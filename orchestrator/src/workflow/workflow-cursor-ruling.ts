@@ -16,7 +16,6 @@ import {
   authorizeWorkflowQuestionMutation,
 } from '../run/question-mutation.ts'
 import { resolvedRulingPersonName } from '../run/ruling-attribution.ts'
-import { refreshStaleMirror } from './task-flow-mirror-refresh.ts'
 import { taskFlowLocalStore } from './task-flow-store.ts'
 import type { TaskFlowIntentInput } from './task-flow-store-types.ts'
 import { workflowKeyOf } from './workflow-cursor-arguments.ts'
@@ -153,23 +152,11 @@ async function applyWorkflowRulingLocally(input: {
   )
   const result = writeTransaction(() => {
     const store = taskFlowLocalStore(database)
-    const mirror = store.write('stage-update', input.payload, input.hosted).mirror[row.record_id]
+    store.write('stage-update', input.payload, input.hosted)
     return {
       summary: `${cursorName(row.workflow_slug, row.mode_slug, row.workflow_key, true)} is running at step ${row.ordinal + 1} ${row.step_slug}.`,
       questionId: question.number,
-      mirror,
     }
   }, database)
-  if (result.mirror === 'refresh')
-    await refreshStaleMirror(
-      database,
-      {
-        recordId: row.record_id,
-        project: row.project,
-        taskKey: row.workflow_key,
-        taskRecordId: row.task_record_id,
-      },
-      input.context.taskFlowClient,
-    )
   return { summary: result.summary, questionId: result.questionId, cursorRecordId: row.record_id }
 }

@@ -174,7 +174,7 @@ test('flow mutation preserves state when the payload omits it', async () => {
   ).toBe('done')
 })
 
-test('stale adopt mirror rows report refresh without partial mutation', async () => {
+test('stale adopt rows avoid partial mutation', async () => {
   const d = database()
   const row = await stage(d)
   d.query('UPDATE workflow_cursor SET revision=2 WHERE record_id=?').run(row.record_id)
@@ -184,7 +184,7 @@ test('stale adopt mirror rows report refresh without partial mutation', async ()
       [string]
     >('SELECT task_record_id,task_flow_record_id,revision FROM workflow_cursor WHERE record_id=?')
     .get(row.record_id)!
-  const result = taskFlowLocalStore(d).write(
+  taskFlowLocalStore(d).write(
     'adopt',
     {
       requestId: row.record_id,
@@ -198,7 +198,6 @@ test('stale adopt mirror rows report refresh without partial mutation', async ()
       revisions: { [row.record_id]: 4, [row.task_flow_record_id!]: 4 },
     },
   )
-  expect(result.mirror).toEqual({ [row.record_id]: 'refresh' })
   expect(
     d
       .query(

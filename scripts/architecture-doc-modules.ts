@@ -66,6 +66,7 @@ export const docModules: DocModule[] = [
     '../git/commit-resolution.ts',
     '../project/projects.ts',
     '../workflow/workflow-task-reference.ts',
+    '../workflow/task-flow-store.ts',
     '../workflow/workflow-text-copy.ts',
     './context-item-store.ts',
     './doc-context-write.ts',

@@ -205,6 +205,7 @@ const taskFlowAbandonSchema = z.object({
 const taskFlowAdoptSchema = z.object({
   ...base,
   stage: revisionReference,
+  stageValues: stageUpdateValues.pick({ workflowKey: true, arguments: true }).optional(),
   taskId: id,
   state: z.enum(['open', 'done', 'dropped']).optional(),
   updatedMachineId: id,

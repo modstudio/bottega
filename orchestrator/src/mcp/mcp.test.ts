@@ -828,16 +828,15 @@ describe('orch MCP', () => {
         body: 'survives the failed MCP copy',
       })
 
-      expect(
-        db()
-          .query('SELECT ordinal,state,task_record_id FROM workflow_cursor WHERE number=?')
-          .get(first.id),
-      ).toEqual({ ordinal: 2, state: 'running', task_record_id: taskId })
-      expect(db().query('SELECT state FROM workflow_cursor WHERE number=?').get(second.id)).toEqual(
-        {
-          state: 'abandoned',
-        },
-      )
+      const authoritativeFirst = await memory.readTaskFlowStage!(firstRow.record_id)
+      expect(authoritativeFirst!.flow).toMatchObject({ taskId })
+      expect(authoritativeFirst!.stage).toMatchObject({
+        activeOrdinal: 2,
+        state: 'running',
+      })
+      expect((await memory.readTaskFlowStage!(secondRow.record_id))!.stage).toMatchObject({
+        state: 'abandoned',
+      })
     } finally {
       if (previousRecordUrl === undefined) delete process.env.BOTTEGA_RECORD_API_URL
       else process.env.BOTTEGA_RECORD_API_URL = previousRecordUrl

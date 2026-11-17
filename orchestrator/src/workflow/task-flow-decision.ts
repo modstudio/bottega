@@ -16,11 +16,6 @@ export function decideAppliedMirrorMutation(
   return 'refresh'
 }
 
-/** Reconciles the next free keyless slot observed in the mirror and hosted record. */
-export function reconcileKeylessInstanceSlot(localSlot: number, hostedSlot: number): number {
-  return Math.max(localSlot, hostedSlot)
-}
-
 export function taskFlowState(statusCategory: string | null | undefined): TaskFlowState | null {
   if (statusCategory === 'done') return 'done'
   if (statusCategory === 'dropped' || statusCategory === 'cancelled') return 'dropped'
@@ -69,22 +64,6 @@ export function decideWorkflowTakeover(input: {
           : (input.recordRemedy ?? 'restore the hosted record connection and retry'),
     }
   return { action: 'take-over', fromMachineId: input.holderMachineId }
-}
-
-export type TaskFlowReadDecision = 'local' | 'hosted' | 'refresh'
-export function decideTaskFlowReadThrough(input: {
-  localFlowRevision: number | null
-  hostedFlowRevision: number
-  hostedListsStages: boolean
-  localStageRevision: number | null
-  hostedStageRevision: number | null
-}): TaskFlowReadDecision {
-  if (input.localFlowRevision === null) return 'hosted'
-  if (input.hostedListsStages && input.hostedFlowRevision > input.localFlowRevision)
-    return 'refresh'
-  if (input.hostedStageRevision == null) return 'local'
-  if (input.localStageRevision == null) return 'hosted'
-  return input.hostedStageRevision > input.localStageRevision ? 'refresh' : 'local'
 }
 
 const TASK_FLOW_ROUTE_RELEASE_REMEDY =

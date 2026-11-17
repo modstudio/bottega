@@ -13,7 +13,6 @@ import { recordApiClient } from '../src/record/record-api-client.ts'
 import { bearerHeaders, setActiveRecordSpaceForSession } from '../src/record/record-auth.ts'
 import { pullRecordCache } from '../src/record/record-cache.ts'
 import { syncRecord } from '../src/record/record-sync.ts'
-import { readThroughTaskFlow } from '../src/workflow/task-flow-read-through.ts'
 import { composeWorkflowWithCursor } from '../src/workflow/workflow-cursor.ts'
 import {
   abandonCursor,
@@ -810,7 +809,7 @@ export function registerTaskFlowReadThroughTakeoverProof(input: Input): void {
     }
   })
 
-  test('hosted task-flow read-through advances across machines and remains space isolated', async () => {
+  test('hosted task-flow advances across machines and remains space isolated', async () => {
     const machineA = newRecordId()
     const machineB = newRecordId()
     const taskId = newRecordId()
@@ -874,37 +873,31 @@ export function registerTaskFlowReadThroughTakeoverProof(input: Input): void {
         {},
       )
       expect(opened.cursor?.opened).toBe(true)
-      const localIds = databaseA
-        .query<
-          { flow_id: string; stage_id: string },
-          []
-        >(`SELECT flow.record_id flow_id,cursor.record_id stage_id
-           FROM task_flow flow JOIN workflow_cursor cursor
-             ON cursor.record_id=flow.open_stage_cursor_record_id`)
-        .get()!
 
       // Machine B is the same user's second machine: takeover is cross-machine for one user, and a
       // flow belongs to its user within the space, so another member's push is refused by design.
       input.signIn()
       const byTask = await client.readTaskFlow!({ taskKey: TASK_KEY })
-      const byFlow = await client.readTaskFlow!({ flowRecordId: localIds.flow_id })
+      const recordIds = { flow_id: byTask.flow.id, stage_id: byTask.stage!.id }
+      expect(
+        databaseA.query('SELECT 1 FROM task_flow WHERE task_record_id=?').get(taskId),
+      ).toBeNull()
+      expect(
+        databaseA.query('SELECT 1 FROM workflow_cursor WHERE record_id=?').get(recordIds.stage_id),
+      ).toBeNull()
+      const byFlow = await client.readTaskFlow!({ flowRecordId: recordIds.flow_id })
       for (const hosted of [byTask, byFlow]) {
-        expect(hosted.flow.id).toBe(localIds.flow_id)
+        expect(hosted.flow.id).toBe(recordIds.flow_id)
         expect(hosted.stage).toMatchObject({
-          id: localIds.stage_id,
+          id: recordIds.stage_id,
           openedMachineId: machineA,
           lastAdvancedMachineId: machineA,
           takenOverFromMachineId: null,
           holder: { id: machineA, displayName: 'Machine A' },
         })
-        expect(hosted.otherStages?.map((stage) => stage.id)).not.toContain(localIds.stage_id)
+        expect(hosted.otherStages?.map((stage) => stage.id)).not.toContain(recordIds.stage_id)
       }
 
-      await readThroughTaskFlow(databaseB, {
-        project: PROJECT,
-        taskKey: TASK_KEY,
-        taskRecordId: taskId,
-      })
       setMachineValue('machine.id', machineB)
       await syncRecord({
         local: databaseB,
@@ -912,13 +905,9 @@ export function registerTaskFlowReadThroughTakeoverProof(input: Input): void {
         projectSpaces: { [PROJECT]: input.spaceId() },
       })
       // The built-in diagnose step has a recorded-artifact floor; this proof exercises takeover.
-      // Hosted reads use the authoritative row, so keep it and the local mirror in agreement.
       input.admin(
-        `UPDATE task_flow_stage SET enforcement='note-only' WHERE id='${localIds.stage_id}';`,
+        `UPDATE task_flow_stage SET enforcement='note-only' WHERE id='${recordIds.stage_id}';`,
       )
-      databaseB
-        .query("UPDATE workflow_cursor SET enforcement='note-only' WHERE record_id=?")
-        .run(localIds.stage_id)
       const advanced = await nextWorkflowStep(
         WORKFLOW,
         PROJECT,
@@ -940,14 +929,14 @@ export function registerTaskFlowReadThroughTakeoverProof(input: Input): void {
       const hostedStage = () =>
         input.admin(
           `SELECT revision || '|' || taken_over_from_machine_id || '|' || last_advanced_machine_id
-           FROM task_flow_stage WHERE id='${localIds.stage_id}';`,
+           FROM task_flow_stage WHERE id='${recordIds.stage_id}';`,
         )
       const afterTakeover = hostedStage()
       expect(afterTakeover).toBe(`${byTask.stage!.revision + 1}|${machineA}|${machineB}`)
       input.signIn()
       expect(await client.readTaskFlow!({ taskKey: TASK_KEY })).toMatchObject({
         stage: {
-          id: localIds.stage_id,
+          id: recordIds.stage_id,
           takenOverFromMachineId: machineA,
           lastAdvancedMachineId: machineB,
           holder: { id: machineB, displayName: 'Machine B' },
@@ -968,17 +957,15 @@ export function registerTaskFlowReadThroughTakeoverProof(input: Input): void {
         },
         databaseB,
       )
-      const closedRevision = databaseB
-        .query<{ revision: number }, [string]>(
-          'SELECT revision FROM workflow_cursor WHERE record_id=?',
-        )
-        .get(localIds.stage_id)!.revision
+      const closedRevision = Number(
+        input.admin(`SELECT revision FROM task_flow_stage WHERE id='${recordIds.stage_id}';`),
+      )
       input.signIn()
       const afterClose = await client.readTaskFlow!({ taskKey: TASK_KEY })
       expect(afterClose.stage).toBeNull()
       expect(afterClose.otherStages).toContainEqual(
         expect.objectContaining({
-          id: localIds.stage_id,
+          id: recordIds.stage_id,
           revision: closedRevision,
           state: 'abandoned',
         }),
@@ -997,7 +984,7 @@ export function registerTaskFlowReadThroughTakeoverProof(input: Input): void {
       ).rejects.toThrow('hosted task flow was not found')
       await expect(
         client.readTaskFlow!(
-          { flowRecordId: localIds.flow_id },
+          { flowRecordId: recordIds.flow_id },
           { destinationSpaceId: otherSpace.id },
         ),
       ).rejects.toThrow('hosted task flow was not found')

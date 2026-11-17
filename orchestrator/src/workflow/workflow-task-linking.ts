@@ -15,7 +15,6 @@ import type {
 } from '../record/record-task-flow-write-contract.ts'
 import { taskFlowRequestId } from '../record/record-task-flow-write-contract.ts'
 import { linkWorkflowQuestionsTaskReference } from '../run/question-mutation.ts'
-import { readThroughTaskFlow } from './task-flow-read-through.ts'
 import { taskFlowLocalStore, taskFlowReadStore } from './task-flow-store.ts'
 import { cursorName } from './workflow-cursor-format.ts'
 import {
@@ -54,27 +53,14 @@ export async function linkWorkflowTaskLabel(
     hosted.push({ row, payload, result })
   }
   const store = taskFlowLocalStore(database)
-  const refresh: typeof hosted = []
   const linkedCursors = writeTransaction(() => {
     for (const row of hosted) {
-      const outcome = store.write('adopt', row.payload, row.result).mirror[row.payload.stage.id]
-      if (outcome === 'refresh') refresh.push(row)
+      store.write('adopt', row.payload, row.result)
     }
     return hosted.length
   }, database)
   const linkedQuestions = await linkWorkflowQuestionsTaskReference(input, database)
   const linked = { workflow_cursor: linkedCursors, question: linkedQuestions }
-  for (const { result } of refresh)
-    if (result)
-      await readThroughTaskFlow(
-        database,
-        {
-          project: input.project,
-          taskKey: input.workflowKey,
-          taskRecordId: input.taskRecordId,
-        },
-        client,
-      )
   return linked
 }
 

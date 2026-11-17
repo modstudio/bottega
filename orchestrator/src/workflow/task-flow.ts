@@ -3,15 +3,11 @@
 
 import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { machineId } from '../record/machine-identity.ts'
 import type { RecordTaskFlowClient } from '../record/record-api-client-task-flow.ts'
-import {
-  decideTaskStageSelection,
-  type OpenTaskStage,
-  taskFlowState,
-} from './task-flow-decision.ts'
+import { decideTaskStageSelection, type OpenTaskStage } from './task-flow-decision.ts'
 import { taskFlowLocalStore, taskFlowReadStore } from './task-flow-store.ts'
-import type { TaskFlowStageCursorRow, WorkflowCursorInsert } from './task-flow-store-types.ts'
+import { sqliteTaskFlowLocalStore } from './task-flow-store-sqlite.ts'
+import type { TaskFlowStageCursorRow } from './task-flow-store-types.ts'
 import { workflowCursorReference } from './workflow-cursor-format.ts'
 
 export function vacateRetiredWorkflowKeySlot(
@@ -25,69 +21,9 @@ export function vacateRetiredWorkflowKeySlot(
   taskFlowLocalStore(d).retireStageIdentity({ project, workflow, mode, key, exceptRecordId })
 }
 
-/** Owns the complete persisted workflow-cursor row shape for local and hosted inserts. */
-export function insertWorkflowCursorRow(
-  database: Database,
-  row: WorkflowCursorInsert,
-  conflict: 'local-identity' | 'hosted-record',
-): string {
-  const projectRecordId = row.projectRecordId
-  if (row.workflowKey && row.instanceId === '') {
-    vacateRetiredWorkflowKeySlot(
-      row.project,
-      row.workflow,
-      row.mode,
-      row.workflowKey,
-      database,
-      row.recordId,
-    )
-    if (conflict === 'hosted-record') {
-      const local = taskFlowLocalStore(database).conflictingHostedStage({
-        projectRecordId,
-        workflow: row.workflow,
-        mode: row.mode,
-        key: row.workflowKey,
-        recordId: row.recordId,
-      })
-      if (local)
-        throw new Error(
-          `local cursor ${local.number} (${local.record_id}) conflicts with hosted stage ${row.recordId}; abandon it with ${PLATFORM_SLUG} workflow abandon${workflowCursorReference(local.number, row.project).cli} --reason "<text>"`,
-        )
-    }
-  }
-  return taskFlowLocalStore(database).insertStage(row, conflict)
-}
-
 /** Reads the open cursor projected by a task flow without creating or changing either row. */
 function openTaskFlowStageCursor(taskRecordId: string, d: Database): TaskFlowStageCursorRow | null {
-  return taskFlowLocalStore(d).openStageForTask(taskRecordId)
-}
-
-export function cacheAdoptedTaskFlow(
-  input: {
-    project: string
-    taskRecordId: string
-    cursorRecordId: string
-    flowRecordId: string
-    flowRevision: number
-    stageRevision: number
-    statusCategory?: string | null
-    at: string
-  },
-  d: Database,
-): void {
-  const store = taskFlowLocalStore(d)
-  const existing = store.flowRecordIdForTask(input.taskRecordId)
-  if (existing && existing !== input.flowRecordId)
-    throw new Error(
-      `task flow ${existing} disagrees with hosted flow ${input.flowRecordId}; rerun after refreshing the hosted task flow`,
-    )
-  const machine = machineId()
-  store.cacheAdoptedFlow({
-    ...input,
-    state: taskFlowState(input.statusCategory),
-    machineId: machine,
-  })
+  return sqliteTaskFlowLocalStore(d).openStageForTask(taskRecordId)
 }
 
 function openStageFromCursor(
@@ -142,7 +78,7 @@ export function refuseTaskFlowStageConflictLocal(
   input: TaskFlowStageConflictInput,
   d: Database,
 ): void {
-  const flow = taskFlowLocalStore(d).flowProjectionForTask(input.taskRecordId)
+  const flow = sqliteTaskFlowLocalStore(d).flowProjectionForTask(input.taskRecordId)
   refuseTaskFlowStageConflictWithFacts(input, flow, openStage(input.taskRecordId, d))
 }
 

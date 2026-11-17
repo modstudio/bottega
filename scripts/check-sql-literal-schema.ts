@@ -369,6 +369,7 @@ const SQL_PREPARE_EXEMPTIONS: readonly SqlExemption[] = [
       '753d5504d330efca',
       '29be386f82cbd855',
       '30c0302d2d1ef23d',
+      '7f556ce9e6a8e41d',
     ],
     'workflow cache reconciliation interpolates one controlled table and foreign-key descriptor',
   ),
