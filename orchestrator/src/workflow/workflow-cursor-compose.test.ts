@@ -8,6 +8,7 @@ import {
 import { DocRevisionConflictError } from '../doc/doc-revision-conflict.ts'
 import { rememberActiveRecordSpace } from '../project-space.ts'
 import { rememberProjectSpace } from '../project-space-cache.ts'
+import type { RecordApiClient } from '../record/record-api-client.ts'
 import type { RecordTaskFlowClient } from '../record/record-api-client-task-flow.ts'
 import {
   type TaskFlowIntentInput,
@@ -85,7 +86,7 @@ function composeClient(
     destinations?: Array<{ destinationSpaceId?: string } | undefined>
     projectNames?: Record<string, string>
   } = {},
-): RecordTaskFlowClient {
+): RecordApiClient {
   const memory = createMemoryRecordApiClient({
     taskFlowComposeFlowRevision: options.flowRevision ?? 4,
     taskFlowComposeStageRevision: options.stageRevision ?? 7,
@@ -467,7 +468,7 @@ test('advance, await, rule, and abandon call the record before caching returned 
     flowRevision: 4,
     enforcement: 'note-only',
   })
-  const taskFlowClient: RecordTaskFlowClient = {
+  const taskFlowClient: RecordApiClient = {
     ...memory,
     ...projectIdentityClient,
     advanceTaskFlow: async (input, destination) => {
@@ -504,6 +505,7 @@ test('advance, await, rule, and abandon call the record before caching returned 
       return memory.abandonTaskFlow!(input, destination)
     },
   }
+  installRecordApiClient(taskFlowClient)
   const hostedContext = { ...context, taskRecordId: TASK_IDS.lifecycle, taskFlowClient }
   const args = { key: 'DEV-LIFECYCLE', branch: 'DEV-LIFECYCLE-work', worktree: '/tmp/lifecycle' }
   const opened = await composeWorkflowWithCursor(

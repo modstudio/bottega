@@ -10,9 +10,9 @@ import {
   requireQuestionMutationApplied,
 } from '../question-store/question-store-mutation.ts'
 import {
+  openQuestionForWorkflowStep,
   questionById,
   questionRulings,
-  waitingQuestions,
 } from '../question-store/question-store-read.ts'
 import { rulingActor } from './question-vocabulary.ts'
 import { adoptedMutationReason } from './run-authority.ts'
@@ -90,21 +90,24 @@ export async function upsertWorkflowQuestion(
     projectId: string | null
     workflowKey: string
     workflowTaskRecordId: string | null
-    stepOrdinal: number
+    cursorOrdinal: number
     stepSlug: string
     question: string
     at: string
   },
   database: Database = db(),
 ): Promise<{ recordId: string; number: number }> {
-  const open = (await waitingQuestions(database)).find(
-    ({ workflow_cursor_record_id }) => workflow_cursor_record_id === input.cursorId,
-  )
+  const open = await openQuestionForWorkflowStep(database, {
+    cursorId: input.cursorId,
+    cursorOrdinal: input.cursorOrdinal,
+    stepSlug: input.stepSlug,
+  })
   if (open) {
-    const row = await questionById(database, open.question_record_id)
+    const openId = String(open.record_id)
+    const row = await questionById(database, openId)
     if (row?.project_record_id === null && input.projectId) {
       const mutation = await mutateQuestion(database, {
-        id: open.question_record_id,
+        id: openId,
         intent: 'close',
         at: input.at,
         actorSession: sessionId(),
@@ -117,7 +120,7 @@ export async function upsertWorkflowQuestion(
       requireQuestionMutationApplied(mutation, row)
     } else {
       const mutation = await mutateQuestion(database, {
-        id: open.question_record_id,
+        id: openId,
         intent: 'link',
         at: input.at,
         actorSession: sessionId(),
@@ -128,9 +131,9 @@ export async function upsertWorkflowQuestion(
           workflowTaskId: input.workflowTaskRecordId,
         },
       })
-      const linked = await questionById(database, open.question_record_id)
+      const linked = await questionById(database, openId)
       requireQuestionMutationApplied(mutation, linked!)
-      return { recordId: open.question_record_id, number: Number(linked!.number) }
+      return { recordId: openId, number: Number(linked!.number) }
     }
   }
   const inserted = await askQuestion(database, {

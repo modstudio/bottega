@@ -383,6 +383,7 @@ export function createMemoryRecordApiClient(
     questions?: Record<string, unknown>[]
   } = {},
 ): RecordApiClient {
+  const hostsTaskFlow = Boolean(input.taskFlowStages || input.taskFlowSyncedRows)
   const docs = new Map<string, StoredDoc>()
   const revisions = new Map<string, StoredRevision[]>()
   const boardChanges = input.boardChanges ?? []
@@ -556,16 +557,15 @@ export function createMemoryRecordApiClient(
         },
         activeSpaceId: fixtureSpace,
         personalSpaceId: fixtureSpace,
-        memberships:
-          input.taskFlowStages || input.taskFlowSyncedRows
-            ? taskFlowSpaces.map((spaceId, index) => ({
-                space_id: spaceId,
-                name: `Fixture ${index + 1}`,
-                slug: index === 0 ? 'fixture' : `fixture-${index + 1}`,
-                role: 'owner',
-                permission: 'write',
-              }))
-            : [],
+        memberships: hostsTaskFlow
+          ? taskFlowSpaces.map((spaceId, index) => ({
+              space_id: spaceId,
+              name: `Fixture ${index + 1}`,
+              slug: index === 0 ? 'fixture' : `fixture-${index + 1}`,
+              role: 'owner',
+              permission: 'write',
+            }))
+          : [],
       }
     },
     async createOrganization(input) {

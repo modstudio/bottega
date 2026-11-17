@@ -10,6 +10,10 @@ import {
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
 import { recordPool } from './record-pool.ts'
 import type { QuestionReadInput, RecordQuestionReadInput } from './record-question-contract.ts'
+import {
+  RECORD_QUESTION_INBOX_STEP_COLUMNS,
+  RECORD_QUESTION_STEP_COLUMNS,
+} from './record-question-step.ts'
 
 type Tenant = { url: string } & TenantPrincipal
 type Row = Record<string, unknown>
@@ -76,7 +80,7 @@ const QUESTION_DETAIL_COLUMNS = `q.id::text record_id,q.number,q.run_id::text ru
   owner.number run_number,owner.id::text owner_id,owner.status owner_status,NULL::integer owner_pid,
   COALESCE(owner.parent_run_id,owner.id)::text root_id,
   stage.number workflow_cursor_number,stage.workflow workflow_slug,stage.mode mode_slug,
-  stage.active_ordinal workflow_step_ordinal,stage.active_slug workflow_step_slug,
+  ${RECORD_QUESTION_STEP_COLUMNS},
   stage.session_id workflow_owner,stage.updated_at::text workflow_updated_at,stage.state cursor_state,
   stage.arguments::text args,COALESCE(run_project.name,stage_project.name) repo,
   NULL::text cwd,COALESCE(run_project.name,stage_project.name) project_name,
@@ -139,7 +143,7 @@ async function boundedIdentityRows(tx: SQL, input: QuestionReadInput): Promise<R
   )
 }
 
-async function rows(tx: SQL, input: QuestionReadInput): Promise<Row[]> {
+export async function readRecordQuestionRows(tx: SQL, input: QuestionReadInput): Promise<Row[]> {
   if (input.read === 'by-id') return limited(await recordQuestionDetails(tx, input), input.limit)
   if (input.read === 'for-run')
     return limited(await recordQuestionDetails(tx, { runId: input.runId }), input.limit)
@@ -183,8 +187,8 @@ async function rows(tx: SQL, input: QuestionReadInput): Promise<Row[]> {
     const workflows = (await tx.unsafe(
       `SELECT q.number,q.id::text record_id,q.asked_at::text,q.question,stage.number cursor_record_id,
         project.name project,stage.project_id::text project_record_id,stage.workflow workflow_slug,
-        stage.mode mode_slug,stage.arguments::text args,stage.active_ordinal ordinal,
-        stage.active_slug step_slug,stage.session_id
+        stage.mode mode_slug,stage.arguments::text args,
+        ${RECORD_QUESTION_INBOX_STEP_COLUMNS},stage.session_id
        FROM question q JOIN task_flow_stage stage ON stage.id=q.workflow_cursor_record_id
        JOIN project ON project.id=stage.project_id
        WHERE stage.state='awaiting-ruling' AND q.answered_at IS NULL AND q.closed_at IS NULL
@@ -337,7 +341,7 @@ export async function readRecordQuestions(
   }
   return client.begin(async (tx) => {
     await bindTenant(tx, input)
-    const items = await rows(tx, input)
+    const items = await readRecordQuestionRows(tx, input)
     if (input.read !== 'inbox' || input.limit === undefined) return { items }
     const offset = input.changedAfter === undefined ? 0 : Number(input.changedAfter)
     const page = items.slice(0, input.limit)

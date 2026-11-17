@@ -129,6 +129,7 @@ function compare(
 
 export function memoryTaskFlowClient(input: MemoryTaskFlowInput): Partial<RecordApiClient> {
   const stages = [...(input.taskFlowStages ?? [])]
+  input.taskFlowStages = stages
   if (input.taskFlowSyncedRows) seedSyncedStages(stages, input.taskFlowSyncedRows, input)
   const applyStageChange = (change: { id: string; values: object }) => {
     const row = stages.find(({ stage }) => stage.id === change.id)

@@ -136,8 +136,8 @@ export class SqliteQuestionStore implements QuestionStore {
            jev_model=excluded.jev_model,jev_input_tokens=excluded.jev_input_tokens,jev_error=excluded.jev_error,
            jev_agreed=excluded.jev_agreed,jev_question_version=excluded.jev_question_version,
            jev_fits=excluded.jev_fits,jev_order_flipped=excluded.jev_order_flipped,
-           workflow_step_ordinal=COALESCE(excluded.workflow_step_ordinal,question.workflow_step_ordinal),
-           workflow_step_slug=COALESCE(excluded.workflow_step_slug,question.workflow_step_slug)
+           workflow_step_ordinal=COALESCE(question.workflow_step_ordinal,excluded.workflow_step_ordinal),
+           workflow_step_slug=COALESCE(question.workflow_step_slug,excluded.workflow_step_slug)
          WHERE excluded.revision > question.revision`,
       )
       .run(

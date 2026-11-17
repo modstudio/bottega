@@ -34,6 +34,8 @@ export const question = pgTable.withRLS(
       onDelete: 'set null',
     }),
     workflowCursorRecordId: uuid('workflow_cursor_record_id'),
+    workflowStepOrdinal: integer('workflow_step_ordinal'),
+    workflowStepSlug: text('workflow_step_slug'),
     projectId: uuid('project_id').references(() => project.id),
     machineId: uuid('machine_id')
       .notNull()
