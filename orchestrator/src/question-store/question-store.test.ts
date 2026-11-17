@@ -445,6 +445,87 @@ test('record inbox paging advances independently across every reachable space', 
   database.close()
 })
 
+function twoSpaceStore(
+  database: ReturnType<typeof migratedTestDatabase>,
+  rows: Record<string, Array<string | Record<string, unknown>>>,
+) {
+  const written: string[] = []
+  const store = new RecordQuestionStore({
+    database,
+    client: {
+      whoami: async () => ({
+        ...(await whoami()),
+        memberships: [
+          { space_id: SPACE_ID, name: 'Fixture', slug: 'fixture', permission: 'write' },
+          { space_id: OTHER_SPACE_ID, name: 'Other', slug: 'other', permission: 'write' },
+        ],
+      }),
+      readQuestions: async (_input, destination) => ({
+        items: (rows[destination?.destinationSpaceId ?? ''] ?? []).map((row) =>
+          typeof row === 'string' ? { record_id: row } : row,
+        ),
+      }),
+      writeQuestion: async (_intent, input, destination) => {
+        written.push(destination.destinationSpaceId)
+        return { id: input.question.id, number: 1, revision: 2, applied: true }
+      },
+    },
+  })
+  return { store, written }
+}
+
+test('a cursor or run whose questions span record spaces reads every one of them', async () => {
+  const database = migratedTestDatabase()
+  seedOwners(database)
+  const earlier = newRecordId()
+  const later = newRecordId()
+  const { store, written } = twoSpaceStore(database, {
+    [SPACE_ID]: [later],
+    [OTHER_SPACE_ID]: [earlier],
+  })
+  const forCursor = await store.read({ read: 'for-cursor', workflowCursorRecordId: CURSOR_ID })
+  expect(forCursor.items.map((row) => String(field(row, 'record_id'))).sort()).toEqual(
+    [earlier, later].sort(),
+  )
+  const forRun = await store.read({ read: 'for-run', runId: newRecordId() })
+  expect(forRun.items).toHaveLength(2)
+  await store.write(
+    'answer',
+    body({ ...snapshot(), id: earlier, revision: 2, answer: 'Yes' }, 'answer'),
+  )
+  expect(written).toEqual([OTHER_SPACE_ID])
+  database.close()
+})
+
+test('merged questions follow asking order, because numbers repeat across spaces', async () => {
+  const database = migratedTestDatabase()
+  const { store } = twoSpaceStore(database, {
+    [SPACE_ID]: [{ record_id: 'project-new', number: 12, asked_at: '2026-11-17T05:00:00Z' }],
+    [OTHER_SPACE_ID]: [
+      { record_id: 'personal-old', number: 6464, asked_at: '2026-11-16T05:00:00Z' },
+    ],
+  })
+  const read = await store.read({ read: 'for-cursor', workflowCursorRecordId: CURSOR_ID })
+  expect(read.items.map((row) => field(row, 'record_id'))).toEqual(['personal-old', 'project-new'])
+  database.close()
+})
+
+test('one question id held in two record spaces is refused', async () => {
+  const database = migratedTestDatabase()
+  const duplicated = newRecordId()
+  const { store } = twoSpaceStore(database, {
+    [SPACE_ID]: [duplicated],
+    [OTHER_SPACE_ID]: [duplicated],
+  })
+  await expect(
+    store.read({ read: 'for-cursor', workflowCursorRecordId: CURSOR_ID }),
+  ).rejects.toThrow('more than one record space')
+  await expect(store.read({ read: 'by-id', ids: [duplicated] })).rejects.toThrow(
+    'more than one record space',
+  )
+  database.close()
+})
+
 test('a reused record store retries identity after a failed read', async () => {
   const database = migratedTestDatabase()
   let identityReads = 0

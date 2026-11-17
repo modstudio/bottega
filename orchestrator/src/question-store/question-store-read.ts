@@ -2,6 +2,7 @@
 /** Gives callers named, typed reads while the wire contract stays discriminated. */
 
 import type { Database } from 'bun:sqlite'
+import { PLATFORM_NAME } from '../../../shared/brand.ts'
 import type {
   TaskFlowInboxQuestionRow,
   TaskFlowOpenSessionStageRow,
@@ -80,8 +81,24 @@ export async function questionForWorkflowCursorByNumber(
   cursorId: string,
   number: number,
 ): Promise<Record<string, unknown> | null> {
-  const questions = await questionsForWorkflowCursor(database, cursorId)
-  return questions.find((row) => row.number === number) ?? null
+  return questionByNumber(await questionsForWorkflowCursor(database, cursorId), number)
+}
+
+/** Numbers are unique only within a record space, so a cursor spanning spaces can repeat one. */
+export function questionByNumber<
+  Row extends { number?: unknown; answered_at?: unknown; closed_at?: unknown },
+>(questions: Row[], number: number): Row | null {
+  const numbered = questions.filter((row) => row.number === number)
+  // A question closed without an answer is withdrawn, so closing the stale one settles the citation.
+  const matches =
+    numbered.length > 1
+      ? numbered.filter((row) => !(row.closed_at != null && row.answered_at == null))
+      : numbered
+  if (matches.length > 1)
+    throw new Error(
+      `question ${number} names ${matches.length} questions on this cursor in different record spaces; close the stale one with '${PLATFORM_NAME} question close <record id> --reason <why>', then retry`,
+    )
+  return matches[0] ?? null
 }
 
 export async function questionRuleAuditReasons(
