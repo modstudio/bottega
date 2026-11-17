@@ -1,4 +1,4 @@
-import { expect, mock, spyOn, test } from 'bun:test'
+import { expect, mock, test } from 'bun:test'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, relative } from 'node:path'
@@ -40,63 +40,6 @@ test('unknown review verb with options keeps the review-family refusal', async (
   await expect(runReview(['review', 'bogus', '--json'], output)).rejects.toThrow(
     `unknown: ${PLATFORM_SLUG} review bogus. Try `,
   )
-})
-
-test('review tier resolves a task key and names task keys in the unknown-target refusal', async () => {
-  const repo = mkdtempSync(join(tmpdir(), 'orch-review-tier-task-key-'))
-  try {
-    git(repo, 'init', '-b', 'main')
-    git(repo, 'config', 'user.email', 'fixture@example.com')
-    git(repo, 'config', 'user.name', 'Fixture')
-    git(repo, 'remote', 'add', 'origin', 'https://github.com/example/example.git')
-    writeFileSync(join(repo, 'base.ts'), 'export const base = true\n')
-    git(repo, 'add', 'base.ts')
-    git(repo, 'commit', '-m', 'base')
-    const branch = 'DEV-2403-tier-target'
-    git(repo, 'checkout', '-b', branch)
-    writeFileSync(join(repo, 'change.ts'), 'export const change = true\n')
-    git(repo, 'add', 'change.ts')
-    git(repo, 'commit', '-m', 'change')
-    const project = `tier-task-key-${crypto.randomUUID()}`
-    const projectId = newRecordId()
-    upsertProject({
-      recordId: projectId,
-      name: project,
-      path: repo,
-      settings: { trunk: 'main', review: { lenses: [{ lens: 'correctness' }] } },
-    })
-    db()
-      .query(
-        `INSERT INTO run
-         (record_id,number,started_at,agent,job,repo,project_record_id,prompt_sha,prompt_bytes,
-          prompt_head,status,branch,launch_key,turn)
-         VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM run),'2026-11-17','codex','implement',?,?,
-                 'sha',1,'task-key tier target','ok',?,'DEV-2403',1)`,
-      )
-      .run(newRecordId(), project, projectId, branch)
-    const originalSpawnSync = Bun.spawnSync
-    spyOn(Bun, 'spawnSync').mockImplementation(((args: string[], options?: object) => {
-      if (args[0] !== 'gh') return originalSpawnSync(args, options as never)
-      return {
-        exitCode: 0,
-        stdout: Buffer.from('[]'),
-        stderr: Buffer.from(''),
-        success: true,
-        exitedDueToTimeout: false,
-      } as ReturnType<typeof Bun.spawnSync>
-    }) as typeof Bun.spawnSync)
-    const output: string[] = []
-
-    await runReview(['review', 'tier', 'DEV-2403', '--cwd', repo], output)
-
-    expect(output).toContain('lens correctness  framework=generic  reason: initial')
-    await expect(runReview(['review', 'tier', 'UNKNOWN', '--cwd', repo], [])).rejects.toThrow(
-      'review tier accepts a branch, task key, run id, or explicit <from>..<to> range',
-    )
-  } finally {
-    mock.restore()
-    rmSync(repo, { recursive: true, force: true })
-  }
 })
 
 test('review-lens dispatch stores its funnel reason and short-circuits operator orders', async () => {

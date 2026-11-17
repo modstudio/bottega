@@ -523,7 +523,7 @@ show one review with its lenses, grading, and findings
 
 **Synopsis:** `bottega review tier [target] [--cwd <value>] [--json]`
 
-classify review tier and round budget for a branch, run, or range
+classify review tier and round budget for a branch, task, run, or range
 
 ### Options
 

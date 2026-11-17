@@ -599,6 +599,7 @@ export const reviewBoundarySpecs: ReviewBoundarySpec[] = [
       '../../../shared/git.ts',
       '../../../shared/record-id.ts',
       '../agent/agent-registry.ts',
+      '../branch/task-branch.ts',
       '../database/db.ts',
       '../git/git-environment.ts',
       '../jobs/jobs.ts',

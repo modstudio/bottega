@@ -378,8 +378,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
     projectId: runProjectId,
   })
   const claimedCwd = repoJob ? null : callerCwd
-  const claimedBranch = repoJob ? null : branchOf(callerCwd)
-  const initiallyRecordedBranch = recordedBranch(claimedBranch)
+  const initiallyRecordedBranch = recordedBranch(repoJob ? null : branchOf(callerCwd))
   const identity = claimIdentity(opts.resume)
   const ownerSession = requiredOwnerSession(name, opts, resume.workspaceSource)
   const execution = executorClaimFacts(name, mcpRequest, transportName, timeoutMs)
@@ -411,7 +410,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
         opts.probe ? 1 : 0,
         opts.retryOf ?? null,
         reason,
-        claimedBranch,
+        initiallyRecordedBranch,
         identity.parent_run_record_id,
         identity.turn,
         vendorSession,

@@ -191,8 +191,7 @@ function resolveTierTarget(value: string, cwd: string): ResolvedTierTarget {
     ['git', 'show-ref', '--verify', '--quiet', `refs/heads/${value}`],
     { budget: 'git-plumbing', cwd: repo, env: targetGitEnvironment(repo) },
   )
-  const branch =
-    branchRef.exitCode === 0 ? value : (resolveTaskBranch(cwd, value)?.branch ?? null)
+  const branch = branchRef.exitCode === 0 ? value : (resolveTaskBranch(cwd, value)?.branch ?? null)
   if (!branch) {
     throw new Error(
       'review tier accepts a branch, task key, run id, or explicit <from>..<to> range',

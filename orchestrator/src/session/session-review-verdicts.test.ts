@@ -68,13 +68,7 @@ test('cursor-claimed branches skip merged heads but gather commits made after th
   }
   let identity = { head: 'recorded-tip' as string | null, headIsAncestorOfTip: false }
   const lines = () =>
-    sessionReviewVerdictLines(
-      'session',
-      [cursor],
-      database,
-      gather,
-      () => identity,
-    )
+    sessionReviewVerdictLines('session', [cursor], database, gather, () => identity)
 
   expect(lines()).toEqual([])
   expect(gatherCount).toBe(0)
@@ -111,15 +105,10 @@ test('a fix-defect cursor contributes its explicit branch', () => {
   const gathered: string[] = []
 
   expect(
-    sessionReviewVerdictLines(
-      'session',
-      [cursor],
-      database,
-      (branch) => {
-        gathered.push(branch.branch)
-        return { branch: branch.branch, taskKey: branch.taskKey, failure: 'gathered' }
-      },
-    ),
+    sessionReviewVerdictLines('session', [cursor], database, (branch) => {
+      gathered.push(branch.branch)
+      return { branch: branch.branch, taskKey: branch.taskKey, failure: 'gathered' }
+    }),
   ).toEqual([
     `DEV-2403: review verdict unavailable (gathered) → ${PLATFORM_SLUG} review tier DEV-2403`,
   ])

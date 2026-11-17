@@ -33,9 +33,7 @@ test('renders an owed lens count with the task-key remedy', () => {
         next: { action: 'dispatch', lenses: ['correctness', 'craft'] },
       }),
     }),
-  ).toBe(
-    `DEV-1234: 2 review lenses owed → ${PLATFORM_SLUG} review tier DEV-1234`,
-  )
+  ).toBe(`DEV-1234: 2 review lenses owed → ${PLATFORM_SLUG} review tier DEV-1234`)
 })
 
 test('renders one owed lens in the singular', () => {
@@ -58,7 +56,7 @@ test('omits owed lenses while any lens is running', () => {
       taskKey: 'DEV-1234',
       verdict: verdict({
         lenses: [
-          { lens: 'correctness', status: 'running', reason: 'running' },
+          { lens: 'correctness', status: 'running', reason: 'initial' },
           { lens: 'craft', status: 'owed', reason: 'initial' },
         ],
         next: { action: 'wait' },

@@ -41,7 +41,6 @@ import {
 import { job, resolveJobTimeoutMs } from '../jobs/jobs.ts'
 import { effectiveMcpRequest, type McpRequest, storedMcpRequest } from '../mcp/mcp-preflight.ts'
 import { projectByName } from '../project/projects.ts'
-import { claimedRunBranch } from './run-claim-plan.ts'
 import { signedInRecordUserId } from '../record/record-attribution.ts'
 import type { DetachSpec } from '../route/failover.ts'
 import type { SynchronousResult } from '../synchronous-result.ts'
@@ -50,6 +49,7 @@ import { clearQuestionDeliveryPendingForRuns } from './question-delivery-pending
 import { recordedRunLivenessFacts, runAlive } from './run-alive.ts'
 import { RUNS_DIR, readDispatchState } from './run-artifacts.ts'
 import { bindingValues, inheritedRunBinding, inheritedRunLinks } from './run-claim-inheritance.ts'
+import { claimedRunBranch } from './run-claim-plan.ts'
 import { claimWithMigrationAdmission } from './run-claim-transaction.ts'
 import { runCoordinatorLogPath } from './run-coordinator-log.ts'
 import { EXTERNAL_EXECUTOR, HARNESS_EXECUTOR, type RunExecutor } from './run-executor.ts'
@@ -219,6 +219,19 @@ function detachedPlaceholderBindings(
   ] as const
 }
 
+function detachedPlaceholderReviewBindings(spec: ResolvedDetachSpec) {
+  return [
+    spec.agentExplicit ? 1 : 0,
+    claimedRunBranch(
+      spec.resolvedReviewTarget?.branch ?? null,
+      null,
+      spec.resume?.treePlan?.branch ?? spec.resume?.worktree?.branch ?? null,
+      null,
+    ),
+    spec.lens ?? null,
+  ] as const
+}
+
 function placeholderExecution(
   spec: DetachSpec,
   jobName: string,
@@ -355,12 +368,6 @@ async function detachResolved(
   const dispatchMcpPreflightedAgent = preflightDetachMcp(jobName, spec, mcpDispatch)
   const startedByUserId = await signedInRecordUserId()
   const { identity, pendingRecordId, detached, links, binding } = detachedLinks
-  const placeholderBranch = claimedRunBranch(
-    spec.resolvedReviewTarget?.branch ?? null,
-    null,
-    spec.resume?.treePlan?.branch ?? spec.resume?.worktree?.branch ?? null,
-    null,
-  )
   mkdirSync(RUNS_DIR, { recursive: true })
   // Named by the clock alone, this collided: concurrent `bottega run start` calls for the
   // same job inside one millisecond wrote the SAME prompt file, and every one of
@@ -406,9 +413,7 @@ async function detachResolved(
         spec.label ?? null,
         sessionId(),
         spec.probe ? 1 : 0,
-        spec.agentExplicit ? 1 : 0,
-        placeholderBranch,
-        spec.lens ?? null,
+        ...detachedPlaceholderReviewBindings(spec),
         identity.parent_run_record_id,
         identity.turn,
         storedMcpRequest(mcpRequest),
