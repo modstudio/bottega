@@ -46,7 +46,7 @@ test('rejects a stage owner write that bypasses the cursor owner decision', () =
   writeFileSync(
     join(source, 'cursor.ts'),
     [
-      "const unsafe = { stage: { values: { sessionId: context.session } } }",
+      'const unsafe = { stage: { values: { sessionId: context.session } } }',
       "const safe = { stageInsert: { sessionId: cursorOwnerAfter('compose', null, context.session) } }",
       '',
     ].join('\n'),

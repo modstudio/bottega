@@ -427,6 +427,7 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     './workflow-cursor-result.ts',
     './workflow-cursor-selection.ts',
     './workflow-cursor-trail.ts',
+    './workflow-cursor-transition.ts',
     './workflow-text.ts',
   ]),
   module('orchestrator/src/workflow/workflow-cursor-worktrees.ts', [

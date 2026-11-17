@@ -28,8 +28,8 @@ import {
   type SelectableCursorRow,
   type WorkflowCursorContext,
 } from './workflow-cursor-selection.ts'
-import { decideWorkflowRuleAnswer, pinnedWorkflowRuleStep } from './workflow-rule-answer.ts'
 import { cursorOwnerAfter } from './workflow-cursor-transition.ts'
+import { decideWorkflowRuleAnswer, pinnedWorkflowRuleStep } from './workflow-rule-answer.ts'
 import { linkResolvedWorkflowTask } from './workflow-task-linking.ts'
 
 async function selectOpenWorkflowQuestion(

@@ -17,14 +17,7 @@ export type CursorTransition =
 
 export type CursorStartDecision = 'insert' | 'reuse' | 'retire'
 
-export const cursorOwnerVerbs = [
-  'serve',
-  'await',
-  'advance',
-  'compose',
-  'rule',
-  'abandon',
-] as const
+export const cursorOwnerVerbs = ['serve', 'await', 'advance', 'compose', 'rule', 'abandon'] as const
 export type CursorOwnerVerb = (typeof cursorOwnerVerbs)[number]
 
 /** Decide the owner written by each cursor verb. */

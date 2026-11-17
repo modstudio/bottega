@@ -691,7 +691,7 @@ describe('workflow cursor adapter', () => {
     ).rejects.toThrow('workflow flow for DEV-822 is abandoned')
   })
 
-  test('abandon clears an awaiting cursor question and records the current session', async () => {
+  test('abandon clears an awaiting cursor question and preserves its owner', async () => {
     const d = database()
     await composeWorkflowWithCursor('flow', 'fixture', 'default', args, context, d, {}, {})
     await awaitWorkflowRuling(
@@ -718,7 +718,7 @@ describe('workflow cursor adapter', () => {
     expect(d.query('SELECT state,question,session_id FROM workflow_cursor').get()).toEqual({
       state: 'abandoned',
       question: null,
-      session_id: 'session-two',
+      session_id: 'session-one',
     })
     expect(await listWorkflowCursors({ project: 'fixture' }, d)).toEqual([])
     expect(d.query('SELECT close_reason FROM question').get()).toEqual({

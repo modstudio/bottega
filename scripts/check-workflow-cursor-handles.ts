@@ -66,9 +66,11 @@ export function unguardedWorkflowCursorOwnerWrites(root = ROOT): string[] {
         ts.isPropertyAssignment(node) &&
         propertyName(node) === 'sessionId' &&
         belongsToStagePayload(node) &&
-        !(ts.isCallExpression(node.initializer) &&
+        !(
+          ts.isCallExpression(node.initializer) &&
           ts.isIdentifier(node.initializer.expression) &&
-          node.initializer.expression.text === 'cursorOwnerAfter')
+          node.initializer.expression.text === 'cursorOwnerAfter'
+        )
       ) {
         const line = file.getLineAndCharacterOfPosition(node.getStart(file)).line + 1
         findings.push(`${path}:${line}: route stage sessionId through cursorOwnerAfter`)

@@ -33,8 +33,8 @@ import {
 } from './workflow-cursor-selection.ts'
 import { type CursorTrailEntry, isClosedStep } from './workflow-cursor-trail.ts'
 import {
-  cursorValue,
   cursorOwnerAfter,
+  cursorValue,
   decideCursorCompositionInput,
   decideCursorStart,
   decideCursorTransition,

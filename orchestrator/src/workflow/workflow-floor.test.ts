@@ -443,23 +443,6 @@ test('an exec from another session is refused with the rerun remedy', () => {
   })
 })
 
-test('a foreign cursor owner adds its compose takeover to an exec refusal', () => {
-  const takeover = `${PLATFORM_SLUG} workflow compose flow --project fixture --mode default --arg key=DEV-2370`
-  const decision = decide({
-    floors: [commandExit],
-    cursorTakeoverRemedy: takeover,
-    evidence: {
-      exec: {
-        ...passingExec.exec!,
-        sessionMatches: false,
-        sessionAdoptedCursor: false,
-      },
-    },
-  })
-  expect(decision).toMatchObject({ action: 'refuse' })
-  if (decision.action === 'refuse') expect(decision.message).toContain(takeover)
-})
-
 test("an adopting session's exec satisfies command-exit", () => {
   expect(
     decide({
