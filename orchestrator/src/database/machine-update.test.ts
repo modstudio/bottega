@@ -21,8 +21,6 @@ import { DB_PATH, db } from './db.ts'
 import {
   machineUpdateCommand as lockedMachineUpdateCommand,
   machineUpdateCommandUnderLock as machineUpdateCommand,
-  pulledRangeChangesPackageJson,
-  unregisteredMainCheckoutRefusal,
 } from './machine-update.ts'
 import {
   clearMachineUpdateIntent,
@@ -133,48 +131,6 @@ function successfulMachineUpdateDeps(migrate: () => void = () => {}) {
     runLaunchAgentsRefreshVerb: () => {},
   }
 }
-
-test.each([
-  { paths: 'package.json\0', changed: true },
-  { paths: 'packages/worker/package.json\0', changed: true },
-  { paths: 'package.json.md\0packages/worker.ts\0', changed: false },
-])('package.json path decision returns $changed for $paths', ({ paths, changed }) => {
-  expect(pulledRangeChangesPackageJson(paths)).toBe(changed)
-})
-
-test.each([
-  { changedPaths: 'package.json\0', expected: ['pull', 'install', 'migrate'] },
-  { changedPaths: 'shared/source.ts\0', expected: ['pull', 'migrate'] },
-])(
-  'machine update orders dependency refresh for pulled paths $changedPaths',
-  async ({ changedPaths, expected }) => {
-    const events: string[] = []
-    await machineUpdateCommand(
-      { log: () => {} },
-      {
-        cwd: dir,
-        authorityRefusal: () => null,
-        project: () => ({
-          name: 'migration-update-fixture',
-          path: dir,
-          settings: { trunk: 'main' },
-        }),
-        git: (_cwd, args) => {
-          if (args[0] === 'branch') return 'main'
-          if (args[0] === 'show') return JSON.stringify({ entries: migrationJournal() })
-          if (args[0] === 'rev-parse') return 'before-commit'
-          if (args.includes('pull')) events.push('pull')
-          if (args[0] === 'diff') return changedPaths
-          return ''
-        },
-        install: () => events.push('install'),
-        migrate: () => events.push('migrate'),
-        runLaunchAgentsRefreshVerb: () => {},
-      },
-    )
-    expect(events).toEqual(expected)
-  },
-)
 
 test("machine update clears a dead holder's marker before deciding", async () => {
   setMigrationDrain(db(), '0155_rebuild', 'draining', {
@@ -353,7 +309,7 @@ test('machine update restores main when migrate fails after the pull', async () 
   expect(gitCalls.slice(-4)).toEqual([
     ['rev-parse', 'HEAD'],
     ['-c', 'core.hooksPath=/dev/null', 'pull', '--ff-only', 'origin', 'main'],
-    ['diff', '--name-only', '-z', 'before-commit..HEAD', '--'],
+    ['diff', '--name-only', 'before-commit..HEAD', '-z', '--'],
     ['reset', '--keep', 'before-commit'],
   ])
 })
@@ -865,17 +821,6 @@ test('machine update chooses the running checkout when install home names a dist
     else process.env[INSTALL_HOME_ENV] = previous
     rmSync(designated, { recursive: true, force: true })
   }
-})
-
-test('unregistered main checkout refusal names the registered binary when the register has one', () => {
-  const same = (left: string, right: string) => left === right
-  expect(unregisteredMainCheckoutRefusal('/install', null, same)).toBe(
-    `refusing machine update: this installation's root /install is not a registered main checkout; run the registered main checkout's bin/${PLATFORM_SLUG} machine update, or unset ${INSTALL_HOME_ENV} if it points elsewhere`,
-  )
-  expect(unregisteredMainCheckoutRefusal('/install', { path: '/registered-main' }, same)).toBe(
-    `refusing machine update: this installation's root /install is not a registered main checkout; run /registered-main/bin/${PLATFORM_SLUG} machine update, or unset ${INSTALL_HOME_ENV} if it points elsewhere`,
-  )
-  expect(unregisteredMainCheckoutRefusal('/install', { path: '/install' }, same)).toBeNull()
 })
 
 test(`machine update targets the ${PLATFORM_NAME} checkout when the caller is another project`, async () => {

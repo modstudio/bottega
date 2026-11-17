@@ -4,6 +4,7 @@
 import { existsSync, realpathSync, renameSync, rmSync } from 'node:fs'
 import { startBoundedSync } from '../../../shared/bounded-process.ts'
 import { PLATFORM_NAME, PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { nulPathListArgs, splitNulPaths } from '../../../shared/git-path-list.ts'
 import {
   INSTALL_HOME_ENV,
   type InstallationIdentity,
@@ -136,8 +137,8 @@ function runDependencyInstall(cwd: string): void {
 }
 
 /** Decide whether a pulled path list requires refreshing checkout dependencies. */
-export function pulledRangeChangesPackageJson(paths: string): boolean {
-  return paths.split(/\0|\r?\n/).some((path) => /(^|\/)package\.json$/.test(path))
+export function pulledRangeChangesPackageJson(paths: readonly string[]): boolean {
+  return paths.some((path) => /(^|\/)package\.json$/.test(path))
 }
 
 function cleanupFailureMessage(failure: unknown, cleanupError: unknown): string {
@@ -496,39 +497,54 @@ function verifiedLandingBranch(
   return branch
 }
 
-export async function machineUpdateCommandUnderLock(
-  presentation: Presentation,
-  deps: UpdateDependencies = {},
-  requestedVersion?: string,
-): Promise<void> {
-  if (!existsSync(DB_PATH)) throw new Error(missingDatabaseMessage())
-  if (!deps.authorityRefusal && DATABASE_RESOLUTION.method === 'BOTTEGA_ORCHESTRATOR_DB') {
-    throw new Error(
-      `refusing machine update through BOTTEGA_ORCHESTRATOR_DB; run it from the main checkout without the override`,
-    )
-  }
-  const authorityRefusal = (deps.authorityRefusal ?? migrationAuthorityRefusal)()
-  if (authorityRefusal) throw new Error(authorityRefusal)
-  const identity = deps.identity ?? runningInstallationIdentity(import.meta.dir, process.env)
-  recoverAbandonedMachineUpdate(
-    presentation,
-    deps.git ?? ((workingDirectory, args) => git(args, workingDirectory)),
+function applyCheckoutPull(input: {
+  target: string
+  branch: string
+  journal: MigrationJournalEntry[]
+  initialStoreVersion: number
+  runGit: (cwd: string, args: string[]) => string
+  install: (cwd: string) => void
+  migrate: (cwd: string) => void
+}): void {
+  const { target, runGit } = input
+  const before = runGit(target, ['rev-parse', 'HEAD'])
+  const beforePositions = requiredLocalStoreJournalPositions()
+  writeMachineUpdateIntent({
+    before: beforePositions,
+    swapped: { kind: 'checkout', target, priorCommit: before },
+  })
+  // Machine update handles post-pull install and migration itself, so its pull skips the hook.
+  runGit(target, ['-c', 'core.hooksPath=/dev/null', 'pull', '--ff-only', 'origin', input.branch])
+  const changedPaths = splitNulPaths(
+    runGit(target, nulPathListArgs(['diff', '--name-only', `${before}..HEAD`, '--'])),
   )
-  const path = decideUpdatePath(identity.kind, requestedVersion)
-  if (path.action === 'refuse') throw new Error(path.reason)
-  if (identity.kind === 'distribution') {
-    await (deps.updateDistribution ?? updateDistribution)({
-      manifest: identity.manifest,
-      requestedVersion,
-      presentation,
-      deps,
-    })
-    const maintainStore = deps.maintainStore ?? setupIncrementalVacuumAfterMachineUpdate
-    maintainStoreAfterUpdate(presentation, maintainStore)
-    const refreshLaunchAgents = deps.runLaunchAgentsRefreshVerb ?? runLaunchAgentsRefreshVerb
-    refreshLaunchAgents(realpathSync(process.execPath))
-    return
+  if (pulledRangeChangesPackageJson(changedPaths)) {
+    try {
+      input.install(target)
+    } catch (cause) {
+      handlePostPullFailure({
+        ...input,
+        before,
+        beforePositions,
+        cause,
+        operation: 'dependency install',
+      })
+    }
   }
+  try {
+    input.migrate(target)
+  } catch (cause) {
+    handlePostPullFailure({
+      ...input,
+      before,
+      beforePositions,
+      cause,
+      operation: 'migration',
+    })
+  }
+}
+
+async function updateCheckout(presentation: Presentation, deps: UpdateDependencies): Promise<void> {
   const target = deps.cwd ?? installRoot()
   const callerCwd = deps.callerCwd ?? process.cwd()
   const runGit = deps.git ?? ((workingDirectory, args) => git(args, workingDirectory))
@@ -565,47 +581,16 @@ export async function machineUpdateCommandUnderLock(
       decision: initial.decision,
       pendingMigration: initial.pendingMigration,
       deps,
-      apply: () => {
-        const before = runGit(target, ['rev-parse', 'HEAD'])
-        const beforePositions = requiredLocalStoreJournalPositions()
-        writeMachineUpdateIntent({
-          before: beforePositions,
-          swapped: { kind: 'checkout', target, priorCommit: before },
-        })
-        // Machine update handles post-pull install and migration itself, so its pull skips the hook.
-        runGit(target, ['-c', 'core.hooksPath=/dev/null', 'pull', '--ff-only', 'origin', branch])
-        const changedPaths = runGit(target, ['diff', '--name-only', '-z', `${before}..HEAD`, '--'])
-        if (pulledRangeChangesPackageJson(changedPaths)) {
-          try {
-            install(target)
-          } catch (cause) {
-            handlePostPullFailure({
-              target,
-              before,
-              journal,
-              initialStoreVersion: initial.storeVersion,
-              beforePositions,
-              runGit,
-              cause,
-              operation: 'dependency install',
-            })
-          }
-        }
-        try {
-          migrate(target)
-        } catch (cause) {
-          handlePostPullFailure({
-            target,
-            before,
-            journal,
-            initialStoreVersion: initial.storeVersion,
-            beforePositions,
-            runGit,
-            cause,
-            operation: 'migration',
-          })
-        }
-      },
+      apply: () =>
+        applyCheckoutPull({
+          target,
+          branch,
+          journal,
+          initialStoreVersion: initial.storeVersion,
+          runGit,
+          install,
+          migrate,
+        }),
     })
   } finally {
     clearMachineUpdateIntent()
@@ -615,6 +600,42 @@ export async function machineUpdateCommandUnderLock(
   const refreshLaunchAgents = deps.runLaunchAgentsRefreshVerb ?? runLaunchAgentsRefreshVerb
   refreshLaunchAgents(resolveInstallationPaths(target, {}).executable)
   ;(deps.verifyMainCheckout ?? verifyMainCheckoutInvariant)(target, branch, runGit)
+}
+
+export async function machineUpdateCommandUnderLock(
+  presentation: Presentation,
+  deps: UpdateDependencies = {},
+  requestedVersion?: string,
+): Promise<void> {
+  if (!existsSync(DB_PATH)) throw new Error(missingDatabaseMessage())
+  if (!deps.authorityRefusal && DATABASE_RESOLUTION.method === 'BOTTEGA_ORCHESTRATOR_DB') {
+    throw new Error(
+      `refusing machine update through BOTTEGA_ORCHESTRATOR_DB; run it from the main checkout without the override`,
+    )
+  }
+  const authorityRefusal = (deps.authorityRefusal ?? migrationAuthorityRefusal)()
+  if (authorityRefusal) throw new Error(authorityRefusal)
+  const identity = deps.identity ?? runningInstallationIdentity(import.meta.dir, process.env)
+  recoverAbandonedMachineUpdate(
+    presentation,
+    deps.git ?? ((workingDirectory, args) => git(args, workingDirectory)),
+  )
+  const path = decideUpdatePath(identity.kind, requestedVersion)
+  if (path.action === 'refuse') throw new Error(path.reason)
+  if (identity.kind === 'distribution') {
+    await (deps.updateDistribution ?? updateDistribution)({
+      manifest: identity.manifest,
+      requestedVersion,
+      presentation,
+      deps,
+    })
+    const maintainStore = deps.maintainStore ?? setupIncrementalVacuumAfterMachineUpdate
+    maintainStoreAfterUpdate(presentation, maintainStore)
+    const refreshLaunchAgents = deps.runLaunchAgentsRefreshVerb ?? runLaunchAgentsRefreshVerb
+    refreshLaunchAgents(realpathSync(process.execPath))
+    return
+  }
+  await updateCheckout(presentation, deps)
 }
 
 export async function machineUpdateCommand(

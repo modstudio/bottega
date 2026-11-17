@@ -89,7 +89,7 @@ function stdinInput(stdin: string | Uint8Array | undefined): Blob | Uint8Array |
 }
 
 /** Resolve the named budget that a bounded argv must receive. */
-export function effectiveBudgetForArgv(
+function effectiveBudgetForArgv(
   argv: readonly string[],
   callerBudget: CallBudgetName,
 ): CallBudgetName {
