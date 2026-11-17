@@ -894,6 +894,7 @@ const UUID_COLUMNS: readonly ManifestColumn[] = [
     'workflow.record_id',
     'workflow.space_id',
     'workflow_cursor.record_id',
+    'workflow_cursor.handed_off_from_record_id',
     'workflow_cursor.project_record_id',
     'workflow_cursor.workflow_version_record_id',
     'workflow_cursor.catalogue_version_record_id',

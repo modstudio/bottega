@@ -3,11 +3,11 @@
 
 import type { Database, SQLQueryBindings } from 'bun:sqlite'
 import { newRecordId } from '../../../shared/record-id.ts'
-import { workflowHandoffTrail } from '../../../shared/workflow-handoff-trail.ts'
-import type {
-  TaskFlowIntent,
-  TaskFlowIntentInput,
-  TaskFlowIntentResult,
+import {
+  type TaskFlowIntent,
+  type TaskFlowIntentInput,
+  type TaskFlowIntentResult,
+  workflowHandoffTrail,
 } from '../record/record-task-flow-write-contract.ts'
 import { decideAppliedMirrorMutation } from './task-flow-decision.ts'
 

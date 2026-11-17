@@ -6,16 +6,16 @@
 import type { SQL } from 'bun'
 import { bindJsonb } from '../../../shared/record/jsonb-sql.ts'
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
-import { workflowHandoffTrail } from '../../../shared/workflow-handoff-trail.ts'
 import { DocRevisionConflictError } from '../doc/doc-revision-conflict.ts'
 import { isUniqueViolation } from './record-config-error.ts'
 import { recordPool } from './record-pool.ts'
 import { allocateRecordSequence } from './record-sequence.ts'
-import type {
-  TaskFlowComposeResult,
-  TaskFlowIntent,
-  TaskFlowIntentBody,
-  TaskFlowIntentResult,
+import {
+  type TaskFlowComposeResult,
+  type TaskFlowIntent,
+  type TaskFlowIntentBody,
+  type TaskFlowIntentResult,
+  workflowHandoffTrail,
 } from './record-task-flow-write-contract.ts'
 import {
   decideRevisionPreflight,
