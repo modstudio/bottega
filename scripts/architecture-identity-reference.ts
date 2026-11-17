@@ -1,5 +1,5 @@
 const NUMBER_PREDICATE =
-  /\b(?:[A-Za-z_$][\w$]*\.)?number\s*(?:=\s*(?:\?|\$\d+|[A-Za-z_$][\w$]*\.number\b)|IN\s*\()/gi
+  /\b(?:[A-Za-z_$][\w$]*\.)?number\s*(?:=\s*(?:\?|\$\d+|\$\{|[A-Za-z_$][\w$]*\.number\b)|IN\s*\()/gi
 const IDENTIFIER_CLASSIFIER_CALL = /\bclassify[A-Za-z]+Identifier\s*\(/gi
 const QUESTION_NUMBER_HELPER_CALL =
   /\b(?:questionByProjectNumber|questionNumberProjectId|questionNumberProjectIds)\s*\(/g

@@ -85,14 +85,19 @@ export function parseAnswerIdentifier(
     reference = parseReference(original, 'run')
   } catch {
     throw new Error(
-      `invalid answer identifier ${JSON.stringify(original)}: expected q followed by a positive decimal question number, name/q followed by a positive decimal question number, a positive decimal run number, name/number, or a full run or question UUID`,
+      `invalid answer identifier ${JSON.stringify(original)}: expected q<n>, <project>#q<n>, a positive decimal run number, r<n>, <machine>/<n>, <machine>/r<n>, or a full UUID`,
     )
   }
-  if (reference.value.kind === 'label' && reference.value.prefix === REFERENCE_PREFIXES.question)
+  if (reference.value.kind === 'label' && reference.value.prefix === REFERENCE_PREFIXES.question) {
+    if (reference.qualifier?.kind === 'machine')
+      throw new Error(
+        'question references cannot use a machine qualifier; pass a <project>#q<number> reference',
+      )
     return withQualifier(
       { kind: 'question-number', number: reference.value.number },
       reference.qualifier,
     )
+  }
   if (reference.value.kind === 'label' && reference.value.prefix === REFERENCE_PREFIXES.run)
     return withQualifier(
       { kind: 'run-number', number: reference.value.number },
@@ -109,7 +114,7 @@ export function parseAnswerIdentifier(
       reference.qualifier,
     )
   throw new Error(
-    `invalid answer identifier ${JSON.stringify(original)}: expected q followed by a positive decimal question number, name/q followed by a positive decimal question number, a positive decimal run number, name/number, or a full run or question UUID`,
+    `invalid answer identifier ${JSON.stringify(original)}: expected q<n>, <project>#q<n>, a positive decimal run number, r<n>, <machine>/<n>, <machine>/r<n>, or a full UUID`,
   )
 }
 

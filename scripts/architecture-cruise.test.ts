@@ -21,6 +21,16 @@ test('identity reference guard rejects an interpolated number-column lookup outs
   ])
 })
 
+test('identity reference guard rejects a tagged-template number-column lookup', () => {
+  const added = identityReferenceViolationCount(
+    'tx`SELECT id FROM note WHERE number=$' + '{n}`',
+    'orchestrator/src/run/new.ts',
+  )
+  expect(identityReferenceGuardViolations({ 'orchestrator/src/run/new.ts': added }, {})).toEqual([
+    'orchestrator/src/run/new.ts: production identity bypass count grew from 0 to 1; resolve the reference through identity/',
+  ])
+})
+
 test('identity reference guard rejects a question-number helper call outside identity', () => {
   const added = identityReferenceViolationCount(
     'await questionByProjectNumber(database, number, projectId)',

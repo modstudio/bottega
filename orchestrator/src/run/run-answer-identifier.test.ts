@@ -29,16 +29,21 @@ const question = (overrides: Partial<NonNullable<AnswerIdentifierFacts['question
 describe('answer identifier parse', () => {
   test('preserves qualifiers for identity resolution', () => {
     const names = { shortName: 'mine', formerShortNames: ['old-mine'] }
-    expect(parseAnswerIdentifier('mine/q42', names)).toEqual({
-      kind: 'question-number',
-      number: 42,
-      qualifier: { kind: 'machine', value: 'mine' },
-    })
     expect(parseAnswerIdentifier('beta#q42', names)).toEqual({
       kind: 'question-number',
       number: 42,
       qualifier: { kind: 'project', value: 'beta' },
     })
+    expect(parseAnswerIdentifier('mine/r42', names)).toEqual({
+      kind: 'run-number',
+      number: 42,
+      qualifier: { kind: 'machine', value: 'mine' },
+    })
+  })
+  test('refuses a machine qualifier on a question with the project-qualified remedy', () => {
+    expect(() => parseAnswerIdentifier('mine/q42')).toThrow(
+      'question references cannot use a machine qualifier; pass a <project>#q<number> reference',
+    )
   })
   test('owns q-prefix grammar and accepts the run identifier forms', () => {
     const recordId = newRecordId()

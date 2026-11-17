@@ -1,6 +1,8 @@
 /** Shrink-only production bypasses that predate the shared identity resolver. */
 export const identityReferenceBaseline: Readonly<Record<string, number>> = {
-  'hub/src/hosted-tasks.ts': 1,
+  'hub/scripts/test-postgres-evidence.ts': 1,
+  'hub/src/hosted-notes.ts': 1,
+  'hub/src/hosted-tasks.ts': 3,
   'hub/src/ingest/runs.ts': 2,
   'hub/src/note-cache.ts': 2,
   'hub/src/note.ts': 2,
@@ -20,8 +22,13 @@ export const identityReferenceBaseline: Readonly<Record<string, number>> = {
   'orchestrator/src/porting/porting.ts': 4,
   'orchestrator/src/project/projects.ts': 1,
   'orchestrator/src/question-store/question-store-sqlite-reads.ts': 2,
+  'orchestrator/src/record/record-catalogue-import.ts': 1,
   'orchestrator/src/record/record-cache-port.ts': 1,
+  'orchestrator/src/record/record-moderation-hide.ts': 1,
+  'orchestrator/src/record/record-outside-block.ts': 1,
+  'orchestrator/src/record/record-port-catalogue.ts': 1,
   'orchestrator/src/record/record-question-read.ts': 1,
+  'orchestrator/src/record/record-task-flow-list-query.ts': 3,
   'orchestrator/src/review/review-commands.ts': 1,
   'orchestrator/src/review/review-identifier.ts': 1,
   'orchestrator/src/run/question-identifier.ts': 2,
