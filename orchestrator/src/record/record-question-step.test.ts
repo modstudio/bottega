@@ -64,22 +64,67 @@ function questionWrite(requestId = REQUEST, revision = 1): QuestionWriteBody {
   return {
     requestId,
     question: {
-      id: QUESTION, number: null, runId: null, workflowKey: null, workflowTaskId: null,
-      workflowCursorRecordId: CURSOR, projectId: null, machineId: MACHINE, revision,
-      askedAt: STAMP, question: 'Proceed?', options: null, recommendation: null, why: null,
-      askedVia: 'workflow', kind: null, typedOptions: null, criteria: null, levels: null,
-      answer: null, answerValue: null, answerBasis: null, answeredAt: null, answeredBy: null,
-      answeredByName: null, answeredByKind: null, answererKind: null, answerChannel: null,
-      jevPick: null, jevConfidence: null, jevProbabilities: null, jevModel: null,
-      jevInputTokens: null, jevError: null, jevAgreed: null, jevQuestionVersion: null,
-      jevFits: null, jevOrderFlipped: null, awaitingOperatorAt: STAMP, relayedBy: null,
-      overturnedAt: null, overturnedBy: null, overturnedByName: null, overturnReason: null,
-      replacement: null, filedAs: null, filedRef: null, filedRecordId: null, filedLabel: null,
-      filedAt: null, closedAt: null, closeReason: null, withheldFields: [],
-      createdAt: STAMP, updatedAt: STAMP,
+      id: QUESTION,
+      number: null,
+      runId: null,
+      workflowKey: null,
+      workflowTaskId: null,
+      workflowCursorRecordId: CURSOR,
+      projectId: null,
+      machineId: MACHINE,
+      revision,
+      askedAt: STAMP,
+      question: 'Proceed?',
+      options: null,
+      recommendation: null,
+      why: null,
+      askedVia: 'workflow',
+      kind: null,
+      typedOptions: null,
+      criteria: null,
+      levels: null,
+      answer: null,
+      answerValue: null,
+      answerBasis: null,
+      answeredAt: null,
+      answeredBy: null,
+      answeredByName: null,
+      answeredByKind: null,
+      answererKind: null,
+      answerChannel: null,
+      jevPick: null,
+      jevConfidence: null,
+      jevProbabilities: null,
+      jevModel: null,
+      jevInputTokens: null,
+      jevError: null,
+      jevAgreed: null,
+      jevQuestionVersion: null,
+      jevFits: null,
+      jevOrderFlipped: null,
+      awaitingOperatorAt: STAMP,
+      relayedBy: null,
+      overturnedAt: null,
+      overturnedBy: null,
+      overturnedByName: null,
+      overturnReason: null,
+      replacement: null,
+      filedAs: null,
+      filedRef: null,
+      filedRecordId: null,
+      filedLabel: null,
+      filedAt: null,
+      closedAt: null,
+      closeReason: null,
+      withheldFields: [],
+      createdAt: STAMP,
+      updatedAt: STAMP,
     },
     audit: {
-      action: revision === 1 ? 'ask' : 'link', actorSession: 'session', at: STAMP, reason: null,
+      action: revision === 1 ? 'ask' : 'link',
+      actorSession: 'session',
+      at: STAMP,
+      reason: null,
     },
   }
 }
@@ -88,21 +133,26 @@ const principal = { url: 'pglite', userId: USER, spaceId: SPACE, spaceIds: [SPAC
 
 test('production hosted write keeps the question step through a later-step rewrite', async () => {
   const sql = pgliteSql(postgres)
-  expect(await writeRecordQuestionTransaction('ask', { ...principal, ...questionWrite() }, sql))
-    .toMatchObject({ applied: true, revision: 1 })
+  expect(
+    await writeRecordQuestionTransaction('ask', { ...principal, ...questionWrite() }, sql),
+  ).toMatchObject({ applied: true, revision: 1 })
 
   await postgres.exec(
     `UPDATE task_flow_stage SET active_ordinal=7,active_slug='implementation' WHERE id='${CURSOR}'`,
   )
   expect(
     await writeRecordQuestionTransaction(
-      'link', { ...principal, ...questionWrite(REWRITE_REQUEST, 2) }, sql,
+      'link',
+      { ...principal, ...questionWrite(REWRITE_REQUEST, 2) },
+      sql,
     ),
   ).toMatchObject({ applied: true, revision: 2 })
   expect(
-    (await postgres.query(
-      `SELECT workflow_step_ordinal,workflow_step_slug FROM question WHERE id='${QUESTION}'`,
-    )).rows,
+    (
+      await postgres.query(
+        `SELECT workflow_step_ordinal,workflow_step_slug FROM question WHERE id='${QUESTION}'`,
+      )
+    ).rows,
   ).toEqual([{ workflow_step_ordinal: 7, workflow_step_slug: 'design-signoff' }])
 })
 
@@ -121,7 +171,8 @@ test('production hosted reads preserve stored steps and fall back on the correct
   `)
 
   const forCursor = await readRecordQuestionRows(sql, {
-    read: 'for-cursor', workflowCursorRecordId: CURSOR,
+    read: 'for-cursor',
+    workflowCursorRecordId: CURSOR,
   })
   expect(forCursor).toMatchObject([
     { number: 1, workflow_step_ordinal: 7, workflow_step_slug: 'design-signoff' },

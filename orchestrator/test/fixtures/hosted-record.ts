@@ -62,27 +62,24 @@ export async function createHostedRecordFixture(options: {
 type SqlFragment = { readonly sql: string }
 
 function pgliteQuery(database: Pick<PGlite, 'query'>): SQL {
-  const result = (statement: string, parameters: unknown[]) => ({
-    then: <TResult1 = unknown, TResult2 = never>(
-      onfulfilled?: ((value: unknown[]) => TResult1 | PromiseLike<TResult1>) | null,
-      onrejected?: ((reason: unknown) => TResult2 | PromiseLike<TResult2>) | null,
-    ) =>
-      database
-        .query(statement, parameters)
-        .then((value) => value.rows)
-        .then(onfulfilled, onrejected),
-    catch: <TResult = never>(
-      onrejected?: ((reason: unknown) => TResult | PromiseLike<TResult>) | null,
-    ) =>
-      database
-        .query(statement, parameters)
-        .then((value) => value.rows)
-        .catch(onrejected),
-    values: () =>
-      database
-        .query<unknown[]>(statement, parameters, { rowMode: 'array' })
-        .then((value) => value.rows),
-  })
+  const result = (statement: string, parameters: unknown[]) => {
+    let arrayMode = false
+    const rows = Promise.resolve()
+      .then(() =>
+        database.query(
+          statement,
+          parameters,
+          arrayMode ? { rowMode: 'array' as const } : undefined,
+        ),
+      )
+      .then((value) => value.rows)
+    return Object.assign(rows, {
+      values: () => {
+        arrayMode = true
+        return rows
+      },
+    })
+  }
   const query = (strings: TemplateStringsArray, ...interpolations: unknown[]) => {
     let statement = strings[0]!
     const parameters: unknown[] = []
