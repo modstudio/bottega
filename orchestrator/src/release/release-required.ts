@@ -4,6 +4,7 @@
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { nulPathListArgs, splitNulPaths } from '../../../shared/git-path-list.ts'
 import { git, gitResult, targetGitEnvironment } from '../git/git-environment.ts'
+import { returnMainCheckoutToTrunkCommand } from '../project/main-checkout-invariant.ts'
 import type { Project } from '../project/projects.ts'
 import { declaredGlobsMatch } from '../review/review-declared-globs.ts'
 import { releaseProofDecision, releaseRungProofRefusal } from './release-decision.ts'
@@ -12,7 +13,6 @@ import {
   newestSuccessfulProvenReleaseCommit,
   type ReleaseResult,
   releaseProject,
-  returnMainCheckoutToTrunkCommand,
 } from './release-service.ts'
 import { decideShipToReach, releaseDepthFlag, shipToRungs } from './ship-to-reach.ts'
 

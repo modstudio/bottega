@@ -43,6 +43,7 @@ export const releaseModules = [
       'shared/brand.ts',
       'shared/git-path-list.ts',
       'orchestrator/src/git/git-environment.ts',
+      'orchestrator/src/project/main-checkout-invariant.ts',
       'orchestrator/src/project/projects.ts',
       'orchestrator/src/review/review-declared-globs.ts',
       'orchestrator/src/release/release-entry-closure.ts',

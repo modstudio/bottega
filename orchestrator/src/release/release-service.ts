@@ -49,8 +49,6 @@ import {
   updateReleaseLedgerWarning,
 } from './release-ledger.ts'
 
-export { returnMainCheckoutToTrunkCommand }
-
 type CommandResult = { exitCode: number; output: string }
 
 const RELEASE_CI_DEPLOY_WAIT_MS = 30 * 60 * 1_000
