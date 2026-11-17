@@ -8,13 +8,7 @@ const startedAt = performance.now()
 const root = fileURLToPath(new URL('..', import.meta.url)).replace(/\/$/, '')
 
 // Mirrors the production surfaces and exclusions owned by check-refusal-remedy.ts.
-const sourceRoots = [
-  'orchestrator/src',
-  'shared',
-  'hub/src',
-  'cli',
-  'scripts',
-] as const
+const sourceRoots = ['orchestrator/src', 'shared', 'hub/src', 'cli', 'scripts'] as const
 
 const proseAllowlist = new Map([
   ['task client', 'names the hosted task client in a test-safety refusal, not a command'],
@@ -77,21 +71,24 @@ export function remedyCommandCitationFindings(
 }
 
 function check(): boolean {
-  const findings = sourceRoots.flatMap(sourceFiles).sort().flatMap((path) =>
-    readFileSync(`${root}/${path}`, 'utf8')
-      .split('\n')
-      .flatMap((line, index) => {
-        const lineFindings = line.includes('git pull')
-          ? [`${path}:${index + 1}: forbidden remedy text 'git pull'`]
-          : []
-        lineFindings.push(
-          ...remedyCommandCitationFindings(line).map(
-            (mention) => `${path}:${index + 1}: ${mention} is not a registered command`,
-          ),
-        )
-        return lineFindings
-      }),
-  )
+  const findings = sourceRoots
+    .flatMap(sourceFiles)
+    .sort()
+    .flatMap((path) =>
+      readFileSync(`${root}/${path}`, 'utf8')
+        .split('\n')
+        .flatMap((line, index) => {
+          const lineFindings = line.includes('git pull')
+            ? [`${path}:${index + 1}: forbidden remedy text 'git pull'`]
+            : []
+          lineFindings.push(
+            ...remedyCommandCitationFindings(line).map(
+              (mention) => `${path}:${index + 1}: ${mention} is not a registered command`,
+            ),
+          )
+          return lineFindings
+        }),
+    )
   for (const finding of findings) console.error(finding)
   if (findings.length) return false
   console.log(`remedy text guard: ${(performance.now() - startedAt).toFixed(1)}ms`)

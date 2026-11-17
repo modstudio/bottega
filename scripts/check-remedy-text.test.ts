@@ -12,14 +12,11 @@ const known = [
 ] as const
 
 test('classifies command citations against the complete registered path', () => {
-  expect(remedyCommandCitationFindings('run ${PLATFORM_SLUG} project show alpha', known)).toEqual(
-    [`${PLATFORM_SLUG} project show`],
-  )
+  expect(remedyCommandCitationFindings('run ${PLATFORM_SLUG} project show alpha', known)).toEqual([
+    `${PLATFORM_SLUG} project show`,
+  ])
   expect(
-    remedyCommandCitationFindings(
-      'run \\`${PLATFORM_SLUG} ruling list --changed-after\\`',
-      known,
-    ),
+    remedyCommandCitationFindings('run \\`${PLATFORM_SLUG} ruling list --changed-after\\`', known),
   ).toEqual([`${PLATFORM_SLUG} ruling`])
   expect(
     remedyCommandCitationFindings('${PLATFORM_SLUG} question ruling lst --json', known),
