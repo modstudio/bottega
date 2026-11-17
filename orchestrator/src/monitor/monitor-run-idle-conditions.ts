@@ -132,16 +132,7 @@ export function stalledRunConditions(
   const running = liveRunMembers(database)
   const samples = deps.samples ?? (running.length ? sampleProcesses() : [])
   return running.flatMap((run): MonitorCondition[] => {
-    let observed = liveMemberStall(run, samples, clock, idleStallMs(), deps.observedStartTime)
-    if (observed.state === 'stalled') {
-      observed = liveMemberStall(
-        { ...run, capacity_wait_since: capacityWaitSinceForRun(run.record_id) },
-        samples,
-        clock,
-        idleStallMs(),
-        deps.observedStartTime,
-      )
-    }
+    const observed = liveMemberStall(run, samples, clock, idleStallMs(), deps.observedStartTime)
     if (observed.state !== 'stalled' || observed.idleMs === null || observed.detail === null)
       return []
     return [
