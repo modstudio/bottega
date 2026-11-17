@@ -2,6 +2,7 @@ import { expect, test } from 'bun:test'
 import { Hono } from 'hono'
 import { registerRecordWorkflowRoutes } from './record-api-workflow.ts'
 import type { RecordIdentity } from './record-auth.ts'
+import { RECORD_KEYED_NOT_VISIBLE_CODE } from './record-keyed-read.ts'
 import { RecordTaskFlowError } from './record-task-flow.ts'
 import {
   TASK_FLOW_PRESENCE_BATCH_MAX,
@@ -232,6 +233,7 @@ test.each(byIdRoutes)(
       error: 'not visible in your record spaces (1 memberships)',
       remedy:
         'the row is in a space you are not a member of, or it does not exist; join its space or check the id',
+      code: RECORD_KEYED_NOT_VISIBLE_CODE,
     })
   },
 )
@@ -278,5 +280,6 @@ test('a destinationless flow-record-id miss returns the membership-safe refusal'
     error: 'not visible in your record spaces (2 memberships)',
     remedy:
       'the row is in a space you are not a member of, or it does not exist; join its space or check the id',
+    code: RECORD_KEYED_NOT_VISIBLE_CODE,
   })
 })

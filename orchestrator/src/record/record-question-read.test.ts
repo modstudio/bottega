@@ -16,6 +16,8 @@ const secondSpaceId = '01990000-0000-7000-8000-000000004020'
 const secondProjectId = '01990000-0000-7000-8000-000000004021'
 const crossSpaceRunId = '01990000-0000-7000-8000-000000004022'
 const firstSpaceOnlyUserId = '01990000-0000-7000-8000-000000004026'
+const firstCursorId = '01990000-0000-7000-8000-000000004028'
+const secondCursorId = '01990000-0000-7000-8000-000000004029'
 
 let database: PGlite
 
@@ -78,12 +80,12 @@ beforeAll(async () => {
        'sha-cross',1,'cross-space',false,'${secondProjectId}','asking',1,'typescript','test',
        'harness',false,false,true,'session-cross',3,now(),now());
     INSERT INTO question
-      (id,space_id,run_id,project_id,machine_id,number,revision,withheld_fields,
+      (id,space_id,run_id,workflow_cursor_record_id,project_id,machine_id,number,revision,withheld_fields,
        asked_at,question,created_at,updated_at)
     VALUES
-      ('01990000-0000-7000-8000-000000004024','${spaceId}','${crossSpaceRunId}',
+      ('01990000-0000-7000-8000-000000004024','${spaceId}','${crossSpaceRunId}','${firstCursorId}',
        '${projectId}','${machineId}',5,1,'[]',now(),'cross-space owner',now(),now()),
-      ('01990000-0000-7000-8000-000000004025','${secondSpaceId}','${crossSpaceRunId}',
+      ('01990000-0000-7000-8000-000000004025','${secondSpaceId}','${crossSpaceRunId}','${secondCursorId}',
        '${secondProjectId}','${machineId}',6,1,'[]',now(),'second-space row',now(),now());
     SET ROLE record_actor;
   `)
@@ -130,6 +132,21 @@ test('a keyed run read returns rows from every bound member space with their hom
 test('a keyed run read never returns a row from an unbound space', async () => {
   const result = await questionsForCrossSpaceRun([spaceId], firstSpaceOnlyUserId)
   expect(result.items.map((row) => [row.number, row.space_id])).toEqual([[5, spaceId]])
+})
+
+test('open-for-cursors returns one home-space row for each cursor across bound spaces', async () => {
+  const sql = pgliteSql(database)
+  const result = await sql.begin(async (tx) => {
+    await bindTenant(tx, { userId, spaceId, spaceIds: [spaceId, secondSpaceId] })
+    return readRecordQuestionRows(tx, {
+      read: 'open-for-cursors',
+      workflowCursorRecordIds: [firstCursorId, secondCursorId],
+    })
+  })
+  expect(result.items).toEqual([
+    { workflow_cursor_record_id: firstCursorId, space_id: spaceId, number: 5 },
+    { workflow_cursor_record_id: secondCursorId, space_id: secondSpaceId, number: 6 },
+  ])
 })
 
 test('hosted inbox excludes answered and closed rows and pages in SQL', async () => {

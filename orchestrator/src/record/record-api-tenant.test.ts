@@ -26,7 +26,7 @@ const identity = (activeSpaceId: string): RecordIdentity => ({
 
 test('request tenant reads use the named destination when one is supplied', () => {
   expect(
-    requestTenant(identity('space-personal'), 'space-project', 'read', 'postgres://record'),
+    requestTenant(identity('space-personal'), 'space-project', 'read', 'postgres://record', ''),
   ).toEqual({
     url: 'postgres://record',
     userId: 'user-a',
@@ -37,19 +37,21 @@ test('request tenant reads use the named destination when one is supplied', () =
 })
 
 test('request tenant reads use the personal lens over every membership', () => {
-  expect(requestTenant(identity('space-personal'), undefined, 'read', 'postgres://record')).toEqual(
-    {
-      url: 'postgres://record',
-      userId: 'user-a',
-      personalSpaceId: 'space-personal',
-      spaceId: 'space-personal',
-      spaceIds: ['space-personal', 'space-project'],
-    },
-  )
+  expect(
+    requestTenant(identity('space-personal'), undefined, 'read', 'postgres://record', ''),
+  ).toEqual({
+    url: 'postgres://record',
+    userId: 'user-a',
+    personalSpaceId: 'space-personal',
+    spaceId: 'space-personal',
+    spaceIds: ['space-personal', 'space-project'],
+  })
 })
 
 test('request tenant reads otherwise use only the active space', () => {
-  expect(requestTenant(identity('space-project'), undefined, 'read', 'postgres://record')).toEqual({
+  expect(
+    requestTenant(identity('space-project'), undefined, 'read', 'postgres://record', ''),
+  ).toEqual({
     url: 'postgres://record',
     userId: 'user-a',
     personalSpaceId: 'space-personal',
@@ -79,6 +81,16 @@ test.each([
       readKind,
     ),
   ).toMatchObject({ spaceIds: ['space-personal', 'space-project'] })
+  expect(
+    requestTenant(
+      identity('space-project'),
+      undefined,
+      'read',
+      'postgres://record',
+      route,
+      readKind,
+    ),
+  ).toMatchObject({ uuidKeyedRead: true })
 })
 
 test('a named destination keeps a keyed read bound to that one space', () => {
@@ -112,9 +124,9 @@ test.each([
 })
 
 test('request tenant refuses a write without a named destination', () => {
-  expect(requestTenant(identity('space-project'), undefined, 'write', 'postgres://record')).toEqual(
-    {
-      refused: 'write-destination',
-    },
-  )
+  expect(
+    requestTenant(identity('space-project'), undefined, 'write', 'postgres://record', ''),
+  ).toEqual({
+    refused: 'write-destination',
+  })
 })

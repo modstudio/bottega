@@ -7,6 +7,7 @@ import {
   type RecordChangeCursor,
 } from '../../../shared/record/record-changes.ts'
 import type { RecordIdentity } from './record-auth.ts'
+import { recordKeyedNotVisibleRefusal } from './record-keyed-read.ts'
 import {
   type QuestionIntent,
   type QuestionReadInput,
@@ -73,9 +74,6 @@ type Ports = {
   scope(context: Context<Environment>): Tenant | null
   noSpace(context: Context<Environment>): Response
 }
-const keyedMissRemedy =
-  'the row is in a space you are not a member of, or it does not exist; join its space or check the id'
-
 function isEmptyQuestionRead(result: unknown): boolean {
   if (typeof result !== 'object' || result === null || !('items' in result)) return false
   return Array.isArray(result.items) && result.items.length === 0
@@ -118,13 +116,7 @@ export function registerRecordQuestionRoutes(
       context.get('destinationSpaceId') === undefined &&
       isEmptyQuestionRead(result)
     )
-      return context.json(
-        {
-          error: `not visible in your record spaces (${tenant.spaceIds.length} memberships)`,
-          remedy: keyedMissRemedy,
-        },
-        404,
-      )
+      return context.json(recordKeyedNotVisibleRefusal(tenant.spaceIds.length), 404)
     return context.json(result)
   })
   app.post('/v1/questions/:intent', async (context) => {

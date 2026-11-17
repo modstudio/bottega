@@ -111,7 +111,7 @@ import type { RecordScore } from './record-verdicts.ts'
 export const SNAPSHOT_MAX_BYTES = 1024 * 1024
 
 type ApiEnvironment = RecordWriteTelemetryEnvironment
-type Tenant = Omit<ConfigTenant, 'spaceIds'> & { spaceIds: string[] }
+type Tenant = Omit<ConfigTenant, 'spaceIds'> & { spaceIds: string[]; uuidKeyedRead?: true }
 type Deps = RecordSubjectRouteDeps &
   RecordReleaseRouteDeps &
   RecordLensRouteDeps &

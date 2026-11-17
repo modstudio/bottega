@@ -209,7 +209,7 @@ function withChildren(
 }
 
 export async function readRecordTaskFlow(
-  input: TenantPrincipal & { url: string } & TaskFlowReadQueryInput,
+  input: TenantPrincipal & { url: string; uuidKeyedRead?: true } & TaskFlowReadQueryInput,
 ): Promise<HostedTaskFlow> {
   const sql = recordPool(input.url)
   return sql.begin(async (tx) => {
@@ -229,7 +229,7 @@ export async function readRecordTaskFlow(
        ORDER BY f.open_stage_record_id IS NULL, f.revision DESC, f.updated_at DESC, f.id
        LIMIT 1`,
       [
-        input.flowRecordId ? null : input.spaceId,
+        input.uuidKeyedRead ? null : input.spaceId,
         input.flowRecordId ?? null,
         input.taskKey ?? null,
         input.taskId ?? null,

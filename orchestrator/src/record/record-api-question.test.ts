@@ -9,6 +9,7 @@ import {
   registerRecordQuestionRoutes,
 } from './record-api-question.ts'
 import type { RecordIdentity } from './record-auth.ts'
+import { RECORD_KEYED_NOT_VISIBLE_CODE } from './record-keyed-read.ts'
 import { UnboundedQuestionRulingsError } from './record-question-contract.ts'
 import { readRecordQuestions } from './record-question-read.ts'
 
@@ -19,10 +20,15 @@ const tenant = {
   spaceIds: ['01990000-0000-7000-8000-000000002002'],
 }
 
-function app(deps: RecordQuestionRouteDeps) {
+function app(deps: RecordQuestionRouteDeps, destinationSpaceId?: string) {
   const api = new Hono<{
     Variables: { identity: RecordIdentity; destinationSpaceId?: string }
   }>()
+  if (destinationSpaceId)
+    api.use('*', async (context, next) => {
+      context.set('destinationSpaceId', destinationSpaceId)
+      await next()
+    })
   registerRecordQuestionRoutes(api, deps, {
     scope: () => tenant,
     noSpace: () => new Response(null, { status: 409 }),
@@ -133,7 +139,17 @@ test('a destinationless question by-id miss returns the membership-safe refusal'
     error: 'not visible in your record spaces (1 memberships)',
     remedy:
       'the row is in a space you are not a member of, or it does not exist; join its space or check the id',
+    code: RECORD_KEYED_NOT_VISIBLE_CODE,
   })
+})
+
+test('a question by-id miss with a named destination keeps the empty-items response', async () => {
+  const response = await app(
+    { readQuestions: async () => ({ items: [] }) },
+    tenant.spaceId,
+  ).request('/v1/questions?read=by-id&ids=00000000-0000-4000-8000-000000000001')
+  expect(response.status).toBe(200)
+  expect(await response.json()).toEqual({ items: [] })
 })
 
 test('invalid direct question writes name the failing body path', async () => {

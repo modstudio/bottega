@@ -136,10 +136,11 @@ export const recordBindingModules: RecordModule[] = [
   ]),
   module('orchestrator/src/record/record-api-tenant.ts', [
     '../../../shared/record-remedies.ts',
-    '../../../shared/record-space-request.ts',
     './record-api-doc-tenant.ts',
     './record-auth.ts',
+    './record-keyed-read.ts',
   ]),
+  module('orchestrator/src/record/record-keyed-read.ts', []),
   module('orchestrator/src/record/record-api-board.ts', [
     '../../../shared/prose/prose-gate.ts',
     '../../../shared/record-remedies.ts',

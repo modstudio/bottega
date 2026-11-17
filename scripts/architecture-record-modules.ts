@@ -292,6 +292,7 @@ export const recordModules: RecordModule[] = [
     '../doc/doc-revision-conflict.ts',
     './record-auth.ts',
     './record-cursor.ts',
+    './record-keyed-read.ts',
     './record-workflow-contract.ts',
     './record-task-flow.ts',
     './record-task-flow-contract.ts',
