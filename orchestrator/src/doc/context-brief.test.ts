@@ -1,11 +1,14 @@
 import { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
+import { resolve } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
 import { migratedTestDatabase } from '../database/test-database.fixture.ts'
+import { composeWorkflowWithCursor } from '../workflow/workflow-cursor.ts'
+import { installHostedWorkflowTreeFixture } from '../workflow/workflow-store.fixture.ts'
 import {
   type ContextBrief,
   contextBrief,
@@ -64,6 +67,7 @@ test('renders the compact context layout line by line and keeps only item first 
       {
         recordId: 'cursor-record',
         number: 1369,
+        project: PLATFORM_SLUG,
         key: 'DEV-1844/2',
         workflow: 'plan-task',
         mode: 'design',
@@ -122,6 +126,7 @@ test('renders a keyless cursor with its idle age and close command', () => {
       {
         recordId: 'explore-record',
         number: 845,
+        project: PLATFORM_SLUG,
         key: null,
         workflow: 'explore',
         mode: 'default',
@@ -135,6 +140,7 @@ test('renders a keyless cursor with its idle age and close command', () => {
         questionNumber: null,
         runs: [],
         keylessIdle: 'idle 2h 10m',
+        keylessIdleMs: 7_800_000,
       },
     ],
     claims: [],
@@ -148,11 +154,11 @@ test('renders a keyless cursor with its idle age and close command', () => {
   }
 
   expect(renderContextBrief(brief)).toContain(
-    `cursor 845 explore · idle 2h 10m → ${PLATFORM_SLUG} workflow abandon --cursor 845`,
+    `cursor 845 explore · idle 2h 10m → ${PLATFORM_SLUG} workflow abandon --cursor 845 --project ${PLATFORM_SLUG}`,
   )
 })
 
-test('keeps an awaiting question on a keyless cursor and omits its abandon remedy', () => {
+test('keeps a fresh keyless cursor visible without an abandon remedy', () => {
   const brief: ContextBrief = {
     session: 'session-a',
     fullCommand: `${PLATFORM_SLUG} agent context show --session session-a`,
@@ -162,6 +168,7 @@ test('keeps an awaiting question on a keyless cursor and omits its abandon remed
       {
         recordId: 'explore-record',
         number: 845,
+        project: PLATFORM_SLUG,
         key: null,
         workflow: 'explore',
         mode: 'default',
@@ -172,9 +179,10 @@ test('keeps an awaiting question on a keyless cursor and omits its abandon remed
         worktree: null,
         tip: null,
         pr: null,
-        questionNumber: 6600,
+        questionNumber: null,
         runs: [],
-        keylessIdle: null,
+        keylessIdle: 'idle 10m',
+        keylessIdleMs: 600_000,
       },
     ],
     claims: [],
@@ -190,7 +198,7 @@ test('keeps an awaiting question on a keyless cursor and omits its abandon remed
   const line = renderContextBrief(brief)
     .split('\n')
     .find((entry) => entry.includes('cursor 845'))
-  expect(line).toBe('  cursor 845 explore · idle unknown, awaiting q6600')
+  expect(line).toBe('  cursor 845 explore · idle 10m')
   expect(line).not.toContain('workflow abandon')
 })
 
@@ -304,6 +312,72 @@ test('contextBrief carries question groups into the waiting segment', async () =
     expect.objectContaining({ job: 'implement', status: 'asking', label: 'Read the brief' }),
   ])
   expect(renderContextBrief(brief)).toContain('implement asking · Read the brief')
+})
+
+test('contextBrief uses the session cursor rows for holders and in flight', async () => {
+  const session = 'context-brief-cursor-session'
+  const foreignSession = 'context-brief-foreign-session'
+  const project = 'context-brief-cursor-project'
+  db()
+    .query(
+      `INSERT INTO project (record_id,name,path,stack,settings)
+       VALUES (?,?,'/different-project','bun',
+               '{"tracker":{"protocol":"hub"},"docs":{"protocol":"orch-docs"},"gate":"bun run check"}')`,
+    )
+    .run(newRecordId(), project)
+  db()
+    .query(
+      `INSERT INTO project (record_id,name,path,stack,settings)
+       VALUES (?,?,'/unregistered','bun',
+               '{"tracker":{"protocol":"hub"},"docs":{"protocol":"orch-docs"},"gate":"bun run check"}')`,
+    )
+    .run(newRecordId(), PLATFORM_SLUG)
+  installHostedWorkflowTreeFixture(project, newRecordId(), resolve(process.cwd(), '..'))
+  new Database(process.env.BOTTEGA_HUB_DB!, { create: true }).close()
+  const migration = Bun.spawnSync([...bottegaEntryArgv(PLATFORM_SLUG), 'machine', 'migrate'], {
+    env: { ...process.env, NODE_ENV: 'production' },
+    stdout: 'pipe',
+    stderr: 'pipe',
+  })
+  expect(migration.exitCode, migration.stderr.toString()).toBe(0)
+  const own = await composeWorkflowWithCursor(
+    'explore',
+    project,
+    'default',
+    {},
+    { session },
+    undefined,
+    {},
+    {},
+  )
+  const foreign = await composeWorkflowWithCursor(
+    'explore',
+    project,
+    'default',
+    {},
+    { session: foreignSession },
+    undefined,
+    {},
+    {},
+  )
+
+  const nodeEnvironment = process.env.NODE_ENV
+  process.env.NODE_ENV = 'production'
+  const brief = await contextBrief(session, '/unregistered', db()).finally(() => {
+    if (nodeEnvironment === undefined) delete process.env.NODE_ENV
+    else process.env.NODE_ENV = nodeEnvironment
+  })
+  const rendered = renderContextBrief(brief)
+
+  expect(brief.holders.map((holder) => holder.title)).toContain(
+    `Cursor ${own.cursor!.id} explore default (${project})`,
+  )
+  expect(brief.holders.map((holder) => holder.title)).not.toContain(
+    `Cursor ${foreign.cursor!.id} explore default (${project})`,
+  )
+  expect(rendered).toContain(`cursor ${own.cursor!.id} explore · idle 0m`)
+  expect(rendered).not.toContain(`cursor ${foreign.cursor!.id} explore`)
+  expect(rendered).not.toContain('workflow abandon')
 })
 
 test('orders the session, each project-scoped working task, and its epic by task profile', () => {
@@ -427,9 +501,10 @@ test('renders an open keyless cursor item under its cursor header without an ope
       [
         {
           record_id: recordId,
-          number: 42,
+          id: 42,
           workflow_slug: 'explore',
           mode_slug: 'default',
+          project: PLATFORM_SLUG,
         },
       ],
     ),
@@ -451,8 +526,12 @@ test('renders an open keyless cursor item under its cursor header without an ope
     },
     autonomy: 'unknown',
   })
-  expect(rendered).toContain('Cursor 42 explore default\n  position: Continue here.')
-  expect(rendered).not.toContain('Cursor 42 explore default\n  position: Continue here.\n  open:')
+  expect(rendered).toContain(
+    `Cursor 42 explore default (${PLATFORM_SLUG})\n  position: Continue here.`,
+  )
+  expect(rendered).not.toContain(
+    `Cursor 42 explore default (${PLATFORM_SLUG})\n  position: Continue here.\n  open:`,
+  )
   database.close()
 })
 

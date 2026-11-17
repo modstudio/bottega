@@ -1,8 +1,8 @@
 import { describe, expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { KEYLESS_CURSOR_IDLE_MS } from './keyless-cursor-idle.ts'
 import {
   decideStopSummary,
-  KEYLESS_CURSOR_IDLE_MS,
   OWED_ITEM_OVERDUE_MS,
   type StopSummaryFacts,
 } from './stop-summary-decision.ts'
@@ -48,21 +48,25 @@ describe('Stop summary decision', () => {
         cursors: [
           {
             number: 10,
+            project: PLATFORM_SLUG,
             key: 'DEV-2297',
             workflow: 'plan-task',
             step: 'design',
             ordinal: 6,
             total: 11,
             updatedAt: NOW,
+            questionNumber: null,
           },
           {
             number: 11,
+            project: PLATFORM_SLUG,
             key: null,
             workflow: 'explore',
             step: 'orient',
             ordinal: 1,
             total: 4,
             updatedAt: NOW,
+            questionNumber: null,
           },
         ],
       }),
@@ -78,18 +82,20 @@ describe('Stop summary decision', () => {
   test('an idle keyless cursor adds one non-blocking line without changing block identity', () => {
     const idleCursor = {
       number: 845,
+      project: PLATFORM_SLUG,
       key: null,
       workflow: 'explore',
       step: 'orient',
       ordinal: 1,
       total: 4,
       updatedAt: new Date(Date.parse(NOW) - KEYLESS_CURSOR_IDLE_MS).toISOString(),
+      questionNumber: null,
     }
     const baseline = decideStopSummary(facts({ owedItems: [owed()] }))
     const result = decideStopSummary(facts({ cursors: [idleCursor], owedItems: [owed()] }))
 
     expect(result.lines.filter((line) => line.startsWith('Explore cursor 845 idle'))).toEqual([
-      `Explore cursor 845 idle 1h 0m → ${PLATFORM_SLUG} workflow abandon --cursor 845`,
+      `Explore cursor 845 idle 1h 0m → ${PLATFORM_SLUG} workflow abandon --cursor 845 --project ${PLATFORM_SLUG}`,
     ])
     expect(result.block).toBeTrue()
     expect(result.blockKey).toBe(baseline.blockKey)
@@ -100,25 +106,47 @@ describe('Stop summary decision', () => {
     const cursors = [
       {
         number: 845,
+        project: PLATFORM_SLUG,
         key: null,
         workflow: 'explore',
         step: 'orient',
         ordinal: 1,
         total: 4,
         updatedAt: NOW,
+        questionNumber: null,
       },
       {
         number: 884,
+        project: PLATFORM_SLUG,
         key: 'DEV-2323',
         workflow: 'plan-task',
         step: 'build',
         ordinal: 1,
         total: 4,
         updatedAt: old,
+        questionNumber: null,
       },
     ]
     expect(decideStopSummary(facts({ cursors })).lines).not.toContainEqual(
       expect.stringContaining('workflow abandon --cursor'),
+    )
+  })
+
+  test('an idle keyless cursor with an open question has no abandon remedy', () => {
+    const cursor = {
+      number: 845,
+      project: PLATFORM_SLUG,
+      key: null,
+      workflow: 'explore',
+      step: 'orient',
+      ordinal: 1,
+      total: 4,
+      updatedAt: new Date(Date.parse(NOW) - KEYLESS_CURSOR_IDLE_MS).toISOString(),
+      questionNumber: 73,
+    }
+
+    expect(decideStopSummary(facts({ cursors: [cursor] })).lines).not.toContainEqual(
+      expect.stringContaining('workflow abandon'),
     )
   })
 

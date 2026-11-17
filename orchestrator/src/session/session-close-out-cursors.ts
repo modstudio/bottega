@@ -8,12 +8,14 @@ import {
   type TaskFlowOpenSessionStageRow as OpenCursor,
 } from '../workflow/task-flow-store.ts'
 import { writeFinishingWorkflowAdvance } from '../workflow/workflow-cursor.ts'
+import { workflowCursorReference } from '../workflow/workflow-cursor-format.ts'
 import { closeExploreForLifecycle } from '../workflow/workflow-explore-lifecycle-close.ts'
 import { classifySessionCursor } from './session-close-out-decision.ts'
 import type { SessionErrorLine, SessionProcessLine } from './session-close-out-report.ts'
 
 function reportRemainingCursor(
   cursor: OpenCursor,
+  ownerSession: string | null,
   report: { parked: string[]; process: SessionProcessLine[] },
 ): void {
   const disposition = classifySessionCursor({
@@ -26,8 +28,10 @@ function reportRemainingCursor(
     )
     return
   }
-  const next = `${PLATFORM_SLUG} workflow next ${cursor.workflow_slug} --cursor ${cursor.number}`
-  const abandon = `${PLATFORM_SLUG} workflow abandon ${cursor.workflow_slug} --cursor ${cursor.number} --reason "<why>"`
+  const reference = workflowCursorReference(cursor.number, cursor.project).cli
+  const next = `${PLATFORM_SLUG} workflow next ${cursor.workflow_slug}${reference}`
+  const owner = ownerSession ? ` --owner-session ${ownerSession}` : ''
+  const abandon = `${PLATFORM_SLUG} workflow abandon ${cursor.workflow_slug}${reference} --reason "<why>"${owner}`
   report.process.push({
     item: `workflow cursor ${cursor.number}`,
     reason: `cursor is ${cursor.state}`,
@@ -72,6 +76,6 @@ export async function releaseSessionCursors(input: {
         })
       }
     }
-    reportRemainingCursor(cursor, input.report)
+    reportRemainingCursor(cursor, input.session, input.report)
   }
 }

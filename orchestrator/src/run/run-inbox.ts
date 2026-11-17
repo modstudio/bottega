@@ -139,8 +139,8 @@ async function workflowInboxQuestions(
       }),
       question: row.question,
       answer_command: canAnswer
-        ? `${PLATFORM_SLUG} workflow rule ${shellWord(row.workflow_slug)} --project ${shellWord(row.project)} ` +
-          `--mode ${shellWord(row.mode_slug)}${workflowCursorReference(row.cursor_record_id).cli}${flags} --ruling "<ruling>"`
+        ? `${PLATFORM_SLUG} workflow rule ${shellWord(row.workflow_slug)} ` +
+          `--mode ${shellWord(row.mode_slug)}${workflowCursorReference(row.cursor_record_id, row.project).cli}${flags} --ruling "<ruling>"`
         : null,
       ownership_notice: canAnswer
         ? null

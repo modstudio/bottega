@@ -882,7 +882,7 @@ export function composeWorkflow(
     facts,
     needs,
     rulings: effectiveAutonomy.rulings,
-    ...autonomyNoticeOutput(autonomy),
+    ...autonomyNoticeOutput(autonomy, projectName),
   }
 }
 
@@ -992,7 +992,7 @@ export function getWorkflowStep(
     body: templates.body,
     ...keylessTrackerActionMetadata(keylessTrackerActionPaths),
     next,
-    ...autonomyNoticeOutput(autonomy),
+    ...autonomyNoticeOutput(autonomy, projectName),
   }
 }
 

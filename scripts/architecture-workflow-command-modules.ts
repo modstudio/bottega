@@ -104,6 +104,7 @@ export const workflowCommandModules: WorkflowCommandModule[] = [
     './task-flow-decision.ts',
     './task-flow-store.ts',
     './task-flow-store-types.ts',
+    './workflow-cursor-format.ts',
     './workflow-cursor-transition.ts',
     './workflow-floor.ts',
   ]),

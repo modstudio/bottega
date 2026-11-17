@@ -12,6 +12,7 @@ import {
 } from './task-flow-decision.ts'
 import { taskFlowLocalStore, taskFlowReadStore } from './task-flow-store.ts'
 import type { TaskFlowStageCursorRow, WorkflowCursorInsert } from './task-flow-store-types.ts'
+import { workflowCursorReference } from './workflow-cursor-format.ts'
 
 export function vacateRetiredWorkflowKeySlot(
   project: string,
@@ -50,7 +51,7 @@ export function insertWorkflowCursorRow(
       })
       if (local)
         throw new Error(
-          `local cursor ${local.number} (${local.record_id}) conflicts with hosted stage ${row.recordId}; abandon it with ${PLATFORM_SLUG} workflow abandon --cursor ${local.number} --reason "<text>"`,
+          `local cursor ${local.number} (${local.record_id}) conflicts with hosted stage ${row.recordId}; abandon it with ${PLATFORM_SLUG} workflow abandon${workflowCursorReference(local.number, row.project).cli} --reason "<text>"`,
         )
     }
   }
@@ -95,6 +96,7 @@ function openStageFromCursor(
   return cursor
     ? {
         cursor: cursor.id,
+        project: cursor.project,
         workflow: cursor.workflow_slug,
         mode: cursor.mode_slug,
         recordId: cursor.record_id,
@@ -121,7 +123,8 @@ function taskFlowStageConflictRefusal(
   input: TaskFlowStageConflictInput,
   stage: OpenTaskStage,
 ): string {
-  return `task ${input.taskKey} already has open stage cursor ${stage.cursor} ${stage.workflow} ${stage.mode}; finish it with ${PLATFORM_SLUG} workflow next ${stage.workflow} --cursor ${stage.cursor}, or drop it with ${PLATFORM_SLUG} workflow abandon ${stage.workflow} --cursor ${stage.cursor}`
+  const reference = workflowCursorReference(stage.cursor, stage.project).cli
+  return `task ${input.taskKey} already has open stage cursor ${stage.cursor} ${stage.workflow} ${stage.mode}; finish it with ${PLATFORM_SLUG} workflow next ${stage.workflow}${reference}, or drop it with ${PLATFORM_SLUG} workflow abandon ${stage.workflow}${reference}`
 }
 
 function refuseTaskFlowStageConflictWithFacts(

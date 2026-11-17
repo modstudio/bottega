@@ -488,9 +488,15 @@ function registerWorkflowListTool(server: McpServer): void {
   )
 }
 
-async function abandonWorkflowWithTextCopy(cursor: number, reason: string, ports: DocsMcpPorts) {
+async function abandonWorkflowWithTextCopy(
+  cursor: number,
+  project: string,
+  reason: string,
+  ownerSession: string | undefined,
+  ports: DocsMcpPorts,
+) {
   const { context } = await resolveMcpSelectedCursorContext(
-    undefined,
+    project,
     undefined,
     undefined,
     {},
@@ -501,9 +507,12 @@ async function abandonWorkflowWithTextCopy(cursor: number, reason: string, ports
     {
       action: 'abandon',
       cursor,
+      project,
       args: {},
       context,
       reason,
+      ownerSession,
+      surface: 'mcp',
     },
     undefined,
     ports.hubTaskReader,
@@ -622,10 +631,18 @@ function registerWorkflowActionTools(server: McpServer, ports: DocsMcpPorts): vo
       description: 'Abandon one workflow run by cursor handle.',
       inputSchema: z.object({
         cursor: z.number().int().positive(),
+        project: z.string().trim().min(1),
         reason: z.string().trim().min(1),
+        owner_session: z
+          .string()
+          .trim()
+          .min(1)
+          .optional()
+          .describe('abandon a cursor owned by another session by naming that session'),
       }),
     },
-    async ({ cursor, reason }) => abandonWorkflowWithTextCopy(cursor, reason, ports),
+    async ({ cursor, project, reason, owner_session }) =>
+      abandonWorkflowWithTextCopy(cursor, project, reason, owner_session, ports),
   )
 }
 

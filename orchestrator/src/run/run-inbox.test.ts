@@ -257,7 +257,7 @@ test('inbox lists workflow questions with their identity and answer command', as
   const shown = await inbox({ all: true })
   expect(shown).toContain('workflow fixture-workflow · fixture · mode default · step 3 fix')
   expect(shown).toContain(
-    `${PLATFORM_SLUG} workflow rule fixture-workflow --project fixture --mode default --cursor 1 --arg key=DEV-1069 --ruling "<ruling>"`,
+    `${PLATFORM_SLUG} workflow rule fixture-workflow --mode default --cursor 1 --project fixture --arg key=DEV-1069 --ruling "<ruling>"`,
   )
   expect(shown).not.toContain('--from-operator')
   expect(JSON.parse(await inbox({ all: true, json: true }))).toContainEqual(
@@ -271,7 +271,7 @@ test('inbox lists workflow questions with their identity and answer command', as
       can_answer: true,
       group: 'user',
       session_id: 'orch-test-session',
-      answer_command: `${PLATFORM_SLUG} workflow rule fixture-workflow --project fixture --mode default --cursor 1 --arg key=DEV-1069 --ruling "<ruling>"`,
+      answer_command: `${PLATFORM_SLUG} workflow rule fixture-workflow --mode default --cursor 1 --project fixture --arg key=DEV-1069 --ruling "<ruling>"`,
       ownership_notice: null,
     }),
   )

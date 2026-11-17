@@ -529,6 +529,8 @@ export async function abandonCommand(
       args,
       context,
       reason: flagValue(argv, 'reason'),
+      ownerSession: flagValue(argv, 'owner-session'),
+      surface: 'cli',
     },
     undefined,
     options.hubTaskReader,

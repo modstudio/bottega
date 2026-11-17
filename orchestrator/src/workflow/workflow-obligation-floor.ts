@@ -5,6 +5,7 @@ import type { Database } from 'bun:sqlite'
 import { PLATFORM_NAME, PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { RecordTaskFlowClient } from '../record/record-api-client-task-flow.ts'
 import { taskFlowReadStore } from './task-flow-store.ts'
+import { workflowCursorReference } from './workflow-cursor-format.ts'
 import { type Floor, isFloorKind, type OpenObligation } from './workflow-floor.ts'
 
 export type WorkflowObligationFloorRow = {
@@ -16,12 +17,13 @@ export type WorkflowObligationFloorRow = {
   expected_status: string
   floor_deferrable: boolean | number
   cursor_number: number
+  cursor_project: string
 }
 
 export function floorFromObligationRow(row: WorkflowObligationFloorRow): Floor {
   if (!isFloorKind(row.floor))
     throw new Error(
-      `obligation ${row.id} has unknown floor kind "${row.floor}"; this ${PLATFORM_NAME} binary does not know that floor kind; run \`${PLATFORM_SLUG} machine update\` when a newer ${PLATFORM_NAME} recorded the obligation, otherwise abandon its cursor with \`${PLATFORM_SLUG} workflow abandon --cursor ${row.cursor_number}\``,
+      `obligation ${row.id} has unknown floor kind "${row.floor}"; this ${PLATFORM_NAME} binary does not know that floor kind; run \`${PLATFORM_SLUG} machine update\` when a newer ${PLATFORM_NAME} recorded the obligation, otherwise abandon its cursor with \`${PLATFORM_SLUG} workflow abandon${workflowCursorReference(row.cursor_number, row.cursor_project).cli}\``,
     )
   return {
     kind: row.floor,

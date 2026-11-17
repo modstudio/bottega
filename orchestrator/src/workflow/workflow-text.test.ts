@@ -511,6 +511,7 @@ describe('task-linked workflow text preservation', () => {
     await closeCursorWithTextCopy(
       {
         action: 'abandon',
+        surface: 'cli',
         project: 'fixture',
         workflow: 'text-fixture',
         mode: 'default',
@@ -547,7 +548,7 @@ describe('task-linked workflow text preservation', () => {
       },
     }
     const result = await closeCursorWithTextCopy(
-      { action: 'abandon', cursor, args: {}, context, reason: 'not linked' },
+      { action: 'abandon', surface: 'cli', cursor, args: {}, context, reason: 'not linked' },
       d,
       taskReader,
       refusing,
@@ -599,6 +600,7 @@ describe('task-linked workflow text preservation', () => {
       closeCursorWithTextCopy(
         {
           action: 'abandon',
+          surface: 'cli',
           cursor: terminalCursor,
           args: {},
           context,
@@ -640,6 +642,7 @@ describe('task-linked workflow text preservation', () => {
         closeCursorWithTextCopy(
           {
             action: 'abandon',
+            surface: 'cli',
             cursor,
             args: {},
             context,

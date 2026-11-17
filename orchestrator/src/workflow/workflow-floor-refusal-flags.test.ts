@@ -265,6 +265,7 @@ for (const variant of variants) {
       expected_status: variant.floor.expectedStatus,
       floor_deferrable: variant.floor.deferrable,
       cursor_number: 1,
+      cursor_project: 'fixture',
     }
     const obligationFloor = floorFromObligationRow(row)
     const open: OpenObligation = {

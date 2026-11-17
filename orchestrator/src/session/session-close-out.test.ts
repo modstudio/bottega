@@ -178,16 +178,16 @@ test('close-out parks only an awaiting cursor with a recorded open question', as
     expect.objectContaining({
       item: `workflow cursor ${missingQuestion.number}`,
       remedy:
-        `${PLATFORM_SLUG} workflow next flow --cursor ${missingQuestion.number}, or ` +
-        `${PLATFORM_SLUG} workflow abandon flow --cursor ${missingQuestion.number} --reason "<why>"`,
+        `${PLATFORM_SLUG} workflow next flow --cursor ${missingQuestion.number} --project fixture, or ` +
+        `${PLATFORM_SLUG} workflow abandon flow --cursor ${missingQuestion.number} --project fixture --reason "<why>" --owner-session ${session}`,
     }),
   )
   expect(report.process).toContainEqual(
     expect.objectContaining({
       item: `workflow cursor ${answeredQuestion.number}`,
       remedy:
-        `${PLATFORM_SLUG} workflow next flow --cursor ${answeredQuestion.number}, or ` +
-        `${PLATFORM_SLUG} workflow abandon flow --cursor ${answeredQuestion.number} --reason "<why>"`,
+        `${PLATFORM_SLUG} workflow next flow --cursor ${answeredQuestion.number} --project fixture, or ` +
+        `${PLATFORM_SLUG} workflow abandon flow --cursor ${answeredQuestion.number} --project fixture --reason "<why>" --owner-session ${session}`,
     }),
   )
   expect(report.parked).not.toContain(
@@ -197,8 +197,8 @@ test('close-out parks only an awaiting cursor with a recorded open question', as
     expect.objectContaining({
       item: `workflow cursor ${running.number}`,
       remedy:
-        `${PLATFORM_SLUG} workflow next flow --cursor ${running.number}, or ` +
-        `${PLATFORM_SLUG} workflow abandon flow --cursor ${running.number} --reason "<why>"`,
+        `${PLATFORM_SLUG} workflow next flow --cursor ${running.number} --project fixture, or ` +
+        `${PLATFORM_SLUG} workflow abandon flow --cursor ${running.number} --project fixture --reason "<why>" --owner-session ${session}`,
     }),
   )
   expect(report.recommendation).toBe('brief')

@@ -39,6 +39,7 @@ export const cleanupBoundarySpecs = [
       '../../../shared/brand.ts',
       './keyless-cursor-idle.ts',
       './stop-summary-time.ts',
+      '../workflow/workflow-cursor-format.ts',
     ],
     typeOnlyAllowed: ['../run/question-inbox-counts.ts'],
     reason: 'Keep the bounded Stop presentation independent of stores, processes, and clocks.',
@@ -285,6 +286,7 @@ export const cleanupBoundarySpecs = [
       '../../../shared/brand.ts',
       '../workflow/task-flow-store.ts',
       '../workflow/workflow-cursor.ts',
+      '../workflow/workflow-cursor-format.ts',
       '../workflow/workflow-explore-lifecycle-close.ts',
       './session-close-out-decision.ts',
       './session-close-out-report.ts',
@@ -544,7 +546,11 @@ export const cleanupBoundarySpecs = [
   {
     name: 'cleanup-sweep-explore-decision-boundary',
     file: 'orchestrator/src/cleanup/cleanup-sweep-explore-decision.ts',
-    allowed: ['../../../shared/brand.ts', './cleanup-sweep-decisions.ts'],
+    allowed: [
+      '../../../shared/brand.ts',
+      '../workflow/workflow-cursor-format.ts',
+      './cleanup-sweep-decisions.ts',
+    ],
     typeOnlyAllowed: [],
     reason: 'Keep orphaned session cursor policy pure over shared owner-liveness facts.',
   },

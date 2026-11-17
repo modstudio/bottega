@@ -72,9 +72,9 @@ test('compose protects an open branch while worktree compose and branch next sti
     ),
   ).rejects.toThrow(
     `workflow compose cannot rebind open cursor 1 from stored branch "DEV-822-old" at step 1 lens; ` +
-      `finish it with ${PLATFORM_SLUG} workflow next ${slug} --cursor 1, or abandon it with ` +
-      `${PLATFORM_SLUG} workflow abandon ${slug} --cursor 1 --reason "<text>"; a renamed branch of the ` +
-      `same change continues through ${PLATFORM_SLUG} workflow next ${slug} --cursor 1 with the new branch`,
+      `finish it with ${PLATFORM_SLUG} workflow next ${slug} --cursor 1 --project fixture, or abandon it with ` +
+      `${PLATFORM_SLUG} workflow abandon ${slug} --cursor 1 --project fixture --reason "<text>"; a renamed branch of the ` +
+      `same change continues through ${PLATFORM_SLUG} workflow next ${slug} --cursor 1 --project fixture with the new branch`,
   )
 
   const renamedArgs = {

@@ -28,7 +28,7 @@ export function taskFlowState(statusCategory: string | null | undefined): TaskFl
   return 'open'
 }
 
-export type OpenTaskStage = { cursor: number; workflow: string; mode: string }
+export type OpenTaskStage = { cursor: number; project: string; workflow: string; mode: string }
 
 export type TaskStageSelection =
   | { action: 'open' }

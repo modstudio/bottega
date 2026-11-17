@@ -197,6 +197,7 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     '../../../shared/brand.ts',
     '../record/record-api-client-task-flow.ts',
     './task-flow-store.ts',
+    './workflow-cursor-format.ts',
     './workflow-floor.ts',
   ]),
   module('orchestrator/src/workflow/workflow-self-ruling.ts', [

@@ -58,6 +58,6 @@ test('an unknown obligation floor names the obligation and its cursor number', (
   ).run(OBLIGATION_ID, CURSOR_ID)
 
   expect(() => openWorkflowObligations(CURSOR_ID, d)).toThrow(
-    `obligation ${OBLIGATION_ID} has unknown floor kind "future-floor"; this ${PLATFORM_NAME} binary does not know that floor kind; run \`${PLATFORM_SLUG} machine update\` when a newer ${PLATFORM_NAME} recorded the obligation, otherwise abandon its cursor with \`${PLATFORM_SLUG} workflow abandon --cursor 1\``,
+    `obligation ${OBLIGATION_ID} has unknown floor kind "future-floor"; this ${PLATFORM_NAME} binary does not know that floor kind; run \`${PLATFORM_SLUG} machine update\` when a newer ${PLATFORM_NAME} recorded the obligation, otherwise abandon its cursor with \`${PLATFORM_SLUG} workflow abandon --cursor 1 --project fixture\``,
   )
 })

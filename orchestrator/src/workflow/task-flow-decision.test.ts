@@ -45,7 +45,7 @@ test('a task with no open stage may enter any workflow, including an earlier one
 })
 
 test('the open stage is reused and a different stage is refused by cursor or workflow', () => {
-  const stage = { cursor: 42, workflow: 'plan-task', mode: 'default' }
+  const stage = { cursor: 42, project: 'fixture', workflow: 'plan-task', mode: 'default' }
   expect(decideTaskStageSelection(stage, { workflow: 'plan-task', mode: 'default' }).action).toBe(
     'reuse',
   )

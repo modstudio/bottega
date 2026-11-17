@@ -100,8 +100,8 @@ function renderWorkflowCursorRemedy(
     .join('')
   return (
     `${cursorName(row.workflow_slug, row.mode_slug, row.workflow_key)} is at step ${active.n} ${active.slug}; ` +
-    `fetch that step, or close it with: ${PLATFORM_SLUG} workflow next ${row.workflow_slug} --project ${row.project} ` +
-    `--mode ${row.mode_slug}${workflowCursorReference(row.id).cli}${args} --note "<how its floor was met>"`
+    `fetch that step, or close it with: ${PLATFORM_SLUG} workflow next ${row.workflow_slug} ` +
+    `--mode ${row.mode_slug}${workflowCursorReference(row.id, row.project).cli}${args} --note "<how its floor was met>"`
   )
 }
 

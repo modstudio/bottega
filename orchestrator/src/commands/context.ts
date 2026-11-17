@@ -136,7 +136,7 @@ export function register(program: Command): void {
       if (options.json) return log(JSON.stringify(result))
       for (const item of result.items) log(`${item.id}  ${item.kind}  ${item.revision}`)
       for (const cursor of result.cursorHolders) {
-        log(`Cursor ${cursor.cursor} ${cursor.workflow} ${cursor.mode}`)
+        log(`Cursor ${cursor.cursor} ${cursor.workflow} ${cursor.mode} (${cursor.project})`)
         for (const item of cursor.items) log(`  ${item.id}  ${item.kind}  ${item.revision}`)
       }
     })

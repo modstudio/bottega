@@ -2,10 +2,12 @@
 /** Decides whether a gone session's keyless cursor expires or remains visible for intervention. */
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { workflowCursorReference } from '../workflow/workflow-cursor-format.ts'
 import { ownerIsGone, type UnjudgedOwnerFacts } from './cleanup-sweep-decisions.ts'
 
 export type SessionCursorSweepFacts = UnjudgedOwnerFacts & {
   cursor: number
+  project: string
   workflowSlug: string
   stepSlug: string
   openQuestionRecordId: string | null
@@ -20,8 +22,10 @@ export function decideSessionCursorSweep(
   facts: SessionCursorSweepFacts,
 ): SessionCursorSweepDecision {
   if (!ownerIsGone(facts)) return { action: 'keep' }
-  const adopt = `${PLATFORM_SLUG} workflow step ${facts.workflowSlug} ${facts.stepSlug} --cursor ${facts.cursor}`
-  const abandon = `${PLATFORM_SLUG} workflow abandon ${facts.workflowSlug} --cursor ${facts.cursor} --reason "<why>"`
+  const reference = workflowCursorReference(facts.cursor, facts.project).cli
+  const adopt = `${PLATFORM_SLUG} workflow step ${facts.workflowSlug} ${facts.stepSlug}${reference}`
+  const owner = facts.ownerSessionId ? ` --owner-session ${facts.ownerSessionId}` : ''
+  const abandon = `${PLATFORM_SLUG} workflow abandon ${facts.workflowSlug}${reference} --reason "<why>"${owner}`
   if (facts.openQuestionRecordId)
     return {
       action: 'report',

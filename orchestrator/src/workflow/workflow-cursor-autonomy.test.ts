@@ -255,7 +255,7 @@ describe('workflow cursor stored autonomy', () => {
     await expect(
       getWorkflowStepWithCursor('flow', 'fixture', 'rebase', args, 'default', context, d, {}),
     ).rejects.toThrow(
-      `workflow cursor ${opened.cursor!.id}'s stored autonomy has no ship-to level; clear it with: ${PLATFORM_SLUG} workflow abandon --cursor ${opened.cursor!.id} --reason "<why>"; then start a new run with: ${PLATFORM_SLUG} workflow compose flow --project fixture --mode default --arg key=DEV-822 --arg branch=DEV-822-work --arg worktree=/tmp/work`,
+      `workflow cursor ${opened.cursor!.id}'s stored autonomy has no ship-to level; clear it with: ${PLATFORM_SLUG} workflow abandon --cursor ${opened.cursor!.id} --project fixture --reason "<why>"; then start a new run with: ${PLATFORM_SLUG} workflow compose flow --project fixture --mode default --arg key=DEV-822 --arg branch=DEV-822-work --arg worktree=/tmp/work`,
     )
   })
 

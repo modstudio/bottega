@@ -14,6 +14,7 @@ function facts(
     now,
     windowMs: UNJUDGED_OWNER_WINDOW_MS,
     cursor: 7,
+    project: 'fixture',
     workflowSlug: 'explore',
     stepSlug: 'investigate',
     openQuestionRecordId: null,
@@ -50,7 +51,9 @@ describe('session cursor sweep decision', () => {
       expect.objectContaining({
         action: 'report',
         item: 'workflow question question-id on cursor 7',
-        remedy: expect.stringContaining('workflow abandon explore --cursor 7'),
+        remedy: expect.stringContaining(
+          'workflow abandon explore --cursor 7 --project fixture --reason "<why>" --owner-session session',
+        ),
       }),
     )
   })

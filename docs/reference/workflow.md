@@ -85,7 +85,7 @@ workflows and their cursors
 
 ## bottega workflow abandon
 
-**Synopsis:** `bottega workflow abandon [workflow] [--cursor <value>] [--mode <value>] [--project <value>] [--arg <value>] [--reason <value>] [--json]`
+**Synopsis:** `bottega workflow abandon [workflow] [--cursor <value>] [--mode <value>] [--project <value>] [--owner-session <value>] [--arg <value>] [--reason <value>] [--json]`
 
 abandon an open workflow cursor
 
@@ -94,6 +94,7 @@ abandon an open workflow cursor
 - `--cursor <value>`: select this workflow cursor
 - `--mode <value>`: select this workflow mode
 - `--project <value>`: select this registered project
+- `--owner-session <value>`: abandon a cursor owned by another session by naming that session
 - `--arg <value>`: supply a workflow argument as name=value
 - `--reason <value>`: record why this change is being made
 - `--json`: print JSON output
