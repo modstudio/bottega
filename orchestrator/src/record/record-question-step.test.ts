@@ -136,6 +136,9 @@ test('production hosted write keeps the question step through a later-step rewri
   expect(
     await writeRecordQuestionTransaction('ask', { ...principal, ...questionWrite() }, sql),
   ).toMatchObject({ applied: true, revision: 1 })
+  expect(
+    await writeRecordQuestionTransaction('ask', { ...principal, ...questionWrite() }, sql),
+  ).toMatchObject({ applied: true, replayed: true, revision: 1 })
 
   await postgres.exec(
     `UPDATE task_flow_stage SET active_ordinal=7,active_slug='implementation' WHERE id='${CURSOR}'`,

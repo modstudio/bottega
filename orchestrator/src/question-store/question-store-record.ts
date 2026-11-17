@@ -4,14 +4,13 @@
 import type { Database } from 'bun:sqlite'
 import { parseRecordSpaceMemberships } from '../../../shared/record-space-membership.ts'
 import { SESSION_LIVE_MS } from '../../../shared/session-liveness.ts'
-import { projectByRecordId } from '../project/project-read.ts'
 import type { RecordWriteDestination } from '../record/record-api-client-paths.ts'
 import {
   type RecordQuestionClient,
   requireQuestionWriteClient,
 } from '../record/record-api-client-question.ts'
 import type { RecordIdentity } from '../record/record-auth.ts'
-import { requireProjectRecordDestination } from '../record/record-project-destination-client.ts'
+import { resolveQuestionWriteDestination } from '../record/record-question-destination.ts'
 import type {
   QuestionIntent,
   QuestionReadInput,
@@ -150,28 +149,23 @@ export class RecordQuestionStore implements QuestionStore {
   private destination(projectId: string): Promise<RecordWriteDestination> {
     const cached = this.destinations.get(projectId)
     if (cached) return cached
-    const project = projectByRecordId(projectId, this.input.database)
-    if (!project) throw new Error(`project ${projectId} is not registered; register it, then retry`)
-    const result = requireProjectRecordDestination(project.name, project.settings, {
+    const result = resolveQuestionWriteDestination(projectId, {
+      database: this.input.database,
       whoami: () => this.identity(),
+    }).catch((error: unknown) => {
+      this.destinations.delete(projectId)
+      throw error
     })
-      .then((destinationSpaceId) => ({ destinationSpaceId }))
-      .catch((error: unknown) => {
-        this.destinations.delete(projectId)
-        throw error
-      })
     this.destinations.set(projectId, result)
     return result
   }
 
   private async writeDestination(projectId: string | null): Promise<RecordWriteDestination> {
     if (projectId) return this.destination(projectId)
-    const identity = await this.identity()
-    if (!identity.personalSpaceId)
-      throw new Error(
-        'the signed-in user has no personal record space; repair record identity, then retry',
-      )
-    return { destinationSpaceId: identity.personalSpaceId }
+    return resolveQuestionWriteDestination(null, {
+      database: this.input.database,
+      whoami: () => this.identity(),
+    })
   }
 
   private allDestinations(): Promise<RecordWriteDestination[]> {

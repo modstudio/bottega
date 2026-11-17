@@ -3,6 +3,7 @@
 
 import type { Context } from 'hono'
 import { DocRevisionConflictError, revisionConflictBody } from '../doc/doc-revision-conflict.ts'
+import { OutboxRowError } from './outbox-failure.ts'
 import { RecordBoardError } from './record-board-contract.ts'
 import { ConfigServiceError } from './record-config-error.ts'
 import { RecordDocError } from './record-docs.ts'
@@ -17,6 +18,8 @@ import { SpaceDeleteError } from './record-trial-space-contract.ts'
 import { RecordVerdictError } from './record-verdicts.ts'
 
 export function renderRecordApiRefusal(context: Context, error: unknown): Response | null {
+  if (error instanceof OutboxRowError && error.errorClass === 'row-validation')
+    return context.json({ error: error.message }, 422)
   if (error instanceof DocRevisionConflictError)
     return context.json(revisionConflictBody(error), 409)
   if (error instanceof RecordProjectSpaceConflictError)

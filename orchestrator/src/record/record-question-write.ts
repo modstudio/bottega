@@ -122,6 +122,7 @@ export async function writeRecordQuestionTransaction(
       number: Number(existing[0].number),
       revision: Number(existing[0].revision),
       applied: true,
+      replayed: true,
     }
   const number = await questionNumberForWrite(intent, input, existing[0], tx)
   const payload = {

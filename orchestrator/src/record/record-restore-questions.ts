@@ -1,20 +1,23 @@
 // concern: record-question-recovery
-/** Replays retired local question snapshots into their original hosted spaces without mutating SQLite. */
+/** Replays retired local question snapshots into their canonical hosted spaces without mutating SQLite. */
 
 import type { Database } from 'bun:sqlite'
 import { createHash } from 'node:crypto'
 import { db } from '../database/db.ts'
+import type { RecordWriteDestination } from './record-api-client-paths.ts'
 import { recordApiClient } from './record-api-client.ts'
 import {
   type RecordQuestionClient,
   requireQuestionWriteClient,
 } from './record-api-client-question.ts'
+import type { RecordIdentity } from './record-auth.ts'
 import {
   type QuestionWriteBody,
   type QuestionWriteResult,
   questionAuditSchema,
   questionWriteSchema,
 } from './record-question-contract.ts'
+import { resolveQuestionWriteDestination } from './record-question-destination.ts'
 
 export type RetiredQuestionOutboxRow = { id: number; rowId: string; payload: string }
 export type RestoreQuestionCandidate = {
@@ -22,7 +25,6 @@ export type RestoreQuestionCandidate = {
   id: string
   number: number | null
   revision: number
-  spaceId: string
   body: QuestionWriteBody
 }
 export type RestoreQuestionRejection = {
@@ -36,7 +38,6 @@ type ParsedPayload = Record<string, unknown> & {
   id: string
   number: number | null
   revision: number
-  spaceId: string
 }
 
 function uuidFromDigest(digest: Buffer): string {
@@ -87,19 +88,11 @@ function parsePayload(
       number: typeof payload.number === 'number' ? payload.number : null,
       reason: `payload is not a restorable question snapshot: ${parsed.error.issues[0]?.message ?? 'invalid payload'}`,
     }
-  if (typeof payload.spaceId !== 'string' || !payload.spaceId)
-    return {
-      outboxId: row.id,
-      id: parsed.data.question.id,
-      number: parsed.data.question.number,
-      reason: 'payload has no record space id',
-    }
   return {
     outboxId: row.id,
     id: parsed.data.question.id,
     number: parsed.data.question.number,
     revision: parsed.data.question.revision,
-    spaceId: payload.spaceId,
     body: parsed.data,
   }
 }
@@ -131,7 +124,7 @@ export function newestRetiredQuestionPayloads(rows: readonly RetiredQuestionOutb
 }
 
 function restoreQuestionDisposition(result: QuestionWriteResult): 'restored' | 'unchanged' {
-  return result.applied ? 'restored' : 'unchanged'
+  return result.replayed || !result.applied ? 'unchanged' : 'restored'
 }
 
 export function restoreQuestionRefusalReason(error: unknown): string | null {
@@ -163,10 +156,11 @@ type RestoreAttempt = { disposition: keyof RestoreCounts; reason?: string }
 async function restoreCandidate(
   candidate: RestoreQuestionCandidate,
   client: RecordQuestionClient,
+  destination: RecordWriteDestination,
 ): Promise<RestoreAttempt> {
   try {
     const result = await client.writeQuestion!('restore', candidate.body, {
-      destinationSpaceId: candidate.spaceId,
+      destinationSpaceId: destination.destinationSpaceId,
     })
     return { disposition: restoreQuestionDisposition(result) }
   } catch (error) {
@@ -176,18 +170,6 @@ async function restoreCandidate(
       reason: refused ?? (error instanceof Error ? error.message : String(error)),
     }
   }
-}
-
-function reportDryRun(
-  selection: ReturnType<typeof newestRetiredQuestionPayloads>,
-  ports: { log: (line: string) => void; setExitCode: (code: number) => void },
-): void {
-  for (const candidate of selection.candidates)
-    ports.log(`${candidate.number ?? '?'}\t${candidate.id}\twould restore`)
-  ports.log(
-    `${selection.candidates.length} would restore, ${selection.rejected.length} refused, 0 failed`,
-  )
-  if (selection.rejected.length) ports.setExitCode(1)
 }
 
 export async function restoreQuestionsCommand(
@@ -204,18 +186,65 @@ export async function restoreQuestionsCommand(
   for (const rejected of selection.rejected)
     ports.log(`${rejected.number ?? '?'}\t${rejected.id}\trefused: ${rejected.reason}`)
 
-  if (options.dryRun) {
-    reportDryRun(selection, ports)
-    return
+  const client = ports.client ?? recordApiClient()
+  const writeClient = options.dryRun ? client : requireQuestionWriteClient(client)
+  let identityRead: Promise<RecordIdentity> | undefined
+  const identity = () => {
+    identityRead ??= (
+      client.whoami
+        ? client.whoami()
+        : Promise.reject(
+            new Error('record API predates identity reads; release hosted-api, then retry'),
+          )
+    ).catch((error: unknown) => {
+      identityRead = undefined
+      throw error
+    })
+    return identityRead
   }
-
-  const client = requireQuestionWriteClient(ports.client ?? recordApiClient())
+  const destinations = new Map<string, Promise<RecordWriteDestination>>()
+  const destination = (projectId: string | null) => {
+    const key = projectId ?? ''
+    const cached = destinations.get(key)
+    if (cached) return cached
+    const result = resolveQuestionWriteDestination(projectId, {
+      database: ports.database ?? db(),
+      whoami: identity,
+    }).catch((error: unknown) => {
+      destinations.delete(key)
+      throw error
+    })
+    destinations.set(key, result)
+    return result
+  }
   for (const candidate of selection.candidates) {
-    const attempt = await restoreCandidate(candidate, client)
+    let resolved: RecordWriteDestination
+    try {
+      resolved = await destination(candidate.body.question.projectId)
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error)
+      counts.refused += 1
+      ports.log(`${candidate.number ?? '?'}\t${candidate.id}\trefused: ${reason}`)
+      continue
+    }
+    if (options.dryRun) {
+      ports.log(
+        `${candidate.number ?? '?'}\t${candidate.id}\twould restore to ${resolved.destinationSpaceId}`,
+      )
+      continue
+    }
+    const attempt = await restoreCandidate(candidate, writeClient, resolved)
     counts[attempt.disposition] += 1
     ports.log(
       `${candidate.number ?? '?'}\t${candidate.id}\t${attempt.disposition}${attempt.reason ? `: ${attempt.reason}` : ''}`,
     )
+  }
+  if (options.dryRun) {
+    ports.log(
+      `${selection.candidates.length - (counts.refused - selection.rejected.length)} would restore, ${counts.refused} refused, 0 failed`,
+    )
+    if (counts.refused) ports.setExitCode(1)
+    return
   }
   ports.log(
     `${counts.restored} restored, ${counts.unchanged} unchanged, ${counts.refused} refused, ${counts.failed} failed`,
