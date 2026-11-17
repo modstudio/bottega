@@ -11,6 +11,7 @@ import {
 } from '../collect/collect.ts'
 import { db } from '../database/db.ts'
 import {
+  capacityWaitSinceForRun,
   idleLabel,
   idleMsSince,
   liveOperationalStatusFromEvents,
@@ -31,9 +32,12 @@ import type {
   QuestionDeliveryMode,
   QuestionDeliveryOutcome,
 } from './question-vocabulary.ts'
-import { isFreshRunHostWait, RUN_HOST_WAIT_MAX_MS } from './run-host-capacity.ts'
 import { classifyRunIdentifier, resolveRunIdentifierOrNull } from './run-identifier.ts'
-import { isRunQueuedForCapacity } from './run-liveness-policy.ts'
+import {
+  isFreshRunHostWait,
+  isRunQueuedForCapacity,
+  RUN_HOST_WAIT_MAX_MS,
+} from './run-liveness-policy.ts'
 import { LIVE_RUN_STATUS_SQL, RUN_LIVE_STATUSES } from './run-status.ts'
 import { type SubscriptionCostContext, withReportedCost } from './run-subscription-cost.ts'
 import { subscriptionCostFacts } from './run-subscription-cost-store.ts'
@@ -390,13 +394,16 @@ function listedLiveState(
   const lastEventAt = (row.last_event_at as string | null) ?? null
   const startedAt = String(row.current_started_at ?? row.started_at)
   const operational = liveOperationalStatus(String(row.live_member_record_id), live)
-  const queuedForCapacity =
-    live &&
-    isRunQueuedForCapacity(
-      (row.host_wait_since as string | null) ?? null,
-      operational.capacity_wait_since,
-      observedAt,
-    )
+  const capacityWaitSince = live
+    ? capacityWaitSinceForRun(String(row.live_member_record_id))
+    : null
+  const queuedForCapacity = isRunQueuedForCapacity(
+    String(row.status),
+    (row.host_wait_since as string | null) ?? null,
+    capacityWaitSince,
+    (row.current_agent_pid as number | null) ?? null,
+    observedAt,
+  )
   const stallObservation = live
     ? liveMemberStall(
         {
@@ -410,7 +417,7 @@ function listedLiveState(
           agent_pid: (row.current_agent_pid as number | null) ?? null,
           agent_start_time: (row.current_agent_start_time as string | null) ?? null,
           host_wait_since: (row.host_wait_since as string | null) ?? null,
-          capacity_wait_since: operational.capacity_wait_since,
+          capacity_wait_since: capacityWaitSince,
         },
         processSamples,
         observedAt,

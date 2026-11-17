@@ -7,7 +7,7 @@ import {
   pidAlive,
   pidRecordIdentity,
 } from '../../../shared/process-identity.ts'
-import { isFreshRunHostWait } from './run-host-capacity.ts'
+import { isFreshRunHostWait } from './run-liveness-policy.ts'
 import { heldRunCloseOutLeaseIds, heldRunLeaseIds } from './run-lease.ts'
 
 export type MigrationInFlightRun = {

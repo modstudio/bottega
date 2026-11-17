@@ -7,8 +7,11 @@ import { nowIso } from '../database/db.ts'
 import { appendRunEvent } from '../events.ts'
 import { AgentCapacityError } from '../route/routing-refusal.ts'
 import { type RunningRunCounts, runningRunCountsForAgents } from '../route/running-runs.ts'
-import { nextRunCapacityPoll, RUN_HOST_WAIT_MAX_MS } from './run-host-capacity.ts'
-import { DETACHED_AGENT_CAPACITY_WAIT_MAX_MS } from './run-liveness-policy.ts'
+import { nextRunCapacityPoll } from './run-host-capacity.ts'
+import {
+  DETACHED_AGENT_CAPACITY_WAIT_MAX_MS,
+  RUN_HOST_WAIT_MAX_MS,
+} from './run-liveness-policy.ts'
 
 export type CapacityWaitDecision = 'wait' | 'refuse'
 

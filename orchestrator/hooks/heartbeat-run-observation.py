@@ -166,7 +166,7 @@ def live(session_id: str) -> None:
             + (
                 "s"
                 if stall_state == "stalled"
-                else ("i" if idle_note and not (waiting or waiting_for_capacity) else "")
+                else ("i" if idle_note and not waiting else "")
             )
         )
         roots.append(row["record_id"])

@@ -8,11 +8,12 @@ import { CONFIG_HOME_ENV } from '../../../shared/config-directory.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun, score } from '../../test/fixtures/store.ts'
 import { db, nowIso } from '../database/db.ts'
+import { appendRunEvent } from '../events.ts'
 import { RECORD_TUNNEL_DOWN_REMEDY } from '../record/record-tunnel-error.ts'
 import { liveMemberStall } from '../run/live-run-member.ts'
-import { RUN_HOST_WAIT_MAX_MS } from '../run/run-host-capacity.ts'
 import {
   DETACHED_AGENT_CAPACITY_WAIT_MAX_MS,
+  RUN_HOST_WAIT_MAX_MS,
   RUN_HOST_WAIT_POLL_MS,
 } from '../run/run-liveness-policy.ts'
 import {
@@ -20,6 +21,7 @@ import {
   askingRuns,
   deadRunningProcessConditions,
   idleRunCondition,
+  idleRunConditions,
   orphanRecipeDatabaseConditions,
   pidBornAfterRun,
   reconcileHub,
@@ -224,9 +226,31 @@ describe('idle run classification', () => {
         5 * 60_000,
       ),
     ).toMatchObject({ kind: 'idle' })
+  })
+
+  test('a dead pid with an open agent wait is stale-run', () => {
     expect(
-      idleRunCondition({ ...facts, capacity_wait_since: null }, observedAt, 5 * 60_000),
-    ).toMatchObject({ kind: 'idle' })
+      idleRunCondition(
+        {
+          ...row,
+          pidAlive: false,
+          pid: 42,
+          capacity_wait_since: new Date(clock - 1_000).toISOString(),
+        },
+        clock,
+      ),
+    ).toMatchObject({ kind: 'stale-run' })
+  })
+
+  test('the detector reads an open agent wait before reporting an idle row', () => {
+    const waitSince = '2026-09-17T15:26:00.000Z'
+    const runId = addRun({ agent: '(pending)', job: 'implement', status: 'running', startedAt: waitSince })
+    db().query('UPDATE run SET last_event_at=? WHERE record_id=?').run(waitSince, runId)
+    appendRunEvent(runId, { ts: waitSince, type: 'capacity_wait', waiting: true })
+
+    expect(idleRunConditions(Date.parse('2026-09-17T15:35:00.000Z'))).not.toContainEqual(
+      expect.objectContaining({ subject: `run:${runId}` }),
+    )
   })
 
   test('an over-bound host wait is stuck-host-wait', () => {

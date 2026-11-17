@@ -463,7 +463,7 @@ esac
                 )
                 self.assertIn(operational["live_status_detail"], completed.stdout)
                 if operational["waiting_for_capacity"]:
-                    self.assertNotIn(base["live_member_id"] + "i", completed.stdout)
+                    self.assertIn(base["live_member_id"] + "i", completed.stdout)
     def test_completion_keeps_a_failed_root_watched_only_inside_its_window(self):
         root = "01990000-0000-7000-8000-000000000001"
         member = "01990000-0000-7000-8000-000000000002"

@@ -18,12 +18,10 @@ import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 import { recordedRunClaimsWorktree } from '../cleanup/cleanup-sweep-docker.ts'
 import { db, liveRuns } from '../database/db.ts'
 import {
+  capacityWaitSinceForRun,
   idleLabel,
   idleMsSince,
   idleWarnMs,
-  liveOperationalStatusFromEvents,
-  readEventLog,
-  runEventsPath,
 } from '../events.ts'
 import { UNSCORED_WHERE } from '../evidence/evidence-query.ts'
 import { targetGitEnvironment } from '../git/git-environment.ts'
@@ -238,7 +236,7 @@ export function idleRunCondition(
   clock = Date.now(),
   threshold = idleWarnMs(),
 ): MonitorCondition | null {
-  if (isRunQueuedForCapacity(run.host_wait_since, run.capacity_wait_since, clock)) return null
+  if (isRunQueuedForCapacity('running', run.host_wait_since, null, run.pid, clock)) return null
   if (run.pidAlive === false) {
     return {
       kind: 'stale-run',
@@ -263,6 +261,7 @@ export function idleRunCondition(
       ownerSession: run.session_id,
     }
   }
+  if (isRunQueuedForCapacity('running', null, run.capacity_wait_since, run.pid, clock)) return null
   const label = idleLabel(run.last_event_at, run.started_at, clock, threshold)
   if (!label) return null
   return {
@@ -297,15 +296,14 @@ export function idleRunConditions(
     host_wait_since: string | null
   }[]
   return running.flatMap((run): MonitorCondition[] => {
-    const operational = liveOperationalStatusFromEvents(readEventLog(runEventsPath(run.record_id)))
-    const condition = idleRunCondition(
-      {
-        ...run,
-        capacity_wait_since: operational.capacity_wait_since,
-        pidAlive: run.pid === null ? null : pidAlive(run.pid),
-      },
-      clock,
-    )
+    const facts = { ...run, pidAlive: run.pid === null ? null : pidAlive(run.pid) }
+    let condition = idleRunCondition(facts, clock)
+    if (condition?.kind === 'idle') {
+      condition = idleRunCondition(
+        { ...facts, capacity_wait_since: capacityWaitSinceForRun(run.record_id) },
+        clock,
+      )
+    }
     return condition ? [condition] : []
   })
 }
@@ -322,7 +320,16 @@ export function stalledRunConditions(
   const running = liveRunMembers(database)
   const samples = deps.samples ?? (running.length ? sampleProcesses() : [])
   return running.flatMap((run): MonitorCondition[] => {
-    const observed = liveMemberStall(run, samples, clock, idleStallMs(), deps.observedStartTime)
+    let observed = liveMemberStall(run, samples, clock, idleStallMs(), deps.observedStartTime)
+    if (observed.state === 'stalled') {
+      observed = liveMemberStall(
+        { ...run, capacity_wait_since: capacityWaitSinceForRun(run.record_id) },
+        samples,
+        clock,
+        idleStallMs(),
+        deps.observedStartTime,
+      )
+    }
     if (observed.state !== 'stalled' || observed.idleMs === null || observed.detail === null)
       return []
     return [

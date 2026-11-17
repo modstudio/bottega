@@ -3,8 +3,7 @@ import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
 import type { ProcessSample } from '../process-resource-sampler.ts'
 import { type LiveRunMember, liveMemberStall, liveRunMembers } from './live-run-member.ts'
-import { RUN_HOST_WAIT_MAX_MS } from './run-host-capacity.ts'
-import { RUN_HOST_WAIT_POLL_MS } from './run-liveness-policy.ts'
+import { RUN_HOST_WAIT_MAX_MS, RUN_HOST_WAIT_POLL_MS } from './run-liveness-policy.ts'
 
 describe('live run member', () => {
   const clock = Date.parse('2026-09-22T12:30:00.000Z')
@@ -60,10 +59,15 @@ describe('live run member', () => {
     ).toMatchObject({ state: 'healthy', idleMs: null })
   })
 
-  test('a fresh agent capacity waiter is exempt from stall detection', () => {
+  test('a fresh agent capacity waiter without a launched agent is exempt from stall detection', () => {
     expect(
       liveMemberStall(
-        { ...member, capacity_wait_since: new Date(clock - 1_000).toISOString() },
+        {
+          ...member,
+          agent_pid: null,
+          agent_start_time: null,
+          capacity_wait_since: new Date(clock - 1_000).toISOString(),
+        },
         idle,
         clock,
         25 * 60_000,
@@ -123,7 +127,6 @@ describe('live run member', () => {
       agent_pid: 880,
       agent_start_time: 'recorded birth',
       host_wait_since: null,
-      capacity_wait_since: null,
     })
   })
 })

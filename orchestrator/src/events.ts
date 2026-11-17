@@ -360,6 +360,11 @@ export function liveOperationalStatusFromEvents(
   return { ...status, live_status_detail: formatLiveOperationalStatus(status) }
 }
 
+/** Read the open agent-capacity wait recorded in one run's event log. */
+export function capacityWaitSinceForRun(runId: string): string | null {
+  return liveOperationalStatusFromEvents(readEventLog(runEventsPath(runId))).capacity_wait_since
+}
+
 const RESULT_STATUSES = new Set(['completed', 'failed', 'ok', 'error', 'cancelled'])
 
 function simpleObservedEvent(

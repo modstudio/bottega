@@ -27,12 +27,14 @@ export const DETACHED_AGENT_CAPACITY_WAIT_MAX_MS =
 
 /** Whether a running run is still within either capacity queue's live bound. */
 export function isRunQueuedForCapacity(
+  status: string,
   hostWaitSince: string | null | undefined,
   agentCapacityWaitSince: string | null | undefined,
+  agentPid: number | null | undefined,
   clock = Date.now(),
 ): boolean {
-  if (isFreshRunHostWait('running', hostWaitSince, clock)) return true
-  if (!agentCapacityWaitSince) return false
+  if (isFreshRunHostWait(status, hostWaitSince, clock)) return true
+  if (status !== 'running' || agentPid != null || !agentCapacityWaitSince) return false
   const started = Date.parse(agentCapacityWaitSince)
   return Number.isFinite(started) && clock - started <= DETACHED_AGENT_CAPACITY_WAIT_MAX_MS
 }

@@ -19,11 +19,6 @@ import { activeCores, HOST_RESERVATION_EVIDENCE_DAYS, reservedCores } from './ho
 import { RUN_HOST_WAIT_MAX_MS, RUN_HOST_WAIT_POLL_MS } from './run-liveness-policy.ts'
 import { TERMINAL_RUN_STATUS_SQL } from './run-status.ts'
 
-export {
-  isFreshRunHostWait,
-  RUN_HOST_WAIT_MAX_MS,
-} from './run-liveness-policy.ts'
-
 const RUN_HOST_WAIT_POLL_CAP_MS = 15_000
 const RUN_HOST_WAIT_POLL_JITTER_FRACTION = 0.2
 
