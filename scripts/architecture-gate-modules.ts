@@ -39,6 +39,7 @@ export const gateModules: GateModule[] = [
     'node:path',
     '../database/db.ts',
     '../gate-load.ts',
+    '../git/fetch-retry.ts',
     '../idle-kill.ts',
     '../issue/issue-shell.ts',
     '../no-follow-file.ts',

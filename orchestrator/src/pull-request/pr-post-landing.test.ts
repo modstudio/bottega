@@ -29,12 +29,17 @@ import {
 } from './pr-post-landing-payload.ts'
 
 test.each([
-  ['unsatisfied release and clean cleanup', { satisfied: false }, 0, 21],
+  [
+    'unsatisfied release and clean cleanup',
+    { satisfied: false },
+    0,
+    MERGED_WITH_UNRELEASED_RUNG_EXIT_CODE,
+  ],
   [
     'unsatisfied release and residue cleanup',
     { satisfied: false },
     MERGED_WITH_RESIDUE_EXIT_CODE,
-    21,
+    MERGED_WITH_UNRELEASED_RUNG_EXIT_CODE,
   ],
   ['satisfied release and clean cleanup', { satisfied: true }, 0, 0],
   [
@@ -43,8 +48,13 @@ test.each([
     MERGED_WITH_RESIDUE_EXIT_CODE,
     MERGED_WITH_RESIDUE_EXIT_CODE,
   ],
-  ['undecided rung decision', { satisfied: false, decisionError: 'landing fetch failed' }, 0, 21],
-] as const)('%s chooses exit %i', (_name, release, cleanupExit, expected) => {
+  [
+    'undecided rung decision',
+    { satisfied: false, decisionError: 'landing fetch failed' },
+    0,
+    MERGED_WITH_UNRELEASED_RUNG_EXIT_CODE,
+  ],
+] as const)('%s chooses the release-aware exit', (_name, release, cleanupExit, expected) => {
   expect(decideMergedOutputExitCode(release, cleanupExit)).toBe(expected)
 })
 
