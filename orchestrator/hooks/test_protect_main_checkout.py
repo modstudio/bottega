@@ -119,6 +119,12 @@ class MainCheckoutHookTest(unittest.TestCase):
             with self.subTest(command=command):
                 self.assertIsNone(self.invoke(command, "/elsewhere")["output"])
 
+    def test_quoted_remedy_for_main_checkout_path_is_allowed(self):
+        main = "/registered/it's main"
+        projects = [{"name": "protected", "path": main, "settings": {"trunk": "main"}}]
+        command = "git -C '/registered/it'\\''s main' switch 'main'"
+        self.assertIsNone(self.invoke(command, "/elsewhere", projects)["output"])
+
     def test_checkout_and_switch_variants_stay_denied(self):
         cases = (
             "git checkout -- file",

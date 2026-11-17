@@ -115,7 +115,7 @@ test('machine doctor keeps a wrong branch as a register question', () => {
   })
   expect(diagnosis.failed).toBe(false)
   expect(diagnosis.lines).toEqual([expect.stringContaining('register question')])
-  expect(diagnosis.lines[0]).toContain('run git -C /branchy switch main')
+  expect(diagnosis.lines[0]).toContain("run git -C '/branchy' switch 'main'")
   expect(diagnosis.lines[0]).not.toContain('FAIL')
 })
 

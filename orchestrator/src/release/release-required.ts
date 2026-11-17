@@ -4,6 +4,7 @@
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { nulPathListArgs, splitNulPaths } from '../../../shared/git-path-list.ts'
 import { git, gitResult, targetGitEnvironment } from '../git/git-environment.ts'
+import { returnMainCheckoutToTrunkCommand } from '../project/main-checkout-invariant.ts'
 import type { Project } from '../project/projects.ts'
 import { declaredGlobsMatch } from '../review/review-declared-globs.ts'
 import { releaseProofDecision, releaseRungProofRefusal } from './release-decision.ts'
@@ -237,7 +238,7 @@ export function verifyMainCheckout(project: Project, mergeCommit?: string): void
   )
   if (branch !== trunk) {
     throw new Error(
-      `registered main checkout is on ${branch || 'detached HEAD'}, not ${trunk}; switch it to ${trunk}`,
+      `registered main checkout is on ${branch || 'detached HEAD'}, not ${trunk}; run ${returnMainCheckoutToTrunkCommand(project.path, trunk)}, then retry`,
     )
   }
   const dirty = git(

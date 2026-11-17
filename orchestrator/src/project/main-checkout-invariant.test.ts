@@ -6,7 +6,10 @@ import {
 
 test('renders the sanctioned return-to-trunk command', () => {
   expect(returnMainCheckoutToTrunkCommand('/projects/example', 'main')).toBe(
-    'git -C /projects/example switch main',
+    "git -C '/projects/example' switch 'main'",
+  )
+  expect(returnMainCheckoutToTrunkCommand("/projects/it's here", 'main;touch x')).toBe(
+    "git -C '/projects/it'\\''s here' switch 'main;touch x'",
   )
 })
 

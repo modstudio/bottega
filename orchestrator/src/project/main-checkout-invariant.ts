@@ -3,6 +3,7 @@
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { git } from '../git/git-environment.ts'
+import { shellQuote } from '../resources/git-locks.ts'
 
 export type MainCheckoutFacts = {
   branch: string | null
@@ -12,7 +13,7 @@ export type MainCheckoutFacts = {
 
 /** Render the one sanctioned command that returns a registered main checkout to trunk. */
 export function returnMainCheckoutToTrunkCommand(path: string, trunk: string): string {
-  return `git -C ${path} switch ${trunk}`
+  return `git -C ${shellQuote(path)} switch ${shellQuote(trunk)}`
 }
 
 export function mainCheckoutInvariant(

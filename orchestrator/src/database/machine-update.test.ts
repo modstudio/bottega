@@ -749,7 +749,7 @@ test('machine update requires the registered landing branch in the main checkout
       },
     ),
   ).rejects.toThrow(
-    `registered landing branch is main, but ${dir} is on release; run git -C ${dir} switch main, then retry`,
+    `registered landing branch is main, but ${dir} is on release; run git -C '${dir}' switch 'main', then retry`,
   )
 })
 

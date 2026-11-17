@@ -69,6 +69,7 @@ import {
 import { type SettingsObjectMode, validateProjectInjectionSettings } from './project-injection.ts'
 import { localProjectPurgeRefusals, purgeLocalOrchestratorProject } from './project-purge-local.ts'
 import { projectPushRefusalMessage } from './project-push-refusal.ts'
+import { returnMainCheckoutToTrunkCommand } from './main-checkout-invariant.ts'
 import { type Project, projectByName, projectRowByName, projects } from './project-read.ts'
 import {
   PROJECT_REFERENCE_REPORT,
@@ -689,7 +690,7 @@ export function detachedCheckoutDecision(
   const releaseTag = [...tagsAtHead].sort().find((tag) => releaseTagVersion(tag) !== null)
   return releaseTag
     ? `release tag ${releaseTag} is checked out; a development checkout stays on its landing branch ${landing}\n` +
-        `cleared by: git -C ${shellQuote(checkoutPath)} switch -- ${shellQuote(landing)}`
+        `cleared by: ${returnMainCheckoutToTrunkCommand(checkoutPath, landing)}`
     : `checkout HEAD is detached, not landing branch ${landing}\n` +
         registerBranchRemedy(landing, checkoutPath, projectName)
 }
