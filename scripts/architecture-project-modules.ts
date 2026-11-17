@@ -33,6 +33,8 @@ export const projectModules: ProjectModule[] = [
     '../../../shared/removal-report.ts',
     '../../../shared/state-directory.ts',
     '../database/db.ts',
+    '../database/hosted-table-guard.ts',
+    '../record/record-write-authority.ts',
     '../run/run-status.ts',
   ]),
   module('orchestrator/src/project/declared-project-space.ts', [

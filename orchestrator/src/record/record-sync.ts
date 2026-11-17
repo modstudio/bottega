@@ -40,11 +40,7 @@ import {
   quarantineOutboxRow,
   retirePendingOutboxKinds,
 } from './outbox-quarantine.ts'
-import {
-  type RecordApiClient,
-  RecordApiRequestError,
-  recordApiClient,
-} from './record-api-client.ts'
+import { RecordApiRequestError, recordApiClient } from './record-api-client.ts'
 import { builtInsEnsured, recordBuiltInsEnsured } from './record-built-ins-identity.ts'
 import { pullRecordCache } from './record-cache.ts'
 import { type OversizedRecordSyncRow, planRecordSyncBatch } from './record-sync-batch.ts'
