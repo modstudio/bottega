@@ -36,6 +36,7 @@ export const recordQuestionModules: RecordModule[] = [
     'hono',
     '../../../shared/record/record-changes.ts',
     './record-auth.ts',
+    './record-keyed-read.ts',
     './record-question-contract.ts',
   ]),
   module('orchestrator/src/record/record-question-read.ts', [
