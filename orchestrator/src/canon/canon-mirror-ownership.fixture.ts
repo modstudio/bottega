@@ -56,6 +56,7 @@ export function mirrorFixturePort(
     remoteTrunkTip: () => head,
     push: () => {},
     pullRequest: () => null,
+    admitPullRequest: async () => {},
     openPullRequest: () => ({
       number: 7,
       url: 'https://example.test/pull/7',

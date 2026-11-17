@@ -22,7 +22,8 @@ import { targetGitEnvironment } from '../git/git-environment.ts'
 import { fileNote, listHubNotes } from '../mcp/hub-notes.ts'
 import { withWorktreeCreateLock } from '../project/project-lock.ts'
 import { type Project, projects, stackAt } from '../project/projects.ts'
-import { createPullRequest } from '../pull-request/pr-admission.ts'
+import { createPullRequestAdmitted } from '../pull-request/pr-admission.ts'
+import { assertPullRequestTaskCursorAdmission } from '../pull-request/task-cursor-admission.ts'
 import { recordCreatedWorktreeClaims, settleClaims } from '../resources/resource-claims.ts'
 import { acquireRunLease } from '../run/run-lease.ts'
 import { nextRunNumber } from '../run/run-number.ts'
@@ -99,6 +100,7 @@ export type CanonMirrorPort = {
   commit(path: string, subject: string, body: string): string
   push(path: string, branch: string, expected: string | null): void
   pullRequest(path: string, branch: string): PullRequest | null
+  admitPullRequest(project: Project, branch: string): Promise<void>
   openPullRequest(path: string, title: string, bodyFile: string): PullRequest
   refreshPullRequest(path: string, number: number, title: string, bodyFile: string): PullRequest
   merge(path: string, number: number, commit: string): void
@@ -225,8 +227,10 @@ export const systemCanonMirrorPort: CanonMirrorPort = {
         'number,url,headRefOid,headRefName,baseRefName,statusCheckRollup',
       ]),
     ),
+  admitPullRequest: (project, branch) =>
+    assertPullRequestTaskCursorAdmission({ command: 'pr create', project, branch }),
   openPullRequest: (path, title, bodyFile) => {
-    createPullRequest(['--title', title, '--body-file', bodyFile], {}, path)
+    createPullRequestAdmitted(['--title', title, '--body-file', bodyFile], {}, path)
     const opened = systemCanonMirrorPort.pullRequest(
       path,
       command(path, ['git', 'branch', '--show-current']),
@@ -794,6 +798,7 @@ async function mirrorProject(
           undefined,
           ['ship'],
         )
+    if (!dryRun) await port.admitPullRequest(project, branch)
     const lockedOutcome = runMirrorLocked({
       project,
       dryRun,

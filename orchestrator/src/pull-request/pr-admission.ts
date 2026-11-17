@@ -652,18 +652,18 @@ function pendingIntent(database: Database, project: string, branch: string): boo
   )
 }
 
-export async function createPullRequest(
+type CreatePullRequestOptions = {
+  overrideReason?: string
+  ceilingRuling?: string
+  fromOperator?: boolean
+}
+
+function createPullRequestAdmittedChange(
   args: string[],
-  options: { overrideReason?: string; ceilingRuling?: string; fromOperator?: boolean },
-  cwd = process.cwd(),
-): Promise<{ output: string; overrideId: string | null }> {
-  guardTriageOverrideService([options.overrideReason, options.ceilingRuling])
-  const change = resolvePullRequestChange(cwd)
-  await assertPullRequestTaskCursorAdmission({
-    command: 'pr create',
-    project: change.project,
-    branch: change.branch,
-  })
+  options: CreatePullRequestOptions,
+  cwd: string,
+  change: PullRequestChange,
+): { output: string; overrideId: string | null } {
   const trunk = change.project.settings.trunk!.trim()
   const existing = pullRequestForBranch(cwd, change.branch, trunk)
   if (existing) finalizeTriageIntent(change.project.name, change.branch, existing.number)
@@ -743,6 +743,30 @@ export async function createPullRequest(
     output: outcome.output,
     overrideId: checked.overrideId,
   }
+}
+
+export function createPullRequestAdmitted(
+  args: string[],
+  options: CreatePullRequestOptions,
+  cwd = process.cwd(),
+): { output: string; overrideId: string | null } {
+  guardTriageOverrideService([options.overrideReason, options.ceilingRuling])
+  return createPullRequestAdmittedChange(args, options, cwd, resolvePullRequestChange(cwd))
+}
+
+export async function createPullRequest(
+  args: string[],
+  options: CreatePullRequestOptions,
+  cwd = process.cwd(),
+): Promise<{ output: string; overrideId: string | null }> {
+  guardTriageOverrideService([options.overrideReason, options.ceilingRuling])
+  const change = resolvePullRequestChange(cwd)
+  await assertPullRequestTaskCursorAdmission({
+    command: 'pr create',
+    project: change.project,
+    branch: change.branch,
+  })
+  return createPullRequestAdmittedChange(args, options, cwd, change)
 }
 
 function recordedRunBranches(database: Database, project: Project): string[] {
