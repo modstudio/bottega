@@ -30,7 +30,7 @@ export const PROJECT_MCP_WRITER_WITHHELD_REASON =
 export const PROJECT_MCP_WRITER_WITHHELD_ADVICE =
   'writing workers cannot receive these; run as a reader through the proxy, or declare the server without them'
 
-export const PROJECT_MCP_WRITER_TOOLS_ADVICE = `declare mcp.writer_tools.<server> with ${PLATFORM_SLUG} project update`
+export const PROJECT_MCP_WRITER_TOOLS_ADVICE = `declare mcp.writer_tools.<server> with ${PLATFORM_SLUG} project set`
 
 export const PROJECT_MCP_RELATIVE_WRITER_REASON =
   "its project-relative command would run a worker-writable path with the project's credentials"
