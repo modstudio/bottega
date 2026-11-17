@@ -1,6 +1,9 @@
-import { expect, test } from 'bun:test'
+import { afterEach, expect, test } from 'bun:test'
 import { resolvedRecordOrigin } from '../../../shared/record-api-url.ts'
-import { createMemoryRecordApiClient } from '../../test/fixtures/record-api.ts'
+import {
+  createMemoryRecordApiClient,
+  installRecordApiClient,
+} from '../../test/fixtures/record-api.ts'
 import { guardHostedTables } from '../database/hosted-table-guard.ts'
 import { rememberActiveRecordSpace } from '../project-space.ts'
 import { rememberProjectSpace } from '../project-space-cache.ts'
@@ -29,6 +32,10 @@ const destinationSpaceId = 'fixture-space'
 const workflow = 'hosted-task-flow-guard'
 const taskKey = 'DEV-HOSTED-GUARD'
 const taskId = '00000000-0000-4000-8001-000000000001'
+
+afterEach(() => {
+  installRecordApiClient(null)
+})
 
 test('hosted task-flow intents never touch the five local task-flow tables', async () => {
   const raw = cursorDatabase()
@@ -81,6 +88,7 @@ test('hosted task-flow intents never touch the five local task-flow tables', asy
       ],
     }),
   }
+  installRecordApiClient(taskFlowClient)
   const context = { session: 'hosted-task-flow-guard', taskFlowClient }
 
   const composed = await composeWorkflowWithCursor(
@@ -189,6 +197,7 @@ test('hosted task-flow intents never touch the five local task-flow tables', asy
       { project: 'fixture', workflowKey: taskKey, taskRecordId: taskId },
       taskFlowClient,
     ),
-  ).toEqual({ workflow_cursor: 1, question: 0 })
+  ).toEqual({ workflow_cursor: 1, question: 1 })
+  expect(raw.query('SELECT count(*) count FROM question').get()).toEqual({ count: 0 })
   expect(attachment).toStartWith('attached-text:')
 })
