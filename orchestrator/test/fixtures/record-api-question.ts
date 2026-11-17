@@ -1,7 +1,7 @@
 import type { RecordApiClient } from '../../src/record/record-api-client.ts'
 import type { MemoryTaskFlowInput } from './record-api-task-flow.ts'
 
-type MemoryQuestionInput = Pick<MemoryTaskFlowInput, 'taskFlowStages'> & {
+type MemoryQuestionInput = Pick<MemoryTaskFlowInput, 'taskFlowProjectSpaces' | 'taskFlowStages'> & {
   questions?: Record<string, unknown>[]
 }
 

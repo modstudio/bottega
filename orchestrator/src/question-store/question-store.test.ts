@@ -628,12 +628,8 @@ function twoSpaceStore(
           { space_id: OTHER_SPACE_ID, name: 'Other', slug: 'other', permission: 'write' },
         ],
       }),
-      readQuestions: async (_input, destination) => ({
-        items: Object.entries(
-          destination
-            ? { [destination.destinationSpaceId]: rows[destination.destinationSpaceId] }
-            : rows,
-        ).flatMap(([spaceId, values]) =>
+      readQuestions: async () => ({
+        items: Object.entries(rows).flatMap(([spaceId, values]) =>
           (values ?? []).map((row) => ({
             ...(typeof row === 'string' ? { record_id: row } : row),
             space_id: spaceId,
