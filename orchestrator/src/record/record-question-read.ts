@@ -99,10 +99,14 @@ const QUESTION_DETAIL_COLUMNS = `q.id::text record_id,q.space_id::text space_id,
   NULL::text cwd,COALESCE(run_project.name,stage_project.name) project_name,
   NULL::text project_path,COALESCE(owner.task_key,q.workflow_key) launch_key,
   COALESCE(owner.task_key,q.workflow_key) "taskHolder",
-  (SELECT latest.status FROM run latest
-    WHERE latest.id=COALESCE(owner.parent_run_id,owner.id)
-       OR latest.parent_run_id=COALESCE(owner.parent_run_id,owner.id)
-    ORDER BY latest.turn DESC,latest.number DESC LIMIT 1) latest_status,
+  CASE WHEN owner.parent_run_id IS NULL
+    THEN (SELECT latest.status FROM run latest
+      WHERE latest.id=owner.id OR latest.parent_run_id=owner.id
+      ORDER BY latest.turn DESC,latest.number DESC LIMIT 1)
+    ELSE (SELECT latest.status FROM run latest
+      WHERE latest.id=owner.parent_run_id OR latest.parent_run_id=owner.parent_run_id
+      ORDER BY latest.turn DESC,latest.number DESC LIMIT 1)
+  END latest_status,
   COALESCE(owner.project_id,stage.project_id)::text project_record_id`
 
 type QuestionDetailInput = {
@@ -285,14 +289,19 @@ async function inboxRows(
       q.asked_at::text,q.question,q.options::text,q.recommendation,q.why,q.kind,q.jev_pick,q.jev_confidence,
       q.jev_probabilities::text,q.jev_error,q.answered_at::text,q.overturned_at::text,q.overturned_by,
       q.overturn_reason,q.replacement,q.filed_as,q.filed_ref,q.filed_record_id::text,q.filed_label,q.filed_at::text,
-      owner.agent,owner.job,root_project.name repo,COALESCE(owner.task_key,root.task_key) task_key,root.project_id::text project_record_id,owner.status,owner.session_id,
+      owner.agent,owner.job,COALESCE(parent_project.name,owner_project.name) repo,
+      COALESCE(owner.task_key,parent.task_key) task_key,
+      COALESCE(parent.project_id,owner.project_id)::text project_record_id,owner.status,owner.session_id,
       q.awaiting_operator_at::text,
-      root.status root_status,root.id::text root_record_id,root.number root_number,
-      CASE WHEN root.evidence_excluded IS NULL THEN 0 ELSE 1 END root_voided,
+      COALESCE(parent.status,owner.status) root_status,
+      COALESCE(parent.id,owner.id)::text root_record_id,
+      COALESCE(parent.number,owner.number) root_number,
+      CASE WHEN COALESCE(parent.evidence_excluded,owner.evidence_excluded) IS NULL THEN 0 ELSE 1 END root_voided,
       COALESCE(owner.parent_run_id,owner.id)::text root_id
      FROM question q JOIN run owner ON owner.id=q.run_id
-     JOIN run root ON root.id=COALESCE(owner.parent_run_id,owner.id)
-     LEFT JOIN project root_project ON root_project.id=root.project_id
+     LEFT JOIN run parent ON parent.id=owner.parent_run_id
+     LEFT JOIN project parent_project ON parent_project.id=parent.project_id
+     LEFT JOIN project owner_project ON owner_project.id=owner.project_id
      WHERE q.answered_at IS NULL AND q.closed_at IS NULL
      ORDER BY q.run_id,q.number${offsetClause(requested, offset)}`,
     [],
@@ -353,12 +362,15 @@ async function rows(tx: SQL, input: QuestionReadInput): Promise<Row[]> {
     return limited(
       (await tx.unsafe(
         `WITH raw_candidates AS (
-       SELECT q.number question_id,q.id::text question_record_id,root.id::text run_record_id,
+       SELECT q.number question_id,q.id::text question_record_id,
+        COALESCE(parent.id,owner.id)::text run_record_id,
         NULL::text workflow_cursor_record_id,q.question,q.answer,q.answer_basis,q.answered_at::text,
         q.answerer_kind,q.answered_by_name,q.overturned_at::text,q.overturned_by_name,q.replacement,
         COALESCE(q.overturned_at,q.answered_at) effective_at
-       FROM question q JOIN run owner ON owner.id=q.run_id JOIN run root ON root.id=COALESCE(owner.parent_run_id,owner.id)
-       WHERE root.project_id=$1::uuid AND root.task_id=$2::uuid AND q.answered_at IS NOT NULL
+       FROM question q JOIN run owner ON owner.id=q.run_id
+       LEFT JOIN run parent ON parent.id=owner.parent_run_id
+       WHERE COALESCE(parent.project_id,owner.project_id)=$1::uuid
+        AND COALESCE(parent.task_id,owner.task_id)=$2::uuid AND q.answered_at IS NOT NULL
         AND NOT (q.overturned_at IS NOT NULL AND q.replacement IS NULL)
        UNION ALL
        SELECT q.number,q.id::text,NULL::text,q.workflow_cursor_record_id::text,q.question,q.answer,q.answer_basis,
