@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { mainCheckoutInvariant } from './main-checkout-invariant.ts'
 
 describe('main checkout invariant', () => {
@@ -35,8 +36,7 @@ describe('main checkout invariant', () => {
       }),
     ).toEqual({
       holds: false,
-      message:
-        "checkout branch is release, not landing branch main; checkout has tracked modifications; restore the tracked checkout, then run git -C '/projects/example' switch 'main', then run bottega machine doctor",
+      message: `checkout branch is release, not landing branch main; checkout has tracked modifications; restore the tracked checkout, then run git -C '/projects/example' switch 'main', then run ${PLATFORM_SLUG} machine doctor`,
     })
   })
 })
