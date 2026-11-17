@@ -29,7 +29,9 @@ function commandAt(program: Command, path: readonly string[]): Command | null {
 }
 
 function registeredGroupVerbs(): Map<string, Set<string>> {
-  const verbs = new Map(GROUPS.map(([group]) => [group, new Set<string>()]))
+  const verbs: Map<string, Set<string>> = new Map(
+    GROUPS.map(([group]) => [group, new Set<string>()]),
+  )
   const programs = { orch: orchestratorProgram, hub: hubProgram } as const
   for (const route of ROUTES) {
     const groupVerbs = verbs.get(route.command[0]!)
@@ -37,7 +39,8 @@ function registeredGroupVerbs(): Map<string, Set<string>> {
     if (route.command[1]) groupVerbs.add(route.command[1])
     if (route.command.length !== 1 || (route.owner !== 'orch' && route.owner !== 'hub')) continue
     const registered = commandAt(programs[route.owner], route.argv ?? [])
-    if (!registered) throw new Error(`registered route ${route.command.join(' ')} has no owner command`)
+    if (!registered)
+      throw new Error(`registered route ${route.command.join(' ')} has no owner command`)
     for (const command of registered.commands) {
       groupVerbs.add(command.name())
       for (const alias of command.aliases()) groupVerbs.add(alias)

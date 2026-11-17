@@ -34,7 +34,6 @@ export async function projectRecordId(
     spaceId: principal.spaceId,
   })
   if (resolved.status !== 'found') {
-    const project = projectName ?? requestedId
     throw new OutboxRowError(
       `record project ${requestedId} is absent from request space ${principal.spaceId}`,
       'row-validation',
