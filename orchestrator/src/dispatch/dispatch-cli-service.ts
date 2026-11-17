@@ -22,6 +22,9 @@ import {
   type TaskBranchLandingRefusal,
   TaskBranchLandingRefusalError,
   taskBranchCandidateNotice,
+  taskBranchHeldTreeFacts,
+  taskBranchHeldTreeRemedy,
+  taskBranchLandingTreeRefusal,
   taskBranchReuseNotice,
 } from '../branch/task-branch.ts'
 import { compatibleTaskBranch } from '../branch/task-branch-reuse.ts'
@@ -61,14 +64,13 @@ import type { DetachSpec } from '../route/failover.ts'
 import { pick, type RoutedSelection } from '../route/route.ts'
 import { pickCommand } from '../route/routing-commands.ts'
 import { AgentCapacityError } from '../route/routing-refusal.ts'
-import { taskBranchLandingTreeRefusal } from '../run/held-branch-refusal.ts'
 import { sha } from '../run/prompt-sha.ts'
 import { run } from '../run/run.ts'
 import { assertAcpPolicyAllowed } from '../run/run-acp-policy.ts'
 import { waitForAgentSelection } from '../run/run-agent-capacity.ts'
 import { RUNS_DIR } from '../run/run-artifacts.ts'
 import type { RunWorkflowBinding } from '../run/run-claim-inheritance.ts'
-import { claimTreePlanForCandidate } from '../run/run-claim-plan.ts'
+import { claimTreePlanForCandidate, decideHeldBranchRemedy } from '../run/run-claim-plan.ts'
 import { follow as followRun, harnessHandoff, printHarnessHandoff } from '../run/run-control.ts'
 import { detach as dispatchDetached } from '../run/run-dispatch.ts'
 import { runEvidence } from '../run/run-evidence-context.ts'
@@ -437,7 +439,14 @@ export function refuseHeldTaskBranchBeforeDetach(
     forbidsRepo: false,
     repoJob: true,
     hasWorktree: false,
-    refusalMessage: taskBranchLandingTreeRefusal,
+    refusalMessage: (refusal) =>
+      taskBranchLandingTreeRefusal(
+        refusal,
+        taskBranchHeldTreeRemedy(
+          refusal.path,
+          decideHeldBranchRemedy(taskBranchHeldTreeFacts(refusal.path)),
+        ),
+      ),
   })
 }
 

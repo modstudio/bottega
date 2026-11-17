@@ -30,6 +30,8 @@ export type ClaimTreePlanRuling =
 
 type AcceptedClaimTreePlan = Exclude<ClaimTreePlanRuling, { mode: 'refuse' }>
 
+export { decideHeldBranchRemedy } from './resume-tree.ts'
+
 export type RetryRootTreeValidation = { branch: string; tip: string }
 
 export function requiredRepositoryRoot(cwd: string): string {

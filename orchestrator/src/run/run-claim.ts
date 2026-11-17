@@ -11,7 +11,12 @@ import { dirname, join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { Agent } from '../agent/agents.ts'
 import { settleCreateTimeBranchCleanup } from '../branch/create-time-settlement.ts'
-import type { TaskBranchCandidate } from '../branch/task-branch.ts'
+import {
+  type TaskBranchCandidate,
+  taskBranchHeldTreeFacts,
+  taskBranchHeldTreeRemedy,
+  taskBranchLandingTreeRefusal,
+} from '../branch/task-branch.ts'
 import type { Pack } from '../canon/canon.ts'
 import { readStrictCodexSchema } from '../contract/codex-schema.ts'
 import { replyFileInstruction, TEXT_REPLY_SCHEMA } from '../contract/contract.ts'
@@ -59,7 +64,6 @@ import { toolFor } from '../worktree/worktree-preflight.ts'
 import { removeFor } from '../worktree/worktree-remove.ts'
 import type { Worktree } from '../worktree/worktree-types.ts'
 import { assertBranchHasNoAliveOwner } from './branch-owner-guard.ts'
-import { taskBranchLandingTreeRefusal } from './held-branch-refusal.ts'
 import { sha } from './prompt-sha.ts'
 import { withReaderCreationLocks } from './reader-tree-sharing-claim.ts'
 import { resumeCreationOptions } from './resume-tree.ts'
@@ -84,6 +88,7 @@ import { executeClaimedMcpPlan } from './run-claim-mcp.ts'
 import {
   claimedRunBranch,
   claimTreePlanForCandidate,
+  decideHeldBranchRemedy,
   requiredRepositoryRoot,
   resumeCreationLifecycle,
   resumeCreationTool,
@@ -371,7 +376,14 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
     forbidsRepo,
     repoJob,
     hasWorktree: Boolean(opts.resume?.worktree),
-    refusalMessage: taskBranchLandingTreeRefusal,
+    refusalMessage: (refusal) =>
+      taskBranchLandingTreeRefusal(
+        refusal,
+        taskBranchHeldTreeRemedy(
+          refusal.path,
+          decideHeldBranchRemedy(taskBranchHeldTreeFacts(refusal.path)),
+        ),
+      ),
   })
   const existingBranch = resumePlan?.branch ?? resolvedTaskBranch?.branch
   assertBranchHasNoAliveOwner({

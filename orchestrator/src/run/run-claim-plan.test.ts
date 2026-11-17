@@ -1,14 +1,39 @@
 import { describe, expect, test } from 'bun:test'
-import { taskBranchLandingTreeRefusal } from './held-branch-refusal.ts'
+import { taskBranchLandingTreeRefusal } from '../branch/task-branch.ts'
 import {
   claimedRunBranch,
   decideClaimTreePlan,
+  decideHeldBranchRemedy,
   resumeCreationLifecycle,
   resumeCreationTool,
   retryRootTreeValidation,
   shouldResolveTaskBranch,
   taskBranchKey,
 } from './run-claim-plan.ts'
+
+describe('held branch remedy', () => {
+  test.each(
+    [false, true].flatMap((cwdInsideTree) =>
+      [false, true].flatMap((cursorNamesTree) =>
+        [false, true].map((treeDirty) => ({ cwdInsideTree, cursorNamesTree, treeDirty })),
+      ),
+    ),
+  )(
+    'clears the hold for cwd=$cwdInsideTree cursor=$cursorNamesTree dirty=$treeDirty',
+    ({ cwdInsideTree, cursorNamesTree, treeDirty }) => {
+      const remedy = decideHeldBranchRemedy({
+        path: '/worktrees/DEV-2405',
+        cwdInsideTree,
+        cursorNamesTree,
+        treeDirty,
+      })
+      expect(remedy.release).toBe(cwdInsideTree || cursorNamesTree ? 'detach' : 'remove')
+      expect(remedy.prepare !== null).toBe(treeDirty)
+      if (cursorNamesTree) expect(remedy.release).not.toBe('remove')
+      if (treeDirty) expect(remedy.prepare).toContain('commit or stash')
+    },
+  )
+})
 
 describe('retry-root tree validation', () => {
   test('returns the writing branch and tip from a retry-root tree plan', () => {
@@ -132,10 +157,12 @@ describe('claim tree plan', () => {
         ownerJob,
       })
       if (ruling.mode !== 'refuse') throw new Error('expected a lifecycle-tree refusal')
-      expect(taskBranchLandingTreeRefusal(ruling)).toContain(`architect-owned ${ownerJob} tree`)
-      expect(taskBranchLandingTreeRefusal(ruling)).toContain(
-        'start over from trunk with --base main',
+      const message = taskBranchLandingTreeRefusal(
+        ruling,
+        'git -C /tmp/DEV-1398-landing checkout --detach',
       )
+      expect(message).toContain(`architect-owned ${ownerJob} tree`)
+      expect(message).toContain('start over from trunk with --base main')
     },
   )
 })

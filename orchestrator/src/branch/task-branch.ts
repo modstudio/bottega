@@ -6,7 +6,7 @@ import { startBoundedSync } from '../../../shared/bounded-process.ts'
  */
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { refusal as refusalValue } from '../../../shared/refusal.ts'
+import { refusal as refusalValue, renderRefusal } from '../../../shared/refusal.ts'
 import { db } from '../database/db.ts'
 import { realpathOrSpelled } from '../git/checkout-identity.ts'
 import { checkedOutWorktree, repoRootOf, targetGitEnvironment } from '../git/git-environment.ts'
@@ -48,6 +48,74 @@ export type TaskBranchCandidate = {
   trunk: string
   worktree: Worktree | null
   worktreeOwnerJob: string | null
+}
+
+function openCursorNamesTaskBranchTree(path: string): boolean {
+  const canonical = realpathOrSpelled(path)
+  const rows = db()
+    .query("SELECT args FROM workflow_cursor WHERE state NOT IN ('done','abandoned')")
+    .all() as Array<{ args: string }>
+  return rows.some(({ args }) => {
+    try {
+      const worktree = (JSON.parse(args) as Record<string, unknown>).worktree
+      return typeof worktree === 'string' && realpathOrSpelled(worktree) === canonical
+    } catch {
+      return false
+    }
+  })
+}
+
+function taskBranchTreeDirty(path: string): boolean {
+  const result = startBoundedSync(['git', '-C', path, 'status', '--porcelain'], {
+    budget: 'git-plumbing',
+    env: targetGitEnvironment(path),
+  })
+  return result.exitCode !== 0 || result.stdout.length > 0
+}
+
+/** Gather the resolved path, cursor, and dirty facts for a held task-branch tree. */
+export function taskBranchHeldTreeFacts(path: string) {
+  const tree = realpathOrSpelled(path).replace(/\/$/, '')
+  const cwd = realpathOrSpelled(process.cwd()).replace(/\/$/, '')
+  return {
+    path,
+    cwdInsideTree: cwd === tree || cwd.startsWith(`${tree}/`),
+    cursorNamesTree: openCursorNamesTaskBranchTree(path),
+    treeDirty: taskBranchTreeDirty(path),
+  }
+}
+
+/** Render a held-tree decision with the command vocabulary owned by this adapter. */
+export function taskBranchHeldTreeRemedy(
+  path: string,
+  remedy: { prepare: string | null; release: 'detach' | 'remove' },
+): string {
+  const release =
+    remedy.release === 'detach'
+      ? `git -C ${path} checkout --detach`
+      : `${PLATFORM_SLUG} tree remove ${path}`
+  return remedy.prepare ? `${remedy.prepare}, then ${release}` : release
+}
+
+/** Compose the operator remedy when an architect landing tree owns the reused branch. */
+export function taskBranchLandingTreeRefusal(
+  refusal: {
+    path: string
+    branch: string
+    freshBase: string
+    ownerJob: string
+  },
+  heldTreeRemedy: string,
+): string {
+  return renderRefusal(
+    refusalValue(
+      `refusing task branch ${refusal.branch}: it is checked out in architect-owned ${refusal.ownerJob} tree ${refusal.path}.`,
+      {
+        kind: 'edit',
+        text: `${heldTreeRemedy}, or start over from trunk with --base ${refusal.freshBase}`,
+      },
+    ),
+  )
 }
 
 export type TaskBranchRunRow = {

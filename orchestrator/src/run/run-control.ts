@@ -12,7 +12,8 @@ import { branchNote, failoverSummary, okOutcomeNote, resolveFailover } from '../
 import { db, nowIso, writeTransaction } from '../database/db.ts'
 import { successorReviewLensInputStatusesFromPrompt } from '../database/review-lens-input-artifact.ts'
 import { appendRunEvent } from '../events.ts'
-import { branchOf, gitContext } from '../git/git-environment.ts'
+import { realpathOrSpelled, withoutTrailingSeparators } from '../git/checkout-identity.ts'
+import { branchOf, gitContext, gitResult, worktreeListPorcelain } from '../git/git-environment.ts'
 import { job } from '../jobs/jobs.ts'
 import { mcpRequestFromStored } from '../mcp/mcp-preflight.ts'
 import { outcomeOf } from '../outcome.ts'
@@ -32,10 +33,16 @@ import {
   continuationTreeCwd,
   requireContinuationTree,
 } from './continuation-tree-service.ts'
-import { refuseHeldContinuationBranch } from './held-branch-refusal.ts'
 import { displayRunQuestion } from './question-display-probe.ts'
 import { openChainQuestions } from './question-open.ts'
-import { continuationBranchPlan, type ResumeTreePlan, resumeTreePlan } from './resume-tree.ts'
+import {
+  continuationBranchAvailability,
+  continuationBranchPlan,
+  decideHeldBranchRemedy,
+  parseWorktreeList,
+  type ResumeTreePlan,
+  resumeTreePlan,
+} from './resume-tree.ts'
 import {
   adoptRunMutation,
   auditRunMutation,
@@ -588,6 +595,65 @@ function inheritedResumeWorktree(
     repoRoot: projectPath!,
     source: latest.worktree_source ?? undefined,
   }
+}
+
+function openCursorNamesContinuationTree(path: string): boolean {
+  const rows = db()
+    .query("SELECT args FROM workflow_cursor WHERE state NOT IN ('done','abandoned')")
+    .all() as Array<{ args: string }>
+  return rows.some(({ args }) => {
+    try {
+      const worktree = (JSON.parse(args) as Record<string, unknown>).worktree
+      return typeof worktree === 'string' && realpathOrSpelled(worktree) === path
+    } catch {
+      return false
+    }
+  })
+}
+
+export function refuseHeldContinuationBranch(
+  id: string,
+  projectPath: string | null,
+  recordedTreePath: string | null,
+  plan: ResumeTreePlan | null,
+): void {
+  if (!plan || !projectPath) return
+  const worktrees = parseWorktreeList(worktreeListPorcelain(projectPath))
+  const canonicalPath = (path: string): string => withoutTrailingSeparators(realpathOrSpelled(path))
+  const canonicalWorktrees = worktrees.map((worktree) => ({
+    ...worktree,
+    path: canonicalPath(worktree.path),
+  }))
+  const availability = continuationBranchAvailability(
+    plan.branch,
+    recordedTreePath ? canonicalPath(recordedTreePath) : null,
+    canonicalWorktrees,
+  )
+  if (availability.action === 'continue') return
+  const holdingPath =
+    worktrees.find(
+      (worktree, index) =>
+        worktree.branch === plan.branch &&
+        canonicalWorktrees[index]?.path === availability.holdingPath,
+    )?.path ?? availability.holdingPath
+  const canonicalTree = canonicalPath(holdingPath)
+  const canonicalCwd = canonicalPath(process.cwd())
+  const dirty = gitResult(['status', '--porcelain'], holdingPath)
+  const remedy = decideHeldBranchRemedy({
+    path: holdingPath,
+    cwdInsideTree: canonicalCwd === canonicalTree || canonicalCwd.startsWith(`${canonicalTree}/`),
+    cursorNamesTree: openCursorNamesContinuationTree(canonicalTree),
+    treeDirty: !dirty.ok || dirty.stdout.length > 0,
+  })
+  const release =
+    remedy.release === 'detach'
+      ? `git -C ${holdingPath} checkout --detach`
+      : `${PLATFORM_SLUG} tree remove ${holdingPath}`
+  const releaseWithPreparation = remedy.prepare ? `${remedy.prepare}, then ${release}` : release
+  throw new Error(
+    `run ${id} cannot continue: branch ${plan.branch} is checked out at ${holdingPath}\n` +
+      `release it with ${releaseWithPreparation}, then retry ${PLATFORM_SLUG} run continue ${id}`,
+  )
 }
 
 function recreatedTreePlan(
