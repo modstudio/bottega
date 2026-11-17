@@ -8,6 +8,7 @@ import { readFileSync } from 'node:fs'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { gitAt } from '../../../shared/git.ts'
 import { readMachineValue } from '../../../shared/machine-config.ts'
+import { parseReference } from '../../../shared/reference.ts'
 import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 import { agentRows } from '../agent/agent-registry.ts'
 import { db } from '../database/db.ts'
@@ -15,7 +16,6 @@ import { listDocMetadata } from '../doc/doc-list.ts'
 import { setDocCheckedAgainst } from '../doc/docs.ts'
 import { fileNote, type HubNote, listHubNotes } from '../mcp/hub-notes.ts'
 import { currentProjectRepository, projectByName } from '../project/projects.ts'
-import { parseRunIdentifier } from '../run/run-identifier-grammar.ts'
 import {
   classifyDispatch,
   classifyWaitedRow,
@@ -258,8 +258,12 @@ const quiet = (lastFailureKind: string | null): ItemResult => ({
 
 export function isUsableSpareRunIdentifier(identifier: string): boolean {
   try {
-    parseRunIdentifier(identifier, null)
-    return true
+    const reference = parseReference(identifier, 'run')
+    return (
+      reference.qualifier === null &&
+      (reference.value.kind === 'number' ||
+        (reference.value.kind === 'label' && reference.value.prefix === 'r'))
+    )
   } catch {
     return false
   }
