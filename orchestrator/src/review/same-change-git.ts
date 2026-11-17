@@ -95,7 +95,7 @@ export function exactChangeReplayContext(
 }
 
 /** Adapt the review Git probe to a shared exact-change replay context. */
-export const exactChangeReplayRunner =
+const exactChangeReplayRunner =
   (context: ExactChangeReplayContext): CoverageGitRunner =>
   (args, stdin, stdinFile) =>
     git(context.repo, args, true, stdin, stdinFile)
@@ -139,23 +139,32 @@ function replayWitnessForCurrent(input: ReplayWitnessInput, row: ReplayWitnessRo
 
 /** Add a clean-replay witness only to rows whose stored identity does not match. */
 export function replayWitnessesForCurrent<T extends ReplayWitnessRow>(input: {
-  runner: CoverageGitRunner
+  context: ExactChangeReplayContext
   rows: readonly T[]
-  current: CurrentReplayChange
-  trunk: string
-  witnesses?: Map<string, boolean>
+  current: Pick<CurrentReplayChange, 'patchId' | 'zeroContextPatchId' | 'pathSet'>
+  runner?: CoverageGitRunner
 }): (T & { replayMatchesCurrent?: boolean })[] {
-  const currentStored = {
-    patchId: input.current.patchId,
-    zeroContextPatchId: input.current.zeroContextPatchId,
-    pathSet: input.current.pathSet,
+  const runner = input.runner ?? exactChangeReplayRunner(input.context)
+  const current: CurrentReplayChange = {
+    ...input.current,
+    base: input.context.base,
+    tip: input.context.tip,
+    tree: input.context.tree,
   }
-  const byTip = input.witnesses ?? new Map<string, boolean>()
+  const currentStored = {
+    patchId: current.patchId,
+    zeroContextPatchId: current.zeroContextPatchId,
+    pathSet: current.pathSet,
+  }
+  const byTip = input.context.witnesses
   return input.rows.map((row) => {
     if (sameStoredChange(row, currentStored)) return row
     let replayMatchesCurrent = byTip.get(row.tip)
     if (replayMatchesCurrent === undefined) {
-      replayMatchesCurrent = replayWitnessForCurrent(input, row)
+      replayMatchesCurrent = replayWitnessForCurrent(
+        { runner, current, trunk: input.context.trunk },
+        row,
+      )
       byTip.set(row.tip, replayMatchesCurrent)
     }
     return { ...row, replayMatchesCurrent }

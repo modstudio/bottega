@@ -16,11 +16,7 @@ import { branchRunOwnerSession, measureChangeGroup, serializePathSet } from './r
 import { reviewLineage } from './review-lineage-store.ts'
 import { enqueueReviewRead } from './review-outbox.ts'
 import { sameStoredChangeOrWitness } from './same-change.ts'
-import {
-  type ExactChangeReplayContext,
-  exactChangeReplayRunner,
-  replayWitnessesForCurrent,
-} from './same-change-git.ts'
+import { type ExactChangeReplayContext, replayWitnessesForCurrent } from './same-change-git.ts'
 
 type Flags = { flag(name: string): string | undefined }
 type Presentation = { log(...values: unknown[]): void }
@@ -88,29 +84,14 @@ export function hasExactArchitectRead(
     .all(project, ...lineage)
   const witnessed = replay
     ? replayWitnessesForCurrent({
-        runner: exactChangeReplayRunner(replay),
+        context: replay,
         rows: reads,
-        current: { patchId, zeroContextPatchId, pathSet, ...replay },
-        trunk: replay.trunk,
-        witnesses: replay.witnesses,
+        current: { patchId, zeroContextPatchId, pathSet },
       })
     : reads
   return witnessed.some((read) =>
-    architectReadMatches(read, { patchId, zeroContextPatchId, pathSet }),
+    sameStoredChangeOrWitness(read, { patchId, zeroContextPatchId, pathSet }),
   )
-}
-
-/** Pure exact-change match for one gathered architect read. */
-export function architectReadMatches(
-  read: {
-    patchId: string | null
-    zeroContextPatchId: string | null
-    pathSet: string | null
-    replayMatchesCurrent?: boolean
-  },
-  current: { patchId: string; zeroContextPatchId: string; pathSet: string },
-): boolean {
-  return sameStoredChangeOrWitness(read, current)
 }
 
 export function requireBranchRunOwner(

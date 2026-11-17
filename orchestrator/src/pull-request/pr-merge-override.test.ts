@@ -7,7 +7,6 @@ import { db } from '../database/db.ts'
 import { projectByName } from '../project/projects.ts'
 import type { ReviewFunnelVerdict } from '../review-funnel/decide-review-funnel.ts'
 import {
-  landingOverrideMatches,
   overrideFacts,
   readLandingOverridesForBranch,
 } from '../review-funnel/gather-funnel-facts.ts'
@@ -233,27 +232,4 @@ test("merge honors create's triage override for the same patch after a rebase", 
     mergePullRequest('42', cwd, adapterFor(changedHead, mergedHeads, database), database),
   ).toThrow('review triage is incomplete')
   expect(mergedHeads).toEqual([rebasedHead, recordedHead])
-})
-
-test('the landing override matcher requires a matching replay witness for another identity', () => {
-  const candidate = {
-    recordId: 'override',
-    project: 'fixture',
-    branch: 'DEV-2364-work',
-    tip: 'old-tip',
-    tree: 'old-tree',
-    patchId: 'old-patch',
-    zeroContextPatchId: 'old-zero',
-    pathSet: '["a.ts"]',
-    attribution: 'operator' as const,
-    reason: 'accepted',
-    missingLenses: [],
-  }
-  const current = {
-    patchId: 'new-patch',
-    zeroContextPatchId: 'new-zero',
-    pathSet: '["a.ts"]',
-  }
-  expect(landingOverrideMatches({ ...candidate, replayMatchesCurrent: true }, current)).toBe(true)
-  expect(landingOverrideMatches({ ...candidate, replayMatchesCurrent: false }, current)).toBe(false)
 })

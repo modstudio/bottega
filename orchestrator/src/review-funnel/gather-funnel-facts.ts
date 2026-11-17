@@ -29,7 +29,6 @@ import { sameStoredChangeOrWitness } from '../review/same-change.ts'
 import {
   type ExactChangeReplayContext,
   exactChangeReplayContext,
-  exactChangeReplayRunner,
   replayWitnessesForCurrent,
 } from '../review/same-change-git.ts'
 import type {
@@ -110,7 +109,7 @@ export function overrideFacts(
   replay?: ExactChangeReplayContext,
 ): { ceilingRuling: boolean; overriddenLenses: string[] } {
   const row = landingOverridesWithReplay(database, change, replay).find((candidate) =>
-    landingOverrideMatches(candidate, change),
+    sameStoredChangeOrWitness(candidate, change),
   )
   if (!row) return { ceilingRuling: false, overriddenLenses: [] }
   return {
@@ -134,13 +133,6 @@ export type LandingOverrideRow = {
   replayMatchesCurrent?: boolean
 }
 
-export function landingOverrideMatches(
-  candidate: LandingOverrideRow,
-  current: { patchId: string; zeroContextPatchId: string | null; pathSet: string },
-): boolean {
-  return sameStoredChangeOrWitness(candidate, current)
-}
-
 export function landingOverridesWithReplay(
   database: Database,
   change: {
@@ -155,18 +147,13 @@ export function landingOverridesWithReplay(
   const rows = readLandingOverridesForBranch(database, change.project, change.branch)
   if (!replay) return rows
   return replayWitnessesForCurrent({
-    runner: exactChangeReplayRunner(replay),
+    context: replay,
     rows,
     current: {
       patchId: change.patchId,
       zeroContextPatchId: change.zeroContextPatchId,
       pathSet: change.pathSet,
-      base: replay.base,
-      tip: replay.tip,
-      tree: replay.tree,
     },
-    trunk: replay.trunk,
-    witnesses: replay.witnesses,
   })
 }
 
@@ -274,18 +261,13 @@ export function gatherAdmissionEvidenceDecision(
     }))
   const witnessedReads = replay
     ? replayWitnessesForCurrent({
-        runner: exactChangeReplayRunner(replay),
+        context: replay,
         rows: readRows,
         current: {
           patchId: change.group.patchId,
           zeroContextPatchId: change.group.zeroContextPatchId,
           pathSet: serializePathSet(change.group.pathSet),
-          base: replay.base,
-          tip: replay.tip,
-          tree: replay.tree,
         },
-        trunk: replay.trunk,
-        witnesses: replay.witnesses,
       })
     : readRows
   return decideTriage({

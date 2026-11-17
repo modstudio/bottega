@@ -28,6 +28,15 @@ const current = {
   tree: 'current-tree',
 }
 
+const context = () => ({
+  repo: '/fixture',
+  base: current.base,
+  tip: current.tip,
+  tree: current.tree,
+  trunk: 'trunk',
+  witnesses: new Map<string, boolean>(),
+})
+
 const replayingRunner =
   (calls: string[][], oldBase = 'reviewed-base'): CoverageGitRunner =>
   (args, _stdin, stdinFile) => {
@@ -56,7 +65,7 @@ test('equal tip and current trees still replay when the base moved', () => {
   const runner = replayingRunner(calls)
 
   expect(
-    replayWitnessesForCurrent({ runner, rows: [row], current, trunk: 'trunk' })[0]
+    replayWitnessesForCurrent({ context: context(), runner, rows: [row], current })[0]
       ?.replayMatchesCurrent,
   ).toBe(true)
   expect(calls.filter(([command]) => command === 'merge-tree')).toHaveLength(1)
@@ -67,7 +76,7 @@ test('a differing identity on the same base is refused without merge-tree', () =
   const runner = replayingRunner(calls, current.base)
 
   expect(
-    replayWitnessesForCurrent({ runner, rows: [row], current, trunk: 'trunk' })[0]
+    replayWitnessesForCurrent({ context: context(), runner, rows: [row], current })[0]
       ?.replayMatchesCurrent,
   ).toBe(false)
   expect(calls).toEqual([['merge-base', 'reviewed-tip', 'trunk']])
@@ -76,8 +85,7 @@ test('a differing identity on the same base is refused without merge-tree', () =
 test('two consumers sharing a witness memo replay one tip once', () => {
   const calls: string[][] = []
   const runner = replayingRunner(calls)
-  const witnesses = new Map<string, boolean>()
-  const input = { runner, rows: [row], current, trunk: 'trunk', witnesses }
+  const input = { context: context(), runner, rows: [row], current }
 
   expect(replayWitnessesForCurrent(input)[0]?.replayMatchesCurrent).toBe(true)
   expect(replayWitnessesForCurrent(input)[0]?.replayMatchesCurrent).toBe(true)
