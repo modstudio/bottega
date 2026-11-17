@@ -16,6 +16,13 @@ import { projectByName, projectByRecordId } from '../project/project-read.ts'
 import { cachedProjectSpaces } from '../project-space-cache.ts'
 import { questionById, questionByProjectNumber } from '../question-store/question-store-read.ts'
 import { decideMachineLabel, type MachineIdentifierNames } from '../record/machine-name.ts'
+import {
+  type LocalRunIdentity,
+  ResolutionMissError,
+  resolveLocalRun,
+  uuidVisibilityRefusal,
+  visibilityRefusal,
+} from './identity-local-run.ts'
 
 type ResolvableKind = Exclude<ReferenceKind, 'task'>
 
@@ -53,44 +60,18 @@ export type IdentityContext = {
   identityMap: Map<string, ResolvedIdentity>
 }
 
-export type LocalRunIdentity = { record_id: string; project_record_id: string | null }
-export type LocalRunReference =
-  | { kind: 'number'; number: number }
-  | { kind: 'record-id'; recordId: string }
-
-export class ResolutionMissError extends Error {}
-
 const projectSpace = (context: IdentityContext, projectId: string | null): string | null => {
   const project = projectId ? projectByRecordId(projectId, context.database) : null
   return project ? (cachedProjectSpaces(context.database)[project.name] ?? null) : null
 }
 
 function runById(context: IdentityContext, recordId: string): LocalRunIdentity | null {
-  return (
-    context.database
-      .query<LocalRunIdentity, [string]>(
-        'SELECT record_id,project_record_id FROM run WHERE record_id=?',
-      )
-      .get(recordId) ?? null
-  )
-}
-
-export function resolveLocalRun(
-  database: Database,
-  reference: LocalRunReference,
-): LocalRunIdentity {
-  const row = database
-    .query<LocalRunIdentity, [number | string]>(
-      reference.kind === 'number'
-        ? 'SELECT record_id,project_record_id FROM run WHERE number=?'
-        : 'SELECT record_id,project_record_id FROM run WHERE record_id=?',
-    )
-    .get(reference.kind === 'number' ? reference.number : reference.recordId)
-  if (!row) {
-    if (reference.kind === 'record-id') uuidVisibilityRefusal()
-    visibilityRefusal('this machine')
+  try {
+    return resolveLocalRun(context.database, { kind: 'record-id', recordId })
+  } catch (error) {
+    if (error instanceof ResolutionMissError) return null
+    throw error
   }
-  return row
 }
 
 function questionProjectId(row: Record<string, unknown>): string | null {
@@ -114,16 +95,6 @@ function scopedProject(
   const project = projectByName(qualifier.value, context.database)
   if (!project) throw new Error(`project ${qualifier.value} is not registered on this machine`)
   return { projectId: project.recordId, projectName: qualifier.value }
-}
-
-function visibilityRefusal(scope: string): never {
-  throw new ResolutionMissError(
-    `reference is not visible in ${scope}; pass the UUID or a qualified label`,
-  )
-}
-
-function uuidVisibilityRefusal(): never {
-  throw new ResolutionMissError('reference is not visible in any space you belong to')
 }
 
 async function resolveUuid(recordId: string, context: IdentityContext): Promise<ResolvedIdentity> {

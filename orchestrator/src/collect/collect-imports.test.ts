@@ -38,6 +38,7 @@ const DEGRADED_COLLECTION_GRAPH = [
   '../gate/gate-decision.ts',
   '../gate/worker-check-omissions.ts',
   '../jobs/job-fidelity.ts',
+  '../identity/identity-local-run.ts',
   '../mcp/mcp-command.ts',
   '../mcp/mcp-headers-helper.ts',
   '../mcp/mcp-probe.ts',

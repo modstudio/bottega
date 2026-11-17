@@ -2,7 +2,7 @@
 /** Resolves a user-facing run number or UUID to the run UUID. */
 
 import type { Database } from 'bun:sqlite'
-import { ResolutionMissError, resolveLocalRun } from '../identity/identity.ts'
+import { ResolutionMissError, resolveLocalRun } from '../identity/identity-local-run.ts'
 import { classifyRunIdentifier, parseRunIdentifier } from './run-identifier-names.ts'
 
 export { classifyRunIdentifier, parseRunIdentifier }
