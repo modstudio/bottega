@@ -54,8 +54,8 @@ test.each(['PUT', 'DELETE'])(
     const app = recordApiTestApp(identity, {
       ...idleSubjectDeps(),
       ...idleRecordApiDeps(),
-        upsertContextItem: async () => conflict(),
-        deleteContextItem: async () => conflict(),
+      upsertContextItem: async () => conflict(),
+      deleteContextItem: async () => conflict(),
     })
     const response = await app.request(
       method === 'PUT' ? '/v1/context-items' : `/v1/context-items/${id}`,

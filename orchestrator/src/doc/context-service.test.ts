@@ -449,7 +449,9 @@ test('lifecycle drop keeps the local item when the session owner cannot be resol
         error: expect.stringContaining(`session ${session} has no recorded owning project`),
       }),
     ])
-    expect((await getContext({ session })).items).toEqual([expect.objectContaining({ id: item.id })])
+    expect((await getContext({ session })).items).toEqual([
+      expect.objectContaining({ id: item.id }),
+    ])
   } finally {
     if (priorSession === undefined) delete process.env.CLAUDE_CODE_SESSION_ID
     else process.env.CLAUDE_CODE_SESSION_ID = priorSession

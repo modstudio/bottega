@@ -1,14 +1,12 @@
 // concern: context-service
 /** Owns context item reads and mutations over the document store. */
 import type { Database } from 'bun:sqlite'
-import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   type ContextItemKind,
   splitContextHolder,
 } from '../../../shared/context-item-vocabulary.ts'
 import { withholdSecretShapedDetail } from '../../../shared/secret-shaped.ts'
 import { db, sessionId, writableDb } from '../database/db.ts'
-import { projectAt } from '../project/projects.ts'
 import { applyRecordWriteAuthority } from '../record/record-write-authority.ts'
 import { taskFlowReadStore } from '../workflow/task-flow-store.ts'
 import { openKeylessCursorsForSession } from '../workflow/workflow-cursor-list.ts'
@@ -215,17 +213,15 @@ async function dropSessionContextItemForLifecycle(input: {
         : ('already-absent' as const),
     hosted: async () => {
       const sessionOwner = db()
-        .query<{ project: string | null; cwd: string | null }, [string]>(
-          'SELECT project,cwd FROM presence WHERE session_id=?',
+        .query<{ project: string | null }, [string]>(
+          'SELECT project FROM presence WHERE session_id=?',
         )
         .get(input.session)
-      const project =
-        sessionOwner?.project?.trim() ||
-        (sessionOwner?.cwd ? projectAt(sessionOwner.cwd)?.name : null)
+      const project = sessionOwner?.project?.trim()
       if (!project)
         throw new Error(
-          `session ${input.session} has no recorded owning project or checkout path\n` +
-            `cleared by: restore the session registry row with its owning project, then retry ${PLATFORM_SLUG} machine sweep`,
+          `session ${input.session} has no recorded owning project\n` +
+            'remedy: restore the session registry row with its owning project, then retry the lifecycle operation',
         )
       const client = await hostedContextItemClient(holder, {
         kind: 'session',
@@ -242,7 +238,7 @@ async function dropSessionContextItemForLifecycle(input: {
   return { holder, id: input.id, outcome: result }
 }
 
-export type SessionContextDropOutcome = 'dropped' | 'already-absent' | 'would-drop' | 'failed'
+type SessionContextDropOutcome = 'dropped' | 'already-absent' | 'would-drop' | 'failed'
 
 export type SessionContextDropResult = {
   item: ReturnType<typeof sessionContextItems>[number]
