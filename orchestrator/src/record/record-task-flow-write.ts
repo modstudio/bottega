@@ -434,6 +434,20 @@ async function applyStageUpdates(tx: SQL, body: StageUpdateBody) {
 }
 
 async function applyHandoff(tx: SQL, input: Tenant, body: HandoffBody) {
+  const sourceRows = (await tx.unsafe(
+    `SELECT session_id,workflow_key,flow_record_id::text,state FROM task_flow_stage WHERE id=$1::uuid FOR UPDATE`,
+    [body.oldStage.id],
+  )) as Array<{ session_id: string | null; workflow_key: string | null; flow_record_id: string; state: string }>
+  const source = sourceRows[0]
+  if (!source) conflict('task_flow_stage', body.oldStage.id, null)
+  if (source.state === 'awaiting-ruling')
+    refusal('workflow cursor is awaiting a ruling; answer its question, then retry the handoff', `task_flow_stage.id=${body.oldStage.id}`, 'already-exists')
+  if (!source.session_id || source.session_id !== body.newStage.sessionId)
+    refusal('workflow cursor is owned by another session; hand off it from that session', `task_flow_stage.id=${body.oldStage.id}`, 'already-exists')
+  if (source.workflow_key !== body.newStage.workflowKey)
+    refusal('handoff target key differs from the source cursor key; pass the same key', `task_flow_stage.id=${body.oldStage.id}`, 'already-exists')
+  if (source.flow_record_id !== body.flow.id || body.newStage.flowRecordId !== body.flow.id)
+    refusal('handoff stages must belong to the same task flow; retry the current cursor', `task_flow.id=${body.flow.id}`, 'already-exists')
   const number = await allocateRecordSequence(tx, input.spaceId, body.newStage.projectId, 'task_flow_stage')
   const oldStage: Mutation = {
     ...body.oldStage,
@@ -457,10 +471,10 @@ async function applyHandoff(tx: SQL, input: Tenant, body: HandoffBody) {
     }
   }
   const revisions: Record<string, number> = {}
-  revisions[body.flow.id] = await updateRevisionRow(tx, 'task_flow', body.flow, body.requestId)
   revisions[oldStage.id] = await updateRevisionRow(tx, 'task_flow_stage', oldStage, body.requestId)
   const inserted = await insertStage(tx, input.spaceId, body.requestId, body.newStage, number)
   revisions[body.newStage.id] = inserted.revision
+  revisions[body.flow.id] = await updateRevisionRow(tx, 'task_flow', body.flow, body.requestId)
   await tx`UPDATE context_item SET holder_id=${body.contextHolderTo},updated_at=${body.newStage.updatedAt}::timestamptz
     WHERE space_id=${input.spaceId}::uuid AND holder_kind='cursor' AND holder_id=${body.contextHolderFrom}`
   return { revisions, stage: { id: body.newStage.id, number: inserted.number } }

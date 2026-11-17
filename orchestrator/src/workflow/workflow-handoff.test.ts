@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { setContextItem } from '../doc/context-item-store.ts'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { composeWorkflowWithCursor } from './workflow-cursor.ts'
 import { handoffWorkflow } from './workflow-handoff.ts'
 import {
@@ -13,7 +13,11 @@ function install(d: ReturnType<typeof database>, slug: string, steps: string[]) 
   const draft = setWorkflowLocal(slug, {
     title: slug,
     description: 'handoff fixture',
-    arguments: [{ name: 'key', required: true, description: 'Task key.' }],
+    arguments: [
+      { name: 'key', required: true, description: 'Task key.' },
+      { name: 'branch', required: true, description: 'Branch.' },
+      { name: 'worktree', required: true, description: 'Worktree.' },
+    ],
     modes: [{ slug: 'default', title: 'Default', default: true, steps }],
   }, 'handoff fixture', 'test', d)
   promoteWorkflowLocal(slug, draft.n, 'handoff fixture', 'test', d)
@@ -21,17 +25,20 @@ function install(d: ReturnType<typeof database>, slug: string, steps: string[]) 
 
 test('handoff closes the old stage, opens and links the successor, moves context, and renews the same claim', async () => {
   const d = database()
-  install(d, 'handoff-source', ['score', 'rebase', 'complete'])
+  install(d, 'handoff-source', ['lens', 'score', 'complete'])
   install(d, 'handoff-target', ['score'])
-  const args = { key: 'DEV-HANDOFF' }
+  const args = { key: 'DEV-HANDOFF', branch: 'DEV-HANDOFF-work', worktree: '/tmp/work' }
   const context = { session: 'handoff-session', taskRecordId: 'task-DEV-HANDOFF', taskStatusCategory: 'active' }
   const opened = await composeWorkflowWithCursor('handoff-source', 'fixture', 'default', args, context, d, {}, {})
   const oldNumber = opened.cursor!.id
   d.query("UPDATE workflow_cursor SET enforcement='note-only' WHERE number=?").run(oldNumber)
   await selectAndNextWorkflowStep('handoff-source', 'fixture', 'default', args, 'first done', context, d, {}, testPorts)
   const old = d.query<any, [number]>('SELECT * FROM workflow_cursor WHERE number=?').get(oldNumber)!
-  setContextItem({ holder: `cursor:${old.record_id}`, slug: 'decision', kind: 'fact', body: 'carry me', source: 'test' }, d)
-  const claim = d.query<{ record_id: string }, [string]>("SELECT record_id FROM board_claim WHERE subject_value=? AND state='live'").get('DEV-HANDOFF')
+  d.query(`INSERT INTO context_item
+    (record_id,holder_kind,holder_id,slug,kind,body,source,created_at,updated_at)
+    VALUES (?,'cursor',?,'decision','fact','carry me','test',?,?)`)
+    .run(newRecordId(), old.record_id, old.created_at, old.created_at)
+  const claim = d.query<{ record_id: string }, [string]>("SELECT record_id FROM board_claim WHERE subject_value=? AND closed_at IS NULL").get('DEV-HANDOFF')
   const takes: string[] = []
   const result = await handoffWorkflow({
     row: { ...old, id: old.number, workflow_version: 1, catalogue_version: 1, handed_off_from_record_id: null },

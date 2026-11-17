@@ -129,10 +129,15 @@ export function renderWorkflowCursorLine(row: {
   question?: string | null
   question_number?: number | null
   obligations?: string
+  handed_off_from_number?: number | null
+  handed_off_from_workflow?: string | null
 }): string {
   const question = row.question
     ? ` question${row.question_number == null ? '' : ` q${row.question_number}`}: ${workflowCursorQuestionSummary(row.question)} (full text: ${PLATFORM_SLUG} question inbox)`
     : ''
   const obligations = row.obligations ? ` obligations: ${row.obligations}` : ''
-  return `cursor ${row.id} ${row.workflow_slug} ${row.mode_slug} ${row.workflow_key || 'unassigned'} ${row.project} step ${row.ordinal + 1}/${row.total_steps} ${row.step_slug} ${row.state} next: ${row.next_slug}${question}${obligations}`
+  const handoff = row.handed_off_from_number && row.handed_off_from_workflow
+    ? ` handed off from ${row.handed_off_from_workflow} cursor ${row.handed_off_from_number}`
+    : ''
+  return `cursor ${row.id} ${row.workflow_slug} ${row.mode_slug} ${row.workflow_key || 'unassigned'} ${row.project} step ${row.ordinal + 1}/${row.total_steps} ${row.step_slug} ${row.state} next: ${row.next_slug}${handoff}${question}${obligations}`
 }

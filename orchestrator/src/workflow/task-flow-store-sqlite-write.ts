@@ -555,10 +555,10 @@ function writeHandoff(
       updatedAt: trail.at,
     },
   }
-  result[flow.id] = updateMutation(database, 'task_flow', flow, 'handoff', revisions)
   result[oldStage.id] = updateMutation(database, 'workflow_cursor', oldStage, 'handoff', revisions)
   const inserted = insertStage(database, newStage, revisions?.[String(newStage.id)] ?? 1)
   result[inserted.id] = revisions?.[inserted.id] ?? 1
+  result[flow.id] = updateMutation(database, 'task_flow', flow, 'handoff', revisions)
   database.query("UPDATE context_item SET holder_id=?,updated_at=? WHERE holder_kind='cursor' AND holder_id=?")
     .run(
       body.contextHolderTo as SQLQueryBindings,

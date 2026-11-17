@@ -67,6 +67,18 @@ test('evidence after a cursor closes or a claim lapses is uncovered', () => {
   })
 })
 
+test('handoff coverage requires one live claim spanning the old close and successor open', () => {
+  const handoff = {
+    project: 'alpha', key: 'DEV-1',
+    closedAt: '2026-11-17T10:00:00.000Z', openedAt: '2026-11-17T10:00:00.000Z',
+  }
+  const base = { days: 1, now: '2026-11-17T20:00:00.000Z', evidence: [], cursors: [], handoffs: [handoff] }
+  expect(decideWorkflowUncovered({ ...base, claims: [{ project: 'alpha', key: 'DEV-1', openedAt: '2026-11-17T09:00:00.000Z', closedAt: null }] }).days[0]!.count).toBe(0)
+  expect(decideWorkflowUncovered({ ...base, claims: [] }).days[0]).toEqual({
+    day: '2026-11-17', count: 1, tasks: [{ project: 'alpha', key: 'DEV-1' }],
+  })
+})
+
 test('rejects an invalid day window', () => {
   expect(() =>
     decideWorkflowUncovered({
