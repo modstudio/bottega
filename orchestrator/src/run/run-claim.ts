@@ -11,12 +11,7 @@ import { dirname, join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { Agent } from '../agent/agents.ts'
 import { settleCreateTimeBranchCleanup } from '../branch/create-time-settlement.ts'
-import {
-  type TaskBranchCandidate,
-  taskBranchHeldTreeFacts,
-  taskBranchHeldTreeRemedy,
-  taskBranchLandingTreeRefusal,
-} from '../branch/task-branch.ts'
+import { type TaskBranchCandidate, taskBranchLandingTreeRefusal } from '../branch/task-branch.ts'
 import type { Pack } from '../canon/canon.ts'
 import { readStrictCodexSchema } from '../contract/codex-schema.ts'
 import { replyFileInstruction, TEXT_REPLY_SCHEMA } from '../contract/contract.ts'
@@ -85,10 +80,10 @@ import {
   recordCarriedRulings,
 } from './run-claim-inheritance.ts'
 import { executeClaimedMcpPlan } from './run-claim-mcp.ts'
+import { heldBranchRemedy } from './held-branch-remedy.ts'
 import {
   claimedRunBranch,
   claimTreePlanForCandidate,
-  decideHeldBranchRemedy,
   requiredRepositoryRoot,
   resumeCreationLifecycle,
   resumeCreationTool,
@@ -371,19 +366,13 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
       opts.ownerSession ?? sessionId(),
     )
   }
-  const { attachedTree, claimTreePlan } = claimTreePlanForCandidate({
+  const { attachedTree, claimTreePlan } = await claimTreePlanForCandidate({
     candidate: resolvedTaskBranch,
     forbidsRepo,
     repoJob,
     hasWorktree: Boolean(opts.resume?.worktree),
-    refusalMessage: (refusal) =>
-      taskBranchLandingTreeRefusal(
-        refusal,
-        taskBranchHeldTreeRemedy(
-          refusal.path,
-          decideHeldBranchRemedy(taskBranchHeldTreeFacts(refusal.path)),
-        ),
-      ),
+    refusalMessage: async (refusal) =>
+      taskBranchLandingTreeRefusal(refusal, await heldBranchRemedy(refusal.path)),
   })
   const existingBranch = resumePlan?.branch ?? resolvedTaskBranch?.branch
   assertBranchHasNoAliveOwner({

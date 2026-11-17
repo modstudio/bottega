@@ -318,6 +318,7 @@ export const runLifecycleModules: ArchitectureModule[] = [
     './prompt-sha.ts',
     './run-process.ts',
     './resume-tree.ts',
+    './held-branch-remedy.ts',
     '../sandbox/sandbox.ts',
     '../branch/task-branch.ts',
     '../worktree/trunk-base-choice.ts',
@@ -378,6 +379,12 @@ export const runLifecycleModules: ArchitectureModule[] = [
     '../project/branch-name.ts',
     './resume-tree.ts',
     './synthetic-lifecycle-job.ts',
+  ]),
+  module('orchestrator/src/run/held-branch-remedy.ts', [
+    '../../../shared/brand.ts',
+    '../git/checkout-identity.ts',
+    '../git/git-environment.ts',
+    '../workflow/workflow-cursor-worktrees.ts',
   ]),
   module('orchestrator/src/run/run-task-reference.ts', [
     '../../../shared/brand.ts',

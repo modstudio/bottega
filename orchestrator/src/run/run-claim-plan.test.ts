@@ -1,9 +1,9 @@
 import { describe, expect, test } from 'bun:test'
 import { taskBranchLandingTreeRefusal } from '../branch/task-branch.ts'
+import { decideHeldBranchRemedy } from './held-branch-remedy.ts'
 import {
   claimedRunBranch,
   decideClaimTreePlan,
-  decideHeldBranchRemedy,
   resumeCreationLifecycle,
   resumeCreationTool,
   retryRootTreeValidation,
@@ -162,7 +162,9 @@ describe('claim tree plan', () => {
         'git -C /tmp/DEV-1398-landing checkout --detach',
       )
       expect(message).toContain(`architect-owned ${ownerJob} tree`)
-      expect(message).toContain('start over from trunk with --base main')
+      expect(message).toContain('continue the work yourself in architect tree')
+      expect(message).toContain('retry the same bottega run start … --continue DEV-1398-writer')
+      expect(message).not.toContain('--base')
     },
   )
 })

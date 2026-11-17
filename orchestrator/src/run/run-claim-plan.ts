@@ -30,8 +30,6 @@ export type ClaimTreePlanRuling =
 
 type AcceptedClaimTreePlan = Exclude<ClaimTreePlanRuling, { mode: 'refuse' }>
 
-export { decideHeldBranchRemedy } from './resume-tree.ts'
-
 export type RetryRootTreeValidation = { branch: string; tip: string }
 
 export function requiredRepositoryRoot(cwd: string): string {
@@ -93,7 +91,7 @@ export function decideClaimTreePlan(facts: ClaimTreePlanFacts): ClaimTreePlanRul
 }
 
 /** Adapt one resolved task-branch candidate into a pre-effect claim plan. */
-export function claimTreePlanForCandidate<T extends { path: string }>(input: {
+export async function claimTreePlanForCandidate<T extends { path: string }>(input: {
   candidate: {
     branch: string
     trunk: string
@@ -103,7 +101,9 @@ export function claimTreePlanForCandidate<T extends { path: string }>(input: {
   forbidsRepo: boolean
   repoJob: boolean
   hasWorktree: boolean
-  refusalMessage: (refusal: Extract<ClaimTreePlanRuling, { mode: 'refuse' }>) => string
+  refusalMessage: (
+    refusal: Extract<ClaimTreePlanRuling, { mode: 'refuse' }>,
+  ) => string | Promise<string>
 }) {
   const attachedTree = input.candidate?.worktree ?? null
   const claimTreePlan = decideClaimTreePlan({
@@ -120,7 +120,7 @@ export function claimTreePlanForCandidate<T extends { path: string }>(input: {
     repoJob: input.repoJob,
     hasWorktree: input.hasWorktree,
   })
-  if (claimTreePlan.mode === 'refuse') throw new Error(input.refusalMessage(claimTreePlan))
+  if (claimTreePlan.mode === 'refuse') throw new Error(await input.refusalMessage(claimTreePlan))
   return { attachedTree, claimTreePlan: claimTreePlan as AcceptedClaimTreePlan }
 }
 

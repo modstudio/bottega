@@ -53,26 +53,6 @@ export type ContinuationBranchAvailability =
   | { action: 'continue' }
   | { action: 'refuse'; holdingPath: string }
 
-export type HeldBranchRemedyFacts = {
-  path: string
-  cwdInsideTree: boolean
-  cursorNamesTree: boolean
-  treeDirty: boolean
-}
-
-export type HeldBranchRemedy = {
-  prepare: string | null
-  release: 'detach' | 'remove'
-}
-
-/** Choose a release that preserves a tree still named by the operator's live context. */
-export function decideHeldBranchRemedy(facts: HeldBranchRemedyFacts): HeldBranchRemedy {
-  return {
-    prepare: facts.treeDirty ? `commit or stash the work in ${facts.path} first` : null,
-    release: facts.cwdInsideTree || facts.cursorNamesTree ? 'detach' : 'remove',
-  }
-}
-
 export type WorktreeCheckout = { path: string; branch: string | null }
 
 /** Parse Git's stable worktree inventory into the facts the decision consumes. */

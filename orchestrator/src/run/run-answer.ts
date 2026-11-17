@@ -515,7 +515,7 @@ function retryTreeForNeverStarted<T>(neverStarted: boolean, cwd: string, resolve
   return resolve()
 }
 
-function writingRetryWorkspace(
+async function writingRetryWorkspace(
   id: string,
   row: RetryRunRow,
   needed: boolean,
@@ -634,7 +634,7 @@ export async function retryRun(
   const instructions = continuationInstructionsForFreshRetry(writesRepo, id, row.root_record_id)
   // The same agent remains the default. An explicit replacement gets a fresh
   // vendor conversation while the retained writing workspace travels with it.
-  const workspace = writingRetryWorkspace(
+  const workspace = await writingRetryWorkspace(
     id,
     row,
     preliminaryPath.action === 'needs-writing-workspace',

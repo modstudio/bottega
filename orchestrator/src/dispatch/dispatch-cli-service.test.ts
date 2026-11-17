@@ -15,28 +15,39 @@ import {
   transportSelection,
 } from './dispatch-cli-service.ts'
 
-test('held task branch refusal runs before a dispatch can claim a row', () => {
+test('task branch gate refuses an architect tree, attaches a worker tree, and creates with no tree', async () => {
   const before = db().query('SELECT COUNT(*) count FROM run').get() as { count: number }
-
-  expect(() =>
-    refuseHeldTaskBranchBeforeDetach({
+  const candidate = {
+    branch: 'DEV-2405-held',
+    tip: 'tip',
+    commitCount: 1,
+    mergeBase: 'base',
+    projectId: 'project-id',
+    projectName: 'fixture',
+    nominatingRuns: [],
+    trunk: 'main',
+    worktree: {
+      path: '/worktrees/DEV-2405-held',
       branch: 'DEV-2405-held',
-      tip: 'tip',
-      commitCount: 1,
-      mergeBase: 'base',
-      projectId: 'project-id',
-      projectName: 'fixture',
-      nominatingRuns: [],
-      trunk: 'main',
-      worktree: {
-        path: '/worktrees/DEV-2405-held',
-        branch: 'DEV-2405-held',
-        base: 'base',
-        repoRoot: '/repo',
-      },
-      worktreeOwnerJob: 'landing-tree',
+      base: 'base',
+      repoRoot: '/repo',
+    },
+    worktreeOwnerJob: 'landing-tree',
+  }
+
+  await expect(refuseHeldTaskBranchBeforeDetach(candidate)).rejects.toThrow(
+    'refusing task branch DEV-2405-held',
+  )
+  await expect(
+    refuseHeldTaskBranchBeforeDetach({ ...candidate, worktreeOwnerJob: 'craft' }),
+  ).resolves.toBeUndefined()
+  await expect(
+    refuseHeldTaskBranchBeforeDetach({
+      ...candidate,
+      worktree: null,
+      worktreeOwnerJob: null,
     }),
-  ).toThrow('refusing task branch DEV-2405-held')
+  ).resolves.toBeUndefined()
 
   expect(db().query('SELECT COUNT(*) count FROM run').get()).toEqual(before)
 })

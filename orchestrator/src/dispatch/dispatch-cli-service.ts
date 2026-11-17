@@ -22,8 +22,6 @@ import {
   type TaskBranchLandingRefusal,
   TaskBranchLandingRefusalError,
   taskBranchCandidateNotice,
-  taskBranchHeldTreeFacts,
-  taskBranchHeldTreeRemedy,
   taskBranchLandingTreeRefusal,
   taskBranchReuseNotice,
 } from '../branch/task-branch.ts'
@@ -70,7 +68,8 @@ import { assertAcpPolicyAllowed } from '../run/run-acp-policy.ts'
 import { waitForAgentSelection } from '../run/run-agent-capacity.ts'
 import { RUNS_DIR } from '../run/run-artifacts.ts'
 import type { RunWorkflowBinding } from '../run/run-claim-inheritance.ts'
-import { claimTreePlanForCandidate, decideHeldBranchRemedy } from '../run/run-claim-plan.ts'
+import { heldBranchRemedy } from '../run/held-branch-remedy.ts'
+import { claimTreePlanForCandidate } from '../run/run-claim-plan.ts'
 import { follow as followRun, harnessHandoff, printHarnessHandoff } from '../run/run-control.ts'
 import { detach as dispatchDetached } from '../run/run-dispatch.ts'
 import { runEvidence } from '../run/run-evidence-context.ts'
@@ -431,32 +430,26 @@ function warnTaskBranchBypass(
   )
 }
 
-export function refuseHeldTaskBranchBeforeDetach(
+export async function refuseHeldTaskBranchBeforeDetach(
   candidate: NonNullable<ReturnType<typeof resolveTaskBranch>>,
-): void {
-  claimTreePlanForCandidate({
+): Promise<void> {
+  await claimTreePlanForCandidate({
     candidate,
     forbidsRepo: false,
     repoJob: true,
     hasWorktree: false,
-    refusalMessage: (refusal) =>
-      taskBranchLandingTreeRefusal(
-        refusal,
-        taskBranchHeldTreeRemedy(
-          refusal.path,
-          decideHeldBranchRemedy(taskBranchHeldTreeFacts(refusal.path)),
-        ),
-      ),
+    refusalMessage: async (refusal) =>
+      taskBranchLandingTreeRefusal(refusal, await heldBranchRemedy(refusal.path)),
   })
 }
 
-function resolveTaskBranchForDispatch(
+async function resolveTaskBranchForDispatch(
   cwd: string,
   key: string,
   branch: string | undefined,
   report: boolean,
   error: (...values: unknown[]) => void,
-): ReturnType<typeof resolveTaskBranch> {
+): Promise<ReturnType<typeof resolveTaskBranch>> {
   const candidates = resolveTaskBranchCandidates(cwd, key)
   if (!branch) {
     const notice = taskBranchCandidateNotice(candidates)
@@ -470,7 +463,7 @@ function resolveTaskBranchForDispatch(
       `refusing --continue ${branch}: its tip is already contained by the caller checkout`,
     )
   }
-  refuseHeldTaskBranchBeforeDetach(compatible)
+  await refuseHeldTaskBranchBeforeDetach(compatible)
   if (report) error(taskBranchReuseNotice(compatible))
   return compatible
 }

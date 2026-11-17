@@ -13,7 +13,7 @@ import { db, nowIso, writeTransaction } from '../database/db.ts'
 import { successorReviewLensInputStatusesFromPrompt } from '../database/review-lens-input-artifact.ts'
 import { appendRunEvent } from '../events.ts'
 import { realpathOrSpelled, withoutTrailingSeparators } from '../git/checkout-identity.ts'
-import { branchOf, gitContext, gitResult, worktreeListPorcelain } from '../git/git-environment.ts'
+import { branchOf, gitContext, worktreeListPorcelain } from '../git/git-environment.ts'
 import { job } from '../jobs/jobs.ts'
 import { mcpRequestFromStored } from '../mcp/mcp-preflight.ts'
 import { outcomeOf } from '../outcome.ts'
@@ -38,11 +38,11 @@ import { openChainQuestions } from './question-open.ts'
 import {
   continuationBranchAvailability,
   continuationBranchPlan,
-  decideHeldBranchRemedy,
   parseWorktreeList,
   type ResumeTreePlan,
   resumeTreePlan,
 } from './resume-tree.ts'
+import { heldBranchRemedy } from './held-branch-remedy.ts'
 import {
   adoptRunMutation,
   auditRunMutation,
@@ -597,26 +597,12 @@ function inheritedResumeWorktree(
   }
 }
 
-function openCursorNamesContinuationTree(path: string): boolean {
-  const rows = db()
-    .query("SELECT args FROM workflow_cursor WHERE state NOT IN ('done','abandoned')")
-    .all() as Array<{ args: string }>
-  return rows.some(({ args }) => {
-    try {
-      const worktree = (JSON.parse(args) as Record<string, unknown>).worktree
-      return typeof worktree === 'string' && realpathOrSpelled(worktree) === path
-    } catch {
-      return false
-    }
-  })
-}
-
-export function refuseHeldContinuationBranch(
+export async function refuseHeldContinuationBranch(
   id: string,
   projectPath: string | null,
   recordedTreePath: string | null,
   plan: ResumeTreePlan | null,
-): void {
+): Promise<void> {
   if (!plan || !projectPath) return
   const worktrees = parseWorktreeList(worktreeListPorcelain(projectPath))
   const canonicalPath = (path: string): string => withoutTrailingSeparators(realpathOrSpelled(path))
@@ -636,23 +622,10 @@ export function refuseHeldContinuationBranch(
         worktree.branch === plan.branch &&
         canonicalWorktrees[index]?.path === availability.holdingPath,
     )?.path ?? availability.holdingPath
-  const canonicalTree = canonicalPath(holdingPath)
-  const canonicalCwd = canonicalPath(process.cwd())
-  const dirty = gitResult(['status', '--porcelain'], holdingPath)
-  const remedy = decideHeldBranchRemedy({
-    path: holdingPath,
-    cwdInsideTree: canonicalCwd === canonicalTree || canonicalCwd.startsWith(`${canonicalTree}/`),
-    cursorNamesTree: openCursorNamesContinuationTree(canonicalTree),
-    treeDirty: !dirty.ok || dirty.stdout.length > 0,
-  })
-  const release =
-    remedy.release === 'detach'
-      ? `git -C ${holdingPath} checkout --detach`
-      : `${PLATFORM_SLUG} tree remove ${holdingPath}`
-  const releaseWithPreparation = remedy.prepare ? `${remedy.prepare}, then ${release}` : release
+  const release = await heldBranchRemedy(holdingPath)
   throw new Error(
     `run ${id} cannot continue: branch ${plan.branch} is checked out at ${holdingPath}\n` +
-      `release it with ${releaseWithPreparation}, then retry ${PLATFORM_SLUG} run continue ${id}`,
+      `release it with ${release}, then retry ${PLATFORM_SLUG} run continue ${id}`,
   )
 }
 
@@ -797,7 +770,7 @@ export async function continueRun(
     plan: treePlan,
     branchSource,
   } = continuationTree(id, row, latest, checkout.project)
-  refuseHeldContinuationBranch(id, project?.path ?? null, latest.worktree, treePlan)
+  await refuseHeldContinuationBranch(id, project?.path ?? null, latest.worktree, treePlan)
   // A block naming an in-progress operation carries no checkpoint row, so it
   // must not be read as a recreated tree state: hasCheckpoint, not the block,
   // decides whether the conversation restarts.
