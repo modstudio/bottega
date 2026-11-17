@@ -253,6 +253,7 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
   module('orchestrator/src/workflow/workflow-floor-evidence-input.ts', []),
   module('orchestrator/src/workflow/workflow-step-question-evidence.ts', [
     'bun:sqlite',
+    '../question-store/question-order.ts',
     '../run/question-open.ts',
     './workflow-floor.ts',
     './workflow-floor-evidence.ts',

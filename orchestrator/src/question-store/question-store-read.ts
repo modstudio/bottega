@@ -2,6 +2,7 @@
 /** Gives callers named, typed reads while the wire contract stays discriminated. */
 
 import type { Database } from 'bun:sqlite'
+import { PLATFORM_NAME } from '../../../shared/brand.ts'
 import type {
   TaskFlowInboxQuestionRow,
   TaskFlowOpenSessionStageRow,
@@ -95,7 +96,7 @@ export function questionByNumber<
       : numbered
   if (matches.length > 1)
     throw new Error(
-      `question ${number} names ${matches.length} questions on this cursor in different record spaces; close the stale one with 'bottega question close <record id> --reason <why>', then retry`,
+      `question ${number} names ${matches.length} questions on this cursor in different record spaces; close the stale one with '${PLATFORM_NAME} question close <record id> --reason <why>', then retry`,
     )
   return matches[0] ?? null
 }
