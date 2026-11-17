@@ -21,6 +21,7 @@ import { DB_PATH, db } from './db.ts'
 import {
   machineUpdateCommand as lockedMachineUpdateCommand,
   machineUpdateCommandUnderLock as machineUpdateCommand,
+  pulledRangeChangesPackageJson,
   unregisteredMainCheckoutRefusal,
 } from './machine-update.ts'
 import {
@@ -133,6 +134,48 @@ function successfulMachineUpdateDeps(migrate: () => void = () => {}) {
   }
 }
 
+test.each([
+  { paths: 'package.json\0', changed: true },
+  { paths: 'packages/worker/package.json\0', changed: true },
+  { paths: 'package.json.md\0packages/worker.ts\0', changed: false },
+])('package.json path decision returns $changed for $paths', ({ paths, changed }) => {
+  expect(pulledRangeChangesPackageJson(paths)).toBe(changed)
+})
+
+test.each([
+  { changedPaths: 'package.json\0', expected: ['pull', 'install', 'migrate'] },
+  { changedPaths: 'shared/source.ts\0', expected: ['pull', 'migrate'] },
+])(
+  'machine update orders dependency refresh for pulled paths $changedPaths',
+  async ({ changedPaths, expected }) => {
+    const events: string[] = []
+    await machineUpdateCommand(
+      { log: () => {} },
+      {
+        cwd: dir,
+        authorityRefusal: () => null,
+        project: () => ({
+          name: 'migration-update-fixture',
+          path: dir,
+          settings: { trunk: 'main' },
+        }),
+        git: (_cwd, args) => {
+          if (args[0] === 'branch') return 'main'
+          if (args[0] === 'show') return JSON.stringify({ entries: migrationJournal() })
+          if (args[0] === 'rev-parse') return 'before-commit'
+          if (args.includes('pull')) events.push('pull')
+          if (args[0] === 'diff') return changedPaths
+          return ''
+        },
+        install: () => events.push('install'),
+        migrate: () => events.push('migrate'),
+        runLaunchAgentsRefreshVerb: () => {},
+      },
+    )
+    expect(events).toEqual(expected)
+  },
+)
+
 test("machine update clears a dead holder's marker before deciding", async () => {
   setMigrationDrain(db(), '0155_rebuild', 'draining', {
     pid: 4_200_000,
@@ -160,12 +203,13 @@ test("machine update clears a dead holder's marker before deciding", async () =>
   expect(migrationDrain(db())).toBeNull()
   expect(migrated).toBe(true)
   expect(existsSync(machineUpdateIntentPath(process.env))).toBeFalse()
-  expect(gitCalls.map((args) => args[0])).toEqual([
+  expect(gitCalls.map((args) => (args.includes('pull') ? 'pull' : args[0]))).toEqual([
     'branch',
     'fetch',
     'show',
     'rev-parse',
-    '-c',
+    'pull',
+    'diff',
     'branch',
     'status',
   ])
@@ -306,9 +350,10 @@ test('machine update restores main when migrate fails after the pull', async () 
   ).rejects.toThrow(
     `migration failed: injected migration failure; main was restored to before-commit; rerun ${PLATFORM_SLUG} machine update`,
   )
-  expect(gitCalls.slice(-3)).toEqual([
+  expect(gitCalls.slice(-4)).toEqual([
     ['rev-parse', 'HEAD'],
     ['-c', 'core.hooksPath=/dev/null', 'pull', '--ff-only', 'origin', 'main'],
+    ['diff', '--name-only', '-z', 'before-commit..HEAD', '--'],
     ['reset', '--keep', 'before-commit'],
   ])
 })
@@ -679,7 +724,7 @@ test('machine update clears the drain marker when the bounded wait expires', asy
           }),
           git: (_cwd, args) => {
             if (args[0] === 'branch') return 'main'
-            if (args[0] === 'pull') applied = true
+            if (args.includes('pull')) applied = true
             return args[0] === 'show' ? JSON.stringify({ entries: migrationJournal() }) : ''
           },
           migrate: () => {
@@ -864,7 +909,7 @@ test(`machine update targets the ${PLATFORM_NAME} checkout when the caller is an
     /^incremental vacuum setup: pruned 0 rows, \d+ bytes before, \d+ bytes after, \d+ms elapsed$/,
   )
   expect(projectPaths).toEqual([target])
-  expect(gitCwds).toEqual([target, target, target, target, target, target, target])
+  expect(gitCwds).toEqual([target, target, target, target, target, target, target, target])
 })
 
 test('machine update defaults the target to the installation root', async () => {
@@ -895,7 +940,7 @@ test('machine update defaults the target to the installation root', async () => 
     },
   )
   expect(projectPaths).toEqual([target])
-  expect(gitCwds).toEqual([target, target, target, target, target, target, target])
+  expect(gitCwds).toEqual([target, target, target, target, target, target, target, target])
   expect(journalRef).toBe(`origin/main:${ORCHESTRATOR_MIGRATION_JOURNAL_SOURCE.path}`)
 })
 

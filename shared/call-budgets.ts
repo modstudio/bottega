@@ -64,12 +64,7 @@ export const CALL_BUDGETS: Readonly<Record<CallBudgetName, CallBudget>> = Object
 })
 
 function budgetForGitSubcommand(subcommand: string): CallBudgetName {
-  if (subcommand === 'pull') {
-    return CALL_BUDGETS['git-network'].deadlineMs > CALL_BUDGETS['git-ref-move'].deadlineMs
-      ? 'git-network'
-      : 'git-ref-move'
-  }
-  if (['merge', 'rebase', 'checkout', 'switch'].includes(subcommand)) return 'git-ref-move'
+  if (['pull', 'merge', 'rebase', 'checkout', 'switch'].includes(subcommand)) return 'git-ref-move'
   return ['fetch', 'ls-remote', 'push', 'clone'].includes(subcommand)
     ? 'git-network'
     : 'git-plumbing'

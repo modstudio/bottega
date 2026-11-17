@@ -121,6 +121,25 @@ function runMigration(cwd: string): void {
   }
 }
 
+function runDependencyInstall(cwd: string): void {
+  const result = startBoundedSync(['bun', 'install', '--silent'], {
+    budget: 'machine-update',
+    cwd,
+  })
+  process.stdout.write(result.stdout)
+  process.stderr.write(result.stderr)
+  if (result.exitCode !== 0) {
+    const stderr = result.stderr.trim()
+    const detail = stderr ? `: ${stderr}` : ''
+    throw new Error(`bun install failed with exit ${result.exitCode}${detail}`)
+  }
+}
+
+/** Decide whether a pulled path list requires refreshing checkout dependencies. */
+export function pulledRangeChangesPackageJson(paths: string): boolean {
+  return paths.split(/\0|\r?\n/).some((path) => /(^|\/)package\.json$/.test(path))
+}
+
 function cleanupFailureMessage(failure: unknown, cleanupError: unknown): string {
   const original = failure instanceof Error ? failure.message : String(failure)
   const cleanup = cleanupError instanceof Error ? cleanupError.message : String(cleanupError)
@@ -179,6 +198,7 @@ type UpdateDependencies = {
   callerCwd?: string
   authorityRefusal?: () => string | null
   git?: (cwd: string, args: string[]) => string
+  install?: (cwd: string) => void
   migrate?: (cwd: string) => void
   afterDrainPromoted?: () => void
   maintainStore?: (presentation: Presentation) => void
@@ -342,14 +362,15 @@ async function updateDistribution(input: {
   input.presentation.log(current.message)
 }
 
-function restoreMainAfterMigrationFailure(input: {
+function restoreMainAfterPostPullFailure(input: {
   target: string
   before: string
   runGit: (cwd: string, args: string[]) => string
   cause: unknown
+  operation: 'dependency install' | 'migration'
   beforePositions: StoreJournalPositions
 }): never {
-  const migrationFailure = input.cause instanceof Error ? input.cause.message : String(input.cause)
+  const failure = input.cause instanceof Error ? input.cause.message : String(input.cause)
   try {
     input.runGit(input.target, ['reset', '--keep', input.before])
   } catch (restoreCause) {
@@ -360,10 +381,10 @@ function restoreMainAfterMigrationFailure(input: {
       swapped: { kind: 'checkout', target: input.target, priorCommit: input.before },
       restoreFailure,
     })
-    throw new Error(`migration failed: ${migrationFailure}; ${decision.message}`)
+    throw new Error(`${input.operation} failed: ${failure}; ${decision.message}`)
   }
   throw new Error(
-    `migration failed: ${migrationFailure}; main was restored to ${input.before}; ` +
+    `${input.operation} failed: ${failure}; main was restored to ${input.before}; ` +
       `rerun ${PLATFORM_SLUG} machine update`,
   )
 }
@@ -379,7 +400,7 @@ function storePositionInIncomingJournal(
   return position.index
 }
 
-function handleMigrationFailureAfterPull(input: {
+function handlePostPullFailure(input: {
   target: string
   before: string
   journal: MigrationJournalEntry[]
@@ -387,8 +408,9 @@ function handleMigrationFailureAfterPull(input: {
   beforePositions: StoreJournalPositions
   runGit: (cwd: string, args: string[]) => string
   cause: unknown
+  operation: 'dependency install' | 'migration'
 }): never {
-  const migrationFailure = input.cause instanceof Error ? input.cause.message : String(input.cause)
+  const failure = input.cause instanceof Error ? input.cause.message : String(input.cause)
   let storeVersion: number | null = null
   try {
     storeVersion = withSynchronousDatabaseForMigrationStep((database) =>
@@ -407,11 +429,11 @@ function handleMigrationFailureAfterPull(input: {
         ? ''
         : `; the orchestrator journal position moved from ${input.initialStoreVersion} to ${storeVersion} in the incoming journal`
     throw new Error(
-      `migration failed: ${migrationFailure}; main was left at the pulled commit; ` +
+      `${input.operation} failed: ${failure}; main was left at the pulled commit; ` +
         `${decision.message}${incomingJournalDetail}`,
     )
   }
-  restoreMainAfterMigrationFailure(input)
+  restoreMainAfterPostPullFailure(input)
 }
 
 function recoverAbandonedMachineUpdate(
@@ -510,6 +532,7 @@ export async function machineUpdateCommandUnderLock(
   const target = deps.cwd ?? installRoot()
   const callerCwd = deps.callerCwd ?? process.cwd()
   const runGit = deps.git ?? ((workingDirectory, args) => git(args, workingDirectory))
+  const install = deps.install ?? runDependencyInstall
   const migrate = deps.migrate ?? runMigration
   const lookedUp = withSynchronousDatabaseForMigrationStep((database) =>
     (deps.project ?? projectAt)(target, database),
@@ -549,12 +572,29 @@ export async function machineUpdateCommandUnderLock(
           before: beforePositions,
           swapped: { kind: 'checkout', target, priorCommit: before },
         })
-        // Machine update migrates immediately after pulling, so its pull must not run the hook.
+        // Machine update handles post-pull install and migration itself, so its pull skips the hook.
         runGit(target, ['-c', 'core.hooksPath=/dev/null', 'pull', '--ff-only', 'origin', branch])
+        const changedPaths = runGit(target, ['diff', '--name-only', '-z', `${before}..HEAD`, '--'])
+        if (pulledRangeChangesPackageJson(changedPaths)) {
+          try {
+            install(target)
+          } catch (cause) {
+            handlePostPullFailure({
+              target,
+              before,
+              journal,
+              initialStoreVersion: initial.storeVersion,
+              beforePositions,
+              runGit,
+              cause,
+              operation: 'dependency install',
+            })
+          }
+        }
         try {
           migrate(target)
         } catch (cause) {
-          handleMigrationFailureAfterPull({
+          handlePostPullFailure({
             target,
             before,
             journal,
@@ -562,6 +602,7 @@ export async function machineUpdateCommandUnderLock(
             beforePositions,
             runGit,
             cause,
+            operation: 'migration',
           })
         }
       },

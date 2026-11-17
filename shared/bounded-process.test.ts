@@ -1,12 +1,17 @@
 import { afterEach, beforeEach, expect, mock, test } from 'bun:test'
 import { PLATFORM_SLUG } from './brand.ts'
+import { CALL_BUDGETS } from './call-budgets.ts'
 
 const SENTINEL = 'BOTTEGA_BOUNDED_PROCESS_ENV_SENTINEL'
 const execaMock = mock(
   async (
     _file: string,
     _args: string[],
-    options: { env?: Record<string, string | undefined>; extendEnv?: boolean },
+    options: {
+      env?: Record<string, string | undefined>
+      extendEnv?: boolean
+      timeout?: number
+    },
   ) => {
     const effectiveEnv =
       options.extendEnv === false ? options.env : { ...process.env, ...options.env }
@@ -23,9 +28,7 @@ const execaMock = mock(
 
 mock.module('execa', () => ({ execa: execaMock }))
 
-const { effectiveBudgetForArgv, startBounded, startParentBound } = await import(
-  './bounded-process.ts'
-)
+const { startBounded, startParentBound } = await import('./bounded-process.ts')
 
 let previousSentinel: string | undefined
 
@@ -50,8 +53,16 @@ test('an explicit environment replaces the parent environment', async () => {
   expect(execaMock.mock.calls[0]?.[2]).toMatchObject({ env, extendEnv: false })
 })
 
-test('a git argv receives the larger classified budget', () => {
-  expect(effectiveBudgetForArgv(['git', 'pull'], 'git-plumbing')).toBe('git-ref-move')
+test('a generic git budget is raised to the classified ref-move deadline', async () => {
+  await startBounded(['git', 'pull'], { budget: 'git-plumbing' })
+
+  expect(execaMock.mock.calls[0]?.[2]?.timeout).toBe(CALL_BUDGETS['git-ref-move'].deadlineMs)
+})
+
+test('a deliberate git probe budget keeps its declared deadline', async () => {
+  await startBounded(['git', 'rev-parse'], { budget: 'git-probe' })
+
+  expect(execaMock.mock.calls[0]?.[2]?.timeout).toBe(CALL_BUDGETS['git-probe'].deadlineMs)
 })
 
 test('a parent-bound child keeps all three relay pipes streaming', async () => {

@@ -94,6 +94,7 @@ export function effectiveBudgetForArgv(
   callerBudget: CallBudgetName,
 ): CallBudgetName {
   if (argv[0] !== 'git') return callerBudget
+  if (callerBudget !== 'git-plumbing' && callerBudget !== 'git-network') return callerBudget
   const classifiedBudget = budgetForArgv(argv)
   return CALL_BUDGETS[classifiedBudget].deadlineMs > CALL_BUDGETS[callerBudget].deadlineMs
     ? classifiedBudget
