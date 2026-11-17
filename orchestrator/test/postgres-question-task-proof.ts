@@ -237,6 +237,7 @@ export function registerQuestionTaskRecordSyncProof(
        '${at}','${at}','run-question-proof');`)
     const workflowQuestion = snapshot(newRecordId())
     workflowQuestion.workflowCursorRecordId = stageId
+    workflowQuestion.workflowTaskId = directTaskId
     const runQuestion = snapshot(newRecordId())
     runQuestion.runId = runId
     runQuestion.workflowCursorRecordId = null
@@ -292,6 +293,55 @@ export function registerQuestionTaskRecordSyncProof(
         )
       ).items,
     ).toEqual([{ workflow_cursor_record_id: stageId, number: workflowWrite.number }])
+    const openForTask = (
+      await client.readQuestions!(
+        { read: 'open-for-tasks', taskRecordIds: [directTaskId] },
+        destination,
+      )
+    ).items
+    expect(openForTask).toContainEqual(expect.objectContaining({ record_id: workflowQuestion.id }))
+    for (const row of openForTask)
+      expect(row).toMatchObject({
+        workflow_task_record_id: directTaskId,
+        answered_at: null,
+        closed_at: null,
+      })
+    expect(
+      (
+        await client.readQuestions!(
+          { read: 'open-for-tasks', taskRecordIds: [newRecordId()] },
+          destination,
+        )
+      ).items,
+    ).toEqual([])
+    expect(
+      (
+        await client.readQuestions!(
+          { read: 'for-session', sessionId: 'question-proof-session' },
+          destination,
+        )
+      ).items,
+    ).toEqual([expect.objectContaining({ record_id: workflowQuestion.id })])
+    expect(
+      (
+        await client.readQuestions!(
+          { read: 'for-session', sessionId: 'run-question-proof' },
+          destination,
+        )
+      ).items,
+    ).toEqual([expect.objectContaining({ record_id: runQuestion.id })])
+    expect(
+      (
+        await client.readQuestions!(
+          {
+            read: 'unlinked-workflow',
+            project: directProjectName,
+            workflowKey: 'DEV-2331',
+          },
+          destination,
+        )
+      ).items,
+    ).toEqual([])
     expect((await client.readQuestions!({ read: 'waiting' }, destination)).items).toContainEqual(
       expect.objectContaining({ question_record_id: workflowQuestion.id }),
     )
@@ -308,11 +358,15 @@ export function registerQuestionTaskRecordSyncProof(
     const inbox = (await client.readQuestions!({ read: 'inbox' }, destination)).items
     expect(inbox).toContainEqual(expect.objectContaining({ record_id: workflowQuestion.id }))
     expect(inbox).toContainEqual(expect.objectContaining({ record_id: runQuestion.id }))
+    await expect(
+      client.readQuestions!({ read: 'rulings', kind: 'workflow' }, destination),
+    ).rejects.toThrow('unbounded question ruling history reads are refused')
     expect(
-      (await client.readQuestions!({ read: 'rulings', kind: 'workflow' }, destination)).items,
+      (await client.readQuestions!({ read: 'rulings', kind: 'workflow', limit: 100 }, destination))
+        .items,
     ).toContainEqual(expect.objectContaining({ record_id: workflowQuestion.id }))
     expect(
-      (await client.readQuestions!({ read: 'rulings', kind: 'run' }, destination)).items,
+      (await client.readQuestions!({ read: 'rulings', kind: 'run', since: at }, destination)).items,
     ).toContainEqual(expect.objectContaining({ record_id: runQuestion.id }))
     expect((await client.readQuestions!({ read: 'projects' }, destination)).items).toContainEqual({
       project: directProjectName,
@@ -334,6 +388,12 @@ export function registerQuestionTaskRecordSyncProof(
       },
       destination,
     )
+    expect((await client.readQuestions!({ read: 'inbox' }, destination)).items).not.toContainEqual(
+      expect.objectContaining({ record_id: workflowQuestion.id }),
+    )
+    expect(
+      (await client.readQuestions!({ read: 'inbox', limit: 1 }, destination)).items,
+    ).toHaveLength(1)
     const overturnedAt = '2026-11-15T12:01:30.000Z'
     Object.assign(workflowQuestion, {
       revision: 3,
@@ -564,8 +624,8 @@ export function registerQuestionTaskRecordSyncProof(
     ).items
     sameKeys('open-for-session', hostedOpen[0], localOpen[0])
     for (const kind of ['workflow', 'run'] as const) {
-      const hostedRulings = (await hostedStore.read({ read: 'rulings', kind })).items
-      const localRulings = (await localStore.read({ read: 'rulings', kind })).items
+      const hostedRulings = (await hostedStore.read({ read: 'rulings', kind, since: at })).items
+      const localRulings = (await localStore.read({ read: 'rulings', kind, since: at })).items
       const id = kind === 'workflow' ? parityWorkflow.id : parityRun.id
       sameKeys(
         `rulings ${kind}`,

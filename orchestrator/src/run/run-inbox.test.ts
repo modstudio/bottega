@@ -135,7 +135,7 @@ test('inbox does not list a closed question', async () => {
   expect(JSON.parse(await inbox({ all: true, json: true }))).toEqual([])
 })
 
-test('inbox shows an overturned ruling and its reason', async () => {
+test('inbox excludes answered rulings regardless of later ruling metadata', async () => {
   const run = addRun({ agent: 'codex', job: 'implement', status: 'ok' })
   db()
     .query(
@@ -144,11 +144,6 @@ test('inbox shows an overturned ruling and its reason', async () => {
        VALUES ((SELECT COALESCE(MAX(number),0)+1 FROM question),'${newRecordId()}',?,'2026-09-20','Which?','Old','2026-09-21','2026-09-22','owner','Wrong evidence')`,
     )
     .run(run)
-  const output = await inbox({ all: true })
-  expect(output).toContain('overturned: Wrong evidence')
-})
-test('inbox shows a filed ruling ref', async () => {
-  const run = addRun({ agent: 'codex', job: 'implement', status: 'ok' })
   db()
     .query(
       `INSERT INTO question
@@ -156,14 +151,6 @@ test('inbox shows a filed ruling ref', async () => {
        VALUES ((SELECT COALESCE(MAX(number),0)+1 FROM question),'${newRecordId()}',?,'2026-09-20','Which?','Keep it.','2026-09-21','doc','12@rev-1','2026-09-22')`,
     )
     .run(run)
-  const output = await inbox({ all: true })
-  expect(output).toContain('filed: doc 12@rev-1')
-  expect(JSON.parse(await inbox({ all: true, json: true }))).toContainEqual(
-    expect.objectContaining({ filed_as: 'doc', filed_ref: '12@rev-1' }),
-  )
-})
-test('inbox shows a canon filing label and UUID', async () => {
-  const run = addRun({ agent: 'codex', job: 'implement', status: 'ok' })
   db()
     .query(
       `INSERT INTO question
@@ -172,17 +159,8 @@ test('inbox shows a canon filing label and UUID', async () => {
                '11111111-1111-4111-8111-111111111111','${PLATFORM_SLUG}#44','2026-09-22')`,
     )
     .run(run)
-  const output = await inbox({ all: true })
-  expect(output).toContain(
-    `filed: canon-proposal ${PLATFORM_SLUG}#44 (11111111-1111-4111-8111-111111111111)`,
-  )
-  expect(JSON.parse(await inbox({ all: true, json: true }))).toContainEqual(
-    expect.objectContaining({
-      filed_ref: null,
-      filed_record_id: '11111111-1111-4111-8111-111111111111',
-      filed_label: `${PLATFORM_SLUG}#44`,
-    }),
-  )
+  expect(await inbox({ all: true })).toBe('no open questions')
+  expect(JSON.parse(await inbox({ all: true, json: true }))).toEqual([])
 })
 test.each(['ok', 'failed'])(
   'inbox treats an asking child under a %s root as live',

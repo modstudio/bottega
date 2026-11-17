@@ -27,6 +27,7 @@ const PROJECT_ID = '00000000-0000-4000-8000-000000000101'
 const TASK_ID = '00000000-0000-4000-8000-000000000102'
 const CURSOR_ID = '00000000-0000-4000-8000-000000000103'
 const RUN_ID = '00000000-0000-4000-8000-000000000104'
+const SECOND_RUN_ID = '00000000-0000-4000-8000-000000000107'
 const WORKFLOW_QUESTION_ID = '00000000-0000-4000-8000-000000000105'
 const RUN_QUESTION_ID = '00000000-0000-4000-8000-000000000106'
 const EXCLUDED_QUESTION_ID = '00000000-0000-4000-8000-000000000108'
@@ -136,6 +137,13 @@ function seedOwners(database: Database): void {
     VALUES (?,1,?,'codex','implement','question-fixture','sha',1,'prompt','running','run-session',
       'DEV-2331','[]',?,?)`)
     .run(RUN_ID, STAMP, PROJECT_ID, TASK_ID)
+  database
+    .query(`INSERT INTO run
+    (record_id,number,started_at,agent,job,repo,prompt_sha,prompt_bytes,prompt_head,status,session_id,
+     launch_key,changed_paths,project_record_id,task_record_id)
+    VALUES (?,2,?,'codex','implement','question-fixture','sha',1,'prompt','running','run-session',
+      'DEV-2331','[]',?,?)`)
+    .run(SECOND_RUN_ID, STAMP, PROJECT_ID, TASK_ID)
 }
 
 const body = (
@@ -194,6 +202,19 @@ async function questionStoreContract(
   expect(
     (await store.read({ read: 'open-for-cursors', workflowCursorRecordIds: [CURSOR_ID] })).items,
   ).toEqual([{ workflow_cursor_record_id: CURSOR_ID, number: 1 }])
+  expect(
+    (await store.read({ read: 'open-for-tasks', taskRecordIds: [TASK_ID] })).items.map((row) =>
+      field(row, 'record_id'),
+    ),
+  ).toEqual([workflow.id])
+  expect(
+    (await store.read({ read: 'open-for-tasks', taskRecordIds: [OTHER_SPACE_ID] })).items,
+  ).toEqual([])
+  expect(
+    (await store.read({ read: 'for-session', sessionId: 'owner-session' })).items.map((row) =>
+      field(row, 'record_id'),
+    ),
+  ).toEqual([workflow.id])
 
   const run = snapshot({
     id: RUN_QUESTION_ID,
@@ -221,12 +242,68 @@ async function questionStoreContract(
   expect((await store.read({ read: 'inbox', limit: 1 })).items).toHaveLength(1)
   expect(inbox).toHaveLength(2)
 
-  const workflowRulings = (await store.read({ read: 'rulings', kind: 'workflow' })).items
-  expect(workflowRulings).toHaveLength(1)
+  const answeredRunBase = snapshot({
+    runId: RUN_ID,
+    workflowCursorRecordId: null,
+    workflowTaskId: TASK_ID,
+    askedVia: 'live',
+  })
+  await store.write('ask', body(answeredRunBase))
+  const answeredRun = await mutate(store, 'answer', answeredRunBase, {
+    answer: 'Yes',
+    answeredAt: '2026-11-15T12:01:00.000Z',
+    updatedAt: '2026-11-15T12:01:00.000Z',
+  })
+  expect(
+    (await store.read({ read: 'inbox' })).items.some(
+      (row) => field(row, 'record_id') === answeredRun.id,
+    ),
+  ).toBe(false)
+  const closedWorkflowBase = snapshot({ workflowTaskId: TASK_ID })
+  await store.write('ask', body(closedWorkflowBase))
+  const closedWorkflow = await mutate(store, 'close', closedWorkflowBase, {
+    closedAt: '2026-11-15T12:02:00.000Z',
+    closeReason: 'test',
+    updatedAt: '2026-11-15T12:02:00.000Z',
+  })
+  expect(
+    (await store.read({ read: 'inbox' })).items.some(
+      (row) => field(row, 'record_id') === closedWorkflow.id,
+    ),
+  ).toBe(false)
+
+  await expect(store.read({ read: 'rulings', kind: 'all' })).rejects.toThrow(
+    'unbounded question ruling history reads are refused',
+  )
+  const workflowRulings = (await store.read({ read: 'rulings', kind: 'workflow', limit: 100 }))
+    .items
+  expect(workflowRulings).toHaveLength(2)
   expect(workflowRulings.every((row) => field(row, 'record_id') !== run.id)).toBe(true)
-  const runRulings = (await store.read({ read: 'rulings', kind: 'run' })).items
-  expect(runRulings).toHaveLength(1)
-  expect(runRulings[0]).toMatchObject({ record_id: run.id, run_record_id: RUN_ID })
+  const runRulings = (await store.read({ read: 'rulings', kind: 'run', since: STAMP })).items
+  expect(runRulings).toHaveLength(2)
+  expect(runRulings).toContainEqual(
+    expect.objectContaining({ record_id: run.id, run_record_id: RUN_ID }),
+  )
+
+  const unlinked = snapshot({ id: newRecordId() })
+  await store.write('ask', body(unlinked))
+  expect(
+    (
+      await store.read({
+        read: 'unlinked-workflow',
+        project: 'question-fixture',
+        workflowKey: 'DEV-2331',
+      })
+    ).items.map((row) => field(row, 'record_id')),
+  ).toEqual([unlinked.id])
+  expect(
+    (await store.read({ read: 'unlinked-workflow', workflowKey: 'DEV-outside' })).items,
+  ).toEqual([])
+  await mutate(store, 'close', unlinked, {
+    closedAt: '2026-11-15T12:00:30.000Z',
+    closeReason: 'fixture',
+    updatedAt: '2026-11-15T12:00:30.000Z',
+  })
 
   const answeredAt = '2026-11-15T12:01:00.000Z'
   const answered = await mutate(store, 'answer', workflow, {
@@ -242,6 +319,11 @@ async function questionStoreContract(
   const rule = body(ruled, 'rule')
   rule.audit.reason = 'adopted cursor'
   await store.write('link', rule)
+  expect(
+    (await store.read({ read: 'open-for-tasks', taskRecordIds: [TASK_ID] })).items.map((row) =>
+      field(row, 'record_id'),
+    ),
+  ).toEqual([run.id])
   expect(
     (
       await store.read({
@@ -306,9 +388,24 @@ async function questionStoreContract(
     updatedAt: '2026-11-15T12:06:00.000Z',
   })
   expect(closed.closedAt).not.toBeNull()
+  expect((await store.read({ read: 'open-for-tasks', taskRecordIds: [TASK_ID] })).items).toEqual([])
   expect(
     (await store.read({ read: 'inbox' })).items.some((row) => field(row, 'record_id') === run.id),
   ).toBe(false)
+  const secondRunQuestion = snapshot({
+    runId: SECOND_RUN_ID,
+    workflowCursorRecordId: null,
+    askedVia: 'live',
+  })
+  await store.write('ask', body(secondRunQuestion))
+  const perRun = [
+    ...(await store.read({ read: 'for-run', runId: RUN_ID })).items,
+    ...(await store.read({ read: 'for-run', runId: SECOND_RUN_ID })).items,
+  ]
+  const batched = (await store.read({ read: 'for-runs', runIds: [RUN_ID, SECOND_RUN_ID] })).items
+  expect(batched.map((row) => field(row, 'record_id')).sort()).toEqual(
+    perRun.map((row) => field(row, 'record_id')).sort(),
+  )
   const projects = (await store.read({ read: 'projects' })).items
   expect(projects).toContainEqual({
     project: 'question-fixture',
@@ -397,9 +494,30 @@ test('record question reads refuse a bare number before making a client request'
   })
 
   await expect(store.read({ read: 'by-number', number: 7 })).rejects.toThrow(
-    'question numbers are unique only within a record space; read the question by id or by cursor, then retry',
+    'question numbers are unique only within a record space; pass the question UUID, then retry',
   )
   expect(requests).toBe(0)
+  database.close()
+})
+
+test('record for-runs merges every space in asking order and refuses a duplicated id', async () => {
+  const database = migratedTestDatabase()
+  const { store } = twoSpaceStore(database, {
+    [SPACE_ID]: [{ record_id: 'project-new', number: 12, asked_at: '2026-11-17T05:00:00Z' }],
+    [OTHER_SPACE_ID]: [
+      { record_id: 'personal-old', number: 6464, asked_at: '2026-11-16T05:00:00Z' },
+    ],
+  })
+  const read = await store.read({ read: 'for-runs', runIds: [RUN_ID] })
+  expect(read.items.map((row) => field(row, 'record_id'))).toEqual(['personal-old', 'project-new'])
+  const duplicated = newRecordId()
+  const { store: duplicatedStore } = twoSpaceStore(database, {
+    [SPACE_ID]: [duplicated],
+    [OTHER_SPACE_ID]: [duplicated],
+  })
+  await expect(duplicatedStore.read({ read: 'for-runs', runIds: [RUN_ID] })).rejects.toThrow(
+    'more than one record space',
+  )
   database.close()
 })
 

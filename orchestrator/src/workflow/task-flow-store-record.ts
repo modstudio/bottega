@@ -3,7 +3,10 @@
 
 import type { Database } from 'bun:sqlite'
 import { projectByName, projectByRecordId, projects } from '../project/project-read.ts'
-import { questionRulings } from '../question-store/question-store-read.ts'
+import {
+  allQuestionRulingsPaged,
+  unlinkedWorkflowQuestions,
+} from '../question-store/question-store-read.ts'
 import { recordQuestionReads } from '../question-store/question-store-record-task-flow-compat.ts'
 import { RecordApiRequestError, recordApiClient } from '../record/record-api-client.ts'
 import type {
@@ -583,7 +586,7 @@ class RecordTaskFlowReadStore {
   }
   async pendingTaskLinks(table: 'workflow_cursor' | 'question') {
     if (table === 'question')
-      return (await questionRulings(this.database, { kind: 'workflow' })).items.flatMap((row) =>
+      return (await unlinkedWorkflowQuestions(this.database)).flatMap((row) =>
         row.workflow_task_record_id == null && row.workflow_key && row.project
           ? [
               {
@@ -604,7 +607,7 @@ class RecordTaskFlowReadStore {
   }
   async linkedTaskReferences(table: 'workflow_cursor' | 'question') {
     if (table === 'question')
-      return (await questionRulings(this.database, { kind: 'workflow' })).items.flatMap((row) =>
+      return (await allQuestionRulingsPaged(this.database, 'workflow')).flatMap((row) =>
         row.workflow_task_record_id && row.project
           ? [
               {

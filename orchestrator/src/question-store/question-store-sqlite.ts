@@ -12,20 +12,25 @@ import type {
 import {
   assertQuestionJsonFieldsStructured,
   questionChangedAfterRefusal,
+  unboundedQuestionRulingsRefusal,
 } from '../record/record-question-contract.ts'
 import {
   localQuestionProjects,
   maxQuestionNumber,
   openQuestionsForCursors,
+  openQuestionsForTasks,
   openStagesForSession,
   questionByNumberRow,
   questionsByIdRows,
   questionsForCursor,
   questionsForRun,
+  questionsForRuns,
+  questionsForSession,
   ruleAuditReasons,
   rulingRows,
   runInboxQuestionRows,
   taskRulingRows,
+  unlinkedWorkflowQuestions,
   waitingWorkflowQuestions,
   workflowInboxQuestions,
 } from './question-store-sqlite-reads.ts'
@@ -38,11 +43,62 @@ const limited = <Row>(rows: Row[], limit?: number): Row[] =>
 function assertLocalChangedAfter(input: QuestionReadInput): void {
   if (
     input.changedAfter !== undefined &&
-    ((input.read !== 'rulings' && input.read !== 'inbox') || !/^\d+$/.test(input.changedAfter))
+    ((input.read !== 'rulings' && input.read !== 'inbox') ||
+      (input.read === 'rulings'
+        ? !/^(?:\d+|page:\d+)$/.test(input.changedAfter)
+        : !/^\d+$/.test(input.changedAfter)))
   )
     throw new Error(
       `${questionChangedAfterRefusal.local.message}; ${questionChangedAfterRefusal.local.remedy}`,
     )
+}
+
+function targetedRead(database: Database, input: QuestionReadInput): QuestionReadResult | null {
+  if (input.read === 'task-rulings') {
+    const project = database
+      .query<{ name: string }, [string]>('SELECT name FROM project WHERE record_id=?')
+      .get(input.projectId)
+    return {
+      items: project ? taskRulingRows(database, project.name, input.taskId, input.limit ?? -1) : [],
+    }
+  }
+  if (input.read === 'by-id')
+    return { items: limited(questionsByIdRows(database, input.ids), input.limit) }
+  if (input.read === 'for-run')
+    return { items: limited(questionsForRun(database, input.runId), input.limit) }
+  if (input.read === 'for-runs')
+    return { items: limited(questionsForRuns(database, input.runIds), input.limit) }
+  if (input.read === 'for-session')
+    return { items: limited(questionsForSession(database, input.sessionId), input.limit) }
+  if (input.read === 'max-number')
+    return { items: limited(maxQuestionNumber(database), input.limit) }
+  if (input.read === 'by-number')
+    return { items: limited(questionByNumberRow(database, input.number), input.limit) }
+  if (input.read === 'open-for-cursors')
+    return {
+      items: limited(openQuestionsForCursors(database, input.workflowCursorRecordIds), input.limit),
+    }
+  if (input.read === 'open-for-tasks')
+    return { items: limited(openQuestionsForTasks(database, input.taskRecordIds), input.limit) }
+  if (input.read === 'unlinked-workflow')
+    return {
+      items: limited(
+        unlinkedWorkflowQuestions(database, input.project, input.workflowKey),
+        input.limit,
+      ),
+    }
+  if (input.read === 'for-cursor')
+    return {
+      items: limited(questionsForCursor(database, input.workflowCursorRecordId), input.limit),
+    }
+  if (input.read === 'rule-audit-reasons')
+    return {
+      items: limited(
+        ruleAuditReasons(database, input.workflowCursorRecordId, input.actorSession),
+        input.limit,
+      ),
+    }
+  return null
 }
 
 function recordAppliedMutation(database: Database, input: QuestionWriteBody): void {
@@ -67,6 +123,29 @@ export class SqliteQuestionStore implements QuestionStore {
   }
 
   private readRulings(input: Extract<QuestionReadInput, { read: 'rulings' }>): QuestionReadResult {
+    if (input.since === undefined && input.limit === undefined && input.changedAfter === undefined)
+      throw new Error(
+        `${unboundedQuestionRulingsRefusal.message}; ${unboundedQuestionRulingsRefusal.remedy}`,
+      )
+    const pageAfter = input.changedAfter?.startsWith('page:')
+      ? Number(input.changedAfter.slice(5))
+      : null
+    if (input.limit !== undefined || pageAfter !== null) {
+      const pageSize = input.limit ?? 100
+      const all = rulingRows(this.database, {
+        kind: input.kind,
+        since: input.since,
+        after: null,
+        cursor: null,
+      }).filter((row) => pageAfter === null || row.number > pageAfter)
+      const items = all.slice(0, pageSize)
+      const last = items.at(-1)
+      return {
+        items,
+        ...(last ? { cursor: `page:${last.number}` } : {}),
+        more: all.length > pageSize,
+      }
+    }
     const after = input.changedAfter === undefined ? null : Number(input.changedAfter)
     const cursor =
       after === null
@@ -84,10 +163,30 @@ export class SqliteQuestionStore implements QuestionStore {
   }
 
   private readInbox(input: Extract<QuestionReadInput, { read: 'inbox' }>): QuestionReadResult {
-    const rows = [...runInboxQuestionRows(this.database), ...workflowInboxQuestions(this.database)]
     const offset = input.changedAfter === undefined ? 0 : Number(input.changedAfter)
-    const end = input.limit === undefined ? rows.length : offset + input.limit
-    return { items: rows.slice(offset, end), cursor: String(end), more: end < rows.length }
+    const requested = input.limit === undefined ? undefined : input.limit + 1
+    const runCount = this.database
+      .query<{ count: number }, []>(
+        `SELECT COUNT(*) count FROM question
+         WHERE run_record_id IS NOT NULL AND answered_at IS NULL AND closed_at IS NULL`,
+      )
+      .get()!.count
+    const runRows = runInboxQuestionRows(this.database, undefined, requested, offset)
+    const workflowOffset = Math.max(0, offset - runCount)
+    const workflowLimit =
+      requested === undefined ? undefined : Math.max(0, requested - runRows.length)
+    const rows = [
+      ...runRows,
+      ...(workflowLimit === 0
+        ? []
+        : workflowInboxQuestions(this.database, workflowLimit, workflowOffset)),
+    ]
+    const items = input.limit === undefined ? rows : rows.slice(0, input.limit)
+    return {
+      items,
+      cursor: String(offset + items.length),
+      more: input.limit !== undefined && rows.length > input.limit,
+    }
   }
 
   async write(intent: QuestionIntent, input: QuestionWriteBody): Promise<QuestionWriteResult> {
@@ -209,45 +308,8 @@ export class SqliteQuestionStore implements QuestionStore {
         items: limited(openStagesForSession(this.database, input.sessionId), input.limit),
       }
     if (input.read === 'rulings') return this.readRulings(input)
-    if (input.read === 'task-rulings') {
-      const project = this.database
-        .query<{ name: string }, [string]>('SELECT name FROM project WHERE record_id=?')
-        .get(input.projectId)
-      return {
-        items: project
-          ? taskRulingRows(this.database, project.name, input.taskId, input.limit ?? -1)
-          : [],
-      }
-    }
-    if (input.read === 'by-id')
-      return { items: limited(questionsByIdRows(this.database, input.ids), input.limit) }
-    if (input.read === 'for-run')
-      return { items: limited(questionsForRun(this.database, input.runId), input.limit) }
-    if (input.read === 'max-number')
-      return { items: limited(maxQuestionNumber(this.database), input.limit) }
-    if (input.read === 'by-number')
-      return { items: limited(questionByNumberRow(this.database, input.number), input.limit) }
-    if (input.read === 'open-for-cursors')
-      return {
-        items: limited(
-          openQuestionsForCursors(this.database, input.workflowCursorRecordIds),
-          input.limit,
-        ),
-      }
-    if (input.read === 'for-cursor')
-      return {
-        items: limited(
-          questionsForCursor(this.database, input.workflowCursorRecordId),
-          input.limit,
-        ),
-      }
-    if (input.read === 'rule-audit-reasons')
-      return {
-        items: limited(
-          ruleAuditReasons(this.database, input.workflowCursorRecordId, input.actorSession),
-          input.limit,
-        ),
-      }
+    const targeted = targetedRead(this.database, input)
+    if (targeted) return targeted
     return { items: limited(localQuestionProjects(this.database), input.limit) }
   }
 }

@@ -9,6 +9,8 @@ import {
   registerRecordQuestionRoutes,
 } from './record-api-question.ts'
 import type { RecordIdentity } from './record-auth.ts'
+import { UnboundedQuestionRulingsError } from './record-question-contract.ts'
+import { readRecordQuestions } from './record-question-read.ts'
 
 const tenant = {
   url: 'postgres://record.test',
@@ -33,7 +35,12 @@ test('hosted rulings decode opaque cursors and malformed cursors give a fresh-cu
   let received: RecordChangeCursor | undefined
   const api = app({
     readQuestions: async (input) => {
-      if (input.read === 'rulings') received = input.changedAfter
+      if (
+        input.read === 'rulings' &&
+        input.changedAfter &&
+        !('questionNumber' in input.changedAfter)
+      )
+        received = input.changedAfter
       return { items: [], cursor: encodeRecordChangeCursor(cursor), more: false, reset: false }
     },
   })
@@ -61,6 +68,52 @@ test('hosted rulings refuse combining a change cursor with a limit', async () =>
     error: 'limit cannot be combined with changedAfter',
     remedy: 'drop limit; follow more to page',
   })
+})
+
+test('hosted rulings refuse an unbounded history read and serve every bounded form', async () => {
+  const reads: string[] = []
+  const api = app({
+    readQuestions: async (input) => {
+      if (input.read === 'rulings')
+        reads.push(
+          input.since !== undefined
+            ? 'since'
+            : input.limit !== undefined
+              ? 'limit'
+              : input.changedAfter !== undefined
+                ? 'changedAfter'
+                : 'unbounded',
+        )
+      if (
+        input.read === 'rulings' &&
+        input.since === undefined &&
+        input.limit === undefined &&
+        input.changedAfter === undefined
+      )
+        throw new UnboundedQuestionRulingsError()
+      return { items: [], cursor: encodeRecordChangeCursor({ xid: 1n, seq: 1n }), more: false }
+    },
+  })
+  const refused = await api.request('/v1/questions?read=rulings')
+  expect(refused.status).toBe(422)
+  expect(await refused.json()).toEqual({
+    error: 'unbounded question ruling history reads are refused',
+    remedy:
+      'use by-id, by-number, for-run, for-runs, for-session, open-for-cursors, open-for-tasks, or unlinked-workflow for a targeted read; otherwise page rulings with limit and changedAfter',
+  })
+  expect(
+    (await api.request('/v1/questions?read=rulings&since=2026-11-15T12%3A00%3A00.000Z')).status,
+  ).toBe(200)
+  expect((await api.request('/v1/questions?read=rulings&limit=1')).status).toBe(200)
+  const cursor = encodeRecordChangeCursor({ xid: 1n, seq: 1n })
+  expect((await api.request(`/v1/questions?read=rulings&changedAfter=${cursor}`)).status).toBe(200)
+  expect(reads).toEqual(['unbounded', 'since', 'limit', 'changedAfter'])
+})
+
+test('hosted read service refuses unbounded ruling materialization', async () => {
+  expect(readRecordQuestions({ ...tenant, read: 'rulings', kind: 'all' })).rejects.toBeInstanceOf(
+    UnboundedQuestionRulingsError,
+  )
 })
 
 test('hosted question reads other than rulings still refuse changedAfter', async () => {

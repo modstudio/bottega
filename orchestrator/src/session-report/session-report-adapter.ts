@@ -4,7 +4,7 @@
 import type { Database } from 'bun:sqlite'
 import { db } from '../database/db.ts'
 import { UNSCORED_WHERE } from '../evidence/evidence-query.ts'
-import { openQuestionStages, questionRulings } from '../question-store/question-store-read.ts'
+import { openQuestionStages, questionsForSession } from '../question-store/question-store-read.ts'
 import {
   buildSessionWindowReport,
   comparisonWindow,
@@ -122,8 +122,8 @@ export async function factsForSession(
       updatedAt: row.updated_at,
       openToday: openCursorIds.has(row.record_id),
     }))
-  const questions = (await questionRulings(database, { kind: 'all' })).items
-    .filter((row) => row.session_id === sessionId && String(row.asked_at) <= end)
+  const questions = (await questionsForSession(database, sessionId))
+    .filter((row) => String(row.asked_at) <= end)
     .sort((a, b) => Number(a.number) - Number(b.number))
     .map((row) => ({
       id: String(row.record_id),

@@ -39,7 +39,7 @@ import { AGENTS } from '../agent/agent-registry.ts'
 import type { Agent } from '../agent/agents.ts'
 import { db } from '../database/db.ts'
 import { appliedRecordMigrationCount, recordMigrationCount } from '../postgres/postgres-migrate.ts'
-import { questionProjects } from '../question-store/question-store-read.ts'
+import { questionProjects, questionRulingsPaged } from '../question-store/question-store-read.ts'
 import { RecordQuestionStore } from '../question-store/question-store-record.ts'
 import { inspectRunRecordBackfill, type RunRecordBackfillInspection } from '../run/run-outbox.ts'
 import {
@@ -717,6 +717,26 @@ function questionClientWithIdentity(identity: RecordIdentity) {
   }
 }
 
+async function hostedMachineQuestionCount(database: Database, identity: RecordIdentity) {
+  const questionStore = new RecordQuestionStore({
+    database,
+    client: questionClientWithIdentity(identity),
+  })
+  const questionIds = (await questionRulingsPaged(questionStore, 'all')).map((row) =>
+    String(row.record_id),
+  )
+  const pages = Array.from({ length: Math.ceil(questionIds.length / 100) }, (_, index) =>
+    questionStore.read({
+      read: 'by-id',
+      ids: questionIds.slice(index * 100, index * 100 + 100),
+    }),
+  )
+  const hostedQuestions = (await Promise.all(pages)).flatMap(({ items }) => items)
+  return hostedQuestions.filter(
+    (question) => (question as Record<string, unknown>).machine_id === machineId(),
+  ).length
+}
+
 async function operatorRecordChecks(input: {
   recordUrl: string
   migrateUrl?: string
@@ -757,26 +777,7 @@ async function operatorRecordChecks(input: {
   } else {
     const identity = input.identity
     try {
-      const questionStore = new RecordQuestionStore({
-        database: input.database,
-        client: questionClientWithIdentity(identity.record),
-      })
-      const questionIds = (await questionStore.read({ read: 'rulings', kind: 'all' })).items.map(
-        (row) => String((row as Record<string, unknown>).record_id),
-      )
-      const hostedQuestions = (
-        await Promise.all(
-          Array.from({ length: Math.ceil(questionIds.length / 100) }, (_, index) =>
-            questionStore.read({
-              read: 'by-id',
-              ids: questionIds.slice(index * 100, index * 100 + 100),
-            }),
-          ),
-        )
-      ).flatMap(({ items }) => items)
-      const machineQuestions = hostedQuestions.filter(
-        (question) => (question as Record<string, unknown>).machine_id === machineId(),
-      ).length
+      const machineQuestions = await hostedMachineQuestionCount(input.database, identity.record)
       const attribution = await actor.begin(async (tx) => {
         await tx`SELECT set_config('app.user_id', ${identity.record.user.id}, true)`
         await tx`SELECT set_config('app.space_id', ${identity.record.activeSpaceId}, true)`

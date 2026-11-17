@@ -170,10 +170,12 @@ test('production hosted reads preserve stored steps and fall back on the correct
     SET ROLE record_actor;
   `)
 
-  const forCursor = await readRecordQuestionRows(sql, {
-    read: 'for-cursor',
-    workflowCursorRecordId: CURSOR,
-  })
+  const forCursor = (
+    await readRecordQuestionRows(sql, {
+      read: 'for-cursor',
+      workflowCursorRecordId: CURSOR,
+    })
+  ).items
   expect(forCursor).toMatchObject([
     { number: 1, workflow_step_ordinal: 7, workflow_step_slug: 'design-signoff' },
     { number: 2, workflow_step_ordinal: 8, workflow_step_slug: 'implementation' },
@@ -186,7 +188,7 @@ test('production hosted reads preserve stored steps and fall back on the correct
     ),
   ).toEqual({ stepQuestion: { id: 2, state: 'open', answeredAt: null, replacement: null } })
 
-  expect(await readRecordQuestionRows(sql, { read: 'inbox' })).toMatchObject([
+  expect((await readRecordQuestionRows(sql, { read: 'inbox' })).items).toMatchObject([
     { number: 1, ordinal: 6, step_slug: 'design-signoff' },
     { number: 2, ordinal: 7, step_slug: 'implementation' },
   ])

@@ -61,9 +61,13 @@ close a question without recording a ruling
 
 ## bottega question identity-map
 
-**Synopsis:** `bottega question identity-map`
+**Synopsis:** `bottega question identity-map <identifiers...>`
 
 print numeric question identities and their durable record ids as JSON
+
+### Options
+
+Options are documented by `--help`.
 
 ### Related
 

@@ -22,6 +22,18 @@ import type {
 } from '../workflow/task-flow-store-types.ts'
 import { questionOpenSql, questionTaskHolderSql } from './question-store-sql.ts'
 
+export function questionNumberProjectIds(database: Database, number: number): string[] {
+  return database
+    .query<{ project_record_id: string | null }, [number]>(
+      `SELECT DISTINCT COALESCE(owner.project_record_id,cursor.project_record_id) project_record_id
+       FROM question q LEFT JOIN run owner ON owner.record_id=q.run_record_id
+       LEFT JOIN workflow_cursor cursor ON cursor.record_id=q.workflow_cursor_record_id
+       WHERE q.number=?`,
+    )
+    .all(number)
+    .flatMap((row) => (row.project_record_id ? [row.project_record_id] : []))
+}
+
 export type QueriedInboxQuestion = {
   number: number
   record_id: string
@@ -143,21 +155,27 @@ export const keylessSessionCursors = (
     .all(...(project ? [project] : []))
 }
 
-export const workflowInboxQuestions = (database: Database): TaskFlowInboxQuestionRow[] =>
+export const workflowInboxQuestions = (
+  database: Database,
+  limit?: number,
+  offset = 0,
+): TaskFlowInboxQuestionRow[] =>
   database
-    .query<TaskFlowInboxQuestionRow, []>(
+    .query<TaskFlowInboxQuestionRow, [number, number]>(
       `SELECT q.number,q.record_id,q.asked_at,q.question,c.number cursor_record_id,c.project,c.project_record_id,c.workflow_slug,c.mode_slug,c.args,
               COALESCE(q.workflow_step_ordinal - 1,c.ordinal) ordinal,
               COALESCE(q.workflow_step_slug,c.step_slug) step_slug,c.session_id
          FROM question q JOIN workflow_cursor c ON c.record_id=q.workflow_cursor_record_id
         WHERE c.state='awaiting-ruling' AND ${questionOpenSql('q')}
-        ORDER BY q.asked_at,q.number`,
+        ORDER BY q.asked_at,q.number LIMIT ? OFFSET ?`,
     )
-    .all()
+    .all(limit ?? -1, offset)
 
 export function runInboxQuestionRows(
   database: Database,
   cutoff = new Date(Date.now() - SESSION_LIVE_MS).toISOString(),
+  limit?: number,
+  offset = 0,
 ): QueriedInboxQuestion[] {
   return database
     .query(
@@ -175,9 +193,10 @@ export function runInboxQuestionRows(
        FROM question q JOIN run r ON r.record_id=q.run_record_id
        JOIN run root ON root.record_id=COALESCE(r.parent_run_record_id,r.record_id)
        LEFT JOIN session_seen seen ON seen.session_id=r.session_id
-      WHERE q.closed_at IS NULL ORDER BY q.run_record_id,q.number`,
+      WHERE ${questionOpenSql('q')}
+      ORDER BY q.run_record_id,q.number LIMIT ? OFFSET ?`,
     )
-    .all(cutoff) as QueriedInboxQuestion[]
+    .all(cutoff, limit ?? -1, offset) as QueriedInboxQuestion[]
 }
 
 export function rulingRows(
@@ -453,6 +472,54 @@ export const openQuestionsForCursors = (
     .all(...cursorIds)
 }
 
+function filteredQuestionRows(database: Database, predicate: string, values: string[]) {
+  return database
+    .query(
+      `SELECT ${QUESTION_PORT_COLUMNS} FROM question q
+       LEFT JOIN run owner ON owner.record_id=q.run_record_id
+       LEFT JOIN project run_project ON run_project.record_id=owner.project_record_id
+       LEFT JOIN workflow_cursor cursor ON cursor.record_id=q.workflow_cursor_record_id
+       LEFT JOIN project ON project.record_id=cursor.project_record_id
+       WHERE ${predicate} ORDER BY q.number`,
+    )
+    .all(...values) as Record<string, unknown>[]
+}
+
+export const openQuestionsForTasks = (database: Database, taskIds: readonly string[]) =>
+  taskIds.length
+    ? filteredQuestionRows(
+        database,
+        `q.workflow_task_record_id IN (${taskIds.map(() => '?').join(',')})
+         AND q.answered_at IS NULL AND q.closed_at IS NULL`,
+        [...taskIds],
+      )
+    : []
+
+export const questionsForSession = (database: Database, sessionId: string) =>
+  filteredQuestionRows(database, 'COALESCE(owner.session_id,cursor.session_id)=?', [sessionId])
+
+export const unlinkedWorkflowQuestions = (
+  database: Database,
+  project?: string,
+  workflowKey?: string,
+) => {
+  const clauses = [
+    'q.workflow_cursor_record_id IS NOT NULL',
+    'q.workflow_key IS NOT NULL',
+    'q.workflow_task_record_id IS NULL',
+  ]
+  const values: string[] = []
+  if (project) {
+    clauses.push('project.name=?')
+    values.push(project)
+  }
+  if (workflowKey) {
+    clauses.push('q.workflow_key=?')
+    values.push(workflowKey)
+  }
+  return filteredQuestionRows(database, clauses.join(' AND '), values)
+}
+
 export const questionsForCursor = (
   database: Database,
   workflowCursorRecordId: string,
@@ -493,3 +560,13 @@ export const questionsForRun = (database: Database, runId: string): Record<strin
        WHERE q.run_record_id=? ORDER BY q.number`,
     )
     .all(runId) as Record<string, unknown>[]
+
+export const questionsForRuns = (
+  database: Database,
+  runIds: readonly string[],
+): Record<string, unknown>[] => {
+  if (!runIds.length) return []
+  return filteredQuestionRows(database, `q.run_record_id IN (${runIds.map(() => '?').join(',')})`, [
+    ...runIds,
+  ])
+}

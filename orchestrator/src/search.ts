@@ -1,6 +1,6 @@
 import type { Database } from 'bun:sqlite'
 import { existsSync, readFileSync } from 'node:fs'
-import { questionRulings } from './question-store/question-store-read.ts'
+import { allQuestionRulingsPaged } from './question-store/question-store-read.ts'
 
 type RecordSource = 'score' | 'ruling' | 'review' | 'output'
 
@@ -47,7 +47,7 @@ function matchedResult(row: Candidate, query: string, includeFull: boolean): Rec
 }
 
 async function rulingCandidates(d: Database): Promise<Record<string, unknown>[]> {
-  return (await questionRulings(d, { kind: 'run' })).items
+  return (await allQuestionRulingsPaged(d, 'run'))
     .filter(({ answer }) => answer !== null)
     .map((row) => {
       const { number, ...rest } = row as Record<string, unknown> & { number: number }

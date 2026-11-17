@@ -8,7 +8,7 @@ import {
   RulingListSchema,
 } from '../../../shared/orch-contract.ts'
 import { db } from '../database/db.ts'
-import { questionRulings } from '../question-store/question-store-read.ts'
+import { allQuestionRulingsPaged, questionRulings } from '../question-store/question-store-read.ts'
 
 type RulingListOptions = {
   since?: string
@@ -37,11 +37,14 @@ async function queryRulings(options: RulingListOptions): Promise<{
     if (!Number.isFinite(Date.parse(options.since))) throw new Error('--since must be an ISO date')
   }
   const after = options.changedAfter ?? null
-  const result = await questionRulings(db(), {
-    kind: options.kind,
-    ...(options.since ? { since: options.since } : {}),
-    ...(after === null ? {} : { changedAfter: String(after) }),
-  })
+  const result =
+    options.since === undefined && after === null
+      ? { items: await allQuestionRulingsPaged(db(), options.kind), cursor: null }
+      : await questionRulings(db(), {
+          kind: options.kind,
+          ...(options.since ? { since: options.since } : {}),
+          ...(after === null ? {} : { changedAfter: String(after) }),
+        })
   const rows = result.items
   const cursor = result.cursor ?? null
   const parsed = z.array(RulingListSchema.element.strip()).parse(

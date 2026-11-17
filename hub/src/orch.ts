@@ -361,11 +361,19 @@ export async function readRunChanges(after: string): Promise<{ rows: OrchRun[]; 
   return decodeRunChangesJson(await orchProcess(readRunChangesArgv(after), RUNS_DEADLINE_MS))
 }
 
-export async function readQuestionIdentityMap(): Promise<QuestionIdentity[]> {
+export async function readQuestionIdentityMap(
+  numbers: readonly number[],
+): Promise<QuestionIdentity[]> {
+  if (!numbers.length) return []
   return QuestionIdentityListSchema.parse(
-    JSON.parse(await orchProcess(['question', 'identity-map'], RUN_IDENTITY_MAP_DEADLINE_MS)),
+    JSON.parse(await orchProcess(questionIdentityMapArgv(numbers), RUN_IDENTITY_MAP_DEADLINE_MS)),
   )
 }
+
+export const questionIdentityMapArgv = (numbers: readonly number[]): string[] => [
+  'question-identities',
+  ...numbers.map(String),
+]
 
 export async function readWorkflowCursorIdentityMap(): Promise<WorkflowCursorIdentityRow[]> {
   return WorkflowCursorIdentityRowListSchema.parse(

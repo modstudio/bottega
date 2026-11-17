@@ -9,7 +9,11 @@ import {
 } from '../../../shared/record/record-changes.ts'
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
 import { recordPool } from './record-pool.ts'
-import type { QuestionReadInput, RecordQuestionReadInput } from './record-question-contract.ts'
+import {
+  type QuestionReadInput,
+  type RecordQuestionReadInput,
+  UnboundedQuestionRulingsError,
+} from './record-question-contract.ts'
 import {
   RECORD_QUESTION_INBOX_STEP_COLUMNS,
   RECORD_QUESTION_STEP_COLUMNS,
@@ -25,7 +29,11 @@ type RulingRead = Extract<RecordQuestionReadInput, { read: 'rulings' }>
 
 async function recordQuestionRulingRows(
   tx: SQL,
-  input: Pick<RulingRead, 'kind' | 'since'> & { ids?: readonly string[] },
+  input: Pick<RulingRead, 'kind' | 'since'> & {
+    ids?: readonly string[]
+    afterNumber?: number
+    limit?: number
+  },
 ): Promise<Row[]> {
   const clauses: string[] = []
   const values: unknown[] = []
@@ -46,6 +54,11 @@ async function recordQuestionRulingRows(
       `q.id IN (${input.ids.map((_, index) => `$${first + index + 1}::uuid`).join(',')})`,
     )
   }
+  if (input.afterNumber !== undefined) {
+    values.push(input.afterNumber)
+    clauses.push(`q.number>$${values.length}`)
+  }
+  const sqlLimit = input.limit === undefined ? '' : ` LIMIT ${input.limit}`
   return (await tx.unsafe(
     `SELECT q.number,q.id::text record_id,q.run_id::text run_record_id,owner.number run_number,
       q.workflow_cursor_record_id::text workflow_cursor_id,q.workflow_key,q.workflow_task_id::text workflow_task_record_id,
@@ -61,7 +74,7 @@ async function recordQuestionRulingRows(
      LEFT JOIN task_flow_stage stage ON stage.id=q.workflow_cursor_record_id
      LEFT JOIN project stage_project ON stage_project.id=stage.project_id
      ${clauses.length ? `WHERE ${clauses.join(' AND ')}` : ''}
-     ORDER BY q.number`,
+     ORDER BY q.number${sqlLimit}`,
     values,
   )) as Row[]
 }
@@ -92,25 +105,62 @@ const QUESTION_DETAIL_COLUMNS = `q.id::text record_id,q.number,q.run_id::text ru
     ORDER BY latest.turn DESC,latest.number DESC LIMIT 1) latest_status,
   COALESCE(owner.project_id,stage.project_id)::text project_record_id`
 
-async function recordQuestionDetails(
-  tx: SQL,
-  input: { ids?: readonly string[]; runId?: string; workflowCursorRecordId?: string },
-): Promise<Row[]> {
-  if (input.ids?.length === 0) return []
-  const values = input.ids ? [...input.ids] : [input.runId ?? input.workflowCursorRecordId]
-  const predicate = input.ids
-    ? `q.id IN (${input.ids.map((_, index) => `$${index + 1}::uuid`).join(',')})`
-    : input.runId
-      ? 'q.run_id=$1::uuid'
-      : 'q.workflow_cursor_record_id=$1::uuid'
+type QuestionDetailInput = {
+  ids?: readonly string[]
+  runId?: string
+  runIds?: readonly string[]
+  workflowCursorRecordId?: string
+  sessionId?: string
+  taskRecordIds?: readonly string[]
+}
+
+function questionDetailFilter(input: QuestionDetailInput): {
+  predicate: string
+  values: string[]
+} | null {
+  if (input.ids) {
+    if (!input.ids.length) return null
+    return {
+      predicate: `q.id IN (${input.ids.map((_, index) => `$${index + 1}::uuid`).join(',')})`,
+      values: [...input.ids],
+    }
+  }
+  if (input.runIds) {
+    if (!input.runIds.length) return null
+    return {
+      predicate: `q.run_id IN (${input.runIds.map((_, index) => `$${index + 1}::uuid`).join(',')})`,
+      values: [...input.runIds],
+    }
+  }
+  if (input.runId) return { predicate: 'q.run_id=$1::uuid', values: [input.runId] }
+  if (input.workflowCursorRecordId)
+    return {
+      predicate: 'q.workflow_cursor_record_id=$1::uuid',
+      values: [input.workflowCursorRecordId],
+    }
+  if (input.sessionId)
+    return {
+      predicate: 'COALESCE(owner.session_id,stage.session_id)=$1',
+      values: [input.sessionId],
+    }
+  if (!input.taskRecordIds?.length) return null
+  return {
+    predicate: `q.workflow_task_id IN (${input.taskRecordIds.map((_, index) => `$${index + 1}::uuid`).join(',')}) AND q.answered_at IS NULL AND q.closed_at IS NULL`,
+    values: [...input.taskRecordIds],
+  }
+}
+
+async function recordQuestionDetails(tx: SQL, input: QuestionDetailInput): Promise<Row[]> {
+  const filter = questionDetailFilter(input)
+  if (!filter) return []
   return (await tx.unsafe(
     `SELECT ${QUESTION_DETAIL_COLUMNS} FROM question q
      LEFT JOIN run owner ON owner.id=q.run_id
      LEFT JOIN project run_project ON run_project.id=owner.project_id
      LEFT JOIN task_flow_stage stage ON stage.id=q.workflow_cursor_record_id
      LEFT JOIN project stage_project ON stage_project.id=stage.project_id
-     WHERE ${predicate} ORDER BY q.number`,
-    values,
+     WHERE ${filter.predicate} ORDER BY q.number`,
+    filter.values,
   )) as Row[]
 }
 
@@ -143,19 +193,27 @@ async function boundedIdentityRows(tx: SQL, input: QuestionReadInput): Promise<R
   )
 }
 
-export async function readRecordQuestionRows(tx: SQL, input: QuestionReadInput): Promise<Row[]> {
+async function targetedRows(tx: SQL, input: QuestionReadInput): Promise<Row[] | null> {
   if (input.read === 'by-id') return limited(await recordQuestionDetails(tx, input), input.limit)
   if (input.read === 'for-run')
     return limited(await recordQuestionDetails(tx, { runId: input.runId }), input.limit)
+  if (input.read === 'for-runs')
+    return limited(await recordQuestionDetails(tx, { runIds: input.runIds }), input.limit)
+  if (input.read === 'for-session')
+    return limited(await recordQuestionDetails(tx, { sessionId: input.sessionId }), input.limit)
   const identityRows = await boundedIdentityRows(tx, input)
   if (identityRows !== null) return identityRows
   if (input.read === 'for-cursor')
     return limited(
-      await recordQuestionDetails(tx, {
-        workflowCursorRecordId: input.workflowCursorRecordId,
-      }),
+      await recordQuestionDetails(tx, { workflowCursorRecordId: input.workflowCursorRecordId }),
       input.limit,
     )
+  if (input.read === 'open-for-tasks')
+    return limited(
+      await recordQuestionDetails(tx, { taskRecordIds: input.taskRecordIds }),
+      input.limit,
+    )
+  if (input.read === 'unlinked-workflow') return unlinkedWorkflowRows(tx, input)
   if (input.read === 'rule-audit-reasons')
     return limited(
       (await tx.unsafe(
@@ -167,41 +225,99 @@ export async function readRecordQuestionRows(tx: SQL, input: QuestionReadInput):
       )) as Row[],
       input.limit,
     )
-  if (input.read === 'inbox') {
-    const runs = (await tx.unsafe(
-      `SELECT q.number,q.id::text record_id,q.run_id::text run_record_id,owner.number run_number,
-        q.asked_at::text,q.question,q.options::text,q.recommendation,q.why,q.kind,q.jev_pick,q.jev_confidence,
-        q.jev_probabilities::text,q.jev_error,q.answered_at::text,q.overturned_at::text,q.overturned_by,
-        q.overturn_reason,q.replacement,q.filed_as,q.filed_ref,q.filed_record_id::text,q.filed_label,q.filed_at::text,
-        owner.agent,owner.job,root_project.name repo,COALESCE(owner.task_key,root.task_key) task_key,root.project_id::text project_record_id,owner.status,owner.session_id,
-        q.awaiting_operator_at::text,
-        root.status root_status,root.id::text root_record_id,root.number root_number,
-        CASE WHEN root.evidence_excluded IS NULL THEN 0 ELSE 1 END root_voided,
-        COALESCE(owner.parent_run_id,owner.id)::text root_id
-       FROM question q JOIN run owner ON owner.id=q.run_id
-       JOIN run root ON root.id=COALESCE(owner.parent_run_id,owner.id)
-       LEFT JOIN project root_project ON root_project.id=root.project_id
-       WHERE q.closed_at IS NULL ORDER BY q.run_id,q.number`,
-      [],
-    )) as Row[]
-    const workflows = (await tx.unsafe(
-      `SELECT q.number,q.id::text record_id,q.asked_at::text,q.question,stage.number cursor_record_id,
-        project.name project,stage.project_id::text project_record_id,stage.workflow workflow_slug,
-        stage.mode mode_slug,stage.arguments::text args,
-        ${RECORD_QUESTION_INBOX_STEP_COLUMNS},stage.session_id
-       FROM question q JOIN task_flow_stage stage ON stage.id=q.workflow_cursor_record_id
-       JOIN project ON project.id=stage.project_id
-       WHERE stage.state='awaiting-ruling' AND q.answered_at IS NULL AND q.closed_at IS NULL
-       ORDER BY q.asked_at,q.number`,
-      [],
-    )) as Row[]
-    const combined = [...runs, ...workflows]
-    const offset = input.changedAfter === undefined ? 0 : Number(input.changedAfter)
-    return combined.slice(
-      offset,
-      input.limit === undefined ? combined.length : offset + input.limit + 1,
-    )
+  return null
+}
+
+async function unlinkedWorkflowRows(
+  tx: SQL,
+  input: Extract<QuestionReadInput, { read: 'unlinked-workflow' }>,
+): Promise<Row[]> {
+  const clauses = [
+    'q.workflow_cursor_record_id IS NOT NULL',
+    'q.workflow_key IS NOT NULL',
+    'q.workflow_task_id IS NULL',
+  ]
+  const values: string[] = []
+  if (input.project) {
+    values.push(input.project)
+    clauses.push(`stage_project.name=$${values.length}`)
   }
+  if (input.workflowKey) {
+    values.push(input.workflowKey)
+    clauses.push(`q.workflow_key=$${values.length}`)
+  }
+  return limited(
+    (await tx.unsafe(
+      `SELECT ${QUESTION_DETAIL_COLUMNS} FROM question q
+       LEFT JOIN run owner ON owner.id=q.run_id
+       LEFT JOIN project run_project ON run_project.id=owner.project_id
+       LEFT JOIN task_flow_stage stage ON stage.id=q.workflow_cursor_record_id
+       LEFT JOIN project stage_project ON stage_project.id=stage.project_id
+       WHERE ${clauses.join(' AND ')} ORDER BY q.number`,
+      values,
+    )) as Row[],
+    input.limit,
+  )
+}
+
+function offsetClause(limit: number | undefined, offset: number): string {
+  if (limit !== undefined) return ` LIMIT ${limit} OFFSET ${offset}`
+  return offset === 0 ? '' : ` OFFSET ${offset}`
+}
+
+async function inboxRows(
+  tx: SQL,
+  input: Extract<QuestionReadInput, { read: 'inbox' }>,
+): Promise<Row[]> {
+  const offset = input.changedAfter === undefined ? 0 : Number(input.changedAfter)
+  const requested = input.limit === undefined ? undefined : input.limit + 1
+  const runCount = Number(
+    (
+      (await tx.unsafe(
+        `SELECT COUNT(*) count FROM question q
+         WHERE q.run_id IS NOT NULL AND q.answered_at IS NULL AND q.closed_at IS NULL`,
+        [],
+      )) as Array<{ count: number | string }>
+    )[0]?.count ?? 0,
+  )
+  const runs = (await tx.unsafe(
+    `SELECT q.number,q.id::text record_id,q.run_id::text run_record_id,owner.number run_number,
+      q.asked_at::text,q.question,q.options::text,q.recommendation,q.why,q.kind,q.jev_pick,q.jev_confidence,
+      q.jev_probabilities::text,q.jev_error,q.answered_at::text,q.overturned_at::text,q.overturned_by,
+      q.overturn_reason,q.replacement,q.filed_as,q.filed_ref,q.filed_record_id::text,q.filed_label,q.filed_at::text,
+      owner.agent,owner.job,root_project.name repo,COALESCE(owner.task_key,root.task_key) task_key,root.project_id::text project_record_id,owner.status,owner.session_id,
+      q.awaiting_operator_at::text,
+      root.status root_status,root.id::text root_record_id,root.number root_number,
+      CASE WHEN root.evidence_excluded IS NULL THEN 0 ELSE 1 END root_voided,
+      COALESCE(owner.parent_run_id,owner.id)::text root_id
+     FROM question q JOIN run owner ON owner.id=q.run_id
+     JOIN run root ON root.id=COALESCE(owner.parent_run_id,owner.id)
+     LEFT JOIN project root_project ON root_project.id=root.project_id
+     WHERE q.answered_at IS NULL AND q.closed_at IS NULL
+     ORDER BY q.run_id,q.number${offsetClause(requested, offset)}`,
+    [],
+  )) as Row[]
+  const workflowOffset = Math.max(0, offset - runCount)
+  const workflowLimit = requested === undefined ? undefined : Math.max(0, requested - runs.length)
+  const workflows = (await tx.unsafe(
+    `SELECT q.number,q.id::text record_id,q.asked_at::text,q.question,stage.number cursor_record_id,
+      project.name project,stage.project_id::text project_record_id,stage.workflow workflow_slug,
+      stage.mode mode_slug,stage.arguments::text args,
+      ${RECORD_QUESTION_INBOX_STEP_COLUMNS},stage.session_id
+     FROM question q JOIN task_flow_stage stage ON stage.id=q.workflow_cursor_record_id
+     JOIN project ON project.id=stage.project_id
+     WHERE stage.state='awaiting-ruling' AND q.answered_at IS NULL AND q.closed_at IS NULL
+     ORDER BY q.asked_at,q.number${offsetClause(workflowLimit, workflowOffset)}`,
+    [],
+  )) as Row[]
+  const combined = [...runs, ...workflows]
+  return input.limit === undefined ? combined : combined.slice(0, input.limit + 1)
+}
+
+async function rows(tx: SQL, input: QuestionReadInput): Promise<Row[]> {
+  const targeted = await targetedRows(tx, input)
+  if (targeted !== null) return targeted
+  if (input.read === 'inbox') return inboxRows(tx, input)
   if (input.read === 'waiting')
     return limited(
       (await tx.unsafe(
@@ -272,79 +388,124 @@ export async function readRecordQuestionRows(tx: SQL, input: QuestionReadInput):
   )
 }
 
+export async function readRecordQuestionRows(
+  tx: SQL,
+  input: Exclude<QuestionReadInput, { read: 'rulings' }>,
+): Promise<{ items: Row[]; cursor?: string; more?: boolean }> {
+  const items = await rows(tx, input)
+  if (input.read !== 'inbox' || input.limit === undefined) return { items }
+  const offset = input.changedAfter === undefined ? 0 : Number(input.changedAfter)
+  const page = items.slice(0, input.limit)
+  return { items: page, cursor: String(offset + page.length), more: items.length > input.limit }
+}
+
+type RulingsInput = Tenant & Extract<RecordQuestionReadInput, { read: 'rulings' }>
+type RecordPool = ReturnType<typeof recordPool>
+
+async function readRulingPage(client: RecordPool, input: RulingsInput) {
+  const pageSize = input.limit ?? 100
+  return client.begin(async (tx) => {
+    await bindTenant(tx, input)
+    const all = await recordQuestionRulingRows(tx, {
+      kind: input.kind,
+      since: input.since,
+      afterNumber:
+        input.changedAfter && 'questionNumber' in input.changedAfter
+          ? input.changedAfter.questionNumber
+          : undefined,
+      limit: pageSize + 1,
+    })
+    const items = all.slice(0, pageSize)
+    const last = items.at(-1)
+    return {
+      items,
+      ...(last ? { cursor: `page:${String(last.number)}` } : {}),
+      more: all.length > pageSize,
+    }
+  })
+}
+
+async function readRulingChanges(client: RecordPool, input: RulingsInput) {
+  const materialize = async (tx: SQL, page: RecordChangeReadPage) => {
+    const items = page.resetRequired
+      ? limited(await recordQuestionRulingRows(tx, input), input.limit)
+      : await recordQuestionRulingRows(tx, {
+          kind: input.kind,
+          since: input.since,
+          ids: [...new Set(page.changes.map(({ id }) => id))],
+        })
+    return {
+      items,
+      cursor: encodeRecordChangeCursor(page.cursor),
+      more: page.resetRequired ? false : page.more,
+      reset: page.resetRequired,
+    }
+  }
+  if (input.changedAfter !== undefined) {
+    if ('questionNumber' in input.changedAfter)
+      throw new Error('page cursors must use the rulings page read')
+    return readRecordChanges(
+      client,
+      input,
+      input.changedAfter,
+      MAX_RECORD_CHANGE_PAGE_SIZE,
+      RECORD_QUESTION_CHANGE_TABLES,
+      materialize,
+    )
+  }
+
+  let after = (
+    await readRecordChanges(
+      client,
+      input,
+      null,
+      MAX_RECORD_CHANGE_PAGE_SIZE,
+      RECORD_QUESTION_CHANGE_TABLES,
+    )
+  ).cursor
+  while (true) {
+    const page = await readRecordChanges(
+      client,
+      input,
+      after,
+      MAX_RECORD_CHANGE_PAGE_SIZE,
+      RECORD_QUESTION_CHANGE_TABLES,
+      async (tx, current) => {
+        if (current.resetRequired || current.more)
+          return { done: false as const, cursor: current.cursor }
+        const allItems = await recordQuestionRulingRows(tx, input)
+        const items = limited(allItems, input.limit)
+        if (items.length < allItems.length) return { done: true as const, result: { items } }
+        return {
+          done: true as const,
+          result: {
+            items,
+            cursor: encodeRecordChangeCursor(current.cursor),
+            more: false,
+            reset: false,
+          },
+        }
+      },
+    )
+    if (page.done) return page.result
+    after = page.cursor
+  }
+}
+
 export async function readRecordQuestions(
   input: Tenant & RecordQuestionReadInput,
 ): Promise<{ items: Row[]; cursor?: string; more?: boolean; reset?: boolean }> {
-  const client = recordPool(input.url)
   if (input.read === 'rulings') {
-    const materialize = async (tx: SQL, page: RecordChangeReadPage) => {
-      const items = page.resetRequired
-        ? limited(await recordQuestionRulingRows(tx, input), input.limit)
-        : await recordQuestionRulingRows(tx, {
-            kind: input.kind,
-            since: input.since,
-            ids: [...new Set(page.changes.map(({ id }) => id))],
-          })
-      return {
-        items,
-        cursor: encodeRecordChangeCursor(page.cursor),
-        more: page.resetRequired ? false : page.more,
-        reset: page.resetRequired,
-      }
-    }
-    if (input.changedAfter !== undefined)
-      return readRecordChanges(
-        client,
-        input,
-        input.changedAfter,
-        MAX_RECORD_CHANGE_PAGE_SIZE,
-        RECORD_QUESTION_CHANGE_TABLES,
-        materialize,
-      )
-
-    let after = (
-      await readRecordChanges(
-        client,
-        input,
-        null,
-        MAX_RECORD_CHANGE_PAGE_SIZE,
-        RECORD_QUESTION_CHANGE_TABLES,
-      )
-    ).cursor
-    while (true) {
-      const page = await readRecordChanges(
-        client,
-        input,
-        after,
-        MAX_RECORD_CHANGE_PAGE_SIZE,
-        RECORD_QUESTION_CHANGE_TABLES,
-        async (tx, current) => {
-          if (current.resetRequired || current.more)
-            return { done: false as const, cursor: current.cursor }
-          const allItems = await recordQuestionRulingRows(tx, input)
-          const items = limited(allItems, input.limit)
-          if (items.length < allItems.length) return { done: true as const, result: { items } }
-          return {
-            done: true as const,
-            result: {
-              items,
-              cursor: encodeRecordChangeCursor(current.cursor),
-              more: false,
-              reset: false,
-            },
-          }
-        },
-      )
-      if (page.done) return page.result
-      after = page.cursor
-    }
+    if (input.since === undefined && input.limit === undefined && input.changedAfter === undefined)
+      throw new UnboundedQuestionRulingsError()
+    const client = recordPool(input.url)
+    if (input.limit !== undefined || (input.changedAfter && 'questionNumber' in input.changedAfter))
+      return readRulingPage(client, input)
+    return readRulingChanges(client, input)
   }
+  const client = recordPool(input.url)
   return client.begin(async (tx) => {
     await bindTenant(tx, input)
-    const items = await readRecordQuestionRows(tx, input)
-    if (input.read !== 'inbox' || input.limit === undefined) return { items }
-    const offset = input.changedAfter === undefined ? 0 : Number(input.changedAfter)
-    const page = items.slice(0, input.limit)
-    return { items: page, cursor: String(offset + page.length), more: items.length > input.limit }
+    return readRecordQuestionRows(tx, input)
   })
 }

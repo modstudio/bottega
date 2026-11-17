@@ -10,7 +10,7 @@ import { pullRequestNumberForBranch } from '../branch/task-key-pull-request.ts'
 import { db } from '../database/db.ts'
 import { filedIssueQueueState } from '../issue/issue-dispatch.ts'
 import { projectAt, projectByName } from '../project/projects.ts'
-import { questionRulings } from '../question-store/question-store-read.ts'
+import { openQuestionsForTasks } from '../question-store/question-store-read.ts'
 import {
   type QuestionInboxCounts,
   questionInboxCountsForSession,
@@ -52,6 +52,7 @@ type ContextBriefHolder = {
   kind: 'session' | 'cursor' | 'task' | 'epic'
   items: ContextItem[]
   openQuestions?: Array<{ number: number; question: string }>
+  openQuestionsUnavailable?: string
 }
 
 export type ContextBrief = {
@@ -105,6 +106,7 @@ function renderItem(item: ContextItem): string {
 
 function renderOpenQuestions(holder: ContextBriefHolder): string[] {
   if (holder.kind === 'cursor') return []
+  if (holder.openQuestionsUnavailable) return [`  open: ${holder.openQuestionsUnavailable}`]
   const questions = (holder.openQuestions ?? []).map(
     (question) => `  open: ${firstLine(question.question)}`,
   )
@@ -163,6 +165,7 @@ type ContextBriefHolderReference =
   | (Omit<ContextBriefHolder, 'items' | 'kind'> & {
       kind: 'task' | 'epic'
       recordId: string
+      project: string
     })
 
 /** Decide holder order from task facts only; store reads are applied after this decision. */
@@ -198,6 +201,7 @@ export function holderSequence(
       title: task.title ?? '',
       kind: taskProfile(task.key, projectTasks),
       recordId: task.record_id,
+      project: task.project,
     })
   }
   for (const { key, project } of working) {
@@ -220,6 +224,31 @@ export async function storedBriefHolders(
   references: readonly ContextBriefHolderReference[],
   database: Database,
 ): Promise<ContextBriefHolder[]> {
+  const taskReferences = references.filter(
+    (reference): reference is Extract<ContextBriefHolderReference, { kind: 'task' | 'epic' }> =>
+      reference.kind === 'task' || reference.kind === 'epic',
+  )
+  const openByTask = new Map<string, Array<{ number: number; question: string }>>()
+  const unresolvedProjects = new Set<string>()
+  for (const projectName of new Set(taskReferences.map(({ project }) => project))) {
+    const project = projectByName(projectName, database)
+    if (!project) {
+      unresolvedProjects.add(projectName)
+      continue
+    }
+    const projectTasks = taskReferences.filter((reference) => reference.project === projectName)
+    const rows = await openQuestionsForTasks(
+      database,
+      projectTasks.map(({ recordId }) => recordId),
+      project.recordId,
+    )
+    for (const row of rows) {
+      const taskId = String(row.workflow_task_record_id)
+      const questions = openByTask.get(taskId) ?? []
+      questions.push({ number: Number(row.number), question: String(row.question) })
+      openByTask.set(taskId, questions)
+    }
+  }
   return (
     await Promise.all(
       references.map(async (reference) => {
@@ -233,31 +262,21 @@ export async function storedBriefHolders(
           const { recordId, ...holder } = reference
           return { ...holder, items: storedItems(cursorContextHolder(recordId), database) }
         }
-        const { recordId, ...holder } = reference
-        const openQuestions = await openTaskQuestions(recordId, database)
+        const { recordId, project: projectName, ...holder } = reference
+        const openQuestions = openByTask.get(recordId) ?? []
         return {
           ...holder,
           items: storedItems(taskContextHolder(recordId), database),
+          ...(unresolvedProjects.has(projectName)
+            ? {
+                openQuestionsUnavailable: `questions unread for unresolved project ${projectName}; register or refresh the project, then retry`,
+              }
+            : {}),
           ...(openQuestions.length ? { openQuestions } : {}),
         }
       }),
     )
   ).filter((holder) => holder.kind !== 'session' || holder.items.length > 0)
-}
-
-/** Read only unanswered, unclosed questions bound to one task record. */
-async function openTaskQuestions(
-  taskRecordId: string,
-  database: Database,
-): Promise<Array<{ number: number; question: string }>> {
-  return (await questionRulings(database, { kind: 'all' })).items
-    .filter(
-      (row) =>
-        row.workflow_task_record_id === taskRecordId &&
-        row.answered_at === null &&
-        row.closed_at === null,
-    )
-    .map((row) => ({ number: Number(row.number), question: String(row.question) }))
 }
 
 export function workingKeysForBrief(

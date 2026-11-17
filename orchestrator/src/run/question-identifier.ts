@@ -4,7 +4,11 @@
 import type { Database } from 'bun:sqlite'
 import type { QuestionIdentity } from '../../../shared/orch-contract.ts'
 import { hasRecordIdShape } from '../../../shared/record-id.ts'
-import { questionById, questionRulings } from '../question-store/question-store-read.ts'
+import {
+  questionById,
+  questionByProjectNumber,
+  questionNumberProjectId,
+} from '../question-store/question-store-read.ts'
 
 export type ParsedQuestionIdentifier =
   | { kind: 'number'; id: number }
@@ -12,9 +16,25 @@ export type ParsedQuestionIdentifier =
 
 const ACCEPTED_QUESTION_IDENTIFIERS = 'a positive decimal question number or a full question UUID'
 
-export async function questionIdentityMap(database: Database): Promise<QuestionIdentity[]> {
-  const { items } = await questionRulings(database, { kind: 'all' })
-  return items.map((row) => ({ number: Number(row.number), record_id: String(row.record_id) }))
+export async function questionIdentityMap(
+  database: Database,
+  identifiers: Array<string | number>,
+): Promise<QuestionIdentity[]> {
+  return Promise.all(
+    identifiers.map(async (identifier) => {
+      const parsed = parseQuestionIdentifier(identifier)
+      const row =
+        parsed.kind === 'number'
+          ? await questionByProjectNumber(
+              database,
+              parsed.id,
+              questionNumberProjectId(database, parsed.id),
+            )
+          : await questionById(database, parsed.recordId)
+      if (!row) throw new Error(`no question has identifier ${JSON.stringify(String(identifier))}`)
+      return { number: Number(row.number), record_id: String(row.record_id) }
+    }),
+  )
 }
 
 export function parseQuestionIdentifier(input: string | number): ParsedQuestionIdentifier {
@@ -35,8 +55,12 @@ export async function resolveQuestionIdentifier(
 ): Promise<string> {
   const parsed = parseQuestionIdentifier(input)
   if (parsed.kind === 'number') {
-    const row = (await questionIdentityMap(database)).find(({ number }) => number === parsed.id)
-    if (row) return row.record_id
+    const row = await questionByProjectNumber(
+      database,
+      parsed.id,
+      questionNumberProjectId(database, parsed.id),
+    )
+    if (row) return String(row.record_id)
     throw new Error(`no question has number ${parsed.id}; pass ${ACCEPTED_QUESTION_IDENTIFIERS}`)
   }
   const row = await questionById(database, parsed.recordId)

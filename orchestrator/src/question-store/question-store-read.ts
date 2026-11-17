@@ -3,6 +3,7 @@
 
 import type { Database } from 'bun:sqlite'
 import { PLATFORM_NAME } from '../../../shared/brand.ts'
+import { projectByName } from '../project/project-read.ts'
 import type {
   TaskFlowInboxQuestionRow,
   TaskFlowOpenSessionStageRow,
@@ -11,6 +12,22 @@ import type {
 } from '../workflow/task-flow-store-types.ts'
 import { compareQuestionsByAsk } from './question-order.ts'
 import { questionStore } from './question-store.ts'
+import { questionNumberProjectIds } from './question-store-sqlite-reads.ts'
+import type { QuestionStore } from './question-store-types.ts'
+
+export function questionNumberProjectId(database: Database, number: number): string {
+  const projectIds = questionNumberProjectIds(database, number)
+  if (projectIds.length > 1)
+    throw new Error(
+      `question number ${number} exists in more than one project; pass the question UUID, then retry`,
+    )
+  const projectId = projectIds[0]
+  if (!projectId)
+    throw new Error(
+      `question ${number} has no locally resolved record space; pass the question UUID`,
+    )
+  return projectId
+}
 
 export async function questionById(
   database: Database,
@@ -21,6 +38,60 @@ export async function questionById(
       | Record<string, unknown>
       | undefined) ?? null
   )
+}
+
+export async function questionByProjectNumber(
+  database: Database,
+  number: number,
+  projectId: string,
+): Promise<Record<string, unknown> | null> {
+  return (
+    ((await questionStore(database).read({ read: 'by-number', number }, projectId)).items[0] as
+      | Record<string, unknown>
+      | undefined) ?? null
+  )
+}
+
+export async function openQuestionsForTasks(
+  database: Database,
+  taskRecordIds: string[],
+  projectId: string,
+): Promise<Record<string, unknown>[]> {
+  if (!taskRecordIds.length) return []
+  const rows: Record<string, unknown>[] = []
+  for (let offset = 0; offset < taskRecordIds.length; offset += 100) {
+    rows.push(
+      ...((
+        await questionStore(database).read(
+          { read: 'open-for-tasks', taskRecordIds: taskRecordIds.slice(offset, offset + 100) },
+          projectId,
+        )
+      ).items as Record<string, unknown>[]),
+    )
+  }
+  return rows
+}
+
+export async function questionsForSession(database: Database, sessionId: string) {
+  return (await questionStore(database).read({ read: 'for-session', sessionId })).items as Record<
+    string,
+    unknown
+  >[]
+}
+
+export async function unlinkedWorkflowQuestions(
+  database: Database,
+  input: { project?: string; workflowKey?: string; projectId?: string } = {},
+) {
+  const projectId =
+    input.projectId ??
+    (input.project ? projectByName(input.project, database)?.recordId : undefined)
+  return (
+    await questionStore(database).read(
+      { read: 'unlinked-workflow', project: input.project, workflowKey: input.workflowKey },
+      projectId,
+    )
+  ).items as Record<string, unknown>[]
 }
 
 export async function waitingQuestions(database: Database): Promise<TaskFlowWaitingQuestionRow[]> {
@@ -62,7 +133,18 @@ export async function questionsForRuns(
   database: Database,
   runIds: readonly string[],
 ): Promise<Record<string, unknown>[]> {
-  return (await Promise.all(runIds.map((runId) => questionsForRun(database, runId)))).flat()
+  const rows: Record<string, unknown>[] = []
+  for (let offset = 0; offset < runIds.length; offset += 100) {
+    const ids = runIds.slice(offset, offset + 100)
+    if (!ids.length) continue
+    rows.push(
+      ...((await questionStore(database).read({ read: 'for-runs', runIds: ids })).items as Record<
+        string,
+        unknown
+      >[]),
+    )
+  }
+  return rows
 }
 
 export async function questionsForWorkflowCursor(
@@ -191,6 +273,36 @@ export async function questionRulings(
 ) {
   const result = await questionStore(database).read({ read: 'rulings', ...input })
   return { ...result, items: result.items as Record<string, unknown>[] }
+}
+
+export async function allQuestionRulingsPaged(
+  database: Database,
+  kind: 'workflow' | 'run' | 'all',
+): Promise<Record<string, unknown>[]> {
+  return questionRulingsPaged(questionStore(database), kind)
+}
+
+export async function questionRulingsPaged(
+  store: QuestionStore,
+  kind: 'workflow' | 'run' | 'all',
+): Promise<Record<string, unknown>[]> {
+  const items: Record<string, unknown>[] = []
+  let changedAfter: string | undefined
+  let more = true
+  while (more) {
+    const result = await store.read({
+      read: 'rulings',
+      kind,
+      ...(changedAfter === undefined ? { limit: 100 } : { changedAfter }),
+    })
+    items.push(...(result.items as Record<string, unknown>[]))
+    more = result.more === true
+    if (!more) return items
+    if (!result.cursor)
+      throw new Error('question rulings page says more without a continuation cursor')
+    changedAfter = result.cursor
+  }
+  return items
 }
 
 export async function questionTaskRulings(

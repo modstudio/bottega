@@ -30,7 +30,7 @@ import {
   worktreeDatabaseInventory,
 } from '../resources/resource-inventory.ts'
 import type { ResourceClaimKind } from '../resources/resource-step-recorder.ts'
-import { openChainQuestions } from '../run/question-open.ts'
+import { openRunChainRoots } from '../run/question-open.ts'
 import { TERMINAL_RUN_STATUS_SET, TERMINAL_RUN_STATUS_SQL } from '../run/run-status.ts'
 
 export { sandboxDirectoryInventory } from '../resources/resource-inventory.ts'
@@ -97,10 +97,11 @@ export async function askingRuns(database = db()): Promise<AddressedRun[]> {
   const candidates = database
     .query(`SELECT record_id, started_at, session_id FROM run WHERE ${ASKING_RUN_WHERE}`)
     .all() as AddressedRun[]
-  const open = await Promise.all(
-    candidates.map((run) => openChainQuestions(database, run.record_id)),
+  const openRoots = await openRunChainRoots(
+    database,
+    candidates.map((run) => run.record_id),
   )
-  return candidates.filter((_, index) => open[index]!.length === 0)
+  return candidates.filter((run) => !openRoots.has(run.record_id))
 }
 
 type TerminalCloseOutRun = AddressedRun & {

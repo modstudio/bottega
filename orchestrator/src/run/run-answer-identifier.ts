@@ -3,7 +3,12 @@
 
 import type { Database } from 'bun:sqlite'
 import { storedMachineNames } from '../../../shared/machine-config.ts'
-import { questionRulings, questionsById } from '../question-store/question-store-read.ts'
+import {
+  questionByProjectNumber,
+  questionNumberProjectId,
+  questionsById,
+} from '../question-store/question-store-read.ts'
+import { questionNumberProjectIds } from '../question-store/question-store-sqlite-reads.ts'
 import { type MachineIdentifierNames, stripMachineLabel } from '../record/machine-name.ts'
 import { questionsForRunChain } from './question-open.ts'
 import { classifyBareRunIdentifier } from './run-identifier-grammar.ts'
@@ -198,11 +203,19 @@ async function readQuestionFacts(
   database: Database,
   identifier: ParsedAnswerIdentifier,
 ): Promise<AnswerQuestionFacts | null> {
+  // A bare number may name a run, so a number no question holds is a miss, not a refusal.
+  if (
+    identifier.kind !== 'record-id' &&
+    !questionNumberProjectIds(database, identifier.number).length
+  )
+    return null
   const row =
     identifier.kind === 'record-id'
       ? (await questionsById(database, [identifier.recordId]))[0]
-      : (await questionRulings(database, { kind: 'all' })).items.find(
-          ({ number }) => Number(number) === identifier.number,
+      : await questionByProjectNumber(
+          database,
+          identifier.number,
+          questionNumberProjectId(database, identifier.number),
         )
   if (!row) return null
   const runId = String(row.run_record_id)

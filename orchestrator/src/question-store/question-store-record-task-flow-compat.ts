@@ -19,6 +19,7 @@ import type {
 } from '../workflow/task-flow-store-types.ts'
 import { compareQuestionsByAsk } from './question-order.ts'
 import { questionStore } from './question-store.ts'
+import { questionRulingsPaged } from './question-store-read.ts'
 import type { QuestionReadRow, QuestionStore } from './question-store-types.ts'
 
 type StageSelector = Record<string, unknown>
@@ -216,13 +217,9 @@ function rulingListReads(questions: QuestionStore) {
       after: number | null
       cursor: number | null
     }): Promise<TaskFlowRulingRow[]> {
-      const rows = (
-        await questions.read({
-          read: 'rulings',
-          kind: input.kind,
-          ...(input.since ? { since: input.since } : {}),
-        })
-      ).items
+      const rows: QuestionReadRow[] = input.since
+        ? (await questions.read({ read: 'rulings', kind: input.kind, since: input.since })).items
+        : ((await questionRulingsPaged(questions, input.kind)) as QuestionReadRow[])
       for (const row of rows) {
         const cursor = field(row, 'workflow_cursor_id')
         if (typeof cursor === 'string' && field(row, 'workflow_slug') == null)

@@ -394,11 +394,23 @@ type MigrationResult = {
 
 export async function questionIdentitiesForMigrations(
   d: Database,
-  readQuestionIdentities: () => Promise<readonly QuestionIdentity[]>,
+  readQuestionIdentities: (numbers: readonly number[]) => Promise<readonly QuestionIdentity[]>,
 ): Promise<readonly QuestionIdentity[]> {
   if (!pendingMigrationTags(d).includes('0036_question_uuid_key')) return []
+  const hasQuestionTable = d
+    .query<{ present: number }, []>(
+      "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='question') present",
+    )
+    .get()?.present
+  if (!hasQuestionTable) return []
+  const numbers = d
+    .query<{ number: number }, []>('SELECT DISTINCT question_id number FROM question')
+    .all()
+    .map(({ number }) => number)
+    .sort((left, right) => left - right)
+  if (!numbers.length) return []
   try {
-    return await readQuestionIdentities()
+    return await readQuestionIdentities(numbers)
   } catch (error) {
     throw new Error(
       `refusing question UUID migration: could not obtain the orchestrator identity map; ` +
@@ -489,7 +501,7 @@ export function migrateDatabase(
 }
 
 export async function migrateDatabaseWithQuestionIdentityMap(
-  readQuestionIdentities: () => Promise<readonly QuestionIdentity[]>,
+  readQuestionIdentities: (numbers: readonly number[]) => Promise<readonly QuestionIdentity[]>,
   readCursorIdentities: () => Promise<readonly WorkflowCursorIdentityRow[]> = async () => [],
 ): Promise<MigrationResult> {
   const { database, create } = openMigrationDatabase()

@@ -158,6 +158,33 @@ test('renders a keyless cursor with its idle age and close command', () => {
   )
 })
 
+test('renders unresolved task project question reads as unavailable', () => {
+  const brief: ContextBrief = {
+    session: 'session',
+    fullCommand: 'full',
+    holders: [
+      {
+        key: 'DEV-1',
+        title: 'Unresolved task',
+        kind: 'task',
+        items: [],
+        openQuestionsUnavailable:
+          'questions unread for unresolved project missing-project; register or refresh the project, then retry',
+      },
+    ],
+    runs: [],
+    cursors: [],
+    claims: [],
+    waiting: { boardRequests: 0, questions: null, filedIssues: 0, resumeBriefs: 0 },
+    autonomy: 'manual',
+  }
+
+  expect(renderContextBrief(brief)).toContain(
+    'open: questions unread for unresolved project missing-project; register or refresh the project, then retry',
+  )
+  expect(renderContextBrief(brief)).not.toContain('open: none')
+})
+
 test('keeps a fresh keyless cursor visible without an abandon remedy', () => {
   const brief: ContextBrief = {
     session: 'session-a',
@@ -207,6 +234,12 @@ test('renders one open question for its task holder', async () => {
   database.exec('PRAGMA foreign_keys=OFF')
   database
     .query(
+      `INSERT INTO project(record_id,name,path,stack,settings)
+       VALUES ('00000000-0000-4000-8000-000000000001','fixture','/fixture','bun','{}')`,
+    )
+    .run()
+  database
+    .query(
       `INSERT INTO question
        (record_id,number,workflow_cursor_record_id,workflow_task_record_id,asked_at,question,answered_at,closed_at)
        VALUES ('question-5277',5277,'cursor-record','task-record','2026-11-13','Which shape should the brief use?',NULL,NULL),
@@ -221,6 +254,7 @@ test('renders one open question for its task holder', async () => {
         title: 'Build the brief',
         kind: 'task',
         recordId: 'task-record',
+        project: 'fixture',
       },
     ],
     database,
@@ -416,31 +450,42 @@ test('orders the session, each project-scoped working task, and its epic by task
       title: 'Build the brief',
       kind: 'task',
       recordId: `${PLATFORM_SLUG}:DEV-1844/2`,
+      project: PLATFORM_SLUG,
     },
     {
       key: 'DEV-1844',
       title: 'Architect context',
       kind: 'epic',
       recordId: `${PLATFORM_SLUG}:DEV-1844`,
+      project: PLATFORM_SLUG,
     },
-    { key: 'APP-7', title: 'Other project task', kind: 'task', recordId: 'other:APP-7' },
+    {
+      key: 'APP-7',
+      title: 'Other project task',
+      kind: 'task',
+      recordId: 'other:APP-7',
+      project: 'other',
+    },
     {
       key: 'DEV-2000',
       title: 'Parentless childless task',
       kind: 'task',
       recordId: `${PLATFORM_SLUG}:DEV-2000`,
+      project: PLATFORM_SLUG,
     },
     {
       key: 'SHARED-1',
       title: 'Platform shared key',
       kind: 'task',
       recordId: `${PLATFORM_SLUG}:SHARED-1`,
+      project: PLATFORM_SLUG,
     },
     {
       key: 'SHARED-1',
       title: 'Other shared key',
       kind: 'task',
       recordId: 'other:SHARED-1',
+      project: 'other',
     },
   ])
 })
@@ -464,6 +509,8 @@ test('reads a working task brief from its record-id holder while retaining the t
       key: 'STAR-1',
       title: 'Stable holder',
       kind: 'task',
+      openQuestionsUnavailable:
+        'questions unread for unresolved project starship; register or refresh the project, then retry',
       items: [
         expect.objectContaining(
           item(`task:${recordId}`, 'position', 'position', 'Continue.', 'test'),

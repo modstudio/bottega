@@ -17,7 +17,7 @@ import type { ProcessSample } from '../process-resource-sampler.ts'
 import { questionRulings } from '../question-store/question-store-read.ts'
 import { publishChangeCursor } from './collect-change.ts'
 import { currentRunMemberJoin, liveMemberStall } from './live-run-member.ts'
-import { questionsForRunChain } from './question-open.ts'
+import { questionsForRunChains } from './question-open.ts'
 import type {
   AnswerChannel,
   AnswererKind,
@@ -139,10 +139,10 @@ function reportRouteAndExecutor(row: Record<string, unknown>, log: (...values: u
   if (row.executor === 'harness') log('      executor: harness')
 }
 
-async function listingQuestions(recordId: string, json: boolean) {
+function listingQuestions(questions: Record<string, unknown>[] | undefined, json: boolean) {
   if (!json) return undefined
   return (
-    (await questionsForRunChain(db(), recordId)) as unknown as {
+    (questions ?? []) as unknown as {
       number: number
       record_id: string
       run_record_id: string
@@ -173,6 +173,17 @@ async function listingQuestions(recordId: string, json: boolean) {
   }))
 }
 
+async function listingQuestionsByRoot(
+  rows: Record<string, unknown>[],
+  json: boolean,
+): Promise<Map<string, Record<string, unknown>[]>> {
+  if (!json) return new Map()
+  return questionsForRunChains(
+    db(),
+    rows.map((row) => String(row.record_id)),
+  )
+}
+
 function listingCostContext(
   json: boolean,
   subscriptionCost: SubscriptionCostContext | undefined,
@@ -187,15 +198,16 @@ async function listingConversation(
   subscriptionCost: SubscriptionCostContext | undefined,
   chainIsStranded: (id: string) => boolean,
   strandedRecovery: (id: string) => string,
+  questions: Record<string, unknown>[] | undefined,
 ): Promise<Record<string, unknown>[]> {
   const chain = resolveFailover(db(), r.record_id as string)
   const final = chain.attempts.at(-1)!
   const recordId = String(r.record_id)
-  const questions = await listingQuestions(recordId, json)
+  const listedQuestions = listingQuestions(questions, json)
   const listed = {
     ...r,
     ...listingHumanCurrent(final.record_id, json),
-    ...(questions ? { questions } : {}),
+    ...(listedQuestions ? { questions: listedQuestions } : {}),
     answer_agent: final.agent,
     failover_chain: chain.attempts.map((attempt) => attempt.agent),
     ...(chainIsStranded(recordId)
@@ -208,6 +220,33 @@ async function listingConversation(
   }
   if (!subscriptionCost) return [listed]
   return [listedRunWithCost(listed, listingTurns(recordId, json), subscriptionCost)]
+}
+
+async function listingConversations(
+  rows: Record<string, unknown>[],
+  input: {
+    json: boolean
+    costContext: SubscriptionCostContext | undefined
+    chainIsStranded: (id: string) => boolean
+    strandedRecovery: (id: string) => string
+  },
+): Promise<Record<string, unknown>[]> {
+  const rooted = rows.map(withRetryRecordId)
+  const questionsByRoot = await listingQuestionsByRoot(rooted, input.json)
+  return (
+    await Promise.all(
+      rooted.map((row) =>
+        listingConversation(
+          row,
+          input.json,
+          input.costContext,
+          input.chainIsStranded,
+          input.strandedRecovery,
+          questionsByRoot.get(String(row.record_id)),
+        ),
+      ),
+    )
+  ).flat()
 }
 
 function processSamplesForRows(
@@ -708,13 +747,12 @@ export async function runListingCommand(
       ORDER BY r.number DESC${listingLimitSql(limit)}`,
     )
     .all(...args, ...listingLimitBindings(limit)) as Record<string, unknown>[]
-  rows = (
-    await Promise.all(
-      rows
-        .map(withRetryRecordId)
-        .map((r) => listingConversation(r, json, costContext, chainIsStranded, strandedRecovery)),
-    )
-  ).flat()
+  rows = await listingConversations(rows, {
+    json,
+    costContext,
+    chainIsStranded,
+    strandedRecovery,
+  })
   // Unknown means absent from orch, not merely absent from this presentation
   // (for example because an id names a child turn or another filter excludes
   // it). Omission and non-existence are different facts for machine callers.
