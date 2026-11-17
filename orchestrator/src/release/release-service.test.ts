@@ -93,7 +93,7 @@ test('release checkout verification reports a breach', () => {
   ).toEqual({
     restoreWarning: null,
     restoreBreach:
-      'registered main checkout could not be restored to landing branch main: checkout has tracked modifications; restore it; run git -C /project switch main',
+      "registered main checkout could not be restored to landing branch main: checkout has tracked modifications; restore it; run git -C '/project' switch 'main'",
   })
 })
 

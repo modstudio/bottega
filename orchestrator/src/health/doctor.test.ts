@@ -89,7 +89,7 @@ test('machine doctor fails only tracked-dirty projects that require a clean main
       name: 'strict',
       requireCleanMain: true,
       checkout: { branch: 'main', trunk: 'main', trackedModified: true },
-      decide: mainCheckoutInvariant,
+      decide: (facts) => mainCheckoutInvariant('/strict', facts),
     }),
   ).toMatchObject({ failed: true, lines: [expect.stringContaining('FAIL')] })
 
@@ -98,7 +98,7 @@ test('machine doctor fails only tracked-dirty projects that require a clean main
       name: 'permissive',
       requireCleanMain: false,
       checkout: { branch: 'main', trunk: 'main', trackedModified: true },
-      decide: mainCheckoutInvariant,
+      decide: (facts) => mainCheckoutInvariant('/permissive', facts),
     }),
   ).toEqual({
     failed: false,
@@ -111,10 +111,11 @@ test('machine doctor keeps a wrong branch as a register question', () => {
     name: 'branchy',
     requireCleanMain: true,
     checkout: { branch: 'feature', trunk: 'main', trackedModified: false },
-    decide: mainCheckoutInvariant,
+    decide: (facts) => mainCheckoutInvariant('/branchy', facts),
   })
   expect(diagnosis.failed).toBe(false)
   expect(diagnosis.lines).toEqual([expect.stringContaining('register question')])
+  expect(diagnosis.lines[0]).toContain("run git -C '/branchy' switch 'main'")
   expect(diagnosis.lines[0]).not.toContain('FAIL')
 })
 

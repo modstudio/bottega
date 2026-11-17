@@ -16,7 +16,7 @@ The worktree is the safety boundary. A repository agent, except a shared reviewe
 
 Readers never commit, push or merge; a findings review runs no suites, one probe per finding. Writers commit to run branches but never push, merge into trunk or rewrite history. Trunk admits work only by GitHub pull request through the merge queue; after merging a reworked run, run `bottega tree branch landed`.
 
-`hooks/protect-main-checkout.py` blocks tracked writes and ruled Bash Git mutations in registered main (`-C` else cwd); worktrees excluded; `requireCleanMain` false exempts; unparsed pass. `hooks/git-guard.py` asks before a destructive push and allows git in a project worktree, also via `bottega workflow exec`. `hooks/no-attribution.py` denies `git commit`/`git merge`/`gh pr create` crediting an AI, also `-F`/`--body-file`; `.githooks/commit-msg` does too.
+`hooks/protect-main-checkout.py` blocks main tracked writes/Git mutations; allows bare `checkout`/`switch` (`-q`/`--quiet` optional) only to registered trunk. Worktrees/opt-outs/unparsed exempt. `hooks/git-guard.py` asks before a destructive push and allows git in a project worktree, also via `bottega workflow exec`. `hooks/no-attribution.py` denies `git commit`/`git merge`/`gh pr create` crediting an AI, also `-F`/`--body-file`; `.githooks/commit-msg` does too.
 
 **An architect session with files to commit while workers are running uses a worktree, not a branch in the shared checkout** — branching there turns an ordinary commit into someone else's escape. **Landing happens in the disposable worktree, never the main checkout.**
 

@@ -62,7 +62,7 @@ export function releaseReasonDecision(
 }
 
 export type CheckoutFacts = {
-  path: string
+  returnToTrunkCommand: string
   branch: string
   requiredBranch: string
   trunk: string
@@ -84,6 +84,7 @@ export const RELEASE_CHECKOUT_DIRTY_REFUSAL =
 
 /** Decide how a release-command checkout moves from its landing branch to its rung. */
 export function releaseCheckoutTransitionDecision(facts: {
+  returnToTrunkCommand: string
   current: string
   trunk: string
   rungBranch: string
@@ -95,7 +96,7 @@ export function releaseCheckoutTransitionDecision(facts: {
   if (facts.current !== facts.trunk && facts.current !== facts.rungBranch) {
     return {
       ok: false,
-      message: `registered main checkout is on ${facts.current || 'detached HEAD'}, not its landing branch ${facts.trunk}; switch it to ${facts.trunk}, then retry`,
+      message: `registered main checkout is on ${facts.current || 'detached HEAD'}, not its landing branch ${facts.trunk}; run ${facts.returnToTrunkCommand}, then retry`,
     }
   }
   if (facts.dirty) {
@@ -295,7 +296,7 @@ export function checkoutReleaseDecision(facts: CheckoutFacts): Decision {
   if (facts.branch !== facts.requiredBranch) {
     return {
       ok: false,
-      message: `the release did not move the registered main checkout; it is on ${facts.branch || 'detached HEAD'}, not its landing branch ${facts.trunk}; run git -C ${facts.path} switch ${facts.trunk}, then retry`,
+      message: `the release did not move the registered main checkout; it is on ${facts.branch || 'detached HEAD'}, not its landing branch ${facts.trunk}; run ${facts.returnToTrunkCommand}, then retry`,
     }
   }
   if (facts.dirty) {
