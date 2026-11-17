@@ -265,25 +265,15 @@ function releaseSupersededVersions(local: Database): void {
     const n = names(table)
     const cursorForeign =
       table === 'workflow' ? 'workflow_version_record_id' : 'catalogue_version_record_id'
-    const versions = hosted
-      ? table === 'workflow'
-        ? local
-            .query<{ record_id: string; space_id: string }, []>(
-              'SELECT record_id,space_id FROM workflow_version WHERE superseded_at IS NOT NULL',
-            )
-            .all()
-        : local
-            .query<{ record_id: string; space_id: string }, []>(
-              'SELECT record_id,space_id FROM step_catalogue_version WHERE superseded_at IS NOT NULL',
-            )
-            .all()
-      : local
-          .query<{ record_id: string; space_id: string }, []>(
-            `SELECT record_id,space_id FROM ${n.version} v
-               WHERE superseded_at IS NOT NULL
-                 AND NOT EXISTS (SELECT 1 FROM workflow_cursor c WHERE c.${cursorForeign}=v.record_id)`,
-          )
-          .all()
+    const cursorClause = hosted
+      ? ''
+      : `AND NOT EXISTS (SELECT 1 FROM workflow_cursor c WHERE c.${cursorForeign}=v.record_id)`
+    const versions = local
+      .query<{ record_id: string; space_id: string }, []>(
+        `SELECT record_id,space_id FROM ${n.version} v
+           WHERE superseded_at IS NOT NULL ${cursorClause}`,
+      )
+      .all()
     for (const version of versions)
       setAsideOrDeleteVersion(local, n, version.space_id, version.record_id)
   }

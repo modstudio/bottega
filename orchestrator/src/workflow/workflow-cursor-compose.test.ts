@@ -21,7 +21,6 @@ import { promoteWorkflowLocal, setWorkflowLocal } from './workflows.ts'
 
 const destinationSpaceId = 'fixture-space'
 const TASK_IDS = {
-  existing: '00000000-0000-4000-8001-000000000001',
   hosted: '00000000-0000-4000-8001-000000000002',
   stale: '00000000-0000-4000-8001-000000000003',
   adoptRefresh: '00000000-0000-4000-8001-000000000004',
@@ -68,18 +67,11 @@ function composeClient(
   options: {
     fail?: Error
     number?: number
-    flowRevision?: number
-    stageRevision?: number
-    enforcement?: string
-    recordCompose?: boolean
     destinations?: Array<{ destinationSpaceId?: string } | undefined>
     projectNames?: Record<string, string>
   } = {},
 ): RecordApiClient {
   const memory = createMemoryRecordApiClient({
-    taskFlowComposeFlowRevision: options.flowRevision ?? 4,
-    taskFlowComposeStageRevision: options.stageRevision ?? 7,
-    taskFlowComposeEnforcement: options.enforcement,
     taskFlowProjectNames: options.projectNames,
   })
   const replays = new Map<
@@ -95,17 +87,14 @@ function composeClient(
       if (options.fail) throw options.fail
       const replay = replays.get(input.requestId)
       if (replay) return replay
-      const stored =
-        options.recordCompose === false
-          ? { stage: { id: input.stageInsert!.id, number: options.number ?? 41 } }
-          : await memory.composeTaskFlow!(input, destination)
+      const stored = await memory.composeTaskFlow!(input, destination)
       const stage = input.stageInsert!
       const flowId = input.flowInsert?.id ?? input.flowChange!.id
       const result = {
         stage: { id: stage.id, number: options.number ?? stored.stage!.number },
         revisions: {
-          [flowId]: options.flowRevision ?? 4,
-          [stage.id]: options.stageRevision ?? 7,
+          [flowId]: 4,
+          [stage.id]: 7,
         },
       }
       replays.set(input.requestId, result)
@@ -136,20 +125,6 @@ function installKeylessWorkflow(d: Database, slug: string): void {
 
 test('hosted compose prints the hosted number without a local task-flow copy', async () => {
   const d = hostedDatabase()
-  await composeWorkflowWithCursor(
-    'flow',
-    'fixture',
-    'default',
-    { key: 'DEV-EXISTING', branch: 'DEV-EXISTING-work', worktree: '/tmp/existing' },
-    {
-      ...context,
-      taskRecordId: TASK_IDS.existing,
-      taskFlowClient: composeClient([], { number: 99 }),
-    },
-    d,
-    {},
-    {},
-  )
   const calls: TaskFlowIntentInput<'compose'>[] = []
   const destinations: Array<{ destinationSpaceId?: string } | undefined> = []
   const taskFlowClient = composeClient(calls, { destinations, number: 1 })

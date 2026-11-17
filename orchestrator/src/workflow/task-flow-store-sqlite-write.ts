@@ -8,17 +8,11 @@ import type {
   TaskFlowIntentInput,
   TaskFlowIntentResult,
 } from '../record/record-task-flow-write-contract.ts'
-import {
-  type AppliedMirrorMutationDecision,
-  decideAppliedMirrorMutation,
-} from './task-flow-decision.ts'
+import { decideAppliedMirrorMutation } from './task-flow-decision.ts'
 
 type Mutation = { id: string; expectedRevision: number; values: Record<string, unknown> }
 type SqlRow = Record<string, SQLQueryBindings>
-type AppliedMirrorOutcome = Exclude<AppliedMirrorMutationDecision, 'refuse'>
-type MirrorReportingIntent = 'stage-update' | 'advance' | 'await-ruling' | 'abandon' | 'adopt'
-export type TaskFlowSqliteWriteResult<K extends TaskFlowIntent> = TaskFlowIntentResult<K> &
-  (K extends MirrorReportingIntent ? { mirror: Record<string, AppliedMirrorOutcome> } : object)
+export type TaskFlowSqliteWriteResult<K extends TaskFlowIntent> = TaskFlowIntentResult<K>
 
 const jsonValues = new Set(['arguments', 'closedStepNotes', 'satisfiedEvidence'])
 
@@ -151,7 +145,6 @@ function updateMutation(
   mutation: Mutation,
   intent: TaskFlowIntent,
   applied: Record<string, number> | undefined,
-  mirror?: Record<string, AppliedMirrorOutcome>,
 ): number {
   const next = applied?.[mutation.id] ?? mutation.expectedRevision + 1
   const current = revision(database, table, mutation.id)
@@ -161,7 +154,6 @@ function updateMutation(
     applied?.[mutation.id],
   )
   if (decision === 'refuse') revisionRefusal(database, intent, table, mutation.id)
-  if (mirror) mirror[mutation.id] = decision
   if (decision !== 'apply') return next
   if (table === 'task_flow') applyFlowValues(database, mutation, next)
   else applyStageValues(database, mutation, next)
@@ -349,19 +341,18 @@ function applyStageMutation(
   intent: 'advance' | 'await-ruling' | 'abandon',
   body: SqlRow,
   revisions: Record<string, number> | undefined,
-): { revisions: Record<string, number>; mirror: Record<string, AppliedMirrorOutcome> } {
+): { revisions: Record<string, number> } {
   const result: Record<string, number> = {}
-  const mirror: Record<string, AppliedMirrorOutcome> = {}
   const flow = body.flow as Mutation | undefined
   const stage = body.stage as unknown as Mutation
-  if (flow) result[flow.id] = updateMutation(database, 'task_flow', flow, intent, revisions, mirror)
-  result[stage.id] = updateMutation(database, 'workflow_cursor', stage, intent, revisions, mirror)
+  if (flow) result[flow.id] = updateMutation(database, 'task_flow', flow, intent, revisions)
+  result[stage.id] = updateMutation(database, 'workflow_cursor', stage, intent, revisions)
   for (const row of (body.obligationInserts as SqlRow[] | undefined) ?? [])
     insertObligation(database, row)
   for (const row of (body.obligationUpdates as SqlRow[] | undefined) ?? [])
     updateObligation(database, row)
   deleteTexts(database, stage.id, (body.deleteTextIds as string[] | undefined) ?? [])
-  return { revisions: result, mirror }
+  return { revisions: result }
 }
 
 function sourceFlowForAdopt(
@@ -423,7 +414,6 @@ function applyAdopt(
     return {
       revisions: applied!.revisions,
       flowRecordId: applied!.flowRecordId,
-      mirror: { [stage.id]: stageDecision },
     }
   const source = sourceFlowForAdopt(database, stage.id, body, applied)
   const target = database
@@ -497,7 +487,6 @@ function applyAdopt(
       [flowRecordId]: revisions[flowRecordId] ?? (target?.revision ?? source.revision) + 1,
     },
     flowRecordId,
-    mirror: { [stage.id]: stageDecision },
   }
 }
 
@@ -560,20 +549,11 @@ function writeCompose(
 
 function writeStageUpdate(database: Database, body: SqlRow, revisions?: Record<string, number>) {
   const result: Record<string, number> = {}
-  const mirror: Record<string, AppliedMirrorOutcome> = {}
   const flow = body.flow as Mutation | undefined
-  if (flow)
-    result[flow.id] = updateMutation(database, 'task_flow', flow, 'stage-update', revisions, mirror)
+  if (flow) result[flow.id] = updateMutation(database, 'task_flow', flow, 'stage-update', revisions)
   for (const stage of body.stages as unknown as Mutation[])
-    result[stage.id] = updateMutation(
-      database,
-      'workflow_cursor',
-      stage,
-      'stage-update',
-      revisions,
-      mirror,
-    )
-  return { revisions: result, mirror }
+    result[stage.id] = updateMutation(database, 'workflow_cursor', stage, 'stage-update', revisions)
+  return { revisions: result }
 }
 
 function writeTextIntent(

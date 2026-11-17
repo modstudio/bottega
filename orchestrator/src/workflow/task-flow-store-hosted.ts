@@ -9,36 +9,16 @@ import type {
 } from '../record/record-task-flow-write-contract.ts'
 import type { TaskFlowSqliteWriteResult } from './task-flow-store-sqlite-write.ts'
 
-const mirrorIntents = new Set<TaskFlowIntent>([
-  'stage-update',
-  'advance',
-  'await-ruling',
-  'abandon',
-  'adopt',
-])
-
-function stageIds<K extends TaskFlowIntent>(intent: K, input: TaskFlowIntentInput<K>): string[] {
-  const body = input as Record<string, unknown>
-  if (intent === 'stage-update') return (body.stages as Array<{ id: string }>).map(({ id }) => id)
-  const stage = body.stage as { id: string } | undefined
-  return stage ? [stage.id] : []
-}
-
 function appliedResult<K extends TaskFlowIntent>(
   intent: K,
-  input: TaskFlowIntentInput<K>,
+  _input: TaskFlowIntentInput<K>,
   applied?: TaskFlowIntentResult<K> | null,
 ): TaskFlowSqliteWriteResult<K> {
   if (!applied)
     throw new Error(
       `hosted ${intent} task-flow write returned no result; restore record access and retry`,
     )
-  return {
-    ...applied,
-    ...(mirrorIntents.has(intent)
-      ? { mirror: Object.fromEntries(stageIds(intent, input).map((id) => [id, 'keep'])) }
-      : {}),
-  } as TaskFlowSqliteWriteResult<K>
+  return applied
 }
 
 /** Hosted mode returns record results without touching local task-flow tables. */
