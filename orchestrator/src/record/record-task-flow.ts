@@ -376,7 +376,15 @@ export async function readRecordTaskFlowText(
 ): Promise<HostedTaskFlowTextById> {
   return recordPool(input.url).begin(async (tx) => {
     await bindTenant(tx, input)
-    const rows = await tx`
+    return readRecordTaskFlowTextTransaction(tx, input.id)
+  })
+}
+
+export async function readRecordTaskFlowTextTransaction(
+  tx: SQL,
+  id: string,
+): Promise<HostedTaskFlowTextById> {
+  const liveRows = await tx`
       SELECT t.*,s.id stage_id,s.number stage_number,
              c.id copy_id,c.workflow_text_record_id copy_workflow_text_record_id,
              c.stage_record_id copy_stage_record_id,
@@ -385,28 +393,38 @@ export async function readRecordTaskFlowText(
       JOIN task_flow_stage s ON s.id=t.stage_record_id AND s.space_id=t.space_id
       LEFT JOIN workflow_text_copy c
         ON c.workflow_text_record_id=t.id AND c.space_id=t.space_id
-      WHERE t.id=${input.id}::uuid`
-    const row = rows[0] as Record<string, unknown> | undefined
-    if (!row) throw new RecordTaskFlowError(RECORD_TASK_FLOW_NOT_FOUND_MESSAGE)
+      WHERE t.id=${id}::uuid`
+  const live = liveRows[0] as Record<string, unknown> | undefined
+  if (live)
     return {
-      space_id: String(row.space_id),
-      text: toHostedStepText(row),
-      stage: {
-        id: String(row.stage_id),
-        number: Number(row.stage_number),
-      },
+      space_id: String(live.space_id),
+      text: toHostedStepText(live),
+      stage: { id: String(live.stage_id), number: Number(live.stage_number) },
       copy:
-        row.copy_id == null
+        live.copy_id == null
           ? null
           : toHostedTextCopy({
-              id: row.copy_id,
-              workflow_text_record_id: row.copy_workflow_text_record_id,
-              stage_record_id: row.copy_stage_record_id,
-              task_document_reference: row.copy_task_document_reference,
-              copied_at: row.copy_copied_at,
+              id: live.copy_id,
+              workflow_text_record_id: live.copy_workflow_text_record_id,
+              stage_record_id: live.copy_stage_record_id,
+              task_document_reference: live.copy_task_document_reference,
+              copied_at: live.copy_copied_at,
             }),
     }
-  })
+
+  const copyRows = await tx`
+    SELECT c.*,s.id stage_id,s.number stage_number
+    FROM workflow_text_copy c
+    JOIN task_flow_stage s ON s.id=c.stage_record_id AND s.space_id=c.space_id
+    WHERE c.workflow_text_record_id=${id}::uuid`
+  const copy = copyRows[0] as Record<string, unknown> | undefined
+  if (!copy) throw new RecordTaskFlowError(RECORD_TASK_FLOW_NOT_FOUND_MESSAGE)
+  return {
+    space_id: String(copy.space_id),
+    text: null,
+    stage: { id: String(copy.stage_id), number: Number(copy.stage_number) },
+    copy: toHostedTextCopy(copy),
+  }
 }
 
 export async function readRecordTaskFlowObligation(
