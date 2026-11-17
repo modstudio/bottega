@@ -195,10 +195,11 @@ export function sessionContextHolders(database: Database) {
   }))
 }
 
+/** Hosted lifecycle removal is unconditional like task clearing; the local snapshot revision guards against selecting a changed item. */
 async function dropSessionContextItemForLifecycle(input: {
   session: string
   id: string
-  expectedRevision: string
+  localExpectedRevision: string
   reason: string
 }) {
   assertWorkerDocStoreWriteAllowed('dropSessionContextItemForLifecycle')
@@ -208,10 +209,15 @@ async function dropSessionContextItemForLifecycle(input: {
   if (!item) return { holder, id: input.id, outcome: 'already-absent' as const }
   const result = await applyRecordWriteAuthority({
     local: () =>
-      removeLocalContextItem(holder, input.id, input.expectedRevision)
+      removeLocalContextItem(holder, input.id, input.localExpectedRevision)
         ? ('dropped' as const)
         : ('already-absent' as const),
     hosted: async () => {
+      if (item.revision !== input.localExpectedRevision)
+        throw new Error(
+          `context item ${holder}/${input.id} changed since it was selected\n` +
+            'remedy: retry the lifecycle operation',
+        )
       const sessionOwner = db()
         .query<{ project: string | null }, [string]>(
           'SELECT project FROM presence WHERE session_id=?',
@@ -228,7 +234,7 @@ async function dropSessionContextItemForLifecycle(input: {
         checkoutProject: project,
       })
       const hosted = await client.remove(item.recordId, {})
-      const dropped = removeLocalContextItem(holder, input.id, item.revision)
+      const dropped = removeLocalContextItem(holder, input.id, input.localExpectedRevision)
       if (!dropped) return 'already-absent' as const
       return hosted.removed ? ('dropped' as const) : ('already-absent' as const)
     },
@@ -269,7 +275,7 @@ export async function dropSessionContextItemsForLifecycle(input: {
       const result = await dropSessionContextItemForLifecycle({
         session: input.session,
         id: item.id,
-        expectedRevision: item.revision,
+        localExpectedRevision: item.revision,
         reason: input.reason,
       })
       results.push({

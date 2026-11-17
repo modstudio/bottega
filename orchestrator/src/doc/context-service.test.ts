@@ -487,6 +487,91 @@ test('lifecycle drop ignores a divergent hosted revision and drops both copies',
   }
 })
 
+test('lifecycle drop refuses a locally changed item before deleting the hosted row', async () => {
+  const session = newRecordId()
+  const ownerProject = `session-owner-${session}`
+  const priorSession = process.env.CLAUDE_CODE_SESSION_ID
+  const priorUrl = process.env.BOTTEGA_RECORD_API_URL
+  process.env.CLAUDE_CODE_SESSION_ID = session
+  try {
+    await setContextItem({
+      session,
+      id: 'locally-changed',
+      kind: 'fact',
+      source: 'test',
+      body: 'The lifecycle caller selected this fact.',
+    })
+    const items = sessionContextItems(session, db())
+    const selected = items[0]!
+    db()
+      .query(
+        "UPDATE context_item SET kind='ruling',body='Keep the rewritten item.',source='q2377',question_number=2377,updated_at='2026-11-17T05:10:22.635Z' WHERE record_id=?",
+      )
+      .run(selected.recordId)
+    expect(sessionContextItems(session, db())[0]!.revision).not.toBe(selected.revision)
+    upsertProject({
+      recordId: newRecordId(),
+      name: ownerProject,
+      path: `/tmp/${ownerProject}`,
+      settings: { space: 'session-space' },
+    })
+    db()
+      .query(
+        `INSERT INTO presence(session_id,harness,role,machine,project,cwd,last_seen)
+         VALUES (?,'codex','architect','test-machine',?,'/tmp/session-owner','2026-11-16T00:00:00.000Z')`,
+      )
+      .run(session, ownerProject)
+    process.env.BOTTEGA_RECORD_API_URL = 'https://record.example.test'
+    rememberHostedRecord(db())
+    const memory = createMemoryRecordApiClient()
+    let hostedDeleteCalled = false
+    installRecordApiClient({
+      ...memory,
+      whoami: async () => ({
+        user: { id: 'user-a' },
+        activeSpaceId: 'personal-space',
+        personalSpaceId: 'personal-space',
+        memberships: [
+          { space_id: 'personal-space', slug: 'personal', permission: 'write' },
+          { space_id: 'session-space', slug: 'session-space', permission: 'write' },
+        ],
+      }),
+      deleteContextItem: async () => {
+        hostedDeleteCalled = true
+        return { removed: true }
+      },
+    })
+
+    expect(
+      await dropSessionContextItemsForLifecycle({
+        session,
+        reason: 'test local rewrite after selection',
+        items,
+      }),
+    ).toEqual([
+      expect.objectContaining({
+        outcome: 'failed',
+        error: expect.stringContaining(
+          `context item session:${session}/${selected.id} changed since it was selected`,
+        ),
+      }),
+    ])
+    expect(hostedDeleteCalled).toBe(false)
+    expect((await getContext({ session })).items).toEqual([
+      expect.objectContaining({
+        id: selected.id,
+        kind: 'ruling',
+        body: 'Keep the rewritten item.',
+      }),
+    ])
+  } finally {
+    if (priorSession === undefined) delete process.env.CLAUDE_CODE_SESSION_ID
+    else process.env.CLAUDE_CODE_SESSION_ID = priorSession
+    if (priorUrl === undefined) delete process.env.BOTTEGA_RECORD_API_URL
+    else process.env.BOTTEGA_RECORD_API_URL = priorUrl
+  }
+})
+
 test('lifecycle drop keeps the local item when the session owner cannot be resolved', async () => {
   const session = newRecordId()
   const priorSession = process.env.CLAUDE_CODE_SESSION_ID
