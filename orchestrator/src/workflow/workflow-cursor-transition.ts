@@ -17,6 +17,39 @@ export type CursorTransition =
 
 export type CursorStartDecision = 'insert' | 'reuse' | 'retire'
 
+export const cursorOwnerVerbs = ['serve', 'await', 'advance', 'compose', 'rule', 'abandon'] as const
+export type CursorOwnerVerb = (typeof cursorOwnerVerbs)[number]
+declare const cursorOwnerBrand: unique symbol
+export type CursorOwner = string & { readonly [cursorOwnerBrand]: true }
+
+/** Mark an owner copied unchanged from a stored cursor or hosted stage. */
+export function storedCursorOwner(value: string): CursorOwner
+export function storedCursorOwner(value: null): null
+export function storedCursorOwner(value: string | null): CursorOwner | null
+export function storedCursorOwner(value: string | null): CursorOwner | null {
+  return value as CursorOwner | null
+}
+
+/** Decide the owner written by each cursor verb. */
+export function cursorOwnerAfter(
+  verb: CursorOwnerVerb,
+  storedSession: string | null,
+  callerSession: string | null | undefined,
+): CursorOwner | null {
+  if (verb === 'advance' || verb === 'compose')
+    return storedCursorOwner(callerSession ?? storedSession)
+  return storedCursorOwner(storedSession ?? callerSession ?? null)
+}
+
+/** Return the owner only when a session-bearing caller is foreign to it. */
+export function foreignCursorOwner(
+  row: { session_id: string | null },
+  callerSession: string | null | undefined,
+): string | undefined {
+  if (!callerSession || !row.session_id || row.session_id === callerSession) return undefined
+  return row.session_id
+}
+
 export type OutcomeDecision = { action: 'allow' } | { action: 'refuse'; message: string }
 
 /** Decide whether a supplied close outcome matches the current catalogue step. */

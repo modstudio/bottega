@@ -3,9 +3,10 @@
 
 import type { Database } from 'bun:sqlite'
 import { nowIso } from '../database/db.ts'
-import { cursorName } from './workflow-cursor-format.ts'
+import { cursorName, workflowCursorTakeoverRemedy } from './workflow-cursor-format.ts'
 import type { SelectableCursorRow, WorkflowCursorContext } from './workflow-cursor-selection.ts'
 import { currentStepActivatedAt, reentryBoundFloorInput } from './workflow-cursor-trail.ts'
+import { foreignCursorOwner } from './workflow-cursor-transition.ts'
 import {
   decideFloorSatisfaction,
   type EnforcementMode,
@@ -19,6 +20,7 @@ import { openWorkflowObligations } from './workflow-obligation-floor.ts'
 
 type FloorCursor = Pick<
   SelectableCursorRow,
+  | 'id'
   | 'record_id'
   | 'project'
   | 'workflow_slug'
@@ -43,8 +45,10 @@ export async function applyFloorDecision(
   client?: WorkflowCursorContext['taskFlowClient'],
   requireRuling = false,
   selfRulingId?: number,
+  callerSession?: string | null,
 ): Promise<FloorDecision> {
   const args = JSON.parse(row.args) as Record<string, string>
+  const foreignOwner = foreignCursorOwner(row, callerSession)
   const evidenceFloors = floors.filter(({ kind }) => kind !== 'review-owed')
   if (row.enforcement === 'floors' && evidenceFloors.length !== floors.length) {
     const reviewOwed = invokeFloorEvidencePort(
@@ -95,6 +99,9 @@ export async function applyFloorDecision(
     enforcement: row.enforcement ?? 'note-only',
     finishing,
     openObligations: await openWorkflowObligations(row.record_id, database, client),
+    ...(foreignOwner
+      ? { cursorTakeoverRemedy: workflowCursorTakeoverRemedy(row, foreignOwner) }
+      : {}),
     ...reentryBoundFloorInput(requireRuling, row.closed, row.step_slug),
   })
 }

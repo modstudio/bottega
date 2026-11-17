@@ -15,7 +15,7 @@ export type FinishExploreLifecycle = (input: {
   row: TaskFlowStageCursorRow
   closed: CursorTrailEntry[]
   deleteTextIds: string[]
-  sessionId: string | null
+  callerSession: string | null | undefined
   database: Database
   at: string
 }) => Promise<void>
@@ -63,7 +63,7 @@ export async function closeExploreForLifecycle(
     row,
     closed,
     deleteTextIds,
-    sessionId: row.session_id,
+    callerSession: row.session_id,
     database,
     at,
   })

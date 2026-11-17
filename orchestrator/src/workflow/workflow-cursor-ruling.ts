@@ -9,10 +9,7 @@ import {
   taskFlowWriteTarget,
   writeHostedTaskFlow,
 } from '../record/record-task-flow-write-client.ts'
-import type {
-  TaskFlowIntentInput,
-  TaskFlowIntentResult,
-} from '../record/record-task-flow-write-contract.ts'
+import type { TaskFlowIntentResult } from '../record/record-task-flow-write-contract.ts'
 import { taskFlowRequestId } from '../record/record-task-flow-write-contract.ts'
 import {
   answerWorkflowQuestion,
@@ -21,6 +18,7 @@ import {
 import { resolvedRulingPersonName } from '../run/ruling-attribution.ts'
 import { refreshStaleMirror } from './task-flow-mirror-refresh.ts'
 import { taskFlowLocalStore } from './task-flow-store.ts'
+import type { TaskFlowIntentInput } from './task-flow-store-types.ts'
 import { workflowKeyOf } from './workflow-cursor-arguments.ts'
 import { cursorName } from './workflow-cursor-format.ts'
 import {
@@ -28,6 +26,7 @@ import {
   type SelectableCursorRow,
   type WorkflowCursorContext,
 } from './workflow-cursor-selection.ts'
+import { cursorOwnerAfter } from './workflow-cursor-transition.ts'
 import { decideWorkflowRuleAnswer, pinnedWorkflowRuleStep } from './workflow-rule-answer.ts'
 import { linkResolvedWorkflowTask } from './workflow-task-linking.ts'
 
@@ -95,7 +94,7 @@ export async function ruleWorkflow(
         values: {
           state: 'running',
           question: null,
-          sessionId: row.session_id ?? context.session ?? null,
+          sessionId: cursorOwnerAfter('rule', row.session_id, context.session),
           updatedAt: at,
         },
       },

@@ -24,6 +24,7 @@ import {
   linkLegacyStageToFlow,
 } from './task-flow-store-sqlite-write.ts'
 import type { TaskFlowStageCursorRow } from './task-flow-store-types.ts'
+import { storedCursorOwner } from './workflow-cursor-transition.ts'
 
 const LEGACY_TASKLESS_FLOW_NAMESPACE = v5.URL
 
@@ -230,7 +231,7 @@ function stagePayload(row: StageRow, flowRecordId: string): Record<string, unkno
     mode: row.mode_slug,
     workflowKey: row.workflow_key,
     instanceId: row.instance_id,
-    sessionId: row.session_id,
+    sessionId: storedCursorOwner(row.session_id),
     workflowVersionId: row.workflow_version_record_id,
     catalogueVersionId: row.catalogue_version_record_id,
     arguments: JSON.parse(row.args),

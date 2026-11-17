@@ -8,16 +8,20 @@ import {
   taskFlowWriteTarget,
   writeHostedTaskFlow,
 } from '../record/record-task-flow-write-client.ts'
-import type { TaskFlowIntentInput } from '../record/record-task-flow-write-contract.ts'
 import { taskFlowRequestId } from '../record/record-task-flow-write-contract.ts'
 import type { AutonomyResolution, LiveCursorAutonomy } from './autonomy.ts'
 import { refreshStaleMirror } from './task-flow-mirror-refresh.ts'
 import { taskFlowLocalStore } from './task-flow-store.ts'
+import type { TaskFlowIntentInput } from './task-flow-store-types.ts'
 import { type CommitCountPort, readCommitsPastLanding } from './workflow-compose-branch.ts'
 import { resolveCursorArguments, workflowKeyOf } from './workflow-cursor-arguments.ts'
 import { cursorAutonomy } from './workflow-cursor-autonomy.ts'
 import { insertWorkflowCursor } from './workflow-cursor-compose.ts'
-import { formatCursorOpened, formatCursorResumed } from './workflow-cursor-format.ts'
+import {
+  foreignCursorOwnerNotice,
+  formatCursorOpened,
+  formatCursorResumed,
+} from './workflow-cursor-format.ts'
 import { closeOpenWorkflowQuestion } from './workflow-cursor-mutation.ts'
 import { refuseInvalidServe } from './workflow-cursor-result.ts'
 import {
@@ -29,6 +33,7 @@ import {
 } from './workflow-cursor-selection.ts'
 import { type CursorTrailEntry, isClosedStep } from './workflow-cursor-trail.ts'
 import {
+  cursorOwnerAfter,
   cursorValue,
   decideCursorCompositionInput,
   decideCursorStart,
@@ -213,7 +218,7 @@ async function applyServeTransition(
                 activeSlug: decision.slug,
                 state: 'running' as const,
                 question: null,
-                sessionId: context.session ?? row.session_id,
+                sessionId: cursorOwnerAfter('serve', row.session_id, context.session),
                 lastAdvancedMachineId: machineId(),
               }
             : {}),
@@ -313,6 +318,7 @@ async function serveWorkflowStepWithCursor(
   const { opensCursor, composition, requested, index, input, resolvedArguments } = prepared
   const decision = serveDecision(prepared, slug, mode, args)
   if (!row) row = await insertWorkflowCursor(composition, context, database, autonomy, commitCount)
+  const ownerNotice = foreignCursorOwnerNotice(row, context.session)
   await applyServeTransition(row, decision, context, database, resolvedArguments)
   const served = await withWorkflowTextFacts(
     await getWorkflowStep(
@@ -355,7 +361,7 @@ async function serveWorkflowStepWithCursor(
     cursor: row.id,
     flow,
     pass: stepPass(flow, composition.steps, decision.ordinal),
-    notice: [openNotice, redirectNotice].filter(Boolean).join('\n'),
+    notice: [openNotice, redirectNotice, ownerNotice].filter(Boolean).join('\n'),
   }
 }
 

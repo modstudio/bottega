@@ -194,6 +194,7 @@ export type FloorSatisfactionInput = {
   finishing: boolean
   openObligations: OpenObligation[]
   freshRulingAfter?: string
+  cursorTakeoverRemedy?: string
 }
 
 export function flagForFloor(kind: FloorKind): string {
@@ -964,6 +965,7 @@ export function decideFloorSatisfaction(input: FloorSatisfactionInput): FloorDec
   const bindingRefusal = commandExitBindingRefusal(
     input.evidence.exec,
     floorsAcceptPullRequestLink(input.floors),
+    input.cursorTakeoverRemedy,
   )
   if (
     met.length === 0 &&
