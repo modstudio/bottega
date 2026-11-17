@@ -161,7 +161,14 @@ def live(session_id: str) -> None:
                 raise ValueError("stall detail is invalid")
             stalled.append(stall.replace("\t", " ").replace("\r", " ").replace("\n", " "))
             stalled_subjects.append("run:" + member_id)
-        ids.append(member_id + ("s" if stall_state == "stalled" else ("i" if idle_note and not waiting else "")))
+        ids.append(
+            member_id
+            + (
+                "s"
+                if stall_state == "stalled"
+                else ("i" if idle_note and not (waiting or waiting_for_capacity) else "")
+            )
+        )
         roots.append(row["record_id"])
         display = (
             "waiting for host capacity since " + host_wait_since

@@ -59,6 +59,18 @@ describe('live run member', () => {
     ).toMatchObject({ state: 'healthy', idleMs: null })
   })
 
+  test('a fresh agent capacity waiter is exempt from stall detection', () => {
+    expect(
+      liveMemberStall(
+        { ...member, capacity_wait_since: new Date(clock - 1_000).toISOString() },
+        idle,
+        clock,
+        25 * 60_000,
+        () => member.agent_start_time,
+      ),
+    ).toMatchObject({ state: 'healthy', idleMs: null })
+  })
+
   test('an expired or terminal host wait marker does not exempt a stall', () => {
     const expired = new Date(clock - RUN_HOST_WAIT_MAX_MS - RUN_HOST_WAIT_POLL_MS - 1).toISOString()
     expect(
@@ -110,6 +122,7 @@ describe('live run member', () => {
       agent_pid: 880,
       agent_start_time: 'recorded birth',
       host_wait_since: null,
+      capacity_wait_since: null,
     })
   })
 })

@@ -7,12 +7,17 @@
 import type { Database } from 'bun:sqlite'
 import { pidRecordIdentity, processStartTime } from '../../../shared/process-identity.ts'
 import { db } from '../database/db.ts'
-import { idleMsSince } from '../events.ts'
+import {
+  idleMsSince,
+  liveOperationalStatusFromEvents,
+  readEventLog,
+  runEventsPath,
+} from '../events.ts'
 import { processTreeCpuMoving } from '../idle-kill.ts'
 import { jobIdleKillMs } from '../jobs/jobs.ts'
 import type { ProcessSample } from '../process-resource-sampler.ts'
 import { idleStallMs, stalledRunDetail, stalledRunState } from '../stalled-run.ts'
-import { isFreshRunHostWait } from './run-host-capacity.ts'
+import { isRunQueuedForCapacity } from './run-liveness-policy.ts'
 
 export type LiveRunMember = {
   record_id: string
@@ -25,6 +30,7 @@ export type LiveRunMember = {
   agent_pid: number | null
   agent_start_time: string | null
   host_wait_since?: string | null
+  capacity_wait_since?: string | null
   status?: string
 }
 
@@ -40,7 +46,7 @@ export function currentRunMemberJoin(rootAlias: string): string {
 
 /** Current running members machine-wide, retaining the root session as their owner. */
 export function liveRunMembers(database: Database = db()): LiveRunMember[] {
-  return database
+  const members = database
     .query(
       `SELECT current_run.record_id, current_run.number, current_run.started_at, current_run.last_event_at,
               current_run.agent, current_run.job, root.session_id,
@@ -50,6 +56,12 @@ export function liveRunMembers(database: Database = db()): LiveRunMember[] {
         WHERE root.parent_run_record_id IS NULL AND current_run.status='running'`,
     )
     .all() as LiveRunMember[]
+  return members.map((member) => ({
+    ...member,
+    capacity_wait_since: liveOperationalStatusFromEvents(
+      readEventLog(runEventsPath(member.record_id)),
+    ).capacity_wait_since,
+  }))
 }
 
 export type LiveMemberStall = {
@@ -67,7 +79,10 @@ export function liveMemberStall(
   thresholdMs = idleStallMs(),
   observedStartTime: (pid: number) => string | null = processStartTime,
 ): LiveMemberStall {
-  if (isFreshRunHostWait(member.status ?? 'running', member.host_wait_since, clock)) {
+  if (
+    (member.status ?? 'running') === 'running' &&
+    isRunQueuedForCapacity(member.host_wait_since, member.capacity_wait_since, clock)
+  ) {
     return { state: 'healthy', detail: null, idleMs: null, idleBoundMs: jobIdleKillMs(member.job) }
   }
   const idleMs = idleMsSince(member.last_event_at, member.started_at, clock)

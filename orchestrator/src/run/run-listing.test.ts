@@ -239,6 +239,7 @@ describe('run listing', () => {
   })
 
   test('runs publish capacity waits and live throttle details instead of idle', async () => {
+    const observedAt = Date.parse('2026-10-21T12:06:00.000Z')
     const waiting = addRun({ agent: '(pending)', job: 'review-lens', status: 'running' })
     appendRunEvent(waiting, {
       ts: '2026-10-21T12:00:00.000Z',
@@ -257,10 +258,25 @@ describe('run listing', () => {
       concurrency: 6,
     })
 
-    const rows = (await command({ json: true, id: [waiting, throttled] })).map(runJson)
+    db()
+      .query('UPDATE run SET started_at=?,last_event_at=? WHERE record_id=?')
+      .run('2026-10-21T12:00:00.000Z', '2026-10-21T12:00:00.000Z', waiting)
+
+    const rows = (
+      await command(
+        { json: true, id: [waiting, throttled] },
+        () => null,
+        { sampleProcesses: () => [], processStartTime: () => null },
+        () => observedAt,
+      )
+    ).map(runJson)
     expect(rows.find((row) => row.record_id === waiting)).toMatchObject({
       waiting_for_capacity: true,
       capacity_wait_since: '2026-10-21T12:00:00.000Z',
+      idle: null,
+      idle_ms: null,
+      stall_state: 'healthy',
+      stall: null,
     })
     expect(rows.find((row) => row.record_id === throttled)).toMatchObject({
       throttled: {

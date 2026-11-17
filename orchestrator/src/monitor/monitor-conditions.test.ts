@@ -11,6 +11,7 @@ import { db, nowIso } from '../database/db.ts'
 import { RECORD_TUNNEL_DOWN_REMEDY } from '../record/record-tunnel-error.ts'
 import { liveMemberStall } from '../run/live-run-member.ts'
 import { RUN_HOST_WAIT_MAX_MS, RUN_HOST_WAIT_POLL_MS } from '../run/run-host-capacity.ts'
+import { DETACHED_AGENT_CAPACITY_WAIT_MAX_MS } from '../run/run-liveness-policy.ts'
 import {
   abandonedBootstrapConditions,
   askingRuns,
@@ -182,6 +183,47 @@ describe('idle run classification', () => {
         5 * 60_000,
       ),
     ).toBeNull()
+  })
+
+  test('the reproduced open agent capacity wait is not reported idle', () => {
+    const capacityWaitSince = '2026-09-17T15:26:00.000Z'
+    const observedAt = Date.parse('2026-09-17T15:35:00.000Z')
+    expect(
+      idleRunCondition(
+        {
+          ...row,
+          started_at: capacityWaitSince,
+          last_event_at: capacityWaitSince,
+          pidAlive: null,
+          capacity_wait_since: capacityWaitSince,
+        },
+        observedAt,
+        5 * 60_000,
+      ),
+    ).toBeNull()
+  })
+
+  test('an expired or closed agent capacity wait retains idle behavior', () => {
+    const observedAt = Date.parse('2026-09-17T16:26:00.001Z')
+    const capacityWaitSince = new Date(
+      observedAt - DETACHED_AGENT_CAPACITY_WAIT_MAX_MS - 1,
+    ).toISOString()
+    const facts = {
+      ...row,
+      started_at: capacityWaitSince,
+      last_event_at: capacityWaitSince,
+      pidAlive: null,
+    }
+    expect(
+      idleRunCondition(
+        { ...facts, capacity_wait_since: capacityWaitSince },
+        observedAt,
+        5 * 60_000,
+      ),
+    ).toMatchObject({ kind: 'idle' })
+    expect(
+      idleRunCondition({ ...facts, capacity_wait_since: null }, observedAt, 5 * 60_000),
+    ).toMatchObject({ kind: 'idle' })
   })
 
   test('an over-bound host wait is stuck-host-wait', () => {

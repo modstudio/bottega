@@ -26,6 +26,7 @@ import type {
   QuestionDeliveryOutcome,
 } from './question-vocabulary.ts'
 import { isFreshRunHostWait, RUN_HOST_WAIT_MAX_MS } from './run-host-capacity.ts'
+import { isRunQueuedForCapacity } from './run-liveness-policy.ts'
 import { classifyRunIdentifier, resolveRunIdentifierOrNull } from './run-identifier.ts'
 import { LIVE_RUN_STATUS_SQL, RUN_LIVE_STATUSES } from './run-status.ts'
 import { type SubscriptionCostContext, withReportedCost } from './run-subscription-cost.ts'
@@ -810,12 +811,22 @@ export async function runListingCommand(
     const lastEventAt = (r.last_event_at as string | null) ?? null
     const startedAt = String(r.current_started_at ?? r.started_at),
       observedAt = clock()
-    const idle = live
-      ? idleLabel(lastEventAt, startedAt, observedAt)
-      : r.failure_kind === 'idle'
-        ? 'idle-killed'
-        : null
-    const since = live ? idleMsSince(lastEventAt, startedAt, observedAt) : null
+    const operational = liveOperationalStatus(String(r.live_member_record_id), live)
+    const queuedForCapacity =
+      live &&
+      isRunQueuedForCapacity(
+        (r.host_wait_since as string | null) ?? null,
+        operational.capacity_wait_since,
+        observedAt,
+      )
+    const idle =
+      live && !queuedForCapacity
+        ? idleLabel(lastEventAt, startedAt, observedAt)
+        : r.failure_kind === 'idle'
+          ? 'idle-killed'
+          : null
+    const since =
+      live && !queuedForCapacity ? idleMsSince(lastEventAt, startedAt, observedAt) : null
     const stallObservation = live
       ? liveMemberStall(
           {
@@ -829,6 +840,7 @@ export async function runListingCommand(
             agent_pid: (r.current_agent_pid as number | null) ?? null,
             agent_start_time: (r.current_agent_start_time as string | null) ?? null,
             host_wait_since: (r.host_wait_since as string | null) ?? null,
+            capacity_wait_since: operational.capacity_wait_since,
           },
           processSamples,
           observedAt,
@@ -851,7 +863,7 @@ export async function runListingCommand(
       idle,
       idle_ms: since,
       waiting_for_host_capacity: freshListedRunHostWait(r, observedAt),
-      ...liveOperationalStatus(String(r.live_member_record_id), live),
+      ...operational,
       stall_state: stallObservation?.state ?? null,
       stall: stallObservation?.detail ?? null,
       reclaimed_ms: reclaimed,

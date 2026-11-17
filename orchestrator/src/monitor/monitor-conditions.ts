@@ -17,7 +17,14 @@ import {
 import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 import { recordedRunClaimsWorktree } from '../cleanup/cleanup-sweep-docker.ts'
 import { db, liveRuns } from '../database/db.ts'
-import { idleLabel, idleMsSince, idleWarnMs } from '../events.ts'
+import {
+  idleLabel,
+  idleMsSince,
+  idleWarnMs,
+  liveOperationalStatusFromEvents,
+  readEventLog,
+  runEventsPath,
+} from '../events.ts'
 import { UNSCORED_WHERE } from '../evidence/evidence-query.ts'
 import { targetGitEnvironment } from '../git/git-environment.ts'
 import { hookTreeNotice } from '../hook-tree/hook-tree.ts'
@@ -39,7 +46,7 @@ import type { ReclaimKind } from '../reclaim/reclaim-kind.ts'
 import { liveMemberStall, liveRunMembers } from '../run/live-run-member.ts'
 import { recordedRunLivenessFacts, runAlive } from '../run/run-alive.ts'
 import { abandonedBootstrap, PENDING_BOOTSTRAP_MS } from '../run/run-bootstrap.ts'
-import { isFreshRunHostWait } from '../run/run-host-capacity.ts'
+import { isRunQueuedForCapacity } from '../run/run-liveness-policy.ts'
 import { runLeaseState } from '../run/run-lease.ts'
 import { recordedOwnerProcess } from '../run/run-owner-session-liveness.ts'
 import {
@@ -222,6 +229,7 @@ type IdleRunFacts = {
   pidAlive: boolean | null
   pid?: number | null
   host_wait_since?: string | null
+  capacity_wait_since?: string | null
 }
 
 /** Classify one running row from already-observed process and elapsed-time facts. */
@@ -230,7 +238,7 @@ export function idleRunCondition(
   clock = Date.now(),
   threshold = idleWarnMs(),
 ): MonitorCondition | null {
-  if (isFreshRunHostWait('running', run.host_wait_since, clock)) return null
+  if (isRunQueuedForCapacity(run.host_wait_since, run.capacity_wait_since, clock)) return null
   if (run.pidAlive === false) {
     return {
       kind: 'stale-run',
@@ -289,9 +297,11 @@ export function idleRunConditions(
     host_wait_since: string | null
   }[]
   return running.flatMap((run): MonitorCondition[] => {
+    const operational = liveOperationalStatusFromEvents(readEventLog(runEventsPath(run.record_id)))
     const condition = idleRunCondition(
       {
         ...run,
+        capacity_wait_since: operational.capacity_wait_since,
         pidAlive: run.pid === null ? null : pidAlive(run.pid),
       },
       clock,
