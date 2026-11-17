@@ -125,6 +125,63 @@ class GuardedChildTest(unittest.TestCase):
 class HeartbeatShellProcessTest(GuardedChildTest):
     """Cases that drive the heartbeat shell and the children it starts."""
 
+    def run_observation_failure_fixture(self, failing_call, stderr_line):
+        with tempfile.TemporaryDirectory() as root:
+            checkout = Path(root)
+            hooks = checkout / "orchestrator" / "hooks"
+            binary = checkout / "bin"
+            hooks.mkdir(parents=True)
+            binary.mkdir()
+            stage_heartbeat_sources(hooks)
+            fake = binary / "bottega"
+            fake.write_text(
+                f'''#!/bin/sh
+case "$*" in
+  "board presence") exit 0 ;;
+  "question inbox --all --active --json")
+    if [ "{failing_call}" = "inbox" ]; then printf '%s\\n' '{stderr_line}' >&2; exit 1; fi
+    printf '[]\\n' ;;
+  "run list --live --json")
+    if [ "{failing_call}" = "runs" ]; then printf '%s\\n' '{stderr_line}' >&2; exit 1; fi
+    exit 0 ;;
+  "machine monitor --notices --json"|"machine monitor --notices --json --skip-board-refresh") printf '[]\\n' ;;
+  *) exit 0 ;;
+esac
+''',
+                encoding="utf-8",
+            )
+            fake.chmod(0o755)
+            return self.run_shell(
+                "the degraded observation tick",
+                ["bash", str(hooks / "orch-heartbeat.sh"), "fixture-session", "0.01", "1"],
+                cwd=checkout,
+                env={
+                    **os.environ,
+                    "BOTTEGA_MAIN_CHECKOUT": str(checkout),
+                    "BOTTEGA_ORCHESTRATOR_DB": str(checkout / "absent.db"),
+                },
+                capture_output=True,
+                text=True,
+                check=True,
+            ).stdout
+
+    def test_inbox_failure_includes_screened_first_stderr_line(self):
+        completed = self.run_observation_failure_fixture(
+            "inbox", "invalid question read query"
+        )
+        self.assertIn("reason: inbox=invalid question read query State unknown", completed)
+
+    def test_runs_failure_includes_screened_first_stderr_line(self):
+        completed = self.run_observation_failure_fixture("runs", "run read unavailable")
+        self.assertIn("reason: runs=run read unavailable State unknown", completed)
+
+    def test_observation_failure_redacts_secret_shaped_stderr(self):
+        completed = self.run_observation_failure_fixture(
+            "inbox", "request token=example-credential failed"
+        )
+        self.assertIn("reason: inbox=request [withheld: assignment] State unknown", completed)
+        self.assertNotIn("example-credential", completed)
+
     def test_linked_worktree_heartbeat_uses_main_checkout_binary_without_override(self):
         with tempfile.TemporaryDirectory() as root:
             fixture = Path(root)
@@ -1461,6 +1518,54 @@ esac
                 completed.stdout.splitlines(),
             )
             self.assertNotIn("run:01990000", completed.stdout)
+
+    def test_acknowledgement_failure_includes_screened_first_stderr_line(self):
+        with tempfile.TemporaryDirectory() as root:
+            checkout = Path(root)
+            hooks = checkout / "orchestrator" / "hooks"
+            binary = checkout / "bin"
+            hooks.mkdir(parents=True)
+            binary.mkdir()
+            stage_heartbeat_sources(hooks)
+            fake = binary / "bottega"
+            fake.write_text(
+                """#!/bin/sh
+case \"$*\" in
+  \"board presence\") exit 0 ;;
+  \"question inbox --all --active --json\") printf '[]\\n' ;;
+  \"run list --live --json\") exit 0 ;;
+  \"machine monitor --notices --json --skip-board-refresh\")
+    printf '%s\\n' '[{\"noticeId\":\"condition:1\",\"kind\":\"worker-gate-tooling-change\",\"subject\":\"run:01990000-0000-7000-8000-000000000002\",\"label\":\"run 16709\",\"detail\":\"inspect the run deliberately.\",\"ownerSession\":\"fixture-session\"}]' ;;
+  \"machine monitor --ack-notices condition:1 --json\")
+    printf '%s\\n' 'acknowledgement store unavailable' >&2
+    exit 1 ;;
+  *) exit 0 ;;
+esac
+""",
+                encoding="utf-8",
+            )
+            fake.chmod(0o755)
+
+            completed = self.run_shell(
+                "the failed acknowledgement tick",
+                ["bash", str(hooks / "orch-heartbeat.sh"), "fixture-session", "0.01", "1"],
+                cwd=checkout,
+                env={
+                    **os.environ,
+                    "BOTTEGA_MAIN_CHECKOUT": str(checkout),
+                    "BOTTEGA_ORCHESTRATOR_DB": str(checkout / "absent.db"),
+                },
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+
+            self.assertIn(
+                "monitor notice acknowledgement failed; delivered notices may repeat. "
+                "Health state still follows inbox and runs. reason=acknowledgement store unavailable",
+                completed.stdout,
+            )
+
     def test_hosted_board_refresh_runs_separately_every_fifth_tick(self):
         with tempfile.TemporaryDirectory() as root:
             checkout = Path(root)
