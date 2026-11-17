@@ -124,6 +124,8 @@ export const questionWriteSchema = z.object({
   audit: questionAuditSchema,
 })
 export type QuestionWriteBody = z.infer<typeof questionWriteSchema>
+// `applied` means the request is reflected in the stored row; `replayed` means
+// this call matched an earlier request and wrote nothing.
 export const questionWriteResultSchema = z.object({
   id,
   number: z.number().int().positive(),

@@ -95,8 +95,13 @@ export async function writeRecordQuestion(
       return writeRecordQuestionTransaction(intent, input, tx)
     })
   } catch (error) {
-    if (intent !== 'restore' || !isUniqueViolation(error, 'question_space_number_unique'))
-      throw error
+    if (intent !== 'restore') throw error
+    if (isUniqueViolation(error, 'question_pkey'))
+      throw new RecordQuestionError(
+        `question ${input.question.id} already exists in another space; it was not restored`,
+        409,
+      )
+    if (!isUniqueViolation(error, 'question_space_number_unique')) throw error
     const holderId = await pool.begin(async (tx) => {
       await bindTenant(tx, input)
       return restoreNumberHolder(input, tx, false)

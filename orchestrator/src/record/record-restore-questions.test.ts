@@ -146,7 +146,7 @@ function outboxDatabase(): Database {
   return database
 }
 
-test('dry-run lists retired questions without calling the record or changing SQLite', async () => {
+test('dry-run resolves retired questions without sending writes or changing SQLite', async () => {
   using database = outboxDatabase()
   const before = database.query('SELECT * FROM outbox').get()
   const lines: string[] = []
@@ -249,6 +249,73 @@ test('restore refuses unregistered and undeclared projects without sending', asy
     `project ${unregisteredProject} is not registered; register it, then retry`,
   )
   expect(lines.at(-1)).toBe('1 restored, 0 unchanged, 2 refused, 0 failed')
+})
+
+test('restore refuses a retired project with the un-retire remedy', async () => {
+  using database = outboxDatabase()
+  database
+    .query('UPDATE project SET retired_at=? WHERE record_id=?')
+    .run(STAMP, PROJECT)
+  database
+    .query('UPDATE outbox SET payload=? WHERE id=77')
+    .run(payload(2, QUESTION, 6713, PROJECT))
+  const lines: string[] = []
+  const writes: string[] = []
+  await restoreQuestionsCommand(
+    { dryRun: false },
+    {
+      database,
+      client: {
+        whoami: async () => identity(),
+        writeQuestion: async (_intent, body) => {
+          writes.push(body.question.id)
+          return { id: body.question.id, number: body.question.number!, revision: 1, applied: true }
+        },
+      },
+      log: (line) => lines.push(line),
+      setExitCode: () => {},
+    },
+  )
+  expect(writes).toEqual([])
+  expect(lines).toContain(
+    `6713\t${QUESTION}\trefused: project registered is retired; un-retire it with \`bottega project retire registered --undo\`, then retry`,
+  )
+  expect(lines.at(-1)).toBe('0 restored, 0 unchanged, 1 refused, 0 failed')
+})
+
+test('restore counts an identity read error as failed and stops before sending', async () => {
+  using database = outboxDatabase()
+  const secondQuestion = '01990000-0000-7000-8000-000000002394'
+  database
+    .query("INSERT INTO outbox (id,kind,row_id,payload,retired_at) VALUES (78,'question',?,?,?)")
+    .run(secondQuestion, payload(1, secondQuestion, 6714), STAMP)
+  const lines: string[] = []
+  let identityReads = 0
+  let writes = 0
+  await restoreQuestionsCommand(
+    { dryRun: false },
+    {
+      database,
+      client: {
+        whoami: async () => {
+          identityReads += 1
+          throw new Error('record identity is unavailable')
+        },
+        writeQuestion: async () => {
+          writes += 1
+          throw new Error('must not send')
+        },
+      },
+      log: (line) => lines.push(line),
+      setExitCode: () => {},
+    },
+  )
+  expect(identityReads).toBe(1)
+  expect(writes).toBe(0)
+  expect(lines).toEqual([
+    `6713\t${QUESTION}\tfailed: record identity is unavailable`,
+    '0 restored, 0 unchanged, 0 refused, 1 failed',
+  ])
 })
 
 test('restore reports a replayed write as unchanged', async () => {

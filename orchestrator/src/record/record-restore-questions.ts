@@ -10,14 +10,16 @@ import {
   type RecordQuestionClient,
   requireQuestionWriteClient,
 } from './record-api-client-question.ts'
-import type { RecordIdentity } from './record-auth.ts'
 import {
   type QuestionWriteBody,
   type QuestionWriteResult,
   questionAuditSchema,
   questionWriteSchema,
 } from './record-question-contract.ts'
-import { resolveQuestionWriteDestination } from './record-question-destination.ts'
+import {
+  QuestionWriteIdentityError,
+  questionWriteDestinations,
+} from './record-question-destination.ts'
 
 export type RetiredQuestionOutboxRow = { id: number; rowId: string; payload: string }
 export type RestoreQuestionCandidate = {
@@ -152,7 +154,9 @@ function retiredQuestionRows(database: Database): RetiredQuestionOutboxRow[] {
 
 type RestoreCounts = { restored: number; unchanged: number; refused: number; failed: number }
 type RestoreAttempt = { disposition: keyof RestoreCounts; reason?: string }
-type RestoreDestination = { destination: RecordWriteDestination } | { reason: string }
+type RestoreDestination =
+  | { destination: RecordWriteDestination }
+  | { reason: string; disposition: 'refused' | 'failed' }
 
 async function resolveRestoreDestination(
   candidate: RestoreQuestionCandidate,
@@ -161,7 +165,10 @@ async function resolveRestoreDestination(
   try {
     return { destination: await resolve(candidate.body.question.projectId) }
   } catch (error) {
-    return { reason: error instanceof Error ? error.message : String(error) }
+    return {
+      reason: error instanceof Error ? error.message : String(error),
+      disposition: error instanceof QuestionWriteIdentityError ? 'failed' : 'refused',
+    }
   }
 }
 
@@ -193,51 +200,37 @@ export async function restoreQuestionsCommand(
     setExitCode: (code: number) => void
   },
 ): Promise<void> {
-  const selection = newestRetiredQuestionPayloads(retiredQuestionRows(ports.database ?? db()))
+  const database = ports.database ?? db()
+  const selection = newestRetiredQuestionPayloads(retiredQuestionRows(database))
   const counts = { restored: 0, unchanged: 0, refused: selection.rejected.length, failed: 0 }
+  let wouldRestore = 0
   for (const rejected of selection.rejected)
     ports.log(`${rejected.number ?? '?'}\t${rejected.id}\trefused: ${rejected.reason}`)
 
   const client = ports.client ?? recordApiClient()
   const writeClient = options.dryRun ? client : requireQuestionWriteClient(client)
-  let identityRead: Promise<RecordIdentity> | undefined
-  const identity = () => {
-    identityRead ??= (
+  const destination = questionWriteDestinations({
+    database,
+    whoami: () =>
       client.whoami
         ? client.whoami()
         : Promise.reject(
             new Error('record API predates identity reads; release hosted-api, then retry'),
-          )
-    ).catch((error: unknown) => {
-      identityRead = undefined
-      throw error
-    })
-    return identityRead
-  }
-  const destinations = new Map<string, Promise<RecordWriteDestination>>()
-  const destination = (projectId: string | null) => {
-    const key = projectId ?? ''
-    const cached = destinations.get(key)
-    if (cached) return cached
-    const result = resolveQuestionWriteDestination(projectId, {
-      database: ports.database ?? db(),
-      whoami: identity,
-    }).catch((error: unknown) => {
-      destinations.delete(key)
-      throw error
-    })
-    destinations.set(key, result)
-    return result
-  }
+          ),
+  })
   for (const candidate of selection.candidates) {
     const resolution = await resolveRestoreDestination(candidate, destination)
     if ('reason' in resolution) {
-      counts.refused += 1
-      ports.log(`${candidate.number ?? '?'}\t${candidate.id}\trefused: ${resolution.reason}`)
+      counts[resolution.disposition] += 1
+      ports.log(
+        `${candidate.number ?? '?'}\t${candidate.id}\t${resolution.disposition}: ${resolution.reason}`,
+      )
+      if (resolution.disposition === 'failed') break
       continue
     }
     const resolved = resolution.destination
     if (options.dryRun) {
+      wouldRestore += 1
       ports.log(
         `${candidate.number ?? '?'}\t${candidate.id}\twould restore to ${resolved.destinationSpaceId}`,
       )
@@ -250,10 +243,8 @@ export async function restoreQuestionsCommand(
     )
   }
   if (options.dryRun) {
-    ports.log(
-      `${selection.candidates.length - (counts.refused - selection.rejected.length)} would restore, ${counts.refused} refused, 0 failed`,
-    )
-    if (counts.refused) ports.setExitCode(1)
+    ports.log(`${wouldRestore} would restore, ${counts.refused} refused, ${counts.failed} failed`)
+    if (counts.refused || counts.failed) ports.setExitCode(1)
     return
   }
   ports.log(

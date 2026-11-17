@@ -29,7 +29,12 @@ test('row-validation outbox errors render as 422 while other classes fall throug
     (context) =>
       renderRecordApiRefusal(
         context,
-        new OutboxRowError('record project is absent from request space', 'row-validation'),
+        new OutboxRowError(
+          'record project is absent from request space',
+          'row-validation',
+          null,
+          'send it to its declared space, then retry',
+        ),
       )!,
   )
   app.get(
@@ -40,7 +45,10 @@ test('row-validation outbox errors render as 422 while other classes fall throug
   )
   const refusal = await app.request('/row-validation')
   expect(refusal.status).toBe(422)
-  expect(await refusal.json()).toEqual({ error: 'record project is absent from request space' })
+  expect(await refusal.json()).toEqual({
+    error: 'record project is absent from request space',
+    remedy: 'send it to its declared space, then retry',
+  })
   const fallback = await app.request('/payload')
   expect(fallback.status).toBe(500)
   expect(await fallback.json()).toEqual({ fallback: true })

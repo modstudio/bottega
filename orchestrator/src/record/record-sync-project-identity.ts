@@ -33,9 +33,12 @@ export async function projectRecordId(
     spaceId: principal.spaceId,
   })
   if (resolved.status !== 'found') {
+    const project = projectName ?? requestedId
     throw new OutboxRowError(
       `record project ${requestedId} is absent from request space ${principal.spaceId}`,
       'row-validation',
+      null,
+      `send it to the space that holds the project (\`bottega project show ${project}\` names it), then retry`,
     )
   }
   projectIds?.set(cacheKey, resolved.project.id)

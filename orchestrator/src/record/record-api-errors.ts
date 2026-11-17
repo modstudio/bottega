@@ -19,7 +19,10 @@ import { RecordVerdictError } from './record-verdicts.ts'
 
 export function renderRecordApiRefusal(context: Context, error: unknown): Response | null {
   if (error instanceof OutboxRowError && error.errorClass === 'row-validation')
-    return context.json({ error: error.message }, 422)
+    return context.json(
+      error.remedy ? { error: error.message, remedy: error.remedy } : { error: error.message },
+      422,
+    )
   if (error instanceof DocRevisionConflictError)
     return context.json(revisionConflictBody(error), 409)
   if (error instanceof RecordProjectSpaceConflictError)
