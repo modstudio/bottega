@@ -1,7 +1,9 @@
 import { expect, test } from 'bun:test'
 import { newRecordId } from '../../../shared/record-id.ts'
+import { installRecordApiClient } from '../../test/fixtures/record-api.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
+import type { RecordApiClient } from '../record/record-api-client.ts'
 import { type IdentityContext, resolve } from './identity.ts'
 
 const addProject = (name: string): string => {
@@ -77,4 +79,60 @@ test('resolver applies the existing machine-label decision before resolving runs
   await expect(resolve(`project#r${number}`, context, 'run')).rejects.toThrow(
     'run references cannot use a project qualifier because run numbers are per machine',
   )
+})
+
+test('resolver uses a hosted cursor question project without a local cursor row', async () => {
+  const suffix = newRecordId().slice(-8)
+  const projectName = `hosted-${suffix}`
+  const projectId = newRecordId()
+  const questionId = newRecordId()
+  const cursorId = newRecordId()
+  const spaceId = newRecordId()
+  db()
+    .query('INSERT INTO project(record_id,name,path,settings) VALUES (?,?,?,?)')
+    .run(projectId, projectName, `/tmp/${projectName}`, JSON.stringify({ space: projectName }))
+  const previousRecordApiUrl = process.env.BOTTEGA_RECORD_API_URL
+  process.env.BOTTEGA_RECORD_API_URL = 'https://record.example.test'
+  installRecordApiClient({
+    whoami: async () => ({
+      user: { id: newRecordId() },
+      activeSpaceId: spaceId,
+      personalSpaceId: null,
+      memberships: [
+        { space_id: spaceId, name: projectName, slug: projectName, permission: 'write' },
+      ],
+    }),
+    readQuestions: async () => ({
+      items: [
+        {
+          id: questionId,
+          number: 71_003,
+          workflow_cursor_record_id: cursorId,
+          project_record_id: projectId,
+        },
+      ],
+    }),
+  } as RecordApiClient)
+  try {
+    const context: IdentityContext = {
+      database: db(),
+      sessionId: 'caller',
+      projectId,
+      projectName,
+      machineNames: null,
+      identityMap: new Map(),
+    }
+    expect(
+      db().query('SELECT record_id FROM workflow_cursor WHERE record_id=?').get(cursorId),
+    ).toBeNull()
+    await expect(resolve('q71003', context, 'question')).resolves.toMatchObject({
+      kind: 'question',
+      recordId: questionId,
+      projectId,
+    })
+  } finally {
+    installRecordApiClient(null)
+    if (previousRecordApiUrl === undefined) delete process.env.BOTTEGA_RECORD_API_URL
+    else process.env.BOTTEGA_RECORD_API_URL = previousRecordApiUrl
+  }
 })

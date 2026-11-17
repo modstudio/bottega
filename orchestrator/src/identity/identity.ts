@@ -75,19 +75,8 @@ function runByNumber(context: IdentityContext, number: number): IdentityRow | nu
   )
 }
 
-function questionProjectId(context: IdentityContext, row: Record<string, unknown>): string | null {
-  const runRecordId = typeof row.run_record_id === 'string' ? row.run_record_id : null
-  if (runRecordId) return runById(context, runRecordId)?.project_record_id ?? null
-  const cursorRecordId =
-    typeof row.workflow_cursor_record_id === 'string' ? row.workflow_cursor_record_id : null
-  if (!cursorRecordId) return null
-  return (
-    context.database
-      .query<{ project_record_id: string | null }, [string]>(
-        'SELECT project_record_id FROM workflow_cursor WHERE record_id=?',
-      )
-      .get(cursorRecordId)?.project_record_id ?? null
-  )
+function questionProjectId(row: Record<string, unknown>): string | null {
+  return typeof row.project_record_id === 'string' ? row.project_record_id : null
 }
 
 const kindForPrefix = (prefix: string): ResolvableKind | null =>
@@ -122,7 +111,7 @@ async function resolveUuid(recordId: string, context: IdentityContext): Promise<
     }
   const question = await questionById(context.database, recordId)
   if (!question) visibilityRefusal("the caller's visible spaces")
-  const projectId = questionProjectId(context, question)
+  const projectId = questionProjectId(question)
   return {
     kind: 'question',
     recordId: String(question.record_id),
@@ -161,7 +150,7 @@ async function resolveQuestion(
       : 'number' in parsed.value && scope.projectId
         ? await questionByProjectNumber(context.database, parsed.value.number, scope.projectId)
         : null
-  const projectId = question ? questionProjectId(context, question) : null
+  const projectId = question ? questionProjectId(question) : null
   if (!question || (parsed.value.kind !== 'record-id' && projectId !== scope.projectId))
     visibilityRefusal(scope.projectName ? `project ${scope.projectName}` : "the caller's project")
   return {
