@@ -488,5 +488,6 @@ export const PLATFORM_COMMAND_WORDS = [
   'workflow text',
   'workflow text copy',
   'workflow text show',
+  'workflow uncovered',
   'workflow versions',
 ] as const

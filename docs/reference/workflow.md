@@ -44,6 +44,7 @@ workflows and their cursors
 - [bottega workflow text](#bottega-workflow-text)
 - [bottega workflow text copy](#bottega-workflow-text-copy)
 - [bottega workflow text show](#bottega-workflow-text-show)
+- [bottega workflow uncovered](#bottega-workflow-uncovered)
 - [bottega workflow versions](#bottega-workflow-versions)
 
 ## bottega workflow
@@ -81,6 +82,7 @@ workflows and their cursors
 - [bottega workflow show](./workflow.md#bottega-workflow-show)
 - [bottega workflow step](./workflow.md#bottega-workflow-step)
 - [bottega workflow text](./workflow.md#bottega-workflow-text)
+- [bottega workflow uncovered](./workflow.md#bottega-workflow-uncovered)
 - [bottega workflow versions](./workflow.md#bottega-workflow-versions)
 
 ## bottega workflow abandon
@@ -717,6 +719,21 @@ show a workflow text attachment
 ### Related
 
 - [bottega workflow text](./workflow.md#bottega-workflow-text)
+
+## bottega workflow uncovered
+
+**Synopsis:** `bottega workflow uncovered [--days <value>] [--json]`
+
+report keyed work performed without a live task cursor or claim
+
+### Options
+
+- `--days <value>`: number of recent UTC days to include
+- `--json`: print JSON output
+
+### Related
+
+- [bottega workflow](./workflow.md#bottega-workflow)
 
 ## bottega workflow versions
 

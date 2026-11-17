@@ -26,6 +26,7 @@ import type {
   HostedBoardThread,
 } from '../record/record-board-contract.ts'
 import { resolveRunIdentifier } from '../run/run-identifier.ts'
+import { workflowCursorReference } from '../workflow/workflow-cursor-format.ts'
 import {
   type AnswerNoteFiler,
   acceptedAnswerNoteText,
@@ -932,13 +933,7 @@ export async function boardClaimList(
         c.taskCursorCoverageRead,
       ).claims.map(claimResult),
     }
-  const resolvedProject = claimProject(
-    project,
-    c.env,
-    c.cwd,
-    c.database,
-    c.taskCursorCoverageRead,
-  )
+  const resolvedProject = claimProject(project, c.env, c.cwd, c.database, c.taskCursorCoverageRead)
   const hosted = await hostedClient(c).listBoardClaims(
     resolvedProject,
     projectRowByName(resolvedProject, c.database)?.recordId ?? null,
@@ -966,7 +961,7 @@ export async function boardClaimReleaseTask(key: string, project: string, inputC
       .get(project, normalizedKey)
     if (open)
       throw new Error(
-        `task ${normalizedKey} is held by open workflow cursor ${open.number}; run workflow abandon --cursor ${open.number} before board claim release-task`,
+        `task ${normalizedKey} is held by open workflow cursor ${open.number}; run workflow abandon${workflowCursorReference(open.number, project).cli} before board claim release-task`,
       )
     if (mode === 'hosted') {
       const hosted = await hostedClient(c).readTaskFlow!(
@@ -975,7 +970,7 @@ export async function boardClaimReleaseTask(key: string, project: string, inputC
       )
       if (hosted.stage && !['done', 'abandoned'].includes(hosted.stage.state))
         throw new Error(
-          `task ${normalizedKey} is held by open workflow cursor ${hosted.stage.number}; run workflow abandon --cursor ${hosted.stage.number} before board claim release-task`,
+          `task ${normalizedKey} is held by open workflow cursor ${hosted.stage.number}; run workflow abandon${workflowCursorReference(hosted.stage.number, project).cli} before board claim release-task`,
         )
     }
   }

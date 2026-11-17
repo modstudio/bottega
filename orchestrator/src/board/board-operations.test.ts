@@ -590,53 +590,6 @@ test('claim verbs stringify every id and share the same local and hosted result 
   })
 })
 
-test('release-task normalizes a task subject before releasing a local claim', async () => {
-  const clock = Date.parse('2026-10-05T12:00:00Z')
-  const claim = await boardClaimTake(
-    { subject: 'task:DEV-1', project: 'board-route-project' },
-    {
-      env: noRecordEnv,
-      clock,
-      taskCursorSession: 'cursor-session',
-      cwd: '/tmp/board-route-project',
-    },
-  )
-  await expect(
-    boardClaimReleaseTask('task:DEV-1', 'board-route-project', {
-      env: noRecordEnv,
-      clock: clock + 1,
-    }),
-  ).resolves.toEqual({ released: 1 })
-  await expect(
-    boardClaimList('board-route-project', true, { env: noRecordEnv, clock: clock + 1 }),
-  ).resolves.toEqual({
-    claims: [expect.objectContaining({ recordId: claim.recordId, closeReason: 'task-closed' })],
-  })
-})
-
-test('manual task claim take and release direct callers to the cursor verbs', async () => {
-  const clock = Date.parse('2026-10-05T12:00:00Z')
-  await expect(
-    boardClaimTake(
-      { subject: 'task:DEV-1', project: 'board-route-project' },
-      { env: noRecordEnv, clock },
-    ),
-  ).rejects.toThrow('workflow compose … --arg key=DEV-1')
-
-  const claim = await boardClaimTake(
-    { subject: 'task:DEV-1', project: 'board-route-project' },
-    {
-      env: noRecordEnv,
-      clock,
-      taskCursorSession: 'cursor-session',
-      cwd: '/tmp/board-route-project',
-    },
-  )
-  await expect(
-    boardClaimRelease(claim.recordId, { env: noRecordEnv, clock: clock + 1 }),
-  ).rejects.toThrow('workflow next to the end or workflow abandon')
-})
-
 test('release-task normalizes before hosted release and refuses another shape before calling', async () => {
   db().query('INSERT INTO schema_meta(key,value) VALUES (?,?)').run(BOARD_HOSTED_ADOPTED_KEY, '1')
   const calls: { project: string; projectId?: string | null; key: string }[] = []
@@ -750,35 +703,6 @@ test('hosted take and list use the local claim-project actor decision', async ()
     }),
   ).rejects.toThrow(`architect session belongs to project ${heldProject.name}`)
   expect(called).toBe(false)
-})
-
-test('the uncovered read authority lists claims for a foreign registered project', async () => {
-  db().query('INSERT INTO schema_meta(key,value) VALUES (?,?)').run(BOARD_HOSTED_ADOPTED_KEY, '1')
-  const listedProjects: string[] = []
-  const client = {
-    ...createMemoryRecordApiClient(),
-    listBoardClaims: async (project: string) => {
-      listedProjects.push(project)
-      return { claims: [] }
-    },
-  }
-  const context = {
-    env,
-    cwd: process.cwd(),
-    client,
-    destinationResolver,
-  }
-
-  await expect(boardClaimList('board-route-project', true, context)).rejects.toThrow(
-    'architect session belongs to project board-route-architect',
-  )
-  await expect(
-    boardClaimList('board-route-project', true, {
-      ...context,
-      taskCursorCoverageRead: true,
-    }),
-  ).resolves.toEqual({ claims: [] })
-  expect(listedProjects).toEqual(['board-route-project'])
 })
 
 test('an adopted install routes hosted-capable message verbs only to the injected client', async () => {

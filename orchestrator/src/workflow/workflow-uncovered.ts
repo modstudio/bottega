@@ -6,9 +6,9 @@ import { boardClaimList } from '../board/board-operations.ts'
 import { decideLandingTaskKey } from '../branch/branch-landing-service.ts'
 import { db } from '../database/db.ts'
 import { projectByName, projects } from '../project/projects.ts'
-import { taskFlowReadStore, type TaskFlowReadStore } from './task-flow-store.ts'
+import { type TaskFlowReadStore, taskFlowReadStore } from './task-flow-store.ts'
 
-export const WORKFLOW_UNCOVERED_DEFAULT_DAYS = 14
+const WORKFLOW_UNCOVERED_DEFAULT_DAYS = 14
 
 export type KeyedWorkEvidence = {
   project: string
@@ -152,7 +152,9 @@ export async function workflowUncoveredReport(
     .map((row) => ({ ...row, source: 'run' as const }))
   let cursorRows: Awaited<ReturnType<TaskFlowReadStore['keyedStageHistory']>>
   try {
-    cursorRows = await (dependencies.taskFlowStore ?? taskFlowReadStore(database)).keyedStageHistory({
+    cursorRows = await (
+      dependencies.taskFlowStore ?? taskFlowReadStore(database)
+    ).keyedStageHistory({
       since: from,
     })
   } catch (error) {

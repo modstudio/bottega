@@ -23,16 +23,8 @@ const entries = {
     (await import('../orchestrator/src/check/check-attribution.ts')).checkAttributionMain(argv),
   schemaCheck: async () =>
     (await import('../orchestrator/src/check/check-strict-schema.ts')).checkStrictSchemaMain(),
-  keylessCursorIdleAdmission: async (action: 'task new') => {
-    try {
-      await (
-        await import('../orchestrator/src/session/keyless-cursor-idle-admission.ts')
-      ).assertKeylessCursorIdleAdmission(action)
-      return null
-    } catch (error) {
-      return error instanceof Error ? error.message : String(error)
-    }
-  },
+  keylessCursorIdleAdmission: async (action: 'task new') =>
+    (await import('../orchestrator/src/cli/orch.ts')).keylessCursorIdleAdmission(action),
 }
 
 process.exitCode = await dispatchBinary(process.argv.slice(2), entries, () =>

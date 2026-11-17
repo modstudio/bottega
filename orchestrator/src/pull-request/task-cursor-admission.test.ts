@@ -7,7 +7,7 @@ import {
 
 const input = {
   command: 'pr create' as const,
-  project: 'bottega',
+  project: 'alpha',
   taskKey: 'DEV-2387',
   harnessSession: 'session-a',
   heldCursors: [] as Array<{ project: string; workflowKey: string }>,
@@ -30,7 +30,7 @@ describe('pull-request task cursor admission', () => {
     expect(
       decidePullRequestTaskCursorAdmission({
         ...input,
-        heldCursors: [{ project: 'bottega', workflowKey: 'DEV-2387' }],
+        heldCursors: [{ project: 'alpha', workflowKey: 'DEV-2387' }],
       }),
     ).toEqual({ kind: 'allow' })
   })
@@ -39,7 +39,7 @@ describe('pull-request task cursor admission', () => {
     const decision = decidePullRequestTaskCursorAdmission({
       ...input,
       command: 'pr merge',
-      heldCursors: [{ project: 'bottega', workflowKey: 'DEV-1' }],
+      heldCursors: [{ project: 'alpha', workflowKey: 'DEV-1' }],
     })
     expect(decision.kind).toBe('refuse')
     if (decision.kind === 'refuse') {
@@ -52,8 +52,8 @@ describe('pull-request task cursor admission', () => {
 
 const project = {
   recordId: 'project-id',
-  name: 'bottega',
-  path: '/projects/bottega',
+  name: 'alpha',
+  path: '/projects/alpha',
   stack: null,
   canon: true,
   retiredAt: null,
@@ -71,7 +71,7 @@ test('the adapter reads the harness cursors before admitting a keyed branch', as
     },
     async (_database, session) => {
       sessions.push(session)
-      return [{ project: 'bottega', workflowKey: 'DEV-2387' }]
+      return [{ project: 'alpha', workflowKey: 'DEV-2387' }]
     },
   )
   expect(sessions).toEqual(['session-a'])
