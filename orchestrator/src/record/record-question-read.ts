@@ -21,7 +21,11 @@ type RulingRead = Extract<RecordQuestionReadInput, { read: 'rulings' }>
 
 async function recordQuestionRulingRows(
   tx: SQL,
-  input: Pick<RulingRead, 'kind' | 'since'> & { ids?: readonly string[] },
+  input: Pick<RulingRead, 'kind' | 'since'> & {
+    ids?: readonly string[]
+    afterNumber?: number
+    limit?: number
+  },
 ): Promise<Row[]> {
   const clauses: string[] = []
   const values: unknown[] = []
@@ -42,6 +46,11 @@ async function recordQuestionRulingRows(
       `q.id IN (${input.ids.map((_, index) => `$${first + index + 1}::uuid`).join(',')})`,
     )
   }
+  if (input.afterNumber !== undefined) {
+    values.push(input.afterNumber)
+    clauses.push(`q.number>$${values.length}`)
+  }
+  const sqlLimit = input.limit === undefined ? '' : ` LIMIT ${input.limit}`
   return (await tx.unsafe(
     `SELECT q.number,q.id::text record_id,q.run_id::text run_record_id,owner.number run_number,
       q.workflow_cursor_record_id::text workflow_cursor_id,q.workflow_key,q.workflow_task_id::text workflow_task_record_id,
@@ -57,7 +66,7 @@ async function recordQuestionRulingRows(
      LEFT JOIN task_flow_stage stage ON stage.id=q.workflow_cursor_record_id
      LEFT JOIN project stage_project ON stage_project.id=stage.project_id
      ${clauses.length ? `WHERE ${clauses.join(' AND ')}` : ''}
-     ORDER BY q.number`,
+     ORDER BY q.number${sqlLimit}`,
     values,
   )) as Row[]
 }
@@ -90,15 +99,29 @@ const QUESTION_DETAIL_COLUMNS = `q.id::text record_id,q.number,q.run_id::text ru
 
 async function recordQuestionDetails(
   tx: SQL,
-  input: { ids?: readonly string[]; runId?: string; workflowCursorRecordId?: string },
+  input: {
+    ids?: readonly string[]
+    runId?: string
+    workflowCursorRecordId?: string
+    sessionId?: string
+    taskRecordIds?: readonly string[]
+  },
 ): Promise<Row[]> {
-  if (input.ids?.length === 0) return []
-  const values = input.ids ? [...input.ids] : [input.runId ?? input.workflowCursorRecordId]
+  if (input.ids?.length === 0 || input.taskRecordIds?.length === 0) return []
+  const values = input.ids
+    ? [...input.ids]
+    : input.taskRecordIds
+      ? [...input.taskRecordIds]
+      : [input.runId ?? input.workflowCursorRecordId ?? input.sessionId]
   const predicate = input.ids
     ? `q.id IN (${input.ids.map((_, index) => `$${index + 1}::uuid`).join(',')})`
     : input.runId
       ? 'q.run_id=$1::uuid'
-      : 'q.workflow_cursor_record_id=$1::uuid'
+      : input.workflowCursorRecordId
+        ? 'q.workflow_cursor_record_id=$1::uuid'
+        : input.sessionId
+          ? 'COALESCE(owner.session_id,stage.session_id)=$1'
+          : `q.workflow_task_id IN (${input.taskRecordIds!.map((_, index) => `$${index + 1}::uuid`).join(',')}) AND q.answered_at IS NULL AND q.closed_at IS NULL`
   return (await tx.unsafe(
     `SELECT ${QUESTION_DETAIL_COLUMNS} FROM question q
      LEFT JOIN run owner ON owner.id=q.run_id
@@ -143,6 +166,8 @@ async function rows(tx: SQL, input: QuestionReadInput): Promise<Row[]> {
   if (input.read === 'by-id') return limited(await recordQuestionDetails(tx, input), input.limit)
   if (input.read === 'for-run')
     return limited(await recordQuestionDetails(tx, { runId: input.runId }), input.limit)
+  if (input.read === 'for-session')
+    return limited(await recordQuestionDetails(tx, { sessionId: input.sessionId }), input.limit)
   const identityRows = await boundedIdentityRows(tx, input)
   if (identityRows !== null) return identityRows
   if (input.read === 'for-cursor')
@@ -152,6 +177,39 @@ async function rows(tx: SQL, input: QuestionReadInput): Promise<Row[]> {
       }),
       input.limit,
     )
+  if (input.read === 'open-for-tasks')
+    return limited(
+      await recordQuestionDetails(tx, { taskRecordIds: input.taskRecordIds }),
+      input.limit,
+    )
+  if (input.read === 'unlinked-workflow') {
+    const clauses = [
+      'q.workflow_cursor_record_id IS NOT NULL',
+      'q.workflow_key IS NOT NULL',
+      'q.workflow_task_id IS NULL',
+    ]
+    const values: string[] = []
+    if (input.project) {
+      values.push(input.project)
+      clauses.push(`stage_project.name=$${values.length}`)
+    }
+    if (input.workflowKey) {
+      values.push(input.workflowKey)
+      clauses.push(`q.workflow_key=$${values.length}`)
+    }
+    return limited(
+      (await tx.unsafe(
+        `SELECT ${QUESTION_DETAIL_COLUMNS} FROM question q
+         LEFT JOIN run owner ON owner.id=q.run_id
+         LEFT JOIN project run_project ON run_project.id=owner.project_id
+         LEFT JOIN task_flow_stage stage ON stage.id=q.workflow_cursor_record_id
+         LEFT JOIN project stage_project ON stage_project.id=stage.project_id
+         WHERE ${clauses.join(' AND ')} ORDER BY q.number`,
+        values,
+      )) as Row[],
+      input.limit,
+    )
+  }
   if (input.read === 'rule-audit-reasons')
     return limited(
       (await tx.unsafe(
@@ -273,6 +331,28 @@ export async function readRecordQuestions(
 ): Promise<{ items: Row[]; cursor?: string; more?: boolean; reset?: boolean }> {
   const client = recordPool(input.url)
   if (input.read === 'rulings') {
+    if (input.limit !== undefined || (input.changedAfter && 'questionNumber' in input.changedAfter)) {
+      const pageSize = input.limit ?? 100
+      return client.begin(async (tx) => {
+        await bindTenant(tx, input)
+        const all = await recordQuestionRulingRows(tx, {
+          kind: input.kind,
+          since: input.since,
+          afterNumber:
+            input.changedAfter && 'questionNumber' in input.changedAfter
+              ? input.changedAfter.questionNumber
+              : undefined,
+          limit: pageSize + 1,
+        })
+        const items = all.slice(0, pageSize)
+        const last = items.at(-1)
+        return {
+          items,
+          ...(last ? { cursor: `page:${String(last.number)}` } : {}),
+          more: all.length > pageSize,
+        }
+      })
+    }
     const materialize = async (tx: SQL, page: RecordChangeReadPage) => {
       const items = page.resetRequired
         ? limited(await recordQuestionRulingRows(tx, input), input.limit)

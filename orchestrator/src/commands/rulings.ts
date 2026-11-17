@@ -59,8 +59,11 @@ function registerQuestionIdentities(program: Command): void {
   program
     .command('question-identities')
     .description('print numeric question identities and their durable record ids as JSON')
+    .argument('<identifiers...>', 'question numbers or UUIDs')
     .allowExcessArguments(false)
-    .action(async () => log(JSON.stringify(await questionIdentityMap(db()))))
+    .action(async (identifiers: string[]) =>
+      log(JSON.stringify(await questionIdentityMap(db(), identifiers))),
+    )
 }
 
 async function printRulings(options: {

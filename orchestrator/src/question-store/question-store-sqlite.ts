@@ -12,22 +12,26 @@ import type {
 import {
   assertQuestionJsonFieldsStructured,
   questionChangedAfterRefusal,
+  unboundedQuestionRulingsRefusal,
 } from '../record/record-question-contract.ts'
 import {
   localQuestionProjects,
   maxQuestionNumber,
   openQuestionsForCursors,
+  openQuestionsForTasks,
   openStagesForSession,
   questionByNumberRow,
   questionsByIdRows,
   questionsForCursor,
   questionsForRun,
+  questionsForSession,
   ruleAuditReasons,
   rulingRows,
   runInboxQuestionRows,
   taskRulingRows,
   waitingWorkflowQuestions,
   workflowInboxQuestions,
+  unlinkedWorkflowQuestions,
 } from './question-store-sqlite-reads.ts'
 import type { QuestionReadResult, QuestionStore } from './question-store-types.ts'
 
@@ -38,7 +42,10 @@ const limited = <Row>(rows: Row[], limit?: number): Row[] =>
 function assertLocalChangedAfter(input: QuestionReadInput): void {
   if (
     input.changedAfter !== undefined &&
-    ((input.read !== 'rulings' && input.read !== 'inbox') || !/^\d+$/.test(input.changedAfter))
+    ((input.read !== 'rulings' && input.read !== 'inbox') ||
+      (input.read === 'rulings'
+        ? !/^(?:\d+|page:\d+)$/.test(input.changedAfter)
+        : !/^\d+$/.test(input.changedAfter)))
   )
     throw new Error(
       `${questionChangedAfterRefusal.local.message}; ${questionChangedAfterRefusal.local.remedy}`,
@@ -67,6 +74,29 @@ export class SqliteQuestionStore implements QuestionStore {
   }
 
   private readRulings(input: Extract<QuestionReadInput, { read: 'rulings' }>): QuestionReadResult {
+    if (input.since === undefined && input.limit === undefined && input.changedAfter === undefined)
+      throw new Error(
+        `${unboundedQuestionRulingsRefusal.message}; ${unboundedQuestionRulingsRefusal.remedy}`,
+      )
+    const pageAfter = input.changedAfter?.startsWith('page:')
+      ? Number(input.changedAfter.slice(5))
+      : null
+    if (input.limit !== undefined || pageAfter !== null) {
+      const pageSize = input.limit ?? 100
+      const all = rulingRows(this.database, {
+        kind: input.kind,
+        since: input.since,
+        after: null,
+        cursor: null,
+      }).filter((row) => pageAfter === null || row.number > pageAfter)
+      const items = all.slice(0, pageSize)
+      const last = items.at(-1)
+      return {
+        items,
+        ...(last ? { cursor: `page:${last.number}` } : {}),
+        more: all.length > pageSize,
+      }
+    }
     const after = input.changedAfter === undefined ? null : Number(input.changedAfter)
     const cursor =
       after === null
@@ -223,6 +253,8 @@ export class SqliteQuestionStore implements QuestionStore {
       return { items: limited(questionsByIdRows(this.database, input.ids), input.limit) }
     if (input.read === 'for-run')
       return { items: limited(questionsForRun(this.database, input.runId), input.limit) }
+    if (input.read === 'for-session')
+      return { items: limited(questionsForSession(this.database, input.sessionId), input.limit) }
     if (input.read === 'max-number')
       return { items: limited(maxQuestionNumber(this.database), input.limit) }
     if (input.read === 'by-number')
@@ -231,6 +263,15 @@ export class SqliteQuestionStore implements QuestionStore {
       return {
         items: limited(
           openQuestionsForCursors(this.database, input.workflowCursorRecordIds),
+          input.limit,
+        ),
+      }
+    if (input.read === 'open-for-tasks')
+      return { items: limited(openQuestionsForTasks(this.database, input.taskRecordIds), input.limit) }
+    if (input.read === 'unlinked-workflow')
+      return {
+        items: limited(
+          unlinkedWorkflowQuestions(this.database, input.project, input.workflowKey),
           input.limit,
         ),
       }

@@ -21,6 +21,48 @@ export async function questionById(
   )
 }
 
+export async function questionByNumber(
+  database: Database,
+  number: number,
+  projectId: string,
+): Promise<Record<string, unknown> | null> {
+  return (
+    ((await questionStore(database).read({ read: 'by-number', number }, projectId)).items[0] as
+      | Record<string, unknown>
+      | undefined) ?? null
+  )
+}
+
+export async function openQuestionsForTasks(
+  database: Database,
+  taskRecordIds: string[],
+  projectId: string,
+): Promise<Record<string, unknown>[]> {
+  if (!taskRecordIds.length) return []
+  return (
+    await questionStore(database).read({ read: 'open-for-tasks', taskRecordIds }, projectId)
+  ).items as Record<string, unknown>[]
+}
+
+export async function questionsForSession(database: Database, sessionId: string) {
+  return (await questionStore(database).read({ read: 'for-session', sessionId })).items as Record<
+    string,
+    unknown
+  >[]
+}
+
+export async function unlinkedWorkflowQuestions(
+  database: Database,
+  input: { project?: string; workflowKey?: string; projectId?: string } = {},
+) {
+  return (
+    await questionStore(database).read(
+      { read: 'unlinked-workflow', project: input.project, workflowKey: input.workflowKey },
+      input.projectId,
+    )
+  ).items as Record<string, unknown>[]
+}
+
 export async function waitingQuestions(database: Database): Promise<TaskFlowWaitingQuestionRow[]> {
   return (await questionStore(database).read({ read: 'waiting' }))
     .items as TaskFlowWaitingQuestionRow[]
@@ -144,6 +186,24 @@ export async function questionRulings(
 ) {
   const result = await questionStore(database).read({ read: 'rulings', ...input })
   return { ...result, items: result.items as Record<string, unknown>[] }
+}
+
+export async function allQuestionRulingsPaged(
+  database: Database,
+  kind: 'workflow' | 'run' | 'all',
+): Promise<Record<string, unknown>[]> {
+  const items: Record<string, unknown>[] = []
+  let changedAfter: string | undefined
+  do {
+    const result = await questionRulings(database, {
+      kind,
+      ...(changedAfter === undefined ? { limit: 100 } : { changedAfter }),
+    })
+    items.push(...result.items)
+    if (!result.more) return items
+    if (!result.cursor) throw new Error('question rulings page says more without a continuation cursor')
+    changedAfter = result.cursor
+  } while (true)
 }
 
 export async function questionTaskRulings(

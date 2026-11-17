@@ -244,18 +244,20 @@ export class RecordQuestionStore implements QuestionStore {
     return await this.input.client.writeQuestion(intent, input, destination)
   }
 
-  async read(input: QuestionReadInput): Promise<QuestionReadResult> {
-    if (input.read === 'by-number')
+  async read(input: QuestionReadInput, projectId?: string): Promise<QuestionReadResult> {
+    if (input.read === 'by-number' && !projectId)
       throw new Error(
-        'question numbers are unique only within a record space; read the question by id or by cursor, then retry',
+        'question numbers are unique only within a record space; pass the question UUID, then retry',
       )
     if (input.changedAfter !== undefined && input.read !== 'rulings' && input.read !== 'inbox')
       throw new Error(
         `${questionChangedAfterRefusal.message}; ${questionChangedAfterRefusal.remedy}`,
       )
-    const result = (SINGLE_SPACE_READ_KINDS as readonly string[]).includes(input.read)
-      ? await this.singleSpaceRead(input)
-      : await this.listRead(input)
+    const result = projectId
+      ? await this.readAt(input, await this.destination(projectId))
+      : (SINGLE_SPACE_READ_KINDS as readonly string[]).includes(input.read)
+        ? await this.singleSpaceRead(input)
+        : await this.listRead(input)
     const enrichMachineFields = (SINGLE_SPACE_READ_KINDS as readonly string[]).includes(input.read)
     const items = result.items.map((row) =>
       localQuestionRow(this.input.database, row, enrichMachineFields),

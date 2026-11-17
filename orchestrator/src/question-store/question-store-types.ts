@@ -72,5 +72,5 @@ export type QuestionReadResult = {
 }
 export interface QuestionStore {
   write(intent: QuestionIntent, input: QuestionWriteBody): Promise<QuestionWriteResult>
-  read(input: QuestionReadInput): Promise<QuestionReadResult>
+  read(input: QuestionReadInput, projectId?: string): Promise<QuestionReadResult>
 }

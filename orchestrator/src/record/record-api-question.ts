@@ -13,6 +13,7 @@ import {
   questionChangedAfterRefusal,
   questionIntentSchema,
   questionReadSchema,
+  unboundedQuestionRulingsRefusal,
   questionWriteSchema,
   type RecordQuestionReadInput,
 } from './record-question-contract.ts'
@@ -50,6 +51,18 @@ export function registerRecordQuestionRoutes(
     const query = questionReadSchema.safeParse(context.req.query())
     if (!query.success) return context.json({ error: 'invalid question read query' }, 400)
     if (query.data.read === 'rulings') {
+      if (
+        query.data.since === undefined &&
+        query.data.limit === undefined &&
+        query.data.changedAfter === undefined
+      )
+        return context.json(
+          {
+            error: unboundedQuestionRulingsRefusal.message,
+            remedy: unboundedQuestionRulingsRefusal.remedy,
+          },
+          422,
+        )
       const { changedAfter: encodedChangedAfter, ...read } = query.data
       if (encodedChangedAfter === undefined)
         return context.json(await deps.readQuestions({ ...tenant, ...read }))
@@ -61,9 +74,13 @@ export function registerRecordQuestionRoutes(
           },
           422,
         )
-      let changedAfter: RecordChangeCursor
+      let changedAfter: RecordChangeCursor | { questionNumber: number }
       try {
-        changedAfter = decodeRecordChangeCursor(encodedChangedAfter)
+        changedAfter = encodedChangedAfter.startsWith('page:')
+          ? { questionNumber: Number(encodedChangedAfter.slice(5)) }
+          : decodeRecordChangeCursor(encodedChangedAfter)
+        if ('questionNumber' in changedAfter && !Number.isSafeInteger(changedAfter.questionNumber))
+          throw new Error('shape')
       } catch {
         return context.json(
           {
