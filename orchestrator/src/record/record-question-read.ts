@@ -335,97 +335,107 @@ async function rows(tx: SQL, input: QuestionReadInput): Promise<Row[]> {
   )
 }
 
+type RulingsInput = Tenant & Extract<RecordQuestionReadInput, { read: 'rulings' }>
+type RecordPool = ReturnType<typeof recordPool>
+
+async function readRulingPage(client: RecordPool, input: RulingsInput) {
+  const pageSize = input.limit ?? 100
+  return client.begin(async (tx) => {
+    await bindTenant(tx, input)
+    const all = await recordQuestionRulingRows(tx, {
+      kind: input.kind,
+      since: input.since,
+      afterNumber:
+        input.changedAfter && 'questionNumber' in input.changedAfter
+          ? input.changedAfter.questionNumber
+          : undefined,
+      limit: pageSize + 1,
+    })
+    const items = all.slice(0, pageSize)
+    const last = items.at(-1)
+    return {
+      items,
+      ...(last ? { cursor: `page:${String(last.number)}` } : {}),
+      more: all.length > pageSize,
+    }
+  })
+}
+
+async function readRulingChanges(client: RecordPool, input: RulingsInput) {
+  const materialize = async (tx: SQL, page: RecordChangeReadPage) => {
+    const items = page.resetRequired
+      ? limited(await recordQuestionRulingRows(tx, input), input.limit)
+      : await recordQuestionRulingRows(tx, {
+          kind: input.kind,
+          since: input.since,
+          ids: [...new Set(page.changes.map(({ id }) => id))],
+        })
+    return {
+      items,
+      cursor: encodeRecordChangeCursor(page.cursor),
+      more: page.resetRequired ? false : page.more,
+      reset: page.resetRequired,
+    }
+  }
+  if (input.changedAfter !== undefined) {
+    if ('questionNumber' in input.changedAfter)
+      throw new Error('page cursors must use the rulings page read')
+    return readRecordChanges(
+      client,
+      input,
+      input.changedAfter,
+      MAX_RECORD_CHANGE_PAGE_SIZE,
+      RECORD_QUESTION_CHANGE_TABLES,
+      materialize,
+    )
+  }
+
+  let after = (
+    await readRecordChanges(
+      client,
+      input,
+      null,
+      MAX_RECORD_CHANGE_PAGE_SIZE,
+      RECORD_QUESTION_CHANGE_TABLES,
+    )
+  ).cursor
+  while (true) {
+    const page = await readRecordChanges(
+      client,
+      input,
+      after,
+      MAX_RECORD_CHANGE_PAGE_SIZE,
+      RECORD_QUESTION_CHANGE_TABLES,
+      async (tx, current) => {
+        if (current.resetRequired || current.more)
+          return { done: false as const, cursor: current.cursor }
+        const allItems = await recordQuestionRulingRows(tx, input)
+        const items = limited(allItems, input.limit)
+        if (items.length < allItems.length) return { done: true as const, result: { items } }
+        return {
+          done: true as const,
+          result: {
+            items,
+            cursor: encodeRecordChangeCursor(current.cursor),
+            more: false,
+            reset: false,
+          },
+        }
+      },
+    )
+    if (page.done) return page.result
+    after = page.cursor
+  }
+}
+
 export async function readRecordQuestions(
   input: Tenant & RecordQuestionReadInput,
 ): Promise<{ items: Row[]; cursor?: string; more?: boolean; reset?: boolean }> {
   const client = recordPool(input.url)
   if (input.read === 'rulings') {
-    if (
-      input.limit !== undefined ||
-      (input.changedAfter && 'questionNumber' in input.changedAfter)
-    ) {
-      const pageSize = input.limit ?? 100
-      return client.begin(async (tx) => {
-        await bindTenant(tx, input)
-        const all = await recordQuestionRulingRows(tx, {
-          kind: input.kind,
-          since: input.since,
-          afterNumber:
-            input.changedAfter && 'questionNumber' in input.changedAfter
-              ? input.changedAfter.questionNumber
-              : undefined,
-          limit: pageSize + 1,
-        })
-        const items = all.slice(0, pageSize)
-        const last = items.at(-1)
-        return {
-          items,
-          ...(last ? { cursor: `page:${String(last.number)}` } : {}),
-          more: all.length > pageSize,
-        }
-      })
-    }
-    const materialize = async (tx: SQL, page: RecordChangeReadPage) => {
-      const items = page.resetRequired
-        ? limited(await recordQuestionRulingRows(tx, input), input.limit)
-        : await recordQuestionRulingRows(tx, {
-            kind: input.kind,
-            since: input.since,
-            ids: [...new Set(page.changes.map(({ id }) => id))],
-          })
-      return {
-        items,
-        cursor: encodeRecordChangeCursor(page.cursor),
-        more: page.resetRequired ? false : page.more,
-        reset: page.resetRequired,
-      }
-    }
-    if (input.changedAfter !== undefined)
-      return readRecordChanges(
-        client,
-        input,
-        input.changedAfter,
-        MAX_RECORD_CHANGE_PAGE_SIZE,
-        RECORD_QUESTION_CHANGE_TABLES,
-        materialize,
-      )
-
-    let after = (
-      await readRecordChanges(
-        client,
-        input,
-        null,
-        MAX_RECORD_CHANGE_PAGE_SIZE,
-        RECORD_QUESTION_CHANGE_TABLES,
-      )
-    ).cursor
-    while (true) {
-      const page = await readRecordChanges(
-        client,
-        input,
-        after,
-        MAX_RECORD_CHANGE_PAGE_SIZE,
-        RECORD_QUESTION_CHANGE_TABLES,
-        async (tx, current) => {
-          if (current.resetRequired || current.more)
-            return { done: false as const, cursor: current.cursor }
-          const allItems = await recordQuestionRulingRows(tx, input)
-          const items = limited(allItems, input.limit)
-          if (items.length < allItems.length) return { done: true as const, result: { items } }
-          return {
-            done: true as const,
-            result: {
-              items,
-              cursor: encodeRecordChangeCursor(current.cursor),
-              more: false,
-              reset: false,
-            },
-          }
-        },
-      )
-      if (page.done) return page.result
-      after = page.cursor
-    }
+    if (input.limit !== undefined || (input.changedAfter && 'questionNumber' in input.changedAfter))
+      return readRulingPage(client, input)
+    return readRulingChanges(client, input)
   }
   return client.begin(async (tx) => {
     await bindTenant(tx, input)

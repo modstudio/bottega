@@ -33,7 +33,12 @@ test('hosted rulings decode opaque cursors and malformed cursors give a fresh-cu
   let received: RecordChangeCursor | undefined
   const api = app({
     readQuestions: async (input) => {
-      if (input.read === 'rulings') received = input.changedAfter
+      if (
+        input.read === 'rulings' &&
+        input.changedAfter &&
+        !('questionNumber' in input.changedAfter)
+      )
+        received = input.changedAfter
       return { items: [], cursor: encodeRecordChangeCursor(cursor), more: false, reset: false }
     },
   })

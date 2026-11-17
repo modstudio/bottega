@@ -4,7 +4,6 @@
 import type { Database } from 'bun:sqlite'
 import { callerIdentityRefusal } from '../caller-classification.ts'
 import { callerIdentity, db, sessionId } from '../database/db.ts'
-import { projectByName } from '../project/project-read.ts'
 import {
   askQuestion,
   mutateQuestion,
@@ -154,12 +153,10 @@ export async function linkWorkflowQuestionsTaskReference(
   input: { project: string; workflowKey: string; taskRecordId: string },
   database: Database = db(),
 ): Promise<number> {
-  const project = projectByName(input.project, database)
   const questions = (
     await unlinkedWorkflowQuestions(database, {
       project: input.project,
       workflowKey: input.workflowKey,
-      projectId: project?.recordId,
     })
   ).map((row) => String(row.record_id))
   let linked = 0

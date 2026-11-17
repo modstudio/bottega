@@ -9,7 +9,14 @@ import type {
   TaskFlowWaitingQuestionRow,
 } from '../workflow/task-flow-store-types.ts'
 import { questionStore } from './question-store.ts'
-import { questionProjectIdByNumber } from './question-store-sqlite-reads.ts'
+
+function projectRecordIdByName(database: Database, project: string): string | undefined {
+  return database
+    .query<{ record_id: string }, [string]>(
+      'SELECT record_id FROM project WHERE name=? AND retired_at IS NULL',
+    )
+    .get(project)?.record_id
+}
 
 export async function questionById(
   database: Database,
@@ -35,7 +42,16 @@ export async function questionByNumber(
 }
 
 export function questionNumberProjectId(database: Database, number: number): string | null {
-  return questionProjectIdByNumber(database, number)
+  return (
+    database
+      .query<{ project_record_id: string | null }, [number]>(
+        `SELECT COALESCE(owner.project_record_id,cursor.project_record_id) project_record_id
+         FROM question q LEFT JOIN run owner ON owner.record_id=q.run_record_id
+         LEFT JOIN workflow_cursor cursor ON cursor.record_id=q.workflow_cursor_record_id
+         WHERE q.number=?`,
+      )
+      .get(number)?.project_record_id ?? null
+  )
 }
 
 export async function openQuestionsForTasks(
@@ -59,10 +75,12 @@ export async function unlinkedWorkflowQuestions(
   database: Database,
   input: { project?: string; workflowKey?: string; projectId?: string } = {},
 ) {
+  const projectId =
+    input.projectId ?? (input.project ? projectRecordIdByName(database, input.project) : undefined)
   return (
     await questionStore(database).read(
       { read: 'unlinked-workflow', project: input.project, workflowKey: input.workflowKey },
-      input.projectId,
+      projectId,
     )
   ).items as Record<string, unknown>[]
 }

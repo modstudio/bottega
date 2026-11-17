@@ -446,7 +446,7 @@ export async function questionIdentitiesForMigrations(
     .query<{ number: number }, []>('SELECT DISTINCT question_id number FROM question')
     .all()
     .map(({ number }) => number)
-    .toSorted((left, right) => left - right)
+    .sort((left, right) => left - right)
   if (!numbers.length) return []
   try {
     return await readQuestionIdentities(numbers)

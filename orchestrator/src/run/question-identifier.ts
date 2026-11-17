@@ -65,7 +65,7 @@ export async function resolveQuestionIdentifier(
       parsed.id,
       questionNumberProject(database, parsed.id),
     )
-    if (row) return row.record_id
+    if (row) return String(row.record_id)
     throw new Error(`no question has number ${parsed.id}; pass ${ACCEPTED_QUESTION_IDENTIFIERS}`)
   }
   const row = await questionById(database, parsed.recordId)

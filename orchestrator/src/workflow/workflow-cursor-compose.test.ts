@@ -8,6 +8,7 @@ import {
 import { DocRevisionConflictError } from '../doc/doc-revision-conflict.ts'
 import { rememberActiveRecordSpace } from '../project-space.ts'
 import { rememberProjectSpace } from '../project-space-cache.ts'
+import type { RecordApiClient } from '../record/record-api-client.ts'
 import type { RecordTaskFlowClient } from '../record/record-api-client-task-flow.ts'
 import {
   type TaskFlowIntentInput,
@@ -85,7 +86,7 @@ function composeClient(
     destinations?: Array<{ destinationSpaceId?: string } | undefined>
     projectNames?: Record<string, string>
   } = {},
-): RecordTaskFlowClient {
+): RecordApiClient & RecordTaskFlowClient {
   const memory = createMemoryRecordApiClient({
     taskFlowComposeFlowRevision: options.flowRevision ?? 4,
     taskFlowComposeStageRevision: options.stageRevision ?? 7,
