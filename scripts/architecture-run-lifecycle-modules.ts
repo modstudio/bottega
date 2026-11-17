@@ -344,6 +344,7 @@ export const runLifecycleModules: ArchitectureModule[] = [
     './run-resource-step-recording.ts',
     './run-task-reference.ts',
     './run-task-branch-resolution.ts',
+    '../workflow/workflow-cursor-worktrees.ts',
   ]),
   module('orchestrator/src/run/run-credential-claim.ts', []),
   module('orchestrator/src/run/run-claim-mcp.ts', [
@@ -384,7 +385,6 @@ export const runLifecycleModules: ArchitectureModule[] = [
     '../../../shared/brand.ts',
     '../git/checkout-identity.ts',
     '../git/git-environment.ts',
-    '../workflow/workflow-cursor-worktrees.ts',
   ]),
   module('orchestrator/src/run/run-task-reference.ts', [
     '../../../shared/brand.ts',

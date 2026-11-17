@@ -62,13 +62,13 @@ import type { DetachSpec } from '../route/failover.ts'
 import { pick, type RoutedSelection } from '../route/route.ts'
 import { pickCommand } from '../route/routing-commands.ts'
 import { AgentCapacityError } from '../route/routing-refusal.ts'
+import { heldBranchRemedy } from '../run/held-branch-remedy.ts'
 import { sha } from '../run/prompt-sha.ts'
 import { run } from '../run/run.ts'
 import { assertAcpPolicyAllowed } from '../run/run-acp-policy.ts'
 import { waitForAgentSelection } from '../run/run-agent-capacity.ts'
 import { RUNS_DIR } from '../run/run-artifacts.ts'
 import type { RunWorkflowBinding } from '../run/run-claim-inheritance.ts'
-import { heldBranchRemedy } from '../run/held-branch-remedy.ts'
 import { claimTreePlanForCandidate } from '../run/run-claim-plan.ts'
 import { follow as followRun, harnessHandoff, printHarnessHandoff } from '../run/run-control.ts'
 import { detach as dispatchDetached } from '../run/run-dispatch.ts'
@@ -88,6 +88,7 @@ import {
   type TransportName,
 } from '../transport/transport.ts'
 import { askTypedQuestion } from '../typed-question/typed-question-service.ts'
+import { openCursorWorktrees } from '../workflow/workflow-cursor-worktrees.ts'
 import {
   callerDrift,
   checkoutHasUncommittedWork,
@@ -439,7 +440,10 @@ export async function refuseHeldTaskBranchBeforeDetach(
     repoJob: true,
     hasWorktree: false,
     refusalMessage: async (refusal) =>
-      taskBranchLandingTreeRefusal(refusal, await heldBranchRemedy(refusal.path)),
+      taskBranchLandingTreeRefusal(
+        refusal,
+        await heldBranchRemedy(refusal.path, openCursorWorktrees),
+      ),
   })
 }
 

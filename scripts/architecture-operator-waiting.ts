@@ -26,6 +26,7 @@ export const operatorWaitingModules: OperatorWaitingModule[] = [
     '../review/review-vocabulary.ts',
     '../score/refusal-guidance.ts',
     '../workflow/workflow-context-moment.ts',
+    '../workflow/workflow-cursor-worktrees.ts',
     './answer-value-args.ts',
     './question-identifier.ts',
     './question-vocabulary.ts',

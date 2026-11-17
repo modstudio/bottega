@@ -42,6 +42,7 @@ import type { ReviewRole } from '../review/review-role.ts'
 import { attributedLaunchKey, type ResolvedReviewTarget } from '../review/review-target.ts'
 import { resolveSupersededTurn } from '../route/failover.ts'
 import { runOwnedPaths } from '../run-owned-paths.ts'
+import { openCursorWorktrees } from '../workflow/workflow-cursor-worktrees.ts'
 import { type KeepTreeExemption, recordedKeepTreeExemption } from '../worktree/keep-tree-hold.ts'
 import { writerTreeBaseRef } from '../worktree/trunk-base-choice.ts'
 import { createWorkerWorktree, worktreeExists } from '../worktree/worktree.ts'
@@ -59,6 +60,7 @@ import { toolFor } from '../worktree/worktree-preflight.ts'
 import { removeFor } from '../worktree/worktree-remove.ts'
 import type { Worktree } from '../worktree/worktree-types.ts'
 import { assertBranchHasNoAliveOwner } from './branch-owner-guard.ts'
+import { heldBranchRemedy } from './held-branch-remedy.ts'
 import { sha } from './prompt-sha.ts'
 import { withReaderCreationLocks } from './reader-tree-sharing-claim.ts'
 import { resumeCreationOptions } from './resume-tree.ts'
@@ -80,7 +82,6 @@ import {
   recordCarriedRulings,
 } from './run-claim-inheritance.ts'
 import { executeClaimedMcpPlan } from './run-claim-mcp.ts'
-import { heldBranchRemedy } from './held-branch-remedy.ts'
 import {
   claimedRunBranch,
   claimTreePlanForCandidate,
@@ -372,7 +373,10 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
     repoJob,
     hasWorktree: Boolean(opts.resume?.worktree),
     refusalMessage: async (refusal) =>
-      taskBranchLandingTreeRefusal(refusal, await heldBranchRemedy(refusal.path)),
+      taskBranchLandingTreeRefusal(
+        refusal,
+        await heldBranchRemedy(refusal.path, openCursorWorktrees),
+      ),
   })
   const existingBranch = resumePlan?.branch ?? resolvedTaskBranch?.branch
   assertBranchHasNoAliveOwner({

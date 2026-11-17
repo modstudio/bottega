@@ -91,6 +91,7 @@ import { assertAgentWorkRun } from './synthetic-lifecycle-job.ts'
 type RunAnswerHelpers = {
   argvResumeLimit(agentName: string): number | undefined
   presentation: RunControlPresentation
+  openCursorWorktrees?: () => Promise<readonly { worktree: string }[]>
   dispatch?: typeof detach
   dashboardAuthorized?: () => boolean
 }
@@ -520,6 +521,7 @@ async function writingRetryWorkspace(
   row: RetryRunRow,
   needed: boolean,
   strandedRecordOnly: boolean,
+  openCursorWorktrees: () => Promise<readonly { worktree: string }[]>,
 ) {
   if (!needed) return null
   return resolveWritingRetryWorkspace({
@@ -532,8 +534,18 @@ async function writingRetryWorkspace(
     branchKept: row.branch_kept,
     branchKeptTip: row.branch_kept_tip,
     strandedRecordOnly,
+    openCursorWorktrees,
   })
 }
+
+const continueRetry = (id: string, helpers: RunAnswerHelpers) =>
+  continueRun(
+    id,
+    undefined,
+    helpers.argvResumeLimit,
+    undefined,
+    helpers.openCursorWorktrees ?? (async () => []),
+  )
 
 function retryKeepTree(row: RetryRunRow) {
   return recordedKeepTreeExemption(
@@ -596,7 +608,7 @@ export async function retryRun(
     neverStarted,
   )
   if (preliminaryPath?.action === 'continue') {
-    const resumed = await continueRun(id, undefined, helpers.argvResumeLimit)
+    const resumed = await continueRetry(id, helpers)
     auditRunMutation(
       retryAuthority,
       'retry',
@@ -639,6 +651,7 @@ export async function retryRun(
     row,
     preliminaryPath.action === 'needs-writing-workspace',
     recordedRulings.length > 0 && latestTurn.status === 'asking',
+    helpers.openCursorWorktrees ?? (async () => []),
   )
   console.error(
     `— retrying run ${id} (${row.agent}/${row.job}` +

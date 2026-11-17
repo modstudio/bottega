@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { taskBranchLandingTreeRefusal } from '../branch/task-branch.ts'
 import { decideHeldBranchRemedy } from './held-branch-remedy.ts'
 import {
@@ -163,7 +164,9 @@ describe('claim tree plan', () => {
       )
       expect(message).toContain(`architect-owned ${ownerJob} tree`)
       expect(message).toContain('continue the work yourself in architect tree')
-      expect(message).toContain('retry the same bottega run start … --continue DEV-1398-writer')
+      expect(message).toContain(
+        `retry the same ${PLATFORM_SLUG} run start … --continue DEV-1398-writer`,
+      )
       expect(message).not.toContain('--base')
     },
   )

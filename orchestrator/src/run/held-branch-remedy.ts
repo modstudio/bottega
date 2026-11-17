@@ -4,22 +4,26 @@
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { realpathOrSpelled } from '../git/checkout-identity.ts'
 import { gitResult } from '../git/git-environment.ts'
-import { openCursorWorktrees } from '../workflow/workflow-cursor-worktrees.ts'
 
-export type HeldBranchRemedyFacts = {
+type OpenCursorWorktreesPort = () => Promise<readonly { worktree: string }[]>
+
+type HeldBranchRemedyFacts = {
   path: string
   cwdInsideTree: boolean
   cursorNamesTree: boolean
   treeDirty: boolean
 }
 
-export type HeldBranchRemedy = {
+type HeldBranchRemedy = {
   prepare: string | null
   release: 'detach' | 'remove'
 }
 
 /** Gather the resolved path, hosted cursor, and dirty facts for one held tree. */
-export async function heldBranchRemedyFacts(path: string): Promise<HeldBranchRemedyFacts> {
+async function heldBranchRemedyFacts(
+  path: string,
+  openCursorWorktrees: OpenCursorWorktreesPort,
+): Promise<HeldBranchRemedyFacts> {
   const tree = realpathOrSpelled(path).replace(/\/$/, '')
   const cwd = realpathOrSpelled(process.cwd()).replace(/\/$/, '')
   const dirty = gitResult(['status', '--porcelain'], path)
@@ -43,7 +47,7 @@ export function decideHeldBranchRemedy(facts: HeldBranchRemedyFacts): HeldBranch
 }
 
 /** Render a held-tree decision with the operator command vocabulary. */
-export function renderHeldBranchRemedy(path: string, remedy: HeldBranchRemedy): string {
+function renderHeldBranchRemedy(path: string, remedy: HeldBranchRemedy): string {
   const release =
     remedy.release === 'detach'
       ? `git -C ${path} checkout --detach`
@@ -52,6 +56,12 @@ export function renderHeldBranchRemedy(path: string, remedy: HeldBranchRemedy): 
 }
 
 /** Gather, decide, and render the release for one held tree. */
-export async function heldBranchRemedy(path: string): Promise<string> {
-  return renderHeldBranchRemedy(path, decideHeldBranchRemedy(await heldBranchRemedyFacts(path)))
+export async function heldBranchRemedy(
+  path: string,
+  openCursorWorktrees: OpenCursorWorktreesPort,
+): Promise<string> {
+  return renderHeldBranchRemedy(
+    path,
+    decideHeldBranchRemedy(await heldBranchRemedyFacts(path, openCursorWorktrees)),
+  )
 }

@@ -33,6 +33,7 @@ import {
   continuationTreeCwd,
   requireContinuationTree,
 } from './continuation-tree-service.ts'
+import { heldBranchRemedy } from './held-branch-remedy.ts'
 import { displayRunQuestion } from './question-display-probe.ts'
 import { openChainQuestions } from './question-open.ts'
 import {
@@ -42,7 +43,6 @@ import {
   type ResumeTreePlan,
   resumeTreePlan,
 } from './resume-tree.ts'
-import { heldBranchRemedy } from './held-branch-remedy.ts'
 import {
   adoptRunMutation,
   auditRunMutation,
@@ -602,6 +602,7 @@ export async function refuseHeldContinuationBranch(
   projectPath: string | null,
   recordedTreePath: string | null,
   plan: ResumeTreePlan | null,
+  openCursorWorktrees: () => Promise<readonly { worktree: string }[]>,
 ): Promise<void> {
   if (!plan || !projectPath) return
   const worktrees = parseWorktreeList(worktreeListPorcelain(projectPath))
@@ -622,12 +623,27 @@ export async function refuseHeldContinuationBranch(
         worktree.branch === plan.branch &&
         canonicalWorktrees[index]?.path === availability.holdingPath,
     )?.path ?? availability.holdingPath
-  const release = await heldBranchRemedy(holdingPath)
+  const release = await heldBranchRemedy(holdingPath, openCursorWorktrees)
   throw new Error(
     `run ${id} cannot continue: branch ${plan.branch} is checked out at ${holdingPath}\n` +
       `release it with ${release}, then retry ${PLATFORM_SLUG} run continue ${id}`,
   )
 }
+
+const refuseContinuationHold = (
+  id: string,
+  project: Project | null,
+  latest: ChainTurn,
+  plan: ResumeTreePlan | null,
+  openCursorWorktrees: () => Promise<readonly { worktree: string }[]>,
+) =>
+  refuseHeldContinuationBranch(
+    id,
+    project?.path ?? null,
+    latest.worktree,
+    plan,
+    openCursorWorktrees,
+  )
 
 function recreatedTreePlan(
   plan: ResumeTreePlan | null,
@@ -693,6 +709,7 @@ export async function continueRun(
   message: string | undefined,
   argvResumeLimit: RunControlPresentation['argvResumeLimit'],
   produceMessage?: () => string | undefined,
+  openCursorWorktrees: () => Promise<readonly { worktree: string }[]> = async () => [],
 ): Promise<{ childId: string; job: string }> {
   let authority = authorizeRunMutation(id, 'continue')
   const row = db()
@@ -770,7 +787,7 @@ export async function continueRun(
     plan: treePlan,
     branchSource,
   } = continuationTree(id, row, latest, checkout.project)
-  await refuseHeldContinuationBranch(id, project?.path ?? null, latest.worktree, treePlan)
+  await refuseContinuationHold(id, project, latest, treePlan, openCursorWorktrees)
   // A block naming an in-progress operation carries no checkpoint row, so it
   // must not be read as a recreated tree state: hasCheckpoint, not the block,
   // decides whether the conversation restarts.
