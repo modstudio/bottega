@@ -1,106 +1,101 @@
 import { readdirSync, readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
-import type { Command } from 'commander'
-import { GROUPS, ROUTES } from '../cli/routes.ts'
-import { program as hubProgram } from '../hub/src/cli-program.ts'
-import { program as orchestratorProgram } from '../orchestrator/src/cli/program.ts'
+import { unknownBottegaCommandWords } from '../orchestrator/src/doc/doc-command-mentions.ts'
 import { PLATFORM_SLUG } from '../shared/brand.ts'
+import { PLATFORM_COMMAND_WORDS } from '../shared/command-spellings.ts'
 
 const startedAt = performance.now()
-const root = fileURLToPath(new URL('..', import.meta.url))
-const sourceRoots = [`${root}orchestrator/src`, `${root}hub/src`, `${root}shared`]
+const root = fileURLToPath(new URL('..', import.meta.url)).replace(/\/$/, '')
+
+// Mirrors the production surfaces and exclusions owned by check-refusal-remedy.ts.
+const sourceRoots = [
+  'orchestrator/src',
+  'shared',
+  'hub/src',
+  'cli',
+  'scripts',
+] as const
 
 const proseAllowlist = new Map([
   ['task client', 'names the hosted task client in a test-safety refusal, not a command'],
   ['note client', 'names the hosted note client in a test-safety refusal, not a command'],
   ['report client', 'names the hosted report client in a test-safety refusal, not a command'],
+  ['task lookup', 'describes a failed task lookup operation, not a command'],
+  ['task read', 'describes a task read operation with no reader, not a command'],
+  ['task document', 'describes a workflow text document, not a command'],
+  ['machine setup chooses', 'continues prose after the runnable machine setup command'],
+  ['machine setup requires', 'continues prose after the runnable machine setup command'],
+  ['record outbox shows', 'continues prose after the runnable record outbox command'],
+  ['machine init-db', 'names a registered hidden machine route omitted from public spellings'],
+  ['machine journal', 'names a registered hidden machine route omitted from public spellings'],
+  ['release with', 'describes releasing with the installer, not a command'],
+  ['release that', 'describes the release that wrote a store, not a command'],
+  ['pr from', 'describes a pull request source, not a command'],
+  ['pr requires', 'describes a pull request precondition, not a command'],
 ])
 
-function commandAt(program: Command, path: readonly string[]): Command | null {
-  let command = program
-  for (const name of path) {
-    const next = command.commands.find(
-      (candidate) => candidate.name() === name || candidate.aliases().includes(name),
-    )
-    if (!next) return null
-    command = next
-  }
-  return command
-}
-
-function registeredGroupVerbs(): Map<string, Set<string>> {
-  const verbs: Map<string, Set<string>> = new Map(
-    GROUPS.map(([group]) => [group, new Set<string>()]),
-  )
-  const programs = { orch: orchestratorProgram, hub: hubProgram } as const
-  for (const route of ROUTES) {
-    const groupVerbs = verbs.get(route.command[0]!)
-    if (!groupVerbs) continue
-    if (route.command[1]) groupVerbs.add(route.command[1])
-    if (route.command.length !== 1 || (route.owner !== 'orch' && route.owner !== 'hub')) continue
-    const registered = commandAt(programs[route.owner], route.argv ?? [])
-    if (!registered)
-      throw new Error(`registered route ${route.command.join(' ')} has no owner command`)
-    for (const command of registered.commands) {
-      groupVerbs.add(command.name())
-      for (const alias of command.aliases()) groupVerbs.add(alias)
-    }
-  }
-  return verbs
-}
-
-function isOperationProse(command: string, before: string, after: string): boolean {
-  if (command === 'task lookup') return after.startsWith(' failed:')
-  if (command === 'task read') {
-    return before.endsWith('a ') && after.startsWith(' and no reader was provided')
-  }
-  if (command === 'release with') return after.startsWith(' the installer')
-  if (command === 'release that') return after.startsWith(' wrote this store')
-  if (command === 'pr from') return after.startsWith(' a registered checkout')
-  if (command === 'pr requires') return after.startsWith(' a checked-out branch')
-  return false
-}
-
-function productionFiles(directory: string): string[] {
-  return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+function sourceFiles(directory: string): string[] {
+  return readdirSync(`${root}/${directory}`, { withFileTypes: true }).flatMap((entry) => {
     const path = `${directory}/${entry.name}`
-    if (entry.isDirectory()) return productionFiles(path)
-    if (!entry.isFile() || !entry.name.endsWith('.ts') || entry.name.endsWith('.test.ts')) return []
+    if (entry.isDirectory()) return entry.name === 'test' ? [] : sourceFiles(path)
+    if (
+      !entry.isFile() ||
+      !entry.name.endsWith('.ts') ||
+      entry.name.endsWith('.test.ts') ||
+      entry.name.endsWith('.d.ts') ||
+      path === 'scripts/check-remedy-text.ts'
+    )
+      return []
     return [path]
   })
 }
 
-const groupVerbs = registeredGroupVerbs()
-const commandCitation = /\$\{PLATFORM_SLUG\} ([a-z][a-z-]*) ([a-z][a-z-]*)/g
-const findings = sourceRoots.flatMap(productionFiles).flatMap((path) => {
-  const relative = path.slice(root.length)
-  return readFileSync(path, 'utf8')
-    .split('\n')
-    .flatMap((line, index) => {
-      const lineFindings = line.includes('git pull')
-        ? [`${relative}:${index + 1}: forbidden remedy text 'git pull'`]
-        : []
-      for (const match of line.matchAll(commandCitation)) {
-        const group = match[1]!
-        const verb = match[2]!
-        const registered = groupVerbs.get(group)
-        if (!registered || registered.has(verb)) continue
-        const command = `${group} ${verb}`
-        if (proseAllowlist.has(command)) continue
-        const before = line.slice(0, match.index)
-        const after = line.slice(match.index + match[0].length)
-        if (isOperationProse(command, before, after)) continue
-        lineFindings.push(
-          `${relative}:${index + 1}: ${PLATFORM_SLUG} ${command} is not a registered command`,
-        )
-      }
-      return lineFindings
-    })
-})
-
-if (findings.length) {
-  console.error(findings.join('\n'))
-  process.exit(1)
+function insideEscapedBackticks(line: string, index: number): boolean {
+  return line.slice(0, index).split('\\`').length % 2 === 0
 }
 
-console.log(`remedy text guard: ${(performance.now() - startedAt).toFixed(1)}ms`)
+const commandCitation = /\$\{PLATFORM_SLUG\}((?: [a-z][a-z0-9-]*)+)/g
+
+/** Pure classification of unregistered command citations in one source line. */
+export function remedyCommandCitationFindings(
+  line: string,
+  knownCommandWords: readonly string[] = PLATFORM_COMMAND_WORDS,
+): string[] {
+  if (!line.includes('${PLATFORM_SLUG}')) return []
+  const topLevelWords = new Set(knownCommandWords.map((command) => command.split(' ')[0]!))
+  const findings: string[] = []
+  for (const match of line.matchAll(commandCitation)) {
+    const words = match[1]!.trim().split(' ')
+    if (!insideEscapedBackticks(line, match.index) && !topLevelWords.has(words[0]!)) continue
+    const mention = unknownBottegaCommandWords(words, knownCommandWords)
+    if (!mention) continue
+    const command = mention.slice(`${PLATFORM_SLUG} `.length)
+    if (proseAllowlist.has(command)) continue
+    findings.push(mention)
+  }
+  return findings
+}
+
+function check(): boolean {
+  const findings = sourceRoots.flatMap(sourceFiles).sort().flatMap((path) =>
+    readFileSync(`${root}/${path}`, 'utf8')
+      .split('\n')
+      .flatMap((line, index) => {
+        const lineFindings = line.includes('git pull')
+          ? [`${path}:${index + 1}: forbidden remedy text 'git pull'`]
+          : []
+        lineFindings.push(
+          ...remedyCommandCitationFindings(line).map(
+            (mention) => `${path}:${index + 1}: ${mention} is not a registered command`,
+          ),
+        )
+        return lineFindings
+      }),
+  )
+  for (const finding of findings) console.error(finding)
+  if (findings.length) return false
+  console.log(`remedy text guard: ${(performance.now() - startedAt).toFixed(1)}ms`)
+  return true
+}
+
+if (import.meta.main && !check()) process.exit(1)

@@ -78,6 +78,17 @@ function unknownBottegaMention(tokens: string[], known: ReadonlySet<string>): st
   return hasSubcommands ? `${matched} ${next}` : null
 }
 
+/** Returns the first unregistered word in a command path after the platform slug. */
+export function unknownBottegaCommandWords(
+  words: readonly string[],
+  knownCommandWords: readonly string[],
+): string | null {
+  return unknownBottegaMention(
+    [PLATFORM_SLUG, ...words],
+    new Set(knownCommandWords.map((command) => `${PLATFORM_SLUG} ${command}`)),
+  )
+}
+
 /** Returns each distinct unknown or retired command mention in source order. */
 export function unknownCommandMentions(
   body: string,

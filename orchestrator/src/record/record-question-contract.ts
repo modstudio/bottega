@@ -146,7 +146,7 @@ export class RecordQuestionError extends Error {
 
 const questionChangedAfterLocalRefusal = {
   message: 'changedAfter is served only on a hosted install',
-  remedy: `retry without changedAfter; local rulings polling uses \`${PLATFORM_SLUG} ruling list --changed-after\``,
+  remedy: `retry without changedAfter; local rulings polling uses \`${PLATFORM_SLUG} question ruling list --changed-after\``,
 } as const
 export const questionChangedAfterRefusal = {
   message: 'changedAfter is served only for hosted rulings reads',
