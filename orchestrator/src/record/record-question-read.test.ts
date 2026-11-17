@@ -18,6 +18,13 @@ const crossSpaceRunId = '01990000-0000-7000-8000-000000004022'
 const firstSpaceOnlyUserId = '01990000-0000-7000-8000-000000004026'
 const firstCursorId = '01990000-0000-7000-8000-000000004028'
 const secondCursorId = '01990000-0000-7000-8000-000000004029'
+const invisibleParentTurnId = '01990000-0000-7000-8000-000000004030'
+const visibleParentId = '01990000-0000-7000-8000-000000004032'
+const visibleParentTurnId = '01990000-0000-7000-8000-000000004033'
+const unlinkedParentId = '01990000-0000-7000-8000-000000004034'
+const linkedParentTurnId = '01990000-0000-7000-8000-000000004035'
+const inheritedTaskKeyTurnId = '01990000-0000-7000-8000-000000004041'
+const otherVisibleProjectId = '01990000-0000-7000-8000-000000004040'
 
 let database: PGlite
 
@@ -70,7 +77,9 @@ beforeAll(async () => {
     VALUES ('01990000-0000-7000-8000-000000004027','${spaceId}','${firstSpaceOnlyUserId}',
       'member','read',now());
     INSERT INTO project (id,space_id,name,key_prefixes,created_at)
-    VALUES ('${secondProjectId}','${secondSpaceId}','second-question-project',ARRAY['TWO'],now());
+    VALUES
+      ('${secondProjectId}','${secondSpaceId}','second-question-project',ARRAY['TWO'],now()),
+      ('${otherVisibleProjectId}','${spaceId}','other-question-project',ARRAY['ALT'],now());
     INSERT INTO run
       (id,space_id,machine_id,started_by_user_id,started_at,agent,job,prompt_sha,prompt_bytes,
        prompt_head,probe,project_id,status,turn,stack,model,executor,no_failover,
@@ -79,14 +88,60 @@ beforeAll(async () => {
       ('${crossSpaceRunId}','${secondSpaceId}','${machineId}','${userId}',now(),'codex','implement',
        'sha-cross',1,'cross-space',false,'${secondProjectId}','asking',1,'typescript','test',
        'harness',false,false,true,'session-cross',3,now(),now());
+    INSERT INTO run
+      (id,space_id,machine_id,started_by_user_id,started_at,agent,job,prompt_sha,prompt_bytes,
+       prompt_head,probe,project_id,status,turn,stack,model,executor,no_failover,
+       automatic_failover,work_preserved,session_id,number,parent_run_id,created_at,updated_at)
+    VALUES
+      ('${invisibleParentTurnId}','${spaceId}','${machineId}','${userId}',now(),'codex','implement',
+       'sha-invisible-parent',1,'invisible-parent-turn',false,'${projectId}','asking',2,
+       'typescript','test','harness',false,false,true,'session-invisible-parent',4,
+       '${crossSpaceRunId}',now(),now());
+    UPDATE run SET task_id='${taskId}',task_key='DEV-1' WHERE id='${invisibleParentTurnId}';
+    INSERT INTO run
+      (id,space_id,machine_id,started_by_user_id,started_at,agent,job,prompt_sha,prompt_bytes,
+       prompt_head,probe,project_id,task_id,task_key,status,turn,evidence_excluded,stack,model,
+       executor,no_failover,automatic_failover,work_preserved,session_id,number,parent_run_id,
+       created_at,updated_at)
+    VALUES
+      ('${visibleParentId}','${spaceId}','${machineId}','${userId}',now(),'codex','implement',
+       'sha-visible-parent',1,'visible-parent',false,'${projectId}','${taskId}','DEV-1','done',1,
+       NULL,'typescript','test','harness',false,false,true,'session-visible-parent',5,NULL,now(),now()),
+      ('${visibleParentTurnId}','${spaceId}','${machineId}','${userId}',now(),'codex','implement',
+       'sha-visible-turn',1,'visible-turn',false,'${otherVisibleProjectId}','${otherTaskId}','DEV-2','asking',2,
+       'turn-only exclusion','typescript','test','harness',false,false,true,'session-visible-turn',6,
+       '${visibleParentId}',now(),now()),
+      ('${unlinkedParentId}','${spaceId}','${machineId}','${userId}',now(),'codex','implement',
+       'sha-unlinked-parent',1,'unlinked-parent',false,'${projectId}',NULL,NULL,'done',1,NULL,
+       'typescript','test','harness',false,false,true,'session-unlinked-parent',7,NULL,now(),now()),
+      ('${linkedParentTurnId}','${spaceId}','${machineId}','${userId}',now(),'codex','implement',
+       'sha-linked-turn',1,'linked-turn',false,'${projectId}','${taskId}','DEV-1','asking',2,NULL,
+       'typescript','test','harness',false,false,true,'session-linked-turn',8,
+       '${unlinkedParentId}',now(),now()),
+      ('${inheritedTaskKeyTurnId}','${spaceId}','${machineId}','${userId}',now(),'codex','implement',
+       'sha-inherited-task-key',1,'inherited-task-key',false,'${projectId}','${taskId}',NULL,'asking',2,NULL,
+       'typescript','test','harness',false,false,true,'session-inherited-task-key',9,
+       '${visibleParentId}',now(),now());
     INSERT INTO question
       (id,space_id,run_id,workflow_cursor_record_id,project_id,machine_id,number,revision,withheld_fields,
-       asked_at,question,created_at,updated_at)
+       asked_at,question,answer,answered_at,created_at,updated_at)
     VALUES
       ('01990000-0000-7000-8000-000000004024','${spaceId}','${crossSpaceRunId}','${firstCursorId}',
-       '${projectId}','${machineId}',5,1,'[]',now(),'cross-space owner',now(),now()),
+       '${projectId}','${machineId}',5,1,'[]',now(),'cross-space owner',NULL,NULL,now(),now()),
       ('01990000-0000-7000-8000-000000004025','${secondSpaceId}','${crossSpaceRunId}','${secondCursorId}',
-       '${secondProjectId}','${machineId}',6,1,'[]',now(),'second-space row',now(),now());
+       '${secondProjectId}','${machineId}',6,1,'[]',now(),'second-space row',NULL,NULL,now(),now()),
+      ('01990000-0000-7000-8000-000000004031','${spaceId}','${invisibleParentTurnId}',NULL,
+       '${projectId}','${machineId}',7,1,'[]',now(),'invisible parent root',NULL,NULL,now(),now()),
+      ('01990000-0000-7000-8000-000000004036','${spaceId}','${visibleParentTurnId}',NULL,
+       '${projectId}','${machineId}',8,1,'[]',now(),'visible parent inbox',NULL,NULL,now(),now()),
+      ('01990000-0000-7000-8000-000000004037','${spaceId}','${visibleParentTurnId}',NULL,
+       '${projectId}','${machineId}',9,1,'[]',now(),'visible parent ruling','yes',now(),now(),now()),
+      ('01990000-0000-7000-8000-000000004038','${spaceId}','${linkedParentTurnId}',NULL,
+       '${projectId}','${machineId}',10,1,'[]',now(),'unlinked parent ruling','yes',now(),now(),now()),
+      ('01990000-0000-7000-8000-000000004039','${spaceId}','${invisibleParentTurnId}',NULL,
+       '${projectId}','${machineId}',11,1,'[]',now(),'invisible parent ruling','yes',now(),now(),now()),
+      ('01990000-0000-7000-8000-000000004042','${spaceId}','${inheritedTaskKeyTurnId}',NULL,
+       '${projectId}','${machineId}',12,1,'[]',now(),'visible parent inherited task key',NULL,NULL,now(),now());
     SET ROLE record_actor;
   `)
 })
@@ -154,4 +209,37 @@ test('hosted inbox excludes answered and closed rows and pages in SQL', async ()
   expect(page.items).toHaveLength(1)
   expect(page.items[0]?.number).toBe(1)
   expect(page.more).toBe(true)
+})
+
+test('hosted inbox excludes a turn whose parent run is not visible', async () => {
+  const result = await readRecordQuestionRows(pgliteSql(database), { read: 'inbox' })
+  expect(result.items.map((row) => row.question)).not.toContain('invisible parent root')
+})
+
+test('hosted inbox projects every root value from a visible parent', async () => {
+  const result = await readRecordQuestionRows(pgliteSql(database), { read: 'inbox' })
+  const row = result.items.find((item) => item.question === 'visible parent inbox')
+  const inherited = result.items.find(
+    (item) => item.question === 'visible parent inherited task key',
+  )
+  expect(row).toMatchObject({
+    root_status: 'done',
+    root_record_id: visibleParentId,
+    root_number: 5,
+    root_voided: 0,
+    task_key: 'DEV-2',
+    project_record_id: projectId,
+    repo: 'question-read-fixture',
+  })
+  expect(inherited?.task_key).toBe('DEV-1')
+})
+
+test('hosted task rulings use the visible root task and exclude absent or invisible roots', async () => {
+  const result = await readRecordQuestionRows(pgliteSql(database), {
+    read: 'task-rulings',
+    projectId,
+    taskId,
+  })
+  expect(result.items.map((row) => row.question)).toEqual(['visible parent ruling'])
+  expect(result.items[0]?.run_record_id).toBe(visibleParentId)
 })
