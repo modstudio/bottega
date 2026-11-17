@@ -579,3 +579,20 @@ export const questionsForRun = (database: Database, runId: string): Record<strin
        WHERE q.run_record_id=? ORDER BY q.number`,
     )
     .all(runId) as Record<string, unknown>[]
+
+export const questionsForRuns = (
+  database: Database,
+  runIds: readonly string[],
+): Record<string, unknown>[] => {
+  if (!runIds.length) return []
+  return database
+    .query(
+      `SELECT ${QUESTION_PORT_COLUMNS} FROM question q
+       LEFT JOIN run owner ON owner.record_id=q.run_record_id
+       LEFT JOIN project run_project ON run_project.record_id=owner.project_record_id
+       LEFT JOIN workflow_cursor cursor ON cursor.record_id=q.workflow_cursor_record_id
+       LEFT JOIN project ON project.record_id=cursor.project_record_id
+       WHERE q.run_record_id IN (${runIds.map(() => '?').join(',')}) ORDER BY q.number`,
+    )
+    .all(...runIds) as Record<string, unknown>[]
+}

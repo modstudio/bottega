@@ -9,7 +9,6 @@ import type {
   TaskFlowWaitingQuestionRow,
 } from '../workflow/task-flow-store-types.ts'
 import { questionStore } from './question-store.ts'
-import { questionNumberProjectId as sqliteQuestionNumberProjectId } from './question-store-sqlite-reads.ts'
 
 function projectRecordIdByName(database: Database, project: string): string | undefined {
   return database
@@ -40,10 +39,6 @@ export async function questionByNumber(
       | Record<string, unknown>
       | undefined) ?? null
   )
-}
-
-export function questionNumberProjectId(database: Database, number: number): string | null {
-  return sqliteQuestionNumberProjectId(database, number)
 }
 
 export async function openQuestionsForTasks(

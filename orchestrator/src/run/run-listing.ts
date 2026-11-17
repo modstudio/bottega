@@ -14,10 +14,10 @@ import { liveOperationalStatusFromEvents, readEventLog, runEventsPath } from '..
 import { UNSCORED_WHERE } from '../evidence/evidence-query.ts'
 import { failureReason, type OutcomeRow, outcomeOf } from '../outcome.ts'
 import type { ProcessSample } from '../process-resource-sampler.ts'
-import { questionRulings, questionsForRuns } from '../question-store/question-store-read.ts'
+import { questionRulings } from '../question-store/question-store-read.ts'
 import { publishChangeCursor } from './collect-change.ts'
 import { currentRunMemberJoin, liveMemberStall } from './live-run-member.ts'
-import { runChainIds } from './run-chain.ts'
+import { questionsForRunChains } from './question-open.ts'
 import type {
   AnswerChannel,
   AnswererKind,
@@ -173,6 +173,17 @@ function listingQuestions(questions: Record<string, unknown>[] | undefined, json
   }))
 }
 
+async function listingQuestionsByRoot(
+  rows: Record<string, unknown>[],
+  json: boolean,
+): Promise<Map<string, Record<string, unknown>[]>> {
+  if (!json) return new Map()
+  return questionsForRunChains(
+    db(),
+    rows.map((row) => String(row.record_id)),
+  )
+}
+
 function listingCostContext(
   json: boolean,
   subscriptionCost: SubscriptionCostContext | undefined,
@@ -209,6 +220,33 @@ async function listingConversation(
   }
   if (!subscriptionCost) return [listed]
   return [listedRunWithCost(listed, listingTurns(recordId, json), subscriptionCost)]
+}
+
+async function listingConversations(
+  rows: Record<string, unknown>[],
+  input: {
+    json: boolean
+    costContext: SubscriptionCostContext | undefined
+    chainIsStranded: (id: string) => boolean
+    strandedRecovery: (id: string) => string
+  },
+): Promise<Record<string, unknown>[]> {
+  const rooted = rows.map(withRetryRecordId)
+  const questionsByRoot = await listingQuestionsByRoot(rooted, input.json)
+  return (
+    await Promise.all(
+      rooted.map((row) =>
+        listingConversation(
+          row,
+          input.json,
+          input.costContext,
+          input.chainIsStranded,
+          input.strandedRecovery,
+          questionsByRoot.get(String(row.record_id)),
+        ),
+      ),
+    )
+  ).flat()
 }
 
 function processSamplesForRows(
@@ -709,39 +747,12 @@ export async function runListingCommand(
       ORDER BY r.number DESC${listingLimitSql(limit)}`,
     )
     .all(...args, ...listingLimitBindings(limit)) as Record<string, unknown>[]
-  rows = rows.map(withRetryRecordId)
-  const questionsByRoot = new Map<string, Record<string, unknown>[]>()
-  if (json) {
-    const chainIdsByRoot = new Map(
-      rows.map((row) => {
-        const rootId = String(row.record_id)
-        return [rootId, runChainIds(db(), rootId)] as const
-      }),
-    )
-    const allQuestions = await questionsForRuns(db(), [
-      ...new Set([...chainIdsByRoot.values()].flat()),
-    ])
-    const byRun = Map.groupBy(allQuestions, (question) => String(question.run_record_id))
-    for (const [rootId, chainIds] of chainIdsByRoot)
-      questionsByRoot.set(
-        rootId,
-        chainIds.flatMap((runId) => byRun.get(runId) ?? []),
-      )
-  }
-  rows = (
-    await Promise.all(
-      rows.map((r) =>
-        listingConversation(
-          r,
-          json,
-          costContext,
-          chainIsStranded,
-          strandedRecovery,
-          questionsByRoot.get(String(r.record_id)),
-        ),
-      ),
-    )
-  ).flat()
+  rows = await listingConversations(rows, {
+    json,
+    costContext,
+    chainIsStranded,
+    strandedRecovery,
+  })
   // Unknown means absent from orch, not merely absent from this presentation
   // (for example because an id names a child turn or another filter excludes
   // it). Omission and non-existence are different facts for machine callers.

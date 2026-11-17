@@ -97,45 +97,62 @@ const QUESTION_DETAIL_COLUMNS = `q.id::text record_id,q.number,q.run_id::text ru
     ORDER BY latest.turn DESC,latest.number DESC LIMIT 1) latest_status,
   COALESCE(owner.project_id,stage.project_id)::text project_record_id`
 
-async function recordQuestionDetails(
-  tx: SQL,
-  input: {
-    ids?: readonly string[]
-    runId?: string
-    runIds?: readonly string[]
-    workflowCursorRecordId?: string
-    sessionId?: string
-    taskRecordIds?: readonly string[]
-  },
-): Promise<Row[]> {
-  if (input.ids?.length === 0 || input.runIds?.length === 0 || input.taskRecordIds?.length === 0)
-    return []
-  const values = input.ids
-    ? [...input.ids]
-    : input.runIds
-      ? [...input.runIds]
-      : input.taskRecordIds
-        ? [...input.taskRecordIds]
-        : [input.runId ?? input.workflowCursorRecordId ?? input.sessionId]
-  const predicate = input.ids
-    ? `q.id IN (${input.ids.map((_, index) => `$${index + 1}::uuid`).join(',')})`
-    : input.runIds
-      ? `q.run_id IN (${input.runIds.map((_, index) => `$${index + 1}::uuid`).join(',')})`
-      : input.runId
-        ? 'q.run_id=$1::uuid'
-        : input.workflowCursorRecordId
-          ? 'q.workflow_cursor_record_id=$1::uuid'
-          : input.sessionId
-            ? 'COALESCE(owner.session_id,stage.session_id)=$1'
-            : `q.workflow_task_id IN (${input.taskRecordIds!.map((_, index) => `$${index + 1}::uuid`).join(',')}) AND q.answered_at IS NULL AND q.closed_at IS NULL`
+type QuestionDetailInput = {
+  ids?: readonly string[]
+  runId?: string
+  runIds?: readonly string[]
+  workflowCursorRecordId?: string
+  sessionId?: string
+  taskRecordIds?: readonly string[]
+}
+
+function questionDetailFilter(input: QuestionDetailInput): {
+  predicate: string
+  values: string[]
+} | null {
+  if (input.ids) {
+    if (!input.ids.length) return null
+    return {
+      predicate: `q.id IN (${input.ids.map((_, index) => `$${index + 1}::uuid`).join(',')})`,
+      values: [...input.ids],
+    }
+  }
+  if (input.runIds) {
+    if (!input.runIds.length) return null
+    return {
+      predicate: `q.run_id IN (${input.runIds.map((_, index) => `$${index + 1}::uuid`).join(',')})`,
+      values: [...input.runIds],
+    }
+  }
+  if (input.runId) return { predicate: 'q.run_id=$1::uuid', values: [input.runId] }
+  if (input.workflowCursorRecordId)
+    return {
+      predicate: 'q.workflow_cursor_record_id=$1::uuid',
+      values: [input.workflowCursorRecordId],
+    }
+  if (input.sessionId)
+    return {
+      predicate: 'COALESCE(owner.session_id,stage.session_id)=$1',
+      values: [input.sessionId],
+    }
+  if (!input.taskRecordIds?.length) return null
+  return {
+    predicate: `q.workflow_task_id IN (${input.taskRecordIds.map((_, index) => `$${index + 1}::uuid`).join(',')}) AND q.answered_at IS NULL AND q.closed_at IS NULL`,
+    values: [...input.taskRecordIds],
+  }
+}
+
+async function recordQuestionDetails(tx: SQL, input: QuestionDetailInput): Promise<Row[]> {
+  const filter = questionDetailFilter(input)
+  if (!filter) return []
   return (await tx.unsafe(
     `SELECT ${QUESTION_DETAIL_COLUMNS} FROM question q
      LEFT JOIN run owner ON owner.id=q.run_id
      LEFT JOIN project run_project ON run_project.id=owner.project_id
      LEFT JOIN task_flow_stage stage ON stage.id=q.workflow_cursor_record_id
      LEFT JOIN project stage_project ON stage_project.id=stage.project_id
-     WHERE ${predicate} ORDER BY q.number`,
-    values,
+     WHERE ${filter.predicate} ORDER BY q.number`,
+    filter.values,
   )) as Row[]
 }
 

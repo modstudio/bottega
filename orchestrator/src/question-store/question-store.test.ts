@@ -23,6 +23,7 @@ const PROJECT_ID = '00000000-0000-4000-8000-000000000101'
 const TASK_ID = '00000000-0000-4000-8000-000000000102'
 const CURSOR_ID = '00000000-0000-4000-8000-000000000103'
 const RUN_ID = '00000000-0000-4000-8000-000000000104'
+const SECOND_RUN_ID = '00000000-0000-4000-8000-000000000107'
 const WORKFLOW_QUESTION_ID = '00000000-0000-4000-8000-000000000105'
 const RUN_QUESTION_ID = '00000000-0000-4000-8000-000000000106'
 const EXCLUDED_QUESTION_ID = '00000000-0000-4000-8000-000000000108'
@@ -130,6 +131,13 @@ function seedOwners(database: Database): void {
     VALUES (?,1,?,'codex','implement','question-fixture','sha',1,'prompt','running','run-session',
       'DEV-2331','[]',?,?)`)
     .run(RUN_ID, STAMP, PROJECT_ID, TASK_ID)
+  database
+    .query(`INSERT INTO run
+    (record_id,number,started_at,agent,job,repo,prompt_sha,prompt_bytes,prompt_head,status,session_id,
+     launch_key,changed_paths,project_record_id,task_record_id)
+    VALUES (?,2,?,'codex','implement','question-fixture','sha',1,'prompt','running','run-session',
+      'DEV-2331','[]',?,?)`)
+    .run(SECOND_RUN_ID, STAMP, PROJECT_ID, TASK_ID)
 }
 
 const body = (
@@ -381,6 +389,20 @@ async function questionStoreContract(
   expect(
     (await store.read({ read: 'inbox' })).items.some((row) => field(row, 'record_id') === run.id),
   ).toBe(false)
+  const secondRunQuestion = snapshot({
+    runId: SECOND_RUN_ID,
+    workflowCursorRecordId: null,
+    askedVia: 'live',
+  })
+  await store.write('ask', body(secondRunQuestion))
+  const perRun = [
+    ...(await store.read({ read: 'for-run', runId: RUN_ID })).items,
+    ...(await store.read({ read: 'for-run', runId: SECOND_RUN_ID })).items,
+  ]
+  const batched = (await store.read({ read: 'for-runs', runIds: [RUN_ID, SECOND_RUN_ID] })).items
+  expect(batched.map((row) => field(row, 'record_id')).sort()).toEqual(
+    perRun.map((row) => field(row, 'record_id')).sort(),
+  )
   const projects = (await store.read({ read: 'projects' })).items
   expect(projects).toContainEqual({
     project: 'question-fixture',
@@ -488,8 +510,8 @@ test('record for-runs reads once per owning project', async () => {
     .query(`INSERT INTO run
       (record_id,number,started_at,agent,job,repo,prompt_sha,prompt_bytes,prompt_head,status,
        changed_paths,project_record_id)
-      VALUES (?,2,?,'codex','implement','question-fixture','sha',1,'prompt','running','[]',?),
-             (?,3,?,'codex','implement','other-fixture','sha',1,'prompt','running','[]',?)`)
+      VALUES (?,3,?,'codex','implement','question-fixture','sha',1,'prompt','running','[]',?),
+             (?,4,?,'codex','implement','other-fixture','sha',1,'prompt','running','[]',?)`)
     .run(sameProjectRunId, STAMP, PROJECT_ID, secondRunId, STAMP, secondProjectId)
   const reads: string[] = []
   const store = new RecordQuestionStore({

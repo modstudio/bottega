@@ -24,6 +24,7 @@ import {
   questionsByIdRows,
   questionsForCursor,
   questionsForRun,
+  questionsForRuns,
   questionsForSession,
   ruleAuditReasons,
   rulingRows,
@@ -66,12 +67,7 @@ function targetedRead(database: Database, input: QuestionReadInput): QuestionRea
   if (input.read === 'for-run')
     return { items: limited(questionsForRun(database, input.runId), input.limit) }
   if (input.read === 'for-runs')
-    return {
-      items: limited(
-        input.runIds.flatMap((runId) => questionsForRun(database, runId)),
-        input.limit,
-      ),
-    }
+    return { items: limited(questionsForRuns(database, input.runIds), input.limit) }
   if (input.read === 'for-session')
     return { items: limited(questionsForSession(database, input.sessionId), input.limit) }
   if (input.read === 'max-number')

@@ -3,11 +3,8 @@
 
 import type { Database } from 'bun:sqlite'
 import { storedMachineNames } from '../../../shared/machine-config.ts'
-import {
-  questionByNumber,
-  questionNumberProjectId,
-  questionsById,
-} from '../question-store/question-store-read.ts'
+import { questionByNumber, questionsById } from '../question-store/question-store-read.ts'
+import { questionNumberProjectId } from '../question-store/question-store-sqlite-reads.ts'
 import { type MachineIdentifierNames, stripMachineLabel } from '../record/machine-name.ts'
 import { questionsForRunChain } from './question-open.ts'
 import { classifyBareRunIdentifier } from './run-identifier-grammar.ts'

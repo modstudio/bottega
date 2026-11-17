@@ -30,8 +30,7 @@ import {
   worktreeDatabaseInventory,
 } from '../resources/resource-inventory.ts'
 import type { ResourceClaimKind } from '../resources/resource-step-recorder.ts'
-import { questionsForRuns } from '../question-store/question-store-read.ts'
-import { runChainIds } from '../run/run-chain.ts'
+import { questionsForRunChains } from '../run/question-open.ts'
 import { TERMINAL_RUN_STATUS_SET, TERMINAL_RUN_STATUS_SQL } from '../run/run-status.ts'
 
 export { sandboxDirectoryInventory } from '../resources/resource-inventory.ts'
@@ -98,17 +97,14 @@ export async function askingRuns(database = db()): Promise<AddressedRun[]> {
   const candidates = database
     .query(`SELECT record_id, started_at, session_id FROM run WHERE ${ASKING_RUN_WHERE}`)
     .all() as AddressedRun[]
-  const chains = new Map(
-    candidates.map((run) => [run.record_id, runChainIds(database, run.record_id)] as const),
-  )
-  const questions = await questionsForRuns(database, [...new Set([...chains.values()].flat())])
-  const runsWithOpenQuestions = new Set(
-    questions
-      .filter((row) => row.answered_at === null && row.closed_at === null)
-      .map((row) => String(row.run_record_id)),
+  const questions = await questionsForRunChains(
+    database,
+    candidates.map((run) => run.record_id),
   )
   return candidates.filter((run) =>
-    chains.get(run.record_id)!.every((runId) => !runsWithOpenQuestions.has(runId)),
+    questions
+      .get(run.record_id)!
+      .every((row) => row.answered_at !== null || row.closed_at !== null),
   )
 }
 
