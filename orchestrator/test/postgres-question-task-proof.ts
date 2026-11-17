@@ -292,7 +292,7 @@ export function registerQuestionTaskRecordSyncProof(
           destination,
         )
       ).items,
-    ).toEqual([{ workflow_cursor_record_id: stageId, number: workflowWrite.number }])
+    ).toEqual([{ workflow_cursor_record_id: stageId, space_id: directSpaceId, number: workflowWrite.number }])
     const openForTask = (
       await client.readQuestions!(
         { read: 'open-for-tasks', taskRecordIds: [directTaskId] },
@@ -420,7 +420,7 @@ export function registerQuestionTaskRecordSyncProof(
           destination,
         )
       ).items,
-    ).toEqual([{ workflow_cursor_record_id: stageId, number: excludedWrite.number }])
+    ).toEqual([{ workflow_cursor_record_id: stageId, space_id: directSpaceId, number: excludedWrite.number }])
     Object.assign(excludedQuestion, {
       revision: 2,
       answer: 'Old',
