@@ -81,7 +81,7 @@ function decodeSpaceCursors(value: string): SpaceCursors {
   }
 }
 
-const SINGLE_SPACE_READ_KINDS = ['by-id', 'for-run', 'for-cursor'] as const
+const SPACE_KEYED_READ_KINDS = ['by-id', 'for-run', 'for-cursor'] as const
 
 export class RecordQuestionStore implements QuestionStore {
   private readonly input: {
@@ -162,30 +162,37 @@ export class RecordQuestionStore implements QuestionStore {
     return this.input.client.readQuestions(input, destination)
   }
 
-  private async singleSpaceRead(input: QuestionReadInput): Promise<QuestionReadResult> {
+  // Each question has one home, but a run or cursor may hold questions in several
+  // spaces, so a set read combines them and refuses only an id found twice.
+  private async spaceKeyedRead(input: QuestionReadInput): Promise<QuestionReadResult> {
     const answers = await Promise.all(
       (await this.allDestinations()).map(async (destination) => ({
         destination,
         value: await this.readAt(input, destination),
       })),
     )
-    const decision = decideSingleRecordSpace(
-      answers.map(({ destination, value }) => ({
-        spaceId: destination.destinationSpaceId,
-        found: value.items.length > 0,
-      })),
-    )
-    if ('refused' in decision)
-      throw new Error(
-        `${decision.refused}; remove the duplicate question from all but its authoritative space, then retry`,
-      )
-    if (decision.index === null) return { items: [] }
-    const answer = answers[decision.index]!
-    for (const row of answer.value.items) {
-      const id = row.record_id ?? row.id
-      if (typeof id === 'string') this.questionSpaces.set(id, answer.destination)
+    const homes = new Map<string, Array<{ spaceId: string; found: boolean }>>()
+    for (const { destination, value } of answers)
+      for (const row of value.items) {
+        const id = row.record_id ?? row.id
+        if (typeof id !== 'string') continue
+        const found = homes.get(id) ?? []
+        found.push({ spaceId: destination.destinationSpaceId, found: true })
+        homes.set(id, found)
+      }
+    for (const found of homes.values()) {
+      const decision = decideSingleRecordSpace(found)
+      if ('refused' in decision)
+        throw new Error(
+          `${decision.refused}; remove the duplicate question from all but its authoritative space, then retry`,
+        )
     }
-    return answer.value
+    for (const { destination, value } of answers)
+      for (const row of value.items) {
+        const id = row.record_id ?? row.id
+        if (typeof id === 'string') this.questionSpaces.set(id, destination)
+      }
+    return { items: answers.flatMap(({ value }) => value.items) }
   }
 
   private async listRead(input: QuestionReadInput): Promise<QuestionReadResult> {
@@ -242,7 +249,7 @@ export class RecordQuestionStore implements QuestionStore {
     else {
       let found = this.questionSpaces.get(input.question.id)
       if (!found) {
-        await this.singleSpaceRead({ read: 'by-id', ids: [input.question.id] })
+        await this.spaceKeyedRead({ read: 'by-id', ids: [input.question.id] })
         found = this.questionSpaces.get(input.question.id)
       }
       if (!found)
@@ -263,10 +270,10 @@ export class RecordQuestionStore implements QuestionStore {
       throw new Error(
         `${questionChangedAfterRefusal.message}; ${questionChangedAfterRefusal.remedy}`,
       )
-    const result = (SINGLE_SPACE_READ_KINDS as readonly string[]).includes(input.read)
-      ? await this.singleSpaceRead(input)
+    const result = (SPACE_KEYED_READ_KINDS as readonly string[]).includes(input.read)
+      ? await this.spaceKeyedRead(input)
       : await this.listRead(input)
-    const enrichMachineFields = (SINGLE_SPACE_READ_KINDS as readonly string[]).includes(input.read)
+    const enrichMachineFields = (SPACE_KEYED_READ_KINDS as readonly string[]).includes(input.read)
     const items = result.items.map((row) =>
       localQuestionRow(this.input.database, row, enrichMachineFields),
     )
