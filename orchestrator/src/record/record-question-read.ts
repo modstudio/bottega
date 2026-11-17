@@ -10,6 +10,7 @@ import {
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
 import { recordPool } from './record-pool.ts'
 import type { QuestionReadInput, RecordQuestionReadInput } from './record-question-contract.ts'
+import { RECORD_QUESTION_STEP_COLUMNS } from './record-question-step.ts'
 
 type Tenant = { url: string } & TenantPrincipal
 type Row = Record<string, unknown>
@@ -61,9 +62,6 @@ async function recordQuestionRulingRows(
     values,
   )) as Row[]
 }
-
-export const RECORD_QUESTION_STEP_COLUMNS =
-  'COALESCE(q.workflow_step_ordinal,stage.active_ordinal + 1) workflow_step_ordinal,COALESCE(q.workflow_step_slug,stage.active_slug) workflow_step_slug'
 
 const QUESTION_DETAIL_COLUMNS = `q.id::text record_id,q.number,q.run_id::text run_record_id,
   q.workflow_key,q.workflow_task_id::text workflow_task_record_id,

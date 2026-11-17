@@ -19,32 +19,10 @@ import type {
 } from './record-question-contract.ts'
 import { RecordQuestionError } from './record-question-contract.ts'
 import { allocateQuestionNumber } from './record-question-number.ts'
+import { questionValuesForWrite } from './record-question-step.ts'
 import { projectRecordId } from './record-sync-project-identity.ts'
-import { questionValues } from './record-sync-service.ts'
 
 type Tenant = { url: string } & TenantPrincipal
-
-export async function questionValuesForWrite(
-  tx: SQL,
-  payload: Record<string, unknown>,
-  projectId: string | null,
-  workflowTaskId: string | null,
-  workflowCursorRecordId: string | null,
-) {
-  const workflowStep = workflowCursorRecordId
-    ? (
-        (await tx`
-        SELECT active_ordinal,active_slug FROM task_flow_stage
-         WHERE id=${workflowCursorRecordId}::uuid
-      `) as Array<{ active_ordinal: number | string; active_slug: string }>
-      )[0]
-    : undefined
-  return {
-    ...questionValues(payload, projectId, workflowTaskId),
-    workflowStepOrdinal: workflowStep ? Number(workflowStep.active_ordinal) + 1 : null,
-    workflowStepSlug: workflowStep?.active_slug ?? null,
-  }
-}
 
 export async function writeRecordQuestion(
   intent: QuestionIntent,
