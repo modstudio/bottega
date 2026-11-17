@@ -555,7 +555,7 @@ function registerOutboxCommands(record: Command): void {
   outbox
     .command('restore-questions')
     .description('restore retired question snapshots to their hosted record spaces')
-    .option('--dry-run', 'list the question snapshots without sending them')
+    .option('--dry-run', "resolve each question snapshot's destination space without sending it")
     .action((options) =>
       hostedCommand(`${PLATFORM_SLUG} record outbox restore-questions`, () =>
         restoreQuestionsCommand(

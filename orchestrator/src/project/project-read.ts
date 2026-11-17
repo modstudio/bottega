@@ -85,10 +85,13 @@ export function projectByName(name: string, database: Database = db()): Project 
 }
 
 export function projectByRecordId(recordId: string, database: Database = db()): Project | null {
+  const project = projectRowByRecordId(recordId, database)
+  return project?.retiredAt ? null : project
+}
+
+export function projectRowByRecordId(recordId: string, database: Database = db()): Project | null {
   const row = database
     .query('SELECT * FROM project WHERE record_id = ?')
     .get(recordId) as ProjectRow | null
-  if (!row) return null
-  const project = parseProject(row)
-  return project.retiredAt ? null : project
+  return row ? parseProject(row) : null
 }

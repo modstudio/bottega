@@ -73,6 +73,7 @@ export const recordSyncModules: RecordSyncModule[] = [
   ]),
   module('orchestrator/src/record/record-sync-project-identity.ts', [
     'bun',
+    '../../../shared/brand.ts',
     '../../../shared/record-project-identity.ts',
     './outbox-failure.ts',
     './record-project-identity.ts',

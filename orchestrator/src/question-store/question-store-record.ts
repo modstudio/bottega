@@ -4,20 +4,18 @@
 import type { Database } from 'bun:sqlite'
 import { parseRecordSpaceMemberships } from '../../../shared/record-space-membership.ts'
 import { SESSION_LIVE_MS } from '../../../shared/session-liveness.ts'
-import { projectByRecordId } from '../project/project-read.ts'
 import type { RecordWriteDestination } from '../record/record-api-client-paths.ts'
 import {
   type RecordQuestionClient,
   requireQuestionWriteClient,
 } from '../record/record-api-client-question.ts'
-import type { RecordIdentity } from '../record/record-auth.ts'
-import { requireProjectRecordDestination } from '../record/record-project-destination-client.ts'
 import type {
   QuestionIntent,
   QuestionReadInput,
   QuestionWriteBody,
 } from '../record/record-question-contract.ts'
 import { questionChangedAfterRefusal } from '../record/record-question-contract.ts'
+import { questionWriteDestinations } from '../record/record-question-destination.ts'
 import { decideSingleRecordSpace } from '../record/record-space-cardinality.ts'
 import { compareQuestionsByAsk } from './question-order.ts'
 import { resolveQuestionRunPusher } from './question-run-pusher.ts'
@@ -122,60 +120,31 @@ export class RecordQuestionStore implements QuestionStore {
     database: Database
     client: RecordQuestionClient
   }
-  private identityRead?: Promise<RecordIdentity>
-  private readonly destinations = new Map<string, Promise<RecordWriteDestination>>()
+  private readonly destination: (projectId: string | null) => Promise<RecordWriteDestination>
   private everyDestination?: Promise<RecordWriteDestination[]>
   private readonly questionSpaces = new Map<string, RecordWriteDestination>()
 
   constructor(input: RecordQuestionStore['input']) {
     this.input = input
+    this.destination = questionWriteDestinations({
+      database: input.database,
+      whoami: () =>
+        input.client.whoami
+          ? input.client.whoami()
+          : Promise.reject(
+              new Error('record API predates identity reads; release hosted-api, then retry'),
+            ),
+    })
   }
 
-  // A store is reused across calls, so a rejected read is forgotten rather than
-  // replayed: the next call retries once the record answers again.
-  private identity(): Promise<RecordIdentity> {
-    this.identityRead ??= (
+  private allDestinations(): Promise<RecordWriteDestination[]> {
+    this.everyDestination ??= (
       this.input.client.whoami
         ? this.input.client.whoami()
         : Promise.reject(
             new Error('record API predates identity reads; release hosted-api, then retry'),
           )
-    ).catch((error: unknown) => {
-      this.identityRead = undefined
-      throw error
-    })
-    return this.identityRead
-  }
-
-  private destination(projectId: string): Promise<RecordWriteDestination> {
-    const cached = this.destinations.get(projectId)
-    if (cached) return cached
-    const project = projectByRecordId(projectId, this.input.database)
-    if (!project) throw new Error(`project ${projectId} is not registered; register it, then retry`)
-    const result = requireProjectRecordDestination(project.name, project.settings, {
-      whoami: () => this.identity(),
-    })
-      .then((destinationSpaceId) => ({ destinationSpaceId }))
-      .catch((error: unknown) => {
-        this.destinations.delete(projectId)
-        throw error
-      })
-    this.destinations.set(projectId, result)
-    return result
-  }
-
-  private async writeDestination(projectId: string | null): Promise<RecordWriteDestination> {
-    if (projectId) return this.destination(projectId)
-    const identity = await this.identity()
-    if (!identity.personalSpaceId)
-      throw new Error(
-        'the signed-in user has no personal record space; repair record identity, then retry',
-      )
-    return { destinationSpaceId: identity.personalSpaceId }
-  }
-
-  private allDestinations(): Promise<RecordWriteDestination[]> {
-    this.everyDestination ??= this.identity()
+    )
       .then((identity) => {
         const ids = new Set(
           parseRecordSpaceMemberships(identity.memberships).map(({ spaceId }) => spaceId),
@@ -280,7 +249,7 @@ export class RecordQuestionStore implements QuestionStore {
       await resolveQuestionRunPusher()(this.input.database, input.question.runId)
     }
     let destination: RecordWriteDestination
-    if (intent === 'ask') destination = await this.writeDestination(input.question.projectId)
+    if (intent === 'ask') destination = await this.destination(input.question.projectId)
     else {
       let found = this.questionSpaces.get(input.question.id)
       if (!found) {

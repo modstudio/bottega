@@ -23,15 +23,18 @@ export class RecordSyncWiringError extends Error {}
 export class OutboxRowError extends Error {
   readonly errorClass: Exclude<OutboxFailureFacts['errorClass'], 'unknown' | 'verdict-rule'>
   readonly blockedProject: string | null
+  readonly remedy: string | null
 
   constructor(
     message: string,
     errorClass: Exclude<OutboxFailureFacts['errorClass'], 'unknown' | 'verdict-rule'>,
     blockedProject: string | null = null,
+    remedy: string | null = null,
   ) {
     super(message)
     this.errorClass = errorClass
     this.blockedProject = blockedProject
+    this.remedy = remedy
   }
 }
 
