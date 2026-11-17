@@ -116,7 +116,6 @@ export const recordQuestionModules: RecordModule[] = [
     '../record/record-api-client-paths.ts',
     '../record/record-auth.ts',
     '../record/record-question-destination.ts',
-    '../record/record-space-cardinality.ts',
     '../record/record-question-contract.ts',
     './question-order.ts',
     './question-run-pusher.ts',

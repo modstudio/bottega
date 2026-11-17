@@ -32,6 +32,9 @@ export function memoryQuestionClient(
       }
     },
     async readQuestions(selector) {
+      const keyed = ['by-id', 'for-run', 'for-runs', 'for-cursor', 'open-for-cursors'].includes(
+        selector.read,
+      )
       const selected = questions.filter((row) => {
         if (selector.read === 'by-id') return selector.ids.includes(String(row.id ?? row.record_id))
         if (selector.read === 'by-number') return Number(row.number) === selector.number
@@ -66,11 +69,17 @@ export function memoryQuestionClient(
           : selected
       const items = rows.map((row) => {
         const hosted = hostedQuestionRow(row)
-        const stage = input.taskFlowStages?.find(
+        const stageRow = input.taskFlowStages?.find(
           ({ stage }) => stage.id === (row.workflowCursorRecordId ?? row.workflow_cursor_record_id),
-        )?.stage
+        )
+        const stage = stageRow?.stage
+        const spaceId =
+          hosted.space_id ??
+          stageRow?.space_id ??
+          (stage ? input.taskFlowProjectSpaces?.[stage.projectId] : undefined)
         return {
           ...hosted,
+          ...(keyed && spaceId ? { space_id: spaceId } : {}),
           ...(stage && hosted.project === undefined ? { project: stage.projectName } : {}),
           workflow_step_ordinal:
             hosted.workflow_step_ordinal ?? (stage ? stage.activeOrdinal + 1 : null),
@@ -79,7 +88,7 @@ export function memoryQuestionClient(
       })
       return { items }
     },
-    async writeQuestion(_intent, body) {
+    async writeQuestion(_intent, body, destination) {
       const index = questions.findIndex((row) => (row.id ?? row.record_id) === body.question.id)
       const number =
         body.question.number ??
@@ -90,6 +99,7 @@ export function memoryQuestionClient(
       )?.stage
       const stored = {
         ...body.question,
+        space_id: destination.destinationSpaceId,
         number,
         workflowStepOrdinal:
           existing?.workflowStepOrdinal ??
