@@ -58,10 +58,11 @@ async function dropSweptHolder(
     dryRun: input.dryRun,
   })) {
     const label = `${holder.holder}/${drop.item.id} (${drop.item.kind})`
-    if (input.dryRun && drop.error === null) input.presentation.log(`would drop context ${label}`)
-    else if (drop.removed) input.presentation.log(`dropped context ${label}`)
-    else if (drop.alreadyAbsent) input.presentation.log(`context already absent ${label}`)
-    else if (drop.error) {
+    if (drop.outcome === 'would-drop') input.presentation.log(`would drop context ${label}`)
+    else if (drop.outcome === 'dropped') input.presentation.log(`dropped context ${label}`)
+    else if (drop.outcome === 'already-absent')
+      input.presentation.log(`context already absent ${label}`)
+    else if (drop.outcome === 'failed' && drop.error) {
       failed = true
       input.presentation.error(`context drop failed ${label}: ${drop.error}`)
     }

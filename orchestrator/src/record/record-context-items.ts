@@ -55,7 +55,7 @@ export function assertRecordContextItemRevision(
       }),
     ),
     condition,
-    'stale-revision',
+    currentRevision === undefined ? 'missing-hosted-revision' : 'stale-revision',
     currentRevision ?? null,
   )
 }

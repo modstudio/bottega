@@ -47,11 +47,10 @@ function remainingContextProcess(
 function contextDropMechanicalLine(
   drop: Awaited<ReturnType<typeof dropSessionContextItemsForLifecycle>>[number],
   label: string,
-  dryRun: boolean,
 ): string | null {
-  if (dryRun && drop.error === null) return `would drop ${label}`
-  if (drop.removed) return `drop ${label}`
-  if (drop.alreadyAbsent) return `already absent ${label}`
+  if (drop.outcome === 'would-drop') return `would drop ${label}`
+  if (drop.outcome === 'dropped') return `drop ${label}`
+  if (drop.outcome === 'already-absent') return `already absent ${label}`
   return null
 }
 
@@ -85,7 +84,7 @@ export async function closeOutSessionContext(input: {
   })
   for (const drop of drops) {
     const label = `context ${drop.item.holder}/${drop.item.id} (${drop.item.kind})`
-    const mechanical = contextDropMechanicalLine(drop, label, input.dryRun)
+    const mechanical = contextDropMechanicalLine(drop, label)
     if (mechanical) report.mechanical.push(mechanical)
     else if (drop.error)
       report.errors.push({
@@ -119,11 +118,11 @@ export async function consumeSessionContext(input: {
     items,
     reason: input.reason,
   })) {
-    if (drop.removed)
+    if (drop.outcome === 'dropped')
       lines.push(`dropped context ${drop.item.holder}/${drop.item.id} (${drop.item.kind})`)
-    else if (drop.alreadyAbsent)
+    else if (drop.outcome === 'already-absent')
       lines.push(`context already absent ${drop.item.holder}/${drop.item.id} (${drop.item.kind})`)
-    else if (drop.error)
+    else if (drop.outcome === 'failed' && drop.error)
       lines.push(
         `resume context drop failed for ${drop.item.holder}/${drop.item.id} (${drop.item.kind}): ${drop.error}`,
       )

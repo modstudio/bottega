@@ -1,12 +1,14 @@
 // concern: context-service
 /** Owns context item reads and mutations over the document store. */
 import type { Database } from 'bun:sqlite'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   type ContextItemKind,
   splitContextHolder,
 } from '../../../shared/context-item-vocabulary.ts'
 import { withholdSecretShapedDetail } from '../../../shared/secret-shaped.ts'
 import { db, sessionId, writableDb } from '../database/db.ts'
+import { projectAt } from '../project/projects.ts'
 import { applyRecordWriteAuthority } from '../record/record-write-authority.ts'
 import { taskFlowReadStore } from '../workflow/task-flow-store.ts'
 import { openKeylessCursorsForSession } from '../workflow/workflow-cursor-list.ts'
@@ -176,7 +178,7 @@ export async function clearTaskHolderForLifecycle(input: {
       let alreadyAbsent = 0
       for (const item of items) {
         const hosted = await client.remove(item.recordId, {})
-        if (!removeLocalContextItem(holder, item.id, item.revision)) continue
+        if (!removeLocalContextItem(holder, item.id)) continue
         if (hosted.removed) removed++
         else alreadyAbsent++
       }
@@ -205,31 +207,46 @@ async function dropSessionContextItemForLifecycle(input: {
   const holder = `session:${input.session}`
   writableDb()
   const item = getContextItem(holder, input.id)
-  if (!item) return { holder, id: input.id, removed: false, alreadyAbsent: false }
+  if (!item) return { holder, id: input.id, outcome: 'already-absent' as const }
   const result = await applyRecordWriteAuthority({
-    local: () => ({
-      removed: removeLocalContextItem(holder, input.id, input.expectedRevision),
-      alreadyAbsent: false,
-    }),
+    local: () =>
+      removeLocalContextItem(holder, input.id, input.expectedRevision)
+        ? ('dropped' as const)
+        : ('already-absent' as const),
     hosted: async () => {
-      const client = await hostedContextItemClient(holder)
+      const sessionOwner = db()
+        .query<{ project: string | null; cwd: string | null }, [string]>(
+          'SELECT project,cwd FROM presence WHERE session_id=?',
+        )
+        .get(input.session)
+      const project =
+        sessionOwner?.project?.trim() ||
+        (sessionOwner?.cwd ? projectAt(sessionOwner.cwd)?.name : null)
+      if (!project)
+        throw new Error(
+          `session ${input.session} has no recorded owning project or checkout path\n` +
+            `cleared by: restore the session registry row with its owning project, then retry ${PLATFORM_SLUG} machine sweep`,
+        )
+      const client = await hostedContextItemClient(holder, {
+        kind: 'session',
+        checkoutProject: project,
+      })
       const hosted = await client.remove(item.recordId, {
         expectedRevision: input.expectedRevision,
       })
       const dropped = removeLocalContextItem(holder, input.id, item.revision)
-      return {
-        removed: hosted.removed && dropped,
-        alreadyAbsent: !hosted.removed && dropped,
-      }
+      if (!dropped) return 'already-absent' as const
+      return hosted.removed ? ('dropped' as const) : ('already-absent' as const)
     },
   })
-  return { holder, id: input.id, ...result }
+  return { holder, id: input.id, outcome: result }
 }
+
+export type SessionContextDropOutcome = 'dropped' | 'already-absent' | 'would-drop' | 'failed'
 
 export type SessionContextDropResult = {
   item: ReturnType<typeof sessionContextItems>[number]
-  removed: boolean
-  alreadyAbsent: boolean
+  outcome: SessionContextDropOutcome
   error: string | null
 }
 
@@ -245,14 +262,13 @@ export async function dropSessionContextItemsForLifecycle(input: {
     if (item.revision === null) {
       results.push({
         item,
-        removed: false,
-        alreadyAbsent: false,
+        outcome: 'failed',
         error: 'context item revision is unavailable',
       })
       continue
     }
     if (input.dryRun) {
-      results.push({ item, removed: false, alreadyAbsent: false, error: null })
+      results.push({ item, outcome: 'would-drop', error: null })
       continue
     }
     try {
@@ -264,15 +280,13 @@ export async function dropSessionContextItemsForLifecycle(input: {
       })
       results.push({
         item,
-        removed: result.removed,
-        alreadyAbsent: result.alreadyAbsent,
+        outcome: result.outcome,
         error: null,
       })
     } catch (error) {
       results.push({
         item,
-        removed: false,
-        alreadyAbsent: false,
+        outcome: 'failed',
         error: error instanceof Error ? error.message : String(error),
       })
     }
@@ -374,17 +388,31 @@ export async function dropContextItem(
   const { holder, task } = await resolveContextHolder(input)
   writableDb()
   const item = getContextItem(holder, input.id)
-  if (!item) return { holder, task: task?.key ?? null, id: input.id, removed: false }
+  if (!item)
+    return {
+      holder,
+      task: task?.key ?? null,
+      id: input.id,
+      removed: false,
+      alreadyAbsent: true,
+    }
   assertContextDropAllowed({ item })
-  const removed = await applyRecordWriteAuthority({
-    local: () => removeLocalContextItem(holder, input.id, input.expectedRevision),
+  const result = await applyRecordWriteAuthority({
+    local: () => ({
+      removed: removeLocalContextItem(holder, input.id, input.expectedRevision),
+      alreadyAbsent: false,
+    }),
     hosted: async () => {
       const client = await hostedContextItemClient(holder, contextTaskOwner(task ?? undefined))
       const result = await client.remove(item.recordId, {
         expectedRevision: input.expectedRevision,
       })
-      return result.removed ? removeLocalContextItem(holder, input.id, item.revision) : false
+      const removed = removeLocalContextItem(holder, input.id, item.revision)
+      return {
+        removed: result.removed && removed,
+        alreadyAbsent: !result.removed && removed,
+      }
     },
   })
-  return { holder, task: task?.key ?? null, id: input.id, removed }
+  return { holder, task: task?.key ?? null, id: input.id, ...result }
 }

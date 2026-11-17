@@ -280,7 +280,7 @@ test('worker environments refuse every context-item write entry point', async ()
       }),
     ).toEqual([
       expect.objectContaining({
-        removed: false,
+        outcome: 'failed',
         error: expect.stringContaining('dropSessionContextItemForLifecycle'),
       }),
     ])
@@ -327,6 +327,12 @@ test('lifecycle task clear ignores revisions and counts already-absent hosted ro
       }),
       deleteContextItem: async (id, input) => {
         removals.push({ id, input })
+        if (removals.length === 1)
+          db()
+            .query(
+              "UPDATE context_item SET updated_at='2026-11-13T19:41:54.000Z' WHERE holder_kind='task'",
+            )
+            .run()
         return { removed: removals.length === 1 }
       },
     })
@@ -345,6 +351,7 @@ test('lifecycle task clear ignores revisions and counts already-absent hosted ro
 
 test('lifecycle drop reports an absent hosted row and drops the local item', async () => {
   const session = newRecordId()
+  const ownerProject = `session-owner-${session}`
   const priorSession = process.env.CLAUDE_CODE_SESSION_ID
   const priorUrl = process.env.BOTTEGA_RECORD_API_URL
   process.env.CLAUDE_CODE_SESSION_ID = session
@@ -357,6 +364,111 @@ test('lifecycle drop reports an absent hosted row and drops the local item', asy
       body: 'Drop this locally when the hosted row is absent.',
     })
     const item = (await getContext({ session })).items[0]!
+    upsertProject({
+      recordId: newRecordId(),
+      name: ownerProject,
+      path: `/tmp/${ownerProject}`,
+      settings: { space: 'session-space' },
+    })
+    db()
+      .query(
+        `INSERT INTO presence(session_id,harness,role,machine,project,cwd,last_seen)
+         VALUES (?,'codex','architect','test-machine',?,'/tmp/session-owner','2026-11-16T00:00:00.000Z')`,
+      )
+      .run(session, ownerProject)
+    process.env.BOTTEGA_RECORD_API_URL = 'https://record.example.test'
+    rememberHostedRecord(db())
+    const memory = createMemoryRecordApiClient()
+    let removedFromSpace: string | undefined
+    installRecordApiClient({
+      ...memory,
+      whoami: async () => ({
+        user: { id: 'user-a' },
+        activeSpaceId: 'personal-space',
+        personalSpaceId: 'personal-space',
+        memberships: [
+          { space_id: 'personal-space', slug: 'personal', permission: 'write' },
+          { space_id: 'session-space', slug: 'session-space', permission: 'write' },
+        ],
+      }),
+      deleteContextItem: async (_id, _input, destination) => {
+        removedFromSpace = destination.destinationSpaceId
+        return { removed: false }
+      },
+    })
+
+    expect(
+      await dropSessionContextItemsForLifecycle({
+        session,
+        reason: 'test absent hosted row',
+        items: [item],
+      }),
+    ).toEqual([
+      expect.objectContaining({
+        outcome: 'already-absent',
+        error: null,
+      }),
+    ])
+    expect(removedFromSpace).toBe('session-space')
+    expect((await getContext({ session })).items).toEqual([])
+  } finally {
+    if (priorSession === undefined) delete process.env.CLAUDE_CODE_SESSION_ID
+    else process.env.CLAUDE_CODE_SESSION_ID = priorSession
+    if (priorUrl === undefined) delete process.env.BOTTEGA_RECORD_API_URL
+    else process.env.BOTTEGA_RECORD_API_URL = priorUrl
+  }
+})
+
+test('lifecycle drop keeps the local item when the session owner cannot be resolved', async () => {
+  const session = newRecordId()
+  const priorSession = process.env.CLAUDE_CODE_SESSION_ID
+  const priorUrl = process.env.BOTTEGA_RECORD_API_URL
+  process.env.CLAUDE_CODE_SESSION_ID = session
+  try {
+    await setContextItem({
+      session,
+      id: 'ownerless',
+      kind: 'fact',
+      source: 'test',
+      body: 'Keep this until its hosted space can be established.',
+    })
+    const item = (await getContext({ session })).items[0]!
+    process.env.BOTTEGA_RECORD_API_URL = 'https://record.example.test'
+    rememberHostedRecord(db())
+    installRecordApiClient(createMemoryRecordApiClient())
+
+    expect(
+      await dropSessionContextItemsForLifecycle({
+        session,
+        reason: 'test missing owner',
+        items: [item],
+      }),
+    ).toEqual([
+      expect.objectContaining({
+        outcome: 'failed',
+        error: expect.stringContaining(`session ${session} has no recorded owning project`),
+      }),
+    ])
+    expect((await getContext({ session })).items).toEqual([expect.objectContaining({ id: item.id })])
+  } finally {
+    if (priorSession === undefined) delete process.env.CLAUDE_CODE_SESSION_ID
+    else process.env.CLAUDE_CODE_SESSION_ID = priorSession
+    if (priorUrl === undefined) delete process.env.BOTTEGA_RECORD_API_URL
+    else process.env.BOTTEGA_RECORD_API_URL = priorUrl
+  }
+})
+
+test('single-item drop removes a local row already absent from hosted record', async () => {
+  installContextFacts()
+  await setContextItem({
+    task: task.key,
+    id: 'hosted-absent-single',
+    kind: 'fact',
+    source: 'test',
+    body: 'Drop the local copy.',
+  })
+  const priorUrl = process.env.BOTTEGA_RECORD_API_URL
+  try {
     process.env.BOTTEGA_RECORD_API_URL = 'https://record.example.test'
     rememberHostedRecord(db())
     const memory = createMemoryRecordApiClient()
@@ -371,23 +483,11 @@ test('lifecycle drop reports an absent hosted row and drops the local item', asy
       deleteContextItem: async () => ({ removed: false }),
     })
 
-    expect(
-      await dropSessionContextItemsForLifecycle({
-        session,
-        reason: 'test absent hosted row',
-        items: [item],
-      }),
-    ).toEqual([
-      expect.objectContaining({
-        removed: false,
-        alreadyAbsent: true,
-        error: null,
-      }),
-    ])
-    expect((await getContext({ session })).items).toEqual([])
+    expect(await dropContextItem({ task: task.key, id: 'hosted-absent-single' })).toEqual(
+      expect.objectContaining({ removed: false, alreadyAbsent: true }),
+    )
+    expect((await getContext({ task: task.key })).items).toEqual([])
   } finally {
-    if (priorSession === undefined) delete process.env.CLAUDE_CODE_SESSION_ID
-    else process.env.CLAUDE_CODE_SESSION_ID = priorSession
     if (priorUrl === undefined) delete process.env.BOTTEGA_RECORD_API_URL
     else process.env.BOTTEGA_RECORD_API_URL = priorUrl
   }

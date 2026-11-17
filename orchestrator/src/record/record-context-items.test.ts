@@ -18,6 +18,15 @@ test('hosted context-item revisions allow matching or unconditional writes and t
       message: expect.stringContaining(`${PLATFORM_SLUG} agent context show`),
     })
   }
+  try {
+    assertRecordContextItemRevision('stale', undefined)
+    throw new Error('expected missing hosted revision conflict')
+  } catch (error) {
+    expect(error).toMatchObject({
+      reason: 'missing-hosted-revision',
+      currentRevision: null,
+    })
+  }
 })
 
 test('hosted context-item upsert refuses a malformed row before opening Postgres', async () => {
