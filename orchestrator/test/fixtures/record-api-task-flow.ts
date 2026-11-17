@@ -86,7 +86,6 @@ function seedSyncedStages(
     // The hosted read contract parses the seeded row, so a synced shape it rejects fails here.
     stages.push(
       hostedTaskFlowStageByIdSchema.parse({
-        space_id: String(payload.spaceId),
         flow: {
           ...flow,
           taskKey: values.workflowKey || null,
@@ -167,7 +166,6 @@ export function memoryTaskFlowClient(input: MemoryTaskFlowInput): Partial<Record
       }
       const number = nextStageNumber(stages, stage.projectId)
       const stored: HostedTaskFlowStageById = {
-        space_id: input.taskFlowProjectSpaces?.[stage.projectId] ?? ACTIVE_SPACE_ID,
         flow: {
           ...flow,
           openStageRecordId: stage.id,

@@ -105,7 +105,7 @@ const hostedTaskFlowSummarySchema = z.object({
 })
 
 export const hostedTaskFlowSchema = z.object({
-  space_id: z.string().uuid(),
+  space_id: z.string().uuid().optional(),
   flow: hostedTaskFlowSummarySchema,
   stage: hostedTaskFlowStageSchema.extend({ holder: machine }).nullable(),
   /** Every stage of the flow except the open stage. */
@@ -114,14 +114,14 @@ export const hostedTaskFlowSchema = z.object({
 
 export type HostedTaskFlow = z.infer<typeof hostedTaskFlowSchema>
 export const hostedTaskFlowStageByIdSchema = z.object({
-  space_id: z.string().uuid(),
+  space_id: z.string().uuid().optional(),
   stage: hostedTaskFlowStageSchema,
   flow: hostedTaskFlowSummarySchema,
 })
 export type HostedTaskFlowStageById = z.infer<typeof hostedTaskFlowStageByIdSchema>
 
 export const hostedTaskFlowTextByIdSchema = z.object({
-  space_id: z.string().uuid(),
+  space_id: z.string().uuid().optional(),
   text: hostedTaskFlowStepTextSchema,
   stage: z.object({ id: z.string().uuid(), number: z.number().int().positive() }),
   copy: hostedTaskFlowTextCopySchema.nullable(),
@@ -129,7 +129,7 @@ export const hostedTaskFlowTextByIdSchema = z.object({
 export type HostedTaskFlowTextById = z.infer<typeof hostedTaskFlowTextByIdSchema>
 
 export const hostedTaskFlowObligationByIdSchema = z.object({
-  space_id: z.string().uuid(),
+  space_id: z.string().uuid().optional(),
   obligation: hostedTaskFlowObligationSchema,
   stage: z.object({
     id: z.string().uuid(),
