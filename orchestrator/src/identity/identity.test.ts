@@ -4,8 +4,8 @@ import { installRecordApiClient } from '../../test/fixtures/record-api.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
 import type { RecordApiClient } from '../record/record-api-client.ts'
-import { resolveLocalRun } from './identity-local-run.ts'
 import { type IdentityContext, resolve } from './identity.ts'
+import { resolveLocalRun } from './identity-local-run.ts'
 
 const addProject = (name: string): string => {
   const id = newRecordId()
