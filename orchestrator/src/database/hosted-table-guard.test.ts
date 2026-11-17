@@ -33,6 +33,9 @@ test('hosted install guard matches each table-reference form but not a column na
       'UPDATE question SET question=NULL',
       'CREATE TABLE question (id TEXT)',
       'DELETE FROM question',
+      'SELECT (SELECT MAX(number) FROM question)',
+      'SELECT * FROM question;',
+      'SELECT * FROM local_row JOIN (question) q ON true',
     ])
       expect(() => guarded.query(sql)).toThrow('question is held by the hosted record')
     expect(guarded.query('SELECT question_mutation_audit FROM local_row').all()).toEqual([])

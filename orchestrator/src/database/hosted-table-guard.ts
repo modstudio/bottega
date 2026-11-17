@@ -17,6 +17,9 @@ export const HOSTED_TABLES_WITHOUT_LOCAL_ACCESS = [
 ] as const
 
 const guardedMethods = new Set(['query', 'prepare', 'run', 'exec'])
+// A listed name ends where an identifier character cannot follow, so `FROM question)` and
+// `FROM question;` are references while `question_mutation_audit` is a different table.
+const NAME_END = '(?![A-Za-z0-9_$])'
 const SQL_IDENTIFIER = '(?:[A-Za-z_][A-Za-z0-9_$]*|"[^"]+"|`[^`]+`|\\[[^\\]]+\\])'
 
 export function guardHostedTables(
@@ -33,9 +36,9 @@ export function guardHostedTables(
         const escaped = escapeRegExp(table)
         const tableName = `(?:${escaped}|"${escaped}"|\`${escaped}\`|\\[${escaped}\\])`
         const qualifier = `(?:${SQL_IDENTIFIER}\\s*\\.\\s*)?`
-        const direct = `\\b(?:FROM|JOIN|INTO|UPDATE|TABLE|DELETE\\s+FROM)\\s+${qualifier}${tableName}(?=\\s|,|$)`
+        const direct = `\\b(?:FROM|JOIN|INTO|UPDATE|TABLE|DELETE\\s+FROM)\\s+(?:\\(\\s*)?${qualifier}${tableName}${NAME_END}`
         const tableReference = `${qualifier}${SQL_IDENTIFIER}(?:\\s+(?:AS\\s+)?${SQL_IDENTIFIER})?`
-        const commaList = `\\bFROM\\s+${tableReference}(?:\\s*,\\s*${tableReference})*\\s*,\\s*${qualifier}${tableName}(?=\\s|,|$)`
+        const commaList = `\\bFROM\\s+${tableReference}(?:\\s*,\\s*${tableReference})*\\s*,\\s*${qualifier}${tableName}${NAME_END}`
         return new RegExp(`(?:${direct}|${commaList})`, 'i').test(sql)
       }) ?? null
     checks.set(sql, found)

@@ -1,4 +1,4 @@
-import { expect, test } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { closeDatabaseForFixture, db, migrateDatabase } from '../database/db.ts'
@@ -112,26 +112,34 @@ test('standard after-initialize hooks backfill classifiable rounds and re-enqueu
   ).toEqual({ count: 2 })
 })
 
-test('standard hosted-store access guards hosted tables while local numbering remains available', () => {
-  const database = migratedTestDatabase()
-  const priorRecordApiUrl = process.env.BOTTEGA_RECORD_API_URL
-  process.env.BOTTEGA_RECORD_API_URL = 'https://record.example.test'
-  database
-    .query(
-      "INSERT INTO record_install_binding(id,bound_at,record_origin) VALUES (1,'at','https://record.example.test')",
-    )
-    .run()
-  try {
-    const accessed = STANDARD_OPEN_HOOKS.access!(database)
-    expect(() => accessed.query('SELECT 1 FROM task_flow')).toThrow(
-      'task_flow is held by the hosted record on this install; read or write it through the record API',
-    )
-    expect(nextEntityNumber(accessed, 'run')).toBe(1)
-    expect(nextEntityNumber(accessed, 'review')).toBe(1)
-    expect(nextEntityNumber(accessed, 'board_message')).toBe(1)
-  } finally {
+describe('standard hosted-store access', () => {
+  let priorRecordApiUrl: string | undefined
+  beforeEach(() => {
+    priorRecordApiUrl = process.env.BOTTEGA_RECORD_API_URL
+    process.env.BOTTEGA_RECORD_API_URL = 'https://record.example.test'
+  })
+  afterEach(() => {
     if (priorRecordApiUrl === undefined) delete process.env.BOTTEGA_RECORD_API_URL
     else process.env.BOTTEGA_RECORD_API_URL = priorRecordApiUrl
-    database.close()
-  }
+  })
+
+  test('guards hosted tables while local numbering remains available', () => {
+    const database = migratedTestDatabase()
+    database
+      .query(
+        "INSERT INTO record_install_binding(id,bound_at,record_origin) VALUES (1,'at','https://record.example.test')",
+      )
+      .run()
+    try {
+      const accessed = STANDARD_OPEN_HOOKS.access!(database)
+      expect(() => accessed.query('SELECT 1 FROM task_flow')).toThrow(
+        'task_flow is held by the hosted record on this install; read or write it through the record API',
+      )
+      expect(nextEntityNumber(accessed, 'run')).toBe(1)
+      expect(nextEntityNumber(accessed, 'review')).toBe(1)
+      expect(nextEntityNumber(accessed, 'board_message')).toBe(1)
+    } finally {
+      database.close()
+    }
+  })
 })
