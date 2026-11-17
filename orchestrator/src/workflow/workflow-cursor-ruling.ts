@@ -97,8 +97,9 @@ export async function ruleWorkflow(
   await followTaskCursorClaim({
     project: row.project,
     taskKey: row.workflow_key || null,
-    session: context.session,
+    session: row.session_id && row.session_id !== context.session ? null : context.session,
     verb: 'rule',
+    database,
   })
   const payload: TaskFlowIntentInput<'stage-update'> = {
     requestId: taskFlowRequestId('stage-update', [row.record_id, String(row.revision)]),

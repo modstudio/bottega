@@ -8,6 +8,7 @@ export const workflowBoundarySpecs = [
     allowed: [
       '../board/board-claim-policy.ts',
       '../board/board-operations.ts',
+      'bun:sqlite',
       '../project/projects.ts',
     ],
     reason:

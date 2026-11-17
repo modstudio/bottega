@@ -106,6 +106,7 @@ export async function abandonWorkflowCursor(
       taskKey: row.workflow_key || null,
       session: context.session,
       verb: 'abandon',
+      database: d,
     })
     return result.text
   } catch (error) {

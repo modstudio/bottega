@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { userInfo } from 'node:os'
 import { newRecordId } from '../../../shared/record-id.ts'
+import { boardClaimReleaseTask } from '../board/board-operations.ts'
 import {
   productionStepCatalogue,
   promoteStepCatalogueLocal,
@@ -835,6 +836,9 @@ describe('workflow cursor adapter', () => {
   test('a second session takes a keyed cursor over and is told so', async () => {
     const d = database()
     await composeWorkflowWithCursor('flow', 'fixture', 'default', args, context, d, {}, {})
+    await expect(
+      boardClaimReleaseTask('DEV-822', 'fixture', { database: d, env: {} }),
+    ).rejects.toThrow('workflow abandon --cursor 1')
     await getWorkflowStepWithCursor('flow', 'fixture', 'rebase', args, 'default', context, d, {})
     await closeStep('flow', 'fixture', 'default', args, 'rebased', context, d)
     const recomposed = await composeWorkflowWithCursor(

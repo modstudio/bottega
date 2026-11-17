@@ -82,15 +82,17 @@ export function claimProject(
   requested: string | undefined,
   env: Environment = process.env,
   cwd = process.cwd(),
+  database: ReturnType<typeof db> = db(),
+  allowRequestedProject = false,
 ): string {
   const actor = claimActor(env)
-  if (actor.kind === 'operator') {
+  if (actor.kind === 'operator' || allowRequestedProject) {
     if (!requested) throw new Error('operator claim requires --project <name>')
-    if (!projectByName(requested))
+    if (!projectByName(requested, database))
       throw new Error(`unknown project ${requested}; run ${PLATFORM_SLUG} project list`)
     return requested
   }
-  const held = projectAt(cwd)
+  const held = projectAt(cwd, database)
   if (!held) throw new Error(`claim project is unknown for ${cwd}; run from a registered project`)
   if (requested && requested !== held.name)
     throw new Error(
@@ -283,6 +285,7 @@ function refusedTake(conflicts: ClaimRow[], context: TakeTransaction): TakeTrans
 }
 
 function tellTakenOverHolder(claim: ClaimRow, context: TakeTransaction): void {
+  if (context.allowArchitectTakeover) return
   if (claim.holder_kind !== 'architect') return
   linkClaimNotice(
     claim.record_id,
@@ -358,6 +361,7 @@ export function takeClaim(
   clock = Date.now(),
   cwd = process.cwd(),
   allowArchitectTakeover = false,
+  database = writableDb(),
 ): TakeClaimResult {
   const actor = claimActor(env)
   if (input.force && !mayForceClaim(actor) && !allowArchitectTakeover)
@@ -367,8 +371,8 @@ export function takeClaim(
   const duration = input.durationMs ?? BOARD_CLAIM_DEFAULT_MS
   const durationRefusal = claimDurationRefusal(duration)
   if (durationRefusal) throw new Error(durationRefusal)
-  const project = claimProject(input.project, env, cwd)
-  const database = writableDb()
+  const project = claimProject(input.project, env, cwd, database, allowArchitectTakeover)
+  const claimCwd = allowArchitectTakeover ? (projectByName(project, database)?.path ?? cwd) : cwd
   validateRunTie(input.runId, actor, database)
   const outcome = writeTransaction(
     () =>
@@ -381,7 +385,7 @@ export function takeClaim(
         project,
         env,
         clock,
-        cwd,
+        cwd: claimCwd,
         database,
         allowArchitectTakeover,
       }),
@@ -500,11 +504,11 @@ export function releaseTaskClaims(
   project: string,
   env: Environment = process.env,
   clock = Date.now(),
+  database = writableDb(),
 ): { released: number } {
   claimActor(env)
-  if (!projectByName(project))
+  if (!projectByName(project, database))
     throw new Error(`unknown project ${project}; run ${PLATFORM_SLUG} project list`)
-  const database = writableDb()
   return writeTransaction(() => {
     const rows = database
       .query(

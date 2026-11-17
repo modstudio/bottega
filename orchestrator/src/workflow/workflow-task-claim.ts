@@ -7,6 +7,7 @@ import {
   boardClaimTake,
   type BoardClaimResult,
 } from '../board/board-operations.ts'
+import type { Database } from 'bun:sqlite'
 import { projectByName } from '../project/projects.ts'
 
 export type TaskCursorClaimVerb = 'compose' | 'advance' | 'await' | 'rule' | 'finish' | 'abandon'
@@ -47,17 +48,20 @@ export type TaskCursorClaimPorts = {
   release(input: { project: string; key: string; session: string }): Promise<{ released: number }>
 }
 
-const productionPorts: TaskCursorClaimPorts = {
-  take: ({ project, key, session }) =>
-    boardClaimTake(
-      { project, subject: `task:${key}`, durationMs: BOARD_CLAIM_DEFAULT_MS },
-      { taskCursorSession: session, cwd: projectByName(project)?.path },
-    ),
-  release: ({ project, key, session }) =>
-    boardClaimReleaseTask(key, project, {
-      taskCursorSession: session,
-      cwd: projectByName(project)?.path,
-    }),
+function productionPorts(database?: Database): TaskCursorClaimPorts {
+  return {
+    take: ({ project, key, session }) =>
+      boardClaimTake(
+        { project, subject: `task:${key}`, durationMs: BOARD_CLAIM_DEFAULT_MS },
+        { taskCursorSession: session, database, cwd: projectByName(project, database)?.path },
+      ),
+    release: ({ project, key, session }) =>
+      boardClaimReleaseTask(key, project, {
+        taskCursorSession: session,
+        database,
+        cwd: projectByName(project, database)?.path,
+      }),
+  }
 }
 
 export async function followTaskCursorClaim(
@@ -66,8 +70,9 @@ export async function followTaskCursorClaim(
     taskKey: string | null
     session: string | null | undefined
     verb: TaskCursorClaimVerb
+    database?: Database
   },
-  ports: TaskCursorClaimPorts = productionPorts,
+  ports: TaskCursorClaimPorts = productionPorts(input.database),
 ): Promise<TaskCursorClaimDecision> {
   const decision = decideTaskCursorClaim(input)
   if (decision.action === 'take') await ports.take(decision)

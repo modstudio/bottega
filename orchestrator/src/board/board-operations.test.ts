@@ -614,6 +614,29 @@ test('release-task normalizes a task subject before releasing a local claim', as
   })
 })
 
+test('manual task claim take and release direct callers to the cursor verbs', async () => {
+  const clock = Date.parse('2026-10-05T12:00:00Z')
+  await expect(
+    boardClaimTake(
+      { subject: 'task:DEV-1', project: 'board-route-project' },
+      { env: noRecordEnv, clock },
+    ),
+  ).rejects.toThrow('workflow compose … --arg key=DEV-1')
+
+  const claim = await boardClaimTake(
+    { subject: 'task:DEV-1', project: 'board-route-project' },
+    {
+      env: noRecordEnv,
+      clock,
+      taskCursorSession: 'cursor-session',
+      cwd: '/tmp/board-route-project',
+    },
+  )
+  await expect(
+    boardClaimRelease(claim.recordId, { env: noRecordEnv, clock: clock + 1 }),
+  ).rejects.toThrow('workflow next to the end or workflow abandon')
+})
+
 test('release-task normalizes before hosted release and refuses another shape before calling', async () => {
   db().query('INSERT INTO schema_meta(key,value) VALUES (?,?)').run(BOARD_HOSTED_ADOPTED_KEY, '1')
   const calls: { project: string; projectId?: string | null; key: string }[] = []

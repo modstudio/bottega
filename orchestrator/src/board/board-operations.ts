@@ -97,6 +97,7 @@ type Context = {
   destinationResolver?: BoardDestinationResolver
   /** Internal authority used only by the workflow cursor claim adapter. */
   taskCursorSession?: string
+  database?: ReturnType<typeof db>
 }
 
 export type BoardPostResult = {
@@ -198,6 +199,7 @@ function context(input: Context = {}) {
     answerNoteFiler: input.answerNoteFiler ?? fileAcceptedAnswerNote,
     destinationResolver: input.destinationResolver ?? boardWriteDestination,
     taskCursorSession: input.taskCursorSession,
+    database: input.database ?? db(),
   }
 }
 
@@ -838,9 +840,15 @@ export async function boardClaimTake(input: TakeClaimInput, inputContext?: Conte
     c.env = taskCursorEnvironment(c.env, c.taskCursorSession)
     input = { ...input, force: true }
   }
-  const project = claimProject(input.project, c.env, c.cwd)
-  const callerProject = projectAt(c.cwd)
-  const targetProject = projectByName(project)
+  const project = claimProject(
+    input.project,
+    c.env,
+    c.cwd,
+    c.database,
+    Boolean(c.taskCursorSession),
+  )
+  const callerProject = projectAt(c.cwd, c.database)
+  const targetProject = projectByName(project, c.database)
   const checkout = boardTextCheckout({
     callerCwd: c.cwd,
     callerProject: callerProject?.name ?? null,
@@ -856,8 +864,8 @@ export async function boardClaimTake(input: TakeClaimInput, inputContext?: Conte
       : input.subject,
     note: input.note === undefined ? undefined : prepareNote(input.note),
   }
-  if (boardMode('shared', c.env) === 'local') {
-    const result = takeClaim(input, c.env, c.clock, c.cwd, Boolean(c.taskCursorSession))
+  if (boardMode('shared', c.env, c.database) === 'local') {
+    const result = takeClaim(input, c.env, c.clock, c.cwd, Boolean(c.taskCursorSession), c.database)
     return { ...claimResult(result), action: result.action }
   }
   if (input.force && !c.taskCursorSession)
@@ -932,7 +940,7 @@ export async function boardClaimList(
 export async function boardClaimReleaseTask(key: string, project: string, inputContext?: Context) {
   const c = context(inputContext)
   if (c.taskCursorSession) c.env = taskCursorEnvironment(c.env, c.taskCursorSession)
-  const targetProject = projectByName(project)
+  const targetProject = projectByName(project, c.database)
   if (!targetProject)
     throw new Error(`unknown project ${project}; run ${PLATFORM_SLUG} project list`)
   const normalizedKey = releaseTaskKey(
@@ -940,7 +948,7 @@ export async function boardClaimReleaseTask(key: string, project: string, inputC
     targetProject.settings.worktree?.keyPattern ?? DEFAULT_TASK_KEY_PATTERN,
   )
   if (!c.taskCursorSession) {
-    const open = db()
+    const open = c.database
       .query<{ number: number }, [string, string]>(
         `SELECT number FROM workflow_cursor
          WHERE project=? AND workflow_key=? AND state NOT IN ('done','abandoned')
@@ -952,8 +960,8 @@ export async function boardClaimReleaseTask(key: string, project: string, inputC
         `task ${normalizedKey} is held by open workflow cursor ${open.number}; run workflow abandon --cursor ${open.number} before board claim release-task`,
       )
   }
-  return boardMode('shared', c.env) === 'local'
-    ? releaseTaskClaims(normalizedKey, project, c.env, c.clock)
+  return boardMode('shared', c.env, c.database) === 'local'
+    ? releaseTaskClaims(normalizedKey, project, c.env, c.clock, c.database)
     : hostedClient(c).releaseBoardTaskClaims(
         { key: normalizedKey, project, projectId: targetProject.recordId },
         await writeDestination(c, project),

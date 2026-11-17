@@ -73,10 +73,7 @@ import {
   type WorkflowSelfRulingInput,
 } from './workflow-self-ruling-mutation.ts'
 import { linkResolvedWorkflowTask, withLinkedWorkflowTask } from './workflow-task-linking.ts'
-import {
-  followTaskCursorClaim,
-  taskClaimReleaseWarning,
-} from './workflow-task-claim.ts'
+import { followTaskCursorClaim, taskClaimReleaseWarning } from './workflow-task-claim.ts'
 import { workflowTextDeletionIds } from './workflow-text.ts'
 import { composeWorkflow } from './workflows.ts'
 
@@ -212,44 +209,48 @@ export async function composeWorkflowWithCursor(
     taskKey: keyOf(composition.arguments) || null,
     session: context.session,
     verb: 'compose',
+    database: d,
   })
   let row!: CursorRow
   try {
     if (existing && start === 'reuse') {
-    const resolved = resolveCursorArguments(existing, args, d, true)
-    const payload: TaskFlowIntentInput<'stage-update'> = {
-      requestId: taskFlowRequestId('stage-update', [existing.record_id, String(existing.revision)]),
-      stages: [
-        {
-          id: existing.record_id,
-          expectedRevision: existing.revision,
-          values: {
-            arguments: resolved.args,
-            closedStepNotes: JSON.parse(resolved.closed) as unknown[],
-            sessionId: cursorOwnerAfter('compose', existing.session_id, context.session),
-            updatedAt: resolved.updatedAt,
+      const resolved = resolveCursorArguments(existing, args, d, true)
+      const payload: TaskFlowIntentInput<'stage-update'> = {
+        requestId: taskFlowRequestId('stage-update', [
+          existing.record_id,
+          String(existing.revision),
+        ]),
+        stages: [
+          {
+            id: existing.record_id,
+            expectedRevision: existing.revision,
+            values: {
+              arguments: resolved.args,
+              closedStepNotes: JSON.parse(resolved.closed) as unknown[],
+              sessionId: cursorOwnerAfter('compose', existing.session_id, context.session),
+              updatedAt: resolved.updatedAt,
+            },
           },
-        },
-      ],
-    }
-    const hosted = await writeHostedTaskFlow(
-      'stage-update',
-      payload,
-      taskFlowWriteTarget(existing.project, d),
-      context.taskFlowClient,
-    )
-    writeTransaction(() => {
-      const store = taskFlowLocalStore(d)
-      const result = store.write('stage-update', payload, hosted)
-      row = {
-        ...existing,
-        args: resolved.encoded,
-        closed: resolved.closed,
-        session_id: context.session ?? existing.session_id,
-        updated_at: resolved.updatedAt,
-        revision: result.revisions[existing.record_id]!,
+        ],
       }
-    }, d)
+      const hosted = await writeHostedTaskFlow(
+        'stage-update',
+        payload,
+        taskFlowWriteTarget(existing.project, d),
+        context.taskFlowClient,
+      )
+      writeTransaction(() => {
+        const store = taskFlowLocalStore(d)
+        const result = store.write('stage-update', payload, hosted)
+        row = {
+          ...existing,
+          args: resolved.encoded,
+          closed: resolved.closed,
+          session_id: context.session ?? existing.session_id,
+          updated_at: resolved.updatedAt,
+          revision: result.revisions[existing.record_id]!,
+        }
+      }, d)
     } else row = await insertWorkflowCursor(composition, context, d, live.resolution, commitCount)
   } catch (error) {
     if (start !== 'reuse')
@@ -258,6 +259,7 @@ export async function composeWorkflowWithCursor(
         taskKey: keyOf(composition.arguments) || null,
         session: context.session,
         verb: 'abandon',
+        database: d,
       })
     throw error
   }
@@ -625,6 +627,7 @@ export async function writeFinishingWorkflowAdvance(input: {
       taskKey: row.workflow_key || null,
       session: input.callerSession,
       verb: 'finish',
+      database,
     })
     return null
   } catch (error) {
@@ -789,6 +792,7 @@ async function nextWorkflowStepImpl(
     taskKey: row.workflow_key || null,
     session: context.session,
     verb: 'advance',
+    database: d,
   })
   const claimWarning = await persistWorkflowAdvance(
     row,
@@ -925,8 +929,9 @@ async function awaitWorkflowRulingImpl(
   await followTaskCursorClaim({
     project: row.project,
     taskKey: row.workflow_key || null,
-    session: context.session,
+    session: row.session_id && row.session_id !== context.session ? null : context.session,
     verb: 'await',
+    database: d,
   })
   const resolved = resolveCursorArguments(row, args, d)
   const at = resolved.updatedAt
