@@ -214,7 +214,7 @@ test('a cursor-bound ask without a project is refused without writing', async ()
         projectId: null,
         workflowKey: 'DEV-2373',
         workflowTaskRecordId: null,
-        stepOrdinal: 1,
+        cursorOrdinal: 0,
         stepSlug: 'implement',
         question: 'Proceed?',
         at: STAMP,
