@@ -108,6 +108,9 @@ async function dispatchOutbox(
   if (verb === 'retry' && qualifiedId?.startsWith('--matching')) {
     return dispatchOrchestratorOutbox(rest, entries, invocation.publicPath)
   }
+  if (verb === 'restore-questions') {
+    return dispatchOrchestratorOutbox(rest, entries, invocation.publicPath)
+  }
   const match = qualifiedId?.match(/^(orch|hub):(.+)$/)
   if (!match) {
     console.error(

@@ -10,6 +10,7 @@ import {
   question as questionRecord,
 } from '../../../shared/record/schema-question.ts'
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
+import { isUniqueViolation } from './record-config-error.ts'
 import { recordPool } from './record-pool.ts'
 import { pushQuestionAudits } from './record-question-audit.ts'
 import type {
@@ -23,15 +24,86 @@ import { QUESTION_STEP_CONFLICT_SET, questionValuesForWrite } from './record-que
 import { projectRecordId } from './record-sync-project-identity.ts'
 
 type Tenant = { url: string } & TenantPrincipal
+type ExistingQuestion = {
+  number: number | string | null
+  revision: number | string
+  last_request_id: string | null
+}
+
+function requireRestoreNumber(intent: QuestionIntent, input: Tenant & QuestionWriteBody): void {
+  if (intent !== 'restore' || input.question.number !== null) return
+  throw new RecordQuestionError(
+    `question ${input.question.id} cannot be restored without its original number; pass the number from the retired outbox payload, then retry`,
+    422,
+  )
+}
+
+function restoreNumberConflict(input: Tenant & QuestionWriteBody, holderId: string) {
+  return new RecordQuestionError(
+    `question number ${input.question.number} in space ${input.spaceId} is already held by question ${holderId}; restore under its original number is refused`,
+    409,
+  )
+}
+
+async function restoreNumberHolder(
+  input: Tenant & QuestionWriteBody,
+  tx: SQL,
+  lock: boolean,
+): Promise<string | null> {
+  const holder = (
+    lock
+      ? await tx`
+        SELECT id::text FROM question
+        WHERE space_id=${input.spaceId}::uuid AND number=${input.question.number}
+          AND id<>${input.question.id}::uuid
+        FOR UPDATE
+      `
+      : await tx`
+        SELECT id::text FROM question
+        WHERE space_id=${input.spaceId}::uuid AND number=${input.question.number}
+          AND id<>${input.question.id}::uuid
+      `
+  ) as Array<{ id: string }>
+  return holder[0]?.id ?? null
+}
+
+async function questionNumberForWrite(
+  intent: QuestionIntent,
+  input: Tenant & QuestionWriteBody,
+  existing: ExistingQuestion | undefined,
+  tx: SQL,
+): Promise<number> {
+  if (intent !== 'ask' && intent !== 'restore' && !existing)
+    throw new RecordQuestionError(`question ${input.question.id} not found`, 404)
+  if (intent === 'restore' && existing?.number == null) {
+    const holderId = await restoreNumberHolder(input, tx, true)
+    if (holderId) throw restoreNumberConflict(input, holderId)
+  }
+  if (existing?.number != null) return Number(existing.number)
+  if (intent === 'restore') return input.question.number!
+  return allocateQuestionNumber(tx, input.spaceId)
+}
 
 export async function writeRecordQuestion(
   intent: QuestionIntent,
   input: Tenant & QuestionWriteBody,
 ): Promise<QuestionWriteResult> {
-  return recordPool(input.url).begin(async (tx) => {
-    await bindTenant(tx, input)
-    return writeRecordQuestionTransaction(intent, input, tx)
-  })
+  const pool = recordPool(input.url)
+  try {
+    return await pool.begin(async (tx) => {
+      await bindTenant(tx, input)
+      return writeRecordQuestionTransaction(intent, input, tx)
+    })
+  } catch (error) {
+    if (intent !== 'restore' || !isUniqueViolation(error, 'question_space_number_unique'))
+      throw error
+    const holderId = await pool.begin(async (tx) => {
+      await bindTenant(tx, input)
+      return restoreNumberHolder(input, tx, false)
+    })
+    if (!holderId) throw error
+    throw restoreNumberConflict(input, holderId)
+  }
 }
 
 export async function writeRecordQuestionTransaction(
@@ -39,14 +111,11 @@ export async function writeRecordQuestionTransaction(
   input: Tenant & QuestionWriteBody,
   tx: SQL,
 ): Promise<QuestionWriteResult> {
+  requireRestoreNumber(intent, input)
   const existing = (await tx`
       SELECT number,revision,last_request_id::text
         FROM question WHERE id=${input.question.id}::uuid FOR UPDATE
-    `) as Array<{
-    number: number | string | null
-    revision: number | string
-    last_request_id: string | null
-  }>
+    `) as ExistingQuestion[]
   if (existing[0]?.last_request_id === input.requestId)
     return {
       id: input.question.id,
@@ -54,12 +123,7 @@ export async function writeRecordQuestionTransaction(
       revision: Number(existing[0].revision),
       applied: true,
     }
-  if (intent !== 'ask' && !existing[0])
-    throw new RecordQuestionError(`question ${input.question.id} not found`, 404)
-  const number =
-    existing[0]?.number == null
-      ? await allocateQuestionNumber(tx, input.spaceId)
-      : Number(existing[0].number)
+  const number = await questionNumberForWrite(intent, input, existing[0], tx)
   const payload = {
     ...input.question,
     number,

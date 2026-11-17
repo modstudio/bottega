@@ -13,6 +13,7 @@ the hosted record and outbox
 - [bottega record outbox](#bottega-record-outbox)
 - [bottega record outbox discard](#bottega-record-outbox-discard)
 - [bottega record outbox help](#bottega-record-outbox-help)
+- [bottega record outbox restore-questions](#bottega-record-outbox-restore-questions)
 - [bottega record outbox retire](#bottega-record-outbox-retire)
 - [bottega record outbox retry](#bottega-record-outbox-retry)
 - [bottega record outbox show](#bottega-record-outbox-show)
@@ -169,6 +170,7 @@ inspect and retry pending record writes
 - [bottega record](./record.md#bottega-record)
 - [bottega record outbox discard](./record.md#bottega-record-outbox-discard)
 - [bottega record outbox help](./record.md#bottega-record-outbox-help)
+- [bottega record outbox restore-questions](./record.md#bottega-record-outbox-restore-questions)
 - [bottega record outbox retire](./record.md#bottega-record-outbox-retire)
 - [bottega record outbox retry](./record.md#bottega-record-outbox-retry)
 - [bottega record outbox show](./record.md#bottega-record-outbox-show)
@@ -189,6 +191,20 @@ discard a quarantined entry
 **Synopsis:** `bottega record outbox help [command]`
 
 display help for command
+
+### Related
+
+- [bottega record outbox](./record.md#bottega-record-outbox)
+
+## bottega record outbox restore-questions
+
+**Synopsis:** `bottega record outbox restore-questions [--dry-run]`
+
+restore retired question snapshots to their hosted record spaces
+
+### Options
+
+- `--dry-run`: list the question snapshots without sending them
 
 ### Related
 
