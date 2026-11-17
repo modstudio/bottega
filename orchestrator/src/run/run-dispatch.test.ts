@@ -9,8 +9,8 @@ import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun, dir } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
 import { clearMigrationDrain, setMigrationDrain } from '../database/migration-drain.ts'
+import { branchOf } from '../git/git-environment.ts'
 import { upsertProject } from '../project/projects.ts'
-import { liveLensStates } from '../review-funnel/gather-funnel-facts.ts'
 import { writeDispatchState } from './run-artifacts.ts'
 import { detach, spawnCwd } from './run-dispatch.ts'
 import { RUN_REFERENCE_REFUSAL } from './run-task-reference.ts'
@@ -21,7 +21,12 @@ const originalConfigHome = process.env.BOTTEGA_CONFIG_HOME
 const temporary: string[] = []
 beforeEach(() => {
   upsertProject({ recordId: newRecordId(), name: 'dispatch-fixture', path: dir })
-  upsertProject({ recordId: newRecordId(), name: 'dispatch-repo-fixture', path: import.meta.dir })
+  upsertProject({
+    recordId: newRecordId(),
+    name: 'dispatch-repo-fixture',
+    path: import.meta.dir,
+    settings: { trunk: 'main' },
+  })
 })
 afterEach(() => {
   mock.restore()
@@ -143,9 +148,9 @@ test('a findings dispatch carries its resolved round role to the coordinator', a
   ).toEqual({ cursor_record_id: cursorRecordId, step_slug: 'review' })
 })
 
-test('a detached review placeholder is credited as running when it is claimed', async () => {
+test('a detached review placeholder records its lens and requested review branch', async () => {
   process.env.BOTTEGA_DEPTH = '0'
-  const branch = 'DEV-2403-reviewed'
+  const branch = branchOf(import.meta.dir)!
   const spawnCoordinator = (() => {
     const child = new EventEmitter() as EventEmitter & { pid: number; unref(): void }
     child.pid = process.pid
@@ -163,7 +168,6 @@ test('a detached review placeholder is credited as running when it is claimed', 
       key: 'DEV-2403',
       lens: 'correctness',
       review: branch,
-      resolvedReviewTarget: { branch, commit: 'head', base: 'base' },
     },
     'codex',
     spawnCoordinator,
@@ -173,9 +177,6 @@ test('a detached review placeholder is credited as running when it is claimed', 
     lens: 'correctness',
     branch,
   })
-  expect(liveLensStates(db(), 'dispatch-repo-fixture', branch)).toEqual([
-    { lens: 'correctness', runId, state: 'running' },
-  ])
   db().query("UPDATE run SET status='stopped' WHERE record_id=?").run(runId)
 })
 

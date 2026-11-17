@@ -324,21 +324,21 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
           return p
         })()
       : originalSchemaPath
-  const started = Date.now()
-  const head = originalPrompt.slice(0, 200).replace(/\s+/g, ' ')
+  const started = Date.now(),
+    head = originalPrompt.slice(0, 200).replace(/\s+/g, ' ')
   const inheritedLaunch =
     resume.workspaceSource === 'retained' ? inheritedRunFacts(opts.resume!.parent) : null
   const recordedBranch = (worktreeBranch: string | null) =>
     claimedRunBranch(
       reviewTarget?.branch ?? null,
+      opts.review ?? null,
       implicitReview.branch,
       implicitReview.findings ? (inheritedLaunch?.branch ?? null) : null,
       worktreeBranch,
     )
   const launchCwd = inheritedLaunch?.launch_cwd ?? opts.launchCwd ?? callerCwd
-  const launchSeed = inheritedLaunch?.launch_seed ?? seed ?? null
-  const attributedKey = attributedLaunchKey({ writesJob, key: opts.key, cwd: callerCwd })
-  const launchKey = inheritedLaunch?.launch_key ?? attributedKey
+  const launchKey =
+    inheritedLaunch?.launch_key ?? attributedLaunchKey({ writesJob, key: opts.key, cwd: callerCwd })
   const links = await claimLinks(input, launchKey, launchCwd, inheritedLaunch)
   runProjectId = links.projectRecordId
   const launchBase = inheritedLaunch?.launch_base ?? opts.launchBase ?? opts.base ?? null
@@ -418,7 +418,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
         pack ? JSON.stringify(pack.docs.map((doc) => doc.revisionId)) : null,
         pack?.sha256 ?? null,
         launchCwd,
-        launchSeed,
+        inheritedLaunch?.launch_seed ?? seed ?? null,
         launchKey,
         links.taskRecordId,
         launchBase,
@@ -472,7 +472,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
         pack ? JSON.stringify(pack.docs.map((doc) => doc.revisionId)) : null,
         pack?.sha256 ?? null,
         launchCwd,
-        launchSeed,
+        inheritedLaunch?.launch_seed ?? seed ?? null,
         launchKey,
         links.taskRecordId,
         launchBase,

@@ -593,6 +593,7 @@ export const reviewBoundarySpecs: ReviewBoundarySpec[] = [
     file: 'orchestrator/src/review/review-commands.ts',
     allowed: [
       '../../../shared/brand.ts',
+      '../../../shared/reference.ts',
       'bun:sqlite',
       'node:fs',
       'zod',

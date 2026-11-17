@@ -17,7 +17,6 @@ import {
 } from '../workflow/workflow-cursor-list.ts'
 import { activeLandings } from './session-close-out.ts'
 import {
-  type SessionReviewTaskBranchResolver,
   type SessionReviewVerdictGatherer,
   sessionReviewVerdictLines,
 } from './session-review-verdicts.ts'
@@ -122,7 +121,6 @@ export async function sessionStopSummary(
     previousBlockKey: string | null
     now?: string
     reviewVerdictGatherer?: SessionReviewVerdictGatherer
-    reviewTaskBranchResolver?: SessionReviewTaskBranchResolver
     stateEnvironment?: StateEnvironment
   },
   database: Database = db(),
@@ -155,14 +153,9 @@ export async function sessionStopSummary(
     )
     .all(session)
   const reviews = classifyStopSummaryReviews(reviewRows)
-  const reviewVerdictLines = sessionReviewVerdictLines(
-    session,
-    cursors,
-    database,
-    options.reviewVerdictGatherer,
-    undefined,
-    options.reviewTaskBranchResolver,
-  )
+  const reviewVerdictLines = sessionReviewVerdictLines(session, cursors, database, {
+    gather: options.reviewVerdictGatherer,
+  })
   const sessionLandings = activeLandings(database, session)
   const activeLandingTrees = database
     .query<StopSummaryActiveLandingRow, []>(

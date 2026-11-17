@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Command } from 'commander'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { register as registerReviewCommand } from '../commands/review.ts'
 import { db } from '../database/db.ts'
@@ -20,7 +21,7 @@ async function runReview(argv: string[], output: string[]): Promise<void> {
   await program.parseAsync(['node', 'orch', ...argv])
 }
 
-test('review tier resolves a task key and names task keys in the unknown-target refusal', async () => {
+test('review tier resolves a task key and distinguishes missing task branches from unknown targets', async () => {
   const repo = mkdtempSync(join(tmpdir(), 'orch-review-tier-task-key-'))
   try {
     git(repo, 'init', '-b', 'main')
@@ -68,6 +69,9 @@ test('review tier resolves a task key and names task keys in the unknown-target 
     await runReview(['review', 'tier', 'DEV-2403', '--cwd', repo], output)
 
     expect(output).toContain('lens correctness  framework=generic  reason: initial')
+    await expect(runReview(['review', 'tier', 'DEV-999', '--cwd', repo], [])).rejects.toThrow(
+      `task DEV-999 has no unlanded branch; pass its branch or run id to \`${PLATFORM_SLUG} review tier\``,
+    )
     await expect(runReview(['review', 'tier', 'UNKNOWN', '--cwd', repo], [])).rejects.toThrow(
       'review tier accepts a branch, task key, run id, or explicit <from>..<to> range',
     )

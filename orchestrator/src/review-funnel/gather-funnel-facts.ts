@@ -79,7 +79,7 @@ function reviewRoundFacts(
   }))
 }
 
-export function liveLensStates(
+function liveLensStates(
   database: Database,
   project: string,
   branch: string,

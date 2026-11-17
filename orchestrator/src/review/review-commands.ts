@@ -6,6 +6,7 @@ import { z } from 'zod'
 import { startBoundedSync } from '../../../shared/bounded-process.ts'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { gitToplevel } from '../../../shared/git.ts'
+import { parseReference } from '../../../shared/reference.ts'
 import { refusal, renderRefusal } from '../../../shared/refusal.ts'
 import { AGENTS, requireAgent } from '../agent/agent-registry.ts'
 import { resolveTaskBranch } from '../branch/task-branch.ts'
@@ -109,6 +110,31 @@ function resolveTierTargetCommit(repo: string, ref: string): string {
   }
 }
 
+function tierTaskKey(value: string): string | null {
+  try {
+    const parsed = parseReference(value)
+    return parsed.qualifier === null && parsed.value.kind === 'task-key' ? parsed.value.key : null
+  } catch {
+    return null
+  }
+}
+
+function resolveTierBranch(repo: string, cwd: string, value: string): string {
+  const branchRef = startBoundedSync(
+    ['git', 'show-ref', '--verify', '--quiet', `refs/heads/${value}`],
+    { budget: 'git-plumbing', cwd: repo, env: targetGitEnvironment(repo) },
+  )
+  const branch = branchRef.exitCode === 0 ? value : (resolveTaskBranch(cwd, value)?.branch ?? null)
+  if (branch) return branch
+  const taskKey = tierTaskKey(value)
+  if (taskKey) {
+    throw new Error(
+      `task ${taskKey} has no unlanded branch; pass its branch or run id to \`${PLATFORM_SLUG} review tier\``,
+    )
+  }
+  throw new Error('review tier accepts a branch, task key, run id, or explicit <from>..<to> range')
+}
+
 function resolveTierTarget(value: string, cwd: string): ResolvedTierTarget {
   if (classifyRunIdentifier(value)) {
     return (() => {
@@ -187,16 +213,7 @@ function resolveTierTarget(value: string, cwd: string): ResolvedTierTarget {
     }
   }
 
-  const branchRef = startBoundedSync(
-    ['git', 'show-ref', '--verify', '--quiet', `refs/heads/${value}`],
-    { budget: 'git-plumbing', cwd: repo, env: targetGitEnvironment(repo) },
-  )
-  const branch = branchRef.exitCode === 0 ? value : (resolveTaskBranch(cwd, value)?.branch ?? null)
-  if (!branch) {
-    throw new Error(
-      'review tier accepts a branch, task key, run id, or explicit <from>..<to> range',
-    )
-  }
+  const branch = resolveTierBranch(repo, cwd, value)
   const trunk = typeof project.settings.trunk === 'string' ? project.settings.trunk.trim() : ''
   if (!trunk) throw new Error(`project ${project.name} has no trunk configured`)
   const from = resolveReviewBase(repo, branch, trunk)

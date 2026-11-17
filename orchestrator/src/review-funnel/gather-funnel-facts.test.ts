@@ -92,6 +92,16 @@ function fixture(landingBranch: string) {
   })
 
   const prNumber = 2024
+  const liveRunId = newRecordId()
+  database
+    .query(
+      `INSERT INTO run
+       (record_id,number,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,turn,
+        project_record_id,repo,branch,launch_key,lens)
+       VALUES (?,3,'2026-11-15T15:03:00Z','codex','review-lens','sha',1,'head','running',1,
+               ?,'fixture',?,'DEV-2336','correctness')`,
+    )
+    .run(liveRunId, projectId, branch)
   database
     .query(
       `INSERT INTO landing_triage_snapshot
@@ -120,6 +130,7 @@ function fixture(landingBranch: string) {
   const identity = measureChangeIdentity(repo, 'HEAD^', 'HEAD')!
   return {
     database,
+    liveRunId,
     facts: gatherFunnelFacts({
       database,
       cwd: repo,
@@ -142,6 +153,19 @@ function fixture(landingBranch: string) {
     }),
   }
 }
+
+test('a running review-lens row carrying lens and branch is credited immediately', () => {
+  const { database, facts, liveRunId } = fixture(branch)
+  try {
+    expect(facts.lensStates).toContainEqual({
+      lens: 'correctness',
+      runId: liveRunId,
+      state: 'running',
+    })
+  } finally {
+    database.close()
+  }
+})
 
 test("a change's own merged landing does not mark its review rounds as previously landed", () => {
   const { database, facts } = fixture(branch)

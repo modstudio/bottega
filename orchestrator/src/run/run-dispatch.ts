@@ -224,6 +224,7 @@ function detachedPlaceholderReviewBindings(spec: ResolvedDetachSpec) {
     spec.agentExplicit ? 1 : 0,
     claimedRunBranch(
       spec.resolvedReviewTarget?.branch ?? null,
+      spec.review ?? null,
       null,
       spec.resume?.treePlan?.branch ?? spec.resume?.worktree?.branch ?? null,
       null,

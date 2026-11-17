@@ -51,12 +51,17 @@ export function retryRootTreeValidation(input: {
 
 export function claimedRunBranch(
   reviewTargetBranch: string | null,
+  requestedReviewBranch: string | null,
   implicitReviewBranch: string | null,
   rootReviewBranch: string | null,
   worktreeBranch: string | null,
 ): string | null {
   const branch =
-    reviewTargetBranch ?? implicitReviewBranch ?? rootReviewBranch ?? (worktreeBranch || null)
+    reviewTargetBranch ??
+    requestedReviewBranch ??
+    implicitReviewBranch ??
+    rootReviewBranch ??
+    (worktreeBranch || null)
   if (branch && isCommitShapedBranch(branch)) {
     throw new Error(
       `refusing to record commit-shaped branch ${branch}; dispatch with --review <branch>`,

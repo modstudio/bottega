@@ -43,19 +43,22 @@ describe('retry-root tree validation', () => {
 })
 
 test('claim branch selection records implicit, explicit, and ordinary worktree branches', () => {
-  expect(claimedRunBranch(null, 'DEV-1147-implicit', 'DEV-1147-root', null)).toBe(
+  expect(claimedRunBranch(null, null, 'DEV-1147-implicit', 'DEV-1147-root', null)).toBe(
     'DEV-1147-implicit',
   )
-  expect(claimedRunBranch('DEV-1147-explicit', null, 'DEV-1147-root', null)).toBe(
+  expect(claimedRunBranch('DEV-1147-explicit', null, null, 'DEV-1147-root', null)).toBe(
     'DEV-1147-explicit',
   )
-  expect(claimedRunBranch(null, null, 'DEV-1147-root', null)).toBe('DEV-1147-root')
-  expect(claimedRunBranch(null, null, null, 'DEV-1147-writer')).toBe('DEV-1147-writer')
-  expect(claimedRunBranch(null, null, null, '')).toBeNull()
+  expect(claimedRunBranch(null, 'DEV-1147-requested', null, 'DEV-1147-root', null)).toBe(
+    'DEV-1147-requested',
+  )
+  expect(claimedRunBranch(null, null, null, 'DEV-1147-root', null)).toBe('DEV-1147-root')
+  expect(claimedRunBranch(null, null, null, null, 'DEV-1147-writer')).toBe('DEV-1147-writer')
+  expect(claimedRunBranch(null, null, null, null, '')).toBeNull()
 })
 
 test('claim branch selection refuses a commit-shaped branch', () => {
-  expect(() => claimedRunBranch('5c156c96b', null, null, null)).toThrow(
+  expect(() => claimedRunBranch('5c156c96b', null, null, null, null)).toThrow(
     'dispatch with --review <branch>',
   )
 })
