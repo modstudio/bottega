@@ -129,10 +129,7 @@ import {
   searchPublicRecordDocs,
   searchRecordDocs,
 } from './record-public-docs.ts'
-import {
-  readRecordQuestions,
-  readRecordUnlinkedWorkflowQuestionIds,
-} from './record-question-read.ts'
+import { readRecordQuestions } from './record-question-read.ts'
 import { writeRecordQuestion } from './record-question-write.ts'
 import { recordReleaseCheck } from './record-release-check.ts'
 import { listRecordReleases, readLatestRecordReleases } from './record-releases.ts'
@@ -156,13 +153,10 @@ import { syncHostedRecord } from './record-sync-service.ts'
 import {
   listRecordTaskFlowStages,
   readRecordTaskFlow,
-  readRecordTaskFlowConflict,
   readRecordTaskFlowObligation,
   readRecordTaskFlowPresence,
   readRecordTaskFlowProjectReferenceCounts,
-  readRecordTaskFlowRecordId,
   readRecordTaskFlowStage,
-  readRecordTaskFlowStageRevision,
   readRecordTaskFlowText,
 } from './record-task-flow.ts'
 import { writeRecordTaskFlow } from './record-task-flow-write.ts'
@@ -389,10 +383,6 @@ function recordProjectDependencies() {
   return {
     readProjects: listRecordProjects,
     readTaskFlow: readRecordTaskFlow,
-    readTaskFlowConflict: readRecordTaskFlowConflict,
-    readTaskFlowRecordId: readRecordTaskFlowRecordId,
-    readTaskFlowStageRevision: readRecordTaskFlowStageRevision,
-    readUnlinkedWorkflowQuestionIds: readRecordUnlinkedWorkflowQuestionIds,
     readTaskFlowStage: readRecordTaskFlowStage,
     readTaskFlowText: readRecordTaskFlowText,
     readTaskFlowObligation: readRecordTaskFlowObligation,

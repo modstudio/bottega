@@ -40,23 +40,6 @@ import {
 type Environment = { Variables: { identity: RecordIdentity; destinationSpaceId?: string } }
 type Tenant = { url: string; userId: string; spaceId: string; spaceIds: string[] }
 export type RecordWorkflowRouteDeps = {
-  readTaskFlowConflict?(
-    input: Tenant & {
-      projectId: string
-      workflow: string
-      mode: string
-      workflowKey: string
-      exceptStageId: string
-    },
-  ): Promise<unknown>
-  readTaskFlowRecordId?(input: Tenant & { taskId: string }): Promise<unknown>
-  readTaskFlowStageRevision?(input: Tenant & { stageId: string }): Promise<unknown>
-  readUnlinkedWorkflowQuestionIds?(
-    input: Tenant & {
-      projectId: string
-      workflowKey: string
-    },
-  ): Promise<unknown>
   readTaskFlow?(input: Tenant & TaskFlowReadQueryInput): Promise<unknown>
   readTaskFlowStage?(input: Tenant & { id: string }): Promise<unknown>
   readTaskFlowText?(input: Tenant & { id: string }): Promise<unknown>
@@ -228,53 +211,6 @@ function registerTaskFlowReadRoutes(
   ports: Ports,
 ): void {
   const uuid = z.string().uuid()
-  app.get('/v1/task-flow/conflicting-stage', async (context) => {
-    if (!deps.readTaskFlowConflict)
-      return context.json({ error: 'hosted task-flow conflict read is unavailable' }, 503)
-    const active = ports.scope(context)
-    if (!active) return ports.noSpace(context)
-    const query = z
-      .object({
-        projectId: uuid,
-        workflow: z.string().min(1),
-        mode: z.string().min(1),
-        workflowKey: z.string().min(1),
-        exceptStageId: uuid,
-      })
-      .safeParse(context.req.query())
-    if (!query.success) return context.json({ error: 'invalid task-flow conflict query' }, 400)
-    return context.json(await deps.readTaskFlowConflict({ ...active, ...query.data }))
-  })
-  app.get('/v1/task-flow/flow-record-id', async (context) => {
-    if (!deps.readTaskFlowRecordId)
-      return context.json({ error: 'hosted task-flow record-id read is unavailable' }, 503)
-    const active = ports.scope(context)
-    if (!active) return ports.noSpace(context)
-    const taskId = uuid.safeParse(context.req.query('taskId'))
-    if (!taskId.success) return context.json({ error: 'taskId is required' }, 400)
-    return context.json(await deps.readTaskFlowRecordId({ ...active, taskId: taskId.data }))
-  })
-  app.get('/v1/task-flow/stage-revision', async (context) => {
-    if (!deps.readTaskFlowStageRevision)
-      return context.json({ error: 'hosted task-flow stage-revision read is unavailable' }, 503)
-    const active = ports.scope(context)
-    if (!active) return ports.noSpace(context)
-    const stageId = uuid.safeParse(context.req.query('stageId'))
-    if (!stageId.success) return context.json({ error: 'stageId is required' }, 400)
-    return context.json(await deps.readTaskFlowStageRevision({ ...active, stageId: stageId.data }))
-  })
-  app.get('/v1/task-flow/unlinked-workflow-question-ids', async (context) => {
-    if (!deps.readUnlinkedWorkflowQuestionIds)
-      return context.json({ error: 'hosted unlinked workflow-question read is unavailable' }, 503)
-    const active = ports.scope(context)
-    if (!active) return ports.noSpace(context)
-    const query = z
-      .object({ projectId: uuid, workflowKey: z.string().min(1) })
-      .safeParse(context.req.query())
-    if (!query.success)
-      return context.json({ error: 'invalid unlinked workflow-question query' }, 400)
-    return context.json(await deps.readUnlinkedWorkflowQuestionIds({ ...active, ...query.data }))
-  })
   app.get('/v1/task-flow', async (context) => {
     if (!deps.readTaskFlow)
       return context.json({ error: 'hosted task flow read is unavailable' }, 503)

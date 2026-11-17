@@ -8,13 +8,10 @@ import { recordIso } from '../../../shared/record-timestamp.ts'
 import { recordPool } from './record-pool.ts'
 import {
   type HostedTaskFlow,
-  type HostedTaskFlowConflict,
   type HostedTaskFlowObligationById,
   type HostedTaskFlowProjectReferenceCounts,
-  type HostedTaskFlowRecordId,
   type HostedTaskFlowStageById,
   type HostedTaskFlowStageList,
-  type HostedTaskFlowStageRevision,
   type HostedTaskFlowTextById,
   RECORD_TASK_FLOW_NOT_FOUND_CODE,
   RECORD_TASK_FLOW_NOT_FOUND_MESSAGE,
@@ -28,54 +25,6 @@ import { taskFlowStageListNextCursor, taskFlowStageListSql } from './record-task
 export class RecordTaskFlowError extends Error {
   readonly status = 404
   readonly code = RECORD_TASK_FLOW_NOT_FOUND_CODE
-}
-
-export async function readRecordTaskFlowConflict(
-  input: TenantPrincipal & {
-    url: string
-    projectId: string
-    workflow: string
-    mode: string
-    workflowKey: string
-    exceptStageId: string
-  },
-): Promise<HostedTaskFlowConflict> {
-  return recordPool(input.url).begin(async (tx) => {
-    await bindTenant(tx, input)
-    const rows = await tx`
-      SELECT number,id FROM task_flow_stage
-      WHERE space_id=${input.spaceId}::uuid AND project_id=${input.projectId}::uuid
-        AND workflow=${input.workflow} AND mode=${input.mode}
-        AND workflow_key=${input.workflowKey} AND instance_id=''
-        AND state NOT IN ('done','abandoned') AND id<>${input.exceptStageId}::uuid
-      ORDER BY number LIMIT 1`
-    const row = rows[0] as Record<string, unknown> | undefined
-    return row ? { number: Number(row.number), recordId: String(row.id) } : null
-  })
-}
-
-export async function readRecordTaskFlowRecordId(
-  input: TenantPrincipal & { url: string; taskId: string },
-): Promise<HostedTaskFlowRecordId> {
-  return recordPool(input.url).begin(async (tx) => {
-    await bindTenant(tx, input)
-    const rows = await tx`
-      SELECT id FROM task_flow
-      WHERE space_id=${input.spaceId}::uuid AND task_id=${input.taskId}::uuid LIMIT 1`
-    return { flowRecordId: rows[0] ? String(rows[0].id) : null }
-  })
-}
-
-export async function readRecordTaskFlowStageRevision(
-  input: TenantPrincipal & { url: string; stageId: string },
-): Promise<HostedTaskFlowStageRevision> {
-  return recordPool(input.url).begin(async (tx) => {
-    await bindTenant(tx, input)
-    const rows = await tx`
-      SELECT revision FROM task_flow_stage
-      WHERE space_id=${input.spaceId}::uuid AND id=${input.stageId}::uuid`
-    return { revision: rows[0] ? Number(rows[0].revision) : null }
-  })
 }
 
 type HostedStage = NonNullable<HostedTaskFlow['otherStages']>[number]

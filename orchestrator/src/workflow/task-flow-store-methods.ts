@@ -9,20 +9,11 @@ export type TaskFlowWriteMethod =
   | 'relinkProjectReferences'
   | 'renameStageProject'
 
-export const taskFlowLocalReadPlacement = {
-  conflictingHostedStage: 'shared',
-  openStageForTask: 'shared',
-  flowRecordIdForTask: 'shared',
-  flowProjectionForTask: 'shared',
-  stageByRecordId: 'shared',
-  stageRevision: 'shared',
-  waitingWorkflowQuestions: 'shared',
-  unlinkedWorkflowQuestionIds: 'shared',
-} as const
+export const taskFlowLocalReadMethods = [
+  'openStageForTask',
+  'flowProjectionForTask',
+  'stageByRecordId',
+  'waitingWorkflowQuestions',
+] as const
 
-export type TaskFlowLocalReadMethod = keyof typeof taskFlowLocalReadPlacement
-export type TaskFlowLocalOnlyReadMethod = {
-  [K in TaskFlowLocalReadMethod]: (typeof taskFlowLocalReadPlacement)[K] extends 'local-only'
-    ? K
-    : never
-}[TaskFlowLocalReadMethod]
+export type TaskFlowLocalReadMethod = (typeof taskFlowLocalReadMethods)[number]

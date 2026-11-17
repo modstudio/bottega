@@ -11,7 +11,7 @@ import {
   throwIfRecordRefused,
 } from '../record/record-write-authority.ts'
 import { hostedTaskFlowLocalStore } from './task-flow-store-hosted.ts'
-import type { TaskFlowLocalOnlyReadMethod, TaskFlowWriteMethod } from './task-flow-store-methods.ts'
+import type { TaskFlowLocalReadMethod, TaskFlowWriteMethod } from './task-flow-store-methods.ts'
 import { resolveTaskFlowReadStore } from './task-flow-store-record.ts'
 import { sqliteTaskFlowLocalStore } from './task-flow-store-sqlite.ts'
 import type { TaskFlowSqliteWriteResult } from './task-flow-store-sqlite-write.ts'
@@ -71,16 +71,8 @@ interface TaskFlowQueries {
     key: string
     exceptRecordId: string | null
   }): void
-  conflictingHostedStage(input: {
-    projectRecordId: string
-    workflow: string
-    mode: string
-    key: string
-    recordId: string
-  }): { number: number; record_id: string } | null
   insertStage(row: WorkflowCursorInsert, conflict: 'local-identity' | 'hosted-record'): string
   openStageForTask(taskRecordId: string): TaskFlowStageCursorRow | null
-  flowRecordIdForTask(taskRecordId: string): string | null
   cacheAdoptedFlow(input: {
     project: string
     taskRecordId: string
@@ -191,7 +183,6 @@ interface TaskFlowQueries {
   rulingFileQuestion(questionId: string): TaskFlowRulingFileRow | null
   questionCloseFacts(questionId: string): TaskFlowQuestionCloseRow | null
   overturnRulingRow(questionId: string): TaskFlowOverturnRulingRow | null
-  unlinkedWorkflowQuestionIds(project: string, workflowKey: string): string[]
   pendingTaskLinks(table: 'workflow_cursor' | 'question'): TaskFlowPendingTaskLinkRow[]
   linkedTaskReferences(table: 'workflow_cursor' | 'question'): TaskFlowLinkedTaskReferenceRow[]
   projectReferenceCounts(projectRecordId: string): {
@@ -209,7 +200,7 @@ interface TaskFlowQueries {
 
 type TaskFlowReadMethod = Exclude<
   keyof TaskFlowQueries,
-  TaskFlowWriteMethod | TaskFlowLocalOnlyReadMethod
+  TaskFlowWriteMethod | TaskFlowLocalReadMethod
 >
 
 type AsyncTaskFlowReads = {
@@ -220,7 +211,7 @@ type AsyncTaskFlowReads = {
 
 /** Synchronous writes and reads that must remain atomic inside a local transaction. */
 export interface TaskFlowLocalStore
-  extends Pick<TaskFlowQueries, TaskFlowWriteMethod | TaskFlowLocalOnlyReadMethod> {}
+  extends Pick<TaskFlowQueries, TaskFlowWriteMethod | TaskFlowLocalReadMethod> {}
 
 /** Async task-flow reads, implemented locally now and by the hosted record in the next slice. */
 export interface TaskFlowReadStore extends AsyncTaskFlowReads {}

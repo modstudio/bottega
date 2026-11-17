@@ -10,7 +10,6 @@ import type {
   TaskFlowIntentResult,
 } from '../record/record-task-flow-write-contract.ts'
 import type {
-  TaskFlowLocalOnlyReadMethod,
   TaskFlowLocalReadMethod,
   TaskFlowWriteMethod,
 } from './task-flow-store-methods.ts'
@@ -121,23 +120,6 @@ class SqliteTaskFlowStore {
       )
   }
 
-  conflictingHostedStage(input: {
-    projectRecordId: string
-    workflow: string
-    mode: string
-    key: string
-    recordId: string
-  }): { number: number; record_id: string } | null {
-    this.assertLocalRead('conflictingHostedStage')
-    return this.database
-      .query<{ number: number; record_id: string }, [string, string, string, string, string]>(
-        `SELECT number,record_id FROM workflow_cursor
-         WHERE project_record_id=? AND workflow_slug=? AND mode_slug=? AND workflow_key=?
-           AND instance_id='' AND state NOT IN ('done','abandoned') AND record_id<>?`,
-      )
-      .get(input.projectRecordId, input.workflow, input.mode, input.key, input.recordId)
-  }
-
   insertStage(row: WorkflowCursorInsert, conflict: 'local-identity' | 'hosted-record'): string {
     const conflictSql =
       conflict === 'local-identity'
@@ -197,17 +179,6 @@ class SqliteTaskFlowStore {
          ON cursor.record_id=flow.open_stage_cursor_record_id WHERE flow.task_record_id=?`,
       )
       .get(taskRecordId)
-  }
-
-  flowRecordIdForTask(taskRecordId: string): string | null {
-    this.assertLocalRead('flowRecordIdForTask')
-    return (
-      this.database
-        .query<{ record_id: string }, [string]>(
-          'SELECT record_id FROM task_flow WHERE task_record_id=?',
-        )
-        .get(taskRecordId)?.record_id ?? null
-    )
   }
 
   cacheAdoptedFlow(input: {
@@ -419,7 +390,6 @@ class SqliteTaskFlowStore {
   }
 
   stageRevision(recordId: string): number | null {
-    this.assertLocalRead('stageRevision')
     return (
       this.database
         .query<{ revision: number }, [string]>(
@@ -678,11 +648,6 @@ class SqliteTaskFlowStore {
     return questions.overturnRulingRow(this.database, questionId)
   }
 
-  unlinkedWorkflowQuestionIds(project: string, workflowKey: string): string[] {
-    this.assertLocalRead('unlinkedWorkflowQuestionIds')
-    return questions.unlinkedWorkflowQuestionIds(this.database, project, workflowKey)
-  }
-
   pendingTaskLinks(table: 'workflow_cursor' | 'question'): TaskFlowPendingTaskLinkRow[] {
     return questions.pendingTaskLinks(this.database, table)
   }
@@ -745,7 +710,7 @@ export function sqliteTaskFlowLocalStore(database: Database): SqliteTaskFlowStor
 
 type SqliteTaskFlowReadMethod = Exclude<
   keyof SqliteTaskFlowStore,
-  TaskFlowWriteMethod | TaskFlowLocalOnlyReadMethod
+  TaskFlowWriteMethod | TaskFlowLocalReadMethod
 >
 type SqliteTaskFlowReadStore = {
   [K in SqliteTaskFlowReadMethod]: SqliteTaskFlowStore[K] extends (...args: infer A) => infer R
@@ -757,14 +722,6 @@ type SqliteTaskFlowReadStore = {
 export function sqliteTaskFlowReadStore(database: Database): SqliteTaskFlowReadStore {
   const local = new SqliteTaskFlowStore(database)
   return {
-    conflictingHostedStage: async (input) => local.conflictingHostedStage(input),
-    flowRecordIdForTask: async (taskRecordId) => local.flowRecordIdForTask(taskRecordId),
-    stageRevision: async (recordId) => local.stageRevision(recordId),
-    unlinkedWorkflowQuestionIds: async (project, workflowKey) =>
-      local.unlinkedWorkflowQuestionIds(project, workflowKey),
-    openStageForTask: async (taskRecordId) => local.openStageForTask(taskRecordId),
-    flowProjectionForTask: async (taskRecordId) => local.flowProjectionForTask(taskRecordId),
-    stageByRecordId: async (recordId) => local.stageByRecordId(recordId),
     latestStageForTask: async (input) => local.latestStageForTask(input),
     openKeylessStages: async (input) => local.openKeylessStages(input),
     activeStageModes: async (input) => local.activeStageModes(input),

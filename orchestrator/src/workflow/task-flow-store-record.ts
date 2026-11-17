@@ -245,69 +245,6 @@ class RecordTaskFlowReadStore {
     })
   }
 
-  async conflictingHostedStage(input: {
-    projectRecordId: string
-    workflow: string
-    mode: string
-    key: string
-    recordId: string
-  }) {
-    const read = this.client.readTaskFlowConflict
-    if (!read)
-      throw new Error(
-        'record API predates task-flow conflict reads; release hosted-api, then retry',
-      )
-    const project = this.projectName(input.projectRecordId)
-    const result = await read(
-      {
-        projectId: input.projectRecordId,
-        workflow: input.workflow,
-        mode: input.mode,
-        workflowKey: input.key,
-        exceptStageId: input.recordId,
-      },
-      await this.destination(project),
-    )
-    return result ? { number: result.number, record_id: result.recordId } : null
-  }
-
-  async flowRecordIdForTask(taskRecordId: string) {
-    const read = this.client.readTaskFlowRecordId
-    if (!read)
-      throw new Error(
-        'record API predates task-flow record-id reads; release hosted-api, then retry',
-      )
-    const result = await this.readEveryDestination((destination) =>
-      read(taskRecordId, destination).then((answer) => (answer.flowRecordId ? answer : null)),
-    )
-    return result?.flowRecordId ?? null
-  }
-
-  async stageRevision(recordId: string) {
-    const read = this.client.readTaskFlowStageRevision
-    if (!read)
-      throw new Error(
-        'record API predates task-flow stage-revision reads; release hosted-api, then retry',
-      )
-    const result = await this.readEveryDestination((destination) =>
-      read(recordId, destination).then((answer) => (answer.revision ? answer : null)),
-    )
-    return result?.revision ?? null
-  }
-
-  async unlinkedWorkflowQuestionIds(project: string, workflowKey: string) {
-    const read = this.client.readUnlinkedWorkflowQuestionIds
-    if (!read)
-      throw new Error(
-        'record API predates unlinked workflow-question reads; release hosted-api, then retry',
-      )
-    const result = await read(
-      { projectId: this.projectId(project), workflowKey },
-      await this.destination(project),
-    )
-    return result.questionIds
-  }
-
   async openStageForTask(taskRecordId: string) {
     const flow = await this.flow({ taskId: taskRecordId })
     return flow?.stage ? stageRow({ stage: flow.stage, flow: flow.flow }, false) : null
