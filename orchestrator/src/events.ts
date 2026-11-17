@@ -6,6 +6,7 @@ import { redactSecretShaped } from '../../shared/secret-shaped.ts'
 import { resolveRunsDirectory } from './database/database-location.ts'
 import { db, nowIso, writableDb } from './database/db.ts'
 import { targetGitEnvironment } from './git/git-environment.ts'
+import { isRunQueuedForCapacity } from './run/run-liveness-policy.ts'
 import { capToolEventText } from './tool-event-text.ts'
 
 /** The live-stream subset the JSONL log records. Wider transport events are ignored. */
@@ -358,6 +359,11 @@ export function liveOperationalStatusFromEvents(
         : null,
   }
   return { ...status, live_status_detail: formatLiveOperationalStatus(status) }
+}
+
+/** Read the open agent-capacity wait recorded in one run's event log. */
+export function capacityWaitSinceForRun(runId: string): string | null {
+  return liveOperationalStatusFromEvents(readEventLog(runEventsPath(runId))).capacity_wait_since
 }
 
 const RESULT_STATUSES = new Set(['completed', 'failed', 'ok', 'error', 'cancelled'])
@@ -875,7 +881,8 @@ export function peekRun(
 ): PeekSummary {
   const row = db()
     .query(
-      `SELECT number AS id, record_id, status, agent, job, started_at, last_event_at, worktree, base_commit, vendor_tokens
+      `SELECT number AS id, record_id, status, agent, job, started_at, last_event_at, worktree, base_commit, vendor_tokens,
+              host_wait_since, agent_pid
        FROM run WHERE record_id=?`,
     )
     .get(id) as {
@@ -889,11 +896,21 @@ export function peekRun(
     worktree: string | null
     base_commit: string | null
     vendor_tokens: number | null
+    host_wait_since: string | null
+    agent_pid: number | null
   } | null
   if (!row) throw new Error(`no run ${id}`)
   const now = opts.now ?? Date.now()
   const started = Date.parse(row.started_at)
   const events = readEventLog(runEventsPath(id, opts.runsDir))
+  const capacityWaitSince = liveOperationalStatusFromEvents(events).capacity_wait_since
+  const queuedForCapacity = isRunQueuedForCapacity(
+    row.status,
+    row.host_wait_since,
+    capacityWaitSince,
+    row.agent_pid,
+    now,
+  )
   const lastWorkerTs = events.findLast(isWorkerActivity)?.ts ?? row.last_event_at
   const lastAt = lastWorkerTs
     ? Date.parse(lastWorkerTs)
@@ -919,7 +936,9 @@ export function peekRun(
     commits: worktreeCommits(row.worktree, row.base_commit),
     vendor_tokens: usage?.type === 'usage' ? usage.tokens : row.vendor_tokens,
     last_event_at: row.last_event_at ?? lastWorkerTs ?? null,
-    idle: idleLabel(row.last_event_at ?? lastWorkerTs, row.started_at, now),
+    idle: queuedForCapacity
+      ? null
+      : idleLabel(row.last_event_at ?? lastWorkerTs, row.started_at, now),
   }
 }
 

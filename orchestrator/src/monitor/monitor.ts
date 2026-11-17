@@ -48,13 +48,11 @@ import { monitorCanonSummary } from './monitor-canon-summary.ts'
 import { observeCollectLease } from './monitor-collect-lease.ts'
 import {
   abandonedBootstrapConditions,
-  age,
   askingRuns,
   deadRunningProcessConditions,
   dockerConditions,
   git,
   hookTreeConditions,
-  idleRunConditions,
   orphanRecipeDatabaseConditions,
   reconcileHub,
   refGuardConditions,
@@ -62,7 +60,6 @@ import {
   rulingConditions,
   sandboxDirectoryInventory,
   staleRunConditions,
-  stalledRunConditions,
   terminalCloseOutRuns,
   terminalProcessAliveConditions,
   unscoredRuns,
@@ -80,6 +77,7 @@ import { outboxConditions } from './monitor-outbox.ts'
 import { observeRecordTunnel } from './monitor-record-tunnel.ts'
 import { finishMonitorResult as finish } from './monitor-result.ts'
 import { observeRetrievalPins } from './monitor-retrieval-pins.ts'
+import { age, idleRunConditions, stalledRunConditions } from './monitor-run-idle-conditions.ts'
 import { runTokenJumpConditions } from './monitor-run-token-jump.ts'
 import { strayWorktreeConditions } from './monitor-stray-worktrees.ts'
 import {

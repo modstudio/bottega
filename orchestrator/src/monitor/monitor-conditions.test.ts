@@ -9,18 +9,15 @@ import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun, score } from '../../test/fixtures/store.ts'
 import { db, nowIso } from '../database/db.ts'
 import { RECORD_TUNNEL_DOWN_REMEDY } from '../record/record-tunnel-error.ts'
-import { liveMemberStall } from '../run/live-run-member.ts'
-import { RUN_HOST_WAIT_MAX_MS, RUN_HOST_WAIT_POLL_MS } from '../run/run-host-capacity.ts'
+import { RUN_HOST_WAIT_MAX_MS, RUN_HOST_WAIT_POLL_MS } from '../run/run-liveness-policy.ts'
 import {
   abandonedBootstrapConditions,
   askingRuns,
   deadRunningProcessConditions,
-  idleRunCondition,
   orphanRecipeDatabaseConditions,
   pidBornAfterRun,
   reconcileHub,
   rulingConditions,
-  stalledRunConditions,
   terminalConversationTime,
   terminalProcessPgid,
   terminalProcessResidueObservations,
@@ -135,124 +132,6 @@ describe('tracked recipe database comparison', () => {
   })
 })
 
-describe('idle run classification', () => {
-  const row = {
-    record_id: '73',
-    started_at: '2026-09-17T12:00:00.000Z',
-    last_event_at: '2026-09-17T12:01:00.000Z',
-    agent: 'codex',
-    job: 'implement',
-    session_id: 'session-73',
-  }
-  const clock = Date.parse('2026-09-17T12:07:00.000Z')
-
-  test('a live quiet running row is idle', () => {
-    expect(idleRunCondition({ ...row, pidAlive: true }, clock, 5 * 60_000)).toMatchObject({
-      kind: 'idle',
-      subject: 'run:73',
-      ageMs: 6 * 60_000,
-    })
-  })
-
-  test('a running row whose recorded pid is dead is stale, not idle', () => {
-    expect(idleRunCondition({ ...row, pidAlive: false }, clock, 5 * 60_000)).toMatchObject({
-      kind: 'stale-run',
-      subject: 'run:73',
-      action: `run ${PLATFORM_SLUG} run stop 73`,
-    })
-  })
-
-  test('a quiet running row without a recorded pid retains idle behavior', () => {
-    expect(idleRunCondition({ ...row, pidAlive: null }, clock, 5 * 60_000)).toMatchObject({
-      kind: 'idle',
-      subject: 'run:73',
-      ageMs: 6 * 60_000,
-    })
-  })
-
-  test('a fresh host wait is not reported', () => {
-    expect(
-      idleRunCondition(
-        {
-          ...row,
-          pidAlive: null,
-          host_wait_since: new Date(clock - 1_000).toISOString(),
-        },
-        clock,
-        5 * 60_000,
-      ),
-    ).toBeNull()
-  })
-
-  test('an over-bound host wait is stuck-host-wait', () => {
-    const since = new Date(clock - RUN_HOST_WAIT_MAX_MS - RUN_HOST_WAIT_POLL_MS - 1).toISOString()
-    expect(
-      idleRunCondition(
-        { ...row, pidAlive: null, pid: null, host_wait_since: since },
-        clock,
-        5 * 60_000,
-      ),
-    ).toMatchObject({
-      kind: 'stuck-host-wait',
-      subject: 'run:73',
-      since,
-      ageMs: RUN_HOST_WAIT_MAX_MS + RUN_HOST_WAIT_POLL_MS + 1,
-      detail: expect.stringContaining('coordinator pid none'),
-      action: expect.stringContaining('run stop 73 if it is dead'),
-    })
-  })
-})
-
-describe('stalled run monitor condition', () => {
-  test('wraps the running turn stall observation in the monitor envelope', () => {
-    const root = addRun({
-      agent: 'codex',
-      job: 'implement',
-      status: 'asking',
-      session: 'session-chain',
-    })
-    const turn = addRun({
-      agent: 'grok',
-      job: 'review-lens',
-      status: 'running',
-      parent: root,
-      turn: 2,
-      startedAt: '2026-09-17T12:00:00.000Z',
-    })
-    db()
-      .query('UPDATE run SET agent_pid=?,agent_start_time=?,last_event_at=? WHERE record_id=?')
-      .run(process.pid, 'recorded birth', '2026-09-17T12:01:00.000Z', turn)
-
-    const clock = Date.parse('2026-09-17T12:30:00.000Z')
-    const samples = [{ pid: process.pid, ppid: 1, pgid: process.pid, cpu: 0, state: 'S' }]
-    const member = {
-      record_id: turn,
-      number: 2,
-      started_at: '2026-09-17T12:00:00.000Z',
-      last_event_at: '2026-09-17T12:01:00.000Z',
-      agent: 'grok',
-      job: 'review-lens',
-      session_id: 'session-chain',
-      agent_pid: process.pid,
-      agent_start_time: 'recorded birth',
-    }
-    const observed = liveMemberStall(member, samples, clock, 25 * 60_000, () => 'recorded birth')
-
-    expect(
-      stalledRunConditions(clock, {
-        samples,
-        observedStartTime: () => 'recorded birth',
-      }),
-    ).toEqual([
-      expect.objectContaining({
-        subject: `run:${turn}`,
-        ownerSession: 'session-chain',
-        ageMs: observed.idleMs,
-        detail: observed.detail,
-      }),
-    ])
-  })
-})
 function insertAnsweredQuestion(runId: string): void {
   db()
     .query(

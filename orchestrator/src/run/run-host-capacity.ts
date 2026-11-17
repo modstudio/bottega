@@ -16,10 +16,9 @@ import {
   recordedHostLoad,
 } from '../gate-load.ts'
 import { activeCores, HOST_RESERVATION_EVIDENCE_DAYS, reservedCores } from './host-reservation.ts'
+import { RUN_HOST_WAIT_MAX_MS, RUN_HOST_WAIT_POLL_MS } from './run-liveness-policy.ts'
 import { TERMINAL_RUN_STATUS_SQL } from './run-status.ts'
 
-export const RUN_HOST_WAIT_MAX_MS = 15 * 60_000
-export const RUN_HOST_WAIT_POLL_MS = 1_000
 const RUN_HOST_WAIT_POLL_CAP_MS = 15_000
 const RUN_HOST_WAIT_POLL_JITTER_FRACTION = 0.2
 
@@ -34,16 +33,6 @@ export function nextRunCapacityPoll(
   const baseMs = Math.min(previousPollMs * 2, RUN_HOST_WAIT_POLL_CAP_MS)
   const jitter = (random * 2 - 1) * RUN_HOST_WAIT_POLL_JITTER_FRACTION
   return { baseMs, delayMs: Math.round(baseMs * (1 + jitter)) }
-}
-
-export function isFreshRunHostWait(
-  status: string,
-  since: string | null | undefined,
-  now = Date.now(),
-): boolean {
-  if (status !== 'running' || !since) return false
-  const started = Date.parse(since)
-  return Number.isFinite(started) && now - started <= RUN_HOST_WAIT_MAX_MS + RUN_HOST_WAIT_POLL_MS
 }
 
 type RunningRepositoryFacts = {

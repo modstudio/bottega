@@ -369,6 +369,19 @@ describe('vendor event log', () => {
     expect(peek.events).toHaveLength(4)
   })
 
+  test('peek does not label an open agent capacity wait idle', () => {
+    const waitSince = '2026-09-17T15:26:00.000Z'
+    const id = addRun({
+      agent: '(pending)',
+      job: 'implement',
+      status: 'running',
+      startedAt: waitSince,
+    })
+    appendRunEvent(id, { ts: waitSince, type: 'capacity_wait', waiting: true })
+
+    expect(peekRun(id, { now: Date.parse('2026-09-17T15:35:00.000Z') }).idle).toBeNull()
+  })
+
   test('coalesces assistant chunks and records tool results without bodies', () => {
     const id = addRun({ agent: 'grok', job: 'summarize', status: 'running' })
     const path = runEventsPath(id)

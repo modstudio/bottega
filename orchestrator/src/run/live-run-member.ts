@@ -12,7 +12,7 @@ import { processTreeCpuMoving } from '../idle-kill.ts'
 import { jobIdleKillMs } from '../jobs/jobs.ts'
 import type { ProcessSample } from '../process-resource-sampler.ts'
 import { idleStallMs, stalledRunDetail, stalledRunState } from '../stalled-run.ts'
-import { isFreshRunHostWait } from './run-host-capacity.ts'
+import { isRunQueuedForCapacity } from './run-liveness-policy.ts'
 
 export type LiveRunMember = {
   record_id: string
@@ -25,6 +25,7 @@ export type LiveRunMember = {
   agent_pid: number | null
   agent_start_time: string | null
   host_wait_since?: string | null
+  capacity_wait_since?: string | null
   status?: string
 }
 
@@ -67,7 +68,15 @@ export function liveMemberStall(
   thresholdMs = idleStallMs(),
   observedStartTime: (pid: number) => string | null = processStartTime,
 ): LiveMemberStall {
-  if (isFreshRunHostWait(member.status ?? 'running', member.host_wait_since, clock)) {
+  if (
+    isRunQueuedForCapacity(
+      member.status ?? 'running',
+      member.host_wait_since,
+      member.capacity_wait_since,
+      member.agent_pid,
+      clock,
+    )
+  ) {
     return { state: 'healthy', detail: null, idleMs: null, idleBoundMs: jobIdleKillMs(member.job) }
   }
   const idleMs = idleMsSince(member.last_event_at, member.started_at, clock)

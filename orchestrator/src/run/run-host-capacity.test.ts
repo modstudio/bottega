@@ -7,12 +7,12 @@ import { HOST_RESERVATION_FLOOR_CORES, HOST_RESERVATION_MIN_SAMPLES } from './ho
 import {
   RUN_HOST_CAPACITY_WAITERS_SQL,
   RUN_HOST_RESERVATION_SAMPLES_SQL,
-  RUN_HOST_WAIT_MAX_MS,
   RUNNING_REPOSITORY_FACTS_SQL,
   runHostCapacityQueue,
   startRunAfterHostCapacity,
   waitForRunHostCapacity,
 } from './run-host-capacity.ts'
+import { RUN_HOST_WAIT_MAX_MS } from './run-liveness-policy.ts'
 
 const loaded = (): HostLoad => ({
   gates: 0,
