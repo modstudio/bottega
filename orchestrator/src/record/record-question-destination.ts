@@ -17,7 +17,7 @@ type DestinationInput = {
   whoami: () => Promise<RecordIdentity>
 }
 
-export async function resolveQuestionWriteDestination(
+async function resolveQuestionWriteDestination(
   projectId: string | null,
   input: DestinationInput,
 ): Promise<RecordWriteDestination> {

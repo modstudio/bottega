@@ -204,7 +204,7 @@ restore retired question snapshots to their hosted record spaces
 
 ### Options
 
-- `--dry-run`: list the question snapshots without sending them
+- `--dry-run`: resolve each question snapshot's destination space without sending it
 
 ### Related
 

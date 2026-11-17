@@ -191,6 +191,26 @@ async function restoreCandidate(
   }
 }
 
+async function reportResolvedCandidate(
+  candidate: RestoreQuestionCandidate,
+  destination: RecordWriteDestination,
+  dryRun: boolean,
+  client: RecordQuestionClient,
+  log: (line: string) => void,
+): Promise<RestoreAttempt | null> {
+  if (dryRun) {
+    log(
+      `${candidate.number ?? '?'}\t${candidate.id}\twould restore to ${destination.destinationSpaceId}`,
+    )
+    return null
+  }
+  const attempt = await restoreCandidate(candidate, client, destination)
+  log(
+    `${candidate.number ?? '?'}\t${candidate.id}\t${attempt.disposition}${attempt.reason ? `: ${attempt.reason}` : ''}`,
+  )
+  return attempt
+}
+
 export async function restoreQuestionsCommand(
   options: { dryRun: boolean },
   ports: {
@@ -228,19 +248,18 @@ export async function restoreQuestionsCommand(
       if (resolution.disposition === 'failed') break
       continue
     }
-    const resolved = resolution.destination
-    if (options.dryRun) {
+    const attempt = await reportResolvedCandidate(
+      candidate,
+      resolution.destination,
+      options.dryRun,
+      writeClient,
+      ports.log,
+    )
+    if (!attempt) {
       wouldRestore += 1
-      ports.log(
-        `${candidate.number ?? '?'}\t${candidate.id}\twould restore to ${resolved.destinationSpaceId}`,
-      )
       continue
     }
-    const attempt = await restoreCandidate(candidate, writeClient, resolved)
     counts[attempt.disposition] += 1
-    ports.log(
-      `${candidate.number ?? '?'}\t${candidate.id}\t${attempt.disposition}${attempt.reason ? `: ${attempt.reason}` : ''}`,
-    )
   }
   if (options.dryRun) {
     ports.log(`${wouldRestore} would restore, ${counts.refused} refused, ${counts.failed} failed`)
