@@ -6,6 +6,7 @@
 import type { SQL } from 'bun'
 import { bindJsonb } from '../../../shared/record/jsonb-sql.ts'
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
+import { workflowHandoffTrail } from '../../../shared/workflow-handoff-trail.ts'
 import { DocRevisionConflictError } from '../doc/doc-revision-conflict.ts'
 import { isUniqueViolation } from './record-config-error.ts'
 import { recordPool } from './record-pool.ts'
@@ -28,6 +29,7 @@ type RevisionRow = { revision: number | string; last_request_id: string | null }
 type ComposeBody = TaskFlowIntentBody<'compose'>
 type StageUpdateBody = TaskFlowIntentBody<'stage-update'>
 type AdoptBody = TaskFlowIntentBody<'adopt'>
+type HandoffBody = TaskFlowIntentBody<'handoff'>
 type StageMutationBody =
   | TaskFlowIntentBody<'advance'>
   | TaskFlowIntentBody<'await-ruling'>
@@ -182,6 +184,7 @@ async function insertStage(
   spaceId: string,
   requestId: string,
   row: Record<string, unknown>,
+  allocatedNumber?: number,
 ): Promise<{ revision: number; number: number }> {
   const flow =
     (await tx`SELECT project_id::text FROM task_flow WHERE id=${row.flowRecordId}::uuid FOR UPDATE`) as Array<{
@@ -202,18 +205,19 @@ async function insertStage(
       conflict('task_flow_stage', String(row.id), Number(existing.revision), 'already-exists')
     return { revision: Number(existing.revision), number: Number(existing.number) }
   }
-  const number = await allocateRecordSequence(tx, spaceId, String(row.projectId), 'task_flow_stage')
+  const number = allocatedNumber ?? await allocateRecordSequence(tx, spaceId, String(row.projectId), 'task_flow_stage')
   await tx`INSERT INTO task_flow_stage
     (id,space_id,flow_record_id,project_id,number,workflow,mode,workflow_key,instance_id,session_id,
      workflow_version_id,catalogue_version_id,arguments,active_ordinal,active_slug,state,closed_step_notes,
      question,autonomy,enforcement,total_steps,opened_machine_id,taken_over_from_machine_id,
-     last_advanced_machine_id,revision,last_request_id,created_at,updated_at)
+     last_advanced_machine_id,handed_off_from_record_id,revision,last_request_id,created_at,updated_at)
     VALUES (${row.id}::uuid,${spaceId}::uuid,${row.flowRecordId}::uuid,${row.projectId}::uuid,${number},
       ${row.workflow},${row.mode},${row.workflowKey},${row.instanceId},${row.sessionId},
       ${row.workflowVersionId}::uuid,${row.catalogueVersionId}::uuid,${bindJsonb(tx, row.arguments)},
       ${row.activeOrdinal},${row.activeSlug},${row.state},${bindJsonb(tx, row.closedStepNotes)},
       ${row.question},${row.autonomy},${row.enforcement},${row.totalSteps},${row.openedMachineId}::uuid,
-      ${row.takenOverFromMachineId}::uuid,${row.lastAdvancedMachineId}::uuid,1,${requestId}::uuid,
+      ${row.takenOverFromMachineId}::uuid,${row.lastAdvancedMachineId}::uuid,
+      ${row.handedOffFromRecordId ?? null}::uuid,1,${requestId}::uuid,
       ${row.createdAt}::timestamptz,${row.updatedAt}::timestamptz)`
   return { revision: 1, number }
 }
@@ -429,6 +433,39 @@ async function applyStageUpdates(tx: SQL, body: StageUpdateBody) {
   return { revisions }
 }
 
+async function applyHandoff(tx: SQL, input: Tenant, body: HandoffBody) {
+  const number = await allocateRecordSequence(tx, input.spaceId, body.newStage.projectId, 'task_flow_stage')
+  const oldStage: Mutation = {
+    ...body.oldStage,
+    values: {
+      state: 'done',
+      closedStepNotes: workflowHandoffTrail({ ...body.trail, successorNumber: number }),
+      question: null,
+      updatedAt: body.trail.at,
+    },
+  }
+  const mutations = [
+    { table: 'task_flow' as const, mutation: body.flow },
+    { table: 'task_flow_stage' as const, mutation: oldStage },
+  ]
+  if ((await preflightMutations(tx, mutations, body.requestId)) === 'retry') {
+    const existing = await existingRow(tx, 'task_flow_stage', body.newStage.id)
+    if (!existing) conflict('task_flow_stage', body.newStage.id, null)
+    return {
+      revisions: Object.fromEntries(mutations.map(({ mutation }) => [mutation.id, mutation.expectedRevision + 1])),
+      stage: { id: body.newStage.id, number: Number(existing.number) },
+    }
+  }
+  const revisions: Record<string, number> = {}
+  revisions[body.flow.id] = await updateRevisionRow(tx, 'task_flow', body.flow, body.requestId)
+  revisions[oldStage.id] = await updateRevisionRow(tx, 'task_flow_stage', oldStage, body.requestId)
+  const inserted = await insertStage(tx, input.spaceId, body.requestId, body.newStage, number)
+  revisions[body.newStage.id] = inserted.revision
+  await tx`UPDATE context_item SET holder_id=${body.contextHolderTo},updated_at=${body.newStage.updatedAt}::timestamptz
+    WHERE space_id=${input.spaceId}::uuid AND holder_kind='cursor' AND holder_id=${body.contextHolderFrom}`
+  return { revisions, stage: { id: body.newStage.id, number: inserted.number } }
+}
+
 async function adoptTargetFlow(
   tx: SQL,
   spaceId: string,
@@ -587,6 +624,7 @@ const intentAppliers: { [K in TaskFlowIntent]: Applier<K> } = {
   advance: (tx, input) => applyStageMutation(tx, input, input),
   'await-ruling': (tx, input) => applyStageMutation(tx, input, input),
   abandon: (tx, input) => applyStageMutation(tx, input, input),
+  handoff: (tx, input) => applyHandoff(tx, input, input),
   adopt: (tx, input) => applyAdopt(tx, input.spaceId, input),
   'attach-text': async (tx, input) => {
     for (const row of input.rows) {

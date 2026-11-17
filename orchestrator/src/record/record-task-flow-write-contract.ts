@@ -53,6 +53,7 @@ const stageInsert = z.object({
   lastAdvancedMachineId: id,
   createdAt: stamp,
   updatedAt: stamp,
+  handedOffFromRecordId: nullableId.optional(),
 })
 
 const revisionReference = z.object({ id, expectedRevision: revision })
@@ -202,6 +203,22 @@ const taskFlowAbandonSchema = z.object({
   obligationUpdates: z.array(obligationUpdate).default([]),
   deleteTextIds: z.array(id).default([]),
 })
+const taskFlowHandoffSchema = z.object({
+  ...base,
+  flow: mutation(flowComposeValues.pick({ openStageRecordId: true, updatedMachineId: true, updatedAt: true })),
+  oldStage: revisionReference,
+  newStage: stageInsert.extend({ handedOffFromRecordId: id }),
+  trail: z.object({
+    closed: z.array(z.unknown()),
+    current: z.object({ n: z.number().int().positive(), slug: z.string() }),
+    remaining: z.array(z.object({ n: z.number().int().positive(), slug: z.string() })),
+    targetWorkflow: z.string(),
+    reason: z.string(),
+    at: stamp,
+  }),
+  contextHolderFrom: z.string(),
+  contextHolderTo: z.string(),
+})
 const taskFlowAdoptSchema = z.object({
   ...base,
   stage: revisionReference,
@@ -225,6 +242,7 @@ export const taskFlowIntentSchemas = {
   advance: taskFlowAdvanceSchema,
   'await-ruling': taskFlowAwaitRulingSchema,
   abandon: taskFlowAbandonSchema,
+  handoff: taskFlowHandoffSchema,
   adopt: taskFlowAdoptSchema,
   'attach-text': taskFlowAttachTextSchema,
   'delete-text': taskFlowDeleteTextSchema,
@@ -243,6 +261,9 @@ export type TaskFlowWriteResult = z.infer<typeof taskFlowWriteResultSchema>
 export const taskFlowComposeResultSchema = taskFlowWriteResultSchema.extend({
   stage: z.object({ id, number: z.number().int().positive() }).nullable(),
 })
+export const taskFlowHandoffResultSchema = taskFlowWriteResultSchema.extend({
+  stage: z.object({ id, number: z.number().int().positive() }),
+})
 export type TaskFlowComposeResult = z.infer<typeof taskFlowComposeResultSchema>
 export const taskFlowAdoptResultSchema = taskFlowWriteResultSchema.extend({ flowRecordId: id })
 export type TaskFlowAdoptResult = z.infer<typeof taskFlowAdoptResultSchema>
@@ -250,4 +271,6 @@ export type TaskFlowIntentResult<K extends TaskFlowIntent> = K extends 'compose'
   ? TaskFlowComposeResult
   : K extends 'adopt'
     ? TaskFlowAdoptResult
-    : TaskFlowWriteResult
+    : K extends 'handoff'
+      ? z.infer<typeof taskFlowHandoffResultSchema>
+      : TaskFlowWriteResult

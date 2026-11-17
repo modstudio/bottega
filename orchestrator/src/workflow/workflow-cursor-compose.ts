@@ -355,6 +355,7 @@ function applyHostedCompose(
       opened_machine_id: rowInput.openedMachineId,
       taken_over_from_machine_id: rowInput.takenOverFromMachineId,
       last_advanced_machine_id: rowInput.lastAdvancedMachineId,
+      handed_off_from_record_id: null,
       revision: hosted.revisions[hosted.stage.id]!,
       updated_at: rowInput.updatedAt,
     }

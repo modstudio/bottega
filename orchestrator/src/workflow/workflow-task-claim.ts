@@ -10,7 +10,7 @@ import {
 } from '../board/board-operations.ts'
 import { projectByName } from '../project/projects.ts'
 
-export type TaskCursorClaimVerb = 'compose' | 'advance' | 'await' | 'rule' | 'finish' | 'abandon'
+export type TaskCursorClaimVerb = 'compose' | 'advance' | 'await' | 'rule' | 'finish' | 'abandon' | 'handoff'
 
 export type TaskCursorClaimDecision =
   | { action: 'none' }

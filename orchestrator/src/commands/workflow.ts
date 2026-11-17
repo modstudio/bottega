@@ -18,6 +18,7 @@ import {
   execCommand,
   forkWorkflowCommand,
   hydrateCommand,
+  handoffCommand,
   importCommand,
   listWorkflowCommand,
   nextCommand,
@@ -116,7 +117,7 @@ function workflowRegistration(
     .allowExcessArguments(true)
     .action(() => {
       throw new Error(
-        `unknown: ${PLATFORM_SLUG} workflow. Try list | show | set | promote | retire | fork | versions | render-check | compose | step | attach | next | dispatch | land | await | rule | abandon | cursors | probe | exec | hydrate | import | promote-tree`,
+        `unknown: ${PLATFORM_SLUG} workflow. Try list | show | set | promote | retire | fork | versions | render-check | compose | step | attach | next | handoff | dispatch | land | await | rule | abandon | cursors | probe | exec | hydrate | import | promote-tree`,
       )
     })
   return { workflow, workflowPresentation, handlerOptions, output }
@@ -288,6 +289,22 @@ function registerWorkflowAdvancement({
   handlerOptions,
   output,
 }: WorkflowRegistration): void {
+  jsonOption(
+    reasonOption(
+      workflow
+        .command('handoff <workflow>')
+        .description('close the current cursor by opening a named workflow for the same key')
+        .requiredOption('--cursor <value>', 'select this workflow cursor')
+        .option('--mode <value>', 'select the target workflow mode')
+        .option('--project <value>', 'select this registered project')
+        .addOption(collectedOption('--arg <value>', 'supply a target workflow argument as name=value')),
+    ),
+  )
+    .allowExcessArguments(false)
+    .action((slug, options) =>
+      handoffCommand(workflowArgv('handoff', [slug], options), output(options), handlerOptions),
+    )
+
   jsonOption(
     workflow
       .command('attach [workflow]')

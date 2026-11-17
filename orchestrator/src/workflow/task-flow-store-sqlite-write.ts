@@ -3,6 +3,7 @@
 
 import type { Database, SQLQueryBindings } from 'bun:sqlite'
 import { newRecordId } from '../../../shared/record-id.ts'
+import { workflowHandoffTrail } from '../../../shared/workflow-handoff-trail.ts'
 import type {
   TaskFlowIntent,
   TaskFlowIntentInput,
@@ -30,6 +31,7 @@ const REVISION_ACTION: Record<TaskFlowIntent, string> = {
   advance: 'advancing',
   'await-ruling': 'awaiting a ruling',
   abandon: 'being abandoned',
+  handoff: 'being handed off',
   adopt: 'linking its task',
   'attach-text': 'attaching text',
   'delete-text': 'deleting text',
@@ -115,7 +117,8 @@ function applyStageValues(database: Database, mutation: Mutation, next: number):
     question=CASE WHEN ? THEN ? ELSE question END,autonomy=CASE WHEN ? THEN ? ELSE autonomy END,
     enforcement=COALESCE(?,enforcement),opened_machine_id=COALESCE(?,opened_machine_id),
     taken_over_from_machine_id=CASE WHEN ? THEN ? ELSE taken_over_from_machine_id END,
-    last_advanced_machine_id=COALESCE(?,last_advanced_machine_id),updated_at=COALESCE(?,updated_at),revision=?
+    last_advanced_machine_id=COALESCE(?,last_advanced_machine_id),
+    handed_off_from_record_id=COALESCE(?,handed_off_from_record_id),updated_at=COALESCE(?,updated_at),revision=?
     WHERE record_id=?`)
     .run(
       value('flowRecordId'),
@@ -133,6 +136,7 @@ function applyStageValues(database: Database, mutation: Mutation, next: number):
       value('openedMachineId'),
       ...takeover,
       value('lastAdvancedMachineId'),
+      value('handedOffFromRecordId'),
       value('updatedAt'),
       next,
       mutation.id,
@@ -206,8 +210,8 @@ function insertStage(
       (record_id,number,project,project_record_id,workflow_slug,mode_slug,workflow_key,task_record_id,
        task_flow_record_id,instance_id,session_id,workflow_version_record_id,catalogue_version_record_id,
        args,autonomy,ordinal,step_slug,state,closed,question,total_steps,created_at,updated_at,enforcement,
-       opened_machine_id,taken_over_from_machine_id,last_advanced_machine_id,revision)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+       opened_machine_id,taken_over_from_machine_id,last_advanced_machine_id,handed_off_from_record_id,revision)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
     .run(
       // @ts-expect-error The validated intent guarantees every required SQLite binding.
       row.id,
@@ -237,6 +241,7 @@ function insertStage(
       row.openedMachineId,
       row.takenOverFromMachineId,
       row.lastAdvancedMachineId,
+      row.handedOffFromRecordId ?? null,
       revisionValue,
     )
   return { id: String(row.id), number }
@@ -527,6 +532,42 @@ function writeStageUpdate(database: Database, body: SqlRow, revisions?: Record<s
   return { revisions: result }
 }
 
+function writeHandoff(
+  database: Database,
+  body: SqlRow,
+  applied: TaskFlowIntentResult<'handoff'> | null | undefined,
+) {
+  const flow = body.flow as unknown as Mutation
+  const oldReference = body.oldStage as unknown as { id: string; expectedRevision: number }
+  const newStage = body.newStage as unknown as SqlRow
+  const revisions = applied?.revisions
+  const result: Record<string, number> = {}
+  const number = applied?.stage.number ?? database.query<{ n: number }, [string]>(
+    'SELECT COALESCE(MAX(number),0)+1 n FROM workflow_cursor WHERE project_record_id=?',
+  ).get(String(newStage.projectId))!.n
+  const trail = body.trail as unknown as Parameters<typeof workflowHandoffTrail>[0]
+  const oldStage: Mutation = {
+    ...oldReference,
+    values: {
+      state: 'done',
+      closedStepNotes: workflowHandoffTrail({ ...trail, successorNumber: number }),
+      question: null,
+      updatedAt: trail.at,
+    },
+  }
+  result[flow.id] = updateMutation(database, 'task_flow', flow, 'handoff', revisions)
+  result[oldStage.id] = updateMutation(database, 'workflow_cursor', oldStage, 'handoff', revisions)
+  const inserted = insertStage(database, newStage, revisions?.[String(newStage.id)] ?? 1)
+  result[inserted.id] = revisions?.[inserted.id] ?? 1
+  database.query("UPDATE context_item SET holder_id=?,updated_at=? WHERE holder_kind='cursor' AND holder_id=?")
+    .run(
+      body.contextHolderTo as SQLQueryBindings,
+      newStage.updatedAt as SQLQueryBindings,
+      body.contextHolderFrom as SQLQueryBindings,
+    )
+  return { revisions: result, stage: { id: inserted.id, number: inserted.number } }
+}
+
 function writeTextIntent(
   database: Database,
   intent: 'attach-text' | 'delete-text' | 'copy-text',
@@ -582,6 +623,12 @@ export function writeSqliteTaskFlow<K extends TaskFlowIntent>(
       body,
       revisions,
     ) as unknown as TaskFlowSqliteWriteResult<K>
+  if (intent === 'handoff')
+    return writeHandoff(
+      database,
+      body,
+      applied as TaskFlowIntentResult<'handoff'> | null,
+    ) as TaskFlowSqliteWriteResult<K>
   if (intent === 'adopt')
     return applyAdopt(
       database,

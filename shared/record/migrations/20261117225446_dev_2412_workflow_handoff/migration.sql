@@ -1,0 +1,3 @@
+ALTER TABLE "task_flow_stage" ADD COLUMN "handed_off_from_record_id" uuid;--> statement-breakpoint
+CREATE UNIQUE INDEX "task_flow_stage_handed_off_from_record_id_unique" ON "task_flow_stage" ("handed_off_from_record_id") WHERE "handed_off_from_record_id" IS NOT NULL;--> statement-breakpoint
+ALTER TABLE "task_flow_stage" ADD CONSTRAINT "task_flow_stage_handed_off_from_record_id_fkey" FOREIGN KEY ("handed_off_from_record_id") REFERENCES "task_flow_stage"("id");
