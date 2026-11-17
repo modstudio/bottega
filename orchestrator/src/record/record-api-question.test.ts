@@ -145,6 +145,16 @@ test('a destinationless question by-id miss returns the membership-safe refusal'
   })
 })
 
+test('a destinationless question for-run miss keeps the empty-items response', async () => {
+  const response = await app(
+    { readQuestions: async () => ({ items: [] }) },
+    undefined,
+    true,
+  ).request('/v1/questions?read=for-run&runId=00000000-0000-4000-8000-000000000001')
+  expect(response.status).toBe(200)
+  expect(await response.json()).toEqual({ items: [] })
+})
+
 test('a question by-id miss with a named destination keeps the empty-items response', async () => {
   const response = await app(
     { readQuestions: async () => ({ items: [] }) },

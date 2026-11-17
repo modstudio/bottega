@@ -117,7 +117,7 @@ export function registerRecordQuestionRoutes(
         422,
       )
     const result = await deps.readQuestions({ ...tenant, ...query.data })
-    if (tenant.uuidKeyedRead && isEmptyQuestionRead(result))
+    if (tenant.uuidKeyedRead && query.data.read === 'by-id' && isEmptyQuestionRead(result))
       return context.json(recordKeyedNotVisibleRefusal(tenant.spaceIds.length), 404)
     return context.json(result)
   })
