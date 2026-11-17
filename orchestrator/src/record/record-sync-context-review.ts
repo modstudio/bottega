@@ -6,11 +6,12 @@ import { eq } from 'drizzle-orm'
 import { drizzle } from 'drizzle-orm/bun-sql'
 import { contextReview } from '../../../shared/record/schema-session.ts'
 import { recordDate } from '../../../shared/record-timestamp.ts'
+import { OutboxRowError } from './outbox-failure.ts'
 import { OUTBOX_PAYLOAD_CONTRACTS } from './outbox-payload-contracts.ts'
 import type { ExistingEvidenceOwned, RequireOwnedUpsert } from './record-evidence-references.ts'
 import type { RecordPayload, RecordPrincipal } from './record-sync-contract.ts'
 import { bindPrincipal } from './record-sync-principal.ts'
-import { nonnegativeInteger } from './record-value-conversions.ts'
+import { nonnegativeInteger, nonnegativeRoundedInteger } from './record-value-conversions.ts'
 
 export const contextReviewRecordKind = (
   existingEvidenceOwned: ExistingEvidenceOwned<SQL>,
@@ -22,8 +23,10 @@ export const contextReviewRecordKind = (
       await bindPrincipal(tx, principal)
       const items = nonnegativeInteger(row.items, 'context_review.items')
       const flagged = nonnegativeInteger(row.flagged, 'context_review.flagged')
-      const intervalMs = nonnegativeInteger(row.intervalMs, 'context_review.interval_ms')
-      if (flagged > items) throw new Error('context_review.flagged must not exceed items')
+      const intervalMs = nonnegativeRoundedInteger(row.intervalMs, 'context_review.interval_ms')
+      if (flagged > items) {
+        throw new OutboxRowError('context_review.flagged must not exceed items', 'row-validation')
+      }
       const values = {
         id: String(row.id),
         spaceId: String(row.spaceId),

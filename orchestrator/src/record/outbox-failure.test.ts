@@ -4,6 +4,7 @@ import {
   classifyOutboxFailure,
   type OutboxFailureFacts,
   outboxFailureDisposition,
+  RecordSyncWiringError,
 } from './outbox-failure.ts'
 
 const classify = (facts: Partial<OutboxFailureFacts>) =>
@@ -65,5 +66,9 @@ describe('hosted record outbox failure classification', () => {
     expect(outboxFailureDisposition(constraint)).toBe('row-fatal')
     expect(outboxFailureDisposition(grant)).toBe('pass-fatal')
     expect(outboxFailureDisposition(connection)).toBe('pass-fatal')
+  })
+
+  test('record sync wiring errors are pass-fatal', () => {
+    expect(outboxFailureDisposition(new RecordSyncWiringError('x'))).toBe('pass-fatal')
   })
 })

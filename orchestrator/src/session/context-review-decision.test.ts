@@ -59,6 +59,18 @@ describe('context review timing', () => {
       ),
     ).toBe(CONTEXT_REVIEW_MAX_MS)
   })
+
+  test('rounds a fractional median from an even number of in-window gaps', () => {
+    const interval = contextReviewInterval(
+      now,
+      [600_000, 600_000, 600_000, 600_001, 600_001, 600_001].map((gapMs) => ({
+        at: now,
+        gapMs,
+      })),
+    )
+    expect(interval).toBe(600_001)
+    expect(Number.isInteger(interval)).toBe(true)
+  })
 })
 
 test('flags only stale facts and pointers and orders flagged items first', () => {

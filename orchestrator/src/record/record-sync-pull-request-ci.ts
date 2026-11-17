@@ -6,6 +6,7 @@ import { eq } from 'drizzle-orm'
 import { drizzle } from 'drizzle-orm/bun-sql'
 import { pullRequestCi } from '../../../shared/record/schema-landing.ts'
 import { nullableRecordDate, recordDate } from '../../../shared/record-timestamp.ts'
+import { RecordSyncWiringError } from './outbox-failure.ts'
 import { OUTBOX_PAYLOAD_CONTRACTS } from './outbox-payload-contracts.ts'
 import type { ExistingEvidenceOwned, RequireOwnedUpsert } from './record-evidence-references.ts'
 import type { RecordPayload, RecordPrincipal } from './record-sync-contract.ts'
@@ -49,8 +50,12 @@ async function pushPullRequestCi(
   existingEvidenceOwned?: ExistingEvidenceOwned<SQL>,
   requireOwnedUpsert?: RequireOwnedUpsert,
 ): Promise<void> {
-  if (!existingEvidenceOwned) throw new Error('pull-request CI sync requires collision ownership')
-  if (!requireOwnedUpsert) throw new Error('pull-request CI sync requires collision refusal')
+  if (!existingEvidenceOwned) {
+    throw new RecordSyncWiringError('pull-request CI sync requires collision ownership')
+  }
+  if (!requireOwnedUpsert) {
+    throw new RecordSyncWiringError('pull-request CI sync requires collision refusal')
+  }
   await postgres.begin(async (tx) => {
     await bindPrincipal(tx, principal)
     const write = pullRequestCiValues(row, await projectRecordId(tx, row, principal, projectIds))

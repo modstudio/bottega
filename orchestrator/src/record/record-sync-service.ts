@@ -454,7 +454,10 @@ function landingReviewCarryValues(row: Payload, projectId: string | null) {
 
 function landingTriageSnapshotValues(row: Payload, projectId: string | null) {
   if (!Array.isArray(row.reviewIds) || row.reviewIds.some((id) => !hasRecordIdShape(String(id)))) {
-    throw new Error('landing triage snapshot reviewIds must be an array of UUIDs')
+    throw new OutboxRowError(
+      'landing triage snapshot reviewIds must be an array of UUIDs',
+      'row-validation',
+    )
   }
   return {
     ...landingCommonValues(row),
