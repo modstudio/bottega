@@ -61,6 +61,9 @@ export const recordQuestionModules: RecordModule[] = [
   ]),
   module('orchestrator/src/record/record-question-destination.ts', [
     'bun:sqlite',
+    '../../../shared/brand.ts',
+    '../../../shared/record-space-membership.ts',
+    '../../../shared/record-write-space.ts',
     '../project/project-read.ts',
     './record-api-client-paths.ts',
     './record-auth.ts',
