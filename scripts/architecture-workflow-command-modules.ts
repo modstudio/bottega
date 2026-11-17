@@ -14,7 +14,8 @@ const module = (file: string, allowed: string[]): WorkflowCommandModule => ({
 export const workflowCommandModules: WorkflowCommandModule[] = [
   module('orchestrator/src/workflow/workflow-compose-claim-rollback.ts', [
     'bun:sqlite',
-    './workflow-cursor-transition.ts',
+    './workflow-cursor-mutation.ts',
+    './workflow-cursor-selection.ts',
     './workflow-task-claim.ts',
   ]),
   module('orchestrator/src/workflow/workflow-task-claim.ts', [

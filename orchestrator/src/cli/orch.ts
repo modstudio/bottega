@@ -131,15 +131,15 @@ export async function keylessCursorIdleAdmission(
   action: 'task new',
 ): Promise<KeylessCursorIdleCheck> {
   try {
-    const { assertKeylessCursorIdleAdmission } = await import(
+    const { checkKeylessCursorIdleAdmission } = await import(
       '../session/keyless-cursor-idle-admission.ts'
     )
-    await assertKeylessCursorIdleAdmission(action)
-    return { kind: 'allow' }
+    const decision = await checkKeylessCursorIdleAdmission(action)
+    return decision.kind === 'refuse'
+      ? { kind: 'refuse', message: decision.message }
+      : { kind: 'allow' }
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error)
-    if (reason.startsWith(`refusing ${PLATFORM_SLUG} ${action}:`))
-      return { kind: 'refuse', message: reason }
     return {
       kind: 'failed',
       reason,

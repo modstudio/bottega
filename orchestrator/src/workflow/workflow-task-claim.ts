@@ -94,3 +94,8 @@ export function taskClaimReleaseWarning(project: string, key: string, error: unk
   const detail = error instanceof Error ? error.message : String(error)
   return `warning: task cursor closed but its claim could not be released: ${detail}; run board claim release-task ${key} --project ${project}`
 }
+
+export function taskClaimFollowWarning(key: string, error: unknown): string {
+  const detail = error instanceof Error ? error.message : String(error)
+  return `warning: task cursor moved but its claim did not move: ${detail}; run workflow next for ${key} to retake it`
+}

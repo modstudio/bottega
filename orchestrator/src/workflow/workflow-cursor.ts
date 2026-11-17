@@ -23,7 +23,7 @@ import {
   readCommitsPastLanding,
   workflowComposeBranchRefusal,
 } from './workflow-compose-branch.ts'
-import { rollbackComposeClaim } from './workflow-compose-claim-rollback.ts'
+import { followComposeTaskClaim } from './workflow-compose-claim-rollback.ts'
 import { adoptWorkflowTask } from './workflow-cursor-adoption.ts'
 import { workflowKeyOf as keyOf, resolveCursorArguments } from './workflow-cursor-arguments.ts'
 import { graduateExploreAfterCompose, insertWorkflowCursor } from './workflow-cursor-compose.ts'
@@ -73,7 +73,12 @@ import {
   recordWorkflowSelfRuling,
   type WorkflowSelfRulingInput,
 } from './workflow-self-ruling-mutation.ts'
-import { followTaskCursorClaim, taskClaimReleaseWarning } from './workflow-task-claim.ts'
+import {
+  followTaskCursorClaim,
+  type TaskCursorClaimPorts,
+  taskClaimFollowWarning,
+  taskClaimReleaseWarning,
+} from './workflow-task-claim.ts'
 import { linkResolvedWorkflowTask, withLinkedWorkflowTask } from './workflow-task-linking.ts'
 import { workflowTextDeletionIds } from './workflow-text.ts'
 import { composeWorkflow } from './workflows.ts'
@@ -220,6 +225,7 @@ export async function composeWorkflowWithCursor(
   selection: { version?: number; catalogueVersion?: number } = {},
   live: LiveCursorAutonomy,
   commitCount: CommitCountPort = readCommitsPastLanding,
+  taskClaimPorts?: TaskCursorClaimPorts,
 ) {
   const composition = composeWorkflow(slug, project, mode, args, d, selection, live.resolution)
   if (!composition.mode || composition.needs.arguments)
@@ -248,29 +254,16 @@ export async function composeWorkflowWithCursor(
       )
     : null
   const start = decideCursorStart(existing?.state ?? null)
-  const claimFollow = await followTaskCursorClaim({
-    project: composition.project,
-    taskKey: keyOf(composition.arguments) || null,
-    session: context.session,
-    verb: 'compose',
-    database: d,
-  })
   let row!: CursorRow
-  try {
-    if (existing && start === 'reuse') row = await reuseWorkflowCursor(existing, args, context, d)
-    else row = await insertWorkflowCursor(composition, context, d, live.resolution, commitCount)
-  } catch (error) {
-    await rollbackComposeClaim({
-      claimAction: claimFollow.claimAction,
-      start,
-      project: composition.project,
-      taskKey: keyOf(composition.arguments) || null,
-      session: context.session,
-      displacedSession: existing?.session_id ?? null,
-      database: d,
-      error,
-    })
-  }
+  if (existing && start === 'reuse') row = await reuseWorkflowCursor(existing, args, context, d)
+  else row = await insertWorkflowCursor(composition, context, d, live.resolution, commitCount)
+  const claimWarning = await followComposeTaskClaim(
+    row,
+    start === 'reuse',
+    context,
+    d,
+    taskClaimPorts,
+  )
   const cursor = {
     id: row.id,
     n: row.ordinal + 1,
@@ -296,6 +289,7 @@ export async function composeWorkflowWithCursor(
   return {
     ...cursorComposition(row, d, live),
     cursor,
+    ...(claimWarning ? { claimWarning } : {}),
     ...(graduated ? { graduated } : {}),
   }
 }
@@ -799,14 +793,7 @@ async function nextWorkflowStepImpl(
     context.taskFlowClient,
     context.session,
   )
-  await followTaskCursorClaim({
-    project: row.project,
-    taskKey: row.workflow_key || null,
-    session: context.session,
-    verb: 'advance',
-    database: d,
-  })
-  const claimWarning = await persistWorkflowAdvance(
+  let claimWarning = await persistWorkflowAdvance(
     row,
     composition,
     close.closed,
@@ -820,6 +807,19 @@ async function nextWorkflowStepImpl(
     takeover.fromMachineId,
     close.selfRulingPlan,
   )
+  if (close.advance.ordinal !== null) {
+    try {
+      await followTaskCursorClaim({
+        project: row.project,
+        taskKey: row.workflow_key || null,
+        session: context.session,
+        verb: 'advance',
+        database: d,
+      })
+    } catch (error) {
+      if (row.workflow_key) claimWarning = taskClaimFollowWarning(row.workflow_key, error)
+    }
+  }
   const rendered = await renderWorkflowAdvanceResult({
     row,
     composition,

@@ -1,43 +1,47 @@
-// concern: workflow compose claim rollback
-/** Restores claim ownership when a cursor compose fails after taking the task claim. */
+// concern: workflow compose claim follow-through
+/** Follows a persisted compose with its claim, undoing only a new cursor on refusal. */
 
 import type { Database } from 'bun:sqlite'
-import type { CursorStartDecision } from './workflow-cursor-transition.ts'
-import { followTaskCursorClaim, taskClaimReleaseWarning } from './workflow-task-claim.ts'
+import { abandonWorkflowCursor } from './workflow-cursor-mutation.ts'
+import type { SelectableCursorRow, WorkflowCursorContext } from './workflow-cursor-selection.ts'
+import {
+  followTaskCursorClaim,
+  type TaskCursorClaimPorts,
+  taskClaimFollowWarning,
+} from './workflow-task-claim.ts'
 
-export async function rollbackComposeClaim(input: {
-  claimAction: 'taken' | 'renewed' | 'taken-over' | undefined
-  start: CursorStartDecision
-  project: string
-  taskKey: string | null
-  session: string | null | undefined
-  displacedSession: string | null
-  database: Database
-  error: unknown
-}): Promise<never> {
-  const shouldRelease =
-    input.claimAction === 'taken-over' || (input.start !== 'reuse' && input.claimAction === 'taken')
-  let releaseWarning: string | null = null
-  if (shouldRelease) {
+export async function followComposeTaskClaim(
+  row: SelectableCursorRow,
+  reused: boolean,
+  context: WorkflowCursorContext,
+  database: Database,
+  ports?: TaskCursorClaimPorts,
+): Promise<string | null> {
+  try {
+    await followTaskCursorClaim(
+      {
+        project: row.project,
+        taskKey: row.workflow_key || null,
+        session: context.session,
+        verb: 'compose',
+        database,
+      },
+      ports,
+    )
+    return null
+  } catch (error) {
+    if (reused) return row.workflow_key ? taskClaimFollowWarning(row.workflow_key, error) : null
     try {
-      await followTaskCursorClaim({
-        project: input.project,
-        taskKey: input.taskKey,
-        session: input.session,
-        verb: 'abandon',
-        database: input.database,
-      })
-    } catch (error) {
-      if (input.taskKey)
-        releaseWarning = taskClaimReleaseWarning(input.project, input.taskKey, error)
+      await abandonWorkflowCursor(row, 'task claim take failed', context, database)
+    } catch (abandonError) {
+      const detail = error instanceof Error ? error.message : String(error)
+      const abandonDetail =
+        abandonError instanceof Error ? abandonError.message : String(abandonError)
+      throw new Error(
+        `${detail}\nwarning: could not abandon cursor after claim failure: ${abandonDetail}`,
+        { cause: error },
+      )
     }
+    throw error
   }
-  const detail = input.error instanceof Error ? input.error.message : String(input.error)
-  const takeoverWarning =
-    input.claimAction === 'taken-over'
-      ? `warning: claim taken from session ${input.displacedSession ?? 'unknown'} was released after compose failed; that session can retake it with workflow compose`
-      : null
-  throw new Error([detail, releaseWarning, takeoverWarning].filter(Boolean).join('\n'), {
-    cause: input.error,
-  })
 }

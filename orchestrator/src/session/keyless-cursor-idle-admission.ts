@@ -49,16 +49,16 @@ export function decideKeylessCursorIdleAdmission(input: {
   }
 }
 
-export async function assertKeylessCursorIdleAdmission(
+export async function checkKeylessCursorIdleAdmission(
   action: 'run start' | 'workflow compose' | 'task new',
   input: { now?: number; env?: Record<string, string | undefined> } = {},
-): Promise<void> {
+): Promise<KeylessCursorIdleAdmission> {
   const caller = classifyCaller(input.env ?? process.env)
-  if (caller.kind !== 'harness') return
+  if (caller.kind !== 'harness') return { kind: 'allow' }
   const identity = resolveCallerIdentity(caller, null)
-  if (identity.kind !== 'identity') return
+  if (identity.kind !== 'identity') return { kind: 'allow' }
   const rows = await taskFlowReadStore(db()).listOpenStages({ sessionId: identity.session })
-  const decision = decideKeylessCursorIdleAdmission({
+  return decideKeylessCursorIdleAdmission({
     action,
     now: input.now ?? Date.now(),
     cursors: rows.map((row) => ({
@@ -70,5 +70,12 @@ export async function assertKeylessCursorIdleAdmission(
       questionNumber: row.question_number,
     })),
   })
+}
+
+export async function assertKeylessCursorIdleAdmission(
+  action: 'run start' | 'workflow compose' | 'task new',
+  input: { now?: number; env?: Record<string, string | undefined> } = {},
+): Promise<void> {
+  const decision = await checkKeylessCursorIdleAdmission(action, input)
   if (decision.kind === 'refuse') throw new Error(decision.message)
 }

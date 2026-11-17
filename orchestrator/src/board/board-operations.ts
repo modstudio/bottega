@@ -941,13 +941,9 @@ export async function boardClaimReleaseTask(key: string, project: string, inputC
     : releaseTaskKey(key, targetProject.settings.worktree?.keyPattern ?? DEFAULT_TASK_KEY_PATTERN)
   const mode = boardMode('shared', c.env, c.database)
   if (!releaseAuthority) {
-    const open = (
-      await taskFlowReadStore(c.database, c.client).keyedStageHistory({ since: '' })
-    ).find(
+    const open = (await taskFlowReadStore(c.database, c.client).listOpenStages({ project })).find(
       (stage) =>
-        stage.project === project &&
-        stage.workflow_key === normalizedKey &&
-        !['done', 'abandoned'].includes(stage.state),
+        stage.workflow_key === normalizedKey && !['done', 'abandoned'].includes(stage.state),
     )
     if (open)
       throw new Error(

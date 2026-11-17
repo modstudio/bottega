@@ -9,6 +9,7 @@ import { evidenceGuidance, type FloorKind, mayCloseOnAgentSelfRuling } from './w
 import type { composeWorkflow, getWorkflowStep } from './workflows.ts'
 
 type WorkflowComposition = ReturnType<typeof composeWorkflow> & {
+  claimWarning?: string
   cursor?: {
     id: number
     n: number
@@ -88,6 +89,7 @@ function renderRunnableComposition(result: WorkflowComposition): string {
     `${result.workflow.title} — ${mode.title}`,
     result.workflow.description,
     ...(graduation ? [graduation] : []),
+    ...(result.claimWarning ? [result.claimWarning] : []),
     '',
     contract,
     '',
