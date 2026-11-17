@@ -30,7 +30,7 @@ describe('Hub question UUID migration', () => {
     const current = migratedThrough(36)
     const pending = migratedThrough(35)
     let calls = 0
-    const readMap = async () => {
+    const readMap = async (_numbers: readonly number[]) => {
       calls++
       return []
     }
@@ -38,7 +38,7 @@ describe('Hub question UUID migration', () => {
       expect(await questionIdentitiesForMigrations(current, readMap)).toEqual([])
       expect(calls).toBe(0)
       expect(await questionIdentitiesForMigrations(pending, readMap)).toEqual([])
-      expect(calls).toBe(1)
+      expect(calls).toBe(0)
     } finally {
       current.close()
       pending.close()
@@ -48,11 +48,38 @@ describe('Hub question UUID migration', () => {
   test('a pending rekey names machine migrate when the orchestrator map is unavailable', async () => {
     const pending = migratedThrough(35)
     try {
+      pending.query(
+        `INSERT INTO question(question_id,run_ref,root_ref,task_key,session_id,asked_at)
+         VALUES (92,'orch:run','orch:run','DEV-1214','session','2026-10-19')`,
+      ).run()
       await expect(
-        questionIdentitiesForMigrations(pending, async () => {
+        questionIdentitiesForMigrations(pending, async (_numbers) => {
           throw new Error('orchestrator unavailable')
         }),
       ).rejects.toThrow(`run ${PLATFORM_SLUG} machine migrate`)
+    } finally {
+      pending.close()
+    }
+  })
+
+  test('requests only the legacy question numbers needed by a pending rekey', async () => {
+    const pending = migratedThrough(35)
+    try {
+      pending.exec(`
+        INSERT INTO question(question_id,run_ref,root_ref,task_key,session_id,asked_at)
+        VALUES (93,'orch:run:93','orch:run:93','DEV-1214','session','2026-10-19'),
+               (91,'orch:run:91','orch:run:91','DEV-1214','session','2026-10-19');
+      `)
+      const requested: number[][] = []
+      const rows = await questionIdentitiesForMigrations(pending, async (numbers) => {
+        requested.push([...numbers])
+        return numbers.map((number) => ({
+          number,
+          record_id: `00000000-0000-4000-8000-${String(number).padStart(12, '0')}`,
+        }))
+      })
+      expect(requested).toEqual([[91, 93]])
+      expect(rows.map(({ number }) => number)).toEqual([91, 93])
     } finally {
       pending.close()
     }

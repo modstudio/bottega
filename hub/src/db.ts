@@ -433,11 +433,16 @@ type MigrationResult = {
 
 export async function questionIdentitiesForMigrations(
   d: Database,
-  readQuestionIdentities: () => Promise<readonly QuestionIdentity[]>,
+  readQuestionIdentities: (numbers: readonly number[]) => Promise<readonly QuestionIdentity[]>,
 ): Promise<readonly QuestionIdentity[]> {
   if (!pendingMigrationTags(d).includes('0036_question_uuid_key')) return []
+  const numbers = d
+    .query<{ number: number }, []>('SELECT question_id number FROM question ORDER BY question_id')
+    .all()
+    .map(({ number }) => number)
+  if (!numbers.length) return []
   try {
-    return await readQuestionIdentities()
+    return await readQuestionIdentities(numbers)
   } catch (error) {
     throw new Error(
       `refusing question UUID migration: could not obtain the orchestrator identity map; ` +
@@ -528,7 +533,7 @@ export function migrateDatabase(
 }
 
 export async function migrateDatabaseWithQuestionIdentityMap(
-  readQuestionIdentities: () => Promise<readonly QuestionIdentity[]>,
+  readQuestionIdentities: (numbers: readonly number[]) => Promise<readonly QuestionIdentity[]>,
   readCursorIdentities: () => Promise<readonly WorkflowCursorIdentityRow[]> = async () => [],
 ): Promise<MigrationResult> {
   const { database, create } = openMigrationDatabase()

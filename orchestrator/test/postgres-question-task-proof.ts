@@ -237,6 +237,7 @@ export function registerQuestionTaskRecordSyncProof(
        '${at}','${at}','run-question-proof');`)
     const workflowQuestion = snapshot(newRecordId())
     workflowQuestion.workflowCursorRecordId = stageId
+    workflowQuestion.workflowTaskId = directTaskId
     const runQuestion = snapshot(newRecordId())
     runQuestion.runId = runId
     runQuestion.workflowCursorRecordId = null
@@ -292,6 +293,50 @@ export function registerQuestionTaskRecordSyncProof(
         )
       ).items,
     ).toEqual([{ workflow_cursor_record_id: stageId, number: workflowWrite.number }])
+    expect(
+      (
+        await client.readQuestions!(
+          { read: 'open-for-tasks', taskRecordIds: [directTaskId] },
+          destination,
+        )
+      ).items,
+    ).toEqual([expect.objectContaining({ record_id: workflowQuestion.id })])
+    expect(
+      (
+        await client.readQuestions!(
+          { read: 'open-for-tasks', taskRecordIds: [newRecordId()] },
+          destination,
+        )
+      ).items,
+    ).toEqual([])
+    expect(
+      (
+        await client.readQuestions!(
+          { read: 'for-session', sessionId: 'question-proof-session' },
+          destination,
+        )
+      ).items,
+    ).toEqual([expect.objectContaining({ record_id: workflowQuestion.id })])
+    expect(
+      (
+        await client.readQuestions!(
+          { read: 'for-session', sessionId: 'run-question-proof' },
+          destination,
+        )
+      ).items,
+    ).toEqual([expect.objectContaining({ record_id: runQuestion.id })])
+    expect(
+      (
+        await client.readQuestions!(
+          {
+            read: 'unlinked-workflow',
+            project: directProjectName,
+            workflowKey: 'DEV-2331',
+          },
+          destination,
+        )
+      ).items,
+    ).toEqual([])
     expect((await client.readQuestions!({ read: 'waiting' }, destination)).items).toContainEqual(
       expect.objectContaining({ question_record_id: workflowQuestion.id }),
     )
@@ -308,11 +353,20 @@ export function registerQuestionTaskRecordSyncProof(
     const inbox = (await client.readQuestions!({ read: 'inbox' }, destination)).items
     expect(inbox).toContainEqual(expect.objectContaining({ record_id: workflowQuestion.id }))
     expect(inbox).toContainEqual(expect.objectContaining({ record_id: runQuestion.id }))
+    await expect(
+      client.readQuestions!({ read: 'rulings', kind: 'workflow' }, destination),
+    ).rejects.toThrow('unbounded question ruling history reads are refused')
     expect(
-      (await client.readQuestions!({ read: 'rulings', kind: 'workflow' }, destination)).items,
+      (await client.readQuestions!({ read: 'rulings', kind: 'workflow', limit: 100 }, destination))
+        .items,
     ).toContainEqual(expect.objectContaining({ record_id: workflowQuestion.id }))
     expect(
-      (await client.readQuestions!({ read: 'rulings', kind: 'run' }, destination)).items,
+      (
+        await client.readQuestions!(
+          { read: 'rulings', kind: 'run', since: at },
+          destination,
+        )
+      ).items,
     ).toContainEqual(expect.objectContaining({ record_id: runQuestion.id }))
     expect((await client.readQuestions!({ read: 'projects' }, destination)).items).toContainEqual({
       project: directProjectName,

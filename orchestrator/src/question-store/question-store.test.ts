@@ -190,6 +190,19 @@ async function questionStoreContract(
   expect(
     (await store.read({ read: 'open-for-cursors', workflowCursorRecordIds: [CURSOR_ID] })).items,
   ).toEqual([{ workflow_cursor_record_id: CURSOR_ID, number: 1 }])
+  expect(
+    (await store.read({ read: 'open-for-tasks', taskRecordIds: [TASK_ID] })).items.map((row) =>
+      field(row, 'record_id'),
+    ),
+  ).toEqual([workflow.id])
+  expect(
+    (await store.read({ read: 'open-for-tasks', taskRecordIds: [OTHER_SPACE_ID] })).items,
+  ).toEqual([])
+  expect(
+    (await store.read({ read: 'for-session', sessionId: 'owner-session' })).items.map((row) =>
+      field(row, 'record_id'),
+    ),
+  ).toEqual([workflow.id])
 
   const run = snapshot({
     id: RUN_QUESTION_ID,
@@ -217,12 +230,36 @@ async function questionStoreContract(
   expect((await store.read({ read: 'inbox', limit: 1 })).items).toHaveLength(1)
   expect(inbox).toHaveLength(2)
 
-  const workflowRulings = (await store.read({ read: 'rulings', kind: 'workflow' })).items
+  await expect(store.read({ read: 'rulings', kind: 'all' })).rejects.toThrow(
+    'unbounded question ruling history reads are refused',
+  )
+  const workflowRulings = (await store.read({ read: 'rulings', kind: 'workflow', limit: 100 }))
+    .items
   expect(workflowRulings).toHaveLength(1)
   expect(workflowRulings.every((row) => field(row, 'record_id') !== run.id)).toBe(true)
-  const runRulings = (await store.read({ read: 'rulings', kind: 'run' })).items
+  const runRulings = (await store.read({ read: 'rulings', kind: 'run', since: STAMP })).items
   expect(runRulings).toHaveLength(1)
   expect(runRulings[0]).toMatchObject({ record_id: run.id, run_record_id: RUN_ID })
+
+  const unlinked = snapshot({ id: newRecordId() })
+  await store.write('ask', body(unlinked))
+  expect(
+    (
+      await store.read({
+        read: 'unlinked-workflow',
+        project: 'question-fixture',
+        workflowKey: 'DEV-2331',
+      })
+    ).items.map((row) => field(row, 'record_id')),
+  ).toEqual([unlinked.id])
+  expect(
+    (await store.read({ read: 'unlinked-workflow', workflowKey: 'DEV-outside' })).items,
+  ).toEqual([])
+  await mutate(store, 'close', unlinked, {
+    closedAt: '2026-11-15T12:00:30.000Z',
+    closeReason: 'fixture',
+    updatedAt: '2026-11-15T12:00:30.000Z',
+  })
 
   const answeredAt = '2026-11-15T12:01:00.000Z'
   const answered = await mutate(store, 'answer', workflow, {
@@ -238,6 +275,11 @@ async function questionStoreContract(
   const rule = body(ruled, 'rule')
   rule.audit.reason = 'adopted cursor'
   await store.write('link', rule)
+  expect(
+    (await store.read({ read: 'open-for-tasks', taskRecordIds: [TASK_ID] })).items.map((row) =>
+      field(row, 'record_id'),
+    ),
+  ).toEqual([run.id])
   expect(
     (
       await store.read({
@@ -302,6 +344,9 @@ async function questionStoreContract(
     updatedAt: '2026-11-15T12:06:00.000Z',
   })
   expect(closed.closedAt).not.toBeNull()
+  expect(
+    (await store.read({ read: 'open-for-tasks', taskRecordIds: [TASK_ID] })).items,
+  ).toEqual([])
   expect(
     (await store.read({ read: 'inbox' })).items.some((row) => field(row, 'record_id') === run.id),
   ).toBe(false)
@@ -393,7 +438,7 @@ test('record question reads refuse a bare number before making a client request'
   })
 
   await expect(store.read({ read: 'by-number', number: 7 })).rejects.toThrow(
-    'question numbers are unique only within a record space; read the question by id or by cursor, then retry',
+    'question numbers are unique only within a record space; pass the question UUID, then retry',
   )
   expect(requests).toBe(0)
   database.close()
