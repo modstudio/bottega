@@ -24,6 +24,9 @@ type Row = Record<string, unknown>
 export const RECORD_QUESTION_CHANGE_TABLES = ['question'] as const
 const limited = (rows: Row[], limit?: number): Row[] =>
   limit === undefined ? rows : rows.slice(0, limit)
+const VISIBLE_ROOT_RUN = '(owner.parent_run_id IS NULL OR parent.id IS NOT NULL)'
+const rootRunColumn = (column: string): string =>
+  `CASE WHEN owner.parent_run_id IS NULL THEN owner.${column} ELSE parent.${column} END`
 
 type RulingRead = Extract<RecordQuestionReadInput, { read: 'rulings' }>
 
@@ -289,21 +292,22 @@ async function inboxRows(
       q.asked_at::text,q.question,q.options::text,q.recommendation,q.why,q.kind,q.jev_pick,q.jev_confidence,
       q.jev_probabilities::text,q.jev_error,q.answered_at::text,q.overturned_at::text,q.overturned_by,
       q.overturn_reason,q.replacement,q.filed_as,q.filed_ref,q.filed_record_id::text,q.filed_label,q.filed_at::text,
-      owner.agent,owner.job,COALESCE(parent_project.name,owner_project.name) repo,
-      COALESCE(owner.task_key,parent.task_key) task_key,
-      COALESCE(parent.project_id,owner.project_id)::text project_record_id,owner.status,owner.session_id,
+      owner.agent,owner.job,
+      CASE WHEN owner.parent_run_id IS NULL THEN owner_project.name ELSE parent_project.name END repo,
+      ${rootRunColumn('task_key')} task_key,
+      (${rootRunColumn('project_id')})::text project_record_id,owner.status,owner.session_id,
       q.awaiting_operator_at::text,
-      COALESCE(parent.status,owner.status) root_status,
-      COALESCE(parent.id,owner.id)::text root_record_id,
-      COALESCE(parent.number,owner.number) root_number,
-      CASE WHEN COALESCE(parent.evidence_excluded,owner.evidence_excluded) IS NULL THEN 0 ELSE 1 END root_voided,
+      ${rootRunColumn('status')} root_status,
+      (${rootRunColumn('id')})::text root_record_id,
+      ${rootRunColumn('number')} root_number,
+      CASE WHEN (${rootRunColumn('evidence_excluded')}) IS NULL THEN 0 ELSE 1 END root_voided,
       COALESCE(owner.parent_run_id,owner.id)::text root_id
      FROM question q JOIN run owner ON owner.id=q.run_id
      LEFT JOIN run parent ON parent.id=owner.parent_run_id
      LEFT JOIN project parent_project ON parent_project.id=parent.project_id
      LEFT JOIN project owner_project ON owner_project.id=owner.project_id
      WHERE q.answered_at IS NULL AND q.closed_at IS NULL
-      AND (owner.parent_run_id IS NULL OR parent.id IS NOT NULL)
+      AND ${VISIBLE_ROOT_RUN}
      ORDER BY q.run_id,q.number${offsetClause(requested, offset)}`,
     [],
   )) as Row[]
@@ -364,15 +368,15 @@ async function rows(tx: SQL, input: QuestionReadInput): Promise<Row[]> {
       (await tx.unsafe(
         `WITH raw_candidates AS (
        SELECT q.number question_id,q.id::text question_record_id,
-        COALESCE(parent.id,owner.id)::text run_record_id,
+        (${rootRunColumn('id')})::text run_record_id,
         NULL::text workflow_cursor_record_id,q.question,q.answer,q.answer_basis,q.answered_at::text,
         q.answerer_kind,q.answered_by_name,q.overturned_at::text,q.overturned_by_name,q.replacement,
         COALESCE(q.overturned_at,q.answered_at) effective_at
        FROM question q JOIN run owner ON owner.id=q.run_id
        LEFT JOIN run parent ON parent.id=owner.parent_run_id
-       WHERE COALESCE(parent.project_id,owner.project_id)=$1::uuid
-        AND COALESCE(parent.task_id,owner.task_id)=$2::uuid AND q.answered_at IS NOT NULL
-        AND (owner.parent_run_id IS NULL OR parent.id IS NOT NULL)
+       WHERE (${rootRunColumn('project_id')})=$1::uuid
+        AND (${rootRunColumn('task_id')})=$2::uuid AND q.answered_at IS NOT NULL
+        AND ${VISIBLE_ROOT_RUN}
         AND NOT (q.overturned_at IS NOT NULL AND q.replacement IS NULL)
        UNION ALL
        SELECT q.number,q.id::text,NULL::text,q.workflow_cursor_record_id::text,q.question,q.answer,q.answer_basis,
