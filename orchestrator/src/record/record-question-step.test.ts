@@ -2,7 +2,7 @@ import { afterEach, beforeEach, expect, test } from 'bun:test'
 import type { PGlite } from '@electric-sql/pglite'
 import { createHostedRecordFixture, pgliteSql } from '../../test/fixtures/hosted-record.ts'
 import { gatherStepQuestionEvidenceFromRows } from '../workflow/workflow-step-question-evidence.ts'
-import type { QuestionWriteBody } from './record-question-contract.ts'
+import { type QuestionWriteBody, RecordQuestionError } from './record-question-contract.ts'
 import { readRecordQuestionRows } from './record-question-read.ts'
 import { writeRecordQuestionTransaction } from './record-question-write.ts'
 
@@ -144,15 +144,18 @@ async function moveCursorToOtherSpace() {
 
 test('a new cursor question refuses a destination space that does not hold its cursor', async () => {
   await moveCursorToOtherSpace()
-  await expect(
-    writeRecordQuestionTransaction(
-      'ask',
-      { ...principal, ...questionWrite() },
-      pgliteSql(postgres),
-    ),
-  ).rejects.toThrow(
-    `workflow cursor ${CURSOR} is absent from the question's destination space; ask through the cursor's project with`,
+  const refusal = writeRecordQuestionTransaction(
+    'ask',
+    { ...principal, ...questionWrite() },
+    pgliteSql(postgres),
   )
+  await expect(refusal).rejects.toBeInstanceOf(RecordQuestionError)
+  await expect(refusal).rejects.toMatchObject({
+    status: 409,
+    message: expect.stringContaining(
+      `workflow cursor ${CURSOR} is absent from the question's destination space; ask through the cursor's project with`,
+    ),
+  })
 })
 
 test('a stored cursor question remains closable when its cursor is in another space', async () => {

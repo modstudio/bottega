@@ -5,6 +5,7 @@ import type { SQL } from 'bun'
 import { sql as drizzleSql } from 'drizzle-orm'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { question as questionRecord } from '../../../shared/record/schema-question.ts'
+import { RecordQuestionError } from './record-question-contract.ts'
 import { questionValues } from './record-sync-service.ts'
 
 /** A rewrite keeps the step a question was first asked on; only an unbound row takes the new one. */
@@ -37,8 +38,9 @@ export async function questionValuesForWrite(
       )[0]
     : undefined
   if (workflowCursorRecordId && requireWorkflowStep && !workflowStep)
-    throw new Error(
+    throw new RecordQuestionError(
       `workflow cursor ${workflowCursorRecordId} is absent from the question's destination space; ask through the cursor's project with \`${PLATFORM_SLUG} workflow await\` so the question is written to the space that holds the cursor`,
+      409,
     )
   return {
     ...questionValues(payload, projectId, workflowTaskId),
