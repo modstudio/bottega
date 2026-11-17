@@ -66,6 +66,7 @@ export async function sweepHubTasks(
   )
   let cleared = 0
   let removed = 0
+  let alreadyAbsent = 0
   let failed = false
   for (const holder of decision.clear) {
     try {
@@ -76,6 +77,7 @@ export async function sweepHubTasks(
       })
       cleared++
       removed += result.removed
+      alreadyAbsent += result.alreadyAbsent
     } catch (error) {
       failed = true
       presentation.error(
@@ -85,8 +87,8 @@ export async function sweepHubTasks(
   }
   presentation.log(
     dryRun
-      ? `task context: would clear ${cleared} done tasks, would remove ${removed} items, kept ${decision.keptOpen} open, unresolved ${decision.unresolved.length}`
-      : `task context: cleared ${cleared} done tasks, removed ${removed} items, kept ${decision.keptOpen} open, unresolved ${decision.unresolved.length}`,
+      ? `task context: would clear ${cleared} done tasks, would remove ${removed} items, already absent ${alreadyAbsent}, kept ${decision.keptOpen} open, unresolved ${decision.unresolved.length}`
+      : `task context: cleared ${cleared} done tasks, removed ${removed} items, already absent ${alreadyAbsent}, kept ${decision.keptOpen} open, unresolved ${decision.unresolved.length}`,
   )
   return failed || runLinks.kind === 'error'
 }

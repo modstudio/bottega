@@ -146,7 +146,12 @@ export async function clearTaskContext(input: { task: string }) {
     project: task.project,
     dryRun: false,
   })
-  return { holder, task: task.key, removed: result.removed }
+  return {
+    holder,
+    task: task.key,
+    removed: result.removed,
+    alreadyAbsent: result.alreadyAbsent,
+  }
 }
 
 /** Clears one task holder by durable identity for lifecycle cleanup. */
@@ -158,24 +163,27 @@ export async function clearTaskHolderForLifecycle(input: {
   assertWorkerDocStoreWriteAllowed('clearTaskHolderForLifecycle')
   const holder = taskContextHolder(input.holderId)
   const items = listContextItems(holder)
-  if (input.dryRun) return { holder, removed: items.length }
+  if (input.dryRun) return { holder, removed: items.length, alreadyAbsent: 0 }
   writableDb()
-  const removed = await applyRecordWriteAuthority({
-    local: () => removeLocalContextHolder(holder),
+  const result = await applyRecordWriteAuthority({
+    local: () => ({ removed: removeLocalContextHolder(holder), alreadyAbsent: 0 }),
     hosted: async () => {
       const client = await hostedContextItemClient(
         holder,
         contextTaskOwner({ project: input.project }),
       )
-      let count = 0
+      let removed = 0
+      let alreadyAbsent = 0
       for (const item of items) {
-        await client.remove(item.recordId, { expectedRevision: item.revision })
-        if (removeLocalContextItem(holder, item.id, item.revision)) count++
+        const hosted = await client.remove(item.recordId, {})
+        if (!removeLocalContextItem(holder, item.id, item.revision)) continue
+        if (hosted.removed) removed++
+        else alreadyAbsent++
       }
-      return count
+      return { removed, alreadyAbsent }
     },
   })
-  return { holder, removed }
+  return { holder, ...result }
 }
 
 export function sessionContextHolders(database: Database) {
@@ -197,25 +205,31 @@ async function dropSessionContextItemForLifecycle(input: {
   const holder = `session:${input.session}`
   writableDb()
   const item = getContextItem(holder, input.id)
-  if (!item) return { holder, id: input.id, removed: false }
-  const removed = await applyRecordWriteAuthority({
-    local: () => removeLocalContextItem(holder, input.id, input.expectedRevision),
+  if (!item) return { holder, id: input.id, removed: false, alreadyAbsent: false }
+  const result = await applyRecordWriteAuthority({
+    local: () => ({
+      removed: removeLocalContextItem(holder, input.id, input.expectedRevision),
+      alreadyAbsent: false,
+    }),
     hosted: async () => {
       const client = await hostedContextItemClient(holder)
-      const result = await client.remove(item.recordId, {
+      const hosted = await client.remove(item.recordId, {
         expectedRevision: input.expectedRevision,
       })
-      if (!result.removed)
-        throw new Error(`context item ${item.recordId} not found in hosted record`)
-      return removeLocalContextItem(holder, input.id, item.revision)
+      const dropped = removeLocalContextItem(holder, input.id, item.revision)
+      return {
+        removed: hosted.removed && dropped,
+        alreadyAbsent: !hosted.removed && dropped,
+      }
     },
   })
-  return { holder, id: input.id, removed }
+  return { holder, id: input.id, ...result }
 }
 
 export type SessionContextDropResult = {
   item: ReturnType<typeof sessionContextItems>[number]
   removed: boolean
+  alreadyAbsent: boolean
   error: string | null
 }
 
@@ -229,11 +243,16 @@ export async function dropSessionContextItemsForLifecycle(input: {
   const results: SessionContextDropResult[] = []
   for (const item of input.items) {
     if (item.revision === null) {
-      results.push({ item, removed: false, error: 'context item revision is unavailable' })
+      results.push({
+        item,
+        removed: false,
+        alreadyAbsent: false,
+        error: 'context item revision is unavailable',
+      })
       continue
     }
     if (input.dryRun) {
-      results.push({ item, removed: false, error: null })
+      results.push({ item, removed: false, alreadyAbsent: false, error: null })
       continue
     }
     try {
@@ -243,11 +262,17 @@ export async function dropSessionContextItemsForLifecycle(input: {
         expectedRevision: item.revision,
         reason: input.reason,
       })
-      results.push({ item, removed: result.removed, error: null })
+      results.push({
+        item,
+        removed: result.removed,
+        alreadyAbsent: result.alreadyAbsent,
+        error: null,
+      })
     } catch (error) {
       results.push({
         item,
         removed: false,
+        alreadyAbsent: false,
         error: error instanceof Error ? error.message : String(error),
       })
     }

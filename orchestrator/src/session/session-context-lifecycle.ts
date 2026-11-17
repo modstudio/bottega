@@ -76,6 +76,7 @@ export async function closeOutSessionContext(input: {
     const label = `context ${drop.item.holder}/${drop.item.id} (${drop.item.kind})`
     if (input.dryRun && drop.error === null) report.mechanical.push(`would drop ${label}`)
     else if (drop.removed) report.mechanical.push(`drop ${label}`)
+    else if (drop.alreadyAbsent) report.mechanical.push(`already absent ${label}`)
     else if (drop.error)
       report.errors.push({
         item: label,
@@ -110,6 +111,8 @@ export async function consumeSessionContext(input: {
   })) {
     if (drop.removed)
       lines.push(`dropped context ${drop.item.holder}/${drop.item.id} (${drop.item.kind})`)
+    else if (drop.alreadyAbsent)
+      lines.push(`context already absent ${drop.item.holder}/${drop.item.id} (${drop.item.kind})`)
     else if (drop.error)
       lines.push(
         `resume context drop failed for ${drop.item.holder}/${drop.item.id} (${drop.item.kind}): ${drop.error}`,

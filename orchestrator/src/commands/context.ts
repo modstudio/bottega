@@ -31,7 +31,9 @@ function registerClear(context: Command): void {
     .requiredOption('--task <key>', 'select task holder')
     .action(async (options) => {
       const result = await clearTaskContext({ task: options.task })
-      log(`context: cleared ${result.removed} items on ${result.task}`)
+      log(
+        `context: cleared ${result.removed} items on ${result.task}, already absent ${result.alreadyAbsent}`,
+      )
     })
 }
 
