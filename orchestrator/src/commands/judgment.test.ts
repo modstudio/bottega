@@ -92,7 +92,7 @@ test('comparison flags refuse an unknown run UUID', () => {
       values: () => [],
       flag: (name) => (name === 'worse-than' ? '01990000-0000-7000-8000-000000000099' : undefined),
     }).flag('worse-than'),
-  ).toThrow('no run matches')
+  ).toThrow('reference is not visible in any space you belong to')
 })
 
 test('duplicate flags resolve the other run while preserving both finding ordinals', () => {

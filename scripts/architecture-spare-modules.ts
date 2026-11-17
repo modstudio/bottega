@@ -23,6 +23,7 @@ export const spareModules: SpareModule[] = [
     '../../../shared/brand.ts',
     '../../../shared/git.ts',
     '../../../shared/machine-config.ts',
+    '../../../shared/reference.ts',
     '../../../shared/self-spawn.ts',
     '../agent/agent-registry.ts',
     '../database/db.ts',

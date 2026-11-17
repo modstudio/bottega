@@ -1,3 +1,4 @@
+import { IDENTITY_STATE_CLASSES } from '../shared/identity-state-classes.ts'
 import type { StateClassStore } from './identity-inventory.ts'
 
 export type TableStateClassDeclaration = {
@@ -278,7 +279,7 @@ export const STATE_CLASSES: readonly StateClassDeclaration[] = [
     'Local project lens revision',
   ),
   synced('orchestrator', 'pull_request_ci', 'Outbox source for pull request checks'),
-  hosted('orchestrator', 'question', 'question', 'Questions awaiting or carrying rulings'),
+  IDENTITY_STATE_CLASSES.question,
   machine(
     'orchestrator',
     'question_delivery',
@@ -327,7 +328,7 @@ export const STATE_CLASSES: readonly StateClassDeclaration[] = [
     'Pooled run evidence used on this machine',
     DEV_2234_MACHINE_RULING,
   ),
-  synced('orchestrator', 'run', 'Outbox source for runs'),
+  IDENTITY_STATE_CLASSES.run,
   synced('orchestrator', 'run_carried_ruling', 'Rulings carried by runs', 'DEV-2234'),
   machine(
     'orchestrator',

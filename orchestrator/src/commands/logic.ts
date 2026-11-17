@@ -4,6 +4,7 @@
 import { type Command, Option, type OptionValues } from 'commander'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { repeatable } from '../../../shared/cli-repeat-guard.ts'
+import { formatReference } from '../../../shared/reference.ts'
 import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 import { agentCommand, agentsCommand } from '../agent/agent-commands.ts'
 import { serveAsk } from '../ask/ask.ts'
@@ -89,7 +90,7 @@ const presentation = {
   },
   exit: (code: number): never => process.exit(code),
   now: Date.now,
-  printRunId: (id: string) => write(`${displayRunNumber(id)}\n`),
+  printRunId: (id: string) => write(`${formatReference('run', displayRunNumber(id))}\n`),
 }
 const scoreSuffix = (jobName: string) =>
   (jobTakesFidelity(jobName) ? ' [drifted|partial|faithful]' : '') +
@@ -543,7 +544,7 @@ function registerDoCommand(program: Command): void {
     const argv = rawArgv(command)
     await doCommand(argv, {
       error: console.error,
-      printRunId: (id) => write(`${id}\n`),
+      printRunId: (id) => write(`${formatReference('run', id)}\n`),
       cwd: process.cwd,
     })
   })
@@ -760,7 +761,7 @@ export function register(program: Command, dependencies: LogicDependencies = {})
       pickPreviewCommand(productArgv('pick', [job], options), {
         error: console.error,
         log,
-        printRunId: (id) => write(`${id}\n`),
+        printRunId: (id) => write(`${formatReference('run', id)}\n`),
         cwd: process.cwd,
       }),
     )

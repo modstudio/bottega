@@ -14,6 +14,8 @@ import {
 import { db } from '../database/db.ts'
 import type { ContextMomentPorts } from '../doc/context-moment-adapter.ts'
 import { getDocRevision, setDoc } from '../doc/docs.ts'
+import { resolve } from '../identity/identity.ts'
+import { identityContext } from '../identity/identity-context.ts'
 import { operatorWaiting, relayQuestion } from '../operator/operator-waiting.ts'
 import { resolveQuestionIdentifier } from '../run/question-identifier.ts'
 import { rulingAttributionDecision } from '../run/question-vocabulary.ts'
@@ -139,8 +141,9 @@ function registerAnswerQuestionsTool(
     },
     async ({ run_record_id, rulings, from_operator, record_only }) => {
       const resolved = await resolveAnswerRulings(rulings, from_operator ?? false)
+      const run = await resolve(run_record_id, identityContext(db()), 'run')
       const report = await answerRun(
-        localRunId(run_record_id),
+        run.recordId,
         {
           rulings: resolved,
           fromOperator: false,

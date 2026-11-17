@@ -2,24 +2,14 @@
 /** Resolves a user-facing run number or UUID to the run UUID. */
 
 import type { Database } from 'bun:sqlite'
-import { ACCEPTED_RUN_IDENTIFIERS } from './run-identifier-grammar.ts'
+import { ResolutionMissError, resolveLocalRun } from '../identity/identity-local-run.ts'
 import { classifyRunIdentifier, parseRunIdentifier } from './run-identifier-names.ts'
 
 export { classifyRunIdentifier, parseRunIdentifier }
 
 export function resolveRunIdentifier(database: Database, input: string | number): string {
   const parsed = parseRunIdentifier(input)
-  const row = database
-    .query<{ record_id: string }, [number | string]>(
-      parsed.kind === 'number'
-        ? 'SELECT record_id FROM run WHERE number=?'
-        : 'SELECT record_id FROM run WHERE record_id=?',
-    )
-    .get(parsed.kind === 'number' ? parsed.number : parsed.recordId)
-  if (row) return row.record_id
-  throw new Error(
-    `no run matches ${JSON.stringify(String(input))}; pass ${ACCEPTED_RUN_IDENTIFIERS}`,
-  )
+  return resolveLocalRun(database, parsed).record_id
 }
 
 export function resolveRunIdentifierOrNull(
@@ -28,13 +18,10 @@ export function resolveRunIdentifierOrNull(
 ): string | null {
   const parsed = classifyRunIdentifier(input)
   if (!parsed) return null
-  return (
-    database
-      .query<{ record_id: string }, [number | string]>(
-        parsed.kind === 'number'
-          ? 'SELECT record_id FROM run WHERE number=?'
-          : 'SELECT record_id FROM run WHERE record_id=?',
-      )
-      .get(parsed.kind === 'number' ? parsed.number : parsed.recordId)?.record_id ?? null
-  )
+  try {
+    return resolveLocalRun(database, parsed).record_id
+  } catch (error) {
+    if (error instanceof ResolutionMissError) return null
+    throw error
+  }
 }
