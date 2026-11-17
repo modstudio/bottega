@@ -87,6 +87,7 @@ export function authorizeWorkflowQuestionMutation(input: {
 export async function upsertWorkflowQuestion(
   input: {
     cursorId: string
+    projectId: string | null
     workflowKey: string
     workflowTaskRecordId: string | null
     stepOrdinal: number
@@ -100,24 +101,41 @@ export async function upsertWorkflowQuestion(
     ({ workflow_cursor_record_id }) => workflow_cursor_record_id === input.cursorId,
   )
   if (open) {
-    const mutation = await mutateQuestion(database, {
-      id: open.question_record_id,
-      intent: 'link',
-      at: input.at,
-      actorSession: sessionId(),
-      reason: null,
-      changes: {
-        question: input.question,
-        workflowKey: input.workflowKey || null,
-        workflowTaskId: input.workflowTaskRecordId,
-      },
-    })
     const row = await questionById(database, open.question_record_id)
-    requireQuestionMutationApplied(mutation, row!)
-    return { recordId: open.question_record_id, number: Number(row!.number) }
+    if (row?.project_record_id === null && input.projectId) {
+      const mutation = await mutateQuestion(database, {
+        id: open.question_record_id,
+        intent: 'close',
+        at: input.at,
+        actorSession: sessionId(),
+        reason: `re-asked in its project's record space (DEV-2373)`,
+        changes: {
+          closedAt: input.at,
+          closeReason: `re-asked in its project's record space (DEV-2373)`,
+        },
+      })
+      requireQuestionMutationApplied(mutation, row)
+    } else {
+      const mutation = await mutateQuestion(database, {
+        id: open.question_record_id,
+        intent: 'link',
+        at: input.at,
+        actorSession: sessionId(),
+        reason: null,
+        changes: {
+          question: input.question,
+          workflowKey: input.workflowKey || null,
+          workflowTaskId: input.workflowTaskRecordId,
+        },
+      })
+      const linked = await questionById(database, open.question_record_id)
+      requireQuestionMutationApplied(mutation, linked!)
+      return { recordId: open.question_record_id, number: Number(linked!.number) }
+    }
   }
   const inserted = await askQuestion(database, {
     workflowCursorRecordId: input.cursorId,
+    projectId: input.projectId,
     workflowKey: input.workflowKey || null,
     workflowTaskId: input.workflowTaskRecordId,
     askedAt: input.at,

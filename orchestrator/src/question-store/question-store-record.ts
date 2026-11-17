@@ -224,6 +224,16 @@ export class RecordQuestionStore implements QuestionStore {
   async write(intent: QuestionIntent, input: QuestionWriteBody) {
     if (!this.input.client.writeQuestion)
       throw new Error('record API predates direct question writes; release hosted-api, then retry')
+    if (
+      intent === 'ask' &&
+      !input.question.projectId &&
+      (input.question.runId || input.question.workflowCursorRecordId)
+    ) {
+      const owner = input.question.runId
+        ? `run ${input.question.runId}`
+        : `workflow cursor ${input.question.workflowCursorRecordId}`
+      throw new Error(`ask for ${owner} carries no project; pass its project, then retry`)
+    }
     if (intent === 'ask' && input.question.runId) {
       await resolveQuestionRunPusher()(this.input.database, input.question.runId)
     }
