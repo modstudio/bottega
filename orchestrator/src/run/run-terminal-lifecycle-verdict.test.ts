@@ -1,7 +1,11 @@
 import { describe, expect, test } from 'bun:test'
 import { terminalLifecycleForWrite } from './run-terminal-lifecycle-verdict.ts'
 
-const outcome = (status: string, failureKind: string | null = null, error: string | null = null) => ({
+const outcome = (
+  status: string,
+  failureKind: string | null = null,
+  error: string | null = null,
+) => ({
   status,
   failureKind,
   error,
@@ -9,14 +13,22 @@ const outcome = (status: string, failureKind: string | null = null, error: strin
 
 describe('terminal lifecycle verdict', () => {
   test.each([
-    ['stopped against asking', outcome('stopped', 'stopped', 'stopped by architect'), outcome('asking')],
+    [
+      'stopped against asking',
+      outcome('stopped', 'stopped', 'stopped by architect'),
+      outcome('asking'),
+    ],
     ['stopped against ok', outcome('stopped', 'stopped', 'stopped by architect'), outcome('ok')],
     [
       'abandoned against asking',
       outcome('stale', 'abandoned', 'abandoned by architect'),
       outcome('asking'),
     ],
-    ['abandoned against ok', outcome('stale', 'abandoned', 'abandoned by architect'), outcome('ok')],
+    [
+      'abandoned against ok',
+      outcome('stale', 'abandoned', 'abandoned by architect'),
+      outcome('ok'),
+    ],
   ])('%s keeps the stored verdict', (_name, stored, incoming) => {
     expect(terminalLifecycleForWrite(stored, incoming)).toEqual(stored)
   })

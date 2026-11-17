@@ -49,7 +49,7 @@ import {
   type RunArtifactListingEntry,
 } from './run-artifact-retention.ts'
 import { type GooseContextProfile, writeRunContextProfile } from './run-context-profile.ts'
-import { terminalLifecycleForWrite } from './run-terminal-lifecycle-verdict.ts'
+import { terminalLifecycleWrite } from './run-terminal-lifecycle-store.ts'
 import {
   quotaReadingsColumnValues,
   type RunQuotaColumns,
@@ -406,12 +406,12 @@ export function reconcileRun(id: string): string {
    * or a failed transaction could reconcile to `asking` with nothing to answer.
    */
   writeTransaction(() => {
-    const stored = db()
-      .query('SELECT status, error, failure_kind FROM run WHERE record_id=?')
-      .get(id) as { status: string; error: string | null; failure_kind: string | null }
-    const lifecycle = terminalLifecycleForWrite(
-      { status: stored.status, error: stored.error, failureKind: stored.failure_kind },
-      { status: snapshot.status, error: snapshot.error, failureKind: snapshot.failureKind },
+    const lifecycle = terminalLifecycleWrite(
+      db(),
+      id,
+      snapshot.status,
+      snapshot.error,
+      snapshot.failureKind,
     )
     db()
       .query(
@@ -437,9 +437,9 @@ export function reconcileRun(id: string): string {
         snapshot.vendorCostUsd,
         ...runUsageColumnValues(snapshot),
         snapshot.model,
-        snapshot.status,
-        snapshot.error,
-        snapshot.failureKind,
+        lifecycle.status,
+        lifecycle.error,
+        lifecycle.failureKind,
         snapshot.vendorSession,
         snapshot.preConfinement,
         snapshot.confinement,

@@ -8,7 +8,7 @@ export type StoredTerminalLifecycle = {
 }
 
 /** An architect lifecycle verdict is final even if the worker later finishes. */
-export function hasArchitectLifecycleVerdict(outcome: StoredTerminalLifecycle): boolean {
+function hasArchitectLifecycleVerdict(outcome: StoredTerminalLifecycle): boolean {
   return (
     outcome.status === 'stopped' ||
     (outcome.status === 'stale' && outcome.failureKind === 'abandoned')

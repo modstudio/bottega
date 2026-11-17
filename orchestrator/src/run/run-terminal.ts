@@ -67,6 +67,7 @@ import { checkpointRoot, claimIdentity } from './run-resume-kind.ts'
 import { type BlockerRow, blockersToRecord } from './run-terminal-blockers.ts'
 import { finalizeTerminalChain, settleTerminalQuestionState } from './run-terminal-chain.ts'
 import { terminalTurnChanged } from './run-terminal-change.ts'
+import { terminalLifecycleWrite } from './run-terminal-lifecycle-store.ts'
 import { applyConfinementPrecedence, applyVendorTermination } from './run-terminal-precedence.ts'
 import {
   applyPrematureFinalFailure,
@@ -82,7 +83,6 @@ import {
   runUsageColumns,
   runUsageColumnValues,
 } from './run-usage-columns.ts'
-import { terminalLifecycleForWrite } from './run-terminal-lifecycle-verdict.ts'
 import {
   shouldSnapshotSharedGitConfig,
   terminalSharedGitConfigHeader,
@@ -941,21 +941,7 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
   const writeTerminalRow = () =>
     writeTransaction(() => {
       const finishedAt = nowIso()
-      const storedLifecycle = db()
-        .query('SELECT status, error, failure_kind FROM run WHERE record_id=?')
-        .get(claim.id) as {
-        status: string
-        error: string | null
-        failure_kind: ReturnType<typeof classify> | null
-      }
-      const recordedLifecycle = terminalLifecycleForWrite(
-        {
-          status: storedLifecycle.status,
-          error: storedLifecycle.error,
-          failureKind: storedLifecycle.failure_kind,
-        },
-        { status, error, failureKind },
-      )
+      const recordedLifecycle = terminalLifecycleWrite(db(), claim.id, status, error, failureKind)
       db()
         .query(
           `UPDATE run SET latency_ms=?, exit_code=?, output_bytes=?, output_path=?, prompt_path=?,

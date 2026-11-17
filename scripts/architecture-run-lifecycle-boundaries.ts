@@ -95,6 +95,7 @@ export const runLifecycleBoundarySpecs: ImportBoundary[] = [
       './run-artifact-limits.ts',
       './run-context-profile.ts',
       './run-terminal-lifecycle-verdict.ts',
+      './run-terminal-lifecycle-store.ts',
       './run-usage-columns.ts',
     ],
     'Keep run artifacts independent of routing, contracts, transports, reviews, and isolation.',
