@@ -210,7 +210,6 @@ function registerTaskFlowReadRoutes(
   deps: RecordWorkflowRouteDeps,
   ports: Ports,
 ): void {
-  const uuid = z.string().uuid()
   app.get('/v1/task-flow', async (context) => {
     if (!deps.readTaskFlow)
       return context.json({ error: 'hosted task flow read is unavailable' }, 503)

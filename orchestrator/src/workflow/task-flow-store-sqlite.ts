@@ -9,10 +9,7 @@ import type {
   TaskFlowIntent,
   TaskFlowIntentResult,
 } from '../record/record-task-flow-write-contract.ts'
-import type {
-  TaskFlowLocalReadMethod,
-  TaskFlowWriteMethod,
-} from './task-flow-store-methods.ts'
+import type { TaskFlowLocalReadMethod, TaskFlowWriteMethod } from './task-flow-store-methods.ts'
 import {
   type TaskFlowSqliteWriteResult,
   writeSqliteTaskFlow,
@@ -708,7 +705,10 @@ export function sqliteTaskFlowLocalStore(database: Database): SqliteTaskFlowStor
   return new SqliteTaskFlowStore(database, true)
 }
 
-type SqliteTaskFlowReadMethod = Exclude<keyof SqliteTaskFlowStore, TaskFlowWriteMethod>
+type SqliteTaskFlowReadMethod = Exclude<
+  keyof SqliteTaskFlowStore,
+  TaskFlowWriteMethod | 'stageRevision'
+>
 type SqliteTaskFlowReadStore = {
   [K in SqliteTaskFlowReadMethod]: SqliteTaskFlowStore[K] extends (...args: infer A) => infer R
     ? (...args: A) => Promise<R>

@@ -122,7 +122,6 @@ interface TaskFlowQueries {
     mode: string
     key: string
   }): { id: number } | null
-  stageRevision(recordId: string): number | null
   flowState(recordId: string): {
     record_id: string
     revision: number
@@ -207,8 +206,7 @@ type AsyncTaskFlowReads = {
 }
 
 /** Synchronous writes and reads that must remain atomic inside a local transaction. */
-export interface TaskFlowLocalStore
-  extends Pick<TaskFlowQueries, TaskFlowWriteMethod> {}
+export interface TaskFlowLocalStore extends Pick<TaskFlowQueries, TaskFlowWriteMethod> {}
 
 /** Async task-flow reads, implemented locally now and by the hosted record in the next slice. */
 export interface TaskFlowReadStore extends AsyncTaskFlowReads {}
