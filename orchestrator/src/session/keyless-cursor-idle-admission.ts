@@ -6,7 +6,7 @@ import { classifyCaller, resolveCallerIdentity } from '../caller-classification.
 import { db } from '../database/db.ts'
 import { taskFlowReadStore } from '../workflow/task-flow-store.ts'
 import { workflowCursorReference } from '../workflow/workflow-cursor-format.ts'
-import { KEYLESS_CURSOR_IDLE_MS, keylessCursorIdle } from './keyless-cursor-idle.ts'
+import { idleKeylessCursor } from './keyless-cursor-idle.ts'
 
 export type IdleAdmissionCursor = {
   number: number
@@ -27,11 +27,10 @@ export function decideKeylessCursorIdleAdmission(input: {
   cursors: readonly IdleAdmissionCursor[]
 }): KeylessCursorIdleAdmission {
   const idle = input.cursors
-    .filter((cursor) => !cursor.key && cursor.questionNumber === null)
-    .map((cursor) => ({ cursor, idle: keylessCursorIdle(cursor.updatedAt, input.now) }))
+    .map((cursor) => ({ cursor, idle: idleKeylessCursor(cursor, input.now) }))
     .filter(
       (item): item is { cursor: IdleAdmissionCursor; idle: NonNullable<typeof item.idle> } =>
-        item.idle !== null && item.idle.ms >= KEYLESS_CURSOR_IDLE_MS,
+        item.idle !== null,
     )
     .sort(
       (left, right) => right.idle.ms - left.idle.ms || left.cursor.number - right.cursor.number,

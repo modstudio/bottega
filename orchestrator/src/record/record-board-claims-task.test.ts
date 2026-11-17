@@ -1,23 +1,32 @@
 import { expect, test } from 'bun:test'
 import type { ClaimSubject } from '../board/board-claim-policy.ts'
-import { decideHostedTaskClaimTake } from './record-board-claims.ts'
+import { crossUserTaskClaimTakeRefusal, taskClaimTakeRefusal } from './record-board-claims.ts'
 
 const task = { kind: 'task', value: 'DEV-1' } satisfies ClaimSubject
 
-test('hosted task take requires an owned open stage and then permits takeover', () => {
-  expect(decideHostedTaskClaimTake({ subject: task, ownsOpenStage: false })).toEqual({
-    admitted: false,
-    refusal: 'task claims follow task cursors; run workflow compose … --arg key=DEV-1 instead',
-  })
+test('hosted task take requires an owned open stage', () => {
+  expect(taskClaimTakeRefusal(task, false)).toBe(
+    'task claims follow task cursors; run workflow compose … --arg key=DEV-1 instead',
+  )
+  expect(taskClaimTakeRefusal(task, true)).toBeNull()
+})
+
+test('hosted task takeover refuses a different user but admits the same user handoff', () => {
+  const conflictingLiveClaims = [{ holderUserId: 'user-a', holderSession: 'session-a' }]
   expect(
-    decideHostedTaskClaimTake({
+    crossUserTaskClaimTakeRefusal({
       subject: task,
-      ownsOpenStage: true,
-      conflictingClaim: true,
-      foreignLiveConflict: true,
+      userId: 'user-b',
+      conflictingLiveClaims,
     }),
-  ).toEqual({
-    admitted: true,
-    decision: 'take-over',
-  })
+  ).toBe(
+    'task claim is held by user user-a session session-a; that holder must abandon the cursor, or wait for the claim to lapse',
+  )
+  expect(
+    crossUserTaskClaimTakeRefusal({
+      subject: task,
+      userId: 'user-a',
+      conflictingLiveClaims,
+    }),
+  ).toBeNull()
 })

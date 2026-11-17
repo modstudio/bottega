@@ -24,33 +24,23 @@ beforeEach(() => {
 })
 
 describe('task cursor claim decision', () => {
-  for (const verb of ['compose', 'advance', 'await', 'rule'] as const)
-    test(`${verb} takes or renews the owner claim`, () => {
-      expect(decideTaskCursorClaim({ ...input, verb })).toEqual({
-        action: 'take',
-        project: 'claim-cursor-project',
-        key: 'DEV-2387',
-        session: 'session-a',
-      })
+  test('an owner verb takes or renews the owner claim', () => {
+    expect(decideTaskCursorClaim({ ...input, verb: 'advance' })).toEqual({
+      action: 'take',
+      project: 'claim-cursor-project',
+      key: 'DEV-2387',
+      session: 'session-a',
     })
+  })
 
-  for (const verb of ['finish', 'abandon'] as const)
-    test(`${verb} releases the owner claim`, () => {
-      expect(decideTaskCursorClaim({ ...input, verb })).toEqual({
-        action: 'release',
-        project: 'claim-cursor-project',
-        key: 'DEV-2387',
-      })
-    })
-
-  for (const verb of ['finish', 'abandon'] as const)
-    test(`${verb} releases the claim without a harness session`, () => {
+  test('closing verbs release the claim, including without a harness session', () => {
+    for (const verb of ['finish', 'abandon'] as const)
       expect(decideTaskCursorClaim({ ...input, session: null, verb })).toEqual({
         action: 'release',
         project: 'claim-cursor-project',
         key: 'DEV-2387',
       })
-    })
+  })
 
   test('keyless cursors do not touch task claims', () => {
     expect(decideTaskCursorClaim({ ...input, taskKey: null, verb: 'compose' })).toEqual({

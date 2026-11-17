@@ -5,7 +5,7 @@ import { createHash } from 'node:crypto'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { QuestionInboxCounts } from '../run/question-inbox-counts.ts'
 import { workflowCursorReference } from '../workflow/workflow-cursor-format.ts'
-import { KEYLESS_CURSOR_IDLE_MS, keylessCursorIdle } from './keyless-cursor-idle.ts'
+import { idleKeylessCursor } from './keyless-cursor-idle.ts'
 import { formatStopTime } from './stop-summary-time.ts'
 
 export const OWED_ITEM_OVERDUE_MS = 60 * 60 * 1000
@@ -103,9 +103,8 @@ function cursorLine(cursor: StopSummaryCursor): string {
 }
 
 function idleCursorLine(cursor: StopSummaryCursor, now: number): string | null {
-  if (cursor.key || cursor.questionNumber !== null) return null
-  const idle = keylessCursorIdle(cursor.updatedAt, now)
-  if (!idle || idle.ms < KEYLESS_CURSOR_IDLE_MS) return null
+  const idle = idleKeylessCursor(cursor, now)
+  if (!idle) return null
   return `${cursor.workflow} cursor ${cursor.number} ${idle.label} → ${PLATFORM_SLUG} workflow abandon${workflowCursorReference(cursor.number, cursor.project).cli}`
 }
 

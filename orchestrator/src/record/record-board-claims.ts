@@ -311,32 +311,23 @@ function differentRenewalTerms(
 type TakenClaim = HostedBoardClaim & { action: 'taken' | 'renewed' | 'taken-over' }
 type TakeOutcome = TakenClaim | { refused: string }
 
-export type HostedTaskClaimTakeDecision =
-  | { admitted: true; decision: ReturnType<typeof claimTakeDecision> }
-  | { admitted: false; refusal: string }
+export function taskClaimTakeRefusal(subject: ClaimSubject, ownsOpenStage: boolean): string | null {
+  if (subject.kind !== 'task' || ownsOpenStage) return null
+  return `task claims follow task cursors; run workflow compose … --arg key=${subject.value} instead`
+}
 
-export function decideHostedTaskClaimTake(input: {
+export function crossUserTaskClaimTakeRefusal(input: {
   subject: ClaimSubject
-  ownsOpenStage: boolean
-  sameHolderSameSubject?: boolean
-  conflictingClaim?: boolean
-  foreignLiveConflict?: boolean
-}): HostedTaskClaimTakeDecision {
-  if (input.subject.kind === 'task' && !input.ownsOpenStage)
-    return {
-      admitted: false,
-      refusal: `task claims follow task cursors; run workflow compose … --arg key=${input.subject.value} instead`,
-    }
-  return {
-    admitted: true,
-    decision: claimTakeDecision({
-      sameHolderSameSubject: Boolean(input.sameHolderSameSubject),
-      conflictingClaim: Boolean(input.conflictingClaim),
-      foreignLiveConflict: Boolean(input.foreignLiveConflict),
-      force: input.subject.kind === 'task',
-      actorKind: input.subject.kind === 'task' ? 'operator' : 'architect',
-    }),
-  }
+  userId: string
+  conflictingLiveClaims: readonly { holderUserId: string; holderSession: string | null }[]
+}): string | null {
+  if (input.subject.kind !== 'task') return null
+  const conflict = input.conflictingLiveClaims.find((claim) => claim.holderUserId !== input.userId)
+  if (!conflict) return null
+  const holder = conflict.holderSession
+    ? `user ${conflict.holderUserId} session ${conflict.holderSession}`
+    : `operator user ${conflict.holderUserId}`
+  return `task claim is held by ${holder}; that holder must abandon the cursor, or wait for the claim to lapse`
 }
 
 function takeRefused(outcome: TakeOutcome): outcome is { refused: string } {
@@ -517,8 +508,8 @@ async function takeClaimInTx(
           )[0],
         )
       : false
-  const admission = decideHostedTaskClaimTake({ subject, ownsOpenStage: ownedOpenStage })
-  if (!admission.admitted) throw new RecordBoardError(admission.refusal, 400)
+  const admissionRefusal = taskClaimTakeRefusal(subject, ownedOpenStage)
+  if (admissionRefusal) throw new RecordBoardError(admissionRefusal, 400)
   const existing = await loadClaim(tx, input.id)
   if (existing) return replayExistingTake(tx, input, existing, subject, session, clock)
   const { exactHeld, conflicts, foreignLive, lapsedExact } = await readTakeOverlaps(
@@ -528,15 +519,22 @@ async function takeClaimInTx(
     session,
     clock,
   )
-  const authority = decideHostedTaskClaimTake({
+  const crossUserRefusal = crossUserTaskClaimTakeRefusal({
     subject,
-    ownsOpenStage: ownedOpenStage,
+    userId: input.userId,
+    conflictingLiveClaims: foreignLive.map((row) => ({
+      holderUserId: String(row.holder_user_id),
+      holderSession: row.holder_session == null ? null : String(row.holder_session),
+    })),
+  })
+  if (crossUserRefusal) throw new RecordBoardError(crossUserRefusal, 403)
+  const decision = claimTakeDecision({
     sameHolderSameSubject: exactHeld !== undefined,
     conflictingClaim: conflicts.length > 0,
     foreignLiveConflict: foreignLive.length > 0,
+    force: subject.kind === 'task',
+    actorKind: subject.kind === 'task' ? 'operator' : 'architect',
   })
-  if (!authority.admitted) throw new RecordBoardError(authority.refusal, 400)
-  const decision = authority.decision
   if (decision === 'renew' && exactHeld)
     return renewOpenClaim(tx, input, exactHeld, duration, note, clock)
   if (decision === 'refuse') {

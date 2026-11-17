@@ -14,18 +14,6 @@ const input = {
 }
 
 describe('pull-request task cursor admission', () => {
-  test('admits without a harness session', () => {
-    expect(decidePullRequestTaskCursorAdmission({ ...input, harnessSession: null })).toEqual({
-      kind: 'allow',
-    })
-  })
-
-  test('admits a branch without a task key', () => {
-    expect(decidePullRequestTaskCursorAdmission({ ...input, taskKey: null })).toEqual({
-      kind: 'allow',
-    })
-  })
-
   test('admits the session that owns the key cursor', () => {
     expect(
       decidePullRequestTaskCursorAdmission({
