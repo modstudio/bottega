@@ -580,9 +580,7 @@ export const questionsForRuns = (
   runIds: readonly string[],
 ): Record<string, unknown>[] => {
   if (!runIds.length) return []
-  return filteredQuestionRows(
-    database,
-    `q.run_record_id IN (${runIds.map(() => '?').join(',')})`,
-    [...runIds],
-  )
+  return filteredQuestionRows(database, `q.run_record_id IN (${runIds.map(() => '?').join(',')})`, [
+    ...runIds,
+  ])
 }

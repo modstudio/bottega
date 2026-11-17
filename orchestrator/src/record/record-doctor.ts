@@ -39,10 +39,7 @@ import { AGENTS } from '../agent/agent-registry.ts'
 import type { Agent } from '../agent/agents.ts'
 import { db } from '../database/db.ts'
 import { appliedRecordMigrationCount, recordMigrationCount } from '../postgres/postgres-migrate.ts'
-import {
-  questionProjects,
-  questionRulingsPaged,
-} from '../question-store/question-store-read.ts'
+import { questionProjects, questionRulingsPaged } from '../question-store/question-store-read.ts'
 import { RecordQuestionStore } from '../question-store/question-store-record.ts'
 import { inspectRunRecordBackfill, type RunRecordBackfillInspection } from '../run/run-outbox.ts'
 import {

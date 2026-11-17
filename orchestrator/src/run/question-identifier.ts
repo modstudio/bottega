@@ -25,7 +25,11 @@ export async function questionIdentityMap(
       const parsed = parseQuestionIdentifier(identifier)
       const row =
         parsed.kind === 'number'
-          ? await questionByNumber(database, parsed.id, questionNumberProjectId(database, parsed.id))
+          ? await questionByNumber(
+              database,
+              parsed.id,
+              questionNumberProjectId(database, parsed.id),
+            )
           : await questionById(database, parsed.recordId)
       if (!row) throw new Error(`no question has identifier ${JSON.stringify(String(identifier))}`)
       return { number: Number(row.number), record_id: String(row.record_id) }

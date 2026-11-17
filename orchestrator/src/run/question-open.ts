@@ -34,9 +34,7 @@ export async function openRunChainRoots(
   const questions = await questionsForRunChains(database, rootIds)
   return new Set(
     [...questions]
-      .filter(([, rows]) =>
-        rows.some((row) => row.answered_at === null && row.closed_at === null),
-      )
+      .filter(([, rows]) => rows.some((row) => row.answered_at === null && row.closed_at === null))
       .map(([rootId]) => rootId),
   )
 }

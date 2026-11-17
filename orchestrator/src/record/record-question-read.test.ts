@@ -1,5 +1,5 @@
-import type { PGlite } from '@electric-sql/pglite'
 import { afterAll, beforeAll, expect, test } from 'bun:test'
+import type { PGlite } from '@electric-sql/pglite'
 import { createHostedRecordFixture, pgliteSql } from '../../test/fixtures/hosted-record.ts'
 import { readRecordQuestionRows } from './record-question-read.ts'
 

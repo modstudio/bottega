@@ -262,14 +262,14 @@ export async function storedBriefHolders(
           const { recordId, ...holder } = reference
           return { ...holder, items: storedItems(cursorContextHolder(recordId), database) }
         }
-        const { recordId, project: _project, ...holder } = reference
+        const { recordId, project: projectName, ...holder } = reference
         const openQuestions = openByTask.get(recordId) ?? []
         return {
           ...holder,
           items: storedItems(taskContextHolder(recordId), database),
-          ...(unresolvedProjects.has(_project)
+          ...(unresolvedProjects.has(projectName)
             ? {
-                openQuestionsUnavailable: `questions unread for unresolved project ${_project}; register or refresh the project, then retry`,
+                openQuestionsUnavailable: `questions unread for unresolved project ${projectName}; register or refresh the project, then retry`,
               }
             : {}),
           ...(openQuestions.length ? { openQuestions } : {}),

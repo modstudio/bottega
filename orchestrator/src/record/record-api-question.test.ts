@@ -111,9 +111,9 @@ test('hosted rulings refuse an unbounded history read and serve every bounded fo
 })
 
 test('hosted read service refuses unbounded ruling materialization', async () => {
-  expect(
-    readRecordQuestions({ ...tenant, read: 'rulings', kind: 'all' }),
-  ).rejects.toBeInstanceOf(UnboundedQuestionRulingsError)
+  expect(readRecordQuestions({ ...tenant, read: 'rulings', kind: 'all' })).rejects.toBeInstanceOf(
+    UnboundedQuestionRulingsError,
+  )
 })
 
 test('hosted question reads other than rulings still refuse changedAfter', async () => {

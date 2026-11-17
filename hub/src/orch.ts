@@ -366,9 +366,7 @@ export async function readQuestionIdentityMap(
 ): Promise<QuestionIdentity[]> {
   if (!numbers.length) return []
   return QuestionIdentityListSchema.parse(
-    JSON.parse(
-      await orchProcess(questionIdentityMapArgv(numbers), RUN_IDENTITY_MAP_DEADLINE_MS),
-    ),
+    JSON.parse(await orchProcess(questionIdentityMapArgv(numbers), RUN_IDENTITY_MAP_DEADLINE_MS)),
   )
 }
 

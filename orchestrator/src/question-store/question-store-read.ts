@@ -2,13 +2,13 @@
 /** Gives callers named, typed reads while the wire contract stays discriminated. */
 
 import type { Database } from 'bun:sqlite'
+import { projectByName } from '../project/project-read.ts'
 import type {
   TaskFlowInboxQuestionRow,
   TaskFlowOpenSessionStageRow,
   TaskFlowTaskRulingRow,
   TaskFlowWaitingQuestionRow,
 } from '../workflow/task-flow-store-types.ts'
-import { projectByName } from '../project/project-read.ts'
 import { questionStore } from './question-store.ts'
 import { questionNumberProjectIds } from './question-store-sqlite-reads.ts'
 import type { QuestionStore } from './question-store-types.ts'
@@ -21,7 +21,9 @@ export function questionNumberProjectId(database: Database, number: number): str
     )
   const projectId = projectIds[0]
   if (!projectId)
-    throw new Error(`question ${number} has no locally resolved record space; pass the question UUID`)
+    throw new Error(
+      `question ${number} has no locally resolved record space; pass the question UUID`,
+    )
   return projectId
 }
 
@@ -80,7 +82,8 @@ export async function unlinkedWorkflowQuestions(
   input: { project?: string; workflowKey?: string; projectId?: string } = {},
 ) {
   const projectId =
-    input.projectId ?? (input.project ? projectByName(input.project, database)?.recordId : undefined)
+    input.projectId ??
+    (input.project ? projectByName(input.project, database)?.recordId : undefined)
   return (
     await questionStore(database).read(
       { read: 'unlinked-workflow', project: input.project, workflowKey: input.workflowKey },
