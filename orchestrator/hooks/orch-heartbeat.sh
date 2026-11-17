@@ -98,7 +98,6 @@ heartbeat_timestamp() {
 }
 
 screened_reason() {
-  [ -s "$1" ] || return 0
   local reason
   reason=$(python3 "$ROOT/hooks/heartbeat-decision.py" <"$1" 2>/dev/null)
   [ -n "$reason" ] || reason="stderr screening failed"
