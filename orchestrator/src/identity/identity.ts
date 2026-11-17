@@ -12,7 +12,7 @@ import {
   type ReferenceKind,
 } from '../../../shared/reference.ts'
 import { projectByName, projectByRecordId } from '../project/project-read.ts'
-import { effectiveProjectSpace } from '../project-space.ts'
+import { cachedProjectSpaces } from '../project-space-cache.ts'
 import { questionById, questionByProjectNumber } from '../question-store/question-store-read.ts'
 
 type ResolvableKind = Exclude<ReferenceKind, 'task'>
@@ -54,7 +54,7 @@ type IdentityRow = { record_id: string; project_record_id: string | null }
 
 const projectSpace = (context: IdentityContext, projectId: string | null): string | null => {
   const project = projectId ? projectByRecordId(projectId, context.database) : null
-  return effectiveProjectSpace(context.database, project?.name ?? null)
+  return project ? (cachedProjectSpaces(context.database)[project.name] ?? null) : null
 }
 
 function runById(context: IdentityContext, recordId: string): IdentityRow | null {

@@ -14,7 +14,7 @@ export const identityModules = [
     '../../../shared/identity-state-classes.ts',
     '../../../shared/reference.ts',
     '../project/project-read.ts',
-    '../project-space.ts',
+    '../project-space-cache.ts',
     '../question-store/question-store-read.ts',
   ]),
   module('orchestrator/src/identity/identity-context.ts', [
