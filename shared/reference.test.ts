@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from './brand.ts'
 import { newRecordId } from './record-id.ts'
 import { parseReference } from './reference.ts'
 
@@ -8,9 +9,9 @@ describe('record reference grammar', () => {
     expect(parseReference(id).value).toEqual({ kind: 'record-id', recordId: id })
     expect(parseReference('q42').value).toEqual({ kind: 'label', prefix: 'q', number: 42 })
     expect(parseReference('DEV-2378').value).toEqual({ kind: 'task-key', key: 'DEV-2378' })
-    expect(parseReference('bottega#q42').qualifier).toEqual({
+    expect(parseReference(`${PLATFORM_SLUG}#q42`).qualifier).toEqual({
       kind: 'project',
-      value: 'bottega',
+      value: PLATFORM_SLUG,
     })
     expect(parseReference('workstation/r42').qualifier).toEqual({
       kind: 'machine',
@@ -23,7 +24,7 @@ describe('record reference grammar', () => {
     })
   })
 
-  test.each(['', ' q1', 'q0', 'q-1', '#q1', 'bottega#', 'a/b#q1', 'DEV-0', 'Q1'])(
+  test.each(['', ' q1', 'q0', 'q-1', '#q1', `${PLATFORM_SLUG}#`, 'a/b#q1', 'DEV-0', 'Q1'])(
     'refuses malformed reference %p',
     (value) => expect(() => parseReference(value)).toThrow('invalid reference'),
   )

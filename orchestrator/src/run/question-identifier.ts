@@ -6,6 +6,7 @@ import type { QuestionIdentity } from '../../../shared/orch-contract.ts'
 import { parseReference } from '../../../shared/reference.ts'
 import { resolve } from '../identity/identity.ts'
 import { identityContext } from '../identity/identity-context.ts'
+import { questionById } from '../question-store/question-store-read.ts'
 
 export type ParsedQuestionIdentifier =
   | { kind: 'number'; id: number }
@@ -19,17 +20,22 @@ export async function questionIdentityMap(
   return Promise.all(
     identifiers.map(async (identifier) => {
       const resolved = await resolve(identifier, context, 'question')
-      const row = database
-        .query<{ number: number }, [string]>('SELECT number FROM question WHERE record_id=?')
-        .get(resolved.recordId)
+      const row = await questionById(database, resolved.recordId)
       if (!row) throw new Error(`question ${resolved.recordId} is not cached locally`)
-      return { number: row.number, record_id: resolved.recordId }
+      return { number: Number(row.number), record_id: resolved.recordId }
     }),
   )
 }
 
 export function parseQuestionIdentifier(input: string | number): ParsedQuestionIdentifier {
-  const parsed = parseReference(input, 'question')
+  let parsed: ReturnType<typeof parseReference>
+  try {
+    parsed = parseReference(input, 'question')
+  } catch {
+    throw new Error(
+      `invalid question identifier ${JSON.stringify(String(input))}: expected a q-prefixed question number, positive decimal question number, or full question UUID`,
+    )
+  }
   if (parsed.value.kind === 'record-id')
     return { kind: 'record-id', recordId: parsed.value.recordId }
   if (parsed.value.kind === 'number') return { kind: 'number', id: parsed.value.number }

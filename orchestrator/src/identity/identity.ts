@@ -6,14 +6,18 @@ import {
   IDENTITY_STATE_CLASSES,
   type IdentityAuthority,
 } from '../../../shared/identity-state-classes.ts'
-import { parseReference, type ReferenceKind } from '../../../shared/reference.ts'
+import {
+  type ParsedReference,
+  parseReference,
+  type ReferenceKind,
+} from '../../../shared/reference.ts'
 import { projectByName, projectByRecordId } from '../project/project-read.ts'
 import { effectiveProjectSpace } from '../project-space.ts'
 import { questionById, questionByProjectNumber } from '../question-store/question-store-read.ts'
 
 type ResolvableKind = Exclude<ReferenceKind, 'task'>
 
-export const IDENTITY_KINDS = {
+const IDENTITY_KINDS = {
   question: {
     table: IDENTITY_STATE_CLASSES.question.table,
     prefix: 'q',
@@ -104,6 +108,75 @@ function visibilityRefusal(scope: string): never {
   throw new Error(`reference is not visible in ${scope}; pass the UUID or a qualified label`)
 }
 
+async function resolveUuid(recordId: string, context: IdentityContext): Promise<ResolvedIdentity> {
+  const run = runById(context, recordId)
+  if (run)
+    return {
+      kind: 'run',
+      recordId: run.record_id,
+      projectId: run.project_record_id,
+      spaceId: projectSpace(context, run.project_record_id),
+      authority: IDENTITY_KINDS.run.authority,
+    }
+  const question = await questionById(context.database, recordId)
+  if (!question) visibilityRefusal("the caller's visible spaces")
+  const projectId = questionProjectId(context, question)
+  return {
+    kind: 'question',
+    recordId: String(question.record_id),
+    projectId,
+    spaceId: projectSpace(context, projectId),
+    authority: IDENTITY_KINDS.question.authority,
+  }
+}
+
+function resolveRun(parsed: ParsedReference, context: IdentityContext): ResolvedIdentity | null {
+  const row =
+    parsed.value.kind === 'record-id'
+      ? runById(context, parsed.value.recordId)
+      : 'number' in parsed.value
+        ? runByNumber(context, parsed.value.number)
+        : null
+  return row
+    ? {
+        kind: 'run',
+        recordId: row.record_id,
+        projectId: row.project_record_id,
+        spaceId: projectSpace(context, row.project_record_id),
+        authority: IDENTITY_KINDS.run.authority,
+      }
+    : null
+}
+
+async function resolveQuestion(
+  parsed: ParsedReference,
+  context: IdentityContext,
+): Promise<ResolvedIdentity> {
+  const scope = scopedProject(context, parsed.qualifier)
+  const question =
+    parsed.value.kind === 'record-id'
+      ? await questionById(context.database, parsed.value.recordId)
+      : 'number' in parsed.value && scope.projectId
+        ? await questionByProjectNumber(context.database, parsed.value.number, scope.projectId)
+        : null
+  const projectId = question ? questionProjectId(context, question) : null
+  if (!question || (parsed.value.kind !== 'record-id' && projectId !== scope.projectId))
+    visibilityRefusal(scope.projectName ? `project ${scope.projectName}` : "the caller's project")
+  return {
+    kind: 'question',
+    recordId: String(question.record_id),
+    projectId,
+    spaceId: projectSpace(context, projectId),
+    authority: IDENTITY_KINDS.question.authority,
+  }
+}
+
+function parsedKind(parsed: ParsedReference, expectedKind?: ResolvableKind): ResolvableKind | null {
+  if (parsed.value.kind === 'label') return kindForPrefix(parsed.value.prefix)
+  if (parsed.value.kind === 'number') return parsed.value.referenceKind
+  return expectedKind ?? null
+}
+
 export async function resolve(
   reference: string | number,
   context: IdentityContext,
@@ -115,79 +188,19 @@ export async function resolve(
   const parsed = parseReference(reference, expectedKind)
   if (parsed.value.kind === 'task-key')
     throw new Error(`task reference ${parsed.value.key} is not migrated to identity resolution`)
-  const kind =
-    parsed.value.kind === 'label'
-      ? kindForPrefix(parsed.value.prefix)
-      : parsed.value.kind === 'number'
-        ? parsed.value.referenceKind
-        : expectedKind
-  if (!kind) {
-    const run = runById(context, parsed.value.recordId)
-    if (run) {
-      const result: ResolvedIdentity = {
-        kind: 'run',
-        recordId: run.record_id,
-        projectId: run.project_record_id,
-        spaceId: projectSpace(context, run.project_record_id),
-        authority: IDENTITY_KINDS.run.authority,
-      }
-      context.identityMap.set(cacheKey, result)
-      return result
-    }
-    const question = await questionById(context.database, parsed.value.recordId)
-    if (!question) visibilityRefusal("the caller's visible spaces")
-    const projectId = questionProjectId(context, question)
-    const result: ResolvedIdentity = {
-      kind: 'question',
-      recordId: String(question.record_id),
-      projectId,
-      spaceId: projectSpace(context, projectId),
-      authority: IDENTITY_KINDS.question.authority,
-    }
-    context.identityMap.set(cacheKey, result)
-    return result
-  }
+  const kind = parsedKind(parsed, expectedKind)
+  if (!kind && parsed.value.kind !== 'record-id')
+    throw new Error(`reference ${JSON.stringify(String(reference))} has no migrated kind`)
   if (expectedKind && kind !== expectedKind)
     throw new Error(
       `reference ${JSON.stringify(String(reference))} names a ${kind}, expected ${expectedKind}`,
     )
 
-  let result: ResolvedIdentity | null = null
-  if (kind === 'run') {
-    const row =
-      parsed.value.kind === 'record-id'
-        ? runById(context, parsed.value.recordId)
-        : runByNumber(context, parsed.value.number)
-    if (row)
-      result = {
-        kind,
-        recordId: row.record_id,
-        projectId: row.project_record_id,
-        spaceId: projectSpace(context, row.project_record_id),
-        authority: IDENTITY_KINDS.run.authority,
-      }
-  } else {
-    const scope = scopedProject(context, parsed.qualifier)
-    const question =
-      parsed.value.kind === 'record-id'
-        ? await questionById(context.database, parsed.value.recordId)
-        : scope.projectId
-          ? await questionByProjectNumber(context.database, parsed.value.number, scope.projectId)
-          : null
-    if (question) {
-      const projectId = questionProjectId(context, question)
-      if (parsed.value.kind === 'record-id' || projectId === scope.projectId)
-        result = {
-          kind,
-          recordId: String(question.record_id),
-          projectId,
-          spaceId: projectSpace(context, projectId),
-          authority: IDENTITY_KINDS.question.authority,
-        }
-    }
-    if (!result)
-      visibilityRefusal(scope.projectName ? `project ${scope.projectName}` : "the caller's project")
-  }
+  const result = !kind
+    ? await resolveUuid(parsed.value.recordId, context)
+    : kind === 'run'
+      ? resolveRun(parsed, context)
+      : await resolveQuestion(parsed, context)
   if (!result) visibilityRefusal('this machine')
   context.identityMap.set(cacheKey, result)
   return result
