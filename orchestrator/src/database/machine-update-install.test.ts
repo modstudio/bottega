@@ -61,7 +61,7 @@ test.each([
         runLaunchAgentsRefreshVerb: () => {},
       },
     )
-    expect(events).toEqual(expected)
+    expect(events).toEqual([...expected])
   },
 )
 
