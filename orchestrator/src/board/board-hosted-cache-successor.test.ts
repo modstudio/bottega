@@ -245,6 +245,38 @@ test('a hosted successor receipt holder receives the reply without another elect
   expect(calls).toBe(0)
 })
 
+test('a read-only hosted push defers only the successor receipt holder', async () => {
+  const held = fixture({ session: 'reader' })
+  const holderDatabase = machine(held.projectId, 'reader')
+  await refresh(holderDatabase, held.client)
+
+  const holderPush = await claimCachedHostedForPush(
+    'reader',
+    false,
+    Date.now(),
+    holderDatabase,
+    false,
+  )
+  expect(holderPush.notices).toEqual([])
+  expect(holderPush.deferredReplySuccessors).toEqual([
+    { replyRecordId: held.reply.id, threadTitle: 'Report' },
+  ])
+
+  const offered = fixture()
+  const candidateDatabase = machine(offered.projectId, 'candidate')
+  await refresh(candidateDatabase, offered.client)
+
+  const candidatePush = await claimCachedHostedForPush(
+    'candidate',
+    false,
+    Date.now(),
+    candidateDatabase,
+    false,
+  )
+  expect(candidatePush.notices).toEqual([])
+  expect(candidatePush.deferredReplySuccessors).toEqual([])
+})
+
 test('a demoted former holder clears its local successor bit and cannot offer the reply', async () => {
   const { client, projectId, reply } = fixture({ session: 'old-holder' })
   const old = machine(projectId, 'old-holder', Date.now() - SESSION_LIVE_MS - 1)

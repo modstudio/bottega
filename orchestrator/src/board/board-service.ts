@@ -161,6 +161,17 @@ function wasDelivered(messageRecordId: string, reader: string, database = db()):
   return Boolean(receiptDelivery(messageRecordId, reader, database)?.delivered_at)
 }
 
+function replySuccessorHeld(messageRecordId: string, reader: string, database = db()): boolean {
+  return Boolean(
+    database
+      .query(
+        `SELECT 1 AS ok FROM board_receipt
+         WHERE message_record_id=? AND reader_session=? AND successor=1`,
+      )
+      .get(messageRecordId, reader),
+  )
+}
+
 function replySuccessorPush(
   reply: MessageRow,
   reader: string,
@@ -411,6 +422,7 @@ export function claimNotices(
   expiresAt: string | null
   purpose: BoardPurpose
   reportReplySuccessor?: boolean
+  successorHeld?: boolean
   threadTitle?: string
 }[] {
   const reader = boardReader(env)
@@ -430,7 +442,11 @@ export function claimNotices(
       expiresAt: row.expires_at,
     }
     return row.kind === 'reply' && replySuccessorPush(row, reader, clock, database)
-      ? { ...notice, reportReplySuccessor: true }
+      ? {
+          ...notice,
+          reportReplySuccessor: true,
+          ...(replySuccessorHeld(row.record_id, reader, database) ? { successorHeld: true } : {}),
+        }
       : notice
   })
 }

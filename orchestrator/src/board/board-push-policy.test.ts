@@ -208,20 +208,33 @@ test('a session that began after a post is not pushed an older request', () => {
   ).toBe('ordinary')
 })
 
-test('a read-only delivery defers a reply successor instead of claiming it', () => {
-  const successor = {
+test('a read-only delivery defers a held reply successor and drops a candidate-only reply', () => {
+  const heldSuccessor = {
     ackRequired: false,
     ackDeadline: null,
     createdAt: postedAt,
     expiresAt: null,
     reportReplySuccessor: true,
+    successorHeld: true,
     threadTitle: 'Report thread',
   }
-  expect(selectPushNotices('2026-10-16T12:00:00.000Z', [successor], clock, false)).toEqual({
+  const candidateOnly = {
+    ...heldSuccessor,
+    successorHeld: false,
+    threadTitle: 'Candidate-only report thread',
+  }
+  expect(
+    selectPushNotices(
+      '2026-10-16T12:00:00.000Z',
+      [heldSuccessor, candidateOnly],
+      clock,
+      false,
+    ),
+  ).toEqual({
     notices: [],
-    withheldOlderCount: 0,
+    withheldOlderCount: 1,
     deferredReplySuccessorCount: 1,
-    deferredReplySuccessors: [successor],
+    deferredReplySuccessors: [heldSuccessor],
   })
 })
 

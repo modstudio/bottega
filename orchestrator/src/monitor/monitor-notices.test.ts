@@ -274,7 +274,7 @@ test('notice delivery survives a failing hosted-pressure check on a refresh tick
   ).toEqual({ checked_at: seededCheckedAt, state: '{' })
 }, 1_000)
 
-test('read-only notice claim defers a report reply successor with a reason', async () => {
+test('read-only notice claim drops a candidate-only reply and defers it once held', async () => {
   const clock = Date.now()
   const postedAt = clock - SESSION_LIVE_MS - 60_000
   const replyAt = postedAt + 30_000
@@ -328,25 +328,19 @@ test('read-only notice claim defers a report reply successor with a reason', asy
     new Date(replyAt + 1_000).toISOString(),
     new Date(clock).toISOString(),
   )
-  expect(
-    claimPushNotices(
-      false,
-      { CLAUDE_CODE_SESSION_ID: 'monitor-successor-reader' },
-      clock,
-      db(),
-      false,
-    ).deferredReplySuccessorCount,
-  ).toBe(1)
+  const env = { CLAUDE_CODE_SESSION_ID: 'monitor-successor-reader' }
+  expect(claimPushNotices(false, env, clock, db(), false).deferredReplySuccessorCount).toBe(0)
   db().exec('PRAGMA wal_checkpoint(PASSIVE)')
 
-  const delivery = await claimMonitorNoticesForCommand('monitor-successor-reader', {
+  const candidateDelivery = await claimMonitorNoticesForCommand('monitor-successor-reader', {
     skipBoardRefresh: true,
   })
 
-  expect(delivery.notices.map((notice) => notice.noticeId)).not.toContain(`board:${reply.number}`)
-  expect(delivery.warning).toContain(`"Successor report" (reply ${reply.recordId})`)
-  expect(delivery.warning).toContain('held, not lost')
-  expect(delivery.warning).toContain(
+  expect(candidateDelivery.notices.map((notice) => notice.noticeId)).not.toContain(
+    `board:${reply.number}`,
+  )
+  expect(candidateDelivery.warning ?? '').not.toContain(`reply ${reply.recordId}`)
+  expect(candidateDelivery.warning ?? '').not.toContain(
     `${PLATFORM_SLUG} board pending --session monitor-successor-reader`,
   )
   expect(
@@ -354,6 +348,28 @@ test('read-only notice claim defers a report reply successor with a reason', asy
       .query('SELECT COUNT(*) count FROM board_receipt WHERE message_record_id=? AND successor=1')
       .get(reply.recordId),
   ).toEqual({ count: 0 })
+
+  db()
+    .query(
+      `INSERT INTO board_receipt
+       (message_record_id,reader_session,audience_at_posting,successor,delivered_at,acknowledged_at,record_id)
+       VALUES (?,?,0,1,NULL,NULL,?)`,
+    )
+    .run(reply.recordId, 'monitor-successor-reader', newRecordId())
+  expect(claimPushNotices(false, env, clock, db(), false).deferredReplySuccessorCount).toBe(1)
+
+  const heldDelivery = await claimMonitorNoticesForCommand('monitor-successor-reader', {
+    skipBoardRefresh: true,
+  })
+
+  expect(heldDelivery.notices.map((notice) => notice.noticeId)).not.toContain(
+    `board:${reply.number}`,
+  )
+  expect(heldDelivery.warning).toContain(`"Successor report" (reply ${reply.recordId})`)
+  expect(heldDelivery.warning).toContain('held, not lost')
+  expect(heldDelivery.warning).toContain(
+    `${PLATFORM_SLUG} board pending --session monitor-successor-reader`,
+  )
 })
 
 test('heartbeat board notices use the shared reply delivery rendering', async () => {

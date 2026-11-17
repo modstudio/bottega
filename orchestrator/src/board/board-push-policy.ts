@@ -199,6 +199,7 @@ export function selectPushNotices<
     expiresAt: string | null
     purpose?: BoardPurpose
     reportReplySuccessor?: boolean
+    successorHeld?: boolean
     threadTitle?: string
   },
 >(
@@ -226,7 +227,7 @@ export function selectPushNotices<
     })
     if (decision === 'withheld') return []
     if (notice.reportReplySuccessor && !claimReplySuccessors) {
-      deferredReplySuccessors.push(notice)
+      if (notice.successorHeld) deferredReplySuccessors.push(notice)
       return []
     }
     return [notice]
