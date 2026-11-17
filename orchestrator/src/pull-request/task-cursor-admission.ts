@@ -12,9 +12,7 @@ import { openQuestionStages } from '../question-store/question-store-read.ts'
 
 type HeldTaskCursor = { project: string; workflowKey: string }
 
-export type PullRequestTaskCursorAdmission =
-  | { kind: 'allow' }
-  | { kind: 'refuse'; message: string }
+export type PullRequestTaskCursorAdmission = { kind: 'allow' } | { kind: 'refuse'; message: string }
 
 export function decidePullRequestTaskCursorAdmission(input: {
   command: 'pr create' | 'pr merge'
@@ -66,7 +64,8 @@ export async function assertPullRequestTaskCursorAdmission(
   const harnessSession = identity?.kind === 'identity' ? identity.session : null
   const taskKey = taskKeyToken(input.branch, input.project.settings.keyPrefixes ?? [])
   const database = input.database ?? db()
-  const heldCursors = taskKey && harnessSession ? await readOpenCursors(database, harnessSession) : []
+  const heldCursors =
+    taskKey && harnessSession ? await readOpenCursors(database, harnessSession) : []
   const decision = decidePullRequestTaskCursorAdmission({
     command: input.command,
     project: input.project.name,

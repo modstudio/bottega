@@ -47,7 +47,8 @@ export function decideWorkflowUncovered(input: {
   if (!Number.isSafeInteger(input.days) || input.days < 1)
     throw new Error('--days must be a positive integer')
   const today = new Date(input.now)
-  if (!Number.isFinite(today.getTime())) throw new Error('workflow uncovered requires a valid clock')
+  if (!Number.isFinite(today.getTime()))
+    throw new Error('workflow uncovered requires a valid clock')
   const dayNames = Array.from({ length: input.days }, (_, offset) => {
     const day = new Date(today)
     day.setUTCDate(day.getUTCDate() - offset)
@@ -69,7 +70,8 @@ export function decideWorkflowUncovered(input: {
         unique.set(`${item.project}\0${item.key}`, { project: item.project, key: item.key })
       }
       const tasks = [...unique.values()].sort(
-        (left, right) => left.project.localeCompare(right.project) || left.key.localeCompare(right.key),
+        (left, right) =>
+          left.project.localeCompare(right.project) || left.key.localeCompare(right.key),
       )
       return { day, count: tasks.length, tasks }
     }),
@@ -121,11 +123,9 @@ function readLandingEvidence(database: Database, from: string): KeyedWorkEvidenc
   return evidence
 }
 
-export function workflowUncoveredReport(input: {
-  days?: number
-  database?: Database
-  clock?: number
-} = {}): WorkflowUncoveredReport {
+export function workflowUncoveredReport(
+  input: { days?: number; database?: Database; clock?: number } = {},
+): WorkflowUncoveredReport {
   const days = input.days ?? WORKFLOW_UNCOVERED_DEFAULT_DAYS
   if (!Number.isSafeInteger(days) || days < 1) throw new Error('--days must be a positive integer')
   const database = input.database ?? db()
@@ -164,8 +164,7 @@ export function workflowUncoveredReport(input: {
       project: row.project,
       key: row.key,
       openedAt: row.openedAt,
-      closedAt:
-        row.closedAt && row.closedAt < row.lapsesAt ? row.closedAt : row.lapsesAt,
+      closedAt: row.closedAt && row.closedAt < row.lapsesAt ? row.closedAt : row.lapsesAt,
     }))
   return decideWorkflowUncovered({
     days,

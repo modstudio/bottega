@@ -1,5 +1,19 @@
 export const pullRequestModuleSpecs = [
   {
+    file: 'orchestrator/src/pull-request/task-cursor-admission.ts',
+    allowed: [
+      'bun:sqlite',
+      '../../../shared/brand.ts',
+      '../../../shared/refusal.ts',
+      '../branch/other-branch-state.ts',
+      '../caller-classification.ts',
+      '../database/db.ts',
+      '../project/projects.ts',
+      '../question-store/question-store-read.ts',
+    ],
+    typeOnlyAllowed: ['bun:sqlite', '../project/projects.ts'],
+  },
+  {
     file: 'orchestrator/src/pull-request/pr-landed-exit-codes.ts',
     allowed: ['../ship-cleanup/ship-cleanup-decision.ts'],
   },
@@ -142,6 +156,7 @@ export const pullRequestModuleSpecs = [
       './mergeability-decision.ts',
       './override-decision.ts',
       './pre-push-decision.ts',
+      './task-cursor-admission.ts',
     ],
   },
   {

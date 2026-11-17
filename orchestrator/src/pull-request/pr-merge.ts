@@ -770,11 +770,16 @@ async function completeMerge(input: {
   let admittedChange: PullRequestChange
   try {
     pullRequest = input.adapter.view(input.cwd, input.target)
-    await input.adapter.taskCursorAdmission?.(
-      input.project,
-      pullRequest.headBranch,
-      input.database,
-    )
+  } catch (cause) {
+    refuseUncaughtMergeError(cause, {
+      cwd: input.cwd,
+      target: input.target,
+      number: pullRequest?.number,
+      adapter: input.adapter,
+    })
+  }
+  await input.adapter.taskCursorAdmission?.(input.project, pullRequest.headBranch, input.database)
+  try {
     if (pullRequest.state === 'MERGED') {
       if (!pullRequest.mergeCommit)
         throw new Error('merged pull request lookup returned no merge commit')
