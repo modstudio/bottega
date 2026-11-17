@@ -16,6 +16,7 @@ import type {
 } from '../record/record-question-contract.ts'
 import { questionChangedAfterRefusal } from '../record/record-question-contract.ts'
 import { decideSingleRecordSpace } from '../record/record-space-cardinality.ts'
+import { compareQuestionsByAsk } from './question-order.ts'
 import { resolveQuestionRunPusher } from './question-run-pusher.ts'
 import type { QuestionReadResult, QuestionReadRow, QuestionStore } from './question-store-types.ts'
 
@@ -58,6 +59,11 @@ function localQuestionRow(
     : null
   mapped.cwd = owner?.cwd ?? mapped.project_path
   return mapped as QuestionReadRow
+}
+
+function questionRowRecordId(row: Record<string, unknown>): string | null {
+  const id = row.record_id ?? row.id
+  return typeof id === 'string' ? id : null
 }
 
 type SpaceCursors = Record<string, string>
@@ -174,8 +180,8 @@ export class RecordQuestionStore implements QuestionStore {
     const homes = new Map<string, Set<string>>()
     for (const { destination, value } of answers)
       for (const row of value.items) {
-        const id = row.record_id ?? row.id
-        if (typeof id !== 'string') continue
+        const id = questionRowRecordId(row)
+        if (!id) continue
         homes.set(id, (homes.get(id) ?? new Set()).add(destination.destinationSpaceId))
       }
     for (const spaces of homes.values()) {
@@ -189,18 +195,11 @@ export class RecordQuestionStore implements QuestionStore {
     }
     for (const { destination, value } of answers)
       for (const row of value.items) {
-        const id = row.record_id ?? row.id
-        if (typeof id === 'string') this.questionSpaces.set(id, destination)
+        const id = questionRowRecordId(row)
+        if (id) this.questionSpaces.set(id, destination)
       }
-    // Numbers are allocated per space, so merged rows are ordered by when they were asked.
     return {
-      items: answers
-        .flatMap(({ value }) => value.items)
-        .sort(
-          (a, b) =>
-            String(a.asked_at ?? '').localeCompare(String(b.asked_at ?? '')) ||
-            Number(a.number) - Number(b.number),
-        ),
+      items: answers.flatMap(({ value }) => value.items).sort(compareQuestionsByAsk),
     }
   }
 

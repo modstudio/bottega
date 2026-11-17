@@ -91,7 +91,7 @@ export function questionByNumber<Row extends { number?: unknown }>(
   const matches = questions.filter((row) => row.number === number)
   if (matches.length > 1)
     throw new Error(
-      `question ${number} names ${matches.length} questions on this cursor in different record spaces; pass the question's record id, then retry`,
+      `question ${number} names ${matches.length} questions on this cursor in different record spaces; close the stale one with 'bottega question close <record id> --reason <why>', then retry`,
     )
   return matches[0] ?? null
 }
