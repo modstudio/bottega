@@ -20,8 +20,7 @@ async function initDatabaseCommand(argv: string[]): Promise<number> {
     return 1
   }
   try {
-    const { registerStandardRuntime } = await import('../runtime/runtime-registration.ts')
-    registerStandardRuntime()
+    await registerFrontDoorRuntime()
     const { initializeDatabase } = await import('../database/db.ts')
     console.log(initializeDatabase())
     return 0
@@ -38,8 +37,7 @@ async function fullCli(
 ): Promise<number> {
   const { recoverMissingWorkingDirectory } = await import('../database/database-location.ts')
   recoverMissingWorkingDirectory()
-  const { registerStandardRuntime } = await import('../runtime/runtime-registration.ts')
-  registerStandardRuntime()
+  await registerFrontDoorRuntime()
   if (!storeFree && argv[0] !== 'migrate' && argv[0] !== 'update') {
     const { ensureDatabase } = await import('../database/db.ts')
     ensureDatabase()
@@ -127,10 +125,16 @@ export type KeylessCursorIdleCheck =
   | { kind: 'refuse'; message: string }
   | { kind: 'failed'; reason: string; remedy: string }
 
+async function registerFrontDoorRuntime(): Promise<void> {
+  const { registerStandardRuntime } = await import('../runtime/runtime-registration.ts')
+  registerStandardRuntime()
+}
+
 export async function keylessCursorIdleAdmission(
   action: 'task new',
 ): Promise<KeylessCursorIdleCheck> {
   try {
+    await registerFrontDoorRuntime()
     const { checkKeylessCursorIdleAdmission } = await import(
       '../session/keyless-cursor-idle-admission.ts'
     )
@@ -143,7 +147,9 @@ export async function keylessCursorIdleAdmission(
     return {
       kind: 'failed',
       reason,
-      remedy: `retry ${PLATFORM_SLUG} ${action}`,
+      remedy: /^cleared by:/m.test(reason)
+        ? 'follow the remedy in the failure reason above'
+        : `retry ${PLATFORM_SLUG} ${action}`,
     }
   }
 }
@@ -197,8 +203,7 @@ export function runCliEntryForTest(
 
 /** Structured owner output for the product front door's composite outbox listing. */
 export async function outboxEntries(): Promise<Record<string, unknown>[]> {
-  const { registerStandardRuntime } = await import('../runtime/runtime-registration.ts')
-  registerStandardRuntime()
+  await registerFrontDoorRuntime()
   const { ensureDatabase, db } = await import('../database/db.ts')
   ensureDatabase()
   const { quarantinedOutboxRows } = await import('../record/outbox-quarantine.ts')
@@ -207,8 +212,7 @@ export async function outboxEntries(): Promise<Record<string, unknown>[]> {
 
 /** Structured owner output for the product front door's composite storage report. */
 export async function tableStorageEntries() {
-  const { registerStandardRuntime } = await import('../runtime/runtime-registration.ts')
-  registerStandardRuntime()
+  await registerFrontDoorRuntime()
   const { ensureDatabase } = await import('../database/db.ts')
   ensureDatabase()
   const report = await (
