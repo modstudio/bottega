@@ -68,6 +68,7 @@ import {
   writeDispatchState,
   writeGeneratedSchema,
 } from './run-artifacts.ts'
+import { executorClaimFacts, installExecutorPushGuard } from './run-claim-executor.ts'
 import { admitFreshRepositoryRun, type HostCapacityWaitDeps } from './run-claim-host-capacity.ts'
 import type { RunWorkflowBinding } from './run-claim-inheritance.ts'
 import {
@@ -91,7 +92,6 @@ import {
 } from './run-claim-plan.ts'
 import { claimWithMigrationAdmission } from './run-claim-transaction.ts'
 import { type CredentialPayment, endpointKeyIdentityBindings } from './run-credential-claim.ts'
-import { executorClaimFacts, installExecutorPushGuard } from './run-claim-executor.ts'
 import { HARNESS_AGENT } from './run-executor.ts'
 import { nextRunNumber } from './run-number.ts'
 import { errorTail } from './run-process.ts'
