@@ -19,6 +19,7 @@ import {
 import {
   type DeferredReplySuccessor,
   missingReaderStartWarning,
+  type ReplySuccessorNoticeState,
   replySuccessorAddressing,
   selectPushNotices,
 } from './board-push-policy.ts'
@@ -31,6 +32,7 @@ import {
   type Environment,
   hasNonSuccessorReceipt,
   hasReceipt,
+  holdsReplySuccessor,
   insertRootMessage,
   type MessageRow,
   messageRows,
@@ -400,7 +402,7 @@ export function claimNotices(
   env: Environment = process.env,
   clock = Date.now(),
   database = db(),
-): {
+): ({
   number: number
   recordId: string
   text: string
@@ -410,9 +412,8 @@ export function claimNotices(
   createdAt: string
   expiresAt: string | null
   purpose: BoardPurpose
-  reportReplySuccessor?: boolean
   threadTitle?: string
-}[] {
+} & ReplySuccessorNoticeState)[] {
   const reader = boardReader(env)
   const rows = messageRows(database).filter(
     (row) =>
@@ -430,7 +431,11 @@ export function claimNotices(
       expiresAt: row.expires_at,
     }
     return row.kind === 'reply' && replySuccessorPush(row, reader, clock, database)
-      ? { ...notice, reportReplySuccessor: true }
+      ? {
+          ...notice,
+          reportReplySuccessor: true,
+          successorHeld: holdsReplySuccessor(row.record_id, reader, database),
+        }
       : notice
   })
 }

@@ -843,7 +843,7 @@ function claimCachedHostedFromContext(
         ? {
             ...notice,
             reportReplySuccessor: true,
-            ...(successor === 1 ? { successorHeld: true } : {}),
+            successorHeld: successor === 1,
           }
         : notice
     })
