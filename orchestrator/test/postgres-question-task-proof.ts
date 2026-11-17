@@ -383,6 +383,12 @@ export function registerQuestionTaskRecordSyncProof(
       },
       destination,
     )
+    expect((await client.readQuestions!({ read: 'inbox' }, destination)).items).not.toContainEqual(
+      expect.objectContaining({ record_id: workflowQuestion.id }),
+    )
+    expect(
+      (await client.readQuestions!({ read: 'inbox', limit: 1 }, destination)).items,
+    ).toHaveLength(1)
     const overturnedAt = '2026-11-15T12:01:30.000Z'
     Object.assign(workflowQuestion, {
       revision: 3,

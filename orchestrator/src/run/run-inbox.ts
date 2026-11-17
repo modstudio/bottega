@@ -182,9 +182,7 @@ export async function queryInbox(
       [{ owner_status: question.status }],
     ) === null
   const selected = queriedRows.filter((question) =>
-    mine || input.activeOnly
-      ? question.answered_at === null && isLive(question)
-      : question.answered_at === null || !isLive(question),
+    mine || input.activeOnly ? isLive(question) : true,
   )
   const visible =
     input.scope === 'session'
@@ -422,9 +420,7 @@ export async function runInboxCommand(
       [{ owner_status: question.status }],
     ) === null
   const allRows = queriedRows.filter((question) =>
-    mine || activeOnly
-      ? question.answered_at === null && isLive(question)
-      : question.answered_at === null || !isLive(question),
+    mine || activeOnly ? isLive(question) : true,
   )
   // Inside a registered project, the default view is the union of questions in
   // that project and questions owned by this session. Visibility does not make

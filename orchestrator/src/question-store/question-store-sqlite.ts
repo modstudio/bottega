@@ -160,10 +160,29 @@ export class SqliteQuestionStore implements QuestionStore {
   }
 
   private readInbox(input: Extract<QuestionReadInput, { read: 'inbox' }>): QuestionReadResult {
-    const rows = [...runInboxQuestionRows(this.database), ...workflowInboxQuestions(this.database)]
     const offset = input.changedAfter === undefined ? 0 : Number(input.changedAfter)
-    const end = input.limit === undefined ? rows.length : offset + input.limit
-    return { items: rows.slice(offset, end), cursor: String(end), more: end < rows.length }
+    const requested = input.limit === undefined ? undefined : input.limit + 1
+    const runCount = this.database
+      .query<{ count: number }, []>(
+        `SELECT COUNT(*) count FROM question
+         WHERE run_record_id IS NOT NULL AND answered_at IS NULL AND closed_at IS NULL`,
+      )
+      .get()!.count
+    const runRows = runInboxQuestionRows(this.database, undefined, requested, offset)
+    const workflowOffset = Math.max(0, offset - runCount)
+    const workflowLimit = requested === undefined ? undefined : Math.max(0, requested - runRows.length)
+    const rows = [
+      ...runRows,
+      ...(workflowLimit === 0
+        ? []
+        : workflowInboxQuestions(this.database, workflowLimit, workflowOffset)),
+    ]
+    const items = input.limit === undefined ? rows : rows.slice(0, input.limit)
+    return {
+      items,
+      cursor: String(offset + items.length),
+      more: input.limit !== undefined && rows.length > input.limit,
+    }
   }
 
   async write(intent: QuestionIntent, input: QuestionWriteBody): Promise<QuestionWriteResult> {

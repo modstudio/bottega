@@ -231,6 +231,19 @@ async function rows(tx: SQL, input: QuestionReadInput): Promise<Row[]> {
   const targeted = await targetedRows(tx, input)
   if (targeted !== null) return targeted
   if (input.read === 'inbox') {
+    const offset = input.changedAfter === undefined ? 0 : Number(input.changedAfter)
+    const requested = input.limit === undefined ? undefined : input.limit + 1
+    const runCount = Number(
+      (
+        (await tx.unsafe(
+          `SELECT COUNT(*) count FROM question q
+           WHERE q.run_id IS NOT NULL AND q.answered_at IS NULL AND q.closed_at IS NULL`,
+          [],
+        )) as Array<{ count: number | string }>
+      )[0]?.count ?? 0,
+    )
+    const runLimit =
+      requested === undefined ? (offset === 0 ? '' : ` OFFSET ${offset}`) : ` LIMIT ${requested} OFFSET ${offset}`
     const runs = (await tx.unsafe(
       `SELECT q.number,q.id::text record_id,q.run_id::text run_record_id,owner.number run_number,
         q.asked_at::text,q.question,q.options::text,q.recommendation,q.why,q.kind,q.jev_pick,q.jev_confidence,
@@ -244,9 +257,12 @@ async function rows(tx: SQL, input: QuestionReadInput): Promise<Row[]> {
        FROM question q JOIN run owner ON owner.id=q.run_id
        JOIN run root ON root.id=COALESCE(owner.parent_run_id,owner.id)
        LEFT JOIN project root_project ON root_project.id=root.project_id
-       WHERE q.closed_at IS NULL ORDER BY q.run_id,q.number`,
+       WHERE q.answered_at IS NULL AND q.closed_at IS NULL
+       ORDER BY q.run_id,q.number${runLimit}`,
       [],
     )) as Row[]
+    const workflowOffset = Math.max(0, offset - runCount)
+    const workflowLimit = requested === undefined ? undefined : Math.max(0, requested - runs.length)
     const workflows = (await tx.unsafe(
       `SELECT q.number,q.id::text record_id,q.asked_at::text,q.question,stage.number cursor_record_id,
         project.name project,stage.project_id::text project_record_id,stage.workflow workflow_slug,
@@ -255,15 +271,17 @@ async function rows(tx: SQL, input: QuestionReadInput): Promise<Row[]> {
        FROM question q JOIN task_flow_stage stage ON stage.id=q.workflow_cursor_record_id
        JOIN project ON project.id=stage.project_id
        WHERE stage.state='awaiting-ruling' AND q.answered_at IS NULL AND q.closed_at IS NULL
-       ORDER BY q.asked_at,q.number`,
+       ORDER BY q.asked_at,q.number${
+         workflowLimit === undefined
+           ? workflowOffset === 0
+             ? ''
+             : ` OFFSET ${workflowOffset}`
+           : ` LIMIT ${workflowLimit} OFFSET ${workflowOffset}`
+       }`,
       [],
     )) as Row[]
     const combined = [...runs, ...workflows]
-    const offset = input.changedAfter === undefined ? 0 : Number(input.changedAfter)
-    return combined.slice(
-      offset,
-      input.limit === undefined ? combined.length : offset + input.limit + 1,
-    )
+    return input.limit === undefined ? combined : combined.slice(0, input.limit + 1)
   }
   if (input.read === 'waiting')
     return limited(

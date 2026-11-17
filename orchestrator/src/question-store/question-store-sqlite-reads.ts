@@ -143,20 +143,26 @@ export const keylessSessionCursors = (
     .all(...(project ? [project] : []))
 }
 
-export const workflowInboxQuestions = (database: Database): TaskFlowInboxQuestionRow[] =>
+export const workflowInboxQuestions = (
+  database: Database,
+  limit?: number,
+  offset = 0,
+): TaskFlowInboxQuestionRow[] =>
   database
-    .query<TaskFlowInboxQuestionRow, []>(
+    .query<TaskFlowInboxQuestionRow, [number, number]>(
       `SELECT q.number,q.record_id,q.asked_at,q.question,c.number cursor_record_id,c.project,c.project_record_id,c.workflow_slug,c.mode_slug,c.args,
               c.ordinal,c.step_slug,c.session_id
          FROM question q JOIN workflow_cursor c ON c.record_id=q.workflow_cursor_record_id
         WHERE c.state='awaiting-ruling' AND ${questionOpenSql('q')}
-        ORDER BY q.asked_at,q.number`,
+        ORDER BY q.asked_at,q.number LIMIT ? OFFSET ?`,
     )
-    .all()
+    .all(limit ?? -1, offset)
 
 export function runInboxQuestionRows(
   database: Database,
   cutoff = new Date(Date.now() - SESSION_LIVE_MS).toISOString(),
+  limit?: number,
+  offset = 0,
 ): QueriedInboxQuestion[] {
   return database
     .query(
@@ -174,9 +180,10 @@ export function runInboxQuestionRows(
        FROM question q JOIN run r ON r.record_id=q.run_record_id
        JOIN run root ON root.record_id=COALESCE(r.parent_run_record_id,r.record_id)
        LEFT JOIN session_seen seen ON seen.session_id=r.session_id
-      WHERE q.closed_at IS NULL ORDER BY q.run_record_id,q.number`,
+      WHERE q.answered_at IS NULL AND q.closed_at IS NULL
+      ORDER BY q.run_record_id,q.number LIMIT ? OFFSET ?`,
     )
-    .all(cutoff) as QueriedInboxQuestion[]
+    .all(cutoff, limit ?? -1, offset) as QueriedInboxQuestion[]
 }
 
 export function rulingRows(

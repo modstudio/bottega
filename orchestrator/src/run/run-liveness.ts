@@ -537,10 +537,8 @@ export async function closeStaleChainQuestions(
     open.map((question) => String(question.record_id)),
     QUESTION_CLOSE_CHAIN_STALE,
   )
-  const roots = new Set(terminalQuestions.map((question) => String(question.root_id)))
   for (const rootId of rootsWithPendingDelivery(database))
-    if (roots.has(rootId))
-      await retireRunChainQuestionDeliveries(database, rootId, QUESTION_CLOSE_CHAIN_STALE)
+    await retireRunChainQuestionDeliveries(database, rootId, QUESTION_CLOSE_CHAIN_STALE)
   return closed
 }
 

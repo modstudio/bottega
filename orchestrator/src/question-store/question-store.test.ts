@@ -228,16 +228,48 @@ async function questionStoreContract(
   expect((await store.read({ read: 'inbox', limit: 1 })).items).toHaveLength(1)
   expect(inbox).toHaveLength(2)
 
+  const answeredRunBase = snapshot({
+    runId: RUN_ID,
+    workflowCursorRecordId: null,
+    workflowTaskId: TASK_ID,
+    askedVia: 'live',
+  })
+  await store.write('ask', body(answeredRunBase))
+  const answeredRun = await mutate(store, 'answer', answeredRunBase, {
+    answer: 'Yes',
+    answeredAt: '2026-11-15T12:01:00.000Z',
+    updatedAt: '2026-11-15T12:01:00.000Z',
+  })
+  expect(
+    (await store.read({ read: 'inbox' })).items.some(
+      (row) => field(row, 'record_id') === answeredRun.id,
+    ),
+  ).toBe(false)
+  const closedWorkflowBase = snapshot({ workflowTaskId: TASK_ID })
+  await store.write('ask', body(closedWorkflowBase))
+  const closedWorkflow = await mutate(store, 'close', closedWorkflowBase, {
+    closedAt: '2026-11-15T12:02:00.000Z',
+    closeReason: 'test',
+    updatedAt: '2026-11-15T12:02:00.000Z',
+  })
+  expect(
+    (await store.read({ read: 'inbox' })).items.some(
+      (row) => field(row, 'record_id') === closedWorkflow.id,
+    ),
+  ).toBe(false)
+
   await expect(store.read({ read: 'rulings', kind: 'all' })).rejects.toThrow(
     'unbounded question ruling history reads are refused',
   )
   const workflowRulings = (await store.read({ read: 'rulings', kind: 'workflow', limit: 100 }))
     .items
-  expect(workflowRulings).toHaveLength(1)
+  expect(workflowRulings).toHaveLength(2)
   expect(workflowRulings.every((row) => field(row, 'record_id') !== run.id)).toBe(true)
   const runRulings = (await store.read({ read: 'rulings', kind: 'run', since: STAMP })).items
-  expect(runRulings).toHaveLength(1)
-  expect(runRulings[0]).toMatchObject({ record_id: run.id, run_record_id: RUN_ID })
+  expect(runRulings).toHaveLength(2)
+  expect(runRulings).toContainEqual(
+    expect.objectContaining({ record_id: run.id, run_record_id: RUN_ID }),
+  )
 
   const unlinked = snapshot({ id: newRecordId() })
   await store.write('ask', body(unlinked))
