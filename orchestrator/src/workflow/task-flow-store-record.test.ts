@@ -170,6 +170,7 @@ function hostedStage(
   const flowId = input.flowId ?? (input.taskless ? '00000000-0000-4000-8000-000000000009' : FLOW_ID)
   const projectId = input.projectId ?? PROJECT_ID
   return {
+    space_id: PROJECT_ID,
     flow: {
       id: flowId,
       projectId,
