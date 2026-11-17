@@ -9,13 +9,7 @@ describe('run capacity queue policy', () => {
 
   test('accepts an open agent capacity wait within its bound', () => {
     expect(
-      isRunQueuedForCapacity(
-        'running',
-        null,
-        new Date(clock - 1_000).toISOString(),
-        null,
-        clock,
-      ),
+      isRunQueuedForCapacity('running', null, new Date(clock - 1_000).toISOString(), null, clock),
     ).toBe(true)
     expect(
       isRunQueuedForCapacity(

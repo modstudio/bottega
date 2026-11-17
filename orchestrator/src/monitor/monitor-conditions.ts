@@ -17,12 +17,7 @@ import {
 import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 import { recordedRunClaimsWorktree } from '../cleanup/cleanup-sweep-docker.ts'
 import { db, liveRuns } from '../database/db.ts'
-import {
-  capacityWaitSinceForRun,
-  idleLabel,
-  idleMsSince,
-  idleWarnMs,
-} from '../events.ts'
+import { capacityWaitSinceForRun, idleLabel, idleMsSince, idleWarnMs } from '../events.ts'
 import { UNSCORED_WHERE } from '../evidence/evidence-query.ts'
 import { targetGitEnvironment } from '../git/git-environment.ts'
 import { hookTreeNotice } from '../hook-tree/hook-tree.ts'
@@ -45,7 +40,7 @@ import { liveMemberStall, liveRunMembers } from '../run/live-run-member.ts'
 import { recordedRunLivenessFacts, runAlive } from '../run/run-alive.ts'
 import { abandonedBootstrap, PENDING_BOOTSTRAP_MS } from '../run/run-bootstrap.ts'
 import { runLeaseState } from '../run/run-lease.ts'
-import { isRunQueuedForCapacity } from '../run/run-liveness-policy.ts'
+import { isFreshAgentCapacityWait, isFreshRunHostWait } from '../run/run-liveness-policy.ts'
 import { recordedOwnerProcess } from '../run/run-owner-session-liveness.ts'
 import {
   HOOK_TREE_JOB,
@@ -237,7 +232,8 @@ export function idleRunCondition(
   clock = Date.now(),
   threshold = idleWarnMs(),
 ): MonitorCondition | null {
-  if (isRunQueuedForCapacity('running', run.host_wait_since, null, run.agent_pid, clock)) return null
+  // A fresh host wait outranks stale-run; an agent wait ranks below it.
+  if (isFreshRunHostWait('running', run.host_wait_since, clock)) return null
   if (run.pidAlive === false) {
     return {
       kind: 'stale-run',
@@ -262,7 +258,7 @@ export function idleRunCondition(
       ownerSession: run.session_id,
     }
   }
-  if (isRunQueuedForCapacity('running', null, run.capacity_wait_since, run.agent_pid, clock))
+  if (isFreshAgentCapacityWait('running', run.capacity_wait_since, run.agent_pid, clock))
     return null
   const label = idleLabel(run.last_event_at, run.started_at, clock, threshold)
   if (!label) return null

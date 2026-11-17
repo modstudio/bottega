@@ -25,6 +25,18 @@ const DETACHED_AGENT_CAPACITY_STALE_MARGIN_MS = 5 * 60_000
 export const DETACHED_AGENT_CAPACITY_WAIT_MAX_MS =
   STALE_AFTER_MS - DETACHED_AGENT_CAPACITY_STALE_MARGIN_MS
 
+/** Whether an unlaunched agent is still within its capacity queue's live bound. */
+export function isFreshAgentCapacityWait(
+  status: string,
+  since: string | null | undefined,
+  agentPid: number | null | undefined,
+  clock = Date.now(),
+): boolean {
+  if (status !== 'running' || agentPid != null || !since) return false
+  const started = Date.parse(since)
+  return Number.isFinite(started) && clock - started <= DETACHED_AGENT_CAPACITY_WAIT_MAX_MS
+}
+
 /** Whether a running run is still within either capacity queue's live bound. */
 export function isRunQueuedForCapacity(
   status: string,
@@ -34,7 +46,5 @@ export function isRunQueuedForCapacity(
   clock = Date.now(),
 ): boolean {
   if (isFreshRunHostWait(status, hostWaitSince, clock)) return true
-  if (status !== 'running' || agentPid != null || !agentCapacityWaitSince) return false
-  const started = Date.parse(agentCapacityWaitSince)
-  return Number.isFinite(started) && clock - started <= DETACHED_AGENT_CAPACITY_WAIT_MAX_MS
+  return isFreshAgentCapacityWait(status, agentCapacityWaitSince, agentPid, clock)
 }

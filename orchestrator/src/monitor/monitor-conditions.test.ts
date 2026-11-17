@@ -264,7 +264,12 @@ describe('idle run classification', () => {
 
   test('the detector reads an open agent wait before reporting an idle row', () => {
     const waitSince = '2026-09-17T15:26:00.000Z'
-    const runId = addRun({ agent: '(pending)', job: 'implement', status: 'running', startedAt: waitSince })
+    const runId = addRun({
+      agent: '(pending)',
+      job: 'implement',
+      status: 'running',
+      startedAt: waitSince,
+    })
     db().query('UPDATE run SET last_event_at=? WHERE record_id=?').run(waitSince, runId)
     appendRunEvent(runId, { ts: waitSince, type: 'capacity_wait', waiting: true })
 

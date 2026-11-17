@@ -11,7 +11,6 @@ import {
 } from '../collect/collect.ts'
 import { db } from '../database/db.ts'
 import {
-  capacityWaitSinceForRun,
   idleLabel,
   idleMsSince,
   liveOperationalStatusFromEvents,
@@ -394,9 +393,7 @@ function listedLiveState(
   const lastEventAt = (row.last_event_at as string | null) ?? null
   const startedAt = String(row.current_started_at ?? row.started_at)
   const operational = liveOperationalStatus(String(row.live_member_record_id), live)
-  const capacityWaitSince = live
-    ? capacityWaitSinceForRun(String(row.live_member_record_id))
-    : null
+  const capacityWaitSince = operational.capacity_wait_since
   const queuedForCapacity = isRunQueuedForCapacity(
     String(row.status),
     (row.host_wait_since as string | null) ?? null,
