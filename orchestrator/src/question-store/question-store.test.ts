@@ -445,7 +445,10 @@ test('record inbox paging advances independently across every reachable space', 
   database.close()
 })
 
-function twoSpaceStore(database: ReturnType<typeof migratedTestDatabase>, rows: Record<string, string[]>) {
+function twoSpaceStore(
+  database: ReturnType<typeof migratedTestDatabase>,
+  rows: Record<string, string[]>,
+) {
   const written: string[] = []
   const store = new RecordQuestionStore({
     database,
@@ -484,7 +487,10 @@ test('a cursor or run whose questions span record spaces reads every one of them
   )
   const forRun = await store.read({ read: 'for-run', runId: newRecordId() })
   expect(forRun.items).toHaveLength(2)
-  await store.write('answer', body({ ...snapshot(), id: earlier, revision: 2, answer: 'Yes' }, 'answer'))
+  await store.write(
+    'answer',
+    body({ ...snapshot(), id: earlier, revision: 2, answer: 'Yes' }, 'answer'),
+  )
   expect(written).toEqual([OTHER_SPACE_ID])
   database.close()
 })
