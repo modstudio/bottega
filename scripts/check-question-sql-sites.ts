@@ -12,7 +12,6 @@ const QUESTION_SQL = /\b(?:FROM|JOIN|INTO|UPDATE|DELETE\s+FROM)\s+question\b/g
 const EXACT_ADAPTERS = new Set([
   'orchestrator/src/question-store/question-store-sqlite.ts',
   'orchestrator/src/question-store/question-store-sqlite-reads.ts',
-  'orchestrator/src/question-store/question-store-read.ts',
   'orchestrator/src/record/record-question-read.ts',
   'orchestrator/src/record/record-question-write.ts',
   'orchestrator/src/record/record-question-number.ts',

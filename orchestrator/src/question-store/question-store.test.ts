@@ -213,6 +213,9 @@ async function questionStoreContract(
   expect((await store.read({ read: 'max-number' })).items).toEqual([{ number: 2 }])
   expect((await store.read({ read: 'by-id', ids: [run.id] })).items).toHaveLength(1)
   expect((await store.read({ read: 'for-run', runId: RUN_ID })).items).toHaveLength(1)
+  expect((await store.read({ read: 'for-runs', runIds: [RUN_ID] })).items).toEqual(
+    (await store.read({ read: 'for-run', runId: RUN_ID })).items,
+  )
   expect(
     (
       await store.read({
@@ -469,6 +472,48 @@ test('record question reads refuse a bare number before making a client request'
     'question numbers are unique only within a record space; pass the question UUID, then retry',
   )
   expect(requests).toBe(0)
+  database.close()
+})
+
+test('record for-runs reads once per owning project', async () => {
+  const database = migratedTestDatabase()
+  seedOwners(database)
+  const secondProjectId = newRecordId()
+  const secondRunId = newRecordId()
+  const sameProjectRunId = newRecordId()
+  database
+    .query('INSERT INTO project(record_id,name,path,stack,settings) VALUES (?,?,?,?,?)')
+    .run(secondProjectId, 'other-fixture', '/other', 'bun', '{"space":"other"}')
+  database
+    .query(`INSERT INTO run
+      (record_id,number,started_at,agent,job,repo,prompt_sha,prompt_bytes,prompt_head,status,
+       changed_paths,project_record_id)
+      VALUES (?,2,?,'codex','implement','question-fixture','sha',1,'prompt','running','[]',?),
+             (?,3,?,'codex','implement','other-fixture','sha',1,'prompt','running','[]',?)`)
+    .run(sameProjectRunId, STAMP, PROJECT_ID, secondRunId, STAMP, secondProjectId)
+  const reads: string[] = []
+  const store = new RecordQuestionStore({
+    database,
+    client: {
+      whoami: async () => ({
+        ...(await whoami()),
+        memberships: [
+          { space_id: SPACE_ID, name: 'Fixture', slug: 'fixture', permission: 'write' },
+          { space_id: OTHER_SPACE_ID, name: 'Other', slug: 'other', permission: 'write' },
+        ],
+      }),
+      readQuestions: async (_input, destination) => {
+        reads.push(destination!.destinationSpaceId)
+        return { items: [] }
+      },
+    },
+  })
+
+  await store.read({ read: 'for-runs', runIds: [RUN_ID, sameProjectRunId] })
+  expect(reads).toEqual([SPACE_ID])
+  reads.length = 0
+  await store.read({ read: 'for-runs', runIds: [RUN_ID, sameProjectRunId, secondRunId] })
+  expect(reads.sort()).toEqual([OTHER_SPACE_ID, SPACE_ID].sort())
   database.close()
 })
 

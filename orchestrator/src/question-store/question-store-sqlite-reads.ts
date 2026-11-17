@@ -22,6 +22,23 @@ import type {
 } from '../workflow/task-flow-store-types.ts'
 import { questionOpenSql, questionTaskHolderSql } from './question-store-sql.ts'
 
+export function questionNumberProjectId(database: Database, number: number): string | null {
+  const projectIds = database
+    .query<{ project_record_id: string | null }, [number]>(
+      `SELECT DISTINCT COALESCE(owner.project_record_id,cursor.project_record_id) project_record_id
+       FROM question q LEFT JOIN run owner ON owner.record_id=q.run_record_id
+       LEFT JOIN workflow_cursor cursor ON cursor.record_id=q.workflow_cursor_record_id
+       WHERE q.number=?`,
+    )
+    .all(number)
+    .flatMap((row) => (row.project_record_id ? [row.project_record_id] : []))
+  if (projectIds.length > 1)
+    throw new Error(
+      `question number ${number} exists in more than one project; pass the question UUID, then retry`,
+    )
+  return projectIds[0] ?? null
+}
+
 export type QueriedInboxQuestion = {
   number: number
   record_id: string

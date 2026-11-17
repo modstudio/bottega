@@ -18,7 +18,8 @@ import {
 } from '../gate/worker-check-omissions.ts'
 import { parseMcpProbe } from '../mcp/mcp-probe.ts'
 import { failureReason, outcomeOf } from '../outcome.ts'
-import { openChainQuestions } from '../run/question-open.ts'
+import { questionsForRuns } from '../question-store/question-store-read.ts'
+import { runChainIds } from '../run/run-chain.ts'
 import { HARNESS_EXECUTOR } from '../run/run-executor.ts'
 import { classifyRunIdentifier, resolveRunIdentifier } from '../run/run-identifier.ts'
 import type { ObservedDeadRun } from '../run/run-liveness.ts'
@@ -148,27 +149,62 @@ function presentLastWorkerCheckOmissions(
 }
 
 /** Resolve what an `asking` status means across the whole conversation. */
-async function resolveAsking(database: Database, runId: string): Promise<AskingResolution> {
-  const member = database
-    .query('SELECT record_id, parent_run_record_id FROM run WHERE record_id=?')
-    .get(runId) as {
-    record_id: string
-    parent_run_record_id: string | null
-  } | null
-  if (!member) throw new Error(`no run ${runId}`)
-  const rootId = member.parent_run_record_id ?? member.record_id
-  if ((await openChainQuestions(database, rootId)).length) return { state: 'open', rootId }
-
-  const running = database
-    .query(
-      `SELECT record_id FROM run
-      WHERE (record_id = ? OR parent_run_record_id = ?) AND status = 'running'
-      ORDER BY turn DESC, number DESC LIMIT 1`,
+async function resolveAskings(
+  database: Database,
+  runIds: readonly string[],
+): Promise<Map<string, AskingResolution>> {
+  if (!runIds.length) return new Map()
+  const members = database
+    .query<{ record_id: string; parent_run_record_id: string | null }, string[]>(
+      `SELECT record_id,parent_run_record_id FROM run
+       WHERE record_id IN (${runIds.map(() => '?').join(',')})`,
     )
-    .get(rootId, rootId) as { record_id: string } | null
-  return running
-    ? { state: 'running', rootId, runningId: running.record_id }
-    : { state: 'recoverable', rootId }
+    .all(...runIds)
+  const rootsByRun = new Map(
+    members.map((member) => [member.record_id, member.parent_run_record_id ?? member.record_id]),
+  )
+  for (const runId of runIds) if (!rootsByRun.has(runId)) throw new Error(`no run ${runId}`)
+  const roots = [...new Set(rootsByRun.values())]
+  const chainIdsByRoot = new Map(roots.map((rootId) => [rootId, runChainIds(database, rootId)]))
+  const questions = await questionsForRuns(database, [
+    ...new Set([...chainIdsByRoot.values()].flat()),
+  ])
+  const openRunIds = new Set(
+    questions
+      .filter((row) => row.answered_at === null && row.closed_at === null)
+      .map((row) => String(row.run_record_id)),
+  )
+  const openRoots = new Set(
+    [...chainIdsByRoot]
+      .filter(([, chainIds]) => chainIds.some((runId) => openRunIds.has(runId)))
+      .map(([rootId]) => rootId),
+  )
+  const runningByRoot = new Map<string, string>()
+  const running = database
+    .query<{ record_id: string; root_id: string }, string[]>(
+      `SELECT record_id,COALESCE(parent_run_record_id,record_id) root_id FROM run
+       WHERE COALESCE(parent_run_record_id,record_id) IN (${roots.map(() => '?').join(',')})
+         AND status='running' ORDER BY turn DESC,number DESC`,
+    )
+    .all(...roots)
+  for (const row of running)
+    if (!runningByRoot.has(row.root_id)) runningByRoot.set(row.root_id, row.record_id)
+  return new Map(
+    runIds.map((runId) => {
+      const rootId = rootsByRun.get(runId)!
+      const runningId = runningByRoot.get(rootId)
+      const resolution: AskingResolution = openRoots.has(rootId)
+        ? { state: 'open', rootId }
+        : runningId
+          ? { state: 'running', rootId, runningId }
+          : { state: 'recoverable', rootId }
+      return [runId, resolution]
+    }),
+  )
+}
+
+async function resolveAsking(database: Database, runId: string): Promise<AskingResolution> {
+  return (await resolveAskings(database, [runId])).get(runId)!
 }
 
 /**
@@ -867,41 +903,46 @@ export async function collectWaitForRuns(
   const observedTerminal = new Set<string>()
   for (;;) {
     const observation = await beforePoll()
-    const outcomes = await Promise.all(
-      ids.map(async (requestedId) => {
-        const chain = resolveFailover(database, requestedId)
-        const row = database
-          .query(
-            'SELECT record_id, status, output_path, error, failure_kind, exit_code FROM run WHERE record_id=?',
-          )
-          .get(chain.finalId) as {
-          record_id: string
-          status: string
-          output_path: string | null
-          error: string | null
-          failure_kind: string | null
-          exit_code: number | null
-        }
-        const asking = row.status === 'asking' ? await resolveAsking(database, row.record_id) : null
-        const outcome =
-          asking?.state === 'running'
-            ? { terminal: false, ok: false, line: 'running' }
-            : asking?.state === 'open'
+    const rows = ids.map((requestedId) => {
+      const chain = resolveFailover(database, requestedId)
+      const row = database
+        .query(
+          'SELECT record_id, status, output_path, error, failure_kind, exit_code FROM run WHERE record_id=?',
+        )
+        .get(chain.finalId) as {
+        record_id: string
+        status: string
+        output_path: string | null
+        error: string | null
+        failure_kind: string | null
+        exit_code: number | null
+      }
+      return { requestedId, row, chain }
+    })
+    const askingByRun = await resolveAskings(
+      database,
+      rows.filter(({ row }) => row.status === 'asking').map(({ row }) => row.record_id),
+    )
+    const outcomes = rows.map(({ requestedId, row, chain }) => {
+      const asking = row.status === 'asking' ? askingByRun.get(row.record_id)! : null
+      const outcome =
+        asking?.state === 'running'
+          ? { terminal: false, ok: false, line: 'running' }
+          : asking?.state === 'open'
+            ? {
+                terminal: true,
+                ok: true,
+                line: `asking - ${PLATFORM_SLUG} question inbox (or ${PLATFORM_SLUG} question answer ${asking.rootId})`,
+              }
+            : asking?.state === 'recoverable'
               ? {
                   terminal: true,
                   ok: true,
-                  line: `asking - ${PLATFORM_SLUG} question inbox (or ${PLATFORM_SLUG} question answer ${asking.rootId})`,
+                  line: `asking - recoverable: ${PLATFORM_SLUG} run continue ${asking.rootId}`,
                 }
-              : asking?.state === 'recoverable'
-                ? {
-                    terminal: true,
-                    ok: true,
-                    line: `asking - recoverable: ${PLATFORM_SLUG} run continue ${asking.rootId}`,
-                  }
-                : outcomeOf(row)
-        return { requestedId, row, chain, outcome }
-      }),
-    )
+              : outcomeOf(row)
+      return { requestedId, row, chain, outcome }
+    })
     if (Array.isArray(observation)) {
       const requestedRows = new Set(outcomes.map(({ row }) => row.record_id))
       for (const dead of observation) {

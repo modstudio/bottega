@@ -546,14 +546,14 @@ function storedChangeCursor(key: string): string | null {
   )
 }
 
-function stampChangeCursors(runCursor: string, rulingCursor: string): void {
+function stampChangeCursor(key: string, cursor: string): void {
   writeTransaction((conn) => {
-    const statement = conn.query(
-      `INSERT INTO setting(key,value) VALUES (?,?)
-         ON CONFLICT(key) DO UPDATE SET value=excluded.value`,
-    )
-    statement.run(RUN_CHANGE_CURSOR_SETTING, runCursor)
-    statement.run(RULING_CHANGE_CURSOR_SETTING, rulingCursor)
+    conn
+      .query(
+        `INSERT INTO setting(key,value) VALUES (?,?)
+           ON CONFLICT(key) DO UPDATE SET value=excluded.value`,
+      )
+      .run(key, cursor)
   })
 }
 
@@ -572,31 +572,34 @@ export async function ingestRunChanges(
   const snapshotAt = nowIso()
   const previousRun = storedChangeCursor(RUN_CHANGE_CURSOR_SETTING)
   const previousRuling = storedChangeCursor(RULING_CHANGE_CURSOR_SETTING)
-  let runs: OrchRun[]
-  let workflowQuestions: RulingListRow[]
-  let runCursor: string
-  let rulingCursor: string
-  if (previousRun === null || previousRuling === null) {
-    const snapshot = await (options.runChangeReader ?? readRunChanges)(COLLECT_CHANGE_CURSOR_PROBE)
-    const [snapshotRuns, rulingSnapshot] = await Promise.all([
-      (options.runReader ?? readRuns)(fallbackSince),
-      (options.rulingChangeReader ?? readWorkflowRulingChanges)('0'),
-    ])
-    runs = snapshotRuns
-    workflowQuestions = rulingSnapshot.rows
-    runCursor = snapshot.cursor
-    rulingCursor = rulingSnapshot.cursor
-  } else {
-    const [runChanges, rulingChanges] = await Promise.all([
-      (options.runChangeReader ?? readRunChanges)(previousRun),
-      (options.rulingChangeReader ?? readWorkflowRulingChanges)(previousRuling),
-    ])
-    runs = runChanges.rows
-    workflowQuestions = rulingChanges.rows
-    runCursor = runChanges.cursor
-    rulingCursor = rulingChanges.cursor
+  const [runLeg, rulingLeg] = await Promise.allSettled([
+    (async () => {
+      const changeReader = options.runChangeReader ?? readRunChanges
+      const change = await changeReader(previousRun ?? COLLECT_CHANGE_CURSOR_PROBE)
+      const runs =
+        previousRun === null ? await (options.runReader ?? readRuns)(fallbackSince) : change.rows
+      const result = ingestRunSourceRows(runs, [], snapshotAt, options)
+      stampChangeCursor(RUN_CHANGE_CURSOR_SETTING, change.cursor)
+      return { rows: runs, result }
+    })(),
+    (async () => {
+      const change = await (options.rulingChangeReader ?? readWorkflowRulingChanges)(
+        previousRuling ?? '0',
+      )
+      const result = ingestRunSourceRows([], change.rows, snapshotAt, options)
+      stampChangeCursor(RULING_CHANGE_CURSOR_SETTING, change.cursor)
+      return { rows: change.rows, result }
+    })(),
+  ])
+  if (runLeg.status === 'rejected') throw runLeg.reason
+  if (rulingLeg.status === 'rejected') throw rulingLeg.reason
+  const { rows: runs, result: runResult } = runLeg.value
+  const { rows: workflowQuestions, result: rulingResult } = rulingLeg.value
+  const skippedUnlinked = (runResult.skippedUnlinked ?? 0) + (rulingResult.skippedUnlinked ?? 0)
+  return {
+    examined: runs.length + workflowQuestions.length,
+    rows: runResult.rows + rulingResult.rows,
+    skipped: runResult.skipped + rulingResult.skipped,
+    ...(skippedUnlinked ? { skippedUnlinked } : {}),
   }
-  const result = ingestRunSourceRows(runs, workflowQuestions, snapshotAt, options)
-  stampChangeCursors(runCursor, rulingCursor)
-  return { examined: runs.length + workflowQuestions.length, ...result }
 }

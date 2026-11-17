@@ -9,6 +9,7 @@ import type {
   TaskFlowWaitingQuestionRow,
 } from '../workflow/task-flow-store-types.ts'
 import { questionStore } from './question-store.ts'
+import { questionNumberProjectId as sqliteQuestionNumberProjectId } from './question-store-sqlite-reads.ts'
 
 function projectRecordIdByName(database: Database, project: string): string | undefined {
   return database
@@ -42,16 +43,7 @@ export async function questionByNumber(
 }
 
 export function questionNumberProjectId(database: Database, number: number): string | null {
-  return (
-    database
-      .query<{ project_record_id: string | null }, [number]>(
-        `SELECT COALESCE(owner.project_record_id,cursor.project_record_id) project_record_id
-         FROM question q LEFT JOIN run owner ON owner.record_id=q.run_record_id
-         LEFT JOIN workflow_cursor cursor ON cursor.record_id=q.workflow_cursor_record_id
-         WHERE q.number=?`,
-      )
-      .get(number)?.project_record_id ?? null
-  )
+  return sqliteQuestionNumberProjectId(database, number)
 }
 
 export async function openQuestionsForTasks(
@@ -124,7 +116,18 @@ export async function questionsForRuns(
   database: Database,
   runIds: readonly string[],
 ): Promise<Record<string, unknown>[]> {
-  return (await Promise.all(runIds.map((runId) => questionsForRun(database, runId)))).flat()
+  const rows: Record<string, unknown>[] = []
+  for (let offset = 0; offset < runIds.length; offset += 100) {
+    const ids = runIds.slice(offset, offset + 100)
+    if (!ids.length) continue
+    rows.push(
+      ...((await questionStore(database).read({ read: 'for-runs', runIds: ids })).items as Record<
+        string,
+        unknown
+      >[]),
+    )
+  }
+  return rows
 }
 
 export async function questionsForWorkflowCursor(

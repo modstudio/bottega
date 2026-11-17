@@ -14,10 +14,10 @@ import { liveOperationalStatusFromEvents, readEventLog, runEventsPath } from '..
 import { UNSCORED_WHERE } from '../evidence/evidence-query.ts'
 import { failureReason, type OutcomeRow, outcomeOf } from '../outcome.ts'
 import type { ProcessSample } from '../process-resource-sampler.ts'
-import { questionRulings } from '../question-store/question-store-read.ts'
+import { questionRulings, questionsForRuns } from '../question-store/question-store-read.ts'
 import { publishChangeCursor } from './collect-change.ts'
 import { currentRunMemberJoin, liveMemberStall } from './live-run-member.ts'
-import { questionsForRunChain } from './question-open.ts'
+import { runChainIds } from './run-chain.ts'
 import type {
   AnswerChannel,
   AnswererKind,
@@ -139,10 +139,10 @@ function reportRouteAndExecutor(row: Record<string, unknown>, log: (...values: u
   if (row.executor === 'harness') log('      executor: harness')
 }
 
-async function listingQuestions(recordId: string, json: boolean) {
+function listingQuestions(questions: Record<string, unknown>[] | undefined, json: boolean) {
   if (!json) return undefined
   return (
-    (await questionsForRunChain(db(), recordId)) as unknown as {
+    (questions ?? []) as unknown as {
       number: number
       record_id: string
       run_record_id: string
@@ -187,15 +187,16 @@ async function listingConversation(
   subscriptionCost: SubscriptionCostContext | undefined,
   chainIsStranded: (id: string) => boolean,
   strandedRecovery: (id: string) => string,
+  questions: Record<string, unknown>[] | undefined,
 ): Promise<Record<string, unknown>[]> {
   const chain = resolveFailover(db(), r.record_id as string)
   const final = chain.attempts.at(-1)!
   const recordId = String(r.record_id)
-  const questions = await listingQuestions(recordId, json)
+  const listedQuestions = listingQuestions(questions, json)
   const listed = {
     ...r,
     ...listingHumanCurrent(final.record_id, json),
-    ...(questions ? { questions } : {}),
+    ...(listedQuestions ? { questions: listedQuestions } : {}),
     answer_agent: final.agent,
     failover_chain: chain.attempts.map((attempt) => attempt.agent),
     ...(chainIsStranded(recordId)
@@ -708,11 +709,37 @@ export async function runListingCommand(
       ORDER BY r.number DESC${listingLimitSql(limit)}`,
     )
     .all(...args, ...listingLimitBindings(limit)) as Record<string, unknown>[]
+  rows = rows.map(withRetryRecordId)
+  const questionsByRoot = new Map<string, Record<string, unknown>[]>()
+  if (json) {
+    const chainIdsByRoot = new Map(
+      rows.map((row) => {
+        const rootId = String(row.record_id)
+        return [rootId, runChainIds(db(), rootId)] as const
+      }),
+    )
+    const allQuestions = await questionsForRuns(db(), [
+      ...new Set([...chainIdsByRoot.values()].flat()),
+    ])
+    const byRun = Map.groupBy(allQuestions, (question) => String(question.run_record_id))
+    for (const [rootId, chainIds] of chainIdsByRoot)
+      questionsByRoot.set(
+        rootId,
+        chainIds.flatMap((runId) => byRun.get(runId) ?? []),
+      )
+  }
   rows = (
     await Promise.all(
-      rows
-        .map(withRetryRecordId)
-        .map((r) => listingConversation(r, json, costContext, chainIsStranded, strandedRecovery)),
+      rows.map((r) =>
+        listingConversation(
+          r,
+          json,
+          costContext,
+          chainIsStranded,
+          strandedRecovery,
+          questionsByRoot.get(String(r.record_id)),
+        ),
+      ),
     )
   ).flat()
   // Unknown means absent from orch, not merely absent from this presentation

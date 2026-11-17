@@ -106,7 +106,7 @@ function decodeSpaceCursors(value: string): SpaceCursors {
   }
 }
 
-const SINGLE_SPACE_READ_KINDS = ['by-id', 'for-run', 'for-cursor'] as const
+const SINGLE_SPACE_READ_KINDS = ['by-id', 'for-run', 'for-runs', 'for-cursor'] as const
 
 export class RecordQuestionStore implements QuestionStore {
   private readonly input: {
@@ -246,6 +246,37 @@ export class RecordQuestionStore implements QuestionStore {
     }
   }
 
+  private async forRunsRead(
+    input: Extract<QuestionReadInput, { read: 'for-runs' }>,
+  ): Promise<QuestionReadResult> {
+    const placeholders = input.runIds.map(() => '?').join(',')
+    const owners = this.input.database
+      .query<{ record_id: string; project_record_id: string | null }, string[]>(
+        `SELECT record_id,project_record_id FROM run WHERE record_id IN (${placeholders})`,
+      )
+      .all(...input.runIds)
+    const projectByRun = new Map(owners.map((row) => [row.record_id, row.project_record_id]))
+    const groups = new Map<string, string[]>()
+    const unowned: string[] = []
+    for (const runId of input.runIds) {
+      const projectId = projectByRun.get(runId)
+      if (!projectId) {
+        unowned.push(runId)
+        continue
+      }
+      const group = groups.get(projectId) ?? []
+      group.push(runId)
+      groups.set(projectId, group)
+    }
+    const answers = await Promise.all([
+      ...[...groups].map(async ([projectId, runIds]) =>
+        this.readAt({ ...input, runIds }, await this.destination(projectId)),
+      ),
+      ...(unowned.length ? [this.listRead({ ...input, runIds: unowned })] : []),
+    ])
+    return { items: answers.flatMap((answer) => answer.items) }
+  }
+
   async write(intent: QuestionIntent, input: QuestionWriteBody) {
     if (!this.input.client.writeQuestion)
       throw new Error('record API predates direct question writes; release hosted-api, then retry')
@@ -280,9 +311,11 @@ export class RecordQuestionStore implements QuestionStore {
       )
     const result = projectId
       ? await this.readAt(input, await this.destination(projectId))
-      : (SINGLE_SPACE_READ_KINDS as readonly string[]).includes(input.read)
-        ? await this.singleSpaceRead(input)
-        : await this.listRead(input)
+      : input.read === 'for-runs'
+        ? await this.forRunsRead(input)
+        : (SINGLE_SPACE_READ_KINDS as readonly string[]).includes(input.read)
+          ? await this.singleSpaceRead(input)
+          : await this.listRead(input)
     const enrichMachineFields = (SINGLE_SPACE_READ_KINDS as readonly string[]).includes(input.read)
     const items = result.items.map((row) =>
       localQuestionRow(this.input.database, row, enrichMachineFields),

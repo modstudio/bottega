@@ -102,26 +102,32 @@ async function recordQuestionDetails(
   input: {
     ids?: readonly string[]
     runId?: string
+    runIds?: readonly string[]
     workflowCursorRecordId?: string
     sessionId?: string
     taskRecordIds?: readonly string[]
   },
 ): Promise<Row[]> {
-  if (input.ids?.length === 0 || input.taskRecordIds?.length === 0) return []
+  if (input.ids?.length === 0 || input.runIds?.length === 0 || input.taskRecordIds?.length === 0)
+    return []
   const values = input.ids
     ? [...input.ids]
-    : input.taskRecordIds
-      ? [...input.taskRecordIds]
-      : [input.runId ?? input.workflowCursorRecordId ?? input.sessionId]
+    : input.runIds
+      ? [...input.runIds]
+      : input.taskRecordIds
+        ? [...input.taskRecordIds]
+        : [input.runId ?? input.workflowCursorRecordId ?? input.sessionId]
   const predicate = input.ids
     ? `q.id IN (${input.ids.map((_, index) => `$${index + 1}::uuid`).join(',')})`
-    : input.runId
-      ? 'q.run_id=$1::uuid'
-      : input.workflowCursorRecordId
-        ? 'q.workflow_cursor_record_id=$1::uuid'
-        : input.sessionId
-          ? 'COALESCE(owner.session_id,stage.session_id)=$1'
-          : `q.workflow_task_id IN (${input.taskRecordIds!.map((_, index) => `$${index + 1}::uuid`).join(',')}) AND q.answered_at IS NULL AND q.closed_at IS NULL`
+    : input.runIds
+      ? `q.run_id IN (${input.runIds.map((_, index) => `$${index + 1}::uuid`).join(',')})`
+      : input.runId
+        ? 'q.run_id=$1::uuid'
+        : input.workflowCursorRecordId
+          ? 'q.workflow_cursor_record_id=$1::uuid'
+          : input.sessionId
+            ? 'COALESCE(owner.session_id,stage.session_id)=$1'
+            : `q.workflow_task_id IN (${input.taskRecordIds!.map((_, index) => `$${index + 1}::uuid`).join(',')}) AND q.answered_at IS NULL AND q.closed_at IS NULL`
   return (await tx.unsafe(
     `SELECT ${QUESTION_DETAIL_COLUMNS} FROM question q
      LEFT JOIN run owner ON owner.id=q.run_id
@@ -166,6 +172,8 @@ async function targetedRows(tx: SQL, input: QuestionReadInput): Promise<Row[] | 
   if (input.read === 'by-id') return limited(await recordQuestionDetails(tx, input), input.limit)
   if (input.read === 'for-run')
     return limited(await recordQuestionDetails(tx, { runId: input.runId }), input.limit)
+  if (input.read === 'for-runs')
+    return limited(await recordQuestionDetails(tx, { runIds: input.runIds }), input.limit)
   if (input.read === 'for-session')
     return limited(await recordQuestionDetails(tx, { sessionId: input.sessionId }), input.limit)
   const identityRows = await boundedIdentityRows(tx, input)

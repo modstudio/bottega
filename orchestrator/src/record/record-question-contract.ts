@@ -164,10 +164,14 @@ const taskRecordIds = z.preprocess(
   (value) => (typeof value === 'string' ? value.split(',').filter(Boolean) : value),
   z.array(id).min(1).max(100),
 )
+const runIds = z.preprocess(
+  (value) => (typeof value === 'string' ? value.split(',').filter(Boolean) : value),
+  z.array(id).min(1).max(100),
+)
 export const unboundedQuestionRulingsRefusal = {
   message: 'unbounded question ruling history reads are refused',
   remedy:
-    'use by-id, by-number, for-run, for-session, open-for-cursors, open-for-tasks, or unlinked-workflow for a targeted read; otherwise page rulings with limit and changedAfter',
+    'use by-id, by-number, for-run, for-runs, for-session, open-for-cursors, open-for-tasks, or unlinked-workflow for a targeted read; otherwise page rulings with limit and changedAfter',
 } as const
 export const questionReadSchema = z.discriminatedUnion('read', [
   z.object({ read: z.literal('inbox'), limit: readLimit, changedAfter }),
@@ -200,6 +204,7 @@ export const questionReadSchema = z.discriminatedUnion('read', [
     changedAfter,
   }),
   z.object({ read: z.literal('for-run'), runId: id, limit: readLimit, changedAfter }),
+  z.object({ read: z.literal('for-runs'), runIds, limit: readLimit, changedAfter }),
   z.object({
     read: z.literal('for-session'),
     sessionId: z.string().min(1, 'sessionId is required'),

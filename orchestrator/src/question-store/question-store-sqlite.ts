@@ -65,6 +65,13 @@ function targetedRead(database: Database, input: QuestionReadInput): QuestionRea
     return { items: limited(questionsByIdRows(database, input.ids), input.limit) }
   if (input.read === 'for-run')
     return { items: limited(questionsForRun(database, input.runId), input.limit) }
+  if (input.read === 'for-runs')
+    return {
+      items: limited(
+        input.runIds.flatMap((runId) => questionsForRun(database, runId)),
+        input.limit,
+      ),
+    }
   if (input.read === 'for-session')
     return { items: limited(questionsForSession(database, input.sessionId), input.limit) }
   if (input.read === 'max-number')

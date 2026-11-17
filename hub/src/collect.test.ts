@@ -171,6 +171,55 @@ describe('run ingest', () => {
       resetFixtureStore()
     }
   })
+  test('run change progress survives a ruling failure and only the missing leg snapshots next', async () => {
+    let runSnapshots = 0
+    let rulingReads = 0
+    try {
+      await expect(
+        ingestRunChanges(runsSince(), {
+          runChangeReader: async () => ({ rows: [], cursor: 'run-7' }),
+          runReader: async () => {
+            runSnapshots += 1
+            return []
+          },
+          rulingChangeReader: async () => {
+            rulingReads += 1
+            throw new Error('ruling feed unavailable')
+          },
+        }),
+      ).rejects.toThrow('ruling feed unavailable')
+      expect(
+        db()
+          .query<{ value: string }, [string]>('SELECT value FROM setting WHERE key=?')
+          .get(RUN_CHANGE_CURSOR_SETTING)?.value,
+      ).toBe('run-7')
+      expect(
+        db()
+          .query<{ value: string }, [string]>('SELECT value FROM setting WHERE key=?')
+          .get(RULING_CHANGE_CURSOR_SETTING)?.value,
+      ).toBeUndefined()
+
+      await ingestRunChanges(runsSince(), {
+        runChangeReader: async (after) => {
+          expect(after).toBe('run-7')
+          return { rows: [], cursor: 'run-8' }
+        },
+        runReader: async () => {
+          runSnapshots += 1
+          return []
+        },
+        rulingChangeReader: async (after) => {
+          rulingReads += 1
+          expect(after).toBe('0')
+          return { rows: [], cursor: 'ruling-8' }
+        },
+      })
+      expect(runSnapshots).toBe(1)
+      expect(rulingReads).toBe(2)
+    } finally {
+      resetFixtureStore()
+    }
+  })
   test('a failing transcripts leg does not stop the runs watermark advancing', async () => {
     const watermark = '2026-09-24T16:00:00.000Z'
     const results = await collectFast({
