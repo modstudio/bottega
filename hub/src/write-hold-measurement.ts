@@ -1,4 +1,5 @@
 import type { Database } from 'bun:sqlite'
+import { fileURLToPath } from 'node:url'
 import { appendStoreWriteHold } from '../../shared/store-write-hold-log.ts'
 import { writeCallerFromStack } from '../../shared/write-caller-from-stack.ts'
 import {
@@ -9,6 +10,7 @@ import {
 } from './write-hold.ts'
 
 const writeHoldWindows = new WeakMap<Database, WriteHoldWindow>()
+const writeHoldMeasurementSourcePath = fileURLToPath(import.meta.url)
 
 function databasePath(conn: Database): string {
   const databases = conn.query<{ name: string; file: string }, []>('PRAGMA database_list').all()
@@ -16,12 +18,8 @@ function databasePath(conn: Database): string {
 }
 
 function writeCaller(excludedFiles: readonly string[]): string | null {
-  const stack = (new Error().stack ?? '')
-    .split('\n')
-    .filter((line) => !line.includes('write-hold-measurement.ts'))
-    .join('\n')
-  return writeCallerFromStack(stack, {
-    excludedFiles,
+  return writeCallerFromStack(new Error().stack ?? '', {
+    excludedFiles: [...excludedFiles, writeHoldMeasurementSourcePath],
   })
 }
 
