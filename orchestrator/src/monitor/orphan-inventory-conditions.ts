@@ -3,7 +3,7 @@
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { SandboxDirectoryInventory } from '../resources/resource-inventory.ts'
-import { age } from './monitor-conditions.ts'
+import { age } from './monitor-run-idle-conditions.ts'
 import type { MonitorCondition } from './monitor-types.ts'
 
 type DockerNetworkOwner = {

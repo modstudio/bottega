@@ -192,6 +192,7 @@ export const monitorModules: MonitorModule[] = [
     '../worktree/keep-tree-hold.ts',
     '../mcp/mcp.ts',
     './monitor-conditions.ts',
+    './monitor-run-idle-conditions.ts',
     './monitor-branches.ts',
     './monitor-gate-tooling.ts',
     './host-pressure-conditions.ts',
@@ -270,7 +271,7 @@ export const monitorModules: MonitorModule[] = [
   module('orchestrator/src/monitor/orphan-inventory-conditions.ts', [
     '../../../shared/brand.ts',
     '../resources/resource-inventory.ts',
-    './monitor-conditions.ts',
+    './monitor-run-idle-conditions.ts',
     './monitor-types.ts',
   ]),
   module('orchestrator/src/monitor/database-connection-conditions.ts', [
