@@ -9,7 +9,6 @@ import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun, dir } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
 import { clearMigrationDrain, setMigrationDrain } from '../database/migration-drain.ts'
-import { branchOf } from '../git/git-environment.ts'
 import { upsertProject } from '../project/projects.ts'
 import { writeDispatchState } from './run-artifacts.ts'
 import { detach, spawnCwd } from './run-dispatch.ts'
@@ -148,9 +147,9 @@ test('a findings dispatch carries its resolved round role to the coordinator', a
   ).toEqual({ cursor_record_id: cursorRecordId, step_slug: 'review' })
 })
 
-test('a detached review placeholder records its lens and requested review branch', async () => {
+test('a detached review placeholder records its lens and resolved review branch', async () => {
   process.env.BOTTEGA_DEPTH = '0'
-  const branch = branchOf(import.meta.dir)!
+  const branch = 'DEV-2403-placeholder-fixture'
   const spawnCoordinator = (() => {
     const child = new EventEmitter() as EventEmitter & { pid: number; unref(): void }
     child.pid = process.pid
@@ -167,7 +166,7 @@ test('a detached review placeholder records its lens and requested review branch
       repo: 'dispatch-repo-fixture',
       key: 'DEV-2403',
       lens: 'correctness',
-      review: branch,
+      resolvedReviewTarget: { branch, commit: 'a'.repeat(40), base: 'b'.repeat(40) },
     },
     'codex',
     spawnCoordinator,
