@@ -53,7 +53,7 @@ export const questionIntentSchema = z.enum([
 ])
 export type QuestionIntent = z.infer<typeof questionIntentSchema>
 
-const questionAuditSchema = z.object({
+export const questionAuditSchema = z.object({
   action: z.string().min(1),
   actorSession: nullableText,
   at: stamp,

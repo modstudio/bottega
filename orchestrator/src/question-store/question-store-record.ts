@@ -6,7 +6,10 @@ import { parseRecordSpaceMemberships } from '../../../shared/record-space-member
 import { SESSION_LIVE_MS } from '../../../shared/session-liveness.ts'
 import { projectByRecordId } from '../project/project-read.ts'
 import type { RecordWriteDestination } from '../record/record-api-client-paths.ts'
-import type { RecordQuestionClient } from '../record/record-api-client-question.ts'
+import {
+  type RecordQuestionClient,
+  requireQuestionWriteClient,
+} from '../record/record-api-client-question.ts'
 import type { RecordIdentity } from '../record/record-auth.ts'
 import { requireProjectRecordDestination } from '../record/record-project-destination-client.ts'
 import type {
@@ -237,8 +240,7 @@ export class RecordQuestionStore implements QuestionStore {
   }
 
   async write(intent: QuestionIntent, input: QuestionWriteBody) {
-    if (!this.input.client.writeQuestion)
-      throw new Error('record API predates direct question writes; release hosted-api, then retry')
+    const writeQuestion = requireQuestionWriteClient(this.input.client)
     if (
       intent === 'ask' &&
       !input.question.projectId &&
@@ -266,7 +268,7 @@ export class RecordQuestionStore implements QuestionStore {
         )
       destination = found
     }
-    return await this.input.client.writeQuestion(intent, input, destination)
+    return await writeQuestion(intent, input, destination)
   }
 
   async read(input: QuestionReadInput): Promise<QuestionReadResult> {

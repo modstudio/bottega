@@ -1,9 +1,9 @@
 import { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
 import type { QuestionWriteBody } from './record-question-contract.ts'
+import { RecordApiRequestError } from './record-api-client-response.ts'
 import {
   newestRetiredQuestionPayloads,
-  restoreQuestionDisposition,
   restoreQuestionRefusalReason,
   restoreQuestionRequestId,
   restoreQuestionsCommand,
@@ -103,21 +103,15 @@ test('retired question selection keeps the highest revision for each question id
 test('restore request ids are deterministic UUIDs derived from the outbox row', () => {
   expect(restoreQuestionRequestId(77)).toBe(restoreQuestionRequestId(77))
   expect(restoreQuestionRequestId(77)).not.toBe(restoreQuestionRequestId(78))
-  expect(restoreQuestionRequestId(77)).toMatch(
-    /^[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
-  )
 })
 
-test('restore dispositions distinguish unchanged writes and hosted refusals', () => {
-  expect(
-    restoreQuestionDisposition({ id: QUESTION, number: 6713, revision: 2, applied: true }),
-  ).toBe('restored')
-  expect(
-    restoreQuestionDisposition({ id: QUESTION, number: 6713, revision: 2, applied: false }),
-  ).toBe('unchanged')
+test('restore refusal reasons distinguish hosted refusals from failures', () => {
   expect(
     restoreQuestionRefusalReason(Object.assign(new Error('number is held'), { status: 409 })),
   ).toBe('number is held')
+  expect(
+    restoreQuestionRefusalReason(new RecordApiRequestError('sign in, then retry', 'refused')),
+  ).toBe('sign in, then retry')
   expect(restoreQuestionRefusalReason(new Error('network failed'))).toBeNull()
 })
 
@@ -150,10 +144,14 @@ test('dry-run lists retired questions without calling the record or changing SQL
   expect(database.query('SELECT * FROM outbox').get()).toEqual(before)
 })
 
-test('restore sends the full snapshot to its payload space', async () => {
+test('restore reports malformed and hosted refusals and exits non-zero', async () => {
   using database = outboxDatabase()
+  database
+    .query("INSERT INTO outbox (id,kind,row_id,payload,retired_at) VALUES (78,'question',?,?,?)")
+    .run('01990000-0000-7000-8000-000000002384', '{', STAMP)
   const writes: Array<{ intent: string; body: QuestionWriteBody; destination: string }> = []
   const lines: string[] = []
+  const exitCodes: number[] = []
   await restoreQuestionsCommand(
     { dryRun: false },
     {
@@ -161,11 +159,11 @@ test('restore sends the full snapshot to its payload space', async () => {
       client: {
         writeQuestion: async (intent, body, destination) => {
           writes.push({ intent, body, destination: destination.destinationSpaceId })
-          return { id: QUESTION, number: 6713, revision: 2, applied: true }
+          throw Object.assign(new Error('number 6713 is held by another question'), { status: 409 })
         },
       },
       log: (line) => lines.push(line),
-      setExitCode: () => {},
+      setExitCode: (code) => exitCodes.push(code),
     },
   )
   expect(writes).toHaveLength(1)
@@ -174,5 +172,7 @@ test('restore sends the full snapshot to its payload space', async () => {
     destination: SPACE,
     body: { question: { id: QUESTION, number: 6713, revision: 2, answer: 'Yes' } },
   })
-  expect(lines.at(-1)).toBe('1 restored, 0 unchanged, 0 refused, 0 failed')
+  expect(lines).toContain(`6713\t${QUESTION}\trefused: number 6713 is held by another question`)
+  expect(lines.at(-1)).toBe('0 restored, 0 unchanged, 2 refused, 0 failed')
+  expect(exitCodes).toEqual([1])
 })

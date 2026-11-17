@@ -5,10 +5,15 @@ import type { Database } from 'bun:sqlite'
 import { createHash } from 'node:crypto'
 import { db } from '../database/db.ts'
 import { recordApiClient } from './record-api-client.ts'
-import type { RecordQuestionClient } from './record-api-client-question.ts'
+import {
+  type RecordQuestionClient,
+  requireQuestionWriteClient,
+} from './record-api-client-question.ts'
+import { RecordApiRequestError } from './record-api-client-response.ts'
 import {
   type QuestionWriteBody,
   type QuestionWriteResult,
+  questionAuditSchema,
   questionWriteSchema,
 } from './record-question-contract.ts'
 
@@ -49,16 +54,8 @@ export function restoreQuestionRequestId(outboxId: number): string {
 function payloadAudit(payload: Record<string, unknown>): QuestionWriteBody['audit'] {
   const audits = Array.isArray(payload.audits) ? payload.audits : []
   const latest = audits.at(-1)
-  if (latest && typeof latest === 'object') {
-    const parsed = latest as Record<string, unknown>
-    if (typeof parsed.action === 'string' && typeof parsed.at === 'string')
-      return {
-        action: parsed.action,
-        actorSession: typeof parsed.actorSession === 'string' ? parsed.actorSession : null,
-        at: parsed.at,
-        reason: typeof parsed.reason === 'string' ? parsed.reason : null,
-      }
-  }
+  const parsed = questionAuditSchema.safeParse(latest)
+  if (parsed.success) return parsed.data
   return {
     action: 'restore',
     actorSession: null,
@@ -139,6 +136,11 @@ export function restoreQuestionDisposition(result: QuestionWriteResult): 'restor
 }
 
 export function restoreQuestionRefusalReason(error: unknown): string | null {
+  if (
+    error instanceof RecordApiRequestError &&
+    (error.kind === 'refused' || error.kind === 'conflict')
+  )
+    return error.message
   if (!error || typeof error !== 'object' || !('status' in error)) return null
   const status = Number(error.status)
   if (!Number.isInteger(status) || status < 400 || status >= 500) return null
@@ -208,8 +210,7 @@ export async function restoreQuestionsCommand(
   }
 
   const client = ports.client ?? recordApiClient()
-  if (!client.writeQuestion)
-    throw new Error('record API predates direct question writes; release hosted-api, then retry')
+  requireQuestionWriteClient(client)
   for (const candidate of selection.candidates) {
     const attempt = await restoreCandidate(candidate, client)
     counts[attempt.disposition] += 1
