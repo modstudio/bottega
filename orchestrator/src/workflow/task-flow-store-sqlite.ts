@@ -708,10 +708,7 @@ export function sqliteTaskFlowLocalStore(database: Database): SqliteTaskFlowStor
   return new SqliteTaskFlowStore(database, true)
 }
 
-type SqliteTaskFlowReadMethod = Exclude<
-  keyof SqliteTaskFlowStore,
-  TaskFlowWriteMethod | TaskFlowLocalReadMethod
->
+type SqliteTaskFlowReadMethod = Exclude<keyof SqliteTaskFlowStore, TaskFlowWriteMethod>
 type SqliteTaskFlowReadStore = {
   [K in SqliteTaskFlowReadMethod]: SqliteTaskFlowStore[K] extends (...args: infer A) => infer R
     ? (...args: A) => Promise<R>
@@ -722,6 +719,9 @@ type SqliteTaskFlowReadStore = {
 export function sqliteTaskFlowReadStore(database: Database): SqliteTaskFlowReadStore {
   const local = new SqliteTaskFlowStore(database)
   return {
+    openStageForTask: async (taskRecordId) => local.openStageForTask(taskRecordId),
+    flowProjectionForTask: async (taskRecordId) => local.flowProjectionForTask(taskRecordId),
+    stageByRecordId: async (recordId) => local.stageByRecordId(recordId),
     latestStageForTask: async (input) => local.latestStageForTask(input),
     openKeylessStages: async (input) => local.openKeylessStages(input),
     activeStageModes: async (input) => local.activeStageModes(input),

@@ -11,7 +11,7 @@ import {
   throwIfRecordRefused,
 } from '../record/record-write-authority.ts'
 import { hostedTaskFlowLocalStore } from './task-flow-store-hosted.ts'
-import type { TaskFlowLocalReadMethod, TaskFlowWriteMethod } from './task-flow-store-methods.ts'
+import type { TaskFlowWriteMethod } from './task-flow-store-methods.ts'
 import { resolveTaskFlowReadStore } from './task-flow-store-record.ts'
 import { sqliteTaskFlowLocalStore } from './task-flow-store-sqlite.ts'
 import type { TaskFlowSqliteWriteResult } from './task-flow-store-sqlite-write.ts'
@@ -198,10 +198,7 @@ interface TaskFlowQueries {
   localQuestionProjects(): Array<{ project: string | null }>
 }
 
-type TaskFlowReadMethod = Exclude<
-  keyof TaskFlowQueries,
-  TaskFlowWriteMethod | TaskFlowLocalReadMethod
->
+type TaskFlowReadMethod = Exclude<keyof TaskFlowQueries, TaskFlowWriteMethod>
 
 type AsyncTaskFlowReads = {
   [K in TaskFlowReadMethod]: TaskFlowQueries[K] extends (...args: infer A) => infer R
@@ -211,7 +208,7 @@ type AsyncTaskFlowReads = {
 
 /** Synchronous writes and reads that must remain atomic inside a local transaction. */
 export interface TaskFlowLocalStore
-  extends Pick<TaskFlowQueries, TaskFlowWriteMethod | TaskFlowLocalReadMethod> {}
+  extends Pick<TaskFlowQueries, TaskFlowWriteMethod> {}
 
 /** Async task-flow reads, implemented locally now and by the hosted record in the next slice. */
 export interface TaskFlowReadStore extends AsyncTaskFlowReads {}
