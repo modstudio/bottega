@@ -447,7 +447,7 @@ test('record inbox paging advances independently across every reachable space', 
 
 function twoSpaceStore(
   database: ReturnType<typeof migratedTestDatabase>,
-  rows: Record<string, string[]>,
+  rows: Record<string, Array<string | Record<string, unknown>>>,
 ) {
   const written: string[] = []
   const store = new RecordQuestionStore({
@@ -461,9 +461,9 @@ function twoSpaceStore(
         ],
       }),
       readQuestions: async (_input, destination) => ({
-        items: (rows[destination?.destinationSpaceId ?? ''] ?? []).map((id: string) => ({
-          record_id: id,
-        })),
+        items: (rows[destination?.destinationSpaceId ?? ''] ?? []).map((row) =>
+          typeof row === 'string' ? { record_id: row } : row,
+        ),
       }),
       writeQuestion: async (_intent, input, destination) => {
         written.push(destination.destinationSpaceId)
@@ -494,6 +494,19 @@ test('a cursor or run whose questions span record spaces reads every one of them
     body({ ...snapshot(), id: earlier, revision: 2, answer: 'Yes' }, 'answer'),
   )
   expect(written).toEqual([OTHER_SPACE_ID])
+  database.close()
+})
+
+test('merged questions follow asking order, because numbers repeat across spaces', async () => {
+  const database = migratedTestDatabase()
+  const { store } = twoSpaceStore(database, {
+    [SPACE_ID]: [{ record_id: 'project-new', number: 12, asked_at: '2026-11-17T05:00:00Z' }],
+    [OTHER_SPACE_ID]: [
+      { record_id: 'personal-old', number: 6464, asked_at: '2026-11-16T05:00:00Z' },
+    ],
+  })
+  const read = await store.read({ read: 'for-cursor', workflowCursorRecordId: CURSOR_ID })
+  expect(read.items.map((row) => field(row, 'record_id'))).toEqual(['personal-old', 'project-new'])
   database.close()
 })
 

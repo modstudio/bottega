@@ -20,7 +20,11 @@ export async function gatherStepQuestionEvidence(
         Number(row.workflow_step_ordinal) === input.stepOrdinal &&
         row.workflow_step_slug === input.stepSlug,
     )
-    .sort((a, b) => Number(b.number) - Number(a.number))[0]
+    .sort(
+      (a, b) =>
+        String(b.asked_at ?? '').localeCompare(String(a.asked_at ?? '')) ||
+        Number(b.number) - Number(a.number),
+    )[0]
   const row = question
     ? ({
         id: Number(question.number),

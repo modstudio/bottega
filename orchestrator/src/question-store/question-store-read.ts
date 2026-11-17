@@ -80,8 +80,14 @@ export async function questionForWorkflowCursorByNumber(
   cursorId: string,
   number: number,
 ): Promise<Record<string, unknown> | null> {
-  const questions = await questionsForWorkflowCursor(database, cursorId)
-  return questions.find((row) => row.number === number) ?? null
+  const matches = (await questionsForWorkflowCursor(database, cursorId)).filter(
+    (row) => row.number === number,
+  )
+  if (matches.length > 1)
+    throw new Error(
+      `question ${number} names ${matches.length} questions on this cursor in different record spaces; pass the question's record id, then retry`,
+    )
+  return matches[0] ?? null
 }
 
 export async function questionRuleAuditReasons(

@@ -171,17 +171,17 @@ export class RecordQuestionStore implements QuestionStore {
         value: await this.readAt(input, destination),
       })),
     )
-    const homes = new Map<string, Array<{ spaceId: string; found: boolean }>>()
+    const homes = new Map<string, Set<string>>()
     for (const { destination, value } of answers)
       for (const row of value.items) {
         const id = row.record_id ?? row.id
         if (typeof id !== 'string') continue
-        const found = homes.get(id) ?? []
-        found.push({ spaceId: destination.destinationSpaceId, found: true })
-        homes.set(id, found)
+        homes.set(id, (homes.get(id) ?? new Set()).add(destination.destinationSpaceId))
       }
-    for (const found of homes.values()) {
-      const decision = decideSingleRecordSpace(found)
+    for (const spaces of homes.values()) {
+      const decision = decideSingleRecordSpace(
+        [...spaces].map((spaceId) => ({ spaceId, found: true })),
+      )
       if ('refused' in decision)
         throw new Error(
           `${decision.refused}; remove the duplicate question from all but its authoritative space, then retry`,
@@ -192,7 +192,16 @@ export class RecordQuestionStore implements QuestionStore {
         const id = row.record_id ?? row.id
         if (typeof id === 'string') this.questionSpaces.set(id, destination)
       }
-    return { items: answers.flatMap(({ value }) => value.items) }
+    // Numbers are allocated per space, so merged rows are ordered by when they were asked.
+    return {
+      items: answers
+        .flatMap(({ value }) => value.items)
+        .sort(
+          (a, b) =>
+            String(a.asked_at ?? '').localeCompare(String(b.asked_at ?? '')) ||
+            Number(a.number) - Number(b.number),
+        ),
+    }
   }
 
   private async listRead(input: QuestionReadInput): Promise<QuestionReadResult> {

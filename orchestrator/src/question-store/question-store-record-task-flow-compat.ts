@@ -69,7 +69,12 @@ async function openDetailsForStages(questions: QuestionStore, ids: string[]) {
             await questions.read({ read: 'for-cursor', workflowCursorRecordId: id })
           ).items
             .filter((row) => field(row, 'answered_at') == null && field(row, 'closed_at') == null)
-            .sort((a, b) => Number(field(a, 'number')) - Number(field(b, 'number')))
+            .sort(
+              (a, b) =>
+                String(field(a, 'asked_at') ?? '').localeCompare(
+                  String(field(b, 'asked_at') ?? ''),
+                ) || Number(field(a, 'number')) - Number(field(b, 'number')),
+            )
           return rows[0] ? ([id, rows[0]] as const) : null
         }),
       )
