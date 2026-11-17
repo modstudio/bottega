@@ -58,6 +58,59 @@ test('request tenant reads otherwise use only the active space', () => {
   })
 })
 
+test.each([
+  ['/v1/questions', 'by-id'],
+  ['/v1/questions', 'for-run'],
+  ['/v1/questions', 'for-runs'],
+  ['/v1/questions', 'for-cursor'],
+  ['/v1/questions', 'open-for-cursors'],
+  ['/v1/task-flow', 'flow'],
+  ['/v1/task-flow/stages/00000000-0000-4000-8000-000000000001', undefined],
+  ['/v1/task-flow/texts/00000000-0000-4000-8000-000000000001', undefined],
+  ['/v1/task-flow/obligations/00000000-0000-4000-8000-000000000001', undefined],
+])('request tenant binds every membership for keyed read %s %s', (route, readKind) => {
+  expect(
+    requestTenant(
+      identity('space-project'),
+      undefined,
+      'read',
+      'postgres://record',
+      route,
+      readKind,
+    ),
+  ).toMatchObject({ spaceIds: ['space-personal', 'space-project'] })
+})
+
+test('a named destination keeps a keyed read bound to that one space', () => {
+  expect(
+    requestTenant(
+      identity('space-project'),
+      'space-project',
+      'read',
+      'postgres://record',
+      '/v1/questions',
+      'for-run',
+    ),
+  ).toMatchObject({ spaceId: 'space-project', spaceIds: ['space-project'] })
+})
+
+test.each([
+  ['/v1/questions', 'inbox'],
+  ['/v1/questions', 'rulings'],
+  ['/v1/task-flow/stages', undefined],
+])('list read %s %s keeps the active-space binding', (route, readKind) => {
+  expect(
+    requestTenant(
+      identity('space-project'),
+      undefined,
+      'read',
+      'postgres://record',
+      route,
+      readKind,
+    ),
+  ).toMatchObject({ spaceIds: ['space-project'] })
+})
+
 test('request tenant refuses a write without a named destination', () => {
   expect(requestTenant(identity('space-project'), undefined, 'write', 'postgres://record')).toEqual(
     {

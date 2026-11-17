@@ -450,6 +450,7 @@ realPostgres('hosted task flow revisions', () => {
         VALUES (${COPY}::uuid,${SPACE}::uuid,${TEXT}::uuid,${STAGE}::uuid,'task:DEV-1978',${STAMP})`
 
       await expect(readRecordTaskFlowStage({ ...principal, id: STAGE })).resolves.toMatchObject({
+        space_id: SPACE,
         stage: {
           id: STAGE,
           number: 1,
@@ -460,6 +461,7 @@ realPostgres('hosted task flow revisions', () => {
         flow: { id: FLOW },
       })
       await expect(readRecordTaskFlowText({ ...principal, id: TEXT })).resolves.toMatchObject({
+        space_id: SPACE,
         text: { id: TEXT, stageRecordId: STAGE, stepSlug: 'build', body: 'proof text' },
         stage: { id: STAGE, number: 1 },
         copy: { id: COPY, taskDocumentReference: 'task:DEV-1978' },
@@ -467,6 +469,7 @@ realPostgres('hosted task flow revisions', () => {
       await expect(
         readRecordTaskFlowObligation({ ...principal, id: OBLIGATION }),
       ).resolves.toMatchObject({
+        space_id: SPACE,
         obligation: { id: OBLIGATION, stageRecordId: STAGE, floor: 'test' },
         stage: { id: STAGE, number: 1, state: 'done' },
       })

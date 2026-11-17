@@ -73,6 +73,13 @@ type Ports = {
   scope(context: Context<Environment>): Tenant | null
   noSpace(context: Context<Environment>): Response
 }
+const keyedMissRemedy =
+  'the row is in a space you are not a member of, or it does not exist; join its space or check the id'
+
+function isEmptyQuestionRead(result: unknown): boolean {
+  if (typeof result !== 'object' || result === null || !('items' in result)) return false
+  return Array.isArray(result.items) && result.items.length === 0
+}
 const DIRECT_WRITE_ISSUE_LIMIT = 3
 
 function directWriteRefusal(issues: readonly { path: PropertyKey[]; message: string }[]): string {
@@ -105,7 +112,20 @@ export function registerRecordQuestionRoutes(
         },
         422,
       )
-    return context.json(await deps.readQuestions({ ...tenant, ...query.data }))
+    const result = await deps.readQuestions({ ...tenant, ...query.data })
+    if (
+      query.data.read === 'by-id' &&
+      context.get('destinationSpaceId') === undefined &&
+      isEmptyQuestionRead(result)
+    )
+      return context.json(
+        {
+          error: `not visible in your record spaces (${tenant.spaceIds.length} memberships)`,
+          remedy: keyedMissRemedy,
+        },
+        404,
+      )
+    return context.json(result)
   })
   app.post('/v1/questions/:intent', async (context) => {
     const tenant = ports.scope(context)

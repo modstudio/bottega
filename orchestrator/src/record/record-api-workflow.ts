@@ -68,6 +68,18 @@ type Ports = {
   noSpace(context: Context<Environment>): Response
 }
 const limit = z.coerce.number().int().min(1).max(100).default(20)
+const keyedMissRemedy =
+  'the row is in a space you are not a member of, or it does not exist; join its space or check the id'
+
+function keyedMiss(context: Context<Environment>, memberships: number): Response {
+  return context.json(
+    {
+      error: `not visible in your record spaces (${memberships} memberships)`,
+      remedy: keyedMissRemedy,
+    },
+    404,
+  )
+}
 function registerTaskFlowWriteRoute<K extends TaskFlowIntent>(
   app: Hono<Environment>,
   deps: RecordWorkflowRouteDeps,
@@ -198,6 +210,8 @@ function registerTaskFlowByIdRoutes(
       try {
         return context.json(await read({ ...active, id: id.data }))
       } catch (error) {
+        if (error instanceof RecordTaskFlowError && context.get('destinationSpaceId') === undefined)
+          return keyedMiss(context, active.spaceIds.length)
         if (error instanceof RecordTaskFlowError)
           return context.json({ error: error.message, code: error.code }, 404)
         throw error
@@ -221,6 +235,12 @@ function registerTaskFlowReadRoutes(
     try {
       return context.json(await deps.readTaskFlow({ ...active, ...query.data }))
     } catch (error) {
+      if (
+        error instanceof RecordTaskFlowError &&
+        query.data.flowRecordId !== undefined &&
+        context.get('destinationSpaceId') === undefined
+      )
+        return keyedMiss(context, active.spaceIds.length)
       if (error instanceof RecordTaskFlowError)
         return context.json({ error: error.message, code: error.code }, 404)
       throw error

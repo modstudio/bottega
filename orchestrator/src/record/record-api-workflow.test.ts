@@ -177,10 +177,16 @@ const byIdRoutes = [
 function taskFlowByIdApp(
   spaceId: string,
   calls: Array<{ kind: ByIdKind; id: string; spaceId: string }>,
+  destination = false,
 ) {
   const app = new Hono<{
     Variables: { identity: RecordIdentity; destinationSpaceId?: string }
   }>()
+  if (destination)
+    app.use('*', async (context, next) => {
+      context.set('destinationSpaceId', spaceId)
+      await next()
+    })
   const read = async (kind: ByIdKind, input: { id: string; spaceId: string }) => {
     calls.push({ kind, id: input.id, spaceId: input.spaceId })
     if (input.id !== KNOWN_ID || input.spaceId !== SPACE)
@@ -218,13 +224,59 @@ test('task-flow by-id routes pass the active space and requested id to their dep
 })
 
 test.each(byIdRoutes)(
-  'task-flow %s by-id route returns the ordinary not-found shape for an unknown id',
+  'task-flow %s by-id route returns the membership-safe refusal for an unknown id',
   async (_kind, path) => {
     const response = await taskFlowByIdApp(SPACE, []).request(`${path}/${UNKNOWN_ID}`)
     expect(response.status).toBe(404)
     expect(await response.json()).toEqual({
-      error: 'hosted task flow was not found',
-      code: 'task_flow_not_found',
+      error: 'not visible in your record spaces (1 memberships)',
+      remedy:
+        'the row is in a space you are not a member of, or it does not exist; join its space or check the id',
     })
   },
 )
+
+test('a task-flow by-id read with a named destination keeps the existing miss response', async () => {
+  const response = await taskFlowByIdApp(SPACE, [], true).request(
+    `/v1/task-flow/stages/${UNKNOWN_ID}`,
+  )
+  expect(response.status).toBe(404)
+  expect(await response.json()).toEqual({
+    error: 'hosted task flow was not found',
+    code: 'task_flow_not_found',
+  })
+})
+
+test('a destinationless flow-record-id miss returns the membership-safe refusal', async () => {
+  const app = new Hono<{
+    Variables: { identity: RecordIdentity; destinationSpaceId?: string }
+  }>()
+  registerRecordWorkflowRoutes(
+    app,
+    {
+      readTaskFlow: async () => {
+        throw new RecordTaskFlowError('hosted task flow was not found')
+      },
+      listWorkflowCatalogue: async () => [],
+      draftWorkflow: async () => null,
+      promoteWorkflow: async () => null,
+      retireWorkflow: async () => null,
+    },
+    {
+      scope: () => ({
+        url: 'postgres://unused',
+        userId: SPACE,
+        spaceId: SPACE,
+        spaceIds: [SPACE, PROJECT],
+      }),
+      noSpace: () => new Response(null, { status: 403 }),
+    },
+  )
+  const response = await app.request(`/v1/task-flow?flowRecordId=${UNKNOWN_ID}`)
+  expect(response.status).toBe(404)
+  expect(await response.json()).toEqual({
+    error: 'not visible in your record spaces (2 memberships)',
+    remedy:
+      'the row is in a space you are not a member of, or it does not exist; join its space or check the id',
+  })
+})

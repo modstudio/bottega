@@ -2,6 +2,7 @@
 /** Builds the server-owned tenant used by hosted API routes. */
 
 import type { WriteSpaceRefusal } from '../../../shared/record-remedies.ts'
+import { recordReadIsUuidKeyed } from '../../../shared/record-space-request.ts'
 import type { RecordDocumentTenant } from './record-api-doc-tenant.ts'
 import type { RecordIdentity } from './record-auth.ts'
 
@@ -12,6 +13,8 @@ export function requestTenant(
   destinationSpaceId: string | undefined,
   nature: 'read' | 'write',
   url: string,
+  route = '',
+  readKind?: string,
 ): RequestTenant {
   if (nature === 'write' && destinationSpaceId === undefined)
     return { refused: 'write-destination' }
@@ -25,7 +28,8 @@ export function requestTenant(
     spaceIds:
       destinationSpaceId != null
         ? [destinationSpaceId]
-        : identity.activeSpaceId === identity.personalSpaceId
+        : recordReadIsUuidKeyed(route, readKind) ||
+            identity.activeSpaceId === identity.personalSpaceId
           ? memberships
           : [identity.activeSpaceId],
   }

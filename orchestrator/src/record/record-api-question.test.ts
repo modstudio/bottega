@@ -124,6 +124,18 @@ test('hosted question reads other than rulings still refuse changedAfter', async
   expect(await response.json()).toMatchObject({ remedy: expect.stringContaining('rulings read') })
 })
 
+test('a destinationless question by-id miss returns the membership-safe refusal', async () => {
+  const response = await app({ readQuestions: async () => ({ items: [] }) }).request(
+    '/v1/questions?read=by-id&ids=00000000-0000-4000-8000-000000000001',
+  )
+  expect(response.status).toBe(404)
+  expect(await response.json()).toEqual({
+    error: 'not visible in your record spaces (1 memberships)',
+    remedy:
+      'the row is in a space you are not a member of, or it does not exist; join its space or check the id',
+  })
+})
+
 test('invalid direct question writes name the failing body path', async () => {
   const response = await app({ writeQuestion: async () => ({ applied: true }) }).request(
     '/v1/questions/answer',

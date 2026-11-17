@@ -13,6 +13,16 @@ export function recordRequestNature(method: string): 'read' | 'write' {
   return method === 'GET' || method === 'HEAD' ? 'read' : 'write'
 }
 
+/** Decide whether a hosted read is keyed by a UUID that is unique across record spaces. */
+export function recordReadIsUuidKeyed(route: string, readKind?: string): boolean {
+  if (route === '/v1/questions')
+    return ['by-id', 'for-run', 'for-runs', 'for-cursor', 'open-for-cursors'].includes(
+      readKind ?? '',
+    )
+  if (route === '/v1/task-flow') return readKind === 'flow'
+  return /^\/v1\/task-flow\/(stages|texts|obligations)\/[^/]+$/.test(route)
+}
+
 /** Decide whether the caller's membership permits the requested operation. */
 export function recordSpaceAccessDecision(
   nature: 'read' | 'write',

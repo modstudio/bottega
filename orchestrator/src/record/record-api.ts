@@ -316,11 +316,20 @@ function writeTelemetryDeps(deps: Deps) {
 
 function refusingRequestTenant(context: Context<ApiEnvironment>, recordUrl: string): Tenant | null {
   recordDestinationlessWrite(context)
+  const route = context.req.path
+  const readKind =
+    route === '/v1/questions'
+      ? context.req.query('read')
+      : route === '/v1/task-flow' && context.req.query('flowRecordId')
+        ? 'flow'
+        : undefined
   const tenant = requestTenant(
     context.get('identity'),
     context.get('destinationSpaceId'),
     recordRequestNature(context.req.method),
     recordUrl,
+    route,
+    readKind,
   )
   if (tenant && 'refused' in tenant) {
     const refusal = recordWriteSpaceRefusal()

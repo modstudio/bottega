@@ -31,7 +31,7 @@ type HostedStage = NonNullable<HostedTaskFlow['otherStages']>[number]
 type HostedStageSummary = HostedTaskFlowStageList['items'][number]['stage']
 
 const STAGE_SELECT = `
-  s.id stage_id,s.flow_record_id stage_flow_record_id,s.project_id stage_project_id,
+  s.id stage_id,s.space_id stage_space_id,s.flow_record_id stage_flow_record_id,s.project_id stage_project_id,
   sp.name stage_project_name,s.number stage_number,s.workflow stage_workflow,s.mode stage_mode,
   s.workflow_key stage_workflow_key,s.instance_id stage_instance_id,s.session_id stage_session_id,
   s.workflow_version_id stage_workflow_version_id,wv.n stage_workflow_version_number,
@@ -45,7 +45,7 @@ const STAGE_SELECT = `
   s.created_at stage_created_at,s.updated_at stage_updated_at`
 
 const FLOW_SELECT = `
-  f.id,f.project_id,f.task_id,t.key task_key,f.state,f.open_stage_record_id,
+  f.id,f.space_id,f.project_id,f.task_id,t.key task_key,f.state,f.open_stage_record_id,
   (SELECT count(*)::integer FROM task_flow_stage open_stage
    WHERE open_stage.flow_record_id=f.id AND open_stage.space_id=f.space_id
      AND open_stage.state NOT IN ('done','abandoned')) open_stage_count,
@@ -222,16 +222,22 @@ export async function readRecordTaskFlow(
        LEFT JOIN task_flow_stage s ON s.id=f.open_stage_record_id AND s.space_id=f.space_id
        ${STAGE_JOINS}
        LEFT JOIN machine m ON m.id=s.last_advanced_machine_id
-       WHERE f.space_id=$1::uuid
+       WHERE ($1::uuid IS NULL OR f.space_id=$1::uuid)
          AND ($2::uuid IS NULL OR f.id=$2::uuid)
          AND ($3::text IS NULL OR t.key=$3)
          AND ($4::uuid IS NULL OR f.task_id=$4::uuid)
        ORDER BY f.open_stage_record_id IS NULL, f.revision DESC, f.updated_at DESC, f.id
        LIMIT 1`,
-      [input.spaceId, input.flowRecordId ?? null, input.taskKey ?? null, input.taskId ?? null],
+      [
+        input.flowRecordId ? null : input.spaceId,
+        input.flowRecordId ?? null,
+        input.taskKey ?? null,
+        input.taskId ?? null,
+      ],
     )
     const row = rows[0]
     if (!row) throw new RecordTaskFlowError(RECORD_TASK_FLOW_NOT_FOUND_MESSAGE)
+    const rowSpaceId = String(row.space_id)
     const stageRows = await tx.unsafe(
       `SELECT ${STAGE_SELECT}
        FROM task_flow_stage s
@@ -239,13 +245,14 @@ export async function readRecordTaskFlow(
        WHERE s.space_id=$1::uuid AND s.flow_record_id=$2::uuid
          AND ($3::uuid IS NULL OR s.id<>$3::uuid)
        ORDER BY s.updated_at`,
-      [input.spaceId, row.id, row.open_stage_record_id ?? null],
+      [rowSpaceId, row.id, row.open_stage_record_id ?? null],
     )
-    const children = await stageChildren(tx, input.spaceId, String(row.id))
+    const children = await stageChildren(tx, rowSpaceId, String(row.id))
     const otherStages = stageRows.map((stageRow: Record<string, unknown>) =>
       withChildren(toHostedStage(stageRow), children),
     )
     return {
+      space_id: rowSpaceId,
       flow: toHostedFlow(row),
       stage:
         row.stage_id == null
@@ -349,13 +356,18 @@ export async function readRecordTaskFlowStage(
        JOIN task_flow f ON f.id=s.flow_record_id AND f.space_id=s.space_id
        LEFT JOIN hub_task t ON t.id=f.task_id AND t.space_id=f.space_id
        ${STAGE_JOINS}
-       WHERE s.space_id=$1::uuid AND s.id=$2::uuid`,
-      [input.spaceId, input.id],
+       WHERE s.id=$1::uuid`,
+      [input.id],
     )
     const row = rows[0]
     if (!row) throw new RecordTaskFlowError(RECORD_TASK_FLOW_NOT_FOUND_MESSAGE)
-    const children = await stageChildren(tx, input.spaceId, String(row.stage_flow_record_id))
-    return { stage: withChildren(toHostedStage(row), children), flow: toHostedFlow(row) }
+    const rowSpaceId = String(row.stage_space_id)
+    const children = await stageChildren(tx, rowSpaceId, String(row.stage_flow_record_id))
+    return {
+      space_id: rowSpaceId,
+      stage: withChildren(toHostedStage(row), children),
+      flow: toHostedFlow(row),
+    }
   })
 }
 
@@ -373,10 +385,11 @@ export async function readRecordTaskFlowText(
       JOIN task_flow_stage s ON s.id=t.stage_record_id AND s.space_id=t.space_id
       LEFT JOIN workflow_text_copy c
         ON c.workflow_text_record_id=t.id AND c.space_id=t.space_id
-      WHERE t.space_id=${input.spaceId}::uuid AND t.id=${input.id}::uuid`
+      WHERE t.id=${input.id}::uuid`
     const row = rows[0] as Record<string, unknown> | undefined
     if (!row) throw new RecordTaskFlowError(RECORD_TASK_FLOW_NOT_FOUND_MESSAGE)
     return {
+      space_id: String(row.space_id),
       text: toHostedStepText(row),
       stage: {
         id: String(row.stage_id),
@@ -405,10 +418,11 @@ export async function readRecordTaskFlowObligation(
       SELECT o.*,s.id stage_id,s.number stage_number,s.state stage_state
       FROM workflow_obligation o
       JOIN task_flow_stage s ON s.id=o.stage_record_id AND s.space_id=o.space_id
-      WHERE o.space_id=${input.spaceId}::uuid AND o.id=${input.id}::uuid`
+      WHERE o.id=${input.id}::uuid`
     const row = rows[0] as Record<string, unknown> | undefined
     if (!row) throw new RecordTaskFlowError(RECORD_TASK_FLOW_NOT_FOUND_MESSAGE)
     return {
+      space_id: String(row.space_id),
       obligation: toHostedObligation(row),
       stage: {
         id: String(row.stage_id),
