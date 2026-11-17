@@ -1,8 +1,7 @@
-import { afterAll, beforeAll, expect, test } from 'bun:test'
-import { rmSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { INSTALL_HOME_ENV } from '../../../shared/install-root.ts'
+import { useFixtureInstallationRoot } from '../../test/fixtures/installation-root.ts'
 import { dir } from '../../test/fixtures/store.ts'
 import {
   machineUpdateCommandUnderLock as machineUpdateCommand,
@@ -11,9 +10,7 @@ import {
 } from './machine-update.ts'
 import { migrationJournal } from './migrations.ts'
 
-const fixturePackage = join(dir, 'package.json')
-beforeAll(() => writeFileSync(fixturePackage, JSON.stringify({ name: PLATFORM_SLUG })))
-afterAll(() => rmSync(fixturePackage, { force: true }))
+useFixtureInstallationRoot()
 
 test('unregistered main checkout refusal names the registered binary when the register has one', () => {
   const same = (left: string, right: string) => left === right
@@ -67,3 +64,69 @@ test.each([
     expect(events).toEqual(expected)
   },
 )
+
+test('machine update restores main when dependency install fails after the pull', async () => {
+  const gitCalls: string[][] = []
+  let migrated = false
+  await expect(
+    machineUpdateCommand(
+      { log: () => {} },
+      {
+        cwd: dir,
+        authorityRefusal: () => null,
+        project: () => ({
+          name: 'migration-update-fixture',
+          path: dir,
+          settings: { trunk: 'main' },
+        }),
+        git: (_cwd, args) => {
+          gitCalls.push(args)
+          if (args[0] === 'branch') return 'main'
+          if (args[0] === 'show') return JSON.stringify({ entries: migrationJournal() })
+          if (args[0] === 'rev-parse') return 'before-commit'
+          if (args[0] === 'diff') return 'package.json\0'
+          return ''
+        },
+        install: () => {
+          throw new Error('injected install failure')
+        },
+        migrate: () => {
+          migrated = true
+        },
+      },
+    ),
+  ).rejects.toThrow(
+    `dependency install failed: injected install failure; main was restored to before-commit; rerun ${PLATFORM_SLUG} machine update`,
+  )
+  expect(migrated).toBeFalse()
+  expect(gitCalls).toContainEqual(['reset', '--keep', 'before-commit'])
+})
+
+test('machine update restores main when pulled-path measurement fails after the pull', async () => {
+  const gitCalls: string[][] = []
+  await expect(
+    machineUpdateCommand(
+      { log: () => {} },
+      {
+        cwd: dir,
+        authorityRefusal: () => null,
+        project: () => ({
+          name: 'migration-update-fixture',
+          path: dir,
+          settings: { trunk: 'main' },
+        }),
+        git: (_cwd, args) => {
+          gitCalls.push(args)
+          if (args[0] === 'branch') return 'main'
+          if (args[0] === 'show') return JSON.stringify({ entries: migrationJournal() })
+          if (args[0] === 'rev-parse') return 'before-commit'
+          if (args[0] === 'diff') throw new Error('injected diff failure')
+          return ''
+        },
+      },
+    ),
+  ).rejects.toThrow(
+    `pulled-path measurement failed: injected diff failure; main was restored to before-commit; rerun ${PLATFORM_SLUG} machine update`,
+  )
+  expect(gitCalls).toContainEqual(['reset', '--keep', 'before-commit'])
+})

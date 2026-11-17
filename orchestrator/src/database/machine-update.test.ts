@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, expect, test } from 'bun:test'
+import { expect, test } from 'bun:test'
 import { randomUUID } from 'node:crypto'
 import {
   existsSync,
@@ -15,6 +15,7 @@ import { PLATFORM_NAME, PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { DIST_MANIFEST, INSTALL_HOME_ENV, installRoot } from '../../../shared/install-root.ts'
 import { HUB_DATABASE_ENV } from '../../../shared/state-directory.ts'
 import { withMachineUpdateLock } from '../../../shared/update-lock.ts'
+import { useFixtureInstallationRoot } from '../../test/fixtures/installation-root.ts'
 import { dir } from '../../test/fixtures/store.ts'
 import { acquireRunLease, removeFreeRunLease } from '../run/run-lease.ts'
 import { DB_PATH, db } from './db.ts'
@@ -35,14 +36,7 @@ import { migrationWindow } from './migration-window-state.ts'
 import { migrationJournal } from './migrations.ts'
 import { fixtureProjectRecordId } from './test-database.fixture.ts'
 
-const fixturePackage = join(dir, 'package.json')
-beforeAll(() => {
-  writeFileSync(fixturePackage, JSON.stringify({ name: PLATFORM_SLUG }))
-})
-
-afterAll(() => {
-  rmSync(fixturePackage, { force: true })
-})
+useFixtureInstallationRoot()
 
 function holdBackLastNonAdditiveMigration(database: ReturnType<typeof db>) {
   const journal = migrationJournal()

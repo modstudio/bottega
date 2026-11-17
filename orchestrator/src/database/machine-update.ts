@@ -107,33 +107,41 @@ function incomingJournal(
   return validatedMigrationJournalEntries(parsed.entries)
 }
 
-function runMigration(cwd: string): void {
-  const result = startBoundedSync([`./bin/${PLATFORM_SLUG}`, 'machine', 'migrate'], {
+function runPostPullStep(input: {
+  argv: string[]
+  cwd: string
+  env?: Record<string, string | undefined>
+  failureLabel: string
+}): void {
+  const result = startBoundedSync(input.argv, {
     budget: 'machine-update',
-    cwd,
-    env: { ...targetGitEnvironment(cwd), ...machineUpdateLockHeldEnvironment() },
+    cwd: input.cwd,
+    env: input.env,
   })
   process.stdout.write(result.stdout)
   process.stderr.write(result.stderr)
   if (result.exitCode !== 0) {
     const stderr = result.stderr.trim()
     const detail = stderr ? `: ${stderr}` : ''
-    throw new Error(`${PLATFORM_SLUG} machine migrate failed with exit ${result.exitCode}${detail}`)
+    throw new Error(`${input.failureLabel} failed with exit ${result.exitCode}${detail}`)
   }
 }
 
-function runDependencyInstall(cwd: string): void {
-  const result = startBoundedSync(['bun', 'install', '--silent'], {
-    budget: 'machine-update',
+function runMigration(cwd: string): void {
+  runPostPullStep({
+    argv: [`./bin/${PLATFORM_SLUG}`, 'machine', 'migrate'],
     cwd,
+    env: { ...targetGitEnvironment(cwd), ...machineUpdateLockHeldEnvironment() },
+    failureLabel: `${PLATFORM_SLUG} machine migrate`,
   })
-  process.stdout.write(result.stdout)
-  process.stderr.write(result.stderr)
-  if (result.exitCode !== 0) {
-    const stderr = result.stderr.trim()
-    const detail = stderr ? `: ${stderr}` : ''
-    throw new Error(`bun install failed with exit ${result.exitCode}${detail}`)
-  }
+}
+
+function runDependencyInstall(cwd: string): void {
+  runPostPullStep({
+    argv: ['bun', 'install', '--frozen-lockfile', '--silent'],
+    cwd,
+    failureLabel: 'bun install',
+  })
 }
 
 /** Decide whether a pulled path list requires refreshing checkout dependencies. */
@@ -363,12 +371,14 @@ async function updateDistribution(input: {
   input.presentation.log(current.message)
 }
 
+type PostPullOperation = 'pulled-path measurement' | 'dependency install' | 'migration'
+
 function restoreMainAfterPostPullFailure(input: {
   target: string
   before: string
   runGit: (cwd: string, args: string[]) => string
   cause: unknown
-  operation: 'dependency install' | 'migration'
+  operation: PostPullOperation
   beforePositions: StoreJournalPositions
 }): never {
   const failure = input.cause instanceof Error ? input.cause.message : String(input.cause)
@@ -409,7 +419,7 @@ function handlePostPullFailure(input: {
   beforePositions: StoreJournalPositions
   runGit: (cwd: string, args: string[]) => string
   cause: unknown
-  operation: 'dependency install' | 'migration'
+  operation: PostPullOperation
 }): never {
   const failure = input.cause instanceof Error ? input.cause.message : String(input.cause)
   let storeVersion: number | null = null
@@ -515,9 +525,20 @@ function applyCheckoutPull(input: {
   })
   // Machine update handles post-pull install and migration itself, so its pull skips the hook.
   runGit(target, ['-c', 'core.hooksPath=/dev/null', 'pull', '--ff-only', 'origin', input.branch])
-  const changedPaths = splitNulPaths(
-    runGit(target, nulPathListArgs(['diff', '--name-only', `${before}..HEAD`, '--'])),
-  )
+  let changedPaths: string[]
+  try {
+    changedPaths = splitNulPaths(
+      runGit(target, nulPathListArgs(['diff', '--name-only', `${before}..HEAD`, '--'])),
+    )
+  } catch (cause) {
+    handlePostPullFailure({
+      ...input,
+      before,
+      beforePositions,
+      cause,
+      operation: 'pulled-path measurement',
+    })
+  }
   if (pulledRangeChangesPackageJson(changedPaths)) {
     try {
       input.install(target)
