@@ -23,7 +23,9 @@ const execaMock = mock(
 
 mock.module('execa', () => ({ execa: execaMock }))
 
-const { startBounded, startParentBound } = await import('./bounded-process.ts')
+const { effectiveBudgetForArgv, startBounded, startParentBound } = await import(
+  './bounded-process.ts'
+)
 
 let previousSentinel: string | undefined
 
@@ -46,6 +48,10 @@ test('an explicit environment replaces the parent environment', async () => {
   })
 
   expect(execaMock.mock.calls[0]?.[2]).toMatchObject({ env, extendEnv: false })
+})
+
+test('a git argv receives the larger classified budget', () => {
+  expect(effectiveBudgetForArgv(['git', 'pull'], 'git-plumbing')).toBe('git-ref-move')
 })
 
 test('a parent-bound child keeps all three relay pipes streaming', async () => {

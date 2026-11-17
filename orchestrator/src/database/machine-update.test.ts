@@ -165,7 +165,7 @@ test("machine update clears a dead holder's marker before deciding", async () =>
     'fetch',
     'show',
     'rev-parse',
-    'pull',
+    '-c',
     'branch',
     'status',
   ])
@@ -308,7 +308,7 @@ test('machine update restores main when migrate fails after the pull', async () 
   )
   expect(gitCalls.slice(-3)).toEqual([
     ['rev-parse', 'HEAD'],
-    ['pull', '--ff-only', 'origin', 'main'],
+    ['-c', 'core.hooksPath=/dev/null', 'pull', '--ff-only', 'origin', 'main'],
     ['reset', '--keep', 'before-commit'],
   ])
 })
@@ -468,7 +468,7 @@ test('an additive machine update marks only the store-open window around pull an
         git: (_cwd, args) => {
           if (args[0] === 'branch') return 'main'
           if (args[0] === 'show') return JSON.stringify({ entries: held.journal })
-          if (args[0] === 'pull') {
+          if (args.includes('pull')) {
             expect(migrationWindow(db())?.migration).toBe(held.pending.tag)
             expect(migrationDrain(db())).toBeNull()
             phases.push('pull')
@@ -598,7 +598,7 @@ test('a non-additive update waits for an admitted resume, then migrates behind t
         git: (_cwd, args) => {
           if (args[0] === 'branch') return 'main'
           if (args[0] === 'show') return JSON.stringify({ entries: migrationJournal() })
-          if (args[0] === 'pull') {
+          if (args.includes('pull')) {
             expect(migrationDrain(db())?.migration).toBe(pending.tag)
             events.push('pull')
           }

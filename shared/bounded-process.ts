@@ -1,6 +1,11 @@
 import { closeSync, openSync } from 'node:fs'
 import { execa } from 'execa'
-import { BoundExceededError, CALL_BUDGETS, type CallBudgetName } from './call-budgets.ts'
+import {
+  BoundExceededError,
+  budgetForArgv,
+  CALL_BUDGETS,
+  type CallBudgetName,
+} from './call-budgets.ts'
 
 /**
  * A breached bound throws BoundExceededError naming its budget and remedy. A wrapper whose
@@ -83,13 +88,26 @@ function stdinInput(stdin: string | Uint8Array | undefined): Blob | Uint8Array |
   return typeof stdin === 'string' ? new Blob([stdin]) : stdin
 }
 
+/** Resolve the named budget that a bounded argv must receive. */
+export function effectiveBudgetForArgv(
+  argv: readonly string[],
+  callerBudget: CallBudgetName,
+): CallBudgetName {
+  if (argv[0] !== 'git') return callerBudget
+  const classifiedBudget = budgetForArgv(argv)
+  return CALL_BUDGETS[classifiedBudget].deadlineMs > CALL_BUDGETS[callerBudget].deadlineMs
+    ? classifiedBudget
+    : callerBudget
+}
+
 export async function startBounded(
   argv: readonly string[],
   options: BoundedProcessOptions,
 ): Promise<BoundedResult> {
   const [file, ...args] = argv
   if (!file) throw new TypeError('startBounded requires a non-empty argv')
-  const budget = CALL_BUDGETS[options.budget]
+  const budgetName = effectiveBudgetForArgv(argv, options.budget)
+  const budget = CALL_BUDGETS[budgetName]
   const result = await execa(file, args, {
     cwd: options.cwd,
     env: options.env,
@@ -104,10 +122,10 @@ export async function startBounded(
   })
   if (result.isCanceled) options.signal?.throwIfAborted()
   if (result.timedOut) {
-    throw new BoundExceededError(commandText(argv), options.budget, 'deadline', budget.deadlineMs)
+    throw new BoundExceededError(commandText(argv), budgetName, 'deadline', budget.deadlineMs)
   }
   if (result.isMaxBuffer) {
-    throw new BoundExceededError(commandText(argv), options.budget, 'output', budget.outputBytes)
+    throw new BoundExceededError(commandText(argv), budgetName, 'output', budget.outputBytes)
   }
   return { exitCode: exitCode(result.exitCode), stdout: result.stdout, stderr: result.stderr }
 }
@@ -126,7 +144,8 @@ export function startBoundedSyncBytes(
   options: BoundedSyncOptions,
 ): BoundedBytesResult {
   if (argv.length === 0) throw new TypeError('startBoundedSync requires a non-empty argv')
-  const budget = CALL_BUDGETS[options.budget]
+  const budgetName = effectiveBudgetForArgv(argv, options.budget)
+  const budget = CALL_BUDGETS[budgetName]
   if (options.stdin !== undefined && options.stdinFile !== undefined) {
     throw new TypeError('startBoundedSync accepts either stdin or stdinFile, not both')
   }
@@ -150,7 +169,7 @@ export function startBoundedSyncBytes(
   })()
   if (result.exitedDueToTimeout) {
     killProcessGroup(result.pid)
-    throw new BoundExceededError(commandText(argv), options.budget, 'deadline', budget.deadlineMs)
+    throw new BoundExceededError(commandText(argv), budgetName, 'deadline', budget.deadlineMs)
   }
   if (
     result.signalCode === 'SIGKILL' &&
@@ -158,7 +177,7 @@ export function startBoundedSyncBytes(
       result.stderr.byteLength >= budget.outputBytes)
   ) {
     killProcessGroup(result.pid)
-    throw new BoundExceededError(commandText(argv), options.budget, 'output', budget.outputBytes)
+    throw new BoundExceededError(commandText(argv), budgetName, 'output', budget.outputBytes)
   }
   return {
     exitCode: exitCode(result.exitCode),

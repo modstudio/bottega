@@ -3,6 +3,7 @@ export type CallBudgetName =
   | 'git-probe'
   | 'git-object'
   | 'git-network'
+  | 'git-ref-move'
   | 'process-table'
   | 'self-cli'
   | 'machine-update'
@@ -33,6 +34,8 @@ export const CALL_BUDGETS: Readonly<Record<CallBudgetName, CallBudget>> = Object
   /** Whole-object reads (binary patches, blobs) whose size follows the project's content. */
   'git-object': { deadlineMs: 120_000, outputBytes: 512 * MIB, graceMs: 2_000 },
   'git-network': { deadlineMs: 120_000, outputBytes: 16 * MIB, graceMs: 5_000 },
+  // Covers repository hooks, such as post-merge, that git runs inside a ref move.
+  'git-ref-move': { deadlineMs: 180_000, outputBytes: 16 * MIB, graceMs: 5_000 },
   'process-table': { deadlineMs: 10_000, outputBytes: 4 * MIB, graceMs: 1_000 },
   'self-cli': { deadlineMs: 60_000, outputBytes: 16 * MIB, graceMs: 5_000 },
   /** Must cover MIGRATION_DRAIN_TIMEOUT_MS, MIGRATION_WINDOW_WAIT_MS, MACHINE_UPDATE_LOCK_WAIT_MS, and the release-download total, which the child may spend in sequence. */
@@ -60,6 +63,18 @@ export const CALL_BUDGETS: Readonly<Record<CallBudgetName, CallBudget>> = Object
   gh: { deadlineMs: 60_000, outputBytes: 16 * MIB, graceMs: 5_000 },
 })
 
+function budgetForGitSubcommand(subcommand: string): CallBudgetName {
+  if (subcommand === 'pull') {
+    return CALL_BUDGETS['git-network'].deadlineMs > CALL_BUDGETS['git-ref-move'].deadlineMs
+      ? 'git-network'
+      : 'git-ref-move'
+  }
+  if (['merge', 'rebase', 'checkout', 'switch'].includes(subcommand)) return 'git-ref-move'
+  return ['fetch', 'ls-remote', 'push', 'clone'].includes(subcommand)
+    ? 'git-network'
+    : 'git-plumbing'
+}
+
 /** Select the shared process budget from a gh or git argv. */
 export function budgetForArgv(argv: readonly string[]): CallBudgetName {
   if (argv[0] === 'gh') return 'gh'
@@ -84,9 +99,7 @@ export function budgetForArgv(argv: readonly string[]): CallBudgetName {
       continue
     }
     if (argument.startsWith('-')) continue
-    return ['fetch', 'ls-remote', 'push', 'pull', 'clone'].includes(argument)
-      ? 'git-network'
-      : 'git-plumbing'
+    return budgetForGitSubcommand(argument)
   }
   return 'git-plumbing'
 }

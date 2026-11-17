@@ -549,7 +549,8 @@ export async function machineUpdateCommandUnderLock(
           before: beforePositions,
           swapped: { kind: 'checkout', target, priorCommit: before },
         })
-        runGit(target, ['pull', '--ff-only', 'origin', branch])
+        // Machine update migrates immediately after pulling, so its pull must not run the hook.
+        runGit(target, ['-c', 'core.hooksPath=/dev/null', 'pull', '--ff-only', 'origin', branch])
         try {
           migrate(target)
         } catch (cause) {
