@@ -165,6 +165,23 @@ export async function askQuestion(
   },
 ) {
   const id = input.id ?? newRecordId()
+  let projectId = input.projectId ?? null
+  if (!projectId && input.runId) {
+    const run = database
+      .query<{ project_record_id: string | null }, [string]>(
+        'SELECT project_record_id FROM run WHERE record_id=?',
+      )
+      .get(input.runId)
+    if (!run)
+      throw new Error(
+        `run ${input.runId} is not in this machine's store, so its question has no record space; rerun the command from the machine that started the run`,
+      )
+    if (!run.project_record_id)
+      throw new Error(
+        `run ${input.runId} carries no project, so its question has no record space; start the run from a registered project checkout, then retry`,
+      )
+    projectId = run.project_record_id
+  }
   const question: Snapshot = {
     id,
     number: null,
@@ -172,7 +189,7 @@ export async function askQuestion(
     workflowKey: input.workflowKey ?? null,
     workflowTaskId: input.workflowTaskId ?? null,
     workflowCursorRecordId: input.workflowCursorRecordId ?? null,
-    projectId: input.projectId ?? null,
+    projectId,
     machineId: machineId(),
     revision: 1,
     askedAt: input.askedAt,
