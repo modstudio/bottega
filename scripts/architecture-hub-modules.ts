@@ -186,8 +186,6 @@ export const hubModuleSpecs = [
     file: 'hub/src/write-hold-measurement.ts',
     allowed: [
       'bun:sqlite',
-      'node:path',
-      'node:url',
       '../../shared/store-write-hold-log.ts',
       '../../shared/write-caller-from-stack.ts',
       './write-hold.ts',

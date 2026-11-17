@@ -113,23 +113,27 @@ function markerRestricted(tag: string, where: string, block: string): boolean {
   ).test(block)
 }
 
-test('every BACKFILL update changes no row when its block runs again', () => {
-  const unsafe: string[] = []
-  for (const entry of migrationJournal()) {
+function unsafeUpdate(tag: string, block: string, statement: string, index: number): string | null {
+  if (!/^\s*update\b/i.test(statement)) return null
+  const setAt = topLevelKeyword(statement, 'set', 0)
+  const whereAt = topLevelKeyword(statement, 'where', setAt + 3)
+  const columns = setAt === -1 || whereAt === -1 ? [] : setColumns(statement, setAt, whereAt)
+  const where = whereAt === -1 ? '' : statement.slice(whereAt + 5)
+  const safe =
+    columns.length > 0 && (nullRestricted(columns, where) || markerRestricted(tag, where, block))
+  return safe ? null : `${tag} statement ${index + 1}`
+}
+
+function unsafeBackfillUpdates(): string[] {
+  return migrationJournal().flatMap((entry) => {
     const source = readFileSync(join(MIGRATIONS_FOLDER, `${entry.tag}.sql`), 'utf8')
     const block = stripSqlComments(splitMigrationSource(source).backfill)
-    for (const [index, statement] of sqlStatements(block).entries()) {
-      if (!/^\s*update\b/i.test(statement)) continue
-      const setAt = topLevelKeyword(statement, 'set', 0)
-      const whereAt = topLevelKeyword(statement, 'where', setAt + 3)
-      const columns = setAt === -1 || whereAt === -1 ? [] : setColumns(statement, setAt, whereAt)
-      const where = whereAt === -1 ? '' : statement.slice(whereAt + 5)
-      if (
-        !columns.length ||
-        (!nullRestricted(columns, where) && !markerRestricted(entry.tag, where, block))
-      )
-        unsafe.push(`${entry.tag} statement ${index + 1}`)
-    }
-  }
-  expect(unsafe).toEqual([])
+    return sqlStatements(block)
+      .map((statement, index) => unsafeUpdate(entry.tag, block, statement, index))
+      .filter((finding): finding is string => finding !== null)
+  })
+}
+
+test('every migration BACKFILL update changes no row when its block runs again', () => {
+  expect(unsafeBackfillUpdates()).toEqual([])
 })

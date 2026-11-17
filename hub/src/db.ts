@@ -359,7 +359,8 @@ export function writeTransaction<T>(fn: (conn: Database) => T, database?: Databa
   } finally {
     if (depth === 0) {
       const endedMs = performance.timeOrigin + performance.now()
-      if (beganMs !== null) measureFinishedWrite(conn, beganMs, endedMs)
+      if (beganMs !== null)
+        measureFinishedWrite(conn, beganMs, endedMs, { excludedCallerFiles: [dbSourcePath] })
       writeDepth.delete(conn)
       conn.exec('PRAGMA query_only = ON')
     } else {
