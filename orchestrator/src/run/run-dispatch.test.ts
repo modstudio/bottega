@@ -133,6 +133,11 @@ test('a findings dispatch carries its resolved round role to the coordinator', a
       cwd: import.meta.dir,
       lens: 'correctness',
       binding: { cursorRecordId, stepSlug: 'review' },
+      resolvedReviewTarget: {
+        branch: 'DEV-2403-round-role-fixture',
+        commit: 'a'.repeat(40),
+        base: 'b'.repeat(40),
+      },
     },
     'codex',
     spawnCoordinator,
