@@ -9,6 +9,7 @@ import { catalogueVersionRecordId, workflowVersionRecordId } from '../../test/fi
 import { db } from '../database/db.ts'
 import { upsertProject } from '../project/projects.ts'
 import { rememberHostedRecord } from '../record/install-binding-write.ts'
+import { assertRecordContextItemRevision } from '../record/record-context-items.ts'
 import {
   clearTaskContext,
   dropContextItem,
@@ -410,6 +411,69 @@ test('lifecycle drop reports an absent hosted row and drops the local item', asy
       }),
     ])
     expect(removedFromSpace).toBe('session-space')
+    expect((await getContext({ session })).items).toEqual([])
+  } finally {
+    if (priorSession === undefined) delete process.env.CLAUDE_CODE_SESSION_ID
+    else process.env.CLAUDE_CODE_SESSION_ID = priorSession
+    if (priorUrl === undefined) delete process.env.BOTTEGA_RECORD_API_URL
+    else process.env.BOTTEGA_RECORD_API_URL = priorUrl
+  }
+})
+
+test('lifecycle drop ignores a divergent hosted revision and drops both copies', async () => {
+  const session = newRecordId()
+  const ownerProject = `session-owner-${session}`
+  const priorSession = process.env.CLAUDE_CODE_SESSION_ID
+  const priorUrl = process.env.BOTTEGA_RECORD_API_URL
+  process.env.CLAUDE_CODE_SESSION_ID = session
+  try {
+    await setContextItem({
+      session,
+      id: 'divergent-revision',
+      kind: 'fact',
+      source: 'test',
+      body: 'Drop this even when the hosted revision differs.',
+    })
+    const item = (await getContext({ session })).items[0]!
+    upsertProject({
+      recordId: newRecordId(),
+      name: ownerProject,
+      path: `/tmp/${ownerProject}`,
+      settings: { space: 'session-space' },
+    })
+    db()
+      .query(
+        `INSERT INTO presence(session_id,harness,role,machine,project,cwd,last_seen)
+         VALUES (?,'codex','architect','test-machine',?,'/tmp/session-owner','2026-11-16T00:00:00.000Z')`,
+      )
+      .run(session, ownerProject)
+    process.env.BOTTEGA_RECORD_API_URL = 'https://record.example.test'
+    rememberHostedRecord(db())
+    const memory = createMemoryRecordApiClient()
+    installRecordApiClient({
+      ...memory,
+      whoami: async () => ({
+        user: { id: 'user-a' },
+        activeSpaceId: 'personal-space',
+        personalSpaceId: 'personal-space',
+        memberships: [
+          { space_id: 'personal-space', slug: 'personal', permission: 'write' },
+          { space_id: 'session-space', slug: 'session-space', permission: 'write' },
+        ],
+      }),
+      deleteContextItem: async (_id, input) => {
+        assertRecordContextItemRevision(input.expectedRevision, '2026-11-16T00:00:00.000Z')
+        return { removed: true }
+      },
+    })
+
+    expect(
+      await dropSessionContextItemsForLifecycle({
+        session,
+        reason: 'test divergent hosted revision',
+        items: [item],
+      }),
+    ).toEqual([expect.objectContaining({ outcome: 'dropped', error: null })])
     expect((await getContext({ session })).items).toEqual([])
   } finally {
     if (priorSession === undefined) delete process.env.CLAUDE_CODE_SESSION_ID

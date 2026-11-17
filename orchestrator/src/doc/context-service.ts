@@ -227,9 +227,7 @@ async function dropSessionContextItemForLifecycle(input: {
         kind: 'session',
         checkoutProject: project,
       })
-      const hosted = await client.remove(item.recordId, {
-        expectedRevision: input.expectedRevision,
-      })
+      const hosted = await client.remove(item.recordId, {})
       const dropped = removeLocalContextItem(holder, input.id, item.revision)
       if (!dropped) return 'already-absent' as const
       return hosted.removed ? ('dropped' as const) : ('already-absent' as const)
