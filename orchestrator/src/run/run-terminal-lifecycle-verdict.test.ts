@@ -36,6 +36,11 @@ describe('terminal lifecycle verdict', () => {
   test.each([
     ['running', outcome('running'), outcome('ok', null, 'complete')],
     ['asking', outcome('asking'), outcome('ok', null, 'complete')],
+    [
+      'stale interrupted',
+      outcome('stale', 'interrupted', 'pid 4194304 is not alive'),
+      outcome('ok', null, 'complete'),
+    ],
   ])('%s takes the incoming outcome', (_name, stored, incoming) => {
     expect(terminalLifecycleForWrite(stored, incoming)).toEqual(incoming)
   })

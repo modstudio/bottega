@@ -133,7 +133,9 @@ test('reconcile records measurements without overwriting an architect abandon ve
     .run(id)
   persistTerminalSnapshot(id, { ...terminalSnapshot(), status: 'asking', latencyMs: 456 })
 
-  expect(reconcileRun(id)).toBe(`reconciled run ${id} as asking`)
+  expect(reconcileRun(id)).toBe(
+    `reconciled run ${id} as stale (stored architect verdict kept; snapshot said asking)`,
+  )
   expect(
     db()
       .query('SELECT status,failure_kind,error,latency_ms,vendor_tokens FROM run WHERE record_id=?')

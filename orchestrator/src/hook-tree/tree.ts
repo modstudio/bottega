@@ -17,6 +17,7 @@ import {
 } from '../resources/resource-claims.ts'
 import { acquireRunLease } from '../run/run-lease.ts'
 import { nextRunNumber } from '../run/run-number.ts'
+import { terminalLifecycleWrite } from '../run/run-terminal-lifecycle-store.ts'
 import { HOOK_TREE_JOB, isSyntheticLifecycleJob } from '../run/synthetic-lifecycle-job.ts'
 import { unownedProjectTreeRemovalRemedy } from '../worktree/snapshotless-tracked-recipe.ts'
 import { createWithTool } from '../worktree/worktree-create.ts'
@@ -69,9 +70,37 @@ export function hookTreeSeedRequest(input: {
 }
 
 function recordHookTreeFailure(recordId: string, startedAt: string, detail: string): void {
-  db()
-    .query(`UPDATE run SET status='failed',latency_ms=?,exit_code=1,error=? WHERE record_id=?`)
-    .run(Math.max(0, Date.now() - Date.parse(startedAt)), detail, recordId)
+  writeTransaction(() => {
+    const lifecycle = terminalLifecycleWrite(db(), recordId, 'failed', detail, null)
+    db()
+      .query(
+        `UPDATE run SET status=?,failure_kind=?,error=?,latency_ms=?,exit_code=1 WHERE record_id=?`,
+      )
+      .run(
+        lifecycle.status,
+        lifecycle.failureKind,
+        lifecycle.error,
+        Math.max(0, Date.now() - Date.parse(startedAt)),
+        recordId,
+      )
+  })
+}
+
+function recordHookTreeSuccess(recordId: string, startedAt: string): void {
+  writeTransaction(() => {
+    const lifecycle = terminalLifecycleWrite(db(), recordId, 'ok', null, null)
+    db()
+      .query(
+        `UPDATE run SET status=?,failure_kind=?,error=?,latency_ms=?,exit_code=0 WHERE record_id=?`,
+      )
+      .run(
+        lifecycle.status,
+        lifecycle.failureKind,
+        lifecycle.error,
+        Math.max(0, Date.now() - Date.parse(startedAt)),
+        recordId,
+      )
+  })
 }
 
 export function createHookTree(input: {
@@ -197,9 +226,7 @@ export function createHookTree(input: {
       undefined,
       hookBranch,
     )
-    db()
-      .query(`UPDATE run SET status='ok',latency_ms=?,exit_code=0 WHERE record_id=?`)
-      .run(Math.max(0, Date.now() - Date.parse(startedAt)), inserted.record_id)
+    recordHookTreeSuccess(inserted.record_id, startedAt)
     return created.path
   } catch (error) {
     const detail = String((error as Error)?.message ?? error)

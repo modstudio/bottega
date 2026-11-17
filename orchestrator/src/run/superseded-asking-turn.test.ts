@@ -1,5 +1,10 @@
 import { describe, expect, test } from 'bun:test'
-import { type ChainTurnState, supersededAskingTurns } from './superseded-asking-turn.ts'
+import {
+  type AskingTurnAuditRow,
+  type ChainTurnState,
+  overwrittenAbandonedAskingTurns,
+  supersededAskingTurns,
+} from './superseded-asking-turn.ts'
 
 const turn = (turn: number, status: string): ChainTurnState => ({
   recordId: `run-${turn}`,
@@ -27,5 +32,29 @@ describe('superseded asking turns', () => {
         { ...turn(3, 'ok'), rootId: 'root-b' },
       ]),
     ).toEqual([])
+  })
+})
+
+describe('overwritten architect abandon verdicts', () => {
+  const audit = (
+    action: string,
+    at: string,
+    rowId: number,
+    reason: string | null = null,
+  ): AskingTurnAuditRow => ({ recordId: 'run-2', action, at, rowId, reason })
+
+  test('uses the latest audit time and row id to decide whether abandon is latest', () => {
+    expect(
+      overwrittenAbandonedAskingTurns([
+        audit('abandon', '2026-11-17T01:00:00.000Z', 1, 'operator note'),
+        audit('continue', '2026-11-17T01:00:00.000Z', 2),
+      ]),
+    ).toEqual([])
+    expect(
+      overwrittenAbandonedAskingTurns([
+        audit('continue', '2026-11-17T01:00:00.000Z', 1),
+        audit('abandon', '2026-11-17T01:00:00.000Z', 2, 'operator note'),
+      ]),
+    ).toEqual([{ recordId: 'run-2', reason: 'operator note' }])
   })
 })

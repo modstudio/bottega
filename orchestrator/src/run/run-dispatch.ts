@@ -27,7 +27,7 @@ import { pidAlive } from '../../../shared/process-identity.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 import { SESSION_LIVE_MS } from '../../../shared/session-liveness.ts'
-import { db, nowIso, sessionId, writableDb } from '../database/db.ts'
+import { db, nowIso, sessionId, writableDb, writeTransaction } from '../database/db.ts'
 import {
   assertMigrationDispatchAllowed,
   assertMigrationDispatchAllowedAndRecord,
@@ -60,7 +60,10 @@ import { repoOf } from './run-project-context.ts'
 import { claimIdentity, resumeFacts } from './run-resume-kind.ts'
 import { recordRunStartupFailure } from './run-startup-failure.ts'
 import { admitNewRunReference } from './run-task-reference.ts'
-import { reconcileSupersededAskingTurns } from './superseded-asking-turn-store.ts'
+import {
+  reconcileSupersededAskingTurns,
+  supersededAskingTurnDecisions,
+} from './superseded-asking-turn-store.ts'
 
 function writeDetachedPrompt(runsDir: string, recordId: string, prompt: string): string {
   const runDirectory = join(runsDir, recordId)
@@ -189,7 +192,10 @@ function settleDetachedResumeClaim(
 ): void {
   clearResumedQuestionDelivery(inserted, spec)
   if (!inserted || !spec.resume || spec.resume.kind === 'retry-root') return
-  reconcileSupersededAskingTurns(db(), nowIso(), spec.resume.parent)
+  writeTransaction(() => {
+    const decisions = supersededAskingTurnDecisions(db(), spec.resume!.parent)
+    reconcileSupersededAskingTurns(db(), decisions, nowIso())
+  })
 }
 
 function resolvedDetachSpec(spec: DetachSpec, jobName: string): DetachSpec {

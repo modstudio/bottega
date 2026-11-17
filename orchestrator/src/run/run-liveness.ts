@@ -33,7 +33,7 @@ import {
   sharedGitConfigCheckSkipReason,
 } from './shared-git-config-check.ts'
 import {
-  overwrittenAbandonedAskingTurnIds,
+  overwrittenAbandonedAskingTurnDecisions,
   reconcileOverwrittenAbandonedAskingTurns,
   reconcileSupersededAskingTurns,
   supersededAskingTurnDecisions,
@@ -393,6 +393,24 @@ function terminalizeHarnessFailures(
   }
 }
 
+function repairAskingTurns(
+  database: Database,
+  finishedAt: string,
+): { supersededCount: number; repairedAbandoned: string[] } {
+  return writeTransaction(() => {
+    const superseded = supersededAskingTurnDecisions(database)
+    const overwrittenAbandons = overwrittenAbandonedAskingTurnDecisions(database)
+    return {
+      supersededCount: reconcileSupersededAskingTurns(database, superseded, finishedAt),
+      repairedAbandoned: reconcileOverwrittenAbandonedAskingTurns(
+        database,
+        overwrittenAbandons,
+        finishedAt,
+      ),
+    }
+  }, database)
+}
+
 function finalizeReapedRuns(
   database: Database,
   ended: string[],
@@ -403,20 +421,6 @@ function finalizeReapedRuns(
   if (!ended.length) return
   rollUpReapedRoots(database, ended, new Set(setupDeaths), localMachineId, finishedAt)
   for (const id of ended) teardownTerminalRunResources(database, id)
-}
-
-function repairOverwrittenAbandons(
-  database: Database,
-  candidates: string[],
-  finishedAt: string,
-): number {
-  if (!candidates.length) return 0
-  const repaired = writeTransaction(
-    () => reconcileOverwrittenAbandonedAskingTurns(database, finishedAt),
-    database,
-  )
-  if (repaired.length) rollUpReapedRoots(database, repaired, new Set(), machineId(), finishedAt)
-  return repaired.length
 }
 
 export function reapStale(
@@ -438,16 +442,16 @@ export function reapStale(
     rows,
     now,
   )
-  const supersededAsking = supersededAskingTurnDecisions(d)
-  const overwrittenAbandonedAsking = overwrittenAbandonedAskingTurnIds(d)
   if (storeWritesRefused()) {
+    const supersededAsking = supersededAskingTurnDecisions(d)
+    const overwrittenAbandonedAsking = overwrittenAbandonedAskingTurnDecisions(d)
     return [
       ...supersededAsking.map((turn) => ({
         record_id: turn.recordId,
         reason: `superseded by run ${turn.supersededByNumber}`,
       })),
-      ...overwrittenAbandonedAsking.map((recordId) => ({
-        record_id: recordId,
+      ...overwrittenAbandonedAsking.map((decision) => ({
+        record_id: decision.recordId,
         reason: 'architect abandon verdict was overwritten by a late terminal write',
       })),
       ...dead.map((id) => {
@@ -471,10 +475,10 @@ export function reapStale(
   const ended = [...dead, ...abandonedBootstraps, ...setupDeaths, ...recordedCauseDeaths]
   const localMachineId = ended.length ? machineId() : ''
   const finishedAt = new Date(now).toISOString()
-  const supersededCount = supersededAsking.length
-    ? writeTransaction(() => reconcileSupersededAskingTurns(d, finishedAt), d)
-    : 0
-  const repairedAbandoned = repairOverwrittenAbandons(d, overwrittenAbandonedAsking, finishedAt)
+  const askingRepairs = repairAskingTurns(d, finishedAt)
+  if (askingRepairs.repairedAbandoned.length) {
+    rollUpReapedRoots(d, askingRepairs.repairedAbandoned, new Set(), machineId(), finishedAt)
+  }
   if (abandonedBootstraps.length) {
     const update = d.query(
       `UPDATE run SET status='failed', failure_kind='harness', host_wait_since=NULL,
@@ -522,8 +526,8 @@ export function reapStale(
   }
   finalizeReapedRuns(d, ended, [...setupDeaths, ...recordedCauseDeaths], localMachineId, finishedAt)
   return (
-    supersededCount +
-    repairedAbandoned +
+    askingRepairs.supersededCount +
+    askingRepairs.repairedAbandoned.length +
     dead.length +
     abandonedBootstraps.length +
     setupDeaths.length +

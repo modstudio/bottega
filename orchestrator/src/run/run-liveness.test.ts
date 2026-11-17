@@ -96,19 +96,49 @@ const runNumber = (recordId: string): number =>
 
 describe('reapStale', () => {
   test('restores an asking row whose latest chain audit is abandon', () => {
-    const id = addRun({ agent: 'codex', job: 'craft', status: 'asking' })
+    const root = addRun({ agent: 'codex', job: 'craft', status: 'ok' })
+    const id = addRun({
+      agent: 'codex',
+      job: 'craft',
+      status: 'asking',
+      parent: root,
+      turn: 2,
+    })
     db()
       .query(
         `INSERT INTO run_mutation_audit
            (record_id,run_record_id,root_run_record_id,action,at,reason)
          VALUES (?,?,?,?,?,?)`,
       )
-      .run(newRecordId(), id, id, 'abandon', nowIso(), 'late worker still running')
+      .run(newRecordId(), root, root, 'abandon', nowIso(), 'late worker still running')
 
     expect(reapStale(db(), noSharedGitConfigCheck)).toBe(1)
-    expect(db().query('SELECT status,failure_kind FROM run WHERE record_id=?').get(id)).toEqual({
+    expect(
+      db().query('SELECT status,failure_kind,error FROM run WHERE record_id=?').get(id),
+    ).toEqual({
       status: 'stale',
       failure_kind: 'abandoned',
+      error: 'abandoned by architect: late worker still running',
+    })
+    const payload = db()
+      .query<{ payload: string }, [string]>(
+        `SELECT payload FROM outbox WHERE kind='run' AND row_id=? ORDER BY id DESC LIMIT 1`,
+      )
+      .get(id)!
+    expect(JSON.parse(payload.payload)).toMatchObject({
+      localId: runNumber(id),
+      status: 'stale',
+      failureKind: 'abandoned',
+    })
+    expect(
+      db()
+        .query(
+          'SELECT action,reason FROM run_mutation_audit WHERE run_record_id=? ORDER BY rowid DESC',
+        )
+        .get(id),
+    ).toEqual({
+      action: 'reap',
+      reason: 'architect abandon verdict restored after late terminal write',
     })
   })
 
@@ -158,9 +188,9 @@ describe('reapStale', () => {
     expect(
       db().query('SELECT status,failure_kind,error FROM run WHERE record_id=?').get(asking),
     ).toEqual({
-      status: 'stale',
-      failure_kind: 'abandoned',
-      error: `superseded by run ${latestNumber}`,
+      status: 'ok',
+      failure_kind: null,
+      error: null,
     })
     expect(db().query('SELECT status FROM run WHERE record_id=?').get(root)).toEqual({
       status: 'ok',
@@ -168,6 +198,23 @@ describe('reapStale', () => {
     expect(
       db().query('SELECT answered_at,closed_at FROM question WHERE record_id=?').get(questionId),
     ).toEqual({ answered_at: null, closed_at: null })
+    const payload = db()
+      .query<{ payload: string }, [string]>(
+        `SELECT payload FROM outbox WHERE kind='run' AND row_id=? ORDER BY id DESC LIMIT 1`,
+      )
+      .get(asking)!
+    expect(JSON.parse(payload.payload)).toMatchObject({
+      localId: runNumber(asking),
+      status: 'ok',
+      failureKind: null,
+    })
+    expect(
+      db()
+        .query(
+          'SELECT action,reason FROM run_mutation_audit WHERE run_record_id=? ORDER BY rowid DESC',
+        )
+        .get(asking),
+    ).toEqual({ action: 'reap', reason: `superseded by run ${latestNumber}` })
   })
 
   test('elapsed time does not kill a legacy run while its pid is alive', () => {

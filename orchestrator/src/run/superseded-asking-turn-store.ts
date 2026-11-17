@@ -1,10 +1,18 @@
 // concern: superseded asking turn store
-/** Reads and closes superseded asking turns without deciding chain policy. */
+/** Reads asking-turn repair facts. Audit is the only evidence for verdicts overwritten before the write guard existed. */
 
 import type { Database } from 'bun:sqlite'
 import { machineId } from '../record/machine-identity.ts'
+import { writeSupersededAskingTurn } from '../route/failover.ts'
+import { architectAbandonError, writeAskingRunAbandoned } from './asking-run-lifecycle-store.ts'
+import { auditRunMutation, runMutationAuthority } from './run-authority.ts'
 import { enqueueRunRecord } from './run-outbox.ts'
-import { type ChainTurnState, supersededAskingTurns } from './superseded-asking-turn.ts'
+import {
+  type AskingTurnAuditRow,
+  type ChainTurnState,
+  overwrittenAbandonedAskingTurns,
+  supersededAskingTurns,
+} from './superseded-asking-turn.ts'
 
 export function supersededAskingTurnDecisions(
   database: Database,
@@ -24,18 +32,14 @@ export function supersededAskingTurnDecisions(
 /** Close asking continuation turns that a later turn in the same chain superseded. */
 export function reconcileSupersededAskingTurns(
   database: Database,
+  decisions: ReturnType<typeof supersededAskingTurns>,
   finishedAt: string,
-  rootId?: string,
 ): number {
-  const decisions = supersededAskingTurnDecisions(database, rootId)
-  const update = database.query(
-    `UPDATE run SET status='stale', failure_kind='abandoned', error=?
-      WHERE record_id=? AND status='asking'`,
-  )
   let changed = 0
   for (const decision of decisions) {
-    const result = update.run(`superseded by run ${decision.supersededByNumber}`, decision.recordId)
-    if (result.changes !== 1) continue
+    const reason = `superseded by run ${decision.supersededByNumber}`
+    if (!writeSupersededAskingTurn(database, decision.recordId)) continue
+    auditRunMutation(runMutationAuthority(database, decision.recordId), 'reap', reason, database)
     enqueueRunRecord(database, decision.recordId, machineId(), finishedAt)
     changed++
   }
@@ -43,39 +47,40 @@ export function reconcileSupersededAskingTurns(
 }
 
 /** Asking rows whose latest chain mutation is an architect abandon lost that verdict. */
-export function overwrittenAbandonedAskingTurnIds(database: Database): string[] {
-  return (
-    database
-      .query(
-        `SELECT asking.record_id
-           FROM run asking
-          WHERE asking.status='asking'
-            AND (
-              SELECT audit.action
-                FROM run_mutation_audit audit
-               WHERE audit.root_run_record_id = COALESCE(asking.parent_run_record_id, asking.record_id)
-               ORDER BY audit.at DESC, audit.rowid DESC
-               LIMIT 1
-            ) = 'abandon'`,
-      )
-      .all() as { record_id: string }[]
-  ).map(({ record_id }) => record_id)
+export function overwrittenAbandonedAskingTurnDecisions(
+  database: Database,
+): ReturnType<typeof overwrittenAbandonedAskingTurns> {
+  const rows = database
+    .query(
+      `SELECT asking.record_id AS recordId, audit.action, audit.at, audit.rowid AS rowId, audit.reason
+         FROM run asking
+         JOIN run_mutation_audit audit
+           ON audit.root_run_record_id=COALESCE(asking.parent_run_record_id, asking.record_id)
+        WHERE asking.status='asking'
+        ORDER BY asking.record_id, audit.at DESC, audit.rowid DESC`,
+    )
+    .all() as AskingTurnAuditRow[]
+  return overwrittenAbandonedAskingTurns(rows)
 }
 
 /** Restore an architect abandon verdict overwritten by a worker's late terminal write. */
 export function reconcileOverwrittenAbandonedAskingTurns(
   database: Database,
+  candidates: ReturnType<typeof overwrittenAbandonedAskingTurns>,
   finishedAt: string,
 ): string[] {
-  const candidates = overwrittenAbandonedAskingTurnIds(database)
-  const update = database.query(
-    "UPDATE run SET status='stale', failure_kind='abandoned' WHERE record_id=? AND status='asking'",
-  )
   const repaired: string[] = []
-  for (const recordId of candidates) {
-    if (update.run(recordId).changes !== 1) continue
-    enqueueRunRecord(database, recordId, machineId(), finishedAt)
-    repaired.push(recordId)
+  for (const candidate of candidates) {
+    const error = architectAbandonError(candidate.reason)
+    if (!writeAskingRunAbandoned(database, candidate.recordId, error)) continue
+    auditRunMutation(
+      runMutationAuthority(database, candidate.recordId),
+      'reap',
+      'architect abandon verdict restored after late terminal write',
+      database,
+    )
+    enqueueRunRecord(database, candidate.recordId, machineId(), finishedAt)
+    repaired.push(candidate.recordId)
   }
   return repaired
 }

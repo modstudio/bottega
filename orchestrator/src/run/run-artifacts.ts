@@ -405,7 +405,7 @@ export function reconcileRun(id: string): string {
    * therefore requires first making questions recoverable from this journal,
    * or a failed transaction could reconcile to `asking` with nothing to answer.
    */
-  writeTransaction(() => {
+  const appliedLifecycle = writeTransaction(() => {
     const lifecycle = terminalLifecycleWrite(
       db(),
       id,
@@ -455,9 +455,16 @@ export function reconcileRun(id: string): string {
         id,
       )
     writeRunContextProfile(db(), id, snapshot.contextProfile)
+    return lifecycle
   })
   teardownTerminalRunResources(db(), id)
-  return `reconciled run ${id} as ${snapshot.status}`
+  const keptStoredVerdict =
+    appliedLifecycle.status !== snapshot.status ||
+    appliedLifecycle.error !== snapshot.error ||
+    appliedLifecycle.failureKind !== snapshot.failureKind
+  return keptStoredVerdict
+    ? `reconciled run ${id} as ${appliedLifecycle.status} (stored architect verdict kept; snapshot said ${snapshot.status})`
+    : `reconciled run ${id} as ${appliedLifecycle.status}`
 }
 
 export type DispatchState = { deliverables: string[]; timeoutMinutes: number | null }
