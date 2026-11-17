@@ -21,7 +21,13 @@ import {
 } from './record-question-contract.ts'
 
 type Environment = { Variables: { identity: RecordIdentity; destinationSpaceId?: string } }
-type Tenant = { url: string; userId: string; spaceId: string; spaceIds: string[] }
+type Tenant = {
+  url: string
+  userId: string
+  spaceId: string
+  spaceIds: string[]
+  uuidKeyedRead?: true
+}
 export type RecordQuestionRouteDeps = {
   readQuestions?(input: Tenant & RecordQuestionReadInput): Promise<unknown>
   writeQuestion?(intent: QuestionIntent, input: Tenant & QuestionWriteBody): Promise<unknown>
@@ -111,11 +117,7 @@ export function registerRecordQuestionRoutes(
         422,
       )
     const result = await deps.readQuestions({ ...tenant, ...query.data })
-    if (
-      query.data.read === 'by-id' &&
-      context.get('destinationSpaceId') === undefined &&
-      isEmptyQuestionRead(result)
-    )
+    if (tenant.uuidKeyedRead && isEmptyQuestionRead(result))
       return context.json(recordKeyedNotVisibleRefusal(tenant.spaceIds.length), 404)
     return context.json(result)
   })

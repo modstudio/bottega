@@ -1,9 +1,5 @@
 import { expect, test } from 'bun:test'
-import {
-  RECORD_KEYED_NOT_VISIBLE_CODE,
-  recordKeyedNotVisibleRefusal,
-  recordReadIsUuidKeyed,
-} from './record-keyed-read.ts'
+import { recordReadIsUuidKeyed, recordRequestReadKind } from './record-keyed-read.ts'
 
 test('only UUID-keyed hosted reads are classified as keyed', () => {
   for (const read of ['by-id', 'for-run', 'for-runs', 'for-cursor', 'open-for-cursors'])
@@ -20,13 +16,15 @@ test('only UUID-keyed hosted reads are classified as keyed', () => {
     expect(recordReadIsUuidKeyed('/v1/questions', read)).toBe(false)
   expect(recordReadIsUuidKeyed('/v1/task-flow/stages')).toBe(false)
   expect(recordReadIsUuidKeyed('/v1/task-flow', 'task')).toBe(false)
-})
 
-test('keyed misses have one stable coded refusal', () => {
-  expect(recordKeyedNotVisibleRefusal(2)).toEqual({
-    error: 'not visible in your record spaces (2 memberships)',
-    remedy:
-      'the row is in a space you are not a member of, or it does not exist; join its space or check the id',
-    code: RECORD_KEYED_NOT_VISIBLE_CODE,
-  })
+  const query = (values: Record<string, string>) => (name: string) => values[name]
+  expect(recordRequestReadKind('/v1/questions', query({ read: 'by-id' }))).toBe('by-id')
+  expect(recordRequestReadKind('/v1/questions', query({ read: 'inbox' }))).toBe('inbox')
+  expect(recordRequestReadKind('/v1/task-flow', query({ flowRecordId: crypto.randomUUID() }))).toBe(
+    'flow',
+  )
+  expect(recordRequestReadKind('/v1/task-flow', query({ taskKey: 'DEV-2384' }))).toBeUndefined()
+  expect(
+    recordRequestReadKind(`/v1/task-flow/stages/${crypto.randomUUID()}`, query({})),
+  ).toBeUndefined()
 })

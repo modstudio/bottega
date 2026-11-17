@@ -205,7 +205,7 @@ function registerTaskFlowByIdRoutes(
       try {
         return context.json(await read({ ...active, id: id.data }))
       } catch (error) {
-        if (error instanceof RecordTaskFlowError && context.get('destinationSpaceId') === undefined)
+        if (error instanceof RecordTaskFlowError && active.uuidKeyedRead)
           return context.json(recordKeyedNotVisibleRefusal(active.spaceIds.length), 404)
         if (error instanceof RecordTaskFlowError)
           return context.json({ error: error.message, code: error.code }, 404)
@@ -230,11 +230,7 @@ function registerTaskFlowReadRoutes(
     try {
       return context.json(await deps.readTaskFlow({ ...active, ...query.data }))
     } catch (error) {
-      if (
-        error instanceof RecordTaskFlowError &&
-        query.data.flowRecordId !== undefined &&
-        context.get('destinationSpaceId') === undefined
-      )
+      if (error instanceof RecordTaskFlowError && active.uuidKeyedRead)
         return context.json(recordKeyedNotVisibleRefusal(active.spaceIds.length), 404)
       if (error instanceof RecordTaskFlowError)
         return context.json({ error: error.message, code: error.code }, 404)

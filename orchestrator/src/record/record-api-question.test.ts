@@ -20,7 +20,7 @@ const tenant = {
   spaceIds: ['01990000-0000-7000-8000-000000002002'],
 }
 
-function app(deps: RecordQuestionRouteDeps, destinationSpaceId?: string) {
+function app(deps: RecordQuestionRouteDeps, destinationSpaceId?: string, uuidKeyedRead = false) {
   const api = new Hono<{
     Variables: { identity: RecordIdentity; destinationSpaceId?: string }
   }>()
@@ -30,7 +30,7 @@ function app(deps: RecordQuestionRouteDeps, destinationSpaceId?: string) {
       await next()
     })
   registerRecordQuestionRoutes(api, deps, {
-    scope: () => tenant,
+    scope: () => ({ ...tenant, ...(uuidKeyedRead ? { uuidKeyedRead: true as const } : {}) }),
     noSpace: () => new Response(null, { status: 409 }),
   })
   return api
@@ -131,9 +131,11 @@ test('hosted question reads other than rulings still refuse changedAfter', async
 })
 
 test('a destinationless question by-id miss returns the membership-safe refusal', async () => {
-  const response = await app({ readQuestions: async () => ({ items: [] }) }).request(
-    '/v1/questions?read=by-id&ids=00000000-0000-4000-8000-000000000001',
-  )
+  const response = await app(
+    { readQuestions: async () => ({ items: [] }) },
+    undefined,
+    true,
+  ).request('/v1/questions?read=by-id&ids=00000000-0000-4000-8000-000000000001')
   expect(response.status).toBe(404)
   expect(await response.json()).toEqual({
     error: 'not visible in your record spaces (1 memberships)',

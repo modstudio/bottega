@@ -3,6 +3,15 @@
 
 export const RECORD_KEYED_NOT_VISIBLE_CODE = 'record_not_visible'
 
+export function recordRequestReadKind(
+  route: string,
+  query: (name: string) => string | undefined,
+): string | undefined {
+  if (route === '/v1/questions') return query('read')
+  if (route === '/v1/task-flow' && query('flowRecordId')) return 'flow'
+  return undefined
+}
+
 export function recordReadIsUuidKeyed(route: string, readKind?: string): boolean {
   if (route === '/v1/questions')
     return ['by-id', 'for-run', 'for-runs', 'for-cursor', 'open-for-cursors'].includes(

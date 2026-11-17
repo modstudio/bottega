@@ -206,7 +206,13 @@ function taskFlowByIdApp(
       retireWorkflow: async () => null,
     },
     {
-      scope: () => ({ url: 'postgres://unused', userId: SPACE, spaceId, spaceIds: [spaceId] }),
+      scope: () => ({
+        url: 'postgres://unused',
+        userId: SPACE,
+        spaceId,
+        spaceIds: [spaceId],
+        ...(!destination ? { uuidKeyedRead: true as const } : {}),
+      }),
       noSpace: () => new Response(null, { status: 403 }),
     },
   )
@@ -270,6 +276,7 @@ test('a destinationless flow-record-id miss returns the membership-safe refusal'
         userId: SPACE,
         spaceId: SPACE,
         spaceIds: [SPACE, PROJECT],
+        uuidKeyedRead: true,
       }),
       noSpace: () => new Response(null, { status: 403 }),
     },

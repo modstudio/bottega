@@ -90,6 +90,7 @@ import type {
   RecordDocOrderInput,
   RecordDocRevision,
 } from './record-docs.ts'
+import { recordRequestReadKind } from './record-keyed-read.ts'
 import type { RecordProjectPurgeResult } from './record-project-purge-contract.ts'
 import type { RecordProjectUpsertInput } from './record-projects.ts'
 import type {
@@ -317,12 +318,7 @@ function writeTelemetryDeps(deps: Deps) {
 function refusingRequestTenant(context: Context<ApiEnvironment>, recordUrl: string): Tenant | null {
   recordDestinationlessWrite(context)
   const route = context.req.path
-  const readKind =
-    route === '/v1/questions'
-      ? context.req.query('read')
-      : route === '/v1/task-flow' && context.req.query('flowRecordId')
-        ? 'flow'
-        : undefined
+  const readKind = recordRequestReadKind(route, (name) => context.req.query(name))
   const tenant = requestTenant(
     context.get('identity'),
     context.get('destinationSpaceId'),
