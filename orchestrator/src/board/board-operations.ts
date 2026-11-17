@@ -97,6 +97,8 @@ type Context = {
   destinationResolver?: BoardDestinationResolver
   /** Internal authority used only by the workflow cursor claim adapter. */
   taskCursorSession?: string
+  /** Internal read authority used only by the workflow uncovered guard. */
+  taskCursorCoverageRead?: true
   database?: ReturnType<typeof db>
 }
 
@@ -199,6 +201,7 @@ function context(input: Context = {}) {
     answerNoteFiler: input.answerNoteFiler ?? fileAcceptedAnswerNote,
     destinationResolver: input.destinationResolver ?? boardWriteDestination,
     taskCursorSession: input.taskCursorSession,
+    taskCursorCoverageRead: input.taskCursorCoverageRead,
     database: input.database ?? db(),
   }
 }
@@ -918,11 +921,27 @@ export async function boardClaimList(
 ) {
   const c = context(inputContext)
   if (boardMode('shared', c.env) === 'local')
-    return { claims: listClaims(project, all, c.env, c.clock, c.cwd).claims.map(claimResult) }
-  const resolvedProject = claimProject(project, c.env, c.cwd)
+    return {
+      claims: listClaims(
+        project,
+        all,
+        c.env,
+        c.clock,
+        c.cwd,
+        c.database,
+        c.taskCursorCoverageRead,
+      ).claims.map(claimResult),
+    }
+  const resolvedProject = claimProject(
+    project,
+    c.env,
+    c.cwd,
+    c.database,
+    c.taskCursorCoverageRead,
+  )
   const hosted = await hostedClient(c).listBoardClaims(
     resolvedProject,
-    projectRowByName(resolvedProject)?.recordId ?? null,
+    projectRowByName(resolvedProject, c.database)?.recordId ?? null,
   )
   return {
     claims: (all ? hosted.claims : hosted.claims.filter((claim) => claim.live)).map(claimResult),

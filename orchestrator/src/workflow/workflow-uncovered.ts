@@ -172,7 +172,10 @@ export async function workflowUncoveredReport(
   for (const project of projects(undefined, database)) {
     let listed: Awaited<ReturnType<typeof boardClaimList>>
     try {
-      listed = await claimList(project.name, true, { database })
+      listed = await claimList(project.name, true, {
+        database,
+        taskCursorCoverageRead: true,
+      })
     } catch (error) {
       throw new Error(
         `workflow uncovered could not read board claim coverage for project ${project.name}: ${error instanceof Error ? error.message : String(error)}`,

@@ -752,6 +752,35 @@ test('hosted take and list use the local claim-project actor decision', async ()
   expect(called).toBe(false)
 })
 
+test('the uncovered read authority lists claims for a foreign registered project', async () => {
+  db().query('INSERT INTO schema_meta(key,value) VALUES (?,?)').run(BOARD_HOSTED_ADOPTED_KEY, '1')
+  const listedProjects: string[] = []
+  const client = {
+    ...createMemoryRecordApiClient(),
+    listBoardClaims: async (project: string) => {
+      listedProjects.push(project)
+      return { claims: [] }
+    },
+  }
+  const context = {
+    env,
+    cwd: process.cwd(),
+    client,
+    destinationResolver,
+  }
+
+  await expect(boardClaimList('board-route-project', true, context)).rejects.toThrow(
+    'architect session belongs to project board-route-architect',
+  )
+  await expect(
+    boardClaimList('board-route-project', true, {
+      ...context,
+      taskCursorCoverageRead: true,
+    }),
+  ).resolves.toEqual({ claims: [] })
+  expect(listedProjects).toEqual(['board-route-project'])
+})
+
 test('an adopted install routes hosted-capable message verbs only to the injected client', async () => {
   db().query('INSERT INTO schema_meta(key,value) VALUES (?,?)').run(BOARD_HOSTED_ADOPTED_KEY, '1')
   const id = newRecordId()

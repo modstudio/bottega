@@ -452,14 +452,16 @@ export function listClaims(
   env: Environment = process.env,
   clock = Date.now(),
   cwd = process.cwd(),
+  database: ReturnType<typeof db> = db(),
+  allowRequestedProject = false,
 ): { claims: ClaimView[] } {
-  const name = claimProject(project, env, cwd)
-  const rows = db()
+  const name = claimProject(project, env, cwd, database, allowRequestedProject)
+  const rows = database
     .query(
       `SELECT ${CLAIM_COLUMNS} FROM board_claim WHERE project_record_id=(SELECT record_id FROM project WHERE name=?) ORDER BY taken_at,record_id`,
     )
     .all(name) as ClaimRow[]
-  const claims = rows.map((row) => view(row, clock)).filter((row) => all || row.live)
+  const claims = rows.map((row) => view(row, clock, database)).filter((row) => all || row.live)
   return { claims }
 }
 
