@@ -5,6 +5,11 @@ import { hasRecordIdShape } from './record-id.ts'
 
 export type ReferenceKind = 'question' | 'run' | 'task'
 export const REFERENCE_PREFIXES = { question: 'q', run: 'r' } as const
+
+export function formatReference(kind: keyof typeof REFERENCE_PREFIXES, number: number): string {
+  return `${REFERENCE_PREFIXES[kind]}${number}`
+}
+
 export type ReferenceQualifier =
   | { kind: 'project'; value: string }
   | { kind: 'machine'; value: string }

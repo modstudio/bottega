@@ -4,7 +4,7 @@ import { installRecordApiClient } from '../../test/fixtures/record-api.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
 import type { RecordApiClient } from '../record/record-api-client.ts'
-import { type IdentityContext, resolve } from './identity.ts'
+import { type IdentityContext, resolve, resolveLocalRun } from './identity.ts'
 
 const addProject = (name: string): string => {
   const id = newRecordId()
@@ -49,15 +49,27 @@ test('resolver scopes labels to the caller project, crosses with a qualifier, an
   await expect(resolve('q71002', context, 'question')).rejects.toThrow(
     `not visible in project ${alphaName}`,
   )
-  await expect(resolve('q71002', context, 'question')).rejects.not.toThrow('not found')
   await expect(resolve('other/q71001', context, 'question')).rejects.toThrow(
     'question references cannot use a machine qualifier; pass a <project>#q<number> reference',
+  )
+  await expect(resolve(`unregistered-${suffix}#q71001`, context, 'question')).rejects.toThrow(
+    `project unregistered-${suffix} is not registered on this machine`,
+  )
+  await expect(resolve(`${betaName}#${betaQuestion}`, context)).rejects.toThrow(
+    'a UUID takes no qualifier; pass it bare',
   )
   const missingId = newRecordId()
   await expect(resolve(missingId, context)).rejects.toThrow(
     'reference is not visible in any space you belong to',
   )
   await expect(resolve(missingId, context)).rejects.not.toThrow('pass the UUID')
+})
+
+test('a missing run UUID uses the UUID visibility refusal', () => {
+  const missingId = newRecordId()
+  expect(() => resolveLocalRun(db(), { kind: 'record-id', recordId: missingId })).toThrow(
+    'reference is not visible in any space you belong to',
+  )
 })
 
 test('resolver applies the existing machine-label decision before resolving runs', async () => {

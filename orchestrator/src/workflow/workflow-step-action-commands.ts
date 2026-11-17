@@ -3,6 +3,7 @@
 
 import type { Command, OptionValues } from 'commander'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { formatReference } from '../../../shared/reference.ts'
 import { ORCH_DO_OPTIONS } from '../commands/do-options.ts'
 import {
   addPullRequestOptions,
@@ -32,7 +33,7 @@ type StepActionCommandPorts = {
 
 const dispatchPresentation = {
   error: (...values: unknown[]) => console.error(...values),
-  printRunId: (id: number) => write(`r${id}\n`),
+  printRunId: (id: number) => write(`${formatReference('run', id)}\n`),
   cwd: process.cwd,
 }
 

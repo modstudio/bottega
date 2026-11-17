@@ -73,7 +73,7 @@ describe('run identifier', () => {
     expect(resolveRunIdentifier(db(), recordId.toUpperCase())).toBe(recordId)
     const unknown = newRecordId()
     expect(() => resolveRunIdentifier(db(), unknown)).toThrow(
-      'reference is not visible in this machine; pass the UUID or a qualified label',
+      'reference is not visible in any space you belong to',
     )
   })
 })

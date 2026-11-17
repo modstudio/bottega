@@ -86,7 +86,10 @@ export function resolveLocalRun(
         : 'SELECT record_id,project_record_id FROM run WHERE record_id=?',
     )
     .get(reference.kind === 'number' ? reference.number : reference.recordId)
-  if (!row) visibilityRefusal('this machine')
+  if (!row) {
+    if (reference.kind === 'record-id') uuidVisibilityRefusal()
+    visibilityRefusal('this machine')
+  }
   return row
 }
 
@@ -109,7 +112,8 @@ function scopedProject(
       'question references cannot use a machine qualifier; pass a <project>#q<number> reference',
     )
   const project = projectByName(qualifier.value, context.database)
-  return { projectId: project?.recordId ?? null, projectName: qualifier.value }
+  if (!project) throw new Error(`project ${qualifier.value} is not registered on this machine`)
+  return { projectId: project.recordId, projectName: qualifier.value }
 }
 
 function visibilityRefusal(scope: string): never {
@@ -234,6 +238,8 @@ export async function resolve(
     throw new Error(
       `reference ${JSON.stringify(String(reference))} names a ${kind}, expected ${expectedKind}`,
     )
+  if (parsed.qualifier && parsed.value.kind === 'record-id')
+    throw new Error('a UUID takes no qualifier; pass it bare')
   if (kind === 'run') validateRunQualifier(reference, parsed, context)
 
   const result = !kind

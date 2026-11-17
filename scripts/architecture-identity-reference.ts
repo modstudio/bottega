@@ -1,8 +1,18 @@
-const NUMBER_QUERY_OR_CLASSIFIER =
-  /(?:\b(?:WHERE|AND|OR)\s+(?:[-A-Za-z0-9_.]+\.)?number\s*(?:=\s*[^\s,;)]+|IN\s*\()|classify[A-Za-z]+Identifier\s*\()/gi
+const NUMBER_PREDICATE =
+  /\b(?:[A-Za-z_$][\w$]*\.)?number\s*(?:=\s*(?:\?|\$\d+|[A-Za-z_$][\w$]*\.number\b)|IN\s*\()/gi
+const IDENTIFIER_CLASSIFIER_CALL = /\bclassify[A-Za-z]+Identifier\s*\(/gi
+const QUESTION_NUMBER_HELPER_CALL =
+  /\b(?:questionByProjectNumber|questionNumberProjectId|questionNumberProjectIds)\s*\(/g
 
-export function identityReferenceViolationCount(source: string): number {
-  return [...source.matchAll(NUMBER_QUERY_OR_CLASSIFIER)].length
+export function identityReferenceViolationCount(source: string, file = ''): number {
+  const numberPredicates = [...source.matchAll(NUMBER_PREDICATE)].length
+  const classifiers = [...source.matchAll(IDENTIFIER_CLASSIFIER_CALL)].length
+  const questionHelpers =
+    file.startsWith('orchestrator/src/identity/') ||
+    file.startsWith('orchestrator/src/question-store/')
+      ? 0
+      : [...source.matchAll(QUESTION_NUMBER_HELPER_CALL)].length
+  return numberPredicates + classifiers + questionHelpers
 }
 
 export function identityReferenceGuardViolations(

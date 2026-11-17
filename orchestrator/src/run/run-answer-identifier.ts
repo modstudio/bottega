@@ -4,18 +4,14 @@
 import type { Database } from 'bun:sqlite'
 import { storedMachineNames } from '../../../shared/machine-config.ts'
 import {
+  formatReference,
   parseReference,
   REFERENCE_PREFIXES,
   type ReferenceQualifier,
 } from '../../../shared/reference.ts'
 import { ResolutionMissError, resolve } from '../identity/identity.ts'
 import { identityContext } from '../identity/identity-context.ts'
-import {
-  questionByProjectNumber,
-  questionNumberProjectId,
-  questionsById,
-} from '../question-store/question-store-read.ts'
-import { questionNumberProjectIds } from '../question-store/question-store-sqlite-reads.ts'
+import { questionsById } from '../question-store/question-store-read.ts'
 import type { MachineIdentifierNames } from '../record/machine-name.ts'
 import { questionsForRunChain } from './question-open.ts'
 
@@ -71,11 +67,11 @@ function withQualifier<T extends ParsedAnswerIdentifier>(
 
 function waitingDescription(rootRecordId: string, questionNumbers: number[]): string {
   if (questionNumbers.length === 0) return `run ${rootRecordId} has no open questions`
-  return `run ${rootRecordId} is waiting on ${questionNumbers.map((number) => `q${number}`).join(', ')}`
+  return `run ${rootRecordId} is waiting on ${questionNumbers.map((number) => formatReference('question', number)).join(', ')}`
 }
 
 function explicitQuestionRemedy(questionNumbers: number[]): string {
-  const references = questionNumbers.map((number) => `q${number}`).join(', ')
+  const references = questionNumbers.map((number) => formatReference('question', number)).join(', ')
   return `answer ${questionNumbers.length === 1 ? 'it' : 'them'} explicitly with ${references}`
 }
 
@@ -213,7 +209,7 @@ async function readResolvedRunNumberFacts(
     if (!isResolutionMiss(error)) throw error
   }
   if (!run) return null
-  return readRunFacts(database, { kind: 'record-id', recordId: run.recordId }, callerSessionId)
+  return readRunFacts(database, run.recordId, callerSessionId)
 }
 
 async function openQuestionNumbers(database: Database, rootRecordId: string): Promise<number[]> {
@@ -225,10 +221,9 @@ async function openQuestionNumbers(database: Database, rootRecordId: string): Pr
 
 async function readRunFacts(
   database: Database,
-  identifier: ParsedAnswerIdentifier,
+  runRecordId: string,
   callerSessionId: string | null,
 ): Promise<AnswerRunFacts | null> {
-  if (identifier.kind === 'question-number') return null
   const row =
     database
       .query<
@@ -238,15 +233,15 @@ async function readRunFacts(
           status: string
           owner_session_id: string | null
         },
-        [number | string]
+        [string]
       >(
         `SELECT requested.record_id, requested.status, root.record_id root_record_id,
                 root.session_id owner_session_id
            FROM run requested
            JOIN run root ON root.record_id=COALESCE(requested.parent_run_record_id,requested.record_id)
-          WHERE ${identifier.kind === 'run-number' ? 'requested.number=?' : 'requested.record_id=?'}`,
+          WHERE requested.record_id=?`,
       )
-      .get(identifier.kind === 'run-number' ? identifier.number : identifier.recordId) ?? null
+      .get(runRecordId) ?? null
   if (!row) return null
   return {
     recordId: row.record_id,
@@ -260,21 +255,25 @@ async function readRunFacts(
 async function readQuestionFacts(
   database: Database,
   identifier: ParsedAnswerIdentifier,
+  context: ReturnType<typeof identityContext>,
 ): Promise<AnswerQuestionFacts | null> {
-  // A bare number may name a run, so a number no question holds is a miss, not a refusal.
-  if (
-    identifier.kind !== 'record-id' &&
-    !questionNumberProjectIds(database, identifier.number).length
-  )
-    return null
-  const row =
-    identifier.kind === 'record-id'
-      ? (await questionsById(database, [identifier.recordId]))[0]
-      : await questionByProjectNumber(
-          database,
-          identifier.number,
-          questionNumberProjectId(database, identifier.number),
+  let recordId: string
+  if (identifier.kind === 'record-id') recordId = identifier.recordId
+  else {
+    try {
+      recordId = (
+        await resolve(
+          qualifiedReference(identifier.qualifier, formatReference('question', identifier.number)),
+          context,
+          'question',
         )
+      ).recordId
+    } catch (error) {
+      if (isResolutionMiss(error)) return null
+      throw error
+    }
+  }
+  const row = (await questionsById(database, [recordId]))[0]
   if (!row) return null
   const runId = String(row.run_record_id)
   const rootRecordId =
@@ -312,7 +311,7 @@ export async function resolveAnswerIdentifier(
     const decision = answerIdentifierDecision({
       identifier,
       run: null,
-      question: await readQuestionFacts(database, normalized),
+      question: await readQuestionFacts(database, normalized, context),
     })
     if (decision.kind === 'refuse') throw new Error(decision.reason)
     return decision.runRecordId
@@ -322,7 +321,7 @@ export async function resolveAnswerIdentifier(
     const decision = answerIdentifierDecision({
       identifier,
       run: await readResolvedRunNumberFacts(database, runReference, context, callerSessionId),
-      question: await readQuestionFacts(database, identifier),
+      question: await readQuestionFacts(database, identifier, context),
     })
     if (decision.kind === 'refuse') throw new Error(decision.reason)
     return decision.runRecordId
@@ -334,8 +333,12 @@ export async function resolveAnswerIdentifier(
   const normalized = { kind: 'record-id' as const, recordId: resolved.recordId }
   const decision = answerIdentifierDecision({
     identifier: normalized,
-    run: resolved.kind === 'run' ? await readRunFacts(database, normalized, callerSessionId) : null,
-    question: resolved.kind === 'question' ? await readQuestionFacts(database, normalized) : null,
+    run:
+      resolved.kind === 'run'
+        ? await readRunFacts(database, resolved.recordId, callerSessionId)
+        : null,
+    question:
+      resolved.kind === 'question' ? await readQuestionFacts(database, normalized, context) : null,
   })
   if (decision.kind === 'refuse') throw new Error(decision.reason)
   return decision.runRecordId

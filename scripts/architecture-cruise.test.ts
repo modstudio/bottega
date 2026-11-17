@@ -10,12 +10,24 @@ import {
   identityReferenceViolationCount,
 } from './architecture-identity-reference.ts'
 
-test('identity reference guard rejects a new number-column lookup outside identity', () => {
+test('identity reference guard rejects an interpolated number-column lookup outside identity', () => {
   const added = identityReferenceViolationCount(
-    'select record_id from run where number=$number OR number IN (?, ?)',
+    '`SELECT requested.record_id WHERE $' +
+      '{clause} AND requested.NuMbEr=? OR number IN (?) ON a.number=b.number`',
+    'orchestrator/src/run/new.ts',
   )
   expect(identityReferenceGuardViolations({ 'orchestrator/src/run/new.ts': added }, {})).toEqual([
-    'orchestrator/src/run/new.ts: production identity bypass count grew from 0 to 2; resolve the reference through identity/',
+    'orchestrator/src/run/new.ts: production identity bypass count grew from 0 to 3; resolve the reference through identity/',
+  ])
+})
+
+test('identity reference guard rejects a question-number helper call outside identity', () => {
+  const added = identityReferenceViolationCount(
+    'await questionByProjectNumber(database, number, projectId)',
+    'orchestrator/src/run/new.ts',
+  )
+  expect(identityReferenceGuardViolations({ 'orchestrator/src/run/new.ts': added }, {})).toEqual([
+    'orchestrator/src/run/new.ts: production identity bypass count grew from 0 to 1; resolve the reference through identity/',
   ])
 })
 

@@ -130,7 +130,7 @@ for (const root of [...CONCERNS, 'shared']) {
     if (!isProductionSourceFile(file)) continue
     const sourceText = readFileSync(join(ROOT, file), 'utf8')
     const imports = importSpecifiers(sourceText)
-    const bypasses = identityReferenceViolationCount(sourceText)
+    const bypasses = identityReferenceViolationCount(sourceText, file)
     if (bypasses > 0) identityReferenceCounts[file] = bypasses
     for (const expression of imports.unresolvedRelative) {
       violations.push(`${file}: unresolved relative import at ${expression}`)
