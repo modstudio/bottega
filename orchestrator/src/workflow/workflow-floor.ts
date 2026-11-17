@@ -746,9 +746,7 @@ function operatorRulingRemedy(
   freshRulingAfter?: string,
   strandedQuestionRemedy?: string,
 ): string {
-  if (!question && strandedQuestionRemedy) return `floor ruling is unmet: ${strandedQuestionRemedy}`
-  if (!question)
-    return `floor ruling is unmet: no operator answer on this step; ${suppliedRuling ? 'the supplied ruling cannot close it; ' : ''}record the question with \`${PLATFORM_SLUG} workflow await\`; the operator answers it`
+  if (!question) return missingOperatorQuestionRemedy(suppliedRuling, strandedQuestionRemedy)
   if (question.state === 'closed')
     return `floor ruling is unmet: the step's question ${question.id} is closed; ${suppliedRuling ? 'the supplied ruling cannot close it; ' : ''}record the question with \`${PLATFORM_SLUG} workflow await\`; the operator answers it`
   if (question.state === 'open')
@@ -764,6 +762,14 @@ function operatorRulingRemedy(
   if (question.state === 'answered-by-operator')
     return `floor ruling is unmet: ${suppliedOperatorRulingRefusal(suppliedRuling, question.id)}the operator answered the step's question ${question.id}; close with \`--ruling ${question.id}\``
   return `floor ruling is unmet: question ${question.id} was answered by an agent, which cannot close an operator floor; ${suppliedRuling ? 'the supplied ruling cannot close it; ' : ''}record the question for the operator with \`${PLATFORM_SLUG} workflow await\``
+}
+
+function missingOperatorQuestionRemedy(
+  suppliedRuling?: number,
+  strandedQuestionRemedy?: string,
+): string {
+  if (strandedQuestionRemedy) return `floor ruling is unmet: ${strandedQuestionRemedy}`
+  return `floor ruling is unmet: no operator answer on this step; ${suppliedRuling ? 'the supplied ruling cannot close it; ' : ''}record the question with \`${PLATFORM_SLUG} workflow await\`; the operator answers it`
 }
 
 function overturnedQuestionRemedy(

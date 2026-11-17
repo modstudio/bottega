@@ -257,7 +257,9 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     '../run/question-open.ts',
     './workflow-floor.ts',
     './workflow-floor-evidence.ts',
+    './workflow-stranded-question.ts',
   ]),
+  module('orchestrator/src/workflow/workflow-stranded-question.ts', ['../../../shared/brand.ts']),
   module('orchestrator/src/workflow/workflow-floor-evidence-gather.ts', [
     '../database/db.ts',
     './workflow-floor-evidence.ts',
