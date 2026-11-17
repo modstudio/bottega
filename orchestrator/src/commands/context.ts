@@ -31,7 +31,9 @@ function registerClear(context: Command): void {
     .requiredOption('--task <key>', 'select task holder')
     .action(async (options) => {
       const result = await clearTaskContext({ task: options.task })
-      log(`context: cleared ${result.removed} items on ${result.task}`)
+      log(
+        `context: cleared ${result.removed} items on ${result.task}, already absent ${result.alreadyAbsent}`,
+      )
     })
 }
 
@@ -191,7 +193,8 @@ export function register(program: Command): void {
         ...options,
         expectedRevision: options.expectedRevision,
       })
-      if (!result.removed) throw new Error(`no context item ${result.holder}/${result.id}`)
+      if (!result.removed && !result.alreadyAbsent)
+        throw new Error(`no context item ${result.holder}/${result.id}`)
       log(JSON.stringify(result))
     })
   registerClear(context)
