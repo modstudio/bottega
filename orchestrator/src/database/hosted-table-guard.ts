@@ -17,8 +17,8 @@ export const HOSTED_TABLES_WITHOUT_LOCAL_ACCESS = [
 ] as const
 
 const guardedMethods = new Set(['query', 'prepare', 'run', 'exec'])
-// A listed name ends where an identifier character cannot follow, so `FROM question)` and
-// `FROM question;` are references while `question_mutation_audit` is a different table.
+// A listed name ends where no identifier character follows, so a name closed by a parenthesis
+// or semicolon is still a reference, while a longer name sharing its prefix is another table.
 const NAME_END = '(?![A-Za-z0-9_$])'
 const SQL_IDENTIFIER = '(?:[A-Za-z_][A-Za-z0-9_$]*|"[^"]+"|`[^`]+`|\\[[^\\]]+\\])'
 
