@@ -46,8 +46,8 @@ import type { ReclaimKind } from '../reclaim/reclaim-kind.ts'
 import { liveMemberStall, liveRunMembers } from '../run/live-run-member.ts'
 import { recordedRunLivenessFacts, runAlive } from '../run/run-alive.ts'
 import { abandonedBootstrap, PENDING_BOOTSTRAP_MS } from '../run/run-bootstrap.ts'
-import { isRunQueuedForCapacity } from '../run/run-liveness-policy.ts'
 import { runLeaseState } from '../run/run-lease.ts'
+import { isRunQueuedForCapacity } from '../run/run-liveness-policy.ts'
 import { recordedOwnerProcess } from '../run/run-owner-session-liveness.ts'
 import {
   HOOK_TREE_JOB,

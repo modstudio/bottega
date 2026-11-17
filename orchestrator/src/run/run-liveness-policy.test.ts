@@ -1,8 +1,9 @@
 import { describe, expect, test } from 'bun:test'
-import { RUN_HOST_WAIT_MAX_MS, RUN_HOST_WAIT_POLL_MS } from './run-host-capacity.ts'
 import {
   DETACHED_AGENT_CAPACITY_WAIT_MAX_MS,
   isRunQueuedForCapacity,
+  RUN_HOST_WAIT_MAX_MS,
+  RUN_HOST_WAIT_POLL_MS,
 } from './run-liveness-policy.ts'
 
 describe('run capacity queue policy', () => {

@@ -11,6 +11,7 @@ const liveRunMemberSpec = {
     '../jobs/jobs.ts',
     '../stalled-run.ts',
     './run-host-capacity.ts',
+    './run-liveness-policy.ts',
   ],
   typeOnlyAllowed: [],
   reason: 'Keep the canonical live member and its stall observation independent of adapters.',

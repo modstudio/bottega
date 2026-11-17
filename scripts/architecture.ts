@@ -473,6 +473,7 @@ const declaredModules: ArchitectureModule[] = [
     '../run/run-status.ts',
     '../run/run-bootstrap.ts',
     '../run/run-host-capacity.ts',
+    '../run/run-liveness-policy.ts',
     '../run/live-run-member.ts',
     '../run/run-lease.ts',
     '../run/run-number.ts',

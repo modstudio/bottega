@@ -10,8 +10,11 @@ import { addRun, score } from '../../test/fixtures/store.ts'
 import { db, nowIso } from '../database/db.ts'
 import { RECORD_TUNNEL_DOWN_REMEDY } from '../record/record-tunnel-error.ts'
 import { liveMemberStall } from '../run/live-run-member.ts'
-import { RUN_HOST_WAIT_MAX_MS, RUN_HOST_WAIT_POLL_MS } from '../run/run-host-capacity.ts'
-import { DETACHED_AGENT_CAPACITY_WAIT_MAX_MS } from '../run/run-liveness-policy.ts'
+import { RUN_HOST_WAIT_MAX_MS } from '../run/run-host-capacity.ts'
+import {
+  DETACHED_AGENT_CAPACITY_WAIT_MAX_MS,
+  RUN_HOST_WAIT_POLL_MS,
+} from '../run/run-liveness-policy.ts'
 import {
   abandonedBootstrapConditions,
   askingRuns,

@@ -3,7 +3,8 @@ import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
 import type { ProcessSample } from '../process-resource-sampler.ts'
 import { type LiveRunMember, liveMemberStall, liveRunMembers } from './live-run-member.ts'
-import { RUN_HOST_WAIT_MAX_MS, RUN_HOST_WAIT_POLL_MS } from './run-host-capacity.ts'
+import { RUN_HOST_WAIT_MAX_MS } from './run-host-capacity.ts'
+import { RUN_HOST_WAIT_POLL_MS } from './run-liveness-policy.ts'
 
 describe('live run member', () => {
   const clock = Date.parse('2026-09-22T12:30:00.000Z')

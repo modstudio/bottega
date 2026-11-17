@@ -7,8 +7,9 @@ import { db } from '../database/db.ts'
 import { appendRunEvent } from '../events.ts'
 import type { ProcessSample } from '../process-resource-sampler.ts'
 import { runDetail } from '../state/serve.ts'
-import { RUN_HOST_WAIT_MAX_MS, RUN_HOST_WAIT_POLL_MS } from './run-host-capacity.ts'
+import { RUN_HOST_WAIT_MAX_MS } from './run-host-capacity.ts'
 import { runIdentityMap, runListingCommand } from './run-listing.ts'
+import { RUN_HOST_WAIT_POLL_MS } from './run-liveness-policy.ts'
 import type { SubscriptionCostContext } from './run-subscription-cost.ts'
 import { subscriptionCostFacts } from './run-subscription-cost-store.ts'
 
@@ -239,13 +240,9 @@ describe('run listing', () => {
   })
 
   test('runs publish capacity waits and live throttle details instead of idle', async () => {
-    const observedAt = Date.parse('2026-10-21T12:06:00.000Z')
+    const capacityWaitSince = new Date().toISOString()
     const waiting = addRun({ agent: '(pending)', job: 'review-lens', status: 'running' })
-    appendRunEvent(waiting, {
-      ts: '2026-10-21T12:00:00.000Z',
-      type: 'capacity_wait',
-      waiting: true,
-    })
+    appendRunEvent(waiting, { ts: capacityWaitSince, type: 'capacity_wait', waiting: true })
     const throttled = addRun({ agent: 'codex', job: 'review-lens', status: 'running' })
     appendRunEvent(throttled, {
       ts: '2026-10-21T12:01:00.000Z',
@@ -258,25 +255,15 @@ describe('run listing', () => {
       concurrency: 6,
     })
 
-    db()
-      .query('UPDATE run SET started_at=?,last_event_at=? WHERE record_id=?')
-      .run('2026-10-21T12:00:00.000Z', '2026-10-21T12:00:00.000Z', waiting)
-
+    const clock = () => Date.parse(capacityWaitSince) + 6 * 60_000
     const rows = (
-      await command(
-        { json: true, id: [waiting, throttled] },
-        () => null,
-        { sampleProcesses: () => [], processStartTime: () => null },
-        () => observedAt,
-      )
+      await command({ json: true, id: [waiting, throttled] }, undefined, undefined, clock)
     ).map(runJson)
     expect(rows.find((row) => row.record_id === waiting)).toMatchObject({
       waiting_for_capacity: true,
-      capacity_wait_since: '2026-10-21T12:00:00.000Z',
+      capacity_wait_since: capacityWaitSince,
       idle: null,
       idle_ms: null,
-      stall_state: 'healthy',
-      stall: null,
     })
     expect(rows.find((row) => row.record_id === throttled)).toMatchObject({
       throttled: {
@@ -288,7 +275,7 @@ describe('run listing', () => {
       },
     })
     expect(await runDetail(waiting)).toMatchObject({
-      live_status_detail: 'waiting for capacity since 2026-10-21T12:00:00.000Z',
+      live_status_detail: `waiting for capacity since ${capacityWaitSince}`,
     })
     expect(await runDetail(throttled)).toMatchObject({
       live_status_detail: 'throttled (429), retry 1/5 at 2026-10-21T12:04:45.000Z',

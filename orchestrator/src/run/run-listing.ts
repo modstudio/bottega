@@ -10,7 +10,13 @@ import {
   resolveFailover,
 } from '../collect/collect.ts'
 import { db } from '../database/db.ts'
-import { liveOperationalStatusFromEvents, readEventLog, runEventsPath } from '../events.ts'
+import {
+  idleLabel,
+  idleMsSince,
+  liveOperationalStatusFromEvents,
+  readEventLog,
+  runEventsPath,
+} from '../events.ts'
 import { UNSCORED_WHERE } from '../evidence/evidence-query.ts'
 import { failureReason, type OutcomeRow, outcomeOf } from '../outcome.ts'
 import type { ProcessSample } from '../process-resource-sampler.ts'
@@ -26,8 +32,8 @@ import type {
   QuestionDeliveryOutcome,
 } from './question-vocabulary.ts'
 import { isFreshRunHostWait, RUN_HOST_WAIT_MAX_MS } from './run-host-capacity.ts'
-import { isRunQueuedForCapacity } from './run-liveness-policy.ts'
 import { classifyRunIdentifier, resolveRunIdentifierOrNull } from './run-identifier.ts'
+import { isRunQueuedForCapacity } from './run-liveness-policy.ts'
 import { LIVE_RUN_STATUS_SQL, RUN_LIVE_STATUSES } from './run-status.ts'
 import { type SubscriptionCostContext, withReportedCost } from './run-subscription-cost.ts'
 import { subscriptionCostFacts } from './run-subscription-cost-store.ts'
@@ -372,6 +378,73 @@ function liveOperationalStatus(liveMemberId: string, live: boolean) {
   return liveOperationalStatusFromEvents(eventLog)
 }
 
+function listedLiveState(
+  row: Record<string, unknown>,
+  processSamples: ProcessSample[],
+  observedAt: number,
+  includeLiveStatuses: boolean,
+  processStartTime: (pid: number) => string | null,
+  parseIdleReclaimedMs: (error: string) => number | null,
+): Record<string, unknown> {
+  const live = row.status === 'running'
+  const lastEventAt = (row.last_event_at as string | null) ?? null
+  const startedAt = String(row.current_started_at ?? row.started_at)
+  const operational = liveOperationalStatus(String(row.live_member_record_id), live)
+  const queuedForCapacity =
+    live &&
+    isRunQueuedForCapacity(
+      (row.host_wait_since as string | null) ?? null,
+      operational.capacity_wait_since,
+      observedAt,
+    )
+  const stallObservation = live
+    ? liveMemberStall(
+        {
+          record_id: String(row.live_member_record_id),
+          number: Number(row.live_member_number),
+          agent: String(row.current_agent),
+          job: String(row.current_job),
+          started_at: startedAt,
+          last_event_at: lastEventAt,
+          session_id: (row.session_id as string | null) ?? null,
+          agent_pid: (row.current_agent_pid as number | null) ?? null,
+          agent_start_time: (row.current_agent_start_time as string | null) ?? null,
+          host_wait_since: (row.host_wait_since as string | null) ?? null,
+          capacity_wait_since: operational.capacity_wait_since,
+        },
+        processSamples,
+        observedAt,
+        undefined,
+        processStartTime,
+      )
+    : null
+  const {
+    current_started_at: _currentStartedAt,
+    current_agent: _currentAgent,
+    current_job: _currentJob,
+    current_agent_pid: _currentAgentPid,
+    current_agent_start_time: _currentAgentStartTime,
+    ...rest
+  } = row
+  return {
+    ...rest,
+    ...(includeLiveStatuses ? { live_statuses: RUN_LIVE_STATUSES } : {}),
+    idle:
+      live && !queuedForCapacity
+        ? idleLabel(lastEventAt, startedAt, observedAt)
+        : row.failure_kind === 'idle'
+          ? 'idle-killed'
+          : null,
+    idle_ms: live && !queuedForCapacity ? idleMsSince(lastEventAt, startedAt, observedAt) : null,
+    waiting_for_host_capacity: freshListedRunHostWait(row, observedAt),
+    ...operational,
+    stall_state: stallObservation?.state ?? null,
+    stall: stallObservation?.detail ?? null,
+    reclaimed_ms:
+      row.failure_kind === 'idle' ? parseIdleReclaimedMs(String(row.error ?? '')) : null,
+  }
+}
+
 function addExactFilter(
   where: string[],
   args: Array<string | number>,
@@ -694,7 +767,6 @@ export async function runListingCommand(
     { jsonV1 } = options
   const { log, chainIsStranded, strandedRecovery, processObservation, clock, subscriptionCost } =
     presentation
-  const { idleLabel, idleMsSince } = await import('../events.ts')
   const { parseIdleReclaimedMs } = await import('../idle-kill.ts')
   const json = has('json') || options.jsonV1
   const costContext = listingCostContext(json, subscriptionCost)
@@ -806,69 +878,16 @@ export async function runListingCommand(
   // all of them answers for all of them, rather than one query per row.
   rows = withFailoverWatch(rows)
   const processSamples = processSamplesForRows(rows, processObservation.sampleProcesses)
-  rows = rows.map((r) => {
-    const live = r.status === 'running'
-    const lastEventAt = (r.last_event_at as string | null) ?? null
-    const startedAt = String(r.current_started_at ?? r.started_at),
-      observedAt = clock()
-    const operational = liveOperationalStatus(String(r.live_member_record_id), live)
-    const queuedForCapacity =
-      live &&
-      isRunQueuedForCapacity(
-        (r.host_wait_since as string | null) ?? null,
-        operational.capacity_wait_since,
-        observedAt,
-      )
-    const idle =
-      live && !queuedForCapacity
-        ? idleLabel(lastEventAt, startedAt, observedAt)
-        : r.failure_kind === 'idle'
-          ? 'idle-killed'
-          : null
-    const since =
-      live && !queuedForCapacity ? idleMsSince(lastEventAt, startedAt, observedAt) : null
-    const stallObservation = live
-      ? liveMemberStall(
-          {
-            record_id: String(r.live_member_record_id),
-            number: Number(r.live_member_number),
-            agent: String(r.current_agent),
-            job: String(r.current_job),
-            started_at: startedAt,
-            last_event_at: lastEventAt,
-            session_id: (r.session_id as string | null) ?? null,
-            agent_pid: (r.current_agent_pid as number | null) ?? null,
-            agent_start_time: (r.current_agent_start_time as string | null) ?? null,
-            host_wait_since: (r.host_wait_since as string | null) ?? null,
-            capacity_wait_since: operational.capacity_wait_since,
-          },
-          processSamples,
-          observedAt,
-          undefined,
-          processObservation.processStartTime,
-        )
-      : null
-    const {
-      current_started_at: _currentStartedAt,
-      current_agent: _currentAgent,
-      current_job: _currentJob,
-      current_agent_pid: _currentAgentPid,
-      current_agent_start_time: _currentAgentStartTime,
-      ...rest
-    } = r
-    const reclaimed = r.failure_kind === 'idle' ? parseIdleReclaimedMs(String(r.error ?? '')) : null
-    return {
-      ...rest,
-      ...(has('live') ? { live_statuses: RUN_LIVE_STATUSES } : {}),
-      idle,
-      idle_ms: since,
-      waiting_for_host_capacity: freshListedRunHostWait(r, observedAt),
-      ...operational,
-      stall_state: stallObservation?.state ?? null,
-      stall: stallObservation?.detail ?? null,
-      reclaimed_ms: reclaimed,
-    }
-  })
+  rows = rows.map((row) =>
+    listedLiveState(
+      row,
+      processSamples,
+      clock(),
+      has('live'),
+      processObservation.processStartTime,
+      parseIdleReclaimedMs,
+    ),
+  )
 
   if (publishJson(json, jsonV1, rows, unknownIds, unknownRecordIds, changeSnapshot, log)) return
 

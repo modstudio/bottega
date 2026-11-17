@@ -1,7 +1,18 @@
 // concern: run-liveness-policy
-/** Time bounds and pure policy shared by run liveness and admission. */
+/** Dependency-free time bounds and pure policy shared by run liveness and admission. */
 
-import { isFreshRunHostWait } from './run-host-capacity.ts'
+export const RUN_HOST_WAIT_MAX_MS = 15 * 60_000
+export const RUN_HOST_WAIT_POLL_MS = 1_000
+
+export function isFreshRunHostWait(
+  status: string,
+  since: string | null | undefined,
+  now = Date.now(),
+): boolean {
+  if (status !== 'running' || !since) return false
+  const started = Date.parse(since)
+  return Number.isFinite(started) && now - started <= RUN_HOST_WAIT_MAX_MS + RUN_HOST_WAIT_POLL_MS
+}
 
 /**
  * The outer ceiling for a run and for callers waiting on one. Liveness itself
