@@ -592,14 +592,13 @@ export async function retryRun(
     .get(id) as RetryRunRow | null
   if (!row) throw new Error(`no run ${id}`)
   assertAgentWorkRun(id, row.job, 'retried')
-  // A writing job already has a worktree and a vendor session. Retry would
-  // wrap the prompt again and cut a fresh tree beside the one holding the
-  // partial edit. Continue the same conversation in the same tree instead.
+  // A writing retry would wrap the prompt and cut a fresh tree beside the partial edit.
+  // Continue the same conversation in the same tree instead.
   const recordedRulings = await recordedRulingsForRetry(row.root_record_id)
   const writesRepo = Boolean(job(row.job).needs.writesRepo)
   const readsRepo = Boolean(job(row.job).needs.readsRepo)
-  const bindings = retryAgentBindings(row, options)
-  const { agent, neverStarted } = bindings
+  const bindings = retryAgentBindings(row, options),
+    { agent, neverStarted } = bindings
   const preliminaryPath = retryConversationPath(
     writesRepo,
     recordedRulings.length > 0,
