@@ -59,8 +59,6 @@ export function registerRecordContextItemRoutes(
     if (!parsed.success || !request.success)
       return context.json({ error: 'invalid context item delete' }, 400)
     const result = await deps.deleteContextItem({ ...tenant, id: parsed.data, ...request.data })
-    return result.removed
-      ? context.json(result)
-      : context.json({ error: `context item ${parsed.data} not found` }, 404)
+    return context.json(result)
   })
 }

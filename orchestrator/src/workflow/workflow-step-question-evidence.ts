@@ -2,6 +2,7 @@
 /** Reads the question fact bound to an operator-ruling step. */
 
 import type { Database } from 'bun:sqlite'
+import { compareQuestionsByAsk } from '../question-store/question-order.ts'
 import { questionsForWorkflowCursor } from '../question-store/question-store-read.ts'
 import { type Floor, isOperatorRulingFloor, type ValidatedEvidence } from './workflow-floor.ts'
 import type { QuestionEvidenceRow } from './workflow-floor-evidence.ts'
@@ -20,7 +21,7 @@ export async function gatherStepQuestionEvidence(
         Number(row.workflow_step_ordinal) === input.stepOrdinal &&
         row.workflow_step_slug === input.stepSlug,
     )
-    .sort((a, b) => Number(b.number) - Number(a.number))[0]
+    .sort((a, b) => compareQuestionsByAsk(b, a))[0]
   const row = question
     ? ({
         id: Number(question.number),

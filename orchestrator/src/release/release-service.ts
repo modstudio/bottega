@@ -11,7 +11,10 @@ import { containsSecretShaped } from '../../../shared/secret-shaped.ts'
 import { db, sessionId, writableDb } from '../database/db.ts'
 import { boundedGateOutputTail, GATE_OUTPUT_TAIL_BYTES } from '../gate/gate-decision.ts'
 import { targetGitEnvironment } from '../git/git-environment.ts'
-import { verifyMainCheckoutInvariant } from '../project/main-checkout-invariant.ts'
+import {
+  returnMainCheckoutToTrunkCommand,
+  verifyMainCheckoutInvariant,
+} from '../project/main-checkout-invariant.ts'
 import { projectLockState, withReleaseLock } from '../project/project-lock.ts'
 import { projectByName } from '../project/projects.ts'
 import {
@@ -167,7 +170,7 @@ function checkoutFacts(path: string, branch: string, trunk: string) {
     .split(/\s+/)
     .map(Number)
   return {
-    path,
+    returnToTrunkCommand: returnMainCheckoutToTrunkCommand(path, trunk),
     branch: git(['branch', '--show-current'], path),
     requiredBranch: branch,
     trunk,
@@ -181,7 +184,7 @@ function checkoutFacts(path: string, branch: string, trunk: string) {
 
 function releaseCheckoutRestoreWarning(path: string, trunk: string, cause: unknown): string {
   const condition = cause instanceof Error ? cause.message : String(cause)
-  return `registered main checkout could not be restored to landing branch ${trunk}: ${condition}; run git -C ${path} switch ${trunk}`
+  return `registered main checkout could not be restored to landing branch ${trunk}: ${condition}; run ${returnMainCheckoutToTrunkCommand(path, trunk)}`
 }
 
 export function verifiedReleaseCheckoutRestore(
@@ -222,6 +225,7 @@ function withReleaseCheckout(
 ): ReleaseCommandOutcome {
   git(['fetch', 'origin'], path)
   const transition = releaseCheckoutTransitionDecision({
+    returnToTrunkCommand: returnMainCheckoutToTrunkCommand(path, trunk),
     current: git(['branch', '--show-current'], path),
     trunk,
     rungBranch,

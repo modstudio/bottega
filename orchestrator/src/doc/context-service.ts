@@ -146,7 +146,12 @@ export async function clearTaskContext(input: { task: string }) {
     project: task.project,
     dryRun: false,
   })
-  return { holder, task: task.key, removed: result.removed }
+  return {
+    holder,
+    task: task.key,
+    removed: result.removed,
+    alreadyAbsent: result.alreadyAbsent,
+  }
 }
 
 /** Clears one task holder by durable identity for lifecycle cleanup. */
@@ -158,24 +163,27 @@ export async function clearTaskHolderForLifecycle(input: {
   assertWorkerDocStoreWriteAllowed('clearTaskHolderForLifecycle')
   const holder = taskContextHolder(input.holderId)
   const items = listContextItems(holder)
-  if (input.dryRun) return { holder, removed: items.length }
+  if (input.dryRun) return { holder, removed: items.length, alreadyAbsent: 0 }
   writableDb()
-  const removed = await applyRecordWriteAuthority({
-    local: () => removeLocalContextHolder(holder),
+  const result = await applyRecordWriteAuthority({
+    local: () => ({ removed: removeLocalContextHolder(holder), alreadyAbsent: 0 }),
     hosted: async () => {
       const client = await hostedContextItemClient(
         holder,
         contextTaskOwner({ project: input.project }),
       )
-      let count = 0
+      let removed = 0
+      let alreadyAbsent = 0
       for (const item of items) {
-        await client.remove(item.recordId, { expectedRevision: item.revision })
-        if (removeLocalContextItem(holder, item.id, item.revision)) count++
+        const hosted = await client.remove(item.recordId, {})
+        if (!removeLocalContextItem(holder, item.id)) continue
+        if (hosted.removed) removed++
+        else alreadyAbsent++
       }
-      return count
+      return { removed, alreadyAbsent }
     },
   })
-  return { holder, removed }
+  return { holder, ...result }
 }
 
 export function sessionContextHolders(database: Database) {
@@ -187,35 +195,58 @@ export function sessionContextHolders(database: Database) {
   }))
 }
 
+/** Hosted lifecycle removal is unconditional like task clearing; the local snapshot revision guards against selecting a changed item. */
 async function dropSessionContextItemForLifecycle(input: {
   session: string
   id: string
-  expectedRevision: string
+  localExpectedRevision: string
   reason: string
 }) {
   assertWorkerDocStoreWriteAllowed('dropSessionContextItemForLifecycle')
   const holder = `session:${input.session}`
   writableDb()
   const item = getContextItem(holder, input.id)
-  if (!item) return { holder, id: input.id, removed: false }
-  const removed = await applyRecordWriteAuthority({
-    local: () => removeLocalContextItem(holder, input.id, input.expectedRevision),
+  if (!item) return { holder, id: input.id, outcome: 'already-absent' as const }
+  const result = await applyRecordWriteAuthority({
+    local: () =>
+      removeLocalContextItem(holder, input.id, input.localExpectedRevision)
+        ? ('dropped' as const)
+        : ('already-absent' as const),
     hosted: async () => {
-      const client = await hostedContextItemClient(holder)
-      const result = await client.remove(item.recordId, {
-        expectedRevision: input.expectedRevision,
+      if (item.revision !== input.localExpectedRevision)
+        throw new Error(
+          `context item ${holder}/${input.id} changed since it was selected\n` +
+            'remedy: retry the lifecycle operation',
+        )
+      const sessionOwner = db()
+        .query<{ project: string | null }, [string]>(
+          'SELECT project FROM presence WHERE session_id=?',
+        )
+        .get(input.session)
+      const project = sessionOwner?.project?.trim()
+      if (!project)
+        throw new Error(
+          `session ${input.session} has no recorded owning project\n` +
+            'remedy: restore the session registry row with its owning project, then retry the lifecycle operation',
+        )
+      const client = await hostedContextItemClient(holder, {
+        kind: 'session',
+        checkoutProject: project,
       })
-      if (!result.removed)
-        throw new Error(`context item ${item.recordId} not found in hosted record`)
-      return removeLocalContextItem(holder, input.id, item.revision)
+      const hosted = await client.remove(item.recordId, {})
+      const dropped = removeLocalContextItem(holder, input.id, input.localExpectedRevision)
+      if (!dropped) return 'already-absent' as const
+      return hosted.removed ? ('dropped' as const) : ('already-absent' as const)
     },
   })
-  return { holder, id: input.id, removed }
+  return { holder, id: input.id, outcome: result }
 }
+
+type SessionContextDropOutcome = 'dropped' | 'already-absent' | 'would-drop' | 'failed'
 
 export type SessionContextDropResult = {
   item: ReturnType<typeof sessionContextItems>[number]
-  removed: boolean
+  outcome: SessionContextDropOutcome
   error: string | null
 }
 
@@ -229,25 +260,33 @@ export async function dropSessionContextItemsForLifecycle(input: {
   const results: SessionContextDropResult[] = []
   for (const item of input.items) {
     if (item.revision === null) {
-      results.push({ item, removed: false, error: 'context item revision is unavailable' })
+      results.push({
+        item,
+        outcome: 'failed',
+        error: 'context item revision is unavailable',
+      })
       continue
     }
     if (input.dryRun) {
-      results.push({ item, removed: false, error: null })
+      results.push({ item, outcome: 'would-drop', error: null })
       continue
     }
     try {
       const result = await dropSessionContextItemForLifecycle({
         session: input.session,
         id: item.id,
-        expectedRevision: item.revision,
+        localExpectedRevision: item.revision,
         reason: input.reason,
       })
-      results.push({ item, removed: result.removed, error: null })
+      results.push({
+        item,
+        outcome: result.outcome,
+        error: null,
+      })
     } catch (error) {
       results.push({
         item,
-        removed: false,
+        outcome: 'failed',
         error: error instanceof Error ? error.message : String(error),
       })
     }
@@ -349,17 +388,31 @@ export async function dropContextItem(
   const { holder, task } = await resolveContextHolder(input)
   writableDb()
   const item = getContextItem(holder, input.id)
-  if (!item) return { holder, task: task?.key ?? null, id: input.id, removed: false }
+  if (!item)
+    return {
+      holder,
+      task: task?.key ?? null,
+      id: input.id,
+      removed: false,
+      alreadyAbsent: true,
+    }
   assertContextDropAllowed({ item })
-  const removed = await applyRecordWriteAuthority({
-    local: () => removeLocalContextItem(holder, input.id, input.expectedRevision),
+  const result = await applyRecordWriteAuthority({
+    local: () => ({
+      removed: removeLocalContextItem(holder, input.id, input.expectedRevision),
+      alreadyAbsent: false,
+    }),
     hosted: async () => {
       const client = await hostedContextItemClient(holder, contextTaskOwner(task ?? undefined))
       const result = await client.remove(item.recordId, {
         expectedRevision: input.expectedRevision,
       })
-      return result.removed ? removeLocalContextItem(holder, input.id, item.revision) : false
+      const removed = removeLocalContextItem(holder, input.id, item.revision)
+      return {
+        removed: result.removed && removed,
+        alreadyAbsent: !result.removed && removed,
+      }
     },
   })
-  return { holder, task: task?.key ?? null, id: input.id, removed }
+  return { holder, task: task?.key ?? null, id: input.id, ...result }
 }

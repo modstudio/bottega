@@ -5,7 +5,9 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { STATE_HOME_ENV } from '../../shared/state-directory.ts'
 import { readStoreWriteHoldsSince } from '../../shared/store-write-hold-log.ts'
+import { HUB_MIGRATION_BACKFILL_VALUES } from '../test/migration-values.ts'
 import { closeDatabaseForFixture, DB_PATH, db, writeTransaction } from './db.ts'
+import { applyMigrations } from './migrations.ts'
 
 const originalStateHome = process.env[STATE_HOME_ENV]
 let stateHome = ''
@@ -47,7 +49,8 @@ test('a depth-zero write records a closed long-hold window without changing its 
       longestMs: 1_100,
       transactions: 1,
     })
-    expect(entries.at(-1)?.caller).toMatch(/^hub\/src\/write-hold-wiring\.test\.ts:\d+$/)
+    const caller = entries.at(-1)?.caller
+    expect(caller).toMatch(/^hub\/src\/write-hold-wiring\.test\.ts:\d+$/)
   } finally {
     now.mockRestore()
     measured.close()
@@ -72,5 +75,28 @@ test('a write that cannot acquire the lock is not recorded as a hold', () => {
     now.mockRestore()
     if (holder.inTransaction) holder.exec('ROLLBACK')
     holder.close()
+  }
+})
+
+test('a slow hub migration records its completed lock hold before the process exits', () => {
+  const readings = [100, 1_200]
+  const realNow = performance.now.bind(performance)
+  const measuredPath = join(stateHome, 'migration.db')
+  const measured = new Database(measuredPath, { create: true })
+  const now = spyOn(performance, 'now').mockImplementation(() =>
+    new Error().stack?.includes('/hub/src/migrations.ts') ? (readings.shift() ?? 1_200) : realNow(),
+  )
+  try {
+    applyMigrations(measured, undefined, HUB_MIGRATION_BACKFILL_VALUES)
+    expect(readStoreWriteHoldsSince('1970-01-01T00:00:00.000Z').at(-1)).toMatchObject({
+      store: realpathSync(measuredPath),
+      spanMs: 1_100,
+      longestMs: 1_100,
+      transactions: 1,
+      caller: 'hub migration',
+    })
+  } finally {
+    now.mockRestore()
+    measured.close()
   }
 })

@@ -45,6 +45,7 @@ import {
 import { loadTrackedRecipe, recipePointerErrors } from '../recipe/recipe-loader.ts'
 import { recordApiClient } from '../record/record-api-client.ts'
 import { RecordProjectSpaceConflictError } from '../record/record-project-space-contract.ts'
+import { shellQuote } from '../resources/git-locks.ts'
 import { classifyRunIdentifier, resolveRunIdentifier } from '../run/run-identifier.ts'
 import { autonomySettingsForStorage } from '../workflow/autonomy.ts'
 import {
@@ -59,6 +60,7 @@ import {
   validateCreate,
 } from '../worktree/worktree-template.ts'
 import { isCommitShapedBranch } from './branch-name.ts'
+import { returnMainCheckoutToTrunkCommand } from './main-checkout-invariant.ts'
 import { projectAgentKeyProblems } from './project-agent-keys.ts'
 import { focusedTestsProblems } from './project-focused-tests.ts'
 import {
@@ -689,7 +691,7 @@ export function detachedCheckoutDecision(
   const releaseTag = [...tagsAtHead].sort().find((tag) => releaseTagVersion(tag) !== null)
   return releaseTag
     ? `release tag ${releaseTag} is checked out; a development checkout stays on its landing branch ${landing}\n` +
-        `cleared by: git -C ${shellQuote(checkoutPath)} switch -- ${shellQuote(landing)}`
+        `cleared by: ${returnMainCheckoutToTrunkCommand(checkoutPath, landing)}`
     : `checkout HEAD is detached, not landing branch ${landing}\n` +
         registerBranchRemedy(landing, checkoutPath, projectName)
 }
@@ -842,11 +844,6 @@ function inspectMainCheckout(projectPath: string): MainCheckoutInspection | null
     untracked: state.untracked,
     sequence: state.sequence,
   }
-}
-
-/** POSIX single-quote so a cleared-by line can be pasted into a shell. */
-function shellQuote(value: string): string {
-  return `'${value.replace(/'/g, "'\\''")}'`
 }
 
 function mainCheckoutRefusal(

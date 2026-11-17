@@ -25,10 +25,8 @@ import {
   temporaryStateStoreMigrationAllowed,
 } from '../../shared/state-directory.ts'
 import { decideStoreAccess, type StoreAccessDecision } from '../../shared/store-access.ts'
-import { appendStoreWriteHold } from '../../shared/store-write-hold-log.ts'
 import { sampleWalWriteLock, type WalWriteLockSampleResult } from '../../shared/store-write-lock.ts'
 import { assertTestHubDatabasePath } from '../../shared/test-hub-database.ts'
-import { writeCallerFromStack } from '../../shared/write-caller-from-stack.ts'
 import {
   applyMigrations,
   migrationRefusal,
@@ -36,11 +34,7 @@ import {
   readUserVersion,
   staleWriteRefusal,
 } from './migrations.ts'
-import {
-  finishWriteTransaction,
-  type WriteHoldWindow,
-  writeTransactionNeedsCaller,
-} from './write-hold.ts'
+import { forgetWriteHoldMeasurement, measureFinishedWrite } from './write-hold-measurement.ts'
 
 export type { Project } from './projects.ts'
 
@@ -209,7 +203,6 @@ const databaseAccess = createReadOnlyDatabaseAccess()
 let openedUserVersion: number | null = null
 let schemaReload: ((from: number, to: number) => void) | null = null
 const writeDepth = new WeakMap<Database, number>()
-const writeHoldWindows = new WeakMap<Database, WriteHoldWindow>()
 export const dbSourcePath = fileURLToPath(import.meta.url)
 
 /** Ensure an ordinary store-needing command has a current, authorized store. */
@@ -221,46 +214,13 @@ export function requireDatabase(): void {
 }
 
 export function closeDatabaseForFixture(): void {
-  if (handle) writeHoldWindows.delete(handle)
+  if (handle) forgetWriteHoldMeasurement(handle)
   handle?.close()
   readOnlyHandle?.close()
   handle = null
   readOnlyHandle = null
   openedUserVersion = null
   schemaReload = null
-}
-
-function writeCaller(): string | null {
-  return writeCallerFromStack(new Error().stack ?? '', {
-    excludedFiles: [dbSourcePath],
-  })
-}
-
-function databasePath(conn: Database): string {
-  const databases = conn.query<{ name: string; file: string }, []>('PRAGMA database_list').all()
-  return databases.find((database) => database.name === 'main')?.file || DB_PATH
-}
-
-function measureFinishedWrite(conn: Database, beganMs: number, endedMs: number): void {
-  try {
-    const current = writeHoldWindows.get(conn) ?? null
-    const durationMs = endedMs - beganMs
-    const caller = writeTransactionNeedsCaller(current, beganMs, durationMs) ? writeCaller() : null
-    const measured = finishWriteTransaction(current, { beganMs, endedMs, caller })
-    writeHoldWindows.set(conn, measured.state)
-    if (measured.closed) {
-      appendStoreWriteHold({
-        at: new Date(measured.closed.endedMs).toISOString(),
-        store: databasePath(conn),
-        spanMs: measured.closed.endedMs - measured.closed.beganMs,
-        longestMs: measured.closed.longestMs,
-        transactions: measured.closed.transactions,
-        caller: measured.closed.caller ?? 'unknown',
-      })
-    }
-  } catch {
-    // Measurement must never change the transaction's result or error.
-  }
 }
 
 /** Long-lived processes (bottega dashboard start) reload instead of refusing a write after a migrate. */
@@ -399,7 +359,8 @@ export function writeTransaction<T>(fn: (conn: Database) => T, database?: Databa
   } finally {
     if (depth === 0) {
       const endedMs = performance.timeOrigin + performance.now()
-      if (beganMs !== null) measureFinishedWrite(conn, beganMs, endedMs)
+      if (beganMs !== null)
+        measureFinishedWrite(conn, beganMs, endedMs, { excludedCallerFiles: [dbSourcePath] })
       writeDepth.delete(conn)
       conn.exec('PRAGMA query_only = ON')
     } else {

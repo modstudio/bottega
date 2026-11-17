@@ -491,7 +491,8 @@ function registerContextTools(server: McpServer): void {
     },
     async ({ expected_revision, ...input }) => {
       const result = await dropContextItem({ ...input, expectedRevision: expected_revision })
-      if (!result.removed) throw new Error(`no context item ${result.holder}/${result.id}`)
+      if (!result.removed && !result.alreadyAbsent)
+        throw new Error(`no context item ${result.holder}/${result.id}`)
       return text(result)
     },
   )

@@ -264,7 +264,11 @@ def git_invocation(tokens, cwd, assignments):
     if assignments.get("GIT_WORK_TREE"):
         additional_targets.append(resolve_git_path(assignments["GIT_WORK_TREE"], target))
     targets = [target, *additional_targets]
-    return {"subcommand": tokens[index], "targets": list(dict.fromkeys(targets))}
+    return {
+        "subcommand": tokens[index],
+        "arguments": tokens[index + 1 :],
+        "targets": list(dict.fromkeys(targets)),
+    }
 
 
 def candidate_git_mutations(command, cwd):
@@ -278,7 +282,11 @@ def candidate_git_mutations(command, cwd):
         invocation = git_invocation(tokens, command_cwd, assignments)
         if invocation and invocation["subcommand"] in MUTATING_GIT_SUBCOMMANDS:
             mutations.extend(
-                {"subcommand": invocation["subcommand"], "target": target}
+                {
+                    "subcommand": invocation["subcommand"],
+                    "arguments": invocation["arguments"],
+                    "target": target,
+                }
                 for target in invocation["targets"]
             )
     return mutations

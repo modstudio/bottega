@@ -18,6 +18,7 @@ import {
   storeAheadMigrationRefusal,
   storeAheadOfJournalRefusal,
 } from '../../shared/store-ahead-remedy.ts'
+import { measureFinishedWrite } from './write-hold-measurement.ts'
 export const MIGRATIONS_FOLDER = assetPath('hub', 'migrations')
 export const MIGRATIONS_TABLE = 'hub_migrations'
 export const SCHEMA_LOCK_TABLE = 'hub_schema_lock'
@@ -425,7 +426,7 @@ export function stripSqlComments(source: string): string {
 
 type BackfillValues = Record<string, string | number | bigint | boolean | null | Uint8Array>
 
-function sqlQuoteState(
+export function sqlQuoteState(
   source: string,
   index: number,
   inString: boolean,
@@ -705,8 +706,10 @@ export function applyMigrations(
 ): string[] {
   d.exec('PRAGMA busy_timeout = 15000')
   const connectionSettings = enterMigrationConnectionPolicy(d)
+  let beganMs: number | null = null
   try {
     d.exec('BEGIN IMMEDIATE')
+    beganMs = performance.timeOrigin + performance.now()
     ensureSchemaLock(d)
     d.exec(`UPDATE ${SCHEMA_LOCK_TABLE} SET id = 1 WHERE id = 1`)
     const versions = adoptBaseline(d, folder)
@@ -789,6 +792,11 @@ export function applyMigrations(
     }
     throw error
   } finally {
+    if (beganMs !== null)
+      measureFinishedWrite(d, beganMs, performance.timeOrigin + performance.now(), {
+        caller: 'hub migration',
+        close: true,
+      })
     leaveMigrationConnectionPolicy(d, connectionSettings)
   }
 }

@@ -500,45 +500,24 @@ test('record question reads refuse a bare number before making a client request'
   database.close()
 })
 
-test('record for-runs reads once per owning project', async () => {
+test('record for-runs merges every space in asking order and refuses a duplicated id', async () => {
   const database = migratedTestDatabase()
-  seedOwners(database)
-  const secondProjectId = newRecordId()
-  const secondRunId = newRecordId()
-  const sameProjectRunId = newRecordId()
-  database
-    .query('INSERT INTO project(record_id,name,path,stack,settings) VALUES (?,?,?,?,?)')
-    .run(secondProjectId, 'other-fixture', '/other', 'bun', '{"space":"other"}')
-  database
-    .query(`INSERT INTO run
-      (record_id,number,started_at,agent,job,repo,prompt_sha,prompt_bytes,prompt_head,status,
-       changed_paths,project_record_id)
-      VALUES (?,3,?,'codex','implement','question-fixture','sha',1,'prompt','running','[]',?),
-             (?,4,?,'codex','implement','other-fixture','sha',1,'prompt','running','[]',?)`)
-    .run(sameProjectRunId, STAMP, PROJECT_ID, secondRunId, STAMP, secondProjectId)
-  const reads: string[] = []
-  const store = new RecordQuestionStore({
-    database,
-    client: {
-      whoami: async () => ({
-        ...(await whoami()),
-        memberships: [
-          { space_id: SPACE_ID, name: 'Fixture', slug: 'fixture', permission: 'write' },
-          { space_id: OTHER_SPACE_ID, name: 'Other', slug: 'other', permission: 'write' },
-        ],
-      }),
-      readQuestions: async (_input, destination) => {
-        reads.push(destination!.destinationSpaceId!)
-        return { items: [] }
-      },
-    },
+  const { store } = twoSpaceStore(database, {
+    [SPACE_ID]: [{ record_id: 'project-new', number: 12, asked_at: '2026-11-17T05:00:00Z' }],
+    [OTHER_SPACE_ID]: [
+      { record_id: 'personal-old', number: 6464, asked_at: '2026-11-16T05:00:00Z' },
+    ],
   })
-
-  await store.read({ read: 'for-runs', runIds: [RUN_ID, sameProjectRunId] })
-  expect(reads).toEqual([SPACE_ID])
-  reads.length = 0
-  await store.read({ read: 'for-runs', runIds: [RUN_ID, sameProjectRunId, secondRunId] })
-  expect(reads.sort()).toEqual([OTHER_SPACE_ID, SPACE_ID].sort())
+  const read = await store.read({ read: 'for-runs', runIds: [RUN_ID] })
+  expect(read.items.map((row) => field(row, 'record_id'))).toEqual(['personal-old', 'project-new'])
+  const duplicated = newRecordId()
+  const { store: duplicatedStore } = twoSpaceStore(database, {
+    [SPACE_ID]: [duplicated],
+    [OTHER_SPACE_ID]: [duplicated],
+  })
+  await expect(duplicatedStore.read({ read: 'for-runs', runIds: [RUN_ID] })).rejects.toThrow(
+    'more than one record space',
+  )
   database.close()
 })
 
@@ -581,6 +560,87 @@ test('record inbox paging advances independently across every reachable space', 
   }
   expect(seen.sort()).toEqual([...rows[SPACE_ID], ...rows[OTHER_SPACE_ID]].sort())
   expect(new Set(seen).size).toBe(seen.length)
+  database.close()
+})
+
+function twoSpaceStore(
+  database: ReturnType<typeof migratedTestDatabase>,
+  rows: Record<string, Array<string | Record<string, unknown>>>,
+) {
+  const written: string[] = []
+  const store = new RecordQuestionStore({
+    database,
+    client: {
+      whoami: async () => ({
+        ...(await whoami()),
+        memberships: [
+          { space_id: SPACE_ID, name: 'Fixture', slug: 'fixture', permission: 'write' },
+          { space_id: OTHER_SPACE_ID, name: 'Other', slug: 'other', permission: 'write' },
+        ],
+      }),
+      readQuestions: async (_input, destination) => ({
+        items: (rows[destination?.destinationSpaceId ?? ''] ?? []).map((row) =>
+          typeof row === 'string' ? { record_id: row } : row,
+        ),
+      }),
+      writeQuestion: async (_intent, input, destination) => {
+        written.push(destination.destinationSpaceId)
+        return { id: input.question.id, number: 1, revision: 2, applied: true }
+      },
+    },
+  })
+  return { store, written }
+}
+
+test('a cursor or run whose questions span record spaces reads every one of them', async () => {
+  const database = migratedTestDatabase()
+  seedOwners(database)
+  const earlier = newRecordId()
+  const later = newRecordId()
+  const { store, written } = twoSpaceStore(database, {
+    [SPACE_ID]: [later],
+    [OTHER_SPACE_ID]: [earlier],
+  })
+  const forCursor = await store.read({ read: 'for-cursor', workflowCursorRecordId: CURSOR_ID })
+  expect(forCursor.items.map((row) => String(field(row, 'record_id'))).sort()).toEqual(
+    [earlier, later].sort(),
+  )
+  const forRun = await store.read({ read: 'for-run', runId: newRecordId() })
+  expect(forRun.items).toHaveLength(2)
+  await store.write(
+    'answer',
+    body({ ...snapshot(), id: earlier, revision: 2, answer: 'Yes' }, 'answer'),
+  )
+  expect(written).toEqual([OTHER_SPACE_ID])
+  database.close()
+})
+
+test('merged questions follow asking order, because numbers repeat across spaces', async () => {
+  const database = migratedTestDatabase()
+  const { store } = twoSpaceStore(database, {
+    [SPACE_ID]: [{ record_id: 'project-new', number: 12, asked_at: '2026-11-17T05:00:00Z' }],
+    [OTHER_SPACE_ID]: [
+      { record_id: 'personal-old', number: 6464, asked_at: '2026-11-16T05:00:00Z' },
+    ],
+  })
+  const read = await store.read({ read: 'for-cursor', workflowCursorRecordId: CURSOR_ID })
+  expect(read.items.map((row) => field(row, 'record_id'))).toEqual(['personal-old', 'project-new'])
+  database.close()
+})
+
+test('one question id held in two record spaces is refused', async () => {
+  const database = migratedTestDatabase()
+  const duplicated = newRecordId()
+  const { store } = twoSpaceStore(database, {
+    [SPACE_ID]: [duplicated],
+    [OTHER_SPACE_ID]: [duplicated],
+  })
+  await expect(
+    store.read({ read: 'for-cursor', workflowCursorRecordId: CURSOR_ID }),
+  ).rejects.toThrow('more than one record space')
+  await expect(store.read({ read: 'by-id', ids: [duplicated] })).rejects.toThrow(
+    'more than one record space',
+  )
   database.close()
 })
 

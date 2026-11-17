@@ -17,6 +17,7 @@ import type {
   TaskFlowTaskRulingRow,
   TaskFlowWaitingQuestionRow,
 } from '../workflow/task-flow-store-types.ts'
+import { compareQuestionsByAsk } from './question-order.ts'
 import { questionStore } from './question-store.ts'
 import { questionRulingsPaged } from './question-store-read.ts'
 import type { QuestionReadRow, QuestionStore } from './question-store-types.ts'
@@ -70,7 +71,7 @@ async function openDetailsForStages(questions: QuestionStore, ids: string[]) {
             await questions.read({ read: 'for-cursor', workflowCursorRecordId: id })
           ).items
             .filter((row) => field(row, 'answered_at') == null && field(row, 'closed_at') == null)
-            .sort((a, b) => Number(field(a, 'number')) - Number(field(b, 'number')))
+            .sort(compareQuestionsByAsk)
           return rows[0] ? ([id, rows[0]] as const) : null
         }),
       )

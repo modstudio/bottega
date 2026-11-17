@@ -22,6 +22,7 @@ export const runStopBoundarySpecs = [
       './question-delivery-pending.ts',
       '../worktree/worktree-remove.ts',
       '../worktree/worktree-types.ts',
+      './asking-run-lifecycle-store.ts',
     ],
     typeOnlyAllowed: ['./run-process.ts', './shared-git-config-check.ts'],
     reason:

@@ -20,15 +20,18 @@ export async function settleTerminalQuestionState(input: {
   database: Database
   runId: string
   rootId: string
-  status: string
-  failureKind: ReturnType<typeof classify> | null
   preAnswer(): Promise<void>
 }): Promise<{ status: string; failure_kind: string | null }> {
+  const recordedBeforeQuestions = input.database
+    .query('SELECT status, failure_kind FROM run WHERE record_id=?')
+    .get(input.runId) as { status: string; failure_kind: ReturnType<typeof classify> | null } | null
+  if (!recordedBeforeQuestions)
+    throw new Error(`run ${input.runId} disappeared before terminalisation`)
   await closeRunTerminalChainQuestions(
     input.database,
     input.rootId,
-    input.status,
-    input.failureKind,
+    recordedBeforeQuestions.status,
+    recordedBeforeQuestions.failure_kind,
   )
   await input.preAnswer()
   const recorded = input.database

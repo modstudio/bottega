@@ -254,6 +254,37 @@ describe('run continuation', () => {
     expect(calls).toBe(0)
   })
 
+  test('creating a continuation closes the asking turn it supersedes', async () => {
+    const root = addRun({
+      agent: 'codex',
+      job: 'file-question',
+      status: 'ok',
+      session: 'orch-test-session',
+      repo: 'continuation-fixture',
+    })
+    const asking = addRun({
+      agent: 'codex',
+      job: 'file-question',
+      status: 'asking',
+      parent: root,
+      turn: 2,
+      session: 'orch-test-session',
+    })
+    db()
+      .query('UPDATE run SET vendor_session=?,cwd=?,worktree=? WHERE record_id IN (?,?)')
+      .run('vendor-session', dir, dir, root, asking)
+
+    await continueRun(root, 'continue after the closed question', limit)
+
+    expect(
+      db().query('SELECT status,failure_kind,error FROM run WHERE record_id=?').get(asking),
+    ).toEqual({
+      status: 'ok',
+      failure_kind: null,
+      error: null,
+    })
+  })
+
   test('continue --file refuses when a just-below-limit body plus the reminder exceeds argv', async () => {
     const root = insert('ok')
     const longSpec = 's'.repeat(600)

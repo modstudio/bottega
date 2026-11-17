@@ -87,9 +87,11 @@ export const recordQuestionModules: RecordModule[] = [
     '../record/record-project-destination-client.ts',
     '../record/record-space-cardinality.ts',
     '../record/record-question-contract.ts',
+    './question-order.ts',
     './question-run-pusher.ts',
     './question-store-types.ts',
   ]),
+  module('orchestrator/src/question-store/question-order.ts', []),
   module('orchestrator/src/question-store/question-store-types.ts', [
     '../record/record-question-contract.ts',
     '../workflow/task-flow-store-types.ts',
@@ -105,6 +107,7 @@ export const recordQuestionModules: RecordModule[] = [
   ]),
   module('orchestrator/src/question-store/question-store-read.ts', [
     'bun:sqlite',
+    '../../../shared/brand.ts',
     '../project/project-read.ts',
     '../workflow/task-flow-store-types.ts',
     './question-store.ts',
@@ -124,6 +127,7 @@ export const recordQuestionModules: RecordModule[] = [
     '../record/record-task-flow-contract.ts',
     '../workflow/task-flow-store-record-stage-row.ts',
     '../workflow/task-flow-store-types.ts',
+    './question-order.ts',
     './question-store.ts',
     './question-store-types.ts',
   ]),

@@ -160,7 +160,7 @@ export function registeredMainCheckoutDiagnosis(input: {
 function reportRegisteredMainCheckouts<T extends RegisteredCheckout>(
   inspections: readonly RegisteredMainCheckoutInspection<T>[],
   log: (value: string) => void,
-  decide: (facts: CheckoutInspection) => CheckoutDecision,
+  decide: (path: string, facts: CheckoutInspection) => CheckoutDecision,
 ): boolean {
   let failed = false
   log('\nregistered main checkouts')
@@ -177,7 +177,7 @@ function reportRegisteredMainCheckouts<T extends RegisteredCheckout>(
       name: project.name,
       requireCleanMain: project.settings.requireCleanMain !== false,
       checkout: checkout!,
-      decide,
+      decide: (facts) => decide(project.path, facts),
     })
     for (const line of diagnosis.lines) log(`  ${line}`)
     failed ||= diagnosis.failed
@@ -211,7 +211,7 @@ export function reportCheckoutRegister<T extends RegisteredCheckout>(
   hookFinding: (project: T) => string | null,
   inspectBranch: (project: T) => BranchInspection,
   inspectCheckout: (path: string, trunk: string) => CheckoutInspection,
-  decide: (facts: CheckoutInspection) => CheckoutDecision,
+  decide: (path: string, facts: CheckoutInspection) => CheckoutDecision,
 ): void {
   const { log } = presentation
   const hookFlags = projects.map(hookFinding).filter(Boolean)

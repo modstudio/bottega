@@ -4,7 +4,7 @@
 import type { Database } from 'bun:sqlite'
 import { storedMachineNames } from '../../../shared/machine-config.ts'
 import {
-  questionByNumber,
+  questionByProjectNumber,
   questionNumberProjectId,
   questionsById,
 } from '../question-store/question-store-read.ts'
@@ -205,7 +205,7 @@ async function readQuestionFacts(
   const row =
     identifier.kind === 'record-id'
       ? (await questionsById(database, [identifier.recordId]))[0]
-      : await questionByNumber(
+      : await questionByProjectNumber(
           database,
           identifier.number,
           questionNumberProjectId(database, identifier.number),

@@ -95,6 +95,141 @@ const runNumber = (recordId: string): number =>
   ).number
 
 describe('reapStale', () => {
+  test('opens no write transaction when no asking turns need repair', () => {
+    const database = db()
+    const transaction = database.transaction.bind(database)
+    let transactionCalls = 0
+    spyOn(database, 'transaction').mockImplementation(((operation: () => unknown) => {
+      transactionCalls++
+      return transaction(operation)
+    }) as typeof database.transaction)
+
+    expect(reapStale(database, noSharedGitConfigCheck)).toBe(0)
+    expect(transactionCalls).toBe(0)
+  })
+
+  test('restores an asking row whose latest chain audit is abandon', () => {
+    const root = addRun({ agent: 'codex', job: 'craft', status: 'ok' })
+    const id = addRun({
+      agent: 'codex',
+      job: 'craft',
+      status: 'asking',
+      parent: root,
+      turn: 2,
+    })
+    db()
+      .query(
+        `INSERT INTO run_mutation_audit
+           (record_id,run_record_id,root_run_record_id,action,at,reason)
+         VALUES (?,?,?,?,?,?)`,
+      )
+      .run(newRecordId(), root, root, 'abandon', nowIso(), 'late worker still running')
+
+    expect(reapStale(db(), noSharedGitConfigCheck)).toBe(1)
+    expect(
+      db().query('SELECT status,failure_kind,error FROM run WHERE record_id=?').get(id),
+    ).toEqual({
+      status: 'stale',
+      failure_kind: 'abandoned',
+      error: 'abandoned by architect: late worker still running',
+    })
+    const payload = db()
+      .query<{ payload: string }, [string]>(
+        `SELECT payload FROM outbox WHERE kind='run' AND row_id=? ORDER BY id DESC LIMIT 1`,
+      )
+      .get(id)!
+    expect(JSON.parse(payload.payload)).toMatchObject({
+      localId: runNumber(id),
+      status: 'stale',
+      failureKind: 'abandoned',
+    })
+    expect(
+      db()
+        .query(
+          'SELECT action,reason FROM run_mutation_audit WHERE run_record_id=? ORDER BY rowid DESC',
+        )
+        .get(id),
+    ).toEqual({
+      action: 'reap',
+      reason: 'architect abandon verdict restored after late terminal write',
+    })
+  })
+
+  test('does not restore an asking row when a later mutation superseded abandon', () => {
+    const id = addRun({ agent: 'codex', job: 'craft', status: 'asking' })
+    const insert = db().query(
+      `INSERT INTO run_mutation_audit
+         (record_id,run_record_id,root_run_record_id,action,at,reason)
+       VALUES (?,?,?,?,?,NULL)`,
+    )
+    insert.run(newRecordId(), id, id, 'abandon', '2026-11-16T10:00:00.000Z')
+    insert.run(newRecordId(), id, id, 'continue', '2026-11-16T10:01:00.000Z')
+
+    expect(reapStale(db(), noSharedGitConfigCheck)).toBe(0)
+    expect(db().query('SELECT status,failure_kind FROM run WHERE record_id=?').get(id)).toEqual({
+      status: 'asking',
+      failure_kind: null,
+    })
+  })
+
+  test('repairs superseded asking turns without changing their open questions or root roll-up', () => {
+    const root = addRun({ agent: 'codex', job: 'craft', status: 'ok' })
+    const asking = addRun({
+      agent: 'codex',
+      job: 'craft',
+      status: 'asking',
+      parent: root,
+      turn: 2,
+    })
+    const latest = addRun({
+      agent: 'codex',
+      job: 'craft',
+      status: 'ok',
+      parent: root,
+      turn: 3,
+    })
+    const questionId = newRecordId()
+    db()
+      .query(
+        `INSERT INTO question (number,record_id,run_record_id,asked_at,question)
+         VALUES ((SELECT COALESCE(MAX(number),0)+1 FROM question),?,?,?,?)`,
+      )
+      .run(questionId, asking, nowIso(), 'Which option?')
+
+    expect(reapStale(db(), noSharedGitConfigCheck)).toBe(1)
+    const latestNumber = runNumber(latest)
+    expect(
+      db().query('SELECT status,failure_kind,error FROM run WHERE record_id=?').get(asking),
+    ).toEqual({
+      status: 'ok',
+      failure_kind: null,
+      error: null,
+    })
+    expect(db().query('SELECT status FROM run WHERE record_id=?').get(root)).toEqual({
+      status: 'ok',
+    })
+    expect(
+      db().query('SELECT answered_at,closed_at FROM question WHERE record_id=?').get(questionId),
+    ).toEqual({ answered_at: null, closed_at: null })
+    const payload = db()
+      .query<{ payload: string }, [string]>(
+        `SELECT payload FROM outbox WHERE kind='run' AND row_id=? ORDER BY id DESC LIMIT 1`,
+      )
+      .get(asking)!
+    expect(JSON.parse(payload.payload)).toMatchObject({
+      localId: runNumber(asking),
+      status: 'ok',
+      failureKind: null,
+    })
+    expect(
+      db()
+        .query(
+          'SELECT action,reason FROM run_mutation_audit WHERE run_record_id=? ORDER BY rowid DESC',
+        )
+        .get(asking),
+    ).toEqual({ action: 'reap', reason: `superseded by run ${latestNumber}` })
+  })
+
   test('elapsed time does not kill a legacy run while its pid is alive', () => {
     const id = addRun({ agent: 'grok', job: 'craft', status: 'running' })
     // process.pid is certainly alive: this is the recycled-pid case, and the

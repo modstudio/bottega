@@ -1,6 +1,33 @@
 import { expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
-import { upsertRecordContextItem } from './record-context-items.ts'
+import { DocRevisionConflictError } from '../doc/doc-revision-conflict.ts'
+import { assertRecordContextItemRevision, upsertRecordContextItem } from './record-context-items.ts'
+
+test('hosted context-item revisions allow matching or unconditional writes and type conflicts', () => {
+  expect(() => assertRecordContextItemRevision(undefined, 'current')).not.toThrow()
+  expect(() => assertRecordContextItemRevision('current', 'current')).not.toThrow()
+  try {
+    assertRecordContextItemRevision('stale', 'current')
+    throw new Error('expected revision conflict')
+  } catch (error) {
+    expect(error).toBeInstanceOf(DocRevisionConflictError)
+    expect(error).toMatchObject({
+      status: 409,
+      currentRevision: 'current',
+      message: expect.stringContaining(`${PLATFORM_SLUG} agent context show`),
+    })
+  }
+  try {
+    assertRecordContextItemRevision('stale', undefined)
+    throw new Error('expected missing hosted revision conflict')
+  } catch (error) {
+    expect(error).toMatchObject({
+      reason: 'missing-hosted-revision',
+      currentRevision: null,
+    })
+  }
+})
 
 test('hosted context-item upsert refuses a malformed row before opening Postgres', async () => {
   await expect(

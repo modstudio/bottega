@@ -26,6 +26,7 @@ import {
 } from '../resources/resource-ownership.ts'
 import { branchTip, removeBranch, unmergedBranch } from '../worktree/worktree-remove.ts'
 import type { Worktree } from '../worktree/worktree-types.ts'
+import { architectAbandonError, writeAskingRunAbandoned } from './asking-run-lifecycle-store.ts'
 import {
   closeRunChainQuestions,
   QUESTION_CLOSE_CHAIN_STOPPED,
@@ -425,7 +426,7 @@ export async function abandonRun(
   }
   const callerSession = authority.actor
   const note = options.note
-  const error = `abandoned by architect${note === undefined ? '' : `: ${note}`}`
+  const error = architectAbandonError(note)
   const at = nowIso()
   const readChain = () =>
     db()
@@ -469,12 +470,7 @@ export async function abandonRun(
     }
     authority = reauthorizeRunMutation(authority, 'abandon')
     authority = adoptRunMutation(authority, 'abandon')
-    const changed = db()
-      .query(
-        "UPDATE run SET status='stale', error=?, failure_kind='abandoned', host_wait_since=NULL WHERE record_id=? AND status='asking'",
-      )
-      .run(error, row.record_id)
-    if (changed.changes !== 1) {
+    if (!writeAskingRunAbandoned(db(), row.record_id, error)) {
       const current = readChain()
       throw new Error(
         `run ${id}'s chain changed before it could be abandoned: ${describe(current)}`,

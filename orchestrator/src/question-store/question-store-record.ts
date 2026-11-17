@@ -16,6 +16,7 @@ import type {
 } from '../record/record-question-contract.ts'
 import { questionChangedAfterRefusal } from '../record/record-question-contract.ts'
 import { decideSingleRecordSpace } from '../record/record-space-cardinality.ts'
+import { compareQuestionsByAsk } from './question-order.ts'
 import { resolveQuestionRunPusher } from './question-run-pusher.ts'
 import type { QuestionReadResult, QuestionReadRow, QuestionStore } from './question-store-types.ts'
 
@@ -85,6 +86,11 @@ function inboxItems(database: Database, items: QuestionReadRow[]): QuestionReadR
   })
 }
 
+function questionRowRecordId(row: Record<string, unknown>): string | null {
+  const id = row.record_id ?? row.id
+  return typeof id === 'string' ? id : null
+}
+
 type SpaceCursors = Record<string, string>
 const encodeSpaceCursors = (spaces: SpaceCursors) =>
   Buffer.from(JSON.stringify({ version: 1, spaces })).toString('base64url')
@@ -106,8 +112,7 @@ function decodeSpaceCursors(value: string): SpaceCursors {
   }
 }
 
-const SINGLE_SPACE_READ_KINDS = ['by-id', 'for-run', 'for-cursor'] as const
-const MACHINE_ENRICHED_READ_KINDS = [...SINGLE_SPACE_READ_KINDS, 'for-runs'] as const
+const SPACE_KEYED_READ_KINDS = ['by-id', 'for-run', 'for-cursor', 'for-runs'] as const
 
 export class RecordQuestionStore implements QuestionStore {
   private readonly input: {
@@ -188,30 +193,39 @@ export class RecordQuestionStore implements QuestionStore {
     return this.input.client.readQuestions(input, destination)
   }
 
-  private async singleSpaceRead(input: QuestionReadInput): Promise<QuestionReadResult> {
+  // Each question has one home, but a run or cursor may hold questions in several
+  // spaces, so a set read combines them and refuses only an id found twice.
+  private async spaceKeyedRead(input: QuestionReadInput): Promise<QuestionReadResult> {
     const answers = await Promise.all(
       (await this.allDestinations()).map(async (destination) => ({
         destination,
         value: await this.readAt(input, destination),
       })),
     )
-    const decision = decideSingleRecordSpace(
-      answers.map(({ destination, value }) => ({
-        spaceId: destination.destinationSpaceId,
-        found: value.items.length > 0,
-      })),
-    )
-    if ('refused' in decision)
-      throw new Error(
-        `${decision.refused}; remove the duplicate question from all but its authoritative space, then retry`,
+    const homes = new Map<string, Set<string>>()
+    for (const { destination, value } of answers)
+      for (const row of value.items) {
+        const id = questionRowRecordId(row)
+        if (!id) continue
+        homes.set(id, (homes.get(id) ?? new Set()).add(destination.destinationSpaceId))
+      }
+    for (const spaces of homes.values()) {
+      const decision = decideSingleRecordSpace(
+        [...spaces].map((spaceId) => ({ spaceId, found: true })),
       )
-    if (decision.index === null) return { items: [] }
-    const answer = answers[decision.index]!
-    for (const row of answer.value.items) {
-      const id = row.record_id ?? row.id
-      if (typeof id === 'string') this.questionSpaces.set(id, answer.destination)
+      if ('refused' in decision)
+        throw new Error(
+          `${decision.refused}; remove the duplicate question from all but its authoritative space, then retry`,
+        )
     }
-    return answer.value
+    for (const { destination, value } of answers)
+      for (const row of value.items) {
+        const id = questionRowRecordId(row)
+        if (id) this.questionSpaces.set(id, destination)
+      }
+    return {
+      items: answers.flatMap(({ value }) => value.items).sort(compareQuestionsByAsk),
+    }
   }
 
   private async listRead(input: QuestionReadInput): Promise<QuestionReadResult> {
@@ -247,37 +261,6 @@ export class RecordQuestionStore implements QuestionStore {
     }
   }
 
-  private async forRunsRead(
-    input: Extract<QuestionReadInput, { read: 'for-runs' }>,
-  ): Promise<QuestionReadResult> {
-    const placeholders = input.runIds.map(() => '?').join(',')
-    const owners = this.input.database
-      .query<{ record_id: string; project_record_id: string | null }, string[]>(
-        `SELECT record_id,project_record_id FROM run WHERE record_id IN (${placeholders})`,
-      )
-      .all(...input.runIds)
-    const projectByRun = new Map(owners.map((row) => [row.record_id, row.project_record_id]))
-    const groups = new Map<string, string[]>()
-    const unowned: string[] = []
-    for (const runId of input.runIds) {
-      const projectId = projectByRun.get(runId)
-      if (!projectId) {
-        unowned.push(runId)
-        continue
-      }
-      const group = groups.get(projectId) ?? []
-      group.push(runId)
-      groups.set(projectId, group)
-    }
-    const answers = await Promise.all([
-      ...[...groups].map(async ([projectId, runIds]) =>
-        this.readAt({ ...input, runIds }, await this.destination(projectId)),
-      ),
-      ...(unowned.length ? [this.listRead({ ...input, runIds: unowned })] : []),
-    ])
-    return { items: answers.flatMap((answer) => answer.items) }
-  }
-
   async write(intent: QuestionIntent, input: QuestionWriteBody) {
     if (!this.input.client.writeQuestion)
       throw new Error('record API predates direct question writes; release hosted-api, then retry')
@@ -299,7 +282,7 @@ export class RecordQuestionStore implements QuestionStore {
     else {
       let found = this.questionSpaces.get(input.question.id)
       if (!found) {
-        await this.singleSpaceRead({ read: 'by-id', ids: [input.question.id] })
+        await this.spaceKeyedRead({ read: 'by-id', ids: [input.question.id] })
         found = this.questionSpaces.get(input.question.id)
       }
       if (!found)
@@ -322,14 +305,10 @@ export class RecordQuestionStore implements QuestionStore {
       )
     const result = projectId
       ? await this.readAt(input, await this.destination(projectId))
-      : input.read === 'for-runs'
-        ? await this.forRunsRead(input)
-        : (SINGLE_SPACE_READ_KINDS as readonly string[]).includes(input.read)
-          ? await this.singleSpaceRead(input)
-          : await this.listRead(input)
-    const enrichMachineFields = (MACHINE_ENRICHED_READ_KINDS as readonly string[]).includes(
-      input.read,
-    )
+      : (SPACE_KEYED_READ_KINDS as readonly string[]).includes(input.read)
+        ? await this.spaceKeyedRead(input)
+        : await this.listRead(input)
+    const enrichMachineFields = (SPACE_KEYED_READ_KINDS as readonly string[]).includes(input.read)
     const items = result.items.map((row) =>
       localQuestionRow(this.input.database, row, enrichMachineFields),
     )

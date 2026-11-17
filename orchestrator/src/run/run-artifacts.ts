@@ -49,6 +49,7 @@ import {
   type RunArtifactListingEntry,
 } from './run-artifact-retention.ts'
 import { type GooseContextProfile, writeRunContextProfile } from './run-context-profile.ts'
+import { terminalLifecycleWrite } from './run-terminal-lifecycle-store.ts'
 import {
   quotaReadingsColumnValues,
   type RunQuotaColumns,
@@ -404,7 +405,14 @@ export function reconcileRun(id: string): string {
    * therefore requires first making questions recoverable from this journal,
    * or a failed transaction could reconcile to `asking` with nothing to answer.
    */
-  writeTransaction(() => {
+  const appliedLifecycle = writeTransaction(() => {
+    const lifecycle = terminalLifecycleWrite(
+      db(),
+      id,
+      snapshot.status,
+      snapshot.error,
+      snapshot.failureKind,
+    )
     db()
       .query(
         `UPDATE run SET latency_ms=?, exit_code=?, output_bytes=?, output_path=?, prompt_path=?,
@@ -429,9 +437,9 @@ export function reconcileRun(id: string): string {
         snapshot.vendorCostUsd,
         ...runUsageColumnValues(snapshot),
         snapshot.model,
-        snapshot.status,
-        snapshot.error,
-        snapshot.failureKind,
+        lifecycle.status,
+        lifecycle.error,
+        lifecycle.failureKind,
         snapshot.vendorSession,
         snapshot.preConfinement,
         snapshot.confinement,
@@ -447,9 +455,16 @@ export function reconcileRun(id: string): string {
         id,
       )
     writeRunContextProfile(db(), id, snapshot.contextProfile)
+    return lifecycle
   })
   teardownTerminalRunResources(db(), id)
-  return `reconciled run ${id} as ${snapshot.status}`
+  const keptStoredVerdict =
+    appliedLifecycle.status !== snapshot.status ||
+    appliedLifecycle.error !== snapshot.error ||
+    appliedLifecycle.failureKind !== snapshot.failureKind
+  return keptStoredVerdict
+    ? `reconciled run ${id} as ${appliedLifecycle.status} (stored architect verdict kept; snapshot said ${snapshot.status})`
+    : `reconciled run ${id} as ${appliedLifecycle.status}`
 }
 
 export type DispatchState = { deliverables: string[]; timeoutMinutes: number | null }

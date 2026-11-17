@@ -26,7 +26,9 @@ hook = load(HOOK_PATH, "protect_main_checkout_hook")
 class MainCheckoutHookTest(unittest.TestCase):
     main = "/registered/main"
     worktree = main + "/.claude/worktrees/DEV-1578"
-    protected = [{"name": "protected", "path": main, "settings": {}}]
+    protected = [
+        {"name": "protected", "path": main, "settings": {"trunk": "main"}}
+    ]
     exempt = [
         {"name": "exempt", "path": main, "settings": {"requireCleanMain": False}}
     ]
@@ -108,6 +110,41 @@ class MainCheckoutHookTest(unittest.TestCase):
         for command, cwd in cases:
             with self.subTest(command=command):
                 self.assert_denied(command, cwd)
+
+    def test_return_to_registered_trunk_is_allowed(self):
+        for command in (
+            f"git -C {self.main} switch main",
+            f"git -C {self.main} checkout -q main",
+        ):
+            with self.subTest(command=command):
+                self.assertIsNone(self.invoke(command, "/elsewhere")["output"])
+
+    def test_quoted_remedy_for_main_checkout_path_is_allowed(self):
+        main = "/registered/it's main"
+        projects = [{"name": "protected", "path": main, "settings": {"trunk": "main"}}]
+        command = "git -C '/registered/it'\\''s main' switch 'main'"
+        self.assertIsNone(self.invoke(command, "/elsewhere", projects)["output"])
+
+    def test_checkout_and_switch_variants_stay_denied(self):
+        cases = (
+            "git checkout -- file",
+            "git checkout -b x",
+            "git switch -c x",
+            "git checkout other",
+            "git checkout -q main -- file",
+        )
+        for command in cases:
+            with self.subTest(command=command):
+                self.assert_denied(command)
+
+        no_trunk = [{"name": "protected", "path": self.main, "settings": {}}]
+        result = self.invoke("git switch main", self.main, no_trunk)
+        self.assertEqual(
+            result["output"]["hookSpecificOutput"]["permissionDecision"], "deny"
+        )
+
+    def test_every_mutation_in_a_compound_command_must_be_allowed(self):
+        self.assert_denied("git switch main && git reset --hard")
 
     def test_effective_git_c_directory_replaces_starting_cwd(self):
         result = self.invoke(f"git -C {self.worktree} reset --hard", self.main)

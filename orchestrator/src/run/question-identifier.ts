@@ -6,7 +6,7 @@ import type { QuestionIdentity } from '../../../shared/orch-contract.ts'
 import { hasRecordIdShape } from '../../../shared/record-id.ts'
 import {
   questionById,
-  questionByNumber,
+  questionByProjectNumber,
   questionNumberProjectId,
 } from '../question-store/question-store-read.ts'
 
@@ -25,7 +25,7 @@ export async function questionIdentityMap(
       const parsed = parseQuestionIdentifier(identifier)
       const row =
         parsed.kind === 'number'
-          ? await questionByNumber(
+          ? await questionByProjectNumber(
               database,
               parsed.id,
               questionNumberProjectId(database, parsed.id),
@@ -55,7 +55,7 @@ export async function resolveQuestionIdentifier(
 ): Promise<string> {
   const parsed = parseQuestionIdentifier(input)
   if (parsed.kind === 'number') {
-    const row = await questionByNumber(
+    const row = await questionByProjectNumber(
       database,
       parsed.id,
       questionNumberProjectId(database, parsed.id),
