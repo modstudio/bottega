@@ -8,6 +8,10 @@
     "package": "minimatch"
   },
   {
+    "id": 1247710,
+    "package": "picomatch"
+  },
+  {
     "id": 1243066,
     "package": "zod"
   }

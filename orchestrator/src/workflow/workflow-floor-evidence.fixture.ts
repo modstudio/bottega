@@ -120,6 +120,7 @@ export const gather = async (
 ) =>
   await gatherValidatedEvidence({
     cursorId: CURSOR_RECORD_ID,
+    cursorState: 'running',
     identity: cursorIdentity,
     stepOrdinal: 1,
     stepSlug: 'rebase',

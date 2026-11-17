@@ -65,7 +65,7 @@ export function registerQuestionTaskRecordSyncProof(
       runId: null,
       workflowKey: 'DEV-2331',
       workflowTaskId: null,
-      workflowCursorRecordId: newRecordId(),
+      workflowCursorRecordId: null,
       projectId: directProjectId,
       machineId,
       revision: 1,
@@ -139,6 +139,16 @@ export function registerQuestionTaskRecordSyncProof(
       ),
     ).rejects.toThrow('not found')
     expect(fixture.admin(`SELECT count(*) FROM question WHERE id='${unknown.id}';`)).toBe('0')
+    const missingCursorQuestion = {
+      ...snapshot(newRecordId()),
+      workflowCursorRecordId: newRecordId(),
+    }
+    await expect(ask(missingCursorQuestion)).rejects.toThrow(
+      "absent from the question's destination space",
+    )
+    expect(
+      fixture.admin(`SELECT count(*) FROM question WHERE id='${missingCursorQuestion.id}';`),
+    ).toBe('0')
     const questions = Array.from({ length: 4 }, () => snapshot(newRecordId()))
     const written = await Promise.all(questions.map((question) => ask(question)))
     expect(written.map(({ number }) => number).sort((a, b) => a - b)).toEqual([41, 42, 43, 44])
@@ -368,7 +378,9 @@ export function registerQuestionTaskRecordSyncProof(
           destination,
         )
       ).items,
-    ).toEqual([{ workflow_cursor_record_id: stageId, number: workflowWrite.number }])
+    ).toEqual([
+      { workflow_cursor_record_id: stageId, space_id: directSpaceId, number: workflowWrite.number },
+    ])
     const openForTask = (
       await client.readQuestions!(
         { read: 'open-for-tasks', taskRecordIds: [directTaskId] },
@@ -496,7 +508,9 @@ export function registerQuestionTaskRecordSyncProof(
           destination,
         )
       ).items,
-    ).toEqual([{ workflow_cursor_record_id: stageId, number: excludedWrite.number }])
+    ).toEqual([
+      { workflow_cursor_record_id: stageId, space_id: directSpaceId, number: excludedWrite.number },
+    ])
     Object.assign(excludedQuestion, {
       revision: 2,
       answer: 'Old',

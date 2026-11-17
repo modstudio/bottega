@@ -24,6 +24,7 @@ const database = testDatabaseFixture((d) => {
 const gather = async (d: Database) =>
   await gatherValidatedEvidence({
     cursorId: '00000000-0000-4000-8000-000000000001',
+    cursorState: 'running',
     identity: {
       project: 'fixture',
       workflowKey: 'DEV-977',

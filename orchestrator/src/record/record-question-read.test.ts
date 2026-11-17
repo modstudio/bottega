@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, expect, test } from 'bun:test'
 import type { PGlite } from '@electric-sql/pglite'
+import { bindTenant } from '../../../shared/record/tenant.ts'
 import { createHostedRecordFixture, pgliteSql } from '../../test/fixtures/hosted-record.ts'
 import { readRecordQuestionRows } from './record-question-read.ts'
 
@@ -11,6 +12,12 @@ const taskId = '01990000-0000-7000-8000-000000004005'
 const otherTaskId = '01990000-0000-7000-8000-000000004006'
 const firstRunId = '01990000-0000-7000-8000-000000004007'
 const secondRunId = '01990000-0000-7000-8000-000000004008'
+const secondSpaceId = '01990000-0000-7000-8000-000000004020'
+const secondProjectId = '01990000-0000-7000-8000-000000004021'
+const crossSpaceRunId = '01990000-0000-7000-8000-000000004022'
+const firstSpaceOnlyUserId = '01990000-0000-7000-8000-000000004026'
+const firstCursorId = '01990000-0000-7000-8000-000000004028'
+const secondCursorId = '01990000-0000-7000-8000-000000004029'
 
 let database: PGlite
 
@@ -53,6 +60,33 @@ beforeAll(async () => {
        '${projectId}','${machineId}',3,1,'[]',now(),'closed second',NULL,NULL,now(),now(),now()),
       ('01990000-0000-7000-8000-000000004014','${spaceId}','${secondRunId}','${otherTaskId}',
        '${projectId}','${machineId}',4,1,'[]',now(),'open second',NULL,NULL,NULL,now(),now());
+    INSERT INTO space (id,name,slug,created_at)
+    VALUES ('${secondSpaceId}','Second question space','second-question-space',now());
+    INSERT INTO membership (id,space_id,user_id,role,permission,created_at)
+    VALUES ('01990000-0000-7000-8000-000000004023','${secondSpaceId}','${userId}','member','write',now());
+    INSERT INTO "user" (id,email,name,created_at)
+    VALUES ('${firstSpaceOnlyUserId}','first-space@example.test','First space user',now());
+    INSERT INTO membership (id,space_id,user_id,role,permission,created_at)
+    VALUES ('01990000-0000-7000-8000-000000004027','${spaceId}','${firstSpaceOnlyUserId}',
+      'member','read',now());
+    INSERT INTO project (id,space_id,name,key_prefixes,created_at)
+    VALUES ('${secondProjectId}','${secondSpaceId}','second-question-project',ARRAY['TWO'],now());
+    INSERT INTO run
+      (id,space_id,machine_id,started_by_user_id,started_at,agent,job,prompt_sha,prompt_bytes,
+       prompt_head,probe,project_id,status,turn,stack,model,executor,no_failover,
+       automatic_failover,work_preserved,session_id,number,created_at,updated_at)
+    VALUES
+      ('${crossSpaceRunId}','${secondSpaceId}','${machineId}','${userId}',now(),'codex','implement',
+       'sha-cross',1,'cross-space',false,'${secondProjectId}','asking',1,'typescript','test',
+       'harness',false,false,true,'session-cross',3,now(),now());
+    INSERT INTO question
+      (id,space_id,run_id,workflow_cursor_record_id,project_id,machine_id,number,revision,withheld_fields,
+       asked_at,question,created_at,updated_at)
+    VALUES
+      ('01990000-0000-7000-8000-000000004024','${spaceId}','${crossSpaceRunId}','${firstCursorId}',
+       '${projectId}','${machineId}',5,1,'[]',now(),'cross-space owner',now(),now()),
+      ('01990000-0000-7000-8000-000000004025','${secondSpaceId}','${crossSpaceRunId}','${secondCursorId}',
+       '${secondProjectId}','${machineId}',6,1,'[]',now(),'second-space row',now(),now());
     SET ROLE record_actor;
   `)
 })
@@ -77,6 +111,42 @@ test('hosted targeted question reads enforce run, task, and session scope', asyn
     sessionId: 'session-a',
   })
   expect(session.items.map((row) => row.number)).toEqual([1, 2])
+})
+
+async function questionsForCrossSpaceRun(spaceIds: string[], principalUserId = userId) {
+  const sql = pgliteSql(database)
+  return sql.begin(async (tx) => {
+    await bindTenant(tx, { userId: principalUserId, spaceId, spaceIds })
+    return readRecordQuestionRows(tx, { read: 'for-run', runId: crossSpaceRunId })
+  })
+}
+
+test('a keyed run read returns rows from every bound member space with their home spaces', async () => {
+  const result = await questionsForCrossSpaceRun([spaceId, secondSpaceId])
+  expect(result.items.map((row) => [row.number, row.space_id, row.run_number])).toEqual([
+    [5, spaceId, 3],
+    [6, secondSpaceId, 3],
+  ])
+})
+
+test('a keyed run read never returns a row from an unbound space', async () => {
+  const result = await questionsForCrossSpaceRun([spaceId], firstSpaceOnlyUserId)
+  expect(result.items.map((row) => [row.number, row.space_id])).toEqual([[5, spaceId]])
+})
+
+test('open-for-cursors returns one home-space row for each cursor across bound spaces', async () => {
+  const sql = pgliteSql(database)
+  const result = await sql.begin(async (tx) => {
+    await bindTenant(tx, { userId, spaceId, spaceIds: [spaceId, secondSpaceId] })
+    return readRecordQuestionRows(tx, {
+      read: 'open-for-cursors',
+      workflowCursorRecordIds: [firstCursorId, secondCursorId],
+    })
+  })
+  expect(result.items).toEqual([
+    { workflow_cursor_record_id: firstCursorId, space_id: spaceId, number: 5 },
+    { workflow_cursor_record_id: secondCursorId, space_id: secondSpaceId, number: 6 },
+  ])
 })
 
 test('hosted inbox excludes answered and closed rows and pages in SQL', async () => {
