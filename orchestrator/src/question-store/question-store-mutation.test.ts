@@ -1,10 +1,14 @@
 import { afterEach, beforeEach, expect, test } from 'bun:test'
-import { questionWriteSchema } from '../record/record-question-contract.ts'
-import { installRecordApiClient } from '../../test/fixtures/record-api.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
+import {
+  createMemoryRecordApiClient,
+  installRecordApiClient,
+} from '../../test/fixtures/record-api.ts'
 import { migratedTestDatabase } from '../database/test-database.fixture.ts'
 import type { RecordApiClient } from '../record/record-api-client.ts'
+import { questionWriteSchema } from '../record/record-question-contract.ts'
 import { upsertWorkflowQuestion } from '../run/question-mutation.ts'
+import { registerStandardQuestionRunPusher } from '../runtime/standard-question-run-pusher.ts'
 import { registerQuestionRunPusher } from './question-run-pusher.ts'
 import { askQuestion, questionSnapshotFromRow } from './question-store-mutation.ts'
 
@@ -25,9 +29,7 @@ beforeEach(() => {
 
 afterEach(() => {
   installRecordApiClient(null)
-  registerQuestionRunPusher(async () => {
-    throw new Error('question run pusher test stub used outside a test')
-  })
+  registerStandardQuestionRunPusher()
   if (previousRecordApiUrl === undefined) delete process.env.BOTTEGA_RECORD_API_URL
   else process.env.BOTTEGA_RECORD_API_URL = previousRecordApiUrl
 })
@@ -40,6 +42,7 @@ function seedProject(database: ReturnType<typeof migratedTestDatabase>): void {
 
 function recordClient(writtenSpaces: string[]): RecordApiClient {
   return {
+    ...createMemoryRecordApiClient(),
     whoami: async () => ({
       user: { id: newRecordId() },
       activeSpaceId: PROJECT_SPACE_ID,

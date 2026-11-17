@@ -13,6 +13,7 @@ import {
   markQuestionDeliveryPending,
   pendingQuestionIds,
 } from '../run/question-delivery-pending.ts'
+import { registerStandardQuestionRunPusher } from '../runtime/standard-question-run-pusher.ts'
 import { registerQuestionRunPusher } from './question-run-pusher.ts'
 import { questionStore } from './question-store.ts'
 import { RecordQuestionStore } from './question-store-record.ts'
@@ -38,9 +39,7 @@ beforeEach(() => {
 })
 
 afterEach(() => {
-  registerQuestionRunPusher(async () => {
-    throw new Error('question run pusher test stub used outside a test')
-  })
+  registerStandardQuestionRunPusher()
 })
 type QuestionSnapshot = QuestionWriteBody['question']
 const field = (row: object, key: string): unknown => (row as Record<string, unknown>)[key]

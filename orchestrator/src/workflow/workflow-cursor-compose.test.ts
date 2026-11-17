@@ -1,7 +1,10 @@
 import type { Database } from 'bun:sqlite'
-import { expect, test } from 'bun:test'
+import { afterEach, expect, test } from 'bun:test'
 import { resolvedRecordOrigin } from '../../../shared/record-api-url.ts'
-import { createMemoryRecordApiClient } from '../../test/fixtures/record-api.ts'
+import {
+  createMemoryRecordApiClient,
+  installRecordApiClient,
+} from '../../test/fixtures/record-api.ts'
 import { DocRevisionConflictError } from '../doc/doc-revision-conflict.ts'
 import { rememberActiveRecordSpace } from '../project-space.ts'
 import { rememberProjectSpace } from '../project-space-cache.ts'
@@ -50,6 +53,7 @@ const projectIdentityClient = {
     memberships: [{ space_id: destinationSpaceId, slug: 'fixture-space', permission: 'write' }],
   }),
 }
+afterEach(() => installRecordApiClient(null))
 function hostedDatabase(): Database {
   const d = database()
   for (const table of [
@@ -453,6 +457,7 @@ test('local-only compose makes no client call and writes no task-flow outbox row
 
 test('advance, await, rule, and abandon call the record before caching returned revisions', async () => {
   const d = hostedDatabase()
+  installRecordApiClient({ ...createMemoryRecordApiClient(), ...projectIdentityClient })
   const composeCalls: TaskFlowIntentInput<'compose'>[] = []
   const events: string[] = []
   let stageId = ''
