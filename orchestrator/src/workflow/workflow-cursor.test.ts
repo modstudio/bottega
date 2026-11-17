@@ -536,6 +536,34 @@ describe('workflow cursor adapter', () => {
     }
   })
 
+  test('workflow rule names an open cursor question whose step is missing', async () => {
+    const d = database()
+    await composeWorkflowWithCursor('flow', 'fixture', 'default', args, context, d, {}, {})
+    const awaited = await awaitWorkflowRuling(
+      'flow',
+      'fixture',
+      'default',
+      args,
+      'Proceed?',
+      context,
+      d,
+      () => {},
+    )
+    const question = d.query<{ record_id: string }, []>('SELECT record_id FROM question').get()!
+    d.run('UPDATE question SET workflow_step_ordinal=NULL,workflow_step_slug=NULL')
+    d.run("UPDATE workflow_cursor SET state='running'")
+    const remedy = `question ${awaited.questionId} (record ${question.record_id}) is open on this cursor but carries no step, so no workflow verb can rule on it`
+
+    await expect(
+      ruleWorkflow('flow', 'fixture', 'default', args, 'Proceed.', true, 'cli', context, d),
+    ).rejects.toThrow(`is not awaiting a ruling; ${remedy}`)
+
+    d.run("UPDATE workflow_cursor SET state='awaiting-ruling'")
+    await expect(
+      ruleWorkflow('flow', 'fixture', 'default', args, 'Proceed.', true, 'cli', context, d),
+    ).rejects.toThrow(`has no open question to rule on; ${remedy}`)
+  })
+
   test('a relayed operator ruling preserves the cursor owner and their attach authority', async () => {
     const d = database()
     const ownerContext = { ...context, session: 'session-a' }

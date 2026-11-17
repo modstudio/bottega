@@ -8,6 +8,7 @@ import {
 } from '../question-store/question-store-read.ts'
 import { type Floor, isOperatorRulingFloor, type ValidatedEvidence } from './workflow-floor.ts'
 import type { QuestionEvidenceRow } from './workflow-floor-evidence.ts'
+import { strandedWorkflowQuestionRemedy } from './workflow-stranded-question.ts'
 
 export async function gatherStepQuestionEvidence(
   input: { floors: Floor[]; cursorId: string; stepOrdinal: number; stepSlug: string },
@@ -15,13 +16,14 @@ export async function gatherStepQuestionEvidence(
   factsOf: (
     row: QuestionEvidenceRow,
   ) => Pick<NonNullable<ValidatedEvidence['stepQuestion']>, 'state' | 'answeredAt' | 'replacement'>,
-): Promise<Pick<ValidatedEvidence, 'stepQuestion'>> {
+): Promise<Pick<ValidatedEvidence, 'stepQuestion' | 'strandedQuestionRemedy'>> {
   if (!input.floors.some(isOperatorRulingFloor)) return {}
-  return gatherStepQuestionEvidenceFromRows(
-    await questionsForWorkflowCursor(d, input.cursorId),
-    input,
-    factsOf,
-  )
+  const questions = await questionsForWorkflowCursor(d, input.cursorId)
+  const strandedQuestion = strandedWorkflowQuestionRemedy(questions)
+  return {
+    ...gatherStepQuestionEvidenceFromRows(questions, input, factsOf),
+    ...(strandedQuestion ? { strandedQuestionRemedy: strandedQuestion } : {}),
+  }
 }
 
 export function gatherStepQuestionEvidenceFromRows(

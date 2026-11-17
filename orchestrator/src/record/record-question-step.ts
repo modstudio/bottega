@@ -3,6 +3,7 @@
 
 import type { SQL } from 'bun'
 import { sql as drizzleSql } from 'drizzle-orm'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { question as questionRecord } from '../../../shared/record/schema-question.ts'
 import { questionValues } from './record-sync-service.ts'
 
@@ -25,6 +26,7 @@ export async function questionValuesForWrite(
   projectId: string | null,
   workflowTaskId: string | null,
   workflowCursorRecordId: string | null,
+  requireWorkflowStep = false,
 ) {
   const workflowStep = workflowCursorRecordId
     ? (
@@ -34,6 +36,10 @@ export async function questionValuesForWrite(
       `) as Array<{ active_ordinal: number | string; active_slug: string }>
       )[0]
     : undefined
+  if (workflowCursorRecordId && requireWorkflowStep && !workflowStep)
+    throw new Error(
+      `workflow cursor ${workflowCursorRecordId} is absent from the question's destination space; ask through the cursor's project with \`${PLATFORM_SLUG} workflow await\` so the question is written to the space that holds the cursor`,
+    )
   return {
     ...questionValues(payload, projectId, workflowTaskId),
     workflowStepOrdinal: workflowStep ? Number(workflowStep.active_ordinal) + 1 : null,

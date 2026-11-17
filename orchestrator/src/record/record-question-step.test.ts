@@ -7,6 +7,7 @@ import { readRecordQuestionRows } from './record-question-read.ts'
 import { writeRecordQuestionTransaction } from './record-question-write.ts'
 
 const SPACE = '01990000-0000-7000-8000-000000002360'
+const OTHER_SPACE = '01990000-0000-7000-8000-000000002374'
 const USER = '01990000-0000-7000-8000-000000002361'
 const PROJECT = '01990000-0000-7000-8000-000000002362'
 const MACHINE = '01990000-0000-7000-8000-000000002363'
@@ -130,6 +131,45 @@ function questionWrite(requestId = REQUEST, revision = 1): QuestionWriteBody {
 }
 
 const principal = { url: 'pglite', userId: USER, spaceId: SPACE, spaceIds: [SPACE] }
+
+async function moveCursorToOtherSpace() {
+  await postgres.exec(`
+    RESET ROLE;
+    INSERT INTO space (id,name,slug,created_at)
+    VALUES ('${OTHER_SPACE}','Other question step space','other-question-step-space',now());
+    UPDATE task_flow_stage SET space_id='${OTHER_SPACE}' WHERE id='${CURSOR}';
+    SET ROLE record_actor;
+  `)
+}
+
+test('a new cursor question refuses a destination space that does not hold its cursor', async () => {
+  await moveCursorToOtherSpace()
+  await expect(
+    writeRecordQuestionTransaction(
+      'ask',
+      { ...principal, ...questionWrite() },
+      pgliteSql(postgres),
+    ),
+  ).rejects.toThrow(
+    `workflow cursor ${CURSOR} is absent from the question's destination space; ask through the cursor's project with`,
+  )
+})
+
+test('a stored cursor question remains closable when its cursor is in another space', async () => {
+  const sql = pgliteSql(postgres)
+  await writeRecordQuestionTransaction('ask', { ...principal, ...questionWrite() }, sql)
+  await moveCursorToOtherSpace()
+  const close = questionWrite(REWRITE_REQUEST, 2)
+  close.question.closedAt = '2026-11-17T15:00:00.000Z'
+  close.question.closeReason = 'Re-ask through the cursor project.'
+  close.question.updatedAt = '2026-11-17T15:00:00.000Z'
+  close.audit.action = 'close'
+  close.audit.at = '2026-11-17T15:00:00.000Z'
+
+  await expect(
+    writeRecordQuestionTransaction('close', { ...principal, ...close }, sql),
+  ).resolves.toMatchObject({ applied: true, revision: 2 })
+})
 
 test('production hosted write keeps the question step through a later-step rewrite', async () => {
   const sql = pgliteSql(postgres)
