@@ -240,7 +240,7 @@ export class RecordQuestionStore implements QuestionStore {
   }
 
   async write(intent: QuestionIntent, input: QuestionWriteBody) {
-    const writeQuestion = requireQuestionWriteClient(this.input.client)
+    const client = requireQuestionWriteClient(this.input.client)
     if (
       intent === 'ask' &&
       !input.question.projectId &&
@@ -268,7 +268,7 @@ export class RecordQuestionStore implements QuestionStore {
         )
       destination = found
     }
-    return await writeQuestion(intent, input, destination)
+    return await client.writeQuestion(intent, input, destination)
   }
 
   async read(input: QuestionReadInput): Promise<QuestionReadResult> {

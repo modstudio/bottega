@@ -36,10 +36,12 @@ export type RecordQuestionClient = {
 
 export function requireQuestionWriteClient(
   client: RecordQuestionClient,
-): NonNullable<RecordQuestionClient['writeQuestion']> {
+): RecordQuestionClient & { writeQuestion: NonNullable<RecordQuestionClient['writeQuestion']> } {
   if (!client.writeQuestion)
     throw new Error('record API predates direct question writes; release hosted-api, then retry')
-  return client.writeQuestion
+  return client as RecordQuestionClient & {
+    writeQuestion: NonNullable<RecordQuestionClient['writeQuestion']>
+  }
 }
 
 export const recordQuestionClient = (request: Request): RecordQuestionClient => {

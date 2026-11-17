@@ -50,18 +50,20 @@ async function restoreNumberHolder(
   tx: SQL,
   lock: boolean,
 ): Promise<string | null> {
-  const holder = (lock
-    ? await tx`
+  const holder = (
+    lock
+      ? await tx`
         SELECT id::text FROM question
         WHERE space_id=${input.spaceId}::uuid AND number=${input.question.number}
           AND id<>${input.question.id}::uuid
         FOR UPDATE
       `
-    : await tx`
+      : await tx`
         SELECT id::text FROM question
         WHERE space_id=${input.spaceId}::uuid AND number=${input.question.number}
           AND id<>${input.question.id}::uuid
-      `) as Array<{ id: string }>
+      `
+  ) as Array<{ id: string }>
   return holder[0]?.id ?? null
 }
 

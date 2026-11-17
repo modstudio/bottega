@@ -1,7 +1,7 @@
 import { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
-import type { QuestionWriteBody } from './record-question-contract.ts'
 import { RecordApiRequestError } from './record-api-client-response.ts'
+import type { QuestionWriteBody } from './record-question-contract.ts'
 import {
   newestRetiredQuestionPayloads,
   restoreQuestionRefusalReason,

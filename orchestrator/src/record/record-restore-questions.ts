@@ -9,7 +9,6 @@ import {
   type RecordQuestionClient,
   requireQuestionWriteClient,
 } from './record-api-client-question.ts'
-import { RecordApiRequestError } from './record-api-client-response.ts'
 import {
   type QuestionWriteBody,
   type QuestionWriteResult,
@@ -131,13 +130,14 @@ export function newestRetiredQuestionPayloads(rows: readonly RetiredQuestionOutb
   }
 }
 
-export function restoreQuestionDisposition(result: QuestionWriteResult): 'restored' | 'unchanged' {
+function restoreQuestionDisposition(result: QuestionWriteResult): 'restored' | 'unchanged' {
   return result.applied ? 'restored' : 'unchanged'
 }
 
 export function restoreQuestionRefusalReason(error: unknown): string | null {
   if (
-    error instanceof RecordApiRequestError &&
+    error instanceof Error &&
+    'kind' in error &&
     (error.kind === 'refused' || error.kind === 'conflict')
   )
     return error.message
@@ -209,8 +209,7 @@ export async function restoreQuestionsCommand(
     return
   }
 
-  const client = ports.client ?? recordApiClient()
-  requireQuestionWriteClient(client)
+  const client = requireQuestionWriteClient(ports.client ?? recordApiClient())
   for (const candidate of selection.candidates) {
     const attempt = await restoreCandidate(candidate, client)
     counts[attempt.disposition] += 1
