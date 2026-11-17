@@ -2,7 +2,10 @@ import { expect, test } from 'bun:test'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { closeDatabaseForFixture, db, migrateDatabase } from '../database/db.ts'
+import { nextEntityNumber } from '../database/entity-number.ts'
+import { migratedTestDatabase } from '../database/test-database.fixture.ts'
 import { enqueueReview } from '../review/review-outbox.ts'
+import { STANDARD_OPEN_HOOKS } from './store-hooks.ts'
 
 test('standard after-initialize hooks backfill classifiable rounds and re-enqueue them once', () => {
   const project = newRecordId()
@@ -107,4 +110,28 @@ test('standard after-initialize hooks backfill classifiable rounds and re-enqueu
       )
       .get(repeated),
   ).toEqual({ count: 2 })
+})
+
+test('standard hosted-store access guards hosted tables while local numbering remains available', () => {
+  const database = migratedTestDatabase()
+  const priorRecordApiUrl = process.env.BOTTEGA_RECORD_API_URL
+  process.env.BOTTEGA_RECORD_API_URL = 'https://record.example.test'
+  database
+    .query(
+      "INSERT INTO record_install_binding(id,bound_at,record_origin) VALUES (1,'at','https://record.example.test')",
+    )
+    .run()
+  try {
+    const accessed = STANDARD_OPEN_HOOKS.access!(database)
+    expect(() => accessed.query('SELECT 1 FROM task_flow')).toThrow(
+      'task_flow is held by the hosted record on this install; read or write it through the record API',
+    )
+    expect(nextEntityNumber(accessed, 'run')).toBe(1)
+    expect(nextEntityNumber(accessed, 'review')).toBe(1)
+    expect(nextEntityNumber(accessed, 'board_message')).toBe(1)
+  } finally {
+    if (priorRecordApiUrl === undefined) delete process.env.BOTTEGA_RECORD_API_URL
+    else process.env.BOTTEGA_RECORD_API_URL = priorRecordApiUrl
+    database.close()
+  }
 })

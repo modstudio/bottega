@@ -19,12 +19,15 @@ test('hosted install guard refuses listed SQL and allows other tables', () => {
 
 test('hosted install guard matches each table-reference form but not a column name', () => {
   const database = new Database(':memory:')
-  database.exec('CREATE TABLE local_row (question TEXT)')
+  database.exec('CREATE TABLE local_row (question TEXT, question_mutation_audit TEXT)')
   const guarded = guardHostedTables(database, ['question'])
   try {
     expect(guarded.query('SELECT question FROM local_row').all()).toEqual([])
     for (const sql of [
       'SELECT * FROM question',
+      'SELECT * FROM main.question',
+      'SELECT * FROM "main"."question"',
+      'SELECT * FROM run, question',
       'SELECT * FROM local_row JOIN question ON true',
       'INSERT INTO question DEFAULT VALUES',
       'UPDATE question SET question=NULL',
@@ -32,6 +35,7 @@ test('hosted install guard matches each table-reference form but not a column na
       'DELETE FROM question',
     ])
       expect(() => guarded.query(sql)).toThrow('question is held by the hosted record')
+    expect(guarded.query('SELECT question_mutation_audit FROM local_row').all()).toEqual([])
   } finally {
     database.close()
   }
