@@ -183,6 +183,17 @@ export const hubModuleSpecs = [
   { file: 'hub/src/setting-stamp.ts', allowed: ['./db.ts'] },
   { file: 'hub/src/write-hold.ts', allowed: [] },
   {
+    file: 'hub/src/write-hold-measurement.ts',
+    allowed: [
+      'bun:sqlite',
+      'node:path',
+      'node:url',
+      '../../shared/store-write-hold-log.ts',
+      '../../shared/write-caller-from-stack.ts',
+      './write-hold.ts',
+    ],
+  },
+  {
     file: 'hub/src/hosted-local-apply.ts',
     allowed: ['../../shared/database-lock-refusal.ts'],
   },

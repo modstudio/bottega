@@ -21,5 +21,10 @@ SET value = CASE
     THEN value
   ELSE json_quote(strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '-14 days'))
 END
-WHERE key = 'collect.runs.at';
+WHERE key = 'collect.runs.at'
+  AND NOT EXISTS (
+    SELECT 1 FROM setting WHERE key = 'migration.0010_question_delivery.rewound'
+  );
+INSERT OR IGNORE INTO setting(key, value)
+VALUES ('migration.0010_question_delivery.rewound', 'true');
 -- /BACKFILL

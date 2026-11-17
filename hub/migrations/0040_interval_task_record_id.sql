@@ -8,7 +8,8 @@ UPDATE interval
 SET task_record_id = (
   SELECT MIN(t.record_id) FROM task t WHERE t.key=interval.task_key
 )
-WHERE task_key IS NOT NULL
+WHERE task_record_id IS NULL
+  AND task_key IS NOT NULL
   AND (SELECT COUNT(*) FROM task t WHERE t.key=interval.task_key)=1;
 -- /BACKFILL
 CREATE TRIGGER interval_require_task_or_project_insert
