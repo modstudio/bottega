@@ -520,7 +520,7 @@ export function testFlakeValues(row: Payload) {
 
 export const RETIRED_OUTBOX_KINDS = new Set(['question'] as const)
 export const RETIRED_OUTBOX_REASON =
-  'this outbox kind no longer syncs by outbox; question rows are written to the record directly'
+  'this outbox kind no longer syncs by outbox; its rows are written to the record directly'
 
 const recordKinds = {
   run: {
@@ -862,13 +862,13 @@ const recordKinds = {
   }
 >
 
-function recordKindDisposition(
+export function recordKindDisposition(
   kind: string,
   knownKinds: object,
   retiredKinds: ReadonlySet<string>,
 ): 'known' | 'retired' | 'unknown' {
-  if (Object.hasOwn(knownKinds, kind)) return 'known'
-  return retiredKinds.has(kind) ? 'retired' : 'unknown'
+  if (retiredKinds.has(kind)) return 'retired'
+  return Object.hasOwn(knownKinds, kind) ? 'known' : 'unknown'
 }
 
 async function pushHostedRow(input: {

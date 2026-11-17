@@ -1,7 +1,11 @@
 import { expect, test } from 'bun:test'
 import type { SQL } from 'bun'
 import { OUTBOX_HELD_FOR_UPGRADE_MARKER } from './outbox-held-contract.ts'
-import { RETIRED_OUTBOX_REASON, syncHostedRecord } from './record-sync-service.ts'
+import {
+  RETIRED_OUTBOX_REASON,
+  recordKindDisposition,
+  syncHostedRecord,
+} from './record-sync-service.ts'
 
 const SPACE = '01990000-0000-7000-8000-000000002390'
 
@@ -53,4 +57,9 @@ test('a retired outbox kind is quarantined with the retirement reason', async ()
   expect(await syncKind('question')).toEqual({
     results: [{ id: 1, status: 'quarantined', reason: RETIRED_OUTBOX_REASON }],
   })
+})
+
+test('retirement outranks a known outbox kind', () => {
+  const kind = 'known_and_retired'
+  expect(recordKindDisposition(kind, { [kind]: {} }, new Set([kind]))).toBe('retired')
 })
