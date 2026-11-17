@@ -6,15 +6,15 @@ import { RETIRED_OUTBOX_REASON, syncHostedRecord } from './record-sync-service.t
 const SPACE = '01990000-0000-7000-8000-000000002390'
 
 function stubPostgres(): SQL {
-  type Stub = SQL & {
+  type Stub = ((strings: TemplateStringsArray) => Promise<Record<string, unknown>[]>) & {
     begin: <T>(callback: (sql: SQL) => Promise<T>) => Promise<T>
     unsafe: (query: string) => Promise<Record<string, unknown>[]>
   }
   const result = [{ id: SPACE, user_id: SPACE, name: 'kind-skew' }]
   const stub = (() => Promise.resolve(result)) as unknown as Stub
-  stub.begin = (callback) => callback(stub)
+  stub.begin = (callback) => callback(stub as unknown as SQL)
   stub.unsafe = () => Promise.resolve(result)
-  return stub
+  return stub as unknown as SQL
 }
 
 async function syncKind(kind: string) {
