@@ -7,6 +7,8 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { RemovalReport } from '../../../shared/removal-report.ts'
 import { resolveRunsDirectory } from '../../../shared/state-directory.ts'
 import { writeTransaction } from '../database/db.ts'
+import { HOSTED_TABLES_WITHOUT_LOCAL_ACCESS } from '../database/hosted-table-guard.ts'
+import { currentRecordWriteDecision } from '../record/record-write-authority.ts'
 import { TERMINAL_RUN_STATUS_SQL } from '../run/run-status.ts'
 
 type ForeignKey = {
@@ -143,10 +145,23 @@ export function orchestratorProjectPurgePlan(database: Database): PurgeStep[] {
   const names = tables(database)
   const keys = foreignKeys(database, names)
   const memo = new Map<string, string | null>()
+  const hosted =
+    currentRecordWriteDecision(database).verdict === 'hosted'
+      ? new Set<string>(HOSTED_TABLES_WITHOUT_LOCAL_ACCESS)
+      : new Set<string>()
   const steps: PurgeStep[] = names.flatMap((table) => {
-    if (table === 'project' || table === 'outbox' || LOCAL_CATALOGUE_TABLES.has(table)) return []
+    if (
+      table === 'project' ||
+      table === 'outbox' ||
+      LOCAL_CATALOGUE_TABLES.has(table) ||
+      hosted.has(table)
+    )
+      return []
     const predicate = projectPredicate(table, keys, memo)
-    return predicate ? [{ table, predicate, key: 'record-id' as const }] : []
+    const reachesHostedTable = predicate
+      ? [...hosted].some((hostedTable) => predicate.includes(quote(hostedTable)))
+      : false
+    return predicate && !reachesHostedTable ? [{ table, predicate, key: 'record-id' as const }] : []
   })
   steps.splice(0, steps.length, ...orderPurgeSteps(steps, keys))
   for (const table of LOCAL_CATALOGUE_TABLES) {
@@ -175,7 +190,12 @@ export function orchestratorProjectPurgePlan(database: Database): PurgeStep[] {
 
 export function uncoveredOrchestratorProjectTables(database: Database): string[] {
   const covered = new Set(orchestratorProjectPurgePlan(database).map((step) => step.table))
-  const excluded = new Set(Object.keys(ORCHESTRATOR_PROJECT_PURGE_EXCLUSIONS))
+  const excluded = new Set([
+    ...Object.keys(ORCHESTRATOR_PROJECT_PURGE_EXCLUSIONS),
+    ...(currentRecordWriteDecision(database).verdict === 'hosted'
+      ? HOSTED_TABLES_WITHOUT_LOCAL_ACCESS
+      : []),
+  ])
   return tables(database).filter((table) => {
     const columns = database
       .query(`PRAGMA table_info(${quote(table)})`)

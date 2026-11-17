@@ -1,18 +1,13 @@
 import type { RecordApiClient } from '../../src/record/record-api-client.ts'
 import { recordApiError } from '../../src/record/record-api-client-error.ts'
 import { encodeTaskFlowStageListCursor } from '../../src/record/record-cursor.ts'
-import type { RecordPayload } from '../../src/record/record-sync-contract.ts'
-import { taskFlowStageValues, taskFlowValues } from '../../src/record/record-sync-task-flow.ts'
 import {
   type HostedTaskFlowStageById,
-  hostedTaskFlowStageByIdSchema,
   taskFlowStageListQuerySchema,
 } from '../../src/record/record-task-flow-contract.ts'
 
 export type MemoryTaskFlowInput = {
   taskFlowStages?: HostedTaskFlowStageById[]
-  /** Outbox payloads seeded through the sync push's own mapping and numbering. */
-  taskFlowSyncedRows?: { flows: RecordPayload[]; stages: RecordPayload[] }
   taskFlowProjectNames?: Record<string, string>
   taskFlowProjectSpaces?: Record<string, string>
   taskFlowComposeFlowRevision?: number
@@ -67,52 +62,6 @@ const nextStageNumber = (stages: HostedTaskFlowStageById[], projectId: string) =
     .filter((row) => row.stage.projectId === projectId)
     .reduce((highest, row) => Math.max(highest, row.stage.number), 0) + 1
 
-/** Seeds stages as the sync push writes them: a new stage needs its project and takes its next number. */
-function seedSyncedStages(
-  stages: HostedTaskFlowStageById[],
-  synced: NonNullable<MemoryTaskFlowInput['taskFlowSyncedRows']>,
-  input: MemoryTaskFlowInput,
-): void {
-  for (const payload of synced.stages) {
-    const values = taskFlowStageValues(payload)
-    const { projectId } = values
-    if (!projectId)
-      throw new Error(
-        `fixture refuses synced stage ${values.id}: projectId is required for a new hosted stage`,
-      )
-    const flowPayload = synced.flows.find((row) => row.id === values.flowRecordId)
-    if (!flowPayload) throw new Error(`fixture synced stage ${values.id} has no synced flow`)
-    const flow = taskFlowValues(flowPayload)
-    // The hosted read contract parses the seeded row, so a synced shape it rejects fails here.
-    stages.push(
-      hostedTaskFlowStageByIdSchema.parse({
-        flow: {
-          ...flow,
-          taskKey: values.workflowKey || null,
-          openStageCount: synced.stages.filter((row) => row.flowRecordId === flow.id).length,
-          createdAt: flow.createdAt.toISOString(),
-          updatedAt: flow.updatedAt.toISOString(),
-        },
-        stage: {
-          ...values,
-          projectId,
-          projectName: payload.projectName == null ? null : String(payload.projectName),
-          number: nextStageNumber(stages, projectId),
-          workflowVersionNumber:
-            input.taskFlowWorkflowVersionNumbers?.[values.workflowVersionId] ?? 1,
-          catalogueVersionNumber:
-            input.taskFlowCatalogueVersionNumbers?.[values.catalogueVersionId] ?? 1,
-          createdAt: values.createdAt.toISOString(),
-          updatedAt: values.updatedAt.toISOString(),
-          obligations: [],
-          stepTexts: [],
-          textCopies: [],
-        },
-      }),
-    )
-  }
-}
-
 function compare(
   selector: Selector,
   left: HostedTaskFlowStageById,
@@ -130,7 +79,6 @@ function compare(
 export function memoryTaskFlowClient(input: MemoryTaskFlowInput): Partial<RecordApiClient> {
   const stages = [...(input.taskFlowStages ?? [])]
   input.taskFlowStages = stages
-  if (input.taskFlowSyncedRows) seedSyncedStages(stages, input.taskFlowSyncedRows, input)
   const applyStageChange = (change: { id: string; values: object }) => {
     const row = stages.find(({ stage }) => stage.id === change.id)
     if (!row) throw new Error(`fixture task-flow stage ${change.id} not found`)

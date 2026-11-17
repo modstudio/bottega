@@ -517,11 +517,7 @@ export function testFlakeValues(row: Payload) {
   }
 }
 
-export const RETIRED_OUTBOX_KINDS = new Set([
-  'question',
-  'task_flow',
-  'task_flow_stage',
-] as const)
+export const RETIRED_OUTBOX_KINDS = new Set(['question', 'task_flow', 'task_flow_stage'] as const)
 export const RETIRED_OUTBOX_REASON =
   'this outbox kind no longer syncs by outbox; its rows are written to the record directly'
 

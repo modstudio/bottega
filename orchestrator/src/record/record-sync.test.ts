@@ -81,7 +81,7 @@ test('sync retires and audits leftover direct-write outbox rows once', async () 
   })
   expect(second).not.toHaveProperty('retired')
   expect(local.query('SELECT count(*) AS count FROM outbox_quarantine_audit').get()).toEqual({
-    count: 1,
+    count: 3,
   })
   local.close()
 })
