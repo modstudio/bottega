@@ -1,14 +1,18 @@
-import { describe, expect, test } from 'bun:test'
+import { describe, expect, spyOn, test } from 'bun:test'
 import { addRun } from '../../test/fixtures/store.ts'
 import { addAgent, refreshAgents } from '../agent/agent-registry.ts'
+import type { TaskBranchCandidate } from '../branch/task-branch.ts'
+import * as taskBranch from '../branch/task-branch.ts'
+import * as taskBranchReuse from '../branch/task-branch-reuse.ts'
 import { db } from '../database/db.ts'
+import * as cursorWorktrees from '../workflow/workflow-cursor-worktrees.ts'
 import {
   callerCheckoutDecision,
   decidePreDetachSelection,
   detachSpecWithRoutedSelection,
   dispatchLaunchCwdDecision,
-  refuseHeldTaskBranchBeforeDetach,
   resolveCallerCheckoutDecision,
+  resolveTaskBranchForDispatch,
   routeConstraints,
   selectBeforeDetach,
   taskBranchLandingBypassWarning,
@@ -17,7 +21,7 @@ import {
 
 test('task branch gate refuses an architect tree, attaches a worker tree, and creates with no tree', async () => {
   const before = db().query('SELECT COUNT(*) count FROM run').get() as { count: number }
-  const candidate = {
+  const candidate: TaskBranchCandidate = {
     branch: 'DEV-2405-held',
     tip: 'tip',
     commitCount: 1,
@@ -34,22 +38,36 @@ test('task branch gate refuses an architect tree, attaches a worker tree, and cr
     },
     worktreeOwnerJob: 'landing-tree',
   }
+  const candidates = spyOn(taskBranch, 'resolveTaskBranchCandidates')
+  const compatible = spyOn(taskBranchReuse, 'compatibleTaskBranch')
+  const cursors = spyOn(cursorWorktrees, 'openCursorWorktrees').mockResolvedValue([])
+  const resolve = (value: TaskBranchCandidate) => {
+    candidates.mockReturnValue([value])
+    compatible.mockReturnValue(value)
+    return resolveTaskBranchForDispatch(
+      '/not-a-repository',
+      'DEV-2405',
+      value.branch,
+      false,
+      () => {},
+    )
+  }
 
-  await expect(refuseHeldTaskBranchBeforeDetach(candidate)).rejects.toThrow(
-    'refusing task branch DEV-2405-held',
-  )
-  await expect(
-    refuseHeldTaskBranchBeforeDetach({ ...candidate, worktreeOwnerJob: 'craft' }),
-  ).resolves.toBeUndefined()
-  await expect(
-    refuseHeldTaskBranchBeforeDetach({
+  try {
+    await expect(resolve(candidate)).rejects.toThrow('refusing task branch DEV-2405-held')
+    expect(db().query('SELECT COUNT(*) count FROM run').get()).toEqual(before)
+    await expect(resolve({ ...candidate, worktreeOwnerJob: 'craft' })).resolves.toEqual({
       ...candidate,
-      worktree: null,
-      worktreeOwnerJob: null,
-    }),
-  ).resolves.toBeUndefined()
-
-  expect(db().query('SELECT COUNT(*) count FROM run').get()).toEqual(before)
+      worktreeOwnerJob: 'craft',
+    })
+    await expect(
+      resolve({ ...candidate, worktree: null, worktreeOwnerJob: null }),
+    ).resolves.toEqual({ ...candidate, worktree: null, worktreeOwnerJob: null })
+  } finally {
+    candidates.mockRestore()
+    compatible.mockRestore()
+    cursors.mockRestore()
+  }
 })
 
 test('--distinct-from excludes a prior run by its canonical provider-scoped model', async () => {

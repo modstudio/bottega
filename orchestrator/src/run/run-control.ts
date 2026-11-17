@@ -708,8 +708,8 @@ export async function continueRun(
   id: string,
   message: string | undefined,
   argvResumeLimit: RunControlPresentation['argvResumeLimit'],
-  produceMessage?: () => string | undefined,
-  openCursorWorktrees: () => Promise<readonly { worktree: string }[]> = async () => [],
+  produceMessage: (() => string | undefined) | undefined,
+  openCursorWorktrees: () => Promise<readonly { worktree: string }[]>,
 ): Promise<{ childId: string; job: string }> {
   let authority = authorizeRunMutation(id, 'continue')
   const row = db()

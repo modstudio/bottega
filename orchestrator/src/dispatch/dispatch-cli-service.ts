@@ -431,7 +431,7 @@ function warnTaskBranchBypass(
   )
 }
 
-export async function refuseHeldTaskBranchBeforeDetach(
+async function refuseHeldTaskBranchBeforeDetach(
   candidate: NonNullable<ReturnType<typeof resolveTaskBranch>>,
 ): Promise<void> {
   await claimTreePlanForCandidate({
@@ -447,7 +447,7 @@ export async function refuseHeldTaskBranchBeforeDetach(
   })
 }
 
-async function resolveTaskBranchForDispatch(
+export async function resolveTaskBranchForDispatch(
   cwd: string,
   key: string,
   branch: string | undefined,

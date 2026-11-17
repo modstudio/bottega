@@ -17,6 +17,7 @@ const presentation = {
 }
 export const answerRunHelpers = {
   argvResumeLimit: () => ARGV_PROMPT_BYTES,
+  openCursorWorktrees: async () => [],
   assertWorkerText,
   readWorkerFile,
   readMessageText,
