@@ -309,6 +309,8 @@ export const questionValues = (
     row.workflowCursorRecordId,
     'question.workflowCursorRecordId',
   ),
+  workflowStepOrdinal: nullableNumber(row.workflowStepOrdinal),
+  workflowStepSlug: nullableString(row.workflowStepSlug),
   projectId,
   machineId: String(row.machineId),
   revision: Number(row.revision),

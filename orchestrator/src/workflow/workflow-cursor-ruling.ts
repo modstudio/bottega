@@ -4,7 +4,7 @@
 import type { Database } from 'bun:sqlite'
 import { nowIso, sessionId, writableDb, writeTransaction } from '../database/db.ts'
 import { assertOrchestratorProse } from '../prose-service.ts'
-import { questionsForWorkflowCursor } from '../question-store/question-store-read.ts'
+import { openQuestionForWorkflowStep } from '../question-store/question-store-read.ts'
 import {
   taskFlowWriteTarget,
   writeHostedTaskFlow,
@@ -32,12 +32,14 @@ import { decideWorkflowRuleAnswer, pinnedWorkflowRuleStep } from './workflow-rul
 import { linkResolvedWorkflowTask } from './workflow-task-linking.ts'
 
 async function selectOpenWorkflowQuestion(
-  cursorRecordId: string,
+  cursor: Pick<SelectableCursorRow, 'record_id' | 'ordinal' | 'step_slug'>,
   database: Database,
 ): Promise<{ record_id: string; number: number } | null> {
-  const row = (await questionsForWorkflowCursor(database, cursorRecordId)).find(
-    (question) => question.answered_at === null && question.closed_at === null,
-  )
+  const row = await openQuestionForWorkflowStep(database, {
+    cursorId: cursor.record_id,
+    stepOrdinal: cursor.ordinal + 1,
+    stepSlug: cursor.step_slug,
+  })
   return row ? { record_id: String(row.record_id), number: Number(row.number) } : null
 }
 
@@ -81,7 +83,7 @@ export async function ruleWorkflow(
     database,
   })
   const at = nowIso()
-  const question = await selectOpenWorkflowQuestion(row.record_id, database)
+  const question = await selectOpenWorkflowQuestion(row, database)
   if (!question)
     throw new Error(`${cursorName(slug, mode, row.workflow_key)} has no open question to rule on`)
   const payload: TaskFlowIntentInput<'stage-update'> = {

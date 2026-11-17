@@ -15,7 +15,21 @@ export async function gatherStepQuestionEvidence(
   ) => Pick<NonNullable<ValidatedEvidence['stepQuestion']>, 'state' | 'answeredAt' | 'replacement'>,
 ): Promise<Pick<ValidatedEvidence, 'stepQuestion'>> {
   if (!input.floors.some(isOperatorRulingFloor)) return {}
-  const question = (await questionsForWorkflowCursor(d, input.cursorId))
+  return gatherStepQuestionEvidenceFromRows(
+    await questionsForWorkflowCursor(d, input.cursorId),
+    input,
+    factsOf,
+  )
+}
+
+export function gatherStepQuestionEvidenceFromRows(
+  questions: Record<string, unknown>[],
+  input: { stepOrdinal: number; stepSlug: string },
+  factsOf: (
+    row: QuestionEvidenceRow,
+  ) => Pick<NonNullable<ValidatedEvidence['stepQuestion']>, 'state' | 'answeredAt' | 'replacement'>,
+): Pick<ValidatedEvidence, 'stepQuestion'> {
+  const question = questions
     .filter(
       (row) =>
         Number(row.workflow_step_ordinal) === input.stepOrdinal &&

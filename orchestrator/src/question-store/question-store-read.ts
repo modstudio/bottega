@@ -76,6 +76,24 @@ export async function questionsForWorkflowCursor(
   ).items as Record<string, unknown>[]
 }
 
+export async function openQuestionForWorkflowStep(
+  database: Database,
+  input: { cursorId: string; stepOrdinal: number; stepSlug: string },
+): Promise<Record<string, unknown> | null> {
+  const questions = await questionsForWorkflowCursor(database, input.cursorId)
+  return (
+    questions
+      .filter(
+        (row) =>
+          row.answered_at === null &&
+          row.closed_at === null &&
+          Number(row.workflow_step_ordinal) === input.stepOrdinal &&
+          row.workflow_step_slug === input.stepSlug,
+      )
+      .sort((left, right) => Number(right.number) - Number(left.number))[0] ?? null
+  )
+}
+
 export async function questionForWorkflowCursorByNumber(
   database: Database,
   cursorId: string,
