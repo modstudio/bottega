@@ -27,6 +27,42 @@ test(
   stepQuestionRow(database, gather, CURSOR_RECORD_ID, identity),
 )
 
+const operatorRulingFloor = {
+  kind: 'ruling',
+  deferrable: false,
+  expectedExitCode: 0,
+  expectedStatus: 'done',
+  requirePullRequest: false,
+  operatorRuling: true,
+} as const
+
+test('gathers the stranded-question remedy through operator-floor evidence', async () => {
+  const d = database()
+  const recordId = newRecordId()
+  d.query(
+    `INSERT INTO question
+      (number,record_id,workflow_cursor_record_id,asked_at,question,asked_via,workflow_step_ordinal,workflow_step_slug)
+     VALUES (6452,?,'${CURSOR_RECORD_ID}','2026-09-01','Stranded?','workflow',NULL,NULL)`,
+  ).run(recordId)
+
+  expect(
+    (await gather(d, {}, {}, identity, [operatorRulingFloor])).strandedQuestionRemedy,
+  ).toContain(`question 6452 (record ${recordId})`)
+})
+
+test('does not gather a stranded remedy for a bound operator-floor question', async () => {
+  const d = database()
+  d.query(
+    `INSERT INTO question
+      (number,record_id,workflow_cursor_record_id,asked_at,question,asked_via,workflow_step_ordinal,workflow_step_slug)
+     VALUES (6452,?,'${CURSOR_RECORD_ID}','2026-09-01','Bound?','workflow',1,'rebase')`,
+  ).run(newRecordId())
+
+  expect(await gather(d, {}, {}, identity, [operatorRulingFloor])).not.toHaveProperty(
+    'strandedQuestionRemedy',
+  )
+})
+
 test('refuses a ruling number that belongs to another cursor', async () => {
   const d = database()
   const otherCursor = newRecordId()

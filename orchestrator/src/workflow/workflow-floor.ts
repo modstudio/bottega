@@ -91,6 +91,7 @@ type ValidatedSatisfy =
 export type ValidatedEvidence = {
   runOffered?: string | number
   artifactRunOffered?: string
+  strandedQuestionRemedy?: string
   stepQuestion?: {
     id: number
     state: 'open' | 'closed' | 'answered-by-operator' | 'answered-by-agent' | 'overturned'
@@ -713,7 +714,12 @@ function floorUnmetMessage(
   freshRulingAfter?: string,
 ): string {
   if (isOperatorRulingFloor(floor))
-    return operatorRulingRemedy(evidence.stepQuestion, evidence.ruling?.id, freshRulingAfter)
+    return operatorRulingRemedy(
+      evidence.stepQuestion,
+      evidence.ruling?.id,
+      freshRulingAfter,
+      evidence.strandedQuestionRemedy,
+    )
   if (floor.kind === 'command-exit' && floor.commandEvidence === 'gate')
     return gateFloorRefusal(
       evidence.tree ?? { project: 'this project', worktree: null, commit: null },
@@ -738,9 +744,9 @@ function operatorRulingRemedy(
   question: ValidatedEvidence['stepQuestion'],
   suppliedRuling?: number,
   freshRulingAfter?: string,
+  strandedQuestionRemedy?: string,
 ): string {
-  if (!question)
-    return `floor ruling is unmet: no operator answer on this step; ${suppliedRuling ? 'the supplied ruling cannot close it; ' : ''}record the question with \`${PLATFORM_SLUG} workflow await\`; the operator answers it`
+  if (!question) return missingOperatorQuestionRemedy(suppliedRuling, strandedQuestionRemedy)
   if (question.state === 'closed')
     return `floor ruling is unmet: the step's question ${question.id} is closed; ${suppliedRuling ? 'the supplied ruling cannot close it; ' : ''}record the question with \`${PLATFORM_SLUG} workflow await\`; the operator answers it`
   if (question.state === 'open')
@@ -756,6 +762,15 @@ function operatorRulingRemedy(
   if (question.state === 'answered-by-operator')
     return `floor ruling is unmet: ${suppliedOperatorRulingRefusal(suppliedRuling, question.id)}the operator answered the step's question ${question.id}; close with \`--ruling ${question.id}\``
   return `floor ruling is unmet: question ${question.id} was answered by an agent, which cannot close an operator floor; ${suppliedRuling ? 'the supplied ruling cannot close it; ' : ''}record the question for the operator with \`${PLATFORM_SLUG} workflow await\``
+}
+
+function missingOperatorQuestionRemedy(
+  suppliedRuling?: number,
+  strandedQuestionRemedy?: string,
+): string {
+  if (strandedQuestionRemedy)
+    return `floor ruling is unmet: ${suppliedRuling ? `the supplied ruling ${suppliedRuling} cannot close the step; ` : ''}${strandedQuestionRemedy}`
+  return `floor ruling is unmet: no operator answer on this step; ${suppliedRuling ? 'the supplied ruling cannot close it; ' : ''}record the question with \`${PLATFORM_SLUG} workflow await\`; the operator answers it`
 }
 
 function overturnedQuestionRemedy(
@@ -825,7 +840,12 @@ function operatorRulingBindingRefusal(
     evidence.ruling.boundToCursor &&
     evidence.ruling.boundToStep
     ? null
-    : operatorRulingRemedy(evidence.stepQuestion, evidence.ruling.id, freshRulingAfter)
+    : operatorRulingRemedy(
+        evidence.stepQuestion,
+        evidence.ruling.id,
+        freshRulingAfter,
+        evidence.strandedQuestionRemedy,
+      )
 }
 
 function unfinishedReviewRefusal(floors: Floor[], evidence: ValidatedEvidence): string | null {

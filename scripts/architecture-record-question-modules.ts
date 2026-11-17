@@ -59,7 +59,9 @@ export const recordQuestionModules: RecordModule[] = [
   module('orchestrator/src/record/record-question-step.ts', [
     'bun',
     'drizzle-orm',
+    '../../../shared/brand.ts',
     '../../../shared/record/schema-question.ts',
+    './record-question-contract.ts',
     './record-sync-service.ts',
   ]),
   module('orchestrator/src/record/record-question-write.ts', [

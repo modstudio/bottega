@@ -141,6 +141,7 @@ export async function writeRecordQuestionTransaction(
     projectId,
     workflowTaskId,
     input.question.workflowCursorRecordId,
+    intent === 'ask',
   )
   const {
     id: _id,

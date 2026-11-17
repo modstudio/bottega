@@ -66,6 +66,7 @@ const database = testDatabaseFixture((d) => {
 test('admits a machine-scope document with no project as evidence on another project cursor', async () => {
   const gathered = await gatherValidatedEvidence({
     cursorId: newRecordId(),
+    cursorState: 'running',
     identity,
     stepOrdinal: 1,
     stepSlug: 'rebase',
