@@ -10,7 +10,10 @@ import {
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
 import { recordPool } from './record-pool.ts'
 import type { QuestionReadInput, RecordQuestionReadInput } from './record-question-contract.ts'
-import { RECORD_QUESTION_STEP_COLUMNS } from './record-question-step.ts'
+import {
+  RECORD_QUESTION_INBOX_STEP_COLUMNS,
+  RECORD_QUESTION_STEP_COLUMNS,
+} from './record-question-step.ts'
 
 type Tenant = { url: string } & TenantPrincipal
 type Row = Record<string, unknown>
@@ -185,8 +188,7 @@ async function readRecordQuestionRows(tx: SQL, input: QuestionReadInput): Promis
       `SELECT q.number,q.id::text record_id,q.asked_at::text,q.question,stage.number cursor_record_id,
         project.name project,stage.project_id::text project_record_id,stage.workflow workflow_slug,
         stage.mode mode_slug,stage.arguments::text args,
-        COALESCE(q.workflow_step_ordinal,stage.active_ordinal + 1) ordinal,
-        COALESCE(q.workflow_step_slug,stage.active_slug) step_slug,stage.session_id
+        ${RECORD_QUESTION_INBOX_STEP_COLUMNS},stage.session_id
        FROM question q JOIN task_flow_stage stage ON stage.id=q.workflow_cursor_record_id
        JOIN project ON project.id=stage.project_id
        WHERE stage.state='awaiting-ruling' AND q.answered_at IS NULL AND q.closed_at IS NULL

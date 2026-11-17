@@ -7,6 +7,7 @@ import { gatherStepQuestionEvidenceFromRows } from '../workflow/workflow-step-qu
 import {
   QUESTION_STEP_CONFLICT_SET,
   questionValuesForWrite,
+  RECORD_QUESTION_INBOX_STEP_COLUMNS,
   RECORD_QUESTION_STEP_COLUMNS,
 } from './record-question-step.ts'
 
@@ -185,6 +186,38 @@ test('legacy hosted questions without a stored step use the one-based cursor ste
     ).toEqual({
       stepQuestion: { id: 1, state: 'open', answeredAt: null, replacement: null },
     })
+  } finally {
+    await postgres.close()
+  }
+})
+
+test('the hosted inbox reports the asked step on the local zero-based ordinal', async () => {
+  const postgres = new PGlite()
+  try {
+    await postgres.exec(`
+      CREATE TABLE task_flow_stage (
+        id uuid PRIMARY KEY, active_ordinal integer NOT NULL, active_slug text NOT NULL
+      );
+      CREATE TABLE question (
+        id uuid PRIMARY KEY, workflow_cursor_record_id uuid NOT NULL,
+        workflow_step_ordinal integer, workflow_step_slug text
+      );
+      INSERT INTO task_flow_stage VALUES ('${CURSOR}',7,'implementation');
+      INSERT INTO question VALUES
+        ('${QUESTION}','${CURSOR}',7,'design-signoff'),
+        ('01990000-0000-7000-8000-000000002370','${CURSOR}',NULL,NULL);
+    `)
+    const rows = (
+      await postgres.query(
+        `SELECT ${RECORD_QUESTION_INBOX_STEP_COLUMNS}
+           FROM question q JOIN task_flow_stage stage ON stage.id=q.workflow_cursor_record_id
+          ORDER BY q.id`,
+      )
+    ).rows
+    expect(rows).toEqual([
+      { ordinal: 6, step_slug: 'design-signoff' },
+      { ordinal: 7, step_slug: 'implementation' },
+    ])
   } finally {
     await postgres.close()
   }

@@ -15,6 +15,10 @@ export const QUESTION_STEP_CONFLICT_SET = {
 export const RECORD_QUESTION_STEP_COLUMNS =
   'COALESCE(q.workflow_step_ordinal,stage.active_ordinal + 1) workflow_step_ordinal,COALESCE(q.workflow_step_slug,stage.active_slug) workflow_step_slug'
 
+/** The inbox ordinal is zero-based like the local cursor's, so the stored one-based step is shifted back. */
+export const RECORD_QUESTION_INBOX_STEP_COLUMNS =
+  'COALESCE(q.workflow_step_ordinal - 1,stage.active_ordinal) ordinal,COALESCE(q.workflow_step_slug,stage.active_slug) step_slug'
+
 export async function questionValuesForWrite(
   tx: SQL,
   payload: Record<string, unknown>,
