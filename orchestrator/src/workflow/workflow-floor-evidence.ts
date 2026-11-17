@@ -37,6 +37,7 @@ import {
   checkoutOutsideChangeRefusal,
   classifyCheckoutEvidence,
 } from './workflow-checkout-refusal.ts'
+import type { CursorState } from './workflow-cursor-transition.ts'
 import {
   type ArtifactRef,
   type BottegaCommandIdentity,
@@ -48,7 +49,6 @@ import {
   pullRequestCreateArgv,
   type ValidatedEvidence,
 } from './workflow-floor.ts'
-import type { CursorState } from './workflow-cursor-transition.ts'
 import { gitText, productionResolveCheckout } from './workflow-floor-evidence-checkout.ts'
 import { positiveEvidenceId } from './workflow-floor-evidence-input.ts'
 import {

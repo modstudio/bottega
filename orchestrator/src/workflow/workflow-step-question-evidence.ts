@@ -6,9 +6,9 @@ import {
   latestQuestionOnStep,
   questionsForWorkflowCursor,
 } from '../question-store/question-store-read.ts'
+import type { CursorState } from './workflow-cursor-transition.ts'
 import { type Floor, isOperatorRulingFloor, type ValidatedEvidence } from './workflow-floor.ts'
 import type { QuestionEvidenceRow } from './workflow-floor-evidence.ts'
-import type { CursorState } from './workflow-cursor-transition.ts'
 import { strandedWorkflowQuestionRemedy } from './workflow-stranded-question.ts'
 
 export async function gatherStepQuestionEvidence(

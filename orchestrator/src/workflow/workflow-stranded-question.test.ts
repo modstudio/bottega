@@ -25,9 +25,10 @@ test('an unbound open question on an awaiting cursor points to await before clos
 
 test('a bound open cursor question is not stranded', () => {
   expect(
-    strandedWorkflowQuestionRemedy([
-      { ...openQuestion, workflow_step_ordinal: 7, workflow_step_slug: 'design-signoff' },
-    ], 'running'),
+    strandedWorkflowQuestionRemedy(
+      [{ ...openQuestion, workflow_step_ordinal: 7, workflow_step_slug: 'design-signoff' }],
+      'running',
+    ),
   ).toBeNull()
 })
 
