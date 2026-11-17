@@ -95,6 +95,47 @@ const runNumber = (recordId: string): number =>
   ).number
 
 describe('reapStale', () => {
+  test('repairs superseded asking turns without changing their open questions or root roll-up', () => {
+    const root = addRun({ agent: 'codex', job: 'craft', status: 'ok' })
+    const asking = addRun({
+      agent: 'codex',
+      job: 'craft',
+      status: 'asking',
+      parent: root,
+      turn: 2,
+    })
+    const latest = addRun({
+      agent: 'codex',
+      job: 'craft',
+      status: 'ok',
+      parent: root,
+      turn: 3,
+    })
+    const questionId = newRecordId()
+    db()
+      .query(
+        `INSERT INTO question (number,record_id,run_record_id,asked_at,question)
+         VALUES ((SELECT COALESCE(MAX(number),0)+1 FROM question),?,?,?,?)`,
+      )
+      .run(questionId, asking, nowIso(), 'Which option?')
+
+    expect(reapStale(db(), noSharedGitConfigCheck)).toBe(1)
+    const latestNumber = runNumber(latest)
+    expect(
+      db().query('SELECT status,failure_kind,error FROM run WHERE record_id=?').get(asking),
+    ).toEqual({
+      status: 'stale',
+      failure_kind: 'abandoned',
+      error: `superseded by run ${latestNumber}`,
+    })
+    expect(db().query('SELECT status FROM run WHERE record_id=?').get(root)).toEqual({ status: 'ok' })
+    expect(
+      db()
+        .query('SELECT answered_at,closed_at FROM question WHERE record_id=?')
+        .get(questionId),
+    ).toEqual({ answered_at: null, closed_at: null })
+  })
+
   test('elapsed time does not kill a legacy run while its pid is alive', () => {
     const id = addRun({ agent: 'grok', job: 'craft', status: 'running' })
     // process.pid is certainly alive: this is the recycled-pid case, and the

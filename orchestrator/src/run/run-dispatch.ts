@@ -42,6 +42,7 @@ import { job, resolveJobTimeoutMs } from '../jobs/jobs.ts'
 import { effectiveMcpRequest, type McpRequest, storedMcpRequest } from '../mcp/mcp-preflight.ts'
 import { projectByName } from '../project/projects.ts'
 import { signedInRecordUserId } from '../record/record-attribution.ts'
+import { machineId } from '../record/machine-identity.ts'
 import type { DetachSpec } from '../route/failover.ts'
 import type { SynchronousResult } from '../synchronous-result.ts'
 import { sha } from './prompt-sha.ts'
@@ -53,6 +54,7 @@ import { claimWithMigrationAdmission } from './run-claim-transaction.ts'
 import { runCoordinatorLogPath } from './run-coordinator-log.ts'
 import { EXTERNAL_EXECUTOR, HARNESS_EXECUTOR, type RunExecutor } from './run-executor.ts'
 import { runLeaseState } from './run-lease.ts'
+import { reconcileSupersededAskingTurns } from './run-liveness.ts'
 import { preflightDispatchMcp } from './run-mcp-main-stack.ts'
 import { nextRunNumber } from './run-number.ts'
 import { recordedOwnerProcess } from './run-owner-session-liveness.ts'
@@ -395,6 +397,9 @@ async function detachResolved(
         identity.parent_run_record_id,
       ) as { record_id: string; number: number } | null
     clearResumedQuestionDelivery(inserted, spec)
+    if (inserted && spec.resume && spec.resume.kind !== 'retry-root') {
+      reconcileSupersededAskingTurns(db(), machineId(), nowIso(), spec.resume.parent)
+    }
     if (inserted && spec.resume?.kind === 'retry-root' && spec.resume.retireAsking) {
       db()
         .query(
