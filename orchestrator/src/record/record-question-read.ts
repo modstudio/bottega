@@ -190,10 +190,11 @@ async function boundedIdentityRows(tx: SQL, input: QuestionReadInput): Promise<R
   if (input.read !== 'open-for-cursors') return null
   return limited(
     (await tx.unsafe(
-      `SELECT workflow_cursor_record_id::text,space_id::text space_id,MIN(number) number FROM question
+      `SELECT DISTINCT ON (workflow_cursor_record_id,space_id)
+         id::text record_id,workflow_cursor_record_id::text,space_id::text space_id,number FROM question
        WHERE workflow_cursor_record_id IN (${input.workflowCursorRecordIds.map((_, index) => `$${index + 1}::uuid`).join(',')})
          AND answered_at IS NULL AND closed_at IS NULL
-       GROUP BY workflow_cursor_record_id,space_id ORDER BY number`,
+       ORDER BY workflow_cursor_record_id,space_id,number`,
       input.workflowCursorRecordIds,
     )) as Row[],
     input.limit,

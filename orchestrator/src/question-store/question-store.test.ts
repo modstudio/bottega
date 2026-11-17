@@ -6,7 +6,7 @@ import { installRecordApiClient } from '../../test/fixtures/record-api.ts'
 import { guardHostedTables } from '../database/hosted-table-guard.ts'
 import { migratedTestDatabase } from '../database/test-database.fixture.ts'
 import type { RecordApiClient } from '../record/record-api-client.ts'
-import type { QuestionWriteBody } from '../record/record-question-contract.ts'
+import type { QuestionReadInput, QuestionWriteBody } from '../record/record-question-contract.ts'
 import { QUESTION_JSON_FIELDS } from '../record/record-question-contract.ts'
 import {
   clearQuestionDeliveryPending,
@@ -201,7 +201,14 @@ async function questionStoreContract(
     })
   expect(
     (await store.read({ read: 'open-for-cursors', workflowCursorRecordIds: [CURSOR_ID] })).items,
-  ).toEqual([{ workflow_cursor_record_id: CURSOR_ID, number: 1 }])
+  ).toEqual([
+    {
+      record_id: workflow.id,
+      workflow_cursor_record_id: CURSOR_ID,
+      number: 1,
+      ...(options.supportsByNumber ? {} : { space_id: SPACE_ID }),
+    },
+  ])
   expect(
     (await store.read({ read: 'open-for-tasks', taskRecordIds: [TASK_ID] })).items.map((row) =>
       field(row, 'record_id'),
@@ -424,8 +431,19 @@ test('SQLite and record question adapters satisfy their shared read and write co
       database: local,
       client: {
         whoami,
-        readQuestions: async (input) =>
-          (await hostedStore.read(input)) as { items: Record<string, unknown>[] },
+        readQuestions: async (input) => {
+          const result = await hostedStore.read(input)
+          const keyed = ['by-id', 'for-run', 'for-runs', 'for-cursor', 'open-for-cursors'].includes(
+            input.read,
+          )
+          return {
+            ...result,
+            items: result.items.map((row) => ({
+              ...row,
+              ...(keyed ? { space_id: SPACE_ID } : {}),
+            })),
+          }
+        },
         writeQuestion: (intent, input) => hostedStore.write(intent, input),
       },
     }),
@@ -500,7 +518,47 @@ test('record question reads refuse a bare number before making a client request'
   database.close()
 })
 
-test('record for-runs merges every space in asking order and refuses a duplicated id', async () => {
+test.each([
+  { read: 'by-id', ids: [WORKFLOW_QUESTION_ID] },
+  { read: 'for-run', runId: RUN_ID },
+  { read: 'for-runs', runIds: [RUN_ID, SECOND_RUN_ID] },
+  { read: 'for-cursor', workflowCursorRecordId: CURSOR_ID },
+  { read: 'open-for-cursors', workflowCursorRecordIds: [CURSOR_ID, newRecordId()] },
+] satisfies QuestionReadInput[])(
+  'record $read uses one destination-free request',
+  async (input) => {
+    const database = migratedTestDatabase()
+    let requests = 0
+    const store = new RecordQuestionStore({
+      database,
+      client: {
+        readQuestions: async (_input, destination) => {
+          requests++
+          expect(destination).toBeUndefined()
+          return { items: [] }
+        },
+      },
+    })
+    await store.read(input)
+    expect(requests).toBe(1)
+    database.close()
+  },
+)
+
+test('a keyed not-visible refusal reaches the question caller unchanged', async () => {
+  const database = migratedTestDatabase()
+  const refusal = new Error(
+    'not visible in your record spaces (2 memberships); the row is in a space you are not a member of, or it does not exist; join its space or check the id',
+  )
+  const store = new RecordQuestionStore({
+    database,
+    client: { readQuestions: async () => Promise.reject(refusal) },
+  })
+  await expect(store.read({ read: 'by-id', ids: [WORKFLOW_QUESTION_ID] })).rejects.toBe(refusal)
+  database.close()
+})
+
+test('record for-runs returns every keyed row in asking order', async () => {
   const database = migratedTestDatabase()
   const { store } = twoSpaceStore(database, {
     [SPACE_ID]: [{ record_id: 'project-new', number: 12, asked_at: '2026-11-17T05:00:00Z' }],
@@ -510,14 +568,6 @@ test('record for-runs merges every space in asking order and refuses a duplicate
   })
   const read = await store.read({ read: 'for-runs', runIds: [RUN_ID] })
   expect(read.items.map((row) => field(row, 'record_id'))).toEqual(['personal-old', 'project-new'])
-  const duplicated = newRecordId()
-  const { store: duplicatedStore } = twoSpaceStore(database, {
-    [SPACE_ID]: [duplicated],
-    [OTHER_SPACE_ID]: [duplicated],
-  })
-  await expect(duplicatedStore.read({ read: 'for-runs', runIds: [RUN_ID] })).rejects.toThrow(
-    'more than one record space',
-  )
   database.close()
 })
 
@@ -579,8 +629,15 @@ function twoSpaceStore(
         ],
       }),
       readQuestions: async (_input, destination) => ({
-        items: (rows[destination?.destinationSpaceId ?? ''] ?? []).map((row) =>
-          typeof row === 'string' ? { record_id: row } : row,
+        items: Object.entries(
+          destination
+            ? { [destination.destinationSpaceId]: rows[destination.destinationSpaceId] }
+            : rows,
+        ).flatMap(([spaceId, values]) =>
+          (values ?? []).map((row) => ({
+            ...(typeof row === 'string' ? { record_id: row } : row),
+            space_id: spaceId,
+          })),
         ),
       }),
       writeQuestion: async (_intent, input, destination) => {
@@ -628,22 +685,6 @@ test('merged questions follow asking order, because numbers repeat across spaces
   database.close()
 })
 
-test('one question id held in two record spaces is refused', async () => {
-  const database = migratedTestDatabase()
-  const duplicated = newRecordId()
-  const { store } = twoSpaceStore(database, {
-    [SPACE_ID]: [duplicated],
-    [OTHER_SPACE_ID]: [duplicated],
-  })
-  await expect(
-    store.read({ read: 'for-cursor', workflowCursorRecordId: CURSOR_ID }),
-  ).rejects.toThrow('more than one record space')
-  await expect(store.read({ read: 'by-id', ids: [duplicated] })).rejects.toThrow(
-    'more than one record space',
-  )
-  database.close()
-})
-
 test('a reused record store retries identity after a failed read', async () => {
   const database = migratedTestDatabase()
   let identityReads = 0
@@ -679,11 +720,8 @@ test('record mutations write back to the space holding the question', async () =
           { space_id: OTHER_SPACE_ID, name: 'Other', slug: 'other', permission: 'write' },
         ],
       }),
-      readQuestions: async (input, destination) => ({
-        items:
-          input.read === 'by-id' && destination!.destinationSpaceId === OTHER_SPACE_ID
-            ? [{ record_id: question.id }]
-            : [],
+      readQuestions: async (input) => ({
+        items: input.read === 'by-id' ? [{ record_id: question.id, space_id: OTHER_SPACE_ID }] : [],
       }),
       writeQuestion: async (_intent, input, destination) => {
         writtenSpace = destination.destinationSpaceId
@@ -794,7 +832,9 @@ test('hosted question selection and pending delivery never touch the local quest
     readQuestions: async (input: { read: string; ids?: string[] }) => ({
       items:
         input.read === 'by-id'
-          ? (input.ids ?? []).flatMap((id) => (rows.has(id) ? [rows.get(id)!] : []))
+          ? (input.ids ?? []).flatMap((id) =>
+              rows.has(id) ? [{ ...rows.get(id)!, space_id: SPACE_ID }] : [],
+            )
           : [...rows.values()],
       cursor: input.read === 'rulings' ? 'record-cursor' : undefined,
     }),

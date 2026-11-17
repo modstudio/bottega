@@ -32,33 +32,51 @@ export function memoryQuestionClient(
       }
     },
     async readQuestions(selector) {
-      const items = questions
-        .filter((row) => {
-          if (selector.read === 'by-id')
-            return selector.ids.includes(String(row.id ?? row.record_id))
-          if (selector.read === 'by-number') return Number(row.number) === selector.number
-          if (selector.read === 'for-run') return (row.run_id ?? row.runId) === selector.runId
-          if (selector.read === 'for-cursor')
-            return (
-              (row.workflow_cursor_record_id ?? row.workflowCursorRecordId) ===
-              selector.workflowCursorRecordId
-            )
-          return true
-        })
-        .map((row) => {
-          const hosted = hostedQuestionRow(row)
-          const stage = input.taskFlowStages?.find(
-            ({ stage }) =>
-              stage.id === (row.workflowCursorRecordId ?? row.workflow_cursor_record_id),
-          )?.stage
-          return {
-            ...hosted,
-            ...(stage && hosted.project === undefined ? { project: stage.projectName } : {}),
-            workflow_step_ordinal:
-              hosted.workflow_step_ordinal ?? (stage ? stage.activeOrdinal + 1 : null),
-            workflow_step_slug: hosted.workflow_step_slug ?? stage?.activeSlug ?? null,
-          }
-        })
+      const selected = questions.filter((row) => {
+        if (selector.read === 'by-id') return selector.ids.includes(String(row.id ?? row.record_id))
+        if (selector.read === 'by-number') return Number(row.number) === selector.number
+        if (selector.read === 'for-run') return (row.run_id ?? row.runId) === selector.runId
+        if (selector.read === 'for-cursor')
+          return (
+            (row.workflow_cursor_record_id ?? row.workflowCursorRecordId) ===
+            selector.workflowCursorRecordId
+          )
+        if (selector.read === 'open-for-cursors')
+          return (
+            selector.workflowCursorRecordIds.includes(
+              String(row.workflow_cursor_record_id ?? row.workflowCursorRecordId),
+            ) &&
+            (row.answered_at ?? row.answeredAt) == null &&
+            (row.closed_at ?? row.closedAt) == null
+          )
+        return true
+      })
+      const rows =
+        selector.read === 'open-for-cursors'
+          ? [
+              ...new Map(
+                selected
+                  .sort((left, right) => Number(right.number) - Number(left.number))
+                  .map((row) => [
+                    String(row.workflow_cursor_record_id ?? row.workflowCursorRecordId),
+                    row,
+                  ]),
+              ).values(),
+            ]
+          : selected
+      const items = rows.map((row) => {
+        const hosted = hostedQuestionRow(row)
+        const stage = input.taskFlowStages?.find(
+          ({ stage }) => stage.id === (row.workflowCursorRecordId ?? row.workflow_cursor_record_id),
+        )?.stage
+        return {
+          ...hosted,
+          ...(stage && hosted.project === undefined ? { project: stage.projectName } : {}),
+          workflow_step_ordinal:
+            hosted.workflow_step_ordinal ?? (stage ? stage.activeOrdinal + 1 : null),
+          workflow_step_slug: hosted.workflow_step_slug ?? stage?.activeSlug ?? null,
+        }
+      })
       return { items }
     },
     async writeQuestion(_intent, body) {

@@ -16,7 +16,6 @@ import type {
 import type { RecordTaskFlowClient } from '../record/record-api-client-task-flow.ts'
 import type { RecordIdentity } from '../record/record-auth.ts'
 import { requireProjectRecordDestination } from '../record/record-project-destination-client.ts'
-import { decideSingleRecordSpace } from '../record/record-space-cardinality.ts'
 import {
   type HostedTaskFlow,
   type HostedTaskFlowStageById,
@@ -176,28 +175,15 @@ class RecordTaskFlowReadStore {
     return this.everyDestination
   }
 
-  private async readEveryDestination<T>(
-    read: (destination: RecordWriteDestination) => Promise<T | null>,
-  ): Promise<T | null> {
-    const destinations = await this.allDestinations()
-    const answers = await Promise.all(
-      destinations.map(async (destination) => ({ destination, value: await read(destination) })),
-    )
-    const decision = decideSingleRecordSpace(
-      answers.map(({ destination, value }) => ({
-        spaceId: destination.destinationSpaceId,
-        found: value !== null,
-      })),
-    )
-    if ('refused' in decision) throw new Error(decision.refused)
-    return decision.index === null ? null : answers[decision.index]!.value
+  private async readEveryDestination<T>(read: () => Promise<T | null>): Promise<T | null> {
+    return read()
   }
 
   private readText(recordId: string) {
     const read = this.client.readTaskFlowText
     if (!read)
       throw new Error('record API predates task-flow text reads; release hosted-api, then retry')
-    return this.readEveryDestination((destination) => read(recordId, destination))
+    return this.readEveryDestination(() => read(recordId))
   }
 
   private async list(selector: StageListSelector, project?: string): Promise<ListedItem[]> {
@@ -223,7 +209,7 @@ class RecordTaskFlowReadStore {
     const read = this.client.readTaskFlowStage
     if (!read)
       throw new Error('record API predates task-flow stage reads; release hosted-api, then retry')
-    return this.readEveryDestination((destination) => read(id, destination))
+    return this.readEveryDestination(() => read(id))
   }
 
   private async flow(selector: {
@@ -233,9 +219,9 @@ class RecordTaskFlowReadStore {
     const read = this.client.readTaskFlow
     if (!read)
       throw new Error('record API predates task-flow reads; release hosted-api, then retry')
-    return this.readEveryDestination(async (destination) => {
+    return this.readEveryDestination(async () => {
       try {
-        return await read(selector, destination)
+        return await read(selector)
       } catch (error) {
         if (
           error instanceof RecordApiRequestError &&
@@ -485,7 +471,7 @@ class RecordTaskFlowReadStore {
       throw new Error(
         'record API predates task-flow obligation reads; release hosted-api, then retry',
       )
-    const result = await this.readEveryDestination((destination) => read(recordId, destination))
+    const result = await this.readEveryDestination(() => read(recordId))
     if (!result) return null
     const stage = await this.byId(result.stage.id)
     if (!stage) throw new Error(`workflow stage ${result.stage.id} does not exist`)
