@@ -58,6 +58,7 @@ export type RequiredReleaseReport = {
   required: string[]
   releases: RequiredRungRelease[]
   satisfied: boolean
+  decisionError?: string
 }
 
 export type ReleaseRungPlan = {
@@ -181,30 +182,23 @@ export function requiredRungDecision(
       error: null,
     }
   } catch (cause) {
-    const explicitlyRequired = new Set(
-      rungs
-        .filter((rung) => rung.requiredWhenChanged !== undefined || rung.entryPoints !== undefined)
-        .map(({ name }) => name),
-    )
-    const reached = new Set(
-      rungs
-        .filter((rung) => !rung.onDemand && !explicitlyRequired.has(rung.name))
-        .map(({ name }) => name),
-    )
-    const plans = releaseRungPlans(
-      rungs,
-      explicitlyRequired,
-      reached,
-      depth,
-      new Map(),
-      new Set(),
-      project.settings.trunk!,
+    const error = cause instanceof Error ? cause.message : String(cause)
+    const plans = rungs.map(
+      (rung): ReleaseRungPlan => ({
+        rung: rung.name,
+        branch: rung.branch,
+        required: false,
+        requiredBy: null,
+        reason: `requirement could not be decided: ${error}`,
+        declaresLive: rung.live !== undefined || rung.liveVersion !== undefined,
+        declaresDeploy: rung.deploy !== undefined,
+      }),
     )
     return {
       decided: false,
-      required: plans.filter(({ required }) => required).map(({ rung }) => rung),
+      required: [],
       rungs: plans,
-      error: cause instanceof Error ? cause.message : String(cause),
+      error,
     }
   }
 }
@@ -331,10 +325,23 @@ export function failedRequiredRelease(
   }
 }
 
+export function undecidedRequiredRelease(
+  rungs: ReleaseRungPlan[],
+  error: string,
+): RequiredReleaseReport {
+  return {
+    required: [],
+    releases: rungs.map((rung) => failure(rung, rung.reason ?? 'requirement could not be decided')),
+    satisfied: false,
+    decisionError: error,
+  }
+}
+
 export function releaseRequiredFlagAbsent(
   rungs: ReleaseRungPlan[],
   decisionError?: string | null,
 ): RequiredReleaseReport {
+  if (decisionError) return undecidedRequiredRelease(rungs, decisionError)
   const withDecisionError = (detail: string): string =>
     decisionError ? `${detail}; ${decisionError}` : detail
   const releases = rungs.map((plan): RequiredRungRelease => {
@@ -433,6 +440,9 @@ export function formatRequiredReleaseReport(
   project: string,
   depth?: string,
 ): string {
+  if (report.decisionError) {
+    return `release not proven: could not read the landed paths: ${report.decisionError}; retry: ${PLATFORM_SLUG} pr merge ${target} --release-required${releaseDepthFlag(depth)}`
+  }
   if (report.releases.length === 0) return ''
   const lines = report.releases.map((release) =>
     (release.required ?? report.required.includes(release.rung))

@@ -18,6 +18,7 @@ import {
   gitToplevel as sharedGitToplevel,
 } from '../../../shared/git.ts'
 import { nulPathListArgs, splitNulPaths } from '../../../shared/git-path-list.ts'
+import { decideGitFetchRetry } from './fetch-retry.ts'
 
 /**
  * A MISSING WORKING DIRECTORY IS NOT A MISSING GIT.
@@ -114,17 +115,23 @@ function git(
   failureContext = '',
 ): string {
   if (cwdMissing(cwd)) throw new Error(`git ${args[0]}: ${cwd} does not exist`)
-  const p = startBoundedSync(['git', ...args], {
-    budget: 'git-plumbing',
-    cwd,
-    env,
-  })
-  if (p.exitCode !== 0) {
-    throw new Error(
-      `git ${args.join(' ')} failed${failureContext}: ${p.stderr.trim() || `exit ${p.exitCode}`}`,
-    )
+  for (let attempt = 1; ; attempt += 1) {
+    const p = startBoundedSync(['git', ...args], {
+      budget: 'git-plumbing',
+      cwd,
+      env,
+    })
+    if (p.exitCode === 0) return p.stdout.trim()
+    const stderr = p.stderr.trim() || `exit ${p.exitCode}`
+    const retry =
+      args[0] === 'fetch' && args[1] === 'origin'
+        ? decideGitFetchRetry(attempt, stderr)
+        : { retry: false as const }
+    if (!retry.retry) {
+      throw new Error(`git ${args.join(' ')} failed${failureContext}: ${stderr}`)
+    }
+    Bun.sleepSync(retry.delayMs)
   }
-  return p.stdout.trim()
 }
 
 /** Return the path currently checking out a local branch, if any. */

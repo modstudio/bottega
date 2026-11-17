@@ -30,6 +30,7 @@ import {
   releaseRequiredFlagAbsent,
   releaseRequiredRungsAfterMainMove,
   requiredRungDecision,
+  undecidedRequiredRelease,
   verifyMainCheckout,
 } from '../release/release-required.ts'
 import {
@@ -230,6 +231,13 @@ type RemainingStageAdapter = {
   ): Promise<ShipCleanupReport> | ShipCleanupReport
 }
 
+export function decideMergedOutputExitCode(
+  requiredRelease: Pick<RequiredReleaseReport, 'satisfied'>,
+  cleanupExit: 0 | typeof MERGED_WITH_RESIDUE_EXIT_CODE,
+): 0 | typeof MERGED_WITH_RESIDUE_EXIT_CODE | typeof MERGED_WITH_UNRELEASED_RUNG_EXIT_CODE {
+  return requiredRelease.satisfied ? cleanupExit : MERGED_WITH_UNRELEASED_RUNG_EXIT_CODE
+}
+
 function promotionOutput(input: {
   result: WorkflowPromotionResult
   project: Project
@@ -302,9 +310,7 @@ async function mergedOutput(input: {
   if (!input.adapter.cleanup) {
     return addRequeue({
       output: parts.join('\n'),
-      exitCode: input.requiredRelease.satisfied
-        ? cleanupExit
-        : MERGED_WITH_UNRELEASED_RUNG_EXIT_CODE,
+      exitCode: decideMergedOutputExitCode(input.requiredRelease, cleanupExit),
     })
   }
   try {
@@ -325,7 +331,7 @@ async function mergedOutput(input: {
   }
   return addRequeue({
     output: parts.join('\n'),
-    exitCode: input.requiredRelease.satisfied ? cleanupExit : MERGED_WITH_UNRELEASED_RUNG_EXIT_CODE,
+    exitCode: decideMergedOutputExitCode(input.requiredRelease, cleanupExit),
   })
 }
 
@@ -397,10 +403,9 @@ export async function completePullRequestPostLanding(input: {
               error: move.detail,
             },
       requiredRelease: input.releaseRequired
-        ? failedRequiredRelease(
-            decision.rungs,
-            decision.decided ? `${move.detail}; recover with: ${move.recovery}` : decision.error,
-          )
+        ? decision.decided
+          ? failedRequiredRelease(decision.rungs, `${move.detail}; recover with: ${move.recovery}`)
+          : undecidedRequiredRelease(decision.rungs, decision.error)
         : releaseRequiredFlagAbsent(decision.rungs),
       cleanupWasFenced: move.cleanupWasFenced,
       cleanupRecovery: move.recovery,
@@ -552,10 +557,10 @@ export async function runPullRequestPostLanding(
       payload.requiredRungs,
       project.settings.trunk ?? '',
     )
-  const requiredRelease = !payload.releaseRequired
-    ? releaseRequiredFlagAbsent(rungPlans, payload.rungDecisionError)
-    : payload.rungDecisionError
-      ? failedRequiredRelease(rungPlans, payload.rungDecisionError)
+  const requiredRelease = payload.rungDecisionError
+    ? undecidedRequiredRelease(rungPlans, payload.rungDecisionError)
+    : !payload.releaseRequired
+      ? releaseRequiredFlagAbsent(rungPlans)
       : checkoutFailure
         ? failedRequiredRelease(rungPlans, checkoutFailure)
         : adapter.release({
