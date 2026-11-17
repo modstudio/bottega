@@ -862,6 +862,15 @@ const recordKinds = {
   }
 >
 
+function recordKindDisposition(
+  kind: string,
+  knownKinds: object,
+  retiredKinds: ReadonlySet<string>,
+): 'known' | 'retired' | 'unknown' {
+  if (Object.hasOwn(knownKinds, kind)) return 'known'
+  return retiredKinds.has(kind) ? 'retired' : 'unknown'
+}
+
 async function pushHostedRow(input: {
   postgres: SQL
   row: RecordSyncRequest['rows'][number]
@@ -871,8 +880,11 @@ async function pushHostedRow(input: {
 }): Promise<RecordSyncRowResult> {
   const { postgres, row, identity } = input
   try {
-    if (!(row.kind in recordKinds))
-      throw new OutboxRowError(`unknown outbox kind: ${row.kind}`, 'payload')
+    const disposition = recordKindDisposition(row.kind, recordKinds, RETIRED_OUTBOX_KINDS)
+    if (disposition === 'retired') throw new OutboxRowError(RETIRED_OUTBOX_REASON, 'payload')
+    if (disposition === 'unknown') {
+      throw HostedApiUpgradeRequiredError.unknownKind(row.kind)
+    }
     const kind = row.kind as keyof typeof recordKinds
     const parsed = payload(row.payload, kind)
     const authorization = recordSyncAuthorizationDecision(identity, row.spaceHint)
