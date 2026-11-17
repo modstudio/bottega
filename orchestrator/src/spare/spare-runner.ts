@@ -262,8 +262,7 @@ export function isUsableSpareRunIdentifier(identifier: string): boolean {
     return (
       reference.qualifier === null &&
       (reference.value.kind === 'number' ||
-        (reference.value.kind === 'label' &&
-          reference.value.prefix === REFERENCE_PREFIXES.run))
+        (reference.value.kind === 'label' && reference.value.prefix === REFERENCE_PREFIXES.run))
     )
   } catch {
     return false

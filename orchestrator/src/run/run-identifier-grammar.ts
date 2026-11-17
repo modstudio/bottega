@@ -12,21 +12,17 @@ export type ParsedRunIdentifier =
   | { kind: 'number'; number: number }
   | { kind: 'record-id'; recordId: string }
 
-export const ACCEPTED_RUN_IDENTIFIERS =
+const ACCEPTED_RUN_IDENTIFIERS =
   'an r-prefixed run number, positive decimal run number, name/number, or a full run UUID'
 
-export function classifyBareRunIdentifier(input: string | number): ParsedRunIdentifier | null {
+function classifyBareRunIdentifier(input: string | number): ParsedRunIdentifier | null {
   const given = String(input)
   try {
     const reference = parseReference(given, 'run')
     if (reference.qualifier !== null) return null
-    if (
-      reference.value.kind === 'label' &&
-      reference.value.prefix === REFERENCE_PREFIXES.run
-    )
+    if (reference.value.kind === 'label' && reference.value.prefix === REFERENCE_PREFIXES.run)
       return { kind: 'number', number: reference.value.number }
-    if (reference.value.kind === 'number')
-      return { kind: 'number', number: reference.value.number }
+    if (reference.value.kind === 'number') return { kind: 'number', number: reference.value.number }
     if (reference.value.kind === 'record-id')
       return { kind: 'record-id', recordId: reference.value.recordId }
   } catch {

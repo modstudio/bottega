@@ -162,12 +162,7 @@ test('resolver keeps equal question numbers in their qualified project spaces', 
   ])
     db()
       .query('INSERT INTO project(record_id,name,path,settings) VALUES (?,?,?,?)')
-      .run(
-        projectId,
-        projectName,
-        `/tmp/${projectName}`,
-        JSON.stringify({ space: projectName }),
-      )
+      .run(projectId, projectName, `/tmp/${projectName}`, JSON.stringify({ space: projectName }))
   const previousRecordApiUrl = process.env.BOTTEGA_RECORD_API_URL
   process.env.BOTTEGA_RECORD_API_URL = 'https://record.example.test'
   installRecordApiClient({
@@ -203,9 +198,10 @@ test('resolver keeps equal question numbers in their qualified project spaces', 
       recordId: alphaQuestionId,
       projectId: alphaProjectId,
     })
-    await expect(
-      resolve(`${betaName}#q${number}`, context, 'question'),
-    ).resolves.toMatchObject({ recordId: betaQuestionId, projectId: betaProjectId })
+    await expect(resolve(`${betaName}#q${number}`, context, 'question')).resolves.toMatchObject({
+      recordId: betaQuestionId,
+      projectId: betaProjectId,
+    })
   } finally {
     installRecordApiClient(null)
     if (previousRecordApiUrl === undefined) delete process.env.BOTTEGA_RECORD_API_URL

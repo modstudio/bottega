@@ -4,9 +4,9 @@
 import type { Database } from 'bun:sqlite'
 import { storedMachineNames } from '../../../shared/machine-config.ts'
 import {
-  type ReferenceQualifier,
   parseReference,
   REFERENCE_PREFIXES,
+  type ReferenceQualifier,
 } from '../../../shared/reference.ts'
 import { ResolutionMissError, resolve } from '../identity/identity.ts'
 import { identityContext } from '../identity/identity-context.ts'
@@ -92,10 +92,7 @@ export function parseAnswerIdentifier(
       `invalid answer identifier ${JSON.stringify(original)}: expected q followed by a positive decimal question number, name/q followed by a positive decimal question number, a positive decimal run number, name/number, or a full run or question UUID`,
     )
   }
-  if (
-    reference.value.kind === 'label' &&
-    reference.value.prefix === REFERENCE_PREFIXES.question
-  )
+  if (reference.value.kind === 'label' && reference.value.prefix === REFERENCE_PREFIXES.question)
     return withQualifier(
       { kind: 'question-number', number: reference.value.number },
       reference.qualifier,
@@ -324,12 +321,7 @@ export async function resolveAnswerIdentifier(
     const runReference = qualifiedReference(identifier.qualifier, String(identifier.number))
     const decision = answerIdentifierDecision({
       identifier,
-      run: await readResolvedRunNumberFacts(
-        database,
-        runReference,
-        context,
-        callerSessionId,
-      ),
+      run: await readResolvedRunNumberFacts(database, runReference, context, callerSessionId),
       question: await readQuestionFacts(database, identifier),
     })
     if (decision.kind === 'refuse') throw new Error(decision.reason)
