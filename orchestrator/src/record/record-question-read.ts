@@ -79,7 +79,7 @@ async function recordQuestionRulingRows(
   )) as Row[]
 }
 
-const QUESTION_DETAIL_COLUMNS = `q.id::text record_id,q.number,q.run_id::text run_record_id,
+const QUESTION_DETAIL_COLUMNS = `q.id::text record_id,q.space_id::text space_id,q.number,q.run_id::text run_record_id,
   q.workflow_key,q.workflow_task_id::text workflow_task_record_id,
   q.workflow_cursor_record_id::text,q.project_id::text project_record_id,q.machine_id::text machine_id,q.revision,
   q.asked_at::text,q.question,q.options::text,q.recommendation,q.why,q.asked_via,q.kind,
@@ -183,10 +183,10 @@ async function boundedIdentityRows(tx: SQL, input: QuestionReadInput): Promise<R
   if (input.read !== 'open-for-cursors') return null
   return limited(
     (await tx.unsafe(
-      `SELECT workflow_cursor_record_id::text,MIN(number) number FROM question
+      `SELECT workflow_cursor_record_id::text,space_id::text space_id,MIN(number) number FROM question
        WHERE workflow_cursor_record_id IN (${input.workflowCursorRecordIds.map((_, index) => `$${index + 1}::uuid`).join(',')})
          AND answered_at IS NULL AND closed_at IS NULL
-       GROUP BY workflow_cursor_record_id ORDER BY number`,
+       GROUP BY workflow_cursor_record_id,space_id ORDER BY number`,
       input.workflowCursorRecordIds,
     )) as Row[],
     input.limit,

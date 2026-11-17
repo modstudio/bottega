@@ -32,6 +32,7 @@ type FloorCursor = Pick<
   | 'created_at'
   | 'ordinal'
   | 'step_slug'
+  | 'state'
   | 'closed'
 > & { enforcement: EnforcementMode | null }
 
@@ -64,6 +65,7 @@ export async function applyFloorDecision(
   }
   const validated = await gatherValidatedEvidence({
     cursorId: row.record_id,
+    cursorState: row.state,
     identity: {
       project: row.project,
       workflowKey: row.workflow_key,

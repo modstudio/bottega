@@ -140,6 +140,7 @@ export const run = pgTable.withRLS(
   (table) => [
     index('run_space_evidence_seq_idx').on(table.spaceId, table.evidenceSeq),
     index('run_space_started_id_idx').on(table.spaceId, table.startedAt.desc(), table.id.desc()),
+    index('run_parent_run_id_idx').on(table.parentRunId),
     index('run_task_id_idx').on(table.taskId),
     index('run_unlinked_task_key_idx')
       .on(table.spaceId, table.taskKey)

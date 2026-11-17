@@ -177,15 +177,25 @@ export function latestQuestionOnStep(
   )
 }
 
+export function openQuestionOnStep(
+  rows: Record<string, unknown>[],
+  step: { ordinal: number; slug: string },
+): Record<string, unknown> | null {
+  return latestQuestionOnStep(
+    rows.filter((row) => row.answered_at === null && row.closed_at === null),
+    step,
+  )
+}
+
 export async function openQuestionForWorkflowStep(
   database: Database,
   input: { cursorId: string; cursorOrdinal: number; stepSlug: string },
 ): Promise<Record<string, unknown> | null> {
   const questions = await questionsForWorkflowCursor(database, input.cursorId)
-  return latestQuestionOnStep(
-    questions.filter((row) => row.answered_at === null && row.closed_at === null),
-    { ordinal: input.cursorOrdinal + 1, slug: input.stepSlug },
-  )
+  return openQuestionOnStep(questions, {
+    ordinal: input.cursorOrdinal + 1,
+    slug: input.stepSlug,
+  })
 }
 
 export async function questionForWorkflowCursorByNumber(

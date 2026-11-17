@@ -37,6 +37,7 @@ import {
   checkoutOutsideChangeRefusal,
   classifyCheckoutEvidence,
 } from './workflow-checkout-refusal.ts'
+import type { CursorState } from './workflow-cursor-transition.ts'
 import {
   type ArtifactRef,
   type BottegaCommandIdentity,
@@ -918,6 +919,7 @@ function evidenceCheckoutResolver(
 
 type GatherValidatedEvidenceInput = {
   cursorId: string
+  cursorState: CursorState
   identity: CursorIdentity
   stepOrdinal: number
   stepSlug: string
