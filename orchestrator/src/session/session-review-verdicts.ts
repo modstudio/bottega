@@ -101,7 +101,7 @@ function sessionInFlightReviewBranches(
   for (const run of runs) {
     let writesRepo = false
     try {
-      writesRepo = job(run.job).needs.writesRepo
+      writesRepo = Boolean(job(run.job).needs.writesRepo)
     } catch {
       // Unknown jobs cannot establish ownership of a repository branch.
     }
