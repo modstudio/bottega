@@ -40,7 +40,15 @@ describe('task cursor claim decision', () => {
         action: 'release',
         project: 'claim-cursor-project',
         key: 'DEV-2387',
-        session: 'session-a',
+      })
+    })
+
+  for (const verb of ['finish', 'abandon'] as const)
+    test(`${verb} releases the claim without a harness session`, () => {
+      expect(decideTaskCursorClaim({ ...input, session: null, verb })).toEqual({
+        action: 'release',
+        project: 'claim-cursor-project',
+        key: 'DEV-2387',
       })
     })
 
@@ -79,5 +87,12 @@ test('the local adapter moves a compose claim and finish leaves none live', asyn
   expect(moved.claims[1]).toMatchObject({ holder: 'session-b', live: true })
 
   await followTaskCursorClaim({ ...input, session: 'session-b', verb: 'finish' })
+  expect((await boardClaimList('claim-cursor-project', false, { env: {} })).claims).toEqual([])
+})
+
+test('the local adapter releases a claim on session-less abandon', async () => {
+  await followTaskCursorClaim({ ...input, verb: 'compose' })
+  await followTaskCursorClaim({ ...input, session: null, verb: 'abandon' })
+
   expect((await boardClaimList('claim-cursor-project', false, { env: {} })).claims).toEqual([])
 })

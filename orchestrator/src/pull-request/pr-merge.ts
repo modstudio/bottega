@@ -64,6 +64,7 @@ import {
   type PullRequestMergeOutcome,
   type PullRequestPostLandingAdapter,
 } from './pr-post-landing.ts'
+import { assertPullRequestTaskCursorAdmission } from './task-cursor-admission.ts'
 
 export type { PullRequestMergeFacts } from './pr-merge-evidence.ts'
 export type PullRequestMergeCommandOutcome = PullRequestMergeOutcome & {
@@ -75,6 +76,7 @@ export type PullRequestMergeCommandOutcome = PullRequestMergeOutcome & {
 export type PullRequestMergeAdapter = {
   repository(project: Project): string | null
   view(cwd: string, target: string): PullRequestMergeFacts
+  taskCursorAdmission?(project: Project, branch: string, database: Database): Promise<void>
   checks(cwd: string, number: number): PullRequestCheck[]
   landingState(
     cwd: string,
@@ -228,6 +230,14 @@ const cliPullRequestMergeAdapter: PullRequestMergeAdapter = {
       mergeStateStatus: value.mergeStateStatus,
       mergeCommit: typeof value.mergeCommit?.oid === 'string' ? value.mergeCommit.oid : null,
     }
+  },
+  taskCursorAdmission(project, branch, database) {
+    return assertPullRequestTaskCursorAdmission({
+      command: 'pr merge',
+      project,
+      branch,
+      database,
+    })
   },
   checks(cwd, number) {
     const result = run(cwd, [
@@ -760,6 +770,11 @@ async function completeMerge(input: {
   let admittedChange: PullRequestChange
   try {
     pullRequest = input.adapter.view(input.cwd, input.target)
+    await input.adapter.taskCursorAdmission?.(
+      input.project,
+      pullRequest.headBranch,
+      input.database,
+    )
     if (pullRequest.state === 'MERGED') {
       if (!pullRequest.mergeCommit)
         throw new Error('merged pull request lookup returned no merge commit')

@@ -15,7 +15,7 @@ export type TaskCursorClaimVerb = 'compose' | 'advance' | 'await' | 'rule' | 'fi
 export type TaskCursorClaimDecision =
   | { action: 'none' }
   | { action: 'take'; project: string; key: string; session: string }
-  | { action: 'release'; project: string; key: string; session: string }
+  | { action: 'release'; project: string; key: string }
 
 export function decideTaskCursorClaim(input: {
   project: string
@@ -23,14 +23,14 @@ export function decideTaskCursorClaim(input: {
   session: string | null | undefined
   verb: TaskCursorClaimVerb
 }): TaskCursorClaimDecision {
-  if (!input.taskKey || !input.session) return { action: 'none' }
+  if (!input.taskKey) return { action: 'none' }
   if (input.verb === 'finish' || input.verb === 'abandon')
     return {
       action: 'release',
       project: input.project,
       key: input.taskKey,
-      session: input.session,
     }
+  if (!input.session) return { action: 'none' }
   return {
     action: 'take',
     project: input.project,
@@ -45,7 +45,7 @@ export type TaskCursorClaimPorts = {
     key: string
     session: string
   }): Promise<BoardClaimResult & { action: 'taken' | 'renewed' | 'taken-over' }>
-  release(input: { project: string; key: string; session: string }): Promise<{ released: number }>
+  release(input: { project: string; key: string }): Promise<{ released: number }>
 }
 
 function productionPorts(database?: Database): TaskCursorClaimPorts {
@@ -55,9 +55,9 @@ function productionPorts(database?: Database): TaskCursorClaimPorts {
         { project, subject: `task:${key}`, durationMs: BOARD_CLAIM_DEFAULT_MS },
         { taskCursorSession: session, database, cwd: projectByName(project, database)?.path },
       ),
-    release: ({ project, key, session }) =>
+    release: ({ project, key }) =>
       boardClaimReleaseTask(key, project, {
-        taskCursorSession: session,
+        taskCursorSession: 'task-cursor-release',
         database,
         cwd: projectByName(project, database)?.path,
       }),

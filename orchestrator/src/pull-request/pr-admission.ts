@@ -53,6 +53,7 @@ import {
 } from './mergeability-decision.ts'
 import { decideTriageOverride, type TriageOverrideAttribution } from './override-decision.ts'
 import { decidePrePush, destinationBranch } from './pre-push-decision.ts'
+import { assertPullRequestTaskCursorAdmission } from './task-cursor-admission.ts'
 
 export const REVIEW_READ_VERB = `${PLATFORM_SLUG} review read`
 
@@ -651,13 +652,18 @@ function pendingIntent(database: Database, project: string, branch: string): boo
   )
 }
 
-export function createPullRequest(
+export async function createPullRequest(
   args: string[],
   options: { overrideReason?: string; ceilingRuling?: string; fromOperator?: boolean },
   cwd = process.cwd(),
-): { output: string; overrideId: string | null } {
+): Promise<{ output: string; overrideId: string | null }> {
   guardTriageOverrideService([options.overrideReason, options.ceilingRuling])
   const change = resolvePullRequestChange(cwd)
+  await assertPullRequestTaskCursorAdmission({
+    command: 'pr create',
+    project: change.project,
+    branch: change.branch,
+  })
   const trunk = change.project.settings.trunk!.trim()
   const existing = pullRequestForBranch(cwd, change.branch, trunk)
   if (existing) finalizeTriageIntent(change.project.name, change.branch, existing.number)

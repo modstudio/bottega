@@ -146,7 +146,7 @@ export async function createPullRequestCommand(
   ])
   const forwardedArgs =
     bodyFile === '-' ? githubArgsWithStdinBody(githubArgs, body ?? '') : githubArgs
-  const result = create(
+  const result = await create(
     forwardedArgs,
     {
       overrideReason: options.overrideTriage,

@@ -15,7 +15,7 @@ import {
 test('PR create refuses a misspelled explicit title before admission', async () => {
   let creates = 0
   const misspelling = ['me', 'ida'].join('')
-  const create = () => {
+  const create = async () => {
     creates += 1
     return { output: '', overrideId: null }
   }
@@ -33,7 +33,7 @@ test('PR create refuses a misspelled explicit title before admission', async () 
 
 test('PR create hands GitHub the stdin body it checked', async () => {
   const received: string[][] = []
-  const create = (args: string[]) => {
+  const create = async (args: string[]) => {
     received.push(args)
     return { output: '', overrideId: null }
   }

@@ -41,6 +41,7 @@ import {
   workflowVersionsCommand,
 } from '../workflow/workflow-commands.ts'
 import { workflowNextContextMoment } from '../workflow/workflow-context-moment.ts'
+import { workflowUncoveredCommand } from '../workflow/workflow-uncovered.ts'
 import { workflowCursorIdentityMap } from '../workflow/workflow-cursor-identity.ts'
 import { RECORD_EVIDENCE_FLAG } from '../workflow/workflow-evidence-payload.ts'
 import { registerWorkflowStepActionCommands } from '../workflow/workflow-step-action-commands.ts'
@@ -126,6 +127,15 @@ function registerWorkflowDefinitions({
   output,
   handlerOptions,
 }: WorkflowRegistration): void {
+  jsonOption(
+    workflow
+      .command('uncovered')
+      .description('report keyed work performed without a live task cursor or claim')
+      .option('--days <value>', 'number of recent UTC days to include'),
+  )
+    .allowExcessArguments(false)
+    .action((options) => workflowUncoveredCommand(options, { log }))
+
   jsonOption(
     workflow
       .command('list')
