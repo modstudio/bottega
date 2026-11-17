@@ -179,6 +179,15 @@ function parsedKind(parsed: ParsedReference, expectedKind?: ResolvableKind): Res
   return expectedKind ?? null
 }
 
+async function resolveRecordId(
+  parsed: ParsedReference,
+  context: IdentityContext,
+): Promise<ResolvedIdentity | null> {
+  if (parsed.value.kind !== 'record-id')
+    throw new Error('an unkinded reference must be a record id')
+  return resolveUuid(parsed.value.recordId, context)
+}
+
 function validateRunQualifier(
   reference: string | number,
   parsed: ParsedReference,
@@ -216,7 +225,7 @@ export async function resolve(
   if (kind === 'run') validateRunQualifier(reference, parsed, context)
 
   const result = !kind
-    ? await resolveUuid(parsed.value.recordId, context)
+    ? await resolveRecordId(parsed, context)
     : kind === 'run'
       ? resolveRun(parsed, context)
       : await resolveQuestion(parsed, context)
