@@ -3,7 +3,7 @@
 
 import type { Database } from 'bun:sqlite'
 import { nowIso } from '../database/db.ts'
-import { cursorName } from './workflow-cursor-format.ts'
+import { cursorName, workflowCursorTakeoverCommand } from './workflow-cursor-format.ts'
 import type { SelectableCursorRow, WorkflowCursorContext } from './workflow-cursor-selection.ts'
 import { currentStepActivatedAt, reentryBoundFloorInput } from './workflow-cursor-trail.ts'
 import {
@@ -43,6 +43,7 @@ export async function applyFloorDecision(
   client?: WorkflowCursorContext['taskFlowClient'],
   requireRuling = false,
   selfRulingId?: number,
+  callerSession?: string | null,
 ): Promise<FloorDecision> {
   const args = JSON.parse(row.args) as Record<string, string>
   const evidenceFloors = floors.filter(({ kind }) => kind !== 'review-owed')
@@ -95,6 +96,9 @@ export async function applyFloorDecision(
     enforcement: row.enforcement ?? 'note-only',
     finishing,
     openObligations: await openWorkflowObligations(row.record_id, database, client),
+    ...(row.session_id && row.session_id !== callerSession
+      ? { cursorTakeoverRemedy: workflowCursorTakeoverCommand(row) }
+      : {}),
     ...reentryBoundFloorInput(requireRuling, row.closed, row.step_slug),
   })
 }

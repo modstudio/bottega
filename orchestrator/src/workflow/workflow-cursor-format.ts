@@ -43,6 +43,38 @@ export function formatCursorResumed(input: {
   return `Cursor ${input.cursor} is already open at step ${input.step} ${input.stepSlug} for ${input.key}.`
 }
 
+export function workflowCursorTakeoverCommand(row: {
+  workflow_slug: string
+  project: string
+  mode_slug: string
+  args: string
+}): string {
+  const args = Object.entries(JSON.parse(row.args) as Record<string, string>)
+    .map(([name, value]) => ` --arg ${shellWord(`${name}=${value}`)}`)
+    .join('')
+  return (
+    `${PLATFORM_SLUG} workflow compose ${shellWord(row.workflow_slug)} ` +
+    `--project ${shellWord(row.project)} --mode ${shellWord(row.mode_slug)}${args}`
+  )
+}
+
+export function foreignCursorOwnerNotice(
+  row: {
+    session_id: string | null
+    workflow_slug: string
+    project: string
+    mode_slug: string
+    args: string
+  },
+  callerSession: string | null | undefined,
+): string | undefined {
+  if (!row.session_id || row.session_id === callerSession) return undefined
+  return (
+    `Notice: this cursor is owned by session ${row.session_id}. Take it over with: ` +
+    workflowCursorTakeoverCommand(row)
+  )
+}
+
 export const shellWord = (value: string) =>
   /^[A-Za-z0-9_@%+=:,./-]+$/.test(value) ? value : `'${value.replace(/'/g, "'\\''")}'`
 

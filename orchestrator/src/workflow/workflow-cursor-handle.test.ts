@@ -491,6 +491,39 @@ test('a handle validates supplied identity and serves the active step for an ear
   ).rejects.toThrow('cursor handles changed to per-project numbers')
 })
 
+test('a foreign-session step read preserves the owner and prints the compose takeover', async () => {
+  const d = database()
+  const args = { key: 'DEV-822', branch: 'DEV-822-work', worktree: '/tmp/work' }
+  const opened = await getWorkflowStepWithCursor(
+    'flow',
+    'fixture',
+    'rebase',
+    args,
+    'default',
+    context,
+    d,
+    {},
+  )
+  const served = await getWorkflowStepWithCursor(
+    'flow',
+    'fixture',
+    'rebase',
+    args,
+    'default',
+    { ...context, session: 'foreign-session' },
+    d,
+    {},
+    opened.cursor,
+  )
+  expect(served.notice).toContain('owned by session session-one')
+  expect(served.notice).toContain(
+    'workflow compose flow --project fixture --mode default --arg key=DEV-822',
+  )
+  expect(
+    d.query('SELECT session_id FROM workflow_cursor WHERE number=?').get(opened.cursor),
+  ).toEqual({ session_id: 'session-one' })
+})
+
 test('closing with task adopts a key once and rekeys cursor questions', async () => {
   const d = database()
   installKeylessWorkflow(d, 'adopt-key')

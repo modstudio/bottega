@@ -29,6 +29,7 @@ import {
   type WorkflowCursorContext,
 } from './workflow-cursor-selection.ts'
 import { decideWorkflowRuleAnswer, pinnedWorkflowRuleStep } from './workflow-rule-answer.ts'
+import { cursorOwnerAfter } from './workflow-cursor-transition.ts'
 import { linkResolvedWorkflowTask } from './workflow-task-linking.ts'
 
 async function selectOpenWorkflowQuestion(
@@ -93,7 +94,7 @@ export async function ruleWorkflow(
         values: {
           state: 'running',
           question: null,
-          sessionId: row.session_id ?? context.session ?? null,
+          sessionId: cursorOwnerAfter('rule', row.session_id, context.session),
           updatedAt: at,
         },
       },

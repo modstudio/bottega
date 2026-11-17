@@ -38,6 +38,7 @@ import { workflowKeyOf } from './workflow-cursor-arguments.ts'
 import { storedCursorAutonomyJson } from './workflow-cursor-autonomy.ts'
 import type { SelectableCursorRow, WorkflowCursorContext } from './workflow-cursor-selection.ts'
 import { refuseUnlinkedCursorLabelCollision } from './workflow-cursor-task-reference.ts'
+import { cursorOwnerAfter } from './workflow-cursor-transition.ts'
 import {
   closeExploreForLifecycle,
   type FinishExploreLifecycle,
@@ -231,7 +232,7 @@ async function readComposeFacts(
       taskRecordId: context.taskRecordId ?? null,
       taskFlowRecordId: null,
       instanceId: instance,
-      sessionId: context.session ?? null,
+      sessionId: cursorOwnerAfter('compose', null, context.session),
       workflowVersionRecordId: composition.workflow.record_id,
       catalogueVersionRecordId: composition.catalogue.record_id,
       args: JSON.stringify(composition.arguments),
@@ -300,7 +301,7 @@ function composeIntent(
       mode: composition.mode!.slug,
       workflowKey: facts.key,
       instanceId: facts.instance,
-      sessionId: context.session ?? null,
+      sessionId: cursorOwnerAfter('compose', null, context.session),
       workflowVersionId: composition.workflow.record_id,
       catalogueVersionId: composition.catalogue.record_id,
       arguments: composition.arguments,

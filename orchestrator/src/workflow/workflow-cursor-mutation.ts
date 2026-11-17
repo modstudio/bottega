@@ -17,6 +17,7 @@ import { cursorName } from './workflow-cursor-format.ts'
 import { refuseTerminalCursor } from './workflow-cursor-result.ts'
 import type { SelectableCursorRow, WorkflowCursorContext } from './workflow-cursor-selection.ts'
 import type { CursorTrailEntry } from './workflow-cursor-trail.ts'
+import { cursorOwnerAfter } from './workflow-cursor-transition.ts'
 import { workflowTextDeletionIds } from './workflow-text.ts'
 
 export async function closeOpenWorkflowQuestion(
@@ -60,7 +61,7 @@ export async function abandonWorkflowCursor(
         state: 'abandoned',
         closedStepNotes: closed,
         question: null,
-        sessionId: context.session ?? row.session_id,
+        sessionId: cursorOwnerAfter('abandon', row.session_id, context.session),
         updatedAt: at,
       },
     },

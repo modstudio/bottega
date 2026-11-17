@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
+  foreignCursorOwnerNotice,
   renderWorkflowCursorLine,
   WORKFLOW_CURSOR_QUESTION_SUMMARY_CHARS,
 } from './workflow-cursor-format.ts'
@@ -19,6 +20,23 @@ const row = {
 }
 
 describe('workflow cursor line', () => {
+  test('a foreign owner notice names the owner and the keyed compose takeover', () => {
+    expect(
+      foreignCursorOwnerNotice(
+        {
+          session_id: 'owner-session',
+          workflow_slug: 'ship-task',
+          project: 'fixture',
+          mode_slug: 'default',
+          args: JSON.stringify({ key: 'DEV-2370', worktree: '/tmp/work tree' }),
+        },
+        'reader-session',
+      ),
+    ).toBe(
+      `Notice: this cursor is owned by session owner-session. Take it over with: ${PLATFORM_SLUG} workflow compose ship-task --project fixture --mode default --arg key=DEV-2370 --arg 'worktree=/tmp/work tree'`,
+    )
+  })
+
   test('summarizes a multiline ruling question and points to its full text', () => {
     const line = renderWorkflowCursorLine({
       ...row,

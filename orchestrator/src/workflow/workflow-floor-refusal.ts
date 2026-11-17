@@ -33,11 +33,15 @@ export function gateFloorRefusal(tree: {
 export function commandExitBindingRefusal(
   exec: CommandExitBindingEvidence | undefined,
   acceptsPullRequestLink = false,
+  takeoverRemedy?: string,
 ): string | null {
   if (!exec) return null
   const remedy = `run the command again with \`${PLATFORM_SLUG} workflow exec -- <command>\` in this session after the step started`
   if (!exec.sessionMatches && !exec.sessionAdoptedCursor)
-    return `command-exit evidence exec:${exec.id} belongs to another session; ${remedy}`
+    return (
+      `command-exit evidence exec:${exec.id} belongs to another session; ${remedy}` +
+      (takeoverRemedy ? `; take over this cursor with: ${takeoverRemedy}` : '')
+    )
   if (!exec.createdAfterStepActivation)
     return (
       `command-exit evidence exec:${exec.id} predates this step becoming active; ${remedy}` +

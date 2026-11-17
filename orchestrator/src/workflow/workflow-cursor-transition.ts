@@ -17,6 +17,26 @@ export type CursorTransition =
 
 export type CursorStartDecision = 'insert' | 'reuse' | 'retire'
 
+export const cursorOwnerVerbs = [
+  'serve',
+  'await',
+  'advance',
+  'compose',
+  'rule',
+  'abandon',
+] as const
+export type CursorOwnerVerb = (typeof cursorOwnerVerbs)[number]
+
+/** Decide the owner written by each cursor verb. */
+export function cursorOwnerAfter(
+  verb: CursorOwnerVerb,
+  storedSession: string | null,
+  callerSession: string | null | undefined,
+): string | null {
+  if (verb === 'advance' || verb === 'compose') return callerSession ?? storedSession
+  return storedSession ?? callerSession ?? null
+}
+
 export type OutcomeDecision = { action: 'allow' } | { action: 'refuse'; message: string }
 
 /** Decide whether a supplied close outcome matches the current catalogue step. */
