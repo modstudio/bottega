@@ -8,7 +8,7 @@ import { readFileSync } from 'node:fs'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { gitAt } from '../../../shared/git.ts'
 import { readMachineValue } from '../../../shared/machine-config.ts'
-import { parseReference } from '../../../shared/reference.ts'
+import { parseReference, REFERENCE_PREFIXES } from '../../../shared/reference.ts'
 import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 import { agentRows } from '../agent/agent-registry.ts'
 import { db } from '../database/db.ts'
@@ -262,7 +262,8 @@ export function isUsableSpareRunIdentifier(identifier: string): boolean {
     return (
       reference.qualifier === null &&
       (reference.value.kind === 'number' ||
-        (reference.value.kind === 'label' && reference.value.prefix === 'r'))
+        (reference.value.kind === 'label' &&
+          reference.value.prefix === REFERENCE_PREFIXES.run))
     )
   } catch {
     return false

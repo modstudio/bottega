@@ -1,8 +1,7 @@
 // concern: run-control
 /** Recognizes a user-facing run number or UUID. Pure: it knows no store, process, or clock. */
 
-import { hasRecordIdShape } from '../../../shared/record-id.ts'
-import { parseReference } from '../../../shared/reference.ts'
+import { parseReference, REFERENCE_PREFIXES } from '../../../shared/reference.ts'
 import {
   decideMachineLabel,
   type MachineIdentifierNames,
@@ -20,20 +19,19 @@ export function classifyBareRunIdentifier(input: string | number): ParsedRunIden
   const given = String(input)
   try {
     const reference = parseReference(given, 'run')
+    if (reference.qualifier !== null) return null
     if (
-      reference.qualifier === null &&
       reference.value.kind === 'label' &&
-      reference.value.prefix === 'r'
+      reference.value.prefix === REFERENCE_PREFIXES.run
     )
       return { kind: 'number', number: reference.value.number }
+    if (reference.value.kind === 'number')
+      return { kind: 'number', number: reference.value.number }
+    if (reference.value.kind === 'record-id')
+      return { kind: 'record-id', recordId: reference.value.recordId }
   } catch {
     return null
   }
-  if (/^[0-9]+$/.test(given)) {
-    const number = Number(given)
-    if (Number.isSafeInteger(number) && number > 0) return { kind: 'number', number }
-  }
-  if (hasRecordIdShape(given)) return { kind: 'record-id', recordId: given.toLowerCase() }
   return null
 }
 

@@ -73,7 +73,7 @@ describe('run identifier', () => {
     expect(resolveRunIdentifier(db(), recordId.toUpperCase())).toBe(recordId)
     const unknown = newRecordId()
     expect(() => resolveRunIdentifier(db(), unknown)).toThrow(
-      `no run matches ${JSON.stringify(unknown)}; pass an r-prefixed run number, positive decimal run number, name/number, or a full run UUID`,
+      'reference is not visible in this machine; pass the UUID or a qualified label',
     )
   })
 })

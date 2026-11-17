@@ -50,6 +50,14 @@ test('resolver scopes labels to the caller project, crosses with a qualifier, an
     `not visible in project ${alphaName}`,
   )
   await expect(resolve('q71002', context, 'question')).rejects.not.toThrow('not found')
+  await expect(resolve('other/q71001', context, 'question')).rejects.toThrow(
+    'question references cannot use a machine qualifier; pass a <project>#q<number> reference',
+  )
+  const missingId = newRecordId()
+  await expect(resolve(missingId, context)).rejects.toThrow(
+    'reference is not visible in any space you belong to',
+  )
+  await expect(resolve(missingId, context)).rejects.not.toThrow('pass the UUID')
 })
 
 test('resolver applies the existing machine-label decision before resolving runs', async () => {
@@ -130,6 +138,74 @@ test('resolver uses a hosted cursor question project without a local cursor row'
       recordId: questionId,
       projectId,
     })
+  } finally {
+    installRecordApiClient(null)
+    if (previousRecordApiUrl === undefined) delete process.env.BOTTEGA_RECORD_API_URL
+    else process.env.BOTTEGA_RECORD_API_URL = previousRecordApiUrl
+  }
+})
+
+test('resolver keeps equal question numbers in their qualified project spaces', async () => {
+  const suffix = newRecordId().slice(-8)
+  const alphaName = `hosted-alpha-${suffix}`
+  const betaName = `hosted-beta-${suffix}`
+  const alphaProjectId = newRecordId()
+  const betaProjectId = newRecordId()
+  const alphaSpaceId = newRecordId()
+  const betaSpaceId = newRecordId()
+  const alphaQuestionId = newRecordId()
+  const betaQuestionId = newRecordId()
+  const number = 880_002
+  for (const [projectId, projectName] of [
+    [alphaProjectId, alphaName] as const,
+    [betaProjectId, betaName] as const,
+  ])
+    db()
+      .query('INSERT INTO project(record_id,name,path,settings) VALUES (?,?,?,?)')
+      .run(
+        projectId,
+        projectName,
+        `/tmp/${projectName}`,
+        JSON.stringify({ space: projectName }),
+      )
+  const previousRecordApiUrl = process.env.BOTTEGA_RECORD_API_URL
+  process.env.BOTTEGA_RECORD_API_URL = 'https://record.example.test'
+  installRecordApiClient({
+    whoami: async () => ({
+      user: { id: newRecordId() },
+      activeSpaceId: alphaSpaceId,
+      personalSpaceId: null,
+      memberships: [
+        { space_id: alphaSpaceId, name: alphaName, slug: alphaName, permission: 'write' },
+        { space_id: betaSpaceId, name: betaName, slug: betaName, permission: 'write' },
+      ],
+    }),
+    readQuestions: async (
+      _input: { read: string; number?: number },
+      destination?: { destinationSpaceId: string },
+    ) => ({
+      items:
+        destination?.destinationSpaceId === betaSpaceId
+          ? [{ record_id: betaQuestionId, number, project_record_id: betaProjectId }]
+          : [{ record_id: alphaQuestionId, number, project_record_id: alphaProjectId }],
+    }),
+  } as unknown as RecordApiClient)
+  try {
+    const context: IdentityContext = {
+      database: db(),
+      sessionId: 'caller',
+      projectId: alphaProjectId,
+      projectName: alphaName,
+      machineNames: null,
+      identityMap: new Map(),
+    }
+    await expect(resolve(`q${number}`, context, 'question')).resolves.toMatchObject({
+      recordId: alphaQuestionId,
+      projectId: alphaProjectId,
+    })
+    await expect(
+      resolve(`${betaName}#q${number}`, context, 'question'),
+    ).resolves.toMatchObject({ recordId: betaQuestionId, projectId: betaProjectId })
   } finally {
     installRecordApiClient(null)
     if (previousRecordApiUrl === undefined) delete process.env.BOTTEGA_RECORD_API_URL

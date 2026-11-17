@@ -3,7 +3,7 @@
 
 import type { Database } from 'bun:sqlite'
 import type { QuestionIdentity } from '../../../shared/orch-contract.ts'
-import { parseReference } from '../../../shared/reference.ts'
+import { parseReference, REFERENCE_PREFIXES } from '../../../shared/reference.ts'
 import { resolve } from '../identity/identity.ts'
 import { identityContext } from '../identity/identity-context.ts'
 import {
@@ -49,7 +49,7 @@ export function parseQuestionIdentifier(input: string | number): ParsedQuestionI
   if (parsed.value.kind === 'record-id')
     return { kind: 'record-id', recordId: parsed.value.recordId }
   if (parsed.value.kind === 'number') return { kind: 'number', id: parsed.value.number }
-  if (parsed.value.kind === 'label' && parsed.value.prefix === 'q')
+  if (parsed.value.kind === 'label' && parsed.value.prefix === REFERENCE_PREFIXES.question)
     return { kind: 'number', id: parsed.value.number }
   throw new Error(`reference ${JSON.stringify(String(input))} does not name a question`)
 }

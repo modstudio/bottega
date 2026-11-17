@@ -27,11 +27,17 @@ const question = (overrides: Partial<NonNullable<AnswerIdentifierFacts['question
 })
 
 describe('answer identifier parse', () => {
-  test('composes machine labels with question grammar', () => {
+  test('preserves qualifiers for identity resolution', () => {
     const names = { shortName: 'mine', formerShortNames: ['old-mine'] }
     expect(parseAnswerIdentifier('mine/q42', names)).toEqual({
       kind: 'question-number',
       number: 42,
+      qualifier: { kind: 'machine', value: 'mine' },
+    })
+    expect(parseAnswerIdentifier('beta#q42', names)).toEqual({
+      kind: 'question-number',
+      number: 42,
+      qualifier: { kind: 'project', value: 'beta' },
     })
   })
   test('owns q-prefix grammar and accepts the run identifier forms', () => {
@@ -152,6 +158,47 @@ test('question number and UUID resolve an open question asked by a real turn to 
 
   expect(await resolveAnswerIdentifier(db(), 'q73', null)).toBe(root)
   expect(await resolveAnswerIdentifier(db(), questionId, null)).toBe(root)
+})
+
+test('a qualified question resolves in that project while an unqualified label stays local', async () => {
+  const suffix = newRecordId().slice(-8)
+  const alphaName = `answer-alpha-${suffix}`
+  const betaName = `answer-beta-${suffix}`
+  const alpha = newRecordId()
+  const beta = newRecordId()
+  const session = `answer-session-${suffix}`
+  db()
+    .query('INSERT INTO project(record_id,name,path,settings) VALUES (?,?,?,?)')
+    .run(alpha, alphaName, `/tmp/${alphaName}`, '{}')
+  db()
+    .query('INSERT INTO project(record_id,name,path,settings) VALUES (?,?,?,?)')
+    .run(beta, betaName, `/tmp/${betaName}`, '{}')
+  db()
+    .query(
+      `INSERT INTO presence
+         (session_id,harness,role,machine,project,project_record_id,cwd,first_seen,last_seen)
+       VALUES (?,'codex','architect','machine',?,?,?,'2026-11-17','2026-11-17')`,
+    )
+    .run(session, alphaName, alpha, `/tmp/${alphaName}`)
+  const alphaRun = addRun({
+    agent: 'codex',
+    job: 'file-question',
+    status: 'asking',
+    projectRecordId: alpha,
+  })
+  const betaRun = addRun({
+    agent: 'codex',
+    job: 'file-question',
+    status: 'asking',
+    projectRecordId: beta,
+  })
+  const alphaNumber = 880_001
+  const betaNumber = 880_002
+  addQuestion(alphaRun, alphaNumber)
+  addQuestion(betaRun, betaNumber)
+
+  expect(await resolveAnswerIdentifier(db(), `q${alphaNumber}`, session)).toBe(alphaRun)
+  expect(await resolveAnswerIdentifier(db(), `${betaName}#q${betaNumber}`, session)).toBe(betaRun)
 })
 
 test('an answered question target refuses instead of selecting another open question', async () => {

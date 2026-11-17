@@ -11,9 +11,11 @@ import {
 } from './architecture-identity-reference.ts'
 
 test('identity reference guard rejects a new number-column lookup outside identity', () => {
-  const added = identityReferenceViolationCount('SELECT record_id FROM run WHERE number=?')
+  const added = identityReferenceViolationCount(
+    'select record_id from run where number=$number OR number IN (?, ?)',
+  )
   expect(identityReferenceGuardViolations({ 'orchestrator/src/run/new.ts': added }, {})).toEqual([
-    'orchestrator/src/run/new.ts: production identity bypass count grew from 0 to 1; resolve the reference through identity/',
+    'orchestrator/src/run/new.ts: production identity bypass count grew from 0 to 2; resolve the reference through identity/',
   ])
 })
 

@@ -1,5 +1,5 @@
 const NUMBER_QUERY_OR_CLASSIFIER =
-  /WHERE\s+(?:[-A-Za-z0-9_.]+\.)?number\s*=\s*\?|classify[A-Za-z]+Identifier\s*\(/g
+  /(?:\b(?:WHERE|AND|OR)\s+(?:[-A-Za-z0-9_.]+\.)?number\s*(?:=\s*[^\s,;)]+|IN\s*\()|classify[A-Za-z]+Identifier\s*\()/gi
 
 export function identityReferenceViolationCount(source: string): number {
   return [...source.matchAll(NUMBER_QUERY_OR_CLASSIFIER)].length

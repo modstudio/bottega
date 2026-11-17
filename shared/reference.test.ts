@@ -1,9 +1,12 @@
 import { describe, expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from './brand.ts'
 import { newRecordId } from './record-id.ts'
-import { parseReference } from './reference.ts'
+import { parseReference, REFERENCE_PREFIXES } from './reference.ts'
 
 describe('record reference grammar', () => {
+  test('declares the kind label prefixes once', () => {
+    expect(REFERENCE_PREFIXES).toEqual({ question: 'q', run: 'r' })
+  })
   test('accepts every reference form', () => {
     const id = newRecordId()
     expect(parseReference(id).value).toEqual({ kind: 'record-id', recordId: id })

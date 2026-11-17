@@ -4,7 +4,10 @@
 import { hasRecordIdShape } from './record-id.ts'
 
 export type ReferenceKind = 'question' | 'run' | 'task'
-type ReferenceQualifier = { kind: 'project'; value: string } | { kind: 'machine'; value: string }
+export const REFERENCE_PREFIXES = { question: 'q', run: 'r' } as const
+export type ReferenceQualifier =
+  | { kind: 'project'; value: string }
+  | { kind: 'machine'; value: string }
 
 export type ParsedReference = {
   qualifier: ReferenceQualifier | null

@@ -9,6 +9,7 @@ import {
 import {
   type ParsedReference,
   parseReference,
+  REFERENCE_PREFIXES,
   type ReferenceKind,
 } from '../../../shared/reference.ts'
 import { projectByName, projectByRecordId } from '../project/project-read.ts'
@@ -21,14 +22,14 @@ type ResolvableKind = Exclude<ReferenceKind, 'task'>
 const IDENTITY_KINDS = {
   question: {
     table: IDENTITY_STATE_CLASSES.question.table,
-    prefix: 'q',
+    prefix: REFERENCE_PREFIXES.question,
     numberScope: 'space',
     authority: IDENTITY_STATE_CLASSES.question.class,
     ownerChain: 'question → run or cursor',
   },
   run: {
     table: IDENTITY_STATE_CLASSES.run.table,
-    prefix: 'r',
+    prefix: REFERENCE_PREFIXES.run,
     numberScope: 'machine',
     authority: IDENTITY_STATE_CLASSES.run.class,
     ownerChain: 'run → task → project',
@@ -52,27 +53,41 @@ export type IdentityContext = {
   identityMap: Map<string, ResolvedIdentity>
 }
 
-type IdentityRow = { record_id: string; project_record_id: string | null }
+export type LocalRunIdentity = { record_id: string; project_record_id: string | null }
+export type LocalRunReference =
+  | { kind: 'number'; number: number }
+  | { kind: 'record-id'; recordId: string }
+
+export class ResolutionMissError extends Error {}
 
 const projectSpace = (context: IdentityContext, projectId: string | null): string | null => {
   const project = projectId ? projectByRecordId(projectId, context.database) : null
   return project ? (cachedProjectSpaces(context.database)[project.name] ?? null) : null
 }
 
-function runById(context: IdentityContext, recordId: string): IdentityRow | null {
+function runById(context: IdentityContext, recordId: string): LocalRunIdentity | null {
   return (
     context.database
-      .query<IdentityRow, [string]>('SELECT record_id,project_record_id FROM run WHERE record_id=?')
+      .query<LocalRunIdentity, [string]>(
+        'SELECT record_id,project_record_id FROM run WHERE record_id=?',
+      )
       .get(recordId) ?? null
   )
 }
 
-function runByNumber(context: IdentityContext, number: number): IdentityRow | null {
-  return (
-    context.database
-      .query<IdentityRow, [number]>('SELECT record_id,project_record_id FROM run WHERE number=?')
-      .get(number) ?? null
-  )
+export function resolveLocalRun(
+  database: Database,
+  reference: LocalRunReference,
+): LocalRunIdentity {
+  const row = database
+    .query<LocalRunIdentity, [number | string]>(
+      reference.kind === 'number'
+        ? 'SELECT record_id,project_record_id FROM run WHERE number=?'
+        : 'SELECT record_id,project_record_id FROM run WHERE record_id=?',
+    )
+    .get(reference.kind === 'number' ? reference.number : reference.recordId)
+  if (!row) visibilityRefusal('this machine')
+  return row
 }
 
 function questionProjectId(row: Record<string, unknown>): string | null {
@@ -90,13 +105,21 @@ function scopedProject(
 ) {
   if (!qualifier) return { projectId: context.projectId, projectName: context.projectName }
   if (qualifier.kind !== 'project')
-    return { projectId: context.projectId, projectName: context.projectName }
+    throw new Error(
+      'question references cannot use a machine qualifier; pass a <project>#q<number> reference',
+    )
   const project = projectByName(qualifier.value, context.database)
   return { projectId: project?.recordId ?? null, projectName: qualifier.value }
 }
 
 function visibilityRefusal(scope: string): never {
-  throw new Error(`reference is not visible in ${scope}; pass the UUID or a qualified label`)
+  throw new ResolutionMissError(
+    `reference is not visible in ${scope}; pass the UUID or a qualified label`,
+  )
+}
+
+function uuidVisibilityRefusal(): never {
+  throw new ResolutionMissError('reference is not visible in any space you belong to')
 }
 
 async function resolveUuid(recordId: string, context: IdentityContext): Promise<ResolvedIdentity> {
@@ -110,7 +133,7 @@ async function resolveUuid(recordId: string, context: IdentityContext): Promise<
       authority: IDENTITY_KINDS.run.authority,
     }
   const question = await questionById(context.database, recordId)
-  if (!question) visibilityRefusal("the caller's visible spaces")
+  if (!question) uuidVisibilityRefusal()
   const projectId = questionProjectId(question)
   return {
     kind: 'question',
@@ -121,22 +144,22 @@ async function resolveUuid(recordId: string, context: IdentityContext): Promise<
   }
 }
 
-function resolveRun(parsed: ParsedReference, context: IdentityContext): ResolvedIdentity | null {
-  const row =
+function resolveRun(parsed: ParsedReference, context: IdentityContext): ResolvedIdentity {
+  const reference =
     parsed.value.kind === 'record-id'
-      ? runById(context, parsed.value.recordId)
+      ? ({ kind: 'record-id', recordId: parsed.value.recordId } as const)
       : 'number' in parsed.value
-        ? runByNumber(context, parsed.value.number)
+        ? ({ kind: 'number', number: parsed.value.number } as const)
         : null
-  return row
-    ? {
-        kind: 'run',
-        recordId: row.record_id,
-        projectId: row.project_record_id,
-        spaceId: projectSpace(context, row.project_record_id),
-        authority: IDENTITY_KINDS.run.authority,
-      }
-    : null
+  if (!reference) visibilityRefusal('this machine')
+  const row = resolveLocalRun(context.database, reference)
+  return {
+    kind: 'run',
+    recordId: row.record_id,
+    projectId: row.project_record_id,
+    spaceId: projectSpace(context, row.project_record_id),
+    authority: IDENTITY_KINDS.run.authority,
+  }
 }
 
 async function resolveQuestion(
@@ -171,7 +194,7 @@ function parsedKind(parsed: ParsedReference, expectedKind?: ResolvableKind): Res
 async function resolveRecordId(
   parsed: ParsedReference,
   context: IdentityContext,
-): Promise<ResolvedIdentity | null> {
+): Promise<ResolvedIdentity> {
   if (parsed.value.kind !== 'record-id')
     throw new Error('an unkinded reference must be a record id')
   return resolveUuid(parsed.value.recordId, context)
@@ -218,7 +241,6 @@ export async function resolve(
     : kind === 'run'
       ? resolveRun(parsed, context)
       : await resolveQuestion(parsed, context)
-  if (!result) visibilityRefusal('this machine')
   context.identityMap.set(cacheKey, result)
   return result
 }
