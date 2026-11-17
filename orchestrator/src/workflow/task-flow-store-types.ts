@@ -1,8 +1,28 @@
 // concern: task flow persistence types
 /** Shared row and insert shapes for task-flow persistence. */
 
-import type { CursorState } from './workflow-cursor-transition.ts'
+import type {
+  TaskFlowIntent,
+  TaskFlowIntentInput as RecordTaskFlowIntentInput,
+} from '../record/record-task-flow-write-contract.ts'
+import type { CursorOwner, CursorState } from './workflow-cursor-transition.ts'
 import type { EnforcementMode } from './workflow-floor.ts'
+
+type CursorOwnerMutation = { values: { sessionId?: CursorOwner | null } }
+type CursorOwnerIntentShape<K extends TaskFlowIntent> = K extends 'compose'
+  ? {
+      stageInsert?: { sessionId: CursorOwner | null }
+      stageChanges?: CursorOwnerMutation[]
+    }
+  : K extends 'stage-update'
+    ? { stages: CursorOwnerMutation[] }
+    : K extends 'advance' | 'await-ruling' | 'abandon'
+      ? { stage: CursorOwnerMutation }
+      : object
+
+/** Workflow write intents narrow cursor-stage owner values to the policy-produced brand. */
+export type TaskFlowIntentInput<K extends TaskFlowIntent> = RecordTaskFlowIntentInput<K> &
+  CursorOwnerIntentShape<K>
 
 export type TaskFlowStageCursorRow = {
   id: number
@@ -53,7 +73,7 @@ export type WorkflowCursorInsert = {
   taskRecordId: string | null
   taskFlowRecordId: string | null
   instanceId: string
-  sessionId: string | null
+  sessionId: CursorOwner | null
   workflowVersionRecordId: string
   catalogueVersionRecordId: string
   args: string

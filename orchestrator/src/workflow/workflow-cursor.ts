@@ -10,7 +10,6 @@ import {
   writeHostedTaskFlow,
 } from '../record/record-task-flow-write-client.ts'
 import {
-  type TaskFlowIntentInput,
   type TaskFlowIntentResult,
   taskFlowRequestId,
 } from '../record/record-task-flow-write-contract.ts'
@@ -19,6 +18,7 @@ import type { LiveCursorAutonomy } from './autonomy.ts'
 import { decideWorkflowTakeover, workflowTakeoverNotice } from './task-flow-decision.ts'
 import { refreshStaleMirror } from './task-flow-mirror-refresh.ts'
 import { taskFlowLocalStore, taskFlowReadStore } from './task-flow-store.ts'
+import type { TaskFlowIntentInput } from './task-flow-store-types.ts'
 import {
   type CommitCountPort,
   readCommitsPastLanding,
@@ -482,7 +482,7 @@ async function persistWorkflowAdvance(
       closed,
       deleteTextIds,
       obligationPlan,
-      sessionId: cursorOwnerAfter('advance', row.session_id, context.session),
+      callerSession: context.session,
       takeoverFromMachineId,
       database: d,
       taskFlowClient: context.taskFlowClient,
@@ -540,7 +540,7 @@ export async function writeFinishingWorkflowAdvance(input: {
   closed: CursorTrailEntry[]
   deleteTextIds: string[]
   obligationPlan?: ReturnType<typeof appendWorkflowClose>
-  sessionId: string | null
+  callerSession: string | null | undefined
   takeoverFromMachineId?: string | null
   database: Database
   taskFlowClient?: WorkflowCursorContext['taskFlowClient']
@@ -568,7 +568,7 @@ export async function writeFinishingWorkflowAdvance(input: {
         state: 'done',
         closedStepNotes: closed,
         question: null,
-        sessionId: cursorOwnerAfter('advance', row.session_id, input.sessionId),
+        sessionId: cursorOwnerAfter('advance', row.session_id, input.callerSession),
         takenOverFromMachineId: input.takeoverFromMachineId,
         lastAdvancedMachineId: machineId(),
         updatedAt: at,

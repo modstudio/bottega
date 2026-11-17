@@ -23,7 +23,10 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
   module('orchestrator/src/workflow/workflow-arguments.ts', ['./workflow-definition.ts']),
   module('orchestrator/src/workflow/workflow-cursor-transition.ts', []),
   module('orchestrator/src/workflow/workflow-cursor-trail.ts', []),
-  module('orchestrator/src/workflow/workflow-cursor-format.ts', ['../../../shared/brand.ts']),
+  module('orchestrator/src/workflow/workflow-cursor-format.ts', [
+    '../../../shared/brand.ts',
+    './workflow-cursor-transition.ts',
+  ]),
   module('orchestrator/src/workflow/workflow-cursor-autonomy.ts', [
     '../../../shared/brand.ts',
     '../../../shared/ship-to.ts',

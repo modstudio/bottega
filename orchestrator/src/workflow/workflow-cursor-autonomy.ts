@@ -1,7 +1,6 @@
 // concern: workflow cursor stored autonomy
 /** Reads a cursor's pinned autonomy snapshot without inventing absent ship-to facts. */
 
-import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { SHIP_TO_VALUES, storedShipToLevel } from '../../../shared/ship-to.ts'
 import {
   type AutonomyResolution,
@@ -12,7 +11,7 @@ import {
   type RulingsResolution,
   type StoredAutonomyResolution,
 } from './autonomy.ts'
-import { shellWord } from './workflow-cursor-format.ts'
+import { workflowCursorComposeCommand } from './workflow-cursor-format.ts'
 export type CursorAutonomyRow = {
   id: number
   record_id: string
@@ -144,16 +143,11 @@ export function cursorAutonomy(
 ): CursorAutonomyResolution | undefined {
   if (!row.autonomy) return undefined
   const stored = mapStoredAutonomyResolution(JSON.parse(row.autonomy) as StoredAutonomyResolution)
-  const args = Object.entries(JSON.parse(row.args) as Record<string, string>)
-    .map(([name, value]) => ` --arg ${shellWord(`${name}=${value}`)}`)
-    .join('')
   const pinned = {
     ...stored,
     cursor: {
       id: row.id,
-      composeCommand:
-        `${PLATFORM_SLUG} workflow compose ${shellWord(row.workflow_slug)} --project ${shellWord(row.project)} ` +
-        `--mode ${shellWord(row.mode_slug)}${args}`,
+      composeCommand: workflowCursorComposeCommand(row),
     },
   } satisfies CursorAutonomyResolution
   const combined = combineCursorAutonomy(pinned, live?.resolution)

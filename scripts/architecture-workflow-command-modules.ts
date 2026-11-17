@@ -15,6 +15,7 @@ export const workflowCommandModules: WorkflowCommandModule[] = [
   module('orchestrator/src/workflow/explore-graduation.ts', []),
   module('orchestrator/src/workflow/task-flow-store-methods.ts', []),
   module('orchestrator/src/workflow/task-flow-store-types.ts', [
+    '../record/record-task-flow-write-contract.ts',
     './workflow-cursor-transition.ts',
     './workflow-floor.ts',
   ]),

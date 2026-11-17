@@ -45,7 +45,8 @@ export function commandExitBindingRefusal(
   if (!exec.createdAfterStepActivation)
     return (
       `command-exit evidence exec:${exec.id} predates this step becoming active; ${remedy}` +
-      (acceptsPullRequestLink ? '; alternatively, pass `--artifact <the pull request link>`' : '')
+      (acceptsPullRequestLink ? '; alternatively, pass `--artifact <the pull request link>`' : '') +
+      (takeoverRemedy ? `; take over this cursor with: ${takeoverRemedy}` : '')
     )
   return null
 }

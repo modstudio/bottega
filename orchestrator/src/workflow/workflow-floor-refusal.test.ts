@@ -43,3 +43,19 @@ test('a foreign cursor owner adds its compose takeover to an exec refusal', () =
   )
   expect(refusal).toContain(takeover)
 })
+
+test('a predating exec includes the foreign-owner takeover remedy', () => {
+  const takeover = `${PLATFORM_SLUG} workflow compose flow --project fixture --mode default --arg key=DEV-2370`
+  const refusal = commandExitBindingRefusal(
+    {
+      id: 5,
+      sessionMatches: true,
+      sessionAdoptedCursor: false,
+      createdAfterStepActivation: false,
+    },
+    false,
+    takeover,
+  )
+  expect(refusal).toContain('predates this step becoming active')
+  expect(refusal).toContain(takeover)
+})

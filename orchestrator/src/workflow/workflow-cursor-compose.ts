@@ -15,7 +15,6 @@ import {
 } from '../record/record-task-flow-write-client.ts'
 import {
   type TaskFlowComposeResult,
-  type TaskFlowIntentInput,
   taskFlowRequestId,
 } from '../record/record-task-flow-write-contract.ts'
 import type { AutonomyResolution } from './autonomy.ts'
@@ -28,7 +27,11 @@ import {
 import { reconcileKeylessInstanceSlot, taskFlowState } from './task-flow-decision.ts'
 import { taskFlowLocalStore, taskFlowReadStore } from './task-flow-store.ts'
 import { sqliteTaskFlowReadStore } from './task-flow-store-sqlite.ts'
-import { isKeylessExplore, type WorkflowCursorInsert } from './task-flow-store-types.ts'
+import {
+  isKeylessExplore,
+  type TaskFlowIntentInput,
+  type WorkflowCursorInsert,
+} from './task-flow-store-types.ts'
 import {
   type CommitCountPort,
   readCommitsPastLanding,
@@ -38,7 +41,7 @@ import { workflowKeyOf } from './workflow-cursor-arguments.ts'
 import { storedCursorAutonomyJson } from './workflow-cursor-autonomy.ts'
 import type { SelectableCursorRow, WorkflowCursorContext } from './workflow-cursor-selection.ts'
 import { refuseUnlinkedCursorLabelCollision } from './workflow-cursor-task-reference.ts'
-import { cursorOwnerAfter } from './workflow-cursor-transition.ts'
+import { cursorOwnerAfter, storedCursorOwner } from './workflow-cursor-transition.ts'
 import {
   closeExploreForLifecycle,
   type FinishExploreLifecycle,
@@ -358,7 +361,7 @@ function cacheComposeReplay(
         taskRecordId: flow.taskId,
         taskFlowRecordId: flow.taskId ? flow.id : null,
         instanceId: stage.instanceId ?? facts.instance,
-        sessionId: stage.sessionId ?? null,
+        sessionId: storedCursorOwner(stage.sessionId ?? null),
         args: JSON.stringify(stage.arguments),
         ordinal: stage.activeOrdinal,
         stepSlug: stage.activeSlug,

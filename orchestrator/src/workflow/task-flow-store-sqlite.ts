@@ -7,7 +7,6 @@ import { openQuestionsForCursors } from '../question-store/question-store-read.t
 import * as questions from '../question-store/question-store-sqlite-reads.ts'
 import type {
   TaskFlowIntent,
-  TaskFlowIntentInput,
   TaskFlowIntentResult,
 } from '../record/record-task-flow-write-contract.ts'
 import type {
@@ -24,6 +23,7 @@ import type {
   TaskFlowCursorLifecycleRow,
   TaskFlowCursorWorkRow,
   TaskFlowInboxQuestionRow,
+  TaskFlowIntentInput,
   TaskFlowKeylessSessionCursorRow,
   TaskFlowLinkedTaskReferenceRow,
   TaskFlowListedStageRow,

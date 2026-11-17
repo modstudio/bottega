@@ -2,6 +2,7 @@
 /** Keeps public cursor notices and command/tool handle syntax consistent. */
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { foreignCursorOwner } from './workflow-cursor-transition.ts'
 
 export const WORKFLOW_CURSOR_QUESTION_SUMMARY_CHARS = 120
 export const workflowCursorListCommand = `${PLATFORM_SLUG} workflow cursors`
@@ -43,7 +44,7 @@ export function formatCursorResumed(input: {
   return `Cursor ${input.cursor} is already open at step ${input.step} ${input.stepSlug} for ${input.key}.`
 }
 
-export function workflowCursorTakeoverCommand(row: {
+export function workflowCursorComposeCommand(row: {
   workflow_slug: string
   project: string
   mode_slug: string
@@ -58,20 +59,42 @@ export function workflowCursorTakeoverCommand(row: {
   )
 }
 
+export function workflowCursorTakeoverRemedy(
+  row: {
+    id: number
+    workflow_slug: string
+    workflow_key: string | null
+    project: string
+    mode_slug: string
+    args: string
+  },
+  ownerSession: string,
+): string {
+  const compose = workflowCursorComposeCommand(row)
+  if (row.workflow_key) return compose
+  return (
+    `${PLATFORM_SLUG} workflow abandon${workflowCursorReference(row.id, row.project).cli} ` +
+    `--owner-session ${shellWord(ownerSession)}; then compose a new cursor with: ${compose}`
+  )
+}
+
 export function foreignCursorOwnerNotice(
   row: {
+    id: number
     session_id: string | null
     workflow_slug: string
+    workflow_key: string | null
     project: string
     mode_slug: string
     args: string
   },
   callerSession: string | null | undefined,
 ): string | undefined {
-  if (!row.session_id || row.session_id === callerSession) return undefined
+  const owner = foreignCursorOwner(row, callerSession)
+  if (!owner) return undefined
   return (
-    `Notice: this cursor is owned by session ${row.session_id}. Take it over with: ` +
-    workflowCursorTakeoverCommand(row)
+    `Notice: this cursor is owned by session ${owner}. Take it over with: ` +
+    workflowCursorTakeoverRemedy(row, owner)
   )
 }
 
