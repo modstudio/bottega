@@ -80,9 +80,15 @@ export async function questionForWorkflowCursorByNumber(
   cursorId: string,
   number: number,
 ): Promise<Record<string, unknown> | null> {
-  const matches = (await questionsForWorkflowCursor(database, cursorId)).filter(
-    (row) => row.number === number,
-  )
+  return questionByNumber(await questionsForWorkflowCursor(database, cursorId), number)
+}
+
+/** Numbers are unique only within a record space, so a cursor spanning spaces can repeat one. */
+export function questionByNumber<Row extends { number?: unknown }>(
+  questions: Row[],
+  number: number,
+): Row | null {
+  const matches = questions.filter((row) => row.number === number)
   if (matches.length > 1)
     throw new Error(
       `question ${number} names ${matches.length} questions on this cursor in different record spaces; pass the question's record id, then retry`,
