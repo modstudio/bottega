@@ -1,6 +1,8 @@
 // concern: hosted-board-read-cache-contract
 /** Public shapes produced by the hosted board read cache. */
 
+import type { ReplySuccessorNoticeState } from './board-push-policy.ts'
+
 export type HostedCacheNotice = {
   id: string
   text: string
@@ -10,7 +12,5 @@ export type HostedCacheNotice = {
   createdAt: string
   expiresAt: string | null
   purpose: import('../../../shared/board-purpose.ts').BoardPurpose
-  reportReplySuccessor?: boolean
-  successorHeld?: boolean
   threadTitle?: string
-}
+} & ReplySuccessorNoticeState

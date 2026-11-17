@@ -264,6 +264,14 @@ test('a read-only hosted push defers only the successor receipt holder', async (
 
   const offered = fixture()
   const candidateDatabase = machine(offered.projectId, 'candidate')
+  const authorLastSeen = Date.now() - SESSION_LIVE_MS - 60_000
+  addPresence(
+    candidateDatabase,
+    offered.projectId,
+    'author',
+    authorLastSeen - 60_000,
+    authorLastSeen,
+  )
   await refresh(candidateDatabase, offered.client)
 
   const candidatePush = await claimCachedHostedForPush(

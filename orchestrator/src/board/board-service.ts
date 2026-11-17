@@ -19,6 +19,7 @@ import {
 import {
   type DeferredReplySuccessor,
   missingReaderStartWarning,
+  type ReplySuccessorNoticeState,
   replySuccessorAddressing,
   selectPushNotices,
 } from './board-push-policy.ts'
@@ -31,6 +32,7 @@ import {
   type Environment,
   hasNonSuccessorReceipt,
   hasReceipt,
+  holdsReplySuccessor,
   insertRootMessage,
   type MessageRow,
   messageRows,
@@ -159,17 +161,6 @@ function receiptDelivery(messageRecordId: string, reader: string, database = db(
 
 function wasDelivered(messageRecordId: string, reader: string, database = db()): boolean {
   return Boolean(receiptDelivery(messageRecordId, reader, database)?.delivered_at)
-}
-
-function replySuccessorHeld(messageRecordId: string, reader: string, database = db()): boolean {
-  return Boolean(
-    database
-      .query(
-        `SELECT 1 AS ok FROM board_receipt
-         WHERE message_record_id=? AND reader_session=? AND successor=1`,
-      )
-      .get(messageRecordId, reader),
-  )
 }
 
 function replySuccessorPush(
@@ -411,7 +402,7 @@ export function claimNotices(
   env: Environment = process.env,
   clock = Date.now(),
   database = db(),
-): {
+): ({
   number: number
   recordId: string
   text: string
@@ -421,10 +412,8 @@ export function claimNotices(
   createdAt: string
   expiresAt: string | null
   purpose: BoardPurpose
-  reportReplySuccessor?: boolean
-  successorHeld?: boolean
   threadTitle?: string
-}[] {
+} & ReplySuccessorNoticeState)[] {
   const reader = boardReader(env)
   const rows = messageRows(database).filter(
     (row) =>
@@ -445,7 +434,7 @@ export function claimNotices(
       ? {
           ...notice,
           reportReplySuccessor: true,
-          ...(replySuccessorHeld(row.record_id, reader, database) ? { successorHeld: true } : {}),
+          successorHeld: holdsReplySuccessor(row.record_id, reader, database),
         }
       : notice
   })

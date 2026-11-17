@@ -217,7 +217,7 @@ test('a read-only delivery defers a held reply successor and drops a candidate-o
     reportReplySuccessor: true,
     successorHeld: true,
     threadTitle: 'Report thread',
-  }
+  } as const
   const candidateOnly = {
     ...heldSuccessor,
     successorHeld: false,
@@ -227,9 +227,29 @@ test('a read-only delivery defers a held reply successor and drops a candidate-o
     selectPushNotices('2026-10-16T12:00:00.000Z', [heldSuccessor, candidateOnly], clock, false),
   ).toEqual({
     notices: [],
-    withheldOlderCount: 1,
+    withheldOlderCount: 0,
     deferredReplySuccessorCount: 1,
     deferredReplySuccessors: [heldSuccessor],
+  })
+})
+
+test('a newer candidate-only reply is dropped without being counted as withheld', () => {
+  const candidateOnly = {
+    ackRequired: false,
+    ackDeadline: null,
+    createdAt: '2026-10-16T12:00:01.000Z',
+    expiresAt: null,
+    reportReplySuccessor: true,
+    successorHeld: false,
+    threadTitle: 'Newer candidate-only report thread',
+  } as const
+  expect(
+    selectPushNotices('2026-10-16T12:00:00.000Z', [candidateOnly], clock, false),
+  ).toEqual({
+    notices: [],
+    withheldOlderCount: 0,
+    deferredReplySuccessorCount: 0,
+    deferredReplySuccessors: [],
   })
 })
 
@@ -240,8 +260,9 @@ test('a read-only delivery does not defer an expired reply successor', () => {
     createdAt: postedAt,
     expiresAt: '2026-10-16T11:59:59.999Z',
     reportReplySuccessor: true,
+    successorHeld: true,
     threadTitle: 'Expired report thread',
-  }
+  } as const
   expect(selectPushNotices('2026-10-16T12:00:00.000Z', [successor], clock, false)).toEqual({
     notices: [],
     withheldOlderCount: 1,
