@@ -44,6 +44,17 @@ function remainingContextProcess(
   }
 }
 
+function contextDropMechanicalLine(
+  drop: Awaited<ReturnType<typeof dropSessionContextItemsForLifecycle>>[number],
+  label: string,
+  dryRun: boolean,
+): string | null {
+  if (dryRun && drop.error === null) return `would drop ${label}`
+  if (drop.removed) return `drop ${label}`
+  if (drop.alreadyAbsent) return `already absent ${label}`
+  return null
+}
+
 export async function closeOutSessionContext(input: {
   session: string
   dryRun: boolean
@@ -74,9 +85,8 @@ export async function closeOutSessionContext(input: {
   })
   for (const drop of drops) {
     const label = `context ${drop.item.holder}/${drop.item.id} (${drop.item.kind})`
-    if (input.dryRun && drop.error === null) report.mechanical.push(`would drop ${label}`)
-    else if (drop.removed) report.mechanical.push(`drop ${label}`)
-    else if (drop.alreadyAbsent) report.mechanical.push(`already absent ${label}`)
+    const mechanical = contextDropMechanicalLine(drop, label, input.dryRun)
+    if (mechanical) report.mechanical.push(mechanical)
     else if (drop.error)
       report.errors.push({
         item: label,

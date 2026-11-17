@@ -6,6 +6,7 @@ import type { ContextHolderKind, ContextItemKind } from '../../../shared/context
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { recordIso } from '../../../shared/record-timestamp.ts'
+import { refusal, renderRefusal } from '../../../shared/refusal.ts'
 import { contextItemShapeRefusal } from '../doc/doc-context-write.ts'
 import { DocRevisionConflictError } from '../doc/doc-revision-conflict.ts'
 import { assertWrite } from './record-doc-errors.ts'
@@ -47,7 +48,12 @@ export function assertRecordContextItemRevision(
   if (expectedRevision === undefined || expectedRevision === currentRevision) return
   const condition = `context item changed; expected revision ${expectedRevision}, current revision ${currentRevision ?? 'missing'}`
   throw new DocRevisionConflictError(
-    `${condition}\ncleared by: re-read the item with ${PLATFORM_SLUG} agent context show, then retry with its current revision`,
+    renderRefusal(
+      refusal(condition, {
+        kind: 'edit',
+        text: `re-read the item with ${PLATFORM_SLUG} agent context show, then retry with its current revision`,
+      }),
+    ),
     condition,
     'stale-revision',
     currentRevision ?? null,

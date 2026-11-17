@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { DocRevisionConflictError } from '../doc/doc-revision-conflict.ts'
 import { assertRecordContextItemRevision, upsertRecordContextItem } from './record-context-items.ts'
@@ -14,7 +15,7 @@ test('hosted context-item revisions allow matching or unconditional writes and t
     expect(error).toMatchObject({
       status: 409,
       currentRevision: 'current',
-      message: expect.stringContaining('bottega agent context show'),
+      message: expect.stringContaining(`${PLATFORM_SLUG} agent context show`),
     })
   }
 })

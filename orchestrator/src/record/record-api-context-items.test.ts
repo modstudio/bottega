@@ -1,5 +1,6 @@
 import { expect, test } from 'bun:test'
 import { Hono } from 'hono'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import {
   DocRevisionConflictError,
@@ -48,7 +49,7 @@ test.each(['PUT', 'DELETE'])(
     )
     const conflict = () => {
       throw new DocRevisionConflictError(
-        'context item changed\ncleared by: re-read the item with bottega agent context show, then retry with its current revision',
+        `context item changed\ncleared by: re-read the item with ${PLATFORM_SLUG} agent context show, then retry with its current revision`,
         'context item changed',
         'stale-revision',
         'current-revision',
@@ -95,12 +96,14 @@ test.each(['PUT', 'DELETE'])(
     const body = await response.json()
     expect(response.status).toBe(409)
     expect(revisionConflictBodySchema.safeParse(body).success).toBe(true)
-    expect(recordApiError(body, response.status).message).toContain('bottega agent context show')
+    expect(recordApiError(body, response.status).message).toContain(
+      `${PLATFORM_SLUG} agent context show`,
+    )
     expect(body).toMatchObject({
       code: 'revision-conflict',
       reason: 'stale-revision',
       currentRevision: 'current-revision',
-      error: expect.stringContaining('bottega agent context show'),
+      error: expect.stringContaining(`${PLATFORM_SLUG} agent context show`),
     })
   },
 )
