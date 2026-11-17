@@ -33,6 +33,8 @@ import {
   sharedGitConfigCheckSkipReason,
 } from './shared-git-config-check.ts'
 import {
+  overwrittenAbandonedAskingTurnIds,
+  reconcileOverwrittenAbandonedAskingTurns,
   reconcileSupersededAskingTurns,
   supersededAskingTurnDecisions,
 } from './superseded-asking-turn-store.ts'
@@ -423,11 +425,16 @@ export function reapStale(
     now,
   )
   const supersededAsking = supersededAskingTurnDecisions(d)
+  const overwrittenAbandonedAsking = overwrittenAbandonedAskingTurnIds(d)
   if (storeWritesRefused()) {
     return [
       ...supersededAsking.map((turn) => ({
         record_id: turn.recordId,
         reason: `superseded by run ${turn.supersededByNumber}`,
+      })),
+      ...overwrittenAbandonedAsking.map((recordId) => ({
+        record_id: recordId,
+        reason: 'architect abandon verdict was overwritten by a late terminal write',
       })),
       ...dead.map((id) => {
         const row = rows.find((candidate) => candidate.record_id === id)!
@@ -453,6 +460,12 @@ export function reapStale(
   const supersededCount = supersededAsking.length
     ? writeTransaction(() => reconcileSupersededAskingTurns(d, finishedAt), d)
     : 0
+  const repairedAbandoned = overwrittenAbandonedAsking.length
+    ? writeTransaction(() => reconcileOverwrittenAbandonedAskingTurns(d, finishedAt), d)
+    : []
+  if (repairedAbandoned.length) {
+    rollUpReapedRoots(d, repairedAbandoned, new Set(), machineId(), finishedAt)
+  }
   if (abandonedBootstraps.length) {
     const update = d.query(
       `UPDATE run SET status='failed', failure_kind='harness', host_wait_since=NULL,
@@ -501,6 +514,7 @@ export function reapStale(
   finalizeReapedRuns(d, ended, [...setupDeaths, ...recordedCauseDeaths], localMachineId, finishedAt)
   return (
     supersededCount +
+    repairedAbandoned.length +
     dead.length +
     abandonedBootstraps.length +
     setupDeaths.length +

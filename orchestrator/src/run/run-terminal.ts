@@ -82,6 +82,7 @@ import {
   runUsageColumns,
   runUsageColumnValues,
 } from './run-usage-columns.ts'
+import { terminalLifecycleForWrite } from './run-terminal-lifecycle-verdict.ts'
 import {
   shouldSnapshotSharedGitConfig,
   terminalSharedGitConfigHeader,
@@ -940,14 +941,27 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
   const writeTerminalRow = () =>
     writeTransaction(() => {
       const finishedAt = nowIso()
+      const storedLifecycle = db()
+        .query('SELECT status, error, failure_kind FROM run WHERE record_id=?')
+        .get(claim.id) as {
+        status: string
+        error: string | null
+        failure_kind: ReturnType<typeof classify> | null
+      }
+      const recordedLifecycle = terminalLifecycleForWrite(
+        {
+          status: storedLifecycle.status,
+          error: storedLifecycle.error,
+          failureKind: storedLifecycle.failure_kind,
+        },
+        { status, error, failureKind },
+      )
       db()
         .query(
           `UPDATE run SET latency_ms=?, exit_code=?, output_bytes=?, output_path=?, prompt_path=?,
                         vendor_tokens=?, model_calls=?, peak_call_tokens=?, quota_used_percent_start=?, quota_used_percent_end=?, quota_window_minutes=?, quota_resets_at=?, vendor_cost_usd=?, vendor_input_tokens=?, vendor_output_tokens=?,
                         vendor_estimated_cost_usd=?, vendor_cost_source=?, model=COALESCE(?, model),
-                        status=CASE WHEN status='stopped' THEN status ELSE ? END,
-                        error=CASE WHEN status='stopped' THEN error ELSE ? END,
-                        failure_kind=CASE WHEN status='stopped' THEN failure_kind ELSE ? END,
+                        status=?, error=?, failure_kind=?,
                         host_wait_since=NULL,
                         vendor_session=COALESCE(?, vendor_session), pre_confinement=?, confinement=?,
                         review_provenance=?, provenance_status=?,
@@ -966,9 +980,9 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
           costUsd,
           ...runUsageColumnValues(runUsageColumns(vendorUsage, AGENTS[name]?.billing)),
           effectiveModel,
-          status,
-          error,
-          failureKind,
+          recordedLifecycle.status,
+          recordedLifecycle.error,
+          recordedLifecycle.failureKind,
           resolvedSession,
           preConfinement,
           confinementEvent ? JSON.stringify(confinementEvent) : null,
@@ -1033,9 +1047,9 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
       finalizeTerminalChain(db(), {
         runId: claim.id,
         parentRunId: identity.parent_run_record_id,
-        status,
-        failureKind,
-        error,
+        status: recordedLifecycle.status,
+        failureKind: recordedLifecycle.failureKind as ReturnType<typeof classify> | null,
+        error: recordedLifecycle.error,
         record: [localMachineId, finishedAt],
       })
       // A parsed findings reply is the review event. Capture it in the same
@@ -1079,8 +1093,6 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
     database: db(),
     runId: claim.id,
     rootId: claimIdentity(opts.resume).parent_run_record_id ?? claim.id,
-    status,
-    failureKind,
     preAnswer: () => preAnswerReplyQuestions(claim.id, recordedQuestions),
   })
   return completeRecordedRun({

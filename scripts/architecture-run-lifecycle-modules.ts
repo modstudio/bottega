@@ -169,6 +169,7 @@ export const runLifecycleModules: ArchitectureModule[] = [
     './run-retry.ts',
   ]),
   module('orchestrator/src/run/run-alive.ts', []),
+  module('orchestrator/src/run/run-terminal-lifecycle-verdict.ts', []),
   module('orchestrator/src/run/superseded-asking-turn.ts', []),
   module('orchestrator/src/run/superseded-asking-turn-store.ts', [
     'bun:sqlite',
@@ -720,6 +721,7 @@ export const runLifecycleModules: ArchitectureModule[] = [
     './run-terminal-change.ts',
     './run-terminal-premature.ts',
     './run-terminal-precedence.ts',
+    './run-terminal-lifecycle-verdict.ts',
     './run-test-outcome.ts',
     './run-usage-columns.ts',
     './shared-git-config.ts',

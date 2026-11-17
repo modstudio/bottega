@@ -124,6 +124,29 @@ test('reconcile restores every vendor usage column from the terminal snapshot', 
   })
 })
 
+test('reconcile records measurements without overwriting an architect abandon verdict', () => {
+  const id = addRun({ agent: 'codex', job: 'diagnose', status: 'asking' })
+  db()
+    .query(
+      "UPDATE run SET status='stale',failure_kind='abandoned',error='abandoned by architect',unreconciled=1 WHERE record_id=?",
+    )
+    .run(id)
+  persistTerminalSnapshot(id, { ...terminalSnapshot(), status: 'asking', latencyMs: 456 })
+
+  expect(reconcileRun(id)).toBe(`reconciled run ${id} as asking`)
+  expect(
+    db()
+      .query('SELECT status,failure_kind,error,latency_ms,vendor_tokens FROM run WHERE record_id=?')
+      .get(id),
+  ).toEqual({
+    status: 'stale',
+    failure_kind: 'abandoned',
+    error: 'abandoned by architect',
+    latency_ms: 456,
+    vendor_tokens: 34,
+  })
+})
+
 describe('run files are named by their run, not by the clock', () => {
   /**
    * Six review lenses fired concurrently put three runs inside one millisecond

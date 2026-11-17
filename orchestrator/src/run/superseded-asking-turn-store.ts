@@ -41,3 +41,41 @@ export function reconcileSupersededAskingTurns(
   }
   return changed
 }
+
+/** Asking rows whose latest chain mutation is an architect abandon lost that verdict. */
+export function overwrittenAbandonedAskingTurnIds(database: Database): string[] {
+  return (
+    database
+      .query(
+        `SELECT asking.record_id
+           FROM run asking
+          WHERE asking.status='asking'
+            AND (
+              SELECT audit.action
+                FROM run_mutation_audit audit
+               WHERE audit.root_run_record_id = COALESCE(asking.parent_run_record_id, asking.record_id)
+               ORDER BY audit.at DESC, audit.rowid DESC
+               LIMIT 1
+            ) = 'abandon'`,
+      )
+      .all() as { record_id: string }[]
+  ).map(({ record_id }) => record_id)
+}
+
+/** Restore an architect abandon verdict overwritten by a worker's late terminal write. */
+export function reconcileOverwrittenAbandonedAskingTurns(
+  database: Database,
+  finishedAt: string,
+): string[] {
+  const candidates = overwrittenAbandonedAskingTurnIds(database)
+  const update = database.query(
+    "UPDATE run SET status='stale', failure_kind='abandoned' WHERE record_id=? AND status='asking'",
+  )
+  const repaired: string[] = []
+  for (const recordId of candidates) {
+    if (update.run(recordId).changes !== 1) continue
+    enqueueRunRecord(database, recordId, machineId(), finishedAt)
+    repaired.push(recordId)
+  }
+  return repaired
+}

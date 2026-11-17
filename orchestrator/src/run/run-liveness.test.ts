@@ -95,6 +95,40 @@ const runNumber = (recordId: string): number =>
   ).number
 
 describe('reapStale', () => {
+  test('restores an asking row whose latest chain audit is abandon', () => {
+    const id = addRun({ agent: 'codex', job: 'craft', status: 'asking' })
+    db()
+      .query(
+        `INSERT INTO run_mutation_audit
+           (record_id,run_record_id,root_run_record_id,action,at,reason)
+         VALUES (?,?,?,?,?,?)`,
+      )
+      .run(newRecordId(), id, id, 'abandon', nowIso(), 'late worker still running')
+
+    expect(reapStale(db(), noSharedGitConfigCheck)).toBe(1)
+    expect(db().query('SELECT status,failure_kind FROM run WHERE record_id=?').get(id)).toEqual({
+      status: 'stale',
+      failure_kind: 'abandoned',
+    })
+  })
+
+  test('does not restore an asking row when a later mutation superseded abandon', () => {
+    const id = addRun({ agent: 'codex', job: 'craft', status: 'asking' })
+    const insert = db().query(
+      `INSERT INTO run_mutation_audit
+         (record_id,run_record_id,root_run_record_id,action,at,reason)
+       VALUES (?,?,?,?,?,NULL)`,
+    )
+    insert.run(newRecordId(), id, id, 'abandon', '2026-11-16T10:00:00.000Z')
+    insert.run(newRecordId(), id, id, 'continue', '2026-11-16T10:01:00.000Z')
+
+    expect(reapStale(db(), noSharedGitConfigCheck)).toBe(0)
+    expect(db().query('SELECT status,failure_kind FROM run WHERE record_id=?').get(id)).toEqual({
+      status: 'asking',
+      failure_kind: null,
+    })
+  })
+
   test('repairs superseded asking turns without changing their open questions or root roll-up', () => {
     const root = addRun({ agent: 'codex', job: 'craft', status: 'ok' })
     const asking = addRun({
