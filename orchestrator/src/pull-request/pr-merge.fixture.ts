@@ -46,6 +46,7 @@ export const recordPassingGate = () => recordPassingMergeGate(pullRequest.headCo
 export function adapter(
   input: {
     view?: (target: string) => PullRequestMergeFacts
+    taskCursorAdmission?: PullRequestMergeAdapter['taskCursorAdmission']
     checks?: PullRequestCheck[] | (() => PullRequestCheck[])
     landingState?: () => { remoteLandingTip: string; mergeBase: string }
     hasCommit?: (cwd: string, headCommit: string) => boolean
@@ -81,6 +82,7 @@ export function adapter(
   return {
     repository: () => 'example/repository',
     view: (_cwd, target) => input.view?.(target) ?? pullRequest,
+    ...(input.taskCursorAdmission ? { taskCursorAdmission: input.taskCursorAdmission } : {}),
     checks: () => (typeof input.checks === 'function' ? input.checks() : (input.checks ?? [])),
     landingState: input.landingState ?? (() => ({ remoteLandingTip: 'base', mergeBase: 'base' })),
     hasCommit: input.hasCommit ?? (() => true),

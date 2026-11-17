@@ -52,7 +52,7 @@ test('manual task claim take and release direct callers to the cursor verbs', as
     {
       env: noRecordEnv,
       clock,
-      taskCursorSession: 'cursor-session',
+      taskCursorAuthority: { mode: 'take', session: 'cursor-session' },
       cwd: '/tmp/board-route-project',
     },
   )
@@ -68,7 +68,7 @@ test('release-task normalizes a task subject before releasing a local claim', as
     {
       env: noRecordEnv,
       clock,
-      taskCursorSession: 'cursor-session',
+      taskCursorAuthority: { mode: 'take', session: 'cursor-session' },
       cwd: '/tmp/board-route-project',
     },
   )
@@ -108,7 +108,7 @@ test('the uncovered read authority lists claims for a foreign registered project
   await expect(
     boardClaimList('board-route-project', true, {
       ...context,
-      taskCursorCoverageRead: true,
+      taskCursorAuthority: { mode: 'coverage-read', session: null },
     }),
   ).resolves.toEqual({ claims: [] })
   expect(listedProjects).toEqual(['board-route-project'])

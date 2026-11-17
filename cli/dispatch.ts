@@ -34,7 +34,13 @@ export type BinaryEntries = {
   retrievalSearch(argv: string[]): Promise<void>
   checkAttribution(argv: string[]): Promise<number>
   schemaCheck(argv: string[]): Promise<number>
-  keylessCursorIdleAdmission(action: 'task new'): Promise<string | null>
+  keylessCursorIdleAdmission(
+    action: 'task new',
+  ): Promise<
+    | { kind: 'allow' }
+    | { kind: 'refuse'; message: string }
+    | { kind: 'failed'; reason: string; remedy: string }
+  >
 }
 
 type OutboxOwner = 'orch' | 'hub'
@@ -350,9 +356,13 @@ export async function dispatchBinary(
     }
   }
   if (input[0] === 'task' && input[1] === 'new' && !helpRequested(input.slice(2))) {
-    const refusal = await entries.keylessCursorIdleAdmission('task new')
-    if (refusal) {
-      console.error(refusal)
+    const admission = await entries.keylessCursorIdleAdmission('task new')
+    if (admission.kind !== 'allow') {
+      console.error(
+        admission.kind === 'refuse'
+          ? admission.message
+          : `could not check idle cursors: ${admission.reason}; ${admission.remedy}`,
+      )
       return 1
     }
   }

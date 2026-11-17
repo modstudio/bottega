@@ -59,8 +59,7 @@ describe('task cursor claim decision', () => {
   })
 })
 
-test('a refused take stops before the cursor mutation can run', async () => {
-  let cursorMutated = false
+test('a rejecting take propagates', async () => {
   const ports: TaskCursorClaimPorts = {
     take: async () => {
       throw new Error('claim refused')
@@ -70,8 +69,6 @@ test('a refused take stops before the cursor mutation can run', async () => {
   await expect(followTaskCursorClaim({ ...input, verb: 'compose' }, ports)).rejects.toThrow(
     'claim refused',
   )
-  expect(cursorMutated).toBe(false)
-  cursorMutated = true
 })
 
 test('the local adapter moves a compose claim and finish leaves none live', async () => {

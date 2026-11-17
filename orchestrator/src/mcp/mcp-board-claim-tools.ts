@@ -28,7 +28,8 @@ export function registerBoardClaimTools(server: McpServer): void {
   server.registerTool(
     takeTool,
     {
-      description: 'Take or renew a coordination claim.',
+      description:
+        'Take or renew a path or resource claim. Task claims follow workflow compose and workflow next.',
       inputSchema: z.object({
         subject: z.string().min(1),
         duration_ms: z.number().int().positive().optional(),
@@ -64,7 +65,8 @@ export function registerBoardClaimTools(server: McpServer): void {
   server.registerTool(
     releaseTool,
     {
-      description: 'Release a live coordination claim.',
+      description:
+        'Release a live path or resource claim. Use workflow next to finish or workflow abandon to release a task claim.',
       inputSchema: z.object({ id: z.string().min(1) }),
     },
     async ({ id }) => result(await boardClaimRelease(id)),

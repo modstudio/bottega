@@ -26,6 +26,7 @@ import type {
   HostedBoardThread,
 } from '../record/record-board-contract.ts'
 import { resolveRunIdentifier } from '../run/run-identifier.ts'
+import { taskFlowReadStore } from '../workflow/task-flow-store.ts'
 import { workflowCursorReference } from '../workflow/workflow-cursor-format.ts'
 import {
   type AnswerNoteFiler,
@@ -35,6 +36,7 @@ import {
 } from './board-answer-note.ts'
 import { BOARD_CLAIM_DEFAULT_MS, releaseTaskKey } from './board-claim-policy.ts'
 import {
+  type BoardTaskCursorAuthority,
   type ClaimView,
   claimProject,
   listClaims,
@@ -96,10 +98,8 @@ type Context = {
   isKnownCommit?: IsKnownCommit
   answerNoteFiler?: AnswerNoteFiler
   destinationResolver?: BoardDestinationResolver
-  /** Internal authority used only by the workflow cursor claim adapter. */
-  taskCursorSession?: string
-  /** Internal read authority used only by the workflow uncovered guard. */
-  taskCursorCoverageRead?: true
+  /** Internal authority used only by task-cursor claim adapters and coverage reads. */
+  taskCursorAuthority?: BoardTaskCursorAuthority
   database?: ReturnType<typeof db>
 }
 
@@ -201,8 +201,7 @@ function context(input: Context = {}) {
     isKnownCommit: input.isKnownCommit,
     answerNoteFiler: input.answerNoteFiler ?? fileAcceptedAnswerNote,
     destinationResolver: input.destinationResolver ?? boardWriteDestination,
-    taskCursorSession: input.taskCursorSession,
-    taskCursorCoverageRead: input.taskCursorCoverageRead,
+    taskCursorAuthority: input.taskCursorAuthority,
     database: input.database ?? db(),
   }
 }
@@ -822,18 +821,13 @@ function hostedClaimRunId(runId: string | undefined, env: Environment): string |
 
 export async function boardClaimTake(input: TakeClaimInput, inputContext?: Context) {
   const c = context(inputContext)
-  if (input.subject.startsWith('task:') && !c.taskCursorSession)
+  const takeAuthority = c.taskCursorAuthority?.mode === 'take' ? c.taskCursorAuthority : undefined
+  if (input.subject.startsWith('task:') && !takeAuthority)
     throw new Error(
       `task claims follow task cursors; run workflow compose … --arg key=${input.subject.slice('task:'.length)} instead`,
     )
-  if (c.taskCursorSession) input = { ...input, force: true }
-  const project = claimProject(
-    input.project,
-    c.env,
-    c.cwd,
-    c.database,
-    Boolean(c.taskCursorSession),
-  )
+  if (takeAuthority) input = { ...input, force: true }
+  const project = claimProject(input.project, c.env, c.cwd, c.database, takeAuthority)
   const callerProject = projectAt(c.cwd, c.database)
   const targetProject = projectByName(project, c.database)
   const checkout = boardTextCheckout({
@@ -852,18 +846,10 @@ export async function boardClaimTake(input: TakeClaimInput, inputContext?: Conte
     note: input.note === undefined ? undefined : prepareNote(input.note),
   }
   if (boardMode('shared', c.env, c.database) === 'local') {
-    const result = takeClaim(
-      input,
-      c.env,
-      c.clock,
-      c.cwd,
-      Boolean(c.taskCursorSession),
-      c.database,
-      c.taskCursorSession,
-    )
+    const result = takeClaim(input, c.env, c.clock, c.cwd, c.database, takeAuthority)
     return { ...claimResult(result), action: result.action }
   }
-  if (input.force && !c.taskCursorSession)
+  if (input.force && !takeAuthority)
     throw new Error(
       'hosted claim take does not support --force; release the conflicting claim or wait for its lease',
     )
@@ -875,8 +861,7 @@ export async function boardClaimTake(input: TakeClaimInput, inputContext?: Conte
     durationMs: input.durationMs ?? BOARD_CLAIM_DEFAULT_MS,
     runId: hostedClaimRunId(input.runId, c.env),
     note: input.note,
-    holderSession: c.taskCursorSession ?? boardActor(c.env).session,
-    force: Boolean(c.taskCursorSession),
+    holderSession: takeAuthority?.session ?? boardActor(c.env).session,
   }
   const row = await hostedClient(c).takeBoardClaim(claim, await writeDestination(c, claim.project))
   return { ...claimResult(row), action: row.action }
@@ -921,7 +906,9 @@ export async function boardClaimList(
   inputContext?: Context,
 ) {
   const c = context(inputContext)
-  if (boardMode('shared', c.env) === 'local')
+  const coverageAuthority =
+    c.taskCursorAuthority?.mode === 'coverage-read' ? c.taskCursorAuthority : undefined
+  if (boardMode('shared', c.env, c.database) === 'local')
     return {
       claims: listClaims(
         project,
@@ -930,10 +917,10 @@ export async function boardClaimList(
         c.clock,
         c.cwd,
         c.database,
-        c.taskCursorCoverageRead,
+        coverageAuthority,
       ).claims.map(claimResult),
     }
-  const resolvedProject = claimProject(project, c.env, c.cwd, c.database, c.taskCursorCoverageRead)
+  const resolvedProject = claimProject(project, c.env, c.cwd, c.database, coverageAuthority)
   const hosted = await hostedClient(c).listBoardClaims(
     resolvedProject,
     projectRowByName(resolvedProject, c.database)?.recordId ?? null,
@@ -944,45 +931,31 @@ export async function boardClaimList(
 }
 export async function boardClaimReleaseTask(key: string, project: string, inputContext?: Context) {
   const c = context(inputContext)
+  const releaseAuthority =
+    c.taskCursorAuthority?.mode === 'release' ? c.taskCursorAuthority : undefined
   const targetProject = projectByName(project, c.database)
   if (!targetProject)
     throw new Error(`unknown project ${project}; run ${PLATFORM_SLUG} project list`)
-  const normalizedKey = c.taskCursorSession
+  const normalizedKey = releaseAuthority
     ? key.replace(/^task:/, '').trim()
     : releaseTaskKey(key, targetProject.settings.worktree?.keyPattern ?? DEFAULT_TASK_KEY_PATTERN)
   const mode = boardMode('shared', c.env, c.database)
-  if (!c.taskCursorSession) {
-    const open = c.database
-      .query<{ number: number }, [string, string]>(
-        `SELECT number FROM workflow_cursor
-         WHERE project=? AND workflow_key=? AND state NOT IN ('done','abandoned')
-         ORDER BY number DESC LIMIT 1`,
-      )
-      .get(project, normalizedKey)
+  if (!releaseAuthority) {
+    const open = (
+      await taskFlowReadStore(c.database, c.client).keyedStageHistory({ since: '' })
+    ).find(
+      (stage) =>
+        stage.project === project &&
+        stage.workflow_key === normalizedKey &&
+        !['done', 'abandoned'].includes(stage.state),
+    )
     if (open)
       throw new Error(
-        `task ${normalizedKey} is held by open workflow cursor ${open.number}; run workflow abandon${workflowCursorReference(open.number, project).cli} before board claim release-task`,
+        `task ${normalizedKey} is held by open workflow cursor ${open.id}; run workflow abandon${workflowCursorReference(open.id, project).cli} before board claim release-task`,
       )
-    if (mode === 'hosted') {
-      const hosted = await hostedClient(c).readTaskFlow!(
-        { taskKey: normalizedKey },
-        await writeDestination(c, project),
-      )
-      if (hosted.stage && !['done', 'abandoned'].includes(hosted.stage.state))
-        throw new Error(
-          `task ${normalizedKey} is held by open workflow cursor ${hosted.stage.number}; run workflow abandon${workflowCursorReference(hosted.stage.number, project).cli} before board claim release-task`,
-        )
-    }
   }
   return mode === 'local'
-    ? releaseTaskClaims(
-        normalizedKey,
-        project,
-        c.env,
-        c.clock,
-        c.database,
-        Boolean(c.taskCursorSession),
-      )
+    ? releaseTaskClaims(normalizedKey, project, c.env, c.clock, c.database, releaseAuthority)
     : hostedClient(c).releaseBoardTaskClaims(
         { key: normalizedKey, project, projectId: targetProject.recordId },
         await writeDestination(c, project),

@@ -76,7 +76,7 @@ test('wrapper help prints public orchestrator, hub, and translated usage paths',
     retrievalSearch: async () => {},
     checkAttribution: async () => 0,
     schemaCheck: async () => 0,
-    keylessCursorIdleAdmission: async () => null,
+    keylessCursorIdleAdmission: async () => ({ kind: 'allow' }),
   }
   for (const argv of [
     ['workflow', 'attach', '--help'],
@@ -197,7 +197,7 @@ test('agent verbs keep their verb and pass remaining arguments to the agent entr
     retrievalSearch: async () => {},
     checkAttribution: async () => 0,
     schemaCheck: async () => 0,
-    keylessCursorIdleAdmission: async () => null,
+    keylessCursorIdleAdmission: async () => ({ kind: 'allow' }),
   }
 
   for (const [verb, args] of [

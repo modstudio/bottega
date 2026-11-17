@@ -23,6 +23,7 @@ import {
   readCommitsPastLanding,
   workflowComposeBranchRefusal,
 } from './workflow-compose-branch.ts'
+import { rollbackComposeClaim } from './workflow-compose-claim-rollback.ts'
 import { adoptWorkflowTask } from './workflow-cursor-adoption.ts'
 import { workflowKeyOf as keyOf, resolveCursorArguments } from './workflow-cursor-arguments.ts'
 import { graduateExploreAfterCompose, insertWorkflowCursor } from './workflow-cursor-compose.ts'
@@ -259,15 +260,16 @@ export async function composeWorkflowWithCursor(
     if (existing && start === 'reuse') row = await reuseWorkflowCursor(existing, args, context, d)
     else row = await insertWorkflowCursor(composition, context, d, live.resolution, commitCount)
   } catch (error) {
-    if (start !== 'reuse' && claimFollow.claimAction !== 'renewed')
-      await followTaskCursorClaim({
-        project: composition.project,
-        taskKey: keyOf(composition.arguments) || null,
-        session: context.session,
-        verb: 'abandon',
-        database: d,
-      })
-    throw error
+    await rollbackComposeClaim({
+      claimAction: claimFollow.claimAction,
+      start,
+      project: composition.project,
+      taskKey: keyOf(composition.arguments) || null,
+      session: context.session,
+      displacedSession: existing?.session_id ?? null,
+      database: d,
+      error,
+    })
   }
   const cursor = {
     id: row.id,

@@ -74,6 +74,11 @@ export type TakeClaimInput = {
   force?: boolean
 }
 
+export type BoardTaskCursorAuthority = {
+  mode: 'take' | 'release' | 'coverage-read'
+  session: string | null
+}
+
 function claimActor(env: Environment): ClaimActor {
   return boardActor(env)
 }
@@ -83,10 +88,11 @@ export function claimProject(
   env: Environment = process.env,
   cwd = process.cwd(),
   database: ReturnType<typeof db> = db(),
-  allowRequestedProject = false,
+  authority?: BoardTaskCursorAuthority,
 ): string {
-  const actor = allowRequestedProject ? null : claimActor(env)
-  if (actor?.kind === 'operator' || allowRequestedProject) {
+  const internalProjectRead = authority !== undefined
+  const actor = internalProjectRead ? null : claimActor(env)
+  if (actor?.kind === 'operator' || internalProjectRead) {
     if (!requested) throw new Error('operator claim requires --project <name>')
     if (!projectByName(requested, database))
       throw new Error(`unknown project ${requested}; run ${PLATFORM_SLUG} project list`)
@@ -197,7 +203,7 @@ type TakeTransaction = {
   clock: number
   cwd: string
   database: ReturnType<typeof writableDb>
-  allowArchitectTakeover: boolean
+  taskCursorAuthority?: BoardTaskCursorAuthority
 }
 
 type TakeTransactionResult = {
@@ -347,7 +353,7 @@ function takeClaimInTransaction(context: TakeTransaction): TakeTransactionResult
     conflictingClaim: conflicts.length > 0,
     foreignLiveConflict: foreignLive.length > 0,
     force: Boolean(context.input.force),
-    actorKind: context.allowArchitectTakeover ? 'operator' : context.actor.kind,
+    actorKind: context.taskCursorAuthority?.mode === 'take' ? 'operator' : context.actor.kind,
   })
   if (decision === 'renew') return renewTakenClaim(exactHeld!, context)
   if (decision === 'refuse') return refusedTake(foreignLive, context)
@@ -359,22 +365,24 @@ export function takeClaim(
   env: Environment = process.env,
   clock = Date.now(),
   cwd = process.cwd(),
-  allowArchitectTakeover = false,
   database = writableDb(),
-  cursorSession?: string,
+  taskCursorAuthority?: BoardTaskCursorAuthority,
 ): TakeClaimResult {
+  const cursorSession =
+    taskCursorAuthority?.mode === 'take' ? taskCursorAuthority.session : undefined
+  const internalTake = taskCursorAuthority?.mode === 'take'
   const actor: ClaimActor = cursorSession
     ? { kind: 'architect', session: cursorSession }
     : claimActor(env)
-  if (input.force && !mayForceClaim(actor) && !allowArchitectTakeover)
+  if (input.force && !mayForceClaim(actor) && !internalTake)
     throw new Error('only the operator may use --force')
   const subject = parseClaimSubject(input.subject)
   const note = claimNote(input.note)
   const duration = input.durationMs ?? BOARD_CLAIM_DEFAULT_MS
   const durationRefusal = claimDurationRefusal(duration)
   if (durationRefusal) throw new Error(durationRefusal)
-  const project = claimProject(input.project, env, cwd, database, allowArchitectTakeover)
-  const claimCwd = allowArchitectTakeover ? (projectByName(project, database)?.path ?? cwd) : cwd
+  const project = claimProject(input.project, env, cwd, database, taskCursorAuthority)
+  const claimCwd = internalTake ? (projectByName(project, database)?.path ?? cwd) : cwd
   validateRunTie(input.runId, actor, database)
   const outcome = writeTransaction(
     () =>
@@ -389,7 +397,7 @@ export function takeClaim(
         clock,
         cwd: claimCwd,
         database,
-        allowArchitectTakeover,
+        taskCursorAuthority,
       }),
     database,
   )
@@ -453,9 +461,9 @@ export function listClaims(
   clock = Date.now(),
   cwd = process.cwd(),
   database: ReturnType<typeof db> = db(),
-  allowRequestedProject = false,
+  taskCursorAuthority?: BoardTaskCursorAuthority,
 ): { claims: ClaimView[] } {
-  const name = claimProject(project, env, cwd, database, allowRequestedProject)
+  const name = claimProject(project, env, cwd, database, taskCursorAuthority)
   const rows = database
     .query(
       `SELECT ${CLAIM_COLUMNS} FROM board_claim WHERE project_record_id=(SELECT record_id FROM project WHERE name=?) ORDER BY taken_at,record_id`,
@@ -509,9 +517,9 @@ export function releaseTaskClaims(
   env: Environment = process.env,
   clock = Date.now(),
   database = writableDb(),
-  taskCursorRelease = false,
+  taskCursorAuthority?: BoardTaskCursorAuthority,
 ): { released: number } {
-  if (!taskCursorRelease) claimActor(env)
+  if (taskCursorAuthority?.mode !== 'release') claimActor(env)
   if (!projectByName(project, database))
     throw new Error(`unknown project ${project}; run ${PLATFORM_SLUG} project list`)
   return writeTransaction(() => {

@@ -176,7 +176,7 @@ export async function workflowUncoveredReport(
     try {
       listed = await claimList(project.name, true, {
         database,
-        taskCursorCoverageRead: true,
+        taskCursorAuthority: { mode: 'coverage-read', session: null },
       })
     } catch (error) {
       throw new Error(

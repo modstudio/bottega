@@ -12,13 +12,10 @@ const module = (file: string, allowed: string[]): WorkflowCommandModule => ({
 })
 
 export const workflowCommandModules: WorkflowCommandModule[] = [
-  module('orchestrator/src/session/keyless-cursor-idle-admission.ts', [
-    '../../../shared/brand.ts',
-    '../caller-classification.ts',
-    '../database/db.ts',
-    '../workflow/task-flow-store.ts',
-    '../workflow/workflow-cursor-format.ts',
-    './keyless-cursor-idle.ts',
+  module('orchestrator/src/workflow/workflow-compose-claim-rollback.ts', [
+    'bun:sqlite',
+    './workflow-cursor-transition.ts',
+    './workflow-task-claim.ts',
   ]),
   module('orchestrator/src/workflow/workflow-task-claim.ts', [
     'bun:sqlite',

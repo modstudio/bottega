@@ -185,6 +185,7 @@ export const boardModules: BoardModule[] = [
     '../record/record-board-contract.ts',
     '../run/run-identifier.ts',
     '../workflow/workflow-cursor-format.ts',
+    '../workflow/task-flow-store.ts',
     './board-answer-note.ts',
     './board-hosted-cache.ts',
     './board-write-destination.ts',

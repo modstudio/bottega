@@ -53,11 +53,15 @@ function productionPorts(database?: Database): TaskCursorClaimPorts {
     take: ({ project, key, session }) =>
       boardClaimTake(
         { project, subject: `task:${key}`, durationMs: BOARD_CLAIM_DEFAULT_MS },
-        { taskCursorSession: session, database, cwd: projectByName(project, database)?.path },
+        {
+          taskCursorAuthority: { mode: 'take', session },
+          database,
+          cwd: projectByName(project, database)?.path,
+        },
       ),
     release: ({ project, key }) =>
       boardClaimReleaseTask(key, project, {
-        taskCursorSession: 'task-cursor-release',
+        taskCursorAuthority: { mode: 'release', session: null },
         database,
         cwd: projectByName(project, database)?.path,
       }),

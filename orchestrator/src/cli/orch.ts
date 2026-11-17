@@ -122,15 +122,29 @@ export async function main(argv: string[], invocation?: PublicCommandInvocation)
   return cliEntry(argv, (args, storeFree) => fullCli(args, storeFree, invocation), invocation)
 }
 
-export async function keylessCursorIdleAdmission(action: 'task new'): Promise<string | null> {
+export type KeylessCursorIdleCheck =
+  | { kind: 'allow' }
+  | { kind: 'refuse'; message: string }
+  | { kind: 'failed'; reason: string; remedy: string }
+
+export async function keylessCursorIdleAdmission(
+  action: 'task new',
+): Promise<KeylessCursorIdleCheck> {
   try {
     const { assertKeylessCursorIdleAdmission } = await import(
       '../session/keyless-cursor-idle-admission.ts'
     )
     await assertKeylessCursorIdleAdmission(action)
-    return null
+    return { kind: 'allow' }
   } catch (error) {
-    return error instanceof Error ? error.message : String(error)
+    const reason = error instanceof Error ? error.message : String(error)
+    if (reason.startsWith(`refusing ${PLATFORM_SLUG} ${action}:`))
+      return { kind: 'refuse', message: reason }
+    return {
+      kind: 'failed',
+      reason,
+      remedy: `retry ${PLATFORM_SLUG} ${action}`,
+    }
   }
 }
 

@@ -750,8 +750,15 @@ export function createPullRequestAdmitted(
   options: CreatePullRequestOptions,
   cwd = process.cwd(),
 ): { output: string; overrideId: string | null } {
+  return createPullRequestAdmittedChange(args, options, cwd, preparePullRequestCreate(options, cwd))
+}
+
+function preparePullRequestCreate(
+  options: CreatePullRequestOptions,
+  cwd: string,
+): PullRequestChange {
   guardTriageOverrideService([options.overrideReason, options.ceilingRuling])
-  return createPullRequestAdmittedChange(args, options, cwd, resolvePullRequestChange(cwd))
+  return resolvePullRequestChange(cwd)
 }
 
 export async function createPullRequest(
@@ -759,8 +766,7 @@ export async function createPullRequest(
   options: CreatePullRequestOptions,
   cwd = process.cwd(),
 ): Promise<{ output: string; overrideId: string | null }> {
-  guardTriageOverrideService([options.overrideReason, options.ceilingRuling])
-  const change = resolvePullRequestChange(cwd)
+  const change = preparePullRequestCreate(options, cwd)
   await assertPullRequestTaskCursorAdmission({
     command: 'pr create',
     project: change.project,

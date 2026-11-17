@@ -311,6 +311,34 @@ function differentRenewalTerms(
 type TakenClaim = HostedBoardClaim & { action: 'taken' | 'renewed' | 'taken-over' }
 type TakeOutcome = TakenClaim | { refused: string }
 
+export type HostedTaskClaimTakeDecision =
+  | { admitted: true; decision: ReturnType<typeof claimTakeDecision> }
+  | { admitted: false; refusal: string }
+
+export function decideHostedTaskClaimTake(input: {
+  subject: ClaimSubject
+  ownsOpenStage: boolean
+  sameHolderSameSubject?: boolean
+  conflictingClaim?: boolean
+  foreignLiveConflict?: boolean
+}): HostedTaskClaimTakeDecision {
+  if (input.subject.kind === 'task' && !input.ownsOpenStage)
+    return {
+      admitted: false,
+      refusal: `task claims follow task cursors; run workflow compose … --arg key=${input.subject.value} instead`,
+    }
+  return {
+    admitted: true,
+    decision: claimTakeDecision({
+      sameHolderSameSubject: Boolean(input.sameHolderSameSubject),
+      conflictingClaim: Boolean(input.conflictingClaim),
+      foreignLiveConflict: Boolean(input.foreignLiveConflict),
+      force: input.subject.kind === 'task',
+      actorKind: input.subject.kind === 'task' ? 'operator' : 'architect',
+    }),
+  }
+}
+
 function takeRefused(outcome: TakeOutcome): outcome is { refused: string } {
   return 'refused' in outcome
 }
@@ -473,24 +501,42 @@ async function takeClaimInTx(
   session: string | null,
   clock: number,
 ): Promise<TakeOutcome> {
+  const projectId = await resolveVisibleProjectId(tx, input.project, input.projectId)
+  const ownedOpenStage =
+    subject.kind === 'task' && session
+      ? Boolean(
+          (
+            await tx`
+              SELECT 1 FROM task_flow_stage
+              WHERE project_id=${projectId}::uuid
+                AND workflow_key=${subject.value}
+                AND session_id=${session}
+                AND state IN ('running','awaiting-ruling')
+              LIMIT 1
+            `
+          )[0],
+        )
+      : false
+  const admission = decideHostedTaskClaimTake({ subject, ownsOpenStage: ownedOpenStage })
+  if (!admission.admitted) throw new RecordBoardError(admission.refusal, 400)
   const existing = await loadClaim(tx, input.id)
   if (existing) return replayExistingTake(tx, input, existing, subject, session, clock)
-  const { projectId, exactHeld, conflicts, foreignLive, lapsedExact } = await readTakeOverlaps(
+  const { exactHeld, conflicts, foreignLive, lapsedExact } = await readTakeOverlaps(
     tx,
     input,
     subject,
     session,
     clock,
   )
-  if (input.force && subject.kind !== 'task')
-    throw new RecordBoardError('cursor claim takeover requires a task subject', 400)
-  const decision = claimTakeDecision({
+  const authority = decideHostedTaskClaimTake({
+    subject,
+    ownsOpenStage: ownedOpenStage,
     sameHolderSameSubject: exactHeld !== undefined,
     conflictingClaim: conflicts.length > 0,
     foreignLiveConflict: foreignLive.length > 0,
-    force: Boolean(input.force),
-    actorKind: input.force ? 'operator' : 'architect',
   })
+  if (!authority.admitted) throw new RecordBoardError(authority.refusal, 400)
+  const decision = authority.decision
   if (decision === 'renew' && exactHeld)
     return renewOpenClaim(tx, input, exactHeld, duration, note, clock)
   if (decision === 'refuse') {

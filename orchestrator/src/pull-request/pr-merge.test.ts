@@ -233,6 +233,27 @@ test('an injected forge adapter merges all-passing checks with the method, subje
   expect(calls).toEqual([['squash', 'Prove the pull request head (#42)', 'head-commit']])
 })
 
+test('a task cursor refusal stops before merge', async () => {
+  registerProject([])
+  let merged = false
+  await expect(
+    mergePullRequest(
+      '42',
+      cwd,
+      adapter({
+        taskCursorAdmission: async () => {
+          throw new Error('compose the task cursor first')
+        },
+        merge: () => {
+          merged = true
+          return 'must-not-merge'
+        },
+      }),
+    ),
+  ).rejects.toThrow('compose the task cursor first')
+  expect(merged).toBeFalse()
+})
+
 test('an incomplete CI record is merge residue with the shared retry remedy', async () => {
   registerProject(['test'])
   const incomplete = `CI recording incomplete for PR #42: workflow runs unavailable; retry: ${PLATFORM_SLUG} pr ci-record 42 --project merge-fixture`
