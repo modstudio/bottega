@@ -20,7 +20,12 @@ const originalConfigHome = process.env.BOTTEGA_CONFIG_HOME
 const temporary: string[] = []
 beforeEach(() => {
   upsertProject({ recordId: newRecordId(), name: 'dispatch-fixture', path: dir })
-  upsertProject({ recordId: newRecordId(), name: 'dispatch-repo-fixture', path: import.meta.dir })
+  upsertProject({
+    recordId: newRecordId(),
+    name: 'dispatch-repo-fixture',
+    path: import.meta.dir,
+    settings: { trunk: 'main' },
+  })
 })
 afterEach(() => {
   mock.restore()
@@ -140,6 +145,38 @@ test('a findings dispatch carries its resolved round role to the coordinator', a
   expect(
     db().query('SELECT cursor_record_id,step_slug FROM run WHERE record_id=?').get(runId),
   ).toEqual({ cursor_record_id: cursorRecordId, step_slug: 'review' })
+})
+
+test('a detached review placeholder records its lens and resolved review branch', async () => {
+  process.env.BOTTEGA_DEPTH = '0'
+  const branch = 'DEV-2403-placeholder-fixture'
+  const spawnCoordinator = (() => {
+    const child = new EventEmitter() as EventEmitter & { pid: number; unref(): void }
+    child.pid = process.pid
+    child.unref = () => {}
+    queueMicrotask(() => child.emit('spawn'))
+    return child
+  }) as never
+
+  const runId = await detach(
+    'review-lens',
+    'credited detached review fixture',
+    {
+      cwd: import.meta.dir,
+      repo: 'dispatch-repo-fixture',
+      key: 'DEV-2403',
+      lens: 'correctness',
+      resolvedReviewTarget: { branch, commit: 'a'.repeat(40), base: 'b'.repeat(40) },
+    },
+    'codex',
+    spawnCoordinator,
+  )
+
+  expect(db().query('SELECT lens,branch FROM run WHERE record_id=?').get(runId)).toEqual({
+    lens: 'correctness',
+    branch,
+  })
+  db().query("UPDATE run SET status='stopped' WHERE record_id=?").run(runId)
 })
 
 test('a harness continuation placeholder carries its executor and parent binding before claim', async () => {

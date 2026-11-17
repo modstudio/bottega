@@ -29,7 +29,7 @@ describe('review target', () => {
       callerBranch: 'DEV-2031-review-branch',
       callerBranchContainsCommit: true,
     })
-    const claimed = claimedRunBranch(branch, null, null, 'DEV-2031-review-branch')
+    const claimed = claimedRunBranch(branch, null, null, null, 'DEV-2031-review-branch')
     expect(branch).toBe('DEV-2031-review-branch')
     expect(claimed).toBe('DEV-2031-review-branch')
   })

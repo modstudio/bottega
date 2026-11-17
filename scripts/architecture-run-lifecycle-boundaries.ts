@@ -182,6 +182,7 @@ export const runLifecycleBoundarySpecs: ImportBoundary[] = [
       '../record/record-attribution.ts',
       './run-project-context.ts',
       './run-alive.ts',
+      './run-claim-plan.ts',
       './run-executor.ts',
       './run-owner-session-liveness.ts',
       './run-artifacts.ts',

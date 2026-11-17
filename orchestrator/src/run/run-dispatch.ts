@@ -49,6 +49,7 @@ import { clearQuestionDeliveryPendingForRuns } from './question-delivery-pending
 import { recordedRunLivenessFacts, runAlive } from './run-alive.ts'
 import { RUNS_DIR, readDispatchState } from './run-artifacts.ts'
 import { bindingValues, inheritedRunBinding, inheritedRunLinks } from './run-claim-inheritance.ts'
+import { claimedRunBranch } from './run-claim-plan.ts'
 import { claimWithMigrationAdmission } from './run-claim-transaction.ts'
 import { runCoordinatorLogPath } from './run-coordinator-log.ts'
 import { EXTERNAL_EXECUTOR, HARNESS_EXECUTOR, type RunExecutor } from './run-executor.ts'
@@ -218,6 +219,20 @@ function detachedPlaceholderBindings(
   ] as const
 }
 
+function detachedPlaceholderReviewBindings(spec: ResolvedDetachSpec) {
+  return [
+    spec.agentExplicit ? 1 : 0,
+    claimedRunBranch(
+      spec.resolvedReviewTarget?.branch ?? null,
+      spec.review ?? null,
+      null,
+      spec.resume?.treePlan?.branch ?? spec.resume?.worktree?.branch ?? null,
+      null,
+    ),
+    spec.lens ?? null,
+  ] as const
+}
+
 function placeholderExecution(
   spec: DetachSpec,
   jobName: string,
@@ -371,9 +386,9 @@ async function detachResolved(
     refuseLiveRetryOwner(spec)
     const inserted = db()
       .query(
-        `INSERT INTO run (record_id, number, started_at, agent, job, repo, project_record_id, task_record_id, cwd, prompt_sha, spec_sha, prompt_bytes, prompt_head, label, status, session_id, probe, agent_explicit, parent_run_record_id, turn, mcp, cursor_record_id, step_slug,
+        `INSERT INTO run (record_id, number, started_at, agent, job, repo, project_record_id, task_record_id, cwd, prompt_sha, spec_sha, prompt_bytes, prompt_head, label, status, session_id, probe, agent_explicit, branch, lens, parent_run_record_id, turn, mcp, cursor_record_id, step_slug,
                       vendor_session, started_by_user_id, continuation_message_sha, review_role, selection_reason, executor, evidence_excluded, harness_wall_bound_ms)
-       SELECT ?, ?, ?, '(pending)', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'running', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+       SELECT ?, ?, ?, '(pending)', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'running', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
         WHERE ? IS NULL OR (
           EXISTS (SELECT 1 FROM run root WHERE root.record_id = ? AND root.status <> 'stale')
           AND NOT EXISTS (
@@ -399,7 +414,7 @@ async function detachResolved(
         spec.label ?? null,
         sessionId(),
         spec.probe ? 1 : 0,
-        spec.agentExplicit ? 1 : 0,
+        ...detachedPlaceholderReviewBindings(spec),
         identity.parent_run_record_id,
         identity.turn,
         storedMcpRequest(mcpRequest),

@@ -68,6 +68,7 @@ import {
   writeDispatchState,
   writeGeneratedSchema,
 } from './run-artifacts.ts'
+import { executorClaimFacts, installExecutorPushGuard } from './run-claim-executor.ts'
 import { admitFreshRepositoryRun, type HostCapacityWaitDeps } from './run-claim-host-capacity.ts'
 import type { RunWorkflowBinding } from './run-claim-inheritance.ts'
 import {
@@ -91,8 +92,7 @@ import {
 } from './run-claim-plan.ts'
 import { claimWithMigrationAdmission } from './run-claim-transaction.ts'
 import { type CredentialPayment, endpointKeyIdentityBindings } from './run-credential-claim.ts'
-import { EXTERNAL_EXECUTOR, HARNESS_AGENT, HARNESS_EXECUTOR } from './run-executor.ts'
-import { installHarnessPushGuard } from './run-git-guard.ts'
+import { HARNESS_AGENT } from './run-executor.ts'
 import { nextRunNumber } from './run-number.ts'
 import { errorTail } from './run-process.ts'
 import { readOnlyWorktreeStepRecorder, recordRunWorktree } from './run-resource-step-recording.ts'
@@ -331,6 +331,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
   const recordedBranch = (worktreeBranch: string | null) =>
     claimedRunBranch(
       reviewTarget?.branch ?? null,
+      opts.review ?? null,
       implicitReview.branch,
       implicitReview.findings ? (inheritedLaunch?.branch ?? null) : null,
       worktreeBranch,
@@ -378,7 +379,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
     projectId: runProjectId,
   })
   const claimedCwd = repoJob ? null : callerCwd
-  const claimedBranch = repoJob ? null : branchOf(callerCwd)
+  const initiallyRecordedBranch = recordedBranch(repoJob ? null : branchOf(callerCwd))
   const identity = claimIdentity(opts.resume)
   const ownerSession = requiredOwnerSession(name, opts, resume.workspaceSource)
   const execution = executorClaimFacts(name, mcpRequest, transportName, timeoutMs)
@@ -410,7 +411,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
         opts.probe ? 1 : 0,
         opts.retryOf ?? null,
         reason,
-        claimedBranch,
+        initiallyRecordedBranch,
         identity.parent_run_record_id,
         identity.turn,
         vendorSession,
@@ -437,12 +438,12 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
   const insertClaimedRun = () =>
     db()
       .query(
-        `INSERT INTO run (record_id, number, started_at, agent, job, repo, project_record_id, cwd, prompt_sha, spec_sha, prompt_bytes, prompt_head, label, status, session_id, probe, retry_of_record_id, route_reason, branch, parent_run_record_id, turn, vendor_session, docs_injected, doc_revisions, canon_sha,
+        `INSERT INTO run (record_id, number, started_at, agent, job, repo, project_record_id, cwd, prompt_sha, spec_sha, prompt_bytes, prompt_head, label, status, session_id, probe, retry_of_record_id, route_reason, branch, lens, parent_run_record_id, turn, vendor_session, docs_injected, doc_revisions, canon_sha,
                           launch_cwd, launch_seed, launch_key, task_record_id, launch_base, no_failover,
                           automatic_failover, agent_explicit, transport_explicit, review_ref, review_role, pid, mcp, transport, started_by_user_id,
                           executor, evidence_excluded, harness_wall_bound_ms, endpoint_key_source,
                           credential_id, credential_payer, credential_binding, cursor_record_id, step_slug)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,'running',?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING record_id, number`,
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,'running',?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING record_id, number`,
       )
       .get(
         recordId,
@@ -463,7 +464,8 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
         opts.probe ? 1 : 0,
         opts.retryOf ?? null,
         reason,
-        claimedBranch,
+        initiallyRecordedBranch,
+        opts.lens ?? null,
         identity.parent_run_record_id,
         identity.turn,
         vendorSession,
@@ -1040,28 +1042,6 @@ function requiredOwnerSession(
   return owner
 }
 
-function executorClaimFacts(
-  name: string,
-  mcpRequest: McpRequest | undefined,
-  transportName: string,
-  timeoutMs: number,
-) {
-  const harness = name === HARNESS_AGENT
-  return {
-    harness,
-    launchColumns: [
-      harness ? null : process.pid,
-      storedMcpRequest(mcpRequest),
-      transportName,
-    ] as const,
-    identityColumns: [
-      harness ? HARNESS_EXECUTOR : EXTERNAL_EXECUTOR,
-      null,
-      harness ? timeoutMs : null,
-    ] as const,
-  }
-}
-
 function bindRunBound(
   prompt: string,
   firstTurn: boolean,
@@ -1073,12 +1053,4 @@ function bindRunBound(
   const boundLine = `\n\n${jobBoundInstruction(job(jobName), timeoutMs, scratchDir)}`
   const split = prompt.lastIndexOf('\n---\n')
   return split >= 0 ? prompt.slice(0, split) + boundLine + prompt.slice(split) : prompt + boundLine
-}
-
-function installExecutorPushGuard(
-  harness: boolean,
-  worktree: Worktree | null,
-  recordId: string,
-): void {
-  if (harness) installHarnessPushGuard(worktree, recordId)
 }
