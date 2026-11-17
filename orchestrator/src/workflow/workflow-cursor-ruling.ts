@@ -37,7 +37,7 @@ async function selectOpenWorkflowQuestion(
 ): Promise<{ record_id: string; number: number } | null> {
   const row = await openQuestionForWorkflowStep(database, {
     cursorId: cursor.record_id,
-    stepOrdinal: cursor.ordinal + 1,
+    cursorOrdinal: cursor.ordinal,
     stepSlug: cursor.step_slug,
   })
   return row ? { record_id: String(row.record_id), number: Number(row.number) } : null

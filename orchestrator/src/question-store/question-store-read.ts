@@ -9,6 +9,7 @@ import type {
   TaskFlowTaskRulingRow,
   TaskFlowWaitingQuestionRow,
 } from '../workflow/task-flow-store-types.ts'
+import { compareQuestionsByAsk } from './question-order.ts'
 import { questionStore } from './question-store.ts'
 
 export async function questionById(
@@ -76,21 +77,32 @@ export async function questionsForWorkflowCursor(
   ).items as Record<string, unknown>[]
 }
 
+export function questionOnStep(
+  row: Record<string, unknown>,
+  step: { ordinal: number; slug: string },
+): boolean {
+  return Number(row.workflow_step_ordinal) === step.ordinal && row.workflow_step_slug === step.slug
+}
+
+export function latestQuestionOnStep(
+  rows: Record<string, unknown>[],
+  step: { ordinal: number; slug: string },
+): Record<string, unknown> | null {
+  return (
+    rows
+      .filter((row) => questionOnStep(row, step))
+      .sort((left, right) => compareQuestionsByAsk(right, left))[0] ?? null
+  )
+}
+
 export async function openQuestionForWorkflowStep(
   database: Database,
-  input: { cursorId: string; stepOrdinal: number; stepSlug: string },
+  input: { cursorId: string; cursorOrdinal: number; stepSlug: string },
 ): Promise<Record<string, unknown> | null> {
   const questions = await questionsForWorkflowCursor(database, input.cursorId)
-  return (
-    questions
-      .filter(
-        (row) =>
-          row.answered_at === null &&
-          row.closed_at === null &&
-          Number(row.workflow_step_ordinal) === input.stepOrdinal &&
-          row.workflow_step_slug === input.stepSlug,
-      )
-      .sort((left, right) => Number(right.number) - Number(left.number))[0] ?? null
+  return latestQuestionOnStep(
+    questions.filter((row) => row.answered_at === null && row.closed_at === null),
+    { ordinal: input.cursorOrdinal + 1, slug: input.stepSlug },
   )
 }
 

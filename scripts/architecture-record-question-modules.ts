@@ -115,6 +115,7 @@ export const recordQuestionModules: RecordModule[] = [
   module('orchestrator/src/question-store/question-store-read.ts', [
     'bun:sqlite',
     '../../../shared/brand.ts',
+    './question-order.ts',
     '../workflow/task-flow-store-types.ts',
     './question-store.ts',
   ]),

@@ -90,21 +90,18 @@ export async function upsertWorkflowQuestion(
     projectId: string | null
     workflowKey: string
     workflowTaskRecordId: string | null
-    stepOrdinal: number
+    cursorOrdinal: number
     stepSlug: string
     question: string
     at: string
-    openQuestionRecordId?: string | null
   },
   database: Database = db(),
 ): Promise<{ recordId: string; number: number }> {
-  const open = input.openQuestionRecordId
-    ? await questionById(database, input.openQuestionRecordId)
-    : await openQuestionForWorkflowStep(database, {
-        cursorId: input.cursorId,
-        stepOrdinal: input.stepOrdinal,
-        stepSlug: input.stepSlug,
-      })
+  const open = await openQuestionForWorkflowStep(database, {
+    cursorId: input.cursorId,
+    cursorOrdinal: input.cursorOrdinal,
+    stepSlug: input.stepSlug,
+  })
   if (open) {
     const openId = String(open.record_id)
     const row = await questionById(database, openId)
