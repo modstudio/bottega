@@ -406,7 +406,7 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     './workflow-cursor-ruling.ts',
     './workflow-cursor-serve.ts',
     './workflow-compose-branch.ts',
-    './workflow-compose-claim-rollback.ts',
+    './workflow-compose-claim.ts',
     './workflow-cursor-format.ts',
     './workflow-cursor-mutation.ts',
     './workflow-keyless-close.ts',

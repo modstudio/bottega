@@ -23,7 +23,7 @@ import {
   readCommitsPastLanding,
   workflowComposeBranchRefusal,
 } from './workflow-compose-branch.ts'
-import { followComposeTaskClaim } from './workflow-compose-claim-rollback.ts'
+import { followComposeTaskClaim } from './workflow-compose-claim.ts'
 import { adoptWorkflowTask } from './workflow-cursor-adoption.ts'
 import { workflowKeyOf as keyOf, resolveCursorArguments } from './workflow-cursor-arguments.ts'
 import { graduateExploreAfterCompose, insertWorkflowCursor } from './workflow-cursor-compose.ts'

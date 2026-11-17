@@ -91,7 +91,7 @@ export function registerBoardClaimApiProof(input: {
       'postgres',
       `UPDATE task_flow_stage SET session_id='${sessionB}' WHERE id='${stageId}';`,
     )
-    const second = await take(input.tokenB(), {
+    const second = await take(input.tokenA(), {
       id: newRecordId(),
       project: input.project,
       projectId: input.projectId,
