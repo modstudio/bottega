@@ -70,10 +70,10 @@ function recordClient(
       options.questions && destination?.destinationSpaceId === PERSONAL_SPACE_ID
         ? client.readQuestions!(input, destination)
         : { items: [] },
-    writeQuestion: async (_intent, input, destination) => {
-      options.intents?.push(_intent)
+    writeQuestion: async (intent, input, destination) => {
+      options.intents?.push(intent)
       writtenSpaces.push(destination.destinationSpaceId)
-      return client.writeQuestion!(_intent, input, destination)
+      return client.writeQuestion!(intent, input, destination)
     },
   } as RecordApiClient
 }
