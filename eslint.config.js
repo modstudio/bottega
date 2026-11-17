@@ -1,6 +1,12 @@
 import parser from '@typescript-eslint/parser'
 import sonarjs from 'eslint-plugin-sonarjs'
 
+const importMetaUrlPathnameSelector = {
+  selector:
+    "MemberExpression[property.name='pathname'][object.type='NewExpression'][object.callee.name='URL'][object.arguments.1.type='MemberExpression'][object.arguments.1.object.type='MetaProperty'][object.arguments.1.object.meta.name='import'][object.arguments.1.object.property.name='meta'][object.arguments.1.property.name='url']",
+  message: 'Use fileURLToPath(new URL(..., import.meta.url)) for filesystem paths.',
+}
+
 const recordPushModules = [
   'orchestrator/src/record/outbox-failure.ts',
   'orchestrator/src/record/outbox-held-contract.ts',
@@ -58,14 +64,7 @@ export default [
     },
     plugins: { sonarjs },
     rules: {
-      'no-restricted-syntax': [
-        'error',
-        {
-          selector:
-            "MemberExpression[property.name='pathname'][object.type='NewExpression'][object.callee.name='URL'][object.arguments.1.type='MemberExpression'][object.arguments.1.object.type='MetaProperty'][object.arguments.1.object.meta.name='import'][object.arguments.1.object.property.name='meta'][object.arguments.1.property.name='url']",
-          message: 'Use fileURLToPath(new URL(..., import.meta.url)) for filesystem paths.',
-        },
-      ],
+      'no-restricted-syntax': ['error', importMetaUrlPathnameSelector],
       'sonarjs/cognitive-complexity': ['error', 15],
     },
   },
@@ -74,6 +73,7 @@ export default [
     rules: {
       'no-restricted-syntax': [
         'error',
+        importMetaUrlPathnameSelector,
         {
           selector: "ThrowStatement > NewExpression[callee.name='Error']",
           message:
