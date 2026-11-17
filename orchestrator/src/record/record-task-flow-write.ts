@@ -471,6 +471,20 @@ async function applyHandoff(tx: SQL, input: Tenant, body: HandoffBody) {
       `task_flow.id=${body.flow.id}`,
       'already-exists',
     )
+  const mutations = [
+    { table: 'task_flow' as const, mutation: body.flow },
+    { table: 'task_flow_stage' as const, mutation: { ...body.oldStage, values: {} } },
+  ]
+  if ((await preflightMutations(tx, mutations, body.requestId)) === 'retry') {
+    const existing = await existingRow(tx, 'task_flow_stage', body.newStage.id)
+    if (!existing) conflict('task_flow_stage', body.newStage.id, null)
+    return {
+      revisions: Object.fromEntries(
+        mutations.map(({ mutation }) => [mutation.id, mutation.expectedRevision + 1]),
+      ),
+      stage: { id: body.newStage.id, number: Number(existing.number) },
+    }
+  }
   const number = await allocateRecordSequence(
     tx,
     input.spaceId,
@@ -485,20 +499,6 @@ async function applyHandoff(tx: SQL, input: Tenant, body: HandoffBody) {
       question: null,
       updatedAt: body.trail.at,
     },
-  }
-  const mutations = [
-    { table: 'task_flow' as const, mutation: body.flow },
-    { table: 'task_flow_stage' as const, mutation: oldStage },
-  ]
-  if ((await preflightMutations(tx, mutations, body.requestId)) === 'retry') {
-    const existing = await existingRow(tx, 'task_flow_stage', body.newStage.id)
-    if (!existing) conflict('task_flow_stage', body.newStage.id, null)
-    return {
-      revisions: Object.fromEntries(
-        mutations.map(({ mutation }) => [mutation.id, mutation.expectedRevision + 1]),
-      ),
-      stage: { id: body.newStage.id, number: Number(existing.number) },
-    }
   }
   const revisions: Record<string, number> = {}
   revisions[oldStage.id] = await updateRevisionRow(tx, 'task_flow_stage', oldStage, body.requestId)
