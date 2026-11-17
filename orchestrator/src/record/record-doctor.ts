@@ -763,7 +763,8 @@ async function operatorRecordChecks(input: {
       })
       const questionIds: string[] = []
       let changedAfter: string | undefined
-      do {
+      let more = true
+      while (more) {
         const page = await questionStore.read({
           read: 'rulings',
           kind: 'all',
@@ -772,10 +773,11 @@ async function operatorRecordChecks(input: {
         questionIds.push(
           ...page.items.map((row) => String((row as Record<string, unknown>).record_id)),
         )
-        if (!page.more) break
+        more = page.more === true
+        if (!more) break
         if (!page.cursor) throw new Error('question page has no continuation cursor')
         changedAfter = page.cursor
-      } while (true)
+      }
       const hostedQuestions = (
         await Promise.all(
           Array.from({ length: Math.ceil(questionIds.length / 100) }, (_, index) =>

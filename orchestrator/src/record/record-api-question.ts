@@ -9,13 +9,14 @@ import {
 import type { RecordIdentity } from './record-auth.ts'
 import {
   type QuestionIntent,
+  type QuestionReadInput,
   type QuestionWriteBody,
   questionChangedAfterRefusal,
   questionIntentSchema,
   questionReadSchema,
-  unboundedQuestionRulingsRefusal,
   questionWriteSchema,
   type RecordQuestionReadInput,
+  unboundedQuestionRulingsRefusal,
 } from './record-question-contract.ts'
 
 type Environment = { Variables: { identity: RecordIdentity; destinationSpaceId?: string } }
@@ -23,6 +24,50 @@ type Tenant = { url: string; userId: string; spaceId: string; spaceIds: string[]
 export type RecordQuestionRouteDeps = {
   readQuestions?(input: Tenant & RecordQuestionReadInput): Promise<unknown>
   writeQuestion?(intent: QuestionIntent, input: Tenant & QuestionWriteBody): Promise<unknown>
+}
+
+async function rulingReadResponse(
+  context: Context<Environment>,
+  readQuestions: NonNullable<RecordQuestionRouteDeps['readQuestions']>,
+  tenant: Tenant,
+  input: Extract<QuestionReadInput, { read: 'rulings' }>,
+): Promise<Response> {
+  if (input.since === undefined && input.limit === undefined && input.changedAfter === undefined)
+    return context.json(
+      {
+        error: unboundedQuestionRulingsRefusal.message,
+        remedy: unboundedQuestionRulingsRefusal.remedy,
+      },
+      422,
+    )
+  const { changedAfter: encodedChangedAfter, ...read } = input
+  if (encodedChangedAfter === undefined)
+    return context.json(await readQuestions({ ...tenant, ...read }))
+  if (read.limit !== undefined)
+    return context.json(
+      {
+        error: 'limit cannot be combined with changedAfter',
+        remedy: 'drop limit; follow more to page',
+      },
+      422,
+    )
+  let changedAfter: RecordChangeCursor | { questionNumber: number }
+  try {
+    changedAfter = encodedChangedAfter.startsWith('page:')
+      ? { questionNumber: Number(encodedChangedAfter.slice(5)) }
+      : decodeRecordChangeCursor(encodedChangedAfter)
+    if ('questionNumber' in changedAfter && !Number.isSafeInteger(changedAfter.questionNumber))
+      throw new Error('shape')
+  } catch {
+    return context.json(
+      {
+        error: 'record change cursor is malformed',
+        remedy: 'retry without changedAfter to get a fresh cursor',
+      },
+      422,
+    )
+  }
+  return context.json(await readQuestions({ ...tenant, ...read, changedAfter }))
 }
 type Ports = {
   scope(context: Context<Environment>): Tenant | null
@@ -50,48 +95,8 @@ export function registerRecordQuestionRoutes(
       return context.json({ error: 'hosted question reads are unavailable' }, 503)
     const query = questionReadSchema.safeParse(context.req.query())
     if (!query.success) return context.json({ error: 'invalid question read query' }, 400)
-    if (query.data.read === 'rulings') {
-      if (
-        query.data.since === undefined &&
-        query.data.limit === undefined &&
-        query.data.changedAfter === undefined
-      )
-        return context.json(
-          {
-            error: unboundedQuestionRulingsRefusal.message,
-            remedy: unboundedQuestionRulingsRefusal.remedy,
-          },
-          422,
-        )
-      const { changedAfter: encodedChangedAfter, ...read } = query.data
-      if (encodedChangedAfter === undefined)
-        return context.json(await deps.readQuestions({ ...tenant, ...read }))
-      if (read.limit !== undefined)
-        return context.json(
-          {
-            error: 'limit cannot be combined with changedAfter',
-            remedy: 'drop limit; follow more to page',
-          },
-          422,
-        )
-      let changedAfter: RecordChangeCursor | { questionNumber: number }
-      try {
-        changedAfter = encodedChangedAfter.startsWith('page:')
-          ? { questionNumber: Number(encodedChangedAfter.slice(5)) }
-          : decodeRecordChangeCursor(encodedChangedAfter)
-        if ('questionNumber' in changedAfter && !Number.isSafeInteger(changedAfter.questionNumber))
-          throw new Error('shape')
-      } catch {
-        return context.json(
-          {
-            error: 'record change cursor is malformed',
-            remedy: 'retry without changedAfter to get a fresh cursor',
-          },
-          422,
-        )
-      }
-      return context.json(await deps.readQuestions({ ...tenant, ...read, changedAfter }))
-    }
+    if (query.data.read === 'rulings')
+      return rulingReadResponse(context, deps.readQuestions, tenant, query.data)
     if (query.data.changedAfter !== undefined && query.data.read !== 'inbox')
       return context.json(
         {

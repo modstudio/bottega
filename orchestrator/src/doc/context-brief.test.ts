@@ -207,6 +207,12 @@ test('renders one open question for its task holder', async () => {
   database.exec('PRAGMA foreign_keys=OFF')
   database
     .query(
+      `INSERT INTO project(record_id,name,path,stack,settings)
+       VALUES ('00000000-0000-4000-8000-000000000001','fixture','/fixture','bun','{}')`,
+    )
+    .run()
+  database
+    .query(
       `INSERT INTO question
        (record_id,number,workflow_cursor_record_id,workflow_task_record_id,asked_at,question,answered_at,closed_at)
        VALUES ('question-5277',5277,'cursor-record','task-record','2026-11-13','Which shape should the brief use?',NULL,NULL),
@@ -221,6 +227,7 @@ test('renders one open question for its task holder', async () => {
         title: 'Build the brief',
         kind: 'task',
         recordId: 'task-record',
+        project: 'fixture',
       },
     ],
     database,
@@ -416,31 +423,42 @@ test('orders the session, each project-scoped working task, and its epic by task
       title: 'Build the brief',
       kind: 'task',
       recordId: `${PLATFORM_SLUG}:DEV-1844/2`,
+      project: PLATFORM_SLUG,
     },
     {
       key: 'DEV-1844',
       title: 'Architect context',
       kind: 'epic',
       recordId: `${PLATFORM_SLUG}:DEV-1844`,
+      project: PLATFORM_SLUG,
     },
-    { key: 'APP-7', title: 'Other project task', kind: 'task', recordId: 'other:APP-7' },
+    {
+      key: 'APP-7',
+      title: 'Other project task',
+      kind: 'task',
+      recordId: 'other:APP-7',
+      project: 'other',
+    },
     {
       key: 'DEV-2000',
       title: 'Parentless childless task',
       kind: 'task',
       recordId: `${PLATFORM_SLUG}:DEV-2000`,
+      project: PLATFORM_SLUG,
     },
     {
       key: 'SHARED-1',
       title: 'Platform shared key',
       kind: 'task',
       recordId: `${PLATFORM_SLUG}:SHARED-1`,
+      project: PLATFORM_SLUG,
     },
     {
       key: 'SHARED-1',
       title: 'Other shared key',
       kind: 'task',
       recordId: 'other:SHARED-1',
+      project: 'other',
     },
   ])
 })

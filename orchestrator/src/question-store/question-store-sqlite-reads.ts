@@ -493,6 +493,19 @@ export const openQuestionsForTasks = (database: Database, taskIds: readonly stri
 export const questionsForSession = (database: Database, sessionId: string) =>
   filteredQuestionRows(database, 'COALESCE(owner.session_id,cursor.session_id)=?', [sessionId])
 
+export function questionProjectIdByNumber(database: Database, number: number): string | null {
+  return (
+    database
+      .query<{ project_record_id: string | null }, [number]>(
+        `SELECT COALESCE(owner.project_record_id,cursor.project_record_id) project_record_id
+         FROM question q LEFT JOIN run owner ON owner.record_id=q.run_record_id
+         LEFT JOIN workflow_cursor cursor ON cursor.record_id=q.workflow_cursor_record_id
+         WHERE q.number=?`,
+      )
+      .get(number)?.project_record_id ?? null
+  )
+}
+
 export const unlinkedWorkflowQuestions = (
   database: Database,
   project?: string,

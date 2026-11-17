@@ -5,7 +5,7 @@ import type { Database } from 'bun:sqlite'
 import { readMachineValue } from '../../../shared/machine-config.ts'
 import { jevThresholds } from '../ask/jev-routing.ts'
 import { db } from '../database/db.ts'
-import { questionRulings } from '../question-store/question-store-read.ts'
+import { allQuestionRulingsPaged, questionRulings } from '../question-store/question-store-read.ts'
 import {
   type JevWorkerQuestionMetrics,
   type JevWorkerQuestionRow,
@@ -23,7 +23,11 @@ export async function jevWorkerQuestionReport(
     options.days === undefined
       ? undefined
       : new Date(Date.now() - options.days * 24 * 60 * 60 * 1000).toISOString()
-  const rows = (await questionRulings(database, { kind: 'all', since })).items.filter(
+  const questionRows =
+    since === undefined
+      ? await allQuestionRulingsPaged(database, 'all')
+      : (await questionRulings(database, { kind: 'all', since })).items
+  const rows = questionRows.filter(
     (row) =>
       row.jev_pick !== null &&
       ['choice', 'yesno', 'score'].includes(String(row.kind)) &&

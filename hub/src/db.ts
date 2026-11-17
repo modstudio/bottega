@@ -436,10 +436,17 @@ export async function questionIdentitiesForMigrations(
   readQuestionIdentities: (numbers: readonly number[]) => Promise<readonly QuestionIdentity[]>,
 ): Promise<readonly QuestionIdentity[]> {
   if (!pendingMigrationTags(d).includes('0036_question_uuid_key')) return []
+  const hasQuestionTable = d
+    .query<{ present: number }, []>(
+      "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='question') present",
+    )
+    .get()?.present
+  if (!hasQuestionTable) return []
   const numbers = d
-    .query<{ number: number }, []>('SELECT question_id number FROM question ORDER BY question_id')
+    .query<{ number: number }, []>('SELECT DISTINCT question_id number FROM question')
     .all()
     .map(({ number }) => number)
+    .toSorted((left, right) => left - right)
   if (!numbers.length) return []
   try {
     return await readQuestionIdentities(numbers)

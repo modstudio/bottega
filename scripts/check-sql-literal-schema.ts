@@ -459,6 +459,11 @@ const SQL_PREPARE_EXEMPTIONS: readonly SqlExemption[] = [
     'question identity input is prepared against the legacy and migration-staging schemas',
   ),
   ...exempt(
+    'hub/src/db.ts',
+    ['b2041b8ea9401e3a'],
+    'question UUID migration preflight reads the legacy question number before 0036 rebuilds it',
+  ),
+  ...exempt(
     'hub/src/ingest/trackers.ts',
     ['2987d7cb212ef65b'],
     'transition helper runs only while migration task_new exists',

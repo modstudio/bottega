@@ -4,7 +4,11 @@
 import type { Database } from 'bun:sqlite'
 import type { QuestionIdentity } from '../../../shared/orch-contract.ts'
 import { hasRecordIdShape } from '../../../shared/record-id.ts'
-import { questionById, questionByNumber } from '../question-store/question-store-read.ts'
+import {
+  questionById,
+  questionByNumber,
+  questionNumberProjectId,
+} from '../question-store/question-store-read.ts'
 
 export type ParsedQuestionIdentifier =
   | { kind: 'number'; id: number }
@@ -13,17 +17,12 @@ export type ParsedQuestionIdentifier =
 const ACCEPTED_QUESTION_IDENTIFIERS = 'a positive decimal question number or a full question UUID'
 
 function questionNumberProject(database: Database, number: number): string {
-  const row = database
-    .query<{ project_record_id: string | null }, [number]>(
-      `SELECT COALESCE(owner.project_record_id,cursor.project_record_id) project_record_id
-       FROM question q LEFT JOIN run owner ON owner.record_id=q.run_record_id
-       LEFT JOIN workflow_cursor cursor ON cursor.record_id=q.workflow_cursor_record_id
-       WHERE q.number=?`,
+  const projectId = questionNumberProjectId(database, number)
+  if (!projectId)
+    throw new Error(
+      `question ${number} has no locally resolved record space; pass the question UUID`,
     )
-    .get(number)
-  if (!row?.project_record_id)
-    throw new Error(`question ${number} has no locally resolved record space; pass the question UUID`)
-  return row.project_record_id
+  return projectId
 }
 
 export async function questionIdentityMap(
@@ -37,8 +36,7 @@ export async function questionIdentityMap(
         parsed.kind === 'number'
           ? await questionByNumber(database, parsed.id, questionNumberProject(database, parsed.id))
           : await questionById(database, parsed.recordId)
-      if (!row)
-        throw new Error(`no question has identifier ${JSON.stringify(String(identifier))}`)
+      if (!row) throw new Error(`no question has identifier ${JSON.stringify(String(identifier))}`)
       return { number: Number(row.number), record_id: String(row.record_id) }
     }),
   )
@@ -62,7 +60,11 @@ export async function resolveQuestionIdentifier(
 ): Promise<string> {
   const parsed = parseQuestionIdentifier(input)
   if (parsed.kind === 'number') {
-    const row = await questionByNumber(database, parsed.id, questionNumberProject(database, parsed.id))
+    const row = await questionByNumber(
+      database,
+      parsed.id,
+      questionNumberProject(database, parsed.id),
+    )
     if (row) return row.record_id
     throw new Error(`no question has number ${parsed.id}; pass ${ACCEPTED_QUESTION_IDENTIFIERS}`)
   }

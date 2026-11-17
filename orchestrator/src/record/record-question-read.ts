@@ -162,7 +162,7 @@ async function boundedIdentityRows(tx: SQL, input: QuestionReadInput): Promise<R
   )
 }
 
-async function rows(tx: SQL, input: QuestionReadInput): Promise<Row[]> {
+async function targetedRows(tx: SQL, input: QuestionReadInput): Promise<Row[] | null> {
   if (input.read === 'by-id') return limited(await recordQuestionDetails(tx, input), input.limit)
   if (input.read === 'for-run')
     return limited(await recordQuestionDetails(tx, { runId: input.runId }), input.limit)
@@ -172,9 +172,7 @@ async function rows(tx: SQL, input: QuestionReadInput): Promise<Row[]> {
   if (identityRows !== null) return identityRows
   if (input.read === 'for-cursor')
     return limited(
-      await recordQuestionDetails(tx, {
-        workflowCursorRecordId: input.workflowCursorRecordId,
-      }),
+      await recordQuestionDetails(tx, { workflowCursorRecordId: input.workflowCursorRecordId }),
       input.limit,
     )
   if (input.read === 'open-for-tasks')
@@ -182,34 +180,7 @@ async function rows(tx: SQL, input: QuestionReadInput): Promise<Row[]> {
       await recordQuestionDetails(tx, { taskRecordIds: input.taskRecordIds }),
       input.limit,
     )
-  if (input.read === 'unlinked-workflow') {
-    const clauses = [
-      'q.workflow_cursor_record_id IS NOT NULL',
-      'q.workflow_key IS NOT NULL',
-      'q.workflow_task_id IS NULL',
-    ]
-    const values: string[] = []
-    if (input.project) {
-      values.push(input.project)
-      clauses.push(`stage_project.name=$${values.length}`)
-    }
-    if (input.workflowKey) {
-      values.push(input.workflowKey)
-      clauses.push(`q.workflow_key=$${values.length}`)
-    }
-    return limited(
-      (await tx.unsafe(
-        `SELECT ${QUESTION_DETAIL_COLUMNS} FROM question q
-         LEFT JOIN run owner ON owner.id=q.run_id
-         LEFT JOIN project run_project ON run_project.id=owner.project_id
-         LEFT JOIN task_flow_stage stage ON stage.id=q.workflow_cursor_record_id
-         LEFT JOIN project stage_project ON stage_project.id=stage.project_id
-         WHERE ${clauses.join(' AND ')} ORDER BY q.number`,
-        values,
-      )) as Row[],
-      input.limit,
-    )
-  }
+  if (input.read === 'unlinked-workflow') return unlinkedWorkflowRows(tx, input)
   if (input.read === 'rule-audit-reasons')
     return limited(
       (await tx.unsafe(
@@ -221,6 +192,44 @@ async function rows(tx: SQL, input: QuestionReadInput): Promise<Row[]> {
       )) as Row[],
       input.limit,
     )
+  return null
+}
+
+async function unlinkedWorkflowRows(
+  tx: SQL,
+  input: Extract<QuestionReadInput, { read: 'unlinked-workflow' }>,
+): Promise<Row[]> {
+  const clauses = [
+    'q.workflow_cursor_record_id IS NOT NULL',
+    'q.workflow_key IS NOT NULL',
+    'q.workflow_task_id IS NULL',
+  ]
+  const values: string[] = []
+  if (input.project) {
+    values.push(input.project)
+    clauses.push(`stage_project.name=$${values.length}`)
+  }
+  if (input.workflowKey) {
+    values.push(input.workflowKey)
+    clauses.push(`q.workflow_key=$${values.length}`)
+  }
+  return limited(
+    (await tx.unsafe(
+      `SELECT ${QUESTION_DETAIL_COLUMNS} FROM question q
+       LEFT JOIN run owner ON owner.id=q.run_id
+       LEFT JOIN project run_project ON run_project.id=owner.project_id
+       LEFT JOIN task_flow_stage stage ON stage.id=q.workflow_cursor_record_id
+       LEFT JOIN project stage_project ON stage_project.id=stage.project_id
+       WHERE ${clauses.join(' AND ')} ORDER BY q.number`,
+      values,
+    )) as Row[],
+    input.limit,
+  )
+}
+
+async function rows(tx: SQL, input: QuestionReadInput): Promise<Row[]> {
+  const targeted = await targetedRows(tx, input)
+  if (targeted !== null) return targeted
   if (input.read === 'inbox') {
     const runs = (await tx.unsafe(
       `SELECT q.number,q.id::text record_id,q.run_id::text run_record_id,owner.number run_number,
@@ -331,7 +340,10 @@ export async function readRecordQuestions(
 ): Promise<{ items: Row[]; cursor?: string; more?: boolean; reset?: boolean }> {
   const client = recordPool(input.url)
   if (input.read === 'rulings') {
-    if (input.limit !== undefined || (input.changedAfter && 'questionNumber' in input.changedAfter)) {
+    if (
+      input.limit !== undefined ||
+      (input.changedAfter && 'questionNumber' in input.changedAfter)
+    ) {
       const pageSize = input.limit ?? 100
       return client.begin(async (tx) => {
         await bindTenant(tx, input)

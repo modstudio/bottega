@@ -88,11 +88,7 @@ test('hosted rulings refuse an unbounded history read and serve every bounded fo
       'use by-id, by-number, for-run, for-session, open-for-cursors, open-for-tasks, or unlinked-workflow for a targeted read; otherwise page rulings with limit and changedAfter',
   })
   expect(
-    (
-      await api.request(
-        '/v1/questions?read=rulings&since=2026-11-15T12%3A00%3A00.000Z',
-      )
-    ).status,
+    (await api.request('/v1/questions?read=rulings&since=2026-11-15T12%3A00%3A00.000Z')).status,
   ).toBe(200)
   expect((await api.request('/v1/questions?read=rulings&limit=1')).status).toBe(200)
   const cursor = encodeRecordChangeCursor({ xid: 1n, seq: 1n })

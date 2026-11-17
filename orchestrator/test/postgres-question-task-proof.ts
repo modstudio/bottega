@@ -361,12 +361,7 @@ export function registerQuestionTaskRecordSyncProof(
         .items,
     ).toContainEqual(expect.objectContaining({ record_id: workflowQuestion.id }))
     expect(
-      (
-        await client.readQuestions!(
-          { read: 'rulings', kind: 'run', since: at },
-          destination,
-        )
-      ).items,
+      (await client.readQuestions!({ read: 'rulings', kind: 'run', since: at }, destination)).items,
     ).toContainEqual(expect.objectContaining({ record_id: runQuestion.id }))
     expect((await client.readQuestions!({ read: 'projects' }, destination)).items).toContainEqual({
       project: directProjectName,

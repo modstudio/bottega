@@ -29,9 +29,9 @@ import {
   rulingRows,
   runInboxQuestionRows,
   taskRulingRows,
+  unlinkedWorkflowQuestions,
   waitingWorkflowQuestions,
   workflowInboxQuestions,
-  unlinkedWorkflowQuestions,
 } from './question-store-sqlite-reads.ts'
 import type { QuestionReadResult, QuestionStore } from './question-store-types.ts'
 
@@ -50,6 +50,52 @@ function assertLocalChangedAfter(input: QuestionReadInput): void {
     throw new Error(
       `${questionChangedAfterRefusal.local.message}; ${questionChangedAfterRefusal.local.remedy}`,
     )
+}
+
+function targetedRead(database: Database, input: QuestionReadInput): QuestionReadResult | null {
+  if (input.read === 'task-rulings') {
+    const project = database
+      .query<{ name: string }, [string]>('SELECT name FROM project WHERE record_id=?')
+      .get(input.projectId)
+    return {
+      items: project ? taskRulingRows(database, project.name, input.taskId, input.limit ?? -1) : [],
+    }
+  }
+  if (input.read === 'by-id')
+    return { items: limited(questionsByIdRows(database, input.ids), input.limit) }
+  if (input.read === 'for-run')
+    return { items: limited(questionsForRun(database, input.runId), input.limit) }
+  if (input.read === 'for-session')
+    return { items: limited(questionsForSession(database, input.sessionId), input.limit) }
+  if (input.read === 'max-number')
+    return { items: limited(maxQuestionNumber(database), input.limit) }
+  if (input.read === 'by-number')
+    return { items: limited(questionByNumberRow(database, input.number), input.limit) }
+  if (input.read === 'open-for-cursors')
+    return {
+      items: limited(openQuestionsForCursors(database, input.workflowCursorRecordIds), input.limit),
+    }
+  if (input.read === 'open-for-tasks')
+    return { items: limited(openQuestionsForTasks(database, input.taskRecordIds), input.limit) }
+  if (input.read === 'unlinked-workflow')
+    return {
+      items: limited(
+        unlinkedWorkflowQuestions(database, input.project, input.workflowKey),
+        input.limit,
+      ),
+    }
+  if (input.read === 'for-cursor')
+    return {
+      items: limited(questionsForCursor(database, input.workflowCursorRecordId), input.limit),
+    }
+  if (input.read === 'rule-audit-reasons')
+    return {
+      items: limited(
+        ruleAuditReasons(database, input.workflowCursorRecordId, input.actorSession),
+        input.limit,
+      ),
+    }
+  return null
 }
 
 function recordAppliedMutation(database: Database, input: QuestionWriteBody): void {
@@ -239,56 +285,8 @@ export class SqliteQuestionStore implements QuestionStore {
         items: limited(openStagesForSession(this.database, input.sessionId), input.limit),
       }
     if (input.read === 'rulings') return this.readRulings(input)
-    if (input.read === 'task-rulings') {
-      const project = this.database
-        .query<{ name: string }, [string]>('SELECT name FROM project WHERE record_id=?')
-        .get(input.projectId)
-      return {
-        items: project
-          ? taskRulingRows(this.database, project.name, input.taskId, input.limit ?? -1)
-          : [],
-      }
-    }
-    if (input.read === 'by-id')
-      return { items: limited(questionsByIdRows(this.database, input.ids), input.limit) }
-    if (input.read === 'for-run')
-      return { items: limited(questionsForRun(this.database, input.runId), input.limit) }
-    if (input.read === 'for-session')
-      return { items: limited(questionsForSession(this.database, input.sessionId), input.limit) }
-    if (input.read === 'max-number')
-      return { items: limited(maxQuestionNumber(this.database), input.limit) }
-    if (input.read === 'by-number')
-      return { items: limited(questionByNumberRow(this.database, input.number), input.limit) }
-    if (input.read === 'open-for-cursors')
-      return {
-        items: limited(
-          openQuestionsForCursors(this.database, input.workflowCursorRecordIds),
-          input.limit,
-        ),
-      }
-    if (input.read === 'open-for-tasks')
-      return { items: limited(openQuestionsForTasks(this.database, input.taskRecordIds), input.limit) }
-    if (input.read === 'unlinked-workflow')
-      return {
-        items: limited(
-          unlinkedWorkflowQuestions(this.database, input.project, input.workflowKey),
-          input.limit,
-        ),
-      }
-    if (input.read === 'for-cursor')
-      return {
-        items: limited(
-          questionsForCursor(this.database, input.workflowCursorRecordId),
-          input.limit,
-        ),
-      }
-    if (input.read === 'rule-audit-reasons')
-      return {
-        items: limited(
-          ruleAuditReasons(this.database, input.workflowCursorRecordId, input.actorSession),
-          input.limit,
-        ),
-      }
+    const targeted = targetedRead(this.database, input)
+    if (targeted) return targeted
     return { items: limited(localQuestionProjects(this.database), input.limit) }
   }
 }

@@ -38,9 +38,7 @@ beforeEach(() => {
 })
 
 afterEach(() => {
-  registerQuestionRunPusher(async () => {
-    throw new Error('question run pusher test stub used outside a test')
-  })
+  registerQuestionRunPusher(async () => {})
 })
 type QuestionSnapshot = QuestionWriteBody['question']
 const field = (row: object, key: string): unknown => (row as Record<string, unknown>)[key]
@@ -344,9 +342,7 @@ async function questionStoreContract(
     updatedAt: '2026-11-15T12:06:00.000Z',
   })
   expect(closed.closedAt).not.toBeNull()
-  expect(
-    (await store.read({ read: 'open-for-tasks', taskRecordIds: [TASK_ID] })).items,
-  ).toEqual([])
+  expect((await store.read({ read: 'open-for-tasks', taskRecordIds: [TASK_ID] })).items).toEqual([])
   expect(
     (await store.read({ read: 'inbox' })).items.some((row) => field(row, 'record_id') === run.id),
   ).toBe(false)

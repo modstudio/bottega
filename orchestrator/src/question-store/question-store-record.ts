@@ -60,6 +60,31 @@ function localQuestionRow(
   return mapped as QuestionReadRow
 }
 
+function readMetadata(result: QuestionReadResult) {
+  return {
+    ...(result.cursor === undefined ? {} : { cursor: result.cursor }),
+    ...(result.more === undefined ? {} : { more: result.more }),
+    ...(result.reset === undefined ? {} : { reset: result.reset }),
+  }
+}
+
+function inboxItems(database: Database, items: QuestionReadRow[]): QuestionReadRow[] {
+  const cutoff = new Date(Date.now() - SESSION_LIVE_MS).toISOString()
+  return items.map((row) => {
+    if (!('run_record_id' in row)) return row
+    const inboxRow = row as QuestionReadRow & { session_id?: unknown }
+    const sessionId = typeof inboxRow.session_id === 'string' ? inboxRow.session_id : null
+    const recent = sessionId
+      ? (database
+          .query<{ recent: number }, [string, string]>(
+            'SELECT CASE WHEN last_seen>=? THEN 1 ELSE 0 END recent FROM session_seen WHERE session_id=?',
+          )
+          .get(cutoff, sessionId)?.recent ?? 0)
+      : 0
+    return { ...row, session_recent: recent }
+  })
+}
+
 type SpaceCursors = Record<string, string>
 const encodeSpaceCursors = (spaces: SpaceCursors) =>
   Buffer.from(JSON.stringify({ version: 1, spaces })).toString('base64url')
@@ -265,28 +290,11 @@ export class RecordQuestionStore implements QuestionStore {
     if (input.read !== 'inbox')
       return {
         items,
-        ...(result.cursor === undefined ? {} : { cursor: result.cursor }),
-        ...(result.more === undefined ? {} : { more: result.more }),
-        ...(result.reset === undefined ? {} : { reset: result.reset }),
+        ...readMetadata(result),
       }
-    const cutoff = new Date(Date.now() - SESSION_LIVE_MS).toISOString()
     return {
-      items: items.map((row) => {
-        if (!('run_record_id' in row)) return row
-        const inboxRow = row as QuestionReadRow & { session_id?: unknown }
-        const sessionId = typeof inboxRow.session_id === 'string' ? inboxRow.session_id : null
-        const recent = sessionId
-          ? (this.input.database
-              .query<{ recent: number }, [string, string]>(
-                'SELECT CASE WHEN last_seen>=? THEN 1 ELSE 0 END recent FROM session_seen WHERE session_id=?',
-              )
-              .get(cutoff, sessionId)?.recent ?? 0)
-          : 0
-        return { ...row, session_recent: recent }
-      }),
-      ...(result.cursor === undefined ? {} : { cursor: result.cursor }),
-      ...(result.more === undefined ? {} : { more: result.more }),
-      ...(result.reset === undefined ? {} : { reset: result.reset }),
+      items: inboxItems(this.input.database, items),
+      ...readMetadata(result),
     } as QuestionReadResult
   }
 }

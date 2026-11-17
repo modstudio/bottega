@@ -9,6 +9,7 @@ import type {
   TaskFlowWaitingQuestionRow,
 } from '../workflow/task-flow-store-types.ts'
 import { questionStore } from './question-store.ts'
+import { questionProjectIdByNumber } from './question-store-sqlite-reads.ts'
 
 export async function questionById(
   database: Database,
@@ -33,15 +34,18 @@ export async function questionByNumber(
   )
 }
 
+export function questionNumberProjectId(database: Database, number: number): string | null {
+  return questionProjectIdByNumber(database, number)
+}
+
 export async function openQuestionsForTasks(
   database: Database,
   taskRecordIds: string[],
   projectId: string,
 ): Promise<Record<string, unknown>[]> {
   if (!taskRecordIds.length) return []
-  return (
-    await questionStore(database).read({ read: 'open-for-tasks', taskRecordIds }, projectId)
-  ).items as Record<string, unknown>[]
+  return (await questionStore(database).read({ read: 'open-for-tasks', taskRecordIds }, projectId))
+    .items as Record<string, unknown>[]
 }
 
 export async function questionsForSession(database: Database, sessionId: string) {
@@ -194,16 +198,20 @@ export async function allQuestionRulingsPaged(
 ): Promise<Record<string, unknown>[]> {
   const items: Record<string, unknown>[] = []
   let changedAfter: string | undefined
-  do {
+  let more = true
+  while (more) {
     const result = await questionRulings(database, {
       kind,
       ...(changedAfter === undefined ? { limit: 100 } : { changedAfter }),
     })
     items.push(...result.items)
-    if (!result.more) return items
-    if (!result.cursor) throw new Error('question rulings page says more without a continuation cursor')
+    more = result.more === true
+    if (!more) return items
+    if (!result.cursor)
+      throw new Error('question rulings page says more without a continuation cursor')
     changedAfter = result.cursor
-  } while (true)
+  }
+  return items
 }
 
 export async function questionTaskRulings(

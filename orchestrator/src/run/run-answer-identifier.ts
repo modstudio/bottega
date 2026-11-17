@@ -3,7 +3,11 @@
 
 import type { Database } from 'bun:sqlite'
 import { storedMachineNames } from '../../../shared/machine-config.ts'
-import { questionByNumber, questionsById } from '../question-store/question-store-read.ts'
+import {
+  questionByNumber,
+  questionNumberProjectId,
+  questionsById,
+} from '../question-store/question-store-read.ts'
 import { type MachineIdentifierNames, stripMachineLabel } from '../record/machine-name.ts'
 import { questionsForRunChain } from './question-open.ts'
 import { classifyBareRunIdentifier } from './run-identifier-grammar.ts'
@@ -200,14 +204,7 @@ async function readQuestionFacts(
 ): Promise<AnswerQuestionFacts | null> {
   const localProjectId =
     identifier.kind === 'question-number'
-      ? database
-          .query<{ project_record_id: string | null }, [number]>(
-            `SELECT COALESCE(owner.project_record_id,cursor.project_record_id) project_record_id
-             FROM question q LEFT JOIN run owner ON owner.record_id=q.run_record_id
-             LEFT JOIN workflow_cursor cursor ON cursor.record_id=q.workflow_cursor_record_id
-             WHERE q.number=?`,
-          )
-          .get(identifier.number)?.project_record_id
+      ? questionNumberProjectId(database, identifier.number)
       : null
   if (identifier.kind === 'question-number' && !localProjectId)
     throw new Error(

@@ -48,10 +48,12 @@ describe('Hub question UUID migration', () => {
   test('a pending rekey names machine migrate when the orchestrator map is unavailable', async () => {
     const pending = migratedThrough(35)
     try {
-      pending.query(
-        `INSERT INTO question(question_id,run_ref,root_ref,task_key,session_id,asked_at)
+      pending
+        .query(
+          `INSERT INTO question(question_id,run_ref,root_ref,task_key,session_id,asked_at)
          VALUES (92,'orch:run','orch:run','DEV-1214','session','2026-10-19')`,
-      ).run()
+        )
+        .run()
       await expect(
         questionIdentitiesForMigrations(pending, async (_numbers) => {
           throw new Error('orchestrator unavailable')
