@@ -194,6 +194,7 @@ test('maps git ancestry exit codes to three-valued release ancestry', () => {
 
 const level = {
   path: '/projects/example',
+  returnToTrunkCommand: 'git -C /projects/example switch main',
   branch: 'main',
   requiredBranch: 'main',
   trunk: 'main',
@@ -247,7 +248,7 @@ describe('release checkout transition', () => {
   test('keeps a same-branch release on trunk without a switch or restore', () =>
     expect(
       releaseCheckoutTransitionDecision({
-        path: '/projects/example',
+        returnToTrunkCommand: 'git -C /projects/example switch main',
         current: 'main',
         trunk: 'main',
         rungBranch: 'main',
@@ -263,7 +264,7 @@ describe('release checkout transition', () => {
   test('does not move a same-branch release whose checkout is off trunk', () =>
     expect(
       releaseCheckoutTransitionDecision({
-        path: '/projects/example',
+        returnToTrunkCommand: 'git -C /projects/example switch main',
         current: 'develop',
         trunk: 'main',
         rungBranch: 'main',
@@ -279,7 +280,7 @@ describe('release checkout transition', () => {
   test('switches a clean landing branch to the rung and restores it', () =>
     expect(
       releaseCheckoutTransitionDecision({
-        path: '/projects/example',
+        returnToTrunkCommand: 'git -C /projects/example switch develop',
         current: 'develop',
         trunk: 'develop',
         rungBranch: 'master',
@@ -290,7 +291,7 @@ describe('release checkout transition', () => {
   test('heals a clean checkout already left on the rung', () =>
     expect(
       releaseCheckoutTransitionDecision({
-        path: '/projects/example',
+        returnToTrunkCommand: 'git -C /projects/example switch develop',
         current: 'master',
         trunk: 'develop',
         rungBranch: 'master',
@@ -301,7 +302,7 @@ describe('release checkout transition', () => {
   test('refuses a dirty checkout when it would need switching and restoration', () =>
     expect(
       releaseCheckoutTransitionDecision({
-        path: '/projects/example',
+        returnToTrunkCommand: 'git -C /projects/example switch develop',
         current: 'develop',
         trunk: 'develop',
         rungBranch: 'master',
@@ -315,7 +316,7 @@ describe('release checkout transition', () => {
   test('refuses another branch with the landing-branch remedy', () =>
     expect(
       releaseCheckoutTransitionDecision({
-        path: '/projects/example',
+        returnToTrunkCommand: 'git -C /projects/example switch develop',
         current: 'feature',
         trunk: 'develop',
         rungBranch: 'master',
@@ -330,7 +331,7 @@ describe('release checkout transition', () => {
   test('names detached HEAD when no current branch is reported', () =>
     expect(
       releaseCheckoutTransitionDecision({
-        path: '/projects/example',
+        returnToTrunkCommand: 'git -C /projects/example switch develop',
         current: '',
         trunk: 'develop',
         rungBranch: 'master',
