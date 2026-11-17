@@ -222,6 +222,7 @@ function withReleaseCheckout(
 ): ReleaseCommandOutcome {
   git(['fetch', 'origin'], path)
   const transition = releaseCheckoutTransitionDecision({
+    path,
     current: git(['branch', '--show-current'], path),
     trunk,
     rungBranch,

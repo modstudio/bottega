@@ -10,7 +10,13 @@ export type MainCheckoutFacts = {
   trackedModified: boolean
 }
 
+/** Render the one sanctioned command that returns a registered main checkout to trunk. */
+export function returnMainCheckoutToTrunkCommand(path: string, trunk: string): string {
+  return `git -C ${path} switch ${trunk}`
+}
+
 export function mainCheckoutInvariant(
+  path: string,
   facts: MainCheckoutFacts,
 ): { holds: true } | { holds: false; message: string } {
   const failures: string[] = []
@@ -20,12 +26,14 @@ export function mainCheckoutInvariant(
     )
   }
   if (facts.trackedModified) failures.push('checkout has tracked modifications')
-  return failures.length
-    ? {
-        holds: false,
-        message: `${failures.join('; ')}; restore the tracked checkout and run ${PLATFORM_SLUG} machine doctor`,
-      }
-    : { holds: true }
+  if (failures.length === 0) return { holds: true }
+  const remedies = []
+  if (facts.branch !== facts.trunk) {
+    remedies.push(`run ${returnMainCheckoutToTrunkCommand(path, facts.trunk)}`)
+  }
+  if (facts.trackedModified) remedies.push('restore the tracked checkout')
+  remedies.push(`run ${PLATFORM_SLUG} machine doctor`)
+  return { holds: false, message: `${failures.join('; ')}; ${remedies.join(', then ')}` }
 }
 
 export function mainCheckoutFacts(
@@ -45,6 +53,6 @@ export function verifyMainCheckoutInvariant(
   trunk: string,
   runGit?: (cwd: string, args: string[]) => string,
 ): void {
-  const decision = mainCheckoutInvariant(mainCheckoutFacts(path, trunk, runGit))
+  const decision = mainCheckoutInvariant(path, mainCheckoutFacts(path, trunk, runGit))
   if (!decision.holds) throw new Error(`${path}: ${decision.message}`)
 }

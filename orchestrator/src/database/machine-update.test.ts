@@ -748,7 +748,9 @@ test('machine update requires the registered landing branch in the main checkout
         git: (_cwd, args) => (args[0] === 'branch' ? 'release' : ''),
       },
     ),
-  ).rejects.toThrow(`registered landing branch is main, but ${dir} is on release; check out main`)
+  ).rejects.toThrow(
+    `registered landing branch is main, but ${dir} is on release; run git -C ${dir} switch main, then retry`,
+  )
 })
 
 test('machine update refuses the BOTTEGA_ORCHESTRATOR_DB override', async () => {

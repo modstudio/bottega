@@ -247,6 +247,7 @@ describe('release checkout transition', () => {
   test('keeps a same-branch release on trunk without a switch or restore', () =>
     expect(
       releaseCheckoutTransitionDecision({
+        path: '/projects/example',
         current: 'main',
         trunk: 'main',
         rungBranch: 'main',
@@ -262,6 +263,7 @@ describe('release checkout transition', () => {
   test('does not move a same-branch release whose checkout is off trunk', () =>
     expect(
       releaseCheckoutTransitionDecision({
+        path: '/projects/example',
         current: 'develop',
         trunk: 'main',
         rungBranch: 'main',
@@ -277,6 +279,7 @@ describe('release checkout transition', () => {
   test('switches a clean landing branch to the rung and restores it', () =>
     expect(
       releaseCheckoutTransitionDecision({
+        path: '/projects/example',
         current: 'develop',
         trunk: 'develop',
         rungBranch: 'master',
@@ -287,6 +290,7 @@ describe('release checkout transition', () => {
   test('heals a clean checkout already left on the rung', () =>
     expect(
       releaseCheckoutTransitionDecision({
+        path: '/projects/example',
         current: 'master',
         trunk: 'develop',
         rungBranch: 'master',
@@ -297,6 +301,7 @@ describe('release checkout transition', () => {
   test('refuses a dirty checkout when it would need switching and restoration', () =>
     expect(
       releaseCheckoutTransitionDecision({
+        path: '/projects/example',
         current: 'develop',
         trunk: 'develop',
         rungBranch: 'master',
@@ -310,6 +315,7 @@ describe('release checkout transition', () => {
   test('refuses another branch with the landing-branch remedy', () =>
     expect(
       releaseCheckoutTransitionDecision({
+        path: '/projects/example',
         current: 'feature',
         trunk: 'develop',
         rungBranch: 'master',
@@ -318,12 +324,13 @@ describe('release checkout transition', () => {
     ).toEqual({
       ok: false,
       message:
-        'registered main checkout is on feature, not its landing branch develop; switch it to develop, then retry',
+        'registered main checkout is on feature, not its landing branch develop; run git -C /projects/example switch develop, then retry',
     }))
 
   test('names detached HEAD when no current branch is reported', () =>
     expect(
       releaseCheckoutTransitionDecision({
+        path: '/projects/example',
         current: '',
         trunk: 'develop',
         rungBranch: 'master',
@@ -332,7 +339,7 @@ describe('release checkout transition', () => {
     ).toEqual({
       ok: false,
       message:
-        'registered main checkout is on detached HEAD, not its landing branch develop; switch it to develop, then retry',
+        'registered main checkout is on detached HEAD, not its landing branch develop; run git -C /projects/example switch develop, then retry',
     }))
 })
 

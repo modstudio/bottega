@@ -17,7 +17,10 @@ import {
 } from '../../../shared/update-lock.ts'
 import { realpathOrSpelled } from '../git/checkout-identity.ts'
 import { git, targetGitEnvironment } from '../git/git-environment.ts'
-import { verifyMainCheckoutInvariant } from '../project/main-checkout-invariant.ts'
+import {
+  returnMainCheckoutToTrunkCommand,
+  verifyMainCheckoutInvariant,
+} from '../project/main-checkout-invariant.ts'
 import { projectAt } from '../project/projects.ts'
 import { migrationInFlightRuns } from '../run/migration-in-flight-runs.ts'
 import { setupIncrementalVacuumAfterMachineUpdate } from './database-commands.ts'
@@ -465,7 +468,7 @@ function verifiedLandingBranch(
   if (current !== branch) {
     throw new Error(
       `refusing machine update: registered landing branch is ${branch}, but ${project.path} is on ${current}; ` +
-        `check out ${branch} in ${project.path}`,
+        `run ${returnMainCheckoutToTrunkCommand(project.path, branch)}, then retry`,
     )
   }
   return branch

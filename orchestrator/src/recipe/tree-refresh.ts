@@ -13,6 +13,7 @@ import {
 } from '../database/machine-update-mover.ts'
 import { recordedChainRootsForWorktree } from '../dispatch/dispatch-preflight.ts'
 import { git, gitOk, repoRootOf } from '../git/git-environment.ts'
+import { returnMainCheckoutToTrunkCommand } from '../project/main-checkout-invariant.ts'
 import { projectAt, resolvedWorktreeTool } from '../project/projects.ts'
 import { orchRunLabelForRun } from '../resources/docker-resources.ts'
 import { resolveWorktreeLifecycle } from '../worktree/worktree-lifecycle.ts'
@@ -272,7 +273,7 @@ function refreshMainCheckout(target: ReturnType<typeof registeredRefreshTarget>)
   const branchDecision = decideMainCheckoutBranch(branch, trunk)
   if (branchDecision.action === 'refuse') {
     throw new Error(
-      `main checkout ${treeRoot} is on branch ${branchDecision.branch ?? '(detached HEAD)'}, expected trunk ${trunk}; the main checkout must be on trunk to be refreshed`,
+      `main checkout ${treeRoot} is on branch ${branchDecision.branch ?? '(detached HEAD)'}, expected trunk ${trunk}; the main checkout must be on trunk to be refreshed; run ${returnMainCheckoutToTrunkCommand(treeRoot, trunk)}, then retry`,
     )
   }
 

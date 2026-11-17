@@ -13,6 +13,22 @@ def requires_clean_main(settings):
     return settings.get("requireCleanMain") is not False
 
 
+def returns_to_trunk(mutation, settings):
+    if mutation["subcommand"] not in {"checkout", "switch"}:
+        return False
+    trunk = settings.get("trunk")
+    if not isinstance(trunk, str) or not trunk:
+        return False
+    operands = []
+    for argument in mutation["arguments"]:
+        if argument in {"-q", "--quiet"}:
+            continue
+        if argument.startswith("-"):
+            return False
+        operands.append(argument)
+    return operands == [trunk]
+
+
 def decision_for_mutations(mutations, projects):
     """Decide whether normalized mutations target a protected registered main."""
     for mutation in mutations:
@@ -26,6 +42,8 @@ def decision_for_mutations(mutations, projects):
             in_root = target == root or target.startswith(root + os.sep)
             in_worktree = target.startswith(worktrees + os.sep)
             if in_root and not in_worktree:
+                if returns_to_trunk(mutation, settings):
+                    continue
                 return {
                     "project": project,
                     "root": root,
