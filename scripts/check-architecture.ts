@@ -23,6 +23,10 @@ import {
   hubViewsDocsModeLiteralLines,
   hubViewsDocsModeLiteralRuleName,
 } from './architecture-hub-data.ts'
+import {
+  identityReferenceGuardViolations,
+  identityReferenceViolationCount,
+} from './architecture-identity-reference.ts'
 import { reviewFunnelPrivateDecisionImports } from './architecture-review-boundaries.ts'
 import {
   duplicateImportBoundaryNameViolations,
@@ -37,6 +41,7 @@ import {
 } from './architecture-undeclared-modules.ts'
 import { architectureViolationRatchet } from './architecture-violation-baseline.ts'
 import { importSpecifiers } from './import-scanner.ts'
+import { identityReferenceBaseline } from './quality/identity-reference-baseline.ts'
 import { undeclaredModulesBaseline } from './quality/undeclared-modules-baseline.ts'
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url)).replace(/\/$/, '')
@@ -44,6 +49,7 @@ const BASELINE_FILE = 'scripts/quality/undeclared-modules-baseline.ts'
 const manifestFiles: string[] = modules.map(({ file }) => file)
 const violations: string[] = []
 const manifestFileCounts = new Map<string, number>()
+const identityReferenceCounts: Record<string, number> = {}
 
 violations.push(...(await missingTypeOnlyImportBoundaryViolations(importBoundaries)))
 violations.push(...duplicateImportBoundaryNameViolations(importBoundaries))
@@ -122,7 +128,10 @@ for (const root of [...CONCERNS, 'shared']) {
   for (const relative of new Glob('**/*.{ts,tsx}').scanSync({ cwd: directory })) {
     const file = `${root}/${relative}`
     if (!isProductionSourceFile(file)) continue
-    const imports = importSpecifiers(readFileSync(join(ROOT, file), 'utf8'))
+    const sourceText = readFileSync(join(ROOT, file), 'utf8')
+    const imports = importSpecifiers(sourceText)
+    const bypasses = identityReferenceViolationCount(sourceText)
+    if (bypasses > 0) identityReferenceCounts[file] = bypasses
     for (const expression of imports.unresolvedRelative) {
       violations.push(`${file}: unresolved relative import at ${expression}`)
     }
@@ -177,6 +186,10 @@ for (const root of [...CONCERNS, 'shared']) {
     }
   }
 }
+
+violations.push(
+  ...identityReferenceGuardViolations(identityReferenceCounts, identityReferenceBaseline),
+)
 
 for (const { file } of modules) {
   if (!existsSync(join(ROOT, file))) violations.push(`manifest module names missing file ${file}`)

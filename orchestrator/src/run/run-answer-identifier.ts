@@ -3,6 +3,9 @@
 
 import type { Database } from 'bun:sqlite'
 import { storedMachineNames } from '../../../shared/machine-config.ts'
+import { parseReference } from '../../../shared/reference.ts'
+import { resolve } from '../identity/identity.ts'
+import { identityContext } from '../identity/identity-context.ts'
 import {
   questionByProjectNumber,
   questionNumberProjectId,
@@ -65,11 +68,18 @@ export function parseAnswerIdentifier(
 ): ParsedAnswerIdentifier {
   const original = String(input)
   const given = stripMachineLabel(original, names)
-  const question = given.match(/^q([0-9]+)$/)
-  if (question) {
-    const number = Number(question[1])
-    if (Number.isSafeInteger(number) && number > 0) return { kind: 'question-number', number }
+  let reference: ReturnType<typeof parseReference>
+  try {
+    reference = parseReference(given, 'run')
+  } catch {
+    throw new Error(
+      `invalid answer identifier ${JSON.stringify(original)}: expected q followed by a positive decimal question number, name/q followed by a positive decimal question number, a positive decimal run number, name/number, or a full run or question UUID`,
+    )
   }
+  if (reference.value.kind === 'label' && reference.value.prefix === 'q')
+    return { kind: 'question-number', number: reference.value.number }
+  if (reference.value.kind === 'label' && reference.value.prefix === 'r')
+    return { kind: 'run-number', number: reference.value.number }
   const runIdentifier = classifyBareRunIdentifier(given)
   if (runIdentifier?.kind === 'number') return { kind: 'run-number', number: runIdentifier.number }
   if (runIdentifier?.kind === 'record-id')
@@ -240,10 +250,35 @@ export async function resolveAnswerIdentifier(
   callerSessionId: string | null,
 ): Promise<string> {
   const identifier = parseAnswerIdentifier(input)
+  const context = identityContext(database, { session: callerSessionId })
+  if (identifier.kind === 'question-number') {
+    const question = await resolve(`q${identifier.number}`, context, 'question')
+    const normalized = { kind: 'record-id' as const, recordId: question.recordId }
+    const decision = answerIdentifierDecision({
+      identifier,
+      run: null,
+      question: await readQuestionFacts(database, normalized),
+    })
+    if (decision.kind === 'refuse') throw new Error(decision.reason)
+    return decision.runRecordId
+  }
+  if (identifier.kind === 'run-number') {
+    const run = await resolve(identifier.number, context, 'run')
+    const normalized = { kind: 'record-id' as const, recordId: run.recordId }
+    const decision = answerIdentifierDecision({
+      identifier,
+      run: await readRunFacts(database, normalized, callerSessionId),
+      question: await readQuestionFacts(database, identifier),
+    })
+    if (decision.kind === 'refuse') throw new Error(decision.reason)
+    return decision.runRecordId
+  }
+  const resolved = await resolve(identifier.recordId, context)
+  const normalized = { kind: 'record-id' as const, recordId: resolved.recordId }
   const decision = answerIdentifierDecision({
-    identifier,
-    run: await readRunFacts(database, identifier, callerSessionId),
-    question: await readQuestionFacts(database, identifier),
+    identifier: normalized,
+    run: resolved.kind === 'run' ? await readRunFacts(database, normalized, callerSessionId) : null,
+    question: resolved.kind === 'question' ? await readQuestionFacts(database, normalized) : null,
   })
   if (decision.kind === 'refuse') throw new Error(decision.reason)
   return decision.runRecordId

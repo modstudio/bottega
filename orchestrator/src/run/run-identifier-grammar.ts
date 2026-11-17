@@ -2,6 +2,7 @@
 /** Recognizes a user-facing run number or UUID. Pure: it knows no store, process, or clock. */
 
 import { hasRecordIdShape } from '../../../shared/record-id.ts'
+import { parseReference } from '../../../shared/reference.ts'
 import {
   decideMachineLabel,
   type MachineIdentifierNames,
@@ -13,10 +14,17 @@ export type ParsedRunIdentifier =
   | { kind: 'record-id'; recordId: string }
 
 export const ACCEPTED_RUN_IDENTIFIERS =
-  'a positive decimal run number, name/number, or a full run UUID'
+  'an r-prefixed run number, positive decimal run number, name/number, or a full run UUID'
 
 export function classifyBareRunIdentifier(input: string | number): ParsedRunIdentifier | null {
   const given = String(input)
+  try {
+    const reference = parseReference(given, 'run')
+    if (reference.value.kind === 'label' && reference.value.prefix === 'r')
+      return { kind: 'number', number: reference.value.number }
+  } catch {
+    return null
+  }
   if (/^[0-9]+$/.test(given)) {
     const number = Number(given)
     if (Number.isSafeInteger(number) && number > 0) return { kind: 'number', number }

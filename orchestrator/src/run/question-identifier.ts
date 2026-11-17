@@ -3,69 +3,44 @@
 
 import type { Database } from 'bun:sqlite'
 import type { QuestionIdentity } from '../../../shared/orch-contract.ts'
-import { hasRecordIdShape } from '../../../shared/record-id.ts'
-import {
-  questionById,
-  questionByProjectNumber,
-  questionNumberProjectId,
-} from '../question-store/question-store-read.ts'
+import { parseReference } from '../../../shared/reference.ts'
+import { resolve } from '../identity/identity.ts'
+import { identityContext } from '../identity/identity-context.ts'
 
 export type ParsedQuestionIdentifier =
   | { kind: 'number'; id: number }
   | { kind: 'record-id'; recordId: string }
 
-const ACCEPTED_QUESTION_IDENTIFIERS = 'a positive decimal question number or a full question UUID'
-
 export async function questionIdentityMap(
   database: Database,
   identifiers: Array<string | number>,
 ): Promise<QuestionIdentity[]> {
+  const context = identityContext(database)
   return Promise.all(
     identifiers.map(async (identifier) => {
-      const parsed = parseQuestionIdentifier(identifier)
-      const row =
-        parsed.kind === 'number'
-          ? await questionByProjectNumber(
-              database,
-              parsed.id,
-              questionNumberProjectId(database, parsed.id),
-            )
-          : await questionById(database, parsed.recordId)
-      if (!row) throw new Error(`no question has identifier ${JSON.stringify(String(identifier))}`)
-      return { number: Number(row.number), record_id: String(row.record_id) }
+      const resolved = await resolve(identifier, context, 'question')
+      const row = database
+        .query<{ number: number }, [string]>('SELECT number FROM question WHERE record_id=?')
+        .get(resolved.recordId)
+      if (!row) throw new Error(`question ${resolved.recordId} is not cached locally`)
+      return { number: row.number, record_id: resolved.recordId }
     }),
   )
 }
 
 export function parseQuestionIdentifier(input: string | number): ParsedQuestionIdentifier {
-  const given = String(input)
-  if (/^[0-9]+$/.test(given)) {
-    const id = Number(given)
-    if (Number.isSafeInteger(id) && id > 0) return { kind: 'number', id }
-  }
-  if (hasRecordIdShape(given)) return { kind: 'record-id', recordId: given.toLowerCase() }
-  throw new Error(
-    `invalid question identifier ${JSON.stringify(given)}: expected ${ACCEPTED_QUESTION_IDENTIFIERS}`,
-  )
+  const parsed = parseReference(input, 'question')
+  if (parsed.value.kind === 'record-id')
+    return { kind: 'record-id', recordId: parsed.value.recordId }
+  if (parsed.value.kind === 'number') return { kind: 'number', id: parsed.value.number }
+  if (parsed.value.kind === 'label' && parsed.value.prefix === 'q')
+    return { kind: 'number', id: parsed.value.number }
+  throw new Error(`reference ${JSON.stringify(String(input))} does not name a question`)
 }
 
 export async function resolveQuestionIdentifier(
   database: Database,
   input: string | number,
 ): Promise<string> {
-  const parsed = parseQuestionIdentifier(input)
-  if (parsed.kind === 'number') {
-    const row = await questionByProjectNumber(
-      database,
-      parsed.id,
-      questionNumberProjectId(database, parsed.id),
-    )
-    if (row) return String(row.record_id)
-    throw new Error(`no question has number ${parsed.id}; pass ${ACCEPTED_QUESTION_IDENTIFIERS}`)
-  }
-  const row = await questionById(database, parsed.recordId)
-  if (row) return parsed.recordId
-  throw new Error(
-    `no question has UUID ${JSON.stringify(String(input))}; pass ${ACCEPTED_QUESTION_IDENTIFIERS}`,
-  )
+  return (await resolve(input, identityContext(database), 'question')).recordId
 }

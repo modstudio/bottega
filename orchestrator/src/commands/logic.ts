@@ -89,7 +89,7 @@ const presentation = {
   },
   exit: (code: number): never => process.exit(code),
   now: Date.now,
-  printRunId: (id: string) => write(`${displayRunNumber(id)}\n`),
+  printRunId: (id: string) => write(`r${displayRunNumber(id)}\n`),
 }
 const scoreSuffix = (jobName: string) =>
   (jobTakesFidelity(jobName) ? ' [drifted|partial|faithful]' : '') +
@@ -543,7 +543,7 @@ function registerDoCommand(program: Command): void {
     const argv = rawArgv(command)
     await doCommand(argv, {
       error: console.error,
-      printRunId: (id) => write(`${id}\n`),
+      printRunId: (id) => write(`r${id}\n`),
       cwd: process.cwd,
     })
   })
@@ -760,7 +760,7 @@ export function register(program: Command, dependencies: LogicDependencies = {})
       pickPreviewCommand(productArgv('pick', [job], options), {
         error: console.error,
         log,
-        printRunId: (id) => write(`${id}\n`),
+        printRunId: (id) => write(`r${id}\n`),
         cwd: process.cwd,
       }),
     )

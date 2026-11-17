@@ -32,7 +32,7 @@ type StepActionCommandPorts = {
 
 const dispatchPresentation = {
   error: (...values: unknown[]) => console.error(...values),
-  printRunId: (id: number) => write(`${id}\n`),
+  printRunId: (id: number) => write(`r${id}\n`),
   cwd: process.cwd,
 }
 
