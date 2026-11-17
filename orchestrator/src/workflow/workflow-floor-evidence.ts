@@ -17,7 +17,7 @@ import { resolveDocReference } from '../doc/doc-reference-read.ts'
 import { landingGatePurposeRefusal, resolveGateIdentifier } from '../gate/gate-identifier.ts'
 import { projectByName } from '../project/projects.ts'
 import {
-  questionByNumber,
+  questionForWorkflowCursorByNumber,
   questionRuleAuditReasons,
 } from '../question-store/question-store-read.ts'
 import {
@@ -119,15 +119,18 @@ function runHasRecordedArtifacts(
   return existsSync(artifacts) && readdirSync(artifacts).length > 0
 }
 
-async function gatherRuling(
+export async function gatherRuling(
   id: number,
   cursorId: string,
   stepOrdinal: number,
   stepSlug: string,
   d: Database,
 ): Promise<ValidatedEvidence['ruling']> {
-  const question = await questionByNumber(d, id)
-  if (!question) throw new Error(`--ruling ${id} does not exist`)
+  const question = await questionForWorkflowCursorByNumber(d, cursorId, id)
+  if (!question)
+    throw new Error(
+      `--ruling ${id} is not a question on this workflow cursor; pass the number that \`${PLATFORM_SLUG} workflow rule\` or \`${PLATFORM_SLUG} workflow await\` printed for this cursor, then retry`,
+    )
   const row = {
     id,
     answered_at: question.answered_at as string | null,
@@ -135,7 +138,6 @@ async function gatherRuling(
     overturned_at: question.overturned_at as string | null,
     replacement: question.replacement as string | null,
     is_open: question.answered_at === null && question.closed_at === null ? 1 : 0,
-    workflow_cursor_record_id: question.workflow_cursor_record_id as string | null,
     workflow_step_ordinal: question.workflow_step_ordinal as number | null,
     workflow_step_slug: question.workflow_step_slug as string | null,
   }
@@ -144,7 +146,7 @@ async function gatherRuling(
     id,
     answered: facts.answered,
     answeredByOperator: facts.answeredByOperator,
-    boundToCursor: row.workflow_cursor_record_id === cursorId,
+    boundToCursor: true,
     boundToStep: row.workflow_step_ordinal === stepOrdinal && row.workflow_step_slug === stepSlug,
     answeredAt: row.answered_at,
   }

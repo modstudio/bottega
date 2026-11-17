@@ -81,7 +81,7 @@ function decodeSpaceCursors(value: string): SpaceCursors {
   }
 }
 
-const SINGLE_SPACE_READ_KINDS = ['by-id', 'by-number', 'for-run', 'for-cursor'] as const
+const SINGLE_SPACE_READ_KINDS = ['by-id', 'for-run', 'for-cursor'] as const
 
 export class RecordQuestionStore implements QuestionStore {
   private readonly input: {
@@ -245,6 +245,10 @@ export class RecordQuestionStore implements QuestionStore {
   }
 
   async read(input: QuestionReadInput): Promise<QuestionReadResult> {
+    if (input.read === 'by-number')
+      throw new Error(
+        'question numbers are unique only within a record space; read the question by id or by cursor, then retry',
+      )
     if (input.changedAfter !== undefined && input.read !== 'rulings' && input.read !== 'inbox')
       throw new Error(
         `${questionChangedAfterRefusal.message}; ${questionChangedAfterRefusal.remedy}`,

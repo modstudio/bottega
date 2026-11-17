@@ -75,6 +75,15 @@ export async function questionsForWorkflowCursor(
   ).items as Record<string, unknown>[]
 }
 
+export async function questionForWorkflowCursorByNumber(
+  database: Database,
+  cursorId: string,
+  number: number,
+): Promise<Record<string, unknown> | null> {
+  const questions = await questionsForWorkflowCursor(database, cursorId)
+  return questions.find((row) => row.number === number) ?? null
+}
+
 export async function questionRuleAuditReasons(
   database: Database,
   workflowCursorRecordId: string,
@@ -86,17 +95,6 @@ export async function questionRuleAuditReasons(
     actorSession,
   })
   return result.items.map((row) => ('reason' in row ? (row.reason as string | null) : null))
-}
-
-export async function questionByNumber(
-  database: Database,
-  number: number,
-): Promise<Record<string, unknown> | null> {
-  return (
-    ((await questionStore(database).read({ read: 'by-number', number })).items[0] as
-      | Record<string, unknown>
-      | undefined) ?? null
-  )
 }
 
 export async function maximumQuestionNumber(database: Database): Promise<number> {
