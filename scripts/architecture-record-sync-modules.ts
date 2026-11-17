@@ -55,6 +55,7 @@ export const recordSyncModules: RecordSyncModule[] = [
     '../record/record-task-flow-contract.ts',
     './task-flow-store-sqlite-write.ts',
     './task-flow-store-types.ts',
+    './workflow-cursor-transition.ts',
   ]),
   module('orchestrator/src/record/record-sync-batch.ts', ['../../../shared/brand.ts']),
   module('orchestrator/src/record/record-sync-contract.ts', []),

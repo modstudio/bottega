@@ -1,6 +1,8 @@
 import { describe, expect, test } from 'bun:test'
 import {
   type CursorValue,
+  cursorOwnerAfter,
+  cursorOwnerVerbs,
   decideConditionalAdvance,
   decideCursorStart,
   decideCursorTransition,
@@ -15,6 +17,16 @@ const cursor = (ordinal: number, stepSlug: string, state: CursorValue['state'] =
 })
 
 describe('workflow cursor transition', () => {
+  test('only owning verbs replace a stored cursor owner', () => {
+    for (const verb of cursorOwnerVerbs) {
+      expect(String(cursorOwnerAfter(verb, null, 'caller'))).toBe('caller')
+      expect(String(cursorOwnerAfter(verb, 'caller', 'caller'))).toBe('caller')
+      expect(String(cursorOwnerAfter(verb, 'owner', 'caller'))).toBe(
+        verb === 'advance' || verb === 'compose' ? 'caller' : 'owner',
+      )
+    }
+  })
+
   test('requires, validates, and refuses undeclared close outcomes', () => {
     expect(decideStepOutcome('choose', ['yes', 'no'], undefined)).toEqual({
       action: 'refuse',

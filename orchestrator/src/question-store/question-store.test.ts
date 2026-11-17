@@ -820,3 +820,20 @@ test('hosted question selection and pending delivery never touch the local quest
     database.close()
   }
 })
+
+test('a SQLite rewrite after the cursor advances keeps the step the question was asked on', async () => {
+  const database = migratedTestDatabase()
+  seedOwners(database)
+  const store = questionStore(database)
+  const original = snapshot({ id: WORKFLOW_QUESTION_ID })
+  await store.write('ask', body(original))
+  database
+    .query("UPDATE workflow_cursor SET ordinal=3,step_slug='review' WHERE record_id=?")
+    .run(CURSOR_ID)
+  await store.write('link', body({ ...original, revision: 2, workflowTaskId: TASK_ID }, 'link'))
+  expect((await store.read({ read: 'by-id', ids: [original.id] })).items[0]).toMatchObject({
+    workflow_step_ordinal: 1,
+    workflow_step_slug: 'implement',
+  })
+  database.close()
+})

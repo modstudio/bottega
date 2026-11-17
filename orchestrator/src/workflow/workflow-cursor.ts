@@ -10,7 +10,6 @@ import {
   writeHostedTaskFlow,
 } from '../record/record-task-flow-write-client.ts'
 import {
-  type TaskFlowIntentInput,
   type TaskFlowIntentResult,
   taskFlowRequestId,
 } from '../record/record-task-flow-write-contract.ts'
@@ -19,6 +18,7 @@ import type { LiveCursorAutonomy } from './autonomy.ts'
 import { decideWorkflowTakeover, workflowTakeoverNotice } from './task-flow-decision.ts'
 import { refreshStaleMirror } from './task-flow-mirror-refresh.ts'
 import { taskFlowLocalStore, taskFlowReadStore } from './task-flow-store.ts'
+import type { TaskFlowIntentInput } from './task-flow-store-types.ts'
 import {
   type CommitCountPort,
   readCommitsPastLanding,
@@ -46,6 +46,7 @@ import { cursorComposition } from './workflow-cursor-serve.ts'
 import { type ClosedStep, type CursorTrailEntry, isClosedStep } from './workflow-cursor-trail.ts'
 import {
   type CursorState,
+  cursorOwnerAfter,
   decideConditionalAdvance,
   decideCursorStart,
   decideStepOutcome,
@@ -215,7 +216,7 @@ export async function composeWorkflowWithCursor(
           values: {
             arguments: resolved.args,
             closedStepNotes: JSON.parse(resolved.closed) as unknown[],
-            sessionId: context.session ?? existing.session_id,
+            sessionId: cursorOwnerAfter('compose', existing.session_id, context.session),
             updatedAt: resolved.updatedAt,
           },
         },
@@ -378,6 +379,7 @@ async function closeFloorsForStep(
   outcome: string | undefined,
   d: Database,
   client?: WorkflowCursorContext['taskFlowClient'],
+  callerSession?: string | null,
 ) {
   const currentStep = composition.steps[row.ordinal]!
   const outcomeDecision = decideStepOutcome(currentStep.slug, currentStep.outcomes, outcome)
@@ -411,7 +413,7 @@ async function closeFloorsForStep(
       projectId: projectByName(row.project, d)?.recordId ?? null,
       workflowKey: row.workflow_key,
       workflowTaskRecordId: row.task_record_id,
-      stepOrdinal: row.ordinal + 1,
+      cursorOrdinal: row.ordinal,
       stepSlug: row.step_slug,
       stepTitle: currentStep.title,
       resolvedAutonomy: currentStep.resolvedAutonomy.value,
@@ -430,6 +432,7 @@ async function closeFloorsForStep(
       client,
       advance.requireRuling,
       selfRulingQuestionNumber,
+      callerSession,
     ),
     advance.requireRuling,
     currentStep,
@@ -479,7 +482,7 @@ async function persistWorkflowAdvance(
       closed,
       deleteTextIds,
       obligationPlan,
-      sessionId: context.session ?? row.session_id,
+      callerSession: context.session,
       takeoverFromMachineId,
       database: d,
       taskFlowClient: context.taskFlowClient,
@@ -505,7 +508,7 @@ async function persistWorkflowAdvance(
         state: 'running',
         closedStepNotes: closed,
         question: null,
-        sessionId: context.session ?? row.session_id,
+        sessionId: cursorOwnerAfter('advance', row.session_id, context.session),
         takenOverFromMachineId: takeoverFromMachineId,
         lastAdvancedMachineId: machineId(),
         updatedAt: at,
@@ -537,7 +540,7 @@ export async function writeFinishingWorkflowAdvance(input: {
   closed: CursorTrailEntry[]
   deleteTextIds: string[]
   obligationPlan?: ReturnType<typeof appendWorkflowClose>
-  sessionId: string | null
+  callerSession: string | null | undefined
   takeoverFromMachineId?: string | null
   database: Database
   taskFlowClient?: WorkflowCursorContext['taskFlowClient']
@@ -565,7 +568,7 @@ export async function writeFinishingWorkflowAdvance(input: {
         state: 'done',
         closedStepNotes: closed,
         question: null,
-        sessionId: input.sessionId,
+        sessionId: cursorOwnerAfter('advance', row.session_id, input.callerSession),
         takenOverFromMachineId: input.takeoverFromMachineId,
         lastAdvancedMachineId: machineId(),
         updatedAt: at,
@@ -767,6 +770,7 @@ async function nextWorkflowStepImpl(
     outcome,
     d,
     context.taskFlowClient,
+    context.session,
   )
   await persistWorkflowAdvance(
     row,
@@ -912,7 +916,7 @@ async function awaitWorkflowRulingImpl(
         closedStepNotes: JSON.parse(resolved.closed) as unknown[],
         state: 'awaiting-ruling' as const,
         question: question.trim(),
-        sessionId: context.session ?? row.session_id,
+        sessionId: cursorOwnerAfter('await', row.session_id, context.session),
         updatedAt: at,
       },
     },
@@ -933,7 +937,7 @@ async function awaitWorkflowRulingImpl(
       projectId: projectByName(row.project, d)?.recordId ?? null,
       workflowKey: row.workflow_key,
       workflowTaskRecordId: row.task_record_id,
-      stepOrdinal: row.ordinal + 1,
+      cursorOrdinal: row.ordinal,
       stepSlug: row.step_slug,
       question: question.trim(),
       at,

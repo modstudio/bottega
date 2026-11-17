@@ -36,7 +36,7 @@ export async function recordWorkflowSelfRuling(
     projectId: string | null
     workflowKey: string
     workflowTaskRecordId: string | null
-    stepOrdinal: number
+    cursorOrdinal: number
     stepSlug: string
     stepTitle: string
     resolvedAutonomy: AutonomyValue
@@ -52,7 +52,7 @@ export async function recordWorkflowSelfRuling(
     input.resolvedAutonomy,
     input.floors,
     basis,
-    input.stepOrdinal,
+    input.cursorOrdinal + 1,
     input.stepSlug,
   )
   if (refusal) throw new Error(refusal)
@@ -63,7 +63,7 @@ export async function recordWorkflowSelfRuling(
       projectId: input.projectId,
       workflowKey: input.workflowKey,
       workflowTaskRecordId: input.workflowTaskRecordId,
-      stepOrdinal: input.stepOrdinal,
+      cursorOrdinal: input.cursorOrdinal,
       stepSlug: input.stepSlug,
       question: input.selfRuling.question?.trim() || input.stepTitle,
       at,

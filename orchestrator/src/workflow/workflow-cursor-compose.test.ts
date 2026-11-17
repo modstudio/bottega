@@ -469,7 +469,7 @@ test('advance, await, rule, and abandon call the record before caching returned 
     flowRevision: 4,
     enforcement: 'note-only',
   })
-  const taskFlowClient: RecordTaskFlowClient = {
+  const taskFlowClient: RecordApiClient = {
     ...memory,
     ...projectIdentityClient,
     advanceTaskFlow: async (input, destination) => {
@@ -506,6 +506,7 @@ test('advance, await, rule, and abandon call the record before caching returned 
       return memory.abandonTaskFlow!(input, destination)
     },
   }
+  installRecordApiClient(taskFlowClient)
   const hostedContext = { ...context, taskRecordId: TASK_IDS.lifecycle, taskFlowClient }
   const args = { key: 'DEV-LIFECYCLE', branch: 'DEV-LIFECYCLE-work', worktree: '/tmp/lifecycle' }
   const opened = await composeWorkflowWithCursor(

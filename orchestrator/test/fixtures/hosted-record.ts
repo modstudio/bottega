@@ -62,7 +62,25 @@ export async function createHostedRecordFixture(options: {
 type SqlFragment = { readonly sql: string }
 
 function pgliteQuery(database: Pick<PGlite, 'query'>): SQL {
-  const query = async (strings: TemplateStringsArray, ...interpolations: unknown[]) => {
+  const result = (statement: string, parameters: unknown[]) => {
+    let arrayMode = false
+    const rows = Promise.resolve()
+      .then(() =>
+        database.query(
+          statement,
+          parameters,
+          arrayMode ? { rowMode: 'array' as const } : undefined,
+        ),
+      )
+      .then((value) => value.rows)
+    return Object.assign(rows, {
+      values: () => {
+        arrayMode = true
+        return rows
+      },
+    })
+  }
+  const query = (strings: TemplateStringsArray, ...interpolations: unknown[]) => {
     let statement = strings[0]!
     const parameters: unknown[] = []
     for (const [index, interpolation] of interpolations.entries()) {
@@ -74,12 +92,13 @@ function pgliteQuery(database: Pick<PGlite, 'query'>): SQL {
       }
       statement += strings[index + 1]!
     }
-    return (await database.query(statement, parameters)).rows
+    return result(statement, parameters)
   }
-  query.unsafe = (sql: string, parameters?: unknown[]) =>
-    parameters === undefined
-      ? { sql }
-      : database.query(sql, parameters).then((result) => result.rows)
+  query.options = {}
+  query.unsafe = (sql: string, parameters?: unknown[]) => {
+    if (parameters === undefined) return { sql }
+    return result(sql, parameters)
+  }
   return query as unknown as SQL
 }
 

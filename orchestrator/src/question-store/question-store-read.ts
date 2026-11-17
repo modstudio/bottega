@@ -10,6 +10,7 @@ import type {
   TaskFlowTaskRulingRow,
   TaskFlowWaitingQuestionRow,
 } from '../workflow/task-flow-store-types.ts'
+import { compareQuestionsByAsk } from './question-order.ts'
 import { questionStore } from './question-store.ts'
 import { questionNumberProjectIds } from './question-store-sqlite-reads.ts'
 import type { QuestionStore } from './question-store-types.ts'
@@ -156,6 +157,35 @@ export async function questionsForWorkflowCursor(
       workflowCursorRecordId: cursorId,
     })
   ).items as Record<string, unknown>[]
+}
+
+export function questionOnStep(
+  row: Record<string, unknown>,
+  step: { ordinal: number; slug: string },
+): boolean {
+  return Number(row.workflow_step_ordinal) === step.ordinal && row.workflow_step_slug === step.slug
+}
+
+export function latestQuestionOnStep(
+  rows: Record<string, unknown>[],
+  step: { ordinal: number; slug: string },
+): Record<string, unknown> | null {
+  return (
+    rows
+      .filter((row) => questionOnStep(row, step))
+      .sort((left, right) => compareQuestionsByAsk(right, left))[0] ?? null
+  )
+}
+
+export async function openQuestionForWorkflowStep(
+  database: Database,
+  input: { cursorId: string; cursorOrdinal: number; stepSlug: string },
+): Promise<Record<string, unknown> | null> {
+  const questions = await questionsForWorkflowCursor(database, input.cursorId)
+  return latestQuestionOnStep(
+    questions.filter((row) => row.answered_at === null && row.closed_at === null),
+    { ordinal: input.cursorOrdinal + 1, slug: input.stepSlug },
+  )
 }
 
 export async function questionForWorkflowCursorByNumber(

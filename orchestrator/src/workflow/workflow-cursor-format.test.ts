@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
+  foreignCursorOwnerNotice,
   renderWorkflowCursorLine,
   WORKFLOW_CURSOR_QUESTION_SUMMARY_CHARS,
 } from './workflow-cursor-format.ts'
@@ -19,6 +20,61 @@ const row = {
 }
 
 describe('workflow cursor line', () => {
+  test('a foreign owner notice names the owner and the keyed compose takeover', () => {
+    expect(
+      foreignCursorOwnerNotice(
+        {
+          id: 17,
+          session_id: 'owner-session',
+          workflow_slug: 'ship-task',
+          workflow_key: 'DEV-2370',
+          project: 'fixture',
+          mode_slug: 'default',
+          args: JSON.stringify({ key: 'DEV-2370', worktree: '/tmp/work tree' }),
+        },
+        'reader-session',
+      ),
+    ).toBe(
+      `Notice: this cursor is owned by session owner-session. Take it over with: ${PLATFORM_SLUG} workflow compose ship-task --project fixture --mode default --arg key=DEV-2370 --arg 'worktree=/tmp/work tree'`,
+    )
+  })
+
+  test('a keyless foreign cursor remedy abandons by owner before composing a replacement', () => {
+    expect(
+      foreignCursorOwnerNotice(
+        {
+          id: 17,
+          session_id: 'owner session',
+          workflow_slug: 'explore',
+          workflow_key: '',
+          project: 'fixture project',
+          mode_slug: 'default',
+          args: '{}',
+        },
+        'reader-session',
+      ),
+    ).toBe(
+      `Notice: this cursor is owned by session owner session. Take it over with: ${PLATFORM_SLUG} workflow abandon --cursor 17 --project 'fixture project' --owner-session 'owner session'; then compose a new cursor with: ${PLATFORM_SLUG} workflow compose explore --project 'fixture project' --mode default`,
+    )
+  })
+
+  test('a sessionless reader receives no unusable takeover notice', () => {
+    expect(
+      foreignCursorOwnerNotice(
+        {
+          id: 17,
+          session_id: 'owner-session',
+          workflow_slug: 'ship-task',
+          workflow_key: 'DEV-2370',
+          project: 'fixture',
+          mode_slug: 'default',
+          args: JSON.stringify({ key: 'DEV-2370' }),
+        },
+        null,
+      ),
+    ).toBeUndefined()
+  })
+
   test('summarizes a multiline ruling question and points to its full text', () => {
     const line = renderWorkflowCursorLine({
       ...row,

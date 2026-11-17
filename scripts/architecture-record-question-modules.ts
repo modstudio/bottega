@@ -44,8 +44,15 @@ export const recordQuestionModules: RecordModule[] = [
     '../../../shared/record/tenant.ts',
     './record-pool.ts',
     './record-question-contract.ts',
+    './record-question-step.ts',
   ]),
   module('orchestrator/src/record/record-question-number.ts', ['bun']),
+  module('orchestrator/src/record/record-question-step.ts', [
+    'bun',
+    'drizzle-orm',
+    '../../../shared/record/schema-question.ts',
+    './record-sync-service.ts',
+  ]),
   module('orchestrator/src/record/record-question-write.ts', [
     'drizzle-orm',
     'drizzle-orm/bun-sql',
@@ -56,8 +63,8 @@ export const recordQuestionModules: RecordModule[] = [
     './record-question-audit.ts',
     './record-question-contract.ts',
     './record-question-number.ts',
+    './record-question-step.ts',
     './record-sync-project-identity.ts',
-    './record-sync-service.ts',
   ]),
   module('orchestrator/src/question-store/question-store.ts', [
     'bun:sqlite',
@@ -109,6 +116,7 @@ export const recordQuestionModules: RecordModule[] = [
     'bun:sqlite',
     '../../../shared/brand.ts',
     '../project/project-read.ts',
+    './question-order.ts',
     '../workflow/task-flow-store-types.ts',
     './question-store.ts',
     './question-store-sqlite-reads.ts',

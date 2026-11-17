@@ -23,7 +23,10 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
   module('orchestrator/src/workflow/workflow-arguments.ts', ['./workflow-definition.ts']),
   module('orchestrator/src/workflow/workflow-cursor-transition.ts', []),
   module('orchestrator/src/workflow/workflow-cursor-trail.ts', []),
-  module('orchestrator/src/workflow/workflow-cursor-format.ts', ['../../../shared/brand.ts']),
+  module('orchestrator/src/workflow/workflow-cursor-format.ts', [
+    '../../../shared/brand.ts',
+    './workflow-cursor-transition.ts',
+  ]),
   module('orchestrator/src/workflow/workflow-cursor-autonomy.ts', [
     '../../../shared/brand.ts',
     '../../../shared/ship-to.ts',
@@ -185,6 +188,7 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     './workflow-cursor-format.ts',
     './workflow-cursor-selection.ts',
     './workflow-cursor-trail.ts',
+    './workflow-cursor-transition.ts',
     './workflow-floor.ts',
     './workflow-floor-evidence.ts',
     './workflow-floor-evidence-gather.ts',
@@ -253,7 +257,6 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
   module('orchestrator/src/workflow/workflow-floor-evidence-input.ts', []),
   module('orchestrator/src/workflow/workflow-step-question-evidence.ts', [
     'bun:sqlite',
-    '../question-store/question-order.ts',
     '../run/question-open.ts',
     './workflow-floor.ts',
     './workflow-floor-evidence.ts',
@@ -410,6 +413,7 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     './task-flow.ts',
     './task-flow-mirror-refresh.ts',
     './task-flow-store.ts',
+    './task-flow-store-types.ts',
     './task-flow-decision.ts',
     './workflow-self-ruling.ts',
   ]),
@@ -424,10 +428,12 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     './task-flow.ts',
     './task-flow-mirror-refresh.ts',
     './task-flow-store.ts',
+    './task-flow-store-types.ts',
     './workflow-cursor-format.ts',
     './workflow-cursor-result.ts',
     './workflow-cursor-selection.ts',
     './workflow-cursor-trail.ts',
+    './workflow-cursor-transition.ts',
     './workflow-text.ts',
   ]),
   module('orchestrator/src/workflow/workflow-cursor-worktrees.ts', [
