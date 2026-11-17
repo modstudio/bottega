@@ -168,7 +168,10 @@ export const recordModules: RecordModule[] = [
     './record-api-client-paths.ts',
     './record-board-contract.ts',
   ]),
-  module('orchestrator/src/record/record-api-client-response.ts', []),
+  module('orchestrator/src/record/record-api-client-response.ts', [
+    './record-keyed-read.ts',
+    './record-task-flow-contract.ts',
+  ]),
   module('orchestrator/src/record/record-api-client-error.ts', [
     '../../../shared/record-remedies.ts',
     '../doc/doc-revision-conflict.ts',
