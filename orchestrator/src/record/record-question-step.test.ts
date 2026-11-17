@@ -1,11 +1,14 @@
 import { expect, test } from 'bun:test'
 import { PGlite } from '@electric-sql/pglite'
 import type { SQL } from 'bun'
-import { sql } from 'drizzle-orm'
 import { integer, pgTable, text, uuid } from 'drizzle-orm/pg-core'
 import { drizzle } from 'drizzle-orm/pglite'
 import { gatherStepQuestionEvidenceFromRows } from '../workflow/workflow-step-question-evidence.ts'
-import { questionValuesForWrite, RECORD_QUESTION_STEP_COLUMNS } from './record-question-step.ts'
+import {
+  QUESTION_STEP_CONFLICT_SET,
+  questionValuesForWrite,
+  RECORD_QUESTION_STEP_COLUMNS,
+} from './record-question-step.ts'
 
 const CURSOR = '01990000-0000-7000-8000-000000002368'
 const QUESTION = '01990000-0000-7000-8000-000000002369'
@@ -125,10 +128,7 @@ test('hosted question conflict updates preserve the step where the question was 
         })
         .onConflictDoUpdate({
           target: questionConflictRecord.id,
-          set: {
-            workflowStepOrdinal: sql`COALESCE(${questionConflictRecord.workflowStepOrdinal}, excluded.workflow_step_ordinal)`,
-            workflowStepSlug: sql`COALESCE(${questionConflictRecord.workflowStepSlug}, excluded.workflow_step_slug)`,
-          },
+          set: QUESTION_STEP_CONFLICT_SET,
         })
 
     await write(first)
@@ -146,14 +146,6 @@ test('hosted question conflict updates preserve the step where the question was 
         )
       ).rows,
     ).toEqual([{ workflow_step_ordinal: 7, workflow_step_slug: 'design-signoff' }])
-
-    const hostedWrite = await Bun.file(
-      new URL('./record-question-write.ts', import.meta.url),
-    ).text()
-    expect(hostedWrite).toContain(
-      'workflowStepOrdinal: drizzleSql`COALESCE($' +
-        '{questionRecord.workflowStepOrdinal}, excluded.workflow_step_ordinal)`',
-    )
   } finally {
     await postgres.close()
   }

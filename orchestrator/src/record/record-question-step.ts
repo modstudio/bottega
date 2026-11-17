@@ -2,7 +2,15 @@
 /** Binds hosted workflow questions to the step where they were first asked. */
 
 import type { SQL } from 'bun'
+import { sql as drizzleSql } from 'drizzle-orm'
+import { question as questionRecord } from '../../../shared/record/schema-question.ts'
 import { questionValues } from './record-sync-service.ts'
+
+/** A rewrite keeps the step a question was first asked on; only an unbound row takes the new one. */
+export const QUESTION_STEP_CONFLICT_SET = {
+  workflowStepOrdinal: drizzleSql`COALESCE(${questionRecord.workflowStepOrdinal}, excluded.workflow_step_ordinal)`,
+  workflowStepSlug: drizzleSql`COALESCE(${questionRecord.workflowStepSlug}, excluded.workflow_step_slug)`,
+}
 
 export const RECORD_QUESTION_STEP_COLUMNS =
   'COALESCE(q.workflow_step_ordinal,stage.active_ordinal + 1) workflow_step_ordinal,COALESCE(q.workflow_step_slug,stage.active_slug) workflow_step_slug'

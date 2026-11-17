@@ -19,7 +19,7 @@ import type {
 } from './record-question-contract.ts'
 import { RecordQuestionError } from './record-question-contract.ts'
 import { allocateQuestionNumber } from './record-question-number.ts'
-import { questionValuesForWrite } from './record-question-step.ts'
+import { QUESTION_STEP_CONFLICT_SET, questionValuesForWrite } from './record-question-step.ts'
 import { projectRecordId } from './record-sync-project-identity.ts'
 
 type Tenant = { url: string } & TenantPrincipal
@@ -94,8 +94,7 @@ async function writeRecordQuestionTransaction(
         ...updates,
         number: drizzleSql`COALESCE(${questionRecord.number}, excluded.number)`,
         workflowTaskId: drizzleSql`COALESCE(excluded.workflow_task_id, ${questionRecord.workflowTaskId})`,
-        workflowStepOrdinal: drizzleSql`COALESCE(${questionRecord.workflowStepOrdinal}, excluded.workflow_step_ordinal)`,
-        workflowStepSlug: drizzleSql`COALESCE(${questionRecord.workflowStepSlug}, excluded.workflow_step_slug)`,
+        ...QUESTION_STEP_CONFLICT_SET,
         lastRequestId: input.requestId,
       },
       setWhere: and(
