@@ -329,6 +329,7 @@ export const runLifecycleModules: ArchitectureModule[] = [
     '../worktree/worktree-types.ts',
     '../run-owned-paths.ts',
     './run-claim-plan.ts',
+    './run-claim-executor.ts',
     './run-claim-mcp.ts',
     './run-claim-inheritance.ts',
     './run-claim-host-capacity.ts',
@@ -365,6 +366,12 @@ export const runLifecycleModules: ArchitectureModule[] = [
     '../../../shared/brand.ts',
     '../events.ts',
     './run-host-capacity.ts',
+  ]),
+  module('orchestrator/src/run/run-claim-executor.ts', [
+    '../mcp/mcp-preflight.ts',
+    '../worktree/worktree-types.ts',
+    './run-executor.ts',
+    './run-git-guard.ts',
   ]),
   module('orchestrator/src/run/run-claim-plan.ts', [
     '../git/git-environment.ts',

@@ -91,8 +91,8 @@ import {
 } from './run-claim-plan.ts'
 import { claimWithMigrationAdmission } from './run-claim-transaction.ts'
 import { type CredentialPayment, endpointKeyIdentityBindings } from './run-credential-claim.ts'
-import { EXTERNAL_EXECUTOR, HARNESS_AGENT, HARNESS_EXECUTOR } from './run-executor.ts'
-import { installHarnessPushGuard } from './run-git-guard.ts'
+import { executorClaimFacts, installExecutorPushGuard } from './run-claim-executor.ts'
+import { HARNESS_AGENT } from './run-executor.ts'
 import { nextRunNumber } from './run-number.ts'
 import { errorTail } from './run-process.ts'
 import { readOnlyWorktreeStepRecorder, recordRunWorktree } from './run-resource-step-recording.ts'
@@ -324,8 +324,8 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
           return p
         })()
       : originalSchemaPath
-  const started = Date.now(),
-    head = originalPrompt.slice(0, 200).replace(/\s+/g, ' ')
+  const started = Date.now()
+  const head = originalPrompt.slice(0, 200).replace(/\s+/g, ' ')
   const inheritedLaunch =
     resume.workspaceSource === 'retained' ? inheritedRunFacts(opts.resume!.parent) : null
   const recordedBranch = (worktreeBranch: string | null) =>
@@ -337,8 +337,9 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
       worktreeBranch,
     )
   const launchCwd = inheritedLaunch?.launch_cwd ?? opts.launchCwd ?? callerCwd
-  const launchKey =
-    inheritedLaunch?.launch_key ?? attributedLaunchKey({ writesJob, key: opts.key, cwd: callerCwd })
+  const launchSeed = inheritedLaunch?.launch_seed ?? seed ?? null
+  const attributedKey = attributedLaunchKey({ writesJob, key: opts.key, cwd: callerCwd })
+  const launchKey = inheritedLaunch?.launch_key ?? attributedKey
   const links = await claimLinks(input, launchKey, launchCwd, inheritedLaunch)
   runProjectId = links.projectRecordId
   const launchBase = inheritedLaunch?.launch_base ?? opts.launchBase ?? opts.base ?? null
@@ -418,7 +419,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
         pack ? JSON.stringify(pack.docs.map((doc) => doc.revisionId)) : null,
         pack?.sha256 ?? null,
         launchCwd,
-        inheritedLaunch?.launch_seed ?? seed ?? null,
+        launchSeed,
         launchKey,
         links.taskRecordId,
         launchBase,
@@ -472,7 +473,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
         pack ? JSON.stringify(pack.docs.map((doc) => doc.revisionId)) : null,
         pack?.sha256 ?? null,
         launchCwd,
-        inheritedLaunch?.launch_seed ?? seed ?? null,
+        launchSeed,
         launchKey,
         links.taskRecordId,
         launchBase,
@@ -1041,28 +1042,6 @@ function requiredOwnerSession(
   return owner
 }
 
-function executorClaimFacts(
-  name: string,
-  mcpRequest: McpRequest | undefined,
-  transportName: string,
-  timeoutMs: number,
-) {
-  const harness = name === HARNESS_AGENT
-  return {
-    harness,
-    launchColumns: [
-      harness ? null : process.pid,
-      storedMcpRequest(mcpRequest),
-      transportName,
-    ] as const,
-    identityColumns: [
-      harness ? HARNESS_EXECUTOR : EXTERNAL_EXECUTOR,
-      null,
-      harness ? timeoutMs : null,
-    ] as const,
-  }
-}
-
 function bindRunBound(
   prompt: string,
   firstTurn: boolean,
@@ -1074,12 +1053,4 @@ function bindRunBound(
   const boundLine = `\n\n${jobBoundInstruction(job(jobName), timeoutMs, scratchDir)}`
   const split = prompt.lastIndexOf('\n---\n')
   return split >= 0 ? prompt.slice(0, split) + boundLine + prompt.slice(split) : prompt + boundLine
-}
-
-function installExecutorPushGuard(
-  harness: boolean,
-  worktree: Worktree | null,
-  recordId: string,
-): void {
-  if (harness) installHarnessPushGuard(worktree, recordId)
 }
