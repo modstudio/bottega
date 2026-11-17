@@ -4,6 +4,7 @@
 import { existsSync, realpathSync, renameSync, rmSync } from 'node:fs'
 import { startBoundedSync } from '../../../shared/bounded-process.ts'
 import { PLATFORM_NAME, PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { nulPathListArgs, splitNulPaths } from '../../../shared/git-path-list.ts'
 import {
   INSTALL_HOME_ENV,
   type InstallationIdentity,
@@ -106,19 +107,46 @@ function incomingJournal(
   return validatedMigrationJournalEntries(parsed.entries)
 }
 
-function runMigration(cwd: string): void {
-  const result = startBoundedSync([`./bin/${PLATFORM_SLUG}`, 'machine', 'migrate'], {
+function runPostPullStep(input: {
+  argv: string[]
+  cwd: string
+  env?: Record<string, string | undefined>
+  failureLabel: string
+}): void {
+  const result = startBoundedSync(input.argv, {
     budget: 'machine-update',
-    cwd,
-    env: { ...targetGitEnvironment(cwd), ...machineUpdateLockHeldEnvironment() },
+    cwd: input.cwd,
+    env: input.env,
   })
   process.stdout.write(result.stdout)
   process.stderr.write(result.stderr)
   if (result.exitCode !== 0) {
     const stderr = result.stderr.trim()
     const detail = stderr ? `: ${stderr}` : ''
-    throw new Error(`${PLATFORM_SLUG} machine migrate failed with exit ${result.exitCode}${detail}`)
+    throw new Error(`${input.failureLabel} failed with exit ${result.exitCode}${detail}`)
   }
+}
+
+function runMigration(cwd: string): void {
+  runPostPullStep({
+    argv: [`./bin/${PLATFORM_SLUG}`, 'machine', 'migrate'],
+    cwd,
+    env: { ...targetGitEnvironment(cwd), ...machineUpdateLockHeldEnvironment() },
+    failureLabel: `${PLATFORM_SLUG} machine migrate`,
+  })
+}
+
+function runDependencyInstall(cwd: string): void {
+  runPostPullStep({
+    argv: ['bun', 'install', '--frozen-lockfile', '--silent'],
+    cwd,
+    failureLabel: 'bun install',
+  })
+}
+
+/** Decide whether a pulled path list requires refreshing checkout dependencies. */
+export function pulledRangeChangesPackageJson(paths: readonly string[]): boolean {
+  return paths.some((path) => /(^|\/)package\.json$/.test(path))
 }
 
 function cleanupFailureMessage(failure: unknown, cleanupError: unknown): string {
@@ -179,6 +207,7 @@ type UpdateDependencies = {
   callerCwd?: string
   authorityRefusal?: () => string | null
   git?: (cwd: string, args: string[]) => string
+  install?: (cwd: string) => void
   migrate?: (cwd: string) => void
   afterDrainPromoted?: () => void
   maintainStore?: (presentation: Presentation) => void
@@ -342,14 +371,17 @@ async function updateDistribution(input: {
   input.presentation.log(current.message)
 }
 
-function restoreMainAfterMigrationFailure(input: {
+type PostPullOperation = 'pulled-path measurement' | 'dependency install' | 'migration'
+
+function restoreMainAfterPostPullFailure(input: {
   target: string
   before: string
   runGit: (cwd: string, args: string[]) => string
   cause: unknown
+  operation: PostPullOperation
   beforePositions: StoreJournalPositions
 }): never {
-  const migrationFailure = input.cause instanceof Error ? input.cause.message : String(input.cause)
+  const failure = input.cause instanceof Error ? input.cause.message : String(input.cause)
   try {
     input.runGit(input.target, ['reset', '--keep', input.before])
   } catch (restoreCause) {
@@ -360,10 +392,10 @@ function restoreMainAfterMigrationFailure(input: {
       swapped: { kind: 'checkout', target: input.target, priorCommit: input.before },
       restoreFailure,
     })
-    throw new Error(`migration failed: ${migrationFailure}; ${decision.message}`)
+    throw new Error(`${input.operation} failed: ${failure}; ${decision.message}`)
   }
   throw new Error(
-    `migration failed: ${migrationFailure}; main was restored to ${input.before}; ` +
+    `${input.operation} failed: ${failure}; main was restored to ${input.before}; ` +
       `rerun ${PLATFORM_SLUG} machine update`,
   )
 }
@@ -379,7 +411,7 @@ function storePositionInIncomingJournal(
   return position.index
 }
 
-function handleMigrationFailureAfterPull(input: {
+function handlePostPullFailure(input: {
   target: string
   before: string
   journal: MigrationJournalEntry[]
@@ -387,8 +419,9 @@ function handleMigrationFailureAfterPull(input: {
   beforePositions: StoreJournalPositions
   runGit: (cwd: string, args: string[]) => string
   cause: unknown
+  operation: PostPullOperation
 }): never {
-  const migrationFailure = input.cause instanceof Error ? input.cause.message : String(input.cause)
+  const failure = input.cause instanceof Error ? input.cause.message : String(input.cause)
   let storeVersion: number | null = null
   try {
     storeVersion = withSynchronousDatabaseForMigrationStep((database) =>
@@ -407,11 +440,11 @@ function handleMigrationFailureAfterPull(input: {
         ? ''
         : `; the orchestrator journal position moved from ${input.initialStoreVersion} to ${storeVersion} in the incoming journal`
     throw new Error(
-      `migration failed: ${migrationFailure}; main was left at the pulled commit; ` +
+      `${input.operation} failed: ${failure}; main was left at the pulled commit; ` +
         `${decision.message}${incomingJournalDetail}`,
     )
   }
-  restoreMainAfterMigrationFailure(input)
+  restoreMainAfterPostPullFailure(input)
 }
 
 function recoverAbandonedMachineUpdate(
@@ -474,6 +507,122 @@ function verifiedLandingBranch(
   return branch
 }
 
+function applyCheckoutPull(input: {
+  target: string
+  branch: string
+  journal: MigrationJournalEntry[]
+  initialStoreVersion: number
+  runGit: (cwd: string, args: string[]) => string
+  install: (cwd: string) => void
+  migrate: (cwd: string) => void
+}): void {
+  const { target, runGit } = input
+  const before = runGit(target, ['rev-parse', 'HEAD'])
+  const beforePositions = requiredLocalStoreJournalPositions()
+  writeMachineUpdateIntent({
+    before: beforePositions,
+    swapped: { kind: 'checkout', target, priorCommit: before },
+  })
+  // Machine update handles post-pull install and migration itself, so its pull skips the hook.
+  runGit(target, ['-c', 'core.hooksPath=/dev/null', 'pull', '--ff-only', 'origin', input.branch])
+  let changedPaths: string[]
+  try {
+    changedPaths = splitNulPaths(
+      runGit(target, nulPathListArgs(['diff', '--name-only', `${before}..HEAD`, '--'])),
+    )
+  } catch (cause) {
+    handlePostPullFailure({
+      ...input,
+      before,
+      beforePositions,
+      cause,
+      operation: 'pulled-path measurement',
+    })
+  }
+  if (pulledRangeChangesPackageJson(changedPaths)) {
+    try {
+      input.install(target)
+    } catch (cause) {
+      handlePostPullFailure({
+        ...input,
+        before,
+        beforePositions,
+        cause,
+        operation: 'dependency install',
+      })
+    }
+  }
+  try {
+    input.migrate(target)
+  } catch (cause) {
+    handlePostPullFailure({
+      ...input,
+      before,
+      beforePositions,
+      cause,
+      operation: 'migration',
+    })
+  }
+}
+
+async function updateCheckout(presentation: Presentation, deps: UpdateDependencies): Promise<void> {
+  const target = deps.cwd ?? installRoot()
+  const callerCwd = deps.callerCwd ?? process.cwd()
+  const runGit = deps.git ?? ((workingDirectory, args) => git(args, workingDirectory))
+  const install = deps.install ?? runDependencyInstall
+  const migrate = deps.migrate ?? runMigration
+  const lookedUp = withSynchronousDatabaseForMigrationStep((database) =>
+    (deps.project ?? projectAt)(target, database),
+  )
+  const unregistered = unregisteredMainCheckoutRefusal(target, lookedUp, sameCheckout)
+  if (unregistered) throw new Error(unregistered)
+  const project = lookedUp!
+  const branch = verifiedLandingBranch(project, runGit)
+  if (!sameCheckout(callerCwd, target)) {
+    presentation.log(`updating the ${PLATFORM_NAME} checkout at ${target}`)
+  }
+  runGit(target, ['fetch', 'origin', branch])
+  const journal = incomingJournal(target, branch, runGit)
+  const initial = withSynchronousDatabaseForMigrationStep((database) => {
+    const local = migrationState(database)
+    if (local.ahead) throw new Error(`store is ahead at migration ${local.ahead}`)
+    const storeVersion = storePositionInIncomingJournal(database, journal)
+    const activeDrain = migrationDrainForUpdate(database)
+    return {
+      activeDrain,
+      decision: decideMigrationDrain({ journal, storeVersion }),
+      pendingMigration: journal[storeVersion]?.tag ?? null,
+      storeVersion,
+    }
+  })
+  assertNoActiveDrain(initial.activeDrain)
+  try {
+    await applyWithMigrationGuard({
+      presentation,
+      decision: initial.decision,
+      pendingMigration: initial.pendingMigration,
+      deps,
+      apply: () =>
+        applyCheckoutPull({
+          target,
+          branch,
+          journal,
+          initialStoreVersion: initial.storeVersion,
+          runGit,
+          install,
+          migrate,
+        }),
+    })
+  } finally {
+    clearMachineUpdateIntent()
+  }
+  const maintainStore = deps.maintainStore ?? setupIncrementalVacuumAfterMachineUpdate
+  maintainStoreAfterUpdate(presentation, maintainStore)
+  const refreshLaunchAgents = deps.runLaunchAgentsRefreshVerb ?? runLaunchAgentsRefreshVerb
+  refreshLaunchAgents(resolveInstallationPaths(target, {}).executable)
+  ;(deps.verifyMainCheckout ?? verifyMainCheckoutInvariant)(target, branch, runGit)
+}
+
 export async function machineUpdateCommandUnderLock(
   presentation: Presentation,
   deps: UpdateDependencies = {},
@@ -507,72 +656,7 @@ export async function machineUpdateCommandUnderLock(
     refreshLaunchAgents(realpathSync(process.execPath))
     return
   }
-  const target = deps.cwd ?? installRoot()
-  const callerCwd = deps.callerCwd ?? process.cwd()
-  const runGit = deps.git ?? ((workingDirectory, args) => git(args, workingDirectory))
-  const migrate = deps.migrate ?? runMigration
-  const lookedUp = withSynchronousDatabaseForMigrationStep((database) =>
-    (deps.project ?? projectAt)(target, database),
-  )
-  const unregistered = unregisteredMainCheckoutRefusal(target, lookedUp, sameCheckout)
-  if (unregistered) throw new Error(unregistered)
-  const project = lookedUp!
-  const branch = verifiedLandingBranch(project, runGit)
-  if (!sameCheckout(callerCwd, target)) {
-    presentation.log(`updating the ${PLATFORM_NAME} checkout at ${target}`)
-  }
-  runGit(target, ['fetch', 'origin', branch])
-  const journal = incomingJournal(target, branch, runGit)
-  const initial = withSynchronousDatabaseForMigrationStep((database) => {
-    const local = migrationState(database)
-    if (local.ahead) throw new Error(`store is ahead at migration ${local.ahead}`)
-    const storeVersion = storePositionInIncomingJournal(database, journal)
-    const activeDrain = migrationDrainForUpdate(database)
-    return {
-      activeDrain,
-      decision: decideMigrationDrain({ journal, storeVersion }),
-      pendingMigration: journal[storeVersion]?.tag ?? null,
-      storeVersion,
-    }
-  })
-  assertNoActiveDrain(initial.activeDrain)
-  try {
-    await applyWithMigrationGuard({
-      presentation,
-      decision: initial.decision,
-      pendingMigration: initial.pendingMigration,
-      deps,
-      apply: () => {
-        const before = runGit(target, ['rev-parse', 'HEAD'])
-        const beforePositions = requiredLocalStoreJournalPositions()
-        writeMachineUpdateIntent({
-          before: beforePositions,
-          swapped: { kind: 'checkout', target, priorCommit: before },
-        })
-        runGit(target, ['pull', '--ff-only', 'origin', branch])
-        try {
-          migrate(target)
-        } catch (cause) {
-          handleMigrationFailureAfterPull({
-            target,
-            before,
-            journal,
-            initialStoreVersion: initial.storeVersion,
-            beforePositions,
-            runGit,
-            cause,
-          })
-        }
-      },
-    })
-  } finally {
-    clearMachineUpdateIntent()
-  }
-  const maintainStore = deps.maintainStore ?? setupIncrementalVacuumAfterMachineUpdate
-  maintainStoreAfterUpdate(presentation, maintainStore)
-  const refreshLaunchAgents = deps.runLaunchAgentsRefreshVerb ?? runLaunchAgentsRefreshVerb
-  refreshLaunchAgents(resolveInstallationPaths(target, {}).executable)
-  ;(deps.verifyMainCheckout ?? verifyMainCheckoutInvariant)(target, branch, runGit)
+  await updateCheckout(presentation, deps)
 }
 
 export async function machineUpdateCommand(

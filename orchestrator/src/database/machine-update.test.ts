@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, expect, test } from 'bun:test'
+import { expect, test } from 'bun:test'
 import { randomUUID } from 'node:crypto'
 import {
   existsSync,
@@ -15,13 +15,13 @@ import { PLATFORM_NAME, PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { DIST_MANIFEST, INSTALL_HOME_ENV, installRoot } from '../../../shared/install-root.ts'
 import { HUB_DATABASE_ENV } from '../../../shared/state-directory.ts'
 import { withMachineUpdateLock } from '../../../shared/update-lock.ts'
+import { useFixtureInstallationRoot } from '../../test/fixtures/installation-root.ts'
 import { dir } from '../../test/fixtures/store.ts'
 import { acquireRunLease, removeFreeRunLease } from '../run/run-lease.ts'
 import { DB_PATH, db } from './db.ts'
 import {
   machineUpdateCommand as lockedMachineUpdateCommand,
   machineUpdateCommandUnderLock as machineUpdateCommand,
-  unregisteredMainCheckoutRefusal,
 } from './machine-update.ts'
 import {
   clearMachineUpdateIntent,
@@ -36,14 +36,7 @@ import { migrationWindow } from './migration-window-state.ts'
 import { migrationJournal } from './migrations.ts'
 import { fixtureProjectRecordId } from './test-database.fixture.ts'
 
-const fixturePackage = join(dir, 'package.json')
-beforeAll(() => {
-  writeFileSync(fixturePackage, JSON.stringify({ name: PLATFORM_SLUG }))
-})
-
-afterAll(() => {
-  rmSync(fixturePackage, { force: true })
-})
+useFixtureInstallationRoot()
 
 function holdBackLastNonAdditiveMigration(database: ReturnType<typeof db>) {
   const journal = migrationJournal()
@@ -160,12 +153,13 @@ test("machine update clears a dead holder's marker before deciding", async () =>
   expect(migrationDrain(db())).toBeNull()
   expect(migrated).toBe(true)
   expect(existsSync(machineUpdateIntentPath(process.env))).toBeFalse()
-  expect(gitCalls.map((args) => args[0])).toEqual([
+  expect(gitCalls.map((args) => (args.includes('pull') ? 'pull' : args[0]))).toEqual([
     'branch',
     'fetch',
     'show',
     'rev-parse',
     'pull',
+    'diff',
     'branch',
     'status',
   ])
@@ -306,9 +300,10 @@ test('machine update restores main when migrate fails after the pull', async () 
   ).rejects.toThrow(
     `migration failed: injected migration failure; main was restored to before-commit; rerun ${PLATFORM_SLUG} machine update`,
   )
-  expect(gitCalls.slice(-3)).toEqual([
+  expect(gitCalls.slice(-4)).toEqual([
     ['rev-parse', 'HEAD'],
-    ['pull', '--ff-only', 'origin', 'main'],
+    ['-c', 'core.hooksPath=/dev/null', 'pull', '--ff-only', 'origin', 'main'],
+    ['diff', '--name-only', 'before-commit..HEAD', '-z', '--'],
     ['reset', '--keep', 'before-commit'],
   ])
 })
@@ -468,7 +463,7 @@ test('an additive machine update marks only the store-open window around pull an
         git: (_cwd, args) => {
           if (args[0] === 'branch') return 'main'
           if (args[0] === 'show') return JSON.stringify({ entries: held.journal })
-          if (args[0] === 'pull') {
+          if (args.includes('pull')) {
             expect(migrationWindow(db())?.migration).toBe(held.pending.tag)
             expect(migrationDrain(db())).toBeNull()
             phases.push('pull')
@@ -598,7 +593,7 @@ test('a non-additive update waits for an admitted resume, then migrates behind t
         git: (_cwd, args) => {
           if (args[0] === 'branch') return 'main'
           if (args[0] === 'show') return JSON.stringify({ entries: migrationJournal() })
-          if (args[0] === 'pull') {
+          if (args.includes('pull')) {
             expect(migrationDrain(db())?.migration).toBe(pending.tag)
             events.push('pull')
           }
@@ -679,7 +674,7 @@ test('machine update clears the drain marker when the bounded wait expires', asy
           }),
           git: (_cwd, args) => {
             if (args[0] === 'branch') return 'main'
-            if (args[0] === 'pull') applied = true
+            if (args.includes('pull')) applied = true
             return args[0] === 'show' ? JSON.stringify({ entries: migrationJournal() }) : ''
           },
           migrate: () => {
@@ -822,17 +817,6 @@ test('machine update chooses the running checkout when install home names a dist
   }
 })
 
-test('unregistered main checkout refusal names the registered binary when the register has one', () => {
-  const same = (left: string, right: string) => left === right
-  expect(unregisteredMainCheckoutRefusal('/install', null, same)).toBe(
-    `refusing machine update: this installation's root /install is not a registered main checkout; run the registered main checkout's bin/${PLATFORM_SLUG} machine update, or unset ${INSTALL_HOME_ENV} if it points elsewhere`,
-  )
-  expect(unregisteredMainCheckoutRefusal('/install', { path: '/registered-main' }, same)).toBe(
-    `refusing machine update: this installation's root /install is not a registered main checkout; run /registered-main/bin/${PLATFORM_SLUG} machine update, or unset ${INSTALL_HOME_ENV} if it points elsewhere`,
-  )
-  expect(unregisteredMainCheckoutRefusal('/install', { path: '/install' }, same)).toBeNull()
-})
-
 test(`machine update targets the ${PLATFORM_NAME} checkout when the caller is another project`, async () => {
   const target = dir
   const caller = resolve(dir, 'other-project')
@@ -864,7 +848,7 @@ test(`machine update targets the ${PLATFORM_NAME} checkout when the caller is an
     /^incremental vacuum setup: pruned 0 rows, \d+ bytes before, \d+ bytes after, \d+ms elapsed$/,
   )
   expect(projectPaths).toEqual([target])
-  expect(gitCwds).toEqual([target, target, target, target, target, target, target])
+  expect(gitCwds).toEqual([target, target, target, target, target, target, target, target])
 })
 
 test('machine update defaults the target to the installation root', async () => {
@@ -895,7 +879,7 @@ test('machine update defaults the target to the installation root', async () => 
     },
   )
   expect(projectPaths).toEqual([target])
-  expect(gitCwds).toEqual([target, target, target, target, target, target, target])
+  expect(gitCwds).toEqual([target, target, target, target, target, target, target, target])
   expect(journalRef).toBe(`origin/main:${ORCHESTRATOR_MIGRATION_JOURNAL_SOURCE.path}`)
 })
 
