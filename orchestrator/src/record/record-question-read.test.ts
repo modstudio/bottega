@@ -23,6 +23,7 @@ const visibleParentId = '01990000-0000-7000-8000-000000004032'
 const visibleParentTurnId = '01990000-0000-7000-8000-000000004033'
 const unlinkedParentId = '01990000-0000-7000-8000-000000004034'
 const linkedParentTurnId = '01990000-0000-7000-8000-000000004035'
+const inheritedTaskKeyTurnId = '01990000-0000-7000-8000-000000004041'
 const otherVisibleProjectId = '01990000-0000-7000-8000-000000004040'
 
 let database: PGlite
@@ -116,7 +117,11 @@ beforeAll(async () => {
       ('${linkedParentTurnId}','${spaceId}','${machineId}','${userId}',now(),'codex','implement',
        'sha-linked-turn',1,'linked-turn',false,'${projectId}','${taskId}','DEV-1','asking',2,NULL,
        'typescript','test','harness',false,false,true,'session-linked-turn',8,
-       '${unlinkedParentId}',now(),now());
+       '${unlinkedParentId}',now(),now()),
+      ('${inheritedTaskKeyTurnId}','${spaceId}','${machineId}','${userId}',now(),'codex','implement',
+       'sha-inherited-task-key',1,'inherited-task-key',false,'${projectId}','${taskId}',NULL,'asking',2,NULL,
+       'typescript','test','harness',false,false,true,'session-inherited-task-key',9,
+       '${visibleParentId}',now(),now());
     INSERT INTO question
       (id,space_id,run_id,workflow_cursor_record_id,project_id,machine_id,number,revision,withheld_fields,
        asked_at,question,answer,answered_at,created_at,updated_at)
@@ -134,7 +139,9 @@ beforeAll(async () => {
       ('01990000-0000-7000-8000-000000004038','${spaceId}','${linkedParentTurnId}',NULL,
        '${projectId}','${machineId}',10,1,'[]',now(),'unlinked parent ruling','yes',now(),now(),now()),
       ('01990000-0000-7000-8000-000000004039','${spaceId}','${invisibleParentTurnId}',NULL,
-       '${projectId}','${machineId}',11,1,'[]',now(),'invisible parent ruling','yes',now(),now(),now());
+       '${projectId}','${machineId}',11,1,'[]',now(),'invisible parent ruling','yes',now(),now(),now()),
+      ('01990000-0000-7000-8000-000000004042','${spaceId}','${inheritedTaskKeyTurnId}',NULL,
+       '${projectId}','${machineId}',12,1,'[]',now(),'visible parent inherited task key',NULL,NULL,now(),now());
     SET ROLE record_actor;
   `)
 })
@@ -212,15 +219,19 @@ test('hosted inbox excludes a turn whose parent run is not visible', async () =>
 test('hosted inbox projects every root value from a visible parent', async () => {
   const result = await readRecordQuestionRows(pgliteSql(database), { read: 'inbox' })
   const row = result.items.find((item) => item.question === 'visible parent inbox')
+  const inherited = result.items.find(
+    (item) => item.question === 'visible parent inherited task key',
+  )
   expect(row).toMatchObject({
     root_status: 'done',
     root_record_id: visibleParentId,
     root_number: 5,
     root_voided: 0,
-    task_key: 'DEV-1',
+    task_key: 'DEV-2',
     project_record_id: projectId,
     repo: 'question-read-fixture',
   })
+  expect(inherited?.task_key).toBe('DEV-1')
 })
 
 test('hosted task rulings use the visible root task and exclude absent or invisible roots', async () => {

@@ -294,7 +294,7 @@ async function inboxRows(
       q.overturn_reason,q.replacement,q.filed_as,q.filed_ref,q.filed_record_id::text,q.filed_label,q.filed_at::text,
       owner.agent,owner.job,
       CASE WHEN owner.parent_run_id IS NULL THEN owner_project.name ELSE parent_project.name END repo,
-      ${rootRunColumn('task_key')} task_key,
+      COALESCE(owner.task_key, ${rootRunColumn('task_key')}) task_key,
       (${rootRunColumn('project_id')})::text project_record_id,owner.status,owner.session_id,
       q.awaiting_operator_at::text,
       ${rootRunColumn('status')} root_status,
