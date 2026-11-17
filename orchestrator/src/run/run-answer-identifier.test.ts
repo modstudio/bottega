@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { writeMachineNames } from '../../../shared/machine-config.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
@@ -239,6 +240,20 @@ test('bare-number resolution uses real run, question, ownership, and chain facts
     `bare identifier ${runNumber} is ambiguous between run:${runNumber} (${asking}) and q${runNumber}`,
   )
   expect(await resolveAnswerIdentifier(db(), asking, session)).toBe(asking)
+})
+
+test('machine-qualified run numbers resolve without a question-number collision check', async () => {
+  const machineName = 'answer-machine'
+  writeMachineNames({ shortName: machineName, displayName: 'Answer Machine' })
+  const session = 'machine-qualified-answer-session'
+  const asking = addRun({ agent: 'codex', job: 'file-question', status: 'asking', session })
+  const runNumber = db()
+    .query<{ number: number }, [string]>('SELECT number FROM run WHERE record_id=?')
+    .get(asking)!.number
+  addQuestion(asking, runNumber + 1000)
+
+  expect(await resolveAnswerIdentifier(db(), `${machineName}/${runNumber}`, session)).toBe(asking)
+  expect(await resolveAnswerIdentifier(db(), `${machineName}/r${runNumber}`, session)).toBe(asking)
 })
 
 test('a bare number with no run keeps the explicit question hint', async () => {

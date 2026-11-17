@@ -326,7 +326,10 @@ export async function resolveAnswerIdentifier(
     const decision = answerIdentifierDecision({
       identifier,
       run: await readResolvedRunNumberFacts(database, runReference, context, callerSessionId),
-      question: await readQuestionFacts(database, identifier, context),
+      question:
+        identifier.qualifier?.kind === 'machine'
+          ? null
+          : await readQuestionFacts(database, identifier, context),
     })
     if (decision.kind === 'refuse') throw new Error(decision.reason)
     return decision.runRecordId
