@@ -31,6 +31,14 @@ export class RecordApiRequestError extends Error {
   }
 }
 
+export function isAbsentRecordKeyedRead(error: unknown): boolean {
+  return (
+    error instanceof RecordApiRequestError &&
+    error.status === 404 &&
+    (error.code === 'record_not_visible' || error.code === 'task_flow_not_found')
+  )
+}
+
 export const responseRecord = (body: unknown): Record<string, unknown> =>
   body && typeof body === 'object' ? (body as Record<string, unknown>) : {}
 

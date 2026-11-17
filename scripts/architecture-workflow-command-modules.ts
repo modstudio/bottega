@@ -49,6 +49,7 @@ export const workflowCommandModules: WorkflowCommandModule[] = [
     'bun:sqlite',
     '../project/project-read.ts',
     '../record/record-api-client-paths.ts',
+    '../record/record-api-client-response.ts',
     '../record/record-api-client-task-flow.ts',
     '../record/record-api-client.ts',
     '../record/record-auth.ts',

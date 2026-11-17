@@ -13,9 +13,9 @@ import type {
   RecordRequestDestination,
   RecordWriteDestination,
 } from '../record/record-api-client-paths.ts'
+import { isAbsentRecordKeyedRead } from '../record/record-api-client-response.ts'
 import type { RecordTaskFlowClient } from '../record/record-api-client-task-flow.ts'
 import type { RecordIdentity } from '../record/record-auth.ts'
-import { isAbsentRecordKeyedRead } from '../record/record-keyed-read.ts'
 import { requireProjectRecordDestination } from '../record/record-project-destination-client.ts'
 import {
   type HostedTaskFlow,

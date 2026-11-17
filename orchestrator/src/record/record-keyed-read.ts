@@ -1,19 +1,7 @@
 // concern: record-keyed-read
 /** Owns hosted record routes whose UUID keys are unique across record spaces. */
 
-import { RecordApiRequestError } from './record-api-client-response.ts'
-import { RECORD_TASK_FLOW_NOT_FOUND_CODE } from './record-task-flow-contract.ts'
-
 export const RECORD_KEYED_NOT_VISIBLE_CODE = 'record_not_visible'
-
-export function isAbsentRecordKeyedRead(error: unknown): boolean {
-  return (
-    error instanceof RecordApiRequestError &&
-    error.status === 404 &&
-    (error.code === RECORD_KEYED_NOT_VISIBLE_CODE ||
-      error.code === RECORD_TASK_FLOW_NOT_FOUND_CODE)
-  )
-}
 
 export function recordRequestReadKind(
   route: string,

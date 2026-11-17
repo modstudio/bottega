@@ -5,9 +5,8 @@ import {
   revisionConflictErrorFromRecordApiError,
 } from '../doc/doc-revision-conflict.ts'
 import type { RecordRequestDestination, RecordWriteDestination } from './record-api-client-paths.ts'
-import { RecordApiRequestError } from './record-api-client-response.ts'
+import { isAbsentRecordKeyedRead, RecordApiRequestError } from './record-api-client-response.ts'
 import type { RecordIdentity } from './record-auth.ts'
-import { isAbsentRecordKeyedRead } from './record-keyed-read.ts'
 import {
   type HostedTaskFlow,
   type HostedTaskFlowObligationById,

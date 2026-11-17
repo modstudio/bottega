@@ -114,6 +114,7 @@ export const recordQuestionModules: RecordModule[] = [
     '../../../shared/session-liveness.ts',
     '../record/record-api-client-question.ts',
     '../record/record-api-client-paths.ts',
+    '../record/record-api-client-response.ts',
     '../record/record-auth.ts',
     '../record/record-question-destination.ts',
     '../record/record-question-contract.ts',

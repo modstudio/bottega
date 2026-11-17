@@ -721,9 +721,7 @@ test('a missing hosted task flow reads as null only for an absent-row refusal', 
       },
     })
 
-  await expect(
-    storeFor(recordKeyedNotVisibleRefusal(5)).flowState(FLOW_ID),
-  ).resolves.toBeNull()
+  await expect(storeFor(recordKeyedNotVisibleRefusal(5)).flowState(FLOW_ID)).resolves.toBeNull()
   await expect(
     storeFor({ error: 'route not found', code: 'route_not_found' }).flowState(FLOW_ID),
   ).rejects.toThrow('route not found')

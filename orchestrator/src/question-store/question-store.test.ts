@@ -571,9 +571,11 @@ test('a missing hosted question reads no items only for an absent-row refusal', 
         readQuestions: async () => Promise.reject(recordApiError(body, 404)),
       },
     })
-  const input = { read: 'by-id', ids: [WORKFLOW_QUESTION_ID] } as const
+  const input = { read: 'by-id', ids: [WORKFLOW_QUESTION_ID] } satisfies QuestionReadInput
 
-  await expect(storeFor(recordKeyedNotVisibleRefusal(5)).read(input)).resolves.toEqual({ items: [] })
+  await expect(storeFor(recordKeyedNotVisibleRefusal(5)).read(input)).resolves.toEqual({
+    items: [],
+  })
   await expect(
     storeFor({ error: 'route not found', code: 'route_not_found' }).read(input),
   ).rejects.toThrow('route not found')
