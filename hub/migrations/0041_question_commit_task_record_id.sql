@@ -24,21 +24,24 @@ UPDATE question
 SET task_record_id = (
   SELECT MIN(t.record_id) FROM task t WHERE t.key=question.task_key
 )
-WHERE task_key IS NOT NULL
+WHERE task_record_id IS NULL
+  AND task_key IS NOT NULL
   AND (SELECT COUNT(*) FROM task t WHERE t.key=question.task_key)=1;
 
 UPDATE question
 SET workflow_task_record_id = (
   SELECT MIN(t.record_id) FROM task t WHERE t.key=question.workflow_key
 )
-WHERE workflow_key IS NOT NULL
+WHERE workflow_task_record_id IS NULL
+  AND workflow_key IS NOT NULL
   AND (SELECT COUNT(*) FROM task t WHERE t.key=question.workflow_key)=1;
 
 UPDATE commit_key
 SET task_record_id = (
   SELECT MIN(t.record_id) FROM task t WHERE t.key=commit_key.task_key
 )
-WHERE task_key IS NOT NULL
+WHERE task_record_id IS NULL
+  AND task_key IS NOT NULL
   AND (SELECT COUNT(*) FROM task t WHERE t.key=commit_key.task_key)=1;
 -- /BACKFILL
 CREATE TRIGGER task_link_unlinked_questions_insert
