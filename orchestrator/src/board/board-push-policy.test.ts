@@ -243,9 +243,7 @@ test('a newer candidate-only reply is dropped without being counted as withheld'
     successorHeld: false,
     threadTitle: 'Newer candidate-only report thread',
   } as const
-  expect(
-    selectPushNotices('2026-10-16T12:00:00.000Z', [candidateOnly], clock, false),
-  ).toEqual({
+  expect(selectPushNotices('2026-10-16T12:00:00.000Z', [candidateOnly], clock, false)).toEqual({
     notices: [],
     withheldOlderCount: 0,
     deferredReplySuccessorCount: 0,
