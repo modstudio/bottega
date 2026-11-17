@@ -1,10 +1,24 @@
 import { expect, spyOn, test } from 'bun:test'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { readAskServerFailure } from '../ask/ask-failure.ts'
 import { runCliEntryForTest } from './orch.ts'
+
+const FRONT_DOOR_RUNTIME_HELPER_CALL = 'await registerFrontDoorRuntime()'
+
+function asyncFrontDoorEntryBodies(source: string): { name: string; body: string }[] {
+  return [...source.matchAll(/^export async function (\w+)[\s\S]*?^}/gm)]
+    .map((match) => ({ name: match[1] ?? '', body: match[0] }))
+    .filter(
+      ({ name }) =>
+        name !== 'main' &&
+        name !== 'runCliEntryForTest' &&
+        !name.startsWith('is') &&
+        !name.endsWith('Argv'),
+    )
+}
 
 /** A CLI load that fails before any command action runs — a store this process may not open. */
 const throwingEntry = async (): Promise<number> => {
@@ -29,6 +43,20 @@ test('the CLI entry records an ask-server startup failure where the run reads it
     expect(await runCliEntryForTest(['ask-server'], throwingEntry)).toBe(1)
     expect(readAskServerFailure(scratchDir)).toBe('this store may not be opened')
   })
+})
+
+test('every async front-door store entry registers the standard runtime first', () => {
+  const source = readFileSync(new URL('./orch.ts', import.meta.url), 'utf8')
+  const entries = asyncFrontDoorEntryBodies(source)
+  expect(entries.map(({ name }) => name)).not.toEqual([])
+  for (const { name, body } of entries) {
+    const firstImport = body.indexOf('await import(')
+    expect(firstImport, `${name} has a dynamic store import`).not.toBe(-1)
+    expect(
+      body.slice(0, firstImport),
+      `${name} registers the standard runtime before its first store import`,
+    ).toContain(FRONT_DOOR_RUNTIME_HELPER_CALL)
+  }
 })
 
 test('an ask-server failure reached through its public path is recorded the same way', async () => {
