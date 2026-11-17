@@ -7,6 +7,7 @@ import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun, dir } from '../../test/fixtures/store.ts'
 import { db, nowIso } from '../database/db.ts'
 import type { Project } from '../project/projects.ts'
+import { taskBranchLandingTreeRefusal } from '../run/held-branch-refusal.ts'
 import { claimTreePlanForCandidate } from '../run/run-claim-plan.ts'
 import {
   GH_TARGETED_MERGED_PR_LIMIT,
@@ -28,7 +29,6 @@ import {
   taskBranchCandidateNotice,
   taskBranchContainedTips,
   taskBranchLandingRefusalMessage,
-  taskBranchLandingTreeRefusal,
   taskBranchPullRequestCheck,
   taskBranchReuseNotice,
 } from './task-branch.ts'

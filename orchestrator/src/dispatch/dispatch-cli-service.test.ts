@@ -7,12 +7,39 @@ import {
   decidePreDetachSelection,
   detachSpecWithRoutedSelection,
   dispatchLaunchCwdDecision,
+  refuseHeldTaskBranchBeforeDetach,
   resolveCallerCheckoutDecision,
   routeConstraints,
   selectBeforeDetach,
   taskBranchLandingBypassWarning,
   transportSelection,
 } from './dispatch-cli-service.ts'
+
+test('held task branch refusal runs before a dispatch can claim a row', () => {
+  const before = db().query('SELECT COUNT(*) count FROM run').get() as { count: number }
+
+  expect(() =>
+    refuseHeldTaskBranchBeforeDetach({
+      branch: 'DEV-2405-held',
+      tip: 'tip',
+      commitCount: 1,
+      mergeBase: 'base',
+      projectId: 'project-id',
+      projectName: 'fixture',
+      nominatingRuns: [],
+      trunk: 'main',
+      worktree: {
+        path: '/worktrees/DEV-2405-held',
+        branch: 'DEV-2405-held',
+        base: 'base',
+        repoRoot: '/repo',
+      },
+      worktreeOwnerJob: 'landing-tree',
+    }),
+  ).toThrow('refusing task branch DEV-2405-held')
+
+  expect(db().query('SELECT COUNT(*) count FROM run').get()).toEqual(before)
+})
 
 test('--distinct-from excludes a prior run by its canonical provider-scoped model', async () => {
   const openRouterAgent = 'distinct-openrouter-fixture'

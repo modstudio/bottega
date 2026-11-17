@@ -9,7 +9,6 @@
     "orchestrator/src/branch/branch-disposal.ts": 7,
     "orchestrator/src/branch/branches.ts": 1,
     "orchestrator/src/branch/task-branch-reuse.ts": 2,
-    "orchestrator/src/branch/task-branch.ts": 1,
     "orchestrator/src/canon/canon-commands.ts": 1,
     "orchestrator/src/canon/canon.ts": 1,
     "orchestrator/src/canon/user-canon-home-files.ts": 1,

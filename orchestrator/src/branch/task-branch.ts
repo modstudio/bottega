@@ -50,19 +50,6 @@ export type TaskBranchCandidate = {
   worktreeOwnerJob: string | null
 }
 
-/** Compose the operator remedy when an architect landing tree owns the reused branch. */
-export function taskBranchLandingTreeRefusal(refusal: {
-  path: string
-  branch: string
-  freshBase: string
-  ownerJob: string
-}): string {
-  return (
-    `refusing task branch ${refusal.branch}: it is checked out in architect-owned ${refusal.ownerJob} tree ${refusal.path}.\n` +
-    `cleared by: start from trunk with --base ${refusal.freshBase}, or land through that tree`
-  )
-}
-
 export type TaskBranchRunRow = {
   record_id: string
   number: number

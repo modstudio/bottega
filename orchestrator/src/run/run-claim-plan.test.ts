@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { taskBranchLandingTreeRefusal } from '../branch/task-branch.ts'
+import { taskBranchLandingTreeRefusal } from './held-branch-refusal.ts'
 import {
   claimedRunBranch,
   decideClaimTreePlan,
@@ -133,8 +133,9 @@ describe('claim tree plan', () => {
       })
       if (ruling.mode !== 'refuse') throw new Error('expected a lifecycle-tree refusal')
       expect(taskBranchLandingTreeRefusal(ruling)).toContain(`architect-owned ${ownerJob} tree`)
-      expect(taskBranchLandingTreeRefusal(ruling)).toContain('start from trunk with --base main')
-      expect(taskBranchLandingTreeRefusal(ruling)).toContain('land through that tree')
+      expect(taskBranchLandingTreeRefusal(ruling)).toContain(
+        'start over from trunk with --base main',
+      )
     },
   )
 })

@@ -12,8 +12,7 @@ import { branchNote, failoverSummary, okOutcomeNote, resolveFailover } from '../
 import { db, nowIso, writeTransaction } from '../database/db.ts'
 import { successorReviewLensInputStatusesFromPrompt } from '../database/review-lens-input-artifact.ts'
 import { appendRunEvent } from '../events.ts'
-import { realpathOrSpelled, withoutTrailingSeparators } from '../git/checkout-identity.ts'
-import { branchOf, gitContext, worktreeListPorcelain } from '../git/git-environment.ts'
+import { branchOf, gitContext } from '../git/git-environment.ts'
 import { job } from '../jobs/jobs.ts'
 import { mcpRequestFromStored } from '../mcp/mcp-preflight.ts'
 import { outcomeOf } from '../outcome.ts'
@@ -33,15 +32,10 @@ import {
   continuationTreeCwd,
   requireContinuationTree,
 } from './continuation-tree-service.ts'
+import { refuseHeldContinuationBranch } from './held-branch-refusal.ts'
 import { displayRunQuestion } from './question-display-probe.ts'
 import { openChainQuestions } from './question-open.ts'
-import {
-  continuationBranchAvailability,
-  continuationBranchPlan,
-  parseWorktreeList,
-  type ResumeTreePlan,
-  resumeTreePlan,
-} from './resume-tree.ts'
+import { continuationBranchPlan, type ResumeTreePlan, resumeTreePlan } from './resume-tree.ts'
 import {
   adoptRunMutation,
   auditRunMutation,
@@ -594,38 +588,6 @@ function inheritedResumeWorktree(
     repoRoot: projectPath!,
     source: latest.worktree_source ?? undefined,
   }
-}
-
-export function refuseHeldContinuationBranch(
-  id: string,
-  projectPath: string | null,
-  recordedTreePath: string | null,
-  plan: ResumeTreePlan | null,
-): void {
-  if (!plan || !projectPath) return
-  const worktrees = parseWorktreeList(worktreeListPorcelain(projectPath))
-  const canonicalPath = (path: string): string => withoutTrailingSeparators(realpathOrSpelled(path))
-  const canonicalWorktrees = worktrees.map((worktree) => ({
-    ...worktree,
-    path: canonicalPath(worktree.path),
-  }))
-  const availability = continuationBranchAvailability(
-    plan.branch,
-    recordedTreePath ? canonicalPath(recordedTreePath) : null,
-    canonicalWorktrees,
-  )
-  if (availability.action === 'continue') return
-  const holdingPath =
-    worktrees.find(
-      (worktree, index) =>
-        worktree.branch === plan.branch &&
-        canonicalWorktrees[index]?.path === availability.holdingPath,
-    )?.path ?? availability.holdingPath
-  throw new Error(
-    `run ${id} cannot continue: branch ${plan.branch} is checked out at ${holdingPath}\n` +
-      `release it with git worktree remove ${holdingPath}, ` +
-      `or ${PLATFORM_SLUG} tree remove ${holdingPath} if it is an orch-opened tree`,
-  )
 }
 
 function recreatedTreePlan(

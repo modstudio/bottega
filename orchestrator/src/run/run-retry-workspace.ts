@@ -17,9 +17,10 @@ import {
   continuationTreeCwd,
   requireContinuationTree,
 } from './continuation-tree-service.ts'
+import { refuseHeldContinuationBranch } from './held-branch-refusal.ts'
 import { type ResumeTreePlan, resumeTreePlan } from './resume-tree.ts'
 import { recordedRunLivenessFacts, runAlive } from './run-alive.ts'
-import { refuseHeldContinuationBranch, resumeLaunchForRoot } from './run-control.ts'
+import { resumeLaunchForRoot } from './run-control.ts'
 import { runLeaseState } from './run-lease.ts'
 import { recordedOwnerProcess } from './run-owner-session-liveness.ts'
 import type { RunResumeOptions } from './run-resume-options.ts'
