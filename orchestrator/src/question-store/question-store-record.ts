@@ -232,9 +232,7 @@ export class RecordQuestionStore implements QuestionStore {
       const owner = input.question.runId
         ? `run ${input.question.runId}`
         : `workflow cursor ${input.question.workflowCursorRecordId}`
-      throw new Error(
-        `ask for ${owner} must carry its project; register that project, then retry`,
-      )
+      throw new Error(`ask for ${owner} must carry its project; register that project, then retry`)
     }
     if (intent === 'ask' && input.question.runId) {
       await resolveQuestionRunPusher()(this.input.database, input.question.runId)
