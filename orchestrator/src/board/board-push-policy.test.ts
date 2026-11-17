@@ -224,12 +224,7 @@ test('a read-only delivery defers a held reply successor and drops a candidate-o
     threadTitle: 'Candidate-only report thread',
   }
   expect(
-    selectPushNotices(
-      '2026-10-16T12:00:00.000Z',
-      [heldSuccessor, candidateOnly],
-      clock,
-      false,
-    ),
+    selectPushNotices('2026-10-16T12:00:00.000Z', [heldSuccessor, candidateOnly], clock, false),
   ).toEqual({
     notices: [],
     withheldOlderCount: 1,
