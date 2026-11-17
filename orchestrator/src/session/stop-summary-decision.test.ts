@@ -55,6 +55,7 @@ describe('Stop summary decision', () => {
             ordinal: 6,
             total: 11,
             updatedAt: NOW,
+            questionNumber: null,
           },
           {
             number: 11,
@@ -65,6 +66,7 @@ describe('Stop summary decision', () => {
             ordinal: 1,
             total: 4,
             updatedAt: NOW,
+            questionNumber: null,
           },
         ],
       }),
@@ -87,6 +89,7 @@ describe('Stop summary decision', () => {
       ordinal: 1,
       total: 4,
       updatedAt: new Date(Date.parse(NOW) - KEYLESS_CURSOR_IDLE_MS).toISOString(),
+      questionNumber: null,
     }
     const baseline = decideStopSummary(facts({ owedItems: [owed()] }))
     const result = decideStopSummary(facts({ cursors: [idleCursor], owedItems: [owed()] }))
@@ -110,6 +113,7 @@ describe('Stop summary decision', () => {
         ordinal: 1,
         total: 4,
         updatedAt: NOW,
+        questionNumber: null,
       },
       {
         number: 884,
@@ -120,10 +124,29 @@ describe('Stop summary decision', () => {
         ordinal: 1,
         total: 4,
         updatedAt: old,
+        questionNumber: null,
       },
     ]
     expect(decideStopSummary(facts({ cursors })).lines).not.toContainEqual(
       expect.stringContaining('workflow abandon --cursor'),
+    )
+  })
+
+  test('an idle keyless cursor with an open question has no abandon remedy', () => {
+    const cursor = {
+      number: 845,
+      project: PLATFORM_SLUG,
+      key: null,
+      workflow: 'explore',
+      step: 'orient',
+      ordinal: 1,
+      total: 4,
+      updatedAt: new Date(Date.parse(NOW) - KEYLESS_CURSOR_IDLE_MS).toISOString(),
+      questionNumber: 73,
+    }
+
+    expect(decideStopSummary(facts({ cursors: [cursor] })).lines).not.toContainEqual(
+      expect.stringContaining('workflow abandon'),
     )
   })
 

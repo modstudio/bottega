@@ -47,7 +47,6 @@ import {
 } from '../workflow/workflow-compose-branch.ts'
 import {
   mcpWorkflowCursorContext,
-  refuseForeignCursorAbandon,
   resolveMcpSelectedCursorContext,
 } from '../workflow/workflow-cursor-selection.ts'
 import type { HubTaskReader } from '../workflow/workflow-task-reference.ts'
@@ -496,7 +495,7 @@ async function abandonWorkflowWithTextCopy(
   ownerSession: string | undefined,
   ports: DocsMcpPorts,
 ) {
-  const { context, selectedRow } = await resolveMcpSelectedCursorContext(
+  const { context } = await resolveMcpSelectedCursorContext(
     project,
     undefined,
     undefined,
@@ -504,7 +503,6 @@ async function abandonWorkflowWithTextCopy(
     cursor,
     ports.hubTaskReader,
   )
-  refuseForeignCursorAbandon(selectedRow!, context.session, ownerSession, 'mcp')
   const result = await closeCursorWithTextCopy(
     {
       action: 'abandon',
@@ -513,6 +511,8 @@ async function abandonWorkflowWithTextCopy(
       args: {},
       context,
       reason,
+      ownerSession,
+      surface: 'mcp',
     },
     undefined,
     ports.hubTaskReader,
@@ -633,7 +633,12 @@ function registerWorkflowActionTools(server: McpServer, ports: DocsMcpPorts): vo
         cursor: z.number().int().positive(),
         project: z.string().trim().min(1),
         reason: z.string().trim().min(1),
-        owner_session: z.string().trim().min(1).optional(),
+        owner_session: z
+          .string()
+          .trim()
+          .min(1)
+          .optional()
+          .describe('abandon a cursor owned by another session by naming that session'),
       }),
     },
     async ({ cursor, project, reason, owner_session }) =>

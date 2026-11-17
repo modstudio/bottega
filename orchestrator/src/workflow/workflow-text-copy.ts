@@ -25,6 +25,7 @@ import {
 } from './workflow-cursor-result.ts'
 import {
   readThroughWorkflowCursorContext,
+  refuseForeignCursorAbandon,
   type SelectableCursorRow,
   selectWorkflowCursorForClose,
   type WorkflowCursorContext,
@@ -300,7 +301,12 @@ export type WorkflowTextCloseInput =
       outcome?: string
       live?: LiveCursorAutonomy
     })
-  | (CloseTarget & { action: 'abandon'; reason?: string })
+  | (CloseTarget & {
+      action: 'abandon'
+      reason?: string
+      ownerSession?: string
+      surface: 'cli' | 'mcp'
+    })
 
 /** Owns validation, preservation, transactional close, and the uncopied remedy. */
 export async function closeCursorWithTextCopy(
@@ -349,6 +355,8 @@ export async function closeCursorWithTextCopyResult(
     throw new Error(
       `${cursorName(input.workflow ?? 'workflow', input.mode ?? 'default', input.key ?? '')} has no cursor; compose the workflow first`,
     )
+  if (input.action === 'abandon')
+    refuseForeignCursorAbandon(row, input.context.session, input.ownerSession, input.surface)
   refuseTerminalCursor(row)
   if (input.action === 'next') refuseMissingCloseNote(input.note, row.ordinal + 1, row.step_slug)
   else refuseMissingAbandonReason(input.reason)

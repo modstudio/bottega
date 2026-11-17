@@ -202,6 +202,7 @@ export async function sessionStopSummary(
       ordinal: cursor.ordinal + 1,
       total: cursor.total_steps,
       updatedAt: cursor.updated_at,
+      questionNumber: cursor.question_number,
     })),
     reviewVerdictLines,
     liveRuns,

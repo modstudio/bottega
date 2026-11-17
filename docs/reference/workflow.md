@@ -94,7 +94,7 @@ abandon an open workflow cursor
 - `--cursor <value>`: select this workflow cursor
 - `--mode <value>`: select this workflow mode
 - `--project <value>`: select this registered project
-- `--owner-session <value>`: state intent to abandon a cursor owned by this session
+- `--owner-session <value>`: abandon a cursor owned by another session by naming that session
 - `--arg <value>`: supply a workflow argument as name=value
 - `--reason <value>`: record why this change is being made
 - `--json`: print JSON output

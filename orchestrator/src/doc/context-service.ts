@@ -108,6 +108,7 @@ async function listOpenCursorContextHolders(session: string, database: Database 
     const holder = cursorContextHolder(cursor.record_id)
     return {
       cursor: cursor.number,
+      project: cursor.project,
       workflow: cursor.workflow_slug,
       mode: cursor.mode_slug,
       holder,

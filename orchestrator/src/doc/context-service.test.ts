@@ -235,6 +235,7 @@ test('session context includes open keyless cursor items and omits done cursors'
     expect((await getContext({ session })).cursorHolders).toEqual([
       {
         cursor: expect.any(Number),
+        project: PLATFORM_SLUG,
         workflow: 'explore',
         mode: 'default',
         holder: expect.stringContaining(openRecordId),

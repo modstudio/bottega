@@ -24,7 +24,8 @@ export function decideSessionCursorSweep(
   if (!ownerIsGone(facts)) return { action: 'keep' }
   const reference = workflowCursorReference(facts.cursor, facts.project).cli
   const adopt = `${PLATFORM_SLUG} workflow step ${facts.workflowSlug} ${facts.stepSlug}${reference}`
-  const abandon = `${PLATFORM_SLUG} workflow abandon ${facts.workflowSlug}${reference} --reason "<why>"`
+  const owner = facts.ownerSessionId ? ` --owner-session ${facts.ownerSessionId}` : ''
+  const abandon = `${PLATFORM_SLUG} workflow abandon ${facts.workflowSlug}${reference} --reason "<why>"${owner}`
   if (facts.openQuestionRecordId)
     return {
       action: 'report',

@@ -15,6 +15,7 @@ import type { SessionErrorLine, SessionProcessLine } from './session-close-out-r
 
 function reportRemainingCursor(
   cursor: OpenCursor,
+  ownerSession: string | null,
   report: { parked: string[]; process: SessionProcessLine[] },
 ): void {
   const disposition = classifySessionCursor({
@@ -29,7 +30,8 @@ function reportRemainingCursor(
   }
   const reference = workflowCursorReference(cursor.number, cursor.project).cli
   const next = `${PLATFORM_SLUG} workflow next ${cursor.workflow_slug}${reference}`
-  const abandon = `${PLATFORM_SLUG} workflow abandon ${cursor.workflow_slug}${reference} --reason "<why>"`
+  const owner = ownerSession ? ` --owner-session ${ownerSession}` : ''
+  const abandon = `${PLATFORM_SLUG} workflow abandon ${cursor.workflow_slug}${reference} --reason "<why>"${owner}`
   report.process.push({
     item: `workflow cursor ${cursor.number}`,
     reason: `cursor is ${cursor.state}`,
@@ -74,6 +76,6 @@ export async function releaseSessionCursors(input: {
         })
       }
     }
-    reportRemainingCursor(cursor, input.report)
+    reportRemainingCursor(cursor, input.session, input.report)
   }
 }

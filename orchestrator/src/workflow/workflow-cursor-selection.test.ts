@@ -210,6 +210,53 @@ test('CLI abandon refuses another sessions cursor until its owner is acknowledge
   })
 })
 
+test('CLI keyed abandon refuses another sessions cursor until its owner is acknowledged', async () => {
+  const project = 'keyed-abandon-owner-project'
+  const slug = 'keyed-abandon-owner'
+  const key = 'DEV-2365-keyed'
+  const step = productionStepCatalogue().definition.steps.find(
+    ({ slug }) => slug === 'blast-radius',
+  )!.slug
+  registerCurrentProject(project)
+  publishCursorWorkflow(slug, [{ slug: 'default', title: 'Default', default: true, steps: [step] }])
+  const opened = await composeWorkflowWithCursor(
+    slug,
+    project,
+    'default',
+    { key },
+    { session: 'foreign-keyed-session' },
+    undefined,
+    {},
+    {},
+  )
+  const argv = [
+    'workflow',
+    'abandon',
+    slug,
+    '--project',
+    project,
+    '--mode',
+    'default',
+    '--arg',
+    `key=${key}`,
+    '--reason',
+    'test',
+  ]
+
+  await expect(workflowCommand(argv, presentation([]))).rejects.toThrow(
+    'owned by session foreign-keyed-session; rerun with --owner-session foreign-keyed-session',
+  )
+  await workflowCommand(
+    [...argv, '--owner-session', 'foreign-keyed-session'],
+    presentation([]),
+  )
+  expect(
+    db()
+      .query('SELECT state FROM workflow_cursor WHERE number=? AND project=?')
+      .get(opened.cursor!.id, project),
+  ).toEqual({ state: 'abandoned' })
+})
+
 describe('CLI abandon for the owning session', () => {
   let priorSession: string | undefined
 
@@ -243,6 +290,9 @@ describe('CLI abandon for the owning session', () => {
       {},
       {},
     )
+    db()
+      .query('UPDATE workflow_cursor SET session_id=? WHERE number=? AND project=?')
+      .run('own-session', own.cursor!.id, project)
     await workflowCommand(
       [
         'workflow',

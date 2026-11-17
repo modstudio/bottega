@@ -19,6 +19,7 @@ type StopSummaryCursor = {
   ordinal: number
   total: number
   updatedAt: string
+  questionNumber: number | null
 }
 
 export type StopSummaryOwedItem = {
@@ -102,7 +103,7 @@ function cursorLine(cursor: StopSummaryCursor): string {
 }
 
 function idleCursorLine(cursor: StopSummaryCursor, now: number): string | null {
-  if (cursor.key) return null
+  if (cursor.key || cursor.questionNumber !== null) return null
   const idle = keylessCursorIdle(cursor.updatedAt, now)
   if (!idle || idle.ms < KEYLESS_CURSOR_IDLE_MS) return null
   return `Explore cursor ${cursor.number} ${idle.label} → ${PLATFORM_SLUG} workflow abandon${workflowCursorReference(cursor.number, cursor.project).cli}`

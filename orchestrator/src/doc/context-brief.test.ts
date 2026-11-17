@@ -1,11 +1,14 @@
 import { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
+import { resolve } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
 import { migratedTestDatabase } from '../database/test-database.fixture.ts'
+import { composeWorkflowWithCursor } from '../workflow/workflow-cursor.ts'
+import { installHostedWorkflowTreeFixture } from '../workflow/workflow-store.fixture.ts'
 import {
   type ContextBrief,
   contextBrief,
@@ -309,6 +312,72 @@ test('contextBrief carries question groups into the waiting segment', async () =
     expect.objectContaining({ job: 'implement', status: 'asking', label: 'Read the brief' }),
   ])
   expect(renderContextBrief(brief)).toContain('implement asking · Read the brief')
+})
+
+test('contextBrief uses the session cursor rows for holders and in flight', async () => {
+  const session = 'context-brief-cursor-session'
+  const foreignSession = 'context-brief-foreign-session'
+  const project = 'context-brief-cursor-project'
+  db()
+    .query(
+      `INSERT INTO project (record_id,name,path,stack,settings)
+       VALUES (?,?,'/different-project','bun',
+               '{"tracker":{"protocol":"hub"},"docs":{"protocol":"orch-docs"},"gate":"bun run check"}')`,
+    )
+    .run(newRecordId(), project)
+  db()
+    .query(
+      `INSERT INTO project (record_id,name,path,stack,settings)
+       VALUES (?,?,'/unregistered','bun',
+               '{"tracker":{"protocol":"hub"},"docs":{"protocol":"orch-docs"},"gate":"bun run check"}')`,
+    )
+    .run(newRecordId(), PLATFORM_SLUG)
+  installHostedWorkflowTreeFixture(project, newRecordId(), resolve(process.cwd(), '..'))
+  new Database(process.env.BOTTEGA_HUB_DB!, { create: true }).close()
+  const migration = Bun.spawnSync([...bottegaEntryArgv(PLATFORM_SLUG), 'machine', 'migrate'], {
+    env: { ...process.env, NODE_ENV: 'production' },
+    stdout: 'pipe',
+    stderr: 'pipe',
+  })
+  expect(migration.exitCode, migration.stderr.toString()).toBe(0)
+  const own = await composeWorkflowWithCursor(
+    'explore',
+    project,
+    'default',
+    {},
+    { session },
+    undefined,
+    {},
+    {},
+  )
+  const foreign = await composeWorkflowWithCursor(
+    'explore',
+    project,
+    'default',
+    {},
+    { session: foreignSession },
+    undefined,
+    {},
+    {},
+  )
+
+  const nodeEnvironment = process.env.NODE_ENV
+  process.env.NODE_ENV = 'production'
+  const brief = await contextBrief(session, '/unregistered', db()).finally(() => {
+    if (nodeEnvironment === undefined) delete process.env.NODE_ENV
+    else process.env.NODE_ENV = nodeEnvironment
+  })
+  const rendered = renderContextBrief(brief)
+
+  expect(brief.holders.map((holder) => holder.title)).toContain(
+    `Cursor ${own.cursor!.id} explore default (${project})`,
+  )
+  expect(brief.holders.map((holder) => holder.title)).not.toContain(
+    `Cursor ${foreign.cursor!.id} explore default (${project})`,
+  )
+  expect(rendered).toContain(`cursor ${own.cursor!.id} explore · idle 0m`)
+  expect(rendered).not.toContain(`cursor ${foreign.cursor!.id} explore`)
+  expect(rendered).not.toContain('workflow abandon')
 })
 
 test('orders the session, each project-scoped working task, and its epic by task profile', () => {
