@@ -122,6 +122,7 @@ const SPACE_KEYED_READ_KINDS = [
   'for-runs',
   'open-for-cursors',
 ] as const
+// open-for-cursors returns partial id, cursor, space, and number rows, so it skips machine enrichment below.
 
 export class RecordQuestionStore implements QuestionStore {
   private readonly input: {

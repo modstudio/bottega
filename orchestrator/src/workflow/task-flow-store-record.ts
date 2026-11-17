@@ -175,15 +175,11 @@ class RecordTaskFlowReadStore {
     return this.everyDestination
   }
 
-  private async readEveryDestination<T>(read: () => Promise<T | null>): Promise<T | null> {
-    return read()
-  }
-
   private readText(recordId: string) {
     const read = this.client.readTaskFlowText
     if (!read)
       throw new Error('record API predates task-flow text reads; release hosted-api, then retry')
-    return this.readEveryDestination(() => read(recordId))
+    return read(recordId)
   }
 
   private async list(selector: StageListSelector, project?: string): Promise<ListedItem[]> {
@@ -209,7 +205,7 @@ class RecordTaskFlowReadStore {
     const read = this.client.readTaskFlowStage
     if (!read)
       throw new Error('record API predates task-flow stage reads; release hosted-api, then retry')
-    return this.readEveryDestination(() => read(id))
+    return read(id)
   }
 
   private async flow(selector: {
@@ -219,19 +215,17 @@ class RecordTaskFlowReadStore {
     const read = this.client.readTaskFlow
     if (!read)
       throw new Error('record API predates task-flow reads; release hosted-api, then retry')
-    return this.readEveryDestination(async () => {
-      try {
-        return await read(selector)
-      } catch (error) {
-        if (
-          error instanceof RecordApiRequestError &&
-          error.status === 404 &&
-          error.code === RECORD_TASK_FLOW_NOT_FOUND_CODE
-        )
-          return null
-        throw error
-      }
-    })
+    try {
+      return await read(selector)
+    } catch (error) {
+      if (
+        error instanceof RecordApiRequestError &&
+        error.status === 404 &&
+        error.code === RECORD_TASK_FLOW_NOT_FOUND_CODE
+      )
+        return null
+      throw error
+    }
   }
 
   async openStageForTask(taskRecordId: string) {
@@ -471,7 +465,7 @@ class RecordTaskFlowReadStore {
       throw new Error(
         'record API predates task-flow obligation reads; release hosted-api, then retry',
       )
-    const result = await this.readEveryDestination(() => read(recordId))
+    const result = await read(recordId)
     if (!result) return null
     const stage = await this.byId(result.stage.id)
     if (!stage) throw new Error(`workflow stage ${result.stage.id} does not exist`)

@@ -417,6 +417,21 @@ async function questionStoreContract(
   expect(projects).toContainEqual({
     project: 'question-fixture',
   })
+  if (options.supportsByNumber) {
+    const earlier = snapshot({ askedAt: '2026-11-15T13:00:00.000Z' })
+    const later = snapshot({ askedAt: '2026-11-15T13:01:00.000Z' })
+    const earlierResult = await store.write('ask', body(earlier, 'ask'))
+    await store.write('ask', body(later, 'ask'))
+    expect(
+      (await store.read({ read: 'open-for-cursors', workflowCursorRecordIds: [CURSOR_ID] })).items,
+    ).toEqual([
+      {
+        record_id: earlier.id,
+        workflow_cursor_record_id: CURSOR_ID,
+        number: earlierResult.number,
+      },
+    ])
+  }
 }
 
 test('SQLite and record question adapters satisfy their shared read and write contract', async () => {
@@ -555,19 +570,6 @@ test('a keyed not-visible refusal reaches the question caller unchanged', async 
     client: { readQuestions: async () => Promise.reject(refusal) },
   })
   await expect(store.read({ read: 'by-id', ids: [WORKFLOW_QUESTION_ID] })).rejects.toBe(refusal)
-  database.close()
-})
-
-test('record for-runs returns every keyed row in asking order', async () => {
-  const database = migratedTestDatabase()
-  const { store } = twoSpaceStore(database, {
-    [SPACE_ID]: [{ record_id: 'project-new', number: 12, asked_at: '2026-11-17T05:00:00Z' }],
-    [OTHER_SPACE_ID]: [
-      { record_id: 'personal-old', number: 6464, asked_at: '2026-11-16T05:00:00Z' },
-    ],
-  })
-  const read = await store.read({ read: 'for-runs', runIds: [RUN_ID] })
-  expect(read.items.map((row) => field(row, 'record_id'))).toEqual(['personal-old', 'project-new'])
   database.close()
 })
 

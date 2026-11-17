@@ -3,6 +3,7 @@
 
 import type { Database } from 'bun:sqlite'
 import { PLATFORM_NAME } from '../../../shared/brand.ts'
+import { QUESTION_ID_LIST_LIMIT } from '../record/record-question-contract.ts'
 import type { HostedTaskFlowStageById } from '../record/record-task-flow-contract.ts'
 import { TASK_FLOW_STAGE_STATES } from '../record/record-task-flow-contract.ts'
 import { type ListedItem, stageRow } from '../workflow/task-flow-store-record-stage-row.ts'
@@ -56,16 +57,17 @@ function fields<T>(row: QuestionReadRow, names: readonly string[]): T {
 
 async function openForStages(questions: QuestionStore, ids: string[]) {
   if (ids.length === 0) return new Map<string, QuestionReadRow>()
-  return openQuestionMap(
-    (await questions.read({ read: 'open-for-cursors', workflowCursorRecordIds: ids })).items,
-  )
-}
-
-async function openDetailsForStages(questions: QuestionStore, ids: string[]) {
-  if (ids.length === 0) return new Map<string, QuestionReadRow>()
-  return openQuestionMap(
-    (await questions.read({ read: 'open-for-cursors', workflowCursorRecordIds: ids })).items,
-  )
+  const rows: QuestionReadRow[] = []
+  for (let offset = 0; offset < ids.length; offset += QUESTION_ID_LIST_LIMIT)
+    rows.push(
+      ...(
+        await questions.read({
+          read: 'open-for-cursors',
+          workflowCursorRecordIds: ids.slice(offset, offset + QUESTION_ID_LIST_LIMIT),
+        })
+      ).items,
+    )
+  return openQuestionMap(rows)
 }
 
 function stageReads(questions: QuestionStore, read: StageRead) {
@@ -171,7 +173,7 @@ function sessionReads(questions: QuestionStore, read: StageRead) {
         ...(project ? { projectId: read.projectId(project) } : {}),
       }
       const items = project ? await read.list(selector, project) : await read.listEvery(selector)
-      const open = await openDetailsForStages(
+      const open = await openForStages(
         questions,
         items.map(({ stage }) => stage.id),
       )

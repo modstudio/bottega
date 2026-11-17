@@ -798,4 +798,47 @@ describe('hosted task-flow question decorations', () => {
     ])
     expect(requests).toBe(1)
   })
+
+  test('open details for 101 stages use two capped keyed question requests', async () => {
+    const d = guardHostedTables(database(), ['question'])
+    const stages = Array.from({ length: 101 }, (_, index) => {
+      const suffix = (index + 200).toString(16).padStart(12, '0')
+      const stage = hostedStage({
+        taskless: true,
+        number: index + 1,
+        stageId: `00000000-0000-4000-8000-${suffix}`,
+        flowId: `00000000-0000-4001-8000-${suffix}`,
+      })
+      stage.stage.workflowKey = null
+      return stage
+    })
+    const questions = [stages[0]!, stages[100]!].map((stage, index) => ({
+      id: `00000000-0000-4002-8000-${(index + 1).toString(16).padStart(12, '0')}`,
+      number: index + 1,
+      workflowCursorRecordId: stage.stage.id,
+    }))
+    const memory = createMemoryRecordApiClient({ taskFlowStages: stages, questions })
+    const chunkSizes: number[] = []
+    const client = {
+      ...memory,
+      readQuestions: async (...args: Parameters<NonNullable<typeof memory.readQuestions>>) => {
+        if (args[0].read === 'open-for-cursors')
+          chunkSizes.push(args[0].workflowCursorRecordIds.length)
+        return memory.readQuestions!(...args)
+      },
+    }
+    installRecordApiClient(client)
+    const rows = await recordTaskFlowReadStore(d, client).keylessSessionCursors(null)
+    expect(chunkSizes).toEqual([100, 1])
+    expect(rows.filter((row) => row.open_question_record_id !== null)).toEqual([
+      expect.objectContaining({
+        record_id: stages[0]!.stage.id,
+        open_question_record_id: questions[0]!.id,
+      }),
+      expect.objectContaining({
+        record_id: stages[100]!.stage.id,
+        open_question_record_id: questions[1]!.id,
+      }),
+    ])
+  })
 })

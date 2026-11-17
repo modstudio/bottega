@@ -20,6 +20,7 @@ const firstCursorId = '01990000-0000-7000-8000-000000004028'
 const secondCursorId = '01990000-0000-7000-8000-000000004029'
 const firstQuestionId = '01990000-0000-7000-8000-000000004024'
 const secondQuestionId = '01990000-0000-7000-8000-000000004025'
+const laterFirstQuestionId = '01990000-0000-7000-8000-000000004043'
 const invisibleParentTurnId = '01990000-0000-7000-8000-000000004030'
 const visibleParentId = '01990000-0000-7000-8000-000000004032'
 const visibleParentTurnId = '01990000-0000-7000-8000-000000004033'
@@ -129,9 +130,11 @@ beforeAll(async () => {
        asked_at,question,answer,answered_at,created_at,updated_at)
     VALUES
       ('${firstQuestionId}','${spaceId}','${crossSpaceRunId}','${firstCursorId}',
-       '${projectId}','${machineId}',5,1,'[]',now(),'cross-space owner',NULL,NULL,now(),now()),
+       '${projectId}','${machineId}',5,1,'[]','2026-11-17T12:00:00Z','cross-space owner',NULL,NULL,now(),now()),
       ('${secondQuestionId}','${secondSpaceId}','${crossSpaceRunId}','${secondCursorId}',
        '${secondProjectId}','${machineId}',6,1,'[]',now(),'second-space row',NULL,NULL,now(),now()),
+      ('${laterFirstQuestionId}','${spaceId}','${secondRunId}','${firstCursorId}',
+       '${projectId}','${machineId}',13,1,'[]','2026-11-17T13:00:00Z','later same-cursor row',NULL,NULL,now(),now()),
       ('01990000-0000-7000-8000-000000004031','${spaceId}','${invisibleParentTurnId}',NULL,
        '${projectId}','${machineId}',7,1,'[]',now(),'invisible parent root',NULL,NULL,now(),now()),
       ('01990000-0000-7000-8000-000000004036','${spaceId}','${visibleParentTurnId}',NULL,
