@@ -112,7 +112,7 @@ test('resolver uses a hosted cursor question project without a local cursor row'
         },
       ],
     }),
-  } as RecordApiClient)
+  } as unknown as RecordApiClient)
   try {
     const context: IdentityContext = {
       database: db(),
