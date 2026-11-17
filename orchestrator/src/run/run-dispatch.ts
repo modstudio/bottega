@@ -27,7 +27,7 @@ import { pidAlive } from '../../../shared/process-identity.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 import { SESSION_LIVE_MS } from '../../../shared/session-liveness.ts'
-import { db, nowIso, sessionId, writableDb } from '../database/db.ts'
+import { db, nowIso, sessionId, writableDb, writeTransaction } from '../database/db.ts'
 import {
   assertMigrationDispatchAllowed,
   assertMigrationDispatchAllowedAndRecord,
@@ -60,6 +60,10 @@ import { repoOf } from './run-project-context.ts'
 import { claimIdentity, resumeFacts } from './run-resume-kind.ts'
 import { recordRunStartupFailure } from './run-startup-failure.ts'
 import { admitNewRunReference } from './run-task-reference.ts'
+import {
+  reconcileSupersededAskingTurns,
+  supersededAskingTurnDecisions,
+} from './superseded-asking-turn-store.ts'
 
 function writeDetachedPrompt(runsDir: string, recordId: string, prompt: string): string {
   const runDirectory = join(runsDir, recordId)
@@ -180,6 +184,18 @@ function claimDetachedRun<T extends SynchronousResult>(
     },
     claim,
   )
+}
+
+function settleDetachedResumeClaim(
+  inserted: { record_id: string; number: number } | null,
+  spec: ResolvedDetachSpec,
+): void {
+  clearResumedQuestionDelivery(inserted, spec)
+  if (!inserted || !spec.resume || spec.resume.kind === 'retry-root') return
+  writeTransaction(() => {
+    const decisions = supersededAskingTurnDecisions(db(), spec.resume!.parent)
+    reconcileSupersededAskingTurns(db(), decisions, nowIso())
+  })
 }
 
 function resolvedDetachSpec(spec: DetachSpec, jobName: string): DetachSpec {
@@ -394,7 +410,7 @@ async function detachResolved(
         identity.parent_run_record_id,
         identity.parent_run_record_id,
       ) as { record_id: string; number: number } | null
-    clearResumedQuestionDelivery(inserted, spec)
+    settleDetachedResumeClaim(inserted, spec)
     if (inserted && spec.resume?.kind === 'retry-root' && spec.resume.retireAsking) {
       db()
         .query(

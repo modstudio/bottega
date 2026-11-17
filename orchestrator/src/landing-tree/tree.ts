@@ -22,6 +22,7 @@ import { continuationBranchPlan, resumeTreePlan } from '../run/resume-tree.ts'
 import { nextRunNumber } from '../run/run-number.ts'
 import { prepareResumeBranchIfNeeded } from '../run/run-resume-claim.ts'
 import { TERMINAL_RUN_STATUS_SET } from '../run/run-status.ts'
+import { terminalLifecycleWrite } from '../run/run-terminal-lifecycle-store.ts'
 import { createWorkerWorktree } from '../worktree/worktree.ts'
 import { inspectTreeOwnership } from '../worktree/worktree-attribution.ts'
 import type { RecordRecipeResource } from '../worktree/worktree-create.ts'
@@ -124,13 +125,21 @@ export async function releaseFailedLandingTree(runId: string): Promise<void> {
 }
 
 function recordLandingTreeFailure(recordId: string, startedAt: string, error: unknown): void {
-  db()
-    .query("UPDATE run SET status='failed',latency_ms=?,exit_code=1,error=? WHERE record_id=?")
-    .run(
-      Math.max(0, Date.now() - Date.parse(startedAt)),
-      String((error as Error)?.message ?? error),
-      recordId,
-    )
+  const detail = String((error as Error)?.message ?? error)
+  writeTransaction(() => {
+    const lifecycle = terminalLifecycleWrite(db(), recordId, 'failed', detail, null)
+    db()
+      .query(
+        'UPDATE run SET status=?,failure_kind=?,error=?,latency_ms=?,exit_code=1 WHERE record_id=?',
+      )
+      .run(
+        lifecycle.status,
+        lifecycle.failureKind,
+        lifecycle.error,
+        Math.max(0, Date.now() - Date.parse(startedAt)),
+        recordId,
+      )
+  })
 }
 
 function resolveLandingTarget(runId: string, root: LandingTreeRunRow, latest: LandingTreeRunRow) {
@@ -182,9 +191,20 @@ function finishLandingTreeOpen(
   startedAt: string,
 ): void {
   adoptCoordinatorRunsForLanding(root, database)
-  database
-    .query("UPDATE run SET status='ok',latency_ms=?,exit_code=0 WHERE record_id=?")
-    .run(Math.max(0, Date.now() - Date.parse(startedAt)), recordId)
+  writeTransaction(() => {
+    const lifecycle = terminalLifecycleWrite(database, recordId, 'ok', null, null)
+    database
+      .query(
+        'UPDATE run SET status=?,failure_kind=?,error=?,latency_ms=?,exit_code=0 WHERE record_id=?',
+      )
+      .run(
+        lifecycle.status,
+        lifecycle.failureKind,
+        lifecycle.error,
+        Math.max(0, Date.now() - Date.parse(startedAt)),
+        recordId,
+      )
+  }, database)
 }
 
 export async function openLandingTree(runId: string, seed?: string): Promise<OpenedLandingTree> {

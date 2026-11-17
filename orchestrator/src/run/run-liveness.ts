@@ -32,6 +32,12 @@ import {
   type RecordedRunSharedGitConfigInput,
   sharedGitConfigCheckSkipReason,
 } from './shared-git-config-check.ts'
+import {
+  overwrittenAbandonedAskingTurnDecisions,
+  reconcileOverwrittenAbandonedAskingTurns,
+  reconcileSupersededAskingTurns,
+  supersededAskingTurnDecisions,
+} from './superseded-asking-turn-store.ts'
 
 /** The common bound for callers following a detached run to its terminal state. */
 export const RUN_FOLLOW_TIMEOUT_MS = STALE_AFTER_MS + 60_000
@@ -387,6 +393,27 @@ function terminalizeHarnessFailures(
   }
 }
 
+function repairAskingTurns(
+  database: Database,
+  finishedAt: string,
+): { supersededCount: number; repairedAbandoned: string[] } {
+  const superseded = supersededAskingTurnDecisions(database)
+  const overwrittenAbandons = overwrittenAbandonedAskingTurnDecisions(database)
+  if (!superseded.length && !overwrittenAbandons.length) {
+    return { supersededCount: 0, repairedAbandoned: [] }
+  }
+  return writeTransaction(() => {
+    return {
+      supersededCount: reconcileSupersededAskingTurns(database, superseded, finishedAt),
+      repairedAbandoned: reconcileOverwrittenAbandonedAskingTurns(
+        database,
+        overwrittenAbandons,
+        finishedAt,
+      ),
+    }
+  }, database)
+}
+
 function finalizeReapedRuns(
   database: Database,
   ended: string[],
@@ -419,7 +446,17 @@ export function reapStale(
     now,
   )
   if (storeWritesRefused()) {
+    const supersededAsking = supersededAskingTurnDecisions(d)
+    const overwrittenAbandonedAsking = overwrittenAbandonedAskingTurnDecisions(d)
     return [
+      ...supersededAsking.map((turn) => ({
+        record_id: turn.recordId,
+        reason: `superseded by run ${turn.supersededByNumber}`,
+      })),
+      ...overwrittenAbandonedAsking.map((decision) => ({
+        record_id: decision.recordId,
+        reason: 'architect abandon verdict was overwritten by a late terminal write',
+      })),
       ...dead.map((id) => {
         const row = rows.find((candidate) => candidate.record_id === id)!
         return {
@@ -441,6 +478,10 @@ export function reapStale(
   const ended = [...dead, ...abandonedBootstraps, ...setupDeaths, ...recordedCauseDeaths]
   const localMachineId = ended.length ? machineId() : ''
   const finishedAt = new Date(now).toISOString()
+  const askingRepairs = repairAskingTurns(d, finishedAt)
+  if (askingRepairs.repairedAbandoned.length) {
+    rollUpReapedRoots(d, askingRepairs.repairedAbandoned, new Set(), machineId(), finishedAt)
+  }
   if (abandonedBootstraps.length) {
     const update = d.query(
       `UPDATE run SET status='failed', failure_kind='harness', host_wait_since=NULL,
@@ -487,7 +528,14 @@ export function reapStale(
     }
   }
   finalizeReapedRuns(d, ended, [...setupDeaths, ...recordedCauseDeaths], localMachineId, finishedAt)
-  return dead.length + abandonedBootstraps.length + setupDeaths.length + recordedCauseDeaths.length
+  return (
+    askingRepairs.supersededCount +
+    askingRepairs.repairedAbandoned.length +
+    dead.length +
+    abandonedBootstraps.length +
+    setupDeaths.length +
+    recordedCauseDeaths.length
+  )
 }
 
 /**

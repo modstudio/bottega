@@ -291,6 +291,17 @@ export async function supersededTurnQuestionState(
   }
 }
 
+/** Record that a successor completed an asking turn's contract. */
+export function writeSupersededAskingTurn(database: Database, recordId: string): boolean {
+  return (
+    database
+      .query(
+        "UPDATE run SET status='ok', host_wait_since=NULL WHERE record_id=? AND status='asking'",
+      )
+      .run(recordId).changes === 1
+  )
+}
+
 export function resolveSupersededTurn(
   database: Database,
   rootId: string,
@@ -298,16 +309,17 @@ export function resolveSupersededTurn(
   questionState: { answered: boolean; open: boolean },
 ): number {
   if (!questionState.answered || questionState.open) return 0
-  return database
+  const prior = database
     .query(
-      `UPDATE run AS prior SET status='ok'
+      `SELECT prior.record_id FROM run prior
       WHERE prior.parent_run_record_id=? AND prior.turn=? AND prior.status='asking'
         AND EXISTS (
           SELECT 1 FROM run later
            WHERE later.parent_run_record_id=prior.parent_run_record_id AND later.turn>prior.turn
         )`,
     )
-    .run(rootId, turn).changes
+    .get(rootId, turn) as { record_id: string } | null
+  return prior && writeSupersededAskingTurn(database, prior.record_id) ? 1 : 0
 }
 
 export type FailoverAttempt = { record_id: string; agent: string }

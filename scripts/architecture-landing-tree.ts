@@ -51,6 +51,7 @@ export const landingTreeModules = [
       '../run/run-resume-claim.ts',
       '../run/run-number.ts',
       '../run/run-status.ts',
+      '../run/run-terminal-lifecycle-store.ts',
       '../run/resume-tree.ts',
       '../worktree/worktree.ts',
       '../worktree/worktree-attribution.ts',

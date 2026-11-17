@@ -656,6 +656,7 @@ const declaredModules: ArchitectureModule[] = [
     '../resources/resource-claims.ts',
     '../run/run-lease.ts',
     '../run/run-number.ts',
+    '../run/run-terminal-lifecycle-store.ts',
     '../run/synthetic-lifecycle-job.ts',
     '../recipe/tracked-recipe.ts',
     '../worktree/snapshotless-tracked-recipe.ts',
