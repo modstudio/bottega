@@ -274,6 +274,9 @@ test("a projectless open cursor question is closed and re-asked in the project's
     project_record_id: null,
     awaiting_operator_at: STAMP,
     closed_at: null,
+    answered_at: null,
+    workflow_step_ordinal: 1,
+    workflow_step_slug: 'implement',
   })
   const writtenSpaces: string[] = []
   const intents: QuestionIntent[] = []
@@ -288,7 +291,7 @@ test("a projectless open cursor question is closed and re-asked in the project's
       projectId: PROJECT_ID,
       workflowKey: 'DEV-2373',
       workflowTaskRecordId: null,
-      stepOrdinal: 1,
+      cursorOrdinal: 0,
       stepSlug: 'implement',
       question: 'Proceed?',
       at: STAMP,
