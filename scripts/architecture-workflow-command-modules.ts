@@ -12,6 +12,14 @@ const module = (file: string, allowed: string[]): WorkflowCommandModule => ({
 })
 
 export const workflowCommandModules: WorkflowCommandModule[] = [
+  module('orchestrator/src/session/keyless-cursor-idle-admission.ts', [
+    '../../../shared/brand.ts',
+    '../caller-classification.ts',
+    '../database/db.ts',
+    '../workflow/task-flow-store.ts',
+    '../workflow/workflow-cursor-format.ts',
+    './keyless-cursor-idle.ts',
+  ]),
   module('orchestrator/src/workflow/workflow-task-claim.ts', [
     'bun:sqlite',
     '../board/board-claim-policy.ts',
@@ -20,9 +28,11 @@ export const workflowCommandModules: WorkflowCommandModule[] = [
   ]),
   module('orchestrator/src/workflow/workflow-uncovered.ts', [
     'bun:sqlite',
+    '../board/board-operations.ts',
     '../branch/branch-landing-service.ts',
     '../database/db.ts',
     '../project/projects.ts',
+    './task-flow-store.ts',
   ]),
   module('orchestrator/src/workflow/explore-graduation.ts', []),
   module('orchestrator/src/workflow/task-flow-store-hosted.ts', [

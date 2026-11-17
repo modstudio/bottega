@@ -71,6 +71,7 @@ import { follow as followRun, harnessHandoff, printHarnessHandoff } from '../run
 import { detach as dispatchDetached } from '../run/run-dispatch.ts'
 import { runEvidence } from '../run/run-evidence-context.ts'
 import { resolveRunIdentifier } from '../run/run-identifier.ts'
+import { assertKeylessCursorIdleAdmission } from '../session/keyless-cursor-idle-admission.ts'
 import { boundTaskText, taskTextReadRemedy } from '../run/run-pack-prompt.ts'
 import { routedPromptBytes, routedPromptText } from '../run/run-routing-input.ts'
 import { renderTaskRulings } from '../run/task-rulings.ts'
@@ -672,6 +673,7 @@ export async function doCommand(
 ): Promise<void> {
   const requestedJob = argv[1]
   if (requestedJob && JOBS[requestedJob]) assertInstallLevelAllowsDispatch(requestedJob)
+  await assertKeylessCursorIdleAdmission('run start')
   await ensureLocalHealth()
   const flag = (name: string) => flagValue(argv, name)
   const has = (name: string) =>

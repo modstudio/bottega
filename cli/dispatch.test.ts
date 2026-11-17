@@ -22,8 +22,25 @@ function entries(calls: string[]): BinaryEntries {
     },
     checkAttribution: call('checkAttribution'),
     schemaCheck: call('schemaCheck'),
+    keylessCursorIdleAdmission: async () => null,
   }
 }
+
+test('task new refuses before reaching hub when the session has an idle keyless cursor', async () => {
+  const calls: string[] = []
+  const dispatch = entries(calls)
+  dispatch.keylessCursorIdleAdmission = async () => 'cursor 970 is idle'
+  const errors: string[] = []
+  const originalError = console.error
+  console.error = (value) => errors.push(String(value))
+  try {
+    expect(await dispatchBinary(['task', 'new', '--project', 'fixture'], dispatch, () => '')).toBe(1)
+  } finally {
+    console.error = originalError
+  }
+  expect(errors).toEqual(['cursor 970 is idle'])
+  expect(calls).toEqual([])
+})
 
 test('record outbox combines owner-qualified rows and routes qualified actions', async () => {
   const calls: string[] = []

@@ -2,9 +2,11 @@
 /** Measures keyed work evidence that had neither an open task cursor nor a live task claim. */
 
 import type { Database } from 'bun:sqlite'
+import { boardClaimList } from '../board/board-operations.ts'
 import { decideLandingTaskKey } from '../branch/branch-landing-service.ts'
 import { db } from '../database/db.ts'
-import { projectByName } from '../project/projects.ts'
+import { projectByName, projects } from '../project/projects.ts'
+import { taskFlowReadStore, type TaskFlowReadStore } from './task-flow-store.ts'
 
 export const WORKFLOW_UNCOVERED_DEFAULT_DAYS = 14
 
@@ -123,9 +125,15 @@ function readLandingEvidence(database: Database, from: string): KeyedWorkEvidenc
   return evidence
 }
 
-export function workflowUncoveredReport(
+type WorkflowUncoveredDependencies = {
+  taskFlowStore?: Pick<TaskFlowReadStore, 'keyedStageHistory'>
+  claimList?: typeof boardClaimList
+}
+
+export async function workflowUncoveredReport(
   input: { days?: number; database?: Database; clock?: number } = {},
-): WorkflowUncoveredReport {
+  dependencies: WorkflowUncoveredDependencies = {},
+): Promise<WorkflowUncoveredReport> {
   const days = input.days ?? WORKFLOW_UNCOVERED_DEFAULT_DAYS
   if (!Number.isSafeInteger(days) || days < 1) throw new Error('--days must be a positive integer')
   const database = input.database ?? db()
@@ -142,30 +150,47 @@ export function workflowUncoveredReport(
     )
     .all(from)
     .map((row) => ({ ...row, source: 'run' as const }))
-  const cursors = database
-    .query<TaskCoverage, []>(
-      `SELECT project,workflow_key key,created_at openedAt,
-              CASE WHEN state IN ('done','abandoned') THEN updated_at ELSE NULL END closedAt
-         FROM workflow_cursor WHERE workflow_key<>''`,
+  let cursorRows: Awaited<ReturnType<TaskFlowReadStore['keyedStageHistory']>>
+  try {
+    cursorRows = await (dependencies.taskFlowStore ?? taskFlowReadStore(database)).keyedStageHistory({
+      since: from,
+    })
+  } catch (error) {
+    throw new Error(
+      `workflow uncovered could not read task-flow cursor coverage: ${error instanceof Error ? error.message : String(error)}`,
+      { cause: error },
     )
-    .all()
-  const claims = database
-    .query<
-      { project: string; key: string; openedAt: string; lapsesAt: string; closedAt: string | null },
-      []
-    >(
-      `SELECT project.name project,claim.subject_value key,claim.taken_at openedAt,
-              claim.lapses_at lapsesAt,claim.closed_at closedAt
-         FROM board_claim claim JOIN project ON project.record_id=claim.project_record_id
-        WHERE claim.subject_kind='task'`,
+  }
+  const cursors = cursorRows.map((row) => ({
+    project: row.project,
+    key: row.workflow_key,
+    openedAt: row.created_at,
+    closedAt: ['done', 'abandoned'].includes(row.state) ? row.updated_at : null,
+  }))
+  const claimList = dependencies.claimList ?? boardClaimList
+  const claims: TaskCoverage[] = []
+  for (const project of projects(undefined, database)) {
+    let listed: Awaited<ReturnType<typeof boardClaimList>>
+    try {
+      listed = await claimList(project.name, true, { database })
+    } catch (error) {
+      throw new Error(
+        `workflow uncovered could not read board claim coverage for project ${project.name}: ${error instanceof Error ? error.message : String(error)}`,
+        { cause: error },
+      )
+    }
+    claims.push(
+      ...listed.claims
+        .filter((claim) => claim.subject.kind === 'task')
+        .map((claim) => ({
+          project: claim.project,
+          key: claim.subject.value,
+          openedAt: claim.takenAt,
+          closedAt:
+            claim.closedAt && claim.closedAt < claim.lapsesAt ? claim.closedAt : claim.lapsesAt,
+        })),
     )
-    .all()
-    .map((row) => ({
-      project: row.project,
-      key: row.key,
-      openedAt: row.openedAt,
-      closedAt: row.closedAt && row.closedAt < row.lapsesAt ? row.closedAt : row.lapsesAt,
-    }))
+  }
   return decideWorkflowUncovered({
     days,
     now: now.toISOString(),
@@ -178,15 +203,16 @@ export function workflowUncoveredReport(
 export function workflowUncoveredCommand(
   options: { days?: string; json?: boolean },
   output: { log(value: string): void },
-): void {
+): Promise<void> {
   const days = options.days === undefined ? undefined : Number(options.days)
-  const report = workflowUncoveredReport({ ...(days === undefined ? {} : { days }) })
-  if (options.json) {
-    output.log(JSON.stringify(report, null, 2))
-    return
-  }
-  for (const row of report.days) {
-    const keys = row.tasks.map((task) => `${task.project}/${task.key}`).join(', ')
-    output.log(`${row.day}: ${row.count} (expected ${report.expected})${keys ? `  ${keys}` : ''}`)
-  }
+  return workflowUncoveredReport({ ...(days === undefined ? {} : { days }) }).then((report) => {
+    if (options.json) {
+      output.log(JSON.stringify(report, null, 2))
+      return
+    }
+    for (const row of report.days) {
+      const keys = row.tasks.map((task) => `${task.project}/${task.key}`).join(', ')
+      output.log(`${row.day}: ${row.count} (expected ${report.expected})${keys ? `  ${keys}` : ''}`)
+    }
+  })
 }

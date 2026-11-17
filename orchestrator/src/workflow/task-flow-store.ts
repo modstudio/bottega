@@ -108,6 +108,7 @@ interface TaskFlowQueries {
     sessionId: string
   }): Array<{ mode_slug: string }>
   listOpenStages(input: { project?: string; sessionId?: string }): TaskFlowListedStageRow[]
+  keyedStageHistory(input: { since: string }): TaskFlowStageCursorRow[]
   openStageWorktrees(): Array<{
     number: number
     workflow: string

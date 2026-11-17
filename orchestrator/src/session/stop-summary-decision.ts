@@ -106,7 +106,7 @@ function idleCursorLine(cursor: StopSummaryCursor, now: number): string | null {
   if (cursor.key || cursor.questionNumber !== null) return null
   const idle = keylessCursorIdle(cursor.updatedAt, now)
   if (!idle || idle.ms < KEYLESS_CURSOR_IDLE_MS) return null
-  return `Explore cursor ${cursor.number} ${idle.label} → ${PLATFORM_SLUG} workflow abandon${workflowCursorReference(cursor.number, cursor.project).cli}`
+  return `${cursor.workflow} cursor ${cursor.number} ${idle.label} → ${PLATFORM_SLUG} workflow abandon${workflowCursorReference(cursor.number, cursor.project).cli}`
 }
 
 function movingLine(facts: StopSummaryFacts): string | null {

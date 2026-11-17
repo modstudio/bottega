@@ -79,7 +79,7 @@ test('rejects an invalid day window', () => {
   ).toThrow('--days must be a positive integer')
 })
 
-test('the adapter correlates run and landing evidence with cursor and claim intervals', () => {
+test('the adapter correlates run and landing evidence with hosted-shaped cursor and claim reads', async () => {
   const database = new Database(':memory:')
   database.exec(`
     CREATE TABLE project (
@@ -87,12 +87,6 @@ test('the adapter correlates run and landing evidence with cursor and claim inte
     );
     CREATE TABLE run (
       project_record_id TEXT,launch_key TEXT,started_at TEXT,branch TEXT,minted_branch TEXT
-    );
-    CREATE TABLE workflow_cursor (
-      project TEXT,workflow_key TEXT,created_at TEXT,state TEXT,updated_at TEXT
-    );
-    CREATE TABLE board_claim (
-      project_record_id TEXT,subject_kind TEXT,subject_value TEXT,taken_at TEXT,lapses_at TEXT,closed_at TEXT
     );
     CREATE TABLE branch_landing_record (
       project TEXT,project_record_id TEXT,branch TEXT,merged_at TEXT
@@ -103,20 +97,54 @@ test('the adapter correlates run and landing evidence with cursor and claim inte
       ('project-alpha','DEV-1','2026-11-17T10:00:00.000Z',NULL,NULL),
       ('project-alpha','DEV-2','2026-11-17T10:00:00.000Z',NULL,NULL),
       ('project-alpha','DEV-3','2026-11-17T10:00:00.000Z',NULL,NULL);
-    INSERT INTO workflow_cursor VALUES
-      ('alpha','DEV-2','2026-11-17T09:00:00.000Z','running','2026-11-17T09:00:00.000Z');
-    INSERT INTO board_claim VALUES
-      ('project-alpha','task','DEV-3','2026-11-17T09:00:00.000Z','2026-11-17T11:00:00.000Z',NULL);
     INSERT INTO branch_landing_record VALUES
       ('alpha','project-alpha','DEV-4-change','2026-11-17T12:00:00.000Z');
   `)
   try {
     expect(
-      workflowUncoveredReport({
-        days: 1,
-        database,
-        clock: Date.parse('2026-11-17T20:00:00.000Z'),
-      }).days[0],
+      (
+        await workflowUncoveredReport(
+          {
+            days: 1,
+            database,
+            clock: Date.parse('2026-11-17T20:00:00.000Z'),
+          },
+          {
+            taskFlowStore: {
+              keyedStageHistory: async () => [
+                {
+                  project: 'alpha',
+                  workflow_key: 'DEV-2',
+                  created_at: '2026-11-17T09:00:00.000Z',
+                  state: 'running',
+                  updated_at: '2026-11-17T09:00:00.000Z',
+                } as never,
+              ],
+            },
+            claimList: async () => ({
+              claims: [
+                {
+                  recordId: 'claim-dev-3',
+                  project: 'alpha',
+                  subject: { kind: 'task', value: 'DEV-3' },
+                  holder: 'session-a',
+                  note: null,
+                  runId: null,
+                  run_record_id: null,
+                  takenAt: '2026-11-17T09:00:00.000Z',
+                  renewedAt: '2026-11-17T09:00:00.000Z',
+                  lapsesAt: '2026-11-17T11:00:00.000Z',
+                  live: false,
+                  closedAt: null,
+                  closeReason: null,
+                  previousClaimRecordIds: [],
+                  supersededByClaimRecordId: null,
+                },
+              ],
+            }),
+          },
+        )
+      ).days[0],
     ).toEqual({
       day: '2026-11-17',
       count: 2,
