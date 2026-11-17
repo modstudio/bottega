@@ -48,7 +48,11 @@ function seedProject(database: ReturnType<typeof migratedTestDatabase>): void {
 
 function recordClient(
   writtenSpaces: string[],
-  options: { questions?: Record<string, unknown>[]; intents?: QuestionIntent[] } = {},
+  options: {
+    questions?: Record<string, unknown>[]
+    intents?: QuestionIntent[]
+    closedAts?: (string | null)[]
+  } = {},
 ): RecordApiClient {
   const client = createMemoryRecordApiClient({ questions: options.questions })
   return {
@@ -72,6 +76,7 @@ function recordClient(
         : { items: [] },
     writeQuestion: async (intent, input, destination) => {
       options.intents?.push(intent)
+      options.closedAts?.push(input.question.closedAt)
       writtenSpaces.push(destination.destinationSpaceId)
       return client.writeQuestion!(intent, input, destination)
     },
@@ -272,7 +277,10 @@ test("a projectless open cursor question is closed and re-asked in the project's
   })
   const writtenSpaces: string[] = []
   const intents: QuestionIntent[] = []
-  installRecordApiClient(recordClient(writtenSpaces, { questions: [openQuestion], intents }))
+  const closedAts: (string | null)[] = []
+  installRecordApiClient(
+    recordClient(writtenSpaces, { questions: [openQuestion], intents, closedAts }),
+  )
 
   const inserted = await upsertWorkflowQuestion(
     {
@@ -289,6 +297,7 @@ test("a projectless open cursor question is closed and re-asked in the project's
   )
 
   expect(intents).toEqual(['close', 'ask'])
+  expect(closedAts).toEqual([STAMP, null])
   expect(writtenSpaces).toEqual([PERSONAL_SPACE_ID, PROJECT_SPACE_ID])
   expect(inserted.recordId).not.toBe(ID)
   database.close()

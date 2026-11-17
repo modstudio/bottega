@@ -109,7 +109,10 @@ export async function upsertWorkflowQuestion(
         at: input.at,
         actorSession: sessionId(),
         reason: `re-asked in its project's record space (DEV-2373)`,
-        changes: {},
+        changes: {
+          closedAt: input.at,
+          closeReason: `re-asked in its project's record space (DEV-2373)`,
+        },
       })
       requireQuestionMutationApplied(mutation, row)
     } else {
