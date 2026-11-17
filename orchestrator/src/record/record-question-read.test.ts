@@ -18,6 +18,7 @@ const crossSpaceRunId = '01990000-0000-7000-8000-000000004022'
 const firstSpaceOnlyUserId = '01990000-0000-7000-8000-000000004026'
 const firstCursorId = '01990000-0000-7000-8000-000000004028'
 const secondCursorId = '01990000-0000-7000-8000-000000004029'
+const invisibleParentTurnId = '01990000-0000-7000-8000-000000004030'
 
 let database: PGlite
 
@@ -79,6 +80,15 @@ beforeAll(async () => {
       ('${crossSpaceRunId}','${secondSpaceId}','${machineId}','${userId}',now(),'codex','implement',
        'sha-cross',1,'cross-space',false,'${secondProjectId}','asking',1,'typescript','test',
        'harness',false,false,true,'session-cross',3,now(),now());
+    INSERT INTO run
+      (id,space_id,machine_id,started_by_user_id,started_at,agent,job,prompt_sha,prompt_bytes,
+       prompt_head,probe,project_id,status,turn,stack,model,executor,no_failover,
+       automatic_failover,work_preserved,session_id,number,parent_run_id,created_at,updated_at)
+    VALUES
+      ('${invisibleParentTurnId}','${spaceId}','${machineId}','${userId}',now(),'codex','implement',
+       'sha-invisible-parent',1,'invisible-parent-turn',false,'${projectId}','asking',2,
+       'typescript','test','harness',false,false,true,'session-invisible-parent',4,
+       '${crossSpaceRunId}',now(),now());
     INSERT INTO question
       (id,space_id,run_id,workflow_cursor_record_id,project_id,machine_id,number,revision,withheld_fields,
        asked_at,question,created_at,updated_at)
@@ -86,7 +96,9 @@ beforeAll(async () => {
       ('01990000-0000-7000-8000-000000004024','${spaceId}','${crossSpaceRunId}','${firstCursorId}',
        '${projectId}','${machineId}',5,1,'[]',now(),'cross-space owner',now(),now()),
       ('01990000-0000-7000-8000-000000004025','${secondSpaceId}','${crossSpaceRunId}','${secondCursorId}',
-       '${secondProjectId}','${machineId}',6,1,'[]',now(),'second-space row',now(),now());
+       '${secondProjectId}','${machineId}',6,1,'[]',now(),'second-space row',now(),now()),
+      ('01990000-0000-7000-8000-000000004031','${spaceId}','${invisibleParentTurnId}',NULL,
+       '${projectId}','${machineId}',7,1,'[]',now(),'invisible parent root',now(),now());
     SET ROLE record_actor;
   `)
 })
@@ -154,4 +166,9 @@ test('hosted inbox excludes answered and closed rows and pages in SQL', async ()
   expect(page.items).toHaveLength(1)
   expect(page.items[0]?.number).toBe(1)
   expect(page.more).toBe(true)
+})
+
+test('hosted inbox excludes a turn whose parent run is not visible', async () => {
+  const result = await readRecordQuestionRows(pgliteSql(database), { read: 'inbox' })
+  expect(result.items.map((row) => row.question)).not.toContain('invisible parent root')
 })

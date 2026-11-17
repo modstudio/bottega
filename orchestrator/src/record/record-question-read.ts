@@ -303,6 +303,7 @@ async function inboxRows(
      LEFT JOIN project parent_project ON parent_project.id=parent.project_id
      LEFT JOIN project owner_project ON owner_project.id=owner.project_id
      WHERE q.answered_at IS NULL AND q.closed_at IS NULL
+      AND (owner.parent_run_id IS NULL OR parent.id IS NOT NULL)
      ORDER BY q.run_id,q.number${offsetClause(requested, offset)}`,
     [],
   )) as Row[]
@@ -371,6 +372,7 @@ async function rows(tx: SQL, input: QuestionReadInput): Promise<Row[]> {
        LEFT JOIN run parent ON parent.id=owner.parent_run_id
        WHERE COALESCE(parent.project_id,owner.project_id)=$1::uuid
         AND COALESCE(parent.task_id,owner.task_id)=$2::uuid AND q.answered_at IS NOT NULL
+        AND (owner.parent_run_id IS NULL OR parent.id IS NOT NULL)
         AND NOT (q.overturned_at IS NOT NULL AND q.replacement IS NULL)
        UNION ALL
        SELECT q.number,q.id::text,NULL::text,q.workflow_cursor_record_id::text,q.question,q.answer,q.answer_basis,
