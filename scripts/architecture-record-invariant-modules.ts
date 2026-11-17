@@ -33,6 +33,7 @@ export const recordInvariantModules = [
     'bun',
     '../../../shared/record/jsonb-sql.ts',
     '../../../shared/record/tenant.ts',
+    '../../../shared/workflow-handoff-trail.ts',
     '../doc/doc-revision-conflict.ts',
     './record-config-error.ts',
     './record-pool.ts',

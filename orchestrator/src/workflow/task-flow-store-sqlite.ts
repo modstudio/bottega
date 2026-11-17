@@ -44,10 +44,7 @@ import type {
 const STAGE_COLUMNS =
   'cursor.number id,cursor.record_id,cursor.project,cursor.workflow_slug,cursor.mode_slug,cursor.workflow_key,cursor.task_record_id,cursor.task_flow_record_id,cursor.instance_id,cursor.session_id,cursor.ordinal,cursor.step_slug,cursor.state,cursor.workflow_version_record_id,cursor.catalogue_version_record_id,(SELECT n FROM workflow_version WHERE record_id=cursor.workflow_version_record_id) workflow_version,(SELECT n FROM step_catalogue_version WHERE record_id=cursor.catalogue_version_record_id) catalogue_version,cursor.args,cursor.autonomy,cursor.closed,cursor.question,cursor.total_steps,cursor.created_at,cursor.updated_at,cursor.enforcement,cursor.opened_machine_id,cursor.taken_over_from_machine_id,cursor.last_advanced_machine_id,cursor.revision,cursor.handed_off_from_record_id'
 
-const LISTED_STAGE_COLUMNS = `${STAGE_COLUMNS},
-  (SELECT COUNT(*) FROM workflow_cursor stage WHERE stage.task_flow_record_id=cursor.task_flow_record_id AND stage.state NOT IN ('done','abandoned')) open_stage_count,
-  (SELECT number FROM workflow_cursor source WHERE source.record_id=cursor.handed_off_from_record_id) handed_off_from_number,
-  (SELECT workflow_slug FROM workflow_cursor source WHERE source.record_id=cursor.handed_off_from_record_id) handed_off_from_workflow`
+const LISTED_STAGE_COLUMNS = `${STAGE_COLUMNS},(SELECT COUNT(*) FROM workflow_cursor stage WHERE stage.task_flow_record_id=cursor.task_flow_record_id AND stage.state NOT IN ('done','abandoned')) open_stage_count`
 
 const WORKFLOW_OBLIGATION_FLOOR_COLUMNS = `record_id AS id, floor, require_pull_request,
   operator_ruling, expected_exit_code, expected_status, floor_deferrable,

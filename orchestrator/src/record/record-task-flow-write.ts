@@ -205,7 +205,9 @@ async function insertStage(
       conflict('task_flow_stage', String(row.id), Number(existing.revision), 'already-exists')
     return { revision: Number(existing.revision), number: Number(existing.number) }
   }
-  const number = allocatedNumber ?? await allocateRecordSequence(tx, spaceId, String(row.projectId), 'task_flow_stage')
+  const number =
+    allocatedNumber ??
+    (await allocateRecordSequence(tx, spaceId, String(row.projectId), 'task_flow_stage'))
   await tx`INSERT INTO task_flow_stage
     (id,space_id,flow_record_id,project_id,number,workflow,mode,workflow_key,instance_id,session_id,
      workflow_version_id,catalogue_version_id,arguments,active_ordinal,active_slug,state,closed_step_notes,
@@ -437,18 +439,44 @@ async function applyHandoff(tx: SQL, input: Tenant, body: HandoffBody) {
   const sourceRows = (await tx.unsafe(
     `SELECT session_id,workflow_key,flow_record_id::text,state FROM task_flow_stage WHERE id=$1::uuid FOR UPDATE`,
     [body.oldStage.id],
-  )) as Array<{ session_id: string | null; workflow_key: string | null; flow_record_id: string; state: string }>
+  )) as Array<{
+    session_id: string | null
+    workflow_key: string | null
+    flow_record_id: string
+    state: string
+  }>
   const source = sourceRows[0]
   if (!source) conflict('task_flow_stage', body.oldStage.id, null)
   if (source.state === 'awaiting-ruling')
-    refusal('workflow cursor is awaiting a ruling; answer its question, then retry the handoff', `task_flow_stage.id=${body.oldStage.id}`, 'already-exists')
+    refusal(
+      'workflow cursor is awaiting a ruling; answer its question, then retry the handoff',
+      `task_flow_stage.id=${body.oldStage.id}`,
+      'already-exists',
+    )
   if (!source.session_id || source.session_id !== body.newStage.sessionId)
-    refusal('workflow cursor is owned by another session; hand off it from that session', `task_flow_stage.id=${body.oldStage.id}`, 'already-exists')
+    refusal(
+      'workflow cursor is owned by another session; hand off it from that session',
+      `task_flow_stage.id=${body.oldStage.id}`,
+      'already-exists',
+    )
   if (source.workflow_key !== body.newStage.workflowKey)
-    refusal('handoff target key differs from the source cursor key; pass the same key', `task_flow_stage.id=${body.oldStage.id}`, 'already-exists')
+    refusal(
+      'handoff target key differs from the source cursor key; pass the same key',
+      `task_flow_stage.id=${body.oldStage.id}`,
+      'already-exists',
+    )
   if (source.flow_record_id !== body.flow.id || body.newStage.flowRecordId !== body.flow.id)
-    refusal('handoff stages must belong to the same task flow; retry the current cursor', `task_flow.id=${body.flow.id}`, 'already-exists')
-  const number = await allocateRecordSequence(tx, input.spaceId, body.newStage.projectId, 'task_flow_stage')
+    refusal(
+      'handoff stages must belong to the same task flow; retry the current cursor',
+      `task_flow.id=${body.flow.id}`,
+      'already-exists',
+    )
+  const number = await allocateRecordSequence(
+    tx,
+    input.spaceId,
+    body.newStage.projectId,
+    'task_flow_stage',
+  )
   const oldStage: Mutation = {
     ...body.oldStage,
     values: {
@@ -466,7 +494,9 @@ async function applyHandoff(tx: SQL, input: Tenant, body: HandoffBody) {
     const existing = await existingRow(tx, 'task_flow_stage', body.newStage.id)
     if (!existing) conflict('task_flow_stage', body.newStage.id, null)
     return {
-      revisions: Object.fromEntries(mutations.map(({ mutation }) => [mutation.id, mutation.expectedRevision + 1])),
+      revisions: Object.fromEntries(
+        mutations.map(({ mutation }) => [mutation.id, mutation.expectedRevision + 1]),
+      ),
       stage: { id: body.newStage.id, number: Number(existing.number) },
     }
   }

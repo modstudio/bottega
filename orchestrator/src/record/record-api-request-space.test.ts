@@ -456,6 +456,7 @@ POST /v1/task-flow/stage-update
 POST /v1/task-flow/advance
 POST /v1/task-flow/await-ruling
 POST /v1/task-flow/abandon
+POST /v1/task-flow/handoff
 POST /v1/task-flow/adopt
 POST /v1/task-flow/attach-text
 POST /v1/task-flow/delete-text
@@ -567,6 +568,7 @@ const recordTenantRouteBodies = new Map<string, unknown>([
     'POST /v1/task-flow/abandon',
     { requestId: guardId, stage: { ...revision, values: { state: 'abandoned' } } },
   ],
+  ['POST /v1/task-flow/handoff', {}],
   [
     'POST /v1/task-flow/adopt',
     {

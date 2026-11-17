@@ -49,8 +49,6 @@ import {
   resolveWorkflowCursorContext,
 } from './workflow-cursor-selection.ts'
 import { getWorkflowStepWithCursor } from './workflow-cursor-serve.ts'
-import { handoffWorkflow } from './workflow-handoff.ts'
-import { selectWorkflowCursorByHandle } from './workflow-cursor-selection.ts'
 import { parseWorkflowEvidencePayload, RECORD_EVIDENCE_FLAG } from './workflow-evidence-payload.ts'
 import { workflowExecCheckoutRefusal, workflowExecCommandCwd } from './workflow-exec-checkout.ts'
 import type { WorkflowEvidenceInput } from './workflow-floor-evidence.ts'
@@ -541,40 +539,6 @@ export async function abandonCommand(
     options.workflowTextDocuments ?? productionWorkflowTextDocumentPorts,
   )
   print(result, result)
-}
-
-export async function handoffCommand(
-  argv: string[],
-  print: WorkflowPrint,
-  options: WorkflowCommandOptions = {},
-): Promise<void> {
-  const cursor = positive(flagValue(argv, 'cursor'), '--cursor')
-  if (!cursor) throw new Error('--cursor is required')
-  const project = flagValue(argv, 'project') ?? inspectionProjectName(options)
-  if (!project) throw new Error('--project is required')
-  const row = await selectWorkflowCursorByHandle({ project }, cursor, undefined, db())
-  const args = workflowArgs(argv)
-  const context = await resolveWorkflowCursorContext(
-    project,
-    { ...args, key: row.workflow_key },
-    cliWorkflowCursorContext(),
-    options.hubTaskReader,
-    row,
-  )
-  const live = await resolveWorkflowLiveAutonomy({
-    slug: argv[2]!, project, mode: flagValue(argv, 'mode'), args, context,
-  })
-  const result = await handoffWorkflow({
-    row,
-    workflow: argv[2]!,
-    mode: flagValue(argv, 'mode'),
-    args,
-    reason: flagValue(argv, 'reason') ?? '',
-    context,
-    live,
-    commitCount: options.commitCount,
-  })
-  print(result, `handed off to ${result.workflow} cursor ${result.cursor}`)
 }
 
 export async function setWorkflowCommand(argv: string[], print: WorkflowPrint): Promise<void> {

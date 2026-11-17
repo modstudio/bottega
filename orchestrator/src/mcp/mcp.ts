@@ -48,10 +48,7 @@ import {
 import {
   mcpWorkflowCursorContext,
   resolveMcpSelectedCursorContext,
-  selectWorkflowCursorByHandle,
 } from '../workflow/workflow-cursor-selection.ts'
-import { resolveWorkflowLiveAutonomy } from '../workflow/workflow-cursor-live-autonomy.ts'
-import { handoffWorkflow } from '../workflow/workflow-handoff.ts'
 import type { HubTaskReader } from '../workflow/workflow-task-reference.ts'
 import {
   attachWorkflowTextByHandle,
@@ -74,11 +71,12 @@ import { registerSetupTools } from './mcp-setup-tools.ts'
 import { registerSubjectTools } from './mcp-subject-tools.ts'
 import { advanceWorkflow } from './mcp-workflow-advance.ts'
 import { registerWorkflowContextTools } from './mcp-workflow-context-tools.ts'
+import { registerWorkflowHandoffTool } from './mcp-workflow-handoff.ts'
 import { nextWorkflowStepInputSchema } from './mcp-workflow-input.ts'
 import { resolveMcpWorkflowSpace } from './mcp-workflow-space.ts'
 import { registerWorkflowStepTool } from './mcp-workflow-step.ts'
 
-type DocsMcpPorts = LandingBranchPorts & {
+export type DocsMcpPorts = LandingBranchPorts & {
   hubTaskReader?: HubTaskReader
   workflowTextDocuments?: WorkflowTextDocumentPorts
   contextMomentPorts?: ContextMomentPorts
@@ -627,32 +625,7 @@ function registerWorkflowActionTools(server: McpServer, ports: DocsMcpPorts): vo
   )
 
   registerWorkflowContextTools(server, ports)
-
-  server.registerTool(
-    'handoff_workflow',
-    {
-      description: 'Close one keyed workflow cursor and atomically open a named successor for the same key.',
-      inputSchema: z.object({
-        workflow: z.string().trim().min(1),
-        cursor: z.number().int().positive(),
-        project: z.string().trim().min(1),
-        reason: z.string().trim().min(1),
-        mode: z.string().trim().min(1).optional(),
-        args: z.record(z.string(), z.string()).optional(),
-      }),
-    },
-    async ({ workflow, cursor, project, reason, mode, args = {} }) => {
-      const row = await selectWorkflowCursorByHandle({ project }, cursor, undefined, db())
-      const { context } = await resolveMcpSelectedCursorContext(
-        project, row.workflow_slug, row.mode_slug, { ...args, key: row.workflow_key }, cursor,
-        ports.hubTaskReader,
-      )
-      const live = await resolveWorkflowLiveAutonomy({ slug: workflow, project, mode, args, context })
-      return text(await handoffWorkflow({
-        row, workflow, mode, args, reason, context, live, commitCount: ports.commitCount,
-      }))
-    },
-  )
+  registerWorkflowHandoffTool(server, ports, text)
 
   server.registerTool(
     'abandon_workflow',

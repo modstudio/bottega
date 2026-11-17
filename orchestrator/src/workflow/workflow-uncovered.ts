@@ -197,7 +197,14 @@ export async function workflowUncoveredReport(
       ? byRecordId.get(row.handed_off_from_record_id)
       : undefined
     return previous
-      ? [{ project: row.project, key: row.workflow_key, closedAt: previous.updated_at, openedAt: row.created_at }]
+      ? [
+          {
+            project: row.project,
+            key: row.workflow_key,
+            closedAt: previous.updated_at,
+            openedAt: row.created_at,
+          },
+        ]
       : []
   })
   const claimList = dependencies.claimList ?? boardClaimList

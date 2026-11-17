@@ -25,6 +25,7 @@ workflows and their cursors
 - [bottega workflow exec](#bottega-workflow-exec)
 - [bottega workflow fix-defect](#bottega-workflow-fix-defect)
 - [bottega workflow fork](#bottega-workflow-fork)
+- [bottega workflow handoff](#bottega-workflow-handoff)
 - [bottega workflow hydrate](#bottega-workflow-hydrate)
 - [bottega workflow import](#bottega-workflow-import)
 - [bottega workflow land](#bottega-workflow-land)
@@ -67,6 +68,7 @@ workflows and their cursors
 - [bottega workflow exec](./workflow.md#bottega-workflow-exec)
 - [bottega workflow fix-defect](./workflow.md#bottega-workflow-fix-defect)
 - [bottega workflow fork](./workflow.md#bottega-workflow-fork)
+- [bottega workflow handoff](./workflow.md#bottega-workflow-handoff)
 - [bottega workflow hydrate](./workflow.md#bottega-workflow-hydrate)
 - [bottega workflow import](./workflow.md#bottega-workflow-import)
 - [bottega workflow land](./workflow.md#bottega-workflow-land)
@@ -396,6 +398,25 @@ fork a workflow into a new draft version
 - `--from <value>`: fork from this version
 - `--reason <value>`: record why this change is being made
 - `--author <value>`: record who is making this change
+- `--json`: print JSON output
+
+### Related
+
+- [bottega workflow](./workflow.md#bottega-workflow)
+
+## bottega workflow handoff
+
+**Synopsis:** `bottega workflow handoff <workflow> [--cursor <value>] [--mode <value>] [--project <value>] [--arg <value>] [--reason <value>] [--json]`
+
+close the current cursor by opening a named workflow for the same key
+
+### Options
+
+- `--cursor <value>`: select this workflow cursor
+- `--mode <value>`: select the target workflow mode
+- `--project <value>`: select this registered project
+- `--arg <value>`: supply a target workflow argument as name=value
+- `--reason <value>`: record why this change is being made
 - `--json`: print JSON output
 
 ### Related

@@ -1,5 +1,3 @@
-export type HandoffTrailEntry = { n: number; slug: string; note: string; at: string }
-
 /** Render the stable trail entries only after the successor's display number is allocated. */
 export function workflowHandoffTrail(input: {
   closed: unknown[]

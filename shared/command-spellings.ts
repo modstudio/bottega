@@ -469,6 +469,7 @@ export const PLATFORM_COMMAND_WORDS = [
   'workflow exec',
   'workflow fix-defect',
   'workflow fork',
+  'workflow handoff',
   'workflow hydrate',
   'workflow import',
   'workflow land',

@@ -205,7 +205,9 @@ const taskFlowAbandonSchema = z.object({
 })
 const taskFlowHandoffSchema = z.object({
   ...base,
-  flow: mutation(flowComposeValues.pick({ openStageRecordId: true, updatedMachineId: true, updatedAt: true })),
+  flow: mutation(
+    flowComposeValues.pick({ openStageRecordId: true, updatedMachineId: true, updatedAt: true }),
+  ),
   oldStage: revisionReference,
   newStage: stageInsert.extend({ handedOffFromRecordId: id }),
   trail: z.object({

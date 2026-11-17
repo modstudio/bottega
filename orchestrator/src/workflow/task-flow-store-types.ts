@@ -20,7 +20,7 @@ type CursorOwnerIntentShape<K extends TaskFlowIntent> = K extends 'compose'
       ? { stage: CursorOwnerMutation }
       : K extends 'handoff'
         ? { newStage: { sessionId: CursorOwner | null } }
-      : object
+        : object
 
 /** Workflow write intents narrow cursor-stage owner values to the policy-produced brand. */
 export type TaskFlowIntentInput<K extends TaskFlowIntent> = RecordTaskFlowIntentInput<K> &

@@ -130,6 +130,7 @@ export const SYNCED_SOURCE_DECLARATIONS: SyncedSources = {
       'workflow_obligation',
       'workflow_step_text',
       'workflow_text_copy',
+      'context_item',
     ],
     [
       'abandonTaskFlow',
@@ -140,6 +141,7 @@ export const SYNCED_SOURCE_DECLARATIONS: SyncedSources = {
       'composeTaskFlow',
       'copyTaskFlowText',
       'deleteTaskFlowText',
+      'handoffTaskFlow',
       'updateTaskFlowStage',
     ],
   ),
@@ -158,6 +160,7 @@ export const SYNCED_SOURCE_DECLARATIONS: SyncedSources = {
       'workflow_obligation',
       'workflow_step_text',
       'workflow_text_copy',
+      'context_item',
     ],
     [
       'abandonTaskFlow',
@@ -168,6 +171,7 @@ export const SYNCED_SOURCE_DECLARATIONS: SyncedSources = {
       'composeTaskFlow',
       'copyTaskFlowText',
       'deleteTaskFlowText',
+      'handoffTaskFlow',
       'updateTaskFlowStage',
     ],
   ),

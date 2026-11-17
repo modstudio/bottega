@@ -18,7 +18,6 @@ import {
   execCommand,
   forkWorkflowCommand,
   hydrateCommand,
-  handoffCommand,
   importCommand,
   listWorkflowCommand,
   nextCommand,
@@ -44,6 +43,7 @@ import {
 import { workflowNextContextMoment } from '../workflow/workflow-context-moment.ts'
 import { workflowCursorIdentityMap } from '../workflow/workflow-cursor-identity.ts'
 import { RECORD_EVIDENCE_FLAG } from '../workflow/workflow-evidence-payload.ts'
+import { handoffCommand } from '../workflow/workflow-handoff-command.ts'
 import { registerWorkflowStepActionCommands } from '../workflow/workflow-step-action-commands.ts'
 import {
   copyWorkflowTextCommand,
@@ -297,7 +297,9 @@ function registerWorkflowAdvancement({
         .requiredOption('--cursor <value>', 'select this workflow cursor')
         .option('--mode <value>', 'select the target workflow mode')
         .option('--project <value>', 'select this registered project')
-        .addOption(collectedOption('--arg <value>', 'supply a target workflow argument as name=value')),
+        .addOption(
+          collectedOption('--arg <value>', 'supply a target workflow argument as name=value'),
+        ),
     ),
   )
     .allowExcessArguments(false)

@@ -136,8 +136,9 @@ export function renderWorkflowCursorLine(row: {
     ? ` question${row.question_number == null ? '' : ` q${row.question_number}`}: ${workflowCursorQuestionSummary(row.question)} (full text: ${PLATFORM_SLUG} question inbox)`
     : ''
   const obligations = row.obligations ? ` obligations: ${row.obligations}` : ''
-  const handoff = row.handed_off_from_number && row.handed_off_from_workflow
-    ? ` handed off from ${row.handed_off_from_workflow} cursor ${row.handed_off_from_number}`
-    : ''
+  const handoff =
+    row.handed_off_from_number && row.handed_off_from_workflow
+      ? ` handed off from ${row.handed_off_from_workflow} cursor ${row.handed_off_from_number}`
+      : ''
   return `cursor ${row.id} ${row.workflow_slug} ${row.mode_slug} ${row.workflow_key || 'unassigned'} ${row.project} step ${row.ordinal + 1}/${row.total_steps} ${row.step_slug} ${row.state} next: ${row.next_slug}${handoff}${question}${obligations}`
 }
