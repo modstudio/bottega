@@ -73,11 +73,17 @@ export async function followTaskCursorClaim(
     database?: Database
   },
   ports: TaskCursorClaimPorts = productionPorts(input.database),
-): Promise<TaskCursorClaimDecision> {
+): Promise<{
+  decision: TaskCursorClaimDecision
+  claimAction?: 'taken' | 'renewed' | 'taken-over'
+}> {
   const decision = decideTaskCursorClaim(input)
-  if (decision.action === 'take') await ports.take(decision)
+  if (decision.action === 'take') {
+    const result = await ports.take(decision)
+    return { decision, claimAction: result.action }
+  }
   if (decision.action === 'release') await ports.release(decision)
-  return decision
+  return { decision }
 }
 
 export function taskClaimReleaseWarning(project: string, key: string, error: unknown): string {

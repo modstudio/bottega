@@ -85,8 +85,8 @@ export function claimProject(
   database: ReturnType<typeof db> = db(),
   allowRequestedProject = false,
 ): string {
-  const actor = claimActor(env)
-  if (actor.kind === 'operator' || allowRequestedProject) {
+  const actor = allowRequestedProject ? null : claimActor(env)
+  if (actor?.kind === 'operator' || allowRequestedProject) {
     if (!requested) throw new Error('operator claim requires --project <name>')
     if (!projectByName(requested, database))
       throw new Error(`unknown project ${requested}; run ${PLATFORM_SLUG} project list`)
@@ -362,8 +362,11 @@ export function takeClaim(
   cwd = process.cwd(),
   allowArchitectTakeover = false,
   database = writableDb(),
+  cursorSession?: string,
 ): TakeClaimResult {
-  const actor = claimActor(env)
+  const actor: ClaimActor = cursorSession
+    ? { kind: 'architect', session: cursorSession }
+    : claimActor(env)
   if (input.force && !mayForceClaim(actor) && !allowArchitectTakeover)
     throw new Error('only the operator may use --force')
   const subject = parseClaimSubject(input.subject)
@@ -505,8 +508,9 @@ export function releaseTaskClaims(
   env: Environment = process.env,
   clock = Date.now(),
   database = writableDb(),
+  taskCursorRelease = false,
 ): { released: number } {
-  claimActor(env)
+  if (!taskCursorRelease) claimActor(env)
   if (!projectByName(project, database))
     throw new Error(`unknown project ${project}; run ${PLATFORM_SLUG} project list`)
   return writeTransaction(() => {

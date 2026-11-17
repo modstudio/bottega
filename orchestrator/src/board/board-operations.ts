@@ -203,20 +203,6 @@ function context(input: Context = {}) {
   }
 }
 
-function taskCursorEnvironment(env: Environment, session: string): Environment {
-  const next: Environment = { ...env, CLAUDE_CODE_SESSION_ID: session }
-  for (const marker of [
-    'BOTTEGA_RUN_ID',
-    'BOTTEGA_DEPTH',
-    'BOTTEGA_MAIN_CHECKOUT',
-    'BOTTEGA_SCRATCH',
-    'BOTTEGA_RUN_TOKEN',
-    'BOTTEGA_ASK_URL',
-  ])
-    delete next[marker]
-  return next
-}
-
 function ownBoardTextCheckout(cwd: string): string | null {
   const callerProject = projectAt(cwd)
   const targetProject = callerProject ? projectByName(callerProject.name) : null
@@ -836,10 +822,7 @@ export async function boardClaimTake(input: TakeClaimInput, inputContext?: Conte
     throw new Error(
       `task claims follow task cursors; run workflow compose … --arg key=${input.subject.slice('task:'.length)} instead`,
     )
-  if (c.taskCursorSession) {
-    c.env = taskCursorEnvironment(c.env, c.taskCursorSession)
-    input = { ...input, force: true }
-  }
+  if (c.taskCursorSession) input = { ...input, force: true }
   const project = claimProject(
     input.project,
     c.env,
@@ -865,7 +848,15 @@ export async function boardClaimTake(input: TakeClaimInput, inputContext?: Conte
     note: input.note === undefined ? undefined : prepareNote(input.note),
   }
   if (boardMode('shared', c.env, c.database) === 'local') {
-    const result = takeClaim(input, c.env, c.clock, c.cwd, Boolean(c.taskCursorSession), c.database)
+    const result = takeClaim(
+      input,
+      c.env,
+      c.clock,
+      c.cwd,
+      Boolean(c.taskCursorSession),
+      c.database,
+      c.taskCursorSession,
+    )
     return { ...claimResult(result), action: result.action }
   }
   if (input.force && !c.taskCursorSession)
@@ -880,7 +871,7 @@ export async function boardClaimTake(input: TakeClaimInput, inputContext?: Conte
     durationMs: input.durationMs ?? BOARD_CLAIM_DEFAULT_MS,
     runId: hostedClaimRunId(input.runId, c.env),
     note: input.note,
-    holderSession: boardActor(c.env).session,
+    holderSession: c.taskCursorSession ?? boardActor(c.env).session,
     force: Boolean(c.taskCursorSession),
   }
   const row = await hostedClient(c).takeBoardClaim(claim, await writeDestination(c, claim.project))
@@ -939,14 +930,13 @@ export async function boardClaimList(
 }
 export async function boardClaimReleaseTask(key: string, project: string, inputContext?: Context) {
   const c = context(inputContext)
-  if (c.taskCursorSession) c.env = taskCursorEnvironment(c.env, c.taskCursorSession)
   const targetProject = projectByName(project, c.database)
   if (!targetProject)
     throw new Error(`unknown project ${project}; run ${PLATFORM_SLUG} project list`)
-  const normalizedKey = releaseTaskKey(
-    key,
-    targetProject.settings.worktree?.keyPattern ?? DEFAULT_TASK_KEY_PATTERN,
-  )
+  const normalizedKey = c.taskCursorSession
+    ? key.replace(/^task:/, '').trim()
+    : releaseTaskKey(key, targetProject.settings.worktree?.keyPattern ?? DEFAULT_TASK_KEY_PATTERN)
+  const mode = boardMode('shared', c.env, c.database)
   if (!c.taskCursorSession) {
     const open = c.database
       .query<{ number: number }, [string, string]>(
@@ -959,9 +949,26 @@ export async function boardClaimReleaseTask(key: string, project: string, inputC
       throw new Error(
         `task ${normalizedKey} is held by open workflow cursor ${open.number}; run workflow abandon --cursor ${open.number} before board claim release-task`,
       )
+    if (mode === 'hosted') {
+      const hosted = await hostedClient(c).readTaskFlow!(
+        { taskKey: normalizedKey },
+        await writeDestination(c, project),
+      )
+      if (hosted.stage && !['done', 'abandoned'].includes(hosted.stage.state))
+        throw new Error(
+          `task ${normalizedKey} is held by open workflow cursor ${hosted.stage.number}; run workflow abandon --cursor ${hosted.stage.number} before board claim release-task`,
+        )
+    }
   }
-  return boardMode('shared', c.env, c.database) === 'local'
-    ? releaseTaskClaims(normalizedKey, project, c.env, c.clock, c.database)
+  return mode === 'local'
+    ? releaseTaskClaims(
+        normalizedKey,
+        project,
+        c.env,
+        c.clock,
+        c.database,
+        Boolean(c.taskCursorSession),
+      )
     : hostedClient(c).releaseBoardTaskClaims(
         { key: normalizedKey, project, projectId: targetProject.recordId },
         await writeDestination(c, project),

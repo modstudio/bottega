@@ -642,6 +642,7 @@ test('release-task normalizes before hosted release and refuses another shape be
   const calls: { project: string; projectId?: string | null; key: string }[] = []
   const client = {
     ...createMemoryRecordApiClient(),
+    readTaskFlow: async () => ({ flow: null, stage: null }),
     releaseBoardTaskClaims: async (input: (typeof calls)[number]) => {
       calls.push(input)
       return { released: 1 }

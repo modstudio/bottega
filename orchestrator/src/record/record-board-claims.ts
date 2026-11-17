@@ -482,6 +482,8 @@ async function takeClaimInTx(
     session,
     clock,
   )
+  if (input.force && subject.kind !== 'task')
+    throw new RecordBoardError('cursor claim takeover requires a task subject', 400)
   const decision = claimTakeDecision({
     sameHolderSameSubject: exactHeld !== undefined,
     conflictingClaim: conflicts.length > 0,

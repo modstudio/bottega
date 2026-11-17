@@ -204,7 +204,7 @@ export async function composeWorkflowWithCursor(
       )
     : null
   const start = decideCursorStart(existing?.state ?? null)
-  await followTaskCursorClaim({
+  const claimFollow = await followTaskCursorClaim({
     project: composition.project,
     taskKey: keyOf(composition.arguments) || null,
     session: context.session,
@@ -253,7 +253,7 @@ export async function composeWorkflowWithCursor(
       }, d)
     } else row = await insertWorkflowCursor(composition, context, d, live.resolution, commitCount)
   } catch (error) {
-    if (start !== 'reuse')
+    if (start !== 'reuse' && claimFollow.claimAction !== 'renewed')
       await followTaskCursorClaim({
         project: composition.project,
         taskKey: keyOf(composition.arguments) || null,
