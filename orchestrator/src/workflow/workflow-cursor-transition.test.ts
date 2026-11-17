@@ -19,9 +19,9 @@ const cursor = (ordinal: number, stepSlug: string, state: CursorValue['state'] =
 describe('workflow cursor transition', () => {
   test('only owning verbs replace a stored cursor owner', () => {
     for (const verb of cursorOwnerVerbs) {
-      expect(cursorOwnerAfter(verb, null, 'caller')).toBe('caller')
-      expect(cursorOwnerAfter(verb, 'caller', 'caller')).toBe('caller')
-      expect(cursorOwnerAfter(verb, 'owner', 'caller')).toBe(
+      expect(String(cursorOwnerAfter(verb, null, 'caller'))).toBe('caller')
+      expect(String(cursorOwnerAfter(verb, 'caller', 'caller'))).toBe('caller')
+      expect(String(cursorOwnerAfter(verb, 'owner', 'caller'))).toBe(
         verb === 'advance' || verb === 'compose' ? 'caller' : 'owner',
       )
     }

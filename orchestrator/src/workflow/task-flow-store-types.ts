@@ -2,8 +2,8 @@
 /** Shared row and insert shapes for task-flow persistence. */
 
 import type {
-  TaskFlowIntent,
   TaskFlowIntentInput as RecordTaskFlowIntentInput,
+  TaskFlowIntent,
 } from '../record/record-task-flow-write-contract.ts'
 import type { CursorOwner, CursorState } from './workflow-cursor-transition.ts'
 import type { EnforcementMode } from './workflow-floor.ts'

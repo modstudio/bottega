@@ -19,6 +19,7 @@ import type {
   TaskFlowCursorLifecycleRow,
   TaskFlowCursorWorkRow,
   TaskFlowInboxQuestionRow,
+  TaskFlowIntentInput,
   TaskFlowKeylessSessionCursorRow,
   TaskFlowLinkedTaskReferenceRow,
   TaskFlowListedStageRow,
@@ -37,7 +38,6 @@ import type {
   TaskFlowTextRow,
   TaskFlowUncopiedTextRow,
   TaskFlowWaitingQuestionRow,
-  TaskFlowIntentInput,
   WorkflowCursorInsert,
 } from './task-flow-store-types.ts'
 

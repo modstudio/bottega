@@ -5,9 +5,9 @@ import type { Database, SQLQueryBindings } from 'bun:sqlite'
 import { newRecordId } from '../../../shared/record-id.ts'
 import type {
   TaskFlowIntent,
+  TaskFlowIntentInput,
   TaskFlowIntentResult,
 } from '../record/record-task-flow-write-contract.ts'
-import type { TaskFlowIntentInput } from './task-flow-store-types.ts'
 import {
   type AppliedMirrorMutationDecision,
   decideAppliedMirrorMutation,

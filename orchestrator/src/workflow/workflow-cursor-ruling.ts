@@ -9,9 +9,7 @@ import {
   taskFlowWriteTarget,
   writeHostedTaskFlow,
 } from '../record/record-task-flow-write-client.ts'
-import type {
-  TaskFlowIntentResult,
-} from '../record/record-task-flow-write-contract.ts'
+import type { TaskFlowIntentResult } from '../record/record-task-flow-write-contract.ts'
 import { taskFlowRequestId } from '../record/record-task-flow-write-contract.ts'
 import {
   answerWorkflowQuestion,
