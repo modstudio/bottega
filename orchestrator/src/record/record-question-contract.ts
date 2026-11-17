@@ -42,6 +42,7 @@ export function assertQuestionJsonFieldsStructured(
 
 export const questionIntentSchema = z.enum([
   'ask',
+  'restore',
   'answer',
   'close',
   'file',
@@ -132,8 +133,8 @@ export const questionWriteResultSchema = z.object({
 export type QuestionWriteResult = z.infer<typeof questionWriteResultSchema>
 
 export class RecordQuestionError extends Error {
-  status: 404 | 409
-  constructor(message: string, status: 404 | 409) {
+  status: 404 | 409 | 422
+  constructor(message: string, status: 404 | 409 | 422) {
     super(message)
     this.name = 'RecordQuestionError'
     this.status = status

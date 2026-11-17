@@ -142,6 +142,44 @@ export function registerQuestionTaskRecordSyncProof(
     const questions = Array.from({ length: 4 }, () => snapshot(newRecordId()))
     const written = await Promise.all(questions.map((question) => ask(question)))
     expect(written.map(({ number }) => number).sort((a, b) => a - b)).toEqual([41, 42, 43, 44])
+    const restore = (question: QuestionSnapshot, requestId = newRecordId()) =>
+      client.writeQuestion!(
+        'restore',
+        {
+          requestId,
+          question,
+          audit: { action: 'restore', actorSession: 'proof', at, reason: null },
+        },
+        destination,
+      )
+    await expect(restore(snapshot(newRecordId()))).rejects.toThrow(
+      'cannot be restored without its original number',
+    )
+    const restored = { ...snapshot(newRecordId()), number: 1_200 }
+    expect(await restore(restored)).toMatchObject({
+      id: restored.id,
+      number: 1_200,
+      revision: 1,
+      applied: true,
+    })
+    const colliding = { ...snapshot(newRecordId()), number: 1_200 }
+    await expect(restore(colliding)).rejects.toThrow(
+      `question number 1200 in space ${directSpaceId} is already held by question ${restored.id}`,
+    )
+    expect(fixture.admin(`SELECT count(*) FROM question WHERE id='${colliding.id}';`)).toBe('0')
+    Object.assign(restored, {
+      number: 1_300,
+      revision: 2,
+      answer: 'restored answer',
+      answeredAt: at,
+      updatedAt: at,
+    })
+    expect(await restore(restored)).toMatchObject({ number: 1_200, revision: 2, applied: true })
+    expect(
+      fixture.admin(`SELECT number||':'||answer FROM question WHERE id='${restored.id}';`),
+    ).toBe('1200:restored answer')
+    const afterRestore = await ask(snapshot(newRecordId()))
+    expect(afterRestore.number).toBe(1_201)
     const duplicate = fixture.asSpace(
       fixture.actorRole,
       'actor-password',

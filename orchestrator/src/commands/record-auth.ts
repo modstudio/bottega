@@ -62,6 +62,7 @@ import {
 import { publishSnapshotsCommand } from '../record/record-publish.ts'
 import { pushCataloguesCommand } from '../record/record-push-catalogues.ts'
 import { pushDocsCommand } from '../record/record-push-docs.ts'
+import { restoreQuestionsCommand } from '../record/record-restore-questions.ts'
 import { useHostedRecord } from '../record/record-use.ts'
 import { recordPublishAvailability, requireHostedRecord } from '../record/record-write-authority.ts'
 import { promptHidden } from './hidden-prompt.ts'
@@ -582,6 +583,23 @@ export function register(program: Command): void {
       retireOutboxRowWithDependencyProof(Number(rowId), String(options.reason))
       log(`outbox row ${String(rowId)} retired`)
     })
+  outbox
+    .command('restore-questions')
+    .description('restore retired question snapshots to their hosted record spaces')
+    .option('--dry-run', 'list the question snapshots without sending them')
+    .action((options) =>
+      hostedCommand(`${PLATFORM_SLUG} record outbox restore-questions`, () =>
+        restoreQuestionsCommand(
+          { dryRun: Boolean(options.dryRun) },
+          {
+            log,
+            setExitCode: (code) => {
+              process.exitCode = code
+            },
+          },
+        ),
+      ),
+    )
   record
     .command('publish')
     .description('publish hosted record snapshots')
