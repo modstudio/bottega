@@ -22,5 +22,5 @@ primary_region = "ewr"
   grace_period = "10s"
 
 [[vm]]
-  size = "shared-cpu-1x"
+  size = "shared-cpu-4x"
   memory = "1024mb"
