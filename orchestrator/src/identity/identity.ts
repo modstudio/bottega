@@ -13,11 +13,8 @@ import {
 } from '../../../shared/reference.ts'
 import { projectByName, projectByRecordId } from '../project/project-read.ts'
 import { cachedProjectSpaces } from '../project-space-cache.ts'
-import {
-  decideMachineLabel,
-  type MachineIdentifierNames,
-} from '../record/machine-name.ts'
 import { questionById, questionByProjectNumber } from '../question-store/question-store-read.ts'
+import { decideMachineLabel, type MachineIdentifierNames } from '../record/machine-name.ts'
 
 type ResolvableKind = Exclude<ReferenceKind, 'task'>
 
@@ -182,6 +179,22 @@ function parsedKind(parsed: ParsedReference, expectedKind?: ResolvableKind): Res
   return expectedKind ?? null
 }
 
+function validateRunQualifier(
+  reference: string | number,
+  parsed: ParsedReference,
+  context: IdentityContext,
+): void {
+  if (parsed.qualifier?.kind === 'project')
+    throw new Error(
+      'run references cannot use a project qualifier because run numbers are per machine',
+    )
+  if (parsed.qualifier?.kind !== 'machine') return
+  const decision = decideMachineLabel(String(reference), context.machineNames)
+  if (decision.kind === 'refused') throw new Error(decision.reason)
+  if (decision.kind !== 'bare')
+    throw new Error(`invalid run reference ${JSON.stringify(String(reference))}`)
+}
+
 export async function resolve(
   reference: string | number,
   context: IdentityContext,
@@ -200,16 +213,7 @@ export async function resolve(
     throw new Error(
       `reference ${JSON.stringify(String(reference))} names a ${kind}, expected ${expectedKind}`,
     )
-  if (kind === 'run' && parsed.qualifier?.kind === 'project')
-    throw new Error(
-      'run references cannot use a project qualifier because run numbers are per machine',
-    )
-  if (kind === 'run' && parsed.qualifier?.kind === 'machine') {
-    const decision = decideMachineLabel(String(reference), context.machineNames)
-    if (decision.kind === 'refused') throw new Error(decision.reason)
-    if (decision.kind !== 'bare')
-      throw new Error(`invalid run reference ${JSON.stringify(String(reference))}`)
-  }
+  if (kind === 'run') validateRunQualifier(reference, parsed, context)
 
   const result = !kind
     ? await resolveUuid(parsed.value.recordId, context)
