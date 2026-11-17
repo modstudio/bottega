@@ -311,6 +311,25 @@ function differentRenewalTerms(
 type TakenClaim = HostedBoardClaim & { action: 'taken' | 'renewed' | 'taken-over' }
 type TakeOutcome = TakenClaim | { refused: string }
 
+export function taskClaimTakeRefusal(subject: ClaimSubject, ownsOpenStage: boolean): string | null {
+  if (subject.kind !== 'task' || ownsOpenStage) return null
+  return `task claims follow task cursors; run workflow compose … --arg key=${subject.value} instead`
+}
+
+export function crossUserTaskClaimTakeRefusal(input: {
+  subject: ClaimSubject
+  userId: string
+  conflictingLiveClaims: readonly { holderUserId: string; holderSession: string | null }[]
+}): string | null {
+  if (input.subject.kind !== 'task') return null
+  const conflict = input.conflictingLiveClaims.find((claim) => claim.holderUserId !== input.userId)
+  if (!conflict) return null
+  const holder = conflict.holderSession
+    ? `user ${conflict.holderUserId} session ${conflict.holderSession}`
+    : `operator user ${conflict.holderUserId}`
+  return `task claim is held by ${holder}; that holder must abandon the cursor, or wait for the claim to lapse`
+}
+
 function takeRefused(outcome: TakeOutcome): outcome is { refused: string } {
   return 'refused' in outcome
 }
@@ -473,21 +492,48 @@ async function takeClaimInTx(
   session: string | null,
   clock: number,
 ): Promise<TakeOutcome> {
+  const projectId = await resolveVisibleProjectId(tx, input.project, input.projectId)
+  const ownedOpenStage =
+    subject.kind === 'task' && session
+      ? Boolean(
+          (
+            await tx`
+              SELECT 1 FROM task_flow_stage
+              WHERE project_id=${projectId}::uuid
+                AND workflow_key=${subject.value}
+                AND session_id=${session}
+                AND state IN ('running','awaiting-ruling')
+              LIMIT 1
+            `
+          )[0],
+        )
+      : false
+  const admissionRefusal = taskClaimTakeRefusal(subject, ownedOpenStage)
+  if (admissionRefusal) throw new RecordBoardError(admissionRefusal, 400)
   const existing = await loadClaim(tx, input.id)
   if (existing) return replayExistingTake(tx, input, existing, subject, session, clock)
-  const { projectId, exactHeld, conflicts, foreignLive, lapsedExact } = await readTakeOverlaps(
+  const { exactHeld, conflicts, foreignLive, lapsedExact } = await readTakeOverlaps(
     tx,
     input,
     subject,
     session,
     clock,
   )
+  const crossUserRefusal = crossUserTaskClaimTakeRefusal({
+    subject,
+    userId: input.userId,
+    conflictingLiveClaims: foreignLive.map((row) => ({
+      holderUserId: String(row.holder_user_id),
+      holderSession: row.holder_session == null ? null : String(row.holder_session),
+    })),
+  })
+  if (crossUserRefusal) throw new RecordBoardError(crossUserRefusal, 403)
   const decision = claimTakeDecision({
     sameHolderSameSubject: exactHeld !== undefined,
     conflictingClaim: conflicts.length > 0,
     foreignLiveConflict: foreignLive.length > 0,
-    force: false,
-    actorKind: 'architect',
+    force: subject.kind === 'task',
+    actorKind: subject.kind === 'task' ? 'operator' : 'architect',
   })
   if (decision === 'renew' && exactHeld)
     return renewOpenClaim(tx, input, exactHeld, duration, note, clock)
@@ -548,6 +594,11 @@ export async function releaseHostedBoardClaim(
   return withBoardTenant(input, false, async (tx) => {
     const row = await loadClaim(tx, input.id)
     if (!row) throw new RecordBoardError(`no board claim ${input.id}`, 404)
+    if (row.subject_kind === 'task')
+      throw new RecordBoardError(
+        `task claims follow task cursors; run workflow next to the end or workflow abandon for ${row.subject_value}`,
+        400,
+      )
     if (!hostedLive(row, clock))
       throw new RecordBoardError(`claim ${input.id} is no longer live`, 400)
     if (!sameHostedClaimHolder(row, input.userId, session)) {

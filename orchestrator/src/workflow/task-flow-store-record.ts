@@ -331,6 +331,20 @@ class RecordTaskFlowReadStore {
   async listOpenStages(input: { project?: string; sessionId?: string }) {
     return this.questions.listOpenStages(input)
   }
+  async keyedStageHistory(input: { since: string }) {
+    return (
+      await this.listEveryDestination({
+        states: ['running', 'awaiting-ruling', 'done', 'abandoned'],
+      })
+    )
+      .map((item) => stageRow(item))
+      .filter(
+        (row) =>
+          row.workflow_key !== '' &&
+          (!['done', 'abandoned'].includes(row.state) || row.updated_at >= input.since),
+      )
+      .sort((left, right) => left.created_at.localeCompare(right.created_at) || left.id - right.id)
+  }
   async openStageWorktrees() {
     return (await this.listEveryDestination({ states: ['running', 'awaiting-ruling'] }))
       .map((row) => stageRow(row))

@@ -100,7 +100,6 @@ const HOSTED_FIXTURE_IMPORTS_WITHOUT_SQL = new Set([
   'orchestrator/test/canon-import-proof.ts',
   'orchestrator/test/postgres-board-api-values.ts',
   'orchestrator/test/postgres-board-cache-client.ts',
-  'orchestrator/test/postgres-board-claim-api-proof.ts',
   // Drives the receipt and change-feed routes over HTTP and owns no SQL.
   'orchestrator/test/postgres-board-receipt-revision-proof.ts',
   'orchestrator/test/postgres-board-route-edge-proof.ts',

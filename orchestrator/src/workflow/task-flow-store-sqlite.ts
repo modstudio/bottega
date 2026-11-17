@@ -336,6 +336,18 @@ class SqliteTaskFlowStore {
       .all(...values)
   }
 
+  keyedStageHistory(input: { since: string }): TaskFlowStageCursorRow[] {
+    return this.database
+      .query<TaskFlowStageCursorRow, [string]>(
+        `SELECT ${STAGE_COLUMNS}
+         FROM workflow_cursor cursor
+         WHERE cursor.workflow_key<>''
+           AND (cursor.state NOT IN ('done','abandoned') OR cursor.updated_at>=?)
+         ORDER BY cursor.created_at,cursor.number`,
+      )
+      .all(input.since)
+  }
+
   openStageWorktrees(): Array<{
     number: number
     workflow: string
@@ -740,6 +752,7 @@ export function sqliteTaskFlowReadStore(database: Database): SqliteTaskFlowReadS
         question_number: openByCursor.get(row.record_id) ?? null,
       }))
     },
+    keyedStageHistory: async (input) => local.keyedStageHistory(input),
     openStageWorktrees: async () => local.openStageWorktrees(),
     activeStageAutonomy: async (project, taskRecordId) =>
       local.activeStageAutonomy(project, taskRecordId),

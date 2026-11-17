@@ -395,8 +395,13 @@ function resolvePostAudience(expression: string, machine: string) {
   return { audience: { kind: 'machine' as const, value }, expression: `machine:${value}` }
 }
 
-function resolvePostOrigin(actor: BoardActor, env: Environment, cwd: string) {
-  const project = projectAt(cwd)
+function resolvePostOrigin(
+  actor: BoardActor,
+  env: Environment,
+  cwd: string,
+  database: ReturnType<typeof writableDb>,
+) {
+  const project = projectAt(cwd, database)
   return {
     harness: actor.kind === 'operator' ? null : architectIdentity(env)!.harness,
     project: project?.name ?? null,
@@ -613,7 +618,7 @@ export function insertRootMessage(
     postingMachine,
   )
   validateRunAudience(audience, actor, database)
-  const origin = resolvePostOrigin(actor, env, cwd)
+  const origin = resolvePostOrigin(actor, env, cwd, database)
   validateArchitectAudience(actor, audience, origin.project, cwd, database)
   const purpose = rootPurpose(kind, input, audience, actor, origin.project)
   const senderTags = senderBoardTags(input)

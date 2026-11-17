@@ -76,6 +76,7 @@ import { routedPromptBytes, routedPromptText } from '../run/run-routing-input.ts
 import { renderTaskRulings } from '../run/task-rulings.ts'
 import { taskRulingsForDispatch } from '../run/task-rulings-store.ts'
 import { refusalScoreGuidanceFromPath } from '../score/refusal-guidance.ts'
+import { assertKeylessCursorIdleAdmission } from '../session/keyless-cursor-idle-admission.ts'
 import {
   assertAcpReady,
   classifyTransportPin,
@@ -672,6 +673,7 @@ export async function doCommand(
 ): Promise<void> {
   const requestedJob = argv[1]
   if (requestedJob && JOBS[requestedJob]) assertInstallLevelAllowsDispatch(requestedJob)
+  await assertKeylessCursorIdleAdmission('run start')
   await ensureLocalHealth()
   const flag = (name: string) => flagValue(argv, name)
   const has = (name: string) =>

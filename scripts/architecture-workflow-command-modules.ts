@@ -12,6 +12,26 @@ const module = (file: string, allowed: string[]): WorkflowCommandModule => ({
 })
 
 export const workflowCommandModules: WorkflowCommandModule[] = [
+  module('orchestrator/src/workflow/workflow-compose-claim.ts', [
+    'bun:sqlite',
+    './workflow-cursor-mutation.ts',
+    './workflow-cursor-selection.ts',
+    './workflow-task-claim.ts',
+  ]),
+  module('orchestrator/src/workflow/workflow-task-claim.ts', [
+    'bun:sqlite',
+    '../board/board-claim-policy.ts',
+    '../board/board-operations.ts',
+    '../project/projects.ts',
+  ]),
+  module('orchestrator/src/workflow/workflow-uncovered.ts', [
+    'bun:sqlite',
+    '../board/board-operations.ts',
+    '../branch/branch-landing-service.ts',
+    '../database/db.ts',
+    '../project/projects.ts',
+    './task-flow-store.ts',
+  ]),
   module('orchestrator/src/workflow/explore-graduation.ts', []),
   module('orchestrator/src/workflow/task-flow-store-hosted.ts', [
     'bun:sqlite',
@@ -196,6 +216,7 @@ export const workflowCommandModules: WorkflowCommandModule[] = [
     './workflow-rule-answer.ts',
     './workflow-stranded-question.ts',
     './workflow-task-linking.ts',
+    './workflow-task-claim.ts',
   ]),
   module('orchestrator/src/workflow/workflow-exec-checkout.ts', ['../../../shared/brand.ts']),
   module('orchestrator/src/workflow/workflow-catalogue-commands.ts', [

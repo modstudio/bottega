@@ -590,30 +590,28 @@ test('claim verbs stringify every id and share the same local and hosted result 
   })
 })
 
-test('release-task normalizes a task subject before releasing a local claim', async () => {
-  const clock = Date.parse('2026-10-05T12:00:00Z')
-  const claim = await boardClaimTake(
-    { subject: 'task:DEV-1', project: 'board-route-project' },
-    { env: noRecordEnv, clock },
-  )
-  await expect(
-    boardClaimReleaseTask('task:DEV-1', 'board-route-project', {
-      env: noRecordEnv,
-      clock: clock + 1,
-    }),
-  ).resolves.toEqual({ released: 1 })
-  await expect(
-    boardClaimList('board-route-project', true, { env: noRecordEnv, clock: clock + 1 }),
-  ).resolves.toEqual({
-    claims: [expect.objectContaining({ recordId: claim.recordId, closeReason: 'task-closed' })],
-  })
-})
-
 test('release-task normalizes before hosted release and refuses another shape before calling', async () => {
   db().query('INSERT INTO schema_meta(key,value) VALUES (?,?)').run(BOARD_HOSTED_ADOPTED_KEY, '1')
   const calls: { project: string; projectId?: string | null; key: string }[] = []
   const client = {
     ...createMemoryRecordApiClient(),
+    readTaskFlow: async () => ({
+      flow: {
+        id: newRecordId(),
+        projectId: project!.record_id,
+        taskId: null,
+        taskKey: 'DEV-1',
+        state: 'open' as const,
+        openStageRecordId: null,
+        openStageCount: 0,
+        openingMachineId: newRecordId(),
+        updatedMachineId: newRecordId(),
+        revision: 1,
+        createdAt: '2026-10-05T12:00:00.000Z',
+        updatedAt: '2026-10-05T12:00:00.000Z',
+      },
+      stage: null,
+    }),
     releaseBoardTaskClaims: async (input: (typeof calls)[number]) => {
       calls.push(input)
       return { released: 1 }

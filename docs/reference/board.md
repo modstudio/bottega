@@ -164,7 +164,7 @@ list board claims
 
 **Synopsis:** `bottega board claim release <id>`
 
-release a claim
+release a path or resource claim; workflow abandon releases a task claim
 
 ### Related
 
@@ -174,7 +174,7 @@ release a claim
 
 **Synopsis:** `bottega board claim release-task <key> [--project <name>] [--json]`
 
-release every live claim for a task
+repair a task claim after its cursor has closed
 
 ### Options
 
@@ -199,7 +199,7 @@ extend a live claim
 
 **Synopsis:** `bottega board claim take <subject> [--for <duration>] [--run <id>] [--note <text>] [--project <name>] [--force]`
 
-claim a task, path, or resource
+claim a path or resource; task claims follow workflow compose and renew with workflow next
 
 ### Options
 

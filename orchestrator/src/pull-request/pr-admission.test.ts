@@ -55,13 +55,13 @@ const ceilingTriage = (values: Partial<Extract<TriageDecision, { complete: false
     ...values,
   }) as TriageDecision
 
-test('refuses a secret-shaped override reason before resolving the checkout', () => {
-  expect(() =>
+test('refuses a secret-shaped override reason before resolving the checkout', async () => {
+  await expect(
     createPullRequest([], {
       overrideReason: 'token=ghp_123456789012345678901234567890123456',
       fromOperator: true,
     }),
-  ).toThrow('reason resembles a secret')
+  ).rejects.toThrow('reason resembles a secret')
 })
 
 test('an undisposed finding at the ceiling refuses without recording a ruling', () => {

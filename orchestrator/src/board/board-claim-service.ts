@@ -74,6 +74,11 @@ export type TakeClaimInput = {
   force?: boolean
 }
 
+export type BoardTaskCursorAuthority = {
+  mode: 'take' | 'release' | 'coverage-read'
+  session: string | null
+}
+
 function claimActor(env: Environment): ClaimActor {
   return boardActor(env)
 }
@@ -82,15 +87,18 @@ export function claimProject(
   requested: string | undefined,
   env: Environment = process.env,
   cwd = process.cwd(),
+  database: ReturnType<typeof db> = db(),
+  authority?: BoardTaskCursorAuthority,
 ): string {
-  const actor = claimActor(env)
-  if (actor.kind === 'operator') {
+  const internalProjectRead = authority !== undefined
+  const actor = internalProjectRead ? null : claimActor(env)
+  if (actor?.kind === 'operator' || internalProjectRead) {
     if (!requested) throw new Error('operator claim requires --project <name>')
-    if (!projectByName(requested))
+    if (!projectByName(requested, database))
       throw new Error(`unknown project ${requested}; run ${PLATFORM_SLUG} project list`)
     return requested
   }
-  const held = projectAt(cwd)
+  const held = projectAt(cwd, database)
   if (!held) throw new Error(`claim project is unknown for ${cwd}; run from a registered project`)
   if (requested && requested !== held.name)
     throw new Error(
@@ -195,6 +203,7 @@ type TakeTransaction = {
   clock: number
   cwd: string
   database: ReturnType<typeof writableDb>
+  taskCursorAuthority?: BoardTaskCursorAuthority
 }
 
 type TakeTransactionResult = {
@@ -344,7 +353,7 @@ function takeClaimInTransaction(context: TakeTransaction): TakeTransactionResult
     conflictingClaim: conflicts.length > 0,
     foreignLiveConflict: foreignLive.length > 0,
     force: Boolean(context.input.force),
-    actorKind: context.actor.kind,
+    actorKind: context.taskCursorAuthority?.mode === 'take' ? 'operator' : context.actor.kind,
   })
   if (decision === 'renew') return renewTakenClaim(exactHeld!, context)
   if (decision === 'refuse') return refusedTake(foreignLive, context)
@@ -356,16 +365,24 @@ export function takeClaim(
   env: Environment = process.env,
   clock = Date.now(),
   cwd = process.cwd(),
+  database = writableDb(),
+  taskCursorAuthority?: BoardTaskCursorAuthority,
 ): TakeClaimResult {
-  const actor = claimActor(env)
-  if (input.force && !mayForceClaim(actor)) throw new Error('only the operator may use --force')
+  const cursorSession =
+    taskCursorAuthority?.mode === 'take' ? taskCursorAuthority.session : undefined
+  const internalTake = taskCursorAuthority?.mode === 'take'
+  const actor: ClaimActor = cursorSession
+    ? { kind: 'architect', session: cursorSession }
+    : claimActor(env)
+  if (input.force && !mayForceClaim(actor) && !internalTake)
+    throw new Error('only the operator may use --force')
   const subject = parseClaimSubject(input.subject)
   const note = claimNote(input.note)
   const duration = input.durationMs ?? BOARD_CLAIM_DEFAULT_MS
   const durationRefusal = claimDurationRefusal(duration)
   if (durationRefusal) throw new Error(durationRefusal)
-  const project = claimProject(input.project, env, cwd)
-  const database = writableDb()
+  const project = claimProject(input.project, env, cwd, database, taskCursorAuthority)
+  const claimCwd = internalTake ? (projectByName(project, database)?.path ?? cwd) : cwd
   validateRunTie(input.runId, actor, database)
   const outcome = writeTransaction(
     () =>
@@ -378,8 +395,9 @@ export function takeClaim(
         project,
         env,
         clock,
-        cwd,
+        cwd: claimCwd,
         database,
+        taskCursorAuthority,
       }),
     database,
   )
@@ -442,14 +460,16 @@ export function listClaims(
   env: Environment = process.env,
   clock = Date.now(),
   cwd = process.cwd(),
+  database: ReturnType<typeof db> = db(),
+  taskCursorAuthority?: BoardTaskCursorAuthority,
 ): { claims: ClaimView[] } {
-  const name = claimProject(project, env, cwd)
-  const rows = db()
+  const name = claimProject(project, env, cwd, database, taskCursorAuthority)
+  const rows = database
     .query(
       `SELECT ${CLAIM_COLUMNS} FROM board_claim WHERE project_record_id=(SELECT record_id FROM project WHERE name=?) ORDER BY taken_at,record_id`,
     )
     .all(name) as ClaimRow[]
-  const claims = rows.map((row) => view(row, clock)).filter((row) => all || row.live)
+  const claims = rows.map((row) => view(row, clock, database)).filter((row) => all || row.live)
   return { claims }
 }
 
@@ -496,11 +516,12 @@ export function releaseTaskClaims(
   project: string,
   env: Environment = process.env,
   clock = Date.now(),
+  database = writableDb(),
+  taskCursorAuthority?: BoardTaskCursorAuthority,
 ): { released: number } {
-  claimActor(env)
-  if (!projectByName(project))
+  if (taskCursorAuthority?.mode !== 'release') claimActor(env)
+  if (!projectByName(project, database))
     throw new Error(`unknown project ${project}; run ${PLATFORM_SLUG} project list`)
-  const database = writableDb()
   return writeTransaction(() => {
     const rows = database
       .query(

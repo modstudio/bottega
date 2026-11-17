@@ -15,6 +15,7 @@ import { type Project, projectAt, projects } from '../project/projects.ts'
 import { resolveReviewIdentifier } from '../review/review-identifier.ts'
 import { resolveReviewBase } from '../review/review-target.ts'
 import { resolveRunIdentifier } from '../run/run-identifier.ts'
+import { assertKeylessCursorIdleAdmission } from '../session/keyless-cursor-idle-admission.ts'
 import { resolveBase } from '../worktree/worktree-caller.ts'
 import { parseAutonomy } from './autonomy.ts'
 import { resolveProbeArtifact } from './probe-identifier.ts'
@@ -121,6 +122,7 @@ export type WorkflowCommandOptions = {
   workflowTextDocuments?: WorkflowTextDocumentPorts
   contextMomentPorts?: ContextMomentPorts
   contextMomentGather?: typeof import('./workflow-context-moment.ts').workflowNextContextMoment
+  idleCursorAdmission?: () => Promise<void>
 }
 export type WorkflowPrint = (value: unknown, line?: string) => void
 type ProbePrintRecord =
@@ -982,6 +984,9 @@ export async function composeCommand(
   presentation: WorkflowPresentation,
   options: WorkflowCommandOptions = {},
 ): Promise<void> {
+  await (
+    options.idleCursorAdmission ?? (() => assertKeylessCursorIdleAdmission('workflow compose'))
+  )()
   const project = flagValue(argv, 'project')
   if (!project) throw new Error('--project is required')
   const mode = flagValue(argv, 'mode')

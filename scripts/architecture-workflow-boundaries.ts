@@ -3,6 +3,18 @@ import { workflowFloorBoundarySpecs } from './architecture-workflow-floor-module
 export const workflowBoundarySpecs = [
   ...workflowFloorBoundarySpecs,
   {
+    name: 'workflow-task-claim-boundary',
+    file: 'orchestrator/src/workflow/workflow-task-claim.ts',
+    allowed: [
+      '../board/board-claim-policy.ts',
+      '../board/board-operations.ts',
+      'bun:sqlite',
+      '../project/projects.ts',
+    ],
+    reason:
+      'Keep the cursor-to-claim decision pure and route its local or hosted write through the board service.',
+  },
+  {
     name: 'workflow-read-space-boundary',
     file: 'orchestrator/src/workflow/workflow-read-space.ts',
     allowed: [

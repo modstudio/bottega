@@ -94,8 +94,8 @@ describe('Stop summary decision', () => {
     const baseline = decideStopSummary(facts({ owedItems: [owed()] }))
     const result = decideStopSummary(facts({ cursors: [idleCursor], owedItems: [owed()] }))
 
-    expect(result.lines.filter((line) => line.startsWith('Explore cursor 845 idle'))).toEqual([
-      `Explore cursor 845 idle 1h 0m → ${PLATFORM_SLUG} workflow abandon --cursor 845 --project ${PLATFORM_SLUG}`,
+    expect(result.lines.filter((line) => line.startsWith('explore cursor 845 idle'))).toEqual([
+      `explore cursor 845 idle 1h 0m → ${PLATFORM_SLUG} workflow abandon --cursor 845 --project ${PLATFORM_SLUG}`,
     ])
     expect(result.block).toBeTrue()
     expect(result.blockKey).toBe(baseline.blockKey)

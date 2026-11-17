@@ -22,8 +22,54 @@ function entries(calls: string[]): BinaryEntries {
     },
     checkAttribution: call('checkAttribution'),
     schemaCheck: call('schemaCheck'),
+    keylessCursorIdleAdmission: async () => ({ kind: 'allow' }),
   }
 }
+
+test('task new refuses before reaching hub when the session has an idle keyless cursor', async () => {
+  const calls: string[] = []
+  const dispatch = entries(calls)
+  dispatch.keylessCursorIdleAdmission = async () => ({
+    kind: 'refuse',
+    message: 'cursor 970 is idle',
+  })
+  const errors: string[] = []
+  const originalError = console.error
+  console.error = (value) => errors.push(String(value))
+  try {
+    expect(await dispatchBinary(['task', 'new', '--project', 'fixture'], dispatch, () => '')).toBe(
+      1,
+    )
+  } finally {
+    console.error = originalError
+  }
+  expect(errors).toEqual(['cursor 970 is idle'])
+  expect(calls).toEqual([])
+})
+
+test('task new distinguishes an idle-cursor check failure from a refusal', async () => {
+  const calls: string[] = []
+  const dispatch = entries(calls)
+  dispatch.keylessCursorIdleAdmission = async () => ({
+    kind: 'failed',
+    reason: 'record unavailable',
+    remedy: `retry ${PLATFORM_SLUG} task new`,
+  })
+  const errors: string[] = []
+  const originalError = console.error
+  console.error = (value) => errors.push(String(value))
+  try {
+    expect(await dispatchBinary(['task', 'new', '--project', 'fixture'], dispatch, () => '')).toBe(
+      1,
+    )
+  } finally {
+    console.error = originalError
+  }
+  expect(errors).toEqual([
+    `could not check idle cursors: record unavailable; retry ${PLATFORM_SLUG} task new`,
+  ])
+  expect(calls).toEqual([])
+})
 
 test('record outbox combines owner-qualified rows and routes qualified actions', async () => {
   const calls: string[] = []

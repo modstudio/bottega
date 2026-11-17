@@ -16,7 +16,9 @@ export function registerBoardClaimCommands(
   const claim = board.command('claim').description('manage claims on shared work')
   claim
     .command('take <subject>')
-    .description('claim a task, path, or resource')
+    .description(
+      'claim a path or resource; task claims follow workflow compose and renew with workflow next',
+    )
     .option('--for <duration>', 'set how long the claim remains live')
     .option('--run <id>', 'associate the claim with this run')
     .option('--note <text>', 'record context for the claim')
@@ -42,7 +44,7 @@ export function registerBoardClaimCommands(
     .action(async (id) => console.log(JSON.stringify(await boardClaimRenew(String(id)))))
   claim
     .command('release <id>')
-    .description('release a claim')
+    .description('release a path or resource claim; workflow abandon releases a task claim')
     .action(async (id) => console.log(JSON.stringify(await boardClaimRelease(String(id)))))
   claim
     .command('list')
@@ -54,7 +56,7 @@ export function registerBoardClaimCommands(
     )
   claim
     .command('release-task <key>')
-    .description('release every live claim for a task')
+    .description('repair a task claim after its cursor has closed')
     .requiredOption('--project <name>', 'name the task project')
     .option('--json', 'write the released claims as JSON')
     .action(async (key, options) =>

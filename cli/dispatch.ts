@@ -34,6 +34,13 @@ export type BinaryEntries = {
   retrievalSearch(argv: string[]): Promise<void>
   checkAttribution(argv: string[]): Promise<number>
   schemaCheck(argv: string[]): Promise<number>
+  keylessCursorIdleAdmission(
+    action: 'task new',
+  ): Promise<
+    | { kind: 'allow' }
+    | { kind: 'refuse'; message: string }
+    | { kind: 'failed'; reason: string; remedy: string }
+  >
 }
 
 type OutboxOwner = 'orch' | 'hub'
@@ -346,6 +353,17 @@ export async function dispatchBinary(
     } else {
       console.log(routeHelp(resolved.route))
       return 0
+    }
+  }
+  if (input[0] === 'task' && input[1] === 'new' && !helpRequested(input.slice(2))) {
+    const admission = await entries.keylessCursorIdleAdmission('task new')
+    if (admission.kind !== 'allow') {
+      console.error(
+        admission.kind === 'refuse'
+          ? admission.message
+          : `could not check idle cursors: ${admission.reason}; ${admission.remedy}`,
+      )
+      return 1
     }
   }
   if (resolved.route.owner === 'local') return reportLegacyCalls(resolved.rest)

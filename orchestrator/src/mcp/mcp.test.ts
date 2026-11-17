@@ -867,6 +867,7 @@ describe('orch MCP', () => {
           'DELETE FROM task_flow WHERE project_record_id=(SELECT record_id FROM project WHERE name=?)',
         )
         .run(project)
+      db().query('DELETE FROM board_claim').run()
       db().query('DELETE FROM record_install_binding').run()
       await removeProject(project)
     }

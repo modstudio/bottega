@@ -70,6 +70,14 @@ export const sessionContextModules: SessionContextModule[] = [
     '../record/outbox-sanitize.ts',
   ]),
   module('orchestrator/src/session/keyless-cursor-idle.ts', ['../events.ts']),
+  module('orchestrator/src/session/keyless-cursor-idle-admission.ts', [
+    '../../../shared/brand.ts',
+    '../caller-classification.ts',
+    '../database/db.ts',
+    '../workflow/task-flow-store.ts',
+    '../workflow/workflow-cursor-format.ts',
+    './keyless-cursor-idle.ts',
+  ]),
   module('orchestrator/src/session/session-start-context-limit.ts', [
     '../../hooks/session-start-context.json',
   ]),

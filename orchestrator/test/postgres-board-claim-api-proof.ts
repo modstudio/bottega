@@ -13,6 +13,106 @@ export function registerBoardClaimApiProof(input: {
   succeeds(user: string, password: string, source: string): string
 }): void {
   const headers = (token: string) => requestHeaders(token, input.spaceIdForToken(token))
+  const seedOwnedTaskStage = (key: string, session: string) => {
+    const ids = {
+      machine: newRecordId(),
+      workflow: newRecordId(),
+      workflowVersion: newRecordId(),
+      catalogue: newRecordId(),
+      catalogueVersion: newRecordId(),
+      flow: newRecordId(),
+      stage: newRecordId(),
+    }
+    const space = input.spaceIdForToken(input.tokenA())
+    input.succeeds(
+      'postgres',
+      'postgres',
+      `INSERT INTO machine (id,user_id,name,registered_at,last_seen)
+         VALUES ('${ids.machine}','${input.userA()}','board-claim-task-stage',now(),now());
+       INSERT INTO workflow (id,space_id,slug,created_at,updated_at)
+         VALUES ('${ids.workflow}','${space}','claim-${ids.workflow}',now(),now());
+       INSERT INTO workflow_version
+         (id,space_id,workflow_id,n,status,definition,author,reason,created_at,updated_at)
+         VALUES ('${ids.workflowVersion}','${space}','${ids.workflow}',1,'production','{}','test','proof',now(),now());
+       INSERT INTO step_catalogue (id,space_id,slug,created_at,updated_at)
+         VALUES ('${ids.catalogue}','${space}','claim-${ids.catalogue}',now(),now());
+       INSERT INTO step_catalogue_version
+         (id,space_id,catalogue_id,n,status,definition,author,reason,created_at,updated_at)
+         VALUES ('${ids.catalogueVersion}','${space}','${ids.catalogue}',1,'production','{}','test','proof',now(),now());
+       INSERT INTO task_flow
+         (id,space_id,project_id,state,opening_machine_id,updated_machine_id,revision,created_at,updated_at)
+         VALUES ('${ids.flow}','${space}','${input.projectId}','open','${ids.machine}','${ids.machine}',1,now(),now());
+       INSERT INTO task_flow_stage
+         (id,space_id,flow_record_id,project_id,number,workflow,mode,workflow_key,session_id,
+          workflow_version_id,catalogue_version_id,arguments,active_ordinal,active_slug,state,
+          closed_step_notes,total_steps,opened_machine_id,last_advanced_machine_id,revision,created_at,updated_at)
+         VALUES ('${ids.stage}','${space}','${ids.flow}','${input.projectId}',
+          (SELECT COALESCE(max(number),0)+1 FROM task_flow_stage WHERE project_id='${input.projectId}'),
+          'claim-proof','default','${key}','${session}','${ids.workflowVersion}','${ids.catalogueVersion}',
+          '{}',0,'work','running','[]',1,'${ids.machine}','${ids.machine}',1,now(),now());
+       UPDATE task_flow SET open_stage_record_id='${ids.stage}' WHERE id='${ids.flow}';`,
+    )
+    return ids.stage
+  }
+
+  test('task claim take requires the caller owned stage and follows a stage handoff', async () => {
+    const take = (token: string, body: Record<string, unknown>) =>
+      fetch(`${input.origin()}/v1/board/claims`, {
+        method: 'PUT',
+        headers: headers(token),
+        body: JSON.stringify(body),
+      })
+    const key = 'BAPI-CURSOR'
+    const sessionA = 'cursor-session-a'
+    const sessionB = 'cursor-session-b'
+    const refused = await take(input.tokenA(), {
+      id: newRecordId(),
+      project: input.project,
+      projectId: input.projectId,
+      subject: `task:${key}`,
+      holderSession: sessionA,
+    })
+    expect(refused.status).toBe(400)
+
+    const stageId = seedOwnedTaskStage(key, sessionA)
+    const firstId = newRecordId()
+    const first = await take(input.tokenA(), {
+      id: firstId,
+      project: input.project,
+      projectId: input.projectId,
+      subject: `task:${key}`,
+      holderSession: sessionA,
+    })
+    expect(first.status).toBe(200)
+    expect((await json(first)).action).toBe('taken')
+
+    input.succeeds(
+      'postgres',
+      'postgres',
+      `UPDATE task_flow_stage SET session_id='${sessionB}' WHERE id='${stageId}';`,
+    )
+    const second = await take(input.tokenA(), {
+      id: newRecordId(),
+      project: input.project,
+      projectId: input.projectId,
+      subject: `task:${key}`,
+      holderSession: sessionB,
+    })
+    expect(second.status).toBe(200)
+    expect((await json(second)).action).toBe('taken-over')
+
+    const listed = await json(
+      await fetch(
+        `${input.origin()}/v1/board/claims?project=${input.project}&projectId=${input.projectId}`,
+        { headers: headers(input.tokenA()) },
+      ),
+    )
+    expect(
+      (listed.claims as Array<{ id: string; closeReason: string | null }>).find(
+        (claim) => claim.id === firstId,
+      )?.closeReason,
+    ).toBe('taken-over')
+  })
 
   test('claim take, renewal, live conflict with notice, lapsed takeover, release, and release by task key', async () => {
     const take = (token: string, body: Record<string, unknown>) =>
@@ -115,7 +215,7 @@ export function registerBoardClaimApiProof(input: {
       id: lapsedId,
       project: input.project,
       projectId: input.projectId,
-      subject: 'task:BAPI-1',
+      subject: 'resource:bapi-1',
       holderSession: 'holder-a',
       durationMs: 1,
     })
@@ -126,7 +226,7 @@ export function registerBoardClaimApiProof(input: {
       id: successor,
       project: input.project,
       projectId: input.projectId,
-      subject: 'task:BAPI-1',
+      subject: 'resource:bapi-1',
       holderSession: 'holder-b',
     })
     expect(takeover.status).toBe(200)
@@ -171,7 +271,7 @@ export function registerBoardClaimApiProof(input: {
           id: sameHolderLapsedId,
           project: input.project,
           projectId: input.projectId,
-          subject: 'task:BAPI-2',
+          subject: 'resource:bapi-2',
           holderSession: 'holder-a',
           durationMs: 1,
         })
@@ -183,7 +283,7 @@ export function registerBoardClaimApiProof(input: {
       id: sameHolderSuccessor,
       project: input.project,
       projectId: input.projectId,
-      subject: 'task:BAPI-2',
+      subject: 'resource:bapi-2',
       holderSession: 'holder-a',
     })
     expect(sameHolderTakeover.status).toBe(200)
@@ -230,7 +330,7 @@ export function registerBoardClaimApiProof(input: {
        CREATE FUNCTION fail_board_claim_insert_once() RETURNS trigger
        LANGUAGE plpgsql SECURITY DEFINER AS $$
        BEGIN
-         IF NEW.subject_kind='task' AND NEW.subject_value='BAPI-3'
+         IF NEW.subject_kind='resource' AND NEW.subject_value='bapi-3'
             AND nextval('board_claim_retry_once')=1 THEN
            RAISE EXCEPTION 'injected board claim collision'
              USING ERRCODE='23505', CONSTRAINT='board_claim_live_subject_unique';
@@ -245,7 +345,7 @@ export function registerBoardClaimApiProof(input: {
         id: newRecordId(),
         project: input.project,
         projectId: input.projectId,
-        subject: 'task:BAPI-3',
+        subject: 'resource:bapi-3',
         holderSession: 'holder-a',
       })
       expect(retried.status).toBe(200)
@@ -266,6 +366,7 @@ export function registerBoardClaimApiProof(input: {
     })
     expect(released.status).toBe(200)
     const taskId = newRecordId()
+    seedOwnedTaskStage('BAPI-9', 'holder-a')
     expect(
       (
         await take(input.tokenA(), {

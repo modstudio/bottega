@@ -53,6 +53,7 @@ import {
 } from './mergeability-decision.ts'
 import { decideTriageOverride, type TriageOverrideAttribution } from './override-decision.ts'
 import { decidePrePush, destinationBranch } from './pre-push-decision.ts'
+import { assertPullRequestTaskCursorAdmission } from './task-cursor-admission.ts'
 
 export const REVIEW_READ_VERB = `${PLATFORM_SLUG} review read`
 
@@ -651,13 +652,18 @@ function pendingIntent(database: Database, project: string, branch: string): boo
   )
 }
 
-export function createPullRequest(
+type CreatePullRequestOptions = {
+  overrideReason?: string
+  ceilingRuling?: string
+  fromOperator?: boolean
+}
+
+function createPullRequestAdmittedChange(
   args: string[],
-  options: { overrideReason?: string; ceilingRuling?: string; fromOperator?: boolean },
-  cwd = process.cwd(),
+  options: CreatePullRequestOptions,
+  cwd: string,
+  change: PullRequestChange,
 ): { output: string; overrideId: string | null } {
-  guardTriageOverrideService([options.overrideReason, options.ceilingRuling])
-  const change = resolvePullRequestChange(cwd)
   const trunk = change.project.settings.trunk!.trim()
   const existing = pullRequestForBranch(cwd, change.branch, trunk)
   if (existing) finalizeTriageIntent(change.project.name, change.branch, existing.number)
@@ -737,6 +743,36 @@ export function createPullRequest(
     output: outcome.output,
     overrideId: checked.overrideId,
   }
+}
+
+export function createPullRequestAdmitted(
+  args: string[],
+  options: CreatePullRequestOptions,
+  cwd = process.cwd(),
+): { output: string; overrideId: string | null } {
+  return createPullRequestAdmittedChange(args, options, cwd, preparePullRequestCreate(options, cwd))
+}
+
+function preparePullRequestCreate(
+  options: CreatePullRequestOptions,
+  cwd: string,
+): PullRequestChange {
+  guardTriageOverrideService([options.overrideReason, options.ceilingRuling])
+  return resolvePullRequestChange(cwd)
+}
+
+export async function createPullRequest(
+  args: string[],
+  options: CreatePullRequestOptions,
+  cwd = process.cwd(),
+): Promise<{ output: string; overrideId: string | null }> {
+  const change = preparePullRequestCreate(options, cwd)
+  await assertPullRequestTaskCursorAdmission({
+    command: 'pr create',
+    project: change.project,
+    branch: change.branch,
+  })
+  return createPullRequestAdmittedChange(args, options, cwd, change)
 }
 
 function recordedRunBranches(database: Database, project: Project): string[] {

@@ -195,6 +195,53 @@ test('answering a keyed stage ruling writes no task-flow outbox row', async () =
   expect(d.query("SELECT kind FROM outbox WHERE kind LIKE 'task_flow%'").all()).toEqual([])
 })
 
+test('keyed advance, await, and rule each restore the owner task claim', async () => {
+  const d = cursorDatabase()
+  const workflow = 'task-flow-owner-claim'
+  const args = { key: 'DEV-OWNER-CLAIM' }
+  const context = {
+    session: 'task-flow-owner-claim',
+    taskRecordId: 'task-DEV-OWNER-CLAIM',
+    taskStatusCategory: 'active',
+  }
+  const liveClaims = () =>
+    d
+      .query<{ holder_session: string }, [string]>(
+        `SELECT holder_session FROM board_claim
+         WHERE project='fixture' AND subject_kind='task' AND subject_value='DEV-OWNER-CLAIM'
+           AND closed_at IS NULL AND lapses_at > ?`,
+      )
+      .all(new Date().toISOString())
+  const forgetClaim = () => d.query('DELETE FROM board_claim').run()
+
+  installTaskFlowLifecycleWorkflow(d, workflow, ['score', 'complete'])
+  const opened = await composeWorkflowWithCursor(
+    workflow,
+    'fixture',
+    'default',
+    args,
+    context,
+    d,
+    {},
+    {},
+  )
+  d.query("UPDATE workflow_cursor SET enforcement='note-only' WHERE number=?").run(
+    opened.cursor!.id,
+  )
+
+  forgetClaim()
+  await nextWorkflowStep(workflow, 'fixture', 'default', args, 'advance', context, d, {}, testPorts)
+  expect(liveClaims()).toEqual([{ holder_session: context.session }])
+
+  forgetClaim()
+  await awaitWorkflowRuling(workflow, 'fixture', 'default', args, 'Proceed?', context, d, () => {})
+  expect(liveClaims()).toEqual([{ holder_session: context.session }])
+
+  forgetClaim()
+  await ruleWorkflow(workflow, 'fixture', 'default', args, 'Proceed.', true, 'mcp', context, d)
+  expect(liveClaims()).toEqual([{ holder_session: context.session }])
+})
+
 test('task adoption attaches a local flow and later advance writes no outbox row', async () => {
   const d = cursorDatabase()
   const workflow = 'task-flow-adoption-outbox'

@@ -48,6 +48,7 @@ import {
   copyWorkflowTextCommand,
   showWorkflowTextCommand,
 } from '../workflow/workflow-text-commands.ts'
+import { workflowUncoveredCommand } from '../workflow/workflow-uncovered.ts'
 import { collect, log, productArgv, rawArgv } from './support.ts'
 
 const collectedOption = (flags: string, description: string) =>
@@ -126,6 +127,15 @@ function registerWorkflowDefinitions({
   output,
   handlerOptions,
 }: WorkflowRegistration): void {
+  jsonOption(
+    workflow
+      .command('uncovered')
+      .description('report keyed work performed without a live task cursor or claim')
+      .option('--days <value>', 'number of recent UTC days to include'),
+  )
+    .allowExcessArguments(false)
+    .action((options) => workflowUncoveredCommand(options, { log }))
+
   jsonOption(
     workflow
       .command('list')
