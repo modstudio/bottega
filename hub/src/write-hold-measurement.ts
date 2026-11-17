@@ -4,7 +4,7 @@ import { appendStoreWriteHold } from '../../shared/store-write-hold-log.ts'
 import { writeCallerFromStack } from '../../shared/write-caller-from-stack.ts'
 import {
   finishWriteTransaction,
-  WRITE_HOLD_LOG_MS,
+  loggedWindow,
   type WriteHoldWindow,
   writeTransactionNeedsCaller,
 } from './write-hold.ts'
@@ -24,7 +24,6 @@ function writeCaller(excludedFiles: readonly string[]): string | null {
 }
 
 function appendWindow(conn: Database, window: WriteHoldWindow): void {
-  if (window.endedMs - window.beganMs < WRITE_HOLD_LOG_MS) return
   appendStoreWriteHold({
     at: new Date(window.endedMs).toISOString(),
     store: databasePath(conn),
@@ -59,7 +58,8 @@ export function measureFinishedWrite(
     const measured = finishWriteTransaction(current, { beganMs, endedMs, caller })
     if (measured.closed) appendWindow(conn, measured.closed)
     if (options.close) {
-      appendWindow(conn, measured.state)
+      const window = loggedWindow(measured.state)
+      if (window) appendWindow(conn, window)
       writeHoldWindows.delete(conn)
     } else writeHoldWindows.set(conn, measured.state)
   } catch {

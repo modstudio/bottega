@@ -426,7 +426,7 @@ export function stripSqlComments(source: string): string {
 
 type BackfillValues = Record<string, string | number | bigint | boolean | null | Uint8Array>
 
-function sqlQuoteState(
+export function sqlQuoteState(
   source: string,
   index: number,
   inString: boolean,

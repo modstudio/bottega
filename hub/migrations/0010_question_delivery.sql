@@ -23,8 +23,8 @@ SET value = CASE
 END
 WHERE key = 'collect.runs.at'
   AND NOT EXISTS (
-    SELECT 1 FROM setting WHERE key = 'migration.0010_question_delivery.rewound'
+    SELECT 1 FROM setting WHERE key = 'migration.0010.question-delivery-rewound'
   );
 INSERT OR IGNORE INTO setting(key, value)
-VALUES ('migration.0010_question_delivery.rewound', 'true');
+VALUES ('migration.0010.question-delivery-rewound', 'true');
 -- /BACKFILL

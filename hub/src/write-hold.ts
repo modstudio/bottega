@@ -30,7 +30,7 @@ function sameBurst(current: WriteHoldWindow | null, beganMs: number): current is
   return current !== null && beganMs - current.endedMs <= WRITE_HOLD_BURST_GAP_MS
 }
 
-function loggedWindow(window: WriteHoldWindow): WriteHoldWindow | null {
+export function loggedWindow(window: WriteHoldWindow): WriteHoldWindow | null {
   return window.endedMs - window.beganMs >= WRITE_HOLD_LOG_MS ? window : null
 }
 

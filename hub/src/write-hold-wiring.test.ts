@@ -50,8 +50,6 @@ test('a depth-zero write records a closed long-hold window without changing its 
       transactions: 1,
     })
     const caller = entries.at(-1)?.caller
-    expect(caller).not.toContain('hub/src/db.ts')
-    expect(caller).not.toContain('hub/src/write-hold-measurement.ts')
     expect(caller).toMatch(/^hub\/src\/write-hold-wiring\.test\.ts:\d+$/)
   } finally {
     now.mockRestore()

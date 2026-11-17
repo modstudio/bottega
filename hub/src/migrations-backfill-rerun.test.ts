@@ -2,17 +2,25 @@ import { expect, test } from 'bun:test'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { splitMigrationSource } from '../../shared/migration-source.ts'
-import { MIGRATIONS_FOLDER, migrationJournal, stripSqlComments } from './migrations.ts'
+import {
+  MIGRATIONS_FOLDER,
+  migrationJournal,
+  sqlQuoteState,
+  stripSqlComments,
+} from './migrations.ts'
 
 function sqlStatements(source: string): string[] {
   const statements: string[] = []
   let start = 0
   let inString = false
   for (let index = 0; index < source.length; index++) {
-    if (source[index] === "'") {
-      if (inString && source[index + 1] === "'") index++
-      else inString = !inString
-    } else if (!inString && source[index] === ';') {
+    const quote = sqlQuoteState(source, index, inString)
+    if (quote.index !== index || quote.inString !== inString) {
+      index = quote.index
+      inString = quote.inString
+      continue
+    }
+    if (!inString && source[index] === ';') {
       statements.push(source.slice(start, index).trim())
       start = index + 1
     }
@@ -27,9 +35,10 @@ function topLevelKeyword(source: string, keyword: string, start: number): number
   let inString = false
   for (let index = start; index <= source.length - keyword.length; index++) {
     const char = source[index]!
-    if (char === "'") {
-      if (inString && source[index + 1] === "'") index++
-      else inString = !inString
+    const quote = sqlQuoteState(source, index, inString)
+    if (quote.index !== index || quote.inString !== inString) {
+      index = quote.index
+      inString = quote.inString
       continue
     }
     if (inString) continue
@@ -53,10 +62,13 @@ function topLevelParts(source: string, separator: string): string[] {
   let inString = false
   for (let index = 0; index < source.length; index++) {
     const char = source[index]!
-    if (char === "'") {
-      if (inString && source[index + 1] === "'") index++
-      else inString = !inString
-    } else if (!inString && char === '(') depth++
+    const quote = sqlQuoteState(source, index, inString)
+    if (quote.index !== index || quote.inString !== inString) {
+      index = quote.index
+      inString = quote.inString
+      continue
+    }
+    if (!inString && char === '(') depth++
     else if (!inString && char === ')') depth--
     else if (!inString && depth === 0 && char === separator) {
       parts.push(source.slice(start, index))
@@ -72,10 +84,13 @@ function topLevelCharacter(source: string, target: string): number {
   let inString = false
   for (let index = 0; index < source.length; index++) {
     const char = source[index]!
-    if (char === "'") {
-      if (inString && source[index + 1] === "'") index++
-      else inString = !inString
-    } else if (!inString && char === '(') depth++
+    const quote = sqlQuoteState(source, index, inString)
+    if (quote.index !== index || quote.inString !== inString) {
+      index = quote.index
+      inString = quote.inString
+      continue
+    }
+    if (!inString && char === '(') depth++
     else if (!inString && char === ')') depth--
     else if (!inString && depth === 0 && char === target) return index
   }
@@ -104,7 +119,12 @@ function markerRestricted(tag: string, where: string, block: string): boolean {
     /\bnot\s+exists\s*\(\s*select\s+1\s+from\s+setting\s+where\s+key\s*=\s*'([^']+)'\s*\)/i,
   )
   const key = match?.[1]
-  if (!key || !new RegExp(`^migration\\.${tag.replaceAll('.', '\\.')}\\.[a-z0-9_-]+$`).test(key))
+  const migrationNumber = tag.match(/^(\d{4})_/)?.[1]
+  if (
+    !key ||
+    !migrationNumber ||
+    !new RegExp(`^migration\\.${migrationNumber}\\.[a-z0-9]+(?:-[a-z0-9]+)*$`).test(key)
+  )
     return false
   const quotedKey = key.replaceAll("'", "''")
   return new RegExp(
@@ -121,7 +141,9 @@ function unsafeUpdate(tag: string, block: string, statement: string, index: numb
   const where = whereAt === -1 ? '' : statement.slice(whereAt + 5)
   const safe =
     columns.length > 0 && (nullRestricted(columns, where) || markerRestricted(tag, where, block))
-  return safe ? null : `${tag} statement ${index + 1}`
+  return safe
+    ? null
+    : `${tag} statement ${index + 1} reruns on every migrate; clear it by guarding each SET column with <column> IS NULL or by the setting-marker NOT EXISTS / INSERT OR IGNORE pair`
 }
 
 function unsafeBackfillUpdates(): string[] {
