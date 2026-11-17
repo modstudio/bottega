@@ -1,6 +1,7 @@
 import { expect, test } from 'bun:test'
 import { Hono } from 'hono'
 import { newRecordId } from '../../../shared/record-id.ts'
+import { OutboxRowError } from './outbox-failure.ts'
 import { renderRecordApiRefusal } from './record-api-errors.ts'
 import { registerRecordProjectRoutes } from './record-api-projects.ts'
 import type { RecordIdentity } from './record-auth.ts'
@@ -19,6 +20,38 @@ test('only a project-table row-level-security violation becomes a project confli
   expect(classifyProjectWriteRefusal('42501', 'run')).toBe('unchanged')
   expect(classifyProjectWriteRefusal('23505', 'project')).toBe('unchanged')
   expect(classifyProjectWriteRefusal(null, null)).toBe('unchanged')
+})
+
+test('row-validation outbox errors render as 422 while other classes fall through', async () => {
+  const app = new Hono()
+  app.get(
+    '/row-validation',
+    (context) =>
+      renderRecordApiRefusal(
+        context,
+        new OutboxRowError(
+          'record project is absent from request space',
+          'row-validation',
+          null,
+          'send it to its declared space, then retry',
+        ),
+      )!,
+  )
+  app.get(
+    '/payload',
+    (context) =>
+      renderRecordApiRefusal(context, new OutboxRowError('bad payload', 'payload')) ??
+      context.json({ fallback: true }, 500),
+  )
+  const refusal = await app.request('/row-validation')
+  expect(refusal.status).toBe(422)
+  expect(await refusal.json()).toEqual({
+    error: 'record project is absent from request space',
+    remedy: 'send it to its declared space, then retry',
+  })
+  const fallback = await app.request('/payload')
+  expect(fallback.status).toBe(500)
+  expect(await fallback.json()).toEqual({ fallback: true })
 })
 
 test('the project route renders a typed 409 naming the sent project and request space', async () => {
