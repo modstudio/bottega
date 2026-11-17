@@ -208,6 +208,26 @@ describe('idle run classification', () => {
     ).toBeNull()
   })
 
+  test('a live coordinator does not make an unlaunched capacity wait idle', () => {
+    const capacityWaitSince = '2026-09-17T15:26:00.000Z'
+    const observedAt = Date.parse('2026-09-17T15:35:00.000Z')
+    expect(
+      idleRunCondition(
+        {
+          ...row,
+          started_at: capacityWaitSince,
+          last_event_at: capacityWaitSince,
+          pid: 4242,
+          pidAlive: true,
+          agent_pid: null,
+          capacity_wait_since: capacityWaitSince,
+        },
+        observedAt,
+        5 * 60_000,
+      ),
+    ).toBeNull()
+  })
+
   test('an expired or closed agent capacity wait retains idle behavior', () => {
     const observedAt = Date.parse('2026-09-17T16:26:00.001Z')
     const capacityWaitSince = new Date(

@@ -226,6 +226,7 @@ type IdleRunFacts = {
   session_id: string | null
   pidAlive: boolean | null
   pid?: number | null
+  agent_pid?: number | null
   host_wait_since?: string | null
   capacity_wait_since?: string | null
 }
@@ -236,7 +237,7 @@ export function idleRunCondition(
   clock = Date.now(),
   threshold = idleWarnMs(),
 ): MonitorCondition | null {
-  if (isRunQueuedForCapacity('running', run.host_wait_since, null, run.pid, clock)) return null
+  if (isRunQueuedForCapacity('running', run.host_wait_since, null, run.agent_pid, clock)) return null
   if (run.pidAlive === false) {
     return {
       kind: 'stale-run',
@@ -261,7 +262,8 @@ export function idleRunCondition(
       ownerSession: run.session_id,
     }
   }
-  if (isRunQueuedForCapacity('running', null, run.capacity_wait_since, run.pid, clock)) return null
+  if (isRunQueuedForCapacity('running', null, run.capacity_wait_since, run.agent_pid, clock))
+    return null
   const label = idleLabel(run.last_event_at, run.started_at, clock, threshold)
   if (!label) return null
   return {
@@ -282,7 +284,7 @@ export function idleRunConditions(
 ): MonitorCondition[] {
   const running = database
     .query(
-      `SELECT record_id, started_at, last_event_at, agent, job, session_id, pid, host_wait_since
+      `SELECT record_id, started_at, last_event_at, agent, job, session_id, pid, agent_pid, host_wait_since
        FROM run WHERE status='running'`,
     )
     .all() as {
@@ -293,6 +295,7 @@ export function idleRunConditions(
     job: string
     session_id: string | null
     pid: number | null
+    agent_pid: number | null
     host_wait_since: string | null
   }[]
   return running.flatMap((run): MonitorCondition[] => {
