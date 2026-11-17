@@ -84,11 +84,15 @@ export async function questionForWorkflowCursorByNumber(
 }
 
 /** Numbers are unique only within a record space, so a cursor spanning spaces can repeat one. */
-export function questionByNumber<Row extends { number?: unknown }>(
-  questions: Row[],
-  number: number,
-): Row | null {
-  const matches = questions.filter((row) => row.number === number)
+export function questionByNumber<
+  Row extends { number?: unknown; answered_at?: unknown; closed_at?: unknown },
+>(questions: Row[], number: number): Row | null {
+  const numbered = questions.filter((row) => row.number === number)
+  // A question closed without an answer is withdrawn, so closing the stale one settles the citation.
+  const matches =
+    numbered.length > 1
+      ? numbered.filter((row) => !(row.closed_at != null && row.answered_at == null))
+      : numbered
   if (matches.length > 1)
     throw new Error(
       `question ${number} names ${matches.length} questions on this cursor in different record spaces; close the stale one with 'bottega question close <record id> --reason <why>', then retry`,

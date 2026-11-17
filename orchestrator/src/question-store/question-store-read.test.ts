@@ -10,4 +10,6 @@ test('a question number repeated across record spaces refuses instead of picking
   )
   expect(questionByNumber([personal, other], 12)).toBe(personal)
   expect(questionByNumber([other], 12)).toBeNull()
+  const withdrawn = { ...personal, closed_at: '2026-11-17T05:00:00Z', answered_at: null }
+  expect(questionByNumber([withdrawn, project], 12)).toBe(project)
 })
