@@ -24,11 +24,13 @@ test('only a project-table row-level-security violation becomes a project confli
 
 test('row-validation outbox errors render as 422 while other classes fall through', async () => {
   const app = new Hono()
-  app.get('/row-validation', (context) =>
-    renderRecordApiRefusal(
-      context,
-      new OutboxRowError('record project is absent from request space', 'row-validation'),
-    ),
+  app.get(
+    '/row-validation',
+    (context) =>
+      renderRecordApiRefusal(
+        context,
+        new OutboxRowError('record project is absent from request space', 'row-validation'),
+      )!,
   )
   app.get(
     '/payload',

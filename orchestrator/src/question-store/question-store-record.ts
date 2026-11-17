@@ -10,13 +10,13 @@ import {
   requireQuestionWriteClient,
 } from '../record/record-api-client-question.ts'
 import type { RecordIdentity } from '../record/record-auth.ts'
-import { resolveQuestionWriteDestination } from '../record/record-question-destination.ts'
 import type {
   QuestionIntent,
   QuestionReadInput,
   QuestionWriteBody,
 } from '../record/record-question-contract.ts'
 import { questionChangedAfterRefusal } from '../record/record-question-contract.ts'
+import { resolveQuestionWriteDestination } from '../record/record-question-destination.ts'
 import { decideSingleRecordSpace } from '../record/record-space-cardinality.ts'
 import { compareQuestionsByAsk } from './question-order.ts'
 import { resolveQuestionRunPusher } from './question-run-pusher.ts'

@@ -4,8 +4,8 @@
 import type { Database } from 'bun:sqlite'
 import { createHash } from 'node:crypto'
 import { db } from '../database/db.ts'
-import type { RecordWriteDestination } from './record-api-client-paths.ts'
 import { recordApiClient } from './record-api-client.ts'
+import type { RecordWriteDestination } from './record-api-client-paths.ts'
 import {
   type RecordQuestionClient,
   requireQuestionWriteClient,
@@ -152,6 +152,18 @@ function retiredQuestionRows(database: Database): RetiredQuestionOutboxRow[] {
 
 type RestoreCounts = { restored: number; unchanged: number; refused: number; failed: number }
 type RestoreAttempt = { disposition: keyof RestoreCounts; reason?: string }
+type RestoreDestination = { destination: RecordWriteDestination } | { reason: string }
+
+async function resolveRestoreDestination(
+  candidate: RestoreQuestionCandidate,
+  resolve: (projectId: string | null) => Promise<RecordWriteDestination>,
+): Promise<RestoreDestination> {
+  try {
+    return { destination: await resolve(candidate.body.question.projectId) }
+  } catch (error) {
+    return { reason: error instanceof Error ? error.message : String(error) }
+  }
+}
 
 async function restoreCandidate(
   candidate: RestoreQuestionCandidate,
@@ -218,15 +230,13 @@ export async function restoreQuestionsCommand(
     return result
   }
   for (const candidate of selection.candidates) {
-    let resolved: RecordWriteDestination
-    try {
-      resolved = await destination(candidate.body.question.projectId)
-    } catch (error) {
-      const reason = error instanceof Error ? error.message : String(error)
+    const resolution = await resolveRestoreDestination(candidate, destination)
+    if ('reason' in resolution) {
       counts.refused += 1
-      ports.log(`${candidate.number ?? '?'}\t${candidate.id}\trefused: ${reason}`)
+      ports.log(`${candidate.number ?? '?'}\t${candidate.id}\trefused: ${resolution.reason}`)
       continue
     }
+    const resolved = resolution.destination
     if (options.dryRun) {
       ports.log(
         `${candidate.number ?? '?'}\t${candidate.id}\twould restore to ${resolved.destinationSpaceId}`,

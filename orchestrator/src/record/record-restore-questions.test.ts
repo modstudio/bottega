@@ -243,7 +243,7 @@ test('restore refuses unregistered and undeclared projects without sending', asy
   )
   expect(writes).toEqual([QUESTION])
   expect(lines.find((line) => line.includes(undeclaredQuestion))).toContain(
-    'project undeclared has no declared record space; run `bottega project set undeclared --space <slug>`',
+    'project undeclared has no declared record space',
   )
   expect(lines.find((line) => line.includes(unregisteredQuestion))).toContain(
     `project ${unregisteredProject} is not registered; register it, then retry`,
