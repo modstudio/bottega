@@ -59,6 +59,7 @@ import {
   validateCreate,
 } from '../worktree/worktree-template.ts'
 import { isCommitShapedBranch } from './branch-name.ts'
+import { returnMainCheckoutToTrunkCommand } from './main-checkout-invariant.ts'
 import { projectAgentKeyProblems } from './project-agent-keys.ts'
 import { focusedTestsProblems } from './project-focused-tests.ts'
 import {
@@ -69,7 +70,6 @@ import {
 import { type SettingsObjectMode, validateProjectInjectionSettings } from './project-injection.ts'
 import { localProjectPurgeRefusals, purgeLocalOrchestratorProject } from './project-purge-local.ts'
 import { projectPushRefusalMessage } from './project-push-refusal.ts'
-import { returnMainCheckoutToTrunkCommand } from './main-checkout-invariant.ts'
 import { type Project, projectByName, projectRowByName, projects } from './project-read.ts'
 import {
   PROJECT_REFERENCE_REPORT,

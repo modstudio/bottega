@@ -3,12 +3,15 @@
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { git } from '../git/git-environment.ts'
-import { shellQuote } from '../resources/git-locks.ts'
 
 export type MainCheckoutFacts = {
   branch: string | null
   trunk: string
   trackedModified: boolean
+}
+
+function shellQuote(value: string): string {
+  return `'${value.replace(/'/g, "'\\''")}'`
 }
 
 /** Render the one sanctioned command that returns a registered main checkout to trunk. */
