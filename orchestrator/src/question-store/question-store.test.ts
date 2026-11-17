@@ -13,7 +13,11 @@ import {
   markQuestionDeliveryPending,
   pendingQuestionIds,
 } from '../run/question-delivery-pending.ts'
-import { registerQuestionRunPusher } from './question-run-pusher.ts'
+import {
+  type QuestionRunPusher,
+  registerQuestionRunPusher,
+  resolveQuestionRunPusher,
+} from './question-run-pusher.ts'
 import { questionStore } from './question-store.ts'
 import { RecordQuestionStore } from './question-store-record.ts'
 import type { QuestionStore } from './question-store-types.ts'
@@ -30,8 +34,10 @@ const EXCLUDED_QUESTION_ID = '00000000-0000-4000-8000-000000000108'
 const SPACE_ID = '00000000-0000-4000-8000-000000000109'
 const OTHER_SPACE_ID = '00000000-0000-4000-8000-000000000110'
 let pushedRuns: string[]
+let previousQuestionRunPusher: QuestionRunPusher
 
 beforeEach(() => {
+  previousQuestionRunPusher = resolveQuestionRunPusher()
   pushedRuns = []
   registerQuestionRunPusher(async (_database, runId) => {
     pushedRuns.push(runId)
@@ -39,7 +45,7 @@ beforeEach(() => {
 })
 
 afterEach(() => {
-  registerQuestionRunPusher(async () => {})
+  registerQuestionRunPusher(previousQuestionRunPusher)
 })
 type QuestionSnapshot = QuestionWriteBody['question']
 const field = (row: object, key: string): unknown => (row as Record<string, unknown>)[key]

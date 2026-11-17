@@ -459,6 +459,7 @@ test('local-only compose makes no client call and writes no task-flow outbox row
 
 test('advance, await, rule, and abandon call the record before caching returned revisions', async () => {
   const d = hostedDatabase()
+  installRecordApiClient({ ...createMemoryRecordApiClient(), ...projectIdentityClient })
   const composeCalls: TaskFlowIntentInput<'compose'>[] = []
   const events: string[] = []
   let stageId = ''
