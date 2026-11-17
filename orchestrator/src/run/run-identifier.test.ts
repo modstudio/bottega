@@ -8,7 +8,11 @@ import { setMachineValue, writeMachineNames } from '../../../shared/machine-conf
 import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
-import { parseRunIdentifier, resolveRunIdentifier } from './run-identifier.ts'
+import {
+  parseRunIdentifier,
+  resolveRunIdentifier,
+  resolveRunIdentifierOrNull,
+} from './run-identifier.ts'
 import { classifyRunIdentifier as classifyGrammar } from './run-identifier-grammar.ts'
 
 let configRoot: string
@@ -31,6 +35,7 @@ describe('run identifier', () => {
     expect(
       classifyGrammar('release/1.2', { shortName: 'mine', formerShortNames: ['old-mine'] }),
     ).toBeNull()
+    expect(classifyGrammar('X/r42', { shortName: 'mine', formerShortNames: [] })).toBeNull()
   })
 
   test('a foreign label refuses in the resolver before any database query', () => {
@@ -72,7 +77,19 @@ describe('run identifier', () => {
     expect(resolveRunIdentifier(db(), recordId.toUpperCase())).toBe(recordId)
     const unknown = newRecordId()
     expect(() => resolveRunIdentifier(db(), unknown)).toThrow(
-      `no run matches ${JSON.stringify(unknown)}; pass a positive decimal run number, name/number, or a full run UUID`,
+      'reference is not visible in any space you belong to',
     )
+  })
+
+  test('nullable resolution maps only a resolution miss to null', () => {
+    expect(resolveRunIdentifierOrNull(db(), newRecordId())).toBeNull()
+    expect(resolveRunIdentifierOrNull(db(), 'not-an-identifier')).toBeNull()
+    const failure = new Error('database failed')
+    const database = {
+      query() {
+        throw failure
+      },
+    } as unknown as Database
+    expect(() => resolveRunIdentifierOrNull(database, 42)).toThrow(failure)
   })
 })

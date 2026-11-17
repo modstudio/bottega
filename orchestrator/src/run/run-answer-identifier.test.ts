@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { writeMachineNames } from '../../../shared/machine-config.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
@@ -27,12 +28,23 @@ const question = (overrides: Partial<NonNullable<AnswerIdentifierFacts['question
 })
 
 describe('answer identifier parse', () => {
-  test('composes machine labels with question grammar', () => {
+  test('preserves qualifiers for identity resolution', () => {
     const names = { shortName: 'mine', formerShortNames: ['old-mine'] }
-    expect(parseAnswerIdentifier('mine/q42', names)).toEqual({
+    expect(parseAnswerIdentifier('beta#q42', names)).toEqual({
       kind: 'question-number',
       number: 42,
+      qualifier: { kind: 'project', value: 'beta' },
     })
+    expect(parseAnswerIdentifier('mine/r42', names)).toEqual({
+      kind: 'run-number',
+      number: 42,
+      qualifier: { kind: 'machine', value: 'mine' },
+    })
+  })
+  test('refuses a machine qualifier on a question with the project-qualified remedy', () => {
+    expect(() => parseAnswerIdentifier('mine/q42')).toThrow(
+      'question references cannot use a machine qualifier; pass a <project>#q<number> reference',
+    )
   })
   test('owns q-prefix grammar and accepts the run identifier forms', () => {
     const recordId = newRecordId()
@@ -154,6 +166,47 @@ test('question number and UUID resolve an open question asked by a real turn to 
   expect(await resolveAnswerIdentifier(db(), questionId, null)).toBe(root)
 })
 
+test('a qualified question resolves in that project while an unqualified label stays local', async () => {
+  const suffix = newRecordId().slice(-8)
+  const alphaName = `answer-alpha-${suffix}`
+  const betaName = `answer-beta-${suffix}`
+  const alpha = newRecordId()
+  const beta = newRecordId()
+  const session = `answer-session-${suffix}`
+  db()
+    .query('INSERT INTO project(record_id,name,path,settings) VALUES (?,?,?,?)')
+    .run(alpha, alphaName, `/tmp/${alphaName}`, '{}')
+  db()
+    .query('INSERT INTO project(record_id,name,path,settings) VALUES (?,?,?,?)')
+    .run(beta, betaName, `/tmp/${betaName}`, '{}')
+  db()
+    .query(
+      `INSERT INTO presence
+         (session_id,harness,role,machine,project,project_record_id,cwd,first_seen,last_seen)
+       VALUES (?,'codex','architect','machine',?,?,?,'2026-11-17','2026-11-17')`,
+    )
+    .run(session, alphaName, alpha, `/tmp/${alphaName}`)
+  const alphaRun = addRun({
+    agent: 'codex',
+    job: 'file-question',
+    status: 'asking',
+    projectRecordId: alpha,
+  })
+  const betaRun = addRun({
+    agent: 'codex',
+    job: 'file-question',
+    status: 'asking',
+    projectRecordId: beta,
+  })
+  const alphaNumber = 880_001
+  const betaNumber = 880_002
+  addQuestion(alphaRun, alphaNumber)
+  addQuestion(betaRun, betaNumber)
+
+  expect(await resolveAnswerIdentifier(db(), `q${alphaNumber}`, session)).toBe(alphaRun)
+  expect(await resolveAnswerIdentifier(db(), `${betaName}#q${betaNumber}`, session)).toBe(betaRun)
+})
+
 test('an answered question target refuses instead of selecting another open question', async () => {
   const root = addRun({ agent: 'codex', job: 'file-question', status: 'asking' })
   const answeredId = addQuestion(root, 81)
@@ -187,4 +240,28 @@ test('bare-number resolution uses real run, question, ownership, and chain facts
     `bare identifier ${runNumber} is ambiguous between run:${runNumber} (${asking}) and q${runNumber}`,
   )
   expect(await resolveAnswerIdentifier(db(), asking, session)).toBe(asking)
+})
+
+test('machine-qualified run numbers resolve without a question-number collision check', async () => {
+  const machineName = 'answer-machine'
+  writeMachineNames({ shortName: machineName, displayName: 'Answer Machine' })
+  const session = 'machine-qualified-answer-session'
+  const asking = addRun({ agent: 'codex', job: 'file-question', status: 'asking', session })
+  const runNumber = db()
+    .query<{ number: number }, [string]>('SELECT number FROM run WHERE record_id=?')
+    .get(asking)!.number
+  addQuestion(asking, runNumber + 1000)
+
+  expect(await resolveAnswerIdentifier(db(), `${machineName}/${runNumber}`, session)).toBe(asking)
+  expect(await resolveAnswerIdentifier(db(), `${machineName}/r${runNumber}`, session)).toBe(asking)
+})
+
+test('a bare number with no run keeps the explicit question hint', async () => {
+  const owner = addRun({ agent: 'codex', job: 'file-question', status: 'asking' })
+  const number = 900_001
+  addQuestion(owner, number)
+
+  await expect(resolveAnswerIdentifier(db(), number, null)).rejects.toThrow(
+    `run ${number} does not exist; to answer question q${number}, pass q${number}`,
+  )
 })

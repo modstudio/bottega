@@ -111,6 +111,8 @@ export const mcpModules: McpModule[] = [
     '../run/ruling-file.ts',
     '../run/ruling-overturn.ts',
     '../run/question-identifier.ts',
+    '../identity/identity.ts',
+    '../identity/identity-context.ts',
     '../run/run-answer.ts',
     '../run/run-inbox.ts',
     '../run/run-identifier.ts',

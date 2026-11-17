@@ -477,7 +477,7 @@ test('malformed and unknown UUID question selectors refuse without writing', asy
       },
       helpers,
     ),
-  ).rejects.toThrow('no question has UUID')
+  ).rejects.toThrow('not visible in project continuation-fixture')
   expect(db().query('SELECT answer FROM question WHERE run_record_id=?').get(id)).toEqual({
     answer: null,
   })

@@ -5,6 +5,41 @@ import {
   dependencyCruiserNodeVersionRefusal,
   NON_TYPESCRIPT_TEST_DEPENDENCIES,
 } from './architecture-cruise.ts'
+import {
+  identityReferenceGuardViolations,
+  identityReferenceViolationCount,
+} from './architecture-identity-reference.ts'
+
+test('identity reference guard rejects an interpolated number-column lookup outside identity', () => {
+  const added = identityReferenceViolationCount(
+    '`SELECT requested.record_id WHERE $' +
+      '{clause} AND requested.NuMbEr=? OR number IN (?) ON a.number=b.number`',
+    'orchestrator/src/run/new.ts',
+  )
+  expect(identityReferenceGuardViolations({ 'orchestrator/src/run/new.ts': added }, {})).toEqual([
+    'orchestrator/src/run/new.ts: production identity bypass count grew from 0 to 3; resolve the reference through identity/',
+  ])
+})
+
+test('identity reference guard rejects a tagged-template number-column lookup', () => {
+  const added = identityReferenceViolationCount(
+    'tx`SELECT id FROM note WHERE number=$' + '{n}`',
+    'orchestrator/src/run/new.ts',
+  )
+  expect(identityReferenceGuardViolations({ 'orchestrator/src/run/new.ts': added }, {})).toEqual([
+    'orchestrator/src/run/new.ts: production identity bypass count grew from 0 to 1; resolve the reference through identity/',
+  ])
+})
+
+test('identity reference guard rejects a question-number helper call outside identity', () => {
+  const added = identityReferenceViolationCount(
+    'await questionByProjectNumber(database, number, projectId)',
+    'orchestrator/src/run/new.ts',
+  )
+  expect(identityReferenceGuardViolations({ 'orchestrator/src/run/new.ts': added }, {})).toEqual([
+    'orchestrator/src/run/new.ts: production identity bypass count grew from 0 to 1; resolve the reference through identity/',
+  ])
+})
 
 test('every non-TypeScript test dependency exists in the tree', () => {
   for (const tests of Object.values(NON_TYPESCRIPT_TEST_DEPENDENCIES)) {

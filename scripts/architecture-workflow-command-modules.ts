@@ -75,6 +75,7 @@ export const workflowCommandModules: WorkflowCommandModule[] = [
   module('orchestrator/src/workflow/workflow-step-action-commands.ts', [
     'commander',
     '../../../shared/brand.ts',
+    '../../../shared/reference.ts',
     '../commands/do-options.ts',
     '../commands/pull-request.ts',
     '../commands/support.ts',

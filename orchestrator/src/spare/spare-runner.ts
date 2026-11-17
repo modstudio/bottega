@@ -8,6 +8,7 @@ import { readFileSync } from 'node:fs'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { gitAt } from '../../../shared/git.ts'
 import { readMachineValue } from '../../../shared/machine-config.ts'
+import { parseReference, REFERENCE_PREFIXES } from '../../../shared/reference.ts'
 import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 import { agentRows } from '../agent/agent-registry.ts'
 import { db } from '../database/db.ts'
@@ -255,6 +256,19 @@ const quiet = (lastFailureKind: string | null): ItemResult => ({
   report: null,
 })
 
+export function isUsableSpareRunIdentifier(identifier: string): boolean {
+  try {
+    const reference = parseReference(identifier, 'run')
+    return (
+      reference.qualifier === null &&
+      (reference.value.kind === 'number' ||
+        (reference.value.kind === 'label' && reference.value.prefix === REFERENCE_PREFIXES.run))
+    )
+  } catch {
+    return false
+  }
+}
+
 /** Dispatch one document's run, wait for it, and record what it licensed. */
 async function workOneItem(item: DriftDocFacts, ctx: NightContext): Promise<ItemResult> {
   // The commit the run audits is the one checked out when it is dispatched.
@@ -278,7 +292,7 @@ async function workOneItem(item: DriftDocFacts, ctx: NightContext): Promise<Item
   const classification = classifyDispatch({
     exitCode: dispatch.exitCode,
     rowAppeared: run !== null,
-    identifierUsable: /^[0-9]+$/.test(runIdentifier),
+    identifierUsable: isUsableSpareRunIdentifier(runIdentifier),
   })
 
   if (classification === 'capacity') {

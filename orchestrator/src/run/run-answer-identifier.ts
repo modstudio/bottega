@@ -4,19 +4,22 @@
 import type { Database } from 'bun:sqlite'
 import { storedMachineNames } from '../../../shared/machine-config.ts'
 import {
-  questionByProjectNumber,
-  questionNumberProjectId,
-  questionsById,
-} from '../question-store/question-store-read.ts'
-import { questionNumberProjectIds } from '../question-store/question-store-sqlite-reads.ts'
-import { type MachineIdentifierNames, stripMachineLabel } from '../record/machine-name.ts'
+  formatReference,
+  parseReference,
+  REFERENCE_PREFIXES,
+  type ReferenceQualifier,
+} from '../../../shared/reference.ts'
+import { resolve } from '../identity/identity.ts'
+import { identityContext } from '../identity/identity-context.ts'
+import { ResolutionMissError } from '../identity/identity-local-run.ts'
+import { questionsById } from '../question-store/question-store-read.ts'
+import type { MachineIdentifierNames } from '../record/machine-name.ts'
 import { questionsForRunChain } from './question-open.ts'
-import { classifyBareRunIdentifier } from './run-identifier-grammar.ts'
 
 export type ParsedAnswerIdentifier =
-  | { kind: 'question-number'; number: number }
-  | { kind: 'run-number'; number: number }
-  | { kind: 'record-id'; recordId: string }
+  | { kind: 'question-number'; number: number; qualifier?: ReferenceQualifier }
+  | { kind: 'run-number'; number: number; qualifier?: ReferenceQualifier }
+  | { kind: 'record-id'; recordId: string; qualifier?: ReferenceQualifier }
 
 type AnswerRunFacts = {
   recordId: string
@@ -43,39 +46,79 @@ export type AnswerIdentifierDecision =
   | { kind: 'target'; runRecordId: string }
   | { kind: 'refuse'; reason: string }
 
+const ANSWER_IDENTIFIER_FORMS =
+  'q<n>, <project>#q<n>, a positive decimal run number, r<n>, <machine>/<n>, <machine>/r<n>, or a full UUID'
+
 function questionReference(
   identifier: Exclude<ParsedAnswerIdentifier, { kind: 'run-number' }>,
 ): string {
-  return identifier.kind === 'question-number' ? `q${identifier.number}` : identifier.recordId
+  return identifier.kind === 'question-number'
+    ? qualifiedReference(identifier.qualifier, `${REFERENCE_PREFIXES.question}${identifier.number}`)
+    : identifier.recordId
+}
+
+function qualifiedReference(qualifier: ReferenceQualifier | undefined, value: string): string {
+  if (!qualifier) return value
+  return `${qualifier.value}${qualifier.kind === 'project' ? '#' : '/'}${value}`
+}
+
+function withQualifier<T extends ParsedAnswerIdentifier>(
+  identifier: T,
+  qualifier: ReferenceQualifier | null,
+): T {
+  return qualifier ? { ...identifier, qualifier } : identifier
 }
 
 function waitingDescription(rootRecordId: string, questionNumbers: number[]): string {
   if (questionNumbers.length === 0) return `run ${rootRecordId} has no open questions`
-  return `run ${rootRecordId} is waiting on ${questionNumbers.map((number) => `q${number}`).join(', ')}`
+  return `run ${rootRecordId} is waiting on ${questionNumbers.map((number) => formatReference('question', number)).join(', ')}`
 }
 
 function explicitQuestionRemedy(questionNumbers: number[]): string {
-  const references = questionNumbers.map((number) => `q${number}`).join(', ')
+  const references = questionNumbers.map((number) => formatReference('question', number)).join(', ')
   return `answer ${questionNumbers.length === 1 ? 'it' : 'them'} explicitly with ${references}`
 }
 
 export function parseAnswerIdentifier(
   input: string | number,
-  names: MachineIdentifierNames | null = storedMachineNames(),
+  _names: MachineIdentifierNames | null = storedMachineNames(),
 ): ParsedAnswerIdentifier {
   const original = String(input)
-  const given = stripMachineLabel(original, names)
-  const question = given.match(/^q([0-9]+)$/)
-  if (question) {
-    const number = Number(question[1])
-    if (Number.isSafeInteger(number) && number > 0) return { kind: 'question-number', number }
+  let reference: ReturnType<typeof parseReference>
+  try {
+    reference = parseReference(original, 'run')
+  } catch {
+    throw new Error(
+      `invalid answer identifier ${JSON.stringify(original)}: expected ${ANSWER_IDENTIFIER_FORMS}`,
+    )
   }
-  const runIdentifier = classifyBareRunIdentifier(given)
-  if (runIdentifier?.kind === 'number') return { kind: 'run-number', number: runIdentifier.number }
-  if (runIdentifier?.kind === 'record-id')
-    return { kind: 'record-id', recordId: runIdentifier.recordId }
+  if (reference.value.kind === 'label' && reference.value.prefix === REFERENCE_PREFIXES.question) {
+    if (reference.qualifier?.kind === 'machine')
+      throw new Error(
+        'question references cannot use a machine qualifier; pass a <project>#q<number> reference',
+      )
+    return withQualifier(
+      { kind: 'question-number', number: reference.value.number },
+      reference.qualifier,
+    )
+  }
+  if (reference.value.kind === 'label' && reference.value.prefix === REFERENCE_PREFIXES.run)
+    return withQualifier(
+      { kind: 'run-number', number: reference.value.number },
+      reference.qualifier,
+    )
+  if (reference.value.kind === 'number')
+    return withQualifier(
+      { kind: 'run-number', number: reference.value.number },
+      reference.qualifier,
+    )
+  if (reference.value.kind === 'record-id')
+    return withQualifier(
+      { kind: 'record-id', recordId: reference.value.recordId },
+      reference.qualifier,
+    )
   throw new Error(
-    `invalid answer identifier ${JSON.stringify(original)}: expected q followed by a positive decimal question number, name/q followed by a positive decimal question number, a positive decimal run number, name/number, or a full run or question UUID`,
+    `invalid answer identifier ${JSON.stringify(original)}: expected ${ANSWER_IDENTIFIER_FORMS}`,
   )
 }
 
@@ -100,7 +143,7 @@ function explicitQuestionDecision(
     reason:
       identifier.kind === 'question-number'
         ? `no question has number ${identifier.number}`
-        : `no run or question matches ${JSON.stringify(identifier.recordId)}; pass qN, a full question UUID, a positive decimal run number, or a full run UUID`,
+        : `no run or question matches ${JSON.stringify(identifier.recordId)}; pass ${ANSWER_IDENTIFIER_FORMS}`,
   }
 }
 
@@ -158,6 +201,26 @@ export function answerIdentifierDecision(facts: AnswerIdentifierFacts): AnswerId
     : explicitQuestionDecision(identifier, run, question)
 }
 
+function isResolutionMiss(error: unknown): boolean {
+  return error instanceof ResolutionMissError
+}
+
+async function readResolvedRunNumberFacts(
+  database: Database,
+  reference: string | number,
+  context: ReturnType<typeof identityContext>,
+  callerSessionId: string | null,
+): Promise<AnswerRunFacts | null> {
+  let run: Awaited<ReturnType<typeof resolve>> | null = null
+  try {
+    run = await resolve(reference, context, 'run')
+  } catch (error) {
+    if (!isResolutionMiss(error)) throw error
+  }
+  if (!run) return null
+  return readRunFacts(database, run.recordId, callerSessionId)
+}
+
 async function openQuestionNumbers(database: Database, rootRecordId: string): Promise<number[]> {
   return (await questionsForRunChain(database, rootRecordId))
     .filter(({ answered_at, closed_at }) => answered_at === null && closed_at === null)
@@ -167,10 +230,9 @@ async function openQuestionNumbers(database: Database, rootRecordId: string): Pr
 
 async function readRunFacts(
   database: Database,
-  identifier: ParsedAnswerIdentifier,
+  runRecordId: string,
   callerSessionId: string | null,
 ): Promise<AnswerRunFacts | null> {
-  if (identifier.kind === 'question-number') return null
   const row =
     database
       .query<
@@ -180,15 +242,15 @@ async function readRunFacts(
           status: string
           owner_session_id: string | null
         },
-        [number | string]
+        [string]
       >(
         `SELECT requested.record_id, requested.status, root.record_id root_record_id,
                 root.session_id owner_session_id
            FROM run requested
            JOIN run root ON root.record_id=COALESCE(requested.parent_run_record_id,requested.record_id)
-          WHERE ${identifier.kind === 'run-number' ? 'requested.number=?' : 'requested.record_id=?'}`,
+          WHERE requested.record_id=?`,
       )
-      .get(identifier.kind === 'run-number' ? identifier.number : identifier.recordId) ?? null
+      .get(runRecordId) ?? null
   if (!row) return null
   return {
     recordId: row.record_id,
@@ -202,21 +264,25 @@ async function readRunFacts(
 async function readQuestionFacts(
   database: Database,
   identifier: ParsedAnswerIdentifier,
+  context: ReturnType<typeof identityContext>,
 ): Promise<AnswerQuestionFacts | null> {
-  // A bare number may name a run, so a number no question holds is a miss, not a refusal.
-  if (
-    identifier.kind !== 'record-id' &&
-    !questionNumberProjectIds(database, identifier.number).length
-  )
-    return null
-  const row =
-    identifier.kind === 'record-id'
-      ? (await questionsById(database, [identifier.recordId]))[0]
-      : await questionByProjectNumber(
-          database,
-          identifier.number,
-          questionNumberProjectId(database, identifier.number),
+  let recordId: string
+  if (identifier.kind === 'record-id') recordId = identifier.recordId
+  else {
+    try {
+      recordId = (
+        await resolve(
+          qualifiedReference(identifier.qualifier, formatReference('question', identifier.number)),
+          context,
+          'question',
         )
+      ).recordId
+    } catch (error) {
+      if (isResolutionMiss(error)) return null
+      throw error
+    }
+  }
+  const row = (await questionsById(database, [recordId]))[0]
   if (!row) return null
   const runId = String(row.run_record_id)
   const rootRecordId =
@@ -240,10 +306,51 @@ export async function resolveAnswerIdentifier(
   callerSessionId: string | null,
 ): Promise<string> {
   const identifier = parseAnswerIdentifier(input)
+  const context = identityContext(database, { session: callerSessionId })
+  if (identifier.kind === 'question-number') {
+    const question = await resolve(
+      qualifiedReference(
+        identifier.qualifier,
+        `${REFERENCE_PREFIXES.question}${identifier.number}`,
+      ),
+      context,
+      'question',
+    )
+    const normalized = { kind: 'record-id' as const, recordId: question.recordId }
+    const decision = answerIdentifierDecision({
+      identifier,
+      run: null,
+      question: await readQuestionFacts(database, normalized, context),
+    })
+    if (decision.kind === 'refuse') throw new Error(decision.reason)
+    return decision.runRecordId
+  }
+  if (identifier.kind === 'run-number') {
+    const runReference = qualifiedReference(identifier.qualifier, String(identifier.number))
+    const decision = answerIdentifierDecision({
+      identifier,
+      run: await readResolvedRunNumberFacts(database, runReference, context, callerSessionId),
+      question:
+        identifier.qualifier?.kind === 'machine'
+          ? null
+          : await readQuestionFacts(database, identifier, context),
+    })
+    if (decision.kind === 'refuse') throw new Error(decision.reason)
+    return decision.runRecordId
+  }
+  const resolved = await resolve(
+    qualifiedReference(identifier.qualifier, identifier.recordId),
+    context,
+  )
+  const normalized = { kind: 'record-id' as const, recordId: resolved.recordId }
   const decision = answerIdentifierDecision({
-    identifier,
-    run: await readRunFacts(database, identifier, callerSessionId),
-    question: await readQuestionFacts(database, identifier),
+    identifier: normalized,
+    run:
+      resolved.kind === 'run'
+        ? await readRunFacts(database, resolved.recordId, callerSessionId)
+        : null,
+    question:
+      resolved.kind === 'question' ? await readQuestionFacts(database, normalized, context) : null,
   })
   if (decision.kind === 'refuse') throw new Error(decision.reason)
   return decision.runRecordId
