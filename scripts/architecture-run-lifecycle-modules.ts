@@ -169,6 +169,13 @@ export const runLifecycleModules: ArchitectureModule[] = [
     './run-retry.ts',
   ]),
   module('orchestrator/src/run/run-alive.ts', []),
+  module('orchestrator/src/run/superseded-asking-turn.ts', []),
+  module('orchestrator/src/run/superseded-asking-turn-store.ts', [
+    'bun:sqlite',
+    '../record/machine-identity.ts',
+    './run-outbox.ts',
+    './superseded-asking-turn.ts',
+  ]),
   module('orchestrator/src/run/run-owner-session-liveness.ts', [
     '../database/db.ts',
     './session-liveness-adapter.ts',

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { supersededAskingTurns, type ChainTurnState } from './superseded-asking-turn.ts'
+import { type ChainTurnState, supersededAskingTurns } from './superseded-asking-turn.ts'
 
 const turn = (turn: number, status: string): ChainTurnState => ({
   recordId: `run-${turn}`,
@@ -18,5 +18,14 @@ describe('superseded asking turns', () => {
 
   test('does not supersede the latest asking turn', () => {
     expect(supersededAskingTurns([turn(2, 'ok'), turn(3, 'asking')])).toEqual([])
+  })
+
+  test('does not use a later turn from another root', () => {
+    expect(
+      supersededAskingTurns([
+        { ...turn(2, 'asking'), rootId: 'root-a' },
+        { ...turn(3, 'ok'), rootId: 'root-b' },
+      ]),
+    ).toEqual([])
   })
 })

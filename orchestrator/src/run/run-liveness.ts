@@ -33,9 +33,9 @@ import {
   sharedGitConfigCheckSkipReason,
 } from './shared-git-config-check.ts'
 import {
-  type ChainTurnState,
-  supersededAskingTurns,
-} from './superseded-asking-turn.ts'
+  reconcileSupersededAskingTurns,
+  supersededAskingTurnDecisions,
+} from './superseded-asking-turn-store.ts'
 
 /** The common bound for callers following a detached run to its terminal state. */
 export const RUN_FOLLOW_TIMEOUT_MS = STALE_AFTER_MS + 60_000
@@ -243,43 +243,6 @@ function rollUpReapedRoots(
  */
 export type ObservedDeadRun = { record_id: string; reason: string }
 
-function supersededAskingTurnDecisions(
-  database: Database,
-  rootId?: string,
-): ReturnType<typeof supersededAskingTurns> {
-  const where = rootId ? 'WHERE parent_run_record_id = ?' : 'WHERE parent_run_record_id IS NOT NULL'
-  const rows = database
-    .query(
-      `SELECT record_id AS recordId, parent_run_record_id AS rootId, number, turn, status
-         FROM run ${where}
-        ORDER BY parent_run_record_id, turn, number`,
-    )
-    .all(...(rootId ? [rootId] : [])) as ChainTurnState[]
-  return supersededAskingTurns(rows)
-}
-
-/** Close asking continuation turns that a later turn in the same chain superseded. */
-export function reconcileSupersededAskingTurns(
-  database: Database,
-  machine: string,
-  finishedAt: string,
-  rootId?: string,
-): number {
-  const decisions = supersededAskingTurnDecisions(database, rootId)
-  const update = database.query(
-    `UPDATE run SET status='stale', failure_kind='abandoned', error=?
-      WHERE record_id=? AND status='asking'`,
-  )
-  let changed = 0
-  for (const decision of decisions) {
-    const result = update.run(`superseded by run ${decision.supersededByNumber}`, decision.recordId)
-    if (result.changes !== 1) continue
-    enqueueRunRecord(database, decision.recordId, machine, finishedAt)
-    changed++
-  }
-  return changed
-}
-
 type RunningRow = {
   number: number
   record_id: string
@@ -485,10 +448,10 @@ export function reapStale(
     ]
   }
   const ended = [...dead, ...abandonedBootstraps, ...setupDeaths, ...recordedCauseDeaths]
-  const localMachineId = ended.length || supersededAsking.length ? machineId() : ''
+  const localMachineId = ended.length ? machineId() : ''
   const finishedAt = new Date(now).toISOString()
   const supersededCount = supersededAsking.length
-    ? writeTransaction(() => reconcileSupersededAskingTurns(d, localMachineId, finishedAt), d)
+    ? writeTransaction(() => reconcileSupersededAskingTurns(d, finishedAt), d)
     : 0
   if (abandonedBootstraps.length) {
     const update = d.query(

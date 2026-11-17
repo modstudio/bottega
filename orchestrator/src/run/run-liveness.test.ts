@@ -128,11 +128,11 @@ describe('reapStale', () => {
       failure_kind: 'abandoned',
       error: `superseded by run ${latestNumber}`,
     })
-    expect(db().query('SELECT status FROM run WHERE record_id=?').get(root)).toEqual({ status: 'ok' })
+    expect(db().query('SELECT status FROM run WHERE record_id=?').get(root)).toEqual({
+      status: 'ok',
+    })
     expect(
-      db()
-        .query('SELECT answered_at,closed_at FROM question WHERE record_id=?')
-        .get(questionId),
+      db().query('SELECT answered_at,closed_at FROM question WHERE record_id=?').get(questionId),
     ).toEqual({ answered_at: null, closed_at: null })
   })
 
