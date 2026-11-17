@@ -59,7 +59,7 @@ import {
   validateCreate,
 } from '../worktree/worktree-template.ts'
 import { isCommitShapedBranch } from './branch-name.ts'
-import { returnMainCheckoutToTrunkCommand } from './main-checkout-invariant.ts'
+import { returnMainCheckoutToTrunkCommand, shellQuote } from './main-checkout-invariant.ts'
 import { projectAgentKeyProblems } from './project-agent-keys.ts'
 import { focusedTestsProblems } from './project-focused-tests.ts'
 import {
@@ -843,11 +843,6 @@ function inspectMainCheckout(projectPath: string): MainCheckoutInspection | null
     untracked: state.untracked,
     sequence: state.sequence,
   }
-}
-
-/** POSIX single-quote so a cleared-by line can be pasted into a shell. */
-function shellQuote(value: string): string {
-  return `'${value.replace(/'/g, "'\\''")}'`
 }
 
 function mainCheckoutRefusal(

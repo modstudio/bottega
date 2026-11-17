@@ -10,9 +10,9 @@ import { releaseProofDecision, releaseRungProofRefusal } from './release-decisio
 import type { EntryClosure } from './release-entry-closure.ts'
 import {
   newestSuccessfulProvenReleaseCommit,
-  returnMainCheckoutToTrunkCommand,
   type ReleaseResult,
   releaseProject,
+  returnMainCheckoutToTrunkCommand,
 } from './release-service.ts'
 import { decideShipToReach, releaseDepthFlag, shipToRungs } from './ship-to-reach.ts'
 
