@@ -293,14 +293,19 @@ export function registerQuestionTaskRecordSyncProof(
         )
       ).items,
     ).toEqual([{ workflow_cursor_record_id: stageId, number: workflowWrite.number }])
-    expect(
-      (
-        await client.readQuestions!(
-          { read: 'open-for-tasks', taskRecordIds: [directTaskId] },
-          destination,
-        )
-      ).items,
-    ).toEqual([expect.objectContaining({ record_id: workflowQuestion.id })])
+    const openForTask = (
+      await client.readQuestions!(
+        { read: 'open-for-tasks', taskRecordIds: [directTaskId] },
+        destination,
+      )
+    ).items
+    expect(openForTask).toContainEqual(expect.objectContaining({ record_id: workflowQuestion.id }))
+    for (const row of openForTask)
+      expect(row).toMatchObject({
+        workflow_task_record_id: directTaskId,
+        answered_at: null,
+        closed_at: null,
+      })
     expect(
       (
         await client.readQuestions!(
@@ -619,8 +624,8 @@ export function registerQuestionTaskRecordSyncProof(
     ).items
     sameKeys('open-for-session', hostedOpen[0], localOpen[0])
     for (const kind of ['workflow', 'run'] as const) {
-      const hostedRulings = (await hostedStore.read({ read: 'rulings', kind })).items
-      const localRulings = (await localStore.read({ read: 'rulings', kind })).items
+      const hostedRulings = (await hostedStore.read({ read: 'rulings', kind, since: at })).items
+      const localRulings = (await localStore.read({ read: 'rulings', kind, since: at })).items
       const id = kind === 'workflow' ? parityWorkflow.id : parityRun.id
       sameKeys(
         `rulings ${kind}`,

@@ -24,6 +24,8 @@ export function registerQuestionChangeFeedProof(
     const fixture = input()
     const priorQuestionId = newRecordId()
     const questionId = newRecordId()
+    // A bootstrap names since because unbounded ruling history reads are refused.
+    const bootstrapSince = '2026-11-15T00:00:00.000Z'
     const priorAskedAt = '2026-11-15T12:00:00.000Z'
     const priorAnsweredAt = '2026-11-15T12:01:00.000Z'
     const askedAt = '2026-11-15T13:00:00.000Z'
@@ -60,7 +62,10 @@ export function registerQuestionChangeFeedProof(
       SELECT xid,seq FROM record_change ORDER BY xid DESC,seq DESC LIMIT 1
     ) WHERE singleton;`)
 
-    const bootstrap = await client.readQuestions!({ read: 'rulings', kind: 'all' }, destination)
+    const bootstrap = await client.readQuestions!(
+      { read: 'rulings', kind: 'all', since: bootstrapSince },
+      destination,
+    )
     expect(bootstrap.items).toContainEqual(
       expect.objectContaining({
         record_id: priorQuestionId,
@@ -107,10 +112,21 @@ export function registerQuestionChangeFeedProof(
       destination,
     )
     expect(truncated.items).toHaveLength(1)
-    expect(truncated.cursor).toBeUndefined()
-    expect(truncated.more).toBeUndefined()
+    expect(truncated.cursor).toBe(`page:${String(truncated.items[0]!.number)}`)
+    expect(truncated.more).toBe(true)
     expect(truncated.reset).toBeUndefined()
-    const complete = await client.readQuestions!({ read: 'rulings', kind: 'all' }, destination)
+    const nextPage = await client.readQuestions!(
+      { read: 'rulings', kind: 'all', changedAfter: truncated.cursor! },
+      destination,
+    )
+    expect(nextPage.items.length).toBeGreaterThan(0)
+    expect(nextPage.items.map((item) => item.record_id)).not.toContain(
+      truncated.items[0]!.record_id,
+    )
+    const complete = await client.readQuestions!(
+      { read: 'rulings', kind: 'all', since: bootstrapSince },
+      destination,
+    )
     expect(complete.cursor).toBeString()
 
     const changed = await client.readQuestions!(
@@ -159,7 +175,7 @@ export function registerQuestionChangeFeedProof(
     ).toBe('2')
 
     const pagingBootstrap = await client.readQuestions!(
-      { read: 'rulings', kind: 'all' },
+      { read: 'rulings', kind: 'all', since: bootstrapSince },
       destination,
     )
     expect(pagingBootstrap.cursor).toBeString()
@@ -203,7 +219,7 @@ export function registerQuestionChangeFeedProof(
     expect(pagedQuestionIds.every((id) => pagedIds.has(id))).toBe(true)
 
     const drainedBootstrap = await client.readQuestions!(
-      { read: 'rulings', kind: 'all' },
+      { read: 'rulings', kind: 'all', since: bootstrapSince },
       destination,
     )
     const drainedIds = new Set(drainedBootstrap.items.map((item) => item.record_id as string))
