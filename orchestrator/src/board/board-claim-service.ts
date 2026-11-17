@@ -285,7 +285,6 @@ function refusedTake(conflicts: ClaimRow[], context: TakeTransaction): TakeTrans
 }
 
 function tellTakenOverHolder(claim: ClaimRow, context: TakeTransaction): void {
-  if (context.allowArchitectTakeover) return
   if (claim.holder_kind !== 'architect') return
   linkClaimNotice(
     claim.record_id,
