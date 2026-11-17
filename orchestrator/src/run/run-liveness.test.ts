@@ -95,6 +95,19 @@ const runNumber = (recordId: string): number =>
   ).number
 
 describe('reapStale', () => {
+  test('opens no write transaction when no asking turns need repair', () => {
+    const database = db()
+    const transaction = database.transaction.bind(database)
+    let transactionCalls = 0
+    spyOn(database, 'transaction').mockImplementation(((operation: () => unknown) => {
+      transactionCalls++
+      return transaction(operation)
+    }) as typeof database.transaction)
+
+    expect(reapStale(database, noSharedGitConfigCheck)).toBe(0)
+    expect(transactionCalls).toBe(0)
+  })
+
   test('restores an asking row whose latest chain audit is abandon', () => {
     const root = addRun({ agent: 'codex', job: 'craft', status: 'ok' })
     const id = addRun({

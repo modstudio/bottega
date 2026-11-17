@@ -397,9 +397,12 @@ function repairAskingTurns(
   database: Database,
   finishedAt: string,
 ): { supersededCount: number; repairedAbandoned: string[] } {
+  const superseded = supersededAskingTurnDecisions(database)
+  const overwrittenAbandons = overwrittenAbandonedAskingTurnDecisions(database)
+  if (!superseded.length && !overwrittenAbandons.length) {
+    return { supersededCount: 0, repairedAbandoned: [] }
+  }
   return writeTransaction(() => {
-    const superseded = supersededAskingTurnDecisions(database)
-    const overwrittenAbandons = overwrittenAbandonedAskingTurnDecisions(database)
     return {
       supersededCount: reconcileSupersededAskingTurns(database, superseded, finishedAt),
       repairedAbandoned: reconcileOverwrittenAbandonedAskingTurns(
