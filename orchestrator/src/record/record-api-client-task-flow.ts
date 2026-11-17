@@ -9,16 +9,24 @@ import { RecordApiRequestError } from './record-api-client-response.ts'
 import type { RecordIdentity } from './record-auth.ts'
 import {
   type HostedTaskFlow,
+  type HostedTaskFlowConflict,
   type HostedTaskFlowObligationById,
   type HostedTaskFlowProjectReferenceCounts,
+  type HostedTaskFlowQuestionIds,
+  type HostedTaskFlowRecordId,
   type HostedTaskFlowStageById,
   type HostedTaskFlowStageList,
+  type HostedTaskFlowStageRevision,
   type HostedTaskFlowTextById,
+  hostedTaskFlowConflictSchema,
   hostedTaskFlowObligationByIdSchema,
   hostedTaskFlowProjectReferenceCountsSchema,
+  hostedTaskFlowQuestionIdsSchema,
+  hostedTaskFlowRecordIdSchema,
   hostedTaskFlowSchema,
   hostedTaskFlowStageByIdSchema,
   hostedTaskFlowStageListSchema,
+  hostedTaskFlowStageRevisionSchema,
   hostedTaskFlowTextByIdSchema,
   RECORD_TASK_FLOW_NOT_FOUND_CODE,
   type TaskFlowPresence,
@@ -59,6 +67,31 @@ export type RecordTaskFlowClient = {
     selector: TaskFlowReadQueryInput,
     destination?: RecordRequestDestination,
   ): Promise<HostedTaskFlow>
+  readTaskFlowConflict?(
+    input: {
+      projectId: string
+      workflow: string
+      mode: string
+      workflowKey: string
+      exceptStageId: string
+    },
+    destination: RecordRequestDestination,
+  ): Promise<HostedTaskFlowConflict>
+  readTaskFlowRecordId?(
+    taskId: string,
+    destination?: RecordRequestDestination,
+  ): Promise<HostedTaskFlowRecordId>
+  readTaskFlowStageRevision?(
+    stageId: string,
+    destination?: RecordRequestDestination,
+  ): Promise<HostedTaskFlowStageRevision>
+  readUnlinkedWorkflowQuestionIds?(
+    input: {
+      projectId: string
+      workflowKey: string
+    },
+    destination: RecordRequestDestination,
+  ): Promise<HostedTaskFlowQuestionIds>
   listTaskFlowStages?(
     selector: Omit<TaskFlowStageListClientInput, 'limit'> & { limit?: number },
     destination?: RecordRequestDestination,
@@ -167,6 +200,26 @@ async function write<K extends TaskFlowIntent, T>(
 }
 function taskFlowReadClient(request: Request): Partial<RecordTaskFlowClient> {
   return {
+    readTaskFlowConflict: (input, destination) =>
+      request(`/v1/task-flow/conflicting-stage?${new URLSearchParams(input)}`, {
+        ...destination,
+        schema: (body) => hostedTaskFlowConflictSchema.parse(body),
+      }),
+    readTaskFlowRecordId: (taskId, destination) =>
+      request(`/v1/task-flow/flow-record-id?${new URLSearchParams({ taskId })}`, {
+        ...destination,
+        schema: (body) => hostedTaskFlowRecordIdSchema.parse(body),
+      }),
+    readTaskFlowStageRevision: (stageId, destination) =>
+      request(`/v1/task-flow/stage-revision?${new URLSearchParams({ stageId })}`, {
+        ...destination,
+        schema: (body) => hostedTaskFlowStageRevisionSchema.parse(body),
+      }),
+    readUnlinkedWorkflowQuestionIds: (input, destination) =>
+      request(`/v1/task-flow/unlinked-workflow-question-ids?${new URLSearchParams(input)}`, {
+        ...destination,
+        schema: (body) => hostedTaskFlowQuestionIdsSchema.parse(body),
+      }),
     readTaskFlow: (selector, destination) => {
       const query = new URLSearchParams()
       if (selector.taskKey) query.set('taskKey', selector.taskKey)

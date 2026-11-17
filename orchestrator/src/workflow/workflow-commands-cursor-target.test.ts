@@ -11,7 +11,6 @@ import { rememberProjectSpace } from '../project-space-cache.ts'
 import { machineId } from '../record/machine-identity.ts'
 import type { HostedTaskFlow } from '../record/record-task-flow-contract.ts'
 import { productionStepCatalogue } from './step-catalogue.ts'
-import { readThroughTaskFlow } from './task-flow-read-through.ts'
 import { composeWorkflowWithCursor } from './workflow-cursor.ts'
 import {
   workflowCommandPresentation as presentation,
@@ -37,7 +36,7 @@ afterEach(() => {
   else process.env.CLAUDE_CODE_SESSION_ID = priorSession
 })
 
-test('next by cursor alone reads through the row key and links the hosted task', async () => {
+test('next by cursor alone reads the authoritative row and links the hosted task', async () => {
   const slug = 'cursor-command-hosted-takeover'
   const project = 'cursor-command-hosted-takeover-project'
   const key = 'DEV-2174-fixture'
@@ -133,11 +132,7 @@ test('next by cursor alone reads through the row key and links the hosted task',
     readTaskFlow: async () => hosted(1, 0),
   })
   process.env.BOTTEGA_RECORD_API_URL = 'https://record.test'
-  await readThroughTaskFlow(db(), { project, taskKey: key, taskRecordId: taskId })
-  db().query('UPDATE workflow_cursor SET task_record_id=NULL WHERE record_id=?').run(stageId)
-  const cursor = db()
-    .query<{ number: number }, [string]>('SELECT number FROM workflow_cursor WHERE record_id=?')
-    .get(stageId)!.number
+  const cursor = 1
   const secondClient = createMemoryRecordApiClient({
     taskFlowStages: [{ flow: { ...hosted(2, 1).flow, taskId: null }, stage: hosted(2, 1).stage! }],
   })
@@ -176,10 +171,8 @@ test('next by cursor alone reads through the row key and links the hosted task',
 
   expect(lines.join('\n')).not.toContain('Took over this workflow stage from Remote CLI machine.')
   expect(
-    db()
-      .query('SELECT ordinal,state,task_record_id FROM workflow_cursor WHERE record_id=?')
-      .get(stageId),
-  ).toEqual({ ordinal: 1, state: 'done', task_record_id: taskId })
+    db().query('SELECT record_id FROM workflow_cursor WHERE record_id=?').get(stageId),
+  ).toBeNull()
 })
 
 test('cursor verbs parse every documented positional form before flags', async () => {

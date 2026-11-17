@@ -21,6 +21,22 @@ export const RECORD_QUESTION_CHANGE_TABLES = ['question'] as const
 const limited = (rows: Row[], limit?: number): Row[] =>
   limit === undefined ? rows : rows.slice(0, limit)
 
+export async function readRecordUnlinkedWorkflowQuestionIds(
+  input: Tenant & { projectId: string; workflowKey: string },
+): Promise<{ questionIds: string[] }> {
+  return recordPool(input.url).begin(async (tx) => {
+    await bindTenant(tx, input)
+    const rows = await tx`
+      SELECT q.id FROM question q
+      JOIN task_flow_stage s
+        ON s.id=q.workflow_cursor_record_id AND s.space_id=q.space_id
+      WHERE q.space_id=${input.spaceId}::uuid AND s.project_id=${input.projectId}::uuid
+        AND q.workflow_key=${input.workflowKey} AND q.workflow_task_id IS NULL
+      ORDER BY q.id`
+    return { questionIds: rows.map((row: Row) => String(row.id)) }
+  })
+}
+
 type RulingRead = Extract<RecordQuestionReadInput, { read: 'rulings' }>
 
 async function recordQuestionRulingRows(

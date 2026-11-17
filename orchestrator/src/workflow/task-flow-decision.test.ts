@@ -2,10 +2,8 @@ import { describe, expect, test } from 'bun:test'
 import {
   decideAppliedMirrorMutation,
   decideTaskFlowReadStatus,
-  decideTaskFlowReadThrough,
   decideTaskStageSelection,
   decideWorkflowTakeover,
-  reconcileKeylessInstanceSlot,
   taskFlowState,
 } from './task-flow-decision.ts'
 
@@ -15,17 +13,6 @@ test('applied mirror mutation distinguishes apply, keep, refresh, and refusal', 
   expect(decideAppliedMirrorMutation(2, 3, 5)).toBe('refresh')
   expect(decideAppliedMirrorMutation(2, 3, undefined)).toBe('refuse')
 })
-
-test.each([
-  ['local ahead', 4, 3, 4],
-  ['hosted ahead', 3, 4, 4],
-  ['equal', 4, 4, 4],
-] as const)(
-  'keyless slot reconciliation keeps the next free slot when %s',
-  (_case, local, hosted, expected) => {
-    expect(reconcileKeylessInstanceSlot(local, hosted)).toBe(expected)
-  },
-)
 
 describe('task flow state projection', () => {
   test.each([
@@ -94,96 +81,6 @@ test('takeover decision distinguishes same-machine, reachable, and offline advan
     remedy:
       'the stage was last advanced by this holder and was not read from the record; re-run with --key DEV-2098',
   })
-})
-
-test('read-through picks local, hosted, or refresh from stage revisions', () => {
-  expect(
-    decideTaskFlowReadThrough({
-      localFlowRevision: null,
-      hostedFlowRevision: 1,
-      hostedListsStages: true,
-      localStageRevision: null,
-      hostedStageRevision: null,
-    }),
-  ).toBe('hosted')
-  expect(
-    decideTaskFlowReadThrough({
-      localFlowRevision: 3,
-      hostedFlowRevision: 3,
-      hostedListsStages: true,
-      localStageRevision: 4,
-      hostedStageRevision: null,
-    }),
-  ).toBe('local')
-  expect(
-    decideTaskFlowReadThrough({
-      localFlowRevision: 3,
-      hostedFlowRevision: 3,
-      hostedListsStages: true,
-      localStageRevision: null,
-      hostedStageRevision: 1,
-    }),
-  ).toBe('hosted')
-  expect(
-    decideTaskFlowReadThrough({
-      localFlowRevision: 3,
-      hostedFlowRevision: 3,
-      hostedListsStages: true,
-      localStageRevision: 4,
-      hostedStageRevision: 5,
-    }),
-  ).toBe('refresh')
-  expect(
-    decideTaskFlowReadThrough({
-      localFlowRevision: 3,
-      hostedFlowRevision: 3,
-      hostedListsStages: true,
-      localStageRevision: 5,
-      hostedStageRevision: 5,
-    }),
-  ).toBe('local')
-})
-
-test.each([
-  ['without an open stage', null],
-  ['with an open stage', 4],
-] as const)('a newer hosted flow is refreshed %s', (_label, hostedStageRevision) => {
-  expect(
-    decideTaskFlowReadThrough({
-      localFlowRevision: 7,
-      hostedFlowRevision: 8,
-      hostedListsStages: true,
-      localStageRevision: 5,
-      hostedStageRevision,
-    }),
-  ).toBe('refresh')
-})
-
-test.each([7, 6])(
-  'a hosted flow at revision %s keeps stage-revision behavior',
-  (hostedFlowRevision) => {
-    expect(
-      decideTaskFlowReadThrough({
-        localFlowRevision: 7,
-        hostedFlowRevision,
-        hostedListsStages: true,
-        localStageRevision: 5,
-        hostedStageRevision: null,
-      }),
-    ).toBe('local')
-  },
-)
-
-test('a newer hosted flow without a stage list keeps stage-revision behavior', () => {
-  expect(
-    decideTaskFlowReadThrough({
-      localFlowRevision: 7,
-      hostedFlowRevision: 8,
-      hostedListsStages: false,
-      localStageRevision: 5,
-      hostedStageRevision: null,
-    }),
-  ).toBe('local')
 })
 
 test('task-flow route compatibility recognizes only its named not-found', () => {

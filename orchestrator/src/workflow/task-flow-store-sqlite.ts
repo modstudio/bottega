@@ -757,6 +757,11 @@ type SqliteTaskFlowReadStore = {
 export function sqliteTaskFlowReadStore(database: Database): SqliteTaskFlowReadStore {
   const local = new SqliteTaskFlowStore(database)
   return {
+    conflictingHostedStage: async (input) => local.conflictingHostedStage(input),
+    flowRecordIdForTask: async (taskRecordId) => local.flowRecordIdForTask(taskRecordId),
+    stageRevision: async (recordId) => local.stageRevision(recordId),
+    unlinkedWorkflowQuestionIds: async (project, workflowKey) =>
+      local.unlinkedWorkflowQuestionIds(project, workflowKey),
     openStageForTask: async (taskRecordId) => local.openStageForTask(taskRecordId),
     flowProjectionForTask: async (taskRecordId) => local.flowProjectionForTask(taskRecordId),
     stageByRecordId: async (recordId) => local.stageByRecordId(recordId),

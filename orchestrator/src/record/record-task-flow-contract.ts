@@ -163,6 +163,26 @@ export const taskFlowPresenceInputSchema = z.object({
 export type TaskFlowPresenceInput = z.infer<typeof taskFlowPresenceInputSchema>
 export type TaskFlowPresence = z.infer<typeof taskFlowPresenceInputSchema>
 
+export const hostedTaskFlowConflictSchema = z
+  .object({ number: z.number().int().positive(), recordId: z.string().uuid() })
+  .nullable()
+export type HostedTaskFlowConflict = z.infer<typeof hostedTaskFlowConflictSchema>
+
+export const hostedTaskFlowRecordIdSchema = z.object({
+  flowRecordId: z.string().uuid().nullable(),
+})
+export type HostedTaskFlowRecordId = z.infer<typeof hostedTaskFlowRecordIdSchema>
+
+export const hostedTaskFlowStageRevisionSchema = z.object({
+  revision: z.number().int().positive().nullable(),
+})
+export type HostedTaskFlowStageRevision = z.infer<typeof hostedTaskFlowStageRevisionSchema>
+
+export const hostedTaskFlowQuestionIdsSchema = z.object({
+  questionIds: z.array(z.string().uuid()),
+})
+export type HostedTaskFlowQuestionIds = z.infer<typeof hostedTaskFlowQuestionIdsSchema>
+
 export const taskFlowReadQuerySchema = z
   .object({
     taskKey: z.string().min(1).optional(),

@@ -146,6 +146,28 @@ export function memoryTaskFlowClient(input: MemoryTaskFlowInput): Partial<Record
     return revision
   }
   return {
+    async readTaskFlowConflict(selector) {
+      const match = stages.find(
+        ({ stage }) =>
+          stage.projectId === selector.projectId &&
+          stage.workflow === selector.workflow &&
+          stage.mode === selector.mode &&
+          stage.workflowKey === selector.workflowKey &&
+          (stage.instanceId ?? '') === '' &&
+          !['done', 'abandoned'].includes(stage.state) &&
+          stage.id !== selector.exceptStageId,
+      )
+      return match ? { number: match.stage.number, recordId: match.stage.id } : null
+    },
+    async readTaskFlowRecordId(taskId) {
+      return { flowRecordId: stages.find(({ flow }) => flow.taskId === taskId)?.flow.id ?? null }
+    },
+    async readTaskFlowStageRevision(stageId) {
+      return { revision: stages.find(({ stage }) => stage.id === stageId)?.stage.revision ?? null }
+    },
+    async readUnlinkedWorkflowQuestionIds() {
+      return { questionIds: [] }
+    },
     async composeTaskFlow(payload) {
       const stage = payload.stageInsert!
       const priorFlow = stages.find(({ flow }) => flow.id === stage.flowRecordId)?.flow

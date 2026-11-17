@@ -473,12 +473,23 @@ function applyAdopt(
       )
   }
   const stageRevision = revisions[stage.id] ?? stage.expectedRevision + 1
+  const stageValues = (body.stageValues as SqlRow | undefined) ?? {}
   database
     .query(
-      'UPDATE workflow_cursor SET task_record_id=?,task_flow_record_id=?,last_advanced_machine_id=?,updated_at=?,revision=? WHERE record_id=?',
+      `UPDATE workflow_cursor SET task_record_id=?,task_flow_record_id=?,
+       workflow_key=COALESCE(?,workflow_key),args=COALESCE(?,args),
+       last_advanced_machine_id=?,updated_at=?,revision=? WHERE record_id=?`,
     )
-    // @ts-expect-error The validated intent guarantees every required SQLite binding.
-    .run(body.taskId, flowRecordId, body.updatedMachineId, body.updatedAt, stageRevision, stage.id)
+    .run(
+      body.taskId ?? null,
+      flowRecordId,
+      stageValues.workflowKey ?? null,
+      stageValues.arguments === undefined ? null : JSON.stringify(stageValues.arguments),
+      body.updatedMachineId ?? null,
+      body.updatedAt ?? null,
+      stageRevision,
+      stage.id,
+    )
   return {
     revisions: {
       ...revisions,

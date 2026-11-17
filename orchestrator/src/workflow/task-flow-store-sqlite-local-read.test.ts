@@ -1,6 +1,5 @@
 import { expect, test } from 'bun:test'
 import { testDatabaseFixture } from '../database/test-database.fixture.ts'
-import type { TaskFlowLocalStore } from './task-flow-store.ts'
 import {
   type TaskFlowLocalReadMethod,
   taskFlowLocalReadPlacement,
@@ -25,7 +24,10 @@ const callLocalRead = {
   stageRevision: (store) => store.stageRevision(''),
   waitingWorkflowQuestions: (store) => store.waitingWorkflowQuestions(),
   unlinkedWorkflowQuestionIds: (store) => store.unlinkedWorkflowQuestionIds('', ''),
-} satisfies Record<TaskFlowLocalReadMethod, (store: TaskFlowLocalStore) => unknown>
+} satisfies Record<
+  TaskFlowLocalReadMethod,
+  (store: ReturnType<typeof sqliteTaskFlowLocalStore>) => unknown
+>
 
 test('every local read requires a transaction', () => {
   const store = sqliteTaskFlowLocalStore(database())

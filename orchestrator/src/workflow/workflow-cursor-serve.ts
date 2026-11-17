@@ -10,7 +10,6 @@ import {
 } from '../record/record-task-flow-write-client.ts'
 import { taskFlowRequestId } from '../record/record-task-flow-write-contract.ts'
 import type { AutonomyResolution, LiveCursorAutonomy } from './autonomy.ts'
-import { refreshStaleMirror } from './task-flow-mirror-refresh.ts'
 import { taskFlowLocalStore } from './task-flow-store.ts'
 import type { TaskFlowIntentInput } from './task-flow-store-types.ts'
 import { type CommitCountPort, readCommitsPastLanding } from './workflow-compose-branch.ts'
@@ -241,7 +240,7 @@ async function applyServeTransition(
   )
   if ((decision.move || decision.resume) && row.state === 'awaiting-ruling')
     await closeOpenWorkflowQuestion(row.record_id, 'advanced-without-ruling', at, database)
-  const mirror = writeTransaction(() => {
+  writeTransaction(() => {
     const store = taskFlowLocalStore(database)
     const result = store.write('stage-update', payload, hosted)
     const revision = result.revisions[row.record_id]!
@@ -255,23 +254,7 @@ async function applyServeTransition(
       row.step_slug = decision.slug
       row.state = 'running'
     }
-    return result.mirror[row.record_id]
   }, database)
-  if (mirror === 'refresh') {
-    Object.assign(
-      row,
-      await refreshStaleMirror(
-        database,
-        {
-          recordId: row.record_id,
-          project: row.project,
-          taskKey: row.workflow_key,
-          taskRecordId: row.task_record_id,
-        },
-        context.taskFlowClient,
-      ),
-    )
-  }
 }
 
 async function serveWorkflowStepWithCursor(

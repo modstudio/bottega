@@ -494,6 +494,7 @@ async function moveAdoptedStage(
       values: {
         flowRecordId: target.id,
         lastAdvancedMachineId: body.updatedMachineId,
+        ...body.stageValues,
         updatedAt: body.updatedAt,
       },
     },
@@ -533,6 +534,7 @@ async function adoptStageInPlace(tx: SQL, body: AdoptBody, source: AdoptFlowRow)
       ...body.stage,
       values: {
         lastAdvancedMachineId: body.updatedMachineId,
+        ...body.stageValues,
         updatedAt: body.updatedAt,
       },
     },
@@ -555,7 +557,7 @@ async function applyAdopt(tx: SQL, spaceId: string, body: AdoptBody) {
   const stageDecision = await revisionDecision(
     tx,
     'task_flow_stage',
-    { ...body.stage, values: {} },
+    { ...body.stage, values: body.stageValues ?? {} },
     body.requestId,
   )
   if (stageDecision === 'retry' || source.task_id === body.taskId) {

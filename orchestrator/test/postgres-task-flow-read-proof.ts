@@ -119,6 +119,30 @@ export async function proveTaskFlowRecordReads(input: {
   expect(
     (await input.client.readTaskFlow!({ taskId: input.taskId }, input.destination)).flow.id,
   ).toBe(input.flowId)
+  expect(await input.client.readTaskFlowRecordId!(input.taskId, input.destination)).toEqual({
+    flowRecordId: input.flowId,
+  })
+  expect(await input.client.readTaskFlowStageRevision!(input.stageId, input.destination)).toEqual({
+    revision: 1,
+  })
+  expect(
+    await input.client.readTaskFlowConflict!(
+      {
+        projectId: input.projectId,
+        workflow: input.stage.workflow,
+        mode: input.stage.mode,
+        workflowKey: input.stage.workflowKey,
+        exceptStageId: newRecordId(),
+      },
+      input.destination,
+    ),
+  ).toMatchObject({ recordId: input.stageId })
+  expect(
+    await input.client.readUnlinkedWorkflowQuestionIds!(
+      { projectId: input.projectId, workflowKey: input.stage.workflowKey },
+      input.destination,
+    ),
+  ).toEqual({ questionIds: [] })
 
   const pageEveryStage = async (order: 'project' | 'newest') => {
     const collected: string[] = []

@@ -45,6 +45,9 @@ function relinkDatabase(): Database {
   database.exec('PRAGMA foreign_keys = ON')
   database.exec(
     `CREATE TABLE project (record_id TEXT PRIMARY KEY, name TEXT UNIQUE NOT NULL);
+     CREATE TABLE record_install_binding (
+       id INTEGER PRIMARY KEY CHECK (id = 1), bound_at TEXT NOT NULL, record_origin TEXT
+     );
      CREATE TABLE outbox (
        id INTEGER PRIMARY KEY, kind TEXT NOT NULL, row_id TEXT NOT NULL, payload TEXT NOT NULL,
        created_at TEXT NOT NULL, attempts INTEGER NOT NULL DEFAULT 0, last_error TEXT,

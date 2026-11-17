@@ -16,7 +16,6 @@ import {
 import { upsertWorkflowQuestion } from '../run/question-mutation.ts'
 import type { LiveCursorAutonomy } from './autonomy.ts'
 import { decideWorkflowTakeover, workflowTakeoverNotice } from './task-flow-decision.ts'
-import { refreshStaleMirror } from './task-flow-mirror-refresh.ts'
 import { taskFlowLocalStore, taskFlowReadStore } from './task-flow-store.ts'
 import type { TaskFlowIntentInput } from './task-flow-store-types.ts'
 import {
@@ -228,23 +227,18 @@ export async function composeWorkflowWithCursor(
       taskFlowWriteTarget(existing.project, d),
       context.taskFlowClient,
     )
-    const mirror = writeTransaction(() => {
+    writeTransaction(() => {
       const store = taskFlowLocalStore(d)
       const result = store.write('stage-update', payload, hosted)
-      row = store.stageByRecordId(existing.record_id) as CursorRow
-      return result.mirror[existing.record_id]
+      row = {
+        ...existing,
+        args: resolved.encoded,
+        closed: resolved.closed,
+        session_id: context.session ?? existing.session_id,
+        updated_at: resolved.updatedAt,
+        revision: result.revisions[existing.record_id]!,
+      }
     }, d)
-    if (mirror === 'refresh')
-      row = (await refreshStaleMirror(
-        d,
-        {
-          recordId: existing.record_id,
-          project: existing.project,
-          taskKey: existing.workflow_key,
-          taskRecordId: existing.task_record_id,
-        },
-        context.taskFlowClient,
-      )) as CursorRow
   } else row = await insertWorkflowCursor(composition, context, d, live.resolution, commitCount)
   const cursor = {
     id: row.id,
@@ -531,7 +525,6 @@ async function persistWorkflowAdvance(
     selfRulingPlan,
     payload,
     hosted,
-    client: context.taskFlowClient,
   })
 }
 
@@ -604,7 +597,6 @@ export async function writeFinishingWorkflowAdvance(input: {
     selfRulingPlan: input.selfRulingPlan,
     payload,
     hosted,
-    client: input.taskFlowClient,
   })
 }
 
@@ -663,7 +655,6 @@ async function applyWorkflowAdvanceLocally(input: {
   selfRulingPlan?: Parameters<typeof recordWorkflowSelfRuling>[0]
   payload: TaskFlowIntentInput<'advance'>
   hosted: TaskFlowIntentResult<'advance'> | null
-  client: WorkflowCursorContext['taskFlowClient']
 }): Promise<void> {
   const { row, database: d, at, selfRulingPlan, payload, hosted } = input
   if (row.state === 'awaiting-ruling')
@@ -678,20 +669,9 @@ async function applyWorkflowAdvanceLocally(input: {
     }
     await recordWorkflowSelfRuling(selfRulingPlan, d)
   }
-  const mirror = writeTransaction(() => {
-    return taskFlowLocalStore(d).write('advance', payload, hosted).mirror[row.record_id]
+  writeTransaction(() => {
+    taskFlowLocalStore(d).write('advance', payload, hosted)
   }, d)
-  if (mirror === 'refresh')
-    await refreshStaleMirror(
-      d,
-      {
-        recordId: row.record_id,
-        project: row.project,
-        taskKey: row.workflow_key,
-        taskRecordId: row.task_record_id,
-      },
-      input.client,
-    )
 }
 
 async function adoptAndRefreshWorkflowTask(
@@ -927,9 +907,9 @@ async function awaitWorkflowRulingImpl(
     taskFlowWriteTarget(row.project, d),
     context.taskFlowClient,
   )
-  const mirror = writeTransaction(() => {
+  writeTransaction(() => {
     const store = taskFlowLocalStore(d)
-    return store.write('await-ruling', payload, hosted).mirror[row.record_id]
+    store.write('await-ruling', payload, hosted)
   }, d)
   const recordedQuestion = await upsertWorkflowQuestion(
     {
@@ -954,19 +934,7 @@ async function awaitWorkflowRulingImpl(
       questionId: recordedQuestion.number,
     },
     cursorId: row.record_id,
-    mirror,
   }
-  if (mirror === 'refresh')
-    await refreshStaleMirror(
-      d,
-      {
-        recordId: row.record_id,
-        project: row.project,
-        taskKey: row.workflow_key,
-        taskRecordId: row.task_record_id,
-      },
-      context.taskFlowClient,
-    )
   return result
 }
 
