@@ -131,7 +131,7 @@ test('task branch pull-request checks report an ordinary listing failure as unkn
   ).toMatchObject({ state: 'unknown' })
 })
 
-test('an evidence-excluded landing-tree owner refuses dispatch planning', () => {
+test('an evidence-excluded landing-tree owner refuses dispatch planning', async () => {
   const repo = join(dir, 'landing-tree-owner-repo')
   const landingTree = join(repo, '.claude', 'worktrees', 'orch-14488')
   mkdirSync(landingTree, { recursive: true })
@@ -239,7 +239,8 @@ test('an evidence-excluded landing-tree owner refuses dispatch planning', () => 
       forbidsRepo: false,
       repoJob: true,
       hasWorktree: false,
-      refusalMessage: taskBranchLandingTreeRefusal,
+      refusalMessage: (refusal) =>
+        taskBranchLandingTreeRefusal(refusal, `git -C ${refusal.path} checkout --detach`),
     }),
   ).toThrow(
     `refusing task branch DEV-1398-orch-14461: it is checked out in architect-owned landing-tree tree ${landingTree}.`,

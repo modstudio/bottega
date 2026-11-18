@@ -1,6 +1,9 @@
-import { describe, expect, test } from 'bun:test'
+import { describe, expect, spyOn, test } from 'bun:test'
 import { addRun } from '../../test/fixtures/store.ts'
 import { addAgent, refreshAgents } from '../agent/agent-registry.ts'
+import type { TaskBranchCandidate } from '../branch/task-branch.ts'
+import * as taskBranch from '../branch/task-branch.ts'
+import * as taskBranchReuse from '../branch/task-branch-reuse.ts'
 import { db } from '../database/db.ts'
 import {
   callerCheckoutDecision,
@@ -8,11 +11,64 @@ import {
   detachSpecWithRoutedSelection,
   dispatchLaunchCwdDecision,
   resolveCallerCheckoutDecision,
+  resolveTaskBranchForDispatch,
   routeConstraints,
   selectBeforeDetach,
   taskBranchLandingBypassWarning,
   transportSelection,
 } from './dispatch-cli-service.ts'
+
+test('task branch gate refuses an architect tree, attaches a worker tree, and creates with no tree', async () => {
+  const before = db().query('SELECT COUNT(*) count FROM run').get() as { count: number }
+  const candidate: TaskBranchCandidate = {
+    branch: 'DEV-2405-held',
+    tip: 'tip',
+    commitCount: 1,
+    mergeBase: 'base',
+    projectId: 'project-id',
+    projectName: 'fixture',
+    nominatingRuns: [],
+    trunk: 'main',
+    worktree: {
+      path: '/worktrees/DEV-2405-held',
+      branch: 'DEV-2405-held',
+      base: 'base',
+      repoRoot: '/repo',
+    },
+    worktreeOwnerJob: 'landing-tree',
+  }
+  const candidates = spyOn(taskBranch, 'resolveTaskBranchCandidates')
+  const compatible = spyOn(taskBranchReuse, 'compatibleTaskBranch')
+  const resolve = (value: TaskBranchCandidate) => {
+    candidates.mockReturnValue([value])
+    compatible.mockReturnValue(value)
+    return resolveTaskBranchForDispatch(
+      '/not-a-repository',
+      'DEV-2405',
+      value.branch,
+      false,
+      () => {},
+    )
+  }
+
+  try {
+    const refusal = await resolve(candidate).catch((error: Error) => error)
+    expect(refusal).toBeInstanceOf(Error)
+    expect((refusal as Error).message).toContain('refusing task branch DEV-2405-held')
+    expect((refusal as Error).message).toContain('git -C /worktrees/DEV-2405-held switch --detach')
+    expect(db().query('SELECT COUNT(*) count FROM run').get()).toEqual(before)
+    await expect(resolve({ ...candidate, worktreeOwnerJob: 'craft' })).resolves.toEqual({
+      ...candidate,
+      worktreeOwnerJob: 'craft',
+    })
+    await expect(
+      resolve({ ...candidate, worktree: null, worktreeOwnerJob: null }),
+    ).resolves.toEqual({ ...candidate, worktree: null, worktreeOwnerJob: null })
+  } finally {
+    candidates.mockRestore()
+    compatible.mockRestore()
+  }
+})
 
 test('--distinct-from excludes a prior run by its canonical provider-scoped model', async () => {
   const openRouterAgent = 'distinct-openrouter-fixture'

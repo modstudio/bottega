@@ -61,12 +61,14 @@ import type { DetachSpec } from '../route/failover.ts'
 import { pick, type RoutedSelection } from '../route/route.ts'
 import { pickCommand } from '../route/routing-commands.ts'
 import { AgentCapacityError } from '../route/routing-refusal.ts'
+import { heldLandingTreeRefusal } from '../run/held-branch-remedy.ts'
 import { sha } from '../run/prompt-sha.ts'
 import { run } from '../run/run.ts'
 import { assertAcpPolicyAllowed } from '../run/run-acp-policy.ts'
 import { waitForAgentSelection } from '../run/run-agent-capacity.ts'
 import { RUNS_DIR } from '../run/run-artifacts.ts'
 import type { RunWorkflowBinding } from '../run/run-claim-inheritance.ts'
+import { claimTreePlanForCandidate } from '../run/run-claim-plan.ts'
 import { follow as followRun, harnessHandoff, printHarnessHandoff } from '../run/run-control.ts'
 import { detach as dispatchDetached } from '../run/run-dispatch.ts'
 import { runEvidence } from '../run/run-evidence-context.ts'
@@ -427,13 +429,25 @@ function warnTaskBranchBypass(
   )
 }
 
-function resolveTaskBranchForDispatch(
+function refuseHeldTaskBranchBeforeDetach(
+  candidate: NonNullable<ReturnType<typeof resolveTaskBranch>>,
+): void {
+  claimTreePlanForCandidate({
+    candidate,
+    forbidsRepo: false,
+    repoJob: true,
+    hasWorktree: false,
+    refusalMessage: heldLandingTreeRefusal,
+  })
+}
+
+export async function resolveTaskBranchForDispatch(
   cwd: string,
   key: string,
   branch: string | undefined,
   report: boolean,
   error: (...values: unknown[]) => void,
-): ReturnType<typeof resolveTaskBranch> {
+): Promise<ReturnType<typeof resolveTaskBranch>> {
   const candidates = resolveTaskBranchCandidates(cwd, key)
   if (!branch) {
     const notice = taskBranchCandidateNotice(candidates)
@@ -447,6 +461,7 @@ function resolveTaskBranchForDispatch(
       `refusing --continue ${branch}: its tip is already contained by the caller checkout`,
     )
   }
+  refuseHeldTaskBranchBeforeDetach(compatible)
   if (report) error(taskBranchReuseNotice(compatible))
   return compatible
 }

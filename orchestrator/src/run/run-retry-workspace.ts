@@ -134,7 +134,7 @@ type RetryWorkspaceRow = {
   harness_wall_bound_ms: number | null
 }
 
-export function resolveWritingRetryWorkspace(input: {
+type WritingRetryWorkspaceInput = {
   id: string
   rootId: string
   job: string
@@ -144,7 +144,11 @@ export function resolveWritingRetryWorkspace(input: {
   branchKept: string | null
   branchKeptTip: string | null
   strandedRecordOnly: boolean
-}): WritingRetryWorkspace {
+}
+
+export function resolveWritingRetryWorkspace(
+  input: WritingRetryWorkspaceInput,
+): WritingRetryWorkspace {
   const latest = db()
     .query(
       `SELECT record_id,cwd,worktree,branch,base_commit,worktree_source,branch_kept_tip,status,pid,

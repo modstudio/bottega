@@ -175,7 +175,7 @@ type DispatchPresentation = {
     key: string,
     branch: string | undefined,
     report: boolean,
-  ): NonNullable<DetachSpec['resolvedTaskBranch']> | null
+  ): Promise<NonNullable<DetachSpec['resolvedTaskBranch']> | null>
   checkoutHasUncommittedWork(cwd: string): boolean
   resolveBase(cwd: string, base: string): string
   isWorktreeRelativeRef(ref: string): boolean
@@ -512,7 +512,7 @@ function taskBranchBypassWarningKey(
   return base && writesRepo ? (key ?? null) : null
 }
 
-function resolveTaskBranchReuse(
+async function resolveTaskBranchReuse(
   input: {
     porcelain: boolean
     base: string | undefined
@@ -524,8 +524,8 @@ function resolveTaskBranchReuse(
     key: string,
     branch: string | undefined,
     report: boolean,
-  ) => NonNullable<DetachSpec['resolvedTaskBranch']> | null,
-): DetachSpec['resolvedTaskBranch'] | undefined {
+  ) => Promise<NonNullable<DetachSpec['resolvedTaskBranch']> | null>,
+): Promise<DetachSpec['resolvedTaskBranch'] | undefined> {
   if (!input.writesRepo || input.base || !input.key) return undefined
   return resolve(input.key, input.continueBranch, !input.porcelain)
 }
@@ -794,7 +794,7 @@ export async function dispatchCommand(
     taskBranchBypassWarningKey(base, Boolean(requested.needs.writesRepo), flag('key')),
     base,
   )
-  const resolvedTaskBranch = resolveTaskBranchReuse(
+  const resolvedTaskBranch = await resolveTaskBranchReuse(
     {
       porcelain,
       base,

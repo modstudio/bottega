@@ -33,6 +33,7 @@ import {
   continuationTreeCwd,
   requireContinuationTree,
 } from './continuation-tree-service.ts'
+import { heldBranchRemedy } from './held-branch-remedy.ts'
 import { displayRunQuestion } from './question-display-probe.ts'
 import { openChainQuestions } from './question-open.ts'
 import {
@@ -621,10 +622,10 @@ export function refuseHeldContinuationBranch(
         worktree.branch === plan.branch &&
         canonicalWorktrees[index]?.path === availability.holdingPath,
     )?.path ?? availability.holdingPath
+  const release = heldBranchRemedy(holdingPath)
   throw new Error(
     `run ${id} cannot continue: branch ${plan.branch} is checked out at ${holdingPath}\n` +
-      `release it with git worktree remove ${holdingPath}, ` +
-      `or ${PLATFORM_SLUG} tree remove ${holdingPath} if it is an orch-opened tree`,
+      `release it with ${release}, then retry ${PLATFORM_SLUG} run continue ${id}`,
   )
 }
 

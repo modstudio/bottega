@@ -274,7 +274,7 @@ describe('run continuation', () => {
       .query('UPDATE run SET vendor_session=?,cwd=?,worktree=? WHERE record_id IN (?,?)')
       .run('vendor-session', dir, dir, root, asking)
 
-    await continueRun(root, 'continue after the closed question', limit)
+    await continueRun(root, 'continue after the closed question', limit, undefined)
 
     expect(
       db().query('SELECT status,failure_kind,error FROM run WHERE record_id=?').get(asking),
@@ -326,7 +326,7 @@ describe('run continuation', () => {
       .query('UPDATE run SET vendor_session=?,cwd=?,worktree=? WHERE record_id IN (?,?)')
       .run('vendor-session', dir, dir, root, prior)
 
-    const resumed = await continueRun(root, 'vendor-session message', limit)
+    const resumed = await continueRun(root, 'vendor-session message', limit, undefined)
     const artifact = db()
       .query('SELECT prompt_path,continuation_message_sha FROM run WHERE record_id=?')
       .get(resumed.childId) as {
@@ -412,7 +412,12 @@ describe('run continuation', () => {
       db().query('SELECT COUNT(*) n FROM run_checkpoint WHERE run_record_id=?').get(root),
     ).toEqual({ n: 0 })
 
-    const resumed = await continueRun(root, 'finish the rebase and land the slice', limit)
+    const resumed = await continueRun(
+      root,
+      'finish the rebase and land the slice',
+      limit,
+      undefined,
+    )
     const child = db()
       .query(
         'SELECT prompt_path,vendor_session,parent_run_record_id,turn FROM run WHERE record_id=?',
@@ -468,7 +473,12 @@ describe('run continuation', () => {
         root,
       )
 
-    const resumed = await continueRun(root, 'finish the rebase and land the slice', limit)
+    const resumed = await continueRun(
+      root,
+      'finish the rebase and land the slice',
+      limit,
+      undefined,
+    )
     const child = db()
       .query('SELECT prompt_path,vendor_session FROM run WHERE record_id=?')
       .get(resumed.childId) as { prompt_path: string; vendor_session: string | null }
@@ -553,7 +563,7 @@ describe('run continuation', () => {
       )
       .run('vendor-session', dir, root)
 
-    const resumed = await continueRun(root, 'summarize one more thing', limit)
+    const resumed = await continueRun(root, 'summarize one more thing', limit, undefined)
 
     expect(resumed).toEqual({ childId: expect.stringMatching(/^[0-9a-f-]{36}$/), job: 'summarize' })
   })

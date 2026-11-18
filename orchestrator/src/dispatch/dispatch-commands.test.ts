@@ -97,7 +97,7 @@ test('an attributed unbound override detaches and records its warning on the run
       validateSchema: () => {},
       warnCallerDrift: () => {},
       warnTaskBranchBypass: () => {},
-      resolveTaskBranchForDispatch: () => null,
+      resolveTaskBranchForDispatch: async () => null,
       checkoutHasUncommittedWork: () => false,
       resolveBase: (_cwd, base) => base,
       isWorktreeRelativeRef: () => false,

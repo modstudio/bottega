@@ -1,12 +1,12 @@
-import { startBoundedSync } from '../../../shared/bounded-process.ts'
 // concern: task-branch
 /**
  * Knows the project register, branch content status, and database reads. Must
  * not know transports, contracts, or routing.
  */
 
+import { startBoundedSync } from '../../../shared/bounded-process.ts'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { refusal as refusalValue } from '../../../shared/refusal.ts'
+import { refusal as refusalValue, renderRefusal } from '../../../shared/refusal.ts'
 import { db } from '../database/db.ts'
 import { realpathOrSpelled } from '../git/checkout-identity.ts'
 import { checkedOutWorktree, repoRootOf, targetGitEnvironment } from '../git/git-environment.ts'
@@ -51,15 +51,24 @@ export type TaskBranchCandidate = {
 }
 
 /** Compose the operator remedy when an architect landing tree owns the reused branch. */
-export function taskBranchLandingTreeRefusal(refusal: {
-  path: string
-  branch: string
-  freshBase: string
-  ownerJob: string
-}): string {
-  return (
-    `refusing task branch ${refusal.branch}: it is checked out in architect-owned ${refusal.ownerJob} tree ${refusal.path}.\n` +
-    `cleared by: start from trunk with --base ${refusal.freshBase}, or land through that tree`
+export function taskBranchLandingTreeRefusal(
+  refusal: {
+    path: string
+    branch: string
+    ownerJob: string
+  },
+  heldTreeRemedy: string,
+): string {
+  return renderRefusal(
+    refusalValue(
+      `refusing task branch ${refusal.branch}: it is checked out in architect-owned ${refusal.ownerJob} tree ${refusal.path}.`,
+      {
+        kind: 'edit',
+        text:
+          `continue the work yourself in architect tree ${refusal.path}, or ${heldTreeRemedy}, ` +
+          `then retry the same ${PLATFORM_SLUG} run start … --continue ${refusal.branch}`,
+      },
+    ),
   )
 }
 

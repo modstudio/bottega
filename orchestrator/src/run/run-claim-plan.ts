@@ -14,7 +14,6 @@ export type ClaimTreePlanFacts = {
     path: string
     branch: string
     ownerJob: string | null
-    freshBase: string
   } | null
   forbidsRepo: boolean
   repoJob: boolean
@@ -23,7 +22,7 @@ export type ClaimTreePlanFacts = {
 
 export type ClaimTreePlanRuling =
   | { mode: 'attach' }
-  | { mode: 'refuse'; path: string; branch: string; freshBase: string; ownerJob: string }
+  | { mode: 'refuse'; path: string; branch: string; ownerJob: string }
   | { mode: 'isolate' }
   | { mode: 'create' }
   | { mode: 'caller' }
@@ -80,7 +79,6 @@ export function decideClaimTreePlan(facts: ClaimTreePlanFacts): ClaimTreePlanRul
       mode: 'refuse',
       path: facts.resolvedTaskWorktree.path,
       branch: facts.resolvedTaskWorktree.branch,
-      freshBase: facts.resolvedTaskWorktree.freshBase,
       ownerJob: facts.resolvedTaskWorktree.ownerJob,
     }
   }
@@ -111,7 +109,6 @@ export function claimTreePlanForCandidate<T extends { path: string }>(input: {
             path: attachedTree.path,
             branch: input.candidate.branch,
             ownerJob: input.candidate.worktreeOwnerJob,
-            freshBase: input.candidate.trunk,
           }
         : null,
     forbidsRepo: input.forbidsRepo,
