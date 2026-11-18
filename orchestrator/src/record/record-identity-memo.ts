@@ -3,9 +3,9 @@
 
 import {
   markRecordIdentityChanged,
-  recordSessionTokenGeneration,
   type RecordSessionStamp,
   readRecordSessionStamp,
+  recordSessionTokenGeneration,
   sameSessionStamp,
 } from '../../../shared/record-session.ts'
 import { RECORD_WHOAMI_ROUTE, type RecordClientRequest } from './record-api-client-paths.ts'
