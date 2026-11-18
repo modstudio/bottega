@@ -190,7 +190,7 @@ async function insertStage(
   row: Record<string, unknown>,
   options: { revision?: number; number?: number; jsonb?: JsonBinder } = {},
 ): Promise<{ revision: number; number: number }> {
-  const { revision = 1, jsonb = bindJsonb } = options
+  const { revision = 1, jsonb = bindJsonb, number: allocatedNumber } = options
   const flow =
     (await tx`SELECT project_id::text FROM task_flow WHERE id=${row.flowRecordId}::uuid FOR UPDATE`) as Array<{
       project_id: string
@@ -211,7 +211,7 @@ async function insertStage(
     return { revision: Number(existing.revision), number: Number(existing.number) }
   }
   const number =
-    options.number ??
+    allocatedNumber ??
     (await allocateRecordSequence(tx, spaceId, String(row.projectId), 'task_flow_stage'))
   await tx`INSERT INTO task_flow_stage
     (id,space_id,flow_record_id,project_id,number,workflow,mode,workflow_key,instance_id,session_id,
@@ -364,13 +364,9 @@ async function applyCompose(
     )
   let stage: TaskFlowComposeResult['stage'] = null
   if (body.stageInsert) {
-    const inserted = await insertStage(
-      tx,
-      input.spaceId,
-      body.requestId,
-      body.stageInsert,
-      { jsonb },
-    )
+    const inserted = await insertStage(tx, input.spaceId, body.requestId, body.stageInsert, {
+      jsonb,
+    })
     revisions[String(body.stageInsert.id)] = inserted.revision
     stage = { id: String(body.stageInsert.id), number: inserted.number }
   }
@@ -397,7 +393,10 @@ async function applyImport(
   for (const row of body.stages) {
     if (row.flowRecordId !== body.flow.id)
       conflict('task_flow_stage', row.id, null, 'already-exists')
-    const inserted = await insertStage(tx, input.spaceId, body.requestId, row, { revision: row.revision, jsonb })
+    const inserted = await insertStage(tx, input.spaceId, body.requestId, row, {
+      revision: row.revision,
+      jsonb,
+    })
     revisions[row.id] = inserted.revision
     stages.push({ id: row.id, number: inserted.number })
   }
