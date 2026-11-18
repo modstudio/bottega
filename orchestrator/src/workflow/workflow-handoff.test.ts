@@ -242,10 +242,7 @@ test('keyless handoff takes the claim, adopts the key, and moves context to its 
       release: async () => ({ released: 1 }),
     },
   })
-  const successor = (await taskFlowReadStore(fixture.d).stageByHandle(
-    'fixture',
-    result.cursor,
-  ))!
+  const successor = (await taskFlowReadStore(fixture.d).stageByHandle('fixture', result.cursor))!
   expect(claims).toEqual(['DEV-KEYLESS', 'DEV-KEYLESS'])
   expect(successor).toMatchObject({
     workflow_key: 'DEV-KEYLESS',

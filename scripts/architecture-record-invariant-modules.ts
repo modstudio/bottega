@@ -28,6 +28,7 @@ export const recordInvariantModules = [
     './record-write-authority.ts',
   ]),
   module('orchestrator/src/record/record-task-flow-write-decision.ts', []),
+  module('orchestrator/src/record/task-flow-handoff-policy.ts', []),
   module('orchestrator/src/record/record-sequence.ts', ['bun', '../../../shared/record-id.ts']),
   module('orchestrator/src/record/record-task-flow-write.ts', [
     'bun',
@@ -39,6 +40,7 @@ export const recordInvariantModules = [
     './record-sequence.ts',
     './record-task-flow-write-contract.ts',
     './record-task-flow-write-decision.ts',
+    './task-flow-handoff-policy.ts',
   ]),
   module('orchestrator/src/record/active-space-invariant.ts', [
     '../../../shared/record-remedies.ts',

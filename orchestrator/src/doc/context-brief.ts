@@ -349,9 +349,7 @@ export function selectBriefInFlight(
       .map(({ cursor_record_id: _, ...run }) => run),
     cursorRuns: cursors.map((cursor) => ({
       recordId: cursor.record_id,
-      runs: liveRuns
-        .filter((run) => runCursor(run) === cursor.record_id)
-        .map((run) => run.number),
+      runs: liveRuns.filter((run) => runCursor(run) === cursor.record_id).map((run) => run.number),
     })),
     claims: liveClaims
       .filter((claim) => !claimBoundToCursor(claim, cursors))

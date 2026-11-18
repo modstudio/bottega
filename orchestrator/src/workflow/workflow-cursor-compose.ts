@@ -44,7 +44,6 @@ import type { composeWorkflow } from './workflows.ts'
 
 type Composition = ReturnType<typeof composeWorkflow>
 type ExistingFlow = { record_id: string; revision: number } | null
-export type GraduatedExplore = { cursor: number; closed: true }
 type ComposeFacts = {
   rowInput: WorkflowCursorInsert
   existingFlow: ExistingFlow
@@ -76,15 +75,13 @@ function decideKeylessComposeInstance(input: {
   ])
 }
 
-export async function graduatingExploreCursor(
-  input: {
-    project: string
-    session: string | null | undefined
-    taskBound: boolean
-    database: Database
-    taskFlowClient?: WorkflowCursorContext['taskFlowClient']
-  },
-): Promise<SelectableCursorRow | undefined> {
+export async function graduatingExploreCursor(input: {
+  project: string
+  session: string | null | undefined
+  taskBound: boolean
+  database: Database
+  taskFlowClient?: WorkflowCursorContext['taskFlowClient']
+}): Promise<SelectableCursorRow | undefined> {
   if (!input.session || !input.taskBound) return undefined
   const rows = await taskFlowReadStore(input.database, input.taskFlowClient).listOpenStages({
     project: input.project,

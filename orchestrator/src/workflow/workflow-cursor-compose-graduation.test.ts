@@ -20,9 +20,7 @@ async function openExplore(d: Database, session: string) {
       title: 'Explore',
       description: 'Explore fixture.',
       arguments: [{ name: 'key', required: false, description: 'Optional task key.' }],
-      modes: [
-        { slug: 'default', title: 'Default', default: true, steps: ['diagnose'] },
-      ],
+      modes: [{ slug: 'default', title: 'Default', default: true, steps: ['diagnose'] }],
     },
     'graduation fixture',
     'test',
@@ -59,14 +57,13 @@ test('task-bound composition hands the session untouched explore cursor off', as
   )
 
   expect(composed.graduated).toEqual({ cursor: explore.id, closed: true })
-  const source =
-    await taskFlowReadStore(d).stageByRecordId(
-      d
-        .query<{ record_id: string }, [number]>(
-          'SELECT record_id FROM workflow_cursor WHERE number=?',
-        )
-        .get(explore.id)!.record_id,
-    )
+  const source = await taskFlowReadStore(d).stageByRecordId(
+    d
+      .query<{ record_id: string }, [number]>(
+        'SELECT record_id FROM workflow_cursor WHERE number=?',
+      )
+      .get(explore.id)!.record_id,
+  )
   expect(source).toMatchObject({ state: 'done' })
   expect(await taskFlowReadStore(d).stageByHandle('fixture', composed.cursor!.id)).toMatchObject({
     handed_off_from_record_id: source!.record_id,

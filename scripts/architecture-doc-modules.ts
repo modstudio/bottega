@@ -127,6 +127,7 @@ export const docModules: DocModule[] = [
     '../session/session-review-verdicts.ts',
     '../workflow/session-context.ts',
     '../workflow/workflow-cursor-list.ts',
+    '../workflow/workflow-cursor-successor.ts',
     '../workflow/workflow-cursor-format.ts',
     '../workflow/workflow-cursor-worktrees.ts',
     '../workflow/workflow-task-reference.ts',

@@ -208,9 +208,7 @@ function insertStage(
       'SELECT task_record_id FROM task_flow WHERE record_id=?',
     )
     .get(String(row.flowRecordId))
-  const number =
-    allocatedNumber ??
-    nextCursorNumber(database, String(row.projectId))
+  const number = allocatedNumber ?? nextCursorNumber(database, String(row.projectId))
   database
     .query(`INSERT INTO workflow_cursor
       (record_id,number,project,project_record_id,workflow_slug,mode_slug,workflow_key,task_record_id,

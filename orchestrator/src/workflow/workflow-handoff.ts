@@ -16,9 +16,10 @@ import { taskFlowLocalStore, taskFlowReadStore } from './task-flow-store.ts'
 import type { TaskFlowIntentInput } from './task-flow-store-types.ts'
 import type { CommitCountPort } from './workflow-compose-branch.ts'
 import { readCommitsPastLanding, workflowComposeBranchRefusal } from './workflow-compose-branch.ts'
-import { workflowKeyOf } from './workflow-cursor-arguments.ts'
 import { adoptWorkflowTask } from './workflow-cursor-adoption.ts'
+import { workflowKeyOf } from './workflow-cursor-arguments.ts'
 import { storedCursorAutonomyForComposition } from './workflow-cursor-autonomy.ts'
+import { workflowCursorReference } from './workflow-cursor-format.ts'
 import { refuseTerminalCursor } from './workflow-cursor-result.ts'
 import type { SelectableCursorRow, WorkflowCursorContext } from './workflow-cursor-selection.ts'
 import { cursorComposition } from './workflow-cursor-serve.ts'
@@ -80,8 +81,7 @@ async function validateHandoffTarget(input: HandoffInput, d: Database) {
       `workflow "${input.workflow}" needs arguments: ${composition.needs.arguments.join(', ')}; pass each with --arg k=v`,
     )
   const targetKey = workflowKeyOf(composition.arguments)
-  if (!targetKey)
-    throw new Error('keyless handoff requires a task key; pass --arg key=<KEY>')
+  if (!targetKey) throw new Error('keyless handoff requires a task key; pass --arg key=<KEY>')
   if (row.workflow_key && targetKey !== row.workflow_key)
     throw new Error(
       `handoff target key ${targetKey || '<none>'} differs from cursor key ${row.workflow_key}; pass --arg key=${row.workflow_key}`,
@@ -114,9 +114,7 @@ async function validateHandoff(input: HandoffInput, d: Database) {
     openStageMatches: Boolean(flow && flow.open_stage_cursor_record_id === row.record_id),
   })
   if (policyRefusal)
-    throw new Error(
-      policyRefusal.replace('workflow cursor is', `workflow cursor ${row.id} is`),
-    )
+    throw new Error(policyRefusal.replace('workflow cursor is', `workflow cursor ${row.id} is`))
   if (!flow) throw new Error(`workflow cursor ${row.id} has no task flow; compose it again`)
   return { composition, flow }
 }
@@ -237,7 +235,8 @@ export async function handoffWorkflow(input: HandoffInput) {
     const adopted = await taskFlowReadStore(d, input.context.taskFlowClient).stageByRecordId(
       input.row.record_id,
     )
-    if (!adopted) throw new Error(`workflow cursor ${input.row.id} disappeared after adopting ${key}`)
+    if (!adopted)
+      throw new Error(`workflow cursor ${input.row.id} disappeared after adopting ${key}`)
     return await handoffKeyedWorkflow({ ...input, row: adopted }, d)
   } catch (error) {
     let releaseWarning: string | undefined
@@ -256,7 +255,7 @@ export async function handoffWorkflow(input: HandoffInput) {
       releaseWarning = taskClaimReleaseWarning(input.row.project, key, releaseError)
     }
     const detail = error instanceof Error ? error.message : String(error)
-    const retry = `workflow handoff ${input.workflow} --cursor ${input.row.id} --arg key=${key}`
+    const retry = `workflow handoff ${input.workflow}${workflowCursorReference(input.row.id, input.row.project).cli} --arg key=${key}`
     throw new Error(
       `${detail}; cursor ${input.row.id} ${input.row.workflow_key ? `is now keyed to ${key}` : 'remains keyless'}; retry with ${retry}${releaseWarning ? `; ${releaseWarning}` : ''}`,
     )
