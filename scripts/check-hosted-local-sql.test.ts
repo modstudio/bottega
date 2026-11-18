@@ -136,6 +136,74 @@ test('an interpolated table is refused as cannot-judge', () => {
   ).toEqual([expect.stringContaining('cannot judge interpolated SQL table')])
 })
 
+test('moving a baselined interpolated table site to another line stays clean', () => {
+  const file = 'orchestrator/src/run/unsafe.ts'
+  const sourceText = 'db.query(`SELECT 1 FROM ${table} WHERE id=?`)'
+  const original = extractSqlFromSource({
+    sourceText,
+    file,
+    renderedUnresolvedRisk: hostedLocalRenderedSqlRisk,
+  })
+  const moved = extractSqlFromSource({
+    sourceText: `\n\n${sourceText}`,
+    file,
+    renderedUnresolvedRisk: hostedLocalRenderedSqlRisk,
+  })
+  expect(original.cannotJudge).toHaveLength(1)
+  expect(moved.cannotJudge).toHaveLength(1)
+  expect(moved.cannotJudge[0]?.line).not.toBe(original.cannotJudge[0]?.line)
+  const cannotJudgeBaseline = [
+    { file, fingerprint: original.cannotJudge[0]!.fingerprint, count: 1 },
+  ]
+  for (const extracted of [original, moved])
+    expect(
+      hostedLocalSqlViolations({
+        ...extracted,
+        tables: ['question'],
+        allowedFiles: [],
+        stateClasses: [hostedQuestion],
+        cannotJudgeBaseline,
+      }),
+    ).toEqual([])
+})
+
+test('a second copy of a baselined interpolated table statement fails', () => {
+  const file = 'orchestrator/src/run/unsafe.ts'
+  const statement = 'db.query(`SELECT 1 FROM ${table} WHERE id=?`)'
+  const extracted = extractSqlFromSource({
+    sourceText: `${statement}\n${statement}`,
+    file,
+    renderedUnresolvedRisk: hostedLocalRenderedSqlRisk,
+  })
+  expect(extracted.cannotJudge).toHaveLength(2)
+  expect(
+    hostedLocalSqlViolations({
+      ...extracted,
+      tables: ['question'],
+      allowedFiles: [],
+      stateClasses: [hostedQuestion],
+      cannotJudgeBaseline: [{ file, fingerprint: extracted.cannotJudge[0]!.fingerprint, count: 1 }],
+    }),
+  ).toEqual([expect.stringContaining(`${file}:2: cannot judge interpolated SQL table`)])
+})
+
+test('removing a baselined interpolated table statement fails as stale', () => {
+  const file = 'orchestrator/src/run/unsafe.ts'
+  expect(
+    hostedLocalSqlViolations({
+      sites: [],
+      tables: ['question'],
+      allowedFiles: [],
+      stateClasses: [hostedQuestion],
+      cannotJudgeBaseline: [{ file, fingerprint: 'removed-fixture', count: 1 }],
+    }),
+  ).toEqual([
+    expect.stringContaining(
+      `${file}: stale cannot-judge SQL baseline entry for fingerprint removed-fixture; expected 1 occurrences but found 0`,
+    ),
+  ])
+})
+
 test('an exact-path exemption refuses more sites than its budget', () => {
   expect(
     hostedLocalSqlViolations({

@@ -22,265 +22,250 @@ import {
 import { STATE_CLASSES, type StateClassDeclaration } from './identity-state-classes.ts'
 
 type AllowedFile = { pattern: RegExp; reason: string; expectedSites?: number }
-type CannotJudgeSite = Pick<HostedSqlCannotJudgeSite, 'file' | 'line' | 'fingerprint'>
+type CannotJudgeSite = Pick<HostedSqlCannotJudgeSite, 'file' | 'fingerprint'> & { count: number }
 
 // These dynamic table positions cannot be compared with the hosted-table list statically. This
-// baseline is shrink-only: a new site and a listed site that disappears both fail the check.
+// baseline is shrink-only and position-independent: a new occurrence and a listed occurrence that
+// disappears both fail the check, while unrelated line movement does not.
 const HOSTED_LOCAL_SQL_CANNOT_JUDGE: readonly CannotJudgeSite[] = [
   {
     file: 'orchestrator/src/database/applied-migration-compatibilities.ts',
-    line: 22,
     fingerprint: '7463683474865ece',
+    count: 1,
   },
-  { file: 'orchestrator/src/database/migrations.ts', line: 172, fingerprint: 'c2bcd7e2f8124e6b' },
-  { file: 'orchestrator/src/database/migrations.ts', line: 231, fingerprint: 'b73e4bb83e0e7c33' },
-  { file: 'orchestrator/src/database/migrations.ts', line: 577, fingerprint: '27903a21e6eb16ab' },
-  { file: 'orchestrator/src/database/migrations.ts', line: 594, fingerprint: 'c6a80514323db339' },
-  { file: 'orchestrator/src/database/migrations.ts', line: 620, fingerprint: 'e2c360ab1bc139bf' },
-  { file: 'orchestrator/src/database/migrations.ts', line: 661, fingerprint: 'e2c360ab1bc139bf' },
-  { file: 'orchestrator/src/database/migrations.ts', line: 693, fingerprint: '7d052d27daa537c2' },
-  { file: 'orchestrator/src/database/migrations.ts', line: 844, fingerprint: '94c095d6cb4e312c' },
-  { file: 'orchestrator/src/database/migrations.ts', line: 849, fingerprint: '63cd14a16f049ea3' },
-  { file: 'orchestrator/src/database/migrations.ts', line: 859, fingerprint: '8e161a1a230eb845' },
-  { file: 'orchestrator/src/database/migrations.ts', line: 976, fingerprint: '5554c8742578f04e' },
+  { file: 'orchestrator/src/database/migrations.ts', fingerprint: 'c2bcd7e2f8124e6b', count: 1 },
+  { file: 'orchestrator/src/database/migrations.ts', fingerprint: 'b73e4bb83e0e7c33', count: 1 },
+  { file: 'orchestrator/src/database/migrations.ts', fingerprint: '27903a21e6eb16ab', count: 1 },
+  { file: 'orchestrator/src/database/migrations.ts', fingerprint: 'c6a80514323db339', count: 1 },
+  { file: 'orchestrator/src/database/migrations.ts', fingerprint: 'e2c360ab1bc139bf', count: 2 },
+  { file: 'orchestrator/src/database/migrations.ts', fingerprint: '7d052d27daa537c2', count: 1 },
+  { file: 'orchestrator/src/database/migrations.ts', fingerprint: '94c095d6cb4e312c', count: 1 },
+  { file: 'orchestrator/src/database/migrations.ts', fingerprint: '63cd14a16f049ea3', count: 1 },
+  { file: 'orchestrator/src/database/migrations.ts', fingerprint: '8e161a1a230eb845', count: 1 },
+  { file: 'orchestrator/src/database/migrations.ts', fingerprint: '5554c8742578f04e', count: 1 },
   {
     file: 'orchestrator/src/database/workflow-uuid-migration-preflight.ts',
-    line: 47,
     fingerprint: '69dfb4ea9416b034',
+    count: 1,
   },
   {
     file: 'orchestrator/src/database/workflow-uuid-migration-preflight.ts',
-    line: 140,
     fingerprint: '9888083730a7b2c3',
+    count: 1,
   },
   {
     file: 'orchestrator/src/database/workflow-uuid-migration-preflight.ts',
-    line: 156,
     fingerprint: '8e0eda83ecfaeb2f',
+    count: 1,
   },
   {
     file: 'orchestrator/src/database/workflow-uuid-migration-preflight.ts',
-    line: 173,
     fingerprint: 'bc8f9979f72410ab',
+    count: 1,
   },
   {
     file: 'orchestrator/src/database/workflow-uuid-migration-preflight.ts',
-    line: 181,
     fingerprint: '2e50ddb469181ce3',
+    count: 1,
   },
   {
     file: 'orchestrator/src/database/workflow-uuid-migration-preflight.ts',
-    line: 195,
     fingerprint: 'a241e17d4e8d8c3b',
+    count: 1,
   },
   {
     file: 'orchestrator/src/record/record-cache-workflow.ts',
-    line: 137,
     fingerprint: '9639f51bc1550c03',
+    count: 2,
   },
   {
     file: 'orchestrator/src/record/record-cache-workflow.ts',
-    line: 143,
     fingerprint: '5c9fd129c3d4b73f',
+    count: 2,
   },
   {
     file: 'orchestrator/src/record/record-cache-workflow.ts',
-    line: 191,
     fingerprint: '1417efd6b354e702',
+    count: 1,
   },
   {
     file: 'orchestrator/src/record/record-cache-workflow.ts',
-    line: 198,
     fingerprint: 'c208ee3c943908a5',
+    count: 1,
   },
   {
     file: 'orchestrator/src/record/record-cache-workflow.ts',
-    line: 210,
     fingerprint: '1d04a04d2cf3b706',
+    count: 1,
   },
   {
     file: 'orchestrator/src/record/record-cache-workflow.ts',
-    line: 216,
     fingerprint: '850921d42645e4ca',
+    count: 1,
   },
   {
     file: 'orchestrator/src/record/record-cache-workflow.ts',
-    line: 231,
     fingerprint: '791428279e160f65',
+    count: 1,
   },
   {
     file: 'orchestrator/src/record/record-cache-workflow.ts',
-    line: 252,
     fingerprint: '7e6ac1f4dadcc333',
+    count: 1,
   },
   {
     file: 'orchestrator/src/record/record-cache-workflow.ts',
-    line: 257,
     fingerprint: '7b875b5d8fa88c2c',
+    count: 1,
   },
   {
     file: 'orchestrator/src/record/record-cache-workflow.ts',
-    line: 259,
     fingerprint: '14bec7f7b8a010b1',
+    count: 1,
   },
   {
     file: 'orchestrator/src/record/record-cache-workflow.ts',
-    line: 273,
     fingerprint: 'a1fc2a8a2b05e3e0',
+    count: 1,
   },
   {
     file: 'orchestrator/src/record/record-cache-workflow.ts',
-    line: 291,
-    fingerprint: '9639f51bc1550c03',
-  },
-  {
-    file: 'orchestrator/src/record/record-cache-workflow.ts',
-    line: 296,
-    fingerprint: '5c9fd129c3d4b73f',
-  },
-  {
-    file: 'orchestrator/src/record/record-cache-workflow.ts',
-    line: 303,
     fingerprint: 'a3fb86bba61e3ccc',
+    count: 1,
   },
   {
     file: 'orchestrator/src/record/record-cache-workflow.ts',
-    line: 324,
     fingerprint: '3df973fa87136ddd',
+    count: 2,
   },
   {
     file: 'orchestrator/src/record/record-cache-workflow.ts',
-    line: 330,
     fingerprint: '67c0ac3cb92b8316',
+    count: 1,
   },
   {
     file: 'orchestrator/src/record/record-cache-workflow.ts',
-    line: 336,
-    fingerprint: '3df973fa87136ddd',
-  },
-  {
-    file: 'orchestrator/src/record/record-cache-workflow.ts',
-    line: 350,
     fingerprint: 'aa5604c57f4b834b',
+    count: 1,
   },
   {
     file: 'orchestrator/src/record/record-cache-workflow.ts',
-    line: 355,
     fingerprint: '7d8bf8bd0381d80d',
+    count: 1,
   },
   {
     file: 'orchestrator/src/record/record-cache-workflow.ts',
-    line: 372,
     fingerprint: '6a33ebc6c88231dd',
+    count: 1,
   },
   {
     file: 'orchestrator/src/record/record-cache-workflow.ts',
-    line: 378,
     fingerprint: '3c8e68fbaeb5da95',
+    count: 1,
   },
   {
     file: 'orchestrator/src/record/record-push-catalogues.ts',
-    line: 283,
     fingerprint: '10e82ead1dfbc5ba',
+    count: 1,
   },
   {
     file: 'orchestrator/src/record/record-push-catalogues.ts',
-    line: 295,
     fingerprint: '8ce4908278702814',
+    count: 1,
   },
   {
     file: 'orchestrator/src/record/record-push-catalogues.ts',
-    line: 315,
     fingerprint: '383022a650070478',
+    count: 1,
   },
-  { file: 'orchestrator/src/record/landing-outbox.ts', line: 370, fingerprint: '543598fa794fcb6f' },
-  { file: 'orchestrator/src/project/project-rename.ts', line: 41, fingerprint: '4362e5264bf0a218' },
-  { file: 'orchestrator/src/project/project-rename.ts', line: 46, fingerprint: '746c46a002aa138f' },
-  { file: 'orchestrator/src/project/project-rename.ts', line: 50, fingerprint: '3963bd7daacd1664' },
+  { file: 'orchestrator/src/record/landing-outbox.ts', fingerprint: '543598fa794fcb6f', count: 1 },
+  { file: 'orchestrator/src/project/project-rename.ts', fingerprint: '4362e5264bf0a218', count: 1 },
+  { file: 'orchestrator/src/project/project-rename.ts', fingerprint: '746c46a002aa138f', count: 1 },
+  { file: 'orchestrator/src/project/project-rename.ts', fingerprint: '3963bd7daacd1664', count: 1 },
   {
     file: 'orchestrator/src/project/project-reference-counts.ts',
-    line: 72,
     fingerprint: '068ed06fbe47a552',
+    count: 1,
   },
   {
     file: 'orchestrator/src/project/project-purge-local.ts',
-    line: 269,
     fingerprint: '8c0233c605909e37',
+    count: 1,
   },
   {
     file: 'orchestrator/src/project/project-purge-local.ts',
-    line: 277,
     fingerprint: '8e31a9d1da411112',
+    count: 1,
   },
   {
     file: 'orchestrator/src/workflow/versioned-lifecycle.ts',
-    line: 46,
     fingerprint: 'ede535d9578d3797',
+    count: 1,
   },
   {
     file: 'orchestrator/src/workflow/versioned-lifecycle.ts',
-    line: 77,
     fingerprint: 'a857a4b2b972163e',
+    count: 1,
   },
   {
     file: 'orchestrator/src/workflow/versioned-lifecycle.ts',
-    line: 114,
     fingerprint: '798628156be850df',
+    count: 1,
   },
   {
     file: 'orchestrator/src/workflow/versioned-lifecycle.ts',
-    line: 129,
     fingerprint: 'bdc9c668f3fa9c3d',
+    count: 1,
   },
   {
     file: 'orchestrator/src/workflow/versioned-lifecycle.ts',
-    line: 164,
     fingerprint: 'b6b6a87e96f96f03',
+    count: 1,
   },
   {
     file: 'orchestrator/src/workflow/versioned-lifecycle.ts',
-    line: 183,
     fingerprint: 'c077752476c0d1ce',
+    count: 1,
   },
   {
     file: 'orchestrator/src/workflow/versioned-lifecycle.ts',
-    line: 190,
     fingerprint: 'd16fe45df2c87222',
+    count: 1,
   },
   {
     file: 'orchestrator/src/workflow/versioned-lifecycle.ts',
-    line: 195,
     fingerprint: '850c6d2de7870630',
+    count: 1,
   },
   {
     file: 'orchestrator/src/workflow/versioned-lifecycle.ts',
-    line: 222,
     fingerprint: 'f528f7d254e11096',
+    count: 1,
   },
   {
     file: 'orchestrator/src/workflow/versioned-lifecycle.ts',
-    line: 226,
     fingerprint: '40373afeb1b3ba6a',
+    count: 1,
   },
   {
     file: 'orchestrator/src/workflow/versioned-lifecycle.ts',
-    line: 230,
     fingerprint: '2eee5aa4ab3806ba',
+    count: 1,
   },
   {
     file: 'orchestrator/src/workflow/versioned-lifecycle.ts',
-    line: 253,
     fingerprint: '49acf0551a9e5f5f',
+    count: 1,
   },
   {
     file: 'orchestrator/src/workflow/versioned-lifecycle.ts',
-    line: 263,
     fingerprint: '3e309e8267319596',
+    count: 1,
   },
   {
     file: 'orchestrator/src/workflow/versioned-lifecycle.ts',
-    line: 270,
     fingerprint: 'eaedfdbd33e1d716',
+    count: 1,
   },
 ]
 
@@ -296,19 +281,28 @@ function cannotJudgeFailures(
   baseline: readonly CannotJudgeSite[],
 ): string[] {
   const failures: string[] = []
-  const key = (site: CannotJudgeSite): string => `${site.file}:${site.line}:${site.fingerprint}`
-  const sitesByKey = new Map(sites.map((site) => [key(site), site]))
+  const key = (site: Pick<HostedSqlCannotJudgeSite, 'file' | 'fingerprint'>): string =>
+    `${site.file}:${site.fingerprint}`
+  const sitesByKey = new Map<string, HostedSqlCannotJudgeSite[]>()
+  for (const site of sites) {
+    const siteKey = key(site)
+    sitesByKey.set(siteKey, [...(sitesByKey.get(siteKey) ?? []), site])
+  }
   const baselineByKey = new Map(baseline.map((site) => [key(site), site]))
-  for (const [siteKey, site] of sitesByKey)
-    if (!baselineByKey.has(siteKey))
+  for (const [siteKey, matchingSites] of sitesByKey) {
+    const expected = baselineByKey.get(siteKey)?.count ?? 0
+    for (const site of matchingSites.slice(expected))
       failures.push(
-        `${site.file}:${site.line}: cannot judge interpolated SQL table ${site.expression}; use a static table name or add this site to the shrink-only HOSTED_LOCAL_SQL_CANNOT_JUDGE baseline`,
+        `${site.file}:${site.line}: cannot judge interpolated SQL table ${site.expression}; use a static table name or add this occurrence to the shrink-only HOSTED_LOCAL_SQL_CANNOT_JUDGE baseline`,
       )
-  for (const [siteKey, site] of baselineByKey)
-    if (!sitesByKey.has(siteKey))
+  }
+  for (const [siteKey, baselineSite] of baselineByKey) {
+    const actual = sitesByKey.get(siteKey)?.length ?? 0
+    if (actual < baselineSite.count)
       failures.push(
-        `${site.file}:${site.line}: stale cannot-judge SQL baseline entry; remove it from HOSTED_LOCAL_SQL_CANNOT_JUDGE`,
+        `${baselineSite.file}: stale cannot-judge SQL baseline entry for fingerprint ${baselineSite.fingerprint}; expected ${baselineSite.count} occurrences but found ${actual}`,
       )
+  }
   return failures
 }
 
