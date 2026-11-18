@@ -21,6 +21,11 @@ const samples = {
   gate: { setting: 'bun run check', column: 'gate', value: 'bun run check' },
   workerCheck: { setting: 'bun run lint', column: 'workerCheck', value: 'bun run lint' },
   gateInput: { setting: 'worktree', column: 'gateInput', value: 'worktree' },
+  gateTooling: {
+    setting: ['scripts/check.ts', 'scripts/checks/**'],
+    column: 'gateTooling',
+    value: ['scripts/check.ts', 'scripts/checks/**'],
+  },
   focusedTests: {
     setting: { command: 'scripts/test-focused', args: ['--ci'] },
     column: 'focusedTests',
@@ -142,10 +147,17 @@ describe('hostedProjectColumns', () => {
     expect(columns.mcpWriterTools).toBeNull()
   })
 
+  test('refuses malformed hosted gate tooling with the project named', () => {
+    expect(() => hostedProjectColumns({ gateTooling: ['scripts/check.ts', 1] }, 'probe')).toThrow(
+      'project probe settings.gateTooling must be an array of strings',
+    )
+  })
+
   test('maps hosted columns back to local project settings', () => {
     const columns = hostedProjectColumns(
       {
         trunk: 'main',
+        gateTooling: ['scripts/check.ts', 'scripts/checks/**'],
         managedContext: true,
         requireCleanMain: false,
         mcp: {
@@ -158,6 +170,7 @@ describe('hostedProjectColumns', () => {
     )
     expect(hostedProjectSettings(columns)).toMatchObject({
       trunk: 'main',
+      gateTooling: ['scripts/check.ts', 'scripts/checks/**'],
       managedContext: true,
       requireCleanMain: false,
       mcp: {

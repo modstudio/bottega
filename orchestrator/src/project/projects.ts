@@ -87,6 +87,7 @@ import {
   autonomyProblems,
   canonMirrorKeyProblems,
   gateInputProblems,
+  gateToolingProblems,
   invalidOptionalStringArray,
   mainStackProblems,
   managedContextProblems,
@@ -554,6 +555,7 @@ export function validateProjectSettings(
     ...visibilityProblems(settings.visibility),
     ...focusedTestsProblems(settings.focusedTests),
     ...gateInputProblems(settings.gateInput),
+    ...gateToolingProblems(settings.gateTooling),
     ...workerCheckProblems(settings.workerCheck),
     ...projectAgentKeyProblems(settings.agentKeys),
   ]
