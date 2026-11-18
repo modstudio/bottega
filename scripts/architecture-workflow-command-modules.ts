@@ -31,7 +31,9 @@ export const workflowCommandModules: WorkflowCommandModule[] = [
     './workflow-cursor-serve.ts',
     './workflow-cursor-transition.ts',
     './workflow-cursor-compose.ts',
+    './workflow-explore-lifecycle-close.ts',
     './workflow-handoff-refusal.ts',
+    './workflow-handoff-types.ts',
     './workflow-task-claim.ts',
     './workflows.ts',
   ]),
@@ -48,6 +50,7 @@ export const workflowCommandModules: WorkflowCommandModule[] = [
     './workflow-task-reference.ts',
   ]),
   module('orchestrator/src/workflow/workflow-handoff-refusal.ts', []),
+  module('orchestrator/src/workflow/workflow-handoff-types.ts', []),
   module('orchestrator/src/workflow/workflow-compose-claim.ts', [
     'bun:sqlite',
     './workflow-cursor-mutation.ts',

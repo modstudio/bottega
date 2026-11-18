@@ -25,7 +25,7 @@ export const workflowAutonomyModules: WorkflowAutonomyModule[] = [
     './autonomy.ts',
     './workflow-cursor-format.ts',
     './workflow-floor.ts',
-    './workflow-handoff.ts',
+    './workflow-handoff-types.ts',
     './workflows.ts',
   ]),
   module('orchestrator/src/workflow/autonomy.ts', [

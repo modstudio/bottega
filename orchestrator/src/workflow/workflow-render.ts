@@ -1,12 +1,12 @@
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { CursorAutonomyNotice } from './autonomy.ts'
-import type { GraduatedExplore } from './workflow-handoff.ts'
 import {
   formatCursorOpened,
   formatCursorResumed,
   workflowCursorReference,
 } from './workflow-cursor-format.ts'
 import { evidenceGuidance, type FloorKind, mayCloseOnAgentSelfRuling } from './workflow-floor.ts'
+import type { GraduatedExplore } from './workflow-handoff-types.ts'
 import type { composeWorkflow, getWorkflowStep } from './workflows.ts'
 
 type WorkflowComposition = ReturnType<typeof composeWorkflow> & {

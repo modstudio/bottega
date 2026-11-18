@@ -32,7 +32,6 @@ import {
 } from './workflow-cursor-selection.ts'
 import { type CursorTrailEntry, isClosedStep } from './workflow-cursor-trail.ts'
 import {
-  type CursorState,
   cursorOwnerAfter,
   cursorValue,
   decideCursorCompositionInput,
@@ -46,15 +45,6 @@ import { withWorkflowTextFacts } from './workflow-text.ts'
 import { composeWorkflow, getWorkflowStep } from './workflows.ts'
 
 type CursorRow = SelectableCursorRow
-
-export type CursorSummary = {
-  id: number
-  n: number
-  slug: string
-  state: CursorState
-  opened: boolean
-  previousSession?: string | null
-}
 
 export function cursorComposition(
   row: SelectableCursorRow,

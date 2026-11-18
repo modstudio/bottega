@@ -21,9 +21,14 @@ import { storedCursorAutonomyForComposition } from './workflow-cursor-autonomy.t
 import { graduatingExploreCursor } from './workflow-cursor-compose.ts'
 import { workflowCursorReference } from './workflow-cursor-format.ts'
 import type { SelectableCursorRow, WorkflowCursorContext } from './workflow-cursor-selection.ts'
-import { cursorComposition, type CursorSummary } from './workflow-cursor-serve.ts'
+import { cursorComposition } from './workflow-cursor-serve.ts'
 import { cursorOwnerAfter } from './workflow-cursor-transition.ts'
+import {
+  closeExploreForLifecycle,
+  type FinishExploreLifecycle,
+} from './workflow-explore-lifecycle-close.ts'
 import { taskFlowHandoffRefusal } from './workflow-handoff-refusal.ts'
+import type { CursorSummary, GraduatedExplore } from './workflow-handoff-types.ts'
 import {
   followTaskCursorClaim,
   type TaskCursorClaimPorts,
@@ -312,4 +317,30 @@ export async function handoffGraduatingExplore(
   }
 }
 
-export type GraduatedExplore = { cursor: number; closed: true }
+export async function closeGraduatingExploreForReuse(
+  composition: ReturnType<typeof composeWorkflow>,
+  context: WorkflowCursorContext,
+  database: Database,
+  finish: FinishExploreLifecycle,
+  replacingCursor: number,
+): Promise<GraduatedExplore | undefined> {
+  const source = await graduatingExploreCursor({
+    project: composition.project,
+    session: context.session,
+    taskBound: Boolean(workflowKeyOf(composition.arguments)),
+    database,
+    taskFlowClient: context.taskFlowClient,
+  })
+  if (!source) return undefined
+  const outcome = await closeExploreForLifecycle(
+    source.record_id,
+    'answered',
+    database,
+    finish,
+    `replaced by cursor ${replacingCursor}`,
+    { requireUntouched: true },
+  )
+  if (outcome !== 'closed')
+    throw new Error(`explore cursor ${source.id} could not be closed: close outcome was ${outcome}`)
+  return { cursor: source.id, closed: true }
+}

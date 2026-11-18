@@ -31,7 +31,7 @@ import {
 import { followComposeTaskClaim } from './workflow-compose-claim.ts'
 import { adoptWorkflowTask } from './workflow-cursor-adoption.ts'
 import { workflowKeyOf as keyOf, resolveCursorArguments } from './workflow-cursor-arguments.ts'
-import { graduatingExploreCursor, insertWorkflowCursor } from './workflow-cursor-compose.ts'
+import { insertWorkflowCursor } from './workflow-cursor-compose.ts'
 import { cursorName } from './workflow-cursor-format.ts'
 import { abandonWorkflowCursor, closeOpenWorkflowQuestion } from './workflow-cursor-mutation.ts'
 import {
@@ -47,7 +47,7 @@ import {
   selectByHandle,
   type WorkflowCursorContext,
 } from './workflow-cursor-selection.ts'
-import { cursorComposition, type CursorSummary } from './workflow-cursor-serve.ts'
+import { cursorComposition } from './workflow-cursor-serve.ts'
 import { type ClosedStep, type CursorTrailEntry, isClosedStep } from './workflow-cursor-trail.ts'
 import {
   cursorOwnerAfter,
@@ -70,8 +70,8 @@ import {
   type WorkflowEvidenceInput,
 } from './workflow-floor-evidence.ts'
 import { withReplayedFloorEvidenceAsync } from './workflow-floor-evidence-replay.ts'
-import { type GraduatedExplore, handoffGraduatingExplore } from './workflow-handoff.ts'
-import { closeExploreForLifecycle } from './workflow-explore-lifecycle-close.ts'
+import { closeGraduatingExploreForReuse, handoffGraduatingExplore } from './workflow-handoff.ts'
+import type { CursorSummary } from './workflow-handoff-types.ts'
 import { refuseKeylessStepClose } from './workflow-keyless-close.ts'
 import { selfRulingRefusal } from './workflow-self-ruling.ts'
 import {
@@ -279,29 +279,16 @@ export async function composeWorkflowWithCursor(
     opened: start !== 'reuse',
     previousSession: start === 'reuse' ? takenOverFrom(existing, context) : null,
   } satisfies CursorSummary
-  let graduated: GraduatedExplore | undefined
-  if (start === 'reuse') {
-    const source = await graduatingExploreCursor({
-      project: composition.project,
-      session: context.session,
-      taskBound: Boolean(keyOf(composition.arguments)),
-      database: d,
-      taskFlowClient: context.taskFlowClient,
-    })
-    if (source) {
-      const outcome = await closeExploreForLifecycle(
-        source.record_id,
-        'answered',
-        d,
-        writeFinishingWorkflowAdvance,
-        `replaced by cursor ${cursor.id}`,
-        { requireUntouched: true },
-      )
-      if (outcome !== 'closed')
-        throw new Error(`explore cursor ${source.id} could not be closed: close outcome was ${outcome}`)
-      graduated = { cursor: source.id, closed: true }
-    }
-  }
+  const graduated =
+    start === 'reuse'
+      ? await closeGraduatingExploreForReuse(
+          composition,
+          context,
+          d,
+          writeFinishingWorkflowAdvance,
+          cursor.id,
+        )
+      : undefined
   return {
     ...cursorComposition(row, d, live),
     cursor,

@@ -407,6 +407,7 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     './workflow-cursor-adoption.ts',
     './workflow-cursor-compose.ts',
     './workflow-handoff.ts',
+    './workflow-handoff-types.ts',
     './workflow-cursor-ruling.ts',
     './workflow-cursor-serve.ts',
     './workflow-compose-branch.ts',

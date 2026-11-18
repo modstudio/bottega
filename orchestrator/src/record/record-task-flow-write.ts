@@ -7,6 +7,7 @@ import type { SQL } from 'bun'
 import { bindJsonb } from '../../../shared/record/jsonb-sql.ts'
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
 import { DocRevisionConflictError } from '../doc/doc-revision-conflict.ts'
+import { taskFlowHandoffRefusal } from '../workflow/workflow-handoff-refusal.ts'
 import { isUniqueViolation } from './record-config-error.ts'
 import { recordPool } from './record-pool.ts'
 import { allocateRecordSequence } from './record-sequence.ts'
@@ -24,7 +25,6 @@ import {
   recordColumnName,
   sameRecordValue,
 } from './record-task-flow-write-decision.ts'
-import { taskFlowHandoffRefusal } from '../workflow/workflow-handoff-refusal.ts'
 
 type Tenant = { url: string } & TenantPrincipal
 type Mutation = { id: string; expectedRevision: number; values: Record<string, unknown> }
