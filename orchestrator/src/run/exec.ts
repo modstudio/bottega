@@ -42,6 +42,13 @@ export function startupFailureDiagnostic(error: unknown): string {
   return String((error as Error)?.stack ?? error)
 }
 
+export function executorCallerToken(
+  inherited: string | undefined,
+  callerLineage: (own: string, parent: string | undefined) => string,
+): string {
+  return callerLineage('exec:run', inherited)
+}
+
 /** Record why this run never started, using as little of the codebase as possible. */
 async function recordStartupFailure(id: string, reason: string): Promise<void> {
   if (!id) return
@@ -84,9 +91,52 @@ async function recordStartupFailure(id: string, reason: string): Promise<void> {
 }
 
 export async function main(argv: string[]): Promise<number> {
+  let requestWindowTimer: ReturnType<typeof setInterval> | undefined
+  let finishRequestWindow: (() => void) | undefined
   const [idArg, promptPath, jobName, specJson] = argv
   const id = idArg ?? ''
   try {
+    const { CALLER_ENVIRONMENT_KEY, callerLineage } = await import(
+      '../../../shared/record-caller.ts'
+    )
+    process.env[CALLER_ENVIRONMENT_KEY] = executorCallerToken(
+      process.env[CALLER_ENVIRONMENT_KEY],
+      callerLineage,
+    )
+    const { recordRequestCount } = await import('../../../shared/record-request-headers.ts')
+    const {
+      exceedsLongLivedRecordRequestRate,
+      LONG_LIVED_RECORD_REQUEST_ALLOWANCE,
+      LONG_LIVED_RECORD_REQUESTS_PER_WINDOW_MAX,
+      LONG_LIVED_RECORD_REQUEST_WINDOW_MS,
+    } = await import('./run-record-request-rate.ts')
+    const { recordRunWarning } = await import('../events.ts')
+    let requestWindowIndex = 1
+    let requestCountAtWindowStart = recordRequestCount()
+    const closeRequestWindow = (): void => {
+      const currentCount = recordRequestCount()
+      const count = currentCount - requestCountAtWindowStart
+      if (id && exceedsLongLivedRecordRequestRate({ count, windowIndex: requestWindowIndex })) {
+        recordRunWarning(
+          id,
+          `long-lived record request rate exceeded: ${count} requests in window ${requestWindowIndex}; allowance ${LONG_LIVED_RECORD_REQUEST_ALLOWANCE} requests in the first window; bound ${LONG_LIVED_RECORD_REQUESTS_PER_WINDOW_MAX} requests per ${LONG_LIVED_RECORD_REQUEST_WINDOW_MS / 1_000}-second window`,
+        )
+      }
+      requestCountAtWindowStart = currentCount
+      requestWindowIndex += 1
+    }
+    const closeRequestWindowSafely = (): void => {
+      try {
+        closeRequestWindow()
+      } catch (error) {
+        console.error(
+          `orch: run ${id} could not record its request-rate warning: ${startupFailureDiagnostic(error)}`,
+        )
+      }
+    }
+    requestWindowTimer = setInterval(closeRequestWindowSafely, LONG_LIVED_RECORD_REQUEST_WINDOW_MS)
+    requestWindowTimer.unref()
+    finishRequestWindow = closeRequestWindowSafely
     if (!id || !promptPath || !jobName)
       throw new Error('__exec <run-id> <prompt-file> <job> [spec]')
     const { readFileSync } = await import('node:fs')
@@ -134,6 +184,9 @@ export async function main(argv: string[]): Promise<number> {
       `orch: run ${id} ${runFinishFailed ? 'finish failed' : 'could not start'}: ${diagnostic}`,
     )
     return 1
+  } finally {
+    if (requestWindowTimer) clearInterval(requestWindowTimer)
+    finishRequestWindow?.()
   }
 }
 

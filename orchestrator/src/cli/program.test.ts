@@ -157,7 +157,7 @@ test('run scopes real command actions to the public CLI path and restores the pa
 
     process.env[CALLER_ENVIRONMENT_KEY] = 'hook:parent'
     expect(await run(['store-path'], invocation)).toBe(0)
-    expect(observed.at(-1)).toBe('hook:parent')
+    expect(observed.at(-1)).toBe('cli:machine/store-path.hook:parent')
     expect(process.env[CALLER_ENVIRONMENT_KEY]).toBe('hook:parent')
   } finally {
     if (parentCaller === undefined) delete process.env[CALLER_ENVIRONMENT_KEY]

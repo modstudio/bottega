@@ -11,6 +11,10 @@ export const CALLER_TOKEN_MAX_LENGTH = 64
 const CALLER_TOKEN = /^[A-Za-z0-9:_/.-]+$/
 const callerScope = new AsyncLocalStorage<string>()
 
+export function callerLineage(own: string, parent: string | undefined): string {
+  return `${own}${parent ? `.${parent}` : ''}`.slice(0, CALLER_TOKEN_MAX_LENGTH)
+}
+
 function validCallerToken(value: string | undefined): value is string {
   return Boolean(value && value.length <= CALLER_TOKEN_MAX_LENGTH && CALLER_TOKEN.test(value))
 }

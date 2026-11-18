@@ -1,10 +1,15 @@
 import { expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { callerLineage } from '../../../shared/record-caller.ts'
 import { refusal } from '../../../shared/refusal.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
 import { RefusalError } from '../refusal-error.ts'
-import { main, startupFailureDiagnostic } from './exec.ts'
+import { executorCallerToken, main, startupFailureDiagnostic } from './exec.ts'
+
+test('the detached executor keeps its inherited caller lineage', () => {
+  expect(executorCallerToken('cli:run/start', callerLineage)).toBe('exec:run.cli:run/start')
+})
 
 test('a startup refusal reports its message without a stack', () => {
   const error = new RefusalError(refusal(`run ${PLATFORM_SLUG} agent probe codex`))

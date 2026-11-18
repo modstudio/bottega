@@ -2,10 +2,24 @@ import { expect, test } from 'bun:test'
 import { hostedAccessLogLine } from './hosted-server.ts'
 import {
   CALLER_TOKEN_MAX_LENGTH,
+  callerLineage,
   callerToken,
   inboundCaller,
   loggedCallerToken,
 } from './record-caller.ts'
+
+test('caller lineage keeps the caller first and bounds inherited lineage', () => {
+  expect(callerLineage('exec:run', undefined)).toBe('exec:run')
+  expect(callerLineage('exec:run', 'cli:run/start')).toBe('exec:run.cli:run/start')
+  expect(callerLineage('cli:task/show', 'exec:run.cli:run/start')).toBe(
+    'cli:task/show.exec:run.cli:run/start',
+  )
+
+  const overLong = callerLineage('exec:run', `cli:${'x'.repeat(CALLER_TOKEN_MAX_LENGTH)}`)
+  expect(overLong).toHaveLength(CALLER_TOKEN_MAX_LENGTH)
+  expect(overLong.startsWith('exec:run.')).toBe(true)
+  expect(callerToken(undefined, overLong)).toBe(overLong)
+})
 
 test('caller token selects the scoped MCP caller before the process environment', () => {
   expect(callerToken('mcp:list_open_questions', 'hook:heartbeat')).toBe('mcp:list_open_questions')
