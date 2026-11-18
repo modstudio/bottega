@@ -1,5 +1,9 @@
 export const runModuleSpecs = [
   {
+    file: 'orchestrator/src/run/cursorless-run-evidence.ts',
+    allowed: ['bun:sqlite', '../jobs/jobs.ts'],
+  },
+  {
     file: 'orchestrator/src/jobs/delegation.ts',
     allowed: [
       '../../../shared/brand.ts',

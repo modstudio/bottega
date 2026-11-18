@@ -1,6 +1,10 @@
 import { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
-import { decideWorkflowUncovered, workflowUncoveredReport } from './workflow-uncovered.ts'
+import {
+  decideWorkflowUncovered,
+  workflowUncoveredCommand,
+  workflowUncoveredReport,
+} from './workflow-uncovered.ts'
 
 const evidence = [
   { project: 'alpha', key: 'DEV-1', at: '2026-11-17T10:00:00.000Z', source: 'run' as const },
@@ -36,12 +40,20 @@ test('reports each uncovered task once per day and includes zero days', () => {
           closedAt: '2026-11-17T11:30:00.000Z',
         },
       ],
+      cursorlessRuns: [
+        { number: 42, job: 'understand', session: 'session-a', at: '2026-11-17T14:00:00.000Z' },
+      ],
     }),
   ).toEqual({
     expected: 0,
     days: [
-      { day: '2026-11-16', count: 0, tasks: [] },
-      { day: '2026-11-17', count: 1, tasks: [{ project: 'alpha', key: 'DEV-3' }] },
+      { day: '2026-11-16', count: 0, tasks: [], cursorlessRuns: [] },
+      {
+        day: '2026-11-17',
+        count: 1,
+        tasks: [{ project: 'alpha', key: 'DEV-3' }],
+        cursorlessRuns: [{ number: 42, job: 'understand', session: 'session-a' }],
+      },
     ],
   })
 })
@@ -64,6 +76,7 @@ test('evidence after a cursor closes or a claim lapses is uncovered', () => {
     day: '2026-11-17',
     count: 1,
     tasks: [{ project: 'alpha', key: 'DEV-1' }],
+    cursorlessRuns: [],
   })
 })
 
@@ -93,6 +106,7 @@ test('handoff coverage requires one live claim spanning the old close and succes
     day: '2026-11-17',
     count: 1,
     tasks: [{ project: 'alpha', key: 'DEV-1' }],
+    cursorlessRuns: [],
   })
 })
 
@@ -108,6 +122,38 @@ test('rejects an invalid day window', () => {
   ).toThrow('--days must be a positive integer')
 })
 
+test('the command lists cursorless runs and sets failure or success explicitly', async () => {
+  const output = (lines: string[], codes: number[]) => ({
+    log: (line: string) => lines.push(line),
+    setExitCode: (code: number) => codes.push(code),
+  })
+  const gapLines: string[] = []
+  const gapCodes: number[] = []
+  await workflowUncoveredCommand({}, output(gapLines, gapCodes), async () => ({
+    expected: 0,
+    days: [
+      {
+        day: '2026-11-17',
+        count: 0,
+        tasks: [],
+        cursorlessRuns: [{ number: 42, job: 'understand', session: 'session-a' }],
+      },
+    ],
+  }))
+  expect(gapLines).toEqual([
+    '2026-11-17: 0 (expected 0)',
+    '  cursorless runs: 1 (expected 0)  #42 understand',
+  ])
+  expect(gapCodes).toEqual([1])
+
+  const clearCodes: number[] = []
+  await workflowUncoveredCommand({}, output([], clearCodes), async () => ({
+    expected: 0,
+    days: [{ day: '2026-11-17', count: 0, tasks: [], cursorlessRuns: [] }],
+  }))
+  expect(clearCodes).toEqual([0])
+})
+
 test('the adapter correlates run and landing evidence with hosted-shaped cursor and claim reads', async () => {
   const database = new Database(':memory:')
   database.exec(`
@@ -115,7 +161,8 @@ test('the adapter correlates run and landing evidence with hosted-shaped cursor 
       record_id TEXT PRIMARY KEY,name TEXT,path TEXT,stack TEXT,canon INTEGER,settings TEXT,retired_at TEXT
     );
     CREATE TABLE run (
-      project_record_id TEXT,launch_key TEXT,started_at TEXT,branch TEXT,minted_branch TEXT
+      number INTEGER,project_record_id TEXT,launch_key TEXT,started_at TEXT,branch TEXT,
+      minted_branch TEXT,job TEXT,session_id TEXT,cursor_record_id TEXT,turn INTEGER
     );
     CREATE TABLE branch_landing_record (
       project TEXT,project_record_id TEXT,branch TEXT,merged_at TEXT
@@ -123,9 +170,13 @@ test('the adapter correlates run and landing evidence with hosted-shaped cursor 
     INSERT INTO project VALUES
       ('project-alpha','alpha','/projects/alpha',NULL,1,'{"keyPrefixes":["DEV"]}',NULL);
     INSERT INTO run VALUES
-      ('project-alpha','DEV-1','2026-11-17T10:00:00.000Z',NULL,NULL),
-      ('project-alpha','DEV-2','2026-11-17T10:00:00.000Z',NULL,NULL),
-      ('project-alpha','DEV-3','2026-11-17T10:00:00.000Z',NULL,NULL);
+      (1,'project-alpha','DEV-1','2026-11-17T10:00:00.000Z',NULL,NULL,'understand','session-a',NULL,1),
+      (2,'project-alpha','DEV-2','2026-11-17T10:00:00.000Z',NULL,NULL,'understand','session-a',NULL,1),
+      (3,'project-alpha','DEV-3','2026-11-17T10:00:00.000Z',NULL,NULL,'understand','session-a',NULL,1),
+      (4,'project-alpha',NULL,'2026-11-17T13:00:00.000Z',NULL,NULL,'understand','session-a',NULL,1),
+      (5,'project-alpha',NULL,'2026-11-17T14:00:00.000Z',NULL,NULL,'hook-tree','session-a',NULL,1),
+      (6,'project-alpha',NULL,'2026-11-17T15:00:00.000Z',NULL,NULL,'understand','session-a','cursor-a',1),
+      (7,'project-alpha',NULL,'2026-11-17T16:00:00.000Z',NULL,NULL,'understand','session-a',NULL,2);
     INSERT INTO branch_landing_record VALUES
       ('alpha','project-alpha','DEV-4-change','2026-11-17T12:00:00.000Z');
   `)
@@ -222,6 +273,7 @@ test('the adapter correlates run and landing evidence with hosted-shaped cursor 
         { project: 'alpha', key: 'DEV-4' },
         { project: 'alpha', key: 'DEV-5' },
       ],
+      cursorlessRuns: [{ number: 4, job: 'understand', session: 'session-a' }],
     })
     expect((await report(true)).days[0]).toEqual({
       day: '2026-11-17',
@@ -230,6 +282,7 @@ test('the adapter correlates run and landing evidence with hosted-shaped cursor 
         { project: 'alpha', key: 'DEV-1' },
         { project: 'alpha', key: 'DEV-4' },
       ],
+      cursorlessRuns: [{ number: 4, job: 'understand', session: 'session-a' }],
     })
   } finally {
     database.close()
