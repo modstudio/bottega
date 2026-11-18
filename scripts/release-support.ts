@@ -1,6 +1,6 @@
 import { fileURLToPath } from 'node:url'
 import { PLATFORM_NAME } from '../shared/brand.ts'
-import type { DistributionManifest } from '../shared/install-root.ts'
+import type { DistributionManifest } from '../shared/distribution-manifest.ts'
 import { RELEASE_TAG_SHAPE, releaseTagVersion } from '../shared/release-tag.ts'
 
 const repositoryRoot = fileURLToPath(new URL('..', import.meta.url))

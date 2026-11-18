@@ -28,6 +28,7 @@ export const sessionLossesModules: SessionLossesModule[] = [
     '../database/db.ts',
     '../doc/docs.ts',
     '../metric/transcript-reader.ts',
+    '../record/record-task-flow-contract.ts',
     '../run/run-artifacts.ts',
     '../run/run-dispatch.ts',
     '../run/run-status.ts',

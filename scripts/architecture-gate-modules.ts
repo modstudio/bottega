@@ -83,6 +83,7 @@ export const gateModules: GateModule[] = [
     './gate-check-executions.ts',
     './gate-checkout.ts',
     './gate-decision.ts',
+    './gate-index.ts',
   ]),
   module('orchestrator/src/gate/gate-check-executions.ts', [
     '../../../shared/check-execution.ts',

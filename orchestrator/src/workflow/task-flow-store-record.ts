@@ -21,7 +21,10 @@ import {
   type HostedTaskFlow,
   type HostedTaskFlowStageById,
   type HostedTaskFlowStageList,
+  isClosedStageState,
+  TASK_FLOW_OPEN_STAGE_STATES,
   TASK_FLOW_STAGE_LIST_LIMIT_MAX,
+  TASK_FLOW_STAGE_STATES,
 } from '../record/record-task-flow-contract.ts'
 import {
   currentRecordWriteDecision,
@@ -37,6 +40,8 @@ import { sqliteTaskFlowReadStore } from './task-flow-store-sqlite.ts'
 import type {
   TaskFlowObligationRow,
   TaskFlowOpenObligationRow,
+  TaskFlowOpenStageWorktreeRow,
+  TaskFlowStageCursorRow,
   TaskFlowTextRow,
 } from './task-flow-store-types.ts'
 
@@ -270,7 +275,7 @@ class RecordTaskFlowReadStore {
         mode: input.mode,
         sessionId: input.sessionId,
         keyless: true,
-        states: ['running', 'awaiting-ruling'],
+        states: [...TASK_FLOW_OPEN_STAGE_STATES],
       },
       input.project,
     )
@@ -286,7 +291,7 @@ class RecordTaskFlowReadStore {
     const common: StageListSelector = {
       projectId: this.projectId(input.project),
       workflow: input.workflow,
-      states: ['running', 'awaiting-ruling'],
+      states: [...TASK_FLOW_OPEN_STAGE_STATES],
     }
     const groups = input.key
       ? await Promise.all([
@@ -306,30 +311,42 @@ class RecordTaskFlowReadStore {
   async listOpenStages(input: { project?: string; sessionId?: string }) {
     return this.questions.listOpenStages(input)
   }
+  async listStages(input: {
+    project?: string
+    sessionId?: string
+    states: readonly [TaskFlowStageCursorRow['state'], ...TaskFlowStageCursorRow['state'][]]
+  }) {
+    return this.questions.listStages(input)
+  }
   async keyedStageHistory(input: { since: string }) {
     return (
       await this.listEveryDestination({
-        states: ['running', 'awaiting-ruling', 'done', 'abandoned'],
+        states: [...TASK_FLOW_STAGE_STATES],
       })
     )
       .map((item) => stageRow(item))
       .filter(
         (row) =>
           row.workflow_key !== '' &&
-          (!['done', 'abandoned'].includes(row.state) || row.updated_at >= input.since),
+          (!isClosedStageState(row.state) || row.updated_at >= input.since),
       )
       .sort((left, right) => left.created_at.localeCompare(right.created_at) || left.id - right.id)
   }
-  async openStageWorktrees() {
-    return (await this.listEveryDestination({ states: ['running', 'awaiting-ruling'] }))
+  async openStageWorktrees(): Promise<TaskFlowOpenStageWorktreeRow[]> {
+    return (await this.listEveryDestination({ states: [...TASK_FLOW_OPEN_STAGE_STATES] }))
       .map((row) => stageRow(row))
-      .sort((a, b) => a.id - b.id)
       .map((row) => ({
+        record_id: row.record_id,
         number: row.id,
         workflow: row.workflow_slug,
         project: row.project,
         args: row.args,
+        closed: row.closed,
+        revision: row.revision,
       }))
+      .sort(
+        (left, right) => left.project.localeCompare(right.project) || left.number - right.number,
+      )
   }
   async activeStageAutonomy(project: string, taskRecordId: string) {
     return (
@@ -337,7 +354,7 @@ class RecordTaskFlowReadStore {
         {
           projectId: this.projectId(project),
           taskId: taskRecordId,
-          states: ['running', 'awaiting-ruling'],
+          states: [...TASK_FLOW_OPEN_STAGE_STATES],
         },
         project,
       )
@@ -366,7 +383,7 @@ class RecordTaskFlowReadStore {
         workflow: input.workflow,
         mode: input.mode,
         workflowKey: input.key,
-        states: ['running', 'awaiting-ruling'],
+        states: [...TASK_FLOW_OPEN_STAGE_STATES],
       },
       input.project,
     )

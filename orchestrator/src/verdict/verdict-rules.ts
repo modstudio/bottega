@@ -62,6 +62,16 @@ export type JobFacts = {
   hasRequiredReviewGrades: boolean
 }
 
+// Axis-only paths record no review grades.
+export function axisOnlyJobFacts(writesRepo: boolean): JobFacts {
+  return {
+    writesRepo,
+    producesFindings: false,
+    hasAnyReviewGrades: false,
+    hasRequiredReviewGrades: true,
+  }
+}
+
 export type VerdictFacts = {
   delivery: string
   quality: string | null
@@ -74,6 +84,27 @@ export type VerdictRefusal = {
   /** Lets a caller answer a refusal in its own words; the message stands alone. */
   code: 'evidence' | 'delivery' | 'quality' | 'fidelity' | 'fidelity-missing' | 'review-grades'
   message: string
+}
+
+export function refuseUnusableThirdVerdictWord(
+  jobName: string,
+  jobTakesFidelity: boolean,
+  suppliedFidelity: string | undefined,
+): VerdictRefusal | null {
+  if (
+    jobTakesFidelity ||
+    !suppliedFidelity ||
+    FIDELITY.includes(suppliedFidelity as (typeof FIDELITY)[number])
+  ) {
+    return null
+  }
+  return {
+    code: 'fidelity',
+    message:
+      `${jobName} is judged on two axes only: delivery (${DELIVERY.join(' | ')}) and ` +
+      `quality (${QUALITY.join(' | ')}); '${suppliedFidelity}' is not a verdict word for ` +
+      `${jobName}; remove it`,
+  }
 }
 
 function refuseEvidence(input: VerdictFacts): VerdictRefusal | null {

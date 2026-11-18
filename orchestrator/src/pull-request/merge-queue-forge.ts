@@ -8,7 +8,7 @@ import type { MergeQueueObservation } from './merge-queue-decision.ts'
 export function githubMergeQueueState(cwd: string, nodeId: string): MergeQueueObservation {
   const value = githubGraphql(
     cwd,
-    'query($id:ID!){node(id:$id){... on PullRequest{state mergeCommit{oid} mergeQueueEntry{state enqueuedAt}}}}',
+    'query($id:ID!){node(id:$id){... on PullRequest{state mergeCommit{oid} mergeQueueEntry{state enqueuedAt} timelineItems(last:1,itemTypes:[REMOVED_FROM_MERGE_QUEUE_EVENT]){nodes{... on RemovedFromMergeQueueEvent{reason createdAt}}}}}}',
     [`id=${nodeId}`],
     'merge-queue lookup',
   ) as {
@@ -17,6 +17,9 @@ export function githubMergeQueueState(cwd: string, nodeId: string): MergeQueueOb
         state?: unknown
         mergeCommit?: { oid?: unknown } | null
         mergeQueueEntry?: { state?: unknown; enqueuedAt?: unknown } | null
+        timelineItems?: {
+          nodes?: Array<{ reason?: unknown; createdAt?: unknown } | null> | null
+        } | null
       } | null
     }
   }
@@ -24,16 +27,21 @@ export function githubMergeQueueState(cwd: string, nodeId: string): MergeQueueOb
   const mergeCommit = node?.mergeCommit?.oid
   const entryState = node?.mergeQueueEntry?.state
   const enqueuedAt = node?.mergeQueueEntry?.enqueuedAt
+  const removalReason = node?.timelineItems?.nodes?.at(-1)?.reason
+  const removedAt = node?.timelineItems?.nodes?.at(-1)?.createdAt
   if (
     !node ||
     typeof node.state !== 'string' ||
     node.mergeCommit === undefined ||
     (node.mergeCommit !== null && typeof mergeCommit !== 'string') ||
     node.mergeQueueEntry === undefined ||
+    node.timelineItems === undefined ||
     (node.mergeQueueEntry !== null &&
       (typeof entryState !== 'string' ||
         enqueuedAt === undefined ||
-        (enqueuedAt !== null && typeof enqueuedAt !== 'string')))
+        (enqueuedAt !== null && typeof enqueuedAt !== 'string'))) ||
+    (removalReason !== undefined && typeof removalReason !== 'string') ||
+    (removedAt !== undefined && typeof removedAt !== 'string')
   ) {
     throw new Error('merge-queue lookup returned an unexpected JSON shape')
   }
@@ -42,6 +50,8 @@ export function githubMergeQueueState(cwd: string, nodeId: string): MergeQueueOb
     mergeCommit: typeof mergeCommit === 'string' ? mergeCommit : null,
     entryState: typeof entryState === 'string' ? entryState : null,
     enqueuedAt: typeof enqueuedAt === 'string' ? enqueuedAt : null,
+    removalReason: typeof removalReason === 'string' ? removalReason : null,
+    removedAt: typeof removedAt === 'string' ? removedAt : null,
   }
 }
 

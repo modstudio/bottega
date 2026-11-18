@@ -2,6 +2,7 @@
 /** Reports open keyed cursors the task-flow backfill leaves unmerged, whether deliberately or because no flow was created. */
 
 import type { Database } from 'bun:sqlite'
+import { TASK_FLOW_CLOSED_STAGE_STATES_SQL } from '../record/record-task-flow-contract.ts'
 
 export const TASK_FLOW_MIGRATION = '0198_task_flow'
 
@@ -9,7 +10,7 @@ export function taskFlowBackfillReports(d: Database): string[] {
   const unresolved = d
     .query<{ number: number }, []>(
       `SELECT number FROM workflow_cursor
-       WHERE workflow_key<>'' AND task_record_id IS NULL AND state NOT IN ('done','abandoned')
+       WHERE workflow_key<>'' AND task_record_id IS NULL AND state NOT IN (${TASK_FLOW_CLOSED_STAGE_STATES_SQL})
        ORDER BY number`,
     )
     .all()
@@ -23,7 +24,7 @@ export function taskFlowBackfillReports(d: Database): string[] {
          ) task_rank
          FROM workflow_cursor
          WHERE workflow_key<>'' AND task_record_id IS NOT NULL
-           AND state NOT IN ('done','abandoned')
+           AND state NOT IN (${TASK_FLOW_CLOSED_STAGE_STATES_SQL})
        ) WHERE task_rank>1 ORDER BY number`,
     )
     .all()
@@ -31,7 +32,7 @@ export function taskFlowBackfillReports(d: Database): string[] {
     .query<{ number: number }, []>(
       `SELECT cursor.number FROM workflow_cursor cursor
        WHERE cursor.workflow_key<>'' AND cursor.task_record_id IS NOT NULL
-         AND cursor.state NOT IN ('done','abandoned')
+         AND cursor.state NOT IN (${TASK_FLOW_CLOSED_STAGE_STATES_SQL})
          AND NOT EXISTS (
            SELECT 1 FROM task_flow flow WHERE flow.task_record_id=cursor.task_record_id
          )

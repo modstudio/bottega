@@ -20,6 +20,33 @@ export const Kinds: StoryObj<typeof meta> = {
     </>
   ),
 }
+export const Warning: StoryObj<typeof meta> = {
+  render: () => (
+    <>
+      <button
+        type="button"
+        onClick={() =>
+          toast.warning(
+            'Task DEV-1 is closed, but claim cleanup remains.\nclear it with: bottega board claim release-task DEV-1 --project workshop-with-a-long-name',
+          )
+        }
+      >
+        Show warning
+      </button>
+      <Toaster />
+    </>
+  ),
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await userEvent.click(canvas.getByRole('button', { name: 'Show warning' }))
+    const notification = canvas.getByRole('listitem')
+    await waitFor(() =>
+      expect(within(notification).getByText(/Task DEV-1 is closed/)).toBeVisible(),
+    )
+    await userEvent.click(within(notification).getByRole('button', { name: 'Dismiss' }))
+    await waitFor(() => expect(canvas.queryByRole('listitem')).not.toBeInTheDocument())
+  },
+}
 export const Keyboard: StoryObj<typeof meta> = {
   render: () => (
     <>

@@ -1,6 +1,7 @@
 import { dirname, resolve } from 'node:path'
+import type { OrchProject } from '../../shared/orch-contract.ts'
 import { type TrackerProject, trackerSourceFor } from '../../shared/trackers.ts'
-import { type OrchProject, type ProjectListOptions, projectList } from './orch.ts'
+import { type ProjectListOptions, projectList } from './orch-project-register.ts'
 
 export type { StatusCategory } from '../../shared/trackers.ts'
 

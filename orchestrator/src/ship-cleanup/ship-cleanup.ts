@@ -84,9 +84,19 @@ export type ShipCleanupReport = {
 export type ShipCleanupDependencies = {
   landingState(project: string, branch: string): BranchStateDecision
   observeBranchRef(projectPath: string, branch: string): GitRefObservation
-  closeOut(
-    runId: string,
-  ): Promise<{ outcome: string; detail: string }> | { outcome: string; detail: string }
+  closeOut(runId: string):
+    | Promise<{
+        outcome: string
+        detail: string
+        cursorCleanupFailure?: string
+        cursorCleanupRemedy?: string
+      }>
+    | {
+        outcome: string
+        detail: string
+        cursorCleanupFailure?: string
+        cursorCleanupRemedy?: string
+      }
   prune(
     project: string,
     branch: string,
@@ -324,6 +334,7 @@ async function closeBranchWorktree(
       }
       if (result.outcome === 'released' && row.worktree)
         removedNow.set(row.worktree, runIdsByTree.get(row.worktree) ?? new Set([row.record_id]))
+      reportCursorCleanupFailure(report, row.number, result)
       return null
     }
     report.kept.push(
@@ -350,6 +361,19 @@ async function closeBranchWorktree(
     })
   }
   return null
+}
+
+function reportCursorCleanupFailure(
+  report: ShipCleanupReport,
+  runNumber: number,
+  result: { cursorCleanupFailure?: string; cursorCleanupRemedy?: string },
+): void {
+  if (!result.cursorCleanupFailure) return
+  report.errors.push({
+    item: `run ${runNumber} cursor worktree pointers`,
+    detail: result.cursorCleanupFailure,
+    retry: result.cursorCleanupRemedy ?? result.cursorCleanupFailure,
+  })
 }
 
 async function releaseLandingTree(
@@ -382,6 +406,7 @@ async function releaseLandingTree(
     if (result.outcome === 'released') report.removed.worktrees.push(row.worktree)
     else report.absentWorktrees.push(row.worktree)
     removedNow.set(row.worktree, runIdsByTree.get(row.worktree) ?? new Set([row.record_id]))
+    reportCursorCleanupFailure(report, row.number, result)
     return null
   }
   if (result.outcome === 'kept') {

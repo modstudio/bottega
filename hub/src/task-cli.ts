@@ -17,6 +17,7 @@ import {
   showTask,
 } from './task.ts'
 import { closeThenPrune } from './task-close.ts'
+import { TaskClosedWithResidueError } from './task-closed-residue.ts'
 import {
   createTaskDocument,
   deleteTaskDocument,
@@ -182,37 +183,41 @@ async function showTaskCommand(key: string, options: TaskOptions): Promise<void>
 }
 
 async function closeTask(key: string, options: TaskOptions): Promise<void> {
-  const { closed, pruned, pruneError, claimReleaseError } = await closeThenPrune(
-    key,
-    { project: options.project },
-    Boolean(options.keepBranches),
-    optional(options, 'abandon'),
-    await machineAttribution(),
-    ARRAY_MCP_STATUS_WRITE_CONFIRM,
-    { close: closeTaskThroughTracker },
-  )
-  printTaskRow(closed)
-  if (claimReleaseError) {
-    console.error(`claim release failed: ${claimReleaseError.message}`)
-    console.error(
-      `retry: ${PLATFORM_SLUG} board claim release-task ${closed.key} --project ${closed.project} --json`,
+  let result: Awaited<ReturnType<typeof closeThenPrune>>
+  try {
+    result = await closeThenPrune(
+      key,
+      { project: options.project },
+      Boolean(options.keepBranches),
+      optional(options, 'abandon'),
+      await machineAttribution(),
+      ARRAY_MCP_STATUS_WRITE_CONFIRM,
+      {
+        close: (key, scope, attribution, closeOptions) =>
+          closeTaskThroughTracker(key, scope, attribution, closeOptions),
+        cursorAbandoned: (cursor) =>
+          console.log(`cursor ${cursor.number} ${cursor.workflow}: abandoned (${cursor.reason})`),
+      },
     )
-    process.exitCode = TASK_CLOSED_WITH_RESIDUE_EXIT_CODE
-  }
-  if (pruneError) {
-    console.error(`branch prune failed: ${pruneError.message}`)
-    console.error(
-      `retry: ${PLATFORM_SLUG} tree branch prune --project ${closed.project} --key ${closed.key}`,
-    )
-    process.exitCode = TASK_CLOSED_WITH_RESIDUE_EXIT_CODE
+  } catch (error) {
+    handleTaskClosedWithResidue(error)
     return
   }
+  const { closed, pruned } = result
+  printTaskRow(closed)
   if (!pruned) return
   console.log(`branches: deleted ${pruned.deleted.length}; kept ${pruned.kept.length}`)
   for (const branch of pruned.operator)
     console.log(
       `${branch.state}: ${branch.branch} (${branch.commitsNotOnTrunk} commits not on trunk); ${branch.command}`,
     )
+}
+
+export function handleTaskClosedWithResidue(error: unknown): void {
+  if (!(error instanceof TaskClosedWithResidueError)) throw error
+  printTaskRow(error.task)
+  console.error(error.message)
+  process.exitCode = TASK_CLOSED_WITH_RESIDUE_EXIT_CODE
 }
 
 function taskOptions(command: Command): TaskOptions {
@@ -353,18 +358,24 @@ function registerTaskQueryCommands(task: Command): void {
     if (!Object.keys(changes).length)
       throw new Error(`${PLATFORM_SLUG} task set requires a field to change`)
     const attribution = await machineAttribution()
-    const row = await setTaskThroughTracker(
-      key,
-      { project: options.project },
-      changes,
-      attribution,
-      {
-        force: Boolean(options.force),
-        abandonReason: optional(options, 'abandon'),
-        confirm: ARRAY_MCP_STATUS_WRITE_CONFIRM,
-      },
-    )
-    printTaskRow(row)
+    try {
+      const row = await setTaskThroughTracker(
+        key,
+        { project: options.project },
+        changes,
+        attribution,
+        {
+          force: Boolean(options.force),
+          abandonReason: optional(options, 'abandon'),
+          confirm: ARRAY_MCP_STATUS_WRITE_CONFIRM,
+          cursorAbandoned: (cursor) =>
+            console.log(`cursor ${cursor.number} ${cursor.workflow}: abandoned (${cursor.reason})`),
+        },
+      )
+      printTaskRow(row)
+    } catch (error) {
+      handleTaskClosedWithResidue(error)
+    }
   })
 }
 

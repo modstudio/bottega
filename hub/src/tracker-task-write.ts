@@ -13,6 +13,7 @@ import { projects, type RegisteredProject } from './projects.ts'
 import {
   closeTask,
   commentTask,
+  localTaskStatusCategory,
   prepareDoneTransition,
   setTask,
   showTask,
@@ -22,6 +23,14 @@ import {
 import type { Attribution } from './task-attribution.ts'
 import type { TaskScope } from './task-identity.ts'
 import type { TaskRow } from './task-row.ts'
+import {
+  type AbandonedTaskCursor,
+  abandonPlannedTaskCursors,
+  type openTaskWorkflowCursors,
+  planOpenTaskCursorClose,
+  type TaskCursorAbandon,
+  type TaskCursorClosePlan,
+} from './task-workflow-cursors.ts'
 import type { HostedTaskWriteOptions } from './task-write-destination.ts'
 import { type TrackerConnectionDependencies, withTrackerConnection } from './tracker-connection.ts'
 
@@ -32,6 +41,9 @@ type TrackerWriteDependencies = TrackerConnectionDependencies & {
   localSet?: typeof setTask
   localClose?: typeof closeTask
   localComment?: typeof commentTask
+  listCursors?: typeof openTaskWorkflowCursors
+  abandonCursor?: TaskCursorAbandon
+  callingSession?: string | null
 }
 type TrackerWriteOptions = {
   force?: boolean
@@ -39,6 +51,30 @@ type TrackerWriteOptions = {
   confirm: string
   /** The destination the write belongs to, so a hosted local row lands where its caller read it. */
   hosted?: HostedTaskWriteOptions
+  cursorAbandoned?: (cursor: AbandonedTaskCursor) => void
+}
+
+async function planTaskCursorClose(
+  task: TaskRow,
+  category: StatusCategory,
+  options: TrackerWriteOptions,
+  dependencies: TrackerWriteDependencies,
+): Promise<TaskCursorClosePlan | null> {
+  return planOpenTaskCursorClose(task.project, task.key, category, {
+    list: dependencies.listCursors,
+    abandon: dependencies.abandonCursor,
+    callingSession: dependencies.callingSession,
+    onAbandoned: options.cursorAbandoned,
+  })
+}
+
+async function abandonAfterWrite(
+  task: TaskRow,
+  plan: TaskCursorClosePlan | null,
+): Promise<TaskRow> {
+  if (!plan) return task
+  await abandonPlannedTaskCursors(plan, task)
+  return task
 }
 
 function registeredProjectFor(
@@ -148,8 +184,24 @@ export async function setTaskThroughTracker(
   dependencies: TrackerWriteDependencies = {},
 ): Promise<TaskRow> {
   const current = showTask(key, scope).task
+  const requestedCategory = changes.status
+    ? current.source === 'local'
+      ? localTaskStatusCategory(changes.status)
+      : undefined
+    : undefined
   if (current.source === 'local') {
-    return (dependencies.localSet ?? setTask)(key, scope, changes, attribution, options)
+    const plan =
+      requestedCategory === 'done' || requestedCategory === 'dropped'
+        ? await planTaskCursorClose(current, requestedCategory, options, dependencies)
+        : null
+    const written = await (dependencies.localSet ?? setTask)(
+      key,
+      scope,
+      changes,
+      attribution,
+      options,
+    )
+    return abandonAfterWrite(written, plan)
   }
   const project = registeredProjectFor(current, dependencies)
   const fields = Object.keys(changes)
@@ -161,17 +213,29 @@ export async function setTaskThroughTracker(
   }
   const resolved = resolveExternalStatus(project, changes.status)
   const { status, category } = resolved
+  const plan =
+    category === 'done' || category === 'dropped'
+      ? await planTaskCursorClose(current, category, options, dependencies)
+      : null
   if (category === 'done') {
     await prepareExternalDoneTransition(current, attribution, options.abandonReason, dependencies)
   }
-  return writeExternalStatus(current, project, status, category, options.confirm, dependencies)
+  const written = await writeExternalStatus(
+    current,
+    project,
+    status,
+    category,
+    options.confirm,
+    dependencies,
+  )
+  return abandonAfterWrite(written, plan)
 }
 
 export async function closeTaskThroughTracker(
   key: string,
   scope: TaskScope,
   attribution: Attribution,
-  options: { abandonReason?: string; confirm: string },
+  options: Pick<TrackerWriteOptions, 'abandonReason' | 'confirm'>,
   dependencies: TrackerWriteDependencies = {},
 ): Promise<TaskRow> {
   const current = showTask(key, scope).task

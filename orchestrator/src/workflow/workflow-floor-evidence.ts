@@ -7,6 +7,7 @@ import { isAbsolute, join, resolve } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { docScopeHasProjectSubject, docScopeIsProjectless } from '../../../shared/docs.ts'
 import { githubRepository } from '../../../shared/github-repository.ts'
+import { refusal, renderRefusal } from '../../../shared/refusal.ts'
 import { installedBottegaExecutable } from '../../../shared/self-spawn.ts'
 import { runArtifactsDir, runScratchReplyPath } from '../artifact-paths.ts'
 import { viewPullRequest } from '../branch/merged-pull-request.ts'
@@ -31,19 +32,21 @@ import { rulingStatus } from '../run/question-vocabulary.ts'
 import { resolveRunIdentifier } from '../run/run-identifier.ts'
 import { TERMINAL_RUN_STATUS_SET } from '../run/run-status.ts'
 import { parseProbeArtifact, resolveProbeArtifact } from './probe-identifier.ts'
-import { taskFlowReadStore } from './task-flow-store.ts'
+import { taskFlowHandoffLinks, taskFlowReadStore } from './task-flow-store.ts'
 import {
   type CheckoutResolution,
   checkoutOutsideChangeRefusal,
-  classifyCheckoutEvidence,
+  classifyCheckoutResolution,
 } from './workflow-checkout-refusal.ts'
 import type { CursorState } from './workflow-cursor-transition.ts'
+import { resolveWorkflowCursorSuccessor } from './workflow-cursor-transition.ts'
 import {
   type ArtifactRef,
   type BottegaCommandIdentity,
   decideReviewReadArtifact,
   type Floor,
   flagForFloor,
+  floorGuidance,
   githubPullRequestUrlIn,
   parseArtifactRef,
   pullRequestCreateArgv,
@@ -342,7 +345,6 @@ function requireCheckout(
   headCommit: string | null,
   identity: CursorIdentity,
   resolveCheckout: FloorEvidencePorts['resolveCheckout'],
-  requireOnBranch: boolean,
 ): CheckoutResolution {
   if (!resolveCheckout)
     throw new Error(`${flag} cwd project is unset, not this cursor's ${identity.project}`)
@@ -351,23 +353,7 @@ function requireCheckout(
     throw new Error(
       `${flag} cwd project is ${checkout.project ?? 'unset'}, not this cursor's ${identity.project}`,
     )
-  const location = classifyCheckoutEvidence({
-    headIsTipOrAncestor: checkout.headIsTipOrAncestor,
-    landingCommit: checkout.landingCommit ?? null,
-    landingIsHeadOrAncestor: checkout.landingIsHeadOrAncestor ?? false,
-    recordedLandingTip: checkout.recordedLandingTip,
-    headIsRecordedTipOrAncestor: checkout.headIsRecordedTipOrAncestor,
-    landingIsOnTrunk: checkout.landingIsOnTrunk,
-  })
-  if (
-    requireOnBranch &&
-    identity.branch &&
-    checkout.branch !== identity.branch &&
-    location !== 'post-landing'
-  )
-    throw new Error(
-      `${flag} cwd is on ${checkout.branch ?? 'unset'}, not this cursor's ${identity.branch}`,
-    )
+  const location = classifyCheckoutResolution(checkout)
   if (identity.branch && location === 'outside-change')
     throw new Error(
       checkoutOutsideChangeRefusal(flag, identity.branch, checkout.checkoutPath, checkout),
@@ -410,14 +396,7 @@ async function gatherGate(
     project = run.project
   } else {
     if (!row.cwd) throw new Error(`${flag} architect row has no cwd`)
-    project = requireCheckout(
-      flag,
-      row.cwd,
-      row.head_commit,
-      identity,
-      resolveCheckout,
-      true,
-    ).project
+    project = requireCheckout(flag, row.cwd, row.head_commit, identity, resolveCheckout).project
   }
   return {
     recordId: row.record_id,
@@ -479,7 +458,12 @@ function resolveDocArtifact(value: string, identity: CursorIdentity, d: Database
   const flag = `--artifact doc:${value}`
   if (!row)
     throw new Error(
-      `${flag} does not exist; use doc:<scope>/<subject-or-_>/<slug> or doc:<document-UUID>`,
+      renderRefusal(
+        refusal(`${flag} does not exist`, {
+          kind: 'edit',
+          text: floorGuidance['recorded-artifact'],
+        }),
+      ),
     )
   if (!docAdmissibleAsCursorEvidence(row, identity.project))
     throw new Error(
@@ -623,7 +607,7 @@ async function resolveArtifact(
     if (!row) throw new Error(`${unresolvedFlag} does not exist`)
     const flag = `--artifact ${ref.kind}:${row.number}`
     if (row.kind !== ref.kind) throw new Error(`${flag} is recorded as ${row.kind}:${row.number}`)
-    requireCheckout(flag, row.cwd, row.head_commit, identity, resolveCheckout, false)
+    requireCheckout(flag, row.cwd, row.head_commit, identity, resolveCheckout)
     return { ref: raw, exists: true }
   }
   if (ref.kind === 'run') {
@@ -740,16 +724,19 @@ async function gatherSatisfy(
   id: string,
   cursorId: string,
   d: Database,
+  taskFlowClient?: Parameters<typeof taskFlowReadStore>[1],
 ): Promise<ValidatedEvidence['satisfy']> {
-  const row = await taskFlowReadStore(d).obligationByRecordId(id)
+  const store = taskFlowReadStore(d, taskFlowClient)
+  const row = await store.obligationByRecordId(id)
   if (!row) return { id, found: false }
   const floor = floorFromObligationRow(row)
+  const handoffLinks = await taskFlowHandoffLinks(store, [cursorId])
   return {
     id,
     found: true,
     open: row.satisfied_at === null && row.abandoned_at === null,
     abandoned: row.abandoned_at !== null,
-    cursorMatches: row.cursor_record_id === cursorId,
+    cursorMatches: resolveWorkflowCursorSuccessor(row.cursor_record_id, handoffLinks) === cursorId,
     floor,
   }
 }
@@ -792,7 +779,7 @@ async function gatheredCommandEvidence(
     sessionMatches: session.sessionMatches,
     sessionAdoptedCursor: session.sessionAdoptedCursor,
     createdAfterStepActivation: row.created_at >= identity.stepActivatedAt,
-    checkoutBranch: checkout.branch,
+    checkoutLocation: classifyCheckoutResolution(checkout),
     headCommit: row.head_commit,
     cursorBranch: identity.branch,
     output: row.output_tail,
@@ -927,6 +914,7 @@ type GatherValidatedEvidenceInput = {
   evidence: WorkflowEvidenceInput
   ports?: FloorEvidencePorts
   d?: Database
+  taskFlowClient?: Parameters<typeof taskFlowReadStore>[1]
 }
 
 async function gatherArtifactEvidence(
@@ -1032,6 +1020,7 @@ export async function gatherValidatedEvidenceBase(
   if (input.evidence.task?.trim())
     gathered.task = gatherTask(input.evidence.task.trim(), input.identity, d, ports)
   if (input.evidence.defer?.trim()) gathered.deferReason = input.evidence.defer.trim()
-  if (satisfies) gathered.satisfy = await gatherSatisfy(satisfies, input.cursorId, d)
+  if (satisfies)
+    gathered.satisfy = await gatherSatisfy(satisfies, input.cursorId, d, input.taskFlowClient)
   return gathered
 }

@@ -189,11 +189,20 @@ function edgeKey(edge: ArchitectureViolationEdge) {
   return JSON.stringify([edge.rule, edge.from, edge.to])
 }
 
-export function architectureViolationRatchet(current: readonly ArchitectureViolationEdge[]) {
+export type ArchitectureViolationRatchet = {
+  newViolations: readonly ArchitectureViolationEdge[]
+  fixedBaseline: readonly ArchitectureViolationEdge[]
+  baselined: readonly ArchitectureViolationEdge[]
+}
+
+export function architectureViolationRatchet(
+  current: readonly ArchitectureViolationEdge[],
+): ArchitectureViolationRatchet {
   const baseline = new Map(architectureViolationBaseline.map((edge) => [edgeKey(edge), edge]))
   const currentKeys = new Set(current.map(edgeKey))
   return {
     newViolations: current.filter((edge) => !baseline.has(edgeKey(edge))),
     fixedBaseline: architectureViolationBaseline.filter((edge) => !currentKeys.has(edgeKey(edge))),
+    baselined: current.filter((edge) => baseline.has(edgeKey(edge))),
   }
 }

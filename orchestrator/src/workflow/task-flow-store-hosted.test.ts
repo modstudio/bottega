@@ -7,7 +7,15 @@ import {
 import { guardHostedTables } from '../database/hosted-table-guard.ts'
 import { rememberActiveRecordSpace } from '../project-space.ts'
 import { rememberProjectSpace } from '../project-space-cache.ts'
-import { awaitWorkflowRuling, composeWorkflowWithCursor } from './workflow-cursor.ts'
+import type { HostedTaskFlowStageById } from '../record/record-task-flow-contract.ts'
+import { TASK_FLOW_STAGE_STATES } from '../record/record-task-flow-contract.ts'
+import { taskFlowReadStore } from './task-flow-store.ts'
+import {
+  abandonSelectedWorkflowCursorForClose,
+  awaitWorkflowRuling,
+  composeWorkflowWithCursor,
+} from './workflow-cursor.ts'
+import { listWorkflowCursors } from './workflow-cursor-list.ts'
 import { ruleWorkflow } from './workflow-cursor-ruling.ts'
 import { getWorkflowStepWithCursor } from './workflow-cursor-serve.ts'
 import {
@@ -32,6 +40,7 @@ const destinationSpaceId = 'fixture-space'
 const workflow = 'hosted-task-flow-guard'
 const taskKey = 'DEV-HOSTED-GUARD'
 const taskId = '00000000-0000-4000-8001-000000000001'
+const secondProjectId = '00000000-0000-4000-8001-000000000002'
 
 afterEach(() => {
   installRecordApiClient(null)
@@ -70,13 +79,25 @@ test('hosted task-flow intents never touch the five local task-flow tables', asy
   rememberActiveRecordSpace(raw, destinationSpaceId)
   rememberProjectSpace(raw, 'fixture', destinationSpaceId)
   raw
+    .query('INSERT INTO project (record_id,name,path,stack,settings) VALUES (?,?,?,?,?)')
+    .run(secondProjectId, 'second-fixture', '/second-fixture', 'bun', '{}')
+  raw
     .query('INSERT INTO record_install_binding (id,bound_at,record_origin) VALUES (1,?,?)')
     .run('2026-11-15T00:00:00.000Z', resolvedRecordOrigin())
 
   const database = guardHostedTables(raw, taskFlowTables)
-  const memory = createMemoryRecordApiClient({
+  const taskFlowStages: HostedTaskFlowStageById[] = []
+  const memoryInput = {
     taskFlowComposeEnforcement: 'note-only',
-  })
+    taskFlowStages,
+    taskFlowProjectSpaces: {
+      [raw
+        .query<{ record_id: string }, []>("SELECT record_id FROM project WHERE name='fixture'")
+        .get()!.record_id]: destinationSpaceId,
+      [secondProjectId]: destinationSpaceId,
+    },
+  }
+  const memory = createMemoryRecordApiClient(memoryInput)
   const taskFlowClient = {
     ...memory,
     whoami: async () => ({
@@ -200,4 +221,38 @@ test('hosted task-flow intents never touch the five local task-flow tables', asy
   ).toEqual({ workflow_cursor: 1, question: 1 })
   expect(raw.query('SELECT count(*) count FROM question').get()).toEqual({ count: 0 })
   expect(attachment).toStartWith('attached-text:')
+
+  const readStore = taskFlowReadStore(database, taskFlowClient)
+  const selected = (await readStore.listOpenStages({ project: 'fixture' }))[0]!
+  await abandonSelectedWorkflowCursorForClose(
+    selected,
+    'prove the guarded hosted all-state read',
+    { ...context, taskRecordId: taskId },
+    database,
+    { key: taskKey },
+  )
+  expect(
+    await readStore.listStages({ project: 'fixture', states: TASK_FLOW_STAGE_STATES }),
+  ).toMatchObject([{ state: 'abandoned', question_number: null }])
+  expect(await readStore.listOpenStages({ project: 'fixture' })).toEqual([])
+  memoryInput.taskFlowStages.push({
+    flow: {
+      ...hosted.flow,
+      id: '00000000-0000-4000-8001-000000000003',
+      projectId: secondProjectId,
+    },
+    stage: {
+      ...hosted.stage,
+      id: '00000000-0000-4000-8001-000000000004',
+      flowRecordId: '00000000-0000-4000-8001-000000000003',
+      projectId: secondProjectId,
+      projectName: 'second-fixture',
+    },
+  })
+  expect(
+    (await listWorkflowCursors({ all: true, project: 'fixture' }, database)).map((row) => ({
+      project: row.project,
+      state: row.state,
+    })),
+  ).toEqual([{ project: 'fixture', state: 'abandoned' }])
 })

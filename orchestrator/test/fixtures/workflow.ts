@@ -1,5 +1,101 @@
 import type { Database } from 'bun:sqlite'
 import { newRecordId } from '../../../shared/record-id.ts'
+import {
+  type HostedTaskFlowStageById,
+  isClosedStageState,
+  type TaskFlowStageState,
+} from '../../src/record/record-task-flow-contract.ts'
+
+const FIXTURE_MACHINE_ID = '00000000-0000-4000-8000-000000000001'
+
+/** Translate one mirrored cursor into the hosted record shape used by read-store tests. */
+export function hostedCursorStageFixture(
+  database: Database,
+  recordId: string,
+): HostedTaskFlowStageById {
+  const row = database
+    .query<
+      {
+        record_id: string
+        number: number
+        project: string
+        workflow_slug: string
+        mode_slug: string
+        workflow_key: string
+        instance_id: string
+        session_id: string | null
+        workflow_version_record_id: string
+        catalogue_version_record_id: string
+        args: string
+        ordinal: number
+        step_slug: string
+        state: TaskFlowStageState
+        closed: string
+        question: string | null
+        total_steps: number
+        created_at: string
+        updated_at: string
+        enforcement: 'floors' | 'off'
+        revision: number
+        project_record_id: string
+      },
+      [string]
+    >(
+      `SELECT cursor.*,project.record_id project_record_id
+         FROM workflow_cursor cursor JOIN project ON project.name=cursor.project
+        WHERE cursor.record_id=?`,
+    )
+    .get(recordId)
+  if (!row) throw new Error(`no fixture workflow cursor ${recordId}`)
+  const flowRecordId = newRecordId()
+  return {
+    flow: {
+      id: flowRecordId,
+      projectId: row.project_record_id,
+      taskId: null,
+      taskKey: row.workflow_key || null,
+      state: isClosedStageState(row.state) ? 'done' : 'open',
+      openStageRecordId: row.record_id,
+      openStageCount: 1,
+      openingMachineId: FIXTURE_MACHINE_ID,
+      updatedMachineId: FIXTURE_MACHINE_ID,
+      revision: 1,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+    },
+    stage: {
+      id: row.record_id,
+      flowRecordId,
+      projectId: row.project_record_id,
+      projectName: row.project,
+      number: row.number,
+      workflow: row.workflow_slug,
+      mode: row.mode_slug,
+      workflowKey: row.workflow_key,
+      instanceId: row.instance_id,
+      sessionId: row.session_id,
+      workflowVersionId: row.workflow_version_record_id,
+      workflowVersionNumber: 1,
+      catalogueVersionId: row.catalogue_version_record_id,
+      catalogueVersionNumber: 1,
+      arguments: JSON.parse(row.args) as Record<string, string>,
+      activeOrdinal: row.ordinal,
+      activeSlug: row.step_slug,
+      state: row.state,
+      closedStepNotes: JSON.parse(row.closed) as unknown[],
+      question: row.question,
+      autonomy: null,
+      enforcement: row.enforcement,
+      totalSteps: row.total_steps,
+      openedMachineId: FIXTURE_MACHINE_ID,
+      takenOverFromMachineId: null,
+      lastAdvancedMachineId: FIXTURE_MACHINE_ID,
+      revision: row.revision,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+    },
+  }
+}
 
 export function workflowVersionRecordId(database: Database, slug = 'ship-task', n = 1): string {
   let row = database

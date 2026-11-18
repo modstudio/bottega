@@ -6,6 +6,7 @@ import { boardClaimList } from '../board/board-operations.ts'
 import { decideLandingTaskKey } from '../branch/branch-landing-service.ts'
 import { db } from '../database/db.ts'
 import { projectByName, projects } from '../project/projects.ts'
+import { isClosedStageState } from '../record/record-task-flow-contract.ts'
 import {
   type CursorlessRunEvidence,
   cursorlessRunEvidence,
@@ -200,7 +201,7 @@ export async function workflowUncoveredReport(
     project: row.project,
     key: row.workflow_key,
     openedAt: row.created_at,
-    closedAt: ['done', 'abandoned'].includes(row.state) ? row.updated_at : null,
+    closedAt: isClosedStageState(row.state) ? row.updated_at : null,
   }))
   const byRecordId = new Map(cursorRows.map((row) => [row.record_id, row]))
   const handoffs = cursorRows.flatMap((row): HandoffTransition[] => {

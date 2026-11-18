@@ -3,12 +3,12 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { PLATFORM_NAME, PLATFORM_SLUG } from './brand.ts'
+import type { DistributionManifest } from './distribution-manifest.ts'
 import { registerEmbeddedAssets } from './embedded-assets.ts'
 import {
   assetPath,
   checkoutHeadCommit,
   DIST_MANIFEST,
-  type DistributionManifest,
   gitCommonDir,
   INSTALL_HOME_ENV,
   installationBuildId,

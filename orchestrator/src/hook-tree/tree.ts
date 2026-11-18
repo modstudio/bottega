@@ -19,6 +19,7 @@ import { acquireRunLease } from '../run/run-lease.ts'
 import { nextRunNumber } from '../run/run-number.ts'
 import { terminalLifecycleWrite } from '../run/run-terminal-lifecycle-store.ts'
 import { HOOK_TREE_JOB, isSyntheticLifecycleJob } from '../run/synthetic-lifecycle-job.ts'
+import type { CursorWorktreeTaskFlowClient } from '../workflow/workflow-cursor-worktrees.ts'
 import { unownedProjectTreeRemovalRemedy } from '../worktree/snapshotless-tracked-recipe.ts'
 import { createWithTool } from '../worktree/worktree-create.ts'
 import { resolveWorktreeLifecycle } from '../worktree/worktree-lifecycle.ts'
@@ -238,14 +239,17 @@ export function createHookTree(input: {
 }
 
 export type HookTreeRemovalResult =
-  | { outcome: 'released' }
-  | { outcome: 'absent' }
+  | { outcome: 'released'; cursorCleanupFailure?: string; cursorCleanupRemedy?: string }
+  | { outcome: 'absent'; cursorCleanupFailure?: string; cursorCleanupRemedy?: string }
   | { outcome: 'kept'; reason: string }
   | { outcome: 'failed'; detail: string }
 
-export async function removeHookTreeResult(requestedPath: string): Promise<HookTreeRemovalResult> {
+export async function removeHookTreeResult(
+  requestedPath: string,
+  taskFlowClient?: CursorWorktreeTaskFlowClient,
+): Promise<HookTreeRemovalResult> {
   try {
-    return await removeRecordedHookTree(requestedPath)
+    return await removeRecordedHookTree(requestedPath, taskFlowClient)
   } catch (cause) {
     return { outcome: 'failed', detail: cause instanceof Error ? cause.message : String(cause) }
   }
@@ -258,7 +262,10 @@ export function absentClaimedHookTreeDecision(input: {
   return !input.pathExists && input.hasHistoricalWorktreeClaim ? 'absent' : 'refuse'
 }
 
-async function removeRecordedHookTree(requestedPath: string): Promise<HookTreeRemovalResult> {
+async function removeRecordedHookTree(
+  requestedPath: string,
+  taskFlowClient?: CursorWorktreeTaskFlowClient,
+): Promise<HookTreeRemovalResult> {
   const wanted = canonicalPath(requestedPath)
   const recordedOwners = (
     db()
@@ -284,11 +291,30 @@ async function removeRecordedHookTree(requestedPath: string): Promise<HookTreeRe
     )
   }
   writableDb()
-  const result = await closeOutRun(owners[0]!.record_id, { intent: 'tree-remove' })
-  if (result.outcome === 'released') return { outcome: 'released' }
-  if (result.outcome === 'absent') return { outcome: 'absent' }
+  const result = await closeOutRun(owners[0]!.record_id, {
+    intent: 'tree-remove',
+    taskFlowClient,
+  })
+  if (result.outcome === 'released' || result.outcome === 'absent')
+    return successfulHookTreeRemovalResult(
+      result.outcome,
+      result.cursorCleanupFailure,
+      result.cursorCleanupRemedy,
+    )
   if (result.outcome === 'held') return { outcome: 'kept', reason: result.detail }
   return { outcome: 'failed', detail: `tree teardown ${result.outcome}: ${result.detail}` }
+}
+
+function successfulHookTreeRemovalResult(
+  outcome: 'released' | 'absent',
+  cursorCleanupFailure?: string,
+  cursorCleanupRemedy?: string,
+): HookTreeRemovalResult {
+  return {
+    outcome,
+    ...(cursorCleanupFailure ? { cursorCleanupFailure } : {}),
+    ...(cursorCleanupRemedy ? { cursorCleanupRemedy } : {}),
+  }
 }
 
 function unownedHookTreeRemovalResult(
@@ -322,6 +348,8 @@ function unownedHookTreeRemovalResult(
 
 export async function removeHookTree(requestedPath: string): Promise<void> {
   const result = await removeHookTreeResult(requestedPath)
+  if ((result.outcome === 'released' || result.outcome === 'absent') && result.cursorCleanupFailure)
+    throw new Error(result.cursorCleanupFailure)
   if (result.outcome === 'kept') throw new Error(`tree teardown held: ${result.reason}`)
   if (result.outcome === 'failed') throw new Error(result.detail)
 }

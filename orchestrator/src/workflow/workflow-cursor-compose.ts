@@ -7,6 +7,7 @@ import { nowIso, writeTransaction } from '../database/db.ts'
 import { DocRevisionConflictError } from '../doc/doc-revision-conflict.ts'
 import { machineId } from '../record/machine-identity.ts'
 import { recordApiClient } from '../record/record-api-client.ts'
+import { TASK_FLOW_OPEN_STAGE_STATES } from '../record/record-task-flow-contract.ts'
 import {
   resolveTaskFlowDestination,
   type TaskFlowWriteTarget,
@@ -28,6 +29,7 @@ import {
   isKeylessExplore,
   type TaskFlowIntentInput,
   type WorkflowCursorInsert,
+  workflowStageInsert,
 } from './task-flow-store-types.ts'
 import {
   type CommitCountPort,
@@ -43,17 +45,11 @@ import {
   closeExploreForLifecycle,
   type FinishExploreLifecycle,
 } from './workflow-explore-lifecycle-close.ts'
+import type { GraduatedExplore } from './workflow-handoff-types.ts'
 import type { composeWorkflow } from './workflows.ts'
 
 type Composition = ReturnType<typeof composeWorkflow>
 type ExistingFlow = { record_id: string; revision: number } | null
-export type GraduatedExplore =
-  | { cursor: number; closed: true }
-  | { cursor: number; closed: false; reason: string }
-export type ExploreGraduationDependencies = {
-  closeExplore?: typeof closeExploreForLifecycle
-  finishExplore: FinishExploreLifecycle
-}
 type ComposeFacts = {
   rowInput: WorkflowCursorInsert
   existingFlow: ExistingFlow
@@ -85,17 +81,13 @@ function decideKeylessComposeInstance(input: {
   ])
 }
 
-export async function graduateExploreAfterCompose(
-  input: {
-    project: string
-    session: string | null | undefined
-    taskBound: boolean
-    replacingCursor: number
-    database: Database
-    taskFlowClient?: WorkflowCursorContext['taskFlowClient']
-  },
-  dependencies: ExploreGraduationDependencies,
-): Promise<GraduatedExplore | undefined> {
+export async function graduatingExploreCursor(input: {
+  project: string
+  session: string | null | undefined
+  taskBound: boolean
+  database: Database
+  taskFlowClient?: WorkflowCursorContext['taskFlowClient']
+}): Promise<SelectableCursorRow | undefined> {
   if (!input.session || !input.taskBound) return undefined
   const rows = await taskFlowReadStore(input.database, input.taskFlowClient).listOpenStages({
     project: input.project,
@@ -115,21 +107,43 @@ export async function graduateExploreAfterCompose(
     : null
   const decision = exploreGraduation({ taskBound: input.taskBound, explore })
   if (decision.action === 'keep') return undefined
+  return row
+}
+
+export async function closeGraduatingExploreForReuse(
+  composition: ReturnType<typeof composeWorkflow>,
+  context: WorkflowCursorContext,
+  database: Database,
+  finish: FinishExploreLifecycle,
+  replacingCursor: number,
+): Promise<GraduatedExplore | undefined> {
+  const source = await graduatingExploreCursor({
+    project: composition.project,
+    session: context.session,
+    taskBound: Boolean(workflowKeyOf(composition.arguments)),
+    database,
+    taskFlowClient: context.taskFlowClient,
+  })
+  if (!source) return undefined
   try {
-    const outcome = await (dependencies.closeExplore ?? closeExploreForLifecycle)(
-      decision.recordId,
+    const outcome = await closeExploreForLifecycle(
+      source.record_id,
       'answered',
-      input.database,
-      dependencies.finishExplore,
-      `replaced by cursor ${input.replacingCursor}`,
+      database,
+      finish,
+      `replaced by cursor ${replacingCursor}`,
       { requireUntouched: true },
     )
     return outcome === 'closed'
-      ? { cursor: decision.cursor, closed: true }
-      : { cursor: decision.cursor, closed: false, reason: `explore close outcome was ${outcome}` }
+      ? { cursor: source.id, closed: true }
+      : {
+          cursor: source.id,
+          closed: false,
+          reason: `close outcome was ${outcome}`,
+        }
   } catch (error) {
     return {
-      cursor: decision.cursor,
+      cursor: source.id,
       closed: false,
       reason: error instanceof Error ? error.message : String(error),
     }
@@ -286,7 +300,7 @@ function composeIntent(
             updatedAt: at,
           },
         }),
-    stageInsert: {
+    stageInsert: workflowStageInsert({
       id: rowInput.recordId,
       flowRecordId,
       projectId: projectRecordId,
@@ -298,20 +312,12 @@ function composeIntent(
       workflowVersionId: composition.workflow.record_id,
       catalogueVersionId: composition.catalogue.record_id,
       arguments: composition.arguments,
-      activeOrdinal: 0,
       activeSlug: composition.steps[0]!.slug,
-      state: 'running',
-      closedStepNotes: [],
-      question: null,
       autonomy: facts.autonomyJson,
-      enforcement: 'floors',
       totalSteps: composition.steps.length,
       openedMachineId: machine,
-      takenOverFromMachineId: null,
-      lastAdvancedMachineId: machine,
       createdAt: at,
-      updatedAt: at,
-    },
+    }),
   }
 }
 
@@ -389,7 +395,7 @@ async function recoverComposeConflict(
   const listed = await client.listTaskFlowStages!(
     {
       projectId: facts.projectRecordId,
-      states: ['running', 'awaiting-ruling'],
+      states: [...TASK_FLOW_OPEN_STAGE_STATES],
       ...(facts.key ? { taskKey: facts.key } : { sessionId: context.session ?? undefined }),
     },
     await resolveTaskFlowDestination(target, client),

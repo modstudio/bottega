@@ -24,7 +24,7 @@ const input = {
 describe('pull-request create outcome', () => {
   test('an existing dirty pull request is reported without running create and finalizes its number', () => {
     expect(decideCreateOutcome({ ...input, existing: dirty, createResult: null })).toEqual({
-      throwMessage: null,
+      refusal: null,
       output:
         'pull request already exists for DEV-2189-create-outcome: https://github.example/pulls/42; gh pr create was not run\nhttps://github.example/pulls/42 conflicts with main: rebase it on the landing branch before merging',
       finalizePullRequestNumber: 42,
@@ -38,7 +38,13 @@ describe('pull-request create outcome', () => {
         createResult: { stdout: '', failure: 'authentication required' },
       }),
     ).toEqual({
-      throwMessage: 'gh pr create failed: authentication required',
+      refusal: {
+        condition: 'gh pr create failed: authentication required',
+        remedy: {
+          kind: 'edit',
+          text: `fix the reported GitHub condition, then rerun ${PLATFORM_SLUG} pr create`,
+        },
+      },
       output: '',
       finalizePullRequestNumber: null,
     })
@@ -46,7 +52,7 @@ describe('pull-request create outcome', () => {
 
   test('a successful unresolved create reports the pending remedy', () => {
     expect(decideCreateOutcome(input)).toEqual({
-      throwMessage: null,
+      refusal: null,
       output: `https://github.example/pulls/42\ngh pr view DEV-2189-create-outcome could not resolve the created pull request; mergeability was not checked and the triage intent remains pending; rerun ${PLATFORM_SLUG} pr create to record it`,
       finalizePullRequestNumber: null,
     })
@@ -54,7 +60,7 @@ describe('pull-request create outcome', () => {
 
   test('a successful create resolving dirty reports the conflict and finalizes its number', () => {
     expect(decideCreateOutcome({ ...input, created: dirty })).toEqual({
-      throwMessage: null,
+      refusal: null,
       output:
         'https://github.example/pulls/42\nhttps://github.example/pulls/42 conflicts with main: rebase it on the landing branch before merging',
       finalizePullRequestNumber: 42,

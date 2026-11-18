@@ -73,12 +73,17 @@ test('a gate that dirties the tree while it runs is not attributed to HEAD', asy
 test('inserts a finished dirty-tree gate without attributing it to HEAD', async () => {
   const d = database()
   const chunks: string[] = []
+  let snapshotCalls = 0
   const result = await runArchitectGate({
     cwd: repositoryPath,
     d,
     topLevel: () => repositoryPath,
     checkout: cleanCheckout,
     gitState: () => ({ headCommit, porcelainPaths: ['?? dirty.txt'] }),
+    contentTree: () => {
+      snapshotCalls += 1
+      return 'tree123'
+    },
     write: (chunk) => chunks.push(chunk),
     runner: ({ write }) => {
       write('ok\n')
@@ -91,8 +96,15 @@ test('inserts a finished dirty-tree gate without attributing it to HEAD', async 
       }
     },
   })
-  expect(result).toEqual({ number: 1, exitCode: 0 })
+  expect(result).toEqual({
+    number: 1,
+    exitCode: 0,
+    commit: null,
+    commitUnknown: 'dirty-before',
+    checkedTree: 'tree123',
+  })
   expect(chunks).toEqual(['ok\n'])
+  expect(snapshotCalls).toBe(2)
   expect(
     d
       .query(
@@ -114,9 +126,46 @@ test('inserts a finished dirty-tree gate without attributing it to HEAD', async 
   expect(d.query('SELECT COUNT(*) count FROM check_execution').get()).toEqual({ count: 0 })
 })
 
+test('records a dirty-tree gate when checked-tree snapshots are unavailable', async () => {
+  const d = database()
+  let ran = false
+  const result = await runArchitectGate({
+    cwd: repositoryPath,
+    d,
+    topLevel: () => repositoryPath,
+    checkout: cleanCheckout,
+    gitState: () => ({ headCommit, porcelainPaths: ['?? dirty.txt'] }),
+    contentTree: (_cwd, failureContext) => {
+      expect(failureContext).toBe(' while snapshotting the checked tree')
+      throw new Error(`git write-tree failed${failureContext}`)
+    },
+    write: () => {},
+    runner: () => {
+      ran = true
+      return {
+        exitCode: 1,
+        output: '',
+        startedAt: '2026-09-01T00:00:00.000Z',
+        finishedAt: '2026-09-01T00:00:01.000Z',
+        elapsedMs: 1000,
+      }
+    },
+  })
+  expect(ran).toBe(true)
+  expect(result).toEqual({
+    number: 1,
+    exitCode: 1,
+    commit: null,
+    commitUnknown: 'dirty-before',
+    checkedTree: null,
+    treeUnavailable: 'git write-tree failed while snapshotting the checked tree',
+  })
+  expect(d.query('SELECT head_commit FROM gate_execution').get()).toEqual({ head_commit: null })
+})
+
 test('inserts valid check records in the transaction with the gate row', async () => {
   const d = database()
-  await runArchitectGate({
+  const result = await runArchitectGate({
     cwd: repositoryPath,
     d,
     topLevel: () => repositoryPath,
@@ -144,6 +193,10 @@ test('inserts valid check records in the transaction with the gate row', async (
         elapsedMs: 1000,
       }
     },
+  })
+  expect(result.commit).toBe(headCommit)
+  expect(d.query('SELECT head_commit FROM gate_execution').get()).toEqual({
+    head_commit: headCommit,
   })
   expect(
     d

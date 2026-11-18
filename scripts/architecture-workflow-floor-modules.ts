@@ -14,7 +14,9 @@ const module = (file: string, allowed: string[]): WorkflowFloorModule => ({
 
 export const workflowFloorModules: WorkflowFloorModule[] = [
   module('orchestrator/src/workflow/workflow-arguments.ts', ['./workflow-definition.ts']),
-  module('orchestrator/src/workflow/workflow-cursor-transition.ts', []),
+  module('orchestrator/src/workflow/workflow-cursor-transition.ts', [
+    '../record/record-task-flow-contract.ts',
+  ]),
   module('orchestrator/src/workflow/workflow-cursor-trail.ts', []),
   module('orchestrator/src/workflow/workflow-cursor-format.ts', [
     '../../../shared/brand.ts',
@@ -82,9 +84,12 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     'bun:sqlite',
     '../database/db.ts',
     '../project/projects.ts',
+    '../record/record-task-flow-contract.ts',
     '../run/question-open.ts',
+    '../run/run-status.ts',
     './workflow-cursor-autonomy.ts',
     './task-flow-store.ts',
+    './task-flow-store-types.ts',
     './workflow-cursor-format.ts',
     './workflow-cursor-selection.ts',
     './workflow-obligation-floor.ts',
@@ -121,6 +126,7 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     '../../../shared/record-id.ts',
     '../database/db.ts',
     '../record/record-api-client-task-flow.ts',
+    '../record/record-task-flow-contract.ts',
     '../record/record-task-flow-write-client.ts',
     '../record/record-task-flow-write-contract.ts',
     './autonomy.ts',
@@ -137,6 +143,7 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
   module('orchestrator/src/workflow/workflow-explore-lifecycle-close.ts', [
     'bun:sqlite',
     '../database/db.ts',
+    '../record/record-task-flow-contract.ts',
     '../run/question-open.ts',
     './task-flow-store.ts',
     './task-flow-store-types.ts',
@@ -160,6 +167,7 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     '../record/machine-name.ts',
     '../run/run-identifier-names.ts',
     './probe-identifier.ts',
+    './workflow-checkout-refusal.ts',
     './workflow-floor-refusal.ts',
   ]),
   module('orchestrator/src/workflow/workflow-review-owed-decision.ts', [
@@ -195,7 +203,10 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     './workflow-floor-evidence-replay.ts',
     './workflow-obligation-floor.ts',
   ]),
-  module('orchestrator/src/workflow/workflow-floor-refusal.ts', ['../../../shared/brand.ts']),
+  module('orchestrator/src/workflow/workflow-floor-refusal.ts', [
+    '../../../shared/brand.ts',
+    '../../../shared/refusal.ts',
+  ]),
   module('orchestrator/src/workflow/workflow-obligation-floor.ts', [
     'bun:sqlite',
     '../../../shared/brand.ts',
@@ -297,6 +308,7 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     'node:fs',
     'node:path',
     '../../../shared/brand.ts',
+    '../../../shared/refusal.ts',
     '../../../shared/docs.ts',
     '../../../shared/github-repository.ts',
     '../../../shared/self-spawn.ts',
@@ -334,6 +346,7 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     '../../../shared/record-id.ts',
     '../database/db.ts',
     '../prose-service.ts',
+    '../record/record-task-flow-contract.ts',
     '../record/record-task-flow-write-client.ts',
     '../record/record-task-flow-write-contract.ts',
     './task-flow-store.ts',
@@ -406,6 +419,8 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     './workflow-cursor-autonomy.ts',
     './workflow-cursor-adoption.ts',
     './workflow-cursor-compose.ts',
+    './workflow-handoff.ts',
+    './workflow-handoff-types.ts',
     './workflow-cursor-ruling.ts',
     './workflow-cursor-serve.ts',
     './workflow-compose-branch.ts',
@@ -447,8 +462,15 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
   ]),
   module('orchestrator/src/workflow/workflow-cursor-worktrees.ts', [
     'bun:sqlite',
+    'node:fs',
+    'node:path',
     '../database/db.ts',
+    '../record/record-api-client-task-flow.ts',
+    '../record/record-task-flow-write-client.ts',
+    '../record/record-task-flow-write-contract.ts',
     './task-flow-store.ts',
+    './task-flow-store-types.ts',
+    './workflow-cursor-trail.ts',
   ]),
   module('orchestrator/src/workflow/workflow-cursor-result.ts', [
     '../../../shared/brand.ts',

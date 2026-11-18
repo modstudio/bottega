@@ -4,6 +4,10 @@
 import type { Database } from 'bun:sqlite'
 import { SESSION_LIVE_MS } from '../../../shared/session-liveness.ts'
 import { voidedSql } from '../evidence/evidence-query.ts'
+import {
+  TASK_FLOW_CLOSED_STAGE_STATES_SQL,
+  TASK_FLOW_OPEN_STAGE_STATES_SQL,
+} from '../record/record-task-flow-contract.ts'
 import type {
   TaskFlowCloseOutStageRow,
   TaskFlowCursorLifecycleRow,
@@ -88,7 +92,7 @@ export const closeOutShipTaskStage = (
         WHERE session_id = ?
           AND project = ?
           AND workflow_slug = 'ship-task'
-          AND state IN ('running','awaiting-ruling')
+          AND state IN (${TASK_FLOW_OPEN_STAGE_STATES_SQL})
           AND json_extract(args, '$.branch') = ?
         ORDER BY number`,
     )
@@ -135,7 +139,7 @@ export const openStagesForSession = (
           WHERE q.workflow_cursor_record_id=workflow_cursor.record_id
             AND ${questionOpenSql('q')} LIMIT 1) open_question_record_id
        FROM workflow_cursor
-        WHERE session_id=? AND state NOT IN ('done','abandoned') ORDER BY number`,
+        WHERE session_id=? AND state NOT IN (${TASK_FLOW_CLOSED_STAGE_STATES_SQL}) ORDER BY number`,
     )
     .all(sessionId)
 
@@ -150,7 +154,7 @@ export const keylessSessionCursors = (
         (SELECT q.record_id FROM question q WHERE q.workflow_cursor_record_id=c.record_id
           AND ${questionOpenSql('q')} LIMIT 1) open_question_record_id
        FROM workflow_cursor c WHERE c.workflow_key='' AND c.session_id IS NOT NULL
-         AND c.state NOT IN ('done','abandoned') ${projectClause} ORDER BY c.number`,
+         AND c.state NOT IN (${TASK_FLOW_CLOSED_STAGE_STATES_SQL}) ${projectClause} ORDER BY c.number`,
     )
     .all(...(project ? [project] : []))
 }

@@ -983,6 +983,7 @@ export const recordModules: RecordModule[] = [
     'bun',
     '../../../shared/brand.ts',
     '../../../shared/record/schema.ts',
+    './record-task-flow-contract.ts',
     '../board/board-claim-policy.ts',
     '../board/board-policy.ts',
     './record-board-author.ts',

@@ -439,13 +439,8 @@ describe('work.task', () => {
       }) as never,
     })
     await router.createCaller({}).setStatus({ key: 'EXT-1', scope: {}, status: 'in_progress' })
-    expect(seen).toEqual([
-      'EXT-1',
-      {},
-      { status: 'in_progress' },
-      expect.any(Object),
-      { confirm: 'production' },
-    ])
+    expect(seen.slice(0, -2)).toEqual(['EXT-1', {}, { status: 'in_progress' }, expect.any(Object)])
+    expect(seen.slice(-2)).toEqual([{ confirm: 'production' }, { callingSession: null }])
   })
 
   test('a stale document reports both versions without retrying the write', async () => {

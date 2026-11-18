@@ -153,7 +153,7 @@ test('workflow exec runs a child whose own argument is --record-evidence', async
       shown.presentation,
     )
 
-    expect(shown.stdout[0]).toMatch(/^\d+$/)
+    expect(shown.stdout[0]).toMatch(/^exec \d+ passed$/)
     expect(
       db()
         .query(

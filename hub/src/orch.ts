@@ -7,15 +7,7 @@
  */
 
 import { randomUUID } from 'node:crypto'
-import {
-  accessSync,
-  chmodSync,
-  constants,
-  mkdtempSync,
-  rmSync,
-  statSync,
-  writeFileSync,
-} from 'node:fs'
+import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { z } from 'zod'
@@ -37,7 +29,6 @@ import {
   type DocAudience,
   type FilingDocScope,
 } from '../../shared/docs.ts'
-import { assetPath } from '../../shared/install-root.ts'
 import type {
   MachinePermissionOperation,
   MachinePermissionOverlay,
@@ -56,7 +47,6 @@ import {
   OrchBlockersSchema,
   OrchChangeCursorEnvelopeSchema,
   type OrchProject,
-  OrchProjectListSchema,
   OrchProjectSchema,
   type OrchRun,
   type OrchRunDetail,
@@ -74,10 +64,6 @@ import {
   type WorkflowCursorIdentityRow,
   WorkflowCursorIdentityRowListSchema,
 } from '../../shared/orch-contract.ts'
-import {
-  processObservationError,
-  processObservationInterrupted,
-} from '../../shared/process-identity.ts'
 import { bottegaEntryArgv } from '../../shared/self-spawn.ts'
 import {
   SETTINGS_PERMISSION_LISTS,
@@ -90,7 +76,6 @@ export type {
   OperatorWaitingItem,
   OrchProject,
   OrchRun,
-  OrchRunDetail,
 } from '../../shared/orch-contract.ts'
 
 import {
@@ -117,6 +102,7 @@ import {
   docArgv,
   docReorderArgv,
 } from './orch-doc-argv.ts'
+import { resolveOrchExecutable } from './orch-project-register.ts'
 import { refreshProjects } from './projects.ts'
 
 export type { BoardListInput, BoardPostInput } from './board-contract.ts'
@@ -124,37 +110,6 @@ export type { BoardListInput, BoardPostInput } from './board-contract.ts'
 let dashboardCapability: { dir: string; path: string; token: string } | null = null
 const RUNS_DEADLINE_MS = 60_000
 const RUN_IDENTITY_MAP_DEADLINE_MS = 20_000
-const PROJECT_LIST_TIMEOUT_MS = 20_000
-
-/** Resolve the executable for every call made by a long-lived process in the hub concern. */
-export function resolveOrchExecutable(): string {
-  const override = process.env.BOTTEGA_ORCH?.trim() || null
-  const checkout = assetPath('bin', PLATFORM_SLUG)
-  if (override && usableExecutable(override)) return override
-  if (usableExecutable(checkout)) return checkout
-  const found = Bun.which(PLATFORM_SLUG, { PATH: process.env.PATH })
-  if (found) return found
-  throw missingBinary(override, checkout)
-}
-
-function usableExecutable(candidate: string): boolean {
-  try {
-    if (!statSync(candidate).isFile()) return false
-    accessSync(candidate, constants.X_OK)
-    return true
-  } catch {
-    return false
-  }
-}
-
-function missingBinary(override: string | null, checkout: string): Error {
-  return new Error(
-    `${PLATFORM_SLUG} executable unavailable: BOTTEGA_ORCH override ${override ?? 'unset'}; ` +
-      `checkout executable ${checkout}; PATH lookup found nothing. ` +
-      `Set BOTTEGA_ORCH to an executable file, restore the checkout executable, or add ${PLATFORM_SLUG} to PATH.`,
-  )
-}
-
 /** Mint the process-local capability used only by dashboard score children. */
 export function startDashboardCapability(): string {
   if (dashboardCapability) return dashboardCapability.path
@@ -247,7 +202,7 @@ async function orchProcess(
   }
 }
 
-async function json<T>(
+export async function parseOrchestratorJson<T>(
   args: string[],
   schema: { parse(value: unknown): T },
   opts: {
@@ -384,7 +339,7 @@ export async function readWorkflowCursorIdentityMap(): Promise<WorkflowCursorIde
 }
 
 export const readWorkflowRulings = (since: string): Promise<RulingListRow[]> =>
-  json(
+  parseOrchestratorJson(
     ['question', 'ruling', 'list', '--json', '--kind', 'workflow', '--since', since],
     RulingListSchema,
   )
@@ -392,7 +347,7 @@ export const readWorkflowRulings = (since: string): Promise<RulingListRow[]> =>
 export const readWorkflowRulingChanges = (
   after: string,
 ): Promise<{ rows: RulingListRow[]; cursor: string }> =>
-  json(
+  parseOrchestratorJson(
     [
       'question',
       'ruling',
@@ -419,10 +374,10 @@ export async function readRunsById(ids: (string | number)[]): Promise<OrchRunLin
 }
 
 export const waiting = (): Promise<OperatorWaitingItem[]> =>
-  json(['run', 'waiting', '--json'], z.array(OperatorWaitingItemSchema))
+  parseOrchestratorJson(['run', 'waiting', '--json'], z.array(OperatorWaitingItemSchema))
 
 export const claimWaitingNotifications = () =>
-  json(
+  parseOrchestratorJson(
     ['run', 'waiting', '--claim-notifications', '--json'],
     z.array(ClaimedOperatorNotificationSchema),
   )
@@ -444,7 +399,7 @@ export async function answerWaiting(
   runId: string,
   rulings: readonly WaitingRuling[],
 ): Promise<AnswerWaitingResult> {
-  return json(answerWaitingArgv(runId, rulings), AnswerWaitingResultSchema, {
+  return parseOrchestratorJson(answerWaitingArgv(runId, rulings), AnswerWaitingResultSchema, {
     env: dashboardCapabilityEnvironment(),
   })
 }
@@ -474,64 +429,16 @@ export const fileRulingArgv = (input: FileWaitingRuling): string[] => [
 ]
 
 export async function fileWaitingRuling(input: FileWaitingRuling): Promise<FileRulingResult> {
-  return json(fileRulingArgv(input), FileRulingResultSchema, {
+  return parseOrchestratorJson(fileRulingArgv(input), FileRulingResultSchema, {
     env: dashboardCapabilityEnvironment(),
   })
 }
 
 export const blockers = (days: number): Promise<OrchBlockers> =>
-  json(['machine', 'blockers', '--days', String(days), '--json'], OrchBlockersSchema)
-
-type ProjectListProcessResult = {
-  command: string
-  exitCode: number | null
-  signalCode: string | number | null | undefined
-  exitedDueToTimeout: boolean
-  stderr: string
-  stdout: string
-  timeoutMs: number
-}
-
-/** Decide the project-register error without observing or spawning its process. */
-export function projectListProcessError(result: ProjectListProcessResult): string | null {
-  if (processObservationInterrupted(result)) {
-    const classified = processObservationError(result.command, result.timeoutMs, result)
-    return `${classified}; retry once the register responds`
-  }
-  if (result.exitCode === 0) return null
-  return (
-    result.stderr.trim() || result.stdout.trim() || `${result.command} exited ${result.exitCode}`
+  parseOrchestratorJson(
+    ['machine', 'blockers', '--days', String(days), '--json'],
+    OrchBlockersSchema,
   )
-}
-
-export type ProjectListOptions = { retired?: boolean }
-
-export function projectList(options: ProjectListOptions = {}): OrchProject[] {
-  const command = bottegaEntryArgv(PLATFORM_SLUG, resolveOrchExecutable)
-  const args = ['project', 'list', ...(options.retired ? ['--retired'] : []), '--json']
-  const proc = Bun.spawnSync([...command, ...args], {
-    env: { ...process.env },
-    stdout: 'pipe',
-    stderr: 'pipe',
-    timeout: PROJECT_LIST_TIMEOUT_MS,
-  })
-  const out = proc.stdout.toString()
-  const error = projectListProcessError({
-    command: `${PLATFORM_SLUG} ${args.join(' ')}`,
-    exitCode: proc.exitCode,
-    signalCode: proc.signalCode,
-    exitedDueToTimeout: proc.exitedDueToTimeout === true,
-    stderr: proc.stderr.toString(),
-    stdout: out,
-    timeoutMs: PROJECT_LIST_TIMEOUT_MS,
-  })
-  if (error) throw new Error(error)
-  try {
-    return OrchProjectListSchema.parse(JSON.parse(out))
-  } catch (cause) {
-    throw new Error(`invalid project register: ${String(cause)}`)
-  }
-}
 
 export type ProjectWriteBody = {
   path?: string
@@ -563,13 +470,13 @@ export function projectArgv(
 }
 
 export async function projectAdd(body: ProjectAddBody): Promise<OrchProject> {
-  const result = await json(projectArgv('add', body.name, body), OrchProjectSchema)
+  const result = await parseOrchestratorJson(projectArgv('add', body.name, body), OrchProjectSchema)
   refreshProjects()
   return result
 }
 
 export async function projectSet(name: string, body: ProjectWriteBody): Promise<OrchProject> {
-  const result = await json(projectArgv('set', name, body), OrchProjectSchema)
+  const result = await parseOrchestratorJson(projectArgv('set', name, body), OrchProjectSchema)
   refreshProjects()
   return result
 }
@@ -635,10 +542,16 @@ export const releaseTaskClaims = (project: string, key: string): Promise<{ relea
   ])
 
 export const state = (days: number | null) =>
-  json(['run', 'state', ...(days ? ['--days', String(days)] : [])], OrchStateSchema)
+  parseOrchestratorJson(
+    ['run', 'state', ...(days ? ['--days', String(days)] : [])],
+    OrchStateSchema,
+  )
 
 export const health = (days: number): Promise<HarnessHealth> =>
-  json(['machine', 'health', '--days', String(days), '--json'], HarnessHealthSchema)
+  parseOrchestratorJson(
+    ['machine', 'health', '--days', String(days), '--json'],
+    HarnessHealthSchema,
+  )
 
 export type OrchJob = {
   name: string
@@ -667,8 +580,8 @@ export const agents = () => jsonDocument<OrchAgentDefinition[]>(['agent', 'list'
 export const dispatchNoteCurator = (cwd: string, prompt: string): Promise<string> =>
   orchProcess(['run', 'start', 'understand', '--cwd', cwd], 0, { stdin: prompt })
 
-export const run = (id: number): Promise<OrchRunDetail> =>
-  json(['run', 'show', String(id)], OrchRunDetailSchema)
+const run = (id: number): Promise<OrchRunDetail> =>
+  parseOrchestratorJson(['run', 'show', String(id)], OrchRunDetailSchema)
 export const runDetail = run
 
 /**
@@ -912,34 +825,42 @@ export const machinePermissionArgv = (input: MachinePermissionInput) => [
 ]
 
 export const userDocList = () =>
-  json(docArgv('list', { scope: 'canon', user: true }), z.array(DocRowSchema)) as Promise<DocRow[]>
+  parseOrchestratorJson(
+    docArgv('list', { scope: 'canon', user: true }),
+    z.array(DocRowSchema),
+  ) as Promise<DocRow[]>
 export const userDocGet = (slug: string, scope = 'canon') =>
-  json(docArgv('get', { slug, scope, user: true }), DocRowSchema) as Promise<DocRow>
+  parseOrchestratorJson(
+    docArgv('get', { slug, scope, user: true }),
+    DocRowSchema,
+  ) as Promise<DocRow>
 export const userDocSet = (input: Omit<DocSetInput, 'scope' | 'subject'>, scope = 'canon') =>
-  json(docArgv('set', { ...input, scope, user: true }), DocRowSchema, {
+  parseOrchestratorJson(docArgv('set', { ...input, scope, user: true }), DocRowSchema, {
     stdin: input.body,
     env: requiredDashboardCapabilityEnvironment(),
   }) as Promise<DocRow>
 export const userDocRemove = (slug: string, reason: string, expectedRevision?: string) =>
-  json(
+  parseOrchestratorJson(
     docArgv('remove', { slug, scope: 'canon', user: true, reason, expectedRevision }),
     z.object({ removed: z.boolean() }),
     { env: requiredDashboardCapabilityEnvironment() },
   )
 
-export const contextGet = (cwd: string) => json(contextArgv(cwd), ContextSchema)
+export const contextGet = (cwd: string) => parseOrchestratorJson(contextArgv(cwd), ContextSchema)
 export const configSet = (key: string, value: string, expectedRowVersion?: number | null) =>
-  json(configArgv('set', key, value, expectedRowVersion), ConfigEntrySchema, {
+  parseOrchestratorJson(configArgv('set', key, value, expectedRowVersion), ConfigEntrySchema, {
     env: requiredDashboardCapabilityEnvironment(),
   })
-export const configList = () => json(configArgv('list'), z.array(ConfigEntrySchema))
+export const configList = () =>
+  parseOrchestratorJson(configArgv('list'), z.array(ConfigEntrySchema))
 export const configDelete = (key: string, expectedRowVersion?: number) =>
   orchProcess(configDeleteArgv(key, expectedRowVersion), 20_000, {
     env: requiredDashboardCapabilityEnvironment(),
   })
-export const machineConfigList = () => json(machineConfigArgv('list'), MachineConfigListSchema)
+export const machineConfigList = () =>
+  parseOrchestratorJson(machineConfigArgv('list'), MachineConfigListSchema)
 export const machineConfigSet = (key: string, value: string) =>
-  json(machineConfigArgv('set', key, value), MachineConfigFileEntrySchema, {
+  parseOrchestratorJson(machineConfigArgv('set', key, value), MachineConfigFileEntrySchema, {
     env: requiredDashboardCapabilityEnvironment(),
   })
 export const machineConfigDelete = (key: string) =>
@@ -947,7 +868,7 @@ export const machineConfigDelete = (key: string) =>
     env: requiredDashboardCapabilityEnvironment(),
   })
 export const settingsCheck = (target: { user: true } | { project: string }) =>
-  json(settingsCheckArgv(target), SettingsCheckSchema, {
+  parseOrchestratorJson(settingsCheckArgv(target), SettingsCheckSchema, {
     acceptedExitCodes: [1],
     acceptedOutput: (output) => {
       try {
@@ -987,15 +908,15 @@ export type MachinePermissionInput = {
 }
 
 export const settingsPermission = (input: SettingsPermissionInput) =>
-  json(settingsPermissionArgv(input), SettingsPermissionResultSchema, {
+  parseOrchestratorJson(settingsPermissionArgv(input), SettingsPermissionResultSchema, {
     env: requiredDashboardCapabilityEnvironment(),
   })
 
 export const machinePermissions = () =>
-  json(machinePermissionListArgv(), MachinePermissionOverlaySchema)
+  parseOrchestratorJson(machinePermissionListArgv(), MachinePermissionOverlaySchema)
 
 export const machinePermission = (input: MachinePermissionInput) =>
-  json(machinePermissionArgv(input), MachinePermissionResultSchema, {
+  parseOrchestratorJson(machinePermissionArgv(input), MachinePermissionResultSchema, {
     env: requiredDashboardCapabilityEnvironment(),
   })
 
@@ -1038,7 +959,7 @@ const boardOperatorMarkers = () => [
 ]
 const boardOptions = () => ({ unsetEnv: boardOperatorMarkers() })
 
-export function boardListArgv(input: BoardListInput): string[] {
+function boardListArgv(input: BoardListInput): string[] {
   return [
     'board',
     'list',
@@ -1069,24 +990,28 @@ export function boardPostArgv(input: BoardPostInput): string[] {
 }
 
 export const boardList = (input: BoardListInput) =>
-  json(boardListArgv(input), BoardListResultSchema, boardOptions())
+  parseOrchestratorJson(boardListArgv(input), BoardListResultSchema, boardOptions())
 export const boardThread = (id: string) =>
-  json(['board', 'thread', id], BoardThreadResultSchema, boardOptions())
+  parseOrchestratorJson(['board', 'thread', id], BoardThreadResultSchema, boardOptions())
 export const boardStatus = (id: string) =>
-  json(['board', 'status', id], BoardStatusResultSchema, boardOptions())
+  parseOrchestratorJson(['board', 'status', id], BoardStatusResultSchema, boardOptions())
 export const boardPost = (input: BoardPostInput) =>
-  json(boardPostArgv(input), BoardPostResultSchema, boardOptions())
+  parseOrchestratorJson(boardPostArgv(input), BoardPostResultSchema, boardOptions())
 export const boardReply = (input: { id: string; body: string }) =>
-  json(
+  parseOrchestratorJson(
     ['board', 'reply', input.id, '--body', input.body],
     BoardPostResultSchema.extend({ rootId: BoardIdSchema }),
     boardOptions(),
   )
 export const boardAccept = (input: { questionId: string; replyId: string }) =>
-  json(
+  parseOrchestratorJson(
     ['board', 'accept', input.questionId, input.replyId],
     BoardAcceptResultSchema,
     boardOptions(),
   )
 export const boardWithdraw = (id: string) =>
-  json(['board', 'withdraw', id], z.object({ withdrawn: BoardIdSchema }), boardOptions())
+  parseOrchestratorJson(
+    ['board', 'withdraw', id],
+    z.object({ withdrawn: BoardIdSchema }),
+    boardOptions(),
+  )

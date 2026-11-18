@@ -4,7 +4,6 @@
 export type TaskFlowWriteMethod =
   | 'write'
   | 'retireStageIdentity'
-  | 'insertStage'
   | 'cacheAdoptedFlow'
   | 'relinkProjectReferences'
   | 'renameStageProject'

@@ -49,6 +49,9 @@ test('listing scope honors explicit flags and refuses an unresolved cwd', () => 
     ),
   ).toBe('other')
   expect(workflowCursorProjectScope({ all: true }, 'fixture', '/fixture/worktree')).toBeUndefined()
+  expect(
+    workflowCursorProjectScope({ all: true, project: 'other' }, 'fixture', '/fixture/worktree'),
+  ).toBe('other')
   expect(() => workflowCursorProjectScope({}, undefined, '/tmp')).toThrow(
     'cannot list workflow cursors from /tmp: pass --project, --session or --all',
   )

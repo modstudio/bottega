@@ -31,11 +31,13 @@ import {
 } from './gate-checkout.ts'
 import {
   boundedGateOutputTail,
+  decideArchitectGateOutcome,
   decideGateHeadCommit,
   GATE_OUTPUT_TAIL_BYTES,
   resolveGateCommand,
   WORKER_GATE_BASE_ENV,
 } from './gate-decision.ts'
+import { architectGateTree } from './gate-index.ts'
 
 /** The reason a gate execution row was requested. Enforced by gate_execution's SQL CHECK. */
 export type GatePurpose = 'gate' | 'worker-check'
@@ -62,7 +64,16 @@ export type ArchitectGateGitState = (cwd: string) => {
 
 type ArchitectGateTopLevel = (cwd: string) => string | null
 
-export type ArchitectGateRecord = { number: number; exitCode: number }
+export type ArchitectGateRecord = { number: number; exitCode: number } & (
+  | { commit: string }
+  | {
+      commit: null
+      commitUnknown: 'dirty-before'
+      checkedTree: string | null
+      treeUnavailable?: string
+    }
+  | { commit: null; commitUnknown: 'changed-during' }
+)
 
 /** Record a worker-style gate request; the broker remains the only executor. */
 export function requestGateExecution(
@@ -254,6 +265,7 @@ export async function runArchitectGate(input: {
   gitState?: ArchitectGateGitState
   checkout?: GateCheckoutObserver
   topLevel?: ArchitectGateTopLevel
+  contentTree?: (cwd: string, failureContext?: string) => string
   write?: (chunk: string) => void
 }): Promise<ArchitectGateRecord> {
   const { caller, project, gate, checkoutTopLevel } = architectGateTarget(input)
@@ -270,6 +282,17 @@ export async function runArchitectGate(input: {
   const write = input.write ?? ((chunk) => process.stdout.write(chunk))
   const observe = input.gitState ?? observeGitState
   const before = gateHeadCommit(checkoutTopLevel, observe)
+  const snapshotTree = () => {
+    try {
+      return (input.contentTree ?? architectGateTree)(
+        checkoutTopLevel,
+        ' while snapshotting the checked tree',
+      )
+    } catch (error) {
+      return { unavailable: error instanceof Error ? error.message : String(error) }
+    }
+  }
+  const treeBefore = before === null ? snapshotTree() : null
   const executionPath = gateCheckExecutionPath()
   const ran = await (input.runner ?? defaultRunner)({
     command,
@@ -278,15 +301,21 @@ export async function runArchitectGate(input: {
     write,
   })
   const checkExecutions = readGateCheckExecutions(executionPath, write)
-  // A gate that rewrites the tree while it runs tested something other than HEAD.
-  const commit =
-    before !== null && gateHeadCommit(checkoutTopLevel, observe) === before ? before : null
+  // Only a gate that starts clean and leaves HEAD and the tree unchanged is attributable.
+  const after = gateHeadCommit(checkoutTopLevel, observe)
+  const treeAfter = before === null ? snapshotTree() : null
+  const attribution = decideArchitectGateOutcome({
+    headCommitBefore: before,
+    headCommitAfter: after,
+    treeBefore,
+    treeAfter,
+  })
   const tail = boundedGateOutputTail(
     redactSecretShapedOutput(ran.output, [process.env[WORKER_GATE_BASE_ENV] ?? '', before ?? '']),
     GATE_OUTPUT_TAIL_BYTES,
   )
   const d = input.d ?? writableDb()
-  return writeTransaction(() => {
+  return writeTransaction<ArchitectGateRecord>(() => {
     const recordId = newRecordId()
     d.query(
       `INSERT INTO gate_execution
@@ -302,7 +331,7 @@ export async function runArchitectGate(input: {
       ran.elapsedMs,
       tail,
       command,
-      commit,
+      attribution.commit,
       caller,
       checkoutTopLevel,
     )
@@ -311,6 +340,6 @@ export async function runArchitectGate(input: {
       .get(recordId)
     if (!row?.number) throw new Error('gate_execution row was not inserted')
     insertGateCheckExecutions(d, recordId, checkExecutions)
-    return { number: row.number, exitCode: ran.exitCode }
+    return { number: row.number, exitCode: ran.exitCode, ...attribution }
   }, d)
 }

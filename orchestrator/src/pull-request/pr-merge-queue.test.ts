@@ -47,8 +47,9 @@ function registerProject(requiredChecks: string[]): void {
     )
 }
 
-type TestQueueObservation = Omit<MergeQueueObservation, 'enqueuedAt'> & {
+type TestQueueObservation = Omit<MergeQueueObservation, 'enqueuedAt' | 'removalReason'> & {
   enqueuedAt?: string | null
+  removalReason?: string | null
 }
 
 function adapter(input: {
@@ -100,16 +101,19 @@ function adapter(input: {
             : state.entryState === null
               ? null
               : '2026-10-24T10:00:00Z',
+        removalReason: state.removalReason ?? null,
       }
     },
     enqueue: (enqueueCwd, number, headCommit) => input.enqueue?.(enqueueCwd, number, headCommit),
     requeue: (requeueCwd, nodeId, headCommit) => input.requeue?.(requeueCwd, nodeId, headCommit),
     failedMergeGroupRun: (...args) =>
-      input.failedMergeGroupRun?.(...args) ?? {
-        id: 9876,
-        url: 'https://github.example/actions/runs/9876',
-        conclusion: 'failure',
-      },
+      input.failedMergeGroupRun
+        ? input.failedMergeGroupRun(...args)
+        : {
+            id: 9876,
+            url: 'https://github.example/actions/runs/9876',
+            conclusion: 'failure',
+          },
     now: input.now ?? Date.now,
     wait: (milliseconds) => input.wait?.(milliseconds),
     postLanding: {
@@ -325,9 +329,8 @@ test('a failed entry without an enqueue time does not search workflow runs', asy
   )
 })
 
-test('a pull request removed from an established queue refuses with the retry command', async () => {
+test('a pull request removed from an established queue stops and reports the reason', async () => {
   registerProject(['ci'])
-  let clock = 0
   expect(
     async () =>
       await mergePullRequest(
@@ -336,21 +339,47 @@ test('a pull request removed from an established queue refuses with the retry co
         adapter({
           queueStates: [
             { pullRequestState: 'OPEN', mergeCommit: null, entryState: 'QUEUED' },
-            { pullRequestState: 'OPEN', mergeCommit: null, entryState: null },
-            { pullRequestState: 'OPEN', mergeCommit: null, entryState: null },
+            {
+              pullRequestState: 'OPEN',
+              mergeCommit: null,
+              entryState: null,
+              removalReason: 'BASE_BRANCH_UPDATED',
+            },
           ],
-          now: () => clock,
-          wait: (milliseconds) => {
-            clock += milliseconds === 10_000 ? MERGE_QUEUE_DEQUEUE_CONFIRM_MS : milliseconds
-          },
+          failedMergeGroupRun: () => null,
         }),
       ),
   ).toThrow(
-    `left the merge queue without merging; cleared by: fix the dequeue reason, then ${PLATFORM_SLUG} pr merge 42`,
+    `dequeued without a failed check (reason: BASE_BRANCH_UPDATED); cleared by: ${PLATFORM_SLUG} pr merge 42`,
   )
 })
 
-test('a pull request merged during the vanished-entry transition completes', async () => {
+test('a merge-conflict removal names merge, push, and requeue as its remedy', async () => {
+  registerProject(['ci'])
+  expect(
+    async () =>
+      await mergePullRequest(
+        '42',
+        cwd,
+        adapter({
+          queueStates: [
+            { pullRequestState: 'OPEN', mergeCommit: null, entryState: 'QUEUED' },
+            {
+              pullRequestState: 'OPEN',
+              mergeCommit: null,
+              entryState: null,
+              removalReason: 'merge_conflict',
+            },
+          ],
+          failedMergeGroupRun: () => null,
+        }),
+      ),
+  ).toThrow(
+    `dequeued without a failed check (reason: merge_conflict); cleared by: merge origin/main into the pull-request branch, push it, then ${PLATFORM_SLUG} pr merge 42`,
+  )
+})
+
+test('a merged removal completes when pull-request state catches up inside confirmation', async () => {
   registerProject(['ci'])
   expect(
     await mergePullRequest(
@@ -359,18 +388,138 @@ test('a pull request merged during the vanished-entry transition completes', asy
       adapter({
         queueStates: [
           { pullRequestState: 'OPEN', mergeCommit: null, entryState: 'QUEUED' },
-          { pullRequestState: 'OPEN', mergeCommit: null, entryState: null },
+          {
+            pullRequestState: 'OPEN',
+            mergeCommit: null,
+            entryState: null,
+            removalReason: 'merged',
+          },
           { pullRequestState: 'MERGED', mergeCommit: 'queued-merge-oid', entryState: null },
         ],
+        failedMergeGroupRun: () => null,
       }),
     ),
-  ).toEqual({
-    output: 'queued-merge-oid',
-    exitCode: 0,
-    pullRequestNumber: 42,
-    mergeCommit: 'queued-merge-oid',
-    headBranch: 'DEV-1358-queue',
-  })
+  ).toMatchObject({ mergeCommit: 'queued-merge-oid' })
+})
+
+test('a merged removal past confirmation refuses and reports the reason', async () => {
+  registerProject(['ci'])
+  let clock = 0
+  let waits = 0
+  expect(
+    async () =>
+      await mergePullRequest(
+        '42',
+        cwd,
+        adapter({
+          queueStates: [
+            { pullRequestState: 'OPEN', mergeCommit: null, entryState: 'QUEUED' },
+            {
+              pullRequestState: 'OPEN',
+              mergeCommit: null,
+              entryState: null,
+              removalReason: 'merged',
+            },
+            {
+              pullRequestState: 'OPEN',
+              mergeCommit: null,
+              entryState: null,
+              removalReason: 'merged',
+            },
+          ],
+          now: () => clock,
+          wait: () => {
+            waits += 1
+            if (waits === 2) clock = MERGE_QUEUE_DEQUEUE_CONFIRM_MS
+          },
+          failedMergeGroupRun: () => null,
+        }),
+      ),
+  ).toThrow('dequeued without a failed check (reason: merged)')
+})
+
+test('a stale merge-conflict removal from before this enqueue does not refuse', async () => {
+  registerProject(['ci'])
+  const removedAt = '2026-10-24T10:00:00Z'
+  const now = Date.parse('2026-10-24T10:00:01Z')
+  expect(
+    await mergePullRequest(
+      '42',
+      cwd,
+      adapter({
+        queueStates: [
+          {
+            pullRequestState: 'OPEN',
+            mergeCommit: null,
+            entryState: null,
+            removalReason: 'merge_conflict',
+            removedAt,
+          },
+          {
+            pullRequestState: 'OPEN',
+            mergeCommit: null,
+            entryState: null,
+            removalReason: 'merge_conflict',
+            removedAt,
+          },
+          { pullRequestState: 'OPEN', mergeCommit: null, entryState: 'QUEUED' },
+          { pullRequestState: 'MERGED', mergeCommit: 'queued-merge-oid', entryState: null },
+        ],
+        now: () => now,
+        failedMergeGroupRun: () => null,
+      }),
+    ),
+  ).toMatchObject({ mergeCommit: 'queued-merge-oid' })
+})
+
+test('a merge-conflict dequeue with a failed run keeps the reasoned remedy and appends evidence', async () => {
+  registerProject(['ci'])
+  expect(
+    async () =>
+      await mergePullRequest(
+        '42',
+        cwd,
+        adapter({
+          queueStates: [
+            { pullRequestState: 'OPEN', mergeCommit: null, entryState: 'QUEUED' },
+            {
+              pullRequestState: 'OPEN',
+              mergeCommit: null,
+              entryState: null,
+              removalReason: 'merge_conflict',
+            },
+          ],
+        }),
+      ),
+  ).toThrow(
+    `dequeued without a failed check (reason: merge_conflict); failure merge-group run 9876 (https://github.example/actions/runs/9876); cleared by: merge origin/main into the pull-request branch, push it, then ${PLATFORM_SLUG} pr merge 42`,
+  )
+})
+
+test('a failed-checks dequeue keeps the failed-check remedy and appends run evidence', async () => {
+  registerProject(['ci'])
+  expect(
+    async () =>
+      await mergePullRequest(
+        '42',
+        cwd,
+        adapter({
+          queueStates: [
+            { pullRequestState: 'OPEN', mergeCommit: null, entryState: 'QUEUED' },
+            {
+              pullRequestState: 'OPEN',
+              mergeCommit: null,
+              entryState: null,
+              removalReason: 'failed_checks',
+            },
+          ],
+        }),
+      ),
+  ).toThrow(
+    `failed in the merge queue (reason: failed_checks); failure merge-group run 9876 ` +
+      `(https://github.example/actions/runs/9876); cleared by: push a fix if the check failure is real, ` +
+      `or re-run ${PLATFORM_SLUG} pr merge 42 to requeue the unchanged head if it flaked`,
+  )
 })
 
 test('a closed pull request refuses immediately after an established queue', async () => {

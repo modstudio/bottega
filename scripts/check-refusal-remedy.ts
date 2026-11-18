@@ -11,12 +11,14 @@ const RENDERER = 'shared/refusal.ts'
 export type RefusalRemedyBaseline = {
   rawLiterals: Record<string, number>
   missingRemedies: Record<string, number>
+  forwardedOutputWithoutRemedy: Record<string, number>
   commandCases: Record<string, { test?: string; exemption?: string }>
 }
 
 export type RefusalRemedyFindings = {
   rawLiterals: { file: string; line: number }[]
   missingRemedies: { file: string; line: number }[]
+  forwardedOutputWithoutRemedy: { file: string; line: number }[]
   commandRemedies: { id: string; file: string; line: number }[]
 }
 
@@ -127,12 +129,32 @@ function enclosingName(node: ts.Node): string {
   return '<top-level>'
 }
 
+function descendant(node: ts.Node, predicate: (candidate: ts.Node) => boolean): boolean {
+  if (predicate(node)) return true
+  let found = false
+  ts.forEachChild(node, (child) => {
+    if (!found && descendant(child, predicate)) found = true
+  })
+  return found
+}
+
+function forwardsSubprocessOutput(node: ts.Node): boolean {
+  return descendant(
+    node,
+    (candidate) =>
+      (ts.isPropertyAccessExpression(candidate) &&
+        (candidate.name.text === 'stderr' || candidate.name.text === 'stdout')) ||
+      (ts.isIdentifier(candidate) && (candidate.text === 'stderr' || candidate.text === 'stdout')),
+  )
+}
+
 export function refusalRemedyFindings(
   files: Readonly<Record<string, string>>,
 ): RefusalRemedyFindings {
   const findings: RefusalRemedyFindings = {
     rawLiterals: [],
     missingRemedies: [],
+    forwardedOutputWithoutRemedy: [],
     commandRemedies: [],
   }
   for (const [file, text] of Object.entries(files)) {
@@ -160,6 +182,23 @@ export function refusalRemedyFindings(
             line: lineOf(source, node),
           })
         }
+      }
+      if (
+        ts.isNewExpression(node) &&
+        ts.isIdentifier(node.expression) &&
+        node.expression.text === 'Error' &&
+        node.arguments?.[0] &&
+        forwardsSubprocessOutput(node.arguments[0]) &&
+        !node.arguments[0].getText(source).includes('cleared by:') &&
+        !descendant(
+          node.arguments[0],
+          (candidate) =>
+            ts.isCallExpression(candidate) &&
+            isRefusalCall(candidate.expression, bindings) &&
+            candidate.arguments[1] !== undefined,
+        )
+      ) {
+        findings.forwardedOutputWithoutRemedy.push({ file, line: lineOf(source, node) })
       }
       ts.forEachChild(node, visit)
     }
@@ -236,6 +275,11 @@ export function refusalRemedyViolations(
       findings.missingRemedies,
       baseline.missingRemedies,
     ),
+    ...ratchetViolations(
+      'forwarded subprocess output without a remedy',
+      findings.forwardedOutputWithoutRemedy,
+      baseline.forwardedOutputWithoutRemedy,
+    ),
   ]
   const actualCommands = new Set(findings.commandRemedies.map(({ id }) => id))
   for (const finding of findings.commandRemedies) {
@@ -282,7 +326,7 @@ function check(): boolean {
   for (const violation of violations) console.error(violation)
   if (violations.length) return false
   console.log(
-    `check-refusal-remedy: ok (${findings.rawLiterals.length} raw literals, ${findings.missingRemedies.length} shape-built refusals without remedies, ${findings.commandRemedies.length} command remedies)`,
+    `check-refusal-remedy: ok (${findings.rawLiterals.length} raw literals, ${findings.missingRemedies.length} shape-built refusals without remedies, ${findings.forwardedOutputWithoutRemedy.length} forwarded subprocess outputs without remedies, ${findings.commandRemedies.length} command remedies)`,
   )
   return true
 }

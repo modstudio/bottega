@@ -112,8 +112,10 @@ const concerns: ConcernManifest = {
 
 const declaredModules: ArchitectureModule[] = [
   ...questionCallerModules,
+  module('orchestrator/src/outcome-line.ts', []),
   module('orchestrator/src/workflow/task-flow-store.ts', [
     'bun:sqlite',
+    '../record/record-task-flow-contract.ts',
     '../record/record-task-flow-write-contract.ts',
     '../record/record-write-authority.ts',
     './task-flow-store-hosted.ts',
@@ -122,19 +124,19 @@ const declaredModules: ArchitectureModule[] = [
     './task-flow-store-sqlite-write.ts',
     './task-flow-store-methods.ts',
     './task-flow-store-types.ts',
-  ]),
-  module('orchestrator/src/workflow/task-flow-store-sqlite.ts', [
-    'bun:sqlite',
-    '../database/db.ts',
-    '../record/record-task-flow-write-contract.ts',
-    '../run/question-open.ts',
-    '../question-store/question-store-sqlite-reads.ts',
-    './task-flow-store-sqlite-write.ts',
-    './task-flow-store-methods.ts',
-    './task-flow-store-types.ts',
+    './workflow-cursor-transition.ts',
   ]),
   module('orchestrator/src/close/close-out-preparation.ts', [
+    'node:fs',
+    '../../../shared/brand.ts',
+    '../../../shared/refusal.ts',
+    '../database/db.ts',
+    '../record/record-api-client-task-flow.ts',
+    '../resources/resource-ownership.ts',
+    '../workflow/workflow-cursor-format.ts',
     '../workflow/workflow-cursor-worktrees.ts',
+    './absent-tree-close-out.ts',
+    './close-out-report.ts',
   ]),
   module('orchestrator/src/workflow/task-flow-store-sqlite-write.ts', [
     'bun:sqlite',
@@ -373,6 +375,27 @@ const declaredModules: ArchitectureModule[] = [
     '../record/machine-identity.ts',
     '../run/run-outbox.ts',
     './evidence-query.ts',
+  ]),
+  module('orchestrator/src/evidence-exclusion.ts', [
+    './database/db.ts',
+    './evidence/unjudged-expiry.ts',
+    './failure/failure.ts',
+    './jobs/job-fidelity.ts',
+    './record/machine-identity.ts',
+    './run/question-close.ts',
+    './run/run-authority.ts',
+    './run/run-outbox.ts',
+    './run/run-status.ts',
+    './run/synthetic-lifecycle-job.ts',
+    './score/score.ts',
+    './score/score-outbox.ts',
+    './score/score-verdict-record.ts',
+    './verdict/verdict-rules.ts',
+  ]),
+  module('orchestrator/src/score/score-verdict-record.ts', [
+    '../../../shared/record-id.ts',
+    '../database/db.ts',
+    './score.ts',
   ]),
   ...branchModuleSpecs.map((spec) => module(spec.file, [...spec.allowed])),
   ...agentProbeModules,
@@ -631,6 +654,7 @@ const declaredModules: ArchitectureModule[] = [
     '../worktree/worktree-lifecycle.ts',
     '../worktree/worktree-seed.ts',
     '../worktree/worktree-types.ts',
+    '../workflow/workflow-cursor-worktrees.ts',
   ]),
   module('orchestrator/src/workflow/workflow-step-sequences.ts', [
     './step-catalogue-definition.ts',
@@ -673,16 +697,9 @@ export const inversions: { from: string; to: string }[] = [
   },
 ]
 
-const allowedCycles: { cycle: string[]; reason: string }[] = [
-  {
-    cycle: [
-      'orchestrator/src/canon/canon.ts',
-      'orchestrator/src/doc/docs.ts',
-      'orchestrator/src/canon/canon.ts',
-    ],
-    reason: 'Pre-existing operator-doc/canon compilation cycle outside the specified inversions.',
-  },
-]
+const GUARDED_CONCERN_ROOTS = '^(?:orchestrator/src/|hub/|shared/)'
+
+const allowedCycles: { cycle: string[]; reason: string }[] = []
 
 export const exactArchitecturePath = (path: string) =>
   `^${path.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`
@@ -824,6 +841,17 @@ const architectureCycleFiles = [
   ...new Set(allowedCycles.flatMap(({ cycle }) => cycle.slice(0, -1))),
 ]
 
+const concernCycleRule: ArchitectureRule = {
+  name: 'no-new-concern-root-cycles',
+  severity: 'error',
+  comment: 'Reject cycles that leave and re-enter the concern roots.',
+  from: {
+    path: GUARDED_CONCERN_ROOTS,
+    pathNot: architectureCycleFiles.map(exactArchitecturePath),
+  },
+  to: { circular: true },
+}
+
 const declaredModuleRules: ArchitectureRule[] = modules.map((entry) => ({
   name: `module-${entry.file.replace(/[^a-z0-9]+/gi, '-')}`,
   severity: 'error' as const,
@@ -941,15 +969,7 @@ export function architectureRules() {
       from: { path: exactArchitecturePath(entry.from) },
       to: { path: exactArchitecturePath(entry.to) },
     })),
-    {
-      name: 'no-new-orchestrator-cycles',
-      severity: 'error',
-      from: {
-        path: '^orchestrator/src/',
-        pathNot: architectureCycleFiles.map(exactArchitecturePath),
-      },
-      to: { path: '^orchestrator/src/', circular: true },
-    },
+    concernCycleRule,
     ...allowedCycles.flatMap((entry) =>
       entry.cycle.slice(0, -1).map((from, index) => ({
         name: `cycle-exception-${index}-${from.replace(/[^a-z0-9]+/gi, '-')}`,
@@ -957,7 +977,6 @@ export function architectureRules() {
         comment: entry.reason,
         from: { path: exactArchitecturePath(from) },
         to: {
-          path: '^orchestrator/src/',
           pathNot: [exactArchitecturePath(entry.cycle[index + 1]!)],
           circular: true,
         },

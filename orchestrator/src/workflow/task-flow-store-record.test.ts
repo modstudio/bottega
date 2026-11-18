@@ -658,8 +658,24 @@ test('machine-wide hosted reads merge every registered project space', async () 
   }
   const store = recordTaskFlowReadStore(d, client)
   expect(await store.openStageWorktrees()).toEqual([
-    { number: 1, workflow: 'flow', project: 'fixture', args: '{}' },
-    { number: 1, workflow: 'flow', project: 'second-fixture', args: '{}' },
+    {
+      record_id: hostedStage().stage.id,
+      number: 1,
+      workflow: 'flow',
+      project: 'fixture',
+      args: '{}',
+      closed: '[]',
+      revision: 1,
+    },
+    {
+      record_id: second.stage.id,
+      number: 1,
+      workflow: 'flow',
+      project: 'second-fixture',
+      args: '{}',
+      closed: '[]',
+      revision: 1,
+    },
   ])
   expect((await store.stageByRecordId(second.stage.id))?.record_id).toBe(second.stage.id)
   expect((await store.openStageForTask(secondTaskId))?.record_id).toBe(second.stage.id)

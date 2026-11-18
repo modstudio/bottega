@@ -38,6 +38,7 @@ import { metricCommand } from '../metric/metric-commands.ts'
 import { monitorCommand } from '../monitor/monitor-commands.ts'
 import { storageCommand } from '../monitor/storage-commands.ts'
 import { relayCommand, waitingCommand } from '../operator/operator-commands.ts'
+import { formatOutcomeLine } from '../outcome-line.ts'
 import { projectAt } from '../project/projects.ts'
 import { treeRefreshCommand } from '../recipe/tree-refresh.ts'
 import { treeReseedCommand } from '../recipe/tree-reseed.ts'
@@ -124,6 +125,22 @@ const runFlags = (options: OptionValues) => ({
   follow: Boolean(options.follow),
   quiet: Boolean(options.quiet),
 })
+const runGateCommand = async (): Promise<void> => {
+  const result = await runArchitectGate({ write: (chunk) => write(chunk) })
+  log(
+    formatOutcomeLine(
+      'commitUnknown' in result
+        ? {
+            kind: 'gate',
+            id: result.number,
+            checkedTree: null,
+            ...result,
+          }
+        : { kind: 'gate', id: result.number, ...result },
+    ),
+  )
+  presentation.setExitCode(architectGateProcessExitCode(result.exitCode))
+}
 const tellByIdentifier = (id: string, command: Command, ping: boolean) =>
   tellCommand(
     localRunId(id),
@@ -738,11 +755,7 @@ export function register(program: Command, dependencies: LogicDependencies = {})
     .command('run')
     .description('run the registered project gate in this checkout and record a gate_execution row')
     .allowExcessArguments(false)
-    .action(async () => {
-      const result = await runArchitectGate({ write: (chunk) => write(chunk) })
-      log(String(result.number))
-      presentation.setExitCode(architectGateProcessExitCode(result.exitCode))
-    })
+    .action(runGateCommand)
   gate
     .command('passed <commit>')
     .description('exit zero when this project has a passing gate recorded for the exact commit')

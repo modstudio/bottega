@@ -1,5 +1,59 @@
 export const hubModuleSpecs = [
   {
+    file: 'hub/src/orch-view.ts',
+    allowed: [
+      '../../shared/interval.ts',
+      '../../shared/orch-contract.ts',
+      './attribute.ts',
+      './collect.ts',
+      './db.ts',
+      './excerpt.ts',
+      './ingest/runs.ts',
+      './orch.ts',
+      './orch-transforms.ts',
+      './projects.ts',
+      './query.ts',
+      './run-display.ts',
+      './task-projections.ts',
+      './time.ts',
+    ],
+  },
+  {
+    file: 'hub/src/orch-project-register.ts',
+    allowed: [
+      'node:fs',
+      '../../shared/brand.ts',
+      '../../shared/install-root.ts',
+      '../../shared/orch-contract.ts',
+      '../../shared/process-identity.ts',
+      '../../shared/self-spawn.ts',
+    ],
+  },
+  {
+    file: 'hub/src/caller-session.ts',
+    allowed: ['../../shared/caller-classification.ts'],
+  },
+  {
+    file: 'hub/src/task-cursor-close-decision.ts',
+    allowed: ['../../shared/brand.ts', '../../shared/orch-contract.ts'],
+  },
+  {
+    file: 'hub/src/task-closed-residue.ts',
+    allowed: ['../../shared/brand.ts', '../../shared/orch-contract.ts', './task-row.ts'],
+  },
+  {
+    file: 'hub/src/task-workflow-cursors.ts',
+    allowed: [
+      '../../shared/brand.ts',
+      '../../shared/orch-contract.ts',
+      './caller-session.ts',
+      './orch.ts',
+      './task-closed-residue.ts',
+      './task-cursor-close-decision.ts',
+      './task-row.ts',
+    ],
+  },
+  {
     file: 'hub/src/record-board-client.ts',
     allowed: [
       'zod',
@@ -462,6 +516,7 @@ export const hubModuleSpecs = [
       './projects.ts',
       './task.ts',
       './task-close.ts',
+      './task-closed-residue.ts',
       './task-document.ts',
       './task-hosted-cli.ts',
       './task-machine-attribution.ts',

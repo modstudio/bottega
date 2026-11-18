@@ -481,6 +481,24 @@ const WorkflowCursorIdentityRowSchema = z
 export const WorkflowCursorIdentityRowListSchema = z.array(WorkflowCursorIdentityRowSchema)
 export type WorkflowCursorIdentityRow = z.infer<typeof WorkflowCursorIdentityRowSchema>
 
+const OpenWorkflowCursorSchema = z
+  .object({
+    id: z.number().int().positive(),
+    record_id: z.string().uuid(),
+    project: z.string().nullable(),
+    workflow_slug: z.string(),
+    workflow_key: z.string().nullable(),
+    session_id: z.string().nullable(),
+    live_runs: z.array(
+      z.object({ number: z.number().int().positive(), record_id: z.string().uuid() }).strict(),
+    ),
+  })
+  .passthrough()
+export const OpenWorkflowCursorListSchema = z.array(OpenWorkflowCursorSchema)
+export type OpenWorkflowCursor = z.infer<typeof OpenWorkflowCursorSchema>
+
+export const WorkflowAbandonResultSchema = z.string()
+
 const guideCandidate = z
   .object({
     agent: z.string(),

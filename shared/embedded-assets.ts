@@ -15,7 +15,7 @@ import {
 import { userInfo } from 'node:os'
 import { dirname, join, relative } from 'node:path'
 
-import type { DistributionManifest } from './install-root.ts'
+import type { DistributionManifest } from './distribution-manifest.ts'
 
 export type EmbeddedRuntimeFile = {
   destination: string

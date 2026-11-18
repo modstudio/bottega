@@ -101,6 +101,16 @@ export type TaskFlowProjectionRow = {
   open_stage_cursor_record_id: string | null
 }
 
+export type TaskFlowOpenStageWorktreeRow = {
+  record_id: string
+  number: number
+  workflow: string
+  project: string
+  args: string
+  closed: string
+  revision: number
+}
+
 export type TaskFlowListedStageRow = TaskFlowStageCursorRow & {
   open_stage_count: number
   question_number: number | null
@@ -284,4 +294,35 @@ export type TaskFlowTaskRulingRow = {
   overturned_by_name: string | null
   replacement: string | null
   candidate_count: number
+}
+
+export function workflowStageInsert(input: {
+  id: string
+  flowRecordId: string
+  projectId: string
+  workflow: string
+  mode: string
+  workflowKey: string
+  instanceId: string
+  sessionId: NonNullable<TaskFlowIntentInput<'compose'>['stageInsert']>['sessionId']
+  workflowVersionId: string
+  catalogueVersionId: string
+  arguments: Record<string, string>
+  activeSlug: string
+  autonomy: string | null
+  totalSteps: number
+  openedMachineId: string
+  createdAt: string
+}) {
+  return {
+    ...input,
+    activeOrdinal: 0,
+    state: 'running' as const,
+    closedStepNotes: [],
+    question: null,
+    enforcement: 'floors' as const,
+    takenOverFromMachineId: null,
+    lastAdvancedMachineId: input.openedMachineId,
+    updatedAt: input.createdAt,
+  }
 }

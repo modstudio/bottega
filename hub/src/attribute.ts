@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
+import type { OrchRun } from '../../shared/orch-contract.ts'
 import { db } from './db.ts'
-import type { OrchRun } from './ingest/runs.ts'
 import { type Project, projectRoot, projects } from './projects.ts'
 import {
   isTaskKeyPrefix,

@@ -8,12 +8,14 @@ export type MergeQueueObservation = {
   mergeCommit: string | null
   entryState: string | null
   enqueuedAt: string | null
+  removalReason?: string | null
+  removedAt?: string | null
 }
 
 export type MergeQueueState =
   | { state: 'merged'; mergeCommit: string }
   | { state: 'queued' }
-  | { state: 'dequeued' }
+  | { state: 'dequeued'; reason: string }
   | { state: 'closed' }
   | { state: 'failed' }
   | { state: 'unknown'; detail: string }
@@ -23,10 +25,16 @@ type MergeQueueAction =
   | { action: 'enqueue' }
   | { action: 'requeue' }
   | { action: 'wait'; delay: number }
-  | { action: 'refuse'; refusal: string; remedy: string }
+  | {
+      action: 'refuse'
+      refusal: string
+      remedy: string
+      source?: 'dequeue-reason' | 'failed-check'
+    }
 
 export type MergeQueueWaitState = {
   enqueueSubmitted: boolean
+  enqueueSubmittedAt: number | null
   activeEntryObserved: boolean
   dequeueObservedAt: number | null
   requeuePendingSince: number | null
@@ -77,6 +85,7 @@ function failedMergeQueueStep(
       action: 'refuse',
       refusal: `pull request #${number} failed in the merge queue`,
       remedy: `push a fix if the check failure is real, or re-run ${retry} to requeue the unchanged head if it flaked`,
+      source: 'failed-check',
     },
   }
 }
@@ -99,7 +108,7 @@ function observedMergeQueueState(
   }
   if (
     queue.state === 'dequeued' &&
-    previous.activeEntryObserved &&
+    (previous.activeEntryObserved || (previous.enqueueSubmitted && queue.reason !== 'unknown')) &&
     previous.dequeueObservedAt === null
   ) {
     return { ...previous, dequeueObservedAt: now }
@@ -107,7 +116,24 @@ function observedMergeQueueState(
   return previous
 }
 
-export function interpretMergeQueue(observation: MergeQueueObservation): MergeQueueState {
+function removalReason(
+  observation: MergeQueueObservation,
+  lastEnqueuedAt: string | null,
+  enqueueSubmittedAt: number | null,
+): string {
+  const observedEnqueue = lastEnqueuedAt ? Date.parse(lastEnqueuedAt) : Number.NEGATIVE_INFINITY
+  const submittedEnqueue = enqueueSubmittedAt ?? Number.NEGATIVE_INFINITY
+  const removedAt = observation.removedAt ? Date.parse(observation.removedAt) : null
+  return removedAt !== null && removedAt < Math.max(observedEnqueue, submittedEnqueue)
+    ? 'unknown'
+    : (observation.removalReason ?? 'unknown')
+}
+
+export function interpretMergeQueue(
+  observation: MergeQueueObservation,
+  lastEnqueuedAt: string | null = null,
+  enqueueSubmittedAt: number | null = null,
+): MergeQueueState {
   const pullRequestState = observation.pullRequestState.toUpperCase()
   const entryState = observation.entryState?.toUpperCase() ?? null
   if (pullRequestState === 'MERGED' && observation.mergeCommit) {
@@ -118,10 +144,53 @@ export function interpretMergeQueue(observation: MergeQueueObservation): MergeQu
   if (pullRequestState === 'OPEN' && entryState && ACTIVE_ENTRY_STATES.has(entryState)) {
     return { state: 'queued' }
   }
-  if (pullRequestState === 'OPEN' && entryState === null) return { state: 'dequeued' }
+  if (pullRequestState === 'OPEN' && entryState === null) {
+    return {
+      state: 'dequeued',
+      reason: removalReason(observation, lastEnqueuedAt, enqueueSubmittedAt),
+    }
+  }
   return {
     state: 'unknown',
     detail: `pull request state ${observation.pullRequestState}, queue entry ${observation.entryState ?? 'none'}, merge commit ${observation.mergeCommit ?? 'none'}`,
+  }
+}
+
+function confirmedDequeueReason(
+  queue: MergeQueueState,
+  state: MergeQueueWaitState,
+  now: number,
+): string | null {
+  return queue.state === 'dequeued' &&
+    state.dequeueObservedAt !== null &&
+    now - state.dequeueObservedAt >= MERGE_QUEUE_DEQUEUE_CONFIRM_MS
+    ? queue.reason
+    : null
+}
+
+function dequeueRefusal(
+  number: number,
+  reason: string,
+  landingBranch: string,
+): Extract<MergeQueueAction, { action: 'refuse' }> {
+  const retry = `${PLATFORM_SLUG} pr merge ${number}`
+  if (reason.toLowerCase() === 'failed_checks') {
+    return {
+      action: 'refuse',
+      refusal: `pull request #${number} failed in the merge queue (reason: ${reason})`,
+      remedy: `push a fix if the check failure is real, or re-run ${retry} to requeue the unchanged head if it flaked`,
+      source: 'failed-check',
+    }
+  }
+  const reasonRefusesOnItsOwn = !['unknown', 'merged'].includes(reason.toLowerCase())
+  return {
+    action: 'refuse',
+    refusal: `pull request #${number} was dequeued without a failed check (reason: ${reason})`,
+    remedy:
+      reason.toLowerCase() === 'merge_conflict'
+        ? `merge origin/${landingBranch} into the pull-request branch, push it, then ${retry}`
+        : retry,
+    ...(reasonRefusesOnItsOwn ? { source: 'dequeue-reason' as const } : {}),
   }
 }
 
@@ -131,6 +200,7 @@ export function stepMergeQueueWait(
   queue: MergeQueueState,
   now: number,
   deadline: number,
+  landingBranch: string,
 ): MergeQueueStep {
   let state = observedMergeQueueState(previous, queue, now)
 
@@ -173,25 +243,22 @@ export function stepMergeQueueWait(
   }
   if (
     queue.state === 'dequeued' &&
-    state.activeEntryObserved &&
-    state.dequeueObservedAt !== null &&
-    now - state.dequeueObservedAt >= MERGE_QUEUE_DEQUEUE_CONFIRM_MS
+    (state.activeEntryObserved || (state.enqueueSubmitted && queue.reason !== 'unknown')) &&
+    queue.reason !== 'unknown' &&
+    queue.reason.toLowerCase() !== 'merged'
   ) {
-    return {
-      state,
-      action: {
-        action: 'refuse',
-        refusal: `pull request #${number} left the merge queue without merging`,
-        remedy: `fix the dequeue reason, then ${retry}`,
-      },
-    }
+    return { state, action: dequeueRefusal(number, queue.reason, landingBranch) }
   }
   if (queue.state === 'dequeued' && !state.enqueueSubmitted && !state.activeEntryObserved) {
-    state = { ...state, enqueueSubmitted: true }
+    state = { ...state, enqueueSubmitted: true, enqueueSubmittedAt: now }
     return { state, action: { action: 'enqueue' } }
   }
+  const confirmedReason = confirmedDequeueReason(queue, state, now)
+  if (confirmedReason !== null) {
+    return { state, action: dequeueRefusal(number, confirmedReason, landingBranch) }
+  }
   const dequeueConfirmationRemaining =
-    queue.state === 'dequeued' && state.activeEntryObserved && state.dequeueObservedAt !== null
+    queue.state === 'dequeued' && state.dequeueObservedAt !== null
       ? MERGE_QUEUE_DEQUEUE_CONFIRM_MS - (now - state.dequeueObservedAt)
       : Number.POSITIVE_INFINITY
   return {

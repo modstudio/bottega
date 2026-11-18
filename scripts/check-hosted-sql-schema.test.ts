@@ -37,6 +37,43 @@ describe('hosted SQL schema guard', () => {
     }
   })
 
+  test('splices a resolvable unsafe constant and leaves an unsafe variable unresolved', async () => {
+    const database = new PGlite()
+    await database.waitReady
+    await database.exec('CREATE TABLE run (id uuid PRIMARY KEY)')
+    try {
+      const resolved = extractHostedSqlFromSource({
+        sourceText: `
+          import type { SQL } from 'bun'
+          const COLUMN = 'id'
+          function read(sql: SQL) { return sql\`SELECT \${sql.unsafe(COLUMN)} FROM run\` }
+        `,
+        file: 'resolved-unsafe.ts',
+      })
+      expect(resolved.unresolved).toHaveLength(0)
+      expect(resolved.sites.map((site) => site.sql)).toEqual(['SELECT id FROM run'])
+      await expect(checkHostedSqlSchema({ database, ...resolved })).resolves.toEqual({
+        prepared: 1,
+        skipped: 0,
+      })
+
+      const unresolved = extractHostedSqlFromSource({
+        sourceText: `
+          import type { SQL } from 'bun'
+          function read(sql: SQL, column: string) {
+            return sql\`SELECT \${sql.unsafe(column)} FROM run\`
+          }
+        `,
+        file: 'unresolved-unsafe.ts',
+      })
+      expect(unresolved.sites).toHaveLength(0)
+      expect(unresolved.unresolved).toHaveLength(1)
+      expect(unresolved.unresolved[0]?.expression).toContain('sql.unsafe(column)')
+    } finally {
+      await database.close()
+    }
+  })
+
   test('extracts each statement passed to a real-Postgres fixture executor', async () => {
     const database = new PGlite()
     await database.waitReady

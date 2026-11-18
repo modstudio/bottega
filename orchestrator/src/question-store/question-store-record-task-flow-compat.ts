@@ -5,7 +5,10 @@ import type { Database } from 'bun:sqlite'
 import { PLATFORM_NAME } from '../../../shared/brand.ts'
 import { QUESTION_ID_LIST_LIMIT } from '../record/record-question-contract.ts'
 import type { HostedTaskFlowStageById } from '../record/record-task-flow-contract.ts'
-import { TASK_FLOW_STAGE_STATES } from '../record/record-task-flow-contract.ts'
+import {
+  TASK_FLOW_OPEN_STAGE_STATES,
+  TASK_FLOW_STAGE_STATES,
+} from '../record/record-task-flow-contract.ts'
 import { type ListedItem, stageRow } from '../workflow/task-flow-store-record-stage-row.ts'
 import type {
   TaskFlowInboxQuestionRow,
@@ -15,6 +18,7 @@ import type {
   TaskFlowQuestionCloseRow,
   TaskFlowRulingFileRow,
   TaskFlowRulingRow,
+  TaskFlowStageCursorRow,
   TaskFlowTaskRulingRow,
   TaskFlowWaitingQuestionRow,
 } from '../workflow/task-flow-store-types.ts'
@@ -72,12 +76,13 @@ async function openForStages(questions: QuestionStore, ids: string[]) {
 
 function stageReads(questions: QuestionStore, read: StageRead) {
   return {
-    async listOpenStages(input: {
+    async listStages(input: {
       project?: string
       sessionId?: string
+      states: readonly [TaskFlowStageCursorRow['state'], ...TaskFlowStageCursorRow['state'][]]
     }): Promise<TaskFlowListedStageRow[]> {
       const selector = {
-        states: ['running', 'awaiting-ruling'],
+        states: input.states,
         ...(input.sessionId ? { sessionId: input.sessionId } : {}),
         ...(input.project ? { projectId: read.projectId(input.project) } : {}),
       }
@@ -102,6 +107,13 @@ function stageReads(questions: QuestionStore, read: StageRead) {
         .sort((a, b) => a.updated_at.localeCompare(b.updated_at) || a.id - b.id)
     },
 
+    async listOpenStages(input: {
+      project?: string
+      sessionId?: string
+    }): Promise<TaskFlowListedStageRow[]> {
+      return this.listStages({ ...input, states: TASK_FLOW_OPEN_STAGE_STATES })
+    },
+
     async stageIdentityMap() {
       return (await read.listEvery({ states: TASK_FLOW_STAGE_STATES }))
         .map(({ stage }) => ({ number: stage.number, record_id: stage.id }))
@@ -119,7 +131,7 @@ function stageReads(questions: QuestionStore, read: StageRead) {
             projectId: read.projectId(project),
             sessionId,
             workflow: 'ship-task',
-            states: ['running', 'awaiting-ruling'],
+            states: TASK_FLOW_OPEN_STAGE_STATES,
           },
           project,
         )
@@ -169,7 +181,7 @@ function sessionReads(questions: QuestionStore, read: StageRead) {
     async keylessSessionCursors(project: string | null) {
       const selector = {
         keyless: true,
-        states: ['running', 'awaiting-ruling'],
+        states: TASK_FLOW_OPEN_STAGE_STATES,
         ...(project ? { projectId: read.projectId(project) } : {}),
       }
       const items = project ? await read.list(selector, project) : await read.listEvery(selector)

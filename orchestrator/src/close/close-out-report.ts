@@ -36,6 +36,8 @@ export type CloseOutReportResult = {
 export type CloseOutResult = Omit<CloseOutReportResult, 'outcome' | 'reportOutcome'> & {
   outcome: 'released' | 'forgotten' | 'held' | 'live' | 'absent' | 'failed'
   reportOutcome?: 'kept'
+  cursorCleanupFailure?: string
+  cursorCleanupRemedy?: string
 }
 
 export type HeldConversationCloseOutResult = Omit<

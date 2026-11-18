@@ -1,8 +1,8 @@
 import { initTRPC, TRPCError } from '@trpc/server'
 import { z } from 'zod'
 import { runDetail as orchRun, score as orchScore } from '../../orch.ts'
+import { cachedStrip, view } from '../../orch-view.ts'
 import { runListInput } from '../../run-list-input.ts'
-import { cachedStrip, view } from '../../serve.ts'
 import type { Context } from '../context.ts'
 
 const t = initTRPC.context<Context>().create()

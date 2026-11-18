@@ -7,7 +7,10 @@ import { RECORD_SIGN_IN_REMEDY } from '../../../shared/record-remedies.ts'
 import { db, sessionId } from '../database/db.ts'
 import { RecordApiRequestError, recordApiClient } from '../record/record-api-client.ts'
 import type { RecordTaskFlowClient } from '../record/record-api-client-task-flow.ts'
-import { RECORD_TASK_FLOW_NOT_FOUND_MESSAGE } from '../record/record-task-flow-contract.ts'
+import {
+  isClosedStageState,
+  RECORD_TASK_FLOW_NOT_FOUND_MESSAGE,
+} from '../record/record-task-flow-contract.ts'
 import {
   resolveTaskFlowDestination,
   taskFlowWriteTarget,
@@ -170,8 +173,8 @@ export function workflowCursorProjectScope(
   cwdProject: string | undefined,
   cwd: string,
 ): string | undefined {
-  if (options.all || (options.session && !options.project)) return undefined
   if (options.project) return options.project
+  if (options.all || options.session) return undefined
   if (cwdProject) return cwdProject
   throw new Error(`cannot list workflow cursors from ${cwd}: pass --project, --session or --all`)
 }
@@ -245,7 +248,7 @@ export async function selectByHandle(
       `workflow cursor ${cursor} does not exist in project ${project}; cursor handles changed to per-project numbers, so list cursors again with ${workflowCursorListCommand}; a local handle need not exist in the hosted flow, so pass the task key as the workflow argument key (--arg key=<KEY> on the CLI, args.key over MCP) to read it`,
     )
   validateIdentity(row, identity)
-  if (!includeTerminal && (row.state === 'done' || row.state === 'abandoned'))
+  if (!includeTerminal && isClosedStageState(row.state))
     throw new Error(
       `cursor ${row.id} is ${row.state}; a new run is opened by fetching step 1 without a handle`,
     )

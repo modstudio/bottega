@@ -464,6 +464,8 @@ describe('hosted-only task safety', () => {
     let pruned = false
     await expect(
       closeThenPrune('DEV-1', {}, false, undefined, UNATTRIBUTED, 'production', {
+        project: () => PLATFORM_SLUG,
+        listCursors: async () => [],
         close: async () => {
           throw new Error('hosted close failed')
         },

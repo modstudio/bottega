@@ -10,6 +10,7 @@ import { catalogueVersionRecordId, workflowVersionRecordId } from '../../test/fi
 import { db } from '../database/db.ts'
 import { CONTEXT_FACTS_PORTS_KEY, type ContextFactsPorts } from '../doc/context-write-adapter.ts'
 import { upsertProject } from '../project/projects.ts'
+import type { TASK_FLOW_OPEN_STAGE_STATES } from '../record/record-task-flow-contract.ts'
 import { workflowTextAttachmentToken } from '../workflow/workflow-text.ts'
 import { showWorkflowText } from '../workflow/workflow-text-copy.ts'
 import { closeOutSession, formatSessionCloseOut } from './session-close-out.ts'
@@ -48,7 +49,7 @@ function attachRunToProject(runId: string, projectId: string, project: string): 
 
 function addCursor(
   session: string,
-  state: 'running' | 'awaiting-ruling',
+  state: (typeof TASK_FLOW_OPEN_STAGE_STATES)[number],
 ): {
   recordId: string
   number: number

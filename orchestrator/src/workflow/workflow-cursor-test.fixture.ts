@@ -1,12 +1,14 @@
 import type { Database } from 'bun:sqlite'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { testDatabaseFixture } from '../database/test-database.fixture.ts'
+import { isClosedStageState, isOpenStageState } from '../record/record-task-flow-contract.ts'
 import type { LiveCursorAutonomy } from './autonomy.ts'
 import {
   productionStepCatalogue,
   promoteStepCatalogueLocal,
   setStepCatalogueLocal,
 } from './step-catalogue.ts'
+import { taskFlowReadStore } from './task-flow-store.ts'
 import {
   abandonSelectedWorkflowCursorForClose,
   awaitWorkflowRuling,
@@ -29,6 +31,7 @@ import {
 import { seedWorkflows } from './workflow-seeds.ts'
 import type { WorkflowSelfRulingInput } from './workflow-self-ruling-mutation.ts'
 import { installWorkflowStoreFixture } from './workflow-store.fixture.ts'
+import type { TaskCursorClaimPorts } from './workflow-task-claim.ts'
 
 export const database = testDatabaseFixture((d) => {
   seedWorkflows(d)
@@ -55,6 +58,38 @@ export const matchingCheckout = {
   headIsTipOrAncestor: true,
   landingBranch: 'main',
   ...{ project: 'fixture', branch: args.branch, checkoutPath: '/tmp/work' },
+}
+
+export function admissionEnforcingTaskClaimPorts(
+  database: Database,
+  options: {
+    action?: 'taken' | 'renewed' | 'taken-over'
+    takes?: string[]
+    releases?: string[]
+  } = {},
+): TaskCursorClaimPorts {
+  return {
+    take: async ({ project, key, session }) => {
+      const ownsOpenStage = (await taskFlowReadStore(database).openStagesForSession(session)).some(
+        (stage) =>
+          stage.project === project && stage.workflow_key === key && isOpenStageState(stage.state),
+      )
+      if (!ownsOpenStage)
+        throw new Error(
+          `fixture hosted admission: no running or awaiting-ruling stage keyed ${key} for session ${session}`,
+        )
+      options.takes?.push(key)
+      return {
+        action: options.action ?? 'taken',
+        recordId: 'admission-enforcing-claim',
+        number: 1,
+      } as never
+    },
+    release: async ({ key }) => {
+      options.releases?.push(key)
+      return { released: 1 }
+    },
+  }
 }
 
 export async function prepareOperatorRulingCursor(d: Database, session: string | null) {
@@ -144,7 +179,7 @@ export function installEvidence(
           AND ${key ? 'instance_id=?' : 'session_id=?'} ORDER BY number DESC`,
     )
     .get(project, slug, mode, key, instance)
-  if (!row || row.state === 'done' || row.state === 'abandoned') return {}
+  if (!row || isClosedStageState(row.state)) return {}
   const gate =
     d
       .query<{ number: number }, []>(

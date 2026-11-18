@@ -15,8 +15,8 @@ import {
   RUN_CHANGE_CURSOR_SETTING,
 } from './ingest/runs.ts'
 import type { claimWaitingNotifications } from './orch.ts'
+import { clearOrchCache } from './orch-view.ts'
 import { listOpenRulings } from './rulings.ts'
-import { clearOrchCache } from './serve.ts'
 
 beforeAll(resetFixtureStore)
 afterEach(clearOrchCache)

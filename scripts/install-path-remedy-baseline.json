@@ -2,7 +2,7 @@
   "files": {
     "orchestrator/src/canon/canon.ts": 1,
     "orchestrator/src/dashboard-capability.ts": 1,
-    "hub/src/orch.ts": 1,
+    "hub/src/orch-project-register.ts": 1,
     "orchestrator/src/database/machine-update-mover.ts": 1,
     "orchestrator/src/database/machine-update.ts": 3,
     "orchestrator/src/pull-request/pr-post-landing.ts": 3,

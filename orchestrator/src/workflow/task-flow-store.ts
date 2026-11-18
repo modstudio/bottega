@@ -2,6 +2,7 @@
 /** The task-flow persistence port and its resolver. */
 
 import type { Database } from 'bun:sqlite'
+import type { TaskFlowStageState } from '../record/record-task-flow-contract.ts'
 import type {
   TaskFlowIntentResult,
   TaskFlowLiveIntent,
@@ -27,6 +28,7 @@ import type {
   TaskFlowObligationRow,
   TaskFlowOpenObligationRow,
   TaskFlowOpenSessionStageRow,
+  TaskFlowOpenStageWorktreeRow,
   TaskFlowOverturnRulingRow,
   TaskFlowPendingTaskLinkRow,
   TaskFlowProjectionRow,
@@ -39,8 +41,8 @@ import type {
   TaskFlowTextRow,
   TaskFlowUncopiedTextRow,
   TaskFlowWaitingQuestionRow,
-  WorkflowCursorInsert,
 } from './task-flow-store-types.ts'
+import type { WorkflowCursorHandoffLink } from './workflow-cursor-transition.ts'
 
 export type {
   TaskFlowCloseOutStageRow,
@@ -71,7 +73,6 @@ interface TaskFlowQueries {
     key: string
     exceptRecordId: string | null
   }): void
-  insertStage(row: WorkflowCursorInsert, conflict: 'local-identity' | 'hosted-record'): string
   openStageForTask(taskRecordId: string): TaskFlowStageCursorRow | null
   cacheAdoptedFlow(input: {
     project: string
@@ -108,13 +109,14 @@ interface TaskFlowQueries {
     sessionId: string
   }): Array<{ mode_slug: string }>
   listOpenStages(input: { project?: string; sessionId?: string }): TaskFlowListedStageRow[]
+  listStages(input: {
+    project?: string
+    sessionId?: string
+    states: readonly [TaskFlowStageState, ...TaskFlowStageState[]]
+  }): TaskFlowListedStageRow[]
   keyedStageHistory(input: { since: string }): TaskFlowStageCursorRow[]
-  openStageWorktrees(): Array<{
-    number: number
-    workflow: string
-    project: string
-    args: string
-  }>
+  /** Reads open cursor worktree rows ordered by project, then cursor number. */
+  openStageWorktrees(): TaskFlowOpenStageWorktreeRow[]
   activeStageAutonomy(project: string, taskRecordId: string): Array<{ autonomy: string | null }>
   stageIdentityMap(): Array<{ number: number; record_id: string }>
   stageHoldingTaskKey(input: {
@@ -211,6 +213,29 @@ export interface TaskFlowLocalStore extends Pick<TaskFlowQueries, TaskFlowWriteM
 
 /** Async task-flow reads, implemented locally now and by the hosted record in the next slice. */
 export interface TaskFlowReadStore extends AsyncTaskFlowReads {}
+
+/** Reads complete handoff lineages from authoritative stage rows, including closed ancestors. */
+export async function taskFlowHandoffLinks(
+  store: TaskFlowReadStore,
+  terminalRecordIds: readonly string[],
+): Promise<WorkflowCursorHandoffLink[]> {
+  const links: WorkflowCursorHandoffLink[] = []
+  const visited = new Set<string>()
+  const pending = [...terminalRecordIds]
+  while (pending.length) {
+    const recordId = pending.pop()!
+    if (visited.has(recordId)) continue
+    visited.add(recordId)
+    const row = await store.stageByRecordId(recordId)
+    if (!row) continue
+    links.push({
+      record_id: row.record_id,
+      handed_off_from_record_id: row.handed_off_from_record_id,
+    })
+    if (row.handed_off_from_record_id) pending.push(row.handed_off_from_record_id)
+  }
+  return links
+}
 
 /** Resolves task-flow writes and transaction-bound reads to local SQLite. */
 export function taskFlowLocalStore(database: Database): TaskFlowLocalStore {

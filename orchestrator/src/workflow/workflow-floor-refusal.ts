@@ -2,6 +2,7 @@
 /** Names the failed floor condition and the action that can establish it. */
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { refusal, renderRefusal } from '../../../shared/refusal.ts'
 
 type CommandExitBindingEvidence = {
   id: number
@@ -25,9 +26,14 @@ export function gateFloorRefusal(tree: {
   if (tree.commit)
     return `floor command-exit is unmet: no passing gate record for ${tree.project} commit ${tree.commit}; run \`${PLATFORM_SLUG} gate run\` in the tree at commit ${tree.commit}, then pass \`--gate <gate execution id>\``
   const condition = tree.worktree
-    ? `the recorded cursor worktree ${tree.worktree} could not be resolved to a commit`
+    ? `the recorded cursor worktree ${tree.worktree} was removed or could not be resolved to a commit`
     : 'the cursor has no recorded worktree to resolve to a commit'
-  return `floor command-exit is unmet: ${condition}; pass \`--arg worktree=<tree>\` naming an existing tree`
+  return renderRefusal(
+    refusal(`floor command-exit is unmet: ${condition}`, {
+      kind: 'edit',
+      text: 'pass `--arg worktree=<tree>` naming an existing tree',
+    }),
+  )
 }
 
 export function commandExitBindingRefusal(

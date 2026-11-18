@@ -1,4 +1,6 @@
-export type CursorState = 'running' | 'awaiting-ruling' | 'done' | 'abandoned'
+import { isClosedStageState, type TaskFlowStageState } from '../record/record-task-flow-contract.ts'
+
+export type CursorState = TaskFlowStageState
 
 export type CursorValue = {
   ordinal: number
@@ -16,6 +18,32 @@ export type CursorTransition =
   | { action: 'refuse'; reason: 'compose-first' | 'ahead' | 'state' | 'not-started' }
 
 export type CursorStartDecision = 'insert' | 'reuse' | 'retire'
+
+export type WorkflowCursorHandoffLink = {
+  record_id: string
+  handed_off_from_record_id: string | null
+}
+
+export function resolveWorkflowCursorSuccessor(
+  recordId: string | null,
+  rows: readonly WorkflowCursorHandoffLink[],
+): string | null {
+  if (!recordId) return null
+  const successors = new Map(
+    rows
+      .filter((row) => row.handed_off_from_record_id !== null)
+      .map((row) => [row.handed_off_from_record_id!, row.record_id]),
+  )
+  let current = recordId
+  const visited = new Set<string>()
+  while (!visited.has(current)) {
+    visited.add(current)
+    const successor = successors.get(current)
+    if (!successor) break
+    current = successor
+  }
+  return current
+}
 
 export const cursorOwnerVerbs = [
   'serve',
@@ -214,7 +242,7 @@ export const cursorValue = (
 
 /** Decide whether starting a cursor needs a new identity slot. */
 export function decideCursorStart(state: CursorState | null): CursorStartDecision {
-  if (state === 'done' || state === 'abandoned') return 'retire'
+  if (state && isClosedStageState(state)) return 'retire'
   return state ? 'reuse' : 'insert'
 }
 
@@ -223,8 +251,7 @@ export function decideCursorTransition(
   cursor: CursorValue | null,
   request: CursorTransitionRequest,
 ): CursorTransition {
-  if (cursor?.state === 'done' || cursor?.state === 'abandoned')
-    return { action: 'refuse', reason: 'state' }
+  if (cursor && isClosedStageState(cursor.state)) return { action: 'refuse', reason: 'state' }
   if (request.kind === 'serve') {
     if (!cursor) {
       return request.ordinal === 0

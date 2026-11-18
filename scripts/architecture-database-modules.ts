@@ -49,6 +49,7 @@ export const databaseModules: ArchitectureModule[] = [
     '../../../shared/bounded-fetch.ts',
     '../../../shared/bounded-process.ts',
     '../../../shared/call-budgets.ts',
+    '../../../shared/distribution-manifest.ts',
     '../../../shared/install-root.ts',
     '../../../shared/release-artifacts.ts',
     '../../../shared/state-directory.ts',
@@ -85,7 +86,10 @@ export const databaseModules: ArchitectureModule[] = [
     './write-probe.ts',
   ]),
   module('orchestrator/src/database/tolerant-delete.ts', ['bun:sqlite']),
-  module('orchestrator/src/database/task-flow-migration-preflight.ts', ['bun:sqlite']),
+  module('orchestrator/src/database/task-flow-migration-preflight.ts', [
+    'bun:sqlite',
+    '../record/record-task-flow-contract.ts',
+  ]),
   module('orchestrator/src/database/machine-update-mover.ts', [
     'node:path',
     '../../../shared/brand.ts',

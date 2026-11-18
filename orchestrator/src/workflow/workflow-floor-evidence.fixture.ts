@@ -21,7 +21,6 @@ export const unlinkedIdentity = identityOf('DEV-977', null, 'DEV-977-work')
 export const planningIdentity = identityOf('', null, null)
 export const matchingCheckout = {
   project: 'fixture',
-  branch: 'DEV-977-work',
   checkoutPath: '/fixture/work',
   headIsTipOrAncestor: true,
   landingBranch: 'main',
