@@ -4,8 +4,8 @@ import { testDatabaseFixture } from '../database/test-database.fixture.ts'
 import { projects } from '../project/projects.ts'
 import {
   promoteStepCatalogueLocal,
-  setStepCatalogueLocal,
   type StepCatalogueDefinition,
+  setStepCatalogueLocal,
 } from './step-catalogue.ts'
 import { composeWorkflowWithCursor } from './workflow-cursor.ts'
 import { checkResolvedWorkflowRendering } from './workflow-render-check-store.ts'
