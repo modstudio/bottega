@@ -1,45 +1,19 @@
+import '../orchestrator/test/preload.ts'
 import '../hub/test/preload.ts'
-import { beforeEach, expect, mock, test } from 'bun:test'
+import { beforeEach, expect, test } from 'bun:test'
 import { projectRegisterReader } from '../hub/src/project-register-reader.ts'
 import { resetFixtureStore } from '../hub/test/run-fixtures.ts'
 import { taskReader } from '../orchestrator/src/workflow/task-read-port.ts'
+import { addProject } from '../orchestrator/test/fixtures/offline-branch-landing.ts'
 import { OrchProjectListSchema } from '../shared/orch-contract.ts'
 import { installCliTaskReader } from './task-read-adapter.ts'
 
-mock.module('../orchestrator/src/project/project-read.ts', () => ({
-  projects: () => [
-    {
-      recordId: '00000000-0000-4000-8000-000000000245',
-      name: 'alpha',
-      path: '/fixtures/repos/alpha',
-      stack: 'typescript',
-      canon: true,
-      retiredAt: null,
-      settings: {},
-    },
-  ],
-}))
+let projectRecordId: string
 
-mock.module('../orchestrator/src/project/project-list-json.ts', () => ({
-  listedProjectJson: (project: {
-    recordId: string
-    name: string
-    path: string
-    stack: string | null
-    canon: boolean
-    settings: Record<string, unknown>
-  }) => ({
-    record_id: project.recordId,
-    name: project.name,
-    path: project.path,
-    stack: project.stack,
-    canon: project.canon,
-    repository: true,
-    settings: project.settings,
-  }),
-}))
-
-beforeEach(resetFixtureStore)
+beforeEach(() => {
+  resetFixtureStore()
+  projectRecordId = addProject('alpha', '/fixtures/repos/alpha')
+})
 
 test('installing the CLI adapter leaves hub unloaded until the first read', () => {
   const hubTaskModule = require.resolve('../hub/src/task.ts')
@@ -86,7 +60,7 @@ test('the installed register reader returns schema-valid registered projects', (
 
   expect(OrchProjectListSchema.parse(rows)).toContainEqual(
     expect.objectContaining({
-      record_id: '00000000-0000-4000-8000-000000000245',
+      record_id: projectRecordId,
       name: 'alpha',
     }),
   )

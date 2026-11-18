@@ -8,9 +8,17 @@
  */
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
+import { gitAt } from '../shared/git.ts'
+import { nulPathListArgs, splitNulPaths } from '../shared/git-path-list.ts'
+import { refusal, renderRefusal } from '../shared/refusal.ts'
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url)).replace(/\/$/, '')
 const STATIC_TEST_ROOTS = ['.githooks', 'hub', 'scripts', 'shared']
+
+const MOCK_MODULE_BASELINE = {
+  'hub/src/trpc/router.test.ts': 'partial hub/src/orch.ts stub; replace in a separate task',
+  'shared/bounded-process.test.ts': 'partial execa stub; replace in a separate task',
+} as const
 
 type StaticViolation = { file: string; line: number; reason: string }
 
@@ -20,6 +28,48 @@ function testFilesUnder(path: string): string[] {
     .filter((entry) => entry.isFile() && /\.test\.[cm]?[jt]sx?$/.test(entry.name))
     .map((entry) => `${entry.parentPath}/${entry.name}`)
     .filter((file) => !file.includes('/node_modules/'))
+}
+
+function trackedTestFiles(): string[] {
+  const listed = gitAt(ROOT, nulPathListArgs(['ls-files']))
+  if (listed.code !== 0) {
+    throw new Error(
+      renderRefusal(
+        refusal(`could not list tracked test files: ${listed.stderr.trim()}`, {
+          kind: 'edit',
+          text: 'Restore git access, then rerun bun scripts/check-test-spawns.ts',
+        }),
+      ),
+    )
+  }
+  return splitNulPaths(listed.stdout).filter((file) => file.endsWith('.test.ts'))
+}
+
+function mockModuleViolations(): StaticViolation[] {
+  const callsByFile = new Map<string, number[]>()
+  for (const file of trackedTestFiles()) {
+    const calls = readFileSync(`${ROOT}/${file}`, 'utf8')
+      .split('\n')
+      .flatMap((line, index) => (/\bmock\.module\s*\(/.test(line) ? [index + 1] : []))
+    if (calls.length > 0) callsByFile.set(file, calls)
+  }
+
+  const remedy = 'mock.module is process-global; inject a seam, or seed a real fixture'
+  const violations: StaticViolation[] = []
+  for (const [file, lines] of callsByFile) {
+    const allowed = file in MOCK_MODULE_BASELINE ? 1 : 0
+    for (const line of lines.slice(allowed)) violations.push({ file, line, reason: remedy })
+  }
+  for (const file of Object.keys(MOCK_MODULE_BASELINE)) {
+    if (!callsByFile.has(file)) {
+      violations.push({
+        file,
+        line: 1,
+        reason: 'stale mock.module baseline entry; remove it because the baseline may only shrink',
+      })
+    }
+  }
+  return violations
 }
 
 function staticViolations(): StaticViolation[] {
@@ -49,7 +99,7 @@ function staticViolations(): StaticViolation[] {
   })
 }
 
-const staticFailures = staticViolations()
+const staticFailures = [...staticViolations(), ...mockModuleViolations()]
 for (const violation of staticFailures) {
   console.error(`${violation.file}:${violation.line}: ${violation.reason}`)
 }
