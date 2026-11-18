@@ -45,17 +45,6 @@ export function recordCallerToken(environment: NodeJS.ProcessEnv = process.env):
   return callerToken(scoped, environment[CALLER_ENVIRONMENT_KEY])
 }
 
-export function recordCallerHeaders(headers?: HeadersInit): Headers {
-  const result = new Headers(headers)
-  result.set(CALLER_HEADER_NAME, recordCallerToken())
-  return result
-}
-
-export function withRecordCallerHeader(transport: typeof fetch): typeof fetch {
-  return ((input, init) =>
-    transport(input, { ...init, headers: recordCallerHeaders(init?.headers) })) as typeof fetch
-}
-
 export function withRecordCaller<T>(value: string, work: () => T): T {
   return callerScope.run(value, work)
 }

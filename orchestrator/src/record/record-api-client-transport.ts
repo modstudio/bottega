@@ -5,7 +5,7 @@ import { hostedApiFetch } from '../../../shared/bounded-fetch.ts'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { scheduleHostedCallObservation } from '../../../shared/hosted-call-observation.ts'
 import { runningInstallationIdentity } from '../../../shared/install-root.ts'
-import { recordCallerHeaders } from '../../../shared/record-caller.ts'
+import { recordRequestHeaders } from '../../../shared/record-request-headers.ts'
 import {
   classifyHostedTransportError,
   type HostedCallOutcomeRecorder,
@@ -81,7 +81,7 @@ export async function recordTransport(
   const startedAt = performance.now()
   const userAgent = identityResolver ? userAgentFrom(identityResolver) : runningUserAgent()
   try {
-    const headers = recordCallerHeaders(init.headers)
+    const headers = recordRequestHeaders({ headers: init.headers })
     headers.set('user-agent', userAgent)
     const response = await transport(`${baseUrl}${path}`, { ...init, headers })
     scheduleHostedCallObservation(recorder, {

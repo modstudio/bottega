@@ -2,6 +2,7 @@ import {
   RECORD_PERSONAL_SPACE_REMEDY,
   RECORD_SIGN_IN_REMEDY,
 } from '../../shared/record-remedies.ts'
+import { recordRequestHeaders } from '../../shared/record-request-headers.ts'
 import { readRecordSessionTokenAsync } from '../../shared/record-session.ts'
 import { createRecordClient, requiredRecordApiUrl } from './record-client.ts'
 import type { RecordFetch } from './record-client-options.ts'
@@ -20,7 +21,7 @@ export async function personalRecordSpace(
   if (!token) throw new Error(RECORD_SIGN_IN_REMEDY)
   const identity = await createRecordClient({
     baseUrl: requiredRecordApiUrl(),
-    headers: { authorization: `Bearer ${token}` },
+    headers: recordRequestHeaders({ bearerToken: token }),
     fetch: options.fetch,
     requestDeadlineMs: options.requestDeadlineMs,
   }).whoami()

@@ -27,9 +27,9 @@ import {
   OrchStateSchema,
 } from '../../shared/orch-contract.ts'
 import { resolveRecordApiUrl } from '../../shared/record-api-url.ts'
-import { recordCallerHeaders } from '../../shared/record-caller.ts'
 import { RecordProjectsSchema } from '../../shared/record-project-contract.ts'
 import { hostedRequestSafetyStatement } from '../../shared/record-remedies.ts'
+import { recordRequestHeaders } from '../../shared/record-request-headers.ts'
 import type { RunDetailReviewLens } from '../../shared/review-presentation.ts'
 import { SubjectOutputSchema } from '../../shared/subjects.ts'
 import {
@@ -530,7 +530,7 @@ async function request<T>(
 ): Promise<T> {
   const deadlineMs = options.requestDeadlineMs ?? RECORD_REQUEST_DEADLINE_MS
   const controller = new AbortController()
-  const headers = recordCallerHeaders(init.headers)
+  const headers = recordRequestHeaders({ headers: init.headers })
   if (options.headers.cookie) headers.set('Cookie', options.headers.cookie)
   if (options.headers.authorization) headers.set('Authorization', options.headers.authorization)
   headers.set('user-agent', `${PLATFORM_SLUG}/${packageMetadata.version}`)
@@ -643,7 +643,10 @@ function reorderRecordDocs(
 ) {
   return request(options, '/v1/docs/order', docOrderResultSchema, {
     method: 'PUT',
-    headers: { 'content-type': 'application/json', 'x-record-space': destinationSpaceId },
+    headers: recordRequestHeaders({
+      destinationSpaceId,
+      headers: { 'content-type': 'application/json' },
+    }),
     body: JSON.stringify(input),
   })
 }
@@ -655,10 +658,10 @@ function putRecordDoc(
 ) {
   return request(options, '/v1/docs', docWriteResultSchema, {
     method: 'PUT',
-    headers: {
-      'content-type': 'application/json',
-      'x-record-space': destinationSpaceId,
-    },
+    headers: recordRequestHeaders({
+      destinationSpaceId,
+      headers: { 'content-type': 'application/json' },
+    }),
     body: JSON.stringify(input),
   })
 }
@@ -680,7 +683,7 @@ async function recordSubjects(
         cursor,
       }),
       subjectsSchema,
-      { headers: { 'x-record-space': destinationSpaceId } },
+      { headers: recordRequestHeaders({ destinationSpaceId }) },
     )
     items.push(...page.items)
     cursor = page.nextCursor ?? undefined
@@ -837,7 +840,7 @@ function recordPublicDocsClient(options: RecordClientOptions) {
 
 /** Addresses one request to a space the caller belongs to instead of the active space. */
 function spaceDestination(spaceId?: string): RequestInit | undefined {
-  return spaceId ? { headers: { 'x-record-space': spaceId } } : undefined
+  return spaceId ? { headers: recordRequestHeaders({ destinationSpaceId: spaceId }) } : undefined
 }
 
 function recordDocReadClient(options: RecordClientOptions) {
@@ -948,10 +951,10 @@ export function createRecordClient(options: RecordClientOptions) {
     ) =>
       request(options, `/v1/docs/${encodeURIComponent(id)}`, deletedResultSchema, {
         method: 'DELETE',
-        headers: {
-          'content-type': 'application/json',
-          'x-record-space': destinationSpaceId,
-        },
+        headers: recordRequestHeaders({
+          destinationSpaceId,
+          headers: { 'content-type': 'application/json' },
+        }),
         body: JSON.stringify(input),
       }),
     ...recordConfigClient(options),

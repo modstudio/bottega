@@ -1,6 +1,5 @@
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { recordNoDestinationWrite } from '../../shared/record/no-destination-write-store.ts'
-import { withRecordCallerHeader } from '../../shared/record-caller.ts'
 import { noDestinationWriteCause } from '../../shared/record-no-destination-write-contract.ts'
 import type { NoDestinationWriteTelemetry } from '../../shared/record-no-destination-write-counter.ts'
 import {
@@ -8,6 +7,7 @@ import {
   RECORD_SIGN_IN_REMEDY,
   recordWriteSpaceRefusal,
 } from '../../shared/record-remedies.ts'
+import { recordRequestHeaders } from '../../shared/record-request-headers.ts'
 import {
   parseRecordSpaceMemberships,
   type RecordSpaceMembership,
@@ -122,8 +122,8 @@ export async function taskSpaceIdentity(
   if (!authorization) return { kind: 'unauthenticated' }
   let response: Response
   try {
-    response = await withRecordCallerHeader(fetchImpl)(`${base.replace(/\/$/, '')}/v1/whoami`, {
-      headers: { authorization },
+    response = await fetchImpl(`${base.replace(/\/$/, '')}/v1/whoami`, {
+      headers: recordRequestHeaders({ headers: { authorization } }),
     })
   } catch (cause) {
     return { kind: 'unavailable', cause: cause instanceof Error ? cause.name : 'Error' }
