@@ -109,6 +109,50 @@ describe('live outcome derivation', () => {
     ).toEqual({ status: 'ok', failureKind: null, error: null })
   })
 
+  test('run 36261 fallback progress at the wall bound is a timeout', () => {
+    const output = JSON.stringify({
+      status: 'done',
+      summary:
+        "The affected run required a collection call and is still executing under the same supervised run. I'm continuing to collect it rather than starting a duplicate test execution.",
+      files_changed: null,
+      tests: null,
+    })
+    const derived = deriveLiveOutcome({
+      ...base,
+      contractStatus: 'done',
+      output,
+      replyFilePresent: false,
+      timedOut: true,
+      exitCode: 143,
+      signal: 'SIGTERM',
+    })
+
+    expect({ ...decideOutcome(derived.inputs), error: derived.error }).toEqual({
+      status: 'failed',
+      failureKind: 'timeout',
+      error: 'no reply within 45m; worker was killed',
+    })
+    expect(derived.inputs.completedReplyAtTimeout).toBe(false)
+  })
+
+  test('a non-timeout writer progress fallback is premature-final', () => {
+    const output = JSON.stringify({
+      status: 'done',
+      summary: "The checks have not yet finished; then I'll fix the failure.",
+    })
+    const derived = deriveLiveOutcome({
+      ...base,
+      contractStatus: 'done',
+      output,
+      replyFilePresent: false,
+    })
+
+    expect(decideOutcome(derived.inputs)).toEqual({
+      status: 'failed',
+      failureKind: 'premature-final',
+    })
+  })
+
   test('a non-answer with exit code zero is a failure', () => {
     expect(outcome({ writesJob: false, output: '[API Error: empty response]' })).toEqual({
       status: 'failed',

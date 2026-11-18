@@ -711,10 +711,12 @@ export const runLifecycleModules: ArchitectureModule[] = [
     '../../shared/secret-shaped.ts',
     './contract/contract-reply.ts',
     './failure/failure.ts',
+    './fallback-completion.ts',
     './outcome.ts',
     './run/run-process.ts',
     './transport/transport.ts',
   ]),
+  module('orchestrator/src/fallback-completion.ts', ['./evidence/premature-final.ts']),
   module('orchestrator/src/run/run-terminal.ts', [
     '../../../shared/brand.ts',
     '../../../shared/record-id.ts',

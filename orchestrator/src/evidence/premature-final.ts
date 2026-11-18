@@ -1,6 +1,6 @@
 // concern: premature-final
 
-const OPENING_PROGRESS_VOCABULARY =
+export const OPENING_PROGRESS_VOCABULARY =
   /\b(?:starting|beginning|gathering|reading|review not started|before (?:writing|drafting|answering)|i will|i'll|next i)\b/i
 
 export type PrematureFinalReplyShape = 'reader' | 'review' | 'done-writer' | 'other'
