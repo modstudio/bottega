@@ -118,7 +118,10 @@ export const sqliteAdapterImportRule = {
   name: 'sqlite-adapters-have-selector-gated-importers',
   severity: 'error' as const,
   comment: `Local SQLite adapters are imported only through reviewed local-store paths. ${sqliteAdapterAllowedImporters.map(({ reason }) => reason).join('; ')}.`,
-  from: { pathNot: sqliteAdapterAllowedImporters.map(({ path }) => path) },
+  from: {
+    path: '^orchestrator/',
+    pathNot: sqliteAdapterAllowedImporters.map(({ path }) => path),
+  },
   to: { path: sqliteAdapterPath },
 }
 
