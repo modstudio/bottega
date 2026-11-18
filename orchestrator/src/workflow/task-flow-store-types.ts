@@ -294,7 +294,7 @@ export function workflowStageInsert(input: {
   mode: string
   workflowKey: string
   instanceId: string
-  sessionId: TaskFlowIntentInput<'compose'>['stageInsert']['sessionId']
+  sessionId: NonNullable<TaskFlowIntentInput<'compose'>['stageInsert']>['sessionId']
   workflowVersionId: string
   catalogueVersionId: string
   arguments: Record<string, string>
