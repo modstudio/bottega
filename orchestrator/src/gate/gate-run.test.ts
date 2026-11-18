@@ -91,7 +91,7 @@ test('inserts a finished dirty-tree gate without attributing it to HEAD', async 
       }
     },
   })
-  expect(result).toEqual({ number: 1, exitCode: 0 })
+  expect(result).toEqual({ number: 1, exitCode: 0, commit: null })
   expect(chunks).toEqual(['ok\n'])
   expect(
     d
