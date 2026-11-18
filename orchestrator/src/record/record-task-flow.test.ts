@@ -6,9 +6,9 @@ import { requestTenant } from './record-api-tenant.ts'
 import type { RecordIdentity } from './record-auth.ts'
 import { recordRequestReadKind } from './record-keyed-read.ts'
 import {
-  readRecordTaskFlowTransaction,
   readRecordTaskFlowPresenceTransaction,
   readRecordTaskFlowTextTransaction,
+  readRecordTaskFlowTransaction,
 } from './record-task-flow.ts'
 
 const SPACE = '01990000-0000-7000-8000-000000002416'
@@ -203,10 +203,10 @@ test('task-flow route tenant finds a task UUID in a non-active member space', as
     user: { id: USER, email: 'member@example.test' },
     activeSpaceId: SPACE,
     personalSpaceId: SECOND.space,
-    memberships: [SPACE, SECOND.space].map((space_id) => ({
-      space_id,
+    memberships: [SPACE, SECOND.space].map((spaceId) => ({
+      space_id: spaceId,
       name: 'Member space',
-      slug: space_id,
+      slug: spaceId,
       role: 'member',
       permission: 'write',
     })),
