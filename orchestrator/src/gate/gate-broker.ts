@@ -532,13 +532,11 @@ async function runPreparedGate(input: {
               '-z',
               '--untracked-files=all',
             ])
+      const observedHeadCommit =
+        gitPaths(input.prepared.worktree, ['rev-parse', '--verify', 'HEAD^{commit}'])[0]?.trim() ??
+        ''
       const headCommit = decideGateHeadCommit({
-        headCommit:
-          gitPaths(input.prepared.worktree, [
-            'rev-parse',
-            '--verify',
-            'HEAD^{commit}',
-          ])[0]?.trim() ?? '',
+        headCommit: observedHeadCommit,
         porcelainPaths,
       })
       db()
@@ -561,7 +559,6 @@ async function runPreparedGate(input: {
         baseCommit: input.prepared.baseCommit,
       })
       try {
-        input.record(`checked tree ${gateIndex.treeId} (HEAD ${headCommit})\n`)
         await runGateProcess({
           command: input.prepared.command,
           worktree: input.prepared.worktree,
@@ -574,6 +571,7 @@ async function runPreparedGate(input: {
           record: input.record,
           stop: input.stop,
         })
+        input.record(`checked tree ${gateIndex.treeId} (HEAD ${observedHeadCommit})\n`)
       } finally {
         gateIndex.remove()
       }
