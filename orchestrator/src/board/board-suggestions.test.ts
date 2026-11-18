@@ -124,6 +124,30 @@ test('worker suggestion can be declined without reporting an author withdrawal',
   ).toEqual([])
 })
 
+test('worker suggestion posts anew after an identical suggestion is withdrawn or expired', () => {
+  const clock = Date.now() + 225_000
+  const run = runFixture('duplicate-architect')
+  const withdrawnInput = { title: 'Try again', body: 'Withdrawn suggestions are not duplicates' }
+  const withdrawn = suggestBoardPost(run.id, withdrawnInput, clock)
+  declineBoardSuggestion(
+    withdrawn.recordId,
+    { CLAUDE_CODE_SESSION_ID: 'duplicate-architect' },
+    clock + 1,
+  )
+  const afterWithdrawal = suggestBoardPost(run.id, withdrawnInput, clock + 2)
+  expect(afterWithdrawal.dropped).toBeFalse()
+  expect(afterWithdrawal.recordId).not.toBe(withdrawn.recordId)
+
+  const expiredInput = { title: 'Try later', body: 'Expired suggestions are not duplicates' }
+  const expired = suggestBoardPost(run.id, expiredInput, clock + 3)
+  db()
+    .query('UPDATE board_message SET expires_at=? WHERE record_id=?')
+    .run(new Date(clock + 3).toISOString(), expired.recordId)
+  const afterExpiry = suggestBoardPost(run.id, expiredInput, clock + 4)
+  expect(afterExpiry.dropped).toBeFalse()
+  expect(afterExpiry.recordId).not.toBe(expired.recordId)
+})
+
 test('refused suggestion post leaves the suggestion live', () => {
   const clock = Date.now() + 250_000
   const run = runFixture('rollback-architect')

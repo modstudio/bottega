@@ -1,5 +1,9 @@
 // concern: board-suggestions
 import { BOARD_REQUEST_DEFAULT_EXPIRY_MS } from '../../../shared/board-duration.ts'
+import {
+  type BoardWriteDropped,
+  localBoardWriteResult,
+} from '../../../shared/board-write-result.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { db, writableDb, writeTransaction } from '../database/db.ts'
 import { nextEntityNumber } from '../database/entity-number.ts'
@@ -12,6 +16,7 @@ import {
   postDecision,
 } from './board-policy.ts'
 import { boardActor, type PostNoticeInput, postNoticeInTransaction } from './board-service.ts'
+import { localBoardDuplicateLiveSql } from './board-store.ts'
 import { type BoardTag, type SenderBoardTags, senderBoardTags, senderTagKey } from './board-tags.ts'
 import {
   boardTextCheckout,
@@ -72,7 +77,7 @@ export function suggestBoardPost(
   input: SuggestBoardPostInput,
   clock = Date.now(),
   isKnownCommit?: IsKnownCommit,
-): { recordId: string; number: number; dropped: boolean } {
+): { recordId: string; number: number; dropped: BoardWriteDropped } {
   const run = rootRun(runId)
   if (!run) throw new Error(`run ${runId} does not exist; put the suggestion in the final reply`)
   const callerCwd = process.cwd()
@@ -106,7 +111,8 @@ export function suggestBoardPost(
     .query(
       `SELECT record_id,number FROM board_message
        WHERE kind='suggestion' AND author_kind='worker' AND author_run_record_id=?
-         AND audience=? AND title=? AND body=? AND created_at>=? ORDER BY created_at DESC,number DESC`,
+         AND audience=? AND title=? AND body=? AND ${localBoardDuplicateLiveSql(clock)}
+         AND created_at>=? ORDER BY created_at DESC,number DESC`,
     )
     .all(run.record_id, audience, input.title, input.body, duplicateSince) as {
     record_id: string
@@ -124,7 +130,11 @@ export function suggestBoardPost(
   })
   const decision = postDecision({ recentPosts, duplicate: Boolean(duplicate) })
   if (decision === 'drop-duplicate')
-    return { recordId: duplicate!.record_id, number: duplicate!.number, dropped: true }
+    return {
+      recordId: duplicate!.record_id,
+      number: duplicate!.number,
+      dropped: localBoardWriteResult(duplicate!.record_id).dropped,
+    }
   if (decision === 'rate-limited')
     throw new Error('board suggestion rate limit reached; retry after the ten-minute author window')
   const createdAt = new Date(clock).toISOString()
@@ -160,7 +170,7 @@ export function suggestBoardPost(
     )
     for (const tag of senderTags) addTag.run(newRecordId(), recordId, tag.kind, tag.value)
   }, database)
-  return { recordId, number, dropped: false }
+  return { recordId, number, dropped: localBoardWriteResult(null).dropped }
 }
 
 function suggestion(recordId: string, database = db()): SuggestionRow {

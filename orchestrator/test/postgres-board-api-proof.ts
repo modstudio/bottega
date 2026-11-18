@@ -20,6 +20,7 @@ import {
 } from './postgres-board-api-values.ts'
 import { postgresBoardCacheClient, postgresBoardCacheStore } from './postgres-board-cache-client.ts'
 import { registerBoardClaimApiProof } from './postgres-board-claim-api-proof.ts'
+import { registerBoardDuplicateProof } from './postgres-board-duplicate-proof.ts'
 import { registerBoardOutsideApiProof } from './postgres-board-outside-api-proof.ts'
 import { registerBoardOverviewProof } from './postgres-board-overview-proof.ts'
 import { registerBoardPostingProjectProof } from './postgres-board-posting-project-proof.ts'
@@ -428,16 +429,15 @@ export function registerBoardApiProofs(input: {
     expect(items.some((item) => item.message.id === id)).toBeFalse()
   })
 
-  test('post is idempotent by id and refuses the same id with different content', async () => {
-    const id = newRecordId()
-    const body = notice(id, `project:${PROJECT}`, caseSession('idempotent'))
-    const first = await post(tokenA, body)
-    const again = await post(tokenA, body)
-    const different = await post(tokenA, { ...body, body: 'other' })
-    expect(first.status).toBe(200)
-    expect(again.status).toBe(200)
-    expect(((await again.json()) as { id: string }).id).toBe(id)
-    expect(different.status).toBe(409)
+  registerBoardDuplicateProof({
+    origin: () => origin,
+    headers: () => spaceHeaders(tokenB),
+    post: (body) => post(tokenA, body),
+    caseSession,
+    succeeds: input.succeeds,
+    userId: () => userA,
+    project: PROJECT,
+    projectId: IDS.project,
   })
 
   registerBoardPostingProjectProof({

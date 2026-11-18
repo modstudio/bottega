@@ -6,6 +6,11 @@ import {
   parseBoardDuration,
 } from '../../../../shared/board-duration.ts'
 import { defaultBoardPurpose } from '../../../../shared/board-purpose.ts'
+import {
+  type BoardWriteDropped,
+  boardWriteWarning,
+  hostedBoardWriteResult,
+} from '../../../../shared/board-write-result.ts'
 import { newRecordId } from '../../../../shared/record/schema.ts'
 import {
   BoardAcceptInputSchema,
@@ -30,6 +35,22 @@ const t = initTRPC.context<Context>().create()
 const boardReplyInput = BoardReplyInputSchema.extend({ spaceId })
 const boardAcceptInput = BoardAcceptInputSchema.extend({ spaceId })
 const boardIdInput = BoardIdInputSchema.extend({ spaceId })
+
+type HostedBoardPostResult = Omit<z.input<typeof BoardPostResultSchema>, 'dropped'> & {
+  dropped: BoardWriteDropped
+}
+type HostedBoardReplyResult = Omit<z.input<typeof BoardReplyResultSchema>, 'dropped'> & {
+  dropped: BoardWriteDropped
+}
+
+const hostedBoardPostResult = (result: HostedBoardPostResult) =>
+  BoardPostResultSchema.parse(result) as Omit<typeof result, 'dropped'> & {
+    dropped: BoardWriteDropped
+  }
+const hostedBoardReplyResult = (result: HostedBoardReplyResult) =>
+  BoardReplyResultSchema.parse(result) as Omit<typeof result, 'dropped'> & {
+    dropped: BoardWriteDropped
+  }
 
 type HostedBoardClient = Pick<
   RecordClient,
@@ -146,11 +167,12 @@ function boardPostProcedure(deps: HostedBoardDeps) {
         },
         destination.spaceId,
       )
-      return BoardPostResultSchema.parse({
+      const result = hostedBoardWriteResult(id, message)
+      return hostedBoardPostResult({
         id: message.id,
-        dropped: message.id !== id,
+        dropped: result.dropped,
         reached: null,
-        warning: null,
+        warning: boardWriteWarning(result, { kind: 'root' }),
       })
     }),
   )
@@ -193,20 +215,25 @@ export function createHostedBoardRouter(
     post: boardPostProcedure(deps),
     reply: t.procedure.input(boardReplyInput).mutation(({ ctx, input }) =>
       call(async () => {
+        const id = deps.newId()
         const message = await deps.clientFor(ctx).boardReply(
           input.id,
           {
-            id: deps.newId(),
+            id,
             body: input.body,
           },
           input.spaceId,
         )
-        return BoardReplyResultSchema.parse({
+        const result = hostedBoardWriteResult(id, message)
+        return hostedBoardReplyResult({
           id: message.id,
-          rootId: message.threadRootId,
-          dropped: false,
+          rootId: message.threadRootId!,
+          dropped: result.dropped,
           reached: null,
-          warning: null,
+          warning: boardWriteWarning(result, {
+            kind: 'reply',
+            rootId: input.id,
+          }),
         })
       }),
     ),

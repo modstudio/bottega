@@ -1,10 +1,12 @@
 import { expect, test } from 'bun:test'
 import { resolve } from 'node:path'
 import { BOARD_REQUEST_DEFAULT_EXPIRY_MS } from '../../../shared/board-duration.ts'
+import { boardReplyDuplicateWarning } from '../../../shared/board-write-result.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { db } from '../database/db.ts'
 import { fixtureProjectRecordId } from '../database/test-database.fixture.ts'
 import { projectAt } from '../project/projects.ts'
+import { boardReply } from './board-operations.ts'
 import { claimNotices, claimRunNotices, reapBoardMessages } from './board-service.ts'
 import { BOARD_NOTE_FILING_LEASE_MS } from './board-thread-policy.ts'
 import {
@@ -39,6 +41,40 @@ const architect = (session: string) => ({ CLAUDE_CODE_SESSION_ID: session })
 const filed = (number: number) => ({
   noteRecordId: `01990000-0000-7000-8000-${String(number).padStart(12, '0')}`,
   noteLabel: `thread-fixture#${number}`,
+})
+
+test('local reply duplicates drop while live and post anew after the match is withdrawn', async () => {
+  ensurePostingProject()
+  const clock = Date.now() + 90_000
+  const env = architect('reply-duplicate-author')
+  const question = askQuestion(
+    { audience: 'operator', title: 'Repeat reply?', body: 'Can this reply be repeated?' },
+    env,
+    clock,
+    cwd,
+  )
+  const first = replyToThread(question.recordId, 'Repeatable answer.', env, clock + 1, cwd)
+  const duplicate = await boardReply(question.recordId, 'Repeatable answer.', {
+    env,
+    clock: clock + 2,
+    cwd,
+  })
+  expect({ ...duplicate, dropped: Boolean(duplicate.dropped) }).toMatchObject({
+    recordId: first.recordId,
+    dropped: true,
+    warning: boardReplyDuplicateWarning(first.recordId, question.recordId),
+  })
+
+  db()
+    .query('UPDATE board_message SET withdrawn_at=? WHERE record_id=?')
+    .run(new Date(clock + 3).toISOString(), first.recordId)
+  const reposted = await boardReply(question.recordId, 'Repeatable answer.', {
+    env,
+    clock: clock + 4,
+    cwd,
+  })
+  expect(reposted.dropped).toBeFalse()
+  expect(reposted.recordId).not.toBe(first.recordId)
 })
 
 test('question replies reach the prior participants but never the replier', () => {

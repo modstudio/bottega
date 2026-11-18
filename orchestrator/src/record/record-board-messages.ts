@@ -15,7 +15,6 @@ import {
   acknowledgementRefusal,
   architectsPostingRefusal,
   audienceDescription,
-  BOARD_BODY_MAX_CHARS,
   BOARD_DUPLICATE_WINDOW_MS,
   BOARD_POST_RATE_WINDOW_MS,
   messageIsLive,
@@ -30,7 +29,6 @@ import {
   senderBoardTags,
   senderTagKey,
 } from '../board/board-tags.ts'
-import { boardTextSecretRefusal } from '../board/board-text-secret.ts'
 import {
   acceptRefusal,
   BOARD_NOTE_FILING_LEASE_MS,
@@ -47,8 +45,13 @@ import {
   type HostedBoardReplyInput,
   type HostedBoardSessionInput,
   type HostedBoardThread,
+  type HostedBoardWriteServerResponse,
   RecordBoardError,
 } from './record-board-contract.ts'
+import {
+  hostedBoardFilingFailRefusal,
+  hostedBoardReplyBodyRefusal,
+} from './record-board-message-refusal.ts'
 import { insertBoardMessageTags, readBoardMessageTags } from './record-board-message-tags.ts'
 import {
   type OutsidePostInput,
@@ -72,6 +75,22 @@ import {
 } from './record-board-scope.ts'
 import { type BoardTenant, boardUuidArray, withBoardTenant } from './record-board-tx.ts'
 
+/** Postgres predicate for a live, visible duplicate-eligible root. */
+function hostedBoardDuplicateLiveSql(tx: SQL, clock: number, alias = '') {
+  const prefix = alias ? `${alias}.` : ''
+  const now = new Date(clock).toISOString()
+  return tx.unsafe(
+    `${prefix}withdrawn_at IS NULL AND ${prefix}expires_at>'${now}'::timestamptz AND ${prefix}hidden_at IS NULL`,
+  )
+}
+
+function hostedBoardWriteServerResponse(
+  mintedId: string,
+  message: HostedBoardMessage,
+): HostedBoardWriteServerResponse {
+  return { ...message, duplicateOf: message.id === mintedId ? null : message.id }
+}
+
 type HostedBoardForcedScope = {
   scopeProjectIds: string[]
   recipientUserIds: string[]
@@ -89,7 +108,6 @@ type PreparedHostedPost = {
 
 export const RATE_LIMITED =
   'board post rate limit reached; retry after the ten-minute author window'
-
 function hostedBoardOrigin(row: Record<string, unknown>): HostedBoardMessage['origin'] {
   return {
     kind: row.author_session ? 'architect' : 'operator',
@@ -254,6 +272,7 @@ async function duplicateRootId(
       AND audience IS NOT DISTINCT FROM ${input.audience}
       AND title IS NOT DISTINCT FROM ${input.title}
       AND body=${input.body}
+      AND ${hostedBoardDuplicateLiveSql(tx, clock)}
       AND created_at>=${duplicateSince}::timestamptz
     ORDER BY created_at DESC
   `) as { id: string }[]
@@ -413,7 +432,7 @@ async function postMember(tx: SQL, values: OutsidePostInput): Promise<HostedBoar
 
 export async function postHostedBoardMessage(
   input: BoardTenant & HostedBoardPostInput,
-): Promise<HostedBoardMessage> {
+): Promise<HostedBoardWriteServerResponse> {
   if (input.kind !== 'notice' && input.kind !== 'question') {
     throw new RecordBoardError('hosted board post kind must be notice or question', 400)
   }
@@ -462,7 +481,7 @@ export async function postHostedBoardMessage(
     tags,
     clock,
   }
-  return withBoardTenant(
+  const message = await withBoardTenant(
     input,
     true,
     async (tx) =>
@@ -472,6 +491,7 @@ export async function postHostedBoardMessage(
         view: viewById,
       })) ?? postMember(tx, values),
   )
+  return hostedBoardWriteServerResponse(input.id, message)
 }
 
 async function prepareHostedPost(
@@ -567,20 +587,6 @@ export async function postHostedBoardNoticeInTransaction(
   return viewById(tx, input.id, clock)
 }
 
-function replyBodyRefusal(body: string): string | null {
-  if (!body.trim()) return 'board reply body is required; provide body'
-  if (body.length > BOARD_BODY_MAX_CHARS)
-    return `board reply body exceeds ${BOARD_BODY_MAX_CHARS} characters; shorten it`
-  return boardTextSecretRefusal('board reply', body)
-}
-
-export function hostedBoardFilingFailRefusal(error: string): string | null {
-  if (!error.trim()) return 'filing failure error is required'
-  if (error.length > BOARD_BODY_MAX_CHARS)
-    return `board filing failure exceeds ${BOARD_BODY_MAX_CHARS} characters; shorten it`
-  return boardTextSecretRefusal('board filing failure', error)
-}
-
 function liveRoot(row: Record<string, unknown>, clock: number): boolean {
   if (row.expires_at == null) return false
   return messageIsLive(
@@ -665,13 +671,16 @@ async function replyMember(
 ): Promise<HostedBoardMessage> {
   const duplicateSince = new Date(clock - BOARD_DUPLICATE_WINDOW_MS).toISOString()
   const duplicate = (await tx`
-    SELECT id FROM board_message
-    WHERE kind='reply' AND author_user_id=${input.userId}::uuid
-      AND author_session IS NOT DISTINCT FROM ${session}
-      AND thread_root_id=${String(root.id)}::uuid AND body=${input.body}
-      AND audience IS NOT DISTINCT FROM ${audience}
-      AND created_at>=${duplicateSince}::timestamptz
-    ORDER BY created_at DESC LIMIT 1
+    SELECT reply.id FROM board_message AS reply
+    JOIN board_message AS root ON root.id=reply.thread_root_id
+    WHERE reply.kind='reply' AND reply.author_user_id=${input.userId}::uuid
+      AND reply.author_session IS NOT DISTINCT FROM ${session}
+      AND reply.thread_root_id=${String(root.id)}::uuid AND reply.body=${input.body}
+      AND reply.audience IS NOT DISTINCT FROM ${audience}
+      AND reply.withdrawn_at IS NULL AND reply.hidden_at IS NULL
+      AND ${hostedBoardDuplicateLiveSql(tx, clock, 'root')}
+      AND reply.created_at>=${duplicateSince}::timestamptz
+    ORDER BY reply.created_at DESC LIMIT 1
   `) as { id: string }[]
   const decision = await authorWindow(tx, input.userId, session, clock, duplicate.length > 0)
   if (decision === 'drop-duplicate' && duplicate[0])
@@ -755,8 +764,8 @@ async function replyHostedBoardMessageTx(
 
 export async function replyHostedBoardMessage(
   input: BoardTenant & HostedBoardReplyInput & { rootId: string },
-): Promise<HostedBoardMessage> {
-  const bodyRefusal = replyBodyRefusal(input.body)
+): Promise<HostedBoardWriteServerResponse> {
+  const bodyRefusal = hostedBoardReplyBodyRefusal(input.body)
   if (bodyRefusal) throw new RecordBoardError(bodyRefusal, 400)
   const parsedAudience = input.audience ?? null
   const audience = parsedAudience === null ? null : replyAudienceValue(parsedAudience)
@@ -780,9 +789,10 @@ export async function replyHostedBoardMessage(
     senderTags: [],
     authorProjectId: null,
   }
-  return withBoardTenant(input, true, (tx) =>
+  const message = await withBoardTenant(input, true, (tx) =>
     replyHostedBoardMessageTx(tx, input, requested, actor, session, audience, clock),
   )
+  return hostedBoardWriteServerResponse(input.id, message)
 }
 
 export async function withdrawHostedBoardMessage(

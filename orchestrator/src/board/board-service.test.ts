@@ -6,6 +6,7 @@ import {
   BOARD_REQUEST_DEFAULT_EXPIRY_MS,
   BOARD_STANDING_DEFAULT_EXPIRY_MS,
 } from '../../../shared/board-duration.ts'
+import { boardDuplicateWarning } from '../../../shared/board-write-result.ts'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { db } from '../database/db.ts'
@@ -673,12 +674,12 @@ test('duplicate notices require the same order-independent sender tag set', () =
     {},
     clock + 2,
   )
-  expect(duplicate).toEqual({
+  expect({ ...duplicate, dropped: Boolean(duplicate.dropped) }).toEqual({
     recordId: retargeted.recordId,
     number: retargeted.number,
     dropped: true,
     reached: 0,
-    warning: 'reached no live session; re-address it or wait for a matching session',
+    warning: boardDuplicateWarning(retargeted.recordId),
   })
   const request = postNotice(
     {

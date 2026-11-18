@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
 import { BOARD_BODY_MAX_CHARS } from '../board/board-policy.ts'
-import { hostedBoardFilingFailRefusal } from './record-board-messages.ts'
+import { hostedBoardFilingFailRefusal } from './record-board-message-refusal.ts'
 
 test('filing-fail error is bounded and refused when secret-shaped without echoing the text', () => {
   expect(hostedBoardFilingFailRefusal('hub unavailable')).toBeNull()

@@ -1,5 +1,9 @@
 import { extendedBoardThreadExpiry } from '../../../shared/board-duration.ts'
 import { replyAudienceValue } from '../../../shared/board-reply-audience-options.ts'
+import {
+  type BoardWriteDropped,
+  localBoardWriteResult,
+} from '../../../shared/board-write-result.ts'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { db, writableDb, writeTransaction } from '../database/db.ts'
@@ -30,6 +34,7 @@ import {
   boardOrigin,
   hasReceipt,
   insertRootMessage,
+  localBoardDuplicateLiveSql,
   type MessageRow,
   messageRows,
   messageTags,
@@ -87,7 +92,8 @@ type ReplyResult = {
   recordId: string
   number: number
   rootRecordId: string
-  dropped: boolean
+  dropped: BoardWriteDropped
+  duplicateOf: string | null
   reached: number
 }
 
@@ -215,10 +221,12 @@ export function replyToThread(
     const storedAudience = audience === null ? null : replyAudienceValue(audience)
     const duplicate = database
       .query(
-        `SELECT record_id,number FROM board_message
-         WHERE kind='reply' AND author_kind=? AND author_session IS ?
-           AND thread_root_record_id=? AND body=? AND audience IS ? AND created_at>=?
-         ORDER BY created_at DESC,number DESC LIMIT 1`,
+        `SELECT reply.record_id,reply.number FROM board_message AS reply
+         JOIN board_message AS root ON root.record_id=reply.thread_root_record_id
+         WHERE reply.kind='reply' AND reply.author_kind=? AND reply.author_session IS ?
+           AND reply.thread_root_record_id=? AND reply.body=? AND reply.audience IS ?
+           AND reply.withdrawn_at IS NULL AND ${localBoardDuplicateLiveSql(clock, 'root')}
+           AND reply.created_at>=? ORDER BY reply.created_at DESC,reply.number DESC LIMIT 1`,
       )
       .get(
         actor.kind,
@@ -239,7 +247,7 @@ export function replyToThread(
         recordId: duplicate!.record_id,
         number: duplicate!.number,
         rootRecordId: root.record_id,
-        dropped: true,
+        ...localBoardWriteResult(duplicate!.record_id),
         reached,
       }
     }
@@ -277,7 +285,7 @@ export function replyToThread(
       recordId: replyRecordId,
       number: replyNumber,
       rootRecordId: root.record_id,
-      dropped: false,
+      ...localBoardWriteResult(null),
       reached,
     }
   }, database)

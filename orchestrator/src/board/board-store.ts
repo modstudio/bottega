@@ -4,6 +4,11 @@ import {
   boardDefaultExpiryMs,
 } from '../../../shared/board-duration.ts'
 import { type BoardPurpose, defaultBoardPurpose } from '../../../shared/board-purpose.ts'
+import {
+  type BoardWriteDropped,
+  boardWriteWarning,
+  localBoardWriteResult,
+} from '../../../shared/board-write-result.ts'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { SESSION_LIVE_MS } from '../../../shared/session-liveness.ts'
@@ -53,7 +58,7 @@ export type BoardOrigin = {
 export type PostNoticeResult = {
   recordId: string
   number: number
-  dropped: boolean
+  dropped: BoardWriteDropped
   reached: number
   warning?: string
 }
@@ -105,6 +110,12 @@ export type MessageRow = {
 
 export const BOARD_MESSAGE_COLUMNS =
   'record_id,number,kind,purpose,author_kind,author_session,audience,title,body,ack_required,ack_deadline,expires_at,created_at,withdrawn_at,withdrawn_reason,author_harness,author_project,author_run_record_id,thread_root_record_id,accepted_reply_record_id,accepted_by,accepted_at,note_record_id,note_label,note_pending_error,note_filing_started_at,claim_record_id'
+
+/** SQLite predicate for a live duplicate-eligible root; local board rows have no hidden column. */
+export function localBoardDuplicateLiveSql(clock: number, alias = ''): string {
+  const prefix = alias ? `${alias}.` : ''
+  return `${prefix}withdrawn_at IS NULL AND ${prefix}expires_at>'${new Date(clock).toISOString()}'`
+}
 
 function rootPurpose(
   kind: 'notice' | 'question',
@@ -455,15 +466,20 @@ function runOwnerSession(runId: string, database: ReturnType<typeof writableDb>)
 function postNoticeResult(
   recordId: string,
   number: number,
-  dropped: boolean,
+  duplicateOf: string | null,
   reached: number,
 ): PostNoticeResult {
+  const result = localBoardWriteResult(duplicateOf)
   return {
     recordId,
     number,
-    dropped,
+    dropped: result.dropped,
     reached,
-    ...(reached === 0 ? { warning: NO_REACH_WARNING } : {}),
+    ...(result.dropped
+      ? { warning: boardWriteWarning(result, { kind: 'root' })! }
+      : reached === 0
+        ? { warning: NO_REACH_WARNING }
+        : {}),
   }
 }
 
@@ -577,6 +593,7 @@ function duplicateRoot(
        WHERE kind=? AND purpose=? AND author_kind=? AND author_session IS ? AND author_run_record_id IS ?
          AND author_project_record_id IS (SELECT record_id FROM project WHERE name IS ?)
          AND audience=? AND title=? AND body=? AND created_at>=?
+         AND ${localBoardDuplicateLiveSql(input.clock)}
        ORDER BY created_at DESC,number DESC`,
     )
     .all(
@@ -649,7 +666,7 @@ export function insertRootMessage(
         )
         .get(duplicate!.record_id) as { count: number }
     ).count
-    return postNoticeResult(duplicate!.record_id, duplicate!.number, true, reached)
+    return postNoticeResult(duplicate!.record_id, duplicate!.number, duplicate!.record_id, reached)
   }
   if (decision === 'rate-limited') throw new BoardPostRateLimitError()
   const createdAt = new Date(clock).toISOString()
@@ -688,7 +705,7 @@ export function insertRootMessage(
     origin.project,
     database,
   )
-  return postNoticeResult(inserted.recordId, inserted.number, false, reached)
+  return postNoticeResult(inserted.recordId, inserted.number, null, reached)
 }
 
 function insertRootRow(

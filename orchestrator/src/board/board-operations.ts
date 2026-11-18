@@ -6,6 +6,11 @@ import {
   boardDefaultExpiryMs,
 } from '../../../shared/board-duration.ts'
 import { defaultBoardPurpose } from '../../../shared/board-purpose.ts'
+import {
+  type BoardWriteDropped,
+  boardWriteWarning,
+  hostedBoardWriteResult,
+} from '../../../shared/board-write-result.ts'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { db } from '../database/db.ts'
@@ -24,6 +29,7 @@ import type {
   HostedBoardReceipt,
   HostedBoardStatus,
   HostedBoardThread,
+  HostedBoardWriteClientResponse,
 } from '../record/record-board-contract.ts'
 import { isClosedStageState } from '../record/record-task-flow-contract.ts'
 import { resolveRunIdentifier } from '../run/run-identifier.ts'
@@ -107,7 +113,7 @@ type Context = {
 export type BoardPostResult = {
   recordId: string
   number: number | null
-  dropped: boolean
+  dropped: BoardWriteDropped
   reached: number | null
   warning: string | null
 }
@@ -250,6 +256,21 @@ function localPostResult(value: ReturnType<typeof postNotice>): BoardPostResult 
     dropped: value.dropped,
     reached: value.reached,
     warning: value.warning ?? null,
+  }
+}
+
+function hostedPostResult(
+  mintedId: string,
+  response: HostedBoardWriteClientResponse,
+  warningContext: { kind: 'root' } | { kind: 'reply'; rootId: string } = { kind: 'root' },
+): BoardPostResult {
+  const result = hostedBoardWriteResult(mintedId, response)
+  return {
+    recordId: response.id,
+    number: null,
+    dropped: result.dropped,
+    reached: null,
+    warning: boardWriteWarning(result, warningContext),
   }
 }
 
@@ -513,13 +534,7 @@ export async function boardPost(input: PostNoticeInput, inputContext?: Context) 
   if (audienceRefusal) throw new Error(audienceRefusal)
   const post = hostedBoardPostInput('notice', input, c)
   const row = await hostedClient(c).postBoardMessage(post, await writeDestination(c, post.project))
-  return {
-    recordId: row.id,
-    number: null,
-    dropped: false,
-    reached: null,
-    warning: null,
-  } satisfies BoardPostResult
+  return hostedPostResult(post.id, row)
 }
 
 export async function boardAsk(
@@ -542,13 +557,7 @@ export async function boardAsk(
   if (audienceRefusal) throw new Error(audienceRefusal)
   const post = hostedBoardPostInput('question', input, c)
   const row = await hostedClient(c).postBoardMessage(post, await writeDestination(c, post.project))
-  return {
-    recordId: row.id,
-    number: null,
-    dropped: false,
-    reached: null,
-    warning: null,
-  } satisfies BoardPostResult
+  return hostedPostResult(post.id, row)
 }
 
 export async function boardReply(
@@ -570,7 +579,10 @@ export async function boardReply(
       rootId: result.rootRecordId,
       dropped: result.dropped,
       reached: result.reached,
-      warning: null,
+      warning: boardWriteWarning(result, {
+        kind: 'reply',
+        rootId: result.rootRecordId,
+      }),
     } satisfies BoardReplyResult
   }
   const actor = authorFacts(c.env)
@@ -592,12 +604,8 @@ export async function boardReply(
     await writeDestination(c, reply.project),
   )
   return {
-    recordId: row.id,
-    number: null,
+    ...hostedPostResult(reply.id, row, { kind: 'reply', rootId: resolved.recordId }),
     rootId: id,
-    dropped: false,
-    reached: null,
-    warning: null,
   } satisfies BoardReplyResult
 }
 
