@@ -17,14 +17,6 @@ export type QuarantinedOutboxRow = {
   quarantinedAt: string
 }
 
-export function retirePendingOutboxKindsSql(placeholders: string): string {
-  return `SELECT id,kind,row_id,attempts,last_error,quarantine_reason,quarantined_at,retired_at
-     FROM outbox
-    WHERE kind IN (${placeholders})
-      AND ${PENDING_OUTBOX_PREDICATE_SQL}
-    ORDER BY id`
-}
-
 export const QUARANTINED_OUTBOX_ROWS_SQL = `SELECT id,kind,row_id,quarantine_reason,attempts,quarantined_at
   FROM outbox WHERE quarantined_at IS NOT NULL AND retired_at IS NULL ORDER BY id`
 

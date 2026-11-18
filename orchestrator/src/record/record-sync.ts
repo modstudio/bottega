@@ -75,13 +75,6 @@ export type {
 export const PENDING_OUTBOX_COUNT_SQL = `SELECT count(*) AS count FROM outbox
   WHERE ${PENDING_OUTBOX_PREDICATE_SQL}`
 
-export function preparePendingRowsSql(placeholders: string): string {
-  return `SELECT id, kind, row_id, payload FROM outbox
-   WHERE ${PENDING_OUTBOX_PREDICATE_SQL}
-     AND kind NOT IN (${placeholders})
-   ORDER BY id`
-}
-
 /** Whether this environment names a hosted record endpoint for synchronization. */
 export function recordSyncConfigured(
   environment: Record<string, string | undefined> = process.env,
