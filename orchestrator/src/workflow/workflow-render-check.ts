@@ -232,8 +232,12 @@ export function checkWorkflowRendering(
   workflows: { slug: string; definition: WorkflowDefinition }[],
   catalogue: StepCatalogueDefinition,
   registeredProjects: Project[],
-  composedWorkflowsByProject: ReadonlyMap<string, ReadonlySet<string>>,
+  composedWorkflowsByProject?: ReadonlyMap<string, ReadonlySet<string>>,
 ): WorkflowRenderCheckResult {
+  const allWorkflowSlugs = new Set(workflows.map(({ slug }) => slug))
+  const composedWorkflows =
+    composedWorkflowsByProject ??
+    new Map(registeredProjects.map(({ name }) => [name, allWorkflowSlugs]))
   const accumulator: RenderCheckAccumulator = {
     failures: [],
     resolutionFailures: [],
@@ -256,7 +260,7 @@ export function checkWorkflowRendering(
             slug,
             mode.slug,
             stepSlug,
-            composedWorkflowsByProject.get(project.name) ?? new Set(),
+            composedWorkflows.get(project.name) ?? new Set(),
           )
         }
       }

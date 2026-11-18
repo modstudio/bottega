@@ -632,19 +632,8 @@ function workflowPromotionPreflight(
   if (refusal) throw new Error(refusal)
   const workflows = productionWorkflows(d, spaceId).filter((workflow) => workflow.slug !== slug)
   workflows.push({ slug, definition })
-  const registeredProjects = projects(undefined, d)
   const renderRefusal = renderCheckRefusal(
-    checkWorkflowRendering(
-      workflows,
-      catalogue,
-      registeredProjects,
-      new Map(
-        registeredProjects.map((project) => [
-          project.name,
-          new Set(workflows.map(({ slug }) => slug)),
-        ]),
-      ),
-    ),
+    checkWorkflowRendering(workflows, catalogue, projects(undefined, d)),
   )
   if (renderRefusal) throw new Error(renderRefusal)
 }
