@@ -1,50 +1,14 @@
-import { join } from 'node:path'
-import { fileURLToPath } from 'node:url'
-import { PGlite, type Transaction } from '@electric-sql/pglite'
+import type { PGlite } from '@electric-sql/pglite'
 import type { SQL } from 'bun'
-import { type MigrationMeta, readMigrationFiles } from 'drizzle-orm/migrator'
-import { migrationSessionStatements } from '../../../shared/record/migration-session.ts'
 import { RECORD_ACTOR_ROLE } from '../../../shared/record/schema.ts'
-
-const migrationsFolder = join(
-  fileURLToPath(new URL('../../../shared/record/migrations', import.meta.url)),
-)
-
-async function applyMigration(transaction: Transaction, migration: MigrationMeta) {
-  for (const statement of migration.sql) await transaction.exec(statement)
-  await transaction.query(
-    'INSERT INTO drizzle.__drizzle_migrations (hash,created_at,name) VALUES ($1,$2,$3)',
-    [migration.hash, migration.folderMillis, migration.name],
-  )
-}
+import { loadHostedRecordSnapshot } from './hosted-record-snapshot.ts'
 
 export async function createHostedRecordFixture(options: {
   spaceId: string
   userId: string
 }): Promise<PGlite> {
-  const database = new PGlite()
+  const database = await loadHostedRecordSnapshot()
   await database.exec(`
-    CREATE ROLE record_owner LOGIN NOSUPERUSER NOBYPASSRLS;
-    CREATE ROLE record_actor LOGIN NOSUPERUSER NOBYPASSRLS;
-    CREATE ROLE record_auth LOGIN NOSUPERUSER NOBYPASSRLS;
-    CREATE ROLE record_public NOLOGIN NOSUPERUSER NOBYPASSRLS;
-    CREATE ROLE record_reader LOGIN NOSUPERUSER NOBYPASSRLS;
-    GRANT record_public TO record_actor WITH INHERIT FALSE, SET TRUE;
-    GRANT CREATE ON DATABASE postgres TO record_owner;
-    ALTER SCHEMA public OWNER TO record_owner;
-    SET ROLE record_owner;
-    CREATE SCHEMA drizzle;
-    CREATE TABLE drizzle.__drizzle_migrations (
-      id serial PRIMARY KEY, hash text NOT NULL, created_at bigint, name text
-    );
-  `)
-  await database.transaction(async (transaction) => {
-    for (const statement of migrationSessionStatements()) await transaction.exec(statement)
-    for (const migration of readMigrationFiles({ migrationsFolder }))
-      await applyMigration(transaction, migration)
-  })
-  await database.exec(`
-    RESET ROLE;
     INSERT INTO space (id,name,slug,created_at)
     VALUES ('${options.spaceId}','Mirror test','mirror-test',now());
     INSERT INTO "user" (id,email,name,created_at)
