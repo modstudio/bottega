@@ -52,12 +52,14 @@ import {
   REVIEW_REPRODUCED,
 } from '../review/review-vocabulary.ts'
 import { resolveQuestionIdentifier } from '../run/question-identifier.ts'
+import { answerClosedWorkflowQuestion } from '../run/question-mutation.ts'
 import { resolveAnswerTarget } from '../run/run-answer-identifier.ts'
 import { finishHarnessRun } from '../run/run-harness-finish.ts'
 import { resolveRunIdentifier } from '../run/run-identifier.ts'
 import {
-  answerClosedWorkflowQuestionCommand,
   answerCommand,
+  answerInputFromArgv,
+  answerRunHelpers,
   continueCommand,
   retryCommand,
 } from '../run/run-message-commands.ts'
@@ -135,15 +137,25 @@ const tellByIdentifier = (id: string, command: Command, ping: boolean) =>
 const answerByIdentifier = async (id: string, command: Command, options: OptionValues) => {
   const target = await resolveAnswerTarget(db(), id, sessionId())
   if (target.kind === 'workflow-question') {
-    await answerClosedWorkflowQuestionCommand(
-      target,
+    const input = await answerInputFromArgv(
       rawArgv(command).slice(2),
       Boolean(options.recordOnly),
       Boolean(options.json),
       runFlags(options),
-      presentation,
+      answerRunHelpers(presentation),
       refusedOwnerOptions(command, 'question answer', 'question'),
     )
+    if (Array.isArray(input.rulings))
+      throw new Error('a workflow question accepts one ruling; pass the ruling as the message')
+    await answerClosedWorkflowQuestion({
+      questionId: target.questionRecordId,
+      cursorId: target.cursorRecordId,
+      ruling: input.rulings,
+      fromOperator: input.fromOperator,
+      channel: input.channel,
+    })
+    if (options.json)
+      console.log(JSON.stringify({ questionId: target.questionRecordId, answered: true }))
     return
   }
   await answerCommand(

@@ -197,16 +197,7 @@ test('a failed self-ruling write does not advance a running cursor', async () =>
 test('a failed self-ruling write leaves an awaiting cursor and its question open', async () => {
   const d = database()
   await openAtRuling(d)
-  await awaitWorkflowRuling(
-    'flow',
-    'fixture',
-    'default',
-    args,
-    'Proceed?',
-    context,
-    d,
-    () => {},
-  )
+  await awaitWorkflowRuling('flow', 'fixture', 'default', args, 'Proceed?', context, d, () => {})
   const before = d.query('SELECT ordinal,step_slug,state,revision FROM workflow_cursor').get()
   d.exec(`CREATE TRIGGER fail_dev2394_self_ruling_answer BEFORE UPDATE OF answer ON question
     WHEN NEW.answer IS NOT NULL
@@ -237,16 +228,7 @@ test('a failed workflow-question write does not write an await-ruling advance', 
   write.mockClear()
 
   await expect(
-    awaitWorkflowRuling(
-      'flow',
-      'fixture',
-      'default',
-      args,
-      'Proceed?',
-      context,
-      d,
-      () => {},
-    ),
+    awaitWorkflowRuling('flow', 'fixture', 'default', args, 'Proceed?', context, d, () => {}),
   ).rejects.toThrow('injected workflow-question write failure')
 
   expect(write).not.toHaveBeenCalled()

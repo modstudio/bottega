@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { writeMachineNames } from '../../../shared/machine-config.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun } from '../../test/fixtures/store.ts'
@@ -7,9 +8,14 @@ import {
   type AnswerIdentifierFacts,
   answerIdentifierDecision,
   parseAnswerIdentifier,
-  resolveAnswerIdentifier,
   resolveAnswerTarget,
 } from './run-answer-identifier.ts'
+
+async function resolveAnswerIdentifier(input: string | number, callerSessionId: string | null) {
+  const target = await resolveAnswerTarget(db(), input, callerSessionId)
+  if (target.kind !== 'target') throw new Error('expected a run target')
+  return target.runRecordId
+}
 
 const run = (overrides: Partial<NonNullable<AnswerIdentifierFacts['run']>> = {}) => ({
   recordId: 'asking-run',
@@ -163,8 +169,8 @@ test('question number and UUID resolve an open question asked by a real turn to 
   })
   const questionId = addQuestion(turn, 73)
 
-  expect(await resolveAnswerIdentifier(db(), 'q73', null)).toBe(root)
-  expect(await resolveAnswerIdentifier(db(), questionId, null)).toBe(root)
+  expect(await resolveAnswerIdentifier('q73', null)).toBe(root)
+  expect(await resolveAnswerIdentifier(questionId, null)).toBe(root)
 })
 
 test('a qualified question resolves in that project while an unqualified label stays local', async () => {
@@ -204,8 +210,8 @@ test('a qualified question resolves in that project while an unqualified label s
   addQuestion(alphaRun, alphaNumber)
   addQuestion(betaRun, betaNumber)
 
-  expect(await resolveAnswerIdentifier(db(), `q${alphaNumber}`, session)).toBe(alphaRun)
-  expect(await resolveAnswerIdentifier(db(), `${betaName}#q${betaNumber}`, session)).toBe(betaRun)
+  expect(await resolveAnswerIdentifier(`q${alphaNumber}`, session)).toBe(alphaRun)
+  expect(await resolveAnswerIdentifier(`${betaName}#q${betaNumber}`, session)).toBe(betaRun)
 })
 
 test('an answered question target refuses instead of selecting another open question', async () => {
@@ -216,10 +222,10 @@ test('an answered question target refuses instead of selecting another open ques
     .query("UPDATE question SET answered_at='2026-10-15',answer='yes' WHERE record_id=?")
     .run(answeredId)
 
-  await expect(resolveAnswerIdentifier(db(), 'q81', null)).rejects.toThrow(
+  await expect(resolveAnswerIdentifier('q81', null)).rejects.toThrow(
     `q81 is already ruled on; run ${root} is waiting on q82`,
   )
-  await expect(resolveAnswerIdentifier(db(), answeredId, null)).rejects.toThrow(
+  await expect(resolveAnswerIdentifier(answeredId, null)).rejects.toThrow(
     `${answeredId} is already ruled on; run ${root} is waiting on q82`,
   )
 })
@@ -237,10 +243,10 @@ test('bare-number resolution uses real run, question, ownership, and chain facts
     .run(collidingQuestion)
   addQuestion(asking, runNumber + 1000)
 
-  await expect(resolveAnswerIdentifier(db(), runNumber, session)).rejects.toThrow(
+  await expect(resolveAnswerIdentifier(runNumber, session)).rejects.toThrow(
     `bare identifier ${runNumber} is ambiguous between run:${runNumber} (${asking}) and q${runNumber}`,
   )
-  expect(await resolveAnswerIdentifier(db(), asking, session)).toBe(asking)
+  expect(await resolveAnswerIdentifier(asking, session)).toBe(asking)
 })
 
 test('machine-qualified run numbers resolve without a question-number collision check', async () => {
@@ -253,8 +259,8 @@ test('machine-qualified run numbers resolve without a question-number collision 
     .get(asking)!.number
   addQuestion(asking, runNumber + 1000)
 
-  expect(await resolveAnswerIdentifier(db(), `${machineName}/${runNumber}`, session)).toBe(asking)
-  expect(await resolveAnswerIdentifier(db(), `${machineName}/r${runNumber}`, session)).toBe(asking)
+  expect(await resolveAnswerIdentifier(`${machineName}/${runNumber}`, session)).toBe(asking)
+  expect(await resolveAnswerIdentifier(`${machineName}/r${runNumber}`, session)).toBe(asking)
 })
 
 test('a bare number with no run keeps the explicit question hint', async () => {
@@ -262,7 +268,7 @@ test('a bare number with no run keeps the explicit question hint', async () => {
   const number = 900_001
   addQuestion(owner, number)
 
-  await expect(resolveAnswerIdentifier(db(), number, null)).rejects.toThrow(
+  await expect(resolveAnswerIdentifier(number, null)).rejects.toThrow(
     `run ${number} does not exist; to answer question q${number}, pass q${number}`,
   )
 })
@@ -323,9 +329,7 @@ test('an open cursor question names the workflow rule remedy with its cursor and
   const fixture = addCursorQuestion({ state: 'awaiting-ruling' })
   await expect(
     resolveAnswerTarget(db(), `q${fixture.questionNumber}`, fixture.caller),
-  ).rejects.toThrow(
-    `use bottega workflow rule --cursor 9876 --project ${fixture.project}`,
-  )
+  ).rejects.toThrow(`use ${PLATFORM_SLUG} workflow rule --cursor 9876 --project ${fixture.project}`)
 })
 
 test('a closed unanswered cursor question resolves by bare q-number to the question target', async () => {

@@ -108,10 +108,9 @@ test('answer records a late ruling on a closed cursor question without moving it
   setRawArgv(argv.slice(2))
   await program.parseAsync(argv)
 
-  const answered =
-    db()
-      .query('SELECT answer,answered_at,closed_at,close_reason FROM question WHERE record_id=?')
-      .get(questionId) as Record<string, unknown>
+  const answered = db()
+    .query('SELECT answer,answered_at,closed_at,close_reason FROM question WHERE record_id=?')
+    .get(questionId) as Record<string, unknown>
   expect(answered).toMatchObject({
     answer: 'late ruling',
     closed_at: '2026-11-17T00:00:00.000Z',
@@ -119,7 +118,9 @@ test('answer records a late ruling on a closed cursor question without moving it
   })
   expect(typeof answered.answered_at).toBe('string')
   expect(
-    db().query('SELECT ordinal,step_slug,state,revision FROM workflow_cursor WHERE record_id=?').get(cursorId),
+    db()
+      .query('SELECT ordinal,step_slug,state,revision FROM workflow_cursor WHERE record_id=?')
+      .get(cursorId),
   ).toEqual({ ordinal: 2, step_slug: 'review', state: 'running', revision: 7 })
 })
 

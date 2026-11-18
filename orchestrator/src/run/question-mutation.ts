@@ -15,7 +15,6 @@ import {
   unlinkedWorkflowQuestions,
 } from '../question-store/question-store-read.ts'
 import { rulingActor } from './question-vocabulary.ts'
-import { resolvedRulingPersonName } from './ruling-attribution.ts'
 import { adoptedMutationReason } from './run-authority.ts'
 import {
   joinMutationReason,
@@ -198,7 +197,7 @@ export async function answerWorkflowQuestion(
     actor: string | null
     fromOperator: boolean
     personName: string | null
-    channel: 'cli' | 'mcp'
+    channel: 'cli' | 'mcp' | 'ui'
     adoptionReason?: string | null
     expect?: 'open' | 'closed-unanswered'
   },
@@ -243,7 +242,7 @@ export async function answerClosedWorkflowQuestion(
     cursorId: string
     ruling: string
     fromOperator: boolean
-    channel: 'cli' | 'mcp'
+    channel: 'cli' | 'mcp' | 'ui'
   },
   database: Database = db(),
 ): Promise<void> {
@@ -269,7 +268,7 @@ export async function answerClosedWorkflowQuestion(
       expect: 'closed-unanswered',
       at: new Date().toISOString(),
       actor,
-      personName: resolvedRulingPersonName(input.fromOperator),
+      personName: null,
       adoptionReason,
     },
     database,

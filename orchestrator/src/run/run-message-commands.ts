@@ -36,7 +36,6 @@ import { refusalScoreGuidanceFromPath } from '../score/refusal-guidance.ts'
 import { answeredQuestionContextMoments } from '../workflow/workflow-context-moment.ts'
 import { answerValueArgs } from './answer-value-args.ts'
 import { parseQuestionIdentifier, resolveQuestionIdentifier } from './question-identifier.ts'
-import { answerClosedWorkflowQuestion } from './question-mutation.ts'
 import { rulingAttributionDecision } from './question-vocabulary.ts'
 import { rulingFileOfferLines } from './ruling-file-text.ts'
 import { type AnswerRunInput, answerRun, retryRun } from './run-answer.ts'
@@ -278,36 +277,6 @@ export async function answerCommand(
   )) {
     await applyContextMoment(moment, json, context?.output, context?.ports)
   }
-}
-
-export async function answerClosedWorkflowQuestionCommand(
-  target: { questionRecordId: string; cursorRecordId: string },
-  argv: string[],
-  recordOnly: boolean,
-  json: boolean,
-  flags: Flags,
-  presentation: Presentation,
-  refusedOptions?: Readonly<Record<string, string>>,
-): Promise<void> {
-  const input = await answerInputFromArgv(
-    argv,
-    recordOnly,
-    json,
-    flags,
-    answerRunHelpers(presentation),
-    refusedOptions,
-  )
-  if (Array.isArray(input.rulings))
-    throw new Error('a workflow question accepts one ruling; pass the ruling as the message')
-  await answerClosedWorkflowQuestion({
-    questionId: target.questionRecordId,
-    cursorId: target.cursorRecordId,
-    ruling: input.rulings,
-    fromOperator: input.fromOperator,
-    channel: input.channel,
-  })
-  if (json)
-    console.log(JSON.stringify({ questionId: target.questionRecordId, answered: true }))
 }
 
 export async function continueCommand(
