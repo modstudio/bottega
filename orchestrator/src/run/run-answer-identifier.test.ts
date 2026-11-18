@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { writeMachineNames } from '../../../shared/machine-config.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun } from '../../test/fixtures/store.ts'
@@ -7,8 +8,14 @@ import {
   type AnswerIdentifierFacts,
   answerIdentifierDecision,
   parseAnswerIdentifier,
-  resolveAnswerIdentifier,
+  resolveAnswerTarget,
 } from './run-answer-identifier.ts'
+
+async function resolveAnswerIdentifier(input: string | number, callerSessionId: string | null) {
+  const target = await resolveAnswerTarget(db(), input, callerSessionId)
+  if (target.kind !== 'target') throw new Error('expected a run target')
+  return target.runRecordId
+}
 
 const run = (overrides: Partial<NonNullable<AnswerIdentifierFacts['run']>> = {}) => ({
   recordId: 'asking-run',
@@ -19,10 +26,16 @@ const run = (overrides: Partial<NonNullable<AnswerIdentifierFacts['run']>> = {})
   ...overrides,
 })
 
-const question = (overrides: Partial<NonNullable<AnswerIdentifierFacts['question']>> = {}) => ({
+type RunQuestionFacts = Extract<
+  NonNullable<AnswerIdentifierFacts['question']>,
+  { kind: 'run-question' }
+>
+
+const question = (overrides: Partial<RunQuestionFacts> = {}): RunQuestionFacts => ({
+  kind: 'run-question',
   rootRecordId: 'question-root',
   open: true,
-  state: 'open' as const,
+  state: 'open',
   openQuestionNumbers: [12],
   ...overrides,
 })
@@ -162,8 +175,8 @@ test('question number and UUID resolve an open question asked by a real turn to 
   })
   const questionId = addQuestion(turn, 73)
 
-  expect(await resolveAnswerIdentifier(db(), 'q73', null)).toBe(root)
-  expect(await resolveAnswerIdentifier(db(), questionId, null)).toBe(root)
+  expect(await resolveAnswerIdentifier('q73', null)).toBe(root)
+  expect(await resolveAnswerIdentifier(questionId, null)).toBe(root)
 })
 
 test('a qualified question resolves in that project while an unqualified label stays local', async () => {
@@ -203,8 +216,8 @@ test('a qualified question resolves in that project while an unqualified label s
   addQuestion(alphaRun, alphaNumber)
   addQuestion(betaRun, betaNumber)
 
-  expect(await resolveAnswerIdentifier(db(), `q${alphaNumber}`, session)).toBe(alphaRun)
-  expect(await resolveAnswerIdentifier(db(), `${betaName}#q${betaNumber}`, session)).toBe(betaRun)
+  expect(await resolveAnswerIdentifier(`q${alphaNumber}`, session)).toBe(alphaRun)
+  expect(await resolveAnswerIdentifier(`${betaName}#q${betaNumber}`, session)).toBe(betaRun)
 })
 
 test('an answered question target refuses instead of selecting another open question', async () => {
@@ -215,10 +228,10 @@ test('an answered question target refuses instead of selecting another open ques
     .query("UPDATE question SET answered_at='2026-10-15',answer='yes' WHERE record_id=?")
     .run(answeredId)
 
-  await expect(resolveAnswerIdentifier(db(), 'q81', null)).rejects.toThrow(
+  await expect(resolveAnswerIdentifier('q81', null)).rejects.toThrow(
     `q81 is already ruled on; run ${root} is waiting on q82`,
   )
-  await expect(resolveAnswerIdentifier(db(), answeredId, null)).rejects.toThrow(
+  await expect(resolveAnswerIdentifier(answeredId, null)).rejects.toThrow(
     `${answeredId} is already ruled on; run ${root} is waiting on q82`,
   )
 })
@@ -236,10 +249,10 @@ test('bare-number resolution uses real run, question, ownership, and chain facts
     .run(collidingQuestion)
   addQuestion(asking, runNumber + 1000)
 
-  await expect(resolveAnswerIdentifier(db(), runNumber, session)).rejects.toThrow(
+  await expect(resolveAnswerIdentifier(runNumber, session)).rejects.toThrow(
     `bare identifier ${runNumber} is ambiguous between run:${runNumber} (${asking}) and q${runNumber}`,
   )
-  expect(await resolveAnswerIdentifier(db(), asking, session)).toBe(asking)
+  expect(await resolveAnswerIdentifier(asking, session)).toBe(asking)
 })
 
 test('machine-qualified run numbers resolve without a question-number collision check', async () => {
@@ -252,8 +265,8 @@ test('machine-qualified run numbers resolve without a question-number collision 
     .get(asking)!.number
   addQuestion(asking, runNumber + 1000)
 
-  expect(await resolveAnswerIdentifier(db(), `${machineName}/${runNumber}`, session)).toBe(asking)
-  expect(await resolveAnswerIdentifier(db(), `${machineName}/r${runNumber}`, session)).toBe(asking)
+  expect(await resolveAnswerIdentifier(`${machineName}/${runNumber}`, session)).toBe(asking)
+  expect(await resolveAnswerIdentifier(`${machineName}/r${runNumber}`, session)).toBe(asking)
 })
 
 test('a bare number with no run keeps the explicit question hint', async () => {
@@ -261,7 +274,111 @@ test('a bare number with no run keeps the explicit question hint', async () => {
   const number = 900_001
   addQuestion(owner, number)
 
-  await expect(resolveAnswerIdentifier(db(), number, null)).rejects.toThrow(
+  await expect(resolveAnswerIdentifier(number, null)).rejects.toThrow(
     `run ${number} does not exist; to answer question q${number}, pass q${number}`,
   )
+})
+
+function addCursorQuestion(input: {
+  state: 'running' | 'awaiting-ruling'
+  closed?: boolean
+  answered?: boolean
+}) {
+  const suffix = newRecordId().slice(-8)
+  const project = `cursor-answer-${suffix}`
+  const projectId = newRecordId()
+  const cursorId = newRecordId()
+  const questionId = newRecordId()
+  const questionNumber = 890_000 + Number.parseInt(suffix.slice(0, 4), 16)
+  const caller = `cursor-answer-session-${suffix}`
+  db().exec('PRAGMA foreign_keys=OFF')
+  db()
+    .query('INSERT INTO project(record_id,name,path,settings) VALUES (?,?,?,?)')
+    .run(projectId, project, `/tmp/${project}`, '{}')
+  db()
+    .query(
+      `INSERT INTO presence
+         (session_id,harness,role,machine,project,project_record_id,cwd,first_seen,last_seen)
+       VALUES (?,'codex','architect','machine',?,?,?,'2026-11-17','2026-11-17')`,
+    )
+    .run(caller, project, projectId, `/tmp/${project}`)
+  db()
+    .query(
+      `INSERT INTO workflow_cursor
+        (record_id,number,project,project_record_id,workflow_slug,mode_slug,workflow_key,instance_id,
+         session_id,workflow_version_record_id,catalogue_version_record_id,args,ordinal,step_slug,state,
+         closed,question,total_steps,created_at,updated_at)
+       VALUES (?,9876,?,?,'flow','default','DEV-2394','',?, ?,?,'{}',2,'review',?,'[]',NULL,4,'2026-11-17','2026-11-17')`,
+    )
+    .run(cursorId, project, projectId, caller, newRecordId(), newRecordId(), input.state)
+  db()
+    .query(
+      `INSERT INTO question
+        (record_id,number,workflow_cursor_record_id,asked_at,question,asked_via,
+         answered_at,answer,closed_at,close_reason)
+       VALUES (?,?,?,'2026-11-17','Proceed?','workflow',?,?,?,?)`,
+    )
+    .run(
+      questionId,
+      questionNumber,
+      cursorId,
+      input.answered ? '2026-11-17' : null,
+      input.answered ? 'yes' : null,
+      input.closed ? '2026-11-17' : null,
+      input.closed ? 'advanced-without-ruling' : null,
+    )
+  db().exec('PRAGMA foreign_keys=ON')
+  return { caller, cursorId, project, questionId, questionNumber }
+}
+
+test('an open cursor question names the workflow rule remedy with its cursor and project', async () => {
+  const fixture = addCursorQuestion({ state: 'awaiting-ruling' })
+  await expect(
+    resolveAnswerTarget(db(), `q${fixture.questionNumber}`, fixture.caller),
+  ).rejects.toThrow(`use ${PLATFORM_SLUG} workflow rule --cursor 9876 --project ${fixture.project}`)
+})
+
+test('a closed unanswered cursor question resolves by bare q-number to the question target', async () => {
+  const fixture = addCursorQuestion({ state: 'running', closed: true })
+  expect(await resolveAnswerTarget(db(), `q${fixture.questionNumber}`, fixture.caller)).toEqual({
+    kind: 'workflow-question',
+    questionRecordId: fixture.questionId,
+    cursorRecordId: fixture.cursorId,
+  })
+})
+
+test('an answered cursor question refuses as already ruled on without naming a null run', async () => {
+  const fixture = addCursorQuestion({ state: 'running', answered: true })
+  const message = await resolveAnswerTarget(
+    db(),
+    `q${fixture.questionNumber}`,
+    fixture.caller,
+  ).then(
+    () => 'resolved unexpectedly',
+    (error: unknown) => (error instanceof Error ? error.message : String(error)),
+  )
+  expect(message).toBe(`q${fixture.questionNumber} is already ruled on`)
+  expect(message).not.toContain('null')
+})
+
+test('a cursor question whose cursor is absent refuses without rendering a null cursor remedy', () => {
+  const cursorRecordId = newRecordId()
+  const decision = answerIdentifierDecision({
+    identifier: { kind: 'question-number', number: 881_001 },
+    run: null,
+    question: {
+      kind: 'workflow-question',
+      recordId: newRecordId(),
+      cursorRecordId,
+      cursorNumber: null,
+      project: null,
+      open: true,
+      state: 'open',
+    },
+  })
+  expect(decision).toEqual({
+    kind: 'refuse',
+    reason: `q881001's workflow cursor ${cursorRecordId} could not be read; check it with ${PLATFORM_SLUG} question inbox --all`,
+  })
+  expect(decision.kind === 'refuse' ? decision.reason : '').not.toContain('--cursor null')
 })

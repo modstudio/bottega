@@ -146,6 +146,13 @@ export const AnswerWaitingResultSchema = z
   })
   .strict()
 
+export const LateWorkflowRulingResultSchema = z
+  .object({
+    outcome: z.literal('recorded-late'),
+    question_record_id: z.string().uuid(),
+  })
+  .strict()
+
 const OpenQuestionSchema = z
   .object({
     question_id: z.number().int().positive(),

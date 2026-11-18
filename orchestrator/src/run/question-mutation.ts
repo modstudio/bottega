@@ -2,6 +2,8 @@
 /** Owns authority and audit for workflow-question mutations. Run questions keep run authority. */
 
 import type { Database } from 'bun:sqlite'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { recordDate } from '../../../shared/record-timestamp.ts'
 import { callerIdentityRefusal } from '../caller-classification.ts'
 import { callerIdentity, db, sessionId } from '../database/db.ts'
 import {
@@ -197,19 +199,26 @@ export async function answerWorkflowQuestion(
     actor: string | null
     fromOperator: boolean
     personName: string | null
-    channel: 'cli' | 'mcp'
+    channel: 'cli' | 'mcp' | 'ui'
     adoptionReason?: string | null
+    expect?: 'open' | 'closed-unanswered'
   },
   database: Database = db(),
 ): Promise<void> {
   const row = await questionById(database, input.questionId)
+  if (!row)
+    throw new Error(
+      `question ${input.questionId} was not found; check the identifier with ${PLATFORM_SLUG} question inbox --all`,
+    )
+  const expected = input.expect ?? 'open'
   if (
-    !row ||
     row.workflow_cursor_record_id !== input.cursorId ||
     row.answer !== null ||
-    row.closed_at !== null
+    (expected === 'open' ? row.closed_at !== null : row.closed_at === null)
   )
-    throw new Error(`question ${input.questionId} is not open`)
+    throw new Error(
+      `question ${input.questionId} is not ${expected === 'open' ? 'open' : 'closed and unanswered'}`,
+    )
   const mutation = await mutateQuestion(database, {
     id: input.questionId,
     intent: 'answer',
@@ -217,7 +226,7 @@ export async function answerWorkflowQuestion(
     actorSession: input.actor,
     reason: joinMutationReason(input.ruling, input.adoptionReason ?? null),
     auditAction: 'rule',
-    requireOpen: true,
+    requireOpen: expected === 'open',
     changes: {
       answer: input.ruling,
       answerBasis: input.basis ?? null,
@@ -229,4 +238,43 @@ export async function answerWorkflowQuestion(
     },
   })
   requireQuestionMutationApplied(mutation, row)
+}
+
+/** Records a late ruling on a closed workflow question without changing its cursor or closure. */
+export async function answerClosedWorkflowQuestion(
+  input: {
+    questionId: string
+    cursorId: string
+    ruling: string
+    fromOperator: boolean
+    channel: 'cli' | 'mcp' | 'ui'
+  },
+  database: Database = db(),
+): Promise<void> {
+  const row = await questionById(database, input.questionId)
+  if (!row)
+    throw new Error(
+      `question ${input.questionId} was not found; check the identifier with ${PLATFORM_SLUG} question inbox --all`,
+    )
+  const actor = sessionId()
+  const adoptionReason = authorizeWorkflowQuestionMutation({
+    owner: typeof row.workflow_owner === 'string' ? row.workflow_owner : null,
+    actor,
+    fromOperator: input.fromOperator,
+    subject: `workflow question ${input.questionId}`,
+    action: 'rule',
+    chainLastActivityAt: recordDate(row.workflow_updated_at).getTime(),
+    database,
+  })
+  await answerWorkflowQuestion(
+    {
+      ...input,
+      expect: 'closed-unanswered',
+      at: new Date().toISOString(),
+      actor,
+      personName: null,
+      adoptionReason,
+    },
+    database,
+  )
 }

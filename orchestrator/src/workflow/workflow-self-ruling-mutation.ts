@@ -4,6 +4,10 @@
 import type { Database } from 'bun:sqlite'
 import { nowIso, sessionId } from '../database/db.ts'
 import { assertOrchestratorProse } from '../prose-service.ts'
+import {
+  latestQuestionOnStep,
+  questionsForWorkflowCursor,
+} from '../question-store/question-store-read.ts'
 import { answerWorkflowQuestion, upsertWorkflowQuestion } from '../run/question-mutation.ts'
 import type { AutonomyValue } from './autonomy.ts'
 import type { Floor } from './workflow-floor.ts'
@@ -56,6 +60,15 @@ export async function recordWorkflowSelfRuling(
     input.stepSlug,
   )
   if (refusal) throw new Error(refusal)
+  const existing = latestQuestionOnStep(
+    await questionsForWorkflowCursor(database, input.cursorId),
+    { ordinal: input.cursorOrdinal + 1, slug: input.stepSlug },
+  )
+  if (existing?.answered_at !== null && existing?.answered_at !== undefined) {
+    const recorded = String(existing.answer)
+    const number = Number(existing.number)
+    if (recorded === ruling) return { questionId: number }
+  }
   const at = nowIso()
   const question = await upsertWorkflowQuestion(
     {

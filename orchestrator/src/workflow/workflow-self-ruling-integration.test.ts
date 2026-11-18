@@ -1,7 +1,8 @@
 import type { Database } from 'bun:sqlite'
-import { expect, test } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, spyOn, test } from 'bun:test'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { testDatabaseFixture } from '../database/test-database.fixture.ts'
+import * as taskFlowWriter from '../record/record-task-flow-write-client.ts'
 import type { AutonomyResolution } from './autonomy.ts'
 import {
   productionStepCatalogue,
@@ -9,12 +10,17 @@ import {
   setStepCatalogueLocal,
 } from './step-catalogue.ts'
 import { workflowNextContextMoment } from './workflow-context-moment.ts'
-import { composeWorkflowWithCursor } from './workflow-cursor.ts'
+import {
+  awaitWorkflowRuling,
+  composeWorkflowWithCursor,
+  writeFinishingWorkflowAdvance,
+} from './workflow-cursor.ts'
 import { resolveWorkflowLiveAutonomy } from './workflow-cursor-live-autonomy.ts'
 import { getWorkflowStepWithCursor } from './workflow-cursor-serve.ts'
 import { selectAndNextWorkflowStep as nextWorkflowStep } from './workflow-cursor-test.fixture.ts'
 import { flagForFloor } from './workflow-floor.ts'
 import { seedWorkflows } from './workflow-seeds.ts'
+import * as selfRulingMutation from './workflow-self-ruling-mutation.ts'
 import { installWorkflowStoreFixture } from './workflow-store.fixture.ts'
 import { closeCursorWithTextCopy, closeCursorWithTextCopyResult } from './workflow-text-copy.ts'
 import { composeWorkflow } from './workflows.ts'
@@ -103,7 +109,7 @@ function installProbe(d: Database): number {
   ).number
 }
 
-function selfRule(d: Database, question?: string): Promise<string> {
+function selfRule(d: Database, question?: string, ruling = 'Proceed.'): Promise<string> {
   return nextWorkflowStep(
     'flow',
     'fixture',
@@ -116,7 +122,7 @@ function selfRule(d: Database, question?: string): Promise<string> {
     ports,
     undefined,
     {
-      ruling: 'Proceed.',
+      ruling,
       basis: 'specification line 4',
       question,
       channel: 'mcp',
@@ -172,6 +178,196 @@ test('self-ruling records the answered question and closes the step atomically',
   expect(d.query("SELECT count(*) count FROM outbox WHERE kind='question'").get()).toEqual({
     count: 0,
   })
+})
+
+test('a failed self-ruling write does not advance a running cursor', async () => {
+  const d = database()
+  await openAtRuling(d)
+  const before = d.query('SELECT ordinal,step_slug,state,revision FROM workflow_cursor').get()
+  d.exec(`CREATE TRIGGER fail_dev2394_self_ruling_insert BEFORE INSERT ON question
+    BEGIN SELECT RAISE(ABORT,'injected self-ruling write failure'); END`)
+  const write = spyOn(taskFlowWriter, 'writeHostedTaskFlow')
+  write.mockClear()
+
+  await expect(selfRule(d)).rejects.toThrow('injected self-ruling write failure')
+
+  expect(write).not.toHaveBeenCalled()
+  expect(d.query('SELECT ordinal,step_slug,state,revision FROM workflow_cursor').get()).toEqual(
+    before,
+  )
+  expect(d.query('SELECT count(*) count FROM question').get()).toEqual({ count: 0 })
+  write.mockRestore()
+})
+
+test('a failed self-ruling write leaves an awaiting cursor and its question open', async () => {
+  const d = database()
+  await openAtRuling(d)
+  await awaitWorkflowRuling('flow', 'fixture', 'default', args, 'Proceed?', context, d, () => {})
+  const before = d.query('SELECT ordinal,step_slug,state,revision FROM workflow_cursor').get()
+  d.exec(`CREATE TRIGGER fail_dev2394_self_ruling_answer BEFORE UPDATE OF answer ON question
+    WHEN NEW.answer IS NOT NULL
+    BEGIN SELECT RAISE(ABORT,'injected self-ruling write failure'); END`)
+  const write = spyOn(taskFlowWriter, 'writeHostedTaskFlow')
+  write.mockClear()
+
+  await expect(selfRule(d)).rejects.toThrow('injected self-ruling write failure')
+
+  expect(write).not.toHaveBeenCalled()
+  expect(d.query('SELECT ordinal,step_slug,state,revision FROM workflow_cursor').get()).toEqual(
+    before,
+  )
+  expect(d.query('SELECT answered_at,closed_at FROM question').get()).toEqual({
+    answered_at: null,
+    closed_at: null,
+  })
+  write.mockRestore()
+})
+
+test('a hosted advance failure on an awaiting cursor does not close its question', async () => {
+  const d = database()
+  await openAtRuling(d)
+  await awaitWorkflowRuling('flow', 'fixture', 'default', args, 'Proceed?', context, d, () => {})
+  const before = d.query('SELECT ordinal,step_slug,state,revision FROM workflow_cursor').get()
+  const write = spyOn(taskFlowWriter, 'writeHostedTaskFlow')
+  write.mockImplementation(() => Promise.reject(new Error('injected hosted advance failure')))
+
+  try {
+    await expect(selfRule(d)).rejects.toThrow('injected hosted advance failure')
+  } finally {
+    write.mockRestore()
+  }
+
+  expect(d.query('SELECT ordinal,step_slug,state,revision FROM workflow_cursor').get()).toEqual(
+    before,
+  )
+  expect(d.query('SELECT answered_at,closed_at FROM question').get()).toEqual({
+    answered_at: expect.any(String),
+    closed_at: null,
+  })
+})
+
+describe('hosted self-ruling advance', () => {
+  let previousRecordApiUrl: string | undefined
+  let hostedAdvanceDatabase: Database
+  let destinationSpaceId: string
+
+  beforeEach(async () => {
+    previousRecordApiUrl = process.env.BOTTEGA_RECORD_API_URL
+    hostedAdvanceDatabase = database()
+    await openAtRuling(hostedAdvanceDatabase)
+    destinationSpaceId = newRecordId()
+    hostedAdvanceDatabase.query('UPDATE project SET settings=? WHERE name=?').run(
+      JSON.stringify({
+        gate: 'bun run check',
+        trunk: 'main',
+        docs: { protocol: 'orch-docs' },
+        tracker: { protocol: 'hub' },
+        space: destinationSpaceId,
+      }),
+      'fixture',
+    )
+    process.env.BOTTEGA_RECORD_API_URL = 'https://record.example.test'
+  })
+
+  afterEach(() => {
+    if (previousRecordApiUrl === undefined) delete process.env.BOTTEGA_RECORD_API_URL
+    else process.env.BOTTEGA_RECORD_API_URL = previousRecordApiUrl
+  })
+
+  test('skips the local preflight and writes both records', async () => {
+    const d = hostedAdvanceDatabase
+    d.query('INSERT INTO record_install_binding (id,bound_at,record_origin) VALUES (1,?,?)').run(
+      '2026-11-18',
+      'https://record.example.test',
+    )
+    const advances: unknown[] = []
+    const hostedContext = {
+      whoami: async () => ({
+        user: { id: newRecordId() },
+        activeSpaceId: null,
+        personalSpaceId: null,
+        memberships: [{ space_id: destinationSpaceId, slug: 'fixture-space', permission: 'write' }],
+      }),
+      advanceTaskFlow: async (input: unknown) => {
+        advances.push(input)
+        return {} as never
+      },
+    }
+    const ruling = spyOn(selfRulingMutation, 'recordWorkflowSelfRuling').mockResolvedValue({
+      questionId: 17,
+    })
+
+    try {
+      const row = {
+        ...(d.query('SELECT * FROM workflow_cursor').get() as Record<string, unknown>),
+        task_flow_record_id: null,
+      } as never
+      await writeFinishingWorkflowAdvance({
+        row,
+        closed: [],
+        deleteTextIds: [],
+        callerSession: context.session,
+        database: d,
+        taskFlowClient: hostedContext,
+        selfRulingPlan: {} as never,
+      })
+      expect(ruling).toHaveBeenCalledTimes(1)
+      expect(advances).toHaveLength(1)
+    } finally {
+      ruling.mockRestore()
+    }
+  })
+})
+
+test('a retried self-ruling reuses identical text and records different text', async () => {
+  const write = spyOn(taskFlowWriter, 'writeHostedTaskFlow')
+
+  try {
+    const identical = database()
+    await openAtRuling(identical)
+    write.mockImplementationOnce(() => Promise.reject(new Error('injected hosted advance failure')))
+    await expect(selfRule(identical)).rejects.toThrow('injected hosted advance failure')
+    const identicalResult = await selfRule(identical)
+    expect(identicalResult).toContain('Complete the review.')
+    expect(identical.query('SELECT count(*) count FROM question').get()).toEqual({ count: 1 })
+
+    const different = database()
+    await openAtRuling(different)
+    write.mockImplementationOnce(() => Promise.reject(new Error('injected hosted advance failure')))
+    await expect(selfRule(different)).rejects.toThrow('injected hosted advance failure')
+    const differentResult = await selfRule(different, undefined, 'Stop.')
+    expect(differentResult).toContain('Complete the review.')
+    expect(different.query('SELECT answer FROM question ORDER BY number').all()).toEqual([
+      { answer: 'Proceed.' },
+      { answer: 'Stop.' },
+    ])
+    expect(different.query('SELECT ordinal,step_slug FROM workflow_cursor').get()).toEqual({
+      ordinal: 4,
+      step_slug: 'complete',
+    })
+  } finally {
+    write.mockRestore()
+  }
+})
+
+test('a failed workflow-question write does not write an await-ruling advance', async () => {
+  const d = database()
+  await openAtRuling(d)
+  const before = d.query('SELECT ordinal,step_slug,state,revision FROM workflow_cursor').get()
+  d.exec(`CREATE TRIGGER fail_dev2394_await_question BEFORE INSERT ON question
+    BEGIN SELECT RAISE(ABORT,'injected workflow-question write failure'); END`)
+  const write = spyOn(taskFlowWriter, 'writeHostedTaskFlow')
+  write.mockClear()
+
+  await expect(
+    awaitWorkflowRuling('flow', 'fixture', 'default', args, 'Proceed?', context, d, () => {}),
+  ).rejects.toThrow('injected workflow-question write failure')
+
+  expect(write).not.toHaveBeenCalled()
+  expect(d.query('SELECT ordinal,step_slug,state,revision FROM workflow_cursor').get()).toEqual(
+    before,
+  )
+  write.mockRestore()
 })
 
 test('review-owed is applied as the only floor and leaves no evidence floor behind', async () => {

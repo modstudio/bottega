@@ -16,7 +16,12 @@ import {
 import { upsertWorkflowQuestion } from '../run/question-mutation.ts'
 import type { LiveCursorAutonomy } from './autonomy.ts'
 import { decideWorkflowTakeover, workflowTakeoverNotice } from './task-flow-decision.ts'
-import { taskFlowLocalStore, taskFlowReadStore } from './task-flow-store.ts'
+import {
+  taskFlowLocalStore,
+  taskFlowReadStore,
+  taskFlowWritesHosted,
+  writeLocalAdvance,
+} from './task-flow-store.ts'
 import type { TaskFlowIntentInput } from './task-flow-store-types.ts'
 import {
   type CommitCountPort,
@@ -536,6 +541,7 @@ async function persistWorkflowAdvance(
     obligationUpdates,
     deleteTextIds,
   }
+  await prepareWorkflowSelfRuling(selfRulingPlan, payload, d)
   const hosted = await writeHostedTaskFlow(
     'advance',
     payload,
@@ -544,9 +550,8 @@ async function persistWorkflowAdvance(
   )
   await applyWorkflowAdvanceLocally({
     row,
-    database: d,
     at,
-    selfRulingPlan,
+    database: d,
     payload,
     hosted,
   })
@@ -609,6 +614,7 @@ export async function writeFinishingWorkflowAdvance(input: {
     obligationUpdates,
     deleteTextIds,
   }
+  await prepareWorkflowSelfRuling(input.selfRulingPlan, payload, database)
   const hosted = await writeHostedTaskFlow(
     'advance',
     payload,
@@ -617,9 +623,8 @@ export async function writeFinishingWorkflowAdvance(input: {
   )
   await applyWorkflowAdvanceLocally({
     row,
-    database,
     at,
-    selfRulingPlan: input.selfRulingPlan,
+    database,
     payload,
     hosted,
   })
@@ -685,30 +690,35 @@ function advanceRecordRows(
   }
 }
 
+async function prepareWorkflowSelfRuling(
+  plan: Parameters<typeof recordWorkflowSelfRuling>[0] | undefined,
+  payload: TaskFlowIntentInput<'advance'>,
+  database: Database,
+): Promise<void> {
+  if (!plan) return
+  if (!taskFlowWritesHosted(database)) {
+    // Record the ruling only once the local advance is known to apply.
+    database.exec('SAVEPOINT self_ruling_preflight')
+    try {
+      writeLocalAdvance(database, payload, null)
+    } finally {
+      database.exec('ROLLBACK TO self_ruling_preflight; RELEASE self_ruling_preflight')
+    }
+  }
+  await recordWorkflowSelfRuling(plan, database)
+}
+
 async function applyWorkflowAdvanceLocally(input: {
-  row: CursorRow
-  database: Database
+  row: SelectableCursorRow
   at: string
-  selfRulingPlan?: Parameters<typeof recordWorkflowSelfRuling>[0]
+  database: Database
   payload: TaskFlowIntentInput<'advance'>
   hosted: TaskFlowIntentResult<'advance'> | null
 }): Promise<void> {
-  const { row, database: d, at, selfRulingPlan, payload, hosted } = input
+  const { row, at, database: d, payload, hosted } = input
   if (row.state === 'awaiting-ruling')
     await closeOpenWorkflowQuestion(row.record_id, 'advanced-without-ruling', at, d)
-  if (selfRulingPlan) {
-    d.exec('SAVEPOINT self_ruling_advance_preflight')
-    try {
-      taskFlowLocalStore(d).write('advance', payload, hosted)
-    } finally {
-      d.exec('ROLLBACK TO self_ruling_advance_preflight')
-      d.exec('RELEASE self_ruling_advance_preflight')
-    }
-    await recordWorkflowSelfRuling(selfRulingPlan, d)
-  }
-  writeTransaction(() => {
-    taskFlowLocalStore(d).write('advance', payload, hosted)
-  }, d)
+  writeTransaction(() => writeLocalAdvance(d, payload, hosted), d)
 }
 
 async function adoptAndRefreshWorkflowTask(
@@ -962,16 +972,6 @@ async function awaitWorkflowRulingImpl(
       },
     },
   }
-  const hosted = await writeHostedTaskFlow(
-    'await-ruling',
-    payload,
-    taskFlowWriteTarget(row.project, d),
-    context.taskFlowClient,
-  )
-  writeTransaction(() => {
-    const store = taskFlowLocalStore(d)
-    store.write('await-ruling', payload, hosted)
-  }, d)
   const recordedQuestion = await upsertWorkflowQuestion(
     {
       cursorId: row.record_id,
@@ -985,6 +985,16 @@ async function awaitWorkflowRulingImpl(
     },
     d,
   )
+  const hosted = await writeHostedTaskFlow(
+    'await-ruling',
+    payload,
+    taskFlowWriteTarget(row.project, d),
+    context.taskFlowClient,
+  )
+  writeTransaction(() => {
+    const store = taskFlowLocalStore(d)
+    store.write('await-ruling', payload, hosted)
+  }, d)
   const result = {
     summary: {
       id: row.id,
