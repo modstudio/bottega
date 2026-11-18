@@ -6,6 +6,7 @@ import type { SQL } from 'bun'
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
 import { recordIso } from '../../../shared/record-timestamp.ts'
 import { recordPool } from './record-pool.ts'
+import { readRecordQuestionPresenceTransaction } from './record-question-read.ts'
 import {
   type HostedTaskFlow,
   type HostedTaskFlowObligationById,
@@ -360,17 +361,7 @@ export async function readRecordTaskFlowPresenceTransaction(
         input.textCopyIds,
       ])
     : []
-  const questions = input.questionIds.length
-    ? await tx.unsafe('SELECT id FROM question WHERE id=ANY($1::uuid[]) ORDER BY id', [
-        input.questionIds,
-      ])
-    : []
-  const questionAudits = input.questionAuditIds.length
-    ? await tx.unsafe(
-        'SELECT id FROM question_mutation_audit WHERE id=ANY($1::uuid[]) ORDER BY id',
-        [input.questionAuditIds],
-      )
-    : []
+  const questionPresence = await readRecordQuestionPresenceTransaction(tx, input)
   const ids = (rows: Array<Record<string, unknown>>) => rows.map((row) => String(row.id))
   return {
     stageIds: ids(stages),
@@ -378,8 +369,7 @@ export async function readRecordTaskFlowPresenceTransaction(
     obligationIds: ids(obligations),
     textIds: ids(texts),
     textCopyIds: ids(textCopies),
-    questionIds: ids(questions),
-    questionAuditIds: ids(questionAudits),
+    ...questionPresence,
   }
 }
 

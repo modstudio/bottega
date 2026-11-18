@@ -30,6 +30,25 @@ const rootRunColumn = (column: string): string =>
 
 type RulingRead = Extract<RecordQuestionReadInput, { read: 'rulings' }>
 
+export async function readRecordQuestionPresenceTransaction(
+  tx: SQL,
+  input: { questionIds: string[]; questionAuditIds: string[] },
+): Promise<{ questionIds: string[]; questionAuditIds: string[] }> {
+  const questions = input.questionIds.length
+    ? await tx.unsafe('SELECT id FROM question WHERE id=ANY($1::uuid[]) ORDER BY id', [
+        input.questionIds,
+      ])
+    : []
+  const questionAudits = input.questionAuditIds.length
+    ? await tx.unsafe(
+        'SELECT id FROM question_mutation_audit WHERE id=ANY($1::uuid[]) ORDER BY id',
+        [input.questionAuditIds],
+      )
+    : []
+  const ids = (rows: Array<Record<string, unknown>>) => rows.map((row) => String(row.id))
+  return { questionIds: ids(questions), questionAuditIds: ids(questionAudits) }
+}
+
 async function recordQuestionRulingRows(
   tx: SQL,
   input: Pick<RulingRead, 'kind' | 'since'> & {
