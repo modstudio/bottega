@@ -1,5 +1,8 @@
 import { describe, expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { scoredVoidFidelity } from '../evidence-exclusion.ts'
+import { refuseJudgeVerdictAxes } from '../judgment.ts'
+import { refuseRecalibrationVerdict } from '../score/recalibration.ts'
 import {
   type JobFacts,
   refuseChildTurnVoid,
@@ -128,6 +131,57 @@ describe('verdict rules', () => {
   test('accepts a coherent read-only verdict', () => {
     expect(refuseVerdict(valid)).toBeNull()
   })
+
+  test.each([
+    { delivery: 'other', quality: 'right', fidelity: undefined, writesRepo: false },
+    { delivery: 'none', quality: 'right', fidelity: undefined, writesRepo: false },
+    { delivery: 'full', quality: 'other', fidelity: undefined, writesRepo: false },
+    { delivery: 'full', quality: 'right', fidelity: 'other', writesRepo: true },
+  ] as const)(
+    'keeps caller refusal %o identical',
+    ({ delivery, quality, fidelity, writesRepo }) => {
+      const facts: VerdictFacts = {
+        delivery,
+        quality,
+        fidelity: writesRepo && delivery !== 'none' ? (fidelity ?? null) : null,
+        job: {
+          writesRepo,
+          producesFindings: false,
+          hasAnyReviewGrades: false,
+          hasRequiredReviewGrades: true,
+        },
+        failureKind: null,
+      }
+      const canonical = refuseVerdict(facts)?.message
+      expect(canonical).toBeDefined()
+
+      let voidMessage: string | undefined
+      try {
+        scoredVoidFidelity(
+          writesRepo ? 'implement' : 'file-question',
+          delivery as never,
+          quality as never,
+          fidelity as never,
+        )
+      } catch (error) {
+        voidMessage = error instanceof Error ? error.message : String(error)
+      }
+
+      expect(voidMessage).toBe(canonical)
+      expect(
+        refuseJudgeVerdictAxes(
+          { log() {}, error() {}, pairHint: () => '' },
+          writesRepo ? 'implement' : 'file-question',
+          null,
+          [delivery, quality, fidelity],
+          writesRepo,
+        )?.message,
+      ).toBe(canonical)
+      expect(refuseRecalibrationVerdict(delivery, quality, fidelity, writesRepo)?.message).toBe(
+        canonical,
+      )
+    },
+  )
 
   test('accepts a writing verdict only with fidelity', () => {
     expect(refuseVerdict({ ...valid, job: writing, fidelity: 'faithful' })).toBeNull()
