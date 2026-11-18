@@ -541,13 +541,13 @@ async function persistWorkflowAdvance(
     obligationUpdates,
     deleteTextIds,
   }
+  await prepareWorkflowSelfRuling(selfRulingPlan, payload, d)
   const hosted = await writeHostedTaskFlow(
     'advance',
     payload,
     taskFlowWriteTarget(row.project, d),
     context.taskFlowClient,
   )
-  await prepareWorkflowSelfRuling(selfRulingPlan, payload, d)
   await applyWorkflowAdvanceLocally({
     row,
     at,
