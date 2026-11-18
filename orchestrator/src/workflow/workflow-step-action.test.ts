@@ -1,5 +1,6 @@
 import { expect, test } from 'bun:test'
 import { recordUnreachableRefusal } from '../../../shared/record-remedies.ts'
+import { selectBriefInFlight } from '../doc/context-brief.ts'
 import { JOBS } from '../jobs/jobs.ts'
 import { composeWorkflowWithCursor } from './workflow-cursor.ts'
 import { args, context, database } from './workflow-cursor-test.fixture.ts'
@@ -189,6 +190,15 @@ test('the pure dispatch decision still refuses an undeclared job on a keyed curs
 
 test('a keyless lookup absent from the step dispatches with the cursor step binding', async () => {
   const calls: unknown[][] = []
+  let runRow:
+    | {
+        number: number
+        job: string
+        status: 'running'
+        label: string
+        cursor_record_id: string
+      }
+    | undefined
   await dispatchForStep(
     { cursor: 17, job: 'understand', argv: ['do', 'understand', 'Inspect it.'] },
     {
@@ -201,6 +211,13 @@ test('a keyless lookup absent from the step dispatches with the cursor step bind
         }),
       dispatch: async (...args) => {
         calls.push(args)
+        runRow = {
+          number: 42,
+          job: 'understand',
+          status: 'running',
+          label: 'Inspect it.',
+          cursor_record_id: args[1].cursorRecordId,
+        }
       },
     },
   )
@@ -210,6 +227,20 @@ test('a keyless lookup absent from the step dispatches with the cursor step bind
       { cursorRecordId: 'cursor-record-17', stepSlug: 'investigate' },
     ],
   ])
+  const inFlight = selectBriefInFlight(
+    [runRow!],
+    [
+      {
+        record_id: 'cursor-record-17',
+        project: 'fixture',
+        workflow_key: '',
+        args: {},
+      },
+    ],
+    [],
+  )
+  expect(inFlight.runs).toEqual([])
+  expect(inFlight.cursorRuns).toEqual([{ recordId: 'cursor-record-17', runs: [42] }])
 })
 
 test('land refuses an undeclared action exactly and never calls its PR service', async () => {
