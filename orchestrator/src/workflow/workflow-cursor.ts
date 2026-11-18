@@ -65,7 +65,7 @@ import {
   type Floor,
   type FloorDecision,
 } from './workflow-floor.ts'
-import { applyFloorDecision } from './workflow-floor-apply.ts'
+import { applyFloorDecision, refuseForeignKeylessCursor } from './workflow-floor-apply.ts'
 import { type FloorEvidencePorts, productionFloorPorts } from './workflow-floor-evidence.ts'
 import { withReplayedFloorEvidenceAsync } from './workflow-floor-evidence-replay.ts'
 import { handoffGraduatingExplore } from './workflow-handoff.ts'
@@ -776,6 +776,7 @@ async function nextWorkflowStepImpl(
   row.args = resolvedArguments.encoded
   row.closed = resolvedArguments.closed
   refuseKeylessStepClose(row, evidence.task, d, live)
+  refuseForeignKeylessCursor(row, context.session)
   row = await adoptAndRefreshWorkflowTask(row, evidence.task, context, d)
   const composition = cursorComposition(row, d, live)
   const step = composition.steps[row.ordinal]!

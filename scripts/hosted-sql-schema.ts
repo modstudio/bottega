@@ -95,6 +95,8 @@ const HOSTED_FIXTURE_IMPORTS_WITHOUT_SQL = new Set([
   // Records gate fixture timings and intentionally owns no SQL.
   'orchestrator/test/gate-phase-timing.ts',
   'orchestrator/test/gate-timings-reporter.ts',
+  // Refuses non-loopback test network access and intentionally owns no SQL.
+  'orchestrator/test/network-guard.ts',
   'orchestrator/test/preload.ts',
   // Registers hosted canon HTTP assertions and intentionally owns no SQL.
   'orchestrator/test/canon-import-proof.ts',

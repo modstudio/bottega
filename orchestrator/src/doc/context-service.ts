@@ -2,6 +2,7 @@
 /** Owns context item reads and mutations over the document store. */
 import type { Database } from 'bun:sqlite'
 import {
+  type ContextHolderKind,
   type ContextItemKind,
   splitContextHolder,
 } from '../../../shared/context-item-vocabulary.ts'
@@ -186,8 +187,18 @@ export async function clearTaskHolderForLifecycle(input: {
   return { holder, ...result }
 }
 
+/** Lists one scope of stored context through the context service read boundary. */
+export function scopeContextHolders(holderKind: ContextHolderKind, database: Database = db()) {
+  return listContextHolders(holderKind, database).map(({ holder, holderId, updatedAt, items }) => ({
+    holder,
+    holderId,
+    updatedAt,
+    items,
+  }))
+}
+
 export function sessionContextHolders(database: Database) {
-  return listContextHolders('session', database).map(({ holder, holderId, updatedAt, items }) => ({
+  return scopeContextHolders('session', database).map(({ holder, holderId, updatedAt, items }) => ({
     holder,
     session: holderId,
     updatedAt,

@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs'
 import { migratedTestDatabase } from '../database/test-database.fixture.ts'
 import {
   briefInjectionCursorFacts,
+  briefInjectionWindow,
   recordBriefInjection,
   SESSION_START_SOURCES,
 } from './brief-injection.ts'
@@ -77,5 +78,15 @@ test('recording persists the final size and matching outbox row atomically', asy
     .get()!
   expect(outbox.kind).toBe('brief_injection')
   expect(JSON.parse(outbox.payload)).toMatchObject({ bytes: 10_100, lines: 120, overCap: true })
+  expect(briefInjectionWindow('2026-11-13T00:00:00.000Z', database)).toEqual([
+    {
+      sessionId: 'session-a',
+      at: '2026-11-13T12:00:05.000Z',
+      source: 'compact',
+      cursors: 1,
+      overCap: true,
+    },
+  ])
+  expect(briefInjectionWindow('2026-11-14T00:00:00.000Z', database)).toEqual([])
   database.close()
 })
