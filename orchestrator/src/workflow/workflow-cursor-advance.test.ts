@@ -134,7 +134,7 @@ async function closeChoice(d: Database, slug: string, outcome?: string): Promise
     'selected',
     context,
     d,
-    { artifact: `probe:${probe}` },
+    { artifacts: [`probe:${probe}`] },
     testPorts,
     undefined,
     undefined,
@@ -301,7 +301,7 @@ async function closeStep(
     context,
     d,
     {
-      artifact: `probe:${probe}`,
+      artifacts: [`probe:${probe}`],
       ...(ruling === undefined ? {} : { ruling }),
       ...extra,
     },
@@ -475,7 +475,7 @@ describe('ruling outcomes and bounded re-entry', () => {
         'opened pull request',
         context,
         d,
-        { artifact: `exec:${id}` },
+        { artifacts: [`exec:${id}`] },
         testPorts,
       )
 
@@ -519,7 +519,7 @@ describe('ruling outcomes and bounded re-entry', () => {
         'merged pull request',
         context,
         d,
-        { artifact: `exec:${id}` },
+        { artifacts: [`exec:${id}`] },
         testPorts,
         undefined,
         undefined,

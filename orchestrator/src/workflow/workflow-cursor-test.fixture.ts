@@ -23,11 +23,8 @@ import {
   selectWorkflowCursorForClose,
   type WorkflowCursorContext,
 } from './workflow-cursor-selection.ts'
-import {
-  type FloorEvidencePorts,
-  productionFloorPorts,
-  type WorkflowEvidenceInput,
-} from './workflow-floor-evidence.ts'
+import type { WorkflowEvidenceInput } from './workflow-evidence-input.ts'
+import { type FloorEvidencePorts, productionFloorPorts } from './workflow-floor-evidence.ts'
 import { seedWorkflows } from './workflow-seeds.ts'
 import type { WorkflowSelfRulingInput } from './workflow-self-ruling-mutation.ts'
 import { installWorkflowStoreFixture } from './workflow-store.fixture.ts'
@@ -238,7 +235,7 @@ export function installEvidence(
       row.ordinal + 1,
       row.step_slug,
     ) as { number: number }
-  return { gate, artifact: `probe:${probe}`, ruling: ruling.number, task: taskKey }
+  return { gate, artifacts: [`probe:${probe}`], ruling: ruling.number, task: taskKey }
 }
 
 export function closeStep(

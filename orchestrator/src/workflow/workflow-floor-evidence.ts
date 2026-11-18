@@ -31,8 +31,11 @@ import { reviewLineage } from '../review/review-lineage-store.ts'
 import { rulingStatus } from '../run/question-vocabulary.ts'
 import { resolveRunIdentifier } from '../run/run-identifier.ts'
 import { TERMINAL_RUN_STATUS_SET } from '../run/run-status.ts'
-import { parseProbeArtifact, resolveProbeArtifact } from './probe-identifier.ts'
 import { taskFlowHandoffLinks, taskFlowReadStore } from './task-flow-store.ts'
+import type {
+  BottegaCommandIdentity,
+  ValidatedArtifactEvidence,
+} from './workflow-artifact-evidence.ts'
 import {
   type CheckoutResolution,
   checkoutOutsideChangeRefusal,
@@ -40,9 +43,9 @@ import {
 } from './workflow-checkout-refusal.ts'
 import type { CursorState } from './workflow-cursor-transition.ts'
 import { resolveWorkflowCursorSuccessor } from './workflow-cursor-transition.ts'
+import type { WorkflowEvidenceInput } from './workflow-evidence-input.ts'
 import {
   type ArtifactRef,
-  type BottegaCommandIdentity,
   decideReviewReadArtifact,
   type Floor,
   flagForFloor,
@@ -61,6 +64,7 @@ import {
 } from './workflow-floor-evidence-replay.ts'
 import { readHubTask } from './workflow-floor-task-read.ts'
 import { floorFromObligationRow } from './workflow-obligation-floor.ts'
+import { resolvedOfferedArtifact } from './workflow-offered-artifacts.ts'
 import {
   type BoundRun,
   decideRunBinding,
@@ -70,17 +74,6 @@ import {
 import { attachedTextReferenceMeetsFloor, type WorkflowTextRow } from './workflow-text.ts'
 
 export type { FloorEvidencePorts } from './workflow-floor-evidence-replay.ts'
-
-export type WorkflowEvidenceInput = {
-  ruling?: number
-  review?: string
-  gate?: string | number
-  run?: string
-  artifact?: string
-  task?: string
-  defer?: string
-  satisfies?: string
-}
 
 export type CursorIdentity = {
   project: string
@@ -629,7 +622,7 @@ function pullRequestEvidence(
   d: Database,
   ports: FloorEvidencePorts,
   flag = `--artifact ${url}`,
-): NonNullable<ValidatedEvidence['pullRequest']> {
+): NonNullable<ValidatedArtifactEvidence['pullRequest']> {
   const project = projectByName(identity.project, d)
   if (!project) throw new Error(`project ${identity.project} is not registered`)
   const trunk = project.settings.trunk?.trim()
@@ -761,7 +754,7 @@ async function gatheredCommandEvidence(
   d: Database,
   checkout: CheckoutResolution,
   ports: FloorEvidencePorts,
-): Promise<Pick<ValidatedEvidence, 'probe' | 'exec' | 'pullRequest'>> {
+): Promise<Pick<ValidatedArtifactEvidence, 'probe' | 'exec' | 'pullRequest'>> {
   if (kind === 'probe') return { probe: { id, exitCode: row.exit_code } }
   const session = await sessionOrAdopterFor(cursorId, identity.session, row.session_id, d)
   const argv = recordedArgv(row.command)
@@ -769,7 +762,7 @@ async function gatheredCommandEvidence(
   const url = pullRequestCreateArgv(argv, commandIdentity)
     ? githubPullRequestUrlIn(row.output_tail)
     : undefined
-  const exec: NonNullable<ValidatedEvidence['exec']> = {
+  const exec: NonNullable<ValidatedArtifactEvidence['exec']> = {
     id,
     recordId,
     command: recordedCommand(row.command),
@@ -849,7 +842,7 @@ function recordedCommand(value: string): string {
 function offeredArtifactRunEvidence(
   parsed: ArtifactRef,
   d: Database,
-): Pick<ValidatedEvidence, 'artifactRunOffered'> {
+): Pick<ValidatedArtifactEvidence, 'artifactRunOffered'> {
   if (parsed.kind === 'run') return { artifactRunOffered: parsed.id }
   if (parsed.kind === 'id') {
     const run = d.query('SELECT record_id FROM run WHERE number=?').get(parsed.id) as {
@@ -875,16 +868,6 @@ function gatherTreeEvidence(
           identity.worktree,
         )
       : null,
-  }
-}
-
-function resolvedOfferedArtifact(d: Database, artifact: string): string {
-  const offered = artifact.trim()
-  try {
-    const parsed = parseProbeArtifact(offered)
-    return parsed?.identifier.kind === 'number' ? resolveProbeArtifact(d, offered)! : offered
-  } catch {
-    return offered
   }
 }
 
@@ -924,62 +907,72 @@ async function gatherArtifactEvidence(
   ports: FloorEvidencePorts,
   resolveCheckout: NonNullable<FloorEvidencePorts['resolveCheckout']>,
 ): Promise<void> {
-  if (!input.evidence.artifact?.trim()) return
-  const offeredArtifact = resolvedOfferedArtifact(d, input.evidence.artifact)
-  const parsed = parseArtifactRef(offeredArtifact)
-  if ('error' in parsed) throw new Error(parsed.error)
-  gathered.artifact = await resolveArtifact(
-    parsed,
-    offeredArtifact,
-    input.identity,
-    {
-      cursorId: input.cursorId,
-      stepOrdinal: input.stepOrdinal,
-      stepSlug: input.stepSlug,
-    },
-    d,
-    ports,
-    resolveCheckout,
-    gathered.tree!.commit,
-  )
-  Object.assign(gathered, offeredArtifactRunEvidence(parsed, d))
-  if (parsed.kind === 'pull-request')
-    gathered.pullRequest = pullRequestEvidence(parsed.url, input.identity, d, ports)
-  if (parsed.kind !== 'probe' && parsed.kind !== 'exec') return
-  const row = d
-    .query<
-      {
-        number: number
-        command: string
-        cwd: string
-        head_commit: string | null
-        exit_code: number
-        session_id: string | null
-        created_at: string
-        output_tail: string
-        withheld: number
-        command_withheld: number
-      },
-      [string]
-    >(
-      'SELECT number,command,cwd,head_commit,exit_code,session_id,created_at,output_tail,withheld,command_withheld FROM probe WHERE record_id=?',
-    )
-    .get(parsed.recordId)!
-  const checkout = resolveCheckout(row.cwd, row.head_commit, input.identity.branch)
-  Object.assign(
-    gathered,
-    await gatheredCommandEvidence(
-      parsed.kind,
-      row.number,
-      parsed.recordId,
-      row,
-      input.identity,
-      input.cursorId,
-      d,
-      checkout,
-      ports,
-    ),
-  )
+  const seen = new Set<string>()
+  for (const artifact of input.evidence.artifacts ?? []) {
+    if (!artifact.trim()) continue
+    const offeredArtifact = resolvedOfferedArtifact(d, artifact)
+    if (seen.has(offeredArtifact)) continue
+    seen.add(offeredArtifact)
+    const parsed = parseArtifactRef(offeredArtifact)
+    if ('error' in parsed) throw new Error(parsed.error)
+    const entry: ValidatedArtifactEvidence = {
+      artifact: await resolveArtifact(
+        parsed,
+        offeredArtifact,
+        input.identity,
+        {
+          cursorId: input.cursorId,
+          stepOrdinal: input.stepOrdinal,
+          stepSlug: input.stepSlug,
+        },
+        d,
+        ports,
+        resolveCheckout,
+        gathered.tree!.commit,
+      ),
+      ...offeredArtifactRunEvidence(parsed, d),
+    }
+    if (parsed.kind === 'pull-request')
+      entry.pullRequest = pullRequestEvidence(parsed.url, input.identity, d, ports)
+    if (parsed.kind === 'probe' || parsed.kind === 'exec') {
+      const row = d
+        .query<
+          {
+            number: number
+            command: string
+            cwd: string
+            head_commit: string | null
+            exit_code: number
+            session_id: string | null
+            created_at: string
+            output_tail: string
+            withheld: number
+            command_withheld: number
+          },
+          [string]
+        >(
+          'SELECT number,command,cwd,head_commit,exit_code,session_id,created_at,output_tail,withheld,command_withheld FROM probe WHERE record_id=?',
+        )
+        .get(parsed.recordId)!
+      const checkout = resolveCheckout(row.cwd, row.head_commit, input.identity.branch)
+      Object.assign(
+        entry,
+        await gatheredCommandEvidence(
+          parsed.kind,
+          row.number,
+          parsed.recordId,
+          row,
+          input.identity,
+          input.cursorId,
+          d,
+          checkout,
+          ports,
+        ),
+      )
+    }
+    if (!gathered.artifacts) gathered.artifacts = []
+    gathered.artifacts.push(entry)
+  }
 }
 
 export async function gatherValidatedEvidenceBase(

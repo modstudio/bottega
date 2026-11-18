@@ -111,7 +111,7 @@ test('open-pr does not advance from a review-lens run artifact', async () => {
       'opened pull request',
       context,
       d,
-      { artifact: String(run.number) },
+      { artifacts: [String(run.number)] },
       { runHasArtifacts: () => true, resolveTreeCommit: () => 'abc' },
     ),
   ).toThrow('floor recorded-artifact is unmet')

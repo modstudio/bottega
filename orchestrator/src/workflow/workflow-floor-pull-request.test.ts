@@ -43,7 +43,7 @@ const pullRequestExit = {
 }
 const pullRequestArtifact = { ...pullRequestExit, kind: 'recorded-artifact' as const }
 const EXEC_RECORD_ID = '00000000-0000-4000-8000-000000000004'
-const matchingExecEvidence = {
+const matchingExecArtifact = {
   artifact: { ref: `exec:${EXEC_RECORD_ID}`, exists: true },
   exec: {
     id: 4,
@@ -62,6 +62,7 @@ const matchingExecEvidence = {
   },
   pullRequest: { url, ...link },
 }
+const matchingExecEvidence = { artifacts: [matchingExecArtifact] }
 const decide = (evidence: typeof matchingExecEvidence) =>
   decideFloorSatisfaction({
     floors: [pullRequestExit, pullRequestArtifact],
@@ -174,12 +175,16 @@ test('a retained pull-request URL satisfies the floor when another output line i
 
 test('a pr-create exec from another session is refused on every pull-request floor', () => {
   const evidence = {
-    ...matchingExecEvidence,
-    exec: {
-      ...matchingExecEvidence.exec,
-      sessionMatches: false,
-      sessionAdoptedCursor: false,
-    },
+    artifacts: [
+      {
+        ...matchingExecArtifact,
+        exec: {
+          ...matchingExecArtifact.exec,
+          sessionMatches: false,
+          sessionAdoptedCursor: false,
+        },
+      },
+    ],
   }
   expect(decide(evidence).action).toBe('refuse')
   const artifactOnly = decideFloorSatisfaction({
@@ -198,8 +203,12 @@ test('a pr-create exec from another session is refused on every pull-request flo
 
 test('a pr-create exec predating the step names the pull-request link alternative', () => {
   const decision = decide({
-    ...matchingExecEvidence,
-    exec: { ...matchingExecEvidence.exec, createdAfterStepActivation: false },
+    artifacts: [
+      {
+        ...matchingExecArtifact,
+        exec: { ...matchingExecArtifact.exec, createdAfterStepActivation: false },
+      },
+    ],
   })
   expect(decision).toEqual({
     action: 'refuse',
@@ -211,11 +220,16 @@ test('a withheld pr-create exec names the pull-request link remedy', () => {
   const decision = decideFloorSatisfaction({
     floors: [pullRequestExit],
     evidence: {
-      exec: {
-        ...matchingExecEvidence.exec,
-        output: withheldOutput,
-        outputWithheld: true,
-      },
+      artifacts: [
+        {
+          ...matchingExecArtifact,
+          exec: {
+            ...matchingExecArtifact.exec,
+            output: withheldOutput,
+            outputWithheld: true,
+          },
+        },
+      ],
     },
     enforcement: 'floors',
     finishing: false,

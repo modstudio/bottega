@@ -343,7 +343,7 @@ function registerWorkflowAdvancement({
       .option('--review <value>', 'cite a review as floor evidence')
       .option('--gate <value>', 'cite a gate as floor evidence')
       .option('--run <value>', 'cite a run as floor evidence')
-      .option('--artifact <value>', 'cite an artifact as floor evidence')
+      .addOption(collectedOption('--artifact <value>', 'cite an artifact as floor evidence'))
       .option('--task <value>', 'cite a task as floor evidence')
       .option('--defer <value>', 'record deferred floor evidence')
       .option('--satisfies <value>', 'cite the floor this evidence satisfies')

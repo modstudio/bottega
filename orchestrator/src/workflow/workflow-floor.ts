@@ -7,6 +7,10 @@ import { WITHHELD_SECRET_SHAPED } from '../../../shared/secret-shaped.ts'
 import { MachineLabelRefusal } from '../record/machine-name.ts'
 import { classifyRunIdentifier, machineLabelRefusal } from '../run/run-identifier-names.ts'
 import { parseProbeArtifact } from './probe-identifier.ts'
+import type {
+  BottegaCommandIdentity,
+  ValidatedArtifactEvidence,
+} from './workflow-artifact-evidence.ts'
 import type { CheckoutEvidenceLocation } from './workflow-checkout-refusal.ts'
 import {
   commandExitBindingRefusal,
@@ -91,7 +95,7 @@ type ValidatedSatisfy =
 
 export type ValidatedEvidence = {
   runOffered?: string | number
-  artifactRunOffered?: string
+  artifacts?: ValidatedArtifactEvidence[]
   strandedQuestionRemedy?: string
   stepQuestion?: {
     id: number
@@ -122,36 +126,6 @@ export type ValidatedEvidence = {
     commit: string | null
   }
   run?: { id: string; terminal: boolean; exitCode: number | null }
-  probe?: { id: number; exitCode: number }
-  exec?: {
-    id: number
-    recordId: string
-    command: string
-    argv: string[] | null
-    commandIdentity?: BottegaCommandIdentity
-    exitCode: number
-    sessionMatches: boolean
-    sessionAdoptedCursor: boolean
-    createdAfterStepActivation: boolean
-    checkoutLocation: CheckoutEvidenceLocation
-    headCommit: string | null
-    cursorBranch: string | null
-    output: string
-    outputWithheld?: boolean
-    commandWithheld?: boolean
-    pullRequestCondition?: string
-  }
-  artifact?: { ref: string; exists: boolean }
-  pullRequest?: {
-    url: string
-    repository: string | null
-    projectRepository: string | null
-    state: string
-    head: string
-    base: string
-    cursorBranch: string
-    trunk: string
-  }
   task?: {
     key: string
     status: string | null
@@ -454,12 +428,6 @@ function execOutputWithheld(facts: { outputWithheld: boolean; output: string }):
   return facts.outputWithheld || facts.output === WITHHELD_SECRET_SHAPED
 }
 
-export type BottegaCommandIdentity = {
-  resolvedCandidate: string | null
-  mainCheckoutExecutable: string | null
-  installedExecutable: string | null
-}
-
 /** Matches one bottega verb after the adapter has resolved any path-shaped executable. */
 export function bottegaVerbArgv(
   argv: string[] | null,
@@ -564,7 +532,7 @@ export function decidePullRequestEvidence(
 }
 
 function execPullRequestFacts(
-  evidence: ValidatedEvidence,
+  evidence: ValidatedArtifactEvidence,
 ): Extract<PullRequestEvidenceFacts, { kind: 'exec' }> | undefined {
   const exec = evidence.exec
   if (!exec) return undefined
@@ -587,12 +555,14 @@ function execPullRequestFacts(
 }
 
 function linkPullRequestFacts(
-  evidence: ValidatedEvidence,
+  evidence: ValidatedArtifactEvidence,
 ): Extract<PullRequestEvidenceFacts, { kind: 'link' }> | undefined {
   return evidence.pullRequest ? { kind: 'link', ...evidence.pullRequest } : undefined
 }
 
-function pullRequestFacts(evidence: ValidatedEvidence): PullRequestEvidenceFacts | undefined {
+function pullRequestFacts(
+  evidence: ValidatedArtifactEvidence,
+): PullRequestEvidenceFacts | undefined {
   return execPullRequestFacts(evidence) ?? linkPullRequestFacts(evidence)
 }
 
@@ -610,15 +580,18 @@ function commandExitMet(floor: Floor, evidence: ValidatedEvidence): boolean {
   )
   if (floor.commandEvidence === 'gate') return gateOk
   const runOk = Boolean(run?.terminal && run.exitCode === floor.expectedExitCode)
-  const probeOk = evidence.probe?.exitCode === floor.expectedExitCode
-  const execOk = Boolean(
-    evidence.exec?.exitCode === floor.expectedExitCode &&
-      (evidence.exec.sessionMatches || evidence.exec.sessionAdoptedCursor) &&
-      evidence.exec.createdAfterStepActivation,
+  const artifactOk = (evidence.artifacts ?? []).some(
+    (entry) =>
+      entry.probe?.exitCode === floor.expectedExitCode ||
+      (entry.exec?.exitCode === floor.expectedExitCode &&
+        (entry.exec.sessionMatches || entry.exec.sessionAdoptedCursor) &&
+        entry.exec.createdAfterStepActivation),
   )
   if (floor.commandEvidence === 'pull-request')
-    return decidePullRequestEvidence(pullRequestFacts(evidence)).met
-  return gateOk || runOk || probeOk || execOk
+    return (evidence.artifacts ?? []).some(
+      (entry) => decidePullRequestEvidence(pullRequestFacts(entry)).met,
+    )
+  return gateOk || runOk || artifactOk
 }
 
 function normalizedTrackerWord(value: string): string {
@@ -665,8 +638,10 @@ function floorIsMet(floor: Floor, evidence: ValidatedEvidence, freshRulingAfter?
   if (floor.kind === 'command-exit') return commandExitMet(floor, evidence)
   if (floor.kind === 'recorded-artifact')
     return floor.commandEvidence === 'pull-request'
-      ? decidePullRequestEvidence(pullRequestFacts(evidence)).met
-      : evidence.artifact?.exists === true
+      ? (evidence.artifacts ?? []).some(
+          (entry) => decidePullRequestEvidence(pullRequestFacts(entry)).met,
+        )
+      : (evidence.artifacts ?? []).some((entry) => entry.artifact.exists)
   if (floor.kind === 'tracker-transition') return taskMet(floor, evidence)
   throw new Error(`unknown floor kind "${String(floor.kind)}"`)
 }
@@ -698,7 +673,10 @@ function trackerUnmetMessage(floor: Floor, evidence: ValidatedEvidence): string 
 function pullRequestUnmetMessage(floor: Floor, evidence: ValidatedEvidence): string | null {
   if (floor.commandEvidence !== 'pull-request') return null
   if (floor.kind !== 'command-exit' && floor.kind !== 'recorded-artifact') return null
-  const decision = decidePullRequestEvidence(pullRequestFacts(evidence))
+  const facts = (evidence.artifacts ?? [])
+    .map(pullRequestFacts)
+    .find((entry) => entry !== undefined)
+  const decision = decidePullRequestEvidence(facts)
   if (decision.met) return null
   const remedy =
     decision.condition === WITHHELD_PULL_REQUEST_CONDITION
@@ -736,8 +714,11 @@ function floorUnmetMessage(
         : '')
   if (floor.kind === 'recorded-artifact' && evidence.runOffered !== undefined)
     return `${existing}; run ${evidence.runOffered} is accepted as --artifact ${evidence.runOffered} when it has a reply or a recorded artifact`
-  if (floor.kind === 'command-exit' && evidence.artifactRunOffered !== undefined)
-    return `${existing}; run ${evidence.artifactRunOffered} is accepted as --run ${evidence.artifactRunOffered} once terminal with exit code ${floor.expectedExitCode}`
+  const artifactRunOffered = evidence.artifacts?.find(
+    (entry) => entry.artifactRunOffered !== undefined,
+  )?.artifactRunOffered
+  if (floor.kind === 'command-exit' && artifactRunOffered !== undefined)
+    return `${existing}; run ${artifactRunOffered} is accepted as --run ${artifactRunOffered} once terminal with exit code ${floor.expectedExitCode}`
   return existing
 }
 
@@ -816,12 +797,15 @@ function commandExitFailureRefusal(
   evidence: ValidatedEvidence,
   met: Floor[],
 ): string | null {
-  const exec = evidence.exec
-  if (!exec || evidence.artifact?.ref !== `exec:${exec.recordId}`) return null
   if (!met.some((floor) => floor.kind === 'recorded-artifact')) return null
   if (met.some((floor) => floor.kind === 'command-exit')) return null
   const commandExit = floors.find((floor) => floor.kind === 'command-exit')
-  if (!commandExit || exec.exitCode === commandExit.expectedExitCode) return null
+  if (!commandExit) return null
+  const exec = evidence.artifacts
+    ?.filter((entry) => entry.artifact.ref === `exec:${entry.exec?.recordId}`)
+    .map((entry) => entry.exec)
+    .find((entry) => entry !== undefined && entry.exitCode !== commandExit.expectedExitCode)
+  if (!exec) return null
   return commandExitMismatchRefusal({
     id: exec.id,
     command: exec.command,
@@ -861,7 +845,12 @@ function evidenceRefs(evidence: ValidatedEvidence): EvidenceRef[] {
   if (evidence.review) refs.push({ flag: '--review', value: String(evidence.review.number) })
   if (evidence.gate) refs.push({ flag: '--gate', value: evidence.gate.recordId })
   if (evidence.run) refs.push({ flag: '--run', value: String(evidence.run.id) })
-  if (evidence.artifact) refs.push({ flag: '--artifact', value: evidence.artifact.ref })
+  const artifactRefs = new Set<string>()
+  for (const entry of evidence.artifacts ?? []) {
+    if (artifactRefs.has(entry.artifact.ref)) continue
+    artifactRefs.add(entry.artifact.ref)
+    refs.push({ flag: '--artifact', value: entry.artifact.ref })
+  }
   if (evidence.task) refs.push({ flag: '--task', value: evidence.task.key })
   return refs
 }
@@ -983,11 +972,15 @@ export function decideFloorSatisfaction(input: FloorSatisfactionInput): FloorDec
   )
   const commandFailure = commandExitFailureRefusal(input.floors, input.evidence, met)
   if (commandFailure) return { action: 'refuse', message: commandFailure }
-  const bindingRefusal = commandExitBindingRefusal(
-    input.evidence.exec,
-    floorsAcceptPullRequestLink(input.floors),
-    input.cursorTakeoverRemedy,
-  )
+  const bindingRefusal = input.evidence.artifacts
+    ?.map((entry) =>
+      commandExitBindingRefusal(
+        entry.exec,
+        floorsAcceptPullRequestLink(input.floors),
+        input.cursorTakeoverRemedy,
+      ),
+    )
+    .find((refusal) => refusal !== null)
   if (
     met.length === 0 &&
     bindingRefusal &&

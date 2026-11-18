@@ -100,9 +100,9 @@ test('resolves probe artifacts and task comments through injected ports', async 
       (record_id,project,project_record_id,branch,tip,tree,pr_number,review_record_ids,patch_id,tier,lens_rounds,finding_count,at)
      VALUES ('snap-1','fixture',(SELECT record_id FROM project WHERE name='fixture'),'DEV-977-work','abc','tree',12,'[]','patch',1,1,0,'2026-09-01')`,
   ).run()
-  const gathered = await gather(d, { artifact: 'probe:1', task: 'DEV-977' })
-  expect(gathered.artifact).toEqual({ ref: `probe:${probeRecordId}`, exists: true })
-  expect(gathered.probe).toEqual({ id: 1, exitCode: 0 })
+  const gathered = await gather(d, { artifacts: ['probe:1'], task: 'DEV-977' })
+  expect(gathered.artifacts?.[0]?.artifact).toEqual({ ref: `probe:${probeRecordId}`, exists: true })
+  expect(gathered.artifacts?.[0]?.probe).toEqual({ id: 1, exitCode: 0 })
   expect(gathered.task).toEqual({
     key: 'DEV-977',
     status: 'done',
@@ -399,17 +399,17 @@ test('a bare run number or run UUID artifact resolves through the run record', a
   const number = (
     d.query('SELECT number FROM run WHERE record_id=?').get(matching) as { number: number }
   ).number
-  expect((await gather(d, { artifact: String(number) })).artifact).toEqual({
+  expect((await gather(d, { artifacts: [String(number)] })).artifacts?.[0]?.artifact).toEqual({
     ref: String(number),
     exists: true,
   })
-  expect((await gather(d, { artifact: matching })).artifact).toEqual({
+  expect((await gather(d, { artifacts: [matching] })).artifacts?.[0]?.artifact).toEqual({
     ref: matching,
     exists: true,
   })
   const foreign = insertRun(d, { project: 'other', branch: 'other-branch', launchKey: 'DEV-1' })
-  expect(async () => await gather(d, { artifact: foreign })).toThrow('project is other')
-  expect(async () => await gather(d, { artifact: newRecordId() })).toThrow(
+  expect(async () => await gather(d, { artifacts: [foreign] })).toThrow('project is other')
+  expect(async () => await gather(d, { artifacts: [newRecordId()] })).toThrow(
     'is not a run; pass --artifact <',
   )
 })
@@ -424,7 +424,7 @@ test('a foreign probe is refused and a matching probe is allowed', async () => {
     async () =>
       await gather(
         d,
-        { artifact: 'probe:1' },
+        { artifacts: ['probe:1'] },
         {
           resolveCheckout: () => ({
             project: 'other',
@@ -444,7 +444,7 @@ test('a foreign probe is refused and a matching probe is allowed', async () => {
   const matchingProbeRecordId = d
     .query<{ record_id: string }, []>('SELECT record_id FROM probe WHERE number=2')
     .get()!.record_id
-  expect((await gather(d, { artifact: 'probe:2' })).artifact).toEqual({
+  expect((await gather(d, { artifacts: ['probe:2'] })).artifacts?.[0]?.artifact).toEqual({
     ref: `probe:${matchingProbeRecordId}`,
     exists: true,
   })
@@ -460,7 +460,7 @@ test('exec evidence is branch-bound and carries its exit code', async () => {
     async () =>
       await gather(
         d,
-        { artifact: 'exec:1' },
+        { artifacts: ['exec:1'] },
         {
           resolveCheckout: () => ({
             project: 'other',
@@ -480,11 +480,21 @@ test('exec evidence is branch-bound and carries its exit code', async () => {
   const matchingExecRecordId = d
     .query<{ record_id: string }, []>('SELECT record_id FROM probe WHERE number=2')
     .get()!.record_id
-  expect(await gather(d, { artifact: 'exec:2' })).toMatchObject({
-    artifact: { ref: `exec:${matchingExecRecordId}`, exists: true },
-    exec: { id: 2, recordId: matchingExecRecordId, command: 'true', argv: ['true'], exitCode: 0 },
+  expect(await gather(d, { artifacts: ['exec:2'] })).toMatchObject({
+    artifacts: [
+      {
+        artifact: { ref: `exec:${matchingExecRecordId}`, exists: true },
+        exec: {
+          id: 2,
+          recordId: matchingExecRecordId,
+          command: 'true',
+          argv: ['true'],
+          exitCode: 0,
+        },
+      },
+    ],
   })
-  expect(async () => await gather(d, { artifact: 'probe:2' })).toThrow(
+  expect(async () => await gather(d, { artifacts: ['probe:2'] })).toThrow(
     '--artifact probe:2 is recorded as exec:2',
   )
 
@@ -492,19 +502,23 @@ test('exec evidence is branch-bound and carries its exit code', async () => {
     `INSERT INTO probe (record_id,command,cwd,head_commit,exit_code,output_tail,created_at,kind)
      VALUES ('${newRecordId()}',?,'/fixture/work','abc',0,'','2026-09-01','exec')`,
   ).run(JSON.stringify([PLATFORM_SLUG, 'pr', 'create']))
-  expect(await gather(d, { artifact: 'exec:3' })).toMatchObject({
-    exec: { id: 3, argv: [PLATFORM_SLUG, 'pr', 'create'], output: '' },
+  expect(await gather(d, { artifacts: ['exec:3'] })).toMatchObject({
+    artifacts: [{ exec: { id: 3, argv: [PLATFORM_SLUG, 'pr', 'create'], output: '' } }],
   })
-  expect((await gather(d, { artifact: 'exec:3' })).pullRequest).toBeUndefined()
+  expect((await gather(d, { artifacts: ['exec:3'] })).artifacts?.[0]?.pullRequest).toBeUndefined()
 
   const url = 'https://github.com/acme/app/pull/15'
   d.query(
     `INSERT INTO probe (record_id,command,cwd,head_commit,exit_code,output_tail,created_at,kind)
      VALUES ('${newRecordId()}',?,'/fixture/work','abc',0,?,'2026-09-01','exec')`,
   ).run(JSON.stringify([PLATFORM_SLUG, 'pr', 'create']), `opened ${url}`)
-  expect(await gather(d, { artifact: 'exec:4' })).toMatchObject({
-    exec: { id: 4, argv: [PLATFORM_SLUG, 'pr', 'create'], output: `opened ${url}` },
-    pullRequest: { url, repository: 'acme/app', projectRepository: 'acme/app' },
+  expect(await gather(d, { artifacts: ['exec:4'] })).toMatchObject({
+    artifacts: [
+      {
+        exec: { id: 4, argv: [PLATFORM_SLUG, 'pr', 'create'], output: `opened ${url}` },
+        pullRequest: { url, repository: 'acme/app', projectRepository: 'acme/app' },
+      },
+    ],
   })
 })
 
@@ -522,7 +536,7 @@ test('exec evidence uses the post-command head that belongs to the rebased branc
     (
       await gather(
         d,
-        { artifact: 'exec:1' },
+        { artifacts: ['exec:1'] },
         {
           resolveCheckout: (_cwd, headCommit) =>
             headCommit === 'rebased-tip'
@@ -530,7 +544,7 @@ test('exec evidence uses the post-command head that belongs to the rebased branc
               : { ...matchingCheckout, headIsTipOrAncestor: false },
         },
       )
-    ).artifact,
+    ).artifacts?.[0]?.artifact,
   ).toEqual({ ref: `exec:${execRecordId}`, exists: true })
 })
 
@@ -545,7 +559,7 @@ test('exec evidence refuses a post-command head outside the change', async () =>
     async () =>
       await gather(
         d,
-        { artifact: 'exec:1' },
+        { artifacts: ['exec:1'] },
         {
           resolveCheckout: () => ({ ...matchingCheckout, headIsTipOrAncestor: false }),
         },
@@ -560,22 +574,22 @@ test('a pr-create exec whose output URL cannot be judged is gathered as a condit
     `INSERT INTO probe (record_id,command,cwd,head_commit,exit_code,output_tail,created_at,kind)
      VALUES ('${newRecordId()}',?,'/fixture/work','abc',0,?,'2026-09-01','exec')`,
   ).run(JSON.stringify([PLATFORM_SLUG, 'pr', 'create']), `opened ${other}`)
-  const mismatched = await gather(d, { artifact: 'exec:1' })
-  expect(mismatched.pullRequest).toBeUndefined()
-  expect(mismatched.exec?.pullRequestCondition).toContain('--artifact exec:1')
-  expect(mismatched.exec?.pullRequestCondition).toContain('resolved as')
+  const mismatched = await gather(d, { artifacts: ['exec:1'] })
+  expect(mismatched.artifacts?.[0]?.pullRequest).toBeUndefined()
+  expect(mismatched.artifacts?.[0]?.exec?.pullRequestCondition).toContain('--artifact exec:1')
+  expect(mismatched.artifacts?.[0]?.exec?.pullRequestCondition).toContain('resolved as')
   const failed = await gather(
     d,
-    { artifact: 'exec:1' },
+    { artifacts: ['exec:1'] },
     {
       viewPullRequest: () => {
         throw new Error('gh pr view failed: no pull request found')
       },
     },
   )
-  expect(failed.pullRequest).toBeUndefined()
-  expect(failed.exec?.pullRequestCondition).toContain('--artifact exec:1')
-  expect(failed.exec?.pullRequestCondition).toContain('gh pr view failed')
+  expect(failed.artifacts?.[0]?.pullRequest).toBeUndefined()
+  expect(failed.artifacts?.[0]?.exec?.pullRequestCondition).toContain('--artifact exec:1')
+  expect(failed.artifacts?.[0]?.exec?.pullRequestCondition).toContain('gh pr view failed')
 })
 
 test('pull-request artifacts resolve and match the cursor branch and project trunk', async () => {
@@ -584,7 +598,7 @@ test('pull-request artifacts resolve and match the cursor branch and project tru
   expect(
     await gather(
       d,
-      { artifact: url },
+      { artifacts: [url] },
       {
         viewPullRequest: () => ({
           state: 'OPEN',
@@ -597,15 +611,19 @@ test('pull-request artifacts resolve and match the cursor branch and project tru
       },
     ),
   ).toMatchObject({
-    artifact: { ref: url, exists: true },
-    pullRequest: {
-      url,
-      repository: 'acme/app',
-      projectRepository: 'acme/app',
-      state: 'OPEN',
-      head: 'DEV-977-work',
-      base: 'main',
-    },
+    artifacts: [
+      {
+        artifact: { ref: url, exists: true },
+        pullRequest: {
+          url,
+          repository: 'acme/app',
+          projectRepository: 'acme/app',
+          state: 'OPEN',
+          head: 'DEV-977-work',
+          base: 'main',
+        },
+      },
+    ],
   })
 })
 
@@ -628,11 +646,11 @@ test("exec evidence recognizes only a cursor's recorded adopting session", async
             ('${newRecordId()}','["true"]','/fixture/work','abc',0,'','2026-09-02','exec','unrelated-session')`,
   ).run()
 
-  expect((await gather(d, { artifact: 'exec:1' })).exec).toMatchObject({
+  expect((await gather(d, { artifacts: ['exec:1'] })).artifacts?.[0]?.exec).toMatchObject({
     sessionMatches: false,
     sessionAdoptedCursor: true,
   })
-  expect((await gather(d, { artifact: 'exec:2' })).exec).toMatchObject({
+  expect((await gather(d, { artifacts: ['exec:2'] })).artifacts?.[0]?.exec).toMatchObject({
     sessionMatches: false,
     sessionAdoptedCursor: false,
   })
@@ -645,7 +663,7 @@ test('a foreign doc is refused and a matching doc is allowed', async () => {
     `INSERT INTO doc (scope,subject,slug,title,body,delivery,audiences,created_at,updated_at,project_record_id,record_id)
      VALUES ('project','other','note','t','b','inject','["technical"]','t','t',?,?)`,
   ).run(projectId(d, 'other'), foreignId)
-  expect(async () => await gather(d, { artifact: `doc:${foreignId}` })).toThrow(
+  expect(async () => await gather(d, { artifacts: [`doc:${foreignId}`] })).toThrow(
     `--artifact doc:${foreignId} is scoped to other, not this cursor's fixture`,
   )
   const matchingId = newRecordId()
@@ -653,7 +671,7 @@ test('a foreign doc is refused and a matching doc is allowed', async () => {
     `INSERT INTO doc (scope,subject,slug,title,body,delivery,audiences,created_at,updated_at,project_record_id,record_id)
      VALUES ('project','fixture','note','t','b','inject','["technical"]','t','t',?,?)`,
   ).run(projectId(d, 'fixture'), matchingId)
-  expect((await gather(d, { artifact: `doc:${matchingId}` })).artifact).toEqual({
+  expect((await gather(d, { artifacts: [`doc:${matchingId}`] })).artifacts?.[0]?.artifact).toEqual({
     ref: 'doc:project/fixture/note',
     exists: true,
   })
@@ -667,7 +685,8 @@ test('a path-shaped canon slug resolves as the whole address remainder', async (
      VALUES ('canon','fixture','.agents/rules/10-code.md','t','b','inject','["technical"]','t','t',?,?)`,
   ).run(projectId(d, 'fixture'), id)
   expect(
-    (await gather(d, { artifact: 'doc:canon/fixture/.agents/rules/10-code.md' })).artifact,
+    (await gather(d, { artifacts: ['doc:canon/fixture/.agents/rules/10-code.md'] })).artifacts?.[0]
+      ?.artifact,
   ).toEqual({
     ref: 'doc:canon/fixture/.agents/rules/10-code.md',
     exists: true,
@@ -684,30 +703,32 @@ test('a legacy resume doc without a project id is scoped by its project subject'
             ('resume','other','foreign-brief','t','b','demand','["technical"]','t','t',NULL,?)`,
   ).run(matchingId, foreignId)
 
-  expect((await gather(d, { artifact: `doc:${matchingId}` })).artifact).toEqual({
+  expect((await gather(d, { artifacts: [`doc:${matchingId}`] })).artifacts?.[0]?.artifact).toEqual({
     ref: 'doc:resume/fixture/brief',
     exists: true,
   })
-  expect(async () => await gather(d, { artifact: `doc:${foreignId}` })).toThrow(
+  expect(async () => await gather(d, { artifacts: [`doc:${foreignId}`] })).toThrow(
     `--artifact doc:${foreignId} is scoped to other, not this cursor's fixture`,
   )
 })
 
 test('a foreign task comment is refused and a matching comment is allowed', async () => {
   const d = database()
-  expect(async () => await gather(d, { artifact: 'task:DEV-1#comment:4' })).toThrow(
+  expect(async () => await gather(d, { artifacts: ['task:DEV-1#comment:4'] })).toThrow(
     "--artifact task:DEV-1#comment:4 task is not this cursor's DEV-977",
   )
-  expect((await gather(d, { artifact: 'task:DEV-977#comment:4' })).artifact).toEqual({
+  expect(
+    (await gather(d, { artifacts: ['task:DEV-977#comment:4'] })).artifacts?.[0]?.artifact,
+  ).toEqual({
     ref: 'task:DEV-977#comment:4',
     exists: true,
   })
   expect(
     (
       await gather(d, {
-        artifact: 'task:DEV-977#comment:01a10c8d-164d-71e9-b8a9-a59f15256556',
+        artifacts: ['task:DEV-977#comment:01a10c8d-164d-71e9-b8a9-a59f15256556'],
       })
-    ).artifact,
+    ).artifacts?.[0]?.artifact,
   ).toEqual({
     ref: 'task:DEV-977#comment:01a10c8d-164d-71e9-b8a9-a59f15256556',
     exists: true,
@@ -726,29 +747,30 @@ test('a fresh tracker task read verifies its own comment ids and refuses another
   const readTask = () => trackerRead
 
   expect(
-    (await gather(d, { artifact: `task:DEV-977#comment:${trackerComment}` }, { readTask }))
-      .artifact,
+    (await gather(d, { artifacts: [`task:DEV-977#comment:${trackerComment}`] }, { readTask }))
+      .artifacts?.[0]?.artifact,
   ).toEqual({ ref: `task:DEV-977#comment:${trackerComment}`, exists: true })
-  expect(async () => await gather(d, { artifact: 'task:DEV-977#comment:4' }, { readTask })).toThrow(
-    '--artifact task:DEV-977#comment:4 is not a comment on DEV-977',
-  )
+  expect(
+    async () => await gather(d, { artifacts: ['task:DEV-977#comment:4'] }, { readTask }),
+  ).toThrow('--artifact task:DEV-977#comment:4 is not a comment on DEV-977')
 
   const hubRead = hubTaskReadFromJson('DEV-977', {
     task: { record_id: 'task-DEV-977', key: 'DEV-977', status: 'done', status_category: 'done' },
     comments: [{ id: 4 }],
   })
   expect(
-    (await gather(d, { artifact: 'task:DEV-977#comment:4' }, { readTask: () => hubRead })).artifact,
+    (await gather(d, { artifacts: ['task:DEV-977#comment:4'] }, { readTask: () => hubRead }))
+      .artifacts?.[0]?.artifact,
   ).toEqual({ ref: 'task:DEV-977#comment:4', exists: true })
 })
 
 test('a task artifact requires the fresh task key to match the cursor', async () => {
   const d = database()
-  expect((await gather(d, { artifact: 'task:DEV-977' })).artifact).toEqual({
+  expect((await gather(d, { artifacts: ['task:DEV-977'] })).artifacts?.[0]?.artifact).toEqual({
     ref: 'task:DEV-977',
     exists: true,
   })
-  expect(async () => await gather(d, { artifact: 'task:DEV-1' })).toThrow(
+  expect(async () => await gather(d, { artifacts: ['task:DEV-1'] })).toThrow(
     "--artifact task:DEV-1 task is not this cursor's DEV-977",
   )
 })
@@ -763,10 +785,13 @@ test('an unlinked keyed cursor accepts only its own task label as task evidence'
 
 test('an unlinked keyed cursor accepts only its own task label as an artifact', async () => {
   const d = database()
-  expect(async () => await gather(d, { artifact: 'task:DEV-1' }, {}, unlinkedIdentity)).toThrow(
+  expect(async () => await gather(d, { artifacts: ['task:DEV-1'] }, {}, unlinkedIdentity)).toThrow(
     "--artifact task:DEV-1 task is not this cursor's DEV-977",
   )
-  expect((await gather(d, { artifact: 'task:DEV-977' }, {}, unlinkedIdentity)).artifact).toEqual({
+  expect(
+    (await gather(d, { artifacts: ['task:DEV-977'] }, {}, unlinkedIdentity)).artifacts?.[0]
+      ?.artifact,
+  ).toEqual({
     ref: 'task:DEV-977',
     exists: true,
   })
@@ -814,7 +839,7 @@ test('a tracker without comment ids names the task artifact remedy', async () =>
     async () =>
       await gather(
         database(),
-        { artifact: 'task:DEV-977#comment:uuid' },
+        { artifacts: ['task:DEV-977#comment:uuid'] },
         {
           readTask: (key) => ({
             recordId: `task-${key}`,
@@ -1005,10 +1030,11 @@ test('an explicit run artifact reaches keyless binding', async () => {
     sessionId: 's',
     startedAt: '2026-09-02',
   })
-  expect((await gather(d, { artifact: `run:${matching}` }, {}, planningIdentity)).artifact).toEqual(
-    {
-      ref: `run:${matching}`,
-      exists: true,
-    },
-  )
+  expect(
+    (await gather(d, { artifacts: [`run:${matching}`] }, {}, planningIdentity)).artifacts?.[0]
+      ?.artifact,
+  ).toEqual({
+    ref: `run:${matching}`,
+    exists: true,
+  })
 })

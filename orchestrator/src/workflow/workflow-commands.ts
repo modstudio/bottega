@@ -19,7 +19,6 @@ import { resolveRunIdentifier } from '../run/run-identifier.ts'
 import { assertKeylessCursorIdleAdmission } from '../session/keyless-cursor-idle-admission.ts'
 import { resolveBase } from '../worktree/worktree-caller.ts'
 import { parseAutonomy } from './autonomy.ts'
-import { resolveProbeArtifact } from './probe-identifier.ts'
 import {
   promoteStepCatalogue,
   resolvedStepCatalogueVersions,
@@ -48,10 +47,11 @@ import {
   resolveWorkflowCursorContext,
 } from './workflow-cursor-selection.ts'
 import { getWorkflowStepWithCursor } from './workflow-cursor-serve.ts'
+import type { WorkflowEvidenceInput } from './workflow-evidence-input.ts'
 import { parseWorkflowEvidencePayload, RECORD_EVIDENCE_FLAG } from './workflow-evidence-payload.ts'
 import { workflowExecCheckoutRefusal, workflowExecCommandCwd } from './workflow-exec-checkout.ts'
-import type { WorkflowEvidenceInput } from './workflow-floor-evidence.ts'
 import { workflowImportLines } from './workflow-import-output.ts'
+import { resolveOfferedArtifacts } from './workflow-offered-artifacts.ts'
 import {
   type ProbeRecord,
   type ProbeRunner,
@@ -427,7 +427,7 @@ function presentCommandOutcome(
   presentation.setExitCode(outcome.exitCode)
 }
 
-function evidenceFromArgv(argv: string[]): WorkflowEvidenceInput {
+export function evidenceFromArgv(argv: string[]): WorkflowEvidenceInput {
   const run = flagValue(argv, 'run')
   return {
     ruling: positive(flagValue(argv, 'ruling'), '--ruling'),
@@ -440,7 +440,7 @@ function evidenceFromArgv(argv: string[]): WorkflowEvidenceInput {
         ? undefined
         : resolveGateIdentifier(db(), flagValue(argv, 'gate')!),
     run: run === undefined ? undefined : resolveRunIdentifier(db(), run),
-    artifact: resolveProbeArtifact(db(), flagValue(argv, 'artifact')),
+    artifacts: resolveOfferedArtifacts(db(), flagValues(argv, 'artifact')),
     task: flagValue(argv, 'task'),
     defer: flagValue(argv, 'defer'),
     satisfies: obligationUuid(flagValue(argv, 'satisfies')),

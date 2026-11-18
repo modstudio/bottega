@@ -269,7 +269,7 @@ describe('workflow text lifecycle', () => {
       'research attached',
       context,
       d,
-      { artifact: reference },
+      { artifacts: [reference] },
       {},
       cursor,
     )
@@ -297,7 +297,7 @@ describe('workflow text lifecycle', () => {
       'source attached',
       context,
       d,
-      { artifact: source },
+      { artifacts: [source] },
       {},
       cursor,
     )
@@ -310,7 +310,7 @@ describe('workflow text lifecycle', () => {
       'task written',
       context,
       d,
-      { artifact: consumer },
+      { artifacts: [consumer] },
       {},
       cursor,
     )
@@ -335,7 +335,7 @@ describe('workflow text lifecycle', () => {
         note,
         context,
         finished,
-        { artifact: reference },
+        { artifacts: [reference] },
         {},
         finishedCursor,
       )
@@ -691,7 +691,7 @@ describe('task-linked workflow text preservation', () => {
             note,
             context,
             d,
-            { artifact: reference },
+            { artifacts: [reference] },
             {},
             cursor,
           )

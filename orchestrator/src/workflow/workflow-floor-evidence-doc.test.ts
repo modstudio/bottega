@@ -71,11 +71,11 @@ test('admits a machine-scope document with no project as evidence on another pro
     stepOrdinal: 1,
     stepSlug: 'rebase',
     floors: [],
-    evidence: { artifact: 'doc:machine/_/note' },
+    evidence: { artifacts: ['doc:machine/_/note'] },
     ports: {},
     d: database(),
   })
-  expect(gathered.artifact).toEqual({ ref: 'doc:machine/_/note', exists: true })
+  expect(gathered.artifacts?.[0]?.artifact).toEqual({ ref: 'doc:machine/_/note', exists: true })
 })
 
 test('an unknown doc artifact refusal names every accepted artifact form including task key', async () => {
@@ -87,7 +87,7 @@ test('an unknown doc artifact refusal names every accepted artifact form includi
       stepOrdinal: 1,
       stepSlug: 'rebase',
       floors: [],
-      evidence: { artifact: 'doc:missing' },
+      evidence: { artifacts: ['doc:missing'] },
       ports: {},
       d: database(),
     }),

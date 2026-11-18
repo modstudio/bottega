@@ -7,13 +7,14 @@ import { cursorName, workflowCursorTakeoverRemedy } from './workflow-cursor-form
 import type { SelectableCursorRow, WorkflowCursorContext } from './workflow-cursor-selection.ts'
 import { currentStepActivatedAt, reentryBoundFloorInput } from './workflow-cursor-trail.ts'
 import { foreignCursorOwner } from './workflow-cursor-transition.ts'
+import type { WorkflowEvidenceInput } from './workflow-evidence-input.ts'
 import {
   decideFloorSatisfaction,
   type EnforcementMode,
   type Floor,
   type FloorDecision,
 } from './workflow-floor.ts'
-import type { FloorEvidencePorts, WorkflowEvidenceInput } from './workflow-floor-evidence.ts'
+import type { FloorEvidencePorts } from './workflow-floor-evidence.ts'
 import { gatherValidatedEvidence } from './workflow-floor-evidence-gather.ts'
 import { invokeFloorEvidencePort } from './workflow-floor-evidence-replay.ts'
 import { openWorkflowObligations } from './workflow-obligation-floor.ts'

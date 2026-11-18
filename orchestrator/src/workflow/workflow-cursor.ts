@@ -56,6 +56,7 @@ import {
   decideCursorStart,
   decideStepOutcome,
 } from './workflow-cursor-transition.ts'
+import type { WorkflowEvidenceInput } from './workflow-evidence-input.ts'
 import {
   allowedCloseFloor,
   DEFAULT_EXPECTED_EXIT_CODE,
@@ -65,11 +66,7 @@ import {
   type FloorDecision,
 } from './workflow-floor.ts'
 import { applyFloorDecision } from './workflow-floor-apply.ts'
-import {
-  type FloorEvidencePorts,
-  productionFloorPorts,
-  type WorkflowEvidenceInput,
-} from './workflow-floor-evidence.ts'
+import { type FloorEvidencePorts, productionFloorPorts } from './workflow-floor-evidence.ts'
 import { withReplayedFloorEvidenceAsync } from './workflow-floor-evidence-replay.ts'
 import { handoffGraduatingExplore } from './workflow-handoff.ts'
 import type { CursorSummary } from './workflow-handoff-types.ts'
