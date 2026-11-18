@@ -192,7 +192,10 @@ export type ProjectSettings = {
   productionBranch?: string
   /** The project's complete landing gate, run from the branch worktree. */
   gate?: string
-  /** Project-root-relative globs matching the registered gate's own code. */
+  /**
+   * Project-root-relative file globs matching the code of both the gate and the worker check;
+   * a directory needs `/**`. Declaring it replaces the default rule that every `scripts` path is gate tooling.
+   */
   gateTooling?: string[]
   /** Cheap static checks a writing worker runs before reporting done. */
   workerCheck?: string
