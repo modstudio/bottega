@@ -37,9 +37,12 @@ test('refuses a timeout below the floor', () => {
   ])
 })
 
-test('accepts equivalent and longer Fly durations', () => {
-  expect(decide('[deploy]\nwait_timeout = "900s"')).toEqual([])
-  expect(decide('[deploy]\nwait_timeout = "1h"')).toEqual([])
+test('refuses sub-floor Fly durations written in other units', () => {
+  for (const value of ['899s', '0.24h']) {
+    expect(decide(`[deploy]\nwait_timeout = "${value}"`)).toEqual([
+      `${path}: [deploy].wait_timeout value "${value}" is below the 15m floor; raise wait_timeout to at least "15m"; lowering the floor is an operator ruling in scripts/check-fly-deploy-timeouts.ts`,
+    ])
+  }
 })
 
 test('refuses values that are not Fly durations', () => {
