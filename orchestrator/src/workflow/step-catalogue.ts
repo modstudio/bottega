@@ -971,7 +971,8 @@ function cataloguePromotionPreflight(
     definition: JSON.parse(row.definition) as WorkflowDefinition,
   }))
   const refusal = renderCheckRefusal(
-    checkWorkflowRendering(workflows, definition, projects(undefined, d)),
+    // Promotion reads only placeholder failures, which do not depend on composition history.
+    checkWorkflowRendering(workflows, definition, projects(undefined, d), new Map()),
   )
   if (refusal) throw new Error(refusal)
 }

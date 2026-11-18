@@ -633,7 +633,8 @@ function workflowPromotionPreflight(
   const workflows = productionWorkflows(d, spaceId).filter((workflow) => workflow.slug !== slug)
   workflows.push({ slug, definition })
   const renderRefusal = renderCheckRefusal(
-    checkWorkflowRendering(workflows, catalogue, projects(undefined, d)),
+    // Promotion reads only placeholder failures, which do not depend on composition history.
+    checkWorkflowRendering(workflows, catalogue, projects(undefined, d), new Map()),
   )
   if (renderRefusal) throw new Error(renderRefusal)
 }
