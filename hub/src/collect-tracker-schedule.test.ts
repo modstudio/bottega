@@ -110,7 +110,8 @@ test('tasks output names only the reasons that skipped trackers', () => {
         read: 0,
         skippedFresh: 0,
         leftToWatcher: 4,
-        unreportedParents: [],
+        unreportedParentProjects: [],
+        ambiguousParentProjects: [],
       },
     }),
   ).toBe(
@@ -125,14 +126,18 @@ test('tasks output names only the reasons that skipped trackers', () => {
         read: 2,
         skippedFresh: 1,
         leftToWatcher: 0,
-        unreportedParents: [
+        unreportedParentProjects: [
           { project: 'alpha', count: 3 },
           { project: 'beta', count: 0 },
+        ],
+        ambiguousParentProjects: [
+          { project: 'alpha', count: 1, keys: ['ALP-8'] },
+          { project: 'beta', count: 0, keys: [] },
         ],
       },
     }),
   ).toBe(
-    'tasks             ok (2 trackers read, 1 skipped fresh, alpha 3 parents unreported, beta 0 parents unreported)',
+    'tasks             ok (2 trackers read, 1 skipped fresh, alpha 3 parents unreported, beta 0 parents unreported, alpha 1 parents ambiguous (ALP-8), beta 0 parents ambiguous)',
   )
 })
 

@@ -94,6 +94,26 @@ export const hubModuleSpecs = [
   },
   { file: 'hub/src/ingest/tracker-read-mode.ts', allowed: [] },
   {
+    file: 'hub/src/ingest/trackers.ts',
+    allowed: [
+      'bun:sqlite',
+      '../../../shared/record/schema.ts',
+      '../../../shared/tracker-list-scope.ts',
+      '../../../shared/tracker-task-text.ts',
+      '../../../shared/trackers.ts',
+      '../db.ts',
+      '../mcp.ts',
+      '../outbox.ts',
+      '../project-record-id.ts',
+      '../projects.ts',
+      '../push-contract.ts',
+      '../task-cache.ts',
+      '../task-hosted-row.ts',
+      '../task-identity.ts',
+      './tracker-read-mode.ts',
+    ],
+  },
+  {
     file: 'hub/src/hosted-push-decision.ts',
     allowed: [
       '../../shared/record-timestamp.ts',
@@ -237,7 +257,7 @@ export const hubModuleSpecs = [
   { file: 'hub/src/outbox-fast-cycle.ts', allowed: [] },
   { file: 'hub/src/collect-cadence.ts', allowed: [] },
   {
-    file: 'hub/src/collect-tracker-parents.ts',
+    file: 'hub/src/collect-tracker-counts.ts',
     allowed: ['../../shared/brand.ts', './ingest/trackers.ts'],
   },
   { file: 'hub/src/collect-watch-schedule.ts', allowed: [] },

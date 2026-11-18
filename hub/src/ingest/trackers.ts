@@ -16,6 +16,7 @@ import { queueHostedChange } from '../outbox.ts'
 import { projectRecordIdFor } from '../project-record-id.ts'
 import { projects } from '../projects.ts'
 import { HOSTED_STATUS_EVENT_TABLE, HOSTED_TASK_TABLE } from '../push-contract.ts'
+import { reconcileParentRecordId, resolveParentRecordId } from '../task-cache.ts'
 import { collectorTaskShouldQueue } from '../task-hosted-row.ts'
 import { claimTaskIdentity } from '../task-identity.ts'
 import {
@@ -93,6 +94,9 @@ export type TrackerResult = {
   retired?: number
   /** Rows in this read whose tracker response omitted the parent field. */
   unreportedParents?: number
+  /** Reported parent keys whose canonical task identity is ambiguous. */
+  ambiguousParents?: number
+  ambiguousParentKeys?: string[]
   /** Whether any tracker-owned row differed from the last successful read. */
   activity?: boolean
   skipped?: string
@@ -379,6 +383,7 @@ function updateTrackerTask(
   effectiveKey: string,
   at: string,
   times: TrackerObservationTimes,
+  parentRecordId: string | null,
 ) {
   const parentReported = t.parentKey !== undefined
   conn
@@ -387,10 +392,7 @@ function updateTrackerTask(
          status_category=?, opened_at=?, updated_at=?, assignee=?, closed_at=?,
          source='mcp', last_seen=?, retired_reason=NULL,
          parent_key=CASE WHEN ? THEN ? ELSE parent_key END,
-         parent_record_id=CASE
-           WHEN NOT ? THEN parent_record_id
-           ELSE (SELECT record_id FROM task parent WHERE parent.project=? AND parent.key=?)
-         END
+         parent_record_id=CASE WHEN ? THEN ? ELSE parent_record_id END
        WHERE record_id=?`,
     )
     .run(
@@ -407,19 +409,22 @@ function updateTrackerTask(
       parentReported,
       t.parentKey ?? null,
       parentReported,
-      t.project,
-      t.parentKey ?? null,
+      parentRecordId,
       row.record_id,
     )
 }
 
-function insertTrackerTask(conn: Database, t: TrackerTask, times: TrackerObservationTimes) {
+function insertTrackerTask(
+  conn: Database,
+  t: TrackerTask,
+  times: TrackerObservationTimes,
+  parentRecordId: string | null,
+) {
   conn
     .query(
       `INSERT INTO task (record_id, external_id, key, project, project_record_id, title, status, status_category,
         opened_at, updated_at, assignee, closed_at, source, first_seen, last_seen, parent_key,parent_record_id)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?, 'mcp', ?, ?, ?,
-         (SELECT record_id FROM task parent WHERE parent.project=? AND parent.key=?))`,
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?, 'mcp', ?, ?, ?, ?)`,
     )
     .run(
       newRecordId(),
@@ -437,19 +442,8 @@ function insertTrackerTask(conn: Database, t: TrackerTask, times: TrackerObserva
       times.firstSeen,
       times.lastSeen,
       t.parentKey ?? null,
-      t.project,
-      t.parentKey ?? null,
+      parentRecordId,
     )
-}
-
-function resolveChildrenOfTrackerTask(conn: Database, project: string, key: string) {
-  conn
-    .query(
-      `UPDATE task SET parent_record_id=(
-         SELECT parent.record_id FROM task parent WHERE parent.project=? AND parent.key=?
-       ) WHERE project=? AND parent_key=? AND parent_record_id IS NULL`,
-    )
-    .run(project, key, project, key)
 }
 
 function refreshTrackerClaim(conn: Database, t: TrackerTask, at: string) {
@@ -482,16 +476,24 @@ function upsertTrackerTaskOn(conn: Database, t: TrackerTask, at: string) {
       stored: row,
       times: trackerObservationTimes(t, row, at, row.key),
       changed: false,
+      ambiguousParentKeys: [],
     }
   }
   const effectiveKey = row ? trackerLabelAfterCollisionCheck(conn, t, row) : t.key
   const changed = differs(t, row ?? undefined, effectiveKey)
   const times = trackerObservationTimes(t, row ?? undefined, at, effectiveKey)
-  if (row) updateTrackerTask(conn, t, row, effectiveKey, at, times)
-  else insertTrackerTask(conn, t, times)
-  resolveChildrenOfTrackerTask(conn, t.project, effectiveKey)
+  const parentResolution =
+    t.parentKey === undefined || t.parentKey === null
+      ? { recordId: null, ambiguous: false }
+      : resolveParentRecordId(conn, t.parentKey, t.project)
+  if (row) updateTrackerTask(conn, t, row, effectiveKey, at, times, parentResolution.recordId)
+  else insertTrackerTask(conn, t, times, parentResolution.recordId)
+  const childResolution = reconcileParentRecordId(conn, effectiveKey, t.project)
   refreshTrackerClaim(conn, t, at)
-  return { stored: row, times, changed }
+  const ambiguousParentKeys = new Set<string>()
+  if (parentResolution.ambiguous && t.parentKey) ambiguousParentKeys.add(t.parentKey)
+  if (childResolution.ambiguous) ambiguousParentKeys.add(effectiveKey)
+  return { stored: row, times, changed, ambiguousParentKeys: [...ambiguousParentKeys] }
 }
 
 export type TrackerTaskObservation = {
@@ -508,6 +510,7 @@ export type TrackerTaskObservation = {
 type CachedTrackerTaskObservation = TrackerTaskObservation & {
   times: TrackerObservationTimes
   changed: boolean
+  ambiguousParentKeys: string[]
 }
 
 /** Observe one tracker row and its category transition in the same transaction. */
@@ -516,7 +519,7 @@ function observeTrackerTaskOn(
   task: TrackerTask,
   at: string,
 ): CachedTrackerTaskObservation {
-  const { stored, times, changed } = upsertTrackerTaskOn(conn, task, at)
+  const { stored, times, changed, ambiguousParentKeys } = upsertTrackerTaskOn(conn, task, at)
   const was = stored?.status_category ?? null
   const recordsTransition =
     stored !== null &&
@@ -532,7 +535,8 @@ function observeTrackerTaskOn(
     collectorTaskShouldQueue('mcp', observed, changed || stored?.updated_at === null)
   )
     queueHostedChange(conn, HOSTED_TASK_TABLE, taskRecordId, 'upsert', at)
-  if (!recordsTransition) return { at, taskRecordId, taskKey, times, changed, event: null }
+  if (!recordsTransition)
+    return { at, taskRecordId, taskKey, times, changed, ambiguousParentKeys, event: null }
 
   const recordId = newRecordId()
   const inserted = conn
@@ -551,6 +555,7 @@ function observeTrackerTaskOn(
     taskKey,
     times,
     changed,
+    ambiguousParentKeys,
     event,
   }
 }
@@ -662,6 +667,16 @@ function unreportedParentCount(tasks: Iterable<TrackerTask>): number {
   return [...tasks].filter((task) => task.parentKey === undefined).length
 }
 
+function ambiguousParentSummary(observations: TrackerCacheObservation[], backfillKeys: string[]) {
+  const keys = [
+    ...new Set([
+      ...observations.flatMap(({ observation }) => observation.ambiguousParentKeys),
+      ...backfillKeys,
+    ]),
+  ].sort()
+  return { ambiguousParents: keys.length, ambiguousParentKeys: keys }
+}
+
 /** Retire tracker rows the register no longer assigns to this project. */
 export function retireOutOfScopeTrackerTasks(
   project: Project,
@@ -745,16 +760,17 @@ async function backfillTrackerTasks(
   missing: { task_key: string; project: string }[],
   at: string,
   prefixes: readonly string[],
-): Promise<{ filled: number; activity: boolean }> {
+): Promise<{ filled: number; activity: boolean; ambiguousParentKeys: string[] }> {
   let filled = 0
   let activity = false
-  if (!source.lookup) return { filled, activity }
+  const ambiguousParentKeys = new Set<string>()
+  if (!source.lookup) return { filled, activity, ambiguousParentKeys: [] }
   for (const { task_key } of missing.filter((row) => row.project === source.project)) {
     if (!trackerKeyInScope(task_key, prefixes)) continue
     try {
       const task = await lookupTrackerTask(source, client, task_key)
       if (!task) continue
-      const { changed } = writeTransaction((conn) => {
+      const { changed, ambiguousParentKeys: taskAmbiguities } = writeTransaction((conn) => {
         const result = upsertTrackerTaskOn(conn, task, at)
         const stored = trackerIdentityRow(conn, task)
         if (
@@ -770,11 +786,12 @@ async function backfillTrackerTasks(
       })
       filled++
       if (changed) activity = true
+      for (const key of taskAmbiguities) ambiguousParentKeys.add(key)
     } catch {
       /* not findable; its work remains project-level unattributed */
     }
   }
-  return { filled, activity }
+  return { filled, activity, ambiguousParentKeys: [...ambiguousParentKeys] }
 }
 
 function recentIntervalsNeedingTracker(conn: Database) {
@@ -916,6 +933,7 @@ export async function ingestTrackers(
                 deleted: deletions.dropped,
                 retired,
                 unreportedParents: unreportedParentCount(unique.values()),
+                ...ambiguousParentSummary(observations, backfill.ambiguousParentKeys),
               },
               filled: backfill.filled,
             }

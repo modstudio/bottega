@@ -9,11 +9,7 @@ import { DEFAULT_IDLE_CAP_MS } from '../../shared/interval.ts'
 import { sendOperatorNotification } from '../../shared/operator-notification.ts'
 import { refusal, renderRefusal } from '../../shared/refusal.ts'
 import { FAST_MS, SLOW_MS } from './collect-cadence.ts'
-import {
-  formatTrackerCounts,
-  type TrackerCounts,
-  trackerCounts,
-} from './collect-tracker-parents.ts'
+import { formatTrackerCounts, type TrackerCounts, trackerCounts } from './collect-tracker-counts.ts'
 import {
   type WatchRunningCycle,
   type WatchTick,
@@ -941,14 +937,6 @@ export async function collectOnce(
         'tasks',
         async () => {
           const trackerResults = await (dependencies.trackers ?? ingestTrackers)()
-          for (const result of trackerResults) {
-            const note = result.skipped
-              ? `skipped: ${result.skipped}`
-              : result.error
-                ? `FAILED: ${result.error}`
-                : `${result.mode ? `${result.mode} read, ` : ''}${result.tasks} tasks, ${result.changed} status changes${result.deleted ? `, ${result.deleted} deleted dropped` : ''}, ${result.unreportedParents ?? 0} parents unreported`
-            console.log(`${`tracker/${result.project}`.padEnd(21)}${note}`)
-          }
           const error = trackerLegError(trackerResults)
           if (error) throw new Error(error)
           return trackerCounts(trackerResults, 0, 0)

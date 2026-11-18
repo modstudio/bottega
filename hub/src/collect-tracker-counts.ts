@@ -5,7 +5,8 @@ export type TrackerCounts = {
   read: number
   skippedFresh: number
   leftToWatcher: number
-  unreportedParents: { project: string; count: number }[]
+  unreportedParentProjects: { project: string; count: number }[]
+  ambiguousParentProjects: { project: string; count: number; keys: string[] }[]
 }
 
 export function trackerCounts(
@@ -13,13 +14,20 @@ export function trackerCounts(
   skippedFresh: number,
   leftToWatcher: number,
 ): TrackerCounts {
+  const successful = results.filter(successfulTrackerRead)
   return {
-    read: results.filter(successfulTrackerRead).length,
+    read: successful.length,
     skippedFresh,
     leftToWatcher,
-    unreportedParents: results
-      .filter(successfulTrackerRead)
-      .map((result) => ({ project: result.project, count: result.unreportedParents ?? 0 })),
+    unreportedParentProjects: successful.map((result) => ({
+      project: result.project,
+      count: result.unreportedParents ?? 0,
+    })),
+    ambiguousParentProjects: successful.map((result) => ({
+      project: result.project,
+      count: result.ambiguousParents ?? 0,
+      keys: result.ambiguousParentKeys ?? [],
+    })),
   }
 }
 
@@ -30,7 +38,11 @@ export function formatTrackerCounts(counts: TrackerCounts): string[] {
       `${counts.leftToWatcher} left to the watcher; force with ${PLATFORM_SLUG} record pull --only tasks`,
     )
   if (counts.skippedFresh) parts.push(`${counts.skippedFresh} skipped fresh`)
-  for (const guard of counts.unreportedParents)
+  for (const guard of counts.unreportedParentProjects)
     parts.push(`${guard.project} ${guard.count} parents unreported`)
+  for (const guard of counts.ambiguousParentProjects) {
+    const keys = guard.keys.length ? ` (${guard.keys.join(', ')})` : ''
+    parts.push(`${guard.project} ${guard.count} parents ambiguous${keys}`)
+  }
   return parts
 }

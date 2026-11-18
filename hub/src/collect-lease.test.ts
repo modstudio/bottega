@@ -611,7 +611,8 @@ describe('collect lease', () => {
           read: 0,
           skippedFresh: 0,
           leftToWatcher: trackerProjects().length,
-          unreportedParents: [],
+          unreportedParentProjects: [],
+          ambiguousParentProjects: [],
         },
       })
     } finally {
