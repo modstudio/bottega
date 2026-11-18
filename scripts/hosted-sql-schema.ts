@@ -1,7 +1,20 @@
 import { createHash } from 'node:crypto'
-import { existsSync, readdirSync, readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { dirname, relative, resolve } from 'node:path'
 import ts from 'typescript'
+import {
+  couldBeSqlExpression,
+  type RenderedSqlCallArgument,
+  renderedSqlRiskCandidates,
+  renderSqlCallArgument,
+  splitSqlStatements,
+} from './local-sql-call-classification.ts'
+import {
+  productionTypeScriptFiles,
+  productionTypeScriptFilesIncludingTests,
+} from './typescript-source-files.ts'
+
+export { productionTypeScriptFiles } from './typescript-source-files.ts'
 
 export type HostedSqlSite = {
   file: string
@@ -11,6 +24,9 @@ export type HostedSqlSite = {
 }
 
 export type HostedSqlUnresolvedSite = HostedSqlSite & { expression: string }
+export type HostedSqlCannotJudgeSite = HostedSqlUnresolvedSite & {
+  kind: 'interpolated-table'
+}
 
 type RenderedSql = { sql: string; bindings: number }
 type StaticValue = string | string[]
@@ -18,21 +34,11 @@ type StaticSymbols = {
   constants: Map<string, ts.Expression>
   functions: Map<string, ts.FunctionDeclaration>
 }
-const SQL_START = /^\s*(?:SELECT|INSERT|UPDATE|DELETE|WITH)\b/i
+const HOSTED_SQL_START = /^\s*(?:SELECT|INSERT|UPDATE|DELETE|WITH)\b/i
+const LOCAL_HANDLE_SQL_START = /^\s*(?:SELECT|INSERT|UPDATE|DELETE|WITH|CREATE|DROP|ALTER)\b/i
 
 function hostedSqlFingerprint(sql: string): string {
   return createHash('sha256').update(sql.replace(/\s+/g, ' ').trim()).digest('hex').slice(0, 16)
-}
-
-function productionTypeScriptFiles(directory: string): string[] {
-  const files: string[] = []
-  for (const entry of readdirSync(directory, { withFileTypes: true })) {
-    if (entry.name === 'node_modules') continue
-    const path = resolve(directory, entry.name)
-    if (entry.isDirectory()) files.push(...productionTypeScriptFiles(path))
-    else if (entry.name.endsWith('.ts') && !entry.name.endsWith('.test.ts')) files.push(path)
-  }
-  return files
 }
 
 function importedFixturePath(root: string, file: string, statement: ts.Statement): string | null {
@@ -72,17 +78,6 @@ function hostedFixtureTypeScriptFiles(root: string): string[] {
     }
   }
   return [...files].sort()
-}
-
-function productionTypeScriptFilesIncludingTests(directory: string): string[] {
-  const files: string[] = []
-  for (const entry of readdirSync(directory, { withFileTypes: true })) {
-    if (entry.name === 'node_modules') continue
-    const path = resolve(directory, entry.name)
-    if (entry.isDirectory()) files.push(...productionTypeScriptFilesIncludingTests(path))
-    else if (entry.name.endsWith('.ts')) files.push(path)
-  }
-  return files
 }
 
 const HOSTED_FIXTURE_IMPORTS_WITHOUT_SQL = new Set([
@@ -267,6 +262,33 @@ function resolveStaticPropertyCall(
   return typeof separator === 'string' ? receiver.join(separator) : null
 }
 
+function resolveStaticConditional(
+  node: ts.ConditionalExpression,
+  symbols: StaticSymbols,
+  bindings: Map<string, StaticValue>,
+  seen: Set<string>,
+): StaticValue | null {
+  const branches = [node.whenTrue, node.whenFalse].map((branch) =>
+    resolveStaticValue(branch, symbols, bindings, seen),
+  )
+  if (branches.some((branch) => branch === null)) return null
+  return branches.flatMap((branch) => (Array.isArray(branch) ? branch : [branch!]))
+}
+
+function resolveStaticConcatenation(
+  node: ts.BinaryExpression,
+  symbols: StaticSymbols,
+  bindings: Map<string, StaticValue>,
+  seen: Set<string>,
+): StaticValue | null {
+  const left = resolveStaticValue(node.left, symbols, bindings, seen)
+  const right = resolveStaticValue(node.right, symbols, bindings, seen)
+  if (left === null || right === null) return null
+  const leftValues = Array.isArray(left) ? left : [left]
+  const rightValues = Array.isArray(right) ? right : [right]
+  return leftValues.flatMap((prefix) => rightValues.map((suffix) => prefix + suffix))
+}
+
 function resolveStaticValue(
   expression: ts.Expression,
   symbols: StaticSymbols,
@@ -278,6 +300,10 @@ function resolveStaticValue(
   if (ts.isArrayLiteralExpression(node)) return resolveStaticArray(node, symbols, bindings, seen)
   if (ts.isTemplateExpression(node)) return resolveStaticTemplate(node, symbols, bindings, seen)
   if (ts.isIdentifier(node)) return resolveStaticIdentifier(node, symbols, bindings, seen)
+  if (ts.isConditionalExpression(node))
+    return resolveStaticConditional(node, symbols, bindings, seen)
+  if (ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.PlusToken)
+    return resolveStaticConcatenation(node, symbols, bindings, seen)
   if (!ts.isCallExpression(node)) return null
   const target = unwrap(node.expression)
   if (ts.isIdentifier(target))
@@ -396,20 +422,31 @@ function collectFunctions(source: ts.SourceFile): Map<string, ts.FunctionDeclara
   return functions
 }
 
-function importedSource(file: string, statement: ts.ImportDeclaration): ts.SourceFile | null {
+type ImportedSourceCache = Map<string, ts.SourceFile | null>
+
+function importedSource(
+  file: string,
+  statement: ts.ImportDeclaration,
+  cache: ImportedSourceCache,
+): ts.SourceFile | null {
   if (!ts.isStringLiteral(statement.moduleSpecifier)) return null
   const specifier = statement.moduleSpecifier.text
   if (!specifier.startsWith('.')) return null
   const imported = resolve(dirname(file), specifier)
   const importedFile = imported.endsWith('.ts') ? imported : `${imported}.ts`
-  if (!existsSync(importedFile)) return null
-  return ts.createSourceFile(
-    importedFile,
-    readFileSync(importedFile, 'utf8'),
-    ts.ScriptTarget.Latest,
-    true,
-    ts.ScriptKind.TS,
-  )
+  const cached = cache.get(importedFile)
+  if (cached !== undefined || cache.has(importedFile)) return cached ?? null
+  const source = existsSync(importedFile)
+    ? ts.createSourceFile(
+        importedFile,
+        readFileSync(importedFile, 'utf8'),
+        ts.ScriptTarget.Latest,
+        true,
+        ts.ScriptKind.TS,
+      )
+    : null
+  cache.set(importedFile, source)
+  return source
 }
 
 function mergeImportedSymbols(
@@ -437,11 +474,15 @@ function mergeImportedSymbols(
   }
 }
 
-function collectStaticSymbols(file: string, source: ts.SourceFile): StaticSymbols {
+function collectStaticSymbols(
+  file: string,
+  source: ts.SourceFile,
+  importedSources: ImportedSourceCache = new Map(),
+): StaticSymbols {
   const symbols: StaticSymbols = { constants: new Map(), functions: new Map() }
   for (const statement of source.statements) {
     if (!ts.isImportDeclaration(statement)) continue
-    const dependency = importedSource(file, statement)
+    const dependency = importedSource(file, statement, importedSources)
     if (dependency) mergeImportedSymbols(symbols, statement, dependency)
   }
   for (const [name, value] of collectConstants(source)) symbols.constants.set(name, value)
@@ -460,7 +501,7 @@ function staticSymbolsForSource(
 }
 
 export function extractHostedSqlFromSource(
-  input: { sourceText: string; file: string },
+  input: { sourceText: string; file: string; statementStart?: RegExp },
   staticSymbols?: StaticSymbols,
 ): {
   sites: HostedSqlSite[]
@@ -475,6 +516,7 @@ export function extractHostedSqlFromSource(
   )
   const constants = staticSymbols?.constants ?? collectConstants(source)
   const symbols = staticSymbols ?? { constants, functions: collectFunctions(source) }
+  const statementStart = input.statementStart ?? HOSTED_SQL_START
   const sites: HostedSqlSite[] = []
   const unresolved: HostedSqlUnresolvedSite[] = []
   if (!importsBunSql(source)) return { sites, unresolved }
@@ -483,7 +525,7 @@ export function extractHostedSqlFromSource(
     const rendered = renderTemplate(node.template, constants, symbols)
     if (rendered) {
       for (const item of rendered) {
-        if (!SQL_START.test(item.sql)) continue
+        if (!statementStart.test(item.sql)) continue
         const fingerprint = hostedSqlFingerprint(item.sql)
         sites.push({ file: input.file, line, sql: item.sql, fingerprint })
       }
@@ -492,7 +534,7 @@ export function extractHostedSqlFromSource(
     const firstText = ts.isNoSubstitutionTemplateLiteral(node.template)
       ? node.template.text
       : node.template.head.text
-    if (!SQL_START.test(firstText)) return
+    if (!statementStart.test(firstText)) return
     const expression = node.getText(source)
     unresolved.push({
       file: input.file,
@@ -508,6 +550,172 @@ export function extractHostedSqlFromSource(
   }
   visit(source)
   return { sites, unresolved }
+}
+
+const SQL_CALL_METHODS = new Set(['exec', 'prepare', 'query', 'run'])
+
+function sqlCallSites(
+  node: ts.Node,
+  source: ts.SourceFile,
+  file: string,
+  staticSymbols: () => StaticSymbols,
+  renderedUnresolvedRisk: ((sql: string) => boolean) | undefined,
+  localConstants: () => Map<string, ts.Expression>,
+): {
+  sites: HostedSqlSite[]
+  unresolved: HostedSqlUnresolvedSite[]
+  cannotJudge: HostedSqlCannotJudgeSite[]
+} {
+  const empty = { sites: [], unresolved: [], cannotJudge: [] }
+  if (!ts.isCallExpression(node)) return empty
+  const target = unwrap(node.expression)
+  let method: string | null = null
+  if (ts.isIdentifier(target)) method = target.text
+  else if (ts.isPropertyAccessExpression(target)) method = target.name.text
+  const argument = node.arguments[0]
+  if (!method || !SQL_CALL_METHODS.has(method) || !argument) return empty
+  const rendered =
+    renderSqlCallArgument(argument, HOSTED_SQL_START) ??
+    (() => {
+      const value = resolveStaticValue(argument, staticSymbols())
+      if (typeof value === 'string')
+        return { statements: splitSqlStatements(value), unresolved: null, unresolvedSql: false }
+      if (Array.isArray(value))
+        return {
+          statements: value.flatMap(splitSqlStatements),
+          unresolved: null,
+          unresolvedSql: false,
+        }
+      return null
+    })()
+  const line = source.getLineAndCharacterOfPosition(argument.getStart(source)).line + 1
+  const dynamicTable = interpolatedTableExpression(argument)
+  if (dynamicTable && rendered && (rendered.unresolved || rendered.statements.length === 0)) {
+    const sql = argument.getText(source)
+    return {
+      sites: [],
+      unresolved: [],
+      cannotJudge: [
+        {
+          file,
+          line,
+          sql,
+          expression: dynamicTable.getText(source),
+          fingerprint: hostedSqlFingerprint(sql),
+          kind: 'interpolated-table',
+        },
+      ],
+    }
+  }
+  if (!rendered && couldBeSqlExpression(argument, LOCAL_HANDLE_SQL_START)) {
+    const expression = argument.getText(source)
+    return {
+      sites: [],
+      unresolved: [
+        {
+          file,
+          line,
+          sql: expression,
+          expression,
+          fingerprint: hostedSqlFingerprint(expression),
+        },
+      ],
+      cannotJudge: [],
+    }
+  }
+  if (!rendered) return empty
+  if (
+    renderedUnresolvedRisk &&
+    (rendered.unresolved ||
+      (rendered.statements.length === 0 &&
+        couldBeSqlExpression(argument, LOCAL_HANDLE_SQL_START))) &&
+    renderedSqlRiskCandidates(argument, localConstants()).some(renderedUnresolvedRisk)
+  ) {
+    const expression = (rendered.unresolved ?? argument).getText(source)
+    const sql = argument.getText(source)
+    return {
+      sites: [],
+      unresolved: [{ file, line, sql, expression, fingerprint: hostedSqlFingerprint(sql) }],
+      cannotJudge: [],
+    }
+  }
+  return {
+    sites: rendered.statements
+      .filter((sql) => LOCAL_HANDLE_SQL_START.test(sql))
+      .map((sql) => ({ file, line, sql, fingerprint: hostedSqlFingerprint(sql) })),
+    unresolved: [],
+    cannotJudge: [],
+  }
+}
+
+function interpolatedTableExpression(expression: ts.Expression): ts.Expression | null {
+  const template = unwrap(expression)
+  if (!ts.isTemplateExpression(template)) return null
+  let fixedText = template.head.text
+  for (const span of template.templateSpans) {
+    if (/\b(?:FROM|JOIN|INTO|UPDATE)\s*$/i.test(fixedText)) return span.expression
+    fixedText += ` ? ${span.literal.text}`
+  }
+  return null
+}
+
+/** Extracts static SQL from the Bun SQL tag and SQLite database call shapes. */
+export function extractSqlFromSource(input: {
+  sourceText: string
+  file: string
+  renderedUnresolvedRisk?: (sql: string) => boolean
+}): {
+  sites: HostedSqlSite[]
+  unresolved: HostedSqlUnresolvedSite[]
+  cannotJudge: HostedSqlCannotJudgeSite[]
+} {
+  const source = ts.createSourceFile(
+    input.file,
+    input.sourceText,
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.TS,
+  )
+  const extracted = extractHostedSqlFromSource({
+    ...input,
+    statementStart: LOCAL_HANDLE_SQL_START,
+  })
+  const importedSources: ImportedSourceCache = new Map()
+  let symbols: StaticSymbols | undefined
+  const staticSymbols = (): StaticSymbols =>
+    (symbols ??= collectStaticSymbols(input.file, source, importedSources))
+  let constants: Map<string, ts.Expression> | undefined
+  const localConstants = (): Map<string, ts.Expression> => (constants ??= collectConstants(source))
+  const sites = [...extracted.sites]
+  const unresolved = [...extracted.unresolved]
+  const cannotJudge: HostedSqlCannotJudgeSite[] = []
+  const visit = (node: ts.Node): void => {
+    const calls = sqlCallSites(
+      node,
+      source,
+      input.file,
+      staticSymbols,
+      input.renderedUnresolvedRisk,
+      localConstants,
+    )
+    sites.push(...calls.sites)
+    unresolved.push(...calls.unresolved)
+    cannotJudge.push(...calls.cannotJudge)
+    ts.forEachChild(node, visit)
+  }
+  visit(source)
+  const unique = new Map(sites.map((site) => [`${site.line}#${site.fingerprint}`, site]))
+  const uniqueUnresolved = new Map(
+    unresolved.map((site) => [`${site.line}#${site.fingerprint}`, site]),
+  )
+  const uniqueCannotJudge = new Map(
+    cannotJudge.map((site) => [`${site.line}#${site.fingerprint}`, site]),
+  )
+  return {
+    sites: [...unique.values()],
+    unresolved: [...uniqueUnresolved.values()],
+    cannotJudge: [...uniqueCannotJudge.values()],
+  }
 }
 
 const HOSTED_FIXTURE_EXECUTORS = new Set([
@@ -528,105 +736,6 @@ function fixtureExecutorName(expression: ts.Expression): string | null {
   return null
 }
 
-function splitSqlStatements(sql: string): string[] {
-  const statements: string[] = []
-  let start = 0
-  let quote: "'" | '"' | null = null
-  for (let index = 0; index < sql.length; index += 1) {
-    const character = sql[index]
-    if (quote) {
-      if (character === quote) {
-        if (sql[index + 1] === quote) index += 1
-        else quote = null
-      }
-      continue
-    }
-    if (character === "'" || character === '"') quote = character
-    else if (character === ';') {
-      statements.push(sql.slice(start, index))
-      start = index + 1
-    }
-  }
-  statements.push(sql.slice(start))
-  return statements.map((statement) => statement.trim()).filter(Boolean)
-}
-
-type RenderedFixtureSql = {
-  statements: string[]
-  unresolved: ts.Expression | null
-  unresolvedSql: boolean
-}
-
-function fixtureInterpolationIsScalar(sql: string): boolean {
-  if (/(?:=|<>|\bIN\s*\()\s*$/i.test(sql)) return true
-  const statement = splitSqlStatements(sql).at(-1) ?? ''
-  const valuesAt = statement.search(/\bVALUES\b/i)
-  if (valuesAt < 0) return false
-  let depth = 0
-  let quote: "'" | '"' | null = null
-  for (const character of statement.slice(valuesAt + 'VALUES'.length)) {
-    if (quote) {
-      if (character === quote) quote = null
-      continue
-    }
-    if (character === "'" || character === '"') quote = character
-    else if (character === '(') depth += 1
-    else if (character === ')') depth -= 1
-  }
-  return depth > 0 && /(?:\(|,)\s*$/.test(statement)
-}
-
-function appendFixtureSpan(
-  sql: string,
-  span: ts.TemplateSpan,
-): { sql: string; unresolved: ts.Expression | null } {
-  const value = unwrap(span.expression)
-  if (ts.isIdentifier(value) && value.text === 'statement') return { sql, unresolved: value }
-  let suffix = span.literal.text
-  const exactlySingleQuoted = sql.endsWith("'") && suffix.startsWith("'")
-  if (exactlySingleQuoted) {
-    sql = sql.slice(0, -1)
-    suffix = suffix.slice(1)
-  }
-  const singleQuoted = !exactlySingleQuoted && (sql.match(/'/g)?.length ?? 0) % 2 === 1
-  const quotedLiteral = exactlySingleQuoted || singleQuoted
-  const stringProducingConditional =
-    ts.isConditionalExpression(value) &&
-    [value.whenTrue, value.whenFalse].some(
-      (branch) => ts.isStringLiteralLike(unwrap(branch)) || ts.isTemplateLiteral(unwrap(branch)),
-    )
-  if (!quotedLiteral && (!fixtureInterpolationIsScalar(sql) || stringProducingConditional))
-    return { sql, unresolved: value }
-  return { sql: `${sql}NULL${suffix}`, unresolved: null }
-}
-
-function renderFixtureSql(expression: ts.Expression): RenderedFixtureSql | null {
-  const node = unwrap(expression)
-  if (ts.isStringLiteralLike(node))
-    return {
-      statements: splitSqlStatements(node.text),
-      unresolved: null,
-      unresolvedSql: false,
-    }
-  if (!ts.isTemplateExpression(node)) return null
-  let sql = node.head.text
-  for (const span of node.templateSpans) {
-    const appended = appendFixtureSpan(sql, span)
-    if (appended.unresolved)
-      return {
-        statements: [],
-        unresolved: appended.unresolved,
-        unresolvedSql: splitSqlStatements(sql).some((statement) => SQL_START.test(statement)),
-      }
-    sql = appended.sql
-  }
-  return {
-    statements: splitSqlStatements(sql),
-    unresolved: null,
-    unresolvedSql: false,
-  }
-}
-
 type ExtractedFixtureSql = {
   sites: HostedSqlSite[]
   unresolved: HostedSqlUnresolvedSite[]
@@ -639,14 +748,14 @@ function sourceContainsPotentialHostedSql(source: ts.SourceFile): boolean {
     if (found) return
     if (
       ts.isStringLiteralLike(node) &&
-      splitSqlStatements(node.text).some((sql) => SQL_START.test(sql))
+      splitSqlStatements(node.text).some((sql) => HOSTED_SQL_START.test(sql))
     ) {
       found = true
       return
     }
     if (
       ts.isTemplateExpression(node) &&
-      splitSqlStatements(node.head.text).some((sql) => SQL_START.test(sql))
+      splitSqlStatements(node.head.text).some((sql) => HOSTED_SQL_START.test(sql))
     ) {
       found = true
       return
@@ -661,7 +770,9 @@ function unqualifiedTableReference(sql: string, table: string): boolean {
   return new RegExp(`(^|[^.a-zA-Z0-9_])${table}\\b`, 'i').test(sql)
 }
 
-function filterTemporaryTableStatements(rendered: RenderedFixtureSql): RenderedFixtureSql {
+function filterTemporaryTableStatements(
+  rendered: RenderedSqlCallArgument,
+): RenderedSqlCallArgument {
   const temporaryTables = new Set<string>()
   const statements: string[] = []
   for (const statement of rendered.statements) {
@@ -683,12 +794,12 @@ function fixtureSite(
   file: string,
   argument: ts.Expression,
 ): ExtractedFixtureSql {
-  const initial = renderFixtureSql(argument)
+  const initial = renderSqlCallArgument(argument, HOSTED_SQL_START)
   const rendered = initial && filterTemporaryTableStatements(initial)
   if (!rendered) return { sites: [], unresolved: [], selected: false }
   const line = source.getLineAndCharacterOfPosition(argument.getStart(source)).line + 1
   const sites = rendered.statements
-    .filter((sql) => SQL_START.test(sql))
+    .filter((sql) => HOSTED_SQL_START.test(sql))
     .map((sql) => ({
       file,
       line,

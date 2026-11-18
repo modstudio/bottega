@@ -209,14 +209,20 @@ async function finishLandingTreeOpen(
       )
   }, database)
   if (!cursorRecordId) return undefined
-  const cursor = database
-    .query<{ number: number }, [string]>('SELECT number FROM workflow_cursor WHERE record_id=?')
-    .get(cursorRecordId)?.number
+  return landingTreeCursorBindingWarning(cursorRecordId, worktree, database)
+}
+
+export async function landingTreeCursorBindingWarning(
+  cursorRecordId: string,
+  worktree: string,
+  database: Database,
+  bind: typeof bindCursorArguments = bindCursorArguments,
+): Promise<string | undefined> {
   try {
-    const result = await bindCursorArguments({ cursorRecordId, worktree }, database)
+    const result = await bind({ cursorRecordId, worktree }, database)
     return result.action === 'refused' ? result.warning : undefined
   } catch (error) {
-    return `workflow cursor ${cursor ?? cursorRecordId} argument binding failed: ${String((error as Error)?.message ?? error)}`
+    return `workflow cursor ${cursorRecordId} argument binding failed: ${String((error as Error)?.message ?? error)}`
   }
 }
 

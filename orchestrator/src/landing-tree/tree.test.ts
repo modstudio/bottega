@@ -3,7 +3,12 @@ import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
 import { removeHookTree } from '../hook-tree/tree.ts'
-import { landingTreeSeedRequest, landingTreeSourceRun, releaseFailedLandingTree } from './tree.ts'
+import {
+  landingTreeCursorBindingWarning,
+  landingTreeSeedRequest,
+  landingTreeSourceRun,
+  releaseFailedLandingTree,
+} from './tree.ts'
 
 test('landing-tree seed request carries the recorded launch seed', () => {
   expect(
@@ -32,6 +37,44 @@ test('landing tree opening resolves a turn to its root and latest UUID', () => {
     root: { record_id: root },
     latest: { record_id: turn },
   })
+})
+
+test('landing tree cursor binding failure before cursor load returns a warning named by record id', async () => {
+  const cursorRecordId = newRecordId()
+  const warning = await landingTreeCursorBindingWarning(
+    cursorRecordId,
+    '/work/landing',
+    db(),
+    async () => {
+      throw new Error('binding unavailable')
+    },
+  )
+
+  expect(warning).toBe(
+    `workflow cursor ${cursorRecordId} argument binding failed: binding unavailable`,
+  )
+})
+
+test('landing tree cursor binding failure after cursor load returns a warning named by number', async () => {
+  const cursorRecordId = newRecordId()
+  db().exec('PRAGMA foreign_keys=OFF')
+  db()
+    .query(`INSERT INTO workflow_cursor
+      (record_id,number,project,workflow_slug,mode_slug,workflow_key,instance_id,session_id,
+       workflow_version_record_id,catalogue_version_record_id,args,total_steps,created_at,updated_at)
+      VALUES (?,98123,'fixture','explore','default','','instance',NULL,?,?,?,3,?,?)`)
+    .run(
+      cursorRecordId,
+      newRecordId(),
+      newRecordId(),
+      '{malformed',
+      new Date().toISOString(),
+      new Date().toISOString(),
+    )
+
+  await expect(
+    landingTreeCursorBindingWarning(cursorRecordId, '/work/landing', db()),
+  ).resolves.toContain('workflow cursor 98123 argument binding failed:')
 })
 
 test('failed creation settles its worktree claim after the recipe already removed the directory', async () => {

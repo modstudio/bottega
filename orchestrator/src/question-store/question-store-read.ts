@@ -13,32 +13,7 @@ import type {
 } from '../workflow/task-flow-store-types.ts'
 import { compareQuestionsByAsk } from './question-order.ts'
 import { questionStore } from './question-store.ts'
-import {
-  localQuestionHistoryProjectIdsSqlite,
-  localQuestionHistorySqlite,
-  questionNumberProjectIds,
-  unattributedLocalQuestionHistorySqlite,
-} from './question-store-sqlite-reads.ts'
 import type { QuestionStore } from './question-store-types.ts'
-
-export const localQuestionHistoryProjectIds = localQuestionHistoryProjectIdsSqlite
-export const localQuestionHistory = localQuestionHistorySqlite
-export const unattributedLocalQuestionHistory = unattributedLocalQuestionHistorySqlite
-
-export function questionNumberProjectId(database: Database, number: number): string {
-  const projectIds = questionNumberProjectIds(database, number)
-  if (projectIds.length > 1)
-    throw new Error(
-      `question number ${number} exists in more than one project; pass the question UUID, then retry`,
-    )
-  const projectId = projectIds[0]
-  if (!projectId)
-    throw new Error(
-      `question ${number} has no locally resolved record space; pass the question UUID`,
-    )
-  return projectId
-}
-
 export async function questionById(
   database: Database,
   id: string,
@@ -57,6 +32,17 @@ export async function questionByProjectNumber(
 ): Promise<Record<string, unknown> | null> {
   return (
     ((await questionStore(database).read({ read: 'by-number', number }, projectId)).items[0] as
+      | Record<string, unknown>
+      | undefined) ?? null
+  )
+}
+
+export async function questionByUnscopedNumber(
+  database: Database,
+  number: number,
+): Promise<Record<string, unknown> | null> {
+  return (
+    ((await questionStore(database).read({ read: 'by-number', number })).items[0] as
       | Record<string, unknown>
       | undefined) ?? null
   )

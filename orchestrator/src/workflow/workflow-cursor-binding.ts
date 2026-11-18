@@ -157,45 +157,49 @@ export async function bindCursorArguments(
   if (!input.cursorRecordId) return { action: 'unbound' }
   const row = await taskFlowReadStore(database, client).stageByRecordId(input.cursorRecordId)
   if (!row) return { action: 'unbound' }
-  const stored = JSON.parse(row.args) as Record<string, string>
-  const declared = declaredCursorArguments(row, database)
-  const supplied: Record<string, string> = {}
-  if (declared.has('worktree') && input.worktree?.trim()) supplied.worktree = input.worktree
+  try {
+    const stored = JSON.parse(row.args) as Record<string, string>
+    const declared = declaredCursorArguments(row, database)
+    const supplied: Record<string, string> = {}
+    if (declared.has('worktree') && input.worktree?.trim()) supplied.worktree = input.worktree
 
-  if (declared.has('branch')) {
-    const branch = discoveredBranchBinding(row, stored, input.branch, database)
-    if (branch.refusal) return branch.refusal
-    if (branch.branch) supplied.branch = branch.branch
-  }
+    if (declared.has('branch')) {
+      const branch = discoveredBranchBinding(row, stored, input.branch, database)
+      if (branch.refusal) return branch.refusal
+      if (branch.branch) supplied.branch = branch.branch
+    }
 
-  if (Object.keys(supplied).length === 0) return { action: 'no-op' }
-  const resolved = resolveCursorArguments(row, supplied, database)
-  if (resolved.encoded === row.args && resolved.closed === row.closed) return { action: 'no-op' }
-  const payload: TaskFlowIntentInput<'stage-update'> = {
-    requestId: taskFlowRequestId('stage-update', [row.record_id, String(row.revision)]),
-    stages: [
-      {
-        id: row.record_id,
-        expectedRevision: row.revision,
-        values: {
-          arguments: resolved.args,
-          closedStepNotes: JSON.parse(resolved.closed),
-          updatedAt: resolved.updatedAt,
+    if (Object.keys(supplied).length === 0) return { action: 'no-op' }
+    const resolved = resolveCursorArguments(row, supplied, database)
+    if (resolved.encoded === row.args && resolved.closed === row.closed) return { action: 'no-op' }
+    const payload: TaskFlowIntentInput<'stage-update'> = {
+      requestId: taskFlowRequestId('stage-update', [row.record_id, String(row.revision)]),
+      stages: [
+        {
+          id: row.record_id,
+          expectedRevision: row.revision,
+          values: {
+            arguments: resolved.args,
+            closedStepNotes: JSON.parse(resolved.closed),
+            updatedAt: resolved.updatedAt,
+          },
         },
-      },
-    ],
+      ],
+    }
+    const hosted = await writeHostedTaskFlow(
+      'stage-update',
+      payload,
+      taskFlowWriteTarget(row.project, database),
+      client,
+    )
+    writeTransaction(
+      () => taskFlowLocalStore(database).write('stage-update', payload, hosted),
+      database,
+    )
+    return { action: 'updated' }
+  } catch (error) {
+    return { action: 'refused', warning: bindingFailureWarning(row.id, error) }
   }
-  const hosted = await writeHostedTaskFlow(
-    'stage-update',
-    payload,
-    taskFlowWriteTarget(row.project, database),
-    client,
-  )
-  writeTransaction(
-    () => taskFlowLocalStore(database).write('stage-update', payload, hosted),
-    database,
-  )
-  return { action: 'updated' }
 }
 
 /** Read one run's recorded lifecycle handles and bind them to its cursor, if any. */
