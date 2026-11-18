@@ -8,8 +8,7 @@ function requestUrl(input: NetworkRequestInput): string {
 
 function isLoopbackHostname(hostname: string): boolean {
   if (hostname === 'localhost' || hostname === '[::1]') return true
-  const octets = hostname.split('.')
-  return octets.length === 4 && octets[0] === '127'
+  return /^127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(hostname)
 }
 
 /** Decides whether a gate test may reach the requested network host. */

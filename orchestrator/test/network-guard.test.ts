@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from 'bun:test'
 import { recordApiClientOver, recordApiRequest } from '../src/record/record-api-client.ts'
 import { installRecordSessionRunner, memoryRecordSession } from './fixtures/record-session.ts'
 import {
@@ -14,16 +14,21 @@ describe('test network request decision', () => {
     'https://api.example.test',
     'http://127.0.0.1.evil.test',
     'http://localhost.evil.test',
+    'http://127.evil.test.com',
+    'http://127.a.b.c',
   ])('refuses non-loopback URL %s', (url) => {
     expect(testNetworkRequestDecision(url, withoutContainer)).toBe('refuse')
   })
 
-  test.each(['http://localhost:3000', 'http://127.0.0.5', 'http://[::1]:8080'])(
-    'allows loopback URL %s',
-    (url) => {
-      expect(testNetworkRequestDecision(url, withoutContainer)).toBe('allow')
-    },
-  )
+  test.each([
+    'http://localhost:3000',
+    'http://127.0.0.5',
+    'http://127.1/',
+    'http://0x7f.0.0.1/',
+    'http://[::1]:8080',
+  ])('allows loopback URL %s', (url) => {
+    expect(testNetworkRequestDecision(url, withoutContainer)).toBe('allow')
+  })
 
   test('allows a non-loopback URL when a test container is provisioned', () => {
     expect(
@@ -38,6 +43,35 @@ describe('test network request decision', () => {
     expect(
       testNetworkRequestDecision(new Request('https://api.example.test'), withoutContainer),
     ).toBe('refuse')
+  })
+})
+
+describe('preload test network guard', () => {
+  let originalFetch: typeof fetch
+  let originalContainer: string | undefined
+
+  beforeAll(() => {
+    originalFetch = globalThis.fetch
+    globalThis.fetch = (async () => Response.json({})) as unknown as typeof fetch
+  })
+
+  afterAll(() => {
+    globalThis.fetch = originalFetch
+  })
+
+  beforeEach(() => {
+    originalContainer = process.env.BOTTEGA_TEST_POSTGRES_CONTAINER
+    delete process.env.BOTTEGA_TEST_POSTGRES_CONTAINER
+  })
+
+  afterEach(() => {
+    if (originalContainer === undefined) delete process.env.BOTTEGA_TEST_POSTGRES_CONTAINER
+    else process.env.BOTTEGA_TEST_POSTGRES_CONTAINER = originalContainer
+  })
+
+  test('refuses a non-loopback request through the preload-installed guard', async () => {
+    const url = 'https://api.example.test/x'
+    await expect(fetch(url)).rejects.toThrow(testNetworkRefusal(url))
   })
 })
 
