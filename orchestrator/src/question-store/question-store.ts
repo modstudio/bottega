@@ -9,7 +9,16 @@ import {
 } from '../record/record-write-authority.ts'
 import { RecordQuestionStore } from './question-store-record.ts'
 import { SqliteQuestionStore } from './question-store-sqlite.ts'
+import {
+  localQuestionHistoryProjectIdsSqlite,
+  localQuestionHistorySqlite,
+  unattributedLocalQuestionHistorySqlite,
+} from './question-store-sqlite-reads.ts'
 import type { QuestionStore } from './question-store-types.ts'
+
+export const localQuestionHistoryProjectIds = localQuestionHistoryProjectIdsSqlite
+export const localQuestionHistory = localQuestionHistorySqlite
+export const unattributedLocalQuestionHistory = unattributedLocalQuestionHistorySqlite
 
 /**
  * How long one process reuses a hosted store, and with it the identity and

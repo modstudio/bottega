@@ -1,5 +1,7 @@
 [default]
 locale = "en-us"
+# Generated SQL fingerprints in shrink-only baselines are hex hashes, not words.
+extend-ignore-re = ["fingerprint: '[0-9a-f]{16}'"]
 
 [default.extend-words]
 # Acctivate is the inventory system a registered project integrates with.

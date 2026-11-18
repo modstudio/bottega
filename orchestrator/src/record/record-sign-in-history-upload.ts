@@ -5,12 +5,12 @@ import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { withDatabaseForMigrationStep } from '../database/db.ts'
 import type { ProjectAdoptionResult } from '../project/project-relink.ts'
-import { questionSnapshotFromRow } from '../question-store/question-store-mutation.ts'
 import {
   localQuestionHistory,
   localQuestionHistoryProjectIds,
   unattributedLocalQuestionHistory,
-} from '../question-store/question-store-read.ts'
+} from '../question-store/question-store.ts'
+import { questionSnapshotFromRow } from '../question-store/question-store-mutation.ts'
 import { taskFlowHistoryMaintenanceStore } from '../workflow/task-flow-store.ts'
 import { type RecordApiClient, recordApiClient } from './record-api-client.ts'
 import type { RecordWriteDestination } from './record-api-client-paths.ts'
