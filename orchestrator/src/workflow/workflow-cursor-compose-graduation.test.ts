@@ -4,7 +4,7 @@ import { newRecordId } from '../../../shared/record-id.ts'
 import { taskFlowReadStore } from './task-flow-store.ts'
 import { composeWorkflowWithCursor } from './workflow-cursor.ts'
 import { admissionEnforcingTaskClaimPorts, database } from './workflow-cursor-test.fixture.ts'
-import { closeGraduatingExploreForReuse } from './workflow-handoff.ts'
+import { closeGraduatingExploreForReuse } from './workflow-cursor-compose.ts'
 import { composeWorkflow, promoteWorkflowLocal, setWorkflowLocal } from './workflows.ts'
 
 const live = {}

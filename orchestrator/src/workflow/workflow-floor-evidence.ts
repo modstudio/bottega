@@ -63,10 +63,10 @@ import { floorFromObligationRow } from './workflow-obligation-floor.ts'
 import {
   type BoundRun,
   decideRunBinding,
-  resolveWorkflowCursorSuccessor,
   type SessionMatch,
   sessionOrAdopterMatch,
 } from './workflow-run-binding.ts'
+import { resolveWorkflowCursorSuccessor } from './workflow-cursor-transition.ts'
 import { attachedTextReferenceMeetsFloor, type WorkflowTextRow } from './workflow-text.ts'
 
 export type { FloorEvidencePorts } from './workflow-floor-evidence-replay.ts'

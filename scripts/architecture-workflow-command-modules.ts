@@ -31,9 +31,7 @@ export const workflowCommandModules: WorkflowCommandModule[] = [
     './workflow-cursor-serve.ts',
     './workflow-cursor-transition.ts',
     './workflow-cursor-compose.ts',
-    './workflow-explore-lifecycle-close.ts',
     './workflow-handoff-refusal.ts',
-    './workflow-handoff-types.ts',
     './workflow-task-claim.ts',
     './workflows.ts',
   ]),
@@ -213,6 +211,8 @@ export const workflowCommandModules: WorkflowCommandModule[] = [
     './workflow-cursor-selection.ts',
     './workflow-cursor-task-reference.ts',
     './workflow-cursor-transition.ts',
+    './workflow-explore-lifecycle-close.ts',
+    './workflow-handoff-types.ts',
     './workflows.ts',
   ]),
   module('orchestrator/src/workflow/workflow-cursor-serve.ts', [

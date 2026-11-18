@@ -32,7 +32,7 @@ import {
 import {
   resolveWorkflowCursorSuccessor,
   type WorkflowCursorHandoffLink,
-} from '../workflow/workflow-run-binding.ts'
+} from '../workflow/workflow-cursor-transition.ts'
 import {
   type HubTaskReference,
   projectTaskKey,

@@ -122,6 +122,7 @@ const declaredModules: ArchitectureModule[] = [
     './task-flow-store-sqlite-write.ts',
     './task-flow-store-methods.ts',
     './task-flow-store-types.ts',
+    './workflow-cursor-transition.ts',
   ]),
   module('orchestrator/src/workflow/task-flow-store-sqlite.ts', [
     'bun:sqlite',

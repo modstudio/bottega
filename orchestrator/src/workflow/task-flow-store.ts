@@ -43,6 +43,7 @@ import type {
   TaskFlowWaitingQuestionRow,
   WorkflowCursorInsert,
 } from './task-flow-store-types.ts'
+import type { WorkflowCursorHandoffLink } from './workflow-cursor-transition.ts'
 
 export type {
   TaskFlowCloseOutStageRow,
@@ -219,8 +220,8 @@ export interface TaskFlowReadStore extends AsyncTaskFlowReads {}
 export async function taskFlowHandoffLinks(
   store: TaskFlowReadStore,
   terminalRecordIds: readonly string[],
-): Promise<Array<{ record_id: string; handed_off_from_record_id: string | null }>> {
-  const links: Array<{ record_id: string; handed_off_from_record_id: string | null }> = []
+): Promise<WorkflowCursorHandoffLink[]> {
+  const links: WorkflowCursorHandoffLink[] = []
   const visited = new Set<string>()
   const pending = [...terminalRecordIds]
   while (pending.length) {
