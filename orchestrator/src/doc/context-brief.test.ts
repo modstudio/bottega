@@ -334,7 +334,7 @@ test('contextBrief carries question groups into the waiting segment', async () =
 
   const nodeEnvironment = process.env.NODE_ENV
   process.env.NODE_ENV = 'production'
-  const brief = await contextBrief(session, '/unregistered', db()).finally(() => {
+  const brief = await contextBrief(session, '/unregistered', db(), async () => []).finally(() => {
     if (nodeEnvironment === undefined) delete process.env.NODE_ENV
     else process.env.NODE_ENV = nodeEnvironment
   })
@@ -397,7 +397,7 @@ test('contextBrief uses the session cursor rows for holders and in flight', asyn
 
   const nodeEnvironment = process.env.NODE_ENV
   process.env.NODE_ENV = 'production'
-  const brief = await contextBrief(session, '/unregistered', db()).finally(() => {
+  const brief = await contextBrief(session, '/unregistered', db(), async () => []).finally(() => {
     if (nodeEnvironment === undefined) delete process.env.NODE_ENV
     else process.env.NODE_ENV = nodeEnvironment
   })

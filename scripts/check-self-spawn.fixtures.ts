@@ -43,5 +43,5 @@ function readFreshHubTaskThroughCli() {
   return startBoundedSync(['${PLATFORM_SLUG}', 'task', 'show', 'DEV-1', '--fresh'], {})
 }
 `
-import { PLATFORM_SLUG } from '../shared/brand.ts'
 
+import { PLATFORM_SLUG } from '../shared/brand.ts'

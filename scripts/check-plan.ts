@@ -285,6 +285,7 @@ export const ROOT_TEST_FILES = [
   'cli/dispatch.test.ts',
   'cli/routes.test.ts',
   'cli/legacy-calls.test.ts',
+  'cli/task-read-adapter.test.ts',
   'scripts/quality/dead-code.test.ts',
   'scripts/architecture.test.ts',
   'scripts/architecture-hub-packages.test.ts',

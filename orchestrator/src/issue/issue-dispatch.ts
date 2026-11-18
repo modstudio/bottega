@@ -12,6 +12,7 @@ import { type KernelLease, projectGitCommonDir, tryKernelLease } from '../projec
 import { projectByName } from '../project/projects.ts'
 import { TERMINAL_RUN_STATUS_SQL } from '../run/run-status.ts'
 import { taskReader } from '../workflow/task-read-port.ts'
+import { type HubTaskReader, readHubTasks } from '../workflow/workflow-task-reference.ts'
 import { worktreeDirty } from '../worktree/worktree-attribution.ts'
 import { workIssue } from './issue.ts'
 import { parseFiledIssue } from './issue-file.ts'
@@ -274,9 +275,17 @@ export function unscoredFiledIssueLoopRuns(): FiledIssueLoopRun[] {
 
 export async function filedIssueQueueState(
   project: string | null | undefined = undefined,
+  reader: HubTaskReader = readHubTasks,
 ): Promise<FiledIssueQueueState> {
-  const rows = taskReader().list({ project: PLATFORM_SLUG })
-  const waiting = rows.flatMap((task) => {
+  const rows = await reader(PLATFORM_SLUG)
+  const filedRows: FiledIssueTaskRow[] = rows.map((task) => ({
+    key: task.key,
+    title: task.title ?? null,
+    body: task.body ?? null,
+    status_category: task.status_category ?? null,
+    opened_at: task.opened_at ?? null,
+  }))
+  const waiting = filedRows.flatMap((task) => {
     try {
       return task.status_category === 'review' && parseFiledIssue({ task }).kind === 'defect'
         ? [{ key: task.key, title: task.title }]
@@ -285,7 +294,7 @@ export async function filedIssueQueueState(
       return []
     }
   })
-  const unworked = eligibleFiledIssueTasks(rows, liveLease).map(({ key, title }) => ({
+  const unworked = eligibleFiledIssueTasks(filedRows, liveLease).map(({ key, title }) => ({
     key,
     title,
   }))

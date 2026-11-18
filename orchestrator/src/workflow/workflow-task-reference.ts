@@ -13,6 +13,8 @@ export type HubTaskReference = {
   record_id: string
   project: string
   title?: string | null
+  body?: string | null
+  opened_at?: string | null
   parent_key?: string | null
   source?: string | null
   status_category?: string | null
@@ -89,6 +91,12 @@ function taskReference(row: unknown): HubTaskReference {
   const parent = (row as HubTaskReference).parent_key
   if (parent !== undefined && parent !== null && typeof parent !== 'string')
     throw new Error('response contained an invalid task parent key')
+  const body = (row as HubTaskReference).body
+  if (body !== undefined && body !== null && typeof body !== 'string')
+    throw new Error('response contained an invalid task body')
+  const openedAt = (row as HubTaskReference).opened_at
+  if (openedAt !== undefined && openedAt !== null && typeof openedAt !== 'string')
+    throw new Error('response contained an invalid task opened time')
   return row as HubTaskReference
 }
 
