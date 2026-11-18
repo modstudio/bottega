@@ -8,8 +8,8 @@ import {
   decideCursorBranchBinding,
 } from './workflow-cursor-binding.ts'
 import { closeStep, context } from './workflow-cursor-test.fixture.ts'
-import { seedCurrentWorkflowTreeFixture } from './workflow-store.fixture.ts'
 import { expandWorkflowSteps } from './workflow-step-sequences.ts'
+import { seedCurrentWorkflowTreeFixture } from './workflow-store.fixture.ts'
 import { getWorkflowStep, showResolvedWorkflow } from './workflows.ts'
 
 const currentDatabase = testDatabaseFixture((d) =>
@@ -21,21 +21,12 @@ describe('cursor branch binding decision', () => {
     ['fill', null, null, 'DEV-2449-new', { action: 'fill' }],
     ['no-op', 'DEV-2449-new', null, 'DEV-2449-new', { action: 'no-op' }],
     ['rebind', 'DEV-2449-old', null, 'DEV-2449-new', { action: 'rebind' }],
-    [
-      'refuse',
-      'DEV-2449-old',
-      2449,
-      'DEV-2449-new',
-      { action: 'refuse', pullRequestNumber: 2449 },
-    ],
-  ] as const)(
-    '%s',
-    (_label, currentBranch, pullRequestNumber, runBranch, expected) => {
-      expect(decideCursorBranchBinding({ currentBranch, pullRequestNumber, runBranch })).toEqual(
-        expected,
-      )
-    },
-  )
+    ['refuse', 'DEV-2449-old', 2449, 'DEV-2449-new', { action: 'refuse', pullRequestNumber: 2449 }],
+  ] as const)('%s', (_label, currentBranch, pullRequestNumber, runBranch, expected) => {
+    expect(decideCursorBranchBinding({ currentBranch, pullRequestNumber, runBranch })).toEqual(
+      expected,
+    )
+  })
 })
 
 test('a bound implement run makes every fix-defect step render and advances blast-radius', async () => {
@@ -79,9 +70,7 @@ test('a bound implement run makes every fix-defect step render and advances blas
     { resolution },
   )
   const cursor = d
-    .query<{ record_id: string }, [number]>(
-      'SELECT record_id FROM workflow_cursor WHERE number=?',
-    )
+    .query<{ record_id: string }, [number]>('SELECT record_id FROM workflow_cursor WHERE number=?')
     .get(composition.cursor!.id)!
   const run = newRecordId()
   d.query(
@@ -95,15 +84,16 @@ test('a bound implement run makes every fix-defect step render and advances blas
   expect(await bindRecordedRunCursorArguments(run, d)).toEqual({ action: 'updated' })
   const args = JSON.parse(
     (
-      d.query<{ args: string }, [string]>('SELECT args FROM workflow_cursor WHERE record_id=?').get(
-        cursor.record_id,
-      ) as { args: string }
+      d
+        .query<{ args: string }, [string]>('SELECT args FROM workflow_cursor WHERE record_id=?')
+        .get(cursor.record_id) as { args: string }
     ).args,
   ) as Record<string, string>
   expect(args).toMatchObject({ key, branch, worktree })
   for (const step of composition.steps) {
-    expect(() => getWorkflowStep('fix-defect', 'fixture', step.slug, args, d, { mode: 'single' })).not
-      .toThrow()
+    expect(() =>
+      getWorkflowStep('fix-defect', 'fixture', step.slug, args, d, { mode: 'single' }),
+    ).not.toThrow()
   }
 
   const blastRadius = composition.steps.findIndex((step) => step.slug === 'blast-radius')
@@ -139,9 +129,9 @@ test('a bound implement run makes every fix-defect step render and advances blas
   expect(await bindRecordedRunCursorArguments(run, d)).toEqual({ action: 'updated' })
   expect(
     JSON.parse(
-      d.query<{ closed: string }, [string]>(
-        'SELECT closed FROM workflow_cursor WHERE record_id=?',
-      ).get(cursor.record_id)!.closed,
+      d
+        .query<{ closed: string }, [string]>('SELECT closed FROM workflow_cursor WHERE record_id=?')
+        .get(cursor.record_id)!.closed,
     ),
   ).toContainEqual(
     expect.objectContaining({
@@ -173,10 +163,9 @@ test('a bound implement run makes every fix-defect step render and advances blas
     expect(refusal.warning).toContain('workflow abandon fix-defect')
   }
   const refusedArgs = JSON.parse(
-    d.query<{ args: string }, [string]>('SELECT args FROM workflow_cursor WHERE record_id=?').get(
-      cursor.record_id,
-    )!.args,
+    d
+      .query<{ args: string }, [string]>('SELECT args FROM workflow_cursor WHERE record_id=?')
+      .get(cursor.record_id)!.args,
   ) as Record<string, string>
   expect(refusedArgs).toMatchObject({ branch: renamedBranch, worktree: reopenedWorktree })
 })
-
