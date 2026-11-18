@@ -10,6 +10,8 @@ import { isClosedStageState } from '../record/record-task-flow-contract.ts'
 import {
   type CursorlessRunEvidence,
   cursorlessRunEvidence,
+  type FailedBeforeClaimRunEvidence,
+  failedBeforeClaimRunEvidence,
 } from '../run/cursorless-run-evidence.ts'
 import { type TaskFlowReadStore, taskFlowReadStore } from './task-flow-store.ts'
 
@@ -42,6 +44,7 @@ export type WorkflowUncoveredReport = {
     count: number
     tasks: Array<{ project: string; key: string }>
     cursorlessRuns: Array<{ number: number; job: string; session: string | null }>
+    failedBeforeClaim: number
   }>
 }
 
@@ -59,6 +62,7 @@ export function decideWorkflowUncovered(input: {
   claims: readonly TaskCoverage[]
   handoffs?: readonly HandoffTransition[]
   cursorlessRuns?: readonly CursorlessRunEvidence[]
+  failedBeforeClaimRuns?: readonly FailedBeforeClaimRunEvidence[]
 }): WorkflowUncoveredReport {
   if (!Number.isSafeInteger(input.days) || input.days < 1)
     throw new Error('--days must be a positive integer')
@@ -108,7 +112,9 @@ export function decideWorkflowUncovered(input: {
         .filter((run) => run.at.slice(0, 10) === day)
         .map(({ number, job, session }) => ({ number, job, session }))
         .sort((left, right) => left.number - right.number)
-      return { day, count: tasks.length, tasks, cursorlessRuns }
+      const failedBeforeClaim =
+        input.failedBeforeClaimRuns?.find((evidence) => evidence.day === day)?.count ?? 0
+      return { day, count: tasks.length, tasks, cursorlessRuns, failedBeforeClaim }
     }),
   }
 }
@@ -184,6 +190,7 @@ export async function workflowUncoveredReport(
     .all(from)
     .map((row) => ({ ...row, source: 'run' as const }))
   const cursorlessRuns = cursorlessRunEvidence(database, from)
+  const failedBeforeClaimRuns = failedBeforeClaimRunEvidence(database, from)
   let cursorRows: Awaited<ReturnType<TaskFlowReadStore['keyedStageHistory']>>
   try {
     cursorRows = await (
@@ -254,6 +261,7 @@ export async function workflowUncoveredReport(
     claims,
     handoffs,
     cursorlessRuns,
+    failedBeforeClaimRuns,
   })
 }
 
@@ -276,6 +284,7 @@ export function workflowUncoveredCommand(
         output.log(
           `  cursorless runs: ${row.cursorlessRuns.length} (expected ${result.expected})${runs ? `  ${runs}` : ''}`,
         )
+        output.log(`  failed before claim: ${row.failedBeforeClaim}`)
       }
     }
     output.setExitCode(
