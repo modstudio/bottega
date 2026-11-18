@@ -5,6 +5,7 @@ import { resolve } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { gitToplevel, resolvedPathsEqual } from '../../../shared/git.ts'
 import { recordApiConfigured } from '../../../shared/record-api-url.ts'
+import { refusal, renderRefusal } from '../../../shared/refusal.ts'
 import { flagValue, flagValues } from '../cli/args.ts'
 import { db } from '../database/db.ts'
 import { contentTree, reviewChangedPaths } from '../git/git-environment.ts'
@@ -45,9 +46,14 @@ export function workflowProjectRefusal(input: {
   recordConfigured: boolean
 }): string | null {
   if (input.project || !input.recordConfigured) return null
-  return (
-    `refusing workflow ${input.command} in ${input.root}: no registered project owns this directory\n` +
-    "cleared by: run from a registered project's worktree, or pass --cwd for one"
+  return renderRefusal(
+    refusal(
+      `refusing workflow ${input.command} in ${input.root}: no registered project owns this directory`,
+      {
+        kind: 'edit',
+        text: "run from a registered project's worktree, or pass --cwd for one",
+      },
+    ),
   )
 }
 
@@ -77,9 +83,13 @@ export function hydrateCommand(
   const { root, project } = workflowCommandProject('hydrate', options)
   if (project && resolvedPathsEqual(root, project.path)) {
     throw new Error(
-      `refusing to hydrate registered main checkout ${project.path}\n` +
-        'invariant: workflow hydration writes a disposable project tree, never the main checkout\n' +
-        'cleared by: pass --cwd for a worktree',
+      renderRefusal(
+        refusal(
+          `refusing to hydrate registered main checkout ${project.path}\n` +
+            'invariant: workflow hydration writes a disposable project tree, never the main checkout',
+          { kind: 'edit', text: 'pass --cwd for a worktree' },
+        ),
+      ),
     )
   }
   const database = db()

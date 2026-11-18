@@ -9,7 +9,7 @@ import { projectAt, upsertProject } from '../project/projects.ts'
 import { rememberProjectSpace } from '../project-space-cache.ts'
 import { applyWorkflowCatalogueRow } from '../record/record-cache-workflow.fixture.ts'
 import { productionStepCatalogue } from './step-catalogue.ts'
-import { commandOutcome, workflowProjectRefusal } from './workflow-commands.ts'
+import { commandOutcome } from './workflow-commands.ts'
 import { composeWorkflowWithCursor } from './workflow-cursor.ts'
 import { recordWorkflowProbe } from './workflow-probe.ts'
 import {
@@ -26,6 +26,7 @@ import {
   registerOwningWorkflowProject as registerOwningProject,
   runWorkflowCommand as workflowCommand,
 } from './workflow-store.fixture.ts'
+import { workflowProjectRefusal } from './workflow-tree-commands.ts'
 import {
   promoteWorkflowLocal,
   resolvedWorkflowVersions,

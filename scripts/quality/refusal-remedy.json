@@ -87,7 +87,6 @@
     "orchestrator/src/subject/subjects.ts": 5,
     "orchestrator/src/transport/transport.ts": 1,
     "orchestrator/src/workflow/workflow-catalogue-commands.ts": 1,
-    "orchestrator/src/workflow/workflow-commands.ts": 2,
     "orchestrator/src/workflow/workflow-evidence-recording.ts": 1,
     "orchestrator/src/workflow/workflow-project-facts.ts": 3,
     "orchestrator/src/worktree/evidence-checkout.ts": 1,

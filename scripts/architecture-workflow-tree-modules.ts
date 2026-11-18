@@ -37,6 +37,7 @@ export const workflowTreeModules: WorkflowTreeModule[] = [
     '../../../shared/brand.ts',
     '../../../shared/git.ts',
     '../../../shared/record-api-url.ts',
+    '../../../shared/refusal.ts',
     '../cli/args.ts',
     '../database/db.ts',
     '../git/git-environment.ts',
