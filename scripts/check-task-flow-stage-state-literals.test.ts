@@ -4,14 +4,24 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { taskFlowStageStateLiteralRestatements } from './check-task-flow-stage-state-literals.ts'
 
-test('rejects a line that restates a task-flow stage-state set', () => {
+test('rejects task-flow stage-state sets but not function-call arguments', () => {
   const root = mkdtempSync(join(tmpdir(), 'task-flow-stage-state-guard-'))
   const source = join(root, 'orchestrator/src/workflow')
   mkdirSync(source, { recursive: true })
-  writeFileSync(join(source, 'filter.ts'), "const open = ['running', 'awaiting-ruling']\n")
+  writeFileSync(
+    join(source, 'filter.ts'),
+    [
+      "const open = ['running', 'awaiting-ruling']",
+      "const query = `SELECT 1 WHERE state NOT IN ('done','abandoned')`",
+      "const closed = state === 'done' || state === 'abandoned'",
+      "expect(closedTaskAnnotation('running', 'done')).toBe('CLOSED TASK done')",
+    ].join('\n'),
+  )
 
   expect(taskFlowStageStateLiteralRestatements(root)).toEqual([
     'orchestrator/src/workflow/filter.ts:1: derive task-flow stage-state sets from record-task-flow-contract',
+    'orchestrator/src/workflow/filter.ts:2: derive task-flow stage-state sets from record-task-flow-contract',
+    'orchestrator/src/workflow/filter.ts:3: derive task-flow stage-state sets from record-task-flow-contract',
   ])
 })
 

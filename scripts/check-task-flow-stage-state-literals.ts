@@ -13,6 +13,8 @@ const stageStates = taskFlowStageStateSqlList(TASK_FLOW_STAGE_STATES)
   .split(',')
   .map((state) => state.slice(1, -1))
 const STAGE_STATE = new RegExp(`['"](${stageStates.map(regexEscape).join('|')})['"]`, 'g')
+const ARRAY_LITERAL = /\[[^\[\]]*\]/g
+const SQL_IN_LIST = /\b(?:NOT\s+)?IN\s*\([^()]*\)/gi
 const EXEMPTIONS = [
   {
     pathPrefix: 'shared/record/migrations/',
@@ -44,6 +46,23 @@ function stageStateContext(path: string, line: string): boolean {
   )
 }
 
+function distinctStageStates(source: string): Set<string> {
+  return new Set([...source.matchAll(STAGE_STATE)].map((match) => match[1]))
+}
+
+function restatesStageStateSet(line: string): boolean {
+  const literalLists = [...line.matchAll(ARRAY_LITERAL), ...line.matchAll(SQL_IN_LIST)]
+  if (literalLists.some((match) => distinctStageStates(match[0]).size >= 2)) return true
+
+  const booleanOperands = line.split(/\|\||&&/)
+  if (booleanOperands.length < 2) return false
+  const operandStates = booleanOperands.map(distinctStageStates).filter((states) => states.size > 0)
+  return (
+    operandStates.length >= 2 &&
+    new Set(operandStates.flatMap((states) => [...states])).size >= 2
+  )
+}
+
 export function taskFlowStageStateLiteralRestatements(root = ROOT): string[] {
   return sourceFiles(root, ['orchestrator/src', 'orchestrator/test', 'shared'], (path) => {
     return (path.endsWith('.ts') || path.endsWith('.sql')) && path !== DECLARATION
@@ -51,8 +70,7 @@ export function taskFlowStageStateLiteralRestatements(root = ROOT): string[] {
     readFileSync(`${root}/${path}`, 'utf8')
       .split('\n')
       .flatMap((line, index) => {
-        const states = new Set([...line.matchAll(STAGE_STATE)].map((match) => match[1]))
-        return states.size >= 2 &&
+        return restatesStageStateSet(line) &&
           stageStateContext(path, line) &&
           !exemptStageStateLine(path, line)
           ? [
