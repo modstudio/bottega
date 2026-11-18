@@ -579,9 +579,7 @@ function writeHandoff(
   result[flow.id] = updateMutation(
     database,
     'task_flow',
-    applied
-      ? { ...flow, values: { ...flow.values, openStageRecordId: stageId } }
-      : flow,
+    applied ? { ...flow, values: { ...flow.values, openStageRecordId: stageId } } : flow,
     'handoff',
     revisions,
   )

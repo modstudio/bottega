@@ -217,22 +217,31 @@ test('handoff adopts the hosted successor id in the local mirror', async () => {
     stage: { id: hostedId, number: 2 },
   })
   expect(
-    d.query<{ record_id: string }, [string]>(
-      'SELECT record_id FROM workflow_cursor WHERE record_id=?',
-    ).get(hostedId),
+    d
+      .query<{ record_id: string }, [string]>(
+        'SELECT record_id FROM workflow_cursor WHERE record_id=?',
+      )
+      .get(hostedId),
   ).toEqual({ record_id: hostedId })
   expect(
-    d.query<{ record_id: string }, [string]>(
-      'SELECT record_id FROM workflow_cursor WHERE record_id=?',
-    ).get(payloadId),
+    d
+      .query<{ record_id: string }, [string]>(
+        'SELECT record_id FROM workflow_cursor WHERE record_id=?',
+      )
+      .get(payloadId),
   ).toBeNull()
   expect(
-    d.query<{ open_stage_cursor_record_id: string }, [string]>(
-      'SELECT open_stage_cursor_record_id FROM task_flow WHERE record_id=?',
-    ).get(row.task_flow_record_id!),
+    d
+      .query<{ open_stage_cursor_record_id: string }, [string]>(
+        'SELECT open_stage_cursor_record_id FROM task_flow WHERE record_id=?',
+      )
+      .get(row.task_flow_record_id!),
   ).toEqual({ open_stage_cursor_record_id: hostedId })
   expect(
-    d.query<{ holder_id: string }, [string]>('SELECT holder_id FROM context_item WHERE record_id=?')
+    d
+      .query<{ holder_id: string }, [string]>(
+        'SELECT holder_id FROM context_item WHERE record_id=?',
+      )
       .get(contextId),
   ).toEqual({ holder_id: hostedId })
 })

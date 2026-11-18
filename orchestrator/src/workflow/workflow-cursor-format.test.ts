@@ -94,8 +94,7 @@ This third line makes the reproduction roughly three hundred characters long.`,
   })
 
   test('leaves a cursor without a question unchanged', () => {
-    const unchanged =
-      `cursor 1145 plan-task default DEV-1983 ${PLATFORM_SLUG} step 3/5 signoff awaiting-ruling next: implement`
+    const unchanged = `cursor 1145 plan-task default DEV-1983 ${PLATFORM_SLUG} step 3/5 signoff awaiting-ruling next: implement`
     expect(
       renderWorkflowCursorLine({
         ...row,
