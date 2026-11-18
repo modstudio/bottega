@@ -544,6 +544,7 @@ export const recordModules: RecordModule[] = [
     '../database/slow-statements.ts',
     './machine-identity.ts',
     './outbox-enqueue.ts',
+    './outbox-read.ts',
     './outbox-sanitize.ts',
     './outbox-serialize.ts',
     'bun:sqlite',
@@ -630,6 +631,7 @@ export const recordModules: RecordModule[] = [
     '../workflow/task-flow-store.ts',
     './machine-identity.ts',
     './outbox-quarantine.ts',
+    './outbox-read.ts',
     './record-api-client.ts',
     './record-auth.ts',
     './record-attribution.ts',
@@ -644,17 +646,9 @@ export const recordModules: RecordModule[] = [
     './record-verdicts.ts',
   ]),
   module('orchestrator/src/record/outbox-held-contract.ts', ['../../../shared/brand.ts']),
-  module('orchestrator/src/record/outbox-held.ts', ['bun:sqlite', './outbox-held-contract.ts']),
   module('orchestrator/src/record/record-payload-columns.ts', [
     './outbox-failure.ts',
     './outbox-held-contract.ts',
-  ]),
-  module('orchestrator/src/record/outbox-dependency.ts', [
-    'bun:sqlite',
-    '../run/run-status.ts',
-    './outbox-prune-payload.ts',
-    './record-evidence-references.ts',
-    './record-sync-types.ts',
   ]),
   module('orchestrator/src/record/outbox-operator.ts', [
     'bun:sqlite',

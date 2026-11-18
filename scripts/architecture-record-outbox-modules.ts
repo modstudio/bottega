@@ -24,6 +24,30 @@ export const recordOutboxModules: ArchitectureModule[] = [
       'orchestrator/src/database/write-commit-effects.ts',
       'orchestrator/src/record/outbox-enqueue.ts',
       'orchestrator/src/record/outbox-held-contract.ts',
+      'orchestrator/src/record/outbox-read.ts',
+    ],
+  },
+  {
+    file: 'orchestrator/src/record/outbox-read.ts',
+    allowed: [],
+  },
+  {
+    file: 'orchestrator/src/record/outbox-held.ts',
+    allowed: [
+      'bun:sqlite',
+      'orchestrator/src/record/outbox-held-contract.ts',
+      'orchestrator/src/record/outbox-read.ts',
+    ],
+  },
+  {
+    file: 'orchestrator/src/record/outbox-dependency.ts',
+    allowed: [
+      'bun:sqlite',
+      'orchestrator/src/run/run-status.ts',
+      'orchestrator/src/record/outbox-prune-payload.ts',
+      'orchestrator/src/record/outbox-read.ts',
+      'orchestrator/src/record/record-evidence-references.ts',
+      'orchestrator/src/record/record-sync-types.ts',
     ],
   },
   {
