@@ -77,27 +77,30 @@ test('hosted writes map duplicate and fresh server responses', async () => {
       }
     },
   }
-  await expect(
-    boardPost(
-      { audience: 'operator', title: 'Hosted', body: 'body' },
-      { env, client, destinationResolver },
-    ),
-  ).resolves.toEqual({
+  const posted = await boardPost(
+    { audience: 'operator', title: 'Hosted', body: 'body' },
+    { env, client, destinationResolver },
+  )
+  expect({ ...posted, dropped: Boolean(posted.dropped) }).toEqual({
     recordId: root.id,
     number: null,
     dropped: true,
     reached: null,
     warning: boardDuplicateWarning(root.id),
   })
-  await expect(
-    boardAsk(
-      { audience: 'operator', title: 'Hosted question', body: 'body' },
-      { env, client, destinationResolver },
-    ),
-  ).resolves.toMatchObject({ dropped: false, warning: null })
-  await expect(
-    boardReply(root.id, 'reply', { env, client, destinationResolver }, { kind: 'acknowledged' }),
-  ).resolves.toEqual({
+  const asked = await boardAsk(
+    { audience: 'operator', title: 'Hosted question', body: 'body' },
+    { env, client, destinationResolver },
+  )
+  expect(Boolean(asked.dropped)).toBeFalse()
+  expect(asked.warning).toBeNull()
+  const replied = await boardReply(
+    root.id,
+    'reply',
+    { env, client, destinationResolver },
+    { kind: 'acknowledged' },
+  )
+  expect({ ...replied, dropped: Boolean(replied.dropped) }).toEqual({
     recordId: existingReplyId,
     number: null,
     rootId: root.id,

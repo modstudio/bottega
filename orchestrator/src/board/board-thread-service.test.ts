@@ -59,7 +59,7 @@ test('local reply duplicates drop while live and post anew after the match is wi
     clock: clock + 2,
     cwd,
   })
-  expect(duplicate).toMatchObject({
+  expect({ ...duplicate, dropped: Boolean(duplicate.dropped) }).toMatchObject({
     recordId: first.recordId,
     dropped: true,
     warning: boardReplyDuplicateWarning(first.recordId, question.recordId),

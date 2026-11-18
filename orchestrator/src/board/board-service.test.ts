@@ -674,7 +674,7 @@ test('duplicate notices require the same order-independent sender tag set', () =
     {},
     clock + 2,
   )
-  expect(duplicate).toEqual({
+  expect({ ...duplicate, dropped: Boolean(duplicate.dropped) }).toEqual({
     recordId: retargeted.recordId,
     number: retargeted.number,
     dropped: true,

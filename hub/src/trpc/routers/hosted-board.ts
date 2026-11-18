@@ -227,7 +227,7 @@ export function createHostedBoardRouter(
         const result = hostedBoardWriteResult(id, message)
         return hostedBoardReplyResult({
           id: message.id,
-          rootId: message.threadRootId,
+          rootId: message.threadRootId!,
           dropped: result.dropped,
           reached: null,
           warning: boardWriteWarning(result, {

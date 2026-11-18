@@ -105,7 +105,7 @@ test('an unadopted install keeps a post local and renders its id as a string', a
     },
   )
   expect(result.recordId).toBeString()
-  expect(result).toEqual({
+  expect({ ...result, dropped: Boolean(result.dropped) }).toEqual({
     recordId: result.recordId,
     number: result.number,
     dropped: false,

@@ -268,7 +268,7 @@ function hostedPostResult(
   return {
     recordId: response.id,
     number: null,
-    dropped: false,
+    dropped: result.dropped,
     reached: null,
     warning: boardWriteWarning(result, warningContext),
   }
