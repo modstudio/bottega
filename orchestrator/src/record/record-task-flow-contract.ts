@@ -233,8 +233,7 @@ export const taskFlowReadQuerySchema = z
   .refine(
     (value) =>
       Number(Boolean(value.taskKey)) +
-        Number(Boolean(value.flowRecordId)) +
-        Number(Boolean(value.taskId)) ===
+        TASK_FLOW_UUID_READ_SELECTORS.filter((selector) => value[selector]).length ===
       1,
   )
 export type TaskFlowReadQueryInput = z.input<typeof taskFlowReadQuerySchema>
