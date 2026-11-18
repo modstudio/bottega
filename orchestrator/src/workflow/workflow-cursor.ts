@@ -83,6 +83,8 @@ import { linkResolvedWorkflowTask, withLinkedWorkflowTask } from './workflow-tas
 import { workflowTextDeletionIds } from './workflow-text.ts'
 import { composeWorkflow } from './workflows.ts'
 
+const { taskFlowLocalStore, taskFlowReadStore } = taskFlowStore
+
 type CursorRow = SelectableCursorRow
 
 /** Re-reads, inside the close transaction, a cursor selected before its text copy. */
@@ -202,7 +204,7 @@ async function reuseWorkflowCursor(
   )
   let row!: CursorRow
   writeTransaction(() => {
-    const result = taskFlowStore.taskFlowLocalStore(database).write('stage-update', payload, hosted)
+    const result = taskFlowLocalStore(database).write('stage-update', payload, hosted)
     row = {
       ...existing,
       args: resolved.encoded,
@@ -643,7 +645,7 @@ async function selectClosingTaskFlow(
   client?: WorkflowCursorContext['taskFlowClient'],
 ) {
   if (!row.task_flow_record_id) return null
-  return await taskFlowStore.taskFlowReadStore(database, client).flowState(row.task_flow_record_id)
+  return await taskFlowReadStore(database, client).flowState(row.task_flow_record_id)
 }
 
 async function advanceTextDeletionIds(
@@ -735,9 +737,9 @@ async function adoptAndRefreshWorkflowTask(
     context.taskStatusCategory,
   )
   if (row.workflow_key === workflowKey) return row
-  return (await taskFlowStore
-    .taskFlowReadStore(database, context.taskFlowClient)
-    .stageByRecordId(row.record_id)) as CursorRow
+  return (await taskFlowReadStore(database, context.taskFlowClient).stageByRecordId(
+    row.record_id,
+  )) as CursorRow
 }
 
 function workflowTakeoverForAdvance(
@@ -882,9 +884,9 @@ export async function nextWorkflowStep(
   await linkResolvedWorkflowTask(project, context, d)
   await reselectCursor(selected, args, context, d)
   return withReplayedFloorEvidenceAsync(ports, async (replayPorts) => {
-    const row = (await taskFlowStore
-      .taskFlowReadStore(d, context.taskFlowClient)
-      .stageByRecordId(selected.record_id)) as CursorRow
+    const row = (await taskFlowReadStore(d, context.taskFlowClient).stageByRecordId(
+      selected.record_id,
+    )) as CursorRow
     adoptLinkedTask(row, args, context)
     return nextWorkflowStepImpl(
       row,
@@ -990,7 +992,7 @@ async function awaitWorkflowRulingImpl(
     context.taskFlowClient,
   )
   writeTransaction(() => {
-    const store = taskFlowStore.taskFlowLocalStore(d)
+    const store = taskFlowLocalStore(d)
     store.write('await-ruling', payload, hosted)
   }, d)
   const result = {
