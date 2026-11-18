@@ -19,6 +19,7 @@ import { acquireRunLease } from '../run/run-lease.ts'
 import { nextRunNumber } from '../run/run-number.ts'
 import { terminalLifecycleWrite } from '../run/run-terminal-lifecycle-store.ts'
 import { HOOK_TREE_JOB, isSyntheticLifecycleJob } from '../run/synthetic-lifecycle-job.ts'
+import { clearOpenCursorWorktreesAtPath } from '../workflow/workflow-cursor-worktrees.ts'
 import { unownedProjectTreeRemovalRemedy } from '../worktree/snapshotless-tracked-recipe.ts'
 import { createWithTool } from '../worktree/worktree-create.ts'
 import { resolveWorktreeLifecycle } from '../worktree/worktree-lifecycle.ts'
@@ -245,7 +246,10 @@ export type HookTreeRemovalResult =
 
 export async function removeHookTreeResult(requestedPath: string): Promise<HookTreeRemovalResult> {
   try {
-    return await removeRecordedHookTree(requestedPath)
+    const result = await removeRecordedHookTree(requestedPath)
+    if (result.outcome === 'released' || result.outcome === 'absent')
+      await clearOpenCursorWorktreesAtPath(requestedPath)
+    return result
   } catch (cause) {
     return { outcome: 'failed', detail: cause instanceof Error ? cause.message : String(cause) }
   }

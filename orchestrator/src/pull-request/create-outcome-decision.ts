@@ -1,6 +1,7 @@
 // concern: pull-request create outcome
 /** Decides the result of creating or rediscovering a pull request from gathered facts. */
 
+import { refusal, renderRefusal } from '../../../shared/refusal.ts'
 import type { MergeabilityDecision } from './mergeability-decision.ts'
 
 export type CreateOutcomePullRequest = {
@@ -46,7 +47,12 @@ export function decideCreateOutcome(input: {
 
   if (input.createResult.failure !== null) {
     return {
-      throwMessage: `gh pr create failed: ${input.createResult.failure}`,
+      throwMessage: renderRefusal(
+        refusal(`gh pr create failed: ${input.createResult.failure}`, {
+          kind: 'edit',
+          text: `fix the reported GitHub condition, then rerun ${input.platformSlug} pr create`,
+        }),
+      ),
       output: '',
       finalizePullRequestNumber: null,
     }

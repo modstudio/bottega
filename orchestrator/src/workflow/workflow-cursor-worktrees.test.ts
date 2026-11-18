@@ -4,6 +4,7 @@ import { catalogueVersionRecordId, workflowVersionRecordId } from '../../test/fi
 import { openKeylessCursorsForSession } from './workflow-cursor-list.ts'
 import { database } from './workflow-cursor-test.fixture.ts'
 import {
+  clearOpenCursorWorktreesAtPath,
   openCursorWorktrees,
   workflowCursorBranchAndWorktree,
   workflowCursorClaimHandles,
@@ -72,6 +73,47 @@ test('cursor branch and worktree handles are trimmed and nullable', () => {
     worktree: null,
     branch: null,
   })
+})
+
+test('clears every open cursor worktree pointer at a removed path and records the change', async () => {
+  const d = database()
+  const path = `/trees/removed-${newRecordId()}`
+  const insert = d.query(
+    `INSERT INTO workflow_cursor
+      (record_id,number,project,workflow_slug,mode_slug,workflow_key,instance_id,session_id,
+       workflow_version_record_id,catalogue_version_record_id,args,ordinal,step_slug,state,closed,
+       question,total_steps,created_at,updated_at,enforcement)
+     VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM workflow_cursor),'fixture','fixture','default',
+             '', '',NULL,?,?,?,0,'research',?,'[]',NULL,1,'2026-10-27','2026-10-27','floors')`,
+  )
+  const ids = ['running', 'awaiting-ruling', 'done'].map((state) => {
+    const id = newRecordId()
+    insert.run(
+      id,
+      workflowVersionRecordId(d),
+      catalogueVersionRecordId(d),
+      JSON.stringify({ worktree: path, branch: 'DEV-2218-work' }),
+      state,
+    )
+    return id
+  })
+
+  expect(await clearOpenCursorWorktreesAtPath(path, d)).toBe(2)
+  const rows = ids.map((id) =>
+    d
+      .query<{ args: string; closed: string }, [string]>(
+        'SELECT args,closed FROM workflow_cursor WHERE record_id=?',
+      )
+      .get(id),
+  )
+  expect(rows.slice(0, 2).map((row) => JSON.parse(row!.args))).toEqual([
+    { branch: 'DEV-2218-work' },
+    { branch: 'DEV-2218-work' },
+  ])
+  expect(JSON.parse(rows[0]!.closed)).toContainEqual(
+    expect.objectContaining({ event: 'argument-rebound', name: 'worktree', oldValue: path }),
+  )
+  expect(JSON.parse(rows[2]!.args)).toEqual({ worktree: path, branch: 'DEV-2218-work' })
 })
 
 test('open keyless cursor reader excludes a done cursor and task-bound cursor', async () => {

@@ -38,7 +38,9 @@ describe('pull-request create outcome', () => {
         createResult: { stdout: '', failure: 'authentication required' },
       }),
     ).toEqual({
-      throwMessage: 'gh pr create failed: authentication required',
+      throwMessage:
+        `gh pr create failed: authentication required\n` +
+        `cleared by: fix the reported GitHub condition, then rerun ${PLATFORM_SLUG} pr create`,
       output: '',
       finalizePullRequestNumber: null,
     })

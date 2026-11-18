@@ -7,6 +7,7 @@ import { isAbsolute, join, resolve } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { docScopeHasProjectSubject, docScopeIsProjectless } from '../../../shared/docs.ts'
 import { githubRepository } from '../../../shared/github-repository.ts'
+import { refusal, renderRefusal } from '../../../shared/refusal.ts'
 import { installedBottegaExecutable } from '../../../shared/self-spawn.ts'
 import { runArtifactsDir, runScratchReplyPath } from '../artifact-paths.ts'
 import { viewPullRequest } from '../branch/merged-pull-request.ts'
@@ -479,7 +480,15 @@ function resolveDocArtifact(value: string, identity: CursorIdentity, d: Database
   const flag = `--artifact doc:${value}`
   if (!row)
     throw new Error(
-      `${flag} does not exist; use doc:<scope>/<subject-or-_>/<slug> or doc:<document-UUID>`,
+      renderRefusal(
+        refusal(`${flag} does not exist`, {
+          kind: 'edit',
+          text:
+            'pass an existing artifact as doc:<scope>/<subject-or-_>/<slug>, ' +
+            'doc:<document-UUID>, task:<KEY>, comment:<UUID>, run:<run>, gate:<gate>, ' +
+            'review:<review>, ruling:<ruling>, or pull-request:<url>',
+        }),
+      ),
     )
   if (!docAdmissibleAsCursorEvidence(row, identity.project))
     throw new Error(

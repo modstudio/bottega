@@ -705,6 +705,7 @@ function createPullRequestAdmittedChange(
 
   let createResult: PullRequestCreateResult | null = null
   if (!existing) {
+    pushPullRequestBranch(cwd, change.branch)
     let stdout = ''
     let failure: string | null = null
     try {
@@ -743,6 +744,35 @@ function createPullRequestAdmittedChange(
     output: outcome.output,
     overrideId: checked.overrideId,
   }
+}
+
+function pushPullRequestBranch(cwd: string, branch: string): void {
+  const upstreamLookup = startBoundedSync(
+    ['git', 'rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{upstream}'],
+    { budget: 'git-plumbing', cwd, env: targetGitEnvironment(cwd) },
+  )
+  const upstream = upstreamLookup.exitCode === 0 ? upstreamLookup.stdout.trim() : null
+  const ahead = upstream
+    ? Number(
+        command(cwd, ['git', 'rev-list', '--count', `${upstream}..HEAD`], 'branch ahead lookup'),
+      )
+    : 1
+  if (upstream && ahead === 0) return
+  const process = startBoundedSync(['git', 'push', '--set-upstream', 'origin', branch], {
+    budget: 'git-network',
+    cwd,
+    env: targetGitEnvironment(cwd),
+  })
+  if (process.exitCode === 0) return
+  const detail = process.stderr.trim() || `exit ${process.exitCode}`
+  throw new Error(
+    renderRefusal(
+      refusal(`pull request branch ${branch} could not be pushed: ${detail}`, {
+        kind: 'edit',
+        text: `fix the reported git condition, then rerun ${PLATFORM_SLUG} pr create`,
+      }),
+    ),
+  )
 }
 
 export function createPullRequestAdmitted(

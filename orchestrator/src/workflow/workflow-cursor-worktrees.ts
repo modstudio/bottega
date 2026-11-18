@@ -2,8 +2,16 @@
 /** Reads only the worktree arguments held by open workflow cursors. */
 
 import type { Database } from 'bun:sqlite'
-import { db } from '../database/db.ts'
-import { taskFlowReadStore } from './task-flow-store.ts'
+import { realpathSync } from 'node:fs'
+import { resolve } from 'node:path'
+import { db, nowIso, writeTransaction } from '../database/db.ts'
+import {
+  taskFlowWriteTarget,
+  writeHostedTaskFlow,
+} from '../record/record-task-flow-write-client.ts'
+import { taskFlowRequestId } from '../record/record-task-flow-write-contract.ts'
+import { taskFlowLocalStore, taskFlowReadStore } from './task-flow-store.ts'
+import type { TaskFlowIntentInput } from './task-flow-store-types.ts'
 
 export type OpenCursorWorktree = {
   number: number
@@ -50,4 +58,61 @@ export async function openCursorWorktrees(
       ? [{ number: row.number, workflow: row.workflow, project: row.project, worktree }]
       : []
   })
+}
+
+function comparablePath(path: string): string {
+  try {
+    return realpathSync(path)
+  } catch {
+    return resolve(path)
+  }
+}
+
+/** Clear open cursor claims that point at a tree which has just been removed. */
+export async function clearOpenCursorWorktreesAtPath(
+  path: string,
+  database: Database = db(),
+): Promise<number> {
+  const wanted = comparablePath(path)
+  const rows = database
+    .query<
+      { record_id: string; revision: number; project: string; args: string; closed: string },
+      []
+    >(
+      `SELECT record_id,revision,project,args,closed FROM workflow_cursor
+         WHERE state IN ('running','awaiting-ruling') ORDER BY project,number`,
+    )
+    .all()
+    .filter((row) => {
+      const worktree = workflowCursorBranchAndWorktree(row.args).worktree
+      return worktree !== null && comparablePath(worktree) === wanted
+    })
+  for (const row of rows) {
+    const args = JSON.parse(row.args) as Record<string, string>
+    const oldValue = args.worktree!
+    delete args.worktree
+    const at = nowIso()
+    const closed = JSON.parse(row.closed) as unknown[]
+    closed.push({ event: 'argument-rebound', name: 'worktree', oldValue, newValue: '', at })
+    const payload: TaskFlowIntentInput<'stage-update'> = {
+      requestId: taskFlowRequestId('stage-update', [row.record_id, String(row.revision)]),
+      stages: [
+        {
+          id: row.record_id,
+          expectedRevision: row.revision,
+          values: { arguments: args, closedStepNotes: closed, updatedAt: at },
+        },
+      ],
+    }
+    const hosted = await writeHostedTaskFlow(
+      'stage-update',
+      payload,
+      taskFlowWriteTarget(row.project, database),
+    )
+    writeTransaction(
+      () => taskFlowLocalStore(database).write('stage-update', payload, hosted),
+      database,
+    )
+  }
+  return rows.length
 }

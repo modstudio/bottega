@@ -530,11 +530,20 @@ function waitForQueuedMerge(
     requeuePendingSince: null,
   }
   let requeueOutput: string | undefined
+  let lastEnqueuedAt: string | null = null
   while (true) {
     const observation = adapter.queueState(cwd, pullRequest.nodeId)
+    if (observation.enqueuedAt) lastEnqueuedAt = observation.enqueuedAt
     const state = interpretMergeQueue(observation)
     const now = adapter.now()
-    const step = stepMergeQueueWait(pullRequest.number, waitState, state, now, deadline)
+    const step = stepMergeQueueWait(
+      pullRequest.number,
+      waitState,
+      state,
+      now,
+      deadline,
+      pullRequest.baseBranch,
+    )
     waitState = step.state
     const action = step.action
     if (action.action === 'complete') {
@@ -544,24 +553,45 @@ function waitForQueuedMerge(
       }
     }
     if (action.action === 'refuse') {
-      const evidence =
-        state.state === 'failed'
-          ? `; ${failedMergeGroupRunEvidence(pullRequest, cwd, repository, observation.enqueuedAt, adapter)}`
-          : ''
-      throw new Error(`refusing merge: ${action.refusal}${evidence}; cleared by: ${action.remedy}`)
+      const failed =
+        state.state === 'failed' || state.state === 'dequeued'
+          ? failedMergeGroupRun(pullRequest, cwd, repository, lastEnqueuedAt, adapter)
+          : null
+      if (state.state === 'dequeued' && failed?.run) {
+        throw new Error(
+          renderRefusal(
+            refusal(
+              `refusing merge: pull request #${pullRequest.number} failed in the merge queue; ${failed.evidence}`,
+              {
+                kind: 'edit',
+                text: `push a fix if the check failure is real, or re-run ${PLATFORM_SLUG} pr merge ${pullRequest.number} to requeue the unchanged head if it flaked`,
+              },
+            ),
+          ).replace('\n', '; '),
+        )
+      }
+      const evidence = state.state === 'failed' && failed ? `; ${failed.evidence}` : ''
+      throw new Error(
+        renderRefusal(
+          refusal(`refusing merge: ${action.refusal}${evidence}`, {
+            kind: 'edit',
+            text: action.remedy,
+          }),
+        ).replace('\n', '; '),
+      )
     }
     if (action.action === 'enqueue') {
       enqueueForMergeQueue(pullRequest, cwd, adapter, target)
       continue
     }
     if (action.action === 'requeue') {
-      const evidence = failedMergeGroupRunEvidence(
+      const evidence = failedMergeGroupRun(
         pullRequest,
         cwd,
         repository,
-        observation.enqueuedAt,
+        lastEnqueuedAt,
         adapter,
-      )
+      ).evidence
       requeueForMergeQueue(pullRequest, cwd, adapter, evidence, target)
       requeueOutput = `requeued #${pullRequest.number} at ${pullRequest.headCommit} after ${evidence}`
       continue
@@ -570,16 +600,23 @@ function waitForQueuedMerge(
   }
 }
 
-function failedMergeGroupRunEvidence(
+function failedMergeGroupRun(
   pullRequest: PullRequestMergeFacts,
   cwd: string,
   repository: string | null,
   enqueuedAt: string | null,
   adapter: PullRequestMergeAdapter,
-): string {
-  if (!repository) return 'failed merge-group run could not be read: repository identity is absent'
+): { run: FailedMergeGroupRun | null; evidence: string } {
+  if (!repository)
+    return {
+      run: null,
+      evidence: 'failed merge-group run could not be read: repository identity is absent',
+    }
   if (!enqueuedAt) {
-    return 'failed merge-group run could not be read: the queue entry has no enqueue time'
+    return {
+      run: null,
+      evidence: 'failed merge-group run could not be read: the queue entry has no enqueue time',
+    }
   }
   try {
     const run = adapter.failedMergeGroupRun(
@@ -589,12 +626,18 @@ function failedMergeGroupRunEvidence(
       pullRequest.number,
       enqueuedAt,
     )
-    return run
-      ? `${run.conclusion} merge-group run ${run.id} (${run.url})`
-      : `no merge-group run that failed since ${enqueuedAt} was found`
+    return {
+      run,
+      evidence: run
+        ? `${run.conclusion} merge-group run ${run.id} (${run.url})`
+        : `no merge-group run that failed since ${enqueuedAt} was found`,
+    }
   } catch (cause) {
     if (cause instanceof BoundExceededError) throw cause
-    return `failed merge-group run could not be read: ${cause instanceof Error ? cause.message : String(cause)}`
+    return {
+      run: null,
+      evidence: `failed merge-group run could not be read: ${cause instanceof Error ? cause.message : String(cause)}`,
+    }
   }
 }
 

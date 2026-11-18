@@ -69,7 +69,7 @@ describe('merge-queue state', () => {
         entryState: null,
         enqueuedAt: null,
       }),
-    ).toEqual({ state: 'dequeued' })
+    ).toEqual({ state: 'dequeued', reason: 'unknown' })
   })
 
   test('a closed pull request is distinct from an open pull request with no queue entry', () => {
@@ -93,12 +93,20 @@ describe('merge-queue action', () => {
   })
 
   test('an absent entry is enqueued once, then waited for until an entry is observed', () => {
-    const enqueue = stepMergeQueueWait(42, initialWaitState, { state: 'dequeued' }, 0, 20_000)
+    const enqueue = stepMergeQueueWait(
+      42,
+      initialWaitState,
+      { state: 'dequeued', reason: 'unknown' },
+      0,
+      20_000,
+    )
     expect(enqueue).toEqual({
       state: { ...initialWaitState, enqueueSubmitted: true },
       action: { action: 'enqueue' },
     })
-    expect(stepMergeQueueWait(42, enqueue.state, { state: 'dequeued' }, 0, 20_000)).toEqual({
+    expect(
+      stepMergeQueueWait(42, enqueue.state, { state: 'dequeued', reason: 'unknown' }, 0, 20_000),
+    ).toEqual({
       state: enqueue.state,
       action: { action: 'wait', delay: 10_000 },
     })
@@ -107,10 +115,20 @@ describe('merge-queue action', () => {
   test('a transition gap waits and can still complete as merged', () => {
     const deadline = MERGE_QUEUE_DEQUEUE_CONFIRM_MS * 2
     const queued = stepMergeQueueWait(42, initialWaitState, { state: 'queued' }, 0, deadline)
-    const gap = stepMergeQueueWait(42, queued.state, { state: 'dequeued' }, 1, deadline)
+    const gap = stepMergeQueueWait(
+      42,
+      queued.state,
+      { state: 'dequeued', reason: 'unknown' },
+      1,
+      deadline,
+    )
     expect(gap).toEqual({
       state: { ...queued.state, dequeueObservedAt: 1 },
-      action: { action: 'wait', delay: 10_000 },
+      action: {
+        action: 'refuse',
+        refusal: expect.stringContaining('reason: unknown'),
+        remedy: `${PLATFORM_SLUG} pr merge 42`,
+      },
     })
     expect(
       stepMergeQueueWait(
@@ -129,7 +147,7 @@ describe('merge-queue action', () => {
       stepMergeQueueWait(
         42,
         { ...initialWaitState, activeEntryObserved: true, dequeueObservedAt: observedAt },
-        { state: 'dequeued' },
+        { state: 'dequeued', reason: 'unknown' },
         observedAt + MERGE_QUEUE_DEQUEUE_CONFIRM_MS,
         MERGE_QUEUE_DEQUEUE_CONFIRM_MS * 2,
       ),
@@ -141,8 +159,31 @@ describe('merge-queue action', () => {
       },
       action: {
         action: 'refuse',
-        refusal: expect.stringContaining('left the merge queue without merging'),
-        remedy: expect.stringContaining('fix the dequeue reason'),
+        refusal: expect.stringContaining('dequeued without a failed check (reason: unknown)'),
+        remedy: `${PLATFORM_SLUG} pr merge 42`,
+      },
+    })
+  })
+
+  test('a merge-conflict dequeue reports the reason and names the clearing sequence', () => {
+    const state = { ...initialWaitState, activeEntryObserved: true }
+    expect(
+      stepMergeQueueWait(
+        42,
+        state,
+        { state: 'dequeued', reason: 'merge_conflict' },
+        1,
+        20_000,
+        'trunk',
+      ),
+    ).toEqual({
+      state: { ...state, dequeueObservedAt: 1 },
+      action: {
+        action: 'refuse',
+        refusal: expect.stringContaining('reason: merge_conflict'),
+        remedy:
+          `merge origin/trunk into the pull-request branch, push it, then ` +
+          `${PLATFORM_SLUG} pr merge 42`,
       },
     })
   })

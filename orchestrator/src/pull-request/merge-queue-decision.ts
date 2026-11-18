@@ -8,12 +8,13 @@ export type MergeQueueObservation = {
   mergeCommit: string | null
   entryState: string | null
   enqueuedAt: string | null
+  removalReason?: string | null
 }
 
 export type MergeQueueState =
   | { state: 'merged'; mergeCommit: string }
   | { state: 'queued' }
-  | { state: 'dequeued' }
+  | { state: 'dequeued'; reason: string }
   | { state: 'closed' }
   | { state: 'failed' }
   | { state: 'unknown'; detail: string }
@@ -118,7 +119,8 @@ export function interpretMergeQueue(observation: MergeQueueObservation): MergeQu
   if (pullRequestState === 'OPEN' && entryState && ACTIVE_ENTRY_STATES.has(entryState)) {
     return { state: 'queued' }
   }
-  if (pullRequestState === 'OPEN' && entryState === null) return { state: 'dequeued' }
+  if (pullRequestState === 'OPEN' && entryState === null)
+    return { state: 'dequeued', reason: observation.removalReason ?? 'unknown' }
   return {
     state: 'unknown',
     detail: `pull request state ${observation.pullRequestState}, queue entry ${observation.entryState ?? 'none'}, merge commit ${observation.mergeCommit ?? 'none'}`,
@@ -131,6 +133,7 @@ export function stepMergeQueueWait(
   queue: MergeQueueState,
   now: number,
   deadline: number,
+  landingBranch = 'main',
 ): MergeQueueStep {
   let state = observedMergeQueueState(previous, queue, now)
 
@@ -171,18 +174,18 @@ export function stepMergeQueueWait(
       },
     }
   }
-  if (
-    queue.state === 'dequeued' &&
-    state.activeEntryObserved &&
-    state.dequeueObservedAt !== null &&
-    now - state.dequeueObservedAt >= MERGE_QUEUE_DEQUEUE_CONFIRM_MS
-  ) {
+  if (queue.state === 'dequeued' && state.activeEntryObserved) {
+    const reason = queue.reason
+    const remedy =
+      reason.toLowerCase() === 'merge_conflict'
+        ? `merge origin/${landingBranch} into the pull-request branch, push it, then ${retry}`
+        : retry
     return {
       state,
       action: {
         action: 'refuse',
-        refusal: `pull request #${number} left the merge queue without merging`,
-        remedy: `fix the dequeue reason, then ${retry}`,
+        refusal: `pull request #${number} was dequeued without a failed check (reason: ${reason})`,
+        remedy,
       },
     }
   }
@@ -190,15 +193,11 @@ export function stepMergeQueueWait(
     state = { ...state, enqueueSubmitted: true }
     return { state, action: { action: 'enqueue' } }
   }
-  const dequeueConfirmationRemaining =
-    queue.state === 'dequeued' && state.activeEntryObserved && state.dequeueObservedAt !== null
-      ? MERGE_QUEUE_DEQUEUE_CONFIRM_MS - (now - state.dequeueObservedAt)
-      : Number.POSITIVE_INFINITY
   return {
     state,
     action: {
       action: 'wait',
-      delay: Math.min(MERGE_QUEUE_POLL_MS, deadline - now, dequeueConfirmationRemaining),
+      delay: Math.min(MERGE_QUEUE_POLL_MS, deadline - now),
     },
   }
 }

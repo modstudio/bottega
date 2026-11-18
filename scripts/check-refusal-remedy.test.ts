@@ -9,6 +9,7 @@ import {
 const emptyBaseline = (): RefusalRemedyBaseline => ({
   rawLiterals: {},
   missingRemedies: {},
+  forwardedOutputWithoutRemedy: {},
   commandCases: {},
 })
 
@@ -19,6 +20,21 @@ test('fails a fixture that adds a raw cleared-by literal', () => {
   expect(refusalRemedyViolations(findings, emptyBaseline())).toEqual([
     'orchestrator/src/example.ts:1: new raw cleared-by literal is not allowed',
   ])
+})
+
+test('flags interpolated subprocess stderr without a remedy and accepts one with a remedy', () => {
+  const findings = refusalRemedyFindings({
+    'orchestrator/src/example.ts': `
+      throw new Error(\`command failed: \${process.stderr}\`)
+      throw new Error(\`command failed: \${process.stderr}; cleared by: retry it\`)
+    `,
+  })
+  expect(findings.forwardedOutputWithoutRemedy).toEqual([
+    { file: 'orchestrator/src/example.ts', line: 2 },
+  ])
+  expect(refusalRemedyViolations(findings, emptyBaseline())).toContain(
+    'orchestrator/src/example.ts:2: new forwarded subprocess output without a remedy is not allowed',
+  )
 })
 
 test('requires the raw-literal and missing-remedy baselines to shrink', () => {
