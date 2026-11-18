@@ -2,23 +2,19 @@
 /** Knows workflow command semantics and thin tree adapters. Must not know CLI grammar, runs, routing, or transports. */
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { startBoundedSync } from '../../../shared/bounded-process.ts'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { gitToplevel, resolvedPathsEqual } from '../../../shared/git.ts'
+import { gitToplevel } from '../../../shared/git.ts'
 import { recordApiConfigured } from '../../../shared/record-api-url.ts'
 import { answerRecordShape } from '../../../shared/record-shape.ts'
 import { flagValue, flagValues } from '../cli/args.ts'
 import { db } from '../database/db.ts'
 import type { ContextMomentPorts } from '../doc/context-moment-adapter.ts'
 import { resolveGateIdentifier } from '../gate/gate-identifier.ts'
-import { contentTree, reviewChangedPaths, targetGitEnvironment } from '../git/git-environment.ts'
 import { formatOutcomeLine } from '../outcome-line.ts'
 import { type Project, projectAt, projects } from '../project/projects.ts'
 import { resolveReviewIdentifier } from '../review/review-identifier.ts'
-import { resolveReviewBase } from '../review/review-target.ts'
 import { resolveRunIdentifier } from '../run/run-identifier.ts'
 import { assertKeylessCursorIdleAdmission } from '../session/keyless-cursor-idle-admission.ts'
-import { resolveBase } from '../worktree/worktree-caller.ts'
 import { parseAutonomy } from './autonomy.ts'
 import {
   promoteStepCatalogue,
@@ -51,7 +47,6 @@ import { getWorkflowStepWithCursor } from './workflow-cursor-serve.ts'
 import type { WorkflowEvidenceInput } from './workflow-evidence-input.ts'
 import { parseWorkflowEvidencePayload, RECORD_EVIDENCE_FLAG } from './workflow-evidence-payload.ts'
 import { workflowExecCheckoutRefusal, workflowExecCommandCwd } from './workflow-exec-checkout.ts'
-import { workflowImportLines } from './workflow-import-output.ts'
 import { resolveOfferedArtifacts } from './workflow-offered-artifacts.ts'
 import {
   type ProbeRecord,
@@ -62,7 +57,10 @@ import {
   wrappedCommandExitCode,
 } from './workflow-probe.ts'
 import { productionWorkflowFloorPorts } from './workflow-production-floor-ports.ts'
-import { decideWorkflowPromotionAdmission } from './workflow-promotion-admission.ts'
+import {
+  admittedWorkflowPromotion,
+  type PromotionContainsHead,
+} from './workflow-promotion-command.ts'
 import { workflowReadSpaceFor } from './workflow-read-space.ts'
 import { renderWorkflowComposition, renderWorkflowStep } from './workflow-render.ts'
 import {
@@ -79,19 +77,7 @@ import {
   productionWorkflowTextDocumentPorts,
   type WorkflowTextDocumentPorts,
 } from './workflow-text-copy.ts'
-import { parseWorkflowTree } from './workflow-tree.ts'
-import { applyWorkflowTreePlan, collectWorkflowTree } from './workflow-tree-files.ts'
-import {
-  decideWorkflowHydration,
-  workflowHydrationProtectionLines,
-} from './workflow-tree-hydration.ts'
-import {
-  importWorkflowTree,
-  newestDraftWorkflowTree,
-  productionHistory,
-  productionWorkflowTree,
-  promoteMatchingWorkflowTreeDrafts,
-} from './workflow-tree-store.ts'
+import { workflowCommandProject } from './workflow-tree-commands.ts'
 import { workflowWriteSpace } from './workflow-write-space.ts'
 import {
   composeWorkflow,
@@ -105,6 +91,13 @@ import {
   showResolvedWorkflow,
   workflowModeStepLists,
 } from './workflows.ts'
+
+export {
+  hydrateCommand,
+  importCommand,
+  promoteTreeCommand,
+  workflowProjectRefusal,
+} from './workflow-tree-commands.ts'
 
 export type WorkflowPresentation = {
   log(value: string): void
@@ -124,13 +117,7 @@ export type WorkflowCommandOptions = {
   contextMomentPorts?: ContextMomentPorts
   contextMomentGather?: typeof import('./workflow-context-moment.ts').workflowNextContextMoment
   idleCursorAdmission?: () => Promise<void>
-  promotionContainsHead?: (
-    root: string,
-    landingBranch: string,
-  ) => {
-    contains: boolean
-    failure?: string
-  }
+  promotionContainsHead?: PromotionContainsHead
 }
 export type WorkflowPrint = (value: unknown, line?: string) => void
 type ProbePrintRecord =
@@ -184,52 +171,17 @@ export function showWorkflowCommand(
   )
 }
 
-function admittedPromotion(
-  argv: string[],
-  options: WorkflowCommandOptions,
-  resolved?: { root: string; project: Project | null },
-): { reason: string | undefined; author: string | undefined } {
-  const { root, project } = resolved ?? workflowCommandProject('promote', options)
-  const landingBranch = project?.settings.trunk?.trim() || null
-  let contains = false
-  let failure: string | undefined
-  if (landingBranch) {
-    const observed = options.promotionContainsHead
-      ? options.promotionContainsHead(root, landingBranch)
-      : (() => {
-          const result = startBoundedSync(
-            ['git', 'merge-base', '--is-ancestor', 'HEAD', landingBranch],
-            { budget: 'git-plumbing', cwd: root, env: targetGitEnvironment(root) },
-          )
-          return {
-            contains: result.exitCode === 0,
-            ...(result.exitCode > 1
-              ? { failure: result.stderr.trim() || `git exited ${result.exitCode}` }
-              : {}),
-          }
-        })()
-    contains = observed.contains
-    failure = observed.failure
-  }
-  const decision = decideWorkflowPromotionAdmission({
-    landingBranch,
-    landingBranchContainsHead: contains,
-    inspectionFailure: failure,
-    fromOperator: argv.includes('--from-operator'),
-    reason: flagValue(argv, 'reason'),
-    author: flagValue(argv, 'author'),
-    operatorName: argv.includes('--from-operator') ? 'Shmuel Barkin' : null,
-  })
-  if (decision.verdict === 'refuse') throw new Error(decision.message)
-  return decision
-}
-
 export async function promoteWorkflowCommand(
   argv: string[],
   print: WorkflowPrint,
   options: WorkflowCommandOptions = {},
 ): Promise<void> {
-  const admitted = admittedPromotion(argv, options)
+  const resolved = workflowCommandProject('promote', options)
+  const admitted = admittedWorkflowPromotion({
+    argv,
+    ...resolved,
+    containsHead: options.promotionContainsHead,
+  })
   print(
     await promoteWorkflow(
       argv[2]!,
@@ -864,7 +816,12 @@ export async function promoteCatalogueCommand(
   print: WorkflowPrint,
   options: WorkflowCommandOptions = {},
 ): Promise<void> {
-  const admitted = admittedPromotion(argv, options)
+  const resolved = workflowCommandProject('promote', options)
+  const admitted = admittedWorkflowPromotion({
+    argv,
+    ...resolved,
+    containsHead: options.promotionContainsHead,
+  })
   print(
     await promoteStepCatalogue(
       positive(argv[2], 'version')!,
@@ -894,170 +851,6 @@ export function catalogueVersionsCommand(
   options: WorkflowCommandOptions = {},
 ): void {
   print(resolvedStepCatalogueVersions(inspectionProjectName(options)))
-}
-
-export function workflowProjectRefusal(input: {
-  command: 'hydrate' | 'import' | 'promote' | 'promote-tree'
-  root: string
-  project: string | null
-  recordConfigured: boolean
-}): string | null {
-  if (input.project || !input.recordConfigured) return null
-  return (
-    `refusing workflow ${input.command} in ${input.root}: no registered project owns this directory\n` +
-    "cleared by: run from a registered project's worktree, or pass --cwd for one"
-  )
-}
-
-function workflowCommandProject(
-  command: 'hydrate' | 'import' | 'promote' | 'promote-tree',
-  options: WorkflowCommandOptions,
-): { root: string; project: Project | null } {
-  const resolved = resolve(options.cwd ?? process.cwd())
-  const root = gitToplevel(resolved)
-  if (!root) throw new Error(`refusing ${resolved}: not a git repository`)
-  const project = inspectionProject({ ...options, cwd: root })
-  const refusal = workflowProjectRefusal({
-    command,
-    root,
-    project: project?.name ?? null,
-    recordConfigured: recordApiConfigured(),
-  })
-  if (refusal) throw new Error(refusal)
-  return { root, project }
-}
-
-export function hydrateCommand(
-  argv: string[],
-  presentation: WorkflowPresentation,
-  options: WorkflowCommandOptions = {},
-): void {
-  const { root, project } = workflowCommandProject('hydrate', options)
-  if (project && resolvedPathsEqual(root, project.path)) {
-    throw new Error(
-      `refusing to hydrate registered main checkout ${project.path}\n` +
-        'invariant: workflow hydration writes a disposable project tree, never the main checkout\n' +
-        'cleared by: pass --cwd for a worktree',
-    )
-  }
-  const database = db()
-  const production = productionWorkflowTree({ database, project: project?.name ?? null })
-  const draft = newestDraftWorkflowTree({ database, project: project?.name ?? null })
-  const history = productionHistory(
-    database,
-    workflowReadSpaceFor(database, project?.name ?? null),
-  ).history
-  const decision = decideWorkflowHydration({
-    production,
-    draft,
-    history,
-    tree: collectWorkflowTree(root),
-    ...(flagValues(argv, 'path').length ? { paths: new Set(flagValues(argv, 'path')) } : {}),
-    discard: new Set(flagValues(argv, 'discard')),
-  })
-  if (decision.unknownSelectors.length) {
-    presentation.error('refusing workflow hydrate: unknown workflow-tree selectors')
-    for (const { option, path } of decision.unknownSelectors) {
-      presentation.error(
-        `${option} ${path}: names neither a collected tree path nor a path rendered by production`,
-      )
-    }
-    presentation.error('paths are relative to the tree root in the form --check prints')
-    presentation.setExitCode(1)
-    return
-  }
-  const { plan } = decision
-  for (const { path } of plan.writes) presentation.log(`write ${path}`)
-  for (const path of plan.deletes) presentation.log(`delete ${path}`)
-  for (const line of workflowHydrationProtectionLines(decision.protected)) presentation.log(line)
-  const count = plan.writes.length + plan.deletes.length
-  const reports = count + decision.protected.length
-  if (argv.includes('--check')) {
-    if (reports) presentation.setExitCode(1)
-    return
-  }
-  applyWorkflowTreePlan(root, plan)
-  presentation.log(`hydrated ${count} paths`)
-  if (decision.protected.length) presentation.setExitCode(1)
-}
-
-export async function importCommand(
-  argv: string[],
-  print: WorkflowPrint,
-  options: WorkflowCommandOptions = {},
-): Promise<void> {
-  const { root, project } = workflowCommandProject('import', options)
-  const trunk = project?.settings.trunk?.trim()
-  if (!trunk) {
-    throw new Error(
-      'workflow import refused: the registered project has no landing branch in settings.trunk',
-    )
-  }
-  let base: string | null = null
-  let resolutionFailure: string | null = null
-  try {
-    const head = resolveBase(root, 'HEAD')
-    base = resolveReviewBase(root, head, trunk)
-  } catch (cause) {
-    resolutionFailure = cause instanceof Error ? cause.message : String(cause)
-  }
-  if (!base) {
-    throw new Error(
-      `workflow import refused: no merge base with registered landing branch ${trunk}; ` +
-        `${resolutionFailure ? `${resolutionFailure}; ` : ''}fetch ${trunk} into ${root}, then retry`,
-    )
-  }
-  let changedPaths: Set<string> | undefined
-  let skipped: string | undefined
-  try {
-    changedPaths = new Set(reviewChangedPaths(root, base, contentTree(root)))
-  } catch (cause) {
-    skipped = `workflow stale-reversion check skipped: ${String((cause as Error).message ?? cause)}`
-  }
-  const result = await importWorkflowTree(
-    parseWorkflowTree(collectWorkflowTree(root)),
-    flagValue(argv, 'reason'),
-    flagValue(argv, 'author'),
-    undefined,
-    project?.name,
-    changedPaths,
-  )
-  print(result, [...(skipped ? [skipped] : []), ...workflowImportLines(result)].join('\n'))
-}
-
-export async function promoteTreeCommand(
-  argv: string[],
-  presentation: WorkflowPresentation,
-  options: WorkflowCommandOptions = {},
-): Promise<void> {
-  const { root, project } = workflowCommandProject('promote-tree', options)
-  const admitted = admittedPromotion(argv, options, { root, project })
-  const reason = admitted.reason
-  if (!reason?.trim()) throw new Error('workflow promote-tree: reason is required')
-  const plan = await promoteMatchingWorkflowTreeDrafts({
-    tree: parseWorkflowTree(collectWorkflowTree(root)),
-    reason,
-    author: admitted.author,
-    project: project?.name ?? null,
-  })
-  if (!plan.promotions.length && !plan.divergent.length) {
-    presentation.log('nothing needed promotion')
-    return
-  }
-  for (const item of plan.promotions)
-    presentation.log(
-      item.kind === 'catalogue'
-        ? `promoted catalogue draft ${item.n}`
-        : `promoted workflow ${item.slug} draft ${item.n}`,
-    )
-  if (plan.divergent.length) {
-    const items = plan.divergent.map((item) =>
-      item.kind === 'catalogue' ? 'catalogue' : `workflow ${item.slug}`,
-    )
-    throw new Error(
-      `workflow promote-tree refused: tree ${items.join(', ')} matched neither production nor the newest draft; clear with: ${PLATFORM_SLUG} workflow import --cwd ${root}, then ${PLATFORM_SLUG} workflow promote-tree --cwd ${root} --reason "${reason.trim()}"`,
-    )
-  }
 }
 
 export async function composeCommand(

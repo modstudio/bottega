@@ -151,7 +151,15 @@ function runWorkflowSync(cwd: string): void {
     ['promote-tree', `${PLATFORM_SLUG} workflow promote-tree`],
   ] as const) {
     runPostPullStep({
-      argv: [`./bin/${PLATFORM_SLUG}`, 'workflow', verb, '--cwd', cwd, '--reason', reason],
+      argv: [
+        resolveInstallationPaths(cwd, {}).executable,
+        'workflow',
+        verb,
+        '--cwd',
+        cwd,
+        '--reason',
+        reason,
+      ],
       cwd,
       failureLabel,
     })

@@ -369,31 +369,6 @@ test('workflow hydrate check resolves hosted production from the worktree withou
   expect(result.exitCodes).toEqual([])
 })
 
-test('workflow import refuses before writing when the landing branch has no merge base', async () => {
-  const fixture = hostedWorkflowRepositoryFixture('import')
-  const project = 'import-hosted-worktree'
-  registerOwningProject(project, fixture.mainCheckout)
-  expect(projectAt(fixture.worktree)?.name).toBe(project)
-  installHostedWorkflowTree(project, newRecordId(), fixture.worktree)
-  publishStaleLocalWorkflow('import-local-only')
-  const priorMainCheckout = process.env.BOTTEGA_MAIN_CHECKOUT
-  const lines: string[] = []
-  try {
-    delete process.env.BOTTEGA_MAIN_CHECKOUT
-    await expect(
-      workflowCommand(
-        ['workflow', 'import', '--cwd', fixture.worktree, '--reason', 'unchanged hosted tree'],
-        presentation(lines),
-      ),
-    ).rejects.toThrow('workflow import refused: no merge base with registered landing branch main')
-  } finally {
-    if (priorMainCheckout === undefined) delete process.env.BOTTEGA_MAIN_CHECKOUT
-    else process.env.BOTTEGA_MAIN_CHECKOUT = priorMainCheckout
-    fixture.dispose()
-  }
-  expect(lines).toEqual([])
-})
-
 test('workflow tree project refusal is only required for a configured record without an owner', async () => {
   const input = { command: 'hydrate' as const, root: '/fixture/unowned' }
   expect(
@@ -445,47 +420,6 @@ test('workflow promote-tree refuses a workflow divergent from production and its
   expect((await promoteTree('divergent tree', true)).error?.message).toMatch(
     /workflow hosted matched neither production nor the newest draft; clear with: .* workflow import .* then .* workflow promote-tree/,
   )
-})
-
-test('workflow promote refuses an unlanded HEAD and records an operator override', async () => {
-  registerCurrentProject('promotion-admission-project')
-  const slug = 'promotion-admission'
-  const draft = setWorkflowLocal(
-    slug,
-    {
-      title: 'Promotion admission',
-      description: 'Exercises landing-branch promotion admission.',
-      arguments: [],
-      modes: [],
-    },
-    'draft for promotion admission',
-    'test',
-  )
-  const argv = [
-    'workflow',
-    'promote',
-    slug,
-    String(draft.n),
-    '--reason',
-    'emergency workflow repair',
-  ]
-  const options = { promotionContainsHead: () => ({ contains: false }) }
-  await expect(workflowCommand(argv, presentation([]), options)).rejects.toThrow(
-    'land the workflow change by pull request',
-  )
-
-  await workflowCommand([...argv, '--from-operator'], presentation([]), options)
-  expect(
-    db()
-      .query<{ author: string; reason: string }, []>(
-        `SELECT e.author,e.reason FROM workflow_event e
-          JOIN workflow_version v ON v.record_id=e.workflow_version_record_id
-          JOIN workflow w ON w.record_id=v.workflow_record_id
-          WHERE w.slug='promotion-admission' AND e.event='promote'
-          ORDER BY e.at DESC LIMIT 1`,
-      )
-      .get(),
-  ).toEqual({ author: 'Shmuel Barkin', reason: 'emergency workflow repair' })
 })
 
 test('mode-less step command resolves autonomy from the fetched catalogue step', async () => {

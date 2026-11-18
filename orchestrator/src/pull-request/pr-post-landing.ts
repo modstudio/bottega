@@ -437,16 +437,9 @@ export async function completePullRequestPostLanding(input: {
 }
 
 function promoteWorkflowTree(project: Project, reason: string): WorkflowPromotionResult {
+  const binary = join(project.path, 'bin', PLATFORM_SLUG)
   const imported = startBoundedSync(
-    [
-      join(project.path, 'bin', PLATFORM_SLUG),
-      'workflow',
-      'import',
-      '--cwd',
-      project.path,
-      '--reason',
-      reason,
-    ],
+    [binary, 'workflow', 'import', '--cwd', project.path, '--reason', reason],
     { budget: 'self-cli', cwd: project.path, env: process.env },
   )
   if (imported.exitCode !== 0) {
@@ -457,15 +450,7 @@ function promoteWorkflowTree(project: Project, reason: string): WorkflowPromotio
     }
   }
   const result = startBoundedSync(
-    [
-      join(project.path, 'bin', PLATFORM_SLUG),
-      'workflow',
-      'promote-tree',
-      '--cwd',
-      project.path,
-      '--reason',
-      reason,
-    ],
+    [binary, 'workflow', 'promote-tree', '--cwd', project.path, '--reason', reason],
     { budget: 'self-cli', cwd: project.path, env: process.env },
   )
   if (result.exitCode === 0) {
