@@ -542,9 +542,9 @@ function registerDoCommand(program: Command): void {
 }
 
 function registerWaitingCommand(program: Command): void {
-  describedCommand(program, 'waiting', 'list questions waiting on the operator')
+  describedCommand(program, 'waiting', 'list questions waiting for a ruling')
     .option('--json', 'write the waiting questions as JSON')
-    .option('--claim-notifications', 'claim and include pending operator notifications')
+    .option('--claim-notifications', 'claim and include pending ruling notifications')
     .allowExcessArguments(false)
     .action(
       async (options) =>
@@ -657,8 +657,8 @@ export function register(program: Command, dependencies: LogicDependencies = {})
     .action((id, _message, options, command) =>
       tellByIdentifier(id, command, Boolean(options.ping)),
     )
-  describedCommand(program, 'relay <id>', 'relay a worker question to the operator')
-    .requiredOption('--note <why>', 'record why the question needs the operator')
+  describedCommand(program, 'relay <id>', 'relay a worker question to a person for a ruling')
+    .requiredOption('--note <why>', 'record why the question needs a person to rule')
     .allowUnknownOption(true)
     .action((id, options, command) => relayByIdentifier(id, command, options.note))
   registerWaitingCommand(program)

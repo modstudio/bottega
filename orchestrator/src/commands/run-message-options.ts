@@ -7,7 +7,7 @@ import { describedCommand } from './support.ts'
 const withKeyedTurnOverride = (command: Command): Command =>
   command
     .option('--override-unbound <reason>', 'override keyed cursor admission')
-    .option('--from-operator', 'attest that the operator requested the override')
+    .option('--from-operator', 'attest that a person, not an agent, requested the override')
 
 export const answerCommandDefinition = (program: Command): Command =>
   describedCommand(
