@@ -62,7 +62,12 @@ function installKeylessWorkflow(
 test.each([
   { name: 'advance', steps: ['ownership-first', 'ownership-last'] },
   { name: 'finish', steps: ['ownership-first'] },
-])('a foreign keyless $name passes through the floor adapter and refuses', async ({ steps }) => {
+  {
+    name: 'advance with task adoption',
+    steps: ['ownership-first', 'ownership-last'],
+    task: 'DEV-2422',
+  },
+])('a foreign keyless $name refuses before writing', async ({ steps, task }) => {
   const d = database()
   const slug = `keyless-foreign-${steps.length}`
   installKeylessWorkflow(d, slug, steps)
@@ -90,7 +95,7 @@ test.each([
       'closed by foreign session',
       { session: 'foreign-session' },
       d,
-      {},
+      task ? { task } : {},
       undefined,
       cursor,
     ),
@@ -98,8 +103,10 @@ test.each([
     `workflow cursor ${cursor} is owned by session owner-session; a keyless cursor changes owner only through an explicit takeover. Take it over with: ${PLATFORM_SLUG} workflow abandon --cursor ${cursor} --project fixture --owner-session owner-session; then compose a new cursor with: ${PLATFORM_SLUG} workflow compose ${slug} --project fixture --mode default`,
   )
   expect(
-    d.query('SELECT session_id,ordinal,state FROM workflow_cursor WHERE number=?').get(cursor),
-  ).toEqual({ session_id: 'owner-session', ordinal: 0, state: 'running' })
+    d
+      .query('SELECT session_id,workflow_key,ordinal,state FROM workflow_cursor WHERE number=?')
+      .get(cursor),
+  ).toEqual({ session_id: 'owner-session', workflow_key: '', ordinal: 0, state: 'running' })
 })
 
 test('a foreign keyed advance keeps the recorded taken-over claim behavior', async () => {
