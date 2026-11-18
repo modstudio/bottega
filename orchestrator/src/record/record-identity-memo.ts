@@ -28,7 +28,7 @@ function memoSlot(): MemoSlot {
   return created
 }
 
-export function memoizedRecordIdentity(
+function memoizedRecordIdentity(
   baseUrl: string,
   load: () => Promise<RecordIdentity>,
   now: () => number = Date.now,
@@ -39,6 +39,7 @@ export function memoizedRecordIdentity(
   const current = slot.byBaseUrl.get(baseUrl)
   if (
     current &&
+    current.stamp === stamp &&
     at - current.startedAt < RECORD_IDENTITY_MEMO_MAX_AGE_MS
   )
     return current.read

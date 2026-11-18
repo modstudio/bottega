@@ -65,18 +65,21 @@ function countingRequest(onWhoami: () => Promise<typeof identity> = async () => 
   whoamiRequests: () => number
 } {
   let whoamiRequests = 0
-  const request: RecordClientRequest = async <T>(path, init = {}): Promise<T> => {
+  const request = (async (
+    path: string,
+    init: RequestInit & { schema?: (body: unknown) => unknown } = {},
+  ): Promise<unknown> => {
     if (path === '/v1/whoami') {
       whoamiRequests += 1
       const body = await onWhoami()
-      return (init.schema ? init.schema(body) : body) as T
+      return init.schema ? init.schema(body) : body
     }
     if (path === '/api/auth/organization/set-active') {
       const body = { id: 'space-b', slug: 'beta' }
-      return (init.schema ? init.schema(body) : body) as T
+      return init.schema ? init.schema(body) : body
     }
     throw new Error(`unexpected request ${path}`)
-  }
+  }) as RecordClientRequest
   return { request, whoamiRequests: () => whoamiRequests }
 }
 
