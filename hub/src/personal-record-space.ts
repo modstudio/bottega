@@ -19,9 +19,10 @@ export async function personalRecordSpace(
 ): Promise<string> {
   const token = options.token === undefined ? await readRecordSessionTokenAsync() : options.token
   if (!token) throw new Error(RECORD_SIGN_IN_REMEDY)
+  const headers = recordRequestHeaders({ bearerToken: token })
   const identity = await createRecordClient({
     baseUrl: requiredRecordApiUrl(),
-    headers: recordRequestHeaders({ bearerToken: token }),
+    headers: { authorization: headers.get('authorization') ?? undefined },
     fetch: options.fetch,
     requestDeadlineMs: options.requestDeadlineMs,
   }).whoami()

@@ -4,10 +4,12 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { Glob } from 'bun'
 import ts from 'typescript'
+import { PLATFORM_SLUG } from '../shared/brand.ts'
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url)).replace(/\/$/, '')
 const SOURCE_ROOTS = ['shared', 'hub/src', 'orchestrator/src'] as const
 const HELPER_MODULE = 'shared/record-request-headers.ts'
+const CALLER_HEADER_LITERAL = `x-${PLATFORM_SLUG}-caller`
 const TEST_FILE = /(?:^|\/)(?:test|tests)\/|(?:^|\/)(?:test-[^/]+|[^/]+\.test)\.ts$/
 
 export const THIRD_PARTY_BEARER_HEADER_FILES = {
@@ -36,7 +38,7 @@ function literalText(node: ts.Node | undefined): string | undefined {
 
 function headerKind(name: string | undefined): HeaderConstructionKind | undefined {
   const normalized = name?.toLowerCase()
-  if (normalized === 'x-bottega-caller') return 'caller'
+  if (normalized === CALLER_HEADER_LITERAL) return 'caller'
   if (normalized === 'x-record-space') return 'space'
   return undefined
 }
@@ -63,44 +65,40 @@ function propertyValue(
   return undefined
 }
 
+function namedValueKind(name: string | undefined, value: ts.Node | undefined) {
+  return (
+    headerKind(name) ??
+    (name?.toLowerCase() === 'authorization' && isBearerValue(value) ? 'bearer' : undefined)
+  )
+}
+
+function propertyConstructionKind(node: ts.PropertyAssignment) {
+  return namedValueKind(propertyName(node.name), node.initializer)
+}
+
+function callConstructionKind(node: ts.CallExpression) {
+  if (!ts.isPropertyAccessExpression(node.expression)) return undefined
+  const method = node.expression.name.text
+  if (method !== 'set' && method !== 'append') return undefined
+  return namedValueKind(literalText(node.arguments[0]), node.arguments[1])
+}
+
+function arrayConstructionKind(node: ts.ArrayLiteralExpression) {
+  return namedValueKind(literalText(node.elements[0]), node.elements[1])
+}
+
+function objectConstructionKind(node: ts.ObjectLiteralExpression) {
+  const name = literalText(propertyValue(node, 'name'))
+  return name?.toLowerCase() === 'authorization' && isBearerValue(propertyValue(node, 'value'))
+    ? 'bearer'
+    : undefined
+}
+
 function constructionKind(node: ts.Node): HeaderConstructionKind | undefined {
-  if (ts.isPropertyAssignment(node)) {
-    const name = propertyName(node.name)
-    return (
-      headerKind(name) ??
-      (name?.toLowerCase() === 'authorization' && isBearerValue(node.initializer)
-        ? 'bearer'
-        : undefined)
-    )
-  }
-
-  if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression)) {
-    const method = node.expression.name.text
-    if (method !== 'set' && method !== 'append') return undefined
-    const name = literalText(node.arguments[0])
-    return (
-      headerKind(name) ??
-      (name?.toLowerCase() === 'authorization' && isBearerValue(node.arguments[1])
-        ? 'bearer'
-        : undefined)
-    )
-  }
-
-  if (ts.isArrayLiteralExpression(node)) {
-    const name = literalText(node.elements[0])
-    return (
-      headerKind(name) ??
-      (name?.toLowerCase() === 'authorization' && isBearerValue(node.elements[1])
-        ? 'bearer'
-        : undefined)
-    )
-  }
-
-  if (ts.isObjectLiteralExpression(node)) {
-    const name = literalText(propertyValue(node, 'name'))
-    const value = propertyValue(node, 'value')
-    if (name?.toLowerCase() === 'authorization' && isBearerValue(value)) return 'bearer'
-  }
+  if (ts.isPropertyAssignment(node)) return propertyConstructionKind(node)
+  if (ts.isCallExpression(node)) return callConstructionKind(node)
+  if (ts.isArrayLiteralExpression(node)) return arrayConstructionKind(node)
+  if (ts.isObjectLiteralExpression(node)) return objectConstructionKind(node)
   return undefined
 }
 

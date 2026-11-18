@@ -580,7 +580,8 @@ export async function recordIdentity(
   })
 }
 
-export const bearerHeaders = (token: string) => recordRequestHeaders({ bearerToken: token })
+export const bearerHeaders = (token: string, destinationSpaceId?: string, headers?: HeadersInit) =>
+  recordRequestHeaders({ bearerToken: token, destinationSpaceId, headers })
 
 export async function setActiveRecordSpaceForSession(
   url: string,

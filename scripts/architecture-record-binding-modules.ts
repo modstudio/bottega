@@ -49,7 +49,7 @@ export const recordBindingModules: RecordModule[] = [
     '../../../shared/brand.ts',
     '../../../shared/hosted-call-observation.ts',
     '../../../shared/install-root.ts',
-    '../../../shared/record-caller.ts',
+    '../../../shared/record-request-headers.ts',
     '../hosted-call-outcome.ts',
     './record-auth.ts',
   ]),

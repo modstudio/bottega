@@ -89,7 +89,7 @@ test('config client sends the active caller header', async () => {
   )
 
   await withRecordCaller('cli:machine/config/secret/list', () => client.whoami())
-  expect(caller).toBe('cli:machine/config/secret/list')
+  expect(caller as string | null).toBe('cli:machine/config/secret/list')
 })
 
 test('config client decodes a machine signing public key', async () => {
