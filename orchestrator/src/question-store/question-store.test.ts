@@ -511,9 +511,10 @@ test('only the record adapter passes a rulings feed cursor through', async () =>
   database.close()
 })
 
-test('record question reads refuse a bare number before making a client request', async () => {
+test('record question reads fan a bare number across reachable record spaces', async () => {
   const database = migratedTestDatabase()
   let requests = 0
+  const destinations: Array<string | undefined> = []
   const store = new RecordQuestionStore({
     database,
     client: {
@@ -521,17 +522,27 @@ test('record question reads refuse a bare number before making a client request'
         requests += 1
         return whoami()
       },
-      readQuestions: async () => {
+      readQuestions: async (_input, destination) => {
         requests += 1
-        return { items: [] }
+        destinations.push(destination?.destinationSpaceId)
+        return {
+          items: [
+            {
+              id: WORKFLOW_QUESTION_ID,
+              number: 7,
+              project_record_id: PROJECT_ID,
+            },
+          ],
+        }
       },
     },
   })
 
-  await expect(store.read({ read: 'by-number', number: 7 })).rejects.toThrow(
-    'question numbers are unique only within a record space; pass the question UUID, then retry',
-  )
-  expect(requests).toBe(0)
+  await expect(store.read({ read: 'by-number', number: 7 })).resolves.toMatchObject({
+    items: [{ record_id: WORKFLOW_QUESTION_ID, number: 7 }],
+  })
+  expect(destinations).toEqual([SPACE_ID])
+  expect(requests).toBe(2)
   database.close()
 })
 

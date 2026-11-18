@@ -257,10 +257,6 @@ export class RecordQuestionStore implements QuestionStore {
   }
 
   async read(input: QuestionReadInput, projectId?: string): Promise<QuestionReadResult> {
-    if (input.read === 'by-number' && !projectId)
-      throw new Error(
-        'question numbers are unique only within a record space; pass the question UUID, then retry',
-      )
     if (input.changedAfter !== undefined && input.read !== 'rulings' && input.read !== 'inbox')
       throw new Error(
         `${questionChangedAfterRefusal.message}; ${questionChangedAfterRefusal.remedy}`,

@@ -1,8 +1,10 @@
 import { describe, expect, test } from 'bun:test'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { addProject } from '../../test/fixtures/offline-branch-landing.ts'
+import { installRecordApiClient } from '../../test/fixtures/record-api.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
+import type { RecordApiClient } from '../record/record-api-client.ts'
 import {
   parseQuestionIdentifier,
   questionIdentityMap,
@@ -45,5 +47,50 @@ describe('question identifier', () => {
     await expect(questionIdentityMap(db(), [71001])).resolves.toEqual([
       { number: 71001, record_id: recordId },
     ])
+  })
+
+  test('the maintenance map refuses a number shared by projects but still resolves a UUID', async () => {
+    const alphaProjectId = newRecordId()
+    const betaProjectId = newRecordId()
+    const alphaSpaceId = newRecordId()
+    const betaSpaceId = newRecordId()
+    const alphaQuestionId = newRecordId()
+    const betaQuestionId = newRecordId()
+    const previousRecordApiUrl = process.env.BOTTEGA_RECORD_API_URL
+    process.env.BOTTEGA_RECORD_API_URL = 'https://record.example.test'
+    installRecordApiClient({
+      whoami: async () => ({
+        user: { id: newRecordId() },
+        activeSpaceId: alphaSpaceId,
+        personalSpaceId: null,
+        memberships: [
+          { space_id: alphaSpaceId, name: 'Alpha', slug: 'alpha', permission: 'write' },
+          { space_id: betaSpaceId, name: 'Beta', slug: 'beta', permission: 'write' },
+        ],
+      }),
+      readQuestions: async (
+        input: { read: string },
+        destination?: { destinationSpaceId: string },
+      ) => ({
+        items:
+          input.read === 'by-id'
+            ? [{ id: betaQuestionId, number: 71_002, project_record_id: betaProjectId }]
+            : destination?.destinationSpaceId === betaSpaceId
+              ? [{ id: betaQuestionId, number: 71_002, project_record_id: betaProjectId }]
+              : [{ id: alphaQuestionId, number: 71_002, project_record_id: alphaProjectId }],
+      }),
+    } as unknown as RecordApiClient)
+    try {
+      await expect(questionIdentityMap(db(), [71_002])).rejects.toThrow(
+        'question number 71002 exists in more than one project; pass the question UUID',
+      )
+      await expect(questionIdentityMap(db(), [betaQuestionId])).resolves.toEqual([
+        { number: 71_002, record_id: betaQuestionId },
+      ])
+    } finally {
+      installRecordApiClient(null)
+      if (previousRecordApiUrl === undefined) delete process.env.BOTTEGA_RECORD_API_URL
+      else process.env.BOTTEGA_RECORD_API_URL = previousRecordApiUrl
+    }
   })
 })
