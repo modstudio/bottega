@@ -574,7 +574,7 @@ test('a pr-create exec whose output URL cannot be judged is gathered as a condit
     `INSERT INTO probe (record_id,command,cwd,head_commit,exit_code,output_tail,created_at,kind)
      VALUES ('${newRecordId()}',?,'/fixture/work','abc',0,?,'2026-09-01','exec')`,
   ).run(JSON.stringify([PLATFORM_SLUG, 'pr', 'create']), `opened ${other}`)
-  const mismatched = await gather(d, { artifacts: [''] })
+  const mismatched = await gather(d, { artifacts: ['exec:1'] })
   expect(mismatched.artifacts?.[0]?.pullRequest).toBeUndefined()
   expect(mismatched.artifacts?.[0]?.exec?.pullRequestCondition).toContain('--artifact exec:1')
   expect(mismatched.artifacts?.[0]?.exec?.pullRequestCondition).toContain('resolved as')
@@ -714,10 +714,12 @@ test('a legacy resume doc without a project id is scoped by its project subject'
 
 test('a foreign task comment is refused and a matching comment is allowed', async () => {
   const d = database()
-  expect(async () => await gather(d, { artifacts: [''] })).toThrow(
+  expect(async () => await gather(d, { artifacts: ['task:DEV-1#comment:4'] })).toThrow(
     "--artifact task:DEV-1#comment:4 task is not this cursor's DEV-977",
   )
-  expect((await gather(d, { artifacts: ['task:DEV-977#comment:4'] })).artifacts?.[0]?.artifact).toEqual({
+  expect(
+    (await gather(d, { artifacts: ['task:DEV-977#comment:4'] })).artifacts?.[0]?.artifact,
+  ).toEqual({
     ref: 'task:DEV-977#comment:4',
     exists: true,
   })
@@ -748,16 +750,17 @@ test('a fresh tracker task read verifies its own comment ids and refuses another
     (await gather(d, { artifacts: [`task:DEV-977#comment:${trackerComment}`] }, { readTask }))
       .artifacts?.[0]?.artifact,
   ).toEqual({ ref: `task:DEV-977#comment:${trackerComment}`, exists: true })
-  expect(async () => await gather(d, { artifacts: ['task:DEV-977#comment:4'] }, { readTask })).toThrow(
-    '--artifact task:DEV-977#comment:4 is not a comment on DEV-977',
-  )
+  expect(
+    async () => await gather(d, { artifacts: ['task:DEV-977#comment:4'] }, { readTask }),
+  ).toThrow('--artifact task:DEV-977#comment:4 is not a comment on DEV-977')
 
   const hubRead = hubTaskReadFromJson('DEV-977', {
     task: { record_id: 'task-DEV-977', key: 'DEV-977', status: 'done', status_category: 'done' },
     comments: [{ id: 4 }],
   })
   expect(
-    (await gather(d, { artifacts: ['task:DEV-977#comment:4'] }, { readTask: () => hubRead })).artifacts?.[0]?.artifact,
+    (await gather(d, { artifacts: ['task:DEV-977#comment:4'] }, { readTask: () => hubRead }))
+      .artifacts?.[0]?.artifact,
   ).toEqual({ ref: 'task:DEV-977#comment:4', exists: true })
 })
 
@@ -767,9 +770,43 @@ test('a task artifact requires the fresh task key to match the cursor', async ()
     ref: 'task:DEV-977',
     exists: true,
   })
-  expect(async () => await gather(d, { artifacts: [''] })).toThrow(
+  expect(async () => await gather(d, { artifacts: ['task:DEV-1'] })).toThrow(
     "--artifact task:DEV-1 task is not this cursor's DEV-977",
   )
+})
+
+test('an unresolvable second artifact refuses the close and names that artifact', async () => {
+  const d = database()
+  expect(
+    async () =>
+      await gather(d, {
+        artifacts: ['task:DEV-977', 'not-an-artifact'],
+      }),
+  ).toThrow('not-an-artifact')
+})
+
+test('a duplicated artifact reference is resolved once', async () => {
+  const d = database()
+  let reads = 0
+  const evidence = await gather(
+    d,
+    { artifacts: ['task:DEV-977', 'task:DEV-977'] },
+    {
+      readTask: (key) => {
+        reads += 1
+        return {
+          recordId: `task-${key}`,
+          key,
+          status: 'done',
+          statusCategory: 'done',
+          commentIds: [],
+          commentsVerifiable: true,
+        }
+      },
+    },
+  )
+  expect(reads).toBe(1)
+  expect(evidence.artifacts).toHaveLength(1)
 })
 
 test('an unlinked keyed cursor accepts only its own task label as task evidence', async () => {
@@ -785,7 +822,10 @@ test('an unlinked keyed cursor accepts only its own task label as an artifact', 
   expect(async () => await gather(d, { artifacts: ['task:DEV-1'] }, {}, unlinkedIdentity)).toThrow(
     "--artifact task:DEV-1 task is not this cursor's DEV-977",
   )
-  expect((await gather(d, { artifacts: ['task:DEV-977'] }, {}, unlinkedIdentity)).artifacts?.[0]?.artifact).toEqual({
+  expect(
+    (await gather(d, { artifacts: ['task:DEV-977'] }, {}, unlinkedIdentity)).artifacts?.[0]
+      ?.artifact,
+  ).toEqual({
     ref: 'task:DEV-977',
     exists: true,
   })
@@ -1024,10 +1064,11 @@ test('an explicit run artifact reaches keyless binding', async () => {
     sessionId: 's',
     startedAt: '2026-09-02',
   })
-  expect((await gather(d, { artifacts: [`run:${matching}`] }, {}, planningIdentity)).artifacts?.[0]?.artifact).toEqual(
-    {
-      ref: `run:${matching}`,
-      exists: true,
-    },
-  )
+  expect(
+    (await gather(d, { artifacts: [`run:${matching}`] }, {}, planningIdentity)).artifacts?.[0]
+      ?.artifact,
+  ).toEqual({
+    ref: `run:${matching}`,
+    exists: true,
+  })
 })

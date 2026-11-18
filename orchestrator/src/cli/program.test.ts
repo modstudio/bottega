@@ -145,7 +145,7 @@ test('the retired top-level probe spelling is not registered', () => {
   expect(program.commands.some((command) => command.name() === 'probe')).toBeFalse()
 })
 
-test('workflow next refuses repeated artifact evidence before its floor runs', async () => {
+test('workflow next refuses a repeated single-value option before its floor runs', async () => {
   const workflow = program.commands.find((command) => command.name() === 'workflow')!
   const next = workflow.commands.find((command) => command.name() === 'next')!
   let floorRan = false
@@ -157,9 +157,9 @@ test('workflow next refuses repeated artifact evidence before its floor runs', a
 
   next.configureOutput({ ...output, writeErr: (value) => errors.push(value) })
   try {
-    expect(await run(['workflow', 'next', '--artifact', 'exec:1', '--artifact', 'exec:2'])).toBe(2)
+    expect(await run(['workflow', 'next', '--gate', 'gate-1', '--gate', 'gate-2'])).toBe(2)
     expect(errors.join('')).toContain(
-      '--artifact may be supplied only once; received exec:1 and exec:2',
+      '--gate may be supplied only once; received gate-1 and gate-2',
     )
     expect(floorRan).toBeFalse()
   } finally {

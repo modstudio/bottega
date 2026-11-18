@@ -7,6 +7,10 @@ import { WITHHELD_SECRET_SHAPED } from '../../../shared/secret-shaped.ts'
 import { MachineLabelRefusal } from '../record/machine-name.ts'
 import { classifyRunIdentifier, machineLabelRefusal } from '../run/run-identifier-names.ts'
 import { parseProbeArtifact } from './probe-identifier.ts'
+import type {
+  BottegaCommandIdentity,
+  ValidatedArtifactEvidence,
+} from './workflow-artifact-evidence.ts'
 import type { CheckoutEvidenceLocation } from './workflow-checkout-refusal.ts'
 import {
   commandExitBindingRefusal,
@@ -88,40 +92,6 @@ type ValidatedSatisfy =
       cursorMatches: boolean
       floor: Floor
     }
-
-export type ValidatedArtifactEvidence = {
-  artifact: { ref: string; exists: boolean }
-  artifactRunOffered?: string
-  probe?: { id: number; exitCode: number }
-  exec?: {
-    id: number
-    recordId: string
-    command: string
-    argv: string[] | null
-    commandIdentity?: BottegaCommandIdentity
-    exitCode: number
-    sessionMatches: boolean
-    sessionAdoptedCursor: boolean
-    createdAfterStepActivation: boolean
-    checkoutLocation: CheckoutEvidenceLocation
-    headCommit: string | null
-    cursorBranch: string | null
-    output: string
-    outputWithheld?: boolean
-    commandWithheld?: boolean
-    pullRequestCondition?: string
-  }
-  pullRequest?: {
-    url: string
-    repository: string | null
-    projectRepository: string | null
-    state: string
-    head: string
-    base: string
-    cursorBranch: string
-    trunk: string
-  }
-}
 
 export type ValidatedEvidence = {
   runOffered?: string | number
@@ -456,12 +426,6 @@ const WITHHELD_PULL_REQUEST_COMMAND_CONDITION = `the recorded command was withhe
 
 function execOutputWithheld(facts: { outputWithheld: boolean; output: string }): boolean {
   return facts.outputWithheld || facts.output === WITHHELD_SECRET_SHAPED
-}
-
-export type BottegaCommandIdentity = {
-  resolvedCandidate: string | null
-  mainCheckoutExecutable: string | null
-  installedExecutable: string | null
 }
 
 /** Matches one bottega verb after the adapter has resolved any path-shaped executable. */
@@ -881,8 +845,12 @@ function evidenceRefs(evidence: ValidatedEvidence): EvidenceRef[] {
   if (evidence.review) refs.push({ flag: '--review', value: String(evidence.review.number) })
   if (evidence.gate) refs.push({ flag: '--gate', value: evidence.gate.recordId })
   if (evidence.run) refs.push({ flag: '--run', value: String(evidence.run.id) })
-  for (const entry of evidence.artifacts ?? [])
+  const artifactRefs = new Set<string>()
+  for (const entry of evidence.artifacts ?? []) {
+    if (artifactRefs.has(entry.artifact.ref)) continue
+    artifactRefs.add(entry.artifact.ref)
     refs.push({ flag: '--artifact', value: entry.artifact.ref })
+  }
   if (evidence.task) refs.push({ flag: '--task', value: evidence.task.key })
   return refs
 }

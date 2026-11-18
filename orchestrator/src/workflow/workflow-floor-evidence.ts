@@ -31,8 +31,13 @@ import { reviewLineage } from '../review/review-lineage-store.ts'
 import { rulingStatus } from '../run/question-vocabulary.ts'
 import { resolveRunIdentifier } from '../run/run-identifier.ts'
 import { TERMINAL_RUN_STATUS_SET } from '../run/run-status.ts'
-import { parseProbeArtifact, resolveProbeArtifact } from './probe-identifier.ts'
 import { taskFlowHandoffLinks, taskFlowReadStore } from './task-flow-store.ts'
+import type {
+  BottegaCommandIdentity,
+  ValidatedArtifactEvidence,
+  WorkflowEvidenceInput,
+} from './workflow-artifact-evidence.ts'
+import { resolvedOfferedArtifact } from './workflow-artifact-evidence.ts'
 import {
   type CheckoutResolution,
   checkoutOutsideChangeRefusal,
@@ -42,7 +47,6 @@ import type { CursorState } from './workflow-cursor-transition.ts'
 import { resolveWorkflowCursorSuccessor } from './workflow-cursor-transition.ts'
 import {
   type ArtifactRef,
-  type BottegaCommandIdentity,
   decideReviewReadArtifact,
   type Floor,
   flagForFloor,
@@ -50,7 +54,6 @@ import {
   githubPullRequestUrlIn,
   parseArtifactRef,
   pullRequestCreateArgv,
-  type ValidatedArtifactEvidence,
   type ValidatedEvidence,
 } from './workflow-floor.ts'
 import { gitText, productionResolveCheckout } from './workflow-floor-evidence-checkout.ts'
@@ -70,18 +73,8 @@ import {
 } from './workflow-run-binding.ts'
 import { attachedTextReferenceMeetsFloor, type WorkflowTextRow } from './workflow-text.ts'
 
+export type { WorkflowEvidenceInput } from './workflow-artifact-evidence.ts'
 export type { FloorEvidencePorts } from './workflow-floor-evidence-replay.ts'
-
-export type WorkflowEvidenceInput = {
-  ruling?: number
-  review?: string
-  gate?: string | number
-  run?: string
-  artifacts?: string[]
-  task?: string
-  defer?: string
-  satisfies?: string
-}
 
 export type CursorIdentity = {
   project: string
@@ -879,16 +872,6 @@ function gatherTreeEvidence(
   }
 }
 
-function resolvedOfferedArtifact(d: Database, artifact: string): string {
-  const offered = artifact.trim()
-  try {
-    const parsed = parseProbeArtifact(offered)
-    return parsed?.identifier.kind === 'number' ? resolveProbeArtifact(d, offered)! : offered
-  } catch {
-    return offered
-  }
-}
-
 function evidenceCheckoutResolver(
   identity: CursorIdentity,
   ports: FloorEvidencePorts,
@@ -988,7 +971,8 @@ async function gatherArtifactEvidence(
         ),
       )
     }
-    ;(gathered.artifacts ??= []).push(entry)
+    if (!gathered.artifacts) gathered.artifacts = []
+    gathered.artifacts.push(entry)
   }
 }
 

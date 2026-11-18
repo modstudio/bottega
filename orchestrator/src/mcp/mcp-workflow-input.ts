@@ -18,10 +18,7 @@ export const nextWorkflowStepInputSchema = z.object({
   gate: z.union([z.number().int().positive(), z.uuid()]).optional(),
   run: z.union([z.number().int().positive(), z.string().trim().min(1)]).optional(),
   artifact: z
-    .union([
-      z.string().trim().min(1),
-      z.array(z.string().trim().min(1)).min(1),
-    ])
+    .union([z.string().trim().min(1), z.array(z.string().trim().min(1)).min(1)])
     .optional(),
   task: z.string().trim().min(1).optional(),
   cursor: z.number().int().positive().optional(),

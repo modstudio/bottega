@@ -65,7 +65,7 @@ test('a withheld pr-create exec carries the withheld flag and no pull request', 
      VALUES ('${newRecordId()}',?,'/fixture/work','abc',0,'[withheld: secret-shaped content]','2026-09-01','exec',1)`,
   ).run(JSON.stringify([PLATFORM_SLUG, 'pr', 'create']))
   expect(await gather(d)).toMatchObject({
-    exec: { outputWithheld: true, output: '[withheld: secret-shaped content]' },
+    artifacts: [{ exec: { outputWithheld: true, output: '[withheld: secret-shaped content]' } }],
   })
   expect((await gather(d)).artifacts?.[0]?.pullRequest).toBeUndefined()
 })
@@ -79,7 +79,16 @@ test('a withheld command is gathered separately from readable output and names i
   ).run(`opened ${url}`)
   const evidence = await gather(d)
   expect(evidence).toMatchObject({
-    exec: { argv: null, commandWithheld: true, outputWithheld: false, output: `opened ${url}` },
+    artifacts: [
+      {
+        exec: {
+          argv: null,
+          commandWithheld: true,
+          outputWithheld: false,
+          output: `opened ${url}`,
+        },
+      },
+    ],
   })
 
   const exec = evidence.artifacts![0]!.exec!

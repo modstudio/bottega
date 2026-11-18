@@ -427,7 +427,7 @@ function presentCommandOutcome(
   presentation.setExitCode(outcome.exitCode)
 }
 
-function evidenceFromArgv(argv: string[]): WorkflowEvidenceInput {
+export function evidenceFromArgv(argv: string[]): WorkflowEvidenceInput {
   const run = flagValue(argv, 'run')
   return {
     ruling: positive(flagValue(argv, 'ruling'), '--ruling'),
@@ -440,7 +440,9 @@ function evidenceFromArgv(argv: string[]): WorkflowEvidenceInput {
         ? undefined
         : resolveGateIdentifier(db(), flagValue(argv, 'gate')!),
     run: run === undefined ? undefined : resolveRunIdentifier(db(), run),
-    artifacts: flagValues(argv, 'artifact').map((artifact) => resolveProbeArtifact(db(), artifact)!),
+    artifacts: flagValues(argv, 'artifact').map(
+      (artifact) => resolveProbeArtifact(db(), artifact)!,
+    ),
     task: flagValue(argv, 'task'),
     defer: flagValue(argv, 'defer'),
     satisfies: obligationUuid(flagValue(argv, 'satisfies')),
