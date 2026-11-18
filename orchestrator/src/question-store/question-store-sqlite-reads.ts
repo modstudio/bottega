@@ -5,8 +5,8 @@ import type { Database } from 'bun:sqlite'
 import { SESSION_LIVE_MS } from '../../../shared/session-liveness.ts'
 import { voidedSql } from '../evidence/evidence-query.ts'
 import {
-  TASK_FLOW_CLOSED_STAGE_STATES,
-  TASK_FLOW_OPEN_STAGE_STATES,
+  TASK_FLOW_CLOSED_STAGE_STATES_SQL,
+  TASK_FLOW_OPEN_STAGE_STATES_SQL,
 } from '../record/record-task-flow-contract.ts'
 import type {
   TaskFlowCloseOutStageRow,
@@ -86,17 +86,17 @@ export const closeOutShipTaskStage = (
   branch: string,
 ): TaskFlowCloseOutStageRow[] =>
   database
-    .query<TaskFlowCloseOutStageRow, string[]>(
+    .query<TaskFlowCloseOutStageRow, [string, string, string]>(
       `SELECT number id, step_slug, workflow_slug, project, args
          FROM workflow_cursor
         WHERE session_id = ?
           AND project = ?
           AND workflow_slug = 'ship-task'
-          AND state IN (?,?)
+          AND state IN (${TASK_FLOW_OPEN_STAGE_STATES_SQL})
           AND json_extract(args, '$.branch') = ?
         ORDER BY number`,
     )
-    .all(sessionId, project, ...TASK_FLOW_OPEN_STAGE_STATES, branch)
+    .all(sessionId, project, branch)
 
 export const waitingWorkflowQuestions = (database: Database): TaskFlowWaitingQuestionRow[] =>
   database
@@ -133,15 +133,15 @@ export const openStagesForSession = (
   sessionId: string,
 ): TaskFlowOpenSessionStageRow[] =>
   database
-    .query<TaskFlowOpenSessionStageRow, string[]>(
+    .query<TaskFlowOpenSessionStageRow, [string]>(
       `SELECT record_id,number,project,workflow_slug,mode_slug,workflow_key,state,updated_at,
         (SELECT q.record_id FROM question q
           WHERE q.workflow_cursor_record_id=workflow_cursor.record_id
             AND ${questionOpenSql('q')} LIMIT 1) open_question_record_id
        FROM workflow_cursor
-        WHERE session_id=? AND state NOT IN (?,?) ORDER BY number`,
+        WHERE session_id=? AND state NOT IN (${TASK_FLOW_CLOSED_STAGE_STATES_SQL}) ORDER BY number`,
     )
-    .all(sessionId, ...TASK_FLOW_CLOSED_STAGE_STATES)
+    .all(sessionId)
 
 export const keylessSessionCursors = (
   database: Database,
@@ -154,9 +154,9 @@ export const keylessSessionCursors = (
         (SELECT q.record_id FROM question q WHERE q.workflow_cursor_record_id=c.record_id
           AND ${questionOpenSql('q')} LIMIT 1) open_question_record_id
        FROM workflow_cursor c WHERE c.workflow_key='' AND c.session_id IS NOT NULL
-         AND c.state NOT IN (?,?) ${projectClause} ORDER BY c.number`,
+         AND c.state NOT IN (${TASK_FLOW_CLOSED_STAGE_STATES_SQL}) ${projectClause} ORDER BY c.number`,
     )
-    .all(...TASK_FLOW_CLOSED_STAGE_STATES, ...(project ? [project] : []))
+    .all(...(project ? [project] : []))
 }
 
 export const workflowInboxQuestions = (

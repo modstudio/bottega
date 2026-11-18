@@ -21,6 +21,25 @@ export const TASK_FLOW_CLOSED_STAGE_STATES = [
   'done',
   'abandoned',
 ] as const satisfies readonly TaskFlowStageState[]
+export function taskFlowStageStateSqlList(states: readonly TaskFlowStageState[]): string {
+  return states.map((state) => `'${state}'`).join(',')
+}
+export const TASK_FLOW_OPEN_STAGE_STATES_SQL = taskFlowStageStateSqlList(
+  TASK_FLOW_OPEN_STAGE_STATES,
+)
+export const TASK_FLOW_CLOSED_STAGE_STATES_SQL = taskFlowStageStateSqlList(
+  TASK_FLOW_CLOSED_STAGE_STATES,
+)
+export function isOpenStageState(
+  state: string,
+): state is (typeof TASK_FLOW_OPEN_STAGE_STATES)[number] {
+  return (TASK_FLOW_OPEN_STAGE_STATES as readonly string[]).includes(state)
+}
+export function isClosedStageState(
+  state: string,
+): state is (typeof TASK_FLOW_CLOSED_STAGE_STATES)[number] {
+  return (TASK_FLOW_CLOSED_STAGE_STATES as readonly string[]).includes(state)
+}
 type ClassifiedTaskFlowStageState =
   | (typeof TASK_FLOW_OPEN_STAGE_STATES)[number]
   | (typeof TASK_FLOW_CLOSED_STAGE_STATES)[number]

@@ -21,7 +21,7 @@ import {
   type HostedTaskFlow,
   type HostedTaskFlowStageById,
   type HostedTaskFlowStageList,
-  TASK_FLOW_CLOSED_STAGE_STATES,
+  isClosedStageState,
   TASK_FLOW_OPEN_STAGE_STATES,
   TASK_FLOW_STAGE_LIST_LIMIT_MAX,
   TASK_FLOW_STAGE_STATES,
@@ -328,8 +328,7 @@ class RecordTaskFlowReadStore {
       .filter(
         (row) =>
           row.workflow_key !== '' &&
-          (!(TASK_FLOW_CLOSED_STAGE_STATES as readonly string[]).includes(row.state) ||
-            row.updated_at >= input.since),
+          (!isClosedStageState(row.state) || row.updated_at >= input.since),
       )
       .sort((left, right) => left.created_at.localeCompare(right.created_at) || left.id - right.id)
   }

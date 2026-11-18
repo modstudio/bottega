@@ -2,20 +2,20 @@
 /** Reports open keyed cursors the task-flow backfill leaves unmerged, whether deliberately or because no flow was created. */
 
 import type { Database } from 'bun:sqlite'
-import { TASK_FLOW_CLOSED_STAGE_STATES } from '../record/record-task-flow-contract.ts'
+import { TASK_FLOW_CLOSED_STAGE_STATES_SQL } from '../record/record-task-flow-contract.ts'
 
 export const TASK_FLOW_MIGRATION = '0198_task_flow'
 
 export function taskFlowBackfillReports(d: Database): string[] {
   const unresolved = d
-    .query<{ number: number }, string[]>(
+    .query<{ number: number }, []>(
       `SELECT number FROM workflow_cursor
-       WHERE workflow_key<>'' AND task_record_id IS NULL AND state NOT IN (?,?)
+       WHERE workflow_key<>'' AND task_record_id IS NULL AND state NOT IN (${TASK_FLOW_CLOSED_STAGE_STATES_SQL})
        ORDER BY number`,
     )
-    .all(...TASK_FLOW_CLOSED_STAGE_STATES)
+    .all()
   const extras = d
-    .query<{ number: number; kept: number }, string[]>(
+    .query<{ number: number; kept: number }, []>(
       `SELECT number,kept FROM (
          SELECT number,FIRST_VALUE(number) OVER (
            PARTITION BY task_record_id ORDER BY number DESC
@@ -24,21 +24,21 @@ export function taskFlowBackfillReports(d: Database): string[] {
          ) task_rank
          FROM workflow_cursor
          WHERE workflow_key<>'' AND task_record_id IS NOT NULL
-           AND state NOT IN (?,?)
+           AND state NOT IN (${TASK_FLOW_CLOSED_STAGE_STATES_SQL})
        ) WHERE task_rank>1 ORDER BY number`,
     )
-    .all(...TASK_FLOW_CLOSED_STAGE_STATES)
+    .all()
   const missing = d
-    .query<{ number: number }, string[]>(
+    .query<{ number: number }, []>(
       `SELECT cursor.number FROM workflow_cursor cursor
        WHERE cursor.workflow_key<>'' AND cursor.task_record_id IS NOT NULL
-         AND cursor.state NOT IN (?,?)
+         AND cursor.state NOT IN (${TASK_FLOW_CLOSED_STAGE_STATES_SQL})
          AND NOT EXISTS (
            SELECT 1 FROM task_flow flow WHERE flow.task_record_id=cursor.task_record_id
          )
        ORDER BY cursor.number`,
     )
-    .all(...TASK_FLOW_CLOSED_STAGE_STATES)
+    .all()
   return [
     ...extras.map(
       ({ number, kept }) => `cursor ${number} not merged; cursor ${kept} is the task's stage`,

@@ -1,10 +1,18 @@
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
+import {
+  TASK_FLOW_STAGE_STATES,
+  taskFlowStageStateSqlList,
+} from '../orchestrator/src/record/record-task-flow-contract.ts'
 import { sourceFiles } from './source-analysis.ts'
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url)).replace(/\/$/, '')
 const DECLARATION = 'orchestrator/src/record/record-task-flow-contract.ts'
-const STAGE_STATE = /['"](running|awaiting-ruling|done|abandoned)['"]/g
+const regexEscape = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+const stageStates = taskFlowStageStateSqlList(TASK_FLOW_STAGE_STATES)
+  .split(',')
+  .map((state) => state.slice(1, -1))
+const STAGE_STATE = new RegExp(`['"](${stageStates.map(regexEscape).join('|')})['"]`, 'g')
 const EXEMPTIONS = [
   {
     pathPrefix: 'shared/record/migrations/',
@@ -14,21 +22,6 @@ const EXEMPTIONS = [
     path: 'shared/record/schema-task-flow.ts',
     line: `      .where(sql\`\${table.state} NOT IN ('done','abandoned')\`),`,
     reason: 'the hosted partial-index predicate requires a schema migration when states change',
-  },
-  {
-    path: 'orchestrator/src/record/record-board-claims.ts',
-    line: "                AND state IN ('running','awaiting-ruling')",
-    reason: 'a literal hosted predicate lets Postgres prove the partial-index implication',
-  },
-  {
-    path: 'orchestrator/src/record/record-question-read.ts',
-    line: "       WHERE stage.session_id=$1 AND stage.state NOT IN ('done','abandoned')",
-    reason: 'a literal hosted predicate lets Postgres prove the partial-index implication',
-  },
-  {
-    path: 'orchestrator/src/record/record-task-flow.ts',
-    line: "     AND open_stage.state NOT IN ('done','abandoned')) open_stage_count,",
-    reason: 'a literal hosted predicate lets Postgres prove the partial-index implication',
   },
 ] as const
 
@@ -52,7 +45,7 @@ function stageStateContext(path: string, line: string): boolean {
 }
 
 export function taskFlowStageStateLiteralRestatements(root = ROOT): string[] {
-  return sourceFiles(root, ['orchestrator/src', 'shared'], (path) => {
+  return sourceFiles(root, ['orchestrator/src', 'orchestrator/test', 'shared'], (path) => {
     return (path.endsWith('.ts') || path.endsWith('.sql')) && path !== DECLARATION
   }).flatMap((path) =>
     readFileSync(`${root}/${path}`, 'utf8')

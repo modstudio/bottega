@@ -5,10 +5,7 @@ import type { Database } from 'bun:sqlite'
 import { db } from '../database/db.ts'
 import { projectAt } from '../project/projects.ts'
 import { openQuestionStages } from '../question-store/question-store-read.ts'
-import {
-  TASK_FLOW_OPEN_STAGE_STATES,
-  TASK_FLOW_STAGE_STATES,
-} from '../record/record-task-flow-contract.ts'
+import { isOpenStageState, TASK_FLOW_STAGE_STATES } from '../record/record-task-flow-contract.ts'
 import {
   type TaskFlowListedStageRow as ListedCursorRow,
   taskFlowHandoffLinks,
@@ -65,7 +62,7 @@ export async function listWorkflowCursors(
       const handedOffFrom = row.handed_off_from_record_id
         ? await taskFlowReadStore(d).stageByRecordId(row.handed_off_from_record_id)
         : null
-      const closed = !TASK_FLOW_OPEN_STAGE_STATES.some((state) => state === row.state)
+      const closed = !isOpenStageState(row.state)
       const composition = closed
         ? null
         : composeWorkflow(

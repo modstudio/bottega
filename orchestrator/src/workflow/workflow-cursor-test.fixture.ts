@@ -1,10 +1,7 @@
 import type { Database } from 'bun:sqlite'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { testDatabaseFixture } from '../database/test-database.fixture.ts'
-import {
-  TASK_FLOW_CLOSED_STAGE_STATES,
-  TASK_FLOW_OPEN_STAGE_STATES,
-} from '../record/record-task-flow-contract.ts'
+import { isClosedStageState, isOpenStageState } from '../record/record-task-flow-contract.ts'
 import type { LiveCursorAutonomy } from './autonomy.ts'
 import {
   productionStepCatalogue,
@@ -75,9 +72,7 @@ export function admissionEnforcingTaskClaimPorts(
     take: async ({ project, key, session }) => {
       const ownsOpenStage = (await taskFlowReadStore(database).openStagesForSession(session)).some(
         (stage) =>
-          stage.project === project &&
-          stage.workflow_key === key &&
-          (TASK_FLOW_OPEN_STAGE_STATES as readonly string[]).includes(stage.state),
+          stage.project === project && stage.workflow_key === key && isOpenStageState(stage.state),
       )
       if (!ownsOpenStage)
         throw new Error(
@@ -184,7 +179,7 @@ export function installEvidence(
           AND ${key ? 'instance_id=?' : 'session_id=?'} ORDER BY number DESC`,
     )
     .get(project, slug, mode, key, instance)
-  if (!row || (TASK_FLOW_CLOSED_STAGE_STATES as readonly string[]).includes(row.state)) return {}
+  if (!row || isClosedStageState(row.state)) return {}
   const gate =
     d
       .query<{ number: number }, []>(

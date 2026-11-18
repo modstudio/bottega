@@ -16,6 +16,7 @@ import {
   type HostedTaskFlowTextById,
   RECORD_TASK_FLOW_NOT_FOUND_CODE,
   RECORD_TASK_FLOW_NOT_FOUND_MESSAGE,
+  TASK_FLOW_CLOSED_STAGE_STATES_SQL,
   type TaskFlowPresence,
   type TaskFlowReadQueryInput,
   type TaskFlowStageListQuery,
@@ -49,7 +50,7 @@ const FLOW_SELECT = `
   f.id,f.space_id,f.project_id,f.task_id,t.key task_key,f.state,f.open_stage_record_id,
   (SELECT count(*)::integer FROM task_flow_stage open_stage
    WHERE open_stage.flow_record_id=f.id AND open_stage.space_id=f.space_id
-     AND open_stage.state NOT IN ('done','abandoned')) open_stage_count,
+     AND open_stage.state NOT IN (${TASK_FLOW_CLOSED_STAGE_STATES_SQL})) open_stage_count,
   f.opening_machine_id,f.updated_machine_id,f.revision,f.created_at,f.updated_at`
 
 const STAGE_JOINS = `

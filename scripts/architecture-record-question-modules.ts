@@ -44,6 +44,7 @@ export const recordQuestionModules: RecordModule[] = [
     '../../../shared/record/record-changes.ts',
     '../../../shared/record/tenant.ts',
     './record-pool.ts',
+    './record-task-flow-contract.ts',
     './record-question-contract.ts',
     './record-question-step.ts',
   ]),

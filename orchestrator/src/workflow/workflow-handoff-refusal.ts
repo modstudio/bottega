@@ -1,7 +1,7 @@
 // concern: workflow handoff refusal
 /** Pure policy shared by local and hosted task-flow handoff writers. */
 
-import { TASK_FLOW_CLOSED_STAGE_STATES } from '../record/record-task-flow-contract.ts'
+import { isClosedStageState } from '../record/record-task-flow-contract.ts'
 
 export function handoffSourceRefusal(input: {
   cursorLabel: string
@@ -9,8 +9,7 @@ export function handoffSourceRefusal(input: {
   sourceSession: string | null
   targetSession: string | null
 }): string | null {
-  if ((TASK_FLOW_CLOSED_STAGE_STATES as readonly string[]).includes(input.state))
-    return `${input.cursorLabel} is ${input.state}`
+  if (isClosedStageState(input.state)) return `${input.cursorLabel} is ${input.state}`
   if (input.state === 'awaiting-ruling')
     return `${input.cursorLabel} is awaiting a ruling; answer its question, then retry the handoff`
   if (!input.sourceSession || input.sourceSession !== input.targetSession)

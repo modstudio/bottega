@@ -25,7 +25,7 @@ import type {
   HostedBoardStatus,
   HostedBoardThread,
 } from '../record/record-board-contract.ts'
-import { TASK_FLOW_CLOSED_STAGE_STATES } from '../record/record-task-flow-contract.ts'
+import { isClosedStageState } from '../record/record-task-flow-contract.ts'
 import { resolveRunIdentifier } from '../run/run-identifier.ts'
 import { taskFlowReadStore } from '../workflow/task-flow-store.ts'
 import { workflowCursorReference } from '../workflow/workflow-cursor-format.ts'
@@ -943,9 +943,7 @@ export async function boardClaimReleaseTask(key: string, project: string, inputC
   const mode = boardMode('shared', c.env, c.database)
   if (!releaseAuthority) {
     const open = (await taskFlowReadStore(c.database, c.client).listOpenStages({ project })).find(
-      (stage) =>
-        stage.workflow_key === normalizedKey &&
-        !(TASK_FLOW_CLOSED_STAGE_STATES as readonly string[]).includes(stage.state),
+      (stage) => stage.workflow_key === normalizedKey && !isClosedStageState(stage.state),
     )
     if (open)
       throw new Error(

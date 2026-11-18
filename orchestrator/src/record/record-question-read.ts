@@ -18,6 +18,7 @@ import {
   RECORD_QUESTION_INBOX_STEP_COLUMNS,
   RECORD_QUESTION_STEP_COLUMNS,
 } from './record-question-step.ts'
+import { TASK_FLOW_CLOSED_STAGE_STATES_SQL } from './record-task-flow-contract.ts'
 
 type Tenant = { url: string } & TenantPrincipal
 type Row = Record<string, unknown>
@@ -374,7 +375,7 @@ async function rows(tx: SQL, input: QuestionReadInput): Promise<Row[]> {
         (SELECT q.id::text FROM question q WHERE q.workflow_cursor_record_id=stage.id
           AND q.answered_at IS NULL AND q.closed_at IS NULL LIMIT 1) open_question_record_id
        FROM task_flow_stage stage JOIN project ON project.id=stage.project_id
-       WHERE stage.session_id=$1 AND stage.state NOT IN ('done','abandoned')
+       WHERE stage.session_id=$1 AND stage.state NOT IN (${TASK_FLOW_CLOSED_STAGE_STATES_SQL})
        ORDER BY stage.number`,
         [input.sessionId],
       )) as Row[],

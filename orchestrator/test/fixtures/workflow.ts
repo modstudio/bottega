@@ -1,6 +1,10 @@
 import type { Database } from 'bun:sqlite'
 import { newRecordId } from '../../../shared/record-id.ts'
-import type { HostedTaskFlowStageById } from '../../src/record/record-task-flow-contract.ts'
+import {
+  type HostedTaskFlowStageById,
+  isClosedStageState,
+  type TaskFlowStageState,
+} from '../../src/record/record-task-flow-contract.ts'
 
 const FIXTURE_MACHINE_ID = '00000000-0000-4000-8000-000000000001'
 
@@ -25,7 +29,7 @@ export function hostedCursorStageFixture(
         args: string
         ordinal: number
         step_slug: string
-        state: 'running' | 'awaiting-ruling' | 'done' | 'abandoned'
+        state: TaskFlowStageState
         closed: string
         question: string | null
         total_steps: number
@@ -50,7 +54,7 @@ export function hostedCursorStageFixture(
       projectId: row.project_record_id,
       taskId: null,
       taskKey: row.workflow_key || null,
-      state: row.state === 'done' || row.state === 'abandoned' ? 'done' : 'open',
+      state: isClosedStageState(row.state) ? 'done' : 'open',
       openStageRecordId: row.record_id,
       openStageCount: 1,
       openingMachineId: FIXTURE_MACHINE_ID,

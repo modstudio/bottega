@@ -34,6 +34,7 @@ import {
   isBoardClaimSubjectUniqueViolation,
   withBoardTenant,
 } from './record-board-tx.ts'
+import { TASK_FLOW_OPEN_STAGE_STATES_SQL } from './record-task-flow-contract.ts'
 
 export const CLAIM_CONFLICT = 'claim conflicts with:'
 
@@ -502,7 +503,7 @@ async function takeClaimInTx(
               WHERE project_id=${projectId}::uuid
                 AND workflow_key=${subject.value}
                 AND session_id=${session}
-                AND state IN ('running','awaiting-ruling')
+                AND state IN (${TASK_FLOW_OPEN_STAGE_STATES_SQL})
               LIMIT 1
             `
           )[0],

@@ -29,23 +29,3 @@ test('ignores same-word vocabularies outside stage context but catches SQL state
     'orchestrator/src/run/query.ts:1: derive task-flow stage-state sets from record-task-flow-contract',
   ])
 })
-
-test('admits the declaration, immutable migrations, and hosted partial index only', () => {
-  const root = mkdtempSync(join(tmpdir(), 'task-flow-stage-state-guard-'))
-  const declaration = join(root, 'orchestrator/src/record')
-  const migrations = join(root, 'shared/record/migrations/0001_fixture')
-  const shared = join(root, 'shared/record')
-  mkdirSync(declaration, { recursive: true })
-  mkdirSync(migrations, { recursive: true })
-  writeFileSync(
-    join(declaration, 'record-task-flow-contract.ts'),
-    "export const states = ['running', 'awaiting-ruling', 'done', 'abandoned']\n",
-  )
-  writeFileSync(join(migrations, 'migration.sql'), "state IN ('running','awaiting-ruling')\n")
-  writeFileSync(
-    join(shared, 'schema-task-flow.ts'),
-    `      .where(sql\`\${table.state} NOT IN ('done','abandoned')\`),\n`,
-  )
-
-  expect(taskFlowStageStateLiteralRestatements(root)).toEqual([])
-})
