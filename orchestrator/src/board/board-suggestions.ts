@@ -94,6 +94,7 @@ export function suggestBoardPost(
   const audience = `session:${run.session_id}`
   const since = new Date(clock - BOARD_POST_RATE_WINDOW_MS).toISOString()
   const duplicateSince = new Date(clock - BOARD_DUPLICATE_WINDOW_MS).toISOString()
+  const now = new Date(clock).toISOString()
   const recentPosts = (
     db()
       .query(
@@ -109,14 +110,7 @@ export function suggestBoardPost(
          AND audience=? AND title=? AND body=? AND withdrawn_at IS NULL AND expires_at>?
          AND created_at>=? ORDER BY created_at DESC,number DESC`,
     )
-    .all(
-      run.record_id,
-      audience,
-      input.title,
-      input.body,
-      new Date(clock).toISOString(),
-      duplicateSince,
-    ) as {
+    .all(run.record_id, audience, input.title, input.body, now, duplicateSince) as {
     record_id: string
     number: number
   }[]

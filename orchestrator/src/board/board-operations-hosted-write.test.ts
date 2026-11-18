@@ -1,4 +1,5 @@
 import { beforeEach, expect, test } from 'bun:test'
+import { boardDuplicateWarning } from '../../../shared/board-write-result.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { createMemoryRecordApiClient } from '../../test/fixtures/record-api.ts'
 import { db } from '../database/db.ts'
@@ -77,7 +78,7 @@ test('hosted writes map duplicate and fresh server responses', async () => {
     number: null,
     dropped: true,
     reached: null,
-    warning: `Duplicate of live board message ${root.id}; withdraw it with bottega board withdraw ${root.id} and post anew.`,
+    warning: boardDuplicateWarning(root.id),
   })
   await expect(
     boardAsk(

@@ -3,6 +3,7 @@ import {
   BOARD_DEFAULT_ACK_DEADLINE_MS,
   BOARD_REQUEST_DEFAULT_EXPIRY_MS,
 } from '../../../../shared/board-duration.ts'
+import { boardDuplicateWarning } from '../../../../shared/board-write-result.ts'
 import {
   BoardAcceptResultSchema,
   BoardListResultSchema,
@@ -181,7 +182,7 @@ test('hosted board procedures map responses and send each write to its resource 
   expect(BoardPostResultSchema.parse(posted)).toMatchObject({
     id: servicePostId,
     dropped: true,
-    warning: `Duplicate of live board message ${servicePostId}; withdraw it with bottega board withdraw ${servicePostId} and post anew.`,
+    warning: boardDuplicateWarning(servicePostId),
   })
   expect(BoardReplyResultSchema.parse(replied)).toMatchObject({
     id: replyId,

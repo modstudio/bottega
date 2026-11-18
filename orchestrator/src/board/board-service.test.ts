@@ -6,6 +6,7 @@ import {
   BOARD_REQUEST_DEFAULT_EXPIRY_MS,
   BOARD_STANDING_DEFAULT_EXPIRY_MS,
 } from '../../../shared/board-duration.ts'
+import { boardDuplicateWarning } from '../../../shared/board-write-result.ts'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { db } from '../database/db.ts'
@@ -25,7 +26,6 @@ import {
   postNotice,
   readNotices,
   recordPresence,
-  withdrawNotice,
 } from './board-service.ts'
 import { askQuestion, replyToThread } from './board-thread-service.ts'
 
@@ -679,7 +679,7 @@ test('duplicate notices require the same order-independent sender tag set', () =
     number: retargeted.number,
     dropped: true,
     reached: 0,
-    warning: `Duplicate of live board message ${retargeted.recordId}; withdraw it with bottega board withdraw ${retargeted.recordId} and post anew.`,
+    warning: boardDuplicateWarning(retargeted.recordId),
   })
   const request = postNotice(
     {
@@ -693,20 +693,6 @@ test('duplicate notices require the same order-independent sender tag set', () =
   )
   expect(request.recordId).not.toBe(retargeted.recordId)
   expect(request.dropped).toBeFalse()
-})
-
-test('a notice identical to a withdrawn notice posts anew', () => {
-  const clock = Date.now() + 18_000
-  const input = {
-    audience: 'operator',
-    title: 'Withdrawn duplicate',
-    body: 'Post this content again after withdrawal.',
-  }
-  const first = postNotice(input, {}, clock)
-  withdrawNotice(first.recordId, {}, clock + 1)
-  const reposted = postNotice(input, {}, clock + 2)
-  expect(reposted.dropped).toBeFalse()
-  expect(reposted.recordId).not.toBe(first.recordId)
 })
 
 test('plain architects duplicate identity includes the posting project', () => {

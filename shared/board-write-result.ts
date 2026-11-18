@@ -23,5 +23,7 @@ export function hostedBoardWriteResult(
 }
 
 export function boardDuplicateWarning(duplicateOf: string): string {
-  return `Duplicate of live board message ${duplicateOf}; withdraw it with bottega board withdraw ${duplicateOf} and post anew.`
+  return `Duplicate of live board message ${duplicateOf}; withdraw it with ${PLATFORM_SLUG} board withdraw ${duplicateOf} and post anew.`
 }
+
+import { PLATFORM_SLUG } from './brand.ts'

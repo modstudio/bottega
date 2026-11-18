@@ -15,7 +15,6 @@ import {
   acknowledgementRefusal,
   architectsPostingRefusal,
   audienceDescription,
-  BOARD_BODY_MAX_CHARS,
   BOARD_DUPLICATE_WINDOW_MS,
   BOARD_POST_RATE_WINDOW_MS,
   messageIsLive,
@@ -30,7 +29,6 @@ import {
   senderBoardTags,
   senderTagKey,
 } from '../board/board-tags.ts'
-import { boardTextSecretRefusal } from '../board/board-text-secret.ts'
 import {
   acceptRefusal,
   BOARD_NOTE_FILING_LEASE_MS,
@@ -50,6 +48,10 @@ import {
   type HostedBoardWriteResponse,
   RecordBoardError,
 } from './record-board-contract.ts'
+import {
+  hostedBoardFilingFailRefusal,
+  hostedBoardReplyBodyRefusal,
+} from './record-board-message-refusal.ts'
 import { insertBoardMessageTags, readBoardMessageTags } from './record-board-message-tags.ts'
 import {
   type OutsidePostInput,
@@ -90,6 +92,7 @@ type PreparedHostedPost = {
 
 export const RATE_LIMITED =
   'board post rate limit reached; retry after the ten-minute author window'
+export { hostedBoardFilingFailRefusal }
 
 function hostedBoardOrigin(row: Record<string, unknown>): HostedBoardMessage['origin'] {
   return {
@@ -571,20 +574,6 @@ export async function postHostedBoardNoticeInTransaction(
   return viewById(tx, input.id, clock)
 }
 
-function replyBodyRefusal(body: string): string | null {
-  if (!body.trim()) return 'board reply body is required; provide body'
-  if (body.length > BOARD_BODY_MAX_CHARS)
-    return `board reply body exceeds ${BOARD_BODY_MAX_CHARS} characters; shorten it`
-  return boardTextSecretRefusal('board reply', body)
-}
-
-export function hostedBoardFilingFailRefusal(error: string): string | null {
-  if (!error.trim()) return 'filing failure error is required'
-  if (error.length > BOARD_BODY_MAX_CHARS)
-    return `board filing failure exceeds ${BOARD_BODY_MAX_CHARS} characters; shorten it`
-  return boardTextSecretRefusal('board filing failure', error)
-}
-
 function liveRoot(row: Record<string, unknown>, clock: number): boolean {
   if (row.expires_at == null) return false
   return messageIsLive(
@@ -764,7 +753,7 @@ async function replyHostedBoardMessageTx(
 export async function replyHostedBoardMessage(
   input: BoardTenant & HostedBoardReplyInput & { rootId: string },
 ): Promise<HostedBoardWriteResponse> {
-  const bodyRefusal = replyBodyRefusal(input.body)
+  const bodyRefusal = hostedBoardReplyBodyRefusal(input.body)
   if (bodyRefusal) throw new RecordBoardError(bodyRefusal, 400)
   const parsedAudience = input.audience ?? null
   const audience = parsedAudience === null ? null : replyAudienceValue(parsedAudience)

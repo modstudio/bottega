@@ -20,6 +20,7 @@ import {
 } from './postgres-board-api-values.ts'
 import { postgresBoardCacheClient, postgresBoardCacheStore } from './postgres-board-cache-client.ts'
 import { registerBoardClaimApiProof } from './postgres-board-claim-api-proof.ts'
+import { registerBoardDuplicateProof } from './postgres-board-duplicate-proof.ts'
 import { registerBoardOutsideApiProof } from './postgres-board-outside-api-proof.ts'
 import { registerBoardOverviewProof } from './postgres-board-overview-proof.ts'
 import { registerBoardPostingProjectProof } from './postgres-board-posting-project-proof.ts'
@@ -428,90 +429,15 @@ export function registerBoardApiProofs(input: {
     expect(items.some((item) => item.message.id === id)).toBeFalse()
   })
 
-  test('post is idempotent by id and refuses the same id with different content', async () => {
-    const id = newRecordId()
-    const body = notice(id, `project:${PROJECT}`, caseSession('idempotent'))
-    const first = await post(tokenA, body)
-    const again = await post(tokenA, body)
-    const different = await post(tokenA, { ...body, body: 'other' })
-    expect(first.status).toBe(200)
-    expect(again.status).toBe(200)
-    expect(await json(again)).toMatchObject({ id, duplicateOf: null })
-    expect(different.status).toBe(409)
-  })
-
-  test('hosted duplicates match only live visible messages and identify the match', async () => {
-    const session = caseSession('live-duplicate')
-    const content = {
-      kind: 'notice',
-      audience: 'operator',
-      title: 'Duplicate liveness',
-      body: 'The same hosted board content.',
-      expiresAt,
-      authorSession: session,
-    }
-    const firstId = newRecordId()
-    expect((await post(tokenA, { ...content, id: firstId })).status).toBe(200)
-
-    const duplicate = await post(tokenA, { ...content, id: newRecordId() })
-    expect(duplicate.status).toBe(200)
-    expect(await json(duplicate)).toMatchObject({ id: firstId, duplicateOf: firstId })
-
-    input.succeeds(
-      'postgres',
-      'postgres',
-      `UPDATE board_message SET withdrawn_at=now(),withdrawn_reason='author' WHERE id='${firstId}';`,
-    )
-    const afterWithdrawId = newRecordId()
-    const afterWithdraw = await post(tokenA, { ...content, id: afterWithdrawId })
-    expect(afterWithdraw.status).toBe(200)
-    expect(await json(afterWithdraw)).toMatchObject({ id: afterWithdrawId, duplicateOf: null })
-
-    input.succeeds(
-      'postgres',
-      'postgres',
-      `UPDATE board_message SET hidden_at=now(),hidden_by_user_id='${userA}',hidden_reason='duplicate' WHERE id='${afterWithdrawId}';`,
-    )
-    const afterHiddenId = newRecordId()
-    const afterHidden = await post(tokenA, { ...content, id: afterHiddenId })
-    expect(afterHidden.status).toBe(200)
-    expect(await json(afterHidden)).toMatchObject({ id: afterHiddenId, duplicateOf: null })
-  })
-
-  test('a reply identical to a withdrawn reply posts anew', async () => {
-    const questionId = newRecordId()
-    const asked = await post(tokenA, {
-      id: questionId,
-      kind: 'question',
-      audience: `project:${PROJECT}`,
-      projectId: IDS.project,
-      title: 'Reply duplicate liveness',
-      body: 'Can this answer be repeated?',
-      expiresAt,
-      authorSession: caseSession('reply-duplicate-root'),
-    })
-    expect(asked.status).toBe(200)
-    const reply = (id: string) =>
-      fetch(`${origin}/v1/board/messages/${questionId}/replies`, {
-        method: 'POST',
-        headers: spaceHeaders(tokenB),
-        body: JSON.stringify({
-          id,
-          body: 'Repeatable answer.',
-          authorSession: caseSession('reply-duplicate-author'),
-        }),
-      })
-    const firstId = newRecordId()
-    expect((await reply(firstId)).status).toBe(200)
-    input.succeeds(
-      'postgres',
-      'postgres',
-      `UPDATE board_message SET withdrawn_at=now(),withdrawn_reason='author' WHERE id='${firstId}';`,
-    )
-    const repostedId = newRecordId()
-    const reposted = await reply(repostedId)
-    expect(reposted.status).toBe(200)
-    expect(await json(reposted)).toMatchObject({ id: repostedId, duplicateOf: null })
+  registerBoardDuplicateProof({
+    origin: () => origin,
+    headers: () => spaceHeaders(tokenB),
+    post: (body) => post(tokenA, body),
+    caseSession,
+    succeeds: input.succeeds,
+    userId: () => userA,
+    project: PROJECT,
+    projectId: IDS.project,
   })
 
   registerBoardPostingProjectProof({
