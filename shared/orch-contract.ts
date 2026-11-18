@@ -146,6 +146,13 @@ export const AnswerWaitingResultSchema = z
   })
   .strict()
 
+export const LateWorkflowRulingResultSchema = z
+  .object({
+    outcome: z.literal('recorded-late'),
+    question_record_id: z.string().uuid(),
+  })
+  .strict()
+
 const OpenQuestionSchema = z
   .object({
     question_id: z.number().int().positive(),
@@ -219,6 +226,7 @@ export const FileRulingResultSchema = z
 export type OperatorWaitingItem = z.infer<typeof OperatorWaitingItemSchema>
 export type ClaimedOperatorNotification = z.infer<typeof ClaimedOperatorNotificationSchema>
 export type AnswerWaitingResult = z.infer<typeof AnswerWaitingResultSchema>
+export type LateWorkflowRulingResult = z.infer<typeof LateWorkflowRulingResultSchema>
 export type ListOpenQuestionsResult = z.infer<typeof ListOpenQuestionsResultSchema>
 export type FileRulingResult = z.infer<typeof FileRulingResultSchema>
 

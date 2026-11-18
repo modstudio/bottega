@@ -218,6 +218,29 @@ test('a failed self-ruling write leaves an awaiting cursor and its question open
   write.mockRestore()
 })
 
+test('a hosted advance failure on an awaiting cursor does not close its question', async () => {
+  const d = database()
+  await openAtRuling(d)
+  await awaitWorkflowRuling('flow', 'fixture', 'default', args, 'Proceed?', context, d, () => {})
+  const before = d.query('SELECT ordinal,step_slug,state,revision FROM workflow_cursor').get()
+  const write = spyOn(taskFlowWriter, 'writeHostedTaskFlow')
+  write.mockImplementation(() => Promise.reject(new Error('injected hosted advance failure')))
+
+  try {
+    await expect(selfRule(d)).rejects.toThrow('injected hosted advance failure')
+  } finally {
+    write.mockRestore()
+  }
+
+  expect(d.query('SELECT ordinal,step_slug,state,revision FROM workflow_cursor').get()).toEqual(
+    before,
+  )
+  expect(d.query('SELECT answered_at,closed_at FROM question').get()).toEqual({
+    answered_at: expect.any(String),
+    closed_at: null,
+  })
+})
+
 test('a failed workflow-question write does not write an await-ruling advance', async () => {
   const d = database()
   await openAtRuling(d)

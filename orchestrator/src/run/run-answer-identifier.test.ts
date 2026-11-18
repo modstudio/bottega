@@ -27,6 +27,7 @@ const run = (overrides: Partial<NonNullable<AnswerIdentifierFacts['run']>> = {})
 })
 
 const question = (overrides: Partial<NonNullable<AnswerIdentifierFacts['question']>> = {}) => ({
+  kind: 'run-question' as const,
   rootRecordId: 'question-root',
   open: true,
   state: 'open' as const,
@@ -343,7 +344,36 @@ test('a closed unanswered cursor question resolves by bare q-number to the quest
 
 test('an answered cursor question refuses as already ruled on without naming a null run', async () => {
   const fixture = addCursorQuestion({ state: 'running', answered: true })
-  await expect(
-    resolveAnswerTarget(db(), `q${fixture.questionNumber}`, fixture.caller),
-  ).rejects.toThrow(`q${fixture.questionNumber} is already ruled on`)
+  const message = await resolveAnswerTarget(
+    db(),
+    `q${fixture.questionNumber}`,
+    fixture.caller,
+  ).then(
+    () => 'resolved unexpectedly',
+    (error: unknown) => (error instanceof Error ? error.message : String(error)),
+  )
+  expect(message).toBe(`q${fixture.questionNumber} is already ruled on`)
+  expect(message).not.toContain('null')
+})
+
+test('a cursor question whose cursor is absent refuses without rendering a null cursor remedy', () => {
+  const cursorRecordId = newRecordId()
+  const decision = answerIdentifierDecision({
+    identifier: { kind: 'question-number', number: 881_001 },
+    run: null,
+    question: {
+      kind: 'workflow-question',
+      recordId: newRecordId(),
+      cursorRecordId,
+      cursorNumber: null,
+      project: null,
+      open: true,
+      state: 'open',
+    },
+  })
+  expect(decision).toEqual({
+    kind: 'refuse',
+    reason: `q881001's workflow cursor ${cursorRecordId} is not on this machine; rule it from the machine that holds that cursor`,
+  })
+  expect(decision.kind === 'refuse' ? decision.reason : '').not.toContain('--cursor null')
 })

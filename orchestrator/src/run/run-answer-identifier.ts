@@ -31,17 +31,25 @@ type AnswerRunFacts = {
   openQuestionNumbers: number[]
 }
 
-type AnswerQuestionFacts = {
-  recordId?: string
+type RunQuestionFacts = {
+  kind: 'run-question'
   rootRecordId: string
-  workflowCursorRecordId?: string | null
-  workflowCursorNumber?: number | null
-  workflowCursorState?: string | null
-  workflowProject?: string | null
   open: boolean
   state: 'open' | 'ruled' | 'closed'
   openQuestionNumbers: number[]
 }
+
+type WorkflowQuestionFacts = {
+  kind: 'workflow-question'
+  recordId: string
+  cursorRecordId: string
+  cursorNumber: number | null
+  project: string | null
+  open: boolean
+  state: 'open' | 'ruled' | 'closed'
+}
+
+type AnswerQuestionFacts = RunQuestionFacts | WorkflowQuestionFacts
 
 export type AnswerIdentifierFacts = {
   identifier: ParsedAnswerIdentifier
@@ -135,7 +143,8 @@ function explicitQuestionDecision(
   run: AnswerRunFacts | null,
   question: AnswerQuestionFacts | null,
 ): AnswerIdentifierDecision {
-  if (question?.workflowCursorRecordId) return workflowQuestionDecision(identifier, question)
+  if (question?.kind === 'workflow-question')
+    return workflowQuestionDecision(identifier, question)
   if (question) {
     if (question.open) return { kind: 'target', runRecordId: question.rootRecordId }
     const state = question.state === 'ruled' ? 'already ruled on' : 'closed'
@@ -158,26 +167,30 @@ function explicitQuestionDecision(
 
 function workflowQuestionDecision(
   identifier: Exclude<ParsedAnswerIdentifier, { kind: 'run-number' }>,
-  question: AnswerQuestionFacts,
+  question: WorkflowQuestionFacts,
 ): AnswerIdentifierDecision {
-  if (question.state === 'ruled')
-    return { kind: 'refuse', reason: `${questionReference(identifier)} is already ruled on` }
-  if (question.open) {
-    const reference = workflowCursorReference(
-      question.workflowCursorNumber!,
-      question.workflowProject!,
-    ).cli
+  if (question.cursorNumber === null || question.project === null)
     return {
       kind: 'refuse',
       reason:
-        `${questionReference(identifier)} belongs to workflow cursor ${String(question.workflowCursorNumber)} awaiting a ruling; ` +
+        `${questionReference(identifier)}'s workflow cursor ${question.cursorRecordId} is not on this machine; ` +
+        'rule it from the machine that holds that cursor',
+    }
+  if (question.state === 'ruled')
+    return { kind: 'refuse', reason: `${questionReference(identifier)} is already ruled on` }
+  if (question.open) {
+    const reference = workflowCursorReference(question.cursorNumber, question.project).cli
+    return {
+      kind: 'refuse',
+      reason:
+        `${questionReference(identifier)} belongs to workflow cursor ${question.cursorNumber} awaiting a ruling; ` +
         `use ${PLATFORM_SLUG} workflow rule${reference}`,
     }
   }
   return {
     kind: 'workflow-question',
-    questionRecordId: question.recordId!,
-    cursorRecordId: question.workflowCursorRecordId!,
+    questionRecordId: question.recordId,
+    cursorRecordId: question.cursorRecordId,
   }
 }
 
@@ -194,7 +207,11 @@ function runNumberDecision(
   }
   const runCanReceiveRuling =
     run.status === 'asking' && run.ownedByCaller && run.openQuestionNumbers.length > 0
-  if (run.status === 'asking' && question && question.rootRecordId !== run.rootRecordId) {
+  if (
+    run.status === 'asking' &&
+    question?.kind === 'run-question' &&
+    question.rootRecordId !== run.rootRecordId
+  ) {
     return {
       kind: 'refuse',
       reason:
@@ -332,6 +349,7 @@ async function readQuestionFacts(
       .get(runId)?.root_id ?? runId
   const open = row.answered_at === null && row.closed_at === null
   return {
+    kind: 'run-question',
     rootRecordId,
     open,
     state: open ? 'open' : row.answered_at ? 'ruled' : 'closed',
@@ -344,23 +362,21 @@ function readWorkflowQuestionFacts(
   recordId: string,
   workflowCursorRecordId: string,
   row: Record<string, unknown>,
-): AnswerQuestionFacts {
+): WorkflowQuestionFacts {
   const cursor = database
-    .query<{ number: number; state: string; project: string }, [string]>(
-      'SELECT number,state,project FROM workflow_cursor WHERE record_id=?',
+    .query<{ number: number; project: string }, [string]>(
+      'SELECT number,project FROM workflow_cursor WHERE record_id=?',
     )
     .get(workflowCursorRecordId)
   const open = row.answered_at === null && row.closed_at === null
   return {
+    kind: 'workflow-question',
     recordId,
-    rootRecordId: workflowCursorRecordId,
-    workflowCursorRecordId,
-    workflowCursorNumber: cursor?.number ?? null,
-    workflowCursorState: cursor?.state ?? null,
-    workflowProject: cursor?.project ?? null,
+    cursorRecordId: workflowCursorRecordId,
+    cursorNumber: cursor?.number ?? null,
+    project: cursor?.project ?? null,
     open,
     state: open ? 'open' : row.answered_at ? 'ruled' : 'closed',
-    openQuestionNumbers: [],
   }
 }
 

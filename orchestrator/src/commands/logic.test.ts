@@ -1,4 +1,4 @@
-import { expect, test } from 'bun:test'
+import { expect, spyOn, test } from 'bun:test'
 import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { Command } from 'commander'
@@ -104,9 +104,17 @@ test('answer records a late ruling on a closed cursor question without moving it
 
   const program = new Command().exitOverride()
   register(program)
-  const argv = ['node', 'orch', 'answer', `q${questionNumber}`, 'late ruling']
+  const argv = ['node', 'orch', 'answer', `q${questionNumber}`, '--json', 'late ruling']
   setRawArgv(argv.slice(2))
-  await program.parseAsync(argv)
+  const log = spyOn(console, 'log').mockImplementation(() => {})
+  try {
+    await program.parseAsync(argv)
+    expect(log).toHaveBeenCalledWith(
+      JSON.stringify({ outcome: 'recorded-late', question_record_id: questionId }),
+    )
+  } finally {
+    log.mockRestore()
+  }
 
   const answered = db()
     .query('SELECT answer,answered_at,closed_at,close_reason FROM question WHERE record_id=?')

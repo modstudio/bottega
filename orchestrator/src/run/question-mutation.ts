@@ -204,9 +204,12 @@ export async function answerWorkflowQuestion(
   database: Database = db(),
 ): Promise<void> {
   const row = await questionById(database, input.questionId)
+  if (!row)
+    throw new Error(
+      `question ${input.questionId} was not found; check the identifier with bottega question inbox --all`,
+    )
   const expected = input.expect ?? 'open'
   if (
-    !row ||
     row.workflow_cursor_record_id !== input.cursorId ||
     row.answer !== null ||
     (expected === 'open' ? row.closed_at !== null : row.closed_at === null)

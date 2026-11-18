@@ -536,18 +536,7 @@ async function persistWorkflowAdvance(
     obligationUpdates,
     deleteTextIds,
   }
-  if (selfRulingPlan) {
-    d.exec('SAVEPOINT self_ruling_advance_preflight')
-    try {
-      taskFlowLocalStore(d).write('advance', payload, null)
-    } finally {
-      d.exec('ROLLBACK TO self_ruling_advance_preflight')
-      d.exec('RELEASE self_ruling_advance_preflight')
-    }
-    await recordWorkflowSelfRuling(selfRulingPlan, d)
-  }
-  if (row.state === 'awaiting-ruling')
-    await closeOpenWorkflowQuestion(row.record_id, 'advanced-without-ruling', at, d)
+  await prepareWorkflowSelfRuling(selfRulingPlan, payload, d)
   const hosted = await writeHostedTaskFlow(
     'advance',
     payload,
@@ -555,6 +544,8 @@ async function persistWorkflowAdvance(
     context.taskFlowClient,
   )
   await applyWorkflowAdvanceLocally({
+    row,
+    at,
     database: d,
     payload,
     hosted,
@@ -618,18 +609,7 @@ export async function writeFinishingWorkflowAdvance(input: {
     obligationUpdates,
     deleteTextIds,
   }
-  if (input.selfRulingPlan) {
-    database.exec('SAVEPOINT self_ruling_advance_preflight')
-    try {
-      taskFlowLocalStore(database).write('advance', payload, null)
-    } finally {
-      database.exec('ROLLBACK TO self_ruling_advance_preflight')
-      database.exec('RELEASE self_ruling_advance_preflight')
-    }
-    await recordWorkflowSelfRuling(input.selfRulingPlan, database)
-  }
-  if (row.state === 'awaiting-ruling')
-    await closeOpenWorkflowQuestion(row.record_id, 'advanced-without-ruling', at, database)
+  await prepareWorkflowSelfRuling(input.selfRulingPlan, payload, database)
   const hosted = await writeHostedTaskFlow(
     'advance',
     payload,
@@ -637,6 +617,8 @@ export async function writeFinishingWorkflowAdvance(input: {
     input.taskFlowClient,
   )
   await applyWorkflowAdvanceLocally({
+    row,
+    at,
     database,
     payload,
     hosted,
@@ -703,12 +685,32 @@ function advanceRecordRows(
   }
 }
 
+async function prepareWorkflowSelfRuling(
+  plan: Parameters<typeof recordWorkflowSelfRuling>[0] | undefined,
+  payload: TaskFlowIntentInput<'advance'>,
+  database: Database,
+): Promise<void> {
+  if (!plan) return
+  database.exec('SAVEPOINT self_ruling_advance_preflight')
+  try {
+    taskFlowLocalStore(database).write('advance', payload, null)
+  } finally {
+    database.exec('ROLLBACK TO self_ruling_advance_preflight')
+    database.exec('RELEASE self_ruling_advance_preflight')
+  }
+  await recordWorkflowSelfRuling(plan, database)
+}
+
 async function applyWorkflowAdvanceLocally(input: {
+  row: SelectableCursorRow
+  at: string
   database: Database
   payload: TaskFlowIntentInput<'advance'>
   hosted: TaskFlowIntentResult<'advance'> | null
 }): Promise<void> {
-  const { database: d, payload, hosted } = input
+  const { row, at, database: d, payload, hosted } = input
+  if (row.state === 'awaiting-ruling')
+    await closeOpenWorkflowQuestion(row.record_id, 'advanced-without-ruling', at, d)
   writeTransaction(() => {
     taskFlowLocalStore(d).write('advance', payload, hosted)
   }, d)

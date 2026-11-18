@@ -4,6 +4,7 @@
 import { type Command, Option, type OptionValues } from 'commander'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { repeatable } from '../../../shared/cli-repeat-guard.ts'
+import { LateWorkflowRulingResultSchema } from '../../../shared/orch-contract.ts'
 import { formatReference } from '../../../shared/reference.ts'
 import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 import { agentCommand, agentsCommand } from '../agent/agent-commands.ts'
@@ -155,7 +156,14 @@ const answerByIdentifier = async (id: string, command: Command, options: OptionV
       channel: input.channel,
     })
     if (options.json)
-      console.log(JSON.stringify({ questionId: target.questionRecordId, answered: true }))
+      console.log(
+        JSON.stringify(
+          LateWorkflowRulingResultSchema.parse({
+            outcome: 'recorded-late',
+            question_record_id: target.questionRecordId,
+          }),
+        ),
+      )
     return
   }
   await answerCommand(
