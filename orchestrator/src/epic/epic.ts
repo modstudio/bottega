@@ -1,8 +1,6 @@
 import type { Database } from 'bun:sqlite'
-import { startBounded } from '../../../shared/bounded-process.ts'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { engagedMs } from '../../../shared/interval.ts'
-import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 import { db } from '../database/db.ts'
 import { cwdMissing, gitResult } from '../git/git-environment.ts'
 import { type ReviewRole, reviewCountsAsRound } from '../review/review-role.ts'
@@ -10,6 +8,7 @@ import { STALE_AFTER_MS } from '../run/run-liveness-policy.ts'
 import { type SubscriptionCostContext, withReportedCost } from '../run/run-subscription-cost.ts'
 import { subscriptionCostFacts } from '../run/run-subscription-cost-store.ts'
 import { utcMillis } from '../utc-millis.ts'
+import { type TaskReadRow, taskReader } from '../workflow/task-read-port.ts'
 export type EpicChild = { key: string; title?: string; status?: string | null }
 type NotRecorded = { metric: string; needed: string }
 type EpicTaskScore = {
@@ -483,25 +482,10 @@ function totalRow(rows: EpicTaskScore[], timing: DurationMetrics): EpicTaskScore
 export async function epicChildren(
   project: string,
   epicKey: string,
-  starter: typeof startBounded = startBounded,
+  reader: (filters: { project: string; parent: string }) => readonly TaskReadRow[] = (filters) =>
+    taskReader().list(filters),
 ): Promise<EpicChild[]> {
-  const child = await starter(
-    [
-      ...bottegaEntryArgv(PLATFORM_SLUG),
-      'task',
-      'list',
-      '--project',
-      project,
-      '--parent',
-      epicKey,
-      '--json',
-    ],
-    { budget: 'self-cli', env: { ...process.env } },
-  )
-  const { stdout, stderr, exitCode } = child
-  if (exitCode !== 0)
-    throw new Error(stderr.trim() || stdout.trim() || `${PLATFORM_SLUG} exited ${exitCode}`)
-  const parsed = JSON.parse(stdout) as unknown
+  const parsed: unknown = reader({ project, parent: epicKey })
   if (
     !Array.isArray(parsed) ||
     parsed.some(
@@ -509,7 +493,7 @@ export async function epicChildren(
         !row || typeof row !== 'object' || !('key' in row) || typeof row.key !== 'string',
     )
   ) {
-    throw new Error(`${PLATFORM_SLUG} task list --parent returned an invalid JSON document`)
+    throw new Error(`${PLATFORM_SLUG} task list --parent returned invalid task rows`)
   }
   return parsed as EpicChild[]
 }

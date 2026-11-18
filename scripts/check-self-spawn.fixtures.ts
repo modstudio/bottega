@@ -28,3 +28,18 @@ export const acceptedSelfSpawnFixture = `
   const command = [...bottegaEntryArgv('ask-server'), 'hub/src/cli.ts']
   Bun.spawn(command)
 `
+
+export const spawnedTaskReadFixture = `
+import { startBounded } from '../shared/bounded-process.ts'
+startBounded(['bottega', 'task', 'show', 'DEV-1'], {})
+`
+
+export const spawnedTaskWriteFixture = `
+hub(['task', 'set', 'DEV-1', '--status', 'active'])
+`
+
+export const freshTaskReadFixture = `
+function readFreshHubTaskThroughCli() {
+  return startBoundedSync(['bottega', 'task', 'show', 'DEV-1', '--fresh'], {})
+}
+`

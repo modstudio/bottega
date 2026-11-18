@@ -11,6 +11,20 @@ import { PLATFORM_NAME } from '../shared/brand.ts'
 const root = fileURLToPath(new URL('..', import.meta.url))
 const resolver = join(root, 'shared', 'self-spawn.ts')
 
+export type TaskVerbSpawn = { line: number; verb: string; exemptFreshRead: boolean }
+
+export const TASK_WRITE_BASELINE = {
+  'orchestrator/src/issue/issue-dispatch.ts': {
+    count: 4,
+    reason: 'task write, later slice',
+  },
+  'orchestrator/src/issue/issue.ts': { count: 4, reason: 'task write, later slice' },
+  'orchestrator/src/workflow/workflow-text-copy.ts': {
+    count: 1,
+    reason: 'task write, later slice',
+  },
+} as const
+
 type Binding =
   | ts.VariableDeclaration
   | ts.ParameterDeclaration
@@ -221,6 +235,87 @@ export function selfSpawnViolationLines(sourceText: string, path = 'fixture.ts')
   return violations
 }
 
+function containingFunctionName(node: ts.Node): string | undefined {
+  for (let current: ts.Node | undefined = node.parent; current; current = current.parent) {
+    if (ts.isFunctionDeclaration(current) && current.name) return current.name.text
+    if (
+      (ts.isArrowFunction(current) || ts.isFunctionExpression(current)) &&
+      ts.isVariableDeclaration(current.parent) &&
+      ts.isIdentifier(current.parent.name)
+    )
+      return current.parent.name.text
+  }
+  return undefined
+}
+
+function taskTokens(expression: ts.Expression | undefined): string[] {
+  if (!expression || !ts.isArrayLiteralExpression(expression)) return []
+  return expression.elements.flatMap((element) => {
+    if (ts.isStringLiteral(element) || ts.isNoSubstitutionTemplateLiteral(element))
+      return [element.text]
+    return []
+  })
+}
+
+/** Find calls that send the task verb group to an orchestrator self-spawn helper. */
+export function taskVerbSpawns(sourceText: string, path = 'fixture.ts'): TaskVerbSpawn[] {
+  const source = ts.createSourceFile(
+    path,
+    sourceText,
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.TS,
+  )
+  const findings: TaskVerbSpawn[] = []
+  const visit = (node: ts.Node): void => {
+    if (ts.isCallExpression(node)) {
+      const callee = node.expression.getText(source)
+      const spawnCall = ['startBounded', 'startBoundedSync', 'spawnBottega', 'hub'].includes(callee)
+      if (spawnCall) {
+        const tokens = taskTokens(node.arguments[0])
+        const task = tokens.indexOf('task')
+        const verb = task < 0 ? undefined : tokens[task + 1]
+        if (verb) {
+          findings.push({
+            line: source.getLineAndCharacterOfPosition(node.getStart(source)).line + 1,
+            verb,
+            exemptFreshRead:
+              containingFunctionName(node) === 'readFreshHubTaskThroughCli' && verb === 'show',
+          })
+        }
+      }
+    }
+    ts.forEachChild(node, visit)
+  }
+  visit(source)
+  return findings
+}
+
+export function taskVerbSpawnViolations(
+  path: string,
+  findings: readonly TaskVerbSpawn[],
+): string[] {
+  const reads = findings.filter(
+    (finding) => (finding.verb === 'show' || finding.verb === 'list') && !finding.exemptFreshRead,
+  )
+  const writes = findings.filter((finding) => finding.verb !== 'show' && finding.verb !== 'list')
+  const baseline = TASK_WRITE_BASELINE[path as keyof typeof TASK_WRITE_BASELINE]
+  const allowedWrites = baseline?.count ?? 0
+  const violations = reads.map(
+    ({ line, verb }) => `${path}:${line}: task ${verb} must use the installed task reader`,
+  )
+  if (writes.length > allowedWrites) {
+    for (const { line, verb } of writes.slice(allowedWrites))
+      violations.push(`${path}:${line}: task ${verb} is not in the task-write baseline`)
+  }
+  if (writes.length < allowedWrites) {
+    violations.push(
+      `${path}: task-write baseline may only shrink; lower its count from ${allowedWrites} to ${writes.length}`,
+    )
+  }
+  return violations
+}
+
 function collect(directory: string, files: string[]): void {
   if (!existsSync(directory)) return
   for (const entry of readdirSync(directory, { withFileTypes: true })) {
@@ -251,5 +346,14 @@ if (import.meta.main) {
   for (const violation of violations) {
     console.error(`${violation}: launch ${PLATFORM_NAME} entries through shared/self-spawn.ts`)
   }
-  if (violations.length) process.exit(1)
+  const taskViolations = files.flatMap((path) => {
+    if (!path.startsWith(join(root, 'orchestrator', 'src'))) return []
+    const relativePath = relative(root, path)
+    return taskVerbSpawnViolations(
+      relativePath,
+      taskVerbSpawns(readFileSync(path, 'utf8'), relativePath),
+    )
+  })
+  for (const violation of taskViolations) console.error(violation)
+  if (violations.length || taskViolations.length) process.exit(1)
 }

@@ -419,29 +419,18 @@ describe('epic scoreboard', () => {
     }
   })
 
-  test('shells out to hub for child membership and CLI views use that result', async () => {
+  test('reads child membership through the task-reader seam', async () => {
     const children = [
       { key: 'DEV-501', title: 'child one' },
       { key: 'DEV-502', title: 'child two' },
     ]
-    const starts: string[][] = []
+    const reads: { project: string; parent: string }[] = []
     expect(
-      await epicChildren(PLATFORM_SLUG, 'DEV-500', async (args) => {
-        starts.push([...args])
-        return { stdout: JSON.stringify(children), stderr: '', exitCode: 0 }
+      await epicChildren(PLATFORM_SLUG, 'DEV-500', (filters) => {
+        reads.push(filters)
+        return children.map((child) => ({ ...child, record_id: child.key, project: PLATFORM_SLUG }))
       }),
-    ).toEqual(children)
-    expect(starts).toHaveLength(1)
-    expect(starts[0]).toEqual(
-      expect.arrayContaining([
-        'task',
-        'list',
-        '--project',
-        PLATFORM_SLUG,
-        '--parent',
-        'DEV-500',
-        '--json',
-      ]),
-    )
+    ).toEqual(children.map((child) => ({ ...child, record_id: child.key, project: PLATFORM_SLUG })))
+    expect(reads).toEqual([{ project: PLATFORM_SLUG, parent: 'DEV-500' }])
   })
 })

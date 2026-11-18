@@ -1,10 +1,8 @@
 // concern: branch lifecycle evidence
 /** Reads one task's status through the task concern's existing CLI owner. */
 
-import { startBoundedSync } from '../../../shared/bounded-process.ts'
-import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 import { TASK_STATUSES } from '../../../shared/trackers.ts'
+import { taskReader } from '../workflow/task-read-port.ts'
 import {
   type HubTaskReader,
   type HubTaskReference,
@@ -61,34 +59,19 @@ function taskStatusObservation(
 
 export function observeTaskStatus(key: string | null, project: string): TaskStatusObservation {
   if (!key) return { raw: null, category: null, lastSeen: null, verified: false, detail: 'unkeyed' }
-  const result = startBoundedSync(
-    [...bottegaEntryArgv(PLATFORM_SLUG), 'task', 'show', key, '--project', project, '--json'],
-    { budget: 'self-cli', env: process.env },
-  )
-  if (result.exitCode !== 0) {
-    const detail = result.stderr.trim() || `exit ${result.exitCode}`
+  try {
+    const parsed = taskReader().show(key, { project })
+    const raw = typeof parsed.task.status === 'string' ? parsed.task.status : null
+    const lastSeen = typeof parsed.task.last_seen === 'string' ? parsed.task.last_seen : null
+    return taskStatusObservation(raw, lastSeen, parsed.task.status_category)
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error)
     return {
       raw: null,
       category: null,
       lastSeen: null,
       verified: false,
       detail: `unverified (${detail})`,
-    }
-  }
-  try {
-    const parsed = JSON.parse(result.stdout) as {
-      task?: { status?: unknown; status_category?: unknown; last_seen?: unknown }
-    }
-    const raw = typeof parsed.task?.status === 'string' ? parsed.task.status : null
-    const lastSeen = typeof parsed.task?.last_seen === 'string' ? parsed.task.last_seen : null
-    return taskStatusObservation(raw, lastSeen, parsed.task?.status_category)
-  } catch {
-    return {
-      raw: null,
-      category: null,
-      lastSeen: null,
-      verified: false,
-      detail: 'unverified (invalid task response)',
     }
   }
 }

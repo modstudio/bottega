@@ -11,6 +11,7 @@ import { UNSCORED_WHERE } from '../evidence/evidence-query.ts'
 import { type KernelLease, projectGitCommonDir, tryKernelLease } from '../project/project-lock.ts'
 import { projectByName } from '../project/projects.ts'
 import { TERMINAL_RUN_STATUS_SQL } from '../run/run-status.ts'
+import { taskReader } from '../workflow/task-read-port.ts'
 import { worktreeDirty } from '../worktree/worktree-attribution.ts'
 import { workIssue } from './issue.ts'
 import { parseFiledIssue } from './issue-file.ts'
@@ -82,7 +83,10 @@ async function hub(args: string[]): Promise<string> {
 async function task(
   key: string,
 ): Promise<{ task: FiledIssueTaskRow; comments?: { body?: unknown }[] }> {
-  return JSON.parse(await hub(['task', 'show', key, '--project', PLATFORM_SLUG, '--json']))
+  return taskReader().show(key, { project: PLATFORM_SLUG }) as {
+    task: FiledIssueTaskRow
+    comments?: { body?: unknown }[]
+  }
 }
 
 /** Explicit retries may reclaim handed-back issues; the queue never does. */
@@ -209,9 +213,7 @@ export async function dispatchFiledIssues(key?: string): Promise<boolean> {
     await claimAndWork(key.toUpperCase(), false)
     return false
   }
-  const rows = JSON.parse(
-    await hub(['task', 'list', '--project', PLATFORM_SLUG, '--json']),
-  ) as FiledIssueTaskRow[]
+  const rows = taskReader().list({ project: PLATFORM_SLUG }) as FiledIssueTaskRow[]
   const candidates = eligibleFiledIssueTasks(rows, liveLease)
   const dispatched = new Set<string>()
   let taken = 0
@@ -276,9 +278,7 @@ export function unscoredFiledIssueLoopRuns(): FiledIssueLoopRun[] {
 export async function filedIssueQueueState(
   project: string | null | undefined = undefined,
 ): Promise<FiledIssueQueueState> {
-  const rows = JSON.parse(
-    await hub(['task', 'list', '--project', PLATFORM_SLUG, '--json']),
-  ) as FiledIssueTaskRow[]
+  const rows = taskReader().list({ project: PLATFORM_SLUG }) as FiledIssueTaskRow[]
   const waiting = rows.flatMap((task) => {
     try {
       return task.status_category === 'review' && parseFiledIssue({ task }).kind === 'defect'

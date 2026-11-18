@@ -1,4 +1,4 @@
-import { startBounded } from '../../../shared/bounded-process.ts'
+import { startBoundedSync } from '../../../shared/bounded-process.ts'
 // concern: workflows
 /** Resolves a workflow task label through the injectable hub task-list port. */
 
@@ -6,6 +6,7 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { withholdSecretShapedDetail } from '../../../shared/secret-shaped.ts'
 import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 import { namesMissingTask } from '../../../shared/task-missing.ts'
+import { taskReader } from './task-read-port.ts'
 
 export type HubTaskReference = {
   key: string
@@ -98,28 +99,43 @@ function taskReferenceFromShow(response: unknown): HubTaskReference | null {
   return taskReference(row)
 }
 
-export async function taskCommand(command: string[]): Promise<string> {
-  const child = await startBounded([...bottegaEntryArgv(PLATFORM_SLUG), ...command], {
-    budget: 'self-cli',
-    env: { ...process.env },
-  })
+/**
+ * Read the authoritative tracker while holding a collect lease. This remains a CLI spawn because
+ * the refresh needs a writable hub store; ordinary task reads use the installed in-process port.
+ */
+export function readFreshHubTaskThroughCli(
+  key: string,
+  options: { project?: string; cwd?: string } = {},
+): string {
+  const child = startBoundedSync(
+    [
+      ...bottegaEntryArgv(PLATFORM_SLUG),
+      'task',
+      'show',
+      key,
+      ...(options.project ? ['--project', options.project] : []),
+      '--fresh',
+      '--json',
+    ],
+    {
+      budget: 'self-cli',
+      cwd: options.cwd,
+      env: { ...process.env },
+    },
+  )
   const { stdout, stderr, exitCode } = child
   if (exitCode !== 0) throw new Error(stderr.trim() || `exit status ${exitCode}`)
   return stdout.trim()
 }
 
 export async function readHubTasks(project: string): Promise<HubTaskReference[]> {
-  const response = JSON.parse(
-    await taskCommand(['task', 'list', '--project', project, '--json']),
-  ) as unknown
-  if (!Array.isArray(response)) throw new Error('response was not an array')
-  return response.map(taskReference)
+  return (await taskReader().list({ project })).map(taskReference)
 }
 
 export async function pullHubTask(project: string, key: string): Promise<HubTaskReference | null> {
   let output: string
   try {
-    output = await taskCommand(['task', 'show', key, '--project', project, '--fresh', '--json'])
+    output = readFreshHubTaskThroughCli(key, { project })
   } catch (error) {
     if (taskPullFailureNamesMissingTask(error, key)) return null
     throw error

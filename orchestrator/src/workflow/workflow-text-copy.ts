@@ -5,7 +5,9 @@ import type { Database } from 'bun:sqlite'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { startBounded } from '../../../shared/bounded-process.ts'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 import { db, writeTransaction } from '../database/db.ts'
 import type { RecordTaskFlowClient } from '../record/record-api-client-task-flow.ts'
 import { isClosedStageState } from '../record/record-task-flow-contract.ts'
@@ -17,6 +19,7 @@ import {
 import { taskFlowRequestId } from '../record/record-task-flow-write-contract.ts'
 import type { LiveCursorAutonomy } from './autonomy.ts'
 import { taskFlowLocalStore, taskFlowReadStore } from './task-flow-store.ts'
+import { taskReader } from './task-read-port.ts'
 import { abandonSelectedWorkflowCursorForClose, nextWorkflowStep } from './workflow-cursor.ts'
 import { cursorName, workflowCursorReference } from './workflow-cursor-format.ts'
 import {
@@ -42,7 +45,6 @@ import {
   type HubTaskReference,
   readHubTasks,
   resolveHubTaskReference,
-  taskCommand,
 } from './workflow-task-reference.ts'
 import {
   deleteWorkflowText,
@@ -76,10 +78,7 @@ export type WorkflowTextCopyResult = {
 
 export const productionWorkflowTextDocumentPorts: WorkflowTextDocumentPorts = {
   async list(taskKey, project) {
-    const rows = JSON.parse(
-      await taskCommand(['task', 'doc', 'list', taskKey, '--project', project, '--json']),
-    ) as { label?: unknown; id?: unknown; title?: unknown }[]
-    if (!Array.isArray(rows)) throw new Error('task document list response was not an array')
+    const rows = await taskReader().documents(taskKey, { project })
     return rows.map((row) => {
       const reference = typeof row.label === 'string' ? row.label : row.id
       if (typeof reference !== 'string' || typeof row.title !== 'string')
@@ -92,18 +91,25 @@ export const productionWorkflowTextDocumentPorts: WorkflowTextDocumentPorts = {
     const bodyPath = join(directory, 'body.md')
     try {
       writeFileSync(bodyPath, body)
-      return await taskCommand([
-        'task',
-        'doc',
-        'new',
-        taskKey,
-        '--project',
-        project,
-        '--title',
-        title,
-        '--body-file',
-        bodyPath,
-      ])
+      const child = await startBounded(
+        [
+          ...bottegaEntryArgv(PLATFORM_SLUG),
+          'task',
+          'doc',
+          'new',
+          taskKey,
+          '--project',
+          project,
+          '--title',
+          title,
+          '--body-file',
+          bodyPath,
+        ],
+        { budget: 'self-cli', env: { ...process.env } },
+      )
+      if (child.exitCode !== 0)
+        throw new Error(child.stderr.trim() || `exit status ${child.exitCode}`)
+      return child.stdout.trim()
     } finally {
       rmSync(directory, { recursive: true, force: true })
     }

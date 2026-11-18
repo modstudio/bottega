@@ -1,12 +1,11 @@
 // concern: workflows
 /** One tracker task read as the floor verifier consumes it. */
 
-import { startBoundedSync } from '../../../shared/bounded-process.ts'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { withholdSecretShapedDetail } from '../../../shared/secret-shaped.ts'
-import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 import { namesMissingTask } from '../../../shared/task-missing.ts'
 import { isTrackerCommentId } from '../../../shared/trackers.ts'
+import { readFreshHubTaskThroughCli } from './workflow-task-reference.ts'
 
 export type HubTaskRead = {
   recordId?: string
@@ -76,13 +75,10 @@ export function hubTaskReadRefusal(
 }
 
 export function readHubTask(key: string, cwd = process.cwd()): HubTaskRead {
-  const [hub, ...prefix] = bottegaEntryArgv(PLATFORM_SLUG)
-  const result = startBoundedSync([hub!, ...prefix, 'task', 'show', key, '--json', '--fresh'], {
-    budget: 'self-cli',
-    cwd,
-    env: process.env,
-  })
-  if (result.exitCode !== 0)
-    throw new Error(hubTaskReadRefusal(key, result.exitCode, result.stderr, result.stdout))
-  return hubTaskReadFromJson(key, JSON.parse(result.stdout))
+  try {
+    return hubTaskReadFromJson(key, JSON.parse(readFreshHubTaskThroughCli(key, { cwd })))
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error)
+    throw new Error(hubTaskReadRefusal(key, 1, detail, ''))
+  }
 }
