@@ -532,6 +532,7 @@ const declaredModules: ArchitectureModule[] = [
     '../../../shared/record-id.ts',
     '../../../shared/record/schema.ts',
     '../record/outbox-enqueue.ts',
+    '../record/outbox-read.ts',
     '../record/outbox-sanitize.ts',
     '../record/outbox-serialize.ts',
     '../verdict/verdict-payload.ts',

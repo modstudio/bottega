@@ -10,6 +10,7 @@ import {
 import { machineId } from './machine-identity.ts'
 
 import { insertOutboxRow, refreshPendingOutboxRow } from './outbox-enqueue.ts'
+import { PENDING_OUTBOX_PREDICATE_SQL } from './outbox-read.ts'
 import { stringifyOutboxPayload } from './outbox-sanitize.ts'
 
 export type LandingEvidenceBackfillResult = {
@@ -227,7 +228,7 @@ export function enqueuePullRequestCi(database: Database, recordId: string, at = 
   const value = buildPullRequestCiPayload(row, machineId(), at)
   const pending = database
     .query<{ id: number }, [string]>(
-      "SELECT id FROM outbox WHERE kind='pull_request_ci' AND row_id=? AND synced_at IS NULL AND quarantined_at IS NULL AND retired_at IS NULL ORDER BY id DESC LIMIT 1",
+      `SELECT id FROM outbox WHERE kind='pull_request_ci' AND row_id=? AND ${PENDING_OUTBOX_PREDICATE_SQL} ORDER BY id DESC LIMIT 1`,
     )
     .get(recordId)
   if (pending) {

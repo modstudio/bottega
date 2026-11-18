@@ -4,6 +4,7 @@
 import type { Database } from 'bun:sqlite'
 import { TERMINAL_RUN_STATUS_SQL } from '../run/run-status.ts'
 import { isReleasedOutboxPayload } from './outbox-prune-payload.ts'
+import { PENDING_OUTBOX_PREDICATE_SQL } from './outbox-read.ts'
 import { evidenceReferences } from './record-evidence-references.ts'
 import type {
   BlockedOutboxRow,
@@ -33,13 +34,11 @@ export type QuarantinedParentHoldAccumulator = Map<
 
 type PendingOutboxRowWithPayload = { row: OutboxRow; payload: Payload }
 
+export const PENDING_OUTBOX_ROWS_WITH_PAYLOAD_SQL = `SELECT id,kind,row_id,payload FROM outbox
+  WHERE ${PENDING_OUTBOX_PREDICATE_SQL} ORDER BY id`
+
 function pendingOutboxRowsWithPayload(database: Database): PendingOutboxRowWithPayload[] {
-  const rows = database
-    .query<OutboxRow, []>(
-      `SELECT id,kind,row_id,payload FROM outbox
-       WHERE synced_at IS NULL AND quarantined_at IS NULL AND retired_at IS NULL ORDER BY id`,
-    )
-    .all()
+  const rows = database.query<OutboxRow, []>(PENDING_OUTBOX_ROWS_WITH_PAYLOAD_SQL).all()
   const parsedRows: PendingOutboxRowWithPayload[] = []
   for (const row of rows) {
     let parsed: unknown
@@ -284,7 +283,7 @@ export function outboxRowBlockedByRetiredParent(
   const row = database
     .query<OutboxRow, [number]>(
       `SELECT id,kind,row_id,payload FROM outbox WHERE id=?
-       AND synced_at IS NULL AND quarantined_at IS NULL AND retired_at IS NULL`,
+       AND ${PENDING_OUTBOX_PREDICATE_SQL}`,
     )
     .get(rowId)
   if (!row) return null
@@ -411,8 +410,7 @@ export function outboxRowIsEligible(database: Database, row: OutboxRow): boolean
   return Boolean(
     database
       .query<{ id: number }, [number, string]>(
-        `SELECT id FROM outbox WHERE id=? AND payload=? AND synced_at IS NULL
-         AND quarantined_at IS NULL AND retired_at IS NULL`,
+        `SELECT id FROM outbox WHERE id=? AND payload=? AND ${PENDING_OUTBOX_PREDICATE_SQL}`,
       )
       .get(row.id, row.payload),
   )
@@ -423,7 +421,7 @@ export function markOutboxRowSynced(database: Database, row: OutboxRow, at: stri
     database
       .query(
         `UPDATE outbox SET synced_at=?, last_error=NULL WHERE id=? AND payload=?
-         AND synced_at IS NULL AND quarantined_at IS NULL AND retired_at IS NULL`,
+         AND ${PENDING_OUTBOX_PREDICATE_SQL}`,
       )
       .run(at, row.id, row.payload).changes,
   )

@@ -46,6 +46,7 @@ import { inspectRunRecordBackfill, type RunRecordBackfillInspection } from '../r
 import { activeSpaceInvariant } from './active-space-invariant.ts'
 import { machineId } from './machine-identity.ts'
 import { quarantinedOutboxRows } from './outbox-quarantine.ts'
+import { PENDING_OUTBOX_PREDICATE_SQL } from './outbox-read.ts'
 import { RecordApiRequestError, recordApiClient, recordApiRequest } from './record-api-client.ts'
 import { recordQuestionClient } from './record-api-client-question.ts'
 import { recordAttributionFailure } from './record-attribution.ts'
@@ -459,7 +460,7 @@ function pendingOutboxCount(database: Database): number {
   return database
     .query<{ count: number }, []>(
       `SELECT count(*) AS count FROM outbox
-     WHERE synced_at IS NULL AND quarantined_at IS NULL AND retired_at IS NULL`,
+     WHERE ${PENDING_OUTBOX_PREDICATE_SQL}`,
     )
     .get()!.count
 }

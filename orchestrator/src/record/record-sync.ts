@@ -40,6 +40,7 @@ import {
   quarantineOutboxRow,
   retirePendingOutboxKinds,
 } from './outbox-quarantine.ts'
+import { PENDING_OUTBOX_PREDICATE_SQL } from './outbox-read.ts'
 import { RecordApiRequestError, recordApiClient } from './record-api-client.ts'
 import { builtInsEnsured, recordBuiltInsEnsured } from './record-built-ins-identity.ts'
 import { pullRecordCache } from './record-cache.ts'
@@ -70,6 +71,9 @@ export type {
   RecordSyncOptions,
   RecordSyncResult,
 } from './record-sync-types.ts'
+
+export const PENDING_OUTBOX_COUNT_SQL = `SELECT count(*) AS count FROM outbox
+  WHERE ${PENDING_OUTBOX_PREDICATE_SQL}`
 
 /** Whether this environment names a hosted record endpoint for synchronization. */
 export function recordSyncConfigured(
@@ -169,12 +173,7 @@ function declaredProjectSpace(
 }
 
 function pendingCount(local: Database): number {
-  return local
-    .query<{ count: number }, []>(
-      `SELECT count(*) AS count FROM outbox
-       WHERE synced_at IS NULL AND quarantined_at IS NULL AND retired_at IS NULL`,
-    )
-    .get()!.count
+  return local.query<{ count: number }, []>(PENDING_OUTBOX_COUNT_SQL).get()!.count
 }
 
 function syncRouteError(error: unknown): never {
@@ -267,7 +266,7 @@ function preparePendingRows(local: Database): Set<PreparedOutboxRow> {
   const rows = local
     .query<OutboxRow, string[]>(
       `SELECT id, kind, row_id, payload FROM outbox
-       WHERE synced_at IS NULL AND quarantined_at IS NULL AND retired_at IS NULL
+       WHERE ${PENDING_OUTBOX_PREDICATE_SQL}
          AND kind NOT IN (${[...RETIRED_OUTBOX_KINDS].map(() => '?').join(',')})
        ORDER BY id`,
     )
