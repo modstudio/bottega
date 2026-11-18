@@ -39,7 +39,7 @@ export function decideCreateOutcome(input: {
 
   if (!input.createResult) {
     return {
-      refusal: refusal('gh pr create was not run'),
+      refusal: { condition: 'gh pr create was not run' },
       output: '',
       finalizePullRequestNumber: null,
     }

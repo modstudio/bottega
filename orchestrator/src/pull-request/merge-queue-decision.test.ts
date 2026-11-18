@@ -1,13 +1,13 @@
 import { describe, expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
+  stepMergeQueueWait as decideMergeQueueWait,
   interpretMergeQueue,
   MERGE_QUEUE_DEQUEUE_CONFIRM_MS,
   MERGE_QUEUE_REQUEUE_CONFIRM_MS,
   type MergeQueueState,
   type MergeQueueWaitState,
   mergeQueueEnqueueFailureRemedy,
-  stepMergeQueueWait as decideMergeQueueWait,
 } from './merge-queue-decision.ts'
 
 const stepMergeQueueWait = (

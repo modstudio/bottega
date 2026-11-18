@@ -100,7 +100,7 @@ export const pullRequestModuleSpecs = [
   { file: 'orchestrator/src/pull-request/mergeability-decision.ts', allowed: [] },
   {
     file: 'orchestrator/src/pull-request/create-outcome-decision.ts',
-    allowed: ['./mergeability-decision.ts'],
+    allowed: ['../../../shared/refusal.ts', './mergeability-decision.ts'],
     typeOnlyAllowed: ['./mergeability-decision.ts'],
   },
   {

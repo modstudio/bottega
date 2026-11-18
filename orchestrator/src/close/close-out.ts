@@ -5,10 +5,8 @@
  * the CLI.
  */
 
-import { existsSync, realpathSync, rmSync } from 'node:fs'
+import { existsSync, rmSync } from 'node:fs'
 import { join, resolve } from 'node:path'
-import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { refusal, renderRefusal } from '../../../shared/refusal.ts'
 import { restoreBranch } from '../branch/branch-ref-guard.ts'
 import { db, nowIso, sessionId, writeTransaction } from '../database/db.ts'
 import { gitContext, targetGitEnvironment } from '../git/git-environment.ts'
@@ -52,10 +50,14 @@ import {
 } from './absent-tree-close-out.ts'
 import { adoptedTreeCloseOutDecision } from './close-out-adoption.ts'
 import { withCloseOutLease } from './close-out-lease.ts'
-import { type CloseOutPreparation, prepareCloseOut } from './close-out-preparation.ts'
+import {
+  type CloseOutPreparation,
+  type CloseOutTaskFlowClient,
+  conversationRootAndWorktree,
+  prepareCloseOut,
+  prepareCursorWorktreeClear,
+} from './close-out-preparation.ts'
 import { closeTerminalChainQuestions } from './close-out-questions.ts'
-import type { RecordTaskFlowClient } from '../record/record-api-client-task-flow.ts'
-import { clearOpenCursorWorktreesAtPath } from '../workflow/workflow-cursor-worktrees.ts'
 
 import {
   landingTreeReleaseHold,
@@ -103,7 +105,7 @@ type CloseOutOptions = {
   extraPids?: number[]
   pgid?: number | null
   closeOutLeaseHeld?: boolean
-  taskFlowClient?: RecordTaskFlowClient
+  taskFlowClient?: CloseOutTaskFlowClient
 }
 
 type CloseOutPreparedOptions = CloseOutOptions & {
@@ -893,22 +895,6 @@ function appendRetainedBranchDetail(result: CloseOutAttemptResult): CloseOutAtte
   return result
 }
 
-function conversationRootAndWorktree(runId: string): {
-  rootRecordId: string
-  worktree: string | null
-} {
-  const row = db()
-    .query(
-      'SELECT COALESCE(parent_run_record_id,record_id) root_record_id,worktree FROM run WHERE record_id=?',
-    )
-    .get(runId) as { root_record_id: string; worktree: string | null } | null
-  if (!row) throw new Error(`no run ${runId}`)
-  const root = db().query('SELECT worktree FROM run WHERE record_id=?').get(row.root_record_id) as {
-    worktree: string | null
-  } | null
-  return { rootRecordId: row.root_record_id, worktree: row.worktree ?? root?.worktree ?? null }
-}
-
 function closeOutCallerDetail(detail: string, intent: CloseOutOptions['intent']): string {
   return `${detail}; close-out intent=${intent} pid=${process.pid} ppid=${process.ppid}`
 }
@@ -1026,50 +1012,13 @@ export async function closeOutRun(
   runId: string,
   options: CloseOutOptions,
 ): Promise<CloseOutResult> {
-  const root = conversationRootAndWorktree(runId)
-  const spellingsBefore = conversationWorktreeSpellings(db(), root.rootRecordId)
-  const preparation = await prepareCloseOut()
-  if (root.worktree && existsSync(root.worktree)) {
-    const identity = realpathSync(root.worktree)
-    const cursorSpellings = preparation.cursorWorktrees.flatMap(({ worktree }) => {
-      try {
-        return realpathSync(worktree) === identity ? [worktree] : []
-      } catch {
-        return []
-      }
-    })
-    spellingsBefore.set(root.worktree, [
-      ...new Set([
-        ...(spellingsBefore.get(root.worktree) ?? [root.worktree]),
-        ...cursorSpellings,
-      ]),
-    ])
-  }
+  const preparation = await prepareCloseOut(options.taskFlowClient)
+  const clearCursorWorktrees = prepareCursorWorktreeClear(runId, preparation)
   const { questionRootIds, ...preparedResult } = closeOutRunPrepared(runId, options, preparation)
   let result = preparedResult
-  if (!options.dryRun && result.worktree && ['released', 'absent'].includes(result.outcome)) {
-    try {
-      await clearOpenCursorWorktreesAtPath(
-        result.worktree,
-        db(),
-        options.taskFlowClient,
-        spellingsBefore.get(result.worktree) ?? [result.worktree],
-      )
-    } catch (cause) {
-      const detail = cause instanceof Error ? cause.message : String(cause)
-      result = {
-        ...result,
-        cursorCleanupFailure: renderRefusal(
-          refusal(
-            `the tree at ${result.worktree} was ${result.outcome} but the cursor worktree pointers at it could not be cleared: ${detail}`,
-            {
-              kind: 'edit',
-              text: `rerun ${PLATFORM_SLUG} tree remove ${result.worktree} to retry, or pass --arg worktree=<tree> on the cursor`,
-            },
-          ),
-        ).replace('\n', '; '),
-      }
-    }
+  if (!options.dryRun) {
+    const cursorCleanupFailure = await clearCursorWorktrees(result)
+    if (cursorCleanupFailure) result = { ...result, cursorCleanupFailure }
   }
   for (const rootId of questionRootIds) await closeTerminalChainQuestions(rootId, !!options.dryRun)
   return result

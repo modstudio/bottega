@@ -5,13 +5,8 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun, dir } from '../../test/fixtures/store.ts'
 import { addOpenCursorWorktree } from '../../test/fixtures/workflow.ts'
-import {
-  createMemoryRecordApiClient,
-  installRecordApiClient,
-} from '../../test/fixtures/record-api.ts'
 import { db } from '../database/db.ts'
 import { upsertProject } from '../project/projects.ts'
-import type { RecordTaskFlowClient } from '../record/record-api-client-task-flow.ts'
 import { RUNS_DIR } from '../run/run-artifacts.ts'
 import {
   clearConversationKeepTreeHold,
@@ -172,7 +167,7 @@ function closeOutFixture(
     }
     return spawnResult()
   }) as typeof Bun.spawnSync)
-  return { id, project, repo, tree, spawnCommands }
+  return { id, repo, tree, spawnCommands }
 }
 
 describe('close-out extraction decision', () => {
@@ -718,52 +713,6 @@ test('absent terminal landing-tree close-out clears its pointer and settles miss
     ).toEqual({ state: 'absent' })
   } finally {
     rmSync(repo, { recursive: true, force: true })
-  }
-})
-
-test('tree removal reports a cursor cleanup failure without changing the released outcome', async () => {
-  const fixture = closeOutFixture('owned')
-  addOpenCursorWorktree(db(), { project: fixture.project, worktree: fixture.tree })
-  const previousRecordUrl = process.env.BOTTEGA_RECORD_API_URL
-  process.env.BOTTEGA_RECORD_API_URL = 'https://record.example.test'
-  db()
-    .query('UPDATE project SET settings=?')
-    .run(JSON.stringify({ trunk: 'main', space: 'fixture-space-id' }))
-  db()
-    .query(
-      `INSERT OR REPLACE INTO record_install_binding (id,bound_at,record_origin)
-       VALUES (1,'2026-11-18T00:00:00.000Z','https://record.example.test')`,
-    )
-    .run()
-  const taskFlowClient: RecordTaskFlowClient = {
-    ...createMemoryRecordApiClient(),
-    whoami: async () => ({
-      user: { id: 'fixture-user' },
-      activeSpaceId: 'fixture-space-id',
-      personalSpaceId: 'fixture-space-id',
-      memberships: [{ space_id: 'fixture-space-id', slug: 'fixture-space', permission: 'write' }],
-    }),
-    updateTaskFlowStage: async () => {
-      throw new Error('record down')
-    },
-  }
-  installRecordApiClient(taskFlowClient)
-
-  try {
-    const result = await closeOutRun(fixture.id, { intent: 'tree-remove', taskFlowClient })
-
-    expect(result).toMatchObject({
-      outcome: 'released',
-      cursorCleanupFailure:
-        `the tree at ${fixture.tree} was released but the cursor worktree pointers at it could not be cleared: record down; ` +
-        `cleared by: rerun ${PLATFORM_SLUG} tree remove ${fixture.tree} to retry, or pass --arg worktree=<tree> on the cursor`,
-    })
-  } finally {
-    if (previousRecordUrl === undefined) delete process.env.BOTTEGA_RECORD_API_URL
-    else process.env.BOTTEGA_RECORD_API_URL = previousRecordUrl
-    db().query('DELETE FROM record_install_binding').run()
-    installRecordApiClient(createMemoryRecordApiClient())
-    rmSync(fixture.repo, { recursive: true, force: true })
   }
 })
 

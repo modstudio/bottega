@@ -295,18 +295,20 @@ async function removeRecordedHookTree(
     intent: 'tree-remove',
     taskFlowClient,
   })
-  if (result.outcome === 'released')
-    return {
-      outcome: 'released',
-      ...(result.cursorCleanupFailure ? { cursorCleanupFailure: result.cursorCleanupFailure } : {}),
-    }
-  if (result.outcome === 'absent')
-    return {
-      outcome: 'absent',
-      ...(result.cursorCleanupFailure ? { cursorCleanupFailure: result.cursorCleanupFailure } : {}),
-    }
+  if (result.outcome === 'released' || result.outcome === 'absent')
+    return successfulHookTreeRemovalResult(result.outcome, result.cursorCleanupFailure)
   if (result.outcome === 'held') return { outcome: 'kept', reason: result.detail }
   return { outcome: 'failed', detail: `tree teardown ${result.outcome}: ${result.detail}` }
+}
+
+function successfulHookTreeRemovalResult(
+  outcome: 'released' | 'absent',
+  cursorCleanupFailure?: string,
+): HookTreeRemovalResult {
+  return {
+    outcome,
+    ...(cursorCleanupFailure ? { cursorCleanupFailure } : {}),
+  }
 }
 
 function unownedHookTreeRemovalResult(
