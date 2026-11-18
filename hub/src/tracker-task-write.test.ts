@@ -100,14 +100,16 @@ describe('array-mcp task writes', () => {
   test('set routes a raw registered status through task_update before updating the cache', async () => {
     const calls: { name: string; args: Record<string, unknown> }[] = []
     let observedParent: TrackerTask['parentKey'] = null
-    const fixture = dependencies(async (name, args) => {
-      calls.push({ name, args })
-      return { id: taskId, status: 'in_progress' }
-    })
-    fixture.observe = (...args: Parameters<typeof observeTrackerTask>) => {
-      const [task] = args
-      observedParent = task.parentKey
-      return observeTrackerTask(...args)
+    const fixture = {
+      ...dependencies(async (name, args) => {
+        calls.push({ name, args })
+        return { id: taskId, status: 'in_progress' }
+      }),
+      observe: (...args: Parameters<typeof observeTrackerTask>) => {
+        const [task] = args
+        observedParent = task.parentKey
+        return observeTrackerTask(...args)
+      },
     }
     const row = await setTaskThroughTracker(
       'ADN-1659',
