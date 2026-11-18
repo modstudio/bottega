@@ -1,7 +1,7 @@
 import { expect, test } from 'bun:test'
 import { newRecordId } from '../../shared/record/schema.ts'
+import { recordRequestHeaders } from '../../shared/record-request-headers.ts'
 import {
-  bearerHeaders,
   noSpaceBuiltIns,
   recordAuth,
   setActiveRecordSpaceForSession,
@@ -41,18 +41,20 @@ async function proveRememberedSpace(input: {
     )
     await setActiveRecordSpaceForSession(
       input.actorUrl,
-      bearerHeaders(signup.token),
+      recordRequestHeaders({ bearerToken: signup.token }),
       input.rememberedSpaceId,
     )
 
     const signedIn = await auth.api.signInEmail({ body: { email, password: input.password } })
     if (!signedIn.token) throw new Error('remembered-space sign-in has no bearer token')
-    const resumed = await auth.api.getSession({ headers: bearerHeaders(signedIn.token) })
+    const resumed = await auth.api.getSession({
+      headers: recordRequestHeaders({ bearerToken: signedIn.token }),
+    })
     expect(resumed?.session.activeOrganizationId).toBe(input.rememberedSpaceId)
     await expect(
       setActiveRecordSpaceForSession(
         input.actorUrl,
-        bearerHeaders(signedIn.token),
+        recordRequestHeaders({ bearerToken: signedIn.token }),
         input.outsiderSpaceId,
       ),
     ).rejects.toThrow('is not a member of space')

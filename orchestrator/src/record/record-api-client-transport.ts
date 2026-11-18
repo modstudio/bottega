@@ -11,7 +11,6 @@ import {
   type HostedCallOutcomeRecorder,
   recordHostedCallOutcome,
 } from '../hosted-call-outcome.ts'
-import { bearerHeaders } from './record-auth.ts'
 
 let memoizedUserAgent: string | undefined
 
@@ -106,7 +105,7 @@ export async function recordTransport(
 
 export function boardStreamHeaders(token: string): Headers {
   const headers = new Headers()
-  for (const [name, value] of bearerHeaders(token)) headers.set(name, value)
+  for (const [name, value] of recordRequestHeaders({ bearerToken: token })) headers.set(name, value)
   headers.set('accept', 'text/event-stream')
   return headers
 }

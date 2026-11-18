@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { SQL } from 'bun'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId, PLATFORM_SPACE_ID, project } from '../../../shared/record/schema.ts'
+import { recordRequestHeaders } from '../../../shared/record-request-headers.ts'
 import { installRecordApiClient } from '../../test/fixtures/record-api.ts'
 import {
   installRecordSessionRunner,
@@ -14,7 +15,6 @@ import { applyMigrations } from '../database/migrations.ts'
 import { backfillLandingEvidenceRecords } from '../record/landing-outbox.ts'
 import { startRecordApiServer } from '../record/record-api-server.ts'
 import {
-  bearerHeaders,
   noSpaceBuiltIns,
   RECORD_SESSION_KEY,
   recordAuth,
@@ -160,7 +160,11 @@ realPostgres('project import against copied live SQLite data', () => {
       INSERT INTO membership (id,space_id,user_id,role,permission,created_at)
       VALUES (${newRecordId()}::uuid, ${PLATFORM_SPACE_ID}::uuid, ${signedUp.user.id}::uuid, 'owner', 'write', now())
     `
-    await setActiveRecordSpaceForSession(actorUrl!, bearerHeaders(recordToken), PLATFORM_SPACE_ID)
+    await setActiveRecordSpaceForSession(
+      actorUrl!,
+      recordRequestHeaders({ bearerToken: recordToken }),
+      PLATFORM_SPACE_ID,
+    )
     apiServer = await startRecordApiServer({
       ...process.env,
       PORT: '0',

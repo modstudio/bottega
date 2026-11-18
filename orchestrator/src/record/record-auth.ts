@@ -24,7 +24,6 @@ import {
 } from '../../../shared/record/schema-auth.ts'
 import { recordServiceUrl } from '../../../shared/record/service-connection.ts'
 import { RECORD_SIGN_IN_REMEDY } from '../../../shared/record-remedies.ts'
-import { recordRequestHeaders } from '../../../shared/record-request-headers.ts'
 import { sendEmailVerificationEmail } from '../mail/email-verification-mailer.ts'
 import { sendRecordInvitationEmail } from '../mail/invitation-mailer.ts'
 import { sendPasswordResetEmail } from '../mail/password-reset-mailer.ts'
@@ -579,9 +578,6 @@ export async function recordIdentity(
     return recordIdentityFromRows(user, activeSpaceId, personalSpaceId, [...memberships])
   })
 }
-
-export const bearerHeaders = (token: string, destinationSpaceId?: string, headers?: HeadersInit) =>
-  recordRequestHeaders({ bearerToken: token, destinationSpaceId, headers })
 
 export async function setActiveRecordSpaceForSession(
   url: string,

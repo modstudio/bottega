@@ -5,6 +5,7 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { readEnvValues } from '../../../shared/env-values.ts'
 import { resolveRecordApiUrl } from '../../../shared/record-api-url.ts'
 import { readRecordSessionTokenAsync } from '../../../shared/record-session.ts'
+import { recordRequestHeaders } from '../../../shared/record-request-headers.ts'
 import { concernStateDirectory } from '../../../shared/state-directory.ts'
 import {
   command as dashboardCommand,
@@ -322,7 +323,9 @@ try {
         (url) => bearerOrigins.has(url.origin),
         (route) =>
           route.continue({
-            headers: { ...route.request().headers(), authorization: `Bearer ${token}` },
+            headers: Object.fromEntries(
+              recordRequestHeaders({ bearerToken: token, headers: route.request().headers() }),
+            ),
           }),
       )
       try {

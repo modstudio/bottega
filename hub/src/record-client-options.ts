@@ -10,6 +10,7 @@ export type RecordFetch = (input: string, init?: RequestInit) => Promise<Respons
 export type RecordClientOptions = {
   baseUrl: string
   headers: RecordAuthHeaders
+  bearerToken?: string
   fetch?: RecordFetch
   requestDeadlineMs?: number
 }

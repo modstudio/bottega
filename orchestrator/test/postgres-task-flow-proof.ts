@@ -6,11 +6,12 @@ import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { setMachineValue } from '../../shared/machine-config.ts'
 import { newRecordId } from '../../shared/record-id.ts'
+import { recordRequestHeaders } from '../../shared/record-request-headers.ts'
 import { migratedTestDatabase } from '../src/database/test-database.fixture.ts'
 import { rememberProjectSpace } from '../src/project-space-cache.ts'
 import { rememberHostedRecord } from '../src/record/install-binding-write.ts'
 import { recordApiClient } from '../src/record/record-api-client.ts'
-import { bearerHeaders, setActiveRecordSpaceForSession } from '../src/record/record-auth.ts'
+import { setActiveRecordSpaceForSession } from '../src/record/record-auth.ts'
 import { pullRecordCache } from '../src/record/record-cache.ts'
 import { syncRecord } from '../src/record/record-sync.ts'
 import { composeWorkflowWithCursor } from '../src/workflow/workflow-cursor.ts'
@@ -739,7 +740,7 @@ export function registerTaskFlowReadThroughTakeoverProof(input: Input): void {
       ).rejects.toMatchObject({ condition: `task_flow.id=${flowId}` })
 
       const otherSpace = await auth.api.createOrganization({
-        headers: bearerHeaders(input.token()),
+        headers: recordRequestHeaders({ bearerToken: input.token() }),
         body: {
           name: 'Direct Task Flow Isolation Proof',
           slug: `direct-task-flow-isolation-${taskId.slice(-8)}`,
@@ -835,7 +836,7 @@ export function registerTaskFlowReadThroughTakeoverProof(input: Input): void {
       `)
       await setActiveRecordSpaceForSession(
         input.urls().actor,
-        bearerHeaders(input.token()),
+        recordRequestHeaders({ bearerToken: input.token() }),
         input.spaceId(),
       )
 
@@ -964,7 +965,7 @@ export function registerTaskFlowReadThroughTakeoverProof(input: Input): void {
       )
 
       const otherSpace = await auth.api.createOrganization({
-        headers: bearerHeaders(input.token()),
+        headers: recordRequestHeaders({ bearerToken: input.token() }),
         body: {
           name: 'Task Flow Isolation Proof',
           slug: `task-flow-isolation-${taskId.slice(-8)}`,

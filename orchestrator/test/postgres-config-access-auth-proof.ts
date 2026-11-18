@@ -1,6 +1,7 @@
 import { expect, test } from 'bun:test'
 import { newRecordId } from '../../shared/record/schema.ts'
-import { bearerHeaders, setActiveRecordSpaceForSession } from '../src/record/record-auth.ts'
+import { recordRequestHeaders } from '../../shared/record-request-headers.ts'
+import { setActiveRecordSpaceForSession } from '../src/record/record-auth.ts'
 import {
   SIGN_UP_AUTH,
   SIGN_UP_CLI_OUTPUT,
@@ -50,11 +51,19 @@ export function registerConfigAccessSpaceCreationProof(input: {
     ).toEqual([`${SIGN_UP_AUTH.emailA}|1|owner|write|t`, `${SIGN_UP_AUTH.emailB}|1|owner|write|t`])
     const auth = testRecordAuth(input.actorUrl(), input.authUrl())
     try {
-      expect((await auth.api.getSession({ headers: bearerHeaders(input.token()) }))?.user.id).toBe(
-        input.userId(),
-      )
       expect(
-        (await auth.api.getSession({ headers: bearerHeaders(input.otherToken()) }))?.user.id,
+        (
+          await auth.api.getSession({
+            headers: recordRequestHeaders({ bearerToken: input.token() }),
+          })
+        )?.user.id,
+      ).toBe(input.userId())
+      expect(
+        (
+          await auth.api.getSession({
+            headers: recordRequestHeaders({ bearerToken: input.otherToken() }),
+          })
+        )?.user.id,
       ).toBe(input.otherUserId())
     } finally {
       await auth.close()
@@ -66,7 +75,7 @@ export function registerConfigAccessSpaceCreationProof(input: {
     try {
       const userId = input.userId()
       const created = await auth.api.createOrganization({
-        headers: bearerHeaders(input.token()),
+        headers: recordRequestHeaders({ bearerToken: input.token() }),
         body: {
           name: 'Config Access Hook',
           slug: `config-access-hook-${userId.slice(-8)}`,
@@ -90,7 +99,7 @@ export function registerConfigAccessSpaceCreationProof(input: {
     try {
       const userId = input.userId()
       const created = await auth.api.createOrganization({
-        headers: bearerHeaders(input.token()),
+        headers: recordRequestHeaders({ bearerToken: input.token() }),
         body: {
           name: 'Owner Write Hook',
           slug: `owner-write-hook-${userId.slice(-8)}`,
@@ -101,7 +110,7 @@ export function registerConfigAccessSpaceCreationProof(input: {
         INSERT INTO membership (id,space_id,user_id,role,permission,config_access,created_at)
         VALUES ('${memberId}','${created.id}','${input.otherUserId()}','member','read',false,now());`)
       await auth.api.updateMemberRole({
-        headers: bearerHeaders(input.token()),
+        headers: recordRequestHeaders({ bearerToken: input.token() }),
         body: { memberId, role: 'owner', organizationId: created.id },
       })
       expect(
@@ -116,7 +125,7 @@ export function registerConfigAccessSpaceCreationProof(input: {
   test('a non-owner member setting the outside intake receives the owner remedy', async () => {
     const spaceId = newRecordId()
     const projectId = newRecordId()
-    const headers = bearerHeaders(input.otherToken())
+    const headers = recordRequestHeaders({ bearerToken: input.otherToken() })
     const auth = testRecordAuth(input.actorUrl(), input.authUrl())
     const previous = await auth.api.getSession({ headers })
     const previousSpaceId = previous?.session.activeOrganizationId
@@ -195,7 +204,7 @@ export function registerConfigAccessSpaceCreationProof(input: {
   test('config access grant changes the requested space instead of the active space', async () => {
     const activeSpaceId = newRecordId()
     const requestedSpaceId = newRecordId()
-    const headers = bearerHeaders(input.token())
+    const headers = recordRequestHeaders({ bearerToken: input.token() })
     const auth = testRecordAuth(input.actorUrl(), input.authUrl())
     const previous = await auth.api.getSession({ headers })
     const previousSpaceId = previous?.session.activeOrganizationId
@@ -274,7 +283,7 @@ export function registerConfigAccessSpaceCreationProof(input: {
       fetch(`${input.apiUrl()}/v1/config-access/withdraw`, {
         method: 'POST',
         headers: {
-          ...Object.fromEntries(bearerHeaders(input.token())),
+          ...Object.fromEntries(recordRequestHeaders({ bearerToken: input.token() })),
           'content-type': 'application/json',
           'x-record-space': spaceId,
         },
@@ -346,7 +355,7 @@ export function registerConfigAccessSpaceCreationProof(input: {
       `${input.apiUrl()}/v1/config/data-keys/current?recipientKeyId=${memberKey}`,
       {
         headers: {
-          ...Object.fromEntries(bearerHeaders(input.otherToken())),
+          ...Object.fromEntries(recordRequestHeaders({ bearerToken: input.otherToken() })),
           'x-record-space': spaceId,
         },
       },
@@ -363,7 +372,7 @@ export function registerConfigAccessSpaceCreationProof(input: {
       `${input.apiUrl()}/v1/config/data-keys/current?recipientKeyId=${memberKey}`,
       {
         headers: {
-          ...Object.fromEntries(bearerHeaders(input.otherToken())),
+          ...Object.fromEntries(recordRequestHeaders({ bearerToken: input.otherToken() })),
           'x-record-space': spaceId,
         },
       },
@@ -378,7 +387,7 @@ export function registerConfigAccessSpaceCreationProof(input: {
     const auth = testRecordAuth(input.actorUrl(), input.authUrl())
     try {
       await auth.api.removeMember({
-        headers: bearerHeaders(input.token()),
+        headers: recordRequestHeaders({ bearerToken: input.token() }),
         body: { memberIdOrEmail: SIGN_UP_AUTH.emailB, organizationId: spaceId },
       })
     } finally {

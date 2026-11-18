@@ -4,12 +4,12 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { Glob } from 'bun'
 import ts from 'typescript'
-import { PLATFORM_SLUG } from '../shared/brand.ts'
+import { CALLER_HEADER_NAME } from '../shared/record-caller.ts'
+import { RECORD_SPACE_HEADER_NAME } from '../shared/record-request-headers.ts'
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url)).replace(/\/$/, '')
-const SOURCE_ROOTS = ['shared', 'hub/src', 'orchestrator/src'] as const
+const SOURCE_ROOTS = ['shared', 'hub/src', 'hub/web/scripts', 'orchestrator/src'] as const
 const HELPER_MODULE = 'shared/record-request-headers.ts'
-const CALLER_HEADER_LITERAL = `x-${PLATFORM_SLUG}-caller`
 const TEST_FILE = /(?:^|\/)(?:test|tests)\/|(?:^|\/)(?:test-[^/]+|[^/]+\.test)\.ts$/
 
 export const THIRD_PARTY_BEARER_HEADER_FILES = {
@@ -38,19 +38,28 @@ function literalText(node: ts.Node | undefined): string | undefined {
 
 function headerKind(name: string | undefined): HeaderConstructionKind | undefined {
   const normalized = name?.toLowerCase()
-  if (normalized === CALLER_HEADER_LITERAL) return 'caller'
-  if (normalized === 'x-record-space') return 'space'
+  if (normalized === CALLER_HEADER_NAME.toLowerCase() || name === 'CALLER_HEADER_NAME')
+    return 'caller'
+  if (normalized === RECORD_SPACE_HEADER_NAME || name === 'RECORD_SPACE_HEADER_NAME') return 'space'
   return undefined
 }
 
 function isBearerValue(node: ts.Node | undefined): boolean {
   if (!node) return false
   if (ts.isTemplateExpression(node)) return node.head.text === 'Bearer '
+  if (ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.PlusToken)
+    return literalText(node.left)?.startsWith('Bearer ') ?? false
   return literalText(node)?.startsWith('Bearer ') ?? false
+}
+
+function headerName(node: ts.Node | undefined): string | undefined {
+  if (node && ts.isIdentifier(node)) return node.text
+  return literalText(node)
 }
 
 function propertyName(node: ts.PropertyName): string | undefined {
   if (ts.isIdentifier(node) || ts.isStringLiteral(node)) return node.text
+  if (ts.isComputedPropertyName(node)) return headerName(node.expression)
   return undefined
 }
 
@@ -80,11 +89,11 @@ function callConstructionKind(node: ts.CallExpression) {
   if (!ts.isPropertyAccessExpression(node.expression)) return undefined
   const method = node.expression.name.text
   if (method !== 'set' && method !== 'append') return undefined
-  return namedValueKind(literalText(node.arguments[0]), node.arguments[1])
+  return namedValueKind(headerName(node.arguments[0]), node.arguments[1])
 }
 
 function arrayConstructionKind(node: ts.ArrayLiteralExpression) {
-  return namedValueKind(literalText(node.elements[0]), node.elements[1])
+  return namedValueKind(headerName(node.elements[0]), node.elements[1])
 }
 
 function objectConstructionKind(node: ts.ObjectLiteralExpression) {

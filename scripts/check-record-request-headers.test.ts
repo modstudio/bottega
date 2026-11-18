@@ -1,9 +1,6 @@
 import { expect, test } from 'bun:test'
 import { CALLER_HEADER_NAME } from '../shared/record-caller.ts'
-import {
-  recordRequestHeaderViolations,
-  THIRD_PARTY_BEARER_HEADER_FILES,
-} from './check-record-request-headers.ts'
+import { recordRequestHeaderViolations } from './check-record-request-headers.ts'
 
 test('refuses request-header construction outside the shared helper', () => {
   const source = `
@@ -31,5 +28,35 @@ test('allows server reads and the named third-party bearer clients', () => {
       'hub/src/mcp.ts',
     ),
   ).toEqual([])
-  expect(THIRD_PARTY_BEARER_HEADER_FILES['hub/src/mcp.ts']).toContain('external tracker MCP')
+})
+
+test('refuses shared header-name identifiers in setter, computed-key, and tuple forms', () => {
+  const source = `
+    headers.set(CALLER_HEADER_NAME, caller)
+    headers.append(RECORD_SPACE_HEADER_NAME, destination)
+    const computed = { [CALLER_HEADER_NAME]: caller }
+    const tuples = [[RECORD_SPACE_HEADER_NAME, destination]]
+  `
+  expect(recordRequestHeaderViolations(source, 'hub/src/example.ts')).toEqual([
+    { file: 'hub/src/example.ts', line: 2, kind: 'caller' },
+    { file: 'hub/src/example.ts', line: 3, kind: 'space' },
+    { file: 'hub/src/example.ts', line: 4, kind: 'caller' },
+    { file: 'hub/src/example.ts', line: 5, kind: 'space' },
+  ])
+})
+
+test('refuses binary bearer construction', () => {
+  const source = `const init = { headers: { authorization: 'Bearer ' + token } }`
+  expect(recordRequestHeaderViolations(source, 'hub/src/example.ts')).toEqual([
+    { file: 'hub/src/example.ts', line: 1, kind: 'bearer' },
+  ])
+})
+
+test('allows a server read through the shared caller-header name', () => {
+  expect(
+    recordRequestHeaderViolations(
+      `request.headers.get(CALLER_HEADER_NAME)`,
+      'orchestrator/src/server.ts',
+    ),
+  ).toEqual([])
 })

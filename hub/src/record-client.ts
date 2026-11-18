@@ -530,7 +530,7 @@ async function request<T>(
 ): Promise<T> {
   const deadlineMs = options.requestDeadlineMs ?? RECORD_REQUEST_DEADLINE_MS
   const controller = new AbortController()
-  const headers = recordRequestHeaders({ headers: init.headers })
+  const headers = recordRequestHeaders({ bearerToken: options.bearerToken, headers: init.headers })
   if (options.headers.cookie) headers.set('Cookie', options.headers.cookie)
   if (options.headers.authorization) headers.set('Authorization', options.headers.authorization)
   headers.set('user-agent', `${PLATFORM_SLUG}/${packageMetadata.version}`)

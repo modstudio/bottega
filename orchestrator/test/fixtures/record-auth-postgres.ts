@@ -1,8 +1,8 @@
 import { expect, test } from 'bun:test'
 import { RECORD_AUTH_ROLE } from '../../../shared/record/schema.ts'
+import { recordRequestHeaders } from '../../../shared/record-request-headers.ts'
 import type { RecordApiClient } from '../../src/record/record-api-client.ts'
 import {
-  bearerHeaders,
   noSpaceBuiltIns,
   RECORD_SIGN_UP_INVITATION_REQUIRED,
   recordAuth,
@@ -55,7 +55,9 @@ export function invitationApiClient(
     async whoami() {
       const current = token()
       if (!current) throw new Error('record test session has no token')
-      const session = await auth.api.getSession({ headers: bearerHeaders(current) })
+      const session = await auth.api.getSession({
+        headers: recordRequestHeaders({ bearerToken: current }),
+      })
       if (!session) throw new Error('record test session is unavailable')
       return {
         user: session.user,
@@ -67,7 +69,10 @@ export function invitationApiClient(
     inviteMember: (input) => {
       const current = token()
       if (!current) throw new Error('record test session has no token')
-      return auth.api.createInvitation({ headers: bearerHeaders(current), body: input })
+      return auth.api.createInvitation({
+        headers: recordRequestHeaders({ bearerToken: current }),
+        body: input,
+      })
     },
   }
 }
@@ -199,11 +204,13 @@ function registerNewInviteeInvitationProofs(actorUrl: string, password: string):
     try {
       const owner = await auth.api.signInEmail({ body: { email: SIGN_UP_AUTH.emailA, password } })
       if (!owner.token) throw new Error('owner sign-in has no bearer token')
-      const ownerSession = await auth.api.getSession({ headers: bearerHeaders(owner.token) })
+      const ownerSession = await auth.api.getSession({
+        headers: recordRequestHeaders({ bearerToken: owner.token }),
+      })
       if (!ownerSession?.session.activeOrganizationId) throw new Error('owner has no active space')
       const spaceId = ownerSession.session.activeOrganizationId
       const invitation = await auth.api.createInvitation({
-        headers: bearerHeaders(owner.token),
+        headers: recordRequestHeaders({ bearerToken: owner.token }),
         body: { email, role: 'member', organizationId: spaceId },
       })
       const signup = await auth.api.signUpEmail({
@@ -211,7 +218,12 @@ function registerNewInviteeInvitationProofs(actorUrl: string, password: string):
       })
       if (!signup.token) throw new Error('invited signup has no bearer token')
       expect(signup.user.emailVerified).toBe(false)
-      return { auth, invitation, headers: bearerHeaders(signup.token), spaceId }
+      return {
+        auth,
+        invitation,
+        headers: recordRequestHeaders({ bearerToken: signup.token }),
+        spaceId,
+      }
     } catch (error) {
       await auth.close()
       throw error

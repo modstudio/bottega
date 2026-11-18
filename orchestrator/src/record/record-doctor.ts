@@ -48,7 +48,8 @@ import { quarantinedOutboxRows } from './outbox-quarantine.ts'
 import { RecordApiRequestError, recordApiClient, recordApiRequest } from './record-api-client.ts'
 import { recordQuestionClient } from './record-api-client-question.ts'
 import { recordAttributionFailure } from './record-attribution.ts'
-import { bearerHeaders, type RecordIdentity } from './record-auth.ts'
+import { recordRequestHeaders } from '../../../shared/record-request-headers.ts'
+import type { RecordIdentity } from './record-auth.ts'
 import { recordPool } from './record-pool.ts'
 import { storedRecordToken } from './record-session.ts'
 
@@ -500,7 +501,7 @@ export async function hostedHubDestinationlessWriteFacts(input: {
   try {
     const response = await (input.fetchImpl ?? fetch)(
       `${input.hostedUrl.replace(/\/$/, '')}${NO_DESTINATION_WRITES_ROUTE}`,
-      { headers: bearerHeaders(input.token) },
+      { headers: recordRequestHeaders({ bearerToken: input.token }) },
     )
     if (!response.ok)
       return {

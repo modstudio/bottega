@@ -2,6 +2,7 @@
 /** HTTP client for the record API. Must not know SQL or local table shape. */
 
 import { hostedApiFetch } from '../../../shared/bounded-fetch.ts'
+import { recordRequestHeaders } from '../../../shared/record-request-headers.ts'
 import type {
   DocAudience,
   DocAudiences,
@@ -74,7 +75,6 @@ import {
 import type { RecordSettingsClient } from './record-api-client-settings.ts'
 import { boardStreamHeaders, recordTransport } from './record-api-client-transport.ts'
 import { type RecordWorkflowClient, recordWorkflowClient } from './record-api-client-workflow.ts'
-import { bearerHeaders } from './record-auth.ts'
 import type {
   HostedBoardAcceptInput,
   HostedBoardChanges,
@@ -590,7 +590,11 @@ export async function recordApiRequest<T>(
         : storedRecordToken()
   const origin = recordApiBaseUrl()
   const send = async (bearer: string) => {
-    const headers = bearerHeaders(bearer, init.destinationSpaceId, init.headers)
+    const headers = recordRequestHeaders({
+      bearerToken: bearer,
+      destinationSpaceId: init.destinationSpaceId,
+      headers: init.headers,
+    })
     if (init.body && !headers.has('content-type')) headers.set('content-type', 'application/json')
     try {
       return await recordTransport(origin, path, { ...init, headers }, transport)

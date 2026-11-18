@@ -7,6 +7,7 @@ import {
   RECORD_OWNER_ROLE,
   RECORD_READER_ROLE,
 } from '../../../shared/record/schema.ts'
+import { recordRequestHeaders } from '../../../shared/record-request-headers.ts'
 import { registerHostedCanonProofs } from '../../test/canon-import-proof.ts'
 import { asSpace, asSpaces, psql, succeeds } from '../../test/fixtures/postgres-rls.ts'
 import {
@@ -44,11 +45,7 @@ import { registerPostgresSignInProofs } from '../../test/postgres-sign-in-proof.
 import { registerStaleMembershipProof } from '../../test/postgres-stale-membership-proof.ts'
 import { registerTaskFlowReadThroughTakeoverProof } from '../../test/postgres-task-flow-proof.ts'
 import { startRecordApiServer } from '../record/record-api-server.ts'
-import {
-  bearerHeaders,
-  type recordAuth,
-  setActiveRecordSpaceForSession,
-} from '../record/record-auth.ts'
+import { type recordAuth, setActiveRecordSpaceForSession } from '../record/record-auth.ts'
 import { signUpCommand, whoamiCommand } from '../record/record-auth-command.ts'
 import { diagnoseRecord, recordDoctorExitCode } from '../record/record-doctor.ts'
 import {
@@ -91,7 +88,7 @@ realPostgres('RLS proof against real Postgres', () => {
   const actorSession = async (token: string) => {
     const auth = testRecordAuth(actorUrl!)
     try {
-      return await auth.api.getSession({ headers: bearerHeaders(token) })
+      return await auth.api.getSession({ headers: recordRequestHeaders({ bearerToken: token }) })
     } finally {
       await auth.close()
     }
@@ -246,7 +243,7 @@ realPostgres('RLS proof against real Postgres', () => {
       if (!repair.token) throw new Error('repair signup has no bearer token')
       repairToken = repair.token
       const repairSession = await repairAuth.api.getSession({
-        headers: bearerHeaders(repair.token),
+        headers: recordRequestHeaders({ bearerToken: repair.token }),
       })
       if (!repairSession?.session.activeOrganizationId)
         throw new Error('repair signup has no active space')
@@ -438,7 +435,11 @@ realPostgres('RLS proof against real Postgres', () => {
        VALUES ('01990000-0000-7000-8000-00000000013a','${authSpaceA}',
          (SELECT id FROM "user" WHERE email='${SIGN_UP_AUTH.emailRepair}'),'member','write',now());`,
     )
-    await setActiveRecordSpaceForSession(actorUrl!, bearerHeaders(repairToken), authSpaceA)
+    await setActiveRecordSpaceForSession(
+      actorUrl!,
+      recordRequestHeaders({ bearerToken: repairToken }),
+      authSpaceA,
+    )
     recordSession.setToken(repairToken)
     await expect(
       inviteToRecordSpace('nobody@example.test', 'member', authSpaceA, invitationClient),
@@ -509,7 +510,7 @@ realPostgres('RLS proof against real Postgres', () => {
     const email = 'resend@example.test'
     const before = invitationEmails.length
     const invitation = await invitationAuth.api.createInvitation({
-      headers: bearerHeaders(tokenA),
+      headers: recordRequestHeaders({ bearerToken: tokenA }),
       body: { email, role: 'admin', organizationId: authSpaceA },
     })
     const firstTtl = Number(
@@ -522,7 +523,7 @@ realPostgres('RLS proof against real Postgres', () => {
     expect(firstTtl).toBeGreaterThan(604_790)
     expect(firstTtl).toBeLessThanOrEqual(604_800)
     await invitationAuth.api.createInvitation({
-      headers: bearerHeaders(tokenA),
+      headers: recordRequestHeaders({ bearerToken: tokenA }),
       body: { email, role: 'admin', organizationId: authSpaceA, resend: true },
     })
     expect(invitationEmails.slice(before)).toEqual([
