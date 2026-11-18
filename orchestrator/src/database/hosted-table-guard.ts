@@ -63,7 +63,7 @@ export const HOSTED_LOCAL_SQL_ALLOWED_FILES = [
   {
     pattern: /^orchestrator\/src\/database\/hosted-row-release\.ts$/,
     reason: 'Verifies and releases local copies on the migration-step handle',
-    expectedSites: 14,
+    expectedSites: 15,
   },
   {
     pattern: /^orchestrator\/src\/record\/(?:record-board-claims|record-projects|record-sync)\.ts$/,

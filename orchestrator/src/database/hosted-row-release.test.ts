@@ -11,6 +11,7 @@ import {
   hostedRowReleaseMissingDetail,
   releaseHostedRowsAfterUpdate,
 } from './hosted-row-release.ts'
+import { HOSTED_TABLES_WITHOUT_LOCAL_ACCESS } from './hosted-table-guard.ts'
 import { migratedTestDatabase } from './test-database.fixture.ts'
 
 function rowIds(
@@ -29,6 +30,10 @@ function rowIds(
 
 test('hosted row release does nothing when every local set is empty', () => {
   expect(decideHostedRowRelease(rowIds({}), rowIds({}))).toEqual({ kind: 'nothing' })
+})
+
+test('hosted row release table set matches the guarded hosted table set', () => {
+  expect(new Set(HOSTED_ROW_TABLES)).toEqual(new Set(HOSTED_TABLES_WITHOUT_LOCAL_ACCESS))
 })
 
 test('hosted row release returns every local id when all are present', () => {
@@ -164,6 +169,27 @@ function seedReleaseRows(database: Database, bound = true): HostedRowIds {
   return ids
 }
 
+function seedHandoffCursor(database: Database, predecessorRecordId: string): string {
+  const successorRecordId = newRecordId()
+  database.exec('PRAGMA foreign_keys=OFF')
+  database
+    .query(
+      `INSERT INTO workflow_cursor
+       (record_id,number,project,project_record_id,workflow_slug,mode_slug,workflow_key,instance_id,
+        workflow_version_record_id,catalogue_version_record_id,args,ordinal,step_slug,state,closed,
+        total_steps,created_at,updated_at,enforcement,task_flow_record_id,opened_machine_id,
+        last_advanced_machine_id,revision,handed_off_from_record_id)
+       SELECT ?,2,project,project_record_id,workflow_slug,mode_slug,workflow_key,instance_id || '-handoff',
+        workflow_version_record_id,catalogue_version_record_id,args,ordinal,step_slug,state,closed,
+        total_steps,created_at,updated_at,enforcement,task_flow_record_id,opened_machine_id,
+        last_advanced_machine_id,revision,record_id
+       FROM workflow_cursor WHERE record_id=?`,
+    )
+    .run(successorRecordId, predecessorRecordId)
+  database.exec('PRAGMA foreign_keys=ON')
+  return successorRecordId
+}
+
 function adapterDependencies(
   database: Database,
   presence: NonNullable<Parameters<typeof releaseHostedRowsAfterUpdate>[1]>['presence'],
@@ -203,6 +229,22 @@ test('hosted row release deletes every verified table and a second run makes no 
   ])
   expect([...expected.task_flow]).toHaveLength(1)
   expect([...expected.workflow_cursor]).toHaveLength(1)
+  database.close()
+})
+
+test('hosted row release deletes a verified handoff-linked cursor pair', async () => {
+  const database = migratedTestDatabase()
+  const ids = seedReleaseRows(database)
+  const predecessorRecordId = [...ids.workflow_cursor][0]!
+  const successorRecordId = seedHandoffCursor(database, predecessorRecordId)
+  await releaseHostedRowsAfterUpdate(
+    { log: () => {} },
+    adapterDependencies(database, async (input) => {
+      expect(new Set(input.stageIds)).toEqual(new Set([predecessorRecordId, successorRecordId]))
+      return input
+    }),
+  )
+  expect(database.query('SELECT record_id FROM workflow_cursor').all()).toEqual([])
   database.close()
 })
 

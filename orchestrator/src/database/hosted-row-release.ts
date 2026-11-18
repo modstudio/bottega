@@ -15,6 +15,7 @@ import { withSynchronousDatabaseForMigrationStep, writeTransaction } from './db.
 
 export const HOSTED_ROW_RELEASE_SHOWN_IDS = 5
 
+// Children precede parents by foreign key because deletion runs in this order.
 export const HOSTED_ROW_TABLES = [
   'workflow_obligation',
   'workflow_step_text',
@@ -173,6 +174,9 @@ function deleteHostedRows(database: Database, ids: HostedRowIds): void {
     const copies = database.query('DELETE FROM workflow_text_copy WHERE record_id=?')
     const audits = database.query('DELETE FROM question_mutation_audit WHERE record_id=?')
     const questions = database.query('DELETE FROM question WHERE record_id=?')
+    const clearCursorHandoffs = database.query(
+      'UPDATE workflow_cursor SET handed_off_from_record_id=NULL WHERE record_id=?',
+    )
     const cursors = database.query('DELETE FROM workflow_cursor WHERE record_id=?')
     const flows = database.query('DELETE FROM task_flow WHERE record_id=?')
     for (const id of ids.workflow_obligation) obligations.run(id)
@@ -180,6 +184,7 @@ function deleteHostedRows(database: Database, ids: HostedRowIds): void {
     for (const id of ids.workflow_text_copy) copies.run(id)
     for (const id of ids.question_mutation_audit) audits.run(id)
     for (const id of ids.question) questions.run(id)
+    for (const id of ids.workflow_cursor) clearCursorHandoffs.run(id)
     for (const id of ids.workflow_cursor) cursors.run(id)
     for (const id of ids.task_flow) flows.run(id)
   }, database)
@@ -195,8 +200,7 @@ export async function releaseHostedRowsAfterUpdate(
     readRecordInstallBinding(database).bound ? collectHostedRowIds(database) : null,
   )
   if (!local) return
-  const empty = decideHostedRowRelease(local, emptyHostedRowIds())
-  if (empty.kind === 'nothing') return
+  if (emptyIds(local)) return
 
   let present: HostedRowIds
   try {
@@ -208,15 +212,15 @@ export async function releaseHostedRowsAfterUpdate(
     )
   }
   const decision = decideHostedRowRelease(local, present)
-  if (decision.kind === 'nothing') return
   if (decision.kind === 'refuse')
     throw releaseRefusal(
       `local workflow history is not all on the record; nothing was released: ${hostedRowReleaseMissingDetail(decision.missing)}`,
     )
 
-  withDatabase((database) => deleteHostedRows(database, decision.ids))
-  const rowCount = HOSTED_ROW_TABLES.reduce((total, table) => total + decision.ids[table].size, 0)
-  const tableCount = HOSTED_ROW_TABLES.filter((table) => decision.ids[table].size > 0).length
+  const released = decision as Extract<HostedRowReleaseDecision, { kind: 'release' }>
+  withDatabase((database) => deleteHostedRows(database, released.ids))
+  const rowCount = HOSTED_ROW_TABLES.reduce((total, table) => total + released.ids[table].size, 0)
+  const tableCount = HOSTED_ROW_TABLES.filter((table) => released.ids[table].size > 0).length
   presentation.log(
     `released local workflow history now on the record: ${rowCount} rows across ${tableCount} tables`,
   )
