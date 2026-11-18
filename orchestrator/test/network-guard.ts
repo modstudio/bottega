@@ -39,7 +39,10 @@ function copyFetchProperties(target: typeof fetch, source: typeof fetch): void {
   }
 }
 
-/** Replaces global fetch with a guard over the supplied fetch implementation. */
+/**
+ * Replaces global fetch with a guard over the supplied fetch implementation.
+ * The guard judges only the initial request URL; redirects followed by fetch are not re-checked.
+ */
 export function installTestNetworkGuard(
   innerFetch: typeof fetch = globalThis.fetch,
   environment: NetworkGuardEnvironment = process.env,

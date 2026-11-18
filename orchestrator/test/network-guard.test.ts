@@ -80,7 +80,7 @@ describe('installed test network guard', () => {
   let originalRecordApiUrl: string | undefined
   let originalContainer: string | undefined
   let innerCalls = 0
-  const guardedUrl = 'https://api.example.test/public/v1/docs'
+  const guardedUrl = 'https://api.example.test/v1/snapshots'
 
   beforeEach(() => {
     originalFetch = globalThis.fetch
@@ -108,17 +108,22 @@ describe('installed test network guard', () => {
   })
 
   test('refuses the direct record request client before fetch', async () => {
-    await expect(recordApiClientOver(recordApiRequest).listPublicDocs()).rejects.toThrow(
+    await expect(recordApiClientOver(recordApiRequest).listSnapshots()).rejects.toThrow(
       testNetworkRefusal(guardedUrl),
     )
     expect(innerCalls).toBe(0)
   })
 
   test('refuses a record request wrapper before fetch', async () => {
-    const wrapper = <T>(path: string, init?: RequestInit) => recordApiRequest<T>(path, init)
-    await expect(recordApiClientOver(wrapper).listPublicDocs()).rejects.toThrow(
+    let wrapperCalls = 0
+    const wrapper = <T>(path: string, init?: RequestInit) => {
+      wrapperCalls += 1
+      return recordApiRequest<T>(path, init)
+    }
+    await expect(recordApiClientOver(wrapper).listSnapshots()).rejects.toThrow(
       testNetworkRefusal(guardedUrl),
     )
+    expect(wrapperCalls).toBeGreaterThan(0)
     expect(innerCalls).toBe(0)
   })
 
