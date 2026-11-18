@@ -1,5 +1,5 @@
 // concern: workflow cursor listing
-/** Lists open cursors with their next step and unresolved floor obligations. */
+/** Lists cursors with their next step and unresolved floor obligations. */
 
 import type { Database } from 'bun:sqlite'
 import { db } from '../database/db.ts'
@@ -62,24 +62,27 @@ export async function listWorkflowCursors(
       const handedOffFrom = row.handed_off_from_record_id
         ? await taskFlowReadStore(d).stageByRecordId(row.handed_off_from_record_id)
         : null
-      const composition = composeWorkflow(
-        row.workflow_slug,
-        row.project,
-        row.mode_slug,
-        JSON.parse(row.args),
-        d,
-        {
-          version: row.workflow_version,
-          versionRecordId: row.workflow_version_record_id,
-          catalogueVersion: row.catalogue_version,
-          catalogueVersionRecordId: row.catalogue_version_record_id,
-        },
-        cursorAutonomy(row),
-      )
-      const open = await openWorkflowObligations(row.record_id, d)
+      const closed = row.state === 'done' || row.state === 'abandoned'
+      const composition = closed
+        ? null
+        : composeWorkflow(
+            row.workflow_slug,
+            row.project,
+            row.mode_slug,
+            JSON.parse(row.args),
+            d,
+            {
+              version: row.workflow_version,
+              versionRecordId: row.workflow_version_record_id,
+              catalogueVersion: row.catalogue_version,
+              catalogueVersionRecordId: row.catalogue_version_record_id,
+            },
+            cursorAutonomy(row),
+          )
+      const open = closed ? [] : await openWorkflowObligations(row.record_id, d)
       const listed = {
         ...row,
-        next_slug: composition.steps[row.ordinal + 1]?.slug ?? 'finished',
+        next_slug: composition?.steps[row.ordinal + 1]?.slug ?? 'finished',
         obligations: open
           .map((item) => `${item.id}(${item.stepSlug}:${item.floorDefinition.kind})`)
           .join(','),

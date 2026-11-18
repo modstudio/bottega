@@ -83,8 +83,15 @@ test('hosted task-flow intents never touch the five local task-flow tables', asy
   const memory = createMemoryRecordApiClient({
     taskFlowComposeEnforcement: 'note-only',
   })
+  const stageListProjects: Array<string | undefined> = []
   const taskFlowClient = {
     ...memory,
+    listTaskFlowStages: async (
+      ...args: Parameters<NonNullable<typeof memory.listTaskFlowStages>>
+    ) => {
+      stageListProjects.push(args[0].projectId)
+      return memory.listTaskFlowStages!(...args)
+    },
     whoami: async () => ({
       user: { id: 'fixture-user' },
       activeSpaceId: destinationSpaceId,
@@ -220,9 +227,15 @@ test('hosted task-flow intents never touch the five local task-flow tables', asy
     await readStore.listStages({ project: 'fixture', states: TASK_FLOW_STAGE_STATES }),
   ).toMatchObject([{ state: 'abandoned', question_number: null }])
   expect(await readStore.listOpenStages({ project: 'fixture' })).toEqual([])
+  stageListProjects.length = 0
   expect(
     (await listWorkflowCursors({ all: true, project: 'fixture' }, database)).map(
       (row) => row.state,
     ),
   ).toEqual(['abandoned'])
+  expect(stageListProjects).toEqual([
+    raw
+      .query<{ record_id: string }, []>("SELECT record_id FROM project WHERE name='fixture'")
+      .get()!.record_id,
+  ])
 })

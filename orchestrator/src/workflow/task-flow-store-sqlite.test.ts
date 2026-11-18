@@ -34,6 +34,14 @@ test('all-state stage reads include closed cursors without widening open reads',
   await composeClosed('fixture', 'DEV-DONE', 'session-done', 'done')
   await composeClosed('fixture', 'DEV-ABANDONED', 'session-abandoned', 'abandoned')
   await composeClosed('other', 'DEV-OTHER', 'session-other', 'done')
+  d.query("UPDATE workflow_cursor SET args=? WHERE workflow_key='DEV-DONE'").run(
+    JSON.stringify({
+      key: 'DEV-DONE',
+      branch: 'DEV-DONE-work',
+      worktree: '/tmp/DEV-DONE',
+      request: 'an argument the recorded workflow version does not declare',
+    }),
+  )
 
   const store = taskFlowReadStore(d)
   expect(
@@ -47,11 +55,19 @@ test('all-state stage reads include closed cursors without widening open reads',
   expect(await store.listOpenStages({ project: 'fixture' })).toEqual([])
 
   const cursorCount = d.query<{ count: number }, []>('SELECT count(*) count FROM workflow_cursor')
+  const listed = await listWorkflowCursors({ all: true, project: 'fixture' }, d)
   expect(
-    (await listWorkflowCursors({ all: true, project: 'fixture' }, d))
-      .map((row) => row.state)
-      .sort(),
-  ).toEqual(['abandoned', 'done'])
+    listed
+      .map((row) => ({
+        state: row.state,
+        next: row.next_slug,
+        obligations: (row as typeof row & { obligations: string }).obligations,
+      }))
+      .sort((left, right) => left.state.localeCompare(right.state)),
+  ).toEqual([
+    { state: 'abandoned', next: 'finished', obligations: '' },
+    { state: 'done', next: 'finished', obligations: '' },
+  ])
   expect(
     (await listWorkflowCursors({ all: true, session: 'session-done' }, d)).map(
       (row) => row.workflow_key,
