@@ -424,13 +424,25 @@ describe('epic scoreboard', () => {
       { key: 'DEV-501', title: 'child one' },
       { key: 'DEV-502', title: 'child two' },
     ]
+    const rows = children.map((child) => ({
+      ...child,
+      record_id: child.key,
+      project: PLATFORM_SLUG,
+      parent_key: 'DEV-500',
+      source: 'local',
+      status: null,
+      status_category: null,
+      last_seen: null,
+      body: null,
+      opened_at: null,
+    }))
     const reads: { project: string; parent: string }[] = []
     expect(
       await epicChildren(PLATFORM_SLUG, 'DEV-500', (filters) => {
         reads.push(filters)
-        return children.map((child) => ({ ...child, record_id: child.key, project: PLATFORM_SLUG }))
+        return rows
       }),
-    ).toEqual(children.map((child) => ({ ...child, record_id: child.key, project: PLATFORM_SLUG })))
+    ).toEqual(rows)
     expect(reads).toEqual([{ project: PLATFORM_SLUG, parent: 'DEV-500' }])
   })
 })

@@ -13,3 +13,9 @@ export async function cliTaskReadAdapter(): Promise<TaskReadPort> {
     document: getTaskDocument,
   }
 }
+
+/** Install the lazy CLI-owned adapter into the orchestrator process. */
+export async function installCliTaskReader(): Promise<void> {
+  const { installTaskReader } = await import('../orchestrator/src/workflow/task-read-port.ts')
+  installTaskReader(await cliTaskReadAdapter())
+}

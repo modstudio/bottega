@@ -108,7 +108,9 @@ export const productionWorkflowTextDocumentPorts: WorkflowTextDocumentPorts = {
         { budget: 'self-cli', env: { ...process.env } },
       )
       if (child.exitCode !== 0)
-        throw new Error(child.stderr.trim() || `exit status ${child.exitCode}`)
+        throw new Error(
+          `task document write failed with exit ${child.exitCode}; retry with ${PLATFORM_SLUG} task doc new`,
+        )
       return child.stdout.trim()
     } finally {
       rmSync(directory, { recursive: true, force: true })

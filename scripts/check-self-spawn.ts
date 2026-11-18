@@ -13,7 +13,7 @@ const resolver = join(root, 'shared', 'self-spawn.ts')
 
 export type TaskVerbSpawn = { line: number; verb: string; exemptFreshRead: boolean }
 
-export const TASK_WRITE_BASELINE = {
+const TASK_WRITE_BASELINE = {
   'orchestrator/src/issue/issue-dispatch.ts': {
     count: 4,
     reason: 'task write, later slice',

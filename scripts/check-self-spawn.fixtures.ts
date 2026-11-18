@@ -31,7 +31,7 @@ export const acceptedSelfSpawnFixture = `
 
 export const spawnedTaskReadFixture = `
 import { startBounded } from '../shared/bounded-process.ts'
-startBounded(['bottega', 'task', 'show', 'DEV-1'], {})
+startBounded(['${PLATFORM_SLUG}', 'task', 'show', 'DEV-1'], {})
 `
 
 export const spawnedTaskWriteFixture = `
@@ -40,6 +40,8 @@ hub(['task', 'set', 'DEV-1', '--status', 'active'])
 
 export const freshTaskReadFixture = `
 function readFreshHubTaskThroughCli() {
-  return startBoundedSync(['bottega', 'task', 'show', 'DEV-1', '--fresh'], {})
+  return startBoundedSync(['${PLATFORM_SLUG}', 'task', 'show', 'DEV-1', '--fresh'], {})
 }
 `
+import { PLATFORM_SLUG } from '../shared/brand.ts'
+

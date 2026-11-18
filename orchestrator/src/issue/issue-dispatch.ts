@@ -83,10 +83,7 @@ async function hub(args: string[]): Promise<string> {
 async function task(
   key: string,
 ): Promise<{ task: FiledIssueTaskRow; comments?: { body?: unknown }[] }> {
-  return taskReader().show(key, { project: PLATFORM_SLUG }) as {
-    task: FiledIssueTaskRow
-    comments?: { body?: unknown }[]
-  }
+  return taskReader().show(key, { project: PLATFORM_SLUG })
 }
 
 /** Explicit retries may reclaim handed-back issues; the queue never does. */
@@ -213,7 +210,7 @@ export async function dispatchFiledIssues(key?: string): Promise<boolean> {
     await claimAndWork(key.toUpperCase(), false)
     return false
   }
-  const rows = taskReader().list({ project: PLATFORM_SLUG }) as FiledIssueTaskRow[]
+  const rows = taskReader().list({ project: PLATFORM_SLUG })
   const candidates = eligibleFiledIssueTasks(rows, liveLease)
   const dispatched = new Set<string>()
   let taken = 0
@@ -278,7 +275,7 @@ export function unscoredFiledIssueLoopRuns(): FiledIssueLoopRun[] {
 export async function filedIssueQueueState(
   project: string | null | undefined = undefined,
 ): Promise<FiledIssueQueueState> {
-  const rows = taskReader().list({ project: PLATFORM_SLUG }) as FiledIssueTaskRow[]
+  const rows = taskReader().list({ project: PLATFORM_SLUG })
   const waiting = rows.flatMap((task) => {
     try {
       return task.status_category === 'review' && parseFiledIssue({ task }).kind === 'defect'

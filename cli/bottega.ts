@@ -1,17 +1,12 @@
 import type { PublicCommandInvocation } from '../shared/commander-public-path.ts'
 import { installationVersionText } from '../shared/install-root.ts'
 import { dispatchBinary } from './dispatch.ts'
-import { cliTaskReadAdapter } from './task-read-adapter.ts'
-
-async function installOrchestratorTaskReader(): Promise<void> {
-  const { installTaskReader } = await import('../orchestrator/src/workflow/task-read-port.ts')
-  installTaskReader(await cliTaskReadAdapter())
-}
+import { installCliTaskReader } from './task-read-adapter.ts'
 
 // Each entry loads its owner only when called, so a call to one program never pays for another.
 const entries = {
   orch: async (argv: string[], invocation?: PublicCommandInvocation) => {
-    await installOrchestratorTaskReader()
+    await installCliTaskReader()
     return (await import('../orchestrator/src/cli/orch.ts')).main(argv, invocation)
   },
   hub: async (argv: string[], invocation?: PublicCommandInvocation) =>
@@ -23,7 +18,7 @@ const entries = {
   orchStorage: async () => (await import('../orchestrator/src/cli/orch.ts')).tableStorageEntries(),
   hubStorage: async () => (await import('../hub/src/cli.ts')).tableStorageEntries(),
   runExec: async (argv: string[]) => {
-    await installOrchestratorTaskReader()
+    await installCliTaskReader()
     return (await import('../orchestrator/src/run/exec.ts')).main(argv)
   },
   askProxy: async (argv: string[]) =>
@@ -35,7 +30,7 @@ const entries = {
   schemaCheck: async () =>
     (await import('../orchestrator/src/check/check-strict-schema.ts')).checkStrictSchemaMain(),
   keylessCursorIdleAdmission: async (action: 'task new') => {
-    await installOrchestratorTaskReader()
+    await installCliTaskReader()
     return (await import('../orchestrator/src/cli/orch.ts')).keylessCursorIdleAdmission(action)
   },
 }
