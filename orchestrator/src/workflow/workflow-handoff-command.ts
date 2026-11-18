@@ -1,9 +1,11 @@
 // concern: workflow handoff CLI adapter
 
 import { resolve } from 'node:path'
-import { flagValue } from '../cli/args.ts'
+import { flagValue, flagValues } from '../cli/args.ts'
 import { db } from '../database/db.ts'
+import { resolveGateIdentifier } from '../gate/gate-identifier.ts'
 import { projectAt } from '../project/projects.ts'
+import { resolveRunIdentifier } from '../run/run-identifier.ts'
 import { workflowArgs } from './workflow-command-arguments.ts'
 import type { CommitCountPort } from './workflow-compose-branch.ts'
 import { resolveWorkflowLiveAutonomy } from './workflow-cursor-live-autonomy.ts'
@@ -13,6 +15,8 @@ import {
   selectWorkflowCursorByHandle,
 } from './workflow-cursor-selection.ts'
 import { handoffTargetArguments, handoffWorkflow } from './workflow-handoff.ts'
+import { resolveOfferedArtifacts } from './workflow-offered-artifacts.ts'
+import { productionWorkflowFloorPorts } from './workflow-production-floor-ports.ts'
 import type { HubTaskReader } from './workflow-task-reference.ts'
 
 export async function handoffCommand(
@@ -50,6 +54,19 @@ export async function handoffCommand(
     context,
     live,
     commitCount: options.commitCount,
+    evidence: {
+      gate:
+        flagValue(argv, 'gate') === undefined
+          ? undefined
+          : resolveGateIdentifier(db(), flagValue(argv, 'gate')!),
+      run:
+        flagValue(argv, 'run') === undefined
+          ? undefined
+          : resolveRunIdentifier(db(), flagValue(argv, 'run')!),
+      artifacts: resolveOfferedArtifacts(db(), flagValues(argv, 'artifact')),
+      task: flagValue(argv, 'task'),
+    },
+    floorPorts: productionWorkflowFloorPorts(),
   })
   print(
     result,

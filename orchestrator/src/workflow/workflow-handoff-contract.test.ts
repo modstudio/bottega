@@ -6,10 +6,11 @@ import {
   RECORD_CONTRACT_USER,
   type RecordContractFixture,
 } from '../../test/fixtures/record-contract.ts'
+import { installRecordApiClient } from '../../test/fixtures/record-api.ts'
 import { rememberProjectSpace } from '../project-space-cache.ts'
 import { taskFlowReadStore } from './task-flow-store.ts'
 import { composeWorkflowWithCursor } from './workflow-cursor.ts'
-import { database } from './workflow-cursor-test.fixture.ts'
+import { attachWorkflowFloorArtifact, database } from './workflow-cursor-test.fixture.ts'
 import { handoffWorkflow } from './workflow-handoff.ts'
 import { promoteWorkflowLocal, setWorkflowLocal } from './workflows.ts'
 
@@ -17,6 +18,8 @@ const contractRoutes = [
   'GET /v1/task-flow',
   'GET /v1/task-flow/stages',
   'GET /v1/task-flow/stages/:id',
+  'GET /v1/task-flow/texts/:id',
+  'GET /v1/questions',
   'GET /v1/whoami',
   'POST /v1/task-flow/adopt',
   'POST /v1/task-flow/handoff',
@@ -60,6 +63,7 @@ function installWorkflow(d: ReturnType<typeof database>, slug: string, keyRequir
 
 test('a keyless explore handoff adopts before the hosted task claim is taken', async () => {
   const d = database()
+  installRecordApiClient(fixture.client)
   d.query("UPDATE project SET record_id=? WHERE name='fixture'").run(PROJECT)
   installWorkflow(d, 'contract-explore', false)
   installWorkflow(d, 'contract-target', true)
@@ -162,6 +166,11 @@ test('a keyless explore handoff adopts before the hosted task claim is taken', a
     '2026-11-18T00:00:00.000Z',
     resolvedRecordOrigin(),
   )
+  const artifact = await attachWorkflowFloorArtifact(
+    { id: 100 },
+    { ...context, taskFlowClient: fixture.client },
+    d,
+  )
   const result = await handoffWorkflow({
     row,
     workflow: 'contract-target',
@@ -171,6 +180,7 @@ test('a keyless explore handoff adopts before the hosted task claim is taken', a
     context: { ...context, taskRecordId: TASK, taskFlowClient: fixture.client },
     live: {},
     database: d,
+    evidence: { artifacts: [artifact] },
     commitCount: () => 0,
     taskClaimPorts: {
       take: ({ project: projectName, key, session }) =>

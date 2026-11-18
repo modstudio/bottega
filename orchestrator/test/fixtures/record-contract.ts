@@ -5,10 +5,12 @@ import { recordApiError } from '../../src/record/record-api-client-error.ts'
 import type { RecordClientRequest } from '../../src/record/record-api-client-paths.ts'
 import type { RecordIdentity } from '../../src/record/record-auth.ts'
 import { takeHostedBoardClaim } from '../../src/record/record-board-claims.ts'
+import { readRecordQuestions } from '../../src/record/record-question-read.ts'
 import {
   listRecordTaskFlowStages,
   readRecordTaskFlow,
   readRecordTaskFlowStage,
+  readRecordTaskFlowText,
 } from '../../src/record/record-task-flow.ts'
 import { writeRecordTaskFlow } from '../../src/record/record-task-flow-write.ts'
 import { createHostedRecordFixture, pgliteSql } from './hosted-record.ts'
@@ -79,8 +81,10 @@ export async function createRecordContractFixture(): Promise<RecordContractFixtu
     { ...idleSubjectDeps(), ...idleRecordApiDeps() },
     {
       recordUrl: RECORD_CONTRACT_URL,
+      readQuestions: readRecordQuestions,
       readTaskFlow: readRecordTaskFlow,
       readTaskFlowStage: readRecordTaskFlowStage,
+      readTaskFlowText: readRecordTaskFlowText,
       listTaskFlowStages: listRecordTaskFlowStages,
       writeTaskFlow: writeRecordTaskFlow,
       takeBoardClaim: takeHostedBoardClaim,
@@ -96,6 +100,7 @@ export async function createRecordContractFixture(): Promise<RecordContractFixtu
     const pathname = path
       .split('?', 1)[0]!
       .replace(/^\/v1\/task-flow\/stages\/[^/]+$/, '/v1/task-flow/stages/:id')
+      .replace(/^\/v1\/task-flow\/texts\/[^/]+$/, '/v1/task-flow/texts/:id')
     requestedRoutes.add(`${requestInit.method?.toUpperCase() ?? 'GET'} ${pathname}`)
     const headers = recordRequestHeaders({
       destinationSpaceId: requestInit.destinationSpaceId,
