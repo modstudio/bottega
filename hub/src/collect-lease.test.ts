@@ -607,7 +607,12 @@ describe('collect lease', () => {
       const tasks = (await collectIncremental()).find((leg) => leg.source === 'tasks')
       expect(tasks).toMatchObject({
         ok: true,
-        trackerCounts: { read: 0, skippedFresh: 0, leftToWatcher: trackerProjects().length },
+        trackerCounts: {
+          read: 0,
+          skippedFresh: 0,
+          leftToWatcher: trackerProjects().length,
+          unreportedParents: [],
+        },
       })
     } finally {
       await stop()

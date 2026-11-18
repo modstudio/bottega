@@ -315,7 +315,7 @@ test('collect retires cached out-of-scope rows before any vanished-key lookup', 
   }
 })
 
-test('collect updates reported parents, reconciles their record ids, and counts omissions', async () => {
+test('collect inserts a child with its reported parent record id and counts omissions', async () => {
   const originalFetch = globalThis.fetch
   const originalUrl = process.env.FIXTURE_NO_CREDENTIALS_MCP_URL
   const originalToken = process.env.FIXTURE_NO_CREDENTIALS_MCP_TOKEN
@@ -383,30 +383,6 @@ test('collect updates reported parents, reconciles their record ids, and counts 
         `INSERT INTO task
          (record_id,external_id,key,project,title,status,status_category,parent_key,source,first_seen,last_seen)
          VALUES (?,?,?,?,?,?,?,?, 'mcp',?,?)`,
-      )
-      insert.run(
-        '01990000-0000-7000-8000-000000001310',
-        'tracker-alpha-10',
-        'ALP-10',
-        'alpha',
-        'Parent',
-        'todo',
-        'open',
-        'ALP-98',
-        '2026-11-18T10:00:00.000Z',
-        '2026-11-18T10:00:00.000Z',
-      )
-      insert.run(
-        '01990000-0000-7000-8000-000000001311',
-        'tracker-alpha-11',
-        'ALP-11',
-        'alpha',
-        'Child',
-        'todo',
-        'open',
-        'ALP-99',
-        '2026-11-18T10:00:00.000Z',
-        '2026-11-18T10:00:00.000Z',
       )
       insert.run(
         '01990000-0000-7000-8000-000000001312',

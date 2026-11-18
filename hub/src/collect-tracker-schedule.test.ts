@@ -106,7 +106,12 @@ test('tasks output names only the reasons that skipped trackers', () => {
       source: 'tasks',
       ok: true,
       durationMs: 1,
-      trackerCounts: { read: 0, skippedFresh: 0, leftToWatcher: 4 },
+      trackerCounts: {
+        read: 0,
+        skippedFresh: 0,
+        leftToWatcher: 4,
+        unreportedParents: [],
+      },
     }),
   ).toBe(
     `tasks             ok (0 trackers read, 4 left to the watcher; force with ${PLATFORM_SLUG} record pull --only tasks)`,
@@ -116,9 +121,19 @@ test('tasks output names only the reasons that skipped trackers', () => {
       source: 'tasks',
       ok: true,
       durationMs: 1,
-      trackerCounts: { read: 2, skippedFresh: 1, leftToWatcher: 0 },
+      trackerCounts: {
+        read: 2,
+        skippedFresh: 1,
+        leftToWatcher: 0,
+        unreportedParents: [
+          { project: 'alpha', count: 3 },
+          { project: 'beta', count: 0 },
+        ],
+      },
     }),
-  ).toBe('tasks             ok (2 trackers read, 1 skipped fresh)')
+  ).toBe(
+    'tasks             ok (2 trackers read, 1 skipped fresh, alpha 3 parents unreported, beta 0 parents unreported)',
+  )
 })
 
 test('an all-zero hosted changes report formats as ok', () => {

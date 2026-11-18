@@ -793,6 +793,44 @@ describe('tracker source construction', () => {
 
       expect(fetched.tasks.map((task) => task.parentKey)).toEqual(['PAR-9', null, undefined])
     })
+
+    test(`${protocol} lookup distinguishes a parent, no parent, and an unreported parent`, async () => {
+      const rows =
+        protocol === 'workspace-mcp'
+          ? [
+              { short_id: 'PAR-1', status: 'todo', parent: { short_id: 'par-9' } },
+              { short_id: 'PAR-2', status: 'todo', parent: null },
+              { short_id: 'PAR-3', status: 'todo' },
+            ]
+          : protocol === 'cursor-mcp'
+            ? [
+                { humanKey: 'PAR-1', status: 'todo', parent: { humanKey: 'par-9' } },
+                { humanKey: 'PAR-2', status: 'todo', parent: null },
+                { humanKey: 'PAR-3', status: 'todo' },
+              ]
+            : [
+                { key: 'PAR-1', status: 'todo', parent: { key: 'par-9' } },
+                { key: 'PAR-2', status: 'todo', parent: null },
+                { key: 'PAR-3', status: 'todo' },
+              ]
+      const source = trackerSourceFor(project('parents', protocol))!
+      const results = []
+      for (const row of rows) {
+        const reply =
+          protocol === 'cursor-mcp'
+            ? { success: true, data: row }
+            : protocol === 'array-mcp'
+              ? [row]
+              : row
+        results.push(
+          await source.lookup!({
+            listTools: scopeTools,
+            callTool: async () => reply,
+          }, 'humanKey' in row ? row.humanKey : 'short_id' in row ? row.short_id : row.key),
+        )
+      }
+      expect(results.map((task) => task?.parentKey)).toEqual(['PAR-9', null, undefined])
+    })
   }
 
   for (const protocol of ['workspace-mcp', 'cursor-mcp'] as const) {

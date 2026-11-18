@@ -16,7 +16,6 @@ import { queueHostedChange } from '../outbox.ts'
 import { projectRecordIdFor } from '../project-record-id.ts'
 import { projects } from '../projects.ts'
 import { HOSTED_STATUS_EVENT_TABLE, HOSTED_TASK_TABLE } from '../push-contract.ts'
-import { reconcileParentRecordIds } from '../task-cache.ts'
 import { collectorTaskShouldQueue } from '../task-hosted-row.ts'
 import { claimTaskIdentity } from '../task-identity.ts'
 import {
@@ -381,35 +380,18 @@ function updateTrackerTask(
   at: string,
   times: TrackerObservationTimes,
 ) {
-  if (t.parentKey !== undefined) {
-    conn
-      .query(
-        `UPDATE task SET external_id=COALESCE(?,external_id), key=?, title=?, status=?,
-           status_category=?, opened_at=?, updated_at=?, assignee=?, closed_at=?,
-           source='mcp', last_seen=?, retired_reason=NULL, parent_key=?, parent_record_id=NULL
-         WHERE record_id=?`,
-      )
-      .run(
-        t.externalId,
-        effectiveKey,
-        t.title,
-        t.status,
-        t.category,
-        times.openedAt,
-        times.updatedAt,
-        t.assignee,
-        times.closedAt,
-        at,
-        t.parentKey,
-        row.record_id,
-      )
-    return
-  }
+  const parentReported = t.parentKey !== undefined
   conn
     .query(
       `UPDATE task SET external_id=COALESCE(?,external_id), key=?, title=?, status=?,
          status_category=?, opened_at=?, updated_at=?, assignee=?, closed_at=?,
-         source='mcp', last_seen=?, retired_reason=NULL WHERE record_id=?`,
+         source='mcp', last_seen=?, retired_reason=NULL,
+         parent_key=CASE WHEN ? THEN ? ELSE parent_key END,
+         parent_record_id=CASE
+           WHEN NOT ? THEN parent_record_id
+           ELSE (SELECT record_id FROM task parent WHERE parent.project=? AND parent.key=?)
+         END
+       WHERE record_id=?`,
     )
     .run(
       t.externalId,
@@ -422,42 +404,22 @@ function updateTrackerTask(
       t.assignee,
       times.closedAt,
       at,
+      parentReported,
+      t.parentKey ?? null,
+      parentReported,
+      t.project,
+      t.parentKey ?? null,
       row.record_id,
     )
 }
 
 function insertTrackerTask(conn: Database, t: TrackerTask, times: TrackerObservationTimes) {
-  if (t.parentKey !== undefined) {
-    conn
-      .query(
-        `INSERT INTO task (record_id, external_id, key, project, project_record_id, title, status, status_category,
-          opened_at, updated_at, assignee, closed_at, source, first_seen, last_seen, parent_key)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?, 'mcp', ?, ?, ?)`,
-      )
-      .run(
-        newRecordId(),
-        t.externalId,
-        t.key,
-        t.project,
-        projectRecordIdFor(t.project),
-        t.title,
-        t.status,
-        t.category,
-        times.openedAt,
-        times.updatedAt,
-        t.assignee,
-        times.closedAt,
-        times.firstSeen,
-        times.lastSeen,
-        t.parentKey,
-      )
-    return
-  }
   conn
     .query(
       `INSERT INTO task (record_id, external_id, key, project, project_record_id, title, status, status_category,
-        opened_at, updated_at, assignee, closed_at, source, first_seen, last_seen)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?, 'mcp', ?, ?)`,
+        opened_at, updated_at, assignee, closed_at, source, first_seen, last_seen, parent_key,parent_record_id)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?, 'mcp', ?, ?, ?,
+         (SELECT record_id FROM task parent WHERE parent.project=? AND parent.key=?))`,
     )
     .run(
       newRecordId(),
@@ -474,7 +436,20 @@ function insertTrackerTask(conn: Database, t: TrackerTask, times: TrackerObserva
       times.closedAt,
       times.firstSeen,
       times.lastSeen,
+      t.parentKey ?? null,
+      t.project,
+      t.parentKey ?? null,
     )
+}
+
+function resolveChildrenOfTrackerTask(conn: Database, project: string, key: string) {
+  conn
+    .query(
+      `UPDATE task SET parent_record_id=(
+         SELECT parent.record_id FROM task parent WHERE parent.project=? AND parent.key=?
+       ) WHERE project=? AND parent_key=? AND parent_record_id IS NULL`,
+    )
+    .run(project, key, project, key)
 }
 
 function refreshTrackerClaim(conn: Database, t: TrackerTask, at: string) {
@@ -514,6 +489,7 @@ function upsertTrackerTaskOn(conn: Database, t: TrackerTask, at: string) {
   const times = trackerObservationTimes(t, row ?? undefined, at, effectiveKey)
   if (row) updateTrackerTask(conn, t, row, effectiveKey, at, times)
   else insertTrackerTask(conn, t, times)
+  resolveChildrenOfTrackerTask(conn, t.project, effectiveKey)
   refreshTrackerClaim(conn, t, at)
   return { stored: row, times, changed }
 }
@@ -752,7 +728,6 @@ export function dropDeletedTrackerTasks(
           category: 'dropped',
           updatedAt: at,
           assignee: row.assignee,
-          parentKey: row.parent_key,
         },
         at,
       )
@@ -930,7 +905,6 @@ export async function ingestTrackers(
             // retried here: that doubled traffic precisely when a server was down.
             const backfill = await backfillTrackerTasks(s, m, missing, at, prefixes)
             activity ||= backfill.activity
-            writeTransaction(reconcileParentRecordIds)
             recordTrackerReadState(s.project, read.mode, startedAt, fetched.complete)
             return {
               result: {

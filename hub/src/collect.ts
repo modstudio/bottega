@@ -186,7 +186,12 @@ export type CollectLegResult =
       metrics?: CollectLegMetrics
       hostedChanges?: HostedChangeLegReport | HostedChangesReport
       hostedOutbox?: HostedOutboxReport
-      trackerCounts?: { read: number; skippedFresh: number; leftToWatcher: number }
+      trackerCounts?: {
+        read: number
+        skippedFresh: number
+        leftToWatcher: number
+        unreportedParents: { project: string; count: number }[]
+      }
     }
   | { source: string; ok: false; error: string; durationMs: number }
 
@@ -230,6 +235,8 @@ export function formatCollectLeg(result: CollectLegResult): string {
       )
     if (result.trackerCounts.skippedFresh)
       counts.push(`${result.trackerCounts.skippedFresh} skipped fresh`)
+    for (const parentGuard of result.trackerCounts.unreportedParents)
+      counts.push(`${parentGuard.project} ${parentGuard.count} parents unreported`)
     return `${result.source.padEnd(18)}${separator}ok (${counts.join(', ')})`
   }
   return `${result.source.padEnd(18)}ok`
@@ -830,6 +837,12 @@ async function collectSlowSourceLegs(
             read: trackerResults.filter(successfulTrackerRead).length,
             skippedFresh: selection.skippedFresh,
             leftToWatcher: selection.leftToWatcher,
+            unreportedParents: trackerResults
+              .filter(successfulTrackerRead)
+              .map((result) => ({
+                project: result.project,
+                count: result.unreportedParents ?? 0,
+              })),
           }
         },
         (trackerCounts) => ({ ok: true, trackerCounts }),
@@ -962,6 +975,12 @@ export async function collectOnce(
             read: trackerResults.filter(successfulTrackerRead).length,
             skippedFresh: 0,
             leftToWatcher: 0,
+            unreportedParents: trackerResults
+              .filter(successfulTrackerRead)
+              .map((result) => ({
+                project: result.project,
+                count: result.unreportedParents ?? 0,
+              })),
           }
         },
         (trackerCounts) => ({ ok: true, trackerCounts }),
