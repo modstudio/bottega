@@ -16,7 +16,8 @@ export function registerTaskFlowHandoffProof(
 ): void {
   test('hosted handoff closes and opens atomically and refuses a foreign session', async () => {
     const auth = testRecordAuth(input.urls().actor, input.urls().auth)
-    const machineId = newRecordId(),
+    const projectId = newRecordId(),
+      machineId = newRecordId(),
       taskId = newRecordId(),
       flowId = newRecordId()
     const sourceId = newRecordId(),
@@ -24,10 +25,12 @@ export function registerTaskFlowHandoffProof(
       at = new Date().toISOString()
     try {
       input.admin(`
+        INSERT INTO project(id,space_id,name,created_at)
+        VALUES ('${projectId}','${input.spaceId()}','${project}',now());
         INSERT INTO machine(id,user_id,name,registered_at,last_seen)
         VALUES ('${machineId}',(SELECT user_id FROM membership WHERE space_id='${input.spaceId()}' LIMIT 1),'handoff-proof',now(),now());
         INSERT INTO hub_task(id,space_id,project_name,project_id,key,project,title,status,status_category,source,first_seen,last_seen,created_at,updated_at)
-        VALUES ('${taskId}','${input.spaceId()}','${project}','${input.projectId()}','AA-2412','${project}','handoff proof','active','active','local',now(),now(),now(),now());`)
+        VALUES ('${taskId}','${input.spaceId()}','${project}','${projectId}','AA-2412','${project}','handoff proof','active','active','local',now(),now(),now(),now());`)
       input.signIn()
       const client = recordApiClient()
       const destination = { destinationSpaceId: input.spaceId() }
@@ -41,7 +44,7 @@ export function registerTaskFlowHandoffProof(
       const stage = {
         id: sourceId,
         flowRecordId: flowId,
-        projectId: input.projectId(),
+        projectId,
         workflow,
         mode: 'default',
         workflowKey: 'AA-2412',
@@ -69,7 +72,7 @@ export function registerTaskFlowHandoffProof(
           requestId: newRecordId(),
           flowInsert: {
             id: flowId,
-            projectId: input.projectId(),
+            projectId,
             taskId,
             state: 'open',
             openStageRecordId: sourceId,
