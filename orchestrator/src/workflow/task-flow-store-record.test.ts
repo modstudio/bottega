@@ -7,6 +7,8 @@ import {
 import { guardHostedTables } from '../database/hosted-table-guard.ts'
 import { testDatabaseFixture } from '../database/test-database.fixture.ts'
 import { rememberProjectSpace } from '../project-space-cache.ts'
+import { recordApiError } from '../record/record-api-client-error.ts'
+import { recordKeyedNotVisibleRefusal } from '../record/record-keyed-read.ts'
 import type { HostedTaskFlowStageById } from '../record/record-task-flow-contract.ts'
 import { recordTaskFlowReadStore } from './task-flow-store-record.ts'
 import { sqliteTaskFlowReadStore } from './task-flow-store-sqlite.ts'
@@ -708,6 +710,21 @@ test('each hosted task-flow keyed read uses one destination-free request', async
   expect(counts.obligationsById).toBe(1)
   expect(counts.stagesById).toBe(2)
   expect(destinations).toEqual([undefined, undefined, undefined, undefined, undefined])
+})
+
+test('a missing hosted task flow reads as null only for an absent-row refusal', async () => {
+  const d = database()
+  const storeFor = (body: unknown) =>
+    recordTaskFlowReadStore(d, {
+      readTaskFlow: async () => {
+        throw recordApiError(body, 404)
+      },
+    })
+
+  await expect(storeFor(recordKeyedNotVisibleRefusal(5)).flowState(FLOW_ID)).resolves.toBeNull()
+  await expect(
+    storeFor({ error: 'route not found', code: 'route_not_found' }).flowState(FLOW_ID),
+  ).rejects.toThrow('route not found')
 })
 
 describe('hosted task-flow question decorations', () => {

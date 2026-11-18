@@ -12,6 +12,7 @@ import {
   type RecordQuestionClient,
   requireQuestionWriteClient,
 } from '../record/record-api-client-question.ts'
+import { isAbsentRecordKeyedRead } from '../record/record-api-client-response.ts'
 import type {
   QuestionIntent,
   QuestionReadInput,
@@ -175,7 +176,10 @@ export class RecordQuestionStore implements QuestionStore {
   }
 
   private async spaceKeyedRead(input: QuestionReadInput): Promise<QuestionReadResult> {
-    const value = await this.readAt(input)
+    const value = await this.readAt(input).catch((error: unknown) => {
+      if (isAbsentRecordKeyedRead(error)) return { items: [] }
+      throw error
+    })
     for (const row of value.items) {
       const id = questionRowRecordId(row)
       const spaceId = row.space_id

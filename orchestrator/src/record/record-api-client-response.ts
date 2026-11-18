@@ -1,5 +1,7 @@
 // concern: record-api-client-response
 /** Owns generic record API response shape and message parsing. */
+import { RECORD_KEYED_NOT_VISIBLE_CODE } from './record-keyed-read.ts'
+import { RECORD_TASK_FLOW_NOT_FOUND_CODE } from './record-task-flow-contract.ts'
 
 export class RecordApiRequestError extends Error {
   readonly kind: 'unreachable' | 'server' | 'refused' | 'conflict'
@@ -29,6 +31,14 @@ export class RecordApiRequestError extends Error {
     this.reason = reason
     this.condition = condition
   }
+}
+
+export function isAbsentRecordKeyedRead(error: unknown): boolean {
+  return (
+    error instanceof RecordApiRequestError &&
+    error.status === 404 &&
+    (error.code === RECORD_KEYED_NOT_VISIBLE_CODE || error.code === RECORD_TASK_FLOW_NOT_FOUND_CODE)
+  )
 }
 
 export const responseRecord = (body: unknown): Record<string, unknown> =>
