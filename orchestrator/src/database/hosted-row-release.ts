@@ -4,15 +4,15 @@
 import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { refusal } from '../../../shared/refusal.ts'
-import { RefusalError } from '../refusal-error.ts'
 import { readRecordInstallBinding } from '../record/install-binding.ts'
-import { type RecordApiClient, recordApiClient } from '../record/record-api-client.ts'
+import { recordApiClient } from '../record/record-api-client.ts'
 import {
   TASK_FLOW_PRESENCE_BATCH_MAX,
   type TaskFlowPresence,
   type TaskFlowPresenceInput,
 } from '../record/record-task-flow-contract.ts'
-import { withSynchronousDatabaseForMigrationStep } from './db.ts'
+import { RefusalError } from '../refusal-error.ts'
+import { withSynchronousDatabaseForMigrationStep, writeTransaction } from './db.ts'
 
 export const HOSTED_ROW_RELEASE_SHOWN_IDS = 5
 
@@ -26,7 +26,7 @@ export const HOSTED_ROW_TABLES = [
   'task_flow',
 ] as const
 
-export type HostedRowTable = (typeof HOSTED_ROW_TABLES)[number]
+type HostedRowTable = (typeof HOSTED_ROW_TABLES)[number]
 export type HostedRowIds = Record<HostedRowTable, ReadonlySet<string>>
 
 export type HostedRowReleaseDecision =
@@ -161,24 +161,22 @@ function releaseRefusal(condition: string): RefusalError {
 }
 
 function deleteHostedRows(database: Database, ids: HostedRowIds): void {
-  database
-    .transaction(() => {
-      const obligations = database.query('DELETE FROM workflow_obligation WHERE record_id=?')
-      const texts = database.query('DELETE FROM workflow_step_text WHERE record_id=?')
-      const copies = database.query('DELETE FROM workflow_text_copy WHERE record_id=?')
-      const audits = database.query('DELETE FROM question_mutation_audit WHERE record_id=?')
-      const questions = database.query('DELETE FROM question WHERE record_id=?')
-      const cursors = database.query('DELETE FROM workflow_cursor WHERE record_id=?')
-      const flows = database.query('DELETE FROM task_flow WHERE record_id=?')
-      for (const id of ids.workflow_obligation) obligations.run(id)
-      for (const id of ids.workflow_step_text) texts.run(id)
-      for (const id of ids.workflow_text_copy) copies.run(id)
-      for (const id of ids.question_mutation_audit) audits.run(id)
-      for (const id of ids.question) questions.run(id)
-      for (const id of ids.workflow_cursor) cursors.run(id)
-      for (const id of ids.task_flow) flows.run(id)
-    })
-    .immediate()
+  writeTransaction(() => {
+    const obligations = database.query('DELETE FROM workflow_obligation WHERE record_id=?')
+    const texts = database.query('DELETE FROM workflow_step_text WHERE record_id=?')
+    const copies = database.query('DELETE FROM workflow_text_copy WHERE record_id=?')
+    const audits = database.query('DELETE FROM question_mutation_audit WHERE record_id=?')
+    const questions = database.query('DELETE FROM question WHERE record_id=?')
+    const cursors = database.query('DELETE FROM workflow_cursor WHERE record_id=?')
+    const flows = database.query('DELETE FROM task_flow WHERE record_id=?')
+    for (const id of ids.workflow_obligation) obligations.run(id)
+    for (const id of ids.workflow_step_text) texts.run(id)
+    for (const id of ids.workflow_text_copy) copies.run(id)
+    for (const id of ids.question_mutation_audit) audits.run(id)
+    for (const id of ids.question) questions.run(id)
+    for (const id of ids.workflow_cursor) cursors.run(id)
+    for (const id of ids.task_flow) flows.run(id)
+  }, database)
 }
 
 /** Release local hosted rows only after the record confirms every collected id is present. */

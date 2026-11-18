@@ -1,13 +1,14 @@
 import type { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { RefusalError } from '../refusal-error.ts'
 import {
   decideHostedRowRelease,
-  type HostedRowIds,
-  hostedRowReleaseMissingDetail,
   HOSTED_ROW_RELEASE_SHOWN_IDS,
   HOSTED_ROW_TABLES,
+  type HostedRowIds,
+  hostedRowReleaseMissingDetail,
   releaseHostedRowsAfterUpdate,
 } from './hosted-row-release.ts'
 import { migratedTestDatabase } from './test-database.fixture.ts'
@@ -210,7 +211,7 @@ test('hosted row release refuses one missing id without deleting anything', asyn
   )
   await expect(run).rejects.toBeInstanceOf(RefusalError)
   await expect(run).rejects.toThrow(`question: ${missingQuestion}`)
-  await expect(run).rejects.toThrow('cleared by: bottega record sign-in')
+  await expect(run).rejects.toThrow(`cleared by: ${PLATFORM_SLUG} record sign-in`)
   expect(tableCounts(database)).toEqual(before)
   database.close()
 })
@@ -232,20 +233,23 @@ test('hosted row release does nothing for an unbound store', async () => {
   database.close()
 })
 
-test('hosted row release turns a presence failure into a refusal without deleting', async () => {
+test('hosted row release succeeds after sign-in makes presence readable', async () => {
   const database = migratedTestDatabase()
   seedReleaseRows(database)
   const before = tableCounts(database)
-  const run = releaseHostedRowsAfterUpdate(
-    { log: () => {} },
-    adapterDependencies(database, async () => {
-      throw new Error('record unavailable')
-    }),
-  )
-  await expect(run).rejects.toThrow(
+  let signedIn = false
+  const dependencies = adapterDependencies(database, async (input) => {
+    if (!signedIn) throw new Error('record unavailable')
+    return input
+  })
+  await expect(releaseHostedRowsAfterUpdate({ log: () => {} }, dependencies)).rejects.toThrow(
     'local workflow history presence could not be verified; nothing was released: record unavailable',
   )
-  await expect(run).rejects.toThrow('cleared by: bottega record sign-in')
   expect(tableCounts(database)).toEqual(before)
+  signedIn = true
+  await releaseHostedRowsAfterUpdate({ log: () => {} }, dependencies)
+  expect(tableCounts(database)).toEqual(
+    Object.fromEntries(HOSTED_ROW_TABLES.map((table) => [table, 0])),
+  )
   database.close()
 })
