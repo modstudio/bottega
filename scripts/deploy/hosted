@@ -85,10 +85,20 @@ case "$APP" in
   api)
     fly_app="bottega-api"
     required_secrets=("${HOSTED_API_REQUIRED_SECRETS[@]}")
+    deploy_config="$PROJECT_ROOT/orchestrator/deploy/api/fly.toml"
+    deploy_args=(--build-arg GIT_SHA="$commit")
     ;;
   hub)
     fly_app="bottega-hub"
     required_secrets=("${HOSTED_HUB_REQUIRED_SECRETS[@]}")
+    deploy_config="$PROJECT_ROOT/hub/deploy/fly.toml"
+    deploy_args=(
+      --build-arg VITE_HUB_MODE=hosted
+      --build-arg VITE_RECORD_API_URL=https://api.bottega.run
+      --build-arg VITE_PUBLIC_SITE_ORIGIN=https://bottega.run
+      --build-arg VITE_APP_ORIGIN=https://app.bottega.run
+      --build-arg GIT_SHA="$commit"
+    )
     ;;
 esac
 
@@ -131,14 +141,18 @@ if ! migrate_output="$(BOTTEGA_RECORD_MIGRATE_URL="$record_migrate_url" "$PROJEC
 fi
 printf '%s\n' "$migrate_output"
 
-if [[ "$APP" == "api" ]]; then
-  exec env -u BOTTEGA_RECORD_MIGRATE_URL fly deploy --config "$PROJECT_ROOT/orchestrator/deploy/api/fly.toml" \
-    --build-arg GIT_SHA="$commit"
+deploy_status=0
+deploy_started_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+env -u BOTTEGA_RECORD_MIGRATE_URL fly deploy --config "$deploy_config" "${deploy_args[@]}" || deploy_status=$?
+
+if release_line="$(
+  env -u BOTTEGA_RECORD_MIGRATE_URL fly releases -a "$fly_app" --json |
+    DEPLOY_STARTED_AT="$deploy_started_at" FLY_APP="$fly_app" bun --no-env-file -e \
+      'const rows = JSON.parse(await Bun.stdin.text()); const row = rows[0]; const startedAt = Date.parse(process.env.DEPLOY_STARTED_AT); const createdAt = row ? Date.parse(row.CreatedAt) : Number.NaN; if (row && Number.isFinite(startedAt) && Number.isFinite(createdAt) && Math.floor(createdAt / 1000) >= Math.floor(startedAt / 1000)) console.log(`fly release v${row.Version} ${row.Status} created ${row.CreatedAt}`); else console.log(`fly release: no release was created by this deploy for ${process.env.FLY_APP}`)'
+)"; then
+  printf '%s\n' "$release_line"
+else
+  echo "fly release could not be read for $fly_app; inspect it with fly releases -a $fly_app"
 fi
 
-exec env -u BOTTEGA_RECORD_MIGRATE_URL fly deploy --config "$PROJECT_ROOT/hub/deploy/fly.toml" \
-  --build-arg VITE_HUB_MODE=hosted \
-  --build-arg VITE_RECORD_API_URL=https://api.bottega.run \
-  --build-arg VITE_PUBLIC_SITE_ORIGIN=https://bottega.run \
-  --build-arg VITE_APP_ORIGIN=https://app.bottega.run \
-  --build-arg GIT_SHA="$commit"
+exit "$deploy_status"
