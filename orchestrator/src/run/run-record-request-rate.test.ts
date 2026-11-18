@@ -18,6 +18,12 @@ test('the first window stays within the long-lived request allowance', () => {
       windowIndex: 1,
     }),
   ).toBe(false)
+  expect(
+    exceedsLongLivedRecordRequestRate({
+      count: LONG_LIVED_RECORD_REQUEST_ALLOWANCE + 1,
+      windowIndex: 1,
+    }),
+  ).toBe(true)
 })
 
 test('later windows warn only above the bound', () => {

@@ -125,7 +125,7 @@ export async function main(argv: string[]): Promise<number> {
       requestCountAtWindowStart = currentCount
       requestWindowIndex += 1
     }
-    requestWindowTimer = setInterval(() => {
+    const closeRequestWindowSafely = (): void => {
       try {
         closeRequestWindow()
       } catch (error) {
@@ -133,9 +133,10 @@ export async function main(argv: string[]): Promise<number> {
           `orch: run ${id} could not record its request-rate warning: ${startupFailureDiagnostic(error)}`,
         )
       }
-    }, LONG_LIVED_RECORD_REQUEST_WINDOW_MS)
+    }
+    requestWindowTimer = setInterval(closeRequestWindowSafely, LONG_LIVED_RECORD_REQUEST_WINDOW_MS)
     requestWindowTimer.unref()
-    finishRequestWindow = closeRequestWindow
+    finishRequestWindow = closeRequestWindowSafely
     if (!id || !promptPath || !jobName)
       throw new Error('__exec <run-id> <prompt-file> <job> [spec]')
     const { readFileSync } = await import('node:fs')
@@ -184,14 +185,8 @@ export async function main(argv: string[]): Promise<number> {
     )
     return 1
   } finally {
-    try {
-      if (requestWindowTimer) clearInterval(requestWindowTimer)
-      finishRequestWindow?.()
-    } catch (error) {
-      console.error(
-        `orch: run ${id} could not record its request-rate warning: ${startupFailureDiagnostic(error)}`,
-      )
-    }
+    if (requestWindowTimer) clearInterval(requestWindowTimer)
+    finishRequestWindow?.()
   }
 }
 
