@@ -4,6 +4,7 @@
  * the seq row lock after the task_flow row lock, inside insertStage.
  */
 import type { SQL } from 'bun'
+import { bindJsonb } from '../../../shared/record/jsonb-sql.ts'
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
 import { DocRevisionConflictError } from '../doc/doc-revision-conflict.ts'
 import { isUniqueViolation } from './record-config-error.ts'
@@ -33,6 +34,7 @@ type StageMutationBody =
   | TaskFlowIntentBody<'advance'>
   | TaskFlowIntentBody<'await-ruling'>
   | TaskFlowIntentBody<'abandon'>
+type JsonBinder = (sql: SQL, value: unknown) => unknown
 
 const jsonColumns = new Set(['arguments', 'closed_step_notes', 'satisfied_evidence'])
 const camelToSnake = (key: string) => key.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`)
@@ -185,6 +187,7 @@ async function insertStage(
   requestId: string,
   row: Record<string, unknown>,
   revision = 1,
+  jsonb: JsonBinder = bindJsonb,
 ): Promise<{ revision: number; number: number }> {
   const flow =
     (await tx`SELECT project_id::text FROM task_flow WHERE id=${row.flowRecordId}::uuid FOR UPDATE`) as Array<{
@@ -213,19 +216,24 @@ async function insertStage(
      last_advanced_machine_id,revision,last_request_id,created_at,updated_at)
     VALUES (${row.id}::uuid,${spaceId}::uuid,${row.flowRecordId}::uuid,${row.projectId}::uuid,${number},
       ${row.workflow},${row.mode},${row.workflowKey},${row.instanceId},${row.sessionId},
-      ${row.workflowVersionId}::uuid,${row.catalogueVersionId}::uuid,${JSON.stringify(row.arguments)}::jsonb,
-      ${row.activeOrdinal},${row.activeSlug},${row.state},${JSON.stringify(row.closedStepNotes)}::jsonb,
+      ${row.workflowVersionId}::uuid,${row.catalogueVersionId}::uuid,${jsonb(tx, row.arguments)},
+      ${row.activeOrdinal},${row.activeSlug},${row.state},${jsonb(tx, row.closedStepNotes)},
       ${row.question},${row.autonomy},${row.enforcement},${row.totalSteps},${row.openedMachineId}::uuid,
       ${row.takenOverFromMachineId}::uuid,${row.lastAdvancedMachineId}::uuid,${revision},${requestId}::uuid,
       ${row.createdAt}::timestamptz,${row.updatedAt}::timestamptz)`
   return { revision, number }
 }
 
-async function insertObligation(tx: SQL, spaceId: string, row: Record<string, unknown>) {
+async function insertObligation(
+  tx: SQL,
+  spaceId: string,
+  row: Record<string, unknown>,
+  jsonb: JsonBinder = bindJsonb,
+) {
   const existing = await existingRow(tx, 'workflow_obligation', String(row.id))
   if (existing) return assertSameInsert('workflow_obligation', String(row.id), existing, row)
   const satisfiedEvidence =
-    row.satisfiedEvidence === null ? null : JSON.stringify(row.satisfiedEvidence)
+    row.satisfiedEvidence === null ? tx`NULL` : jsonb(tx, row.satisfiedEvidence)
   await tx`INSERT INTO workflow_obligation
     (id,space_id,stage_record_id,step_ordinal,step_slug,floor,require_pull_request,expected_exit_code,
      expected_status,floor_deferrable,reason,session_id,created_at,satisfied_at,satisfied_step_ordinal,
@@ -233,7 +241,7 @@ async function insertObligation(tx: SQL, spaceId: string, row: Record<string, un
     VALUES (${row.id}::uuid,${spaceId}::uuid,${row.stageRecordId}::uuid,${row.stepOrdinal},${row.stepSlug},
       ${row.floor},${row.requirePullRequest},${row.expectedExitCode},${row.expectedStatus},${row.floorDeferrable},
       ${row.reason},${row.sessionId},${row.createdAt}::timestamptz,${row.satisfiedAt}::timestamptz,
-      ${row.satisfiedStepOrdinal},${row.satisfiedStepSlug},${satisfiedEvidence}::jsonb,
+      ${row.satisfiedStepOrdinal},${row.satisfiedStepSlug},${satisfiedEvidence},
       ${row.abandonedAt}::timestamptz,${row.abandonedReason},${row.operatorRuling})`
 }
 
@@ -332,6 +340,7 @@ async function applyCompose(
   tx: SQL,
   input: Tenant,
   body: ComposeBody,
+  jsonb: JsonBinder = bindJsonb,
 ): Promise<TaskFlowComposeResult> {
   const revisions: Record<string, number> = {}
   if (body.flowInsert)
@@ -350,7 +359,14 @@ async function applyCompose(
     )
   let stage: TaskFlowComposeResult['stage'] = null
   if (body.stageInsert) {
-    const inserted = await insertStage(tx, input.spaceId, body.requestId, body.stageInsert)
+    const inserted = await insertStage(
+      tx,
+      input.spaceId,
+      body.requestId,
+      body.stageInsert,
+      1,
+      jsonb,
+    )
     revisions[String(body.stageInsert.id)] = inserted.revision
     stage = { id: String(body.stageInsert.id), number: inserted.number }
   }
@@ -363,6 +379,7 @@ async function applyImport(
   tx: SQL,
   input: Tenant,
   body: ImportBody,
+  jsonb: JsonBinder = bindJsonb,
 ): Promise<TaskFlowImportResult> {
   const revisions: Record<string, number> = {}
   revisions[body.flow.id] = await insertFlow(
@@ -376,14 +393,14 @@ async function applyImport(
   for (const row of body.stages) {
     if (row.flowRecordId !== body.flow.id)
       conflict('task_flow_stage', row.id, null, 'already-exists')
-    const inserted = await insertStage(tx, input.spaceId, body.requestId, row, row.revision)
+    const inserted = await insertStage(tx, input.spaceId, body.requestId, row, row.revision, jsonb)
     revisions[row.id] = inserted.revision
     stages.push({ id: row.id, number: inserted.number })
   }
   const stageIds = new Set(body.stages.map(({ id }) => id))
   for (const row of body.obligations) {
     if (!stageIds.has(row.stageRecordId)) conflict('workflow_obligation', row.id, null)
-    await insertObligation(tx, input.spaceId, row)
+    await insertObligation(tx, input.spaceId, row, jsonb)
   }
   for (const row of body.texts) {
     if (!stageIds.has(row.stageRecordId)) conflict('workflow_step_text', row.id, null)
@@ -696,6 +713,18 @@ export function writeRecordTaskFlowTransaction<K extends TaskFlowIntent>(
   intent: K,
   input: Tenant & TaskFlowIntentBody<K>,
   tx: SQL,
+  jsonb: JsonBinder = bindJsonb,
 ): Promise<TaskFlowIntentResult<K>> {
+  if (intent === 'import')
+    return applyImport(tx, input, input as Tenant & TaskFlowIntentBody<'import'>, jsonb) as Promise<
+      TaskFlowIntentResult<K>
+    >
+  if (intent === 'compose')
+    return applyCompose(
+      tx,
+      input,
+      input as Tenant & TaskFlowIntentBody<'compose'>,
+      jsonb,
+    ) as Promise<TaskFlowIntentResult<K>>
   return intentAppliers[intent](tx, input)
 }

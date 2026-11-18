@@ -75,7 +75,7 @@ export const recordQuestionModules: RecordModule[] = [
     '../../../shared/brand.ts',
     '../../../shared/record/schema-question.ts',
     './record-question-contract.ts',
-    './record-sync-service.ts',
+    './record-question-values.ts',
   ]),
   module('orchestrator/src/record/record-question-write.ts', [
     'drizzle-orm',
@@ -89,6 +89,7 @@ export const recordQuestionModules: RecordModule[] = [
     './record-question-contract.ts',
     './record-question-number.ts',
     './record-question-step.ts',
+    './record-question-values.ts',
     './record-sync-project-identity.ts',
   ]),
   module('orchestrator/src/question-store/question-store.ts', [

@@ -6,7 +6,7 @@ import { sql as drizzleSql } from 'drizzle-orm'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { question as questionRecord } from '../../../shared/record/schema-question.ts'
 import { RecordQuestionError } from './record-question-contract.ts'
-import { questionValues } from './record-sync-service.ts'
+import { questionValues } from './record-question-values.ts'
 
 /** A rewrite keeps the step a question was first asked on; only an unbound row takes the new one. */
 export const QUESTION_STEP_CONFLICT_SET = {

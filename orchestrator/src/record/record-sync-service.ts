@@ -36,7 +36,6 @@ import {
 } from './record-evidence-references.ts'
 import { assertRecordPayloadColumns } from './record-payload-columns.ts'
 import { recordPool } from './record-pool.ts'
-import { typedQuestionRecordValues } from './record-question-values.ts'
 import { pushReleaseRecord } from './record-release-sync.ts'
 import { nullableReviewLensValues } from './record-review-lens-values.ts'
 import { reviewReadRecordValues } from './record-review-read.ts'
@@ -69,7 +68,7 @@ import {
   runTaskIdentityDecision,
 } from './record-sync-run-task-identity.ts'
 import { runRecordValues } from './record-sync-run-values.ts'
-import { nullableNumber, nullableRoundedBigint, nullableUuid } from './record-value-conversions.ts'
+import { nullableRoundedBigint } from './record-value-conversions.ts'
 import { pushScore } from './score-sync.ts'
 
 function payload(source: string, kind: keyof typeof recordKinds): Payload {
@@ -292,58 +291,6 @@ async function pushRun(
     requireOwnedUpsert(written, 'run', values.id, existingOwned)
   })
 }
-
-export const questionValues = (
-  row: Payload,
-  projectId: string | null,
-  workflowTaskId: string | null,
-) => ({
-  id: String(row.id),
-  number: nullableNumber(row.number),
-  spaceId: String(row.spaceId),
-  runId: nullableString(row.runId),
-  workflowKey: nullableString(row.workflowKey),
-  workflowTaskId,
-  workflowCursorRecordId: nullableUuid(
-    row.workflowCursorRecordId,
-    'question.workflowCursorRecordId',
-  ),
-  projectId,
-  machineId: String(row.machineId),
-  revision: Number(row.revision),
-  lastRequestId: null,
-  askedAt: recordDate(row.askedAt),
-  question: String(row.question),
-  options: row.options,
-  recommendation: nullableString(row.recommendation),
-  why: nullableString(row.why),
-  askedVia: nullableString(row.askedVia),
-  ...typedQuestionRecordValues(row),
-  answer: nullableString(row.answer),
-  answerBasis: nullableString(row.answerBasis),
-  answeredAt: nullableRecordDate(row.answeredAt),
-  answeredBy: nullableString(row.answeredBy),
-  answeredByName: nullableString(row.answeredByName),
-  answererKind: nullableString(row.answererKind),
-  answerChannel: nullableString(row.answerChannel),
-  awaitingOperatorAt: nullableRecordDate(row.awaitingOperatorAt),
-  relayedBy: nullableString(row.relayedBy),
-  overturnedAt: nullableRecordDate(row.overturnedAt),
-  overturnedBy: nullableString(row.overturnedBy),
-  overturnedByName: nullableString(row.overturnedByName),
-  overturnReason: nullableString(row.overturnReason),
-  replacement: nullableString(row.replacement),
-  filedAs: nullableString(row.filedAs),
-  filedRef: nullableString(row.filedRef),
-  filedRecordId: nullableString(row.filedRecordId),
-  filedLabel: nullableString(row.filedLabel),
-  filedAt: nullableRecordDate(row.filedAt),
-  closedAt: nullableRecordDate(row.closedAt),
-  closeReason: nullableString(row.closeReason),
-  withheldFields: row.withheldFields,
-  createdAt: recordDate(row.createdAt),
-  updatedAt: recordDate(row.updatedAt),
-})
 
 export function reviewLensValues(row: Payload) {
   return {

@@ -256,7 +256,7 @@ export type TaskFlowWriteResult = z.infer<typeof taskFlowWriteResultSchema>
 export const taskFlowComposeResultSchema = taskFlowWriteResultSchema.extend({
   stage: z.object({ id, number: z.number().int().positive() }).nullable(),
 })
-export const taskFlowImportResultSchema = taskFlowWriteResultSchema.extend({
+const taskFlowImportResultSchema = taskFlowWriteResultSchema.extend({
   stages: z.array(z.object({ id, number: z.number().int().positive() })),
 })
 export type TaskFlowImportResult = z.infer<typeof taskFlowImportResultSchema>

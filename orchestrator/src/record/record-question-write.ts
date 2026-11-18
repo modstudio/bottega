@@ -24,9 +24,8 @@ import type {
 import { RecordQuestionError } from './record-question-contract.ts'
 import { allocateQuestionNumber } from './record-question-number.ts'
 import { QUESTION_STEP_CONFLICT_SET, questionValuesForWrite } from './record-question-step.ts'
+import { questionValues } from './record-question-values.ts'
 import { projectRecordId } from './record-sync-project-identity.ts'
-import { questionValues } from './record-sync-service.ts'
-import { sameRecordValue } from './record-task-flow-write-decision.ts'
 
 type Tenant = { url: string } & TenantPrincipal
 type ExistingQuestion = {
@@ -218,6 +217,24 @@ export async function writeRecordQuestionTransaction(
 }
 
 const camelToSnake = (key: string) => key.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`)
+const timestamp = /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?Z$/
+
+function canonical(value: unknown): unknown {
+  if (value instanceof Date) return value.getTime()
+  if (typeof value === 'string' && timestamp.test(value)) return Date.parse(value)
+  if (Array.isArray(value)) return value.map(canonical)
+  if (value && typeof value === 'object')
+    return Object.fromEntries(
+      Object.entries(value)
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([key, item]) => [key, canonical(item)]),
+    )
+  return value
+}
+
+function sameRecordValue(left: unknown, right: unknown): boolean {
+  return JSON.stringify(canonical(left)) === JSON.stringify(canonical(right))
+}
 
 function assertSameQuestionRow(
   table: string,

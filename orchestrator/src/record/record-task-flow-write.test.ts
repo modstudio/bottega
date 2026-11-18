@@ -32,6 +32,9 @@ const FINISHED = '2025-04-04T03:02:00.000Z'
 
 let postgres: PGlite
 const principal = { url: 'pglite', userId: USER, spaceId: SPACE, spaceIds: [SPACE] }
+const pgliteJsonb = (_sql: unknown, value: unknown) => ({
+  sql: `'${JSON.stringify(value).replaceAll("'", "''")}'::jsonb`,
+})
 
 beforeEach(async () => {
   postgres = await createHostedRecordFixture({ spaceId: SPACE, userId: USER })
@@ -191,8 +194,18 @@ function liveQuestion(): QuestionWriteBody {
 test('task-flow import is exact and idempotent while minting stage numbers in body order', async () => {
   const sql = pgliteSql(postgres)
   const input = flowImport()
-  const first = await writeRecordTaskFlowTransaction('import', { ...principal, ...input }, sql)
-  const second = await writeRecordTaskFlowTransaction('import', { ...principal, ...input }, sql)
+  const first = await writeRecordTaskFlowTransaction(
+    'import',
+    { ...principal, ...input },
+    sql,
+    pgliteJsonb,
+  )
+  const second = await writeRecordTaskFlowTransaction(
+    'import',
+    { ...principal, ...input },
+    sql,
+    pgliteJsonb,
+  )
   expect(first.stages).toEqual([
     { id: STAGE_TWO, number: 1 },
     { id: STAGE_ONE, number: 2 },
@@ -214,7 +227,7 @@ test('task-flow import is exact and idempotent while minting stage numbers in bo
   const changed = flowImport()
   changed.stages[0]!.activeSlug = 'changed'
   await expect(
-    writeRecordTaskFlowTransaction('import', { ...principal, ...changed }, sql),
+    writeRecordTaskFlowTransaction('import', { ...principal, ...changed }, sql, pgliteJsonb),
   ).rejects.toMatchObject({ reason: 'already-exists' })
 
   const live = stage(STAGE_LIVE, 'live')
@@ -222,6 +235,7 @@ test('task-flow import is exact and idempotent while minting stage numbers in bo
     'compose',
     { ...principal, requestId: REQUEST_LIVE, stageInsert: live },
     sql,
+    pgliteJsonb,
   )
   expect(liveResult.stage).toEqual({ id: STAGE_LIVE, number: 3 })
 })
