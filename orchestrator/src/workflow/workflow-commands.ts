@@ -2,6 +2,7 @@
 /** Knows workflow command semantics and thin tree adapters. Must not know CLI grammar, runs, routing, or transports. */
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
+import { startBoundedSync } from '../../../shared/bounded-process.ts'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { gitToplevel, resolvedPathsEqual } from '../../../shared/git.ts'
 import { recordApiConfigured } from '../../../shared/record-api-url.ts'
@@ -10,7 +11,7 @@ import { flagValue, flagValues } from '../cli/args.ts'
 import { db } from '../database/db.ts'
 import type { ContextMomentPorts } from '../doc/context-moment-adapter.ts'
 import { resolveGateIdentifier } from '../gate/gate-identifier.ts'
-import { contentTree, reviewChangedPaths } from '../git/git-environment.ts'
+import { contentTree, reviewChangedPaths, targetGitEnvironment } from '../git/git-environment.ts'
 import { formatOutcomeLine } from '../outcome-line.ts'
 import { type Project, projectAt, projects } from '../project/projects.ts'
 import { resolveReviewIdentifier } from '../review/review-identifier.ts'
@@ -61,6 +62,7 @@ import {
   wrappedCommandExitCode,
 } from './workflow-probe.ts'
 import { productionWorkflowFloorPorts } from './workflow-production-floor-ports.ts'
+import { decideWorkflowPromotionAdmission } from './workflow-promotion-admission.ts'
 import { workflowReadSpaceFor } from './workflow-read-space.ts'
 import { renderWorkflowComposition, renderWorkflowStep } from './workflow-render.ts'
 import {
@@ -122,6 +124,13 @@ export type WorkflowCommandOptions = {
   contextMomentPorts?: ContextMomentPorts
   contextMomentGather?: typeof import('./workflow-context-moment.ts').workflowNextContextMoment
   idleCursorAdmission?: () => Promise<void>
+  promotionContainsHead?: (
+    root: string,
+    landingBranch: string,
+  ) => {
+    contains: boolean
+    failure?: string
+  }
 }
 export type WorkflowPrint = (value: unknown, line?: string) => void
 type ProbePrintRecord =
@@ -175,13 +184,58 @@ export function showWorkflowCommand(
   )
 }
 
-export async function promoteWorkflowCommand(argv: string[], print: WorkflowPrint): Promise<void> {
+function admittedPromotion(
+  argv: string[],
+  options: WorkflowCommandOptions,
+  resolved?: { root: string; project: Project | null },
+): { reason: string | undefined; author: string | undefined } {
+  const { root, project } = resolved ?? workflowCommandProject('promote', options)
+  const landingBranch = project?.settings.trunk?.trim() || null
+  let contains = false
+  let failure: string | undefined
+  if (landingBranch) {
+    const observed = options.promotionContainsHead
+      ? options.promotionContainsHead(root, landingBranch)
+      : (() => {
+          const result = startBoundedSync(
+            ['git', 'merge-base', '--is-ancestor', 'HEAD', landingBranch],
+            { budget: 'git-plumbing', cwd: root, env: targetGitEnvironment(root) },
+          )
+          return {
+            contains: result.exitCode === 0,
+            ...(result.exitCode > 1
+              ? { failure: result.stderr.trim() || `git exited ${result.exitCode}` }
+              : {}),
+          }
+        })()
+    contains = observed.contains
+    failure = observed.failure
+  }
+  const decision = decideWorkflowPromotionAdmission({
+    landingBranch,
+    landingBranchContainsHead: contains,
+    inspectionFailure: failure,
+    fromOperator: argv.includes('--from-operator'),
+    reason: flagValue(argv, 'reason'),
+    author: flagValue(argv, 'author'),
+    operatorName: argv.includes('--from-operator') ? 'Shmuel Barkin' : null,
+  })
+  if (decision.verdict === 'refuse') throw new Error(decision.message)
+  return decision
+}
+
+export async function promoteWorkflowCommand(
+  argv: string[],
+  print: WorkflowPrint,
+  options: WorkflowCommandOptions = {},
+): Promise<void> {
+  const admitted = admittedPromotion(argv, options)
   print(
     await promoteWorkflow(
       argv[2]!,
       positive(argv[3], 'version')!,
-      flagValue(argv, 'reason'),
-      flagValue(argv, 'author'),
+      admitted.reason,
+      admitted.author,
       undefined,
       undefined,
       await workflowWriteSpace('workflow promote', argv, recordApiConfigured()),
@@ -805,12 +859,17 @@ export async function setCatalogueCommand(argv: string[], print: WorkflowPrint):
   )
 }
 
-export async function promoteCatalogueCommand(argv: string[], print: WorkflowPrint): Promise<void> {
+export async function promoteCatalogueCommand(
+  argv: string[],
+  print: WorkflowPrint,
+  options: WorkflowCommandOptions = {},
+): Promise<void> {
+  const admitted = admittedPromotion(argv, options)
   print(
     await promoteStepCatalogue(
       positive(argv[2], 'version')!,
-      flagValue(argv, 'reason'),
-      flagValue(argv, 'author'),
+      admitted.reason,
+      admitted.author,
       undefined,
       undefined,
       await workflowWriteSpace('workflow catalogue promote', argv, recordApiConfigured()),
@@ -838,7 +897,7 @@ export function catalogueVersionsCommand(
 }
 
 export function workflowProjectRefusal(input: {
-  command: 'hydrate' | 'import' | 'promote-tree'
+  command: 'hydrate' | 'import' | 'promote' | 'promote-tree'
   root: string
   project: string | null
   recordConfigured: boolean
@@ -851,7 +910,7 @@ export function workflowProjectRefusal(input: {
 }
 
 function workflowCommandProject(
-  command: 'hydrate' | 'import' | 'promote-tree',
+  command: 'hydrate' | 'import' | 'promote' | 'promote-tree',
   options: WorkflowCommandOptions,
 ): { root: string; project: Project | null } {
   const resolved = resolve(options.cwd ?? process.cwd())
@@ -928,14 +987,29 @@ export async function importCommand(
   options: WorkflowCommandOptions = {},
 ): Promise<void> {
   const { root, project } = workflowCommandProject('import', options)
+  const trunk = project?.settings.trunk?.trim()
+  if (!trunk) {
+    throw new Error(
+      'workflow import refused: the registered project has no landing branch in settings.trunk',
+    )
+  }
+  let base: string | null = null
+  let resolutionFailure: string | null = null
+  try {
+    const head = resolveBase(root, 'HEAD')
+    base = resolveReviewBase(root, head, trunk)
+  } catch (cause) {
+    resolutionFailure = cause instanceof Error ? cause.message : String(cause)
+  }
+  if (!base) {
+    throw new Error(
+      `workflow import refused: no merge base with registered landing branch ${trunk}; ` +
+        `${resolutionFailure ? `${resolutionFailure}; ` : ''}fetch ${trunk} into ${root}, then retry`,
+    )
+  }
   let changedPaths: Set<string> | undefined
   let skipped: string | undefined
   try {
-    const trunk = project?.settings.trunk?.trim()
-    if (!trunk) throw new Error('the registered project has no landing branch in settings.trunk')
-    const head = resolveBase(root, 'HEAD')
-    const base = resolveReviewBase(root, head, trunk)
-    if (!base) throw new Error(`no merge base with registered landing branch ${trunk}`)
     changedPaths = new Set(reviewChangedPaths(root, base, contentTree(root)))
   } catch (cause) {
     skipped = `workflow stale-reversion check skipped: ${String((cause as Error).message ?? cause)}`
@@ -957,12 +1031,13 @@ export async function promoteTreeCommand(
   options: WorkflowCommandOptions = {},
 ): Promise<void> {
   const { root, project } = workflowCommandProject('promote-tree', options)
-  const reason = flagValue(argv, 'reason')
+  const admitted = admittedPromotion(argv, options, { root, project })
+  const reason = admitted.reason
   if (!reason?.trim()) throw new Error('workflow promote-tree: reason is required')
   const plan = await promoteMatchingWorkflowTreeDrafts({
     tree: parseWorkflowTree(collectWorkflowTree(root)),
     reason,
-    author: flagValue(argv, 'author'),
+    author: admitted.author,
     project: project?.name ?? null,
   })
   if (!plan.promotions.length && !plan.divergent.length) {

@@ -144,6 +144,20 @@ function runDependencyInstall(cwd: string): void {
   })
 }
 
+function runWorkflowSync(cwd: string): void {
+  const reason = 'machine update synchronized the registered landing branch'
+  for (const [verb, failureLabel] of [
+    ['import', `${PLATFORM_SLUG} workflow import`],
+    ['promote-tree', `${PLATFORM_SLUG} workflow promote-tree`],
+  ] as const) {
+    runPostPullStep({
+      argv: [`./bin/${PLATFORM_SLUG}`, 'workflow', verb, '--cwd', cwd, '--reason', reason],
+      cwd,
+      failureLabel,
+    })
+  }
+}
+
 /** Decide whether a pulled path list requires refreshing checkout dependencies. */
 export function pulledRangeChangesPackageJson(paths: readonly string[]): boolean {
   return paths.some((path) => /(^|\/)package\.json$/.test(path))
@@ -209,6 +223,7 @@ type UpdateDependencies = {
   git?: (cwd: string, args: string[]) => string
   install?: (cwd: string) => void
   migrate?: (cwd: string) => void
+  syncWorkflows?: (cwd: string) => void
   afterDrainPromoted?: () => void
   maintainStore?: (presentation: Presentation) => void
   identity?: InstallationIdentity
@@ -616,6 +631,9 @@ async function updateCheckout(presentation: Presentation, deps: UpdateDependenci
   } finally {
     clearMachineUpdateIntent()
   }
+  const syncWorkflows =
+    deps.syncWorkflows ?? (process.env.NODE_ENV === 'test' ? undefined : runWorkflowSync)
+  syncWorkflows?.(target)
   const maintainStore = deps.maintainStore ?? setupIncrementalVacuumAfterMachineUpdate
   maintainStoreAfterUpdate(presentation, maintainStore)
   const refreshLaunchAgents = deps.runLaunchAgentsRefreshVerb ?? runLaunchAgentsRefreshVerb

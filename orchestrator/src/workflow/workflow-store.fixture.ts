@@ -205,6 +205,7 @@ export async function runPromoteTreeCommandFixture(label: string, divergent = fa
         workflowCommandPresentation(lines),
         {
           cwd: fixture.worktree,
+          promotionContainsHead: () => ({ contains: true }),
         },
       )
       return { lines, error: null }

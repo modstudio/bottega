@@ -32,8 +32,8 @@ test.each([
 })
 
 test.each([
-  { changedPaths: 'package.json\0', expected: ['pull', 'install', 'migrate'] },
-  { changedPaths: 'shared/source.ts\0', expected: ['pull', 'migrate'] },
+  { changedPaths: 'package.json\0', expected: ['pull', 'install', 'migrate', 'workflow-sync'] },
+  { changedPaths: 'shared/source.ts\0', expected: ['pull', 'migrate', 'workflow-sync'] },
 ])(
   'machine update orders dependency refresh for pulled paths $changedPaths',
   async ({ changedPaths, expected }) => {
@@ -58,6 +58,7 @@ test.each([
         },
         install: () => events.push('install'),
         migrate: () => events.push('migrate'),
+        syncWorkflows: () => events.push('workflow-sync'),
         runLaunchAgentsRefreshVerb: () => {},
       },
     )

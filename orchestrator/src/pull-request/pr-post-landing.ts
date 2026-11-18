@@ -52,7 +52,7 @@ import {
   requiredMergeCommand,
 } from './pr-post-landing-payload.ts'
 
-type WorkflowPromotionStage = 'fetch' | 'branch-check' | 'fast-forward' | 'promote'
+type WorkflowPromotionStage = 'fetch' | 'branch-check' | 'fast-forward' | 'import' | 'promote'
 export type WorkflowPromotionResult =
   | { ok: true; output: string }
   | { ok: false; stage: WorkflowPromotionStage; detail: string }
@@ -247,7 +247,9 @@ function promotionOutput(input: {
 }): { output: string; error?: string } {
   if (input.result.ok) return { output: input.result.output }
   const reason = `merged PR #${input.prNumber} (${input.mergeCommit})`
-  const promotion = `${PLATFORM_SLUG} workflow promote-tree --cwd ${input.project.path} --reason "${reason}"`
+  const promotion =
+    `${PLATFORM_SLUG} workflow import --cwd ${input.project.path} --reason "${reason}", then ` +
+    `${PLATFORM_SLUG} workflow promote-tree --cwd ${input.project.path} --reason "${reason}"`
   const command = input.recovery
     ? input.recovery
     : input.result.stage === 'fetch'
@@ -435,6 +437,25 @@ export async function completePullRequestPostLanding(input: {
 }
 
 function promoteWorkflowTree(project: Project, reason: string): WorkflowPromotionResult {
+  const imported = startBoundedSync(
+    [
+      join(project.path, 'bin', PLATFORM_SLUG),
+      'workflow',
+      'import',
+      '--cwd',
+      project.path,
+      '--reason',
+      reason,
+    ],
+    { budget: 'self-cli', cwd: project.path, env: process.env },
+  )
+  if (imported.exitCode !== 0) {
+    return {
+      ok: false,
+      stage: 'import',
+      detail: imported.stderr.trim() || `exit ${imported.exitCode}`,
+    }
+  }
   const result = startBoundedSync(
     [
       join(project.path, 'bin', PLATFORM_SLUG),
@@ -447,7 +468,12 @@ function promoteWorkflowTree(project: Project, reason: string): WorkflowPromotio
     ],
     { budget: 'self-cli', cwd: project.path, env: process.env },
   )
-  if (result.exitCode === 0) return { ok: true, output: result.stdout.trim() }
+  if (result.exitCode === 0) {
+    return {
+      ok: true,
+      output: [imported.stdout.trim(), result.stdout.trim()].filter(Boolean).join('\n'),
+    }
+  }
   return {
     ok: false,
     stage: 'promote',
