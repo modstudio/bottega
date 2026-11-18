@@ -426,20 +426,31 @@ function collectFunctions(source: ts.SourceFile): Map<string, ts.FunctionDeclara
   return functions
 }
 
-function importedSource(file: string, statement: ts.ImportDeclaration): ts.SourceFile | null {
+type ImportedSourceCache = Map<string, ts.SourceFile | null>
+
+function importedSource(
+  file: string,
+  statement: ts.ImportDeclaration,
+  cache: ImportedSourceCache,
+): ts.SourceFile | null {
   if (!ts.isStringLiteral(statement.moduleSpecifier)) return null
   const specifier = statement.moduleSpecifier.text
   if (!specifier.startsWith('.')) return null
   const imported = resolve(dirname(file), specifier)
   const importedFile = imported.endsWith('.ts') ? imported : `${imported}.ts`
-  if (!existsSync(importedFile)) return null
-  return ts.createSourceFile(
-    importedFile,
-    readFileSync(importedFile, 'utf8'),
-    ts.ScriptTarget.Latest,
-    true,
-    ts.ScriptKind.TS,
-  )
+  const cached = cache.get(importedFile)
+  if (cached !== undefined || cache.has(importedFile)) return cached ?? null
+  const source = existsSync(importedFile)
+    ? ts.createSourceFile(
+        importedFile,
+        readFileSync(importedFile, 'utf8'),
+        ts.ScriptTarget.Latest,
+        true,
+        ts.ScriptKind.TS,
+      )
+    : null
+  cache.set(importedFile, source)
+  return source
 }
 
 function mergeImportedSymbols(
@@ -467,11 +478,15 @@ function mergeImportedSymbols(
   }
 }
 
-function collectStaticSymbols(file: string, source: ts.SourceFile): StaticSymbols {
+function collectStaticSymbols(
+  file: string,
+  source: ts.SourceFile,
+  importedSources: ImportedSourceCache = new Map(),
+): StaticSymbols {
   const symbols: StaticSymbols = { constants: new Map(), functions: new Map() }
   for (const statement of source.statements) {
     if (!ts.isImportDeclaration(statement)) continue
-    const dependency = importedSource(file, statement)
+    const dependency = importedSource(file, statement, importedSources)
     if (dependency) mergeImportedSymbols(symbols, statement, dependency)
   }
   for (const [name, value] of collectConstants(source)) symbols.constants.set(name, value)
@@ -558,7 +573,7 @@ function sqlCallSites(
   node: ts.Node,
   source: ts.SourceFile,
   file: string,
-  symbols: StaticSymbols,
+  staticSymbols: () => StaticSymbols,
 ): { sites: HostedSqlSite[]; unresolved: HostedSqlUnresolvedSite[] } {
   if (!ts.isCallExpression(node)) return { sites: [], unresolved: [] }
   const target = unwrap(node.expression)
@@ -570,7 +585,7 @@ function sqlCallSites(
   const rendered =
     renderFixtureSql(argument) ??
     (() => {
-      const value = resolveStaticValue(argument, symbols)
+      const value = resolveStaticValue(argument, staticSymbols())
       if (typeof value === 'string')
         return { statements: splitSqlStatements(value), unresolved: null, unresolvedSql: false }
       if (Array.isArray(value))
@@ -619,11 +634,14 @@ export function extractSqlFromSource(input: { sourceText: string; file: string }
     ts.ScriptKind.TS,
   )
   const extracted = extractHostedSqlFromSource(input)
-  const symbols = collectStaticSymbols(input.file, source)
+  const importedSources: ImportedSourceCache = new Map()
+  let symbols: StaticSymbols | undefined
+  const staticSymbols = (): StaticSymbols =>
+    (symbols ??= collectStaticSymbols(input.file, source, importedSources))
   const sites = [...extracted.sites]
   const unresolved = [...extracted.unresolved]
   const visit = (node: ts.Node): void => {
-    const calls = sqlCallSites(node, source, input.file, symbols)
+    const calls = sqlCallSites(node, source, input.file, staticSymbols)
     sites.push(...calls.sites)
     unresolved.push(...calls.unresolved)
     ts.forEachChild(node, visit)
