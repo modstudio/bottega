@@ -455,7 +455,7 @@ test('an undecided decision without the release flag refuses a failed main move'
 
   expect(outcome.exitCode).toBe(MERGED_WITH_UNRELEASED_RUNG_EXIT_CODE)
   expect(outcome.output).toContain(
-    `release not proven: could not read the landed paths: landing fetch failed; retry: ${PLATFORM_SLUG} pr merge 42 --release-required`,
+    `release not proven: requirement could not be decided: landing fetch failed; retry: ${PLATFORM_SLUG} pr merge 42 --release-required`,
   )
 })
 
@@ -626,7 +626,7 @@ test('the child reports one undecided outcome when the parent could not decide',
 
   expect(outcome.exitCode).toBe(21)
   expect(outcome.output).toContain(
-    `release not proven: could not read the landed paths: changed paths unavailable; retry: ${PLATFORM_SLUG} pr merge 42 --release-required`,
+    `release not proven: requirement could not be decided: changed paths unavailable; retry: ${PLATFORM_SLUG} pr merge 42 --release-required`,
   )
   expect(outcome.output).not.toContain('required rung')
 })
@@ -757,7 +757,7 @@ test('the child reports a parent decision error distinctly when the release flag
 
   expect(outcome.exitCode).toBe(21)
   expect(outcome.output).toContain(
-    `release not proven: could not read the landed paths: changed paths unavailable; retry: ${PLATFORM_SLUG} pr merge 42 --release-required`,
+    `release not proven: requirement could not be decided: changed paths unavailable; retry: ${PLATFORM_SLUG} pr merge 42 --release-required`,
   )
 })
 

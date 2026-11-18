@@ -4,21 +4,21 @@ import {
   GIT_FETCH_MAX_ATTEMPTS,
   GIT_FETCH_RETRY_BASE_DELAY_MS,
   isGitFetchInvocation,
+  runWithGitFetchRetry,
 } from './fetch-retry.ts'
 
 test.each([
   ['git prefix', ['git', 'fetch', 'origin', 'main']],
   ['bare git arguments', ['fetch', 'origin', 'main']],
   ['flags before the remote', ['fetch', '--no-tags', '--', 'origin', 'main']],
-] as const)('classifies a fetch of origin with %s', (_name, argv) => {
+  ['another remote', ['fetch', '--no-tags', '--', 'upstream', 'main']],
+  ['a valued option', ['git', 'fetch', '--depth', '1', 'origin', 'main']],
+] as const)('classifies a fetch with %s', (_name, argv) => {
   expect(isGitFetchInvocation([...argv])).toBe(true)
 })
 
-test.each([
-  ['another subcommand', ['git', 'checkout', 'fetch']],
-  ['another remote', ['fetch', '--no-tags', '--', 'upstream', 'main']],
-] as const)('does not classify %s', (_name, argv) => {
-  expect(isGitFetchInvocation([...argv])).toBe(false)
+test('does not classify another subcommand', () => {
+  expect(isGitFetchInvocation(['git', 'checkout', 'fetch'])).toBe(false)
 })
 
 describe('decideGitFetchRetry', () => {
@@ -44,5 +44,54 @@ describe('decideGitFetchRetry', () => {
     expect(decideGitFetchRetry(1, 'fatal: could not read from remote repository')).toEqual({
       retry: false,
     })
+  })
+})
+
+describe('runWithGitFetchRetry', () => {
+  test('returns a successful retry after a ref-lock race', () => {
+    let attempts = 0
+    const result = runWithGitFetchRetry(['git', 'fetch', 'origin', 'main'], () => {
+      attempts += 1
+      return attempts === 1
+        ? {
+            result: 'first failure',
+            succeeded: false,
+            stderr: "cannot lock ref 'refs/remotes/origin/main'",
+          }
+        : { result: 'second success', succeeded: true, stderr: '' }
+    })
+
+    expect(result).toBe('second success')
+    expect(attempts).toBe(2)
+  })
+
+  test('returns the last failure after the attempt limit', () => {
+    let attempts = 0
+    const result = runWithGitFetchRetry(['fetch', 'origin', 'main'], () => {
+      attempts += 1
+      return {
+        result: `failure ${attempts}`,
+        succeeded: false,
+        stderr: "cannot lock ref 'refs/remotes/origin/main'",
+      }
+    })
+
+    expect(result).toBe(`failure ${GIT_FETCH_MAX_ATTEMPTS}`)
+    expect(attempts).toBe(GIT_FETCH_MAX_ATTEMPTS)
+  })
+
+  test('does not retry another git subcommand', () => {
+    let attempts = 0
+    const result = runWithGitFetchRetry(['git', 'status'], () => {
+      attempts += 1
+      return {
+        result: 'status failure',
+        succeeded: false,
+        stderr: "cannot lock ref 'refs/remotes/origin/main'",
+      }
+    })
+
+    expect(result).toBe('status failure')
+    expect(attempts).toBe(1)
   })
 })

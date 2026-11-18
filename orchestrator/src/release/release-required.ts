@@ -442,7 +442,7 @@ export function formatRequiredReleaseReport(
   depth?: string,
 ): string {
   if (report.decisionError) {
-    return `release not proven: could not read the landed paths: ${report.decisionError}; retry: ${PLATFORM_SLUG} pr merge ${target} --release-required${releaseDepthFlag(depth)}`
+    return `release not proven: requirement could not be decided: ${report.decisionError}; retry: ${PLATFORM_SLUG} pr merge ${target} --release-required${releaseDepthFlag(depth)}`
   }
   if (report.releases.length === 0) return ''
   const lines = report.releases.map((release) =>

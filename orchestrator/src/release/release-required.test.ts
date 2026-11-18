@@ -275,7 +275,7 @@ describe('requiredRungDecision', () => {
     const report = undecidedRequiredRelease(decision.rungs, decision.error)
     expect(report.satisfied).toBe(false)
     expect(formatRequiredReleaseReport(report, '42', project.name)).toBe(
-      `release not proven: could not read the landed paths: landing-branch fetch failed; retry: ${PLATFORM_SLUG} pr merge 42 --release-required`,
+      `release not proven: requirement could not be decided: landing-branch fetch failed; retry: ${PLATFORM_SLUG} pr merge 42 --release-required`,
     )
   })
 

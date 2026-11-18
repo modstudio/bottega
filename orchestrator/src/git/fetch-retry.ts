@@ -14,13 +14,7 @@ export type GitFetchAttempt<T> = {
 
 export function isGitFetchInvocation(argv: string[]): boolean {
   const subcommand = argv[0] === 'git' ? 1 : 0
-  if (argv[subcommand] !== 'fetch') return false
-  for (let index = subcommand + 1; index < argv.length; index += 1) {
-    const argument = argv[index]
-    if (argument === '--') return argv[index + 1] === 'origin'
-    if (argument && !argument.startsWith('-')) return argument === 'origin'
-  }
-  return false
+  return argv[subcommand] === 'fetch'
 }
 
 /** Attempts are one-based and include the failed attempt being classified. */
