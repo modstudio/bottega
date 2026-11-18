@@ -4,6 +4,7 @@
 import type { RecordRequestDestination, RecordWriteDestination } from './record-api-client-paths.ts'
 import type { RecordIdentity } from './record-auth.ts'
 import {
+  type QuestionImportBody,
   type QuestionLiveIntent,
   type QuestionReadInput,
   type QuestionWriteBody,
@@ -30,6 +31,10 @@ export type RecordQuestionClient = {
   writeQuestion?(
     intent: QuestionLiveIntent,
     input: QuestionWriteBody,
+    destination: RecordWriteDestination,
+  ): Promise<QuestionWriteResult>
+  importQuestion?(
+    input: QuestionImportBody,
     destination: RecordWriteDestination,
   ): Promise<QuestionWriteResult>
 }
@@ -67,6 +72,13 @@ export const recordQuestionClient = (request: Request): RecordQuestionClient => 
       destination: RecordWriteDestination,
     ) =>
       request(`/v1/questions/${intent}`, {
+        method: 'POST',
+        body: JSON.stringify(input),
+        ...destination,
+        schema: (body) => questionWriteResultSchema.parse(body),
+      }),
+    importQuestion: (input: QuestionImportBody, destination: RecordWriteDestination) =>
+      request('/v1/questions/import', {
         method: 'POST',
         body: JSON.stringify(input),
         ...destination,
