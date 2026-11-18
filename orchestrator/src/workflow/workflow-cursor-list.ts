@@ -47,10 +47,7 @@ export async function workflowCursorHandoffLinks(
 }
 
 /** Reads the run-owned live bindings for the selected workflow cursors. */
-export function liveRunCursorIds(
-  cursorRecordIds: readonly string[],
-  d: Database = db(),
-): string[] {
+export function liveRunCursorIds(cursorRecordIds: readonly string[], d: Database = db()): string[] {
   if (!cursorRecordIds.length) return []
   const placeholders = cursorRecordIds.map(() => '?').join(',')
   return d

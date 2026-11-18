@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { contextHealth, type ContextHealthFacts } from './context-health.ts'
+import { type ContextHealthFacts, contextHealth } from './context-health.ts'
 import { renderContextHealth } from './context-health-render.ts'
 
 test('S1 renders its item count per project and carries it in the JSON report', () => {
@@ -33,8 +33,6 @@ test('S1 renders its item count per project and carries it in the JSON report', 
   }
   const report = contextHealth(facts)
   expect(report.s1Projects).toEqual([{ project: 'fixture', items: 1 }])
-  expect(JSON.parse(JSON.stringify(report)).s1Projects).toEqual([
-    { project: 'fixture', items: 1 },
-  ])
+  expect(JSON.parse(JSON.stringify(report)).s1Projects).toEqual([{ project: 'fixture', items: 1 }])
   expect(renderContextHealth(report)).toContain('project=fixture items=1')
 })

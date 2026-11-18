@@ -33,9 +33,7 @@ export function renderContextHealth(report: ContextHealthReport): string {
     lines.push(...items.map((item) => itemLine(item, shape)))
   }
   itemSection('S1 unreached', report.signals.s1)
-  lines.push(
-    ...report.s1Projects.map((row) => `  project=${row.project} items=${row.items}`),
-  )
+  lines.push(...report.s1Projects.map((row) => `  project=${row.project} items=${row.items}`))
   itemSection('S2 done residue', report.signals.s2)
   itemSection('S3 over shape', report.signals.s3, true)
   itemSection('S4 duplicate', report.signals.s4)

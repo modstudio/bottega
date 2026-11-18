@@ -29,7 +29,7 @@ export type ContextHealthItem = {
   projectRegistered: boolean
 }
 
-export type ContextHealthCursorStage = {
+type ContextHealthCursorStage = {
   recordId: string
   project: string
   taskKey: string | null
@@ -114,7 +114,7 @@ function ageMs(item: ContextHealthItem, now: number): number {
 function remedy(item: ContextHealthItem): string {
   if (item.taskKey) return `${PLATFORM_SLUG} agent context clear --task ${item.taskKey}`
   if (item.holderKind === 'task')
-    return `context item ${item.id} is held by task holder ${item.holderId} whose task no longer resolves; no verb clears it yet (note 01a1f05f)`
+    return `context item ${item.id} is held by task holder ${item.holderId} whose task no longer resolves; no verb clears it yet (note 01a1f05d)`
   const holderFlag = item.holderKind === 'session' ? '--session' : '--cursor'
   const selector = `${holderFlag} ${item.holderId}`
   return `${PLATFORM_SLUG} agent context drop ${selector} --id ${item.id}`
@@ -135,7 +135,7 @@ function finding(item: ContextHealthItem, now: number): ContextHealthFinding {
   }
 }
 
-export function reachedContextCursors(
+function reachedContextCursors(
   stages: readonly ContextHealthCursorStage[],
   liveRunCursorIds: readonly string[],
 ) {
@@ -145,7 +145,7 @@ export function reachedContextCursors(
     .map(({ project, taskKey }) => ({ project, taskKey }))
 }
 
-export function isStaleContextReference(rule: string): boolean {
+function isStaleContextReference(rule: string): boolean {
   return STALE_REFERENCE_RULES.has(rule) && rule !== 'doc/line-anchor'
 }
 
@@ -171,6 +171,13 @@ function compactionBriefs(briefs: ContextHealthFacts['briefs']) {
       overCapShare: overCapBriefs / rows.length,
     }
   })
+}
+
+function s1ProjectCounts(items: ContextHealthFinding[]) {
+  return [...Map.groupBy(items, (item) => item.project!)].map(([project, projectItems]) => ({
+    project,
+    items: projectItems.length,
+  }))
 }
 
 export function contextHealth(facts: ContextHealthFacts): ContextHealthReport {
@@ -242,10 +249,7 @@ export function contextHealth(facts: ContextHealthFacts): ContextHealthReport {
     .map((item) => ageMs(item, now))
     .sort((a, b) => a - b)
   const signals = { s1, s2, s3, s4, s5, s6, s7, s8 }
-  const s1Projects = [...Map.groupBy(s1, (item) => item.project!)].map(([project, items]) => ({
-    project,
-    items: items.length,
-  }))
+  const s1Projects = s1ProjectCounts(s1)
   const wrong = s1.length + s2.length + s3.length + s4.length > 0
   return {
     verdict: wrong ? 'wrong' : 'healthy',

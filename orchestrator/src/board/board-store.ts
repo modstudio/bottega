@@ -336,6 +336,15 @@ export function presenceFacts(database = db(), at = Date.now()) {
   ]
 }
 
+/** Reads each recorded session's owning project through the presence owner. */
+export function sessionProjectRows(database = db()) {
+  return database
+    .query<{ sessionId: string; project: string | null }, []>(
+      'SELECT session_id AS sessionId,project FROM presence',
+    )
+    .all()
+}
+
 export function latestRunStatus(
   runId: string | null,
   database: ReturnType<typeof db> = db(),

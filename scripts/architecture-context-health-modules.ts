@@ -14,6 +14,7 @@ export const contextHealthModules: ContextHealthModule[] = [
   module('orchestrator/src/context-health/context-health.ts', [
     '../../../shared/brand.ts',
     '../../../shared/context-item-vocabulary.ts',
+    '../board/board-store.ts',
     '../doc/context-cursor-warning-decision.ts',
     '../doc/doc-context-write.ts',
     '../doc/doc-lint.ts',
@@ -29,7 +30,6 @@ export const contextHealthModules: ContextHealthModule[] = [
     '../doc/context-service.ts',
     '../doc/doc-lint.ts',
     '../doc/doc-lint-adapter.ts',
-    '../identity/identity-context.ts',
     '../project/projects.ts',
     '../record/record-task-flow-contract.ts',
     '../session/brief-injection.ts',

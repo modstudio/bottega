@@ -6,11 +6,11 @@ import {
   CONTEXT_HOLDER_KINDS,
   type ContextHolderKind,
 } from '../../../shared/context-item-vocabulary.ts'
+import { sessionProjectRows } from '../board/board-store.ts'
 import { nowIso } from '../database/db.ts'
 import { scopeContextHolders } from '../doc/context-service.ts'
 import { docHasRepositoryReferences } from '../doc/doc-lint.ts'
 import { lintStoredDoc } from '../doc/doc-lint-adapter.ts'
-import { sessionProjectRows } from '../identity/identity-context.ts'
 import { projects } from '../project/projects.ts'
 import { TASK_FLOW_STAGE_STATES } from '../record/record-task-flow-contract.ts'
 import { briefInjectionWindow } from '../session/brief-injection.ts'
@@ -80,7 +80,8 @@ function failureFacts(now: string, since: string, error: unknown): ContextHealth
     reviews: [],
     briefs: [],
     unreachable: {
-      resource: error instanceof ProjectTaskReadError ? 'project task data' : 'architect context store',
+      resource:
+        error instanceof ProjectTaskReadError ? 'project task data' : 'architect context store',
       detail: error instanceof Error ? error.message : String(error),
       remedy:
         error instanceof ProjectTaskReadError

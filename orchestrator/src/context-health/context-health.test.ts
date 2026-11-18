@@ -195,7 +195,7 @@ describe('context health signals', () => {
       }),
     ).signals.s2
     expect(finding?.remedy).toBe(
-      'context item i1 is held by task holder task-record whose task no longer resolves; no verb clears it yet (note 01a1f05f)',
+      'context item i1 is held by task holder task-record whose task no longer resolves; no verb clears it yet (note 01a1f05d)',
     )
     expect(finding?.remedy).not.toContain('--cursor')
   })
