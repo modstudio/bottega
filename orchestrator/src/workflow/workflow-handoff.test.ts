@@ -1,8 +1,11 @@
 import { expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
+import { decideKeyedRunCursorAdmission } from '../dispatch/keyed-run-cursor-admission.ts'
+import { selectBriefInFlight } from '../doc/context-brief.ts'
 import { taskFlowHandoffLinks, taskFlowReadStore } from './task-flow-store.ts'
 import { awaitWorkflowRuling, composeWorkflowWithCursor } from './workflow-cursor.ts'
+import { workflowCursorHandoffLinks } from './workflow-cursor-list.ts'
 import { resolveWorkflowCursorContext } from './workflow-cursor-selection.ts'
 import { database, selectAndNextWorkflowStep, testPorts } from './workflow-cursor-test.fixture.ts'
 import { handoffWorkflow } from './workflow-handoff.ts'
@@ -50,7 +53,19 @@ async function keylessFixture() {
     {},
   )
   const row = (await taskFlowReadStore(d).stageByHandle('fixture', opened.cursor!.id))!
-  return { d, context, row }
+  const runRecordId = newRecordId()
+  const run = d
+    .query<{ number: number }, (string | number)[]>(
+      `INSERT INTO run
+        (record_id,number,started_at,agent,job,repo,project_record_id,prompt_sha,prompt_bytes,
+         prompt_head,status,launch_key,task_record_id,session_id,cursor_record_id)
+       VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM run),'2026-11-18','codex','implement',
+               'fixture',(SELECT record_id FROM project WHERE name='fixture'),'sha',1,'carried run',
+               'running','DEV-KEYLESS','task-DEV-KEYLESS',?,?)
+       RETURNING number`,
+    )
+    .get(runRecordId, context.session, row.record_id)!
+  return { d, context, row, run: { recordId: runRecordId, number: run.number } }
 }
 
 const refusalArgs = {
@@ -285,6 +300,81 @@ test('keyless handoff takes the claim, adopts the key, and moves context to its 
       )
       .get('DEV-KEYLESS'),
   ).toEqual({ holder_session: fixture.context.session, closed_at: null })
+  const runBinding = fixture.d
+    .query<{ cursor_record_id: string | null }, [string]>(
+      'SELECT cursor_record_id FROM run WHERE record_id=?',
+    )
+    .get(fixture.run.recordId)!
+  const links = await taskFlowHandoffLinks(taskFlowReadStore(fixture.d), [successor.record_id])
+  expect(resolveWorkflowCursorSuccessor(runBinding.cursor_record_id, links)).toBe(
+    successor.record_id,
+  )
+  expect(
+    decideKeyedRunCursorAdmission({
+      turn: 'continue',
+      key: 'DEV-KEYLESS',
+      project: 'fixture',
+      bindingPresent:
+        resolveWorkflowCursorSuccessor(runBinding.cursor_record_id, links) === successor.record_id,
+      harnessSession: fixture.context.session,
+      heldCursors: [{ project: 'fixture', workflowKey: 'DEV-KEYLESS' }],
+      overrideReason: undefined,
+      fromOperator: false,
+    }),
+  ).toEqual({ kind: 'allow' })
+})
+
+test('brief lineage lists a carried run under the real handoff successor', async () => {
+  const fixture = await keylessFixture()
+  const args = {
+    key: 'DEV-KEYLESS',
+    branch: 'DEV-KEYLESS-work',
+    worktree: '/tmp/keyless-work',
+  }
+  const context = await resolveWorkflowCursorContext(
+    'fixture',
+    args,
+    fixture.context,
+    async () => [
+      {
+        key: 'DEV-KEYLESS',
+        record_id: 'task-DEV-KEYLESS',
+        project: 'fixture',
+        status_category: 'active',
+      },
+    ],
+    fixture.row,
+  )
+  const result = await handoffWorkflow({
+    row: fixture.row,
+    workflow: 'handoff-target',
+    mode: 'default',
+    args,
+    reason: 'task identified',
+    context,
+    live: {},
+    database: fixture.d,
+  })
+  const successor = (await taskFlowReadStore(fixture.d).stageByHandle('fixture', result.cursor))!
+  const selected = selectBriefInFlight(
+    [
+      {
+        number: fixture.run.number,
+        job: 'implement',
+        status: 'running',
+        label: 'carried run',
+        cursor_record_id: fixture.row.record_id,
+      },
+    ],
+    [successor],
+    [],
+    await workflowCursorHandoffLinks([successor], fixture.d),
+  )
+
+  expect(selected.runs).toEqual([])
+  expect(selected.cursorRuns).toEqual([
+    { recordId: successor.record_id, runs: [fixture.run.number] },
+  ])
 })
 
 function failingKeylessHandoff(

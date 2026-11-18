@@ -70,6 +70,30 @@ test('refuses a keyed explore without changing it', async () => {
   expect(cursorState(database, cursorRecordId)).toEqual({ state: 'running', closed: '[]' })
 })
 
+test('leaves an explore with attached text untouched when untouchedness is required', async () => {
+  const database = migratedTestDatabase()
+  const cursorRecordId = addExplore(database)
+  database
+    .query(
+      `INSERT INTO workflow_step_text
+        (record_id,cursor_record_id,step_ordinal,step_slug,body,created_at)
+       VALUES (?, ?, 1, 'investigate', 'attached finding', '2026-11-12')`,
+    )
+    .run(newRecordId(), cursorRecordId)
+
+  const outcome = await closeExploreForLifecycle(
+    cursorRecordId,
+    'answered',
+    database,
+    writeFinishingWorkflowAdvance,
+    'note',
+    { requireUntouched: true },
+  )
+
+  expect(outcome).toBe('touched')
+  expect(cursorState(database, cursorRecordId)).toEqual({ state: 'running', closed: '[]' })
+})
+
 test('adds the replacing cursor to the existing lifecycle note', async () => {
   const database = migratedTestDatabase()
   const cursorRecordId = addExplore(database)
