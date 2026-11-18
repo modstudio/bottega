@@ -6,19 +6,12 @@ import {
   workflowCursorReference,
 } from './workflow-cursor-format.ts'
 import { evidenceGuidance, type FloorKind, mayCloseOnAgentSelfRuling } from './workflow-floor.ts'
-import type { GraduatedExplore } from './workflow-handoff-types.ts'
+import type { CursorSummary, GraduatedExplore } from './workflow-handoff-types.ts'
 import type { composeWorkflow, getWorkflowStep } from './workflows.ts'
 
 type WorkflowComposition = ReturnType<typeof composeWorkflow> & {
   claimWarning?: string
-  cursor?: {
-    id: number
-    n: number
-    slug: string
-    state: string
-    opened: boolean
-    previousSession?: string | null
-  } | null
+  cursor?: CursorSummary | null
   graduated?: GraduatedExplore
 }
 type WorkflowStep = ReturnType<typeof getWorkflowStep> & {
