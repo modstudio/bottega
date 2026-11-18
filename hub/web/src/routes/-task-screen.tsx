@@ -3,6 +3,7 @@ import { IconButton } from '@bottega/hub-ui/button'
 import { Dialog } from '@bottega/hub-ui/dialog'
 import { EmptyState } from '@bottega/hub-ui/empty-state'
 import { Select } from '@bottega/hub-ui/listbox/select'
+import { toast } from '@bottega/hub-ui/toast'
 import { relativeTime } from '@bottega/hub-util/format'
 import { DocumentSurface } from '@bottega/hub-views/document-surface'
 import { TaskMeasures } from '@bottega/hub-views/measures/task-measures'
@@ -40,6 +41,16 @@ export function taskStatusControlValue(detail: TaskScreenDetail): string {
   return detail.task.statusCategory ?? 'open'
 }
 
+export function statusChangeNotice(
+  outcome: { residue: string | null } | { error: unknown },
+): { kind: 'warning' | 'error'; message: string } | null {
+  if ('error' in outcome) {
+    const message = outcome.error instanceof Error ? outcome.error.message : String(outcome.error)
+    return { kind: 'error', message: `Status not changed: ${message}` }
+  }
+  return outcome.residue === null ? null : { kind: 'warning', message: outcome.residue }
+}
+
 function StatusControl({ detail, result }: { detail: TaskScreenDetail; result: TaskScreenResult }) {
   const { setStatus } = result.actions
   if (!detail.capabilities.setStatus.allowed) return <StatusBadge task={detail.task} />
@@ -53,7 +64,15 @@ function StatusControl({ detail, result }: { detail: TaskScreenDetail; result: T
         value: status,
         label: status,
       }))}
-      onChange={(status) => void setStatus.run(status)}
+      onChange={async (status) => {
+        let notice: ReturnType<typeof statusChangeNotice>
+        try {
+          notice = statusChangeNotice({ residue: await setStatus.run(status) })
+        } catch (error) {
+          notice = statusChangeNotice({ error })
+        }
+        if (notice) toast[notice.kind](notice.message)
+      }}
     />
   )
 }

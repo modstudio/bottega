@@ -20,6 +20,28 @@ export const Kinds: StoryObj<typeof meta> = {
     </>
   ),
 }
+export const Warning: StoryObj<typeof meta> = {
+  render: () => (
+    <>
+      <button
+        type="button"
+        onClick={() =>
+          toast.warning(
+            'Task DEV-1 is closed, but claim cleanup remains.\nclear it with: workflow cleanup release-task DEV-1 --project workshop-with-a-long-name',
+          )
+        }
+      >
+        Show warning
+      </button>
+      <Toaster />
+    </>
+  ),
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await userEvent.click(canvas.getByRole('button', { name: 'Show warning' }))
+    await waitFor(() => expect(canvas.getByText(/Task DEV-1 is closed/)).toBeVisible())
+  },
+}
 export const Keyboard: StoryObj<typeof meta> = {
   render: () => (
     <>

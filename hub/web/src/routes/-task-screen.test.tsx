@@ -3,7 +3,22 @@ import { queryClient } from '@bottega/hub-data/client'
 import type { UseTaskResult } from '@bottega/hub-data/use-task'
 import { QueryClientProvider } from '@tanstack/react-query'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { TaskScreen, taskStatusControlValue } from './-task-screen'
+import { PLATFORM_SLUG } from '../../../../shared/brand.ts'
+import { statusChangeNotice, TaskScreen, taskStatusControlValue } from './-task-screen'
+
+test('status change notices distinguish residue, success, and refusals', () => {
+  const residue = `task DEV-1 is closed; claim release did not finish: boom\nclear it with: ${PLATFORM_SLUG} board claim release-task DEV-1 --project workshop`
+  expect(statusChangeNotice({ residue })).toEqual({ kind: 'warning', message: residue })
+  expect(statusChangeNotice({ residue: null })).toBeNull()
+  expect(statusChangeNotice({ error: new Error('status bogus does not resolve') })).toEqual({
+    kind: 'error',
+    message: 'Status not changed: status bogus does not resolve',
+  })
+  expect(statusChangeNotice({ error: 'offline' })).toEqual({
+    kind: 'error',
+    message: 'Status not changed: offline',
+  })
+})
 
 test('a hosted task renders its history and its rail tabs without edit controls', () => {
   const detail: NonNullable<UseTaskResult['detail']> = {

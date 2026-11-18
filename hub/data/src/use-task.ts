@@ -141,10 +141,11 @@ export function useTask(key: string, recordId?: string) {
         refused: refusal(capability?.setTitle),
       },
       setStatus: {
-        run: async (status: string) => {
-          if (refusal(capability?.setStatus)) return
-          await setStatus.mutateAsync({ ...localInput, status })
+        run: async (status: string): Promise<string | null> => {
+          if (refusal(capability?.setStatus)) return null
+          const outcome = await setStatus.mutateAsync({ ...localInput, status })
           await refresh()
+          return outcome.residue
         },
         pending: setStatus.isPending,
         error: setStatus.error,

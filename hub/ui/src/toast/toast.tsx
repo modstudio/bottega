@@ -4,7 +4,7 @@ import { Badge, type Tone } from '../badge/badge'
 import { IconButton } from '../button/button'
 import { toastStyles } from './toast.styles.ts'
 
-type Kind = Extract<Tone, 'success' | 'error' | 'info'>
+type Kind = Extract<Tone, 'success' | 'warning' | 'error' | 'info'>
 type ToastItem = { id: number; kind: Kind; message: string }
 
 const DISMISS_MS = 5000
@@ -35,18 +35,24 @@ function schedule(id: number) {
 function show(kind: Kind, message: string) {
   const id = nextId++
   items = [...items, { id, kind, message }]
-  schedule(id)
+  if (kind !== 'warning') schedule(id)
   emit()
 }
 
 /** Announces the outcome of an action. */
 export const toast = {
   success: (message: string) => show('success', message),
+  warning: (message: string) => show('warning', message),
   error: (message: string) => show('error', message),
   info: (message: string) => show('info', message),
 }
 
-const kindLabel: Record<Kind, string> = { success: 'Done', error: 'Failed', info: 'Note' }
+const kindLabel: Record<Kind, string> = {
+  success: 'Done',
+  warning: 'Warning',
+  error: 'Failed',
+  info: 'Note',
+}
 
 /**
  * The toast region, mounted once. Announcements go through a live region that
@@ -88,8 +94,10 @@ export function Toaster() {
             <li
               key={item.id}
               data-tone={item.kind}
-              onPointerEnter={() => window.clearTimeout(timers.get(item.id))}
-              onPointerLeave={() => schedule(item.id)}
+              onPointerEnter={
+                item.kind === 'warning' ? undefined : () => window.clearTimeout(timers.get(item.id))
+              }
+              onPointerLeave={item.kind === 'warning' ? undefined : () => schedule(item.id)}
               className={toastStyles().item()}
             >
               <Badge tone={item.kind}>{kindLabel[item.kind]}</Badge>
