@@ -49,8 +49,12 @@ export async function applyFloorDecision(
   selfRulingId?: number,
   callerSession?: string | null,
 ): Promise<FloorDecision> {
-  const args = JSON.parse(row.args) as Record<string, string>
   const foreignOwner = foreignCursorOwner(row, callerSession)
+  if (!row.workflow_key && foreignOwner)
+    throw new Error(
+      `workflow cursor ${row.id} is owned by session ${foreignOwner}; a keyless cursor changes owner only through an explicit takeover. Take it over with: ${workflowCursorTakeoverRemedy(row, foreignOwner)}`,
+    )
+  const args = JSON.parse(row.args) as Record<string, string>
   const evidenceFloors = floors.filter(({ kind }) => kind !== 'review-owed')
   if (row.enforcement === 'floors' && evidenceFloors.length !== floors.length) {
     const reviewOwed = invokeFloorEvidencePort(
