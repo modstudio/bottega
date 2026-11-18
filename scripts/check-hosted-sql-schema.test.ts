@@ -6,9 +6,23 @@ import {
   extractHostedFixtureSqlFromSource,
   extractHostedSql,
   extractHostedSqlFromSource,
+  extractSqlFromSource,
 } from './hosted-sql-schema.ts'
 
 describe('hosted SQL schema guard', () => {
+  test('keeps local-handle statement kinds out of the hosted schema extractor', () => {
+    const input = {
+      sourceText:
+        "import type { SQL } from 'bun'; function migrate(sql: SQL) { return sql`CREATE TABLE question (record_id text)` }",
+      file: 'migration.ts',
+    }
+
+    expect(extractHostedSqlFromSource(input)).toEqual({ sites: [], unresolved: [] })
+    expect(extractSqlFromSource(input).sites.map((site) => site.sql)).toEqual([
+      'CREATE TABLE question (record_id text)',
+    ])
+  })
+
   test('accepts a current column and rejects a wrong hosted column', async () => {
     const database = new PGlite()
     await database.waitReady
