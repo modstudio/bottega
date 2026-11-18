@@ -437,8 +437,8 @@ async function applyStageUpdates(tx: SQL, body: StageUpdateBody) {
 
 type HandoffSourceRow = {
   session_id: string | null
-  workflow_slug: string
-  mode_slug: string
+  workflow: string
+  mode: string
   workflow_key: string | null
   flow_record_id: string
   state: string
@@ -452,7 +452,7 @@ async function lockHandoffRows(tx: SQL, body: HandoffBody) {
   const lockedFlow = flowRows[0]
   if (!lockedFlow) conflict('task_flow', body.flow.id, null)
   const sourceRows = (await tx.unsafe(
-    `SELECT session_id,workflow_slug,mode_slug,workflow_key,flow_record_id::text,state
+    `SELECT session_id,workflow,mode,workflow_key,flow_record_id::text,state
      FROM task_flow_stage WHERE id=$1::uuid FOR UPDATE`,
     [body.oldStage.id],
   )) as HandoffSourceRow[]
@@ -492,7 +492,7 @@ async function applyHandoff(tx: SQL, input: Tenant, body: HandoffBody) {
     return replayHandoff(tx, input, body, mutations)
   if (source.state === 'done' || source.state === 'abandoned')
     refusal(
-      `workflow ${source.workflow_slug}${source.workflow_key ? ` for ${source.workflow_key}` : ` (${source.mode_slug})`} is ${source.state}`,
+      `workflow ${source.workflow}${source.workflow_key ? ` for ${source.workflow_key}` : ` (${source.mode})`} is ${source.state}`,
       `task_flow_stage.id=${body.oldStage.id}`,
       'already-exists',
     )
