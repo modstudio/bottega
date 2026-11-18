@@ -334,7 +334,7 @@ export async function execCommand(
 
 /**
  * The receiving form of the hand-off: it takes no child command, records the payload
- * an exec could not, and prints the id exactly as exec does. Its own exit status
+ * an exec could not, and prints the recorded id, which callers read through --json. Its own exit status
  * reports whether the row was recorded, never the wrapped command's status, because
  * the wrapping process owns that and reads a non-zero receiver as lost evidence.
  */

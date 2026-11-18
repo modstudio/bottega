@@ -128,13 +128,22 @@ const runFlags = (options: OptionValues) => ({
 const runGateCommand = async (): Promise<void> => {
   const result = await runArchitectGate({ write: (chunk) => write(chunk) })
   log(
-    formatOutcomeLine({
-      kind: 'gate',
-      id: result.number,
-      exitCode: result.exitCode,
-      signal: null,
-      commit: result.commit,
-    }),
+    formatOutcomeLine(
+      'commitUnknown' in result
+        ? {
+            kind: 'gate',
+            id: result.number,
+            exitCode: result.exitCode,
+            commit: null,
+            commitUnknown: result.commitUnknown,
+          }
+        : {
+            kind: 'gate',
+            id: result.number,
+            exitCode: result.exitCode,
+            commit: result.commit,
+          },
+    ),
   )
   presentation.setExitCode(architectGateProcessExitCode(result.exitCode))
 }

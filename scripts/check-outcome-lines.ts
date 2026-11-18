@@ -1,17 +1,14 @@
-import { existsSync, readdirSync, readFileSync } from 'node:fs'
-import { join, relative, resolve } from 'node:path'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import ts from 'typescript'
+import { DECLARED_SOURCE_ROOTS, isProductionSourceFile } from './architecture-undeclared-modules.ts'
+import { sourceFiles } from './source-analysis.ts'
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url)).replace(/\/$/, '')
-const SOURCE_ROOTS = ['orchestrator/src', 'hub/src']
 const REMEDY = 'finish fallible command output with an outcome line that includes its id'
 
 export type OutcomeLineSource = { path: string; source: string }
-
-function productionTypeScript(path: string): boolean {
-  return /\.tsx?$/.test(path) && !/\.test\.tsx?$/.test(path)
-}
 
 function literalExitCode(node: ts.Expression): boolean {
   return (
@@ -96,7 +93,8 @@ function functionBodyNodes(node: FunctionWithBody): ts.Node[] {
 /** Find fallible command actions whose plain terminal output is still only an id. */
 export function outcomeLineViolations(sources: readonly OutcomeLineSource[]): string[] {
   return sources.flatMap(({ path, source }) => {
-    if (!productionTypeScript(path)) return []
+    if (!isProductionSourceFile(path) || !/\.[cm]?tsx?$/.test(path)) return []
+    if (!source.includes('exitCode') || !source.includes('String(')) return []
     const file = ts.createSourceFile(path, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS)
     const functions = functionLikes(file)
     const computedExitHelpers = new Set(
@@ -126,22 +124,13 @@ export function outcomeLineViolations(sources: readonly OutcomeLineSource[]): st
   })
 }
 
-function sourceFiles(): OutcomeLineSource[] {
-  const files: string[] = []
-  const collect = (directory: string): void => {
-    if (!existsSync(directory)) return
-    for (const entry of readdirSync(directory, { withFileTypes: true })) {
-      const absolute = join(directory, entry.name)
-      if (entry.isDirectory()) collect(absolute)
-      else if (entry.isFile()) files.push(relative(ROOT, absolute))
-    }
-  }
-  for (const root of SOURCE_ROOTS) collect(resolve(ROOT, root))
-  return files.sort().map((path) => ({ path, source: readFileSync(resolve(ROOT, path), 'utf8') }))
-}
-
 if (import.meta.main) {
-  const violations = outcomeLineViolations(sourceFiles())
+  const violations = outcomeLineViolations(
+    sourceFiles(ROOT, DECLARED_SOURCE_ROOTS, isProductionSourceFile).map((path) => ({
+      path,
+      source: readFileSync(resolve(ROOT, path), 'utf8'),
+    })),
+  )
   if (violations.length) {
     console.error(violations.join('\n'))
     process.exit(1)
