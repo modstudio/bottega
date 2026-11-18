@@ -113,9 +113,7 @@ test('clears every open cursor worktree pointer at a removed path and records th
     'running',
   )
 
-  const hostedStages = [ids[0]!, ids[1]!, unrelated].map((id) =>
-    hostedCursorStageFixture(d, id),
-  )
+  const hostedStages = [ids[0]!, ids[1]!, unrelated].map((id) => hostedCursorStageFixture(d, id))
   const previousRecordUrl = process.env.BOTTEGA_RECORD_API_URL
   process.env.BOTTEGA_RECORD_API_URL = 'https://record.example.test'
   d.query(

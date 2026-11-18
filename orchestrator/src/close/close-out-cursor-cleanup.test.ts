@@ -5,10 +5,7 @@ import {
   installRecordApiClient,
 } from '../../test/fixtures/record-api.ts'
 import { addRun } from '../../test/fixtures/store.ts'
-import {
-  addOpenCursorWorktree,
-  hostedCursorStageFixture,
-} from '../../test/fixtures/workflow.ts'
+import { addOpenCursorWorktree, hostedCursorStageFixture } from '../../test/fixtures/workflow.ts'
 import {
   closeDatabaseForFixture,
   db,
@@ -23,9 +20,7 @@ test('a failed close-out clears cursor pointers when the tree is already gone', 
   db().query('UPDATE run SET worktree=?,cwd=? WHERE record_id=?').run(path, path, id)
   const cursor = addOpenCursorWorktree(db(), { project: 'run-fixture', worktree: path })
   const cursorRecordId = db()
-    .query<{ record_id: string }, [number]>(
-      'SELECT record_id FROM workflow_cursor WHERE number=?',
-    )
+    .query<{ record_id: string }, [number]>('SELECT record_id FROM workflow_cursor WHERE number=?')
     .get(cursor)!.record_id
   const hostedStage = hostedCursorStageFixture(db(), cursorRecordId)
   const previousRecordUrl = process.env.BOTTEGA_RECORD_API_URL
@@ -80,9 +75,7 @@ test('tree removal reports a cursor cleanup failure without changing the absent 
   db().query('UPDATE run SET worktree=?,cwd=? WHERE record_id=?').run(path, path, id)
   const cursor = addOpenCursorWorktree(db(), { project: 'run-fixture', worktree: path })
   const cursorRecordId = db()
-    .query<{ record_id: string }, [number]>(
-      'SELECT record_id FROM workflow_cursor WHERE number=?',
-    )
+    .query<{ record_id: string }, [number]>('SELECT record_id FROM workflow_cursor WHERE number=?')
     .get(cursor)!.record_id
   const hostedStage = hostedCursorStageFixture(db(), cursorRecordId)
   const previousRecordUrl = process.env.BOTTEGA_RECORD_API_URL
