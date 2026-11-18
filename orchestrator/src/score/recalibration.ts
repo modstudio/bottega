@@ -96,7 +96,7 @@ export async function recalibrate(
         throw new Error('too many verdict words for this run')
       }
       const fresh: [Delivery, Quality | null, Fidelity | null] = [
-        delivery,
+        delivery as Delivery,
         quality ?? null,
         needsFidelity ? fidelity! : null,
       ]

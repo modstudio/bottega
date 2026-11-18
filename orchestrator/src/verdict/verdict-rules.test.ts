@@ -143,7 +143,7 @@ describe('verdict rules', () => {
       const facts: VerdictFacts = {
         delivery,
         quality,
-        fidelity: writesRepo && delivery !== 'none' ? (fidelity ?? null) : null,
+        fidelity: writesRepo && (delivery as string) !== 'none' ? (fidelity ?? null) : null,
         job: {
           writesRepo,
           producesFindings: false,
