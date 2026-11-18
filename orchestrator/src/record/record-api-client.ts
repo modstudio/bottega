@@ -84,10 +84,8 @@ import type {
   HostedBoardMessage,
   HostedBoardOverview,
   HostedBoardOverviewFilters,
-  HostedBoardPostInput,
   HostedBoardReceipt,
   HostedBoardReceiptInput,
-  HostedBoardReplyInput,
   HostedBoardSessionInput,
   HostedBoardStatus,
   HostedBoardSuccessorInput,
@@ -411,16 +409,8 @@ export type RecordApiClient = ProjectIdentityClient &
       query?: HostedBoardOverviewFilters,
       signal?: AbortSignal,
     ): Promise<HostedBoardOverview>
-    postBoardMessage(
-      input: HostedBoardPostInput,
-      destination: RecordWriteDestination,
-      signal?: AbortSignal,
-    ): Promise<HostedBoardMessage>
-    replyBoardMessage(
-      rootId: string,
-      input: HostedBoardReplyInput,
-      destination: RecordWriteDestination,
-    ): Promise<HostedBoardMessage>
+    postBoardMessage: ReturnType<typeof recordBoardClient>['postBoardMessage']
+    replyBoardMessage: ReturnType<typeof recordBoardClient>['replyBoardMessage']
     withdrawBoardMessage(
       id: string,
       destination: RecordWriteDestination,

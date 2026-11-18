@@ -28,7 +28,7 @@ import type {
   HostedBoardReceipt,
   HostedBoardStatus,
   HostedBoardThread,
-  HostedBoardWriteResponse,
+  HostedBoardWriteClientResponse,
 } from '../record/record-board-contract.ts'
 import { isClosedStageState } from '../record/record-task-flow-contract.ts'
 import { resolveRunIdentifier } from '../run/run-identifier.ts'
@@ -258,7 +258,10 @@ function localPostResult(value: ReturnType<typeof postNotice>): BoardPostResult 
   }
 }
 
-function hostedPostResult(mintedId: string, response: HostedBoardWriteResponse): BoardPostResult {
+function hostedPostResult(
+  mintedId: string,
+  response: HostedBoardWriteClientResponse,
+): BoardPostResult {
   const result = hostedBoardWriteResult(mintedId, response)
   return {
     recordId: response.id,

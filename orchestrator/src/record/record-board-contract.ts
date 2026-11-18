@@ -83,6 +83,7 @@ export type HostedBoardMessage = {
 }
 
 export type HostedBoardWriteResponse = HostedBoardMessage & { duplicateOf: string | null }
+export type HostedBoardWriteClientResponse = HostedBoardMessage & { duplicateOf?: string | null }
 
 export type HostedBoardReply = {
   id: string
