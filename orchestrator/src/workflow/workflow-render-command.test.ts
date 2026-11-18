@@ -102,11 +102,16 @@ test('production workflow step close commands match the real workflow next gramm
   expect(await productionCommandFailures()).toEqual([])
 })
 
-test('the step close-command guard accepts repeated artifacts and reports an unknown flag', async () => {
-  const failures = await grammarFailures(
-    `${PLATFORM_SLUG} workflow next fixture --artifact exec:1 --artifact exec:2 --unknown fixture`,
-  )
+test('the step close-command guard accepts repeated artifacts', async () => {
+  expect(
+    await grammarFailures(
+      `${PLATFORM_SLUG} workflow next fixture --artifact exec:1 --artifact exec:2`,
+    ),
+  ).toEqual([])
+})
+
+test('the step close-command guard reports an unknown flag', async () => {
+  const failures = await grammarFailures(`${PLATFORM_SLUG} workflow next fixture --unknown fixture`)
   expect(failures).toHaveLength(1)
   expect(failures[0]).toContain("unknown option '--unknown'")
-  expect(failures[0]).not.toContain('--artifact may be supplied only once')
 })
