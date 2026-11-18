@@ -7,7 +7,7 @@ import {
   type ContextHolderKind,
 } from '../../../shared/context-item-vocabulary.ts'
 import { sessionProjectRows } from '../board/board-store.ts'
-import { nowIso } from '../database/db.ts'
+import { db, nowIso } from '../database/db.ts'
 import { scopeContextHolders } from '../doc/context-service.ts'
 import { docHasRepositoryReferences } from '../doc/doc-lint.ts'
 import { lintStoredDoc } from '../doc/doc-lint-adapter.ts'
@@ -41,12 +41,12 @@ async function taskRows(project: string | undefined): Promise<HubTaskReference[]
 }
 
 class ProjectTaskReadError extends Error {
-  constructor(
-    readonly project: string,
-    cause: unknown,
-  ) {
+  readonly project: string
+
+  constructor(project: string, cause: unknown) {
     super(cause instanceof Error ? cause.message : String(cause))
     this.name = 'ProjectTaskReadError'
+    this.project = project
   }
 }
 
@@ -170,7 +170,7 @@ async function gatherContextHealthFacts(
   since: string,
 ): Promise<ContextHealthFacts> {
   const tasks = await taskRows(options.project)
-  const flowStore = taskFlowReadStore()
+  const flowStore = taskFlowReadStore(db())
   const cursorRows = await flowStore.listStages({
     ...(options.project ? { project: options.project } : {}),
     states: TASK_FLOW_STAGE_STATES,
