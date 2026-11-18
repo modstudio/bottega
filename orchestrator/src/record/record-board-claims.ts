@@ -503,7 +503,7 @@ async function takeClaimInTx(
               WHERE project_id=${projectId}::uuid
                 AND workflow_key=${subject.value}
                 AND session_id=${session}
-                AND state IN (${TASK_FLOW_OPEN_STAGE_STATES_SQL})
+                AND state IN (${tx.unsafe(TASK_FLOW_OPEN_STAGE_STATES_SQL)})
               LIMIT 1
             `
           )[0],

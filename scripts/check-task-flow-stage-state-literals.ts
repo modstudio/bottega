@@ -15,6 +15,9 @@ const stageStates = taskFlowStageStateSqlList(TASK_FLOW_STAGE_STATES)
 const STAGE_STATE = new RegExp(`['"](${stageStates.map(regexEscape).join('|')})['"]`, 'g')
 const ARRAY_LITERAL = /\[[^\[\]]*\]/g
 const SQL_IN_LIST = /\b(?:NOT\s+)?IN\s*\([^()]*\)/gi
+const STAGE_STATES_SQL_INTERPOLATION =
+  /\$\{([^}\n]*\bTASK_FLOW_(?:OPEN|CLOSED)_STAGE_STATES_SQL\b[^}\n]*)\}/g
+const UNSAFE_STAGE_STATES_SQL = /\bunsafe\s*\(\s*TASK_FLOW_(?:OPEN|CLOSED)_STAGE_STATES_SQL\s*\)/
 const EXEMPTIONS = [
   {
     pathPrefix: 'shared/record/migrations/',
@@ -68,22 +71,52 @@ function restatesStageStateSet(line: string): boolean {
   return typeUnionOperands.length >= 2 && operandsRestateStageStateSet(typeUnionOperands)
 }
 
+type TemplateKind = 'plain' | 'tagged' | null
+
+function unsafeStageStateSqlInterpolations(source: string): number[] {
+  let template: TemplateKind = null
+  return source.split('\n').flatMap((line, index) => {
+    const interpolations = [...line.matchAll(STAGE_STATES_SQL_INTERPOLATION)]
+    let unsafeInterpolation = false
+    for (let offset = 0; offset < line.length; offset += 1) {
+      const interpolation = interpolations.find((match) => match.index === offset)
+      if (
+        interpolation &&
+        template === 'tagged' &&
+        !UNSAFE_STAGE_STATES_SQL.test(interpolation[1]!)
+      ) {
+        unsafeInterpolation = true
+      }
+      if (line[offset] !== '`' || line[offset - 1] === '\\') continue
+      if (template !== null) {
+        template = null
+        continue
+      }
+      const prefix = line.slice(0, offset)
+      template = /[A-Za-z_$][\w$]*$/.test(prefix) ? 'tagged' : 'plain'
+    }
+    return unsafeInterpolation ? [index + 1] : []
+  })
+}
+
 export function taskFlowStageStateLiteralRestatements(root = ROOT): string[] {
   return sourceFiles(root, ['orchestrator/src', 'orchestrator/test', 'shared'], (path) => {
     return (path.endsWith('.ts') || path.endsWith('.sql')) && path !== DECLARATION
-  }).flatMap((path) =>
-    readFileSync(`${root}/${path}`, 'utf8')
-      .split('\n')
-      .flatMap((line, index) => {
-        return restatesStageStateSet(line) &&
-          stageStateContext(path, line) &&
-          !exemptStageStateLine(path, line)
-          ? [
-              `${path}:${index + 1}: derive task-flow stage-state sets from record-task-flow-contract`,
-            ]
-          : []
-      }),
-  )
+  }).flatMap((path) => {
+    const source = readFileSync(`${root}/${path}`, 'utf8')
+    const literalFindings = source.split('\n').flatMap((line, index) => {
+      return restatesStageStateSet(line) &&
+        stageStateContext(path, line) &&
+        !exemptStageStateLine(path, line)
+        ? [`${path}:${index + 1}: derive task-flow stage-state sets from record-task-flow-contract`]
+        : []
+    })
+    const interpolationFindings = unsafeStageStateSqlInterpolations(source).map(
+      (line) =>
+        `${path}:${line}: splice task-flow stage-state SQL with the tagged template's unsafe helper`,
+    )
+    return [...literalFindings, ...interpolationFindings]
+  })
 }
 
 if (import.meta.main) {

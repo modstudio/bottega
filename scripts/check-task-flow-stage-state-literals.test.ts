@@ -42,3 +42,24 @@ test('ignores same-word vocabularies outside stage context but catches SQL state
     'orchestrator/src/run/query.ts:1: derive task-flow stage-state sets from record-task-flow-contract',
   ])
 })
+
+test('requires stage-state SQL lists in tagged templates to use an unsafe fragment', () => {
+  const root = mkdtempSync(join(tmpdir(), 'task-flow-stage-state-guard-'))
+  const source = join(root, 'orchestrator/src/record')
+  mkdirSync(source, { recursive: true })
+  writeFileSync(
+    join(source, 'queries.ts'),
+    [
+      'const bound = tx`',
+      '  SELECT 1 WHERE state IN (${TASK_FLOW_OPEN_STAGE_STATES_SQL})',
+      '`',
+      'const raw = tx`',
+      '  SELECT 1 WHERE state IN (${tx.unsafe(TASK_FLOW_OPEN_STAGE_STATES_SQL)})',
+      '`',
+    ].join('\n'),
+  )
+
+  expect(taskFlowStageStateLiteralRestatements(root)).toEqual([
+    "orchestrator/src/record/queries.ts:2: splice task-flow stage-state SQL with the tagged template's unsafe helper",
+  ])
+})
