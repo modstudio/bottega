@@ -14,7 +14,11 @@ import {
 import { taskFlowRequestId } from '../record/record-task-flow-write-contract.ts'
 import { taskFlowLocalStore, taskFlowReadStore } from './task-flow-store.ts'
 import type { TaskFlowIntentInput } from './task-flow-store-types.ts'
-import { resolveCursorArguments } from './workflow-cursor-arguments.ts'
+import {
+  declaredCursorArguments,
+  rebindableCursorArguments,
+  resolveCursorArguments,
+} from './workflow-cursor-arguments.ts'
 import { workflowCursorReference } from './workflow-cursor-format.ts'
 
 export type CursorBranchBindingDecision =
@@ -43,6 +47,7 @@ export type CursorArgumentBindingResult =
 export type TaskKeyWorktreeBindingResult =
   | { action: 'none' | 'bound' }
   | { action: 'ambiguous'; cursors: number[] }
+  | { action: 'refused'; cursor: number; warning: string }
 
 function pullRequestNumberForBranch(
   database: Database,
@@ -76,6 +81,25 @@ function branchRefusalWarning(input: {
   )
 }
 
+function branchConflictWarning(input: {
+  cursor: number
+  project: string
+  workflow: string
+  currentBranch: string
+  runBranch: string
+}): string {
+  const reference = workflowCursorReference(input.cursor, input.project).cli
+  return (
+    `workflow cursor ${input.cursor} kept branch ${input.currentBranch}: run branch ${input.runBranch} ` +
+    `conflicts with the workflow's non-rebindable branch argument; abandon the cursor with ` +
+    `${PLATFORM_SLUG} workflow abandon ${input.workflow}${reference} --reason "<why>"`
+  )
+}
+
+function bindingFailureWarning(cursor: number, error: unknown): string {
+  return `workflow cursor ${cursor} argument binding failed: ${String((error as Error)?.message ?? error)}`
+}
+
 /** Merge lifecycle-discovered arguments and persist them through the task-flow stage-update port. */
 export async function bindCursorArguments(
   input: {
@@ -90,11 +114,12 @@ export async function bindCursorArguments(
   const row = await taskFlowReadStore(database, client).stageByRecordId(input.cursorRecordId)
   if (!row) return { action: 'unbound' }
   const stored = JSON.parse(row.args) as Record<string, string>
+  const declared = new Set(['branch', 'worktree'])
+  const rebindable = rebindableCursorArguments(row, database)
   const supplied: Record<string, string> = {}
-  if (input.worktree?.trim()) supplied.worktree = input.worktree
+  if (declared.has('worktree') && input.worktree?.trim()) supplied.worktree = input.worktree
 
-  let refusal: Extract<CursorArgumentBindingResult, { action: 'refused' }> | null = null
-  if (input.branch?.trim()) {
+  if (declared.has('branch') && input.branch?.trim()) {
     const currentBranch = stored.branch?.trim() || null
     const pullRequestNumber = currentBranch
       ? pullRequestNumberForBranch(database, row.project, currentBranch)
@@ -105,7 +130,7 @@ export async function bindCursorArguments(
       runBranch: input.branch,
     })
     if (decision.action === 'refuse') {
-      refusal = {
+      return {
         action: 'refused',
         warning: branchRefusalWarning({
           cursor: row.id,
@@ -116,13 +141,26 @@ export async function bindCursorArguments(
           pullRequestNumber: decision.pullRequestNumber,
         }),
       }
-    } else if (decision.action !== 'no-op') supplied.branch = input.branch
+    }
+    if (decision.action === 'rebind' && !rebindable.has('branch')) {
+      return {
+        action: 'refused',
+        warning: branchConflictWarning({
+          cursor: row.id,
+          project: row.project,
+          workflow: row.workflow_slug,
+          currentBranch: currentBranch!,
+          runBranch: input.branch,
+        }),
+      }
+    }
+    if (decision.action !== 'no-op') supplied.branch = input.branch
   }
 
-  if (Object.keys(supplied).length === 0) return refusal ?? { action: 'no-op' }
+  if (Object.keys(supplied).length === 0) return { action: 'no-op' }
   const resolved = resolveCursorArguments(row, supplied, database)
   if (resolved.encoded === row.args && resolved.closed === row.closed)
-    return refusal ?? { action: 'no-op' }
+    return { action: 'no-op' }
   const payload: TaskFlowIntentInput<'stage-update'> = {
     requestId: taskFlowRequestId('stage-update', [row.record_id, String(row.revision)]),
     stages: [
@@ -147,7 +185,7 @@ export async function bindCursorArguments(
     () => taskFlowLocalStore(database).write('stage-update', payload, hosted),
     database,
   )
-  return refusal ?? { action: 'updated' }
+  return { action: 'updated' }
 }
 
 /** Read one run's recorded lifecycle handles and bind them to its cursor, if any. */
@@ -194,10 +232,17 @@ export async function bindTaskKeyWorktree(
   ).filter((row) => row.workflow_key === input.key)
   if (rows.length === 0) return { action: 'none' }
   if (rows.length > 1) return { action: 'ambiguous', cursors: rows.map((row) => row.id) }
-  await bindCursorArguments(
-    { cursorRecordId: rows[0]!.record_id, worktree: input.worktree },
-    database,
-    client,
-  )
+  const row = rows[0]!
+  try {
+    const result = await bindCursorArguments(
+      { cursorRecordId: row.record_id, worktree: input.worktree },
+      database,
+      client,
+    )
+    if (result.action === 'refused')
+      return { action: 'refused', cursor: row.id, warning: result.warning }
+  } catch (error) {
+    return { action: 'refused', cursor: row.id, warning: bindingFailureWarning(row.id, error) }
+  }
   return { action: 'bound' }
 }

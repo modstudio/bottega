@@ -8,21 +8,28 @@ import { bindTaskKeyWorktree } from '../workflow/workflow-cursor-binding.ts'
 import { createHookTree, removeHookTree } from './tree.ts'
 export async function treeCreateCommand(
   options: { cwd: string; name: string; key?: string; base?: string; seed?: string },
-  presentation: { writePath(path: string): void },
+  presentation: { writePath(path: string): void; error(message: string): void },
 ): Promise<void> {
+  const project = projectAt(options.cwd)
+  if (!project) {
+    throw new Error(
+      `cwd ${options.cwd} is not inside a registered project; run ${PLATFORM_SLUG} project list and retry with --cwd inside one of its paths`,
+    )
+  }
   const path = createHookTree(options)
   presentation.writePath(path)
   if (!options.key) return
   const result = await bindTaskKeyWorktree({
-    project: projectAt(options.cwd)!.name,
+    project: project.name,
     key: options.key,
     worktree: path,
   })
   if (result.action === 'ambiguous') {
-    presentation.writePath(
+    presentation.error(
       `worktree was not bound: task ${options.key} has multiple open workflow cursors (${result.cursors.join(', ')})`,
     )
   }
+  if (result.action === 'refused') presentation.error(result.warning)
 }
 
 export async function treeRemoveCommand(path: string): Promise<void> {
@@ -32,9 +39,10 @@ export async function treeRemoveCommand(path: string): Promise<void> {
 export async function treeOpenCommand(
   runId: string,
   seed: string | undefined,
-  presentation: { log(value: string): void },
+  presentation: { log(value: string): void; error(message: string): void },
 ): Promise<void> {
   const opened = await openLandingTree(runId, seed)
+  if (opened.warning) presentation.error(opened.warning)
   presentation.log(`tree: ${opened.path}`)
   presentation.log(`branch: ${opened.branch}`)
   presentation.log(`tip: ${opened.tip}`)

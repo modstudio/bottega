@@ -5,6 +5,7 @@ import { productionStepCatalogue } from './step-catalogue.ts'
 import { composeWorkflowWithCursor } from './workflow-cursor.ts'
 import {
   bindRecordedRunCursorArguments,
+  bindTaskKeyWorktree,
   decideCursorBranchBinding,
 } from './workflow-cursor-binding.ts'
 import { closeStep, context } from './workflow-cursor-test.fixture.ts'
@@ -13,8 +14,25 @@ import { seedCurrentWorkflowTreeFixture } from './workflow-store.fixture.ts'
 import { getWorkflowStep, showResolvedWorkflow } from './workflows.ts'
 
 const currentDatabase = testDatabaseFixture((d) =>
-  seedCurrentWorkflowTreeFixture(d, ['fix-defect'], 'DEV-2449 current workflow fixture'),
+  seedCurrentWorkflowTreeFixture(d, ['explore', 'fix-defect'], 'DEV-2449 current workflow fixture'),
 )
+
+function resolutionFor(workflow: string, modeSlug: string, d: ReturnType<typeof currentDatabase>) {
+  const definition = showResolvedWorkflow(workflow, undefined, 'fixture', d).definition
+  const mode = definition.modes.find(({ slug }) => slug === modeSlug)!
+  const stepSlugs = expandWorkflowSteps(
+    mode.steps,
+    productionStepCatalogue(d).definition.sequences ?? [],
+  )
+  return {
+    layers: [],
+    steps: Object.fromEntries(
+      stepSlugs.map((slug) => [slug, { value: 'auto' as const, scope: 'test' }]),
+    ),
+    rulings: { value: 'agent' as const, scope: 'test' },
+    shipTo: { value: 'trunk' as const, scope: 'test' },
+  }
+}
 
 describe('cursor branch binding decision', () => {
   test.each([
@@ -167,7 +185,7 @@ test('a bound implement run makes every fix-defect step render and advances blas
       .query<{ args: string }, [string]>('SELECT args FROM workflow_cursor WHERE record_id=?')
       .get(cursor.record_id)!.args,
   ) as Record<string, string>
-  expect(refusedArgs).toMatchObject({ branch: renamedBranch, worktree: reopenedWorktree })
+  expect(refusedArgs).toMatchObject({ branch: renamedBranch, worktree })
 })
 
 test('a bound read-only run leaves a keyed fix-defect cursor branch and worktree unchanged', async () => {
@@ -232,4 +250,127 @@ test('a bound read-only run leaves a keyed fix-defect cursor branch and worktree
   expect(
     d.query('SELECT args,closed FROM workflow_cursor WHERE record_id=?').get(cursor.record_id),
   ).toEqual(before)
+})
+
+test('a writing run bound to explore skips undeclared branch and worktree handles', async () => {
+  const d = currentDatabase()
+  const composition = await composeWorkflowWithCursor(
+    'explore',
+    'fixture',
+    'default',
+    {},
+    { session: context.session },
+    d,
+    {},
+    { resolution: resolutionFor('explore', 'default', d) },
+  )
+  const cursor = d
+    .query<{ record_id: string; args: string; closed: string }, [number]>(
+      'SELECT record_id,args,closed FROM workflow_cursor WHERE number=?',
+    )
+    .get(composition.cursor!.id)!
+  const run = newRecordId()
+  d.query(
+    `INSERT INTO run
+      (record_id,number,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,
+       cursor_record_id,step_slug,branch,worktree,project_record_id)
+     VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM run),'2026-11-18','codex','implement',
+             'sha',1,'explore guard','ok',?,?,?,?,(SELECT record_id FROM project WHERE name='fixture'))`,
+  ).run(run, cursor.record_id, 'investigate', 'DEV-2449-explore', '/tmp/dev-2449-explore')
+
+  expect(await bindRecordedRunCursorArguments(run, d)).toEqual({ action: 'no-op' })
+  expect(
+    d.query('SELECT args,closed FROM workflow_cursor WHERE record_id=?').get(cursor.record_id),
+  ).toEqual({ args: cursor.args, closed: cursor.closed })
+})
+
+describe('task-key worktree binding', () => {
+  async function addCursor(d: ReturnType<typeof currentDatabase>, key: string) {
+    d.query('UPDATE project SET settings=? WHERE name=?').run(
+      JSON.stringify({
+        gate: 'bun run check',
+        trunk: 'main',
+        tracker: { protocol: 'hub' },
+        docs: { protocol: 'orch-docs' },
+        release: { rungs: [], mergeMethod: 'squash', requiredChecks: [] },
+      }),
+      'fixture',
+    )
+    const composition = await composeWorkflowWithCursor(
+      'fix-defect',
+      'fixture',
+      'single',
+      { key },
+      { session: context.session, taskRecordId: `task-${key}` },
+      d,
+      {},
+      { resolution: resolutionFor('fix-defect', 'single', d) },
+    )
+    return d
+      .query<{ record_id: string; number: number }, [number]>(
+        'SELECT record_id,number FROM workflow_cursor WHERE number=?',
+      )
+      .get(composition.cursor!.id)!
+  }
+
+  test('none leaves cursor storage unchanged', async () => {
+    const d = currentDatabase()
+    expect(
+      await bindTaskKeyWorktree(
+        { project: 'fixture', key: 'DEV-NONE', worktree: '/tmp/dev-none' },
+        d,
+      ),
+    ).toEqual({ action: 'none' })
+    expect(d.query('SELECT count(*) AS count FROM workflow_cursor').get()).toEqual({ count: 0 })
+  })
+
+  test('bound stores the worktree on the only open cursor', async () => {
+    const d = currentDatabase()
+    const cursor = await addCursor(d, 'DEV-BOUND')
+    expect(
+      await bindTaskKeyWorktree(
+        { project: 'fixture', key: 'DEV-BOUND', worktree: '/tmp/dev-bound' },
+        d,
+      ),
+    ).toEqual({ action: 'bound' })
+    expect(
+      JSON.parse(
+        d.query<{ args: string }, [string]>('SELECT args FROM workflow_cursor WHERE record_id=?').get(
+          cursor.record_id,
+        )!.args,
+      ),
+    ).toMatchObject({ key: 'DEV-BOUND', worktree: '/tmp/dev-bound' })
+  })
+
+  test('ambiguous stores no worktree on either open cursor', async () => {
+    const d = currentDatabase()
+    const cursor = await addCursor(d, 'DEV-AMBIGUOUS')
+    const duplicate = newRecordId()
+    d.query(
+      `INSERT INTO workflow_cursor
+       (record_id,number,project,project_record_id,workflow_slug,mode_slug,workflow_key,
+        task_record_id,task_flow_record_id,instance_id,session_id,workflow_version_record_id,
+        catalogue_version_record_id,args,autonomy,ordinal,step_slug,state,closed,question,total_steps,
+        created_at,updated_at,enforcement,opened_machine_id,last_advanced_machine_id,revision)
+       SELECT ?,number+1,project,project_record_id,workflow_slug,mode_slug,workflow_key,
+        task_record_id,NULL,instance_id||'-duplicate',session_id,workflow_version_record_id,
+        catalogue_version_record_id,args,autonomy,ordinal,step_slug,state,closed,question,total_steps,
+        created_at,updated_at,enforcement,opened_machine_id,last_advanced_machine_id,revision
+       FROM workflow_cursor WHERE record_id=?`,
+    ).run(duplicate, cursor.record_id)
+
+    expect(
+      await bindTaskKeyWorktree(
+        { project: 'fixture', key: 'DEV-AMBIGUOUS', worktree: '/tmp/dev-ambiguous' },
+        d,
+      ),
+    ).toEqual({ action: 'ambiguous', cursors: [cursor.number, cursor.number + 1] })
+    const args = d
+      .query<{ args: string }, []>(
+        "SELECT args FROM workflow_cursor WHERE workflow_key='DEV-AMBIGUOUS' ORDER BY number",
+      )
+      .all()
+      .map(({ args }) => JSON.parse(args) as Record<string, string>)
+    expect(args).toEqual([{ key: 'DEV-AMBIGUOUS' }, { key: 'DEV-AMBIGUOUS' }])
+  })
 })

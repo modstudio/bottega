@@ -81,7 +81,7 @@ export function landingTreeSourceRun(runId: string): {
   return { root, latest }
 }
 
-export type OpenedLandingTree = { path: string; branch: string; tip: string }
+export type OpenedLandingTree = { path: string; branch: string; tip: string; warning?: string }
 
 function terminalRunAt(path: string): { recordId: string; job: string } | null {
   const spellings = worktreePathSpellings(db(), path)
@@ -192,8 +192,7 @@ async function finishLandingTreeOpen(
   database: Database,
   recordId: string,
   startedAt: string,
-): Promise<void> {
-  await bindCursorArguments({ cursorRecordId, worktree }, database)
+): Promise<string | undefined> {
   adoptCoordinatorRunsForLanding(root, database)
   writeTransaction(() => {
     const lifecycle = terminalLifecycleWrite(database, recordId, 'ok', null, null)
@@ -209,6 +208,16 @@ async function finishLandingTreeOpen(
         recordId,
       )
   }, database)
+  if (!cursorRecordId) return undefined
+  const cursor = database
+    .query<{ number: number }, [string]>('SELECT number FROM workflow_cursor WHERE record_id=?')
+    .get(cursorRecordId)?.number
+  try {
+    const result = await bindCursorArguments({ cursorRecordId, worktree }, database)
+    return result.action === 'refused' ? result.warning : undefined
+  } catch (error) {
+    return `workflow cursor ${cursor ?? cursorRecordId} argument binding failed: ${String((error as Error)?.message ?? error)}`
+  }
 }
 
 async function finishCreatedLandingTree(input: {
@@ -245,7 +254,7 @@ async function finishCreatedLandingTree(input: {
       `landing tree postcondition failed: expected ${input.branch} at ${input.tip} with run ${input.runRecordId} ownership`,
     )
   }
-  await finishLandingTreeOpen(
+  const warning = await finishLandingTreeOpen(
     input.root,
     input.cursorRecordId,
     input.created.path,
@@ -253,7 +262,7 @@ async function finishCreatedLandingTree(input: {
     input.runRecordId,
     input.startedAt,
   )
-  return { path: input.created.path, branch: input.branch, tip: input.tip }
+  return { path: input.created.path, branch: input.branch, tip: input.tip, warning }
 }
 
 export async function openLandingTree(runId: string, seed?: string): Promise<OpenedLandingTree> {
