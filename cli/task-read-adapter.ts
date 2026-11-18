@@ -15,13 +15,14 @@ function hubTaskReads(): HubTaskReads {
   if (loadedHubTaskReads) return loadedHubTaskReads
   loadedHubTaskReads = {
     task: require('../hub/src/task.ts') as typeof import('../hub/src/task.ts'),
-    document: require('../hub/src/task-document.ts') as typeof import('../hub/src/task-document.ts'),
+    document:
+      require('../hub/src/task-document.ts') as typeof import('../hub/src/task-document.ts'),
   }
   return loadedHubTaskReads
 }
 
 /** Build the CLI-owned port without loading its hub implementation. */
-export function cliTaskReadAdapter(): TaskReadPort {
+function cliTaskReadAdapter(): TaskReadPort {
   return {
     list(filters) {
       return hubTaskReads().task.listTasks(filters)

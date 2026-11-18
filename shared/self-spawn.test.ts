@@ -26,7 +26,7 @@ test('source entries preserve their current argv prefixes', () => {
   expect(bottegaEntryArgv('run-exec')).toEqual([
     process.env.BOTTEGA_EXEC_PATH ?? process.execPath,
     '--no-env-file',
-    assetPath('cli', 'bottega.ts'),
+    assetPath('cli', `${PLATFORM_SLUG}.ts`),
     '__run-exec',
   ])
   expect(bottegaEntryArgv('ask-server')).toEqual([

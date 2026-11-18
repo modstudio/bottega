@@ -43,7 +43,7 @@ function sourceArguments(
       return [
         process.env.BOTTEGA_EXEC_PATH ?? process.execPath,
         '--no-env-file',
-        assetPath('cli', 'bottega.ts'),
+        assetPath('cli', `${PLATFORM_SLUG}.ts`),
         BOTTEGA_ENTRY_PROTOCOL['run-exec'].compiledArguments[0],
       ]
     case 'ask-server':
