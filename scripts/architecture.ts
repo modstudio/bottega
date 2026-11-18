@@ -696,16 +696,9 @@ export const inversions: { from: string; to: string }[] = [
   },
 ]
 
-const allowedCycles: { cycle: string[]; reason: string }[] = [
-  {
-    cycle: [
-      'orchestrator/src/canon/canon.ts',
-      'orchestrator/src/doc/docs.ts',
-      'orchestrator/src/canon/canon.ts',
-    ],
-    reason: 'Pre-existing operator-doc/canon compilation cycle outside the specified inversions.',
-  },
-]
+const GUARDED_CONCERN_ROOTS = '^(?:orchestrator/src/|hub/|shared/)'
+
+const allowedCycles: { cycle: string[]; reason: string }[] = []
 
 export const exactArchitecturePath = (path: string) =>
   `^${path.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`
@@ -967,11 +960,9 @@ export function architectureRules() {
     {
       name: 'no-new-concern-root-cycles',
       severity: 'error',
-      from: {
-        path: '^(?:orchestrator/src/|hub/src/|shared/)',
-        pathNot: architectureCycleFiles.map(exactArchitecturePath),
-      },
-      to: { path: '^(?:orchestrator/src/|hub/src/|shared/)', circular: true },
+      comment: 'Reject cycles that leave and re-enter the concern roots.',
+      from: { path: GUARDED_CONCERN_ROOTS, pathNot: architectureCycleFiles.map(exactArchitecturePath) },
+      to: { circular: true },
     },
     ...allowedCycles.flatMap((entry) =>
       entry.cycle.slice(0, -1).map((from, index) => ({
@@ -980,7 +971,6 @@ export function architectureRules() {
         comment: entry.reason,
         from: { path: exactArchitecturePath(from) },
         to: {
-          path: '^orchestrator/src/',
           pathNot: [exactArchitecturePath(entry.cycle[index + 1]!)],
           circular: true,
         },
