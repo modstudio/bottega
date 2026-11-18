@@ -162,7 +162,7 @@ su -s /bin/sh smoke -c '
   smoke_task=$(${installedBinary} task new --project release-smoke --title "Verify installed release")
   compose_output=$(${installedBinary} workflow compose verify-release --project release-smoke --arg key="$smoke_task" 2>&1)
   printf "%s\\n" "$compose_output"
-  cursor=$(printf "%s\\n" "$compose_output" | sed -n "s/^Cursor \\([0-9][0-9]*\\) was opened for workflow verify-release .*/\\1/p")
+  cursor=$(printf "%s\\n" "$compose_output" | sed -n "s/.*Cursor \\([0-9][0-9]*\\) was opened for workflow verify-release .*/\\1/p")
   case "$cursor" in
     ""|*[!0-9]*) echo "workflow compose did not report exactly one verify-release cursor number" >&2; exit 1 ;;
   esac
@@ -172,7 +172,7 @@ su -s /bin/sh smoke -c '
   ${installedBinary} workflow probe -- git status --short
   dispatch_output=$(${installedBinary} workflow dispatch implement --cursor "$cursor" --agent codex "Make the release smoke fixture commit." 2>&1)
   printf "%s\\n" "$dispatch_output"
-  run_number=$(printf "%s\\n" "$dispatch_output" | sed -n "s/^detached as run \\([0-9][0-9]*\\):.*/\\1/p")
+  run_number=$(printf "%s\\n" "$dispatch_output" | sed -n "s/.*detached as run \\([0-9][0-9]*\\):.*/\\1/p")
   case "$run_number" in
     ""|*[!0-9]*) echo "workflow dispatch did not report exactly one detached run number" >&2; exit 1 ;;
   esac
