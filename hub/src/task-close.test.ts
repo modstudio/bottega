@@ -211,7 +211,7 @@ describe('task close claim release', () => {
     expect(error.residue).toBe('claim-release')
     expect(error.message).toBe(
       `task DEV-1 is closed; claim release did not finish: claim remains; abandon its cursor, then retry: ${PLATFORM_SLUG} board claim release-task DEV-1\n` +
-        `clear it with: ${PLATFORM_SLUG} board claim release-task DEV-1`,
+        `clear it with: ${PLATFORM_SLUG} board claim release-task DEV-1 --project ${PLATFORM_NAME}`,
     )
     expect(printed).toEqual(['cursor 51 abandoned'])
   })

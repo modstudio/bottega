@@ -40,10 +40,7 @@ export function taskCursorAbandonResidue(
 
 export function taskClaimReleaseResidue(task: TaskRow, cause: unknown): TaskClosedWithResidueError {
   const detail = detailOf(cause)
-  const marker = `${PLATFORM_SLUG} `
-  const remedyAt = detail.lastIndexOf(marker)
-  const remedy =
-    remedyAt >= 0 ? detail.slice(remedyAt) : `${PLATFORM_SLUG} board claim release-task ${task.key}`
+  const remedy = `${PLATFORM_SLUG} board claim release-task ${task.key} --project ${task.project}`
   return new TaskClosedWithResidueError(
     task,
     'claim-release',
