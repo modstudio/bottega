@@ -1,11 +1,18 @@
 import { afterEach, beforeEach, expect, test } from 'bun:test'
 import { newRecordId } from '../../../shared/record/schema.ts'
-import { catalogueVersionRecordId, workflowVersionRecordId } from '../../test/fixtures/workflow.ts'
+import { createMemoryRecordApiClient } from '../../test/fixtures/record-api.ts'
+import {
+  catalogueVersionRecordId,
+  hostedCursorStageFixture,
+  workflowVersionRecordId,
+} from '../../test/fixtures/workflow.ts'
+import { STANDARD_OPEN_HOOKS } from '../runtime/store-hooks.ts'
 import { openKeylessCursorsForSession } from './workflow-cursor-list.ts'
 import { database } from './workflow-cursor-test.fixture.ts'
 import {
   clearOpenCursorWorktreesAtPath,
   openCursorWorktrees,
+  openCursorWorktreesAtSpellings,
   workflowCursorBranchAndWorktree,
   workflowCursorClaimHandles,
 } from './workflow-cursor-worktrees.ts'
@@ -106,7 +113,44 @@ test('clears every open cursor worktree pointer at a removed path and records th
     'running',
   )
 
-  expect(await clearOpenCursorWorktreesAtPath([path], d)).toBe(2)
+  const hostedStages = [ids[0]!, ids[1]!, unrelated].map((id) =>
+    hostedCursorStageFixture(d, id),
+  )
+  const previousRecordUrl = process.env.BOTTEGA_RECORD_API_URL
+  process.env.BOTTEGA_RECORD_API_URL = 'https://record.example.test'
+  d.query(
+    `INSERT INTO record_install_binding (id,bound_at,record_origin)
+     VALUES (1,'2026-11-18T00:00:00.000Z','https://record.example.test')`,
+  ).run()
+  const guarded = STANDARD_OPEN_HOOKS.access!(d)
+  const memory = createMemoryRecordApiClient({ taskFlowStages: hostedStages })
+  const client = {
+    ...memory,
+    whoami: async () => ({
+      user: { id: 'fixture-user' },
+      activeSpaceId: 'fixture-space',
+      personalSpaceId: 'fixture-space',
+      memberships: [{ space_id: 'fixture-space', slug: 'fixture', permission: 'write' as const }],
+    }),
+  }
+
+  try {
+    expect(await openCursorWorktreesAtSpellings([path], guarded, client)).toEqual([
+      expect.objectContaining({ number: 1, project: 'fixture', worktree: path }),
+      expect.objectContaining({ number: 2, project: 'fixture', worktree: path }),
+    ])
+    expect(await clearOpenCursorWorktreesAtPath([path], guarded, client)).toBe(2)
+  } finally {
+    if (previousRecordUrl === undefined) delete process.env.BOTTEGA_RECORD_API_URL
+    else process.env.BOTTEGA_RECORD_API_URL = previousRecordUrl
+  }
+  expect(hostedStages.slice(0, 2).map((row) => row.stage.arguments)).toEqual([
+    { branch: 'DEV-2218-work' },
+    { branch: 'DEV-2218-work' },
+  ])
+  expect(hostedStages[0]!.stage.closedStepNotes).toContainEqual(
+    expect.objectContaining({ event: 'argument-rebound', name: 'worktree', oldValue: path }),
+  )
   const rows = [...ids, unrelated].map((id) =>
     d
       .query<{ args: string; closed: string }, [string]>(
@@ -115,12 +159,10 @@ test('clears every open cursor worktree pointer at a removed path and records th
       .get(id),
   )
   expect(rows.slice(0, 2).map((row) => JSON.parse(row!.args))).toEqual([
-    { branch: 'DEV-2218-work' },
-    { branch: 'DEV-2218-work' },
+    { worktree: path, branch: 'DEV-2218-work' },
+    { worktree: path, branch: 'DEV-2218-work' },
   ])
-  expect(JSON.parse(rows[0]!.closed)).toContainEqual(
-    expect.objectContaining({ event: 'argument-rebound', name: 'worktree', oldValue: path }),
-  )
+  expect(JSON.parse(rows[0]!.closed)).toEqual([])
   expect(JSON.parse(rows[2]!.args)).toEqual({ worktree: path, branch: 'DEV-2218-work' })
   expect(JSON.parse(rows[3]!.args)).toEqual({
     worktree: '/trees/unrelated',

@@ -19,10 +19,10 @@ const reapStaleRuns = (database: Parameters<typeof reapStale>[0]) =>
   reapStale(database, terminalSharedGitConfigForRecordedRun)
 
 function shouldGuardHostedTables(
-  verdict: 'hosted' | 'local-authoritative' | 'refused',
+  _verdict: 'hosted' | 'local-authoritative' | 'refused',
   tables: readonly string[],
 ): boolean {
-  return verdict === 'hosted' && tables.length > 0
+  return tables.length > 0
 }
 
 const accessedHandles = new WeakMap<

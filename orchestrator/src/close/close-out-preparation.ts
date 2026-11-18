@@ -101,7 +101,11 @@ export function prepareCursorWorktreeClear(
         spellingSet.has(cursor.worktree),
       )
       try {
-        uncleared = openCursorWorktreesAtSpellings(capturedSpellings, db())
+        uncleared = await openCursorWorktreesAtSpellings(
+          capturedSpellings,
+          db(),
+          preparation.taskFlowClient,
+        )
       } catch {
         // The preparation snapshot still names every cursor that may need manual repair.
       }

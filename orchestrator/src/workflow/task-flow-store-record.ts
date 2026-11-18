@@ -325,10 +325,13 @@ class RecordTaskFlowReadStore {
       .map((row) => stageRow(row))
       .sort((a, b) => a.id - b.id)
       .map((row) => ({
+        record_id: row.record_id,
         number: row.id,
         workflow: row.workflow_slug,
         project: row.project,
         args: row.args,
+        closed: row.closed,
+        revision: row.revision,
       }))
   }
   async activeStageAutonomy(project: string, taskRecordId: string) {

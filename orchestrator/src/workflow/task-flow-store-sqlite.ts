@@ -349,14 +349,29 @@ class SqliteTaskFlowStore {
   }
 
   openStageWorktrees(): Array<{
+    record_id: string
     number: number
     workflow: string
     project: string
     args: string
+    closed: string
+    revision: number
   }> {
     return this.database
-      .query<{ number: number; workflow: string; project: string; args: string }, []>(
-        `SELECT number,workflow_slug workflow,project,args FROM workflow_cursor
+      .query<
+        {
+          record_id: string
+          number: number
+          workflow: string
+          project: string
+          args: string
+          closed: string
+          revision: number
+        },
+        []
+      >(
+        `SELECT record_id,number,workflow_slug workflow,project,args,closed,revision
+         FROM workflow_cursor
          WHERE state NOT IN ('done','abandoned')
          ORDER BY number`,
       )
