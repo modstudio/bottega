@@ -3,6 +3,7 @@
 
 import {
   markRecordIdentityChanged,
+  recordSessionTokenGeneration,
   type RecordSessionStamp,
   readRecordSessionStamp,
   sameSessionStamp,
@@ -14,6 +15,7 @@ export const RECORD_IDENTITY_MEMO_MAX_AGE_MS = 60_000
 
 const MEMO_KEY = Symbol.for('orch.record-identity-memo')
 type MemoEntry = {
+  generation: number
   stamp: RecordSessionStamp
   startedAt: number
   read: Promise<RecordIdentity>
@@ -36,11 +38,13 @@ function memoizedRecordIdentity(
 ): Promise<RecordIdentity> {
   const slot = memoSlot()
   const stamp = readRecordSessionStamp()
+  const generation = recordSessionTokenGeneration()
   const at = now()
   const current = slot.byBaseUrl.get(baseUrl)
   if (
     current &&
     sameSessionStamp(current.stamp, stamp) &&
+    current.generation === generation &&
     at - current.startedAt < RECORD_IDENTITY_MEMO_MAX_AGE_MS
   )
     return current.read
@@ -48,7 +52,7 @@ function memoizedRecordIdentity(
     if (slot.byBaseUrl.get(baseUrl)?.read === read) slot.byBaseUrl.delete(baseUrl)
     throw error
   })
-  slot.byBaseUrl.set(baseUrl, { stamp, startedAt: at, read })
+  slot.byBaseUrl.set(baseUrl, { generation, stamp, startedAt: at, read })
   return read
 }
 

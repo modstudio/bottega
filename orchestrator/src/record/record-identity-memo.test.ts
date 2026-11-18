@@ -46,6 +46,7 @@ const originalTestContainer = process.env.BOTTEGA_TEST_POSTGRES_CONTAINER
 const originalNodeEnv = process.env.NODE_ENV
 let stateHome = ''
 let server: ReturnType<typeof Bun.serve>
+let session: ReturnType<typeof memoryRecordSession>
 let whoamiRequests = 0
 
 beforeEach(() => {
@@ -54,7 +55,7 @@ beforeEach(() => {
   process.env.BOTTEGA_KEYSTORE = 'keychain'
   process.env.NODE_ENV = 'development'
   process.env.BOTTEGA_TEST_POSTGRES_CONTAINER = '1'
-  const session = memoryRecordSession()
+  session = memoryRecordSession()
   session.setToken('record-identity-memo-token')
   installRecordSessionRunner(session.runner)
   installRecordApiClient(null)
@@ -145,6 +146,17 @@ describe('record identity process memo', () => {
     await first.whoami()
 
     markRecordIdentityChanged()
+    await second.whoami()
+
+    expect(whoamiRequests).toBe(2)
+  })
+
+  test('a changed session token generation makes the next client re-request whoami', async () => {
+    const first = recordApiClient()
+    const second = recordApiClient()
+    await first.whoami()
+
+    session.setToken('record-identity-memo-token-b')
     await second.whoami()
 
     expect(whoamiRequests).toBe(2)

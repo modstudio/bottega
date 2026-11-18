@@ -36,6 +36,10 @@ let memoizedStamp: RecordSessionStamp | undefined
 let pendingToken: Promise<string | null> | null = null
 let tokenGeneration = 0
 
+export function recordSessionTokenGeneration(): number {
+  return tokenGeneration
+}
+
 function useFile(): boolean {
   return decideKeyStore(process.env) === 'file'
 }
