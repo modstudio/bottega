@@ -141,7 +141,7 @@ test('the pure dispatch decision refuses a keyless writer with the task remedy b
     action: 'refuse',
     reason:
       'workflow explore cursor 17 has no task key, and implement writes the repository; ' +
-      'compose plan-task for a task, then dispatch from that keyed cursor',
+      'compose plan-task for a task, or hand this cursor off with workflow handoff, then dispatch from that keyed cursor',
   })
 })
 

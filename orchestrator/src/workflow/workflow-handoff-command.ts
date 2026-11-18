@@ -29,7 +29,7 @@ export async function handoffCommand(
   const args = workflowArgs(argv)
   const context = await resolveWorkflowCursorContext(
     project,
-    { ...args, key: row.workflow_key },
+    { ...args, key: args.key ?? row.workflow_key },
     cliWorkflowCursorContext(),
     options.hubTaskReader,
     row,

@@ -85,6 +85,7 @@ export async function applyFloorDecision(
     evidence,
     ports,
     d: database,
+    taskFlowClient: client,
   })
   if (selfRulingId !== undefined)
     validated.ruling = {

@@ -130,6 +130,7 @@ export const docModules: DocModule[] = [
     '../workflow/workflow-cursor-format.ts',
     '../workflow/workflow-cursor-worktrees.ts',
     '../workflow/workflow-task-reference.ts',
+    '../workflow/workflow-run-binding.ts',
     './context-write-adapter.ts',
     './context-brief-format.ts',
     './doc-context-write.ts',

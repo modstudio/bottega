@@ -7,6 +7,7 @@ import { projectAt } from '../project/projects.ts'
 import { openQuestionStages } from '../question-store/question-store-read.ts'
 import {
   type TaskFlowListedStageRow as ListedCursorRow,
+  taskFlowHandoffLinks,
   taskFlowReadStore,
 } from './task-flow-store.ts'
 import { cursorAutonomy } from './workflow-cursor-autonomy.ts'
@@ -27,6 +28,16 @@ export type WorkflowCursorListRow = ListedCursorRow & { next_slug: string; line:
 /** The one workflow-owned read defining open keyless context holders for a session. */
 export async function openKeylessCursorsForSession(session: string, d: Database = db()) {
   return (await openQuestionStages(d, session)).filter((cursor) => !cursor.workflow_key)
+}
+
+export async function workflowCursorHandoffLinks(
+  cursors: readonly Pick<WorkflowCursorListRow, 'record_id'>[],
+  d: Database = db(),
+) {
+  return taskFlowHandoffLinks(
+    taskFlowReadStore(d),
+    cursors.map((cursor) => cursor.record_id),
+  )
 }
 
 export async function listWorkflowCursors(

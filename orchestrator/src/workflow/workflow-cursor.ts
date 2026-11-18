@@ -31,7 +31,7 @@ import {
 import { followComposeTaskClaim } from './workflow-compose-claim.ts'
 import { adoptWorkflowTask } from './workflow-cursor-adoption.ts'
 import { workflowKeyOf as keyOf, resolveCursorArguments } from './workflow-cursor-arguments.ts'
-import { graduateExploreAfterCompose, insertWorkflowCursor } from './workflow-cursor-compose.ts'
+import { insertWorkflowCursor } from './workflow-cursor-compose.ts'
 import { cursorName } from './workflow-cursor-format.ts'
 import { abandonWorkflowCursor, closeOpenWorkflowQuestion } from './workflow-cursor-mutation.ts'
 import {
@@ -50,13 +50,11 @@ import {
 import { cursorComposition } from './workflow-cursor-serve.ts'
 import { type ClosedStep, type CursorTrailEntry, isClosedStep } from './workflow-cursor-trail.ts'
 import {
-  type CursorState,
   cursorOwnerAfter,
   decideConditionalAdvance,
   decideCursorStart,
   decideStepOutcome,
 } from './workflow-cursor-transition.ts'
-import { closeExploreForLifecycle } from './workflow-explore-lifecycle-close.ts'
 import {
   allowedCloseFloor,
   DEFAULT_EXPECTED_EXIT_CODE,
@@ -72,6 +70,8 @@ import {
   type WorkflowEvidenceInput,
 } from './workflow-floor-evidence.ts'
 import { withReplayedFloorEvidenceAsync } from './workflow-floor-evidence-replay.ts'
+import { closeGraduatingExploreForReuse, handoffGraduatingExplore } from './workflow-handoff.ts'
+import type { CursorSummary } from './workflow-handoff-types.ts'
 import { refuseKeylessStepClose } from './workflow-keyless-close.ts'
 import { selfRulingRefusal } from './workflow-self-ruling.ts'
 import {
@@ -135,15 +135,6 @@ function adoptLinkedTask(
 
 const takenOverFrom = (row: CursorRow | null, context: WorkflowCursorContext): string | null =>
   row?.session_id && context.session && row.session_id !== context.session ? row.session_id : null
-
-export type CursorSummary = {
-  id: number
-  n: number
-  slug: string
-  state: CursorState
-  opened: boolean
-  previousSession?: string | null
-}
 
 async function refuseLocalComposeBranch(
   composition: {
@@ -259,43 +250,42 @@ export async function composeWorkflowWithCursor(
       )
     : null
   const start = decideCursorStart(existing?.state ?? null)
+  const handedOff =
+    start === 'reuse'
+      ? undefined
+      : await handoffGraduatingExplore(composition, context, d, live, commitCount, taskClaimPorts)
   let row!: CursorRow
-  if (existing && start === 'reuse') row = await reuseWorkflowCursor(existing, args, context, d)
+  if (handedOff) row = handedOff.row
+  else if (existing && start === 'reuse')
+    row = await reuseWorkflowCursor(existing, args, context, d)
   else row = await insertWorkflowCursor(composition, context, d, live.resolution, commitCount)
-  const claimWarning = await followComposeTaskClaim(
-    row,
-    start === 'reuse',
-    context,
-    d,
-    taskClaimPorts,
-  )
+  const claimWarning = handedOff
+    ? handedOff.claimWarning
+    : await followComposeTaskClaim(row, start === 'reuse', context, d, taskClaimPorts)
   const cursor = {
     id: row.id,
     n: row.ordinal + 1,
     slug: row.step_slug,
     state: row.state,
-    opened: start !== 'reuse',
-    previousSession: start === 'reuse' ? takenOverFrom(existing, context) : null,
+    opened: Boolean(handedOff) || start !== 'reuse',
+    previousSession: !handedOff && start === 'reuse' ? takenOverFrom(existing, context) : null,
   } satisfies CursorSummary
-  const graduated = await graduateExploreAfterCompose(
-    {
-      project: composition.project,
-      session: context.session,
-      taskBound: Boolean(keyOf(composition.arguments)),
-      replacingCursor: cursor.id,
-      database: d,
-      taskFlowClient: context.taskFlowClient,
-    },
-    {
-      finishExplore: writeFinishingWorkflowAdvance,
-      closeExplore: closeExploreForLifecycle,
-    },
-  )
+  const graduated =
+    handedOff?.graduated ??
+    (start === 'reuse'
+      ? await closeGraduatingExploreForReuse(
+          composition,
+          context,
+          d,
+          writeFinishingWorkflowAdvance,
+          cursor.id,
+        )
+      : undefined)
   return {
     ...cursorComposition(row, d, live),
     cursor,
     ...(claimWarning ? { claimWarning } : {}),
-    ...(graduated ? { graduated } : {}),
+    graduated,
   }
 }
 

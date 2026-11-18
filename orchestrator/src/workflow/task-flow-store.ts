@@ -212,6 +212,29 @@ export interface TaskFlowLocalStore extends Pick<TaskFlowQueries, TaskFlowWriteM
 /** Async task-flow reads, implemented locally now and by the hosted record in the next slice. */
 export interface TaskFlowReadStore extends AsyncTaskFlowReads {}
 
+/** Reads complete handoff lineages from authoritative stage rows, including closed ancestors. */
+export async function taskFlowHandoffLinks(
+  store: TaskFlowReadStore,
+  terminalRecordIds: readonly string[],
+): Promise<Array<{ record_id: string; handed_off_from_record_id: string | null }>> {
+  const links: Array<{ record_id: string; handed_off_from_record_id: string | null }> = []
+  const visited = new Set<string>()
+  const pending = [...terminalRecordIds]
+  while (pending.length) {
+    const recordId = pending.pop()!
+    if (visited.has(recordId)) continue
+    visited.add(recordId)
+    const row = await store.stageByRecordId(recordId)
+    if (!row) continue
+    links.push({
+      record_id: row.record_id,
+      handed_off_from_record_id: row.handed_off_from_record_id,
+    })
+    if (row.handed_off_from_record_id) pending.push(row.handed_off_from_record_id)
+  }
+  return links
+}
+
 /** Resolves task-flow writes and transaction-bound reads to local SQLite. */
 export function taskFlowLocalStore(database: Database): TaskFlowLocalStore {
   const decision = currentRecordWriteDecision(database)

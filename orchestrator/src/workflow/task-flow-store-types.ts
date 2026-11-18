@@ -285,3 +285,34 @@ export type TaskFlowTaskRulingRow = {
   replacement: string | null
   candidate_count: number
 }
+
+export function workflowStageInsert(input: {
+  id: string
+  flowRecordId: string
+  projectId: string
+  workflow: string
+  mode: string
+  workflowKey: string
+  instanceId: string
+  sessionId: NonNullable<TaskFlowIntentInput<'compose'>['stageInsert']>['sessionId']
+  workflowVersionId: string
+  catalogueVersionId: string
+  arguments: Record<string, string>
+  activeSlug: string
+  autonomy: string | null
+  totalSteps: number
+  openedMachineId: string
+  createdAt: string
+}) {
+  return {
+    ...input,
+    activeOrdinal: 0,
+    state: 'running' as const,
+    closedStepNotes: [],
+    question: null,
+    enforcement: 'floors' as const,
+    takenOverFromMachineId: null,
+    lastAdvancedMachineId: input.openedMachineId,
+    updatedAt: input.createdAt,
+  }
+}

@@ -38,7 +38,7 @@ const database = testDatabaseFixture((d) => {
 const args = { key: 'DEV-821', branch: 'DEV-821-work', worktree: '/tmp/work' }
 
 describe('workflow rendering', () => {
-  test('renders successful and failed explore graduation lines', () => {
+  test('renders the successful explore graduation line', () => {
     const composition = composeWorkflow('flow', 'fixture', 'default', args, database())
     const cursor = {
       id: 884,

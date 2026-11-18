@@ -31,7 +31,7 @@ import { rulingStatus } from '../run/question-vocabulary.ts'
 import { resolveRunIdentifier } from '../run/run-identifier.ts'
 import { TERMINAL_RUN_STATUS_SET } from '../run/run-status.ts'
 import { parseProbeArtifact, resolveProbeArtifact } from './probe-identifier.ts'
-import { taskFlowReadStore } from './task-flow-store.ts'
+import { taskFlowHandoffLinks, taskFlowReadStore } from './task-flow-store.ts'
 import {
   type CheckoutResolution,
   checkoutOutsideChangeRefusal,
@@ -61,6 +61,7 @@ import { floorFromObligationRow } from './workflow-obligation-floor.ts'
 import {
   type BoundRun,
   decideRunBinding,
+  resolveWorkflowCursorSuccessor,
   type SessionMatch,
   sessionOrAdopterMatch,
 } from './workflow-run-binding.ts'
@@ -740,16 +741,19 @@ async function gatherSatisfy(
   id: string,
   cursorId: string,
   d: Database,
+  taskFlowClient?: Parameters<typeof taskFlowReadStore>[1],
 ): Promise<ValidatedEvidence['satisfy']> {
-  const row = await taskFlowReadStore(d).obligationByRecordId(id)
+  const store = taskFlowReadStore(d, taskFlowClient)
+  const row = await store.obligationByRecordId(id)
   if (!row) return { id, found: false }
   const floor = floorFromObligationRow(row)
+  const handoffLinks = await taskFlowHandoffLinks(store, [cursorId])
   return {
     id,
     found: true,
     open: row.satisfied_at === null && row.abandoned_at === null,
     abandoned: row.abandoned_at !== null,
-    cursorMatches: row.cursor_record_id === cursorId,
+    cursorMatches: resolveWorkflowCursorSuccessor(row.cursor_record_id, handoffLinks) === cursorId,
     floor,
   }
 }
@@ -927,6 +931,7 @@ type GatherValidatedEvidenceInput = {
   evidence: WorkflowEvidenceInput
   ports?: FloorEvidencePorts
   d?: Database
+  taskFlowClient?: Parameters<typeof taskFlowReadStore>[1]
 }
 
 async function gatherArtifactEvidence(
@@ -1032,6 +1037,7 @@ export async function gatherValidatedEvidenceBase(
   if (input.evidence.task?.trim())
     gathered.task = gatherTask(input.evidence.task.trim(), input.identity, d, ports)
   if (input.evidence.defer?.trim()) gathered.deferReason = input.evidence.defer.trim()
-  if (satisfies) gathered.satisfy = await gatherSatisfy(satisfies, input.cursorId, d)
+  if (satisfies)
+    gathered.satisfy = await gatherSatisfy(satisfies, input.cursorId, d, input.taskFlowClient)
   return gathered
 }

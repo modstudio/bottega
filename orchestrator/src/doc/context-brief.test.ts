@@ -622,7 +622,7 @@ test('assigns cursor-bound runs and claims while retaining only unbound work', (
         job: 'implement',
         status: 'running',
         label: 'Build it',
-        cursor_record_id: cursor.record_id,
+        cursor_record_id: 'cursor-source',
       },
       { number: 102, job: 'review', status: 'asking', label: null, cursor_record_id: null },
     ],
@@ -632,6 +632,10 @@ test('assigns cursor-bound runs and claims while retaining only unbound work', (
       { project: PLATFORM_SLUG, subject: { kind: 'path', value: '/tmp/dev-2293' } },
       { project: PLATFORM_SLUG, subject: { kind: 'resource', value: 'DEV-2293-work' } },
       { project: PLATFORM_SLUG, subject: { kind: 'task', value: 'DEV-9999' } },
+    ],
+    [
+      { record_id: 'cursor-middle', handed_off_from_record_id: 'cursor-source' },
+      { record_id: cursor.record_id, handed_off_from_record_id: 'cursor-middle' },
     ],
   )
 
