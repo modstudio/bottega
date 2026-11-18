@@ -11,7 +11,6 @@ import type {
 } from '../record/record-task-flow-write-contract.ts'
 import type { TaskFlowLocalReadMethod, TaskFlowWriteMethod } from './task-flow-store-methods.ts'
 import {
-  nextCursorNumber,
   type TaskFlowSqliteWriteResult,
   writeSqliteTaskFlow,
 } from './task-flow-store-sqlite-write.ts'
@@ -41,7 +40,6 @@ import type {
   TaskFlowTextRow,
   TaskFlowUncopiedTextRow,
   TaskFlowWaitingQuestionRow,
-  WorkflowCursorInsert,
 } from './task-flow-store-types.ts'
 import { TASK_FLOW_OPEN_STAGE_STATES } from './task-flow-store-types.ts'
 
@@ -119,57 +117,6 @@ class SqliteTaskFlowStore {
         input.exceptRecordId,
         input.exceptRecordId,
       )
-  }
-
-  insertStage(row: WorkflowCursorInsert, conflict: 'local-identity' | 'hosted-record'): string {
-    const conflictSql =
-      conflict === 'local-identity'
-        ? `ON CONFLICT(project_record_id,workflow_slug,mode_slug,workflow_key,instance_id) DO UPDATE SET
-             session_id=COALESCE(excluded.session_id,workflow_cursor.session_id),
-             updated_at=excluded.updated_at`
-        : ''
-    const number = nextCursorNumber(this.database, row.projectRecordId)
-    return this.database
-      .query<{ record_id: string }, (string | number | null)[]>(
-        `INSERT INTO workflow_cursor
-         (record_id,number,project,project_record_id,workflow_slug,mode_slug,workflow_key,task_record_id,
-          task_flow_record_id,instance_id,session_id,workflow_version_record_id,catalogue_version_record_id,
-          args,autonomy,ordinal,step_slug,state,closed,question,total_steps,created_at,updated_at,enforcement,
-          opened_machine_id,taken_over_from_machine_id,last_advanced_machine_id,revision)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-         ${conflictSql}
-         RETURNING record_id`,
-      )
-      .get(
-        row.recordId,
-        number,
-        row.project,
-        row.projectRecordId,
-        row.workflow,
-        row.mode,
-        row.workflowKey,
-        row.taskRecordId,
-        row.taskFlowRecordId,
-        row.instanceId,
-        row.sessionId,
-        row.workflowVersionRecordId,
-        row.catalogueVersionRecordId,
-        row.args,
-        row.autonomy,
-        row.ordinal,
-        row.stepSlug,
-        row.state,
-        row.closed,
-        row.question,
-        row.totalSteps,
-        row.createdAt,
-        row.updatedAt,
-        row.enforcement,
-        row.openedMachineId,
-        row.takenOverFromMachineId,
-        row.lastAdvancedMachineId,
-        row.revision,
-      )!.record_id
   }
 
   openStageForTask(taskRecordId: string): TaskFlowStageCursorRow | null {

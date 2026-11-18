@@ -41,7 +41,6 @@ import type {
   TaskFlowTextRow,
   TaskFlowUncopiedTextRow,
   TaskFlowWaitingQuestionRow,
-  WorkflowCursorInsert,
 } from './task-flow-store-types.ts'
 import type { WorkflowCursorHandoffLink } from './workflow-cursor-transition.ts'
 
@@ -74,7 +73,6 @@ interface TaskFlowQueries {
     key: string
     exceptRecordId: string | null
   }): void
-  insertStage(row: WorkflowCursorInsert, conflict: 'local-identity' | 'hosted-record'): string
   openStageForTask(taskRecordId: string): TaskFlowStageCursorRow | null
   cacheAdoptedFlow(input: {
     project: string
