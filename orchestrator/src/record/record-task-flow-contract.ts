@@ -11,8 +11,8 @@ export const TASK_FLOW_STAGE_LIST_REMEDY = `Pass projectId, projectId with numbe
 
 const nullableId = z.string().uuid().nullable()
 const machine = z.object({ id: z.string().uuid(), displayName: z.string().min(1) })
-const stageState = z.enum(['running', 'awaiting-ruling', 'done', 'abandoned'])
-export const TASK_FLOW_STAGE_STATES = stageState.options
+export const TASK_FLOW_STAGE_STATES = ['running', 'awaiting-ruling', 'done', 'abandoned'] as const
+const stageState = z.enum(TASK_FLOW_STAGE_STATES)
 
 const hostedTaskFlowObligationSchema = z.object({
   id: z.string().uuid(),
