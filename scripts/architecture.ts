@@ -114,7 +114,6 @@ const declaredModules: ArchitectureModule[] = [
   ...questionCallerModules,
   module('orchestrator/src/workflow/task-flow-store.ts', [
     'bun:sqlite',
-    '../record/record-task-flow-contract.ts',
     '../record/record-task-flow-write-contract.ts',
     '../record/record-write-authority.ts',
     './task-flow-store-hosted.ts',

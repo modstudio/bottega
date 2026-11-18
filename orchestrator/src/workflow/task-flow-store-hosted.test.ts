@@ -7,7 +7,8 @@ import {
 import { guardHostedTables } from '../database/hosted-table-guard.ts'
 import { rememberActiveRecordSpace } from '../project-space.ts'
 import { rememberProjectSpace } from '../project-space-cache.ts'
-import { TASK_FLOW_STAGE_STATES, taskFlowReadStore } from './task-flow-store.ts'
+import { TASK_FLOW_STAGE_STATES } from '../record/record-task-flow-contract.ts'
+import { taskFlowReadStore } from './task-flow-store.ts'
 import {
   abandonSelectedWorkflowCursorForClose,
   awaitWorkflowRuling,

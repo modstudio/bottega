@@ -44,7 +44,6 @@ import type {
   WorkflowCursorInsert,
 } from './task-flow-store-types.ts'
 
-export { TASK_FLOW_STAGE_STATES } from '../record/record-task-flow-contract.ts'
 export type {
   TaskFlowCloseOutStageRow,
   TaskFlowLinkedTaskReferenceRow,
@@ -114,7 +113,7 @@ interface TaskFlowQueries {
   listStages(input: {
     project?: string
     sessionId?: string
-    states: readonly TaskFlowStageState[]
+    states: readonly [TaskFlowStageState, ...TaskFlowStageState[]]
   }): TaskFlowListedStageRow[]
   keyedStageHistory(input: { since: string }): TaskFlowStageCursorRow[]
   /** Reads open cursor worktree rows ordered by project, then cursor number. */

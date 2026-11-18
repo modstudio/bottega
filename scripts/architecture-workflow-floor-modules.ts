@@ -82,6 +82,7 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     'bun:sqlite',
     '../database/db.ts',
     '../project/projects.ts',
+    '../record/record-task-flow-contract.ts',
     '../run/question-open.ts',
     './workflow-cursor-autonomy.ts',
     './task-flow-store.ts',

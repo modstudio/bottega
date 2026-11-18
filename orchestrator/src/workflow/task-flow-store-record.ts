@@ -311,7 +311,7 @@ class RecordTaskFlowReadStore {
   async listStages(input: {
     project?: string
     sessionId?: string
-    states: readonly TaskFlowStageCursorRow['state'][]
+    states: readonly [TaskFlowStageCursorRow['state'], ...TaskFlowStageCursorRow['state'][]]
   }) {
     return this.questions.listStages(input)
   }

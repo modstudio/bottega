@@ -322,7 +322,7 @@ class SqliteTaskFlowStore {
   listStages(input: {
     project?: string
     sessionId?: string
-    states: readonly TaskFlowStageState[]
+    states: readonly [TaskFlowStageState, ...TaskFlowStageState[]]
   }): TaskFlowListedStageRow[] {
     const clauses = [`cursor.state IN (${input.states.map(() => '?').join(',')})`]
     const values: string[] = [...input.states]
@@ -739,7 +739,7 @@ export function sqliteTaskFlowReadStore(database: Database): SqliteTaskFlowReadS
   const listStages = async (input: {
     project?: string
     sessionId?: string
-    states: readonly TaskFlowStageState[]
+    states: readonly [TaskFlowStageState, ...TaskFlowStageState[]]
   }) => {
     const rows = local.listStages(input)
     const openByCursor = new Map<string, number>()

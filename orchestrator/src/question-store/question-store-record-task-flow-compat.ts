@@ -77,7 +77,7 @@ function stageReads(questions: QuestionStore, read: StageRead) {
     async listStages(input: {
       project?: string
       sessionId?: string
-      states: readonly TaskFlowStageCursorRow['state'][]
+      states: readonly [TaskFlowStageCursorRow['state'], ...TaskFlowStageCursorRow['state'][]]
     }): Promise<TaskFlowListedStageRow[]> {
       const selector = {
         states: input.states,

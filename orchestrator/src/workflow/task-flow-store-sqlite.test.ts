@@ -1,6 +1,7 @@
 import { expect, test } from 'bun:test'
 import { newRecordId } from '../../../shared/record-id.ts'
-import { TASK_FLOW_STAGE_STATES, taskFlowReadStore } from './task-flow-store.ts'
+import { TASK_FLOW_STAGE_STATES } from '../record/record-task-flow-contract.ts'
+import { taskFlowReadStore } from './task-flow-store.ts'
 import { composeWorkflowWithCursor } from './workflow-cursor.ts'
 import { listWorkflowCursors } from './workflow-cursor-list.ts'
 import { database } from './workflow-cursor-test.fixture.ts'
@@ -34,6 +35,16 @@ test('all-state stage reads include closed cursors without widening open reads',
   await composeClosed('fixture', 'DEV-DONE', 'session-done', 'done')
   await composeClosed('fixture', 'DEV-ABANDONED', 'session-abandoned', 'abandoned')
   await composeClosed('other', 'DEV-OTHER', 'session-other', 'done')
+  await composeWorkflowWithCursor(
+    'flow',
+    'fixture',
+    'default',
+    { key: 'DEV-OPEN', branch: 'DEV-OPEN-work', worktree: '/tmp/DEV-OPEN' },
+    { session: 'session-open', taskRecordId: 'task-DEV-OPEN' },
+    d,
+    {},
+    {},
+  )
   d.query("UPDATE workflow_cursor SET args=? WHERE workflow_key='DEV-DONE'").run(
     JSON.stringify({
       key: 'DEV-DONE',
@@ -51,8 +62,11 @@ test('all-state stage reads include closed cursors without widening open reads',
   ).toEqual([
     { state: 'abandoned', question: null },
     { state: 'done', question: null },
+    { state: 'running', question: null },
   ])
-  expect(await store.listOpenStages({ project: 'fixture' })).toEqual([])
+  expect(
+    (await store.listOpenStages({ project: 'fixture' })).map((row) => row.workflow_key),
+  ).toEqual(['DEV-OPEN'])
 
   const cursorCount = d.query<{ count: number }, []>('SELECT count(*) count FROM workflow_cursor')
   const listed = await listWorkflowCursors({ all: true, project: 'fixture' }, d)
@@ -67,11 +81,15 @@ test('all-state stage reads include closed cursors without widening open reads',
   ).toEqual([
     { state: 'abandoned', next: 'finished', obligations: '' },
     { state: 'done', next: 'finished', obligations: '' },
+    { state: 'running', next: 'lens', obligations: '' },
   ])
+  expect(
+    (await listWorkflowCursors({ project: 'fixture' }, d)).map((row) => row.workflow_key),
+  ).toEqual(['DEV-OPEN'])
   expect(
     (await listWorkflowCursors({ all: true, session: 'session-done' }, d)).map(
       (row) => row.workflow_key,
     ),
   ).toEqual(['DEV-DONE'])
-  expect(cursorCount.get()).toEqual({ count: 3 })
+  expect(cursorCount.get()).toEqual({ count: 4 })
 })
