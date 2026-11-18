@@ -51,7 +51,7 @@ export function registerBoardDuplicateProof(input: {
     input.succeeds(
       'postgres',
       'postgres',
-      `UPDATE board_message SET withdrawn_at=now(),withdrawn_reason='author' WHERE id='${firstId}';`,
+      `UPDATE board_message SET withdrawn_at=now() WHERE id='${firstId}';`,
     )
     const afterWithdrawId = newRecordId()
     const afterWithdraw = await input.post({ ...content, id: afterWithdrawId })
@@ -61,7 +61,7 @@ export function registerBoardDuplicateProof(input: {
     input.succeeds(
       'postgres',
       'postgres',
-      `UPDATE board_message SET hidden_at=now(),hidden_by_user_id='${input.userId()}',hidden_reason='duplicate' WHERE id='${afterWithdrawId}';`,
+      `SET ROLE record_owner; UPDATE board_message SET hidden_at=now(),hidden_by_user_id='${input.userId()}',hidden_reason='duplicate' WHERE id='${afterWithdrawId}'; RESET ROLE;`,
     )
     const afterHiddenId = newRecordId()
     const afterHidden = await input.post({ ...content, id: afterHiddenId })
@@ -97,7 +97,7 @@ export function registerBoardDuplicateProof(input: {
     input.succeeds(
       'postgres',
       'postgres',
-      `UPDATE board_message SET withdrawn_at=now(),withdrawn_reason='author' WHERE id='${firstId}';`,
+      `UPDATE board_message SET withdrawn_at=now() WHERE id='${firstId}';`,
     )
     const repostedId = newRecordId()
     const reposted = await reply(repostedId)
