@@ -11,7 +11,7 @@ export function registerTaskFlowHandoffProof(
     signIn(): void
     admin(statement: string): string
   },
-  project: string,
+  _project: string,
   workflow: string,
 ): void {
   test('hosted handoff closes and opens atomically and refuses a foreign session', async () => {
@@ -88,6 +88,10 @@ export function registerTaskFlowHandoffProof(
       )
       input.admin(
         `INSERT INTO context_item(id,space_id,holder_kind,holder_id,slug,kind,body,source,created_at,updated_at) VALUES ('${newRecordId()}','${input.spaceId()}','cursor','${sourceId}','proof','fact','moves','proof',now(),now());`,
+      )
+      const textId = newRecordId()
+      input.admin(
+        `INSERT INTO workflow_step_text(id,space_id,stage_record_id,step_ordinal,step_slug,body,created_at) VALUES ('${textId}','${input.spaceId()}','${sourceId}',1,'implement','moves with handoff',now());`,
       )
       const payload = (sessionId: string, openStageRecordId = successorId) => ({
         requestId: newRecordId(),
@@ -175,6 +179,9 @@ export function registerTaskFlowHandoffProof(
         input.admin(
           `SELECT holder_id FROM context_item WHERE slug='proof' AND space_id='${input.spaceId()}';`,
         ),
+      ).toBe(successorId)
+      expect(
+        input.admin(`SELECT stage_record_id FROM workflow_step_text WHERE id='${textId}';`),
       ).toBe(successorId)
       const replaySuccessorId = newRecordId()
       const beforeReplay = input.admin(

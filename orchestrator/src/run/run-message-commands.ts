@@ -35,6 +35,7 @@ import {
 } from '../review/review-vocabulary.ts'
 import { refusalScoreGuidanceFromPath } from '../score/refusal-guidance.ts'
 import { answeredQuestionContextMoments } from '../workflow/workflow-context-moment.ts'
+import { renewTaskClaim } from '../workflow/workflow-task-claim.ts'
 import { answerValueArgs } from './answer-value-args.ts'
 import { parseQuestionIdentifier, resolveQuestionIdentifier } from './question-identifier.ts'
 import { answerClosedWorkflowQuestion } from './question-mutation.ts'
@@ -50,6 +51,7 @@ export type ContinueCommandDependencies = {
   reportContinuedRun: typeof reportContinuedRun
   admitKeyedTurn?: typeof admitKeyedTurn
   recordKeyedTurnOverride?: typeof recordKeyedTurnOverride
+  renewTaskClaim?: typeof renewTaskClaim
 }
 
 const continueCommandDependencies: ContinueCommandDependencies = { continueRun, reportContinuedRun }
@@ -103,6 +105,7 @@ export const answerRunHelpers = (presentation: Presentation) => ({
   readWorkerFile,
   readMessageText,
   presentation: controlPresentation(presentation),
+  renewTaskClaim,
 })
 
 const questionIdentifiers = (argv: string[]): string[] =>
@@ -357,6 +360,7 @@ export async function continueCommand(
     message,
     argvResumeLimit,
     includeFindings ? () => renderFindings(id, message) : undefined,
+    { renewTaskClaim: dependencies.renewTaskClaim ?? renewTaskClaim },
   )
   ;(dependencies.recordKeyedTurnOverride ?? recordKeyedTurnOverride)(resumed.childId, warning)
   await dependencies.reportContinuedRun(

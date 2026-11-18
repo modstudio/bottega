@@ -47,6 +47,7 @@ import {
   adoptRunMutation,
   auditRunMutation,
   authorizeRunMutation,
+  type RootAuthority,
   reauthorizeRunMutation,
 } from './run-authority.ts'
 import { detach } from './run-dispatch.ts'
@@ -54,6 +55,7 @@ import { closeStaleChainQuestions, RUN_FOLLOW_TIMEOUT_MS, reapStale } from './ru
 import { continuationResumeKind } from './run-resume-kind.ts'
 import { packedResumePromptWithCarriedAttachments } from './run-resume-prompt.ts'
 import { type ContinuationInstruction, renderCheckpointContinuationPrompt } from './run-retry.ts'
+import { type RenewTaskClaim, renewTaskClaimBestEffort } from './run-task-claim-renewal.ts'
 import { terminalSharedGitConfigForRecordedRun } from './shared-git-config-run.ts'
 
 export type RunControlPresentation = {
@@ -688,17 +690,33 @@ function runningTurnRefusal(id: string, running: { record_id: string; turn: numb
   return `run ${id} already has running turn ${running.record_id} (turn ${running.turn})`
 }
 
+const renewContinuedRunClaim = (
+  dependencies: { renewTaskClaim?: RenewTaskClaim },
+  row: { launch_key: string | null; session_id: string | null },
+) =>
+  renewTaskClaimBestEffort(dependencies.renewTaskClaim, row.launch_key, row.session_id, 'continue')
+
+function prepareContinuationAuthority(authority: RootAuthority, id: string): RootAuthority {
+  return writeTransaction(() => {
+    const current = reauthorizeRunMutation(authority, 'continue')
+    const adopted = adoptRunMutation(current, 'continue')
+    db().query("UPDATE run SET status='failed' WHERE record_id=? AND status='stopped'").run(id)
+    return adopted
+  })
+}
+
 export async function continueRun(
   id: string,
   message: string | undefined,
   argvResumeLimit: RunControlPresentation['argvResumeLimit'],
   produceMessage?: () => string | undefined,
+  dependencies: { renewTaskClaim?: RenewTaskClaim } = {},
 ): Promise<{ childId: string; job: string }> {
   let authority = authorizeRunMutation(id, 'continue')
   const row = db()
     .query(
       `SELECT record_id, job, parent_run_record_id, status, cwd, repo, base_commit,
-              branch_kept, branch_kept_tip FROM run WHERE record_id = ?`,
+              branch_kept, branch_kept_tip, launch_key, session_id FROM run WHERE record_id = ?`,
     )
     .get(id) as {
     record_id: string
@@ -710,6 +728,8 @@ export async function continueRun(
     base_commit: string | null
     branch_kept: string | null
     branch_kept_tip: string | null
+    launch_key: string | null
+    session_id: string | null
   } | null
   if (!row) throw new Error(`no run ${id}`)
   refuseEscapedChain(id)
@@ -808,13 +828,8 @@ export async function continueRun(
     rootId: id,
     argvResumeLimit,
   })
-  authority = writeTransaction(() => {
-    authority = reauthorizeRunMutation(authority, 'continue')
-    const adopted = adoptRunMutation(authority, 'continue')
-    // Stop preserves the artifact specifically so this transition can reopen it.
-    db().query("UPDATE run SET status='failed' WHERE record_id=? AND status='stopped'").run(id)
-    return adopted
-  })
+  // Stop preserves the artifact specifically so this transition can reopen it.
+  authority = prepareContinuationAuthority(authority, id)
   const childId = await detach(row.job, prompt, {
     cwd: continuationTreeCwd(treeDecision, checkout.cwd, checkout.project?.path ?? null),
     repo: row.repo ?? undefined,
@@ -835,6 +850,7 @@ export async function continueRun(
   })
   recordContinuationTreeSource(childId, branchSource, treePlan)
   auditRunMutation(authority, 'continue', continuationMessage ?? null, db(), childId)
+  await renewContinuedRunClaim(dependencies, row)
   return { childId, job: row.job }
 }
 

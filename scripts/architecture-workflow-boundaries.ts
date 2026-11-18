@@ -9,7 +9,9 @@ export const workflowBoundarySpecs = [
       '../board/board-claim-policy.ts',
       '../board/board-operations.ts',
       'bun:sqlite',
+      '../database/db.ts',
       '../project/projects.ts',
+      '../run/run-task-claim-renewal.ts',
     ],
     reason:
       'Keep the cursor-to-claim decision pure and route its local or hosted write through the board service.',

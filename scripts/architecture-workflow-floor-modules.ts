@@ -236,6 +236,14 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     './workflow-floor-evidence-replay.ts',
     './workflow-obligation-floor.ts',
   ]),
+  module('orchestrator/src/workflow/workflow-finish-live-writer.ts', ['../../../shared/brand.ts']),
+  module('orchestrator/src/workflow/workflow-finish-live-writer-adapter.ts', [
+    'bun:sqlite',
+    '../jobs/jobs.ts',
+    '../run/run-status.ts',
+    './workflow-cursor-format.ts',
+    './workflow-finish-live-writer.ts',
+  ]),
   module('orchestrator/src/workflow/workflow-floor-refusal.ts', [
     '../../../shared/brand.ts',
     '../../../shared/refusal.ts',
@@ -448,6 +456,8 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     './workflow-floor-evidence.ts',
     './workflow-floor-evidence-gather.ts',
     './workflow-floor-evidence-replay.ts',
+    './workflow-finish-live-writer-adapter.ts',
+    './workflow-finish-live-writer.ts',
     './workflow-obligation-floor.ts',
     './workflow-rule-answer.ts',
     './workflow-self-ruling-mutation.ts',

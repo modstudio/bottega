@@ -35,6 +35,7 @@ import { HARNESS_EXECUTOR } from './run-executor.ts'
 import { decideHarnessReply } from './run-harness-reply.ts'
 import { checksReviewedCommit } from './run-pack-prompt.ts'
 import { replyContract } from './run-reply-source.ts'
+import type { RenewTaskClaim } from './run-task-claim-renewal.ts'
 import type { TerminalInput, TerminalResult } from './run-terminal.ts'
 import { finishRunWithFallback } from './run-terminal-fallback.ts'
 
@@ -99,7 +100,11 @@ type FinishFacts = {
   confinement: HarnessConfinementSnapshot
 }
 
-function harnessTerminalInput(facts: FinishFacts, localMachineId: string): TerminalInput {
+function harnessTerminalInput(
+  facts: FinishFacts,
+  localMachineId: string,
+  renewTaskClaim?: RenewTaskClaim,
+): TerminalInput {
   const { acceptedQuestions, decision, error, outPath, owned, requestedJob, scratchDir } = facts
   const refused = facts.workerReply?.status === 'refused'
   return {
@@ -114,6 +119,7 @@ function harnessTerminalInput(facts: FinishFacts, localMachineId: string): Termi
     writesJob: Boolean(requestedJob.needs.writesRepo),
     worktree: facts.worktree,
     launchKey: owned.launch_key,
+    renewTaskClaim,
     failureKind: decision.failureKind,
     endpointKey: { secretName: null, source: 'agent', projectName: null },
     scratchDir,
@@ -215,7 +221,11 @@ function closeHarnessRun(facts: FinishFacts, terminal: TerminalResult) {
   })
 }
 
-async function guardedHarnessFinish(facts: FinishFacts, localMachineId: string) {
+async function guardedHarnessFinish(
+  facts: FinishFacts,
+  localMachineId: string,
+  renewTaskClaim?: RenewTaskClaim,
+) {
   const { decision, owned } = facts
   const releaseLease = acquireRunCloseOutLeaseHandle(owned.record_id, () => {})
   try {
@@ -227,18 +237,24 @@ async function guardedHarnessFinish(facts: FinishFacts, localMachineId: string) 
     writeFileSync(facts.outPath, decision.output)
     return closeHarnessRun(
       facts,
-      await finishRunWithFallback(() => harnessTerminalInput(facts, localMachineId), {
-        runId: owned.record_id,
-        started: facts.started,
-        machineId: localMachineId,
-      }),
+      await finishRunWithFallback(
+        () => harnessTerminalInput(facts, localMachineId, renewTaskClaim),
+        {
+          runId: owned.record_id,
+          started: facts.started,
+          machineId: localMachineId,
+        },
+      ),
     )
   } finally {
     releaseLease()
   }
 }
 
-export async function finishHarnessRun(id: string) {
+export async function finishHarnessRun(
+  id: string,
+  dependencies: { renewTaskClaim?: RenewTaskClaim } = {},
+) {
   const localMachineId = machineId()
   const row = db().query('SELECT * FROM run WHERE record_id=?').get(id) as HarnessRow | null
   const refusal = finishRefusal(row, sessionId(), id)
@@ -320,5 +336,5 @@ export async function finishHarnessRun(id: string) {
       }
     })(),
   }
-  return guardedHarnessFinish(facts, localMachineId)
+  return guardedHarnessFinish(facts, localMachineId, dependencies.renewTaskClaim)
 }

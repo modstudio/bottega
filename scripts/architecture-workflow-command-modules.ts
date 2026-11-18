@@ -72,7 +72,9 @@ export const workflowCommandModules: WorkflowCommandModule[] = [
     'bun:sqlite',
     '../board/board-claim-policy.ts',
     '../board/board-operations.ts',
+    '../database/db.ts',
     '../project/projects.ts',
+    '../run/run-task-claim-renewal.ts',
   ]),
   module('orchestrator/src/workflow/workflow-uncovered.ts', [
     'bun:sqlite',

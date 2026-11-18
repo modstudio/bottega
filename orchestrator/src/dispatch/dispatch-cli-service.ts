@@ -85,6 +85,7 @@ import {
   type TransportName,
 } from '../transport/transport.ts'
 import { askTypedQuestion } from '../typed-question/typed-question-service.ts'
+import { renewTaskClaim } from '../workflow/workflow-task-claim.ts'
 import {
   callerDrift,
   checkoutHasUncommittedWork,
@@ -623,13 +624,16 @@ export async function detachRoutedRun(
   presentation: Pick<Presentation, 'cwd' | 'error'> = { cwd: () => cwd, error: () => {} },
 ): Promise<string> {
   if (delegationMode(job(jobName).needs, readDelegationSettings()) === 'harness') {
-    const result = await run({
-      ...spec,
-      job: jobName,
-      prompt: text,
-      agent: 'harness',
-      schemaPath: spec.schema,
-    })
+    const result = await run(
+      {
+        ...spec,
+        job: jobName,
+        prompt: text,
+        agent: 'harness',
+        schemaPath: spec.schema,
+      },
+      { renewTaskClaim },
+    )
     return result.record_id
   }
   const selected = await selectBeforeDetach(

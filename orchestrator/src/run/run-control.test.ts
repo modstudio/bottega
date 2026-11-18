@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, spyOn, test } from 'bun:test'
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
@@ -563,8 +563,16 @@ describe('run continuation', () => {
       )
       .run('vendor-session', dir, root)
 
-    const resumed = await continueRun(root, 'summarize one more thing', limit, undefined)
+    db().query('UPDATE run SET launch_key=? WHERE record_id=?').run('DEV-2414', root)
+    const warning = spyOn(console, 'error').mockImplementation(() => {})
+    const resumed = await continueRun(root, 'summarize one more thing', limit, undefined, {
+      renewTaskClaim: async () => {
+        throw new Error('claim store unavailable')
+      },
+    })
 
     expect(resumed).toEqual({ childId: expect.stringMatching(/^[0-9a-f-]{36}$/), job: 'summarize' })
+    expect(warning).toHaveBeenCalledWith(expect.stringContaining('DEV-2414'))
+    warning.mockRestore()
   })
 })

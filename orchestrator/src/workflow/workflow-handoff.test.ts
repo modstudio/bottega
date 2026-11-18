@@ -3,6 +3,7 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { decideKeyedRunCursorAdmission } from '../dispatch/keyed-run-cursor-admission.ts'
 import { selectBriefInFlight } from '../doc/context-brief.ts'
+import { resolveCarriedAttachments } from '../run/run-carried-attachments.ts'
 import { taskFlowHandoffLinks, taskFlowReadStore } from './task-flow-store.ts'
 import { awaitWorkflowRuling, composeWorkflowWithCursor } from './workflow-cursor.ts'
 import { adoptWorkflowTask } from './workflow-cursor-adoption.ts'
@@ -16,6 +17,8 @@ import {
 } from './workflow-cursor-test.fixture.ts'
 import { resolveWorkflowCursorSuccessor } from './workflow-cursor-transition.ts'
 import { handoffWorkflow } from './workflow-handoff.ts'
+import { attachWorkflowTextByHandle } from './workflow-text.ts'
+import { showWorkflowText } from './workflow-text-copy.ts'
 import { promoteWorkflowLocal, setWorkflowLocal } from './workflows.ts'
 
 function install(
@@ -190,6 +193,12 @@ test('handoff closes the old stage, opens and links the successor, moves context
     testPorts,
   )
   const old = (await taskFlowReadStore(d).stageByHandle('fixture', oldNumber))!
+  const attachment = await attachWorkflowTextByHandle(
+    oldNumber,
+    'carried build context',
+    context,
+    d,
+  )
   d.query(`INSERT INTO context_item
     (record_id,holder_kind,holder_id,slug,kind,body,source,created_at,updated_at)
     VALUES (?,'cursor',?,'decision','fact','carry me','test',?,?)`).run(
@@ -238,6 +247,16 @@ test('handoff closes the old stage, opens and links the successor, moves context
   expect(d.query('SELECT holder_id FROM context_item WHERE slug=?').get('decision')).toEqual({
     holder_id: next.record_id,
   })
+  expect(
+    d
+      .query('SELECT cursor_record_id FROM workflow_step_text WHERE record_id=?')
+      .get(attachment.slice('attached-text:'.length)),
+  ).toEqual({ cursor_record_id: next.record_id })
+  await expect(
+    resolveCarriedAttachments([`dispatch ${attachment}`], {
+      readAttachment: (token) => showWorkflowText(token, d),
+    }),
+  ).resolves.toContain('carried build context')
   expect(
     d
       .query<{ record_id: string; closed_at: string | null }, [string]>(

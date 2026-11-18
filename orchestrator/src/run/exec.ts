@@ -152,6 +152,7 @@ export async function main(
     registerStandardRuntime()
     const { run } = await import('./run.ts')
     const { detachedRunOptions } = await import('../route/failover.ts')
+    const { renewTaskClaim } = await import('../workflow/workflow-task-claim.ts')
     const spec = JSON.parse(specJson ?? '{}') as RunDispatchSpec
     const prompt = readFileSync(promptPath, 'utf8')
     const { db } = await import('../database/db.ts')
@@ -167,10 +168,13 @@ export async function main(
       continuation.continuation_message_sha,
       spec.resume?.continuationMessage,
     )
-    await run({
-      ...detachedRunOptions(jobName, prompt, id, spec),
-      dispatchMcpPreflightedAgent: spec.dispatchMcpPreflightedAgent,
-    })
+    await run(
+      {
+        ...detachedRunOptions(jobName, prompt, id, spec),
+        dispatchMcpPreflightedAgent: spec.dispatchMcpPreflightedAgent,
+      },
+      { renewTaskClaim },
+    )
     return 0
   } catch (e) {
     const message = String((e as Error)?.message ?? e)

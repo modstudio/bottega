@@ -16,6 +16,12 @@ const module = (
 })
 
 export const runLifecycleModules: ArchitectureModule[] = [
+  module('orchestrator/src/run/run-task-claim-renewal.ts', ['bun:sqlite']),
+  module('orchestrator/src/run/run-inherited-dispatch.ts', [
+    './run-artifacts.ts',
+    './run-options.ts',
+    './run-resume-kind.ts',
+  ]),
   module('orchestrator/src/dispatch/probe-launch-overrides.ts', []),
   module('orchestrator/src/dispatch/keyed-run-cursor-admission.ts', [
     '../../../shared/brand.ts',
@@ -222,6 +228,7 @@ export const runLifecycleModules: ArchitectureModule[] = [
     '../refusal-error.ts',
     '../route/failover.ts',
     '../runtime/runtime-registration.ts',
+    '../workflow/workflow-task-claim.ts',
     './continuation-message.ts',
     './run-finish-error.ts',
     './run-record-request-rate.ts',
@@ -470,6 +477,7 @@ export const runLifecycleModules: ArchitectureModule[] = [
       './run-agent-capacity.ts',
       './question-close.ts',
       './run-process.ts',
+      './run-task-claim-renewal.ts',
       './run-types.ts',
       '../transport/transport.ts',
       '../worktree/worktree-remove.ts',
@@ -694,6 +702,7 @@ export const runLifecycleModules: ArchitectureModule[] = [
     './run-pack-prompt.ts',
     './run-terminal.ts',
     './run-terminal-fallback.ts',
+    './run-task-claim-renewal.ts',
   ]),
   module('orchestrator/src/run/run-launch.ts', [
     '../route/failover.ts',
@@ -765,6 +774,7 @@ export const runLifecycleModules: ArchitectureModule[] = [
     './run-outbox.ts',
     './run-process.ts',
     './run-resume-kind.ts',
+    './run-task-claim-renewal.ts',
     './question-vocabulary.ts',
     './question-close.ts',
     './run-terminal-blockers.ts',
@@ -774,6 +784,7 @@ export const runLifecycleModules: ArchitectureModule[] = [
     './run-terminal-precedence.ts',
     './run-terminal-lifecycle-verdict.ts',
     './run-terminal-lifecycle-store.ts',
+    './run-terminal-task-claim.ts',
     './run-test-outcome.ts',
     './run-usage-columns.ts',
     './shared-git-config.ts',
@@ -782,6 +793,12 @@ export const runLifecycleModules: ArchitectureModule[] = [
     '../transport/transport.ts',
     '../worktree/worktree-remove.ts',
     '../worktree/worktree-types.ts',
+  ]),
+  module('orchestrator/src/run/run-terminal-task-claim.ts', [
+    'bun:sqlite',
+    './run-resume-kind.ts',
+    './run-terminal-chain.ts',
+    './run-task-claim-renewal.ts',
   ]),
   module('orchestrator/src/run/run-terminal-chain.ts', [
     'bun:sqlite',

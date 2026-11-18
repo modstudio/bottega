@@ -13,13 +13,14 @@ import { DB_PATH, db } from '../database/db.ts'
 import { repoRootOf } from '../git/git-environment.ts'
 import { DEFAULT_TASK_KEY_PATTERN } from '../project/project-settings.ts'
 import { type Project, projectByName } from '../project/projects.ts'
-import { run } from '../run/run.ts'
+import { run as dispatchRun } from '../run/run.ts'
 import { abandonRun } from '../run/run-stop.ts'
 import type { RunResult } from '../run/run-types.ts'
 import { terminalSharedGitConfigForRecordedRun } from '../run/shared-git-config-run.ts'
 import { resetSandbox, resolveSecretPaths, sandboxLaunchArgv } from '../sandbox/sandbox.ts'
 import { sandboxRuntimeAvailability, srtInstalled } from '../sandbox/sandbox-runtime.ts'
 import { taskReader } from '../workflow/task-read-port.ts'
+import { renewTaskClaim } from '../workflow/workflow-task-claim.ts'
 import { DEFAULT_KEEP_TREE_HOURS, keepTreeExemption } from '../worktree/keep-tree-hold.ts'
 import { worktreeDirty } from '../worktree/worktree-attribution.ts'
 import type { Worktree } from '../worktree/worktree-types.ts'
@@ -743,6 +744,8 @@ async function recordIssueFailure(
   )
   return disposition.action !== 'none'
 }
+
+const run = (input: Parameters<typeof dispatchRun>[0]) => dispatchRun(input, { renewTaskClaim })
 
 /** Work exactly one named issue; every durable fact is written before its tree is released. */
 export async function workIssue(key: string): Promise<void> {
