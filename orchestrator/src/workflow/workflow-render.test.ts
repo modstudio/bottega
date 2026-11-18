@@ -38,7 +38,7 @@ const database = testDatabaseFixture((d) => {
 const args = { key: 'DEV-821', branch: 'DEV-821-work', worktree: '/tmp/work' }
 
 describe('workflow rendering', () => {
-  test('renders successful and failed explore graduation lines', () => {
+  test('renders the successful explore graduation line', () => {
     const composition = composeWorkflow('flow', 'fixture', 'default', args, database())
     const cursor = {
       id: 884,
@@ -54,13 +54,6 @@ describe('workflow rendering', () => {
         graduated: { cursor: 845, closed: true },
       }),
     ).toContain('Closed explore cursor 845: replaced by cursor 884.')
-    expect(
-      renderWorkflowComposition({
-        ...composition,
-        cursor,
-        graduated: { cursor: 845, closed: false, reason: 'close failed' },
-      }),
-    ).toContain('Explore cursor 845 stays open: close failed.')
   })
 
   test('renders looser live autonomy differences and resolution failures', () => {

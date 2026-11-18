@@ -337,10 +337,7 @@ export function selectBriefInFlight(
     'record_id' | 'project' | 'workflow_key' | 'args'
   >[],
   liveClaims: readonly Pick<ClaimView, 'project' | 'subject'>[],
-  handoffLinks: readonly WorkflowCursorHandoffLink[] = cursors.map((cursor) => ({
-    record_id: cursor.record_id,
-    handed_off_from_record_id: null,
-  })),
+  handoffLinks: readonly WorkflowCursorHandoffLink[],
 ) {
   const runCursor = (run: BriefLiveRun) =>
     resolveWorkflowCursorSuccessor(run.cursor_record_id, handoffLinks)

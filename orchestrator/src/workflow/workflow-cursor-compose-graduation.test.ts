@@ -102,3 +102,40 @@ test('task-bound composition keeps an explore cursor with attached text intact',
     d.query('SELECT body FROM workflow_step_text WHERE cursor_record_id=?').all(row.record_id),
   ).toEqual([{ body: 'attached finding' }])
 })
+
+test('task-bound composition reuses its open cursor and closes an untouched explore', async () => {
+  const d = database()
+  const session = 'graduation-reuse'
+  const first = await composeWorkflowWithCursor(
+    'flow',
+    'fixture',
+    'default',
+    taskArgs,
+    { session, taskRecordId: 'task-DEV-2323' },
+    d,
+    {},
+    live,
+  )
+  const explore = await openExplore(d, session)
+
+  const composed = await composeWorkflowWithCursor(
+    'flow',
+    'fixture',
+    'default',
+    taskArgs,
+    { session, taskRecordId: 'task-DEV-2323' },
+    d,
+    {},
+    live,
+  )
+
+  expect(composed.cursor).toMatchObject({ id: first.cursor!.id, opened: false })
+  expect(composed.graduated).toEqual({ cursor: explore.id, closed: true })
+  expect(
+    d
+      .query<{ count: number }, [string]>(
+        "SELECT count(*) AS count FROM workflow_cursor WHERE workflow_key=? AND state NOT IN ('done','abandoned')",
+      )
+      .get(taskArgs.key),
+  ).toEqual({ count: 1 })
+})

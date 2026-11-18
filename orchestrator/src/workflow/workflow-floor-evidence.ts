@@ -31,7 +31,7 @@ import { rulingStatus } from '../run/question-vocabulary.ts'
 import { resolveRunIdentifier } from '../run/run-identifier.ts'
 import { TERMINAL_RUN_STATUS_SET } from '../run/run-status.ts'
 import { parseProbeArtifact, resolveProbeArtifact } from './probe-identifier.ts'
-import { taskFlowOpenStageHandoffLinks, taskFlowReadStore } from './task-flow-store.ts'
+import { taskFlowHandoffLinks, taskFlowReadStore } from './task-flow-store.ts'
 import {
   type CheckoutResolution,
   checkoutOutsideChangeRefusal,
@@ -747,7 +747,7 @@ async function gatherSatisfy(
   const row = await store.obligationByRecordId(id)
   if (!row) return { id, found: false }
   const floor = floorFromObligationRow(row)
-  const handoffLinks = await taskFlowOpenStageHandoffLinks(store)
+  const handoffLinks = await taskFlowHandoffLinks(store, [cursorId])
   return {
     id,
     found: true,

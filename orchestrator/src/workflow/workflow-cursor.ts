@@ -31,7 +31,7 @@ import {
 import { followComposeTaskClaim } from './workflow-compose-claim.ts'
 import { adoptWorkflowTask } from './workflow-cursor-adoption.ts'
 import { workflowKeyOf as keyOf, resolveCursorArguments } from './workflow-cursor-arguments.ts'
-import { insertWorkflowCursor } from './workflow-cursor-compose.ts'
+import { graduatingExploreCursor, insertWorkflowCursor } from './workflow-cursor-compose.ts'
 import { cursorName } from './workflow-cursor-format.ts'
 import { abandonWorkflowCursor, closeOpenWorkflowQuestion } from './workflow-cursor-mutation.ts'
 import {
@@ -47,10 +47,9 @@ import {
   selectByHandle,
   type WorkflowCursorContext,
 } from './workflow-cursor-selection.ts'
-import { cursorComposition } from './workflow-cursor-serve.ts'
+import { cursorComposition, type CursorSummary } from './workflow-cursor-serve.ts'
 import { type ClosedStep, type CursorTrailEntry, isClosedStep } from './workflow-cursor-trail.ts'
 import {
-  type CursorState,
   cursorOwnerAfter,
   decideConditionalAdvance,
   decideCursorStart,
@@ -71,7 +70,8 @@ import {
   type WorkflowEvidenceInput,
 } from './workflow-floor-evidence.ts'
 import { withReplayedFloorEvidenceAsync } from './workflow-floor-evidence-replay.ts'
-import { handoffGraduatingExplore } from './workflow-handoff.ts'
+import { type GraduatedExplore, handoffGraduatingExplore } from './workflow-handoff.ts'
+import { closeExploreForLifecycle } from './workflow-explore-lifecycle-close.ts'
 import { refuseKeylessStepClose } from './workflow-keyless-close.ts'
 import { selfRulingRefusal } from './workflow-self-ruling.ts'
 import {
@@ -135,15 +135,6 @@ function adoptLinkedTask(
 
 const takenOverFrom = (row: CursorRow | null, context: WorkflowCursorContext): string | null =>
   row?.session_id && context.session && row.session_id !== context.session ? row.session_id : null
-
-export type CursorSummary = {
-  id: number
-  n: number
-  slug: string
-  state: CursorState
-  opened: boolean
-  previousSession?: string | null
-}
 
 async function refuseLocalComposeBranch(
   composition: {
@@ -248,15 +239,6 @@ export async function composeWorkflowWithCursor(
   )
   await readThroughWorkflowCursorContext(project, context, d)
   await linkResolvedWorkflowTask(project, context, d)
-  const graduated = await handoffGraduatingExplore(
-    composition,
-    context,
-    d,
-    live,
-    commitCount,
-    taskClaimPorts,
-  )
-  if (graduated) return graduated
   const existing = keyOf(composition.arguments)
     ? await findWorkflowCursor(
         composition.project,
@@ -268,6 +250,17 @@ export async function composeWorkflowWithCursor(
       )
     : null
   const start = decideCursorStart(existing?.state ?? null)
+  if (start !== 'reuse') {
+    const graduated = await handoffGraduatingExplore(
+      composition,
+      context,
+      d,
+      live,
+      commitCount,
+      taskClaimPorts,
+    )
+    if (graduated) return graduated
+  }
   let row!: CursorRow
   if (existing && start === 'reuse') row = await reuseWorkflowCursor(existing, args, context, d)
   else row = await insertWorkflowCursor(composition, context, d, live.resolution, commitCount)
@@ -286,11 +279,34 @@ export async function composeWorkflowWithCursor(
     opened: start !== 'reuse',
     previousSession: start === 'reuse' ? takenOverFrom(existing, context) : null,
   } satisfies CursorSummary
+  let graduated: GraduatedExplore | undefined
+  if (start === 'reuse') {
+    const source = await graduatingExploreCursor({
+      project: composition.project,
+      session: context.session,
+      taskBound: Boolean(keyOf(composition.arguments)),
+      database: d,
+      taskFlowClient: context.taskFlowClient,
+    })
+    if (source) {
+      const outcome = await closeExploreForLifecycle(
+        source.record_id,
+        'answered',
+        d,
+        writeFinishingWorkflowAdvance,
+        `replaced by cursor ${cursor.id}`,
+        { requireUntouched: true },
+      )
+      if (outcome !== 'closed')
+        throw new Error(`explore cursor ${source.id} could not be closed: close outcome was ${outcome}`)
+      graduated = { cursor: source.id, closed: true }
+    }
+  }
   return {
     ...cursorComposition(row, d, live),
     cursor,
     ...(claimWarning ? { claimWarning } : {}),
-    graduated: undefined,
+    graduated,
   }
 }
 

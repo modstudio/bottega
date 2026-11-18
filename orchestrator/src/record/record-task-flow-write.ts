@@ -23,8 +23,8 @@ import {
   decideRevisionWrite,
   recordColumnName,
   sameRecordValue,
-  taskFlowHandoffRefusal,
 } from './record-task-flow-write-decision.ts'
+import { taskFlowHandoffRefusal } from '../workflow/workflow-handoff-refusal.ts'
 
 type Tenant = { url: string } & TenantPrincipal
 type Mutation = { id: string; expectedRevision: number; values: Record<string, unknown> }
@@ -546,6 +546,7 @@ async function applyHandoff(tx: SQL, input: Tenant, body: HandoffBody) {
   if ((await preflightMutations(tx, mutations, body.requestId)) === 'retry')
     return replayHandoff(tx, input, body, mutations)
   const policyRefusal = taskFlowHandoffRefusal({
+    cursorLabel: 'workflow cursor',
     state: source.state,
     sourceKey: source.workflow_key,
     targetKey: body.newStage.workflowKey,
