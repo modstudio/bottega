@@ -61,6 +61,11 @@ export const HOSTED_LOCAL_SQL_ALLOWED_FILES = [
     expectedSites: 2,
   },
   {
+    pattern: /^orchestrator\/src\/database\/hosted-row-release\.ts$/,
+    reason: 'Verifies and releases local copies on the migration-step handle',
+    expectedSites: 15,
+  },
+  {
     pattern: /^orchestrator\/src\/record\/(?:record-board-claims|record-projects|record-sync)\.ts$/,
     reason:
       'Postgres record modules operate on the hosted record rather than a guarded SQLite handle',

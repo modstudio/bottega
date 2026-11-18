@@ -31,6 +31,7 @@ import {
   migrationAuthorityRefusal,
   withSynchronousDatabaseForMigrationStep,
 } from './db.ts'
+import { releaseHostedRowsAfterUpdate } from './hosted-row-release.ts'
 import {
   clearMachineUpdateIntent,
   localStoreJournalPositions,
@@ -211,6 +212,7 @@ type UpdateDependencies = {
   migrate?: (cwd: string) => void
   afterDrainPromoted?: () => void
   maintainStore?: (presentation: Presentation) => void
+  releaseHostedRows?: (presentation: Presentation) => Promise<void>
   identity?: InstallationIdentity
   updateDistribution?: typeof updateDistribution
   runLaunchAgentsRefreshVerb?: (binary: string) => void
@@ -621,6 +623,7 @@ async function updateCheckout(presentation: Presentation, deps: UpdateDependenci
   const refreshLaunchAgents = deps.runLaunchAgentsRefreshVerb ?? runLaunchAgentsRefreshVerb
   refreshLaunchAgents(resolveInstallationPaths(target, {}).executable)
   ;(deps.verifyMainCheckout ?? verifyMainCheckoutInvariant)(target, branch, runGit)
+  await (deps.releaseHostedRows ?? releaseHostedRowsAfterUpdate)(presentation)
 }
 
 export async function machineUpdateCommandUnderLock(
@@ -654,6 +657,7 @@ export async function machineUpdateCommandUnderLock(
     maintainStoreAfterUpdate(presentation, maintainStore)
     const refreshLaunchAgents = deps.runLaunchAgentsRefreshVerb ?? runLaunchAgentsRefreshVerb
     refreshLaunchAgents(realpathSync(process.execPath))
+    await (deps.releaseHostedRows ?? releaseHostedRowsAfterUpdate)(presentation)
     return
   }
   await updateCheckout(presentation, deps)
