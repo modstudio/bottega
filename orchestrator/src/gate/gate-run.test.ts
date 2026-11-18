@@ -79,6 +79,7 @@ test('inserts a finished dirty-tree gate without attributing it to HEAD', async 
     topLevel: () => repositoryPath,
     checkout: cleanCheckout,
     gitState: () => ({ headCommit, porcelainPaths: ['?? dirty.txt'] }),
+    contentTree: () => 'tree123',
     write: (chunk) => chunks.push(chunk),
     runner: ({ write }) => {
       write('ok\n')
@@ -96,6 +97,7 @@ test('inserts a finished dirty-tree gate without attributing it to HEAD', async 
     exitCode: 0,
     commit: null,
     commitUnknown: 'dirty-before',
+    checkedTree: 'tree123',
   })
   expect(chunks).toEqual(['ok\n'])
   expect(

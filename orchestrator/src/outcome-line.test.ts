@@ -8,8 +8,15 @@ test.each([
     'gate 12262 failed (exit 1) at def456',
   ],
   [
-    { kind: 'gate', id: 12263, exitCode: 0, commit: null, commitUnknown: 'dirty-before' },
-    'gate 12263 passed; commit unknown: the tree had uncommitted changes',
+    {
+      kind: 'gate',
+      id: 12263,
+      exitCode: 0,
+      commit: null,
+      commitUnknown: 'dirty-before',
+      checkedTree: 'tree123',
+    },
+    'gate 12263 passed; commit unknown: the tree had uncommitted changes; checked tree tree123',
   ],
   [
     { kind: 'gate', id: 12264, exitCode: 7, commit: null, commitUnknown: 'changed-during' },

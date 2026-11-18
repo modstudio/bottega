@@ -9,6 +9,7 @@ import { WORKER_GATE_BASE_ENV } from './gate-decision.ts'
 
 export function prepareSyntheticGateIndex(input: { worktree: string; baseCommit: string }): {
   environment: Record<string, string>
+  treeId: string
   remove(): void
 } {
   const directory = mkdtempSync(join(tmpdir(), 'orch-worker-gate-index-'))
@@ -26,6 +27,7 @@ export function prepareSyntheticGateIndex(input: { worktree: string; baseCommit:
   }
   return {
     environment: { ...prepared.environment, [WORKER_GATE_BASE_ENV]: input.baseCommit },
+    treeId: prepared.git(['write-tree']),
     remove: () => {
       try {
         prepared.remove()
@@ -33,5 +35,15 @@ export function prepareSyntheticGateIndex(input: { worktree: string; baseCommit:
         rmSync(directory, { recursive: true, force: true })
       }
     },
+  }
+}
+
+/** Snapshot a working tree through the same disposable-index path used by worker gates. */
+export function architectGateTree(worktree: string): string {
+  const prepared = prepareSyntheticGateIndex({ worktree, baseCommit: 'HEAD' })
+  try {
+    return prepared.treeId
+  } finally {
+    prepared.remove()
   }
 }

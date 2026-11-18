@@ -27,6 +27,7 @@ import {
   identityReferenceGuardViolations,
   identityReferenceViolationCount,
 } from './architecture-identity-reference.ts'
+import { architectureRatchetFailureLines } from './architecture-ratchet-output.ts'
 import { reviewFunnelPrivateDecisionImports } from './architecture-review-boundaries.ts'
 import {
   duplicateImportBoundaryNameViolations,
@@ -64,16 +65,21 @@ for (const [file, count] of manifestFileCounts) {
 }
 
 /** The `--base=<commit>` the gate passes; the frozen baseline is compared against it. */
-function baseArgumentOrExit(argv: readonly string[]): string | null {
+function argumentsOrExit(argv: readonly string[]): { base: string | null; full: boolean } {
   let base: string | null = null
+  let full = false
   for (const argument of argv) {
+    if (argument === '--full' && !full) {
+      full = true
+      continue
+    }
     if (!argument.startsWith('--base=') || argument.length === '--base='.length || base !== null) {
-      console.error('usage: bun scripts/check-architecture.ts [--base=<commit>]')
+      console.error('usage: bun scripts/check-architecture.ts [--base=<commit>] [--full]')
       process.exit(1)
     }
     base = argument.slice('--base='.length)
   }
-  return base
+  return { base, full }
 }
 
 /**
@@ -107,7 +113,7 @@ function declaredSourceFiles() {
 
 // The baseline is judged as the base revision froze it, so a baseline line cannot be added
 // alongside the undeclared file it hides.
-const base = baseArgumentOrExit(Bun.argv.slice(2))
+const { base, full } = argumentsOrExit(Bun.argv.slice(2))
 const baseUndeclaredBaseline = baseBaselineOrExit(base)
 
 for (const relative of new Glob('**/*.{ts,tsx}').scanSync({
@@ -255,20 +261,18 @@ const ratchet = architectureViolationRatchet(
 )
 
 if (ratchet.newViolations.length || ratchet.fixedBaseline.length) {
-  for (const edge of ratchet.newViolations) {
-    console.error(
-      `check-architecture: new violation outside the baseline; remove the import: ${edge.rule} ${edge.from} -> ${edge.to}`,
-    )
-  }
-  for (const edge of ratchet.fixedBaseline) {
-    console.error(
-      `check-architecture: baselined violation is fixed; remove it from the baseline: ${edge.rule} ${edge.from} -> ${edge.to}`,
-    )
-  }
-  await runArchitectureCruise({
-    entries: ARCHITECTURE_CRUISE_ENTRIES,
-    extraArgs: ['--output-type', 'err-long'],
-  })
+  const ruleComments = new Map(
+    dependencyCruiserConfig()
+      .forbidden.filter((rule) => rule.comment)
+      .map((rule) => [rule.name, rule.comment!]),
+  )
+  for (const line of architectureRatchetFailureLines({
+    violations: errorViolations,
+    ratchet,
+    ruleComments,
+    full,
+  }))
+    console.error(line)
   process.exit(1)
 }
 

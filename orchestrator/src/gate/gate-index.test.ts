@@ -37,6 +37,7 @@ test('the synthetic index stages the whole current tree without touching the rea
     expect(
       git(root, ['diff', '--cached', '--name-only', base], prepared.environment).split('\n'),
     ).toEqual(['tracked.txt', 'untracked.txt'])
+    expect(prepared.treeId).toBe(git(root, ['write-tree'], prepared.environment))
     expect(git(root, ['write-tree'])).toBe(realIndexBefore)
     expect(git(root, ['rev-parse', 'HEAD'])).toBe(base)
   } finally {

@@ -36,6 +36,7 @@ import {
   resolveGateCommand,
   WORKER_GATE_BASE_ENV,
 } from './gate-decision.ts'
+import { architectGateTree } from './gate-index.ts'
 
 /** The reason a gate execution row was requested. Enforced by gate_execution's SQL CHECK. */
 export type GatePurpose = 'gate' | 'worker-check'
@@ -64,7 +65,8 @@ type ArchitectGateTopLevel = (cwd: string) => string | null
 
 export type ArchitectGateRecord = { number: number; exitCode: number } & (
   | { commit: string }
-  | { commit: null; commitUnknown: 'dirty-before' | 'changed-during' }
+  | { commit: null; commitUnknown: 'dirty-before'; checkedTree: string }
+  | { commit: null; commitUnknown: 'changed-during' }
 )
 
 /** Record a worker-style gate request; the broker remains the only executor. */
@@ -257,6 +259,7 @@ export async function runArchitectGate(input: {
   gitState?: ArchitectGateGitState
   checkout?: GateCheckoutObserver
   topLevel?: ArchitectGateTopLevel
+  contentTree?: (cwd: string) => string
   write?: (chunk: string) => void
 }): Promise<ArchitectGateRecord> {
   const { caller, project, gate, checkoutTopLevel } = architectGateTarget(input)
@@ -273,6 +276,8 @@ export async function runArchitectGate(input: {
   const write = input.write ?? ((chunk) => process.stdout.write(chunk))
   const observe = input.gitState ?? observeGitState
   const before = gateHeadCommit(checkoutTopLevel, observe)
+  const checkedTree =
+    before === null ? (input.contentTree ?? architectGateTree)(checkoutTopLevel) : null
   const executionPath = gateCheckExecutionPath()
   const ran = await (input.runner ?? defaultRunner)({
     command,
@@ -315,11 +320,20 @@ export async function runArchitectGate(input: {
     if (!row?.number) throw new Error('gate_execution row was not inserted')
     insertGateCheckExecutions(d, recordId, checkExecutions)
     if (commit === null) {
+      if (before === null) {
+        return {
+          number: row.number,
+          exitCode: ran.exitCode,
+          commit: null,
+          commitUnknown: 'dirty-before',
+          checkedTree: checkedTree!,
+        }
+      }
       return {
         number: row.number,
         exitCode: ran.exitCode,
         commit: null,
-        commitUnknown: before === null ? 'dirty-before' : 'changed-during',
+        commitUnknown: 'changed-during',
       }
     }
     return { number: row.number, exitCode: ran.exitCode, commit }

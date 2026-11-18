@@ -8,7 +8,15 @@ export type OutcomeLineInput =
       id: number
       exitCode: number
       commit: null
-      commitUnknown: 'dirty-before' | 'changed-during'
+      commitUnknown: 'changed-during'
+    }
+  | {
+      kind: 'gate'
+      id: number
+      exitCode: number
+      commit: null
+      commitUnknown: 'dirty-before'
+      checkedTree: string
     }
   | { kind: 'exec' | 'probe'; id: number; exitCode: number; signal: string | null }
 
@@ -22,5 +30,7 @@ export function formatOutcomeLine(input: OutcomeLineInput): string {
     input.commitUnknown === 'dirty-before'
       ? 'the tree had uncommitted changes'
       : 'the tree changed while the gate ran'
-  return `${prefix} ${outcome}; commit unknown: ${reason}`
+  const checkedTree =
+    input.commitUnknown === 'dirty-before' ? `; checked tree ${input.checkedTree}` : ''
+  return `${prefix} ${outcome}; commit unknown: ${reason}${checkedTree}`
 }

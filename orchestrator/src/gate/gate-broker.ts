@@ -561,6 +561,7 @@ async function runPreparedGate(input: {
         baseCommit: input.prepared.baseCommit,
       })
       try {
+        input.record(`checked tree ${gateIndex.treeId} (HEAD ${headCommit})\n`)
         await runGateProcess({
           command: input.prepared.command,
           worktree: input.prepared.worktree,
