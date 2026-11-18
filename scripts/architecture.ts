@@ -842,6 +842,19 @@ const activeSpaceResolverRule: ArchitectureRule = {
   },
 }
 
+const recordPoolInstallerRule: ArchitectureRule = {
+  name: 'record-pool-installer-is-test-only',
+  severity: 'error',
+  comment: 'Only beside-tests and orchestrator test fixtures may install a record pool.',
+  from: {
+    path: '^',
+    pathNot: ['(?:\\.test|\\.fixture)\\.ts$|^orchestrator/test/'],
+  },
+  to: {
+    path: exactArchitecturePath('orchestrator/test/fixtures/record-pool-injection.ts'),
+  },
+}
+
 const architectureCycleFiles = [
   ...new Set(allowedCycles.flatMap(({ cycle }) => cycle.slice(0, -1))),
 ]
@@ -937,6 +950,7 @@ export function architectureRules() {
       to: { path: exactArchitecturePath('orchestrator/src/run/run.ts') },
     },
     activeSpaceResolverRule,
+    recordPoolInstallerRule,
     {
       name: 'import-record-api-server-transitive-boundary',
       severity: 'error',

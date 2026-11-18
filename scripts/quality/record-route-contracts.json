@@ -1,0 +1,610 @@
+[
+  {
+    "route": "ALL /api/auth/*",
+    "reason": "untested"
+  },
+  {
+    "route": "ALL /public/v1/*",
+    "reason": "untested"
+  },
+  {
+    "route": "ALL /v1/*",
+    "reason": "untested"
+  },
+  {
+    "route": "DELETE /v1/config/credential-preferences",
+    "reason": "untested"
+  },
+  {
+    "route": "DELETE /v1/config/entries/:key",
+    "reason": "untested"
+  },
+  {
+    "route": "DELETE /v1/config/secrets/:key",
+    "reason": "untested"
+  },
+  {
+    "route": "DELETE /v1/config/wraps/:recipientKeyId",
+    "reason": "untested"
+  },
+  {
+    "route": "DELETE /v1/context-items/:id",
+    "reason": "untested"
+  },
+  {
+    "route": "DELETE /v1/docs/:id",
+    "reason": "untested"
+  },
+  {
+    "route": "DELETE /v1/outside-blocks/:userId",
+    "reason": "untested"
+  },
+  {
+    "route": "GET /client-config",
+    "reason": "untested"
+  },
+  {
+    "route": "GET /health",
+    "reason": "untested"
+  },
+  {
+    "route": "GET /public/v1/docs",
+    "reason": "untested"
+  },
+  {
+    "route": "GET /public/v1/docs/:id",
+    "reason": "untested"
+  },
+  {
+    "route": "GET /public/v1/docs/search",
+    "reason": "untested"
+  },
+  {
+    "route": "GET /v1/board/changes",
+    "reason": "untested"
+  },
+  {
+    "route": "GET /v1/board/claims",
+    "reason": "untested"
+  },
+  {
+    "route": "GET /v1/board/messages",
+    "reason": "untested"
+  },
+  {
+    "route": "GET /v1/board/messages/:id/status",
+    "reason": "untested"
+  },
+  {
+    "route": "GET /v1/board/stream",
+    "reason": "untested"
+  },
+  {
+    "route": "GET /v1/board/threads/:id",
+    "reason": "untested"
+  },
+  {
+    "route": "GET /v1/changes",
+    "reason": "untested"
+  },
+  {
+    "route": "GET /v1/config-access",
+    "reason": "untested"
+  },
+  {
+    "route": "GET /v1/config/credential-preferences",
+    "reason": "untested"
+  },
+  {
+    "route": "GET /v1/config/data-keys",
+    "reason": "untested"
+  },
+  {
+    "route": "GET /v1/config/data-keys/:dekId",
+    "reason": "untested"
+  },
+  {
+    "route": "GET /v1/config/data-keys/current",
+    "reason": "untested"
+  },
+  {
+    "route": "GET /v1/config/entries",
+    "reason": "untested"
+  },
+  {
+    "route": "GET /v1/config/entries/:key",
+    "reason": "untested"
+  },
+  {
+    "route": "GET /v1/config/join/nameplates/:nameplate/messages",
+    "reason": "untested"
+  },
+  {
+    "route": "GET /v1/config/machine-keys",
+    "reason": "untested"
+  },
+  {
+    "route": "GET /v1/config/secrets",
+    "reason": "untested"
+  },
+  {
+    "route": "GET /v1/config/secrets/:key",
+    "reason": "untested"
+  },
+  {
+    "route": "GET /v1/config/trust-log",
+    "reason": "untested"
+  },
+  {
+    "route": "GET /v1/docs",
+    "reason": "untested"
+  },
+  {
+    "route": "GET /v1/docs/:id",
+    "reason": "untested"
+  },
+  {
+    "route": "GET /v1/docs/:id/revisions",
+    "reason": "untested"
+  },
+  {
+    "route": "GET /v1/docs/counts",
+    "reason": "untested"
+  },
+  {
+    "route": "GET /v1/docs/search",
+    "reason": "untested"
+  },
+  {
+    "route": "GET /v1/health/no-destination-writes",
+    "reason": "untested"
+  },
+  {
+    "route": "GET /v1/invitations",
+    "reason": "untested"
+  },
+  {
+    "route": "GET /v1/lens-catalogue/:table",
+    "reason": "untested"
+  },
+  {
+    "route": "GET /v1/moderation/hidden",
+    "reason": "untested"
+  },
+  {
+    "route": "GET /v1/outside-blocks",
+    "reason": "untested"
+  },
+  {
+    "route": "GET /v1/outside-intake",
+    "reason": "untested"
+  },
+  {
+    "route": "GET /v1/port-catalogue/:table",
+    "reason": "untested"
+  },
+  {
+    "route": "GET /v1/projects",
+    "reason": "untested"
+  },
+  {
+    "route": "GET /v1/questions",
+    "reason": "untested"
+  },
+  {
+    "route": "GET /v1/releases",
+    "reason": "untested"
+  },
+  {
+    "route": "GET /v1/releases/latest",
+    "reason": "untested"
+  },
+  {
+    "route": "GET /v1/reviews",
+    "reason": "untested"
+  },
+  {
+    "route": "GET /v1/reviews/:id",
+    "reason": "untested"
+  },
+  {
+    "route": "GET /v1/routing-evidence",
+    "reason": "untested"
+  },
+  {
+    "route": "GET /v1/runs",
+    "reason": "untested"
+  },
+  {
+    "route": "GET /v1/runs/:id",
+    "reason": "untested"
+  },
+  {
+    "route": "GET /v1/runs/window",
+    "reason": "untested"
+  },
+  {
+    "route": "GET /v1/scores",
+    "reason": "untested"
+  },
+  {
+    "route": "GET /v1/snapshots",
+    "reason": "untested"
+  },
+  {
+    "route": "GET /v1/subjects",
+    "reason": "untested"
+  },
+  {
+    "route": "GET /v1/task-flow/obligations/:id",
+    "reason": "untested"
+  },
+  {
+    "route": "GET /v1/task-flow/project-reference-counts",
+    "reason": "untested"
+  },
+  {
+    "route": "GET /v1/task-flow/stages",
+    "reason": "untested"
+  },
+  {
+    "route": "GET /v1/task-flow/stages/:id",
+    "reason": "untested"
+  },
+  {
+    "route": "GET /v1/task-flow/texts/:id",
+    "reason": "untested"
+  },
+  {
+    "route": "GET /v1/whoami",
+    "reason": "untested"
+  },
+  {
+    "route": "GET /v1/workflow-catalogue/:table",
+    "reason": "untested"
+  },
+  {
+    "route": "GET /version",
+    "reason": "untested"
+  },
+  {
+    "route": "POST /v1/board/claims/:id/release",
+    "reason": "untested"
+  },
+  {
+    "route": "POST /v1/board/claims/:id/renew",
+    "reason": "untested"
+  },
+  {
+    "route": "POST /v1/board/claims/release-task",
+    "reason": "untested"
+  },
+  {
+    "route": "POST /v1/board/messages/:id/accept",
+    "reason": "untested"
+  },
+  {
+    "route": "POST /v1/board/messages/:id/filing-lease",
+    "reason": "untested"
+  },
+  {
+    "route": "POST /v1/board/messages/:id/filing-lease/complete",
+    "reason": "untested"
+  },
+  {
+    "route": "POST /v1/board/messages/:id/filing-lease/fail",
+    "reason": "untested"
+  },
+  {
+    "route": "POST /v1/board/messages/:id/replies",
+    "reason": "untested"
+  },
+  {
+    "route": "POST /v1/board/messages/:id/withdraw",
+    "reason": "untested"
+  },
+  {
+    "route": "POST /v1/catalogues/ensure-built-ins",
+    "reason": "untested"
+  },
+  {
+    "route": "POST /v1/config-access/grant",
+    "reason": "untested"
+  },
+  {
+    "route": "POST /v1/config-access/withdraw",
+    "reason": "untested"
+  },
+  {
+    "route": "POST /v1/config/data-keys",
+    "reason": "untested"
+  },
+  {
+    "route": "POST /v1/config/data-keys/:dekId/retire",
+    "reason": "untested"
+  },
+  {
+    "route": "POST /v1/config/data-keys/:dekId/wraps",
+    "reason": "untested"
+  },
+  {
+    "route": "POST /v1/config/join/nameplates",
+    "reason": "untested"
+  },
+  {
+    "route": "POST /v1/config/join/nameplates/:nameplate/failure",
+    "reason": "untested"
+  },
+  {
+    "route": "POST /v1/config/join/nameplates/:nameplate/messages",
+    "reason": "untested"
+  },
+  {
+    "route": "POST /v1/config/machine-keys/:keyId/claim",
+    "reason": "untested"
+  },
+  {
+    "route": "POST /v1/config/machine-keys/:keyId/claim-challenge",
+    "reason": "untested"
+  },
+  {
+    "route": "POST /v1/config/machine-keys/:keyId/revoke",
+    "reason": "untested"
+  },
+  {
+    "route": "POST /v1/config/trust-log",
+    "reason": "untested"
+  },
+  {
+    "route": "POST /v1/docs/:id/consume",
+    "reason": "untested"
+  },
+  {
+    "route": "POST /v1/docs/:id/restore",
+    "reason": "untested"
+  },
+  {
+    "route": "POST /v1/docs/canon/import",
+    "reason": "untested"
+  },
+  {
+    "route": "POST /v1/docs/import",
+    "reason": "untested"
+  },
+  {
+    "route": "POST /v1/docs/rename-subject",
+    "reason": "untested"
+  },
+  {
+    "route": "POST /v1/lens-catalogue/import",
+    "reason": "untested"
+  },
+  {
+    "route": "POST /v1/machine/retire",
+    "reason": "untested"
+  },
+  {
+    "route": "POST /v1/members/permission",
+    "reason": "untested"
+  },
+  {
+    "route": "POST /v1/moderation/hide",
+    "reason": "untested"
+  },
+  {
+    "route": "POST /v1/moderation/unhide",
+    "reason": "untested"
+  },
+  {
+    "route": "POST /v1/outside-blocks",
+    "reason": "untested"
+  },
+  {
+    "route": "POST /v1/outside-intake",
+    "reason": "untested"
+  },
+  {
+    "route": "POST /v1/outside-intake/pause",
+    "reason": "untested"
+  },
+  {
+    "route": "POST /v1/outside-intake/resume",
+    "reason": "untested"
+  },
+  {
+    "route": "POST /v1/port-catalogue/import",
+    "reason": "untested"
+  },
+  {
+    "route": "POST /v1/port-catalogue/write",
+    "reason": "untested"
+  },
+  {
+    "route": "POST /v1/projects/:id/purge",
+    "reason": "untested"
+  },
+  {
+    "route": "POST /v1/projects/:id/retire",
+    "reason": "untested"
+  },
+  {
+    "route": "POST /v1/questions/:intent",
+    "reason": "untested"
+  },
+  {
+    "route": "POST /v1/runs/:id/unvoid",
+    "reason": "untested"
+  },
+  {
+    "route": "POST /v1/runs/:id/void",
+    "reason": "untested"
+  },
+  {
+    "route": "POST /v1/settings/auto-mode",
+    "reason": "untested"
+  },
+  {
+    "route": "POST /v1/settings/permission",
+    "reason": "untested"
+  },
+  {
+    "route": "POST /v1/subjects/:id/define",
+    "reason": "untested"
+  },
+  {
+    "route": "POST /v1/subjects/:id/rename",
+    "reason": "untested"
+  },
+  {
+    "route": "POST /v1/subjects/:id/retire",
+    "reason": "untested"
+  },
+  {
+    "route": "POST /v1/subjects/reorder",
+    "reason": "untested"
+  },
+  {
+    "route": "POST /v1/sync",
+    "reason": "untested"
+  },
+  {
+    "route": "POST /v1/task-flow/abandon",
+    "reason": "untested"
+  },
+  {
+    "route": "POST /v1/task-flow/adopt",
+    "reason": "untested"
+  },
+  {
+    "route": "POST /v1/task-flow/advance",
+    "reason": "untested"
+  },
+  {
+    "route": "POST /v1/task-flow/attach-text",
+    "reason": "untested"
+  },
+  {
+    "route": "POST /v1/task-flow/await-ruling",
+    "reason": "untested"
+  },
+  {
+    "route": "POST /v1/task-flow/compose",
+    "reason": "untested"
+  },
+  {
+    "route": "POST /v1/task-flow/copy-text",
+    "reason": "untested"
+  },
+  {
+    "route": "POST /v1/task-flow/delete-text",
+    "reason": "untested"
+  },
+  {
+    "route": "POST /v1/task-flow/handoff",
+    "reason": "untested"
+  },
+  {
+    "route": "POST /v1/task-flow/import",
+    "reason": "untested"
+  },
+  {
+    "route": "POST /v1/task-flow/presence",
+    "reason": "untested"
+  },
+  {
+    "route": "POST /v1/task-flow/stage-update",
+    "reason": "untested"
+  },
+  {
+    "route": "POST /v1/workflow-catalogue/draft",
+    "reason": "untested"
+  },
+  {
+    "route": "POST /v1/workflow-catalogue/import/v2",
+    "reason": "untested"
+  },
+  {
+    "route": "POST /v1/workflow-catalogue/promote",
+    "reason": "untested"
+  },
+  {
+    "route": "POST /v1/workflow-catalogue/retire",
+    "reason": "untested"
+  },
+  {
+    "route": "PUT /v1/active-space",
+    "reason": "untested"
+  },
+  {
+    "route": "PUT /v1/board/messages",
+    "reason": "untested"
+  },
+  {
+    "route": "PUT /v1/board/receipts",
+    "reason": "untested"
+  },
+  {
+    "route": "PUT /v1/board/successor",
+    "reason": "untested"
+  },
+  {
+    "route": "PUT /v1/config/credential-preferences",
+    "reason": "untested"
+  },
+  {
+    "route": "PUT /v1/config/entries/:key",
+    "reason": "untested"
+  },
+  {
+    "route": "PUT /v1/config/machine-keys/:keyId",
+    "reason": "untested"
+  },
+  {
+    "route": "PUT /v1/config/secrets/:key",
+    "reason": "untested"
+  },
+  {
+    "route": "PUT /v1/context-items",
+    "reason": "untested"
+  },
+  {
+    "route": "PUT /v1/docs",
+    "reason": "untested"
+  },
+  {
+    "route": "PUT /v1/docs/order",
+    "reason": "untested"
+  },
+  {
+    "route": "PUT /v1/lens-catalogue/lenses",
+    "reason": "untested"
+  },
+  {
+    "route": "PUT /v1/lens-catalogue/profiles",
+    "reason": "untested"
+  },
+  {
+    "route": "PUT /v1/lens-catalogue/selections",
+    "reason": "untested"
+  },
+  {
+    "route": "PUT /v1/machine/name",
+    "reason": "untested"
+  },
+  {
+    "route": "PUT /v1/projects",
+    "reason": "untested"
+  },
+  {
+    "route": "PUT /v1/runs/:id/score",
+    "reason": "untested"
+  },
+  {
+    "route": "PUT /v1/snapshots/:kind",
+    "reason": "untested"
+  },
+  {
+    "route": "PUT /v1/subjects",
+    "reason": "untested"
+  }
+]
