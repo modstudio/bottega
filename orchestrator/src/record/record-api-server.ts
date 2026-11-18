@@ -39,6 +39,7 @@ import { hostedBoardStatus, putHostedBoardReceipt } from './record-board-receipt
 import { createBoardStreamRegistry } from './record-board-stream.ts'
 import { takeHostedBoardSuccessor } from './record-board-successor.ts'
 import { createBoardWakeSource } from './record-board-wake.ts'
+import { CALLER_HEADER_NAME } from './record-caller.ts'
 import { importRecordCanon } from './record-canon-import.ts'
 import {
   importRecordLensCatalogue,
@@ -241,7 +242,7 @@ function serveRecordApi(
           pathname: new URL(request.url).pathname,
           status: response.status,
           durationMs: performance.now() - started,
-          caller: request.headers.get('x-bottega-caller'),
+          caller: request.headers.get(CALLER_HEADER_NAME),
         }),
       )
       return response

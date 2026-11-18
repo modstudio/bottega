@@ -3,6 +3,7 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { migratedTestDatabase } from '../database/test-database.fixture.ts'
 import { recordHostedCallOutcome } from '../hosted-call-outcome.ts'
 import { recordTransport } from './record-api-client-transport.ts'
+import { CALLER_HEADER_NAME } from './record-caller.ts'
 
 test('record transport sends the fallback user-agent when installation identity resolution fails', async () => {
   const userAgents: Array<string | null> = []
@@ -10,7 +11,7 @@ test('record transport sends the fallback user-agent when installation identity 
   const transport = (async (_input: RequestInfo | URL, init?: RequestInit) => {
     const headers = new Headers(init?.headers)
     userAgents.push(headers.get('user-agent'))
-    callers.push(headers.get('x-bottega-caller'))
+    callers.push(headers.get(CALLER_HEADER_NAME))
     return new Response('{}', { status: 200 })
   }) as unknown as typeof fetch
 

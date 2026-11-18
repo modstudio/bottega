@@ -235,6 +235,7 @@ export const recordApiBoundaries: ImportBoundary[] = [
       './record-workflow-catalogue.ts',
       './record-auth.ts',
       './record-canon-import.ts',
+      './record-caller.ts',
       './record-docs.ts',
       './record-doc-order.ts',
       './record-projects.ts',

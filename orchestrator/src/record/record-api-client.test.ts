@@ -59,7 +59,7 @@ describe('record HTTP authentication responses', () => {
         headers: expect.any(Headers),
         body: { email: 'a@example.test', password: 'secret' },
       })
-      expect([...(requests[0]?.headers.keys() ?? [])]).toEqual(['content-type', 'user-agent'])
+      expect(requests[0]?.headers.has(`x-${PLATFORM_SLUG}-caller`)).toBeTrue()
       expect(requests[0]?.headers.get('content-type')).toBe('application/json')
       expect(requests[0]?.headers.get('user-agent')).toMatch(
         new RegExp(`^${PLATFORM_SLUG}/\\d+\\.\\d+\\.\\d+`),

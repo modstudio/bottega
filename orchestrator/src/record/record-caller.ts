@@ -2,8 +2,10 @@
 /** Owns the bounded caller identity attached to hosted record requests. */
 
 import { AsyncLocalStorage } from 'node:async_hooks'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 
 export const CALLER_ENVIRONMENT_KEY = 'BOTTEGA_CALLER'
+export const CALLER_HEADER_NAME = `x-${PLATFORM_SLUG}-caller`
 export const CALLER_TOKEN_MAX_LENGTH = 64
 
 const CALLER_TOKEN = /^[A-Za-z0-9:_/.-]+$/
@@ -30,7 +32,8 @@ export function cliCallerEnvironmentValue(
 export function recordCallerToken(environment: NodeJS.ProcessEnv = process.env): string {
   const scoped = callerScope.getStore()
   if (scoped !== undefined) return callerToken(scoped, undefined)
-  if (environment !== process.env) return callerToken(undefined, environment[CALLER_ENVIRONMENT_KEY])
+  if (environment !== process.env)
+    return callerToken(undefined, environment[CALLER_ENVIRONMENT_KEY])
   processCallerToken ??= callerToken(undefined, environment[CALLER_ENVIRONMENT_KEY])
   return processCallerToken
 }
