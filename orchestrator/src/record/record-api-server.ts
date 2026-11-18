@@ -241,6 +241,7 @@ function serveRecordApi(
           pathname: new URL(request.url).pathname,
           status: response.status,
           durationMs: performance.now() - started,
+          caller: request.headers.get('x-bottega-caller'),
         }),
       )
       return response

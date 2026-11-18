@@ -11,6 +11,7 @@ import {
   recordHostedCallOutcome,
 } from '../hosted-call-outcome.ts'
 import { bearerHeaders } from './record-auth.ts'
+import { recordCallerToken } from './record-caller.ts'
 
 let memoizedUserAgent: string | undefined
 
@@ -82,6 +83,7 @@ export async function recordTransport(
   try {
     const headers = new Headers(init.headers)
     headers.set('user-agent', userAgent)
+    headers.set('x-bottega-caller', recordCallerToken())
     const response = await transport(`${baseUrl}${path}`, { ...init, headers })
     scheduleHostedCallObservation(recorder, {
       observedAt: new Date().toISOString(),

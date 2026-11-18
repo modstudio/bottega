@@ -6,8 +6,11 @@ import { recordTransport } from './record-api-client-transport.ts'
 
 test('record transport sends the fallback user-agent when installation identity resolution fails', async () => {
   const userAgents: Array<string | null> = []
+  const callers: Array<string | null> = []
   const transport = (async (_input: RequestInfo | URL, init?: RequestInit) => {
-    userAgents.push(new Headers(init?.headers).get('user-agent'))
+    const headers = new Headers(init?.headers)
+    userAgents.push(headers.get('user-agent'))
+    callers.push(headers.get('x-bottega-caller'))
     return new Response('{}', { status: 200 })
   }) as unknown as typeof fetch
 
@@ -24,6 +27,7 @@ test('record transport sends the fallback user-agent when installation identity 
     ),
   ).resolves.toMatchObject({ status: 200 })
   expect(userAgents).toEqual([`${PLATFORM_SLUG}/unknown`])
+  expect(callers).toEqual(['unknown'])
 })
 
 test('record transport stores HTTP and transport-error outcomes for its route class', async () => {

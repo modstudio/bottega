@@ -11,6 +11,7 @@ export function hostedAccessLogLine(input: {
   pathname: string
   status: number
   durationMs: number
+  caller: string | null
 }): string {
-  return `${input.method} ${input.pathname} ${input.status} ${Math.round(input.durationMs)}ms`
+  return `${input.method} ${input.pathname} ${input.status} ${Math.round(input.durationMs)}ms caller=${input.caller ?? '-'}`
 }

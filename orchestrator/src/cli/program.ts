@@ -51,6 +51,7 @@ import { register as registerSync } from '../commands/sync.ts'
 import { register as registerTestSubstance } from '../commands/test-substance.ts'
 import { DB_PATH, dbSourcePath, withReadOnlyDatabaseAccess } from '../database/db.ts'
 import { recordSessionHostPressure } from '../host-pressure/host-pressure-service.ts'
+import { CALLER_ENVIRONMENT_KEY, cliCallerEnvironmentValue } from '../record/record-caller.ts'
 import { classifyRunIdentifier } from '../run/run-identifier.ts'
 
 export const program = new Command()
@@ -99,6 +100,20 @@ registerSetup(program)
 registerSpare(program)
 registerSync(program)
 registerTestSubstance(program)
+
+let activeCallerDispatch = false
+
+program.hook('preAction', (_rootCommand, actionCommand) => {
+  if (!activeCallerDispatch) return
+  const path: string[] = []
+  for (let command: Command | null = actionCommand; command?.parent; command = command.parent) {
+    path.unshift(command.name())
+  }
+  process.env[CALLER_ENVIRONMENT_KEY] = cliCallerEnvironmentValue(
+    process.env[CALLER_ENVIRONMENT_KEY],
+    path,
+  )
+})
 
 program.commands
   .find((command) => command.name() === 'agent')!
@@ -224,6 +239,8 @@ export async function run(argv: string[], invocation?: PublicCommandInvocation):
   beginParse()
   setRawArgv(argv)
   applyPublicCommandPath(program, argv, invocation)
+  const parentCaller = process.env[CALLER_ENVIRONMENT_KEY]
+  activeCallerDispatch = true
   try {
     const parse = () =>
       program.parseAsync(['bun', PLATFORM_SLUG, ...(argv.length ? argv : ['--help'])])
@@ -234,5 +251,9 @@ export async function run(argv: string[], invocation?: PublicCommandInvocation):
     const code = exitCodeFor(error)
     if (!(error instanceof CommanderError)) console.error(await lockedStoreMessage(error, { argv }))
     return code
+  } finally {
+    activeCallerDispatch = false
+    if (parentCaller === undefined) delete process.env[CALLER_ENVIRONMENT_KEY]
+    else process.env[CALLER_ENVIRONMENT_KEY] = parentCaller
   }
 }

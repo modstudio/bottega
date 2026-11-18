@@ -544,6 +544,7 @@ def main() -> int:
         return 0
     if orch_worker_session():
         return 0
+    os.environ["BOTTEGA_CALLER"] = "hook:session-brief"
     session_started_at = datetime.now(timezone.utc).isoformat(
         timespec="milliseconds"
     ).replace("+00:00", "Z")
