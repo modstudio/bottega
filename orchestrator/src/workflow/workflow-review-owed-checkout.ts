@@ -11,7 +11,19 @@ export interface ReviewOwedCheckoutFacts {
 
 export type ReviewOwedCheckoutDecision = { cwd: string; branch: string } | { refusal: string }
 
-const argumentRemedy = 'pass `--arg branch=<branch>`, or `--arg worktree=<path of a live checkout>`'
+export const reviewOwedArgumentRemedy =
+  'pass `--arg worktree=<path>` naming a live checkout on the branch under review, or pass `--arg branch=<branch>` when no live worktree is named'
+
+function describeWorktreeCondition(
+  worktree: string | null,
+  worktreeExists: boolean,
+  worktreeHead: string | null,
+): string {
+  if (worktree && !worktreeExists) return `; ${worktree} is absent`
+  if (worktree && !worktreeHead) return `; ${worktree} exists but its HEAD could not be read`
+  if (worktree && worktreeHead === 'HEAD') return `; ${worktree} is on a detached HEAD`
+  return ''
+}
 
 export function decideReviewOwedCheckout(
   facts: ReviewOwedCheckoutFacts,
@@ -22,13 +34,14 @@ export function decideReviewOwedCheckout(
 
   if (worktree && facts.worktreeExists) {
     if (worktreeHead && worktreeHead !== 'HEAD') return { cwd: worktree, branch: worktreeHead }
-    if (branch) return { cwd: worktree, branch }
+    if (worktreeHead === 'HEAD' && branch) return { cwd: worktree, branch }
+    if (!worktreeHead && branch) return { cwd: facts.projectPath, branch }
   } else if (branch) {
     return { cwd: facts.projectPath, branch }
   }
 
-  const absentWorktree = worktree && !facts.worktreeExists ? `; ${worktree} is absent` : ''
+  const worktreeCondition = describeWorktreeCondition(worktree, facts.worktreeExists, worktreeHead)
   return {
-    refusal: `floor review-owed cannot resolve the cursor branch${absentWorktree}; ${argumentRemedy}`,
+    refusal: `floor review-owed cannot resolve the cursor branch${worktreeCondition}; ${reviewOwedArgumentRemedy}`,
   }
 }

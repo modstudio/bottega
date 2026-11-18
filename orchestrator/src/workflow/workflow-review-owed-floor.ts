@@ -9,13 +9,14 @@ import { emptyReviewRefusal, resolveReviewBase } from '../review/review-target.t
 import { recordReviewFunnelDecision } from '../review-funnel/review-funnel-decision-log.ts'
 import { reviewFunnelVerdictForChange } from '../review-funnel/review-funnel-verdict-service.ts'
 import { gitText } from './workflow-floor-evidence-checkout.ts'
-import { decideReviewOwedCheckout } from './workflow-review-owed-checkout.ts'
+import {
+  decideReviewOwedCheckout,
+  reviewOwedArgumentRemedy,
+} from './workflow-review-owed-checkout.ts'
 import {
   decideReviewOwedFloor,
   type ReviewOwedFloorDecision,
 } from './workflow-review-owed-decision.ts'
-
-const argumentRemedy = 'pass `--arg branch=<branch>` or `--arg worktree=<path>`'
 
 function gatherReviewOwedFloor(
   projectName: string,
@@ -47,7 +48,7 @@ function gatherReviewOwedFloor(
   if (branch === trunk)
     return {
       action: 'refuse',
-      message: `floor review-owed cannot evaluate configured trunk ${trunk}; ${argumentRemedy}`,
+      message: `floor review-owed cannot evaluate configured trunk ${trunk}; ${reviewOwedArgumentRemedy}`,
     }
   const head =
     gitText(cwd, ['rev-parse', '--verify', `${branch}^{commit}`]) ??
