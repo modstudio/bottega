@@ -16,6 +16,7 @@ export function registerTaskFlowHandoffProof(
 ): void {
   test('hosted handoff closes and opens atomically and refuses a foreign session', async () => {
     const auth = testRecordAuth(input.urls().actor, input.urls().auth)
+    const proofProject = 'handoff-proof-project'
     const projectId = newRecordId(),
       machineId = newRecordId(),
       taskId = newRecordId(),
@@ -26,11 +27,11 @@ export function registerTaskFlowHandoffProof(
     try {
       input.admin(`
         INSERT INTO project(id,space_id,name,created_at)
-        VALUES ('${projectId}','${input.spaceId()}','${project}',now());
+        VALUES ('${projectId}','${input.spaceId()}','${proofProject}',now());
         INSERT INTO machine(id,user_id,name,registered_at,last_seen)
         VALUES ('${machineId}',(SELECT user_id FROM membership WHERE space_id='${input.spaceId()}' LIMIT 1),'handoff-proof',now(),now());
         INSERT INTO hub_task(id,space_id,project_name,project_id,key,project,title,status,status_category,source,first_seen,last_seen,created_at,updated_at)
-        VALUES ('${taskId}','${input.spaceId()}','${project}','${projectId}','AA-2412','${project}','handoff proof','active','active','local',now(),now(),now(),now());`)
+        VALUES ('${taskId}','${input.spaceId()}','${proofProject}','${projectId}','AA-2412','${proofProject}','handoff proof','active','active','local',now(),now(),now(),now());`)
       input.signIn()
       const client = recordApiClient()
       const destination = { destinationSpaceId: input.spaceId() }
@@ -123,7 +124,7 @@ export function registerTaskFlowHandoffProof(
         `CREATE OR REPLACE FUNCTION fail_handoff_context() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'forced handoff failure'; END $$; CREATE TRIGGER fail_handoff_context BEFORE UPDATE ON context_item FOR EACH ROW EXECUTE FUNCTION fail_handoff_context();`,
       )
       await expect(client.handoffTaskFlow!(payload('handoff-owner'), destination)).rejects.toThrow(
-        'forced handoff failure',
+        'record API 500',
       )
       expect(
         input.admin(`SELECT state || '|' || revision FROM task_flow_stage WHERE id='${sourceId}';`),
@@ -145,6 +146,31 @@ export function registerTaskFlowHandoffProof(
           `SELECT holder_id FROM context_item WHERE slug='proof' AND space_id='${input.spaceId()}';`,
         ),
       ).toBe(successorId)
+      const claim = await client.takeBoardClaim!(
+        {
+          id: newRecordId(),
+          project: proofProject,
+          projectId,
+          subject: 'task:AA-2412',
+          holderSession: 'handoff-owner',
+        },
+        destination,
+      )
+      expect(claim.action).toBe('taken')
+      await expect(
+        client.takeBoardClaim!(
+          {
+            id: newRecordId(),
+            project: proofProject,
+            projectId,
+            subject: 'task:AA-2412',
+            holderSession: 'foreign-session',
+          },
+          destination,
+        ),
+      ).rejects.toThrow(
+        'task claims follow task cursors; run workflow compose … --arg key=AA-2412 instead',
+      )
     } finally {
       input.admin(
         'DROP TRIGGER IF EXISTS fail_handoff_context ON context_item; DROP FUNCTION IF EXISTS fail_handoff_context();',
