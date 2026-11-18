@@ -35,6 +35,7 @@ import { closeGraduatingExploreForReuse, insertWorkflowCursor } from './workflow
 import { cursorName } from './workflow-cursor-format.ts'
 import { abandonWorkflowCursor, closeOpenWorkflowQuestion } from './workflow-cursor-mutation.ts'
 import {
+  persistedAdvanceRenderFailure,
   refuseMissingAbandonReason,
   refuseMissingCloseNote,
   refuseTerminalCursor,
@@ -820,19 +821,26 @@ async function nextWorkflowStepImpl(
       if (row.workflow_key) claimWarning = taskClaimFollowWarning(row.workflow_key, error)
     }
   }
-  const rendered = await renderWorkflowAdvanceResult({
-    row,
-    composition,
-    closed: close.closed,
-    advance: close.advance,
-    slug,
-    project,
-    mode,
-    selfRuling,
-    d,
-    client: context.taskFlowClient,
-    live,
-  })
+  let rendered: string
+  try {
+    rendered = await renderWorkflowAdvanceResult({
+      row,
+      composition,
+      closed: close.closed,
+      advance: close.advance,
+      slug,
+      project,
+      mode,
+      selfRuling,
+      d,
+      client: context.taskFlowClient,
+      live,
+    })
+  } catch (error) {
+    if (close.advance.ordinal === null) throw error
+    const active = composition.steps[close.advance.ordinal]!
+    throw persistedAdvanceRenderFailure({ row, closed: step, active, error })
+  }
   return {
     text: [takeover.notice, rendered, claimWarning].filter(Boolean).join('\n'),
     selfRulingQuestionNumber: close.selfRulingQuestionNumber,
