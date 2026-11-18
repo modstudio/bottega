@@ -60,6 +60,7 @@ export const MONITOR_NOTICE_DELIVERY_POLICY = {
   'terminal-close-out-held': 'revalidated',
   'unscored-run': 'revalidated',
   'worker-gate-tooling-change': 'append-only',
+  'writer-ok-on-fallback-at-bound': 'append-only',
 } as const satisfies Record<string, 'append-only' | 'revalidated'>
 
 export type MonitorNoticeKind = keyof typeof MONITOR_NOTICE_DELIVERY_POLICY

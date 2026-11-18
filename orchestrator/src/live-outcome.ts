@@ -8,6 +8,7 @@ import {
   gooseVendorFailureKind,
   isNonAnswer,
 } from './failure/failure.ts'
+import { decideFallbackCompletion } from './fallback-completion.ts'
 import { decideOutcomeRule, type OutcomeInputs, type OutcomeRule } from './outcome.ts'
 import { errorTail } from './run/run-process.ts'
 import { failureKindFromStop, stopErrorMessage } from './transport/transport.ts'
@@ -58,10 +59,25 @@ type CalculatedOutcome = {
   defaultError: string
 }
 
+function doneCountsAsCompletedReply(facts: LiveOutcomeFacts): boolean {
+  return (
+    facts.contractStatus === 'done' &&
+    decideFallbackCompletion({
+      writesJob: facts.writesJob,
+      timedOut: facts.timedOut,
+      replyFilePresent: facts.replyFilePresent,
+      finalMessage: facts.output,
+    })
+  )
+}
+
+function readerCompletedReply(facts: LiveOutcomeFacts): boolean {
+  return !facts.writesJob && !facts.replyError && !!facts.output && !isNonAnswer(facts.output)
+}
+
 function calculateOutcome(facts: LiveOutcomeFacts): CalculatedOutcome {
-  const completedReplyAtTimeout =
-    facts.contractStatus === 'done' ||
-    (!facts.writesJob && !facts.replyError && !!facts.output && !isNonAnswer(facts.output))
+  const doneCompleted = doneCountsAsCompletedReply(facts)
+  const completedReplyAtTimeout = doneCompleted || readerCompletedReply(facts)
   const acpVendorStop =
     facts.transportName === 'acp' &&
     facts.transportStatus === 'failed' &&
@@ -84,8 +100,12 @@ function calculateOutcome(facts: LiveOutcomeFacts): CalculatedOutcome {
     facts.agentHarness === 'goose' && facts.replyFileError
       ? gooseVendorFailureKind(facts.output)
       : null
-  const nonAnswer = facts.exitCode === 0 && isNonAnswer(facts.output)
-  const nonAnswerFailureKind = classify(facts.output, facts.exitCode, facts.timedOut, facts.sandbox)
+  const progressFallback =
+    facts.contractStatus === 'done' && !facts.replyFilePresent && !doneCompleted
+  const nonAnswer = facts.exitCode === 0 && (isNonAnswer(facts.output) || progressFallback)
+  const nonAnswerFailureKind = progressFallback
+    ? 'premature-final'
+    : classify(facts.output, facts.exitCode, facts.timedOut, facts.sandbox)
   const completedContractTerminal = facts.stderr.trim() || facts.stdout.trim()
   const completedContractFailureKind = classify(
     completedContractTerminal,
