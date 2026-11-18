@@ -202,7 +202,7 @@ async function reuseWorkflowCursor(
   )
   let row!: CursorRow
   writeTransaction(() => {
-    const result = taskFlowLocalStore(database).write('stage-update', payload, hosted)
+    const result = taskFlowStore.taskFlowLocalStore(database).write('stage-update', payload, hosted)
     row = {
       ...existing,
       args: resolved.encoded,
