@@ -51,10 +51,10 @@ const branchClassification = {
 function seedTrackerTask(): void {
   writeTransaction((conn) => {
     const insert = conn.query(
-        `INSERT INTO task
+      `INSERT INTO task
          (record_id,external_id,key,project,parent_key,parent_record_id,title,status,status_category,source,first_seen,last_seen)
          VALUES (?,?,?,?,?,?,?,'todo','open','mcp',?,?)`,
-      )
+    )
     const parentRecordId = '01990000-0000-7000-8000-000000001661'
     insert.run(
       parentRecordId,
@@ -68,16 +68,16 @@ function seedTrackerTask(): void {
       '2026-10-23T12:00:00.000Z',
     )
     insert.run(
-        '01990000-0000-7000-8000-000000001660',
-        taskId,
-        'ADN-1659',
-        'adanim',
-        'ADN-1600',
-        parentRecordId,
-        'Route tracker writes',
-        '2026-10-23T12:00:00.000Z',
-        '2026-10-23T12:00:00.000Z',
-      )
+      '01990000-0000-7000-8000-000000001660',
+      taskId,
+      'ADN-1659',
+      'adanim',
+      'ADN-1600',
+      parentRecordId,
+      'Route tracker writes',
+      '2026-10-23T12:00:00.000Z',
+      '2026-10-23T12:00:00.000Z',
+    )
   })
 }
 
@@ -104,9 +104,10 @@ describe('array-mcp task writes', () => {
       calls.push({ name, args })
       return { id: taskId, status: 'in_progress' }
     })
-    fixture.observe = (task, at, prefixes) => {
+    fixture.observe = (...args: Parameters<typeof observeTrackerTask>) => {
+      const [task] = args
       observedParent = task.parentKey
-      return observeTrackerTask(task, at, prefixes)
+      return observeTrackerTask(...args)
     }
     const row = await setTaskThroughTracker(
       'ADN-1659',

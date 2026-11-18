@@ -465,11 +465,6 @@ const SQL_PREPARE_EXEMPTIONS: readonly SqlExemption[] = [
     'question UUID migration preflight reads the legacy question number before 0036 rebuilds it',
   ),
   ...exempt(
-    'hub/src/ingest/trackers.ts',
-    ['2987d7cb212ef65b'],
-    'transition helper runs only while migration task_new exists',
-  ),
-  ...exempt(
     'hub/src/pending-hosted-edit.ts',
     ['f5e53a096b09bf92', '32d93769abfe79b5'],
     'hosted edit query composes its validated target descriptor',

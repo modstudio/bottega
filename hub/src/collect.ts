@@ -10,6 +10,11 @@ import { sendOperatorNotification } from '../../shared/operator-notification.ts'
 import { refusal, renderRefusal } from '../../shared/refusal.ts'
 import { FAST_MS, SLOW_MS } from './collect-cadence.ts'
 import {
+  formatTrackerCounts,
+  type TrackerCounts,
+  trackerCounts,
+} from './collect-tracker-parents.ts'
+import {
   type WatchRunningCycle,
   type WatchTick,
   watchCycleDecision,
@@ -31,7 +36,6 @@ import { ingestGit } from './ingest/git.ts'
 import { ingestRunChanges, ingestRuns } from './ingest/runs.ts'
 import {
   ingestTrackers,
-  successfulTrackerRead,
   type TrackerResult,
   trackerLegError,
   trackerProjects,
@@ -186,12 +190,7 @@ export type CollectLegResult =
       metrics?: CollectLegMetrics
       hostedChanges?: HostedChangeLegReport | HostedChangesReport
       hostedOutbox?: HostedOutboxReport
-      trackerCounts?: {
-        read: number
-        skippedFresh: number
-        leftToWatcher: number
-        unreportedParents: { project: string; count: number }[]
-      }
+      trackerCounts?: TrackerCounts
     }
   | { source: string; ok: false; error: string; durationMs: number }
 
@@ -228,16 +227,7 @@ export function formatCollectLeg(result: CollectLegResult): string {
   if (result.hostedOutbox)
     return `${result.source.padEnd(18)}${separator}${hostedOutboxLine(result.hostedOutbox)}`
   if (result.trackerCounts) {
-    const counts = [`${result.trackerCounts.read} trackers read`]
-    if (result.trackerCounts.leftToWatcher)
-      counts.push(
-        `${result.trackerCounts.leftToWatcher} left to the watcher; force with ${PLATFORM_SLUG} record pull --only tasks`,
-      )
-    if (result.trackerCounts.skippedFresh)
-      counts.push(`${result.trackerCounts.skippedFresh} skipped fresh`)
-    for (const parentGuard of result.trackerCounts.unreportedParents)
-      counts.push(`${parentGuard.project} ${parentGuard.count} parents unreported`)
-    return `${result.source.padEnd(18)}${separator}ok (${counts.join(', ')})`
+    return `${result.source.padEnd(18)}${separator}ok (${formatTrackerCounts(result.trackerCounts).join(', ')})`
   }
   return `${result.source.padEnd(18)}ok`
 }
@@ -833,17 +823,7 @@ async function collectSlowSourceLegs(
           if (scheduled) for (const result of trackerResults) trackerSchedule.record(result)
           const error = trackerLegError(trackerResults)
           if (error) throw new Error(error)
-          return {
-            read: trackerResults.filter(successfulTrackerRead).length,
-            skippedFresh: selection.skippedFresh,
-            leftToWatcher: selection.leftToWatcher,
-            unreportedParents: trackerResults
-              .filter(successfulTrackerRead)
-              .map((result) => ({
-                project: result.project,
-                count: result.unreportedParents ?? 0,
-              })),
-          }
+          return trackerCounts(trackerResults, selection.skippedFresh, selection.leftToWatcher)
         },
         (trackerCounts) => ({ ok: true, trackerCounts }),
       ))!,
@@ -971,17 +951,7 @@ export async function collectOnce(
           }
           const error = trackerLegError(trackerResults)
           if (error) throw new Error(error)
-          return {
-            read: trackerResults.filter(successfulTrackerRead).length,
-            skippedFresh: 0,
-            leftToWatcher: 0,
-            unreportedParents: trackerResults
-              .filter(successfulTrackerRead)
-              .map((result) => ({
-                project: result.project,
-                count: result.unreportedParents ?? 0,
-              })),
-          }
+          return trackerCounts(trackerResults, 0, 0)
         },
         (trackerCounts) => ({ ok: true, trackerCounts }),
       ))!,
