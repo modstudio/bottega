@@ -94,7 +94,7 @@ function functionBodyNodes(node: FunctionWithBody): ts.Node[] {
 export function outcomeLineViolations(sources: readonly OutcomeLineSource[]): string[] {
   return sources.flatMap(({ path, source }) => {
     if (!isProductionSourceFile(path) || !/\.[cm]?tsx?$/.test(path)) return []
-    if (!source.includes('exitCode') || !source.includes('String(')) return []
+    if (!/exitcode/i.test(source) || !source.includes('String(')) return []
     const file = ts.createSourceFile(path, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS)
     const functions = functionLikes(file)
     const computedExitHelpers = new Set(

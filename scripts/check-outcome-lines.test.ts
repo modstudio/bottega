@@ -36,3 +36,20 @@ export function create() {
     ]),
   ).toEqual([])
 })
+
+test('reads a file whose only exit write is setExitCode', () => {
+  expect(
+    outcomeLineViolations([
+      {
+        path: 'orchestrator/src/example.ts',
+        source: `command.action(async () => {
+  const r = await work()
+  log(String(r.id))
+  presentation.setExitCode(statusCode(r.status))
+})`,
+      },
+    ]),
+  ).toEqual([
+    'orchestrator/src/example.ts:3: bare id ends fallible command output; finish fallible command output with an outcome line that includes its id',
+  ])
+})
