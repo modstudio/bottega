@@ -97,6 +97,7 @@ import {
   type RecordDocWriteResponse,
   recordDocWriteResponseFields,
 } from './record-doc-transport-contract.ts'
+import { markRecordIdentityMemoChanged, selectRecordApiTransport } from './record-identity-memo.ts'
 import type { HostedRecordInvitation } from './record-pending-invitations.ts'
 import type {
   PublicRecordDoc,
@@ -735,7 +736,7 @@ export function recordApiClient(request = recordApiRequest): RecordApiClient {
   if (injected) return injected
   if (process.env.NODE_ENV === 'test' && !process.env.BOTTEGA_TEST_POSTGRES_CONTAINER)
     throw new Error('record API client refuses a real base URL unless a stub is injected in tests')
-  return recordApiClientOver(request)
+  return recordApiClientOver(selectRecordApiTransport(request, recordApiRequest, recordApiBaseUrl))
 }
 
 export function recordApiClientOver(request: RecordClientRequest): RecordApiClient {
@@ -933,15 +934,22 @@ const recordProjectSubjectClient = (
 function recordIdentityAndSpaceClient(
   request: RecordClientRequest = recordApiRequest,
 ): Pick<RecordApiClient, RecordIdentityAndSpaceMethod> {
+  const changingRequest: RecordClientRequest = async (path, init) => {
+    try {
+      return await request(path, init)
+    } finally {
+      markRecordIdentityMemoChanged()
+    }
+  }
   return {
     createOrganization: (input) =>
-      request('/api/auth/organization/create', {
+      changingRequest('/api/auth/organization/create', {
         method: 'POST',
         body: JSON.stringify(input),
         schema: organizationResponse,
       }),
     setActiveOrganization: (input) =>
-      request('/api/auth/organization/set-active', {
+      changingRequest('/api/auth/organization/set-active', {
         method: 'POST',
         body: JSON.stringify(input),
         schema: organizationResponse,
@@ -951,7 +959,7 @@ function recordIdentityAndSpaceClient(
         schema: recordInvitationListResponse,
       }),
     acceptInvitation: (invitationId) =>
-      request('/api/auth/organization/accept-invitation', {
+      changingRequest('/api/auth/organization/accept-invitation', {
         method: 'POST',
         body: JSON.stringify({ invitationId }),
         schema: acceptedInvitationResponse,
@@ -962,14 +970,14 @@ function recordIdentityAndSpaceClient(
         body: JSON.stringify(input),
       }),
     removeMember: ({ email, organizationId }) =>
-      request('/api/auth/organization/remove-member', {
+      changingRequest('/api/auth/organization/remove-member', {
         method: 'POST',
         body: JSON.stringify({ memberIdOrEmail: email, organizationId }),
       }),
     deleteTrialSpace: (slug) =>
-      request('/v1/spaces/delete-trial', trialSpaceDeleteTransport.options(slug)),
+      changingRequest('/v1/spaces/delete-trial', trialSpaceDeleteTransport.options(slug)),
     deleteSpace: (slug, confirmation) =>
-      request('/v1/spaces/delete', spaceDeleteTransport.options(slug, confirmation)),
+      changingRequest('/v1/spaces/delete', spaceDeleteTransport.options(slug, confirmation)),
   }
 }
 

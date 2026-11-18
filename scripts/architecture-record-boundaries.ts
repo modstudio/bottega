@@ -97,6 +97,7 @@ export const recordApiBoundaries: ImportBoundary[] = [
       './record-api-client-port.ts',
       './record-api-client-routing-evidence.ts',
       './record-api-client-workflow.ts',
+      './record-identity-memo.ts',
       './record-routing-evidence-contract.ts',
       './record-board-contract.ts',
       './record-session.ts',

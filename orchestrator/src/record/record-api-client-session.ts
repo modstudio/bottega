@@ -6,7 +6,7 @@ import {
   type NoDestinationWriteReport,
   parseNoDestinationWriteReport,
 } from '../../../shared/record-no-destination-write-contract.ts'
-import type { RecordClientRequest } from './record-api-client-paths.ts'
+import { RECORD_WHOAMI_ROUTE, type RecordClientRequest } from './record-api-client-paths.ts'
 import { responseRecord } from './record-api-client-response.ts'
 import type { RecordIdentity } from './record-auth.ts'
 import type { RecordSyncRequest, RecordSyncResponse } from './record-sync-contract.ts'
@@ -56,7 +56,7 @@ export function recordSessionClient(
       request(NO_DESTINATION_WRITES_ROUTE, {
         schema: (body) => parseNoDestinationWriteReport(body, 'record API'),
       }),
-    whoami: () => request('/v1/whoami', { schema: identitySchema }),
+    whoami: () => request(RECORD_WHOAMI_ROUTE, { schema: identitySchema }),
     sync: (input) => request('/v1/sync', { method: 'POST', body: JSON.stringify(input) }),
   }
 }

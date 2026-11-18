@@ -31,10 +31,14 @@ const PROBE_ACCOUNT = 'record-probe'
 const FILE_REMEDY = `run ${PLATFORM_SLUG} machine setup, or choose the file keystore directly with ${PLATFORM_SLUG} machine config set --machine machine.keystore file`
 let memoizedToken: string | null | undefined
 const UNREADABLE_STAMP = Symbol('unreadable-record-session-stamp')
-type SessionStamp = string | null | typeof UNREADABLE_STAMP
-let memoizedStamp: SessionStamp | undefined
+export type RecordSessionStamp = string | null | typeof UNREADABLE_STAMP
+let memoizedStamp: RecordSessionStamp | undefined
 let pendingToken: Promise<string | null> | null = null
 let tokenGeneration = 0
+
+export function recordSessionTokenGeneration(): number {
+  return tokenGeneration
+}
 
 function useFile(): boolean {
   return decideKeyStore(process.env) === 'file'
@@ -44,7 +48,7 @@ function readFileToken(): string | null {
   return readOwnerOnlySecretFile(recordSessionPath(process.env), 'record session')?.trim() || null
 }
 
-function readSessionStamp(): SessionStamp {
+export function readRecordSessionStamp(): RecordSessionStamp {
   try {
     return readFileSync(recordSessionStampPath(process.env), 'utf8')
   } catch (error) {
@@ -53,7 +57,10 @@ function readSessionStamp(): SessionStamp {
   }
 }
 
-function sameSessionStamp(left: SessionStamp | undefined, right: SessionStamp): boolean {
+export function sameSessionStamp(
+  left: RecordSessionStamp | undefined,
+  right: RecordSessionStamp,
+): boolean {
   if (left === undefined) return false
   if (right === UNREADABLE_STAMP) return true
   return left === right
@@ -84,7 +91,7 @@ export function readRecordSessionToken(runner?: SecurityRunner): string | null {
     return useFile()
       ? readFileToken()
       : withKeychainRemedy(() => readKeychainItem(SERVICE, ACCOUNT, runner))
-  const stamp = readSessionStamp()
+  const stamp = readRecordSessionStamp()
   if (memoizedToken !== undefined && sameSessionStamp(memoizedStamp, stamp)) return memoizedToken
   const token = useFile()
     ? readFileToken()
@@ -101,7 +108,7 @@ export async function readRecordSessionTokenAsync(
   runner?: AsyncSecurityRunner,
 ): Promise<string | null> {
   if (signal?.aborted) throw signal.reason
-  const stamp = readSessionStamp()
+  const stamp = readRecordSessionStamp()
   if (memoizedToken !== undefined && sameSessionStamp(memoizedStamp, stamp)) return memoizedToken
   if (pendingToken) return raceCallerSignal(pendingToken, signal)
   if (useFile()) {
@@ -170,6 +177,12 @@ export function forgetRecordSessionToken(): void {
   memoizedToken = undefined
   memoizedStamp = undefined
   pendingToken = null
+}
+
+/** Mark a record identity change so every process re-reads session-scoped identity. */
+export function markRecordIdentityChanged(): void {
+  touchRecordSessionStamp()
+  forgetRecordSessionToken()
 }
 
 export function writeRecordSessionToken(token: string, runner?: SecurityRunner): void {
