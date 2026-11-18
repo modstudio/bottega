@@ -17,12 +17,13 @@ export type QuarantinedOutboxRow = {
   quarantinedAt: string
 }
 
-export const retirePendingOutboxKindsSql = (placeholders: string): string =>
-  `SELECT id,kind,row_id,attempts,last_error,quarantine_reason,quarantined_at,retired_at
+export function retirePendingOutboxKindsSql(placeholders: string): string {
+  return `SELECT id,kind,row_id,attempts,last_error,quarantine_reason,quarantined_at,retired_at
      FROM outbox
     WHERE kind IN (${placeholders})
       AND ${PENDING_OUTBOX_PREDICATE_SQL}
     ORDER BY id`
+}
 
 export const QUARANTINED_OUTBOX_ROWS_SQL = `SELECT id,kind,row_id,quarantine_reason,attempts,quarantined_at
   FROM outbox WHERE quarantined_at IS NOT NULL AND retired_at IS NULL ORDER BY id`
@@ -108,7 +109,11 @@ export function retirePendingOutboxKinds(
   return writeTransaction(() => {
     const rows = database
       .query<OutboxIdentity, string[]>(
-        retirePendingOutboxKindsSql([...kinds].map(() => '?').join(',')),
+        `SELECT id,kind,row_id,attempts,last_error,quarantine_reason,quarantined_at,retired_at
+           FROM outbox
+          WHERE kind IN (${[...kinds].map(() => '?').join(',')})
+            AND ${PENDING_OUTBOX_PREDICATE_SQL}
+          ORDER BY id`,
       )
       .all(...kinds)
     for (const row of rows) {

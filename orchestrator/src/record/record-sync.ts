@@ -75,11 +75,12 @@ export type {
 export const PENDING_OUTBOX_COUNT_SQL = `SELECT count(*) AS count FROM outbox
   WHERE ${PENDING_OUTBOX_PREDICATE_SQL}`
 
-export const preparePendingRowsSql = (placeholders: string): string =>
-  `SELECT id, kind, row_id, payload FROM outbox
+export function preparePendingRowsSql(placeholders: string): string {
+  return `SELECT id, kind, row_id, payload FROM outbox
    WHERE ${PENDING_OUTBOX_PREDICATE_SQL}
      AND kind NOT IN (${placeholders})
    ORDER BY id`
+}
 
 /** Whether this environment names a hosted record endpoint for synchronization. */
 export function recordSyncConfigured(
@@ -271,7 +272,10 @@ function planBatchRow(
 function preparePendingRows(local: Database): Set<PreparedOutboxRow> {
   const rows = local
     .query<OutboxRow, string[]>(
-      preparePendingRowsSql([...RETIRED_OUTBOX_KINDS].map(() => '?').join(',')),
+      `SELECT id, kind, row_id, payload FROM outbox
+       WHERE ${PENDING_OUTBOX_PREDICATE_SQL}
+         AND kind NOT IN (${[...RETIRED_OUTBOX_KINDS].map(() => '?').join(',')})
+       ORDER BY id`,
     )
     .all(...RETIRED_OUTBOX_KINDS)
     .sort((left, right) => {

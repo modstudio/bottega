@@ -66,7 +66,7 @@ export const HOSTED_LOCAL_SQL_ALLOWED_FILES = [
       'Postgres record modules operate on the hosted record rather than a guarded SQLite handle',
   },
   {
-    pattern: /^orchestrator\/src\/record\/(?:outbox-(?:prune|quarantine)|record-cache-lens)\.ts$/,
+    pattern: /^orchestrator\/src\/record\/(?:outbox-prune|record-cache-lens)\.ts$/,
     reason:
       'Record synchronization adapters query only their machine-local outbox and cache tables',
   },

@@ -27,6 +27,7 @@ import {
   releasableOutboxPayloadProbeSql,
   releasableOutboxPayloadSelectionSql,
 } from '../orchestrator/src/record/outbox-prune-query.ts'
+import { PENDING_OUTBOX_PREDICATE_SQL } from '../orchestrator/src/record/outbox-read.ts'
 import {
   POOL_CANDIDATE_ROWS_SQL,
   POOL_LATENCY_ROWS_SQL,
@@ -90,6 +91,10 @@ type GlobalSubstitution = {
  * substitution would otherwise prepare SQL that file never writes.
  */
 const GLOBAL_SUBSTITUTIONS: Readonly<Record<string, GlobalSubstitution>> = {
+  PENDING_OUTBOX_PREDICATE_SQL: {
+    values: [PENDING_OUTBOX_PREDICATE_SQL],
+    declaredIn: 'orchestrator/src/record/outbox-read.ts',
+  },
   deliveredUnprotectedOutboxDeleteSql: {
     values: [deliveredUnprotectedOutboxDeleteSql],
     declaredIn: 'orchestrator/src/record/outbox-prune-query.ts',

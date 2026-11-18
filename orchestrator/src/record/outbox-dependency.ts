@@ -421,7 +421,7 @@ export function markOutboxRowSynced(database: Database, row: OutboxRow, at: stri
     database
       .query(
         `UPDATE outbox SET synced_at=?, last_error=NULL WHERE id=? AND payload=?
-         AND synced_at IS NULL AND quarantined_at IS NULL AND retired_at IS NULL`,
+         AND ${PENDING_OUTBOX_PREDICATE_SQL}`,
       )
       .run(at, row.id, row.payload).changes,
   )
