@@ -1,15 +1,17 @@
 // concern: workflow cursor listing
-/** Lists open cursors with their next step and unresolved floor obligations. */
+/** Lists cursors with their next step and unresolved floor obligations. */
 
 import type { Database } from 'bun:sqlite'
 import { db } from '../database/db.ts'
 import { projectAt } from '../project/projects.ts'
 import { openQuestionStages } from '../question-store/question-store-read.ts'
+import { TASK_FLOW_STAGE_STATES } from '../record/record-task-flow-contract.ts'
 import {
   type TaskFlowListedStageRow as ListedCursorRow,
   taskFlowHandoffLinks,
   taskFlowReadStore,
 } from './task-flow-store.ts'
+import { TASK_FLOW_OPEN_STAGE_STATES } from './task-flow-store-types.ts'
 import { cursorAutonomy } from './workflow-cursor-autonomy.ts'
 import { renderWorkflowCursorLine } from './workflow-cursor-format.ts'
 import { workflowCursorProjectScope } from './workflow-cursor-selection.ts'
@@ -48,33 +50,40 @@ export async function listWorkflowCursors(
   const cwdProject =
     options.all || options.project || options.session ? undefined : projectAt(cwd)?.name
   const project = workflowCursorProjectScope(options, cwdProject, cwd)
-  const rows = await taskFlowReadStore(d).listOpenStages({
+  const selector = {
     ...(project ? { project } : {}),
     ...(options.session ? { sessionId: options.session } : {}),
-  })
+  }
+  const store = taskFlowReadStore(d)
+  const rows = options.all
+    ? await store.listStages({ ...selector, states: TASK_FLOW_STAGE_STATES })
+    : await store.listOpenStages(selector)
   return await Promise.all(
     rows.map(async (row) => {
       const handedOffFrom = row.handed_off_from_record_id
         ? await taskFlowReadStore(d).stageByRecordId(row.handed_off_from_record_id)
         : null
-      const composition = composeWorkflow(
-        row.workflow_slug,
-        row.project,
-        row.mode_slug,
-        JSON.parse(row.args),
-        d,
-        {
-          version: row.workflow_version,
-          versionRecordId: row.workflow_version_record_id,
-          catalogueVersion: row.catalogue_version,
-          catalogueVersionRecordId: row.catalogue_version_record_id,
-        },
-        cursorAutonomy(row),
-      )
-      const open = await openWorkflowObligations(row.record_id, d)
+      const closed = !TASK_FLOW_OPEN_STAGE_STATES.some((state) => state === row.state)
+      const composition = closed
+        ? null
+        : composeWorkflow(
+            row.workflow_slug,
+            row.project,
+            row.mode_slug,
+            JSON.parse(row.args),
+            d,
+            {
+              version: row.workflow_version,
+              versionRecordId: row.workflow_version_record_id,
+              catalogueVersion: row.catalogue_version,
+              catalogueVersionRecordId: row.catalogue_version_record_id,
+            },
+            cursorAutonomy(row),
+          )
+      const open = closed ? [] : await openWorkflowObligations(row.record_id, d)
       const listed = {
         ...row,
-        next_slug: composition.steps[row.ordinal + 1]?.slug ?? 'finished',
+        next_slug: composition?.steps[row.ordinal + 1]?.slug ?? 'finished',
         obligations: open
           .map((item) => `${item.id}(${item.stepSlug}:${item.floorDefinition.kind})`)
           .join(','),

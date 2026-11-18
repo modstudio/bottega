@@ -15,9 +15,11 @@ import type {
   TaskFlowQuestionCloseRow,
   TaskFlowRulingFileRow,
   TaskFlowRulingRow,
+  TaskFlowStageCursorRow,
   TaskFlowTaskRulingRow,
   TaskFlowWaitingQuestionRow,
 } from '../workflow/task-flow-store-types.ts'
+import { TASK_FLOW_OPEN_STAGE_STATES } from '../workflow/task-flow-store-types.ts'
 import { questionStore } from './question-store.ts'
 import { questionRulingsPaged } from './question-store-read.ts'
 import type { QuestionReadRow, QuestionStore } from './question-store-types.ts'
@@ -72,12 +74,13 @@ async function openForStages(questions: QuestionStore, ids: string[]) {
 
 function stageReads(questions: QuestionStore, read: StageRead) {
   return {
-    async listOpenStages(input: {
+    async listStages(input: {
       project?: string
       sessionId?: string
+      states: readonly [TaskFlowStageCursorRow['state'], ...TaskFlowStageCursorRow['state'][]]
     }): Promise<TaskFlowListedStageRow[]> {
       const selector = {
-        states: ['running', 'awaiting-ruling'],
+        states: input.states,
         ...(input.sessionId ? { sessionId: input.sessionId } : {}),
         ...(input.project ? { projectId: read.projectId(input.project) } : {}),
       }
@@ -100,6 +103,13 @@ function stageReads(questions: QuestionStore, read: StageRead) {
           }
         })
         .sort((a, b) => a.updated_at.localeCompare(b.updated_at) || a.id - b.id)
+    },
+
+    async listOpenStages(input: {
+      project?: string
+      sessionId?: string
+    }): Promise<TaskFlowListedStageRow[]> {
+      return this.listStages({ ...input, states: TASK_FLOW_OPEN_STAGE_STATES })
     },
 
     async stageIdentityMap() {

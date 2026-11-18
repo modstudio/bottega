@@ -35,6 +35,7 @@ import type {
   TaskFlowRulingFileRow,
   TaskFlowRulingRow,
   TaskFlowStageCursorRow,
+  TaskFlowStageState,
   TaskFlowTaskRulingRow,
   TaskFlowTextBodyRow,
   TaskFlowTextRow,
@@ -109,6 +110,11 @@ interface TaskFlowQueries {
     sessionId: string
   }): Array<{ mode_slug: string }>
   listOpenStages(input: { project?: string; sessionId?: string }): TaskFlowListedStageRow[]
+  listStages(input: {
+    project?: string
+    sessionId?: string
+    states: readonly [TaskFlowStageState, ...TaskFlowStageState[]]
+  }): TaskFlowListedStageRow[]
   keyedStageHistory(input: { since: string }): TaskFlowStageCursorRow[]
   /** Reads open cursor worktree rows ordered by project, then cursor number. */
   openStageWorktrees(): TaskFlowOpenStageWorktreeRow[]

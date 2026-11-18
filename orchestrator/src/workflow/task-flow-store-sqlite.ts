@@ -34,6 +34,7 @@ import type {
   TaskFlowRulingFileRow,
   TaskFlowRulingRow,
   TaskFlowStageCursorRow,
+  TaskFlowStageState,
   TaskFlowTaskRulingRow,
   TaskFlowTextBodyRow,
   TaskFlowTextRow,
@@ -41,6 +42,7 @@ import type {
   TaskFlowWaitingQuestionRow,
   WorkflowCursorInsert,
 } from './task-flow-store-types.ts'
+import { TASK_FLOW_OPEN_STAGE_STATES } from './task-flow-store-types.ts'
 
 const STAGE_COLUMNS =
   'cursor.number id,cursor.record_id,cursor.project,cursor.workflow_slug,cursor.mode_slug,cursor.workflow_key,cursor.task_record_id,cursor.task_flow_record_id,cursor.instance_id,cursor.session_id,cursor.ordinal,cursor.step_slug,cursor.state,cursor.workflow_version_record_id,cursor.catalogue_version_record_id,(SELECT n FROM workflow_version WHERE record_id=cursor.workflow_version_record_id) workflow_version,(SELECT n FROM step_catalogue_version WHERE record_id=cursor.catalogue_version_record_id) catalogue_version,cursor.args,cursor.autonomy,cursor.closed,cursor.question,cursor.total_steps,cursor.created_at,cursor.updated_at,cursor.enforcement,cursor.opened_machine_id,cursor.taken_over_from_machine_id,cursor.last_advanced_machine_id,cursor.revision,cursor.handed_off_from_record_id'
@@ -317,9 +319,13 @@ class SqliteTaskFlowStore {
           .all(input.project, input.workflow, input.sessionId)
   }
 
-  listOpenStages(input: { project?: string; sessionId?: string }): TaskFlowListedStageRow[] {
-    const clauses = [`cursor.state NOT IN ('done','abandoned')`]
-    const values: string[] = []
+  listStages(input: {
+    project?: string
+    sessionId?: string
+    states: readonly [TaskFlowStageState, ...TaskFlowStageState[]]
+  }): TaskFlowListedStageRow[] {
+    const clauses = [`cursor.state IN (${input.states.map(() => '?').join(',')})`]
+    const values: string[] = [...input.states]
     if (input.project) {
       clauses.push('cursor.project_record_id=(SELECT record_id FROM project WHERE name=?)')
       values.push(input.project)
@@ -723,10 +729,32 @@ type SqliteTaskFlowReadStore = {
     ? (...args: A) => Promise<R>
     : never
 }
+type SqliteTaskFlowReadStoreWithOpenStages = SqliteTaskFlowReadStore & {
+  listOpenStages(input: { project?: string; sessionId?: string }): Promise<TaskFlowListedStageRow[]>
+}
 
 /** Delegates async reads to the single synchronous SQLite implementation. */
-export function sqliteTaskFlowReadStore(database: Database): SqliteTaskFlowReadStore {
+export function sqliteTaskFlowReadStore(database: Database): SqliteTaskFlowReadStoreWithOpenStages {
   const local = new SqliteTaskFlowStore(database)
+  const listStages = async (input: {
+    project?: string
+    sessionId?: string
+    states: readonly [TaskFlowStageState, ...TaskFlowStageState[]]
+  }) => {
+    const rows = local.listStages(input)
+    const openByCursor = new Map<string, number>()
+    for (const row of await openQuestionsForCursors(
+      database,
+      rows.map(({ record_id }) => record_id),
+    )) {
+      const cursorId = row.workflow_cursor_record_id
+      if (!openByCursor.has(cursorId)) openByCursor.set(cursorId, row.number)
+    }
+    return rows.map((row) => ({
+      ...row,
+      question_number: openByCursor.get(row.record_id) ?? null,
+    }))
+  }
   return {
     openStageForTask: async (taskRecordId) => local.openStageForTask(taskRecordId),
     flowProjectionForTask: async (taskRecordId) => local.flowProjectionForTask(taskRecordId),
@@ -734,21 +762,8 @@ export function sqliteTaskFlowReadStore(database: Database): SqliteTaskFlowReadS
     latestStageForTask: async (input) => local.latestStageForTask(input),
     openKeylessStages: async (input) => local.openKeylessStages(input),
     activeStageModes: async (input) => local.activeStageModes(input),
-    listOpenStages: async (input) => {
-      const rows = local.listOpenStages(input)
-      const openByCursor = new Map<string, number>()
-      for (const row of await openQuestionsForCursors(
-        database,
-        rows.map(({ record_id }) => record_id),
-      )) {
-        const cursorId = row.workflow_cursor_record_id
-        if (!openByCursor.has(cursorId)) openByCursor.set(cursorId, row.number)
-      }
-      return rows.map((row) => ({
-        ...row,
-        question_number: openByCursor.get(row.record_id) ?? null,
-      }))
-    },
+    listStages,
+    listOpenStages: async (input) => listStages({ ...input, states: TASK_FLOW_OPEN_STAGE_STATES }),
     keyedStageHistory: async (input) => local.keyedStageHistory(input),
     openStageWorktrees: async () => local.openStageWorktrees(),
     activeStageAutonomy: async (project, taskRecordId) =>

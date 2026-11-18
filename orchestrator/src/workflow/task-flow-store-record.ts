@@ -38,6 +38,7 @@ import type {
   TaskFlowObligationRow,
   TaskFlowOpenObligationRow,
   TaskFlowOpenStageWorktreeRow,
+  TaskFlowStageCursorRow,
   TaskFlowTextRow,
 } from './task-flow-store-types.ts'
 
@@ -306,6 +307,13 @@ class RecordTaskFlowReadStore {
   }
   async listOpenStages(input: { project?: string; sessionId?: string }) {
     return this.questions.listOpenStages(input)
+  }
+  async listStages(input: {
+    project?: string
+    sessionId?: string
+    states: readonly [TaskFlowStageCursorRow['state'], ...TaskFlowStageCursorRow['state'][]]
+  }) {
+    return this.questions.listStages(input)
   }
   async keyedStageHistory(input: { since: string }) {
     return (
