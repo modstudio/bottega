@@ -23,6 +23,7 @@ import { nextRunNumber } from '../run/run-number.ts'
 import { prepareResumeBranchIfNeeded } from '../run/run-resume-claim.ts'
 import { TERMINAL_RUN_STATUS_SET } from '../run/run-status.ts'
 import { terminalLifecycleWrite } from '../run/run-terminal-lifecycle-store.ts'
+import { bindCursorArguments } from '../workflow/workflow-cursor-binding.ts'
 import { createWorkerWorktree } from '../worktree/worktree.ts'
 import { inspectTreeOwnership } from '../worktree/worktree-attribution.ts'
 import type { RecordRecipeResource } from '../worktree/worktree-create.ts'
@@ -63,7 +64,7 @@ export function landingTreeSourceRun(runId: string): {
   latest: LandingTreeRunRow
 } {
   const columns = `record_id,parent_run_record_id,repo,project_record_id,cwd,worktree,branch,
-    branch_kept,branch_kept_tip,launch_cwd,launch_key,launch_seed,session_id,job,label`
+    branch_kept,branch_kept_tip,launch_cwd,launch_key,launch_seed,session_id,job,label,cursor_record_id`
   const selected = db()
     .query(`SELECT ${columns} FROM run WHERE record_id=?`)
     .get(runId) as LandingTreeRunRow | null
@@ -80,7 +81,7 @@ export function landingTreeSourceRun(runId: string): {
   return { root, latest }
 }
 
-export type OpenedLandingTree = { path: string; branch: string; tip: string }
+export type OpenedLandingTree = { path: string; branch: string; tip: string; warning?: string }
 
 function terminalRunAt(path: string): { recordId: string; job: string } | null {
   const spellings = worktreePathSpellings(db(), path)
@@ -184,12 +185,14 @@ function resolveLandingTarget(runId: string, root: LandingTreeRunRow, latest: La
   return { project, branch, plan }
 }
 
-function finishLandingTreeOpen(
+async function finishLandingTreeOpen(
   root: LandingTreeRunRow,
+  cursorRecordId: string | null,
+  worktree: string,
   database: Database,
   recordId: string,
   startedAt: string,
-): void {
+): Promise<string | undefined> {
   adoptCoordinatorRunsForLanding(root, database)
   writeTransaction(() => {
     const lifecycle = terminalLifecycleWrite(database, recordId, 'ok', null, null)
@@ -205,6 +208,61 @@ function finishLandingTreeOpen(
         recordId,
       )
   }, database)
+  if (!cursorRecordId) return undefined
+  const cursor = database
+    .query<{ number: number }, [string]>('SELECT number FROM workflow_cursor WHERE record_id=?')
+    .get(cursorRecordId)?.number
+  try {
+    const result = await bindCursorArguments({ cursorRecordId, worktree }, database)
+    return result.action === 'refused' ? result.warning : undefined
+  } catch (error) {
+    return `workflow cursor ${cursor ?? cursorRecordId} argument binding failed: ${String((error as Error)?.message ?? error)}`
+  }
+}
+
+async function finishCreatedLandingTree(input: {
+  created: Worktree
+  branch: string
+  tip: string
+  runRecordId: string
+  projectPath: string
+  cursorRecordId: string | null
+  root: LandingTreeRunRow
+  database: Database
+  startedAt: string
+}): Promise<OpenedLandingTree> {
+  const actualBranch = branchOf(input.created.path)
+  const actualTip = gitContext(input.created.path, 'rev-parse', '--verify', 'HEAD^{commit}')
+  const recorded = db()
+    .query('SELECT worktree,branch,base_commit,minted_branch FROM run WHERE record_id=?')
+    .get(input.runRecordId) as {
+    worktree: string | null
+    branch: string | null
+    base_commit: string | null
+    minted_branch: string | null
+  }
+  if (
+    actualBranch !== input.branch ||
+    actualTip !== input.tip ||
+    recorded.worktree !== input.created.path ||
+    recorded.branch !== input.branch ||
+    recorded.base_commit !== input.tip ||
+    recorded.minted_branch !== null ||
+    inspectTreeOwnership(input.created.path, input.projectPath, [input.runRecordId]) !== 'owned'
+  ) {
+    throw new Error(
+      `landing tree postcondition failed: expected ${input.branch} at ${input.tip} with run ${input.runRecordId} ownership`,
+    )
+  }
+  const warning = await finishLandingTreeOpen(
+    input.root,
+    input.cursorRecordId,
+    input.created.path,
+    input.database,
+    input.runRecordId,
+    input.startedAt,
+  )
+  return { path: input.created.path, branch: input.branch, tip: input.tip, warning }
 }
 
 export async function openLandingTree(runId: string, seed?: string): Promise<OpenedLandingTree> {
@@ -349,31 +407,17 @@ export async function openLandingTree(runId: string, seed?: string): Promise<Ope
         mainStackProject: { recordId: project.recordId, name: project.name },
       })
     })
-    const actualBranch = branchOf(created.path)
-    const actualTip = gitContext(created.path, 'rev-parse', '--verify', 'HEAD^{commit}')
-    const recorded = db()
-      .query('SELECT worktree,branch,base_commit,minted_branch FROM run WHERE record_id=?')
-      .get(inserted.record_id) as {
-      worktree: string | null
-      branch: string | null
-      base_commit: string | null
-      minted_branch: string | null
-    }
-    if (
-      actualBranch !== branch ||
-      actualTip !== plan.tip ||
-      recorded.worktree !== created.path ||
-      recorded.branch !== branch ||
-      recorded.base_commit !== plan.tip ||
-      recorded.minted_branch !== null ||
-      inspectTreeOwnership(created.path, project.path, [inserted.record_id]) !== 'owned'
-    ) {
-      throw new Error(
-        `landing tree postcondition failed: expected ${branch} at ${plan.tip} with run ${inserted.record_id} ownership`,
-      )
-    }
-    finishLandingTreeOpen(root, database, inserted.record_id, startedAt)
-    return { path: created.path, branch, tip: plan.tip }
+    return await finishCreatedLandingTree({
+      created,
+      branch,
+      tip: plan.tip,
+      runRecordId: inserted.record_id,
+      projectPath: project.path,
+      cursorRecordId: latest.cursor_record_id,
+      root,
+      database,
+      startedAt,
+    })
   } catch (error) {
     recordLandingTreeFailure(inserted.record_id, startedAt, error)
     try {

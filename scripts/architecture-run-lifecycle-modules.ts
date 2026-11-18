@@ -178,6 +178,10 @@ export const runLifecycleModules: ArchitectureModule[] = [
     './branch-owner-guard.ts',
     './run-retry.ts',
   ]),
+  module('orchestrator/src/run/run-cursor-binding.ts', [
+    '../events.ts',
+    '../workflow/workflow-cursor-binding.ts',
+  ]),
   module('orchestrator/src/run/run-alive.ts', []),
   module('orchestrator/src/run/run-terminal-lifecycle-verdict.ts', []),
   module('orchestrator/src/run/run-terminal-lifecycle-store.ts', [
@@ -342,6 +346,7 @@ export const runLifecycleModules: ArchitectureModule[] = [
     './run-claim-plan.ts',
     './run-claim-executor.ts',
     './run-claim-mcp.ts',
+    './run-cursor-binding.ts',
     './run-claim-inheritance.ts',
     './run-claim-host-capacity.ts',
     './reader-tree-sharing-claim.ts',

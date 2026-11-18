@@ -59,6 +59,7 @@ export const landingTreeModules = [
       '../worktree/worktree-lifecycle.ts',
       '../worktree/worktree-seed.ts',
       '../worktree/worktree-types.ts',
+      '../workflow/workflow-cursor-binding.ts',
       './landing-tree.ts',
       './run-adoption.ts',
     ],

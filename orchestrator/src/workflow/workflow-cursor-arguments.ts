@@ -102,7 +102,14 @@ export function decideCursorArguments(
     : decideCursorArgumentMerge(stored, supplied, rebindable)
 }
 
-function rebindableArguments(row: ArgumentCursor, d: Database): Set<string> {
+export function declaredCursorArguments(row: ArgumentCursor, d: Database): Set<string> {
+  const definition = row.workflow_version_record_id
+    ? showPinnedWorkflow(row.workflow_version_record_id, d).definition
+    : showResolvedWorkflow(row.workflow_slug, row.workflow_version, row.project, d).definition
+  return new Set(definition.arguments.map(({ name }) => name))
+}
+
+export function rebindableCursorArguments(row: ArgumentCursor, d: Database): Set<string> {
   const pinned = row.workflow_version_record_id
     ? showPinnedWorkflow(row.workflow_version_record_id, d)
     : showResolvedWorkflow(row.workflow_slug, row.workflow_version, row.project, d)
@@ -134,7 +141,7 @@ export function resolveCursorArguments(
     supplied,
     `workflow next cursor ${row.id}`,
   )
-  const rebindable = rebindableArguments(row, d)
+  const rebindable = rebindableCursorArguments(row, d)
   const decision = decideCursorArguments(stored, supplied, rebindable, composing)
   if (decision.action === 'refuse') {
     if ('kind' in decision) {

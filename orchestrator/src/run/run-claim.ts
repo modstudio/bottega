@@ -93,6 +93,7 @@ import {
 } from './run-claim-plan.ts'
 import { claimWithMigrationAdmission } from './run-claim-transaction.ts'
 import { type CredentialPayment, endpointKeyIdentityBindings } from './run-credential-claim.ts'
+import { bindRecordedRunCursor } from './run-cursor-binding.ts'
 import { HARNESS_AGENT } from './run-executor.ts'
 import { nextRunNumber } from './run-number.ts'
 import { errorTail } from './run-process.ts'
@@ -962,6 +963,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
         .query('UPDATE run SET prompt_sha=?, prompt_bytes=? WHERE record_id=?')
         .run(sha(prompt), Buffer.byteLength(prompt), claim.id)
       installExecutorPushGuard(execution.harness, worktree, claim.id)
+      await bindRecordedRunCursor(claim.id)
     }
     ;({
       provisionedMcpConfig,

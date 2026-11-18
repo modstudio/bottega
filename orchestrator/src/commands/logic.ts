@@ -397,7 +397,7 @@ function registerTreeCommands(program: Command): void {
     .option('--seed <value>', 'provision the worktree from this project seed')
     .option('--cwd <path>', 'select the project from this working directory', process.cwd())
     .allowExcessArguments(false)
-    .action((options) =>
+    .action(async (options) =>
       treeCreateCommand(
         {
           cwd: options.cwd,
@@ -406,7 +406,7 @@ function registerTreeCommands(program: Command): void {
           base: options.base,
           seed: options.seed,
         },
-        { writePath: (path) => write(`${path}\n`) },
+        { writePath: (path) => write(`${path}\n`), error: presentation.error },
       ),
     )
   tree
@@ -414,7 +414,9 @@ function registerTreeCommands(program: Command): void {
     .description(TREE_DESCRIPTIONS.open)
     .option('--seed <value>', 'provision the worktree from this project seed')
     .allowExcessArguments(false)
-    .action((run, options) => treeOpenCommand(localRunId(run), options.seed, { log }))
+    .action((run, options) =>
+      treeOpenCommand(localRunId(run), options.seed, { log, error: presentation.error }),
+    )
   tree
     .command('remove <path>')
     .description(TREE_DESCRIPTIONS.remove)

@@ -631,6 +631,8 @@ const declaredModules: ArchitectureModule[] = [
     '../../../shared/brand.ts',
     './tree.ts',
     '../landing-tree/tree.ts',
+    '../project/projects.ts',
+    '../workflow/workflow-cursor-binding.ts',
   ]),
   module('orchestrator/src/hook-tree/tree.ts', [
     '../../../shared/brand.ts',
