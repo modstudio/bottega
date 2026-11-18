@@ -95,7 +95,7 @@ describe('context health signals', () => {
     ).toHaveLength(0)
   })
 
-  test('S4 counts whitespace-normalised duplicates across holders', () => {
+  test('S4 counts whitespace-normalized duplicates across holders', () => {
     const first = baseItem({ body: 'Same\n fact' })
     const second = baseItem({ holder: 'session:s2', recordId: 'r2', body: 'same fact' })
     expect(contextHealth(facts({ items: [first, second] })).signals.s4).toHaveLength(2)
