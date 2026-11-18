@@ -7,6 +7,7 @@ import type { StateEnvironment } from '../../../shared/state-directory.ts'
 import { db, nowIso, sessionId, writeTransaction } from '../database/db.ts'
 import { signalRecordSyncAfterWriteCommit } from './outbox-enqueue.ts'
 import { OUTBOX_HELD_FOR_UPGRADE_MARKER } from './outbox-held-contract.ts'
+import { PENDING_OUTBOX_PREDICATE_SQL } from './outbox-read.ts'
 export type QuarantinedOutboxRow = {
   id: number
   kind: string
@@ -15,6 +16,16 @@ export type QuarantinedOutboxRow = {
   attempts: number
   quarantinedAt: string
 }
+
+export const retirePendingOutboxKindsSql = (placeholders: string): string =>
+  `SELECT id,kind,row_id,attempts,last_error,quarantine_reason,quarantined_at,retired_at
+     FROM outbox
+    WHERE kind IN (${placeholders})
+      AND ${PENDING_OUTBOX_PREDICATE_SQL}
+    ORDER BY id`
+
+export const QUARANTINED_OUTBOX_ROWS_SQL = `SELECT id,kind,row_id,quarantine_reason,attempts,quarantined_at
+  FROM outbox WHERE quarantined_at IS NOT NULL AND retired_at IS NULL ORDER BY id`
 
 type OutboxIdentity = {
   id: number
@@ -97,13 +108,7 @@ export function retirePendingOutboxKinds(
   return writeTransaction(() => {
     const rows = database
       .query<OutboxIdentity, string[]>(
-        `SELECT id,kind,row_id,attempts,last_error,quarantine_reason,quarantined_at,retired_at
-           FROM outbox
-          WHERE kind IN (${[...kinds].map(() => '?').join(',')})
-            AND synced_at IS NULL
-            AND quarantined_at IS NULL
-            AND retired_at IS NULL
-          ORDER BY id`,
+        retirePendingOutboxKindsSql([...kinds].map(() => '?').join(',')),
       )
       .all(...kinds)
     for (const row of rows) {
@@ -266,10 +271,7 @@ export function quarantinedOutboxRows(database: Database = db()): QuarantinedOut
         quarantined_at: string
       },
       []
-    >(
-      `SELECT id,kind,row_id,quarantine_reason,attempts,quarantined_at
-         FROM outbox WHERE quarantined_at IS NOT NULL AND retired_at IS NULL ORDER BY id`,
-    )
+    >(QUARANTINED_OUTBOX_ROWS_SQL)
     .all()
     .map((row) => ({
       id: row.id,

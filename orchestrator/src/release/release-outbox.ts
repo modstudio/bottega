@@ -7,6 +7,7 @@ import { nowIso } from '../database/db.ts'
 import { machineId } from '../record/machine-identity.ts'
 
 import { insertOutboxRow, refreshPendingOutboxRow } from '../record/outbox-enqueue.ts'
+import { PENDING_OUTBOX_PREDICATE_SQL } from '../record/outbox-read.ts'
 import { stringifyOutboxPayload } from '../record/outbox-sanitize.ts'
 
 type ReleaseRow = Record<string, unknown> & { record_id: string }
@@ -52,8 +53,7 @@ export function enqueueReleaseRecord(database: Database, releaseRecordId: string
   const pending = database
     .query<{ id: number }, [string]>(
       `SELECT id FROM outbox
-       WHERE kind='release' AND row_id=? AND synced_at IS NULL
-         AND quarantined_at IS NULL AND retired_at IS NULL
+       WHERE kind='release' AND row_id=? AND ${PENDING_OUTBOX_PREDICATE_SQL}
        ORDER BY id LIMIT 1`,
     )
     .get(row.record_id)

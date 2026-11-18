@@ -2,6 +2,7 @@
 /** Reads pending outbox rows held for a hosted API upgrade. */
 import type { Database } from 'bun:sqlite'
 import { outboxHeldForUpgradeLikePattern } from './outbox-held-contract.ts'
+import { PENDING_OUTBOX_PREDICATE_SQL } from './outbox-read.ts'
 
 export type HeldOutboxKind = {
   kind: string
@@ -14,7 +15,7 @@ export function heldOutboxKinds(database: Database): HeldOutboxKind[] {
   const rows = database
     .query<{ kind: string; created_at: string; last_error: string }, [string]>(
       `SELECT kind,created_at,last_error FROM outbox
-       WHERE synced_at IS NULL AND quarantined_at IS NULL AND retired_at IS NULL
+       WHERE ${PENDING_OUTBOX_PREDICATE_SQL}
          AND last_error LIKE ? ORDER BY kind,created_at,id`,
     )
     .all(outboxHeldForUpgradeLikePattern())

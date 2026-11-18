@@ -5,6 +5,7 @@ import { PLATFORM_SPACE_ID } from '../../../shared/record/schema.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 
 import { insertOutboxRow, refreshPendingOutboxRow } from '../record/outbox-enqueue.ts'
+import { PENDING_OUTBOX_PREDICATE_SQL } from '../record/outbox-read.ts'
 import { stringifyOutboxPayload } from '../record/outbox-sanitize.ts'
 import type { VerdictPayload } from '../verdict/verdict-payload.ts'
 
@@ -81,8 +82,7 @@ export function enqueueScoreRecord(database: Database, runId: string, machineId:
   const pending = database
     .query<{ id: number }, [string]>(
       `SELECT id FROM outbox
-        WHERE kind='score' AND row_id=? AND synced_at IS NULL
-          AND quarantined_at IS NULL AND retired_at IS NULL
+        WHERE kind='score' AND row_id=? AND ${PENDING_OUTBOX_PREDICATE_SQL}
         ORDER BY id LIMIT 1`,
     )
     .get(row.record_id)
