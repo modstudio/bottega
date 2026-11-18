@@ -2,7 +2,6 @@ import { describe, expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   interpretMergeQueue,
-  MERGE_QUEUE_DEQUEUE_CONFIRM_MS,
   MERGE_QUEUE_REQUEUE_CONFIRM_MS,
   type MergeQueueWaitState,
   mergeQueueEnqueueFailureRemedy,
@@ -113,7 +112,7 @@ describe('merge-queue action', () => {
   })
 
   test('a transition gap waits and can still complete as merged', () => {
-    const deadline = MERGE_QUEUE_DEQUEUE_CONFIRM_MS * 2
+    const deadline = 120_000
     const queued = stepMergeQueueWait(42, initialWaitState, { state: 'queued' }, 0, deadline)
     const gap = stepMergeQueueWait(
       42,
@@ -135,7 +134,7 @@ describe('merge-queue action', () => {
         42,
         gap.state,
         { state: 'merged', mergeCommit: 'merge-oid' },
-        MERGE_QUEUE_DEQUEUE_CONFIRM_MS - 1,
+        59_999,
         deadline,
       ),
     ).toEqual({ state: gap.state, action: { action: 'complete', mergeCommit: 'merge-oid' } })
@@ -148,8 +147,8 @@ describe('merge-queue action', () => {
         42,
         { ...initialWaitState, activeEntryObserved: true, dequeueObservedAt: observedAt },
         { state: 'dequeued', reason: 'unknown' },
-        observedAt + MERGE_QUEUE_DEQUEUE_CONFIRM_MS,
-        MERGE_QUEUE_DEQUEUE_CONFIRM_MS * 2,
+        observedAt + 60_000,
+        120_000,
       ),
     ).toEqual({
       state: {
@@ -185,6 +184,18 @@ describe('merge-queue action', () => {
           `merge origin/trunk into the pull-request branch, push it, then ` +
           `${PLATFORM_SLUG} pr merge 42`,
       },
+    })
+  })
+
+  test('a removal event stops waiting even when the active entry was not polled', () => {
+    const state = { ...initialWaitState, enqueueSubmitted: true }
+    expect(
+      stepMergeQueueWait(42, state, { state: 'dequeued', reason: 'merge_conflict' }, 1, 20_000)
+        .action,
+    ).toEqual({
+      action: 'refuse',
+      refusal: expect.stringContaining('reason: merge_conflict'),
+      remedy: expect.stringContaining('merge origin/main'),
     })
   })
 

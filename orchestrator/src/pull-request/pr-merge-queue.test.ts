@@ -6,7 +6,6 @@ import { db } from '../database/db.ts'
 import type { TriageDecision } from '../review-funnel/review-funnel-admission-evidence.ts'
 import type { PullRequestCheck } from './merge-decision.ts'
 import {
-  MERGE_QUEUE_DEQUEUE_CONFIRM_MS,
   MERGE_QUEUE_REQUEUE_CONFIRM_MS,
   MERGE_QUEUE_WAIT_MS,
   type MergeQueueObservation,
@@ -331,7 +330,6 @@ test('a failed entry without an enqueue time does not search workflow runs', asy
 
 test('a pull request removed from an established queue stops and reports the reason', async () => {
   registerProject(['ci'])
-  let clock = 0
   expect(
     async () =>
       await mergePullRequest(
@@ -347,11 +345,7 @@ test('a pull request removed from an established queue stops and reports the rea
               removalReason: 'BASE_BRANCH_UPDATED',
             },
           ],
-          now: () => clock,
           failedMergeGroupRun: () => null,
-          wait: (milliseconds) => {
-            clock += milliseconds === 10_000 ? MERGE_QUEUE_DEQUEUE_CONFIRM_MS : milliseconds
-          },
         }),
       ),
   ).toThrow(

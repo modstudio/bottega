@@ -631,6 +631,7 @@ const declaredModules: ArchitectureModule[] = [
     '../worktree/worktree-lifecycle.ts',
     '../worktree/worktree-seed.ts',
     '../worktree/worktree-types.ts',
+    '../workflow/workflow-cursor-worktrees.ts',
   ]),
   module('orchestrator/src/workflow/workflow-step-sequences.ts', [
     './step-catalogue-definition.ts',

@@ -736,6 +736,15 @@ function createPullRequestAdmittedChange(
     branch: change.branch,
     platformSlug: PLATFORM_SLUG,
   })
+  if (outcome.throwRefusal)
+    throw new Error(
+      renderRefusal(
+        refusal(outcome.throwRefusal.condition, {
+          kind: 'edit',
+          text: outcome.throwRefusal.remedy,
+        }),
+      ),
+    )
   if (outcome.throwMessage) throw new Error(outcome.throwMessage)
   if (outcome.finalizePullRequestNumber !== null) {
     finalizeTriageIntent(change.project.name, change.branch, outcome.finalizePullRequestNumber)

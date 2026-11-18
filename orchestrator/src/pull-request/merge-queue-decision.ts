@@ -9,6 +9,7 @@ export type MergeQueueObservation = {
   entryState: string | null
   enqueuedAt: string | null
   removalReason?: string | null
+  removedAt?: string | null
 }
 
 export type MergeQueueState =
@@ -40,7 +41,6 @@ export type MergeQueueStep = {
 
 const ACTIVE_ENTRY_STATES = new Set(['AWAITING_CHECKS', 'LOCKED', 'MERGEABLE', 'QUEUED'])
 export const MERGE_QUEUE_WAIT_MS = 30 * 60 * 1000
-export const MERGE_QUEUE_DEQUEUE_CONFIRM_MS = 60 * 1000
 export const MERGE_QUEUE_REQUEUE_CONFIRM_MS = 60 * 1000
 const MERGE_QUEUE_POLL_MS = 10 * 1000
 
@@ -174,7 +174,10 @@ export function stepMergeQueueWait(
       },
     }
   }
-  if (queue.state === 'dequeued' && state.activeEntryObserved) {
+  if (
+    queue.state === 'dequeued' &&
+    (state.activeEntryObserved || (state.enqueueSubmitted && queue.reason !== 'unknown'))
+  ) {
     const reason = queue.reason
     const remedy =
       reason.toLowerCase() === 'merge_conflict'

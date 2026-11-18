@@ -195,7 +195,10 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     './workflow-floor-evidence-replay.ts',
     './workflow-obligation-floor.ts',
   ]),
-  module('orchestrator/src/workflow/workflow-floor-refusal.ts', ['../../../shared/brand.ts']),
+  module('orchestrator/src/workflow/workflow-floor-refusal.ts', [
+    '../../../shared/brand.ts',
+    '../../../shared/refusal.ts',
+  ]),
   module('orchestrator/src/workflow/workflow-obligation-floor.ts', [
     'bun:sqlite',
     '../../../shared/brand.ts',
@@ -297,6 +300,7 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     'node:fs',
     'node:path',
     '../../../shared/brand.ts',
+    '../../../shared/refusal.ts',
     '../../../shared/docs.ts',
     '../../../shared/github-repository.ts',
     '../../../shared/self-spawn.ts',
@@ -447,8 +451,13 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
   ]),
   module('orchestrator/src/workflow/workflow-cursor-worktrees.ts', [
     'bun:sqlite',
+    'node:fs',
+    'node:path',
     '../database/db.ts',
+    '../record/record-task-flow-write-client.ts',
+    '../record/record-task-flow-write-contract.ts',
     './task-flow-store.ts',
+    './task-flow-store-types.ts',
   ]),
   module('orchestrator/src/workflow/workflow-cursor-result.ts', [
     '../../../shared/brand.ts',

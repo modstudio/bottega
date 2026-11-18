@@ -32,6 +32,8 @@ import {
   interpretMergeQueue,
   MERGE_QUEUE_WAIT_MS,
   type MergeQueueObservation,
+  type MergeQueueState,
+  type MergeQueueStep,
   type MergeQueueWaitState,
   mergeQueueEnqueueFailureRemedy,
   stepMergeQueueWait,
@@ -534,7 +536,7 @@ function waitForQueuedMerge(
   while (true) {
     const observation = adapter.queueState(cwd, pullRequest.nodeId)
     if (observation.enqueuedAt) lastEnqueuedAt = observation.enqueuedAt
-    const state = interpretMergeQueue(observation)
+    const state = currentMergeQueueState(observation, lastEnqueuedAt)
     const now = adapter.now()
     const step = stepMergeQueueWait(
       pullRequest.number,
@@ -553,32 +555,7 @@ function waitForQueuedMerge(
       }
     }
     if (action.action === 'refuse') {
-      const failed =
-        state.state === 'failed' || state.state === 'dequeued'
-          ? failedMergeGroupRun(pullRequest, cwd, repository, lastEnqueuedAt, adapter)
-          : null
-      if (state.state === 'dequeued' && failed?.run) {
-        throw new Error(
-          renderRefusal(
-            refusal(
-              `refusing merge: pull request #${pullRequest.number} failed in the merge queue; ${failed.evidence}`,
-              {
-                kind: 'edit',
-                text: `push a fix if the check failure is real, or re-run ${PLATFORM_SLUG} pr merge ${pullRequest.number} to requeue the unchanged head if it flaked`,
-              },
-            ),
-          ).replace('\n', '; '),
-        )
-      }
-      const evidence = state.state === 'failed' && failed ? `; ${failed.evidence}` : ''
-      throw new Error(
-        renderRefusal(
-          refusal(`refusing merge: ${action.refusal}${evidence}`, {
-            kind: 'edit',
-            text: action.remedy,
-          }),
-        ).replace('\n', '; '),
-      )
+      throwMergeQueueRefusal(action, state, pullRequest, cwd, repository, lastEnqueuedAt, adapter)
     }
     if (action.action === 'enqueue') {
       enqueueForMergeQueue(pullRequest, cwd, adapter, target)
@@ -598,6 +575,59 @@ function waitForQueuedMerge(
     }
     adapter.wait(action.delay)
   }
+}
+
+function currentMergeQueueState(
+  observation: MergeQueueObservation,
+  lastEnqueuedAt: string | null,
+): MergeQueueState {
+  const state = interpretMergeQueue(observation)
+  if (
+    state.state === 'dequeued' &&
+    observation.removedAt &&
+    lastEnqueuedAt &&
+    Date.parse(observation.removedAt) < Date.parse(lastEnqueuedAt)
+  ) {
+    return { state: 'dequeued', reason: 'unknown' }
+  }
+  return state
+}
+
+function throwMergeQueueRefusal(
+  action: Extract<MergeQueueStep['action'], { action: 'refuse' }>,
+  state: MergeQueueState,
+  pullRequest: PullRequestMergeFacts,
+  cwd: string,
+  repository: string | null,
+  enqueuedAt: string | null,
+  adapter: PullRequestMergeAdapter,
+): never {
+  const failed =
+    state.state === 'failed' || state.state === 'dequeued'
+      ? failedMergeGroupRun(pullRequest, cwd, repository, enqueuedAt, adapter)
+      : null
+  if (state.state === 'dequeued' && failed?.run) {
+    throw new Error(
+      renderRefusal(
+        refusal(
+          `refusing merge: pull request #${pullRequest.number} failed in the merge queue; ${failed.evidence}`,
+          {
+            kind: 'edit',
+            text: `push a fix if the check failure is real, or re-run ${PLATFORM_SLUG} pr merge ${pullRequest.number} to requeue the unchanged head if it flaked`,
+          },
+        ),
+      ).replace('\n', '; '),
+    )
+  }
+  const evidence = state.state === 'failed' && failed ? `; ${failed.evidence}` : ''
+  throw new Error(
+    renderRefusal(
+      refusal(`refusing merge: ${action.refusal}${evidence}`, {
+        kind: 'edit',
+        text: action.remedy,
+      }),
+    ).replace('\n', '; '),
+  )
 }
 
 function failedMergeGroupRun(
