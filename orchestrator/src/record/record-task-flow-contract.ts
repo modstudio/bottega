@@ -78,6 +78,7 @@ const hostedTaskFlowStageSummarySchema = z.object({
   openedMachineId: z.string().uuid(),
   takenOverFromMachineId: nullableId,
   lastAdvancedMachineId: z.string().uuid(),
+  handedOffFromRecordId: nullableId.optional(),
   revision: z.number().int().positive(),
   createdAt: z.string(),
   updatedAt: z.string(),
@@ -160,12 +161,21 @@ export type HostedTaskFlowProjectReferenceCounts = z.infer<
   typeof hostedTaskFlowProjectReferenceCountsSchema
 >
 
-export const taskFlowPresenceInputSchema = z.object({
-  stageIds: z.array(z.string().uuid()).max(TASK_FLOW_PRESENCE_BATCH_MAX),
-  flowIds: z.array(z.string().uuid()).max(TASK_FLOW_PRESENCE_BATCH_MAX),
-})
-export type TaskFlowPresenceInput = z.infer<typeof taskFlowPresenceInputSchema>
-export type TaskFlowPresence = z.infer<typeof taskFlowPresenceInputSchema>
+const taskFlowPresenceIds = z.array(z.string().uuid()).max(TASK_FLOW_PRESENCE_BATCH_MAX).default([])
+
+export const taskFlowPresenceInputSchema = z
+  .object({
+    stageIds: taskFlowPresenceIds,
+    flowIds: taskFlowPresenceIds,
+    obligationIds: taskFlowPresenceIds,
+    textIds: taskFlowPresenceIds,
+    textCopyIds: taskFlowPresenceIds,
+    questionIds: taskFlowPresenceIds,
+    questionAuditIds: taskFlowPresenceIds,
+  })
+  .strict()
+export type TaskFlowPresenceInput = z.input<typeof taskFlowPresenceInputSchema>
+export type TaskFlowPresence = z.output<typeof taskFlowPresenceInputSchema>
 
 export const taskFlowReadQuerySchema = z
   .object({

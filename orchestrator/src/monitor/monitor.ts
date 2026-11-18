@@ -89,6 +89,7 @@ import {
   type MonitorResult,
   type UnaddressedMonitorCondition,
 } from './monitor-types.ts'
+import { writerOkOnFallbackAtBoundConditions } from './monitor-writer-fallback-bound.ts'
 import { observedOrphanComposeConditions } from './orphan-compose-observation.ts'
 import {
   orphanDockerNetworkConditions,
@@ -704,7 +705,7 @@ export async function monitor(
   conditions.push(...deadRunningProcessConditions(clock))
   conditions.push(...idleRunConditions(clock))
   conditions.push(...stalledRunConditions(clock))
-  conditions.push(...workerGateToolingConditions(database))
+  conditions.push(...completedRunConditions(database, clock))
   const recordTunnel = await observeRecordTunnel()
   conditions.push(...recordTunnel.conditions)
   errors.push(...recordTunnel.errors)
@@ -1005,6 +1006,13 @@ export async function monitor(
     load,
     hostPressure,
   )
+}
+
+function completedRunConditions(database: Database, clock: number): MonitorCondition[] {
+  return [
+    ...workerGateToolingConditions(database),
+    ...writerOkOnFallbackAtBoundConditions(database, clock),
+  ]
 }
 
 export {

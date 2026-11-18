@@ -50,6 +50,7 @@ const methodByIntent = {
   advance: 'advanceTaskFlow',
   'await-ruling': 'awaitTaskFlowRuling',
   abandon: 'abandonTaskFlow',
+  handoff: 'handoffTaskFlow',
   adopt: 'adoptTaskFlow',
   'attach-text': 'attachTaskFlowText',
   'delete-text': 'deleteTaskFlowText',

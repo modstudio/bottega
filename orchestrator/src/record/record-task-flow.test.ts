@@ -1,7 +1,11 @@
 import { afterEach, beforeEach, expect, test } from 'bun:test'
 import type { PGlite } from '@electric-sql/pglite'
+import { bindTenant } from '../../../shared/record/tenant.ts'
 import { createHostedRecordFixture, pgliteSql } from '../../test/fixtures/hosted-record.ts'
-import { readRecordTaskFlowTextTransaction } from './record-task-flow.ts'
+import {
+  readRecordTaskFlowPresenceTransaction,
+  readRecordTaskFlowTextTransaction,
+} from './record-task-flow.ts'
 
 const SPACE = '01990000-0000-7000-8000-000000002416'
 const USER = '01990000-0000-7000-8000-000000002417'
@@ -15,6 +19,43 @@ const FLOW = '01990000-0000-7000-8000-000000002424'
 const STAGE = '01990000-0000-7000-8000-000000002425'
 const TEXT = '01990000-0000-7000-8000-000000002426'
 const COPY = '01990000-0000-7000-8000-000000002427'
+const OBLIGATION = '01990000-0000-7000-8000-000000002428'
+const QUESTION = '01990000-0000-7000-8000-000000002429'
+const QUESTION_AUDIT = '01990000-0000-7000-8000-000000002430'
+const INCOMPLETE_STAGE = '01990000-0000-7000-8000-000000002431'
+
+const SECOND = {
+  space: '01990000-0000-7000-8000-000000002432',
+  membership: '01990000-0000-7000-8000-000000002433',
+  project: '01990000-0000-7000-8000-000000002434',
+  workflow: '01990000-0000-7000-8000-000000002435',
+  workflowVersion: '01990000-0000-7000-8000-000000002436',
+  catalogue: '01990000-0000-7000-8000-000000002437',
+  catalogueVersion: '01990000-0000-7000-8000-000000002438',
+  flow: '01990000-0000-7000-8000-000000002439',
+  stage: '01990000-0000-7000-8000-000000002440',
+  obligation: '01990000-0000-7000-8000-000000002441',
+  text: '01990000-0000-7000-8000-000000002442',
+  copy: '01990000-0000-7000-8000-000000002443',
+  question: '01990000-0000-7000-8000-000000002444',
+  questionAudit: '01990000-0000-7000-8000-000000002445',
+}
+const OUTSIDER = {
+  space: '01990000-0000-7000-8000-000000002446',
+  membership: '01990000-0000-7000-8000-000000002447',
+  project: '01990000-0000-7000-8000-000000002448',
+  workflow: '01990000-0000-7000-8000-000000002449',
+  workflowVersion: '01990000-0000-7000-8000-000000002450',
+  catalogue: '01990000-0000-7000-8000-000000002451',
+  catalogueVersion: '01990000-0000-7000-8000-000000002452',
+  flow: '01990000-0000-7000-8000-000000002453',
+  stage: '01990000-0000-7000-8000-000000002454',
+  obligation: '01990000-0000-7000-8000-000000002455',
+  text: '01990000-0000-7000-8000-000000002456',
+  copy: '01990000-0000-7000-8000-000000002457',
+  question: '01990000-0000-7000-8000-000000002458',
+  questionAudit: '01990000-0000-7000-8000-000000002459',
+}
 
 let postgres: PGlite
 
@@ -86,4 +127,110 @@ test('hosted text read returns a copy after its live text is removed', async () 
       stage: { id: STAGE, number: 1 },
       copy: { workflowTextRecordId: TEXT, taskDocumentReference: 'task:DEV-2416/guard' },
     })
+})
+
+async function seedPresenceSpace(row: typeof SECOND, member: boolean) {
+  await postgres.exec(`
+    RESET ROLE;
+    INSERT INTO space (id,name,slug,created_at)
+    VALUES ('${row.space}','Presence ${row.space}','presence-${row.space}',now());
+    ${
+      member
+        ? `INSERT INTO membership (id,space_id,user_id,role,permission,created_at)
+           VALUES ('${row.membership}','${row.space}','${USER}','member','write',now());`
+        : ''
+    }
+    INSERT INTO project (id,space_id,name,key_prefixes,created_at)
+    VALUES ('${row.project}','${row.space}','presence',ARRAY['PRE'],now());
+    INSERT INTO workflow (id,space_id,slug,created_at,updated_at)
+    VALUES ('${row.workflow}','${row.space}','presence',now(),now());
+    INSERT INTO workflow_version
+      (id,space_id,workflow_id,n,status,definition,author,reason,created_at,updated_at)
+    VALUES ('${row.workflowVersion}','${row.space}','${row.workflow}',1,'production','{}',
+      'test','proof',now(),now());
+    INSERT INTO step_catalogue (id,space_id,slug,created_at,updated_at)
+    VALUES ('${row.catalogue}','${row.space}','presence',now(),now());
+    INSERT INTO step_catalogue_version
+      (id,space_id,catalogue_id,n,status,definition,author,reason,created_at,updated_at)
+    VALUES ('${row.catalogueVersion}','${row.space}','${row.catalogue}',1,'production','{}',
+      'test','proof',now(),now());
+    INSERT INTO task_flow
+      (id,space_id,project_id,state,opening_machine_id,updated_machine_id,revision,created_at,updated_at)
+    VALUES ('${row.flow}','${row.space}','${row.project}','open','${MACHINE}','${MACHINE}',1,now(),now());
+    INSERT INTO task_flow_stage
+      (id,space_id,flow_record_id,project_id,number,workflow,mode,workflow_key,session_id,
+       workflow_version_id,catalogue_version_id,arguments,active_ordinal,active_slug,state,
+       closed_step_notes,enforcement,total_steps,opened_machine_id,last_advanced_machine_id,
+       revision,created_at,updated_at)
+    VALUES ('${row.stage}','${row.space}','${row.flow}','${row.project}',1,'presence','default',
+      'PRE-1','session','${row.workflowVersion}','${row.catalogueVersion}','{}',0,
+      'implementation','running','[]','signed',1,'${MACHINE}','${MACHINE}',1,now(),now());
+    INSERT INTO workflow_obligation
+      (id,space_id,stage_record_id,step_ordinal,step_slug,floor,reason,created_at)
+    VALUES ('${row.obligation}','${row.space}','${row.stage}',0,'implementation','artifact',
+      'proof',now());
+    INSERT INTO workflow_step_text
+      (id,space_id,stage_record_id,step_ordinal,step_slug,body,created_at)
+    VALUES ('${row.text}','${row.space}','${row.stage}',0,'implementation','body',now());
+    INSERT INTO workflow_text_copy
+      (id,space_id,workflow_text_record_id,stage_record_id,task_document_reference,copied_at)
+    VALUES ('${row.copy}','${row.space}','${row.text}','${row.stage}','task:PRE-1/proof',now());
+    INSERT INTO question
+      (id,number,space_id,workflow_cursor_record_id,machine_id,revision,asked_at,question,
+       withheld_fields,created_at,updated_at)
+    VALUES ('${row.question}',1,'${row.space}','${row.stage}','${MACHINE}',1,now(),'Proceed?',
+      '[]',now(),now());
+    INSERT INTO question_mutation_audit (id,question_id,space_id,action,at)
+    VALUES ('${row.questionAudit}','${row.question}','${row.space}','ask',now());
+    SET ROLE record_actor;
+  `)
+}
+
+test('presence returns every released table across member spaces and excludes other spaces', async () => {
+  await postgres.exec(`
+    RESET ROLE;
+    UPDATE task_flow_stage SET enforcement='signed' WHERE id='${STAGE}';
+    INSERT INTO task_flow_stage
+      (id,space_id,flow_record_id,project_id,number,workflow,mode,workflow_key,session_id,
+       workflow_version_id,catalogue_version_id,arguments,active_ordinal,active_slug,state,
+       closed_step_notes,total_steps,opened_machine_id,last_advanced_machine_id,revision,created_at,updated_at)
+    VALUES ('${INCOMPLETE_STAGE}','${SPACE}','${FLOW}','${PROJECT}',2,'proof','default','DEV-2417',
+      'session','${WORKFLOW_VERSION}','${CATALOGUE_VERSION}','{}',0,'implementation','done',
+      '[]',1,'${MACHINE}','${MACHINE}',1,now(),now());
+    INSERT INTO workflow_obligation
+      (id,space_id,stage_record_id,step_ordinal,step_slug,floor,reason,created_at)
+    VALUES ('${OBLIGATION}','${SPACE}','${STAGE}',0,'implementation','artifact','proof',now());
+    INSERT INTO question
+      (id,number,space_id,workflow_cursor_record_id,machine_id,revision,asked_at,question,
+       withheld_fields,created_at,updated_at)
+    VALUES ('${QUESTION}',1,'${SPACE}','${STAGE}','${MACHINE}',1,now(),'Proceed?','[]',now(),now());
+    INSERT INTO question_mutation_audit (id,question_id,space_id,action,at)
+    VALUES ('${QUESTION_AUDIT}','${QUESTION}','${SPACE}','ask',now());
+    SET ROLE record_actor;
+  `)
+  await seedPresenceSpace(SECOND, true)
+  await seedPresenceSpace(OUTSIDER, false)
+
+  const result = await pgliteSql(postgres).begin(async (tx) => {
+    await bindTenant(tx, { userId: USER, spaceId: SPACE, spaceIds: [SPACE, SECOND.space] })
+    return readRecordTaskFlowPresenceTransaction(tx, {
+      flowIds: [FLOW, SECOND.flow, OUTSIDER.flow],
+      stageIds: [STAGE, INCOMPLETE_STAGE, SECOND.stage, OUTSIDER.stage],
+      obligationIds: [OBLIGATION, SECOND.obligation, OUTSIDER.obligation],
+      textIds: [TEXT, SECOND.text, OUTSIDER.text],
+      textCopyIds: [COPY, SECOND.copy, OUTSIDER.copy],
+      questionIds: [QUESTION, SECOND.question, OUTSIDER.question],
+      questionAuditIds: [QUESTION_AUDIT, SECOND.questionAudit, OUTSIDER.questionAudit],
+    })
+  })
+
+  expect(result).toEqual({
+    flowIds: [FLOW, SECOND.flow],
+    stageIds: [STAGE, SECOND.stage],
+    obligationIds: [OBLIGATION, SECOND.obligation],
+    textIds: [TEXT, SECOND.text],
+    textCopyIds: [COPY, SECOND.copy],
+    questionIds: [QUESTION, SECOND.question],
+    questionAuditIds: [QUESTION_AUDIT, SECOND.questionAudit],
+  })
 })

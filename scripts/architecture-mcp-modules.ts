@@ -12,6 +12,16 @@ const module = (file: string, allowed: string[]): McpModule => ({
 })
 
 export const mcpModules: McpModule[] = [
+  module('orchestrator/src/mcp/mcp-workflow-handoff.ts', [
+    '@modelcontextprotocol/server',
+    'zod',
+    '../database/db.ts',
+    '../workflow/workflow-compose-branch.ts',
+    '../workflow/workflow-cursor-live-autonomy.ts',
+    '../workflow/workflow-cursor-selection.ts',
+    '../workflow/workflow-handoff.ts',
+    '../workflow/workflow-task-reference.ts',
+  ]),
   module('orchestrator/src/mcp/mcp-task-flow.fixture.ts', [
     'bun:sqlite',
     '../../test/fixtures/record-api.ts',
@@ -104,6 +114,7 @@ export const mcpModules: McpModule[] = [
     '../../../shared/orch-contract.ts',
     '../ask/worker-question.ts',
     '../database/db.ts',
+    '../dispatch/keyed-run-cursor-admission-adapter.ts',
     '../doc/docs.ts',
     '../doc/context-moment-adapter.ts',
     '../operator/operator-waiting.ts',

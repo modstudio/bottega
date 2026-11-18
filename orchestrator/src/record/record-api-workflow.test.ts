@@ -1,5 +1,8 @@
-import { expect, test } from 'bun:test'
+import { expect, mock, test } from 'bun:test'
 import { Hono } from 'hono'
+import { idleRecordApiDeps, idleSubjectDeps } from '../../test/fixtures/record-api.ts'
+import { recordApiTestApp } from '../../test/fixtures/record-api-app.ts'
+import { identity } from './record-api-identity.fixture.ts'
 import { registerRecordWorkflowRoutes } from './record-api-workflow.ts'
 import type { RecordIdentity } from './record-auth.ts'
 import { RECORD_KEYED_NOT_VISIBLE_CODE } from './record-keyed-read.ts'
@@ -7,6 +10,7 @@ import { RecordTaskFlowError } from './record-task-flow.ts'
 import {
   TASK_FLOW_PRESENCE_BATCH_MAX,
   TASK_FLOW_STAGE_LIST_LIMIT_MAX,
+  type TaskFlowPresence,
   type TaskFlowStageListQuery,
 } from './record-task-flow-contract.ts'
 
@@ -14,6 +18,19 @@ const SPACE = '00000000-0000-4000-8000-000000000001'
 const PROJECT = '00000000-0000-4000-8000-000000000002'
 const KNOWN_ID = '00000000-0000-4000-8000-000000000003'
 const UNKNOWN_ID = '00000000-0000-4000-8000-000000000004'
+
+const recordApiAppWith = (overrides: Record<string, unknown>) =>
+  recordApiTestApp(
+    {
+      ...identity,
+      memberships: [
+        ...identity.memberships,
+        { space_id: 'space-b', name: 'Space B', slug: 'space-b' },
+      ],
+    },
+    { ...idleSubjectDeps(), ...idleRecordApiDeps() },
+    overrides,
+  )
 
 function taskFlowApp(calls: TaskFlowStageListQuery[]) {
   const app = new Hono<{
@@ -80,15 +97,15 @@ test.each([1, TASK_FLOW_STAGE_LIST_LIMIT_MAX])(
   },
 )
 
-test('task-flow presence is tenant-bound and validates the named batch limit', async () => {
-  const calls: Array<{
-    flowIds: string[]
-    stageIds: string[]
-    url: string
-    userId: string
-    spaceId: string
-    spaceIds: string[]
-  }> = []
+test('task-flow presence defaults omitted batches and validates every named batch limit', async () => {
+  const calls: Array<
+    TaskFlowPresence & {
+      url: string
+      userId: string
+      spaceId: string
+      spaceIds: string[]
+    }
+  > = []
   const app = new Hono<{
     Variables: { identity: RecordIdentity; destinationSpaceId?: string }
   }>()
@@ -97,7 +114,7 @@ test('task-flow presence is tenant-bound and validates the named batch limit', a
     {
       readTaskFlowPresence: async (input) => {
         calls.push(input)
-        return { flowIds: input.flowIds, stageIds: input.stageIds }
+        return input
       },
       listWorkflowCatalogue: async () => [],
       draftWorkflow: async () => null,
@@ -119,21 +136,86 @@ test('task-flow presence is tenant-bound and validates the named batch limit', a
     {
       flowIds: [KNOWN_ID],
       stageIds: [UNKNOWN_ID],
+      obligationIds: [],
+      textIds: [],
+      textCopyIds: [],
+      questionIds: [],
+      questionAuditIds: [],
       url: 'postgres://unused',
       userId: SPACE,
       spaceId: SPACE,
       spaceIds: [SPACE],
     },
   ])
-  const oversized = await app.request('/v1/task-flow/presence', {
+  for (const field of [
+    'stageIds',
+    'flowIds',
+    'obligationIds',
+    'textIds',
+    'textCopyIds',
+    'questionIds',
+    'questionAuditIds',
+  ] as const) {
+    const oversized = await app.request('/v1/task-flow/presence', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        [field]: Array(TASK_FLOW_PRESENCE_BATCH_MAX + 1).fill(KNOWN_ID),
+      }),
+    })
+    expect(oversized.status).toBe(400)
+    expect(await oversized.json()).toEqual({ error: 'invalid task-flow presence request' })
+  }
+  const unknown = await app.request('/v1/task-flow/presence', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({
-      flowIds: Array(TASK_FLOW_PRESENCE_BATCH_MAX + 1).fill(KNOWN_ID),
-      stageIds: [],
+    body: JSON.stringify({ flowIds: [], stageIds: [], extraIds: [] }),
+  })
+  expect(unknown.status).toBe(400)
+  expect(await unknown.json()).toEqual({ error: 'invalid task-flow presence request' })
+})
+
+test('destinationless task-flow presence reads every member space without write telemetry', async () => {
+  const flowId = '01990000-0000-7000-8000-000000000011'
+  const stageId = '01990000-0000-7000-8000-000000000012'
+  const recorded = mock(async () => undefined)
+  const app = recordApiAppWith({
+    noDestinationWriteCounter: {
+      record: recorded,
+      read: async () => ({ windowStart: '', unrecorded: 0, counts: [] }),
+    },
+    readTaskFlowPresence: async (input: {
+      flowIds: string[]
+      stageIds: string[]
+      spaceIds: string[]
+    }) => ({
+      flowIds: input.spaceIds.includes('space-a') ? input.flowIds : [],
+      stageIds: input.spaceIds.includes('space-b') ? input.stageIds : [],
+      obligationIds: [],
+      textIds: [],
+      textCopyIds: [],
+      questionIds: [],
+      questionAuditIds: [],
     }),
   })
-  expect(oversized.status).toBe(400)
+
+  const response = await app.request('/v1/task-flow/presence', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ flowIds: [flowId], stageIds: [stageId] }),
+  })
+
+  expect(response.status).toBe(200)
+  expect(await response.json()).toEqual({
+    flowIds: [flowId],
+    stageIds: [stageId],
+    obligationIds: [],
+    textIds: [],
+    textCopyIds: [],
+    questionIds: [],
+    questionAuditIds: [],
+  })
+  expect(recorded).not.toHaveBeenCalled()
 })
 
 test('task-flow stage list refuses contradictory task-link filters', async () => {

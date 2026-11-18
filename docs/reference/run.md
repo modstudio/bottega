@@ -221,11 +221,11 @@ reconcile a completed run with its saved artifacts
 
 **Synopsis:** `bottega run relay <id> [--note <why>]`
 
-relay a worker question to the operator
+relay a worker question to a person for a ruling
 
 ### Options
 
-- `--note <why>`: record why the question needs the operator
+- `--note <why>`: record why the question needs a person to rule
 
 ### Related
 
@@ -248,7 +248,7 @@ collect a finished run result
 
 ## bottega run retry
 
-**Synopsis:** `bottega run retry <id> [--agent <value>] [--model <value>] [--follow] [--detach] [--quiet]`
+**Synopsis:** `bottega run retry <id> [--agent <value>] [--model <value>] [--follow] [--detach] [--quiet] [--override-unbound <reason>] [--from-operator]`
 
 retry a failed run with its saved prompt
 
@@ -259,6 +259,8 @@ retry a failed run with its saved prompt
 - `--follow`: wait for the retry and print its result
 - `--detach`: return after starting the retry
 - `--quiet`: suppress collection guidance and followed output
+- `--override-unbound <reason>`: override keyed cursor admission
+- `--from-operator`: attest that a person, not an agent, requested the override
 
 ### Related
 
@@ -378,12 +380,12 @@ Options are documented by `--help`.
 
 **Synopsis:** `bottega run waiting [--json] [--claim-notifications]`
 
-list questions waiting on the operator
+list questions waiting for a ruling
 
 ### Options
 
 - `--json`: write the waiting questions as JSON
-- `--claim-notifications`: claim and include pending operator notifications
+- `--claim-notifications`: claim and include pending ruling notifications
 
 ### Related
 

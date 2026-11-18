@@ -18,7 +18,9 @@ type CursorOwnerIntentShape<K extends TaskFlowIntent> = K extends 'compose'
     ? { stages: CursorOwnerMutation[] }
     : K extends 'advance' | 'await-ruling' | 'abandon'
       ? { stage: CursorOwnerMutation }
-      : object
+      : K extends 'handoff'
+        ? { newStage: { sessionId: CursorOwner | null } }
+        : object
 
 /** Workflow write intents narrow cursor-stage owner values to the policy-produced brand. */
 export type TaskFlowIntentInput<K extends TaskFlowIntent> = RecordTaskFlowIntentInput<K> &
@@ -53,6 +55,7 @@ export type TaskFlowStageCursorRow = {
   taken_over_from_machine_id: string | null
   last_advanced_machine_id: string | null
   revision: number
+  handed_off_from_record_id: string | null
   updated_at: string
 }
 

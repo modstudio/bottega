@@ -226,6 +226,13 @@ export const monitorModules: MonitorModule[] = [
     '../database/db.ts',
     './monitor-types.ts',
   ]),
+  module('orchestrator/src/monitor/monitor-writer-fallback-bound.ts', [
+    'bun:sqlite',
+    '../database/db.ts',
+    '../jobs/jobs.ts',
+    '../run/run-live.ts',
+    './monitor-types.ts',
+  ]),
   module('orchestrator/src/monitor/monitor.ts', [
     'node:fs',
     'node:path',
@@ -245,6 +252,7 @@ export const monitorModules: MonitorModule[] = [
     './monitor-run-idle-conditions.ts',
     './monitor-branches.ts',
     './monitor-gate-tooling.ts',
+    './monitor-writer-fallback-bound.ts',
     './host-pressure-conditions.ts',
     './monitor-hosted-pressure.ts',
     './monitor-hosted-health.ts',

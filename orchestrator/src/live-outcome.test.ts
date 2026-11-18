@@ -8,7 +8,7 @@ import {
   LAST_VENDOR_EVENT_TYPE_MAX,
   type LiveOutcomeFacts,
 } from './live-outcome.ts'
-import { decideOutcome } from './outcome.ts'
+import { decideOutcome, decideOutcomeRule } from './outcome.ts'
 import { decideFailover } from './route/failover.ts'
 import { collectReplySource, type ReplyContract } from './run/run-reply-source.ts'
 import { composeCodexThrottleNotice } from './transport/codex-throttle.ts'
@@ -48,6 +48,15 @@ const outcome = (facts: Partial<LiveOutcomeFacts>) => {
   return { ...decideOutcome(derived.inputs), error: derived.error }
 }
 
+const ruledOutcome = (facts: Partial<LiveOutcomeFacts>) => {
+  const derived = deriveLiveOutcome({ ...base, ...facts })
+  return {
+    ...decideOutcome(derived.inputs),
+    rule: decideOutcomeRule(derived.inputs),
+    error: derived.error,
+  }
+}
+
 describe('live outcome derivation', () => {
   test('a first-throttle cancellation remains quota rather than interruption', () => {
     const error = composeCodexThrottleNotice({ attempt: 1, max: 5 })
@@ -81,6 +90,41 @@ describe('live outcome derivation', () => {
     ).toEqual({ status: 'ok', failureKind: null, error: null })
   })
 
+  test('an idle-killed writer progress fallback without changed files remains idle', () => {
+    expect(
+      ruledOutcome({
+        contractStatus: 'done',
+        output: JSON.stringify({
+          status: 'done',
+          summary: "I'm continuing to inspect the implementation.",
+          files_changed: [],
+        }),
+        idleKilled: true,
+        idleKillError: 'idle-killed after 10m with no CPU',
+      }),
+    ).toEqual({
+      status: 'failed',
+      failureKind: 'idle',
+      rule: 'idle',
+      error: 'idle-killed after 10m with no CPU',
+    })
+  })
+
+  test('an idle-killed writer progress fallback with changed files is idle-completed', () => {
+    expect(
+      ruledOutcome({
+        contractStatus: 'done',
+        output: JSON.stringify({
+          status: 'done',
+          summary: "I'm continuing to report the completed implementation.",
+          files_changed: ['orchestrator/src/live-outcome.ts'],
+        }),
+        idleKilled: true,
+        idleKillError: 'idle-killed after 10m with no CPU',
+      }),
+    ).toEqual({ status: 'ok', failureKind: null, rule: 'idle-completed', error: null })
+  })
+
   test.each(['acp', 'cli'])('an idle kill outranks a %s transport cancel', (transportName) => {
     expect(
       outcome({
@@ -107,6 +151,50 @@ describe('live outcome derivation', () => {
         exitCode: 143,
       }),
     ).toEqual({ status: 'ok', failureKind: null, error: null })
+  })
+
+  test('run 36261 fallback progress at the wall bound is a timeout', () => {
+    const output = JSON.stringify({
+      status: 'done',
+      summary:
+        "The affected run required a collection call and is still executing under the same supervised run. I'm continuing to collect it rather than starting a duplicate test execution.",
+      files_changed: null,
+      tests: null,
+    })
+    const derived = deriveLiveOutcome({
+      ...base,
+      contractStatus: 'done',
+      output,
+      replyFilePresent: false,
+      timedOut: true,
+      exitCode: 143,
+      signal: 'SIGTERM',
+    })
+
+    expect({ ...decideOutcome(derived.inputs), error: derived.error }).toEqual({
+      status: 'failed',
+      failureKind: 'timeout',
+      error: 'no reply within 45m; worker was killed',
+    })
+    expect(derived.inputs.completedReplyAtTimeout).toBe(false)
+  })
+
+  test('a non-timeout writer progress fallback is premature-final', () => {
+    const output = JSON.stringify({
+      status: 'done',
+      summary: "The checks have not yet finished; then I'll fix the failure.",
+    })
+    const derived = deriveLiveOutcome({
+      ...base,
+      contractStatus: 'done',
+      output,
+      replyFilePresent: false,
+    })
+
+    expect(decideOutcome(derived.inputs)).toEqual({
+      status: 'failed',
+      failureKind: 'premature-final',
+    })
   })
 
   test('a non-answer with exit code zero is a failure', () => {

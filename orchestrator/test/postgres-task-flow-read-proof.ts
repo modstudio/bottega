@@ -176,5 +176,10 @@ export async function proveTaskFlowRecordReads(input: {
   ).toEqual({
     flowIds: [input.flowId],
     stageIds: [input.stageId, input.tasklessStageId].toSorted(),
+    obligationIds: [],
+    textIds: [],
+    textCopyIds: [],
+    questionIds: [],
+    questionAuditIds: [],
   })
 }

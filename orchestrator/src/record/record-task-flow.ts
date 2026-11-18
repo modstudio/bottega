@@ -6,6 +6,7 @@ import type { SQL } from 'bun'
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
 import { recordIso } from '../../../shared/record-timestamp.ts'
 import { recordPool } from './record-pool.ts'
+import { readRecordQuestionPresenceTransaction } from './record-question-read.ts'
 import {
   type HostedTaskFlow,
   type HostedTaskFlowObligationById,
@@ -16,7 +17,6 @@ import {
   RECORD_TASK_FLOW_NOT_FOUND_CODE,
   RECORD_TASK_FLOW_NOT_FOUND_MESSAGE,
   type TaskFlowPresence,
-  type TaskFlowPresenceInput,
   type TaskFlowReadQueryInput,
   type TaskFlowStageListQuery,
 } from './record-task-flow-contract.ts'
@@ -41,7 +41,8 @@ const STAGE_SELECT = `
   s.autonomy stage_autonomy,s.enforcement stage_enforcement,s.total_steps stage_total_steps,
   s.opened_machine_id stage_opened_machine_id,
   s.taken_over_from_machine_id stage_taken_over_from_machine_id,
-  s.last_advanced_machine_id stage_last_advanced_machine_id,s.revision stage_revision,
+  s.last_advanced_machine_id stage_last_advanced_machine_id,
+  s.handed_off_from_record_id stage_handed_off_from_record_id,s.revision stage_revision,
   s.created_at stage_created_at,s.updated_at stage_updated_at`
 
 const FLOW_SELECT = `
@@ -91,6 +92,10 @@ function toHostedStageSummary(row: Record<string, unknown>): HostedStageSummary 
         ? null
         : String(row.stage_taken_over_from_machine_id),
     lastAdvancedMachineId: String(row.stage_last_advanced_machine_id),
+    handedOffFromRecordId:
+      row.stage_handed_off_from_record_id == null
+        ? null
+        : String(row.stage_handed_off_from_record_id),
     revision: Number(row.stage_revision),
     createdAt: recordIso(row.stage_created_at),
     updatedAt: recordIso(row.stage_updated_at),
@@ -322,27 +327,55 @@ export async function readRecordTaskFlowProjectReferenceCounts(
  * enforcement: one written before stages carried enforcement is incomplete.
  */
 export async function readRecordTaskFlowPresence(
-  input: TenantPrincipal & { url: string } & TaskFlowPresenceInput,
+  input: TenantPrincipal & { url: string } & TaskFlowPresence,
 ): Promise<TaskFlowPresence> {
   return recordPool(input.url).begin(async (tx) => {
     await bindTenant(tx, input)
-    const stages = input.stageIds.length
-      ? await tx`SELECT id FROM task_flow_stage
-          WHERE space_id=${input.spaceId}::uuid
-            AND id=ANY(${tx.array(input.stageIds, 'uuid')})
-            AND enforcement IS NOT NULL
-          ORDER BY id`
-      : []
-    const flows = input.flowIds.length
-      ? await tx`SELECT id FROM task_flow
-          WHERE space_id=${input.spaceId}::uuid AND id=ANY(${tx.array(input.flowIds, 'uuid')})
-          ORDER BY id`
-      : []
-    return {
-      stageIds: stages.map((row: Record<string, unknown>) => String(row.id)),
-      flowIds: flows.map((row: Record<string, unknown>) => String(row.id)),
-    }
+    return readRecordTaskFlowPresenceTransaction(tx, input)
   })
+}
+
+export async function readRecordTaskFlowPresenceTransaction(
+  tx: SQL,
+  input: TaskFlowPresence,
+): Promise<TaskFlowPresence> {
+  const stages = input.stageIds.length
+    ? await tx.unsafe(
+        `SELECT id FROM task_flow_stage
+         WHERE id=ANY($1::uuid[]) AND enforcement IS NOT NULL ORDER BY id`,
+        [input.stageIds],
+      )
+    : []
+  const flows = input.flowIds.length
+    ? await tx.unsafe('SELECT id FROM task_flow WHERE id=ANY($1::uuid[]) ORDER BY id', [
+        input.flowIds,
+      ])
+    : []
+  const obligations = input.obligationIds.length
+    ? await tx.unsafe('SELECT id FROM workflow_obligation WHERE id=ANY($1::uuid[]) ORDER BY id', [
+        input.obligationIds,
+      ])
+    : []
+  const texts = input.textIds.length
+    ? await tx.unsafe('SELECT id FROM workflow_step_text WHERE id=ANY($1::uuid[]) ORDER BY id', [
+        input.textIds,
+      ])
+    : []
+  const textCopies = input.textCopyIds.length
+    ? await tx.unsafe('SELECT id FROM workflow_text_copy WHERE id=ANY($1::uuid[]) ORDER BY id', [
+        input.textCopyIds,
+      ])
+    : []
+  const questionPresence = await readRecordQuestionPresenceTransaction(tx, input)
+  const ids = (rows: Array<Record<string, unknown>>) => rows.map((row) => String(row.id))
+  return {
+    stageIds: ids(stages),
+    flowIds: ids(flows),
+    obligationIds: ids(obligations),
+    textIds: ids(texts),
+    textCopyIds: ids(textCopies),
+    ...questionPresence,
+  }
 }
 
 export async function readRecordTaskFlowStage(

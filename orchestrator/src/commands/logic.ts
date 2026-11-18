@@ -71,14 +71,27 @@ import { registerLaunchAgentRefreshCommand } from './launch-agent-refresh.ts'
 import { registerLensCommands } from './lens.ts'
 import { registerMachineJournalCommand } from './machine-journal.ts'
 import { registerMachineStorePathCommand } from './machine-store-path.ts'
-import { collect, log, productArgv, rawArgv, write, writeStdout } from './support.ts'
+import {
+  answerCommandDefinition,
+  continueCommandDefinition,
+  retryCommandDefinition,
+} from './run-message-options.ts'
+import {
+  collect,
+  describedCommand,
+  log,
+  productArgv,
+  rawArgv,
+  write,
+  writeStdout,
+} from './support.ts'
 import { registerWorkflowCommands } from './workflow.ts'
 
 const collectedOption = (flags: string, description: string) =>
   repeatable(new Option(flags, description).argParser(collect).default([]))
 
 const localRunId = (input: string | number) => resolveRunIdentifier(db(), input)
-const CONTINUE_USAGE = `${PLATFORM_SLUG} run continue <id> [--findings] [--follow] [--file PATH | "<what next>"]`
+const CONTINUE_USAGE = `${PLATFORM_SLUG} run continue <id> [--findings] [--follow] [--override-unbound "<reason>" --from-operator] [--file PATH | "<what next>"]`
 const displayRunNumber = (recordId: string): number =>
   (db().query('SELECT number FROM run WHERE record_id=?').get(recordId) as { number: number })
     .number
@@ -191,9 +204,6 @@ function epicRegisteredProjectWorkingDirectoryRefusal(): string {
   return `${PLATFORM_SLUG} workflow epic requires a registered project working directory`
 }
 
-const describedCommand = (program: Command, name: string, description: string) =>
-  program.command(name).description(description)
-
 function registerCloseOut(program: Command): void {
   describedCommand(program, 'close-out <id>', 'release a terminal run worktree and its claims')
     .option('--non-blocking', 'refuse instead of waiting for the cleanup lock')
@@ -207,25 +217,6 @@ function registerCloseOut(program: Command): void {
         Boolean(options.json),
       ),
     )
-}
-
-function answerCommandDefinition(program: Command): Command {
-  return describedCommand(
-    program,
-    'answer <id> [message...]',
-    'record rulings for a worker and resume its run',
-  )
-    .allowUnknownOption(true)
-    .option('--file <value>', 'read the ruling from this file')
-    .option('--value <value>', 'record the typed value of the ruling')
-    .option('--follow', 'wait for the resumed run and print its result')
-    .option('--detach', 'return after resuming the run')
-    .option('--quiet', 'suppress collection guidance and followed output')
-    .option('--record-only', 'record the ruling without resuming the run')
-    .option('--from-operator', 'attribute the ruling to the operator')
-    .option('--from-operator-q<id>', 'attribute only question <id> to the operator')
-    .option('--channel <value>', 'record the channel that supplied the ruling')
-    .option('--json', 'write the answer result as JSON')
 }
 
 function registerEfficiencyCommands(program: Command): void {
@@ -551,9 +542,9 @@ function registerDoCommand(program: Command): void {
 }
 
 function registerWaitingCommand(program: Command): void {
-  describedCommand(program, 'waiting', 'list questions waiting on the operator')
+  describedCommand(program, 'waiting', 'list questions waiting for a ruling')
     .option('--json', 'write the waiting questions as JSON')
-    .option('--claim-notifications', 'claim and include pending operator notifications')
+    .option('--claim-notifications', 'claim and include pending ruling notifications')
     .allowExcessArguments(false)
     .action(
       async (options) =>
@@ -666,8 +657,8 @@ export function register(program: Command, dependencies: LogicDependencies = {})
     .action((id, _message, options, command) =>
       tellByIdentifier(id, command, Boolean(options.ping)),
     )
-  describedCommand(program, 'relay <id>', 'relay a worker question to the operator')
-    .requiredOption('--note <why>', 'record why the question needs the operator')
+  describedCommand(program, 'relay <id>', 'relay a worker question to a person for a ruling')
+    .requiredOption('--note <why>', 'record why the question needs a person to rule')
     .allowUnknownOption(true)
     .action((id, options, command) => relayByIdentifier(id, command, options.note))
   registerWaitingCommand(program)
@@ -689,47 +680,41 @@ export function register(program: Command, dependencies: LogicDependencies = {})
   describedCommand(program, 'wait <ids...>', 'wait for runs to reach a terminal state')
     .option('--timeout <value>', 'stop waiting after this duration')
     .action(async (ids, options) => waitByIdentifiers(ids, options))
-  describedCommand(program, 'retry <id>', 'retry a failed run with its saved prompt')
-    .option('--agent <value>', 'use this agent for the retry')
-    .option('--model <value>', 'use this model for the retry')
-    .option('--follow', 'wait for the retry and print its result')
-    .option('--detach', 'return after starting the retry')
-    .option('--quiet', 'suppress collection guidance and followed output')
-    .allowExcessArguments(false)
-    .action((id, options) =>
-      retryCommand(
-        localRunId(id),
-        { agent: options.agent, model: options.model, flags: runFlags(options) },
-        presentation,
-      ),
-    )
+  retryCommandDefinition(program).action((id, options) =>
+    retryCommand(
+      localRunId(id),
+      { agent: options.agent, model: options.model, flags: runFlags(options) },
+      presentation,
+      {
+        overrideReason: options.overrideUnbound,
+        fromOperator: Boolean(options.fromOperator),
+      },
+    ),
+  )
   answerCommandDefinition(program).action((id, _message, options, command) =>
     answerByIdentifier(id, command, options),
   )
-  describedCommand(program, 'continue <id> [message...]', 'continue a finished run as another turn')
-    .allowUnknownOption(true)
-    .option('--file <value>', 'read the continuation message from this file')
-    .option('--follow', 'wait for the continuation and print its result')
-    .option('--detach', 'return after starting the continuation')
-    .option('--quiet', 'suppress collection guidance and followed output')
-    .option('--findings', 'include prior review findings in the continuation')
-    .action((_id, _message, options, command) => {
-      const parsed = parseContinueArgs(rawArgv(command).slice(1), CONTINUE_USAGE)
-      return continueCommand(
-        localRunId(parsed.identifier),
-        parsed,
-        Boolean(options.findings),
-        runFlags(options),
-        presentation,
-        (runId, message) =>
-          (dependencies.continuationFindingsForRun ?? continuationFindingsForRun)(
-            db(),
-            runId,
-            message,
-          ),
-        dependencies.continueCommandDependencies,
-      )
-    })
+  continueCommandDefinition(program).action((_id, _message, options, command) => {
+    const parsed = parseContinueArgs(rawArgv(command).slice(1), CONTINUE_USAGE)
+    return continueCommand(
+      localRunId(parsed.identifier),
+      parsed,
+      Boolean(options.findings),
+      runFlags(options),
+      presentation,
+      (runId, message) =>
+        (dependencies.continuationFindingsForRun ?? continuationFindingsForRun)(
+          db(),
+          runId,
+          message,
+        ),
+      dependencies.continueCommandDependencies,
+      {
+        overrideReason: options.overrideUnbound,
+        fromOperator: Boolean(options.fromOperator),
+      },
+    )
+  })
   registerDoCommand(program)
   const gate = program.command('gate').description('run or inspect recorded project gates')
   gate

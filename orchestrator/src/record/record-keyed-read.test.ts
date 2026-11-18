@@ -11,6 +11,7 @@ test('only UUID-keyed hosted reads are classified as keyed', () => {
   ])
     expect(recordReadIsUuidKeyed(route)).toBe(true)
   expect(recordReadIsUuidKeyed('/v1/task-flow', 'flow')).toBe(true)
+  expect(recordReadIsUuidKeyed('/v1/task-flow/presence')).toBe(true)
 
   for (const read of ['inbox', 'rulings', 'waiting'])
     expect(recordReadIsUuidKeyed('/v1/questions', read)).toBe(false)

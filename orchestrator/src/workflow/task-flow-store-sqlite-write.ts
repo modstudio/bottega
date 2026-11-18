@@ -3,10 +3,11 @@
 
 import type { Database, SQLQueryBindings } from 'bun:sqlite'
 import { newRecordId } from '../../../shared/record-id.ts'
-import type {
-  TaskFlowIntentInput,
-  TaskFlowIntentResult,
-  TaskFlowLiveIntent,
+import {
+  type TaskFlowIntentInput,
+  type TaskFlowIntentResult,
+  type TaskFlowLiveIntent,
+  workflowHandoffTrail,
 } from '../record/record-task-flow-write-contract.ts'
 import { decideAppliedMirrorMutation } from './task-flow-decision.ts'
 
@@ -30,6 +31,7 @@ const REVISION_ACTION: Record<TaskFlowLiveIntent, string> = {
   advance: 'advancing',
   'await-ruling': 'awaiting a ruling',
   abandon: 'being abandoned',
+  handoff: 'being handed off',
   adopt: 'linking its task',
   'attach-text': 'attaching text',
   'delete-text': 'deleting text',
@@ -115,7 +117,8 @@ function applyStageValues(database: Database, mutation: Mutation, next: number):
     question=CASE WHEN ? THEN ? ELSE question END,autonomy=CASE WHEN ? THEN ? ELSE autonomy END,
     enforcement=COALESCE(?,enforcement),opened_machine_id=COALESCE(?,opened_machine_id),
     taken_over_from_machine_id=CASE WHEN ? THEN ? ELSE taken_over_from_machine_id END,
-    last_advanced_machine_id=COALESCE(?,last_advanced_machine_id),updated_at=COALESCE(?,updated_at),revision=?
+    last_advanced_machine_id=COALESCE(?,last_advanced_machine_id),
+    updated_at=COALESCE(?,updated_at),revision=?
     WHERE record_id=?`)
     .run(
       value('flowRecordId'),
@@ -185,6 +188,7 @@ function insertStage(
   database: Database,
   row: SqlRow,
   revisionValue: number,
+  allocatedNumber?: number,
 ): { id: string; number: number } {
   const project = database
     .query<{ name: string }, [string]>('SELECT name FROM project WHERE record_id=?')
@@ -196,18 +200,20 @@ function insertStage(
       'SELECT task_record_id FROM task_flow WHERE record_id=?',
     )
     .get(String(row.flowRecordId))
-  const number = database
-    .query<{ n: number }, [string]>(
-      'SELECT COALESCE(MAX(number),0)+1 n FROM workflow_cursor WHERE project_record_id=?',
-    )
-    .get(String(row.projectId))!.n
+  const number =
+    allocatedNumber ??
+    database
+      .query<{ n: number }, [string]>(
+        'SELECT COALESCE(MAX(number),0)+1 n FROM workflow_cursor WHERE project_record_id=?',
+      )
+      .get(String(row.projectId))!.n
   database
     .query(`INSERT INTO workflow_cursor
       (record_id,number,project,project_record_id,workflow_slug,mode_slug,workflow_key,task_record_id,
        task_flow_record_id,instance_id,session_id,workflow_version_record_id,catalogue_version_record_id,
        args,autonomy,ordinal,step_slug,state,closed,question,total_steps,created_at,updated_at,enforcement,
-       opened_machine_id,taken_over_from_machine_id,last_advanced_machine_id,revision)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+       opened_machine_id,taken_over_from_machine_id,last_advanced_machine_id,handed_off_from_record_id,revision)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
     .run(
       // @ts-expect-error The validated intent guarantees every required SQLite binding.
       row.id,
@@ -237,6 +243,7 @@ function insertStage(
       row.openedMachineId,
       row.takenOverFromMachineId,
       row.lastAdvancedMachineId,
+      row.handedOffFromRecordId ?? null,
       revisionValue,
     )
   return { id: String(row.id), number }
@@ -527,6 +534,63 @@ function writeStageUpdate(database: Database, body: SqlRow, revisions?: Record<s
   return { revisions: result }
 }
 
+function writeHandoff(
+  database: Database,
+  body: SqlRow,
+  applied: TaskFlowIntentResult<'handoff'> | null | undefined,
+) {
+  const flow = body.flow as unknown as Mutation
+  const oldReference = body.oldStage as unknown as { id: string; expectedRevision: number }
+  const newStage = body.newStage as unknown as SqlRow
+  const revisions = applied?.revisions
+  const result: Record<string, number> = {}
+  if (flow.values.openStageRecordId !== newStage.id)
+    throw new Error(
+      'task flow open stage does not match the handoff successor; retry with the successor stage as the open stage',
+    )
+  if (newStage.handedOffFromRecordId !== oldReference.id)
+    throw new Error(
+      'handoff successor does not link to the source stage; retry with the source stage as handedOffFromRecordId',
+    )
+  const stageId = applied?.stage?.id ?? String(newStage.id)
+  const number = database
+    .query<{ n: number }, [string]>(
+      'SELECT COALESCE(MAX(number),0)+1 n FROM workflow_cursor WHERE project_record_id=?',
+    )
+    .get(String(newStage.projectId))!.n
+  const trail = body.trail as unknown as Parameters<typeof workflowHandoffTrail>[0]
+  const oldStage: Mutation = {
+    ...oldReference,
+    values: {
+      state: 'done',
+      closedStepNotes: workflowHandoffTrail({ ...trail, successorNumber: number }),
+      question: null,
+      updatedAt: trail.at,
+    },
+  }
+  result[oldStage.id] = updateMutation(database, 'workflow_cursor', oldStage, 'handoff', revisions)
+  const inserted = insertStage(
+    database,
+    { ...newStage, id: stageId },
+    revisions?.[stageId] ?? 1,
+    number,
+  )
+  result[inserted.id] = revisions?.[inserted.id] ?? 1
+  result[flow.id] = updateMutation(
+    database,
+    'task_flow',
+    applied ? { ...flow, values: { ...flow.values, openStageRecordId: stageId } } : flow,
+    'handoff',
+    revisions,
+  )
+  database
+    .query(
+      "UPDATE context_item SET holder_id=?,updated_at=? WHERE holder_kind='cursor' AND holder_id=?",
+    )
+    .run(stageId, newStage.updatedAt as SQLQueryBindings, oldReference.id)
+  return { revisions: result, stage: { id: inserted.id, number: inserted.number } }
+}
+
 function writeTextIntent(
   database: Database,
   intent: 'attach-text' | 'delete-text' | 'copy-text',
@@ -582,6 +646,12 @@ export function writeSqliteTaskFlow<K extends TaskFlowLiveIntent>(
       body,
       revisions,
     ) as unknown as TaskFlowSqliteWriteResult<K>
+  if (intent === 'handoff')
+    return writeHandoff(
+      database,
+      body,
+      applied as TaskFlowIntentResult<'handoff'> | null,
+    ) as TaskFlowSqliteWriteResult<K>
   if (intent === 'adopt')
     return applyAdopt(
       database,

@@ -3,6 +3,7 @@
 import { sql } from 'drizzle-orm'
 import {
   boolean,
+  foreignKey,
   index,
   integer,
   jsonb,
@@ -91,6 +92,7 @@ export const taskFlowStage = pgTable.withRLS(
       .references(() => machine.id),
     revision: integer().notNull(),
     lastRequestId: uuid('last_request_id'),
+    handedOffFromRecordId: uuid('handed_off_from_record_id'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
   },
@@ -98,6 +100,14 @@ export const taskFlowStage = pgTable.withRLS(
     index('task_flow_stage_flow_record_id_idx').on(table.flowRecordId),
     index('task_flow_stage_project_id_idx').on(table.projectId),
     unique('task_flow_stage_project_number_unique').on(table.projectId, table.number),
+    foreignKey({
+      columns: [table.handedOffFromRecordId],
+      foreignColumns: [table.id],
+      name: 'task_flow_stage_handed_off_from_record_id_fkey',
+    }),
+    uniqueIndex('task_flow_stage_handed_off_from_record_id_unique')
+      .on(table.handedOffFromRecordId)
+      .where(sql`${table.handedOffFromRecordId} IS NOT NULL`),
     uniqueIndex('task_flow_stage_open_slot_unique')
       .on(table.projectId, table.workflow, table.mode, table.workflowKey, table.instanceId)
       .where(sql`${table.state} NOT IN ('done','abandoned')`),

@@ -11,6 +11,7 @@ export const TASK_IDENTITY_UUID_COLUMNS = [
   'workflow_cursor.opened_machine_id',
   'workflow_cursor.taken_over_from_machine_id',
   'workflow_cursor.last_advanced_machine_id',
+  'workflow_cursor.handed_off_from_record_id',
   'question.workflow_task_record_id',
   'port_ref.task_record_id',
   'presence.current_task_record_id',

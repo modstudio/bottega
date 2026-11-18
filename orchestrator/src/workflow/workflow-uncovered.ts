@@ -23,6 +23,12 @@ export type TaskCoverage = {
   openedAt: string
   closedAt: string | null
 }
+export type HandoffTransition = {
+  project: string
+  key: string
+  closedAt: string
+  openedAt: string
+}
 
 export type WorkflowUncoveredReport = {
   expected: 0
@@ -45,6 +51,7 @@ export function decideWorkflowUncovered(input: {
   evidence: readonly KeyedWorkEvidence[]
   cursors: readonly TaskCoverage[]
   claims: readonly TaskCoverage[]
+  handoffs?: readonly HandoffTransition[]
 }): WorkflowUncoveredReport {
   if (!Number.isSafeInteger(input.days) || input.days < 1)
     throw new Error('--days must be a positive integer')
@@ -63,12 +70,27 @@ export function decideWorkflowUncovered(input: {
       !input.cursors.some((coverage) => covers(coverage, item)) &&
       !input.claims.some((coverage) => covers(coverage, item)),
   )
+  const handoffGaps = (input.handoffs ?? []).filter(
+    (handoff) =>
+      wanted.has(handoff.openedAt.slice(0, 10)) &&
+      !input.claims.some(
+        (claim) =>
+          claim.project === handoff.project &&
+          claim.key === handoff.key &&
+          claim.openedAt <= handoff.closedAt &&
+          (claim.closedAt === null || handoff.openedAt < claim.closedAt),
+      ),
+  )
   return {
     expected: 0,
     days: dayNames.map((day) => {
       const unique = new Map<string, { project: string; key: string }>()
       for (const item of uncovered) {
         if (item.at.slice(0, 10) !== day) continue
+        unique.set(`${item.project}\0${item.key}`, { project: item.project, key: item.key })
+      }
+      for (const item of handoffGaps) {
+        if (item.openedAt.slice(0, 10) !== day) continue
         unique.set(`${item.project}\0${item.key}`, { project: item.project, key: item.key })
       }
       const tasks = [...unique.values()].sort(
@@ -169,6 +191,22 @@ export async function workflowUncoveredReport(
     openedAt: row.created_at,
     closedAt: ['done', 'abandoned'].includes(row.state) ? row.updated_at : null,
   }))
+  const byRecordId = new Map(cursorRows.map((row) => [row.record_id, row]))
+  const handoffs = cursorRows.flatMap((row): HandoffTransition[] => {
+    const previous = row.handed_off_from_record_id
+      ? byRecordId.get(row.handed_off_from_record_id)
+      : undefined
+    return previous
+      ? [
+          {
+            project: row.project,
+            key: row.workflow_key,
+            closedAt: previous.updated_at,
+            openedAt: row.created_at,
+          },
+        ]
+      : []
+  })
   const claimList = dependencies.claimList ?? boardClaimList
   const claims: TaskCoverage[] = []
   for (const project of projects(undefined, database)) {
@@ -202,6 +240,7 @@ export async function workflowUncoveredReport(
     evidence: [...runs, ...readLandingEvidence(database, from)],
     cursors,
     claims,
+    handoffs,
   })
 }
 

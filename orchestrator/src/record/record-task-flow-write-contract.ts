@@ -6,6 +6,27 @@ import { z } from 'zod'
 
 const TASK_FLOW_REQUEST_ID_NAMESPACE = v5.URL
 
+/** Render stable trail entries only after the successor's display number is allocated. */
+export function workflowHandoffTrail(input: {
+  closed: unknown[]
+  current: { n: number; slug: string }
+  remaining: Array<{ n: number; slug: string }>
+  targetWorkflow: string
+  successorNumber: number
+  reason: string
+  at: string
+}): unknown[] {
+  return [
+    ...input.closed,
+    {
+      ...input.current,
+      note: `handed off to ${input.targetWorkflow} (cursor ${input.successorNumber}): ${input.reason}`,
+      at: input.at,
+    },
+    ...input.remaining.map((step) => ({ ...step, note: 'not run: handed off', at: input.at })),
+  ]
+}
+
 export function taskFlowRequestId(intent: TaskFlowIntent, parts: readonly string[]): string {
   return v5(JSON.stringify([intent, ...parts]), TASK_FLOW_REQUEST_ID_NAMESPACE)
 }
@@ -55,6 +76,7 @@ const stageInsert = z.object({
   lastAdvancedMachineId: id,
   createdAt: stamp,
   updatedAt: stamp,
+  handedOffFromRecordId: nullableId.optional(),
 })
 
 const importedStage = stageInsert.extend({ revision })
@@ -206,6 +228,22 @@ const taskFlowAbandonSchema = z.object({
   obligationUpdates: z.array(obligationUpdate).default([]),
   deleteTextIds: z.array(id).default([]),
 })
+const taskFlowHandoffSchema = z.object({
+  ...base,
+  flow: mutation(
+    flowComposeValues.pick({ openStageRecordId: true, updatedMachineId: true, updatedAt: true }),
+  ),
+  oldStage: revisionReference,
+  newStage: stageInsert.extend({ handedOffFromRecordId: id }),
+  trail: z.object({
+    closed: z.array(z.unknown()),
+    current: z.object({ n: z.number().int().positive(), slug: z.string() }),
+    remaining: z.array(z.object({ n: z.number().int().positive(), slug: z.string() })),
+    targetWorkflow: z.string(),
+    reason: z.string(),
+    at: stamp,
+  }),
+})
 const taskFlowAdoptSchema = z.object({
   ...base,
   stage: revisionReference,
@@ -238,6 +276,7 @@ export const taskFlowIntentSchemas = {
   advance: taskFlowAdvanceSchema,
   'await-ruling': taskFlowAwaitRulingSchema,
   abandon: taskFlowAbandonSchema,
+  handoff: taskFlowHandoffSchema,
   adopt: taskFlowAdoptSchema,
   'attach-text': taskFlowAttachTextSchema,
   'delete-text': taskFlowDeleteTextSchema,
@@ -261,6 +300,9 @@ const taskFlowImportResultSchema = taskFlowWriteResultSchema.extend({
   stages: z.array(z.object({ id, number: z.number().int().positive() })),
 })
 export type TaskFlowImportResult = z.infer<typeof taskFlowImportResultSchema>
+export const taskFlowHandoffResultSchema = taskFlowWriteResultSchema.extend({
+  stage: z.object({ id, number: z.number().int().positive() }),
+})
 export type TaskFlowComposeResult = z.infer<typeof taskFlowComposeResultSchema>
 export const taskFlowAdoptResultSchema = taskFlowWriteResultSchema.extend({ flowRecordId: id })
 export type TaskFlowAdoptResult = z.infer<typeof taskFlowAdoptResultSchema>
@@ -270,4 +312,6 @@ export type TaskFlowIntentResult<K extends TaskFlowIntent> = K extends 'compose'
     ? TaskFlowImportResult
     : K extends 'adopt'
       ? TaskFlowAdoptResult
-      : TaskFlowWriteResult
+      : K extends 'handoff'
+        ? z.infer<typeof taskFlowHandoffResultSchema>
+        : TaskFlowWriteResult
