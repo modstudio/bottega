@@ -219,17 +219,21 @@ export const taskFlowPresenceInputSchema = z
 export type TaskFlowPresenceInput = z.input<typeof taskFlowPresenceInputSchema>
 export type TaskFlowPresence = z.output<typeof taskFlowPresenceInputSchema>
 
+export const TASK_FLOW_UUID_READ_SELECTORS = ['flowRecordId', 'taskId'] as const
+
+const taskFlowUuidReadSelectorShape = Object.fromEntries(
+  TASK_FLOW_UUID_READ_SELECTORS.map((selector) => [selector, z.string().uuid().optional()]),
+) as Record<(typeof TASK_FLOW_UUID_READ_SELECTORS)[number], z.ZodOptional<z.ZodString>>
+
 export const taskFlowReadQuerySchema = z
   .object({
     taskKey: z.string().min(1).optional(),
-    flowRecordId: z.string().uuid().optional(),
-    taskId: z.string().uuid().optional(),
+    ...taskFlowUuidReadSelectorShape,
   })
   .refine(
     (value) =>
       Number(Boolean(value.taskKey)) +
-        Number(Boolean(value.flowRecordId)) +
-        Number(Boolean(value.taskId)) ===
+        TASK_FLOW_UUID_READ_SELECTORS.filter((selector) => value[selector]).length ===
       1,
   )
 export type TaskFlowReadQueryInput = z.input<typeof taskFlowReadQuerySchema>

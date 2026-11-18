@@ -2,9 +2,13 @@ import { afterEach, beforeEach, expect, test } from 'bun:test'
 import type { PGlite } from '@electric-sql/pglite'
 import { bindTenant } from '../../../shared/record/tenant.ts'
 import { createHostedRecordFixture, pgliteSql } from '../../test/fixtures/hosted-record.ts'
+import { requestTenant } from './record-api-tenant.ts'
+import type { RecordIdentity } from './record-auth.ts'
+import { recordRequestReadKind } from './record-keyed-read.ts'
 import {
   readRecordTaskFlowPresenceTransaction,
   readRecordTaskFlowTextTransaction,
+  readRecordTaskFlowTransaction,
 } from './record-task-flow.ts'
 
 const SPACE = '01990000-0000-7000-8000-000000002416'
@@ -32,6 +36,7 @@ const SECOND = {
   workflowVersion: '01990000-0000-7000-8000-000000002436',
   catalogue: '01990000-0000-7000-8000-000000002437',
   catalogueVersion: '01990000-0000-7000-8000-000000002438',
+  task: '01990000-0000-7000-8000-000000002460',
   flow: '01990000-0000-7000-8000-000000002439',
   stage: '01990000-0000-7000-8000-000000002440',
   obligation: '01990000-0000-7000-8000-000000002441',
@@ -48,6 +53,7 @@ const OUTSIDER = {
   workflowVersion: '01990000-0000-7000-8000-000000002450',
   catalogue: '01990000-0000-7000-8000-000000002451',
   catalogueVersion: '01990000-0000-7000-8000-000000002452',
+  task: '01990000-0000-7000-8000-000000002461',
   flow: '01990000-0000-7000-8000-000000002453',
   stage: '01990000-0000-7000-8000-000000002454',
   obligation: '01990000-0000-7000-8000-000000002455',
@@ -142,6 +148,10 @@ async function seedPresenceSpace(row: typeof SECOND, member: boolean) {
     }
     INSERT INTO project (id,space_id,name,key_prefixes,created_at)
     VALUES ('${row.project}','${row.space}','presence',ARRAY['PRE'],now());
+    INSERT INTO hub_task
+      (id,space_id,project_name,project_id,key,project,source,first_seen,last_seen,created_at,updated_at)
+    VALUES ('${row.task}','${row.space}','presence','${row.project}','PRE-1','presence','mcp',
+      now(),now(),now(),now());
     INSERT INTO workflow (id,space_id,slug,created_at,updated_at)
     VALUES ('${row.workflow}','${row.space}','presence',now(),now());
     INSERT INTO workflow_version
@@ -155,8 +165,8 @@ async function seedPresenceSpace(row: typeof SECOND, member: boolean) {
     VALUES ('${row.catalogueVersion}','${row.space}','${row.catalogue}',1,'production','{}',
       'test','proof',now(),now());
     INSERT INTO task_flow
-      (id,space_id,project_id,state,opening_machine_id,updated_machine_id,revision,created_at,updated_at)
-    VALUES ('${row.flow}','${row.space}','${row.project}','open','${MACHINE}','${MACHINE}',1,now(),now());
+      (id,space_id,project_id,task_id,state,opening_machine_id,updated_machine_id,revision,created_at,updated_at)
+    VALUES ('${row.flow}','${row.space}','${row.project}','${row.task}','open','${MACHINE}','${MACHINE}',1,now(),now());
     INSERT INTO task_flow_stage
       (id,space_id,flow_record_id,project_id,number,workflow,mode,workflow_key,session_id,
        workflow_version_id,catalogue_version_id,arguments,active_ordinal,active_slug,state,
@@ -165,6 +175,7 @@ async function seedPresenceSpace(row: typeof SECOND, member: boolean) {
     VALUES ('${row.stage}','${row.space}','${row.flow}','${row.project}',1,'presence','default',
       'PRE-1','session','${row.workflowVersion}','${row.catalogueVersion}','{}',0,
       'implementation','running','[]','signed',1,'${MACHINE}','${MACHINE}',1,now(),now());
+    UPDATE task_flow SET open_stage_record_id='${row.stage}' WHERE id='${row.flow}';
     INSERT INTO workflow_obligation
       (id,space_id,stage_record_id,step_ordinal,step_slug,floor,reason,created_at)
     VALUES ('${row.obligation}','${row.space}','${row.stage}',0,'implementation','artifact',
@@ -185,6 +196,58 @@ async function seedPresenceSpace(row: typeof SECOND, member: boolean) {
     SET ROLE record_actor;
   `)
 }
+
+test('task-flow route tenant finds a task UUID in a non-active member space', async () => {
+  await seedPresenceSpace(SECOND, true)
+  const identity: RecordIdentity = {
+    user: { id: USER, email: 'member@example.test' },
+    activeSpaceId: SPACE,
+    personalSpaceId: SECOND.space,
+    memberships: [SPACE, SECOND.space].map((spaceId) => ({
+      space_id: spaceId,
+      name: 'Member space',
+      slug: spaceId,
+      role: 'member',
+      permission: 'write',
+    })),
+  }
+  const readKind = recordRequestReadKind('/v1/task-flow', (name) =>
+    name === 'taskId' ? SECOND.task : undefined,
+  )
+  const tenant = requestTenant(
+    identity,
+    undefined,
+    'read',
+    'postgres://fixture',
+    '/v1/task-flow',
+    readKind,
+  )
+  if (!tenant || 'refused' in tenant) throw new Error('task-flow read tenant was refused')
+
+  const result = await pgliteSql(postgres).begin((tx) =>
+    readRecordTaskFlowTransaction(tx, { ...tenant, taskId: SECOND.task }),
+  )
+  expect(result).toMatchObject({
+    flow: { id: SECOND.flow, openStageRecordId: SECOND.stage },
+    stage: { id: SECOND.stage },
+  })
+
+  const taskKeyTenant = requestTenant(
+    identity,
+    undefined,
+    'read',
+    'postgres://fixture',
+    '/v1/task-flow',
+    recordRequestReadKind('/v1/task-flow', (name) => (name === 'taskKey' ? 'PRE-1' : undefined)),
+  )
+  if (!taskKeyTenant || 'refused' in taskKeyTenant)
+    throw new Error('task-key read tenant was refused')
+  await expect(
+    pgliteSql(postgres).begin((tx) =>
+      readRecordTaskFlowTransaction(tx, { ...taskKeyTenant, taskKey: 'PRE-1' }),
+    ),
+  ).rejects.toThrow('hosted task flow was not found')
+})
 
 test('presence returns every released table across member spaces and excludes other spaces', async () => {
   await postgres.exec(`
