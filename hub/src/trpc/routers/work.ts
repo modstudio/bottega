@@ -11,6 +11,7 @@ import {
   setTaskBody,
   taskRecord,
 } from '../../task.ts'
+import { TaskClosedWithResidueError } from '../../task-closed-residue.ts'
 import { getTaskDocument, updateTaskDocument } from '../../task-document.ts'
 import { machineAttribution } from '../../task-machine-attribution.ts'
 import { setTaskThroughTracker } from '../../tracker-task-write.ts'
@@ -103,8 +104,8 @@ function setStatusProcedure(deps: WorkDeps) {
     .input(z.object({ ...taskIdentityInput, status: z.string().trim().min(1) }))
     .mutation(async ({ input: value }) => {
       const attribution = await deps.machineAttribution()
-      return write(() =>
-        deps.setTaskThroughTracker(
+      try {
+        const task = await deps.setTaskThroughTracker(
           value.key,
           value.scope,
           { status: value.status },
@@ -113,8 +114,14 @@ function setStatusProcedure(deps: WorkDeps) {
             confirm: ARRAY_MCP_STATUS_WRITE_CONFIRM,
           },
           { callingSession: null },
-        ),
-      )
+        )
+        return { task, residueMessage: null }
+      } catch (cause) {
+        if (cause instanceof TaskClosedWithResidueError) {
+          return { task: cause.task, residueMessage: cause.message }
+        }
+        throw asWriteError(cause)
+      }
     })
 }
 

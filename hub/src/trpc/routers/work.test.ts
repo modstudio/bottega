@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, beforeEach, expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../../shared/brand.ts'
 import { resetFixtureStore } from '../../../test/run-fixtures.ts'
 import { db, writeTransaction } from '../../db.ts'
 import { taskBodyVersion } from '../../task-detail.ts'
@@ -7,6 +8,44 @@ import { createWorkRouter } from './work.ts'
 beforeAll(resetFixtureStore)
 afterAll(resetFixtureStore)
 beforeEach(resetFixtureStore)
+
+const closedTask = {
+  key: 'DEV-1',
+  project: 'workshop',
+  status: 'done',
+  status_category: 'done',
+} as never
+
+test('setStatus resolves with the closed task and exact residue message', async () => {
+  const { TaskClosedWithResidueError } = await import('../../task-closed-residue.ts')
+  const message = `task DEV-1 is closed; claim release did not finish: boom\nclear it with: ${PLATFORM_SLUG} board claim release-task DEV-1 --project workshop`
+  const router = createWorkRouter({
+    machineAttribution: (async () => ({})) as never,
+    setTaskThroughTracker: (async () => {
+      throw new TaskClosedWithResidueError(closedTask, 'claim-release', message)
+    }) as never,
+  })
+
+  await expect(
+    router.createCaller({}).setStatus({ key: 'DEV-1', scope: {}, status: 'done' }),
+  ).resolves.toEqual({
+    task: closedTask,
+    residueMessage: message,
+  })
+})
+
+test('setStatus keeps a plain refusal as BAD_REQUEST', async () => {
+  const router = createWorkRouter({
+    machineAttribution: (async () => ({})) as never,
+    setTaskThroughTracker: (async () => {
+      throw new Error('status bogus does not resolve')
+    }) as never,
+  })
+
+  await expect(
+    router.createCaller({}).setStatus({ key: 'DEV-1', scope: {}, status: 'bogus' }),
+  ).rejects.toMatchObject({ code: 'BAD_REQUEST', message: 'status bogus does not resolve' })
+})
 
 test('task reads disable edits when machine identity resolution throws', async () => {
   const router = createWorkRouter({
