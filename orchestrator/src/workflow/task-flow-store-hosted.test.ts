@@ -7,7 +7,14 @@ import {
 import { guardHostedTables } from '../database/hosted-table-guard.ts'
 import { rememberActiveRecordSpace } from '../project-space.ts'
 import { rememberProjectSpace } from '../project-space-cache.ts'
-import { awaitWorkflowRuling, composeWorkflowWithCursor } from './workflow-cursor.ts'
+import { TASK_FLOW_STAGE_STATES } from '../record/record-task-flow-contract.ts'
+import { taskFlowReadStore } from './task-flow-store.ts'
+import {
+  abandonSelectedWorkflowCursorForClose,
+  awaitWorkflowRuling,
+  composeWorkflowWithCursor,
+} from './workflow-cursor.ts'
+import { listWorkflowCursors } from './workflow-cursor-list.ts'
 import { ruleWorkflow } from './workflow-cursor-ruling.ts'
 import { getWorkflowStepWithCursor } from './workflow-cursor-serve.ts'
 import {
@@ -200,4 +207,23 @@ test('hosted task-flow intents never touch the five local task-flow tables', asy
   ).toEqual({ workflow_cursor: 1, question: 1 })
   expect(raw.query('SELECT count(*) count FROM question').get()).toEqual({ count: 0 })
   expect(attachment).toStartWith('attached-text:')
+
+  const readStore = taskFlowReadStore(database, taskFlowClient)
+  const selected = (await readStore.listOpenStages({ project: 'fixture' }))[0]!
+  await abandonSelectedWorkflowCursorForClose(
+    selected,
+    'prove the guarded hosted all-state read',
+    { ...context, taskRecordId: taskId },
+    database,
+    { key: taskKey },
+  )
+  expect(
+    await readStore.listStages({ project: 'fixture', states: TASK_FLOW_STAGE_STATES }),
+  ).toMatchObject([{ state: 'abandoned', question_number: null }])
+  expect(await readStore.listOpenStages({ project: 'fixture' })).toEqual([])
+  expect(
+    (await listWorkflowCursors({ all: true, project: 'fixture' }, database)).map(
+      (row) => row.state,
+    ),
+  ).toEqual(['abandoned'])
 })

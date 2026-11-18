@@ -5,6 +5,7 @@ import type { Database } from 'bun:sqlite'
 import { db } from '../database/db.ts'
 import { projectAt } from '../project/projects.ts'
 import { openQuestionStages } from '../question-store/question-store-read.ts'
+import { TASK_FLOW_STAGE_STATES } from '../record/record-task-flow-contract.ts'
 import {
   type TaskFlowListedStageRow as ListedCursorRow,
   taskFlowHandoffLinks,
@@ -48,10 +49,14 @@ export async function listWorkflowCursors(
   const cwdProject =
     options.all || options.project || options.session ? undefined : projectAt(cwd)?.name
   const project = workflowCursorProjectScope(options, cwdProject, cwd)
-  const rows = await taskFlowReadStore(d).listOpenStages({
+  const selector = {
     ...(project ? { project } : {}),
     ...(options.session ? { sessionId: options.session } : {}),
-  })
+  }
+  const store = taskFlowReadStore(d)
+  const rows = options.all
+    ? await store.listStages({ ...selector, states: TASK_FLOW_STAGE_STATES })
+    : await store.listOpenStages(selector)
   return await Promise.all(
     rows.map(async (row) => {
       const handedOffFrom = row.handed_off_from_record_id

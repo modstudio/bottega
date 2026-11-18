@@ -2,6 +2,7 @@
 /** Carries the local task-flow SQL behind the task-flow store ports. */
 
 import type { Database } from 'bun:sqlite'
+import type { TaskFlowStageState } from '../record/record-task-flow-contract.ts'
 import { writeTransaction } from '../database/db.ts'
 import { openQuestionsForCursors } from '../question-store/question-store-read.ts'
 import * as questions from '../question-store/question-store-sqlite-reads.ts'
@@ -317,9 +318,13 @@ class SqliteTaskFlowStore {
           .all(input.project, input.workflow, input.sessionId)
   }
 
-  listOpenStages(input: { project?: string; sessionId?: string }): TaskFlowListedStageRow[] {
-    const clauses = [`cursor.state NOT IN ('done','abandoned')`]
-    const values: string[] = []
+  listStages(input: {
+    project?: string
+    sessionId?: string
+    states: readonly TaskFlowStageState[]
+  }): TaskFlowListedStageRow[] {
+    const clauses = [`cursor.state IN (${input.states.map(() => '?').join(',')})`]
+    const values: string[] = [...input.states]
     if (input.project) {
       clauses.push('cursor.project_record_id=(SELECT record_id FROM project WHERE name=?)')
       values.push(input.project)
@@ -335,6 +340,10 @@ class SqliteTaskFlowStore {
          ORDER BY cursor.updated_at,cursor.number`,
       )
       .all(...values)
+  }
+
+  listOpenStages(input: { project?: string; sessionId?: string }): TaskFlowListedStageRow[] {
+    return this.listStages({ ...input, states: ['running', 'awaiting-ruling'] })
   }
 
   keyedStageHistory(input: { since: string }): TaskFlowStageCursorRow[] {
@@ -727,6 +736,25 @@ type SqliteTaskFlowReadStore = {
 /** Delegates async reads to the single synchronous SQLite implementation. */
 export function sqliteTaskFlowReadStore(database: Database): SqliteTaskFlowReadStore {
   const local = new SqliteTaskFlowStore(database)
+  const listStages = async (input: {
+    project?: string
+    sessionId?: string
+    states: readonly TaskFlowStageState[]
+  }) => {
+    const rows = local.listStages(input)
+    const openByCursor = new Map<string, number>()
+    for (const row of await openQuestionsForCursors(
+      database,
+      rows.map(({ record_id }) => record_id),
+    )) {
+      const cursorId = row.workflow_cursor_record_id
+      if (!openByCursor.has(cursorId)) openByCursor.set(cursorId, row.number)
+    }
+    return rows.map((row) => ({
+      ...row,
+      question_number: openByCursor.get(row.record_id) ?? null,
+    }))
+  }
   return {
     openStageForTask: async (taskRecordId) => local.openStageForTask(taskRecordId),
     flowProjectionForTask: async (taskRecordId) => local.flowProjectionForTask(taskRecordId),
@@ -734,21 +762,9 @@ export function sqliteTaskFlowReadStore(database: Database): SqliteTaskFlowReadS
     latestStageForTask: async (input) => local.latestStageForTask(input),
     openKeylessStages: async (input) => local.openKeylessStages(input),
     activeStageModes: async (input) => local.activeStageModes(input),
-    listOpenStages: async (input) => {
-      const rows = local.listOpenStages(input)
-      const openByCursor = new Map<string, number>()
-      for (const row of await openQuestionsForCursors(
-        database,
-        rows.map(({ record_id }) => record_id),
-      )) {
-        const cursorId = row.workflow_cursor_record_id
-        if (!openByCursor.has(cursorId)) openByCursor.set(cursorId, row.number)
-      }
-      return rows.map((row) => ({
-        ...row,
-        question_number: openByCursor.get(row.record_id) ?? null,
-      }))
-    },
+    listStages,
+    listOpenStages: async (input) =>
+      listStages({ ...input, states: ['running', 'awaiting-ruling'] }),
     keyedStageHistory: async (input) => local.keyedStageHistory(input),
     openStageWorktrees: async () => local.openStageWorktrees(),
     activeStageAutonomy: async (project, taskRecordId) =>

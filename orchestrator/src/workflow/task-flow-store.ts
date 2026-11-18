@@ -6,6 +6,7 @@ import type {
   TaskFlowIntentResult,
   TaskFlowLiveIntent,
 } from '../record/record-task-flow-write-contract.ts'
+import type { TaskFlowStageState } from '../record/record-task-flow-contract.ts'
 import {
   currentRecordWriteDecision,
   throwIfRecordRefused,
@@ -109,6 +110,11 @@ interface TaskFlowQueries {
     sessionId: string
   }): Array<{ mode_slug: string }>
   listOpenStages(input: { project?: string; sessionId?: string }): TaskFlowListedStageRow[]
+  listStages(input: {
+    project?: string
+    sessionId?: string
+    states: readonly TaskFlowStageState[]
+  }): TaskFlowListedStageRow[]
   keyedStageHistory(input: { since: string }): TaskFlowStageCursorRow[]
   /** Reads open cursor worktree rows ordered by project, then cursor number. */
   openStageWorktrees(): TaskFlowOpenStageWorktreeRow[]

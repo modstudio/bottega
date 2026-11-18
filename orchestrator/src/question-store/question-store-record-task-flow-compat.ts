@@ -5,7 +5,10 @@ import type { Database } from 'bun:sqlite'
 import { PLATFORM_NAME } from '../../../shared/brand.ts'
 import { QUESTION_ID_LIST_LIMIT } from '../record/record-question-contract.ts'
 import type { HostedTaskFlowStageById } from '../record/record-task-flow-contract.ts'
-import { TASK_FLOW_STAGE_STATES } from '../record/record-task-flow-contract.ts'
+import {
+  TASK_FLOW_STAGE_STATES,
+  type TaskFlowStageState,
+} from '../record/record-task-flow-contract.ts'
 import { type ListedItem, stageRow } from '../workflow/task-flow-store-record-stage-row.ts'
 import type {
   TaskFlowInboxQuestionRow,
@@ -72,12 +75,13 @@ async function openForStages(questions: QuestionStore, ids: string[]) {
 
 function stageReads(questions: QuestionStore, read: StageRead) {
   return {
-    async listOpenStages(input: {
+    async listStages(input: {
       project?: string
       sessionId?: string
+      states: readonly TaskFlowStageState[]
     }): Promise<TaskFlowListedStageRow[]> {
       const selector = {
-        states: ['running', 'awaiting-ruling'],
+        states: input.states,
         ...(input.sessionId ? { sessionId: input.sessionId } : {}),
         ...(input.project ? { projectId: read.projectId(input.project) } : {}),
       }
@@ -100,6 +104,13 @@ function stageReads(questions: QuestionStore, read: StageRead) {
           }
         })
         .sort((a, b) => a.updated_at.localeCompare(b.updated_at) || a.id - b.id)
+    },
+
+    async listOpenStages(input: {
+      project?: string
+      sessionId?: string
+    }): Promise<TaskFlowListedStageRow[]> {
+      return this.listStages({ ...input, states: ['running', 'awaiting-ruling'] })
     },
 
     async stageIdentityMap() {
