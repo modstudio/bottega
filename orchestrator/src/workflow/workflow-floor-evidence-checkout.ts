@@ -58,14 +58,11 @@ export function productionResolveCheckout(
   const trunkRefs = [`origin/${landingBranch}`, landingBranch]
   const commitIsAncestorOfAnyRef = (commit: string | null, refs: string[]): boolean =>
     Boolean(
-      commit &&
-        refs.some((ref) => gitOk(checkout, ['merge-base', '--is-ancestor', commit, ref])),
+      commit && refs.some((ref) => gitOk(checkout, ['merge-base', '--is-ancestor', commit, ref])),
     )
   const headIsTipOrAncestor = commitIsAncestorOfAnyRef(headCommit, branchRefs)
   const headIsOnTrunk = commitIsAncestorOfAnyRef(headCommit, trunkRefs)
-  const branchTipIsOnTrunk = branchRefs.some((ref) =>
-    commitIsAncestorOfAnyRef(ref, trunkRefs),
-  )
+  const branchTipIsOnTrunk = branchRefs.some((ref) => commitIsAncestorOfAnyRef(ref, trunkRefs))
   const landing =
     headIsTipOrAncestor && !headIsOnTrunk
       ? { commit: null, recordedTip: null }
