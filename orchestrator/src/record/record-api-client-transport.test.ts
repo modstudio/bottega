@@ -7,7 +7,8 @@ import { recordTransport } from './record-api-client-transport.ts'
 test('record transport sends the fallback user-agent when installation identity resolution fails', async () => {
   const userAgents: Array<string | null> = []
   const transport = (async (_input: RequestInfo | URL, init?: RequestInit) => {
-    userAgents.push(new Headers(init?.headers).get('user-agent'))
+    const headers = new Headers(init?.headers)
+    userAgents.push(headers.get('user-agent'))
     return new Response('{}', { status: 200 })
   }) as unknown as typeof fetch
 

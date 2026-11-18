@@ -5,6 +5,8 @@ import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { refuseRepeatedOptions } from '../../shared/cli-repeat-guard.ts'
 import {
   applyPublicCommandPath,
+  type CliCallerDispatch,
+  installCliCallerDispatch,
   type PublicCommandInvocation,
   publicCommandUsage,
 } from '../../shared/commander-public-path.ts'
@@ -26,6 +28,7 @@ import { registerReportCommands } from './report-cli.ts'
 import { registerTaskCommands } from './task-cli.ts'
 
 const beginParses = new WeakMap<Command, () => void>()
+const callerDispatches = new WeakMap<Command, CliCallerDispatch>()
 
 export function createHubProgram(): HubCommand {
   const command = new HubCommand()
@@ -51,6 +54,7 @@ export function createHubProgram(): HubCommand {
   registerTaskCommands(command)
   registerNoteCommands(command)
   registerReportCommands(command)
+  callerDispatches.set(command, installCliCallerDispatch(command))
   beginParses.set(command, refuseRepeatedOptions(command))
   return command
 }
@@ -101,7 +105,11 @@ export async function run(
   try {
     const input = literalHelp(argv.length ? argv : ['--help'])
     const parse = () => command.parseAsync(['bun', PLATFORM_SLUG, ...input])
-    await (usesReadOnlyStoreHandle(argv) ? withReadOnlyDatabaseAccess(parse) : parse())
+    const dispatch = callerDispatches.get(command)
+    if (!dispatch) throw new Error('hub command has no caller dispatch')
+    await dispatch(() =>
+      usesReadOnlyStoreHandle(argv) ? withReadOnlyDatabaseAccess(parse) : parse(),
+    )
     return Number(process.exitCode ?? 0)
   } catch (error) {
     if (!(error instanceof CommanderError)) console.error(await cliErrorMessage(error, argv))

@@ -48,6 +48,7 @@
 # Usage:  orch-heartbeat.sh <session-id> [interval-seconds] [max-ticks]
 # Arm it under the Monitor tool; each emitted line becomes one notification.
 set -uo pipefail
+export BOTTEGA_CALLER="hook:heartbeat"
 
 CALLER_DIRECTORY="$PWD"
 SCRIPT_DIRECTORY=$(cd "$(dirname "$0")" 2>/dev/null && pwd -P) || {

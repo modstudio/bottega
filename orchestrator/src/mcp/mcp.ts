@@ -62,6 +62,7 @@ import {
 import { composeWorkflow, listResolvedWorkflows } from '../workflow/workflows.ts'
 import { fileNote, hubOutput } from './hub-notes.ts'
 import { registerBoardTools } from './mcp-board-tools.ts'
+import { scopeMcpToolCallers, wrapMcpToolHandlers } from './mcp-caller.ts'
 import { registerDocTools } from './mcp-doc-tools.ts'
 import { MCP_SERVER_STALE_EXIT } from './mcp-exit-status.ts'
 import { registerOperatorTools } from './mcp-operator-tools.ts'
@@ -538,20 +539,11 @@ export function createDocsMcpServer(ports: DocsMcpPorts = {}): McpServer {
       exit(MCP_SERVER_STALE_EXIT)
     },
   )
-  const registerTool = server.registerTool.bind(server) as (
-    name: string,
-    config: object,
-    handler: (...args: never[]) => Promise<unknown>,
-  ) => unknown
-  server.registerTool = ((
-    name: string,
-    config: object,
-    handler: (...args: never[]) => Promise<unknown>,
-  ) =>
-    registerTool(name, config, async (...args: never[]) => {
-      db()
-      return handler(...args)
-    })) as typeof server.registerTool
+  scopeMcpToolCallers(server)
+  wrapMcpToolHandlers(server, (_name, handler) => async (...args) => {
+    db()
+    return handler(...args)
+  })
 
   registerCoreTools(server, ports)
   registerWorkflowActionTools(server, ports)

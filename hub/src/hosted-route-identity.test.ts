@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { CALLER_HEADER_NAME, withRecordCaller } from '../../shared/record-caller.ts'
 import {
   HOSTED_HUB_NO_DESTINATION_WRITE_SOURCE,
   identityRefusal,
@@ -42,6 +43,30 @@ describe('hosted destination-less write recording', () => {
       activeSpaceId: 'space-a',
       memberships: [{ space_id: 'space-a', slug: 'active', permission: 'write' }],
     })) as unknown as typeof fetch
+
+  test('attaches the active caller to the shared identity transport', async () => {
+    const callers: Array<string | null> = []
+    const fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => {
+      callers.push(new Headers(init?.headers).get(CALLER_HEADER_NAME))
+      return identityFetch('https://api.test')
+    }) as typeof globalThis.fetch
+    const request = new Request('https://hub.example.test/v1/tasks', {
+      headers: { authorization: 'Bearer token' },
+    })
+    const telemetry = {
+      counter: {
+        record: async () => undefined,
+        read: async () => ({ windowStart: '', unrecorded: 0, counts: [] }),
+      },
+      database: () => ({}) as never,
+    }
+
+    await withRecordCaller('cli:task/list', () =>
+      taskSpaceIdentity(request, 'https://api.test', fetch, true, telemetry),
+    )
+
+    expect(callers).toEqual(['cli:task/list'])
+  })
 
   test('records and refuses headerless writes but accepts writes whose requested space is honored', async () => {
     const records: unknown[] = []

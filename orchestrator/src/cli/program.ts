@@ -7,6 +7,7 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { refuseRepeatedOptions } from '../../../shared/cli-repeat-guard.ts'
 import {
   applyPublicCommandPath,
+  installCliCallerDispatch,
   type PublicCommandInvocation,
   publicCommandUsage,
 } from '../../../shared/commander-public-path.ts'
@@ -99,6 +100,8 @@ registerSetup(program)
 registerSpare(program)
 registerSync(program)
 registerTestSubstance(program)
+
+const callerDispatch = installCliCallerDispatch(program)
 
 program.commands
   .find((command) => command.name() === 'agent')!
@@ -227,7 +230,9 @@ export async function run(argv: string[], invocation?: PublicCommandInvocation):
   try {
     const parse = () =>
       program.parseAsync(['bun', PLATFORM_SLUG, ...(argv.length ? argv : ['--help'])])
-    await (usesReadOnlyStoreHandle(argv) ? withReadOnlyDatabaseAccess(parse) : parse())
+    await callerDispatch(() =>
+      usesReadOnlyStoreHandle(argv) ? withReadOnlyDatabaseAccess(parse) : parse(),
+    )
     await drainStdout()
     return Number(process.exitCode ?? 0)
   } catch (error) {

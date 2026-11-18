@@ -13,7 +13,7 @@ export function registerAskBoardTools(input: {
     value: string,
     isError?: true,
   ) => { content: { type: 'text'; text: string }[]; isError?: true }
-}): string[] {
+}): void {
   input.server.registerTool(
     'suggest_board_post',
     {
@@ -47,5 +47,4 @@ export function registerAskBoardTools(input: {
       }
     },
   )
-  return ['suggest_board_post']
 }

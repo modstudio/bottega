@@ -255,6 +255,7 @@ export const hubModuleSpecs = [
     file: 'hub/src/hosted-route-identity.ts',
     allowed: [
       '../../shared/brand.ts',
+      '../../shared/record-caller.ts',
       '../../shared/record-no-destination-write-contract.ts',
       '../../shared/record-no-destination-write-counter.ts',
       '../../shared/record/no-destination-write-store.ts',
@@ -442,6 +443,7 @@ export const hubModuleSpecs = [
       '../../shared/store-lock-refusal-log.ts',
       'commander',
       '../../shared/install-root.ts',
+      '../../shared/record-caller.ts',
       './cli-command.ts',
       './core-cli.ts',
       './db.ts',

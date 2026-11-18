@@ -65,6 +65,7 @@ import { uncheckedChecksForGateExecution } from '../gate/worker-check-omissions.
 import { JOBS } from '../jobs/jobs.ts'
 import { LOCAL_LISTENER_IDLE_TIMEOUT_SECONDS } from '../local-listener.ts'
 import { checkMessages, messageArchitect } from '../mailbox/mailbox.ts'
+import { scopeMcpToolCallers } from '../mcp/mcp-caller.ts'
 import { initialQuestionWaitingAt } from '../operator/operator-waiting.ts'
 import { orchestratorProseGate } from '../prose-service.ts'
 import { askQuestion } from '../question-store/question-store-mutation.ts'
@@ -651,10 +652,8 @@ export function createAskMcpServer(
   const authorized = (): boolean => authenticatedWorkerRun(runId, token)
   const [pendingGateResults, lifecycle, toolNames] = askServerState(runId, dependencies)
   const server = new McpServer({ name: WORKER_MCP_SERVER_NAME, version: '1' })
-  const registerTool = ((...args: unknown[]) => {
-    if (typeof args[0] === 'string') toolNames.push(args[0])
-    return Reflect.apply(server.registerTool, server, args)
-  }) as typeof server.registerTool
+  scopeMcpToolCallers(server, (name) => toolNames.push(name))
+  const registerTool = server.registerTool.bind(server)
   const text = (value: string, isError?: true) => ({
     content: [{ type: 'text' as const, text: value }],
     ...(isError ? { isError } : {}),
@@ -671,7 +670,7 @@ export function createAskMcpServer(
   // the SDK returns a validation error before the escalation channel can tell
   // the worker to ask again rather than decide the matter itself.
   const requiredTextReachingHandler = z.preprocess((value) => String(value ?? ''), z.string())
-  toolNames.push(...registerAskBoardTools({ server, runId, authorized, unauthorized, text }))
+  registerAskBoardTools({ server, runId, authorized, unauthorized, text })
 
   registerTool(
     'ask_orchestrator',

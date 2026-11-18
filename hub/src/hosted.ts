@@ -6,6 +6,7 @@ import { readBuiltCommit } from '../../shared/built-commit.ts'
 import * as hostedServer from '../../shared/hosted-server.ts'
 import { resolveInstallRoot } from '../../shared/install-root.ts'
 import { recordServiceUrl } from '../../shared/record/service-connection.ts'
+import { CALLER_HEADER_NAME, inboundCaller, withRecordCaller } from '../../shared/record-caller.ts'
 import { createNoDestinationWriteCounter } from '../../shared/record-no-destination-write-counter.ts'
 import { appStaticPath, resolveAppStatic } from './app-static.ts'
 import { changeApi } from './change-api.ts'
@@ -163,13 +164,15 @@ function startHostedServer(environment: ServerEnvironment = process.env) {
     port: config.port,
     fetch: async (request) => {
       const started = performance.now()
-      const response = await requestHandler(request)
+      const caller = inboundCaller(request.headers.get(CALLER_HEADER_NAME))
+      const response = await withRecordCaller(caller.scope, () => requestHandler(request))
       console.log(
         hostedServer.hostedAccessLogLine({
           method: request.method,
           pathname: new URL(request.url).pathname,
           status: response.status,
           durationMs: performance.now() - started,
+          caller: caller.logged,
         }),
       )
       return response

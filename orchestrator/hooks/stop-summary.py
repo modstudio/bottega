@@ -107,6 +107,7 @@ def main():
         return 0
     if not should_hook_act(payload) or payload.get("stop_hook_active"):
         return 0
+    os.environ["BOTTEGA_CALLER"] = "hook:stop-summary"
     ids = session_ids(payload)
     if not ids:
         return 0
