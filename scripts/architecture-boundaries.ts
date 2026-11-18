@@ -8,6 +8,7 @@ import { contractBoundarySpecs } from './architecture-contract-boundaries.ts'
 import { databaseBoundarySpecs } from './architecture-database-boundaries.ts'
 import { docBoundarySpecs } from './architecture-doc-boundaries.ts'
 import { gateBoundarySpecs } from './architecture-gate-modules.ts'
+import { healthBoundarySpecs } from './architecture-health-boundaries.ts'
 import { HUB_UI_ROOT, HUB_VIEWS_ROOT, TYPESCRIPT_TEST_PATH } from './architecture-hub-packages.ts'
 import { mcpBoundarySpecs } from './architecture-mcp-boundaries.ts'
 import { portBoundarySpecs } from './architecture-port-boundaries.ts'
@@ -173,6 +174,7 @@ export const importBoundaries: ImportBoundary[] = [
     'Keep canon write decisions pure and independent of filesystems, stores, commands, and processes.',
   ),
   ...canonBoundarySpecs,
+  ...healthBoundarySpecs,
   ...settingsBoundarySpecs,
   boundary(
     'checkout-identity-boundary',
@@ -379,50 +381,6 @@ export const importBoundaries: ImportBoundary[] = [
       './doc-generator.ts',
     ],
     'Keep document write decisions independent of stores, HTTP, filesystems, and CLI.',
-  ),
-  boundary(
-    'doctor-boundary',
-    'orchestrator/src/health/doctor.ts',
-    [
-      'node:fs',
-      '../../../shared/brand.ts',
-      '../../../shared/install-root.ts',
-      '../../../shared/machine-config.ts',
-      '../agent/agent-auth.ts',
-      '../agent/endpoint-api-key.ts',
-      '../agent/agent-registry.ts',
-      '../agent/agents.ts',
-      '../score/agreement.ts',
-      '../database/db.ts',
-      '../resources/docker-resources.ts',
-      '../evidence/evidence-query.ts',
-      '../jobs/jobs.ts',
-      '../mcp/mcp-credential-literal.ts',
-      '../mcp/mcp-probe.ts',
-      '../worktree/keep-tree-hold.ts',
-      '../agent/model-host.ts',
-      '../resources/resource-claims.ts',
-      '../resources/resource-ownership.ts',
-      '../run/run-status.ts',
-      '../score/score.ts',
-      '../worktree/worktree-attribution.ts',
-      '../worktree/worktree-lifecycle.ts',
-      '../canon/canon.ts',
-      '../doc/docs.ts',
-      '../canon/pack-budget.ts',
-      '../canon/evals.ts',
-      '../sandbox/sandbox.ts',
-      '../sandbox/sandbox-runtime.ts',
-      '../database/migrations.ts',
-      ...['./health.ts', './delegation-doctor.ts', './launch-agent-doctor.ts'],
-      '../project/projects.ts',
-      '../project/main-checkout-invariant.ts',
-      '../record/active-space-invariant.ts',
-      '../record/record-api-client.ts',
-      '../record/record-space.ts',
-      '../run/run-task-linking.ts',
-    ],
-    'Keep doctor independent of transports, routing, run control, the CLI, and reviews by value.',
   ),
   boundary(
     'duel-boundary',
