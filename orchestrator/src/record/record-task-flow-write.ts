@@ -18,6 +18,7 @@ import {
   type TaskFlowIntentResult,
   workflowHandoffTrail,
 } from './record-task-flow-write-contract.ts'
+import { taskFlowHandoffRefusal } from './task-flow-handoff-policy.ts'
 import {
   decideRevisionPreflight,
   decideRevisionWrite,
@@ -544,36 +545,16 @@ async function applyHandoff(tx: SQL, input: Tenant, body: HandoffBody) {
   ]
   if ((await preflightMutations(tx, mutations, body.requestId)) === 'retry')
     return replayHandoff(tx, input, body, mutations)
-  if (source.state === 'done' || source.state === 'abandoned')
-    refusal(
-      `workflow ${source.workflow}${source.workflow_key ? ` for ${source.workflow_key}` : ` (${source.mode})`} is ${source.state}`,
-      `task_flow_stage.id=${body.oldStage.id}`,
-      'already-exists',
-    )
-  if (lockedFlow.open_stage_record_id !== body.oldStage.id)
-    refusal(
-      `workflow cursor ${body.oldStage.id} is not the task flow's open stage; list workflow cursors and retry the current cursor`,
-      `task_flow.id=${body.flow.id}`,
-      'already-exists',
-    )
-  if (source.state === 'awaiting-ruling')
-    refusal(
-      'workflow cursor is awaiting a ruling; answer its question, then retry the handoff',
-      `task_flow_stage.id=${body.oldStage.id}`,
-      'already-exists',
-    )
-  if (!source.session_id || source.session_id !== body.newStage.sessionId)
-    refusal(
-      'workflow cursor is owned by another session; hand off it from that session',
-      `task_flow_stage.id=${body.oldStage.id}`,
-      'already-exists',
-    )
-  if (source.workflow_key !== body.newStage.workflowKey)
-    refusal(
-      'handoff target key differs from the source cursor key; pass the same key',
-      `task_flow_stage.id=${body.oldStage.id}`,
-      'already-exists',
-    )
+  const policyRefusal = taskFlowHandoffRefusal({
+    state: source.state,
+    sourceKey: source.workflow_key,
+    targetKey: body.newStage.workflowKey,
+    sourceSession: source.session_id,
+    targetSession: body.newStage.sessionId,
+    openStageMatches: lockedFlow.open_stage_record_id === body.oldStage.id,
+  })
+  if (policyRefusal)
+    refusal(policyRefusal, `task_flow_stage.id=${body.oldStage.id}`, 'already-exists')
   if (source.flow_record_id !== body.flow.id || body.newStage.flowRecordId !== body.flow.id)
     refusal(
       'handoff stages must belong to the same task flow; retry the current cursor',

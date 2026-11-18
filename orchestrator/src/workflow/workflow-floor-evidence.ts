@@ -58,6 +58,7 @@ import {
 } from './workflow-floor-evidence-replay.ts'
 import { readHubTask } from './workflow-floor-task-read.ts'
 import { floorFromObligationRow } from './workflow-obligation-floor.ts'
+import { resolveWorkflowCursorSuccessor } from './workflow-cursor-successor.ts'
 import {
   type BoundRun,
   decideRunBinding,
@@ -749,7 +750,15 @@ async function gatherSatisfy(
     found: true,
     open: row.satisfied_at === null && row.abandoned_at === null,
     abandoned: row.abandoned_at !== null,
-    cursorMatches: row.cursor_record_id === cursorId,
+    cursorMatches:
+      resolveWorkflowCursorSuccessor(
+        row.cursor_record_id,
+        d
+          .query<{ record_id: string; handed_off_from_record_id: string | null }, []>(
+            'SELECT record_id,handed_off_from_record_id FROM workflow_cursor WHERE handed_off_from_record_id IS NOT NULL',
+          )
+          .all(),
+      ) === cursorId,
     floor,
   }
 }

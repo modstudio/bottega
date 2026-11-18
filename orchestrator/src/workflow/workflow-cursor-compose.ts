@@ -39,21 +39,12 @@ import { storedCursorAutonomyForComposition } from './workflow-cursor-autonomy.t
 import type { SelectableCursorRow, WorkflowCursorContext } from './workflow-cursor-selection.ts'
 import { refuseUnlinkedCursorLabelCollision } from './workflow-cursor-task-reference.ts'
 import { cursorOwnerAfter } from './workflow-cursor-transition.ts'
-import {
-  closeExploreForLifecycle,
-  type FinishExploreLifecycle,
-} from './workflow-explore-lifecycle-close.ts'
+import { workflowStageInsert } from './workflow-stage-insert.ts'
 import type { composeWorkflow } from './workflows.ts'
 
 type Composition = ReturnType<typeof composeWorkflow>
 type ExistingFlow = { record_id: string; revision: number } | null
-export type GraduatedExplore =
-  | { cursor: number; closed: true }
-  | { cursor: number; closed: false; reason: string }
-export type ExploreGraduationDependencies = {
-  closeExplore?: typeof closeExploreForLifecycle
-  finishExplore: FinishExploreLifecycle
-}
+export type GraduatedExplore = { cursor: number; closed: true }
 type ComposeFacts = {
   rowInput: WorkflowCursorInsert
   existingFlow: ExistingFlow
@@ -85,17 +76,15 @@ function decideKeylessComposeInstance(input: {
   ])
 }
 
-export async function graduateExploreAfterCompose(
+export async function graduatingExploreCursor(
   input: {
     project: string
     session: string | null | undefined
     taskBound: boolean
-    replacingCursor: number
     database: Database
     taskFlowClient?: WorkflowCursorContext['taskFlowClient']
   },
-  dependencies: ExploreGraduationDependencies,
-): Promise<GraduatedExplore | undefined> {
+): Promise<SelectableCursorRow | undefined> {
   if (!input.session || !input.taskBound) return undefined
   const rows = await taskFlowReadStore(input.database, input.taskFlowClient).listOpenStages({
     project: input.project,
@@ -115,25 +104,7 @@ export async function graduateExploreAfterCompose(
     : null
   const decision = exploreGraduation({ taskBound: input.taskBound, explore })
   if (decision.action === 'keep') return undefined
-  try {
-    const outcome = await (dependencies.closeExplore ?? closeExploreForLifecycle)(
-      decision.recordId,
-      'answered',
-      input.database,
-      dependencies.finishExplore,
-      `replaced by cursor ${input.replacingCursor}`,
-      { requireUntouched: true },
-    )
-    return outcome === 'closed'
-      ? { cursor: decision.cursor, closed: true }
-      : { cursor: decision.cursor, closed: false, reason: `explore close outcome was ${outcome}` }
-  } catch (error) {
-    return {
-      cursor: decision.cursor,
-      closed: false,
-      reason: error instanceof Error ? error.message : String(error),
-    }
-  }
+  return row
 }
 
 async function keylessComposeOrdinal(
@@ -286,7 +257,7 @@ function composeIntent(
             updatedAt: at,
           },
         }),
-    stageInsert: {
+    stageInsert: workflowStageInsert({
       id: rowInput.recordId,
       flowRecordId,
       projectId: projectRecordId,
@@ -298,20 +269,12 @@ function composeIntent(
       workflowVersionId: composition.workflow.record_id,
       catalogueVersionId: composition.catalogue.record_id,
       arguments: composition.arguments,
-      activeOrdinal: 0,
       activeSlug: composition.steps[0]!.slug,
-      state: 'running',
-      closedStepNotes: [],
-      question: null,
       autonomy: facts.autonomyJson,
-      enforcement: 'floors',
       totalSteps: composition.steps.length,
       openedMachineId: machine,
-      takenOverFromMachineId: null,
-      lastAdvancedMachineId: machine,
       createdAt: at,
-      updatedAt: at,
-    },
+    }),
   }
 }
 

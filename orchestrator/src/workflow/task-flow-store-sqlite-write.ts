@@ -184,6 +184,14 @@ function insertFlow(database: Database, row: SqlRow, revisionValue: number): voi
     )
 }
 
+function nextCursorNumber(database: Database, projectRecordId: string): number {
+  return database
+    .query<{ n: number }, [string]>(
+      'SELECT COALESCE(MAX(number),0)+1 n FROM workflow_cursor WHERE project_record_id=?',
+    )
+    .get(projectRecordId)!.n
+}
+
 function insertStage(
   database: Database,
   row: SqlRow,
@@ -202,11 +210,7 @@ function insertStage(
     .get(String(row.flowRecordId))
   const number =
     allocatedNumber ??
-    database
-      .query<{ n: number }, [string]>(
-        'SELECT COALESCE(MAX(number),0)+1 n FROM workflow_cursor WHERE project_record_id=?',
-      )
-      .get(String(row.projectId))!.n
+    nextCursorNumber(database, String(row.projectId))
   database
     .query(`INSERT INTO workflow_cursor
       (record_id,number,project,project_record_id,workflow_slug,mode_slug,workflow_key,task_record_id,
@@ -553,11 +557,7 @@ function writeHandoff(
       'handoff successor does not link to the source stage; retry with the source stage as handedOffFromRecordId',
     )
   const stageId = applied?.stage?.id ?? String(newStage.id)
-  const number = database
-    .query<{ n: number }, [string]>(
-      'SELECT COALESCE(MAX(number),0)+1 n FROM workflow_cursor WHERE project_record_id=?',
-    )
-    .get(String(newStage.projectId))!.n
+  const number = nextCursorNumber(database, String(newStage.projectId))
   const trail = body.trail as unknown as Parameters<typeof workflowHandoffTrail>[0]
   const oldStage: Mutation = {
     ...oldReference,

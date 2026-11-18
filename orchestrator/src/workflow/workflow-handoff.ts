@@ -10,21 +10,25 @@ import {
   writeHostedTaskFlow,
 } from '../record/record-task-flow-write-client.ts'
 import { taskFlowRequestId } from '../record/record-task-flow-write-contract.ts'
+import { taskFlowHandoffRefusal } from '../record/task-flow-handoff-policy.ts'
 import type { LiveCursorAutonomy } from './autonomy.ts'
 import { taskFlowLocalStore, taskFlowReadStore } from './task-flow-store.ts'
 import type { TaskFlowIntentInput } from './task-flow-store-types.ts'
 import type { CommitCountPort } from './workflow-compose-branch.ts'
 import { readCommitsPastLanding, workflowComposeBranchRefusal } from './workflow-compose-branch.ts'
 import { workflowKeyOf } from './workflow-cursor-arguments.ts'
+import { adoptWorkflowTask } from './workflow-cursor-adoption.ts'
 import { storedCursorAutonomyForComposition } from './workflow-cursor-autonomy.ts'
 import { refuseTerminalCursor } from './workflow-cursor-result.ts'
 import type { SelectableCursorRow, WorkflowCursorContext } from './workflow-cursor-selection.ts'
 import { cursorComposition } from './workflow-cursor-serve.ts'
 import { cursorOwnerAfter } from './workflow-cursor-transition.ts'
+import { workflowStageInsert } from './workflow-stage-insert.ts'
 import {
   followTaskCursorClaim,
   type TaskCursorClaimPorts,
   taskClaimFollowWarning,
+  taskClaimReleaseWarning,
 } from './workflow-task-claim.ts'
 import { composeWorkflow } from './workflows.ts'
 
@@ -41,14 +45,10 @@ type HandoffInput = {
   taskClaimPorts?: TaskCursorClaimPorts
 }
 
-async function validateHandoff(input: HandoffInput, d: Database) {
+async function validateHandoffTarget(input: HandoffInput, d: Database) {
   const row = input.row
   refuseTerminalCursor(row)
   if (!input.reason.trim()) throw new Error('handoff reason is required; pass --reason "<why>"')
-  if (!row.workflow_key)
-    throw new Error(
-      'same-key handoff requires a keyed cursor; use the keyless-to-keyed handoff workflow instead',
-    )
   if (row.state === 'awaiting-ruling' || row.question)
     throw new Error(
       `workflow cursor ${row.id} is awaiting a ruling; answer its question, then retry the handoff`,
@@ -80,7 +80,9 @@ async function validateHandoff(input: HandoffInput, d: Database) {
       `workflow "${input.workflow}" needs arguments: ${composition.needs.arguments.join(', ')}; pass each with --arg k=v`,
     )
   const targetKey = workflowKeyOf(composition.arguments)
-  if (targetKey !== row.workflow_key)
+  if (!targetKey)
+    throw new Error('keyless handoff requires a task key; pass --arg key=<KEY>')
+  if (row.workflow_key && targetKey !== row.workflow_key)
     throw new Error(
       `handoff target key ${targetKey || '<none>'} differs from cursor key ${row.workflow_key}; pass --arg key=${row.workflow_key}`,
     )
@@ -92,13 +94,30 @@ async function validateHandoff(input: HandoffInput, d: Database) {
     commitCount: input.commitCount ?? readCommitsPastLanding,
   })
   if (refusal) throw new Error(refusal)
+  return { composition, targetKey }
+}
+
+async function validateHandoff(input: HandoffInput, d: Database) {
+  const { composition, targetKey } = await validateHandoffTarget(input, d)
+  const row = input.row
+  if (!row.workflow_key)
+    throw new Error('keyless handoff requires a task key; pass --arg key=<KEY>')
   const flow = row.task_flow_record_id
     ? await taskFlowReadStore(d, input.context.taskFlowClient).flowState(row.task_flow_record_id)
     : null
-  if (!flow || flow.open_stage_cursor_record_id !== row.record_id)
+  const policyRefusal = taskFlowHandoffRefusal({
+    state: row.state,
+    sourceKey: row.workflow_key,
+    targetKey,
+    sourceSession: row.session_id,
+    targetSession: input.context.session ?? null,
+    openStageMatches: Boolean(flow && flow.open_stage_cursor_record_id === row.record_id),
+  })
+  if (policyRefusal)
     throw new Error(
-      `workflow cursor ${row.id} is not the task flow's open stage; list workflow cursors and retry the current cursor`,
+      policyRefusal.replace('workflow cursor is', `workflow cursor ${row.id} is`),
     )
+  if (!flow) throw new Error(`workflow cursor ${row.id} has no task flow; compose it again`)
   return { composition, flow }
 }
 
@@ -124,7 +143,7 @@ function handoffPayload(
       values: { openStageRecordId: nextId, updatedMachineId: machine, updatedAt: at },
     },
     oldStage: { id: row.record_id, expectedRevision: row.revision },
-    newStage: {
+    newStage: workflowStageInsert({
       id: nextId,
       flowRecordId: flow.record_id,
       projectId,
@@ -136,21 +155,13 @@ function handoffPayload(
       workflowVersionId: composition.workflow.record_id,
       catalogueVersionId: composition.catalogue.record_id,
       arguments: composition.arguments,
-      activeOrdinal: 0,
       activeSlug: composition.steps[0]!.slug,
-      state: 'running',
-      closedStepNotes: [],
-      question: null,
       autonomy: storedCursorAutonomyForComposition(input.live.resolution, composition),
-      enforcement: 'floors',
       totalSteps: composition.steps.length,
       openedMachineId: machine,
-      takenOverFromMachineId: null,
-      lastAdvancedMachineId: machine,
       handedOffFromRecordId: row.record_id,
       createdAt: at,
-      updatedAt: at,
-    },
+    }),
     trail: {
       closed: JSON.parse(row.closed) as unknown[],
       current: { n: row.ordinal + 1, slug: row.step_slug },
@@ -164,8 +175,7 @@ function handoffPayload(
   }
 }
 
-export async function handoffWorkflow(input: HandoffInput) {
-  const d = input.database ?? db()
+async function handoffKeyedWorkflow(input: HandoffInput, d: Database) {
   const row = input.row
   const validated = await validateHandoff(input, d)
   const payload = handoffPayload(input, d, validated)
@@ -196,5 +206,59 @@ export async function handoffWorkflow(input: HandoffInput) {
     cursor: applied.stage.number,
     workflow: validated.composition.workflow.slug,
     ...(claimWarning ? { claimWarning } : {}),
+  }
+}
+
+export async function handoffWorkflow(input: HandoffInput) {
+  const d = input.database ?? db()
+  if (input.row.workflow_key) return handoffKeyedWorkflow(input, d)
+
+  const validated = await validateHandoffTarget(input, d)
+  const key = validated.targetKey
+  await followTaskCursorClaim(
+    {
+      project: input.row.project,
+      taskKey: key,
+      session: input.context.session,
+      verb: 'handoff',
+      database: d,
+    },
+    input.taskClaimPorts,
+  )
+  try {
+    await adoptWorkflowTask(
+      input.row,
+      key,
+      input.context.taskRecordId,
+      d,
+      input.context.taskFlowClient,
+      input.context.taskStatusCategory,
+    )
+    const adopted = await taskFlowReadStore(d, input.context.taskFlowClient).stageByRecordId(
+      input.row.record_id,
+    )
+    if (!adopted) throw new Error(`workflow cursor ${input.row.id} disappeared after adopting ${key}`)
+    return await handoffKeyedWorkflow({ ...input, row: adopted }, d)
+  } catch (error) {
+    let releaseWarning: string | undefined
+    try {
+      await followTaskCursorClaim(
+        {
+          project: input.row.project,
+          taskKey: key,
+          session: input.context.session,
+          verb: 'abandon',
+          database: d,
+        },
+        input.taskClaimPorts,
+      )
+    } catch (releaseError) {
+      releaseWarning = taskClaimReleaseWarning(input.row.project, key, releaseError)
+    }
+    const detail = error instanceof Error ? error.message : String(error)
+    const retry = `workflow handoff ${input.workflow} --cursor ${input.row.id} --arg key=${key}`
+    throw new Error(
+      `${detail}; cursor ${input.row.id} ${input.row.workflow_key ? `is now keyed to ${key}` : 'remains keyless'}; retry with ${retry}${releaseWarning ? `; ${releaseWarning}` : ''}`,
+    )
   }
 }

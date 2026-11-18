@@ -25,6 +25,10 @@ import {
   type WorkflowCursorListRow,
 } from '../workflow/workflow-cursor-list.ts'
 import {
+  resolveWorkflowCursorSuccessor,
+  type WorkflowCursorHandoffLink,
+} from '../workflow/workflow-cursor-successor.ts'
+import {
   workflowCursorBranchAndWorktree,
   workflowCursorClaimHandles,
 } from '../workflow/workflow-cursor-worktrees.ts'
@@ -332,15 +336,21 @@ export function selectBriefInFlight(
     'record_id' | 'project' | 'workflow_key' | 'args'
   >[],
   liveClaims: readonly Pick<ClaimView, 'project' | 'subject'>[],
+  handoffLinks: readonly WorkflowCursorHandoffLink[] = cursors.map((cursor) => ({
+    record_id: cursor.record_id,
+    handed_off_from_record_id: null,
+  })),
 ) {
+  const runCursor = (run: BriefLiveRun) =>
+    resolveWorkflowCursorSuccessor(run.cursor_record_id, handoffLinks)
   return {
     runs: liveRuns
-      .filter((run) => !cursors.some((cursor) => cursor.record_id === run.cursor_record_id))
+      .filter((run) => !cursors.some((cursor) => cursor.record_id === runCursor(run)))
       .map(({ cursor_record_id: _, ...run }) => run),
     cursorRuns: cursors.map((cursor) => ({
       recordId: cursor.record_id,
       runs: liveRuns
-        .filter((run) => run.cursor_record_id === cursor.record_id)
+        .filter((run) => runCursor(run) === cursor.record_id)
         .map((run) => run.number),
     })),
     claims: liveClaims
@@ -387,6 +397,12 @@ export async function contextBrief(
        WHERE session_id=? AND status IN ${LIVE_RUN_STATUS_SQL} ORDER BY number`,
     )
     .all(session) as Array<ContextBrief['runs'][number] & { cursor_record_id: string | null }>
+  const handoffLinks = database
+    .query<WorkflowCursorHandoffLink, [string]>(
+      `SELECT record_id,handed_off_from_record_id FROM workflow_cursor
+       WHERE session_id=? AND handed_off_from_record_id IS NOT NULL`,
+    )
+    .all(session)
   const questionCounts = await questionInboxCountsForSession(session, database)
   const boardEnv = { ...process.env, CLAUDE_CODE_SESSION_ID: session }
   const boardRequests = claimNotices(true, boardEnv, Date.now(), database).filter(
@@ -395,7 +411,7 @@ export async function contextBrief(
   const references = holderSequence(session, working, taskRows, keylessCursors)
   const holders = await storedBriefHolders(references, database)
   const fullHolder = holders.find((holder) => holder.kind === 'task' || holder.kind === 'epic')
-  const inFlight = selectBriefInFlight(liveRuns, cursors, liveClaims)
+  const inFlight = selectBriefInFlight(liveRuns, cursors, liveClaims, handoffLinks)
   return {
     session,
     fullCommand: fullHolder
