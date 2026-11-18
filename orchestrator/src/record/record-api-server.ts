@@ -5,6 +5,7 @@ import {
   HOSTED_SERVER_IDLE_TIMEOUT_SECONDS,
   hostedAccessLogLine,
 } from '../../../shared/hosted-server.ts'
+import { CALLER_HEADER_NAME, loggedCallerToken } from '../../../shared/record-caller.ts'
 import { createNoDestinationWriteCounter } from '../../../shared/record-no-destination-write-counter.ts'
 import { probeRecord, recordMigrationCount } from '../postgres/postgres-migrate.ts'
 import { renameHostedMachine, retireHostedMachine } from './machine-name-record.ts'
@@ -39,7 +40,6 @@ import { hostedBoardStatus, putHostedBoardReceipt } from './record-board-receipt
 import { createBoardStreamRegistry } from './record-board-stream.ts'
 import { takeHostedBoardSuccessor } from './record-board-successor.ts'
 import { createBoardWakeSource } from './record-board-wake.ts'
-import { CALLER_HEADER_NAME } from './record-caller.ts'
 import { importRecordCanon } from './record-canon-import.ts'
 import {
   importRecordLensCatalogue,
@@ -242,7 +242,7 @@ function serveRecordApi(
           pathname: new URL(request.url).pathname,
           status: response.status,
           durationMs: performance.now() - started,
-          caller: request.headers.get(CALLER_HEADER_NAME),
+          caller: loggedCallerToken(request.headers.get(CALLER_HEADER_NAME)),
         }),
       )
       return response

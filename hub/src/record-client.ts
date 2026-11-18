@@ -27,6 +27,7 @@ import {
   OrchStateSchema,
 } from '../../shared/orch-contract.ts'
 import { resolveRecordApiUrl } from '../../shared/record-api-url.ts'
+import { recordCallerHeaders } from '../../shared/record-caller.ts'
 import { RecordProjectsSchema } from '../../shared/record-project-contract.ts'
 import { hostedRequestSafetyStatement } from '../../shared/record-remedies.ts'
 import type { RunDetailReviewLens } from '../../shared/review-presentation.ts'
@@ -529,7 +530,7 @@ async function request<T>(
 ): Promise<T> {
   const deadlineMs = options.requestDeadlineMs ?? RECORD_REQUEST_DEADLINE_MS
   const controller = new AbortController()
-  const headers = new Headers(init.headers)
+  const headers = recordCallerHeaders(init.headers)
   if (options.headers.cookie) headers.set('Cookie', options.headers.cookie)
   if (options.headers.authorization) headers.set('Authorization', options.headers.authorization)
   headers.set('user-agent', `${PLATFORM_SLUG}/${packageMetadata.version}`)

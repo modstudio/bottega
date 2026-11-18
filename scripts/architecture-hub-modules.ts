@@ -293,6 +293,7 @@ export const hubModuleSpecs = [
     allowed: [
       '../../shared/bounded-fetch.ts',
       '../../shared/brand.ts',
+      '../../shared/record-caller.ts',
       '../../shared/record-space-membership.ts',
       '../../shared/record-space-request.ts',
       './hosted-route-identity.ts',
@@ -388,6 +389,7 @@ export const hubModuleSpecs = [
       '../../shared/store-lock-refusal-log.ts',
       'commander',
       '../../shared/install-root.ts',
+      '../../shared/record-caller.ts',
       './cli-command.ts',
       './core-cli.ts',
       './db.ts',

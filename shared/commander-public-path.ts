@@ -7,6 +7,20 @@ export type PublicCommandInvocation = {
 
 const publicCommandPaths = new WeakMap<Command, readonly string[]>()
 
+export function cliCallerEnvironmentValue(
+  parentValue: string | undefined,
+  command: Command,
+): string {
+  if (parentValue !== undefined) return parentValue
+  const publicPath = publicCommandPaths.get(command)
+  if (publicPath) return `cli:${publicPath.join('/')}`
+  const names: string[] = []
+  for (let current: Command | null = command; current?.parent; current = current.parent) {
+    names.unshift(current.name())
+  }
+  return `cli:${names.join('/')}`
+}
+
 export function takesVariadicArgument(command: Command): boolean {
   return command.registeredArguments.some((argument) => argument.variadic)
 }

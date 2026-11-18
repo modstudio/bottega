@@ -215,6 +215,7 @@ export const recordApiBoundaries: ImportBoundary[] = [
     [
       '../../../shared/built-commit.ts',
       '../../../shared/hosted-server.ts',
+      '../../../shared/record-caller.ts',
       '../../../shared/record-no-destination-write-counter.ts',
       '../../../shared/record-space-membership.ts',
       '../../../shared/record-space-request.ts',
@@ -235,7 +236,6 @@ export const recordApiBoundaries: ImportBoundary[] = [
       './record-workflow-catalogue.ts',
       './record-auth.ts',
       './record-canon-import.ts',
-      './record-caller.ts',
       './record-docs.ts',
       './record-doc-order.ts',
       './record-projects.ts',

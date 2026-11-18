@@ -49,13 +49,9 @@ export const recordBindingModules: RecordModule[] = [
     '../../../shared/brand.ts',
     '../../../shared/hosted-call-observation.ts',
     '../../../shared/install-root.ts',
+    '../../../shared/record-caller.ts',
     '../hosted-call-outcome.ts',
     './record-auth.ts',
-    './record-caller.ts',
-  ]),
-  module('orchestrator/src/record/record-caller.ts', [
-    'node:async_hooks',
-    '../../../shared/brand.ts',
   ]),
   module('orchestrator/src/record/record-write-destination.ts', [
     '../../../shared/record-space-membership.ts',

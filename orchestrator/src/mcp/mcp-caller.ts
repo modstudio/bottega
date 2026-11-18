@@ -2,7 +2,7 @@
 /** Gives each MCP tool invocation its own hosted-record caller scope. */
 
 import type { McpServer } from '@modelcontextprotocol/server'
-import { withRecordCaller } from '../record/record-caller.ts'
+import { withRecordCaller } from '../../../shared/record-caller.ts'
 
 export function scopeMcpToolCallers(
   server: McpServer,

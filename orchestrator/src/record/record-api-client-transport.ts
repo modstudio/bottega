@@ -5,13 +5,13 @@ import { hostedApiFetch } from '../../../shared/bounded-fetch.ts'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { scheduleHostedCallObservation } from '../../../shared/hosted-call-observation.ts'
 import { runningInstallationIdentity } from '../../../shared/install-root.ts'
+import { recordCallerHeaders } from '../../../shared/record-caller.ts'
 import {
   classifyHostedTransportError,
   type HostedCallOutcomeRecorder,
   recordHostedCallOutcome,
 } from '../hosted-call-outcome.ts'
 import { bearerHeaders } from './record-auth.ts'
-import { CALLER_HEADER_NAME, recordCallerToken } from './record-caller.ts'
 
 let memoizedUserAgent: string | undefined
 
@@ -81,9 +81,8 @@ export async function recordTransport(
   const startedAt = performance.now()
   const userAgent = identityResolver ? userAgentFrom(identityResolver) : runningUserAgent()
   try {
-    const headers = new Headers(init.headers)
+    const headers = recordCallerHeaders(init.headers)
     headers.set('user-agent', userAgent)
-    headers.set(CALLER_HEADER_NAME, recordCallerToken())
     const response = await transport(`${baseUrl}${path}`, { ...init, headers })
     scheduleHostedCallObservation(recorder, {
       observedAt: new Date().toISOString(),

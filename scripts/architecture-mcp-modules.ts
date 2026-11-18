@@ -14,7 +14,7 @@ const module = (file: string, allowed: string[]): McpModule => ({
 export const mcpModules: McpModule[] = [
   module('orchestrator/src/mcp/mcp-caller.ts', [
     '@modelcontextprotocol/server',
-    '../record/record-caller.ts',
+    '../../../shared/record-caller.ts',
   ]),
   module('orchestrator/src/mcp/mcp-workflow-handoff.ts', [
     '@modelcontextprotocol/server',

@@ -1,5 +1,6 @@
 import { hostedApiFetch } from '../../shared/bounded-fetch.ts'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
+import { withRecordCallerHeader } from '../../shared/record-caller.ts'
 import type { RecordSpaceMembership } from '../../shared/record-space-membership.ts'
 import {
   recordRequestNature,
@@ -192,7 +193,7 @@ export async function noteApi(
   const who = await taskSpaceIdentity(
     request,
     config.recordApiUrl,
-    (dependencies.fetch ?? hostedApiFetch) as typeof fetch,
+    withRecordCallerHeader((dependencies.fetch ?? hostedApiFetch) as typeof fetch),
     true,
     { counter: config.noDestinationWriteCounter, database: () => config.recordDatabaseUrl },
   )

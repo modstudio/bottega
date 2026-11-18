@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { TRPCError } from '@trpc/server'
 import { getTableColumns } from 'drizzle-orm'
 import type { z } from 'zod'
+import { CALLER_HEADER_NAME } from '../../shared/record-caller.ts'
 import { run } from '../../shared/record/schema-run.ts'
 import { createRecordClient, recordRunDetailSchema } from './record-client.ts'
 import type { RecordFetch } from './record-client-options.ts'
@@ -559,14 +560,19 @@ describe('record client', () => {
   })
 
   test('sets the active space through the authenticated record API', async () => {
-    const captured = { method: '', body: '' }
+    const captured = { method: '', body: '', caller: null as string | null }
     const fetch: RecordFetch = async (_input, init) => {
       captured.method = init?.method ?? ''
       captured.body = String(init?.body)
+      captured.caller = new Headers(init?.headers).get(CALLER_HEADER_NAME)
       return jsonResponse({ activeSpaceId: 'space-b' })
     }
     await clientWith(fetch).setActiveSpace('space-b')
-    expect(captured).toEqual({ method: 'PUT', body: JSON.stringify({ spaceId: 'space-b' }) })
+    expect(captured).toEqual({
+      method: 'PUT',
+      body: JSON.stringify({ spaceId: 'space-b' }),
+      caller: 'unknown',
+    })
   })
 
   test('opts doc lists into readable spaces only when requested', async () => {

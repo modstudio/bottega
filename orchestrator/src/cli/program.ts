@@ -7,9 +7,11 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { refuseRepeatedOptions } from '../../../shared/cli-repeat-guard.ts'
 import {
   applyPublicCommandPath,
+  cliCallerEnvironmentValue,
   type PublicCommandInvocation,
   publicCommandUsage,
 } from '../../../shared/commander-public-path.ts'
+import { CALLER_ENVIRONMENT_KEY } from '../../../shared/record-caller.ts'
 import { databaseLockHolder, isDatabaseLocked } from '../../../shared/database-lock-refusal.ts'
 import { processCommandLine } from '../../../shared/process-identity.ts'
 import { recordDatabaseLockRefusal } from '../../../shared/store-lock-refusal-log.ts'
@@ -51,7 +53,6 @@ import { register as registerSync } from '../commands/sync.ts'
 import { register as registerTestSubstance } from '../commands/test-substance.ts'
 import { DB_PATH, dbSourcePath, withReadOnlyDatabaseAccess } from '../database/db.ts'
 import { recordSessionHostPressure } from '../host-pressure/host-pressure-service.ts'
-import { CALLER_ENVIRONMENT_KEY, cliCallerEnvironmentValue } from '../record/record-caller.ts'
 import { classifyRunIdentifier } from '../run/run-identifier.ts'
 
 export const program = new Command()
@@ -105,13 +106,9 @@ let activeCallerDispatch = false
 
 program.hook('preAction', (_rootCommand, actionCommand) => {
   if (!activeCallerDispatch) return
-  const path: string[] = []
-  for (let command: Command | null = actionCommand; command?.parent; command = command.parent) {
-    path.unshift(command.name())
-  }
   process.env[CALLER_ENVIRONMENT_KEY] = cliCallerEnvironmentValue(
     process.env[CALLER_ENVIRONMENT_KEY],
-    path,
+    actionCommand,
   )
 })
 

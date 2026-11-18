@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { hostedApiFetch } from '../../shared/bounded-fetch.ts'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
+import { withRecordCallerHeader } from '../../shared/record-caller.ts'
 import {
   recordRequestNature,
   recordSpaceAccessDecision,
@@ -184,7 +185,7 @@ export async function reportApi(
   const identity = await taskSpaceIdentity(
     request,
     config.recordApiUrl,
-    (dependencies.fetch ?? hostedApiFetch) as typeof fetch,
+    withRecordCallerHeader((dependencies.fetch ?? hostedApiFetch) as typeof fetch),
     true,
     { counter: config.noDestinationWriteCounter, database: () => config.recordDatabaseUrl },
   )
