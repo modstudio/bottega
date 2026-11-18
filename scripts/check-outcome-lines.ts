@@ -50,37 +50,39 @@ function bareIdPrint(node: ts.Node): ts.CallExpression | null {
       called.expression.text === 'console' &&
       called.name.text === 'log')
   if (!prints) return null
-  return (
-    node.arguments.find(
-      (argument) =>
-        ts.isCallExpression(argument) &&
-        ts.isIdentifier(argument.expression) &&
-        argument.expression.text === 'String' &&
-        argument.arguments.length === 1 &&
-        ts.isPropertyAccessExpression(argument.arguments[0]!) &&
-        (argument.arguments[0].name.text === 'id' || argument.arguments[0].name.text === 'number'),
-    ) ?? null
+  const hasBareId = node.arguments.some(
+    (argument) =>
+      ts.isCallExpression(argument) &&
+      ts.isIdentifier(argument.expression) &&
+      argument.expression.text === 'String' &&
+      argument.arguments.length === 1 &&
+      ts.isPropertyAccessExpression(argument.arguments[0]!) &&
+      (argument.arguments[0].name.text === 'id' || argument.arguments[0].name.text === 'number'),
   )
+  return hasBareId ? node : null
 }
 
-function functionName(node: ts.FunctionLikeDeclaration): string | null {
+type FunctionWithBody = ts.SignatureDeclaration & { body: ts.ConciseBody }
+
+function functionName(node: FunctionWithBody): string | null {
   if ('name' in node && node.name && ts.isIdentifier(node.name)) return node.name.text
   const parent = node.parent
   if (ts.isVariableDeclaration(parent) && ts.isIdentifier(parent.name)) return parent.name.text
   return null
 }
 
-function functionLikes(file: ts.SourceFile): ts.FunctionLikeDeclaration[] {
-  const functions: ts.FunctionLikeDeclaration[] = []
+function functionLikes(file: ts.SourceFile): FunctionWithBody[] {
+  const functions: FunctionWithBody[] = []
   const visit = (node: ts.Node): void => {
-    if (ts.isFunctionLike(node) && node.body) functions.push(node)
+    if (ts.isFunctionLike(node) && 'body' in node && node.body)
+      functions.push(node as FunctionWithBody)
     ts.forEachChild(node, visit)
   }
   visit(file)
   return functions
 }
 
-function functionBodyNodes(node: ts.FunctionLikeDeclaration): ts.Node[] {
+function functionBodyNodes(node: FunctionWithBody): ts.Node[] {
   const result: ts.Node[] = []
   const visit = (child: ts.Node): void => {
     if (child !== node && ts.isFunctionLike(child)) return

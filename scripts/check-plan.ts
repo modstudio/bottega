@@ -220,6 +220,7 @@ export const ROOT_TEST_FILES = [
   'scripts/check-runtime.test.ts',
   'scripts/static-check-plan.test.ts',
   'scripts/check-unchecked-exits.test.ts',
+  'scripts/check-outcome-lines.test.ts',
   'scripts/check-ci-workflow.test.ts',
   'scripts/check-storybook.test.ts',
   'scripts/check-outcome.test.ts',
