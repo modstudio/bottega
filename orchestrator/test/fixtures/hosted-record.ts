@@ -23,7 +23,7 @@ export async function createHostedRecordFixture(options: {
   return database
 }
 
-type SqlFragment = { readonly sql: string; readonly parameters: readonly unknown[] }
+type SqlFragment = { readonly sql: string; readonly parameters?: readonly unknown[] }
 
 function shiftedSql(sql: string, offset: number): string {
   return sql.replace(/\$(\d+)/g, (_, number: string) => `$${Number(number) + offset}`)
@@ -65,7 +65,7 @@ function pgliteQuery(database: Pick<PGlite, 'query'>): SQL {
       if (typeof interpolation === 'object' && interpolation !== null && 'sql' in interpolation) {
         const fragment = interpolation as SqlFragment
         statement += shiftedSql(fragment.sql, parameters.length)
-        parameters.push(...fragment.parameters)
+        parameters.push(...(fragment.parameters ?? []))
       } else {
         parameters.push(interpolation)
         statement += `$${parameters.length}`
