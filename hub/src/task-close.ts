@@ -1,8 +1,15 @@
 import { pruneTaskBranches, releaseTaskClaims } from './orch.ts'
-import { closeTask } from './task.ts'
+import { closeTask, showTask } from './task.ts'
 import type { Attribution } from './task-attribution.ts'
 import type { TaskScope } from './task-identity.ts'
 import type { TaskRow } from './task-row.ts'
+import {
+  type AbandonedTaskCursor,
+  abandonPlannedTaskCursors,
+  type openTaskWorkflowCursors,
+  planOpenTaskCursorClose,
+  type TaskCursorAbandon,
+} from './task-workflow-cursors.ts'
 
 export async function closeThenPrune(
   key: string,
@@ -20,26 +27,82 @@ export async function closeThenPrune(
     ) => Promise<TaskRow>
     prune?: typeof pruneTaskBranches
     releaseClaims?: typeof releaseTaskClaims
+    listCursors?: typeof openTaskWorkflowCursors
+    abandonCursor?: TaskCursorAbandon
+    callingSession?: string | null
+    project?: (key: string, scope: TaskScope) => string
+    cursorAbandoned?: (cursor: AbandonedTaskCursor) => void
   } = {},
 ) {
+  const plan = await planOpenTaskCursorClose(
+    dependencies.project?.(key, scope) ?? showTaskProject(key, scope),
+    key,
+    'done',
+    {
+      list: dependencies.listCursors,
+      abandon: dependencies.abandonCursor,
+      callingSession: dependencies.callingSession,
+      onAbandoned: dependencies.cursorAbandoned,
+    },
+  )
   const closed = dependencies.close
     ? await dependencies.close(key, scope, attribution, { abandonReason, confirm })
     : await closeTask(key, scope, attribution, { abandonReason })
-  let claimReleaseError: Error | null = null
+  let abandoned: AbandonedTaskCursor[] = []
+  try {
+    abandoned = await abandonPlannedTaskCursors(plan)
+  } catch (error) {
+    return {
+      closed,
+      abandoned,
+      abandonError: error as Error,
+      releaseError: null,
+      pruned: null,
+      pruneError: null,
+    }
+  }
   try {
     await (dependencies.releaseClaims ?? releaseTaskClaims)(closed.project, closed.key)
   } catch (error) {
-    claimReleaseError = error as Error
+    return {
+      closed,
+      abandoned,
+      abandonError: null,
+      releaseError: error as Error,
+      pruned: null,
+      pruneError: null,
+    }
   }
-  if (keepBranches) return { closed, pruned: null, pruneError: null, claimReleaseError }
+  if (keepBranches)
+    return {
+      closed,
+      abandoned,
+      abandonError: null,
+      releaseError: null,
+      pruned: null,
+      pruneError: null,
+    }
   try {
     return {
       closed,
+      abandoned,
+      abandonError: null,
+      releaseError: null,
       pruned: await (dependencies.prune ?? pruneTaskBranches)(closed.project, closed.key),
       pruneError: null,
-      claimReleaseError,
     }
   } catch (error) {
-    return { closed, pruned: null, pruneError: error as Error, claimReleaseError }
+    return {
+      closed,
+      abandoned,
+      abandonError: null,
+      releaseError: null,
+      pruned: null,
+      pruneError: error as Error,
+    }
   }
+}
+
+function showTaskProject(key: string, scope: TaskScope): string {
+  return showTask(key, scope).task.project
 }

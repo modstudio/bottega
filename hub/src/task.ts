@@ -139,13 +139,15 @@ export function duplicateCandidates(tasks: TaskRow[], title: string): DuplicateC
     .slice(0, DUPLICATE_LIMIT)
 }
 
-function status(value: string | undefined): StatusCategory {
+export function localTaskStatusCategory(value: string | undefined): StatusCategory {
   const candidate = value ?? 'open'
   if (!(TASK_STATUSES as readonly string[]).includes(candidate)) {
     throw new Error(`invalid status '${candidate}': expected ${TASK_STATUSES.join('|')}`)
   }
   return candidate as StatusCategory
 }
+
+const status = localTaskStatusCategory
 
 const registeredProject = registeredTaskProject
 

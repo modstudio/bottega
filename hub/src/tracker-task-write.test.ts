@@ -5,10 +5,12 @@ import { db, writeTransaction } from './db.ts'
 import type { RegisteredProject } from './projects.ts'
 import { closeTask, showTask } from './task.ts'
 import { UNATTRIBUTED } from './task-attribution.ts'
+import type { OpenTaskWorkflowCursor } from './task-workflow-cursors.ts'
 import {
   closeTaskThroughTracker,
   commentTaskThroughTracker,
   setTaskThroughTracker,
+  TaskCursorResidueError,
 } from './tracker-task-write.ts'
 
 const taskId = '01990000-0000-7000-8000-000000001659'
@@ -71,6 +73,7 @@ function dependencies(callTool: (name: string, args: Record<string, unknown>) =>
     readCredentials: async () => ({ url: 'https://tracker.invalid/mcp', token: 'fixture' }),
     connect: async () => ({ callTool, close: async () => {} }),
     classify: async () => branchClassification,
+    listCursors: async () => [],
   }
 }
 
@@ -253,6 +256,132 @@ describe('array-mcp task writes', () => {
     )
 
     expect(row).toMatchObject({ status: 'cancelled', status_category: 'dropped' })
+  })
+
+  test('task set to a dropped category abandons its open cursor after the tracker write', async () => {
+    let cursorState = 'running'
+    const calls: string[] = []
+    const openCursor = {
+      id: 62,
+      record_id: '01a1ed7c-3333-7333-8333-333333333333',
+      project: 'adanim',
+      workflow_slug: 'ship-task',
+      workflow_key: 'ADN-1659',
+      session_id: 'dead-session',
+      live_runs: [],
+    } satisfies OpenTaskWorkflowCursor
+
+    const row = await setTaskThroughTracker(
+      'ADN-1659',
+      {},
+      { status: 'cancelled' },
+      UNATTRIBUTED,
+      { confirm: 'production' },
+      {
+        ...dependencies(async () => {
+          calls.push(`write:${cursorState}`)
+          return { id: taskId, status: 'cancelled' }
+        }),
+        callingSession: 'calling-session',
+        listCursors: async () => [openCursor],
+        abandonCursor: async (_cursor, reason, owner) => {
+          expect(reason).toBe('task ADN-1659 closed (dropped)')
+          expect(owner).toBe('dead-session')
+          cursorState = 'abandoned'
+        },
+      },
+    )
+
+    expect(row.status_category).toBe('dropped')
+    expect(cursorState).toBe('abandoned')
+    expect(calls).toEqual(['write:running'])
+  })
+
+  test('a local task set to done writes before abandoning its foreign cursor', async () => {
+    writeTransaction((conn) =>
+      conn.query(`UPDATE task SET source='local' WHERE key='ADN-1659'`).run(),
+    )
+    let cursorState = 'running'
+    const calls: string[] = []
+    const current = showTask('ADN-1659').task
+
+    const row = await setTaskThroughTracker(
+      'ADN-1659',
+      {},
+      { status: 'done' },
+      UNATTRIBUTED,
+      { confirm: 'production' },
+      {
+        callingSession: 'calling-session',
+        listCursors: async () => [
+          {
+            id: 63,
+            record_id: '01a1ed7c-3333-7333-8333-333333333334',
+            project: 'adanim',
+            workflow_slug: 'ship-task',
+            workflow_key: 'ADN-1659',
+            session_id: 'foreign-session',
+            live_runs: [],
+          },
+        ],
+        localSet: async () => {
+          calls.push(`write:${cursorState}`)
+          return { ...current, status: 'done', status_category: 'done' }
+        },
+        abandonCursor: async (_cursor, reason, owner) => {
+          expect(reason).toBe('task ADN-1659 closed (done)')
+          expect(owner).toBe('foreign-session')
+          cursorState = 'abandoned'
+        },
+      },
+    )
+
+    expect(row.status_category).toBe('done')
+    expect(calls).toEqual(['write:running'])
+    expect(cursorState).toBe('abandoned')
+  })
+
+  test('a cursor abandonment failure carries the task row written by task set', async () => {
+    writeTransaction((conn) =>
+      conn.query(`UPDATE task SET source='local' WHERE key='ADN-1659'`).run(),
+    )
+    const current = showTask('ADN-1659').task
+    const written = { ...current, status: 'done', status_category: 'done' } as const
+
+    try {
+      await setTaskThroughTracker(
+        'ADN-1659',
+        {},
+        { status: 'done' },
+        UNATTRIBUTED,
+        { confirm: 'production' },
+        {
+          callingSession: 'calling-session',
+          listCursors: async () => [
+            {
+              id: 64,
+              record_id: '01a1ed7c-3333-7333-8333-333333333335',
+              project: 'adanim',
+              workflow_slug: 'ship-task',
+              workflow_key: 'ADN-1659',
+              session_id: 'foreign-session',
+              live_runs: [],
+            },
+          ],
+          localSet: async () => written,
+          abandonCursor: async () => {
+            throw new Error('cursor store unavailable; retry workflow abandon')
+          },
+        },
+      )
+      throw new Error('expected task cursor residue')
+    } catch (error) {
+      expect(error).toBeInstanceOf(TaskCursorResidueError)
+      expect((error as TaskCursorResidueError).task).toBe(written)
+      expect((error as Error).message).toContain(
+        'task ADN-1659 is closed but its workflow cursor cleanup failed',
+      )
+    }
   })
 
   test('a differing reply status is observed before the write refuses', async () => {

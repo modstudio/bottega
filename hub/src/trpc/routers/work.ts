@@ -104,9 +104,16 @@ function setStatusProcedure(deps: WorkDeps) {
     .mutation(async ({ input: value }) => {
       const attribution = await deps.machineAttribution()
       return write(() =>
-        deps.setTaskThroughTracker(value.key, value.scope, { status: value.status }, attribution, {
-          confirm: ARRAY_MCP_STATUS_WRITE_CONFIRM,
-        }),
+        deps.setTaskThroughTracker(
+          value.key,
+          value.scope,
+          { status: value.status },
+          attribution,
+          {
+            confirm: ARRAY_MCP_STATUS_WRITE_CONFIRM,
+          },
+          { callingSession: null },
+        ),
       )
     })
 }

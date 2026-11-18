@@ -247,7 +247,7 @@ async function orchProcess(
   }
 }
 
-async function json<T>(
+export async function parseOrchestratorJson<T>(
   args: string[],
   schema: { parse(value: unknown): T },
   opts: {
@@ -384,7 +384,7 @@ export async function readWorkflowCursorIdentityMap(): Promise<WorkflowCursorIde
 }
 
 export const readWorkflowRulings = (since: string): Promise<RulingListRow[]> =>
-  json(
+  parseOrchestratorJson(
     ['question', 'ruling', 'list', '--json', '--kind', 'workflow', '--since', since],
     RulingListSchema,
   )
@@ -392,7 +392,7 @@ export const readWorkflowRulings = (since: string): Promise<RulingListRow[]> =>
 export const readWorkflowRulingChanges = (
   after: string,
 ): Promise<{ rows: RulingListRow[]; cursor: string }> =>
-  json(
+  parseOrchestratorJson(
     [
       'question',
       'ruling',
@@ -419,10 +419,10 @@ export async function readRunsById(ids: (string | number)[]): Promise<OrchRunLin
 }
 
 export const waiting = (): Promise<OperatorWaitingItem[]> =>
-  json(['run', 'waiting', '--json'], z.array(OperatorWaitingItemSchema))
+  parseOrchestratorJson(['run', 'waiting', '--json'], z.array(OperatorWaitingItemSchema))
 
 export const claimWaitingNotifications = () =>
-  json(
+  parseOrchestratorJson(
     ['run', 'waiting', '--claim-notifications', '--json'],
     z.array(ClaimedOperatorNotificationSchema),
   )
@@ -444,7 +444,7 @@ export async function answerWaiting(
   runId: string,
   rulings: readonly WaitingRuling[],
 ): Promise<AnswerWaitingResult> {
-  return json(answerWaitingArgv(runId, rulings), AnswerWaitingResultSchema, {
+  return parseOrchestratorJson(answerWaitingArgv(runId, rulings), AnswerWaitingResultSchema, {
     env: dashboardCapabilityEnvironment(),
   })
 }
@@ -474,13 +474,16 @@ export const fileRulingArgv = (input: FileWaitingRuling): string[] => [
 ]
 
 export async function fileWaitingRuling(input: FileWaitingRuling): Promise<FileRulingResult> {
-  return json(fileRulingArgv(input), FileRulingResultSchema, {
+  return parseOrchestratorJson(fileRulingArgv(input), FileRulingResultSchema, {
     env: dashboardCapabilityEnvironment(),
   })
 }
 
 export const blockers = (days: number): Promise<OrchBlockers> =>
-  json(['machine', 'blockers', '--days', String(days), '--json'], OrchBlockersSchema)
+  parseOrchestratorJson(
+    ['machine', 'blockers', '--days', String(days), '--json'],
+    OrchBlockersSchema,
+  )
 
 type ProjectListProcessResult = {
   command: string
@@ -563,13 +566,13 @@ export function projectArgv(
 }
 
 export async function projectAdd(body: ProjectAddBody): Promise<OrchProject> {
-  const result = await json(projectArgv('add', body.name, body), OrchProjectSchema)
+  const result = await parseOrchestratorJson(projectArgv('add', body.name, body), OrchProjectSchema)
   refreshProjects()
   return result
 }
 
 export async function projectSet(name: string, body: ProjectWriteBody): Promise<OrchProject> {
-  const result = await json(projectArgv('set', name, body), OrchProjectSchema)
+  const result = await parseOrchestratorJson(projectArgv('set', name, body), OrchProjectSchema)
   refreshProjects()
   return result
 }
@@ -635,10 +638,16 @@ export const releaseTaskClaims = (project: string, key: string): Promise<{ relea
   ])
 
 export const state = (days: number | null) =>
-  json(['run', 'state', ...(days ? ['--days', String(days)] : [])], OrchStateSchema)
+  parseOrchestratorJson(
+    ['run', 'state', ...(days ? ['--days', String(days)] : [])],
+    OrchStateSchema,
+  )
 
 export const health = (days: number): Promise<HarnessHealth> =>
-  json(['machine', 'health', '--days', String(days), '--json'], HarnessHealthSchema)
+  parseOrchestratorJson(
+    ['machine', 'health', '--days', String(days), '--json'],
+    HarnessHealthSchema,
+  )
 
 export type OrchJob = {
   name: string
@@ -668,7 +677,7 @@ export const dispatchNoteCurator = (cwd: string, prompt: string): Promise<string
   orchProcess(['run', 'start', 'understand', '--cwd', cwd], 0, { stdin: prompt })
 
 export const run = (id: number): Promise<OrchRunDetail> =>
-  json(['run', 'show', String(id)], OrchRunDetailSchema)
+  parseOrchestratorJson(['run', 'show', String(id)], OrchRunDetailSchema)
 export const runDetail = run
 
 /**
@@ -912,34 +921,42 @@ export const machinePermissionArgv = (input: MachinePermissionInput) => [
 ]
 
 export const userDocList = () =>
-  json(docArgv('list', { scope: 'canon', user: true }), z.array(DocRowSchema)) as Promise<DocRow[]>
+  parseOrchestratorJson(
+    docArgv('list', { scope: 'canon', user: true }),
+    z.array(DocRowSchema),
+  ) as Promise<DocRow[]>
 export const userDocGet = (slug: string, scope = 'canon') =>
-  json(docArgv('get', { slug, scope, user: true }), DocRowSchema) as Promise<DocRow>
+  parseOrchestratorJson(
+    docArgv('get', { slug, scope, user: true }),
+    DocRowSchema,
+  ) as Promise<DocRow>
 export const userDocSet = (input: Omit<DocSetInput, 'scope' | 'subject'>, scope = 'canon') =>
-  json(docArgv('set', { ...input, scope, user: true }), DocRowSchema, {
+  parseOrchestratorJson(docArgv('set', { ...input, scope, user: true }), DocRowSchema, {
     stdin: input.body,
     env: requiredDashboardCapabilityEnvironment(),
   }) as Promise<DocRow>
 export const userDocRemove = (slug: string, reason: string, expectedRevision?: string) =>
-  json(
+  parseOrchestratorJson(
     docArgv('remove', { slug, scope: 'canon', user: true, reason, expectedRevision }),
     z.object({ removed: z.boolean() }),
     { env: requiredDashboardCapabilityEnvironment() },
   )
 
-export const contextGet = (cwd: string) => json(contextArgv(cwd), ContextSchema)
+export const contextGet = (cwd: string) => parseOrchestratorJson(contextArgv(cwd), ContextSchema)
 export const configSet = (key: string, value: string, expectedRowVersion?: number | null) =>
-  json(configArgv('set', key, value, expectedRowVersion), ConfigEntrySchema, {
+  parseOrchestratorJson(configArgv('set', key, value, expectedRowVersion), ConfigEntrySchema, {
     env: requiredDashboardCapabilityEnvironment(),
   })
-export const configList = () => json(configArgv('list'), z.array(ConfigEntrySchema))
+export const configList = () =>
+  parseOrchestratorJson(configArgv('list'), z.array(ConfigEntrySchema))
 export const configDelete = (key: string, expectedRowVersion?: number) =>
   orchProcess(configDeleteArgv(key, expectedRowVersion), 20_000, {
     env: requiredDashboardCapabilityEnvironment(),
   })
-export const machineConfigList = () => json(machineConfigArgv('list'), MachineConfigListSchema)
+export const machineConfigList = () =>
+  parseOrchestratorJson(machineConfigArgv('list'), MachineConfigListSchema)
 export const machineConfigSet = (key: string, value: string) =>
-  json(machineConfigArgv('set', key, value), MachineConfigFileEntrySchema, {
+  parseOrchestratorJson(machineConfigArgv('set', key, value), MachineConfigFileEntrySchema, {
     env: requiredDashboardCapabilityEnvironment(),
   })
 export const machineConfigDelete = (key: string) =>
@@ -947,7 +964,7 @@ export const machineConfigDelete = (key: string) =>
     env: requiredDashboardCapabilityEnvironment(),
   })
 export const settingsCheck = (target: { user: true } | { project: string }) =>
-  json(settingsCheckArgv(target), SettingsCheckSchema, {
+  parseOrchestratorJson(settingsCheckArgv(target), SettingsCheckSchema, {
     acceptedExitCodes: [1],
     acceptedOutput: (output) => {
       try {
@@ -987,15 +1004,15 @@ export type MachinePermissionInput = {
 }
 
 export const settingsPermission = (input: SettingsPermissionInput) =>
-  json(settingsPermissionArgv(input), SettingsPermissionResultSchema, {
+  parseOrchestratorJson(settingsPermissionArgv(input), SettingsPermissionResultSchema, {
     env: requiredDashboardCapabilityEnvironment(),
   })
 
 export const machinePermissions = () =>
-  json(machinePermissionListArgv(), MachinePermissionOverlaySchema)
+  parseOrchestratorJson(machinePermissionListArgv(), MachinePermissionOverlaySchema)
 
 export const machinePermission = (input: MachinePermissionInput) =>
-  json(machinePermissionArgv(input), MachinePermissionResultSchema, {
+  parseOrchestratorJson(machinePermissionArgv(input), MachinePermissionResultSchema, {
     env: requiredDashboardCapabilityEnvironment(),
   })
 
@@ -1069,24 +1086,28 @@ export function boardPostArgv(input: BoardPostInput): string[] {
 }
 
 export const boardList = (input: BoardListInput) =>
-  json(boardListArgv(input), BoardListResultSchema, boardOptions())
+  parseOrchestratorJson(boardListArgv(input), BoardListResultSchema, boardOptions())
 export const boardThread = (id: string) =>
-  json(['board', 'thread', id], BoardThreadResultSchema, boardOptions())
+  parseOrchestratorJson(['board', 'thread', id], BoardThreadResultSchema, boardOptions())
 export const boardStatus = (id: string) =>
-  json(['board', 'status', id], BoardStatusResultSchema, boardOptions())
+  parseOrchestratorJson(['board', 'status', id], BoardStatusResultSchema, boardOptions())
 export const boardPost = (input: BoardPostInput) =>
-  json(boardPostArgv(input), BoardPostResultSchema, boardOptions())
+  parseOrchestratorJson(boardPostArgv(input), BoardPostResultSchema, boardOptions())
 export const boardReply = (input: { id: string; body: string }) =>
-  json(
+  parseOrchestratorJson(
     ['board', 'reply', input.id, '--body', input.body],
     BoardPostResultSchema.extend({ rootId: BoardIdSchema }),
     boardOptions(),
   )
 export const boardAccept = (input: { questionId: string; replyId: string }) =>
-  json(
+  parseOrchestratorJson(
     ['board', 'accept', input.questionId, input.replyId],
     BoardAcceptResultSchema,
     boardOptions(),
   )
 export const boardWithdraw = (id: string) =>
-  json(['board', 'withdraw', id], z.object({ withdrawn: BoardIdSchema }), boardOptions())
+  parseOrchestratorJson(
+    ['board', 'withdraw', id],
+    z.object({ withdrawn: BoardIdSchema }),
+    boardOptions(),
+  )
