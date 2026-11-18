@@ -53,7 +53,7 @@ export function readRecordSessionStamp(): RecordSessionStamp {
   }
 }
 
-function sameSessionStamp(
+export function sameSessionStamp(
   left: RecordSessionStamp | undefined,
   right: RecordSessionStamp,
 ): boolean {

@@ -5,8 +5,10 @@ import {
   markRecordIdentityChanged,
   type RecordSessionStamp,
   readRecordSessionStamp,
+  sameSessionStamp,
 } from '../../../shared/record-session.ts'
 import type { RecordClientRequest } from './record-api-client-paths.ts'
+import { RECORD_WHOAMI_ROUTE } from './record-api-client-session.ts'
 import type { RecordIdentity } from './record-auth.ts'
 
 export const RECORD_IDENTITY_MEMO_MAX_AGE_MS = 60_000
@@ -39,7 +41,7 @@ function memoizedRecordIdentity(
   const current = slot.byBaseUrl.get(baseUrl)
   if (
     current &&
-    current.stamp === stamp &&
+    sameSessionStamp(current.stamp, stamp) &&
     at - current.startedAt < RECORD_IDENTITY_MEMO_MAX_AGE_MS
   )
     return current.read
@@ -55,24 +57,24 @@ export function forgetRecordIdentityMemo(): void {
   memoSlot().byBaseUrl.clear()
 }
 
+export function markRecordIdentityMemoChanged(): void {
+  markRecordIdentityChanged()
+  forgetRecordIdentityMemo()
+}
+
 export function recordIdentityMemoRequest(
   request: RecordClientRequest,
   baseUrl: () => string,
   now: () => number = Date.now,
 ): RecordClientRequest {
   return async <T>(path: string, init = {}): Promise<T> => {
-    if (path === '/v1/whoami') {
+    if (path === RECORD_WHOAMI_ROUTE) {
       return memoizedRecordIdentity(
         baseUrl(),
         () => request<RecordIdentity>(path, init),
         now,
       ) as Promise<T>
     }
-    const response = await request<T>(path, init)
-    if (path === '/api/auth/organization/set-active') {
-      markRecordIdentityChanged()
-      forgetRecordIdentityMemo()
-    }
-    return response
+    return request<T>(path, init)
   }
 }

@@ -97,7 +97,7 @@ import {
   type RecordDocWriteResponse,
   recordDocWriteResponseFields,
 } from './record-doc-transport-contract.ts'
-import { recordIdentityMemoRequest } from './record-identity-memo.ts'
+import { markRecordIdentityMemoChanged, recordIdentityMemoRequest } from './record-identity-memo.ts'
 import type { HostedRecordInvitation } from './record-pending-invitations.ts'
 import type {
   PublicRecordDoc,
@@ -736,9 +736,17 @@ export function recordApiClient(request = recordApiRequest): RecordApiClient {
   if (injected) return injected
   if (process.env.NODE_ENV === 'test' && !process.env.BOTTEGA_TEST_POSTGRES_CONTAINER)
     throw new Error('record API client refuses a real base URL unless a stub is injected in tests')
-  const transportRequest =
-    request === recordApiRequest ? recordIdentityMemoRequest(request, recordApiBaseUrl) : request
-  return recordApiClientOver(transportRequest)
+  return recordApiClientOver(selectRecordApiTransport(request))
+}
+
+export function selectRecordApiTransport(
+  request: RecordClientRequest,
+  realRequest: RecordClientRequest = recordApiRequest,
+  now: () => number = Date.now,
+): RecordClientRequest {
+  return request === realRequest
+    ? recordIdentityMemoRequest(request, recordApiBaseUrl, now)
+    : request
 }
 
 export function recordApiClientOver(request: RecordClientRequest): RecordApiClient {
@@ -937,42 +945,74 @@ function recordIdentityAndSpaceClient(
   request: RecordClientRequest = recordApiRequest,
 ): Pick<RecordApiClient, RecordIdentityAndSpaceMethod> {
   return {
-    createOrganization: (input) =>
-      request('/api/auth/organization/create', {
-        method: 'POST',
-        body: JSON.stringify(input),
-        schema: organizationResponse,
-      }),
-    setActiveOrganization: (input) =>
-      request('/api/auth/organization/set-active', {
-        method: 'POST',
-        body: JSON.stringify(input),
-        schema: organizationResponse,
-      }),
+    createOrganization: async (input) => {
+      const organization = await request<{ id: string; slug: string }>(
+        '/api/auth/organization/create',
+        {
+          method: 'POST',
+          body: JSON.stringify(input),
+          schema: organizationResponse,
+        },
+      )
+      markRecordIdentityMemoChanged()
+      return organization
+    },
+    setActiveOrganization: async (input) => {
+      const organization = await request<{ id: string; slug: string }>(
+        '/api/auth/organization/set-active',
+        {
+          method: 'POST',
+          body: JSON.stringify(input),
+          schema: organizationResponse,
+        },
+      )
+      markRecordIdentityMemoChanged()
+      return organization
+    },
     listInvitations: () =>
       request('/v1/invitations', {
         schema: recordInvitationListResponse,
       }),
-    acceptInvitation: (invitationId) =>
-      request('/api/auth/organization/accept-invitation', {
-        method: 'POST',
-        body: JSON.stringify({ invitationId }),
-        schema: acceptedInvitationResponse,
-      }),
+    acceptInvitation: async (invitationId) => {
+      const invitation = await request<Awaited<ReturnType<RecordApiClient['acceptInvitation']>>>(
+        '/api/auth/organization/accept-invitation',
+        {
+          method: 'POST',
+          body: JSON.stringify({ invitationId }),
+          schema: acceptedInvitationResponse,
+        },
+      )
+      markRecordIdentityMemoChanged()
+      return invitation
+    },
     inviteMember: (input) =>
       request('/api/auth/organization/invite-member', {
         method: 'POST',
         body: JSON.stringify(input),
       }),
-    removeMember: ({ email, organizationId }) =>
-      request('/api/auth/organization/remove-member', {
+    removeMember: async ({ email, organizationId }) => {
+      await request('/api/auth/organization/remove-member', {
         method: 'POST',
         body: JSON.stringify({ memberIdOrEmail: email, organizationId }),
-      }),
-    deleteTrialSpace: (slug) =>
-      request('/v1/spaces/delete-trial', trialSpaceDeleteTransport.options(slug)),
-    deleteSpace: (slug, confirmation) =>
-      request('/v1/spaces/delete', spaceDeleteTransport.options(slug, confirmation)),
+      })
+      markRecordIdentityMemoChanged()
+    },
+    deleteTrialSpace: async (slug) => {
+      const result = await request<ReturnType<typeof trialSpaceDeleteTransport.response>>(
+        '/v1/spaces/delete-trial',
+        trialSpaceDeleteTransport.options(slug),
+      )
+      markRecordIdentityMemoChanged()
+      return result
+    },
+    deleteSpace: async (slug, confirmation) => {
+      const result = await request<ReturnType<typeof spaceDeleteTransport.response>>(
+        '/v1/spaces/delete',
+        spaceDeleteTransport.options(slug, confirmation),
+      )
+      markRecordIdentityMemoChanged()
+      return result
+    },
   }
 }
 

@@ -17,6 +17,8 @@ export type RecordSessionClient = {
   sync?(input: RecordSyncRequest): Promise<RecordSyncResponse>
 }
 
+export const RECORD_WHOAMI_ROUTE = '/v1/whoami'
+
 export function recordIdentityResponse(
   body: unknown,
   invalid: (message: string) => Error = (message) => new Error(message),
@@ -56,7 +58,7 @@ export function recordSessionClient(
       request(NO_DESTINATION_WRITES_ROUTE, {
         schema: (body) => parseNoDestinationWriteReport(body, 'record API'),
       }),
-    whoami: () => request('/v1/whoami', { schema: identitySchema }),
+    whoami: () => request(RECORD_WHOAMI_ROUTE, { schema: identitySchema }),
     sync: (input) => request('/v1/sync', { method: 'POST', body: JSON.stringify(input) }),
   }
 }

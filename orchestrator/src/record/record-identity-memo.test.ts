@@ -4,12 +4,11 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { markRecordIdentityChanged } from '../../../shared/record-session.ts'
 import { STATE_HOME_ENV } from '../../../shared/state-directory.ts'
-import { recordApiClientOver } from './record-api-client.ts'
+import { recordApiClientOver, selectRecordApiTransport } from './record-api-client.ts'
 import type { RecordClientRequest } from './record-api-client-paths.ts'
 import {
   forgetRecordIdentityMemo,
   RECORD_IDENTITY_MEMO_MAX_AGE_MS,
-  recordIdentityMemoRequest,
 } from './record-identity-memo.ts'
 
 const identity = {
@@ -74,8 +73,12 @@ function countingRequest(onWhoami: () => Promise<typeof identity> = async () => 
       const body = await onWhoami()
       return init.schema ? init.schema(body) : body
     }
-    if (path === '/api/auth/organization/set-active') {
+    if (path === '/api/auth/organization/set-active' || path === '/api/auth/organization/create') {
       const body = { id: 'space-b', slug: 'beta' }
+      return init.schema ? init.schema(body) : body
+    }
+    if (path === '/api/auth/organization/accept-invitation') {
+      const body = { invitation: { organizationId: 'space-b' } }
       return init.schema ? init.schema(body) : body
     }
     throw new Error(`unexpected request ${path}`)
@@ -84,8 +87,7 @@ function countingRequest(onWhoami: () => Promise<typeof identity> = async () => 
 }
 
 function realClients(request: RecordClientRequest, now: () => number = Date.now) {
-  const realRequest = () =>
-    recordIdentityMemoRequest(request, () => process.env.BOTTEGA_RECORD_API_URL!, now)
+  const realRequest = () => selectRecordApiTransport(request, request, now)
   return [recordApiClientOver(realRequest()), recordApiClientOver(realRequest())] as const
 }
 
@@ -142,6 +144,28 @@ describe('record identity process memo', () => {
     await first.whoami()
 
     await first.setActiveOrganization({ organizationId: 'space-b' })
+    await second.whoami()
+
+    expect(counted.whoamiRequests()).toBe(2)
+  })
+
+  test('create-organization success invalidates identity before the next whoami', async () => {
+    const counted = countingRequest()
+    const [first, second] = realClients(counted.request)
+    await first.whoami()
+
+    await first.createOrganization({ name: 'Beta', slug: 'beta' })
+    await second.whoami()
+
+    expect(counted.whoamiRequests()).toBe(2)
+  })
+
+  test('accept-invitation success invalidates identity before the next whoami', async () => {
+    const counted = countingRequest()
+    const [first, second] = realClients(counted.request)
+    await first.whoami()
+
+    await first.acceptInvitation('invitation-a')
     await second.whoami()
 
     expect(counted.whoamiRequests()).toBe(2)
