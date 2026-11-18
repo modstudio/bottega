@@ -9,7 +9,6 @@ import { recordApiClient } from '../record/record-api-client.ts'
 import {
   TASK_FLOW_PRESENCE_BATCH_MAX,
   type TaskFlowPresence,
-  type TaskFlowPresenceInput,
 } from '../record/record-task-flow-contract.ts'
 import { RefusalError } from '../refusal-error.ts'
 import { withSynchronousDatabaseForMigrationStep, writeTransaction } from './db.ts'
@@ -44,12 +43,9 @@ export function decideHostedRowRelease(
   present: HostedRowIds,
 ): HostedRowReleaseDecision {
   if (emptyIds(local)) return { kind: 'nothing' }
-  const missing = Object.fromEntries(
-    HOSTED_ROW_TABLES.map((table) => [
-      table,
-      new Set([...local[table]].filter((id) => !present[table].has(id))),
-    ]),
-  ) as HostedRowIds
+  const missing = emptyHostedRowIds()
+  for (const table of HOSTED_ROW_TABLES)
+    for (const id of local[table]) if (!present[table].has(id)) missing[table].add(id)
   return emptyIds(missing) ? { kind: 'release', ids: local } : { kind: 'refuse', missing }
 }
 
@@ -67,7 +63,7 @@ export function hostedRowReleaseMissingDetail(missing: HostedRowIds): string {
 
 type Presentation = { log(value: string): void }
 type WithDatabase = <T>(action: (database: Database) => T) => T
-type PresenceReader = (input: TaskFlowPresenceInput) => Promise<TaskFlowPresence>
+type PresenceReader = (input: TaskFlowPresence) => Promise<TaskFlowPresence>
 
 export type HostedRowReleaseDependencies = {
   withDatabase?: WithDatabase
@@ -117,20 +113,30 @@ function collectHostedRowIds(database: Database): HostedRowIds {
 }
 
 function emptyHostedRowIds(): Record<HostedRowTable, Set<string>> {
-  return Object.fromEntries(HOSTED_ROW_TABLES.map((table) => [table, new Set<string>()])) as Record<
-    HostedRowTable,
-    Set<string>
-  >
+  return {
+    workflow_obligation: new Set(),
+    workflow_step_text: new Set(),
+    workflow_text_copy: new Set(),
+    question_mutation_audit: new Set(),
+    question: new Set(),
+    workflow_cursor: new Set(),
+    task_flow: new Set(),
+  }
 }
 
-function presenceRequest(local: HostedRowIds, batch: number): TaskFlowPresenceInput {
+function presenceRequest(local: HostedRowIds, batch: number): TaskFlowPresence {
   const offset = batch * TASK_FLOW_PRESENCE_BATCH_MAX
-  return Object.fromEntries(
-    HOSTED_ROW_TABLES.map((table) => [
-      PRESENCE_FIELDS[table],
-      [...local[table]].slice(offset, offset + TASK_FLOW_PRESENCE_BATCH_MAX),
-    ]),
-  ) as TaskFlowPresenceInput
+  const chunk = (table: HostedRowTable) =>
+    [...local[table]].slice(offset, offset + TASK_FLOW_PRESENCE_BATCH_MAX)
+  return {
+    obligationIds: chunk('workflow_obligation'),
+    textIds: chunk('workflow_step_text'),
+    textCopyIds: chunk('workflow_text_copy'),
+    questionAuditIds: chunk('question_mutation_audit'),
+    questionIds: chunk('question'),
+    stageIds: chunk('workflow_cursor'),
+    flowIds: chunk('task_flow'),
+  }
 }
 
 async function readPresentIds(local: HostedRowIds, read: PresenceReader): Promise<HostedRowIds> {
@@ -148,7 +154,7 @@ async function readPresentIds(local: HostedRowIds, read: PresenceReader): Promis
   return present
 }
 
-function defaultPresenceReader(input: TaskFlowPresenceInput): Promise<TaskFlowPresence> {
+function defaultPresenceReader(input: TaskFlowPresence): Promise<TaskFlowPresence> {
   const read = recordApiClient().readTaskFlowPresence
   if (!read) throw new Error('record API predates task-flow presence reads')
   return read(input)

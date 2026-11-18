@@ -16,9 +16,15 @@ import { migratedTestDatabase } from './test-database.fixture.ts'
 function rowIds(
   values: Partial<Record<(typeof HOSTED_ROW_TABLES)[number], string[]>>,
 ): HostedRowIds {
-  return Object.fromEntries(
-    HOSTED_ROW_TABLES.map((table) => [table, new Set(values[table] ?? [])]),
-  ) as HostedRowIds
+  return {
+    workflow_obligation: new Set(values.workflow_obligation ?? []),
+    workflow_step_text: new Set(values.workflow_step_text ?? []),
+    workflow_text_copy: new Set(values.workflow_text_copy ?? []),
+    question_mutation_audit: new Set(values.question_mutation_audit ?? []),
+    question: new Set(values.question ?? []),
+    workflow_cursor: new Set(values.workflow_cursor ?? []),
+    task_flow: new Set(values.task_flow ?? []),
+  }
 }
 
 test('hosted row release does nothing when every local set is empty', () => {
