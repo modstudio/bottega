@@ -36,7 +36,7 @@ type TaskReadShow = {
   documents?: TaskReadDocumentSummary[]
 }
 
-export type TaskReadDuplicateCandidate = {
+type TaskReadDuplicateCandidate = {
   key: string
   status: string | null
   title: string
