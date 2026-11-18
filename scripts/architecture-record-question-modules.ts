@@ -91,6 +91,7 @@ export const recordQuestionModules: RecordModule[] = [
     './record-question-step.ts',
     './record-question-values.ts',
     './record-sync-project-identity.ts',
+    './record-task-flow-write-decision.ts',
   ]),
   module('orchestrator/src/question-store/question-store.ts', [
     'bun:sqlite',

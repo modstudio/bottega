@@ -26,6 +26,7 @@ import { allocateQuestionNumber } from './record-question-number.ts'
 import { QUESTION_STEP_CONFLICT_SET, questionValuesForWrite } from './record-question-step.ts'
 import { questionValues } from './record-question-values.ts'
 import { projectRecordId } from './record-sync-project-identity.ts'
+import { recordColumnName, sameRecordValue } from './record-task-flow-write-decision.ts'
 
 type Tenant = { url: string } & TenantPrincipal
 type ExistingQuestion = {
@@ -99,6 +100,11 @@ export async function writeRecordQuestion(
       return writeRecordQuestionTransaction(intent, input, tx)
     })
   } catch (error) {
+    if (intent === 'import' && isUniqueViolation(error, 'question_mutation_audit_identity'))
+      throw new RecordQuestionError(
+        `question ${input.question.id} already exists with different content`,
+        409,
+      )
     if (intent === 'import' && isUniqueViolation(error, 'question_pkey'))
       throw new RecordQuestionError(
         `question ${input.question.id} already exists in another space; it was not imported`,
@@ -216,26 +222,6 @@ export async function writeRecordQuestionTransaction(
   }
 }
 
-const camelToSnake = (key: string) => key.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`)
-const timestamp = /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?Z$/
-
-function canonical(value: unknown): unknown {
-  if (value instanceof Date) return value.getTime()
-  if (typeof value === 'string' && timestamp.test(value)) return Date.parse(value)
-  if (Array.isArray(value)) return value.map(canonical)
-  if (value && typeof value === 'object')
-    return Object.fromEntries(
-      Object.entries(value)
-        .sort(([left], [right]) => left.localeCompare(right))
-        .map(([key, item]) => [key, canonical(item)]),
-    )
-  return value
-}
-
-function sameRecordValue(left: unknown, right: unknown): boolean {
-  return JSON.stringify(canonical(left)) === JSON.stringify(canonical(right))
-}
-
 function assertSameQuestionRow(
   table: string,
   id: string,
@@ -244,7 +230,7 @@ function assertSameQuestionRow(
 ): void {
   for (const [key, value] of Object.entries(values)) {
     if (key === 'number' || key === 'lastRequestId') continue
-    if (!sameRecordValue(existing[camelToSnake(key)], value))
+    if (!sameRecordValue(existing[recordColumnName(key)], value))
       throw new RecordQuestionError(`${table} ${id} already exists with different content`, 409)
   }
 }

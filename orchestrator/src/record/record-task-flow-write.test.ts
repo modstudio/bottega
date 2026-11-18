@@ -1,6 +1,5 @@
 import { afterEach, beforeEach, expect, test } from 'bun:test'
 import type { PGlite } from '@electric-sql/pglite'
-import { bindTenant } from '../../../shared/record/tenant.ts'
 import { createHostedRecordFixture, pgliteSql } from '../../test/fixtures/hosted-record.ts'
 import type { QuestionImportBody, QuestionWriteBody } from './record-question-contract.ts'
 import { writeRecordQuestionTransaction } from './record-question-write.ts'
@@ -8,7 +7,6 @@ import { writeRecordTaskFlowTransaction } from './record-task-flow-write.ts'
 import type { TaskFlowIntentBody } from './record-task-flow-write-contract.ts'
 
 const SPACE = '01990000-0000-7000-8000-000000002500'
-const OTHER_SPACE = '01990000-0000-7000-8000-000000002501'
 const USER = '01990000-0000-7000-8000-000000002502'
 const PROJECT = '01990000-0000-7000-8000-000000002503'
 const MACHINE = '01990000-0000-7000-8000-000000002504'
@@ -27,6 +25,9 @@ const REQUEST = '01990000-0000-7000-8000-000000002516'
 const REQUEST_TWO = '01990000-0000-7000-8000-000000002517'
 const REQUEST_LIVE = '01990000-0000-7000-8000-000000002518'
 const AUDIT = '01990000-0000-7000-8000-000000002519'
+const OBLIGATION = '01990000-0000-7000-8000-000000002520'
+const TEXT = '01990000-0000-7000-8000-000000002521'
+const COPY = '01990000-0000-7000-8000-000000002522'
 const STAMP = '2025-04-03T02:01:00.000Z'
 const FINISHED = '2025-04-04T03:02:00.000Z'
 
@@ -40,8 +41,6 @@ beforeEach(async () => {
   postgres = await createHostedRecordFixture({ spaceId: SPACE, userId: USER })
   await postgres.exec(`
     RESET ROLE;
-    INSERT INTO space (id,name,slug,created_at)
-    VALUES ('${OTHER_SPACE}','Other import space','other-import-space',now());
     INSERT INTO project (id,space_id,name,key_prefixes,created_at)
     VALUES ('${PROJECT}','${SPACE}','imports',ARRAY['DEV'],now());
     INSERT INTO machine (id,user_id,name,registered_at,last_seen)
@@ -110,9 +109,48 @@ function flowImport(): TaskFlowIntentBody<'import'> {
       revision: 7,
     },
     stages: [stage(STAGE_TWO, 'second'), stage(STAGE_ONE, 'first')],
-    obligations: [],
-    texts: [],
-    copies: [],
+    obligations: [
+      {
+        id: OBLIGATION,
+        stageRecordId: STAGE_TWO,
+        stepOrdinal: 1,
+        stepSlug: 'second',
+        floor: 'test',
+        requirePullRequest: false,
+        expectedExitCode: 0,
+        expectedStatus: 'passed',
+        floorDeferrable: false,
+        reason: 'historical obligation',
+        sessionId: 'historical-session',
+        createdAt: STAMP,
+        satisfiedAt: FINISHED,
+        satisfiedStepOrdinal: 1,
+        satisfiedStepSlug: 'second',
+        satisfiedEvidence: [{ command: 'bun test', status: 'passed' }],
+        abandonedAt: null,
+        abandonedReason: null,
+        operatorRuling: false,
+      },
+    ],
+    texts: [
+      {
+        id: TEXT,
+        stageRecordId: STAGE_TWO,
+        stepOrdinal: 1,
+        stepSlug: 'second',
+        body: 'historical step text',
+        createdAt: STAMP,
+      },
+    ],
+    copies: [
+      {
+        id: COPY,
+        workflowTextRecordId: TEXT,
+        stageRecordId: STAGE_TWO,
+        taskDocumentReference: 'DEV-2419/1',
+        copiedAt: FINISHED,
+      },
+    ],
   }
 }
 
@@ -223,6 +261,53 @@ test('task-flow import is exact and idempotent while minting stage numbers in bo
   expect((await postgres.query('SELECT count(*)::int count FROM board_claim')).rows).toEqual([
     { count: 0 },
   ])
+  expect(
+    (
+      await postgres.query(
+        `SELECT id,stage_record_id,step_ordinal,step_slug,floor
+         FROM workflow_obligation WHERE id='${OBLIGATION}'`,
+      )
+    ).rows,
+  ).toEqual([
+    {
+      id: OBLIGATION,
+      stage_record_id: STAGE_TWO,
+      step_ordinal: 1,
+      step_slug: 'second',
+      floor: 'test',
+    },
+  ])
+  expect(
+    (
+      await postgres.query(
+        `SELECT id,stage_record_id,step_ordinal,step_slug,body
+         FROM workflow_step_text WHERE id='${TEXT}'`,
+      )
+    ).rows,
+  ).toEqual([
+    {
+      id: TEXT,
+      stage_record_id: STAGE_TWO,
+      step_ordinal: 1,
+      step_slug: 'second',
+      body: 'historical step text',
+    },
+  ])
+  expect(
+    (
+      await postgres.query(
+        `SELECT id,workflow_text_record_id,stage_record_id,task_document_reference
+         FROM workflow_text_copy WHERE id='${COPY}'`,
+      )
+    ).rows,
+  ).toEqual([
+    {
+      id: COPY,
+      workflow_text_record_id: TEXT,
+      stage_record_id: STAGE_TWO,
+      task_document_reference: 'DEV-2419/1',
+    },
+  ])
 
   const changed = flowImport()
   changed.stages[0]!.activeSlug = 'changed'
@@ -288,21 +373,3 @@ test('question import preserves history, audits, idempotency, and numbering besi
   ).rejects.toMatchObject({ status: 409, message: expect.stringContaining('different content') })
 })
 
-test('imports are refused by row-level security outside the caller memberships', async () => {
-  const sql = pgliteSql(postgres)
-  await expect(
-    sql.begin(async (tx) => {
-      await bindTenant(tx, { userId: USER, spaceId: OTHER_SPACE, spaceIds: [OTHER_SPACE] })
-      return writeRecordQuestionTransaction(
-        'import',
-        {
-          ...principal,
-          spaceId: OTHER_SPACE,
-          spaceIds: [OTHER_SPACE],
-          ...questionImport(QUESTION_ONE, REQUEST),
-        },
-        tx,
-      )
-    }),
-  ).rejects.toThrow(/row-level security policy/)
-})

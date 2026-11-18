@@ -20,6 +20,7 @@ import type {
 import {
   decideRevisionPreflight,
   decideRevisionWrite,
+  recordColumnName,
   sameRecordValue,
 } from './record-task-flow-write-decision.ts'
 
@@ -37,7 +38,6 @@ type StageMutationBody =
 type JsonBinder = (sql: SQL, value: unknown) => unknown
 
 const jsonColumns = new Set(['arguments', 'closed_step_notes', 'satisfied_evidence'])
-const camelToSnake = (key: string) => key.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`)
 const isJsonColumn = (column: string) => jsonColumns.has(column)
 
 function conflict(
@@ -94,7 +94,7 @@ async function updateRevisionRow(
     return mutation.expectedRevision + 1
   const entries = Object.entries(mutation.values)
   const assignments = entries.map(([key], index) => {
-    const column = camelToSnake(key)
+    const column = recordColumnName(key)
     return `${column}=$${index + 1}${isJsonColumn(column) ? '::jsonb' : ''}`
   })
   const parameters = entries.map(([, value]) => value)
@@ -155,7 +155,7 @@ function assertSameInsert(
   values: Record<string, unknown>,
 ) {
   for (const [key, value] of Object.entries(values)) {
-    const column = camelToSnake(key)
+    const column = recordColumnName(key)
     if (!sameRecordValue(existing[column], value)) conflict(table, id, null, 'already-exists')
   }
 }
@@ -248,7 +248,7 @@ async function insertObligation(
 async function updateObligation(tx: SQL, row: Record<string, unknown>) {
   const entries = Object.entries(row).filter(([key]) => key !== 'id' && key !== 'stageRecordId')
   const sets = entries.map(([key], index) => {
-    const column = camelToSnake(key)
+    const column = recordColumnName(key)
     return `${column}=$${index + 1}${isJsonColumn(column) ? '::jsonb' : ''}`
   })
   const values = entries.map(([, value]) => value)
@@ -636,11 +636,12 @@ async function applyAdopt(tx: SQL, spaceId: string, body: AdoptBody) {
 type Applier<K extends TaskFlowIntent> = (
   tx: SQL,
   input: Tenant & TaskFlowIntentBody<K>,
+  jsonb: JsonBinder,
 ) => Promise<TaskFlowIntentResult<K>>
 
 const intentAppliers: { [K in TaskFlowIntent]: Applier<K> } = {
-  import: (tx, input) => applyImport(tx, input, input),
-  compose: (tx, input) => applyCompose(tx, input, input),
+  import: (tx, input, jsonb) => applyImport(tx, input, input, jsonb),
+  compose: (tx, input, jsonb) => applyCompose(tx, input, input, jsonb),
   'stage-update': (tx, input) => applyStageUpdates(tx, input),
   advance: (tx, input) => applyStageMutation(tx, input, input),
   'await-ruling': (tx, input) => applyStageMutation(tx, input, input),
@@ -715,16 +716,5 @@ export function writeRecordTaskFlowTransaction<K extends TaskFlowIntent>(
   tx: SQL,
   jsonb: JsonBinder = bindJsonb,
 ): Promise<TaskFlowIntentResult<K>> {
-  if (intent === 'import')
-    return applyImport(tx, input, input as Tenant & TaskFlowIntentBody<'import'>, jsonb) as Promise<
-      TaskFlowIntentResult<K>
-    >
-  if (intent === 'compose')
-    return applyCompose(
-      tx,
-      input,
-      input as Tenant & TaskFlowIntentBody<'compose'>,
-      jsonb,
-    ) as Promise<TaskFlowIntentResult<K>>
-  return intentAppliers[intent](tx, input)
+  return intentAppliers[intent](tx, input, jsonb)
 }

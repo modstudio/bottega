@@ -4,7 +4,7 @@
 import type { Database } from 'bun:sqlite'
 import { nextEntityNumber } from '../database/entity-number.ts'
 import type {
-  QuestionIntent,
+  QuestionLiveIntent,
   QuestionReadInput,
   QuestionWriteBody,
   QuestionWriteResult,
@@ -189,7 +189,7 @@ export class SqliteQuestionStore implements QuestionStore {
     }
   }
 
-  async write(intent: QuestionIntent, input: QuestionWriteBody): Promise<QuestionWriteResult> {
+  async write(intent: QuestionLiveIntent, input: QuestionWriteBody): Promise<QuestionWriteResult> {
     const q = input.question
     assertQuestionJsonFieldsStructured(q)
     const workflowStep = q.workflowCursorRecordId

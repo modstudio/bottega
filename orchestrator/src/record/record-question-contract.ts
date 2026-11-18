@@ -53,6 +53,7 @@ export const questionIntentSchema = z.enum([
   'abandon',
 ])
 export type QuestionIntent = z.infer<typeof questionIntentSchema>
+export type QuestionLiveIntent = Exclude<QuestionIntent, 'import'>
 
 export const questionAuditSchema = z.object({
   action: z.string().min(1),

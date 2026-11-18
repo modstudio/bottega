@@ -31,6 +31,9 @@ export function decideRevisionPreflight(
   return index < 0 ? { kind: 'write' } : { kind: 'partial-retry', index }
 }
 
+export const recordColumnName = (key: string) =>
+  key.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`)
+
 const timestamp = /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?Z$/
 
 function canonical(value: unknown): unknown {
