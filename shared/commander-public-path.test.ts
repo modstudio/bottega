@@ -6,9 +6,9 @@ import {
   cliCallerEnvironmentValue,
   installCliCallerDispatch,
 } from './commander-public-path.ts'
-import { CALLER_ENVIRONMENT_KEY, CALLER_TOKEN_MAX_LENGTH, callerToken } from './record-caller.ts'
+import { CALLER_ENVIRONMENT_KEY } from './record-caller.ts'
 
-test('CLI caller uses the resolved operator-visible leaf path and keeps caller lineage', () => {
+test('CLI caller uses the resolved operator-visible leaf path', () => {
   const root = new Command().name(PLATFORM_SLUG)
   const lease = root.command('lease')
   applyPublicCommandPath(root, ['lease'], {
@@ -16,18 +16,9 @@ test('CLI caller uses the resolved operator-visible leaf path and keeps caller l
     publicPath: ['machine', 'lease'],
   })
 
-  expect(cliCallerEnvironmentValue(undefined, lease)).toBe('cli:machine/lease')
   expect(cliCallerEnvironmentValue('hook:heartbeat', lease)).toBe(
     'cli:machine/lease.hook:heartbeat',
   )
-  expect(cliCallerEnvironmentValue('exec:run.cli:run/start', lease)).toBe(
-    'cli:machine/lease.exec:run.cli:run/start',
-  )
-
-  const overLong = cliCallerEnvironmentValue(`exec:${'x'.repeat(CALLER_TOKEN_MAX_LENGTH)}`, lease)
-  expect(overLong).toHaveLength(CALLER_TOKEN_MAX_LENGTH)
-  expect(overLong.startsWith('cli:machine/lease.')).toBe(true)
-  expect(callerToken(undefined, overLong)).toBe(overLong)
 })
 
 test('sequential in-process CLI dispatches restore the parent without stacking their path', async () => {

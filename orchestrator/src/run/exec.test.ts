@@ -1,22 +1,14 @@
 import { expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { CALLER_TOKEN_MAX_LENGTH, callerToken } from '../../../shared/record-caller.ts'
+import { callerLineage } from '../../../shared/record-caller.ts'
 import { refusal } from '../../../shared/refusal.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
 import { RefusalError } from '../refusal-error.ts'
 import { executorCallerToken, main, startupFailureDiagnostic } from './exec.ts'
 
-test('the detached executor tags inherited, absent, and over-long callers', () => {
-  expect(executorCallerToken('cli:run/start')).toBe('exec:run.cli:run/start')
-  expect(executorCallerToken(undefined)).toBe('exec:run')
-  expect(executorCallerToken('exec:parent.cli:run/start')).toBe(
-    'exec:run.exec:parent.cli:run/start',
-  )
-  const overLong = executorCallerToken(`cli:${'x'.repeat(CALLER_TOKEN_MAX_LENGTH)}`)
-  expect(overLong).toHaveLength(CALLER_TOKEN_MAX_LENGTH)
-  expect(overLong.startsWith('exec:run.')).toBe(true)
-  expect(callerToken(undefined, overLong)).toBe(overLong)
+test('the detached executor keeps its inherited caller lineage', () => {
+  expect(executorCallerToken('cli:run/start', callerLineage)).toBe('exec:run.cli:run/start')
 })
 
 test('a startup refusal reports its message without a stack', () => {

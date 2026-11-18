@@ -1,5 +1,5 @@
 import type { Command } from 'commander'
-import { CALLER_ENVIRONMENT_KEY, CALLER_TOKEN_MAX_LENGTH } from './record-caller.ts'
+import { CALLER_ENVIRONMENT_KEY, callerLineage } from './record-caller.ts'
 
 export type PublicCommandInvocation = {
   publicPath: readonly string[]
@@ -22,7 +22,7 @@ export function cliCallerEnvironmentValue(
     }
     ownValue = `cli:${names.join('/')}`
   }
-  return `${ownValue}${parentValue ? `.${parentValue}` : ''}`.slice(0, CALLER_TOKEN_MAX_LENGTH)
+  return callerLineage(ownValue, parentValue)
 }
 
 export type CliCallerDispatch = <T>(work: () => Promise<T>) => Promise<T>

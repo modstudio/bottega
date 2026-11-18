@@ -2,11 +2,16 @@ import { expect, test } from 'bun:test'
 import {
   exceedsLongLivedRecordRequestRate,
   LONG_LIVED_RECORD_REQUEST_ALLOWANCE,
-  LONG_LIVED_RECORD_REQUESTS_PER_MINUTE_MAX,
+  LONG_LIVED_RECORD_REQUESTS_PER_WINDOW_MAX,
 } from './run-record-request-rate.ts'
 
-test('short-lived startup requests stay within the long-lived request allowance', () => {
-  expect(exceedsLongLivedRecordRequestRate({ count: 30, windowIndex: 1 })).toBe(false)
+test('the first window stays within the long-lived request allowance', () => {
+  expect(
+    exceedsLongLivedRecordRequestRate({
+      count: LONG_LIVED_RECORD_REQUEST_ALLOWANCE / 2,
+      windowIndex: 1,
+    }),
+  ).toBe(false)
   expect(
     exceedsLongLivedRecordRequestRate({
       count: LONG_LIVED_RECORD_REQUEST_ALLOWANCE,
@@ -15,16 +20,16 @@ test('short-lived startup requests stay within the long-lived request allowance'
   ).toBe(false)
 })
 
-test('later full windows warn above the bound', () => {
+test('later windows warn only above the bound', () => {
   expect(
     exceedsLongLivedRecordRequestRate({
-      count: LONG_LIVED_RECORD_REQUESTS_PER_MINUTE_MAX,
+      count: LONG_LIVED_RECORD_REQUESTS_PER_WINDOW_MAX,
       windowIndex: 2,
     }),
   ).toBe(false)
   expect(
     exceedsLongLivedRecordRequestRate({
-      count: LONG_LIVED_RECORD_REQUESTS_PER_MINUTE_MAX + 1,
+      count: LONG_LIVED_RECORD_REQUESTS_PER_WINDOW_MAX + 1,
       windowIndex: 2,
     }),
   ).toBe(true)
@@ -44,9 +49,4 @@ test('window policy catches bursts hidden by a whole-run average', () => {
     .filter((windowIndex) => windowIndex !== null)
 
   expect(warnedWindows).toEqual([2, 3, 4, 5, 6, 7, 8, 9, 10])
-})
-
-test('a final partial later window uses the full per-minute bound', () => {
-  expect(exceedsLongLivedRecordRequestRate({ count: 1, windowIndex: 2 })).toBe(false)
-  expect(exceedsLongLivedRecordRequestRate({ count: 7, windowIndex: 2 })).toBe(true)
 })

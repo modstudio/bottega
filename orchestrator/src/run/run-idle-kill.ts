@@ -116,7 +116,6 @@ export async function performIdleKill(input: {
     startedAt: row.started_at,
     pid: input.handle.pid,
     asking: row.status === 'asking',
-    openQuestion: false,
     alreadyTimedOut: input.timedOut,
     alreadyIdleKilled: state.killed,
     thresholdMs: idleThresholdMs,

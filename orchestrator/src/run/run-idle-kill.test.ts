@@ -128,30 +128,27 @@ test('threshold-crossed silence with no open question kills', async () => {
   expect(cancelled).toBe(true)
 })
 
-test('the post-checkpoint branch with no open question still kills', async () => {
+test('an open question created during the checkpoint aborts the idle kill', async () => {
   const runId = idleRun(31)
   const state = idleState()
-  let reads = 0
-  let checkpoints = 0
+  const decisions = [false, true]
+  let cancelled = false
 
   await performIdleKill(
     performInput(
       runId,
       state,
-      async () => {
-        reads += 1
-        return false
-      },
+      async () => decisions.shift() ?? true,
       {
-        checkpoint: checkpoint(() => {
-          checkpoints += 1
-          return null
-        }),
+        checkpoint: checkpoint(),
+        cancel: () => {
+          cancelled = true
+        },
       },
     ),
   )
 
-  expect(checkpoints).toBe(1)
-  expect(reads).toBe(2)
-  expect(state.killed).toBe(true)
+  expect(state.killed).toBe(false)
+  expect(state.error).toBeNull()
+  expect(cancelled).toBe(false)
 })

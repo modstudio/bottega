@@ -403,7 +403,6 @@ export function shouldIdleKill(opts: {
   startedAt: string
   pid: number | null | undefined
   asking: boolean
-  openQuestion: boolean
   alreadyTimedOut: boolean
   alreadyIdleKilled: boolean
   now?: number
@@ -417,7 +416,7 @@ export function shouldIdleKill(opts: {
       reason: 'another terminator owns this run',
     }
   }
-  if (opts.asking || opts.openQuestion) {
+  if (opts.asking) {
     return { kill: false, idleMs: null, reason: 'waiting on a ruling' }
   }
   const pid = opts.pid ?? 0
