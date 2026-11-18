@@ -12,6 +12,15 @@ const module = (file: string, allowed: string[]): WorkflowCommandModule => ({
 })
 
 export const workflowCommandModules: WorkflowCommandModule[] = [
+  module('orchestrator/src/workflow/workflow-cursor-report.ts', [
+    '../cli/args.ts',
+    './workflow-cursor-format.ts',
+    './workflow-cursor-list.ts',
+    './task-flow-decision.ts',
+    './task-flow-store-types.ts',
+    './workflow-commands.ts',
+    './workflow-task-reference.ts',
+  ]),
   module('orchestrator/src/workflow/workflow-handoff.ts', [
     'bun:sqlite',
     '../../../shared/record-id.ts',
@@ -31,9 +40,7 @@ export const workflowCommandModules: WorkflowCommandModule[] = [
     './workflow-cursor-serve.ts',
     './workflow-cursor-transition.ts',
     './workflow-cursor-compose.ts',
-    './workflow-explore-lifecycle-close.ts',
     './workflow-handoff-refusal.ts',
-    './workflow-handoff-types.ts',
     './workflow-task-claim.ts',
     './workflows.ts',
   ]),
@@ -228,6 +235,8 @@ export const workflowCommandModules: WorkflowCommandModule[] = [
     './workflow-cursor-selection.ts',
     './workflow-cursor-task-reference.ts',
     './workflow-cursor-transition.ts',
+    './workflow-explore-lifecycle-close.ts',
+    './workflow-handoff-types.ts',
     './workflows.ts',
   ]),
   module('orchestrator/src/workflow/workflow-cursor-serve.ts', [

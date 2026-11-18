@@ -4,8 +4,8 @@ import { newRecordId } from '../../../shared/record-id.ts'
 import { TASK_FLOW_CLOSED_STAGE_STATES } from '../record/record-task-flow-contract.ts'
 import { taskFlowReadStore } from './task-flow-store.ts'
 import { composeWorkflowWithCursor } from './workflow-cursor.ts'
+import { closeGraduatingExploreForReuse } from './workflow-cursor-compose.ts'
 import { admissionEnforcingTaskClaimPorts, database } from './workflow-cursor-test.fixture.ts'
-import { closeGraduatingExploreForReuse } from './workflow-handoff.ts'
 import { composeWorkflow, promoteWorkflowLocal, setWorkflowLocal } from './workflows.ts'
 
 const live = {}

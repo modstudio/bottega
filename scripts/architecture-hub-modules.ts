@@ -1,5 +1,18 @@
 export const hubModuleSpecs = [
   {
+    file: 'hub/src/caller-session.ts',
+    allowed: ['../../shared/caller-classification.ts'],
+  },
+  {
+    file: 'hub/src/task-workflow-cursors.ts',
+    allowed: [
+      '../../shared/brand.ts',
+      '../../shared/orch-contract.ts',
+      './caller-session.ts',
+      './orch.ts',
+    ],
+  },
+  {
     file: 'hub/src/record-board-client.ts',
     allowed: [
       'zod',

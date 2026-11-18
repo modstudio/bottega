@@ -86,6 +86,7 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     '../project/projects.ts',
     '../record/record-task-flow-contract.ts',
     '../run/question-open.ts',
+    '../run/run-status.ts',
     './workflow-cursor-autonomy.ts',
     './task-flow-store.ts',
     './task-flow-store-types.ts',

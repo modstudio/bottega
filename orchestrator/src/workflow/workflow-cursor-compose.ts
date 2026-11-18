@@ -41,6 +41,11 @@ import { storedCursorAutonomyForComposition } from './workflow-cursor-autonomy.t
 import type { SelectableCursorRow, WorkflowCursorContext } from './workflow-cursor-selection.ts'
 import { refuseUnlinkedCursorLabelCollision } from './workflow-cursor-task-reference.ts'
 import { cursorOwnerAfter } from './workflow-cursor-transition.ts'
+import {
+  closeExploreForLifecycle,
+  type FinishExploreLifecycle,
+} from './workflow-explore-lifecycle-close.ts'
+import type { GraduatedExplore } from './workflow-handoff-types.ts'
 import type { composeWorkflow } from './workflows.ts'
 
 type Composition = ReturnType<typeof composeWorkflow>
@@ -103,6 +108,46 @@ export async function graduatingExploreCursor(input: {
   const decision = exploreGraduation({ taskBound: input.taskBound, explore })
   if (decision.action === 'keep') return undefined
   return row
+}
+
+export async function closeGraduatingExploreForReuse(
+  composition: ReturnType<typeof composeWorkflow>,
+  context: WorkflowCursorContext,
+  database: Database,
+  finish: FinishExploreLifecycle,
+  replacingCursor: number,
+): Promise<GraduatedExplore | undefined> {
+  const source = await graduatingExploreCursor({
+    project: composition.project,
+    session: context.session,
+    taskBound: Boolean(workflowKeyOf(composition.arguments)),
+    database,
+    taskFlowClient: context.taskFlowClient,
+  })
+  if (!source) return undefined
+  try {
+    const outcome = await closeExploreForLifecycle(
+      source.record_id,
+      'answered',
+      database,
+      finish,
+      `replaced by cursor ${replacingCursor}`,
+      { requireUntouched: true },
+    )
+    return outcome === 'closed'
+      ? { cursor: source.id, closed: true }
+      : {
+          cursor: source.id,
+          closed: false,
+          reason: `close outcome was ${outcome}`,
+        }
+  } catch (error) {
+    return {
+      cursor: source.id,
+      closed: false,
+      reason: error instanceof Error ? error.message : String(error),
+    }
+  }
 }
 
 async function keylessComposeOrdinal(

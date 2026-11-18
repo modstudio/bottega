@@ -14,8 +14,8 @@ import {
   selectAndNextWorkflowStep,
   testPorts,
 } from './workflow-cursor-test.fixture.ts'
+import { resolveWorkflowCursorSuccessor } from './workflow-cursor-transition.ts'
 import { handoffWorkflow } from './workflow-handoff.ts'
-import { resolveWorkflowCursorSuccessor } from './workflow-run-binding.ts'
 import { promoteWorkflowLocal, setWorkflowLocal } from './workflows.ts'
 
 function install(

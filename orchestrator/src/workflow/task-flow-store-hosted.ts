@@ -26,9 +26,6 @@ export function hostedTaskFlowLocalStore(_database: Database) {
   return {
     write: appliedResult,
     retireStageIdentity: () => {},
-    insertStage: () => {
-      throw new Error('hosted workflow stages are inserted by the record write')
-    },
     cacheAdoptedFlow: () => {
       throw new Error('hosted task flows are not cached locally')
     },
