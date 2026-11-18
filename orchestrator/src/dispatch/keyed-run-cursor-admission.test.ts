@@ -6,6 +6,7 @@ import {
 } from './keyed-run-cursor-admission.ts'
 
 const base = {
+  turn: 'start' as const,
   key: 'DEV-2293',
   project: PLATFORM_SLUG,
   bindingPresent: false,
@@ -19,8 +20,6 @@ describe('keyed run cursor admission', () => {
   test.each([
     ['keyless', { key: undefined }],
     ['workflow-bound', { bindingPresent: true }],
-    ['operator caller', { harnessSession: null }],
-    ['worker caller', { harnessSession: null }],
     [
       'harness holding the task cursor',
       { heldCursors: [{ project: PLATFORM_SLUG, workflowKey: 'DEV-2293' }] },
@@ -29,22 +28,58 @@ describe('keyed run cursor admission', () => {
     expect(decideKeyedRunCursorAdmission({ ...base, ...change })).toEqual({ kind: 'allow' })
   })
 
-  test('the refusal names both workflow remedies before the override', () => {
-    const decision = decideKeyedRunCursorAdmission(base)
+  test('a keyed later turn with its cursor held is allowed', () => {
+    expect(
+      decideKeyedRunCursorAdmission({
+        ...base,
+        turn: 'continue',
+        heldCursors: [{ project: PLATFORM_SLUG, workflowKey: 'DEV-2293' }],
+      }),
+    ).toEqual({ kind: 'allow' })
+  })
+
+  test('a keyed later turn without its cursor is refused with every workflow remedy', () => {
+    const decision = decideKeyedRunCursorAdmission({ ...base, turn: 'continue' })
     expect(decision.kind).toBe('refuse')
     if (decision.kind !== 'refuse') return
     expect(decision.message).toContain(
       `${PLATFORM_SLUG} workflow compose plan-task --project ${PLATFORM_SLUG} --arg key=DEV-2293`,
     )
     expect(decision.message).toContain(
+      `${PLATFORM_SLUG} workflow compose fix-defect --project ${PLATFORM_SLUG} --arg key=DEV-2293`,
+    )
+    expect(decision.message).toContain(
       `${PLATFORM_SLUG} workflow compose ship-task --project ${PLATFORM_SLUG} --arg key=DEV-2293 --arg branch=<branch> --arg worktree=<worktree>`,
     )
     expect(decision.message.indexOf('plan-task')).toBeLessThan(
+      decision.message.indexOf('fix-defect'),
+    )
+    expect(decision.message.indexOf('fix-defect')).toBeLessThan(
       decision.message.indexOf('ship-task'),
     )
     expect(decision.message.indexOf('ship-task')).toBeLessThan(
       decision.message.indexOf('--override-unbound'),
     )
+  })
+
+  test('a keyed start without a session refuses unless it carries a cursor binding', () => {
+    expect(decideKeyedRunCursorAdmission({ ...base, harnessSession: null })).toEqual({
+      kind: 'refuse',
+      message: expect.stringMatching(/without a harness session[\s\S]*run from a harness session/),
+    })
+    expect(
+      decideKeyedRunCursorAdmission({
+        ...base,
+        harnessSession: null,
+        bindingPresent: true,
+      }),
+    ).toEqual({ kind: 'allow' })
+  })
+
+  test('an unkeyed later turn is allowed', () => {
+    expect(decideKeyedRunCursorAdmission({ ...base, turn: 'retry', key: undefined })).toEqual({
+      kind: 'allow',
+    })
   })
 
   test.each([
@@ -68,7 +103,7 @@ describe('keyed run cursor admission', () => {
       }),
     ).toEqual({
       kind: 'allow-with-override',
-      warning: 'unbound keyed run start overridden by Shmuel Barkin: Emergency dispatch approved.',
+      warning: 'unbound keyed run turn overridden by Shmuel Barkin: Emergency dispatch approved.',
     })
   })
 
@@ -132,7 +167,7 @@ describe('keyed run cursor admission', () => {
 
     expect(decision).toEqual({
       kind: 'allow-with-override',
-      warning: 'unbound keyed run start overridden by Shmuel Barkin: Emergency dispatch approved.',
+      warning: 'unbound keyed run turn overridden by Shmuel Barkin: Emergency dispatch approved.',
     })
     expect(reads).toBe(0)
   })

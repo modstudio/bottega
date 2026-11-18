@@ -25,7 +25,6 @@ import {
   taskBranchReuseNotice,
 } from '../branch/task-branch.ts'
 import { compatibleTaskBranch } from '../branch/task-branch-reuse.ts'
-import { classifyCaller, resolveCallerIdentity } from '../caller-classification.ts'
 import { flagValue, flagValues, readMessageText } from '../cli/args.ts'
 import { doPositionals } from '../commands/do-options.ts'
 import { readStrictCodexSchema } from '../contract/codex-schema.ts'
@@ -45,7 +44,6 @@ import {
   requiredMcpServer,
 } from '../mcp/mcp-preflight.ts'
 import { projectAt, projectByName, stackAt } from '../project/projects.ts'
-import { openQuestionStages } from '../question-store/question-store-read.ts'
 import { reviewFindingMemoryRows } from '../review/rejected-finding-memory.ts'
 import { reviewLensSelectionReasonForDispatch } from '../review/review-lens-dispatch-reason.ts'
 import { reviewLineage } from '../review/review-lineage-store.ts'
@@ -98,26 +96,12 @@ import { callerCheckoutFacts, installLevelDispatchDecision } from './dispatch-pr
 import type { ReviewLensPackInputs } from './review-lens-prompt.ts'
 import type { ReviewFindingMemory } from './review-memory.ts'
 import { lookupProjectTaskKey, readTaskText, type TaskTextRead } from './task-key-lookup.ts'
+import { keyedRunCursorAdmission } from './keyed-run-cursor-admission.ts'
 
 type Presentation = {
   error(...values: unknown[]): void
   printRunId(id: number): void
   cwd(): string
-}
-
-function keyedRunCursorAdmission() {
-  const caller = classifyCaller(process.env)
-  const identity = caller.kind === 'harness' ? resolveCallerIdentity(caller, null) : null
-  return {
-    harnessSession: identity?.kind === 'identity' ? identity.session : null,
-    readOpenCursors: async (session: string) => {
-      const cursors = await openQuestionStages(db(), session)
-      return cursors.map((cursor) => ({
-        project: cursor.project,
-        workflowKey: cursor.workflow_key,
-      }))
-    },
-  }
 }
 
 function earlierReviewRejections(

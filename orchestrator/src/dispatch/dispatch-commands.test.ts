@@ -141,7 +141,7 @@ test('an attributed unbound override detaches and records its warning on the run
   expect(warnings).toEqual([
     {
       runId,
-      warning: 'unbound keyed run start overridden by Shmuel Barkin: Emergency dispatch approved.',
+      warning: 'unbound keyed run turn overridden by Shmuel Barkin: Emergency dispatch approved.',
     },
   ])
 })

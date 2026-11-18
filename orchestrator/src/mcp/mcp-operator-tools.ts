@@ -12,6 +12,7 @@ import {
   OverturnRulingResultSchema,
 } from '../../../shared/orch-contract.ts'
 import { db } from '../database/db.ts'
+import { admitKeyedTurn } from '../dispatch/keyed-run-cursor-admission.ts'
 import type { ContextMomentPorts } from '../doc/context-moment-adapter.ts'
 import { getDocRevision, setDoc } from '../doc/docs.ts'
 import { resolve } from '../identity/identity.ts'
@@ -142,6 +143,7 @@ function registerAnswerQuestionsTool(
     async ({ run_record_id, rulings, from_operator, record_only }) => {
       const resolved = await resolveAnswerRulings(rulings, from_operator ?? false)
       const run = await resolve(run_record_id, identityContext(db()), 'run')
+      await admitKeyedTurn({ runId: run.recordId, turn: 'answer', fromOperator: false })
       const report = await answerRun(
         run.recordId,
         {

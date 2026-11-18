@@ -35,7 +35,9 @@ const contextPorts = (calls: string[]): ContextMomentPorts =>
 
 test('answering a continuation turn question writes its root task position', async () => {
   const root = insert('ok')
-  db().query("UPDATE run SET launch_key='DEV-2225' WHERE record_id=?").run(root)
+  db()
+    .query("UPDATE run SET launch_key='DEV-2225',cursor_record_id=? WHERE record_id=?")
+    .run(newRecordId(), root)
   const turn = addRun({
     agent: 'codex',
     job: 'file-question',
@@ -65,7 +67,9 @@ test('answering a continuation turn question writes its root task position', asy
 
 test('partial record-only answer writes only the selected question position', async () => {
   const root = insert('asking')
-  db().query("UPDATE run SET launch_key='DEV-2225' WHERE record_id=?").run(root)
+  db()
+    .query("UPDATE run SET launch_key='DEV-2225',cursor_record_id=? WHERE record_id=?")
+    .run(newRecordId(), root)
   const addQuestion = (question: string) =>
     db()
       .query<{ record_id: string; number: number }, [string, string, string]>(
@@ -102,7 +106,9 @@ test('partial record-only answer writes only the selected question position', as
 
 test('an operator answer writes its root task ruling', async () => {
   const root = insert('asking')
-  db().query("UPDATE run SET launch_key='DEV-2225' WHERE record_id=?").run(root)
+  db()
+    .query("UPDATE run SET launch_key='DEV-2225',cursor_record_id=? WHERE record_id=?")
+    .run(newRecordId(), root)
   const question = db()
     .query<{ record_id: string; number: number }, [string, string, string]>(
       `${newQuestionSql()} RETURNING record_id,number`,
@@ -126,7 +132,9 @@ test('an operator answer writes its root task ruling', async () => {
 
 test('a context port failure leaves the answer recorded and reports without throwing', async () => {
   const root = insert('asking')
-  db().query("UPDATE run SET launch_key='DEV-2225' WHERE record_id=?").run(root)
+  db()
+    .query("UPDATE run SET launch_key='DEV-2225',cursor_record_id=? WHERE record_id=?")
+    .run(newRecordId(), root)
   const question = db()
     .query<{ record_id: string; number: number }, [string, string, string]>(
       `${newQuestionSql()} RETURNING record_id,number`,

@@ -17,9 +17,11 @@ import {
   readWorkerFile,
 } from '../cli/args.ts'
 import { db } from '../database/db.ts'
+import { admitKeyedTurn } from '../dispatch/keyed-run-cursor-admission.ts'
 import type { ContextMomentOutput } from '../doc/context-moment.ts'
 import { applyContextMoment, type ContextMomentPorts } from '../doc/context-moment-adapter.ts'
 import { newestTurnOutputPath } from '../evidence/evidence-query.ts'
+import { recordRunWarning } from '../events.ts'
 import { jobTakesFidelity } from '../jobs/job-fidelity.ts'
 import { JOBS } from '../jobs/jobs.ts'
 import {
@@ -36,15 +38,41 @@ import { rulingAttributionDecision } from './question-vocabulary.ts'
 import { rulingFileOfferLines } from './ruling-file-text.ts'
 import { type AnswerRunInput, answerRun, retryRun } from './run-answer.ts'
 import { continueRun, type RunControlPresentation, reportContinuedRun } from './run-control.ts'
+import { rootRunRecordId } from './run-root-record.ts'
 
 type Flags = { detach: boolean; follow: boolean; quiet: boolean }
 type Presentation = { printRunId(id: string): void }
 export type ContinueCommandDependencies = {
   continueRun: typeof continueRun
   reportContinuedRun: typeof reportContinuedRun
+  admitKeyedTurn?: typeof admitKeyedTurn
+  recordRunWarning?: typeof recordRunWarning
 }
 
 const continueCommandDependencies: ContinueCommandDependencies = { continueRun, reportContinuedRun }
+
+type KeyedTurnCommandOptions = {
+  overrideReason?: string
+  fromOperator: boolean
+}
+
+type KeyedTurnCommandDependencies = {
+  admitKeyedTurn?: typeof admitKeyedTurn
+  recordRunWarning?: typeof recordRunWarning
+}
+
+const defaultKeyedTurnOptions: KeyedTurnCommandOptions = { fromOperator: false }
+const newestChainTurnId = (id: string): string => {
+  const rootId = rootRunRecordId(id)
+  return (
+    db()
+      .query<{ record_id: string }, [string, string]>(
+        `SELECT record_id FROM run
+         WHERE record_id=? OR parent_run_record_id=? ORDER BY turn DESC,number DESC LIMIT 1`,
+      )
+      .get(rootId, rootId) as { record_id: string }
+  ).record_id
+}
 
 const duration = (ms: number | null | undefined): string => {
   if (ms == null) return '—'
@@ -193,8 +221,16 @@ export async function retryCommand(
   id: string,
   options: { agent?: string; model?: string; flags: Flags },
   presentation: Presentation,
+  admission: KeyedTurnCommandOptions = defaultKeyedTurnOptions,
+  dependencies: KeyedTurnCommandDependencies = {},
 ): Promise<void> {
+  const warning = await (dependencies.admitKeyedTurn ?? admitKeyedTurn)({
+    runId: id,
+    turn: 'retry',
+    ...admission,
+  })
   await retryRun(id, options, answerRunHelpers(presentation))
+  if (warning) (dependencies.recordRunWarning ?? recordRunWarning)(newestChainTurnId(id), warning)
 }
 
 export async function answerCommand(
@@ -206,10 +242,19 @@ export async function answerCommand(
   presentation: Presentation,
   refusedOptions?: Readonly<Record<string, string>>,
   context?: { ports?: ContextMomentPorts; output?: ContextMomentOutput },
+  admission: KeyedTurnCommandOptions = defaultKeyedTurnOptions,
+  dependencies: KeyedTurnCommandDependencies = {},
 ): Promise<void> {
   const helpers = answerRunHelpers(presentation)
   const input = await answerInputFromArgv(argv, recordOnly, json, flags, helpers, refusedOptions)
+  const warning = await (dependencies.admitKeyedTurn ?? admitKeyedTurn)({
+    runId: id,
+    turn: 'answer',
+    ...admission,
+  })
   const { result, answeredQuestions: questions } = await answerRun(id, input, helpers)
+  if (warning)
+    (dependencies.recordRunWarning ?? recordRunWarning)(result.resumed_record_id ?? id, warning)
   const answerByQuestion = new Map(
     Array.isArray(input.rulings)
       ? input.rulings.map((ruling) => [ruling.questionId, ruling.text] as const)
@@ -242,6 +287,7 @@ export async function continueCommand(
   presentation: Presentation,
   renderFindings: (runId: string, message: string | undefined) => string,
   dependencies: ContinueCommandDependencies = continueCommandDependencies,
+  admission: KeyedTurnCommandOptions = defaultKeyedTurnOptions,
 ): Promise<void> {
   const chain = db()
     .query('SELECT record_id, agent, parent_run_record_id FROM run WHERE record_id = ?')
@@ -261,12 +307,18 @@ export async function continueCommand(
     CONTINUE_WORKING_FORMS,
     chain ? argvResumeLimit(chain.agent) : undefined,
   )
+  const warning = await (dependencies.admitKeyedTurn ?? admitKeyedTurn)({
+    runId: id,
+    turn: 'continue',
+    ...admission,
+  })
   const resumed = await dependencies.continueRun(
     id,
     message,
     argvResumeLimit,
     includeFindings ? () => renderFindings(id, message) : undefined,
   )
+  if (warning) (dependencies.recordRunWarning ?? recordRunWarning)(resumed.childId, warning)
   await dependencies.reportContinuedRun(
     resumed.childId,
     resumed.job,

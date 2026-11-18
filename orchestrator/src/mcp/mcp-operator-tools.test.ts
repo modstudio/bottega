@@ -133,7 +133,9 @@ describe('operator MCP tools', () => {
     const runRecordId = (
       db().query('SELECT record_id FROM run WHERE record_id=?').get(runId) as { record_id: string }
     ).record_id
-    db().query("UPDATE run SET launch_key='DEV-2267' WHERE record_id=?").run(runId)
+    db()
+      .query("UPDATE run SET launch_key='DEV-2267',cursor_record_id=? WHERE record_id=?")
+      .run(newRecordId(), runId)
     const questionRecordId = (
       db().query('SELECT record_id FROM question WHERE number=?').get(questionId) as {
         record_id: string
@@ -223,6 +225,42 @@ describe('operator MCP tools', () => {
     expect(
       db().query('SELECT answer,answered_at FROM question WHERE number=?').get(questionId),
     ).toEqual({ answer: null, answered_at: null })
+  })
+
+  test('answer_questions refuses a keyed chain when the session holds no matching cursor', async () => {
+    const runId = addRun({
+      agent: 'codex',
+      job: 'file-question',
+      status: 'asking',
+      session: SESSION,
+    })
+    db().query("UPDATE run SET launch_key='DEV-2417' WHERE record_id=?").run(runId)
+    const questionId = addQuestion(runId, 'Which shape?')
+
+    const result = await withClient((client) =>
+      client.callTool({
+        name: 'answer_questions',
+        arguments: {
+          run_record_id: runId,
+          rulings: [{ question_id: questionId, ruling: 'Use the approved shape.' }],
+        },
+      }),
+    )
+
+    expect(result.isError).toBe(true)
+    const message = (result.content as { text: string }[])[0]!.text
+    expect(message).toContain(
+      `${PLATFORM_SLUG} workflow compose plan-task --project run-fixture --arg key=DEV-2417`,
+    )
+    expect(message).toContain(
+      `${PLATFORM_SLUG} workflow compose fix-defect --project run-fixture --arg key=DEV-2417`,
+    )
+    expect(message).toContain(
+      `${PLATFORM_SLUG} workflow compose ship-task --project run-fixture --arg key=DEV-2417`,
+    )
+    expect(db().query('SELECT answer FROM question WHERE number=?').get(questionId)).toEqual({
+      answer: null,
+    })
   })
 
   test('answer_questions stores flag-shaped rulings verbatim and attributes only explicit operators', async () => {

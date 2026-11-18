@@ -11,7 +11,11 @@ import { serveAsk } from '../ask/ask.ts'
 import { setupAskCommand } from '../ask/ask-commands.ts'
 import { writeAskServerFailure } from '../ask/ask-failure.ts'
 import { checkCommand } from '../check/check-commands.ts'
-import { parseContinueArgs, refusedOwnerOptions } from '../cli/args.ts'
+import {
+  parseContinueArgs,
+  refusedOwnerOptions,
+  withoutKeyedTurnAdmissionArgs,
+} from '../cli/args.ts'
 import { closeOutCommand } from '../close/close-out-command.ts'
 import { peekCommand, resultCommand, waitCommand } from '../collect/collection-commands.ts'
 import { contractCommand } from '../contract/contract-command.ts'
@@ -71,6 +75,11 @@ import { registerLaunchAgentRefreshCommand } from './launch-agent-refresh.ts'
 import { registerLensCommands } from './lens.ts'
 import { registerMachineJournalCommand } from './machine-journal.ts'
 import { registerMachineStorePathCommand } from './machine-store-path.ts'
+import {
+  answerCommandDefinition,
+  continueCommandDefinition,
+  retryCommandDefinition,
+} from './run-message-options.ts'
 import { collect, log, productArgv, rawArgv, write, writeStdout } from './support.ts'
 import { registerWorkflowCommands } from './workflow.ts'
 
@@ -78,7 +87,7 @@ const collectedOption = (flags: string, description: string) =>
   repeatable(new Option(flags, description).argParser(collect).default([]))
 
 const localRunId = (input: string | number) => resolveRunIdentifier(db(), input)
-const CONTINUE_USAGE = `${PLATFORM_SLUG} run continue <id> [--findings] [--follow] [--file PATH | "<what next>"]`
+const CONTINUE_USAGE = `${PLATFORM_SLUG} run continue <id> [--findings] [--follow] [--override-unbound "<reason>" --from-operator] [--file PATH | "<what next>"]`
 const displayRunNumber = (recordId: string): number =>
   (db().query('SELECT number FROM run WHERE record_id=?').get(recordId) as { number: number })
     .number
@@ -118,13 +127,17 @@ const answerByIdentifier = async (id: string, command: Command, options: OptionV
   const target = await resolveAnswerIdentifier(db(), id, sessionId())
   await answerCommand(
     target,
-    rawArgv(command).slice(2),
+    withoutKeyedTurnAdmissionArgs(rawArgv(command).slice(2)),
     Boolean(options.recordOnly),
     Boolean(options.json),
     runFlags(options),
     presentation,
     refusedOwnerOptions(command, 'question answer', 'question'),
     { output: { log, error: console.error } },
+    {
+      overrideReason: options.overrideUnbound,
+      fromOperator: Boolean(options.fromOperator),
+    },
   )
 }
 const relayByIdentifier = async (id: string, command: Command, note: string) =>
@@ -207,25 +220,6 @@ function registerCloseOut(program: Command): void {
         Boolean(options.json),
       ),
     )
-}
-
-function answerCommandDefinition(program: Command): Command {
-  return describedCommand(
-    program,
-    'answer <id> [message...]',
-    'record rulings for a worker and resume its run',
-  )
-    .allowUnknownOption(true)
-    .option('--file <value>', 'read the ruling from this file')
-    .option('--value <value>', 'record the typed value of the ruling')
-    .option('--follow', 'wait for the resumed run and print its result')
-    .option('--detach', 'return after resuming the run')
-    .option('--quiet', 'suppress collection guidance and followed output')
-    .option('--record-only', 'record the ruling without resuming the run')
-    .option('--from-operator', 'attribute the ruling to the operator')
-    .option('--from-operator-q<id>', 'attribute only question <id> to the operator')
-    .option('--channel <value>', 'record the channel that supplied the ruling')
-    .option('--json', 'write the answer result as JSON')
 }
 
 function registerEfficiencyCommands(program: Command): void {
@@ -689,47 +683,41 @@ export function register(program: Command, dependencies: LogicDependencies = {})
   describedCommand(program, 'wait <ids...>', 'wait for runs to reach a terminal state')
     .option('--timeout <value>', 'stop waiting after this duration')
     .action(async (ids, options) => waitByIdentifiers(ids, options))
-  describedCommand(program, 'retry <id>', 'retry a failed run with its saved prompt')
-    .option('--agent <value>', 'use this agent for the retry')
-    .option('--model <value>', 'use this model for the retry')
-    .option('--follow', 'wait for the retry and print its result')
-    .option('--detach', 'return after starting the retry')
-    .option('--quiet', 'suppress collection guidance and followed output')
-    .allowExcessArguments(false)
-    .action((id, options) =>
-      retryCommand(
-        localRunId(id),
-        { agent: options.agent, model: options.model, flags: runFlags(options) },
-        presentation,
-      ),
-    )
+  retryCommandDefinition(program).action((id, options) =>
+    retryCommand(
+      localRunId(id),
+      { agent: options.agent, model: options.model, flags: runFlags(options) },
+      presentation,
+      {
+        overrideReason: options.overrideUnbound,
+        fromOperator: Boolean(options.fromOperator),
+      },
+    ),
+  )
   answerCommandDefinition(program).action((id, _message, options, command) =>
     answerByIdentifier(id, command, options),
   )
-  describedCommand(program, 'continue <id> [message...]', 'continue a finished run as another turn')
-    .allowUnknownOption(true)
-    .option('--file <value>', 'read the continuation message from this file')
-    .option('--follow', 'wait for the continuation and print its result')
-    .option('--detach', 'return after starting the continuation')
-    .option('--quiet', 'suppress collection guidance and followed output')
-    .option('--findings', 'include prior review findings in the continuation')
-    .action((_id, _message, options, command) => {
-      const parsed = parseContinueArgs(rawArgv(command).slice(1), CONTINUE_USAGE)
-      return continueCommand(
-        localRunId(parsed.identifier),
-        parsed,
-        Boolean(options.findings),
-        runFlags(options),
-        presentation,
-        (runId, message) =>
-          (dependencies.continuationFindingsForRun ?? continuationFindingsForRun)(
-            db(),
-            runId,
-            message,
-          ),
-        dependencies.continueCommandDependencies,
-      )
-    })
+  continueCommandDefinition(program).action((_id, _message, options, command) => {
+    const parsed = parseContinueArgs(rawArgv(command).slice(1), CONTINUE_USAGE)
+    return continueCommand(
+      localRunId(parsed.identifier),
+      parsed,
+      Boolean(options.findings),
+      runFlags(options),
+      presentation,
+      (runId, message) =>
+        (dependencies.continuationFindingsForRun ?? continuationFindingsForRun)(
+          db(),
+          runId,
+          message,
+        ),
+      dependencies.continueCommandDependencies,
+      {
+        overrideReason: options.overrideUnbound,
+        fromOperator: Boolean(options.fromOperator),
+      },
+    )
+  })
   registerDoCommand(program)
   const gate = program.command('gate').description('run or inspect recorded project gates')
   gate

@@ -161,6 +161,50 @@ test('continue without --findings hands the architect message through unchanged'
   expect(received).toBe('Continue exactly as before.')
 })
 
+test('continue admits the later turn and records an attributed override on its child', async () => {
+  const recordId = addRun({ agent: 'codex', job: 'implement', status: 'ok' })
+  const number = db()
+    .query<{ number: number }, [string]>('SELECT number FROM run WHERE record_id=?')
+    .get(recordId)!.number
+  const admissions: unknown[] = []
+  const warnings: unknown[] = []
+  const program = new Command().exitOverride()
+  register(program, {
+    continueCommandDependencies: {
+      admitKeyedTurn: async (input) => {
+        admissions.push(input)
+        return 'operator override warning'
+      },
+      continueRun: async () => ({ childId: 'child-record-id', job: 'implement' }),
+      reportContinuedRun: async () => {},
+      recordRunWarning: (runId, warning) => warnings.push({ runId, warning }),
+    },
+  })
+
+  const argv = [
+    'node',
+    'orch',
+    'continue',
+    String(number),
+    '--override-unbound',
+    'operator approved',
+    '--from-operator',
+    'Continue.',
+  ]
+  setRawArgv(argv.slice(2))
+  await program.parseAsync(argv)
+
+  expect(admissions).toEqual([
+    {
+      runId: recordId,
+      turn: 'continue',
+      overrideReason: 'operator approved',
+      fromOperator: true,
+    },
+  ])
+  expect(warnings).toEqual([{ runId: 'child-record-id', warning: 'operator override warning' }])
+})
+
 test('continue refuses an unknown option before --file instead of sending the option text', async () => {
   const recordId = addRun({ agent: 'codex', job: 'implement', status: 'ok' })
   const number = (

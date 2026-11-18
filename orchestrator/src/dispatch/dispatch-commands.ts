@@ -234,6 +234,7 @@ async function keyedRunCursorWarningForDispatch(input: {
   const { harnessSession, readOpenCursors } = input.adapter()
   const decision = await checkKeyedRunCursorAdmission(
     {
+      turn: 'start',
       key: input.key,
       project: input.project,
       bindingPresent: input.bindingPresent,
