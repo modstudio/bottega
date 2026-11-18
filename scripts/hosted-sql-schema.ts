@@ -18,7 +18,8 @@ type StaticSymbols = {
   constants: Map<string, ts.Expression>
   functions: Map<string, ts.FunctionDeclaration>
 }
-const SQL_START = /^\s*(?:SELECT|INSERT|UPDATE|DELETE|WITH|CREATE|DROP|ALTER)\b/i
+const HOSTED_SQL_START = /^\s*(?:SELECT|INSERT|UPDATE|DELETE|WITH)\b/i
+const LOCAL_HANDLE_SQL_START = /^\s*(?:SELECT|INSERT|UPDATE|DELETE|WITH|CREATE|DROP|ALTER)\b/i
 
 function hostedSqlFingerprint(sql: string): string {
   return createHash('sha256').update(sql.replace(/\s+/g, ' ').trim()).digest('hex').slice(0, 16)
@@ -86,6 +87,7 @@ function productionTypeScriptFilesIncludingTests(directory: string): string[] {
 }
 
 const HOSTED_FIXTURE_IMPORTS_WITHOUT_SQL = new Set([
+  'orchestrator/src/postgres/postgres-migrate-public-role.test.ts',
   'orchestrator/src/postgres/postgres-migrate-schema.test.ts',
   // Builds hosted document-import HTTP payloads and intentionally owns no SQL.
   'orchestrator/test/fixtures/doc-import.ts',
@@ -505,7 +507,7 @@ function staticSymbolsForSource(
 }
 
 export function extractHostedSqlFromSource(
-  input: { sourceText: string; file: string },
+  input: { sourceText: string; file: string; statementStart?: RegExp },
   staticSymbols?: StaticSymbols,
 ): {
   sites: HostedSqlSite[]
@@ -520,6 +522,7 @@ export function extractHostedSqlFromSource(
   )
   const constants = staticSymbols?.constants ?? collectConstants(source)
   const symbols = staticSymbols ?? { constants, functions: collectFunctions(source) }
+  const statementStart = input.statementStart ?? HOSTED_SQL_START
   const sites: HostedSqlSite[] = []
   const unresolved: HostedSqlUnresolvedSite[] = []
   if (!importsBunSql(source)) return { sites, unresolved }
@@ -528,7 +531,7 @@ export function extractHostedSqlFromSource(
     const rendered = renderTemplate(node.template, constants, symbols)
     if (rendered) {
       for (const item of rendered) {
-        if (!SQL_START.test(item.sql)) continue
+        if (!statementStart.test(item.sql)) continue
         const fingerprint = hostedSqlFingerprint(item.sql)
         sites.push({ file: input.file, line, sql: item.sql, fingerprint })
       }
@@ -537,7 +540,7 @@ export function extractHostedSqlFromSource(
     const firstText = ts.isNoSubstitutionTemplateLiteral(node.template)
       ? node.template.text
       : node.template.head.text
-    if (!SQL_START.test(firstText)) return
+    if (!statementStart.test(firstText)) return
     const expression = node.getText(source)
     unresolved.push({
       file: input.file,
@@ -563,7 +566,7 @@ function couldBeSqlExpression(expression: ts.Expression): boolean {
   if (ts.isPropertyAccessExpression(value)) return /(?:sql|query|statement)/i.test(value.name.text)
   if (ts.isElementAccessExpression(value))
     return /(?:sql|query|statement)/i.test(value.expression.getText())
-  if (ts.isTemplateExpression(value)) return SQL_START.test(value.head.text)
+  if (ts.isTemplateExpression(value)) return LOCAL_HANDLE_SQL_START.test(value.head.text)
   if (ts.isBinaryExpression(value)) return couldBeSqlExpression(value.left)
   if (ts.isCallExpression(value)) return /(?:sql|query|statement)/i.test(value.expression.getText())
   return false
@@ -615,7 +618,7 @@ function sqlCallSites(
   if (!rendered) return { sites: [], unresolved: [] }
   return {
     sites: rendered.statements
-      .filter((sql) => SQL_START.test(sql))
+      .filter((sql) => LOCAL_HANDLE_SQL_START.test(sql))
       .map((sql) => ({ file, line, sql, fingerprint: hostedSqlFingerprint(sql) })),
     unresolved: [],
   }
@@ -633,7 +636,10 @@ export function extractSqlFromSource(input: { sourceText: string; file: string }
     true,
     ts.ScriptKind.TS,
   )
-  const extracted = extractHostedSqlFromSource(input)
+  const extracted = extractHostedSqlFromSource({
+    ...input,
+    statementStart: LOCAL_HANDLE_SQL_START,
+  })
   const importedSources: ImportedSourceCache = new Map()
   let symbols: StaticSymbols | undefined
   const staticSymbols = (): StaticSymbols =>
@@ -760,7 +766,9 @@ function renderFixtureSql(expression: ts.Expression): RenderedFixtureSql | null 
       return {
         statements: [],
         unresolved: appended.unresolved,
-        unresolvedSql: splitSqlStatements(sql).some((statement) => SQL_START.test(statement)),
+        unresolvedSql: splitSqlStatements(sql).some((statement) =>
+          HOSTED_SQL_START.test(statement),
+        ),
       }
     sql = appended.sql
   }
@@ -783,14 +791,14 @@ function sourceContainsPotentialHostedSql(source: ts.SourceFile): boolean {
     if (found) return
     if (
       ts.isStringLiteralLike(node) &&
-      splitSqlStatements(node.text).some((sql) => SQL_START.test(sql))
+      splitSqlStatements(node.text).some((sql) => HOSTED_SQL_START.test(sql))
     ) {
       found = true
       return
     }
     if (
       ts.isTemplateExpression(node) &&
-      splitSqlStatements(node.head.text).some((sql) => SQL_START.test(sql))
+      splitSqlStatements(node.head.text).some((sql) => HOSTED_SQL_START.test(sql))
     ) {
       found = true
       return
@@ -832,7 +840,7 @@ function fixtureSite(
   if (!rendered) return { sites: [], unresolved: [], selected: false }
   const line = source.getLineAndCharacterOfPosition(argument.getStart(source)).line + 1
   const sites = rendered.statements
-    .filter((sql) => SQL_START.test(sql))
+    .filter((sql) => HOSTED_SQL_START.test(sql))
     .map((sql) => ({
       file,
       line,
