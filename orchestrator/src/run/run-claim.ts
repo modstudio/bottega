@@ -106,6 +106,10 @@ import { recordRunStartupFailure } from './run-startup-failure.ts'
 import { taskBranchResolution } from './run-task-branch-resolution.ts'
 import { admitNewRunReference } from './run-task-reference.ts'
 
+function prepareReadOnlyRunTemp(writesJob: boolean, runtimeDir: string): void {
+  if (!writesJob) mkdirSync(runTempDir(runtimeDir), { recursive: true, mode: 0o700 })
+}
+
 type ClaimOptions = {
   binding?: RunWorkflowBinding
   reserveId?: string
@@ -611,7 +615,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
     taskBranchAttachment = false
   let grokMcpEnvironment: Record<string, string> = {}
   const runtimeDirExisted = existsSync(runtimeDir)
-  if (!writesJob) mkdirSync(runTempDir(runtimeDir), { recursive: true, mode: 0o700 })
+  prepareReadOnlyRunTemp(writesJob, runtimeDir)
   /** Cutting the worktree after the row exists throws for a non-repository or a
    * taken worktree path. This used to happen outside the try/finally below, so
    * its row stayed `running` with no process until the stale sweep guessed at it.

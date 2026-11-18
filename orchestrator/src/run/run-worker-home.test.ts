@@ -32,16 +32,13 @@ afterEach(() => {
 test('every read-only launch uses its run-owned temp while a writer is unchanged', () => {
   const runtimeDir = '/runs/sandbox-root'
   const privateTemp = join(runtimeDir, 'tmp')
-  expect(codexPrivateTempEnvironment(false, 'host', runtimeDir)).toEqual({
+  expect(codexPrivateTempEnvironment(false, privateTemp)).toEqual({
     TMPDIR: privateTemp,
     TMP: privateTemp,
     TEMP: privateTemp,
-  })
-  expect(codexPrivateTempEnvironment(false, 'srt', runtimeDir)).toEqual({
     CLAUDE_CODE_TMPDIR: privateTemp,
   })
-  expect(codexPrivateTempEnvironment(true, 'host', runtimeDir)).toEqual({})
-  expect(codexPrivateTempEnvironment(true, 'srt', runtimeDir)).toEqual({})
+  expect(codexPrivateTempEnvironment(true, privateTemp)).toEqual({})
 })
 
 test('a writer gets cwd-discovered MCP configuration and a reader does not', () => {

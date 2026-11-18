@@ -586,6 +586,7 @@ export async function run(
   const gitConfigEnvironment = workerGitConfigEnvironment(worktree, writesJob, requestedJob.name)
   const recipeEnvironment = {
     ...workerHome.trackedWorkerEnvironment(repoJob, writesJob, worktree, claim.id),
+    ...workerHome.codexPrivateTempEnvironment(writesJob, runTempDir(runtimeDir)),
   }
   assertConfiguredGitGuard(gitConfigEnvironment, writableRoots)
   let askLoopback: AskLoopback | null = null
@@ -943,11 +944,6 @@ export async function run(
           launchEnvironment: {
             ...mcpEnvironment,
             ...probeLaunch.environment,
-            ...workerHome.codexPrivateTempEnvironment(
-              writesJob,
-              sandboxSelection.sandbox,
-              runtimeDir,
-            ),
           },
           scratchDir,
           writesJob,

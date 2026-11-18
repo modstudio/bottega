@@ -1,6 +1,7 @@
 // concern: sandbox-runtime availability and extracted payload adapter; must not know sandbox policy.
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import {
   type SandboxRuntimeConfig as LibrarySandboxRuntimeConfig,
   SandboxManager,
@@ -18,16 +19,8 @@ import {
   sandboxRuntimeAssets,
 } from '../../../shared/sandbox-runtime-assets.ts'
 import { resolveStateRoot, type StateEnvironment } from '../../../shared/state-directory.ts'
-import { ROOT } from '../database/db.ts'
 
-export const SRT_LIBRARY = join(
-  ROOT,
-  'node_modules',
-  '@anthropic-ai',
-  'sandbox-runtime',
-  'dist',
-  'index.js',
-)
+export const SRT_LIBRARY = fileURLToPath(import.meta.resolve('@anthropic-ai/sandbox-runtime'))
 
 let sandboxInitialized = false
 let sandboxOperationTail = Promise.resolve()
@@ -53,7 +46,7 @@ function extractedRoot(environment: StateEnvironment, version: string): string {
 }
 
 function diskPayloadPath(relativePath: string): string {
-  return join(ROOT, relativePath)
+  return fileURLToPath(new URL(`../../${relativePath}`, import.meta.url))
 }
 
 function payloads(assets: SandboxRuntimeAssets): SandboxRuntimePayload[] {

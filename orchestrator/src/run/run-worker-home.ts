@@ -5,7 +5,6 @@ import type { McpMode } from '../mcp/mcp-preflight.ts'
 import { type McpServerConfig, readMcpConfig } from '../mcp/mcp-probe.ts'
 import type { Project } from '../project/projects.ts'
 import { trackedRecipeEnvironment } from '../recipe/tracked-recipe.ts'
-import { runTempDir } from '../run-owned-paths.ts'
 import { preflightCodexMcpCatalogues } from '../sandbox/codex-mcp-preflight.ts'
 import type { CodexMcpScope } from '../sandbox/codex-mcp-scope.ts'
 import { scopeGrokReaderMcpHome } from '../sandbox/grok-reader-mcp-home.ts'
@@ -36,14 +35,15 @@ import { childEnv } from './run-process.ts'
 
 export function codexPrivateTempEnvironment(
   writesJob: boolean,
-  sandbox: RunSandbox,
-  runtimeDir: string,
+  privateTemp: string,
 ): Record<string, string> {
   if (writesJob) return {}
-  const privateTemp = runTempDir(runtimeDir)
-  return sandbox === 'srt'
-    ? { CLAUDE_CODE_TMPDIR: privateTemp }
-    : { TMPDIR: privateTemp, TMP: privateTemp, TEMP: privateTemp }
+  return {
+    TMPDIR: privateTemp,
+    TMP: privateTemp,
+    TEMP: privateTemp,
+    CLAUDE_CODE_TMPDIR: privateTemp,
+  }
 }
 
 function grokReaderMcpEnabled(harness: string, usingMcp: boolean): boolean {
