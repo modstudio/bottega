@@ -28,6 +28,7 @@ import { enqueueScoreRecord } from './score/score-outbox.ts'
 import { recordScoreVerdict } from './score/score-verdict-record.ts'
 import {
   refuseChildTurnVoid,
+  refuseUnusableThirdVerdictWord,
   refuseUnvoid,
   VOID_EXCLUSION_REASON,
 } from './verdict/verdict-rules.ts'
@@ -59,6 +60,9 @@ function scoredVoidFidelity(
   quality: Quality | undefined,
   fidelity: Fidelity | undefined,
 ): Fidelity | undefined {
+  const jobNeedsFidelity = jobTakesFidelity(jobName)
+  const unusableThirdWord = refuseUnusableThirdVerdictWord(jobName, jobNeedsFidelity, fidelity)
+  if (unusableThirdWord) throw new Error(unusableThirdWord.message)
   if (!DELIVERY.includes(delivery)) {
     throw new Error(`delivery must be one of: ${DELIVERY.join(' | ')}`)
   }
@@ -68,7 +72,7 @@ function scoredVoidFidelity(
   if (delivery !== 'none' && (!quality || !QUALITY.includes(quality))) {
     throw new Error(`delivery '${delivery}' needs a quality: ${QUALITY.join(' | ')}`)
   }
-  const needsFidelity = jobTakesFidelity(jobName) && delivery !== 'none'
+  const needsFidelity = jobNeedsFidelity && delivery !== 'none'
   if (needsFidelity && (!fidelity || !FIDELITY.includes(fidelity))) {
     throw new Error(`${jobName} writes code, so verdicts require a fidelity axis`)
   }

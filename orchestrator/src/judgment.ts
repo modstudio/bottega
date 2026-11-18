@@ -62,7 +62,11 @@ import {
 } from './score/score-missing.ts'
 import { enqueueScoreRecord } from './score/score-outbox.ts'
 import { recordScoreVerdict } from './score/score-verdict-record.ts'
-import { refuseVerdict, type VerdictRefusal } from './verdict/verdict-rules.ts'
+import {
+  refuseUnusableThirdVerdictWord,
+  refuseVerdict,
+  type VerdictRefusal,
+} from './verdict/verdict-rules.ts'
 
 type JudgmentFlags = {
   has(name: string): boolean
@@ -463,8 +467,15 @@ function refuseAxesEarly(
     failureKind: string | null
     jobName: string
     unusedFidelity: boolean
+    suppliedFidelity: string | undefined
   },
 ): VerdictRefusal | null {
+  const unusableThirdWord = refuseUnusableThirdVerdictWord(
+    input.jobName,
+    input.writesRepo,
+    input.suppliedFidelity,
+  )
+  if (unusableThirdWord) return unusableThirdWord
   if (input.unusedFidelity) {
     presentation.error(
       `${input.jobName} has no spec to be faithful to, so it is judged on two axes only`,
@@ -547,6 +558,7 @@ function filledPresentAxes(
   quality: string | undefined
   fidelity: string | undefined
   unusedFidelity: boolean
+  suppliedFidelity: string | undefined
 } {
   const needsFidelity = writesRepo && delivery !== 'none'
   return {
@@ -554,6 +566,7 @@ function filledPresentAxes(
     quality: delivery === 'none' ? quality : (quality ?? 'right'),
     fidelity: needsFidelity ? (fidelity ?? 'faithful') : undefined,
     unusedFidelity: !needsFidelity && Boolean(fidelity),
+    suppliedFidelity: fidelity,
   }
 }
 

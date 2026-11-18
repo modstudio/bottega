@@ -4,6 +4,7 @@ import {
   type JobFacts,
   refuseChildTurnVoid,
   refuseHostedUnvoid,
+  refuseUnusableThirdVerdictWord,
   refuseUnvoid,
   refuseVerdict,
   type VerdictFacts,
@@ -27,6 +28,19 @@ const writing: JobFacts = { ...readOnly, writesRepo: true }
 const findings: JobFacts = { ...readOnly, producesFindings: true }
 
 describe('verdict rules', () => {
+  test('refuses only an unusable third verdict word on a two-axis job', () => {
+    const refusal = refuseUnusableThirdVerdictWord('diagnose', false, 'xyz')
+    expect(refusal).toEqual({
+      code: 'fidelity',
+      message:
+        'diagnose is judged on two axes only: delivery (none | partial | full) and ' +
+        "quality (wrong | mixed | right); 'xyz' is not a verdict word for diagnose; remove it",
+    })
+    expect(refuseUnusableThirdVerdictWord('diagnose', false, 'faithful')).toBeNull()
+    expect(refuseUnusableThirdVerdictWord('implement', true, 'xyz')).toBeNull()
+    expect(refuseUnusableThirdVerdictWord('diagnose', false, undefined)).toBeNull()
+  })
+
   test('refuses voiding a child turn and names the conversation root', () => {
     expect(refuseChildTurnVoid('5988', '5931', true)).toBe(
       'refused: turn 5988 is not routing evidence on its own because routing reads roots; ' +

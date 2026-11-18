@@ -459,7 +459,7 @@ describe('judge ruling', () => {
     db()
       .query('UPDATE run SET lens=?,model=?,output_path=? WHERE record_id=?')
       .run('correctness', 'm', output, id)
-    await score(id, ['full', 'right'], {
+    await score(id, ['full', 'right', 'faithful'], {
       reproduced: 'all',
       coverage: 'adequate',
       limits: 'absent',
@@ -468,6 +468,21 @@ describe('judge ruling', () => {
     expect(
       db().query('SELECT delivery,quality,fidelity FROM score WHERE run_record_id=?').get(id),
     ).toEqual({ delivery: 'full', quality: 'right', fidelity: null })
+  })
+
+  test('score refuses an unusable third word without changing a stored verdict or note', async () => {
+    const id = insert('ok', 'file-question')
+    await score(id, ['partial', 'right'], {}, { note: 'kept score note' })
+    const before = db()
+      .query('SELECT delivery,quality,fidelity,note FROM score WHERE run_record_id=?')
+      .get(id)
+
+    await expect(
+      score(id, ['full', 'mixed', 'xyz'], {}, { note: 'replacement score note' }),
+    ).rejects.toThrow("'xyz' is not a verdict word for file-question; remove it")
+    expect(
+      db().query('SELECT delivery,quality,fidelity,note FROM score WHERE run_record_id=?').get(id),
+    ).toEqual(before)
   })
 
   test('lens scoring refuses missing grades with the canonical vocabulary and writes nothing', async () => {

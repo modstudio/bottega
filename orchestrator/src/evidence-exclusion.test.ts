@@ -54,6 +54,24 @@ describe('evidence exclusion', () => {
     })
   })
 
+  test('score --void refuses an unusable third word without changing stored evidence', async () => {
+    const id = insert()
+    await score(id, ['partial', 'right'], {}, { note: 'kept void note' })
+    const snapshot = () =>
+      db()
+        .query(
+          `SELECT score.delivery,score.quality,score.fidelity,score.note,run.evidence_excluded
+             FROM run JOIN score ON score.run_record_id=run.record_id WHERE run.record_id=?`,
+        )
+        .get(id)
+    const before = snapshot()
+
+    await expect(
+      score(id, ['full', 'mixed', 'xyz'], { void: true }, { note: 'replacement void note' }),
+    ).rejects.toThrow("'xyz' is not a verdict word for file-question; remove it")
+    expect(snapshot()).toEqual(before)
+  })
+
   test('leaves an asking chain and its question open', async () => {
     const id = insert('asking', 'review-lens')
     db()
