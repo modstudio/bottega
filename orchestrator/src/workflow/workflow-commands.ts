@@ -11,6 +11,7 @@ import { db } from '../database/db.ts'
 import type { ContextMomentPorts } from '../doc/context-moment-adapter.ts'
 import { resolveGateIdentifier } from '../gate/gate-identifier.ts'
 import { contentTree, reviewChangedPaths } from '../git/git-environment.ts'
+import { formatOutcomeLine } from '../outcome-line.ts'
 import { type Project, projectAt, projects } from '../project/projects.ts'
 import { resolveReviewIdentifier } from '../review/review-identifier.ts'
 import { resolveReviewBase } from '../review/review-target.ts'
@@ -319,13 +320,21 @@ export async function execCommand(
     registeredProject,
     runner: options.probeRunner,
   })
-  print(execPrintRecord(result), String(result.id))
+  print(
+    execPrintRecord(result),
+    formatOutcomeLine({
+      kind: 'exec',
+      id: result.id,
+      exitCode: result.exitCode,
+      signal: result.signal,
+    }),
+  )
   presentCommandOutcome('exec', result, presentation)
 }
 
 /**
  * The receiving form of the hand-off: it takes no child command, records the payload
- * an exec could not, and prints the id exactly as exec does. Its own exit status
+ * an exec could not, and prints the recorded id, which callers read through --json. Its own exit status
  * reports whether the row was recorded, never the wrapped command's status, because
  * the wrapping process owns that and reads a non-zero receiver as lost evidence.
  */
@@ -360,7 +369,15 @@ export async function probeCommand(
   const command = argv.slice(3)
   const cwd = resolve(process.cwd(), options.cwd ?? process.cwd())
   const result = await recordWorkflowProbe(command, { cwd, runner: options.probeRunner })
-  print(probePrintRecord(result), String(result.id))
+  print(
+    probePrintRecord(result),
+    formatOutcomeLine({
+      kind: 'probe',
+      id: result.id,
+      exitCode: result.exitCode,
+      signal: result.signal,
+    }),
+  )
   presentCommandOutcome('probe', result, presentation)
 }
 

@@ -623,7 +623,7 @@ test('workflow probe service returns the recorded child exit code', async () => 
   ).toEqual({ exit_code: 9 })
 })
 
-test('workflow probe prints a failed command exit and stored output tail after the id', async () => {
+test('workflow probe prints a failed outcome and stored output tail', async () => {
   upsertProject({
     recordId: newRecordId(),
     name: 'workflow-probe-presentation-failure',
@@ -642,7 +642,7 @@ test('workflow probe prints a failed command exit and stored output tail after t
   })
 
   expect(shown.stdout).toHaveLength(1)
-  expect(shown.stdout[0]).toMatch(/^\d+$/)
+  expect(shown.stdout[0]).toMatch(/^probe \d+ failed \(exit 127\)$/)
   expect(shown.stderr).toEqual([
     `${PLATFORM_SLUG} workflow probe: command exited 127`,
     'command not found\n',
@@ -650,7 +650,7 @@ test('workflow probe prints a failed command exit and stored output tail after t
   expect(shown.exitCodes).toEqual([127])
 })
 
-test('workflow probe success prints only the id', async () => {
+test('workflow probe success prints its outcome and id', async () => {
   registerCurrentProject('workflow-probe-presentation-success')
   const shown = outcomePresentation()
 
@@ -659,7 +659,7 @@ test('workflow probe success prints only the id', async () => {
   })
 
   expect(shown.stdout).toHaveLength(1)
-  expect(shown.stdout[0]).toMatch(/^\d+$/)
+  expect(shown.stdout[0]).toMatch(/^probe \d+ passed$/)
   expect(shown.stderr).toEqual([])
   expect(shown.exitCodes).toEqual([0])
 })

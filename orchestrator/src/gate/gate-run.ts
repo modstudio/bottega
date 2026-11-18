@@ -62,7 +62,10 @@ export type ArchitectGateGitState = (cwd: string) => {
 
 type ArchitectGateTopLevel = (cwd: string) => string | null
 
-export type ArchitectGateRecord = { number: number; exitCode: number }
+export type ArchitectGateRecord = { number: number; exitCode: number } & (
+  | { commit: string }
+  | { commit: null; commitUnknown: 'dirty-before' | 'changed-during' }
+)
 
 /** Record a worker-style gate request; the broker remains the only executor. */
 export function requestGateExecution(
@@ -278,7 +281,7 @@ export async function runArchitectGate(input: {
     write,
   })
   const checkExecutions = readGateCheckExecutions(executionPath, write)
-  // A gate that rewrites the tree while it runs tested something other than HEAD.
+  // Only a gate that starts clean and leaves HEAD and the tree unchanged is attributable.
   const commit =
     before !== null && gateHeadCommit(checkoutTopLevel, observe) === before ? before : null
   const tail = boundedGateOutputTail(
@@ -286,7 +289,7 @@ export async function runArchitectGate(input: {
     GATE_OUTPUT_TAIL_BYTES,
   )
   const d = input.d ?? writableDb()
-  return writeTransaction(() => {
+  return writeTransaction<ArchitectGateRecord>(() => {
     const recordId = newRecordId()
     d.query(
       `INSERT INTO gate_execution
@@ -311,6 +314,14 @@ export async function runArchitectGate(input: {
       .get(recordId)
     if (!row?.number) throw new Error('gate_execution row was not inserted')
     insertGateCheckExecutions(d, recordId, checkExecutions)
-    return { number: row.number, exitCode: ran.exitCode }
+    if (commit === null) {
+      return {
+        number: row.number,
+        exitCode: ran.exitCode,
+        commit: null,
+        commitUnknown: before === null ? 'dirty-before' : 'changed-during',
+      }
+    }
+    return { number: row.number, exitCode: ran.exitCode, commit }
   }, d)
 }

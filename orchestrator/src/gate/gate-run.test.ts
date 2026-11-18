@@ -91,7 +91,12 @@ test('inserts a finished dirty-tree gate without attributing it to HEAD', async 
       }
     },
   })
-  expect(result).toEqual({ number: 1, exitCode: 0 })
+  expect(result).toEqual({
+    number: 1,
+    exitCode: 0,
+    commit: null,
+    commitUnknown: 'dirty-before',
+  })
   expect(chunks).toEqual(['ok\n'])
   expect(
     d
@@ -116,7 +121,7 @@ test('inserts a finished dirty-tree gate without attributing it to HEAD', async 
 
 test('inserts valid check records in the transaction with the gate row', async () => {
   const d = database()
-  await runArchitectGate({
+  const result = await runArchitectGate({
     cwd: repositoryPath,
     d,
     topLevel: () => repositoryPath,
@@ -144,6 +149,10 @@ test('inserts valid check records in the transaction with the gate row', async (
         elapsedMs: 1000,
       }
     },
+  })
+  expect(result.commit).toBe(headCommit)
+  expect(d.query('SELECT head_commit FROM gate_execution').get()).toEqual({
+    head_commit: headCommit,
   })
   expect(
     d
