@@ -48,6 +48,7 @@ let stateHome = ''
 let server: ReturnType<typeof Bun.serve>
 let session: ReturnType<typeof memoryRecordSession>
 let whoamiRequests = 0
+let rejectSetActiveResponse = false
 
 beforeEach(() => {
   stateHome = mkdtempSync(join(tmpdir(), 'record-identity-memo-'))
@@ -60,6 +61,7 @@ beforeEach(() => {
   installRecordSessionRunner(session.runner)
   installRecordApiClient(null)
   whoamiRequests = 0
+  rejectSetActiveResponse = false
   server = Bun.serve({
     port: 0,
     fetch(request) {
@@ -68,6 +70,8 @@ beforeEach(() => {
         whoamiRequests += 1
         return Response.json(identity)
       }
+      if (path === '/api/auth/organization/set-active' && rejectSetActiveResponse)
+        return Response.json({ id: 'space-b' })
       if (path === '/api/auth/organization/set-active' || path === '/api/auth/organization/create')
         return Response.json({ id: 'space-b', slug: 'beta' })
       if (path === '/api/auth/organization/accept-invitation')
@@ -194,6 +198,20 @@ describe('record identity process memo', () => {
     await first.whoami()
 
     await first.setActiveOrganization({ organizationId: 'space-b' })
+    await second.whoami()
+
+    expect(whoamiRequests).toBe(2)
+  })
+
+  test('set-active schema failure invalidates identity before the next whoami', async () => {
+    const first = recordApiClient()
+    const second = recordApiClient()
+    await first.whoami()
+    rejectSetActiveResponse = true
+
+    await expect(first.setActiveOrganization({ organizationId: 'space-b' })).rejects.toThrow(
+      'record API returned an invalid organization',
+    )
     await second.whoami()
 
     expect(whoamiRequests).toBe(2)
