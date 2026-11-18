@@ -1,12 +1,11 @@
 // concern: run worker home provisioning and failed-launch cleanup
-import { mkdirSync } from 'node:fs'
-import { join } from 'node:path'
 import type { Agent } from '../agent/agents.ts'
 import { workerHarnessName } from '../agent/worker-launch-env.ts'
 import type { McpMode } from '../mcp/mcp-preflight.ts'
 import { type McpServerConfig, readMcpConfig } from '../mcp/mcp-probe.ts'
 import type { Project } from '../project/projects.ts'
 import { trackedRecipeEnvironment } from '../recipe/tracked-recipe.ts'
+import { runTempDir } from '../run-owned-paths.ts'
 import { preflightCodexMcpCatalogues } from '../sandbox/codex-mcp-preflight.ts'
 import type { CodexMcpScope } from '../sandbox/codex-mcp-scope.ts'
 import { scopeGrokReaderMcpHome } from '../sandbox/grok-reader-mcp-home.ts'
@@ -36,14 +35,15 @@ import type { Worktree } from '../worktree/worktree-types.ts'
 import { childEnv } from './run-process.ts'
 
 export function codexPrivateTempEnvironment(
-  harness: string,
-  repoJob: boolean,
-  scratchDir: string,
+  writesJob: boolean,
+  sandbox: RunSandbox,
+  runtimeDir: string,
 ): Record<string, string> {
-  if (harness !== 'codex' || repoJob) return {}
-  const privateTemp = join(scratchDir, 'tmp')
-  mkdirSync(privateTemp, { recursive: true, mode: 0o700 })
-  return { TMPDIR: privateTemp, TMP: privateTemp, TEMP: privateTemp }
+  if (writesJob) return {}
+  const privateTemp = runTempDir(runtimeDir)
+  return sandbox === 'srt'
+    ? { CLAUDE_CODE_TMPDIR: privateTemp }
+    : { TMPDIR: privateTemp, TMP: privateTemp, TEMP: privateTemp }
 }
 
 function grokReaderMcpEnabled(harness: string, usingMcp: boolean): boolean {

@@ -18,6 +18,7 @@ import {
   readerDeliverablesInstruction,
   realQuestions,
   replyFileInstruction,
+  repositoryReaderPreamble,
   resolveReplyDialect,
   TEXT_REPLY_SCHEMA,
   WORKER_SCHEMA,
@@ -47,6 +48,12 @@ test('the harness worker preamble offers only the durable question path', () => 
   expect(preamble).toContain('durable run answer path')
   expect(preamble).not.toContain('NON-BLOCKING MESSAGES')
   expect(preamble).not.toContain('live orchestrator tools are available')
+})
+
+test('the repository reader preamble directs temporary and escaped writes', () => {
+  const preamble = repositoryReaderPreamble(false)
+  expect(preamble).toContain('Temporary files go in $TMPDIR, which is removed with the run')
+  expect(preamble).toContain('written elsewhere in files_written')
 })
 
 const baseWorkerReply = {

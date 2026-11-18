@@ -25,6 +25,7 @@ import {
   extractSandboxRuntime,
   SRT_LIBRARY,
   sandboxRuntimeAvailability,
+  withSandboxTemporaryDirectory,
 } from './sandbox-runtime.ts'
 
 const manifest = {
@@ -65,6 +66,39 @@ function quarantines(final: string): string[] {
 }
 
 describe('sandbox runtime payloads', () => {
+  test('temporary directory is scoped to one launch and restored before the next', async () => {
+    const previous = process.env.CLAUDE_CODE_TMPDIR
+    let releaseFirst = () => {}
+    let firstEntered = () => {}
+    const firstIsEntered = new Promise<void>((resolve) => {
+      firstEntered = resolve
+    })
+    const firstMayFinish = new Promise<void>((resolve) => {
+      releaseFirst = resolve
+    })
+    const observed: string[] = []
+
+    const first = withSandboxTemporaryDirectory('/runs/first/tmp', async () => {
+      observed.push(process.env.CLAUDE_CODE_TMPDIR ?? 'missing')
+      firstEntered()
+      await firstMayFinish
+      observed.push(process.env.CLAUDE_CODE_TMPDIR ?? 'missing')
+    })
+    await firstIsEntered
+    const second = withSandboxTemporaryDirectory('/runs/second/tmp', async () => {
+      observed.push(process.env.CLAUDE_CODE_TMPDIR ?? 'missing')
+    })
+    await Promise.resolve()
+    try {
+      expect(observed).toEqual(['/runs/first/tmp'])
+    } finally {
+      releaseFirst()
+    }
+    await Promise.all([first, second])
+    expect(observed).toEqual(['/runs/first/tmp', '/runs/first/tmp', '/runs/second/tmp'])
+    expect(process.env.CLAUDE_CODE_TMPDIR).toBe(previous)
+  })
+
   test('source availability is exactly the installed library check', () => {
     expect(
       sandboxRuntimeAvailability(process.env, process.platform, process.arch, []).available,

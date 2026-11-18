@@ -88,6 +88,9 @@ export const READONLY_LENS_DENY_PATHS = [
  */
 export const READONLY_LENS_DENY_SOCKETS = ['/var/run/docker.sock', '/run/docker.sock'] as const
 
+/** Shared SRT temp defaults denied to read-only workers. */
+export const READONLY_LENS_DENY_WRITE_PATHS = ['/tmp/claude', '/private/tmp/claude'] as const
+
 /** Loopback TCP is allowed on every readonly-lens SRT profile. */
 export const READONLY_LENS_ALLOW_LOCAL_BINDING = true
 
@@ -269,6 +272,7 @@ export function readonlyLensProfile(input: {
   nodeModuleLinks?: string[]
   mcpAllowlist?: string[]
   environment?: ConfigEnvironment
+  denySharedTemp?: boolean
 }): SandboxRuntimeConfig {
   const environment = input.environment ?? process.env
   const toolchain = (input.path ?? process.env.PATH ?? '')
@@ -329,7 +333,7 @@ export function readonlyLensProfile(input: {
         denyRead: [...protectedDenies, ...READONLY_LENS_DENY_SOCKETS],
         allowWithinDeny,
         allowWrite,
-        denyWrite: [],
+        denyWrite: input.denySharedTemp === false ? [] : [...READONLY_LENS_DENY_WRITE_PATHS],
       },
     },
     environment,
@@ -384,6 +388,7 @@ export function writerProfile(input: {
     worktree,
     scratchDir,
     allowWrite,
+    denySharedTemp: false,
   })
   const broadLoopback = new Set<string>(LOOPBACK_DOMAINS)
   return {
@@ -650,10 +655,11 @@ export async function sandboxLaunchArgv(
   profile: SandboxRuntimeConfig,
   bin: string,
   argv: string[],
+  temporaryDirectory?: string,
 ): Promise<string[]> {
   ensureHubLoginTokenDirectory(process.env)
   const config = sandboxRuntimeConfig(profile)
-  return launchWithSandboxRuntime(config, shellCommand([bin, ...argv]))
+  return launchWithSandboxRuntime(config, shellCommand([bin, ...argv]), temporaryDirectory)
 }
 
 /** Release the process-scoped runtime resources provisioned for this run. */

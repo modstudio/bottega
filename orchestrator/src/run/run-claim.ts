@@ -41,7 +41,7 @@ import { teardownTerminalRunResources } from '../resources/resource-ownership.ts
 import type { ReviewRole } from '../review/review-role.ts'
 import { attributedLaunchKey, type ResolvedReviewTarget } from '../review/review-target.ts'
 import { resolveSupersededTurn } from '../route/failover.ts'
-import { runOwnedPaths } from '../run-owned-paths.ts'
+import { runOwnedPaths, runTempDir } from '../run-owned-paths.ts'
 import { type KeepTreeExemption, recordedKeepTreeExemption } from '../worktree/keep-tree-hold.ts'
 import { writerTreeBaseRef } from '../worktree/trunk-base-choice.ts'
 import { createWorkerWorktree, worktreeExists } from '../worktree/worktree.ts'
@@ -611,6 +611,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
     taskBranchAttachment = false
   let grokMcpEnvironment: Record<string, string> = {}
   const runtimeDirExisted = existsSync(runtimeDir)
+  if (!writesJob) mkdirSync(runTempDir(runtimeDir), { recursive: true, mode: 0o700 })
   /** Cutting the worktree after the row exists throws for a non-repository or a
    * taken worktree path. This used to happen outside the try/finally below, so
    * its row stayed `running` with no process until the stale sweep guessed at it.

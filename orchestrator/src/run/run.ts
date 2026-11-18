@@ -52,6 +52,7 @@ import {
 import * as rt from '../review/review-target.ts'
 import { pick } from '../route/route.ts'
 import { runningRunCountForHarness } from '../route/running-runs.ts'
+import { runTempDir } from '../run-owned-paths.ts'
 import { type CodexMcpCatalogue, codexMcpSetupHeader } from '../sandbox/codex-mcp-scope.ts'
 import { decideCodexSandbox } from '../sandbox/codex-sandbox.ts'
 import { mergeMcpSetupHeader } from '../sandbox/project-mcp-scope.ts'
@@ -585,7 +586,6 @@ export async function run(
   const gitConfigEnvironment = workerGitConfigEnvironment(worktree, writesJob, requestedJob.name)
   const recipeEnvironment = {
     ...workerHome.trackedWorkerEnvironment(repoJob, writesJob, worktree, claim.id),
-    ...workerHome.codexPrivateTempEnvironment(workerHarnessName(a), repoJob, scratchDir),
   }
   assertConfiguredGitGuard(gitConfigEnvironment, writableRoots)
   let askLoopback: AskLoopback | null = null
@@ -696,7 +696,7 @@ export async function run(
           const probeTool = projectSettings?.mcp?.probe_tool ?? null
           const wrap = sandboxSelection.profile
             ? (bin: string, args: string[]) =>
-                sandboxLaunchArgv(sandboxSelection.profile!, bin, args)
+                sandboxLaunchArgv(sandboxSelection.profile!, bin, args, runTempDir(runtimeDir))
             : undefined
           const probe = await probeMcpServer({
             server: mcpServerName,
@@ -940,7 +940,15 @@ export async function run(
           gitConfigEnvironment,
           runtimeDir,
           recipeEnvironment,
-          launchEnvironment: { ...mcpEnvironment, ...probeLaunch.environment },
+          launchEnvironment: {
+            ...mcpEnvironment,
+            ...probeLaunch.environment,
+            ...workerHome.codexPrivateTempEnvironment(
+              writesJob,
+              sandboxSelection.sandbox,
+              runtimeDir,
+            ),
+          },
           scratchDir,
           writesJob,
           codexSandbox,

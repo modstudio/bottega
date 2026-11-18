@@ -41,6 +41,7 @@ import {
   probeSandboxProfile,
   READONLY_LENS_DENY_PATHS,
   READONLY_LENS_DENY_SOCKETS,
+  READONLY_LENS_DENY_WRITE_PATHS,
   readonlyLensDeniesLoginKeychain,
   readonlyLensDeniesOperatorEnvFile,
   readonlyLensProfile,
@@ -663,6 +664,7 @@ describe('readonly-lens sandbox profile', () => {
       ROOT,
     ])
     expect(profile.filesystem.allowWrite).toEqual(['/runs/tree', '/runs/evidence'])
+    expect(profile.filesystem.denyWrite).toEqual(['/tmp/claude', '/private/tmp/claude'])
     expect(profile.filesystem.allowWrite).not.toContain(hubLoginTokenDirectory(environment))
     expect(profile.network.allowedDomains).toEqual([
       'cli-chat-proxy.grok.com',
@@ -881,6 +883,9 @@ describe('readonly-lens sandbox profile', () => {
     expect(profile.filesystem.allowWrite).not.toContain('/projects/main')
     expect(profile.filesystem.allowWrite).not.toContain('/projects/main/.git/objects')
     expect(profile.filesystem.denyWrite).toContain('/projects/main/.claude/worktrees/run-42/.git')
+    for (const path of READONLY_LENS_DENY_WRITE_PATHS) {
+      expect(profile.filesystem.denyWrite).not.toContain(path)
+    }
     expect(profile.network.allowedDomains).toContain('127.0.0.1:43127')
     expect(profile.network.allowedDomains).not.toContain('127.0.0.1')
     expect(profile.network.allowLocalBinding).toBe(false)

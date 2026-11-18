@@ -1117,6 +1117,8 @@ function readonlyPreamble(findings: boolean): string {
 You are working in your own disposable worktree. It is a fresh checkout of this
 run's commit to read. If the caller chose to carry their uncommitted work into it,
 that work is present and is not yours: do not report it as your change.
+Temporary files go in $TMPDIR, which is removed with the run; list any file
+written elsewhere in files_written.
 
 A prompt with several questions is not atomic: answer every question you can.
 ${READER_DELIVERABLE_FIRST}
