@@ -4,6 +4,7 @@
 import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { db, writeTransaction } from '../database/db.ts'
+import { JOBS } from '../jobs/jobs.ts'
 import type { RecordTaskFlowClient } from '../record/record-api-client-task-flow.ts'
 import { TASK_FLOW_OPEN_STAGE_STATES } from '../record/record-task-flow-contract.ts'
 import {
@@ -160,12 +161,14 @@ export async function bindRecordedRunCursorArguments(
       {
         cursor_record_id: string | null
         branch: string | null
+        job: string
         worktree: string | null
       },
       [string]
-    >('SELECT cursor_record_id,branch,worktree FROM run WHERE record_id=?')
+    >('SELECT cursor_record_id,branch,job,worktree FROM run WHERE record_id=?')
     .get(runRecordId)
   if (!run) return { action: 'unbound' }
+  if (JOBS[run.job]?.needs.writesRepo !== true) return { action: 'no-op' }
   return bindCursorArguments(
     {
       cursorRecordId: run.cursor_record_id,

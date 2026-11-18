@@ -42,6 +42,7 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     '../../../shared/brand.ts',
     'bun:sqlite',
     '../database/db.ts',
+    '../jobs/jobs.ts',
     '../record/record-api-client-task-flow.ts',
     '../record/record-task-flow-contract.ts',
     '../record/record-task-flow-write-client.ts',

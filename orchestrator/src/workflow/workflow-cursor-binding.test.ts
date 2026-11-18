@@ -169,3 +169,67 @@ test('a bound implement run makes every fix-defect step render and advances blas
   ) as Record<string, string>
   expect(refusedArgs).toMatchObject({ branch: renamedBranch, worktree: reopenedWorktree })
 })
+
+test('a bound read-only run leaves a keyed fix-defect cursor branch and worktree unchanged', async () => {
+  const d = currentDatabase()
+  d.query('UPDATE project SET settings=? WHERE name=?').run(
+    JSON.stringify({
+      gate: 'bun run check',
+      trunk: 'main',
+      tracker: { protocol: 'hub' },
+      docs: { protocol: 'orch-docs' },
+      release: { rungs: [], mergeMethod: 'squash', requiredChecks: [] },
+    }),
+    'fixture',
+  )
+  const key = 'DEV-2449'
+  const originalBranch = 'DEV-2449-writer'
+  const originalWorktree = '/tmp/dev-2449-writer'
+  const definition = showResolvedWorkflow('fix-defect', undefined, 'fixture', d).definition
+  const mode = definition.modes.find(({ slug }) => slug === 'single')!
+  const stepSlugs = expandWorkflowSteps(
+    mode.steps,
+    productionStepCatalogue(d).definition.sequences ?? [],
+  )
+  const composition = await composeWorkflowWithCursor(
+    'fix-defect',
+    'fixture',
+    'single',
+    { key, branch: originalBranch, worktree: originalWorktree },
+    { session: context.session, taskRecordId: `task-${key}` },
+    d,
+    {},
+    {
+      resolution: {
+        layers: [],
+        steps: Object.fromEntries(
+          stepSlugs.map((slug) => [slug, { value: 'auto' as const, scope: 'test' }]),
+        ),
+        rulings: { value: 'agent', scope: 'test' },
+        shipTo: { value: 'trunk', scope: 'test' },
+      },
+    },
+  )
+  const cursor = d
+    .query<{ record_id: string }, [number]>('SELECT record_id FROM workflow_cursor WHERE number=?')
+    .get(composition.cursor!.id)!
+  const before = d
+    .query<{ args: string; closed: string }, [string]>(
+      'SELECT args,closed FROM workflow_cursor WHERE record_id=?',
+    )
+    .get(cursor.record_id)!
+  const run = newRecordId()
+  d.query(
+    `INSERT INTO run
+      (record_id,number,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,
+       cursor_record_id,step_slug,branch,worktree,worktree_source,project_record_id)
+     VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM run),'2026-11-18','codex','review-lens',
+             'sha',1,'readonly guard','ok',?,?,?,?,'readonly_recipe',
+             (SELECT record_id FROM project WHERE name='fixture'))`,
+  ).run(run, cursor.record_id, 'review-lenses', 'DEV-2449-reader', '/tmp/dev-2449-reader')
+
+  expect(await bindRecordedRunCursorArguments(run, d)).toEqual({ action: 'no-op' })
+  expect(
+    d.query('SELECT args,closed FROM workflow_cursor WHERE record_id=?').get(cursor.record_id),
+  ).toEqual(before)
+})
