@@ -3,7 +3,7 @@ import { expect, test } from 'bun:test'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { taskFlowReadStore } from './task-flow-store.ts'
 import { composeWorkflowWithCursor } from './workflow-cursor.ts'
-import { database } from './workflow-cursor-test.fixture.ts'
+import { admissionEnforcingTaskClaimPorts, database } from './workflow-cursor-test.fixture.ts'
 import { closeGraduatingExploreForReuse } from './workflow-handoff.ts'
 import { composeWorkflow, promoteWorkflowLocal, setWorkflowLocal } from './workflows.ts'
 
@@ -55,6 +55,8 @@ test('task-bound composition hands the session untouched explore cursor off', as
     d,
     {},
     live,
+    undefined,
+    admissionEnforcingTaskClaimPorts(d),
   )
 
   expect(composed.graduated).toEqual({ cursor: explore.id, closed: true })

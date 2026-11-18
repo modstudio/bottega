@@ -119,6 +119,12 @@ async function validateHandoff(input: HandoffInput, d: Database) {
 
 class HandoffOpenStageError extends Error {}
 
+type HandoffClaim = Awaited<ReturnType<typeof followTaskCursorClaim>>
+
+function shouldReleaseHandoffClaim(claim: HandoffClaim | undefined): boolean {
+  return claim !== undefined && claim.claimAction !== 'renewed'
+}
+
 function handoffRetry(
   input: HandoffInput,
   composition: ReturnType<typeof composeWorkflow>,
@@ -228,16 +234,7 @@ export async function handoffWorkflow(input: HandoffInput) {
 
   const validated = await validateHandoffTarget(input, d)
   const key = validated.targetKey
-  const claim = await followTaskCursorClaim(
-    {
-      project: input.row.project,
-      taskKey: key,
-      session: input.context.session,
-      verb: 'handoff',
-      database: d,
-    },
-    input.taskClaimPorts,
-  )
+  let claim: HandoffClaim | undefined
   let adoptedCursor = false
   try {
     await adoptWorkflowTask(
@@ -249,6 +246,16 @@ export async function handoffWorkflow(input: HandoffInput) {
       input.context.taskStatusCategory,
     )
     adoptedCursor = true
+    claim = await followTaskCursorClaim(
+      {
+        project: input.row.project,
+        taskKey: key,
+        session: input.context.session,
+        verb: 'handoff',
+        database: d,
+      },
+      input.taskClaimPorts,
+    )
     const adopted = await taskFlowReadStore(d, input.context.taskFlowClient).stageByRecordId(
       input.row.record_id,
     )
@@ -258,7 +265,7 @@ export async function handoffWorkflow(input: HandoffInput) {
   } catch (error) {
     let releaseWarning: string | undefined
     try {
-      if (claim.claimAction !== 'renewed')
+      if (shouldReleaseHandoffClaim(claim))
         await followTaskCursorClaim(
           {
             project: input.row.project,

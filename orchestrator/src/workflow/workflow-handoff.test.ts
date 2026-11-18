@@ -5,9 +5,15 @@ import { decideKeyedRunCursorAdmission } from '../dispatch/keyed-run-cursor-admi
 import { selectBriefInFlight } from '../doc/context-brief.ts'
 import { taskFlowHandoffLinks, taskFlowReadStore } from './task-flow-store.ts'
 import { awaitWorkflowRuling, composeWorkflowWithCursor } from './workflow-cursor.ts'
+import { adoptWorkflowTask } from './workflow-cursor-adoption.ts'
 import { workflowCursorHandoffLinks } from './workflow-cursor-list.ts'
 import { resolveWorkflowCursorContext } from './workflow-cursor-selection.ts'
-import { database, selectAndNextWorkflowStep, testPorts } from './workflow-cursor-test.fixture.ts'
+import {
+  admissionEnforcingTaskClaimPorts,
+  database,
+  selectAndNextWorkflowStep,
+  testPorts,
+} from './workflow-cursor-test.fixture.ts'
 import { handoffWorkflow } from './workflow-handoff.ts'
 import { resolveWorkflowCursorSuccessor } from './workflow-run-binding.ts'
 import { promoteWorkflowLocal, setWorkflowLocal } from './workflows.ts'
@@ -267,6 +273,7 @@ test('keyless handoff takes the claim, adopts the key, and moves context to its 
       (record_id,holder_kind,holder_id,slug,kind,body,source,created_at,updated_at)
       VALUES (?,'cursor',?,'keyless-decision','fact','carry me','test',?,?)`)
     .run(newRecordId(), fixture.row.record_id, fixture.row.created_at, fixture.row.created_at)
+  const takes: string[] = []
   const result = await handoffWorkflow({
     row: fixture.row,
     workflow: 'handoff-target',
@@ -276,6 +283,7 @@ test('keyless handoff takes the claim, adopts the key, and moves context to its 
     context,
     live: {},
     database: fixture.d,
+    taskClaimPorts: admissionEnforcingTaskClaimPorts(fixture.d, { takes }),
   })
   const successor = (await taskFlowReadStore(fixture.d).stageByHandle('fixture', result.cursor))!
   expect(successor).toMatchObject({
@@ -293,13 +301,7 @@ test('keyless handoff takes the claim, adopts the key, and moves context to its 
   expect(
     fixture.d.query('SELECT holder_id FROM context_item WHERE slug=?').get('keyless-decision'),
   ).toEqual({ holder_id: successor.record_id })
-  expect(
-    fixture.d
-      .query<{ holder_session: string; closed_at: string | null }, [string]>(
-        'SELECT holder_session,closed_at FROM board_claim WHERE subject_value=?',
-      )
-      .get('DEV-KEYLESS'),
-  ).toEqual({ holder_session: fixture.context.session, closed_at: null })
+  expect(takes).toContain('DEV-KEYLESS')
   const runBinding = fixture.d
     .query<{ cursor_record_id: string | null }, [string]>(
       'SELECT cursor_record_id FROM run WHERE record_id=?',
@@ -322,6 +324,24 @@ test('keyless handoff takes the claim, adopts the key, and moves context to its 
       fromOperator: false,
     }),
   ).toEqual({ kind: 'allow' })
+})
+
+test('hosted admission fixture refuses a keyless stage and admits it once keyed', async () => {
+  const fixture = await keylessFixture()
+  const ports = admissionEnforcingTaskClaimPorts(fixture.d)
+  const claim = {
+    project: 'fixture',
+    key: 'DEV-KEYLESS',
+    session: fixture.context.session,
+  }
+
+  await expect(ports.take(claim)).rejects.toThrow(
+    'fixture hosted admission: no running or awaiting-ruling stage keyed DEV-KEYLESS for session keyless-handoff-session',
+  )
+
+  await adoptWorkflowTask(fixture.row, claim.key, 'task-DEV-KEYLESS', fixture.d)
+
+  await expect(ports.take(claim)).resolves.toMatchObject({ action: 'taken' })
 })
 
 test('brief lineage lists a carried run under the real handoff successor', async () => {
@@ -399,13 +419,10 @@ function failingKeylessHandoff(
     },
     live: {},
     database: fixture.d,
-    taskClaimPorts: {
-      take: async () => ({ action: claimAction, recordId: 'claim', number: 1 }) as never,
-      release: async ({ key }) => {
-        releases.push(key)
-        return { released: 1 }
-      },
-    },
+    taskClaimPorts: admissionEnforcingTaskClaimPorts(fixture.d, {
+      action: claimAction,
+      releases,
+    }),
   })
 }
 
@@ -419,7 +436,7 @@ test('keyless handoff failure before adoption reports that the cursor remains ke
   await expect(failingKeylessHandoff(fixture, 'taken', releases)).rejects.toThrow(
     `adoption exploded; cursor ${fixture.row.id} remains keyless`,
   )
-  expect(releases).toEqual(['DEV-KEYLESS'])
+  expect(releases).toEqual([])
 })
 
 test('keyless handoff failure after adoption reports that the cursor is keyed', async () => {
@@ -457,20 +474,28 @@ test('a post-adoption open-stage refusal points at workflow cursors', async () =
 
 test('keyless handoff failure preserves a claim renewed from this session', async () => {
   const fixture = await keylessFixture()
-  fixture.d.exec(`CREATE TRIGGER fail_renewed_keyless_adoption
-    BEFORE UPDATE OF workflow_key ON workflow_cursor
-    BEGIN SELECT RAISE(ABORT, 'adoption exploded'); END`)
+  fixture.d.exec(`CREATE TRIGGER fail_renewed_keyless_successor
+    BEFORE INSERT ON workflow_cursor WHEN NEW.handed_off_from_record_id IS NOT NULL
+    BEGIN SELECT RAISE(ABORT, 'successor exploded'); END`)
   const releases: string[] = []
 
-  await expect(failingKeylessHandoff(fixture, 'renewed', releases)).rejects.toThrow(
-    `adoption exploded; cursor ${fixture.row.id} remains keyless`,
+  let message = ''
+  try {
+    await failingKeylessHandoff(fixture, 'renewed', releases)
+  } catch (error) {
+    message = error instanceof Error ? error.message : String(error)
+  }
+  expect(message).toContain(
+    `successor exploded; cursor ${fixture.row.id} is now keyed to DEV-KEYLESS`,
+  )
+  expect(message).toContain(
+    `retry with workflow handoff handoff-target --mode default --cursor ${fixture.row.id} --project fixture --reason 'task identified' --arg key=DEV-KEYLESS --arg branch=DEV-KEYLESS-work --arg worktree=/tmp/keyless-work`,
   )
   expect(releases).toEqual([])
 })
 
-test('a refused keyless claim leaves the source cursor and context untouched and names the holder', async () => {
+test('a refused keyless claim reports that the source cursor is now keyed and names the holder', async () => {
   const fixture = await keylessFixture()
-  const before = cursorSnapshot(fixture.d, fixture.row.record_id)
   await expect(
     handoffWorkflow({
       row: fixture.row,
@@ -492,8 +517,13 @@ test('a refused keyless claim leaves the source cursor and context untouched and
         release: async () => ({ released: 0 }),
       },
     }),
-  ).rejects.toThrow('session holder-session')
-  expect(cursorSnapshot(fixture.d, fixture.row.record_id)).toEqual(before)
+  ).rejects.toThrow(
+    `session holder-session; cursor ${fixture.row.id} is now keyed to DEV-HELD; retry with`,
+  )
+  expect(await taskFlowReadStore(fixture.d).stageByRecordId(fixture.row.record_id)).toMatchObject({
+    workflow_key: 'DEV-HELD',
+    state: 'running',
+  })
 })
 
 test('keyless handoff without a target key gives the key remedy', async () => {
