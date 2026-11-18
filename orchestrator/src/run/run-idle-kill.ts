@@ -104,24 +104,26 @@ export async function performIdleKill(input: {
   scratchDir: string
   worktreePath: string | null
   forceCollect: (result: TransportResult) => void
+  hasOpenQuestion?: (runId: string) => Promise<boolean>
 }): Promise<void> {
   const { state } = input
   const row = idleRunRow(input.runId)
   if (!row) return
-  const openQuestion = await runHasOpenQuestion(input.runId)
+  const hasOpenQuestion = input.hasOpenQuestion ?? runHasOpenQuestion
   const idleThresholdMs = jobIdleKillMs(input.job, process.env, input.boundMs)
   const decision = shouldIdleKill({
     lastEventAt: row.last_event_at,
     startedAt: row.started_at,
     pid: input.handle.pid,
     asking: row.status === 'asking',
-    openQuestion,
+    openQuestion: false,
     alreadyTimedOut: input.timedOut,
     alreadyIdleKilled: state.killed,
     thresholdMs: idleThresholdMs,
     samples: input.samples,
   })
   if (!decision.kill) return
+  if (await hasOpenQuestion(input.runId)) return
   state.killed = true
   const elapsed = Date.now() - input.vendorStartedAtMs
   state.error = formatIdleKillError({
@@ -131,7 +133,7 @@ export async function performIdleKill(input: {
   })
   const checkpoint = input.checkpoint.request('limit')
   const afterCheckpoint = recordedRunStatus(input.runId)
-  const askedDuringCheckpoint = afterCheckpoint === 'asking' || runHasOpenQuestion(input.runId)
+  const askedDuringCheckpoint = afterCheckpoint === 'asking' || (await hasOpenQuestion(input.runId))
   if (askedDuringCheckpoint) {
     state.killed = false
     state.error = null

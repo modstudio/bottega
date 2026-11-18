@@ -28,6 +28,7 @@
  * migrations, machine identity, or hosted-record publication all being healthy.
  */
 import { Database } from 'bun:sqlite'
+import { CALLER_ENVIRONMENT_KEY, CALLER_TOKEN_MAX_LENGTH } from '../../../shared/record-caller.ts'
 import { keepJournalSidecars } from '../database/wal-persistence.ts'
 import { RefusalError } from '../refusal-error.ts'
 import { isRunFinishFailed } from './run-finish-error.ts'
@@ -40,6 +41,10 @@ type RunDispatchSpec = import('../route/failover.ts').DetachSpec & {
 export function startupFailureDiagnostic(error: unknown): string {
   if (error instanceof RefusalError) return error.message
   return String((error as Error)?.stack ?? error)
+}
+
+export function executorCallerToken(inherited: string | undefined): string {
+  return `exec:${inherited || 'run'}`.slice(0, CALLER_TOKEN_MAX_LENGTH)
 }
 
 /** Record why this run never started, using as little of the codebase as possible. */
@@ -84,9 +89,15 @@ async function recordStartupFailure(id: string, reason: string): Promise<void> {
 }
 
 export async function main(argv: string[]): Promise<number> {
+  const inheritedCaller = process.env[CALLER_ENVIRONMENT_KEY]
+  process.env[CALLER_ENVIRONMENT_KEY] = executorCallerToken(inheritedCaller)
+  const requestWindowStartedAt = Date.now()
+  let requestCountAtStart = 0
   const [idArg, promptPath, jobName, specJson] = argv
   const id = idArg ?? ''
   try {
+    const { recordRequestCount } = await import('../../../shared/record-request-headers.ts')
+    requestCountAtStart = recordRequestCount()
     if (!id || !promptPath || !jobName)
       throw new Error('__exec <run-id> <prompt-file> <job> [spec]')
     const { readFileSync } = await import('node:fs')
@@ -134,6 +145,25 @@ export async function main(argv: string[]): Promise<number> {
       `orch: run ${id} ${runFinishFailed ? 'finish failed' : 'could not start'}: ${diagnostic}`,
     )
     return 1
+  } finally {
+    try {
+      const elapsedMs = Date.now() - requestWindowStartedAt
+      const { recordRequestCount } = await import('../../../shared/record-request-headers.ts')
+      const count = recordRequestCount() - requestCountAtStart
+      const { exceedsLongLivedRecordRequestRate, LONG_LIVED_RECORD_REQUESTS_PER_MINUTE_MAX } =
+        await import('./run-record-request-rate.ts')
+      if (id && exceedsLongLivedRecordRequestRate({ count, elapsedMs })) {
+        const { recordRunWarning } = await import('../events.ts')
+        recordRunWarning(
+          id,
+          `long-lived record request rate exceeded: ${count} requests in ${(elapsedMs / 60_000).toFixed(2)} minutes; bound ${LONG_LIVED_RECORD_REQUESTS_PER_MINUTE_MAX} requests per minute`,
+        )
+      }
+    } catch (error) {
+      console.error(
+        `orch: run ${id} could not record its request-rate warning: ${startupFailureDiagnostic(error)}`,
+      )
+    }
   }
 }
 
