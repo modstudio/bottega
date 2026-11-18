@@ -5,13 +5,13 @@ import {
   RECORD_ACTIVE_SPACE_REMEDY,
   RECORD_SIGN_IN_REMEDY,
 } from '../../../shared/record-remedies.ts'
+import { recordRequestHeaders } from '../../../shared/record-request-headers.ts'
 import {
   readRecordSessionToken,
   readRecordSessionTokenAsync,
   type SecurityRunner,
   writeRecordSessionToken,
 } from '../../../shared/record-session.ts'
-import { recordRequestHeaders } from '../../../shared/record-request-headers.ts'
 import { DATABASE_RESOLUTION, db, writeTransaction } from '../database/db.ts'
 import {
   activeMembershipSpace,

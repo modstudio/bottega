@@ -4,8 +4,8 @@ import { type Browser, type BrowserContext, chromium, type Page, type Request } 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { readEnvValues } from '../../../shared/env-values.ts'
 import { resolveRecordApiUrl } from '../../../shared/record-api-url.ts'
-import { readRecordSessionTokenAsync } from '../../../shared/record-session.ts'
 import { recordRequestHeaders } from '../../../shared/record-request-headers.ts'
+import { readRecordSessionTokenAsync } from '../../../shared/record-session.ts'
 import { concernStateDirectory } from '../../../shared/state-directory.ts'
 import {
   command as dashboardCommand,

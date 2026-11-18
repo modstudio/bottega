@@ -25,6 +25,7 @@ import {
   RECORD_ACTIVE_SPACE_REMEDY,
   RECORD_SIGN_IN_REMEDY,
 } from '../../../shared/record-remedies.ts'
+import { recordRequestHeaders } from '../../../shared/record-request-headers.ts'
 import {
   parseRecordSpaceMemberships,
   type RecordSpaceMembership,
@@ -48,7 +49,6 @@ import { quarantinedOutboxRows } from './outbox-quarantine.ts'
 import { RecordApiRequestError, recordApiClient, recordApiRequest } from './record-api-client.ts'
 import { recordQuestionClient } from './record-api-client-question.ts'
 import { recordAttributionFailure } from './record-attribution.ts'
-import { recordRequestHeaders } from '../../../shared/record-request-headers.ts'
 import type { RecordIdentity } from './record-auth.ts'
 import { recordPool } from './record-pool.ts'
 import { storedRecordToken } from './record-session.ts'

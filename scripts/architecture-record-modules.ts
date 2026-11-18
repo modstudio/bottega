@@ -615,6 +615,7 @@ export const recordModules: RecordModule[] = [
     '../../../shared/operator-credentials.ts',
     '../../../shared/record-api-url.ts',
     '../../../shared/record-remedies.ts',
+    '../../../shared/record-request-headers.ts',
     '../../../shared/record/schema.ts',
     '../../../shared/record-no-destination-write-contract.ts',
     '../../../shared/record-space-membership.ts',
@@ -663,8 +664,9 @@ export const recordModules: RecordModule[] = [
   ]),
   module('orchestrator/src/record/outbox-payload-contracts.ts', ['../verdict/verdict-payload.ts']),
   module('orchestrator/src/record/record-session.ts', [
-    '../../../shared/record-session.ts',
     '../../../shared/record-remedies.ts',
+    '../../../shared/record-request-headers.ts',
+    '../../../shared/record-session.ts',
     '../database/db.ts',
     './record-auth.ts',
     './record-pool.ts',

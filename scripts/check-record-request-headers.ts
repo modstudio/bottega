@@ -12,7 +12,7 @@ const SOURCE_ROOTS = ['shared', 'hub/src', 'hub/web/scripts', 'orchestrator/src'
 const HELPER_MODULE = 'shared/record-request-headers.ts'
 const TEST_FILE = /(?:^|\/)(?:test|tests)\/|(?:^|\/)(?:test-[^/]+|[^/]+\.test)\.ts$/
 
-export const THIRD_PARTY_BEARER_HEADER_FILES = {
+const THIRD_PARTY_BEARER_HEADER_FILES = {
   'hub/src/mcp.ts': 'external tracker MCP endpoint, not the record API or hosted hub',
   'orchestrator/src/agent/openrouter-key-budget.ts':
     'external model provider endpoint, not the record API or hosted hub',

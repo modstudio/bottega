@@ -2,7 +2,6 @@
 /** HTTP client for the record API. Must not know SQL or local table shape. */
 
 import { hostedApiFetch } from '../../../shared/bounded-fetch.ts'
-import { recordRequestHeaders } from '../../../shared/record-request-headers.ts'
 import type {
   DocAudience,
   DocAudiences,
@@ -16,6 +15,7 @@ import {
   RECORD_SIGN_IN_REMEDY,
   recordUnreachableRefusal,
 } from '../../../shared/record-remedies.ts'
+import { recordRequestHeaders } from '../../../shared/record-request-headers.ts'
 import type { TableStorageMeasurement } from '../../../shared/storage-lifecycle.ts'
 import type { CanonFinding } from '../canon/canon-lint.ts'
 import type { DocGenerator } from '../doc/doc-generator.ts'
@@ -590,11 +590,8 @@ export async function recordApiRequest<T>(
         : storedRecordToken()
   const origin = recordApiBaseUrl()
   const send = async (bearer: string) => {
-    const headers = recordRequestHeaders({
-      bearerToken: bearer,
-      destinationSpaceId: init.destinationSpaceId,
-      headers: init.headers,
-    })
+    const { destinationSpaceId: s, headers: h } = init
+    const headers = recordRequestHeaders({ bearerToken: bearer, destinationSpaceId: s, headers: h })
     if (init.body && !headers.has('content-type')) headers.set('content-type', 'application/json')
     try {
       return await recordTransport(origin, path, { ...init, headers }, transport)
