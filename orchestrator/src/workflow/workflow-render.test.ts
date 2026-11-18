@@ -7,6 +7,7 @@ import {
   setStepCatalogueLocal,
 } from './step-catalogue.ts'
 import { type FloorKind, floorGuidance, floorKinds } from './workflow-floor.ts'
+import type { CursorSummary } from './workflow-handoff-types.ts'
 import { renderWorkflowComposition, renderWorkflowStep } from './workflow-render.ts'
 import { seedWorkflows } from './workflow-seeds.ts'
 import { installWorkflowStoreFixture } from './workflow-store.fixture.ts'
@@ -40,7 +41,7 @@ const args = { key: 'DEV-821', branch: 'DEV-821-work', worktree: '/tmp/work' }
 describe('workflow rendering', () => {
   test('renders the successful explore graduation line', () => {
     const composition = composeWorkflow('flow', 'fixture', 'default', args, database())
-    const cursor = {
+    const cursor: CursorSummary = {
       id: 884,
       n: 1,
       slug: composition.steps[0]!.slug,

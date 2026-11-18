@@ -26,13 +26,13 @@ import {
   workflowCursorHandoffLinks,
 } from '../workflow/workflow-cursor-list.ts'
 import {
+  resolveWorkflowCursorSuccessor,
+  type WorkflowCursorHandoffLink,
+} from '../workflow/workflow-cursor-transition.ts'
+import {
   workflowCursorBranchAndWorktree,
   workflowCursorClaimHandles,
 } from '../workflow/workflow-cursor-worktrees.ts'
-import {
-  resolveWorkflowCursorSuccessor,
-  type WorkflowCursorHandoffLink,
-} from '../workflow/workflow-run-binding.ts'
 import {
   type HubTaskReference,
   projectTaskKey,

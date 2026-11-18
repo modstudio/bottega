@@ -31,7 +31,7 @@ import {
 import { followComposeTaskClaim } from './workflow-compose-claim.ts'
 import { adoptWorkflowTask } from './workflow-cursor-adoption.ts'
 import { workflowKeyOf as keyOf, resolveCursorArguments } from './workflow-cursor-arguments.ts'
-import { insertWorkflowCursor } from './workflow-cursor-compose.ts'
+import { closeGraduatingExploreForReuse, insertWorkflowCursor } from './workflow-cursor-compose.ts'
 import { cursorName } from './workflow-cursor-format.ts'
 import { abandonWorkflowCursor, closeOpenWorkflowQuestion } from './workflow-cursor-mutation.ts'
 import {
@@ -70,7 +70,7 @@ import {
   type WorkflowEvidenceInput,
 } from './workflow-floor-evidence.ts'
 import { withReplayedFloorEvidenceAsync } from './workflow-floor-evidence-replay.ts'
-import { closeGraduatingExploreForReuse, handoffGraduatingExplore } from './workflow-handoff.ts'
+import { handoffGraduatingExplore } from './workflow-handoff.ts'
 import type { CursorSummary } from './workflow-handoff-types.ts'
 import { refuseKeylessStepClose } from './workflow-keyless-close.ts'
 import { selfRulingRefusal } from './workflow-self-ruling.ts'

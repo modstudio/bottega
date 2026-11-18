@@ -23,12 +23,7 @@ import { shellWord, workflowCursorReference } from './workflow-cursor-format.ts'
 import type { SelectableCursorRow, WorkflowCursorContext } from './workflow-cursor-selection.ts'
 import { cursorComposition } from './workflow-cursor-serve.ts'
 import { cursorOwnerAfter } from './workflow-cursor-transition.ts'
-import {
-  closeExploreForLifecycle,
-  type FinishExploreLifecycle,
-} from './workflow-explore-lifecycle-close.ts'
 import { handoffSourceRefusal, handoffTargetRefusal } from './workflow-handoff-refusal.ts'
-import type { GraduatedExplore } from './workflow-handoff-types.ts'
 import {
   followTaskCursorClaim,
   type TaskCursorClaimPorts,
@@ -50,6 +45,13 @@ type HandoffInput = {
   taskClaimPorts?: TaskCursorClaimPorts
 }
 
+export function handoffTargetArguments(
+  row: SelectableCursorRow,
+  args: Record<string, string>,
+): Record<string, string> {
+  return row.workflow_key && !args.key ? { ...args, key: row.workflow_key } : args
+}
+
 async function validateHandoffTarget(input: HandoffInput, d: Database) {
   const row = input.row
   if (!input.reason.trim()) throw new Error('handoff reason is required; pass --reason "<why>"')
@@ -68,8 +70,7 @@ async function validateHandoffTarget(input: HandoffInput, d: Database) {
     throw new Error(
       `workflow cursor ${row.id} has open workflow question ${openQuestion.question}; answer it, then retry the handoff`,
     )
-  const targetArgs =
-    row.workflow_key && !input.args.key ? { ...input.args, key: row.workflow_key } : input.args
+  const targetArgs = handoffTargetArguments(row, input.args)
   const composition = composeWorkflow(
     input.workflow,
     row.project,
@@ -327,45 +328,5 @@ export async function handoffGraduatingExplore(
     row,
     claimWarning: result.claimWarning,
     graduated: { cursor: source.id, closed: true as const },
-  }
-}
-
-export async function closeGraduatingExploreForReuse(
-  composition: ReturnType<typeof composeWorkflow>,
-  context: WorkflowCursorContext,
-  database: Database,
-  finish: FinishExploreLifecycle,
-  replacingCursor: number,
-): Promise<GraduatedExplore | undefined> {
-  const source = await graduatingExploreCursor({
-    project: composition.project,
-    session: context.session,
-    taskBound: Boolean(workflowKeyOf(composition.arguments)),
-    database,
-    taskFlowClient: context.taskFlowClient,
-  })
-  if (!source) return undefined
-  try {
-    const outcome = await closeExploreForLifecycle(
-      source.record_id,
-      'answered',
-      database,
-      finish,
-      `replaced by cursor ${replacingCursor}`,
-      { requireUntouched: true },
-    )
-    return outcome === 'closed'
-      ? { cursor: source.id, closed: true }
-      : {
-          cursor: source.id,
-          closed: false,
-          reason: `close outcome was ${outcome}`,
-        }
-  } catch (error) {
-    return {
-      cursor: source.id,
-      closed: false,
-      reason: error instanceof Error ? error.message : String(error),
-    }
   }
 }
