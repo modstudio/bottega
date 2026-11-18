@@ -29,6 +29,7 @@ const messageSchema = boardRootSchema.omit({ text: true }).extend({
   authorUserId: z.string(),
   ackRequired: z.boolean(),
 })
+const writeMessageSchema = messageSchema.extend({ duplicateOf: z.string().nullable().optional() })
 const threadSchema = z.object({
   root: messageSchema,
   replies: BoardThreadResultSchema.shape.replies,
@@ -81,17 +82,22 @@ export function recordBoardClient(options: BoardClientOptions, request: BoardReq
     boardStatus: (id: string) =>
       request(options, `/v1/board/messages/${encodeURIComponent(id)}/status`, statusSchema),
     boardPost: (input: z.input<typeof postSchema>, spaceId: string) =>
-      request(options, '/v1/board/messages', messageSchema, {
+      request(options, '/v1/board/messages', writeMessageSchema, {
         method: 'PUT',
         headers: recordWriteDestinationHeaders(spaceId),
         body: JSON.stringify(postSchema.parse(input)),
       }),
     boardReply: (rootId: string, input: z.input<typeof replySchema>, spaceId: string) =>
-      request(options, `/v1/board/messages/${encodeURIComponent(rootId)}/replies`, messageSchema, {
-        method: 'POST',
-        headers: recordWriteDestinationHeaders(spaceId),
-        body: JSON.stringify(replySchema.parse(input)),
-      }),
+      request(
+        options,
+        `/v1/board/messages/${encodeURIComponent(rootId)}/replies`,
+        writeMessageSchema,
+        {
+          method: 'POST',
+          headers: recordWriteDestinationHeaders(spaceId),
+          body: JSON.stringify(replySchema.parse(input)),
+        },
+      ),
     boardAccept: (questionId: string, replyId: string, spaceId: string) =>
       request(
         options,

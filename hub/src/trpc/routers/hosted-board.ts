@@ -6,6 +6,10 @@ import {
   parseBoardDuration,
 } from '../../../../shared/board-duration.ts'
 import { defaultBoardPurpose } from '../../../../shared/board-purpose.ts'
+import {
+  boardDuplicateWarning,
+  hostedBoardWriteResult,
+} from '../../../../shared/board-write-result.ts'
 import { newRecordId } from '../../../../shared/record/schema.ts'
 import {
   BoardAcceptInputSchema,
@@ -146,11 +150,12 @@ function boardPostProcedure(deps: HostedBoardDeps) {
         },
         destination.spaceId,
       )
+      const result = hostedBoardWriteResult(id, message)
       return BoardPostResultSchema.parse({
         id: message.id,
-        dropped: message.id !== id,
+        dropped: result.dropped,
         reached: null,
-        warning: null,
+        warning: result.duplicateOf ? boardDuplicateWarning(result.duplicateOf) : null,
       })
     }),
   )
@@ -193,20 +198,22 @@ export function createHostedBoardRouter(
     post: boardPostProcedure(deps),
     reply: t.procedure.input(boardReplyInput).mutation(({ ctx, input }) =>
       call(async () => {
+        const id = deps.newId()
         const message = await deps.clientFor(ctx).boardReply(
           input.id,
           {
-            id: deps.newId(),
+            id,
             body: input.body,
           },
           input.spaceId,
         )
+        const result = hostedBoardWriteResult(id, message)
         return BoardReplyResultSchema.parse({
           id: message.id,
           rootId: message.threadRootId,
-          dropped: false,
+          dropped: result.dropped,
           reached: null,
-          warning: null,
+          warning: result.duplicateOf ? boardDuplicateWarning(result.duplicateOf) : null,
         })
       }),
     ),

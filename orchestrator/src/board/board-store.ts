@@ -6,6 +6,7 @@ import {
 import { type BoardPurpose, defaultBoardPurpose } from '../../../shared/board-purpose.ts'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
+import { boardDuplicateWarning } from '../../../shared/board-write-result.ts'
 import { SESSION_LIVE_MS } from '../../../shared/session-liveness.ts'
 import { classifyCaller } from '../caller-classification.ts'
 import { db, type writableDb } from '../database/db.ts'
@@ -463,7 +464,11 @@ function postNoticeResult(
     number,
     dropped,
     reached,
-    ...(reached === 0 ? { warning: NO_REACH_WARNING } : {}),
+    ...(dropped
+      ? { warning: boardDuplicateWarning(recordId) }
+      : reached === 0
+        ? { warning: NO_REACH_WARNING }
+        : {}),
   }
 }
 
@@ -577,6 +582,7 @@ function duplicateRoot(
        WHERE kind=? AND purpose=? AND author_kind=? AND author_session IS ? AND author_run_record_id IS ?
          AND author_project_record_id IS (SELECT record_id FROM project WHERE name IS ?)
          AND audience=? AND title=? AND body=? AND created_at>=?
+         AND withdrawn_at IS NULL AND expires_at>?
        ORDER BY created_at DESC,number DESC`,
     )
     .all(
@@ -590,6 +596,7 @@ function duplicateRoot(
       input.title,
       input.body,
       new Date(input.clock - BOARD_DUPLICATE_WINDOW_MS).toISOString(),
+      new Date(input.clock).toISOString(),
     ) as { record_id: string; number: number }[]
   const senderTagsKey = senderTagKey(input.senderTags)
   return candidates.find((candidate) => {

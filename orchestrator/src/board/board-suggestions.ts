@@ -106,9 +106,17 @@ export function suggestBoardPost(
     .query(
       `SELECT record_id,number FROM board_message
        WHERE kind='suggestion' AND author_kind='worker' AND author_run_record_id=?
-         AND audience=? AND title=? AND body=? AND created_at>=? ORDER BY created_at DESC,number DESC`,
+         AND audience=? AND title=? AND body=? AND withdrawn_at IS NULL AND expires_at>?
+         AND created_at>=? ORDER BY created_at DESC,number DESC`,
     )
-    .all(run.record_id, audience, input.title, input.body, duplicateSince) as {
+    .all(
+      run.record_id,
+      audience,
+      input.title,
+      input.body,
+      new Date(clock).toISOString(),
+      duplicateSince,
+    ) as {
     record_id: string
     number: number
   }[]

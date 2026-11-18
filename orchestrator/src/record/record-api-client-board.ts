@@ -27,6 +27,7 @@ import type {
   HostedBoardSuccessorResult,
   HostedBoardTakeClaimInput,
   HostedBoardThread,
+  HostedBoardWriteResponse,
 } from './record-board-contract.ts'
 import { hostedBoardReplyBody } from './record-board-contract.ts'
 
@@ -49,7 +50,7 @@ type BoardRootClient = {
     input: HostedBoardPostInput,
     destination: RecordWriteDestination,
     signal?: AbortSignal,
-  ): Promise<HostedBoardMessage>
+  ): Promise<HostedBoardWriteResponse>
   withdrawBoardMessage(
     id: string,
     destination: RecordWriteDestination,
@@ -105,7 +106,7 @@ function recordBoardMessageClient(request: RecordClientRequest) {
       input: HostedBoardReplyInput,
       destination: RecordWriteDestination,
     ) =>
-      request<HostedBoardMessage>(`/v1/board/messages/${rootId}/replies`, {
+      request<HostedBoardWriteResponse>(`/v1/board/messages/${rootId}/replies`, {
         method: 'POST',
         body: hostedBoardReplyBody(input),
         ...destination,

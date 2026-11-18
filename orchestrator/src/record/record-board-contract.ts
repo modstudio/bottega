@@ -82,6 +82,8 @@ export type HostedBoardMessage = {
   hiddenReason?: string | null
 }
 
+export type HostedBoardWriteResponse = HostedBoardMessage & { duplicateOf: string | null }
+
 export type HostedBoardReply = {
   id: string
   body: string

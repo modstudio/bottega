@@ -436,8 +436,82 @@ export function registerBoardApiProofs(input: {
     const different = await post(tokenA, { ...body, body: 'other' })
     expect(first.status).toBe(200)
     expect(again.status).toBe(200)
-    expect(((await again.json()) as { id: string }).id).toBe(id)
+    expect(await json(again)).toMatchObject({ id, duplicateOf: null })
     expect(different.status).toBe(409)
+  })
+
+  test('hosted duplicates match only live visible messages and identify the match', async () => {
+    const session = caseSession('live-duplicate')
+    const content = {
+      kind: 'notice',
+      audience: 'operator',
+      title: 'Duplicate liveness',
+      body: 'The same hosted board content.',
+      expiresAt,
+      authorSession: session,
+    }
+    const firstId = newRecordId()
+    expect((await post(tokenA, { ...content, id: firstId })).status).toBe(200)
+
+    const duplicate = await post(tokenA, { ...content, id: newRecordId() })
+    expect(duplicate.status).toBe(200)
+    expect(await json(duplicate)).toMatchObject({ id: firstId, duplicateOf: firstId })
+
+    input.succeeds(
+      'postgres',
+      'postgres',
+      `UPDATE board_message SET withdrawn_at=now(),withdrawn_reason='author' WHERE id='${firstId}';`,
+    )
+    const afterWithdrawId = newRecordId()
+    const afterWithdraw = await post(tokenA, { ...content, id: afterWithdrawId })
+    expect(afterWithdraw.status).toBe(200)
+    expect(await json(afterWithdraw)).toMatchObject({ id: afterWithdrawId, duplicateOf: null })
+
+    input.succeeds(
+      'postgres',
+      'postgres',
+      `UPDATE board_message SET hidden_at=now(),hidden_by_user_id='${userA}',hidden_reason='duplicate' WHERE id='${afterWithdrawId}';`,
+    )
+    const afterHiddenId = newRecordId()
+    const afterHidden = await post(tokenA, { ...content, id: afterHiddenId })
+    expect(afterHidden.status).toBe(200)
+    expect(await json(afterHidden)).toMatchObject({ id: afterHiddenId, duplicateOf: null })
+  })
+
+  test('a reply identical to a withdrawn reply posts anew', async () => {
+    const questionId = newRecordId()
+    const asked = await post(tokenA, {
+      id: questionId,
+      kind: 'question',
+      audience: `project:${PROJECT}`,
+      projectId: IDS.project,
+      title: 'Reply duplicate liveness',
+      body: 'Can this answer be repeated?',
+      expiresAt,
+      authorSession: caseSession('reply-duplicate-root'),
+    })
+    expect(asked.status).toBe(200)
+    const reply = (id: string) =>
+      fetch(`${origin}/v1/board/messages/${questionId}/replies`, {
+        method: 'POST',
+        headers: spaceHeaders(tokenB),
+        body: JSON.stringify({
+          id,
+          body: 'Repeatable answer.',
+          authorSession: caseSession('reply-duplicate-author'),
+        }),
+      })
+    const firstId = newRecordId()
+    expect((await reply(firstId)).status).toBe(200)
+    input.succeeds(
+      'postgres',
+      'postgres',
+      `UPDATE board_message SET withdrawn_at=now(),withdrawn_reason='author' WHERE id='${firstId}';`,
+    )
+    const repostedId = newRecordId()
+    const reposted = await reply(repostedId)
+    expect(reposted.status).toBe(200)
+    expect(await json(reposted)).toMatchObject({ id: repostedId, duplicateOf: null })
   })
 
   registerBoardPostingProjectProof({

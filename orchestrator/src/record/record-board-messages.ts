@@ -47,6 +47,7 @@ import {
   type HostedBoardReplyInput,
   type HostedBoardSessionInput,
   type HostedBoardThread,
+  type HostedBoardWriteResponse,
   RecordBoardError,
 } from './record-board-contract.ts'
 import { insertBoardMessageTags, readBoardMessageTags } from './record-board-message-tags.ts'
@@ -246,6 +247,7 @@ async function duplicateRootId(
   clock: number,
 ): Promise<string | null> {
   const duplicateSince = new Date(clock - BOARD_DUPLICATE_WINDOW_MS).toISOString()
+  const now = new Date(clock).toISOString()
   const candidates = (await tx`
     SELECT id FROM board_message
     WHERE kind=${input.kind} AND purpose=${input.purpose} AND author_user_id=${input.userId}::uuid
@@ -254,6 +256,7 @@ async function duplicateRootId(
       AND audience IS NOT DISTINCT FROM ${input.audience}
       AND title IS NOT DISTINCT FROM ${input.title}
       AND body=${input.body}
+      AND withdrawn_at IS NULL AND expires_at>${now}::timestamptz AND hidden_at IS NULL
       AND created_at>=${duplicateSince}::timestamptz
     ORDER BY created_at DESC
   `) as { id: string }[]
@@ -413,7 +416,7 @@ async function postMember(tx: SQL, values: OutsidePostInput): Promise<HostedBoar
 
 export async function postHostedBoardMessage(
   input: BoardTenant & HostedBoardPostInput,
-): Promise<HostedBoardMessage> {
+): Promise<HostedBoardWriteResponse> {
   if (input.kind !== 'notice' && input.kind !== 'question') {
     throw new RecordBoardError('hosted board post kind must be notice or question', 400)
   }
@@ -462,7 +465,7 @@ export async function postHostedBoardMessage(
     tags,
     clock,
   }
-  return withBoardTenant(
+  const message = await withBoardTenant(
     input,
     true,
     async (tx) =>
@@ -472,6 +475,7 @@ export async function postHostedBoardMessage(
         view: viewById,
       })) ?? postMember(tx, values),
   )
+  return { ...message, duplicateOf: message.id === input.id ? null : message.id }
 }
 
 async function prepareHostedPost(
@@ -664,14 +668,18 @@ async function replyMember(
   clock: number,
 ): Promise<HostedBoardMessage> {
   const duplicateSince = new Date(clock - BOARD_DUPLICATE_WINDOW_MS).toISOString()
+  const now = new Date(clock).toISOString()
   const duplicate = (await tx`
-    SELECT id FROM board_message
-    WHERE kind='reply' AND author_user_id=${input.userId}::uuid
-      AND author_session IS NOT DISTINCT FROM ${session}
-      AND thread_root_id=${String(root.id)}::uuid AND body=${input.body}
-      AND audience IS NOT DISTINCT FROM ${audience}
-      AND created_at>=${duplicateSince}::timestamptz
-    ORDER BY created_at DESC LIMIT 1
+    SELECT reply.id FROM board_message AS reply
+    JOIN board_message AS root ON root.id=reply.thread_root_id
+    WHERE reply.kind='reply' AND reply.author_user_id=${input.userId}::uuid
+      AND reply.author_session IS NOT DISTINCT FROM ${session}
+      AND reply.thread_root_id=${String(root.id)}::uuid AND reply.body=${input.body}
+      AND reply.audience IS NOT DISTINCT FROM ${audience}
+      AND reply.withdrawn_at IS NULL AND reply.hidden_at IS NULL
+      AND root.withdrawn_at IS NULL AND root.expires_at>${now}::timestamptz AND root.hidden_at IS NULL
+      AND reply.created_at>=${duplicateSince}::timestamptz
+    ORDER BY reply.created_at DESC LIMIT 1
   `) as { id: string }[]
   const decision = await authorWindow(tx, input.userId, session, clock, duplicate.length > 0)
   if (decision === 'drop-duplicate' && duplicate[0])
@@ -755,7 +763,7 @@ async function replyHostedBoardMessageTx(
 
 export async function replyHostedBoardMessage(
   input: BoardTenant & HostedBoardReplyInput & { rootId: string },
-): Promise<HostedBoardMessage> {
+): Promise<HostedBoardWriteResponse> {
   const bodyRefusal = replyBodyRefusal(input.body)
   if (bodyRefusal) throw new RecordBoardError(bodyRefusal, 400)
   const parsedAudience = input.audience ?? null
@@ -780,9 +788,10 @@ export async function replyHostedBoardMessage(
     senderTags: [],
     authorProjectId: null,
   }
-  return withBoardTenant(input, true, (tx) =>
+  const message = await withBoardTenant(input, true, (tx) =>
     replyHostedBoardMessageTx(tx, input, requested, actor, session, audience, clock),
   )
+  return { ...message, duplicateOf: message.id === input.id ? null : message.id }
 }
 
 export async function withdrawHostedBoardMessage(

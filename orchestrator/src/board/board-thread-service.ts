@@ -215,10 +215,12 @@ export function replyToThread(
     const storedAudience = audience === null ? null : replyAudienceValue(audience)
     const duplicate = database
       .query(
-        `SELECT record_id,number FROM board_message
-         WHERE kind='reply' AND author_kind=? AND author_session IS ?
-           AND thread_root_record_id=? AND body=? AND audience IS ? AND created_at>=?
-         ORDER BY created_at DESC,number DESC LIMIT 1`,
+        `SELECT reply.record_id,reply.number FROM board_message AS reply
+         JOIN board_message AS root ON root.record_id=reply.thread_root_record_id
+         WHERE reply.kind='reply' AND reply.author_kind=? AND reply.author_session IS ?
+           AND reply.thread_root_record_id=? AND reply.body=? AND reply.audience IS ?
+           AND reply.withdrawn_at IS NULL AND root.withdrawn_at IS NULL AND root.expires_at>?
+           AND reply.created_at>=? ORDER BY reply.created_at DESC,reply.number DESC LIMIT 1`,
       )
       .get(
         actor.kind,
@@ -226,6 +228,7 @@ export function replyToThread(
         root.record_id,
         body,
         storedAudience,
+        new Date(clock).toISOString(),
         new Date(clock - BOARD_DUPLICATE_WINDOW_MS).toISOString(),
       ) as { record_id: string; number: number } | null
     const decision = authorWindowDecision(actor, clock, Boolean(duplicate), database)

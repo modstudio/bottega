@@ -109,11 +109,24 @@ test('hosted board procedures map responses and send each write to its resource 
     },
     boardPost: async (input: Parameters<RecordClient['boardPost']>[0], destination: string) => {
       calls.push({ operation: 'post', input: { ...input, destination } })
-      return { ...root, id: servicePostId, kind: 'notice', title: input.title }
+      return {
+        ...root,
+        id: servicePostId,
+        kind: 'notice',
+        title: input.title,
+        duplicateOf: servicePostId,
+      }
     },
     boardReply: async (id: string, input: { id: string; body: string }, destination: string) => {
       calls.push({ operation: 'reply', input: { rootId: id, ...input, destination } })
-      return { ...root, id: replyId, threadRootId: id, title: null, body: input.body }
+      return {
+        ...root,
+        id: replyId,
+        threadRootId: id,
+        title: null,
+        body: input.body,
+        duplicateOf: null,
+      }
     },
     boardAccept: async (questionId: string, acceptedReplyId: string, destination: string) => {
       calls.push({ operation: 'accept', input: { questionId, acceptedReplyId, destination } })
@@ -165,8 +178,17 @@ test('hosted board procedures map responses and send each write to its resource 
     acknowledged: null,
     unacknowledged: null,
   })
-  expect(BoardPostResultSchema.parse(posted)).toMatchObject({ id: servicePostId, dropped: true })
-  expect(BoardReplyResultSchema.parse(replied)).toMatchObject({ id: replyId, rootId })
+  expect(BoardPostResultSchema.parse(posted)).toMatchObject({
+    id: servicePostId,
+    dropped: true,
+    warning: `Duplicate of live board message ${servicePostId}; withdraw it with bottega board withdraw ${servicePostId} and post anew.`,
+  })
+  expect(BoardReplyResultSchema.parse(replied)).toMatchObject({
+    id: replyId,
+    rootId,
+    dropped: false,
+    warning: null,
+  })
   expect(BoardAcceptResultSchema.parse(accepted)).toMatchObject({
     accepted: replyId,
     questionId: rootId,
