@@ -135,17 +135,12 @@ test('an open question created during the checkpoint aborts the idle kill', asyn
   let cancelled = false
 
   await performIdleKill(
-    performInput(
-      runId,
-      state,
-      async () => decisions.shift() ?? true,
-      {
-        checkpoint: checkpoint(),
-        cancel: () => {
-          cancelled = true
-        },
+    performInput(runId, state, async () => decisions.shift() ?? true, {
+      checkpoint: checkpoint(),
+      cancel: () => {
+        cancelled = true
       },
-    ),
+    }),
   )
 
   expect(state.killed).toBe(false)
