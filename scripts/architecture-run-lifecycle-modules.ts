@@ -382,10 +382,15 @@ export const runLifecycleModules: ArchitectureModule[] = [
   ]),
   module('orchestrator/src/run/held-branch-remedy.ts', [
     '../../../shared/brand.ts',
+    '../../../shared/process-identity.ts',
+    '../../../shared/session-liveness.ts',
     '../branch/task-branch.ts',
     '../database/db.ts',
     '../git/checkout-identity.ts',
+    './run-alive.ts',
     './run-claim-plan.ts',
+    './run-lease.ts',
+    './run-owner-session-liveness.ts',
   ]),
   module('orchestrator/src/run/run-task-reference.ts', [
     '../../../shared/brand.ts',

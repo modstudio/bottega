@@ -2,10 +2,15 @@
 /** Decides and renders the operator remedy for a branch held by another tree. */
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { pidAlive } from '../../../shared/process-identity.ts'
+import { SESSION_LIVE_MS } from '../../../shared/session-liveness.ts'
 import { taskBranchLandingTreeRefusal } from '../branch/task-branch.ts'
 import { db } from '../database/db.ts'
 import { realpathOrSpelled } from '../git/checkout-identity.ts'
+import { recordedRunLivenessFacts, runAlive } from './run-alive.ts'
 import type { ClaimTreePlanRuling } from './run-claim-plan.ts'
+import { runLeaseState } from './run-lease.ts'
+import { recordedOwnerProcess } from './run-owner-session-liveness.ts'
 
 export type HeldBranchRemedyFacts = {
   path: string
@@ -17,6 +22,13 @@ export type HeldBranchRemedy = { action: 'wait-or-stop'; runId: string } | { act
 type LiveTreeRunRow = {
   record_id: string
   worktree: string
+  status: string
+  pid: number | null
+  executor: 'external' | 'harness'
+  session_id: string | null
+  started_at: string
+  session_last_seen: string | null
+  harness_wall_bound_ms: number | null
 }
 
 /** A live run keeps authority over its recorded tree; an idle tree can detach safely. */
@@ -41,13 +53,28 @@ export function heldBranchRemedy(path: string): string {
   const liveRun = (
     db()
       .query(
-        `SELECT record_id,worktree
+        `SELECT record_id,worktree,status,pid,executor,session_id,started_at,harness_wall_bound_ms,
+                (SELECT last_seen FROM session_seen WHERE session_id=run.session_id) session_last_seen
            FROM run
-          WHERE status IN ('running','asking') AND worktree IS NOT NULL
+          WHERE worktree IS NOT NULL
           ORDER BY number DESC`,
       )
       .all() as LiveTreeRunRow[]
-  ).find((row) => realpathOrSpelled(row.worktree) === canonicalPath)
+  ).find(
+    (row) =>
+      realpathOrSpelled(row.worktree) === canonicalPath &&
+      runAlive({
+        status: row.status,
+        lease: runLeaseState(row.record_id),
+        pidAlive: Boolean(row.pid && pidAlive(row.pid)),
+        ...recordedRunLivenessFacts(
+          row,
+          Date.now(),
+          SESSION_LIVE_MS,
+          recordedOwnerProcess(db(), row.session_id),
+        ),
+      }),
+  )
   return renderHeldBranchRemedy(
     path,
     decideHeldBranchRemedy({ path, liveRunId: liveRun?.record_id ?? null }),
