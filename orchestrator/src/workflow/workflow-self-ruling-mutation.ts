@@ -68,9 +68,6 @@ export async function recordWorkflowSelfRuling(
     const recorded = String(existing.answer)
     const number = Number(existing.number)
     if (recorded === ruling) return { questionId: number }
-    throw new Error(
-      `q${number} already records ruling ${JSON.stringify(recorded)}; it cannot be replaced with ${JSON.stringify(ruling)}`,
-    )
   }
   const at = nowIso()
   const question = await upsertWorkflowQuestion(

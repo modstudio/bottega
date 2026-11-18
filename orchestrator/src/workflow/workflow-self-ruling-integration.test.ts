@@ -1,5 +1,5 @@
 import type { Database } from 'bun:sqlite'
-import { expect, spyOn, test } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, spyOn, test } from 'bun:test'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { testDatabaseFixture } from '../database/test-database.fixture.ts'
 import * as taskFlowWriter from '../record/record-task-flow-write-client.ts'
@@ -246,79 +246,102 @@ test('a hosted advance failure on an awaiting cursor does not close its question
   })
 })
 
-test('a self-ruling hosted advance skips the local preflight and writes both records', async () => {
-  const d = database()
-  await openAtRuling(d)
-  const previousRecordApiUrl = process.env.BOTTEGA_RECORD_API_URL
-  process.env.BOTTEGA_RECORD_API_URL = 'https://record.example.test'
-  d.query('INSERT INTO record_install_binding (id,bound_at,record_origin) VALUES (1,?,?)').run(
-    '2026-11-18',
-    'https://record.example.test',
-  )
-  d.query('UPDATE project SET settings=? WHERE name=?').run(
-    JSON.stringify({ space: 'fixture-space' }),
-    'fixture',
-  )
-  const advances: unknown[] = []
-  const hostedContext = {
-    whoami: async () => ({
-      user: { id: newRecordId() },
-      activeSpaceId: null,
-      personalSpaceId: null,
-      memberships: [{ space_id: newRecordId(), slug: 'fixture-space', permission: 'write' }],
-    }),
-    advanceTaskFlow: async (input: unknown) => {
-      advances.push(input)
-      return {} as never
-    },
-  }
-  const ruling = spyOn(selfRulingMutation, 'recordWorkflowSelfRuling').mockResolvedValue({
-    questionId: 17,
+describe('hosted self-ruling advance', () => {
+  let previousRecordApiUrl: string | undefined
+  let hostedAdvanceDatabase: Database
+  let destinationSpaceId: string
+
+  beforeEach(async () => {
+    previousRecordApiUrl = process.env.BOTTEGA_RECORD_API_URL
+    hostedAdvanceDatabase = database()
+    await openAtRuling(hostedAdvanceDatabase)
+    destinationSpaceId = newRecordId()
+    hostedAdvanceDatabase.query('UPDATE project SET settings=? WHERE name=?').run(
+      JSON.stringify({
+        gate: 'bun run check',
+        trunk: 'main',
+        docs: { protocol: 'orch-docs' },
+        tracker: { protocol: 'hub' },
+        space: destinationSpaceId,
+      }),
+      'fixture',
+    )
+    process.env.BOTTEGA_RECORD_API_URL = 'https://record.example.test'
   })
 
-  try {
-    const row = {
-      ...(d.query('SELECT * FROM workflow_cursor').get() as Record<string, unknown>),
-      task_flow_record_id: null,
-    } as never
-    await writeFinishingWorkflowAdvance({
-      row,
-      closed: [],
-      deleteTextIds: [],
-      callerSession: context.session,
-      database: d,
-      taskFlowClient: hostedContext,
-      selfRulingPlan: {} as never,
-    })
-    expect(ruling).toHaveBeenCalledTimes(1)
-    expect(advances).toHaveLength(1)
-  } finally {
-    ruling.mockRestore()
+  afterEach(() => {
     if (previousRecordApiUrl === undefined) delete process.env.BOTTEGA_RECORD_API_URL
     else process.env.BOTTEGA_RECORD_API_URL = previousRecordApiUrl
-  }
+  })
+
+  test('skips the local preflight and writes both records', async () => {
+    const d = hostedAdvanceDatabase
+    d.query('INSERT INTO record_install_binding (id,bound_at,record_origin) VALUES (1,?,?)').run(
+      '2026-11-18',
+      'https://record.example.test',
+    )
+    const advances: unknown[] = []
+    const hostedContext = {
+      whoami: async () => ({
+        user: { id: newRecordId() },
+        activeSpaceId: null,
+        personalSpaceId: null,
+        memberships: [{ space_id: destinationSpaceId, slug: 'fixture-space', permission: 'write' }],
+      }),
+      advanceTaskFlow: async (input: unknown) => {
+        advances.push(input)
+        return {} as never
+      },
+    }
+    const ruling = spyOn(selfRulingMutation, 'recordWorkflowSelfRuling').mockResolvedValue({
+      questionId: 17,
+    })
+
+    try {
+      const row = {
+        ...(d.query('SELECT * FROM workflow_cursor').get() as Record<string, unknown>),
+        task_flow_record_id: null,
+      } as never
+      await writeFinishingWorkflowAdvance({
+        row,
+        closed: [],
+        deleteTextIds: [],
+        callerSession: context.session,
+        database: d,
+        taskFlowClient: hostedContext,
+        selfRulingPlan: {} as never,
+      })
+      expect(ruling).toHaveBeenCalledTimes(1)
+      expect(advances).toHaveLength(1)
+    } finally {
+      ruling.mockRestore()
+    }
+  })
 })
 
-test('a retried self-ruling reuses the recorded ruling and refuses different text', async () => {
-  const d = database()
-  await openAtRuling(d)
+test('a retried self-ruling reuses identical text and records different text', async () => {
   const write = spyOn(taskFlowWriter, 'writeHostedTaskFlow')
-  write.mockImplementationOnce(() => Promise.reject(new Error('injected hosted advance failure')))
 
   try {
-    await expect(selfRule(d)).rejects.toThrow('injected hosted advance failure')
-    expect(d.query('SELECT count(*) count FROM question').get()).toEqual({ count: 1 })
-    expect(d.query('SELECT answer FROM question').get()).toEqual({ answer: 'Proceed.' })
+    const identical = database()
+    await openAtRuling(identical)
+    write.mockImplementationOnce(() => Promise.reject(new Error('injected hosted advance failure')))
+    await expect(selfRule(identical)).rejects.toThrow('injected hosted advance failure')
+    const identicalResult = await selfRule(identical)
+    expect(identicalResult).toContain('Complete the review.')
+    expect(identical.query('SELECT count(*) count FROM question').get()).toEqual({ count: 1 })
 
-    await expect(selfRule(d, undefined, 'Stop.')).rejects.toThrow(
-      'already records ruling "Proceed."; it cannot be replaced with "Stop."',
-    )
-    expect(d.query('SELECT count(*) count FROM question').get()).toEqual({ count: 1 })
-
-    const result = await selfRule(d)
-    expect(result).toContain('Complete the review.')
-    expect(d.query('SELECT count(*) count FROM question').get()).toEqual({ count: 1 })
-    expect(d.query('SELECT ordinal,step_slug FROM workflow_cursor').get()).toEqual({
+    const different = database()
+    await openAtRuling(different)
+    write.mockImplementationOnce(() => Promise.reject(new Error('injected hosted advance failure')))
+    await expect(selfRule(different)).rejects.toThrow('injected hosted advance failure')
+    const differentResult = await selfRule(different, undefined, 'Stop.')
+    expect(differentResult).toContain('Complete the review.')
+    expect(different.query('SELECT answer FROM question ORDER BY number').all()).toEqual([
+      { answer: 'Proceed.' },
+      { answer: 'Stop.' },
+    ])
+    expect(different.query('SELECT ordinal,step_slug FROM workflow_cursor').get()).toEqual({
       ordinal: 4,
       step_slug: 'complete',
     })

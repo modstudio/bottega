@@ -16,7 +16,12 @@ import {
 import { upsertWorkflowQuestion } from '../run/question-mutation.ts'
 import type { LiveCursorAutonomy } from './autonomy.ts'
 import { decideWorkflowTakeover, workflowTakeoverNotice } from './task-flow-decision.ts'
-import * as taskFlowStore from './task-flow-store.ts'
+import {
+  taskFlowLocalStore,
+  taskFlowReadStore,
+  taskFlowWritesHosted,
+  writeLocalAdvance,
+} from './task-flow-store.ts'
 import type { TaskFlowIntentInput } from './task-flow-store-types.ts'
 import {
   type CommitCountPort,
@@ -82,8 +87,6 @@ import {
 import { linkResolvedWorkflowTask, withLinkedWorkflowTask } from './workflow-task-linking.ts'
 import { workflowTextDeletionIds } from './workflow-text.ts'
 import { composeWorkflow } from './workflows.ts'
-
-const { taskFlowLocalStore, taskFlowReadStore } = taskFlowStore
 
 type CursorRow = SelectableCursorRow
 
@@ -538,13 +541,13 @@ async function persistWorkflowAdvance(
     obligationUpdates,
     deleteTextIds,
   }
-  await prepareWorkflowSelfRuling(selfRulingPlan, payload, d)
   const hosted = await writeHostedTaskFlow(
     'advance',
     payload,
     taskFlowWriteTarget(row.project, d),
     context.taskFlowClient,
   )
+  await prepareWorkflowSelfRuling(selfRulingPlan, payload, d)
   await applyWorkflowAdvanceLocally({
     row,
     at,
@@ -693,14 +696,13 @@ async function prepareWorkflowSelfRuling(
   database: Database,
 ): Promise<void> {
   if (!plan) return
-  if (!taskFlowStore.taskFlowWritesHosted(database)) {
+  if (!taskFlowWritesHosted(database)) {
     // Record the ruling only once the local advance is known to apply.
-    database.exec('SAVEPOINT self_ruling_advance_preflight')
+    database.exec('SAVEPOINT self_ruling_preflight')
     try {
-      taskFlowStore.writeLocalAdvance(database, payload, null)
+      writeLocalAdvance(database, payload, null)
     } finally {
-      database.exec('ROLLBACK TO self_ruling_advance_preflight')
-      database.exec('RELEASE self_ruling_advance_preflight')
+      database.exec('ROLLBACK TO self_ruling_preflight; RELEASE self_ruling_preflight')
     }
   }
   await recordWorkflowSelfRuling(plan, database)
@@ -716,9 +718,7 @@ async function applyWorkflowAdvanceLocally(input: {
   const { row, at, database: d, payload, hosted } = input
   if (row.state === 'awaiting-ruling')
     await closeOpenWorkflowQuestion(row.record_id, 'advanced-without-ruling', at, d)
-  writeTransaction(() => {
-    taskFlowStore.writeLocalAdvance(d, payload, hosted)
-  }, d)
+  writeTransaction(() => writeLocalAdvance(d, payload, hosted), d)
 }
 
 async function adoptAndRefreshWorkflowTask(
