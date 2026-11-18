@@ -5,7 +5,6 @@ import { notifyWaitingItem } from '../operator/operator-waiting.ts'
 import { projectByName } from '../project/projects.ts'
 import { maximumQuestionNumber } from '../question-store/question-store-read.ts'
 import { machineId } from '../record/machine-identity.ts'
-import { currentRecordWriteDecision } from '../record/record-write-authority.ts'
 import {
   taskFlowWriteTarget,
   writeHostedTaskFlow,
@@ -17,7 +16,7 @@ import {
 import { upsertWorkflowQuestion } from '../run/question-mutation.ts'
 import type { LiveCursorAutonomy } from './autonomy.ts'
 import { decideWorkflowTakeover, workflowTakeoverNotice } from './task-flow-decision.ts'
-import { taskFlowLocalStore, taskFlowReadStore } from './task-flow-store.ts'
+import * as taskFlowStore from './task-flow-store.ts'
 import type { TaskFlowIntentInput } from './task-flow-store-types.ts'
 import {
   type CommitCountPort,
@@ -644,7 +643,7 @@ async function selectClosingTaskFlow(
   client?: WorkflowCursorContext['taskFlowClient'],
 ) {
   if (!row.task_flow_record_id) return null
-  return await taskFlowReadStore(database, client).flowState(row.task_flow_record_id)
+  return await taskFlowStore.taskFlowReadStore(database, client).flowState(row.task_flow_record_id)
 }
 
 async function advanceTextDeletionIds(
@@ -692,25 +691,17 @@ async function prepareWorkflowSelfRuling(
   database: Database,
 ): Promise<void> {
   if (!plan) return
-  if (currentRecordWriteDecision(database).verdict !== 'hosted') {
+  if (!taskFlowStore.taskFlowWritesHosted(database)) {
     // Record the ruling only once the local advance is known to apply.
     database.exec('SAVEPOINT self_ruling_advance_preflight')
     try {
-      writeLocalAdvance(database, payload, null)
+      taskFlowStore.writeLocalAdvance(database, payload, null)
     } finally {
       database.exec('ROLLBACK TO self_ruling_advance_preflight')
       database.exec('RELEASE self_ruling_advance_preflight')
     }
   }
   await recordWorkflowSelfRuling(plan, database)
-}
-
-function writeLocalAdvance(
-  database: Database,
-  payload: TaskFlowIntentInput<'advance'>,
-  hosted: TaskFlowIntentResult<'advance'> | null,
-): void {
-  taskFlowLocalStore(database).write('advance', payload, hosted)
 }
 
 async function applyWorkflowAdvanceLocally(input: {
@@ -724,7 +715,7 @@ async function applyWorkflowAdvanceLocally(input: {
   if (row.state === 'awaiting-ruling')
     await closeOpenWorkflowQuestion(row.record_id, 'advanced-without-ruling', at, d)
   writeTransaction(() => {
-    writeLocalAdvance(d, payload, hosted)
+    taskFlowStore.writeLocalAdvance(d, payload, hosted)
   }, d)
 }
 
@@ -744,9 +735,9 @@ async function adoptAndRefreshWorkflowTask(
     context.taskStatusCategory,
   )
   if (row.workflow_key === workflowKey) return row
-  return (await taskFlowReadStore(database, context.taskFlowClient).stageByRecordId(
-    row.record_id,
-  )) as CursorRow
+  return (await taskFlowStore
+    .taskFlowReadStore(database, context.taskFlowClient)
+    .stageByRecordId(row.record_id)) as CursorRow
 }
 
 function workflowTakeoverForAdvance(
@@ -891,9 +882,9 @@ export async function nextWorkflowStep(
   await linkResolvedWorkflowTask(project, context, d)
   await reselectCursor(selected, args, context, d)
   return withReplayedFloorEvidenceAsync(ports, async (replayPorts) => {
-    const row = (await taskFlowReadStore(d, context.taskFlowClient).stageByRecordId(
-      selected.record_id,
-    )) as CursorRow
+    const row = (await taskFlowStore
+      .taskFlowReadStore(d, context.taskFlowClient)
+      .stageByRecordId(selected.record_id)) as CursorRow
     adoptLinkedTask(row, args, context)
     return nextWorkflowStepImpl(
       row,
@@ -999,7 +990,7 @@ async function awaitWorkflowRulingImpl(
     context.taskFlowClient,
   )
   writeTransaction(() => {
-    const store = taskFlowLocalStore(d)
+    const store = taskFlowStore.taskFlowLocalStore(d)
     store.write('await-ruling', payload, hosted)
   }, d)
   const result = {

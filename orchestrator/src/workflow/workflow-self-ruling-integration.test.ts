@@ -20,10 +20,10 @@ import { getWorkflowStepWithCursor } from './workflow-cursor-serve.ts'
 import { selectAndNextWorkflowStep as nextWorkflowStep } from './workflow-cursor-test.fixture.ts'
 import { flagForFloor } from './workflow-floor.ts'
 import { seedWorkflows } from './workflow-seeds.ts'
+import * as selfRulingMutation from './workflow-self-ruling-mutation.ts'
 import { installWorkflowStoreFixture } from './workflow-store.fixture.ts'
 import { closeCursorWithTextCopy, closeCursorWithTextCopyResult } from './workflow-text-copy.ts'
 import { composeWorkflow } from './workflows.ts'
-import * as selfRulingMutation from './workflow-self-ruling-mutation.ts'
 
 const args = {
   key: 'DEV-1264',
@@ -251,9 +251,10 @@ test('a self-ruling hosted advance skips the local preflight and writes both rec
   await openAtRuling(d)
   const previousRecordApiUrl = process.env.BOTTEGA_RECORD_API_URL
   process.env.BOTTEGA_RECORD_API_URL = 'https://record.example.test'
-  d.query(
-    'INSERT INTO record_install_binding (id,bound_at,record_origin) VALUES (1,?,?)',
-  ).run('2026-11-18', 'https://record.example.test')
+  d.query('INSERT INTO record_install_binding (id,bound_at,record_origin) VALUES (1,?,?)').run(
+    '2026-11-18',
+    'https://record.example.test',
+  )
   d.query('UPDATE project SET settings=? WHERE name=?').run(
     JSON.stringify({ space: 'fixture-space' }),
     'fixture',

@@ -3,6 +3,7 @@
 
 import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { recordDate } from '../../../shared/record-timestamp.ts'
 import { callerIdentityRefusal } from '../caller-classification.ts'
 import { callerIdentity, db, sessionId } from '../database/db.ts'
 import {
@@ -262,7 +263,7 @@ export async function answerClosedWorkflowQuestion(
     fromOperator: input.fromOperator,
     subject: `workflow question ${input.questionId}`,
     action: 'rule',
-    chainLastActivityAt: Date.parse(String(row.workflow_updated_at)),
+    chainLastActivityAt: recordDate(row.workflow_updated_at).getTime(),
     database,
   })
   await answerWorkflowQuestion(

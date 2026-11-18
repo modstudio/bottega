@@ -221,6 +221,18 @@ export function taskFlowLocalStore(database: Database): TaskFlowLocalStore {
     : sqliteTaskFlowLocalStore(database)
 }
 
+export function taskFlowWritesHosted(database: Database): boolean {
+  return currentRecordWriteDecision(database).verdict === 'hosted'
+}
+
+export function writeLocalAdvance(
+  database: Database,
+  payload: TaskFlowIntentInput<'advance'>,
+  hosted: TaskFlowIntentResult<'advance'> | null,
+): void {
+  taskFlowLocalStore(database).write('advance', payload, hosted)
+}
+
 /** Resolves task-flow reads to the authoritative store for this install. */
 export function taskFlowReadStore(
   database: Database,

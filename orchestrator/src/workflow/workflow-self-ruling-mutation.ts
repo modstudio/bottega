@@ -4,11 +4,11 @@
 import type { Database } from 'bun:sqlite'
 import { nowIso, sessionId } from '../database/db.ts'
 import { assertOrchestratorProse } from '../prose-service.ts'
-import { answerWorkflowQuestion, upsertWorkflowQuestion } from '../run/question-mutation.ts'
 import {
   latestQuestionOnStep,
   questionsForWorkflowCursor,
 } from '../question-store/question-store-read.ts'
+import { answerWorkflowQuestion, upsertWorkflowQuestion } from '../run/question-mutation.ts'
 import type { AutonomyValue } from './autonomy.ts'
 import type { Floor } from './workflow-floor.ts'
 import { selfRulingRefusal } from './workflow-self-ruling.ts'

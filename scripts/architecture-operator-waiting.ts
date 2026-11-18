@@ -15,6 +15,7 @@ export const operatorWaitingModules: OperatorWaitingModule[] = [
   module('orchestrator/src/commands/run-message-options.ts', ['commander', './support.ts']),
   module('orchestrator/src/run/run-message-commands.ts', [
     '../../../shared/brand.ts',
+    '../../../shared/orch-contract.ts',
     '../agent/agent-registry.ts',
     '../agent/agents.ts',
     '../cli/args.ts',
@@ -30,6 +31,7 @@ export const operatorWaitingModules: OperatorWaitingModule[] = [
     '../workflow/workflow-context-moment.ts',
     './answer-value-args.ts',
     './question-identifier.ts',
+    './question-mutation.ts',
     './question-vocabulary.ts',
     './ruling-file-text.ts',
     './run-answer.ts',
@@ -43,6 +45,7 @@ export const operatorWaitingModules: OperatorWaitingModule[] = [
   module('orchestrator/src/run/question-vocabulary.ts', ['../../../shared/question-vocabulary.ts']),
   module('orchestrator/src/run/question-mutation.ts', [
     'bun:sqlite',
+    '../../../shared/record-timestamp.ts',
     '../../../shared/brand.ts',
     '../../../shared/record-id.ts',
     '../caller-classification.ts',

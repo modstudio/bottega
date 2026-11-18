@@ -56,8 +56,8 @@ import { resolveAnswerTarget } from '../run/run-answer-identifier.ts'
 import { finishHarnessRun } from '../run/run-harness-finish.ts'
 import { resolveRunIdentifier } from '../run/run-identifier.ts'
 import {
-  answerCommand,
   answerClosedWorkflowQuestionCommand,
+  answerCommand,
   continueCommand,
   retryCommand,
 } from '../run/run-message-commands.ts'
