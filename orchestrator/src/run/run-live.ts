@@ -214,9 +214,9 @@ async function closeLiveBrokers(
   await closeWorkerNoteBroker(note)
 }
 
-/** A missing named reply is observable even when its final-message fallback is valid. */
 export const FINAL_MESSAGE_FALLBACK_MARKER = 'used final-message fallback'
 
+/** A missing named reply is observable even when its final-message fallback is valid. */
 export function replyFileFallbackError(
   replyFile: string,
   present: boolean,

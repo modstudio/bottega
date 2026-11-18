@@ -4,7 +4,7 @@
 import { OPENING_PROGRESS_VOCABULARY } from './evidence/premature-final.ts'
 
 const CONTINUING_PROGRESS_VOCABULARY =
-  /\b(?:still (?:executing|running|collecting|waiting)|continuing to|i(?:'m| am) continuing|another (?:short )?(?:collection|window|attempt)|then i(?:'ll| will)|has not yet (?:exited|finished|printed)|i will|i'll|next i)\b/i
+  /\b(?:still (?:executing|running|collecting|waiting)|continuing to|i(?:'m| am) continuing|another (?:short )?(?:collection|window|attempt)|then i(?:'ll| will)|has not yet (?:exited|finished|printed))\b/i
 
 export type FallbackCompletionFacts = {
   writesJob: boolean
