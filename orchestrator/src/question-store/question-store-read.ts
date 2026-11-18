@@ -13,16 +13,7 @@ import type {
 } from '../workflow/task-flow-store-types.ts'
 import { compareQuestionsByAsk } from './question-order.ts'
 import { questionStore } from './question-store.ts'
-import {
-  localQuestionHistoryProjectIdsSqlite,
-  localQuestionHistorySqlite,
-  unattributedLocalQuestionHistorySqlite,
-} from './question-store-sqlite-reads.ts'
 import type { QuestionStore } from './question-store-types.ts'
-
-export const localQuestionHistoryProjectIds = localQuestionHistoryProjectIdsSqlite
-export const localQuestionHistory = localQuestionHistorySqlite
-export const unattributedLocalQuestionHistory = unattributedLocalQuestionHistorySqlite
 export async function questionById(
   database: Database,
   id: string,
