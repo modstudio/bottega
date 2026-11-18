@@ -7,6 +7,7 @@ import { drizzle } from 'drizzle-orm/bun-sql'
 import { hostedTaskIdForReference } from '../../../shared/record/hosted-task-id.ts'
 import {
   hostedQuestionWins,
+  questionMutationAudit as questionMutationAuditRecord,
   question as questionRecord,
 } from '../../../shared/record/schema-question.ts'
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
@@ -14,7 +15,9 @@ import { isUniqueViolation } from './record-config-error.ts'
 import { recordPool } from './record-pool.ts'
 import { pushQuestionAudits } from './record-question-audit.ts'
 import type {
+  QuestionImportBody,
   QuestionIntent,
+  QuestionIntentBody,
   QuestionWriteBody,
   QuestionWriteResult,
 } from './record-question-contract.ts'
@@ -22,6 +25,8 @@ import { RecordQuestionError } from './record-question-contract.ts'
 import { allocateQuestionNumber } from './record-question-number.ts'
 import { QUESTION_STEP_CONFLICT_SET, questionValuesForWrite } from './record-question-step.ts'
 import { projectRecordId } from './record-sync-project-identity.ts'
+import { questionValues } from './record-sync-service.ts'
+import { sameRecordValue } from './record-task-flow-write-decision.ts'
 
 type Tenant = { url: string } & TenantPrincipal
 type ExistingQuestion = {
@@ -86,7 +91,7 @@ async function questionNumberForWrite(
 
 export async function writeRecordQuestion(
   intent: QuestionIntent,
-  input: Tenant & QuestionWriteBody,
+  input: Tenant & QuestionIntentBody,
 ): Promise<QuestionWriteResult> {
   const pool = recordPool(input.url)
   try {
@@ -95,58 +100,67 @@ export async function writeRecordQuestion(
       return writeRecordQuestionTransaction(intent, input, tx)
     })
   } catch (error) {
+    if (intent === 'import' && isUniqueViolation(error, 'question_pkey'))
+      throw new RecordQuestionError(
+        `question ${input.question.id} already exists in another space; it was not imported`,
+        409,
+      )
     if (intent !== 'restore') throw error
+    const writeInput = input as Tenant & QuestionWriteBody
     if (isUniqueViolation(error, 'question_pkey'))
       throw new RecordQuestionError(
-        `question ${input.question.id} already exists in another space; it was not restored`,
+        `question ${writeInput.question.id} already exists in another space; it was not restored`,
         409,
       )
     if (!isUniqueViolation(error, 'question_space_number_unique')) throw error
     const holderId = await pool.begin(async (tx) => {
       await bindTenant(tx, input)
-      return restoreNumberHolder(input, tx, false)
+      return restoreNumberHolder(writeInput, tx, false)
     })
     if (!holderId) throw error
-    throw restoreNumberConflict(input, holderId)
+    throw restoreNumberConflict(writeInput, holderId)
   }
 }
 
 export async function writeRecordQuestionTransaction(
   intent: QuestionIntent,
-  input: Tenant & QuestionWriteBody,
+  input: Tenant & QuestionIntentBody,
   tx: SQL,
 ): Promise<QuestionWriteResult> {
-  requireRestoreNumber(intent, input)
+  if (intent === 'import')
+    return importRecordQuestionTransaction(input as Tenant & QuestionImportBody, tx)
+  const writeInput = input as Tenant & QuestionWriteBody
+  requireRestoreNumber(intent, writeInput)
   const existing = (await tx`
       SELECT number,revision,last_request_id::text
-        FROM question WHERE id=${input.question.id}::uuid FOR UPDATE
+        FROM question WHERE id=${writeInput.question.id}::uuid FOR UPDATE
     `) as ExistingQuestion[]
-  if (existing[0]?.last_request_id === input.requestId)
+  if (existing[0]?.last_request_id === writeInput.requestId)
     return {
-      id: input.question.id,
+      id: writeInput.question.id,
       number: Number(existing[0].number),
       revision: Number(existing[0].revision),
       applied: true,
       replayed: true,
     }
-  const number = await questionNumberForWrite(intent, input, existing[0], tx)
+  const number = await questionNumberForWrite(intent, writeInput, existing[0], tx)
   const payload = {
-    ...input.question,
+    ...writeInput.question,
     number,
-    spaceId: input.spaceId,
-    audits: [{ ...input.audit, id: input.requestId }],
+    spaceId: writeInput.spaceId,
+    audits: [{ ...writeInput.audit, id: writeInput.requestId }],
   }
-  const workflowTaskId = await hostedTaskIdForReference(tx, input.spaceId, {
-    id: input.question.workflowTaskId,
-    key: input.question.workflowKey,
+  const workflowTaskId = await hostedTaskIdForReference(tx, writeInput.spaceId, {
+    id: writeInput.question.workflowTaskId,
+    key: writeInput.question.workflowKey,
   })
-  const projectId = await projectRecordId(tx, input.question, input)
+  const projectId = await projectRecordId(tx, writeInput.question, writeInput)
   const values = await questionValuesForWrite(
     tx,
     payload,
     projectId,
     workflowTaskId,
-    input.question.workflowCursorRecordId,
+    writeInput.question.workflowCursorRecordId,
     intent === 'ask',
   )
   const {
@@ -158,7 +172,7 @@ export async function writeRecordQuestionTransaction(
   } = values
   const written = await drizzle({ client: tx })
     .insert(questionRecord)
-    .values({ ...values, lastRequestId: input.requestId })
+    .values({ ...values, lastRequestId: writeInput.requestId })
     .onConflictDoUpdate({
       target: questionRecord.id,
       set: {
@@ -166,12 +180,12 @@ export async function writeRecordQuestionTransaction(
         number: drizzleSql`COALESCE(${questionRecord.number}, excluded.number)`,
         workflowTaskId: drizzleSql`COALESCE(excluded.workflow_task_id, ${questionRecord.workflowTaskId})`,
         ...QUESTION_STEP_CONFLICT_SET,
-        lastRequestId: input.requestId,
+        lastRequestId: writeInput.requestId,
       },
       setWhere: and(
         eq(questionRecord.machineId, values.machineId),
         or(
-          eq(questionRecord.lastRequestId, input.requestId),
+          eq(questionRecord.lastRequestId, writeInput.requestId),
           hostedQuestionWins(drizzleSql`excluded.revision`, questionRecord.revision),
         ),
       ),
@@ -184,21 +198,89 @@ export async function writeRecordQuestionTransaction(
   const result = written[0]
   if (!result && existing[0] && existing[0].number !== null)
     return {
-      id: input.question.id,
+      id: writeInput.question.id,
       number: Number(existing[0].number),
       revision: Number(existing[0].revision),
       applied: false,
     }
   if (!result || result.number == null)
     throw new RecordQuestionError(
-      `question ${input.question.id} write did not satisfy its revision precondition`,
+      `question ${writeInput.question.id} write did not satisfy its revision precondition`,
       409,
     )
-  await pushQuestionAudits(tx, payload, input.question.id, input.spaceId)
+  await pushQuestionAudits(tx, payload, writeInput.question.id, writeInput.spaceId)
   return {
-    id: input.question.id,
+    id: writeInput.question.id,
     number: Number(result.number),
     revision: Number(result.revision),
     applied: true,
+  }
+}
+
+const camelToSnake = (key: string) => key.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`)
+
+function assertSameQuestionRow(
+  table: string,
+  id: string,
+  existing: Record<string, unknown>,
+  values: Record<string, unknown>,
+): void {
+  for (const [key, value] of Object.entries(values)) {
+    if (key === 'number' || key === 'lastRequestId') continue
+    if (!sameRecordValue(existing[camelToSnake(key)], value))
+      throw new RecordQuestionError(`${table} ${id} already exists with different content`, 409)
+  }
+}
+
+async function importQuestionAudit(
+  tx: SQL,
+  spaceId: string,
+  questionId: string,
+  audit: QuestionImportBody['audits'][number],
+): Promise<void> {
+  const rows = (await tx`
+    SELECT * FROM question_mutation_audit WHERE id=${audit.id}::uuid FOR UPDATE
+  `) as Array<Record<string, unknown>>
+  const values = { ...audit, questionId, spaceId }
+  if (rows[0]) return assertSameQuestionRow('question_mutation_audit', audit.id, rows[0], values)
+  await drizzle({ client: tx }).insert(questionMutationAuditRecord).values(values)
+}
+
+async function importRecordQuestionTransaction(
+  input: Tenant & QuestionImportBody,
+  tx: SQL,
+): Promise<QuestionWriteResult> {
+  const existing = (await tx`
+    SELECT * FROM question WHERE id=${input.question.id}::uuid FOR UPDATE
+  `) as Array<Record<string, unknown>>
+  const number =
+    existing[0]?.number == null
+      ? await allocateQuestionNumber(tx, input.spaceId)
+      : Number(existing[0].number)
+  const workflowTaskId = await hostedTaskIdForReference(tx, input.spaceId, {
+    id: input.question.workflowTaskId,
+    key: input.question.workflowKey,
+  })
+  const projectId = await projectRecordId(tx, input.question, input)
+  const values = {
+    ...questionValues(
+      { ...input.question, number, spaceId: input.spaceId },
+      projectId,
+      workflowTaskId,
+    ),
+    workflowStepOrdinal: input.question.workflowStepOrdinal ?? null,
+    workflowStepSlug: input.question.workflowStepSlug ?? null,
+    lastRequestId: input.requestId,
+  }
+  if (existing[0]) assertSameQuestionRow('question', input.question.id, existing[0], values)
+  else await drizzle({ client: tx }).insert(questionRecord).values(values)
+  for (const audit of input.audits)
+    await importQuestionAudit(tx, input.spaceId, input.question.id, audit)
+  return {
+    id: input.question.id,
+    number,
+    revision: input.question.revision,
+    applied: true,
+    ...(existing[0] ? { replayed: true } : {}),
   }
 }
