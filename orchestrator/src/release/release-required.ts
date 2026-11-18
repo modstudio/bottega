@@ -331,26 +331,27 @@ export function undecidedRequiredRelease(
 ): RequiredReleaseReport {
   return {
     required: [],
-    releases: rungs.map((rung) => failure(rung, rung.reason ?? 'requirement could not be decided')),
+    releases: rungs.map((rung) => ({
+      rung: rung.rung,
+      required: false,
+      deployExit: null,
+      outputTail: rung.reason ?? 'requirement could not be decided',
+      satisfied: false,
+      deployed: false,
+    })),
     satisfied: false,
     decisionError: error,
   }
 }
 
-export function releaseRequiredFlagAbsent(
-  rungs: ReleaseRungPlan[],
-  decisionError?: string | null,
-): RequiredReleaseReport {
-  if (decisionError) return undecidedRequiredRelease(rungs, decisionError)
-  const withDecisionError = (detail: string): string =>
-    decisionError ? `${detail}; ${decisionError}` : detail
+export function releaseRequiredFlagAbsent(rungs: ReleaseRungPlan[]): RequiredReleaseReport {
   const releases = rungs.map((plan): RequiredRungRelease => {
     if (!plan.required) return failure(plan, plan.reason ?? 'not required')
     if (plan.requiredBy !== 'reach')
-      return failure(plan, withDecisionError('not released because --release-required was absent'))
+      return failure(plan, 'not released because --release-required was absent')
     return failure(
       { ...plan, required: false },
-      withDecisionError('ship-to reach deploys only at production with --release-required'),
+      'ship-to reach deploys only at production with --release-required',
     )
   })
   return {

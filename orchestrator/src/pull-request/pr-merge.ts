@@ -12,7 +12,7 @@ import { refusal, renderRefusal } from '../../../shared/refusal.ts'
 import { recordMergeBranchLandings } from '../branch/branch-landing-service.ts'
 import { enableSchemaReload, writableDb } from '../database/db.ts'
 import { passingGateForCommit } from '../gate/gate-passed.ts'
-import { decideGitFetchRetry } from '../git/fetch-retry.ts'
+import { runWithGitFetchRetry } from '../git/fetch-retry.ts'
 import { targetGitEnvironment } from '../git/git-environment.ts'
 import { currentProjectRepository, type Project, projectAt } from '../project/projects.ts'
 import { shipToDepthRefusal } from '../release/ship-to-reach.ts'
@@ -158,17 +158,18 @@ function run(cwd: string, argv: string[]): ProcessResult {
 }
 
 function successful(cwd: string, argv: string[], label: string): string {
-  for (let attempt = 1; ; attempt += 1) {
-    const result = run(cwd, argv)
-    if (result.exitCode === 0) return result.stdout
-    const detail = result.stderr || `exit ${result.exitCode}`
-    const retry =
-      argv[0] === 'git' && argv[1] === 'fetch' && argv[2] === 'origin'
-        ? decideGitFetchRetry(attempt, detail)
-        : { retry: false as const }
-    if (!retry.retry) throw new Error(`${label} failed: ${detail}`)
-    Bun.sleepSync(retry.delayMs)
+  const result = runWithGitFetchRetry(argv, () => {
+    const attempt = run(cwd, argv)
+    return {
+      result: attempt,
+      succeeded: attempt.exitCode === 0,
+      stderr: attempt.stderr || `exit ${attempt.exitCode}`,
+    }
+  })
+  if (result.exitCode !== 0) {
+    throw new Error(`${label} failed: ${result.stderr || `exit ${result.exitCode}`}`)
   }
+  return result.stdout
 }
 
 function parsed<T>(value: string, label: string): T {

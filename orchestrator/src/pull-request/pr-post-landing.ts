@@ -402,10 +402,10 @@ export async function completePullRequestPostLanding(input: {
               output: `${move.detail}; recover with: ${move.recovery}`,
               error: move.detail,
             },
-      requiredRelease: input.releaseRequired
-        ? decision.decided
+      requiredRelease: !decision.decided
+        ? undecidedRequiredRelease(decision.rungs, decision.error)
+        : input.releaseRequired
           ? failedRequiredRelease(decision.rungs, `${move.detail}; recover with: ${move.recovery}`)
-          : undecidedRequiredRelease(decision.rungs, decision.error)
         : releaseRequiredFlagAbsent(decision.rungs),
       cleanupWasFenced: move.cleanupWasFenced,
       cleanupRecovery: move.recovery,

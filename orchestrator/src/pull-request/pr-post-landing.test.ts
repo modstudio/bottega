@@ -48,12 +48,6 @@ test.each([
     MERGED_WITH_RESIDUE_EXIT_CODE,
     MERGED_WITH_RESIDUE_EXIT_CODE,
   ],
-  [
-    'undecided rung decision',
-    { satisfied: false, decisionError: 'landing fetch failed' },
-    0,
-    MERGED_WITH_UNRELEASED_RUNG_EXIT_CODE,
-  ],
 ] as const)('%s chooses the release-aware exit', (_name, release, cleanupExit, expected) => {
   expect(decideMergedOutputExitCode(release, cleanupExit)).toBe(expected)
 })
@@ -433,6 +427,36 @@ test('a move failure with an empty required set reports recovery as residue', as
   expect(outcome.exitCode).toBe(20)
   expect(outcome.output).toContain('registered main checkout is dirty; clean it')
   expect(outcome.output).toContain('recover with:')
+})
+
+test('an undecided decision without the release flag refuses a failed main move', async () => {
+  const outcome = await complete({
+    project: onDemandProject,
+    releaseRequired: false,
+    workflowPromotionDue: true,
+    movesInstallation: true,
+    post: {
+      changedPaths: () => {
+        throw new Error('landing fetch failed')
+      },
+      entryClosure: () => new Map(),
+      mainHead: () => 'main-before',
+      moveMain: () => {
+        throw new Error('registered main checkout is dirty; clean it')
+      },
+      fence: () => {
+        throw new Error('fence must not run')
+      },
+      handOff: () => {
+        throw new Error('hand-off must not run')
+      },
+    },
+  })
+
+  expect(outcome.exitCode).toBe(MERGED_WITH_UNRELEASED_RUNG_EXIT_CODE)
+  expect(outcome.output).toContain(
+    `release not proven: could not read the landed paths: landing fetch failed; retry: ${PLATFORM_SLUG} pr merge 42 --release-required`,
+  )
 })
 
 test('a move failure reports every rung and remedy, cleans up, and does not fence or hand off', async () => {

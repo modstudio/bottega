@@ -10,7 +10,7 @@ import { resolveInstallRoot } from '../../../shared/install-root.ts'
 import { containsSecretShaped } from '../../../shared/secret-shaped.ts'
 import { db, sessionId, writableDb } from '../database/db.ts'
 import { boundedGateOutputTail, GATE_OUTPUT_TAIL_BYTES } from '../gate/gate-decision.ts'
-import { decideGitFetchRetry } from '../git/fetch-retry.ts'
+import { runWithGitFetchRetry } from '../git/fetch-retry.ts'
 import { targetGitEnvironment } from '../git/git-environment.ts'
 import {
   returnMainCheckoutToTrunkCommand,
@@ -124,21 +124,20 @@ function run(
 }
 
 function git(args: string[], cwd: string): string {
-  for (let attempt = 1; ; attempt += 1) {
-    const result = run(['git', ...args], cwd)
-    if (result.exitCode === 0) return result.output.trim()
-    const detail = result.output.trim() || `exit ${result.exitCode}`
-    const retry =
-      args[0] === 'fetch' && args[1] === 'origin'
-        ? decideGitFetchRetry(attempt, detail)
-        : { retry: false as const }
-    if (!retry.retry) {
-      throw new Error(
-        `git ${args.join(' ')} failed: ${detail}; fix the checkout or remote, then retry`,
-      )
+  const result = runWithGitFetchRetry(['git', ...args], () => {
+    const attempt = run(['git', ...args], cwd)
+    return {
+      result: attempt,
+      succeeded: attempt.exitCode === 0,
+      stderr: attempt.output.trim() || `exit ${attempt.exitCode}`,
     }
-    Bun.sleepSync(retry.delayMs)
+  })
+  if (result.exitCode !== 0) {
+    throw new Error(
+      `git ${args.join(' ')} failed: ${result.output.trim() || `exit ${result.exitCode}`}; fix the checkout or remote, then retry`,
+    )
   }
+  return result.output.trim()
 }
 
 function shell(

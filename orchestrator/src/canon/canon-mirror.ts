@@ -18,7 +18,7 @@ import { closeOutRunPrepared } from '../close/close-out.ts'
 import { type CloseOutPreparation, prepareCloseOut } from '../close/close-out-preparation.ts'
 import { closeTerminalChainQuestions } from '../close/close-out-questions.ts'
 import { db, nowIso, sessionId, writableDb, writeTransaction } from '../database/db.ts'
-import { decideGitFetchRetry } from '../git/fetch-retry.ts'
+import { runWithGitFetchRetry } from '../git/fetch-retry.ts'
 import { targetGitEnvironment } from '../git/git-environment.ts'
 import { fileNote, listHubNotes } from '../mcp/hub-notes.ts'
 import { withWorktreeCreateLock } from '../project/project-lock.ts'
@@ -128,21 +128,20 @@ function spawn(cwd: string, args: string[]): ReturnType<typeof startBoundedSync>
   })
 }
 function command(cwd: string, args: string[]): string {
-  for (let attempt = 1; ; attempt += 1) {
-    const child = spawn(cwd, args)
-    if (child.exitCode === 0) return child.stdout?.toString().trim() ?? ''
-    const detail = child.stderr?.toString().trim() || `exit ${child.exitCode}`
-    const retry =
-      args[0] === 'git' && args[1] === 'fetch' && args[2] === 'origin'
-        ? decideGitFetchRetry(attempt, detail)
-        : { retry: false as const }
-    if (retry.retry) {
-      Bun.sleepSync(retry.delayMs)
-      continue
+  const child = runWithGitFetchRetry(args, () => {
+    const attempt = spawn(cwd, args)
+    return {
+      result: attempt,
+      succeeded: attempt.exitCode === 0,
+      stderr: attempt.stderr?.toString().trim() || `exit ${attempt.exitCode}`,
     }
+  })
+  if (child.exitCode !== 0) {
+    const detail = child.stderr?.toString().trim() || `exit ${child.exitCode}`
     const safe = screenCanonMirrorError(detail)
     throw new Error(`${args.join(' ')} failed: ${safe}`)
   }
+  return child.stdout?.toString().trim() ?? ''
 }
 function parsePullRequest(text: string): PullRequest | null {
   const row = (

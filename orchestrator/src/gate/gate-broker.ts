@@ -13,7 +13,7 @@ import { nulPathListArgs, splitNulPaths } from '../../../shared/git-path-list.ts
 import { RUN_PROCESS_MARKER_ENV } from '../../../shared/run-process-marker.ts'
 import { db, nowIso, writeTransaction } from '../database/db.ts'
 import { HOST_SLOT_HELD_ENV, HostSlotWaitAborted, withGateSlot } from '../gate-load.ts'
-import { decideGitFetchRetry } from '../git/fetch-retry.ts'
+import { runWithGitFetchRetry } from '../git/fetch-retry.ts'
 import { terminateProcessGroup } from '../idle-kill.ts'
 import { workerGateEnvironment } from '../issue/issue-shell.ts'
 import { createNoFollowFile } from '../no-follow-file.ts'
@@ -225,15 +225,15 @@ export function refreshGateBase(
       message: `gate base refresh skipped: could not read branch.${input.landingBranch}.remote: ${detail}`,
     }
   }
-  let attempt = 1
-  let fetched = invoke(['fetch', '--no-tags', '--', remote, input.landingBranch], options)
-  while (fetched.status !== 0) {
-    const retry = decideGitFetchRetry(attempt, fetched.stderr.toString())
-    if (!retry.retry) break
-    Bun.sleepSync(retry.delayMs)
-    attempt += 1
-    fetched = invoke(['fetch', '--no-tags', '--', remote, input.landingBranch], options)
-  }
+  const fetchArgs = ['fetch', '--no-tags', '--', remote, input.landingBranch]
+  const fetched = runWithGitFetchRetry(fetchArgs, () => {
+    const attempt = invoke(fetchArgs, options)
+    return {
+      result: attempt,
+      succeeded: attempt.status === 0,
+      stderr: attempt.stderr.toString(),
+    }
+  })
   const elapsedMs = Date.now() - started
   if (fetched.status === 0) {
     return {

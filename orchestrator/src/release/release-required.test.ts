@@ -9,6 +9,7 @@ import {
   releaseRequiredFlagAbsent,
   releaseRequiredRungsAfterMainMove,
   requiredRungDecision,
+  undecidedRequiredRelease,
 } from './release-required.ts'
 import type { ReleaseResult } from './release-service.ts'
 
@@ -270,7 +271,7 @@ describe('requiredRungDecision', () => {
       required: [],
       error: 'landing-branch fetch failed',
     })
-    const report = releaseRequiredFlagAbsent(decision.rungs, decision.error)
+    const report = undecidedRequiredRelease(decision.rungs, decision.error)
     expect(report.satisfied).toBe(false)
     expect(formatRequiredReleaseReport(report, '42', project.name)).toBe(
       `release not proven: could not read the landed paths: landing-branch fetch failed; retry: ${PLATFORM_SLUG} pr merge 42 --release-required`,
@@ -325,7 +326,7 @@ describe('requiredRungDecision', () => {
       },
       () => new Map(),
     )
-    const report = releaseRequiredFlagAbsent(decision.rungs, 'changed paths unavailable')
+    const report = undecidedRequiredRelease(decision.rungs, 'changed paths unavailable')
 
     expect(report.required).toEqual([])
     expect(report.satisfied).toBe(false)
