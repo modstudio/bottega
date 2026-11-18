@@ -294,7 +294,7 @@ export function workflowStageInsert(input: {
   mode: string
   workflowKey: string
   instanceId: string
-  sessionId: string | null
+  sessionId: TaskFlowIntentInput<'compose'>['stageInsert']['sessionId']
   workflowVersionId: string
   catalogueVersionId: string
   arguments: Record<string, string>
@@ -302,7 +302,6 @@ export function workflowStageInsert(input: {
   autonomy: string | null
   totalSteps: number
   openedMachineId: string
-  handedOffFromRecordId?: string
   createdAt: string
 }) {
   return {

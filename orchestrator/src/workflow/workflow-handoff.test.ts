@@ -237,7 +237,7 @@ test('keyless handoff takes the claim, adopts the key, and moves context to its 
     taskClaimPorts: {
       take: async ({ key }) => {
         claims.push(key)
-        return { action: 'taken', recordId: 'claim', number: 1 }
+        return { action: 'taken', recordId: 'claim', number: 1 } as never
       },
       release: async () => ({ released: 1 }),
     },

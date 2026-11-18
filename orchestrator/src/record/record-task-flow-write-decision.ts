@@ -55,7 +55,7 @@ export function sameRecordValue(left: unknown, right: unknown): boolean {
 
 export function taskFlowHandoffRefusal(input: {
   state: string
-  sourceKey: string
+  sourceKey: string | null
   targetKey: string
   sourceSession: string | null
   targetSession: string | null

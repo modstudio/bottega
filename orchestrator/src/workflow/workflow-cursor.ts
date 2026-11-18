@@ -290,6 +290,7 @@ export async function composeWorkflowWithCursor(
     ...cursorComposition(row, d, live),
     cursor,
     ...(claimWarning ? { claimWarning } : {}),
+    graduated: undefined,
   }
 }
 
