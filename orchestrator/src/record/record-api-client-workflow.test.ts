@@ -55,6 +55,26 @@ test.each([404, 405])('task-flow write refuses an old record API response %s', a
   ).rejects.toThrow('record API predates task-flow writes; release hosted-api, then retry')
 })
 
+test('history imports post to their intent routes in the named destination space', async () => {
+  const requests: Array<{ path: string; method?: string; destination?: string }> = []
+  const client = recordWorkflowClient(async (path, init) => {
+    requests.push({
+      path,
+      method: init?.method,
+      destination: init?.destinationSpaceId,
+    })
+    return path === '/v1/task-flow/import'
+      ? ({ revisions: {}, stages: [] } as never)
+      : ({ id: ID, number: 7, revision: 1, applied: true } as never)
+  })
+  await client.importTaskFlow!({ requestId: ID, flow: { id: ID }, stages: [] } as never, destination)
+  await client.importQuestion!({ requestId: ID, question: { id: ID }, audits: [] } as never, destination)
+  expect(requests).toEqual([
+    { path: '/v1/task-flow/import', method: 'POST', destination: 'workflow-space' },
+    { path: '/v1/questions/import', method: 'POST', destination: 'workflow-space' },
+  ])
+})
+
 test('task-flow stage lists carry combined filters and the destination space', async () => {
   const requests: Array<{
     path: string

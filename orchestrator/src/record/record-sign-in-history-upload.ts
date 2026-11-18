@@ -7,7 +7,6 @@ import { newRecordId } from '../../../shared/record-id.ts'
 import { withDatabaseForMigrationStep, writeTransaction } from '../database/db.ts'
 import type { ProjectAdoptionResult } from '../project/project-relink.ts'
 import { questionSnapshotFromRow } from '../question-store/question-store-mutation.ts'
-import { storedCursorOwner } from '../workflow/workflow-cursor-transition.ts'
 import { recordApiClient, type RecordApiClient } from './record-api-client.ts'
 import type { RecordWriteDestination } from './record-api-client-paths.ts'
 import type { QuestionImportBody } from './record-question-contract.ts'
@@ -108,7 +107,7 @@ function repairUnlinkedKeylessStages(database: Database): number {
           `INSERT INTO task_flow
             (record_id,task_record_id,project_record_id,state,open_stage_cursor_record_id,
              created_at,updated_at,opening_machine_id,updated_machine_id,revision)
-           VALUES (?,NULL,?,?,?,?,?,?,?,?,1)`,
+           VALUES (?,NULL,?,?,?,?,?,?,?,1)`,
         )
         .run(
           flowId,
@@ -179,7 +178,7 @@ function flowImports(database: Database, projectId: string): FlowImport[] {
         mode: String(stage.mode_slug),
         workflowKey: String(stage.workflow_key),
         instanceId: String(stage.instance_id),
-        sessionId: storedCursorOwner((stage.session_id as string | null) ?? null),
+        sessionId: ((stage.session_id as string | null) ?? null) as FlowImport['stages'][number]['sessionId'],
         workflowVersionId: String(stage.workflow_version_record_id),
         catalogueVersionId: String(stage.catalogue_version_record_id),
         arguments: json(stage.args) as Record<string, string>,

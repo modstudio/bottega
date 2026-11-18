@@ -272,7 +272,7 @@ test('repair creates one keyless flow for every stage state and is idempotent', 
     database
       .query(
         `SELECT cursor.state,flow.state flow_state,
-                flow.open_stage_cursor_record_id=cursor.record_id is_open
+                COALESCE(flow.open_stage_cursor_record_id=cursor.record_id,0) is_open
          FROM workflow_cursor cursor JOIN task_flow flow ON flow.record_id=cursor.task_flow_record_id
          ORDER BY cursor.number`,
       )
