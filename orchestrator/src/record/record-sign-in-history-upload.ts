@@ -21,7 +21,7 @@ type HistoryProject = { name: string; recordId: string }
 type FlowImport = TaskFlowIntentInput<'import'>
 
 type UploadDependencies = {
-  client: Pick<RecordApiClient, 'whoami' | 'importTaskFlow' | 'importQuestion'>
+  client: Pick<RecordApiClient, 'importTaskFlow' | 'importQuestion'>
   destination(project: string): Promise<RecordWriteDestination>
   withDatabase<T>(action: (database: Database) => Promise<T>): Promise<T>
 }

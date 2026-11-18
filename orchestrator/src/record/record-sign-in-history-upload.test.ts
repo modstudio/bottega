@@ -131,7 +131,7 @@ function adoption(name: string): ProjectAdoptionResult {
 
 type ImportClient = Pick<
   RecordTaskFlowClient & RecordQuestionClient,
-  'whoami' | 'importTaskFlow' | 'importQuestion'
+  'importTaskFlow' | 'importQuestion'
 >
 
 function dependencies(database: Database, client: ImportClient) {
@@ -154,7 +154,6 @@ test('two projects upload repeatably to their own spaces and preserve every loca
   const questionNumbers = new Map<string, number>()
   const calls: Array<{ kind: string; space: string; id: string }> = []
   const client: ImportClient = {
-    whoami: async () => ({ personalSpaceId: 'personal', memberships: [], user: {} }),
     importTaskFlow: async (input, destination) => {
       calls.push({ kind: 'flow', space: destination.destinationSpaceId, id: input.flow.id })
       return {
@@ -223,7 +222,6 @@ test('an unmatched project refuses before repair or import', async () => {
   stage(database, { project: 'unmatched', projectId, number: 1, state: 'done' })
   let sends = 0
   const client: ImportClient = {
-    whoami: async () => ({ personalSpaceId: 'personal', memberships: [], user: {} }),
     importTaskFlow: async () => {
       sends++
       throw new Error('unexpected')
@@ -258,7 +256,6 @@ test('repair creates one keyless flow for every stage state and is idempotent', 
     stage(database, { project: 'repair', projectId, number: index + 1, state })
   })
   const client: ImportClient = {
-    whoami: async () => ({ personalSpaceId: 'personal', memberships: [], user: {} }),
     importTaskFlow: async (input) => ({
       revisions: Object.fromEntries(input.stages.map((row) => [row.id, row.revision])),
       stages: input.stages.map((row, index) => ({ id: row.id, number: index + 1 })),
@@ -313,7 +310,6 @@ test('a partial hosted failure leaves all local rows in place', async () => {
   })
   let imports = 0
   const client: ImportClient = {
-    whoami: async () => ({ personalSpaceId: 'personal', memberships: [], user: {} }),
     importTaskFlow: async (input) => {
       imports++
       if (imports === 2) throw new Error('host unavailable')
