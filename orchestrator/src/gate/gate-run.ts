@@ -281,7 +281,7 @@ export async function runArchitectGate(input: {
     write,
   })
   const checkExecutions = readGateCheckExecutions(executionPath, write)
-  // A gate that rewrites the tree while it runs tested something other than HEAD.
+  // Only a gate that starts clean and leaves HEAD and the tree unchanged is attributable.
   const commit =
     before !== null && gateHeadCommit(checkoutTopLevel, observe) === before ? before : null
   const tail = boundedGateOutputTail(
@@ -289,7 +289,7 @@ export async function runArchitectGate(input: {
     GATE_OUTPUT_TAIL_BYTES,
   )
   const d = input.d ?? writableDb()
-  return writeTransaction(() => {
+  return writeTransaction<ArchitectGateRecord>(() => {
     const recordId = newRecordId()
     d.query(
       `INSERT INTO gate_execution
