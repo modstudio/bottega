@@ -33,6 +33,7 @@ import {
   closeTaskThroughTracker,
   commentTaskThroughTracker,
   setTaskThroughTracker,
+  TaskCursorResidueError,
 } from './tracker-task-write.ts'
 
 type TaskOptions = {
@@ -182,22 +183,25 @@ async function showTaskCommand(key: string, options: TaskOptions): Promise<void>
 }
 
 async function closeTask(key: string, options: TaskOptions): Promise<void> {
-  const { closed, pruned, pruneError, claimReleaseError } = await closeThenPrune(
+  const { closed, pruned, pruneError, abandonError, releaseError } = await closeThenPrune(
     key,
     { project: options.project },
     Boolean(options.keepBranches),
     optional(options, 'abandon'),
     await machineAttribution(),
     ARRAY_MCP_STATUS_WRITE_CONFIRM,
-    { close: closeTaskThroughTracker },
+    {
+      close: (key, scope, attribution, closeOptions) =>
+        closeTaskThroughTracker(key, scope, attribution, closeOptions),
+      cursorAbandoned: (cursor) =>
+        console.log(`cursor ${cursor.number} ${cursor.workflow}: abandoned (${cursor.reason})`),
+    },
   )
   printTaskRow(closed)
-  if (claimReleaseError) {
-    console.error(`claim release failed: ${claimReleaseError.message}`)
-    console.error(
-      `retry: ${PLATFORM_SLUG} board claim release-task ${closed.key} --project ${closed.project} --json`,
-    )
+  if (abandonError || releaseError) {
+    console.error((abandonError ?? releaseError)!.message)
     process.exitCode = TASK_CLOSED_WITH_RESIDUE_EXIT_CODE
+    return
   }
   if (pruneError) {
     console.error(`branch prune failed: ${pruneError.message}`)
@@ -353,18 +357,27 @@ function registerTaskQueryCommands(task: Command): void {
     if (!Object.keys(changes).length)
       throw new Error(`${PLATFORM_SLUG} task set requires a field to change`)
     const attribution = await machineAttribution()
-    const row = await setTaskThroughTracker(
-      key,
-      { project: options.project },
-      changes,
-      attribution,
-      {
-        force: Boolean(options.force),
-        abandonReason: optional(options, 'abandon'),
-        confirm: ARRAY_MCP_STATUS_WRITE_CONFIRM,
-      },
-    )
-    printTaskRow(row)
+    try {
+      const row = await setTaskThroughTracker(
+        key,
+        { project: options.project },
+        changes,
+        attribution,
+        {
+          force: Boolean(options.force),
+          abandonReason: optional(options, 'abandon'),
+          confirm: ARRAY_MCP_STATUS_WRITE_CONFIRM,
+          cursorAbandoned: (cursor) =>
+            console.log(`cursor ${cursor.number} ${cursor.workflow}: abandoned (${cursor.reason})`),
+        },
+      )
+      printTaskRow(row)
+    } catch (error) {
+      if (!(error instanceof TaskCursorResidueError)) throw error
+      printTaskRow(error.task)
+      console.error(error.message)
+      process.exitCode = TASK_CLOSED_WITH_RESIDUE_EXIT_CODE
+    }
   })
 }
 

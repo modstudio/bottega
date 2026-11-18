@@ -14,7 +14,6 @@ import {
   awaitCommand,
   catalogueVersionsCommand,
   composeCommand,
-  cursorsCommand,
   execCommand,
   forkWorkflowCommand,
   hydrateCommand,
@@ -42,6 +41,7 @@ import {
 } from '../workflow/workflow-commands.ts'
 import { workflowNextContextMoment } from '../workflow/workflow-context-moment.ts'
 import { workflowCursorIdentityMap } from '../workflow/workflow-cursor-identity.ts'
+import { cursorsCommand } from '../workflow/workflow-cursor-report.ts'
 import { RECORD_EVIDENCE_FLAG } from '../workflow/workflow-evidence-payload.ts'
 import { handoffCommand } from '../workflow/workflow-handoff-command.ts'
 import { registerWorkflowStepActionCommands } from '../workflow/workflow-step-action-commands.ts'
@@ -491,7 +491,9 @@ function registerWorkflowCursorAdmin({
       .option('--all', 'include closed cursors'),
   )
     .allowExcessArguments(false)
-    .action((options) => cursorsCommand(workflowArgv('cursors', [], options), output(options)))
+    .action((options) =>
+      cursorsCommand(workflowArgv('cursors', [], options), output(options), handlerOptions),
+    )
 }
 
 function registerWorkflowChildCommands({

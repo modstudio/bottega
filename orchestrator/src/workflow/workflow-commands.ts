@@ -37,8 +37,6 @@ import {
 import { awaitWorkflowRuling, composeWorkflowWithCursor } from './workflow-cursor.ts'
 import { workflowKeyOf } from './workflow-cursor-arguments.ts'
 import { cursorCommandTarget } from './workflow-cursor-command-target.ts'
-import { renderWorkflowCursorLine } from './workflow-cursor-format.ts'
-import { listWorkflowCursors } from './workflow-cursor-list.ts'
 import {
   resolveCursorLiveAutonomy,
   resolveWorkflowLiveAutonomy,
@@ -758,16 +756,6 @@ export async function awaitCommand(
     result,
     `workflow ${slug} is awaiting ruling question ${result.questionId} at step ${result.n} ${result.slug}`,
   )
-}
-
-export async function cursorsCommand(argv: string[], print: WorkflowPrint): Promise<void> {
-  const rows = await listWorkflowCursors({
-    session: flagValue(argv, 'session'),
-    project: flagValue(argv, 'project'),
-    all: argv.includes('--all'),
-  })
-  if (!rows.length) return
-  print(rows, rows.map(renderWorkflowCursorLine).join('\n'))
 }
 
 export function showCatalogueCommand(
