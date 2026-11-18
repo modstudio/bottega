@@ -1,5 +1,6 @@
 import { expect, test } from 'bun:test'
-import { hostedBoardWriteResult } from './board-write-result.ts'
+import { boardDuplicateWarning, hostedBoardWriteResult } from './board-write-result.ts'
+import { PLATFORM_SLUG } from './brand.ts'
 
 const mintedId = '01990000-0000-7000-8000-000000000001'
 const duplicateId = '01990000-0000-7000-8000-000000000002'
@@ -21,4 +22,10 @@ test('hosted board write results distinguish retries and duplicate response vers
     dropped: true,
     duplicateOf: duplicateId,
   })
+})
+
+test('duplicate warnings name the live message and withdrawal command', () => {
+  const warning = boardDuplicateWarning(duplicateId)
+  expect(warning).toContain(duplicateId)
+  expect(warning).toContain(`${PLATFORM_SLUG} board withdraw ${duplicateId}`)
 })
