@@ -13,7 +13,7 @@ import {
 } from '../record/record-task-flow-write-client.ts'
 import { taskFlowRequestId } from '../record/record-task-flow-write-contract.ts'
 import { taskFlowLocalStore, taskFlowReadStore } from './task-flow-store.ts'
-import type { TaskFlowIntentInput } from './task-flow-store-types.ts'
+import type { TaskFlowIntentInput, TaskFlowStageCursorRow } from './task-flow-store-types.ts'
 import {
   declaredCursorArguments,
   rebindableCursorArguments,
@@ -100,6 +100,50 @@ function bindingFailureWarning(cursor: number, error: unknown): string {
   return `workflow cursor ${cursor} argument binding failed: ${String((error as Error)?.message ?? error)}`
 }
 
+function discoveredBranchBinding(
+  row: TaskFlowStageCursorRow,
+  stored: Record<string, string>,
+  runBranch: string | null | undefined,
+  database: Database,
+): { branch?: string; refusal?: Extract<CursorArgumentBindingResult, { action: 'refused' }> } {
+  if (!runBranch?.trim()) return {}
+  const currentBranch = stored.branch?.trim() || null
+  const pullRequestNumber = currentBranch
+    ? pullRequestNumberForBranch(database, row.project, currentBranch)
+    : null
+  const decision = decideCursorBranchBinding({ currentBranch, pullRequestNumber, runBranch })
+  if (decision.action === 'refuse') {
+    return {
+      refusal: {
+        action: 'refused',
+        warning: branchRefusalWarning({
+          cursor: row.id,
+          project: row.project,
+          workflow: row.workflow_slug,
+          currentBranch: currentBranch!,
+          runBranch,
+          pullRequestNumber: decision.pullRequestNumber,
+        }),
+      },
+    }
+  }
+  if (decision.action === 'rebind' && !rebindableCursorArguments(row, database).has('branch')) {
+    return {
+      refusal: {
+        action: 'refused',
+        warning: branchConflictWarning({
+          cursor: row.id,
+          project: row.project,
+          workflow: row.workflow_slug,
+          currentBranch: currentBranch!,
+          runBranch,
+        }),
+      },
+    }
+  }
+  return decision.action === 'no-op' ? {} : { branch: runBranch }
+}
+
 /** Merge lifecycle-discovered arguments and persist them through the task-flow stage-update port. */
 export async function bindCursorArguments(
   input: {
@@ -114,53 +158,19 @@ export async function bindCursorArguments(
   const row = await taskFlowReadStore(database, client).stageByRecordId(input.cursorRecordId)
   if (!row) return { action: 'unbound' }
   const stored = JSON.parse(row.args) as Record<string, string>
-  const declared = new Set(['branch', 'worktree'])
-  const rebindable = rebindableCursorArguments(row, database)
+  const declared = declaredCursorArguments(row, database)
   const supplied: Record<string, string> = {}
   if (declared.has('worktree') && input.worktree?.trim()) supplied.worktree = input.worktree
 
-  if (declared.has('branch') && input.branch?.trim()) {
-    const currentBranch = stored.branch?.trim() || null
-    const pullRequestNumber = currentBranch
-      ? pullRequestNumberForBranch(database, row.project, currentBranch)
-      : null
-    const decision = decideCursorBranchBinding({
-      currentBranch,
-      pullRequestNumber,
-      runBranch: input.branch,
-    })
-    if (decision.action === 'refuse') {
-      return {
-        action: 'refused',
-        warning: branchRefusalWarning({
-          cursor: row.id,
-          project: row.project,
-          workflow: row.workflow_slug,
-          currentBranch: currentBranch!,
-          runBranch: input.branch,
-          pullRequestNumber: decision.pullRequestNumber,
-        }),
-      }
-    }
-    if (decision.action === 'rebind' && !rebindable.has('branch')) {
-      return {
-        action: 'refused',
-        warning: branchConflictWarning({
-          cursor: row.id,
-          project: row.project,
-          workflow: row.workflow_slug,
-          currentBranch: currentBranch!,
-          runBranch: input.branch,
-        }),
-      }
-    }
-    if (decision.action !== 'no-op') supplied.branch = input.branch
+  if (declared.has('branch')) {
+    const branch = discoveredBranchBinding(row, stored, input.branch, database)
+    if (branch.refusal) return branch.refusal
+    if (branch.branch) supplied.branch = branch.branch
   }
 
   if (Object.keys(supplied).length === 0) return { action: 'no-op' }
   const resolved = resolveCursorArguments(row, supplied, database)
-  if (resolved.encoded === row.args && resolved.closed === row.closed)
-    return { action: 'no-op' }
+  if (resolved.encoded === row.args && resolved.closed === row.closed) return { action: 'no-op' }
   const payload: TaskFlowIntentInput<'stage-update'> = {
     requestId: taskFlowRequestId('stage-update', [row.record_id, String(row.revision)]),
     stages: [

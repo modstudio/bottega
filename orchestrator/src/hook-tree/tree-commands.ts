@@ -19,11 +19,19 @@ export async function treeCreateCommand(
   const path = createHookTree(options)
   presentation.writePath(path)
   if (!options.key) return
-  const result = await bindTaskKeyWorktree({
-    project: project.name,
-    key: options.key,
-    worktree: path,
-  })
+  let result: Awaited<ReturnType<typeof bindTaskKeyWorktree>>
+  try {
+    result = await bindTaskKeyWorktree({
+      project: project.name,
+      key: options.key,
+      worktree: path,
+    })
+  } catch (error) {
+    presentation.error(
+      `workflow cursor for task ${options.key} argument binding failed: ${String((error as Error)?.message ?? error)}`,
+    )
+    return
+  }
   if (result.action === 'ambiguous') {
     presentation.error(
       `worktree was not bound: task ${options.key} has multiple open workflow cursors (${result.cursors.join(', ')})`,

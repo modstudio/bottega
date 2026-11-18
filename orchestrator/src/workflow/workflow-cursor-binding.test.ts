@@ -335,9 +335,9 @@ describe('task-key worktree binding', () => {
     ).toEqual({ action: 'bound' })
     expect(
       JSON.parse(
-        d.query<{ args: string }, [string]>('SELECT args FROM workflow_cursor WHERE record_id=?').get(
-          cursor.record_id,
-        )!.args,
+        d
+          .query<{ args: string }, [string]>('SELECT args FROM workflow_cursor WHERE record_id=?')
+          .get(cursor.record_id)!.args,
       ),
     ).toMatchObject({ key: 'DEV-BOUND', worktree: '/tmp/dev-bound' })
   })
