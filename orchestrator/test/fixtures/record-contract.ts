@@ -1,7 +1,7 @@
 import type { PGlite } from '@electric-sql/pglite'
 import type { Hono } from 'hono'
 import { recordRequestHeaders } from '../../../shared/record-request-headers.ts'
-import { recordApiClient, type RecordApiClient } from '../../src/record/record-api-client.ts'
+import { type RecordApiClient, recordApiClient } from '../../src/record/record-api-client.ts'
 import { recordApiError } from '../../src/record/record-api-client-error.ts'
 import type { RecordIdentity } from '../../src/record/record-auth.ts'
 import { takeHostedBoardClaim } from '../../src/record/record-board-claims.ts'
@@ -11,17 +11,17 @@ import {
   readRecordTaskFlowStage,
 } from '../../src/record/record-task-flow.ts'
 import { writeRecordTaskFlow } from '../../src/record/record-task-flow-write.ts'
-import { recordApiTestApp } from './record-api-app.ts'
+import { createHostedRecordFixture, pgliteSql } from './hosted-record.ts'
 import {
   createMemoryRecordApiClient,
   idleRecordApiDeps,
   idleSubjectDeps,
   installRecordApiClient,
 } from './record-api.ts'
-import { createHostedRecordFixture, pgliteSql } from './hosted-record.ts'
+import { recordApiTestApp } from './record-api-app.ts'
 import { installRecordPool } from './record-pool-injection.ts'
 
-export const RECORD_CONTRACT_URL = 'postgres://record-contract.test/record'
+const RECORD_CONTRACT_URL = 'postgres://record-contract.test/record'
 export const RECORD_CONTRACT_SPACE_A = '01990000-0000-7000-8000-000000024560'
 export const RECORD_CONTRACT_SPACE_B = '01990000-0000-7000-8000-000000024561'
 export const RECORD_CONTRACT_USER = '01990000-0000-7000-8000-000000024562'
@@ -80,14 +80,18 @@ export async function createRecordContractFixture(): Promise<RecordContractFixtu
     SET ROLE record_actor;
   `)
   const restorePool = installRecordPool(RECORD_CONTRACT_URL, pgliteSql(database))
-  const app = recordApiTestApp(identity(), { ...idleSubjectDeps(), ...idleRecordApiDeps() }, {
-    recordUrl: RECORD_CONTRACT_URL,
-    readTaskFlow: readRecordTaskFlow,
-    readTaskFlowStage: readRecordTaskFlowStage,
-    listTaskFlowStages: listRecordTaskFlowStages,
-    writeTaskFlow: writeRecordTaskFlow,
-    takeBoardClaim: takeHostedBoardClaim,
-  })
+  const app = recordApiTestApp(
+    identity(),
+    { ...idleSubjectDeps(), ...idleRecordApiDeps() },
+    {
+      recordUrl: RECORD_CONTRACT_URL,
+      readTaskFlow: readRecordTaskFlow,
+      readTaskFlowStage: readRecordTaskFlowStage,
+      listTaskFlowStages: listRecordTaskFlowStages,
+      writeTaskFlow: writeRecordTaskFlow,
+      takeBoardClaim: takeHostedBoardClaim,
+    },
+  )
   const requestedRoutes = new Set<string>()
   installRecordApiClient(null)
   const previousContainer = process.env.BOTTEGA_TEST_POSTGRES_CONTAINER

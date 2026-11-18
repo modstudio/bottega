@@ -1,12 +1,12 @@
 import { afterAll, beforeAll, expect, test } from 'bun:test'
 import {
   createRecordContractFixture,
-  type RecordContractFixture,
   RECORD_CONTRACT_SPACE_A,
   RECORD_CONTRACT_USER,
+  type RecordContractFixture,
 } from '../../test/fixtures/record-contract.ts'
 
-export const contractRoutes = ['PUT /v1/board/claims'] as const
+const contractRoutes = ['PUT /v1/board/claims'] as const
 
 const PROJECT = '01990000-0000-7000-8000-000000024580'
 const MACHINE = '01990000-0000-7000-8000-000000024581'
@@ -71,15 +71,13 @@ const claim = (id: string, holderSession: string) => ({
 
 test('a task claim is admitted only for the session that owns its open stage', async () => {
   await expect(
-    fixture.client.takeBoardClaim(
-      claim('01990000-0000-7000-8000-000000024588', 'other-session'),
-      { destinationSpaceId: RECORD_CONTRACT_SPACE_A },
-    ),
+    fixture.client.takeBoardClaim(claim('01990000-0000-7000-8000-000000024588', 'other-session'), {
+      destinationSpaceId: RECORD_CONTRACT_SPACE_A,
+    }),
   ).rejects.toThrow('task claims follow task cursors')
   await expect(
-    fixture.client.takeBoardClaim(
-      claim('01990000-0000-7000-8000-000000024589', 'owner-session'),
-      { destinationSpaceId: RECORD_CONTRACT_SPACE_A },
-    ),
+    fixture.client.takeBoardClaim(claim('01990000-0000-7000-8000-000000024589', 'owner-session'), {
+      destinationSpaceId: RECORD_CONTRACT_SPACE_A,
+    }),
   ).resolves.toMatchObject({ action: 'taken', subject: { kind: 'task', value: 'DEV-2424' } })
 })

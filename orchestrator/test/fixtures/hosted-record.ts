@@ -36,17 +36,16 @@ function pgliteQuery(database: Pick<PGlite, 'query'>): SQL {
     const rows = () =>
       (pending ??= Promise.resolve()
         .then(() =>
-        database.query(
-          statement,
-          parameters,
-          arrayMode ? { rowMode: 'array' as const } : undefined,
-        ),
-      )
+          database.query(
+            statement,
+            parameters,
+            arrayMode ? { rowMode: 'array' as const } : undefined,
+          ),
+        )
         .then((value) => value.rows))
-    return {
+    const queryResult = {
       sql: statement,
       parameters,
-      then: (...args: Parameters<Promise<unknown[]>['then']>) => rows().then(...args),
       catch: (...args: Parameters<Promise<unknown[]>['catch']>) => rows().catch(...args),
       finally: (...args: Parameters<Promise<unknown[]>['finally']>) => rows().finally(...args),
       values: () => {
@@ -54,6 +53,10 @@ function pgliteQuery(database: Pick<PGlite, 'query'>): SQL {
         return rows()
       },
     }
+    Object.defineProperty(queryResult, 'then', {
+      value: (...args: Parameters<Promise<unknown[]>['then']>) => rows().then(...args),
+    })
+    return queryResult
   }
   const query = (strings: TemplateStringsArray, ...interpolations: unknown[]) => {
     let statement = strings[0]!

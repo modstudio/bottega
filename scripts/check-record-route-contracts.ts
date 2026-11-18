@@ -1,11 +1,8 @@
-import { Glob } from 'bun'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
+import { Glob } from 'bun'
+import { idleRecordApiDeps, idleSubjectDeps } from '../orchestrator/test/fixtures/record-api.ts'
 import { recordApiTestApp } from '../orchestrator/test/fixtures/record-api-app.ts'
-import {
-  idleRecordApiDeps,
-  idleSubjectDeps,
-} from '../orchestrator/test/fixtures/record-api.ts'
 import type { Finding } from '../shared/ratchet.ts'
 import { ratchetDecision } from '../shared/ratchet.ts'
 
@@ -36,16 +33,16 @@ function appRoutes(): string[] {
 
 async function declaredRoutes(root: string): Promise<Set<string>> {
   const declared = new Set<string>()
-  for await (const path of new Glob('orchestrator/src/**/*.contract.test.ts').scan({ cwd: root })) {
+  for await (const path of new Glob('orchestrator/src/**/*-contract.test.ts').scan({ cwd: root })) {
     const source = readFileSync(resolve(root, path), 'utf8')
-    const literal = source.match(/export const contractRoutes\s*=\s*\[([\s\S]*?)\]\s*as const/)
+    const literal = source.match(/const contractRoutes\s*=\s*\[([\s\S]*?)\]\s*as const/)
     if (!literal) continue
     for (const route of literal[1]!.matchAll(/['"]([^'"]+)['"]/g)) declared.add(route[1]!)
   }
   return declared
 }
 
-export async function checkRecordRouteContracts(root = resolve(import.meta.dir, '..')) {
+async function checkRecordRouteContracts(root = resolve(import.meta.dir, '..')) {
   const baselinePath = resolve(root, 'scripts/quality/record-route-contracts.json')
   const routes = appRoutes()
   const contracts = await declaredRoutes(root)
@@ -57,9 +54,10 @@ export async function checkRecordRouteContracts(root = resolve(import.meta.dir, 
     return []
   }
   const baseline = JSON.parse(readFileSync(baselinePath, 'utf8')) as RecordRouteBaseline[]
+  const undeclared = undeclaredRecordRoutes(routes, contracts, baseline)
   return ratchetDecision({
     base: routeFindings(baseline.map((entry) => entry.route)),
-    head: routeFindings(routes.filter((route) => !contracts.has(route))),
+    head: routeFindings(undeclared),
     change: { renames: new Map(), addedLines: new Map() },
   })
 }
@@ -68,7 +66,8 @@ if (import.meta.main) {
   const started = performance.now()
   const refused = await checkRecordRouteContracts()
   if (refused.length) {
-    for (const finding of refused) console.error(`record route lacks a contract: ${finding.message}`)
+    for (const finding of refused)
+      console.error(`record route lacks a contract: ${finding.message}`)
     process.exitCode = 1
   }
   console.log(`record route contracts: ${(performance.now() - started).toFixed(1)} ms`)

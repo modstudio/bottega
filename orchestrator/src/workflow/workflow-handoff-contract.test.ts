@@ -2,9 +2,9 @@ import { afterAll, beforeAll, expect, test } from 'bun:test'
 import { resolvedRecordOrigin } from '../../../shared/record-api-url.ts'
 import {
   createRecordContractFixture,
-  type RecordContractFixture,
   RECORD_CONTRACT_SPACE_A,
   RECORD_CONTRACT_USER,
+  type RecordContractFixture,
 } from '../../test/fixtures/record-contract.ts'
 import { rememberProjectSpace } from '../project-space-cache.ts'
 import { taskFlowReadStore } from './task-flow-store.ts'
@@ -13,7 +13,7 @@ import { database } from './workflow-cursor-test.fixture.ts'
 import { handoffWorkflow } from './workflow-handoff.ts'
 import { promoteWorkflowLocal, setWorkflowLocal } from './workflows.ts'
 
-export const contractRoutes = [
+const contractRoutes = [
   'GET /v1/task-flow',
   'GET /v1/task-flow/stages',
   'GET /v1/task-flow/stages/:id',

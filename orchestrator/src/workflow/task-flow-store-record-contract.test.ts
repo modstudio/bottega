@@ -1,11 +1,11 @@
 import { afterAll, beforeAll, expect, test } from 'bun:test'
 import {
   createRecordContractFixture,
-  type RecordContractFixture,
   RECORD_CONTRACT_SPACE_B,
+  type RecordContractFixture,
 } from '../../test/fixtures/record-contract.ts'
 
-export const contractRoutes = ['GET /v1/task-flow'] as const
+const contractRoutes = ['GET /v1/task-flow'] as const
 
 const PROJECT = '01990000-0000-7000-8000-000000024570'
 const TASK = '01990000-0000-7000-8000-000000024571'

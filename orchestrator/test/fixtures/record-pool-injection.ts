@@ -6,7 +6,11 @@ function slot(): Map<string, SQL> {
   const holder = globalThis as typeof globalThis & {
     [key: symbol]: Map<string, SQL> | undefined
   }
-  return (holder[RECORD_POOL_SLOT] ??= new Map())
+  const existing = holder[RECORD_POOL_SLOT]
+  if (existing) return existing
+  const created = new Map<string, SQL>()
+  holder[RECORD_POOL_SLOT] = created
+  return created
 }
 
 export function installRecordPool(url: string, sql: SQL): () => void {
