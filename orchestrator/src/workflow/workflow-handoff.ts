@@ -45,6 +45,13 @@ type HandoffInput = {
   taskClaimPorts?: TaskCursorClaimPorts
 }
 
+export function handoffTargetArguments(
+  row: SelectableCursorRow,
+  args: Record<string, string>,
+): Record<string, string> {
+  return row.workflow_key && !args.key ? { ...args, key: row.workflow_key } : args
+}
+
 async function validateHandoffTarget(input: HandoffInput, d: Database) {
   const row = input.row
   if (!input.reason.trim()) throw new Error('handoff reason is required; pass --reason "<why>"')
@@ -63,8 +70,7 @@ async function validateHandoffTarget(input: HandoffInput, d: Database) {
     throw new Error(
       `workflow cursor ${row.id} has open workflow question ${openQuestion.question}; answer it, then retry the handoff`,
     )
-  const targetArgs =
-    row.workflow_key && !input.args.key ? { ...input.args, key: row.workflow_key } : input.args
+  const targetArgs = handoffTargetArguments(row, input.args)
   const composition = composeWorkflow(
     input.workflow,
     row.project,

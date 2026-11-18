@@ -12,7 +12,7 @@ import {
   resolveWorkflowCursorContext,
   selectWorkflowCursorByHandle,
 } from './workflow-cursor-selection.ts'
-import { handoffWorkflow } from './workflow-handoff.ts'
+import { handoffTargetArguments, handoffWorkflow } from './workflow-handoff.ts'
 import type { HubTaskReader } from './workflow-task-reference.ts'
 
 export async function handoffCommand(
@@ -29,7 +29,7 @@ export async function handoffCommand(
   const args = workflowArgs(argv)
   const context = await resolveWorkflowCursorContext(
     project,
-    { ...args, key: args.key ?? row.workflow_key },
+    handoffTargetArguments(row, args),
     cliWorkflowCursorContext(),
     options.hubTaskReader,
     row,
