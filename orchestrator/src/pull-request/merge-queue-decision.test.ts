@@ -4,10 +4,20 @@ import {
   interpretMergeQueue,
   MERGE_QUEUE_DEQUEUE_CONFIRM_MS,
   MERGE_QUEUE_REQUEUE_CONFIRM_MS,
+  type MergeQueueState,
   type MergeQueueWaitState,
   mergeQueueEnqueueFailureRemedy,
-  stepMergeQueueWait,
+  stepMergeQueueWait as decideMergeQueueWait,
 } from './merge-queue-decision.ts'
+
+const stepMergeQueueWait = (
+  number: number,
+  previous: MergeQueueWaitState,
+  queue: MergeQueueState,
+  now: number,
+  deadline: number,
+  landingBranch = 'main',
+) => decideMergeQueueWait(number, previous, queue, now, deadline, landingBranch)
 
 const initialWaitState: MergeQueueWaitState = {
   enqueueSubmitted: false,

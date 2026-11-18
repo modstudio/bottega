@@ -1,6 +1,7 @@
 // concern: pull-request create outcome
 /** Decides the result of creating or rediscovering a pull request from gathered facts. */
 
+import { type Refusal, refusal } from '../../../shared/refusal.ts'
 import type { MergeabilityDecision } from './mergeability-decision.ts'
 
 export type CreateOutcomePullRequest = {
@@ -15,8 +16,7 @@ export type PullRequestCreateResult = {
 }
 
 export type CreateOutcomeDecision = {
-  throwMessage: string | null
-  throwRefusal: { condition: string; remedy: string } | null
+  refusal: Refusal | null
   output: string
   finalizePullRequestNumber: number | null
 }
@@ -31,8 +31,7 @@ export function decideCreateOutcome(input: {
   if (input.existing) {
     const output = `pull request already exists for ${input.branch}: ${input.existing.url}; gh pr create was not run`
     return {
-      throwMessage: null,
-      throwRefusal: null,
+      refusal: null,
       output: pullRequestOutput(output, input.existing),
       finalizePullRequestNumber: input.existing.number,
     }
@@ -40,8 +39,7 @@ export function decideCreateOutcome(input: {
 
   if (!input.createResult) {
     return {
-      throwMessage: 'gh pr create was not run',
-      throwRefusal: null,
+      refusal: refusal('gh pr create was not run'),
       output: '',
       finalizePullRequestNumber: null,
     }
@@ -49,11 +47,10 @@ export function decideCreateOutcome(input: {
 
   if (input.createResult.failure !== null) {
     return {
-      throwMessage: null,
-      throwRefusal: {
-        condition: `gh pr create failed: ${input.createResult.failure}`,
-        remedy: `fix the reported GitHub condition, then rerun ${input.platformSlug} pr create`,
-      },
+      refusal: refusal(`gh pr create failed: ${input.createResult.failure}`, {
+        kind: 'edit',
+        text: `fix the reported GitHub condition, then rerun ${input.platformSlug} pr create`,
+      }),
       output: '',
       finalizePullRequestNumber: null,
     }
@@ -62,8 +59,7 @@ export function decideCreateOutcome(input: {
   if (!input.created) {
     const unresolved = `gh pr view ${input.branch} could not resolve the created pull request; mergeability was not checked and the triage intent remains pending; rerun ${input.platformSlug} pr create to record it`
     return {
-      throwMessage: null,
-      throwRefusal: null,
+      refusal: null,
       output: input.createResult.stdout
         ? `${input.createResult.stdout}\n${unresolved}`
         : unresolved,
@@ -72,8 +68,7 @@ export function decideCreateOutcome(input: {
   }
 
   return {
-    throwMessage: null,
-    throwRefusal: null,
+    refusal: null,
     output: pullRequestOutput(input.createResult.stdout, input.created),
     finalizePullRequestNumber: input.created.number,
   }

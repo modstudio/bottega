@@ -77,8 +77,10 @@ export async function clearOpenCursorWorktreesAtPath(
   path: string,
   database: Database = db(),
   client?: RecordTaskFlowClient,
+  capturedSpellings?: readonly string[],
 ): Promise<number> {
   const wanted = comparablePath(path)
+  const spellings = capturedSpellings ? new Set(capturedSpellings) : null
   const rows = database
     .query<
       { record_id: string; revision: number; project: string; args: string; closed: string },
@@ -90,7 +92,10 @@ export async function clearOpenCursorWorktreesAtPath(
     .all()
     .filter((row) => {
       const worktree = workflowCursorBranchAndWorktree(row.args).worktree
-      return worktree !== null && comparablePath(worktree) === wanted
+      return (
+        worktree !== null &&
+        (spellings ? spellings.has(worktree) : comparablePath(worktree) === wanted)
+      )
     })
   for (const row of rows) {
     const args = JSON.parse(row.args) as Record<string, string>

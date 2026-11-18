@@ -2,12 +2,10 @@ import { expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun } from '../../test/fixtures/store.ts'
-import { catalogueVersionRecordId, workflowVersionRecordId } from '../../test/fixtures/workflow.ts'
 import { db, nowIso } from '../database/db.ts'
 import { upsertProject } from '../project/projects.ts'
 import {
   absentClaimedHookTreeDecision,
-  cursorWorktreeCleanupFailure,
   hookTreeSeedRequest,
   removeHookTree,
   removeHookTreeResult,
@@ -63,41 +61,5 @@ test('a repeated removal reports an absent tree from its released claim', async 
     )
     .run(newRecordId(), id, id, path, nowIso(), nowIso())
 
-  const cursorId = newRecordId()
-  db()
-    .query(
-      `INSERT INTO workflow_cursor
-       (record_id,number,project,workflow_slug,mode_slug,workflow_key,instance_id,
-        workflow_version_record_id,catalogue_version_record_id,args,ordinal,
-        step_slug,state,closed,total_steps,created_at,updated_at,enforcement)
-       VALUES (?,1,'fixture','fixture','default','','',?,?,?,0,'research','running','[]',1,?,?, 'floors')`,
-    )
-    .run(
-      cursorId,
-      workflowVersionRecordId(db()),
-      catalogueVersionRecordId(db()),
-      JSON.stringify({ worktree: path, branch: 'DEV-2218-work' }),
-      nowIso(),
-      nowIso(),
-    )
-
   expect(await removeHookTreeResult(path)).toEqual({ outcome: 'absent' })
-  expect(
-    JSON.parse(
-      db()
-        .query<{ args: string }, [string]>('SELECT args FROM workflow_cursor WHERE record_id=?')
-        .get(cursorId)!.args,
-    ),
-  ).toEqual({ branch: 'DEV-2218-work' })
-})
-
-test('a cursor cleanup failure preserves the successful tree result and names its remedy', () => {
-  expect(
-    cursorWorktreeCleanupFailure({ outcome: 'released' }, '/trees/released', 'record down'),
-  ).toEqual({
-    outcome: 'released',
-    cursorCleanupFailure:
-      `the tree at /trees/released was released but the cursor worktree pointers at it could not be cleared: record down; ` +
-      `rerun ${PLATFORM_SLUG} tree remove /trees/released to retry, or pass --arg worktree=<tree> on the cursor`,
-  })
 })

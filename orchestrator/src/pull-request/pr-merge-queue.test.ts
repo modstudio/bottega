@@ -472,7 +472,7 @@ test('a stale merge-conflict removal from before this enqueue does not refuse', 
   ).toMatchObject({ mergeCommit: 'queued-merge-oid' })
 })
 
-test('a dequeued entry with a real failed merge-group run keeps the failure refusal', async () => {
+test('a merge-conflict dequeue with a failed run keeps the reasoned remedy and appends evidence', async () => {
   registerProject(['ci'])
   expect(
     async () =>
@@ -486,13 +486,13 @@ test('a dequeued entry with a real failed merge-group run keeps the failure refu
               pullRequestState: 'OPEN',
               mergeCommit: null,
               entryState: null,
-              removalReason: 'BASE_BRANCH_UPDATED',
+              removalReason: 'merge_conflict',
             },
           ],
         }),
       ),
   ).toThrow(
-    `failed in the merge queue; failure merge-group run 9876 (https://github.example/actions/runs/9876); cleared by: push a fix if the check failure is real`,
+    `dequeued without a failed check (reason: merge_conflict); failure merge-group run 9876 (https://github.example/actions/runs/9876); cleared by: merge origin/main into the pull-request branch, push it, then ${PLATFORM_SLUG} pr merge 42`,
   )
 })
 

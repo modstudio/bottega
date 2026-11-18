@@ -162,13 +162,29 @@ function confirmedDequeueReason(
     : null
 }
 
+function dequeueRefusal(
+  number: number,
+  reason: string,
+  landingBranch: string,
+): Extract<MergeQueueAction, { action: 'refuse' }> {
+  const retry = `${PLATFORM_SLUG} pr merge ${number}`
+  return {
+    action: 'refuse',
+    refusal: `pull request #${number} was dequeued without a failed check (reason: ${reason})`,
+    remedy:
+      reason.toLowerCase() === 'merge_conflict'
+        ? `merge origin/${landingBranch} into the pull-request branch, push it, then ${retry}`
+        : retry,
+  }
+}
+
 export function stepMergeQueueWait(
   number: number,
   previous: MergeQueueWaitState,
   queue: MergeQueueState,
   now: number,
   deadline: number,
-  landingBranch = 'main',
+  landingBranch: string,
 ): MergeQueueStep {
   let state = observedMergeQueueState(previous, queue, now)
 
@@ -215,19 +231,7 @@ export function stepMergeQueueWait(
     queue.reason !== 'unknown' &&
     queue.reason.toLowerCase() !== 'merged'
   ) {
-    const reason = queue.reason
-    const remedy =
-      reason.toLowerCase() === 'merge_conflict'
-        ? `merge origin/${landingBranch} into the pull-request branch, push it, then ${retry}`
-        : retry
-    return {
-      state,
-      action: {
-        action: 'refuse',
-        refusal: `pull request #${number} was dequeued without a failed check (reason: ${reason})`,
-        remedy,
-      },
-    }
+    return { state, action: dequeueRefusal(number, queue.reason, landingBranch) }
   }
   if (queue.state === 'dequeued' && !state.enqueueSubmitted && !state.activeEntryObserved) {
     state = { ...state, enqueueSubmitted: true, enqueueSubmittedAt: now }
@@ -235,14 +239,7 @@ export function stepMergeQueueWait(
   }
   const confirmedReason = confirmedDequeueReason(queue, state, now)
   if (confirmedReason !== null) {
-    return {
-      state,
-      action: {
-        action: 'refuse',
-        refusal: `pull request #${number} was dequeued without a failed check (reason: ${confirmedReason})`,
-        remedy: retry,
-      },
-    }
+    return { state, action: dequeueRefusal(number, confirmedReason, landingBranch) }
   }
   const dequeueConfirmationRemaining =
     queue.state === 'dequeued' && state.dequeueObservedAt !== null

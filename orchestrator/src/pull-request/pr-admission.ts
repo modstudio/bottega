@@ -736,16 +736,7 @@ function createPullRequestAdmittedChange(
     branch: change.branch,
     platformSlug: PLATFORM_SLUG,
   })
-  if (outcome.throwRefusal)
-    throw new Error(
-      renderRefusal(
-        refusal(outcome.throwRefusal.condition, {
-          kind: 'edit',
-          text: outcome.throwRefusal.remedy,
-        }),
-      ),
-    )
-  if (outcome.throwMessage) throw new Error(outcome.throwMessage)
+  if (outcome.refusal) throw new Error(renderRefusal(outcome.refusal))
   if (outcome.finalizePullRequestNumber !== null) {
     finalizeTriageIntent(change.project.name, change.branch, outcome.finalizePullRequestNumber)
   }
@@ -756,17 +747,6 @@ function createPullRequestAdmittedChange(
 }
 
 function pushPullRequestBranch(cwd: string, branch: string): void {
-  const upstreamLookup = startBoundedSync(
-    ['git', 'rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{upstream}'],
-    { budget: 'git-plumbing', cwd, env: targetGitEnvironment(cwd) },
-  )
-  const upstream = upstreamLookup.exitCode === 0 ? upstreamLookup.stdout.trim() : null
-  const ahead = upstream
-    ? Number(
-        command(cwd, ['git', 'rev-list', '--count', `${upstream}..HEAD`], 'branch ahead lookup'),
-      )
-    : 1
-  if (upstream && ahead === 0) return
   const process = startBoundedSync(['git', 'push', '--set-upstream', 'origin', branch], {
     budget: 'git-network',
     cwd,
