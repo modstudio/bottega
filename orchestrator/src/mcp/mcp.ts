@@ -541,9 +541,9 @@ export function createDocsMcpServer(ports: DocsMcpPorts = {}): McpServer {
   )
   scopeMcpToolCallers(server)
   wrapMcpToolHandlers(server, (_name, handler) => async (...args) => {
-      db()
-      return handler(...args)
-    })
+    db()
+    return handler(...args)
+  })
 
   registerCoreTools(server, ports)
   registerWorkflowActionTools(server, ports)

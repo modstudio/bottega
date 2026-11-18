@@ -107,7 +107,9 @@ export async function run(
     const parse = () => command.parseAsync(['bun', PLATFORM_SLUG, ...input])
     const dispatch = callerDispatches.get(command)
     if (!dispatch) throw new Error('hub command has no caller dispatch')
-    await dispatch(() => (usesReadOnlyStoreHandle(argv) ? withReadOnlyDatabaseAccess(parse) : parse()))
+    await dispatch(() =>
+      usesReadOnlyStoreHandle(argv) ? withReadOnlyDatabaseAccess(parse) : parse(),
+    )
     return Number(process.exitCode ?? 0)
   } catch (error) {
     if (!(error instanceof CommanderError)) console.error(await cliErrorMessage(error, argv))
