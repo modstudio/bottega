@@ -8,8 +8,11 @@ import { statusChangeNotice, TaskScreen, taskStatusControlValue } from './-task-
 
 test('status change notices distinguish residue, success, and refusals', () => {
   const residue = `task DEV-1 is closed; claim release did not finish: boom\nclear it with: ${PLATFORM_SLUG} board claim release-task DEV-1 --project workshop`
-  expect(statusChangeNotice({ residue })).toEqual({ kind: 'warning', message: residue })
-  expect(statusChangeNotice({ residue: null })).toBeNull()
+  expect(statusChangeNotice({ residueMessage: residue })).toEqual({
+    kind: 'warning',
+    message: residue,
+  })
+  expect(statusChangeNotice({ residueMessage: null })).toBeNull()
   expect(statusChangeNotice({ error: new Error('status bogus does not resolve') })).toEqual({
     kind: 'error',
     message: 'Status not changed: status bogus does not resolve',

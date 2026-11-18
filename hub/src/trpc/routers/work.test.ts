@@ -30,7 +30,7 @@ test('setStatus resolves with the closed task and exact residue message', async 
     router.createCaller({}).setStatus({ key: 'DEV-1', scope: {}, status: 'done' }),
   ).resolves.toEqual({
     task: closedTask,
-    residue: message,
+    residueMessage: message,
   })
 })
 

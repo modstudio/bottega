@@ -12,6 +12,12 @@ let nextId = 1
 let items: ToastItem[] = []
 const listeners = new Set<() => void>()
 const timers = new Map<number, number>()
+const persistent: Record<Kind, boolean> = {
+  success: false,
+  warning: true,
+  error: false,
+  info: false,
+}
 
 const emit = () => {
   for (const listener of listeners) listener()
@@ -35,7 +41,7 @@ function schedule(id: number) {
 function show(kind: Kind, message: string) {
   const id = nextId++
   items = [...items, { id, kind, message }]
-  if (kind !== 'warning') schedule(id)
+  if (!persistent[kind]) schedule(id)
   emit()
 }
 
@@ -95,9 +101,9 @@ export function Toaster() {
               key={item.id}
               data-tone={item.kind}
               onPointerEnter={
-                item.kind === 'warning' ? undefined : () => window.clearTimeout(timers.get(item.id))
+                persistent[item.kind] ? undefined : () => window.clearTimeout(timers.get(item.id))
               }
-              onPointerLeave={item.kind === 'warning' ? undefined : () => schedule(item.id)}
+              onPointerLeave={persistent[item.kind] ? undefined : () => schedule(item.id)}
               className={toastStyles().item()}
             >
               <Badge tone={item.kind}>{kindLabel[item.kind]}</Badge>

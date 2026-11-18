@@ -115,10 +115,10 @@ function setStatusProcedure(deps: WorkDeps) {
           },
           { callingSession: null },
         )
-        return { task, residue: null }
+        return { task, residueMessage: null }
       } catch (cause) {
         if (cause instanceof TaskClosedWithResidueError) {
-          return { task: cause.task, residue: cause.message }
+          return { task: cause.task, residueMessage: cause.message }
         }
         throw asWriteError(cause)
       }

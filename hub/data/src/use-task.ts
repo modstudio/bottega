@@ -145,7 +145,7 @@ export function useTask(key: string, recordId?: string) {
           if (refusal(capability?.setStatus)) return null
           const outcome = await setStatus.mutateAsync({ ...localInput, status })
           await refresh()
-          return outcome.residue
+          return outcome.residueMessage
         },
         pending: setStatus.isPending,
         error: setStatus.error,

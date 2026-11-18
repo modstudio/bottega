@@ -42,13 +42,15 @@ export function taskStatusControlValue(detail: TaskScreenDetail): string {
 }
 
 export function statusChangeNotice(
-  outcome: { residue: string | null } | { error: unknown },
+  outcome: { residueMessage: string | null } | { error: unknown },
 ): { kind: 'warning' | 'error'; message: string } | null {
   if ('error' in outcome) {
     const message = outcome.error instanceof Error ? outcome.error.message : String(outcome.error)
     return { kind: 'error', message: `Status not changed: ${message}` }
   }
-  return outcome.residue === null ? null : { kind: 'warning', message: outcome.residue }
+  return outcome.residueMessage === null
+    ? null
+    : { kind: 'warning', message: outcome.residueMessage }
 }
 
 function StatusControl({ detail, result }: { detail: TaskScreenDetail; result: TaskScreenResult }) {
@@ -67,7 +69,7 @@ function StatusControl({ detail, result }: { detail: TaskScreenDetail; result: T
       onChange={async (status) => {
         let notice: ReturnType<typeof statusChangeNotice>
         try {
-          notice = statusChangeNotice({ residue: await setStatus.run(status) })
+          notice = statusChangeNotice({ residueMessage: await setStatus.run(status) })
         } catch (error) {
           notice = statusChangeNotice({ error })
         }

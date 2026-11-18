@@ -27,7 +27,7 @@ export const Warning: StoryObj<typeof meta> = {
         type="button"
         onClick={() =>
           toast.warning(
-            'Task DEV-1 is closed, but claim cleanup remains.\nclear it with: workflow cleanup release-task DEV-1 --project workshop-with-a-long-name',
+            'Task DEV-1 is closed, but claim cleanup remains.\nclear it with: bottega board claim release-task DEV-1 --project workshop-with-a-long-name',
           )
         }
       >
