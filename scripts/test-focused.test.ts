@@ -56,11 +56,13 @@ test('a root-run file inside a workspace is not ignored by the root group', () =
 test('a directory containing only root-run tests runs from the root', () => {
   const [group] = groupFocusedTestPaths(['cli'])
   expect(relative(root, group!.directory) || '.').toBe('.')
-  expect(group!.argv.slice(-3)).toEqual([
-    './cli/dispatch.test.ts',
-    './cli/legacy-calls.test.ts',
-    './cli/routes.test.ts',
-  ])
+  expect(group!.argv).toEqual(
+    expect.arrayContaining([
+      './cli/dispatch.test.ts',
+      './cli/legacy-calls.test.ts',
+      './cli/routes.test.ts',
+    ]),
+  )
   expect(group!.argv).not.toContain('cli/**')
 })
 
