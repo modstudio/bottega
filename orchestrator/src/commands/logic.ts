@@ -397,7 +397,7 @@ function registerTreeCommands(program: Command): void {
     .option('--seed <value>', 'provision the worktree from this project seed')
     .option('--cwd <path>', 'select the project from this working directory', process.cwd())
     .allowExcessArguments(false)
-    .action((options) =>
+    .action(async (options) =>
       treeCreateCommand(
         {
           cwd: options.cwd,

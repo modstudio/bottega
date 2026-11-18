@@ -163,6 +163,7 @@ export const runLifecycleModules: ArchitectureModule[] = [
     '../worktree/provisioning-measurement.ts',
     '../worktree/reader-tree-sharing.ts',
     '../worktree/worktree.ts',
+    '../workflow/workflow-cursor-binding.ts',
     '../worktree/worktree-preflight.ts',
     '../worktree/worktree-readonly.ts',
   ]),

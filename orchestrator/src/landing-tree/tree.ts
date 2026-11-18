@@ -29,6 +29,7 @@ import type { RecordRecipeResource } from '../worktree/worktree-create.ts'
 import { resolveWorktreeLifecycle } from '../worktree/worktree-lifecycle.ts'
 import { projectSeedPreflight, validateProjectSeed } from '../worktree/worktree-seed.ts'
 import type { Worktree } from '../worktree/worktree-types.ts'
+import { bindCursorArguments } from '../workflow/workflow-cursor-binding.ts'
 import type { LandingTreeRunRow } from './landing-tree.ts'
 import {
   LANDING_TREE_AGENT,
@@ -63,7 +64,7 @@ export function landingTreeSourceRun(runId: string): {
   latest: LandingTreeRunRow
 } {
   const columns = `record_id,parent_run_record_id,repo,project_record_id,cwd,worktree,branch,
-    branch_kept,branch_kept_tip,launch_cwd,launch_key,launch_seed,session_id,job,label`
+    branch_kept,branch_kept_tip,launch_cwd,launch_key,launch_seed,session_id,job,label,cursor_record_id`
   const selected = db()
     .query(`SELECT ${columns} FROM run WHERE record_id=?`)
     .get(runId) as LandingTreeRunRow | null
@@ -372,6 +373,10 @@ export async function openLandingTree(runId: string, seed?: string): Promise<Ope
         `landing tree postcondition failed: expected ${branch} at ${plan.tip} with run ${inserted.record_id} ownership`,
       )
     }
+    await bindCursorArguments(
+      { cursorRecordId: latest.cursor_record_id, worktree: created.path },
+      database,
+    )
     finishLandingTreeOpen(root, database, inserted.record_id, startedAt)
     return { path: created.path, branch, tip: plan.tip }
   } catch (error) {

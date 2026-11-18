@@ -28,6 +28,7 @@ export type LandingTreeRunRow = {
   session_id: string | null
   job: string
   label: string | null
+  cursor_record_id: string | null
 }
 
 export type LandingTreeRunAdoptionFacts = {

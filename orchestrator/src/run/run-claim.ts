@@ -19,7 +19,7 @@ import { db, nowIso, sessionId, writeTransaction } from '../database/db.ts'
 import type { ReviewLensInputStatuses } from '../database/review-lens-input-artifact.ts'
 import { namesRecordedRunTree } from '../dispatch/dispatch-preflight.ts'
 import { retargetRepositoryPromptForDispatch } from '../dispatch/prompt-retarget.ts'
-import { appendRunEvent } from '../events.ts'
+import { appendRunEvent, recordRunWarning } from '../events.ts'
 import { checkoutAliases, realpathOrSpelled } from '../git/checkout-identity.ts'
 import { branchOf, gitContext } from '../git/git-environment.ts'
 import { job, jobBoundInstruction } from '../jobs/jobs.ts'
@@ -44,6 +44,7 @@ import { resolveSupersededTurn } from '../route/failover.ts'
 import { runOwnedPaths } from '../run-owned-paths.ts'
 import { type KeepTreeExemption, recordedKeepTreeExemption } from '../worktree/keep-tree-hold.ts'
 import { writerTreeBaseRef } from '../worktree/trunk-base-choice.ts'
+import { bindRecordedRunCursorArguments } from '../workflow/workflow-cursor-binding.ts'
 import { createWorkerWorktree, worktreeExists } from '../worktree/worktree.ts'
 import {
   assertCallerAncestry,
@@ -962,6 +963,8 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
         .query('UPDATE run SET prompt_sha=?, prompt_bytes=? WHERE record_id=?')
         .run(sha(prompt), Buffer.byteLength(prompt), claim.id)
       installExecutorPushGuard(execution.harness, worktree, claim.id)
+      const bindingResult = await bindRecordedRunCursorArguments(claim.id)
+      if (bindingResult.action === 'refused') recordRunWarning(claim.id, bindingResult.warning)
     }
     ;({
       provisionedMcpConfig,
