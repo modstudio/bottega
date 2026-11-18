@@ -121,6 +121,7 @@ function gatePlan(
   projectId: string
   projectName: string
   gateInput: GateInput | undefined
+  gateTooling: string[] | undefined
 } {
   const row = db()
     .query(
