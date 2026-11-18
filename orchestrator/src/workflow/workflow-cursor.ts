@@ -839,7 +839,7 @@ async function nextWorkflowStepImpl(
   } catch (error) {
     if (close.advance.ordinal === null) throw error
     const active = composition.steps[close.advance.ordinal]!
-    throw persistedAdvanceRenderFailure({ row, closed: step, active, args, error })
+    throw persistedAdvanceRenderFailure({ row, closed: step, active, error })
   }
   return {
     text: [takeover.notice, rendered, claimWarning].filter(Boolean).join('\n'),

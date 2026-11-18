@@ -89,14 +89,13 @@ export function refuseMissingAbandonReason(reason: string | undefined): asserts 
 }
 
 export function persistedAdvanceRenderFailure(input: {
-  row: Pick<AdvanceRow, 'id' | 'workflow_slug' | 'project' | 'mode_slug'>
+  row: Pick<AdvanceRow, 'id' | 'workflow_slug' | 'project' | 'mode_slug' | 'args'>
   closed: { n: number; slug: string }
   active: { n: number; slug: string }
-  args: Record<string, string>
   error: unknown
 }): Error {
-  const { row, closed, active, args, error } = input
-  const carriedArgs = Object.entries(args)
+  const { row, closed, active, error } = input
+  const carriedArgs = Object.entries(JSON.parse(row.args) as Record<string, string>)
     .map(([name, value]) => ` --arg ${shellWord(`${name}=${value}`)}`)
     .join('')
   const fetch =

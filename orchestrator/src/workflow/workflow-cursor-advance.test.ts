@@ -142,8 +142,12 @@ async function closeChoice(d: Database, slug: string, outcome?: string): Promise
   )
 }
 
-async function open(d: Database, slug: string): Promise<void> {
-  await composeWorkflowWithCursor(slug, 'fixture', 'default', args, context, d, {}, {})
+async function open(
+  d: Database,
+  slug: string,
+  openArgs: Record<string, string> = args,
+): Promise<void> {
+  await composeWorkflowWithCursor(slug, 'fixture', 'default', openArgs, context, d, {}, {})
 }
 
 describe('conditional workflow cursor advance', () => {
@@ -280,6 +284,7 @@ async function closeStep(
   outcome: string | undefined,
   ruling?: number,
   extra: { review?: string } = {},
+  callArgs: Record<string, string> = args,
 ): Promise<string> {
   const probe = d
     .query<{ number: number }, [string]>(
@@ -291,7 +296,7 @@ async function closeStep(
     slug,
     'fixture',
     'default',
-    args,
+    callArgs,
     'selected',
     context,
     d,
@@ -412,6 +417,7 @@ describe('ruling outcomes and bounded re-entry', () => {
         description: 'Exercises a render failure after a persisted close.',
         arguments: [
           { name: 'key', required: true, description: 'Task key.' },
+          { name: 'branch', required: false, description: 'Branch name.' },
           { name: 'worktree', required: false, description: 'Worktree path.' },
         ],
         modes: [
@@ -428,12 +434,14 @@ describe('ruling outcomes and bounded re-entry', () => {
       d,
     )
     promoteWorkflowLocal('render-failure-after-close', workflow.n, 'publish', 'test', d)
-    await open(d, 'render-failure-after-close')
+    await open(d, 'render-failure-after-close', { ...args, branch: 'work' })
 
-    await expect(closeStep(d, 'render-failure-after-close', undefined)).rejects.toThrow(
+    await expect(
+      closeStep(d, 'render-failure-after-close', undefined, undefined, {}, args),
+    ).rejects.toThrow(
       'Step 1 repro-first closed. Step 2 repro-second is now active.\n' +
         'unresolved workflow placeholder "worktree"; pass --arg worktree=<value> on this step or next call\n' +
-        `Fetch the now-active step with: ${PLATFORM_SLUG} workflow step render-failure-after-close repro-second --mode default --cursor 1 --project fixture --arg key=DEV-1422`,
+        `Fetch the now-active step with: ${PLATFORM_SLUG} workflow step render-failure-after-close repro-second --mode default --cursor 1 --project fixture --arg key=DEV-1422 --arg branch=work`,
     )
     expect(d.query('SELECT ordinal,step_slug FROM workflow_cursor').get()).toEqual({
       ordinal: 1,
