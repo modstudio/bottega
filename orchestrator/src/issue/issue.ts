@@ -19,6 +19,7 @@ import type { RunResult } from '../run/run-types.ts'
 import { terminalSharedGitConfigForRecordedRun } from '../run/shared-git-config-run.ts'
 import { resetSandbox, resolveSecretPaths, sandboxLaunchArgv } from '../sandbox/sandbox.ts'
 import { sandboxRuntimeAvailability, srtInstalled } from '../sandbox/sandbox-runtime.ts'
+import { taskReader } from '../workflow/task-read-port.ts'
 import { DEFAULT_KEEP_TREE_HOURS, keepTreeExemption } from '../worktree/keep-tree-hold.ts'
 import { worktreeDirty } from '../worktree/worktree-attribution.ts'
 import type { Worktree } from '../worktree/worktree-types.ts'
@@ -211,17 +212,13 @@ async function handoff(key: string, title: string, body: string) {
   const path = join(dir, 'body.md')
   try {
     writeFileSync(path, body)
-    const documents = JSON.parse(
-      await hub(['task', 'doc', 'list', key, '--project', PLATFORM_SLUG, '--json']),
-    ) as {
+    const documents = taskReader().documents(key, { project: PLATFORM_SLUG }) as {
       id: string
       role: string | null
     }[]
     const existing = documents.find((document) => document.role === 'handoff')
     if (existing) {
-      const current = JSON.parse(await hub(['task', 'doc', 'show', existing.id, '--json'])) as {
-        version: string
-      }
+      const current = taskReader().document(existing.id)
       await hub([
         'task',
         'doc',
@@ -329,7 +326,7 @@ export async function priorIssueRecord(
     documents?: { id?: unknown; role?: unknown }[]
   },
   showDocument: (id: string) => Promise<string> = async (id) =>
-    hub(['task', 'doc', 'show', id, '--json']),
+    JSON.stringify(taskReader().document(id)),
 ): Promise<string> {
   const comments = taskCommentBodies(shown)
   const documents: string[] = []
@@ -750,7 +747,7 @@ async function recordIssueFailure(
 /** Work exactly one named issue; every durable fact is written before its tree is released. */
 export async function workIssue(key: string): Promise<void> {
   const started = Date.now()
-  const shown = JSON.parse(await hub(['task', 'show', key, '--project', PLATFORM_SLUG, '--json']))
+  const shown = taskReader().show(key, { project: PLATFORM_SLUG })
   const issue = parseFiledIssue(shown)
   const priorRecord = await priorIssueRecord(shown)
   if (issue.kind !== 'defect') {

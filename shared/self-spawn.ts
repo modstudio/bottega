@@ -43,7 +43,8 @@ function sourceArguments(
       return [
         process.env.BOTTEGA_EXEC_PATH ?? process.execPath,
         '--no-env-file',
-        assetPath('orchestrator', 'src', 'run', 'exec.ts'),
+        assetPath('cli', `${PLATFORM_SLUG}.ts`),
+        BOTTEGA_ENTRY_PROTOCOL['run-exec'].compiledArguments[0],
       ]
     case 'ask-server':
       return [assetPath('bin', PLATFORM_SLUG), 'mcp', 'ask-server']

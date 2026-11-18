@@ -1,0 +1,77 @@
+import { installProjectRegisterReader } from '../hub/src/project-register-reader.ts'
+import {
+  installTaskReader,
+  type TaskReadPort,
+} from '../orchestrator/src/workflow/task-read-port.ts'
+
+type HubTaskReads = {
+  task: typeof import('../hub/src/task.ts')
+  document: typeof import('../hub/src/task-document.ts')
+}
+
+let loadedHubTaskReads: HubTaskReads | undefined
+
+type ProjectRegisterReads = {
+  project: typeof import('../orchestrator/src/project/project-read.ts')
+  presentation: typeof import('../orchestrator/src/project/project-list-json.ts')
+  contract: typeof import('../shared/orch-contract.ts')
+}
+
+let loadedProjectRegisterReads: ProjectRegisterReads | undefined
+
+/** Load the register implementation on its first read and reuse it for this process. */
+function projectRegisterReads(): ProjectRegisterReads {
+  if (loadedProjectRegisterReads) return loadedProjectRegisterReads
+  loadedProjectRegisterReads = {
+    project:
+      require('../orchestrator/src/project/project-read.ts') as typeof import('../orchestrator/src/project/project-read.ts'),
+    presentation:
+      require('../orchestrator/src/project/project-list-json.ts') as typeof import('../orchestrator/src/project/project-list-json.ts'),
+    contract: require('../shared/orch-contract.ts') as typeof import('../shared/orch-contract.ts'),
+  }
+  return loadedProjectRegisterReads
+}
+
+/** Load the hub implementation on the first task read and reuse it for this process. */
+function hubTaskReads(): HubTaskReads {
+  if (loadedHubTaskReads) return loadedHubTaskReads
+  loadedHubTaskReads = {
+    task: require('../hub/src/task.ts') as typeof import('../hub/src/task.ts'),
+    document:
+      require('../hub/src/task-document.ts') as typeof import('../hub/src/task-document.ts'),
+  }
+  return loadedHubTaskReads
+}
+
+/** Build the CLI-owned port without loading its hub implementation. */
+function cliTaskReadAdapter(): TaskReadPort {
+  return {
+    list(filters) {
+      return hubTaskReads().task.listTasks(filters)
+    },
+    duplicates(project, title) {
+      const { duplicateCandidates, listTasks } = hubTaskReads().task
+      return duplicateCandidates(listTasks({ project }), title)
+    },
+    show(key, scope) {
+      return hubTaskReads().task.showTask(key, scope)
+    },
+    documents(key, scope) {
+      return hubTaskReads().document.listTaskDocuments(key, scope)
+    },
+    document(value, scope) {
+      return hubTaskReads().document.getTaskDocument(value, scope)
+    },
+  }
+}
+
+/** Install the lazy CLI-owned adapter into the orchestrator process. */
+export function installCliTaskReader(): void {
+  installTaskReader(cliTaskReadAdapter())
+  installProjectRegisterReader((options) => {
+    const { project, presentation, contract } = projectRegisterReads()
+    return contract.OrchProjectListSchema.parse(
+      project.projects(options).map(presentation.listedProjectJson),
+    )
+  })
+}

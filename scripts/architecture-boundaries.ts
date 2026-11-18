@@ -653,6 +653,12 @@ export const importBoundaries: ImportBoundary[] = [
   ),
   ...recordSchemaBoundaries,
   boundary(
+    'project-list-json-boundary',
+    'orchestrator/src/project/project-list-json.ts',
+    ['./declared-project-space.ts', './projects.ts'],
+    'Keep the published project-register mapping beside the register concern.',
+  ),
+  boundary(
     'project-commands-boundary',
     'orchestrator/src/project/project-commands.ts',
     [
@@ -667,12 +673,12 @@ export const importBoundaries: ImportBoundary[] = [
       '../record/record-cache-catalogues.ts',
       '../mcp/mcp-credential-literal.ts',
       '../mcp/mcp-probe.ts',
-      './declared-project-space.ts',
       './project-add-record.ts',
       './project-fill-space.ts',
       './project-fill-space-decision.ts',
       './project-hosted-write.ts',
       './project-record-identity.ts',
+      './project-list-json.ts',
       './project-relink.ts',
       './project-rename.ts',
       './project-set-space.ts',

@@ -28,3 +28,38 @@ export const acceptedSelfSpawnFixture = `
   const command = [...bottegaEntryArgv('ask-server'), 'hub/src/cli.ts']
   Bun.spawn(command)
 `
+
+export const spawnedTaskReadFixture = `
+import { startBounded } from '../shared/bounded-process.ts'
+startBounded(['${PLATFORM_SLUG}', 'task', 'show', 'DEV-1'], {})
+`
+
+export const spawnedTaskWriteFixture = `
+hub(['task', 'set', 'DEV-1', '--status', 'active'])
+`
+
+export const freshTaskReadFixture = `
+function readFreshHubTaskThroughCli() {
+  return startBoundedSync(['${PLATFORM_SLUG}', 'task', 'show', 'DEV-1', '--fresh'], {})
+}
+`
+
+export const nonFreshNamedTaskReadFixture = `
+function readFreshHubTaskThroughCli() {
+  return startBoundedSync(['${PLATFORM_SLUG}', 'task', 'show', 'DEV-1'], {})
+}
+`
+
+export const hubOutputTaskReadFixture = `
+hubOutput(['task', 'list', '--project', '${PLATFORM_SLUG}'])
+`
+
+export const spawnedTaskDocReadFixture = `
+hub(['task', 'doc', 'show', 'DOC-1'])
+`
+
+export const spawnedTaskDuplicatesFixture = `
+hub(['task', 'duplicates', '--project', '${PLATFORM_SLUG}', '--title', 'Duplicate'])
+`
+
+import { PLATFORM_SLUG } from '../shared/brand.ts'

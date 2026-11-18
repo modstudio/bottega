@@ -34,6 +34,7 @@ import {
   workflowCursorClaimHandles,
 } from '../workflow/workflow-cursor-worktrees.ts'
 import {
+  type HubTaskReader,
   type HubTaskReference,
   projectTaskKey,
   readHubTasks,
@@ -374,6 +375,7 @@ export async function contextBrief(
   session: string,
   cwd = process.cwd(),
   database: Database = db(),
+  hubTaskReader: HubTaskReader = readHubTasks,
 ): Promise<ContextBrief> {
   const cursors = await listWorkflowCursors({ session }, database)
   const keylessCursors = cursors.filter((cursor) => !cursor.workflow_key)
@@ -381,11 +383,11 @@ export async function contextBrief(
   const working = workingKeysForBrief(cursors)
   const workingProjects = [...new Set(working.map(({ project }) => project))]
   const [taskRows, autonomy, filedIssues] = await Promise.all([
-    Promise.all(workingProjects.map((project) => readHubTasks(project))).then((rows) =>
+    Promise.all(workingProjects.map((project) => hubTaskReader(project))).then((rows) =>
       rows.flat(),
     ),
     architectSessionContext(cwd, { database }),
-    filedIssueQueueState(projectAt(cwd, database)?.name ?? null),
+    filedIssueQueueState(projectAt(cwd, database)?.name ?? null, hubTaskReader),
   ])
   const liveRuns = database
     .query(

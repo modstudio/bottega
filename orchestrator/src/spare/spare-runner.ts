@@ -16,6 +16,7 @@ import { listDocMetadata } from '../doc/doc-list.ts'
 import { setDocCheckedAgainst } from '../doc/docs.ts'
 import { fileNote, type HubNote, listHubNotes } from '../mcp/hub-notes.ts'
 import { currentProjectRepository, projectByName } from '../project/projects.ts'
+import { taskReader } from '../workflow/task-read-port.ts'
 import {
   classifyDispatch,
   classifyWaitedRow,
@@ -74,7 +75,12 @@ function resolveSpareAgent(): string | null {
 
 /** Whether the configured task key resolves to a real task. */
 function taskKeyResolves(key: string): boolean {
-  return spawnBottega(['task', 'show', key, '--json']).exitCode === 0
+  try {
+    taskReader().show(key)
+    return true
+  } catch {
+    return false
+  }
 }
 
 /** The commit the main checkout of a project currently points at. */

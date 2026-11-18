@@ -18,7 +18,6 @@ import {
   RecordCataloguePullError,
 } from '../record/record-cache-catalogues.ts'
 import { migrateCreate } from '../worktree/worktree-template.ts'
-import { declaredProjectSpace } from './declared-project-space.ts'
 import { projectAddDecision } from './project-add-record.ts'
 import { type ProjectSpaceFillRow, planProjectSpaceFill } from './project-fill-space.ts'
 import { spaceFillNeedsRuling } from './project-fill-space-decision.ts'
@@ -27,6 +26,7 @@ import {
   purgeProjectInHostedRecord,
   refuseHostedProjectSpaceChange,
 } from './project-hosted-write.ts'
+import { listedProjectJson, projectProblems } from './project-list-json.ts'
 import { fillProjectRecordIds } from './project-record-identity.ts'
 import { formatProjectRelink, relinkProjectByName } from './project-relink.ts'
 import { persistLocalProjectSet } from './project-rename.ts'
@@ -40,11 +40,9 @@ import {
   assertProjectRename,
   assertRegisterBranches,
   assertRegisterVisibility,
-  isProjectRepository,
   type Project,
   type ProjectSettings,
   projectByName,
-  projectLifecycleForm,
   projectLocalPurgeRefusals,
   projectRowByName,
   projects,
@@ -121,29 +119,6 @@ const enabledLensIds = (spaceId: string | null): string[] =>
   listLenses(db(), spaceId)
     .filter((lens) => lens.enabled)
     .map((lens) => lens.id)
-
-function listedProjectJson(project: Project) {
-  const { recordId, retiredAt, ...rest } = project
-  return {
-    ...rest,
-    visibility: project.settings.visibility ?? null,
-    record_id: recordId,
-    repository: isProjectRepository(project),
-    ...(retiredAt ? { retired_at: retiredAt } : {}),
-    lifecycle_form: projectLifecycleForm(project),
-    problems: projectProblems(project),
-    commit_hooks_skipped: true,
-    gate: typeof project.settings.gate === 'string' ? project.settings.gate : null,
-  }
-}
-
-function projectProblems(project: Project): string[] {
-  const declared = declaredProjectSpace(project)
-  return [
-    ...validateProjectSettings(project.settings, 'strip', project.path),
-    ...('refused' in declared && !project.retiredAt ? [declared.refused] : []),
-  ]
-}
 
 function emptyProjectListMessage(retired: boolean): string {
   if (retired) return 'no retired projects.'

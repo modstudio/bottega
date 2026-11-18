@@ -6,10 +6,8 @@ export const branchModuleSpecs = [
   {
     file: 'orchestrator/src/branch/task-status-observation.ts',
     allowed: [
-      '../../../shared/bounded-process.ts',
-      '../../../shared/brand.ts',
-      '../../../shared/self-spawn.ts',
       '../../../shared/trackers.ts',
+      '../workflow/task-read-port.ts',
       '../workflow/workflow-task-reference.ts',
     ],
   },

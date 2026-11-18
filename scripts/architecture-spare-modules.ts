@@ -31,6 +31,7 @@ export const spareModules: SpareModule[] = [
     '../doc/docs.ts',
     '../mcp/hub-notes.ts',
     '../project/projects.ts',
+    '../workflow/task-read-port.ts',
     './spare-decisions.ts',
   ]),
 ]

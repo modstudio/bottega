@@ -421,10 +421,8 @@ const declaredModules: ArchitectureModule[] = [
     '../../../shared/call-budgets.ts',
   ]),
   module('orchestrator/src/dispatch/task-cli-read.ts', [
-    '../../../shared/bounded-process.ts',
-    '../../../shared/brand.ts',
-    '../../../shared/self-spawn.ts',
     '../project/projects.ts',
+    '../workflow/task-read-port.ts',
   ]),
   ...mcpModules,
   module('orchestrator/src/sandbox/codex-mcp-preflight.ts', [

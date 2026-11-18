@@ -41,12 +41,8 @@ export const mcpBoundarySpecs: ImportBoundary[] = [
   boundary(
     'task-cli-read-boundary',
     'orchestrator/src/dispatch/task-cli-read.ts',
-    [
-      '../../../shared/bounded-process.ts',
-      '../../../shared/brand.ts',
-      '../../../shared/self-spawn.ts',
-    ],
-    'Keep the declared CLI task read and its bounded process in one tracker adapter.',
+    ['../workflow/task-read-port.ts'],
+    'Keep task lookup adaptation in one adapter over the installed task reader.',
     ['../project/projects.ts'],
   ),
   boundary(

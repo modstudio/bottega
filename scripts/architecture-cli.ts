@@ -18,6 +18,19 @@ export const cliModules = [
       'shared/commander-public-path.ts',
       'shared/install-root.ts',
       'cli/dispatch.ts',
+      'cli/task-read-adapter.ts',
+    ],
+  },
+  {
+    file: 'cli/task-read-adapter.ts',
+    allowed: [
+      'hub/src/project-register-reader.ts',
+      'hub/src/task.ts',
+      'hub/src/task-document.ts',
+      'orchestrator/src/project/project-list-json.ts',
+      'orchestrator/src/project/project-read.ts',
+      'orchestrator/src/workflow/task-read-port.ts',
+      'shared/orch-contract.ts',
     ],
   },
   {
@@ -75,7 +88,10 @@ export function cliCompositionRule(
   return {
     name: 'cli-imports-only-concern-entries',
     severity: 'error' as const,
-    from: { path: '^cli/', pathNot: ['^cli/routes\\.test\\.ts$'] },
+    from: {
+      path: '^cli/',
+      pathNot: ['^cli/routes\\.test\\.ts$', '^cli/task-read-adapter(?:\\.test)?\\.ts$'],
+    },
     to: {
       path: `^(${roots.filter((root) => root !== 'cli').join('|')})/`,
       pathNot: entries.map(exactPath),
