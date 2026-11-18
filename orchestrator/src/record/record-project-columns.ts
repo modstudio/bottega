@@ -36,6 +36,7 @@ export type HostedProjectColumns = {
   gate: string | null
   workerCheck: string | null
   gateInput: string | null
+  gateTooling: string[] | null
   focusedTests: JsonObject | null
   requireCleanMain: boolean
   color: string | null
@@ -74,6 +75,7 @@ export const PROJECT_SETTING_COLUMNS = {
   gate: 'gate',
   workerCheck: 'workerCheck',
   gateInput: 'gateInput',
+  gateTooling: 'gateTooling',
   focusedTests: 'focusedTests',
   keyPrefixes: 'keyPrefixes',
   managedContext: 'managedContext',
@@ -119,7 +121,7 @@ function optionalVisibility(value: unknown, project: string): RepositoryVisibili
 
 function optionalStringArray(
   settings: JsonObject,
-  key: 'keyPrefixes' | 'secretPaths' | 'workerMcpServers',
+  key: 'gateTooling' | 'keyPrefixes' | 'secretPaths' | 'workerMcpServers',
   project: string,
 ): string[] | null {
   const value = settings[key]
@@ -202,6 +204,7 @@ export function hostedProjectColumns(
       settings.gateInput,
       `project ${project} settings.gateInput`,
     ),
+    [PROJECT_SETTING_COLUMNS.gateTooling]: optionalStringArray(settings, 'gateTooling', project),
     [PROJECT_SETTING_COLUMNS.focusedTests]: settingDocument(settings, 'focusedTests', project),
     [PROJECT_SETTING_COLUMNS.requireCleanMain]: settings.requireCleanMain !== false,
     [PROJECT_SETTING_COLUMNS.color]: optionalString(

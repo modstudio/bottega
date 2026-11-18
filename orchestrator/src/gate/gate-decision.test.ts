@@ -334,6 +334,40 @@ test('gate tooling paths include execution inputs and exclude ordinary source', 
   }
 })
 
+test('declared gate tooling globs replace the scripts rule without weakening universal inputs', () => {
+  const gateTooling = ['scripts/check.ts', 'scripts/checks/**']
+  for (const path of ['scripts/build-book-demo.ts', 'scripts/verify/book-render.ts']) {
+    expect(isGateToolingPath(path, 'bun run check --changed', gateTooling)).toBe(false)
+  }
+  for (const path of [
+    'scripts/check.ts',
+    'scripts/checks/changed.ts',
+    'bun.lock',
+    'package.json',
+    '.githooks/pre-commit',
+  ]) {
+    expect(isGateToolingPath(path, 'bun run check --changed', gateTooling)).toBe(true)
+    expect(isGateToolingPath(path, 'bun run check --changed')).toBe(true)
+  }
+  expect(isGateToolingPath('scripts/build-book-demo.ts', 'bun run check --changed')).toBe(true)
+})
+
+test('segnavia fixture reproduction has no changed gate tooling with declared globs', () => {
+  expect(
+    changedGateToolingPaths({
+      diffPaths: [
+        'scripts/build-book-demo.ts',
+        'scripts/demo-book-basic-fixtures.ts',
+        'scripts/fidelity/book-fixtures.ts',
+        'scripts/verify/book-render.ts',
+      ],
+      untrackedPaths: [],
+      gateCommand: 'bun run check --changed',
+      gateTooling: ['scripts/check.ts', 'scripts/checks/**'],
+    }),
+  ).toEqual([])
+})
+
 test('broker tooling evidence combines, deduplicates, filters, and sorts repository observations', () => {
   expect(
     changedGateToolingPaths({

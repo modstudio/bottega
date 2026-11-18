@@ -138,6 +138,7 @@ function gatePlan(
   if (!row.base_commit) throw new Error(`run ${runId} has no recorded base commit`)
   const settings = JSON.parse(row.settings ?? '{}') as {
     gate?: unknown
+    gateTooling?: string[]
     workerCheck?: unknown
     gateInput?: unknown
     trunk?: unknown
@@ -163,6 +164,7 @@ function gatePlan(
     projectId: row.project_record_id,
     projectName: row.project_name,
     gateInput: parseGateInput(settings.gateInput, row.project_name),
+    gateTooling: settings.gateTooling,
   }
 }
 
@@ -300,6 +302,7 @@ function changedGateTooling(
       nulPathListArgs(['ls-files', '--others', '--exclude-standard']),
     ),
     gateCommand: plan.command,
+    gateTooling: plan.gateTooling,
   })
 }
 

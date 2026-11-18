@@ -2,6 +2,7 @@
 /** Pure eligibility, concurrency, and result presentation for a registered worker gate. */
 
 import { isAbsolute, resolve } from 'node:path'
+import { Glob } from 'bun'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 
 export const GATE_INPUTS = ['staged', 'worktree', 'committed'] as const
@@ -308,12 +309,18 @@ function registeredGatePath(command: string): string | null {
 }
 
 /** Classify a changed path that can affect what a registered gate executes. */
-export function isGateToolingPath(path: string, gateCommand: string): boolean {
+export function isGateToolingPath(
+  path: string,
+  gateCommand: string,
+  gateTooling?: readonly string[],
+): boolean {
   const normalized = path.replaceAll('\\', '/').replace(/^\.\//, '')
   const parts = normalized.split('/')
   const name = parts.at(-1) ?? ''
   if (normalized === registeredGatePath(gateCommand)) return true
-  if (parts.includes('scripts') || parts.includes('.githooks')) return true
+  if (parts.includes('.githooks')) return true
+  if (gateTooling?.some((pattern) => new Glob(pattern).match(normalized))) return true
+  if (gateTooling === undefined && parts.includes('scripts')) return true
   if ((GATE_TOOLING_PATH_NAMES as readonly string[]).includes(name)) return true
   if (/^docker-compose/i.test(name) || /^compose.*\.ya?ml$/i.test(name)) return true
   if (parts.length !== 1) return false
@@ -330,9 +337,10 @@ export function changedGateToolingPaths(input: {
   diffPaths: readonly string[]
   untrackedPaths: readonly string[]
   gateCommand: string
+  gateTooling?: readonly string[]
 }): string[] {
   return [...new Set([...input.diffPaths, ...input.untrackedPaths])]
-    .filter((path) => isGateToolingPath(path, input.gateCommand))
+    .filter((path) => isGateToolingPath(path, input.gateCommand, input.gateTooling))
     .sort()
 }
 

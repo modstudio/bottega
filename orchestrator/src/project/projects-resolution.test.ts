@@ -157,6 +157,20 @@ describe('projects are data, not code', () => {
     ).toContain('workerCheck must be a non-empty string')
   })
 
+  test('gateTooling is a non-empty list of relative globs when declared', () => {
+    expect(
+      validateProjectSettings({ gateTooling: ['scripts/check.ts', 'scripts/checks/**'] }, 'strict'),
+    ).toEqual([])
+    expect(validateProjectSettings({ gateTooling: [] }, 'strict')).toContain(
+      'gateTooling must not be empty; an empty list would mean nothing is gate tooling',
+    )
+    for (const pattern of ['/scripts/check.ts', 'scripts/../check.ts']) {
+      expect(validateProjectSettings({ gateTooling: [pattern] }, 'strict').join('\n')).toContain(
+        'must be a relative glob without .. segments',
+      )
+    }
+  })
+
   test('reader MCP tool maps are strict, named, and duplicate-free', () => {
     expect(
       validateProjectSettings(

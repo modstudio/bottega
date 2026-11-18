@@ -256,6 +256,7 @@ export const project = pgTable.withRLS(
     gate: text(),
     workerCheck: text('worker_check'),
     gateInput: text('gate_input'),
+    gateTooling: jsonb('gate_tooling'),
     focusedTests: jsonb('focused_tests'),
     requireCleanMain: boolean('require_clean_main').notNull().default(true),
     color: text(),
