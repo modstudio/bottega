@@ -7,6 +7,7 @@ import { WITHHELD_SECRET_SHAPED } from '../../../shared/secret-shaped.ts'
 import { MachineLabelRefusal } from '../record/machine-name.ts'
 import { classifyRunIdentifier, machineLabelRefusal } from '../run/run-identifier-names.ts'
 import { parseProbeArtifact } from './probe-identifier.ts'
+import type { CheckoutEvidenceLocation } from './workflow-checkout-refusal.ts'
 import {
   commandExitBindingRefusal,
   commandExitMismatchRefusal,
@@ -132,7 +133,7 @@ export type ValidatedEvidence = {
     sessionMatches: boolean
     sessionAdoptedCursor: boolean
     createdAfterStepActivation: boolean
-    checkoutBranch: string | null
+    checkoutLocation: CheckoutEvidenceLocation
     headCommit: string | null
     cursorBranch: string | null
     output: string
@@ -432,7 +433,7 @@ export type PullRequestEvidenceFacts =
       exitCode: number
       sessionBound: boolean
       createdAfterStepActivation: boolean
-      checkoutBranch: string | null
+      checkoutLocation: CheckoutEvidenceLocation
       headCommit: string | null
       cursorBranch: string | null
       output: string
@@ -505,10 +506,10 @@ function decidePullRequestExec(
   if (!facts.createdAfterStepActivation)
     return { met: false, condition: 'the recorded command predates this step activation' }
   if (!facts.cursorBranch) return { met: false, condition: 'this cursor has no branch' }
-  if (facts.checkoutBranch !== facts.cursorBranch)
+  if (facts.checkoutLocation === 'outside-change')
     return {
       met: false,
-      condition: `the recorded command checkout branch is ${facts.checkoutBranch ?? 'unset'}, not this cursor's ${facts.cursorBranch}`,
+      condition: `the recorded command head commit does not belong to this cursor's ${facts.cursorBranch} change`,
     }
   if (!facts.headCommit) return { met: false, condition: 'the recorded command has no head commit' }
   const pullRequestUrl = githubPullRequestUrlIn(facts.output)
@@ -574,7 +575,7 @@ function execPullRequestFacts(
     exitCode: exec.exitCode,
     sessionBound: exec.sessionMatches || exec.sessionAdoptedCursor,
     createdAfterStepActivation: exec.createdAfterStepActivation,
-    checkoutBranch: exec.checkoutBranch,
+    checkoutLocation: exec.checkoutLocation,
     headCommit: exec.headCommit,
     cursorBranch: exec.cursorBranch,
     output: exec.output,

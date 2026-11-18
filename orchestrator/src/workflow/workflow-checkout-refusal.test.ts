@@ -17,6 +17,57 @@ test('checkout evidence accepts a commit from the cursor branch', () => {
   ).toBe('branch')
 })
 
+test('no floor fact about recorded evidence is read from live tree state', () => {
+  const cases = [
+    {
+      name: 'base commit from main before landing',
+      input: {
+        headIsTipOrAncestor: true,
+        headIsOnTrunk: true,
+        landingCommit: null,
+        landingIsHeadOrAncestor: false,
+      },
+      expected: 'outside-change',
+    },
+    {
+      name: 'branch tip from a vanished tree',
+      input: {
+        headIsTipOrAncestor: true,
+        headIsOnTrunk: false,
+        landingCommit: null,
+        landingIsHeadOrAncestor: false,
+      },
+      expected: 'branch',
+    },
+    {
+      name: 'branch commit after landing',
+      input: {
+        headIsTipOrAncestor: true,
+        headIsOnTrunk: true,
+        landingCommit: 'landing',
+        landingIsHeadOrAncestor: false,
+        recordedLandingTip: 'branch-tip',
+        headIsRecordedTipOrAncestor: true,
+        landingIsOnTrunk: true,
+      },
+      expected: 'post-landing',
+    },
+    {
+      name: 'branch tip from a detached checkout',
+      input: {
+        headIsTipOrAncestor: true,
+        headIsOnTrunk: false,
+        landingCommit: null,
+        landingIsHeadOrAncestor: false,
+      },
+      expected: 'branch',
+    },
+  ] as const
+
+  for (const proof of cases)
+    expect(classifyCheckoutEvidence(proof.input), proof.name).toBe(proof.expected)
+})
+
 test('checkout evidence accepts a squash landing commit contained by the checkout head', () => {
   expect(
     classifyCheckoutEvidence({
@@ -60,7 +111,6 @@ test('checkout evidence refuses an unrelated head with no landing commit', () =>
 test('an unavailable landing commit names the condition and guarded refresh remedy', () => {
   const refusal = checkoutOutsideChangeRefusal('--gate 3042', 'DEV-1535-work', '/fixture/main', {
     project: 'fixture',
-    branch: 'main',
     checkoutPath: '/fixture/main',
     headIsTipOrAncestor: false,
     landingCommit: 'dd3e2d8050120bf3d676f86257d0c92c0c5bff41',
@@ -77,7 +127,6 @@ test('an unavailable landing commit names the condition and guarded refresh reme
 test('every outside-change refusal path names a runnable remedy command', () => {
   const base = {
     project: 'fixture',
-    branch: 'main',
     checkoutPath: '/fixture/main',
     headIsTipOrAncestor: false,
     landingBranch: 'main',

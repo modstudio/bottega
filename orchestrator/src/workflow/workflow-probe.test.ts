@@ -420,7 +420,7 @@ test('a sha line, pull-request URL, and refusal remain usable evidence', async (
         exitCode: 0,
         sessionBound: true,
         createdAfterStepActivation: true,
-        checkoutBranch: 'DEV-977-work',
+        checkoutLocation: 'branch',
         headCommit: 'abc',
         cursorBranch: 'DEV-977-work',
         output: result.outputTail,

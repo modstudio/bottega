@@ -26,7 +26,7 @@ const exec = {
   exitCode: 0,
   sessionBound: true,
   createdAfterStepActivation: true,
-  checkoutBranch: 'DEV-977-work',
+  checkoutLocation: 'branch' as const,
   headCommit: 'abc',
   cursorBranch: 'DEV-977-work',
   output: '',
@@ -54,7 +54,7 @@ const matchingExecEvidence = {
     sessionMatches: true,
     sessionAdoptedCursor: false,
     createdAfterStepActivation: true,
-    checkoutBranch: exec.checkoutBranch,
+    checkoutLocation: exec.checkoutLocation,
     headCommit: exec.headCommit,
     cursorBranch: exec.cursorBranch,
     output: `opened ${url}`,
@@ -70,6 +70,25 @@ const decide = (evidence: typeof matchingExecEvidence) =>
     finishing: false,
     openObligations: [],
   })
+
+test('no floor fact about recorded evidence is read from live tree state', () => {
+  const cases = [
+    ['base commit from main before landing', 'outside-change', false],
+    ['branch tip from a vanished tree', 'branch', true],
+    ['branch commit after landing', 'post-landing', true],
+    ['branch tip from a detached checkout', 'branch', true],
+  ] as const
+
+  for (const [name, checkoutLocation, met] of cases) {
+    const decision = decidePullRequestEvidence({
+      ...exec,
+      checkoutLocation,
+      output: `opened ${url}`,
+      link,
+    })
+    expect(decision.met, name).toBe(met)
+  }
+})
 
 test('pr-create exec evidence refuses help and requires a matching pull-request URL', () => {
   expect(
