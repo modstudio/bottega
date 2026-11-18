@@ -6,6 +6,8 @@ primary_region = "ewr"
 
 [deploy]
   release_command = "bun orchestrator/src/record/record-release-check.ts hub"
+  wait_timeout = "15m"
+  release_command_timeout = "15m"
 
 [http_service]
   internal_port = 3000

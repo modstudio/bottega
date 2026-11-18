@@ -4,6 +4,9 @@ primary_region = "ewr"
 [build]
   dockerfile = "Dockerfile"
 
+[deploy]
+  wait_timeout = "15m"
+
 [[vm]]
   size = "shared-cpu-1x"
   memory = "256mb"

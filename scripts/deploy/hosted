@@ -132,13 +132,33 @@ fi
 printf '%s\n' "$migrate_output"
 
 if [[ "$APP" == "api" ]]; then
-  exec env -u BOTTEGA_RECORD_MIGRATE_URL fly deploy --config "$PROJECT_ROOT/orchestrator/deploy/api/fly.toml" \
-    --build-arg GIT_SHA="$commit"
+  if env -u BOTTEGA_RECORD_MIGRATE_URL fly deploy --config "$PROJECT_ROOT/orchestrator/deploy/api/fly.toml" \
+    --build-arg GIT_SHA="$commit"; then
+    deploy_status=0
+  else
+    deploy_status=$?
+  fi
+else
+  if env -u BOTTEGA_RECORD_MIGRATE_URL fly deploy --config "$PROJECT_ROOT/hub/deploy/fly.toml" \
+    --build-arg VITE_HUB_MODE=hosted \
+    --build-arg VITE_RECORD_API_URL=https://api.bottega.run \
+    --build-arg VITE_PUBLIC_SITE_ORIGIN=https://bottega.run \
+    --build-arg VITE_APP_ORIGIN=https://app.bottega.run \
+    --build-arg GIT_SHA="$commit"; then
+    deploy_status=0
+  else
+    deploy_status=$?
+  fi
 fi
 
-exec env -u BOTTEGA_RECORD_MIGRATE_URL fly deploy --config "$PROJECT_ROOT/hub/deploy/fly.toml" \
-  --build-arg VITE_HUB_MODE=hosted \
-  --build-arg VITE_RECORD_API_URL=https://api.bottega.run \
-  --build-arg VITE_PUBLIC_SITE_ORIGIN=https://bottega.run \
-  --build-arg VITE_APP_ORIGIN=https://app.bottega.run \
-  --build-arg GIT_SHA="$commit"
+if release_line="$(
+  env -u BOTTEGA_RECORD_MIGRATE_URL fly releases -a "$fly_app" --json |
+    bun --no-env-file -e \
+      'const rows = JSON.parse(await Bun.stdin.text()); const row = rows[0]; if (!row) process.exit(1); console.log(`fly release v${row.Version} ${row.Status} created ${row.CreatedAt}`)'
+)"; then
+  printf '%s\n' "$release_line"
+else
+  echo "fly release could not be read for $fly_app"
+fi
+
+exit "$deploy_status"
