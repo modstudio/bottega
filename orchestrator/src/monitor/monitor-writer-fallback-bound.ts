@@ -4,6 +4,7 @@
 import type { Database } from 'bun:sqlite'
 import { db } from '../database/db.ts'
 import { resolveRecordedRunJob } from '../jobs/jobs.ts'
+import { FINAL_MESSAGE_FALLBACK_MARKER } from '../run/run-live.ts'
 import type { MonitorCondition } from './monitor-types.ts'
 
 const WRITER_FALLBACK_BOUND_LOOKBACK_MS = 24 * 60 * 60_000
@@ -24,7 +25,7 @@ function writerFallbackBoundRows(database: Database, clock: number): WriterFallb
       `SELECT record_id,started_at,session_id,job,branch,minted_branch
          FROM run
         WHERE status='ok' AND exit_code=143
-          AND error LIKE '%used final-message fallback%'
+          AND error LIKE '%${FINAL_MESSAGE_FALLBACK_MARKER}%'
           AND started_at>=?
         ORDER BY started_at,record_id`,
     )

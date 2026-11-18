@@ -215,6 +215,8 @@ async function closeLiveBrokers(
 }
 
 /** A missing named reply is observable even when its final-message fallback is valid. */
+export const FINAL_MESSAGE_FALLBACK_MARKER = 'used final-message fallback'
+
 export function replyFileFallbackError(
   replyFile: string,
   present: boolean,
@@ -223,7 +225,7 @@ export function replyFileFallbackError(
   turnCeiling: number | null = null,
 ): string | null {
   if (present) return error
-  const notice = `${REPLY_FILE_NAME} missing at ${replyFile}; used final-message fallback`
+  const notice = `${REPLY_FILE_NAME} missing at ${replyFile}; ${FINAL_MESSAGE_FALLBACK_MARKER}`
   const ceiling =
     turnCeiling !== null && modelCalls !== null && modelCalls >= turnCeiling
       ? `; the run stopped at the Goose turn ceiling (${turnCeiling})`

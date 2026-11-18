@@ -1,6 +1,7 @@
 import { expect, test } from 'bun:test'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
+import { FINAL_MESSAGE_FALLBACK_MARKER } from '../run/run-live.ts'
 import { writerOkOnFallbackAtBoundConditions } from './monitor-writer-fallback-bound.ts'
 
 test('reports only an ok writer killed at the bound with a final-message fallback', () => {
@@ -20,7 +21,7 @@ test('reports only an ok writer killed at the bound with a final-message fallbac
   })
   db()
     .query('UPDATE run SET exit_code=143,error=? WHERE record_id=?')
-    .run('reply.json missing at /tmp/reply.json; used final-message fallback', fallback)
+    .run(`reply.json missing at /tmp/reply.json; ${FINAL_MESSAGE_FALLBACK_MARKER}`, fallback)
   db().query('UPDATE run SET exit_code=143,error=NULL WHERE record_id=?').run(replyFile)
 
   expect(writerOkOnFallbackAtBoundConditions(db(), clock)).toEqual([

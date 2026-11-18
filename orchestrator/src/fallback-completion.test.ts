@@ -19,13 +19,16 @@ const progressReplies = [
 ]
 
 describe('fallback completion decision', () => {
-  test.each(progressReplies)('a timed-out sighted progress reply is incomplete', (finalMessage) => {
+  test('a timed-out sighted completion reply is incomplete', () => {
     expect(
       decideFallbackCompletion({
         writesJob: true,
         timedOut: true,
         replyFilePresent: false,
-        finalMessage,
+        finalMessage: JSON.stringify({
+          status: 'done',
+          summary: 'Implemented fallback completion handling; tests pass.',
+        }),
       }),
     ).toBe(false)
   })

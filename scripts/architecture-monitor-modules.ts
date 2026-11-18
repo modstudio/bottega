@@ -230,6 +230,7 @@ export const monitorModules: MonitorModule[] = [
     'bun:sqlite',
     '../database/db.ts',
     '../jobs/jobs.ts',
+    '../run/run-live.ts',
     './monitor-types.ts',
   ]),
   module('orchestrator/src/monitor/monitor.ts', [

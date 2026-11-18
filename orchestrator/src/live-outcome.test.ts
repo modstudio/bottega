@@ -8,7 +8,7 @@ import {
   LAST_VENDOR_EVENT_TYPE_MAX,
   type LiveOutcomeFacts,
 } from './live-outcome.ts'
-import { decideOutcome } from './outcome.ts'
+import { decideOutcome, decideOutcomeRule } from './outcome.ts'
 import { decideFailover } from './route/failover.ts'
 import { collectReplySource, type ReplyContract } from './run/run-reply-source.ts'
 import { composeCodexThrottleNotice } from './transport/codex-throttle.ts'
@@ -48,6 +48,15 @@ const outcome = (facts: Partial<LiveOutcomeFacts>) => {
   return { ...decideOutcome(derived.inputs), error: derived.error }
 }
 
+const ruledOutcome = (facts: Partial<LiveOutcomeFacts>) => {
+  const derived = deriveLiveOutcome({ ...base, ...facts })
+  return {
+    ...decideOutcome(derived.inputs),
+    rule: decideOutcomeRule(derived.inputs),
+    error: derived.error,
+  }
+}
+
 describe('live outcome derivation', () => {
   test('a first-throttle cancellation remains quota rather than interruption', () => {
     const error = composeCodexThrottleNotice({ attempt: 1, max: 5 })
@@ -79,6 +88,41 @@ describe('live outcome derivation', () => {
         transportStopReason: 'cancelled',
       }),
     ).toEqual({ status: 'ok', failureKind: null, error: null })
+  })
+
+  test('an idle-killed writer progress fallback without changed files remains idle', () => {
+    expect(
+      ruledOutcome({
+        contractStatus: 'done',
+        output: JSON.stringify({
+          status: 'done',
+          summary: "I'm continuing to inspect the implementation.",
+          files_changed: [],
+        }),
+        idleKilled: true,
+        idleKillError: 'idle-killed after 10m with no CPU',
+      }),
+    ).toEqual({
+      status: 'failed',
+      failureKind: 'idle',
+      rule: 'idle',
+      error: 'idle-killed after 10m with no CPU',
+    })
+  })
+
+  test('an idle-killed writer progress fallback with changed files is idle-completed', () => {
+    expect(
+      ruledOutcome({
+        contractStatus: 'done',
+        output: JSON.stringify({
+          status: 'done',
+          summary: "I'm continuing to report the completed implementation.",
+          files_changed: ['orchestrator/src/live-outcome.ts'],
+        }),
+        idleKilled: true,
+        idleKillError: 'idle-killed after 10m with no CPU',
+      }),
+    ).toEqual({ status: 'ok', failureKind: null, rule: 'idle-completed', error: null })
   })
 
   test.each(['acp', 'cli'])('an idle kill outranks a %s transport cancel', (transportName) => {
