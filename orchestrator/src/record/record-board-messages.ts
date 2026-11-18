@@ -76,11 +76,11 @@ import {
 import { type BoardTenant, boardUuidArray, withBoardTenant } from './record-board-tx.ts'
 
 /** Postgres predicate for a live, visible duplicate-eligible root. */
-function hostedBoardDuplicateLiveSql(tx: SQL, now: string, alias = '') {
+function hostedBoardDuplicateLiveSql(tx: SQL, clock: number, alias = '') {
   const prefix = alias ? `${alias}.` : ''
+  const now = new Date(clock).toISOString()
   return tx.unsafe(
-    `${prefix}withdrawn_at IS NULL AND ${prefix}expires_at>$1::timestamptz AND ${prefix}hidden_at IS NULL`,
-    [now],
+    `${prefix}withdrawn_at IS NULL AND ${prefix}expires_at>'${now}'::timestamptz AND ${prefix}hidden_at IS NULL`,
   )
 }
 
@@ -257,7 +257,6 @@ async function duplicateRootId(
   clock: number,
 ): Promise<string | null> {
   const duplicateSince = new Date(clock - BOARD_DUPLICATE_WINDOW_MS).toISOString()
-  const now = new Date(clock).toISOString()
   const candidates = (await tx`
     SELECT id FROM board_message
     WHERE kind=${input.kind} AND purpose=${input.purpose} AND author_user_id=${input.userId}::uuid
@@ -266,7 +265,7 @@ async function duplicateRootId(
       AND audience IS NOT DISTINCT FROM ${input.audience}
       AND title IS NOT DISTINCT FROM ${input.title}
       AND body=${input.body}
-      AND ${hostedBoardDuplicateLiveSql(tx, now)}
+      AND ${hostedBoardDuplicateLiveSql(tx, clock)}
       AND created_at>=${duplicateSince}::timestamptz
     ORDER BY created_at DESC
   `) as { id: string }[]
@@ -664,7 +663,6 @@ async function replyMember(
   clock: number,
 ): Promise<HostedBoardMessage> {
   const duplicateSince = new Date(clock - BOARD_DUPLICATE_WINDOW_MS).toISOString()
-  const now = new Date(clock).toISOString()
   const duplicate = (await tx`
     SELECT reply.id FROM board_message AS reply
     JOIN board_message AS root ON root.id=reply.thread_root_id
@@ -673,7 +671,7 @@ async function replyMember(
       AND reply.thread_root_id=${String(root.id)}::uuid AND reply.body=${input.body}
       AND reply.audience IS NOT DISTINCT FROM ${audience}
       AND reply.withdrawn_at IS NULL AND reply.hidden_at IS NULL
-      AND ${hostedBoardDuplicateLiveSql(tx, now, 'root')}
+      AND ${hostedBoardDuplicateLiveSql(tx, clock, 'root')}
       AND reply.created_at>=${duplicateSince}::timestamptz
     ORDER BY reply.created_at DESC LIMIT 1
   `) as { id: string }[]
