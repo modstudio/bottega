@@ -11,6 +11,7 @@ import type {
 } from '../record/record-task-flow-write-contract.ts'
 import type { TaskFlowLocalReadMethod, TaskFlowWriteMethod } from './task-flow-store-methods.ts'
 import {
+  nextCursorNumber,
   type TaskFlowSqliteWriteResult,
   writeSqliteTaskFlow,
 } from './task-flow-store-sqlite-write.ts'
@@ -127,6 +128,7 @@ class SqliteTaskFlowStore {
              session_id=COALESCE(excluded.session_id,workflow_cursor.session_id),
              updated_at=excluded.updated_at`
         : ''
+    const number = nextCursorNumber(this.database, row.projectRecordId)
     return this.database
       .query<{ record_id: string }, (string | number | null)[]>(
         `INSERT INTO workflow_cursor
@@ -134,13 +136,13 @@ class SqliteTaskFlowStore {
           task_flow_record_id,instance_id,session_id,workflow_version_record_id,catalogue_version_record_id,
           args,autonomy,ordinal,step_slug,state,closed,question,total_steps,created_at,updated_at,enforcement,
           opened_machine_id,taken_over_from_machine_id,last_advanced_machine_id,revision)
-         VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM workflow_cursor WHERE project_record_id=?),?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
          ${conflictSql}
          RETURNING record_id`,
       )
       .get(
         row.recordId,
-        row.projectRecordId,
+        number,
         row.project,
         row.projectRecordId,
         row.workflow,
