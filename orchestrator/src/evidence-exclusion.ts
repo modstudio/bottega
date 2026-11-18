@@ -20,6 +20,7 @@ import type { Delivery, Fidelity, Quality } from './score/score.ts'
 import { enqueueScoreRecord } from './score/score-outbox.ts'
 import { recordScoreVerdict } from './score/score-verdict-record.ts'
 import {
+  axisOnlyJobFacts,
   refuseChildTurnVoid,
   refuseUnusableThirdVerdictWord,
   refuseUnvoid,
@@ -62,12 +63,7 @@ export function scoredVoidFidelity(
     delivery,
     quality: quality ?? null,
     fidelity: needsFidelity ? (fidelity ?? null) : null,
-    job: {
-      writesRepo: jobNeedsFidelity,
-      producesFindings: false,
-      hasAnyReviewGrades: false,
-      hasRequiredReviewGrades: true,
-    },
+    job: axisOnlyJobFacts(jobNeedsFidelity),
     failureKind: null,
   })
   if (refusal) throw new Error(refusal.message)

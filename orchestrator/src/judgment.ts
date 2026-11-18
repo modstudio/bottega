@@ -54,6 +54,7 @@ import {
 import { enqueueScoreRecord } from './score/score-outbox.ts'
 import { recordScoreVerdict } from './score/score-verdict-record.ts'
 import {
+  axisOnlyJobFacts,
   refuseUnusableThirdVerdictWord,
   refuseVerdict,
   type VerdictRefusal,
@@ -489,12 +490,7 @@ function refuseAxesEarly(
     delivery: input.delivery ?? '',
     quality: input.quality ?? null,
     fidelity: input.fidelity ?? null,
-    job: {
-      writesRepo: input.writesRepo,
-      producesFindings: false,
-      hasAnyReviewGrades: false,
-      hasRequiredReviewGrades: true,
-    },
+    job: axisOnlyJobFacts(input.writesRepo),
     failureKind: input.failureKind,
   })
 }

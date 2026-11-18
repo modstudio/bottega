@@ -11,7 +11,7 @@ import type { Readable, Writable } from 'node:stream'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { db, nowIso, sessionId } from '../database/db.ts'
 import { JOBS } from '../jobs/jobs.ts'
-import { refuseVerdict, type VerdictRefusal } from '../verdict/verdict-rules.ts'
+import { axisOnlyJobFacts, refuseVerdict, type VerdictRefusal } from '../verdict/verdict-rules.ts'
 import { gwetAc1, quadraticWeightedKappa } from './agreement.ts'
 import { DELIVERY, type Delivery, FIDELITY, type Fidelity, QUALITY, type Quality } from './score.ts'
 
@@ -87,7 +87,7 @@ export async function recalibrate(
       const quality = answer[1] as Quality | undefined
       const fidelity = answer[2] as Fidelity | undefined
       const needsFidelity = writes && delivery !== 'none'
-      const refusal = refuseRecalibrationVerdict(delivery, quality, fidelity, writes)
+      const refusal = refuseRecalibrationVerdict(delivery, quality, fidelity, writes, needsFidelity)
       if (refusal) throw new Error(refusal.message)
       if (
         (!needsFidelity && fidelity) ||
@@ -147,18 +147,13 @@ export function refuseRecalibrationVerdict(
   quality: string | undefined,
   fidelity: string | undefined,
   writesRepo: boolean,
+  needsFidelity: boolean,
 ): VerdictRefusal | null {
-  const needsFidelity = writesRepo && delivery !== 'none'
   return refuseVerdict({
     delivery: delivery ?? '',
     quality: quality ?? null,
     fidelity: needsFidelity ? (fidelity ?? null) : null,
-    job: {
-      writesRepo,
-      producesFindings: false,
-      hasAnyReviewGrades: false,
-      hasRequiredReviewGrades: true,
-    },
+    job: axisOnlyJobFacts(writesRepo),
     failureKind: null,
   })
 }

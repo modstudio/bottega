@@ -510,16 +510,9 @@ describe('judge ruling', () => {
       { delivery: 'full', quality: 'right', fidelity: null },
     ])
 
-    const scoreInvalid = insert('ok', 'file-question')
     const judgeInvalid = insert('ok', 'file-question')
     const invalidMessage = "'other' is not a verdict word for file-question; remove it"
-    await expect(score(scoreInvalid, ['full', 'right', 'other'])).rejects.toThrow(invalidMessage)
     await expect(judge(judgeInvalid, ['full', 'right', 'other'])).rejects.toThrow(invalidMessage)
-    expect(
-      db()
-        .query('SELECT COUNT(*) AS n FROM score WHERE run_record_id IN (?,?)')
-        .get(scoreInvalid, judgeInvalid),
-    ).toEqual({ n: 0 })
   })
 
   test('score refuses an unusable third word without changing a stored verdict or note', async () => {

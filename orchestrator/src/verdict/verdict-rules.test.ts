@@ -4,6 +4,7 @@ import { scoredVoidFidelity } from '../evidence-exclusion.ts'
 import { refuseJudgeVerdictAxes } from '../judgment.ts'
 import { refuseRecalibrationVerdict } from '../score/recalibration.ts'
 import {
+  axisOnlyJobFacts,
   type JobFacts,
   refuseChildTurnVoid,
   refuseHostedUnvoid,
@@ -137,6 +138,7 @@ describe('verdict rules', () => {
     { delivery: 'none', quality: 'right', fidelity: undefined, writesRepo: false },
     { delivery: 'full', quality: 'other', fidelity: undefined, writesRepo: false },
     { delivery: 'full', quality: 'right', fidelity: 'other', writesRepo: true },
+    { delivery: 'full', quality: 'right', fidelity: undefined, writesRepo: true },
   ] as const)(
     'keeps caller refusal %o identical',
     ({ delivery, quality, fidelity, writesRepo }) => {
@@ -144,12 +146,7 @@ describe('verdict rules', () => {
         delivery,
         quality,
         fidelity: writesRepo && (delivery as string) !== 'none' ? (fidelity ?? null) : null,
-        job: {
-          writesRepo,
-          producesFindings: false,
-          hasAnyReviewGrades: false,
-          hasRequiredReviewGrades: true,
-        },
+        job: axisOnlyJobFacts(writesRepo),
         failureKind: null,
       }
       const canonical = refuseVerdict(facts)?.message
@@ -168,18 +165,28 @@ describe('verdict rules', () => {
       }
 
       expect(voidMessage).toBe(canonical)
+      const judgeRefusal = refuseJudgeVerdictAxes(
+        { log() {}, error() {}, pairHint: () => '' },
+        writesRepo ? 'implement' : 'file-question',
+        null,
+        [delivery, quality, fidelity],
+        writesRepo,
+      )
+      if (writesRepo && delivery === 'full' && fidelity === undefined) {
+        // Judge fills 'faithful' and checks for a missing score later.
+        expect(judgeRefusal).toBeNull()
+      } else {
+        expect(judgeRefusal?.message).toBe(canonical)
+      }
       expect(
-        refuseJudgeVerdictAxes(
-          { log() {}, error() {}, pairHint: () => '' },
-          writesRepo ? 'implement' : 'file-question',
-          null,
-          [delivery, quality, fidelity],
+        refuseRecalibrationVerdict(
+          delivery,
+          quality,
+          fidelity,
           writesRepo,
+          writesRepo && (delivery as string) !== 'none',
         )?.message,
       ).toBe(canonical)
-      expect(refuseRecalibrationVerdict(delivery, quality, fidelity, writesRepo)?.message).toBe(
-        canonical,
-      )
     },
   )
 
