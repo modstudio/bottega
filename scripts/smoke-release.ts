@@ -114,10 +114,10 @@ git -C /tmp/probe-repository config user.email smoke@example.invalid
 git -C /tmp/probe-repository config user.name 'Release Smoke'
 printf '%s\\n' 'release sandbox smoke' > /tmp/probe-repository/README.md
 cp -R /workflow-tree /tmp/probe-repository/.agents
-git -C /tmp/probe-repository add README.md
+git -C /tmp/probe-repository add README.md .agents
 git -C /tmp/probe-repository commit -m 'DEV-1123 release smoke fixture' >/dev/null
 printf '%s\\n' '#!/bin/sh' 'set -eu' 'writing_worktree=$(cat /tmp/mcp-state/writing-worktree)' 'writing_hooks=$(cat /tmp/mcp-state/writing-hooks)' 'case "$writing_hooks" in "$writing_worktree"/*) exit 1 ;; esac' 'writing_branch=$(cat /tmp/mcp-state/writing-branch)' 'test "$(git -C /tmp/probe-repository log -1 --format=%s "$writing_branch")" = "DEV-1091 guarded binary smoke"' > /tmp/verify-release-probe
-printf '%s\\n' '{"keyPrefixes":["DEV"]}' > /tmp/release-smoke-settings.json
+printf '%s\\n' '{"keyPrefixes":["DEV"],"docs":{"protocol":"orch-docs"}}' > /tmp/release-smoke-settings.json
 chmod 755 /tmp/verify-release-probe
 useradd --create-home --shell /bin/sh smoke
 mkdir -p /tmp/fake-bin /tmp/mcp-state /home/smoke/.codex
@@ -142,20 +142,22 @@ su -s /bin/sh smoke -c '
   printf "%s\\n" "$agent_output" | grep "^grok "
   cd /tmp/probe-repository
   ${installedBinary} project add /tmp/probe-repository --name release-smoke
-  ${installedBinary} project set release-smoke --settings "$(cat /tmp/release-smoke-settings.json)"
+  ${installedBinary} project set release-smoke --stack git --settings "$(cat /tmp/release-smoke-settings.json)"
   ${installedBinary} workflow import --cwd /tmp/probe-repository --reason "DEV-2421 release smoke workflow"
   ${installedBinary} workflow promote-tree --cwd /tmp/probe-repository --reason "DEV-2421 release smoke workflow"
   smoke_task=$(${installedBinary} task new --project release-smoke --title "Verify installed release")
   ${installedBinary} workflow compose verify-release --project release-smoke --arg key="$smoke_task"
-  cursor=$(sqlite3 /tmp/state/orchestrator/orchestrator.db "SELECT number FROM workflow_cursor WHERE project='release-smoke' AND state='open' ORDER BY number DESC LIMIT 1")
+  cursor=$(sqlite3 /tmp/state/orchestrator/orchestrator.db "SELECT number FROM workflow_cursor ORDER BY number DESC LIMIT 1")
   test -n "$cursor"
   printf "%s\\n" "$cursor" > /tmp/mcp-state/workflow-cursor
   printf "%s\\n" "$smoke_task" > /tmp/mcp-state/smoke-task
   ${installedBinary} workflow next --cursor "$cursor" --artifact "task:$smoke_task" --note "Probe repository and smoke task created."
   ${installedBinary} workflow probe -- git status --short
   ${installedBinary} workflow dispatch implement --cursor "$cursor" --agent codex "Make the release smoke fixture commit."
-  run_number=$(sqlite3 /tmp/state/orchestrator/orchestrator.db "SELECT number FROM run WHERE job='implement' ORDER BY number DESC LIMIT 1")
+  run_number=$(sqlite3 /tmp/state/orchestrator/orchestrator.db "SELECT number FROM run ORDER BY number DESC LIMIT 1")
   test -n "$run_number"
+  ${installedBinary} run wait "$run_number"
+  ${installedBinary} run result "$run_number"
   ${installedBinary} workflow next --cursor "$cursor" --run "$run_number" --note "Writing probe completed."
 '
 writing_worktree=$(cat /tmp/mcp-state/writing-worktree)
@@ -175,7 +177,7 @@ su -s /bin/sh smoke -c '
   cursor=$(cat /tmp/mcp-state/workflow-cursor)
   smoke_task=$(cat /tmp/mcp-state/smoke-task)
   ${installedBinary} workflow exec -- /tmp/verify-release-probe
-  exec_id=$(sqlite3 /tmp/state/orchestrator/orchestrator.db "SELECT number FROM probe WHERE kind='exec' ORDER BY number DESC LIMIT 1")
+  exec_id=$(sqlite3 /tmp/state/orchestrator/orchestrator.db "SELECT number FROM probe ORDER BY number DESC LIMIT 1")
   test -n "$exec_id"
   ${installedBinary} workflow next --cursor "$cursor" --artifact "exec:$exec_id" --note "Guard placement and run commit verified."
   ${installedBinary} task show "$smoke_task"
