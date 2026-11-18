@@ -4,11 +4,12 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { markRecordIdentityChanged } from '../../../shared/record-session.ts'
 import { STATE_HOME_ENV } from '../../../shared/state-directory.ts'
-import { recordApiClientOverRealTransport } from './record-api-client.ts'
+import { recordApiClientOver } from './record-api-client.ts'
 import type { RecordClientRequest } from './record-api-client-paths.ts'
 import {
   forgetRecordIdentityMemo,
   RECORD_IDENTITY_MEMO_MAX_AGE_MS,
+  recordIdentityMemoRequest,
 } from './record-identity-memo.ts'
 
 const identity = {
@@ -80,10 +81,9 @@ function countingRequest(onWhoami: () => Promise<typeof identity> = async () => 
 }
 
 function realClients(request: RecordClientRequest, now: () => number = Date.now) {
-  return [
-    recordApiClientOverRealTransport(request, now),
-    recordApiClientOverRealTransport(request, now),
-  ] as const
+  const realRequest = () =>
+    recordIdentityMemoRequest(request, () => process.env.BOTTEGA_RECORD_API_URL!, now)
+  return [recordApiClientOver(realRequest()), recordApiClientOver(realRequest())] as const
 }
 
 describe('record identity process memo', () => {

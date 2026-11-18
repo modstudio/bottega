@@ -62,10 +62,7 @@ import type { RecordContextItemInput } from './record-context-items.ts'
 export { recordAuthRefusal, recordAuthToken } from './record-api-client-error.ts'
 export { RecordApiRequestError } from './record-api-client-response.ts'
 
-import {
-  markRecordIdentityChanged,
-  sendWithStoredRecordSessionToken,
-} from '../../../shared/record-session.ts'
+import { sendWithStoredRecordSessionToken } from '../../../shared/record-session.ts'
 import {
   type RecordRoutingEvidenceClient,
   recordRoutingEvidenceClient,
@@ -78,7 +75,6 @@ import {
 import type { RecordSettingsClient } from './record-api-client-settings.ts'
 import { boardStreamHeaders, recordTransport } from './record-api-client-transport.ts'
 import { type RecordWorkflowClient, recordWorkflowClient } from './record-api-client-workflow.ts'
-import { forgetRecordIdentityMemo, memoizedRecordIdentity } from './record-identity-memo.ts'
 import type {
   HostedBoardAcceptInput,
   HostedBoardChanges,
@@ -101,6 +97,7 @@ import {
   type RecordDocWriteResponse,
   recordDocWriteResponseFields,
 } from './record-doc-transport-contract.ts'
+import { recordIdentityMemoRequest } from './record-identity-memo.ts'
 import type { HostedRecordInvitation } from './record-pending-invitations.ts'
 import type {
   PublicRecordDoc,
@@ -739,26 +736,9 @@ export function recordApiClient(request = recordApiRequest): RecordApiClient {
   if (injected) return injected
   if (process.env.NODE_ENV === 'test' && !process.env.BOTTEGA_TEST_POSTGRES_CONTAINER)
     throw new Error('record API client refuses a real base URL unless a stub is injected in tests')
-  return request === recordApiRequest
-    ? recordApiClientOverRealTransport(request)
-    : recordApiClientOver(request)
-}
-
-export function recordApiClientOverRealTransport(
-  request: RecordClientRequest,
-  now: () => number = Date.now,
-): RecordApiClient {
-  const client = recordApiClientOver(request)
-  const whoami = client.whoami
-  const setActiveOrganization = client.setActiveOrganization
-  client.whoami = () => memoizedRecordIdentity(recordApiBaseUrl(), whoami, now)
-  client.setActiveOrganization = async (input) => {
-    const organization = await setActiveOrganization(input)
-    markRecordIdentityChanged()
-    forgetRecordIdentityMemo()
-    return organization
-  }
-  return client
+  const transportRequest =
+    request === recordApiRequest ? recordIdentityMemoRequest(request, recordApiBaseUrl) : request
+  return recordApiClientOver(transportRequest)
 }
 
 export function recordApiClientOver(request: RecordClientRequest): RecordApiClient {
