@@ -39,6 +39,7 @@ import {
   classifyCheckoutEvidence,
 } from './workflow-checkout-refusal.ts'
 import type { CursorState } from './workflow-cursor-transition.ts'
+import { resolveWorkflowCursorSuccessor } from './workflow-cursor-transition.ts'
 import {
   type ArtifactRef,
   type BottegaCommandIdentity,
@@ -66,7 +67,6 @@ import {
   type SessionMatch,
   sessionOrAdopterMatch,
 } from './workflow-run-binding.ts'
-import { resolveWorkflowCursorSuccessor } from './workflow-cursor-transition.ts'
 import { attachedTextReferenceMeetsFloor, type WorkflowTextRow } from './workflow-text.ts'
 
 export type { FloorEvidencePorts } from './workflow-floor-evidence-replay.ts'
