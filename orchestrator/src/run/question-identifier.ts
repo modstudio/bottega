@@ -6,11 +6,7 @@ import type { QuestionIdentity } from '../../../shared/orch-contract.ts'
 import { parseReference, REFERENCE_PREFIXES } from '../../../shared/reference.ts'
 import { resolve } from '../identity/identity.ts'
 import { identityContext } from '../identity/identity-context.ts'
-import {
-  questionById,
-  questionByProjectNumber,
-  questionNumberProjectId,
-} from '../question-store/question-store-read.ts'
+import { questionById } from '../question-store/question-store-read.ts'
 
 export type ParsedQuestionIdentifier =
   | { kind: 'number'; id: number }
@@ -22,15 +18,8 @@ export async function questionIdentityMap(
 ): Promise<QuestionIdentity[]> {
   return Promise.all(
     identifiers.map(async (identifier) => {
-      const parsed = parseQuestionIdentifier(identifier)
-      const row =
-        parsed.kind === 'number'
-          ? await questionByProjectNumber(
-              database,
-              parsed.id,
-              questionNumberProjectId(database, parsed.id),
-            )
-          : await questionById(database, parsed.recordId)
+      const recordId = await resolveQuestionIdentifier(database, identifier)
+      const row = await questionById(database, recordId)
       if (!row) throw new Error(`no question has identifier ${JSON.stringify(String(identifier))}`)
       return { number: Number(row.number), record_id: String(row.record_id) }
     }),

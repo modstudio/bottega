@@ -68,6 +68,60 @@ export function hubBrowserNoNodeBuiltinConfig(sharedOptions: DependencyCruiserOp
   }
 }
 
+const sqliteAdapterPath =
+  '^orchestrator/src/(?:question-store/question-store-sqlite[^/]*|workflow/task-flow-store-sqlite[^/]*)\\.ts$'
+
+const sqliteAdapterAllowedImporters = [
+  {
+    path: '^orchestrator/src/question-store/question-store\\.ts$',
+    reason: 'question-store.ts is the question adapter selector',
+  },
+  {
+    path: '^orchestrator/src/workflow/task-flow-store\\.ts$',
+    reason: 'task-flow-store.ts is the task-flow adapter selector',
+  },
+  {
+    path: sqliteAdapterPath,
+    reason: 'a selector-gated SQLite adapter may compose another SQLite adapter',
+  },
+  {
+    path: '^orchestrator/src/question-store/question-store-types\\.ts$',
+    reason: 'the question port type contract names the SQLite row shape as a type only',
+  },
+  {
+    path: '^orchestrator/src/workflow/task-flow-store-hosted\\.ts$',
+    reason: 'the hosted write port names the SQLite write result as a type only',
+  },
+  {
+    path: '^orchestrator/src/workflow/task-flow-store-record\\.ts$',
+    reason: 'task-flow-store-record.ts is itself a selector after its hosted verdict check',
+  },
+  {
+    path: '^orchestrator/src/workflow/workflow-cursor-compose\\.ts$',
+    reason: 'workflow-cursor-compose.ts calls SQLite only after its hosted early return',
+  },
+  {
+    path: '^orchestrator/src/workflow/workflow-text\\.ts$',
+    reason: 'workflow-text.ts calls SQLite only under its not-hosted branch',
+  },
+  {
+    path: '^orchestrator/src/workflow/task-flow\\.ts$',
+    reason: 'task-flow.ts calls SQLite only when hosted adoption wrote nothing',
+  },
+  {
+    path: '(?:\\.test|\\.fixture)\\.ts$|^orchestrator/test/',
+    reason: 'tests and fixtures own isolated stores',
+  },
+] as const
+
+export const sqliteAdapterImportRule = {
+  name: 'sqlite-adapters-have-selector-gated-importers',
+  severity: 'error' as const,
+  comment: `Local SQLite adapters are imported only through reviewed local-store paths. ${sqliteAdapterAllowedImporters.map(({ reason }) => reason).join('; ')}.`,
+  from: { pathNot: sqliteAdapterAllowedImporters.map(({ path }) => path) },
+  to: { path: sqliteAdapterPath },
+}
+
 export type ImportBoundary = {
   name: string
   file: string

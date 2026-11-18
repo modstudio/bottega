@@ -1,23 +1,17 @@
-import { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
-import { questionNumberProjectId } from './question-store-read.ts'
+import { newRecordId } from '../../../shared/record-id.ts'
+import { addRun } from '../../test/fixtures/store.ts'
+import { db } from '../database/db.ts'
+import { questionsForRun } from './question-store-sqlite-reads.ts'
 
-test('question number project lookup refuses numbers shared by projects', () => {
-  const database = new Database(':memory:')
-  database.exec(`
-    CREATE TABLE run(record_id TEXT PRIMARY KEY, project_record_id TEXT);
-    CREATE TABLE workflow_cursor(record_id TEXT PRIMARY KEY, project_record_id TEXT);
-    CREATE TABLE question(
-      record_id TEXT PRIMARY KEY,
-      number INTEGER NOT NULL,
-      run_record_id TEXT,
-      workflow_cursor_record_id TEXT
-    );
-    INSERT INTO run VALUES ('run-a','project-a'),('run-b','project-b');
-    INSERT INTO question VALUES ('question-a',7,'run-a',NULL),('question-b',7,'run-b',NULL);
-  `)
-  expect(() => questionNumberProjectId(database, 7)).toThrow(
-    'question number 7 exists in more than one project; pass the question UUID, then retry',
-  )
-  database.close()
+test('questions for run reports whether the run asked a question', () => {
+  const runId = addRun({ agent: 'codex', job: 'file-question', status: 'asking' })
+  db()
+    .query(
+      `INSERT INTO question(record_id,number,run_record_id,asked_at,question)
+       VALUES (?,1,?,'2026-11-18T00:00:00.000Z','Which?')`,
+    )
+    .run(newRecordId(), runId)
+
+  expect(questionsForRun(db(), runId)).toHaveLength(1)
 })

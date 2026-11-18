@@ -3,7 +3,12 @@ import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
 import { removeHookTree } from '../hook-tree/tree.ts'
-import { landingTreeSeedRequest, landingTreeSourceRun, releaseFailedLandingTree } from './tree.ts'
+import {
+  landingTreeCursorBindingWarning,
+  landingTreeSeedRequest,
+  landingTreeSourceRun,
+  releaseFailedLandingTree,
+} from './tree.ts'
 
 test('landing-tree seed request carries the recorded launch seed', () => {
   expect(
@@ -32,6 +37,22 @@ test('landing tree opening resolves a turn to its root and latest UUID', () => {
     root: { record_id: root },
     latest: { record_id: turn },
   })
+})
+
+test('landing tree cursor binding failure returns a warning named by record id', async () => {
+  const cursorRecordId = newRecordId()
+  const warning = await landingTreeCursorBindingWarning(
+    cursorRecordId,
+    '/work/landing',
+    db(),
+    async () => {
+      throw new Error('binding unavailable')
+    },
+  )
+
+  expect(warning).toBe(
+    `workflow cursor ${cursorRecordId} argument binding failed: binding unavailable`,
+  )
 })
 
 test('failed creation settles its worktree claim after the recipe already removed the directory', async () => {

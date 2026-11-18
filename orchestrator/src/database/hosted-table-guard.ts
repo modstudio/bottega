@@ -16,6 +16,54 @@ export const HOSTED_TABLES_WITHOUT_LOCAL_ACCESS = [
   'workflow_text_copy',
 ] as const
 
+export const HOSTED_LOCAL_SQL_ALLOWED_FILES = [
+  {
+    pattern: /^orchestrator\/src\/question-store\/question-store-sqlite(?:-[^/]+)?\.ts$/,
+    reason: 'SQLite question adapters are selected only by question-store.ts on local installs',
+  },
+  {
+    pattern: /^orchestrator\/src\/workflow\/task-flow-store-sqlite(?:-[^/]+)?\.ts$/,
+    reason: 'SQLite task-flow adapters are selected only by task-flow-store.ts on local installs',
+  },
+  {
+    pattern: /^orchestrator\/migrations\//,
+    reason: 'SQLite migrations operate on the unguarded migration-step handle',
+  },
+  {
+    pattern:
+      /^orchestrator\/src\/database\/(?:migrations(?:-[^/]+)?|[^/]+-migration-preflight)\.ts$/,
+    reason: 'SQLite migration preflights operate on the unguarded migration-step handle',
+  },
+  {
+    pattern: /^orchestrator\/src\/postgres\//,
+    reason:
+      'Postgres record modules operate on the hosted record rather than a guarded SQLite handle',
+  },
+  {
+    pattern:
+      /^orchestrator\/src\/record\/(?:record-question-(?:number|write)|record-task-flow(?:-write)?)\.ts$/,
+    reason:
+      'Postgres record modules operate on the hosted record rather than a guarded SQLite handle',
+  },
+  {
+    pattern: /^orchestrator\/(?:test\/|.*\.fixture\.ts$)/,
+    reason: 'Fixtures own isolated stores and never receive the production guarded handle',
+  },
+  {
+    pattern: /^orchestrator\/src\/database\/entity-number\.ts$/,
+    reason: 'The local identity-number adapter is reached only for local stores',
+  },
+  {
+    pattern: /^orchestrator\/src\/record\/record-cache-workflow\.ts$/,
+    reason: 'The workflow record cache writes only the local cache during record synchronization',
+  },
+  {
+    pattern: /^orchestrator\/src\/session-report\/session-report-adapter\.ts$/,
+    reason:
+      'The session report SQLite adapter is used only where the local report store is authoritative',
+  },
+] as const
+
 const guardedMethods = new Set(['query', 'prepare', 'run', 'exec'])
 // A listed name ends where no identifier character follows, so a name closed by a parenthesis
 // or semicolon is still a reference, while a longer name sharing its prefix is another table.
@@ -31,16 +79,7 @@ export function guardHostedTables(
   const namedTable = (sql: string): string | null => {
     const cached = checks.get(sql)
     if (cached !== undefined || checks.has(sql)) return cached ?? null
-    const found =
-      tables.find((table) => {
-        const escaped = escapeRegExp(table)
-        const tableName = `(?:${escaped}|"${escaped}"|\`${escaped}\`|\\[${escaped}\\])`
-        const qualifier = `(?:${SQL_IDENTIFIER}\\s*\\.\\s*)?`
-        const direct = `\\b(?:FROM|JOIN|INTO|UPDATE|TABLE|DELETE\\s+FROM)\\s+(?:\\(\\s*)?${qualifier}${tableName}${NAME_END}`
-        const tableReference = `${qualifier}${SQL_IDENTIFIER}(?:\\s+(?:AS\\s+)?${SQL_IDENTIFIER})?`
-        const commaList = `\\bFROM\\s+${tableReference}(?:\\s*,\\s*${tableReference})*\\s*,\\s*${qualifier}${tableName}${NAME_END}`
-        return new RegExp(`(?:${direct}|${commaList})`, 'i').test(sql)
-      }) ?? null
+    const found = hostedTableInSql(sql, tables)
     checks.set(sql, found)
     return found
   }
@@ -64,6 +103,20 @@ export function guardHostedTables(
     },
   }) as Database
   return guarded
+}
+
+export function hostedTableInSql(sql: string, tables: readonly string[]): string | null {
+  return (
+    tables.find((table) => {
+      const escaped = escapeRegExp(table)
+      const tableName = `(?:${escaped}|"${escaped}"|\`${escaped}\`|\\[${escaped}\\])`
+      const qualifier = `(?:${SQL_IDENTIFIER}\\s*\\.\\s*)?`
+      const direct = `\\b(?:FROM|JOIN|INTO|UPDATE|TABLE|DELETE\\s+FROM)\\s+(?:\\(\\s*)?${qualifier}${tableName}${NAME_END}`
+      const tableReference = `${qualifier}${SQL_IDENTIFIER}(?:\\s+(?:AS\\s+)?${SQL_IDENTIFIER})?`
+      const commaList = `\\bFROM\\s+${tableReference}(?:\\s*,\\s*${tableReference})*\\s*,\\s*${qualifier}${tableName}${NAME_END}`
+      return new RegExp(`(?:${direct}|${commaList})`, 'i').test(sql)
+    }) ?? null
+  )
 }
 
 function escapeRegExp(value: string): string {

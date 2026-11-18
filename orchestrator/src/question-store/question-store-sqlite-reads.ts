@@ -80,19 +80,6 @@ export function localQuestionHistorySqlite(database: Database, projectId: string
       })),
   }))
 }
-
-export function questionNumberProjectIds(database: Database, number: number): string[] {
-  return database
-    .query<{ project_record_id: string | null }, [number]>(
-      `SELECT DISTINCT COALESCE(owner.project_record_id,cursor.project_record_id) project_record_id
-       FROM question q LEFT JOIN run owner ON owner.record_id=q.run_record_id
-       LEFT JOIN workflow_cursor cursor ON cursor.record_id=q.workflow_cursor_record_id
-       WHERE q.number=?`,
-    )
-    .all(number)
-    .flatMap((row) => (row.project_record_id ? [row.project_record_id] : []))
-}
-
 export type QueriedInboxQuestion = {
   number: number
   record_id: string

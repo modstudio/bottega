@@ -16,6 +16,7 @@ import { startBoundedSync } from '../../shared/bounded-process.ts'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { AGENTS } from '../src/agent/agent-registry.ts'
 import { db, ROOT } from '../src/database/db.ts'
+import { questionsForRun } from '../src/question-store/question-store-read.ts'
 import { run } from '../src/run/run.ts'
 import {
   outcomeFromTransport,
@@ -210,13 +211,10 @@ async function runAskCase(): Promise<Row> {
   const deadline = Date.now() + 120_000
   while (!settled && Date.now() < deadline) {
     const row = db()
-      .query(
-        `SELECT r.id, EXISTS(SELECT 1 FROM question q WHERE q.run_id=r.id) asked
-         FROM run r WHERE r.label=? ORDER BY r.id DESC LIMIT 1`,
-      )
-      .get(marker) as { id: number; asked: number } | null
+      .query('SELECT id,record_id FROM run WHERE label=? ORDER BY id DESC LIMIT 1')
+      .get(marker) as { id: number; record_id: string } | null
     if (row) runId = row.id
-    if (row?.asked) {
+    if (row && (await questionsForRun(db(), row.record_id)).length > 0) {
       questionSeen = true
       const answer = startBoundedSync(
         [process.execPath, join(ROOT, 'src/cli.ts'), 'answer', String(row.id), ruling],

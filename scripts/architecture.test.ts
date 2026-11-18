@@ -41,6 +41,23 @@ test('hosted report delivery transitively rejects the local store and git', () =
   expect(rule?.to.reachable).toBe(true)
 })
 
+test('SQLite adapters reject unreviewed importers and allow the named task-flow siblings', () => {
+  const rule = architectureRules().forbidden.find(
+    (candidate) => candidate.name === 'sqlite-adapters-have-selector-gated-importers',
+  )!
+  const adapter = 'orchestrator/src/workflow/task-flow-store-sqlite.ts'
+  expect(ruleAllows(rule, 'orchestrator/src/question-store/question-store-read.ts', adapter)).toBe(
+    false,
+  )
+  for (const importer of [
+    'orchestrator/src/workflow/task-flow-store-record.ts',
+    'orchestrator/src/workflow/task-flow.ts',
+    'orchestrator/src/workflow/workflow-cursor-compose.ts',
+    'orchestrator/src/workflow/workflow-text.ts',
+  ])
+    expect(ruleAllows(rule, importer, adapter)).toBe(true)
+})
+
 function ruleAllows(
   rule: ReturnType<typeof architectureRules>['forbidden'][number],
   from: string,

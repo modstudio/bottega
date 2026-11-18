@@ -16,7 +16,6 @@ import { questionStore } from './question-store.ts'
 import {
   localQuestionHistoryProjectIdsSqlite,
   localQuestionHistorySqlite,
-  questionNumberProjectIds,
   unattributedLocalQuestionHistorySqlite,
 } from './question-store-sqlite-reads.ts'
 import type { QuestionStore } from './question-store-types.ts'
@@ -24,21 +23,6 @@ import type { QuestionStore } from './question-store-types.ts'
 export const localQuestionHistoryProjectIds = localQuestionHistoryProjectIdsSqlite
 export const localQuestionHistory = localQuestionHistorySqlite
 export const unattributedLocalQuestionHistory = unattributedLocalQuestionHistorySqlite
-
-export function questionNumberProjectId(database: Database, number: number): string {
-  const projectIds = questionNumberProjectIds(database, number)
-  if (projectIds.length > 1)
-    throw new Error(
-      `question number ${number} exists in more than one project; pass the question UUID, then retry`,
-    )
-  const projectId = projectIds[0]
-  if (!projectId)
-    throw new Error(
-      `question ${number} has no locally resolved record space; pass the question UUID`,
-    )
-  return projectId
-}
-
 export async function questionById(
   database: Database,
   id: string,

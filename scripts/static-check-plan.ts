@@ -188,6 +188,7 @@ const STATIC_CHECKS: readonly StaticCheckDeclaration[] = [
   script('scripts/check-question-sql-sites.ts', run),
   script('scripts/check-record-request-headers.ts', run),
   script('scripts/check-record-route-contracts.ts', run),
+  script('scripts/check-hosted-local-sql.ts', run),
   script('scripts/check-outbox-payload-contracts.ts', run),
   script(
     'scripts/check-record-migrations-apply.ts',

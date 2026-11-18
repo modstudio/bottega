@@ -28,7 +28,7 @@ describe('question identifier', () => {
   })
 
   test('the maintenance map resolves a number in its owning project', async () => {
-    const projectId = addProject('question-map-owner', '/work/question-map-owner')
+    const projectId = addProject('question-map-owner', process.cwd())
     const runId = addRun({
       agent: 'codex',
       job: 'file-question',

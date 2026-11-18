@@ -510,6 +510,47 @@ export function extractHostedSqlFromSource(
   return { sites, unresolved }
 }
 
+const SQL_CALL_METHODS = new Set(['exec', 'prepare', 'query', 'run'])
+const SQL_STATEMENT_START = /^\s*(?:SELECT|INSERT|UPDATE|DELETE|WITH|CREATE|DROP|ALTER)\b/i
+
+function sqlCallSites(node: ts.Node, source: ts.SourceFile, file: string): HostedSqlSite[] {
+  if (!ts.isCallExpression(node)) return []
+  const target = unwrap(node.expression)
+  let method: string | null = null
+  if (ts.isIdentifier(target)) method = target.text
+  else if (ts.isPropertyAccessExpression(target)) method = target.name.text
+  const argument = node.arguments[0]
+  if (!method || !SQL_CALL_METHODS.has(method) || !argument) return []
+  const rendered = renderFixtureSql(argument)
+  const line = source.getLineAndCharacterOfPosition(argument.getStart(source)).line + 1
+  return (rendered?.statements ?? [])
+    .filter((sql) => SQL_STATEMENT_START.test(sql))
+    .map((sql) => ({ file, line, sql, fingerprint: hostedSqlFingerprint(sql) }))
+}
+
+/** Extracts static SQL from the Bun SQL tag and SQLite database call shapes. */
+export function extractSqlFromSource(input: { sourceText: string; file: string }): {
+  sites: HostedSqlSite[]
+  unresolved: HostedSqlUnresolvedSite[]
+} {
+  const source = ts.createSourceFile(
+    input.file,
+    input.sourceText,
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.TS,
+  )
+  const extracted = extractHostedSqlFromSource(input)
+  const sites = [...extracted.sites]
+  const visit = (node: ts.Node): void => {
+    sites.push(...sqlCallSites(node, source, input.file))
+    ts.forEachChild(node, visit)
+  }
+  visit(source)
+  const unique = new Map(sites.map((site) => [`${site.line}#${site.fingerprint}`, site]))
+  return { sites: [...unique.values()], unresolved: extracted.unresolved }
+}
+
 const HOSTED_FIXTURE_EXECUTORS = new Set([
   'admin',
   'asSpace',
