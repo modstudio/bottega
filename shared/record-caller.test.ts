@@ -3,8 +3,8 @@ import { hostedAccessLogLine } from './hosted-server.ts'
 import {
   CALLER_TOKEN_MAX_LENGTH,
   callerToken,
+  inboundCaller,
   loggedCallerToken,
-  recordCallerToken,
 } from './record-caller.ts'
 
 test('caller token selects the scoped MCP caller before the process environment', () => {
@@ -22,11 +22,13 @@ test('caller token rejects unsafe and overlong values without truncating them', 
   expect(callerToken(undefined, 'x'.repeat(CALLER_TOKEN_MAX_LENGTH + 1))).toBe('unknown')
 })
 
-test('record caller reads a changed process environment value on every request', () => {
-  const environment = { BOTTEGA_CALLER: 'cli:first' }
-  expect(recordCallerToken(environment)).toBe('cli:first')
-  environment.BOTTEGA_CALLER = 'cli:second'
-  expect(recordCallerToken(environment)).toBe('cli:second')
+test('inbound caller separates the access-log value from the server request scope', () => {
+  expect(inboundCaller(null)).toEqual({ logged: null, scope: 'hub:server' })
+  expect(inboundCaller('cli:task/list')).toEqual({
+    logged: 'cli:task/list',
+    scope: 'cli:task/list',
+  })
+  expect(inboundCaller('cli:task list')).toEqual({ logged: 'invalid', scope: 'hub:server' })
 })
 
 test('access-log caller validation prevents a supplied value from injecting a field', () => {

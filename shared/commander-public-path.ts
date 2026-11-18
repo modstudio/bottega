@@ -1,4 +1,5 @@
 import type { Command } from 'commander'
+import { CALLER_ENVIRONMENT_KEY } from './record-caller.ts'
 
 export type PublicCommandInvocation = {
   publicPath: readonly string[]
@@ -19,6 +20,30 @@ export function cliCallerEnvironmentValue(
     names.unshift(current.name())
   }
   return `cli:${names.join('/')}`
+}
+
+export type CliCallerDispatch = <T>(work: () => Promise<T>) => Promise<T>
+
+export function installCliCallerDispatch(program: Command): CliCallerDispatch {
+  let active = false
+  program.hook('preAction', (_rootCommand, actionCommand) => {
+    if (!active) return
+    process.env[CALLER_ENVIRONMENT_KEY] = cliCallerEnvironmentValue(
+      process.env[CALLER_ENVIRONMENT_KEY],
+      actionCommand,
+    )
+  })
+  return async <T>(work: () => Promise<T>): Promise<T> => {
+    const parentCaller = process.env[CALLER_ENVIRONMENT_KEY]
+    active = true
+    try {
+      return await work()
+    } finally {
+      active = false
+      if (parentCaller === undefined) delete process.env[CALLER_ENVIRONMENT_KEY]
+      else process.env[CALLER_ENVIRONMENT_KEY] = parentCaller
+    }
+  }
 }
 
 export function takesVariadicArgument(command: Command): boolean {

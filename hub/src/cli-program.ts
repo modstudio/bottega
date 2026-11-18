@@ -5,13 +5,13 @@ import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { refuseRepeatedOptions } from '../../shared/cli-repeat-guard.ts'
 import {
   applyPublicCommandPath,
-  cliCallerEnvironmentValue,
+  type CliCallerDispatch,
+  installCliCallerDispatch,
   type PublicCommandInvocation,
   publicCommandUsage,
 } from '../../shared/commander-public-path.ts'
 import { isDatabaseLocked } from '../../shared/database-lock-refusal.ts'
 import { installationVersionText } from '../../shared/install-root.ts'
-import { CALLER_ENVIRONMENT_KEY } from '../../shared/record-caller.ts'
 import { recordDatabaseLockRefusal } from '../../shared/store-lock-refusal-log.ts'
 import { HubCommand } from './cli-command.ts'
 import { registerCoreCommands } from './core-cli.ts'
@@ -28,6 +28,7 @@ import { registerReportCommands } from './report-cli.ts'
 import { registerTaskCommands } from './task-cli.ts'
 
 const beginParses = new WeakMap<Command, () => void>()
+const callerDispatches = new WeakMap<Command, CliCallerDispatch>()
 
 export function createHubProgram(): HubCommand {
   const command = new HubCommand()
@@ -53,12 +54,7 @@ export function createHubProgram(): HubCommand {
   registerTaskCommands(command)
   registerNoteCommands(command)
   registerReportCommands(command)
-  command.hook('preAction', (_rootCommand, actionCommand) => {
-    process.env[CALLER_ENVIRONMENT_KEY] = cliCallerEnvironmentValue(
-      process.env[CALLER_ENVIRONMENT_KEY],
-      actionCommand,
-    )
-  })
+  callerDispatches.set(command, installCliCallerDispatch(command))
   beginParses.set(command, refuseRepeatedOptions(command))
   return command
 }
@@ -106,18 +102,17 @@ export async function run(
   }
   beginParses.get(command)?.()
   applyPublicCommandPath(command, argv, invocation)
-  const parentCaller = process.env[CALLER_ENVIRONMENT_KEY]
   try {
     const input = literalHelp(argv.length ? argv : ['--help'])
     const parse = () => command.parseAsync(['bun', PLATFORM_SLUG, ...input])
-    await (usesReadOnlyStoreHandle(argv) ? withReadOnlyDatabaseAccess(parse) : parse())
+    const dispatch = callerDispatches.get(command)
+    if (!dispatch) throw new Error('hub command has no caller dispatch')
+    await dispatch(() => (usesReadOnlyStoreHandle(argv) ? withReadOnlyDatabaseAccess(parse) : parse()))
     return Number(process.exitCode ?? 0)
   } catch (error) {
     if (!(error instanceof CommanderError)) console.error(await cliErrorMessage(error, argv))
     return exitCodeFor(error)
   } finally {
-    if (parentCaller === undefined) delete process.env[CALLER_ENVIRONMENT_KEY]
-    else process.env[CALLER_ENVIRONMENT_KEY] = parentCaller
     if (argv.includes('--verbose')) console.error(`${PLATFORM_SLUG} ${argv[0]} done at ${nowIso()}`)
   }
 }

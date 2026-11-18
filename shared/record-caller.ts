@@ -29,6 +29,17 @@ export function loggedCallerToken(headerValue: string | null): string | null {
   return validCallerToken(headerValue) ? headerValue : 'invalid'
 }
 
+export function inboundCaller(headerValue: string | null): {
+  logged: string | null
+  scope: string
+} {
+  const logged = loggedCallerToken(headerValue)
+  return {
+    logged,
+    scope: headerValue !== null && validCallerToken(headerValue) ? headerValue : 'hub:server',
+  }
+}
+
 export function recordCallerToken(environment: NodeJS.ProcessEnv = process.env): string {
   const scoped = callerScope.getStore()
   return callerToken(scoped, environment[CALLER_ENVIRONMENT_KEY])

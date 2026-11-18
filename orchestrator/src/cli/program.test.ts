@@ -4,6 +4,7 @@ import { join, resolve } from 'node:path'
 import { CommanderError } from 'commander'
 import { FROZEN_ENV_NAMES } from '../../../shared/brand.ts'
 import type { PublicCommandInvocation } from '../../../shared/commander-public-path.ts'
+import { CALLER_ENVIRONMENT_KEY, recordCallerToken } from '../../../shared/record-caller.ts'
 import { refusal } from '../../../shared/refusal.ts'
 import { readStoreLockRefusalsSince } from '../../../shared/store-lock-refusal-log.ts'
 import { dir } from '../../test/fixtures/store.ts'
@@ -139,6 +140,29 @@ test('canon command recognition is pinned to the Commander registry', () => {
     ...program.commands.flatMap((command) => [command.name(), ...command.aliases()]),
   ])
   expect([...CLI_COMMANDS].sort()).toEqual([...registered].sort())
+})
+
+test('run scopes real command actions to the public CLI path and restores the parent caller', async () => {
+  const parentCaller = process.env[CALLER_ENVIRONMENT_KEY]
+  const observed: string[] = []
+  const storePath = program.commands.find((command) => command.name() === 'store-path')!
+  storePath.hook('postAction', () => void observed.push(recordCallerToken()))
+  const invocation = { ownerPath: ['store-path'], publicPath: ['machine', 'store-path'] }
+
+  try {
+    delete process.env[CALLER_ENVIRONMENT_KEY]
+    expect(await run(['store-path'], invocation)).toBe(0)
+    expect(observed.at(-1)).toBe('cli:machine/store-path')
+    expect(process.env[CALLER_ENVIRONMENT_KEY]).toBeUndefined()
+
+    process.env[CALLER_ENVIRONMENT_KEY] = 'hook:parent'
+    expect(await run(['store-path'], invocation)).toBe(0)
+    expect(observed.at(-1)).toBe('hook:parent')
+    expect(process.env[CALLER_ENVIRONMENT_KEY]).toBe('hook:parent')
+  } finally {
+    if (parentCaller === undefined) delete process.env[CALLER_ENVIRONMENT_KEY]
+    else process.env[CALLER_ENVIRONMENT_KEY] = parentCaller
+  }
 })
 
 test('the retired top-level probe spelling is not registered', () => {

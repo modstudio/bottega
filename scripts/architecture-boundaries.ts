@@ -8,6 +8,7 @@ import { contractBoundarySpecs } from './architecture-contract-boundaries.ts'
 import { databaseBoundarySpecs } from './architecture-database-boundaries.ts'
 import { docBoundarySpecs } from './architecture-doc-boundaries.ts'
 import { gateBoundarySpecs } from './architecture-gate-modules.ts'
+import { hostedHubBoundarySpecs } from './architecture-hosted-hub-boundaries.ts'
 import { HUB_UI_ROOT, HUB_VIEWS_ROOT, TYPESCRIPT_TEST_PATH } from './architecture-hub-packages.ts'
 import { mcpBoundarySpecs } from './architecture-mcp-boundaries.ts'
 import { portBoundarySpecs } from './architecture-port-boundaries.ts'
@@ -110,6 +111,7 @@ export const importBoundaries: ImportBoundary[] = [
   ...boundaries(runLifecycleTypeOnlyBoundarySpecs),
   ...boundaries(runModuleBoundarySpecs),
   ...boundaries(branchStoreModuleSpecs),
+  ...boundaries(hostedHubBoundarySpecs),
   boundary(
     'code-commands-boundary',
     'orchestrator/src/code/code-commands.ts',
@@ -517,37 +519,6 @@ export const importBoundaries: ImportBoundary[] = [
     'orchestrator/src/health/health-commands.ts',
     ['../../../shared/orch-contract.ts', '../database/db.ts', './health.ts'],
     'Keep health command adapters independent of runs, routing, transports, the CLI, and worktrees.',
-  ),
-  boundary(
-    'hosted-hub-server-boundary',
-    'hub/src/hosted.ts',
-    [
-      'node:fs',
-      'node:path',
-      'bun',
-      '@trpc/server/adapters/fetch',
-      '../../shared/built-commit.ts',
-      '../../shared/hosted-server.ts',
-      '../../shared/install-root.ts',
-      '../../shared/record-no-destination-write-counter.ts',
-      '../../shared/record/service-connection.ts',
-      './app-static.ts',
-      './change-api.ts',
-      './hosted-health.ts',
-      './hosted-no-destination-write-api.ts',
-      './hosted-route-config.ts',
-      './hosted-version.ts',
-      './hosted-write-routes.ts',
-      './note-api.ts',
-      './operator-waiting-email-api.ts',
-      './public-docs-text-api.ts',
-      './public-docs-text.ts',
-      './report-api.ts',
-      './task-api.ts',
-      './trpc/context.ts',
-      './trpc/hosted-router.ts',
-    ],
-    'Enforce the hosted hub server concern boundary.',
   ),
   boundary(
     'isolation-boundary',

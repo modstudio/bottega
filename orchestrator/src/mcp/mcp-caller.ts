@@ -4,23 +4,33 @@
 import type { McpServer } from '@modelcontextprotocol/server'
 import { withRecordCaller } from '../../../shared/record-caller.ts'
 
-export function scopeMcpToolCallers(
+type ToolHandler = (...args: never[]) => Promise<unknown>
+
+export function wrapMcpToolHandlers(
   server: McpServer,
+  wrap: (name: string, handler: ToolHandler) => ToolHandler,
   onRegister: (name: string) => void = () => undefined,
 ): void {
   const registerTool = server.registerTool.bind(server) as (
     name: string,
     config: object,
-    handler: (...args: never[]) => Promise<unknown>,
+    handler: ToolHandler,
   ) => unknown
-  server.registerTool = ((
-    name: string,
-    config: object,
-    handler: (...args: never[]) => Promise<unknown>,
-  ) => {
+  server.registerTool = ((name: string, config: object, handler: ToolHandler) => {
     onRegister(name)
-    return registerTool(name, config, (...args: never[]) =>
-      withRecordCaller(`mcp:${name}`, () => handler(...args)),
-    )
+    return registerTool(name, config, wrap(name, handler))
   }) as typeof server.registerTool
+}
+
+export function scopeMcpToolCallers(
+  server: McpServer,
+  onRegister: (name: string) => void = () => undefined,
+): void {
+  wrapMcpToolHandlers(
+    server,
+    (name, handler) =>
+      (...args) =>
+        withRecordCaller(`mcp:${name}`, () => handler(...args)),
+    onRegister,
+  )
 }

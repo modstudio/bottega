@@ -7,13 +7,12 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { refuseRepeatedOptions } from '../../../shared/cli-repeat-guard.ts'
 import {
   applyPublicCommandPath,
-  cliCallerEnvironmentValue,
+  installCliCallerDispatch,
   type PublicCommandInvocation,
   publicCommandUsage,
 } from '../../../shared/commander-public-path.ts'
 import { databaseLockHolder, isDatabaseLocked } from '../../../shared/database-lock-refusal.ts'
 import { processCommandLine } from '../../../shared/process-identity.ts'
-import { CALLER_ENVIRONMENT_KEY } from '../../../shared/record-caller.ts'
 import { recordDatabaseLockRefusal } from '../../../shared/store-lock-refusal-log.ts'
 import {
   sampleWalWriteLock,
@@ -102,15 +101,7 @@ registerSpare(program)
 registerSync(program)
 registerTestSubstance(program)
 
-let activeCallerDispatch = false
-
-program.hook('preAction', (_rootCommand, actionCommand) => {
-  if (!activeCallerDispatch) return
-  process.env[CALLER_ENVIRONMENT_KEY] = cliCallerEnvironmentValue(
-    process.env[CALLER_ENVIRONMENT_KEY],
-    actionCommand,
-  )
-})
+const callerDispatch = installCliCallerDispatch(program)
 
 program.commands
   .find((command) => command.name() === 'agent')!
@@ -236,21 +227,17 @@ export async function run(argv: string[], invocation?: PublicCommandInvocation):
   beginParse()
   setRawArgv(argv)
   applyPublicCommandPath(program, argv, invocation)
-  const parentCaller = process.env[CALLER_ENVIRONMENT_KEY]
-  activeCallerDispatch = true
   try {
     const parse = () =>
       program.parseAsync(['bun', PLATFORM_SLUG, ...(argv.length ? argv : ['--help'])])
-    await (usesReadOnlyStoreHandle(argv) ? withReadOnlyDatabaseAccess(parse) : parse())
+    await callerDispatch(() =>
+      usesReadOnlyStoreHandle(argv) ? withReadOnlyDatabaseAccess(parse) : parse(),
+    )
     await drainStdout()
     return Number(process.exitCode ?? 0)
   } catch (error) {
     const code = exitCodeFor(error)
     if (!(error instanceof CommanderError)) console.error(await lockedStoreMessage(error, { argv }))
     return code
-  } finally {
-    activeCallerDispatch = false
-    if (parentCaller === undefined) delete process.env[CALLER_ENVIRONMENT_KEY]
-    else process.env[CALLER_ENVIRONMENT_KEY] = parentCaller
   }
 }
