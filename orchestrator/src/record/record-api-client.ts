@@ -15,6 +15,7 @@ import {
   RECORD_SIGN_IN_REMEDY,
   recordUnreachableRefusal,
 } from '../../../shared/record-remedies.ts'
+import { recordRequestHeaders } from '../../../shared/record-request-headers.ts'
 import type { TableStorageMeasurement } from '../../../shared/storage-lifecycle.ts'
 import type { CanonFinding } from '../canon/canon-lint.ts'
 import type { DocGenerator } from '../doc/doc-generator.ts'
@@ -74,7 +75,6 @@ import {
 import type { RecordSettingsClient } from './record-api-client-settings.ts'
 import { boardStreamHeaders, recordTransport } from './record-api-client-transport.ts'
 import { type RecordWorkflowClient, recordWorkflowClient } from './record-api-client-workflow.ts'
-import { bearerHeaders } from './record-auth.ts'
 import type {
   HostedBoardAcceptInput,
   HostedBoardChanges,
@@ -580,10 +580,9 @@ export async function recordApiRequest<T>(
         : storedRecordToken()
   const origin = recordApiBaseUrl()
   const send = async (bearer: string) => {
-    const headers = new Headers(init.headers)
-    for (const [name, value] of bearerHeaders(bearer)) headers.set(name, value)
+    const { destinationSpaceId: s, headers: h } = init
+    const headers = recordRequestHeaders({ bearerToken: bearer, destinationSpaceId: s, headers: h })
     if (init.body && !headers.has('content-type')) headers.set('content-type', 'application/json')
-    if (init.destinationSpaceId) headers.set('x-record-space', init.destinationSpaceId)
     try {
       return await recordTransport(origin, path, { ...init, headers }, transport)
     } catch (error) {

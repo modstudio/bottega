@@ -5,6 +5,7 @@ import {
   RECORD_ACTIVE_SPACE_REMEDY,
   RECORD_SIGN_IN_REMEDY,
 } from '../../../shared/record-remedies.ts'
+import { recordRequestHeaders } from '../../../shared/record-request-headers.ts'
 import {
   readRecordSessionToken,
   readRecordSessionTokenAsync,
@@ -14,7 +15,6 @@ import {
 import { DATABASE_RESOLUTION, db, writeTransaction } from '../database/db.ts'
 import {
   activeMembershipSpace,
-  bearerHeaders,
   noSpaceBuiltIns,
   RECORD_SESSION_KEY,
   recordAuth,
@@ -121,7 +121,7 @@ export async function currentRecordUserSession(
   if (!token) throw new Error(RECORD_SIGN_IN_REMEDY)
   const auth = recordAuth(url, process.env, undefined, undefined, undefined, noSpaceBuiltIns)
   const current = await auth.api
-    .getSession({ headers: bearerHeaders(token) })
+    .getSession({ headers: recordRequestHeaders({ bearerToken: token }) })
     .finally(() => auth.close())
   if (!current) throw new Error(RECORD_SIGN_IN_REMEDY)
   const memberships = await recordPool(url).begin(async (tx) => {

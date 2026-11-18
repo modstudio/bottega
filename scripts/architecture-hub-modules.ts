@@ -62,11 +62,15 @@ export const hubModuleSpecs = [
       './record-client-options.ts',
     ],
   },
-  { file: 'hub/src/record-client-options.ts', allowed: [] },
+  {
+    file: 'hub/src/record-client-options.ts',
+    allowed: ['../../shared/record-request-headers.ts'],
+  },
   {
     file: 'hub/src/personal-record-space.ts',
     allowed: [
       '../../shared/record-remedies.ts',
+      '../../shared/record-request-headers.ts',
       '../../shared/record-session.ts',
       './record-client.ts',
       './record-client-options.ts',
@@ -255,7 +259,7 @@ export const hubModuleSpecs = [
     file: 'hub/src/hosted-route-identity.ts',
     allowed: [
       '../../shared/brand.ts',
-      '../../shared/record-caller.ts',
+      '../../shared/record-request-headers.ts',
       '../../shared/record-no-destination-write-contract.ts',
       '../../shared/record-no-destination-write-counter.ts',
       '../../shared/record/no-destination-write-store.ts',
@@ -290,7 +294,11 @@ export const hubModuleSpecs = [
   },
   {
     file: 'hub/src/hosted-session-send.ts',
-    allowed: ['../../shared/record-remedies.ts', '../../shared/record-session.ts'],
+    allowed: [
+      '../../shared/record-remedies.ts',
+      '../../shared/record-request-headers.ts',
+      '../../shared/record-session.ts',
+    ],
   },
   {
     file: 'hub/src/hosted-outside-notes.ts',

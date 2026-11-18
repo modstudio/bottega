@@ -3,6 +3,7 @@ import {
   RECORD_SIGN_IN_REMEDY,
   recordUnreachableRefusal,
 } from '../../shared/record-remedies.ts'
+import { recordRequestHeaders } from '../../shared/record-request-headers.ts'
 import { sendWithStoredRecordSessionToken } from '../../shared/record-session.ts'
 
 type HostedSessionRequestBase = {
@@ -38,11 +39,11 @@ async function send(
     try {
       return await input.fetch(input.url, {
         method: input.method,
-        headers: {
-          authorization: `Bearer ${token}`,
-          'content-type': 'application/json',
-          ...(input.recordSpace ? { 'x-record-space': input.recordSpace } : {}),
-        },
+        headers: recordRequestHeaders({
+          bearerToken: token,
+          destinationSpaceId: input.recordSpace,
+          headers: { 'content-type': 'application/json' },
+        }),
         ...(input.body === undefined ? {} : { body: JSON.stringify(input.body) }),
       })
     } catch (error) {

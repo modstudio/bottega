@@ -6,6 +6,7 @@ import {
   configClient,
 } from './config-client.ts'
 import { CONFIG_HOME_ENV, HARNESS_ENV_FILE_ENV } from './config-directory.ts'
+import { CALLER_HEADER_NAME, withRecordCaller } from './record-caller.ts'
 
 test('missing URL or session is a typed not-configured error', () => {
   expect(() =>
@@ -69,6 +70,26 @@ test('config client preserves a JSON refusal error and remedy', async () => {
     error: 'signed-in user lacks config access',
     remedy: 'ask a space owner to grant it',
   })
+})
+
+test('config client sends the active caller header', async () => {
+  let caller: string | null = null
+  const client = configClient(
+    { BOTTEGA_RECORD_API_URL: 'https://record.test' },
+    async (_input, init) => {
+      caller = new Headers(init?.headers).get(CALLER_HEADER_NAME)
+      return Response.json({
+        user: { id: 'user' },
+        activeSpaceId: null,
+        personalSpaceId: null,
+        memberships: [],
+      })
+    },
+    'test',
+  )
+
+  await withRecordCaller('cli:machine/config/secret/list', () => client.whoami())
+  expect(caller as string | null).toBe('cli:machine/config/secret/list')
 })
 
 test('config client decodes a machine signing public key', async () => {

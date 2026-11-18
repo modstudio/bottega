@@ -6,9 +6,10 @@ import {
   RECORD_OWNER_ROLE,
   RECORD_READER_ROLE,
 } from '../../shared/record/schema.ts'
+import { recordRequestHeaders } from '../../shared/record-request-headers.ts'
 import { renderRecordApiRefusal } from '../src/record/record-api-errors.ts'
 import { registerRecordProjectRoutes } from '../src/record/record-api-projects.ts'
-import { bearerHeaders, type RecordIdentity } from '../src/record/record-auth.ts'
+import type { RecordIdentity } from '../src/record/record-auth.ts'
 import { closeRecordPools } from '../src/record/record-pool.ts'
 import { purgeRecordProject } from '../src/record/record-project-purge.ts'
 import {
@@ -648,7 +649,7 @@ export function registerTrialSpaceTeardownProof(input: {
     try {
       const marker = { createdByUserId: 'proof', createdAt: new Date().toISOString() }
       organization = await auth.api.createOrganization({
-        headers: bearerHeaders(input.token()),
+        headers: recordRequestHeaders({ bearerToken: input.token() }),
         body: {
           name: `Trial marker hook ${marker.createdAt}`,
           slug,
@@ -658,13 +659,13 @@ export function registerTrialSpaceTeardownProof(input: {
       })
       await expect(
         auth.api.updateOrganization({
-          headers: bearerHeaders(input.token()),
+          headers: recordRequestHeaders({ bearerToken: input.token() }),
           body: { organizationId: organization.id, data: { metadata: { trial: marker } } },
         }),
       ).resolves.toMatchObject({ id: organization.id })
       await expect(
         auth.api.updateOrganization({
-          headers: bearerHeaders(input.token()),
+          headers: recordRequestHeaders({ bearerToken: input.token() }),
           body: {
             organizationId: organization.id,
             data: { metadata: { trial: { ...marker, createdAt: 'changed' } } },

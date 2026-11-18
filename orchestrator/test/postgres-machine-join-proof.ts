@@ -19,6 +19,7 @@ import {
 } from '../../shared/machine-signing-key.ts'
 import { formatPairingCode, parsePairingCode } from '../../shared/pairing-code.ts'
 import { newRecordId } from '../../shared/record/schema.ts'
+import { recordRequestHeaders } from '../../shared/record-request-headers.ts'
 import {
   generateDataKey,
   generateMachineKeyPair,
@@ -37,7 +38,6 @@ import { machineInit } from '../src/config/config-service.ts'
 import { encoded } from '../src/config/data-key-access.ts'
 import { machineApprove, machineJoin } from '../src/config/machine-join.ts'
 import { machineAnchor, machineRecover } from '../src/config/trust-log-anchor.ts'
-import { bearerHeaders } from '../src/record/record-auth.ts'
 
 type ProofInput = {
   apiUrl(): string
@@ -74,7 +74,7 @@ export function registerMachineJoinProof(input: ProofInput): void {
   test('machine join relays two sides and enforces lifetime, crowding, failure, limits and pruning', async () => {
     const spaceId = newRecordId()
     const headers = (token: string, space = spaceId) => ({
-      ...Object.fromEntries(bearerHeaders(token)),
+      ...Object.fromEntries(recordRequestHeaders({ bearerToken: token })),
       'content-type': 'application/json',
       'x-record-space': space,
     })
@@ -234,7 +234,7 @@ export function registerMachineJoinProof(input: ProofInput): void {
     const response = await fetch(`${input.apiUrl()}/v1/active-space`, {
       method: 'PUT',
       headers: {
-        ...Object.fromEntries(bearerHeaders(token)),
+        ...Object.fromEntries(recordRequestHeaders({ bearerToken: token })),
         'content-type': 'application/json',
       },
       body: JSON.stringify({ spaceId }),
@@ -596,7 +596,7 @@ export function registerMachineJoinProof(input: ProofInput): void {
         `${input.apiUrl()}/v1/config/join/nameplates/${parsed.nameplate}/messages?side=${SIDE_C}`,
         {
           headers: {
-            ...Object.fromEntries(bearerHeaders(input.token())),
+            ...Object.fromEntries(recordRequestHeaders({ bearerToken: input.token() })),
             'x-record-space': fixture.selected.spaceId,
           },
         },

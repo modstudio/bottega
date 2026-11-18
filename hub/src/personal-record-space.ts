@@ -20,7 +20,8 @@ export async function personalRecordSpace(
   if (!token) throw new Error(RECORD_SIGN_IN_REMEDY)
   const identity = await createRecordClient({
     baseUrl: requiredRecordApiUrl(),
-    headers: { authorization: `Bearer ${token}` },
+    headers: {},
+    bearerToken: token,
     fetch: options.fetch,
     requestDeadlineMs: options.requestDeadlineMs,
   }).whoami()

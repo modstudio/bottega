@@ -4,6 +4,7 @@ import { type Browser, type BrowserContext, chromium, type Page, type Request } 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { readEnvValues } from '../../../shared/env-values.ts'
 import { resolveRecordApiUrl } from '../../../shared/record-api-url.ts'
+import { recordRequestHeaders } from '../../../shared/record-request-headers.ts'
 import { readRecordSessionTokenAsync } from '../../../shared/record-session.ts'
 import { concernStateDirectory } from '../../../shared/state-directory.ts'
 import {
@@ -322,7 +323,9 @@ try {
         (url) => bearerOrigins.has(url.origin),
         (route) =>
           route.continue({
-            headers: { ...route.request().headers(), authorization: `Bearer ${token}` },
+            headers: Object.fromEntries(
+              recordRequestHeaders({ bearerToken: token, headers: route.request().headers() }),
+            ),
           }),
       )
       try {

@@ -8,6 +8,7 @@ import { scheduleHostedCallObservation } from './hosted-call-observation.ts'
 import { jsonBody } from './http-json.ts'
 import { resolveRecordApiUrl } from './record-api-url.ts'
 import { RECORD_SIGN_IN_REMEDY } from './record-remedies.ts'
+import { recordRequestHeaders } from './record-request-headers.ts'
 import { readRecordSessionToken, sendWithStoredRecordSessionToken } from './record-session.ts'
 
 export type ConfigClientErrorReason = 'not-configured' | 'unreachable' | 'response'
@@ -426,9 +427,11 @@ function createConfigClient(
   const request = async <T>(route: string, init: ConfigRequestInit = {}): Promise<T> => {
     const send = async (bearer: string | null) => {
       if (!bearer) throw new ConfigClientError('not-configured', route)
-      const headers = new Headers(init.headers)
-      headers.set('authorization', `Bearer ${bearer}`)
-      if (init.destinationSpaceId) headers.set('x-record-space', init.destinationSpaceId)
+      const headers = recordRequestHeaders({
+        bearerToken: bearer,
+        destinationSpaceId: init.destinationSpaceId,
+        headers: init.headers,
+      })
       if (init.body) headers.set('content-type', 'application/json')
       const startedAt = performance.now()
       try {
