@@ -85,6 +85,7 @@
         "src/check/check-strict-schema.ts!",
         "test/run-gate.ts!",
         "src/**/*.test.ts",
+        "test/**/*.test.ts",
         "scripts/acp-parity.ts!",
         "scripts/**/*.test.ts",
         "scripts/check-canon-lint.ts!",

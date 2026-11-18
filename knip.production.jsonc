@@ -113,6 +113,7 @@
         "src/run/exec.ts!",
         "src/check/check-strict-schema.ts!",
         "test/run-gate.ts!",
+        "!test/**/*.test.ts",
         // Launched by path from src/sandbox/sandbox.ts for Grok's MCP configuration.
         "src/ask/ask-proxy.ts!",
         "scripts/acp-parity.ts!",

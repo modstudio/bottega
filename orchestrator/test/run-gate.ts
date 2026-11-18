@@ -6,6 +6,7 @@ import { resolveGateTimingDirectory } from '../../shared/gate-timing-directory.t
 import { mainCheckoutOf } from '../../shared/git.ts'
 import { withGateSlot } from '../src/gate-load.ts'
 import { gateShardArguments } from '../src/gate-shard.ts'
+import { warmHostedRecordSnapshot } from './fixtures/hosted-record-snapshot.ts'
 import { ORCHESTRATOR_GATE_TEST_SELECTION } from './gate-test-selection.ts'
 import { publishTimingSummary } from './gate-timing-summary.ts'
 import { type GateTimings, mergeTimings } from './record-gate-timings.ts'
@@ -74,6 +75,7 @@ async function runTests(): Promise<GateTimings> {
   return timing
 }
 
+await warmHostedRecordSnapshot()
 const timing = await withGateSlot(runTests)
 writeFileSync(timingPath, `${JSON.stringify(timing, null, 2)}\n`)
 console.log(`wrote ${timingPath}`)
