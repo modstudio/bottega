@@ -8,6 +8,7 @@ import {
   answerIdentifierDecision,
   parseAnswerIdentifier,
   resolveAnswerIdentifier,
+  resolveAnswerTarget,
 } from './run-answer-identifier.ts'
 
 const run = (overrides: Partial<NonNullable<AnswerIdentifierFacts['run']>> = {}) => ({
@@ -264,4 +265,81 @@ test('a bare number with no run keeps the explicit question hint', async () => {
   await expect(resolveAnswerIdentifier(db(), number, null)).rejects.toThrow(
     `run ${number} does not exist; to answer question q${number}, pass q${number}`,
   )
+})
+
+function addCursorQuestion(input: {
+  state: 'running' | 'awaiting-ruling'
+  closed?: boolean
+  answered?: boolean
+}) {
+  const suffix = newRecordId().slice(-8)
+  const project = `cursor-answer-${suffix}`
+  const projectId = newRecordId()
+  const cursorId = newRecordId()
+  const questionId = newRecordId()
+  const questionNumber = 890_000 + Number.parseInt(suffix.slice(0, 4), 16)
+  const caller = `cursor-answer-session-${suffix}`
+  db().exec('PRAGMA foreign_keys=OFF')
+  db()
+    .query('INSERT INTO project(record_id,name,path,settings) VALUES (?,?,?,?)')
+    .run(projectId, project, `/tmp/${project}`, '{}')
+  db()
+    .query(
+      `INSERT INTO presence
+         (session_id,harness,role,machine,project,project_record_id,cwd,first_seen,last_seen)
+       VALUES (?,'codex','architect','machine',?,?,?,'2026-11-17','2026-11-17')`,
+    )
+    .run(caller, project, projectId, `/tmp/${project}`)
+  db()
+    .query(
+      `INSERT INTO workflow_cursor
+        (record_id,number,project,project_record_id,workflow_slug,mode_slug,workflow_key,instance_id,
+         session_id,workflow_version_record_id,catalogue_version_record_id,args,ordinal,step_slug,state,
+         closed,question,total_steps,created_at,updated_at)
+       VALUES (?,9876,?,?,'flow','default','DEV-2394','',?, ?,?,'{}',2,'review',?,'[]',NULL,4,'2026-11-17','2026-11-17')`,
+    )
+    .run(cursorId, project, projectId, caller, newRecordId(), newRecordId(), input.state)
+  db()
+    .query(
+      `INSERT INTO question
+        (record_id,number,workflow_cursor_record_id,asked_at,question,asked_via,
+         answered_at,answer,closed_at,close_reason)
+       VALUES (?,?,?,'2026-11-17','Proceed?','workflow',?,?,?,?)`,
+    )
+    .run(
+      questionId,
+      questionNumber,
+      cursorId,
+      input.answered ? '2026-11-17' : null,
+      input.answered ? 'yes' : null,
+      input.closed ? '2026-11-17' : null,
+      input.closed ? 'advanced-without-ruling' : null,
+    )
+  db().exec('PRAGMA foreign_keys=ON')
+  return { caller, cursorId, project, questionId, questionNumber }
+}
+
+test('an open cursor question names the workflow rule remedy with its cursor and project', async () => {
+  const fixture = addCursorQuestion({ state: 'awaiting-ruling' })
+  await expect(
+    resolveAnswerTarget(db(), `q${fixture.questionNumber}`, fixture.caller),
+  ).rejects.toThrow(
+    `use bottega workflow rule --cursor 9876 --project ${fixture.project}`,
+  )
+})
+
+test('a closed unanswered cursor question resolves by bare q-number to the question target', async () => {
+  const fixture = addCursorQuestion({ state: 'running', closed: true })
+  expect(await resolveAnswerTarget(db(), `q${fixture.questionNumber}`, fixture.caller)).toEqual({
+    kind: 'workflow-question',
+    questionRecordId: fixture.questionId,
+    cursorRecordId: fixture.cursorId,
+  })
+})
+
+test('an answered cursor question refuses as already ruled on without naming a null run', async () => {
+  const fixture = addCursorQuestion({ state: 'running', answered: true })
+  await expect(
+    resolveAnswerTarget(db(), `q${fixture.questionNumber}`, fixture.caller),
+  ).rejects.toThrow(`q${fixture.questionNumber} is already ruled on`)
 })

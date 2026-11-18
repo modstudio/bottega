@@ -52,10 +52,15 @@ import {
   REVIEW_REPRODUCED,
 } from '../review/review-vocabulary.ts'
 import { resolveQuestionIdentifier } from '../run/question-identifier.ts'
-import { resolveAnswerIdentifier } from '../run/run-answer-identifier.ts'
+import { resolveAnswerTarget } from '../run/run-answer-identifier.ts'
 import { finishHarnessRun } from '../run/run-harness-finish.ts'
 import { resolveRunIdentifier } from '../run/run-identifier.ts'
-import { answerCommand, continueCommand, retryCommand } from '../run/run-message-commands.ts'
+import {
+  answerClosedWorkflowQuestionCommand,
+  answerCommand,
+  continueCommand,
+  retryCommand,
+} from '../run/run-message-commands.ts'
 import { loadSubscriptionCostContext } from '../run/run-subscription-prices.ts'
 import { formatShipCleanup, shipCleanup } from '../ship-cleanup/ship-cleanup.ts'
 import { SHIP_CLEANUP_RESIDUE_EXIT_CODE } from '../ship-cleanup/ship-cleanup-decision.ts'
@@ -128,9 +133,21 @@ const tellByIdentifier = (id: string, command: Command, ping: boolean) =>
     refusedOwnerOptions(command, 'run tell', 'run'),
   )
 const answerByIdentifier = async (id: string, command: Command, options: OptionValues) => {
-  const target = await resolveAnswerIdentifier(db(), id, sessionId())
+  const target = await resolveAnswerTarget(db(), id, sessionId())
+  if (target.kind === 'workflow-question') {
+    await answerClosedWorkflowQuestionCommand(
+      target,
+      rawArgv(command).slice(2),
+      Boolean(options.recordOnly),
+      Boolean(options.json),
+      runFlags(options),
+      presentation,
+      refusedOwnerOptions(command, 'question answer', 'question'),
+    )
+    return
+  }
   await answerCommand(
-    target,
+    target.runRecordId,
     rawArgv(command).slice(2),
     Boolean(options.recordOnly),
     Boolean(options.json),

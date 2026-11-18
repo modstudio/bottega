@@ -64,6 +64,65 @@ test('answer refuses a question-sibling option instead of recording it as ruling
   )
 })
 
+test('answer records a late ruling on a closed cursor question without moving its cursor', async () => {
+  const suffix = newRecordId().slice(-8)
+  const project = `late-ruling-${suffix}`
+  const projectId = newRecordId()
+  const cursorId = newRecordId()
+  const questionId = newRecordId()
+  const questionNumber = 910_000 + Number.parseInt(suffix.slice(0, 4), 16)
+  db().exec('PRAGMA foreign_keys=OFF')
+  db()
+    .query('INSERT INTO project(record_id,name,path,settings) VALUES (?,?,?,?)')
+    .run(projectId, project, `/tmp/${project}`, '{}')
+  db()
+    .query(
+      `INSERT OR REPLACE INTO presence
+         (session_id,harness,role,machine,project,project_record_id,cwd,first_seen,last_seen)
+       VALUES (?,'codex','architect','machine',?,?,?,'2026-11-17','2026-11-17')`,
+    )
+    .run(sessionId(), project, projectId, `/tmp/${project}`)
+  db()
+    .query(
+      `INSERT INTO workflow_cursor
+        (record_id,number,project,project_record_id,workflow_slug,mode_slug,workflow_key,instance_id,
+         session_id,workflow_version_record_id,catalogue_version_record_id,args,ordinal,step_slug,state,
+         closed,question,total_steps,created_at,updated_at,revision)
+       VALUES (?,9987,?,?,'flow','default','DEV-2394','',?, ?,?,'{}',2,'review','running',
+               '[]',NULL,4,'2026-11-17','2026-11-17',7)`,
+    )
+    .run(cursorId, project, projectId, sessionId(), newRecordId(), newRecordId())
+  db()
+    .query(
+      `INSERT INTO question
+        (record_id,number,workflow_cursor_record_id,asked_at,question,asked_via,
+         closed_at,close_reason)
+       VALUES (?,?,?,'2026-11-17','Proceed?','workflow','2026-11-17','advanced-without-ruling')`,
+    )
+    .run(questionId, questionNumber, cursorId)
+  db().exec('PRAGMA foreign_keys=ON')
+
+  const program = new Command().exitOverride()
+  register(program)
+  const argv = ['node', 'orch', 'answer', `q${questionNumber}`, 'late ruling']
+  setRawArgv(argv.slice(2))
+  await program.parseAsync(argv)
+
+  const answered =
+    db()
+      .query('SELECT answer,answered_at,closed_at,close_reason FROM question WHERE record_id=?')
+      .get(questionId) as Record<string, unknown>
+  expect(answered).toMatchObject({
+    answer: 'late ruling',
+    closed_at: '2026-11-17T00:00:00.000Z',
+    close_reason: 'advanced-without-ruling',
+  })
+  expect(typeof answered.answered_at).toBe('string')
+  expect(
+    db().query('SELECT ordinal,step_slug,state,revision FROM workflow_cursor WHERE record_id=?').get(cursorId),
+  ).toEqual({ ordinal: 2, step_slug: 'review', state: 'running', revision: 7 })
+})
+
 test('tell refuses a run-sibling option instead of queuing it as message text', async () => {
   const recordId = addRun({ agent: 'codex', job: 'implement', status: 'running' })
   const number = (

@@ -15,6 +15,7 @@ import {
   unlinkedWorkflowQuestions,
 } from '../question-store/question-store-read.ts'
 import { rulingActor } from './question-vocabulary.ts'
+import { resolvedRulingPersonName } from './ruling-attribution.ts'
 import { adoptedMutationReason } from './run-authority.ts'
 import {
   joinMutationReason,
@@ -199,17 +200,21 @@ export async function answerWorkflowQuestion(
     personName: string | null
     channel: 'cli' | 'mcp'
     adoptionReason?: string | null
+    expect?: 'open' | 'closed-unanswered'
   },
   database: Database = db(),
 ): Promise<void> {
   const row = await questionById(database, input.questionId)
+  const expected = input.expect ?? 'open'
   if (
     !row ||
     row.workflow_cursor_record_id !== input.cursorId ||
     row.answer !== null ||
-    row.closed_at !== null
+    (expected === 'open' ? row.closed_at !== null : row.closed_at === null)
   )
-    throw new Error(`question ${input.questionId} is not open`)
+    throw new Error(
+      `question ${input.questionId} is not ${expected === 'open' ? 'open' : 'closed and unanswered'}`,
+    )
   const mutation = await mutateQuestion(database, {
     id: input.questionId,
     intent: 'answer',
@@ -217,7 +222,7 @@ export async function answerWorkflowQuestion(
     actorSession: input.actor,
     reason: joinMutationReason(input.ruling, input.adoptionReason ?? null),
     auditAction: 'rule',
-    requireOpen: true,
+    requireOpen: expected === 'open',
     changes: {
       answer: input.ruling,
       answerBasis: input.basis ?? null,
@@ -229,4 +234,44 @@ export async function answerWorkflowQuestion(
     },
   })
   requireQuestionMutationApplied(mutation, row)
+}
+
+/** Records a late ruling on a closed workflow question without changing its cursor or closure. */
+export async function answerClosedWorkflowQuestion(
+  input: {
+    questionId: string
+    cursorId: string
+    ruling: string
+    fromOperator: boolean
+    channel: 'cli' | 'mcp'
+  },
+  database: Database = db(),
+): Promise<void> {
+  const cursor = database
+    .query<{ session_id: string | null; updated_at: string }, [string]>(
+      'SELECT session_id,updated_at FROM workflow_cursor WHERE record_id=?',
+    )
+    .get(input.cursorId)
+  if (!cursor) throw new Error(`workflow cursor ${input.cursorId} does not exist`)
+  const actor = sessionId()
+  const adoptionReason = authorizeWorkflowQuestionMutation({
+    owner: cursor.session_id,
+    actor,
+    fromOperator: input.fromOperator,
+    subject: `workflow question ${input.questionId}`,
+    action: 'rule',
+    chainLastActivityAt: Date.parse(cursor.updated_at),
+    database,
+  })
+  await answerWorkflowQuestion(
+    {
+      ...input,
+      expect: 'closed-unanswered',
+      at: new Date().toISOString(),
+      actor,
+      personName: resolvedRulingPersonName(input.fromOperator),
+      adoptionReason,
+    },
+    database,
+  )
 }

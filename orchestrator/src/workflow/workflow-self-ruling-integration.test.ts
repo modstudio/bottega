@@ -1,7 +1,8 @@
 import type { Database } from 'bun:sqlite'
-import { expect, test } from 'bun:test'
+import { expect, spyOn, test } from 'bun:test'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { testDatabaseFixture } from '../database/test-database.fixture.ts'
+import * as taskFlowWriter from '../record/record-task-flow-write-client.ts'
 import type { AutonomyResolution } from './autonomy.ts'
 import {
   productionStepCatalogue,
@@ -9,7 +10,7 @@ import {
   setStepCatalogueLocal,
 } from './step-catalogue.ts'
 import { workflowNextContextMoment } from './workflow-context-moment.ts'
-import { composeWorkflowWithCursor } from './workflow-cursor.ts'
+import { awaitWorkflowRuling, composeWorkflowWithCursor } from './workflow-cursor.ts'
 import { resolveWorkflowLiveAutonomy } from './workflow-cursor-live-autonomy.ts'
 import { getWorkflowStepWithCursor } from './workflow-cursor-serve.ts'
 import { selectAndNextWorkflowStep as nextWorkflowStep } from './workflow-cursor-test.fixture.ts'
@@ -172,6 +173,87 @@ test('self-ruling records the answered question and closes the step atomically',
   expect(d.query("SELECT count(*) count FROM outbox WHERE kind='question'").get()).toEqual({
     count: 0,
   })
+})
+
+test('a failed self-ruling write does not advance a running cursor', async () => {
+  const d = database()
+  await openAtRuling(d)
+  const before = d.query('SELECT ordinal,step_slug,state,revision FROM workflow_cursor').get()
+  d.exec(`CREATE TRIGGER fail_dev2394_self_ruling_insert BEFORE INSERT ON question
+    BEGIN SELECT RAISE(ABORT,'injected self-ruling write failure'); END`)
+  const write = spyOn(taskFlowWriter, 'writeHostedTaskFlow')
+  write.mockClear()
+
+  await expect(selfRule(d)).rejects.toThrow('injected self-ruling write failure')
+
+  expect(write).not.toHaveBeenCalled()
+  expect(d.query('SELECT ordinal,step_slug,state,revision FROM workflow_cursor').get()).toEqual(
+    before,
+  )
+  expect(d.query('SELECT count(*) count FROM question').get()).toEqual({ count: 0 })
+  write.mockRestore()
+})
+
+test('a failed self-ruling write leaves an awaiting cursor and its question open', async () => {
+  const d = database()
+  await openAtRuling(d)
+  await awaitWorkflowRuling(
+    'flow',
+    'fixture',
+    'default',
+    args,
+    'Proceed?',
+    context,
+    d,
+    () => {},
+  )
+  const before = d.query('SELECT ordinal,step_slug,state,revision FROM workflow_cursor').get()
+  d.exec(`CREATE TRIGGER fail_dev2394_self_ruling_answer BEFORE UPDATE OF answer ON question
+    WHEN NEW.answer IS NOT NULL
+    BEGIN SELECT RAISE(ABORT,'injected self-ruling write failure'); END`)
+  const write = spyOn(taskFlowWriter, 'writeHostedTaskFlow')
+  write.mockClear()
+
+  await expect(selfRule(d)).rejects.toThrow('injected self-ruling write failure')
+
+  expect(write).not.toHaveBeenCalled()
+  expect(d.query('SELECT ordinal,step_slug,state,revision FROM workflow_cursor').get()).toEqual(
+    before,
+  )
+  expect(d.query('SELECT answered_at,closed_at FROM question').get()).toEqual({
+    answered_at: null,
+    closed_at: null,
+  })
+  write.mockRestore()
+})
+
+test('a failed workflow-question write does not write an await-ruling advance', async () => {
+  const d = database()
+  await openAtRuling(d)
+  const before = d.query('SELECT ordinal,step_slug,state,revision FROM workflow_cursor').get()
+  d.exec(`CREATE TRIGGER fail_dev2394_await_question BEFORE INSERT ON question
+    BEGIN SELECT RAISE(ABORT,'injected workflow-question write failure'); END`)
+  const write = spyOn(taskFlowWriter, 'writeHostedTaskFlow')
+  write.mockClear()
+
+  await expect(
+    awaitWorkflowRuling(
+      'flow',
+      'fixture',
+      'default',
+      args,
+      'Proceed?',
+      context,
+      d,
+      () => {},
+    ),
+  ).rejects.toThrow('injected workflow-question write failure')
+
+  expect(write).not.toHaveBeenCalled()
+  expect(d.query('SELECT ordinal,step_slug,state,revision FROM workflow_cursor').get()).toEqual(
+    before,
+  )
+  write.mockRestore()
 })
 
 test('review-owed is applied as the only floor and leaves no evidence floor behind', async () => {

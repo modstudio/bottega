@@ -30,7 +30,12 @@ type AnswerRunFacts = {
 }
 
 type AnswerQuestionFacts = {
+  recordId?: string
   rootRecordId: string
+  workflowCursorRecordId?: string | null
+  workflowCursorNumber?: number | null
+  workflowCursorState?: string | null
+  workflowProject?: string | null
   open: boolean
   state: 'open' | 'ruled' | 'closed'
   openQuestionNumbers: number[]
@@ -44,6 +49,7 @@ export type AnswerIdentifierFacts = {
 
 export type AnswerIdentifierDecision =
   | { kind: 'target'; runRecordId: string }
+  | { kind: 'workflow-question'; questionRecordId: string; cursorRecordId: string }
   | { kind: 'refuse'; reason: string }
 
 const ANSWER_IDENTIFIER_FORMS =
@@ -128,6 +134,27 @@ function explicitQuestionDecision(
   question: AnswerQuestionFacts | null,
 ): AnswerIdentifierDecision {
   if (question) {
+    if (question.workflowCursorRecordId) {
+      if (question.state === 'ruled')
+        return {
+          kind: 'refuse',
+          reason: `${questionReference(identifier)} is already ruled on`,
+        }
+      if (question.open) {
+        const cursor = question.workflowCursorNumber
+        return {
+          kind: 'refuse',
+          reason:
+            `${questionReference(identifier)} belongs to workflow cursor ${String(cursor)} awaiting a ruling; ` +
+            `use bottega workflow rule --cursor ${String(cursor)} --project ${String(question.workflowProject)}`,
+        }
+      }
+      return {
+        kind: 'workflow-question',
+        questionRecordId: question.recordId!,
+        cursorRecordId: question.workflowCursorRecordId,
+      }
+    }
     if (question.open) return { kind: 'target', runRecordId: question.rootRecordId }
     const state = question.state === 'ruled' ? 'already ruled on' : 'closed'
     return {
@@ -284,7 +311,29 @@ async function readQuestionFacts(
   }
   const row = (await questionsById(database, [recordId]))[0]
   if (!row) return null
-  const runId = String(row.run_record_id)
+  const workflowCursorRecordId =
+    typeof row.workflow_cursor_record_id === 'string' ? row.workflow_cursor_record_id : null
+  if (workflowCursorRecordId) {
+    const cursor = database
+      .query<{ number: number; state: string; project: string }, [string]>(
+        'SELECT number,state,project FROM workflow_cursor WHERE record_id=?',
+      )
+      .get(workflowCursorRecordId)
+    const open = row.answered_at === null && row.closed_at === null
+    return {
+      recordId,
+      rootRecordId: workflowCursorRecordId,
+      workflowCursorRecordId,
+      workflowCursorNumber: cursor?.number ?? null,
+      workflowCursorState: cursor?.state ?? null,
+      workflowProject: cursor?.project ?? null,
+      open,
+      state: open ? 'open' : row.answered_at ? 'ruled' : 'closed',
+      openQuestionNumbers: [],
+    }
+  }
+  if (typeof row.run_record_id !== 'string') return null
+  const runId = row.run_record_id
   const rootRecordId =
     database
       .query<{ root_id: string }, [string]>(
@@ -305,6 +354,17 @@ export async function resolveAnswerIdentifier(
   input: string | number,
   callerSessionId: string | null,
 ): Promise<string> {
+  const decision = await resolveAnswerTarget(database, input, callerSessionId)
+  if (decision.kind === 'workflow-question')
+    throw new Error(`question ${decision.questionRecordId} belongs to a workflow cursor`)
+  return decision.runRecordId
+}
+
+export async function resolveAnswerTarget(
+  database: Database,
+  input: string | number,
+  callerSessionId: string | null,
+): Promise<Exclude<AnswerIdentifierDecision, { kind: 'refuse' }>> {
   const identifier = parseAnswerIdentifier(input)
   const context = identityContext(database, { session: callerSessionId })
   if (identifier.kind === 'question-number') {
@@ -323,7 +383,7 @@ export async function resolveAnswerIdentifier(
       question: await readQuestionFacts(database, normalized, context),
     })
     if (decision.kind === 'refuse') throw new Error(decision.reason)
-    return decision.runRecordId
+    return decision
   }
   if (identifier.kind === 'run-number') {
     const runReference = qualifiedReference(identifier.qualifier, String(identifier.number))
@@ -336,7 +396,7 @@ export async function resolveAnswerIdentifier(
           : await readQuestionFacts(database, identifier, context),
     })
     if (decision.kind === 'refuse') throw new Error(decision.reason)
-    return decision.runRecordId
+    return decision
   }
   const resolved = await resolve(
     qualifiedReference(identifier.qualifier, identifier.recordId),
@@ -353,5 +413,5 @@ export async function resolveAnswerIdentifier(
       resolved.kind === 'question' ? await readQuestionFacts(database, normalized, context) : null,
   })
   if (decision.kind === 'refuse') throw new Error(decision.reason)
-  return decision.runRecordId
+  return decision
 }
