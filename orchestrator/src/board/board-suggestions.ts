@@ -13,10 +13,10 @@ import {
   BOARD_DUPLICATE_WINDOW_MS,
   BOARD_POST_RATE_WINDOW_MS,
   BOARD_TITLE_MAX_CHARS,
-  localBoardDuplicateLiveSql,
   postDecision,
 } from './board-policy.ts'
 import { boardActor, type PostNoticeInput, postNoticeInTransaction } from './board-service.ts'
+import { localBoardDuplicateLiveSql } from './board-store.ts'
 import { type BoardTag, type SenderBoardTags, senderBoardTags, senderTagKey } from './board-tags.ts'
 import {
   boardTextCheckout,
@@ -99,7 +99,6 @@ export function suggestBoardPost(
   const audience = `session:${run.session_id}`
   const since = new Date(clock - BOARD_POST_RATE_WINDOW_MS).toISOString()
   const duplicateSince = new Date(clock - BOARD_DUPLICATE_WINDOW_MS).toISOString()
-  const now = new Date(clock).toISOString()
   const recentPosts = (
     db()
       .query(
@@ -112,10 +111,10 @@ export function suggestBoardPost(
     .query(
       `SELECT record_id,number FROM board_message
        WHERE kind='suggestion' AND author_kind='worker' AND author_run_record_id=?
-         AND audience=? AND title=? AND body=? AND ${localBoardDuplicateLiveSql()}
+         AND audience=? AND title=? AND body=? AND ${localBoardDuplicateLiveSql(clock)}
          AND created_at>=? ORDER BY created_at DESC,number DESC`,
     )
-    .all(run.record_id, audience, input.title, input.body, now, duplicateSince) as {
+    .all(run.record_id, audience, input.title, input.body, duplicateSince) as {
     record_id: string
     number: number
   }[]

@@ -10,12 +10,6 @@ export const BOARD_TITLE_MAX_CHARS = 120
 export const BOARD_BODY_MAX_CHARS = 4000
 export const HEADER_BREAK = /[\r\n\u2028\u2029]/g
 
-/** SQLite predicate for a live duplicate-eligible root; local board rows have no hidden column. */
-export function localBoardDuplicateLiveSql(alias = ''): string {
-  const prefix = alias ? `${alias}.` : ''
-  return `${prefix}withdrawn_at IS NULL AND ${prefix}expires_at>?`
-}
-
 /** Stored values are untrusted too: no interpolated value may create a new header line. */
 export const boardHeaderValue = (value: string | number): string =>
   String(value).replace(HEADER_BREAK, ' ')

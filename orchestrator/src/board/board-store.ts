@@ -25,7 +25,6 @@ import {
   architectsPostingRefusal,
   BOARD_DUPLICATE_WINDOW_MS,
   BOARD_POST_RATE_WINDOW_MS,
-  localBoardDuplicateLiveSql,
   messageIsLive,
   OPERATOR_READER,
   type PresenceFact,
@@ -111,6 +110,12 @@ export type MessageRow = {
 
 export const BOARD_MESSAGE_COLUMNS =
   'record_id,number,kind,purpose,author_kind,author_session,audience,title,body,ack_required,ack_deadline,expires_at,created_at,withdrawn_at,withdrawn_reason,author_harness,author_project,author_run_record_id,thread_root_record_id,accepted_reply_record_id,accepted_by,accepted_at,note_record_id,note_label,note_pending_error,note_filing_started_at,claim_record_id'
+
+/** SQLite predicate for a live duplicate-eligible root; local board rows have no hidden column. */
+export function localBoardDuplicateLiveSql(clock: number, alias = ''): string {
+  const prefix = alias ? `${alias}.` : ''
+  return `${prefix}withdrawn_at IS NULL AND ${prefix}expires_at>'${new Date(clock).toISOString()}'`
+}
 
 function rootPurpose(
   kind: 'notice' | 'question',
@@ -588,7 +593,7 @@ function duplicateRoot(
        WHERE kind=? AND purpose=? AND author_kind=? AND author_session IS ? AND author_run_record_id IS ?
          AND author_project_record_id IS (SELECT record_id FROM project WHERE name IS ?)
          AND audience=? AND title=? AND body=? AND created_at>=?
-         AND ${localBoardDuplicateLiveSql()}
+         AND ${localBoardDuplicateLiveSql(input.clock)}
        ORDER BY created_at DESC,number DESC`,
     )
     .all(
@@ -602,7 +607,6 @@ function duplicateRoot(
       input.title,
       input.body,
       new Date(input.clock - BOARD_DUPLICATE_WINDOW_MS).toISOString(),
-      new Date(input.clock).toISOString(),
     ) as { record_id: string; number: number }[]
   const senderTagsKey = senderTagKey(input.senderTags)
   return candidates.find((candidate) => {

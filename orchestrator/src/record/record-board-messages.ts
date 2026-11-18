@@ -84,6 +84,13 @@ function hostedBoardDuplicateLiveSql(tx: SQL, clock: number, alias = '') {
   )
 }
 
+function hostedBoardWriteServerResponse(
+  mintedId: string,
+  message: HostedBoardMessage,
+): HostedBoardWriteServerResponse {
+  return { ...message, duplicateOf: message.id === mintedId ? null : message.id }
+}
+
 type HostedBoardForcedScope = {
   scopeProjectIds: string[]
   recipientUserIds: string[]
@@ -484,7 +491,7 @@ export async function postHostedBoardMessage(
         view: viewById,
       })) ?? postMember(tx, values),
   )
-  return { ...message, duplicateOf: message.id === input.id ? null : message.id }
+  return hostedBoardWriteServerResponse(input.id, message)
 }
 
 async function prepareHostedPost(
@@ -785,7 +792,7 @@ export async function replyHostedBoardMessage(
   const message = await withBoardTenant(input, true, (tx) =>
     replyHostedBoardMessageTx(tx, input, requested, actor, session, audience, clock),
   )
-  return { ...message, duplicateOf: message.id === input.id ? null : message.id }
+  return hostedBoardWriteServerResponse(input.id, message)
 }
 
 export async function withdrawHostedBoardMessage(

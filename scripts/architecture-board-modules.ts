@@ -319,6 +319,7 @@ export const boardModules: BoardModule[] = [
     '../project/projects.ts',
     './board-policy.ts',
     './board-service.ts',
+    './board-store.ts',
     './board-tags.ts',
     './board-text-preparation.ts',
     './board-text-secret.ts',

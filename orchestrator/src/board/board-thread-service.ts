@@ -18,7 +18,6 @@ import {
   architectIdentity,
   BOARD_BODY_MAX_CHARS,
   BOARD_DUPLICATE_WINDOW_MS,
-  localBoardDuplicateLiveSql,
   OPERATOR_READER,
   parseAudience,
 } from './board-policy.ts'
@@ -35,6 +34,7 @@ import {
   boardOrigin,
   hasReceipt,
   insertRootMessage,
+  localBoardDuplicateLiveSql,
   type MessageRow,
   messageRows,
   messageTags,
@@ -225,7 +225,7 @@ export function replyToThread(
          JOIN board_message AS root ON root.record_id=reply.thread_root_record_id
          WHERE reply.kind='reply' AND reply.author_kind=? AND reply.author_session IS ?
            AND reply.thread_root_record_id=? AND reply.body=? AND reply.audience IS ?
-           AND reply.withdrawn_at IS NULL AND ${localBoardDuplicateLiveSql('root')}
+           AND reply.withdrawn_at IS NULL AND ${localBoardDuplicateLiveSql(clock, 'root')}
            AND reply.created_at>=? ORDER BY reply.created_at DESC,reply.number DESC LIMIT 1`,
       )
       .get(
@@ -234,7 +234,6 @@ export function replyToThread(
         root.record_id,
         body,
         storedAudience,
-        new Date(clock).toISOString(),
         new Date(clock - BOARD_DUPLICATE_WINDOW_MS).toISOString(),
       ) as { record_id: string; number: number } | null
     const decision = authorWindowDecision(actor, clock, Boolean(duplicate), database)
