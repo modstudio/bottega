@@ -40,6 +40,7 @@ import { getReview, listReviews } from '../review/review.ts'
 import { resolveReviewIdentifier } from '../review/review-identifier.ts'
 import { catalogueStepsForAutonomy, parseAutonomy } from '../workflow/autonomy.ts'
 import { resolveProjectAutonomy } from '../workflow/autonomy-scopes.ts'
+import { taskReader } from '../workflow/task-read-port.ts'
 import {
   type CommitCountPort,
   type LandingBranchPorts,
@@ -181,16 +182,7 @@ async function searchDuplicateIssues(
   { duplicates: DuplicateCandidate[]; error: null } | { duplicates: null; error: string }
 > {
   try {
-    const output = await hubOutput([
-      'task',
-      'duplicates',
-      '--project',
-      PLATFORM_SLUG,
-      '--title',
-      title,
-      '--json',
-    ])
-    const duplicates = JSON.parse(output) as DuplicateCandidate[]
+    const duplicates = taskReader().duplicates(PLATFORM_SLUG, title)
     if (!Array.isArray(duplicates))
       throw new Error(`${PLATFORM_SLUG} task duplicates returned a non-array JSON value`)
     return { duplicates, error: null }

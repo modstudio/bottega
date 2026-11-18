@@ -27,6 +27,10 @@ function cliTaskReadAdapter(): TaskReadPort {
     list(filters) {
       return hubTaskReads().task.listTasks(filters)
     },
+    duplicates(project, title) {
+      const { duplicateCandidates, listTasks } = hubTaskReads().task
+      return duplicateCandidates(listTasks({ project }), title)
+    },
     show(key, scope) {
       return hubTaskReads().task.showTask(key, scope)
     },

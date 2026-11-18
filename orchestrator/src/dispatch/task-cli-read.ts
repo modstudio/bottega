@@ -1,5 +1,5 @@
 // concern: task-cli-read
-/** Reads one task through the CLI capability declared by the project register. */
+/** Reads one task through the installed task reader. */
 
 import type { Project } from '../project/projects.ts'
 import { taskReader } from '../workflow/task-read-port.ts'

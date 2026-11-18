@@ -36,8 +36,16 @@ type TaskReadShow = {
   documents?: TaskReadDocumentSummary[]
 }
 
+export type TaskReadDuplicateCandidate = {
+  key: string
+  status: string | null
+  title: string
+  score: number
+}
+
 export type TaskReadPort = {
   list(filters?: { project?: string; status?: string; parent?: string }): TaskReadRow[]
+  duplicates(project: string, title: string): TaskReadDuplicateCandidate[]
   show(key: string, scope?: { project?: string; recordId?: string }): TaskReadShow
   documents(key: string, scope?: { project?: string; recordId?: string }): TaskReadDocumentSummary[]
   document(value: string, scope?: { project?: string; recordId?: string }): TaskReadDocument

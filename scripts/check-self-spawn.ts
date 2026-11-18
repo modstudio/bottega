@@ -11,14 +11,20 @@ import { PLATFORM_NAME } from '../shared/brand.ts'
 const root = fileURLToPath(new URL('..', import.meta.url))
 const resolver = join(root, 'shared', 'self-spawn.ts')
 
-export type TaskVerbSpawn = { line: number; verb: string; exemptFreshRead: boolean }
+export type TaskVerbSpawn = {
+  line: number
+  verb: string
+  read: boolean
+  exemptFreshRead: boolean
+}
 
-const TASK_WRITE_BASELINE = {
+export const TASK_WRITE_BASELINE = {
   'orchestrator/src/issue/issue-dispatch.ts': {
     count: 4,
     reason: 'task write, later slice',
   },
   'orchestrator/src/issue/issue.ts': { count: 4, reason: 'task write, later slice' },
+  'orchestrator/src/mcp/mcp.ts': { count: 1, reason: 'task write, later slice' },
   'orchestrator/src/workflow/workflow-text-copy.ts': {
     count: 1,
     reason: 'task write, later slice',
@@ -257,6 +263,17 @@ function taskTokens(expression: ts.Expression | undefined): string[] {
   })
 }
 
+function taskVerb(tokens: string[], task: number): { verb: string; read: boolean } | undefined {
+  const verb = tokens[task + 1]
+  if (!verb) return undefined
+  if (verb === 'doc') {
+    const subverb = tokens[task + 2]
+    if (!subverb) return { verb, read: false }
+    return { verb: `${verb} ${subverb}`, read: subverb === 'show' || subverb === 'list' }
+  }
+  return { verb, read: verb === 'show' || verb === 'list' || verb === 'duplicates' }
+}
+
 /** Find calls that send the task verb group to an orchestrator self-spawn helper. */
 export function taskVerbSpawns(sourceText: string, path = 'fixture.ts'): TaskVerbSpawn[] {
   const source = ts.createSourceFile(
@@ -270,17 +287,26 @@ export function taskVerbSpawns(sourceText: string, path = 'fixture.ts'): TaskVer
   const visit = (node: ts.Node): void => {
     if (ts.isCallExpression(node)) {
       const callee = node.expression.getText(source)
-      const spawnCall = ['startBounded', 'startBoundedSync', 'spawnBottega', 'hub'].includes(callee)
+      const spawnCall = [
+        'startBounded',
+        'startBoundedSync',
+        'spawnBottega',
+        'hub',
+        'hubOutput',
+      ].includes(callee)
       if (spawnCall) {
         const tokens = taskTokens(node.arguments[0])
         const task = tokens.indexOf('task')
-        const verb = task < 0 ? undefined : tokens[task + 1]
-        if (verb) {
+        const classified = task < 0 ? undefined : taskVerb(tokens, task)
+        if (classified) {
           findings.push({
             line: source.getLineAndCharacterOfPosition(node.getStart(source)).line + 1,
-            verb,
+            ...classified,
             exemptFreshRead:
-              containingFunctionName(node) === 'readFreshHubTaskThroughCli' && verb === 'show',
+              path === 'orchestrator/src/workflow/workflow-task-reference.ts' &&
+              containingFunctionName(node) === 'readFreshHubTaskThroughCli' &&
+              classified.verb === 'show' &&
+              tokens.includes('--fresh'),
           })
         }
       }
@@ -295,10 +321,8 @@ export function taskVerbSpawnViolations(
   path: string,
   findings: readonly TaskVerbSpawn[],
 ): string[] {
-  const reads = findings.filter(
-    (finding) => (finding.verb === 'show' || finding.verb === 'list') && !finding.exemptFreshRead,
-  )
-  const writes = findings.filter((finding) => finding.verb !== 'show' && finding.verb !== 'list')
+  const reads = findings.filter((finding) => finding.read && !finding.exemptFreshRead)
+  const writes = findings.filter((finding) => !finding.read)
   const baseline = TASK_WRITE_BASELINE[path as keyof typeof TASK_WRITE_BASELINE]
   const allowedWrites = baseline?.count ?? 0
   const violations = reads.map(

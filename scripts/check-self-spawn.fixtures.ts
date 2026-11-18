@@ -44,4 +44,22 @@ function readFreshHubTaskThroughCli() {
 }
 `
 
+export const nonFreshNamedTaskReadFixture = `
+function readFreshHubTaskThroughCli() {
+  return startBoundedSync(['${PLATFORM_SLUG}', 'task', 'show', 'DEV-1'], {})
+}
+`
+
+export const hubOutputTaskReadFixture = `
+hubOutput(['task', 'list', '--project', '${PLATFORM_SLUG}'])
+`
+
+export const spawnedTaskDocReadFixture = `
+hub(['task', 'doc', 'show', 'DOC-1'])
+`
+
+export const spawnedTaskDuplicatesFixture = `
+hub(['task', 'duplicates', '--project', '${PLATFORM_SLUG}', '--title', 'Duplicate'])
+`
+
 import { PLATFORM_SLUG } from '../shared/brand.ts'

@@ -1,5 +1,5 @@
 // concern: branch lifecycle evidence
-/** Reads one task's status through the task concern's existing CLI owner. */
+/** Reads one task's status through the installed task reader. */
 
 import { TASK_STATUSES } from '../../../shared/trackers.ts'
 import { taskReader } from '../workflow/task-read-port.ts'
