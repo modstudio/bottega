@@ -5,9 +5,9 @@ import type { Database } from 'bun:sqlite'
 import { db } from '../database/db.ts'
 import { projectAt } from '../project/projects.ts'
 import { openQuestionStages } from '../question-store/question-store-read.ts'
-import { TASK_FLOW_STAGE_STATES } from '../record/record-task-flow-contract.ts'
 import {
   type TaskFlowListedStageRow as ListedCursorRow,
+  TASK_FLOW_STAGE_STATES,
   taskFlowHandoffLinks,
   taskFlowReadStore,
 } from './task-flow-store.ts'

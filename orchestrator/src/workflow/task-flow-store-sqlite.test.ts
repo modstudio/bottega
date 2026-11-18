@@ -1,10 +1,6 @@
 import { expect, test } from 'bun:test'
 import { newRecordId } from '../../../shared/record-id.ts'
-import {
-  TASK_FLOW_STAGE_STATES,
-  type TaskFlowStageState,
-} from '../record/record-task-flow-contract.ts'
-import { taskFlowReadStore } from './task-flow-store.ts'
+import { TASK_FLOW_STAGE_STATES, taskFlowReadStore } from './task-flow-store.ts'
 import { composeWorkflowWithCursor } from './workflow-cursor.ts'
 import { listWorkflowCursors } from './workflow-cursor-list.ts'
 import { database } from './workflow-cursor-test.fixture.ts'
@@ -20,7 +16,7 @@ test('all-state stage reads include closed cursors without widening open reads',
     project: string,
     key: string,
     session: string,
-    state: Extract<TaskFlowStageState, 'done' | 'abandoned'>,
+    state: 'done' | 'abandoned',
   ) => {
     const composed = await composeWorkflowWithCursor(
       'flow',
@@ -51,10 +47,11 @@ test('all-state stage reads include closed cursors without widening open reads',
   expect(await store.listOpenStages({ project: 'fixture' })).toEqual([])
 
   const cursorCount = d.query<{ count: number }, []>('SELECT count(*) count FROM workflow_cursor')
-  expect((await listWorkflowCursors({ all: true, project: 'fixture' }, d)).map((row) => row.state).sort()).toEqual([
-    'abandoned',
-    'done',
-  ])
+  expect(
+    (await listWorkflowCursors({ all: true, project: 'fixture' }, d))
+      .map((row) => row.state)
+      .sort(),
+  ).toEqual(['abandoned', 'done'])
   expect(
     (await listWorkflowCursors({ all: true, session: 'session-done' }, d)).map(
       (row) => row.workflow_key,

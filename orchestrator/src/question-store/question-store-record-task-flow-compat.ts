@@ -5,10 +5,7 @@ import type { Database } from 'bun:sqlite'
 import { PLATFORM_NAME } from '../../../shared/brand.ts'
 import { QUESTION_ID_LIST_LIMIT } from '../record/record-question-contract.ts'
 import type { HostedTaskFlowStageById } from '../record/record-task-flow-contract.ts'
-import {
-  TASK_FLOW_STAGE_STATES,
-  type TaskFlowStageState,
-} from '../record/record-task-flow-contract.ts'
+import { TASK_FLOW_STAGE_STATES } from '../record/record-task-flow-contract.ts'
 import { type ListedItem, stageRow } from '../workflow/task-flow-store-record-stage-row.ts'
 import type {
   TaskFlowInboxQuestionRow,
@@ -18,6 +15,7 @@ import type {
   TaskFlowQuestionCloseRow,
   TaskFlowRulingFileRow,
   TaskFlowRulingRow,
+  TaskFlowStageCursorRow,
   TaskFlowTaskRulingRow,
   TaskFlowWaitingQuestionRow,
 } from '../workflow/task-flow-store-types.ts'
@@ -78,7 +76,7 @@ function stageReads(questions: QuestionStore, read: StageRead) {
     async listStages(input: {
       project?: string
       sessionId?: string
-      states: readonly TaskFlowStageState[]
+      states: readonly TaskFlowStageCursorRow['state'][]
     }): Promise<TaskFlowListedStageRow[]> {
       const selector = {
         states: input.states,

@@ -2,7 +2,6 @@
 /** Carries the local task-flow SQL behind the task-flow store ports. */
 
 import type { Database } from 'bun:sqlite'
-import type { TaskFlowStageState } from '../record/record-task-flow-contract.ts'
 import { writeTransaction } from '../database/db.ts'
 import { openQuestionsForCursors } from '../question-store/question-store-read.ts'
 import * as questions from '../question-store/question-store-sqlite-reads.ts'
@@ -35,6 +34,7 @@ import type {
   TaskFlowRulingFileRow,
   TaskFlowRulingRow,
   TaskFlowStageCursorRow,
+  TaskFlowStageState,
   TaskFlowTaskRulingRow,
   TaskFlowTextBodyRow,
   TaskFlowTextRow,

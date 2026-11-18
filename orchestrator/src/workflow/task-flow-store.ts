@@ -6,7 +6,6 @@ import type {
   TaskFlowIntentResult,
   TaskFlowLiveIntent,
 } from '../record/record-task-flow-write-contract.ts'
-import type { TaskFlowStageState } from '../record/record-task-flow-contract.ts'
 import {
   currentRecordWriteDecision,
   throwIfRecordRefused,
@@ -36,6 +35,7 @@ import type {
   TaskFlowRulingFileRow,
   TaskFlowRulingRow,
   TaskFlowStageCursorRow,
+  TaskFlowStageState,
   TaskFlowTaskRulingRow,
   TaskFlowTextBodyRow,
   TaskFlowTextRow,
@@ -54,7 +54,7 @@ export type {
   TaskFlowRulingFileRow,
   TaskFlowWaitingQuestionRow,
 } from './task-flow-store-types.ts'
-export { isKeylessExplore } from './task-flow-store-types.ts'
+export { isKeylessExplore, TASK_FLOW_STAGE_STATES } from './task-flow-store-types.ts'
 
 /**
  * Names the task-flow questions and write intents used by the workflow engine.

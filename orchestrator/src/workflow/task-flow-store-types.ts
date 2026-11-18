@@ -8,6 +8,14 @@ import type {
 import type { CursorOwner, CursorState } from './workflow-cursor-transition.ts'
 import type { EnforcementMode } from './workflow-floor.ts'
 
+export type TaskFlowStageState = CursorState
+export const TASK_FLOW_STAGE_STATES = [
+  'running',
+  'awaiting-ruling',
+  'done',
+  'abandoned',
+] as const satisfies readonly TaskFlowStageState[]
+
 type CursorOwnerMutation = { values: { sessionId?: CursorOwner | null } }
 type CursorOwnerIntentShape<K extends TaskFlowIntent> = K extends 'compose'
   ? {

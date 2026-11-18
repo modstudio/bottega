@@ -22,7 +22,6 @@ import {
   type HostedTaskFlowStageById,
   type HostedTaskFlowStageList,
   TASK_FLOW_STAGE_LIST_LIMIT_MAX,
-  type TaskFlowStageState,
 } from '../record/record-task-flow-contract.ts'
 import {
   currentRecordWriteDecision,
@@ -39,6 +38,7 @@ import type {
   TaskFlowObligationRow,
   TaskFlowOpenObligationRow,
   TaskFlowOpenStageWorktreeRow,
+  TaskFlowStageCursorRow,
   TaskFlowTextRow,
 } from './task-flow-store-types.ts'
 
@@ -311,7 +311,7 @@ class RecordTaskFlowReadStore {
   async listStages(input: {
     project?: string
     sessionId?: string
-    states: readonly TaskFlowStageState[]
+    states: readonly TaskFlowStageCursorRow['state'][]
   }) {
     return this.questions.listStages(input)
   }
