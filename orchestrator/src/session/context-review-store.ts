@@ -19,6 +19,21 @@ export type ContextReviewEvent = {
   itemIds: string[]
 }
 
+/** Reads the recorded review measurements in one report window. */
+export function contextReviewWindow(since: string, database: Database = db()) {
+  return database
+    .query<{ session_id: string; at: string; items: number; flagged: number }, [string]>(
+      'SELECT session_id,at,items,flagged FROM context_review WHERE at>=? ORDER BY session_id,at',
+    )
+    .all(since)
+    .map((row) => ({
+      sessionId: row.session_id,
+      at: row.at,
+      items: row.items,
+      flagged: row.flagged,
+    }))
+}
+
 export function recordContextReview(
   input: Omit<ContextReviewEvent, 'id' | 'at'>,
   dependencies: { database?: Database; now?: () => string; machine?: () => string } = {},

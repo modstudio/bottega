@@ -4,13 +4,17 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { ContextItemKind } from '../../../shared/context-item-vocabulary.ts'
 import { contextCursorWarning } from '../doc/context-cursor-warning-decision.ts'
 import { CONTEXT_ITEM_MAX_CHARS } from '../doc/doc-context-write.ts'
+import { STALE_REFERENCE_RULES } from '../doc/doc-lint.ts'
+import { isOpenStageState } from '../record/record-task-flow-contract.ts'
 import { CONTEXT_REVIEW_WINDOW_MS } from '../session/context-review-decision.ts'
+import { nearestRankPercentile } from '../state/statistics.ts'
 
 const CONTEXT_HEALTH_WRONG_EXIT_CODE = 2
 const CONTEXT_HEALTH_UNREACHABLE_EXIT_CODE = 1
 
 export type ContextHealthItem = {
   holder: string
+  holderId: string
   holderKind: 'task' | 'session' | 'cursor'
   id: string
   recordId: string
@@ -20,8 +24,16 @@ export type ContextHealthItem = {
   project: string | null
   taskKey: string | null
   taskStatus: string | null
-  staleReferences: Array<{ rule: string; message: string }>
+  referenceFindings: Array<{ rule: string; message: string }>
   unverifiable: string | null
+  projectRegistered: boolean
+}
+
+export type ContextHealthCursorStage = {
+  recordId: string
+  project: string
+  taskKey: string | null
+  state: string
 }
 
 export type ContextHealthFacts = {
@@ -29,7 +41,8 @@ export type ContextHealthFacts = {
   since: string
   items: ContextHealthItem[]
   tasks: Array<{ key: string; project: string; parent_key?: string | null }>
-  openCursors: Array<{ project: string; taskKey: string | null }>
+  cursorStages: ContextHealthCursorStage[]
+  liveRunCursorIds: string[]
   reviews: Array<{ sessionId: string; at: string; items: number; flagged: number }>
   briefs: Array<{
     sessionId: string
@@ -71,6 +84,7 @@ export type ContextHealthReport = {
     }>
     s8: ContextHealthFinding[]
   }
+  s1Projects: Array<{ project: string; items: number }>
   aging: {
     count: number
     minimumMs: number | null
@@ -99,14 +113,21 @@ function ageMs(item: ContextHealthItem, now: number): number {
 
 function remedy(item: ContextHealthItem): string {
   if (item.taskKey) return `${PLATFORM_SLUG} agent context clear --task ${item.taskKey}`
+  if (item.holderKind === 'task')
+    return `context item ${item.id} is held by task holder ${item.holderId} whose task no longer resolves; no verb clears it yet (note 01a1f05f)`
   const holderFlag = item.holderKind === 'session' ? '--session' : '--cursor'
-  const selector = `${holderFlag} ${item.holder.slice(item.holder.indexOf(':') + 1)}`
+  const selector = `${holderFlag} ${item.holderId}`
   return `${PLATFORM_SLUG} agent context drop ${selector} --id ${item.id}`
 }
 
 function finding(item: ContextHealthItem, now: number): ContextHealthFinding {
   return {
     ...item,
+    unverifiable:
+      item.unverifiable ??
+      (item.project !== null && !item.projectRegistered
+        ? `item names project ${item.project}, which is not a registered project`
+        : null),
     ageMs: ageMs(item, now),
     size: item.body.length,
     cap: CONTEXT_ITEM_MAX_CHARS[item.kind],
@@ -114,9 +135,18 @@ function finding(item: ContextHealthItem, now: number): ContextHealthFinding {
   }
 }
 
-function quantile(values: number[], fraction: number): number | null {
-  if (!values.length) return null
-  return values[Math.floor((values.length - 1) * fraction)]!
+export function reachedContextCursors(
+  stages: readonly ContextHealthCursorStage[],
+  liveRunCursorIds: readonly string[],
+) {
+  const live = new Set(liveRunCursorIds)
+  return stages
+    .filter((stage) => isOpenStageState(stage.state) || live.has(stage.recordId))
+    .map(({ project, taskKey }) => ({ project, taskKey }))
+}
+
+export function isStaleContextReference(rule: string): boolean {
+  return STALE_REFERENCE_RULES.has(rule) && rule !== 'doc/line-anchor'
 }
 
 function reviewBlind(reviews: ContextHealthFacts['reviews']) {
@@ -154,11 +184,13 @@ export function contextHealth(facts: ContextHealthFacts): ContextHealthReport {
       generatedAt: facts.now,
       unreachable: facts.unreachable,
       signals: emptySignals,
+      s1Projects: [],
       aging: { count: 0, minimumMs: null, medianMs: null, maximumMs: null },
       notMeasured: [...NOT_MEASURED],
     }
   }
   const withFinding = (items: ContextHealthItem[]) => items.map((item) => finding(item, now))
+  const openCursors = reachedContextCursors(facts.cursorStages, facts.liveRunCursorIds)
   const s1 = withFinding(
     facts.items.filter(
       (item) =>
@@ -166,7 +198,7 @@ export function contextHealth(facts: ContextHealthFacts): ContextHealthReport {
         item.project &&
         contextCursorWarning({
           task: { key: item.taskKey, project: item.project },
-          openCursors: facts.openCursors,
+          openCursors,
           tasks: facts.tasks,
         }) !== null,
     ),
@@ -198,13 +230,22 @@ export function contextHealth(facts: ContextHealthFacts): ContextHealthReport {
   const s6 = reviewBlind(facts.reviews)
   const s7 = compactionBriefs(facts.briefs)
   const s8 = withFinding(
-    live.filter((item) => item.staleReferences.length > 0 || item.unverifiable !== null),
+    live.filter(
+      (item) =>
+        item.referenceFindings.some(({ rule }) => isStaleContextReference(rule)) ||
+        item.unverifiable !== null ||
+        (item.project !== null && !item.projectRegistered),
+    ),
   )
   const ages = live
     .filter((item) => item.kind === 'fact' || item.kind === 'pointer')
     .map((item) => ageMs(item, now))
     .sort((a, b) => a - b)
   const signals = { s1, s2, s3, s4, s5, s6, s7, s8 }
+  const s1Projects = [...Map.groupBy(s1, (item) => item.project!)].map(([project, items]) => ({
+    project,
+    items: items.length,
+  }))
   const wrong = s1.length + s2.length + s3.length + s4.length > 0
   return {
     verdict: wrong ? 'wrong' : 'healthy',
@@ -213,11 +254,12 @@ export function contextHealth(facts: ContextHealthFacts): ContextHealthReport {
     generatedAt: facts.now,
     unreachable: null,
     signals,
+    s1Projects,
     aging: {
       count: ages.length,
-      minimumMs: quantile(ages, 0),
-      medianMs: quantile(ages, 0.5),
-      maximumMs: quantile(ages, 1),
+      minimumMs: nearestRankPercentile(ages, 0),
+      medianMs: nearestRankPercentile(ages, 0.5),
+      maximumMs: nearestRankPercentile(ages, 1),
     },
     notMeasured: [...NOT_MEASURED],
   }

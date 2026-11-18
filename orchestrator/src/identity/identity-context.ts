@@ -3,9 +3,19 @@
 
 import type { Database } from 'bun:sqlite'
 import { storedMachineNames } from '../../../shared/machine-config.ts'
+import { db } from '../database/db.ts'
 import { sessionId } from '../database/session-identity.ts'
 import { projectAt } from '../project/projects.ts'
 import type { IdentityContext } from './identity.ts'
+
+/** Reads each recorded session's owning project through the identity owner. */
+export function sessionProjectRows(database: Database = db()) {
+  return database
+    .query<{ sessionId: string; project: string | null }, []>(
+      'SELECT session_id AS sessionId,project FROM presence',
+    )
+    .all()
+}
 
 export function identityContext(
   database: Database,

@@ -1,20 +1,22 @@
 // concern: context-health
 /** Gathers context health facts through the owning read services. */
-import type { Database } from 'bun:sqlite'
 import { parseBoardDuration } from '../../../shared/board-duration.ts'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   CONTEXT_HOLDER_KINDS,
   type ContextHolderKind,
 } from '../../../shared/context-item-vocabulary.ts'
-import { db, nowIso } from '../database/db.ts'
+import { nowIso } from '../database/db.ts'
 import { scopeContextHolders } from '../doc/context-service.ts'
-import { docHasRepositoryReferences, STALE_REFERENCE_RULES } from '../doc/doc-lint.ts'
+import { docHasRepositoryReferences } from '../doc/doc-lint.ts'
 import { lintStoredDoc } from '../doc/doc-lint-adapter.ts'
+import { sessionProjectRows } from '../identity/identity-context.ts'
 import { projects } from '../project/projects.ts'
-import { isOpenStageState, TASK_FLOW_STAGE_STATES } from '../record/record-task-flow-contract.ts'
-import { LIVE_RUN_STATUS_SQL } from '../run/run-status.ts'
+import { TASK_FLOW_STAGE_STATES } from '../record/record-task-flow-contract.ts'
+import { briefInjectionWindow } from '../session/brief-injection.ts'
+import { contextReviewWindow } from '../session/context-review-store.ts'
 import { taskFlowReadStore } from '../workflow/task-flow-store.ts'
+import { liveRunCursorIds } from '../workflow/workflow-cursor-list.ts'
 import { type HubTaskReference, readHubTasks } from '../workflow/workflow-task-reference.ts'
 import { type ContextHealthFacts, type ContextHealthItem, contextHealth } from './context-health.ts'
 
@@ -28,14 +30,31 @@ function selectedSince(value: string | undefined, now: number): string {
 async function taskRows(project: string | undefined): Promise<HubTaskReference[]> {
   const selected = projects().filter((candidate) => !project || candidate.name === project)
   const rows: HubTaskReference[] = []
-  for (const candidate of selected) rows.push(...(await readHubTasks(candidate.name)))
+  for (const candidate of selected) {
+    try {
+      rows.push(...(await readHubTasks(candidate.name)))
+    } catch (error) {
+      throw new ProjectTaskReadError(candidate.name, error)
+    }
+  }
   return rows
 }
 
-function staleReferenceFacts(body: string, project: string | null) {
-  if (!docHasRepositoryReferences(body)) return { staleReferences: [], unverifiable: null }
+class ProjectTaskReadError extends Error {
+  constructor(
+    readonly project: string,
+    cause: unknown,
+  ) {
+    super(cause instanceof Error ? cause.message : String(cause))
+    this.name = 'ProjectTaskReadError'
+  }
+}
+
+function staleReferenceFacts(body: string, project: string | null, projectRegistered: boolean) {
+  if (!docHasRepositoryReferences(body) || !projectRegistered)
+    return { referenceFindings: [], unverifiable: null }
   if (!project)
-    return { staleReferences: [], unverifiable: 'item has no recorded project checkout' }
+    return { referenceFindings: [], unverifiable: 'item has no recorded project checkout' }
   const findings = lintStoredDoc({
     scope: 'project',
     subject: project,
@@ -45,13 +64,9 @@ function staleReferenceFacts(body: string, project: string | null) {
     status: 'current',
     summary: null,
   })
-  const staleReferences = findings
-    .filter(
-      (finding) => STALE_REFERENCE_RULES.has(finding.rule) && finding.rule !== 'doc/line-anchor',
-    )
-    .map(({ rule, message }) => ({ rule, message }))
+  const referenceFindings = findings.map(({ rule, message }) => ({ rule, message }))
   const unavailable = findings.find((finding) => finding.rule === 'doc/reference-unverifiable')
-  return { staleReferences, unverifiable: unavailable?.message ?? null }
+  return { referenceFindings, unverifiable: unavailable?.message ?? null }
 }
 
 function failureFacts(now: string, since: string, error: unknown): ContextHealthFacts {
@@ -60,13 +75,17 @@ function failureFacts(now: string, since: string, error: unknown): ContextHealth
     since,
     items: [],
     tasks: [],
-    openCursors: [],
+    cursorStages: [],
+    liveRunCursorIds: [],
     reviews: [],
     briefs: [],
     unreachable: {
-      resource: 'architect context store',
+      resource: error instanceof ProjectTaskReadError ? 'project task data' : 'architect context store',
       detail: error instanceof Error ? error.message : String(error),
-      remedy: `run ${PLATFORM_SLUG} record doctor; sign in when it reports a missing or expired record session, or run ${PLATFORM_SLUG} machine update when it reports a behind store; then retry`,
+      remedy:
+        error instanceof ProjectTaskReadError
+          ? `run ${PLATFORM_SLUG} task list --project ${error.project} --json`
+          : `run ${PLATFORM_SLUG} record doctor; sign in when it reports a missing or expired record session, or run ${PLATFORM_SLUG} machine update when it reports a behind store; then retry`,
     },
   }
 }
@@ -94,16 +113,16 @@ function holderIdentity(
 }
 
 function holderItems(
-  database: Database,
   tasks: readonly HubTaskReference[],
   cursorById: ReadonlyMap<string, CursorOwner>,
   sessionProject: ReadonlyMap<string, string | null>,
   options: ContextHealthOptions,
+  registeredProjects: ReadonlySet<string>,
 ): ContextHealthItem[] {
   const taskById = new Map(tasks.map((task) => [task.record_id, task]))
   const items: ContextHealthItem[] = []
   for (const holderKind of CONTEXT_HOLDER_KINDS) {
-    for (const holder of scopeContextHolders(holderKind, database)) {
+    for (const holder of scopeContextHolders(holderKind)) {
       const { task, session, project } = holderIdentity(
         holderKind,
         holder.holderId,
@@ -113,9 +132,11 @@ function holderItems(
       )
       if (options.project && project !== options.project) continue
       if (options.session && session !== options.session) continue
+      const projectRegistered = project === null || registeredProjects.has(project)
       for (const item of holder.items) {
         items.push({
           holder: holder.holder,
+          holderId: holder.holderId,
           holderKind,
           id: item.id,
           recordId: item.recordId,
@@ -125,7 +146,8 @@ function holderItems(
           project,
           taskKey: task?.key ?? null,
           taskStatus: task?.status_category ?? null,
-          ...staleReferenceFacts(item.body, project),
+          projectRegistered,
+          ...staleReferenceFacts(item.body, project, projectRegistered),
         })
       }
     }
@@ -133,37 +155,11 @@ function holderItems(
   return items
 }
 
-function recordedMeasurements(database: Database, since: string, session: string | undefined) {
-  const selectedSession = <Row extends { session_id: string }>(row: Row) =>
-    !session || row.session_id === session
-  const reviews = database
-    .query<{ session_id: string; at: string; items: number; flagged: number }, [string]>(
-      'SELECT session_id,at,items,flagged FROM context_review WHERE at>=? ORDER BY session_id,at',
-    )
-    .all(since)
-    .filter(selectedSession)
-    .map((row) => ({
-      sessionId: row.session_id,
-      at: row.at,
-      items: row.items,
-      flagged: row.flagged,
-    }))
-  const briefs = database
-    .query<
-      { session_id: string; at: string; source: string; cursors: number; over_cap: number },
-      [string]
-    >(
-      'SELECT session_id,at,source,cursors,over_cap FROM brief_injection WHERE at>=? ORDER BY session_id,at',
-    )
-    .all(since)
-    .filter(selectedSession)
-    .map((row) => ({
-      sessionId: row.session_id,
-      at: row.at,
-      source: row.source,
-      cursors: row.cursors,
-      overCap: Boolean(row.over_cap),
-    }))
+function recordedMeasurements(since: string, session: string | undefined) {
+  const selectedSession = <Row extends { sessionId: string }>(row: Row) =>
+    !session || row.sessionId === session
+  const reviews = contextReviewWindow(since).filter(selectedSession)
+  const briefs = briefInjectionWindow(since).filter(selectedSession)
   return { reviews, briefs }
 }
 
@@ -172,42 +168,29 @@ async function gatherContextHealthFacts(
   generatedAt: string,
   since: string,
 ): Promise<ContextHealthFacts> {
-  const database = db()
   const tasks = await taskRows(options.project)
-  const flowStore = taskFlowReadStore(database)
+  const flowStore = taskFlowReadStore()
   const cursorRows = await flowStore.listStages({
     ...(options.project ? { project: options.project } : {}),
     states: TASK_FLOW_STAGE_STATES,
   })
   const cursorById = new Map(cursorRows.map((cursor) => [cursor.record_id, cursor]))
-  const sessionRows = database
-    .query<{ session_id: string; project: string | null }, []>(
-      'SELECT session_id,project FROM presence',
-    )
-    .all()
-  const sessionProject = new Map(sessionRows.map((row) => [row.session_id, row.project]))
-  const items = holderItems(database, tasks, cursorById, sessionProject, options)
-  const openCursors = cursorRows
-    .filter((cursor) => isOpenStageState(cursor.state))
-    .map((cursor) => ({ project: cursor.project, taskKey: cursor.workflow_key || null }))
-  const liveCursorIds = new Set(
-    database
-      .query<{ cursor_record_id: string }, []>(
-        `SELECT DISTINCT cursor_record_id FROM run WHERE cursor_record_id IS NOT NULL AND status IN ${LIVE_RUN_STATUS_SQL}`,
-      )
-      .all()
-      .map((run) => run.cursor_record_id),
-  )
-  const liveBound = cursorRows
-    .filter((cursor) => liveCursorIds.has(cursor.record_id))
-    .map((cursor) => ({ project: cursor.project, taskKey: cursor.workflow_key || null }))
-  const { reviews, briefs } = recordedMeasurements(database, since, options.session)
+  const sessionProject = new Map(sessionProjectRows().map((row) => [row.sessionId, row.project]))
+  const registeredProjects = new Set(projects().map((project) => project.name))
+  const items = holderItems(tasks, cursorById, sessionProject, options, registeredProjects)
+  const { reviews, briefs } = recordedMeasurements(since, options.session)
   return {
     now: generatedAt,
     since,
     items,
     tasks: tasks.map(({ key, project, parent_key }) => ({ key, project, parent_key })),
-    openCursors: [...openCursors, ...liveBound],
+    cursorStages: cursorRows.map((cursor) => ({
+      recordId: cursor.record_id,
+      project: cursor.project,
+      taskKey: cursor.workflow_key || null,
+      state: cursor.state,
+    })),
+    liveRunCursorIds: liveRunCursorIds(cursorRows.map((cursor) => cursor.record_id)),
     reviews,
     briefs,
     unreachable: null,

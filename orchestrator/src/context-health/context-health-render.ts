@@ -13,8 +13,8 @@ function itemLine(item: ContextHealthFinding, shape = false): string {
   const size = shape ? ` size=${item.size}/${item.cap}` : ''
   const references = item.unverifiable
     ? ` unverifiable=${item.unverifiable}`
-    : item.staleReferences.length
-      ? ` stale=${item.staleReferences.map(({ rule }) => rule).join(',')}`
+    : item.referenceFindings.length
+      ? ` stale=${item.referenceFindings.map(({ rule }) => rule).join(',')}`
       : ''
   return `  ${item.holder} task=${task} item=${item.id} kind=${item.kind} age=${age(item.ageMs)}${size}${references}\n    remedy: ${item.remedy}`
 }
@@ -33,6 +33,9 @@ export function renderContextHealth(report: ContextHealthReport): string {
     lines.push(...items.map((item) => itemLine(item, shape)))
   }
   itemSection('S1 unreached', report.signals.s1)
+  lines.push(
+    ...report.s1Projects.map((row) => `  project=${row.project} items=${row.items}`),
+  )
   itemSection('S2 done residue', report.signals.s2)
   itemSection('S3 over shape', report.signals.s3, true)
   itemSection('S4 duplicate', report.signals.s4)

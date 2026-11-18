@@ -5,6 +5,7 @@ import { type ContextHealthFacts, type ContextHealthItem, contextHealth } from '
 const now = '2026-11-18T12:00:00.000Z'
 const baseItem = (overrides: Partial<ContextHealthItem> = {}): ContextHealthItem => ({
   holder: 'session:s1',
+  holderId: 's1',
   holderKind: 'session',
   id: 'i1',
   recordId: 'r1',
@@ -14,8 +15,9 @@ const baseItem = (overrides: Partial<ContextHealthItem> = {}): ContextHealthItem
   project: null,
   taskKey: null,
   taskStatus: null,
-  staleReferences: [],
+  referenceFindings: [],
   unverifiable: null,
+  projectRegistered: true,
   ...overrides,
 })
 const facts = (overrides: Partial<ContextHealthFacts> = {}): ContextHealthFacts => ({
@@ -23,7 +25,8 @@ const facts = (overrides: Partial<ContextHealthFacts> = {}): ContextHealthFacts 
   since: '2026-11-11T12:00:00.000Z',
   items: [],
   tasks: [],
-  openCursors: [],
+  cursorStages: [],
+  liveRunCursorIds: [],
   reviews: [],
   briefs: [],
   unreachable: null,
@@ -34,6 +37,7 @@ describe('context health signals', () => {
   test('S1 counts task context not carried by a cursor and clears when carried', () => {
     const item = baseItem({
       holder: 'task:t1',
+      holderId: 't1',
       holderKind: 'task',
       project: PLATFORM_SLUG,
       taskKey: 'DEV-1',
@@ -41,9 +45,34 @@ describe('context health signals', () => {
     expect(contextHealth(facts({ items: [item] })).signals.s1).toHaveLength(1)
     expect(
       contextHealth(
-        facts({ items: [item], openCursors: [{ project: PLATFORM_SLUG, taskKey: 'DEV-1' }] }),
+        facts({
+          items: [item],
+          cursorStages: [
+            { recordId: 'c1', project: PLATFORM_SLUG, taskKey: 'DEV-1', state: 'running' },
+          ],
+        }),
       ).signals.s1,
     ).toHaveLength(0)
+    expect(contextHealth(facts({ items: [item] })).s1Projects).toEqual([
+      { project: PLATFORM_SLUG, items: 1 },
+    ])
+  })
+
+  test('S1 treats a closed stage as reached only while a live run is bound to it', () => {
+    const item = baseItem({
+      holder: 'task:t1',
+      holderId: 't1',
+      holderKind: 'task',
+      project: PLATFORM_SLUG,
+      taskKey: 'DEV-1',
+    })
+    const cursorStages = [
+      { recordId: 'c1', project: PLATFORM_SLUG, taskKey: 'DEV-1', state: 'done' },
+    ]
+    expect(
+      contextHealth(facts({ items: [item], cursorStages, liveRunCursorIds: ['c1'] })).signals.s1,
+    ).toHaveLength(0)
+    expect(contextHealth(facts({ items: [item], cursorStages })).signals.s1).toHaveLength(1)
   })
 
   test('S2 counts only done-task residue', () => {
@@ -111,10 +140,29 @@ describe('context health signals', () => {
     expect(contextHealth(facts()).signals.s7).toHaveLength(0)
   })
 
-  test('S8 ignores file line anchors excluded by the adapter', () => {
+  test('S8 ignores line-anchor findings but reports stale-reference rules', () => {
     expect(
-      contextHealth(facts({ items: [baseItem({ body: '`file.ts:12`' })] })).signals.s8,
+      contextHealth(
+        facts({
+          items: [
+            baseItem({
+              referenceFindings: [{ rule: 'doc/line-anchor', message: 'unstable line' }],
+            }),
+          ],
+        }),
+      ).signals.s8,
     ).toHaveLength(0)
+    expect(
+      contextHealth(
+        facts({
+          items: [
+            baseItem({
+              referenceFindings: [{ rule: 'doc/reference-path', message: 'missing path' }],
+            }),
+          ],
+        }),
+      ).signals.s8,
+    ).toHaveLength(1)
   })
 
   test('S8 reports an unverifiable project instead of clean', () => {
@@ -122,6 +170,34 @@ describe('context health signals', () => {
       contextHealth(facts({ items: [baseItem({ unverifiable: 'checkout missing' })] })).signals.s8,
     ).toHaveLength(1)
     expect(contextHealth(facts({ items: [baseItem()] })).signals.s8).toHaveLength(0)
+  })
+
+  test('S8 reports a named project absent from the register as unverifiable', () => {
+    const [finding] = contextHealth(
+      facts({ items: [baseItem({ project: 'retired-project', projectRegistered: false })] }),
+    ).signals.s8
+    expect(finding?.unverifiable).toBe(
+      'item names project retired-project, which is not a registered project',
+    )
+  })
+
+  test('an unresolved task holder names the orphan and never offers a cursor selector', () => {
+    const [finding] = contextHealth(
+      facts({
+        items: [
+          baseItem({
+            holder: 'task:task-record',
+            holderId: 'task-record',
+            holderKind: 'task',
+            taskStatus: 'done',
+          }),
+        ],
+      }),
+    ).signals.s2
+    expect(finding?.remedy).toBe(
+      'context item i1 is held by task holder task-record whose task no longer resolves; no verb clears it yet (note 01a1f05f)',
+    )
+    expect(finding?.remedy).not.toContain('--cursor')
   })
 
   test('unreachable data has the error verdict and no false zero verdict', () => {
