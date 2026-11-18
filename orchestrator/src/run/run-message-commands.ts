@@ -30,7 +30,6 @@ import {
 } from '../review/review-vocabulary.ts'
 import { refusalScoreGuidanceFromPath } from '../score/refusal-guidance.ts'
 import { answeredQuestionContextMoments } from '../workflow/workflow-context-moment.ts'
-import { openCursorWorktrees } from '../workflow/workflow-cursor-worktrees.ts'
 import { answerValueArgs } from './answer-value-args.ts'
 import { parseQuestionIdentifier, resolveQuestionIdentifier } from './question-identifier.ts'
 import { rulingAttributionDecision } from './question-vocabulary.ts'
@@ -82,7 +81,6 @@ export const answerRunHelpers = (presentation: Presentation) => ({
   readWorkerFile,
   readMessageText,
   presentation: controlPresentation(presentation),
-  openCursorWorktrees,
 })
 
 const questionIdentifiers = (argv: string[]): string[] =>
@@ -268,7 +266,6 @@ export async function continueCommand(
     message,
     argvResumeLimit,
     includeFindings ? () => renderFindings(id, message) : undefined,
-    openCursorWorktrees,
   )
   await dependencies.reportContinuedRun(
     resumed.childId,

@@ -14,7 +14,6 @@ import { continueRun } from './run-control.ts'
 const priorSession = process.env.CLAUDE_CODE_SESSION_ID
 const trackResidue = trackedTestResidue()
 const argvResumeLimit = () => ARGV_PROMPT_BYTES
-const openCursorWorktrees = async () => []
 const flags = { detach: true, follow: false, quiet: true }
 const helpers = {
   argvResumeLimit,
@@ -22,7 +21,6 @@ const helpers = {
   readWorkerFile,
   readMessageText,
   presentation: { dur: String, scoreHint: () => '', argvResumeLimit, printRunId: () => {} },
-  openCursorWorktrees,
 }
 
 beforeEach(() => {
@@ -53,7 +51,7 @@ test('retry and continue give the same refusal when the chain has no session', a
     const action =
       command === 'retry'
         ? retryRun(id, { flags }, helpers)
-        : continueRun(id, 'go', argvResumeLimit, undefined, openCursorWorktrees)
+        : continueRun(id, 'go', argvResumeLimit)
     await expect(action).rejects.toThrow(
       `run ${id} recorded no session id, so codex cannot be resumed`,
     )

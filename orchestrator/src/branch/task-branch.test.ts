@@ -233,7 +233,7 @@ test('an evidence-excluded landing-tree owner refuses dispatch planning', async 
 
   const candidate = resolveTaskBranch(repo, 'DEV-1398')
   expect(candidate?.worktree?.path).toBe(landingTree)
-  await expect(
+  expect(() =>
     claimTreePlanForCandidate({
       candidate,
       forbidsRepo: false,
@@ -242,7 +242,7 @@ test('an evidence-excluded landing-tree owner refuses dispatch planning', async 
       refusalMessage: (refusal) =>
         taskBranchLandingTreeRefusal(refusal, `git -C ${refusal.path} checkout --detach`),
     }),
-  ).rejects.toThrow(
+  ).toThrow(
     `refusing task branch DEV-1398-orch-14461: it is checked out in architect-owned landing-tree tree ${landingTree}.`,
   )
 })

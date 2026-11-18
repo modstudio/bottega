@@ -144,26 +144,11 @@ type WritingRetryWorkspaceInput = {
   branchKept: string | null
   branchKeptTip: string | null
   strandedRecordOnly: boolean
-  openCursorWorktrees: () => Promise<readonly { worktree: string }[]>
 }
 
-const refuseRetryHold = (
+export function resolveWritingRetryWorkspace(
   input: WritingRetryWorkspaceInput,
-  projectPath: string,
-  recordedTreePath: string | null,
-  plan: ResumeTreePlan,
-) =>
-  refuseHeldContinuationBranch(
-    input.id,
-    projectPath,
-    recordedTreePath,
-    plan,
-    input.openCursorWorktrees,
-  )
-
-export async function resolveWritingRetryWorkspace(
-  input: WritingRetryWorkspaceInput,
-): Promise<WritingRetryWorkspace> {
+): WritingRetryWorkspace {
   const latest = db()
     .query(
       `SELECT record_id,cwd,worktree,branch,base_commit,worktree_source,branch_kept_tip,status,pid,
@@ -262,7 +247,7 @@ export async function resolveWritingRetryWorkspace(
   if (plan.action === 'attach-recorded' || plan.action === 'refuse') {
     throw new Error(`run ${input.id} could not prepare branch ${branch} for retry`)
   }
-  await refuseRetryHold(input, project.path, latest.worktree, plan)
+  refuseHeldContinuationBranch(input.id, project.path, latest.worktree, plan)
   if (worktreeTool?.create && !worktreeTool.recipe && !worktreeTool.recipePath) {
     throw new Error(
       `run ${input.id} cannot reopen branch ${branch}: its command-template lifecycle cannot open an existing branch; ` +

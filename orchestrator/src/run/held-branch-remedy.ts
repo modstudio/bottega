@@ -1,67 +1,62 @@
 // concern: held-branch remedy
-/** Gathers and renders the operator remedy for a branch held by another tree. */
+/** Decides and renders the operator remedy for a branch held by another tree. */
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { taskBranchLandingTreeRefusal } from '../branch/task-branch.ts'
+import { db } from '../database/db.ts'
 import { realpathOrSpelled } from '../git/checkout-identity.ts'
-import { gitResult } from '../git/git-environment.ts'
+import type { ClaimTreePlanRuling } from './run-claim-plan.ts'
 
-type OpenCursorWorktreesPort = () => Promise<readonly { worktree: string }[]>
-
-type HeldBranchRemedyFacts = {
+export type HeldBranchRemedyFacts = {
   path: string
-  cwdInsideTree: boolean
-  cursorNamesTree: boolean
-  treeDirty: boolean
+  liveRunId: string | null
 }
 
-type HeldBranchRemedy = {
-  prepare: string | null
-  release: 'detach' | 'remove'
+export type HeldBranchRemedy = { action: 'wait-or-stop'; runId: string } | { action: 'detach' }
+
+type LiveTreeRunRow = {
+  record_id: string
+  worktree: string
 }
 
-/** Gather the resolved path, hosted cursor, and dirty facts for one held tree. */
-async function heldBranchRemedyFacts(
-  path: string,
-  openCursorWorktrees: OpenCursorWorktreesPort,
-): Promise<HeldBranchRemedyFacts> {
-  const tree = realpathOrSpelled(path).replace(/\/$/, '')
-  const cwd = realpathOrSpelled(process.cwd()).replace(/\/$/, '')
-  const dirty = gitResult(['status', '--porcelain'], path)
-  const cursorWorktrees = await openCursorWorktrees()
-  return {
-    path,
-    cwdInsideTree: cwd === tree || cwd.startsWith(`${tree}/`),
-    cursorNamesTree: cursorWorktrees.some(
-      ({ worktree }) => realpathOrSpelled(worktree).replace(/\/$/, '') === tree,
-    ),
-    treeDirty: !dirty.ok || dirty.stdout.length > 0,
-  }
-}
-
-/** Choose a release that preserves a tree still named by the operator's live context. */
+/** A live run keeps authority over its recorded tree; an idle tree can detach safely. */
 export function decideHeldBranchRemedy(facts: HeldBranchRemedyFacts): HeldBranchRemedy {
-  return {
-    prepare: facts.treeDirty ? `commit or stash the work in ${facts.path} first` : null,
-    release: facts.cwdInsideTree || facts.cursorNamesTree ? 'detach' : 'remove',
+  return facts.liveRunId ? { action: 'wait-or-stop', runId: facts.liveRunId } : { action: 'detach' }
+}
+
+/** Render a decision as an operator action that clears the branch hold. */
+export function renderHeldBranchRemedy(path: string, remedy: HeldBranchRemedy): string {
+  if (remedy.action === 'wait-or-stop') {
+    return (
+      `run ${remedy.runId} is live on ${path}; wait with ${PLATFORM_SLUG} run wait ${remedy.runId} ` +
+      `or stop it with ${PLATFORM_SLUG} run stop ${remedy.runId}`
+    )
   }
+  return `git -C ${path} switch --detach; this keeps uncommitted changes`
 }
 
-/** Render a held-tree decision with the operator command vocabulary. */
-function renderHeldBranchRemedy(path: string, remedy: HeldBranchRemedy): string {
-  const release =
-    remedy.release === 'detach'
-      ? `git -C ${path} checkout --detach`
-      : `${PLATFORM_SLUG} tree remove ${path}`
-  return remedy.prepare ? `${remedy.prepare}, then ${release}` : release
-}
-
-/** Gather, decide, and render the release for one held tree. */
-export async function heldBranchRemedy(
-  path: string,
-  openCursorWorktrees: OpenCursorWorktreesPort,
-): Promise<string> {
+/** Gather the local run-table fact, decide, and render the release for one held tree. */
+export function heldBranchRemedy(path: string): string {
+  const canonicalPath = realpathOrSpelled(path)
+  const liveRun = (
+    db()
+      .query(
+        `SELECT record_id,worktree
+           FROM run
+          WHERE status IN ('running','asking') AND worktree IS NOT NULL
+          ORDER BY number DESC`,
+      )
+      .all() as LiveTreeRunRow[]
+  ).find((row) => realpathOrSpelled(row.worktree) === canonicalPath)
   return renderHeldBranchRemedy(
     path,
-    decideHeldBranchRemedy(await heldBranchRemedyFacts(path, openCursorWorktrees)),
+    decideHeldBranchRemedy({ path, liveRunId: liveRun?.record_id ?? null }),
   )
+}
+
+/** Compose the architect-tree refusal identically at dispatch and claim time. */
+export function heldLandingTreeRefusal(
+  refusal: Extract<ClaimTreePlanRuling, { mode: 'refuse' }>,
+): string {
+  return taskBranchLandingTreeRefusal(refusal, heldBranchRemedy(refusal.path))
 }

@@ -91,7 +91,6 @@ import { assertAgentWorkRun } from './synthetic-lifecycle-job.ts'
 type RunAnswerHelpers = {
   argvResumeLimit(agentName: string): number | undefined
   presentation: RunControlPresentation
-  openCursorWorktrees: () => Promise<readonly { worktree: string }[]>
   dispatch?: typeof detach
   dashboardAuthorized?: () => boolean
 }
@@ -516,12 +515,11 @@ function retryTreeForNeverStarted<T>(neverStarted: boolean, cwd: string, resolve
   return resolve()
 }
 
-async function writingRetryWorkspace(
+function writingRetryWorkspace(
   id: string,
   row: RetryRunRow,
   needed: boolean,
   strandedRecordOnly: boolean,
-  openCursorWorktrees: () => Promise<readonly { worktree: string }[]>,
 ) {
   if (!needed) return null
   return resolveWritingRetryWorkspace({
@@ -534,12 +532,8 @@ async function writingRetryWorkspace(
     branchKept: row.branch_kept,
     branchKeptTip: row.branch_kept_tip,
     strandedRecordOnly,
-    openCursorWorktrees,
   })
 }
-
-const continueRetry = (id: string, helpers: RunAnswerHelpers) =>
-  continueRun(id, undefined, helpers.argvResumeLimit, undefined, helpers.openCursorWorktrees)
 
 function retryKeepTree(row: RetryRunRow) {
   return recordedKeepTreeExemption(
@@ -591,8 +585,7 @@ export async function retryRun(
   const recordedRulings = await recordedRulingsForRetry(row.root_record_id)
   const writesRepo = Boolean(job(row.job).needs.writesRepo)
   const readsRepo = Boolean(job(row.job).needs.readsRepo)
-  const bindings = retryAgentBindings(row, options),
-    { agent, neverStarted } = bindings
+  const { agent, neverStarted, agentExplicit, model, transport } = retryAgentBindings(row, options)
   const preliminaryPath = retryConversationPath(
     writesRepo,
     recordedRulings.length > 0,
@@ -601,7 +594,7 @@ export async function retryRun(
     neverStarted,
   )
   if (preliminaryPath?.action === 'continue') {
-    const resumed = await continueRetry(id, helpers)
+    const resumed = await continueRun(id, undefined, helpers.argvResumeLimit)
     auditRunMutation(
       retryAuthority,
       'retry',
@@ -639,12 +632,11 @@ export async function retryRun(
   const instructions = continuationInstructionsForFreshRetry(writesRepo, id, row.root_record_id)
   // The same agent remains the default. An explicit replacement gets a fresh
   // vendor conversation while the retained writing workspace travels with it.
-  const workspace = await writingRetryWorkspace(
+  const workspace = writingRetryWorkspace(
     id,
     row,
     preliminaryPath.action === 'needs-writing-workspace',
     recordedRulings.length > 0 && latestTurn.status === 'asking',
-    helpers.openCursorWorktrees,
   )
   console.error(
     `— retrying run ${id} (${row.agent}/${row.job}` +
@@ -703,10 +695,10 @@ export async function retryRun(
       retryPrompt,
       {
         agent,
-        agentExplicit: bindings.agentExplicit,
+        agentExplicit,
         schema: row.schema_path ?? undefined,
         mcp: mcpRequestFromStored(row.mcp, row.mcp_error),
-        model: bindings.model,
+        model,
         ...retryReviewBindings(row),
         review: row.review_ref ?? undefined,
         probe: !!row.probe,
@@ -718,7 +710,7 @@ export async function retryRun(
         base: launch.base,
         launchBase: launch.launchBase,
         noFailover: !!row.no_failover,
-        transport: bindings.transport,
+        transport,
         keepTree: retryKeepTree(row),
         deliverables: dispatchState.deliverables,
         timeoutMinutes: dispatchState.timeoutMinutes ?? undefined,

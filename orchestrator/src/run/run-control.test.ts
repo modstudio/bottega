@@ -25,7 +25,6 @@ import { packedResumePrompt } from './run-resume-prompt.ts'
 const trackResidue = trackedTestResidue()
 
 const limit = () => ARGV_PROMPT_BYTES
-const openCursorWorktrees = async () => []
 
 test('the harness handoff builder returns the synchronous command fields', () => {
   const id = addRun({ agent: 'harness', job: 'implement', status: 'running' })
@@ -202,9 +201,9 @@ describe('run continuation', () => {
       repo: 'continuation-fixture',
     })
 
-    await expect(
-      continueRun(root, undefined, limit, undefined, openCursorWorktrees),
-    ).rejects.toThrow(`run ${root} cannot be continued: no turn in its chain ever started`)
+    await expect(continueRun(root, undefined, limit)).rejects.toThrow(
+      `run ${root} cannot be continued: no turn in its chain ever started`,
+    )
   })
 
   test('a findings root with a recorded review cannot be re-terminalised', async () => {
@@ -222,9 +221,7 @@ describe('run continuation', () => {
        FROM review r JOIN review_lens rl ON rl.review_record_id=r.record_id WHERE r.record_id=?`,
       )
       .get(reviewId)
-    await expect(
-      continueRun(root, 'review another turn', limit, undefined, openCursorWorktrees),
-    ).rejects.toThrow(
+    await expect(continueRun(root, 'review another turn', limit)).rejects.toThrow(
       "invariant: a recorded review is the run's product and is not re-terminalised",
     )
     expect(
@@ -247,16 +244,10 @@ describe('run continuation', () => {
     let calls = 0
 
     await expect(
-      continueRun(
-        root,
-        'architect message',
-        limit,
-        () => {
-          calls++
-          return 'rendered findings'
-        },
-        openCursorWorktrees,
-      ),
+      continueRun(root, 'architect message', limit, () => {
+        calls++
+        return 'rendered findings'
+      }),
     ).rejects.toThrow(
       `run ${root} is waiting on 1 question(s): ${PLATFORM_SLUG} question answer ${root} ...`,
     )
@@ -283,13 +274,7 @@ describe('run continuation', () => {
       .query('UPDATE run SET vendor_session=?,cwd=?,worktree=? WHERE record_id IN (?,?)')
       .run('vendor-session', dir, dir, root, asking)
 
-    await continueRun(
-      root,
-      'continue after the closed question',
-      limit,
-      undefined,
-      openCursorWorktrees,
-    )
+    await continueRun(root, 'continue after the closed question', limit, undefined)
 
     expect(
       db().query('SELECT status,failure_kind,error FROM run WHERE record_id=?').get(asking),
@@ -311,7 +296,7 @@ describe('run continuation', () => {
       .query('UPDATE run SET vendor_session=?,agent=?,prompt_path=?,session_id=? WHERE record_id=?')
       .run('parent-session', 'codex', spec, 'orch-test-session', root)
     const assembled = Buffer.byteLength(packedResumePrompt('file-question', body, root, ''))
-    await expect(continueRun(root, body, limit, undefined, openCursorWorktrees)).rejects.toThrow(
+    await expect(continueRun(root, body, limit)).rejects.toThrow(
       `assembled resume prompt is ${assembled} bytes`,
     )
     expect(db().query('SELECT COUNT(*) n FROM run WHERE parent_run_record_id=?').get(root)).toEqual(
@@ -341,13 +326,7 @@ describe('run continuation', () => {
       .query('UPDATE run SET vendor_session=?,cwd=?,worktree=? WHERE record_id IN (?,?)')
       .run('vendor-session', dir, dir, root, prior)
 
-    const resumed = await continueRun(
-      root,
-      'vendor-session message',
-      limit,
-      undefined,
-      openCursorWorktrees,
-    )
+    const resumed = await continueRun(root, 'vendor-session message', limit, undefined)
     const artifact = db()
       .query('SELECT prompt_path,continuation_message_sha FROM run WHERE record_id=?')
       .get(resumed.childId) as {
@@ -402,7 +381,7 @@ describe('run continuation', () => {
       )
 
     const message = 'Apply the architect review exactly.\n'
-    const resumed = await continueRun(root, message, limit, undefined, openCursorWorktrees)
+    const resumed = await continueRun(root, message, limit)
     const artifact = db()
       .query('SELECT prompt_path FROM run WHERE record_id=?')
       .get(resumed.childId) as { prompt_path: string }
@@ -438,7 +417,6 @@ describe('run continuation', () => {
       'finish the rebase and land the slice',
       limit,
       undefined,
-      openCursorWorktrees,
     )
     const child = db()
       .query(
@@ -500,7 +478,6 @@ describe('run continuation', () => {
       'finish the rebase and land the slice',
       limit,
       undefined,
-      openCursorWorktrees,
     )
     const child = db()
       .query('SELECT prompt_path,vendor_session FROM run WHERE record_id=?')
@@ -523,9 +500,9 @@ describe('run continuation', () => {
       .query('UPDATE run SET vendor_session=?,worktree=NULL,base_commit=? WHERE record_id=?')
       .run('vendor-session', 'missing-reader-base', root)
 
-    await expect(
-      continueRun(root, 'deliver queued messages', limit, undefined, openCursorWorktrees),
-    ).rejects.toThrow('read-only base commit missing-reader-base is unavailable')
+    await expect(continueRun(root, 'deliver queued messages', limit)).rejects.toThrow(
+      'read-only base commit missing-reader-base is unavailable',
+    )
     expect(db().query('SELECT COUNT(*) n FROM run WHERE parent_run_record_id=?').get(root)).toEqual(
       {
         n: 0,
@@ -560,9 +537,7 @@ describe('run continuation', () => {
         root,
       )
 
-    await expect(
-      continueRun(root, 'continue after stop', limit, undefined, openCursorWorktrees),
-    ).rejects.toThrow(
+    await expect(continueRun(root, 'continue after stop', limit)).rejects.toThrow(
       /cannot be continued: it must recreate its worktree and has no recorded launch seed/,
     )
     expect(db().query('SELECT status FROM run WHERE record_id=?').get(root)).toEqual({
@@ -588,13 +563,7 @@ describe('run continuation', () => {
       )
       .run('vendor-session', dir, root)
 
-    const resumed = await continueRun(
-      root,
-      'summarize one more thing',
-      limit,
-      undefined,
-      openCursorWorktrees,
-    )
+    const resumed = await continueRun(root, 'summarize one more thing', limit, undefined)
 
     expect(resumed).toEqual({ childId: expect.stringMatching(/^[0-9a-f-]{36}$/), job: 'summarize' })
   })

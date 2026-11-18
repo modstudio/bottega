@@ -1,7 +1,4 @@
 import { describe, expect, test } from 'bun:test'
-import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { taskBranchLandingTreeRefusal } from '../branch/task-branch.ts'
-import { decideHeldBranchRemedy } from './held-branch-remedy.ts'
 import {
   claimedRunBranch,
   decideClaimTreePlan,
@@ -11,30 +8,6 @@ import {
   shouldResolveTaskBranch,
   taskBranchKey,
 } from './run-claim-plan.ts'
-
-describe('held branch remedy', () => {
-  test.each(
-    [false, true].flatMap((cwdInsideTree) =>
-      [false, true].flatMap((cursorNamesTree) =>
-        [false, true].map((treeDirty) => ({ cwdInsideTree, cursorNamesTree, treeDirty })),
-      ),
-    ),
-  )(
-    'clears the hold for cwd=$cwdInsideTree cursor=$cursorNamesTree dirty=$treeDirty',
-    ({ cwdInsideTree, cursorNamesTree, treeDirty }) => {
-      const remedy = decideHeldBranchRemedy({
-        path: '/worktrees/DEV-2405',
-        cwdInsideTree,
-        cursorNamesTree,
-        treeDirty,
-      })
-      expect(remedy.release).toBe(cwdInsideTree || cursorNamesTree ? 'detach' : 'remove')
-      expect(remedy.prepare !== null).toBe(treeDirty)
-      if (cursorNamesTree) expect(remedy.release).not.toBe('remove')
-      if (treeDirty) expect(remedy.prepare).toContain('commit or stash')
-    },
-  )
-})
 
 describe('retry-root tree validation', () => {
   test('returns the writing branch and tip from a retry-root tree plan', () => {
@@ -105,7 +78,6 @@ describe('claim tree plan', () => {
           path: '/tmp/DEV-1398-writer',
           branch: 'DEV-1398-writer',
           ownerJob: 'implement',
-          freshBase: 'main',
         },
         forbidsRepo: true,
         repoJob: true,
@@ -147,27 +119,14 @@ describe('claim tree plan', () => {
           path: '/tmp/DEV-1398-landing',
           branch: 'DEV-1398-writer',
           ownerJob,
-          freshBase: 'main',
         },
       })
       expect(ruling).toEqual({
         mode: 'refuse',
         path: '/tmp/DEV-1398-landing',
         branch: 'DEV-1398-writer',
-        freshBase: 'main',
         ownerJob,
       })
-      if (ruling.mode !== 'refuse') throw new Error('expected a lifecycle-tree refusal')
-      const message = taskBranchLandingTreeRefusal(
-        ruling,
-        'git -C /tmp/DEV-1398-landing checkout --detach',
-      )
-      expect(message).toContain(`architect-owned ${ownerJob} tree`)
-      expect(message).toContain('continue the work yourself in architect tree')
-      expect(message).toContain(
-        `retry the same ${PLATFORM_SLUG} run start … --continue DEV-1398-writer`,
-      )
-      expect(message).not.toContain('--base')
     },
   )
 })

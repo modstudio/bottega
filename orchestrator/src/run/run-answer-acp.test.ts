@@ -27,7 +27,6 @@ const helpers = {
     argvResumeLimit: () => ARGV_PROMPT_BYTES,
     printRunId: () => {},
   },
-  openCursorWorktrees: async () => [],
 }
 
 beforeEach(() => {

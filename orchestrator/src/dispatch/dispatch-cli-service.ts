@@ -22,7 +22,6 @@ import {
   type TaskBranchLandingRefusal,
   TaskBranchLandingRefusalError,
   taskBranchCandidateNotice,
-  taskBranchLandingTreeRefusal,
   taskBranchReuseNotice,
 } from '../branch/task-branch.ts'
 import { compatibleTaskBranch } from '../branch/task-branch-reuse.ts'
@@ -62,7 +61,7 @@ import type { DetachSpec } from '../route/failover.ts'
 import { pick, type RoutedSelection } from '../route/route.ts'
 import { pickCommand } from '../route/routing-commands.ts'
 import { AgentCapacityError } from '../route/routing-refusal.ts'
-import { heldBranchRemedy } from '../run/held-branch-remedy.ts'
+import { heldLandingTreeRefusal } from '../run/held-branch-remedy.ts'
 import { sha } from '../run/prompt-sha.ts'
 import { run } from '../run/run.ts'
 import { assertAcpPolicyAllowed } from '../run/run-acp-policy.ts'
@@ -88,7 +87,6 @@ import {
   type TransportName,
 } from '../transport/transport.ts'
 import { askTypedQuestion } from '../typed-question/typed-question-service.ts'
-import { openCursorWorktrees } from '../workflow/workflow-cursor-worktrees.ts'
 import {
   callerDrift,
   checkoutHasUncommittedWork,
@@ -431,19 +429,15 @@ function warnTaskBranchBypass(
   )
 }
 
-async function refuseHeldTaskBranchBeforeDetach(
+function refuseHeldTaskBranchBeforeDetach(
   candidate: NonNullable<ReturnType<typeof resolveTaskBranch>>,
-): Promise<void> {
-  await claimTreePlanForCandidate({
+): void {
+  claimTreePlanForCandidate({
     candidate,
     forbidsRepo: false,
     repoJob: true,
     hasWorktree: false,
-    refusalMessage: async (refusal) =>
-      taskBranchLandingTreeRefusal(
-        refusal,
-        await heldBranchRemedy(refusal.path, openCursorWorktrees),
-      ),
+    refusalMessage: heldLandingTreeRefusal,
   })
 }
 
@@ -467,7 +461,7 @@ export async function resolveTaskBranchForDispatch(
       `refusing --continue ${branch}: its tip is already contained by the caller checkout`,
     )
   }
-  await refuseHeldTaskBranchBeforeDetach(compatible)
+  refuseHeldTaskBranchBeforeDetach(compatible)
   if (report) error(taskBranchReuseNotice(compatible))
   return compatible
 }

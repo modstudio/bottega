@@ -5,7 +5,6 @@ import type { TaskBranchCandidate } from '../branch/task-branch.ts'
 import * as taskBranch from '../branch/task-branch.ts'
 import * as taskBranchReuse from '../branch/task-branch-reuse.ts'
 import { db } from '../database/db.ts'
-import * as cursorWorktrees from '../workflow/workflow-cursor-worktrees.ts'
 import {
   callerCheckoutDecision,
   decidePreDetachSelection,
@@ -40,7 +39,6 @@ test('task branch gate refuses an architect tree, attaches a worker tree, and cr
   }
   const candidates = spyOn(taskBranch, 'resolveTaskBranchCandidates')
   const compatible = spyOn(taskBranchReuse, 'compatibleTaskBranch')
-  const cursors = spyOn(cursorWorktrees, 'openCursorWorktrees').mockResolvedValue([])
   const resolve = (value: TaskBranchCandidate) => {
     candidates.mockReturnValue([value])
     compatible.mockReturnValue(value)
@@ -54,7 +52,10 @@ test('task branch gate refuses an architect tree, attaches a worker tree, and cr
   }
 
   try {
-    await expect(resolve(candidate)).rejects.toThrow('refusing task branch DEV-2405-held')
+    const refusal = await resolve(candidate).catch((error: Error) => error)
+    expect(refusal).toBeInstanceOf(Error)
+    expect((refusal as Error).message).toContain('refusing task branch DEV-2405-held')
+    expect((refusal as Error).message).toContain('git -C /worktrees/DEV-2405-held switch --detach')
     expect(db().query('SELECT COUNT(*) count FROM run').get()).toEqual(before)
     await expect(resolve({ ...candidate, worktreeOwnerJob: 'craft' })).resolves.toEqual({
       ...candidate,
@@ -66,7 +67,6 @@ test('task branch gate refuses an architect tree, attaches a worker tree, and cr
   } finally {
     candidates.mockRestore()
     compatible.mockRestore()
-    cursors.mockRestore()
   }
 })
 

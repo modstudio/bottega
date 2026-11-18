@@ -55,7 +55,6 @@ export function taskBranchLandingTreeRefusal(
   refusal: {
     path: string
     branch: string
-    freshBase: string
     ownerJob: string
   },
   heldTreeRemedy: string,

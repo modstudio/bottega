@@ -11,7 +11,7 @@ import { dirname, join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { Agent } from '../agent/agents.ts'
 import { settleCreateTimeBranchCleanup } from '../branch/create-time-settlement.ts'
-import { type TaskBranchCandidate, taskBranchLandingTreeRefusal } from '../branch/task-branch.ts'
+import type { TaskBranchCandidate } from '../branch/task-branch.ts'
 import type { Pack } from '../canon/canon.ts'
 import { readStrictCodexSchema } from '../contract/codex-schema.ts'
 import { replyFileInstruction, TEXT_REPLY_SCHEMA } from '../contract/contract.ts'
@@ -42,7 +42,6 @@ import type { ReviewRole } from '../review/review-role.ts'
 import { attributedLaunchKey, type ResolvedReviewTarget } from '../review/review-target.ts'
 import { resolveSupersededTurn } from '../route/failover.ts'
 import { runOwnedPaths } from '../run-owned-paths.ts'
-import { openCursorWorktrees } from '../workflow/workflow-cursor-worktrees.ts'
 import { type KeepTreeExemption, recordedKeepTreeExemption } from '../worktree/keep-tree-hold.ts'
 import { writerTreeBaseRef } from '../worktree/trunk-base-choice.ts'
 import { createWorkerWorktree, worktreeExists } from '../worktree/worktree.ts'
@@ -60,7 +59,7 @@ import { toolFor } from '../worktree/worktree-preflight.ts'
 import { removeFor } from '../worktree/worktree-remove.ts'
 import type { Worktree } from '../worktree/worktree-types.ts'
 import { assertBranchHasNoAliveOwner } from './branch-owner-guard.ts'
-import { heldBranchRemedy } from './held-branch-remedy.ts'
+import { heldLandingTreeRefusal } from './held-branch-remedy.ts'
 import { sha } from './prompt-sha.ts'
 import { withReaderCreationLocks } from './reader-tree-sharing-claim.ts'
 import { resumeCreationOptions } from './resume-tree.ts'
@@ -367,16 +366,12 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
       opts.ownerSession ?? sessionId(),
     )
   }
-  const { attachedTree, claimTreePlan } = await claimTreePlanForCandidate({
+  const { attachedTree, claimTreePlan } = claimTreePlanForCandidate({
     candidate: resolvedTaskBranch,
     forbidsRepo,
     repoJob,
     hasWorktree: Boolean(opts.resume?.worktree),
-    refusalMessage: async (refusal) =>
-      taskBranchLandingTreeRefusal(
-        refusal,
-        await heldBranchRemedy(refusal.path, openCursorWorktrees),
-      ),
+    refusalMessage: heldLandingTreeRefusal,
   })
   const existingBranch = resumePlan?.branch ?? resolvedTaskBranch?.branch
   assertBranchHasNoAliveOwner({

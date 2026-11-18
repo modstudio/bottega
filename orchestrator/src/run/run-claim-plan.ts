@@ -14,7 +14,6 @@ export type ClaimTreePlanFacts = {
     path: string
     branch: string
     ownerJob: string | null
-    freshBase: string
   } | null
   forbidsRepo: boolean
   repoJob: boolean
@@ -23,7 +22,7 @@ export type ClaimTreePlanFacts = {
 
 export type ClaimTreePlanRuling =
   | { mode: 'attach' }
-  | { mode: 'refuse'; path: string; branch: string; freshBase: string; ownerJob: string }
+  | { mode: 'refuse'; path: string; branch: string; ownerJob: string }
   | { mode: 'isolate' }
   | { mode: 'create' }
   | { mode: 'caller' }
@@ -80,7 +79,6 @@ export function decideClaimTreePlan(facts: ClaimTreePlanFacts): ClaimTreePlanRul
       mode: 'refuse',
       path: facts.resolvedTaskWorktree.path,
       branch: facts.resolvedTaskWorktree.branch,
-      freshBase: facts.resolvedTaskWorktree.freshBase,
       ownerJob: facts.resolvedTaskWorktree.ownerJob,
     }
   }
@@ -91,7 +89,7 @@ export function decideClaimTreePlan(facts: ClaimTreePlanFacts): ClaimTreePlanRul
 }
 
 /** Adapt one resolved task-branch candidate into a pre-effect claim plan. */
-export async function claimTreePlanForCandidate<T extends { path: string }>(input: {
+export function claimTreePlanForCandidate<T extends { path: string }>(input: {
   candidate: {
     branch: string
     trunk: string
@@ -101,9 +99,7 @@ export async function claimTreePlanForCandidate<T extends { path: string }>(inpu
   forbidsRepo: boolean
   repoJob: boolean
   hasWorktree: boolean
-  refusalMessage: (
-    refusal: Extract<ClaimTreePlanRuling, { mode: 'refuse' }>,
-  ) => string | Promise<string>
+  refusalMessage: (refusal: Extract<ClaimTreePlanRuling, { mode: 'refuse' }>) => string
 }) {
   const attachedTree = input.candidate?.worktree ?? null
   const claimTreePlan = decideClaimTreePlan({
@@ -113,14 +109,13 @@ export async function claimTreePlanForCandidate<T extends { path: string }>(inpu
             path: attachedTree.path,
             branch: input.candidate.branch,
             ownerJob: input.candidate.worktreeOwnerJob,
-            freshBase: input.candidate.trunk,
           }
         : null,
     forbidsRepo: input.forbidsRepo,
     repoJob: input.repoJob,
     hasWorktree: input.hasWorktree,
   })
-  if (claimTreePlan.mode === 'refuse') throw new Error(await input.refusalMessage(claimTreePlan))
+  if (claimTreePlan.mode === 'refuse') throw new Error(input.refusalMessage(claimTreePlan))
   return { attachedTree, claimTreePlan: claimTreePlan as AcceptedClaimTreePlan }
 }
 
