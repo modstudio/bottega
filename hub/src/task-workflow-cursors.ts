@@ -1,16 +1,15 @@
 // concern: task workflow cursor close
 /** Lists cursors and refuses live work before close, then abandons them after close succeeds. */
 
-import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import {
-  type OpenWorkflowCursor,
   OpenWorkflowCursorListSchema,
   WorkflowAbandonResultSchema,
 } from '../../shared/orch-contract.ts'
 import { callerSession } from './caller-session.ts'
 import { parseOrchestratorJson } from './orch.ts'
+import { decideTaskCursorClose, type OpenTaskWorkflowCursor } from './task-cursor-close-decision.ts'
 
-export type OpenTaskWorkflowCursor = OpenWorkflowCursor
+export type { OpenTaskWorkflowCursor } from './task-cursor-close-decision.ts'
 
 export type AbandonedTaskCursor = { number: number; workflow: string; reason: string }
 
@@ -57,6 +56,18 @@ export type TaskCursorClosePlan = {
   abandon: TaskCursorAbandon
 }
 
+export class TaskCursorAbandonError extends Error {
+  readonly cursor: OpenTaskWorkflowCursor
+  readonly cause: unknown
+
+  constructor(cursor: OpenTaskWorkflowCursor, cause: unknown) {
+    super(cause instanceof Error ? cause.message : String(cause))
+    this.name = 'TaskCursorAbandonError'
+    this.cursor = cursor
+    this.cause = cause
+  }
+}
+
 export async function planOpenTaskCursorClose(
   project: string,
   key: string,
@@ -70,25 +81,16 @@ export async function planOpenTaskCursorClose(
 ): Promise<TaskCursorClosePlan> {
   const calling =
     dependencies.callingSession === undefined ? callerSession() : dependencies.callingSession
-  const cursors = (await (dependencies.list ?? openTaskWorkflowCursors)(project)).filter(
-    (cursor) =>
-      cursor.workflow_key?.toUpperCase() === key.toUpperCase() &&
-      (calling === null || cursor.session_id !== calling),
-  )
-  const live = cursors.flatMap((cursor) => cursor.live_runs.map((run) => ({ cursor, run })))
-  if (live.length) {
-    const details = live
-      .map(
-        ({ cursor, run }) =>
-          `cursor ${cursor.id} has live run ${run.number} [${run.record_id}]; clear it with: ${PLATFORM_SLUG} run stop ${run.number}`,
-      )
-      .join('\n')
-    throw new Error(`refusing to close task ${key} while its cursor has live work:\n${details}`)
-  }
+  const decision = decideTaskCursorClose({
+    key,
+    cursors: await (dependencies.list ?? openTaskWorkflowCursors)(project),
+    callingSession: calling,
+  })
+  if (decision.action === 'refuse') throw new Error(decision.reason)
   return {
     key,
     status,
-    cursors,
+    cursors: decision.cursors,
     onAbandoned: dependencies.onAbandoned,
     abandon:
       dependencies.abandon ??
@@ -97,16 +99,15 @@ export async function planOpenTaskCursorClose(
   }
 }
 
-export async function abandonPlannedTaskCursors(
-  plan: TaskCursorClosePlan,
-): Promise<AbandonedTaskCursor[]> {
+export async function abandonPlannedTaskCursors(plan: TaskCursorClosePlan): Promise<void> {
   const reason = `task ${plan.key} closed (${plan.status})`
-  const abandoned: AbandonedTaskCursor[] = []
   for (const cursor of plan.cursors) {
-    await plan.abandon(cursor, reason, cursor.session_id ?? undefined)
+    try {
+      await plan.abandon(cursor, reason, cursor.session_id ?? undefined)
+    } catch (error) {
+      throw new TaskCursorAbandonError(cursor, error)
+    }
     const result = { number: cursor.id, workflow: cursor.workflow_slug, reason }
-    abandoned.push(result)
     plan.onAbandoned?.(result)
   }
-  return abandoned
 }

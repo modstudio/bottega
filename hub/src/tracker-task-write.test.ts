@@ -5,12 +5,12 @@ import { db, writeTransaction } from './db.ts'
 import type { RegisteredProject } from './projects.ts'
 import { closeTask, showTask } from './task.ts'
 import { UNATTRIBUTED } from './task-attribution.ts'
+import { TaskClosedWithResidueError } from './task-closed-residue.ts'
 import type { OpenTaskWorkflowCursor } from './task-workflow-cursors.ts'
 import {
   closeTaskThroughTracker,
   commentTaskThroughTracker,
   setTaskThroughTracker,
-  TaskCursorResidueError,
 } from './tracker-task-write.ts'
 
 const taskId = '01990000-0000-7000-8000-000000001659'
@@ -376,10 +376,12 @@ describe('array-mcp task writes', () => {
       )
       throw new Error('expected task cursor residue')
     } catch (error) {
-      expect(error).toBeInstanceOf(TaskCursorResidueError)
-      expect((error as TaskCursorResidueError).task).toBe(written)
-      expect((error as Error).message).toContain(
-        'task ADN-1659 is closed but its workflow cursor cleanup failed',
+      expect(error).toBeInstanceOf(TaskClosedWithResidueError)
+      expect((error as TaskClosedWithResidueError).task).toBe(written)
+      expect((error as TaskClosedWithResidueError).residue).toBe('cursor-abandon')
+      expect((error as Error).message).toBe(
+        `task ADN-1659 is closed; workflow cursor cleanup did not finish: cursor store unavailable; retry workflow abandon\n` +
+          `clear it with: ${PLATFORM_SLUG} workflow abandon ship-task --cursor 64 --project adanim --owner-session foreign-session --reason "task ADN-1659 closed (done)"`,
       )
     }
   })

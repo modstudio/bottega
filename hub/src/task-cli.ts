@@ -17,6 +17,7 @@ import {
   showTask,
 } from './task.ts'
 import { closeThenPrune } from './task-close.ts'
+import { TaskClosedWithResidueError } from './task-closed-residue.ts'
 import {
   createTaskDocument,
   deleteTaskDocument,
@@ -33,7 +34,6 @@ import {
   closeTaskThroughTracker,
   commentTaskThroughTracker,
   setTaskThroughTracker,
-  TaskCursorResidueError,
 } from './tracker-task-write.ts'
 
 type TaskOptions = {
@@ -183,40 +183,41 @@ async function showTaskCommand(key: string, options: TaskOptions): Promise<void>
 }
 
 async function closeTask(key: string, options: TaskOptions): Promise<void> {
-  const { closed, pruned, pruneError, abandonError, releaseError } = await closeThenPrune(
-    key,
-    { project: options.project },
-    Boolean(options.keepBranches),
-    optional(options, 'abandon'),
-    await machineAttribution(),
-    ARRAY_MCP_STATUS_WRITE_CONFIRM,
-    {
-      close: (key, scope, attribution, closeOptions) =>
-        closeTaskThroughTracker(key, scope, attribution, closeOptions),
-      cursorAbandoned: (cursor) =>
-        console.log(`cursor ${cursor.number} ${cursor.workflow}: abandoned (${cursor.reason})`),
-    },
-  )
-  printTaskRow(closed)
-  if (abandonError || releaseError) {
-    console.error((abandonError ?? releaseError)!.message)
-    process.exitCode = TASK_CLOSED_WITH_RESIDUE_EXIT_CODE
-    return
-  }
-  if (pruneError) {
-    console.error(`branch prune failed: ${pruneError.message}`)
-    console.error(
-      `retry: ${PLATFORM_SLUG} tree branch prune --project ${closed.project} --key ${closed.key}`,
+  let result: Awaited<ReturnType<typeof closeThenPrune>>
+  try {
+    result = await closeThenPrune(
+      key,
+      { project: options.project },
+      Boolean(options.keepBranches),
+      optional(options, 'abandon'),
+      await machineAttribution(),
+      ARRAY_MCP_STATUS_WRITE_CONFIRM,
+      {
+        close: (key, scope, attribution, closeOptions) =>
+          closeTaskThroughTracker(key, scope, attribution, closeOptions),
+        cursorAbandoned: (cursor) =>
+          console.log(`cursor ${cursor.number} ${cursor.workflow}: abandoned (${cursor.reason})`),
+      },
     )
-    process.exitCode = TASK_CLOSED_WITH_RESIDUE_EXIT_CODE
+  } catch (error) {
+    handleTaskClosedWithResidue(error)
     return
   }
+  const { closed, pruned } = result
+  printTaskRow(closed)
   if (!pruned) return
   console.log(`branches: deleted ${pruned.deleted.length}; kept ${pruned.kept.length}`)
   for (const branch of pruned.operator)
     console.log(
       `${branch.state}: ${branch.branch} (${branch.commitsNotOnTrunk} commits not on trunk); ${branch.command}`,
     )
+}
+
+function handleTaskClosedWithResidue(error: unknown): void {
+  if (!(error instanceof TaskClosedWithResidueError)) throw error
+  printTaskRow(error.task)
+  console.error(error.message)
+  process.exitCode = TASK_CLOSED_WITH_RESIDUE_EXIT_CODE
 }
 
 function taskOptions(command: Command): TaskOptions {
@@ -373,10 +374,7 @@ function registerTaskQueryCommands(task: Command): void {
       )
       printTaskRow(row)
     } catch (error) {
-      if (!(error instanceof TaskCursorResidueError)) throw error
-      printTaskRow(error.task)
-      console.error(error.message)
-      process.exitCode = TASK_CLOSED_WITH_RESIDUE_EXIT_CODE
+      handleTaskClosedWithResidue(error)
     }
   })
 }

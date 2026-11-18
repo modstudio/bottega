@@ -21,6 +21,7 @@ import {
   type TaskComment,
 } from './task.ts'
 import type { Attribution } from './task-attribution.ts'
+import { taskCursorAbandonResidue } from './task-closed-residue.ts'
 import type { TaskScope } from './task-identity.ts'
 import type { TaskRow } from './task-row.ts'
 import {
@@ -29,6 +30,7 @@ import {
   type openTaskWorkflowCursors,
   planOpenTaskCursorClose,
   type TaskCursorAbandon,
+  TaskCursorAbandonError,
   type TaskCursorClosePlan,
 } from './task-workflow-cursors.ts'
 import type { HostedTaskWriteOptions } from './task-write-destination.ts'
@@ -68,17 +70,6 @@ async function planTaskCursorClose(
   })
 }
 
-export class TaskCursorResidueError extends Error {
-  readonly task: TaskRow
-
-  constructor(task: TaskRow, cause: unknown) {
-    const detail = cause instanceof Error ? cause.message : String(cause)
-    super(`task ${task.key} is closed but its workflow cursor cleanup failed: ${detail}`)
-    this.name = 'TaskCursorResidueError'
-    this.task = task
-  }
-}
-
 async function abandonAfterWrite(
   task: TaskRow,
   plan: TaskCursorClosePlan | null,
@@ -88,7 +79,8 @@ async function abandonAfterWrite(
     await abandonPlannedTaskCursors(plan)
     return task
   } catch (error) {
-    throw new TaskCursorResidueError(task, error)
+    if (!(error instanceof TaskCursorAbandonError)) throw error
+    throw taskCursorAbandonResidue(task, plan.status, error.cursor, error.cause)
   }
 }
 

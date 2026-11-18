@@ -3,6 +3,7 @@ import { PLATFORM_NAME, PLATFORM_SLUG } from '../../shared/brand.ts'
 import { UNATTRIBUTED } from './task-attribution.ts'
 import { closeThenPrune } from './task-close.ts'
 import { decideTaskClose } from './task-close-decision.ts'
+import { TaskClosedWithResidueError } from './task-closed-residue.ts'
 import type { TaskRow } from './task-row.ts'
 import type { OpenTaskWorkflowCursor } from './task-workflow-cursors.ts'
 
@@ -76,7 +77,8 @@ describe('task close claim release', () => {
       session_id: 'foreign-session',
       live_runs: [],
     } satisfies OpenTaskWorkflowCursor
-    const result = await closeThenPrune('DEV-1', {}, true, undefined, UNATTRIBUTED, 'production', {
+    const abandoned: unknown[] = []
+    await closeThenPrune('DEV-1', {}, true, undefined, UNATTRIBUTED, 'production', {
       project: () => PLATFORM_NAME,
       callingSession: 'calling-session',
       listCursors: async () => [openCursor],
@@ -94,11 +96,12 @@ describe('task close claim release', () => {
         expect(cursorState).toBe('abandoned')
         return { released: 1 }
       },
+      cursorAbandoned: (result) => abandoned.push(result),
     })
 
     expect(taskState).toBe('done')
     expect(cursorState).toBe('abandoned')
-    expect(result.abandoned).toEqual([
+    expect(abandoned).toEqual([
       { number: 41, workflow: 'ship-task', reason: 'task DEV-1 closed (done)' },
     ])
   })
@@ -180,7 +183,7 @@ describe('task close claim release', () => {
 
   test('reports a remaining claim release refusal and its remedy', async () => {
     const printed: string[] = []
-    const result = await closeThenPrune('DEV-1', {}, true, undefined, UNATTRIBUTED, 'production', {
+    const operation = closeThenPrune('DEV-1', {}, true, undefined, UNATTRIBUTED, 'production', {
       project: () => PLATFORM_NAME,
       listCursors: async () => [
         {
@@ -189,7 +192,7 @@ describe('task close claim release', () => {
           project: PLATFORM_NAME,
           workflow_slug: 'ship-task',
           workflow_key: 'DEV-1',
-          session_id: null,
+          session_id: 'foreign-session',
           live_runs: [],
         },
       ],
@@ -202,18 +205,20 @@ describe('task close claim release', () => {
         )
       },
     })
-    expect(result.releaseError).toEqual(
-      expect.objectContaining({
-        message: `claim remains; abandon its cursor, then retry: ${PLATFORM_SLUG} board claim release-task DEV-1`,
-      }),
+    const error = await operation.catch((cause) => cause)
+    expect(error).toBeInstanceOf(TaskClosedWithResidueError)
+    expect(error.task).toBe(closedTask)
+    expect(error.residue).toBe('claim-release')
+    expect(error.message).toBe(
+      `task DEV-1 is closed; claim release did not finish: claim remains; abandon its cursor, then retry: ${PLATFORM_SLUG} board claim release-task DEV-1\n` +
+        `clear it with: ${PLATFORM_SLUG} board claim release-task DEV-1`,
     )
-    expect(result.closed).toBe(closedTask)
     expect(printed).toEqual(['cursor 51 abandoned'])
   })
 
   test('reports cursor abandonment failure as residue after the task closes', async () => {
     let releaseCalls = 0
-    const result = await closeThenPrune('DEV-1', {}, true, undefined, UNATTRIBUTED, 'production', {
+    const operation = closeThenPrune('DEV-1', {}, true, undefined, UNATTRIBUTED, 'production', {
       project: () => PLATFORM_NAME,
       listCursors: async () => [
         {
@@ -222,7 +227,7 @@ describe('task close claim release', () => {
           project: PLATFORM_NAME,
           workflow_slug: 'ship-task',
           workflow_key: 'DEV-1',
-          session_id: null,
+          session_id: 'foreign-session',
           live_runs: [],
         },
       ],
@@ -236,10 +241,33 @@ describe('task close claim release', () => {
       },
     })
 
-    expect(result.closed).toBe(closedTask)
-    expect(result.abandonError).toEqual(
-      expect.objectContaining({ message: 'cursor store unavailable; retry workflow abandon' }),
+    const error = await operation.catch((cause) => cause)
+    expect(error).toBeInstanceOf(TaskClosedWithResidueError)
+    expect(error.task).toBe(closedTask)
+    expect(error.residue).toBe('cursor-abandon')
+    expect(error.message).toBe(
+      `task DEV-1 is closed; workflow cursor cleanup did not finish: cursor store unavailable; retry workflow abandon\n` +
+        `clear it with: ${PLATFORM_SLUG} workflow abandon ship-task --cursor 52 --project ${PLATFORM_NAME} --owner-session foreign-session --reason "task DEV-1 closed (done)"`,
     )
     expect(releaseCalls).toBe(0)
+  })
+
+  test('throws branch prune residue with the closed row and retry command', async () => {
+    const operation = closeThenPrune('DEV-1', {}, false, undefined, UNATTRIBUTED, 'production', {
+      ...cursorDependencies,
+      close: async () => closedTask,
+      releaseClaims: async () => ({ released: 1 }),
+      prune: async () => {
+        throw new Error('git worktree is busy')
+      },
+    })
+    const error = await operation.catch((cause) => cause)
+    expect(error).toBeInstanceOf(TaskClosedWithResidueError)
+    expect(error.task).toBe(closedTask)
+    expect(error.residue).toBe('branch-prune')
+    expect(error.message).toBe(
+      `task DEV-1 is closed; branch prune did not finish: git worktree is busy\n` +
+        `clear it with: ${PLATFORM_SLUG} tree branch prune --project ${PLATFORM_NAME} --key DEV-1`,
+    )
   })
 })
