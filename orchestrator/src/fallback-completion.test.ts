@@ -55,6 +55,24 @@ describe('fallback completion decision', () => {
     ).toBe(true)
   })
 
+  test.each([
+    { files_changed: ['orchestrator/src/fallback-completion.ts'], tests: null },
+    { files_changed: null, tests: { command: 'bun test', ran: true, passed: true } },
+  ])('an evidence-bearing fallback with progress vocabulary is complete', (evidence) => {
+    expect(
+      decideFallbackCompletion({
+        writesJob: true,
+        timedOut: false,
+        replyFilePresent: false,
+        finalMessage: JSON.stringify({
+          status: 'done',
+          summary: 'After reading the implementation, I will report the completed result.',
+          ...evidence,
+        }),
+      }),
+    ).toBe(true)
+  })
+
   test('reply.json and reader replies retain their completion behavior', () => {
     const progress = progressReplies[0]!
     expect(

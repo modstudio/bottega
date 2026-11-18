@@ -20,17 +20,32 @@ function textFields(value: unknown): string[] {
   return Object.values(value).flatMap(textFields)
 }
 
-function finalMessageTextFields(finalMessage: string): string[] {
+function parsedFallbackHasEvidence(value: unknown): boolean {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) return false
+  const reply = value as {
+    files_changed?: unknown
+    tests?: { ran?: unknown } | null
+  }
+  return (
+    (Array.isArray(reply.files_changed) && reply.files_changed.length > 0) ||
+    reply.tests?.ran === true
+  )
+}
+
+function progressTextFields(finalMessage: string): string[] | null {
   try {
-    return textFields(JSON.parse(finalMessage))
+    const parsed = JSON.parse(finalMessage)
+    return parsedFallbackHasEvidence(parsed) ? null : textFields(parsed)
   } catch {
     return [finalMessage]
   }
 }
 
 function isProgressUpdate(finalMessage: string): boolean {
-  return finalMessageTextFields(finalMessage).some(
-    (text) => OPENING_PROGRESS_VOCABULARY.test(text) || CONTINUING_PROGRESS_VOCABULARY.test(text),
+  return Boolean(
+    progressTextFields(finalMessage)?.some(
+      (text) => OPENING_PROGRESS_VOCABULARY.test(text) || CONTINUING_PROGRESS_VOCABULARY.test(text),
+    ),
   )
 }
 
