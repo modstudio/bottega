@@ -26,11 +26,16 @@ const run = (overrides: Partial<NonNullable<AnswerIdentifierFacts['run']>> = {})
   ...overrides,
 })
 
-const question = (overrides: Partial<NonNullable<AnswerIdentifierFacts['question']>> = {}) => ({
-  kind: 'run-question' as const,
+type RunQuestionFacts = Extract<
+  NonNullable<AnswerIdentifierFacts['question']>,
+  { kind: 'run-question' }
+>
+
+const question = (overrides: Partial<RunQuestionFacts> = {}): RunQuestionFacts => ({
+  kind: 'run-question',
   rootRecordId: 'question-root',
   open: true,
-  state: 'open' as const,
+  state: 'open',
   openQuestionNumbers: [12],
   ...overrides,
 })
