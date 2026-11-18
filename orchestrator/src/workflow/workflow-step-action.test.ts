@@ -141,7 +141,7 @@ test('the pure dispatch decision refuses a keyless writer with the task remedy b
     action: 'refuse',
     reason:
       'workflow explore cursor 17 has no task key, and implement writes the repository; ' +
-      'compose plan-task (or take up a task), then dispatch from that keyed cursor',
+      'compose plan-task for a task, then dispatch from that keyed cursor',
   })
 })
 
@@ -158,7 +158,7 @@ test('the pure dispatch decision preserves a keyed cursor key', () => {
   ).toEqual({ action: 'dispatch-with-key', key: 'DEV-2289' })
 })
 
-test('the pure dispatch decision refuses a keyless lookup missing from the step', () => {
+test('the pure dispatch decision admits a keyless reader missing from the step', () => {
   expect(
     decideStepDispatch({
       cursor: 17,
@@ -168,13 +168,26 @@ test('the pure dispatch decision refuses a keyless lookup missing from the step'
       stepJobs: ['understand'],
       job: JOBS.diagnose!,
     }),
+  ).toEqual({ action: 'dispatch-without-key' })
+})
+
+test('the pure dispatch decision still refuses an undeclared job on a keyed cursor', () => {
+  expect(
+    decideStepDispatch({
+      cursor: 17,
+      taskKey: 'DEV-2289',
+      workflowSlug: 'ship-task',
+      stepSlug: 'implement',
+      stepJobs: ['implement'],
+      job: JOBS.diagnose!,
+    }),
   ).toEqual({
     action: 'refuse',
-    reason: 'step investigate of cursor 17 declares jobs: understand; diagnose is not one of them',
+    reason: 'step implement of cursor 17 declares jobs: implement; diagnose is not one of them',
   })
 })
 
-test('a keyless lookup dispatch preserves argv and the cursor step binding', async () => {
+test('a keyless lookup absent from the step dispatches with the cursor step binding', async () => {
   const calls: unknown[][] = []
   await dispatchForStep(
     { cursor: 17, job: 'understand', argv: ['do', 'understand', 'Inspect it.'] },
@@ -184,7 +197,7 @@ test('a keyless lookup dispatch preserves argv and the cursor step binding', asy
           taskKey: '',
           workflowSlug: 'explore',
           stepSlug: 'investigate',
-          jobs: ['understand'],
+          jobs: [],
         }),
       dispatch: async (...args) => {
         calls.push(args)

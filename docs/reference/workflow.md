@@ -745,7 +745,7 @@ show a workflow text attachment
 
 **Synopsis:** `bottega workflow uncovered [--days <value>] [--json]`
 
-report keyed work performed without a live task cursor or claim
+report work performed without required workflow cursor coverage
 
 ### Options
 

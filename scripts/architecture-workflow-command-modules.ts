@@ -62,6 +62,7 @@ export const workflowCommandModules: WorkflowCommandModule[] = [
     '../branch/branch-landing-service.ts',
     '../database/db.ts',
     '../project/projects.ts',
+    '../run/cursorless-run-evidence.ts',
     './task-flow-store.ts',
   ]),
   module('orchestrator/src/workflow/explore-graduation.ts', []),

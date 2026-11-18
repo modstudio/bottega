@@ -66,9 +66,9 @@ export function decideStepDispatch(input: {
       action: 'refuse',
       reason:
         `workflow ${input.workflowSlug} cursor ${input.cursor} has no task key, and ${input.job.name} writes the repository; ` +
-        'compose plan-task (or take up a task), then dispatch from that keyed cursor',
+        'compose plan-task for a task, then dispatch from that keyed cursor',
     }
-  if (!input.stepJobs.includes(input.job.name)) {
+  if (input.taskKey && !input.stepJobs.includes(input.job.name)) {
     const declared = input.stepJobs.length ? input.stepJobs.join(', ') : 'none'
     return {
       action: 'refuse',

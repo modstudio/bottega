@@ -125,17 +125,18 @@ function workflowRegistration(
 
 function registerWorkflowDefinitions({
   workflow,
+  workflowPresentation,
   output,
   handlerOptions,
 }: WorkflowRegistration): void {
   jsonOption(
     workflow
       .command('uncovered')
-      .description('report keyed work performed without a live task cursor or claim')
+      .description('report work performed without required workflow cursor coverage')
       .option('--days <value>', 'number of recent UTC days to include'),
   )
     .allowExcessArguments(false)
-    .action((options) => workflowUncoveredCommand(options, { log }))
+    .action((options) => workflowUncoveredCommand(options, workflowPresentation))
 
   jsonOption(
     workflow

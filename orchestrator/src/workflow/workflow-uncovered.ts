@@ -1,11 +1,15 @@
 // concern: workflow-uncovered
-/** Measures keyed work evidence that had neither an open task cursor nor a live task claim. */
+/** Measures task work without keyed coverage and taskless jobs without any cursor binding. */
 
 import type { Database } from 'bun:sqlite'
 import { boardClaimList } from '../board/board-operations.ts'
 import { decideLandingTaskKey } from '../branch/branch-landing-service.ts'
 import { db } from '../database/db.ts'
 import { projectByName, projects } from '../project/projects.ts'
+import {
+  type CursorlessRunEvidence,
+  cursorlessRunEvidence,
+} from '../run/cursorless-run-evidence.ts'
 import { type TaskFlowReadStore, taskFlowReadStore } from './task-flow-store.ts'
 
 const WORKFLOW_UNCOVERED_DEFAULT_DAYS = 14
@@ -36,6 +40,7 @@ export type WorkflowUncoveredReport = {
     day: string
     count: number
     tasks: Array<{ project: string; key: string }>
+    cursorlessRuns: Array<{ number: number; job: string; session: string | null }>
   }>
 }
 
@@ -52,6 +57,7 @@ export function decideWorkflowUncovered(input: {
   cursors: readonly TaskCoverage[]
   claims: readonly TaskCoverage[]
   handoffs?: readonly HandoffTransition[]
+  cursorlessRuns?: readonly CursorlessRunEvidence[]
 }): WorkflowUncoveredReport {
   if (!Number.isSafeInteger(input.days) || input.days < 1)
     throw new Error('--days must be a positive integer')
@@ -97,7 +103,11 @@ export function decideWorkflowUncovered(input: {
         (left, right) =>
           left.project.localeCompare(right.project) || left.key.localeCompare(right.key),
       )
-      return { day, count: tasks.length, tasks }
+      const cursorlessRuns = (input.cursorlessRuns ?? [])
+        .filter((run) => run.at.slice(0, 10) === day)
+        .map(({ number, job, session }) => ({ number, job, session }))
+        .sort((left, right) => left.number - right.number)
+      return { day, count: tasks.length, tasks, cursorlessRuns }
     }),
   }
 }
@@ -172,6 +182,7 @@ export async function workflowUncoveredReport(
     )
     .all(from)
     .map((row) => ({ ...row, source: 'run' as const }))
+  const cursorlessRuns = cursorlessRunEvidence(database, from)
   let cursorRows: Awaited<ReturnType<TaskFlowReadStore['keyedStageHistory']>>
   try {
     cursorRows = await (
@@ -241,22 +252,37 @@ export async function workflowUncoveredReport(
     cursors,
     claims,
     handoffs,
+    cursorlessRuns,
   })
 }
 
 export function workflowUncoveredCommand(
   options: { days?: string; json?: boolean },
-  output: { log(value: string): void },
+  output: { log(value: string): void; setExitCode(code: number): void },
+  report: typeof workflowUncoveredReport = workflowUncoveredReport,
 ): Promise<void> {
   const days = options.days === undefined ? undefined : Number(options.days)
-  return workflowUncoveredReport({ ...(days === undefined ? {} : { days }) }).then((report) => {
+  return report({ ...(days === undefined ? {} : { days }) }).then((result) => {
     if (options.json) {
-      output.log(JSON.stringify(report, null, 2))
-      return
+      output.log(JSON.stringify(result, null, 2))
+    } else {
+      for (const row of result.days) {
+        const keys = row.tasks.map((task) => `${task.project}/${task.key}`).join(', ')
+        output.log(
+          `${row.day}: ${row.count} (expected ${result.expected})${keys ? `  ${keys}` : ''}`,
+        )
+        const runs = row.cursorlessRuns.map((run) => `#${run.number} ${run.job}`).join(', ')
+        output.log(
+          `  cursorless runs: ${row.cursorlessRuns.length} (expected ${result.expected})${runs ? `  ${runs}` : ''}`,
+        )
+      }
     }
-    for (const row of report.days) {
-      const keys = row.tasks.map((task) => `${task.project}/${task.key}`).join(', ')
-      output.log(`${row.day}: ${row.count} (expected ${report.expected})${keys ? `  ${keys}` : ''}`)
-    }
+    output.setExitCode(
+      result.days.some(
+        (row) => row.count > result.expected || row.cursorlessRuns.length > result.expected,
+      )
+        ? 1
+        : 0,
+    )
   })
 }
