@@ -1,5 +1,5 @@
 import type { Command } from 'commander'
-import { CALLER_ENVIRONMENT_KEY } from './record-caller.ts'
+import { CALLER_ENVIRONMENT_KEY, CALLER_TOKEN_MAX_LENGTH } from './record-caller.ts'
 
 export type PublicCommandInvocation = {
   publicPath: readonly string[]
@@ -12,14 +12,17 @@ export function cliCallerEnvironmentValue(
   parentValue: string | undefined,
   command: Command,
 ): string {
-  if (parentValue !== undefined) return parentValue
   const publicPath = publicCommandPaths.get(command)
-  if (publicPath) return `cli:${publicPath.join('/')}`
-  const names: string[] = []
-  for (let current: Command | null = command; current?.parent; current = current.parent) {
-    names.unshift(current.name())
+  let ownValue: string
+  if (publicPath) ownValue = `cli:${publicPath.join('/')}`
+  else {
+    const names: string[] = []
+    for (let current: Command | null = command; current?.parent; current = current.parent) {
+      names.unshift(current.name())
+    }
+    ownValue = `cli:${names.join('/')}`
   }
-  return `cli:${names.join('/')}`
+  return `${ownValue}${parentValue ? `.${parentValue}` : ''}`.slice(0, CALLER_TOKEN_MAX_LENGTH)
 }
 
 export type CliCallerDispatch = <T>(work: () => Promise<T>) => Promise<T>

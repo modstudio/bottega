@@ -44,7 +44,7 @@ export function startupFailureDiagnostic(error: unknown): string {
 }
 
 export function executorCallerToken(inherited: string | undefined): string {
-  return `exec:${inherited || 'run'}`.slice(0, CALLER_TOKEN_MAX_LENGTH)
+  return `exec:run${inherited ? `.${inherited}` : ''}`.slice(0, CALLER_TOKEN_MAX_LENGTH)
 }
 
 /** Record why this run never started, using as little of the codebase as possible. */
@@ -91,13 +91,49 @@ async function recordStartupFailure(id: string, reason: string): Promise<void> {
 export async function main(argv: string[]): Promise<number> {
   const inheritedCaller = process.env[CALLER_ENVIRONMENT_KEY]
   process.env[CALLER_ENVIRONMENT_KEY] = executorCallerToken(inheritedCaller)
-  const requestWindowStartedAt = Date.now()
-  let requestCountAtStart = 0
+  let requestWindowTimer: ReturnType<typeof setInterval> | undefined
+  let finishRequestWindow: (() => void) | undefined
   const [idArg, promptPath, jobName, specJson] = argv
   const id = idArg ?? ''
   try {
     const { recordRequestCount } = await import('../../../shared/record-request-headers.ts')
-    requestCountAtStart = recordRequestCount()
+    const {
+      exceedsLongLivedRecordRequestRate,
+      LONG_LIVED_RECORD_REQUEST_ALLOWANCE,
+      LONG_LIVED_RECORD_REQUESTS_PER_MINUTE_MAX,
+      LONG_LIVED_RECORD_REQUEST_WINDOW_MS,
+    } = await import('./run-record-request-rate.ts')
+    const { recordRunWarning } = await import('../events.ts')
+    let requestWindowIndex = 1
+    let requestWindowStartedAt = Date.now()
+    let requestCountAtWindowStart = recordRequestCount()
+    const closeRequestWindow = (elapsedMs: number): void => {
+      const currentCount = recordRequestCount()
+      const count = currentCount - requestCountAtWindowStart
+      if (
+        id &&
+        exceedsLongLivedRecordRequestRate({ count, elapsedMs, windowIndex: requestWindowIndex })
+      ) {
+        recordRunWarning(
+          id,
+          `long-lived record request rate exceeded: ${count} requests in window ${requestWindowIndex}; allowance ${LONG_LIVED_RECORD_REQUEST_ALLOWANCE} requests in the first window; bound ${LONG_LIVED_RECORD_REQUESTS_PER_MINUTE_MAX} requests per minute`,
+        )
+      }
+      requestCountAtWindowStart = currentCount
+      requestWindowStartedAt = Date.now()
+      requestWindowIndex += 1
+    }
+    requestWindowTimer = setInterval(() => {
+      try {
+        closeRequestWindow(LONG_LIVED_RECORD_REQUEST_WINDOW_MS)
+      } catch (error) {
+        console.error(
+          `orch: run ${id} could not record its request-rate warning: ${startupFailureDiagnostic(error)}`,
+        )
+      }
+    }, LONG_LIVED_RECORD_REQUEST_WINDOW_MS)
+    requestWindowTimer.unref()
+    finishRequestWindow = () => closeRequestWindow(Date.now() - requestWindowStartedAt)
     if (!id || !promptPath || !jobName)
       throw new Error('__exec <run-id> <prompt-file> <job> [spec]')
     const { readFileSync } = await import('node:fs')
@@ -147,21 +183,8 @@ export async function main(argv: string[]): Promise<number> {
     return 1
   } finally {
     try {
-      const elapsedMs = Date.now() - requestWindowStartedAt
-      const { recordRequestCount } = await import('../../../shared/record-request-headers.ts')
-      const count = recordRequestCount() - requestCountAtStart
-      const {
-        exceedsLongLivedRecordRequestRate,
-        LONG_LIVED_RECORD_REQUEST_ALLOWANCE,
-        LONG_LIVED_RECORD_REQUESTS_PER_MINUTE_MAX,
-      } = await import('./run-record-request-rate.ts')
-      if (id && exceedsLongLivedRecordRequestRate({ count, elapsedMs })) {
-        const { recordRunWarning } = await import('../events.ts')
-        recordRunWarning(
-          id,
-          `long-lived record request rate exceeded: ${count} requests in ${(elapsedMs / 60_000).toFixed(2)} minutes; allowance ${LONG_LIVED_RECORD_REQUEST_ALLOWANCE} requests; bound ${LONG_LIVED_RECORD_REQUESTS_PER_MINUTE_MAX} requests per minute`,
-        )
-      }
+      if (requestWindowTimer) clearInterval(requestWindowTimer)
+      finishRequestWindow?.()
     } catch (error) {
       console.error(
         `orch: run ${id} could not record its request-rate warning: ${startupFailureDiagnostic(error)}`,

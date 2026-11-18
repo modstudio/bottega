@@ -34,7 +34,7 @@ test('run scopes real command actions to the public CLI path and restores the pa
   const second = createHubProgram()
   second.hook('postAction', () => void observed.push(recordCallerToken()))
   expect(await run(second, ['lease', '--json'], invocation)).toBe(0)
-  expect(observed.at(-1)).toBe('hook:parent')
+  expect(observed.at(-1)).toBe('cli:machine/lease.hook:parent')
   expect(process.env[CALLER_ENVIRONMENT_KEY]).toBe('hook:parent')
 })
 
