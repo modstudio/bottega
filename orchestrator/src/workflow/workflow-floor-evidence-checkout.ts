@@ -53,17 +53,20 @@ export function productionResolveCheckout(
   if ('refusal' in answer) throw new Error(answer.refusal)
   const checkout = answer.checkoutPath
   const project = cwdProject(checkout, identity, d)
-  const branch = gitText(checkout, ['rev-parse', '--abbrev-ref', 'HEAD'])
-  const tip = expectedBranch
-    ? (gitText(checkout, ['rev-parse', '--verify', expectedBranch]) ??
-      gitText(checkout, ['rev-parse', '--verify', `origin/${expectedBranch}`]))
-    : gitText(checkout, ['rev-parse', 'HEAD'])
-  const headIsTipOrAncestor = Boolean(
-    headCommit && tip && gitOk(checkout, ['merge-base', '--is-ancestor', headCommit, tip]),
-  )
-  const landing = headIsTipOrAncestor
-    ? { commit: null, recordedTip: null }
-    : checkoutLanding(identity.project, expectedBranch, d)
+  const landingBranch = registered?.settings.trunk ?? 'main'
+  const branchRefs = expectedBranch ? [expectedBranch, `origin/${expectedBranch}`] : []
+  const trunkRefs = [`origin/${landingBranch}`, landingBranch]
+  const commitIsAncestorOfAnyRef = (commit: string | null, refs: string[]): boolean =>
+    Boolean(
+      commit && refs.some((ref) => gitOk(checkout, ['merge-base', '--is-ancestor', commit, ref])),
+    )
+  const headIsTipOrAncestor = commitIsAncestorOfAnyRef(headCommit, branchRefs)
+  const headIsOnTrunk = commitIsAncestorOfAnyRef(headCommit, trunkRefs)
+  const branchTipIsOnTrunk = branchRefs.some((ref) => commitIsAncestorOfAnyRef(ref, trunkRefs))
+  const landing =
+    headIsTipOrAncestor && !headIsOnTrunk
+      ? { commit: null, recordedTip: null }
+      : checkoutLanding(identity.project, expectedBranch, d)
   const landingCommit = landing.commit
   const landingCommitAvailable = Boolean(
     landingCommit && gitOk(checkout, ['cat-file', '-e', `${landingCommit}^{commit}`]),
@@ -75,25 +78,21 @@ export function productionResolveCheckout(
           gitOk(checkout, ['merge-base', '--is-ancestor', landingCommit, headCommit]),
       )
     : undefined
-  const recordedLandingTip = tip ? null : landing.recordedTip
+  const recordedLandingTip = landing.recordedTip
   const headIsRecordedTipOrAncestor = Boolean(
     headCommit &&
       recordedLandingTip &&
       gitOk(checkout, ['merge-base', '--is-ancestor', headCommit, recordedLandingTip]),
   )
-  const landingBranch = registered?.settings.trunk ?? 'main'
   const landingIsOnTrunk = Boolean(
-    landingCommitAvailable &&
-      landingCommit &&
-      [`origin/${landingBranch}`, landingBranch].some((ref) =>
-        gitOk(checkout, ['merge-base', '--is-ancestor', landingCommit, ref]),
-      ),
+    landingCommitAvailable && commitIsAncestorOfAnyRef(landingCommit, trunkRefs),
   )
   return {
     project,
-    branch,
     checkoutPath: checkout,
     headIsTipOrAncestor,
+    headIsOnTrunk,
+    branchTipIsOnTrunk,
     landingCommit,
     landingIsHeadOrAncestor,
     landingBranch,

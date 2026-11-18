@@ -36,7 +36,7 @@ import { taskFlowHandoffLinks, taskFlowReadStore } from './task-flow-store.ts'
 import {
   type CheckoutResolution,
   checkoutOutsideChangeRefusal,
-  classifyCheckoutEvidence,
+  classifyCheckoutResolution,
 } from './workflow-checkout-refusal.ts'
 import type { CursorState } from './workflow-cursor-transition.ts'
 import { resolveWorkflowCursorSuccessor } from './workflow-cursor-transition.ts'
@@ -345,7 +345,6 @@ function requireCheckout(
   headCommit: string | null,
   identity: CursorIdentity,
   resolveCheckout: FloorEvidencePorts['resolveCheckout'],
-  requireOnBranch: boolean,
 ): CheckoutResolution {
   if (!resolveCheckout)
     throw new Error(`${flag} cwd project is unset, not this cursor's ${identity.project}`)
@@ -354,23 +353,7 @@ function requireCheckout(
     throw new Error(
       `${flag} cwd project is ${checkout.project ?? 'unset'}, not this cursor's ${identity.project}`,
     )
-  const location = classifyCheckoutEvidence({
-    headIsTipOrAncestor: checkout.headIsTipOrAncestor,
-    landingCommit: checkout.landingCommit ?? null,
-    landingIsHeadOrAncestor: checkout.landingIsHeadOrAncestor ?? false,
-    recordedLandingTip: checkout.recordedLandingTip,
-    headIsRecordedTipOrAncestor: checkout.headIsRecordedTipOrAncestor,
-    landingIsOnTrunk: checkout.landingIsOnTrunk,
-  })
-  if (
-    requireOnBranch &&
-    identity.branch &&
-    checkout.branch !== identity.branch &&
-    location !== 'post-landing'
-  )
-    throw new Error(
-      `${flag} cwd is on ${checkout.branch ?? 'unset'}, not this cursor's ${identity.branch}`,
-    )
+  const location = classifyCheckoutResolution(checkout)
   if (identity.branch && location === 'outside-change')
     throw new Error(
       checkoutOutsideChangeRefusal(flag, identity.branch, checkout.checkoutPath, checkout),
@@ -413,14 +396,7 @@ async function gatherGate(
     project = run.project
   } else {
     if (!row.cwd) throw new Error(`${flag} architect row has no cwd`)
-    project = requireCheckout(
-      flag,
-      row.cwd,
-      row.head_commit,
-      identity,
-      resolveCheckout,
-      true,
-    ).project
+    project = requireCheckout(flag, row.cwd, row.head_commit, identity, resolveCheckout).project
   }
   return {
     recordId: row.record_id,
@@ -631,7 +607,7 @@ async function resolveArtifact(
     if (!row) throw new Error(`${unresolvedFlag} does not exist`)
     const flag = `--artifact ${ref.kind}:${row.number}`
     if (row.kind !== ref.kind) throw new Error(`${flag} is recorded as ${row.kind}:${row.number}`)
-    requireCheckout(flag, row.cwd, row.head_commit, identity, resolveCheckout, false)
+    requireCheckout(flag, row.cwd, row.head_commit, identity, resolveCheckout)
     return { ref: raw, exists: true }
   }
   if (ref.kind === 'run') {
@@ -803,7 +779,7 @@ async function gatheredCommandEvidence(
     sessionMatches: session.sessionMatches,
     sessionAdoptedCursor: session.sessionAdoptedCursor,
     createdAfterStepActivation: row.created_at >= identity.stepActivatedAt,
-    checkoutBranch: checkout.branch,
+    checkoutLocation: classifyCheckoutResolution(checkout),
     headCommit: row.head_commit,
     cursorBranch: identity.branch,
     output: row.output_tail,

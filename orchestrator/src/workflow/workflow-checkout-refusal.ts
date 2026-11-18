@@ -5,9 +5,10 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 
 export type CheckoutResolution = {
   project: string | null
-  branch: string | null
   checkoutPath: string
   headIsTipOrAncestor: boolean
+  headIsOnTrunk?: boolean
+  branchTipIsOnTrunk?: boolean
   landingCommit?: string | null
   landingIsHeadOrAncestor?: boolean
   landingBranch: string
@@ -36,13 +37,19 @@ export function decideCheckoutAnswer(input: {
 /** Decides whether a commit belongs to the change before or after its recorded landing. */
 export function classifyCheckoutEvidence(input: {
   headIsTipOrAncestor: boolean
+  headIsOnTrunk?: boolean
+  branchTipIsOnTrunk?: boolean
   landingCommit: string | null
   landingIsHeadOrAncestor: boolean
   recordedLandingTip?: string | null
   headIsRecordedTipOrAncestor?: boolean
   landingIsOnTrunk?: boolean
 }): CheckoutEvidenceLocation {
-  if (input.headIsTipOrAncestor) return 'branch'
+  if (
+    input.headIsTipOrAncestor &&
+    (!input.headIsOnTrunk || (input.branchTipIsOnTrunk && !input.landingCommit))
+  )
+    return 'branch'
   const recordedLanding = classifyRecordedLandingEvidence({
     recordedTip: input.recordedLandingTip ?? null,
     headIsRecordedTipOrAncestor: input.headIsRecordedTipOrAncestor ?? false,
@@ -52,6 +59,20 @@ export function classifyCheckoutEvidence(input: {
   if (recordedLanding) return recordedLanding
   if (input.landingCommit && input.landingIsHeadOrAncestor) return 'post-landing'
   return 'outside-change'
+}
+
+/** Classifies one resolved set of immutable commit ancestry facts. */
+export function classifyCheckoutResolution(checkout: CheckoutResolution): CheckoutEvidenceLocation {
+  return classifyCheckoutEvidence({
+    headIsTipOrAncestor: checkout.headIsTipOrAncestor,
+    headIsOnTrunk: checkout.headIsOnTrunk,
+    branchTipIsOnTrunk: checkout.branchTipIsOnTrunk,
+    landingCommit: checkout.landingCommit ?? null,
+    landingIsHeadOrAncestor: checkout.landingIsHeadOrAncestor ?? false,
+    recordedLandingTip: checkout.recordedLandingTip,
+    headIsRecordedTipOrAncestor: checkout.headIsRecordedTipOrAncestor,
+    landingIsOnTrunk: checkout.landingIsOnTrunk,
+  })
 }
 
 /** Classifies evidence against a recorded tip after its branch ref has disappeared. */

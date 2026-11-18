@@ -84,7 +84,7 @@ const passingExec: ValidatedEvidence = {
     sessionMatches: true,
     sessionAdoptedCursor: false,
     createdAfterStepActivation: true,
-    checkoutBranch: 'DEV-977-work',
+    checkoutLocation: 'branch',
     headCommit: 'abc',
     cursorBranch: 'DEV-977-work',
     output: '',
@@ -530,14 +530,14 @@ test('pull-request evidence accepts a link with the cursor head and base', () =>
   ).toBe('refuse')
 })
 
-test('pull-request evidence binds commands to the exact branch and links to the project repository and state', () => {
+test('pull-request evidence binds commands to the recorded change and links to the project repository and state', () => {
   const exec = {
     kind: 'exec' as const,
     argv: [PLATFORM_SLUG, 'pr', 'create'],
     exitCode: 0,
     sessionBound: true,
     createdAfterStepActivation: true,
-    checkoutBranch: 'other-branch',
+    checkoutLocation: 'outside-change' as const,
     headCommit: 'shared-commit',
     cursorBranch: 'DEV-977-work',
     output: '',
@@ -546,7 +546,7 @@ test('pull-request evidence binds commands to the exact branch and links to the 
   expect(decidePullRequestEvidence(exec)).toEqual({
     met: false,
     condition:
-      "the recorded command checkout branch is other-branch, not this cursor's DEV-977-work",
+      "the recorded command head commit does not belong to this cursor's DEV-977-work change",
   })
 
   const link = {
