@@ -57,8 +57,8 @@ describe('installed test network guard', () => {
     innerCalls = 0
     installTestNetworkGuard((async () => {
       innerCalls += 1
-      return Response.json([])
-    }) as typeof fetch)
+      return Response.json({ items: [] })
+    }) as unknown as typeof fetch)
     const session = memoryRecordSession()
     session.setToken('stream-token')
     installRecordSessionRunner(session.runner)
@@ -108,8 +108,8 @@ describe('test fetch replacement', () => {
     calls = 0
     globalThis.fetch = (async () => {
       calls += 1
-      return Response.json([])
-    }) as typeof fetch
+      return Response.json({ items: [] })
+    }) as unknown as typeof fetch
   })
 
   afterEach(() => {
@@ -117,7 +117,7 @@ describe('test fetch replacement', () => {
   })
 
   test('a test stub installed after the preload guard receives the call', async () => {
-    expect(await recordApiClientOver(recordApiRequest).listPublicDocs()).toEqual([])
+    expect(await recordApiClientOver(recordApiRequest).listPublicDocs()).toEqual({ items: [] })
     expect(calls).toBe(1)
   })
 })

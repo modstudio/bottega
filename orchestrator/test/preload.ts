@@ -25,7 +25,7 @@ import {
   recordTestSetup,
   recordTestTeardown,
 } from './gate-timings-reporter.ts'
-import { installTestNetworkGuard, interceptedTestFetchCalls } from './network-guard.ts'
+import { installTestNetworkGuard } from './network-guard.ts'
 
 const docSecretScannerHolder = globalThis as typeof globalThis & {
   [DOC_SECRET_SCANNER_KEY]?: SecretScanner
@@ -336,7 +336,6 @@ function restoreEnvironment(name: string, value: string | undefined): void {
 }
 
 afterAll(() => {
-  console.log(`test network guard intercepted fetch calls: ${interceptedTestFetchCalls()}`)
   Bun.spawnSync = originalBunSpawnSync
   globalThis.fetch = originalFetch
   if (originalKeychainPlatform === undefined) delete keychainPlatformHolder[KEYCHAIN_PLATFORM_KEY]

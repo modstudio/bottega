@@ -2,12 +2,6 @@ export type NetworkGuardEnvironment = Record<string, string | undefined>
 export type NetworkGuardDecision = 'allow' | 'refuse'
 export type NetworkRequestInput = string | URL | Request
 
-let interceptedFetchCalls = 0
-
-export function interceptedTestFetchCalls(): number {
-  return interceptedFetchCalls
-}
-
 function requestUrl(input: NetworkRequestInput): string {
   return input instanceof Request ? input.url : String(input)
 }
@@ -52,7 +46,6 @@ export function installTestNetworkGuard(
   environment: NetworkGuardEnvironment = process.env,
 ): typeof fetch {
   const guardedFetch = (async (input: NetworkRequestInput, init?: RequestInit) => {
-    interceptedFetchCalls += 1
     if (testNetworkRequestDecision(input, environment) === 'refuse') {
       throw new Error(testNetworkRefusal(input))
     }
