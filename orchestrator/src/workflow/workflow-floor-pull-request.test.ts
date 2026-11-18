@@ -73,20 +73,19 @@ const decide = (evidence: typeof matchingExecEvidence) =>
 
 test('no floor fact about recorded evidence is read from live tree state', () => {
   const cases = [
-    ['base commit from main before landing', 'outside-change', false],
-    ['branch tip from a vanished tree', 'branch', true],
-    ['branch commit after landing', 'post-landing', true],
-    ['branch tip from a detached checkout', 'branch', true],
+    ['branch', true],
+    ['post-landing', true],
+    ['outside-change', false],
   ] as const
 
-  for (const [name, checkoutLocation, met] of cases) {
+  for (const [checkoutLocation, met] of cases) {
     const decision = decidePullRequestEvidence({
       ...exec,
       checkoutLocation,
       output: `opened ${url}`,
       link,
     })
-    expect(decision.met, name).toBe(met)
+    expect(decision.met, checkoutLocation).toBe(met)
   }
 })
 

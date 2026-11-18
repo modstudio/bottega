@@ -20,17 +20,18 @@ test('checkout evidence accepts a commit from the cursor branch', () => {
 test('no floor fact about recorded evidence is read from live tree state', () => {
   const cases = [
     {
-      name: 'base commit from main before landing',
+      name: 'base commit once the branch has commits of its own',
       input: {
         headIsTipOrAncestor: true,
         headIsOnTrunk: true,
+        branchTipIsOnTrunk: false,
         landingCommit: null,
         landingIsHeadOrAncestor: false,
       },
       expected: 'outside-change',
     },
     {
-      name: 'branch tip from a vanished tree',
+      name: 'head on the branch and off trunk',
       input: {
         headIsTipOrAncestor: true,
         headIsOnTrunk: false,
@@ -51,16 +52,6 @@ test('no floor fact about recorded evidence is read from live tree state', () =>
         landingIsOnTrunk: true,
       },
       expected: 'post-landing',
-    },
-    {
-      name: 'branch tip from a detached checkout',
-      input: {
-        headIsTipOrAncestor: true,
-        headIsOnTrunk: false,
-        landingCommit: null,
-        landingIsHeadOrAncestor: false,
-      },
-      expected: 'branch',
     },
     {
       name: 'base commit while the branch has no commits of its own',

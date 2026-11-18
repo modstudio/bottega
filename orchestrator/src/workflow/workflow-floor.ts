@@ -7,6 +7,7 @@ import { WITHHELD_SECRET_SHAPED } from '../../../shared/secret-shaped.ts'
 import { MachineLabelRefusal } from '../record/machine-name.ts'
 import { classifyRunIdentifier, machineLabelRefusal } from '../run/run-identifier-names.ts'
 import { parseProbeArtifact } from './probe-identifier.ts'
+import type { CheckoutEvidenceLocation } from './workflow-checkout-refusal.ts'
 import {
   commandExitBindingRefusal,
   commandExitMismatchRefusal,
@@ -16,7 +17,6 @@ import {
 
 type TrackerStateCategory = 'backlog' | 'open' | 'active' | 'review' | 'done' | 'dropped'
 type TrackerStates = Record<string, TrackerStateCategory>
-type RecordedCheckoutLocation = 'branch' | 'post-landing' | 'outside-change'
 
 export const floorKinds = [
   'ruling',
@@ -133,7 +133,7 @@ export type ValidatedEvidence = {
     sessionMatches: boolean
     sessionAdoptedCursor: boolean
     createdAfterStepActivation: boolean
-    checkoutLocation: RecordedCheckoutLocation
+    checkoutLocation: CheckoutEvidenceLocation
     headCommit: string | null
     cursorBranch: string | null
     output: string
@@ -433,7 +433,7 @@ export type PullRequestEvidenceFacts =
       exitCode: number
       sessionBound: boolean
       createdAfterStepActivation: boolean
-      checkoutLocation: RecordedCheckoutLocation
+      checkoutLocation: CheckoutEvidenceLocation
       headCommit: string | null
       cursorBranch: string | null
       output: string

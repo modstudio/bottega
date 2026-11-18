@@ -54,26 +54,17 @@ export function productionResolveCheckout(
   const checkout = answer.checkoutPath
   const project = cwdProject(checkout, identity, d)
   const landingBranch = registered?.settings.trunk ?? 'main'
-  const headIsTipOrAncestor = Boolean(
-    headCommit &&
-      expectedBranch &&
-      [expectedBranch, `origin/${expectedBranch}`].some((ref) =>
-        gitOk(checkout, ['merge-base', '--is-ancestor', headCommit, ref]),
-      ),
-  )
-  const headIsOnTrunk = Boolean(
-    headCommit &&
-      [`origin/${landingBranch}`, landingBranch].some((ref) =>
-        gitOk(checkout, ['merge-base', '--is-ancestor', headCommit, ref]),
-      ),
-  )
-  const branchTipIsOnTrunk = Boolean(
-    expectedBranch &&
-      [expectedBranch, `origin/${expectedBranch}`].some((branchRef) =>
-        [`origin/${landingBranch}`, landingBranch].some((trunkRef) =>
-          gitOk(checkout, ['merge-base', '--is-ancestor', branchRef, trunkRef]),
-        ),
-      ),
+  const branchRefs = expectedBranch ? [expectedBranch, `origin/${expectedBranch}`] : []
+  const trunkRefs = [`origin/${landingBranch}`, landingBranch]
+  const commitIsAncestorOfAnyRef = (commit: string | null, refs: string[]): boolean =>
+    Boolean(
+      commit &&
+        refs.some((ref) => gitOk(checkout, ['merge-base', '--is-ancestor', commit, ref])),
+    )
+  const headIsTipOrAncestor = commitIsAncestorOfAnyRef(headCommit, branchRefs)
+  const headIsOnTrunk = commitIsAncestorOfAnyRef(headCommit, trunkRefs)
+  const branchTipIsOnTrunk = branchRefs.some((ref) =>
+    commitIsAncestorOfAnyRef(ref, trunkRefs),
   )
   const landing =
     headIsTipOrAncestor && !headIsOnTrunk
@@ -97,11 +88,7 @@ export function productionResolveCheckout(
       gitOk(checkout, ['merge-base', '--is-ancestor', headCommit, recordedLandingTip]),
   )
   const landingIsOnTrunk = Boolean(
-    landingCommitAvailable &&
-      landingCommit &&
-      [`origin/${landingBranch}`, landingBranch].some((ref) =>
-        gitOk(checkout, ['merge-base', '--is-ancestor', landingCommit, ref]),
-      ),
+    landingCommitAvailable && commitIsAncestorOfAnyRef(landingCommit, trunkRefs),
   )
   return {
     project,

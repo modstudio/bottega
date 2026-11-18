@@ -167,6 +167,7 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     '../record/machine-name.ts',
     '../run/run-identifier-names.ts',
     './probe-identifier.ts',
+    './workflow-checkout-refusal.ts',
     './workflow-floor-refusal.ts',
   ]),
   module('orchestrator/src/workflow/workflow-review-owed-decision.ts', [
