@@ -10,6 +10,7 @@ agents, jobs, and routing
 - [bottega agent context brief](#bottega-agent-context-brief)
 - [bottega agent context clear](#bottega-agent-context-clear)
 - [bottega agent context drop](#bottega-agent-context-drop)
+- [bottega agent context health](#bottega-agent-context-health)
 - [bottega agent context record-emission](#bottega-agent-context-record-emission)
 - [bottega agent context record-injection](#bottega-agent-context-record-injection)
 - [bottega agent context review](#bottega-agent-context-review)
@@ -87,6 +88,7 @@ manage stored architect context or resolve checkout context
 - [bottega agent context brief](./agent.md#bottega-agent-context-brief)
 - [bottega agent context clear](./agent.md#bottega-agent-context-clear)
 - [bottega agent context drop](./agent.md#bottega-agent-context-drop)
+- [bottega agent context health](./agent.md#bottega-agent-context-health)
 - [bottega agent context record-emission](./agent.md#bottega-agent-context-record-emission)
 - [bottega agent context record-injection](./agent.md#bottega-agent-context-record-injection)
 - [bottega agent context review](./agent.md#bottega-agent-context-review)
@@ -135,6 +137,23 @@ remove one context item
 - `--cursor <record-id>`: select cursor holder
 - `--id <id>`: stable item id
 - `--expected-revision <revision>`: compare-and-set revision
+
+### Related
+
+- [bottega agent context](./agent.md#bottega-agent-context)
+
+## bottega agent context health
+
+**Synopsis:** `bottega agent context health [--since <duration>] [--project <name>] [--session <id>] [--json]`
+
+report whether stored architect context is managed correctly
+
+### Options
+
+- `--since <duration>`: include recorded review and injection rows by age (default: 7d)
+- `--project <name>`: select one project
+- `--session <id>`: select one session
+- `--json`: write JSON
 
 ### Related
 

@@ -35,6 +35,25 @@ export type BriefInjection = BriefInjectionInput & {
   overCap: boolean
 }
 
+/** Reads the recorded brief measurements in one report window. */
+export function briefInjectionWindow(since: string, database: Database = db()) {
+  return database
+    .query<
+      { session_id: string; at: string; source: string; cursors: number; over_cap: number },
+      [string]
+    >(
+      'SELECT session_id,at,source,cursors,over_cap FROM brief_injection WHERE at>=? ORDER BY session_id,at',
+    )
+    .all(since)
+    .map((row) => ({
+      sessionId: row.session_id,
+      at: row.at,
+      source: row.source,
+      cursors: row.cursors,
+      overCap: Boolean(row.over_cap),
+    }))
+}
+
 function wholeNonnegative(value: number, name: string): void {
   if (!Number.isSafeInteger(value) || value < 0)
     throw new Error(`${name} must be a nonnegative integer`)

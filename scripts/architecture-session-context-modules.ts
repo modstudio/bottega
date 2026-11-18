@@ -14,6 +14,8 @@ const module = (file: string, allowed: string[]): SessionContextModule => ({
 export const sessionContextModules: SessionContextModule[] = [
   module('orchestrator/src/commands/context.ts', [
     '../../../shared/context-item-vocabulary.ts',
+    '../context-health/context-health-adapter.ts',
+    '../context-health/context-health-render.ts',
     '../doc/context-brief.ts',
     '../doc/context-service.ts',
     '../session/brief-injection.ts',

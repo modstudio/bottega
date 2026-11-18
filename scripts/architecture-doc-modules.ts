@@ -20,6 +20,12 @@ export const privateDocImports = [
 ] as const
 
 export const docModules: DocModule[] = [
+  module('orchestrator/src/doc/doc-write-tree.ts', [
+    'node:fs',
+    '../../../shared/git.ts',
+    '../project/projects.ts',
+    './doc-write-allowed.ts',
+  ]),
   module('orchestrator/src/doc/context-cursor-warning-decision.ts', [
     '../../../shared/brand.ts',
     './context-moment.ts',
