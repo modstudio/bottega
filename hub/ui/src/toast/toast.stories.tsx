@@ -39,7 +39,12 @@ export const Warning: StoryObj<typeof meta> = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
     await userEvent.click(canvas.getByRole('button', { name: 'Show warning' }))
-    await waitFor(() => expect(canvas.getByText(/Task DEV-1 is closed/)).toBeVisible())
+    const notification = canvas.getByRole('listitem')
+    await waitFor(() =>
+      expect(within(notification).getByText(/Task DEV-1 is closed/)).toBeVisible(),
+    )
+    await userEvent.click(within(notification).getByRole('button', { name: 'Dismiss' }))
+    await waitFor(() => expect(canvas.queryByRole('listitem')).not.toBeInTheDocument())
   },
 }
 export const Keyboard: StoryObj<typeof meta> = {
