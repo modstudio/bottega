@@ -14,7 +14,9 @@ const module = (file: string, allowed: string[]): WorkflowFloorModule => ({
 
 export const workflowFloorModules: WorkflowFloorModule[] = [
   module('orchestrator/src/workflow/workflow-arguments.ts', ['./workflow-definition.ts']),
-  module('orchestrator/src/workflow/workflow-cursor-transition.ts', []),
+  module('orchestrator/src/workflow/workflow-cursor-transition.ts', [
+    '../record/record-task-flow-contract.ts',
+  ]),
   module('orchestrator/src/workflow/workflow-cursor-trail.ts', []),
   module('orchestrator/src/workflow/workflow-cursor-format.ts', [
     '../../../shared/brand.ts',
@@ -123,6 +125,7 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     '../../../shared/record-id.ts',
     '../database/db.ts',
     '../record/record-api-client-task-flow.ts',
+    '../record/record-task-flow-contract.ts',
     '../record/record-task-flow-write-client.ts',
     '../record/record-task-flow-write-contract.ts',
     './autonomy.ts',
@@ -139,6 +142,7 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
   module('orchestrator/src/workflow/workflow-explore-lifecycle-close.ts', [
     'bun:sqlite',
     '../database/db.ts',
+    '../record/record-task-flow-contract.ts',
     '../run/question-open.ts',
     './task-flow-store.ts',
     './task-flow-store-types.ts',
@@ -340,6 +344,7 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     '../../../shared/record-id.ts',
     '../database/db.ts',
     '../prose-service.ts',
+    '../record/record-task-flow-contract.ts',
     '../record/record-task-flow-write-client.ts',
     '../record/record-task-flow-write-contract.ts',
     './task-flow-store.ts',

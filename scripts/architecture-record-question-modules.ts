@@ -153,6 +153,7 @@ export const recordQuestionModules: RecordModule[] = [
     'bun:sqlite',
     '../../../shared/session-liveness.ts',
     '../evidence/evidence-query.ts',
+    '../record/record-task-flow-contract.ts',
     '../workflow/task-flow-store-types.ts',
     './question-store-sql.ts',
   ]),

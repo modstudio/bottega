@@ -15,6 +15,21 @@ const EXEMPTIONS = [
     line: `      .where(sql\`\${table.state} NOT IN ('done','abandoned')\`),`,
     reason: 'the hosted partial-index predicate requires a schema migration when states change',
   },
+  {
+    path: 'orchestrator/src/record/record-board-claims.ts',
+    line: "                AND state IN ('running','awaiting-ruling')",
+    reason: 'hosted record SQL keeps its stage-state predicate beside the hosted schema',
+  },
+  {
+    path: 'orchestrator/src/record/record-question-read.ts',
+    line: "       WHERE stage.session_id=$1 AND stage.state NOT IN ('done','abandoned')",
+    reason: 'hosted record SQL keeps its stage-state predicate beside the hosted schema',
+  },
+  {
+    path: 'orchestrator/src/record/record-task-flow.ts',
+    line: "     AND open_stage.state NOT IN ('done','abandoned')) open_stage_count,",
+    reason: 'hosted record SQL keeps its stage-state predicate beside the hosted schema',
+  },
 ] as const
 
 function exemptStageStateLine(path: string, line: string): boolean {
