@@ -4,12 +4,23 @@ export const hubModuleSpecs = [
     allowed: ['../../shared/caller-classification.ts'],
   },
   {
+    file: 'hub/src/task-cursor-close-decision.ts',
+    allowed: ['../../shared/brand.ts', '../../shared/orch-contract.ts'],
+  },
+  {
+    file: 'hub/src/task-closed-residue.ts',
+    allowed: ['../../shared/brand.ts', '../../shared/orch-contract.ts', './task-row.ts'],
+  },
+  {
     file: 'hub/src/task-workflow-cursors.ts',
     allowed: [
       '../../shared/brand.ts',
       '../../shared/orch-contract.ts',
       './caller-session.ts',
       './orch.ts',
+      './task-closed-residue.ts',
+      './task-cursor-close-decision.ts',
+      './task-row.ts',
     ],
   },
   {
@@ -473,6 +484,7 @@ export const hubModuleSpecs = [
       './projects.ts',
       './task.ts',
       './task-close.ts',
+      './task-closed-residue.ts',
       './task-document.ts',
       './task-hosted-cli.ts',
       './task-machine-attribution.ts',

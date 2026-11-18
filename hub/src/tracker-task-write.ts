@@ -68,28 +68,13 @@ async function planTaskCursorClose(
   })
 }
 
-export class TaskCursorResidueError extends Error {
-  readonly task: TaskRow
-
-  constructor(task: TaskRow, cause: unknown) {
-    const detail = cause instanceof Error ? cause.message : String(cause)
-    super(`task ${task.key} is closed but its workflow cursor cleanup failed: ${detail}`)
-    this.name = 'TaskCursorResidueError'
-    this.task = task
-  }
-}
-
 async function abandonAfterWrite(
   task: TaskRow,
   plan: TaskCursorClosePlan | null,
 ): Promise<TaskRow> {
   if (!plan) return task
-  try {
-    await abandonPlannedTaskCursors(plan)
-    return task
-  } catch (error) {
-    throw new TaskCursorResidueError(task, error)
-  }
+  await abandonPlannedTaskCursors(plan, task)
+  return task
 }
 
 function registeredProjectFor(
