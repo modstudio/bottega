@@ -42,7 +42,7 @@ export function finishCursorWorktreeClear(
 export async function prepareCloseOut(
   taskFlowClient?: RecordTaskFlowClient,
 ): Promise<CloseOutPreparation> {
-  return { cursorWorktrees: await openCursorWorktrees(), taskFlowClient }
+  return { cursorWorktrees: await openCursorWorktrees(db(), taskFlowClient), taskFlowClient }
 }
 
 export function conversationRootAndWorktree(runId: string): {
@@ -101,7 +101,11 @@ export function prepareCursorWorktreeClear(
         spellingSet.has(cursor.worktree),
       )
       try {
-        uncleared = openCursorWorktreesAtSpellings(capturedSpellings, db())
+        uncleared = await openCursorWorktreesAtSpellings(
+          capturedSpellings,
+          db(),
+          preparation.taskFlowClient,
+        )
       } catch {
         // The preparation snapshot still names every cursor that may need manual repair.
       }

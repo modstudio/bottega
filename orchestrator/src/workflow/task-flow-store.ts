@@ -27,6 +27,7 @@ import type {
   TaskFlowObligationRow,
   TaskFlowOpenObligationRow,
   TaskFlowOpenSessionStageRow,
+  TaskFlowOpenStageWorktreeRow,
   TaskFlowOverturnRulingRow,
   TaskFlowPendingTaskLinkRow,
   TaskFlowProjectionRow,
@@ -109,12 +110,8 @@ interface TaskFlowQueries {
   }): Array<{ mode_slug: string }>
   listOpenStages(input: { project?: string; sessionId?: string }): TaskFlowListedStageRow[]
   keyedStageHistory(input: { since: string }): TaskFlowStageCursorRow[]
-  openStageWorktrees(): Array<{
-    number: number
-    workflow: string
-    project: string
-    args: string
-  }>
+  /** Reads open cursor worktree rows ordered by project, then cursor number. */
+  openStageWorktrees(): TaskFlowOpenStageWorktreeRow[]
   activeStageAutonomy(project: string, taskRecordId: string): Array<{ autonomy: string | null }>
   stageIdentityMap(): Array<{ number: number; record_id: string }>
   stageHoldingTaskKey(input: {
