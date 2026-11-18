@@ -7,7 +7,9 @@ import {
 } from '../../shared/orch-contract.ts'
 import { callerSession } from './caller-session.ts'
 import { parseOrchestratorJson } from './orch.ts'
+import { taskCursorAbandonResidue } from './task-closed-residue.ts'
 import { decideTaskCursorClose, type OpenTaskWorkflowCursor } from './task-cursor-close-decision.ts'
+import type { TaskRow } from './task-row.ts'
 
 export type { OpenTaskWorkflowCursor } from './task-cursor-close-decision.ts'
 
@@ -56,18 +58,6 @@ export type TaskCursorClosePlan = {
   abandon: TaskCursorAbandon
 }
 
-export class TaskCursorAbandonError extends Error {
-  readonly cursor: OpenTaskWorkflowCursor
-  override readonly cause: unknown
-
-  constructor(cursor: OpenTaskWorkflowCursor, cause: unknown) {
-    super(cause instanceof Error ? cause.message : String(cause))
-    this.name = 'TaskCursorAbandonError'
-    this.cursor = cursor
-    this.cause = cause
-  }
-}
-
 export async function planOpenTaskCursorClose(
   project: string,
   key: string,
@@ -99,15 +89,24 @@ export async function planOpenTaskCursorClose(
   }
 }
 
-export async function abandonPlannedTaskCursors(plan: TaskCursorClosePlan): Promise<void> {
+export async function abandonPlannedTaskCursors(
+  plan: TaskCursorClosePlan,
+  closed: TaskRow,
+): Promise<void> {
   const reason = `task ${plan.key} closed (${plan.status})`
-  for (const cursor of plan.cursors) {
+  for (const [index, cursor] of plan.cursors.entries()) {
     try {
       await plan.abandon(cursor, reason, cursor.session_id ?? undefined)
     } catch (error) {
-      throw new TaskCursorAbandonError(cursor, error)
+      throw taskCursorAbandonResidue(closed, plan.status, plan.cursors.slice(index), error)
     }
     const result = { number: cursor.id, workflow: cursor.workflow_slug, reason }
-    plan.onAbandoned?.(result)
+    try {
+      plan.onAbandoned?.(result)
+    } catch (error) {
+      const remaining = plan.cursors.slice(index + 1)
+      if (!remaining.length) throw error
+      throw taskCursorAbandonResidue(closed, plan.status, remaining, error)
+    }
   }
 }

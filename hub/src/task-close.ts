@@ -1,11 +1,7 @@
 import { type BranchPruneResult, pruneTaskBranches, releaseTaskClaims } from './orch.ts'
 import { closeTask, showTask } from './task.ts'
 import type { Attribution } from './task-attribution.ts'
-import {
-  taskBranchPruneResidue,
-  taskClaimReleaseResidue,
-  taskCursorAbandonResidue,
-} from './task-closed-residue.ts'
+import { taskBranchPruneResidue, taskClaimReleaseResidue } from './task-closed-residue.ts'
 import type { TaskScope } from './task-identity.ts'
 import type { TaskRow } from './task-row.ts'
 import {
@@ -14,7 +10,6 @@ import {
   type openTaskWorkflowCursors,
   planOpenTaskCursorClose,
   type TaskCursorAbandon,
-  TaskCursorAbandonError,
 } from './task-workflow-cursors.ts'
 
 export async function closeThenPrune(
@@ -54,12 +49,7 @@ export async function closeThenPrune(
   const closed = dependencies.close
     ? await dependencies.close(key, scope, attribution, { abandonReason, confirm })
     : await closeTask(key, scope, attribution, { abandonReason })
-  try {
-    await abandonPlannedTaskCursors(plan)
-  } catch (error) {
-    if (!(error instanceof TaskCursorAbandonError)) throw error
-    throw taskCursorAbandonResidue(closed, plan.status, error.cursor, error.cause)
-  }
+  await abandonPlannedTaskCursors(plan, closed)
   try {
     await (dependencies.releaseClaims ?? releaseTaskClaims)(closed.project, closed.key)
   } catch (error) {

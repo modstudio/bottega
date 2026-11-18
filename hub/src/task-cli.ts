@@ -213,7 +213,7 @@ async function closeTask(key: string, options: TaskOptions): Promise<void> {
     )
 }
 
-function handleTaskClosedWithResidue(error: unknown): void {
+export function handleTaskClosedWithResidue(error: unknown): void {
   if (!(error instanceof TaskClosedWithResidueError)) throw error
   printTaskRow(error.task)
   console.error(error.message)

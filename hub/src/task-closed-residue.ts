@@ -25,16 +25,18 @@ const detailOf = (cause: unknown): string =>
 export function taskCursorAbandonResidue(
   task: TaskRow,
   status: string,
-  cursor: OpenWorkflowCursor,
+  cursors: OpenWorkflowCursor[],
   cause: unknown,
 ): TaskClosedWithResidueError {
-  const owner = cursor.session_id ? ` --owner-session ${cursor.session_id}` : ''
   const reason = `task ${task.key} closed (${status})`
-  const remedy = `${PLATFORM_SLUG} workflow abandon ${cursor.workflow_slug} --cursor ${cursor.id} --project ${cursor.project ?? task.project}${owner} --reason "${reason}"`
+  const remedies = cursors.map((cursor) => {
+    const owner = cursor.session_id ? ` --owner-session ${cursor.session_id}` : ''
+    return `clear it with: ${PLATFORM_SLUG} workflow abandon ${cursor.workflow_slug} --cursor ${cursor.id} --project ${cursor.project ?? task.project}${owner} --reason "${reason}"`
+  })
   return new TaskClosedWithResidueError(
     task,
     'cursor-abandon',
-    `task ${task.key} is closed; workflow cursor cleanup did not finish: ${detailOf(cause)}\nclear it with: ${remedy}`,
+    `task ${task.key} is closed; workflow cursor cleanup did not finish: ${detailOf(cause)}\n${remedies.join('\n')}`,
   )
 }
 

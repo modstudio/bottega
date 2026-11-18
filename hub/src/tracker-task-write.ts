@@ -21,7 +21,6 @@ import {
   type TaskComment,
 } from './task.ts'
 import type { Attribution } from './task-attribution.ts'
-import { taskCursorAbandonResidue } from './task-closed-residue.ts'
 import type { TaskScope } from './task-identity.ts'
 import type { TaskRow } from './task-row.ts'
 import {
@@ -30,7 +29,6 @@ import {
   type openTaskWorkflowCursors,
   planOpenTaskCursorClose,
   type TaskCursorAbandon,
-  TaskCursorAbandonError,
   type TaskCursorClosePlan,
 } from './task-workflow-cursors.ts'
 import type { HostedTaskWriteOptions } from './task-write-destination.ts'
@@ -75,13 +73,8 @@ async function abandonAfterWrite(
   plan: TaskCursorClosePlan | null,
 ): Promise<TaskRow> {
   if (!plan) return task
-  try {
-    await abandonPlannedTaskCursors(plan)
-    return task
-  } catch (error) {
-    if (!(error instanceof TaskCursorAbandonError)) throw error
-    throw taskCursorAbandonResidue(task, plan.status, error.cursor, error.cause)
-  }
+  await abandonPlannedTaskCursors(plan, task)
+  return task
 }
 
 function registeredProjectFor(

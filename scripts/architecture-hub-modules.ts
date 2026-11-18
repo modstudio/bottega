@@ -18,7 +18,9 @@ export const hubModuleSpecs = [
       '../../shared/orch-contract.ts',
       './caller-session.ts',
       './orch.ts',
+      './task-closed-residue.ts',
       './task-cursor-close-decision.ts',
+      './task-row.ts',
     ],
   },
   {
