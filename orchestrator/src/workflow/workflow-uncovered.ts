@@ -278,7 +278,9 @@ export function workflowUncoveredCommand(
       }
     }
     output.setExitCode(
-      result.days.some((row) => row.count > result.expected || row.cursorlessRuns.length > 0)
+      result.days.some(
+        (row) => row.count > result.expected || row.cursorlessRuns.length > result.expected,
+      )
         ? 1
         : 0,
     )

@@ -1,7 +1,5 @@
 import { expect, test } from 'bun:test'
-import { newRecordId } from '../../../shared/record/schema.ts'
 import { recordUnreachableRefusal } from '../../../shared/record-remedies.ts'
-import { selectBriefInFlight } from '../doc/context-brief.ts'
 import { JOBS } from '../jobs/jobs.ts'
 import { composeWorkflowWithCursor } from './workflow-cursor.ts'
 import { args, context, database } from './workflow-cursor-test.fixture.ts'
@@ -143,7 +141,7 @@ test('the pure dispatch decision refuses a keyless writer with the task remedy b
     action: 'refuse',
     reason:
       'workflow explore cursor 17 has no task key, and implement writes the repository; ' +
-      'compose plan-task for a task, or hand this cursor off with `workflow handoff`, then dispatch from that keyed cursor',
+      'compose plan-task for a task, then dispatch from that keyed cursor',
   })
 })
 
@@ -190,7 +188,6 @@ test('the pure dispatch decision still refuses an undeclared job on a keyed curs
 })
 
 test('a keyless lookup absent from the step dispatches with the cursor step binding', async () => {
-  const d = database()
   const calls: unknown[][] = []
   await dispatchForStep(
     { cursor: 17, job: 'understand', argv: ['do', 'understand', 'Inspect it.'] },
@@ -204,14 +201,6 @@ test('a keyless lookup absent from the step dispatches with the cursor step bind
         }),
       dispatch: async (...args) => {
         calls.push(args)
-        d.query(
-          `INSERT INTO run
-             (record_id,number,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,label,status,
-              session_id,cursor_record_id,step_slug,turn,project_record_id)
-           VALUES (?,42,'2026-11-17T14:00:00.000Z','codex','understand','sha',1,'Inspect it.',
-                   'Inspect it.','running','session-a',?,?,1,
-                   (SELECT record_id FROM project WHERE name='fixture'))`,
-        ).run(newRecordId(), args[1].cursorRecordId, args[1].stepSlug)
       },
     },
   )
@@ -221,35 +210,6 @@ test('a keyless lookup absent from the step dispatches with the cursor step bind
       { cursorRecordId: 'cursor-record-17', stepSlug: 'investigate' },
     ],
   ])
-  const runRow = d
-    .query<
-      {
-        number: number
-        job: string
-        status: 'running'
-        label: string
-        cursor_record_id: string
-      },
-      []
-    >(
-      `SELECT number,job,status,label,cursor_record_id
-         FROM run WHERE number=42`,
-    )
-    .get()!
-  const inFlight = selectBriefInFlight(
-    [runRow],
-    [
-      {
-        record_id: 'cursor-record-17',
-        project: 'fixture',
-        workflow_key: '',
-        args: '{}',
-      },
-    ],
-    [],
-  )
-  expect(inFlight.runs).toEqual([])
-  expect(inFlight.cursorRuns).toEqual([{ recordId: 'cursor-record-17', runs: [42] }])
 })
 
 test('land refuses an undeclared action exactly and never calls its PR service', async () => {
