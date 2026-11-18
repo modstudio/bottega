@@ -60,10 +60,22 @@ async function grammarFailures(command: string): Promise<string[]> {
   }
 }
 
+function equalsOptionValue(command: string, option: string): string | undefined {
+  const match = command.match(new RegExp(`(?:^|\\s)--${option}=(?:"([^"]*)"|'([^']*)'|(\\S+))`))
+  return match?.[1] ?? match?.[2] ?? match?.[3]
+}
+
 function literalNoteFailure(command: string): string | null {
+  const equalsNote = equalsOptionValue(command, 'note')
   const rawTokens = renderedTokens(command)
-  const note = rawTokens[rawTokens.indexOf('--note') + 1]
-  if (!note || command.match(/--note\s+(?:<|\{\{)/)) return null
+  const note = equalsNote ?? rawTokens[rawTokens.indexOf('--note') + 1]
+  if (
+    !note ||
+    (equalsNote === undefined
+      ? command.match(/--note\s+(?:<|\{\{)/)
+      : equalsNote.match(/^(?:<|\{\{)/))
+  )
+    return null
   return note.length > RECORD_SHAPES['step note'].maxChars
     ? `literal --note is ${note.length} characters; limit ${RECORD_SHAPES['step note'].maxChars}`
     : null
@@ -72,7 +84,7 @@ function literalNoteFailure(command: string): string | null {
 function outcomeFailure(command: string, declared: string[] | undefined): string | null {
   if (!declared?.length) return null
   const tokens = renderedTokens(command)
-  const value = tokens[tokens.indexOf('--outcome') + 1]
+  const value = equalsOptionValue(command, 'outcome') ?? tokens[tokens.indexOf('--outcome') + 1]
   return !value || !declared.includes(value)
     ? `--outcome must be one of ${declared.join(', ')}`
     : null
@@ -114,4 +126,17 @@ test('the step close-command guard reports an unknown flag', async () => {
   const failures = await grammarFailures(`${PLATFORM_SLUG} workflow next fixture --unknown fixture`)
   expect(failures).toHaveLength(1)
   expect(failures[0]).toContain("unknown option '--unknown'")
+})
+
+test('the step close-command guard rejects an over-long equals-form note', () => {
+  const note = 'x'.repeat(RECORD_SHAPES['step note'].maxChars + 1)
+  expect(literalNoteFailure(`${closeCommand} fixture --note=${note}`)).toContain(
+    `literal --note is ${note.length} characters`,
+  )
+})
+
+test('the step close-command guard rejects an undeclared equals-form outcome', () => {
+  expect(outcomeFailure(`${closeCommand} fixture --outcome=unexpected`, ['closed'])).toBe(
+    '--outcome must be one of closed',
+  )
 })

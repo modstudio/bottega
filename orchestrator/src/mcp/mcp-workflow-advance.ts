@@ -11,10 +11,10 @@ import {
 import { resolveGateIdentifier } from '../gate/gate-identifier.ts'
 import { resolveReviewIdentifier } from '../review/review-identifier.ts'
 import { resolveRunIdentifier } from '../run/run-identifier.ts'
-import { resolveProbeArtifact } from '../workflow/probe-identifier.ts'
 import { workflowNextContextMoment } from '../workflow/workflow-context-moment.ts'
 import { workflowKeyOf } from '../workflow/workflow-cursor-arguments.ts'
 import { resolveCursorLiveAutonomy } from '../workflow/workflow-cursor-live-autonomy.ts'
+import { resolveOfferedArtifacts } from '../workflow/workflow-offered-artifacts.ts'
 import { productionWorkflowFloorPorts } from '../workflow/workflow-production-floor-ports.ts'
 import { type HubTaskReader, resolveHubTaskReference } from '../workflow/workflow-task-reference.ts'
 import {
@@ -28,11 +28,6 @@ import type { nextWorkflowStepInputSchema } from './mcp-workflow-input.ts'
 
 const workflowRunEvidence = (run: string | number | undefined) =>
   run === undefined ? undefined : resolveRunIdentifier(db(), run)
-
-const workflowArtifactEvidence = (artifact: string | string[] | undefined): string[] =>
-  (artifact === undefined ? [] : Array.isArray(artifact) ? artifact : [artifact]).map(
-    (entry) => resolveProbeArtifact(db(), entry)!,
-  )
 
 function assertAdvanceRecordShapes(
   note: string,
@@ -114,7 +109,7 @@ export async function advanceWorkflow(
         review: review === undefined ? undefined : resolveReviewIdentifier(db(), review),
         gate: gate === undefined ? undefined : resolveGateIdentifier(db(), gate),
         run: workflowRunEvidence(run),
-        artifacts: workflowArtifactEvidence(artifact),
+        artifacts: resolveOfferedArtifacts(db(), artifact),
         task,
         defer,
         satisfies,

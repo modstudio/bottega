@@ -31,7 +31,8 @@ import {
   selectWorkflowCursorForClose,
   type WorkflowCursorContext,
 } from './workflow-cursor-selection.ts'
-import type { FloorEvidencePorts, WorkflowEvidenceInput } from './workflow-floor-evidence.ts'
+import type { WorkflowEvidenceInput } from './workflow-evidence-input.ts'
+import type { FloorEvidencePorts } from './workflow-floor-evidence.ts'
 import {
   assertWorkflowSelfRulingProse,
   type WorkflowSelfRulingInput,

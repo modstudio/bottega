@@ -4,15 +4,12 @@
 import type { Database } from 'bun:sqlite'
 import { parseProbeArtifact, resolveProbeArtifact } from './probe-identifier.ts'
 
-export type WorkflowEvidenceInput = {
-  ruling?: number
-  review?: string
-  gate?: string | number
-  run?: string
-  artifacts?: string[]
-  task?: string
-  defer?: string
-  satisfies?: string
+export function resolveOfferedArtifacts(
+  d: Database,
+  artifacts: string | string[] | undefined,
+): string[] {
+  const offered = artifacts === undefined ? [] : Array.isArray(artifacts) ? artifacts : [artifacts]
+  return offered.map((artifact) => resolveProbeArtifact(d, artifact)!)
 }
 
 export function resolvedOfferedArtifact(d: Database, artifact: string): string {

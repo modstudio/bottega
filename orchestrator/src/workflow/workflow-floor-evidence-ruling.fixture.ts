@@ -1,12 +1,9 @@
 import type { Database } from 'bun:sqlite'
 import { expect } from 'bun:test'
 import { newRecordId } from '../../../shared/record/schema.ts'
+import type { WorkflowEvidenceInput } from './workflow-evidence-input.ts'
 import type { Floor, ValidatedEvidence } from './workflow-floor.ts'
-import type {
-  CursorIdentity,
-  FloorEvidencePorts,
-  WorkflowEvidenceInput,
-} from './workflow-floor-evidence.ts'
+import type { CursorIdentity, FloorEvidencePorts } from './workflow-floor-evidence.ts'
 
 type Gather = (
   d: Database,

@@ -43,6 +43,7 @@ import {
 } from './workflow-checkout-refusal.ts'
 import type { CursorState } from './workflow-cursor-transition.ts'
 import { resolveWorkflowCursorSuccessor } from './workflow-cursor-transition.ts'
+import type { WorkflowEvidenceInput } from './workflow-evidence-input.ts'
 import {
   type ArtifactRef,
   decideReviewReadArtifact,
@@ -63,10 +64,7 @@ import {
 } from './workflow-floor-evidence-replay.ts'
 import { readHubTask } from './workflow-floor-task-read.ts'
 import { floorFromObligationRow } from './workflow-obligation-floor.ts'
-import {
-  resolvedOfferedArtifact,
-  type WorkflowEvidenceInput,
-} from './workflow-offered-artifacts.ts'
+import { resolvedOfferedArtifact } from './workflow-offered-artifacts.ts'
 import {
   type BoundRun,
   decideRunBinding,
@@ -76,7 +74,6 @@ import {
 import { attachedTextReferenceMeetsFloor, type WorkflowTextRow } from './workflow-text.ts'
 
 export type { FloorEvidencePorts } from './workflow-floor-evidence-replay.ts'
-export type { WorkflowEvidenceInput } from './workflow-offered-artifacts.ts'
 
 export type CursorIdentity = {
   project: string
