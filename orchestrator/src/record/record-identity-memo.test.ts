@@ -4,7 +4,15 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { markRecordIdentityChanged } from '../../../shared/record-session.ts'
 import { STATE_HOME_ENV } from '../../../shared/state-directory.ts'
-import { recordApiClientOver } from './record-api-client.ts'
+import {
+  createMemoryRecordApiClient,
+  installRecordApiClient,
+} from '../../test/fixtures/record-api.ts'
+import {
+  installRecordSessionRunner,
+  memoryRecordSession,
+} from '../../test/fixtures/record-session.ts'
+import { recordApiClient, recordApiClientOver } from './record-api-client.ts'
 import type { RecordClientRequest } from './record-api-client-paths.ts'
 import {
   forgetRecordIdentityMemo,
@@ -35,23 +43,51 @@ const originalStateHome = process.env[STATE_HOME_ENV]
 const originalKeyStore = process.env.BOTTEGA_KEYSTORE
 const originalRecordApiUrl = process.env.BOTTEGA_RECORD_API_URL
 const originalTestContainer = process.env.BOTTEGA_TEST_POSTGRES_CONTAINER
+const originalNodeEnv = process.env.NODE_ENV
 let stateHome = ''
+let server: ReturnType<typeof Bun.serve>
+let whoamiRequests = 0
 
 beforeEach(() => {
   stateHome = mkdtempSync(join(tmpdir(), 'record-identity-memo-'))
   process.env[STATE_HOME_ENV] = stateHome
-  process.env.BOTTEGA_KEYSTORE = 'file'
-  process.env.BOTTEGA_RECORD_API_URL = 'https://record.example.test'
+  process.env.BOTTEGA_KEYSTORE = 'keychain'
+  process.env.NODE_ENV = 'development'
   process.env.BOTTEGA_TEST_POSTGRES_CONTAINER = '1'
+  const session = memoryRecordSession()
+  session.setToken('record-identity-memo-token')
+  installRecordSessionRunner(session.runner)
+  installRecordApiClient(null)
+  whoamiRequests = 0
+  server = Bun.serve({
+    port: 0,
+    fetch(request) {
+      const path = new URL(request.url).pathname
+      if (path === '/v1/whoami') {
+        whoamiRequests += 1
+        return Response.json(identity)
+      }
+      if (path === '/api/auth/organization/set-active' || path === '/api/auth/organization/create')
+        return Response.json({ id: 'space-b', slug: 'beta' })
+      if (path === '/api/auth/organization/accept-invitation')
+        return Response.json({ invitation: { organizationId: 'space-b' } })
+      return Response.json({ error: `unexpected request ${path}` }, { status: 404 })
+    },
+  })
+  process.env.BOTTEGA_RECORD_API_URL = server.url.origin
   forgetRecordIdentityMemo()
 })
 
 afterEach(() => {
   forgetRecordIdentityMemo()
+  server.stop(true)
+  installRecordSessionRunner(null)
+  installRecordApiClient(createMemoryRecordApiClient())
   rmSync(stateHome, { recursive: true, force: true })
   restoreEnvironment('BOTTEGA_KEYSTORE', originalKeyStore)
   restoreEnvironment('BOTTEGA_RECORD_API_URL', originalRecordApiUrl)
   restoreEnvironment('BOTTEGA_TEST_POSTGRES_CONTAINER', originalTestContainer)
+  restoreEnvironment('NODE_ENV', originalNodeEnv)
   restoreEnvironment(STATE_HOME_ENV, originalStateHome)
 })
 
@@ -95,23 +131,23 @@ function realClients(request: RecordClientRequest, now: () => number = Date.now)
 
 describe('record identity process memo', () => {
   test('two independently built real-transport clients share one whoami request', async () => {
-    const counted = countingRequest()
-    const [first, second] = realClients(counted.request)
+    const first = recordApiClient()
+    const second = recordApiClient()
 
     await Promise.all([first.whoami(), second.whoami()])
 
-    expect(counted.whoamiRequests()).toBe(1)
+    expect(whoamiRequests).toBe(1)
   })
 
   test('a changed session stamp makes the next client re-request whoami', async () => {
-    const counted = countingRequest()
-    const [first, second] = realClients(counted.request)
+    const first = recordApiClient()
+    const second = recordApiClient()
     await first.whoami()
 
     markRecordIdentityChanged()
     await second.whoami()
 
-    expect(counted.whoamiRequests()).toBe(2)
+    expect(whoamiRequests).toBe(2)
   })
 
   test('identity older than the maximum age is re-requested without sleeping', async () => {
@@ -141,35 +177,35 @@ describe('record identity process memo', () => {
   })
 
   test('set-active success invalidates identity before the next whoami', async () => {
-    const counted = countingRequest()
-    const [first, second] = realClients(counted.request)
+    const first = recordApiClient()
+    const second = recordApiClient()
     await first.whoami()
 
     await first.setActiveOrganization({ organizationId: 'space-b' })
     await second.whoami()
 
-    expect(counted.whoamiRequests()).toBe(2)
+    expect(whoamiRequests).toBe(2)
   })
 
   test('create-organization success invalidates identity before the next whoami', async () => {
-    const counted = countingRequest()
-    const [first, second] = realClients(counted.request)
+    const first = recordApiClient()
+    const second = recordApiClient()
     await first.whoami()
 
     await first.createOrganization({ name: 'Beta', slug: 'beta' })
     await second.whoami()
 
-    expect(counted.whoamiRequests()).toBe(2)
+    expect(whoamiRequests).toBe(2)
   })
 
   test('accept-invitation success invalidates identity before the next whoami', async () => {
-    const counted = countingRequest()
-    const [first, second] = realClients(counted.request)
+    const first = recordApiClient()
+    const second = recordApiClient()
     await first.whoami()
 
     await first.acceptInvitation('invitation-a')
     await second.whoami()
 
-    expect(counted.whoamiRequests()).toBe(2)
+    expect(whoamiRequests).toBe(2)
   })
 })
