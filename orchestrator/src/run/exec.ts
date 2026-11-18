@@ -105,27 +105,22 @@ export async function main(argv: string[]): Promise<number> {
     } = await import('./run-record-request-rate.ts')
     const { recordRunWarning } = await import('../events.ts')
     let requestWindowIndex = 1
-    let requestWindowStartedAt = Date.now()
     let requestCountAtWindowStart = recordRequestCount()
-    const closeRequestWindow = (elapsedMs: number): void => {
+    const closeRequestWindow = (): void => {
       const currentCount = recordRequestCount()
       const count = currentCount - requestCountAtWindowStart
-      if (
-        id &&
-        exceedsLongLivedRecordRequestRate({ count, elapsedMs, windowIndex: requestWindowIndex })
-      ) {
+      if (id && exceedsLongLivedRecordRequestRate({ count, windowIndex: requestWindowIndex })) {
         recordRunWarning(
           id,
           `long-lived record request rate exceeded: ${count} requests in window ${requestWindowIndex}; allowance ${LONG_LIVED_RECORD_REQUEST_ALLOWANCE} requests in the first window; bound ${LONG_LIVED_RECORD_REQUESTS_PER_MINUTE_MAX} requests per minute`,
         )
       }
       requestCountAtWindowStart = currentCount
-      requestWindowStartedAt = Date.now()
       requestWindowIndex += 1
     }
     requestWindowTimer = setInterval(() => {
       try {
-        closeRequestWindow(LONG_LIVED_RECORD_REQUEST_WINDOW_MS)
+        closeRequestWindow()
       } catch (error) {
         console.error(
           `orch: run ${id} could not record its request-rate warning: ${startupFailureDiagnostic(error)}`,
@@ -133,7 +128,7 @@ export async function main(argv: string[]): Promise<number> {
       }
     }, LONG_LIVED_RECORD_REQUEST_WINDOW_MS)
     requestWindowTimer.unref()
-    finishRequestWindow = () => closeRequestWindow(Date.now() - requestWindowStartedAt)
+    finishRequestWindow = closeRequestWindow
     if (!id || !promptPath || !jobName)
       throw new Error('__exec <run-id> <prompt-file> <job> [spec]')
     const { readFileSync } = await import('node:fs')
