@@ -7,15 +7,44 @@ const migrationFiles = [
 ]
 
 describe('hosted record snapshot key', () => {
-  test('changes with migration bytes and the PGlite version', () => {
-    const original = hostedRecordSnapshotKey(migrationFiles, '1.0.0')
+  test('changes with persisted build inputs', () => {
+    const original = hostedRecordSnapshotKey(
+      migrationFiles,
+      '1.0.0',
+      '2.0.0',
+      'CREATE ROLE owner;',
+      ['SET ROLE owner'],
+    )
     const changedMigration = migrationFiles.map((file) => ({ ...file }))
     changedMigration[1] = {
       ...changedMigration[1]!,
       contents: new TextEncoder().encode('SELECT 3;'),
     }
 
-    expect(hostedRecordSnapshotKey(changedMigration, '1.0.0')).not.toBe(original)
-    expect(hostedRecordSnapshotKey(migrationFiles, '1.0.1')).not.toBe(original)
+    expect(
+      hostedRecordSnapshotKey(changedMigration, '1.0.0', '2.0.0', 'CREATE ROLE owner;', [
+        'SET ROLE owner',
+      ]),
+    ).not.toBe(original)
+    expect(
+      hostedRecordSnapshotKey(migrationFiles, '1.0.1', '2.0.0', 'CREATE ROLE owner;', [
+        'SET ROLE owner',
+      ]),
+    ).not.toBe(original)
+    expect(
+      hostedRecordSnapshotKey(migrationFiles, '1.0.0', '2.0.1', 'CREATE ROLE owner;', [
+        'SET ROLE owner',
+      ]),
+    ).not.toBe(original)
+    expect(
+      hostedRecordSnapshotKey(migrationFiles, '1.0.0', '2.0.0', 'CREATE ROLE actor;', [
+        'SET ROLE owner',
+      ]),
+    ).not.toBe(original)
+    expect(
+      hostedRecordSnapshotKey(migrationFiles, '1.0.0', '2.0.0', 'CREATE ROLE owner;', [
+        'RESET ROLE',
+      ]),
+    ).not.toBe(original)
   })
 })
