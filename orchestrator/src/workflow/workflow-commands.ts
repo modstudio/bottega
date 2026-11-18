@@ -223,8 +223,11 @@ export function workflowVersionsCommand(
   print(resolvedWorkflowVersions(argv[2]!, inspectionProjectName(options)))
 }
 
-export function renderCheckCommand(json: boolean, presentation: WorkflowPresentation): void {
-  const result = checkResolvedWorkflowRendering(db(), projects())
+export async function renderCheckCommand(
+  json: boolean,
+  presentation: WorkflowPresentation,
+): Promise<void> {
+  const result = await checkResolvedWorkflowRendering(db(), projects())
   if (json) presentation.log(JSON.stringify(result))
   else for (const line of resolvedWorkflowRenderCheckLines(result)) presentation.log(line)
   if (

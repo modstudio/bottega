@@ -970,8 +970,19 @@ function cataloguePromotionPreflight(
     slug: row.slug,
     definition: JSON.parse(row.definition) as WorkflowDefinition,
   }))
+  const registeredProjects = projects(undefined, d)
   const refusal = renderCheckRefusal(
-    checkWorkflowRendering(workflows, definition, projects(undefined, d)),
+    checkWorkflowRendering(
+      workflows,
+      definition,
+      registeredProjects,
+      new Map(
+        registeredProjects.map((project) => [
+          project.name,
+          new Set(workflows.map(({ slug }) => slug)),
+        ]),
+      ),
+    ),
   )
   if (refusal) throw new Error(refusal)
 }

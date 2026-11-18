@@ -233,7 +233,7 @@ function registerWorkflowVersions({
     workflow.command('render-check').description('check every production workflow can render'),
   )
     .allowExcessArguments(false)
-    .action((options) => renderCheckCommand(Boolean(options.json), workflowPresentation))
+    .action(async (options) => renderCheckCommand(Boolean(options.json), workflowPresentation))
 }
 
 function registerWorkflowRendering({

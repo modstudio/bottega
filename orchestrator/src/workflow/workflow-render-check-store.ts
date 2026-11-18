@@ -2,7 +2,9 @@
 /** Gathers each project's resolved workflow catalogue for the pure render check. */
 import type { Database } from 'bun:sqlite'
 import type { Project } from '../project/projects.ts'
+import { TASK_FLOW_STAGE_STATES } from '../record/record-task-flow-contract.ts'
 import { selectedStepCatalogue } from './step-catalogue.ts'
+import { taskFlowReadStore } from './task-flow-store.ts'
 import {
   checkWorkflowRendering,
   type WorkflowRenderCheckResult,
@@ -29,10 +31,38 @@ export function resolvedWorkflowRenderCheckLines(
 export function checkResolvedWorkflowRendering(
   d: Database,
   registeredProjects: Project[],
+): Promise<ResolvedWorkflowRenderCheckResult> {
+  const store = taskFlowReadStore(d)
+  return Promise.all(
+    registeredProjects.map(
+      async (project) =>
+        [
+          project.name,
+          new Set(
+            (await store.listStages({ project: project.name, states: TASK_FLOW_STAGE_STATES })).map(
+              ({ workflow_slug }) => workflow_slug,
+            ),
+          ),
+        ] as const,
+    ),
+  ).then((composedWorkflows) =>
+    checkResolvedWorkflowRenderingWithComposedWorkflows(
+      d,
+      registeredProjects,
+      new Map(composedWorkflows),
+    ),
+  )
+}
+
+function checkResolvedWorkflowRenderingWithComposedWorkflows(
+  d: Database,
+  registeredProjects: Project[],
+  composedWorkflowsByProject: ReadonlyMap<string, ReadonlySet<string>>,
 ): ResolvedWorkflowRenderCheckResult {
   const result: ResolvedWorkflowRenderCheckResult = {
     failures: [],
     unresolvedProjects: [],
+    notApplicable: [],
     resolutionFailures: [],
     checkedSpaces: [],
   }
@@ -51,9 +81,11 @@ export function checkResolvedWorkflowRendering(
         workflows.map(({ slug, definition }) => ({ slug, definition })),
         selectedStepCatalogue(undefined, d, spaceId).definition,
         [project],
+        composedWorkflowsByProject,
       )
       result.failures.push(...checked.failures)
       result.unresolvedProjects.push(...checked.unresolvedProjects)
+      result.notApplicable.push(...checked.notApplicable)
       result.resolutionFailures.push(...checked.resolutionFailures)
     }
   }

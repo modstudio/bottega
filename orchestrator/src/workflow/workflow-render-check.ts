@@ -52,6 +52,7 @@ type WorkflowStepResolutionFailure = {
 export type WorkflowRenderCheckResult = {
   failures: WorkflowPlaceholderFailure[]
   unresolvedProjects: WorkflowFactResolutionFailure[]
+  notApplicable: WorkflowFactResolutionFailure[]
   resolutionFailures: WorkflowStepResolutionFailure[]
 }
 
@@ -188,6 +189,7 @@ type RenderCheckAccumulator = {
   failures: WorkflowPlaceholderFailure[]
   resolutionFailures: WorkflowStepResolutionFailure[]
   unresolvedByProject: Map<string, { workflows: Set<string>; facts: Set<string> }>
+  notApplicableByProject: Map<string, { workflows: Set<string>; facts: Set<string> }>
 }
 
 function recordStepResult(
@@ -197,30 +199,46 @@ function recordStepResult(
   workflow: string,
   mode: string,
   step: string,
+  composedWorkflows: ReadonlySet<string>,
 ): void {
   if (result.kind === 'placeholders') accumulator.failures.push(...result.failures)
   else if (result.kind === 'resolution')
     accumulator.resolutionFailures.push({ project, workflow, mode, step, reason: result.reason })
   else {
-    const unresolved = accumulator.unresolvedByProject.get(project) ?? {
+    const failuresByProject = composedWorkflows.has(workflow)
+      ? accumulator.unresolvedByProject
+      : accumulator.notApplicableByProject
+    const unresolved = failuresByProject.get(project) ?? {
       workflows: new Set<string>(),
       facts: new Set<string>(),
     }
     unresolved.workflows.add(workflow)
     for (const fact of result.facts) unresolved.facts.add(fact)
-    accumulator.unresolvedByProject.set(project, unresolved)
+    failuresByProject.set(project, unresolved)
   }
+}
+
+function workflowFactFailures(
+  failures: Map<string, { workflows: Set<string>; facts: Set<string> }>,
+): WorkflowFactResolutionFailure[] {
+  return [...failures.entries()].map(([project, unresolved]) => ({
+    project,
+    workflows: [...unresolved.workflows].sort(),
+    facts: [...unresolved.facts].sort(),
+  }))
 }
 
 export function checkWorkflowRendering(
   workflows: { slug: string; definition: WorkflowDefinition }[],
   catalogue: StepCatalogueDefinition,
   registeredProjects: Project[],
+  composedWorkflowsByProject: ReadonlyMap<string, ReadonlySet<string>>,
 ): WorkflowRenderCheckResult {
   const accumulator: RenderCheckAccumulator = {
     failures: [],
     resolutionFailures: [],
     unresolvedByProject: new Map(),
+    notApplicableByProject: new Map(),
   }
   const bySlug = new Map(catalogue.steps.map((step) => [step.slug, step]))
 
@@ -238,22 +256,17 @@ export function checkWorkflowRendering(
             slug,
             mode.slug,
             stepSlug,
+            composedWorkflowsByProject.get(project.name) ?? new Set(),
           )
         }
       }
     }
   }
 
-  const unresolvedProjects = [...accumulator.unresolvedByProject.entries()].map(
-    ([project, unresolved]): WorkflowFactResolutionFailure => ({
-      project,
-      workflows: [...unresolved.workflows].sort(),
-      facts: [...unresolved.facts].sort(),
-    }),
-  )
   return {
     failures: accumulator.failures,
-    unresolvedProjects,
+    unresolvedProjects: workflowFactFailures(accumulator.unresolvedByProject),
+    notApplicable: workflowFactFailures(accumulator.notApplicableByProject),
     resolutionFailures: accumulator.resolutionFailures,
   }
 }
@@ -267,6 +280,10 @@ export function workflowRenderCheckLines(result: WorkflowRenderCheckResult): str
     ...result.unresolvedProjects.map(
       (failure) =>
         `${failure.project}  ${failure.workflows.join(',')}  project facts could not be resolved: ${failure.facts.join('; ')}`,
+    ),
+    ...result.notApplicable.map(
+      (failure) =>
+        `${failure.project}  ${failure.workflows.join(',')}  not applicable (never composed): ${failure.facts.join('; ')}`,
     ),
     ...result.resolutionFailures.map(
       (failure) =>

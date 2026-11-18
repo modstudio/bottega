@@ -12,6 +12,7 @@ import {
 import {
   checkWorkflowRendering,
   unresolvedWorkflowStepPlaceholders,
+  workflowRenderCheckLines,
 } from './workflow-render-check.ts'
 import { seedWorkflows } from './workflow-seeds.ts'
 import { promoteWorkflowLocal, setWorkflowLocal, type WorkflowDefinition } from './workflows.ts'
@@ -52,6 +53,9 @@ const project = (settings: Project['settings']): Project => ({
   settings,
 })
 
+const composedWorkflows = (...slugs: string[]): ReadonlyMap<string, ReadonlySet<string>> =>
+  new Map([['fixture', new Set(slugs)]])
+
 const database = testDatabaseFixture((d) => {
   seedWorkflows(d)
   d.query(
@@ -87,8 +91,18 @@ describe('workflow render check', () => {
       { slug: 'checks', title: 'Checks', steps: ['check', 'omitted'] },
     ]
     expect(
-      checkWorkflowRendering([{ slug: 'flow', definition }], definitionCatalogue, [project({})]),
-    ).toEqual({ failures: [], unresolvedProjects: [], resolutionFailures: [] })
+      checkWorkflowRendering(
+        [{ slug: 'flow', definition }],
+        definitionCatalogue,
+        [project({})],
+        composedWorkflows('flow'),
+      ),
+    ).toEqual({
+      failures: [],
+      unresolvedProjects: [],
+      notApplicable: [],
+      resolutionFailures: [],
+    })
   })
 
   test('reports an optional-fact placeholder only when the resolved project lacks it', () => {
@@ -133,9 +147,12 @@ describe('workflow render check', () => {
     const sequencedCatalogue = catalogue('Use {{tracker.server}}.')
     sequencedCatalogue.sequences = [{ slug: 'checks', title: 'Checks', steps: ['check'] }]
 
-    const result = checkWorkflowRendering([{ slug: 'sequenced', definition }], sequencedCatalogue, [
-      project({ tracker: { protocol: 'hub' } }),
-    ])
+    const result = checkWorkflowRendering(
+      [{ slug: 'sequenced', definition }],
+      sequencedCatalogue,
+      [project({ tracker: { protocol: 'hub' } })],
+      composedWorkflows('sequenced'),
+    )
 
     expect(result.failures).toEqual([
       {
@@ -157,6 +174,7 @@ describe('workflow render check', () => {
       ],
       catalogue('Use {{tracker.protocol}}.'),
       [project({})],
+      composedWorkflows('first', 'second'),
     )
 
     expect(result.failures).toEqual([])
@@ -172,17 +190,60 @@ describe('workflow render check', () => {
     ])
   })
 
+  test('reports a missing fact from a never-composed workflow as not applicable', () => {
+    const result = checkWorkflowRendering(
+      [{ slug: 'signal-check', definition: workflow('check') }],
+      catalogue('Collect signals.', ['signals']),
+      [project({})],
+      composedWorkflows(),
+    )
+    const remedy =
+      `signals; set with: ${PLATFORM_SLUG} project set fixture --settings ` +
+      `'{"signals":{"sources":[{"name":"<label>","list":"<command-or-tool>"}]}}'`
+
+    expect(result.unresolvedProjects).toEqual([])
+    expect(result.notApplicable).toEqual([
+      { project: 'fixture', workflows: ['signal-check'], facts: [remedy] },
+    ])
+    expect(workflowRenderCheckLines(result)).toContain(
+      `fixture  signal-check  not applicable (never composed): ${remedy}`,
+    )
+  })
+
+  test('keeps a placeholder failure in a never-composed workflow', () => {
+    const result = checkWorkflowRendering(
+      [{ slug: 'placeholder-check', definition: workflow('check') }],
+      catalogue('Use {{tracker.server}}.'),
+      [project({ tracker: { protocol: 'hub' } })],
+      composedWorkflows(),
+    )
+
+    expect(result.failures).toEqual([
+      {
+        project: 'fixture',
+        workflow: 'placeholder-check',
+        mode: 'default',
+        step: 'check',
+        field: 'body',
+        placeholder: 'tracker.server',
+      },
+    ])
+    expect(result.notApplicable).toEqual([])
+  })
+
   test('reports the signals remedy only for a step that declares the fact', () => {
     const definition = workflow('check')
     const missing = checkWorkflowRendering(
       [{ slug: 'signal-check', definition }],
       catalogue('Collect signals.', ['signals']),
       [project({})],
+      composedWorkflows('signal-check'),
     )
     const unaffected = checkWorkflowRendering(
       [{ slug: 'plain-check', definition }],
       catalogue('No project facts.', []),
       [project({})],
+      composedWorkflows('plain-check'),
     )
 
     expect(missing.unresolvedProjects).toEqual([
@@ -194,6 +255,7 @@ describe('workflow render check', () => {
         ],
       },
     ])
+    expect(missing.notApplicable).toEqual([])
     expect(unaffected.unresolvedProjects).toEqual([])
     expect(unaffected.resolutionFailures).toEqual([])
   })
@@ -213,9 +275,12 @@ describe('workflow render check', () => {
       ],
     }
 
-    const result = checkWorkflowRendering([{ slug: 'per-step', definition }], definitionCatalogue, [
-      project({ tracker: { protocol: 'hub' } }),
-    ])
+    const result = checkWorkflowRendering(
+      [{ slug: 'per-step', definition }],
+      definitionCatalogue,
+      [project({ tracker: { protocol: 'hub' } })],
+      composedWorkflows('per-step'),
+    )
 
     expect(result.failures).toEqual([
       {
@@ -236,6 +301,7 @@ describe('workflow render check', () => {
       [{ slug: 'invalid-tracker', definition: workflow('check') }],
       catalogue('Use {{tracker.protocol}}.'),
       [project({ tracker: { protocol: 'unsupported' as 'hub' } })],
+      composedWorkflows('invalid-tracker'),
     )
 
     expect(result.unresolvedProjects).toEqual([])
@@ -284,21 +350,31 @@ describe('workflow render check', () => {
         },
       ],
     }
-    const result = checkWorkflowRendering([{ slug: 'ship-task', definition }], shipCatalogue, [
-      project({
-        release: {
-          rungs: [{ name: 'hosted-api', branch: 'main', onDemand: true }],
-          mergeMethod: 'squash',
-          requiredChecks: [],
-        },
-        tracker: {
-          protocol: 'hub',
-          states: { review: 'review', done: 'done' },
-        },
-      }),
-    ])
+    const result = checkWorkflowRendering(
+      [{ slug: 'ship-task', definition }],
+      shipCatalogue,
+      [
+        project({
+          release: {
+            rungs: [{ name: 'hosted-api', branch: 'main', onDemand: true }],
+            mergeMethod: 'squash',
+            requiredChecks: [],
+          },
+          tracker: {
+            protocol: 'hub',
+            states: { review: 'review', done: 'done' },
+          },
+        }),
+      ],
+      composedWorkflows('ship-task'),
+    )
 
-    expect(result).toEqual({ failures: [], unresolvedProjects: [], resolutionFailures: [] })
+    expect(result).toEqual({
+      failures: [],
+      unresolvedProjects: [],
+      notApplicable: [],
+      resolutionFailures: [],
+    })
   })
 
   test('reports a floor placeholder that resolves to an invalid floor kind', () => {
@@ -308,6 +384,7 @@ describe('workflow render check', () => {
       [{ slug: 'invalid-floor', definition: workflow('check') }],
       badFloor,
       [project({ tracker: { protocol: 'workspace-mcp' } })],
+      composedWorkflows('invalid-floor'),
     )
 
     expect(result.failures).toEqual([
