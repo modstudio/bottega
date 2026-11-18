@@ -150,13 +150,16 @@ export async function main(argv: string[]): Promise<number> {
       const elapsedMs = Date.now() - requestWindowStartedAt
       const { recordRequestCount } = await import('../../../shared/record-request-headers.ts')
       const count = recordRequestCount() - requestCountAtStart
-      const { exceedsLongLivedRecordRequestRate, LONG_LIVED_RECORD_REQUESTS_PER_MINUTE_MAX } =
-        await import('./run-record-request-rate.ts')
+      const {
+        exceedsLongLivedRecordRequestRate,
+        LONG_LIVED_RECORD_REQUEST_ALLOWANCE,
+        LONG_LIVED_RECORD_REQUESTS_PER_MINUTE_MAX,
+      } = await import('./run-record-request-rate.ts')
       if (id && exceedsLongLivedRecordRequestRate({ count, elapsedMs })) {
         const { recordRunWarning } = await import('../events.ts')
         recordRunWarning(
           id,
-          `long-lived record request rate exceeded: ${count} requests in ${(elapsedMs / 60_000).toFixed(2)} minutes; bound ${LONG_LIVED_RECORD_REQUESTS_PER_MINUTE_MAX} requests per minute`,
+          `long-lived record request rate exceeded: ${count} requests in ${(elapsedMs / 60_000).toFixed(2)} minutes; allowance ${LONG_LIVED_RECORD_REQUEST_ALLOWANCE} requests; bound ${LONG_LIVED_RECORD_REQUESTS_PER_MINUTE_MAX} requests per minute`,
         )
       }
     } catch (error) {
