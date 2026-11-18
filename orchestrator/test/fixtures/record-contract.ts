@@ -1,6 +1,6 @@
 import type { PGlite } from '@electric-sql/pglite'
 import { recordRequestHeaders } from '../../../shared/record-request-headers.ts'
-import { type RecordApiClient, recordApiClient } from '../../src/record/record-api-client.ts'
+import { type RecordApiClient, recordApiClientOver } from '../../src/record/record-api-client.ts'
 import { recordApiError } from '../../src/record/record-api-client-error.ts'
 import type { RecordClientRequest } from '../../src/record/record-api-client-paths.ts'
 import type { RecordIdentity } from '../../src/record/record-auth.ts'
@@ -88,36 +88,31 @@ export async function createRecordContractFixture(): Promise<RecordContractFixtu
   )
   const requestedRoutes = new Set<string>()
   installRecordApiClient(null)
-  const previousContainer = process.env.BOTTEGA_TEST_POSTGRES_CONTAINER
-  let client: RecordApiClient
-  try {
-    process.env.BOTTEGA_TEST_POSTGRES_CONTAINER = 'record-contract'
-    const request: RecordClientRequest = async <T>(path, init) => {
-      const requestInit = init ?? {}
-      const pathname = path
-        .split('?', 1)[0]!
-        .replace(/^\/v1\/task-flow\/stages\/[^/]+$/, '/v1/task-flow/stages/:id')
-      requestedRoutes.add(`${requestInit.method?.toUpperCase() ?? 'GET'} ${pathname}`)
-      const headers = recordRequestHeaders({
-        destinationSpaceId: requestInit.destinationSpaceId,
-        headers: requestInit.headers,
-      })
-      if (requestInit.body && !headers.has('content-type'))
-        headers.set('content-type', 'application/json')
-      const response = await app.request(path, { ...requestInit, headers })
-      const body = await response.json().catch(() => null)
-      if (!response.ok) {
-        if (requestInit.acceptedError?.status === response.status)
-          return requestInit.acceptedError.schema(body)
-        throw recordApiError(body, response.status, response.headers)
-      }
-      return requestInit.schema ? requestInit.schema(body) : (body as T)
+  const request: RecordClientRequest = async <T>(
+    path: string,
+    init?: Parameters<RecordClientRequest>[1],
+  ) => {
+    const requestInit = init ?? {}
+    const pathname = path
+      .split('?', 1)[0]!
+      .replace(/^\/v1\/task-flow\/stages\/[^/]+$/, '/v1/task-flow/stages/:id')
+    requestedRoutes.add(`${requestInit.method?.toUpperCase() ?? 'GET'} ${pathname}`)
+    const headers = recordRequestHeaders({
+      destinationSpaceId: requestInit.destinationSpaceId,
+      headers: requestInit.headers,
+    })
+    if (requestInit.body && !headers.has('content-type'))
+      headers.set('content-type', 'application/json')
+    const response = await app.request(path, { ...requestInit, headers })
+    const body = await response.json().catch(() => null)
+    if (!response.ok) {
+      if (requestInit.acceptedError?.status === response.status)
+        return requestInit.acceptedError.schema(body) as T
+      throw recordApiError(body, response.status, response.headers)
     }
-    client = recordApiClient(request)
-  } finally {
-    if (previousContainer === undefined) delete process.env.BOTTEGA_TEST_POSTGRES_CONTAINER
-    else process.env.BOTTEGA_TEST_POSTGRES_CONTAINER = previousContainer
+    return requestInit.schema ? (requestInit.schema(body) as T) : (body as T)
   }
+  const client = recordApiClientOver(request)
   installRecordApiClient(client)
   const close = async () => {
     installRecordApiClient(createMemoryRecordApiClient())
