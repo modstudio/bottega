@@ -47,6 +47,8 @@ export function architectureRatchetFailureLines(input: {
     ...detailViolations.flatMap((violation) =>
       violationLines(violation, input.ruleComments.get(violation.rule.name)),
     ),
-    `check-architecture: ${input.ratchet.newViolations.length} new; ${baselinedCount} baselined, not shown; full dump: bun scripts/check-architecture.ts --full`,
+    input.full
+      ? `check-architecture: ${input.ratchet.newViolations.length} new; ${baselinedCount} baselined, shown above`
+      : `check-architecture: ${input.ratchet.newViolations.length} new; ${baselinedCount} baselined, not shown; full dump: bun scripts/check-architecture.ts --full`,
   ]
 }

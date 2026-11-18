@@ -48,3 +48,28 @@ test('prints a fixed baseline edge with no new violation detail', () => {
     'check-architecture: 0 new; 1 baselined, not shown; full dump: bun scripts/check-architecture.ts --full',
   ])
 })
+
+test('prints new and baselined violation details in full mode', () => {
+  const baselined = [
+    violation('baseline-rule', 'baseline-1.ts', 'target.ts'),
+    violation('baseline-rule', 'baseline-2.ts', 'target.ts'),
+  ]
+  const added = violation('new-rule', 'new.ts', 'forbidden.ts')
+  const lines = architectureRatchetFailureLines({
+    violations: [...baselined, added],
+    ratchet: {
+      newViolations: [{ rule: 'new-rule', from: 'new.ts', to: 'forbidden.ts' }],
+      fixedBaseline: [],
+    },
+    ruleComments: new Map([
+      ['baseline-rule', 'baseline comment'],
+      ['new-rule', 'new comment'],
+    ]),
+    full: true,
+  })
+
+  expect(lines).toContain('error baseline-rule: baseline-1.ts -> target.ts')
+  expect(lines).toContain('error baseline-rule: baseline-2.ts -> target.ts')
+  expect(lines).toContain('error new-rule: new.ts -> forbidden.ts')
+  expect(lines.at(-1)).toBe('check-architecture: 1 new; 2 baselined, shown above')
+})
