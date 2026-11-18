@@ -380,7 +380,7 @@ export function hostedLocalSqlViolations(input: {
   return failures
 }
 
-function checkHostedLocalSql(root: string): {
+export function checkHostedLocalSql(root: string): {
   failures: string[]
   unresolved: number
   cannotJudge: number

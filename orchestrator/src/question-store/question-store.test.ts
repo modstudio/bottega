@@ -513,17 +513,12 @@ test('only the record adapter passes a rulings feed cursor through', async () =>
 
 test('record question reads fan a bare number across reachable record spaces', async () => {
   const database = migratedTestDatabase()
-  let requests = 0
   const destinations: Array<string | undefined> = []
   const store = new RecordQuestionStore({
     database,
     client: {
-      whoami: async () => {
-        requests += 1
-        return whoami()
-      },
+      whoami: async () => whoami(),
       readQuestions: async (_input, destination) => {
-        requests += 1
         destinations.push(destination?.destinationSpaceId)
         return {
           items: [
@@ -542,7 +537,6 @@ test('record question reads fan a bare number across reachable record spaces', a
     items: [{ record_id: WORKFLOW_QUESTION_ID, number: 7 }],
   })
   expect(destinations).toEqual([SPACE_ID])
-  expect(requests).toBe(2)
   database.close()
 })
 

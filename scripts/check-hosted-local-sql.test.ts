@@ -1,13 +1,35 @@
-import { expect, test } from 'bun:test'
+import { afterEach, expect, test } from 'bun:test'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { resolve } from 'node:path'
 import { HOSTED_LOCAL_SQL_ALLOWED_FILES } from '../orchestrator/src/database/hosted-table-guard.ts'
 import { sqliteAdapterAllowedImporters } from './architecture-boundaries.ts'
-import { hostedLocalRenderedSqlRisk, hostedLocalSqlViolations } from './check-hosted-local-sql.ts'
+import {
+  checkHostedLocalSql,
+  hostedLocalRenderedSqlRisk,
+  hostedLocalSqlViolations,
+} from './check-hosted-local-sql.ts'
 import {
   extractSqlFromSource,
   type HostedSqlSite,
   type HostedSqlUnresolvedSite,
 } from './hosted-sql-schema.ts'
 import type { StateClassDeclaration } from './identity-state-classes.ts'
+
+const temporaryRoots: string[] = []
+
+afterEach(() => {
+  for (const root of temporaryRoots.splice(0)) rmSync(root, { recursive: true, force: true })
+})
+
+function temporaryProductionFile(file: string, sourceText: string): string {
+  const root = mkdtempSync(resolve(tmpdir(), 'hosted-local-sql-'))
+  temporaryRoots.push(root)
+  const path = resolve(root, file)
+  mkdirSync(resolve(path, '..'), { recursive: true })
+  writeFileSync(path, sourceText)
+  return root
+}
 
 const site = (file: string): HostedSqlSite => ({
   file,
@@ -116,6 +138,24 @@ test('a substituted template not naming a hosted table stays clean', () => {
       renderedUnresolvedRisk: hostedLocalRenderedSqlRisk,
     }),
   ).toEqual({ sites: [], unresolved: [], cannotJudge: [] })
+})
+
+test('the project check reports a hosted-risk rendered template with an unresolved span', () => {
+  const file = 'orchestrator/src/run/unsafe.ts'
+  const root = temporaryProductionFile(
+    file,
+    'db.query(`SELECT 1 FROM workflow_cursor WHERE ${col}=? LIMIT 1`)',
+  )
+  expect(checkHostedLocalSql(root).failures).toContainEqual(expect.stringContaining(file))
+})
+
+test('the project check does not report a rendered template naming a non-hosted table', () => {
+  const file = 'orchestrator/src/run/safe.ts'
+  const root = temporaryProductionFile(
+    file,
+    'db.query(`SELECT ${columns} FROM machine_local_table`)',
+  )
+  expect(checkHostedLocalSql(root).failures.some((failure) => failure.includes(file))).toBe(false)
 })
 
 test('an interpolated table is refused as cannot-judge', () => {
