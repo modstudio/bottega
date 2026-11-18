@@ -16,18 +16,15 @@ export const HOSTED_TABLES_WITHOUT_LOCAL_ACCESS = [
   'workflow_text_copy',
 ] as const
 
+/** Production SQLite adapter modules whose handles are selected away on hosted installs. */
+export const LOCAL_SQLITE_ADAPTER_PATH =
+  '^orchestrator/src/(?:question-store/question-store-sqlite|workflow/task-flow-store-sqlite)[^/]*\\.ts$'
+
 export const HOSTED_LOCAL_SQL_ALLOWED_FILES = [
   {
-    pattern: /^orchestrator\/src\/question-store\/question-store-sqlite(?:-[^/]+)?\.ts$/,
-    reason: 'SQLite question adapters are selected only by question-store.ts on local installs',
-  },
-  {
-    pattern: /^orchestrator\/src\/workflow\/task-flow-store-sqlite(?:-[^/]+)?\.ts$/,
-    reason: 'SQLite task-flow adapters are selected only by task-flow-store.ts on local installs',
-  },
-  {
-    pattern: /^orchestrator\/migrations\//,
-    reason: 'SQLite migrations operate on the unguarded migration-step handle',
+    pattern: new RegExp(LOCAL_SQLITE_ADAPTER_PATH),
+    reason:
+      'SQLite question and task-flow adapters are selected only by their store selectors on local installs',
   },
   {
     pattern:
@@ -35,13 +32,8 @@ export const HOSTED_LOCAL_SQL_ALLOWED_FILES = [
     reason: 'SQLite migration preflights operate on the unguarded migration-step handle',
   },
   {
-    pattern: /^orchestrator\/src\/postgres\//,
-    reason:
-      'Postgres record modules operate on the hosted record rather than a guarded SQLite handle',
-  },
-  {
     pattern:
-      /^orchestrator\/src\/record\/(?:record-question-(?:number|write)|record-task-flow(?:-write)?)\.ts$/,
+      /^orchestrator\/src\/record\/(?:record-question-(?:number|read|write)|record-task-flow(?:-write)?)\.ts$/,
     reason:
       'Postgres record modules operate on the hosted record rather than a guarded SQLite handle',
   },
@@ -54,13 +46,22 @@ export const HOSTED_LOCAL_SQL_ALLOWED_FILES = [
     reason: 'The local identity-number adapter is reached only for local stores',
   },
   {
-    pattern: /^orchestrator\/src\/record\/record-cache-workflow\.ts$/,
-    reason: 'The workflow record cache writes only the local cache during record synchronization',
+    pattern: /^orchestrator\/src\/database\/slow-statements\.ts$/,
+    reason:
+      'SQL timing instrumentation transparently forwards dynamic statements to the handle it wraps; the runtime hosted-table guard remains the backstop',
   },
   {
-    pattern: /^orchestrator\/src\/session-report\/session-report-adapter\.ts$/,
-    reason:
-      'The session report SQLite adapter is used only where the local report store is authoritative',
+    pattern:
+      /^orchestrator\/src\/record\/(?:record-board-claims|record-projects|record-sync)\.ts$/,
+    reason: 'Postgres record modules operate on the hosted record rather than a guarded SQLite handle',
+  },
+  {
+    pattern: /^orchestrator\/src\/record\/(?:outbox-prune|record-cache-lens)\.ts$/,
+    reason: 'Record synchronization adapters query only their machine-local outbox and cache tables',
+  },
+  {
+    pattern: /^orchestrator\/src\/doc\/doc-read-store\.ts$/,
+    reason: 'The local document read adapter builds SQL only for machine-local document tables',
   },
 ] as const
 

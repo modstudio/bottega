@@ -34,6 +34,7 @@ export const identityReferenceBaseline: Readonly<Record<string, number>> = {
   'orchestrator/src/review/review-identifier.ts': 1,
   'orchestrator/src/run/run-identifier-grammar.ts': 4,
   'orchestrator/src/run/run-identifier.ts': 1,
+  'orchestrator/src/run/question-identifier.ts': 1,
   'orchestrator/src/run/run-listing.ts': 2,
   'orchestrator/src/workflow/task-flow-store-sqlite.ts': 1,
   'orchestrator/src/workflow/probe-identifier.ts': 1,

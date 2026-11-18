@@ -50,18 +50,11 @@ export async function questionByUnscopedNumber(
   database: Database,
   number: number,
 ): Promise<Record<string, unknown> | null> {
-  const rows = (await questionStore(database).read({ read: 'by-number', number })).items as Record<
-    string,
-    unknown
-  >[]
-  const questions = [
-    ...new Map(rows.map((row) => [String(row.record_id ?? row.id), row] as const)).values(),
-  ]
-  if (questions.length > 1)
-    throw new Error(
-      `question number ${number} exists in more than one project; pass the question UUID, then retry`,
-    )
-  return questions[0] ?? null
+  return (
+    ((await questionStore(database).read({ read: 'by-number', number })).items[0] as
+      | Record<string, unknown>
+      | undefined) ?? null
+  )
 }
 
 export async function openQuestionsForTasks(

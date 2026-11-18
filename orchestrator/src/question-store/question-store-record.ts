@@ -272,6 +272,13 @@ export class RecordQuestionStore implements QuestionStore {
     const items = result.items.map((row) =>
       localQuestionRow(this.input.database, row, enrichMachineFields),
     )
+    if (input.read === 'by-number' && !projectId) {
+      const questions = new Set(items.map((row) => questionRowRecordId(row)).filter(Boolean))
+      if (questions.size > 1)
+        throw new Error(
+          `question number ${input.number} exists in more than one project; pass the question UUID, then retry`,
+        )
+    }
     if (input.read !== 'inbox')
       return {
         items,

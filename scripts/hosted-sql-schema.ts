@@ -18,13 +18,13 @@ type StaticSymbols = {
   constants: Map<string, ts.Expression>
   functions: Map<string, ts.FunctionDeclaration>
 }
-const SQL_START = /^\s*(?:SELECT|INSERT|UPDATE|DELETE|WITH)\b/i
+const SQL_START = /^\s*(?:SELECT|INSERT|UPDATE|DELETE|WITH|CREATE|DROP|ALTER)\b/i
 
 function hostedSqlFingerprint(sql: string): string {
   return createHash('sha256').update(sql.replace(/\s+/g, ' ').trim()).digest('hex').slice(0, 16)
 }
 
-function productionTypeScriptFiles(directory: string): string[] {
+export function productionTypeScriptFiles(directory: string): string[] {
   const files: string[] = []
   for (const entry of readdirSync(directory, { withFileTypes: true })) {
     if (entry.name === 'node_modules') continue
@@ -278,6 +278,21 @@ function resolveStaticValue(
   if (ts.isArrayLiteralExpression(node)) return resolveStaticArray(node, symbols, bindings, seen)
   if (ts.isTemplateExpression(node)) return resolveStaticTemplate(node, symbols, bindings, seen)
   if (ts.isIdentifier(node)) return resolveStaticIdentifier(node, symbols, bindings, seen)
+  if (ts.isConditionalExpression(node)) {
+    const branches = [node.whenTrue, node.whenFalse].map((branch) =>
+      resolveStaticValue(branch, symbols, bindings, seen),
+    )
+    if (branches.some((branch) => branch === null)) return null
+    return branches.flatMap((branch) => (Array.isArray(branch) ? branch : [branch!]))
+  }
+  if (ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.PlusToken) {
+    const left = resolveStaticValue(node.left, symbols, bindings, seen)
+    const right = resolveStaticValue(node.right, symbols, bindings, seen)
+    if (left === null || right === null) return null
+    const leftValues = Array.isArray(left) ? left : [left]
+    const rightValues = Array.isArray(right) ? right : [right]
+    return leftValues.flatMap((prefix) => rightValues.map((suffix) => prefix + suffix))
+  }
   if (!ts.isCallExpression(node)) return null
   const target = unwrap(node.expression)
   if (ts.isIdentifier(target))
@@ -511,21 +526,71 @@ export function extractHostedSqlFromSource(
 }
 
 const SQL_CALL_METHODS = new Set(['exec', 'prepare', 'query', 'run'])
-const SQL_STATEMENT_START = /^\s*(?:SELECT|INSERT|UPDATE|DELETE|WITH|CREATE|DROP|ALTER)\b/i
 
-function sqlCallSites(node: ts.Node, source: ts.SourceFile, file: string): HostedSqlSite[] {
-  if (!ts.isCallExpression(node)) return []
+function couldBeSqlExpression(expression: ts.Expression): boolean {
+  const value = unwrap(expression)
+  if (ts.isIdentifier(value)) return /(?:sql|query|statement)/i.test(value.text)
+  if (ts.isPropertyAccessExpression(value))
+    return /(?:sql|query|statement)/i.test(value.name.text)
+  if (ts.isElementAccessExpression(value))
+    return /(?:sql|query|statement)/i.test(value.expression.getText())
+  if (ts.isTemplateExpression(value)) return SQL_START.test(value.head.text)
+  if (ts.isBinaryExpression(value)) return couldBeSqlExpression(value.left)
+  if (ts.isCallExpression(value)) return /(?:sql|query|statement)/i.test(value.expression.getText())
+  return false
+}
+
+function sqlCallSites(
+  node: ts.Node,
+  source: ts.SourceFile,
+  file: string,
+  symbols: StaticSymbols,
+): { sites: HostedSqlSite[]; unresolved: HostedSqlUnresolvedSite[] } {
+  if (!ts.isCallExpression(node)) return { sites: [], unresolved: [] }
   const target = unwrap(node.expression)
   let method: string | null = null
   if (ts.isIdentifier(target)) method = target.text
   else if (ts.isPropertyAccessExpression(target)) method = target.name.text
   const argument = node.arguments[0]
-  if (!method || !SQL_CALL_METHODS.has(method) || !argument) return []
-  const rendered = renderFixtureSql(argument)
+  if (!method || !SQL_CALL_METHODS.has(method) || !argument)
+    return { sites: [], unresolved: [] }
+  const rendered =
+    renderFixtureSql(argument) ??
+    (() => {
+      const value = resolveStaticValue(argument, symbols)
+      if (typeof value === 'string')
+        return { statements: splitSqlStatements(value), unresolved: null, unresolvedSql: false }
+      if (Array.isArray(value))
+        return {
+          statements: value.flatMap(splitSqlStatements),
+          unresolved: null,
+          unresolvedSql: false,
+        }
+      return null
+    })()
   const line = source.getLineAndCharacterOfPosition(argument.getStart(source)).line + 1
-  return (rendered?.statements ?? [])
-    .filter((sql) => SQL_STATEMENT_START.test(sql))
-    .map((sql) => ({ file, line, sql, fingerprint: hostedSqlFingerprint(sql) }))
+  if (!rendered && couldBeSqlExpression(argument)) {
+    const expression = argument.getText(source)
+    return {
+      sites: [],
+      unresolved: [
+        {
+          file,
+          line,
+          sql: expression,
+          expression,
+          fingerprint: hostedSqlFingerprint(expression),
+        },
+      ],
+    }
+  }
+  if (!rendered) return { sites: [], unresolved: [] }
+  return {
+    sites: rendered.statements
+      .filter((sql) => SQL_START.test(sql))
+      .map((sql) => ({ file, line, sql, fingerprint: hostedSqlFingerprint(sql) })),
+    unresolved: [],
+  }
 }
 
 /** Extracts static SQL from the Bun SQL tag and SQLite database call shapes. */
@@ -541,14 +606,21 @@ export function extractSqlFromSource(input: { sourceText: string; file: string }
     ts.ScriptKind.TS,
   )
   const extracted = extractHostedSqlFromSource(input)
+  const symbols = collectStaticSymbols(input.file, source)
   const sites = [...extracted.sites]
+  const unresolved = [...extracted.unresolved]
   const visit = (node: ts.Node): void => {
-    sites.push(...sqlCallSites(node, source, input.file))
+    const calls = sqlCallSites(node, source, input.file, symbols)
+    sites.push(...calls.sites)
+    unresolved.push(...calls.unresolved)
     ts.forEachChild(node, visit)
   }
   visit(source)
   const unique = new Map(sites.map((site) => [`${site.line}#${site.fingerprint}`, site]))
-  return { sites: [...unique.values()], unresolved: extracted.unresolved }
+  const uniqueUnresolved = new Map(
+    unresolved.map((site) => [`${site.line}#${site.fingerprint}`, site]),
+  )
+  return { sites: [...unique.values()], unresolved: [...uniqueUnresolved.values()] }
 }
 
 const HOSTED_FIXTURE_EXECUTORS = new Set([

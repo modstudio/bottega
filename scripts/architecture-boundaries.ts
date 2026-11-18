@@ -1,5 +1,6 @@
 import { builtinModules } from 'node:module'
 import { dirname, normalize } from 'node:path'
+import { LOCAL_SQLITE_ADAPTER_PATH } from '../orchestrator/src/database/hosted-table-guard.ts'
 import { branchStoreModuleSpecs } from './architecture-branch-store.ts'
 import { canonBoundarySpecs } from './architecture-canon-boundaries.ts'
 import { cleanupBoundarySpecs } from './architecture-cleanup-boundaries.ts'
@@ -68,10 +69,7 @@ export function hubBrowserNoNodeBuiltinConfig(sharedOptions: DependencyCruiserOp
   }
 }
 
-const sqliteAdapterPath =
-  '^orchestrator/src/(?:question-store/question-store-sqlite[^/]*|workflow/task-flow-store-sqlite[^/]*)\\.ts$'
-
-const sqliteAdapterAllowedImporters = [
+export const sqliteAdapterAllowedImporters = [
   {
     path: '^orchestrator/src/question-store/question-store\\.ts$',
     reason: 'question-store.ts is the question adapter selector',
@@ -81,8 +79,9 @@ const sqliteAdapterAllowedImporters = [
     reason: 'task-flow-store.ts is the task-flow adapter selector',
   },
   {
-    path: sqliteAdapterPath,
+    path: LOCAL_SQLITE_ADAPTER_PATH,
     reason: 'a selector-gated SQLite adapter may compose another SQLite adapter',
+    localSqlAllowed: true,
   },
   {
     path: '^orchestrator/src/question-store/question-store-types\\.ts$',
@@ -122,7 +121,7 @@ export const sqliteAdapterImportRule = {
     path: '^orchestrator/',
     pathNot: sqliteAdapterAllowedImporters.map(({ path }) => path),
   },
-  to: { path: sqliteAdapterPath },
+  to: { path: LOCAL_SQLITE_ADAPTER_PATH },
 }
 
 export type ImportBoundary = {
