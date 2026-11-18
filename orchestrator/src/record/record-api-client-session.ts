@@ -6,7 +6,7 @@ import {
   type NoDestinationWriteReport,
   parseNoDestinationWriteReport,
 } from '../../../shared/record-no-destination-write-contract.ts'
-import type { RecordClientRequest } from './record-api-client-paths.ts'
+import { RECORD_WHOAMI_ROUTE, type RecordClientRequest } from './record-api-client-paths.ts'
 import { responseRecord } from './record-api-client-response.ts'
 import type { RecordIdentity } from './record-auth.ts'
 import type { RecordSyncRequest, RecordSyncResponse } from './record-sync-contract.ts'
@@ -16,8 +16,6 @@ export type RecordSessionClient = {
   whoami(): Promise<RecordIdentity>
   sync?(input: RecordSyncRequest): Promise<RecordSyncResponse>
 }
-
-export const RECORD_WHOAMI_ROUTE = '/v1/whoami'
 
 export function recordIdentityResponse(
   body: unknown,

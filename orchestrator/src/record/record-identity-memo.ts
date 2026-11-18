@@ -7,8 +7,7 @@ import {
   readRecordSessionStamp,
   sameSessionStamp,
 } from '../../../shared/record-session.ts'
-import type { RecordClientRequest } from './record-api-client-paths.ts'
-import { RECORD_WHOAMI_ROUTE } from './record-api-client-session.ts'
+import { RECORD_WHOAMI_ROUTE, type RecordClientRequest } from './record-api-client-paths.ts'
 import type { RecordIdentity } from './record-auth.ts'
 
 export const RECORD_IDENTITY_MEMO_MAX_AGE_MS = 60_000
@@ -62,7 +61,7 @@ export function markRecordIdentityMemoChanged(): void {
   forgetRecordIdentityMemo()
 }
 
-export function recordIdentityMemoRequest(
+function recordIdentityMemoRequest(
   request: RecordClientRequest,
   baseUrl: () => string,
   now: () => number = Date.now,
@@ -77,4 +76,13 @@ export function recordIdentityMemoRequest(
     }
     return request<T>(path, init)
   }
+}
+
+export function selectRecordApiTransport(
+  request: RecordClientRequest,
+  realRequest: RecordClientRequest,
+  baseUrl: () => string,
+  now: () => number = Date.now,
+): RecordClientRequest {
+  return request === realRequest ? recordIdentityMemoRequest(request, baseUrl, now) : request
 }
