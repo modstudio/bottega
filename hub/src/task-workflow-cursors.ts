@@ -58,7 +58,7 @@ export type TaskCursorClosePlan = {
 
 export class TaskCursorAbandonError extends Error {
   readonly cursor: OpenTaskWorkflowCursor
-  readonly cause: unknown
+  override readonly cause: unknown
 
   constructor(cursor: OpenTaskWorkflowCursor, cause: unknown) {
     super(cause instanceof Error ? cause.message : String(cause))
