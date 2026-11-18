@@ -61,6 +61,7 @@ test('retry of a named ACP review lens is not refused', async () => {
   }
 
   const result = await retryRun(id, { flags }, { ...helpers, dispatch })
+  if (!retried) throw new Error('retry did not dispatch a successor')
   expect(result).toBe(retried)
 })
 

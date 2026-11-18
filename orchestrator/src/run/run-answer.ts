@@ -630,8 +630,7 @@ export async function retryRun(
     rootRepo: row.repo,
   })
   const instructions = continuationInstructionsForFreshRetry(writesRepo, id, row.root_record_id)
-  // The same agent remains the default. An explicit replacement gets a fresh
-  // vendor conversation while the retained writing workspace travels with it.
+  // An explicit replacement gets a fresh vendor conversation with the retained writing workspace.
   const workspace = writingRetryWorkspace(
     id,
     row,
@@ -755,8 +754,7 @@ export async function retryRun(
   }
   auditRunMutation(retryAuthority, 'retry', `retried as run ${newId}`, db(), newId)
   console.error(`— run ${newId} is retry of ${id}`)
-  await reportContinuedRun(newId, row.job, options.flags, helpers.presentation)
-  return newId
+  return reportContinuedRun(newId, row.job, options.flags, helpers.presentation).then(() => newId)
 }
 /**
  * Rule on what a worker asked, and set it going again.

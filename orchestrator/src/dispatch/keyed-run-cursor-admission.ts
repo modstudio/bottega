@@ -43,7 +43,9 @@ const composeRemedy = (project: string | null, key: string): string => {
 }
 
 const canOverride = (turn: KeyedRunTurn): boolean => turn !== 'answer'
-const laterTurnRemedy = (input: KeyedRunCursorAdmissionInput): string =>
+const laterTurnRemedy = (
+  input: Pick<KeyedRunCursorAdmissionInput, 'turn' | 'key' | 'project'>,
+): string =>
   composeRemedy(input.project, input.key!) +
   (canOverride(input.turn) ? `; override with ${OVERRIDE_REMEDY}` : '')
 

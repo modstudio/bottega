@@ -373,7 +373,7 @@ export type ContinueArgs = {
 }
 
 /** Remove cursor-admission options before parsing a worker message. */
-export function withoutKeyedTurnAdmissionArgs(args: string[]): string[] {
+function withoutKeyedTurnAdmissionArgs(args: string[]): string[] {
   const filtered: string[] = []
   for (let index = 0; index < args.length; index++) {
     const arg = args[index]!
