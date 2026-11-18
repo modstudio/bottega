@@ -7,12 +7,12 @@ import { refusal, renderRefusal } from '../../../shared/refusal.ts'
 import { db } from '../database/db.ts'
 import type { RecordTaskFlowClient } from '../record/record-api-client-task-flow.ts'
 import { conversationWorktreeSpellings } from '../resources/resource-ownership.ts'
+import { shellWord, workflowCursorReference } from '../workflow/workflow-cursor-format.ts'
 import {
   clearOpenCursorWorktreesAtPath,
   openCursorWorktrees,
   openCursorWorktreesAtSpellings,
 } from '../workflow/workflow-cursor-worktrees.ts'
-import { shellWord, workflowCursorReference } from '../workflow/workflow-cursor-format.ts'
 import { pointerMustClear, type ResourceTeardownResult } from './absent-tree-close-out.ts'
 import type { CloseOutResult } from './close-out-report.ts'
 
