@@ -35,7 +35,7 @@ import {
   workflowComposeBranchRefusal,
 } from './workflow-compose-branch.ts'
 import { workflowKeyOf } from './workflow-cursor-arguments.ts'
-import { storedCursorAutonomyJson } from './workflow-cursor-autonomy.ts'
+import { storedCursorAutonomyForComposition } from './workflow-cursor-autonomy.ts'
 import type { SelectableCursorRow, WorkflowCursorContext } from './workflow-cursor-selection.ts'
 import { refuseUnlinkedCursorLabelCollision } from './workflow-cursor-task-reference.ts'
 import { cursorOwnerAfter } from './workflow-cursor-transition.ts'
@@ -205,10 +205,7 @@ async function readComposeFacts(
     mode: composition.mode!.slug,
     ordinal,
   })
-  const autonomyJson = storedCursorAutonomyJson(autonomy, {
-    steps: Object.fromEntries(composition.steps.map((step) => [step.slug, step.resolvedAutonomy])),
-    rulings: composition.rulings,
-  })
+  const autonomyJson = storedCursorAutonomyForComposition(autonomy, composition)
   return {
     existingFlow,
     flowRecordId: existingFlow?.record_id ?? newRecordId(),

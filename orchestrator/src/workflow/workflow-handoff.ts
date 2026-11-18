@@ -16,7 +16,7 @@ import type { TaskFlowIntentInput } from './task-flow-store-types.ts'
 import type { CommitCountPort } from './workflow-compose-branch.ts'
 import { readCommitsPastLanding, workflowComposeBranchRefusal } from './workflow-compose-branch.ts'
 import { workflowKeyOf } from './workflow-cursor-arguments.ts'
-import { storedCursorAutonomyJson } from './workflow-cursor-autonomy.ts'
+import { storedCursorAutonomyForComposition } from './workflow-cursor-autonomy.ts'
 import { refuseTerminalCursor } from './workflow-cursor-result.ts'
 import type { SelectableCursorRow, WorkflowCursorContext } from './workflow-cursor-selection.ts'
 import { cursorComposition } from './workflow-cursor-serve.ts'
@@ -117,7 +117,7 @@ function handoffPayload(
     .query<{ record_id: string }, [string]>('SELECT record_id FROM project WHERE name=?')
     .get(row.project)!.record_id
   return {
-    requestId: taskFlowRequestId('handoff', [row.record_id, String(row.revision), nextId]),
+    requestId: taskFlowRequestId('handoff', [row.record_id, String(row.revision)]),
     flow: {
       id: flow.record_id,
       expectedRevision: flow.revision,
@@ -141,12 +141,7 @@ function handoffPayload(
       state: 'running',
       closedStepNotes: [],
       question: null,
-      autonomy: storedCursorAutonomyJson(input.live.resolution, {
-        steps: Object.fromEntries(
-          composition.steps.map((step) => [step.slug, step.resolvedAutonomy]),
-        ),
-        rulings: composition.rulings,
-      }),
+      autonomy: storedCursorAutonomyForComposition(input.live.resolution, composition),
       enforcement: 'floors',
       totalSteps: composition.steps.length,
       openedMachineId: machine,

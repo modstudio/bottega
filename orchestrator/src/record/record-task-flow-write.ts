@@ -435,18 +435,73 @@ async function applyStageUpdates(tx: SQL, body: StageUpdateBody) {
   return { revisions }
 }
 
-async function applyHandoff(tx: SQL, input: Tenant, body: HandoffBody) {
+type HandoffSourceRow = {
+  session_id: string | null
+  workflow_slug: string
+  mode_slug: string
+  workflow_key: string | null
+  flow_record_id: string
+  state: string
+}
+
+async function lockHandoffRows(tx: SQL, body: HandoffBody) {
+  const flowRows = (await tx.unsafe(
+    `SELECT open_stage_record_id::text FROM task_flow WHERE id=$1::uuid FOR UPDATE`,
+    [body.flow.id],
+  )) as Array<{ open_stage_record_id: string | null }>
+  const lockedFlow = flowRows[0]
+  if (!lockedFlow) conflict('task_flow', body.flow.id, null)
   const sourceRows = (await tx.unsafe(
-    `SELECT session_id,workflow_key,flow_record_id::text,state FROM task_flow_stage WHERE id=$1::uuid FOR UPDATE`,
+    `SELECT session_id,workflow_slug,mode_slug,workflow_key,flow_record_id::text,state
+     FROM task_flow_stage WHERE id=$1::uuid FOR UPDATE`,
     [body.oldStage.id],
-  )) as Array<{
-    session_id: string | null
-    workflow_key: string | null
-    flow_record_id: string
-    state: string
-  }>
+  )) as HandoffSourceRow[]
   const source = sourceRows[0]
   if (!source) conflict('task_flow_stage', body.oldStage.id, null)
+  return { lockedFlow, source }
+}
+
+async function replayHandoff(
+  tx: SQL,
+  input: Tenant,
+  body: HandoffBody,
+  mutations: Array<{ table: 'task_flow' | 'task_flow_stage'; mutation: Mutation }>,
+) {
+  const existingRows = (await tx.unsafe(
+    `SELECT id::text,number FROM task_flow_stage
+     WHERE space_id=$1::uuid AND handed_off_from_record_id=$2::uuid`,
+    [input.spaceId, body.oldStage.id],
+  )) as Array<{ id: string; number: number | string }>
+  const existing = existingRows[0]
+  if (!existing) conflict('task_flow_stage', body.oldStage.id, null)
+  return {
+    revisions: Object.fromEntries(
+      mutations.map(({ mutation }) => [mutation.id, mutation.expectedRevision + 1]),
+    ),
+    stage: { id: existing.id, number: Number(existing.number) },
+  }
+}
+
+async function applyHandoff(tx: SQL, input: Tenant, body: HandoffBody) {
+  const { lockedFlow, source } = await lockHandoffRows(tx, body)
+  const mutations = [
+    { table: 'task_flow' as const, mutation: body.flow },
+    { table: 'task_flow_stage' as const, mutation: { ...body.oldStage, values: {} } },
+  ]
+  if ((await preflightMutations(tx, mutations, body.requestId)) === 'retry')
+    return replayHandoff(tx, input, body, mutations)
+  if (source.state === 'done' || source.state === 'abandoned')
+    refusal(
+      `workflow ${source.workflow_slug}${source.workflow_key ? ` for ${source.workflow_key}` : ` (${source.mode_slug})`} is ${source.state}`,
+      `task_flow_stage.id=${body.oldStage.id}`,
+      'already-exists',
+    )
+  if (lockedFlow.open_stage_record_id !== body.oldStage.id)
+    refusal(
+      `workflow cursor ${body.oldStage.id} is not the task flow's open stage; list workflow cursors and retry the current cursor`,
+      `task_flow.id=${body.flow.id}`,
+      'already-exists',
+    )
   if (source.state === 'awaiting-ruling')
     refusal(
       'workflow cursor is awaiting a ruling; answer its question, then retry the handoff',
@@ -483,20 +538,6 @@ async function applyHandoff(tx: SQL, input: Tenant, body: HandoffBody) {
       `task_flow_stage.id=${body.newStage.id}`,
       'already-exists',
     )
-  const mutations = [
-    { table: 'task_flow' as const, mutation: body.flow },
-    { table: 'task_flow_stage' as const, mutation: { ...body.oldStage, values: {} } },
-  ]
-  if ((await preflightMutations(tx, mutations, body.requestId)) === 'retry') {
-    const existing = await existingRow(tx, 'task_flow_stage', body.newStage.id)
-    if (!existing) conflict('task_flow_stage', body.newStage.id, null)
-    return {
-      revisions: Object.fromEntries(
-        mutations.map(({ mutation }) => [mutation.id, mutation.expectedRevision + 1]),
-      ),
-      stage: { id: body.newStage.id, number: Number(existing.number) },
-    }
-  }
   const number = await allocateRecordSequence(
     tx,
     input.spaceId,

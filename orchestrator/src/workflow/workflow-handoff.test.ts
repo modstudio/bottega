@@ -297,6 +297,18 @@ test('handoff refuses a stale revision without changing the old cursor or openin
   )
 })
 
+test("handoff refuses a cursor that is not the task flow's open stage without changing it or opening a successor", async () => {
+  const fixture = await refusalFixture()
+  fixture.d
+    .query('UPDATE task_flow SET open_stage_cursor_record_id=NULL WHERE record_id=?')
+    .run(fixture.row.task_flow_record_id!)
+  await expectRefusalUnchanged(
+    fixture,
+    handoffCall(fixture),
+    "is not the task flow's open stage; list workflow cursors and retry the current cursor",
+  )
+})
+
 test('handoff commits and reports a warning when its claim cannot be renewed', async () => {
   const fixture = await refusalFixture()
   const result = await handoffCall(fixture, {

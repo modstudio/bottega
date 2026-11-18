@@ -124,6 +124,28 @@ export function registerTaskFlowHandoffProof(
       expect(input.admin(`SELECT count(*) FROM task_flow_stage WHERE id='${successorId}';`)).toBe(
         '0',
       )
+      input.admin(`UPDATE task_flow_stage SET state='done' WHERE id='${sourceId}';`)
+      await expect(client.handoffTaskFlow!(payload('handoff-owner'), destination)).rejects.toThrow(
+        `workflow ${workflow} for AA-2412 is done`,
+      )
+      expect(
+        input.admin(`SELECT state || '|' || revision FROM task_flow_stage WHERE id='${sourceId}';`),
+      ).toBe('done|1')
+      expect(input.admin(`SELECT count(*) FROM task_flow_stage WHERE id='${successorId}';`)).toBe(
+        '0',
+      )
+      input.admin(`UPDATE task_flow_stage SET state='running' WHERE id='${sourceId}';`)
+      input.admin(`UPDATE task_flow SET open_stage_record_id=NULL WHERE id='${flowId}';`)
+      await expect(client.handoffTaskFlow!(payload('handoff-owner'), destination)).rejects.toThrow(
+        "is not the task flow's open stage; list workflow cursors and retry the current cursor",
+      )
+      expect(
+        input.admin(`SELECT state || '|' || revision FROM task_flow_stage WHERE id='${sourceId}';`),
+      ).toBe('running|1')
+      expect(input.admin(`SELECT count(*) FROM task_flow_stage WHERE id='${successorId}';`)).toBe(
+        '0',
+      )
+      input.admin(`UPDATE task_flow SET open_stage_record_id='${sourceId}' WHERE id='${flowId}';`)
       await expect(
         client.handoffTaskFlow!(payload('foreign-session'), destination),
       ).rejects.toThrow('owned by another session')
@@ -142,7 +164,8 @@ export function registerTaskFlowHandoffProof(
       input.admin(
         'DROP TRIGGER fail_handoff_context ON context_item; DROP FUNCTION fail_handoff_context();',
       )
-      const handed = await client.handoffTaskFlow!(payload('handoff-owner'), destination)
+      const successfulPayload = payload('handoff-owner')
+      const handed = await client.handoffTaskFlow!(successfulPayload, destination)
       expect(handed.stage.id).toBe(successorId)
       expect(input.admin(`SELECT state FROM task_flow_stage WHERE id='${sourceId}';`)).toBe('done')
       expect(input.admin(`SELECT open_stage_record_id FROM task_flow WHERE id='${flowId}';`)).toBe(
@@ -153,6 +176,43 @@ export function registerTaskFlowHandoffProof(
           `SELECT holder_id FROM context_item WHERE slug='proof' AND space_id='${input.spaceId()}';`,
         ),
       ).toBe(successorId)
+      const replaySuccessorId = newRecordId()
+      const beforeReplay = input.admin(
+        `SELECT flow.revision || '|' || flow.open_stage_record_id || '|' || source.revision || '|' || source.state || '|' || count(successor.id)
+         FROM task_flow flow
+         JOIN task_flow_stage source ON source.id='${sourceId}'
+         LEFT JOIN task_flow_stage successor ON successor.handed_off_from_record_id=source.id
+         WHERE flow.id='${flowId}'
+         GROUP BY flow.revision,flow.open_stage_record_id,source.revision,source.state;`,
+      )
+      const replayed = await client.handoffTaskFlow!(
+        {
+          ...successfulPayload,
+          flow: {
+            ...successfulPayload.flow,
+            values: {
+              ...successfulPayload.flow.values,
+              openStageRecordId: replaySuccessorId,
+            },
+          },
+          newStage: { ...successfulPayload.newStage, id: replaySuccessorId },
+        },
+        destination,
+      )
+      expect(replayed.stage).toEqual(handed.stage)
+      expect(
+        input.admin(
+          `SELECT flow.revision || '|' || flow.open_stage_record_id || '|' || source.revision || '|' || source.state || '|' || count(successor.id)
+           FROM task_flow flow
+           JOIN task_flow_stage source ON source.id='${sourceId}'
+           LEFT JOIN task_flow_stage successor ON successor.handed_off_from_record_id=source.id
+           WHERE flow.id='${flowId}'
+           GROUP BY flow.revision,flow.open_stage_record_id,source.revision,source.state;`,
+        ),
+      ).toBe(beforeReplay)
+      expect(
+        input.admin(`SELECT count(*) FROM task_flow_stage WHERE id='${replaySuccessorId}';`),
+      ).toBe('0')
       const claim = await client.takeBoardClaim!(
         {
           id: newRecordId(),

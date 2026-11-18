@@ -118,7 +118,7 @@ function applyStageValues(database: Database, mutation: Mutation, next: number):
     enforcement=COALESCE(?,enforcement),opened_machine_id=COALESCE(?,opened_machine_id),
     taken_over_from_machine_id=CASE WHEN ? THEN ? ELSE taken_over_from_machine_id END,
     last_advanced_machine_id=COALESCE(?,last_advanced_machine_id),
-    handed_off_from_record_id=COALESCE(?,handed_off_from_record_id),updated_at=COALESCE(?,updated_at),revision=?
+    updated_at=COALESCE(?,updated_at),revision=?
     WHERE record_id=?`)
     .run(
       value('flowRecordId'),
@@ -136,7 +136,6 @@ function applyStageValues(database: Database, mutation: Mutation, next: number):
       value('openedMachineId'),
       ...takeover,
       value('lastAdvancedMachineId'),
-      value('handedOffFromRecordId'),
       value('updatedAt'),
       next,
       mutation.id,
