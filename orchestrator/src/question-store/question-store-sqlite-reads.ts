@@ -38,13 +38,29 @@ export function localQuestionHistoryProjectIdsSqlite(database: Database): string
     .map((row) => row.project_id)
 }
 
-export function localQuestionHistorySqlite(database: Database, projectId: string) {
+export function unattributedLocalQuestionHistorySqlite(database: Database) {
+  return database
+    .query<{ number: number; project_record_id: string }, []>(
+      `SELECT q.number,COALESCE(owner.project_record_id,cursor.project_record_id) project_record_id
+       FROM question q LEFT JOIN run owner ON owner.record_id=q.run_record_id
+       LEFT JOIN workflow_cursor cursor ON cursor.record_id=q.workflow_cursor_record_id
+       WHERE COALESCE(owner.project_record_id,cursor.project_record_id) IS NOT NULL
+         AND NOT EXISTS (
+           SELECT 1 FROM project
+           WHERE project.record_id=COALESCE(owner.project_record_id,cursor.project_record_id)
+         )
+       ORDER BY q.number LIMIT 1`,
+    )
+    .get()
+}
+
+export function localQuestionHistorySqlite(database: Database, projectId: string | null) {
   const rows = database
     .query<Record<string, unknown>, [string]>(
       `SELECT q.*,COALESCE(owner.project_record_id,cursor.project_record_id) project_record_id
      FROM question q LEFT JOIN run owner ON owner.record_id=q.run_record_id
      LEFT JOIN workflow_cursor cursor ON cursor.record_id=q.workflow_cursor_record_id
-     WHERE COALESCE(owner.project_record_id,cursor.project_record_id)=? ORDER BY q.number`,
+     WHERE COALESCE(owner.project_record_id,cursor.project_record_id) IS ? ORDER BY q.number`,
     )
     .all(projectId)
   return rows.map((row) => ({

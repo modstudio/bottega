@@ -85,15 +85,24 @@ function stage(
   return id
 }
 
-function question(database: Database, cursorId: string, number: number): string {
+function question(database: Database, cursorId: string | null, number: number): string {
   const id = newRecordId()
+  const runId = cursorId === null ? newRecordId() : null
+  if (runId)
+    database
+      .query(
+        `INSERT INTO run
+         (record_id,number,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,changed_paths,probe)
+         VALUES (?,?,?,'codex','probe','sha',1,'prompt','ok','[]',1)`,
+      )
+      .run(runId, number, at)
   database
     .query(
       `INSERT INTO question
-       (record_id,number,workflow_cursor_record_id,asked_at,question,revision,kind)
-       VALUES (?,?,?,?,?,1,'text')`,
+       (record_id,number,run_record_id,workflow_cursor_record_id,asked_at,question,revision,kind)
+       VALUES (?,?,?,?,?,?,1,'text')`,
     )
-    .run(id, number, cursorId, at, `Question ${number}?`)
+    .run(id, number, runId, cursorId, at, `Question ${number}?`)
   database
     .query(
       `INSERT INTO question_mutation_audit(record_id,question_record_id,action,at)
@@ -137,7 +146,9 @@ type ImportClient = Pick<
 function dependencies(database: Database, client: ImportClient) {
   return {
     client,
-    destination: async (name: string) => ({ destinationSpaceId: `${name}-space` }),
+    destination: async (name: string | null) => ({
+      destinationSpaceId: name === null ? 'personal-space' : `${name}-space`,
+    }),
     withDatabase: async <T>(action: (value: Database) => Promise<T>) => action(database),
   }
 }
@@ -152,17 +163,27 @@ test('two projects upload repeatably to their own spaces and preserve every loca
     [beta.stageId, 22],
   ])
   const questionNumbers = new Map<string, number>()
-  const calls: Array<{ kind: string; space: string; id: string }> = []
+  const calls: Array<{ kind: string; space: string; id: string; requestId: string }> = []
   const client: ImportClient = {
     importTaskFlow: async (input, destination) => {
-      calls.push({ kind: 'flow', space: destination.destinationSpaceId, id: input.flow.id })
+      calls.push({
+        kind: 'flow',
+        space: destination.destinationSpaceId,
+        id: input.flow.id,
+        requestId: input.requestId,
+      })
       return {
         revisions: Object.fromEntries(input.stages.map((row) => [row.id, row.revision])),
         stages: input.stages.map((row) => ({ id: row.id, number: flowNumbers.get(row.id)! })),
       }
     },
     importQuestion: async (input, destination) => {
-      calls.push({ kind: 'question', space: destination.destinationSpaceId, id: input.question.id })
+      calls.push({
+        kind: 'question',
+        space: destination.destinationSpaceId,
+        id: input.question.id,
+        requestId: input.requestId,
+      })
       const number = questionNumbers.get(input.question.id) ?? 30 + questionNumbers.size + 1
       questionNumbers.set(input.question.id, number)
       return { id: input.question.id, number, revision: input.question.revision, applied: true }
@@ -198,6 +219,9 @@ test('two projects upload repeatably to their own spaces and preserve every loca
     'flow:beta-space',
     'question:beta-space',
   ])
+  expect(calls.slice(0, 4).map(({ requestId }) => requestId)).toEqual(
+    calls.slice(4).map(({ requestId }) => requestId),
+  )
   expect(first.filter((line) => line.includes(' -> '))).toEqual(
     second.filter((line) => line.includes(' -> ')),
   )
@@ -289,6 +313,91 @@ test('repair creates one keyless flow for every stage state and is idempotent', 
     { state: 'awaiting-ruling', flow_state: 'open', is_open: 1 },
   ])
   expect(database.query('SELECT count(*) n FROM task_flow').get()).toEqual({ n: 4 })
+  database.close()
+})
+
+test('a keyed stage without a flow refuses before any local or hosted write', async () => {
+  const database = migratedTestDatabase()
+  database.exec('PRAGMA foreign_keys=OFF')
+  const projectId = project(database, 'keyed-orphan')
+  stage(database, {
+    project: 'keyed-orphan',
+    projectId,
+    number: 7,
+    state: 'running',
+    taskId: newRecordId(),
+  })
+  const before = database.serialize()
+  let sends = 0
+  const client: ImportClient = {
+    importTaskFlow: async () => {
+      sends++
+      throw new Error('unexpected')
+    },
+    importQuestion: async () => {
+      sends++
+      throw new Error('unexpected')
+    },
+  }
+  await expect(
+    uploadLocalWorkflowHistory(
+      [adoption('keyed-orphan')],
+      { log: () => undefined },
+      dependencies(database, client),
+    ),
+  ).rejects.toThrow(
+    'cursor 7 in project keyed-orphan has a task but no task flow; ask the architect to repair that task-flow link, then sign in again',
+  )
+  expect(sends).toBe(0)
+  expect(database.serialize()).toEqual(before)
+  database.close()
+})
+
+test('projectless questions upload with audits to the personal space and are counted', async () => {
+  const database = migratedTestDatabase()
+  database.exec('PRAGMA foreign_keys=OFF')
+  const questionId = question(database, null, 9)
+  const calls: Array<{ id: string; space: string; audits: number }> = []
+  const client: ImportClient = {
+    importTaskFlow: async () => {
+      throw new Error('unexpected')
+    },
+    importQuestion: async (input, destination) => {
+      calls.push({
+        id: input.question.id,
+        space: destination.destinationSpaceId,
+        audits: input.audits.length,
+      })
+      return { id: input.question.id, number: 9, revision: 1, applied: true }
+    },
+  }
+  const output: string[] = []
+  await uploadLocalWorkflowHistory(
+    [],
+    { log: (line) => output.push(line) },
+    dependencies(database, client),
+  )
+  expect(calls).toEqual([{ id: questionId, space: 'personal-space', audits: 1 }])
+  expect(output).toContain('personal space: uploaded 1 questions')
+  database.close()
+})
+
+test('a missing import capability refuses before repairing local history', async () => {
+  const database = migratedTestDatabase()
+  database.exec('PRAGMA foreign_keys=OFF')
+  const projectId = project(database, 'capability')
+  stage(database, { project: 'capability', projectId, number: 1, state: 'done' })
+  const before = database.serialize()
+  await expect(
+    uploadLocalWorkflowHistory(
+      [adoption('capability')],
+      { log: () => undefined },
+      dependencies(database, {} as ImportClient),
+    ),
+  ).rejects.toThrow(
+    'record API predates workflow history imports; release hosted-api, then sign in again',
+  )
+  expect(database.serialize()).toEqual(before)
   database.close()
 })
 

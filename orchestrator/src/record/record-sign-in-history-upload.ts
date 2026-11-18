@@ -3,14 +3,15 @@
 
 import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { newRecordId } from '../../../shared/record-id.ts'
-import { withDatabaseForMigrationStep, writeTransaction } from '../database/db.ts'
+import { withDatabaseForMigrationStep } from '../database/db.ts'
 import type { ProjectAdoptionResult } from '../project/project-relink.ts'
 import { questionSnapshotFromRow } from '../question-store/question-store-mutation.ts'
 import {
   localQuestionHistory,
   localQuestionHistoryProjectIds,
+  unattributedLocalQuestionHistory,
 } from '../question-store/question-store-read.ts'
+import { taskFlowHistoryMaintenanceStore } from '../workflow/task-flow-store.ts'
 import { type RecordApiClient, recordApiClient } from './record-api-client.ts'
 import type { RecordWriteDestination } from './record-api-client-paths.ts'
 import { type TaskFlowIntentInput, taskFlowRequestId } from './record-task-flow-write-contract.ts'
@@ -19,10 +20,12 @@ import { recordWriteDestination } from './record-write-destination.ts'
 type Presentation = { log(value: string): void }
 type HistoryProject = { name: string; recordId: string }
 type FlowImport = TaskFlowIntentInput<'import'>
+type FlowImportWithNumbers = { payload: FlowImport; numbers: Map<string, number> }
+type LocalQuestionHistory = ReturnType<typeof localQuestionHistory>
 
 type UploadDependencies = {
   client: Pick<RecordApiClient, 'importTaskFlow' | 'importQuestion'>
-  destination(project: string): Promise<RecordWriteDestination>
+  destination(project: string | null): Promise<RecordWriteDestination>
   withDatabase<T>(action: (database: Database) => Promise<T>): Promise<T>
 }
 
@@ -38,22 +41,27 @@ const requiredString = (value: unknown, label: string): string => {
 }
 
 function historyProjects(database: Database): HistoryProject[] {
-  const projectIds = localQuestionHistoryProjectIds(database)
-  const rows = database
-    .query<HistoryProject, []>(
+  const questionProjects = localQuestionHistoryProjectIds(database)
+  const questionOwners = questionProjects.length
+    ? `OR project.record_id IN (${questionProjects.map(() => '?').join(',')})`
+    : ''
+  return database
+    .query<HistoryProject, string[]>(
       `SELECT project.name,project.record_id recordId FROM project
        WHERE EXISTS (SELECT 1 FROM task_flow flow WHERE flow.project_record_id=project.record_id)
           OR EXISTS (SELECT 1 FROM workflow_cursor cursor WHERE cursor.project_record_id=project.record_id)
+          ${questionOwners}
        ORDER BY project.name`,
     )
-    .all()
-  const known = new Set(rows.map((row) => row.recordId))
-  if (!projectIds.some((id) => !known.has(id))) return rows
-  const questionProjects = new Set(projectIds)
-  return database
-    .query<HistoryProject, []>('SELECT name,record_id recordId FROM project ORDER BY name')
-    .all()
-    .filter((row) => known.has(row.recordId) || questionProjects.has(row.recordId))
+    .all(...questionProjects)
+}
+
+function refuseUnattributedQuestions(database: Database): void {
+  const row = unattributedLocalQuestionHistory(database)
+  if (row)
+    throw new Error(
+      `question q${row.number} belongs to missing project ${row.project_record_id}; repair its project owner, then sign in again`,
+    )
 }
 
 function unmatchedAdoption(
@@ -71,65 +79,6 @@ function projectMismatchRefusal(project: string, spaceId: string): string {
     `local project ${project} has workflow history but did not relink in hosted space ${spaceId}; ` +
     `run \`${PLATFORM_SLUG} project relink ${project}\`, then sign in again`
   )
-}
-
-type UnlinkedCursor = {
-  record_id: string
-  number: number
-  project: string
-  project_record_id: string
-  task_record_id: string | null
-  state: 'running' | 'awaiting-ruling' | 'done' | 'abandoned'
-  created_at: string
-  updated_at: string
-  opened_machine_id: string | null
-  last_advanced_machine_id: string | null
-}
-
-function repairUnlinkedKeylessStages(database: Database): number {
-  const rows = database
-    .query<UnlinkedCursor, []>(
-      `SELECT record_id,number,project,project_record_id,task_record_id,state,created_at,updated_at,
-              opened_machine_id,last_advanced_machine_id
-       FROM workflow_cursor WHERE task_flow_record_id IS NULL ORDER BY project_record_id,number`,
-    )
-    .all()
-  const keyed = rows.find((row) => row.task_record_id !== null)
-  if (keyed)
-    throw new Error(
-      `cursor ${keyed.number} in project ${keyed.project} has a task but no task flow; ask the architect to repair that task-flow link, then sign in again`,
-    )
-  return writeTransaction(() => {
-    let repaired = 0
-    for (const row of rows) {
-      const flowId = newRecordId()
-      const open = row.state === 'running' || row.state === 'awaiting-ruling'
-      database
-        .query(
-          `INSERT INTO task_flow
-            (record_id,task_record_id,project_record_id,state,open_stage_cursor_record_id,
-             created_at,updated_at,opening_machine_id,updated_machine_id,revision)
-           VALUES (?,NULL,?,?,?,?,?,?,?,1)`,
-        )
-        .run(
-          flowId,
-          row.project_record_id,
-          open ? 'open' : row.state === 'done' ? 'done' : 'dropped',
-          open ? row.record_id : null,
-          row.created_at,
-          row.updated_at,
-          requiredString(row.opened_machine_id, `cursor ${row.number} opening machine`),
-          requiredString(row.last_advanced_machine_id, `cursor ${row.number} updated machine`),
-        )
-      database
-        .query(
-          'UPDATE workflow_cursor SET task_flow_record_id=? WHERE record_id=? AND task_flow_record_id IS NULL',
-        )
-        .run(flowId, row.record_id)
-      repaired++
-    }
-    return repaired
-  }, database)
 }
 
 function stageImport(stage: Record<string, unknown>, flowId: string, projectId: string) {
@@ -176,7 +125,7 @@ function flowImport(
   database: Database,
   projectId: string,
   flow: Record<string, unknown>,
-): FlowImport {
+): FlowImportWithNumbers {
   const flowId = String(flow.record_id)
   const stages = database
     .query<Record<string, unknown>, [string]>(
@@ -202,67 +151,70 @@ function flowImport(
     )
     .all(flowId)
   return {
-    requestId: taskFlowRequestId('import', [flowId]),
-    flow: {
-      id: flowId,
-      projectId,
-      taskId: (flow.task_record_id as string | null) ?? null,
-      state: flow.state as 'open' | 'done' | 'dropped',
-      openStageRecordId: (flow.open_stage_cursor_record_id as string | null) ?? null,
-      openingMachineId: requiredString(
-        flow.opening_machine_id,
-        `task flow ${flowId} opening machine`,
-      ),
-      updatedMachineId: requiredString(
-        flow.updated_machine_id,
-        `task flow ${flowId} updated machine`,
-      ),
-      revision: Number(flow.revision),
-      createdAt: String(flow.created_at),
-      updatedAt: String(flow.updated_at),
+    payload: {
+      requestId: taskFlowRequestId('import', [flowId]),
+      flow: {
+        id: flowId,
+        projectId,
+        taskId: (flow.task_record_id as string | null) ?? null,
+        state: flow.state as 'open' | 'done' | 'dropped',
+        openStageRecordId: (flow.open_stage_cursor_record_id as string | null) ?? null,
+        openingMachineId: requiredString(
+          flow.opening_machine_id,
+          `task flow ${flowId} opening machine`,
+        ),
+        updatedMachineId: requiredString(
+          flow.updated_machine_id,
+          `task flow ${flowId} updated machine`,
+        ),
+        revision: Number(flow.revision),
+        createdAt: String(flow.created_at),
+        updatedAt: String(flow.updated_at),
+      },
+      stages: stages.map((stage) => stageImport(stage, flowId, projectId)),
+      obligations: obligations.map((row) => ({
+        id: String(row.record_id),
+        stageRecordId: String(row.cursor_record_id),
+        stepOrdinal: Number(row.step_ordinal),
+        stepSlug: String(row.step_slug),
+        floor: String(row.floor),
+        requirePullRequest: Boolean(row.require_pull_request),
+        expectedExitCode: Number(row.expected_exit_code),
+        expectedStatus: String(row.expected_status),
+        floorDeferrable: Boolean(row.floor_deferrable),
+        reason: String(row.reason),
+        sessionId: (row.session_id as string | null) ?? null,
+        createdAt: String(row.created_at),
+        satisfiedAt: (row.satisfied_at as string | null) ?? null,
+        satisfiedStepOrdinal:
+          row.satisfied_step_ordinal == null ? null : Number(row.satisfied_step_ordinal),
+        satisfiedStepSlug: (row.satisfied_step_slug as string | null) ?? null,
+        satisfiedEvidence: nullableJson(row.satisfied_evidence) as unknown[] | null,
+        abandonedAt: (row.abandoned_at as string | null) ?? null,
+        abandonedReason: (row.abandoned_reason as string | null) ?? null,
+        operatorRuling: Boolean(row.operator_ruling),
+      })),
+      texts: texts.map((row) => ({
+        id: String(row.record_id),
+        stageRecordId: String(row.cursor_record_id),
+        stepOrdinal: Number(row.step_ordinal),
+        stepSlug: String(row.step_slug),
+        body: String(row.body),
+        createdAt: String(row.created_at),
+      })),
+      copies: copies.map((row) => ({
+        id: String(row.record_id),
+        workflowTextRecordId: String(row.workflow_text_record_id),
+        stageRecordId: String(row.cursor_record_id),
+        taskDocumentReference: String(row.task_document_reference),
+        copiedAt: String(row.copied_at),
+      })),
     },
-    stages: stages.map((stage) => stageImport(stage, flowId, projectId)),
-    obligations: obligations.map((row) => ({
-      id: String(row.record_id),
-      stageRecordId: String(row.cursor_record_id),
-      stepOrdinal: Number(row.step_ordinal),
-      stepSlug: String(row.step_slug),
-      floor: String(row.floor),
-      requirePullRequest: Boolean(row.require_pull_request),
-      expectedExitCode: Number(row.expected_exit_code),
-      expectedStatus: String(row.expected_status),
-      floorDeferrable: Boolean(row.floor_deferrable),
-      reason: String(row.reason),
-      sessionId: (row.session_id as string | null) ?? null,
-      createdAt: String(row.created_at),
-      satisfiedAt: (row.satisfied_at as string | null) ?? null,
-      satisfiedStepOrdinal:
-        row.satisfied_step_ordinal == null ? null : Number(row.satisfied_step_ordinal),
-      satisfiedStepSlug: (row.satisfied_step_slug as string | null) ?? null,
-      satisfiedEvidence: nullableJson(row.satisfied_evidence) as unknown[] | null,
-      abandonedAt: (row.abandoned_at as string | null) ?? null,
-      abandonedReason: (row.abandoned_reason as string | null) ?? null,
-      operatorRuling: Boolean(row.operator_ruling),
-    })),
-    texts: texts.map((row) => ({
-      id: String(row.record_id),
-      stageRecordId: String(row.cursor_record_id),
-      stepOrdinal: Number(row.step_ordinal),
-      stepSlug: String(row.step_slug),
-      body: String(row.body),
-      createdAt: String(row.created_at),
-    })),
-    copies: copies.map((row) => ({
-      id: String(row.record_id),
-      workflowTextRecordId: String(row.workflow_text_record_id),
-      stageRecordId: String(row.cursor_record_id),
-      taskDocumentReference: String(row.task_document_reference),
-      copiedAt: String(row.copied_at),
-    })),
+    numbers: new Map(stages.map((stage) => [String(stage.record_id), Number(stage.number)])),
   }
 }
 
-function flowImports(database: Database, projectId: string): FlowImport[] {
+function flowImports(database: Database, projectId: string): FlowImportWithNumbers[] {
   return database
     .query<Record<string, unknown>, [string]>(
       `SELECT flow.* FROM task_flow flow WHERE flow.project_record_id=?
@@ -309,24 +261,16 @@ async function uploadProjectHistory(
   const flows = flowImports(database, project.recordId)
   let stages = 0
   for (const flow of flows) {
-    const result = await recordCall(() => client.importTaskFlow(flow, destination))
-    stages += flow.stages.length
-    const oldNumbers = new Map(
-      database
-        .query<{ record_id: string; number: number }, [string]>(
-          'SELECT record_id,number FROM workflow_cursor WHERE task_flow_record_id=? ORDER BY number',
-        )
-        .all(flow.flow.id)
-        .map((row) => [row.record_id, row.number]),
-    )
+    const result = await recordCall(() => client.importTaskFlow(flow.payload, destination))
+    stages += flow.payload.stages.length
     for (const stage of result.stages) {
-      const old = oldNumbers.get(stage.id)
+      const old = flow.numbers.get(stage.id)
       if (old !== undefined && old !== stage.number)
         presentation.log(`cursor ${old} -> cursor ${stage.number}`)
     }
   }
   const questions = localQuestionHistory(database, project.recordId).map(({ row, audits }) => ({
-    requestId: newRecordId(),
+    requestId: taskFlowRequestId('import', ['question', String(row.record_id)]),
     question: questionSnapshotFromRow(row),
     audits,
   }))
@@ -340,34 +284,64 @@ async function uploadProjectHistory(
   )
 }
 
+async function uploadPersonalQuestionHistory(
+  history: LocalQuestionHistory,
+  destination: RecordWriteDestination,
+  client: UploadDependencies['client'] & {
+    importQuestion: NonNullable<UploadDependencies['client']['importQuestion']>
+  },
+  presentation: Presentation,
+): Promise<void> {
+  const questions = history.map(({ row, audits }) => ({
+    requestId: taskFlowRequestId('import', ['question', String(row.record_id)]),
+    question: questionSnapshotFromRow(row),
+    audits,
+  }))
+  for (const question of questions)
+    await recordCall(() => client.importQuestion(question, destination))
+  presentation.log(`personal space: uploaded ${questions.length} questions`)
+}
+
 async function uploadDatabaseHistory(
   database: Database,
   adoptions: readonly ProjectAdoptionResult[],
   presentation: Presentation,
   dependencies: UploadDependencies,
 ): Promise<void> {
+  refuseUnattributedQuestions(database)
   const projects = historyProjects(database)
-  if (!projects.length) {
+  const personalQuestions = localQuestionHistory(database, null)
+  if (!projects.length && !personalQuestions.length) {
     presentation.log('no local task-flow or question history to upload')
     presentation.log(
       `run \`${PLATFORM_SLUG} machine update\` to verify and release local workflow history`,
     )
     return
   }
-  const destinations = await historyDestinations(projects, adoptions, dependencies.destination)
-  const repaired = repairUnlinkedKeylessStages(database)
-  presentation.log(`repaired ${repaired} unlinked local workflow stages`)
   const { importTaskFlow, importQuestion } = dependencies.client
   if (!importTaskFlow || !importQuestion)
     throw new Error(
       'record API predates workflow history imports; release hosted-api, then sign in again',
     )
+  const destinations = await historyDestinations(projects, adoptions, dependencies.destination)
+  const personalDestination = personalQuestions.length
+    ? await recordCall(() => dependencies.destination(null))
+    : null
+  const repaired = taskFlowHistoryMaintenanceStore(database).repairUnlinkedKeylessStages()
+  presentation.log(`repaired ${repaired} unlinked local workflow stages`)
   const client = { ...dependencies.client, importTaskFlow, importQuestion }
   for (const project of projects)
     await uploadProjectHistory(
       database,
       project,
       destinations.get(project.name)!,
+      client,
+      presentation,
+    )
+  if (personalDestination)
+    await uploadPersonalQuestionHistory(
+      personalQuestions,
+      personalDestination,
       client,
       presentation,
     )
@@ -387,7 +361,10 @@ export async function uploadLocalWorkflowHistory(
     destination:
       dependencies?.destination ??
       ((project) =>
-        recordWriteDestination(client as RecordApiClient, { kind: 'project', name: project })),
+        recordWriteDestination(
+          client as RecordApiClient,
+          project === null ? null : { kind: 'project', name: project },
+        )),
     withDatabase: dependencies?.withDatabase ?? withDatabaseForMigrationStep,
   }
   await complete.withDatabase((database) =>

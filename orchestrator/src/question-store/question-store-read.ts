@@ -17,11 +17,13 @@ import {
   localQuestionHistoryProjectIdsSqlite,
   localQuestionHistorySqlite,
   questionNumberProjectIds,
+  unattributedLocalQuestionHistorySqlite,
 } from './question-store-sqlite-reads.ts'
 import type { QuestionStore } from './question-store-types.ts'
 
 export const localQuestionHistoryProjectIds = localQuestionHistoryProjectIdsSqlite
 export const localQuestionHistory = localQuestionHistorySqlite
+export const unattributedLocalQuestionHistory = unattributedLocalQuestionHistorySqlite
 
 export function questionNumberProjectId(database: Database, number: number): string {
   const projectIds = questionNumberProjectIds(database, number)
