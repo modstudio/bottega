@@ -2,7 +2,7 @@
 /** Declares the question persistence boundary without choosing an adapter. */
 
 import type {
-  QuestionIntent,
+  QuestionLiveIntent,
   QuestionReadInput,
   QuestionWriteBody,
   QuestionWriteResult,
@@ -71,6 +71,6 @@ export type QuestionReadResult = {
   reset?: boolean
 }
 export interface QuestionStore {
-  write(intent: QuestionIntent, input: QuestionWriteBody): Promise<QuestionWriteResult>
+  write(intent: QuestionLiveIntent, input: QuestionWriteBody): Promise<QuestionWriteResult>
   read(input: QuestionReadInput, projectId?: string): Promise<QuestionReadResult>
 }

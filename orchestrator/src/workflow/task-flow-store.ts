@@ -3,8 +3,8 @@
 
 import type { Database } from 'bun:sqlite'
 import type {
-  TaskFlowIntent,
   TaskFlowIntentResult,
+  TaskFlowLiveIntent,
 } from '../record/record-task-flow-write-contract.ts'
 import {
   currentRecordWriteDecision,
@@ -59,7 +59,7 @@ export { isKeylessExplore } from './task-flow-store-types.ts'
  * Migrations and their preflights write the local tables directly by design.
  */
 interface TaskFlowQueries {
-  write<K extends TaskFlowIntent>(
+  write<K extends TaskFlowLiveIntent>(
     intent: K,
     payload: TaskFlowIntentInput<K>,
     applied?: TaskFlowIntentResult<K> | null,

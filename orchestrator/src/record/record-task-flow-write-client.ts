@@ -7,9 +7,9 @@ import type { RecordWriteDestination } from './record-api-client-paths.ts'
 import type { RecordTaskFlowClient } from './record-api-client-task-flow.ts'
 import { requireProjectRecordDestination } from './record-project-destination-client.ts'
 import type {
-  TaskFlowIntent,
   TaskFlowIntentInput,
   TaskFlowIntentResult,
+  TaskFlowLiveIntent,
 } from './record-task-flow-write-contract.ts'
 import { applyRecordWriteAuthority } from './record-write-authority.ts'
 
@@ -57,7 +57,7 @@ const methodByIntent = {
   'copy-text': 'copyTaskFlowText',
 } as const
 
-export async function writeHostedTaskFlow<K extends TaskFlowIntent>(
+export async function writeHostedTaskFlow<K extends TaskFlowLiveIntent>(
   intent: K,
   input: TaskFlowIntentInput<K>,
   target: TaskFlowWriteTarget,

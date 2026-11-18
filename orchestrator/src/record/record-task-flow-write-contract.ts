@@ -49,6 +49,8 @@ const flowInsert = z.object({
   updatedAt: stamp,
 })
 
+const importedFlow = flowInsert.extend({ revision })
+
 const stageInsert = z.object({
   id,
   flowRecordId: id,
@@ -76,6 +78,8 @@ const stageInsert = z.object({
   updatedAt: stamp,
   handedOffFromRecordId: nullableId.optional(),
 })
+
+const importedStage = stageInsert.extend({ revision })
 
 const revisionReference = z.object({ id, expectedRevision: revision })
 const mutation = <T extends z.ZodRawShape>(values: z.ZodObject<T>) =>
@@ -256,8 +260,17 @@ const taskFlowDeleteTextSchema = z.object({
   ids: z.array(id).min(1),
 })
 const taskFlowCopyTextSchema = z.object({ ...base, row: copyInsert })
+const taskFlowImportSchema = z.object({
+  ...base,
+  flow: importedFlow,
+  stages: z.array(importedStage),
+  obligations: z.array(obligationInsert).default([]),
+  texts: z.array(textInsert).default([]),
+  copies: z.array(copyInsert).default([]),
+})
 
 export const taskFlowIntentSchemas = {
+  import: taskFlowImportSchema,
   compose: taskFlowComposeSchema,
   'stage-update': taskFlowStageUpdateSchema,
   advance: taskFlowAdvanceSchema,
@@ -271,6 +284,7 @@ export const taskFlowIntentSchemas = {
 } as const
 
 export type TaskFlowIntent = keyof typeof taskFlowIntentSchemas
+export type TaskFlowLiveIntent = Exclude<TaskFlowIntent, 'import'>
 export type TaskFlowIntentInput<K extends TaskFlowIntent> = z.input<
   (typeof taskFlowIntentSchemas)[K]
 >
@@ -282,6 +296,10 @@ export type TaskFlowWriteResult = z.infer<typeof taskFlowWriteResultSchema>
 export const taskFlowComposeResultSchema = taskFlowWriteResultSchema.extend({
   stage: z.object({ id, number: z.number().int().positive() }).nullable(),
 })
+const taskFlowImportResultSchema = taskFlowWriteResultSchema.extend({
+  stages: z.array(z.object({ id, number: z.number().int().positive() })),
+})
+export type TaskFlowImportResult = z.infer<typeof taskFlowImportResultSchema>
 export const taskFlowHandoffResultSchema = taskFlowWriteResultSchema.extend({
   stage: z.object({ id, number: z.number().int().positive() }),
 })
@@ -290,8 +308,10 @@ export const taskFlowAdoptResultSchema = taskFlowWriteResultSchema.extend({ flow
 export type TaskFlowAdoptResult = z.infer<typeof taskFlowAdoptResultSchema>
 export type TaskFlowIntentResult<K extends TaskFlowIntent> = K extends 'compose'
   ? TaskFlowComposeResult
-  : K extends 'adopt'
-    ? TaskFlowAdoptResult
-    : K extends 'handoff'
-      ? z.infer<typeof taskFlowHandoffResultSchema>
-      : TaskFlowWriteResult
+  : K extends 'import'
+    ? TaskFlowImportResult
+    : K extends 'adopt'
+      ? TaskFlowAdoptResult
+      : K extends 'handoff'
+        ? z.infer<typeof taskFlowHandoffResultSchema>
+        : TaskFlowWriteResult

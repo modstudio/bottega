@@ -1,5 +1,6 @@
 import { expect, test } from 'bun:test'
 import type { VerdictPayload } from '../verdict/verdict-payload.ts'
+import { questionValues } from './record-question-values.ts'
 import { releaseValues } from './record-release-sync.ts'
 import { reviewReadRecordValues } from './record-review-read.ts'
 import { commonReviewRecordValues, reviewValues } from './record-review-values.ts'
@@ -12,7 +13,6 @@ import {
   contentionValues,
   landingOverrideValues,
   landingValues,
-  questionValues,
   reviewFindingValues,
   reviewLensValues,
   testFlakeValues,

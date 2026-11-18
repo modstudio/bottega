@@ -5,7 +5,7 @@ import type { Database } from 'bun:sqlite'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { nullableRecordIso, recordIso } from '../../../shared/record-timestamp.ts'
 import { machineId } from '../record/machine-identity.ts'
-import type { QuestionIntent, QuestionWriteBody } from '../record/record-question-contract.ts'
+import type { QuestionLiveIntent, QuestionWriteBody } from '../record/record-question-contract.ts'
 import { questionStore } from './question-store.ts'
 import { questionById } from './question-store-read.ts'
 
@@ -99,7 +99,7 @@ export async function mutateQuestion(
   database: Database,
   input: {
     id: string
-    intent: QuestionIntent
+    intent: QuestionLiveIntent
     at: string
     actorSession: string | null
     reason: string | null

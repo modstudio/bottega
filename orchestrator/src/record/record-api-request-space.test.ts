@@ -451,6 +451,7 @@ PUT /v1/lens-catalogue/selections
 POST /v1/port-catalogue/write
 POST /v1/port-catalogue/import
 POST /v1/questions/:intent
+POST /v1/task-flow/import
 POST /v1/task-flow/compose
 POST /v1/task-flow/stage-update
 POST /v1/task-flow/advance
@@ -540,6 +541,25 @@ const recordTenantRouteBodies = new Map<string, unknown>([
       expectedRevisions: {},
       reason: 'guard',
       author: 'guard',
+    },
+  ],
+  [
+    'POST /v1/task-flow/import',
+    {
+      requestId: guardId,
+      flow: {
+        id: guardId,
+        projectId: guardId,
+        taskId: null,
+        state: 'done',
+        openStageRecordId: null,
+        openingMachineId: guardId,
+        updatedMachineId: guardId,
+        createdAt: guardStamp,
+        updatedAt: guardStamp,
+        revision: 1,
+      },
+      stages: [],
     },
   ],
   [

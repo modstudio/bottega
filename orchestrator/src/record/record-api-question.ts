@@ -10,9 +10,10 @@ import type { RecordIdentity } from './record-auth.ts'
 import { recordKeyedNotVisibleRefusal } from './record-keyed-read.ts'
 import {
   type QuestionIntent,
+  type QuestionIntentBody,
   type QuestionReadInput,
-  type QuestionWriteBody,
   questionChangedAfterRefusal,
+  questionImportSchema,
   questionIntentSchema,
   questionReadSchema,
   questionWriteSchema,
@@ -30,7 +31,7 @@ type Tenant = {
 }
 export type RecordQuestionRouteDeps = {
   readQuestions?(input: Tenant & RecordQuestionReadInput): Promise<unknown>
-  writeQuestion?(intent: QuestionIntent, input: Tenant & QuestionWriteBody): Promise<unknown>
+  writeQuestion?(intent: QuestionIntent, input: Tenant & QuestionIntentBody): Promise<unknown>
 }
 
 async function rulingReadResponse(
@@ -127,7 +128,11 @@ export function registerRecordQuestionRoutes(
     if (!deps.writeQuestion)
       return context.json({ error: 'hosted question writes are unavailable' }, 503)
     const intent = questionIntentSchema.safeParse(context.req.param('intent'))
-    const body = questionWriteSchema.safeParse(await context.req.json().catch(() => null))
+    const rawBody = await context.req.json().catch(() => null)
+    const body =
+      intent.success && intent.data === 'import'
+        ? questionImportSchema.safeParse(rawBody)
+        : questionWriteSchema.safeParse(rawBody)
     if (!intent.success || !body.success)
       return context.json(
         {

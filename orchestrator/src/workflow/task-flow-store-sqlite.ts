@@ -6,8 +6,8 @@ import { writeTransaction } from '../database/db.ts'
 import { openQuestionsForCursors } from '../question-store/question-store-read.ts'
 import * as questions from '../question-store/question-store-sqlite-reads.ts'
 import type {
-  TaskFlowIntent,
   TaskFlowIntentResult,
+  TaskFlowLiveIntent,
 } from '../record/record-task-flow-write-contract.ts'
 import type { TaskFlowLocalReadMethod, TaskFlowWriteMethod } from './task-flow-store-methods.ts'
 import {
@@ -67,7 +67,7 @@ class SqliteTaskFlowStore {
       )
   }
 
-  write<K extends TaskFlowIntent>(
+  write<K extends TaskFlowLiveIntent>(
     intent: K,
     payload: TaskFlowIntentInput<K>,
     applied?: TaskFlowIntentResult<K> | null,

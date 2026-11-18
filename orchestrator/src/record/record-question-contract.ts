@@ -42,6 +42,7 @@ export function assertQuestionJsonFieldsStructured(
 
 export const questionIntentSchema = z.enum([
   'ask',
+  'import',
   'restore',
   'answer',
   'close',
@@ -52,6 +53,7 @@ export const questionIntentSchema = z.enum([
   'abandon',
 ])
 export type QuestionIntent = z.infer<typeof questionIntentSchema>
+export type QuestionLiveIntent = Exclude<QuestionIntent, 'import'>
 
 export const questionAuditSchema = z.object({
   action: z.string().min(1),
@@ -116,6 +118,8 @@ const questionSnapshotSchema = z.object({
   withheldFields: z.array(z.string()).default([]),
   createdAt: stamp,
   updatedAt: stamp,
+  workflowStepOrdinal: z.number().int().nullable().optional(),
+  workflowStepSlug: nullableText.optional(),
 })
 
 export const questionWriteSchema = z.object({
@@ -123,7 +127,14 @@ export const questionWriteSchema = z.object({
   question: questionSnapshotSchema,
   audit: questionAuditSchema,
 })
+export const questionImportSchema = z.object({
+  requestId: id,
+  question: questionSnapshotSchema,
+  audits: z.array(questionAuditSchema.extend({ id })).default([]),
+})
 export type QuestionWriteBody = z.infer<typeof questionWriteSchema>
+export type QuestionImportBody = z.infer<typeof questionImportSchema>
+export type QuestionIntentBody = QuestionWriteBody | QuestionImportBody
 // `applied` means the request is reflected in the stored row; `replayed` means
 // this call matched an earlier request and wrote nothing.
 export const questionWriteResultSchema = z.object({

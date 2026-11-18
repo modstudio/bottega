@@ -4,7 +4,7 @@
 import type { RecordRequestDestination, RecordWriteDestination } from './record-api-client-paths.ts'
 import type { RecordIdentity } from './record-auth.ts'
 import {
-  type QuestionIntent,
+  type QuestionLiveIntent,
   type QuestionReadInput,
   type QuestionWriteBody,
   type QuestionWriteResult,
@@ -28,7 +28,7 @@ export type RecordQuestionClient = {
     reset?: boolean
   }>
   writeQuestion?(
-    intent: QuestionIntent,
+    intent: QuestionLiveIntent,
     input: QuestionWriteBody,
     destination: RecordWriteDestination,
   ): Promise<QuestionWriteResult>
@@ -62,7 +62,7 @@ export const recordQuestionClient = (request: Request): RecordQuestionClient => 
       })
     },
     writeQuestion: (
-      intent: QuestionIntent,
+      intent: QuestionLiveIntent,
       input: QuestionWriteBody,
       destination: RecordWriteDestination,
     ) =>

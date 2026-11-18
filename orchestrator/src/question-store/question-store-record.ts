@@ -14,7 +14,7 @@ import {
 } from '../record/record-api-client-question.ts'
 import { isAbsentRecordKeyedRead } from '../record/record-api-client-response.ts'
 import type {
-  QuestionIntent,
+  QuestionLiveIntent,
   QuestionReadInput,
   QuestionWriteBody,
 } from '../record/record-question-contract.ts'
@@ -224,7 +224,7 @@ export class RecordQuestionStore implements QuestionStore {
     }
   }
 
-  async write(intent: QuestionIntent, input: QuestionWriteBody) {
+  async write(intent: QuestionLiveIntent, input: QuestionWriteBody) {
     const client = requireQuestionWriteClient(this.input.client)
     if (
       intent === 'ask' &&

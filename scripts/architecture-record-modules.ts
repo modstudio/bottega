@@ -383,7 +383,10 @@ export const recordModules: RecordModule[] = [
     './record-sync.ts',
   ]),
   module('orchestrator/src/record/record-review-lens-values.ts', ['./record-sync-contract.ts']),
-  module('orchestrator/src/record/record-question-values.ts', []),
+  module('orchestrator/src/record/record-question-values.ts', [
+    '../../../shared/record-timestamp.ts',
+    './record-value-conversions.ts',
+  ]),
   module('orchestrator/src/record/record-question-audit.ts', [
     '../../../shared/record-timestamp.ts',
     'bun',

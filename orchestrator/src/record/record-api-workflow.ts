@@ -106,6 +106,10 @@ function registerTaskFlowWriteRoutes(
   ports: Ports,
 ): void {
   const routes: { [K in TaskFlowIntent]: () => void } = {
+    import: () =>
+      registerTaskFlowWriteRoute(app, deps, ports, 'import', (body) =>
+        taskFlowIntentSchemas.import.safeParse(body),
+      ),
     compose: () =>
       registerTaskFlowWriteRoute(app, deps, ports, 'compose', (body) =>
         taskFlowIntentSchemas.compose.safeParse(body),
