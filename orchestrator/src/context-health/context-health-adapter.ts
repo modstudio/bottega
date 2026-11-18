@@ -3,7 +3,10 @@
 import type { Database } from 'bun:sqlite'
 import { parseBoardDuration } from '../../../shared/board-duration.ts'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { CONTEXT_HOLDER_KINDS } from '../../../shared/context-item-vocabulary.ts'
+import {
+  CONTEXT_HOLDER_KINDS,
+  type ContextHolderKind,
+} from '../../../shared/context-item-vocabulary.ts'
 import { db, nowIso } from '../database/db.ts'
 import { scopeContextHolders } from '../doc/context-service.ts'
 import { docHasRepositoryReferences, STALE_REFERENCE_RULES } from '../doc/doc-lint.ts'
@@ -69,6 +72,21 @@ function failureFacts(now: string, since: string, error: unknown): ContextHealth
 
 type CursorOwner = { record_id: string; project: string; session_id: string | null }
 
+function holderIdentity(
+  holderKind: ContextHolderKind,
+  holderId: string,
+  taskById: ReadonlyMap<string, HubTaskReference>,
+  cursorById: ReadonlyMap<string, CursorOwner>,
+  sessionProject: ReadonlyMap<string, string | null>,
+) {
+  const task = holderKind === 'task' ? (taskById.get(holderId) ?? null) : null
+  const cursor = holderKind === 'cursor' ? (cursorById.get(holderId) ?? null) : null
+  const session = holderKind === 'session' ? holderId : (cursor?.session_id ?? null)
+  const project =
+    task?.project ?? cursor?.project ?? (session ? (sessionProject.get(session) ?? null) : null)
+  return { task, session, project }
+}
+
 function holderItems(
   database: Database,
   tasks: readonly HubTaskReference[],
@@ -80,16 +98,15 @@ function holderItems(
   const items: ContextHealthItem[] = []
   for (const holderKind of CONTEXT_HOLDER_KINDS) {
     for (const holder of scopeContextHolders(holderKind, database)) {
-      const task = holderKind === 'task' ? (taskById.get(holder.holderId) ?? null) : null
-      const cursor = holderKind === 'cursor' ? (cursorById.get(holder.holderId) ?? null) : null
-      const holderSession =
-        holderKind === 'session' ? holder.holderId : (cursor?.session_id ?? null)
-      const project =
-        task?.project ??
-        cursor?.project ??
-        (holderSession ? (sessionProject.get(holderSession) ?? null) : null)
+      const { task, session, project } = holderIdentity(
+        holderKind,
+        holder.holderId,
+        taskById,
+        cursorById,
+        sessionProject,
+      )
       if (options.project && project !== options.project) continue
-      if (options.session && holderSession !== options.session) continue
+      if (options.session && session !== options.session) continue
       for (const item of holder.items) {
         items.push({
           holder: holder.holder,

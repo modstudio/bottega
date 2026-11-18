@@ -19,6 +19,7 @@ export const contextHealthModules: ContextHealthModule[] = [
     '../session/context-review-decision.ts',
   ]),
   module('orchestrator/src/context-health/context-health-adapter.ts', [
+    'bun:sqlite',
     '../../../shared/board-duration.ts',
     '../../../shared/brand.ts',
     '../../../shared/context-item-vocabulary.ts',

@@ -119,6 +119,30 @@ function quantile(values: number[], fraction: number): number | null {
   return values[Math.floor((values.length - 1) * fraction)]!
 }
 
+function reviewBlind(reviews: ContextHealthFacts['reviews']) {
+  return [...Map.groupBy(reviews, (row) => row.sessionId)].flatMap(([sessionId, rows]) =>
+    rows.length && rows.every((row) => row.flagged === 0 && row.items > 0)
+      ? [{ sessionId, reviews: rows.length, items: rows.reduce((sum, row) => sum + row.items, 0) }]
+      : [],
+  )
+}
+
+function compactionBriefs(briefs: ContextHealthFacts['briefs']) {
+  const compact = briefs.filter((row) => row.source === 'compact')
+  return [...Map.groupBy(compact, (row) => row.sessionId)].map(([sessionId, rows]) => {
+    const zeroCursorBriefs = rows.filter((row) => row.cursors === 0).length
+    const overCapBriefs = rows.filter((row) => row.overCap).length
+    return {
+      sessionId,
+      compactBriefs: rows.length,
+      zeroCursorBriefs,
+      zeroCursorShare: zeroCursorBriefs / rows.length,
+      overCapBriefs,
+      overCapShare: overCapBriefs / rows.length,
+    }
+  })
+}
+
 export function contextHealth(facts: ContextHealthFacts): ContextHealthReport {
   const now = Date.parse(facts.now)
   const emptySignals = { s1: [], s2: [], s3: [], s4: [], s5: [], s6: [], s7: [], s8: [] }
@@ -171,31 +195,8 @@ export function contextHealth(facts: ContextHealthFacts): ContextHealthReport {
       ageMs(item, now) > CONTEXT_REVIEW_WINDOW_MS,
   )
   const s5 = withFinding(agingItems)
-  const byReviewSession = Map.groupBy(facts.reviews, (row) => row.sessionId)
-  const s6 = [...byReviewSession].flatMap(([sessionId, reviews]) =>
-    reviews.length && reviews.every((row) => row.flagged === 0 && row.items > 0)
-      ? [
-          {
-            sessionId,
-            reviews: reviews.length,
-            items: reviews.reduce((sum, row) => sum + row.items, 0),
-          },
-        ]
-      : [],
-  )
-  const compact = facts.briefs.filter((row) => row.source === 'compact')
-  const s7 = [...Map.groupBy(compact, (row) => row.sessionId)].map(([sessionId, rows]) => {
-    const zeroCursorBriefs = rows.filter((row) => row.cursors === 0).length
-    const overCapBriefs = rows.filter((row) => row.overCap).length
-    return {
-      sessionId,
-      compactBriefs: rows.length,
-      zeroCursorBriefs,
-      zeroCursorShare: zeroCursorBriefs / rows.length,
-      overCapBriefs,
-      overCapShare: overCapBriefs / rows.length,
-    }
-  })
+  const s6 = reviewBlind(facts.reviews)
+  const s7 = compactionBriefs(facts.briefs)
   const s8 = withFinding(
     live.filter((item) => item.staleReferences.length > 0 || item.unverifiable !== null),
   )
