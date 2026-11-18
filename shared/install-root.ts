@@ -2,6 +2,7 @@ import { existsSync, readFileSync, statSync } from 'node:fs'
 import { dirname, isAbsolute, join, resolve } from 'node:path'
 import { PLATFORM_NAME, PLATFORM_SLUG } from './brand.ts'
 import { parseBuiltCommit } from './built-commit.ts'
+import type { DistributionManifest } from './distribution-manifest.ts'
 import { embeddedDistributionManifest } from './embedded-assets.ts'
 
 export type InstallEnvironment = Record<string, string | undefined>
@@ -14,13 +15,6 @@ export const DIST_MANIFEST = `.${PLATFORM_SLUG}-dist.json`
 /** Product CLI paths inside an installed release payload. */
 const PRODUCT_CLI_PAYLOAD = `cli/${PLATFORM_SLUG}`
 export const PRODUCT_CLI_ENTRYPOINT = `${PRODUCT_CLI_PAYLOAD}/entry.ts`
-
-export type DistributionManifest = {
-  name: typeof PLATFORM_NAME
-  version: string
-  built: string
-  commit: string
-}
 
 export type InstallationPaths = {
   root: string

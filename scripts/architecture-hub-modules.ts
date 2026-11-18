@@ -1,5 +1,35 @@
 export const hubModuleSpecs = [
   {
+    file: 'hub/src/orch-view.ts',
+    allowed: [
+      '../../shared/interval.ts',
+      '../../shared/orch-contract.ts',
+      './attribute.ts',
+      './collect.ts',
+      './db.ts',
+      './excerpt.ts',
+      './ingest/runs.ts',
+      './orch.ts',
+      './orch-transforms.ts',
+      './projects.ts',
+      './query.ts',
+      './run-display.ts',
+      './task-projections.ts',
+      './time.ts',
+    ],
+  },
+  {
+    file: 'hub/src/orch-project-register.ts',
+    allowed: [
+      'node:fs',
+      '../../shared/brand.ts',
+      '../../shared/install-root.ts',
+      '../../shared/orch-contract.ts',
+      '../../shared/process-identity.ts',
+      '../../shared/self-spawn.ts',
+    ],
+  },
+  {
     file: 'hub/src/caller-session.ts',
     allowed: ['../../shared/caller-classification.ts'],
   },

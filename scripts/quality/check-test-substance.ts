@@ -8,7 +8,6 @@ import {
 import { openChangeView } from '../../shared/change-view'
 import {
   isTestFile,
-  judgeTestSubstance,
   PHP_POLICY_RULES,
   PHP_UNIVERSAL_RULES,
   type TestFinding,
@@ -17,6 +16,7 @@ import {
   guardedRules,
   testSubstanceReport,
 } from '../../shared/test-substance/test-substance-eslint'
+import { judgeTestSubstance } from '../../shared/test-substance/test-substance-judge.ts'
 import { phpTestSubstanceReport } from '../../shared/test-substance/test-substance-php'
 
 type Mode = { kind: 'staged' } | { kind: 'base'; ref: string }

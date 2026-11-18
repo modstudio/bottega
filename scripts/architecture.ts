@@ -697,16 +697,9 @@ export const inversions: { from: string; to: string }[] = [
   },
 ]
 
-const allowedCycles: { cycle: string[]; reason: string }[] = [
-  {
-    cycle: [
-      'orchestrator/src/canon/canon.ts',
-      'orchestrator/src/doc/docs.ts',
-      'orchestrator/src/canon/canon.ts',
-    ],
-    reason: 'Pre-existing operator-doc/canon compilation cycle outside the specified inversions.',
-  },
-]
+const GUARDED_CONCERN_ROOTS = '^(?:orchestrator/src/|hub/|shared/)'
+
+const allowedCycles: { cycle: string[]; reason: string }[] = []
 
 export const exactArchitecturePath = (path: string) =>
   `^${path.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`
@@ -848,6 +841,17 @@ const architectureCycleFiles = [
   ...new Set(allowedCycles.flatMap(({ cycle }) => cycle.slice(0, -1))),
 ]
 
+const concernCycleRule: ArchitectureRule = {
+  name: 'no-new-concern-root-cycles',
+  severity: 'error',
+  comment: 'Reject cycles that leave and re-enter the concern roots.',
+  from: {
+    path: GUARDED_CONCERN_ROOTS,
+    pathNot: architectureCycleFiles.map(exactArchitecturePath),
+  },
+  to: { circular: true },
+}
+
 const declaredModuleRules: ArchitectureRule[] = modules.map((entry) => ({
   name: `module-${entry.file.replace(/[^a-z0-9]+/gi, '-')}`,
   severity: 'error' as const,
@@ -965,15 +969,7 @@ export function architectureRules() {
       from: { path: exactArchitecturePath(entry.from) },
       to: { path: exactArchitecturePath(entry.to) },
     })),
-    {
-      name: 'no-new-orchestrator-cycles',
-      severity: 'error',
-      from: {
-        path: '^orchestrator/src/',
-        pathNot: architectureCycleFiles.map(exactArchitecturePath),
-      },
-      to: { path: '^orchestrator/src/', circular: true },
-    },
+    concernCycleRule,
     ...allowedCycles.flatMap((entry) =>
       entry.cycle.slice(0, -1).map((from, index) => ({
         name: `cycle-exception-${index}-${from.replace(/[^a-z0-9]+/gi, '-')}`,
@@ -981,7 +977,6 @@ export function architectureRules() {
         comment: entry.reason,
         from: { path: exactArchitecturePath(from) },
         to: {
-          path: '^orchestrator/src/',
           pathNot: [exactArchitecturePath(entry.cycle[index + 1]!)],
           circular: true,
         },

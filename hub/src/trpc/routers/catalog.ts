@@ -1,6 +1,6 @@
 import { initTRPC } from '@trpc/server'
 import { agents, jobs } from '../../orch.ts'
-import { cachedOrchResponse } from '../../serve.ts'
+import { cachedOrchResponse } from '../../orch-view.ts'
 import type { Context } from '../context.ts'
 
 const t = initTRPC.context<Context>().create()

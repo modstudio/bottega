@@ -20,8 +20,6 @@ import { intervalTaskRecordIdForUpdate, uniqueTaskRecordIdForKey } from '../task
 import { chunks, type IngestTransaction } from './batches.ts'
 import { decideCollectorReplace } from './interval-replace.ts'
 
-export type { OrchRun } from '../../../shared/orch-contract.ts'
-
 export const RUN_INGEST_BATCH_SIZE = 50
 
 /**

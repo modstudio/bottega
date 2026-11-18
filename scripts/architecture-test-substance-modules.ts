@@ -4,7 +4,11 @@
 export const testSubstanceModules = [
   {
     file: 'shared/test-substance/test-substance.ts',
-    allowed: ['../ratchet.ts', './test-substance-eslint.ts', './test-substance-php.ts'],
+    allowed: ['../ratchet.ts'],
+  },
+  {
+    file: 'shared/test-substance/test-substance-judge.ts',
+    allowed: ['./test-substance.ts', './test-substance-eslint.ts', './test-substance-php.ts'],
   },
   {
     file: 'shared/test-substance/test-substance-php.ts',
@@ -48,6 +52,7 @@ export const testSubstanceModules = [
     allowed: [
       'node:fs',
       'node:path',
+      '../../shared/test-substance/test-substance-judge.ts',
       '../../shared/test-substance/test-substance.ts',
       './test-substance-project-policy.ts',
     ],

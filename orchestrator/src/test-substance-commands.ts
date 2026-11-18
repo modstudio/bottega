@@ -5,11 +5,11 @@ import { readFileSync, statSync } from 'node:fs'
 import { resolve } from 'node:path'
 import {
   isTestFile,
-  judgeTestSubstance,
   PHP_POLICY_RULES,
   type TestSubstanceInput,
   type TestSubstanceJudgment,
 } from '../../shared/test-substance/test-substance.ts'
+import { judgeTestSubstance } from '../../shared/test-substance/test-substance-judge.ts'
 import {
   type PhpPolicyResolution,
   resolvePhpPolicyRules,
