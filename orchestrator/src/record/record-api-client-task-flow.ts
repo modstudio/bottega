@@ -29,12 +29,14 @@ import {
 import {
   type TaskFlowAdoptResult,
   type TaskFlowComposeResult,
+  type TaskFlowImportResult,
   type TaskFlowIntent,
   type TaskFlowIntentInput,
   type TaskFlowWriteResult,
   taskFlowAdoptResultSchema,
   taskFlowComposeResultSchema,
   taskFlowHandoffResultSchema,
+  taskFlowImportResultSchema,
   taskFlowWriteResultSchema,
 } from './record-task-flow-write-contract.ts'
 
@@ -87,6 +89,10 @@ export type RecordTaskFlowClient = {
     input: TaskFlowIntentInput<'compose'>,
     destination: RecordWriteDestination,
   ): Promise<TaskFlowComposeResult>
+  importTaskFlow?(
+    input: TaskFlowIntentInput<'import'>,
+    destination: RecordWriteDestination,
+  ): Promise<TaskFlowImportResult>
   updateTaskFlowStage?(
     input: TaskFlowIntentInput<'stage-update'>,
     destination: RecordWriteDestination,
@@ -249,6 +255,14 @@ function taskFlowStageListSearchParams(
 
 function taskFlowWriteClient(request: Request): Partial<RecordTaskFlowClient> {
   return {
+    importTaskFlow: (input, destination) =>
+      write(
+        request,
+        'import',
+        input,
+        (body) => taskFlowImportResultSchema.parse(body),
+        destination,
+      ),
     composeTaskFlow: (input, destination) =>
       write(
         request,

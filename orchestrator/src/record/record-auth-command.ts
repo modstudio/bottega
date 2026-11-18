@@ -10,6 +10,8 @@ import { adoptAllHostedProjectIdentities, formatProjectRelink } from '../project
 import { RefusalError } from '../refusal-error.ts'
 import { activeSpaceInvariant } from './active-space-invariant.ts'
 import { rememberHostedRecord } from './install-binding-write.ts'
+import { pushDocsCommand } from './record-push-docs.ts'
+import { uploadLocalWorkflowHistory } from './record-sign-in-history-upload.ts'
 import {
   RecordApiRequestError,
   type RecordSessionResult,
@@ -112,7 +114,8 @@ async function completeSignedInMachineSetup(presentation: Presentation): Promise
       `machine key claim failed: ${error instanceof Error ? error.message : String(error)}`,
     )
   }
-  for (const adoption of await adoptAllHostedProjectIdentities()) {
+  const adoptions = await adoptAllHostedProjectIdentities()
+  for (const adoption of adoptions) {
     if (adoption.status === 'relinked') presentation.log(formatProjectRelink(adoption))
     else if (adoption.status === 'retired-namesake') presentation.log(adoption.message)
     else if (adoption.status === 'failed')
@@ -120,6 +123,8 @@ async function completeSignedInMachineSetup(presentation: Presentation): Promise
         `${adoption.name}: project identity adoption failed: ${adoption.message}; run \`${PLATFORM_SLUG} project relink ${adoption.name}\``,
       )
   }
+  await uploadLocalWorkflowHistory(adoptions, presentation)
+  await pushDocsCommand({ dryRun: false }, presentation)
   await automaticallyAdoptHostedBoard(presentation, { signedIn: () => true })
 }
 
