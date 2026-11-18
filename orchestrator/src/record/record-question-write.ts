@@ -258,7 +258,7 @@ async function importQuestionAudit(
   const rows = (await tx`
     SELECT * FROM question_mutation_audit WHERE id=${audit.id}::uuid FOR UPDATE
   `) as Array<Record<string, unknown>>
-  const values = { ...audit, questionId, spaceId }
+  const values = { ...audit, at: new Date(audit.at), questionId, spaceId }
   if (rows[0]) return assertSameQuestionRow('question_mutation_audit', audit.id, rows[0], values)
   await drizzle({ client: tx }).insert(questionMutationAuditRecord).values(values)
 }

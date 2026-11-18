@@ -4,15 +4,15 @@
 import type { Database, SQLQueryBindings } from 'bun:sqlite'
 import { newRecordId } from '../../../shared/record-id.ts'
 import type {
-  TaskFlowIntent,
   TaskFlowIntentInput,
   TaskFlowIntentResult,
+  TaskFlowLiveIntent,
 } from '../record/record-task-flow-write-contract.ts'
 import { decideAppliedMirrorMutation } from './task-flow-decision.ts'
 
 type Mutation = { id: string; expectedRevision: number; values: Record<string, unknown> }
 type SqlRow = Record<string, SQLQueryBindings>
-export type TaskFlowSqliteWriteResult<K extends TaskFlowIntent> = TaskFlowIntentResult<K>
+export type TaskFlowSqliteWriteResult<K extends TaskFlowLiveIntent> = TaskFlowIntentResult<K>
 
 const jsonValues = new Set(['arguments', 'closedStepNotes', 'satisfiedEvidence'])
 
@@ -24,7 +24,7 @@ function storedValue(key: string, value: unknown): SQLQueryBindings {
 
 export type TaskFlowStaleRowKind = 'flow' | 'stage' | 'cursor'
 
-const REVISION_ACTION: Record<TaskFlowIntent, string> = {
+const REVISION_ACTION: Record<TaskFlowLiveIntent, string> = {
   compose: 'composing',
   'stage-update': 'applying a stage update',
   advance: 'advancing',
@@ -44,7 +44,7 @@ const ROW_SUBJECT: Record<TaskFlowStaleRowKind, string> = {
 
 /** Chooses a stale-write refusal solely from the declared intent and row kind. */
 export function taskFlowRevisionRefusal(
-  intent: TaskFlowIntent,
+  intent: TaskFlowLiveIntent,
   rowKind: TaskFlowStaleRowKind,
   identifier: string | number,
 ): string {
@@ -53,7 +53,7 @@ export function taskFlowRevisionRefusal(
 
 function revisionRefusal(
   database: Database,
-  intent: TaskFlowIntent,
+  intent: TaskFlowLiveIntent,
   table: 'task_flow' | 'workflow_cursor',
   id: string,
 ): never {
@@ -143,7 +143,7 @@ function updateMutation(
   database: Database,
   table: 'task_flow' | 'workflow_cursor',
   mutation: Mutation,
-  intent: TaskFlowIntent,
+  intent: TaskFlowLiveIntent,
   applied: Record<string, number> | undefined,
 ): number {
   const next = applied?.[mutation.id] ?? mutation.expectedRevision + 1
@@ -559,7 +559,7 @@ function writeTextIntent(
   return { revisions: {} }
 }
 
-export function writeSqliteTaskFlow<K extends TaskFlowIntent>(
+export function writeSqliteTaskFlow<K extends TaskFlowLiveIntent>(
   database: Database,
   intent: K,
   payload: TaskFlowIntentInput<K>,

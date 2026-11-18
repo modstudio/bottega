@@ -3,13 +3,13 @@
 
 import type { Database } from 'bun:sqlite'
 import type {
-  TaskFlowIntent,
   TaskFlowIntentInput,
   TaskFlowIntentResult,
+  TaskFlowLiveIntent,
 } from '../record/record-task-flow-write-contract.ts'
 import type { TaskFlowSqliteWriteResult } from './task-flow-store-sqlite-write.ts'
 
-function appliedResult<K extends TaskFlowIntent>(
+function appliedResult<K extends TaskFlowLiveIntent>(
   intent: K,
   _input: TaskFlowIntentInput<K>,
   applied?: TaskFlowIntentResult<K> | null,

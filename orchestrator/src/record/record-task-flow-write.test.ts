@@ -233,7 +233,7 @@ test('task-flow import is exact and idempotent while minting stage numbers in bo
   const live = stage(STAGE_LIVE, 'live')
   const liveResult = await writeRecordTaskFlowTransaction(
     'compose',
-    { ...principal, requestId: REQUEST_LIVE, stageInsert: live },
+    { ...principal, requestId: REQUEST_LIVE, stageInsert: live, stageChanges: [] },
     sql,
     pgliteJsonb,
   )

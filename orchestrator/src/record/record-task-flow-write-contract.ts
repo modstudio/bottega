@@ -245,6 +245,7 @@ export const taskFlowIntentSchemas = {
 } as const
 
 export type TaskFlowIntent = keyof typeof taskFlowIntentSchemas
+export type TaskFlowLiveIntent = Exclude<TaskFlowIntent, 'import'>
 export type TaskFlowIntentInput<K extends TaskFlowIntent> = z.input<
   (typeof taskFlowIntentSchemas)[K]
 >
