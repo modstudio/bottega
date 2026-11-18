@@ -13,6 +13,7 @@
  * register in an older tree is ordinary. Checks on a name or a value this
  * binary knows are identical in both modes.
  */
+import { isAbsolute } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { repositoryVisibility } from '../../../shared/repository-visibility.ts'
 import { GATE_INPUTS } from '../gate/gate-decision.ts'
@@ -264,6 +265,32 @@ export function mainStackProblems(
     ]
   }
   return []
+}
+
+/** A declared gate-tooling list names file globs in the form the matcher compares against. */
+export function gateToolingProblems(value: unknown): string[] {
+  if (value === undefined) return []
+  if (!Array.isArray(value)) return ['gateTooling must be a non-empty array of relative globs']
+  if (value.length === 0) {
+    return ['gateTooling must not be empty; an empty list would mean nothing is gate tooling']
+  }
+  const problems: string[] = []
+  for (const pattern of value) {
+    if (typeof pattern !== 'string' || !pattern.trim()) {
+      problems.push('gateTooling entries must be non-empty relative globs')
+      continue
+    }
+    if (isAbsolute(pattern) || pattern.split(/[\\/]/).includes('..')) {
+      problems.push(
+        `gateTooling entry ${JSON.stringify(pattern)} must be a relative glob without .. segments`,
+      )
+    } else if (pattern.startsWith('./') || pattern.endsWith('/') || pattern.includes('\\')) {
+      problems.push(
+        `gateTooling entry ${JSON.stringify(pattern)} would match no file: write it from the project root with forward slashes and no leading ./, and end a directory with /**`,
+      )
+    }
+  }
+  return problems
 }
 
 export function invalidOptionalStringArray(value: unknown): boolean {

@@ -169,6 +169,11 @@ describe('projects are data, not code', () => {
         'must be a relative glob without .. segments',
       )
     }
+    for (const pattern of ['./scripts/**', 'scripts/', 'scripts\\check.ts']) {
+      expect(validateProjectSettings({ gateTooling: [pattern] }, 'strict').join('\n')).toContain(
+        'would match no file',
+      )
+    }
   })
 
   test('reader MCP tool maps are strict, named, and duplicate-free', () => {

@@ -24,7 +24,7 @@
 
 import type { Database } from 'bun:sqlite'
 import { existsSync, readFileSync } from 'node:fs'
-import { isAbsolute, join, resolve } from 'node:path'
+import { join, resolve } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   gitAt,
@@ -87,6 +87,7 @@ import {
   autonomyProblems,
   canonMirrorKeyProblems,
   gateInputProblems,
+  gateToolingProblems,
   invalidOptionalStringArray,
   mainStackProblems,
   managedContextProblems,
@@ -521,27 +522,6 @@ function keyPrefixProblems(value: unknown, context: ProjectSettingsValidationCon
 function workerCheckProblems(value: unknown): string[] {
   if (value === undefined || (typeof value === 'string' && value.trim())) return []
   return ['workerCheck must be a non-empty string']
-}
-
-function gateToolingProblems(value: unknown): string[] {
-  if (value === undefined) return []
-  if (!Array.isArray(value)) return ['gateTooling must be a non-empty array of relative globs']
-  if (value.length === 0) {
-    return ['gateTooling must not be empty; an empty list would mean nothing is gate tooling']
-  }
-  const problems: string[] = []
-  for (const pattern of value) {
-    if (typeof pattern !== 'string' || !pattern.trim()) {
-      problems.push('gateTooling entries must be non-empty relative globs')
-      continue
-    }
-    if (isAbsolute(pattern) || pattern.split(/[\\/]/).includes('..')) {
-      problems.push(
-        `gateTooling entry ${JSON.stringify(pattern)} must be a relative glob without .. segments`,
-      )
-    }
-  }
-  return problems
 }
 
 export function validateProjectSettings(
