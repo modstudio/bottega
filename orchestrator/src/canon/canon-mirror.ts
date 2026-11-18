@@ -18,6 +18,7 @@ import { closeOutRunPrepared } from '../close/close-out.ts'
 import { type CloseOutPreparation, prepareCloseOut } from '../close/close-out-preparation.ts'
 import { closeTerminalChainQuestions } from '../close/close-out-questions.ts'
 import { db, nowIso, sessionId, writableDb, writeTransaction } from '../database/db.ts'
+import { runWithGitFetchRetry } from '../git/fetch-retry.ts'
 import { targetGitEnvironment } from '../git/git-environment.ts'
 import { fileNote, listHubNotes } from '../mcp/hub-notes.ts'
 import { withWorktreeCreateLock } from '../project/project-lock.ts'
@@ -127,7 +128,14 @@ function spawn(cwd: string, args: string[]): ReturnType<typeof startBoundedSync>
   })
 }
 function command(cwd: string, args: string[]): string {
-  const child = spawn(cwd, args)
+  const child = runWithGitFetchRetry(args, () => {
+    const attempt = spawn(cwd, args)
+    return {
+      result: attempt,
+      succeeded: attempt.exitCode === 0,
+      stderr: attempt.stderr?.toString().trim() || `exit ${attempt.exitCode}`,
+    }
+  })
   if (child.exitCode !== 0) {
     const detail = child.stderr?.toString().trim() || `exit ${child.exitCode}`
     const safe = screenCanonMirrorError(detail)

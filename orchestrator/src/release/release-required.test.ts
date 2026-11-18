@@ -9,6 +9,7 @@ import {
   releaseRequiredFlagAbsent,
   releaseRequiredRungsAfterMainMove,
   requiredRungDecision,
+  undecidedRequiredRelease,
 } from './release-required.ts'
 import type { ReleaseResult } from './release-service.ts'
 
@@ -204,7 +205,7 @@ describe('requiredRungDecision', () => {
     expect(readClosure).toBe(false)
   })
 
-  test('an entry closure failure requires every declaring rung', () => {
+  test('an entry closure failure leaves every rung undecided', () => {
     const decision = requiredRungDecision(
       {
         ...project,
@@ -227,12 +228,24 @@ describe('requiredRungDecision', () => {
 
     expect(decision).toMatchObject({
       decided: false,
-      required: ['hosted-api', 'hosted-hub'],
+      required: [],
       error: 'entry closure unavailable',
     })
+    expect(decision.rungs).toEqual([
+      expect.objectContaining({
+        rung: 'hosted-api',
+        required: false,
+        reason: 'requirement could not be decided: entry closure unavailable',
+      }),
+      expect.objectContaining({
+        rung: 'hosted-hub',
+        required: false,
+        reason: 'requirement could not be decided: entry closure unavailable',
+      }),
+    ])
   })
 
-  test('contains a changed-path failure and names every declaring rung', () => {
+  test('contains a changed-path failure without naming any rung as required', () => {
     const decision = requiredRungDecision(
       {
         ...project,
@@ -255,9 +268,15 @@ describe('requiredRungDecision', () => {
 
     expect(decision).toMatchObject({
       decided: false,
-      required: ['hosted-api', 'worker'],
+      required: [],
       error: 'landing-branch fetch failed',
     })
+    if (decision.decided) throw new Error('expected an undecided release requirement')
+    const report = undecidedRequiredRelease(decision.rungs, decision.error)
+    expect(report.satisfied).toBe(false)
+    expect(formatRequiredReleaseReport(report, '42', project.name)).toBe(
+      `release not proven: requirement could not be decided: landing-branch fetch failed; retry: ${PLATFORM_SLUG} pr merge 42 --release-required`,
+    )
   })
 
   test('satisfies and explains a reach-only rung when the flag is absent', () => {
@@ -290,7 +309,7 @@ describe('requiredRungDecision', () => {
     ])
   })
 
-  test('the absent flag still satisfies a reach-only plan when path inspection failed', () => {
+  test('a path-inspection failure remains unsatisfied when the flag is absent', () => {
     const reachOnlyProject = {
       ...project,
       settings: {
@@ -308,12 +327,12 @@ describe('requiredRungDecision', () => {
       },
       () => new Map(),
     )
-    const report = releaseRequiredFlagAbsent(decision.rungs, 'changed paths unavailable')
+    const report = undecidedRequiredRelease(decision.rungs, 'changed paths unavailable')
 
     expect(report.required).toEqual([])
-    expect(report.satisfied).toBe(true)
+    expect(report.satisfied).toBe(false)
     expect(report.releases[0]?.outputTail).toBe(
-      'ship-to reach deploys only at production with --release-required; changed paths unavailable',
+      'requirement could not be decided: changed paths unavailable',
     )
   })
 

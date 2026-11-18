@@ -12,6 +12,7 @@ import { refusal, renderRefusal } from '../../../shared/refusal.ts'
 import { recordMergeBranchLandings } from '../branch/branch-landing-service.ts'
 import { enableSchemaReload, writableDb } from '../database/db.ts'
 import { passingGateForCommit } from '../gate/gate-passed.ts'
+import { runWithGitFetchRetry } from '../git/fetch-retry.ts'
 import { targetGitEnvironment } from '../git/git-environment.ts'
 import { currentProjectRepository, type Project, projectAt } from '../project/projects.ts'
 import { shipToDepthRefusal } from '../release/ship-to-reach.ts'
@@ -157,7 +158,14 @@ function run(cwd: string, argv: string[]): ProcessResult {
 }
 
 function successful(cwd: string, argv: string[], label: string): string {
-  const result = run(cwd, argv)
+  const result = runWithGitFetchRetry(argv, () => {
+    const attempt = run(cwd, argv)
+    return {
+      result: attempt,
+      succeeded: attempt.exitCode === 0,
+      stderr: attempt.stderr || `exit ${attempt.exitCode}`,
+    }
+  })
   if (result.exitCode !== 0) {
     throw new Error(`${label} failed: ${result.stderr || `exit ${result.exitCode}`}`)
   }

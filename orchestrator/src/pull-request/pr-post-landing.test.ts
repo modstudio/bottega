@@ -17,6 +17,7 @@ import {
 import type { PullRequestMergeFacts } from './pr-merge-evidence.ts'
 import {
   completePullRequestPostLanding,
+  decideMergedOutputExitCode,
   type PullRequestPostLandingAdapter,
   type PullRequestPostLandingChildAdapter,
   postLandingHandOffInvocation,
@@ -26,6 +27,30 @@ import {
   type PullRequestPostLandingPayload,
   postLandingRecovery,
 } from './pr-post-landing-payload.ts'
+
+test.each([
+  [
+    'unsatisfied release and clean cleanup',
+    { satisfied: false },
+    0,
+    MERGED_WITH_UNRELEASED_RUNG_EXIT_CODE,
+  ],
+  [
+    'unsatisfied release and residue cleanup',
+    { satisfied: false },
+    MERGED_WITH_RESIDUE_EXIT_CODE,
+    MERGED_WITH_UNRELEASED_RUNG_EXIT_CODE,
+  ],
+  ['satisfied release and clean cleanup', { satisfied: true }, 0, 0],
+  [
+    'satisfied release and residue cleanup',
+    { satisfied: true },
+    MERGED_WITH_RESIDUE_EXIT_CODE,
+    MERGED_WITH_RESIDUE_EXIT_CODE,
+  ],
+] as const)('%s chooses the release-aware exit', (_name, release, cleanupExit, expected) => {
+  expect(decideMergedOutputExitCode(release, cleanupExit)).toBe(expected)
+})
 
 const cwd = fileURLToPath(new URL('../../..', import.meta.url)).replace(/\/$/, '')
 
@@ -404,6 +429,36 @@ test('a move failure with an empty required set reports recovery as residue', as
   expect(outcome.output).toContain('recover with:')
 })
 
+test('an undecided decision without the release flag refuses a failed main move', async () => {
+  const outcome = await complete({
+    project: onDemandProject,
+    releaseRequired: false,
+    workflowPromotionDue: true,
+    movesInstallation: true,
+    post: {
+      changedPaths: () => {
+        throw new Error('landing fetch failed')
+      },
+      entryClosure: () => new Map(),
+      mainHead: () => 'main-before',
+      moveMain: () => {
+        throw new Error('registered main checkout is dirty; clean it')
+      },
+      fence: () => {
+        throw new Error('fence must not run')
+      },
+      handOff: () => {
+        throw new Error('hand-off must not run')
+      },
+    },
+  })
+
+  expect(outcome.exitCode).toBe(MERGED_WITH_UNRELEASED_RUNG_EXIT_CODE)
+  expect(outcome.output).toContain(
+    `release not proven: requirement could not be decided: landing fetch failed; retry: ${PLATFORM_SLUG} pr merge 42 --release-required`,
+  )
+})
+
 test('a move failure reports every rung and remedy, cleans up, and does not fence or hand off', async () => {
   const calls: string[] = []
   const outcome = await complete({
@@ -555,7 +610,7 @@ const childAdapter = (
   ...overrides,
 })
 
-test('the child fails every declared rung when the parent could not decide', async () => {
+test('the child reports one undecided outcome when the parent could not decide', async () => {
   const outcome = await runPullRequestPostLanding(
     childPayload({
       requiredRungs: ['hosted-api', 'worker'],
@@ -571,11 +626,9 @@ test('the child fails every declared rung when the parent could not decide', asy
 
   expect(outcome.exitCode).toBe(21)
   expect(outcome.output).toContain(
-    'required rung hosted-api: deploy exit not run; changed paths unavailable',
+    `release not proven: requirement could not be decided: changed paths unavailable; retry: ${PLATFORM_SLUG} pr merge 42 --release-required`,
   )
-  expect(outcome.output).toContain(
-    'required rung worker: deploy exit not run; changed paths unavailable',
-  )
+  expect(outcome.output).not.toContain('required rung')
 })
 
 test('the child reports checkout verification failure with the rung remedy', async () => {
@@ -695,7 +748,7 @@ test('the child satisfies a reach-only rung when the release flag is absent', as
   )
 })
 
-test('the child appends a parent decision error when the release flag is absent', async () => {
+test('the child reports a parent decision error distinctly when the release flag is absent', async () => {
   const outcome = await runPullRequestPostLanding(
     childPayload({ releaseRequired: false, rungDecisionError: 'changed paths unavailable' }),
     db(),
@@ -704,7 +757,7 @@ test('the child appends a parent decision error when the release flag is absent'
 
   expect(outcome.exitCode).toBe(21)
   expect(outcome.output).toContain(
-    'not released because --release-required was absent; changed paths unavailable',
+    `release not proven: requirement could not be decided: changed paths unavailable; retry: ${PLATFORM_SLUG} pr merge 42 --release-required`,
   )
 })
 
@@ -756,7 +809,7 @@ test('a recovery with a required rung moves, fences, and hands off', async () =>
   expect(events).toEqual(['move', 'fence', 'hand-off'])
 })
 
-test('a failed required-rung decision is carried to the child with every declared rung', async () => {
+test('a failed required-rung decision is carried to the child without requiring a rung', async () => {
   const received: PullRequestPostLandingPayload[] = []
   const projectWithTwoRungs = {
     ...project,
@@ -797,7 +850,19 @@ test('a failed required-rung decision is carried to the child with every declare
   })
 
   expect(received[0]?.rungDecisionError).toBe('changed paths unavailable')
-  expect(received[0]?.requiredRungs).toEqual(['hosted-api', 'worker'])
+  expect(received[0]?.requiredRungs).toEqual([])
+  expect(received[0]?.rungPlans).toEqual([
+    expect.objectContaining({
+      rung: 'hosted-api',
+      required: false,
+      reason: 'requirement could not be decided: changed paths unavailable',
+    }),
+    expect.objectContaining({
+      rung: 'worker',
+      required: false,
+      reason: 'requirement could not be decided: changed paths unavailable',
+    }),
+  ])
 })
 
 test('the selected depth is carried to the child and its recovery command', async () => {

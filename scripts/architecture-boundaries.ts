@@ -508,6 +508,7 @@ export const importBoundaries: ImportBoundary[] = [
       '../../../shared/call-budgets.ts',
       '../../../shared/git.ts',
       '../../../shared/git-path-list.ts',
+      './fetch-retry.ts',
     ],
     'Keep hermetic git observation independent of lifecycle and policy concerns.',
   ),

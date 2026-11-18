@@ -11,6 +11,7 @@ export const releaseModules = [
       'node:path',
       'orchestrator/src/database/db.ts',
       'orchestrator/src/gate/gate-decision.ts',
+      'orchestrator/src/git/fetch-retry.ts',
       'orchestrator/src/git/git-environment.ts',
       'orchestrator/src/project/project-lock.ts',
       'orchestrator/src/project/projects.ts',

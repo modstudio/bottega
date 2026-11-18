@@ -18,6 +18,7 @@ import {
   gitToplevel as sharedGitToplevel,
 } from '../../../shared/git.ts'
 import { nulPathListArgs, splitNulPaths } from '../../../shared/git-path-list.ts'
+import { runWithGitFetchRetry } from './fetch-retry.ts'
 
 /**
  * A MISSING WORKING DIRECTORY IS NOT A MISSING GIT.
@@ -114,10 +115,17 @@ function git(
   failureContext = '',
 ): string {
   if (cwdMissing(cwd)) throw new Error(`git ${args[0]}: ${cwd} does not exist`)
-  const p = startBoundedSync(['git', ...args], {
-    budget: 'git-plumbing',
-    cwd,
-    env,
+  const p = runWithGitFetchRetry(['git', ...args], () => {
+    const result = startBoundedSync(['git', ...args], {
+      budget: 'git-plumbing',
+      cwd,
+      env,
+    })
+    return {
+      result,
+      succeeded: result.exitCode === 0,
+      stderr: result.stderr.trim() || `exit ${result.exitCode}`,
+    }
   })
   if (p.exitCode !== 0) {
     throw new Error(
