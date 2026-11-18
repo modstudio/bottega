@@ -1,10 +1,10 @@
-import { expect, test } from 'bun:test'
 import type { Database } from 'bun:sqlite'
+import { expect, test } from 'bun:test'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { migratedTestDatabase } from '../database/test-database.fixture.ts'
 import type { ProjectAdoptionResult } from '../project/project-relink.ts'
-import type { RecordTaskFlowClient } from './record-api-client-task-flow.ts'
 import type { RecordQuestionClient } from './record-api-client-question.ts'
+import type { RecordTaskFlowClient } from './record-api-client-task-flow.ts'
 import { uploadLocalWorkflowHistory } from './record-sign-in-history-upload.ts'
 
 const at = '2026-11-18T01:00:00.000Z'
@@ -13,7 +13,12 @@ function project(database: Database, name: string): string {
   const id = newRecordId()
   database
     .query('INSERT INTO project(record_id,name,path,canon,settings) VALUES (?,?,?,0,?)')
-    .run(id, name, `/tmp/${name}`, JSON.stringify({ trunk: 'main', record: { space: `${name}-space` } }))
+    .run(
+      id,
+      name,
+      `/tmp/${name}`,
+      JSON.stringify({ trunk: 'main', record: { space: `${name}-space` } }),
+    )
   return id
 }
 
@@ -142,7 +147,10 @@ test('two projects upload repeatably to their own spaces and preserve every loca
   database.exec('PRAGMA foreign_keys=OFF')
   const alpha = linked(database, 'alpha', 1)
   const beta = linked(database, 'beta', 2)
-  const flowNumbers = new Map([[alpha.stageId, 11], [beta.stageId, 22]])
+  const flowNumbers = new Map([
+    [alpha.stageId, 11],
+    [beta.stageId, 22],
+  ])
   const questionNumbers = new Map<string, number>()
   const calls: Array<{ kind: string; space: string; id: string }> = []
   const client: ImportClient = {
@@ -164,7 +172,7 @@ test('two projects upload repeatably to their own spaces and preserve every loca
   const before = Object.fromEntries(
     ['task_flow', 'workflow_cursor', 'question', 'question_mutation_audit'].map((table) => [
       table,
-      (database.query<{ n: number }, []>(`SELECT count(*) n FROM ${table}`).get()!).n,
+      database.query<{ n: number }, []>(`SELECT count(*) n FROM ${table}`).get()!.n,
     ]),
   )
   const first: string[] = []
@@ -201,7 +209,7 @@ test('two projects upload repeatably to their own spaces and preserve every loca
   const after = Object.fromEntries(
     Object.keys(before).map((table) => [
       table,
-      (database.query<{ n: number }, []>(`SELECT count(*) n FROM ${table}`).get()!).n,
+      database.query<{ n: number }, []>(`SELECT count(*) n FROM ${table}`).get()!.n,
     ]),
   )
   expect(after).toEqual(before)
@@ -246,9 +254,9 @@ test('repair creates one keyless flow for every stage state and is idempotent', 
   database.exec('PRAGMA foreign_keys=OFF')
   const projectId = project(database, 'repair')
   const states = ['done', 'abandoned', 'running', 'awaiting-ruling'] as const
-  states.forEach((state, index) =>
-    stage(database, { project: 'repair', projectId, number: index + 1, state }),
-  )
+  states.forEach((state, index) => {
+    stage(database, { project: 'repair', projectId, number: index + 1, state })
+  })
   const client: ImportClient = {
     whoami: async () => ({ personalSpaceId: 'personal', memberships: [], user: {} }),
     importTaskFlow: async (input) => ({
@@ -291,10 +299,14 @@ test('a partial hosted failure leaves all local rows in place', async () => {
   const database = migratedTestDatabase()
   database.exec('PRAGMA foreign_keys=OFF')
   linked(database, 'partial', 1)
-  const second = flow(database, database.query<{ record_id: string }, []>('SELECT record_id FROM project').get()!.record_id)
+  const second = flow(
+    database,
+    database.query<{ record_id: string }, []>('SELECT record_id FROM project').get()!.record_id,
+  )
   stage(database, {
     project: 'partial',
-    projectId: database.query<{ record_id: string }, []>('SELECT record_id FROM project').get()!.record_id,
+    projectId: database.query<{ record_id: string }, []>('SELECT record_id FROM project').get()!
+      .record_id,
     number: 2,
     state: 'done',
     flowId: second,

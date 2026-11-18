@@ -32,4 +32,17 @@ export const recordTaskFlowModules: RecordModule[] = [
     './record-task-flow-contract.ts',
     './record-task-flow-write-contract.ts',
   ]),
+  module('orchestrator/src/record/record-sign-in-history-upload.ts', [
+    'bun:sqlite',
+    '../../../shared/brand.ts',
+    '../../../shared/record-id.ts',
+    '../database/db.ts',
+    '../project/project-relink.ts',
+    '../question-store/question-store-read.ts',
+    '../question-store/question-store-mutation.ts',
+    './record-api-client.ts',
+    './record-api-client-paths.ts',
+    './record-write-destination.ts',
+    './record-task-flow-write-contract.ts',
+  ]),
 ]

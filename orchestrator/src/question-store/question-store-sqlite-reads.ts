@@ -26,6 +26,45 @@ import type {
 } from '../workflow/task-flow-store-types.ts'
 import { questionOpenSql, questionTaskHolderSql } from './question-store-sql.ts'
 
+export function localQuestionHistoryProjectIdsSqlite(database: Database): string[] {
+  return database
+    .query<{ project_id: string }, []>(
+      `SELECT DISTINCT COALESCE(owner.project_record_id,cursor.project_record_id) project_id
+       FROM question q LEFT JOIN run owner ON owner.record_id=q.run_record_id
+       LEFT JOIN workflow_cursor cursor ON cursor.record_id=q.workflow_cursor_record_id
+       WHERE COALESCE(owner.project_record_id,cursor.project_record_id) IS NOT NULL ORDER BY project_id`,
+    )
+    .all()
+    .map((row) => row.project_id)
+}
+
+export function localQuestionHistorySqlite(database: Database, projectId: string) {
+  const rows = database
+    .query<Record<string, unknown>, [string]>(
+      `SELECT q.*,COALESCE(owner.project_record_id,cursor.project_record_id) project_record_id
+     FROM question q LEFT JOIN run owner ON owner.record_id=q.run_record_id
+     LEFT JOIN workflow_cursor cursor ON cursor.record_id=q.workflow_cursor_record_id
+     WHERE COALESCE(owner.project_record_id,cursor.project_record_id)=? ORDER BY q.number`,
+    )
+    .all(projectId)
+  return rows.map((row) => ({
+    row,
+    audits: database
+      .query<Record<string, unknown>, [string]>(
+        `SELECT record_id id,action,actor_session actorSession,at,reason
+       FROM question_mutation_audit WHERE question_record_id=? ORDER BY at,record_id`,
+      )
+      .all(String(row.record_id))
+      .map((audit) => ({
+        id: String(audit.id),
+        action: String(audit.action),
+        actorSession: (audit.actorSession as string | null) ?? null,
+        at: String(audit.at),
+        reason: (audit.reason as string | null) ?? null,
+      })),
+  }))
+}
+
 export function questionNumberProjectIds(database: Database, number: number): string[] {
   return database
     .query<{ project_record_id: string | null }, [number]>(

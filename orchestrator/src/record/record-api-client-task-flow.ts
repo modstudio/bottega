@@ -255,14 +255,6 @@ function taskFlowStageListSearchParams(
 
 function taskFlowWriteClient(request: Request): Partial<RecordTaskFlowClient> {
   return {
-    importTaskFlow: (input, destination) =>
-      write(
-        request,
-        'import',
-        input,
-        (body) => taskFlowImportResultSchema.parse(body),
-        destination,
-      ),
     composeTaskFlow: (input, destination) =>
       write(
         request,
@@ -340,7 +332,21 @@ function taskFlowWriteClient(request: Request): Partial<RecordTaskFlowClient> {
   }
 }
 
+function taskFlowImportClient(request: Request): Partial<RecordTaskFlowClient> {
+  return {
+    importTaskFlow: (input, destination) =>
+      write(
+        request,
+        'import',
+        input,
+        (body) => taskFlowImportResultSchema.parse(body),
+        destination,
+      ),
+  }
+}
+
 export const recordTaskFlowClient = (request: Request): RecordTaskFlowClient => ({
   ...taskFlowReadClient(request),
   ...taskFlowWriteClient(request),
+  ...taskFlowImportClient(request),
 })

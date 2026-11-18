@@ -67,8 +67,14 @@ test('history imports post to their intent routes in the named destination space
       ? ({ revisions: {}, stages: [] } as never)
       : ({ id: ID, number: 7, revision: 1, applied: true } as never)
   })
-  await client.importTaskFlow!({ requestId: ID, flow: { id: ID }, stages: [] } as never, destination)
-  await client.importQuestion!({ requestId: ID, question: { id: ID }, audits: [] } as never, destination)
+  await client.importTaskFlow!(
+    { requestId: ID, flow: { id: ID }, stages: [] } as never,
+    destination,
+  )
+  await client.importQuestion!(
+    { requestId: ID, question: { id: ID }, audits: [] } as never,
+    destination,
+  )
   expect(requests).toEqual([
     { path: '/v1/task-flow/import', method: 'POST', destination: 'workflow-space' },
     { path: '/v1/questions/import', method: 'POST', destination: 'workflow-space' },

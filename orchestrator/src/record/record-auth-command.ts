@@ -10,8 +10,6 @@ import { adoptAllHostedProjectIdentities, formatProjectRelink } from '../project
 import { RefusalError } from '../refusal-error.ts'
 import { activeSpaceInvariant } from './active-space-invariant.ts'
 import { rememberHostedRecord } from './install-binding-write.ts'
-import { pushDocsCommand } from './record-push-docs.ts'
-import { uploadLocalWorkflowHistory } from './record-sign-in-history-upload.ts'
 import {
   RecordApiRequestError,
   type RecordSessionResult,
@@ -20,7 +18,9 @@ import {
   recordApiSignUp,
 } from './record-api-client.ts'
 import { recordApiSendVerificationEmail } from './record-email-verification-client.ts'
+import { pushDocsCommand } from './record-push-docs.ts'
 import { rememberSignedInRecordUser } from './record-session.ts'
+import { uploadLocalWorkflowHistory } from './record-sign-in-history-upload.ts'
 import { recordMemberships } from './record-space.ts'
 
 type Presentation = { log(value: string): void }

@@ -119,7 +119,7 @@ export const SYNCED_SOURCE_DECLARATIONS: SyncedSources = {
     'orchestrator',
     'recordWorkflowClient',
     ['question', 'question_mutation_audit'],
-    ['writeQuestion'],
+    ['importQuestion', 'writeQuestion'],
   ),
   ...writeEntries(
     'orchestrator',
@@ -147,9 +147,21 @@ export const SYNCED_SOURCE_DECLARATIONS: SyncedSources = {
   ),
   ...writeEntries(
     'orchestrator',
+    'recordWorkflowClient',
+    [
+      'task_flow',
+      'workflow_cursor',
+      'workflow_obligation',
+      'workflow_step_text',
+      'workflow_text_copy',
+    ],
+    ['importTaskFlow'],
+  ),
+  ...writeEntries(
+    'orchestrator',
     'recordApiClient',
     ['question', 'question_mutation_audit'],
-    ['writeQuestion'],
+    ['importQuestion', 'writeQuestion'],
   ),
   ...writeEntries(
     'orchestrator',
@@ -174,6 +186,18 @@ export const SYNCED_SOURCE_DECLARATIONS: SyncedSources = {
       'handoffTaskFlow',
       'updateTaskFlowStage',
     ],
+  ),
+  ...writeEntries(
+    'orchestrator',
+    'recordApiClient',
+    [
+      'task_flow',
+      'workflow_cursor',
+      'workflow_obligation',
+      'workflow_step_text',
+      'workflow_text_copy',
+    ],
+    ['importTaskFlow'],
   ),
   ...writeEntries(
     'orchestrator',
