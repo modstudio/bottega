@@ -319,6 +319,59 @@ describe('project affected-test selector diagnosis', () => {
     }
   })
 
+  test('prints an accepted runners repair when the marker script is present', () => {
+    const scripts = { 'test:affected': 'scripts/affected-tests.ts' }
+    const focusedTests: FocusedTestDeclaration = {
+      runners: [
+        {
+          command: 'bun',
+          args: ['test'],
+          patterns: ['src/**/*.test.ts'],
+        },
+      ],
+    }
+    const finding = affectedSelectorDoctorFinding({ project: 'fixture', focusedTests, scripts })
+    expect(finding).not.toBeNull()
+    const patch = finding?.match(/--settings '(.*)'$/)?.[1]
+    expect(patch).toBeDefined()
+    const repaired = mergeProjectSettings(
+      { focusedTests },
+      parseSettingsPatch(String(patch).replaceAll('<selector command>', 'scripts/affected.ts')),
+    ).focusedTests as FocusedTestDeclaration
+    expect(validateFocusedTestDeclaration(repaired).problems).toEqual([])
+    expect(repaired).toEqual({
+      runners: [
+        {
+          command: 'bun',
+          args: ['test'],
+          patterns: ['src/**/*.test.ts'],
+          affected: { command: 'scripts/affected.ts', args: [] },
+        },
+      ],
+    })
+    expect(
+      affectedSelectorDoctorFinding({ project: 'fixture', focusedTests: repaired, scripts }),
+    ).toBeNull()
+  })
+
+  test('reports nothing for runners with selectors when the marker script is present', () => {
+    expect(
+      affectedSelectorDoctorFinding({
+        project: 'fixture',
+        focusedTests: {
+          runners: [
+            {
+              command: 'bun',
+              args: ['test'],
+              affected: { command: 'scripts/affected.ts', args: [] },
+            },
+          ],
+        },
+        scripts: { 'test:affected': 'scripts/affected-tests.ts' },
+      }),
+    ).toBeNull()
+  })
+
   test('reports a different registered selector', () => {
     expect(
       affectedSelectorDoctorFinding({

@@ -286,6 +286,10 @@ const EXPECTED_AFFECTED_SELECTOR = {
 const UNREGISTERED_RUNNER = '<runner command>'
 const UNREGISTERED_AFFECTED_SELECTOR = '<selector command>'
 
+function settingsRemedy(project: string, patch: unknown): string {
+  return `${PLATFORM_SLUG} project set ${project} --settings '${JSON.stringify(patch)}'`
+}
+
 /** Compare a registered worker check only when the project declares the standard script. */
 export function workerCheckDoctorFinding(input: {
   project: string
@@ -297,8 +301,7 @@ export function workerCheckDoctorFinding(input: {
   return (
     `${input.project}: registered workerCheck ${JSON.stringify(input.workerCheck ?? '(unset)')} ` +
     `differs from package script ${JSON.stringify(EXPECTED_WORKER_CHECK)}; ` +
-    `set it with: ${PLATFORM_SLUG} project set ${input.project} --settings ` +
-    `'${JSON.stringify({ workerCheck: EXPECTED_WORKER_CHECK })}'`
+    `set it with: ${settingsRemedy(input.project, { workerCheck: EXPECTED_WORKER_CHECK })}`
   )
 }
 
@@ -322,8 +325,7 @@ function missingAffectedSelectorDoctorFinding(
     `${project}: focused-test ${missing.length === 1 ? 'runner' : 'runners'} ` +
     `${missing.map((runner) => JSON.stringify(runner.command)).join(', ')} ` +
     `${missing.length === 1 ? 'has' : 'have'} no affected selector; run_tests refuses affected=true for this project's workers; ` +
-    `set it with: ${PLATFORM_SLUG} project set ${project} --settings ` +
-    `'${JSON.stringify({ focusedTests: repair })}'`
+    `set it with: ${settingsRemedy(project, { focusedTests: repair })}`
   )
 }
 
@@ -336,7 +338,9 @@ export function affectedSelectorDoctorFinding(input: {
   if (typeof input.scripts?.[AFFECTED_TEST_SCRIPT] !== 'string') {
     return missingAffectedSelectorDoctorFinding(input.project, input.focusedTests)
   }
-  if (input.focusedTests && 'runners' in input.focusedTests) return null
+  if (input.focusedTests && 'runners' in input.focusedTests) {
+    return missingAffectedSelectorDoctorFinding(input.project, input.focusedTests)
+  }
   const registered = input.focusedTests?.affected
   if (Bun.deepEquals(registered, EXPECTED_AFFECTED_SELECTOR)) return null
   const differs =
@@ -346,14 +350,12 @@ export function affectedSelectorDoctorFinding(input: {
     // A selector alone fails focused-test validation, so the repair registers the runner with it.
     return (
       differs +
-      `no focused-test runner is registered, so set one with it: ${PLATFORM_SLUG} project set ${input.project} --settings ` +
-      `'${JSON.stringify({ focusedTests: { command: UNREGISTERED_RUNNER, args: [], affected: EXPECTED_AFFECTED_SELECTOR } })}'`
+      `no focused-test runner is registered, so set one with it: ${settingsRemedy(input.project, { focusedTests: { command: UNREGISTERED_RUNNER, args: [], affected: EXPECTED_AFFECTED_SELECTOR } })}`
     )
   }
   return (
     differs +
-    `set it with: ${PLATFORM_SLUG} project set ${input.project} --settings ` +
-    `'${JSON.stringify({ focusedTests: { affected: EXPECTED_AFFECTED_SELECTOR } })}'`
+    `set it with: ${settingsRemedy(input.project, { focusedTests: { affected: EXPECTED_AFFECTED_SELECTOR } })}`
   )
 }
 
