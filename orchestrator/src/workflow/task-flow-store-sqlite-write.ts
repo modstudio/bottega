@@ -552,6 +552,7 @@ function writeHandoff(
     throw new Error(
       'handoff successor does not link to the source stage; retry with the source stage as handedOffFromRecordId',
     )
+  const stageId = applied?.stage?.id ?? String(newStage.id)
   const number = database
     .query<{ n: number }, [string]>(
       'SELECT COALESCE(MAX(number),0)+1 n FROM workflow_cursor WHERE project_record_id=?',
@@ -568,14 +569,27 @@ function writeHandoff(
     },
   }
   result[oldStage.id] = updateMutation(database, 'workflow_cursor', oldStage, 'handoff', revisions)
-  const inserted = insertStage(database, newStage, revisions?.[String(newStage.id)] ?? 1, number)
+  const inserted = insertStage(
+    database,
+    { ...newStage, id: stageId },
+    revisions?.[stageId] ?? 1,
+    number,
+  )
   result[inserted.id] = revisions?.[inserted.id] ?? 1
-  result[flow.id] = updateMutation(database, 'task_flow', flow, 'handoff', revisions)
+  result[flow.id] = updateMutation(
+    database,
+    'task_flow',
+    applied
+      ? { ...flow, values: { ...flow.values, openStageRecordId: stageId } }
+      : flow,
+    'handoff',
+    revisions,
+  )
   database
     .query(
       "UPDATE context_item SET holder_id=?,updated_at=? WHERE holder_kind='cursor' AND holder_id=?",
     )
-    .run(newStage.id as SQLQueryBindings, newStage.updatedAt as SQLQueryBindings, oldReference.id)
+    .run(stageId, newStage.updatedAt as SQLQueryBindings, oldReference.id)
   return { revisions: result, stage: { id: inserted.id, number: inserted.number } }
 }
 
