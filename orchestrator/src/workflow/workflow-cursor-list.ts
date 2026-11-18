@@ -11,6 +11,7 @@ import {
   taskFlowHandoffLinks,
   taskFlowReadStore,
 } from './task-flow-store.ts'
+import { TASK_FLOW_OPEN_STAGE_STATES } from './task-flow-store-types.ts'
 import { cursorAutonomy } from './workflow-cursor-autonomy.ts'
 import { renderWorkflowCursorLine } from './workflow-cursor-format.ts'
 import { workflowCursorProjectScope } from './workflow-cursor-selection.ts'
@@ -62,7 +63,7 @@ export async function listWorkflowCursors(
       const handedOffFrom = row.handed_off_from_record_id
         ? await taskFlowReadStore(d).stageByRecordId(row.handed_off_from_record_id)
         : null
-      const closed = row.state === 'done' || row.state === 'abandoned'
+      const closed = !TASK_FLOW_OPEN_STAGE_STATES.some((state) => state === row.state)
       const composition = closed
         ? null
         : composeWorkflow(

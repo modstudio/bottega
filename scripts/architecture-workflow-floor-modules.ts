@@ -85,6 +85,7 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     '../run/question-open.ts',
     './workflow-cursor-autonomy.ts',
     './task-flow-store.ts',
+    './task-flow-store-types.ts',
     './workflow-cursor-format.ts',
     './workflow-cursor-selection.ts',
     './workflow-obligation-floor.ts',

@@ -19,6 +19,7 @@ import type {
   TaskFlowTaskRulingRow,
   TaskFlowWaitingQuestionRow,
 } from '../workflow/task-flow-store-types.ts'
+import { TASK_FLOW_OPEN_STAGE_STATES } from '../workflow/task-flow-store-types.ts'
 import { questionStore } from './question-store.ts'
 import { questionRulingsPaged } from './question-store-read.ts'
 import type { QuestionReadRow, QuestionStore } from './question-store-types.ts'
@@ -108,7 +109,7 @@ function stageReads(questions: QuestionStore, read: StageRead) {
       project?: string
       sessionId?: string
     }): Promise<TaskFlowListedStageRow[]> {
-      return this.listStages({ ...input, states: ['running', 'awaiting-ruling'] })
+      return this.listStages({ ...input, states: TASK_FLOW_OPEN_STAGE_STATES })
     },
 
     async stageIdentityMap() {

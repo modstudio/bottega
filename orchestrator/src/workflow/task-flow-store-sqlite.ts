@@ -42,6 +42,7 @@ import type {
   TaskFlowWaitingQuestionRow,
   WorkflowCursorInsert,
 } from './task-flow-store-types.ts'
+import { TASK_FLOW_OPEN_STAGE_STATES } from './task-flow-store-types.ts'
 
 const STAGE_COLUMNS =
   'cursor.number id,cursor.record_id,cursor.project,cursor.workflow_slug,cursor.mode_slug,cursor.workflow_key,cursor.task_record_id,cursor.task_flow_record_id,cursor.instance_id,cursor.session_id,cursor.ordinal,cursor.step_slug,cursor.state,cursor.workflow_version_record_id,cursor.catalogue_version_record_id,(SELECT n FROM workflow_version WHERE record_id=cursor.workflow_version_record_id) workflow_version,(SELECT n FROM step_catalogue_version WHERE record_id=cursor.catalogue_version_record_id) catalogue_version,cursor.args,cursor.autonomy,cursor.closed,cursor.question,cursor.total_steps,cursor.created_at,cursor.updated_at,cursor.enforcement,cursor.opened_machine_id,cursor.taken_over_from_machine_id,cursor.last_advanced_machine_id,cursor.revision,cursor.handed_off_from_record_id'
@@ -340,10 +341,6 @@ class SqliteTaskFlowStore {
          ORDER BY cursor.updated_at,cursor.number`,
       )
       .all(...values)
-  }
-
-  listOpenStages(input: { project?: string; sessionId?: string }): TaskFlowListedStageRow[] {
-    return this.listStages({ ...input, states: ['running', 'awaiting-ruling'] })
   }
 
   keyedStageHistory(input: { since: string }): TaskFlowStageCursorRow[] {
@@ -732,9 +729,12 @@ type SqliteTaskFlowReadStore = {
     ? (...args: A) => Promise<R>
     : never
 }
+type SqliteTaskFlowReadStoreWithOpenStages = SqliteTaskFlowReadStore & {
+  listOpenStages(input: { project?: string; sessionId?: string }): Promise<TaskFlowListedStageRow[]>
+}
 
 /** Delegates async reads to the single synchronous SQLite implementation. */
-export function sqliteTaskFlowReadStore(database: Database): SqliteTaskFlowReadStore {
+export function sqliteTaskFlowReadStore(database: Database): SqliteTaskFlowReadStoreWithOpenStages {
   const local = new SqliteTaskFlowStore(database)
   const listStages = async (input: {
     project?: string
@@ -763,8 +763,7 @@ export function sqliteTaskFlowReadStore(database: Database): SqliteTaskFlowReadS
     openKeylessStages: async (input) => local.openKeylessStages(input),
     activeStageModes: async (input) => local.activeStageModes(input),
     listStages,
-    listOpenStages: async (input) =>
-      listStages({ ...input, states: ['running', 'awaiting-ruling'] }),
+    listOpenStages: async (input) => listStages({ ...input, states: TASK_FLOW_OPEN_STAGE_STATES }),
     keyedStageHistory: async (input) => local.keyedStageHistory(input),
     openStageWorktrees: async () => local.openStageWorktrees(),
     activeStageAutonomy: async (project, taskRecordId) =>
