@@ -104,6 +104,49 @@ export function decideGateHeadCommit(input: {
   return input.headCommit && input.porcelainPaths.length === 0 ? input.headCommit : null
 }
 
+export type GateTreeSnapshot = string | { unavailable: string }
+
+export type ArchitectGateAttribution =
+  | { commit: string }
+  | {
+      commit: null
+      commitUnknown: 'dirty-before'
+      checkedTree: string | null
+      treeUnavailable?: string
+    }
+  | { commit: null; commitUnknown: 'changed-during' }
+
+/** Attribute an architect gate to the one commit or content tree it checked. */
+export function decideArchitectGateOutcome(input: {
+  headCommitBefore: string | null
+  headCommitAfter: string | null
+  treeBefore: GateTreeSnapshot | null
+  treeAfter: GateTreeSnapshot | null
+}): ArchitectGateAttribution {
+  if (input.headCommitBefore !== null) {
+    return input.headCommitAfter === input.headCommitBefore
+      ? { commit: input.headCommitBefore }
+      : { commit: null, commitUnknown: 'changed-during' }
+  }
+  if (typeof input.treeBefore !== 'string' || typeof input.treeAfter !== 'string') {
+    const unavailable =
+      input.treeBefore && typeof input.treeBefore !== 'string'
+        ? input.treeBefore.unavailable
+        : input.treeAfter && typeof input.treeAfter !== 'string'
+          ? input.treeAfter.unavailable
+          : 'tree snapshot was not taken'
+    return {
+      commit: null,
+      commitUnknown: 'dirty-before',
+      checkedTree: null,
+      treeUnavailable: unavailable,
+    }
+  }
+  return input.treeBefore === input.treeAfter
+    ? { commit: null, commitUnknown: 'dirty-before', checkedTree: input.treeBefore }
+    : { commit: null, commitUnknown: 'changed-during' }
+}
+
 export function decideWorkerGateInput(
   input: GateInput | undefined,
   hasUncommittedTrackedChanges: boolean,

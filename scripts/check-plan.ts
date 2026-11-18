@@ -205,6 +205,7 @@ export const ROOT_TEST_FILES = [
   'scripts/architecture-ui-layers.test.ts',
   'scripts/architecture-undeclared-modules.test.ts',
   'scripts/architecture-violation-baseline.test.ts',
+  'scripts/architecture-ratchet-output.test.ts',
   'scripts/check-hub-ui-styles.test.ts',
   'scripts/check-bun-serve-timeout.test.ts',
   'scripts/check-bun-versions.test.ts',

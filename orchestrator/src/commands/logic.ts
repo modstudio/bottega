@@ -133,16 +133,10 @@ const runGateCommand = async (): Promise<void> => {
         ? {
             kind: 'gate',
             id: result.number,
-            exitCode: result.exitCode,
-            commit: null,
-            commitUnknown: result.commitUnknown,
+            checkedTree: null,
+            ...result,
           }
-        : {
-            kind: 'gate',
-            id: result.number,
-            exitCode: result.exitCode,
-            commit: result.commit,
-          },
+        : { kind: 'gate', id: result.number, ...result },
     ),
   )
   presentation.setExitCode(architectGateProcessExitCode(result.exitCode))

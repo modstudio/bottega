@@ -26,5 +26,6 @@ test('architecture violation ratchet accepts an existing baseline edge', () => {
   expect(architectureViolationRatchet([existing])).toEqual({
     newViolations: [],
     fixedBaseline: architectureViolationBaseline.slice(1),
+    baselined: [existing],
   })
 })
