@@ -253,10 +253,18 @@ function spawnCliChild(
   opts: TransportStartOpts,
   stdinPrompt: string | undefined,
 ) {
+  const temporaryEnvironment = opts.recipeEnvironment?.TMPDIR
+    ? {
+        TMPDIR: opts.recipeEnvironment.TMPDIR,
+        TMP: opts.recipeEnvironment.TMP!,
+        TEMP: opts.recipeEnvironment.TEMP!,
+        CLAUDE_CODE_TMPDIR: opts.recipeEnvironment.CLAUDE_CODE_TMPDIR!,
+      }
+    : {}
   return lowerRunChildPriority(
     execa(launchArgv[0]!, launchArgv.slice(1), {
       cwd: opts.cwd,
-      env: opts.env,
+      env: { ...opts.env, ...temporaryEnvironment },
       stdin: stdinPrompt !== undefined ? 'pipe' : 'ignore',
       input: stdinPrompt,
       stdout: 'pipe',

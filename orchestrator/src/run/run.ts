@@ -60,9 +60,9 @@ import {
   isWritingAcpRun,
   removeNewSandboxHomeAfterFailure,
   resetSandbox,
-  sandboxLaunchArgv,
   sandboxReasonPrefix,
   selectReadonlySandbox,
+  srtLauncher,
 } from '../sandbox/sandbox.ts'
 import { EMPTY_QUOTA_READINGS } from '../transport/quota-readings.ts'
 import {
@@ -696,8 +696,7 @@ export async function run(
             | undefined
           const probeTool = projectSettings?.mcp?.probe_tool ?? null
           const wrap = sandboxSelection.profile
-            ? (bin: string, args: string[]) =>
-                sandboxLaunchArgv(sandboxSelection.profile!, bin, args, runTempDir(runtimeDir))
+            ? srtLauncher(sandboxSelection.profile, runtimeDir)
             : undefined
           const probe = await probeMcpServer({
             server: mcpServerName,
@@ -941,10 +940,7 @@ export async function run(
           gitConfigEnvironment,
           runtimeDir,
           recipeEnvironment,
-          launchEnvironment: {
-            ...mcpEnvironment,
-            ...probeLaunch.environment,
-          },
+          launchEnvironment: { ...mcpEnvironment, ...probeLaunch.environment },
           scratchDir,
           writesJob,
           codexSandbox,
