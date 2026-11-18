@@ -8,6 +8,7 @@ export type CheckoutResolution = {
   checkoutPath: string
   headIsTipOrAncestor: boolean
   headIsOnTrunk?: boolean
+  branchTipIsOnTrunk?: boolean
   landingCommit?: string | null
   landingIsHeadOrAncestor?: boolean
   landingBranch: string
@@ -37,13 +38,18 @@ export function decideCheckoutAnswer(input: {
 export function classifyCheckoutEvidence(input: {
   headIsTipOrAncestor: boolean
   headIsOnTrunk?: boolean
+  branchTipIsOnTrunk?: boolean
   landingCommit: string | null
   landingIsHeadOrAncestor: boolean
   recordedLandingTip?: string | null
   headIsRecordedTipOrAncestor?: boolean
   landingIsOnTrunk?: boolean
 }): CheckoutEvidenceLocation {
-  if (input.headIsTipOrAncestor && !input.headIsOnTrunk) return 'branch'
+  if (
+    input.headIsTipOrAncestor &&
+    (!input.headIsOnTrunk || (input.branchTipIsOnTrunk && !input.landingCommit))
+  )
+    return 'branch'
   const recordedLanding = classifyRecordedLandingEvidence({
     recordedTip: input.recordedLandingTip ?? null,
     headIsRecordedTipOrAncestor: input.headIsRecordedTipOrAncestor ?? false,
@@ -60,6 +66,7 @@ export function classifyCheckoutResolution(checkout: CheckoutResolution): Checko
   return classifyCheckoutEvidence({
     headIsTipOrAncestor: checkout.headIsTipOrAncestor,
     headIsOnTrunk: checkout.headIsOnTrunk,
+    branchTipIsOnTrunk: checkout.branchTipIsOnTrunk,
     landingCommit: checkout.landingCommit ?? null,
     landingIsHeadOrAncestor: checkout.landingIsHeadOrAncestor ?? false,
     recordedLandingTip: checkout.recordedLandingTip,

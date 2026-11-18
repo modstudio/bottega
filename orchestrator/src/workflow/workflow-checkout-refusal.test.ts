@@ -62,6 +62,17 @@ test('no floor fact about recorded evidence is read from live tree state', () =>
       },
       expected: 'branch',
     },
+    {
+      name: 'base commit while the branch has no commits of its own',
+      input: {
+        headIsTipOrAncestor: true,
+        headIsOnTrunk: true,
+        branchTipIsOnTrunk: true,
+        landingCommit: null,
+        landingIsHeadOrAncestor: false,
+      },
+      expected: 'branch',
+    },
   ] as const
 
   for (const proof of cases)

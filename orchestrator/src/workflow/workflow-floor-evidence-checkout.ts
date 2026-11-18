@@ -67,13 +67,21 @@ export function productionResolveCheckout(
         gitOk(checkout, ['merge-base', '--is-ancestor', headCommit, ref]),
       ),
   )
+  const branchTipIsOnTrunk = Boolean(
+    expectedBranch &&
+      [expectedBranch, `origin/${expectedBranch}`].some((branchRef) =>
+        [`origin/${landingBranch}`, landingBranch].some((trunkRef) =>
+          gitOk(checkout, ['merge-base', '--is-ancestor', branchRef, trunkRef]),
+        ),
+      ),
+  )
   const landing =
     headIsTipOrAncestor && !headIsOnTrunk
       ? { commit: null, recordedTip: null }
       : checkoutLanding(identity.project, expectedBranch, d)
   const landingCommit = landing.commit
   const landingCommitAvailable = Boolean(
-    landingCommit && gitOk(checkout, ['merge-base', '--is-ancestor', landingCommit, landingCommit]),
+    landingCommit && gitOk(checkout, ['cat-file', '-e', `${landingCommit}^{commit}`]),
   )
   const landingIsHeadOrAncestor = landingCommitAvailable
     ? Boolean(
@@ -100,6 +108,7 @@ export function productionResolveCheckout(
     checkoutPath: checkout,
     headIsTipOrAncestor,
     headIsOnTrunk,
+    branchTipIsOnTrunk,
     landingCommit,
     landingIsHeadOrAncestor,
     landingBranch,
