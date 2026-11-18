@@ -56,7 +56,7 @@ export function unattributedLocalQuestionHistorySqlite(database: Database) {
 
 export function localQuestionHistorySqlite(database: Database, projectId: string | null) {
   const rows = database
-    .query<Record<string, unknown>, [string]>(
+    .query<Record<string, unknown>, [string | null]>(
       `SELECT q.*,COALESCE(owner.project_record_id,cursor.project_record_id) project_record_id
      FROM question q LEFT JOIN run owner ON owner.record_id=q.run_record_id
      LEFT JOIN workflow_cursor cursor ON cursor.record_id=q.workflow_cursor_record_id
