@@ -184,7 +184,7 @@ function insertFlow(database: Database, row: SqlRow, revisionValue: number): voi
     )
 }
 
-export function nextCursorNumber(database: Database, projectRecordId: string): number {
+function nextCursorNumber(database: Database, projectRecordId: string): number {
   return database
     .query<{ n: number }, [string]>(
       'SELECT COALESCE(MAX(number),0)+1 n FROM workflow_cursor WHERE project_record_id=?',
