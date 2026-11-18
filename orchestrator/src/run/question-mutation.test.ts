@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { migratedTestDatabase } from '../database/test-database.fixture.ts'
 import { answerWorkflowQuestion, authorizeWorkflowQuestionMutation } from './question-mutation.ts'
@@ -22,7 +23,7 @@ test('answering a missing workflow question names the inbox lookup remedy', asyn
       migratedTestDatabase(),
     ),
   ).rejects.toThrow(
-    `question ${questionId} was not found; check the identifier with bottega question inbox --all`,
+    `question ${questionId} was not found; check the identifier with ${PLATFORM_SLUG} question inbox --all`,
   )
 })
 

@@ -226,7 +226,6 @@ export const FileRulingResultSchema = z
 export type OperatorWaitingItem = z.infer<typeof OperatorWaitingItemSchema>
 export type ClaimedOperatorNotification = z.infer<typeof ClaimedOperatorNotificationSchema>
 export type AnswerWaitingResult = z.infer<typeof AnswerWaitingResultSchema>
-export type LateWorkflowRulingResult = z.infer<typeof LateWorkflowRulingResultSchema>
 export type ListOpenQuestionsResult = z.infer<typeof ListOpenQuestionsResultSchema>
 export type FileRulingResult = z.infer<typeof FileRulingResultSchema>
 

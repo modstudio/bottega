@@ -143,8 +143,7 @@ function explicitQuestionDecision(
   run: AnswerRunFacts | null,
   question: AnswerQuestionFacts | null,
 ): AnswerIdentifierDecision {
-  if (question?.kind === 'workflow-question')
-    return workflowQuestionDecision(identifier, question)
+  if (question?.kind === 'workflow-question') return workflowQuestionDecision(identifier, question)
   if (question) {
     if (question.open) return { kind: 'target', runRecordId: question.rootRecordId }
     const state = question.state === 'ruled' ? 'already ruled on' : 'closed'

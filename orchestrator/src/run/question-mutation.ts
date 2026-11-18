@@ -2,6 +2,7 @@
 /** Owns authority and audit for workflow-question mutations. Run questions keep run authority. */
 
 import type { Database } from 'bun:sqlite'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { callerIdentityRefusal } from '../caller-classification.ts'
 import { callerIdentity, db, sessionId } from '../database/db.ts'
 import {
@@ -206,7 +207,7 @@ export async function answerWorkflowQuestion(
   const row = await questionById(database, input.questionId)
   if (!row)
     throw new Error(
-      `question ${input.questionId} was not found; check the identifier with bottega question inbox --all`,
+      `question ${input.questionId} was not found; check the identifier with ${PLATFORM_SLUG} question inbox --all`,
     )
   const expected = input.expect ?? 'open'
   if (
