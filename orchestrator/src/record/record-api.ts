@@ -110,6 +110,7 @@ import { type RecordSnapshot, SNAPSHOT_KINDS, type SnapshotKind } from './record
 import type { RecordScore } from './record-verdicts.ts'
 
 export const SNAPSHOT_MAX_BYTES = 1024 * 1024
+const RECORD_API_POST_READ_ROUTES = new Set(['/v1/task-flow/presence'])
 
 type ApiEnvironment = RecordWriteTelemetryEnvironment
 type Tenant = Omit<ConfigTenant, 'spaceIds'> & { spaceIds: string[]; uuidKeyedRead?: true }
@@ -316,13 +317,17 @@ function writeTelemetryDeps(deps: Deps) {
 }
 
 function refusingRequestTenant(context: Context<ApiEnvironment>, recordUrl: string): Tenant | null {
-  recordDestinationlessWrite(context)
   const route = context.req.path
+  const nature =
+    context.req.method === 'POST' && RECORD_API_POST_READ_ROUTES.has(route)
+      ? 'read'
+      : recordRequestNature(context.req.method)
+  if (nature === 'write') recordDestinationlessWrite(context)
   const readKind = recordRequestReadKind(route, (name) => context.req.query(name))
   const tenant = requestTenant(
     context.get('identity'),
     context.get('destinationSpaceId'),
-    recordRequestNature(context.req.method),
+    nature,
     recordUrl,
     route,
     readKind,
