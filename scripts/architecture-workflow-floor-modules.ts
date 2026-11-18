@@ -165,14 +165,17 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
   module('orchestrator/src/workflow/workflow-review-owed-decision.ts', [
     '../review-funnel/review-funnel-lens-status.ts',
   ]),
+  module('orchestrator/src/workflow/workflow-review-owed-checkout.ts', []),
   module('orchestrator/src/workflow/workflow-review-owed-floor.ts', [
     'bun:sqlite',
+    'node:fs',
     '../database/db.ts',
     '../project/projects.ts',
     '../review-funnel/review-funnel-decision-log.ts',
     '../review-funnel/review-funnel-verdict-service.ts',
     '../review/review-target.ts',
     './workflow-floor-evidence-checkout.ts',
+    './workflow-review-owed-checkout.ts',
     './workflow-review-owed-decision.ts',
   ]),
   module('orchestrator/src/workflow/workflow-production-floor-ports.ts', [
