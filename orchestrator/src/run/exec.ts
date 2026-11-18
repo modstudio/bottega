@@ -37,6 +37,10 @@ type RunDispatchSpec = import('../route/failover.ts').DetachSpec & {
   dispatchMcpPreflightedAgent?: string
 }
 
+type ExecDependencies = {
+  installTaskReader(): void
+}
+
 export function startupFailureDiagnostic(error: unknown): string {
   if (error instanceof RefusalError) return error.message
   return String((error as Error)?.stack ?? error)
@@ -90,12 +94,16 @@ async function recordStartupFailure(id: string, reason: string): Promise<void> {
   }
 }
 
-export async function main(argv: string[]): Promise<number> {
+export async function main(
+  argv: string[],
+  { installTaskReader }: ExecDependencies,
+): Promise<number> {
   let requestWindowTimer: ReturnType<typeof setInterval> | undefined
   let finishRequestWindow: (() => void) | undefined
   const [idArg, promptPath, jobName, specJson] = argv
   const id = idArg ?? ''
   try {
+    installTaskReader()
     const { CALLER_ENVIRONMENT_KEY, callerLineage } = await import(
       '../../../shared/record-caller.ts'
     )
@@ -189,5 +197,3 @@ export async function main(argv: string[]): Promise<number> {
     finishRequestWindow?.()
   }
 }
-
-if (import.meta.main) process.exitCode = await main(process.argv.slice(2))

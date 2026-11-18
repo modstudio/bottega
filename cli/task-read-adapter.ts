@@ -1,21 +1,44 @@
-import type { TaskReadPort } from '../orchestrator/src/workflow/task-read-port.ts'
+import {
+  installTaskReader,
+  type TaskReadPort,
+} from '../orchestrator/src/workflow/task-read-port.ts'
 
-/** Load the hub implementation only for an orchestrator entry and build its task reader. */
-export async function cliTaskReadAdapter(): Promise<TaskReadPort> {
-  const [{ listTasks, showTask }, { listTaskDocuments, getTaskDocument }] = await Promise.all([
-    import('../hub/src/task.ts'),
-    import('../hub/src/task-document.ts'),
-  ])
+type HubTaskReads = {
+  task: typeof import('../hub/src/task.ts')
+  document: typeof import('../hub/src/task-document.ts')
+}
+
+let loadedHubTaskReads: HubTaskReads | undefined
+
+/** Load the hub implementation on the first task read and reuse it for this process. */
+function hubTaskReads(): HubTaskReads {
+  if (loadedHubTaskReads) return loadedHubTaskReads
+  loadedHubTaskReads = {
+    task: require('../hub/src/task.ts') as typeof import('../hub/src/task.ts'),
+    document: require('../hub/src/task-document.ts') as typeof import('../hub/src/task-document.ts'),
+  }
+  return loadedHubTaskReads
+}
+
+/** Build the CLI-owned port without loading its hub implementation. */
+export function cliTaskReadAdapter(): TaskReadPort {
   return {
-    list: listTasks,
-    show: showTask,
-    documents: listTaskDocuments,
-    document: getTaskDocument,
+    list(filters) {
+      return hubTaskReads().task.listTasks(filters)
+    },
+    show(key, scope) {
+      return hubTaskReads().task.showTask(key, scope)
+    },
+    documents(key, scope) {
+      return hubTaskReads().document.listTaskDocuments(key, scope)
+    },
+    document(value, scope) {
+      return hubTaskReads().document.getTaskDocument(value, scope)
+    },
   }
 }
 
 /** Install the lazy CLI-owned adapter into the orchestrator process. */
-export async function installCliTaskReader(): Promise<void> {
-  const { installTaskReader } = await import('../orchestrator/src/workflow/task-read-port.ts')
-  installTaskReader(await cliTaskReadAdapter())
+export function installCliTaskReader(): void {
+  installTaskReader(cliTaskReadAdapter())
 }

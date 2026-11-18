@@ -24,11 +24,22 @@ test('an unexpected startup error keeps its stack', () => {
 test('the detached entry point durably fails and publishes a reservation after startup breaks', async () => {
   const id = addRun({ agent: '(pending)', job: 'summarize', status: 'running' })
 
-  expect(await main([id, '/missing-detached-prompt', 'summarize'])).toBe(1)
+  expect(
+    await main([id, '/missing-detached-prompt', 'summarize'], {
+      installTaskReader() {
+        throw new Error('task reader installation failed')
+      },
+    }),
+  ).toBe(1)
 
   expect(
-    db().query('SELECT status, failure_kind, latency_ms FROM run WHERE record_id=?').get(id),
-  ).toEqual({ status: 'failed', failure_kind: 'harness', latency_ms: 0 })
+    db().query('SELECT status, failure_kind, latency_ms, error FROM run WHERE record_id=?').get(id),
+  ).toEqual({
+    status: 'failed',
+    failure_kind: 'harness',
+    latency_ms: 0,
+    error: 'task reader installation failed',
+  })
   expect(db().query("SELECT kind FROM outbox WHERE row_id=? AND kind='run'").get(id)).toEqual({
     kind: 'run',
   })
