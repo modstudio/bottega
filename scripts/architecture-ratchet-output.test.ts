@@ -1,22 +1,24 @@
 import { expect, test } from 'bun:test'
-import type { IViolation } from 'dependency-cruiser'
 import { architectureRatchetFailureLines } from './architecture-ratchet-output.ts'
+import type {
+  ArchitectureViolationEdge,
+  ArchitectureViolationRatchet,
+} from './architecture-violation-baseline.ts'
 
-function violation(rule: string, from: string, to: string): IViolation {
-  return { rule: { name: rule, severity: 'error' }, from, to }
+function violation(rule: string, from: string, to: string): ArchitectureViolationEdge {
+  return { rule, from, to }
 }
 
 test('prints only the new violation detail and counts the baselined violations', () => {
   const baselined = Array.from({ length: 27 }, (_, index) =>
     violation('baseline-rule', `baseline-${index}.ts`, 'allowed.ts'),
   )
-  const added = violation('new-rule', 'new.ts', 'forbidden.ts')
   const lines = architectureRatchetFailureLines({
-    violations: [...baselined, added],
     ratchet: {
       newViolations: [{ rule: 'new-rule', from: 'new.ts', to: 'forbidden.ts' }],
       fixedBaseline: [],
-    },
+      baselined,
+    } satisfies ArchitectureViolationRatchet,
     ruleComments: new Map([
       ['baseline-rule', 'baseline comment'],
       ['new-rule', 'new comment'],
@@ -35,11 +37,11 @@ test('prints only the new violation detail and counts the baselined violations',
 test('prints a fixed baseline edge with no new violation detail', () => {
   const current = violation('baseline-rule', 'still-present.ts', 'target.ts')
   const lines = architectureRatchetFailureLines({
-    violations: [current],
     ratchet: {
       newViolations: [],
       fixedBaseline: [{ rule: 'baseline-rule', from: 'fixed.ts', to: 'target.ts' }],
-    },
+      baselined: [current],
+    } satisfies ArchitectureViolationRatchet,
     ruleComments: new Map([['baseline-rule', 'baseline comment']]),
   })
 
@@ -54,13 +56,12 @@ test('prints new and baselined violation details in full mode', () => {
     violation('baseline-rule', 'baseline-1.ts', 'target.ts'),
     violation('baseline-rule', 'baseline-2.ts', 'target.ts'),
   ]
-  const added = violation('new-rule', 'new.ts', 'forbidden.ts')
   const lines = architectureRatchetFailureLines({
-    violations: [...baselined, added],
     ratchet: {
       newViolations: [{ rule: 'new-rule', from: 'new.ts', to: 'forbidden.ts' }],
       fixedBaseline: [],
-    },
+      baselined,
+    } satisfies ArchitectureViolationRatchet,
     ruleComments: new Map([
       ['baseline-rule', 'baseline comment'],
       ['new-rule', 'new comment'],

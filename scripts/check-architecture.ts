@@ -267,7 +267,6 @@ if (ratchet.newViolations.length || ratchet.fixedBaseline.length) {
       .map((rule) => [rule.name, rule.comment!]),
   )
   for (const line of architectureRatchetFailureLines({
-    violations: errorViolations,
     ratchet,
     ruleComments,
     full,

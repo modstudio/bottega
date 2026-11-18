@@ -129,29 +129,14 @@ const runGateCommand = async (): Promise<void> => {
   const result = await runArchitectGate({ write: (chunk) => write(chunk) })
   log(
     formatOutcomeLine(
-      'commitUnknown' in result && result.commitUnknown === 'dirty-before'
+      'commitUnknown' in result
         ? {
             kind: 'gate',
             id: result.number,
-            exitCode: result.exitCode,
-            commit: null,
-            commitUnknown: result.commitUnknown,
-            checkedTree: result.checkedTree,
+            checkedTree: null,
+            ...result,
           }
-        : 'commitUnknown' in result
-          ? {
-              kind: 'gate',
-              id: result.number,
-              exitCode: result.exitCode,
-              commit: null,
-              commitUnknown: result.commitUnknown,
-            }
-          : {
-              kind: 'gate',
-              id: result.number,
-              exitCode: result.exitCode,
-              commit: result.commit,
-            },
+        : { kind: 'gate', id: result.number, ...result },
     ),
   )
   presentation.setExitCode(architectGateProcessExitCode(result.exitCode))

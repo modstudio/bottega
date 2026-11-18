@@ -4,6 +4,7 @@ import {
   boundedGateOutputTail,
   brokerGateEnvironment,
   changedGateToolingPaths,
+  decideArchitectGateOutcome,
   decideBrokerLaunch,
   decideGateCancellation,
   decideGateCheckoutRefusal,
@@ -145,6 +146,66 @@ test('broker gate records HEAD only for a clean tree', () => {
   expect(decideGateHeadCommit({ headCommit, porcelainPaths: [] })).toBe(headCommit)
   expect(decideGateHeadCommit({ headCommit, porcelainPaths: [' M src/app.ts'] })).toBeNull()
   expect(decideGateHeadCommit({ headCommit: '', porcelainPaths: [] })).toBeNull()
+})
+
+test.each([
+  [
+    'clean and unchanged',
+    {
+      headCommitBefore: 'head-a',
+      headCommitAfter: 'head-a',
+      treeBefore: null,
+      treeAfter: null,
+    },
+    { commit: 'head-a' },
+  ],
+  [
+    'clean and changed',
+    {
+      headCommitBefore: 'head-a',
+      headCommitAfter: 'head-b',
+      treeBefore: null,
+      treeAfter: null,
+    },
+    { commit: null, commitUnknown: 'changed-during' },
+  ],
+  [
+    'dirty and unchanged',
+    {
+      headCommitBefore: null,
+      headCommitAfter: null,
+      treeBefore: 'tree-a',
+      treeAfter: 'tree-a',
+    },
+    { commit: null, commitUnknown: 'dirty-before', checkedTree: 'tree-a' },
+  ],
+  [
+    'dirty and changed',
+    {
+      headCommitBefore: null,
+      headCommitAfter: null,
+      treeBefore: 'tree-a',
+      treeAfter: 'tree-b',
+    },
+    { commit: null, commitUnknown: 'changed-during' },
+  ],
+  [
+    'dirty with an unavailable snapshot',
+    {
+      headCommitBefore: null,
+      headCommitAfter: null,
+      treeBefore: { unavailable: 'git write-tree failed' },
+      treeAfter: 'tree-a',
+    },
+    {
+      commit: null,
+      commitUnknown: 'dirty-before',
+      checkedTree: null,
+      treeUnavailable: 'git write-tree failed',
+    },
+  ],
+] as const)('decides architect gate attribution for %s', (_name, input, expected) => {
+  expect(decideArchitectGateOutcome(input)).toEqual(expected)
 })
 
 test('a merge in progress with unmerged paths is refused, naming them', () => {
