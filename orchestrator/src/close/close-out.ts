@@ -50,7 +50,14 @@ import {
 } from './absent-tree-close-out.ts'
 import { adoptedTreeCloseOutDecision } from './close-out-adoption.ts'
 import { withCloseOutLease } from './close-out-lease.ts'
-import { type CloseOutPreparation, prepareCloseOut } from './close-out-preparation.ts'
+import {
+  type CloseOutPreparation,
+  type CloseOutTaskFlowClient,
+  conversationRootAndWorktree,
+  finishCursorWorktreeClear,
+  prepareCloseOut,
+  prepareCursorWorktreeClear,
+} from './close-out-preparation.ts'
 import { closeTerminalChainQuestions } from './close-out-questions.ts'
 
 import {
@@ -99,6 +106,7 @@ type CloseOutOptions = {
   extraPids?: number[]
   pgid?: number | null
   closeOutLeaseHeld?: boolean
+  taskFlowClient?: CloseOutTaskFlowClient
 }
 
 type CloseOutPreparedOptions = CloseOutOptions & {
@@ -888,22 +896,6 @@ function appendRetainedBranchDetail(result: CloseOutAttemptResult): CloseOutAtte
   return result
 }
 
-function conversationRootAndWorktree(runId: string): {
-  rootRecordId: string
-  worktree: string | null
-} {
-  const row = db()
-    .query(
-      'SELECT COALESCE(parent_run_record_id,record_id) root_record_id,worktree FROM run WHERE record_id=?',
-    )
-    .get(runId) as { root_record_id: string; worktree: string | null } | null
-  if (!row) throw new Error(`no run ${runId}`)
-  const root = db().query('SELECT worktree FROM run WHERE record_id=?').get(row.root_record_id) as {
-    worktree: string | null
-  } | null
-  return { rootRecordId: row.root_record_id, worktree: row.worktree ?? root?.worktree ?? null }
-}
-
 function closeOutCallerDetail(detail: string, intent: CloseOutOptions['intent']): string {
   return `${detail}; close-out intent=${intent} pid=${process.pid} ppid=${process.ppid}`
 }
@@ -922,7 +914,10 @@ function appendTreeNamingDetail(
 }
 
 /** Run one close-out attempt and retain its outcome for observation and retry. */
-function closeOutRunHoldingLease(runId: string, options: CloseOutPreparedOptions): CloseOutResult {
+function closeOutRunHoldingLease(
+  runId: string,
+  options: CloseOutPreparedOptions,
+): CloseOutAttemptResult {
   const root = conversationRootAndWorktree(runId)
   const keepTree = closeOutKeepTreeDecision(
     root.rootRecordId,
@@ -982,8 +977,6 @@ function closeOutRunHoldingLease(runId: string, options: CloseOutPreparedOptions
       }
     })
   }
-  delete result.resourceTeardownCompleted
-  delete result.resourceTeardownFailed
   if (options.intent !== 'sweep' && ['released', 'absent', 'forgotten'].includes(result.outcome)) {
     const sandbox = releaseSandboxDirectoryForConversation(result.runId, {
       dryRun: options.dryRun,
@@ -1021,8 +1014,14 @@ export async function closeOutRun(
   runId: string,
   options: CloseOutOptions,
 ): Promise<CloseOutResult> {
-  const preparation = await prepareCloseOut()
-  const { questionRootIds, ...result } = closeOutRunPrepared(runId, options, preparation)
+  const preparation = await prepareCloseOut(options.taskFlowClient)
+  const clearCursorWorktrees = prepareCursorWorktreeClear(runId, preparation)
+  const { questionRootIds, ...preparedResult } = closeOutRunPrepared(runId, options, preparation)
+  let result = preparedResult
+  result = finishCursorWorktreeClear(
+    result,
+    options.dryRun ? null : await clearCursorWorktrees(result),
+  )
   for (const rootId of questionRootIds) await closeTerminalChainQuestions(rootId, !!options.dryRun)
   return result
 }
@@ -1032,7 +1031,7 @@ export function closeOutRunPrepared(
   runId: string,
   options: CloseOutOptions,
   preparation: CloseOutPreparation,
-): CloseOutResult & { questionRootIds: string[] } {
+): CloseOutAttemptResult & { questionRootIds: string[] } {
   const preparedOptions: CloseOutPreparedOptions = {
     ...options,
     cursorWorktrees: preparation.cursorWorktrees,

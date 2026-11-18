@@ -1,9 +1,17 @@
-// concern: workflow cursor worktree read
-/** Reads only the worktree arguments held by open workflow cursors. */
+// concern: workflow cursor worktree ownership
+/** Reads open cursor worktrees and clears pointers to trees after removal. */
 
 import type { Database } from 'bun:sqlite'
-import { db } from '../database/db.ts'
-import { taskFlowReadStore } from './task-flow-store.ts'
+import { db, nowIso, writeTransaction } from '../database/db.ts'
+import type { RecordTaskFlowClient } from '../record/record-api-client-task-flow.ts'
+import {
+  taskFlowWriteTarget,
+  writeHostedTaskFlow,
+} from '../record/record-task-flow-write-client.ts'
+import { taskFlowRequestId } from '../record/record-task-flow-write-contract.ts'
+import { taskFlowLocalStore, taskFlowReadStore } from './task-flow-store.ts'
+import type { TaskFlowIntentInput } from './task-flow-store-types.ts'
+import type { ArgumentReboundEvent, CursorTrailEntry } from './workflow-cursor-trail.ts'
 
 export type OpenCursorWorktree = {
   number: number
@@ -11,6 +19,8 @@ export type OpenCursorWorktree = {
   project: string
   worktree: string
 }
+
+export type CursorWorktreeTaskFlowClient = RecordTaskFlowClient
 
 /** Read the claim handles carried by one cursor without trusting stored argument JSON. */
 function workflowCursorStoredArgs(args: string): Record<string, unknown> | null {
@@ -50,4 +60,77 @@ export async function openCursorWorktrees(
       ? [{ number: row.number, workflow: row.workflow, project: row.project, worktree }]
       : []
   })
+}
+
+/** Read locally mirrored open cursors whose stored worktree uses a captured tree spelling. */
+export function openCursorWorktreesAtSpellings(
+  capturedSpellings: readonly string[],
+  database: Database = db(),
+): OpenCursorWorktree[] {
+  const spellings = new Set(capturedSpellings)
+  return database
+    .query<{ number: number; workflow: string; project: string; args: string }, []>(
+      `SELECT number,workflow_slug workflow,project,args FROM workflow_cursor
+         WHERE state IN ('running','awaiting-ruling') ORDER BY project,number`,
+    )
+    .all()
+    .flatMap((row) => {
+      const worktree = workflowCursorBranchAndWorktree(row.args).worktree
+      return worktree !== null && spellings.has(worktree) ? [{ ...row, worktree }] : []
+    })
+}
+
+/** Clear open cursor claims that point at a tree which has just been removed. */
+export async function clearOpenCursorWorktreesAtPath(
+  capturedSpellings: readonly string[],
+  database: Database = db(),
+  client?: RecordTaskFlowClient,
+): Promise<number> {
+  const spellings = new Set(capturedSpellings)
+  const rows = database
+    .query<
+      { record_id: string; revision: number; project: string; args: string; closed: string },
+      []
+    >(
+      `SELECT record_id,revision,project,args,closed FROM workflow_cursor
+         WHERE state IN ('running','awaiting-ruling') ORDER BY project,number`,
+    )
+    .all()
+    .filter((row) => spellings.has(workflowCursorBranchAndWorktree(row.args).worktree ?? ''))
+  for (const row of rows) {
+    const args = JSON.parse(row.args) as Record<string, string>
+    const oldValue = args.worktree!
+    delete args.worktree
+    const at = nowIso()
+    const closed = JSON.parse(row.closed) as CursorTrailEntry[]
+    const rebound: ArgumentReboundEvent = {
+      event: 'argument-rebound',
+      name: 'worktree',
+      oldValue,
+      newValue: '',
+      at,
+    }
+    closed.push(rebound)
+    const payload: TaskFlowIntentInput<'stage-update'> = {
+      requestId: taskFlowRequestId('stage-update', [row.record_id, String(row.revision)]),
+      stages: [
+        {
+          id: row.record_id,
+          expectedRevision: row.revision,
+          values: { arguments: args, closedStepNotes: closed, updatedAt: at },
+        },
+      ],
+    }
+    const hosted = await writeHostedTaskFlow(
+      'stage-update',
+      payload,
+      taskFlowWriteTarget(row.project, database),
+      client,
+    )
+    writeTransaction(
+      () => taskFlowLocalStore(database).write('stage-update', payload, hosted),
+      database,
+    )
+  }
+  return rows.length
 }

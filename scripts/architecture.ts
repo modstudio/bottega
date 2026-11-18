@@ -134,7 +134,16 @@ const declaredModules: ArchitectureModule[] = [
     './task-flow-store-types.ts',
   ]),
   module('orchestrator/src/close/close-out-preparation.ts', [
+    'node:fs',
+    '../../../shared/brand.ts',
+    '../../../shared/refusal.ts',
+    '../database/db.ts',
+    '../record/record-api-client-task-flow.ts',
+    '../resources/resource-ownership.ts',
+    '../workflow/workflow-cursor-format.ts',
     '../workflow/workflow-cursor-worktrees.ts',
+    './absent-tree-close-out.ts',
+    './close-out-report.ts',
   ]),
   module('orchestrator/src/workflow/task-flow-store-sqlite-write.ts', [
     'bun:sqlite',
@@ -631,6 +640,7 @@ const declaredModules: ArchitectureModule[] = [
     '../worktree/worktree-lifecycle.ts',
     '../worktree/worktree-seed.ts',
     '../worktree/worktree-types.ts',
+    '../workflow/workflow-cursor-worktrees.ts',
   ]),
   module('orchestrator/src/workflow/workflow-step-sequences.ts', [
     './step-catalogue-definition.ts',

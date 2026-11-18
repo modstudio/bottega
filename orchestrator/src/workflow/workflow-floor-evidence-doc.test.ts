@@ -77,3 +77,21 @@ test('admits a machine-scope document with no project as evidence on another pro
   })
   expect(gathered.artifact).toEqual({ ref: 'doc:machine/_/note', exists: true })
 })
+
+test('an unknown doc artifact refusal names every accepted artifact form including task key', async () => {
+  expect(
+    gatherValidatedEvidence({
+      cursorId: newRecordId(),
+      cursorState: 'running',
+      identity,
+      stepOrdinal: 1,
+      stepSlug: 'rebase',
+      floors: [],
+      evidence: { artifact: 'doc:missing' },
+      ports: {},
+      d: database(),
+    }),
+  ).rejects.toThrow(
+    'task:<KEY>#comment:<id> | run number or run id | probe:<id> | exec:<id> | review-read:<UUID> | attached-text:<UUID> | GitHub pull-request link',
+  )
+})

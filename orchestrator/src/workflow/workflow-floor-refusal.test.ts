@@ -13,6 +13,7 @@ test('an unresolvable cursor worktree names its path and replacement argument', 
     commit: null,
   })
   expect(refusal).toContain('recorded cursor worktree /fixture/removed-tree')
+  expect(refusal).toContain('was removed')
   expect(refusal).toContain('--arg worktree=<tree>')
   expect(refusal).not.toContain('<current tree commit>')
 })
