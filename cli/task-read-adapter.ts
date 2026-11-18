@@ -1,8 +1,8 @@
+import { installProjectRegisterReader } from '../hub/src/project-register-reader.ts'
 import {
   installTaskReader,
   type TaskReadPort,
 } from '../orchestrator/src/workflow/task-read-port.ts'
-import { installProjectRegisterReader } from '../hub/src/project-register-reader.ts'
 
 type HubTaskReads = {
   task: typeof import('../hub/src/task.ts')
@@ -27,8 +27,7 @@ function projectRegisterReads(): ProjectRegisterReads {
       require('../orchestrator/src/project/project-read.ts') as typeof import('../orchestrator/src/project/project-read.ts'),
     presentation:
       require('../orchestrator/src/project/project-list-json.ts') as typeof import('../orchestrator/src/project/project-list-json.ts'),
-    contract:
-      require('../shared/orch-contract.ts') as typeof import('../shared/orch-contract.ts'),
+    contract: require('../shared/orch-contract.ts') as typeof import('../shared/orch-contract.ts'),
   }
   return loadedProjectRegisterReads
 }

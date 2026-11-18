@@ -25,9 +25,7 @@ export function projects(): RegisteredProject[] {
 }
 
 /** Read every live and retired project from the published register. */
-export function everyRegisteredProject(
-  load?: ProjectRegisterReader,
-): RegisteredProject[] {
+export function everyRegisteredProject(load?: ProjectRegisterReader): RegisteredProject[] {
   const read = load ?? projectRegisterReader() ?? projectList
   return [...read(), ...read({ retired: true })]
 }

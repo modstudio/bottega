@@ -26,8 +26,8 @@ import {
   purgeProjectInHostedRecord,
   refuseHostedProjectSpaceChange,
 } from './project-hosted-write.ts'
-import { fillProjectRecordIds } from './project-record-identity.ts'
 import { listedProjectJson, projectProblems } from './project-list-json.ts'
+import { fillProjectRecordIds } from './project-record-identity.ts'
 import { formatProjectRelink, relinkProjectByName } from './project-relink.ts'
 import { persistLocalProjectSet } from './project-rename.ts'
 import { projectSetSettingsPatch } from './project-set-space.ts'

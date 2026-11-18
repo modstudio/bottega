@@ -1,9 +1,9 @@
 import '../hub/test/preload.ts'
 import { beforeEach, expect, mock, test } from 'bun:test'
 import { projectRegisterReader } from '../hub/src/project-register-reader.ts'
-import { OrchProjectListSchema } from '../shared/orch-contract.ts'
 import { resetFixtureStore } from '../hub/test/run-fixtures.ts'
 import { taskReader } from '../orchestrator/src/workflow/task-read-port.ts'
+import { OrchProjectListSchema } from '../shared/orch-contract.ts'
 import { installCliTaskReader } from './task-read-adapter.ts'
 
 mock.module('../orchestrator/src/project/project-read.ts', () => ({
@@ -58,8 +58,7 @@ test('installing the CLI adapter leaves hub unloaded until the first read', () =
 
   const recordId = Bun.randomUUIDv7()
   const stamp = new Date().toISOString()
-  const { writeTransaction } =
-    require('../hub/src/db.ts') as typeof import('../hub/src/db.ts')
+  const { writeTransaction } = require('../hub/src/db.ts') as typeof import('../hub/src/db.ts')
   writeTransaction((database) =>
     database
       .query(
