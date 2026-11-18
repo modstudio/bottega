@@ -38,7 +38,6 @@ import {
   machinePermissionArgv,
   machinePermissionListArgv,
   projectArgv,
-  projectListProcessError,
   questionIdentityMapArgv,
   readRunChangesArgv,
   readRunsArgv,
@@ -49,6 +48,7 @@ import {
   startDashboardCapability,
   stopDashboardCapability,
 } from './orch.ts'
+import { projectListProcessError } from './orch-project-register.ts'
 
 test('readRunsById builds one id option per id and no since option', () => {
   expect(readRunsByIdArgv([42, '00000000-0000-4000-8000-000000000043'])).toEqual([
@@ -580,7 +580,7 @@ test('orchestrator resolution accepts only executable files from override, check
   const outputDir = join(bundledRoot, 'hub', 'src')
   mkdirSync(outputDir, { recursive: true })
   const built = await Bun.build({
-    entrypoints: [fileURLToPath(new URL('orch.ts', import.meta.url))],
+    entrypoints: [fileURLToPath(new URL('orch-project-register.ts', import.meta.url))],
     outdir: outputDir,
     target: 'bun',
     format: 'esm',

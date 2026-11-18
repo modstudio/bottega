@@ -19,7 +19,7 @@ import { boundedFetch } from '../../../shared/bounded-fetch.ts'
 import { startBoundedSync } from '../../../shared/bounded-process.ts'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { BoundExceededError } from '../../../shared/call-budgets.ts'
-import type { DistributionManifest } from '../../../shared/install-root.ts'
+import type { DistributionManifest } from '../../../shared/distribution-manifest.ts'
 import {
   DEFAULT_RELEASE_DOWNLOAD_ROOT,
   DOWNLOAD_BASE_URL_ENV,

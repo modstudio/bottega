@@ -49,6 +49,7 @@ export const databaseModules: ArchitectureModule[] = [
     '../../../shared/bounded-fetch.ts',
     '../../../shared/bounded-process.ts',
     '../../../shared/call-budgets.ts',
+    '../../../shared/distribution-manifest.ts',
     '../../../shared/install-root.ts',
     '../../../shared/release-artifacts.ts',
     '../../../shared/state-directory.ts',

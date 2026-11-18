@@ -76,7 +76,6 @@ export type {
   OperatorWaitingItem,
   OrchProject,
   OrchRun,
-  OrchRunDetail,
 } from '../../shared/orch-contract.ts'
 
 import {
@@ -107,12 +106,6 @@ import { resolveOrchExecutable } from './orch-project-register.ts'
 import { refreshProjects } from './projects.ts'
 
 export type { BoardListInput, BoardPostInput } from './board-contract.ts'
-export {
-  type ProjectListOptions,
-  projectList,
-  projectListProcessError,
-  resolveOrchExecutable,
-} from './orch-project-register.ts'
 
 let dashboardCapability: { dir: string; path: string; token: string } | null = null
 const RUNS_DEADLINE_MS = 60_000
@@ -587,7 +580,7 @@ export const agents = () => jsonDocument<OrchAgentDefinition[]>(['agent', 'list'
 export const dispatchNoteCurator = (cwd: string, prompt: string): Promise<string> =>
   orchProcess(['run', 'start', 'understand', '--cwd', cwd], 0, { stdin: prompt })
 
-export const run = (id: number): Promise<OrchRunDetail> =>
+const run = (id: number): Promise<OrchRunDetail> =>
   parseOrchestratorJson(['run', 'show', String(id)], OrchRunDetailSchema)
 export const runDetail = run
 
@@ -966,7 +959,7 @@ const boardOperatorMarkers = () => [
 ]
 const boardOptions = () => ({ unsetEnv: boardOperatorMarkers() })
 
-export function boardListArgv(input: BoardListInput): string[] {
+function boardListArgv(input: BoardListInput): string[] {
   return [
     'board',
     'list',

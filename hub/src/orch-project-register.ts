@@ -8,7 +8,7 @@ import {
 } from '../../shared/process-identity.ts'
 import { bottegaEntryArgv } from '../../shared/self-spawn.ts'
 
-export const PROJECT_LIST_TIMEOUT_MS = 20_000
+const PROJECT_LIST_TIMEOUT_MS = 20_000
 
 /** Resolve the executable used to read the orchestrator project register. */
 export function resolveOrchExecutable(): string {
@@ -21,7 +21,7 @@ export function resolveOrchExecutable(): string {
   throw missingBinary(override, checkout)
 }
 
-export function usableExecutable(candidate: string): boolean {
+function usableExecutable(candidate: string): boolean {
   try {
     if (!statSync(candidate).isFile()) return false
     accessSync(candidate, constants.X_OK)
@@ -31,7 +31,7 @@ export function usableExecutable(candidate: string): boolean {
   }
 }
 
-export function missingBinary(override: string | null, checkout: string): Error {
+function missingBinary(override: string | null, checkout: string): Error {
   return new Error(
     `${PLATFORM_SLUG} executable unavailable: BOTTEGA_ORCH override ${override ?? 'unset'}; ` +
       `checkout executable ${checkout}; PATH lookup found nothing. ` +
