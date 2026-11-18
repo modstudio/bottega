@@ -2,7 +2,13 @@ import { createHash } from 'node:crypto'
 import { existsSync, readFileSync } from 'node:fs'
 import { dirname, relative, resolve } from 'node:path'
 import ts from 'typescript'
-import { couldBeSqlExpression, renderedSqlRiskCandidates } from './local-sql-call-classification.ts'
+import {
+  couldBeSqlExpression,
+  type RenderedSqlCallArgument,
+  renderedSqlRiskCandidates,
+  renderSqlCallArgument,
+  splitSqlStatements,
+} from './local-sql-call-classification.ts'
 import {
   productionTypeScriptFiles,
   productionTypeScriptFilesIncludingTests,
@@ -569,7 +575,7 @@ function sqlCallSites(
   const argument = node.arguments[0]
   if (!method || !SQL_CALL_METHODS.has(method) || !argument) return empty
   const rendered =
-    renderFixtureSql(argument) ??
+    renderSqlCallArgument(argument, HOSTED_SQL_START) ??
     (() => {
       const value = resolveStaticValue(argument, staticSymbols())
       if (typeof value === 'string')
@@ -730,107 +736,6 @@ function fixtureExecutorName(expression: ts.Expression): string | null {
   return null
 }
 
-function splitSqlStatements(sql: string): string[] {
-  const statements: string[] = []
-  let start = 0
-  let quote: "'" | '"' | null = null
-  for (let index = 0; index < sql.length; index += 1) {
-    const character = sql[index]
-    if (quote) {
-      if (character === quote) {
-        if (sql[index + 1] === quote) index += 1
-        else quote = null
-      }
-      continue
-    }
-    if (character === "'" || character === '"') quote = character
-    else if (character === ';') {
-      statements.push(sql.slice(start, index))
-      start = index + 1
-    }
-  }
-  statements.push(sql.slice(start))
-  return statements.map((statement) => statement.trim()).filter(Boolean)
-}
-
-type RenderedFixtureSql = {
-  statements: string[]
-  unresolved: ts.Expression | null
-  unresolvedSql: boolean
-}
-
-function fixtureInterpolationIsScalar(sql: string): boolean {
-  if (/(?:=|<>|\bIN\s*\()\s*$/i.test(sql)) return true
-  const statement = splitSqlStatements(sql).at(-1) ?? ''
-  const valuesAt = statement.search(/\bVALUES\b/i)
-  if (valuesAt < 0) return false
-  let depth = 0
-  let quote: "'" | '"' | null = null
-  for (const character of statement.slice(valuesAt + 'VALUES'.length)) {
-    if (quote) {
-      if (character === quote) quote = null
-      continue
-    }
-    if (character === "'" || character === '"') quote = character
-    else if (character === '(') depth += 1
-    else if (character === ')') depth -= 1
-  }
-  return depth > 0 && /(?:\(|,)\s*$/.test(statement)
-}
-
-function appendFixtureSpan(
-  sql: string,
-  span: ts.TemplateSpan,
-): { sql: string; unresolved: ts.Expression | null } {
-  const value = unwrap(span.expression)
-  if (ts.isIdentifier(value) && value.text === 'statement') return { sql, unresolved: value }
-  let suffix = span.literal.text
-  const exactlySingleQuoted = sql.endsWith("'") && suffix.startsWith("'")
-  if (exactlySingleQuoted) {
-    sql = sql.slice(0, -1)
-    suffix = suffix.slice(1)
-  }
-  const singleQuoted = !exactlySingleQuoted && (sql.match(/'/g)?.length ?? 0) % 2 === 1
-  const quotedLiteral = exactlySingleQuoted || singleQuoted
-  const stringProducingConditional =
-    ts.isConditionalExpression(value) &&
-    [value.whenTrue, value.whenFalse].some(
-      (branch) => ts.isStringLiteralLike(unwrap(branch)) || ts.isTemplateLiteral(unwrap(branch)),
-    )
-  if (!quotedLiteral && (!fixtureInterpolationIsScalar(sql) || stringProducingConditional))
-    return { sql, unresolved: value }
-  return { sql: `${sql}NULL${suffix}`, unresolved: null }
-}
-
-function renderFixtureSql(expression: ts.Expression): RenderedFixtureSql | null {
-  const node = unwrap(expression)
-  if (ts.isStringLiteralLike(node))
-    return {
-      statements: splitSqlStatements(node.text),
-      unresolved: null,
-      unresolvedSql: false,
-    }
-  if (!ts.isTemplateExpression(node)) return null
-  let sql = node.head.text
-  for (const span of node.templateSpans) {
-    const appended = appendFixtureSpan(sql, span)
-    if (appended.unresolved)
-      return {
-        statements: [],
-        unresolved: appended.unresolved,
-        unresolvedSql: splitSqlStatements(sql).some((statement) =>
-          HOSTED_SQL_START.test(statement),
-        ),
-      }
-    sql = appended.sql
-  }
-  return {
-    statements: splitSqlStatements(sql),
-    unresolved: null,
-    unresolvedSql: false,
-  }
-}
-
 type ExtractedFixtureSql = {
   sites: HostedSqlSite[]
   unresolved: HostedSqlUnresolvedSite[]
@@ -865,7 +770,9 @@ function unqualifiedTableReference(sql: string, table: string): boolean {
   return new RegExp(`(^|[^.a-zA-Z0-9_])${table}\\b`, 'i').test(sql)
 }
 
-function filterTemporaryTableStatements(rendered: RenderedFixtureSql): RenderedFixtureSql {
+function filterTemporaryTableStatements(
+  rendered: RenderedSqlCallArgument,
+): RenderedSqlCallArgument {
   const temporaryTables = new Set<string>()
   const statements: string[] = []
   for (const statement of rendered.statements) {
@@ -887,7 +794,7 @@ function fixtureSite(
   file: string,
   argument: ts.Expression,
 ): ExtractedFixtureSql {
-  const initial = renderFixtureSql(argument)
+  const initial = renderSqlCallArgument(argument, HOSTED_SQL_START)
   const rendered = initial && filterTemporaryTableStatements(initial)
   if (!rendered) return { sites: [], unresolved: [], selected: false }
   const line = source.getLineAndCharacterOfPosition(argument.getStart(source)).line + 1

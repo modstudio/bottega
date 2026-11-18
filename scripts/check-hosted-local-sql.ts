@@ -26,7 +26,7 @@ type CannotJudgeSite = Pick<HostedSqlCannotJudgeSite, 'file' | 'line' | 'fingerp
 
 // These dynamic table positions cannot be compared with the hosted-table list statically. This
 // baseline is shrink-only: a new site and a listed site that disappears both fail the check.
-export const HOSTED_LOCAL_SQL_CANNOT_JUDGE: readonly CannotJudgeSite[] = [
+const HOSTED_LOCAL_SQL_CANNOT_JUDGE: readonly CannotJudgeSite[] = [
   {
     file: 'orchestrator/src/database/applied-migration-compatibilities.ts',
     line: 22,
@@ -291,6 +291,46 @@ export function hostedLocalRenderedSqlRisk(sql: string): boolean {
   )
 }
 
+function cannotJudgeFailures(
+  sites: readonly HostedSqlCannotJudgeSite[],
+  baseline: readonly CannotJudgeSite[],
+): string[] {
+  const failures: string[] = []
+  const key = (site: CannotJudgeSite): string => `${site.file}:${site.line}:${site.fingerprint}`
+  const sitesByKey = new Map(sites.map((site) => [key(site), site]))
+  const baselineByKey = new Map(baseline.map((site) => [key(site), site]))
+  for (const [siteKey, site] of sitesByKey)
+    if (!baselineByKey.has(siteKey))
+      failures.push(
+        `${site.file}:${site.line}: cannot judge interpolated SQL table ${site.expression}; use a static table name or add this site to the shrink-only HOSTED_LOCAL_SQL_CANNOT_JUDGE baseline`,
+      )
+  for (const [siteKey, site] of baselineByKey)
+    if (!sitesByKey.has(siteKey))
+      failures.push(
+        `${site.file}:${site.line}: stale cannot-judge SQL baseline entry; remove it from HOSTED_LOCAL_SQL_CANNOT_JUDGE`,
+      )
+  return failures
+}
+
+function allowedFileBudgetFailures(
+  allowedFiles: readonly AllowedFile[],
+  uses: ReadonlyMap<number, number>,
+): string[] {
+  const failures: string[] = []
+  allowedFiles.forEach((allowed, index) => {
+    const actual = uses.get(index) ?? 0
+    if (allowed.expectedSites !== undefined && actual !== allowed.expectedSites)
+      failures.push(
+        `${allowed.pattern}: hosted-only SQL exemption expected ${allowed.expectedSites} sites but found ${actual}; update the exact-path budget only after verifying its selector (${allowed.reason})`,
+      )
+    else if (allowed.expectedSites === undefined && actual === 0)
+      failures.push(
+        `unused hosted-only SQL exemption ${allowed.pattern}: remove it from HOSTED_LOCAL_SQL_ALLOWED_FILES (${allowed.reason})`,
+      )
+  })
+  return failures
+}
+
 export function hostedLocalSqlViolations(input: {
   sites: readonly HostedSqlSite[]
   unresolved?: readonly HostedSqlUnresolvedSite[]
@@ -302,8 +342,9 @@ export function hostedLocalSqlViolations(input: {
 }): string[] {
   const failures: string[] = []
   const allowedFileUses = new Map<number, number>()
-  const useAllowedFile = (index: number): void =>
+  const useAllowedFile = (index: number): void => {
     allowedFileUses.set(index, (allowedFileUses.get(index) ?? 0) + 1)
+  }
   const hosted = new Set(
     input.stateClasses.flatMap((item) =>
       'table' in item && item.store === 'orchestrator' && item.class === 'hosted'
@@ -338,39 +379,10 @@ export function hostedLocalSqlViolations(input: {
       `${site.file}:${site.line}: unresolved SQL ${site.expression}; make the SQL statically resolvable, route through the store selector, or declare the file local-only with its reason in HOSTED_LOCAL_SQL_ALLOWED_FILES`,
     )
   }
-  const cannotJudgeByKey = new Map(
-    (input.cannotJudge ?? []).map((site) => [
-      `${site.file}:${site.line}:${site.fingerprint}`,
-      site,
-    ]),
+  failures.push(
+    ...cannotJudgeFailures(input.cannotJudge ?? [], input.cannotJudgeBaseline ?? []),
+    ...allowedFileBudgetFailures(input.allowedFiles, allowedFileUses),
   )
-  const baselineByKey = new Map(
-    (input.cannotJudgeBaseline ?? []).map((site) => [
-      `${site.file}:${site.line}:${site.fingerprint}`,
-      site,
-    ]),
-  )
-  for (const [key, site] of cannotJudgeByKey)
-    if (!baselineByKey.has(key))
-      failures.push(
-        `${site.file}:${site.line}: cannot judge interpolated SQL table ${site.expression}; use a static table name or add this site to the shrink-only HOSTED_LOCAL_SQL_CANNOT_JUDGE baseline`,
-      )
-  for (const [key, site] of baselineByKey)
-    if (!cannotJudgeByKey.has(key))
-      failures.push(
-        `${site.file}:${site.line}: stale cannot-judge SQL baseline entry; remove it from HOSTED_LOCAL_SQL_CANNOT_JUDGE`,
-      )
-  input.allowedFiles.forEach((allowed, index) => {
-    const actual = allowedFileUses.get(index) ?? 0
-    if (allowed.expectedSites !== undefined && actual !== allowed.expectedSites)
-      failures.push(
-        `${allowed.pattern}: hosted-only SQL exemption expected ${allowed.expectedSites} sites but found ${actual}; update the exact-path budget only after verifying its selector (${allowed.reason})`,
-      )
-    else if (allowed.expectedSites === undefined && actual === 0)
-      failures.push(
-        `unused hosted-only SQL exemption ${allowed.pattern}: remove it from HOSTED_LOCAL_SQL_ALLOWED_FILES (${allowed.reason})`,
-      )
-  })
   return failures
 }
 
