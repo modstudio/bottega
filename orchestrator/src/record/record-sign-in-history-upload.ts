@@ -313,9 +313,6 @@ async function uploadDatabaseHistory(
   const personalQuestions = localQuestionHistory(database, null)
   if (!projects.length && !personalQuestions.length) {
     presentation.log('no local task-flow or question history to upload')
-    presentation.log(
-      `run \`${PLATFORM_SLUG} machine update\` to verify and release local workflow history`,
-    )
     return
   }
   const { importTaskFlow, importQuestion } = dependencies.client

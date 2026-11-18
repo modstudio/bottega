@@ -153,6 +153,26 @@ function dependencies(database: Database, client: ImportClient) {
   }
 }
 
+test('empty history prints only the empty upload line', async () => {
+  const database = migratedTestDatabase()
+  const output: string[] = []
+  const client: ImportClient = {
+    importTaskFlow: async () => {
+      throw new Error('unexpected')
+    },
+    importQuestion: async () => {
+      throw new Error('unexpected')
+    },
+  }
+  await uploadLocalWorkflowHistory(
+    [],
+    { log: (line) => output.push(line) },
+    dependencies(database, client),
+  )
+  expect(output).toEqual(['no local task-flow or question history to upload'])
+  database.close()
+})
+
 test('two projects upload repeatably to their own spaces and preserve every local row', async () => {
   const database = migratedTestDatabase()
   database.exec('PRAGMA foreign_keys=OFF')
