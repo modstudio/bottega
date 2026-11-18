@@ -1,7 +1,14 @@
 import { createHash } from 'node:crypto'
-import { existsSync, readdirSync, readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { dirname, relative, resolve } from 'node:path'
 import ts from 'typescript'
+import { couldBeSqlExpression, renderedSqlRiskCandidates } from './local-sql-call-classification.ts'
+import {
+  productionTypeScriptFiles,
+  productionTypeScriptFilesIncludingTests,
+} from './typescript-source-files.ts'
+
+export { productionTypeScriptFiles } from './typescript-source-files.ts'
 
 export type HostedSqlSite = {
   file: string
@@ -23,17 +30,6 @@ const LOCAL_HANDLE_SQL_START = /^\s*(?:SELECT|INSERT|UPDATE|DELETE|WITH|CREATE|D
 
 function hostedSqlFingerprint(sql: string): string {
   return createHash('sha256').update(sql.replace(/\s+/g, ' ').trim()).digest('hex').slice(0, 16)
-}
-
-export function productionTypeScriptFiles(directory: string): string[] {
-  const files: string[] = []
-  for (const entry of readdirSync(directory, { withFileTypes: true })) {
-    if (entry.name === 'node_modules') continue
-    const path = resolve(directory, entry.name)
-    if (entry.isDirectory()) files.push(...productionTypeScriptFiles(path))
-    else if (entry.name.endsWith('.ts') && !entry.name.endsWith('.test.ts')) files.push(path)
-  }
-  return files
 }
 
 function importedFixturePath(root: string, file: string, statement: ts.Statement): string | null {
@@ -73,17 +69,6 @@ function hostedFixtureTypeScriptFiles(root: string): string[] {
     }
   }
   return [...files].sort()
-}
-
-function productionTypeScriptFilesIncludingTests(directory: string): string[] {
-  const files: string[] = []
-  for (const entry of readdirSync(directory, { withFileTypes: true })) {
-    if (entry.name === 'node_modules') continue
-    const path = resolve(directory, entry.name)
-    if (entry.isDirectory()) files.push(...productionTypeScriptFilesIncludingTests(path))
-    else if (entry.name.endsWith('.ts')) files.push(path)
-  }
-  return files
 }
 
 const HOSTED_FIXTURE_IMPORTS_WITHOUT_SQL = new Set([
@@ -560,50 +545,6 @@ export function extractHostedSqlFromSource(
 
 const SQL_CALL_METHODS = new Set(['exec', 'prepare', 'query', 'run'])
 
-function couldBeSqlExpression(expression: ts.Expression): boolean {
-  const value = unwrap(expression)
-  if (ts.isIdentifier(value)) return /(?:sql|query|statement)/i.test(value.text)
-  if (ts.isPropertyAccessExpression(value)) return /(?:sql|query|statement)/i.test(value.name.text)
-  if (ts.isElementAccessExpression(value))
-    return /(?:sql|query|statement)/i.test(value.expression.getText())
-  if (ts.isTemplateExpression(value)) return LOCAL_HANDLE_SQL_START.test(value.head.text)
-  if (ts.isBinaryExpression(value)) return couldBeSqlExpression(value.left)
-  if (ts.isCallExpression(value)) return /(?:sql|query|statement)/i.test(value.expression.getText())
-  return false
-}
-
-function templateStaticText(node: ts.TemplateExpression): string {
-  return `${node.head.text}${node.templateSpans.map((span) => span.literal.text).join('')}`
-}
-
-function renderedSqlRiskCandidates(
-  expression: ts.Expression,
-  constants: Map<string, ts.Expression>,
-): string[] {
-  const candidates: string[] = []
-  const seen = new Set<string>()
-  const visit = (node: ts.Node): void => {
-    const value = ts.isExpression(node) ? unwrap(node) : node
-    if (ts.isStringLiteralLike(value)) {
-      candidates.push(value.text)
-      return
-    }
-    if (ts.isTemplateExpression(value)) candidates.push(templateStaticText(value))
-    if (ts.isIdentifier(value)) {
-      if (seen.has(value.text)) return
-      const initializer = constants.get(value.text)
-      if (initializer) {
-        seen.add(value.text)
-        visit(initializer)
-      }
-      return
-    }
-    ts.forEachChild(value, visit)
-  }
-  visit(expression)
-  return candidates
-}
-
 function sqlCallSites(
   node: ts.Node,
   source: ts.SourceFile,
@@ -634,7 +575,7 @@ function sqlCallSites(
       return null
     })()
   const line = source.getLineAndCharacterOfPosition(argument.getStart(source)).line + 1
-  if (!rendered && couldBeSqlExpression(argument)) {
+  if (!rendered && couldBeSqlExpression(argument, LOCAL_HANDLE_SQL_START)) {
     const expression = argument.getText(source)
     return {
       sites: [],
@@ -653,7 +594,8 @@ function sqlCallSites(
   if (
     renderedUnresolvedRisk &&
     (rendered.unresolved ||
-      (rendered.statements.length === 0 && couldBeSqlExpression(argument))) &&
+      (rendered.statements.length === 0 &&
+        couldBeSqlExpression(argument, LOCAL_HANDLE_SQL_START))) &&
     renderedSqlRiskCandidates(argument, localConstants()).some(renderedUnresolvedRisk)
   ) {
     const expression = (rendered.unresolved ?? argument).getText(source)
@@ -696,8 +638,7 @@ export function extractSqlFromSource(input: {
   const staticSymbols = (): StaticSymbols =>
     (symbols ??= collectStaticSymbols(input.file, source, importedSources))
   let constants: Map<string, ts.Expression> | undefined
-  const localConstants = (): Map<string, ts.Expression> =>
-    (constants ??= collectConstants(source))
+  const localConstants = (): Map<string, ts.Expression> => (constants ??= collectConstants(source))
   const sites = [...extracted.sites]
   const unresolved = [...extracted.unresolved]
   const visit = (node: ts.Node): void => {

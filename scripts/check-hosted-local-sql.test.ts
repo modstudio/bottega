@@ -1,10 +1,7 @@
 import { expect, test } from 'bun:test'
 import { HOSTED_LOCAL_SQL_ALLOWED_FILES } from '../orchestrator/src/database/hosted-table-guard.ts'
 import { sqliteAdapterAllowedImporters } from './architecture-boundaries.ts'
-import {
-  hostedLocalRenderedSqlRisk,
-  hostedLocalSqlViolations,
-} from './check-hosted-local-sql.ts'
+import { hostedLocalRenderedSqlRisk, hostedLocalSqlViolations } from './check-hosted-local-sql.ts'
 import {
   extractSqlFromSource,
   type HostedSqlSite,
