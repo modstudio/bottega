@@ -12,15 +12,18 @@ const module = (file: string, allowed: string[]): OperatorWaitingModule => ({
 })
 
 export const operatorWaitingModules: OperatorWaitingModule[] = [
+  module('orchestrator/src/commands/run-message-options.ts', ['commander']),
   module('orchestrator/src/run/run-message-commands.ts', [
     '../../../shared/brand.ts',
     '../agent/agent-registry.ts',
     '../agent/agents.ts',
     '../cli/args.ts',
     '../database/db.ts',
+    '../dispatch/keyed-run-cursor-admission.ts',
     '../doc/context-moment-adapter.ts',
     '../doc/context-moment.ts',
     '../evidence/evidence-query.ts',
+    '../events.ts',
     '../jobs/job-fidelity.ts',
     '../jobs/jobs.ts',
     '../review/review-vocabulary.ts',
@@ -32,6 +35,7 @@ export const operatorWaitingModules: OperatorWaitingModule[] = [
     './ruling-file-text.ts',
     './run-answer.ts',
     './run-control.ts',
+    './run-root-record.ts',
   ]),
   module('orchestrator/src/run/collect-change.ts', [
     '../../../shared/orch-contract.ts',
