@@ -7,7 +7,6 @@ import { WITHHELD_SECRET_SHAPED } from '../../../shared/secret-shaped.ts'
 import { MachineLabelRefusal } from '../record/machine-name.ts'
 import { classifyRunIdentifier, machineLabelRefusal } from '../run/run-identifier-names.ts'
 import { parseProbeArtifact } from './probe-identifier.ts'
-import type { CheckoutEvidenceLocation } from './workflow-checkout-refusal.ts'
 import {
   commandExitBindingRefusal,
   commandExitMismatchRefusal,
@@ -17,6 +16,7 @@ import {
 
 type TrackerStateCategory = 'backlog' | 'open' | 'active' | 'review' | 'done' | 'dropped'
 type TrackerStates = Record<string, TrackerStateCategory>
+type RecordedCheckoutLocation = 'branch' | 'post-landing' | 'outside-change'
 
 export const floorKinds = [
   'ruling',
@@ -133,7 +133,7 @@ export type ValidatedEvidence = {
     sessionMatches: boolean
     sessionAdoptedCursor: boolean
     createdAfterStepActivation: boolean
-    checkoutLocation: CheckoutEvidenceLocation
+    checkoutLocation: RecordedCheckoutLocation
     headCommit: string | null
     cursorBranch: string | null
     output: string
@@ -433,7 +433,7 @@ export type PullRequestEvidenceFacts =
       exitCode: number
       sessionBound: boolean
       createdAfterStepActivation: boolean
-      checkoutLocation: CheckoutEvidenceLocation
+      checkoutLocation: RecordedCheckoutLocation
       headCommit: string | null
       cursorBranch: string | null
       output: string
@@ -506,12 +506,12 @@ function decidePullRequestExec(
   if (!facts.createdAfterStepActivation)
     return { met: false, condition: 'the recorded command predates this step activation' }
   if (!facts.cursorBranch) return { met: false, condition: 'this cursor has no branch' }
+  if (!facts.headCommit) return { met: false, condition: 'the recorded command has no head commit' }
   if (facts.checkoutLocation === 'outside-change')
     return {
       met: false,
       condition: `the recorded command head commit does not belong to this cursor's ${facts.cursorBranch} change`,
     }
-  if (!facts.headCommit) return { met: false, condition: 'the recorded command has no head commit' }
   const pullRequestUrl = githubPullRequestUrlIn(facts.output)
   if (!pullRequestUrl && execOutputWithheld(facts))
     return { met: false, condition: WITHHELD_PULL_REQUEST_CONDITION }
