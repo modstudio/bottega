@@ -11,9 +11,9 @@ import {
   type PublicCommandInvocation,
   publicCommandUsage,
 } from '../../../shared/commander-public-path.ts'
-import { CALLER_ENVIRONMENT_KEY } from '../../../shared/record-caller.ts'
 import { databaseLockHolder, isDatabaseLocked } from '../../../shared/database-lock-refusal.ts'
 import { processCommandLine } from '../../../shared/process-identity.ts'
+import { CALLER_ENVIRONMENT_KEY } from '../../../shared/record-caller.ts'
 import { recordDatabaseLockRefusal } from '../../../shared/store-lock-refusal-log.ts'
 import {
   sampleWalWriteLock,

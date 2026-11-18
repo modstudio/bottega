@@ -41,8 +41,8 @@ export function recordCallerHeaders(headers?: HeadersInit): Headers {
 }
 
 export function withRecordCallerHeader(transport: typeof fetch): typeof fetch {
-  return (input, init) =>
-    transport(input, { ...init, headers: recordCallerHeaders(init?.headers) })
+  return ((input, init) =>
+    transport(input, { ...init, headers: recordCallerHeaders(init?.headers) })) as typeof fetch
 }
 
 export function withRecordCaller<T>(value: string, work: () => T): T {
