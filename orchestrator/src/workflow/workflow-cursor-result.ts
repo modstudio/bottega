@@ -88,6 +88,27 @@ export function refuseMissingAbandonReason(reason: string | undefined): asserts 
   if (!reason?.trim()) throw new Error('--reason is required')
 }
 
+export function persistedAdvanceRenderFailure(input: {
+  row: Pick<AdvanceRow, 'id' | 'workflow_slug' | 'project' | 'mode_slug'>
+  closed: { n: number; slug: string }
+  active: { n: number; slug: string }
+  args: Record<string, string>
+  error: unknown
+}): Error {
+  const { row, closed, active, args, error } = input
+  const carriedArgs = Object.entries(args)
+    .map(([name, value]) => ` --arg ${shellWord(`${name}=${value}`)}`)
+    .join('')
+  const fetch =
+    `${PLATFORM_SLUG} workflow step ${shellWord(row.workflow_slug)} ${shellWord(active.slug)} ` +
+    `--mode ${shellWord(row.mode_slug)}${workflowCursorReference(row.id, row.project).cli}${carriedArgs}`
+  const cause = error instanceof Error ? error.message : String(error)
+  return new Error(
+    `Step ${closed.n} ${closed.slug} closed. Step ${active.n} ${active.slug} is now active.\n` +
+      `${cause}\nFetch the now-active step with: ${fetch}`,
+  )
+}
+
 function renderWorkflowCursorRemedy(
   row: Pick<
     AdvanceRow,
