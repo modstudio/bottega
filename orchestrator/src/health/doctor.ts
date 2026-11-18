@@ -29,6 +29,10 @@ import {
 } from '../agent/model-host.ts'
 import { DATABASE_RESOLUTION, DB_PATH, databaseOpenMode, db } from '../database/db.ts'
 import { runTotals } from '../evidence/evidence-query.ts'
+import {
+  type FocusedTestDeclaration,
+  validateFocusedTestDeclaration,
+} from '../focused-test/focused-test-decision.ts'
 import { JOBS } from '../jobs/jobs.ts'
 import { credentialLinesFromRead } from '../mcp/mcp-credential-literal.ts'
 import { readMcpConfigResult } from '../mcp/mcp-probe.ts'
@@ -117,7 +121,7 @@ type RegisteredCheckout = {
   settings: {
     trunk?: string
     workerCheck?: string
-    focusedTests?: ProjectFocusedTests
+    focusedTests?: FocusedTestDeclaration
     requireCleanMain?: boolean
   }
 }
@@ -280,10 +284,7 @@ const EXPECTED_AFFECTED_SELECTOR = {
   args: ['run', AFFECTED_TEST_SCRIPT],
 }
 const UNREGISTERED_RUNNER = '<runner command>'
-/** The focused-test declaration as doctor reads it; the typecheck keeps `FocusedTestDeclaration` assignable through doctor.test.ts and the register call. */
-type ProjectFocusedTests =
-  | { command: string; args: string[]; affected?: unknown }
-  | { runners: unknown[] }
+const UNREGISTERED_AFFECTED_SELECTOR = '<selector command>'
 
 /** Compare a registered worker check only when the project declares the standard script. */
 export function workerCheckDoctorFinding(input: {
@@ -301,13 +302,40 @@ export function workerCheckDoctorFinding(input: {
   )
 }
 
-/** Compare a registered affected-test selector only when the project declares the marker script. */
+function missingAffectedSelectorDoctorFinding(
+  project: string,
+  focusedTests: FocusedTestDeclaration | undefined,
+): string | null {
+  const declaration = validateFocusedTestDeclaration(focusedTests)
+  const missing = declaration.runners.filter((runner) => !runner.affected)
+  if (!missing.length) return null
+  const selector = { command: UNREGISTERED_AFFECTED_SELECTOR, args: [] }
+  const repair =
+    focusedTests && 'runners' in focusedTests
+      ? {
+          runners: focusedTests.runners.map((runner) =>
+            runner.affected ? runner : { ...runner, affected: selector },
+          ),
+        }
+      : { affected: selector }
+  return (
+    `${project}: focused-test ${missing.length === 1 ? 'runner' : 'runners'} ` +
+    `${missing.map((runner) => JSON.stringify(runner.command)).join(', ')} ` +
+    `${missing.length === 1 ? 'has' : 'have'} no affected selector; run_tests refuses affected=true for this project's workers; ` +
+    `set it with: ${PLATFORM_SLUG} project set ${project} --settings ` +
+    `'${JSON.stringify({ focusedTests: repair })}'`
+  )
+}
+
+/** Diagnose the registered affected-test selector against a marker script or focused-test runners. */
 export function affectedSelectorDoctorFinding(input: {
   project: string
-  focusedTests: ProjectFocusedTests | undefined
+  focusedTests: FocusedTestDeclaration | undefined
   scripts: Readonly<Record<string, unknown>> | undefined
 }): string | null {
-  if (typeof input.scripts?.[AFFECTED_TEST_SCRIPT] !== 'string') return null
+  if (typeof input.scripts?.[AFFECTED_TEST_SCRIPT] !== 'string') {
+    return missingAffectedSelectorDoctorFinding(input.project, input.focusedTests)
+  }
   if (input.focusedTests && 'runners' in input.focusedTests) return null
   const registered = input.focusedTests?.affected
   if (Bun.deepEquals(registered, EXPECTED_AFFECTED_SELECTOR)) return null
@@ -348,7 +376,7 @@ function projectRegisterQuestions<
   Project extends {
     name: string
     path: string
-    settings: { workerCheck?: string; focusedTests?: ProjectFocusedTests }
+    settings: { workerCheck?: string; focusedTests?: FocusedTestDeclaration }
   },
 >(projects: readonly Project[], branchProblems: (project: Project) => readonly string[]): string[] {
   return projects.flatMap((project) => {

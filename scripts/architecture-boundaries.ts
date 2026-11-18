@@ -415,6 +415,7 @@ export const importBoundaries: ImportBoundary[] = [
       '../sandbox/sandbox-runtime.ts',
       '../database/migrations.ts',
       ...['./health.ts', './delegation-doctor.ts', './launch-agent-doctor.ts'],
+      '../focused-test/focused-test-decision.ts',
       '../project/projects.ts',
       '../project/main-checkout-invariant.ts',
       '../record/active-space-invariant.ts',
