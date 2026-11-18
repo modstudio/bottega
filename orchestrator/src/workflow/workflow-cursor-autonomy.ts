@@ -40,11 +40,24 @@ function storedCursorAutonomy(
   }
 }
 
-export function storedCursorAutonomyJson(
+function storedCursorAutonomyJson(
   autonomy: AutonomyResolution | undefined,
   fallback: { steps: Record<string, unknown>; rulings: unknown },
 ): string {
   return JSON.stringify(storedCursorAutonomy(autonomy) ?? fallback)
+}
+
+export function storedCursorAutonomyForComposition(
+  autonomy: AutonomyResolution | undefined,
+  composition: {
+    steps: Array<{ slug: string; resolvedAutonomy: unknown }>
+    rulings: unknown
+  },
+): string {
+  return storedCursorAutonomyJson(autonomy, {
+    steps: Object.fromEntries(composition.steps.map((step) => [step.slug, step.resolvedAutonomy])),
+    rulings: composition.rulings,
+  })
 }
 
 function stricterEntry<T extends ResolutionEntry>(

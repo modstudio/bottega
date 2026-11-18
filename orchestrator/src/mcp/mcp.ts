@@ -71,11 +71,12 @@ import { registerSetupTools } from './mcp-setup-tools.ts'
 import { registerSubjectTools } from './mcp-subject-tools.ts'
 import { advanceWorkflow } from './mcp-workflow-advance.ts'
 import { registerWorkflowContextTools } from './mcp-workflow-context-tools.ts'
+import { registerWorkflowHandoffTool } from './mcp-workflow-handoff.ts'
 import { nextWorkflowStepInputSchema } from './mcp-workflow-input.ts'
 import { resolveMcpWorkflowSpace } from './mcp-workflow-space.ts'
 import { registerWorkflowStepTool } from './mcp-workflow-step.ts'
 
-type DocsMcpPorts = LandingBranchPorts & {
+export type DocsMcpPorts = LandingBranchPorts & {
   hubTaskReader?: HubTaskReader
   workflowTextDocuments?: WorkflowTextDocumentPorts
   contextMomentPorts?: ContextMomentPorts
@@ -624,6 +625,7 @@ function registerWorkflowActionTools(server: McpServer, ports: DocsMcpPorts): vo
   )
 
   registerWorkflowContextTools(server, ports)
+  registerWorkflowHandoffTool(server, ports, text)
 
   server.registerTool(
     'abandon_workflow',

@@ -55,6 +55,7 @@ export function stageRow(
     opened_machine_id: stage.openedMachineId,
     taken_over_from_machine_id: stage.takenOverFromMachineId,
     last_advanced_machine_id: stage.lastAdvancedMachineId,
+    handed_off_from_record_id: stage.handedOffFromRecordId ?? null,
     revision: stage.revision,
     ...(includeOpenStageCount
       ? { open_stage_count: flow.taskId === null ? 0 : flow.openStageCount }

@@ -126,6 +126,10 @@ function registerTaskFlowWriteRoutes(
       registerTaskFlowWriteRoute(app, deps, ports, 'abandon', (body) =>
         taskFlowIntentSchemas.abandon.safeParse(body),
       ),
+    handoff: () =>
+      registerTaskFlowWriteRoute(app, deps, ports, 'handoff', (body) =>
+        taskFlowIntentSchemas.handoff.safeParse(body),
+      ),
     adopt: () =>
       registerTaskFlowWriteRoute(app, deps, ports, 'adopt', (body) =>
         taskFlowIntentSchemas.adopt.safeParse(body),

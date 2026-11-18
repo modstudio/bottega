@@ -94,8 +94,20 @@ This third line makes the reproduction roughly three hundred characters long.`,
   })
 
   test('leaves a cursor without a question unchanged', () => {
-    expect(renderWorkflowCursorLine(row)).toBe(
-      `cursor 1145 plan-task default DEV-1983 ${PLATFORM_SLUG} step 3/5 signoff awaiting-ruling next: implement`,
-    )
+    const unchanged = `cursor 1145 plan-task default DEV-1983 ${PLATFORM_SLUG} step 3/5 signoff awaiting-ruling next: implement`
+    expect(
+      renderWorkflowCursorLine({
+        ...row,
+        handed_off_from_number: 7,
+        handed_off_from_workflow: 'explore',
+      }),
+    ).toBe(`${unchanged} handed off from explore cursor 7`)
+    expect(
+      renderWorkflowCursorLine({
+        ...row,
+        handed_off_from_number: null,
+        handed_off_from_workflow: null,
+      }),
+    ).toBe(unchanged)
   })
 })

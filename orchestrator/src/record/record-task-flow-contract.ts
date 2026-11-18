@@ -78,6 +78,7 @@ const hostedTaskFlowStageSummarySchema = z.object({
   openedMachineId: z.string().uuid(),
   takenOverFromMachineId: nullableId,
   lastAdvancedMachineId: z.string().uuid(),
+  handedOffFromRecordId: nullableId.optional(),
   revision: z.number().int().positive(),
   createdAt: z.string(),
   updatedAt: z.string(),

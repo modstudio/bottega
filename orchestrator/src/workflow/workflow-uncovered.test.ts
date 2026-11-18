@@ -67,6 +67,35 @@ test('evidence after a cursor closes or a claim lapses is uncovered', () => {
   })
 })
 
+test('handoff coverage requires one live claim spanning the old close and successor open', () => {
+  const handoff = {
+    project: 'alpha',
+    key: 'DEV-1',
+    closedAt: '2026-11-17T10:00:00.000Z',
+    openedAt: '2026-11-17T10:00:00.000Z',
+  }
+  const base = {
+    days: 1,
+    now: '2026-11-17T20:00:00.000Z',
+    evidence: [],
+    cursors: [],
+    handoffs: [handoff],
+  }
+  expect(
+    decideWorkflowUncovered({
+      ...base,
+      claims: [
+        { project: 'alpha', key: 'DEV-1', openedAt: '2026-11-17T09:00:00.000Z', closedAt: null },
+      ],
+    }).days[0]!.count,
+  ).toBe(0)
+  expect(decideWorkflowUncovered({ ...base, claims: [] }).days[0]).toEqual({
+    day: '2026-11-17',
+    count: 1,
+    tasks: [{ project: 'alpha', key: 'DEV-1' }],
+  })
+})
+
 test('rejects an invalid day window', () => {
   expect(() =>
     decideWorkflowUncovered({
@@ -101,51 +130,100 @@ test('the adapter correlates run and landing evidence with hosted-shaped cursor 
       ('alpha','project-alpha','DEV-4-change','2026-11-17T12:00:00.000Z');
   `)
   try {
-    expect(
-      (
-        await workflowUncoveredReport(
-          {
-            days: 1,
-            database,
-            clock: Date.parse('2026-11-17T20:00:00.000Z'),
+    const cursorRows = [
+      {
+        record_id: 'cursor-dev-2',
+        project: 'alpha',
+        workflow_key: 'DEV-2',
+        created_at: '2026-11-17T09:00:00.000Z',
+        state: 'running',
+        updated_at: '2026-11-17T09:00:00.000Z',
+        handed_off_from_record_id: null,
+      },
+      {
+        record_id: 'cursor-dev-5-old',
+        project: 'alpha',
+        workflow_key: 'DEV-5',
+        created_at: '2026-11-17T08:00:00.000Z',
+        state: 'done',
+        updated_at: '2026-11-17T10:00:00.000Z',
+        handed_off_from_record_id: null,
+      },
+      {
+        record_id: 'cursor-dev-5-new',
+        project: 'alpha',
+        workflow_key: 'DEV-5',
+        created_at: '2026-11-17T10:00:00.000Z',
+        state: 'running',
+        updated_at: '2026-11-17T10:00:00.000Z',
+        handed_off_from_record_id: 'cursor-dev-5-old',
+      },
+    ] as never
+    const report = (spanHandoff: boolean) =>
+      workflowUncoveredReport(
+        {
+          days: 1,
+          database,
+          clock: Date.parse('2026-11-17T20:00:00.000Z'),
+        },
+        {
+          taskFlowStore: {
+            keyedStageHistory: async () => cursorRows,
           },
-          {
-            taskFlowStore: {
-              keyedStageHistory: async () => [
-                {
-                  project: 'alpha',
-                  workflow_key: 'DEV-2',
-                  created_at: '2026-11-17T09:00:00.000Z',
-                  state: 'running',
-                  updated_at: '2026-11-17T09:00:00.000Z',
-                } as never,
-              ],
-            },
-            claimList: async () => ({
-              claims: [
-                {
-                  recordId: 'claim-dev-3',
-                  project: 'alpha',
-                  subject: { kind: 'task', value: 'DEV-3' },
-                  holder: 'session-a',
-                  note: null,
-                  runId: null,
-                  run_record_id: null,
-                  takenAt: '2026-11-17T09:00:00.000Z',
-                  renewedAt: '2026-11-17T09:00:00.000Z',
-                  lapsesAt: '2026-11-17T11:00:00.000Z',
-                  live: false,
-                  closedAt: null,
-                  closeReason: null,
-                  previousClaimRecordIds: [],
-                  supersededByClaimRecordId: null,
-                },
-              ],
-            }),
-          },
-        )
-      ).days[0],
-    ).toEqual({
+          claimList: async () => ({
+            claims: [
+              {
+                recordId: 'claim-dev-3',
+                project: 'alpha',
+                subject: { kind: 'task', value: 'DEV-3' },
+                holder: 'session-a',
+                note: null,
+                runId: null,
+                run_record_id: null,
+                takenAt: '2026-11-17T09:00:00.000Z',
+                renewedAt: '2026-11-17T09:00:00.000Z',
+                lapsesAt: '2026-11-17T11:00:00.000Z',
+                live: false,
+                closedAt: null,
+                closeReason: null,
+                previousClaimRecordIds: [],
+                supersededByClaimRecordId: null,
+              },
+              ...(spanHandoff
+                ? [
+                    {
+                      recordId: 'claim-dev-5',
+                      project: 'alpha',
+                      subject: { kind: 'task' as const, value: 'DEV-5' },
+                      holder: 'session-a',
+                      note: null,
+                      runId: null,
+                      run_record_id: null,
+                      takenAt: '2026-11-17T09:00:00.000Z',
+                      renewedAt: '2026-11-17T10:00:00.000Z',
+                      lapsesAt: '2026-11-17T11:00:00.000Z',
+                      live: true,
+                      closedAt: null,
+                      closeReason: null,
+                      previousClaimRecordIds: [],
+                      supersededByClaimRecordId: null,
+                    },
+                  ]
+                : []),
+            ],
+          }),
+        },
+      )
+    expect((await report(false)).days[0]).toEqual({
+      day: '2026-11-17',
+      count: 3,
+      tasks: [
+        { project: 'alpha', key: 'DEV-1' },
+        { project: 'alpha', key: 'DEV-4' },
+        { project: 'alpha', key: 'DEV-5' },
+      ],
+    })
+    expect((await report(true)).days[0]).toEqual({
       day: '2026-11-17',
       count: 2,
       tasks: [

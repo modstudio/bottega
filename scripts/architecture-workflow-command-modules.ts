@@ -12,6 +12,38 @@ const module = (file: string, allowed: string[]): WorkflowCommandModule => ({
 })
 
 export const workflowCommandModules: WorkflowCommandModule[] = [
+  module('orchestrator/src/workflow/workflow-handoff.ts', [
+    'bun:sqlite',
+    '../../../shared/record-id.ts',
+    '../database/db.ts',
+    '../record/machine-identity.ts',
+    '../record/record-task-flow-write-client.ts',
+    '../record/record-task-flow-write-contract.ts',
+    './autonomy.ts',
+    './task-flow-store.ts',
+    './task-flow-store-types.ts',
+    './workflow-compose-branch.ts',
+    './workflow-cursor-arguments.ts',
+    './workflow-cursor-autonomy.ts',
+    './workflow-cursor-result.ts',
+    './workflow-cursor-selection.ts',
+    './workflow-cursor-serve.ts',
+    './workflow-cursor-transition.ts',
+    './workflow-task-claim.ts',
+    './workflows.ts',
+  ]),
+  module('orchestrator/src/workflow/workflow-handoff-command.ts', [
+    'node:path',
+    '../cli/args.ts',
+    '../database/db.ts',
+    '../project/projects.ts',
+    './workflow-command-arguments.ts',
+    './workflow-compose-branch.ts',
+    './workflow-cursor-live-autonomy.ts',
+    './workflow-cursor-selection.ts',
+    './workflow-handoff.ts',
+    './workflow-task-reference.ts',
+  ]),
   module('orchestrator/src/workflow/workflow-compose-claim.ts', [
     'bun:sqlite',
     './workflow-cursor-mutation.ts',

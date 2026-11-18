@@ -41,7 +41,8 @@ const STAGE_SELECT = `
   s.autonomy stage_autonomy,s.enforcement stage_enforcement,s.total_steps stage_total_steps,
   s.opened_machine_id stage_opened_machine_id,
   s.taken_over_from_machine_id stage_taken_over_from_machine_id,
-  s.last_advanced_machine_id stage_last_advanced_machine_id,s.revision stage_revision,
+  s.last_advanced_machine_id stage_last_advanced_machine_id,
+  s.handed_off_from_record_id stage_handed_off_from_record_id,s.revision stage_revision,
   s.created_at stage_created_at,s.updated_at stage_updated_at`
 
 const FLOW_SELECT = `
@@ -91,6 +92,10 @@ function toHostedStageSummary(row: Record<string, unknown>): HostedStageSummary 
         ? null
         : String(row.stage_taken_over_from_machine_id),
     lastAdvancedMachineId: String(row.stage_last_advanced_machine_id),
+    handedOffFromRecordId:
+      row.stage_handed_off_from_record_id == null
+        ? null
+        : String(row.stage_handed_off_from_record_id),
     revision: Number(row.stage_revision),
     createdAt: recordIso(row.stage_created_at),
     updatedAt: recordIso(row.stage_updated_at),

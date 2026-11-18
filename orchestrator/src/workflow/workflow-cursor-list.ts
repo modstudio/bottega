@@ -43,6 +43,9 @@ export async function listWorkflowCursors(
   })
   return await Promise.all(
     rows.map(async (row) => {
+      const handedOffFrom = row.handed_off_from_record_id
+        ? await taskFlowReadStore(d).stageByRecordId(row.handed_off_from_record_id)
+        : null
       const composition = composeWorkflow(
         row.workflow_slug,
         row.project,
@@ -64,6 +67,8 @@ export async function listWorkflowCursors(
         obligations: open
           .map((item) => `${item.id}(${item.stepSlug}:${item.floorDefinition.kind})`)
           .join(','),
+        handed_off_from_number: handedOffFrom?.id ?? null,
+        handed_off_from_workflow: handedOffFrom?.workflow_slug ?? null,
       }
       return { ...listed, line: renderWorkflowCursorLine(listed) }
     }),

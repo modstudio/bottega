@@ -34,6 +34,7 @@ import {
   type TaskFlowWriteResult,
   taskFlowAdoptResultSchema,
   taskFlowComposeResultSchema,
+  taskFlowHandoffResultSchema,
   taskFlowWriteResultSchema,
 } from './record-task-flow-write-contract.ts'
 
@@ -102,6 +103,10 @@ export type RecordTaskFlowClient = {
     input: TaskFlowIntentInput<'abandon'>,
     destination: RecordWriteDestination,
   ): Promise<TaskFlowWriteResult>
+  handoffTaskFlow?(
+    input: TaskFlowIntentInput<'handoff'>,
+    destination: RecordWriteDestination,
+  ): Promise<import('./record-task-flow-write-contract.ts').TaskFlowIntentResult<'handoff'>>
   adoptTaskFlow?(
     input: TaskFlowIntentInput<'adopt'>,
     destination: RecordWriteDestination,
@@ -282,6 +287,14 @@ function taskFlowWriteClient(request: Request): Partial<RecordTaskFlowClient> {
         'abandon',
         input,
         (body) => taskFlowWriteResultSchema.parse(body),
+        destination,
+      ),
+    handoffTaskFlow: (input, destination) =>
+      write(
+        request,
+        'handoff',
+        input,
+        (body) => taskFlowHandoffResultSchema.parse(body),
         destination,
       ),
     adoptTaskFlow: (input, destination) =>

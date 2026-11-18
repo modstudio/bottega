@@ -136,6 +136,8 @@ test('revision refusal names the declared intent and stale row kind', () => {
     ['await-ruling', 'cursor', 15, 'workflow cursor 15 changed while awaiting a ruling'],
     ['abandon', 'flow', 'flow-id', 'task flow flow-id changed while being abandoned'],
     ['abandon', 'cursor', 16, 'workflow cursor 16 changed while being abandoned'],
+    ['handoff', 'flow', 'flow-id', 'task flow flow-id changed while being handed off'],
+    ['handoff', 'cursor', 18, 'workflow cursor 18 changed while being handed off'],
     ['adopt', 'stage', 'stage-id', 'workflow stage stage-id changed while linking its task'],
     ['adopt', 'cursor', 17, 'workflow cursor 17 changed while linking its task'],
   ] as const
@@ -143,6 +145,105 @@ test('revision refusal names the declared intent and stale row kind', () => {
     expect(taskFlowRevisionRefusal(intent, rowKind, identifier)).toBe(
       `${expected}; rerun the command`,
     )
+})
+
+test('handoff adopts the hosted successor id in the local mirror', async () => {
+  const d = database()
+  const row = await stage(d)
+  const flow = d
+    .query<{ revision: number }, [string]>('SELECT revision FROM task_flow WHERE record_id=?')
+    .get(row.task_flow_record_id!)!
+  const payloadId = newRecordId()
+  const hostedId = newRecordId()
+  const contextId = newRecordId()
+  d.query(`INSERT INTO context_item
+    (record_id,holder_kind,holder_id,slug,kind,body,source,created_at,updated_at)
+    VALUES (?,'cursor',?,'proof','fact','moves','test',?,?)`).run(
+    contextId,
+    row.record_id,
+    row.created_at,
+    row.updated_at,
+  )
+  const payload = {
+    requestId: newRecordId(),
+    flow: {
+      id: row.task_flow_record_id!,
+      expectedRevision: flow.revision,
+      values: {
+        openStageRecordId: payloadId,
+        updatedMachineId: row.last_advanced_machine_id!,
+        updatedAt: row.updated_at,
+      },
+    },
+    oldStage: { id: row.record_id, expectedRevision: row.revision },
+    newStage: {
+      id: payloadId,
+      flowRecordId: row.task_flow_record_id!,
+      projectId: '00000000-0000-4000-8000-000000000001',
+      workflow: row.workflow_slug,
+      mode: row.mode_slug,
+      workflowKey: row.workflow_key,
+      instanceId: 'hosted-id-replay',
+      sessionId: row.session_id,
+      workflowVersionId: row.workflow_version_record_id,
+      catalogueVersionId: row.catalogue_version_record_id,
+      arguments: JSON.parse(row.args),
+      activeOrdinal: 0,
+      activeSlug: row.step_slug,
+      state: 'running',
+      closedStepNotes: [],
+      question: null,
+      autonomy: null,
+      enforcement: 'floors',
+      totalSteps: row.total_steps,
+      openedMachineId: row.opened_machine_id,
+      takenOverFromMachineId: null,
+      lastAdvancedMachineId: row.last_advanced_machine_id,
+      handedOffFromRecordId: row.record_id,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+    },
+    trail: {
+      closed: [],
+      current: { n: 1, slug: row.step_slug },
+      remaining: [],
+      targetWorkflow: row.workflow_slug,
+      reason: 'ready',
+      at: row.updated_at,
+    },
+  }
+  taskFlowLocalStore(d).write('handoff', payload as never, {
+    revisions: { [row.record_id]: 2, [row.task_flow_record_id!]: 2, [hostedId]: 1 },
+    stage: { id: hostedId, number: 2 },
+  })
+  expect(
+    d
+      .query<{ record_id: string }, [string]>(
+        'SELECT record_id FROM workflow_cursor WHERE record_id=?',
+      )
+      .get(hostedId),
+  ).toEqual({ record_id: hostedId })
+  expect(
+    d
+      .query<{ record_id: string }, [string]>(
+        'SELECT record_id FROM workflow_cursor WHERE record_id=?',
+      )
+      .get(payloadId),
+  ).toBeNull()
+  expect(
+    d
+      .query<{ open_stage_cursor_record_id: string }, [string]>(
+        'SELECT open_stage_cursor_record_id FROM task_flow WHERE record_id=?',
+      )
+      .get(row.task_flow_record_id!),
+  ).toEqual({ open_stage_cursor_record_id: hostedId })
+  expect(
+    d
+      .query<{ holder_id: string }, [string]>(
+        'SELECT holder_id FROM context_item WHERE record_id=?',
+      )
+      .get(contextId),
+  ).toEqual({ holder_id: hostedId })
 })
 
 test('flow mutation preserves state when the payload omits it', async () => {

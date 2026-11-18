@@ -22,6 +22,7 @@ import {
 import { seedWorkflows } from '../src/workflow/workflow-seeds.ts'
 import { installWorkflowStoreFixture } from '../src/workflow/workflow-store.fixture.ts'
 import { testRecordAuth } from './fixtures/record-auth-postgres.ts'
+import { registerTaskFlowHandoffProof } from './postgres-task-flow-handoff-proof.ts'
 import { proveTaskFlowRecordReads } from './postgres-task-flow-read-proof.ts'
 
 type Input = {
@@ -807,6 +808,8 @@ export function registerTaskFlowReadThroughTakeoverProof(input: Input): void {
       await auth.close()
     }
   })
+
+  registerTaskFlowHandoffProof(input, PROJECT, WORKFLOW)
 
   test('hosted task-flow advances across machines and remains space isolated', async () => {
     const machineA = newRecordId()
