@@ -39,7 +39,6 @@ export const undeclaredModulesBaseline: readonly string[] = [
   'hub/src/hosted.ts',
   'hub/src/ingest/git.ts',
   'hub/src/ingest/runs.ts',
-  'hub/src/ingest/trackers.ts',
   'hub/src/ingest/transcripts.ts',
   'hub/src/install-binding.ts',
   'hub/src/interval-project-correction.ts',
