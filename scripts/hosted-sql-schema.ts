@@ -572,11 +572,45 @@ function couldBeSqlExpression(expression: ts.Expression): boolean {
   return false
 }
 
+function templateStaticText(node: ts.TemplateExpression): string {
+  return `${node.head.text}${node.templateSpans.map((span) => span.literal.text).join('')}`
+}
+
+function renderedSqlRiskCandidates(
+  expression: ts.Expression,
+  constants: Map<string, ts.Expression>,
+): string[] {
+  const candidates: string[] = []
+  const seen = new Set<string>()
+  const visit = (node: ts.Node): void => {
+    const value = ts.isExpression(node) ? unwrap(node) : node
+    if (ts.isStringLiteralLike(value)) {
+      candidates.push(value.text)
+      return
+    }
+    if (ts.isTemplateExpression(value)) candidates.push(templateStaticText(value))
+    if (ts.isIdentifier(value)) {
+      if (seen.has(value.text)) return
+      const initializer = constants.get(value.text)
+      if (initializer) {
+        seen.add(value.text)
+        visit(initializer)
+      }
+      return
+    }
+    ts.forEachChild(value, visit)
+  }
+  visit(expression)
+  return candidates
+}
+
 function sqlCallSites(
   node: ts.Node,
   source: ts.SourceFile,
   file: string,
   staticSymbols: () => StaticSymbols,
+  renderedUnresolvedRisk: ((sql: string) => boolean) | undefined,
+  localConstants: () => Map<string, ts.Expression>,
 ): { sites: HostedSqlSite[]; unresolved: HostedSqlUnresolvedSite[] } {
   if (!ts.isCallExpression(node)) return { sites: [], unresolved: [] }
   const target = unwrap(node.expression)
@@ -616,6 +650,19 @@ function sqlCallSites(
     }
   }
   if (!rendered) return { sites: [], unresolved: [] }
+  if (
+    renderedUnresolvedRisk &&
+    (rendered.unresolved ||
+      (rendered.statements.length === 0 && couldBeSqlExpression(argument))) &&
+    renderedSqlRiskCandidates(argument, localConstants()).some(renderedUnresolvedRisk)
+  ) {
+    const expression = (rendered.unresolved ?? argument).getText(source)
+    const sql = argument.getText(source)
+    return {
+      sites: [],
+      unresolved: [{ file, line, sql, expression, fingerprint: hostedSqlFingerprint(sql) }],
+    }
+  }
   return {
     sites: rendered.statements
       .filter((sql) => LOCAL_HANDLE_SQL_START.test(sql))
@@ -625,7 +672,11 @@ function sqlCallSites(
 }
 
 /** Extracts static SQL from the Bun SQL tag and SQLite database call shapes. */
-export function extractSqlFromSource(input: { sourceText: string; file: string }): {
+export function extractSqlFromSource(input: {
+  sourceText: string
+  file: string
+  renderedUnresolvedRisk?: (sql: string) => boolean
+}): {
   sites: HostedSqlSite[]
   unresolved: HostedSqlUnresolvedSite[]
 } {
@@ -644,10 +695,20 @@ export function extractSqlFromSource(input: { sourceText: string; file: string }
   let symbols: StaticSymbols | undefined
   const staticSymbols = (): StaticSymbols =>
     (symbols ??= collectStaticSymbols(input.file, source, importedSources))
+  let constants: Map<string, ts.Expression> | undefined
+  const localConstants = (): Map<string, ts.Expression> =>
+    (constants ??= collectConstants(source))
   const sites = [...extracted.sites]
   const unresolved = [...extracted.unresolved]
   const visit = (node: ts.Node): void => {
-    const calls = sqlCallSites(node, source, input.file, staticSymbols)
+    const calls = sqlCallSites(
+      node,
+      source,
+      input.file,
+      staticSymbols,
+      input.renderedUnresolvedRisk,
+      localConstants,
+    )
     sites.push(...calls.sites)
     unresolved.push(...calls.unresolved)
     ts.forEachChild(node, visit)

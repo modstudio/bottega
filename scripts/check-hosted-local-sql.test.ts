@@ -1,8 +1,15 @@
 import { expect, test } from 'bun:test'
 import { HOSTED_LOCAL_SQL_ALLOWED_FILES } from '../orchestrator/src/database/hosted-table-guard.ts'
 import { sqliteAdapterAllowedImporters } from './architecture-boundaries.ts'
-import { hostedLocalSqlViolations } from './check-hosted-local-sql.ts'
-import type { HostedSqlSite, HostedSqlUnresolvedSite } from './hosted-sql-schema.ts'
+import {
+  hostedLocalRenderedSqlRisk,
+  hostedLocalSqlViolations,
+} from './check-hosted-local-sql.ts'
+import {
+  extractSqlFromSource,
+  type HostedSqlSite,
+  type HostedSqlUnresolvedSite,
+} from './hosted-sql-schema.ts'
 import type { StateClassDeclaration } from './identity-state-classes.ts'
 
 const site = (file: string): HostedSqlSite => ({
@@ -73,6 +80,45 @@ test('unresolved SQL in an undeclared production file fails', () => {
       stateClasses: [hostedQuestion],
     }),
   ).toEqual([expect.stringContaining('orchestrator/src/run/unsafe.ts:12: unresolved SQL')])
+})
+
+test.each([
+  'db.query(`SELECT 1 FROM workflow_cursor WHERE ${col}=? LIMIT 1`)',
+  'db.exec(`DROP TABLE ${name}`)',
+])('a hosted-risk rendered template with an unresolved span fails: %s', (sourceText) => {
+  const extracted = extractSqlFromSource({
+    sourceText,
+    file: 'orchestrator/src/run/unsafe.ts',
+    renderedUnresolvedRisk: hostedLocalRenderedSqlRisk,
+  })
+  expect(extracted.sites).toEqual([])
+  expect(extracted.unresolved).toHaveLength(1)
+  expect(
+    hostedLocalSqlViolations({
+      ...extracted,
+      tables: ['workflow_cursor'],
+      allowedFiles: [],
+      stateClasses: [
+        {
+          store: 'orchestrator',
+          table: 'workflow_cursor',
+          class: 'hosted',
+          counterpart: 'workflow_cursor',
+          reason: 'fixture',
+        },
+      ],
+    }),
+  ).toEqual([expect.stringContaining('orchestrator/src/run/unsafe.ts:1: unresolved SQL')])
+})
+
+test('a substituted template not naming a hosted table stays clean', () => {
+  expect(
+    extractSqlFromSource({
+      sourceText: 'db.query(`SELECT ${columns} FROM machine_local_table`)',
+      file: 'orchestrator/src/run/safe.ts',
+      renderedUnresolvedRisk: hostedLocalRenderedSqlRisk,
+    }),
+  ).toEqual({ sites: [], unresolved: [] })
 })
 
 test('an allowed file with no hosted-only or unresolved SQL is rejected as unused', () => {

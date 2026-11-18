@@ -1,7 +1,9 @@
 #!/usr/bin/env bun
 /**
- * Static guard for SQL that can name hosted-only tables. Non-literal SQL is refused when it can be
- * identified; guardHostedTables remains the runtime backstop for SQL assembled dynamically.
+ * Static guard for SQL that can name hosted-only tables. Non-rendered SQL arguments are refused
+ * broadly. A rendered template with an unresolved span is refused only when its static fragments
+ * or referenced branches name a hosted-only table, or CREATE/DROP/ALTER has a dynamic target.
+ * guardHostedTables remains the runtime backstop for SQL assembled dynamically.
  */
 import { readFileSync } from 'node:fs'
 import { relative, resolve } from 'node:path'
@@ -19,6 +21,13 @@ import {
 import { STATE_CLASSES, type StateClassDeclaration } from './identity-state-classes.ts'
 
 type AllowedFile = { pattern: RegExp; reason: string }
+
+export function hostedLocalRenderedSqlRisk(sql: string): boolean {
+  return (
+    hostedTableInSql(sql, HOSTED_TABLES_WITHOUT_LOCAL_ACCESS) !== null ||
+    /^\s*(?:CREATE|DROP|ALTER)\b/i.test(sql)
+  )
+}
 
 export function hostedLocalSqlViolations(input: {
   sites: readonly HostedSqlSite[]
@@ -75,7 +84,11 @@ export function hostedLocalSqlViolations(input: {
 function checkHostedLocalSql(root: string): { failures: string[]; unresolved: number } {
   const extracted = productionTypeScriptFiles(resolve(root, 'orchestrator')).map((file) => {
     const path = relative(root, file)
-    return extractSqlFromSource({ sourceText: readFileSync(file, 'utf8'), file: path })
+    return extractSqlFromSource({
+      sourceText: readFileSync(file, 'utf8'),
+      file: path,
+      renderedUnresolvedRisk: hostedLocalRenderedSqlRisk,
+    })
   })
   const sites = extracted.flatMap((value) => value.sites)
   const unresolved = extracted.flatMap((value) => value.unresolved)

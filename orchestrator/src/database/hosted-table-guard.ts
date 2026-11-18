@@ -51,6 +51,11 @@ export const HOSTED_LOCAL_SQL_ALLOWED_FILES = [
       'SQL timing instrumentation transparently forwards dynamic statements to the handle it wraps; the runtime hosted-table guard remains the backstop',
   },
   {
+    pattern: /^orchestrator\/src\/database\/db\.ts$/,
+    reason:
+      'Local connection write probes run before store-hooks wraps the handle and constrain dynamic table names to WRITE_PROBE_TABLE_PREFIX',
+  },
+  {
     pattern: /^orchestrator\/src\/record\/(?:record-board-claims|record-projects|record-sync)\.ts$/,
     reason:
       'Postgres record modules operate on the hosted record rather than a guarded SQLite handle',
@@ -59,6 +64,16 @@ export const HOSTED_LOCAL_SQL_ALLOWED_FILES = [
     pattern: /^orchestrator\/src\/record\/(?:outbox-prune|record-cache-lens)\.ts$/,
     reason:
       'Record synchronization adapters query only their machine-local outbox and cache tables',
+  },
+  {
+    pattern: /^orchestrator\/src\/record\/record-cache-workflow\.ts$/,
+    reason:
+      'Workflow record-cache SQL is selected only on local installs by readRecordInstallBinding(local).bound',
+  },
+  {
+    pattern: /^orchestrator\/src\/session-report\/session-report-adapter\.ts$/,
+    reason:
+      'Workflow-cursor report SQL is selected only on local installs by currentRecordWriteDecision(database).verdict',
   },
   {
     pattern: /^orchestrator\/src\/doc\/doc-read-store\.ts$/,
