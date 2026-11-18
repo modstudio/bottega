@@ -150,16 +150,16 @@ export function interpretMergeQueue(
   }
 }
 
-function confirmedDequeue(
+function confirmedDequeueReason(
   queue: MergeQueueState,
   state: MergeQueueWaitState,
   now: number,
-): boolean {
-  return (
-    queue.state === 'dequeued' &&
+): string | null {
+  return queue.state === 'dequeued' &&
     state.dequeueObservedAt !== null &&
     now - state.dequeueObservedAt >= MERGE_QUEUE_DEQUEUE_CONFIRM_MS
-  )
+    ? queue.reason
+    : null
 }
 
 export function stepMergeQueueWait(
@@ -233,12 +233,13 @@ export function stepMergeQueueWait(
     state = { ...state, enqueueSubmitted: true, enqueueSubmittedAt: now }
     return { state, action: { action: 'enqueue' } }
   }
-  if (confirmedDequeue(queue, state, now)) {
+  const confirmedReason = confirmedDequeueReason(queue, state, now)
+  if (confirmedReason !== null) {
     return {
       state,
       action: {
         action: 'refuse',
-        refusal: `pull request #${number} was dequeued without a failed check (reason: ${queue.reason})`,
+        refusal: `pull request #${number} was dequeued without a failed check (reason: ${confirmedReason})`,
         remedy: retry,
       },
     }
