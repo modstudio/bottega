@@ -66,7 +66,7 @@ function failureFacts(now: string, since: string, error: unknown): ContextHealth
     unreachable: {
       resource: 'architect context store',
       detail: error instanceof Error ? error.message : String(error),
-      remedy: `run ${PLATFORM_SLUG} record doctor and ${PLATFORM_SLUG} machine update, then retry`,
+      remedy: `run ${PLATFORM_SLUG} record doctor; sign in when it reports a missing or expired record session, or run ${PLATFORM_SLUG} machine update when it reports a behind store; then retry`,
     },
   }
 }
