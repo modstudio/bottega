@@ -115,7 +115,51 @@ test('a substituted template not naming a hosted table stays clean', () => {
       file: 'orchestrator/src/run/safe.ts',
       renderedUnresolvedRisk: hostedLocalRenderedSqlRisk,
     }),
-  ).toEqual({ sites: [], unresolved: [] })
+  ).toEqual({ sites: [], unresolved: [], cannotJudge: [] })
+})
+
+test('an interpolated table is refused as cannot-judge', () => {
+  const extracted = extractSqlFromSource({
+    sourceText: 'db.query(`SELECT 1 FROM ${table} WHERE id=?`)',
+    file: 'orchestrator/src/run/unsafe.ts',
+    renderedUnresolvedRisk: hostedLocalRenderedSqlRisk,
+  })
+  expect(extracted.cannotJudge).toHaveLength(1)
+  expect(
+    hostedLocalSqlViolations({
+      ...extracted,
+      tables: ['question'],
+      allowedFiles: [],
+      stateClasses: [hostedQuestion],
+      cannotJudgeBaseline: [],
+    }),
+  ).toEqual([expect.stringContaining('cannot judge interpolated SQL table')])
+})
+
+test('an exact-path exemption refuses more sites than its budget', () => {
+  expect(
+    hostedLocalSqlViolations({
+      sites: [site('orchestrator/src/database/db.ts'), site('orchestrator/src/database/db.ts')],
+      tables: ['question'],
+      allowedFiles: [
+        { pattern: /^orchestrator\/src\/database\/db\.ts$/, reason: 'fixture', expectedSites: 1 },
+      ],
+      stateClasses: [hostedQuestion],
+    }),
+  ).toEqual([expect.stringContaining('expected 1 sites but found 2')])
+})
+
+test('an exact-path exemption refuses a stale count above actual', () => {
+  expect(
+    hostedLocalSqlViolations({
+      sites: [site('orchestrator/src/database/db.ts')],
+      tables: ['question'],
+      allowedFiles: [
+        { pattern: /^orchestrator\/src\/database\/db\.ts$/, reason: 'fixture', expectedSites: 2 },
+      ],
+      stateClasses: [hostedQuestion],
+    }),
+  ).toEqual([expect.stringContaining('expected 2 sites but found 1')])
 })
 
 test('an allowed file with no hosted-only or unresolved SQL is rejected as unused', () => {

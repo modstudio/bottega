@@ -18,6 +18,9 @@ export type HostedSqlSite = {
 }
 
 export type HostedSqlUnresolvedSite = HostedSqlSite & { expression: string }
+export type HostedSqlCannotJudgeSite = HostedSqlUnresolvedSite & {
+  kind: 'interpolated-table'
+}
 
 type RenderedSql = { sql: string; bindings: number }
 type StaticValue = string | string[]
@@ -552,14 +555,19 @@ function sqlCallSites(
   staticSymbols: () => StaticSymbols,
   renderedUnresolvedRisk: ((sql: string) => boolean) | undefined,
   localConstants: () => Map<string, ts.Expression>,
-): { sites: HostedSqlSite[]; unresolved: HostedSqlUnresolvedSite[] } {
-  if (!ts.isCallExpression(node)) return { sites: [], unresolved: [] }
+): {
+  sites: HostedSqlSite[]
+  unresolved: HostedSqlUnresolvedSite[]
+  cannotJudge: HostedSqlCannotJudgeSite[]
+} {
+  const empty = { sites: [], unresolved: [], cannotJudge: [] }
+  if (!ts.isCallExpression(node)) return empty
   const target = unwrap(node.expression)
   let method: string | null = null
   if (ts.isIdentifier(target)) method = target.text
   else if (ts.isPropertyAccessExpression(target)) method = target.name.text
   const argument = node.arguments[0]
-  if (!method || !SQL_CALL_METHODS.has(method) || !argument) return { sites: [], unresolved: [] }
+  if (!method || !SQL_CALL_METHODS.has(method) || !argument) return empty
   const rendered =
     renderFixtureSql(argument) ??
     (() => {
@@ -575,6 +583,24 @@ function sqlCallSites(
       return null
     })()
   const line = source.getLineAndCharacterOfPosition(argument.getStart(source)).line + 1
+  const dynamicTable = interpolatedTableExpression(argument)
+  if (dynamicTable && rendered && (rendered.unresolved || rendered.statements.length === 0)) {
+    const sql = argument.getText(source)
+    return {
+      sites: [],
+      unresolved: [],
+      cannotJudge: [
+        {
+          file,
+          line,
+          sql,
+          expression: dynamicTable.getText(source),
+          fingerprint: hostedSqlFingerprint(sql),
+          kind: 'interpolated-table',
+        },
+      ],
+    }
+  }
   if (!rendered && couldBeSqlExpression(argument, LOCAL_HANDLE_SQL_START)) {
     const expression = argument.getText(source)
     return {
@@ -588,9 +614,10 @@ function sqlCallSites(
           fingerprint: hostedSqlFingerprint(expression),
         },
       ],
+      cannotJudge: [],
     }
   }
-  if (!rendered) return { sites: [], unresolved: [] }
+  if (!rendered) return empty
   if (
     renderedUnresolvedRisk &&
     (rendered.unresolved ||
@@ -603,6 +630,7 @@ function sqlCallSites(
     return {
       sites: [],
       unresolved: [{ file, line, sql, expression, fingerprint: hostedSqlFingerprint(sql) }],
+      cannotJudge: [],
     }
   }
   return {
@@ -610,7 +638,19 @@ function sqlCallSites(
       .filter((sql) => LOCAL_HANDLE_SQL_START.test(sql))
       .map((sql) => ({ file, line, sql, fingerprint: hostedSqlFingerprint(sql) })),
     unresolved: [],
+    cannotJudge: [],
   }
+}
+
+function interpolatedTableExpression(expression: ts.Expression): ts.Expression | null {
+  const template = unwrap(expression)
+  if (!ts.isTemplateExpression(template)) return null
+  let fixedText = template.head.text
+  for (const span of template.templateSpans) {
+    if (/\b(?:FROM|JOIN|INTO|UPDATE)\s*$/i.test(fixedText)) return span.expression
+    fixedText += ` ? ${span.literal.text}`
+  }
+  return null
 }
 
 /** Extracts static SQL from the Bun SQL tag and SQLite database call shapes. */
@@ -621,6 +661,7 @@ export function extractSqlFromSource(input: {
 }): {
   sites: HostedSqlSite[]
   unresolved: HostedSqlUnresolvedSite[]
+  cannotJudge: HostedSqlCannotJudgeSite[]
 } {
   const source = ts.createSourceFile(
     input.file,
@@ -641,6 +682,7 @@ export function extractSqlFromSource(input: {
   const localConstants = (): Map<string, ts.Expression> => (constants ??= collectConstants(source))
   const sites = [...extracted.sites]
   const unresolved = [...extracted.unresolved]
+  const cannotJudge: HostedSqlCannotJudgeSite[] = []
   const visit = (node: ts.Node): void => {
     const calls = sqlCallSites(
       node,
@@ -652,6 +694,7 @@ export function extractSqlFromSource(input: {
     )
     sites.push(...calls.sites)
     unresolved.push(...calls.unresolved)
+    cannotJudge.push(...calls.cannotJudge)
     ts.forEachChild(node, visit)
   }
   visit(source)
@@ -659,7 +702,14 @@ export function extractSqlFromSource(input: {
   const uniqueUnresolved = new Map(
     unresolved.map((site) => [`${site.line}#${site.fingerprint}`, site]),
   )
-  return { sites: [...unique.values()], unresolved: [...uniqueUnresolved.values()] }
+  const uniqueCannotJudge = new Map(
+    cannotJudge.map((site) => [`${site.line}#${site.fingerprint}`, site]),
+  )
+  return {
+    sites: [...unique.values()],
+    unresolved: [...uniqueUnresolved.values()],
+    cannotJudge: [...uniqueCannotJudge.values()],
+  }
 }
 
 const HOSTED_FIXTURE_EXECUTORS = new Set([

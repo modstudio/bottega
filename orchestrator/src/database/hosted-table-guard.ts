@@ -20,6 +20,8 @@ export const HOSTED_TABLES_WITHOUT_LOCAL_ACCESS = [
 export const LOCAL_SQLITE_ADAPTER_PATH =
   '^orchestrator/src/(?:question-store/question-store-sqlite|workflow/task-flow-store-sqlite)[^/]*\\.ts$'
 
+// Exact-path exemptions pin the number of hosted-table and unresolved sites they allow. Adapter
+// families and directory prefixes are intentionally uncounted because local SQL is their purpose.
 export const HOSTED_LOCAL_SQL_ALLOWED_FILES = [
   {
     pattern: new RegExp(LOCAL_SQLITE_ADAPTER_PATH),
@@ -44,16 +46,19 @@ export const HOSTED_LOCAL_SQL_ALLOWED_FILES = [
   {
     pattern: /^orchestrator\/src\/database\/entity-number\.ts$/,
     reason: 'The local identity-number adapter is reached only for local stores',
+    expectedSites: 1,
   },
   {
     pattern: /^orchestrator\/src\/database\/slow-statements\.ts$/,
     reason:
       'SQL timing instrumentation transparently forwards dynamic statements to the handle it wraps; the runtime hosted-table guard remains the backstop',
+    expectedSites: 2,
   },
   {
     pattern: /^orchestrator\/src\/database\/db\.ts$/,
     reason:
       'Local connection write probes run before store-hooks wraps the handle and constrain dynamic table names to WRITE_PROBE_TABLE_PREFIX',
+    expectedSites: 2,
   },
   {
     pattern: /^orchestrator\/src\/record\/(?:record-board-claims|record-projects|record-sync)\.ts$/,
@@ -69,15 +74,18 @@ export const HOSTED_LOCAL_SQL_ALLOWED_FILES = [
     pattern: /^orchestrator\/src\/record\/record-cache-workflow\.ts$/,
     reason:
       'Workflow record-cache SQL is selected only on local installs by readRecordInstallBinding(local).bound',
+    expectedSites: 1,
   },
   {
     pattern: /^orchestrator\/src\/session-report\/session-report-adapter\.ts$/,
     reason:
       'Workflow-cursor report SQL is selected only on local installs by currentRecordWriteDecision(database).verdict',
+    expectedSites: 1,
   },
   {
     pattern: /^orchestrator\/src\/doc\/doc-read-store\.ts$/,
     reason: 'The local document read adapter builds SQL only for machine-local document tables',
+    expectedSites: 1,
   },
 ] as const
 
