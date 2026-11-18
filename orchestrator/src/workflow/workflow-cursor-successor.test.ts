@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { taskFlowHandoffLinks, type TaskFlowReadStore } from './task-flow-store.ts'
+import { type TaskFlowReadStore, taskFlowHandoffLinks } from './task-flow-store.ts'
 import { resolveWorkflowCursorSuccessor } from './workflow-run-binding.ts'
 
 test('resolves an evidence cursor through every handoff successor', () => {

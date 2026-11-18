@@ -235,6 +235,13 @@ export async function taskFlowHandoffLinks(
   return links
 }
 
+export async function taskFlowOpenStageHandoffLinks(store: TaskFlowReadStore) {
+  return taskFlowHandoffLinks(
+    store,
+    (await store.listOpenStages({})).map((stage) => stage.record_id),
+  )
+}
+
 /** Resolves task-flow writes and transaction-bound reads to local SQLite. */
 export function taskFlowLocalStore(database: Database): TaskFlowLocalStore {
   const decision = currentRecordWriteDecision(database)

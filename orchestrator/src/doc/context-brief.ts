@@ -19,11 +19,11 @@ import { LIVE_RUN_STATUS_SQL } from '../run/run-status.ts'
 import { KEYLESS_CURSOR_IDLE_MS, keylessCursorIdle } from '../session/keyless-cursor-idle.ts'
 import { sessionReviewVerdictLines } from '../session/session-review-verdicts.ts'
 import { architectSessionContext } from '../workflow/session-context.ts'
-import { taskFlowHandoffLinks, taskFlowReadStore } from '../workflow/task-flow-store.ts'
 import { workflowCursorReference } from '../workflow/workflow-cursor-format.ts'
 import {
   listWorkflowCursors,
   type WorkflowCursorListRow,
+  workflowCursorHandoffLinks,
 } from '../workflow/workflow-cursor-list.ts'
 import {
   workflowCursorBranchAndWorktree,
@@ -396,9 +396,9 @@ export async function contextBrief(
        WHERE session_id=? AND status IN ${LIVE_RUN_STATUS_SQL} ORDER BY number`,
     )
     .all(session) as Array<ContextBrief['runs'][number] & { cursor_record_id: string | null }>
-  const handoffLinks: WorkflowCursorHandoffLink[] = await taskFlowHandoffLinks(
-    taskFlowReadStore(database),
-    cursors.map((cursor) => cursor.record_id),
+  const handoffLinks: WorkflowCursorHandoffLink[] = await workflowCursorHandoffLinks(
+    cursors,
+    database,
   )
   const questionCounts = await questionInboxCountsForSession(session, database)
   const boardEnv = { ...process.env, CLAUDE_CODE_SESSION_ID: session }

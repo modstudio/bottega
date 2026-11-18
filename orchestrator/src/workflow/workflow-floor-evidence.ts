@@ -31,7 +31,7 @@ import { rulingStatus } from '../run/question-vocabulary.ts'
 import { resolveRunIdentifier } from '../run/run-identifier.ts'
 import { TERMINAL_RUN_STATUS_SET } from '../run/run-status.ts'
 import { parseProbeArtifact, resolveProbeArtifact } from './probe-identifier.ts'
-import { taskFlowHandoffLinks, taskFlowReadStore } from './task-flow-store.ts'
+import { taskFlowOpenStageHandoffLinks, taskFlowReadStore } from './task-flow-store.ts'
 import {
   type CheckoutResolution,
   checkoutOutsideChangeRefusal,
@@ -747,18 +747,13 @@ async function gatherSatisfy(
   const row = await store.obligationByRecordId(id)
   if (!row) return { id, found: false }
   const floor = floorFromObligationRow(row)
-  const openStages = await store.listOpenStages({})
-  const handoffLinks = await taskFlowHandoffLinks(
-    store,
-    openStages.map((stage) => stage.record_id),
-  )
+  const handoffLinks = await taskFlowOpenStageHandoffLinks(store)
   return {
     id,
     found: true,
     open: row.satisfied_at === null && row.abandoned_at === null,
     abandoned: row.abandoned_at !== null,
-    cursorMatches:
-      resolveWorkflowCursorSuccessor(row.cursor_record_id, handoffLinks) === cursorId,
+    cursorMatches: resolveWorkflowCursorSuccessor(row.cursor_record_id, handoffLinks) === cursorId,
     floor,
   }
 }
@@ -1043,11 +1038,6 @@ export async function gatherValidatedEvidenceBase(
     gathered.task = gatherTask(input.evidence.task.trim(), input.identity, d, ports)
   if (input.evidence.defer?.trim()) gathered.deferReason = input.evidence.defer.trim()
   if (satisfies)
-    gathered.satisfy = await gatherSatisfy(
-      satisfies,
-      input.cursorId,
-      d,
-      input.taskFlowClient,
-    )
+    gathered.satisfy = await gatherSatisfy(satisfies, input.cursorId, d, input.taskFlowClient)
   return gathered
 }
