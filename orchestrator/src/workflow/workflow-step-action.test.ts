@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test'
+import { newRecordId } from '../../../shared/record/schema.ts'
 import { recordUnreachableRefusal } from '../../../shared/record-remedies.ts'
 import { selectBriefInFlight } from '../doc/context-brief.ts'
 import { JOBS } from '../jobs/jobs.ts'
@@ -189,16 +190,8 @@ test('the pure dispatch decision still refuses an undeclared job on a keyed curs
 })
 
 test('a keyless lookup absent from the step dispatches with the cursor step binding', async () => {
+  const d = database()
   const calls: unknown[][] = []
-  let runRow:
-    | {
-        number: number
-        job: string
-        status: 'running'
-        label: string
-        cursor_record_id: string
-      }
-    | undefined
   await dispatchForStep(
     { cursor: 17, job: 'understand', argv: ['do', 'understand', 'Inspect it.'] },
     {
@@ -211,13 +204,14 @@ test('a keyless lookup absent from the step dispatches with the cursor step bind
         }),
       dispatch: async (...args) => {
         calls.push(args)
-        runRow = {
-          number: 42,
-          job: 'understand',
-          status: 'running',
-          label: 'Inspect it.',
-          cursor_record_id: args[1].cursorRecordId,
-        }
+        d.query(
+          `INSERT INTO run
+             (record_id,number,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,label,status,
+              session_id,cursor_record_id,step_slug,turn,project_record_id)
+           VALUES (?,42,'2026-11-17T14:00:00.000Z','codex','understand','sha',1,'Inspect it.',
+                   'Inspect it.','running','session-a',?,?,1,
+                   (SELECT record_id FROM project WHERE name='fixture'))`,
+        ).run(newRecordId(), args[1].cursorRecordId, args[1].stepSlug)
       },
     },
   )
@@ -227,8 +221,23 @@ test('a keyless lookup absent from the step dispatches with the cursor step bind
       { cursorRecordId: 'cursor-record-17', stepSlug: 'investigate' },
     ],
   ])
+  const runRow = d
+    .query<
+      {
+        number: number
+        job: string
+        status: 'running'
+        label: string
+        cursor_record_id: string
+      },
+      []
+    >(
+      `SELECT number,job,status,label,cursor_record_id
+         FROM run WHERE number=42`,
+    )
+    .get()!
   const inFlight = selectBriefInFlight(
-    [runRow!],
+    [runRow],
     [
       {
         record_id: 'cursor-record-17',
