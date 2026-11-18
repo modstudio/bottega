@@ -97,9 +97,17 @@ test('clears every open cursor worktree pointer at a removed path and records th
     )
     return id
   })
+  const unrelated = newRecordId()
+  insert.run(
+    unrelated,
+    workflowVersionRecordId(d),
+    catalogueVersionRecordId(d),
+    JSON.stringify({ worktree: '/trees/unrelated', branch: 'other-work' }),
+    'running',
+  )
 
-  expect(await clearOpenCursorWorktreesAtPath(path, d)).toBe(2)
-  const rows = ids.map((id) =>
+  expect(await clearOpenCursorWorktreesAtPath([path], d)).toBe(2)
+  const rows = [...ids, unrelated].map((id) =>
     d
       .query<{ args: string; closed: string }, [string]>(
         'SELECT args,closed FROM workflow_cursor WHERE record_id=?',
@@ -114,6 +122,11 @@ test('clears every open cursor worktree pointer at a removed path and records th
     expect.objectContaining({ event: 'argument-rebound', name: 'worktree', oldValue: path }),
   )
   expect(JSON.parse(rows[2]!.args)).toEqual({ worktree: path, branch: 'DEV-2218-work' })
+  expect(JSON.parse(rows[3]!.args)).toEqual({
+    worktree: '/trees/unrelated',
+    branch: 'other-work',
+  })
+  expect(JSON.parse(rows[3]!.closed)).toEqual([])
 })
 
 test('open keyless cursor reader excludes a done cursor and task-bound cursor', async () => {

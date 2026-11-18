@@ -2,8 +2,6 @@
 /** Reads open cursor worktrees and clears pointers to trees after removal. */
 
 import type { Database } from 'bun:sqlite'
-import { realpathSync } from 'node:fs'
-import { resolve } from 'node:path'
 import { db, nowIso, writeTransaction } from '../database/db.ts'
 import type { RecordTaskFlowClient } from '../record/record-api-client-task-flow.ts'
 import {
@@ -64,23 +62,31 @@ export async function openCursorWorktrees(
   })
 }
 
-function comparablePath(path: string): string {
-  try {
-    return realpathSync(path)
-  } catch {
-    return resolve(path)
-  }
+/** Read locally mirrored open cursors whose stored worktree uses a captured tree spelling. */
+export function openCursorWorktreesAtSpellings(
+  capturedSpellings: readonly string[],
+  database: Database = db(),
+): OpenCursorWorktree[] {
+  const spellings = new Set(capturedSpellings)
+  return database
+    .query<{ number: number; workflow: string; project: string; args: string }, []>(
+      `SELECT number,workflow_slug workflow,project,args FROM workflow_cursor
+         WHERE state IN ('running','awaiting-ruling') ORDER BY project,number`,
+    )
+    .all()
+    .flatMap((row) => {
+      const worktree = workflowCursorBranchAndWorktree(row.args).worktree
+      return worktree !== null && spellings.has(worktree) ? [{ ...row, worktree }] : []
+    })
 }
 
 /** Clear open cursor claims that point at a tree which has just been removed. */
 export async function clearOpenCursorWorktreesAtPath(
-  path: string,
+  capturedSpellings: readonly string[],
   database: Database = db(),
   client?: RecordTaskFlowClient,
-  capturedSpellings?: readonly string[],
 ): Promise<number> {
-  const wanted = comparablePath(path)
-  const spellings = capturedSpellings ? new Set(capturedSpellings) : null
+  const spellings = new Set(capturedSpellings)
   const rows = database
     .query<
       { record_id: string; revision: number; project: string; args: string; closed: string },
@@ -90,13 +96,7 @@ export async function clearOpenCursorWorktreesAtPath(
          WHERE state IN ('running','awaiting-ruling') ORDER BY project,number`,
     )
     .all()
-    .filter((row) => {
-      const worktree = workflowCursorBranchAndWorktree(row.args).worktree
-      return (
-        worktree !== null &&
-        (spellings ? spellings.has(worktree) : comparablePath(worktree) === wanted)
-      )
-    })
+    .filter((row) => spellings.has(workflowCursorBranchAndWorktree(row.args).worktree ?? ''))
   for (const row of rows) {
     const args = JSON.parse(row.args) as Record<string, string>
     const oldValue = args.worktree!

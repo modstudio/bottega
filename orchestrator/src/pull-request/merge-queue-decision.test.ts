@@ -230,6 +230,7 @@ describe('merge-queue action', () => {
         remedy:
           `merge origin/trunk into the pull-request branch, push it, then ` +
           `${PLATFORM_SLUG} pr merge 42`,
+        source: 'dequeue-reason',
       },
     })
   })
@@ -243,6 +244,20 @@ describe('merge-queue action', () => {
       action: 'refuse',
       refusal: expect.stringContaining('reason: merge_conflict'),
       remedy: expect.stringContaining('merge origin/main'),
+      source: 'dequeue-reason',
+    })
+  })
+
+  test('a failed-checks dequeue reports a check failure and its fix-or-requeue remedy', () => {
+    const state = { ...initialWaitState, activeEntryObserved: true }
+    expect(
+      stepMergeQueueWait(42, state, { state: 'dequeued', reason: 'FaIlEd_ChEcKs' }, 1, 20_000)
+        .action,
+    ).toEqual({
+      action: 'refuse',
+      refusal: expect.stringContaining('failed in the merge queue (reason: FaIlEd_ChEcKs)'),
+      remedy: expect.stringMatching(/push a fix.*re-run .* pr merge 42.*flaked/),
+      source: 'failed-check',
     })
   })
 
@@ -294,6 +309,7 @@ describe('merge-queue action', () => {
         action: 'refuse',
         refusal: expect.stringContaining('failed in the merge queue'),
         remedy: expect.stringMatching(/push a fix.*re-run .* pr merge 42.*flaked/),
+        source: 'failed-check',
       },
     })
   })
@@ -313,6 +329,7 @@ describe('merge-queue action', () => {
         action: 'refuse',
         refusal: expect.stringContaining('failed in the merge queue'),
         remedy: expect.stringContaining(`re-run ${PLATFORM_SLUG} pr merge 42`),
+        source: 'failed-check',
       },
     })
   })

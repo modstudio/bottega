@@ -10,13 +10,33 @@ import { conversationWorktreeSpellings } from '../resources/resource-ownership.t
 import {
   clearOpenCursorWorktreesAtPath,
   openCursorWorktrees,
+  openCursorWorktreesAtSpellings,
 } from '../workflow/workflow-cursor-worktrees.ts'
+import { shellWord, workflowCursorReference } from '../workflow/workflow-cursor-format.ts'
+import { pointerMustClear, type ResourceTeardownResult } from './absent-tree-close-out.ts'
+import type { CloseOutResult } from './close-out-report.ts'
 
 export type CloseOutTaskFlowClient = RecordTaskFlowClient
 
 export type CloseOutPreparation = {
   cursorWorktrees: Awaited<ReturnType<typeof openCursorWorktrees>>
   taskFlowClient?: RecordTaskFlowClient
+}
+
+export type CursorWorktreeCleanupFailure = {
+  failure: string
+  remedy: string
+}
+
+export function finishCursorWorktreeClear(
+  result: CloseOutResult & ResourceTeardownResult,
+  cleanup: CursorWorktreeCleanupFailure | null,
+): CloseOutResult {
+  delete result.resourceTeardownCompleted
+  delete result.resourceTeardownFailed
+  return cleanup
+    ? { ...result, cursorCleanupFailure: cleanup.failure, cursorCleanupRemedy: cleanup.remedy }
+    : result
 }
 
 export async function prepareCloseOut(
@@ -44,7 +64,9 @@ export function conversationRootAndWorktree(runId: string): {
 export function prepareCursorWorktreeClear(
   runId: string,
   preparation: CloseOutPreparation,
-): (result: { worktree: string | null; outcome: string }) => Promise<string | null> {
+): (
+  result: CloseOutResult & ResourceTeardownResult,
+) => Promise<CursorWorktreeCleanupFailure | null> {
   const root = conversationRootAndWorktree(runId)
   const worktree = root.worktree
   const spellings = conversationWorktreeSpellings(db(), root.rootRecordId)
@@ -62,26 +84,46 @@ export function prepareCursorWorktreeClear(
     ])
   }
   return async (result) => {
-    if (!result.worktree || !['released', 'absent'].includes(result.outcome)) return null
+    if (
+      !result.worktree ||
+      !pointerMustClear(result.outcome, result.worktree) ||
+      result.resourceTeardownFailed
+    )
+      return null
+    const capturedSpellings = spellings.get(result.worktree) ?? [result.worktree]
     try {
-      await clearOpenCursorWorktreesAtPath(
-        result.worktree,
-        db(),
-        preparation.taskFlowClient,
-        spellings.get(result.worktree) ?? [result.worktree],
-      )
+      await clearOpenCursorWorktreesAtPath(capturedSpellings, db(), preparation.taskFlowClient)
       return null
     } catch (cause) {
       const detail = cause instanceof Error ? cause.message : String(cause)
-      return renderRefusal(
+      const spellingSet = new Set(capturedSpellings)
+      let uncleared = preparation.cursorWorktrees.filter((cursor) =>
+        spellingSet.has(cursor.worktree),
+      )
+      try {
+        uncleared = openCursorWorktreesAtSpellings(capturedSpellings, db())
+      } catch {
+        // The preparation snapshot still names every cursor that may need manual repair.
+      }
+      const cursorNames = uncleared.map((cursor) => `cursor ${cursor.number}`).join(', ')
+      const remedy = uncleared
+        .map(
+          (cursor) =>
+            `${PLATFORM_SLUG} workflow step ${shellWord(cursor.workflow)}` +
+            `${workflowCursorReference(cursor.number, cursor.project).cli}` +
+            ` --arg ${shellWord('worktree=<tree>')}`,
+        )
+        .join('; ')
+      const failure = renderRefusal(
         refusal(
-          `the tree at ${result.worktree} was ${result.outcome} but the cursor worktree pointers at it could not be cleared: ${detail}`,
+          `the tree at ${result.worktree} was ${result.outcome} but the worktree pointers for ${cursorNames || 'the affected cursors'} could not be cleared: ${detail}`,
           {
             kind: 'edit',
-            text: `rerun ${PLATFORM_SLUG} tree remove ${result.worktree} to retry, or pass --arg worktree=<tree> on the cursor`,
+            text: remedy || `rebind each affected cursor with --arg worktree=<tree>`,
           },
         ),
       ).replace('\n', '; ')
+      return { failure, remedy: remedy || `rebind each affected cursor with --arg worktree=<tree>` }
     }
   }
 }

@@ -140,7 +140,10 @@ const declaredModules: ArchitectureModule[] = [
     '../database/db.ts',
     '../record/record-api-client-task-flow.ts',
     '../resources/resource-ownership.ts',
+    '../workflow/workflow-cursor-format.ts',
     '../workflow/workflow-cursor-worktrees.ts',
+    './absent-tree-close-out.ts',
+    './close-out-report.ts',
   ]),
   module('orchestrator/src/workflow/task-flow-store-sqlite-write.ts', [
     'bun:sqlite',

@@ -25,7 +25,12 @@ type MergeQueueAction =
   | { action: 'enqueue' }
   | { action: 'requeue' }
   | { action: 'wait'; delay: number }
-  | { action: 'refuse'; refusal: string; remedy: string }
+  | {
+      action: 'refuse'
+      refusal: string
+      remedy: string
+      source?: 'dequeue-reason' | 'failed-check'
+    }
 
 export type MergeQueueWaitState = {
   enqueueSubmitted: boolean
@@ -80,6 +85,7 @@ function failedMergeQueueStep(
       action: 'refuse',
       refusal: `pull request #${number} failed in the merge queue`,
       remedy: `push a fix if the check failure is real, or re-run ${retry} to requeue the unchanged head if it flaked`,
+      source: 'failed-check',
     },
   }
 }
@@ -168,6 +174,15 @@ function dequeueRefusal(
   landingBranch: string,
 ): Extract<MergeQueueAction, { action: 'refuse' }> {
   const retry = `${PLATFORM_SLUG} pr merge ${number}`
+  if (reason.toLowerCase() === 'failed_checks') {
+    return {
+      action: 'refuse',
+      refusal: `pull request #${number} failed in the merge queue (reason: ${reason})`,
+      remedy: `push a fix if the check failure is real, or re-run ${retry} to requeue the unchanged head if it flaked`,
+      source: 'failed-check',
+    }
+  }
+  const reasonRefusesOnItsOwn = !['unknown', 'merged'].includes(reason.toLowerCase())
   return {
     action: 'refuse',
     refusal: `pull request #${number} was dequeued without a failed check (reason: ${reason})`,
@@ -175,6 +190,7 @@ function dequeueRefusal(
       reason.toLowerCase() === 'merge_conflict'
         ? `merge origin/${landingBranch} into the pull-request branch, push it, then ${retry}`
         : retry,
+    ...(reasonRefusesOnItsOwn ? { source: 'dequeue-reason' as const } : {}),
   }
 }
 

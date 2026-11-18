@@ -435,6 +435,12 @@ test('ship cleanup rerun after the branch is gone stays clean', async () => {
 
 async function landingTreeCleanup(input: {
   removal?: HookTreeRemovalResult
+  closeOutResult?: {
+    outcome: string
+    detail: string
+    cursorCleanupFailure?: string
+    cursorCleanupRemedy?: string
+  }
   runsFromTree?: boolean
   pruneKept?: {
     branch: string
@@ -474,7 +480,7 @@ async function landingTreeCleanup(input: {
     }),
     closeOut: (id) => {
       closed.push(id)
-      return { outcome: 'released', detail: 'released' }
+      return input.closeOutResult ?? { outcome: 'released', detail: 'released' }
     },
     prune: (_project, branch) => ({
       deleted: [],
@@ -591,4 +597,40 @@ test('ship cleanup records an already absent landing tree separately from releas
   expect(result.removedTrees).toEqual([])
   expect(result.report.absentWorktrees).toEqual([result.landingTree])
   expect(result.report.removed.worktrees).toEqual([])
+})
+
+test('ship cleanup reports the cursor rebind remedy from landing-tree removal', async () => {
+  const remedy = `${PLATFORM_SLUG} workflow step ship-task --cursor 17 --project fixture --arg 'worktree=<tree>'`
+  const result = await landingTreeCleanup({
+    removal: {
+      outcome: 'released',
+      cursorCleanupFailure: `cursor worktree pointer could not be cleared; cleared by: ${remedy}`,
+      cursorCleanupRemedy: remedy,
+    },
+  })
+
+  expect(result.report.errors).toContainEqual({
+    item: expect.stringMatching(/^run \d+ cursor worktree pointers$/),
+    detail: expect.stringContaining('cursor worktree pointer could not be cleared'),
+    retry: remedy,
+  })
+})
+
+test('ship cleanup reports the cursor rebind remedy from a non-landing close-out', async () => {
+  const remedy = `${PLATFORM_SLUG} workflow step ship-task --cursor 18 --project fixture --arg 'worktree=<tree>'`
+  const result = await landingTreeCleanup({
+    siblingBranch: { branch: 'DEV-1392-c2', worktree: '/trees/sibling' },
+    closeOutResult: {
+      outcome: 'released',
+      detail: 'released',
+      cursorCleanupFailure: `cursor worktree pointer could not be cleared; cleared by: ${remedy}`,
+      cursorCleanupRemedy: remedy,
+    },
+  })
+
+  expect(result.report.errors).toContainEqual({
+    item: expect.stringMatching(/^run \d+ cursor worktree pointers$/),
+    detail: expect.stringContaining('cursor worktree pointer could not be cleared'),
+    retry: remedy,
+  })
 })

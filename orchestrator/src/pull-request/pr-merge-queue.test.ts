@@ -496,6 +496,32 @@ test('a merge-conflict dequeue with a failed run keeps the reasoned remedy and a
   )
 })
 
+test('a failed-checks dequeue keeps the failed-check remedy and appends run evidence', async () => {
+  registerProject(['ci'])
+  expect(
+    async () =>
+      await mergePullRequest(
+        '42',
+        cwd,
+        adapter({
+          queueStates: [
+            { pullRequestState: 'OPEN', mergeCommit: null, entryState: 'QUEUED' },
+            {
+              pullRequestState: 'OPEN',
+              mergeCommit: null,
+              entryState: null,
+              removalReason: 'failed_checks',
+            },
+          ],
+        }),
+      ),
+  ).toThrow(
+    `failed in the merge queue (reason: failed_checks); failure merge-group run 9876 ` +
+      `(https://github.example/actions/runs/9876); cleared by: push a fix if the check failure is real, ` +
+      `or re-run ${PLATFORM_SLUG} pr merge 42 to requeue the unchanged head if it flaked`,
+  )
+})
+
 test('a closed pull request refuses immediately after an established queue', async () => {
   registerProject(['ci'])
   expect(

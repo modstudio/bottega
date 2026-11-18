@@ -239,8 +239,8 @@ export function createHookTree(input: {
 }
 
 export type HookTreeRemovalResult =
-  | { outcome: 'released'; cursorCleanupFailure?: string }
-  | { outcome: 'absent'; cursorCleanupFailure?: string }
+  | { outcome: 'released'; cursorCleanupFailure?: string; cursorCleanupRemedy?: string }
+  | { outcome: 'absent'; cursorCleanupFailure?: string; cursorCleanupRemedy?: string }
   | { outcome: 'kept'; reason: string }
   | { outcome: 'failed'; detail: string }
 
@@ -296,7 +296,11 @@ async function removeRecordedHookTree(
     taskFlowClient,
   })
   if (result.outcome === 'released' || result.outcome === 'absent')
-    return successfulHookTreeRemovalResult(result.outcome, result.cursorCleanupFailure)
+    return successfulHookTreeRemovalResult(
+      result.outcome,
+      result.cursorCleanupFailure,
+      result.cursorCleanupRemedy,
+    )
   if (result.outcome === 'held') return { outcome: 'kept', reason: result.detail }
   return { outcome: 'failed', detail: `tree teardown ${result.outcome}: ${result.detail}` }
 }
@@ -304,10 +308,12 @@ async function removeRecordedHookTree(
 function successfulHookTreeRemovalResult(
   outcome: 'released' | 'absent',
   cursorCleanupFailure?: string,
+  cursorCleanupRemedy?: string,
 ): HookTreeRemovalResult {
   return {
     outcome,
     ...(cursorCleanupFailure ? { cursorCleanupFailure } : {}),
+    ...(cursorCleanupRemedy ? { cursorCleanupRemedy } : {}),
   }
 }
 

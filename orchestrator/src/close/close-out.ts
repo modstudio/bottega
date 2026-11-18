@@ -54,6 +54,7 @@ import {
   type CloseOutPreparation,
   type CloseOutTaskFlowClient,
   conversationRootAndWorktree,
+  finishCursorWorktreeClear,
   prepareCloseOut,
   prepareCursorWorktreeClear,
 } from './close-out-preparation.ts'
@@ -913,7 +914,10 @@ function appendTreeNamingDetail(
 }
 
 /** Run one close-out attempt and retain its outcome for observation and retry. */
-function closeOutRunHoldingLease(runId: string, options: CloseOutPreparedOptions): CloseOutResult {
+function closeOutRunHoldingLease(
+  runId: string,
+  options: CloseOutPreparedOptions,
+): CloseOutAttemptResult {
   const root = conversationRootAndWorktree(runId)
   const keepTree = closeOutKeepTreeDecision(
     root.rootRecordId,
@@ -973,8 +977,6 @@ function closeOutRunHoldingLease(runId: string, options: CloseOutPreparedOptions
       }
     })
   }
-  delete result.resourceTeardownCompleted
-  delete result.resourceTeardownFailed
   if (options.intent !== 'sweep' && ['released', 'absent', 'forgotten'].includes(result.outcome)) {
     const sandbox = releaseSandboxDirectoryForConversation(result.runId, {
       dryRun: options.dryRun,
@@ -1016,10 +1018,10 @@ export async function closeOutRun(
   const clearCursorWorktrees = prepareCursorWorktreeClear(runId, preparation)
   const { questionRootIds, ...preparedResult } = closeOutRunPrepared(runId, options, preparation)
   let result = preparedResult
-  if (!options.dryRun) {
-    const cursorCleanupFailure = await clearCursorWorktrees(result)
-    if (cursorCleanupFailure) result = { ...result, cursorCleanupFailure }
-  }
+  result = finishCursorWorktreeClear(
+    result,
+    options.dryRun ? null : await clearCursorWorktrees(result),
+  )
   for (const rootId of questionRootIds) await closeTerminalChainQuestions(rootId, !!options.dryRun)
   return result
 }
@@ -1029,7 +1031,7 @@ export function closeOutRunPrepared(
   runId: string,
   options: CloseOutOptions,
   preparation: CloseOutPreparation,
-): CloseOutResult & { questionRootIds: string[] } {
+): CloseOutAttemptResult & { questionRootIds: string[] } {
   const preparedOptions: CloseOutPreparedOptions = {
     ...options,
     cursorWorktrees: preparation.cursorWorktrees,

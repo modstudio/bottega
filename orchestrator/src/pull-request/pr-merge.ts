@@ -591,10 +591,19 @@ function throwMergeQueueRefusal(
     state.state === 'failed' || state.state === 'dequeued'
       ? failedMergeGroupRun(pullRequest, cwd, repository, enqueuedAt, adapter)
       : null
-  const reasonWins =
-    state.state === 'dequeued' && !['unknown', 'merged'].includes(state.reason.toLowerCase())
-  if (reasonWins) {
+  if (action.source === 'dequeue-reason') {
     const evidence = failed?.run ? `; ${failed.evidence}` : ''
+    throw new Error(
+      renderRefusal(
+        refusal(`refusing merge: ${action.refusal}${evidence}`, {
+          kind: 'edit',
+          text: action.remedy,
+        }),
+      ).replace('\n', '; '),
+    )
+  }
+  if (action.source === 'failed-check') {
+    const evidence = failed ? `; ${failed.evidence}` : ''
     throw new Error(
       renderRefusal(
         refusal(`refusing merge: ${action.refusal}${evidence}`, {
