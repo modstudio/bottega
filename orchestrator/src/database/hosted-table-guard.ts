@@ -51,13 +51,14 @@ export const HOSTED_LOCAL_SQL_ALLOWED_FILES = [
       'SQL timing instrumentation transparently forwards dynamic statements to the handle it wraps; the runtime hosted-table guard remains the backstop',
   },
   {
-    pattern:
-      /^orchestrator\/src\/record\/(?:record-board-claims|record-projects|record-sync)\.ts$/,
-    reason: 'Postgres record modules operate on the hosted record rather than a guarded SQLite handle',
+    pattern: /^orchestrator\/src\/record\/(?:record-board-claims|record-projects|record-sync)\.ts$/,
+    reason:
+      'Postgres record modules operate on the hosted record rather than a guarded SQLite handle',
   },
   {
     pattern: /^orchestrator\/src\/record\/(?:outbox-prune|record-cache-lens)\.ts$/,
-    reason: 'Record synchronization adapters query only their machine-local outbox and cache tables',
+    reason:
+      'Record synchronization adapters query only their machine-local outbox and cache tables',
   },
   {
     pattern: /^orchestrator\/src\/doc\/doc-read-store\.ts$/,

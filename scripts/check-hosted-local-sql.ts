@@ -12,9 +12,9 @@ import {
 } from '../orchestrator/src/database/hosted-table-guard.ts'
 import {
   extractSqlFromSource,
-  productionTypeScriptFiles,
   type HostedSqlSite,
   type HostedSqlUnresolvedSite,
+  productionTypeScriptFiles,
 } from './hosted-sql-schema.ts'
 import { STATE_CLASSES, type StateClassDeclaration } from './identity-state-classes.ts'
 

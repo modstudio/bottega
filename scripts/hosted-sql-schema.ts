@@ -86,7 +86,6 @@ function productionTypeScriptFilesIncludingTests(directory: string): string[] {
 }
 
 const HOSTED_FIXTURE_IMPORTS_WITHOUT_SQL = new Set([
-  'orchestrator/src/postgres/postgres-migrate-public-role.test.ts',
   'orchestrator/src/postgres/postgres-migrate-schema.test.ts',
   // Builds hosted document-import HTTP payloads and intentionally owns no SQL.
   'orchestrator/test/fixtures/doc-import.ts',
@@ -267,6 +266,33 @@ function resolveStaticPropertyCall(
   return typeof separator === 'string' ? receiver.join(separator) : null
 }
 
+function resolveStaticConditional(
+  node: ts.ConditionalExpression,
+  symbols: StaticSymbols,
+  bindings: Map<string, StaticValue>,
+  seen: Set<string>,
+): StaticValue | null {
+  const branches = [node.whenTrue, node.whenFalse].map((branch) =>
+    resolveStaticValue(branch, symbols, bindings, seen),
+  )
+  if (branches.some((branch) => branch === null)) return null
+  return branches.flatMap((branch) => (Array.isArray(branch) ? branch : [branch!]))
+}
+
+function resolveStaticConcatenation(
+  node: ts.BinaryExpression,
+  symbols: StaticSymbols,
+  bindings: Map<string, StaticValue>,
+  seen: Set<string>,
+): StaticValue | null {
+  const left = resolveStaticValue(node.left, symbols, bindings, seen)
+  const right = resolveStaticValue(node.right, symbols, bindings, seen)
+  if (left === null || right === null) return null
+  const leftValues = Array.isArray(left) ? left : [left]
+  const rightValues = Array.isArray(right) ? right : [right]
+  return leftValues.flatMap((prefix) => rightValues.map((suffix) => prefix + suffix))
+}
+
 function resolveStaticValue(
   expression: ts.Expression,
   symbols: StaticSymbols,
@@ -278,21 +304,10 @@ function resolveStaticValue(
   if (ts.isArrayLiteralExpression(node)) return resolveStaticArray(node, symbols, bindings, seen)
   if (ts.isTemplateExpression(node)) return resolveStaticTemplate(node, symbols, bindings, seen)
   if (ts.isIdentifier(node)) return resolveStaticIdentifier(node, symbols, bindings, seen)
-  if (ts.isConditionalExpression(node)) {
-    const branches = [node.whenTrue, node.whenFalse].map((branch) =>
-      resolveStaticValue(branch, symbols, bindings, seen),
-    )
-    if (branches.some((branch) => branch === null)) return null
-    return branches.flatMap((branch) => (Array.isArray(branch) ? branch : [branch!]))
-  }
-  if (ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.PlusToken) {
-    const left = resolveStaticValue(node.left, symbols, bindings, seen)
-    const right = resolveStaticValue(node.right, symbols, bindings, seen)
-    if (left === null || right === null) return null
-    const leftValues = Array.isArray(left) ? left : [left]
-    const rightValues = Array.isArray(right) ? right : [right]
-    return leftValues.flatMap((prefix) => rightValues.map((suffix) => prefix + suffix))
-  }
+  if (ts.isConditionalExpression(node))
+    return resolveStaticConditional(node, symbols, bindings, seen)
+  if (ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.PlusToken)
+    return resolveStaticConcatenation(node, symbols, bindings, seen)
   if (!ts.isCallExpression(node)) return null
   const target = unwrap(node.expression)
   if (ts.isIdentifier(target))
@@ -530,8 +545,7 @@ const SQL_CALL_METHODS = new Set(['exec', 'prepare', 'query', 'run'])
 function couldBeSqlExpression(expression: ts.Expression): boolean {
   const value = unwrap(expression)
   if (ts.isIdentifier(value)) return /(?:sql|query|statement)/i.test(value.text)
-  if (ts.isPropertyAccessExpression(value))
-    return /(?:sql|query|statement)/i.test(value.name.text)
+  if (ts.isPropertyAccessExpression(value)) return /(?:sql|query|statement)/i.test(value.name.text)
   if (ts.isElementAccessExpression(value))
     return /(?:sql|query|statement)/i.test(value.expression.getText())
   if (ts.isTemplateExpression(value)) return SQL_START.test(value.head.text)
@@ -552,8 +566,7 @@ function sqlCallSites(
   if (ts.isIdentifier(target)) method = target.text
   else if (ts.isPropertyAccessExpression(target)) method = target.name.text
   const argument = node.arguments[0]
-  if (!method || !SQL_CALL_METHODS.has(method) || !argument)
-    return { sites: [], unresolved: [] }
+  if (!method || !SQL_CALL_METHODS.has(method) || !argument) return { sites: [], unresolved: [] }
   const rendered =
     renderFixtureSql(argument) ??
     (() => {
