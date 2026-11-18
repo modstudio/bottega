@@ -92,6 +92,6 @@ test('an unknown doc artifact refusal names every accepted artifact form includi
       d: database(),
     }),
   ).rejects.toThrow(
-    'task:<KEY>, comment:<UUID>, run:<run>, gate:<gate>, review:<review>, ruling:<ruling>, or pull-request:<url>',
+    'task:<KEY>#comment:<id> | run number or run id | probe:<id> | exec:<id> | review-read:<UUID> | attached-text:<UUID> | GitHub pull-request link',
   )
 })

@@ -45,6 +45,7 @@ import {
   decideReviewReadArtifact,
   type Floor,
   flagForFloor,
+  floorGuidance,
   githubPullRequestUrlIn,
   parseArtifactRef,
   pullRequestCreateArgv,
@@ -483,10 +484,7 @@ function resolveDocArtifact(value: string, identity: CursorIdentity, d: Database
       renderRefusal(
         refusal(`${flag} does not exist`, {
           kind: 'edit',
-          text:
-            'pass an existing artifact as doc:<scope>/<subject-or-_>/<slug>, ' +
-            'doc:<document-UUID>, task:<KEY>, comment:<UUID>, run:<run>, gate:<gate>, ' +
-            'review:<review>, ruling:<ruling>, or pull-request:<url>',
+          text: floorGuidance['recorded-artifact'],
         }),
       ),
     )

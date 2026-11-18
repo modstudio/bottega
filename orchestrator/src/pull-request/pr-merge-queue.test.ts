@@ -6,6 +6,7 @@ import { db } from '../database/db.ts'
 import type { TriageDecision } from '../review-funnel/review-funnel-admission-evidence.ts'
 import type { PullRequestCheck } from './merge-decision.ts'
 import {
+  MERGE_QUEUE_DEQUEUE_CONFIRM_MS,
   MERGE_QUEUE_REQUEUE_CONFIRM_MS,
   MERGE_QUEUE_WAIT_MS,
   type MergeQueueObservation,
@@ -378,7 +379,100 @@ test('a merge-conflict removal names merge, push, and requeue as its remedy', as
   )
 })
 
-test('a vanished queue entry stops before a later merged observation', async () => {
+test('a merged removal completes when pull-request state catches up inside confirmation', async () => {
+  registerProject(['ci'])
+  expect(
+    await mergePullRequest(
+      '42',
+      cwd,
+      adapter({
+        queueStates: [
+          { pullRequestState: 'OPEN', mergeCommit: null, entryState: 'QUEUED' },
+          {
+            pullRequestState: 'OPEN',
+            mergeCommit: null,
+            entryState: null,
+            removalReason: 'merged',
+          },
+          { pullRequestState: 'MERGED', mergeCommit: 'queued-merge-oid', entryState: null },
+        ],
+        failedMergeGroupRun: () => null,
+      }),
+    ),
+  ).toMatchObject({ mergeCommit: 'queued-merge-oid' })
+})
+
+test('a merged removal past confirmation refuses and reports the reason', async () => {
+  registerProject(['ci'])
+  let clock = 0
+  let waits = 0
+  expect(
+    async () =>
+      await mergePullRequest(
+        '42',
+        cwd,
+        adapter({
+          queueStates: [
+            { pullRequestState: 'OPEN', mergeCommit: null, entryState: 'QUEUED' },
+            {
+              pullRequestState: 'OPEN',
+              mergeCommit: null,
+              entryState: null,
+              removalReason: 'merged',
+            },
+            {
+              pullRequestState: 'OPEN',
+              mergeCommit: null,
+              entryState: null,
+              removalReason: 'merged',
+            },
+          ],
+          now: () => clock,
+          wait: () => {
+            waits += 1
+            if (waits === 2) clock = MERGE_QUEUE_DEQUEUE_CONFIRM_MS
+          },
+          failedMergeGroupRun: () => null,
+        }),
+      ),
+  ).toThrow('dequeued without a failed check (reason: merged)')
+})
+
+test('a stale merge-conflict removal from before this enqueue does not refuse', async () => {
+  registerProject(['ci'])
+  const removedAt = '2026-10-24T10:00:00Z'
+  const now = Date.parse('2026-10-24T10:00:01Z')
+  expect(
+    await mergePullRequest(
+      '42',
+      cwd,
+      adapter({
+        queueStates: [
+          {
+            pullRequestState: 'OPEN',
+            mergeCommit: null,
+            entryState: null,
+            removalReason: 'merge_conflict',
+            removedAt,
+          },
+          {
+            pullRequestState: 'OPEN',
+            mergeCommit: null,
+            entryState: null,
+            removalReason: 'merge_conflict',
+            removedAt,
+          },
+          { pullRequestState: 'OPEN', mergeCommit: null, entryState: 'QUEUED' },
+          { pullRequestState: 'MERGED', mergeCommit: 'queued-merge-oid', entryState: null },
+        ],
+        now: () => now,
+        failedMergeGroupRun: () => null,
+      }),
+    ),
+  ).toMatchObject({ mergeCommit: 'queued-merge-oid' })
+})
+
+test('a dequeued entry with a real failed merge-group run keeps the failure refusal', async () => {
   registerProject(['ci'])
   expect(
     async () =>
@@ -388,13 +482,18 @@ test('a vanished queue entry stops before a later merged observation', async () 
         adapter({
           queueStates: [
             { pullRequestState: 'OPEN', mergeCommit: null, entryState: 'QUEUED' },
-            { pullRequestState: 'OPEN', mergeCommit: null, entryState: null },
-            { pullRequestState: 'MERGED', mergeCommit: 'queued-merge-oid', entryState: null },
+            {
+              pullRequestState: 'OPEN',
+              mergeCommit: null,
+              entryState: null,
+              removalReason: 'BASE_BRANCH_UPDATED',
+            },
           ],
-          failedMergeGroupRun: () => null,
         }),
       ),
-  ).toThrow('dequeued without a failed check (reason: unknown)')
+  ).toThrow(
+    `failed in the merge queue; failure merge-group run 9876 (https://github.example/actions/runs/9876); cleared by: push a fix if the check failure is real`,
+  )
 })
 
 test('a closed pull request refuses immediately after an established queue', async () => {

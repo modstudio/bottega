@@ -1,10 +1,11 @@
-// concern: workflow cursor worktree read
-/** Reads only the worktree arguments held by open workflow cursors. */
+// concern: workflow cursor worktree ownership
+/** Reads open cursor worktrees and clears pointers to trees after removal. */
 
 import type { Database } from 'bun:sqlite'
 import { realpathSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { db, nowIso, writeTransaction } from '../database/db.ts'
+import type { RecordTaskFlowClient } from '../record/record-api-client-task-flow.ts'
 import {
   taskFlowWriteTarget,
   writeHostedTaskFlow,
@@ -12,6 +13,7 @@ import {
 import { taskFlowRequestId } from '../record/record-task-flow-write-contract.ts'
 import { taskFlowLocalStore, taskFlowReadStore } from './task-flow-store.ts'
 import type { TaskFlowIntentInput } from './task-flow-store-types.ts'
+import type { ArgumentReboundEvent, CursorTrailEntry } from './workflow-cursor-trail.ts'
 
 export type OpenCursorWorktree = {
   number: number
@@ -19,6 +21,8 @@ export type OpenCursorWorktree = {
   project: string
   worktree: string
 }
+
+export type CursorWorktreeTaskFlowClient = RecordTaskFlowClient
 
 /** Read the claim handles carried by one cursor without trusting stored argument JSON. */
 function workflowCursorStoredArgs(args: string): Record<string, unknown> | null {
@@ -72,6 +76,7 @@ function comparablePath(path: string): string {
 export async function clearOpenCursorWorktreesAtPath(
   path: string,
   database: Database = db(),
+  client?: RecordTaskFlowClient,
 ): Promise<number> {
   const wanted = comparablePath(path)
   const rows = database
@@ -92,8 +97,15 @@ export async function clearOpenCursorWorktreesAtPath(
     const oldValue = args.worktree!
     delete args.worktree
     const at = nowIso()
-    const closed = JSON.parse(row.closed) as unknown[]
-    closed.push({ event: 'argument-rebound', name: 'worktree', oldValue, newValue: '', at })
+    const closed = JSON.parse(row.closed) as CursorTrailEntry[]
+    const rebound: ArgumentReboundEvent = {
+      event: 'argument-rebound',
+      name: 'worktree',
+      oldValue,
+      newValue: '',
+      at,
+    }
+    closed.push(rebound)
     const payload: TaskFlowIntentInput<'stage-update'> = {
       requestId: taskFlowRequestId('stage-update', [row.record_id, String(row.revision)]),
       stages: [
@@ -108,6 +120,7 @@ export async function clearOpenCursorWorktreesAtPath(
       'stage-update',
       payload,
       taskFlowWriteTarget(row.project, database),
+      client,
     )
     writeTransaction(
       () => taskFlowLocalStore(database).write('stage-update', payload, hosted),

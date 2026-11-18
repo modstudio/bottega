@@ -19,7 +19,10 @@ import { acquireRunLease } from '../run/run-lease.ts'
 import { nextRunNumber } from '../run/run-number.ts'
 import { terminalLifecycleWrite } from '../run/run-terminal-lifecycle-store.ts'
 import { HOOK_TREE_JOB, isSyntheticLifecycleJob } from '../run/synthetic-lifecycle-job.ts'
-import { clearOpenCursorWorktreesAtPath } from '../workflow/workflow-cursor-worktrees.ts'
+import {
+  type CursorWorktreeTaskFlowClient,
+  clearOpenCursorWorktreesAtPath,
+} from '../workflow/workflow-cursor-worktrees.ts'
 import { unownedProjectTreeRemovalRemedy } from '../worktree/snapshotless-tracked-recipe.ts'
 import { createWithTool } from '../worktree/worktree-create.ts'
 import { resolveWorktreeLifecycle } from '../worktree/worktree-lifecycle.ts'
@@ -239,16 +242,38 @@ export function createHookTree(input: {
 }
 
 export type HookTreeRemovalResult =
-  | { outcome: 'released' }
-  | { outcome: 'absent' }
+  | { outcome: 'released'; cursorCleanupFailure?: string }
+  | { outcome: 'absent'; cursorCleanupFailure?: string }
   | { outcome: 'kept'; reason: string }
   | { outcome: 'failed'; detail: string }
 
-export async function removeHookTreeResult(requestedPath: string): Promise<HookTreeRemovalResult> {
+export function cursorWorktreeCleanupFailure(
+  result: Extract<HookTreeRemovalResult, { outcome: 'released' | 'absent' }>,
+  requestedPath: string,
+  cause: unknown,
+): HookTreeRemovalResult {
+  const detail = cause instanceof Error ? cause.message : String(cause)
+  return {
+    ...result,
+    cursorCleanupFailure:
+      `the tree at ${requestedPath} was ${result.outcome} but the cursor worktree pointers at it could not be cleared: ${detail}; ` +
+      `rerun ${PLATFORM_SLUG} tree remove ${requestedPath} to retry, or pass --arg worktree=<tree> on the cursor`,
+  }
+}
+
+export async function removeHookTreeResult(
+  requestedPath: string,
+  taskFlowClient?: CursorWorktreeTaskFlowClient,
+): Promise<HookTreeRemovalResult> {
   try {
     const result = await removeRecordedHookTree(requestedPath)
-    if (result.outcome === 'released' || result.outcome === 'absent')
-      await clearOpenCursorWorktreesAtPath(requestedPath)
+    if (result.outcome === 'released' || result.outcome === 'absent') {
+      try {
+        await clearOpenCursorWorktreesAtPath(requestedPath, db(), taskFlowClient)
+      } catch (cause) {
+        return cursorWorktreeCleanupFailure(result, requestedPath, cause)
+      }
+    }
     return result
   } catch (cause) {
     return { outcome: 'failed', detail: cause instanceof Error ? cause.message : String(cause) }
@@ -326,6 +351,8 @@ function unownedHookTreeRemovalResult(
 
 export async function removeHookTree(requestedPath: string): Promise<void> {
   const result = await removeHookTreeResult(requestedPath)
+  if ((result.outcome === 'released' || result.outcome === 'absent') && result.cursorCleanupFailure)
+    throw new Error(result.cursorCleanupFailure)
   if (result.outcome === 'kept') throw new Error(`tree teardown held: ${result.reason}`)
   if (result.outcome === 'failed') throw new Error(result.detail)
 }

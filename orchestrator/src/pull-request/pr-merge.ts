@@ -527,6 +527,7 @@ function waitForQueuedMerge(
   const deadline = adapter.now() + MERGE_QUEUE_WAIT_MS
   let waitState: MergeQueueWaitState = {
     enqueueSubmitted: false,
+    enqueueSubmittedAt: null,
     activeEntryObserved: false,
     dequeueObservedAt: null,
     requeuePendingSince: null,
@@ -536,7 +537,7 @@ function waitForQueuedMerge(
   while (true) {
     const observation = adapter.queueState(cwd, pullRequest.nodeId)
     if (observation.enqueuedAt) lastEnqueuedAt = observation.enqueuedAt
-    const state = currentMergeQueueState(observation, lastEnqueuedAt)
+    const state = interpretMergeQueue(observation, lastEnqueuedAt, waitState.enqueueSubmittedAt)
     const now = adapter.now()
     const step = stepMergeQueueWait(
       pullRequest.number,
@@ -575,22 +576,6 @@ function waitForQueuedMerge(
     }
     adapter.wait(action.delay)
   }
-}
-
-function currentMergeQueueState(
-  observation: MergeQueueObservation,
-  lastEnqueuedAt: string | null,
-): MergeQueueState {
-  const state = interpretMergeQueue(observation)
-  if (
-    state.state === 'dequeued' &&
-    observation.removedAt &&
-    lastEnqueuedAt &&
-    Date.parse(observation.removedAt) < Date.parse(lastEnqueuedAt)
-  ) {
-    return { state: 'dequeued', reason: 'unknown' }
-  }
-  return state
 }
 
 function throwMergeQueueRefusal(

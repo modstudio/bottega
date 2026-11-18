@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   interpretMergeQueue,
+  MERGE_QUEUE_DEQUEUE_CONFIRM_MS,
   MERGE_QUEUE_REQUEUE_CONFIRM_MS,
   type MergeQueueWaitState,
   mergeQueueEnqueueFailureRemedy,
@@ -10,6 +11,7 @@ import {
 
 const initialWaitState: MergeQueueWaitState = {
   enqueueSubmitted: false,
+  enqueueSubmittedAt: null,
   activeEntryObserved: false,
   dequeueObservedAt: null,
   requeuePendingSince: null,
@@ -71,6 +73,25 @@ describe('merge-queue state', () => {
     ).toEqual({ state: 'dequeued', reason: 'unknown' })
   })
 
+  test('a removal reason older than the later enqueue fact is stale', () => {
+    const observation = {
+      pullRequestState: 'OPEN',
+      mergeCommit: null,
+      entryState: null,
+      enqueuedAt: null,
+      removalReason: 'merge_conflict',
+      removedAt: '2026-10-24T10:00:00Z',
+    }
+    expect(interpretMergeQueue(observation, '2026-10-24T10:00:01Z')).toEqual({
+      state: 'dequeued',
+      reason: 'unknown',
+    })
+    expect(interpretMergeQueue(observation, null, Date.parse('2026-10-24T10:00:01Z'))).toEqual({
+      state: 'dequeued',
+      reason: 'unknown',
+    })
+  })
+
   test('a closed pull request is distinct from an open pull request with no queue entry', () => {
     expect(
       interpretMergeQueue({
@@ -100,7 +121,7 @@ describe('merge-queue action', () => {
       20_000,
     )
     expect(enqueue).toEqual({
-      state: { ...initialWaitState, enqueueSubmitted: true },
+      state: { ...initialWaitState, enqueueSubmitted: true, enqueueSubmittedAt: 0 },
       action: { action: 'enqueue' },
     })
     expect(
@@ -111,7 +132,7 @@ describe('merge-queue action', () => {
     })
   })
 
-  test('a vanished active entry stops immediately and reports its reason', () => {
+  test('an unknown vanished entry waits for confirmation before reporting its reason', () => {
     const deadline = 120_000
     const queued = stepMergeQueueWait(42, initialWaitState, { state: 'queued' }, 0, deadline)
     const gap = stepMergeQueueWait(
@@ -123,35 +144,60 @@ describe('merge-queue action', () => {
     )
     expect(gap).toEqual({
       state: { ...queued.state, dequeueObservedAt: 1 },
-      action: {
-        action: 'refuse',
-        refusal: expect.stringContaining('reason: unknown'),
-        remedy: `${PLATFORM_SLUG} pr merge 42`,
-      },
+      action: { action: 'wait', delay: 10_000 },
     })
-  })
-
-  test('an already observed absent entry refuses as dequeued', () => {
-    const observedAt = 1
     expect(
       stepMergeQueueWait(
         42,
-        { ...initialWaitState, activeEntryObserved: true, dequeueObservedAt: observedAt },
+        gap.state,
         { state: 'dequeued', reason: 'unknown' },
-        observedAt + 60_000,
+        1 + MERGE_QUEUE_DEQUEUE_CONFIRM_MS,
         120_000,
       ),
     ).toEqual({
-      state: {
-        ...initialWaitState,
-        activeEntryObserved: true,
-        dequeueObservedAt: observedAt,
-      },
+      state: gap.state,
       action: {
         action: 'refuse',
         refusal: expect.stringContaining('dequeued without a failed check (reason: unknown)'),
         remedy: `${PLATFORM_SLUG} pr merge 42`,
       },
+    })
+  })
+
+  test('a merged removal completes if the pull request catches up inside confirmation', () => {
+    const queued = stepMergeQueueWait(42, initialWaitState, { state: 'queued' }, 0, 120_000)
+    const gap = stepMergeQueueWait(
+      42,
+      queued.state,
+      { state: 'dequeued', reason: 'merged' },
+      1,
+      120_000,
+    )
+    expect(gap.action).toEqual({ action: 'wait', delay: 10_000 })
+    expect(
+      stepMergeQueueWait(42, gap.state, { state: 'merged', mergeCommit: 'merge-oid' }, 2, 120_000)
+        .action,
+    ).toEqual({ action: 'complete', mergeCommit: 'merge-oid' })
+  })
+
+  test('a merged removal past confirmation reports the reason', () => {
+    const state = {
+      ...initialWaitState,
+      activeEntryObserved: true,
+      dequeueObservedAt: 1,
+    }
+    expect(
+      stepMergeQueueWait(
+        42,
+        state,
+        { state: 'dequeued', reason: 'merged' },
+        1 + MERGE_QUEUE_DEQUEUE_CONFIRM_MS,
+        120_000,
+      ).action,
+    ).toEqual({
+      action: 'refuse',
+      refusal: expect.stringContaining('reason: merged'),
+      remedy: `${PLATFORM_SLUG} pr merge 42`,
     })
   })
 

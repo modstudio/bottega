@@ -382,6 +382,12 @@ async function releaseLandingTree(
     if (result.outcome === 'released') report.removed.worktrees.push(row.worktree)
     else report.absentWorktrees.push(row.worktree)
     removedNow.set(row.worktree, runIdsByTree.get(row.worktree) ?? new Set([row.record_id]))
+    if (result.cursorCleanupFailure)
+      report.errors.push({
+        item: `run ${row.number} cursor worktree pointers`,
+        detail: result.cursorCleanupFailure,
+        retry: `${PLATFORM_SLUG} tree remove ${row.worktree}`,
+      })
     return null
   }
   if (result.outcome === 'kept') {

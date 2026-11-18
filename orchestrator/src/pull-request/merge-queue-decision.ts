@@ -29,6 +29,7 @@ type MergeQueueAction =
 
 export type MergeQueueWaitState = {
   enqueueSubmitted: boolean
+  enqueueSubmittedAt: number | null
   activeEntryObserved: boolean
   dequeueObservedAt: number | null
   requeuePendingSince: number | null
@@ -41,6 +42,7 @@ export type MergeQueueStep = {
 
 const ACTIVE_ENTRY_STATES = new Set(['AWAITING_CHECKS', 'LOCKED', 'MERGEABLE', 'QUEUED'])
 export const MERGE_QUEUE_WAIT_MS = 30 * 60 * 1000
+export const MERGE_QUEUE_DEQUEUE_CONFIRM_MS = 60 * 1000
 export const MERGE_QUEUE_REQUEUE_CONFIRM_MS = 60 * 1000
 const MERGE_QUEUE_POLL_MS = 10 * 1000
 
@@ -100,7 +102,7 @@ function observedMergeQueueState(
   }
   if (
     queue.state === 'dequeued' &&
-    previous.activeEntryObserved &&
+    (previous.activeEntryObserved || (previous.enqueueSubmitted && queue.reason !== 'unknown')) &&
     previous.dequeueObservedAt === null
   ) {
     return { ...previous, dequeueObservedAt: now }
@@ -108,7 +110,24 @@ function observedMergeQueueState(
   return previous
 }
 
-export function interpretMergeQueue(observation: MergeQueueObservation): MergeQueueState {
+function removalReason(
+  observation: MergeQueueObservation,
+  lastEnqueuedAt: string | null,
+  enqueueSubmittedAt: number | null,
+): string {
+  const observedEnqueue = lastEnqueuedAt ? Date.parse(lastEnqueuedAt) : Number.NEGATIVE_INFINITY
+  const submittedEnqueue = enqueueSubmittedAt ?? Number.NEGATIVE_INFINITY
+  const removedAt = observation.removedAt ? Date.parse(observation.removedAt) : null
+  return removedAt !== null && removedAt < Math.max(observedEnqueue, submittedEnqueue)
+    ? 'unknown'
+    : (observation.removalReason ?? 'unknown')
+}
+
+export function interpretMergeQueue(
+  observation: MergeQueueObservation,
+  lastEnqueuedAt: string | null = null,
+  enqueueSubmittedAt: number | null = null,
+): MergeQueueState {
   const pullRequestState = observation.pullRequestState.toUpperCase()
   const entryState = observation.entryState?.toUpperCase() ?? null
   if (pullRequestState === 'MERGED' && observation.mergeCommit) {
@@ -119,12 +138,28 @@ export function interpretMergeQueue(observation: MergeQueueObservation): MergeQu
   if (pullRequestState === 'OPEN' && entryState && ACTIVE_ENTRY_STATES.has(entryState)) {
     return { state: 'queued' }
   }
-  if (pullRequestState === 'OPEN' && entryState === null)
-    return { state: 'dequeued', reason: observation.removalReason ?? 'unknown' }
+  if (pullRequestState === 'OPEN' && entryState === null) {
+    return {
+      state: 'dequeued',
+      reason: removalReason(observation, lastEnqueuedAt, enqueueSubmittedAt),
+    }
+  }
   return {
     state: 'unknown',
     detail: `pull request state ${observation.pullRequestState}, queue entry ${observation.entryState ?? 'none'}, merge commit ${observation.mergeCommit ?? 'none'}`,
   }
+}
+
+function confirmedDequeue(
+  queue: MergeQueueState,
+  state: MergeQueueWaitState,
+  now: number,
+): boolean {
+  return (
+    queue.state === 'dequeued' &&
+    state.dequeueObservedAt !== null &&
+    now - state.dequeueObservedAt >= MERGE_QUEUE_DEQUEUE_CONFIRM_MS
+  )
 }
 
 export function stepMergeQueueWait(
@@ -176,7 +211,9 @@ export function stepMergeQueueWait(
   }
   if (
     queue.state === 'dequeued' &&
-    (state.activeEntryObserved || (state.enqueueSubmitted && queue.reason !== 'unknown'))
+    (state.activeEntryObserved || (state.enqueueSubmitted && queue.reason !== 'unknown')) &&
+    queue.reason !== 'unknown' &&
+    queue.reason.toLowerCase() !== 'merged'
   ) {
     const reason = queue.reason
     const remedy =
@@ -193,14 +230,28 @@ export function stepMergeQueueWait(
     }
   }
   if (queue.state === 'dequeued' && !state.enqueueSubmitted && !state.activeEntryObserved) {
-    state = { ...state, enqueueSubmitted: true }
+    state = { ...state, enqueueSubmitted: true, enqueueSubmittedAt: now }
     return { state, action: { action: 'enqueue' } }
   }
+  if (confirmedDequeue(queue, state, now)) {
+    return {
+      state,
+      action: {
+        action: 'refuse',
+        refusal: `pull request #${number} was dequeued without a failed check (reason: ${queue.reason})`,
+        remedy: retry,
+      },
+    }
+  }
+  const dequeueConfirmationRemaining =
+    queue.state === 'dequeued' && state.dequeueObservedAt !== null
+      ? MERGE_QUEUE_DEQUEUE_CONFIRM_MS - (now - state.dequeueObservedAt)
+      : Number.POSITIVE_INFINITY
   return {
     state,
     action: {
       action: 'wait',
-      delay: Math.min(MERGE_QUEUE_POLL_MS, deadline - now),
+      delay: Math.min(MERGE_QUEUE_POLL_MS, deadline - now, dequeueConfirmationRemaining),
     },
   }
 }

@@ -778,7 +778,7 @@ function pushPullRequestBranch(cwd: string, branch: string): void {
     renderRefusal(
       refusal(`pull request branch ${branch} could not be pushed: ${detail}`, {
         kind: 'edit',
-        text: `fix the reported git condition, then rerun ${PLATFORM_SLUG} pr create`,
+        text: `push the branch with git push -u origin ${branch}, then rerun ${PLATFORM_SLUG} pr create`,
       }),
     ),
   )
