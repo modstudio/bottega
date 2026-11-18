@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { taskFlowStageStateLiteralRestatements } from './check-task-flow-stage-state-literals.ts'
 
-test('rejects task-flow stage-state sets but not function-call arguments', () => {
+test('rejects task-flow stage-state sets but not individual value expressions', () => {
   const root = mkdtempSync(join(tmpdir(), 'task-flow-stage-state-guard-'))
   const source = join(root, 'orchestrator/src/workflow')
   mkdirSync(source, { recursive: true })
@@ -14,7 +14,9 @@ test('rejects task-flow stage-state sets but not function-call arguments', () =>
       "const open = ['running', 'awaiting-ruling']",
       "const query = `SELECT 1 WHERE state NOT IN ('done','abandoned')`",
       "const closed = state === 'done' || state === 'abandoned'",
+      "type ClosedState = 'done' | 'abandoned'",
       "expect(closedTaskAnnotation('running', 'done')).toBe('CLOSED TASK done')",
+      "const state = result === 'next' ? 'running' : 'awaiting-ruling'",
     ].join('\n'),
   )
 
@@ -22,6 +24,7 @@ test('rejects task-flow stage-state sets but not function-call arguments', () =>
     'orchestrator/src/workflow/filter.ts:1: derive task-flow stage-state sets from record-task-flow-contract',
     'orchestrator/src/workflow/filter.ts:2: derive task-flow stage-state sets from record-task-flow-contract',
     'orchestrator/src/workflow/filter.ts:3: derive task-flow stage-state sets from record-task-flow-contract',
+    'orchestrator/src/workflow/filter.ts:4: derive task-flow stage-state sets from record-task-flow-contract',
   ])
 })
 

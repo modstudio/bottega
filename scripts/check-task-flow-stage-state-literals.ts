@@ -47,7 +47,14 @@ function stageStateContext(path: string, line: string): boolean {
 }
 
 function distinctStageStates(source: string): Set<string> {
-  return new Set([...source.matchAll(STAGE_STATE)].map((match) => match[1]))
+  return new Set([...source.matchAll(STAGE_STATE)].map((match) => match[1]!))
+}
+
+function operandsRestateStageStateSet(operands: string[]): boolean {
+  const operandStates = operands.map(distinctStageStates).filter((states) => states.size > 0)
+  return (
+    operandStates.length >= 2 && new Set(operandStates.flatMap((states) => [...states])).size >= 2
+  )
 }
 
 function restatesStageStateSet(line: string): boolean {
@@ -55,12 +62,10 @@ function restatesStageStateSet(line: string): boolean {
   if (literalLists.some((match) => distinctStageStates(match[0]).size >= 2)) return true
 
   const booleanOperands = line.split(/\|\||&&/)
-  if (booleanOperands.length < 2) return false
-  const operandStates = booleanOperands.map(distinctStageStates).filter((states) => states.size > 0)
-  return (
-    operandStates.length >= 2 &&
-    new Set(operandStates.flatMap((states) => [...states])).size >= 2
-  )
+  if (booleanOperands.length >= 2 && operandsRestateStageStateSet(booleanOperands)) return true
+
+  const typeUnionOperands = line.split(/(?<!\|)\|(?!\|)/)
+  return typeUnionOperands.length >= 2 && operandsRestateStageStateSet(typeUnionOperands)
 }
 
 export function taskFlowStageStateLiteralRestatements(root = ROOT): string[] {

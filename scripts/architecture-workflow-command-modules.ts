@@ -14,10 +14,10 @@ const module = (file: string, allowed: string[]): WorkflowCommandModule => ({
 export const workflowCommandModules: WorkflowCommandModule[] = [
   module('orchestrator/src/workflow/workflow-cursor-report.ts', [
     '../cli/args.ts',
+    '../record/record-task-flow-contract.ts',
     './workflow-cursor-format.ts',
     './workflow-cursor-list.ts',
     './task-flow-decision.ts',
-    './task-flow-store-types.ts',
     './workflow-commands.ts',
     './workflow-task-reference.ts',
   ]),

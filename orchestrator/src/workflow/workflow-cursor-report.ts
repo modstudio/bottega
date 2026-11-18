@@ -2,8 +2,8 @@
 /** Enriches the existing cursor listing with task closure and bound-run health. */
 
 import { flagValue } from '../cli/args.ts'
+import { TASK_FLOW_OPEN_STAGE_STATES } from '../record/record-task-flow-contract.ts'
 import { taskFlowState } from './task-flow-decision.ts'
-import { TASK_FLOW_OPEN_STAGE_STATES } from './task-flow-store-types.ts'
 import type { WorkflowPrint } from './workflow-commands.ts'
 import { renderWorkflowCursorLine } from './workflow-cursor-format.ts'
 import { listWorkflowCursors } from './workflow-cursor-list.ts'
