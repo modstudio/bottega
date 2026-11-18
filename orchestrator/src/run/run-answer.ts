@@ -563,7 +563,7 @@ export async function retryRun(
   id: string,
   options: { agent?: string; model?: string; flags: RunFlags },
   helpers: RunAnswerHelpers,
-): Promise<void> {
+): Promise<string> {
   let retryAuthority = authorizeRunMutation(id, 'retry')
   const row = db()
     .query(
@@ -603,7 +603,7 @@ export async function retryRun(
       resumed.childId,
     )
     await reportContinuedRun(resumed.childId, resumed.job, options.flags, helpers.presentation)
-    return
+    return resumed.childId
   }
   if (!row.prompt_path || !existsSync(row.prompt_path)) {
     throw new Error(
@@ -756,6 +756,7 @@ export async function retryRun(
   auditRunMutation(retryAuthority, 'retry', `retried as run ${newId}`, db(), newId)
   console.error(`— run ${newId} is retry of ${id}`)
   await reportContinuedRun(newId, row.job, options.flags, helpers.presentation)
+  return newId
 }
 /**
  * Rule on what a worker asked, and set it going again.

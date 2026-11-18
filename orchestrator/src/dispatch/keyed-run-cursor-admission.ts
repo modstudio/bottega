@@ -1,14 +1,8 @@
 // concern: keyed run cursor admission
-/** Decides whether a keyed run turn is held by the calling harness session. */
+/** Decides whether cursor evidence admits a keyed run turn. */
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { refusal, renderRefusal } from '../../../shared/refusal.ts'
-import { classifyCaller, resolveCallerIdentity } from '../caller-classification.ts'
-import { db } from '../database/db.ts'
-import { projectByRecordId } from '../project/project-read.ts'
-import { openQuestionStages } from '../question-store/question-store-read.ts'
-import { inheritedRunFacts } from '../run/run-claim-inheritance.ts'
-import { rootRunRecordId } from '../run/run-root-record.ts'
 
 export type KeyedRunTurn = 'start' | 'continue' | 'answer' | 'retry'
 
@@ -39,6 +33,20 @@ const OVERRIDE_OPTION = '--override-unbound'
 const OVERRIDE_REMEDY = `${OVERRIDE_OPTION} "<reason>" --from-operator`
 const OVERRIDE_PREFIX = 'unbound keyed run turn overridden by Shmuel Barkin: '
 
+const composeRemedy = (project: string | null, key: string): string => {
+  const projectName = project ?? '<project>'
+  return (
+    `for work not yet built, run ${PLATFORM_SLUG} workflow compose plan-task --project ${projectName} --arg key=${key}; ` +
+    `to repair a defect, run ${PLATFORM_SLUG} workflow compose fix-defect --project ${projectName} --arg key=${key}; ` +
+    `for a built branch, run ${PLATFORM_SLUG} workflow compose ship-task --project ${projectName} --arg key=${key} --arg branch=<branch> --arg worktree=<worktree>`
+  )
+}
+
+const canOverride = (turn: KeyedRunTurn): boolean => turn !== 'answer'
+const laterTurnRemedy = (input: KeyedRunCursorAdmissionInput): string =>
+  composeRemedy(input.project, input.key!) +
+  (canOverride(input.turn) ? `; override with ${OVERRIDE_REMEDY}` : '')
+
 /** Apply cursor ownership and operator-override policy without reaching process or storage. */
 export function decideKeyedRunCursorAdmission(
   input: KeyedRunCursorAdmissionInput,
@@ -47,7 +55,7 @@ export function decideKeyedRunCursorAdmission(
     return { kind: 'allow' }
   }
 
-  if (input.overrideReason !== undefined) {
+  if (canOverride(input.turn) && input.overrideReason !== undefined) {
     const reason = input.overrideReason.trim()
     if (!reason) {
       return {
@@ -67,18 +75,26 @@ export function decideKeyedRunCursorAdmission(
   }
 
   if (!input.harnessSession) {
+    const remedy =
+      input.turn === 'start'
+        ? `run from a harness session that holds the task's workflow cursor; or override with ${OVERRIDE_REMEDY}`
+        : laterTurnRemedy(input)
     return {
       kind: 'refuse',
       message: renderRefusal(
         refusal(`refusing keyed run turn for task ${input.key} without a harness session`, {
           kind: 'edit',
-          text: `run from a harness session that holds the task's workflow cursor; or override with ${OVERRIDE_REMEDY}`,
+          text: remedy,
         }),
       ),
     }
   }
 
   if (!input.project) {
+    const remedy =
+      input.turn === 'start'
+        ? `run the dispatch from inside the project's checkout or pass --repo <project>; override with ${OVERRIDE_REMEDY}`
+        : laterTurnRemedy(input)
     return {
       kind: 'refuse',
       message: renderRefusal(
@@ -86,9 +102,7 @@ export function decideKeyedRunCursorAdmission(
           `refusing keyed run turn because the dispatch location is outside every registered project, so cursor ownership for harness session ${input.harnessSession} and task ${input.key} cannot be established`,
           {
             kind: 'edit',
-            text:
-              `run the dispatch from inside the project's checkout or pass --repo <project>; ` +
-              `override with ${OVERRIDE_REMEDY}`,
+            text: remedy,
           },
         ),
       ),
@@ -111,11 +125,7 @@ export function decideKeyedRunCursorAdmission(
           `hold an open workflow cursor for project ${input.project} and task ${input.key}`,
         {
           kind: 'edit',
-          text:
-            `for work not yet built, run ${PLATFORM_SLUG} workflow compose plan-task --project ${input.project} --arg key=${input.key}; ` +
-            `to repair a defect, run ${PLATFORM_SLUG} workflow compose fix-defect --project ${input.project} --arg key=${input.key}; ` +
-            `for a built branch, run ${PLATFORM_SLUG} workflow compose ship-task --project ${input.project} --arg key=${input.key} --arg branch=<branch> --arg worktree=<worktree>; ` +
-            `override with ${OVERRIDE_REMEDY}`,
+          text: laterTurnRemedy(input),
         },
       ),
     ),
@@ -149,7 +159,11 @@ export async function checkKeyedRunCursorAdmission(
           `refusing keyed run turn because open workflow cursors for harness session ${input.harnessSession} could not be read: ${reason}`,
           {
             kind: 'edit',
-            text: `rerun after ${PLATFORM_SLUG} machine doctor; or override with ${OVERRIDE_REMEDY}`,
+            text:
+              `rerun after ${PLATFORM_SLUG} machine doctor; ` +
+              (input.turn === 'start'
+                ? `or override with ${OVERRIDE_REMEDY}`
+                : laterTurnRemedy(input)),
           },
         ),
       ),
@@ -157,45 +171,4 @@ export async function checkKeyedRunCursorAdmission(
   }
 
   return decideKeyedRunCursorAdmission({ ...input, heldCursors })
-}
-
-/** Read the calling harness identity and its open keyed workflow cursors. */
-export function keyedRunCursorAdmission() {
-  const caller = classifyCaller(process.env)
-  const identity = caller.kind === 'harness' ? resolveCallerIdentity(caller, null) : null
-  return {
-    harnessSession: identity?.kind === 'identity' ? identity.session : null,
-    readOpenCursors: async (session: string) =>
-      (await openQuestionStages(db(), session)).map((cursor) => ({
-        project: cursor.project,
-        workflowKey: cursor.workflow_key,
-      })),
-  }
-}
-
-/** Admit one later turn using its chain root's key, project, and cursor binding. */
-export async function admitKeyedTurn(input: {
-  runId: string
-  turn: Exclude<KeyedRunTurn, 'start'>
-  overrideReason?: string
-  fromOperator: boolean
-}): Promise<string | null> {
-  const rootId = rootRunRecordId(input.runId)
-  const facts = inheritedRunFacts(rootId)
-  const project = facts.project_record_id ? projectByRecordId(facts.project_record_id) : null
-  const adapter = keyedRunCursorAdmission()
-  const decision = await checkKeyedRunCursorAdmission(
-    {
-      turn: input.turn,
-      key: facts.launch_key ?? undefined,
-      project: project?.name ?? null,
-      bindingPresent: facts.cursor_record_id !== null,
-      harnessSession: adapter.harnessSession,
-      overrideReason: input.overrideReason,
-      fromOperator: input.fromOperator,
-    },
-    adapter.readOpenCursors,
-  )
-  if (decision.kind === 'refuse') throw new Error(decision.message)
-  return decision.kind === 'allow-with-override' ? decision.warning : null
 }

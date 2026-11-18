@@ -10,7 +10,7 @@ import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
 import type { ContextMomentPorts } from '../doc/context-moment-adapter.ts'
 import { upsertProject } from '../project/projects.ts'
-import { answerCommand } from './run-message-commands.ts'
+import { answerCommand, retryCommand } from './run-message-commands.ts'
 
 let restoreEnvironment: () => void
 beforeEach(() => {
@@ -169,4 +169,107 @@ test('a context port failure leaves the answer recorded and reports without thro
       'context: could not write position on DEV-2225: context unavailable; retry:',
     ),
   )
+})
+
+test('answer admission refusal leaves the question open and does not answer the run', async () => {
+  const root = insert('asking')
+  db().query("UPDATE run SET launch_key='DEV-2225' WHERE record_id=?").run(root)
+  const question = db()
+    .query<{ record_id: string }, [string, string, string]>(
+      `${newQuestionSql()} RETURNING record_id`,
+    )
+    .get(root, new Date().toISOString(), 'Which shape?')!
+  let answered = false
+
+  await expect(
+    answerCommand(
+      root,
+      ['Keep the approved shape.'],
+      true,
+      false,
+      flags,
+      { printRunId: () => {} },
+      undefined,
+      undefined,
+      {
+        admitKeyedTurn: async (input) => {
+          expect(input).toEqual({ runId: root, turn: 'answer' })
+          throw new Error('refusing unbound keyed answer')
+        },
+        answerRun: async () => {
+          answered = true
+          throw new Error('answerRun must not run')
+        },
+      },
+    ),
+  ).rejects.toThrow('refusing unbound keyed answer')
+
+  expect(answered).toBe(false)
+  expect(
+    db()
+      .query<{ answer: string | null }, [string]>('SELECT answer FROM question WHERE record_id=?')
+      .get(question.record_id),
+  ).toEqual({ answer: null })
+})
+
+test('retry admission refusal leaves the question open and does not retry the run', async () => {
+  const root = insert('asking')
+  db().query("UPDATE run SET launch_key='DEV-2225' WHERE record_id=?").run(root)
+  const question = db()
+    .query<{ record_id: string }, [string, string, string]>(
+      `${newQuestionSql()} RETURNING record_id`,
+    )
+    .get(root, new Date().toISOString(), 'Which shape?')!
+  let retried = false
+
+  await expect(
+    retryCommand(
+      root,
+      { flags },
+      { printRunId: () => {} },
+      { fromOperator: false },
+      {
+        admitKeyedTurn: async (input) => {
+          expect(input).toEqual({
+            runId: root,
+            turn: 'retry',
+            overrideReason: undefined,
+            fromOperator: false,
+          })
+          throw new Error('refusing unbound keyed retry')
+        },
+        retryRun: async () => {
+          retried = true
+          throw new Error('retryRun must not run')
+        },
+      },
+    ),
+  ).rejects.toThrow('refusing unbound keyed retry')
+
+  expect(retried).toBe(false)
+  expect(
+    db()
+      .query<{ answer: string | null }, [string]>('SELECT answer FROM question WHERE record_id=?')
+      .get(question.record_id),
+  ).toEqual({ answer: null })
+})
+
+test('retry records its admission override on the new retry root', async () => {
+  const root = insert('failed')
+  const retryRoot = addRun({ agent: 'codex', job: 'implement', status: 'running' })
+  const warnings: Array<{ runId: string; warning: string | null }> = []
+
+  await retryCommand(
+    root,
+    { flags },
+    { printRunId: () => {} },
+    { overrideReason: 'Operator approved.', fromOperator: true },
+    {
+      admitKeyedTurn: async () => 'operator override warning',
+      retryRun: async () => retryRoot,
+      recordKeyedTurnOverride: (runId, warning) => warnings.push({ runId, warning }),
+    },
+  )
+
+  expect(warnings).toEqual([{ runId: retryRoot, warning: 'operator override warning' }])
 })

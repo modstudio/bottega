@@ -47,7 +47,7 @@ test('an unbound keyed harness dispatch refuses before detach', async () => {
           launchCwd: '/tmp',
           notice: null,
         }),
-        keyedRunCursorAdmission: () => ({
+        harnessCursorAdapter: () => ({
           harnessSession: 'session-fixture',
           readOpenCursors: async () => [],
         }),
@@ -118,7 +118,7 @@ test('an attributed unbound override detaches and records its warning on the run
         mcp: undefined,
         agentHarness: null,
       }),
-      keyedRunCursorAdmission: () => ({
+      harnessCursorAdapter: () => ({
         harnessSession: 'session-fixture',
         readOpenCursors: async () => [],
       }),

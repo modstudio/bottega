@@ -19,6 +19,7 @@ const base = {
 describe('keyed run cursor admission', () => {
   test.each([
     ['keyless', { key: undefined }],
+    ['unkeyed later turn', { turn: 'retry' as const, key: undefined }],
     ['workflow-bound', { bindingPresent: true }],
     [
       'harness holding the task cursor',
@@ -76,12 +77,6 @@ describe('keyed run cursor admission', () => {
     ).toEqual({ kind: 'allow' })
   })
 
-  test('an unkeyed later turn is allowed', () => {
-    expect(decideKeyedRunCursorAdmission({ ...base, turn: 'retry', key: undefined })).toEqual({
-      kind: 'allow',
-    })
-  })
-
   test.each([
     ['the key in another project', [{ project: 'segnavia', workflowKey: 'DEV-2293' }]],
     ['only a keyless cursor', [{ project: PLATFORM_SLUG, workflowKey: '' }]],
@@ -132,6 +127,27 @@ describe('keyed run cursor admission', () => {
         /outside every registered project[\s\S]*run the dispatch from inside the project's checkout or pass --repo <project>/,
       ),
     })
+  })
+
+  test('a later turn outside a registered project names only its available remedies', () => {
+    const decision = decideKeyedRunCursorAdmission({ ...base, turn: 'answer', project: null })
+    expect(decision.kind).toBe('refuse')
+    if (decision.kind !== 'refuse') return
+    expect(decision.message).toContain(
+      `${PLATFORM_SLUG} workflow compose plan-task --project <project> --arg key=DEV-2293`,
+    )
+    expect(decision.message).not.toContain('--repo')
+    expect(decision.message).not.toContain('--override-unbound')
+  })
+
+  test('a refused keyed answer names compose remedies but no override', () => {
+    const decision = decideKeyedRunCursorAdmission({ ...base, turn: 'answer' })
+    expect(decision.kind).toBe('refuse')
+    if (decision.kind !== 'refuse') return
+    expect(decision.message).toContain('workflow compose plan-task')
+    expect(decision.message).toContain('workflow compose fix-defect')
+    expect(decision.message).toContain('workflow compose ship-task')
+    expect(decision.message).not.toContain('--override-unbound')
   })
 
   test('refuses when open cursors cannot be read and names the recovery', async () => {

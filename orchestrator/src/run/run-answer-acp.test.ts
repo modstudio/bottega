@@ -53,12 +53,15 @@ test('retry of a named ACP review lens is not refused', async () => {
       "UPDATE run SET prompt_path=?,cwd=?,base_commit=?,session_id=?,transport='acp',agent_explicit=1 WHERE record_id=?",
     )
     .run(prompt, dir, baseCommit, 'orch-test-session', id)
+  let retried: string | undefined
   const dispatch: typeof detach = async (job, _prompt, spec) => {
     assertAcpAllowed(job, spec.agent, undefined, Boolean(spec.agentExplicit))
-    return addRun({ agent: spec.agent!, job, status: 'ok', session: 'orch-test-session' })
+    retried = addRun({ agent: spec.agent!, job, status: 'ok', session: 'orch-test-session' })
+    return retried
   }
 
-  await expect(retryRun(id, { flags }, { ...helpers, dispatch })).resolves.toBeUndefined()
+  const result = await retryRun(id, { flags }, { ...helpers, dispatch })
+  expect(result).toBe(retried)
 })
 
 test('retry with the same agent carries the chain transport', async () => {

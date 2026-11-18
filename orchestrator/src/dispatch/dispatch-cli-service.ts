@@ -93,7 +93,7 @@ import {
 } from '../worktree/worktree-caller.ts'
 import { dispatchCommand, reviewMemoryBranch } from './dispatch-commands.ts'
 import { callerCheckoutFacts, installLevelDispatchDecision } from './dispatch-preflight.ts'
-import { keyedRunCursorAdmission } from './keyed-run-cursor-admission.ts'
+import { harnessCursorAdapter } from './keyed-run-cursor-admission-adapter.ts'
 import type { ReviewLensPackInputs } from './review-lens-prompt.ts'
 import type { ReviewFindingMemory } from './review-memory.ts'
 import { lookupProjectTaskKey, readTaskText, type TaskTextRead } from './task-key-lookup.ts'
@@ -726,7 +726,7 @@ export async function doCommand(
       resolveReviewTarget,
       resolveCallerCheckout: (cwd, repo) => resolveCallerCheckout(presentation.cwd(), cwd, repo),
       resolveDispatchOptions: resolveOptions,
-      keyedRunCursorAdmission,
+      harnessCursorAdapter,
       lookupTaskKey,
       recordRunWarning,
       earlierReviewRejections,

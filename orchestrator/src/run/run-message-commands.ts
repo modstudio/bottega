@@ -17,10 +17,12 @@ import {
   readWorkerFile,
 } from '../cli/args.ts'
 import { db } from '../database/db.ts'
-import { admitKeyedTurn } from '../dispatch/keyed-run-cursor-admission.ts'
+import {
+  admitKeyedTurn,
+  recordKeyedTurnOverride,
+} from '../dispatch/keyed-run-cursor-admission-adapter.ts'
 import type { ContextMomentOutput } from '../doc/context-moment.ts'
 import { applyContextMoment, type ContextMomentPorts } from '../doc/context-moment-adapter.ts'
-import { recordRunWarning } from '../events.ts'
 import { newestTurnOutputPath } from '../evidence/evidence-query.ts'
 import { jobTakesFidelity } from '../jobs/job-fidelity.ts'
 import { JOBS } from '../jobs/jobs.ts'
@@ -38,7 +40,6 @@ import { rulingAttributionDecision } from './question-vocabulary.ts'
 import { rulingFileOfferLines } from './ruling-file-text.ts'
 import { type AnswerRunInput, answerRun, retryRun } from './run-answer.ts'
 import { continueRun, type RunControlPresentation, reportContinuedRun } from './run-control.ts'
-import { rootRunRecordId } from './run-root-record.ts'
 
 type Flags = { detach: boolean; follow: boolean; quiet: boolean }
 type Presentation = { printRunId(id: string): void }
@@ -46,7 +47,7 @@ export type ContinueCommandDependencies = {
   continueRun: typeof continueRun
   reportContinuedRun: typeof reportContinuedRun
   admitKeyedTurn?: typeof admitKeyedTurn
-  recordRunWarning?: typeof recordRunWarning
+  recordKeyedTurnOverride?: typeof recordKeyedTurnOverride
 }
 
 const continueCommandDependencies: ContinueCommandDependencies = { continueRun, reportContinuedRun }
@@ -58,21 +59,12 @@ type KeyedTurnCommandOptions = {
 
 type KeyedTurnCommandDependencies = {
   admitKeyedTurn?: typeof admitKeyedTurn
-  recordRunWarning?: typeof recordRunWarning
+  recordKeyedTurnOverride?: typeof recordKeyedTurnOverride
+  answerRun?: typeof answerRun
+  retryRun?: typeof retryRun
 }
 
 const defaultKeyedTurnOptions: KeyedTurnCommandOptions = { fromOperator: false }
-const newestChainTurnId = (id: string): string => {
-  const rootId = rootRunRecordId(id)
-  return (
-    db()
-      .query<{ record_id: string }, [string, string]>(
-        `SELECT record_id FROM run
-         WHERE record_id=? OR parent_run_record_id=? ORDER BY turn DESC,number DESC LIMIT 1`,
-      )
-      .get(rootId, rootId) as { record_id: string }
-  ).record_id
-}
 
 const duration = (ms: number | null | undefined): string => {
   if (ms == null) return '—'
@@ -229,8 +221,12 @@ export async function retryCommand(
     turn: 'retry',
     ...admission,
   })
-  await retryRun(id, options, answerRunHelpers(presentation))
-  if (warning) (dependencies.recordRunWarning ?? recordRunWarning)(newestChainTurnId(id), warning)
+  const resumedId = await (dependencies.retryRun ?? retryRun)(
+    id,
+    options,
+    answerRunHelpers(presentation),
+  )
+  ;(dependencies.recordKeyedTurnOverride ?? recordKeyedTurnOverride)(resumedId, warning)
 }
 
 export async function answerCommand(
@@ -242,7 +238,6 @@ export async function answerCommand(
   presentation: Presentation,
   refusedOptions?: Readonly<Record<string, string>>,
   context?: { ports?: ContextMomentPorts; output?: ContextMomentOutput },
-  admission: KeyedTurnCommandOptions = defaultKeyedTurnOptions,
   dependencies: KeyedTurnCommandDependencies = {},
 ): Promise<void> {
   const helpers = answerRunHelpers(presentation)
@@ -250,11 +245,16 @@ export async function answerCommand(
   const warning = await (dependencies.admitKeyedTurn ?? admitKeyedTurn)({
     runId: id,
     turn: 'answer',
-    ...admission,
   })
-  const { result, answeredQuestions: questions } = await answerRun(id, input, helpers)
-  if (warning)
-    (dependencies.recordRunWarning ?? recordRunWarning)(result.resumed_record_id ?? id, warning)
+  const { result, answeredQuestions: questions } = await (dependencies.answerRun ?? answerRun)(
+    id,
+    input,
+    helpers,
+  )
+  ;(dependencies.recordKeyedTurnOverride ?? recordKeyedTurnOverride)(
+    result.resumed_record_id ?? id,
+    warning,
+  )
   const answerByQuestion = new Map(
     Array.isArray(input.rulings)
       ? input.rulings.map((ruling) => [ruling.questionId, ruling.text] as const)
@@ -318,7 +318,7 @@ export async function continueCommand(
     argvResumeLimit,
     includeFindings ? () => renderFindings(id, message) : undefined,
   )
-  if (warning) (dependencies.recordRunWarning ?? recordRunWarning)(resumed.childId, warning)
+  ;(dependencies.recordKeyedTurnOverride ?? recordKeyedTurnOverride)(resumed.childId, warning)
   await dependencies.reportContinuedRun(
     resumed.childId,
     resumed.job,

@@ -20,11 +20,16 @@ export const runLifecycleModules: ArchitectureModule[] = [
   module('orchestrator/src/dispatch/keyed-run-cursor-admission.ts', [
     '../../../shared/brand.ts',
     '../../../shared/refusal.ts',
+  ]),
+  module('orchestrator/src/dispatch/keyed-run-cursor-admission-adapter.ts', [
     '../caller-classification.ts',
     '../database/db.ts',
+    '../events.ts',
     '../project/project-read.ts',
+    '../question-store/question-store-read.ts',
     '../run/run-claim-inheritance.ts',
     '../run/run-root-record.ts',
+    './keyed-run-cursor-admission.ts',
   ]),
   module('orchestrator/src/transport/quota-readings.ts', []),
   module('orchestrator/src/transport/codex-quota.ts', ['./quota-readings.ts']),

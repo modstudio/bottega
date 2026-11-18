@@ -177,7 +177,9 @@ test('continue admits the later turn and records an attributed override on its c
       },
       continueRun: async () => ({ childId: 'child-record-id', job: 'implement' }),
       reportContinuedRun: async () => {},
-      recordRunWarning: (runId, warning) => warnings.push({ runId, warning }),
+      recordKeyedTurnOverride: (runId, warning) => {
+        if (warning) warnings.push({ runId, warning })
+      },
     },
   })
 

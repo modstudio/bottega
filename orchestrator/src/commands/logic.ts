@@ -14,7 +14,6 @@ import { checkCommand } from '../check/check-commands.ts'
 import {
   parseContinueArgs,
   refusedOwnerOptions,
-  withoutKeyedTurnAdmissionArgs,
 } from '../cli/args.ts'
 import { closeOutCommand } from '../close/close-out-command.ts'
 import { peekCommand, resultCommand, waitCommand } from '../collect/collection-commands.ts'
@@ -80,7 +79,15 @@ import {
   continueCommandDefinition,
   retryCommandDefinition,
 } from './run-message-options.ts'
-import { collect, log, productArgv, rawArgv, write, writeStdout } from './support.ts'
+import {
+  collect,
+  describedCommand,
+  log,
+  productArgv,
+  rawArgv,
+  write,
+  writeStdout,
+} from './support.ts'
 import { registerWorkflowCommands } from './workflow.ts'
 
 const collectedOption = (flags: string, description: string) =>
@@ -127,17 +134,13 @@ const answerByIdentifier = async (id: string, command: Command, options: OptionV
   const target = await resolveAnswerIdentifier(db(), id, sessionId())
   await answerCommand(
     target,
-    withoutKeyedTurnAdmissionArgs(rawArgv(command).slice(2)),
+    rawArgv(command).slice(2),
     Boolean(options.recordOnly),
     Boolean(options.json),
     runFlags(options),
     presentation,
     refusedOwnerOptions(command, 'question answer', 'question'),
     { output: { log, error: console.error } },
-    {
-      overrideReason: options.overrideUnbound,
-      fromOperator: Boolean(options.fromOperator),
-    },
   )
 }
 const relayByIdentifier = async (id: string, command: Command, note: string) =>
@@ -203,9 +206,6 @@ function registerMcpServers(program: Command): void {
 function epicRegisteredProjectWorkingDirectoryRefusal(): string {
   return `${PLATFORM_SLUG} workflow epic requires a registered project working directory`
 }
-
-const describedCommand = (program: Command, name: string, description: string) =>
-  program.command(name).description(description)
 
 function registerCloseOut(program: Command): void {
   describedCommand(program, 'close-out <id>', 'release a terminal run worktree and its claims')
