@@ -234,7 +234,7 @@ test('a keyless lookup absent from the step dispatches with the cursor step bind
         record_id: 'cursor-record-17',
         project: 'fixture',
         workflow_key: '',
-        args: {},
+        args: '{}',
       },
     ],
     [],
