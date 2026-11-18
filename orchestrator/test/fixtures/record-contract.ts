@@ -1,5 +1,4 @@
 import type { PGlite } from '@electric-sql/pglite'
-import type { Hono } from 'hono'
 import { recordRequestHeaders } from '../../../shared/record-request-headers.ts'
 import { type RecordApiClient, recordApiClient } from '../../src/record/record-api-client.ts'
 import { recordApiError } from '../../src/record/record-api-client-error.ts'
@@ -33,7 +32,7 @@ type ContractRequestInit = RequestInit & {
 }
 
 export type RecordContractFixture = {
-  app: Hono
+  app: ReturnType<typeof recordApiTestApp>
   client: RecordApiClient
   database: PGlite
   requestedRoutes: Set<string>
