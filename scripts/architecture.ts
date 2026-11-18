@@ -969,10 +969,10 @@ export function architectureRules() {
       severity: 'error',
       comment: 'Keep orchestrator, hub, and shared concern roots free of new import cycles.',
       from: {
-        path: '^orchestrator/src/',
+        path: '^(?:orchestrator/src/|hub/src/|shared/)',
         pathNot: architectureCycleFiles.map(exactArchitecturePath),
       },
-      to: { path: '^orchestrator/src/', circular: true },
+      to: { path: '^(?:orchestrator/src/|hub/src/|shared/)', circular: true },
     },
     ...allowedCycles.flatMap((entry) =>
       entry.cycle.slice(0, -1).map((from, index) => ({
