@@ -1,12 +1,20 @@
 import { readFileSync, writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { Glob } from 'bun'
+import type { contractRoutes as boardClaimContractRoutes } from '../orchestrator/src/record/record-board-claims-contract.test.ts'
+import type { contractRoutes as taskFlowReadContractRoutes } from '../orchestrator/src/workflow/task-flow-store-record-contract.test.ts'
+import type { contractRoutes as handoffContractRoutes } from '../orchestrator/src/workflow/workflow-handoff-contract.test.ts'
 import { idleRecordApiDeps, idleSubjectDeps } from '../orchestrator/test/fixtures/record-api.ts'
 import { recordApiTestApp } from '../orchestrator/test/fixtures/record-api-app.ts'
 import type { Finding } from '../shared/ratchet.ts'
 import { ratchetDecision } from '../shared/ratchet.ts'
 
 export type RecordRouteBaseline = { route: string; reason: `untested` | `unsupported:${string}` }
+type ContractRoute =
+  | (typeof boardClaimContractRoutes)[number]
+  | (typeof taskFlowReadContractRoutes)[number]
+  | (typeof handoffContractRoutes)[number]
+  | (string & {})
 
 export function undeclaredRecordRoutes(
   routes: readonly string[],
@@ -31,11 +39,11 @@ function appRoutes(): string[] {
   return [...new Set(app.routes.map((route) => `${route.method} ${route.path}`))].sort()
 }
 
-async function declaredRoutes(root: string): Promise<Set<string>> {
-  const declared = new Set<string>()
+async function declaredRoutes(root: string): Promise<Set<ContractRoute>> {
+  const declared = new Set<ContractRoute>()
   for await (const path of new Glob('orchestrator/src/**/*-contract.test.ts').scan({ cwd: root })) {
     const source = readFileSync(resolve(root, path), 'utf8')
-    const literal = source.match(/const contractRoutes\s*=\s*\[([\s\S]*?)\]\s*as const/)
+    const literal = source.match(/export const contractRoutes\s*=\s*\[([\s\S]*?)\]\s*as const/)
     if (!literal) continue
     for (const route of literal[1]!.matchAll(/['"]([^'"]+)['"]/g)) declared.add(route[1]!)
   }
