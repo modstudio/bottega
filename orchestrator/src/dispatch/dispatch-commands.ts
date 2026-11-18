@@ -196,7 +196,7 @@ type DispatchPresentation = {
     notice: string | null
   }
   resolveDispatchOptions(jobName: string): Promise<DispatchOptions>
-  keyedRunCursorAdmission(): {
+  harnessCursorAdapter(): {
     harnessSession: string | null
     readOpenCursors: OpenKeyedRunCursors
   }
@@ -229,11 +229,12 @@ async function keyedRunCursorWarningForDispatch(input: {
   bindingPresent: boolean
   overrideReason: string | undefined
   fromOperator: boolean
-  adapter: DispatchPresentation['keyedRunCursorAdmission']
+  adapter: DispatchPresentation['harnessCursorAdapter']
 }): Promise<string | null> {
   const { harnessSession, readOpenCursors } = input.adapter()
   const decision = await checkKeyedRunCursorAdmission(
     {
+      turn: 'start',
       key: input.key,
       project: input.project,
       bindingPresent: input.bindingPresent,
@@ -259,7 +260,7 @@ async function cursorWarningFor(
     bindingPresent: Boolean(binding),
     overrideReason: flags.flag('override-unbound'),
     fromOperator: flags.has('from-operator'),
-    adapter: presentation.keyedRunCursorAdmission,
+    adapter: presentation.harnessCursorAdapter,
   })
 }
 

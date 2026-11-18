@@ -104,6 +104,7 @@ export const mcpModules: McpModule[] = [
     '../../../shared/orch-contract.ts',
     '../ask/worker-question.ts',
     '../database/db.ts',
+    '../dispatch/keyed-run-cursor-admission-adapter.ts',
     '../doc/docs.ts',
     '../doc/context-moment-adapter.ts',
     '../operator/operator-waiting.ts',

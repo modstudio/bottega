@@ -1,8 +1,10 @@
 // concern: keyed run cursor admission
-/** Decides whether a keyed run start is held by the calling harness session. */
+/** Decides whether cursor evidence admits a keyed run turn. */
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { refusal, renderRefusal } from '../../../shared/refusal.ts'
+
+export type KeyedRunTurn = 'start' | 'continue' | 'answer' | 'retry'
 
 type KeyedRunCursor = {
   project: string
@@ -10,6 +12,7 @@ type KeyedRunCursor = {
 }
 
 export type KeyedRunCursorAdmissionInput = {
+  turn: KeyedRunTurn
   key: string | undefined
   project: string | null
   bindingPresent: boolean
@@ -28,17 +31,33 @@ export type OpenKeyedRunCursors = (session: string) => Promise<KeyedRunCursor[]>
 
 const OVERRIDE_OPTION = '--override-unbound'
 const OVERRIDE_REMEDY = `${OVERRIDE_OPTION} "<reason>" --from-operator`
-const OVERRIDE_PREFIX = 'unbound keyed run start overridden by Shmuel Barkin: '
+const OVERRIDE_PREFIX = 'unbound keyed run turn overridden by Shmuel Barkin: '
+
+const composeRemedy = (project: string | null, key: string): string => {
+  const projectName = project ?? '<project>'
+  return (
+    `for work not yet built, run ${PLATFORM_SLUG} workflow compose plan-task --project ${projectName} --arg key=${key}; ` +
+    `to repair a defect, run ${PLATFORM_SLUG} workflow compose fix-defect --project ${projectName} --arg key=${key}; ` +
+    `for a built branch, run ${PLATFORM_SLUG} workflow compose ship-task --project ${projectName} --arg key=${key} --arg branch=<branch> --arg worktree=<worktree>`
+  )
+}
+
+const canOverride = (turn: KeyedRunTurn): boolean => turn !== 'answer'
+const laterTurnRemedy = (
+  input: Pick<KeyedRunCursorAdmissionInput, 'turn' | 'key' | 'project'>,
+): string =>
+  composeRemedy(input.project, input.key!) +
+  (canOverride(input.turn) ? `; override with ${OVERRIDE_REMEDY}` : '')
 
 /** Apply cursor ownership and operator-override policy without reaching process or storage. */
 export function decideKeyedRunCursorAdmission(
   input: KeyedRunCursorAdmissionInput,
 ): KeyedRunCursorAdmission {
-  if (!input.key || input.bindingPresent || !input.harnessSession) {
+  if (!input.key || input.bindingPresent) {
     return { kind: 'allow' }
   }
 
-  if (input.overrideReason !== undefined) {
+  if (canOverride(input.turn) && input.overrideReason !== undefined) {
     const reason = input.overrideReason.trim()
     if (!reason) {
       return {
@@ -50,24 +69,42 @@ export function decideKeyedRunCursorAdmission(
       return {
         kind: 'refuse',
         message:
-          'refusing unbound keyed run start override without operator attribution; rerun with ' +
+          'refusing unbound keyed run turn override without operator attribution; rerun with ' +
           OVERRIDE_REMEDY,
       }
     }
     return { kind: 'allow-with-override', warning: `${OVERRIDE_PREFIX}${reason}` }
   }
 
+  if (!input.harnessSession) {
+    const remedy =
+      input.turn === 'start'
+        ? `run from a harness session that holds the task's workflow cursor; or override with ${OVERRIDE_REMEDY}`
+        : laterTurnRemedy(input)
+    return {
+      kind: 'refuse',
+      message: renderRefusal(
+        refusal(`refusing keyed run turn for task ${input.key} without a harness session`, {
+          kind: 'edit',
+          text: remedy,
+        }),
+      ),
+    }
+  }
+
   if (!input.project) {
+    const remedy =
+      input.turn === 'start'
+        ? `run the dispatch from inside the project's checkout or pass --repo <project>; override with ${OVERRIDE_REMEDY}`
+        : laterTurnRemedy(input)
     return {
       kind: 'refuse',
       message: renderRefusal(
         refusal(
-          `refusing keyed run start because the dispatch location is outside every registered project, so cursor ownership for harness session ${input.harnessSession} and task ${input.key} cannot be established`,
+          `refusing keyed run turn because the dispatch location is outside every registered project, so cursor ownership for harness session ${input.harnessSession} and task ${input.key} cannot be established`,
           {
             kind: 'edit',
-            text:
-              `run the dispatch from inside the project's checkout or pass --repo <project>; ` +
-              `override with ${OVERRIDE_REMEDY}`,
+            text: remedy,
           },
         ),
       ),
@@ -86,14 +123,11 @@ export function decideKeyedRunCursorAdmission(
     kind: 'refuse',
     message: renderRefusal(
       refusal(
-        `refusing keyed run start because harness session ${input.harnessSession} does not ` +
+        `refusing keyed run turn because harness session ${input.harnessSession} does not ` +
           `hold an open workflow cursor for project ${input.project} and task ${input.key}`,
         {
           kind: 'edit',
-          text:
-            `for work not yet built, run ${PLATFORM_SLUG} workflow compose plan-task --project ${input.project} --arg key=${input.key}; ` +
-            `for a built branch, run ${PLATFORM_SLUG} workflow compose ship-task --project ${input.project} --arg key=${input.key} --arg branch=<branch> --arg worktree=<worktree>; ` +
-            `override with ${OVERRIDE_REMEDY}`,
+          text: laterTurnRemedy(input),
         },
       ),
     ),
@@ -124,10 +158,14 @@ export async function checkKeyedRunCursorAdmission(
       kind: 'refuse',
       message: renderRefusal(
         refusal(
-          `refusing keyed run start because open workflow cursors for harness session ${input.harnessSession} could not be read: ${reason}`,
+          `refusing keyed run turn because open workflow cursors for harness session ${input.harnessSession} could not be read: ${reason}`,
           {
             kind: 'edit',
-            text: `rerun after ${PLATFORM_SLUG} machine doctor; or override with ${OVERRIDE_REMEDY}`,
+            text:
+              `rerun after ${PLATFORM_SLUG} machine doctor; ` +
+              (input.turn === 'start'
+                ? `or override with ${OVERRIDE_REMEDY}`
+                : laterTurnRemedy(input)),
           },
         ),
       ),

@@ -42,7 +42,7 @@ Two lock purposes, two files. Creation and resume attachment take `project-lock.
 
 Detach claims an id before routing; the asking session owns it. `bottega run result` exits `2` for unfinished and `1` for failed. `bottega run wait` is bounded. `bottega run retry` re-sends the prompt to the same agent and keeps the failure. Writing continues via `bottega run continue` in its worktree. **Keep both ends of a failure. Both claim paths set every meaningful column**, including `parent_run_id` and `turn`.
 
-A harness session's keyed run start needs an open workflow cursor for its project and task. Compose a workflow to clear it; only Shmuel Barkin may override with a recorded reason.
+A keyed start or later turn needs the session's open cursor for the task unless its chain is bound; compose one. Only Shmuel Barkin overrides, never on answer.
 
 # Delegating implementation
 

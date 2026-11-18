@@ -248,7 +248,7 @@ collect a finished run result
 
 ## bottega run retry
 
-**Synopsis:** `bottega run retry <id> [--agent <value>] [--model <value>] [--follow] [--detach] [--quiet]`
+**Synopsis:** `bottega run retry <id> [--agent <value>] [--model <value>] [--follow] [--detach] [--quiet] [--override-unbound <reason>] [--from-operator]`
 
 retry a failed run with its saved prompt
 
@@ -259,6 +259,8 @@ retry a failed run with its saved prompt
 - `--follow`: wait for the retry and print its result
 - `--detach`: return after starting the retry
 - `--quiet`: suppress collection guidance and followed output
+- `--override-unbound <reason>`: override keyed cursor admission
+- `--from-operator`: attest that the operator requested the override
 
 ### Related
 

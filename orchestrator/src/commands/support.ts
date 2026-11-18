@@ -19,6 +19,9 @@ export function rawArgv(_command: Command): string[] {
   return invocationArgv
 }
 
+export const describedCommand = (program: Command, name: string, description: string): Command =>
+  program.command(name).description(description)
+
 const optionKey = (name: string) =>
   name.replace(/-([a-z])/g, (_, letter: string) => letter.toUpperCase())
 

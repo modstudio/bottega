@@ -372,18 +372,34 @@ export type ContinueArgs = {
   sources: { commandFile?: string; positionals: string[] }
 }
 
-/** Parse continue independently of Commander's option ordering and positional assignment. */
-export function parseContinueArgs(args: string[], usage: string): ContinueArgs {
-  const booleans = new Set(['--follow', '--detach', '--quiet', '--findings'])
-  const positionals: string[] = []
-  let commandFile: string | undefined
+/** Remove cursor-admission options before parsing a worker message. */
+function withoutKeyedTurnAdmissionArgs(args: string[]): string[] {
+  const filtered: string[] = []
   for (let index = 0; index < args.length; index++) {
     const arg = args[index]!
+    if (arg === '--override-unbound') {
+      index += 1
+      continue
+    }
+    if (arg.startsWith('--override-unbound=')) continue
+    filtered.push(arg)
+  }
+  return filtered
+}
+
+/** Parse continue independently of Commander's option ordering and positional assignment. */
+export function parseContinueArgs(args: string[], usage: string): ContinueArgs {
+  const booleans = new Set(['--follow', '--detach', '--quiet', '--findings', '--from-operator'])
+  const positionals: string[] = []
+  let commandFile: string | undefined
+  const messageArgs = withoutKeyedTurnAdmissionArgs(args)
+  for (let index = 0; index < messageArgs.length; index++) {
+    const arg = messageArgs[index]!
     if (booleans.has(arg)) continue
     if (arg === '--file' || arg.startsWith('--file=')) {
       if (commandFile !== undefined)
         throw new Error(`--file may be supplied only once\nworking form: ${usage}`)
-      const taken = takeFilePath(args, index, usage)
+      const taken = takeFilePath(messageArgs, index, usage)
       commandFile = taken.path
       index = taken.next - 1
       continue
