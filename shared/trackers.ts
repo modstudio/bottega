@@ -258,6 +258,8 @@ export type TrackerTask = {
   externalId: string | null
   key: string
   project: string
+  /** Undefined means the tracker did not report whether this task has a parent. */
+  parentKey?: string | null
   title: string
   status: string
   category: StatusCategory
@@ -468,6 +470,7 @@ type WorkspaceTask = {
   assignee_id?: string | number | null
   updated_at?: string
   team?: string
+  parent?: { short_id?: string } | null
 }
 
 type WorkspaceTaskDetail = Omit<WorkspaceTask, 'status'> & {
@@ -489,6 +492,7 @@ async function mappedWorkspaceTask(
     externalId: hit.id ?? null,
     key,
     project,
+    parentKey: 'parent' in hit ? (hit.parent?.short_id?.toUpperCase() ?? null) : undefined,
     title: decode(hit.summary ?? ''),
     status: hit.status ?? '',
     category: categoryOf(hit.status ?? '', hit.status_category ?? 'completed', states),
@@ -594,6 +598,7 @@ function appendWorkspaceTasks(
       externalId: task.id ?? null,
       key,
       project,
+      parentKey: 'parent' in task ? (task.parent?.short_id?.toUpperCase() ?? null) : undefined,
       title: decode(task.summary ?? ''),
       status: task.status ?? status ?? '',
       category,
@@ -734,6 +739,7 @@ type CursorTask = {
   assigneeName?: string | null
   deletedAt?: string | null
   projectId?: string
+  parent?: { humanKey?: string } | null
 }
 
 function appendCursorTasks(
@@ -761,6 +767,7 @@ function appendCursorTasks(
       externalId: task.id ?? null,
       key: task.humanKey.toUpperCase(),
       project,
+      parentKey: 'parent' in task ? (task.parent?.humanKey?.toUpperCase() ?? null) : undefined,
       title: decode(task.title ?? ''),
       status: task.status ?? status ?? '',
       category,
@@ -801,6 +808,7 @@ async function lookupCursorTask(
     externalId: task.id ?? null,
     key,
     project,
+    parentKey: 'parent' in task ? (task.parent?.humanKey?.toUpperCase() ?? null) : undefined,
     title: decode(task.title ?? ''),
     status: task.status ?? '',
     category: categoryOf(task.status ?? '', task.status ?? 'done', states),
@@ -940,6 +948,7 @@ function arrayMcpSource(
           title?: string
           status?: string
           assigneeName?: string | null
+          parent?: { key?: string } | null
         }[]
         for (const t of Array.isArray(r) ? r : []) {
           if (!t.key) continue
@@ -947,6 +956,7 @@ function arrayMcpSource(
             externalId: t.id ?? null,
             key: t.key.toUpperCase(),
             project,
+            parentKey: 'parent' in t ? (t.parent?.key?.toUpperCase() ?? null) : undefined,
             title: decode(t.title ?? ''),
             status: t.status ?? status,
             category: fullReadCategory(t.status, t.status, status, states),
@@ -992,6 +1002,7 @@ function arrayMcpSource(
         status?: string
         updatedAt?: string
         assigneeName?: string | null
+        parent?: { key?: string } | null
       }[]
       const hit = arrayTaskForKey(rows, key)
       if (!hit) return null
@@ -999,6 +1010,7 @@ function arrayMcpSource(
         externalId: hit.id ?? null,
         key,
         project,
+        parentKey: 'parent' in hit ? (hit.parent?.key?.toUpperCase() ?? null) : undefined,
         title: decode(hit.title ?? ''),
         status: hit.status ?? '',
         category: categoryOf(hit.status ?? '', hit.status ?? 'done', states),

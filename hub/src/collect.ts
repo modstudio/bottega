@@ -953,7 +953,7 @@ export async function collectOnce(
               ? `skipped: ${result.skipped}`
               : result.error
                 ? `FAILED: ${result.error}`
-                : `${result.mode ? `${result.mode} read, ` : ''}${result.tasks} tasks, ${result.changed} status changes${result.deleted ? `, ${result.deleted} deleted dropped` : ''}`
+                : `${result.mode ? `${result.mode} read, ` : ''}${result.tasks} tasks, ${result.changed} status changes${result.deleted ? `, ${result.deleted} deleted dropped` : ''}, ${result.unreportedParents ?? 0} parents unreported`
             console.log(`${`tracker/${result.project}`.padEnd(21)}${note}`)
           }
           const error = trackerLegError(trackerResults)

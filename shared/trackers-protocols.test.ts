@@ -760,6 +760,41 @@ describe('tracker source construction', () => {
     }
   })
 
+  for (const protocol of ['workspace-mcp', 'cursor-mcp', 'array-mcp'] as const) {
+    test(`${protocol} distinguishes a parent, no parent, and an unreported parent`, async () => {
+      const rows =
+        protocol === 'workspace-mcp'
+          ? [
+              { short_id: 'PAR-1', status: 'todo', parent: { short_id: 'PAR-9' } },
+              { short_id: 'PAR-2', status: 'todo', parent: null },
+              { short_id: 'PAR-3', status: 'todo' },
+            ]
+          : protocol === 'cursor-mcp'
+            ? [
+                { humanKey: 'PAR-1', status: 'todo', parent: { humanKey: 'PAR-9' } },
+                { humanKey: 'PAR-2', status: 'todo', parent: null },
+                { humanKey: 'PAR-3', status: 'todo' },
+              ]
+            : [
+                { key: 'PAR-1', status: 'todo', parent: { key: 'PAR-9' } },
+                { key: 'PAR-2', status: 'todo', parent: null },
+                { key: 'PAR-3', status: 'todo' },
+              ]
+      const reply =
+        protocol === 'workspace-mcp'
+          ? { tasks: rows }
+          : protocol === 'cursor-mcp'
+            ? { data: { items: rows } }
+            : rows
+      const fetched = await trackerSourceFor(project('parents', protocol))!.fetch({
+        listTools: scopeTools,
+        callTool: async () => reply,
+      })
+
+      expect(fetched.tasks.map((task) => task.parentKey)).toEqual(['PAR-9', null, undefined])
+    })
+  }
+
   for (const protocol of ['workspace-mcp', 'cursor-mcp'] as const) {
     test(`${protocol} incremental reads send the declared filter and page without statuses`, async () => {
       const trackerProject = project(protocol, protocol)

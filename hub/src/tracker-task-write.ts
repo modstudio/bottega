@@ -147,6 +147,7 @@ async function writeExternalStatus(
     externalId: task.external_id,
     key: task.key,
     project: task.project,
+    parentKey: task.parent_key,
     title: task.title ?? '',
     status: result.status,
     category: result.category,

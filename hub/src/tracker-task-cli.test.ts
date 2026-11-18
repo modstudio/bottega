@@ -22,6 +22,7 @@ const task: TrackerTask = {
   externalId: 'task-1',
   key: 'FIX-1',
   project: 'fixture',
+  parentKey: null,
   title: 'Fresh task',
   status: 'In Progress',
   category: 'active',

@@ -315,5 +315,148 @@ test('collect retires cached out-of-scope rows before any vanished-key lookup', 
   }
 })
 
+test('collect updates reported parents, reconciles their record ids, and counts omissions', async () => {
+  const originalFetch = globalThis.fetch
+  const originalUrl = process.env.FIXTURE_NO_CREDENTIALS_MCP_URL
+  const originalToken = process.env.FIXTURE_NO_CREDENTIALS_MCP_TOKEN
+  process.env.FIXTURE_NO_CREDENTIALS_MCP_URL = 'https://tracker.invalid/mcp'
+  process.env.FIXTURE_NO_CREDENTIALS_MCP_TOKEN = 'fixture'
+  globalThis.fetch = (async (_input, init) => {
+    if (init?.method === 'DELETE') return new Response(null)
+    const message = JSON.parse(String(init?.body)) as { id?: number; method: string }
+    if (message.method === 'server/discover') return new Response('not found', { status: 404 })
+    if (message.method === 'notifications/initialized') return new Response(null)
+    const result =
+      message.method === 'initialize'
+        ? {
+            protocolVersion: '2025-11-25',
+            capabilities: { tools: {} },
+            serverInfo: { name: 'fixture', version: '1' },
+          }
+        : message.method === 'tools/list'
+          ? {
+              tools: [
+                {
+                  name: 'list-tasks-tool',
+                  inputSchema: { type: 'object', properties: { team_id: {}, status: {} } },
+                },
+              ],
+            }
+          : {
+              content: [
+                {
+                  type: 'text',
+                  text: JSON.stringify({
+                    tasks: [
+                      {
+                        id: 'tracker-alpha-10',
+                        short_id: 'ALP-10',
+                        summary: 'Parent',
+                        status: 'todo',
+                        parent: null,
+                      },
+                      {
+                        id: 'tracker-alpha-11',
+                        short_id: 'ALP-11',
+                        summary: 'Child',
+                        status: 'todo',
+                        parent: { short_id: 'ALP-10' },
+                      },
+                      {
+                        id: 'tracker-alpha-12',
+                        short_id: 'ALP-12',
+                        summary: 'Unknown parent state',
+                        status: 'todo',
+                      },
+                    ],
+                    last_page: 1,
+                  }),
+                },
+              ],
+            }
+    return Response.json({ jsonrpc: '2.0', id: message.id, result })
+  }) as typeof fetch
+  resetFixtureStore()
+  try {
+    writeTransaction((conn) => {
+      const insert = conn.query(
+        `INSERT INTO task
+         (record_id,external_id,key,project,title,status,status_category,parent_key,source,first_seen,last_seen)
+         VALUES (?,?,?,?,?,?,?,?, 'mcp',?,?)`,
+      )
+      insert.run(
+        '01990000-0000-7000-8000-000000001310',
+        'tracker-alpha-10',
+        'ALP-10',
+        'alpha',
+        'Parent',
+        'todo',
+        'open',
+        'ALP-98',
+        '2026-11-18T10:00:00.000Z',
+        '2026-11-18T10:00:00.000Z',
+      )
+      insert.run(
+        '01990000-0000-7000-8000-000000001311',
+        'tracker-alpha-11',
+        'ALP-11',
+        'alpha',
+        'Child',
+        'todo',
+        'open',
+        'ALP-99',
+        '2026-11-18T10:00:00.000Z',
+        '2026-11-18T10:00:00.000Z',
+      )
+      insert.run(
+        '01990000-0000-7000-8000-000000001312',
+        'tracker-alpha-12',
+        'ALP-12',
+        'alpha',
+        'Unknown parent state',
+        'todo',
+        'open',
+        'ALP-97',
+        '2026-11-18T10:00:00.000Z',
+        '2026-11-18T10:00:00.000Z',
+      )
+    })
+
+    const results = await ingestTrackers()
+    expect(results.find((result) => result.project === 'alpha')).toMatchObject({
+      tasks: 3,
+      unreportedParents: 1,
+    })
+    expect(
+      db()
+        .query<{ parent_key: string; parent_record_id: string }, []>(
+          `SELECT parent_key,parent_record_id FROM task WHERE key='ALP-11'`,
+        )
+        .get(),
+    ).toEqual({
+      parent_key: 'ALP-10',
+      parent_record_id: db()
+        .query<{ record_id: string }, []>(`SELECT record_id FROM task WHERE key='ALP-10'`)
+        .get()!.record_id,
+    })
+    expect(
+      db()
+        .query<{ key: string; parent_key: string | null }, []>(
+          `SELECT key,parent_key FROM task WHERE key IN ('ALP-10','ALP-12') ORDER BY key`,
+        )
+        .all(),
+    ).toEqual([
+      { key: 'ALP-10', parent_key: null },
+      { key: 'ALP-12', parent_key: 'ALP-97' },
+    ])
+  } finally {
+    globalThis.fetch = originalFetch
+    if (originalUrl === undefined) delete process.env.FIXTURE_NO_CREDENTIALS_MCP_URL
+    else process.env.FIXTURE_NO_CREDENTIALS_MCP_URL = originalUrl
+    if (originalToken === undefined) delete process.env.FIXTURE_NO_CREDENTIALS_MCP_TOKEN
+    else process.env.FIXTURE_NO_CREDENTIALS_MCP_TOKEN = originalToken
+  }
+})
+
 // restore the store this file bound or queued into, so the next file starts clean
 afterAll(resetFixtureStore)

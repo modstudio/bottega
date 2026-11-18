@@ -16,6 +16,7 @@ import { queueHostedChange } from '../outbox.ts'
 import { projectRecordIdFor } from '../project-record-id.ts'
 import { projects } from '../projects.ts'
 import { HOSTED_STATUS_EVENT_TABLE, HOSTED_TASK_TABLE } from '../push-contract.ts'
+import { reconcileParentRecordIds } from '../task-cache.ts'
 import { collectorTaskShouldQueue } from '../task-hosted-row.ts'
 import { claimTaskIdentity } from '../task-identity.ts'
 import {
@@ -91,6 +92,8 @@ export type TrackerResult = {
   mode?: TrackerReadMode
   deleted?: number
   retired?: number
+  /** Rows in this read whose tracker response omitted the parent field. */
+  unreportedParents?: number
   /** Whether any tracker-owned row differed from the last successful read. */
   activity?: boolean
   skipped?: string
@@ -211,6 +214,7 @@ type ExistingTask = {
   external_id: string | null
   key: string
   project: string
+  parent_key: string | null
   title: string | null
   status: string | null
   status_category: string | null
@@ -236,6 +240,7 @@ function differs(t: TrackerTask, old: ExistingTask | undefined, effectiveKey = t
   return (
     old.key !== effectiveKey ||
     old.project !== t.project ||
+    (t.parentKey !== undefined && old.parent_key !== t.parentKey) ||
     (t.externalId !== null && old.external_id !== t.externalId) ||
     old.title !== t.title ||
     old.status !== t.status ||
@@ -291,7 +296,7 @@ export function trackerObservationTimes(
 }
 
 const TRACKER_IDENTITY_COLUMNS =
-  'record_id,next_document_number,key,source,external_id,project,title,status,status_category,opened_at,closed_at,first_seen,last_seen,updated_at,assignee,retired_reason'
+  'record_id,next_document_number,key,source,external_id,project,parent_key,title,status,status_category,opened_at,closed_at,first_seen,last_seen,updated_at,assignee,retired_reason'
 
 function trackerIdentityRow(conn: Database, t: TrackerTask): TrackerIdentityRow | null {
   let row = t.externalId
@@ -376,6 +381,30 @@ function updateTrackerTask(
   at: string,
   times: TrackerObservationTimes,
 ) {
+  if (t.parentKey !== undefined) {
+    conn
+      .query(
+        `UPDATE task SET external_id=COALESCE(?,external_id), key=?, title=?, status=?,
+           status_category=?, opened_at=?, updated_at=?, assignee=?, closed_at=?,
+           source='mcp', last_seen=?, retired_reason=NULL, parent_key=?, parent_record_id=NULL
+         WHERE record_id=?`,
+      )
+      .run(
+        t.externalId,
+        effectiveKey,
+        t.title,
+        t.status,
+        t.category,
+        times.openedAt,
+        times.updatedAt,
+        t.assignee,
+        times.closedAt,
+        at,
+        t.parentKey,
+        row.record_id,
+      )
+    return
+  }
   conn
     .query(
       `UPDATE task SET external_id=COALESCE(?,external_id), key=?, title=?, status=?,
@@ -398,6 +427,32 @@ function updateTrackerTask(
 }
 
 function insertTrackerTask(conn: Database, t: TrackerTask, times: TrackerObservationTimes) {
+  if (t.parentKey !== undefined) {
+    conn
+      .query(
+        `INSERT INTO task (record_id, external_id, key, project, project_record_id, title, status, status_category,
+          opened_at, updated_at, assignee, closed_at, source, first_seen, last_seen, parent_key)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?, 'mcp', ?, ?, ?)`,
+      )
+      .run(
+        newRecordId(),
+        t.externalId,
+        t.key,
+        t.project,
+        projectRecordIdFor(t.project),
+        t.title,
+        t.status,
+        t.category,
+        times.openedAt,
+        times.updatedAt,
+        t.assignee,
+        times.closedAt,
+        times.firstSeen,
+        times.lastSeen,
+        t.parentKey,
+      )
+    return
+  }
   conn
     .query(
       `INSERT INTO task (record_id, external_id, key, project, project_record_id, title, status, status_category,
@@ -627,6 +682,10 @@ function scopedTrackerTasks(tasks: TrackerTask[], prefixes: readonly string[]) {
   )
 }
 
+function unreportedParentCount(tasks: Iterable<TrackerTask>): number {
+  return [...tasks].filter((task) => task.parentKey === undefined).length
+}
+
 /** Retire tracker rows the register no longer assigns to this project. */
 export function retireOutOfScopeTrackerTasks(
   project: Project,
@@ -693,6 +752,7 @@ export function dropDeletedTrackerTasks(
           category: 'dropped',
           updatedAt: at,
           assignee: row.assignee,
+          parentKey: row.parent_key,
         },
         at,
       )
@@ -793,12 +853,11 @@ export function finishTrackerResults(
 export async function ingestTrackers(
   only: ReadonlySet<Project> | null = null,
 ): Promise<TrackerResult[]> {
-  const d = db()
   const at = nowIso()
   const registrations = trackerRegistrations(projects())
   const trackers = registrations.filter((tracker) => !only || only.has(tracker.project))
 
-  const missing = recentIntervalsNeedingTracker(d)
+  const missing = recentIntervalsNeedingTracker(db())
 
   const results = await Promise.all(
     trackers.map(
@@ -871,6 +930,7 @@ export async function ingestTrackers(
             // retried here: that doubled traffic precisely when a server was down.
             const backfill = await backfillTrackerTasks(s, m, missing, at, prefixes)
             activity ||= backfill.activity
+            writeTransaction(reconcileParentRecordIds)
             recordTrackerReadState(s.project, read.mode, startedAt, fetched.complete)
             return {
               result: {
@@ -881,6 +941,7 @@ export async function ingestTrackers(
                 mode: read.mode,
                 deleted: deletions.dropped,
                 retired,
+                unreportedParents: unreportedParentCount(unique.values()),
               },
               filled: backfill.filled,
             }
