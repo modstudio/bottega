@@ -27,6 +27,7 @@ const score = (
   words: string[],
   input: FlagInput = {},
   extra: { dashboardAuthorized?: boolean; note?: string | null; auditReason?: string | null } = {},
+  output = presentation,
 ) =>
   scoreRun(
     id,
@@ -38,13 +39,14 @@ const score = (
       notEvidence: NOT_EVIDENCE,
       dashboardAuthorized: extra.dashboardAuthorized ?? false,
     },
-    presentation,
+    output,
   )
 const judge = (
   id: string,
   words: string[],
   input: FlagInput = {},
   extra: { note?: string | null; auditReason?: string | null } = {},
+  output = presentation,
 ) =>
   judgeRun(
     id,
@@ -55,7 +57,7 @@ const judge = (
       auditReason: extra.auditReason ?? null,
       notEvidence: NOT_EVIDENCE,
     },
-    presentation,
+    output,
   )
 const insert = (status = 'ok', job = 'file-question') =>
   addRun({ agent: 'codex', job, status, session: process.env.CLAUDE_CODE_SESSION_ID ?? null })
@@ -468,6 +470,49 @@ describe('judge ruling', () => {
     expect(
       db().query('SELECT delivery,quality,fidelity FROM score WHERE run_record_id=?').get(id),
     ).toEqual({ delivery: 'full', quality: 'right', fidelity: null })
+  })
+
+  test('score and judge share the DEV-81 two-axis fidelity ruling', async () => {
+    const scored = insert('ok', 'file-question')
+    const judged = insert('ok', 'file-question')
+    const scoreNotes: string[] = []
+    const judgeNotes: string[] = []
+    await score(
+      scored,
+      ['full', 'right', 'faithful'],
+      {},
+      {},
+      {
+        ...presentation,
+        error: (...values) => scoreNotes.push(values.join(' ')),
+      },
+    )
+    await judge(
+      judged,
+      ['full', 'right', 'faithful'],
+      {},
+      {},
+      {
+        ...presentation,
+        error: (...values) => judgeNotes.push(values.join(' ')),
+      },
+    )
+    expect(judgeNotes).toEqual(scoreNotes)
+    expect(scoreNotes).toEqual([
+      'file-question has no spec to be faithful to, so it is judged on two axes only',
+    ])
+    expect(
+      db()
+        .query('SELECT delivery,quality,fidelity FROM score WHERE run_record_id IN (?,?)')
+        .all(scored, judged),
+    ).toEqual([
+      { delivery: 'full', quality: 'right', fidelity: null },
+      { delivery: 'full', quality: 'right', fidelity: null },
+    ])
+
+    const judgeInvalid = insert('ok', 'file-question')
+    const invalidMessage = "'other' is not a verdict word for file-question; remove it"
+    await expect(judge(judgeInvalid, ['full', 'right', 'other'])).rejects.toThrow(invalidMessage)
   })
 
   test('score refuses an unusable third word without changing a stored verdict or note', async () => {

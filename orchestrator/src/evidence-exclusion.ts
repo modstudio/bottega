@@ -16,20 +16,15 @@ import {
 import { enqueueRunRecord } from './run/run-outbox.ts'
 import { TERMINAL_RUN_STATUS_SQL } from './run/run-status.ts'
 import { assertAgentWorkRun } from './run/synthetic-lifecycle-job.ts'
-import {
-  DELIVERY,
-  type Delivery,
-  FIDELITY,
-  type Fidelity,
-  QUALITY,
-  type Quality,
-} from './score/score.ts'
+import type { Delivery, Fidelity, Quality } from './score/score.ts'
 import { enqueueScoreRecord } from './score/score-outbox.ts'
 import { recordScoreVerdict } from './score/score-verdict-record.ts'
 import {
+  axisOnlyJobFacts,
   refuseChildTurnVoid,
   refuseUnusableThirdVerdictWord,
   refuseUnvoid,
+  refuseVerdict,
   VOID_EXCLUSION_REASON,
 } from './verdict/verdict-rules.ts'
 
@@ -54,7 +49,7 @@ function voidCannotRecord(failureKind: string | null): string | null {
   return null
 }
 
-function scoredVoidFidelity(
+export function scoredVoidFidelity(
   jobName: string,
   delivery: Delivery,
   quality: Quality | undefined,
@@ -63,19 +58,15 @@ function scoredVoidFidelity(
   const jobNeedsFidelity = jobTakesFidelity(jobName)
   const unusableThirdWord = refuseUnusableThirdVerdictWord(jobName, jobNeedsFidelity, fidelity)
   if (unusableThirdWord) throw new Error(unusableThirdWord.message)
-  if (!DELIVERY.includes(delivery)) {
-    throw new Error(`delivery must be one of: ${DELIVERY.join(' | ')}`)
-  }
-  if (delivery === 'none' && quality) {
-    throw new Error("delivery 'none' takes no quality: there was nothing to judge")
-  }
-  if (delivery !== 'none' && (!quality || !QUALITY.includes(quality))) {
-    throw new Error(`delivery '${delivery}' needs a quality: ${QUALITY.join(' | ')}`)
-  }
   const needsFidelity = jobNeedsFidelity && delivery !== 'none'
-  if (needsFidelity && (!fidelity || !FIDELITY.includes(fidelity))) {
-    throw new Error(`${jobName} writes code, so verdicts require a fidelity axis`)
-  }
+  const refusal = refuseVerdict({
+    delivery,
+    quality: quality ?? null,
+    fidelity: needsFidelity ? (fidelity ?? null) : null,
+    job: axisOnlyJobFacts(jobNeedsFidelity),
+    failureKind: null,
+  })
+  if (refusal) throw new Error(refusal.message)
   return needsFidelity ? fidelity : undefined
 }
 

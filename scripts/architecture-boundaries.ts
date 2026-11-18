@@ -672,6 +672,7 @@ export const importBoundaries: ImportBoundary[] = [
       './agreement.ts',
       '../database/db.ts',
       '../jobs/jobs.ts',
+      '../verdict/verdict-rules.ts',
       './score.ts',
       'node:stream',
     ],

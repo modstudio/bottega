@@ -11,6 +11,7 @@ import type { Readable, Writable } from 'node:stream'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { db, nowIso, sessionId } from '../database/db.ts'
 import { JOBS } from '../jobs/jobs.ts'
+import { axisOnlyJobFacts, refuseVerdict, type VerdictRefusal } from '../verdict/verdict-rules.ts'
 import { gwetAc1, quadraticWeightedKappa } from './agreement.ts'
 import { DELIVERY, type Delivery, FIDELITY, type Fidelity, QUALITY, type Quality } from './score.ts'
 
@@ -85,19 +86,9 @@ export async function recalibrate(
       const delivery = answer[0] as Delivery | undefined
       const quality = answer[1] as Quality | undefined
       const fidelity = answer[2] as Fidelity | undefined
-      if (!delivery || !DELIVERY.includes(delivery)) {
-        throw new Error(`delivery must be one of: ${DELIVERY.join(' | ')}`)
-      }
-      if (delivery === 'none' && quality) {
-        throw new Error("delivery 'none' takes no quality: there was nothing to judge")
-      }
-      if (delivery !== 'none' && (!quality || !QUALITY.includes(quality))) {
-        throw new Error(`delivery '${delivery}' needs a quality: ${QUALITY.join(' | ')}`)
-      }
       const needsFidelity = writes && delivery !== 'none'
-      if (needsFidelity && (!fidelity || !FIDELITY.includes(fidelity))) {
-        throw new Error(`this writing job needs fidelity: ${FIDELITY.join(' | ')}`)
-      }
+      const refusal = refuseRecalibrationVerdict(delivery, quality, fidelity, writes, needsFidelity)
+      if (refusal) throw new Error(refusal.message)
       if (
         (!needsFidelity && fidelity) ||
         answer.length > (needsFidelity ? 3 : delivery === 'none' ? 1 : 2)
@@ -105,7 +96,7 @@ export async function recalibrate(
         throw new Error('too many verdict words for this run')
       }
       const fresh: [Delivery, Quality | null, Fidelity | null] = [
-        delivery,
+        delivery as Delivery,
         quality ?? null,
         needsFidelity ? fidelity! : null,
       ]
@@ -149,4 +140,20 @@ export async function recalibrate(
       )
     }
   }
+}
+
+export function refuseRecalibrationVerdict(
+  delivery: string | undefined,
+  quality: string | undefined,
+  fidelity: string | undefined,
+  writesRepo: boolean,
+  needsFidelity: boolean,
+): VerdictRefusal | null {
+  return refuseVerdict({
+    delivery: delivery ?? '',
+    quality: quality ?? null,
+    fidelity: needsFidelity ? (fidelity ?? null) : null,
+    job: axisOnlyJobFacts(writesRepo),
+    failureKind: null,
+  })
 }

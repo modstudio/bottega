@@ -62,6 +62,16 @@ export type JobFacts = {
   hasRequiredReviewGrades: boolean
 }
 
+// Axis-only paths record no review grades.
+export function axisOnlyJobFacts(writesRepo: boolean): JobFacts {
+  return {
+    writesRepo,
+    producesFindings: false,
+    hasAnyReviewGrades: false,
+    hasRequiredReviewGrades: true,
+  }
+}
+
 export type VerdictFacts = {
   delivery: string
   quality: string | null

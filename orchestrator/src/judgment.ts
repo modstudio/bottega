@@ -43,16 +43,7 @@ import {
 import { adoptRunMutation, auditRunMutation, runMutationActor } from './run/run-authority.ts'
 import { assertAgentWorkRun } from './run/synthetic-lifecycle-job.ts'
 import { pairPartners, parseRunIds, recordDuels, recordLosses, recordTies } from './score/duel.ts'
-import {
-  DELIVERY,
-  type Delivery,
-  FIDELITY,
-  type Fidelity,
-  judgeability,
-  QUALITY,
-  type Quality,
-  weigh,
-} from './score/score.ts'
+import { type Delivery, type Fidelity, judgeability, type Quality, weigh } from './score/score.ts'
 import {
   type GivenScoreFlags,
   missingScoreRefusal,
@@ -63,6 +54,7 @@ import {
 import { enqueueScoreRecord } from './score/score-outbox.ts'
 import { recordScoreVerdict } from './score/score-verdict-record.ts'
 import {
+  axisOnlyJobFacts,
   refuseUnusableThirdVerdictWord,
   refuseVerdict,
   type VerdictRefusal,
@@ -316,18 +308,15 @@ export async function judgeRun(
   const delivery = words[0] as Delivery | undefined
   const quality = words[1] as Quality | undefined
   const fidelity = words[2] as Fidelity | undefined
-  if (delivery && !DELIVERY.includes(delivery)) {
-    throw new Error(`delivery must be: ${DELIVERY.join(' | ')}`)
-  }
-  if (delivery === 'none' && quality) throw new Error("delivery 'none' takes no quality")
-  if (quality && !QUALITY.includes(quality)) {
-    throw new Error(`quality must be: ${QUALITY.join(' | ')}`)
-  }
   const writes = jobTakesFidelity(row.job)
-  if (fidelity && !FIDELITY.includes(fidelity)) {
-    throw new Error(`fidelity must be: ${FIDELITY.join(' | ')}`)
-  }
-  if (!writes && fidelity) throw new Error(`${row.job} is judged on two axes only`)
+  const axesRefusal = refuseJudgeVerdictAxes(
+    presentation,
+    row.job,
+    row.failure_kind,
+    [delivery, quality, fidelity],
+    writes,
+  )
+  if (axesRefusal) throw new Error(axesRefusal.message)
   const findingsJob = Boolean(job(row.job).findings)
   const suppliedGrades = suppliedReviewGrades(flags)
   refuseInvalidReviewGrades(suppliedGrades)
@@ -453,6 +442,22 @@ export async function judgeRun(
   )
   return { id, row, reviewId: reviewRecordId, comparison }
 }
+
+export function refuseJudgeVerdictAxes(
+  presentation: JudgmentPresentation,
+  jobName: string,
+  failureKind: string | null,
+  words: readonly [string | undefined, string | undefined, string | undefined],
+  writesRepo: boolean,
+): VerdictRefusal | null {
+  const [delivery, quality, fidelity] = words
+  return refuseAxesEarly(presentation, {
+    ...filledPresentAxes(delivery, quality, fidelity, writesRepo),
+    writesRepo,
+    failureKind,
+    jobName,
+  })
+}
 /**
  * The axes are judged before the review evidence is gathered, so a mistyped
  * word fails before any work is done.
@@ -485,12 +490,7 @@ function refuseAxesEarly(
     delivery: input.delivery ?? '',
     quality: input.quality ?? null,
     fidelity: input.fidelity ?? null,
-    job: {
-      writesRepo: input.writesRepo,
-      producesFindings: false,
-      hasAnyReviewGrades: false,
-      hasRequiredReviewGrades: true,
-    },
+    job: axisOnlyJobFacts(input.writesRepo),
     failureKind: input.failureKind,
   })
 }
