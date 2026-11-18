@@ -4,7 +4,8 @@ import { newRecordId } from '../../../shared/record-id.ts'
 import { taskFlowReadStore } from './task-flow-store.ts'
 import { composeWorkflowWithCursor } from './workflow-cursor.ts'
 import { database } from './workflow-cursor-test.fixture.ts'
-import { promoteWorkflowLocal, setWorkflowLocal } from './workflows.ts'
+import { closeGraduatingExploreForReuse } from './workflow-handoff.ts'
+import { composeWorkflow, promoteWorkflowLocal, setWorkflowLocal } from './workflows.ts'
 
 const live = {}
 const taskArgs = {
@@ -138,4 +139,26 @@ test('task-bound composition reuses its open cursor and closes an untouched expl
       )
       .get(taskArgs.key),
   ).toEqual({ count: 1 })
+})
+
+test('a failed explore close after reuse reports that the explore stays open', async () => {
+  const d = database()
+  const session = 'graduation-reuse-close-failure'
+  const explore = await openExplore(d, session)
+  const composition = composeWorkflow('flow', 'fixture', 'default', taskArgs, d, {})
+  const outcome = await closeGraduatingExploreForReuse(
+    composition,
+    { session },
+    d,
+    async () => {
+      throw new Error('injected explore close failure')
+    },
+    99,
+  )
+
+  expect(outcome).toEqual({
+    cursor: explore.id,
+    closed: false,
+    reason: 'injected explore close failure',
+  })
 })

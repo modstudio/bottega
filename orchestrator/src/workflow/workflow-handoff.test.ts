@@ -3,6 +3,7 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { taskFlowHandoffLinks, taskFlowReadStore } from './task-flow-store.ts'
 import { awaitWorkflowRuling, composeWorkflowWithCursor } from './workflow-cursor.ts'
+import { resolveWorkflowCursorContext } from './workflow-cursor-selection.ts'
 import { database, selectAndNextWorkflowStep, testPorts } from './workflow-cursor-test.fixture.ts'
 import { handoffWorkflow } from './workflow-handoff.ts'
 import { resolveWorkflowCursorSuccessor } from './workflow-run-binding.ts'
@@ -227,6 +228,25 @@ test('handoff closes the old stage, opens and links the successor, moves context
 
 test('keyless handoff takes the claim, adopts the key, and moves context to its successor', async () => {
   const fixture = await keylessFixture()
+  const args = {
+    key: 'DEV-KEYLESS',
+    branch: 'DEV-KEYLESS-work',
+    worktree: '/tmp/keyless-work',
+  }
+  const context = await resolveWorkflowCursorContext(
+    'fixture',
+    args,
+    fixture.context,
+    async () => [
+      {
+        key: 'DEV-KEYLESS',
+        record_id: 'task-DEV-KEYLESS',
+        project: 'fixture',
+        status_category: 'active',
+      },
+    ],
+    fixture.row,
+  )
   fixture.d
     .query(`INSERT INTO context_item
       (record_id,holder_kind,holder_id,slug,kind,body,source,created_at,updated_at)
@@ -236,25 +256,25 @@ test('keyless handoff takes the claim, adopts the key, and moves context to its 
     row: fixture.row,
     workflow: 'handoff-target',
     mode: 'default',
-    args: {
-      key: 'DEV-KEYLESS',
-      branch: 'DEV-KEYLESS-work',
-      worktree: '/tmp/keyless-work',
-    },
+    args,
     reason: 'task identified',
-    context: {
-      ...fixture.context,
-      taskRecordId: 'task-DEV-KEYLESS',
-      taskStatusCategory: 'active',
-    },
+    context,
     live: {},
     database: fixture.d,
   })
   const successor = (await taskFlowReadStore(fixture.d).stageByHandle('fixture', result.cursor))!
   expect(successor).toMatchObject({
     workflow_key: 'DEV-KEYLESS',
+    task_record_id: 'task-DEV-KEYLESS',
     handed_off_from_record_id: fixture.row.record_id,
   })
+  expect(
+    fixture.d
+      .query<{ task_record_id: string | null }, [string]>(
+        'SELECT task_record_id FROM task_flow WHERE record_id=?',
+      )
+      .get(successor.task_flow_record_id!),
+  ).toEqual({ task_record_id: 'task-DEV-KEYLESS' })
   expect(
     fixture.d.query('SELECT holder_id FROM context_item WHERE slug=?').get('keyless-decision'),
   ).toEqual({ holder_id: successor.record_id })
@@ -319,10 +339,30 @@ test('keyless handoff failure after adoption reports that the cursor is keyed', 
     BEGIN SELECT RAISE(ABORT, 'successor exploded'); END`)
 
   const releases: string[] = []
-  await expect(failingKeylessHandoff(fixture, 'taken-over', releases)).rejects.toThrow(
+  let message = ''
+  try {
+    await failingKeylessHandoff(fixture, 'taken-over', releases)
+  } catch (error) {
+    message = error instanceof Error ? error.message : String(error)
+  }
+  expect(message).toContain(
     `successor exploded; cursor ${fixture.row.id} is now keyed to DEV-KEYLESS`,
   )
+  expect(message).toContain(
+    `retry with workflow handoff handoff-target --mode default --cursor ${fixture.row.id} --project fixture --reason 'task identified' --arg key=DEV-KEYLESS --arg branch=DEV-KEYLESS-work --arg worktree=/tmp/keyless-work`,
+  )
   expect(releases).toEqual(['DEV-KEYLESS'])
+})
+
+test('a post-adoption open-stage refusal points at workflow cursors', async () => {
+  const fixture = await keylessFixture()
+  fixture.d.exec(`CREATE TRIGGER detach_keyless_open_stage
+    AFTER UPDATE OF workflow_key ON workflow_cursor
+    BEGIN UPDATE task_flow SET open_stage_cursor_record_id=NULL WHERE record_id=NEW.task_flow_record_id; END`)
+
+  await expect(failingKeylessHandoff(fixture, 'taken', [])).rejects.toThrow(
+    `retry with workflow cursors --project fixture`,
+  )
 })
 
 test('keyless handoff failure preserves a claim renewed from this session', async () => {

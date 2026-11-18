@@ -1,14 +1,11 @@
 // concern: workflow handoff refusal
 /** Pure policy shared by local and hosted task-flow handoff writers. */
 
-export function taskFlowHandoffRefusal(input: {
+export function handoffSourceRefusal(input: {
   cursorLabel: string
   state: string
-  sourceKey: string | null
-  targetKey: string | null
   sourceSession: string | null
   targetSession: string | null
-  openStageMatches: boolean
 }): string | null {
   if (input.state === 'done' || input.state === 'abandoned')
     return `${input.cursorLabel} is ${input.state}`
@@ -16,6 +13,15 @@ export function taskFlowHandoffRefusal(input: {
     return `${input.cursorLabel} is awaiting a ruling; answer its question, then retry the handoff`
   if (!input.sourceSession || input.sourceSession !== input.targetSession)
     return `${input.cursorLabel} is owned by another session; hand off it from that session`
+  return null
+}
+
+export function handoffTargetRefusal(input: {
+  cursorLabel: string
+  sourceKey: string | null
+  targetKey: string | null
+  openStageMatches: boolean
+}): string | null {
   if (input.sourceKey !== input.targetKey)
     return `handoff target key ${input.targetKey || '<none>'} differs from cursor key ${input.sourceKey || '<none>'}; pass --arg key=${input.sourceKey || '<KEY>'}`
   if (!input.openStageMatches)

@@ -7,7 +7,7 @@ import type { SQL } from 'bun'
 import { bindJsonb } from '../../../shared/record/jsonb-sql.ts'
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
 import { DocRevisionConflictError } from '../doc/doc-revision-conflict.ts'
-import { taskFlowHandoffRefusal } from '../workflow/workflow-handoff-refusal.ts'
+import { handoffSourceRefusal, handoffTargetRefusal } from '../workflow/workflow-handoff-refusal.ts'
 import { isUniqueViolation } from './record-config-error.ts'
 import { recordPool } from './record-pool.ts'
 import { allocateRecordSequence } from './record-sequence.ts'
@@ -545,17 +545,25 @@ async function applyHandoff(tx: SQL, input: Tenant, body: HandoffBody) {
   ]
   if ((await preflightMutations(tx, mutations, body.requestId)) === 'retry')
     return replayHandoff(tx, input, body, mutations)
-  const policyRefusal = taskFlowHandoffRefusal({
-    cursorLabel: 'workflow cursor',
+  const cursorLabel = `workflow ${source.workflow} for ${source.workflow_key || '<none>'}`
+  const sourceRefusal = handoffSourceRefusal({
+    cursorLabel,
     state: source.state,
-    sourceKey: source.workflow_key,
-    targetKey: body.newStage.workflowKey,
     sourceSession: source.session_id,
     targetSession: body.newStage.sessionId,
+  })
+  const targetRefusal = handoffTargetRefusal({
+    cursorLabel,
+    sourceKey: source.workflow_key,
+    targetKey: body.newStage.workflowKey,
     openStageMatches: lockedFlow.open_stage_record_id === body.oldStage.id,
   })
-  if (policyRefusal)
-    refusal(policyRefusal, `task_flow_stage.id=${body.oldStage.id}`, 'already-exists')
+  if (sourceRefusal || targetRefusal)
+    refusal(
+      sourceRefusal ?? targetRefusal!,
+      `task_flow_stage.id=${body.oldStage.id}`,
+      'already-exists',
+    )
   if (source.flow_record_id !== body.flow.id || body.newStage.flowRecordId !== body.flow.id)
     refusal(
       'handoff stages must belong to the same task flow; retry the current cursor',

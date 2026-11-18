@@ -19,7 +19,7 @@ import { adoptWorkflowTask } from './workflow-cursor-adoption.ts'
 import { workflowKeyOf } from './workflow-cursor-arguments.ts'
 import { storedCursorAutonomyForComposition } from './workflow-cursor-autonomy.ts'
 import { graduatingExploreCursor } from './workflow-cursor-compose.ts'
-import { workflowCursorReference } from './workflow-cursor-format.ts'
+import { shellWord, workflowCursorReference } from './workflow-cursor-format.ts'
 import type { SelectableCursorRow, WorkflowCursorContext } from './workflow-cursor-selection.ts'
 import { cursorComposition } from './workflow-cursor-serve.ts'
 import { cursorOwnerAfter } from './workflow-cursor-transition.ts'
@@ -27,8 +27,8 @@ import {
   closeExploreForLifecycle,
   type FinishExploreLifecycle,
 } from './workflow-explore-lifecycle-close.ts'
-import { taskFlowHandoffRefusal } from './workflow-handoff-refusal.ts'
-import type { CursorSummary, GraduatedExplore } from './workflow-handoff-types.ts'
+import { handoffSourceRefusal, handoffTargetRefusal } from './workflow-handoff-refusal.ts'
+import type { GraduatedExplore } from './workflow-handoff-types.ts'
 import {
   followTaskCursorClaim,
   type TaskCursorClaimPorts,
@@ -54,14 +54,11 @@ async function validateHandoffTarget(input: HandoffInput, d: Database) {
   const row = input.row
   if (!input.reason.trim()) throw new Error('handoff reason is required; pass --reason "<why>"')
   const cursorLabel = `workflow cursor ${row.id}`
-  const sourceRefusal = taskFlowHandoffRefusal({
+  const sourceRefusal = handoffSourceRefusal({
     cursorLabel,
     state: row.state,
-    sourceKey: row.workflow_key || null,
-    targetKey: row.workflow_key || null,
     sourceSession: row.session_id,
     targetSession: input.context.session ?? null,
-    openStageMatches: true,
   })
   if (sourceRefusal) throw new Error(sourceRefusal)
   const openQuestion = (
@@ -107,18 +104,32 @@ async function validateHandoff(input: HandoffInput, d: Database) {
   const flow = row.task_flow_record_id
     ? await taskFlowReadStore(d, input.context.taskFlowClient).flowState(row.task_flow_record_id)
     : null
-  const policyRefusal = taskFlowHandoffRefusal({
+  const openStageMatches = Boolean(flow && flow.open_stage_cursor_record_id === row.record_id)
+  const policyRefusal = handoffTargetRefusal({
     cursorLabel: `workflow cursor ${row.id}`,
-    state: row.state,
     sourceKey: row.workflow_key,
     targetKey,
-    sourceSession: row.session_id,
-    targetSession: input.context.session ?? null,
-    openStageMatches: Boolean(flow && flow.open_stage_cursor_record_id === row.record_id),
+    openStageMatches,
   })
-  if (policyRefusal) throw new Error(policyRefusal)
+  if (policyRefusal)
+    throw openStageMatches ? new Error(policyRefusal) : new HandoffOpenStageError(policyRefusal)
   if (!flow) throw new Error(`workflow cursor ${row.id} has no task flow; compose it again`)
   return { composition, flow }
+}
+
+class HandoffOpenStageError extends Error {}
+
+function handoffRetry(
+  input: HandoffInput,
+  composition: ReturnType<typeof composeWorkflow>,
+): string {
+  const mode = input.mode ? ` --mode ${shellWord(input.mode)}` : ''
+  const reference = workflowCursorReference(input.row.id, input.row.project).cli
+  const reason = ` --reason ${shellWord(input.reason)}`
+  const args = Object.entries(composition.arguments)
+    .map(([name, value]) => ` --arg ${shellWord(`${name}=${value}`)}`)
+    .join('')
+  return `workflow handoff ${shellWord(input.workflow)}${mode}${reference}${reason}${args}`
 }
 
 function handoffPayload(
@@ -262,7 +273,10 @@ export async function handoffWorkflow(input: HandoffInput) {
       releaseWarning = taskClaimReleaseWarning(input.row.project, key, releaseError)
     }
     const detail = error instanceof Error ? error.message : String(error)
-    const retry = `workflow handoff ${input.workflow}${workflowCursorReference(input.row.id, input.row.project).cli} --arg key=${key}`
+    const retry =
+      error instanceof HandoffOpenStageError
+        ? `workflow cursors --project ${shellWord(input.row.project)}`
+        : handoffRetry(input, validated.composition)
     throw new Error(
       `${detail}; cursor ${input.row.id} ${adoptedCursor ? `is now keyed to ${key}` : 'remains keyless'}; retry with ${retry}${releaseWarning ? `; ${releaseWarning}` : ''}`,
     )
@@ -280,7 +294,7 @@ export async function handoffGraduatingExplore(
   const source = await graduatingExploreCursor({
     project: composition.project,
     session: context.session,
-    taskBound: Boolean(composition.arguments.key),
+    taskBound: Boolean(workflowKeyOf(composition.arguments)),
     database,
     taskFlowClient: context.taskFlowClient,
   })
@@ -303,16 +317,8 @@ export async function handoffGraduatingExplore(
   )
   if (!row) throw new Error(`graduated workflow cursor ${result.cursor} cannot be read; retry`)
   return {
-    ...cursorComposition(row, database, live),
-    cursor: {
-      id: row.id,
-      n: row.ordinal + 1,
-      slug: row.step_slug,
-      state: row.state,
-      opened: true as const,
-      previousSession: null,
-    } satisfies CursorSummary,
-    ...(result.claimWarning ? { claimWarning: result.claimWarning } : {}),
+    row,
+    claimWarning: result.claimWarning,
     graduated: { cursor: source.id, closed: true as const },
   }
 }
@@ -332,15 +338,27 @@ export async function closeGraduatingExploreForReuse(
     taskFlowClient: context.taskFlowClient,
   })
   if (!source) return undefined
-  const outcome = await closeExploreForLifecycle(
-    source.record_id,
-    'answered',
-    database,
-    finish,
-    `replaced by cursor ${replacingCursor}`,
-    { requireUntouched: true },
-  )
-  if (outcome !== 'closed')
-    throw new Error(`explore cursor ${source.id} could not be closed: close outcome was ${outcome}`)
-  return { cursor: source.id, closed: true }
+  try {
+    const outcome = await closeExploreForLifecycle(
+      source.record_id,
+      'answered',
+      database,
+      finish,
+      `replaced by cursor ${replacingCursor}`,
+      { requireUntouched: true },
+    )
+    return outcome === 'closed'
+      ? { cursor: source.id, closed: true }
+      : {
+          cursor: source.id,
+          closed: false,
+          reason: `close outcome was ${outcome}`,
+        }
+  } catch (error) {
+    return {
+      cursor: source.id,
+      closed: false,
+      reason: error instanceof Error ? error.message : String(error),
+    }
+  }
 }

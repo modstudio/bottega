@@ -82,7 +82,9 @@ function renderRunnableComposition(result: WorkflowComposition): string {
   const awaitCommand = `${PLATFORM_SLUG} workflow await ${result.workflow.slug}${project} --mode ${mode.slug}${cursor}${args} --question "..."`
   const contract = `Work the numbered steps below in order, one at a time. A step's line here is its name, not its instructions. Before you start a step, fetch its body: with the orch MCP tool \`get_workflow_step\` (slug "${result.workflow.slug}", project "${result.project}", mode "${mode.slug}", step "${first.slug}", ${reference?.mcp ?? 'cursor omitted'}, args ${JSON.stringify(result.arguments)}), or with \`${PLATFORM_SLUG} workflow step ${result.workflow.slug} ${first.slug}${project} --mode ${mode.slug}${cursor}${args}\` (one --arg per argument). Carry out the body until its floor is met, then close it with \`${nextCommand}\` (or the MCP tool \`next_workflow_step\`), which serves the next step. If a step ends in a question for the operator, record it with \`${awaitCommand}\` before you stop. The workflow is finished only when the last step's floor is met; do not report it finished before then. ${continuation}`
   const graduation = result.graduated
-    ? `Closed explore cursor ${result.graduated.cursor}: replaced by cursor ${result.cursor!.id}.`
+    ? result.graduated.closed
+      ? `Closed explore cursor ${result.graduated.cursor}: replaced by cursor ${result.cursor!.id}.`
+      : `Explore cursor ${result.graduated.cursor} stays open: ${result.graduated.reason}.`
     : null
   return [
     `${result.workflow.title} — ${mode.title}`,

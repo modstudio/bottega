@@ -250,37 +250,29 @@ export async function composeWorkflowWithCursor(
       )
     : null
   const start = decideCursorStart(existing?.state ?? null)
-  if (start !== 'reuse') {
-    const graduated = await handoffGraduatingExplore(
-      composition,
-      context,
-      d,
-      live,
-      commitCount,
-      taskClaimPorts,
-    )
-    if (graduated) return graduated
-  }
+  const handedOff =
+    start === 'reuse'
+      ? undefined
+      : await handoffGraduatingExplore(composition, context, d, live, commitCount, taskClaimPorts)
   let row!: CursorRow
-  if (existing && start === 'reuse') row = await reuseWorkflowCursor(existing, args, context, d)
+  if (handedOff) row = handedOff.row
+  else if (existing && start === 'reuse')
+    row = await reuseWorkflowCursor(existing, args, context, d)
   else row = await insertWorkflowCursor(composition, context, d, live.resolution, commitCount)
-  const claimWarning = await followComposeTaskClaim(
-    row,
-    start === 'reuse',
-    context,
-    d,
-    taskClaimPorts,
-  )
+  const claimWarning = handedOff
+    ? handedOff.claimWarning
+    : await followComposeTaskClaim(row, start === 'reuse', context, d, taskClaimPorts)
   const cursor = {
     id: row.id,
     n: row.ordinal + 1,
     slug: row.step_slug,
     state: row.state,
-    opened: start !== 'reuse',
-    previousSession: start === 'reuse' ? takenOverFrom(existing, context) : null,
+    opened: Boolean(handedOff) || start !== 'reuse',
+    previousSession: !handedOff && start === 'reuse' ? takenOverFrom(existing, context) : null,
   } satisfies CursorSummary
   const graduated =
-    start === 'reuse'
+    handedOff?.graduated ??
+    (start === 'reuse'
       ? await closeGraduatingExploreForReuse(
           composition,
           context,
@@ -288,7 +280,7 @@ export async function composeWorkflowWithCursor(
           writeFinishingWorkflowAdvance,
           cursor.id,
         )
-      : undefined
+      : undefined)
   return {
     ...cursorComposition(row, d, live),
     cursor,

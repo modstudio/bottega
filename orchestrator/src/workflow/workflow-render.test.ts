@@ -54,6 +54,13 @@ describe('workflow rendering', () => {
         graduated: { cursor: 845, closed: true },
       }),
     ).toContain('Closed explore cursor 845: replaced by cursor 884.')
+    expect(
+      renderWorkflowComposition({
+        ...composition,
+        cursor,
+        graduated: { cursor: 845, closed: false, reason: 'close failed' },
+      }),
+    ).toContain('Explore cursor 845 stays open: close failed.')
   })
 
   test('renders looser live autonomy differences and resolution failures', () => {
