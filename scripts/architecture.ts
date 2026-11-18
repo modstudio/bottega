@@ -14,6 +14,7 @@ import {
   concernIsolationRule,
 } from './architecture-cli.ts'
 import { confinementModules } from './architecture-confinement-modules.ts'
+import { contextHealthModules } from './architecture-context-health-modules.ts'
 import { coreModuleSpecs } from './architecture-core-modules.ts'
 import { databaseModules } from './architecture-database-modules.ts'
 import { docModules } from './architecture-doc-modules.ts'
@@ -237,6 +238,7 @@ const declaredModules: ArchitectureModule[] = [
   ...docModules,
   ...subjectModules,
   ...metricModules,
+  ...contextHealthModules,
   ...sessionLossesModules,
   ...sessionReportModules,
   module('orchestrator/src/doc/doc-write-tree.ts', [

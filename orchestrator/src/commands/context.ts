@@ -2,6 +2,8 @@
 /** Registers architect session resolution and stored context item verbs. */
 import type { Command } from 'commander'
 import { CONTEXT_ITEM_KINDS } from '../../../shared/context-item-vocabulary.ts'
+import { contextHealthReport } from '../context-health/context-health-adapter.ts'
+import { renderContextHealth } from '../context-health/context-health-render.ts'
 import { contextBrief, renderContextBrief } from '../doc/context-brief.ts'
 import {
   clearTaskContext,
@@ -34,6 +36,26 @@ function registerClear(context: Command): void {
       log(
         `context: cleared ${result.removed} items on ${result.task}, already absent ${result.alreadyAbsent}`,
       )
+    })
+}
+
+function registerHealth(context: Command): void {
+  context
+    .command('health')
+    .description('report whether stored architect context is managed correctly')
+    .option('--since <duration>', 'include recorded review and injection rows by age (default: 7d)')
+    .option('--project <name>', 'select one project')
+    .option('--session <id>', 'select one session')
+    .option('--json', 'write JSON')
+    .allowExcessArguments(false)
+    .action(async (options) => {
+      const report = await contextHealthReport({
+        since: options.since,
+        project: options.project,
+        session: options.session,
+      })
+      log(options.json ? JSON.stringify(report) : renderContextHealth(report))
+      if (report.exitCode !== 0) process.exitCode = report.exitCode
     })
 }
 
@@ -163,6 +185,7 @@ export function register(program: Command): void {
     })
   registerInjection(context)
   registerEmission(context)
+  registerHealth(context)
   holderOptions(context.command('set').description('create or revise one context item'))
     .requiredOption(
       '--kind <kind>',

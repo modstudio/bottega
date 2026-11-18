@@ -1,12 +1,13 @@
 // concern: context-health
 /** Pure policy for judging stored architect context from already gathered facts. */
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { ContextItemKind } from '../../../shared/context-item-vocabulary.ts'
 import { contextCursorWarning } from '../doc/context-cursor-warning-decision.ts'
 import { CONTEXT_ITEM_MAX_CHARS } from '../doc/doc-context-write.ts'
 import { CONTEXT_REVIEW_WINDOW_MS } from '../session/context-review-decision.ts'
 
-export const CONTEXT_HEALTH_WRONG_EXIT_CODE = 2
-export const CONTEXT_HEALTH_UNREACHABLE_EXIT_CODE = 1
+const CONTEXT_HEALTH_WRONG_EXIT_CODE = 2
+const CONTEXT_HEALTH_UNREACHABLE_EXIT_CODE = 1
 
 export type ContextHealthItem = {
   holder: string
@@ -70,13 +71,24 @@ export type ContextHealthReport = {
     }>
     s8: ContextHealthFinding[]
   }
-  aging: { count: number; minimumMs: number | null; medianMs: number | null; maximumMs: number | null }
+  aging: {
+    count: number
+    minimumMs: number | null
+    medianMs: number | null
+    maximumMs: number | null
+  }
   notMeasured: Array<{ criterion: string; missing: string }>
 }
 
 const NOT_MEASURED = [
-  { criterion: 'DEV-1844 criterion 1 (ordered writes per verb)', missing: "item revision order isn't readable" },
-  { criterion: 'DEV-1844 criterion 3 (brief includes every worked task)', missing: 'brief_injection carries no worked-task signal' },
+  {
+    criterion: 'DEV-1844 criterion 1 (ordered writes per verb)',
+    missing: "item revision order isn't readable",
+  },
+  {
+    criterion: 'DEV-1844 criterion 3 (brief includes every worked task)',
+    missing: 'brief_injection carries no worked-task signal',
+  },
   { criterion: 'Use', missing: 'nothing records whether a loaded item was acted on' },
   { criterion: 'Near-duplicates', missing: 'embedding comparison is held for slice 2' },
 ] as const
@@ -86,9 +98,10 @@ function ageMs(item: ContextHealthItem, now: number): number {
 }
 
 function remedy(item: ContextHealthItem): string {
-  if (item.taskKey) return `bottega agent context clear --task ${item.taskKey}`
-  const selector = item.holderKind === 'session' ? `--session ${item.holder.slice(8)}` : `--cursor ${item.holder.slice(7)}`
-  return `bottega agent context drop ${selector} --id ${item.id}`
+  if (item.taskKey) return `${PLATFORM_SLUG} agent context clear --task ${item.taskKey}`
+  const holderFlag = item.holderKind === 'session' ? '--session' : '--cursor'
+  const selector = `${holderFlag} ${item.holder.slice(item.holder.indexOf(':') + 1)}`
+  return `${PLATFORM_SLUG} agent context drop ${selector} --id ${item.id}`
 }
 
 function finding(item: ContextHealthItem, now: number): ContextHealthFinding {
@@ -111,18 +124,33 @@ export function contextHealth(facts: ContextHealthFacts): ContextHealthReport {
   const emptySignals = { s1: [], s2: [], s3: [], s4: [], s5: [], s6: [], s7: [], s8: [] }
   if (facts.unreachable) {
     return {
-      verdict: 'unreachable', exitCode: CONTEXT_HEALTH_UNREACHABLE_EXIT_CODE,
-      since: facts.since, generatedAt: facts.now, unreachable: facts.unreachable,
-      signals: emptySignals, aging: { count: 0, minimumMs: null, medianMs: null, maximumMs: null },
+      verdict: 'unreachable',
+      exitCode: CONTEXT_HEALTH_UNREACHABLE_EXIT_CODE,
+      since: facts.since,
+      generatedAt: facts.now,
+      unreachable: facts.unreachable,
+      signals: emptySignals,
+      aging: { count: 0, minimumMs: null, medianMs: null, maximumMs: null },
       notMeasured: [...NOT_MEASURED],
     }
   }
   const withFinding = (items: ContextHealthItem[]) => items.map((item) => finding(item, now))
-  const s1 = withFinding(facts.items.filter((item) => item.taskKey && item.project && contextCursorWarning({
-    task: { key: item.taskKey, project: item.project }, openCursors: facts.openCursors, tasks: facts.tasks,
-  }) !== null))
+  const s1 = withFinding(
+    facts.items.filter(
+      (item) =>
+        item.taskKey &&
+        item.project &&
+        contextCursorWarning({
+          task: { key: item.taskKey, project: item.project },
+          openCursors: facts.openCursors,
+          tasks: facts.tasks,
+        }) !== null,
+    ),
+  )
   const s2 = withFinding(facts.items.filter((item) => item.taskStatus === 'done'))
-  const s3 = withFinding(facts.items.filter((item) => item.body.length > CONTEXT_ITEM_MAX_CHARS[item.kind]))
+  const s3 = withFinding(
+    facts.items.filter((item) => item.body.length > CONTEXT_ITEM_MAX_CHARS[item.kind]),
+  )
   const duplicateKeys = new Map<string, Set<string>>()
   for (const item of facts.items) {
     const key = item.body.toLowerCase().replace(/\s+/g, ' ').trim()
@@ -130,27 +158,66 @@ export function contextHealth(facts: ContextHealthFacts): ContextHealthReport {
     holders.add(item.holder)
     duplicateKeys.set(key, holders)
   }
-  const s4 = withFinding(facts.items.filter((item) => (duplicateKeys.get(item.body.toLowerCase().replace(/\s+/g, ' ').trim())?.size ?? 0) > 1))
+  const s4 = withFinding(
+    facts.items.filter(
+      (item) =>
+        (duplicateKeys.get(item.body.toLowerCase().replace(/\s+/g, ' ').trim())?.size ?? 0) > 1,
+    ),
+  )
   const live = facts.items.filter((item) => item.taskStatus !== 'done')
-  const agingItems = live.filter((item) => (item.kind === 'fact' || item.kind === 'pointer') && ageMs(item, now) > CONTEXT_REVIEW_WINDOW_MS)
+  const agingItems = live.filter(
+    (item) =>
+      (item.kind === 'fact' || item.kind === 'pointer') &&
+      ageMs(item, now) > CONTEXT_REVIEW_WINDOW_MS,
+  )
   const s5 = withFinding(agingItems)
   const byReviewSession = Map.groupBy(facts.reviews, (row) => row.sessionId)
-  const s6 = [...byReviewSession].flatMap(([sessionId, reviews]) => reviews.length && reviews.every((row) => row.flagged === 0 && row.items > 0)
-    ? [{ sessionId, reviews: reviews.length, items: reviews.reduce((sum, row) => sum + row.items, 0) }] : [])
+  const s6 = [...byReviewSession].flatMap(([sessionId, reviews]) =>
+    reviews.length && reviews.every((row) => row.flagged === 0 && row.items > 0)
+      ? [
+          {
+            sessionId,
+            reviews: reviews.length,
+            items: reviews.reduce((sum, row) => sum + row.items, 0),
+          },
+        ]
+      : [],
+  )
   const compact = facts.briefs.filter((row) => row.source === 'compact')
   const s7 = [...Map.groupBy(compact, (row) => row.sessionId)].map(([sessionId, rows]) => {
     const zeroCursorBriefs = rows.filter((row) => row.cursors === 0).length
     const overCapBriefs = rows.filter((row) => row.overCap).length
-    return { sessionId, compactBriefs: rows.length, zeroCursorBriefs, zeroCursorShare: zeroCursorBriefs / rows.length, overCapBriefs, overCapShare: overCapBriefs / rows.length }
+    return {
+      sessionId,
+      compactBriefs: rows.length,
+      zeroCursorBriefs,
+      zeroCursorShare: zeroCursorBriefs / rows.length,
+      overCapBriefs,
+      overCapShare: overCapBriefs / rows.length,
+    }
   })
-  const s8 = withFinding(live.filter((item) => item.staleReferences.length > 0 || item.unverifiable !== null))
-  const ages = live.filter((item) => item.kind === 'fact' || item.kind === 'pointer').map((item) => ageMs(item, now)).sort((a, b) => a - b)
+  const s8 = withFinding(
+    live.filter((item) => item.staleReferences.length > 0 || item.unverifiable !== null),
+  )
+  const ages = live
+    .filter((item) => item.kind === 'fact' || item.kind === 'pointer')
+    .map((item) => ageMs(item, now))
+    .sort((a, b) => a - b)
   const signals = { s1, s2, s3, s4, s5, s6, s7, s8 }
   const wrong = s1.length + s2.length + s3.length + s4.length > 0
   return {
-    verdict: wrong ? 'wrong' : 'healthy', exitCode: wrong ? CONTEXT_HEALTH_WRONG_EXIT_CODE : 0,
-    since: facts.since, generatedAt: facts.now, unreachable: null, signals,
-    aging: { count: ages.length, minimumMs: quantile(ages, 0), medianMs: quantile(ages, 0.5), maximumMs: quantile(ages, 1) },
+    verdict: wrong ? 'wrong' : 'healthy',
+    exitCode: wrong ? CONTEXT_HEALTH_WRONG_EXIT_CODE : 0,
+    since: facts.since,
+    generatedAt: facts.now,
+    unreachable: null,
+    signals,
+    aging: {
+      count: ages.length,
+      minimumMs: quantile(ages, 0),
+      medianMs: quantile(ages, 0.5),
+      maximumMs: quantile(ages, 1),
+    },
     notMeasured: [...NOT_MEASURED],
   }
 }
