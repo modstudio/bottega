@@ -10,7 +10,7 @@ import {
 } from '../record/record-task-flow-write-client.ts'
 import { taskFlowRequestId } from '../record/record-task-flow-write-contract.ts'
 import { taskFlowLocalStore, taskFlowReadStore } from './task-flow-store.ts'
-import type { TaskFlowIntentInput } from './task-flow-store-types.ts'
+import type { TaskFlowIntentInput, TaskFlowOpenStageWorktreeRow } from './task-flow-store-types.ts'
 import type { ArgumentReboundEvent, CursorTrailEntry } from './workflow-cursor-trail.ts'
 
 export type OpenCursorWorktree = {
@@ -21,6 +21,8 @@ export type OpenCursorWorktree = {
 }
 
 export type CursorWorktreeTaskFlowClient = RecordTaskFlowClient
+
+type OpenCursorWorktreeRow = TaskFlowOpenStageWorktreeRow & { worktree: string }
 
 /** Read the claim handles carried by one cursor without trusting stored argument JSON. */
 function workflowCursorStoredArgs(args: string): Record<string, unknown> | null {
@@ -50,16 +52,43 @@ export function workflowCursorClaimHandles(args: string): string[] {
   return [handles.worktree, handles.branch].filter((value): value is string => value !== null)
 }
 
+/** Read normalized open cursor worktrees in the store's project/number order. */
+async function readOpenCursorWorktreeRows(
+  database: Database,
+  client?: RecordTaskFlowClient,
+): Promise<OpenCursorWorktreeRow[]> {
+  return (await taskFlowReadStore(database, client).openStageWorktrees()).flatMap((row) => {
+    const worktree = workflowCursorBranchAndWorktree(row.args).worktree
+    return worktree === null ? [] : [{ ...row, worktree }]
+  })
+}
+
+function publicOpenCursorWorktree(row: OpenCursorWorktreeRow): OpenCursorWorktree {
+  return {
+    number: row.number,
+    workflow: row.workflow,
+    project: row.project,
+    worktree: row.worktree,
+  }
+}
+
+/** Select normalized open cursor worktrees whose handle uses a captured spelling. */
+async function readOpenCursorWorktreeRowsAtSpellings(
+  capturedSpellings: readonly string[],
+  database: Database,
+  client?: RecordTaskFlowClient,
+): Promise<OpenCursorWorktreeRow[]> {
+  const spellings = new Set(capturedSpellings)
+  return (await readOpenCursorWorktreeRows(database, client)).filter((row) =>
+    spellings.has(row.worktree),
+  )
+}
+
 export async function openCursorWorktrees(
   database: Database = db(),
+  client?: RecordTaskFlowClient,
 ): Promise<OpenCursorWorktree[]> {
-  const rows = await taskFlowReadStore(database).openStageWorktrees()
-  return rows.flatMap((row) => {
-    const worktree = workflowCursorStoredArgs(row.args)?.worktree
-    return worktree && typeof worktree === 'string' && worktree.trim()
-      ? [{ number: row.number, workflow: row.workflow, project: row.project, worktree }]
-      : []
-  })
+  return (await readOpenCursorWorktreeRows(database, client)).map(publicOpenCursorWorktree)
 }
 
 /** Read open cursors whose stored worktree uses a captured tree spelling. */
@@ -68,15 +97,9 @@ export async function openCursorWorktreesAtSpellings(
   database: Database = db(),
   client?: RecordTaskFlowClient,
 ): Promise<OpenCursorWorktree[]> {
-  const spellings = new Set(capturedSpellings)
-  return (await taskFlowReadStore(database, client).openStageWorktrees())
-    .sort((left, right) => left.project.localeCompare(right.project) || left.number - right.number)
-    .flatMap((row) => {
-      const worktree = workflowCursorBranchAndWorktree(row.args).worktree
-      return worktree !== null && spellings.has(worktree)
-        ? [{ number: row.number, workflow: row.workflow, project: row.project, worktree }]
-        : []
-    })
+  return (await readOpenCursorWorktreeRowsAtSpellings(capturedSpellings, database, client)).map(
+    publicOpenCursorWorktree,
+  )
 }
 
 /** Clear open cursor claims that point at a tree which has just been removed. */
@@ -85,10 +108,7 @@ export async function clearOpenCursorWorktreesAtPath(
   database: Database = db(),
   client?: RecordTaskFlowClient,
 ): Promise<number> {
-  const spellings = new Set(capturedSpellings)
-  const rows = (await taskFlowReadStore(database, client).openStageWorktrees())
-    .filter((row) => spellings.has(workflowCursorBranchAndWorktree(row.args).worktree ?? ''))
-    .sort((left, right) => left.project.localeCompare(right.project) || left.number - right.number)
+  const rows = await readOpenCursorWorktreeRowsAtSpellings(capturedSpellings, database, client)
   for (const row of rows) {
     const args = JSON.parse(row.args) as Record<string, string>
     const oldValue = args.worktree!

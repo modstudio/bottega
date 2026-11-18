@@ -113,7 +113,7 @@ test('clears every open cursor worktree pointer at a removed path and records th
     'running',
   )
 
-  const hostedStages = [ids[0]!, ids[1]!, unrelated].map((id) => hostedCursorStageFixture(d, id))
+  const hostedStages = [...ids, unrelated].map((id) => hostedCursorStageFixture(d, id))
   const previousRecordUrl = process.env.BOTTEGA_RECORD_API_URL
   process.env.BOTTEGA_RECORD_API_URL = 'https://record.example.test'
   d.query(
@@ -149,24 +149,16 @@ test('clears every open cursor worktree pointer at a removed path and records th
   expect(hostedStages[0]!.stage.closedStepNotes).toContainEqual(
     expect.objectContaining({ event: 'argument-rebound', name: 'worktree', oldValue: path }),
   )
-  const rows = [...ids, unrelated].map((id) =>
-    d
-      .query<{ args: string; closed: string }, [string]>(
-        'SELECT args,closed FROM workflow_cursor WHERE record_id=?',
-      )
-      .get(id),
-  )
-  expect(rows.slice(0, 2).map((row) => JSON.parse(row!.args))).toEqual([
-    { worktree: path, branch: 'DEV-2218-work' },
-    { worktree: path, branch: 'DEV-2218-work' },
-  ])
-  expect(JSON.parse(rows[0]!.closed)).toEqual([])
-  expect(JSON.parse(rows[2]!.args)).toEqual({ worktree: path, branch: 'DEV-2218-work' })
-  expect(JSON.parse(rows[3]!.args)).toEqual({
+  expect(hostedStages[2]!.stage.arguments).toEqual({
+    worktree: path,
+    branch: 'DEV-2218-work',
+  })
+  expect(hostedStages[2]!.stage.closedStepNotes).toEqual([])
+  expect(hostedStages[3]!.stage.arguments).toEqual({
     worktree: '/trees/unrelated',
     branch: 'other-work',
   })
-  expect(JSON.parse(rows[3]!.closed)).toEqual([])
+  expect(hostedStages[3]!.stage.closedStepNotes).toEqual([])
 })
 
 test('open keyless cursor reader excludes a done cursor and task-bound cursor', async () => {

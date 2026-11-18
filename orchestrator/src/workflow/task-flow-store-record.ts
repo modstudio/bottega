@@ -37,6 +37,7 @@ import { sqliteTaskFlowReadStore } from './task-flow-store-sqlite.ts'
 import type {
   TaskFlowObligationRow,
   TaskFlowOpenObligationRow,
+  TaskFlowOpenStageWorktreeRow,
   TaskFlowTextRow,
 } from './task-flow-store-types.ts'
 
@@ -320,10 +321,9 @@ class RecordTaskFlowReadStore {
       )
       .sort((left, right) => left.created_at.localeCompare(right.created_at) || left.id - right.id)
   }
-  async openStageWorktrees() {
+  async openStageWorktrees(): Promise<TaskFlowOpenStageWorktreeRow[]> {
     return (await this.listEveryDestination({ states: ['running', 'awaiting-ruling'] }))
       .map((row) => stageRow(row))
-      .sort((a, b) => a.id - b.id)
       .map((row) => ({
         record_id: row.record_id,
         number: row.id,
@@ -333,6 +333,9 @@ class RecordTaskFlowReadStore {
         closed: row.closed,
         revision: row.revision,
       }))
+      .sort(
+        (left, right) => left.project.localeCompare(right.project) || left.number - right.number,
+      )
   }
   async activeStageAutonomy(project: string, taskRecordId: string) {
     return (

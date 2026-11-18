@@ -42,7 +42,7 @@ export function finishCursorWorktreeClear(
 export async function prepareCloseOut(
   taskFlowClient?: RecordTaskFlowClient,
 ): Promise<CloseOutPreparation> {
-  return { cursorWorktrees: await openCursorWorktrees(), taskFlowClient }
+  return { cursorWorktrees: await openCursorWorktrees(db(), taskFlowClient), taskFlowClient }
 }
 
 export function conversationRootAndWorktree(runId: string): {

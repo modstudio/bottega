@@ -26,6 +26,7 @@ import type {
   TaskFlowObligationRow,
   TaskFlowOpenObligationRow,
   TaskFlowOpenSessionStageRow,
+  TaskFlowOpenStageWorktreeRow,
   TaskFlowOverturnRulingRow,
   TaskFlowPendingTaskLinkRow,
   TaskFlowProjectionRow,
@@ -348,32 +349,13 @@ class SqliteTaskFlowStore {
       .all(input.since)
   }
 
-  openStageWorktrees(): Array<{
-    record_id: string
-    number: number
-    workflow: string
-    project: string
-    args: string
-    closed: string
-    revision: number
-  }> {
+  openStageWorktrees(): TaskFlowOpenStageWorktreeRow[] {
     return this.database
-      .query<
-        {
-          record_id: string
-          number: number
-          workflow: string
-          project: string
-          args: string
-          closed: string
-          revision: number
-        },
-        []
-      >(
+      .query<TaskFlowOpenStageWorktreeRow, []>(
         `SELECT record_id,number,workflow_slug workflow,project,args,closed,revision
          FROM workflow_cursor
          WHERE state NOT IN ('done','abandoned')
-         ORDER BY number`,
+         ORDER BY project,number`,
       )
       .all()
   }

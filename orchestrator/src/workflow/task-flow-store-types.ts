@@ -101,6 +101,16 @@ export type TaskFlowProjectionRow = {
   open_stage_cursor_record_id: string | null
 }
 
+export type TaskFlowOpenStageWorktreeRow = {
+  record_id: string
+  number: number
+  workflow: string
+  project: string
+  args: string
+  closed: string
+  revision: number
+}
+
 export type TaskFlowListedStageRow = TaskFlowStageCursorRow & {
   open_stage_count: number
   question_number: number | null
