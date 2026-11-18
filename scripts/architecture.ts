@@ -123,17 +123,6 @@ const declaredModules: ArchitectureModule[] = [
     './task-flow-store-methods.ts',
     './task-flow-store-types.ts',
   ]),
-  module('orchestrator/src/workflow/task-flow-store-sqlite.ts', [
-    'bun:sqlite',
-    '../database/db.ts',
-    '../record/record-task-flow-contract.ts',
-    '../record/record-task-flow-write-contract.ts',
-    '../run/question-open.ts',
-    '../question-store/question-store-sqlite-reads.ts',
-    './task-flow-store-sqlite-write.ts',
-    './task-flow-store-methods.ts',
-    './task-flow-store-types.ts',
-  ]),
   module('orchestrator/src/close/close-out-preparation.ts', [
     'node:fs',
     '../../../shared/brand.ts',

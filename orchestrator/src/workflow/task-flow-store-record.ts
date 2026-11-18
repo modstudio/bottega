@@ -275,7 +275,7 @@ class RecordTaskFlowReadStore {
         mode: input.mode,
         sessionId: input.sessionId,
         keyless: true,
-        states: TASK_FLOW_OPEN_STAGE_STATES,
+        states: [...TASK_FLOW_OPEN_STAGE_STATES],
       },
       input.project,
     )
@@ -291,7 +291,7 @@ class RecordTaskFlowReadStore {
     const common: StageListSelector = {
       projectId: this.projectId(input.project),
       workflow: input.workflow,
-      states: TASK_FLOW_OPEN_STAGE_STATES,
+      states: [...TASK_FLOW_OPEN_STAGE_STATES],
     }
     const groups = input.key
       ? await Promise.all([
@@ -321,7 +321,7 @@ class RecordTaskFlowReadStore {
   async keyedStageHistory(input: { since: string }) {
     return (
       await this.listEveryDestination({
-        states: TASK_FLOW_STAGE_STATES,
+        states: [...TASK_FLOW_STAGE_STATES],
       })
     )
       .map((item) => stageRow(item))
@@ -334,7 +334,7 @@ class RecordTaskFlowReadStore {
       .sort((left, right) => left.created_at.localeCompare(right.created_at) || left.id - right.id)
   }
   async openStageWorktrees(): Promise<TaskFlowOpenStageWorktreeRow[]> {
-    return (await this.listEveryDestination({ states: TASK_FLOW_OPEN_STAGE_STATES }))
+    return (await this.listEveryDestination({ states: [...TASK_FLOW_OPEN_STAGE_STATES] }))
       .map((row) => stageRow(row))
       .map((row) => ({
         record_id: row.record_id,
@@ -355,7 +355,7 @@ class RecordTaskFlowReadStore {
         {
           projectId: this.projectId(project),
           taskId: taskRecordId,
-          states: TASK_FLOW_OPEN_STAGE_STATES,
+          states: [...TASK_FLOW_OPEN_STAGE_STATES],
         },
         project,
       )
@@ -384,7 +384,7 @@ class RecordTaskFlowReadStore {
         workflow: input.workflow,
         mode: input.mode,
         workflowKey: input.key,
-        states: TASK_FLOW_OPEN_STAGE_STATES,
+        states: [...TASK_FLOW_OPEN_STAGE_STATES],
       },
       input.project,
     )

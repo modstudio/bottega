@@ -18,17 +18,17 @@ const EXEMPTIONS = [
   {
     path: 'orchestrator/src/record/record-board-claims.ts',
     line: "                AND state IN ('running','awaiting-ruling')",
-    reason: 'hosted record SQL keeps its stage-state predicate beside the hosted schema',
+    reason: 'a literal hosted predicate lets Postgres prove the partial-index implication',
   },
   {
     path: 'orchestrator/src/record/record-question-read.ts',
     line: "       WHERE stage.session_id=$1 AND stage.state NOT IN ('done','abandoned')",
-    reason: 'hosted record SQL keeps its stage-state predicate beside the hosted schema',
+    reason: 'a literal hosted predicate lets Postgres prove the partial-index implication',
   },
   {
     path: 'orchestrator/src/record/record-task-flow.ts',
     line: "     AND open_stage.state NOT IN ('done','abandoned')) open_stage_count,",
-    reason: 'hosted record SQL keeps its stage-state predicate beside the hosted schema',
+    reason: 'a literal hosted predicate lets Postgres prove the partial-index implication',
   },
 ] as const
 
@@ -40,6 +40,17 @@ function exemptStageStateLine(path: string, line: string): boolean {
   )
 }
 
+function stageStateContext(path: string, line: string): boolean {
+  return (
+    path.includes('/workflow/') ||
+    path.includes('/question-store/') ||
+    path.includes('/board/') ||
+    path.includes('/session-losses/') ||
+    path.includes('task-flow') ||
+    /\bstate\b.*\b(?:IN|NOT IN)\b/.test(line)
+  )
+}
+
 export function taskFlowStageStateLiteralRestatements(root = ROOT): string[] {
   return sourceFiles(root, ['orchestrator/src', 'shared'], (path) => {
     return (path.endsWith('.ts') || path.endsWith('.sql')) && path !== DECLARATION
@@ -48,7 +59,9 @@ export function taskFlowStageStateLiteralRestatements(root = ROOT): string[] {
       .split('\n')
       .flatMap((line, index) => {
         const states = new Set([...line.matchAll(STAGE_STATE)].map((match) => match[1]))
-        return states.size >= 2 && !exemptStageStateLine(path, line)
+        return states.size >= 2 &&
+          stageStateContext(path, line) &&
+          !exemptStageStateLine(path, line)
           ? [
               `${path}:${index + 1}: derive task-flow stage-state sets from record-task-flow-contract`,
             ]

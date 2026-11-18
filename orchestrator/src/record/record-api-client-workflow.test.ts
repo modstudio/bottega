@@ -68,7 +68,7 @@ test('task-flow stage lists carry combined filters and the destination space', a
     {
       projectId: '00000000-0000-4000-8000-000000000001',
       number: 4,
-      states: TASK_FLOW_OPEN_STAGE_STATES,
+      states: [...TASK_FLOW_OPEN_STAGE_STATES],
       linked: true,
       openedMachineId: '00000000-0000-4000-8000-000000000003',
       limit: 50,

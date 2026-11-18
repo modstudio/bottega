@@ -6,12 +6,27 @@ import { taskFlowStageStateLiteralRestatements } from './check-task-flow-stage-s
 
 test('rejects a line that restates a task-flow stage-state set', () => {
   const root = mkdtempSync(join(tmpdir(), 'task-flow-stage-state-guard-'))
-  const source = join(root, 'orchestrator/src/example')
+  const source = join(root, 'orchestrator/src/workflow')
   mkdirSync(source, { recursive: true })
   writeFileSync(join(source, 'filter.ts'), "const open = ['running', 'awaiting-ruling']\n")
 
   expect(taskFlowStageStateLiteralRestatements(root)).toEqual([
-    'orchestrator/src/example/filter.ts:1: derive task-flow stage-state sets from record-task-flow-contract',
+    'orchestrator/src/workflow/filter.ts:1: derive task-flow stage-state sets from record-task-flow-contract',
+  ])
+})
+
+test('ignores same-word vocabularies outside stage context but catches SQL state predicates', () => {
+  const root = mkdtempSync(join(tmpdir(), 'task-flow-stage-state-guard-'))
+  const run = join(root, 'orchestrator/src/run')
+  mkdirSync(run, { recursive: true })
+  writeFileSync(join(run, 'status.ts'), "type Status = 'running' | 'abandoned'\n")
+  writeFileSync(
+    join(run, 'query.ts'),
+    "const query = `SELECT 1 WHERE state IN ('running','awaiting-ruling')`\n",
+  )
+
+  expect(taskFlowStageStateLiteralRestatements(root)).toEqual([
+    'orchestrator/src/run/query.ts:1: derive task-flow stage-state sets from record-task-flow-contract',
   ])
 })
 

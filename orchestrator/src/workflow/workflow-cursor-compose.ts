@@ -350,7 +350,7 @@ async function recoverComposeConflict(
   const listed = await client.listTaskFlowStages!(
     {
       projectId: facts.projectRecordId,
-      states: TASK_FLOW_OPEN_STAGE_STATES,
+      states: [...TASK_FLOW_OPEN_STAGE_STATES],
       ...(facts.key ? { taskKey: facts.key } : { sessionId: context.session ?? undefined }),
     },
     await resolveTaskFlowDestination(target, client),
