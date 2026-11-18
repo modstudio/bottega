@@ -111,7 +111,7 @@ describe('merge-queue action', () => {
     })
   })
 
-  test('a transition gap waits and can still complete as merged', () => {
+  test('a vanished active entry stops immediately and reports its reason', () => {
     const deadline = 120_000
     const queued = stepMergeQueueWait(42, initialWaitState, { state: 'queued' }, 0, deadline)
     const gap = stepMergeQueueWait(
@@ -129,18 +129,9 @@ describe('merge-queue action', () => {
         remedy: `${PLATFORM_SLUG} pr merge 42`,
       },
     })
-    expect(
-      stepMergeQueueWait(
-        42,
-        gap.state,
-        { state: 'merged', mergeCommit: 'merge-oid' },
-        59_999,
-        deadline,
-      ),
-    ).toEqual({ state: gap.state, action: { action: 'complete', mergeCommit: 'merge-oid' } })
   })
 
-  test('an absent entry for the confirmation window refuses as having left the queue', () => {
+  test('an already observed absent entry refuses as dequeued', () => {
     const observedAt = 1
     expect(
       stepMergeQueueWait(
