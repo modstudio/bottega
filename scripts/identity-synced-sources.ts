@@ -38,6 +38,7 @@ export const SYNCED_SOURCE_DECLARATIONS: SyncedSources = {
     'recordApiBaseUrl',
     'recordApiClient',
     'recordApiClientInjected',
+    'recordApiClientOver',
     'recordAuthRefusal',
     'recordAuthToken',
     'recordIdentityResponse',

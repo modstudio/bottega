@@ -8,7 +8,17 @@ export const RECORD_POOL_IDLE_TIMEOUT_SECONDS = 30
 
 const pools = new Map<string, { pool: SQL; max: number }>()
 
+function injectedPool(url: string): SQL | undefined {
+  if (process.env.NODE_ENV !== 'test') return undefined
+  const holder = globalThis as typeof globalThis & {
+    [key: symbol]: Map<string, SQL> | undefined
+  }
+  return holder[Symbol.for('orch.record-pool')]?.get(url)
+}
+
 export function recordPool(url: string, max = RECORD_POOL_MAX): SQL {
+  const injected = injectedPool(url)
+  if (injected) return injected
   const existing = pools.get(url)
   if (existing) {
     if (existing.max !== max) {
