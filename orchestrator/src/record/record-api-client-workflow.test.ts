@@ -80,7 +80,7 @@ test('task-flow stage lists carry combined filters and the destination space', a
   ])
 })
 
-test('task-flow presence posts both id batches to the destination space', async () => {
+test('task-flow presence posts every id batch without requiring a destination space', async () => {
   const requests: Array<{
     path: string
     method?: string
@@ -94,20 +94,32 @@ test('task-flow presence posts both id batches to the destination space', async 
       body: init?.body as string | undefined,
       destinationSpaceId: init?.destinationSpaceId,
     })
-    return { flowIds: [ID], stageIds: [] } as never
+    return {
+      flowIds: [ID],
+      stageIds: [],
+      obligationIds: [],
+      textIds: [],
+      textCopyIds: [],
+      questionIds: [],
+      questionAuditIds: [],
+    } as never
   })
-  await expect(
-    client.readTaskFlowPresence!(
-      { flowIds: [ID], stageIds: [] },
-      { destinationSpaceId: '00000000-0000-4000-8000-000000000002' },
-    ),
-  ).resolves.toEqual({ flowIds: [ID], stageIds: [] })
+  const input = {
+    flowIds: [ID],
+    stageIds: [],
+    obligationIds: [],
+    textIds: [],
+    textCopyIds: [],
+    questionIds: [],
+    questionAuditIds: [],
+  }
+  await expect(client.readTaskFlowPresence!(input)).resolves.toEqual(input)
   expect(requests).toEqual([
     {
       path: '/v1/task-flow/presence',
       method: 'POST',
-      body: JSON.stringify({ flowIds: [ID], stageIds: [] }),
-      destinationSpaceId: '00000000-0000-4000-8000-000000000002',
+      body: JSON.stringify(input),
+      destinationSpaceId: undefined,
     },
   ])
 })

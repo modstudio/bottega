@@ -20,6 +20,7 @@ export const recordTaskFlowModules: RecordModule[] = [
     '../../../shared/record-timestamp.ts',
     '../../../shared/record/tenant.ts',
     './record-pool.ts',
+    './record-question-read.ts',
     './record-task-flow-contract.ts',
     './record-task-flow-list-query.ts',
   ]),
