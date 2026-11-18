@@ -4,6 +4,10 @@
 import type { Database } from 'bun:sqlite'
 import { JOBS } from '../jobs/jobs.ts'
 
+const CURSORLESS_RUN_FAMILY_PREDICATE = `launch_key IS NULL
+          AND cursor_record_id IS NULL
+          AND COALESCE(turn,1)=1`
+
 export type CursorlessRunEvidence = {
   number: number
   job: string
@@ -21,9 +25,7 @@ export function cursorlessRunEvidence(database: Database, from: string): Cursorl
     .query<CursorlessRunEvidence, [string]>(
       `SELECT number,job,session_id session,started_at at
          FROM run
-        WHERE launch_key IS NULL
-          AND cursor_record_id IS NULL
-          AND COALESCE(turn,1)=1
+        WHERE ${CURSORLESS_RUN_FAMILY_PREDICATE}
           AND NOT (agent='(pending)' AND status='failed')
           AND started_at>=?
         ORDER BY number`,
@@ -43,9 +45,7 @@ export function failedBeforeClaimRunEvidence(
     .query<FailedBeforeClaimRunEvidenceRow, [string]>(
       `SELECT substr(started_at,1,10) day,job,count(*) count
          FROM run
-        WHERE launch_key IS NULL
-          AND cursor_record_id IS NULL
-          AND COALESCE(turn,1)=1
+        WHERE ${CURSORLESS_RUN_FAMILY_PREDICATE}
           AND agent='(pending)'
           AND status='failed'
           AND started_at>=?

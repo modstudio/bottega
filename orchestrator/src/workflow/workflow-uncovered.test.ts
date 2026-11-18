@@ -192,7 +192,9 @@ test('the adapter correlates run and landing evidence with hosted-shaped cursor 
       (5,'project-alpha',NULL,'2026-11-17T14:00:00.000Z',NULL,NULL,'hook-tree','session-a',NULL,1,'codex','ok'),
       (6,'project-alpha',NULL,'2026-11-17T15:00:00.000Z',NULL,NULL,'understand','session-a','cursor-a',1,'codex','ok'),
       (7,'project-alpha',NULL,'2026-11-17T16:00:00.000Z',NULL,NULL,'understand','session-a',NULL,2,'codex','ok'),
-      (8,'project-alpha',NULL,'2026-11-17T17:00:00.000Z',NULL,NULL,'understand','session-a',NULL,1,'(pending)','failed');
+      (8,'project-alpha',NULL,'2026-11-17T17:00:00.000Z',NULL,NULL,'understand','session-a',NULL,1,'(pending)','failed'),
+      (9,'project-alpha',NULL,'2026-11-17T18:00:00.000Z',NULL,NULL,'understand','session-a',NULL,1,'codex','failed'),
+      (10,'project-alpha',NULL,'2026-11-17T19:00:00.000Z',NULL,NULL,'understand','session-a',NULL,1,'(pending)','ok');
     INSERT INTO branch_landing_record VALUES
       ('alpha','project-alpha','DEV-4-change','2026-11-17T12:00:00.000Z');
   `)
@@ -289,7 +291,11 @@ test('the adapter correlates run and landing evidence with hosted-shaped cursor 
         { project: 'alpha', key: 'DEV-4' },
         { project: 'alpha', key: 'DEV-5' },
       ],
-      cursorlessRuns: [{ number: 4, job: 'understand', session: 'session-a' }],
+      cursorlessRuns: [
+        { number: 4, job: 'understand', session: 'session-a' },
+        { number: 9, job: 'understand', session: 'session-a' },
+        { number: 10, job: 'understand', session: 'session-a' },
+      ],
       failedBeforeClaim: 1,
     })
     expect((await report(true)).days[0]).toEqual({
@@ -299,7 +305,11 @@ test('the adapter correlates run and landing evidence with hosted-shaped cursor 
         { project: 'alpha', key: 'DEV-1' },
         { project: 'alpha', key: 'DEV-4' },
       ],
-      cursorlessRuns: [{ number: 4, job: 'understand', session: 'session-a' }],
+      cursorlessRuns: [
+        { number: 4, job: 'understand', session: 'session-a' },
+        { number: 9, job: 'understand', session: 'session-a' },
+        { number: 10, job: 'understand', session: 'session-a' },
+      ],
       failedBeforeClaim: 1,
     })
   } finally {
