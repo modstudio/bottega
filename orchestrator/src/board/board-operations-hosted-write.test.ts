@@ -1,5 +1,8 @@
 import { beforeEach, expect, test } from 'bun:test'
-import { boardDuplicateWarning } from '../../../shared/board-write-result.ts'
+import {
+  boardDuplicateWarning,
+  boardReplyDuplicateWarning,
+} from '../../../shared/board-write-result.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { createMemoryRecordApiClient } from '../../test/fixtures/record-api.ts'
 import { db } from '../database/db.ts'
@@ -53,6 +56,7 @@ beforeEach(() => {
 
 test('hosted writes map duplicate and fresh server responses', async () => {
   const root = hostedMessage()
+  const existingReplyId = newRecordId()
   let replyAudience: { kind: string } | undefined
   const client = {
     ...createMemoryRecordApiClient(),
@@ -61,11 +65,16 @@ test('hosted writes map duplicate and fresh server responses', async () => {
         ? { ...root, duplicateOf: root.id }
         : { ...hostedMessage(input.id), kind: 'question', duplicateOf: null },
     replyBoardMessage: async (
-      _rootId: string,
+      rootId: string,
       input: { id: string; audience?: { kind: string } },
     ) => {
       replyAudience = input.audience
-      return { ...hostedMessage(input.id), kind: 'reply', duplicateOf: null }
+      return {
+        ...hostedMessage(existingReplyId),
+        kind: 'reply',
+        threadRootId: rootId,
+        duplicateOf: existingReplyId,
+      }
     },
   }
   await expect(
@@ -89,12 +98,12 @@ test('hosted writes map duplicate and fresh server responses', async () => {
   await expect(
     boardReply(root.id, 'reply', { env, client, destinationResolver }, { kind: 'acknowledged' }),
   ).resolves.toEqual({
-    recordId: expect.any(String),
+    recordId: existingReplyId,
     number: null,
     rootId: root.id,
-    dropped: false,
+    dropped: true,
     reached: null,
-    warning: null,
+    warning: boardReplyDuplicateWarning(existingReplyId, root.id),
   })
   expect(replyAudience).toEqual({ kind: 'acknowledged' })
 })

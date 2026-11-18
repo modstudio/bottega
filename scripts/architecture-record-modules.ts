@@ -885,6 +885,7 @@ export const recordModules: RecordModule[] = [
   module('orchestrator/src/record/record-board-contract.ts', [
     '../../../shared/board-purpose.ts',
     '../../../shared/board-reply-audience-options.ts',
+    '../../../shared/board-write-result.ts',
   ]),
   module('orchestrator/src/record/record-board-author.ts', ['bun', './record-board-contract.ts']),
   module('orchestrator/src/record/record-board-message-tags.ts', [

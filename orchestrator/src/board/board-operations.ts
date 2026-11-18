@@ -7,7 +7,8 @@ import {
 } from '../../../shared/board-duration.ts'
 import { defaultBoardPurpose } from '../../../shared/board-purpose.ts'
 import {
-  boardDuplicateWarning,
+  type BoardWriteDropped,
+  boardWriteWarning,
   hostedBoardWriteResult,
 } from '../../../shared/board-write-result.ts'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
@@ -112,7 +113,7 @@ type Context = {
 export type BoardPostResult = {
   recordId: string
   number: number | null
-  dropped: boolean
+  dropped: BoardWriteDropped
   reached: number | null
   warning: string | null
 }
@@ -261,14 +262,15 @@ function localPostResult(value: ReturnType<typeof postNotice>): BoardPostResult 
 function hostedPostResult(
   mintedId: string,
   response: HostedBoardWriteClientResponse,
+  warningContext: { kind: 'root' } | { kind: 'reply'; rootId: string } = { kind: 'root' },
 ): BoardPostResult {
   const result = hostedBoardWriteResult(mintedId, response)
   return {
     recordId: response.id,
     number: null,
-    dropped: result.dropped,
+    dropped: false,
     reached: null,
-    warning: result.duplicateOf ? boardDuplicateWarning(result.duplicateOf) : null,
+    warning: boardWriteWarning(result, warningContext),
   }
 }
 
@@ -577,7 +579,10 @@ export async function boardReply(
       rootId: result.rootRecordId,
       dropped: result.dropped,
       reached: result.reached,
-      warning: result.dropped ? boardDuplicateWarning(result.recordId) : null,
+      warning: boardWriteWarning(result, {
+        kind: 'reply',
+        rootId: result.rootRecordId,
+      }),
     } satisfies BoardReplyResult
   }
   const actor = authorFacts(c.env)
@@ -599,7 +604,7 @@ export async function boardReply(
     await writeDestination(c, reply.project),
   )
   return {
-    ...hostedPostResult(reply.id, row),
+    ...hostedPostResult(reply.id, row, { kind: 'reply', rootId: resolved.recordId }),
     rootId: id,
   } satisfies BoardReplyResult
 }

@@ -3,7 +3,10 @@ import {
   BOARD_DEFAULT_ACK_DEADLINE_MS,
   BOARD_REQUEST_DEFAULT_EXPIRY_MS,
 } from '../../../../shared/board-duration.ts'
-import { boardDuplicateWarning } from '../../../../shared/board-write-result.ts'
+import {
+  boardDuplicateWarning,
+  boardReplyDuplicateWarning,
+} from '../../../../shared/board-write-result.ts'
 import {
   BoardAcceptResultSchema,
   BoardListResultSchema,
@@ -126,7 +129,7 @@ test('hosted board procedures map responses and send each write to its resource 
         threadRootId: id,
         title: null,
         body: input.body,
-        duplicateOf: null,
+        duplicateOf: replyId,
       }
     },
     boardAccept: async (questionId: string, acceptedReplyId: string, destination: string) => {
@@ -187,8 +190,8 @@ test('hosted board procedures map responses and send each write to its resource 
   expect(BoardReplyResultSchema.parse(replied)).toMatchObject({
     id: replyId,
     rootId,
-    dropped: false,
-    warning: null,
+    dropped: true,
+    warning: boardReplyDuplicateWarning(replyId, rootId),
   })
   expect(BoardAcceptResultSchema.parse(accepted)).toMatchObject({
     accepted: replyId,

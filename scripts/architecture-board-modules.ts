@@ -296,6 +296,7 @@ export const boardModules: BoardModule[] = [
   ]),
   module('orchestrator/src/board/board-thread-service.ts', [
     '../../../shared/board-duration.ts',
+    '../../../shared/board-write-result.ts',
     '../../../shared/brand.ts',
     '../../../shared/board-reply-audience-options.ts',
     '../../../shared/record-id.ts',
@@ -311,6 +312,7 @@ export const boardModules: BoardModule[] = [
   ]),
   module('orchestrator/src/board/board-suggestions.ts', [
     '../../../shared/board-duration.ts',
+    '../../../shared/board-write-result.ts',
     '../../../shared/record-id.ts',
     '../database/db.ts',
     '../database/entity-number.ts',

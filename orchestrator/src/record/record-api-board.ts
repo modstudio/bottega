@@ -35,6 +35,7 @@ import {
   type HostedBoardSuccessorResult,
   type HostedBoardTakeClaimInput,
   type HostedBoardThread,
+  type HostedBoardWriteServerResponse,
   RecordBoardError,
 } from './record-board-contract.ts'
 import {
@@ -174,10 +175,12 @@ export type RecordBoardDeps = {
   boardStreamClock?: BoardStreamClock
   readBoardHead(input: BoardTenant): Promise<string>
   listBoardMessages(input: BoardTenant & HostedBoardOverviewFilters): Promise<HostedBoardOverview>
-  postBoardMessage(input: BoardTenant & HostedBoardPostInput): Promise<HostedBoardMessage>
+  postBoardMessage(
+    input: BoardTenant & HostedBoardPostInput,
+  ): Promise<HostedBoardWriteServerResponse>
   replyBoardMessage(
     input: BoardTenant & HostedBoardReplyInput & { rootId: string },
-  ): Promise<HostedBoardMessage>
+  ): Promise<HostedBoardWriteServerResponse>
   withdrawBoardMessage(
     input: BoardTenant & HostedBoardSessionInput & { id: string },
   ): Promise<HostedBoardMessage>

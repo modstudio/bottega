@@ -9,6 +9,7 @@ import {
   type ReplyAudienceOption,
   replyAudienceValue,
 } from '../../../shared/board-reply-audience-options.ts'
+import type { HostedBoardWriteResponse } from '../../../shared/board-write-result.ts'
 
 export { BOARD_PURPOSES, defaultBoardPurpose }
 
@@ -82,8 +83,9 @@ export type HostedBoardMessage = {
   hiddenReason?: string | null
 }
 
-export type HostedBoardWriteResponse = HostedBoardMessage & { duplicateOf: string | null }
-export type HostedBoardWriteClientResponse = HostedBoardMessage & { duplicateOf?: string | null }
+export type HostedBoardWriteServerResponse = HostedBoardMessage &
+  Required<Pick<HostedBoardWriteResponse, 'duplicateOf'>>
+export type HostedBoardWriteClientResponse = HostedBoardMessage & HostedBoardWriteResponse
 
 export type HostedBoardReply = {
   id: string

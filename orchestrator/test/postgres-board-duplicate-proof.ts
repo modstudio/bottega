@@ -67,6 +67,16 @@ export function registerBoardDuplicateProof(input: {
     const afterHidden = await input.post({ ...content, id: afterHiddenId })
     expect(afterHidden.status).toBe(200)
     expect(await json(afterHidden)).toMatchObject({ id: afterHiddenId, duplicateOf: null })
+
+    input.succeeds(
+      'postgres',
+      'postgres',
+      `UPDATE board_message SET expires_at=now() - interval '1 second' WHERE id='${afterHiddenId}';`,
+    )
+    const afterExpiryId = newRecordId()
+    const afterExpiry = await input.post({ ...content, id: afterExpiryId })
+    expect(afterExpiry.status).toBe(200)
+    expect(await json(afterExpiry)).toMatchObject({ id: afterExpiryId, duplicateOf: null })
   })
 
   test('a reply identical to a withdrawn reply posts anew', async () => {

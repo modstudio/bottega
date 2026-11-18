@@ -7,7 +7,8 @@ import {
 } from '../../../../shared/board-duration.ts'
 import { defaultBoardPurpose } from '../../../../shared/board-purpose.ts'
 import {
-  boardDuplicateWarning,
+  type BoardWriteDropped,
+  boardWriteWarning,
   hostedBoardWriteResult,
 } from '../../../../shared/board-write-result.ts'
 import { newRecordId } from '../../../../shared/record/schema.ts'
@@ -34,6 +35,22 @@ const t = initTRPC.context<Context>().create()
 const boardReplyInput = BoardReplyInputSchema.extend({ spaceId })
 const boardAcceptInput = BoardAcceptInputSchema.extend({ spaceId })
 const boardIdInput = BoardIdInputSchema.extend({ spaceId })
+
+type HostedBoardPostResult = Omit<z.input<typeof BoardPostResultSchema>, 'dropped'> & {
+  dropped: BoardWriteDropped
+}
+type HostedBoardReplyResult = Omit<z.input<typeof BoardReplyResultSchema>, 'dropped'> & {
+  dropped: BoardWriteDropped
+}
+
+const hostedBoardPostResult = (result: HostedBoardPostResult) =>
+  BoardPostResultSchema.parse(result) as Omit<typeof result, 'dropped'> & {
+    dropped: BoardWriteDropped
+  }
+const hostedBoardReplyResult = (result: HostedBoardReplyResult) =>
+  BoardReplyResultSchema.parse(result) as Omit<typeof result, 'dropped'> & {
+    dropped: BoardWriteDropped
+  }
 
 type HostedBoardClient = Pick<
   RecordClient,
@@ -151,11 +168,11 @@ function boardPostProcedure(deps: HostedBoardDeps) {
         destination.spaceId,
       )
       const result = hostedBoardWriteResult(id, message)
-      return BoardPostResultSchema.parse({
+      return hostedBoardPostResult({
         id: message.id,
         dropped: result.dropped,
         reached: null,
-        warning: result.duplicateOf ? boardDuplicateWarning(result.duplicateOf) : null,
+        warning: boardWriteWarning(result, { kind: 'root' }),
       })
     }),
   )
@@ -208,12 +225,15 @@ export function createHostedBoardRouter(
           input.spaceId,
         )
         const result = hostedBoardWriteResult(id, message)
-        return BoardReplyResultSchema.parse({
+        return hostedBoardReplyResult({
           id: message.id,
           rootId: message.threadRootId,
           dropped: result.dropped,
           reached: null,
-          warning: result.duplicateOf ? boardDuplicateWarning(result.duplicateOf) : null,
+          warning: boardWriteWarning(result, {
+            kind: 'reply',
+            rootId: input.id,
+          }),
         })
       }),
     ),

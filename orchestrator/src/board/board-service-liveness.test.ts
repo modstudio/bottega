@@ -18,3 +18,17 @@ test('a notice identical to a withdrawn notice posts anew', () => {
   expect(reposted.dropped).toBeFalse()
   expect(reposted.recordId).not.toBe(first.recordId)
 })
+
+test('a notice identical to an expired notice posts anew', () => {
+  const clock = Date.now()
+  const input = {
+    audience: 'operator',
+    title: 'Expired duplicate',
+    body: 'Post this content again after expiry.',
+    expiresMs: 1,
+  }
+  const first = postNotice(input, {}, clock)
+  const reposted = postNotice(input, {}, clock + 2)
+  expect(reposted.dropped).toBeFalse()
+  expect(reposted.recordId).not.toBe(first.recordId)
+})

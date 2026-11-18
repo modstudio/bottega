@@ -45,7 +45,7 @@ import {
   type HostedBoardReplyInput,
   type HostedBoardSessionInput,
   type HostedBoardThread,
-  type HostedBoardWriteResponse,
+  type HostedBoardWriteServerResponse,
   RecordBoardError,
 } from './record-board-contract.ts'
 import {
@@ -75,6 +75,15 @@ import {
 } from './record-board-scope.ts'
 import { type BoardTenant, boardUuidArray, withBoardTenant } from './record-board-tx.ts'
 
+/** Postgres predicate for a live, visible duplicate-eligible root. */
+function hostedBoardDuplicateLiveSql(tx: SQL, now: string, alias = '') {
+  const prefix = alias ? `${alias}.` : ''
+  return tx.unsafe(
+    `${prefix}withdrawn_at IS NULL AND ${prefix}expires_at>$1::timestamptz AND ${prefix}hidden_at IS NULL`,
+    [now],
+  )
+}
+
 type HostedBoardForcedScope = {
   scopeProjectIds: string[]
   recipientUserIds: string[]
@@ -92,8 +101,6 @@ type PreparedHostedPost = {
 
 export const RATE_LIMITED =
   'board post rate limit reached; retry after the ten-minute author window'
-export { hostedBoardFilingFailRefusal }
-
 function hostedBoardOrigin(row: Record<string, unknown>): HostedBoardMessage['origin'] {
   return {
     kind: row.author_session ? 'architect' : 'operator',
@@ -259,7 +266,7 @@ async function duplicateRootId(
       AND audience IS NOT DISTINCT FROM ${input.audience}
       AND title IS NOT DISTINCT FROM ${input.title}
       AND body=${input.body}
-      AND withdrawn_at IS NULL AND expires_at>${now}::timestamptz AND hidden_at IS NULL
+      AND ${hostedBoardDuplicateLiveSql(tx, now)}
       AND created_at>=${duplicateSince}::timestamptz
     ORDER BY created_at DESC
   `) as { id: string }[]
@@ -419,7 +426,7 @@ async function postMember(tx: SQL, values: OutsidePostInput): Promise<HostedBoar
 
 export async function postHostedBoardMessage(
   input: BoardTenant & HostedBoardPostInput,
-): Promise<HostedBoardWriteResponse> {
+): Promise<HostedBoardWriteServerResponse> {
   if (input.kind !== 'notice' && input.kind !== 'question') {
     throw new RecordBoardError('hosted board post kind must be notice or question', 400)
   }
@@ -666,7 +673,7 @@ async function replyMember(
       AND reply.thread_root_id=${String(root.id)}::uuid AND reply.body=${input.body}
       AND reply.audience IS NOT DISTINCT FROM ${audience}
       AND reply.withdrawn_at IS NULL AND reply.hidden_at IS NULL
-      AND root.withdrawn_at IS NULL AND root.expires_at>${now}::timestamptz AND root.hidden_at IS NULL
+      AND ${hostedBoardDuplicateLiveSql(tx, now, 'root')}
       AND reply.created_at>=${duplicateSince}::timestamptz
     ORDER BY reply.created_at DESC LIMIT 1
   `) as { id: string }[]
@@ -752,7 +759,7 @@ async function replyHostedBoardMessageTx(
 
 export async function replyHostedBoardMessage(
   input: BoardTenant & HostedBoardReplyInput & { rootId: string },
-): Promise<HostedBoardWriteResponse> {
+): Promise<HostedBoardWriteServerResponse> {
   const bodyRefusal = hostedBoardReplyBodyRefusal(input.body)
   if (bodyRefusal) throw new RecordBoardError(bodyRefusal, 400)
   const parsedAudience = input.audience ?? null
