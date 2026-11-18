@@ -612,7 +612,7 @@ function registerWorkflowActionTools(server: McpServer, ports: DocsMcpPorts): vo
     'next_workflow_step',
     {
       description:
-        'Close the current step with a one-line note and a validated evidence reference for its floor, then fetch the next; the cursor is the record.',
+        'Close the current step with a one-line note and validated evidence references for its floor, then fetch the next; artifact may be one reference or a list; the cursor is the record.',
       inputSchema: nextWorkflowStepInputSchema,
     },
     (input) =>

@@ -111,65 +111,77 @@ function evidenceFor(flag: string, floor: Floor): ValidatedEvidence {
     const url = 'https://github.com/acme/app/pull/7'
     if (floor.kind === 'recorded-artifact')
       return {
-        artifact: { ref: url, exists: true },
-        pullRequest: {
-          url,
-          repository: 'acme/app',
-          projectRepository: 'acme/app',
-          state: 'OPEN',
-          head: 'DEV-2015-work',
-          base: 'main',
-          cursorBranch: 'DEV-2015-work',
-          trunk: 'main',
-        },
+        artifacts: [
+          {
+            artifact: { ref: url, exists: true },
+            pullRequest: {
+              url,
+              repository: 'acme/app',
+              projectRepository: 'acme/app',
+              state: 'OPEN',
+              head: 'DEV-2015-work',
+              base: 'main',
+              cursorBranch: 'DEV-2015-work',
+              trunk: 'main',
+            },
+          },
+        ],
       }
     return {
-      artifact: { ref: `exec:${ID}`, exists: true },
-      exec: {
-        id: 7,
-        recordId: ID,
-        command: `${PLATFORM_SLUG} pr create`,
-        argv: [PLATFORM_SLUG, 'pr', 'create'],
-        exitCode: 0,
-        sessionMatches: true,
-        sessionAdoptedCursor: false,
-        createdAfterStepActivation: true,
-        checkoutLocation: 'branch',
-        headCommit: 'abc',
-        cursorBranch: 'DEV-2015-work',
-        output: url,
-      },
-      pullRequest: {
-        url,
-        repository: 'acme/app',
-        projectRepository: 'acme/app',
-        state: 'OPEN',
-        head: 'DEV-2015-work',
-        base: 'main',
-        cursorBranch: 'DEV-2015-work',
-        trunk: 'main',
-      },
+      artifacts: [
+        {
+          artifact: { ref: `exec:${ID}`, exists: true },
+          exec: {
+            id: 7,
+            recordId: ID,
+            command: `${PLATFORM_SLUG} pr create`,
+            argv: [PLATFORM_SLUG, 'pr', 'create'],
+            exitCode: 0,
+            sessionMatches: true,
+            sessionAdoptedCursor: false,
+            createdAfterStepActivation: true,
+            checkoutLocation: 'branch',
+            headCommit: 'abc',
+            cursorBranch: 'DEV-2015-work',
+            output: url,
+          },
+          pullRequest: {
+            url,
+            repository: 'acme/app',
+            projectRepository: 'acme/app',
+            state: 'OPEN',
+            head: 'DEV-2015-work',
+            base: 'main',
+            cursorBranch: 'DEV-2015-work',
+            trunk: 'main',
+          },
+        },
+      ],
     }
   }
   if (floor.kind === 'command-exit')
     return {
-      artifact: { ref: `exec:${ID}`, exists: true },
-      exec: {
-        id: 7,
-        recordId: ID,
-        command: 'true',
-        argv: ['true'],
-        exitCode: 0,
-        sessionMatches: true,
-        sessionAdoptedCursor: false,
-        createdAfterStepActivation: true,
-        checkoutLocation: 'branch',
-        headCommit: 'abc',
-        cursorBranch: 'DEV-2015-work',
-        output: '',
-      },
+      artifacts: [
+        {
+          artifact: { ref: `exec:${ID}`, exists: true },
+          exec: {
+            id: 7,
+            recordId: ID,
+            command: 'true',
+            argv: ['true'],
+            exitCode: 0,
+            sessionMatches: true,
+            sessionAdoptedCursor: false,
+            createdAfterStepActivation: true,
+            checkoutLocation: 'branch',
+            headCommit: 'abc',
+            cursorBranch: 'DEV-2015-work',
+            output: '',
+          },
+        },
+      ],
     }
-  return { artifact: { ref: 'task:DEV-2015', exists: true } }
+  return { artifacts: [{ artifact: { ref: 'task:DEV-2015', exists: true } }] }
 }
 
 function expectNamedFlagsClose(message: string, floor: Floor) {

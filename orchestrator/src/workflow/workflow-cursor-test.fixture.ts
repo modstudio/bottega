@@ -238,7 +238,7 @@ export function installEvidence(
       row.ordinal + 1,
       row.step_slug,
     ) as { number: number }
-  return { gate, artifact: `probe:${probe}`, ruling: ruling.number, task: taskKey }
+  return { gate, artifacts: [`probe:${probe}`], ruling: ruling.number, task: taskKey }
 }
 
 export function closeStep(

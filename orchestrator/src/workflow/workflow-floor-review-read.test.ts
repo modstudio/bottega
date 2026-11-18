@@ -46,7 +46,7 @@ test('a missing review read is refused with the recording remedy', async () => {
         stepOrdinal: 1,
         stepSlug: 'review-lenses',
         floors: catalogueFloors(['recorded-artifact']),
-        evidence: { artifact: `review-read:${readRecordId}` },
+        evidence: { artifacts: [`review-read:${readRecordId}`] },
         ports: { resolveTreeCommit: () => 'tip-commit' },
         d: database(),
       }),
@@ -77,7 +77,7 @@ test.each([
         stepOrdinal: 1,
         stepSlug: 'review-lenses',
         floors: catalogueFloors(['recorded-artifact']),
-        evidence: { artifact: `review-read:${readRecordId}` },
+        evidence: { artifacts: [`review-read:${readRecordId}`] },
         ports: { resolveTreeCommit: () => 'tip-commit' },
         d,
       })

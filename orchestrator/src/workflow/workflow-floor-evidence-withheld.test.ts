@@ -37,7 +37,7 @@ const gather = async (d: Database) =>
     stepOrdinal: 1,
     stepSlug: 'rebase',
     floors: [],
-    evidence: { artifact: 'exec:1' },
+    evidence: { artifacts: ['exec:1'] },
     ports: {
       resolveCheckout: () => ({
         project: 'fixture',
@@ -67,7 +67,7 @@ test('a withheld pr-create exec carries the withheld flag and no pull request', 
   expect(await gather(d)).toMatchObject({
     exec: { outputWithheld: true, output: '[withheld: secret-shaped content]' },
   })
-  expect((await gather(d)).pullRequest).toBeUndefined()
+  expect((await gather(d)).artifacts?.[0]?.pullRequest).toBeUndefined()
 })
 
 test('a withheld command is gathered separately from readable output and names its refusal', async () => {
@@ -82,7 +82,7 @@ test('a withheld command is gathered separately from readable output and names i
     exec: { argv: null, commandWithheld: true, outputWithheld: false, output: `opened ${url}` },
   })
 
-  const exec = evidence.exec!
+  const exec = evidence.artifacts![0]!.exec!
   expect(
     decidePullRequestEvidence({
       ...exec,

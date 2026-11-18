@@ -29,6 +29,11 @@ import type { nextWorkflowStepInputSchema } from './mcp-workflow-input.ts'
 const workflowRunEvidence = (run: string | number | undefined) =>
   run === undefined ? undefined : resolveRunIdentifier(db(), run)
 
+const workflowArtifactEvidence = (artifact: string | string[] | undefined): string[] =>
+  (artifact === undefined ? [] : Array.isArray(artifact) ? artifact : [artifact]).map(
+    (entry) => resolveProbeArtifact(db(), entry)!,
+  )
+
 function assertAdvanceRecordShapes(
   note: string,
   selfRuling?: string,
@@ -109,7 +114,7 @@ export async function advanceWorkflow(
         review: review === undefined ? undefined : resolveReviewIdentifier(db(), review),
         gate: gate === undefined ? undefined : resolveGateIdentifier(db(), gate),
         run: workflowRunEvidence(run),
-        artifact: resolveProbeArtifact(db(), artifact),
+        artifacts: workflowArtifactEvidence(artifact),
         task,
         defer,
         satisfies,

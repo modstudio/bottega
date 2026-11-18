@@ -440,7 +440,7 @@ function evidenceFromArgv(argv: string[]): WorkflowEvidenceInput {
         ? undefined
         : resolveGateIdentifier(db(), flagValue(argv, 'gate')!),
     run: run === undefined ? undefined : resolveRunIdentifier(db(), run),
-    artifact: resolveProbeArtifact(db(), flagValue(argv, 'artifact')),
+    artifacts: flagValues(argv, 'artifact').map((artifact) => resolveProbeArtifact(db(), artifact)!),
     task: flagValue(argv, 'task'),
     defer: flagValue(argv, 'defer'),
     satisfies: obligationUuid(flagValue(argv, 'satisfies')),

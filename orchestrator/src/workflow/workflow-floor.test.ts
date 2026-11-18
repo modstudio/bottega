@@ -72,9 +72,14 @@ const passingGate: ValidatedEvidence = {
   tree: { project: 'fixture', commit: 'abc' },
 }
 const passingRun: ValidatedEvidence = { run: { id: '8', terminal: true, exitCode: 0 } }
-const passingProbe: ValidatedEvidence = { probe: { id: 3, exitCode: 0 } }
+const passingProbe: ValidatedEvidence = {
+  artifacts: [
+    { artifact: { ref: 'probe:3', exists: true }, probe: { id: 3, exitCode: 0 } },
+  ],
+}
 const EXEC_RECORD_ID = '00000000-0000-4000-8000-000000000004'
-const passingExec: ValidatedEvidence = {
+const passingExecArtifact = {
+  artifact: { ref: `exec:${EXEC_RECORD_ID}`, exists: true },
   exec: {
     id: 4,
     recordId: EXEC_RECORD_ID,
@@ -84,13 +89,21 @@ const passingExec: ValidatedEvidence = {
     sessionMatches: true,
     sessionAdoptedCursor: false,
     createdAfterStepActivation: true,
-    checkoutLocation: 'branch',
+    checkoutLocation: 'branch' as const,
     headCommit: 'abc',
     cursorBranch: 'DEV-977-work',
     output: '',
   },
 }
-const presentArtifact: ValidatedEvidence = { artifact: { ref: 'probe:3', exists: true } }
+const passingExec: ValidatedEvidence = { artifacts: [passingExecArtifact] }
+const execEvidence = (
+  overrides: Partial<NonNullable<typeof passingExecArtifact.exec>>,
+): ValidatedEvidence => ({
+  artifacts: [{ ...passingExecArtifact, exec: { ...passingExecArtifact.exec, ...overrides } }],
+})
+const presentArtifact: ValidatedEvidence = {
+  artifacts: [{ artifact: { ref: 'probe:3', exists: true } }],
+}
 const closedTask: ValidatedEvidence = {
   task: {
     key: 'DEV-977',
@@ -305,7 +318,9 @@ test('a run offered to an artifact floor names the same run artifact form', () =
 test('a run artifact offered to a command floor names the same run command form', () => {
   const decision = decide({
     floors: [commandExit],
-    evidence: { artifactRunOffered: '8', artifact: { ref: '8', exists: true } },
+    evidence: {
+      artifacts: [{ artifactRunOffered: '8', artifact: { ref: '8', exists: true } }],
+    },
   })
   expect(decision).toEqual({
     action: 'refuse',
@@ -317,7 +332,14 @@ test('a run artifact offered to a command floor names the same run command form'
 test('a probe with the expected exit satisfies command-exit', () => {
   expect(decide({ floors: [commandExit], evidence: passingProbe }).action).toBe('allow')
   expect(
-    decide({ floors: [commandExit], evidence: { probe: { id: 3, exitCode: 1 } } }).action,
+    decide({
+      floors: [commandExit],
+      evidence: {
+        artifacts: [
+          { artifact: { ref: 'probe:3', exists: true }, probe: { id: 3, exitCode: 1 } },
+        ],
+      },
+    }).action,
   ).toBe('refuse')
 })
 
@@ -326,13 +348,7 @@ test('an exec with the expected exit satisfies command-exit', () => {
   expect(
     decide({
       floors: [commandExit],
-      evidence: {
-        exec: {
-          ...passingExec.exec!,
-          command: `${PLATFORM_SLUG} pr create`,
-          exitCode: 1,
-        },
-      },
+      evidence: execEvidence({ command: `${PLATFORM_SLUG} pr create`, exitCode: 1 }),
     }).action,
   ).toBe('refuse')
 })
@@ -341,14 +357,7 @@ test('a failed exec cannot use the recorded-artifact alternative on a command-ex
   expect(
     decide({
       floors: [commandExit, artifact],
-      evidence: {
-        artifact: { ref: `exec:${EXEC_RECORD_ID}`, exists: true },
-        exec: {
-          ...passingExec.exec!,
-          command: `${PLATFORM_SLUG} pr create`,
-          exitCode: 1,
-        },
-      },
+      evidence: execEvidence({ command: `${PLATFORM_SLUG} pr create`, exitCode: 1 }),
     }),
   ).toEqual({
     action: 'refuse',
@@ -362,8 +371,7 @@ test('a passing gate wins over a failed exec recorded as an artifact', () => {
       floors: [commandExit, artifact],
       evidence: {
         ...passingGate,
-        artifact: { ref: `exec:${EXEC_RECORD_ID}`, exists: true },
-        exec: { ...passingExec.exec!, exitCode: 1 },
+        ...execEvidence({ exitCode: 1 }),
       },
     }).action,
   ).toBe('allow')
@@ -375,8 +383,7 @@ test('a passing terminal run wins over a failed exec recorded as an artifact', (
       floors: [commandExit, artifact],
       evidence: {
         ...passingRun,
-        artifact: { ref: `exec:${EXEC_RECORD_ID}`, exists: true },
-        exec: { ...passingExec.exec!, exitCode: 1 },
+        ...execEvidence({ exitCode: 1 }),
       },
     }).action,
   ).toBe('allow')
@@ -388,8 +395,7 @@ test('an incidental failed exec does not prevent deferral of command-exit', () =
       floors: [deferrableExit],
       evidence: {
         deferReason: 'merge after landing',
-        artifact: { ref: `exec:${EXEC_RECORD_ID}`, exists: true },
-        exec: { ...passingExec.exec!, exitCode: 1 },
+        ...execEvidence({ exitCode: 1 }),
       },
     }),
   ).toMatchObject({
@@ -402,10 +408,7 @@ test('an exec matching a nonzero expected exit satisfies command-exit', () => {
   expect(
     decide({
       floors: [{ ...commandExit, expectedExitCode: 1 }, artifact],
-      evidence: {
-        artifact: { ref: `exec:${EXEC_RECORD_ID}`, exists: true },
-        exec: { ...passingExec.exec!, exitCode: 1 },
-      },
+      evidence: execEvidence({ exitCode: 1 }),
     }).action,
   ).toBe('allow')
 })
@@ -414,14 +417,7 @@ test('a failed exec remains valid for a recorded-artifact-only step', () => {
   expect(
     decide({
       floors: [artifact],
-      evidence: {
-        artifact: { ref: `exec:${EXEC_RECORD_ID}`, exists: true },
-        exec: {
-          ...passingExec.exec!,
-          command: `${PLATFORM_SLUG} pr create`,
-          exitCode: 1,
-        },
-      },
+      evidence: execEvidence({ command: `${PLATFORM_SLUG} pr create`, exitCode: 1 }),
     }).action,
   ).toBe('allow')
 })
@@ -429,13 +425,7 @@ test('a failed exec remains valid for a recorded-artifact-only step', () => {
 test('an exec from another session is refused with the rerun remedy', () => {
   const decision = decide({
     floors: [commandExit],
-    evidence: {
-      exec: {
-        ...passingExec.exec!,
-        sessionMatches: false,
-        sessionAdoptedCursor: false,
-      },
-    },
+    evidence: execEvidence({ sessionMatches: false, sessionAdoptedCursor: false }),
   })
   expect(decision).toEqual({
     action: 'refuse',
@@ -447,13 +437,7 @@ test("an adopting session's exec satisfies command-exit", () => {
   expect(
     decide({
       floors: [commandExit],
-      evidence: {
-        exec: {
-          ...passingExec.exec!,
-          sessionMatches: false,
-          sessionAdoptedCursor: true,
-        },
-      },
+      evidence: execEvidence({ sessionMatches: false, sessionAdoptedCursor: true }),
     }).action,
   ).toBe('allow')
 })
@@ -461,12 +445,7 @@ test("an adopting session's exec satisfies command-exit", () => {
 test('an exec older than the active step is refused with the rerun remedy', () => {
   const decision = decide({
     floors: [commandExit],
-    evidence: {
-      exec: {
-        ...passingExec.exec!,
-        createdAfterStepActivation: false,
-      },
-    },
+    evidence: execEvidence({ createdAfterStepActivation: false }),
   })
   expect(decision).toEqual({
     action: 'refuse',
@@ -496,17 +475,21 @@ test('pull-request evidence accepts a link with the cursor head and base', () =>
     decide({
       floors: [pullRequestExit, pullRequestArtifact],
       evidence: {
-        artifact: { ref: 'https://github.com/acme/app/pull/7', exists: true },
-        pullRequest: {
-          url: 'https://github.com/acme/app/pull/7',
-          repository: 'acme/app',
-          projectRepository: 'acme/app',
-          state: 'OPEN',
-          head: 'DEV-977-work',
-          base: 'main',
-          cursorBranch: 'DEV-977-work',
-          trunk: 'main',
-        },
+        artifacts: [
+          {
+            artifact: { ref: 'https://github.com/acme/app/pull/7', exists: true },
+            pullRequest: {
+              url: 'https://github.com/acme/app/pull/7',
+              repository: 'acme/app',
+              projectRepository: 'acme/app',
+              state: 'OPEN',
+              head: 'DEV-977-work',
+              base: 'main',
+              cursorBranch: 'DEV-977-work',
+              trunk: 'main',
+            },
+          },
+        ],
       },
     }).action,
   ).toBe('allow')
@@ -514,17 +497,21 @@ test('pull-request evidence accepts a link with the cursor head and base', () =>
     decide({
       floors: [pullRequestExit, pullRequestArtifact],
       evidence: {
-        artifact: { ref: 'https://github.com/acme/app/pull/7', exists: true },
-        pullRequest: {
-          url: 'https://github.com/acme/app/pull/7',
-          repository: 'acme/app',
-          projectRepository: 'acme/app',
-          state: 'OPEN',
-          head: 'DEV-977-work',
-          base: 'wrong',
-          cursorBranch: 'DEV-977-work',
-          trunk: 'main',
-        },
+        artifacts: [
+          {
+            artifact: { ref: 'https://github.com/acme/app/pull/7', exists: true },
+            pullRequest: {
+              url: 'https://github.com/acme/app/pull/7',
+              repository: 'acme/app',
+              projectRepository: 'acme/app',
+              state: 'OPEN',
+              head: 'DEV-977-work',
+              base: 'wrong',
+              cursorBranch: 'DEV-977-work',
+              trunk: 'main',
+            },
+          },
+        ],
       },
     }).action,
   ).toBe('refuse')

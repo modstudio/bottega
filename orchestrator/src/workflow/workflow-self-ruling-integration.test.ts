@@ -92,7 +92,7 @@ async function openAtRuling(d: Database): Promise<void> {
       note,
       context,
       d,
-      { artifact: `probe:${installProbe(d)}` },
+      { artifacts: [`probe:${installProbe(d)}`] },
       ports,
     )
   }
@@ -563,7 +563,7 @@ test('self-ruling refuses ask autonomy without changing the cursor or questions'
       note,
       context,
       d,
-      { artifact: `probe:${installProbe(d)}` },
+      { artifacts: [`probe:${installProbe(d)}`] },
       ports,
     )
   }

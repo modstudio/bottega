@@ -50,6 +50,7 @@ import {
   githubPullRequestUrlIn,
   parseArtifactRef,
   pullRequestCreateArgv,
+  type ValidatedArtifactEvidence,
   type ValidatedEvidence,
 } from './workflow-floor.ts'
 import { gitText, productionResolveCheckout } from './workflow-floor-evidence-checkout.ts'
@@ -76,7 +77,7 @@ export type WorkflowEvidenceInput = {
   review?: string
   gate?: string | number
   run?: string
-  artifact?: string
+  artifacts?: string[]
   task?: string
   defer?: string
   satisfies?: string
@@ -629,7 +630,7 @@ function pullRequestEvidence(
   d: Database,
   ports: FloorEvidencePorts,
   flag = `--artifact ${url}`,
-): NonNullable<ValidatedEvidence['pullRequest']> {
+): NonNullable<ValidatedArtifactEvidence['pullRequest']> {
   const project = projectByName(identity.project, d)
   if (!project) throw new Error(`project ${identity.project} is not registered`)
   const trunk = project.settings.trunk?.trim()
@@ -761,7 +762,7 @@ async function gatheredCommandEvidence(
   d: Database,
   checkout: CheckoutResolution,
   ports: FloorEvidencePorts,
-): Promise<Pick<ValidatedEvidence, 'probe' | 'exec' | 'pullRequest'>> {
+): Promise<Pick<ValidatedArtifactEvidence, 'probe' | 'exec' | 'pullRequest'>> {
   if (kind === 'probe') return { probe: { id, exitCode: row.exit_code } }
   const session = await sessionOrAdopterFor(cursorId, identity.session, row.session_id, d)
   const argv = recordedArgv(row.command)
@@ -769,7 +770,7 @@ async function gatheredCommandEvidence(
   const url = pullRequestCreateArgv(argv, commandIdentity)
     ? githubPullRequestUrlIn(row.output_tail)
     : undefined
-  const exec: NonNullable<ValidatedEvidence['exec']> = {
+  const exec: NonNullable<ValidatedArtifactEvidence['exec']> = {
     id,
     recordId,
     command: recordedCommand(row.command),
@@ -849,7 +850,7 @@ function recordedCommand(value: string): string {
 function offeredArtifactRunEvidence(
   parsed: ArtifactRef,
   d: Database,
-): Pick<ValidatedEvidence, 'artifactRunOffered'> {
+): Pick<ValidatedArtifactEvidence, 'artifactRunOffered'> {
   if (parsed.kind === 'run') return { artifactRunOffered: parsed.id }
   if (parsed.kind === 'id') {
     const run = d.query('SELECT record_id FROM run WHERE number=?').get(parsed.id) as {
@@ -924,62 +925,71 @@ async function gatherArtifactEvidence(
   ports: FloorEvidencePorts,
   resolveCheckout: NonNullable<FloorEvidencePorts['resolveCheckout']>,
 ): Promise<void> {
-  if (!input.evidence.artifact?.trim()) return
-  const offeredArtifact = resolvedOfferedArtifact(d, input.evidence.artifact)
-  const parsed = parseArtifactRef(offeredArtifact)
-  if ('error' in parsed) throw new Error(parsed.error)
-  gathered.artifact = await resolveArtifact(
-    parsed,
-    offeredArtifact,
-    input.identity,
-    {
-      cursorId: input.cursorId,
-      stepOrdinal: input.stepOrdinal,
-      stepSlug: input.stepSlug,
-    },
-    d,
-    ports,
-    resolveCheckout,
-    gathered.tree!.commit,
-  )
-  Object.assign(gathered, offeredArtifactRunEvidence(parsed, d))
-  if (parsed.kind === 'pull-request')
-    gathered.pullRequest = pullRequestEvidence(parsed.url, input.identity, d, ports)
-  if (parsed.kind !== 'probe' && parsed.kind !== 'exec') return
-  const row = d
-    .query<
-      {
-        number: number
-        command: string
-        cwd: string
-        head_commit: string | null
-        exit_code: number
-        session_id: string | null
-        created_at: string
-        output_tail: string
-        withheld: number
-        command_withheld: number
-      },
-      [string]
-    >(
-      'SELECT number,command,cwd,head_commit,exit_code,session_id,created_at,output_tail,withheld,command_withheld FROM probe WHERE record_id=?',
-    )
-    .get(parsed.recordId)!
-  const checkout = resolveCheckout(row.cwd, row.head_commit, input.identity.branch)
-  Object.assign(
-    gathered,
-    await gatheredCommandEvidence(
-      parsed.kind,
-      row.number,
-      parsed.recordId,
-      row,
-      input.identity,
-      input.cursorId,
-      d,
-      checkout,
-      ports,
-    ),
-  )
+  const seen = new Set<string>()
+  for (const artifact of input.evidence.artifacts ?? []) {
+    if (!artifact.trim()) continue
+    const offeredArtifact = resolvedOfferedArtifact(d, artifact)
+    if (seen.has(offeredArtifact)) continue
+    seen.add(offeredArtifact)
+    const parsed = parseArtifactRef(offeredArtifact)
+    if ('error' in parsed) throw new Error(parsed.error)
+    const entry: ValidatedArtifactEvidence = {
+      artifact: await resolveArtifact(
+        parsed,
+        offeredArtifact,
+        input.identity,
+        {
+          cursorId: input.cursorId,
+          stepOrdinal: input.stepOrdinal,
+          stepSlug: input.stepSlug,
+        },
+        d,
+        ports,
+        resolveCheckout,
+        gathered.tree!.commit,
+      ),
+      ...offeredArtifactRunEvidence(parsed, d),
+    }
+    if (parsed.kind === 'pull-request')
+      entry.pullRequest = pullRequestEvidence(parsed.url, input.identity, d, ports)
+    if (parsed.kind === 'probe' || parsed.kind === 'exec') {
+      const row = d
+        .query<
+          {
+            number: number
+            command: string
+            cwd: string
+            head_commit: string | null
+            exit_code: number
+            session_id: string | null
+            created_at: string
+            output_tail: string
+            withheld: number
+            command_withheld: number
+          },
+          [string]
+        >(
+          'SELECT number,command,cwd,head_commit,exit_code,session_id,created_at,output_tail,withheld,command_withheld FROM probe WHERE record_id=?',
+        )
+        .get(parsed.recordId)!
+      const checkout = resolveCheckout(row.cwd, row.head_commit, input.identity.branch)
+      Object.assign(
+        entry,
+        await gatheredCommandEvidence(
+          parsed.kind,
+          row.number,
+          parsed.recordId,
+          row,
+          input.identity,
+          input.cursorId,
+          d,
+          checkout,
+          ports,
+        ),
+      )
+    }
+    ;(gathered.artifacts ??= []).push(entry)
+  }
 }
 
 export async function gatherValidatedEvidenceBase(
