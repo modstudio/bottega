@@ -375,6 +375,22 @@ test('record adapter matches SQLite rows and normalizes taskless stages', async 
   expect((await taskless.stageByHandle('fixture', 2))?.task_flow_record_id).toBeNull()
 })
 
+test('removing copied text leaves its reference readable in both stores', async () => {
+  const d = database()
+  d.query('DELETE FROM workflow_step_text WHERE record_id=?').run(TEXT_ID)
+  const local = sqliteTaskFlowReadStore(d)
+  const stage = hostedStage()
+  stage.stage.stepTexts = []
+  const hosted = recordTaskFlowReadStore(
+    d,
+    createMemoryRecordApiClient({ taskFlowStages: [stage] }),
+  )
+
+  expect(await local.liveTextAttachment(TEXT_ID)).toBeNull()
+  expect(await hosted.liveTextAttachment(TEXT_ID)).toBeNull()
+  expect(await hosted.copiedTextReference(TEXT_ID)).toBe(await local.copiedTextReference(TEXT_ID))
+})
+
 test('record adapter reads every page and applies linked and machine filters', async () => {
   const d = database()
   const stages = [hostedStage(), hostedStage({ taskless: true, number: 2 })]

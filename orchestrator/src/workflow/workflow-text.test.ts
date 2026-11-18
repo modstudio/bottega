@@ -353,7 +353,7 @@ describe('workflow text lifecycle', () => {
     await abandon(abandoned, abandonedCursor, 'no longer needed')
     expect(rowCount(abandoned, abandonedCursor)).toBe(0)
     await expect(showWorkflowText(abandonedReference, abandoned)).rejects.toThrow(
-      `${abandonedReference} is not held on this machine; attachments of a cursor not linked to a task are removed when the cursor closes, and an id from another machine is readable only through its task document`,
+      `${abandonedReference} is not held on this machine; no live workflow text or copy link was found, and an id from another machine is readable only through its task document`,
     )
   })
 

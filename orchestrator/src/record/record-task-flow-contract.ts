@@ -122,7 +122,7 @@ export type HostedTaskFlowStageById = z.infer<typeof hostedTaskFlowStageByIdSche
 
 export const hostedTaskFlowTextByIdSchema = z.object({
   space_id: z.string().uuid().optional(),
-  text: hostedTaskFlowStepTextSchema,
+  text: hostedTaskFlowStepTextSchema.nullable(),
   stage: z.object({ id: z.string().uuid(), number: z.number().int().positive() }),
   copy: hostedTaskFlowTextCopySchema.nullable(),
 })

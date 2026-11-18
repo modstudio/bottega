@@ -49,3 +49,19 @@ test('task-flow by-id client schema accepts a response without space_id', () => 
     }),
   ).not.toHaveProperty('space_id')
 })
+
+test('task-flow text client schema accepts a durable copy after live text removal', () => {
+  expect(
+    hostedTaskFlowTextByIdSchema.parse({
+      text: null,
+      stage: { id: ID, number: 1 },
+      copy: {
+        id: ID,
+        workflowTextRecordId: ID,
+        stageRecordId: ID,
+        taskDocumentReference: 'task:DEV-2416/guard',
+        copiedAt: '2026-11-17T00:00:00.000Z',
+      },
+    }),
+  ).toMatchObject({ text: null, copy: { taskDocumentReference: 'task:DEV-2416/guard' } })
+})

@@ -309,12 +309,13 @@ export function memoryTaskFlowClient(input: MemoryTaskFlowInput): Partial<Record
         if (!inDestination(row, input, destination)) continue
         const { stage } = row
         const text = stage.stepTexts?.find((row) => row.id === id)
-        if (text)
+        const copy = stage.textCopies?.find((row) => row.workflowTextRecordId === id)
+        if (text || copy)
           return {
             space_id: input.taskFlowProjectSpaces?.[stage.projectId],
-            text,
+            text: text ?? null,
             stage: { id: stage.id, number: stage.number },
-            copy: stage.textCopies?.find((row) => row.workflowTextRecordId === id) ?? null,
+            copy: copy ?? null,
           }
       }
       return null

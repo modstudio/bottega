@@ -87,7 +87,7 @@ test('an unknown token refuses with its condition and remedy', async () => {
     }),
   ).rejects.toThrow(
     `carried attachments could not be resolved before dispatch:\n- ${FIRST}: ${FIRST} is not held on this machine; ` +
-      'attachments of a cursor not linked to a task are removed when the cursor closes, and an id from another ' +
+      'no live workflow text or copy link was found, and an id from another ' +
       `machine is readable only through its task document\n  remedy: re-attach the text with ${PLATFORM_SLUG} workflow attach, ` +
       "read another machine's attachment through its task document, or paste the body into the spec",
   )

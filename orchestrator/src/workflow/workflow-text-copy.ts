@@ -451,7 +451,7 @@ export function workflowTextUncopiedReport(
 export class WorkflowTextNotHeldError extends Error {
   constructor(token: string) {
     super(
-      `${token} is not held on this machine; attachments of a cursor not linked to a task are removed when the cursor closes, and an id from another machine is readable only through its task document`,
+      `${token} is not held on this machine; no live workflow text or copy link was found, and an id from another machine is readable only through its task document`,
     )
     this.name = 'WorkflowTextNotHeldError'
   }

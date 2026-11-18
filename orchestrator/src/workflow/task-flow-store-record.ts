@@ -391,7 +391,7 @@ class RecordTaskFlowReadStore {
   }
   async textByRecordId(recordId: string) {
     const result = await this.readText(recordId)
-    return result
+    return result?.text
       ? {
           cursor_record_id: result.text.stageRecordId,
           step_ordinal: result.text.stepOrdinal,
@@ -402,7 +402,7 @@ class RecordTaskFlowReadStore {
   }
   async textAttachmentByRecordId(recordId: string) {
     const result = await this.readText(recordId)
-    return result ? textRow(result.text) : null
+    return result?.text ? textRow(result.text) : null
   }
   async textRecordIdsForStage(stageRecordId: string) {
     return (await this.textsForStage(stageRecordId)).map(({ id }) => id)
@@ -431,7 +431,7 @@ class RecordTaskFlowReadStore {
   }
   async liveTextAttachment(recordId: string) {
     const result = await this.readText(recordId)
-    return result
+    return result?.text
       ? {
           cursor: result.stage.number,
           step_slug: result.text.stepSlug,
