@@ -188,10 +188,6 @@
     "reason": "untested"
   },
   {
-    "route": "GET /v1/questions",
-    "reason": "untested"
-  },
-  {
     "route": "GET /v1/releases",
     "reason": "untested"
   },
@@ -241,10 +237,6 @@
   },
   {
     "route": "GET /v1/task-flow/project-reference-counts",
-    "reason": "untested"
-  },
-  {
-    "route": "GET /v1/task-flow/texts/:id",
     "reason": "untested"
   },
   {

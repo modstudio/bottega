@@ -1,12 +1,12 @@
 import { afterAll, beforeAll, expect, test } from 'bun:test'
 import { resolvedRecordOrigin } from '../../../shared/record-api-url.ts'
+import { installRecordApiClient } from '../../test/fixtures/record-api.ts'
 import {
   createRecordContractFixture,
   RECORD_CONTRACT_SPACE_A,
   RECORD_CONTRACT_USER,
   type RecordContractFixture,
 } from '../../test/fixtures/record-contract.ts'
-import { installRecordApiClient } from '../../test/fixtures/record-api.ts'
 import { rememberProjectSpace } from '../project-space-cache.ts'
 import { taskFlowReadStore } from './task-flow-store.ts'
 import { composeWorkflowWithCursor } from './workflow-cursor.ts'

@@ -27,8 +27,8 @@ import type { WorkflowEvidenceInput } from './workflow-evidence-input.ts'
 import { allowedCloseFloor, decideCloseFloors } from './workflow-floor.ts'
 import { applyFloorDecision } from './workflow-floor-apply.ts'
 import type { FloorEvidencePorts } from './workflow-floor-evidence.ts'
-import { productionWorkflowFloorPorts } from './workflow-production-floor-ports.ts'
 import { handoffSourceRefusal, handoffTargetRefusal } from './workflow-handoff-refusal.ts'
+import { productionWorkflowFloorPorts } from './workflow-production-floor-ports.ts'
 import {
   followTaskCursorClaim,
   type TaskCursorClaimPorts,
@@ -50,6 +50,7 @@ type HandoffInput = {
   taskClaimPorts?: TaskCursorClaimPorts
   evidence?: WorkflowEvidenceInput
   floorPorts?: FloorEvidencePorts
+  graduatingUntouchedExplore?: true
 }
 
 export function handoffTargetArguments(
@@ -99,6 +100,11 @@ async function validateHandoffSourceFloor(input: HandoffInput, d: Database) {
     false,
     step,
   )
+}
+
+async function validateHandoffSourceForWrite(input: HandoffInput, d: Database) {
+  await validateHandoffSource(input, d)
+  if (!input.graduatingUntouchedExplore) await validateHandoffSourceFloor(input, d)
 }
 
 async function validateHandoffTarget(input: HandoffInput, d: Database) {
@@ -264,8 +270,7 @@ async function handoffKeyedWorkflow(input: HandoffInput, d: Database) {
 
 export async function handoffWorkflow(input: HandoffInput) {
   const d = input.database ?? db()
-  await validateHandoffSource(input, d)
-  await validateHandoffSourceFloor(input, d)
+  await validateHandoffSourceForWrite(input, d)
   if (input.row.workflow_key) return handoffKeyedWorkflow(input, d)
 
   const validated = await validateHandoffTarget(input, d)
@@ -353,6 +358,7 @@ export async function handoffGraduatingExplore(
     database,
     commitCount,
     taskClaimPorts,
+    graduatingUntouchedExplore: true,
   })
   const row = await taskFlowReadStore(database, context.taskFlowClient).stageByHandle(
     composition.project,

@@ -406,7 +406,7 @@ fork a workflow into a new draft version
 
 ## bottega workflow handoff
 
-**Synopsis:** `bottega workflow handoff <workflow> [--cursor <value>] [--mode <value>] [--project <value>] [--arg <value>] [--reason <value>] [--json]`
+**Synopsis:** `bottega workflow handoff <workflow> [--cursor <value>] [--mode <value>] [--project <value>] [--gate <value>] [--run <value>] [--artifact <value>] [--task <value>] [--arg <value>] [--reason <value>] [--json]`
 
 close the current cursor by opening a named workflow for the same key
 
@@ -415,6 +415,10 @@ close the current cursor by opening a named workflow for the same key
 - `--cursor <value>`: select this workflow cursor
 - `--mode <value>`: select the target workflow mode
 - `--project <value>`: select this registered project
+- `--gate <value>`: cite a gate as floor evidence
+- `--run <value>`: cite a run as floor evidence
+- `--artifact <value>`: cite an artifact as floor evidence
+- `--task <value>`: cite a task as floor evidence
 - `--arg <value>`: supply a target workflow argument as name=value
 - `--reason <value>`: record why this change is being made
 - `--json`: print JSON output
