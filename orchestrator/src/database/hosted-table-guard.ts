@@ -71,6 +71,12 @@ export const HOSTED_LOCAL_SQL_ALLOWED_FILES = [
       'Record synchronization adapters query only their machine-local outbox and cache tables',
   },
   {
+    pattern: /^orchestrator\/src\/record\/record-sign-in-history-upload\.ts$/,
+    reason:
+      "The one-time sign-in transition reads local task-flow and question history through withDatabaseForMigrationStep's owned handle, outside the store-hooks guard, to upload before local deletion",
+    expectedSites: 6,
+  },
+  {
     pattern: /^orchestrator\/src\/record\/record-cache-workflow\.ts$/,
     reason:
       'Workflow record-cache SQL is selected only on local installs by readRecordInstallBinding(local).bound',
