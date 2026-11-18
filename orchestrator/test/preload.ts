@@ -25,6 +25,7 @@ import {
   recordTestSetup,
   recordTestTeardown,
 } from './gate-timings-reporter.ts'
+import { installTestNetworkGuard, interceptedTestFetchCalls } from './network-guard.ts'
 
 const docSecretScannerHolder = globalThis as typeof globalThis & {
   [DOC_SECRET_SCANNER_KEY]?: SecretScanner
@@ -33,7 +34,9 @@ docSecretScannerHolder[DOC_SECRET_SCANNER_KEY] = () => ({ status: 'clean' })
 
 export const dir = mkdtempSync(join(tmpdir(), 'orch-test-'))
 const originalPath = process.env.PATH
+const originalFetch = globalThis.fetch
 const provisionedPostgresContainer = process.env.BOTTEGA_TEST_POSTGRES_CONTAINER
+installTestNetworkGuard(originalFetch)
 
 // This is the only sanctioned route past the docker shim: the Postgres runner
 // must have provisioned a container before the test preload loads.
@@ -253,6 +256,7 @@ beforeEach(() => {
   callerEnvironmentBeforeTest = Object.fromEntries(
     Object.entries(process.env).filter(([key]) => callerEnvironmentKey(key)),
   )
+  installTestNetworkGuard(originalFetch)
   installRecordApiClient(createMemoryRecordApiClient())
   registerStandardTransports()
   assertTestHubDatabase()
@@ -332,7 +336,9 @@ function restoreEnvironment(name: string, value: string | undefined): void {
 }
 
 afterAll(() => {
+  console.log(`test network guard intercepted fetch calls: ${interceptedTestFetchCalls()}`)
   Bun.spawnSync = originalBunSpawnSync
+  globalThis.fetch = originalFetch
   if (originalKeychainPlatform === undefined) delete keychainPlatformHolder[KEYCHAIN_PLATFORM_KEY]
   else keychainPlatformHolder[KEYCHAIN_PLATFORM_KEY] = originalKeychainPlatform
   closeDatabaseForFixture()
