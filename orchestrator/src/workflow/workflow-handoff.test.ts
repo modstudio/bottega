@@ -253,6 +253,55 @@ test('keyless handoff takes the claim, adopts the key, and moves context to its 
   ).toEqual({ holder_id: successor.record_id })
 })
 
+const successfulClaimPorts = {
+  take: async () => ({ action: 'taken', recordId: 'claim', number: 1 }) as never,
+  release: async () => ({ released: 1 }),
+}
+
+function failingKeylessHandoff(fixture: Awaited<ReturnType<typeof keylessFixture>>) {
+  return handoffWorkflow({
+    row: fixture.row,
+    workflow: 'handoff-target',
+    mode: 'default',
+    args: {
+      key: 'DEV-KEYLESS',
+      branch: 'DEV-KEYLESS-work',
+      worktree: '/tmp/keyless-work',
+    },
+    reason: 'task identified',
+    context: {
+      ...fixture.context,
+      taskRecordId: 'task-DEV-KEYLESS',
+      taskStatusCategory: 'active',
+    },
+    live: {},
+    database: fixture.d,
+    taskClaimPorts: successfulClaimPorts,
+  })
+}
+
+test('keyless handoff failure before adoption reports that the cursor remains keyless', async () => {
+  const fixture = await keylessFixture()
+  fixture.d.exec(`CREATE TRIGGER fail_keyless_adoption
+    BEFORE UPDATE OF workflow_key ON workflow_cursor
+    BEGIN SELECT RAISE(ABORT, 'adoption exploded'); END`)
+
+  await expect(failingKeylessHandoff(fixture)).rejects.toThrow(
+    `adoption exploded; cursor ${fixture.row.id} remains keyless`,
+  )
+})
+
+test('keyless handoff failure after adoption reports that the cursor is keyed', async () => {
+  const fixture = await keylessFixture()
+  fixture.d.exec(`CREATE TRIGGER fail_keyless_successor
+    BEFORE INSERT ON workflow_cursor WHEN NEW.handed_off_from_record_id IS NOT NULL
+    BEGIN SELECT RAISE(ABORT, 'successor exploded'); END`)
+
+  await expect(failingKeylessHandoff(fixture)).rejects.toThrow(
+    `successor exploded; cursor ${fixture.row.id} is now keyed to DEV-KEYLESS`,
+  )
+})
+
 test('a refused keyless claim leaves the source cursor and context untouched and names the holder', async () => {
   const fixture = await keylessFixture()
   const before = cursorSnapshot(fixture.d, fixture.row.record_id)

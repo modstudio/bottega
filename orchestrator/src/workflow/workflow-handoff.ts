@@ -225,6 +225,7 @@ export async function handoffWorkflow(input: HandoffInput) {
     },
     input.taskClaimPorts,
   )
+  let adoptedCursor = false
   try {
     await adoptWorkflowTask(
       input.row,
@@ -234,6 +235,7 @@ export async function handoffWorkflow(input: HandoffInput) {
       input.context.taskFlowClient,
       input.context.taskStatusCategory,
     )
+    adoptedCursor = true
     const adopted = await taskFlowReadStore(d, input.context.taskFlowClient).stageByRecordId(
       input.row.record_id,
     )
@@ -259,7 +261,7 @@ export async function handoffWorkflow(input: HandoffInput) {
     const detail = error instanceof Error ? error.message : String(error)
     const retry = `workflow handoff ${input.workflow}${workflowCursorReference(input.row.id, input.row.project).cli} --arg key=${key}`
     throw new Error(
-      `${detail}; cursor ${input.row.id} ${input.row.workflow_key ? `is now keyed to ${key}` : 'remains keyless'}; retry with ${retry}${releaseWarning ? `; ${releaseWarning}` : ''}`,
+      `${detail}; cursor ${input.row.id} ${adoptedCursor ? `is now keyed to ${key}` : 'remains keyless'}; retry with ${retry}${releaseWarning ? `; ${releaseWarning}` : ''}`,
     )
   }
 }
