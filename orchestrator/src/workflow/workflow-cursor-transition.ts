@@ -17,7 +17,15 @@ export type CursorTransition =
 
 export type CursorStartDecision = 'insert' | 'reuse' | 'retire'
 
-export const cursorOwnerVerbs = ['serve', 'await', 'advance', 'compose', 'rule', 'abandon'] as const
+export const cursorOwnerVerbs = [
+  'serve',
+  'await',
+  'advance',
+  'compose',
+  'handoff',
+  'rule',
+  'abandon',
+] as const
 export type CursorOwnerVerb = (typeof cursorOwnerVerbs)[number]
 declare const cursorOwnerBrand: unique symbol
 export type CursorOwner = string & { readonly [cursorOwnerBrand]: true }
@@ -36,7 +44,7 @@ export function cursorOwnerAfter(
   storedSession: string | null,
   callerSession: string | null | undefined,
 ): CursorOwner | null {
-  if (verb === 'advance' || verb === 'compose')
+  if (verb === 'advance' || verb === 'compose' || verb === 'handoff')
     return storedCursorOwner(callerSession ?? storedSession)
   return storedCursorOwner(storedSession ?? callerSession ?? null)
 }

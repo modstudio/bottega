@@ -89,12 +89,12 @@ export function registerTaskFlowHandoffProof(
       input.admin(
         `INSERT INTO context_item(id,space_id,holder_kind,holder_id,slug,kind,body,source,created_at,updated_at) VALUES ('${newRecordId()}','${input.spaceId()}','cursor','${sourceId}','proof','fact','moves','proof',now(),now());`,
       )
-      const payload = (sessionId: string) => ({
+      const payload = (sessionId: string, openStageRecordId = successorId) => ({
         requestId: newRecordId(),
         flow: {
           id: flowId,
           expectedRevision: 1,
-          values: { openStageRecordId: successorId, updatedMachineId: machineId, updatedAt: at },
+          values: { openStageRecordId, updatedMachineId: machineId, updatedAt: at },
         },
         oldStage: { id: sourceId, expectedRevision: 1 },
         newStage: {
@@ -114,9 +114,16 @@ export function registerTaskFlowHandoffProof(
           reason: 'ready',
           at,
         },
-        contextHolderFrom: sourceId,
-        contextHolderTo: successorId,
       })
+      await expect(
+        client.handoffTaskFlow!(payload('handoff-owner', newRecordId()), destination),
+      ).rejects.toThrow('retry with the successor stage as the open stage')
+      expect(
+        input.admin(`SELECT state || '|' || revision FROM task_flow_stage WHERE id='${sourceId}';`),
+      ).toBe('running|1')
+      expect(input.admin(`SELECT count(*) FROM task_flow_stage WHERE id='${successorId}';`)).toBe(
+        '0',
+      )
       await expect(
         client.handoffTaskFlow!(payload('foreign-session'), destination),
       ).rejects.toThrow('owned by another session')

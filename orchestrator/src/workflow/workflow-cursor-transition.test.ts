@@ -22,7 +22,7 @@ describe('workflow cursor transition', () => {
       expect(String(cursorOwnerAfter(verb, null, 'caller'))).toBe('caller')
       expect(String(cursorOwnerAfter(verb, 'caller', 'caller'))).toBe('caller')
       expect(String(cursorOwnerAfter(verb, 'owner', 'caller'))).toBe(
-        verb === 'advance' || verb === 'compose' ? 'caller' : 'owner',
+        verb === 'advance' || verb === 'compose' || verb === 'handoff' ? 'caller' : 'owner',
       )
     }
   })

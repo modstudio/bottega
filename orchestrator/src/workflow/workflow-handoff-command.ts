@@ -51,5 +51,10 @@ export async function handoffCommand(
     live,
     commitCount: options.commitCount,
   })
-  print(result, `handed off to ${result.workflow} cursor ${result.cursor}`)
+  print(
+    result,
+    [`handed off to ${result.workflow} cursor ${result.cursor}`, result.claimWarning]
+      .filter(Boolean)
+      .join('\n'),
+  )
 }

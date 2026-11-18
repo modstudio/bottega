@@ -471,6 +471,18 @@ async function applyHandoff(tx: SQL, input: Tenant, body: HandoffBody) {
       `task_flow.id=${body.flow.id}`,
       'already-exists',
     )
+  if (body.flow.values.openStageRecordId !== body.newStage.id)
+    refusal(
+      'task flow open stage does not match the handoff successor; retry with the successor stage as the open stage',
+      `task_flow.id=${body.flow.id}`,
+      'already-exists',
+    )
+  if (body.newStage.handedOffFromRecordId !== body.oldStage.id)
+    refusal(
+      'handoff successor does not link to the source stage; retry with the source stage as handedOffFromRecordId',
+      `task_flow_stage.id=${body.newStage.id}`,
+      'already-exists',
+    )
   const mutations = [
     { table: 'task_flow' as const, mutation: body.flow },
     { table: 'task_flow_stage' as const, mutation: { ...body.oldStage, values: {} } },
@@ -505,8 +517,8 @@ async function applyHandoff(tx: SQL, input: Tenant, body: HandoffBody) {
   const inserted = await insertStage(tx, input.spaceId, body.requestId, body.newStage, number)
   revisions[body.newStage.id] = inserted.revision
   revisions[body.flow.id] = await updateRevisionRow(tx, 'task_flow', body.flow, body.requestId)
-  await tx`UPDATE context_item SET holder_id=${body.contextHolderTo},updated_at=${body.newStage.updatedAt}::timestamptz
-    WHERE space_id=${input.spaceId}::uuid AND holder_kind='cursor' AND holder_id=${body.contextHolderFrom}`
+  await tx`UPDATE context_item SET holder_id=${body.newStage.id},updated_at=${body.newStage.updatedAt}::timestamptz
+    WHERE space_id=${input.spaceId}::uuid AND holder_kind='cursor' AND holder_id=${body.oldStage.id}`
   return { revisions, stage: { id: body.newStage.id, number: inserted.number } }
 }
 

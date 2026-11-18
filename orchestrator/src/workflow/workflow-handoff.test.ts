@@ -143,11 +143,10 @@ test('handoff closes the old stage, opens and links the successor, moves context
     old.created_at,
   )
   const claim = d
-    .query<{ record_id: string }, [string]>(
+    .query<{ record_id: string; closed_at: string | null }, [string]>(
       'SELECT record_id FROM board_claim WHERE subject_value=? AND closed_at IS NULL',
     )
     .get('DEV-HANDOFF')
-  const takes: string[] = []
   const result = await handoffWorkflow({
     row: old,
     workflow: 'handoff-target',
@@ -157,30 +156,6 @@ test('handoff closes the old stage, opens and links the successor, moves context
     context,
     live: {},
     database: d,
-    taskClaimPorts: {
-      take: async ({ project, key, session }) => {
-        takes.push(key)
-        return {
-          action: 'renewed',
-          recordId: claim?.record_id ?? 'claim',
-          project,
-          subject: { kind: 'task', value: key },
-          holder: session,
-          note: null,
-          runId: null,
-          run_record_id: null,
-          takenAt: old.created_at,
-          renewedAt: old.updated_at,
-          lapsesAt: old.updated_at,
-          live: true,
-          closedAt: null,
-          closeReason: null,
-          previousClaimRecordIds: [],
-          supersededByClaimRecordId: null,
-        }
-      },
-      release: async () => ({ released: 0 }),
-    },
   })
   const oldAfter = (await taskFlowReadStore(d).stageByHandle('fixture', oldNumber))!
   const next = (await taskFlowReadStore(d).stageByHandle('fixture', result.cursor))!
@@ -201,8 +176,13 @@ test('handoff closes the old stage, opens and links the successor, moves context
   expect(d.query('SELECT holder_id FROM context_item WHERE slug=?').get('decision')).toEqual({
     holder_id: next.record_id,
   })
-  expect(takes).toEqual(['DEV-HANDOFF'])
-  expect(claim?.record_id).toBeTruthy()
+  expect(
+    d
+      .query<{ record_id: string; closed_at: string | null }, [string]>(
+        'SELECT record_id,closed_at FROM board_claim WHERE subject_value=?',
+      )
+      .get('DEV-HANDOFF'),
+  ).toEqual({ record_id: claim!.record_id, closed_at: null })
 })
 
 test('handoff refuses an unknown workflow without changing the old cursor or opening a successor', async () => {
@@ -220,6 +200,15 @@ test('handoff refuses a missing required argument without changing the old curso
     fixture,
     handoffCall(fixture, { args: { key: refusalArgs.key } }),
     'pass each with --arg k=v',
+  )
+})
+
+test('handoff refuses a mode the target workflow does not define without changing the old cursor or opening a successor', async () => {
+  const fixture = await refusalFixture()
+  await expectRefusalUnchanged(
+    fixture,
+    handoffCall(fixture, { mode: 'missing-mode' }),
+    'workflow "handoff-target" has no mode "missing-mode"',
   )
 })
 
@@ -294,4 +283,37 @@ test('handoff refuses a missing reason without changing the old cursor or openin
     handoffCall(fixture, { reason: '  ' }),
     'pass --reason "<why>"',
   )
+})
+
+test('handoff refuses a stale revision without changing the old cursor or opening a successor', async () => {
+  const fixture = await refusalFixture()
+  fixture.d
+    .query('UPDATE workflow_cursor SET revision=revision+1 WHERE record_id=?')
+    .run(fixture.row.record_id)
+  await expectRefusalUnchanged(
+    fixture,
+    handoffCall(fixture),
+    'changed while being handed off; rerun the command',
+  )
+})
+
+test('handoff commits and reports a warning when its claim cannot be renewed', async () => {
+  const fixture = await refusalFixture()
+  const result = await handoffCall(fixture, {
+    taskClaimPorts: {
+      take: async () => {
+        throw new Error('claim service unavailable')
+      },
+      release: async () => ({ released: 0 }),
+    },
+  })()
+  expect(result).toMatchObject({
+    workflow: 'handoff-target',
+    claimWarning: expect.stringContaining('claim service unavailable'),
+  })
+  expect(
+    fixture.d
+      .query<{ state: string }, [string]>('SELECT state FROM workflow_cursor WHERE record_id=?')
+      .get(fixture.row.record_id),
+  ).toEqual({ state: 'done' })
 })

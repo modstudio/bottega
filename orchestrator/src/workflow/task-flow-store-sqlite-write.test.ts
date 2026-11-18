@@ -136,6 +136,8 @@ test('revision refusal names the declared intent and stale row kind', () => {
     ['await-ruling', 'cursor', 15, 'workflow cursor 15 changed while awaiting a ruling'],
     ['abandon', 'flow', 'flow-id', 'task flow flow-id changed while being abandoned'],
     ['abandon', 'cursor', 16, 'workflow cursor 16 changed while being abandoned'],
+    ['handoff', 'flow', 'flow-id', 'task flow flow-id changed while being handed off'],
+    ['handoff', 'cursor', 18, 'workflow cursor 18 changed while being handed off'],
     ['adopt', 'stage', 'stage-id', 'workflow stage stage-id changed while linking its task'],
     ['adopt', 'cursor', 17, 'workflow cursor 17 changed while linking its task'],
   ] as const
@@ -143,6 +145,80 @@ test('revision refusal names the declared intent and stale row kind', () => {
     expect(taskFlowRevisionRefusal(intent, rowKind, identifier)).toBe(
       `${expected}; rerun the command`,
     )
+})
+
+test('handoff refuses inconsistent successor references before changing rows', async () => {
+  for (const mismatch of ['open-stage', 'predecessor'] as const) {
+    const d = database()
+    const row = await stage(d)
+    const flow = d
+      .query<{ revision: number }, [string]>('SELECT revision FROM task_flow WHERE record_id=?')
+      .get(row.task_flow_record_id!)!
+    const successorId = newRecordId()
+    const payload = {
+      requestId: newRecordId(),
+      flow: {
+        id: row.task_flow_record_id!,
+        expectedRevision: flow.revision,
+        values: {
+          openStageRecordId: mismatch === 'open-stage' ? newRecordId() : successorId,
+          updatedMachineId: row.last_advanced_machine_id!,
+          updatedAt: row.updated_at,
+        },
+      },
+      oldStage: { id: row.record_id, expectedRevision: row.revision },
+      newStage: {
+        id: successorId,
+        flowRecordId: row.task_flow_record_id!,
+        projectId: '00000000-0000-4000-8000-000000000001',
+        workflow: row.workflow_slug,
+        mode: row.mode_slug,
+        workflowKey: row.workflow_key,
+        instanceId: '',
+        sessionId: row.session_id,
+        workflowVersionId: row.workflow_version_record_id,
+        catalogueVersionId: row.catalogue_version_record_id,
+        arguments: JSON.parse(row.args),
+        activeOrdinal: 0,
+        activeSlug: row.step_slug,
+        state: 'running',
+        closedStepNotes: [],
+        question: null,
+        autonomy: null,
+        enforcement: 'floors',
+        totalSteps: row.total_steps,
+        openedMachineId: row.opened_machine_id,
+        takenOverFromMachineId: null,
+        lastAdvancedMachineId: row.last_advanced_machine_id,
+        handedOffFromRecordId: mismatch === 'predecessor' ? newRecordId() : row.record_id,
+        createdAt: row.created_at,
+        updatedAt: row.updated_at,
+      },
+      trail: {
+        closed: [],
+        current: { n: 1, slug: row.step_slug },
+        remaining: [],
+        targetWorkflow: row.workflow_slug,
+        reason: 'ready',
+        at: row.updated_at,
+      },
+    }
+    expect(() => taskFlowLocalStore(d).write('handoff', payload as never)).toThrow(
+      mismatch === 'open-stage'
+        ? 'retry with the successor stage as the open stage'
+        : 'retry with the source stage as handedOffFromRecordId',
+    )
+    expect(
+      d
+        .query<{ state: string; revision: number }, [string]>(
+          'SELECT state,revision FROM workflow_cursor WHERE record_id=?',
+        )
+        .get(row.record_id),
+    ).toEqual({ state: row.state, revision: row.revision })
+    expect(
+      d.query<{ count: number }, []>('SELECT count(*) count FROM workflow_cursor').get(),
+    ).toEqual({ count: 1 })
+  }
 })
 
 test('flow mutation preserves state when the payload omits it', async () => {

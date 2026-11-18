@@ -239,8 +239,6 @@ const taskFlowHandoffSchema = z.object({
     reason: z.string(),
     at: stamp,
   }),
-  contextHolderFrom: z.string(),
-  contextHolderTo: z.string(),
 })
 const taskFlowAdoptSchema = z.object({
   ...base,

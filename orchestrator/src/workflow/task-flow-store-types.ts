@@ -56,8 +56,6 @@ export type TaskFlowStageCursorRow = {
   last_advanced_machine_id: string | null
   revision: number
   handed_off_from_record_id: string | null
-  handed_off_from_number?: number | null
-  handed_off_from_workflow?: string | null
   updated_at: string
 }
 

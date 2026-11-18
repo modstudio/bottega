@@ -21,7 +21,11 @@ import { refuseTerminalCursor } from './workflow-cursor-result.ts'
 import type { SelectableCursorRow, WorkflowCursorContext } from './workflow-cursor-selection.ts'
 import { cursorComposition } from './workflow-cursor-serve.ts'
 import { cursorOwnerAfter } from './workflow-cursor-transition.ts'
-import { followTaskCursorClaim, type TaskCursorClaimPorts } from './workflow-task-claim.ts'
+import {
+  followTaskCursorClaim,
+  type TaskCursorClaimPorts,
+  taskClaimFollowWarning,
+} from './workflow-task-claim.ts'
 import { composeWorkflow } from './workflows.ts'
 
 type HandoffInput = {
@@ -128,7 +132,7 @@ function handoffPayload(
       mode: composition.mode!.slug,
       workflowKey: row.workflow_key,
       instanceId: '',
-      sessionId: cursorOwnerAfter('compose', null, input.context.session),
+      sessionId: cursorOwnerAfter('handoff', null, input.context.session),
       workflowVersionId: composition.workflow.record_id,
       catalogueVersionId: composition.catalogue.record_id,
       arguments: composition.arguments,
@@ -152,8 +156,6 @@ function handoffPayload(
       createdAt: at,
       updatedAt: at,
     },
-    contextHolderFrom: row.record_id,
-    contextHolderTo: nextId,
     trail: {
       closed: JSON.parse(row.closed) as unknown[],
       current: { n: row.ordinal + 1, slug: row.step_slug },
@@ -179,19 +181,25 @@ export async function handoffWorkflow(input: HandoffInput) {
     input.context.taskFlowClient,
   )
   const applied = writeTransaction(() => taskFlowLocalStore(d).write('handoff', payload, hosted), d)
-  await followTaskCursorClaim(
-    {
-      project: row.project,
-      taskKey: row.workflow_key,
-      session: input.context.session,
-      verb: 'handoff',
-      database: d,
-    },
-    input.taskClaimPorts,
-  )
+  let claimWarning: string | undefined
+  try {
+    await followTaskCursorClaim(
+      {
+        project: row.project,
+        taskKey: row.workflow_key,
+        session: input.context.session,
+        verb: 'handoff',
+        database: d,
+      },
+      input.taskClaimPorts,
+    )
+  } catch (error) {
+    claimWarning = taskClaimFollowWarning(row.workflow_key, error)
+  }
   return {
     oldCursor: row.id,
     cursor: applied.stage.number,
     workflow: validated.composition.workflow.slug,
+    ...(claimWarning ? { claimWarning } : {}),
   }
 }

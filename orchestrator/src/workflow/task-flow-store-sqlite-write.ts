@@ -189,6 +189,7 @@ function insertStage(
   database: Database,
   row: SqlRow,
   revisionValue: number,
+  allocatedNumber?: number,
 ): { id: string; number: number } {
   const project = database
     .query<{ name: string }, [string]>('SELECT name FROM project WHERE record_id=?')
@@ -200,11 +201,13 @@ function insertStage(
       'SELECT task_record_id FROM task_flow WHERE record_id=?',
     )
     .get(String(row.flowRecordId))
-  const number = database
-    .query<{ n: number }, [string]>(
-      'SELECT COALESCE(MAX(number),0)+1 n FROM workflow_cursor WHERE project_record_id=?',
-    )
-    .get(String(row.projectId))!.n
+  const number =
+    allocatedNumber ??
+    database
+      .query<{ n: number }, [string]>(
+        'SELECT COALESCE(MAX(number),0)+1 n FROM workflow_cursor WHERE project_record_id=?',
+      )
+      .get(String(row.projectId))!.n
   database
     .query(`INSERT INTO workflow_cursor
       (record_id,number,project,project_record_id,workflow_slug,mode_slug,workflow_key,task_record_id,
@@ -542,13 +545,19 @@ function writeHandoff(
   const newStage = body.newStage as unknown as SqlRow
   const revisions = applied?.revisions
   const result: Record<string, number> = {}
-  const number =
-    applied?.stage.number ??
-    database
-      .query<{ n: number }, [string]>(
-        'SELECT COALESCE(MAX(number),0)+1 n FROM workflow_cursor WHERE project_record_id=?',
-      )
-      .get(String(newStage.projectId))!.n
+  if (flow.values.openStageRecordId !== newStage.id)
+    throw new Error(
+      'task flow open stage does not match the handoff successor; retry with the successor stage as the open stage',
+    )
+  if (newStage.handedOffFromRecordId !== oldReference.id)
+    throw new Error(
+      'handoff successor does not link to the source stage; retry with the source stage as handedOffFromRecordId',
+    )
+  const number = database
+    .query<{ n: number }, [string]>(
+      'SELECT COALESCE(MAX(number),0)+1 n FROM workflow_cursor WHERE project_record_id=?',
+    )
+    .get(String(newStage.projectId))!.n
   const trail = body.trail as unknown as Parameters<typeof workflowHandoffTrail>[0]
   const oldStage: Mutation = {
     ...oldReference,
@@ -560,18 +569,14 @@ function writeHandoff(
     },
   }
   result[oldStage.id] = updateMutation(database, 'workflow_cursor', oldStage, 'handoff', revisions)
-  const inserted = insertStage(database, newStage, revisions?.[String(newStage.id)] ?? 1)
+  const inserted = insertStage(database, newStage, revisions?.[String(newStage.id)] ?? 1, number)
   result[inserted.id] = revisions?.[inserted.id] ?? 1
   result[flow.id] = updateMutation(database, 'task_flow', flow, 'handoff', revisions)
   database
     .query(
       "UPDATE context_item SET holder_id=?,updated_at=? WHERE holder_kind='cursor' AND holder_id=?",
     )
-    .run(
-      body.contextHolderTo as SQLQueryBindings,
-      newStage.updatedAt as SQLQueryBindings,
-      body.contextHolderFrom as SQLQueryBindings,
-    )
+    .run(newStage.id, newStage.updatedAt as SQLQueryBindings, oldReference.id)
   return { revisions: result, stage: { id: inserted.id, number: inserted.number } }
 }
 
