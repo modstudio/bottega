@@ -27,7 +27,12 @@ export const hubModuleSpecs = [
       '../../shared/orch-contract.ts',
       '../../shared/process-identity.ts',
       '../../shared/self-spawn.ts',
+      './project-register-reader.ts',
     ],
+  },
+  {
+    file: 'hub/src/project-register-reader.ts',
+    allowed: ['../../shared/orch-contract.ts'],
   },
   {
     file: 'hub/src/caller-session.ts',

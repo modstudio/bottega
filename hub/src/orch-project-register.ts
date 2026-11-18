@@ -7,6 +7,9 @@ import {
   processObservationInterrupted,
 } from '../../shared/process-identity.ts'
 import { bottegaEntryArgv } from '../../shared/self-spawn.ts'
+import type { ProjectListOptions } from './project-register-reader.ts'
+
+export type { ProjectListOptions } from './project-register-reader.ts'
 
 const PROJECT_LIST_TIMEOUT_MS = 20_000
 
@@ -60,8 +63,6 @@ export function projectListProcessError(result: ProjectListProcessResult): strin
     result.stderr.trim() || result.stdout.trim() || `${result.command} exited ${result.exitCode}`
   )
 }
-
-export type ProjectListOptions = { retired?: boolean }
 
 export function projectList(options: ProjectListOptions = {}): OrchProject[] {
   const command = bottegaEntryArgv(PLATFORM_SLUG, resolveOrchExecutable)

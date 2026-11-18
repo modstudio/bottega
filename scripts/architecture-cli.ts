@@ -24,9 +24,13 @@ export const cliModules = [
   {
     file: 'cli/task-read-adapter.ts',
     allowed: [
+      'hub/src/project-register-reader.ts',
       'hub/src/task.ts',
       'hub/src/task-document.ts',
+      'orchestrator/src/project/project-list-json.ts',
+      'orchestrator/src/project/project-read.ts',
       'orchestrator/src/workflow/task-read-port.ts',
+      'shared/orch-contract.ts',
     ],
   },
   {

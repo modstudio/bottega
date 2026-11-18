@@ -1,7 +1,8 @@
 import { dirname, resolve } from 'node:path'
 import type { OrchProject } from '../../shared/orch-contract.ts'
 import { type TrackerProject, trackerSourceFor } from '../../shared/trackers.ts'
-import { type ProjectListOptions, projectList } from './orch-project-register.ts'
+import { projectList } from './orch-project-register.ts'
+import { type ProjectRegisterReader, projectRegisterReader } from './project-register-reader.ts'
 
 export type { StatusCategory } from '../../shared/trackers.ts'
 
@@ -19,15 +20,16 @@ export function refreshProjects(): void {
 /** The project register published by orchestrator, read once per process. */
 export function projects(): RegisteredProject[] {
   if (cache) return cache
-  cache = projectList()
+  cache = (projectRegisterReader() ?? projectList)()
   return cache
 }
 
 /** Read every live and retired project from the published register. */
 export function everyRegisteredProject(
-  load: (options?: ProjectListOptions) => RegisteredProject[] = projectList,
+  load?: ProjectRegisterReader,
 ): RegisteredProject[] {
-  return [...load(), ...load({ retired: true })]
+  const read = load ?? projectRegisterReader() ?? projectList
+  return [...read(), ...read({ retired: true })]
 }
 
 export const projectNames = () => projects().map((project) => project.name)
