@@ -59,6 +59,7 @@ export type ContextHealthFinding = ContextHealthItem & {
   size: number
   cap: number
   remedy: string
+  staleReferences: ContextHealthItem['referenceFindings']
 }
 
 export type ContextHealthReport = {
@@ -132,6 +133,7 @@ function finding(item: ContextHealthItem, now: number): ContextHealthFinding {
     size: item.body.length,
     cap: CONTEXT_ITEM_MAX_CHARS[item.kind],
     remedy: remedy(item),
+    staleReferences: item.referenceFindings.filter(({ rule }) => isStaleContextReference(rule)),
   }
 }
 

@@ -13,8 +13,8 @@ function itemLine(item: ContextHealthFinding, shape = false): string {
   const size = shape ? ` size=${item.size}/${item.cap}` : ''
   const references = item.unverifiable
     ? ` unverifiable=${item.unverifiable}`
-    : item.referenceFindings.length
-      ? ` stale=${item.referenceFindings.map(({ rule }) => rule).join(',')}`
+    : item.staleReferences.length
+      ? ` stale=${item.staleReferences.map(({ rule }) => rule).join(',')}`
       : ''
   return `  ${item.holder} task=${task} item=${item.id} kind=${item.kind} age=${age(item.ageMs)}${size}${references}\n    remedy: ${item.remedy}`
 }
