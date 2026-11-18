@@ -56,7 +56,6 @@ import {
   decideCursorStart,
   decideStepOutcome,
 } from './workflow-cursor-transition.ts'
-import { handoffGraduatingExplore } from './workflow-explore-graduation-handoff.ts'
 import {
   allowedCloseFloor,
   DEFAULT_EXPECTED_EXIT_CODE,
@@ -72,6 +71,7 @@ import {
   type WorkflowEvidenceInput,
 } from './workflow-floor-evidence.ts'
 import { withReplayedFloorEvidenceAsync } from './workflow-floor-evidence-replay.ts'
+import { handoffGraduatingExplore } from './workflow-handoff.ts'
 import { refuseKeylessStepClose } from './workflow-keyless-close.ts'
 import { selfRulingRefusal } from './workflow-self-ruling.ts'
 import {

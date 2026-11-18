@@ -23,8 +23,8 @@ import {
   decideRevisionWrite,
   recordColumnName,
   sameRecordValue,
+  taskFlowHandoffRefusal,
 } from './record-task-flow-write-decision.ts'
-import { taskFlowHandoffRefusal } from './task-flow-handoff-policy.ts'
 
 type Tenant = { url: string } & TenantPrincipal
 type Mutation = { id: string; expectedRevision: number; values: Record<string, unknown> }

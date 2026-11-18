@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { resolveWorkflowCursorSuccessor } from './workflow-cursor-successor.ts'
+import { resolveWorkflowCursorSuccessor } from './workflow-run-binding.ts'
 
 test('resolves an evidence cursor through every handoff successor', () => {
   expect(

@@ -28,6 +28,7 @@ import {
   isKeylessExplore,
   type TaskFlowIntentInput,
   type WorkflowCursorInsert,
+  workflowStageInsert,
 } from './task-flow-store-types.ts'
 import {
   type CommitCountPort,
@@ -39,7 +40,6 @@ import { storedCursorAutonomyForComposition } from './workflow-cursor-autonomy.t
 import type { SelectableCursorRow, WorkflowCursorContext } from './workflow-cursor-selection.ts'
 import { refuseUnlinkedCursorLabelCollision } from './workflow-cursor-task-reference.ts'
 import { cursorOwnerAfter } from './workflow-cursor-transition.ts'
-import { workflowStageInsert } from './workflow-stage-insert.ts'
 import type { composeWorkflow } from './workflows.ts'
 
 type Composition = ReturnType<typeof composeWorkflow>

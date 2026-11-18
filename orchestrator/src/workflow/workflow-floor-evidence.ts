@@ -37,7 +37,6 @@ import {
   checkoutOutsideChangeRefusal,
   classifyCheckoutEvidence,
 } from './workflow-checkout-refusal.ts'
-import { resolveWorkflowCursorSuccessor } from './workflow-cursor-successor.ts'
 import type { CursorState } from './workflow-cursor-transition.ts'
 import {
   type ArtifactRef,
@@ -62,6 +61,7 @@ import { floorFromObligationRow } from './workflow-obligation-floor.ts'
 import {
   type BoundRun,
   decideRunBinding,
+  resolveWorkflowCursorSuccessor,
   type SessionMatch,
   sessionOrAdopterMatch,
 } from './workflow-run-binding.ts'

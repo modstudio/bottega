@@ -10,21 +10,21 @@ import {
   writeHostedTaskFlow,
 } from '../record/record-task-flow-write-client.ts'
 import { taskFlowRequestId } from '../record/record-task-flow-write-contract.ts'
-import { taskFlowHandoffRefusal } from '../record/task-flow-handoff-policy.ts'
+import { taskFlowHandoffRefusal } from '../record/record-task-flow-write-decision.ts'
 import type { LiveCursorAutonomy } from './autonomy.ts'
 import { taskFlowLocalStore, taskFlowReadStore } from './task-flow-store.ts'
-import type { TaskFlowIntentInput } from './task-flow-store-types.ts'
+import { type TaskFlowIntentInput, workflowStageInsert } from './task-flow-store-types.ts'
 import type { CommitCountPort } from './workflow-compose-branch.ts'
 import { readCommitsPastLanding, workflowComposeBranchRefusal } from './workflow-compose-branch.ts'
 import { adoptWorkflowTask } from './workflow-cursor-adoption.ts'
 import { workflowKeyOf } from './workflow-cursor-arguments.ts'
 import { storedCursorAutonomyForComposition } from './workflow-cursor-autonomy.ts'
+import { graduatingExploreCursor } from './workflow-cursor-compose.ts'
 import { workflowCursorReference } from './workflow-cursor-format.ts'
 import { refuseTerminalCursor } from './workflow-cursor-result.ts'
 import type { SelectableCursorRow, WorkflowCursorContext } from './workflow-cursor-selection.ts'
 import { cursorComposition } from './workflow-cursor-serve.ts'
 import { cursorOwnerAfter } from './workflow-cursor-transition.ts'
-import { workflowStageInsert } from './workflow-stage-insert.ts'
 import {
   followTaskCursorClaim,
   type TaskCursorClaimPorts,
@@ -259,5 +259,53 @@ export async function handoffWorkflow(input: HandoffInput) {
     throw new Error(
       `${detail}; cursor ${input.row.id} ${input.row.workflow_key ? `is now keyed to ${key}` : 'remains keyless'}; retry with ${retry}${releaseWarning ? `; ${releaseWarning}` : ''}`,
     )
+  }
+}
+
+export async function handoffGraduatingExplore(
+  composition: ReturnType<typeof composeWorkflow>,
+  context: WorkflowCursorContext,
+  database: Database,
+  live: LiveCursorAutonomy,
+  commitCount: CommitCountPort,
+  taskClaimPorts?: TaskCursorClaimPorts,
+) {
+  const source = await graduatingExploreCursor({
+    project: composition.project,
+    session: context.session,
+    taskBound: Boolean(composition.arguments.key),
+    database,
+    taskFlowClient: context.taskFlowClient,
+  })
+  if (!source) return undefined
+  const result = await handoffWorkflow({
+    row: source,
+    workflow: composition.workflow.slug,
+    mode: composition.mode!.slug,
+    args: composition.arguments,
+    reason: `graduated to ${composition.workflow.slug}`,
+    context,
+    live,
+    database,
+    commitCount,
+    taskClaimPorts,
+  })
+  const row = await taskFlowReadStore(database, context.taskFlowClient).stageByHandle(
+    composition.project,
+    result.cursor,
+  )
+  if (!row) throw new Error(`graduated workflow cursor ${result.cursor} cannot be read; retry`)
+  return {
+    ...cursorComposition(row, database, live),
+    cursor: {
+      id: row.id,
+      n: row.ordinal + 1,
+      slug: row.step_slug,
+      state: row.state,
+      opened: true as const,
+      previousSession: null,
+    },
+    ...(result.claimWarning ? { claimWarning: result.claimWarning } : {}),
+    graduated: { cursor: source.id, closed: true as const },
   }
 }
