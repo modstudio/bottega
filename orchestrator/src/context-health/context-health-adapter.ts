@@ -12,6 +12,7 @@ import { scopeContextHolders } from '../doc/context-service.ts'
 import { docHasRepositoryReferences, STALE_REFERENCE_RULES } from '../doc/doc-lint.ts'
 import { lintStoredDoc } from '../doc/doc-lint-adapter.ts'
 import { projects } from '../project/projects.ts'
+import { isOpenStageState, TASK_FLOW_STAGE_STATES } from '../record/record-task-flow-contract.ts'
 import { LIVE_RUN_STATUS_SQL } from '../run/run-status.ts'
 import { taskFlowReadStore } from '../workflow/task-flow-store.ts'
 import { type HubTaskReference, readHubTasks } from '../workflow/workflow-task-reference.ts'
@@ -70,7 +71,12 @@ function failureFacts(now: string, since: string, error: unknown): ContextHealth
   }
 }
 
-type CursorOwner = { record_id: string; project: string; session_id: string | null }
+type CursorOwner = {
+  record_id: string
+  project: string
+  session_id: string | null
+  workflow_key: string | null
+}
 
 function holderIdentity(
   holderKind: ContextHolderKind,
@@ -168,9 +174,11 @@ async function gatherContextHealthFacts(
 ): Promise<ContextHealthFacts> {
   const database = db()
   const tasks = await taskRows(options.project)
-  const cursorRows = database
-    .query<CursorOwner, []>('SELECT record_id,project,session_id FROM workflow_cursor')
-    .all()
+  const flowStore = taskFlowReadStore(database)
+  const cursorRows = await flowStore.listStages({
+    ...(options.project ? { project: options.project } : {}),
+    states: TASK_FLOW_STAGE_STATES,
+  })
   const cursorById = new Map(cursorRows.map((cursor) => [cursor.record_id, cursor]))
   const sessionRows = database
     .query<{ session_id: string; project: string | null }, []>(
@@ -179,16 +187,19 @@ async function gatherContextHealthFacts(
     .all()
   const sessionProject = new Map(sessionRows.map((row) => [row.session_id, row.project]))
   const items = holderItems(database, tasks, cursorById, sessionProject, options)
-  const openCursors = (
-    await taskFlowReadStore(database).listOpenStages(
-      options.project ? { project: options.project } : {},
-    )
-  ).map((cursor) => ({ project: cursor.project, taskKey: cursor.workflow_key || null }))
-  const liveBound = database
-    .query<{ project: string; workflow_key: string | null }, []>(
-      `SELECT DISTINCT c.project,c.workflow_key FROM run r JOIN workflow_cursor c ON c.record_id=r.cursor_record_id WHERE r.status IN ${LIVE_RUN_STATUS_SQL}`,
-    )
-    .all()
+  const openCursors = cursorRows
+    .filter((cursor) => isOpenStageState(cursor.state))
+    .map((cursor) => ({ project: cursor.project, taskKey: cursor.workflow_key || null }))
+  const liveCursorIds = new Set(
+    database
+      .query<{ cursor_record_id: string }, []>(
+        `SELECT DISTINCT cursor_record_id FROM run WHERE cursor_record_id IS NOT NULL AND status IN ${LIVE_RUN_STATUS_SQL}`,
+      )
+      .all()
+      .map((run) => run.cursor_record_id),
+  )
+  const liveBound = cursorRows
+    .filter((cursor) => liveCursorIds.has(cursor.record_id))
     .map((cursor) => ({ project: cursor.project, taskKey: cursor.workflow_key || null }))
   const { reviews, briefs } = recordedMeasurements(database, since, options.session)
   return {

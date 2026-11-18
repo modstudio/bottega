@@ -28,6 +28,7 @@ export const contextHealthModules: ContextHealthModule[] = [
     '../doc/doc-lint.ts',
     '../doc/doc-lint-adapter.ts',
     '../project/projects.ts',
+    '../record/record-task-flow-contract.ts',
     '../run/run-status.ts',
     '../workflow/task-flow-store.ts',
     '../workflow/workflow-task-reference.ts',
