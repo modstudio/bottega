@@ -163,13 +163,20 @@ function startHostedServer(environment: ServerEnvironment = process.env) {
     port: config.port,
     fetch: async (request) => {
       const started = performance.now()
-      const response = await requestHandler(request)
+      const loggedCaller = hostedServer.loggedCallerToken(
+        request.headers.get(hostedServer.CALLER_HEADER_NAME),
+      )
+      const requestCaller = loggedCaller && loggedCaller !== 'invalid' ? loggedCaller : 'hub:server'
+      const response = await hostedServer.withRecordCaller(requestCaller, () =>
+        requestHandler(request),
+      )
       console.log(
         hostedServer.hostedAccessLogLine({
           method: request.method,
           pathname: new URL(request.url).pathname,
           status: response.status,
           durationMs: performance.now() - started,
+          caller: loggedCaller,
         }),
       )
       return response

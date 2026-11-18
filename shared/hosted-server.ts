@@ -1,4 +1,5 @@
 export { recordApiConfigured, resolveRecordApiUrl } from './record-api-url.ts'
+export { CALLER_HEADER_NAME, loggedCallerToken, withRecordCaller } from './record-caller.ts'
 
 /**
  * Set above Fly's idle close so the proxy, not the app, ends an idle connection.

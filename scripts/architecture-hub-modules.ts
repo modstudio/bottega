@@ -201,6 +201,7 @@ export const hubModuleSpecs = [
     file: 'hub/src/hosted-route-identity.ts',
     allowed: [
       '../../shared/brand.ts',
+      '../../shared/record-caller.ts',
       '../../shared/record-no-destination-write-contract.ts',
       '../../shared/record-no-destination-write-counter.ts',
       '../../shared/record/no-destination-write-store.ts',
@@ -293,7 +294,6 @@ export const hubModuleSpecs = [
     allowed: [
       '../../shared/bounded-fetch.ts',
       '../../shared/brand.ts',
-      '../../shared/record-caller.ts',
       '../../shared/record-space-membership.ts',
       '../../shared/record-space-request.ts',
       './hosted-route-identity.ts',

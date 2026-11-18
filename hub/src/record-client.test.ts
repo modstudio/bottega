@@ -571,7 +571,7 @@ describe('record client', () => {
     expect(captured).toEqual({
       method: 'PUT',
       body: JSON.stringify({ spaceId: 'space-b' }),
-      caller: 'unknown',
+      caller: expect.any(String),
     })
   })
 

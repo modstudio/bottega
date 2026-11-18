@@ -1,12 +1,42 @@
-import { beforeEach, expect, spyOn, test } from 'bun:test'
+import { afterEach, beforeEach, expect, spyOn, test } from 'bun:test'
 import type { Command } from 'commander'
+import { CALLER_ENVIRONMENT_KEY, recordCallerToken } from '../../shared/record-caller.ts'
 import { resetFixtureStore } from '../test/run-fixtures.ts'
 import { createHubProgram, run, usesReadOnlyStoreHandle } from './cli-program.ts'
 import { createNote } from './note.ts'
 import { createTask, showTask } from './task.ts'
 import { createTaskDocument, getTaskDocument } from './task-document.ts'
 
-beforeEach(resetFixtureStore)
+let parentCaller: string | undefined
+
+beforeEach(() => {
+  resetFixtureStore()
+  parentCaller = process.env[CALLER_ENVIRONMENT_KEY]
+  delete process.env[CALLER_ENVIRONMENT_KEY]
+})
+
+afterEach(() => {
+  if (parentCaller === undefined) delete process.env[CALLER_ENVIRONMENT_KEY]
+  else process.env[CALLER_ENVIRONMENT_KEY] = parentCaller
+})
+
+test('run scopes real command actions to the public CLI path and restores the parent caller', async () => {
+  const observed: string[] = []
+  const invocation = { ownerPath: ['lease'], publicPath: ['machine', 'lease'] }
+  const first = createHubProgram()
+  first.hook('postAction', () => void observed.push(recordCallerToken()))
+
+  expect(await run(first, ['lease', '--json'], invocation)).toBe(0)
+  expect(observed).toEqual(['cli:machine/lease'])
+  expect(process.env[CALLER_ENVIRONMENT_KEY]).toBeUndefined()
+
+  process.env[CALLER_ENVIRONMENT_KEY] = 'hook:parent'
+  const second = createHubProgram()
+  second.hook('postAction', () => void observed.push(recordCallerToken()))
+  expect(await run(second, ['lease', '--json'], invocation)).toBe(0)
+  expect(observed.at(-1)).toBe('hook:parent')
+  expect(process.env[CALLER_ENVIRONMENT_KEY]).toBe('hook:parent')
+})
 
 test('lease and task queries use a read-only store handle unless show refreshes its tracker', () => {
   expect(usesReadOnlyStoreHandle(['lease', '--json'])).toBeTrue()
