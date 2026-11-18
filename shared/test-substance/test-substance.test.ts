@@ -3,10 +3,10 @@ import {
   applyTestWaivers,
   introducedTestFindings,
   isTestFile,
-  judgeTestSubstance,
   type TestFinding,
   type TestWaiver,
 } from './test-substance'
+import { judgeTestSubstance } from './test-substance-judge.ts'
 
 test('judges an absolute test path outside the current checkout', async () => {
   expect(

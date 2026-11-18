@@ -965,8 +965,9 @@ export function architectureRules() {
       to: { path: exactArchitecturePath(entry.to) },
     })),
     {
-      name: 'no-new-orchestrator-cycles',
+      name: 'no-new-concern-root-cycles',
       severity: 'error',
+      comment: 'Keep orchestrator, hub, and shared concern roots free of new import cycles.',
       from: {
         path: '^orchestrator/src/',
         pathNot: architectureCycleFiles.map(exactArchitecturePath),

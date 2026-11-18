@@ -1,7 +1,7 @@
 import { initTRPC, TRPCError } from '@trpc/server'
 import { z } from 'zod'
 import { ARRAY_MCP_STATUS_WRITE_CONFIRM } from '../../../../shared/trackers.ts'
-import { strip, view } from '../../serve.ts'
+import { strip, view } from '../../orch-view.ts'
 import {
   commentTask,
   deleteTaskComment,

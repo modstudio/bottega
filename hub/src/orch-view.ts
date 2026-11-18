@@ -1,0 +1,507 @@
+import { engagedMs, human } from '../../shared/interval.ts'
+import type { OrchBlockers } from '../../shared/orch-contract.ts'
+import { attributeRun } from './attribute.ts'
+import { leaseHolder } from './collect.ts'
+import { db, nowIso } from './db.ts'
+import { promptLens } from './excerpt.ts'
+import { chainVendorTokens, executionSpans } from './ingest/runs.ts'
+import { state as orchState, blockers as readBlockers, readRuns } from './orch.ts'
+import { routingViewData } from './orch-transforms.ts'
+import { projectNames, projects } from './projects.ts'
+import {
+  boardTasks,
+  completedInWindow,
+  intervalsInWindow,
+  ratioSummary,
+  spendGrid,
+  stripWindow,
+  tasksInWindow,
+} from './query.ts'
+import {
+  appliedRunOffset,
+  liveRowDisplay,
+  matchesRunSearch,
+  type RunPageLimit,
+  runPageLimit,
+  runRowDisplay,
+  type SearchableLiveRun,
+} from './run-display.ts'
+import { BOARD_RECENT_WINDOW_DAYS, projectFlightDone } from './task-projections.ts'
+import { hoursAgo } from './time.ts'
+
+const ORCH_CACHE_TTL_MS = 30_000
+
+type CacheEntry<T> = { checkedAt: number; hasValue: boolean; value?: T; pending?: Promise<T> }
+
+/** One load per key and TTL, including when several clients arrive together. */
+export class TtlCache {
+  private entries = new Map<string, CacheEntry<unknown>>()
+  /** Bumped by clear(), so a load that started before a write cannot store its result after it. */
+  private generation = 0
+  private readonly ttlMs: number
+  private readonly clock: () => number
+
+  constructor(ttlMs: number, clock: () => number = Date.now) {
+    this.ttlMs = ttlMs
+    this.clock = clock
+  }
+
+  /**
+   * The cached value while it is fresh. Once it expires the caller still gets
+   * the last value at once and one background load replaces it, so a poll that
+   * lands just after expiry never waits for a slow orchestrator read. A key with no
+   * value waits for its load, and a failed load drops the key so the next call
+   * waits and sees the failure rather than a value that has stopped updating.
+   */
+  get<T>(key: string, load: () => Promise<T> | T): Promise<T> {
+    const now = this.clock()
+    const cached = this.entries.get(key) as CacheEntry<T> | undefined
+    const fresh = cached !== undefined && now - cached.checkedAt < this.ttlMs
+    if (cached?.hasValue && (fresh || cached.pending)) return Promise.resolve(cached.value as T)
+    if (cached?.pending) return cached.pending
+    const generation = this.generation
+    const pending = Promise.resolve()
+      .then(load)
+      .then(
+        (value) => {
+          if (generation === this.generation) {
+            this.entries.set(key, { checkedAt: this.clock(), hasValue: true, value })
+          }
+          return value
+        },
+        (cause) => {
+          if (generation === this.generation) this.entries.delete(key)
+          throw cause
+        },
+      )
+    if (cached?.hasValue) {
+      this.entries.set(key, { ...cached, pending })
+      pending.catch(() => undefined)
+      return Promise.resolve(cached.value as T)
+    }
+    this.entries.set(key, { checkedAt: now, hasValue: false, pending })
+    return pending
+  }
+
+  clear(): void {
+    this.generation += 1
+    this.entries.clear()
+  }
+}
+
+const orchCache = new TtlCache(ORCH_CACHE_TTL_MS)
+
+/** Cache a complete orch-backed procedure response, including its strip. */
+export function cachedOrchResponse<T>(key: string, load: () => Promise<T> | T): Promise<T> {
+  return orchCache.get(key, load)
+}
+
+/** Test isolation for suites that replace the orchestrator client or its backing rows. */
+export function clearOrchCache(): void {
+  orchCache.clear()
+}
+
+/** The shared hub.db strip on an orchestrator procedure follows the orchestrator clock too. */
+export function cachedStrip(hours: number) {
+  return orchCache.get(`strip:${hours}`, () => strip(hours))
+}
+
+const blockerCache = new Map<
+  number,
+  {
+    checkedAt: number
+    value?: OrchBlockers
+    pending?: Promise<OrchBlockers | null>
+  }
+>()
+
+/**
+ * Recurring environment problems, through the orchestrator's published CLI.
+ *
+ * The dashboard redraws every two seconds, while a blocker changes only when a
+ * run finishes. Cache by window so changing the band never briefly shows the
+ * old band's answer, and keep the last good value when the CLI is unavailable:
+ * this panel must not take the rest of routing down with it.
+ */
+async function orchBlockers(days: number): Promise<OrchBlockers | null> {
+  const now = Date.now()
+  const cached = blockerCache.get(days)
+  if (cached && now - cached.checkedAt < ORCH_CACHE_TTL_MS) {
+    return cached.pending ?? cached.value ?? null
+  }
+  if (cached?.pending) return cached.pending
+
+  const pending = (async () => {
+    try {
+      const value = await readBlockers(days)
+      blockerCache.set(days, { checkedAt: Date.now(), value })
+      return value
+    } catch {
+      blockerCache.set(days, { checkedAt: Date.now(), value: cached?.value })
+      return cached?.value ?? null
+    }
+  })()
+
+  blockerCache.set(days, { checkedAt: now, value: cached?.value, pending })
+  return pending
+}
+
+/** The leaves of the left nav, and the only view names the API will serve. */
+const VIEWS = ['flight', 'board', 'done', 'ratio', 'spend', 'routing', 'runs', 'settings'] as const
+export type View = (typeof VIEWS)[number]
+
+/** Single-quote a value so the command can be pasted into a shell as-is. */
+function setting(key: string): string | null {
+  const row = db()
+    .query<{ value: string }, [string]>(`SELECT value FROM setting WHERE key = ?`)
+    .get(key)
+  if (!row) return null
+  try {
+    return JSON.parse(row.value) as string
+  } catch {
+    return row.value
+  }
+}
+
+/**
+ * The strip above the nav.
+ *
+ * It carries the facts you would otherwise change view to check — is anything
+ * running, is anything broken — so it is on every view rather than being a
+ * destination of its own.
+ */
+export function strip(hours: number) {
+  const from = hoursAgo(hours)
+  const to = nowIso()
+  const window = stripWindow(from, to)
+  const rows = window.tasks
+  const active = new Set(rows.flatMap((r) => r.activeAgents))
+  const r = ratioSummary(14, false)
+  return {
+    window: `${hours}h`,
+    collectedAt: setting('collect.at'),
+    // What CODE is answering, not just how fresh its data is.
+    //
+    // `bottega dashboard start` reads its TypeScript once at import, so a running server goes
+    // on serving the bundle it started with however many times the source is
+    // edited. The page looked perfectly current the whole time - a recent
+    // collect time, live counters - while serving a version that predated the
+    // work, and "I don't see the new thing" was indistinguishable from a bug in
+    // the new thing. This is the one fact that separates them.
+    servingSince: STARTED_AT,
+    collector: leaseHolder(),
+    engaged: human(window.engagedMs),
+    activeAgents: [...active],
+    tasksShipped: r.tasks,
+    counts: {
+      // Tasks only. The untracked rows have their own table and counting them
+      // here would make the badge disagree with the heading beside it.
+      flight: rows.filter(
+        (x) => x.key && (x.workingNow || ['active', 'review'].includes(x.statusCategory ?? '')),
+      ).length,
+      done: rows.filter((x) => x.key && x.statusCategory === 'done').length,
+      // Unscored delegated runs are a real chore queue, so the nav carries the
+      // number rather than making you go and look.
+      runs: window.orchRuns,
+    },
+  }
+}
+
+type RunFilters = {
+  agent: string
+  project: string
+  source?: string
+  offset?: number
+  limit?: RunPageLimit
+  search?: string
+}
+
+function sourceFacets(projectsFromBoard: string[]) {
+  return [
+    ...new Set([
+      'hub',
+      ...projects()
+        .filter((project) => project.settings.tracker)
+        .map((project) => project.name),
+      ...projectsFromBoard,
+    ]),
+  ].sort()
+}
+
+export async function view(
+  name: View,
+  hours: number,
+  f: RunFilters = { agent: '', project: '', source: '' },
+) {
+  const from = hoursAgo(hours)
+  const to = nowIso()
+
+  if (name === 'flight' || name === 'done') {
+    return projectFlightDone({
+      name,
+      tasks: tasksInWindow(from, to),
+      completed: completedInWindow(from, to),
+      intervals: intervalsInWindow(from, to),
+      filters: { agent: f.agent, project: f.project, source: f.source ?? '' },
+      projects: projects(),
+      now: Date.now(),
+    })
+  }
+
+  if (name === 'ratio') {
+    const s = ratioSummary(14)
+    return {
+      perTask: s.perTask,
+      tokens: s.tokens,
+      tasks: s.tasks,
+      usableDays: s.usableDays,
+      direction: s.direction,
+      changePct: s.changePct,
+      days: s.days.map((d) => ({
+        day: d.day,
+        ratio: d.ratio,
+        tokens: d.claude_tokens,
+        tasks: d.tasks,
+        excluded: d.excluded,
+      })),
+    }
+  }
+
+  if (name === 'spend') return spendGrid(14)
+
+  if (name === 'board') {
+    /**
+     * Every project's work in play, on one board.
+     *
+     * The estate's work does not sort itself by which system happens to hold
+     * it, so a task this tool issued and one synced from a project's own
+     * tracker sit side by side — distinguished, never blended, because a reader
+     * has to know which they can act on here.
+     */
+    const b = boardTasks(BOARD_RECENT_WINDOW_DAYS, 250, {
+      project: f.project,
+      source: f.source ?? '',
+    })
+    /**
+     * Facets from the REGISTER, not from the cards.
+     *
+     * Two reasons, and the second is the one that bit. A filter built from the
+     * filtered rows could remove its own option and leave no way back — that
+     * was already known. But building it from `b.cards` was barely better: those
+     * are the cards that survived the CAP, so a project whose work all sorted
+     * below the cut vanished from the picker entirely, and a registered project
+     * with no open work at all — bottega, whose tasks are all done — was never
+     * offered. A reader then cannot tell "this project has nothing open" from
+     * "this is not a project", which are very different facts.
+     *
+     * So every registered project is always selectable, and picking a quiet one
+     * shows an honest empty board. Projects appearing only in the data (a
+     * renamed or retired one still carrying rows) are unioned in, so nothing on
+     * the board is unreachable by its own filter.
+     */
+    const facets = {
+      agents: [] as string[],
+      projects: [
+        ...new Set([
+          ...projectNames(),
+          ...Object.keys(b.totals.project).filter((p) => p !== 'elsewhere'),
+        ]),
+      ].sort() as string[],
+      sources: sourceFacets(b.sourceFacetProjects),
+    }
+    return {
+      cards: b.cards,
+      // TRUE totals, from the same filter the query used — never a count of
+      // the page. A column header counting the rows it was handed understates
+      // every column once the set outgrows one fetch.
+      totals: b.totals,
+      cap: b.cap,
+      // What a project filter is hiding, so the totals above stay honest about
+      // being estate-wide while the columns show one project.
+      scoped: Boolean(f.project || f.source),
+      filters: f,
+      facets,
+    }
+  }
+
+  if (name === 'routing') {
+    // Rendered from the orchestrator's OWN payload rather than re-derived here.
+    // Two places computing "how good is this agent at this job" is precisely
+    // the drift the orchestrator already fixed once, when its stats command and
+    // its dashboard read 96% while the router, counting failures, used 69%.
+    const days = Math.max(1, Math.ceil(hours / 24))
+    const [s, blockers] = await Promise.all([
+      orchCache.get('state:all', () => orchState(null)),
+      orchBlockers(days),
+    ])
+    return routingViewData(s, blockers, days)
+  }
+
+  if (name === 'runs') {
+    const search = f.search ?? ''
+    const limit = runPageLimit(f.limit)
+    const requestedOffset = f.offset ?? 0
+    const now = Date.now()
+    // Orch read + attribution + shaping stay cached per hours/agent/project.
+    // Search, display strings, and the page slice are per request and are not
+    // part of that key.
+    const built = await orchCache.get(`runs:${hours}:${f.agent}:${f.project}`, async () => {
+      // Read through `bottega run list --json`, not from hub's interval mirror: only the
+      // orchestrator knows a run's VERDICT, and a runs list you cannot score from
+      // is a list of chores you have to go elsewhere to do.
+      // Windowed by the BAND, like every other view. This read a fixed 30 days
+      // while the counters above it read the band, so the two disagreed the
+      // moment any history fell outside it: at 24h the band said 256 runs over a
+      // table listing 328. That is precisely what the note below forbids, and it
+      // was invisible only because every run in this database is a day old.
+      const raw = await orchCache.get(`runs-data:${hours}`, () => readRuns(hoursAgo(hours)))
+      const shapedAt = Date.now()
+      // The counters and the live table come from the orchestrator's own state,
+      // over the SAME window as the run list beneath them - a band that counts a
+      // different period than the table under it is worse than no band.
+      const stateDays = Math.max(1, Math.round(hours / 24))
+      const st = await orchCache.get(`state:${stateDays}`, () => orchState(stateDays))
+      // Shaped BEFORE it is filtered, because `project` is not a column. It is
+      // derived by attribute() from the run's cwd and prompt, so filtering the
+      // raw row would be filtering on r.repo alone - and would then disagree
+      // with the project this very table prints in the row beside it.
+      const shaped = raw.map((r) => {
+        const a = attributeRun(r)
+        return {
+          id: r.number,
+          agent: r.agent,
+          job: r.job,
+          task: a.key,
+          project: a.project ?? r.repo,
+          at: r.started_at,
+          engaged: human(engagedMs(executionSpans(r, shapedAt))),
+          running: r.status === 'running',
+          status: r.status,
+          delivery: r.delivery ?? null,
+          quality: r.quality ?? null,
+          tokens: chainVendorTokens(r),
+          costUsd: r.vendor_cost_usd,
+          probe: !!r.probe,
+          head: r.prompt_head,
+          lens: promptLens(r.prompt_path),
+          evidence_excluded: r.evidence_excluded ?? null,
+        }
+      })
+
+      // The dropdowns offer what EXISTS, taken from the whole unfiltered window
+      // rather than from the result. A filter that removes its own options from
+      // the list is one you cannot climb back out of without a reload.
+      const uniq = (xs: (string | null)[]) =>
+        [...new Set(xs.filter((x): x is string => !!x))].sort()
+      const facets = {
+        agents: uniq(shaped.map((r) => r.agent)),
+        projects: uniq(shaped.map((r) => r.project)),
+      }
+
+      // Filtered BEFORE the 120 cap, never after. Capped first, picking one project
+      // would mean "that project's runs among the newest 120 runs" rather than "the
+      // newest 120 runs for that project" - a filter that quietly searches a window
+      // instead of the history, and reports a project as idle because a busier
+      // one crowded it out.
+      const keep = shaped.filter(
+        (r) => (!f.agent || r.agent === f.agent) && (!f.project || r.project === f.project),
+      )
+
+      // Tokens stay per agent: vendors count them differently, so they are never summed.
+      // Runs are one currency and are counted beside them.
+      // Every agent that ran is listed; one with no token reading shows null, not zero.
+      const vendorTotals = new Map<string, number | null>()
+      const agentRuns = new Map<string, number>()
+      for (const run of shaped) {
+        agentRuns.set(run.agent, (agentRuns.get(run.agent) ?? 0) + 1)
+        const sum = vendorTotals.get(run.agent) ?? null
+        vendorTotals.set(run.agent, run.tokens == null ? sum : (sum ?? 0) + run.tokens)
+      }
+      const vendors = [...vendorTotals]
+        .map(([agent, tokens]) => ({ agent, tokens, runs: agentRuns.get(agent) ?? 0 }))
+        .sort((a, b) => (b.tokens ?? -1) - (a.tokens ?? -1) || a.agent.localeCompare(b.agent))
+
+      return {
+        totals: {
+          runs: st.totals.runs,
+          scored: st.totals.scored,
+          voided: st.totals.voided ?? 0,
+          failed: st.totals.failed,
+          stale_n: st.totals.stale_n,
+        },
+        vendors,
+        unscored: st.unscored,
+        stale: st.stale,
+        filters: { agent: f.agent, project: f.project },
+        facets,
+        keep,
+        live: st.live.filter(
+          (l) => (!f.agent || l.agent === f.agent) && (!f.project || (l.repo ?? '') === f.project),
+        ),
+      }
+    })
+
+    const rows = built.keep.map((row) => ({
+      ...row,
+      display: runRowDisplay(row, now),
+    }))
+    const matchedRows = rows.filter((row) => matchesRunSearch(row, search, now))
+    const offset = appliedRunOffset(requestedOffset, matchedRows.length, limit)
+    const live = built.live
+      .map((l) => {
+        const row: SearchableLiveRun = {
+          id: l.id,
+          agent: l.agent,
+          job: l.job,
+          repo: l.repo,
+          elapsedMs: now - new Date(l.started_at).getTime(),
+          prompt_head: l.prompt_head,
+        }
+        return { ...l, elapsedMs: row.elapsedMs, display: liveRowDisplay(row) }
+      })
+      .filter((mapped) =>
+        matchesRunSearch(
+          {
+            id: mapped.id,
+            agent: mapped.agent,
+            job: mapped.job,
+            repo: mapped.repo,
+            elapsedMs: mapped.elapsedMs,
+            prompt_head: mapped.prompt_head,
+          },
+          search,
+          now,
+        ),
+      )
+
+    return {
+      totals: built.totals,
+      vendors: built.vendors,
+      unscored: built.unscored,
+      stale: built.stale,
+      filters: built.filters,
+      facets: built.facets,
+      matched: matchedRows.length,
+      offset,
+      limit,
+      // Filtered on the same two axes, so the panel above the table cannot
+      // contradict it. A live run carries only its `repo` - it has not been
+      // through attribute() - which agrees with `project` for every repo this
+      // machine has, and is the honest best available for a run still going.
+      // Search applies here too; the live panel is not paged.
+      live,
+      // Uncapped, like a task's run list. The 120 was reaching back three and a
+      // half hours on a table claiming 328 matches - a limit that decides how
+      // far you can see, while the band is the control that is supposed to.
+      // The band bounds this now, so a second hidden bound only fights it.
+      rows: matchedRows.slice(offset, offset + limit),
+    }
+  }
+
+  // A view whose data source is not connected yet says exactly what is missing
+  // and what would fill it. A blank panel reads as breakage.
+  return { pending: { needs: 'not built yet' } }
+}
+
+/** When this process loaded its code. Restarting is the only thing that moves it. */
+const STARTED_AT = nowIso()

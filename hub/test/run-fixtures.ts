@@ -6,7 +6,7 @@ import { db } from '../src/db.ts'
 import { ingestRuns } from '../src/ingest/runs.ts'
 import { MIGRATIONS_TABLE } from '../src/migrations.ts'
 import { decodeRunsJson } from '../src/orch.ts'
-import { clearOrchCache } from '../src/serve.ts'
+import { clearOrchCache } from '../src/orch-view.ts'
 
 export const at = (iso: string) => new Date(iso).getTime()
 export const fixtureRecordId = (id: number) =>

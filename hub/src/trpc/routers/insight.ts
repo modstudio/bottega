@@ -1,7 +1,7 @@
 import { initTRPC } from '@trpc/server'
 import { z } from 'zod'
 import { health } from '../../orch.ts'
-import { cachedOrchResponse, cachedStrip, strip, view } from '../../serve.ts'
+import { cachedOrchResponse, cachedStrip, strip, view } from '../../orch-view.ts'
 import type { Context } from '../context.ts'
 
 const t = initTRPC.context<Context>().create()

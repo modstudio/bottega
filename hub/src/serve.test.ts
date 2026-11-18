@@ -9,7 +9,8 @@ import {
 } from '../test/run-fixtures.ts'
 import { db } from './db.ts'
 import { LOCAL_LOGIN_MESSAGE } from './local-auth.ts'
-import { clearOrchCache, handleTrpcRequest, trpcMutationRequestAllowed, view } from './serve.ts'
+import { clearOrchCache, view } from './orch-view.ts'
+import { handleTrpcRequest, trpcMutationRequestAllowed } from './serve.ts'
 import type { AppRouter } from './trpc/router.ts'
 
 test('tRPC mutation requests require browser same-origin proof', () => {
