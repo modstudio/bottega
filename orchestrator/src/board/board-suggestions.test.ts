@@ -135,7 +135,7 @@ test('worker suggestion posts anew after an identical suggestion is withdrawn or
     clock + 1,
   )
   const afterWithdrawal = suggestBoardPost(run.id, withdrawnInput, clock + 2)
-  expect(afterWithdrawal.dropped).toBe(false)
+  expect(afterWithdrawal.dropped).toBeFalse()
   expect(afterWithdrawal.recordId).not.toBe(withdrawn.recordId)
 
   const expiredInput = { title: 'Try later', body: 'Expired suggestions are not duplicates' }
@@ -144,7 +144,7 @@ test('worker suggestion posts anew after an identical suggestion is withdrawn or
     .query('UPDATE board_message SET expires_at=? WHERE record_id=?')
     .run(new Date(clock + 3).toISOString(), expired.recordId)
   const afterExpiry = suggestBoardPost(run.id, expiredInput, clock + 4)
-  expect(afterExpiry.dropped).toBe(false)
+  expect(afterExpiry.dropped).toBeFalse()
   expect(afterExpiry.recordId).not.toBe(expired.recordId)
 })
 
