@@ -2,10 +2,11 @@ import { afterAll, beforeAll, expect, test } from 'bun:test'
 import {
   createRecordContractFixture,
   RECORD_CONTRACT_SPACE_B,
+  RECORD_CONTRACT_USER,
   type RecordContractFixture,
 } from '../../test/fixtures/record-contract.ts'
 
-export const contractRoutes = ['GET /v1/task-flow'] as const
+const contractRoutes = ['GET /v1/task-flow'] as const
 
 const PROJECT = '01990000-0000-7000-8000-000000024570'
 const TASK = '01990000-0000-7000-8000-000000024571'
@@ -19,7 +20,7 @@ beforeAll(async () => {
   await fixture.database.exec(`
     RESET ROLE;
     INSERT INTO machine (id,user_id,name,registered_at,last_seen)
-    VALUES ('${MACHINE}','01990000-0000-7000-8000-000000024562','Contract machine',now(),now());
+    VALUES ('${MACHINE}','${RECORD_CONTRACT_USER}','Contract machine',now(),now());
     INSERT INTO project (id,space_id,name,key_prefixes,created_at)
     VALUES ('${PROJECT}','${RECORD_CONTRACT_SPACE_B}','contract-project',ARRAY['DEV'],now());
     INSERT INTO hub_task

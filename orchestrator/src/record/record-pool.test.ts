@@ -7,6 +7,7 @@ afterAll(closeRecordPools)
 let originalNodeEnv: string | undefined
 beforeEach(() => {
   originalNodeEnv = process.env.NODE_ENV
+  delete process.env.NODE_ENV
 })
 afterEach(() => {
   if (originalNodeEnv === undefined) delete process.env.NODE_ENV
@@ -27,7 +28,6 @@ test('the test pool slot is ignored outside the test environment', async () => {
   const url = 'postgres://pool-slot@127.0.0.1:1/never-connected'
   const injected = {} as ReturnType<typeof recordPool>
   const restore = installRecordPool(url, injected)
-  delete process.env.NODE_ENV
   try {
     expect(recordPool(url)).not.toBe(injected)
   } finally {

@@ -2,6 +2,7 @@ import type { PGlite } from '@electric-sql/pglite'
 import { recordRequestHeaders } from '../../../shared/record-request-headers.ts'
 import { type RecordApiClient, recordApiClient } from '../../src/record/record-api-client.ts'
 import { recordApiError } from '../../src/record/record-api-client-error.ts'
+import type { RecordClientRequest } from '../../src/record/record-api-client-paths.ts'
 import type { RecordIdentity } from '../../src/record/record-auth.ts'
 import { takeHostedBoardClaim } from '../../src/record/record-board-claims.ts'
 import {
@@ -25,19 +26,12 @@ export const RECORD_CONTRACT_SPACE_A = '01990000-0000-7000-8000-000000024560'
 export const RECORD_CONTRACT_SPACE_B = '01990000-0000-7000-8000-000000024561'
 export const RECORD_CONTRACT_USER = '01990000-0000-7000-8000-000000024562'
 
-type ContractRequestInit = RequestInit & {
-  schema?: (body: unknown) => unknown
-  acceptedError?: { status: number; schema: (body: unknown) => unknown }
-  destinationSpaceId?: string
-}
-
 export type RecordContractFixture = {
   app: ReturnType<typeof recordApiTestApp>
   client: RecordApiClient
   database: PGlite
   requestedRoutes: Set<string>
   close(): Promise<void>
-  reload(): Promise<RecordContractFixture>
 }
 
 function identity(): RecordIdentity {
@@ -95,28 +89,35 @@ export async function createRecordContractFixture(): Promise<RecordContractFixtu
   const requestedRoutes = new Set<string>()
   installRecordApiClient(null)
   const previousContainer = process.env.BOTTEGA_TEST_POSTGRES_CONTAINER
-  process.env.BOTTEGA_TEST_POSTGRES_CONTAINER = 'record-contract'
-  const client = recordApiClient(async <T>(path: string, init: ContractRequestInit = {}) => {
-    const pathname = path
-      .split('?', 1)[0]!
-      .replace(/^\/v1\/task-flow\/stages\/[^/]+$/, '/v1/task-flow/stages/:id')
-    requestedRoutes.add(`${init.method?.toUpperCase() ?? 'GET'} ${pathname}`)
-    const headers = recordRequestHeaders({
-      destinationSpaceId: init.destinationSpaceId,
-      headers: init.headers,
-    })
-    if (init.body && !headers.has('content-type')) headers.set('content-type', 'application/json')
-    const response = await app.request(path, { ...init, headers })
-    const body = await response.json().catch(() => null)
-    if (!response.ok) {
-      if (init.acceptedError?.status === response.status)
-        return init.acceptedError.schema(body) as T
-      throw recordApiError(body, response.status, response.headers)
+  let client: RecordApiClient
+  try {
+    process.env.BOTTEGA_TEST_POSTGRES_CONTAINER = 'record-contract'
+    const request: RecordClientRequest = async <T>(path, init) => {
+      const requestInit = init ?? {}
+      const pathname = path
+        .split('?', 1)[0]!
+        .replace(/^\/v1\/task-flow\/stages\/[^/]+$/, '/v1/task-flow/stages/:id')
+      requestedRoutes.add(`${requestInit.method?.toUpperCase() ?? 'GET'} ${pathname}`)
+      const headers = recordRequestHeaders({
+        destinationSpaceId: requestInit.destinationSpaceId,
+        headers: requestInit.headers,
+      })
+      if (requestInit.body && !headers.has('content-type'))
+        headers.set('content-type', 'application/json')
+      const response = await app.request(path, { ...requestInit, headers })
+      const body = await response.json().catch(() => null)
+      if (!response.ok) {
+        if (requestInit.acceptedError?.status === response.status)
+          return requestInit.acceptedError.schema(body)
+        throw recordApiError(body, response.status, response.headers)
+      }
+      return requestInit.schema ? requestInit.schema(body) : (body as T)
     }
-    return (init.schema ? init.schema(body) : body) as T
-  })
-  if (previousContainer === undefined) delete process.env.BOTTEGA_TEST_POSTGRES_CONTAINER
-  else process.env.BOTTEGA_TEST_POSTGRES_CONTAINER = previousContainer
+    client = recordApiClient(request)
+  } finally {
+    if (previousContainer === undefined) delete process.env.BOTTEGA_TEST_POSTGRES_CONTAINER
+    else process.env.BOTTEGA_TEST_POSTGRES_CONTAINER = previousContainer
+  }
   installRecordApiClient(client)
   const close = async () => {
     installRecordApiClient(createMemoryRecordApiClient())
@@ -129,9 +130,5 @@ export async function createRecordContractFixture(): Promise<RecordContractFixtu
     database,
     requestedRoutes,
     close,
-    async reload() {
-      await close()
-      return createRecordContractFixture()
-    },
   }
 }

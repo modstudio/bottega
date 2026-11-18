@@ -6,7 +6,7 @@ import {
   type RecordContractFixture,
 } from '../../test/fixtures/record-contract.ts'
 
-export const contractRoutes = ['PUT /v1/board/claims'] as const
+const contractRoutes = ['PUT /v1/board/claims'] as const
 
 const PROJECT = '01990000-0000-7000-8000-000000024580'
 const MACHINE = '01990000-0000-7000-8000-000000024581'

@@ -13,7 +13,7 @@ import { database } from './workflow-cursor-test.fixture.ts'
 import { handoffWorkflow } from './workflow-handoff.ts'
 import { promoteWorkflowLocal, setWorkflowLocal } from './workflows.ts'
 
-export const contractRoutes = [
+const contractRoutes = [
   'GET /v1/task-flow',
   'GET /v1/task-flow/stages',
   'GET /v1/task-flow/stages/:id',
