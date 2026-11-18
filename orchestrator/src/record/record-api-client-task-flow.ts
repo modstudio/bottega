@@ -68,7 +68,7 @@ export type RecordTaskFlowClient = {
   ): Promise<HostedTaskFlowProjectReferenceCounts>
   readTaskFlowPresence?(
     input: TaskFlowPresenceInput,
-    destination: RecordRequestDestination,
+    destination?: RecordRequestDestination,
   ): Promise<TaskFlowPresence>
   readTaskFlowStage?(
     id: string,
