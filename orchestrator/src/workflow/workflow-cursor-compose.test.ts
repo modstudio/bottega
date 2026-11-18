@@ -10,6 +10,7 @@ import { rememberActiveRecordSpace } from '../project-space.ts'
 import { rememberProjectSpace } from '../project-space-cache.ts'
 import type { RecordApiClient } from '../record/record-api-client.ts'
 import type { RecordTaskFlowClient } from '../record/record-api-client-task-flow.ts'
+import type { HostedTaskFlowStageById } from '../record/record-task-flow-contract.ts'
 import {
   type TaskFlowIntentInput,
   taskFlowRequestId,
@@ -33,6 +34,7 @@ const TASK_IDS = {
   lifecycle: '00000000-0000-4000-8001-000000000011',
   adopted: '00000000-0000-4000-8001-000000000012',
   text: '00000000-0000-4000-8001-000000000013',
+  crossSpace: '00000000-0000-4000-8001-000000000014',
 } as const
 const projectIdentityClient = {
   whoami: async () => ({
@@ -150,6 +152,45 @@ test('hosted compose prints the hosted number without a local task-flow copy', a
   expect(d.query('SELECT 1 FROM workflow_cursor WHERE workflow_key=?').get('DEV-HOSTED')).toBeNull()
   expect(d.query('SELECT 1 FROM task_flow WHERE task_record_id=?').get(TASK_IDS.hosted)).toBeNull()
   expect(d.query("SELECT kind FROM outbox WHERE kind LIKE 'task_flow%'").all()).toEqual([])
+})
+
+test('hosted compose reuses a task flow from a non-active member space', async () => {
+  const d = hostedDatabase()
+  const calls: TaskFlowIntentInput<'compose'>[] = []
+  const memoryInput = {
+    taskFlowStages: [] as HostedTaskFlowStageById[],
+    taskFlowProjectSpaces: {
+      '00000000-0000-4000-8000-000000000001': '01990000-0000-7000-8000-000000000003',
+    },
+  }
+  const memory = createMemoryRecordApiClient(memoryInput)
+  const taskFlowClient: RecordApiClient = {
+    ...memory,
+    ...projectIdentityClient,
+    composeTaskFlow: async (input, destination) => {
+      calls.push(input)
+      return memory.composeTaskFlow!(input, destination)
+    },
+  }
+  const task = {
+    key: 'DEV-CROSS-SPACE',
+    branch: 'DEV-CROSS-SPACE-work',
+    worktree: '/tmp/cross-space',
+  }
+  const hostedContext = { ...context, taskRecordId: TASK_IDS.crossSpace, taskFlowClient }
+
+  await composeWorkflowWithCursor('flow', 'fixture', 'default', task, hostedContext, d, {}, {})
+  const existing = memoryInput.taskFlowStages[0]!
+  existing.stage.state = 'done'
+  existing.flow.openStageRecordId = null
+  existing.flow.openStageCount = 0
+
+  await composeWorkflowWithCursor('flow', 'fixture', 'default', task, hostedContext, d, {}, {})
+
+  expect(calls).toHaveLength(2)
+  expect(calls[1]!.flowInsert).toBeUndefined()
+  expect(calls[1]!.flowChange?.id).toBe(existing.flow.id)
+  expect(calls[1]!.stageInsert?.flowRecordId).toBe(existing.flow.id)
 })
 
 test('hosted compose prints and resolves the per-project number across two projects', async () => {

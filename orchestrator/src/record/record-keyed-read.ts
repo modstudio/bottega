@@ -1,6 +1,8 @@
 // concern: record-keyed-read
 /** Owns hosted record routes whose UUID keys are unique across record spaces. */
 
+import { TASK_FLOW_UUID_READ_SELECTORS } from './record-task-flow-contract.ts'
+
 export const RECORD_KEYED_NOT_VISIBLE_CODE = 'record_not_visible'
 
 export function recordRequestReadKind(
@@ -8,7 +10,11 @@ export function recordRequestReadKind(
   query: (name: string) => string | undefined,
 ): string | undefined {
   if (route === '/v1/questions') return query('read')
-  if (route === '/v1/task-flow' && query('flowRecordId')) return 'flow'
+  if (
+    route === '/v1/task-flow' &&
+    TASK_FLOW_UUID_READ_SELECTORS.some((selector) => query(selector))
+  )
+    return 'flow'
   return undefined
 }
 

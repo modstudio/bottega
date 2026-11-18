@@ -1,6 +1,7 @@
 import type { RecordApiClient } from '../../src/record/record-api-client.ts'
 import { recordApiError } from '../../src/record/record-api-client-error.ts'
 import { encodeTaskFlowStageListCursor } from '../../src/record/record-cursor.ts'
+import { recordReadIsUuidKeyed, recordRequestReadKind } from '../../src/record/record-keyed-read.ts'
 import {
   type HostedTaskFlowStageById,
   taskFlowStageListQuerySchema,
@@ -35,8 +36,11 @@ function inDestination(
   row: HostedTaskFlowStageById,
   input: MemoryTaskFlowInput,
   destination?: Destination,
+  route = '/v1/task-flow/stages',
+  readKind?: string,
 ): boolean {
-  if (!input.taskFlowProjectSpaces || !destination) return true
+  if (!input.taskFlowProjectSpaces) return true
+  if (!destination && recordReadIsUuidKeyed(route, readKind)) return true
   return (
     input.taskFlowProjectSpaces[row.stage.projectId] ===
     (destination?.destinationSpaceId ?? ACTIVE_SPACE_ID)
@@ -219,8 +223,12 @@ export function memoryTaskFlowClient(input: MemoryTaskFlowInput): Partial<Record
     },
     async readTaskFlow(selector, destination) {
       if (input.taskFlowReadCounts) input.taskFlowReadCounts.flowsById++
+      const readKind = recordRequestReadKind(
+        '/v1/task-flow',
+        (name) => selector[name as keyof typeof selector],
+      )
       const found = stages
-        .filter((row) => inDestination(row, input, destination))
+        .filter((row) => inDestination(row, input, destination, '/v1/task-flow', readKind))
         .find(({ flow }) =>
           selector.taskId
             ? flow.taskId === selector.taskId
@@ -297,7 +305,9 @@ export function memoryTaskFlowClient(input: MemoryTaskFlowInput): Partial<Record
     async readTaskFlowStage(id, destination) {
       if (input.taskFlowReadCounts) input.taskFlowReadCounts.stagesById++
       const found = stages.find(
-        (row) => inDestination(row, input, destination) && row.stage.id === id,
+        (row) =>
+          inDestination(row, input, destination, `/v1/task-flow/stages/${id}`) &&
+          row.stage.id === id,
       )
       return found
         ? { ...found, space_id: input.taskFlowProjectSpaces?.[found.stage.projectId] }
@@ -306,7 +316,7 @@ export function memoryTaskFlowClient(input: MemoryTaskFlowInput): Partial<Record
     async readTaskFlowText(id, destination) {
       if (input.taskFlowReadCounts) input.taskFlowReadCounts.textsById++
       for (const row of stages) {
-        if (!inDestination(row, input, destination)) continue
+        if (!inDestination(row, input, destination, `/v1/task-flow/texts/${id}`)) continue
         const { stage } = row
         const text = stage.stepTexts?.find((row) => row.id === id)
         const copy = stage.textCopies?.find((row) => row.workflowTextRecordId === id)
@@ -323,7 +333,7 @@ export function memoryTaskFlowClient(input: MemoryTaskFlowInput): Partial<Record
     async readTaskFlowObligation(id, destination) {
       if (input.taskFlowReadCounts) input.taskFlowReadCounts.obligationsById++
       for (const row of stages) {
-        if (!inDestination(row, input, destination)) continue
+        if (!inDestination(row, input, destination, `/v1/task-flow/obligations/${id}`)) continue
         const { stage } = row
         const obligation = stage.obligations?.find((row) => row.id === id)
         if (obligation)

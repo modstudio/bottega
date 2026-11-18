@@ -218,10 +218,16 @@ export async function readRecordTaskFlow(
   input: TenantPrincipal & { url: string; uuidKeyedRead?: true } & TaskFlowReadQueryInput,
 ): Promise<HostedTaskFlow> {
   const sql = recordPool(input.url)
-  return sql.begin(async (tx) => {
-    await bindTenant(tx, input)
-    const rows = await tx.unsafe(
-      `SELECT ${FLOW_SELECT},${STAGE_SELECT},
+  return sql.begin((tx) => readRecordTaskFlowTransaction(tx, input))
+}
+
+export async function readRecordTaskFlowTransaction(
+  tx: SQL,
+  input: TenantPrincipal & { uuidKeyedRead?: true } & TaskFlowReadQueryInput,
+): Promise<HostedTaskFlow> {
+  await bindTenant(tx, input)
+  const rows = await tx.unsafe(
+    `SELECT ${FLOW_SELECT},${STAGE_SELECT},
               coalesce(m.display_name,m.short_name,m.name) holder_display_name
        FROM task_flow f
        LEFT JOIN hub_task t ON t.id=f.task_id AND t.space_id=f.space_id
@@ -234,45 +240,44 @@ export async function readRecordTaskFlow(
          AND ($4::uuid IS NULL OR f.task_id=$4::uuid)
        ORDER BY f.open_stage_record_id IS NULL, f.revision DESC, f.updated_at DESC, f.id
        LIMIT 1`,
-      [
-        input.uuidKeyedRead ? null : input.spaceId,
-        input.flowRecordId ?? null,
-        input.taskKey ?? null,
-        input.taskId ?? null,
-      ],
-    )
-    const row = rows[0]
-    if (!row) throw new RecordTaskFlowError(RECORD_TASK_FLOW_NOT_FOUND_MESSAGE)
-    const rowSpaceId = String(row.space_id)
-    const stageRows = await tx.unsafe(
-      `SELECT ${STAGE_SELECT}
+    [
+      input.uuidKeyedRead ? null : input.spaceId,
+      input.flowRecordId ?? null,
+      input.taskKey ?? null,
+      input.taskId ?? null,
+    ],
+  )
+  const row = rows[0]
+  if (!row) throw new RecordTaskFlowError(RECORD_TASK_FLOW_NOT_FOUND_MESSAGE)
+  const rowSpaceId = String(row.space_id)
+  const stageRows = await tx.unsafe(
+    `SELECT ${STAGE_SELECT}
        FROM task_flow_stage s
        ${STAGE_JOINS}
        WHERE s.space_id=$1::uuid AND s.flow_record_id=$2::uuid
          AND ($3::uuid IS NULL OR s.id<>$3::uuid)
        ORDER BY s.updated_at`,
-      [rowSpaceId, row.id, row.open_stage_record_id ?? null],
-    )
-    const children = await stageChildren(tx, rowSpaceId, String(row.id))
-    const otherStages = stageRows.map((stageRow: Record<string, unknown>) =>
-      withChildren(toHostedStage(stageRow), children),
-    )
-    return {
-      space_id: rowSpaceId,
-      flow: toHostedFlow(row),
-      stage:
-        row.stage_id == null
-          ? null
-          : {
-              ...withChildren(toHostedStage(row), children),
-              holder: {
-                id: String(row.stage_last_advanced_machine_id),
-                displayName: String(row.holder_display_name),
-              },
+    [rowSpaceId, row.id, row.open_stage_record_id ?? null],
+  )
+  const children = await stageChildren(tx, rowSpaceId, String(row.id))
+  const otherStages = stageRows.map((stageRow: Record<string, unknown>) =>
+    withChildren(toHostedStage(stageRow), children),
+  )
+  return {
+    space_id: rowSpaceId,
+    flow: toHostedFlow(row),
+    stage:
+      row.stage_id == null
+        ? null
+        : {
+            ...withChildren(toHostedStage(row), children),
+            holder: {
+              id: String(row.stage_last_advanced_machine_id),
+              displayName: String(row.holder_display_name),
             },
-      otherStages,
-    }
-  })
+          },
+    otherStages,
+  }
 }
 
 export async function listRecordTaskFlowStages(
