@@ -406,7 +406,7 @@ export async function completePullRequestPostLanding(input: {
         ? undecidedRequiredRelease(decision.rungs, decision.error)
         : input.releaseRequired
           ? failedRequiredRelease(decision.rungs, `${move.detail}; recover with: ${move.recovery}`)
-        : releaseRequiredFlagAbsent(decision.rungs),
+          : releaseRequiredFlagAbsent(decision.rungs),
       cleanupWasFenced: move.cleanupWasFenced,
       cleanupRecovery: move.recovery,
     })

@@ -271,6 +271,7 @@ describe('requiredRungDecision', () => {
       required: [],
       error: 'landing-branch fetch failed',
     })
+    if (decision.decided) throw new Error('expected an undecided release requirement')
     const report = undecidedRequiredRelease(decision.rungs, decision.error)
     expect(report.satisfied).toBe(false)
     expect(formatRequiredReleaseReport(report, '42', project.name)).toBe(

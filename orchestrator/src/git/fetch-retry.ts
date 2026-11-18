@@ -31,10 +31,7 @@ export function decideGitFetchRetry(attempt: number, stderr: string): GitFetchRe
   return { retry: true, delayMs: GIT_FETCH_RETRY_BASE_DELAY_MS * attempt }
 }
 
-export function runWithGitFetchRetry<T>(
-  argv: string[],
-  runner: () => GitFetchAttempt<T>,
-): T {
+export function runWithGitFetchRetry<T>(argv: string[], runner: () => GitFetchAttempt<T>): T {
   for (let attempt = 1; ; attempt += 1) {
     const outcome = runner()
     if (outcome.succeeded || !isGitFetchInvocation(argv)) return outcome.result
