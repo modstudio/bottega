@@ -4,6 +4,7 @@
 import type { Database } from 'bun:sqlite'
 import { nowIso } from '../database/db.ts'
 import { questionsForWorkflowCursor } from '../question-store/question-store-read.ts'
+import { TASK_FLOW_CLOSED_STAGE_STATES } from '../record/record-task-flow-contract.ts'
 import { taskFlowReadStore } from './task-flow-store.ts'
 import { isKeylessExplore, type TaskFlowStageCursorRow } from './task-flow-store-types.ts'
 import type { CursorTrailEntry } from './workflow-cursor-trail.ts'
@@ -30,7 +31,7 @@ export async function closeExploreForLifecycle(
 ): Promise<ExploreLifecycleCloseOutcome> {
   const row = await taskFlowReadStore(database).stageByRecordId(cursorRecordId)
   if (!row) return 'absent'
-  if (row.state === 'done' || row.state === 'abandoned') return 'terminal'
+  if ((TASK_FLOW_CLOSED_STAGE_STATES as readonly string[]).includes(row.state)) return 'terminal'
   if (!isKeylessExplore(row)) throw new Error(`workflow cursor ${row.id} is not a keyless explore`)
   const openQuestion = (await questionsForWorkflowCursor(database, row.record_id)).find(
     (question) => question.answered_at === null && question.closed_at === null,

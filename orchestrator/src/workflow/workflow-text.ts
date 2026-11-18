@@ -4,6 +4,7 @@ import type { Database } from 'bun:sqlite'
 import { RECORD_ID_PATTERN_SOURCE } from '../../../shared/record-id.ts'
 import { writableDb, writeTransaction } from '../database/db.ts'
 import { assertOrchestratorProse } from '../prose-service.ts'
+import { TASK_FLOW_CLOSED_STAGE_STATES } from '../record/record-task-flow-contract.ts'
 import {
   taskFlowWriteTarget,
   writeHostedTaskFlow,
@@ -54,7 +55,7 @@ export function decideWorkflowTextAttach(input: {
   attachmentBytes: number
   cursorBytes: number
 }): AttachDecision {
-  if (input.state === 'done' || input.state === 'abandoned')
+  if ((TASK_FLOW_CLOSED_STAGE_STATES as readonly string[]).includes(input.state))
     return {
       action: 'refuse',
       message: `workflow cursor is ${input.state}; attach to a live cursor`,

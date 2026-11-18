@@ -16,7 +16,11 @@ export const recordInvariantModules = [
     '../database/db.ts',
     './project-settings.ts',
   ]),
-  module('orchestrator/src/record/record-task-flow-write-contract.ts', ['uuid', 'zod']),
+  module('orchestrator/src/record/record-task-flow-write-contract.ts', [
+    'uuid',
+    'zod',
+    './record-task-flow-contract.ts',
+  ]),
   module('orchestrator/src/record/record-task-flow-write-client.ts', [
     'bun:sqlite',
     '../project/project-read.ts',

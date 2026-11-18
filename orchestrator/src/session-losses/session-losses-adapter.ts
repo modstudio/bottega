@@ -15,6 +15,7 @@ import {
   readTranscriptSessionId,
   transcriptSources,
 } from '../metric/transcript-reader.ts'
+import { TASK_FLOW_CLOSED_STAGE_STATES } from '../record/record-task-flow-contract.ts'
 import { runArtifactsDir, runScratchDir } from '../run/run-artifacts.ts'
 import { detach } from '../run/run-dispatch.ts'
 import { TERMINAL_RUN_STATUS_SET } from '../run/run-status.ts'
@@ -167,10 +168,9 @@ async function cursorFacts(sessionId: string): Promise<CursorLifecycle[]> {
       id: row.record_id,
       number: row.number,
       createdAt: row.created_at,
-      terminalAt:
-        row.state === 'done' || row.state === 'abandoned'
-          ? (advancesAt.at(-1) ?? row.updated_at)
-          : null,
+      terminalAt: (TASK_FLOW_CLOSED_STAGE_STATES as readonly string[]).includes(row.state)
+        ? (advancesAt.at(-1) ?? row.updated_at)
+        : null,
       advancesAt,
     }
   })

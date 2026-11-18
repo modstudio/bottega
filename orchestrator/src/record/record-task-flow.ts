@@ -16,6 +16,7 @@ import {
   type HostedTaskFlowTextById,
   RECORD_TASK_FLOW_NOT_FOUND_CODE,
   RECORD_TASK_FLOW_NOT_FOUND_MESSAGE,
+  TASK_FLOW_CLOSED_STAGE_STATES,
   type TaskFlowPresence,
   type TaskFlowReadQueryInput,
   type TaskFlowStageListQuery,
@@ -45,11 +46,11 @@ const STAGE_SELECT = `
   s.handed_off_from_record_id stage_handed_off_from_record_id,s.revision stage_revision,
   s.created_at stage_created_at,s.updated_at stage_updated_at`
 
-const FLOW_SELECT = `
+const flowSelect = (closedStateParameter: number): string => `
   f.id,f.space_id,f.project_id,f.task_id,t.key task_key,f.state,f.open_stage_record_id,
   (SELECT count(*)::integer FROM task_flow_stage open_stage
    WHERE open_stage.flow_record_id=f.id AND open_stage.space_id=f.space_id
-     AND open_stage.state NOT IN ('done','abandoned')) open_stage_count,
+     AND open_stage.state NOT IN ($${closedStateParameter},$${closedStateParameter + 1})) open_stage_count,
   f.opening_machine_id,f.updated_machine_id,f.revision,f.created_at,f.updated_at`
 
 const STAGE_JOINS = `
@@ -220,20 +221,21 @@ export async function readRecordTaskFlow(
   return sql.begin(async (tx) => {
     await bindTenant(tx, input)
     const rows = await tx.unsafe(
-      `SELECT ${FLOW_SELECT},${STAGE_SELECT},
+      `SELECT ${flowSelect(1)},${STAGE_SELECT},
               coalesce(m.display_name,m.short_name,m.name) holder_display_name
        FROM task_flow f
        LEFT JOIN hub_task t ON t.id=f.task_id AND t.space_id=f.space_id
        LEFT JOIN task_flow_stage s ON s.id=f.open_stage_record_id AND s.space_id=f.space_id
        ${STAGE_JOINS}
        LEFT JOIN machine m ON m.id=s.last_advanced_machine_id
-       WHERE ($1::uuid IS NULL OR f.space_id=$1::uuid)
-         AND ($2::uuid IS NULL OR f.id=$2::uuid)
-         AND ($3::text IS NULL OR t.key=$3)
-         AND ($4::uuid IS NULL OR f.task_id=$4::uuid)
+       WHERE ($3::uuid IS NULL OR f.space_id=$3::uuid)
+         AND ($4::uuid IS NULL OR f.id=$4::uuid)
+         AND ($5::text IS NULL OR t.key=$5)
+         AND ($6::uuid IS NULL OR f.task_id=$6::uuid)
        ORDER BY f.open_stage_record_id IS NULL, f.revision DESC, f.updated_at DESC, f.id
        LIMIT 1`,
       [
+        ...TASK_FLOW_CLOSED_STAGE_STATES,
         input.uuidKeyedRead ? null : input.spaceId,
         input.flowRecordId ?? null,
         input.taskKey ?? null,
@@ -280,9 +282,11 @@ export async function listRecordTaskFlowStages(
   return recordPool(input.url).begin(async (tx) => {
     await bindTenant(tx, input)
     const query = taskFlowStageListSql(input.spaceId, input)
+    const closedStateParameter = query.values.length + 1
+    query.values.push(...TASK_FLOW_CLOSED_STAGE_STATES)
     query.values.push(input.limit + 1)
     const rows = await tx.unsafe(
-      `SELECT ${STAGE_SELECT},${FLOW_SELECT}
+      `SELECT ${STAGE_SELECT},${flowSelect(closedStateParameter)}
        FROM task_flow_stage s
        JOIN task_flow f ON f.id=s.flow_record_id AND f.space_id=s.space_id
        LEFT JOIN hub_task t ON t.id=f.task_id AND t.space_id=f.space_id
@@ -384,13 +388,13 @@ export async function readRecordTaskFlowStage(
   return recordPool(input.url).begin(async (tx) => {
     await bindTenant(tx, input)
     const rows = await tx.unsafe(
-      `SELECT ${STAGE_SELECT},${FLOW_SELECT}
+      `SELECT ${STAGE_SELECT},${flowSelect(2)}
        FROM task_flow_stage s
        JOIN task_flow f ON f.id=s.flow_record_id AND f.space_id=s.space_id
        LEFT JOIN hub_task t ON t.id=f.task_id AND t.space_id=f.space_id
        ${STAGE_JOINS}
        WHERE s.id=$1::uuid`,
-      [input.id],
+      [input.id, ...TASK_FLOW_CLOSED_STAGE_STATES],
     )
     const row = rows[0]
     if (!row) throw new RecordTaskFlowError(RECORD_TASK_FLOW_NOT_FOUND_MESSAGE)

@@ -5,7 +5,10 @@ import type { Database } from 'bun:sqlite'
 import { PLATFORM_NAME } from '../../../shared/brand.ts'
 import { QUESTION_ID_LIST_LIMIT } from '../record/record-question-contract.ts'
 import type { HostedTaskFlowStageById } from '../record/record-task-flow-contract.ts'
-import { TASK_FLOW_STAGE_STATES } from '../record/record-task-flow-contract.ts'
+import {
+  TASK_FLOW_OPEN_STAGE_STATES,
+  TASK_FLOW_STAGE_STATES,
+} from '../record/record-task-flow-contract.ts'
 import { type ListedItem, stageRow } from '../workflow/task-flow-store-record-stage-row.ts'
 import type {
   TaskFlowInboxQuestionRow,
@@ -19,7 +22,6 @@ import type {
   TaskFlowTaskRulingRow,
   TaskFlowWaitingQuestionRow,
 } from '../workflow/task-flow-store-types.ts'
-import { TASK_FLOW_OPEN_STAGE_STATES } from '../workflow/task-flow-store-types.ts'
 import { questionStore } from './question-store.ts'
 import { questionRulingsPaged } from './question-store-read.ts'
 import type { QuestionReadRow, QuestionStore } from './question-store-types.ts'
@@ -129,7 +131,7 @@ function stageReads(questions: QuestionStore, read: StageRead) {
             projectId: read.projectId(project),
             sessionId,
             workflow: 'ship-task',
-            states: ['running', 'awaiting-ruling'],
+            states: TASK_FLOW_OPEN_STAGE_STATES,
           },
           project,
         )
@@ -179,7 +181,7 @@ function sessionReads(questions: QuestionStore, read: StageRead) {
     async keylessSessionCursors(project: string | null) {
       const selector = {
         keyless: true,
-        states: ['running', 'awaiting-ruling'],
+        states: TASK_FLOW_OPEN_STAGE_STATES,
         ...(project ? { projectId: read.projectId(project) } : {}),
       }
       const items = project ? await read.list(selector, project) : await read.listEvery(selector)

@@ -12,6 +12,29 @@ export const TASK_FLOW_STAGE_LIST_REMEDY = `Pass projectId, projectId with numbe
 const nullableId = z.string().uuid().nullable()
 const machine = z.object({ id: z.string().uuid(), displayName: z.string().min(1) })
 export const TASK_FLOW_STAGE_STATES = ['running', 'awaiting-ruling', 'done', 'abandoned'] as const
+export type TaskFlowStageState = (typeof TASK_FLOW_STAGE_STATES)[number]
+export const TASK_FLOW_OPEN_STAGE_STATES = [
+  'running',
+  'awaiting-ruling',
+] as const satisfies readonly TaskFlowStageState[]
+export const TASK_FLOW_CLOSED_STAGE_STATES = [
+  'done',
+  'abandoned',
+] as const satisfies readonly TaskFlowStageState[]
+type ClassifiedTaskFlowStageState =
+  | (typeof TASK_FLOW_OPEN_STAGE_STATES)[number]
+  | (typeof TASK_FLOW_CLOSED_STAGE_STATES)[number]
+type TaskFlowStageStatePartition =
+  Exclude<TaskFlowStageState, ClassifiedTaskFlowStageState> extends never
+    ? Extract<
+        (typeof TASK_FLOW_OPEN_STAGE_STATES)[number],
+        (typeof TASK_FLOW_CLOSED_STAGE_STATES)[number]
+      > extends never
+      ? unknown
+      : never
+    : never
+const taskFlowStageStatePartition: TaskFlowStageStatePartition = true
+void taskFlowStageStatePartition
 const stageState = z.enum(TASK_FLOW_STAGE_STATES)
 
 const hostedTaskFlowObligationSchema = z.object({

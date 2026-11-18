@@ -7,6 +7,7 @@ import { nowIso, writeTransaction } from '../database/db.ts'
 import { DocRevisionConflictError } from '../doc/doc-revision-conflict.ts'
 import { machineId } from '../record/machine-identity.ts'
 import { recordApiClient } from '../record/record-api-client.ts'
+import { TASK_FLOW_OPEN_STAGE_STATES } from '../record/record-task-flow-contract.ts'
 import {
   resolveTaskFlowDestination,
   type TaskFlowWriteTarget,
@@ -349,7 +350,7 @@ async function recoverComposeConflict(
   const listed = await client.listTaskFlowStages!(
     {
       projectId: facts.projectRecordId,
-      states: ['running', 'awaiting-ruling'],
+      states: TASK_FLOW_OPEN_STAGE_STATES,
       ...(facts.key ? { taskKey: facts.key } : { sessionId: context.session ?? undefined }),
     },
     await resolveTaskFlowDestination(target, client),

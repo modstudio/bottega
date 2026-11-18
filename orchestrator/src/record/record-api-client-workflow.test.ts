@@ -3,7 +3,10 @@ import { recordApiError } from './record-api-client-error.ts'
 import { recordTaskFlowClient } from './record-api-client-task-flow.ts'
 import { recordWorkflowClient } from './record-api-client-workflow.ts'
 import { recordKeyedNotVisibleRefusal } from './record-keyed-read.ts'
-import { RECORD_TASK_FLOW_NOT_FOUND_CODE } from './record-task-flow-contract.ts'
+import {
+  RECORD_TASK_FLOW_NOT_FOUND_CODE,
+  TASK_FLOW_OPEN_STAGE_STATES,
+} from './record-task-flow-contract.ts'
 import type { RecordWorkflowImportInput } from './record-workflow-contract.ts'
 
 const input: RecordWorkflowImportInput = {
@@ -65,7 +68,7 @@ test('task-flow stage lists carry combined filters and the destination space', a
     {
       projectId: '00000000-0000-4000-8000-000000000001',
       number: 4,
-      states: ['running', 'awaiting-ruling'],
+      states: TASK_FLOW_OPEN_STAGE_STATES,
       linked: true,
       openedMachineId: '00000000-0000-4000-8000-000000000003',
       limit: 50,

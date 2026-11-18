@@ -1,6 +1,7 @@
 import type { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
 import { newRecordId } from '../../../shared/record-id.ts'
+import { TASK_FLOW_CLOSED_STAGE_STATES } from '../record/record-task-flow-contract.ts'
 import { taskFlowReadStore } from './task-flow-store.ts'
 import { composeWorkflowWithCursor } from './workflow-cursor.ts'
 import { admissionEnforcingTaskClaimPorts, database } from './workflow-cursor-test.fixture.ts'
@@ -136,10 +137,10 @@ test('task-bound composition reuses its open cursor and closes an untouched expl
   expect(composed.graduated).toEqual({ cursor: explore.id, closed: true })
   expect(
     d
-      .query<{ count: number }, [string]>(
-        "SELECT count(*) AS count FROM workflow_cursor WHERE workflow_key=? AND state NOT IN ('done','abandoned')",
+      .query<{ count: number }, string[]>(
+        'SELECT count(*) AS count FROM workflow_cursor WHERE workflow_key=? AND state NOT IN (?,?)',
       )
-      .get(taskArgs.key),
+      .get(taskArgs.key, ...TASK_FLOW_CLOSED_STAGE_STATES),
   ).toEqual({ count: 1 })
 })
 

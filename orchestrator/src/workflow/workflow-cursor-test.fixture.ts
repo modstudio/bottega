@@ -1,6 +1,10 @@
 import type { Database } from 'bun:sqlite'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { testDatabaseFixture } from '../database/test-database.fixture.ts'
+import {
+  TASK_FLOW_CLOSED_STAGE_STATES,
+  TASK_FLOW_OPEN_STAGE_STATES,
+} from '../record/record-task-flow-contract.ts'
 import type { LiveCursorAutonomy } from './autonomy.ts'
 import {
   productionStepCatalogue,
@@ -73,7 +77,7 @@ export function admissionEnforcingTaskClaimPorts(
         (stage) =>
           stage.project === project &&
           stage.workflow_key === key &&
-          (stage.state === 'running' || stage.state === 'awaiting-ruling'),
+          (TASK_FLOW_OPEN_STAGE_STATES as readonly string[]).includes(stage.state),
       )
       if (!ownsOpenStage)
         throw new Error(
@@ -180,7 +184,7 @@ export function installEvidence(
           AND ${key ? 'instance_id=?' : 'session_id=?'} ORDER BY number DESC`,
     )
     .get(project, slug, mode, key, instance)
-  if (!row || row.state === 'done' || row.state === 'abandoned') return {}
+  if (!row || (TASK_FLOW_CLOSED_STAGE_STATES as readonly string[]).includes(row.state)) return {}
   const gate =
     d
       .query<{ number: number }, []>(

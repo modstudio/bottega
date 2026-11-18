@@ -1,6 +1,7 @@
 import type { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
 import { testDatabaseFixture } from '../database/test-database.fixture.ts'
+import { TASK_FLOW_CLOSED_STAGE_STATES } from '../record/record-task-flow-contract.ts'
 import { awaitWorkflowRuling, composeWorkflowWithCursor } from './workflow-cursor.ts'
 import { getWorkflowStepWithCursor } from './workflow-cursor-serve.ts'
 import { selectAndNextWorkflowStep as nextWorkflowStep } from './workflow-cursor-test.fixture.ts'
@@ -398,7 +399,7 @@ test('step 1 refuses when two untouched keyless cursors match', async () => {
 })
 
 test('a handle to a done or abandoned cursor never opens a replacement', async () => {
-  for (const state of ['done', 'abandoned'] as const) {
+  for (const state of TASK_FLOW_CLOSED_STAGE_STATES) {
     const d = database()
     installKeylessWorkflow(d, `retired-${state}`)
     const opened = await getWorkflowStepWithCursor(
