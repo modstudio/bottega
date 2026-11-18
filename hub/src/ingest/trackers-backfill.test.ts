@@ -11,7 +11,7 @@ const { db, writeTransaction } = await import('../db.ts')
 const { applyHostedPushChangesInTransaction } = await import('../hosted-push-changes.ts')
 const { loadOutboxChange } = await import('../outbox-row.ts')
 const { parseHostedPushItem } = await import('../push-contract.ts')
-const { ingestTrackers } = await import('./trackers.ts')
+const { ingestTrackers, writeTrackerCache } = await import('./trackers.ts')
 
 test('tracker backfill never queues or overwrites a local row with a missing update time', async () => {
   const originalFetch = globalThis.fetch
@@ -313,6 +313,240 @@ test('collect retires cached out-of-scope rows before any vanished-key lookup', 
     if (originalToken === undefined) delete process.env.FIXTURE_NO_CREDENTIALS_MCP_TOKEN
     else process.env.FIXTURE_NO_CREDENTIALS_MCP_TOKEN = originalToken
   }
+})
+
+test('collect resolves a child read before its parent and counts omissions', async () => {
+  const originalFetch = globalThis.fetch
+  const originalUrl = process.env.FIXTURE_NO_CREDENTIALS_MCP_URL
+  const originalToken = process.env.FIXTURE_NO_CREDENTIALS_MCP_TOKEN
+  process.env.FIXTURE_NO_CREDENTIALS_MCP_URL = 'https://tracker.invalid/mcp'
+  process.env.FIXTURE_NO_CREDENTIALS_MCP_TOKEN = 'fixture'
+  let pass = 0
+  globalThis.fetch = (async (_input, init) => {
+    if (init?.method === 'DELETE') return new Response(null)
+    const message = JSON.parse(String(init?.body)) as { id?: number; method: string }
+    if (message.method === 'server/discover') return new Response('not found', { status: 404 })
+    if (message.method === 'notifications/initialized') return new Response(null)
+    const result =
+      message.method === 'initialize'
+        ? {
+            protocolVersion: '2025-11-25',
+            capabilities: { tools: {} },
+            serverInfo: { name: 'fixture', version: '1' },
+          }
+        : message.method === 'tools/list'
+          ? {
+              tools: [
+                {
+                  name: 'list-tasks-tool',
+                  inputSchema: { type: 'object', properties: { team_id: {}, status: {} } },
+                },
+              ],
+            }
+          : {
+              content: [
+                {
+                  type: 'text',
+                  text: JSON.stringify({
+                    tasks: [
+                      ...(pass++ === 0
+                        ? [
+                            {
+                              id: 'tracker-alpha-11',
+                              short_id: 'ALP-11',
+                              summary: 'Child',
+                              status: 'todo',
+                              parent: { short_id: 'ALP-10' },
+                            },
+                          ]
+                        : [
+                            {
+                              id: 'tracker-alpha-10',
+                              short_id: 'ALP-10',
+                              summary: 'Parent',
+                              status: 'todo',
+                              parent: null,
+                            },
+                          ]),
+                      {
+                        id: 'tracker-alpha-12',
+                        short_id: 'ALP-12',
+                        summary: 'Unknown parent state',
+                        status: 'todo',
+                      },
+                    ],
+                    last_page: 1,
+                  }),
+                },
+              ],
+            }
+    return Response.json({ jsonrpc: '2.0', id: message.id, result })
+  }) as typeof fetch
+  resetFixtureStore()
+  try {
+    writeTransaction((conn) => {
+      const insert = conn.query(
+        `INSERT INTO task
+         (record_id,external_id,key,project,title,status,status_category,parent_key,source,first_seen,last_seen)
+         VALUES (?,?,?,?,?,?,?,?, 'mcp',?,?)`,
+      )
+      insert.run(
+        '01990000-0000-7000-8000-000000001312',
+        'tracker-alpha-12',
+        'ALP-12',
+        'alpha',
+        'Unknown parent state',
+        'todo',
+        'open',
+        'ALP-97',
+        '2026-11-18T10:00:00.000Z',
+        '2026-11-18T10:00:00.000Z',
+      )
+    })
+
+    const firstResults = await ingestTrackers()
+    expect(firstResults.find((result) => result.project === 'alpha')).toMatchObject({
+      tasks: 2,
+      unreportedParents: 1,
+    })
+    expect(
+      db()
+        .query<{ parent_key: string; parent_record_id: string | null }, []>(
+          `SELECT parent_key,parent_record_id FROM task WHERE key='ALP-11'`,
+        )
+        .get(),
+    ).toEqual({
+      parent_key: 'ALP-10',
+      parent_record_id: null,
+    })
+
+    const secondResults = await ingestTrackers()
+    expect(secondResults.find((result) => result.project === 'alpha')).toMatchObject({
+      tasks: 2,
+      unreportedParents: 1,
+    })
+    expect(
+      db()
+        .query<{ parent_key: string; parent_record_id: string }, []>(
+          `SELECT parent_key,parent_record_id FROM task WHERE key='ALP-11'`,
+        )
+        .get(),
+    ).toEqual({
+      parent_key: 'ALP-10',
+      parent_record_id: db()
+        .query<{ record_id: string }, []>(`SELECT record_id FROM task WHERE key='ALP-10'`)
+        .get()!.record_id,
+    })
+    expect(
+      db()
+        .query<{ key: string; parent_key: string | null }, []>(
+          `SELECT key,parent_key FROM task WHERE key IN ('ALP-10','ALP-12') ORDER BY key`,
+        )
+        .all(),
+    ).toEqual([
+      { key: 'ALP-10', parent_key: null },
+      { key: 'ALP-12', parent_key: 'ALP-97' },
+    ])
+  } finally {
+    globalThis.fetch = originalFetch
+    if (originalUrl === undefined) delete process.env.FIXTURE_NO_CREDENTIALS_MCP_URL
+    else process.env.FIXTURE_NO_CREDENTIALS_MCP_URL = originalUrl
+    if (originalToken === undefined) delete process.env.FIXTURE_NO_CREDENTIALS_MCP_TOKEN
+    else process.env.FIXTURE_NO_CREDENTIALS_MCP_TOKEN = originalToken
+  }
+})
+
+test('a reported parent change re-resolves and a reported null clears it', () => {
+  resetFixtureStore()
+  const at = '2026-11-18T10:00:00.000Z'
+  const task = (key: string, parentKey: string | null) => ({
+    externalId: `tracker-${key}`,
+    key,
+    project: 'alpha',
+    parentKey,
+    title: key,
+    status: 'todo',
+    category: 'open' as const,
+    updatedAt: null,
+    assignee: null,
+  })
+  writeTrackerCache([task('ALP-10', null), task('ALP-20', null)], at, [])
+  writeTrackerCache([task('ALP-30', 'ALP-10')], at, [])
+
+  const changed = writeTrackerCache([task('ALP-30', 'ALP-20')], '2026-11-18T11:00:00.000Z', [])[0]!
+  expect(changed.observation.changed).toBe(true)
+  expect(
+    db()
+      .query<{ parent_key: string; parent_record_id: string }, []>(
+        `SELECT parent_key,parent_record_id FROM task WHERE key='ALP-30'`,
+      )
+      .get(),
+  ).toEqual({
+    parent_key: 'ALP-20',
+    parent_record_id: db()
+      .query<{ record_id: string }, []>(`SELECT record_id FROM task WHERE key='ALP-20'`)
+      .get()!.record_id,
+  })
+
+  const cleared = writeTrackerCache([task('ALP-30', null)], '2026-11-18T12:00:00.000Z', [])[0]!
+  expect(cleared.observation.changed).toBe(true)
+  expect(
+    db()
+      .query<{ parent_key: string | null; parent_record_id: string | null }, []>(
+        `SELECT parent_key,parent_record_id FROM task WHERE key='ALP-30'`,
+      )
+      .get(),
+  ).toEqual({ parent_key: null, parent_record_id: null })
+})
+
+test('an ambiguous parent identity is retained and reported without linking', () => {
+  resetFixtureStore()
+  const at = '2026-11-18T10:00:00.000Z'
+  const base = {
+    project: 'alpha',
+    status: 'todo',
+    category: 'open' as const,
+    updatedAt: null,
+    assignee: null,
+  }
+  writeTrackerCache(
+    [
+      { ...base, externalId: 'tracker-parent', key: 'ALP-10', parentKey: null, title: 'Parent' },
+      { ...base, externalId: 'tracker-other', key: 'ALP-99', parentKey: null, title: 'Other' },
+    ],
+    at,
+    [],
+  )
+  writeTransaction((conn) =>
+    conn
+      .query(
+        `UPDATE task_identity_claim SET key='ALP-10'
+         WHERE project='alpha' AND external_id='tracker-other'`,
+      )
+      .run(),
+  )
+
+  const child = writeTrackerCache(
+    [
+      {
+        ...base,
+        externalId: 'tracker-child',
+        key: 'ALP-11',
+        parentKey: 'ALP-10',
+        title: 'Child',
+      },
+    ],
+    '2026-11-18T11:00:00.000Z',
+    [],
+  )[0]!
+  expect(child.observation.ambiguousParentKeys).toEqual(['ALP-10'])
+  expect(
+    db()
+      .query<{ parent_key: string; parent_record_id: string | null }, []>(
+        `SELECT parent_key,parent_record_id FROM task WHERE key='ALP-11'`,
+      )
+      .get(),
+  ).toEqual({ parent_key: 'ALP-10', parent_record_id: null })
 })
 
 // restore the store this file bound or queued into, so the next file starts clean

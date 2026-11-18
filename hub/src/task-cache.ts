@@ -9,7 +9,7 @@ import { HOSTED_STATUS_EVENT_TABLE } from './push-contract.ts'
 import { isSameStatusEvent, statusEventIdentity } from './status-event-identity.ts'
 import type { hostedTaskChanges } from './task-client.ts'
 import { formatTaskDocumentLabel } from './task-document-label.ts'
-import { taskRecordIdFor } from './task-identity.ts'
+import { taskIdentityDecision } from './task-identity.ts'
 
 type HostedChanges = Awaited<ReturnType<typeof hostedTaskChanges>>
 type HostedChangeRow =
@@ -39,7 +39,41 @@ export function parentTaskRecordId(
 ) {
   const parent = cachedTaskRecordId(conn, row.parent_id)
   if (parent) return parent
-  return row.parent_key ? taskRecordIdFor(conn, row.parent_key, row.project) : null
+  return row.parent_key ? resolveParentRecordId(conn, row.parent_key, row.project).recordId : null
+}
+
+export type ParentRecordIdResolution = {
+  recordId: string | null
+  ambiguous: boolean
+}
+
+/** Resolve a reported parent through canonical task identity without hiding ambiguity. */
+export function resolveParentRecordId(
+  conn: Database,
+  parentKey: string,
+  project: string,
+): ParentRecordIdResolution {
+  const decision = taskIdentityDecision(conn, parentKey, project)
+  if ('one' in decision) return { recordId: decision.one, ambiguous: false }
+  if ('several' in decision) return { recordId: null, ambiguous: true }
+  return { recordId: null, ambiguous: false }
+}
+
+/** Reconcile children for one parent key through canonical task identity. */
+export function reconcileParentRecordId(
+  conn: Database,
+  parentKey: string,
+  project: string,
+): ParentRecordIdResolution {
+  const resolution = resolveParentRecordId(conn, parentKey, project)
+  if (resolution.recordId)
+    conn
+      .query(
+        `UPDATE task SET parent_record_id=?
+         WHERE parent_key=? AND project=? AND parent_record_id IS NULL`,
+      )
+      .run(resolution.recordId, parentKey, project)
+  return resolution
 }
 
 export function reconcileParentRecordIds(conn: Database) {
@@ -49,14 +83,8 @@ export function reconcileParentRecordIds(conn: Database) {
        WHERE parent_key IS NOT NULL AND parent_record_id IS NULL`,
     )
     .all()
-  const update = conn.query(
-    `UPDATE task SET parent_record_id=?
-     WHERE parent_key=? AND project=? AND parent_record_id IS NULL`,
-  )
-  for (const { parent_key, project } of unresolved) {
-    const recordId = taskRecordIdFor(conn, parent_key, project)
-    if (recordId) update.run(recordId, parent_key, project)
-  }
+  for (const { parent_key, project } of unresolved)
+    reconcileParentRecordId(conn, parent_key, project)
 }
 
 function requireChildTaskRecordId(conn: Database, kind: string, row: HostedTaskChild) {

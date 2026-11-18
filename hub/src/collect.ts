@@ -9,6 +9,7 @@ import { DEFAULT_IDLE_CAP_MS } from '../../shared/interval.ts'
 import { sendOperatorNotification } from '../../shared/operator-notification.ts'
 import { refusal, renderRefusal } from '../../shared/refusal.ts'
 import { FAST_MS, SLOW_MS } from './collect-cadence.ts'
+import { formatTrackerCounts, type TrackerCounts, trackerCounts } from './collect-tracker-counts.ts'
 import {
   type WatchRunningCycle,
   type WatchTick,
@@ -31,7 +32,6 @@ import { ingestGit } from './ingest/git.ts'
 import { ingestRunChanges, ingestRuns } from './ingest/runs.ts'
 import {
   ingestTrackers,
-  successfulTrackerRead,
   type TrackerResult,
   trackerLegError,
   trackerProjects,
@@ -186,7 +186,7 @@ export type CollectLegResult =
       metrics?: CollectLegMetrics
       hostedChanges?: HostedChangeLegReport | HostedChangesReport
       hostedOutbox?: HostedOutboxReport
-      trackerCounts?: { read: number; skippedFresh: number; leftToWatcher: number }
+      trackerCounts?: TrackerCounts
     }
   | { source: string; ok: false; error: string; durationMs: number }
 
@@ -223,14 +223,7 @@ export function formatCollectLeg(result: CollectLegResult): string {
   if (result.hostedOutbox)
     return `${result.source.padEnd(18)}${separator}${hostedOutboxLine(result.hostedOutbox)}`
   if (result.trackerCounts) {
-    const counts = [`${result.trackerCounts.read} trackers read`]
-    if (result.trackerCounts.leftToWatcher)
-      counts.push(
-        `${result.trackerCounts.leftToWatcher} left to the watcher; force with ${PLATFORM_SLUG} record pull --only tasks`,
-      )
-    if (result.trackerCounts.skippedFresh)
-      counts.push(`${result.trackerCounts.skippedFresh} skipped fresh`)
-    return `${result.source.padEnd(18)}${separator}ok (${counts.join(', ')})`
+    return `${result.source.padEnd(18)}${separator}ok (${formatTrackerCounts(result.trackerCounts).join(', ')})`
   }
   return `${result.source.padEnd(18)}ok`
 }
@@ -826,11 +819,7 @@ async function collectSlowSourceLegs(
           if (scheduled) for (const result of trackerResults) trackerSchedule.record(result)
           const error = trackerLegError(trackerResults)
           if (error) throw new Error(error)
-          return {
-            read: trackerResults.filter(successfulTrackerRead).length,
-            skippedFresh: selection.skippedFresh,
-            leftToWatcher: selection.leftToWatcher,
-          }
+          return trackerCounts(trackerResults, selection.skippedFresh, selection.leftToWatcher)
         },
         (trackerCounts) => ({ ok: true, trackerCounts }),
       ))!,
@@ -948,21 +937,9 @@ export async function collectOnce(
         'tasks',
         async () => {
           const trackerResults = await (dependencies.trackers ?? ingestTrackers)()
-          for (const result of trackerResults) {
-            const note = result.skipped
-              ? `skipped: ${result.skipped}`
-              : result.error
-                ? `FAILED: ${result.error}`
-                : `${result.mode ? `${result.mode} read, ` : ''}${result.tasks} tasks, ${result.changed} status changes${result.deleted ? `, ${result.deleted} deleted dropped` : ''}`
-            console.log(`${`tracker/${result.project}`.padEnd(21)}${note}`)
-          }
           const error = trackerLegError(trackerResults)
           if (error) throw new Error(error)
-          return {
-            read: trackerResults.filter(successfulTrackerRead).length,
-            skippedFresh: 0,
-            leftToWatcher: 0,
-          }
+          return trackerCounts(trackerResults, 0, 0)
         },
         (trackerCounts) => ({ ok: true, trackerCounts }),
       ))!,

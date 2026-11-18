@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { resetFixtureStore } from '../test/run-fixtures.ts'
 import { db, writeTransaction } from './db.ts'
+import { observeTrackerTask, type TrackerTask } from './ingest/trackers.ts'
 import type { RegisteredProject } from './projects.ts'
 import { closeTask, showTask } from './task.ts'
 import { UNATTRIBUTED } from './task-attribution.ts'
@@ -48,23 +49,36 @@ const branchClassification = {
 }
 
 function seedTrackerTask(): void {
-  writeTransaction((conn) =>
-    conn
-      .query(
-        `INSERT INTO task
-         (record_id,external_id,key,project,title,status,status_category,source,first_seen,last_seen)
-         VALUES (?,?,?,?,?,'todo','open','mcp',?,?)`,
-      )
-      .run(
-        '01990000-0000-7000-8000-000000001660',
-        taskId,
-        'ADN-1659',
-        'adanim',
-        'Route tracker writes',
-        '2026-10-23T12:00:00.000Z',
-        '2026-10-23T12:00:00.000Z',
-      ),
-  )
+  writeTransaction((conn) => {
+    const insert = conn.query(
+      `INSERT INTO task
+         (record_id,external_id,key,project,parent_key,parent_record_id,title,status,status_category,source,first_seen,last_seen)
+         VALUES (?,?,?,?,?,?,?,'todo','open','mcp',?,?)`,
+    )
+    const parentRecordId = '01990000-0000-7000-8000-000000001661'
+    insert.run(
+      parentRecordId,
+      'tracker-parent',
+      'ADN-1600',
+      'adanim',
+      null,
+      null,
+      'Parent task',
+      '2026-10-23T12:00:00.000Z',
+      '2026-10-23T12:00:00.000Z',
+    )
+    insert.run(
+      '01990000-0000-7000-8000-000000001660',
+      taskId,
+      'ADN-1659',
+      'adanim',
+      'ADN-1600',
+      parentRecordId,
+      'Route tracker writes',
+      '2026-10-23T12:00:00.000Z',
+      '2026-10-23T12:00:00.000Z',
+    )
+  })
 }
 
 function dependencies(callTool: (name: string, args: Record<string, unknown>) => Promise<unknown>) {
@@ -85,16 +99,25 @@ describe('array-mcp task writes', () => {
 
   test('set routes a raw registered status through task_update before updating the cache', async () => {
     const calls: { name: string; args: Record<string, unknown> }[] = []
+    let observedParent: TrackerTask['parentKey'] = null
+    const fixture = {
+      ...dependencies(async (name, args) => {
+        calls.push({ name, args })
+        return { id: taskId, status: 'in_progress' }
+      }),
+      observe: (...args: Parameters<typeof observeTrackerTask>) => {
+        const [task] = args
+        observedParent = task.parentKey
+        return observeTrackerTask(...args)
+      },
+    }
     const row = await setTaskThroughTracker(
       'ADN-1659',
       {},
       { status: 'in_progress' },
       UNATTRIBUTED,
       { confirm: 'operator-confirmation' },
-      dependencies(async (name, args) => {
-        calls.push({ name, args })
-        return { id: taskId, status: 'in_progress' }
-      }),
+      fixture,
     )
 
     expect(calls).toEqual([
@@ -104,6 +127,14 @@ describe('array-mcp task writes', () => {
       },
     ])
     expect(row).toMatchObject({ status: 'in_progress', status_category: 'active' })
+    expect(observedParent).toBeUndefined()
+    expect(
+      db()
+        .query<{ parent_record_id: string }, []>(
+          `SELECT parent_record_id FROM task WHERE key='ADN-1659'`,
+        )
+        .get()?.parent_record_id,
+    ).toBe('01990000-0000-7000-8000-000000001661')
   })
 
   test('set maps a hub status to its single registered tracker state', async () => {

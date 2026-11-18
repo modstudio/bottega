@@ -258,6 +258,8 @@ export type TrackerTask = {
   externalId: string | null
   key: string
   project: string
+  /** Undefined means the tracker did not report whether this task has a parent. */
+  parentKey?: string | null
   title: string
   status: string
   category: StatusCategory
@@ -395,6 +397,16 @@ const ENTITIES: Record<string, string> = {
 }
 const decode = (s: string) => s.replace(/&(?:amp|lt|gt|quot|#39|nbsp);/g, (m) => ENTITIES[m] ?? m)
 
+function reportedParentKey(
+  row: { parent?: unknown },
+  keyField: 'short_id' | 'humanKey' | 'key',
+): string | null | undefined {
+  if (!('parent' in row)) return undefined
+  if (!row.parent || typeof row.parent !== 'object') return null
+  const key = (row.parent as Record<string, unknown>)[keyField]
+  return typeof key === 'string' && key.trim() ? key.toUpperCase() : null
+}
+
 /** Resolve each new id once. A cached null is a known failed resolution, not a miss. */
 export async function resolveAssigneeIds(
   refs: AssigneeRef[],
@@ -468,6 +480,7 @@ type WorkspaceTask = {
   assignee_id?: string | number | null
   updated_at?: string
   team?: string
+  parent?: { short_id?: string } | null
 }
 
 type WorkspaceTaskDetail = Omit<WorkspaceTask, 'status'> & {
@@ -489,6 +502,7 @@ async function mappedWorkspaceTask(
     externalId: hit.id ?? null,
     key,
     project,
+    parentKey: reportedParentKey(hit, 'short_id'),
     title: decode(hit.summary ?? ''),
     status: hit.status ?? '',
     category: categoryOf(hit.status ?? '', hit.status_category ?? 'completed', states),
@@ -594,6 +608,7 @@ function appendWorkspaceTasks(
       externalId: task.id ?? null,
       key,
       project,
+      parentKey: reportedParentKey(task, 'short_id'),
       title: decode(task.summary ?? ''),
       status: task.status ?? status ?? '',
       category,
@@ -734,6 +749,7 @@ type CursorTask = {
   assigneeName?: string | null
   deletedAt?: string | null
   projectId?: string
+  parent?: { humanKey?: string } | null
 }
 
 function appendCursorTasks(
@@ -761,6 +777,7 @@ function appendCursorTasks(
       externalId: task.id ?? null,
       key: task.humanKey.toUpperCase(),
       project,
+      parentKey: reportedParentKey(task, 'humanKey'),
       title: decode(task.title ?? ''),
       status: task.status ?? status ?? '',
       category,
@@ -801,6 +818,7 @@ async function lookupCursorTask(
     externalId: task.id ?? null,
     key,
     project,
+    parentKey: reportedParentKey(task, 'humanKey'),
     title: decode(task.title ?? ''),
     status: task.status ?? '',
     category: categoryOf(task.status ?? '', task.status ?? 'done', states),
@@ -917,6 +935,16 @@ function cursorMcpSource(
  * carry these tools only on their platform origin, so the configured endpoint
  * must be that origin.
  */
+type ArrayMcpTask = {
+  id?: string
+  key?: string
+  title?: string
+  status?: string
+  updatedAt?: string
+  assigneeName?: string | null
+  parent?: { key?: string } | null
+}
+
 function arrayMcpSource(
   project: string,
   env: string,
@@ -934,19 +962,14 @@ function arrayMcpSource(
     async fetch(m) {
       const out: TrackerTask[] = []
       for (const status of openStatuses) {
-        const r = (await m.callTool(searchAction, { status })) as {
-          id?: string
-          key?: string
-          title?: string
-          status?: string
-          assigneeName?: string | null
-        }[]
+        const r = (await m.callTool(searchAction, { status })) as ArrayMcpTask[]
         for (const t of Array.isArray(r) ? r : []) {
           if (!t.key) continue
           out.push({
             externalId: t.id ?? null,
             key: t.key.toUpperCase(),
             project,
+            parentKey: reportedParentKey(t, 'key'),
             title: decode(t.title ?? ''),
             status: t.status ?? status,
             category: fullReadCategory(t.status, t.status, status, states),
@@ -985,20 +1008,14 @@ function arrayMcpSource(
           `lookup for ${key} returned an unexpected response`,
         )
       }
-      const rows = r as {
-        id?: string
-        key?: string
-        title?: string
-        status?: string
-        updatedAt?: string
-        assigneeName?: string | null
-      }[]
+      const rows = r as ArrayMcpTask[]
       const hit = arrayTaskForKey(rows, key)
       if (!hit) return null
       return {
         externalId: hit.id ?? null,
         key,
         project,
+        parentKey: reportedParentKey(hit, 'key'),
         title: decode(hit.title ?? ''),
         status: hit.status ?? '',
         category: categoryOf(hit.status ?? '', hit.status ?? 'done', states),
