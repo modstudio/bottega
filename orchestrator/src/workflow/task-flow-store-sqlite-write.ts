@@ -576,7 +576,7 @@ function writeHandoff(
     .query(
       "UPDATE context_item SET holder_id=?,updated_at=? WHERE holder_kind='cursor' AND holder_id=?",
     )
-    .run(newStage.id, newStage.updatedAt as SQLQueryBindings, oldReference.id)
+    .run(newStage.id as SQLQueryBindings, newStage.updatedAt as SQLQueryBindings, oldReference.id)
   return { revisions: result, stage: { id: inserted.id, number: inserted.number } }
 }
 
