@@ -163,6 +163,110 @@ function functionReturnExpression(node: ts.ConciseBody): ts.Expression | null {
   return returned?.expression ?? null
 }
 
+function resolveStaticArray(
+  node: ts.ArrayLiteralExpression,
+  symbols: StaticSymbols,
+  bindings: Map<string, StaticValue>,
+  seen: Set<string>,
+): string[] | null {
+  const values = node.elements.map((item) =>
+    ts.isSpreadElement(item) ? null : resolveStaticValue(item, symbols, bindings, seen),
+  )
+  return values.every((value): value is string => typeof value === 'string') ? values : null
+}
+
+function resolveStaticTemplate(
+  node: ts.TemplateExpression,
+  symbols: StaticSymbols,
+  bindings: Map<string, StaticValue>,
+  seen: Set<string>,
+): string | null {
+  let value = node.head.text
+  for (const span of node.templateSpans) {
+    const resolved = resolveStaticValue(span.expression, symbols, bindings, seen)
+    if (typeof resolved !== 'string') return null
+    value += resolved + span.literal.text
+  }
+  return value
+}
+
+function resolveStaticIdentifier(
+  node: ts.Identifier,
+  symbols: StaticSymbols,
+  bindings: Map<string, StaticValue>,
+  seen: Set<string>,
+): StaticValue | null {
+  const bound = bindings.get(node.text)
+  if (bound !== undefined) return bound
+  if (seen.has(node.text)) return null
+  const initializer = symbols.constants.get(node.text)
+  return initializer
+    ? resolveStaticValue(initializer, symbols, bindings, new Set([...seen, node.text]))
+    : null
+}
+
+function resolveStaticFunctionCall(
+  node: ts.CallExpression,
+  target: ts.Identifier,
+  symbols: StaticSymbols,
+  bindings: Map<string, StaticValue>,
+  seen: Set<string>,
+): StaticValue | null {
+  if (seen.has(target.text)) return null
+  const declaration = symbols.functions.get(target.text)
+  const returned = declaration?.body && functionReturnExpression(declaration.body)
+  if (!declaration || !returned) return null
+  const nextBindings = new Map(bindings)
+  for (const [index, parameter] of declaration.parameters.entries()) {
+    const argument = node.arguments[index]
+    if (!ts.isIdentifier(parameter.name) || !argument) return null
+    const value = resolveStaticValue(argument, symbols, bindings, seen)
+    if (value === null) return null
+    nextBindings.set(parameter.name.text, value)
+  }
+  return resolveStaticValue(returned, symbols, nextBindings, new Set([...seen, target.text]))
+}
+
+function resolveStaticMapCall(
+  node: ts.CallExpression,
+  receiver: string[],
+  symbols: StaticSymbols,
+  bindings: Map<string, StaticValue>,
+  seen: Set<string>,
+): string[] | null {
+  const callback = node.arguments[0]
+  if (!callback || (!ts.isArrowFunction(callback) && !ts.isFunctionExpression(callback)))
+    return null
+  const parameter = callback.parameters[0]
+  const returned = functionReturnExpression(callback.body)
+  if (!parameter || !ts.isIdentifier(parameter.name) || !returned) return null
+  const parameterName = parameter.name.text
+  const values = receiver.map((item) => {
+    const nextBindings = new Map(bindings)
+    nextBindings.set(parameterName, item)
+    return resolveStaticValue(returned, symbols, nextBindings, seen)
+  })
+  return values.every((value): value is string => typeof value === 'string') ? values : null
+}
+
+function resolveStaticPropertyCall(
+  node: ts.CallExpression,
+  target: ts.PropertyAccessExpression,
+  symbols: StaticSymbols,
+  bindings: Map<string, StaticValue>,
+  seen: Set<string>,
+): StaticValue | null {
+  const receiver = resolveStaticValue(target.expression, symbols, bindings, seen)
+  if (!Array.isArray(receiver)) return null
+  if (target.name.text === 'map')
+    return resolveStaticMapCall(node, receiver, symbols, bindings, seen)
+  if (target.name.text !== 'join') return null
+  const separator = node.arguments[0]
+    ? resolveStaticValue(node.arguments[0]!, symbols, bindings, seen)
+    : ','
+  return typeof separator === 'string' ? receiver.join(separator) : null
+}
+
 function resolveStaticValue(
   expression: ts.Expression,
   symbols: StaticSymbols,
@@ -171,72 +275,32 @@ function resolveStaticValue(
 ): StaticValue | null {
   const node = unwrap(expression)
   if (ts.isStringLiteralLike(node)) return node.text
-  if (ts.isArrayLiteralExpression(node)) {
-    const values = node.elements.map((item) =>
-      ts.isSpreadElement(item) ? null : resolveStaticValue(item, symbols, bindings, seen),
-    )
-    return values.every((value): value is string => typeof value === 'string') ? values : null
-  }
-  if (ts.isTemplateExpression(node)) {
-    let value = node.head.text
-    for (const span of node.templateSpans) {
-      const resolved = resolveStaticValue(span.expression, symbols, bindings, seen)
-      if (typeof resolved !== 'string') return null
-      value += resolved + span.literal.text
-    }
-    return value
-  }
-  if (ts.isIdentifier(node)) {
-    const bound = bindings.get(node.text)
-    if (bound !== undefined) return bound
-    if (seen.has(node.text)) return null
-    const initializer = symbols.constants.get(node.text)
-    if (!initializer) return null
-    return resolveStaticValue(initializer, symbols, bindings, new Set([...seen, node.text]))
-  }
+  if (ts.isArrayLiteralExpression(node)) return resolveStaticArray(node, symbols, bindings, seen)
+  if (ts.isTemplateExpression(node)) return resolveStaticTemplate(node, symbols, bindings, seen)
+  if (ts.isIdentifier(node)) return resolveStaticIdentifier(node, symbols, bindings, seen)
   if (!ts.isCallExpression(node)) return null
   const target = unwrap(node.expression)
-  if (ts.isIdentifier(target)) {
-    if (seen.has(target.text)) return null
-    const declaration = symbols.functions.get(target.text)
-    const returned = declaration?.body && functionReturnExpression(declaration.body)
-    if (!declaration || !returned) return null
-    const nextBindings = new Map(bindings)
-    for (const [index, parameter] of declaration.parameters.entries()) {
-      if (!ts.isIdentifier(parameter.name)) return null
-      const argument = node.arguments[index]
-      if (!argument) return null
-      const value = resolveStaticValue(argument, symbols, bindings, seen)
-      if (value === null) return null
-      nextBindings.set(parameter.name.text, value)
-    }
-    return resolveStaticValue(
-      returned,
-      symbols,
-      nextBindings,
-      new Set([...seen, target.text]),
-    )
-  }
-  if (!ts.isPropertyAccessExpression(target)) return null
-  const receiver = resolveStaticValue(target.expression, symbols, bindings, seen)
-  if (target.name.text === 'join' && Array.isArray(receiver)) {
-    const separator = node.arguments[0]
-      ? resolveStaticValue(node.arguments[0]!, symbols, bindings, seen)
-      : ','
-    return typeof separator === 'string' ? receiver.join(separator) : null
-  }
-  if (target.name.text !== 'map' || !Array.isArray(receiver)) return null
-  const callback = node.arguments[0]
-  if (!callback || (!ts.isArrowFunction(callback) && !ts.isFunctionExpression(callback))) return null
-  const parameter = callback.parameters[0]
-  const returned = functionReturnExpression(callback.body)
-  if (!parameter || !ts.isIdentifier(parameter.name) || !returned) return null
-  const values = receiver.map((item) => {
-    const nextBindings = new Map(bindings)
-    nextBindings.set(parameter.name.text, item)
-    return resolveStaticValue(returned, symbols, nextBindings, seen)
-  })
-  return values.every((value): value is string => typeof value === 'string') ? values : null
+  if (ts.isIdentifier(target))
+    return resolveStaticFunctionCall(node, target, symbols, bindings, seen)
+  return ts.isPropertyAccessExpression(target)
+    ? resolveStaticPropertyCall(node, target, symbols, bindings, seen)
+    : null
+}
+
+function unsafeRawSql(
+  expression: ts.Expression,
+  symbols: StaticSymbols,
+): string | null | undefined {
+  const node = unwrap(expression)
+  if (
+    !ts.isCallExpression(node) ||
+    !ts.isPropertyAccessExpression(node.expression) ||
+    node.expression.name.text !== 'unsafe'
+  )
+    return undefined
+  const argument = node.arguments[0]
+  const raw = argument && resolveStaticValue(argument, symbols)
+  return typeof raw === 'string' ? raw : null
 }
 
 function renderFragment(
@@ -246,7 +310,7 @@ function renderFragment(
 ): RenderedSql[] | null {
   const node = unwrap(expression)
   if (ts.isTaggedTemplateExpression(node) && isSqlTag(node.tag))
-    return renderTemplate(node.template, constants, seen)
+    return renderTemplate(node.template, constants, { constants, functions: new Map() }, seen)
   if (ts.isIdentifier(node)) {
     if (seen.has(node.text)) return null
     const initializer = constants.get(node.text)
@@ -270,6 +334,27 @@ function appendFragments(left: RenderedSql[], right: RenderedSql[]): RenderedSql
   )
 }
 
+function renderTemplateExpression(
+  rendered: RenderedSql[],
+  expression: ts.Expression,
+  constants: Map<string, ts.Expression>,
+  symbols: StaticSymbols,
+  seen: Set<string>,
+): RenderedSql[] | null {
+  const fragment = renderFragment(expression, constants, seen)
+  if (fragment) return appendFragments(rendered, fragment)
+  const value = unwrap(expression)
+  const raw = unsafeRawSql(value, symbols)
+  if (raw === null) return null
+  if (raw !== undefined) return rendered.map((part) => ({ ...part, sql: part.sql + raw }))
+  if (ts.isCallExpression(value) && isSqlTag(value.expression))
+    return rendered.map((part) => ({ ...part, sql: `${part.sql}(NULL)` }))
+  return rendered.map((part) => ({
+    sql: `${part.sql}$${part.bindings + 1}`,
+    bindings: part.bindings + 1,
+  }))
+}
+
 function renderTemplate(
   template: ts.TemplateLiteral,
   constants: Map<string, ts.Expression>,
@@ -279,41 +364,9 @@ function renderTemplate(
   if (ts.isNoSubstitutionTemplateLiteral(template)) return [{ sql: template.text, bindings: 0 }]
   let rendered: RenderedSql[] = [{ sql: template.head.text, bindings: 0 }]
   for (const span of template.templateSpans) {
-    const fragment = renderFragment(span.expression, constants, seen)
-    if (fragment) rendered = appendFragments(rendered, fragment)
-    else {
-      const expression = unwrap(span.expression)
-      if (
-        ts.isCallExpression(expression) &&
-        ts.isPropertyAccessExpression(expression.expression) &&
-        expression.expression.name.text === 'unsafe'
-      ) {
-        const argument = expression.arguments[0]
-        const raw = argument && resolveStaticValue(argument, symbols)
-        if (typeof raw !== 'string') return null
-        rendered = rendered.map((part) => ({ ...part, sql: part.sql + raw }))
-        rendered = rendered.map((part) => ({
-          ...part,
-          sql: part.sql + span.literal.text,
-        }))
-        continue
-      }
-      if (ts.isCallExpression(expression) && isSqlTag(expression.expression)) {
-        rendered = rendered.map((part) => ({
-          ...part,
-          sql: `${part.sql}(NULL)`,
-        }))
-        rendered = rendered.map((part) => ({
-          ...part,
-          sql: part.sql + span.literal.text,
-        }))
-        continue
-      }
-      rendered = rendered.map((part) => ({
-        sql: `${part.sql}$${part.bindings + 1}`,
-        bindings: part.bindings + 1,
-      }))
-    }
+    const next = renderTemplateExpression(rendered, span.expression, constants, symbols, seen)
+    if (!next) return null
+    rendered = next
     rendered = rendered.map((part) => ({
       ...part,
       sql: part.sql + span.literal.text,
@@ -343,49 +396,67 @@ function collectFunctions(source: ts.SourceFile): Map<string, ts.FunctionDeclara
   return functions
 }
 
-function collectStaticSymbols(
+function importedSource(file: string, statement: ts.ImportDeclaration): ts.SourceFile | null {
+  if (!ts.isStringLiteral(statement.moduleSpecifier)) return null
+  const specifier = statement.moduleSpecifier.text
+  if (!specifier.startsWith('.')) return null
+  const imported = resolve(dirname(file), specifier)
+  const importedFile = imported.endsWith('.ts') ? imported : `${imported}.ts`
+  if (!existsSync(importedFile)) return null
+  return ts.createSourceFile(
+    importedFile,
+    readFileSync(importedFile, 'utf8'),
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.TS,
+  )
+}
+
+function mergeImportedSymbols(
+  symbols: StaticSymbols,
+  statement: ts.ImportDeclaration,
+  source: ts.SourceFile,
+): void {
+  const importedConstants = collectConstants(source)
+  const importedFunctions = collectFunctions(source)
+  const namedBindings = statement.importClause?.namedBindings
+  if (!namedBindings || !ts.isNamedImports(namedBindings)) return
+  const resolvable = namedBindings.elements.some((item) => {
+    const name = item.propertyName?.text ?? item.name.text
+    return importedConstants.has(name) || importedFunctions.has(name)
+  })
+  if (!resolvable) return
+  for (const [name, value] of importedConstants) symbols.constants.set(name, value)
+  for (const [name, value] of importedFunctions) symbols.functions.set(name, value)
+  for (const item of namedBindings.elements) {
+    const importedName = item.propertyName?.text ?? item.name.text
+    const constant = importedConstants.get(importedName)
+    const callable = importedFunctions.get(importedName)
+    if (constant) symbols.constants.set(item.name.text, constant)
+    if (callable) symbols.functions.set(item.name.text, callable)
+  }
+}
+
+function collectStaticSymbols(file: string, source: ts.SourceFile): StaticSymbols {
+  const symbols: StaticSymbols = { constants: new Map(), functions: new Map() }
+  for (const statement of source.statements) {
+    if (!ts.isImportDeclaration(statement)) continue
+    const dependency = importedSource(file, statement)
+    if (dependency) mergeImportedSymbols(symbols, statement, dependency)
+  }
+  for (const [name, value] of collectConstants(source)) symbols.constants.set(name, value)
+  for (const [name, value] of collectFunctions(source)) symbols.functions.set(name, value)
+  return symbols
+}
+
+function staticSymbolsForSource(
   file: string,
+  sourceText: string,
   source: ts.SourceFile,
 ): StaticSymbols {
-  const constants = new Map<string, ts.Expression>()
-  const functions = new Map<string, ts.FunctionDeclaration>()
-  for (const statement of source.statements) {
-    if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier))
-      continue
-    const specifier = statement.moduleSpecifier.text
-    if (!specifier.startsWith('.')) continue
-    const imported = resolve(dirname(file), specifier)
-    const importedFile = imported.endsWith('.ts') ? imported : `${imported}.ts`
-    if (!existsSync(importedFile)) continue
-    const importedSource = ts.createSourceFile(
-      importedFile,
-      readFileSync(importedFile, 'utf8'),
-      ts.ScriptTarget.Latest,
-      true,
-      ts.ScriptKind.TS,
-    )
-    const importedConstants = collectConstants(importedSource)
-    const importedFunctions = collectFunctions(importedSource)
-    const namedBindings = statement.importClause?.namedBindings
-    if (!namedBindings || !ts.isNamedImports(namedBindings)) continue
-    const importsResolvableValue = namedBindings.elements.some((item) => {
-      const importedName = item.propertyName?.text ?? item.name.text
-      return importedConstants.has(importedName) || importedFunctions.has(importedName)
-    })
-    if (!importsResolvableValue) continue
-    for (const [name, value] of importedConstants) constants.set(name, value)
-    for (const [name, value] of importedFunctions) functions.set(name, value)
-    for (const item of namedBindings.elements) {
-      const importedName = item.propertyName?.text ?? item.name.text
-      const constant = importedConstants.get(importedName)
-      const callable = importedFunctions.get(importedName)
-      if (constant) constants.set(item.name.text, constant)
-      if (callable) functions.set(item.name.text, callable)
-    }
-  }
-  for (const [name, value] of collectConstants(source)) constants.set(name, value)
-  for (const [name, value] of collectFunctions(source)) functions.set(name, value)
-  return { constants, functions }
+  return sourceText.includes('${') && sourceText.includes('.unsafe(')
+    ? collectStaticSymbols(file, source)
+    : { constants: collectConstants(source), functions: collectFunctions(source) }
 }
 
 export function extractHostedSqlFromSource(
@@ -760,13 +831,9 @@ export function extractHostedSql(root: string): {
         true,
         ts.ScriptKind.TS,
       )
-      const symbols =
-        sourceText.includes('${') && sourceText.includes('.unsafe(')
-          ? collectStaticSymbols(file, source)
-          : { constants: collectConstants(source), functions: collectFunctions(source) }
       const extracted = extractHostedSqlFromSource(
         { sourceText, file: relative(root, file) },
-        symbols,
+        staticSymbolsForSource(file, sourceText, source),
       )
       sites.push(...extracted.sites)
       unresolved.push(...extracted.unresolved)
