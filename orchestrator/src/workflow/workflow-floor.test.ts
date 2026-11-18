@@ -73,9 +73,7 @@ const passingGate: ValidatedEvidence = {
 }
 const passingRun: ValidatedEvidence = { run: { id: '8', terminal: true, exitCode: 0 } }
 const passingProbe: ValidatedEvidence = {
-  artifacts: [
-    { artifact: { ref: 'probe:3', exists: true }, probe: { id: 3, exitCode: 0 } },
-  ],
+  artifacts: [{ artifact: { ref: 'probe:3', exists: true }, probe: { id: 3, exitCode: 0 } }],
 }
 const EXEC_RECORD_ID = '00000000-0000-4000-8000-000000000004'
 const passingExecArtifact = {
@@ -335,9 +333,7 @@ test('a probe with the expected exit satisfies command-exit', () => {
     decide({
       floors: [commandExit],
       evidence: {
-        artifacts: [
-          { artifact: { ref: 'probe:3', exists: true }, probe: { id: 3, exitCode: 1 } },
-        ],
+        artifacts: [{ artifact: { ref: 'probe:3', exists: true }, probe: { id: 3, exitCode: 1 } }],
       },
     }).action,
   ).toBe('refuse')

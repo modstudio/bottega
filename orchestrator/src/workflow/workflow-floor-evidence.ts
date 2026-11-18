@@ -35,9 +35,7 @@ import { taskFlowHandoffLinks, taskFlowReadStore } from './task-flow-store.ts'
 import type {
   BottegaCommandIdentity,
   ValidatedArtifactEvidence,
-  WorkflowEvidenceInput,
 } from './workflow-artifact-evidence.ts'
-import { resolvedOfferedArtifact } from './workflow-artifact-evidence.ts'
 import {
   type CheckoutResolution,
   checkoutOutsideChangeRefusal,
@@ -66,6 +64,10 @@ import {
 import { readHubTask } from './workflow-floor-task-read.ts'
 import { floorFromObligationRow } from './workflow-obligation-floor.ts'
 import {
+  resolvedOfferedArtifact,
+  type WorkflowEvidenceInput,
+} from './workflow-offered-artifacts.ts'
+import {
   type BoundRun,
   decideRunBinding,
   type SessionMatch,
@@ -73,8 +75,8 @@ import {
 } from './workflow-run-binding.ts'
 import { attachedTextReferenceMeetsFloor, type WorkflowTextRow } from './workflow-text.ts'
 
-export type { WorkflowEvidenceInput } from './workflow-artifact-evidence.ts'
 export type { FloorEvidencePorts } from './workflow-floor-evidence-replay.ts'
+export type { WorkflowEvidenceInput } from './workflow-offered-artifacts.ts'
 
 export type CursorIdentity = {
   project: string

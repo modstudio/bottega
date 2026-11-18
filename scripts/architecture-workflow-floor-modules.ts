@@ -167,8 +167,16 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     '../record/machine-name.ts',
     '../run/run-identifier-names.ts',
     './probe-identifier.ts',
+    './workflow-artifact-evidence.ts',
     './workflow-checkout-refusal.ts',
     './workflow-floor-refusal.ts',
+  ]),
+  module('orchestrator/src/workflow/workflow-artifact-evidence.ts', [
+    './workflow-checkout-refusal.ts',
+  ]),
+  module('orchestrator/src/workflow/workflow-offered-artifacts.ts', [
+    'bun:sqlite',
+    './probe-identifier.ts',
   ]),
   module('orchestrator/src/workflow/workflow-review-owed-decision.ts', [
     '../review-funnel/review-funnel-lens-status.ts',
@@ -328,6 +336,8 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     '../run/run-identifier.ts',
     '../run/run-status.ts',
     './probe-identifier.ts',
+    './workflow-artifact-evidence.ts',
+    './workflow-offered-artifacts.ts',
     './workflow-floor.ts',
     './workflow-cursor-transition.ts',
     './workflow-checkout-landing.ts',
