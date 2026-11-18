@@ -8,6 +8,7 @@ import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { db, writeTransaction } from '../database/db.ts'
 import type { RecordTaskFlowClient } from '../record/record-api-client-task-flow.ts'
+import { isClosedStageState } from '../record/record-task-flow-contract.ts'
 import {
   type TaskFlowWriteTarget,
   taskFlowWriteTarget,
@@ -225,7 +226,7 @@ export async function copyWorkflowTextForCursor(
         })
       }
     }
-    if (cursor.state === 'done' || cursor.state === 'abandoned')
+    if (isClosedStageState(cursor.state))
       await deleteWorkflowText(cursor.recordId, true, database, client)
     return { cursor: cursor.number, project: cursor.project, copied, uncopied, unsupported: null }
   } catch (error) {

@@ -1,4 +1,6 @@
-export type CursorState = 'running' | 'awaiting-ruling' | 'done' | 'abandoned'
+import { isClosedStageState, type TaskFlowStageState } from '../record/record-task-flow-contract.ts'
+
+export type CursorState = TaskFlowStageState
 
 export type CursorValue = {
   ordinal: number
@@ -240,7 +242,7 @@ export const cursorValue = (
 
 /** Decide whether starting a cursor needs a new identity slot. */
 export function decideCursorStart(state: CursorState | null): CursorStartDecision {
-  if (state === 'done' || state === 'abandoned') return 'retire'
+  if (state && isClosedStageState(state)) return 'retire'
   return state ? 'reuse' : 'insert'
 }
 
@@ -249,8 +251,7 @@ export function decideCursorTransition(
   cursor: CursorValue | null,
   request: CursorTransitionRequest,
 ): CursorTransition {
-  if (cursor?.state === 'done' || cursor?.state === 'abandoned')
-    return { action: 'refuse', reason: 'state' }
+  if (cursor && isClosedStageState(cursor.state)) return { action: 'refuse', reason: 'state' }
   if (request.kind === 'serve') {
     if (!cursor) {
       return request.ordinal === 0

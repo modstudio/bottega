@@ -183,6 +183,7 @@ export const boardModules: BoardModule[] = [
     '../record/machine-identity.ts',
     '../record/record-api-client.ts',
     '../record/record-board-contract.ts',
+    '../record/record-task-flow-contract.ts',
     '../run/run-identifier.ts',
     '../workflow/workflow-cursor-format.ts',
     '../workflow/task-flow-store.ts',

@@ -3,6 +3,7 @@
 
 import { v5 } from 'uuid'
 import { z } from 'zod'
+import { TASK_FLOW_STAGE_STATES } from './record-task-flow-contract.ts'
 
 const TASK_FLOW_REQUEST_ID_NAMESPACE = v5.URL
 
@@ -65,7 +66,7 @@ const stageInsert = z.object({
   arguments: z.record(z.string(), z.string()),
   activeOrdinal: z.number().int().nonnegative(),
   activeSlug: z.string(),
-  state: z.enum(['running', 'awaiting-ruling', 'done', 'abandoned']),
+  state: z.enum(TASK_FLOW_STAGE_STATES),
   closedStepNotes: z.array(z.unknown()),
   question: nullableText,
   autonomy: nullableText,
@@ -108,7 +109,7 @@ const stageUpdateValues = z.object({
   arguments: z.record(z.string(), z.string()).optional(),
   activeOrdinal: z.number().int().nonnegative().optional(),
   activeSlug: z.string().optional(),
-  state: z.enum(['running', 'awaiting-ruling', 'done', 'abandoned']).optional(),
+  state: z.enum(TASK_FLOW_STAGE_STATES).optional(),
   closedStepNotes: z.array(z.unknown()).optional(),
   question: nullableText.optional(),
   autonomy: nullableText.optional(),

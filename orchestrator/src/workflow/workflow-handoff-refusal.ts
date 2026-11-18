@@ -1,14 +1,15 @@
 // concern: workflow handoff refusal
 /** Pure policy shared by local and hosted task-flow handoff writers. */
 
+import { isClosedStageState } from '../record/record-task-flow-contract.ts'
+
 export function handoffSourceRefusal(input: {
   cursorLabel: string
   state: string
   sourceSession: string | null
   targetSession: string | null
 }): string | null {
-  if (input.state === 'done' || input.state === 'abandoned')
-    return `${input.cursorLabel} is ${input.state}`
+  if (isClosedStageState(input.state)) return `${input.cursorLabel} is ${input.state}`
   if (input.state === 'awaiting-ruling')
     return `${input.cursorLabel} is awaiting a ruling; answer its question, then retry the handoff`
   if (!input.sourceSession || input.sourceSession !== input.targetSession)

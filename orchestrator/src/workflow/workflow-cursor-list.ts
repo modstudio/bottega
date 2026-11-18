@@ -5,14 +5,13 @@ import type { Database } from 'bun:sqlite'
 import { db } from '../database/db.ts'
 import { projectAt } from '../project/projects.ts'
 import { openQuestionStages } from '../question-store/question-store-read.ts'
-import { TASK_FLOW_STAGE_STATES } from '../record/record-task-flow-contract.ts'
+import { isOpenStageState, TASK_FLOW_STAGE_STATES } from '../record/record-task-flow-contract.ts'
 import { LIVE_RUN_STATUS_SQL } from '../run/run-status.ts'
 import {
   type TaskFlowListedStageRow as ListedCursorRow,
   taskFlowHandoffLinks,
   taskFlowReadStore,
 } from './task-flow-store.ts'
-import { TASK_FLOW_OPEN_STAGE_STATES } from './task-flow-store-types.ts'
 import { cursorAutonomy } from './workflow-cursor-autonomy.ts'
 import { renderWorkflowCursorLine } from './workflow-cursor-format.ts'
 import { workflowCursorProjectScope } from './workflow-cursor-selection.ts'
@@ -84,7 +83,7 @@ export async function listWorkflowCursors(
       const handedOffFrom = row.handed_off_from_record_id
         ? await taskFlowReadStore(d).stageByRecordId(row.handed_off_from_record_id)
         : null
-      const closed = !TASK_FLOW_OPEN_STAGE_STATES.some((state) => state === row.state)
+      const closed = !isOpenStageState(row.state)
       const composition = closed
         ? null
         : composeWorkflow(

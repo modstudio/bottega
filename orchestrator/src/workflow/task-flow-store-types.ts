@@ -1,26 +1,12 @@
 // concern: task flow persistence types
 /** Shared row and insert shapes for task-flow persistence. */
 
-import type { TASK_FLOW_STAGE_STATES } from '../record/record-task-flow-contract.ts'
 import type {
   TaskFlowIntentInput as RecordTaskFlowIntentInput,
   TaskFlowIntent,
 } from '../record/record-task-flow-write-contract.ts'
 import type { CursorOwner, CursorState } from './workflow-cursor-transition.ts'
 import type { EnforcementMode } from './workflow-floor.ts'
-
-export type TaskFlowStageState = CursorState
-type RecordTaskFlowStageState = (typeof TASK_FLOW_STAGE_STATES)[number]
-type StageStateSetsMatch =
-  Exclude<TaskFlowStageState, RecordTaskFlowStageState> extends never
-    ? Exclude<RecordTaskFlowStageState, TaskFlowStageState> extends never
-      ? unknown
-      : never
-    : never
-export const TASK_FLOW_OPEN_STAGE_STATES = [
-  'running',
-  'awaiting-ruling',
-] as const satisfies readonly TaskFlowStageState[] & StageStateSetsMatch
 
 type CursorOwnerMutation = { values: { sessionId?: CursorOwner | null } }
 type CursorOwnerIntentShape<K extends TaskFlowIntent> = K extends 'compose'

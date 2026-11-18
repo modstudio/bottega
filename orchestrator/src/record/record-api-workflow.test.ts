@@ -8,6 +8,7 @@ import type { RecordIdentity } from './record-auth.ts'
 import { RECORD_KEYED_NOT_VISIBLE_CODE } from './record-keyed-read.ts'
 import { RecordTaskFlowError } from './record-task-flow.ts'
 import {
+  TASK_FLOW_OPEN_STAGE_STATES,
   TASK_FLOW_PRESENCE_BATCH_MAX,
   TASK_FLOW_STAGE_LIST_LIMIT_MAX,
   type TaskFlowPresence,
@@ -66,7 +67,7 @@ test('task-flow stage list validates combined filters and applies its default li
   expect(calls[0]).toMatchObject({
     projectId: PROJECT,
     number: 7,
-    states: ['running', 'awaiting-ruling'],
+    states: TASK_FLOW_OPEN_STAGE_STATES,
     limit: 200,
   })
 })

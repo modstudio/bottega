@@ -21,7 +21,10 @@ import {
   type HostedTaskFlow,
   type HostedTaskFlowStageById,
   type HostedTaskFlowStageList,
+  isClosedStageState,
+  TASK_FLOW_OPEN_STAGE_STATES,
   TASK_FLOW_STAGE_LIST_LIMIT_MAX,
+  TASK_FLOW_STAGE_STATES,
 } from '../record/record-task-flow-contract.ts'
 import {
   currentRecordWriteDecision,
@@ -272,7 +275,7 @@ class RecordTaskFlowReadStore {
         mode: input.mode,
         sessionId: input.sessionId,
         keyless: true,
-        states: ['running', 'awaiting-ruling'],
+        states: [...TASK_FLOW_OPEN_STAGE_STATES],
       },
       input.project,
     )
@@ -288,7 +291,7 @@ class RecordTaskFlowReadStore {
     const common: StageListSelector = {
       projectId: this.projectId(input.project),
       workflow: input.workflow,
-      states: ['running', 'awaiting-ruling'],
+      states: [...TASK_FLOW_OPEN_STAGE_STATES],
     }
     const groups = input.key
       ? await Promise.all([
@@ -318,19 +321,19 @@ class RecordTaskFlowReadStore {
   async keyedStageHistory(input: { since: string }) {
     return (
       await this.listEveryDestination({
-        states: ['running', 'awaiting-ruling', 'done', 'abandoned'],
+        states: [...TASK_FLOW_STAGE_STATES],
       })
     )
       .map((item) => stageRow(item))
       .filter(
         (row) =>
           row.workflow_key !== '' &&
-          (!['done', 'abandoned'].includes(row.state) || row.updated_at >= input.since),
+          (!isClosedStageState(row.state) || row.updated_at >= input.since),
       )
       .sort((left, right) => left.created_at.localeCompare(right.created_at) || left.id - right.id)
   }
   async openStageWorktrees(): Promise<TaskFlowOpenStageWorktreeRow[]> {
-    return (await this.listEveryDestination({ states: ['running', 'awaiting-ruling'] }))
+    return (await this.listEveryDestination({ states: [...TASK_FLOW_OPEN_STAGE_STATES] }))
       .map((row) => stageRow(row))
       .map((row) => ({
         record_id: row.record_id,
@@ -351,7 +354,7 @@ class RecordTaskFlowReadStore {
         {
           projectId: this.projectId(project),
           taskId: taskRecordId,
-          states: ['running', 'awaiting-ruling'],
+          states: [...TASK_FLOW_OPEN_STAGE_STATES],
         },
         project,
       )
@@ -380,7 +383,7 @@ class RecordTaskFlowReadStore {
         workflow: input.workflow,
         mode: input.mode,
         workflowKey: input.key,
-        states: ['running', 'awaiting-ruling'],
+        states: [...TASK_FLOW_OPEN_STAGE_STATES],
       },
       input.project,
     )

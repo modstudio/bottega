@@ -1,6 +1,9 @@
 import { expect, test } from 'bun:test'
 import { newRecordId } from '../../../shared/record-id.ts'
-import { TASK_FLOW_STAGE_STATES } from '../record/record-task-flow-contract.ts'
+import {
+  type TASK_FLOW_CLOSED_STAGE_STATES,
+  TASK_FLOW_STAGE_STATES,
+} from '../record/record-task-flow-contract.ts'
 import { taskFlowReadStore } from './task-flow-store.ts'
 import { composeWorkflowWithCursor } from './workflow-cursor.ts'
 import { listWorkflowCursors } from './workflow-cursor-list.ts'
@@ -17,7 +20,7 @@ test('all-state stage reads include closed cursors without widening open reads',
     project: string,
     key: string,
     session: string,
-    state: 'done' | 'abandoned',
+    state: (typeof TASK_FLOW_CLOSED_STAGE_STATES)[number],
   ) => {
     const composed = await composeWorkflowWithCursor(
       'flow',

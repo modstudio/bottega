@@ -702,6 +702,7 @@ export const recordReadBoundariesAfterPublish: ImportBoundary[] = [
       './record-board-project-resolution.ts',
       './record-board-scope.ts',
       './record-board-tx.ts',
+      './record-task-flow-contract.ts',
     ],
     'Keep hosted board claims independent of HTTP and local stores.',
   ),

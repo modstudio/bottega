@@ -9,7 +9,10 @@ import { db, sessionId } from '../database/db.ts'
 import { upsertProject } from '../project/projects.ts'
 import { rememberProjectSpace } from '../project-space-cache.ts'
 import { machineId } from '../record/machine-identity.ts'
-import type { HostedTaskFlow } from '../record/record-task-flow-contract.ts'
+import {
+  type HostedTaskFlow,
+  TASK_FLOW_OPEN_STAGE_STATES,
+} from '../record/record-task-flow-contract.ts'
 import { productionStepCatalogue } from './step-catalogue.ts'
 import { composeWorkflowWithCursor } from './workflow-cursor.ts'
 import {
@@ -263,7 +266,8 @@ test('cursor verbs parse every documented positional form before flags', async (
             .get(cursor),
         ).toEqual({
           workflow_slug: slug,
-          state: row.result === 'next' ? 'running' : 'awaiting-ruling',
+          state:
+            row.result === 'next' ? TASK_FLOW_OPEN_STAGE_STATES[0] : TASK_FLOW_OPEN_STAGE_STATES[1],
           ordinal: row.result === 'next' ? 1 : 0,
         })
       }

@@ -85,7 +85,10 @@ export const databaseModules: ArchitectureModule[] = [
     './write-probe.ts',
   ]),
   module('orchestrator/src/database/tolerant-delete.ts', ['bun:sqlite']),
-  module('orchestrator/src/database/task-flow-migration-preflight.ts', ['bun:sqlite']),
+  module('orchestrator/src/database/task-flow-migration-preflight.ts', [
+    'bun:sqlite',
+    '../record/record-task-flow-contract.ts',
+  ]),
   module('orchestrator/src/database/machine-update-mover.ts', [
     'node:path',
     '../../../shared/brand.ts',

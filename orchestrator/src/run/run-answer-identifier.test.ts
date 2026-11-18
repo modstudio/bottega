@@ -4,6 +4,7 @@ import { writeMachineNames } from '../../../shared/machine-config.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
+import type { TASK_FLOW_OPEN_STAGE_STATES } from '../record/record-task-flow-contract.ts'
 import {
   type AnswerIdentifierFacts,
   answerIdentifierDecision,
@@ -280,7 +281,7 @@ test('a bare number with no run keeps the explicit question hint', async () => {
 })
 
 function addCursorQuestion(input: {
-  state: 'running' | 'awaiting-ruling'
+  state: (typeof TASK_FLOW_OPEN_STAGE_STATES)[number]
   closed?: boolean
   answered?: boolean
 }) {

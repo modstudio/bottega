@@ -253,6 +253,7 @@ export const ROOT_TEST_FILES = [
   'scripts/check-raw-start.test.ts',
   'scripts/check-main-checkout-moves.test.ts',
   'scripts/check-workflow-cursor-handles.test.ts',
+  'scripts/check-task-flow-stage-state-literals.test.ts',
   'scripts/check-active-space-moves.test.ts',
   'scripts/check-git-path-list.test.ts',
   'scripts/command-descriptions.test.ts',

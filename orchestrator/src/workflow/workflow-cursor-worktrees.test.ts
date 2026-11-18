@@ -6,6 +6,10 @@ import {
   hostedCursorStageFixture,
   workflowVersionRecordId,
 } from '../../test/fixtures/workflow.ts'
+import {
+  TASK_FLOW_CLOSED_STAGE_STATES,
+  TASK_FLOW_OPEN_STAGE_STATES,
+} from '../record/record-task-flow-contract.ts'
 import { STANDARD_OPEN_HOOKS } from '../runtime/store-hooks.ts'
 import { openKeylessCursorsForSession } from './workflow-cursor-list.ts'
 import { database } from './workflow-cursor-test.fixture.ts'
@@ -93,7 +97,7 @@ test('clears every open cursor worktree pointer at a removed path and records th
      VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM workflow_cursor),'fixture','fixture','default',
              '', '',NULL,?,?,?,0,'research',?,'[]',NULL,1,'2026-10-27','2026-10-27','floors')`,
   )
-  const ids = ['running', 'awaiting-ruling', 'done'].map((state) => {
+  const ids = [...TASK_FLOW_OPEN_STAGE_STATES, TASK_FLOW_CLOSED_STAGE_STATES[0]].map((state) => {
     const id = newRecordId()
     insert.run(
       id,

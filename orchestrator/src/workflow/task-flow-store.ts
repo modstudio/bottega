@@ -2,6 +2,7 @@
 /** The task-flow persistence port and its resolver. */
 
 import type { Database } from 'bun:sqlite'
+import type { TaskFlowStageState } from '../record/record-task-flow-contract.ts'
 import type {
   TaskFlowIntentResult,
   TaskFlowLiveIntent,
@@ -35,7 +36,6 @@ import type {
   TaskFlowRulingFileRow,
   TaskFlowRulingRow,
   TaskFlowStageCursorRow,
-  TaskFlowStageState,
   TaskFlowTaskRulingRow,
   TaskFlowTextBodyRow,
   TaskFlowTextRow,
