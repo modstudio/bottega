@@ -244,19 +244,7 @@
     "reason": "untested"
   },
   {
-    "route": "GET /v1/task-flow/stages",
-    "reason": "untested"
-  },
-  {
-    "route": "GET /v1/task-flow/stages/:id",
-    "reason": "untested"
-  },
-  {
     "route": "GET /v1/task-flow/texts/:id",
-    "reason": "untested"
-  },
-  {
-    "route": "GET /v1/whoami",
     "reason": "untested"
   },
   {
@@ -472,10 +460,6 @@
     "reason": "untested"
   },
   {
-    "route": "POST /v1/task-flow/adopt",
-    "reason": "untested"
-  },
-  {
     "route": "POST /v1/task-flow/advance",
     "reason": "untested"
   },
@@ -497,10 +481,6 @@
   },
   {
     "route": "POST /v1/task-flow/delete-text",
-    "reason": "untested"
-  },
-  {
-    "route": "POST /v1/task-flow/handoff",
     "reason": "untested"
   },
   {

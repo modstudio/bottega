@@ -23,33 +23,46 @@ export async function createHostedRecordFixture(options: {
   return database
 }
 
-type SqlFragment = { readonly sql: string }
+type SqlFragment = { readonly sql: string; readonly parameters: readonly unknown[] }
+
+function shiftedSql(sql: string, offset: number): string {
+  return sql.replace(/\$(\d+)/g, (_, number: string) => `$${Number(number) + offset}`)
+}
 
 function pgliteQuery(database: Pick<PGlite, 'query'>): SQL {
   const result = (statement: string, parameters: unknown[]) => {
     let arrayMode = false
-    const rows = Promise.resolve()
-      .then(() =>
+    let pending: Promise<unknown[]> | undefined
+    const rows = () =>
+      (pending ??= Promise.resolve()
+        .then(() =>
         database.query(
           statement,
           parameters,
           arrayMode ? { rowMode: 'array' as const } : undefined,
         ),
       )
-      .then((value) => value.rows)
-    return Object.assign(rows, {
+        .then((value) => value.rows))
+    return {
+      sql: statement,
+      parameters,
+      then: (...args: Parameters<Promise<unknown[]>['then']>) => rows().then(...args),
+      catch: (...args: Parameters<Promise<unknown[]>['catch']>) => rows().catch(...args),
+      finally: (...args: Parameters<Promise<unknown[]>['finally']>) => rows().finally(...args),
       values: () => {
         arrayMode = true
-        return rows
+        return rows()
       },
-    })
+    }
   }
   const query = (strings: TemplateStringsArray, ...interpolations: unknown[]) => {
     let statement = strings[0]!
     const parameters: unknown[] = []
     for (const [index, interpolation] of interpolations.entries()) {
       if (typeof interpolation === 'object' && interpolation !== null && 'sql' in interpolation) {
-        statement += (interpolation as SqlFragment).sql
+        const fragment = interpolation as SqlFragment
+        statement += shiftedSql(fragment.sql, parameters.length)
+        parameters.push(...fragment.parameters)
       } else {
         parameters.push(interpolation)
         statement += `$${parameters.length}`
@@ -60,7 +73,7 @@ function pgliteQuery(database: Pick<PGlite, 'query'>): SQL {
   }
   query.options = {}
   query.unsafe = (sql: string, parameters?: unknown[]) => {
-    if (parameters === undefined) return { sql }
+    if (parameters === undefined) return { sql, parameters: [] }
     return result(sql, parameters)
   }
   return query as unknown as SQL

@@ -15,6 +15,9 @@ import { promoteWorkflowLocal, setWorkflowLocal } from './workflows.ts'
 
 export const contractRoutes = [
   'GET /v1/task-flow',
+  'GET /v1/task-flow/stages',
+  'GET /v1/task-flow/stages/:id',
+  'GET /v1/whoami',
   'POST /v1/task-flow/adopt',
   'POST /v1/task-flow/handoff',
   'PUT /v1/board/claims',
@@ -22,6 +25,7 @@ export const contractRoutes = [
 
 const TASK = '01990000-0000-7000-8000-000000024590'
 const FLOW = '01990000-0000-7000-8000-000000024594'
+const PROJECT = '01990000-0000-7000-8000-000000024595'
 let fixture: RecordContractFixture
 
 beforeAll(async () => {
@@ -56,6 +60,7 @@ function installWorkflow(d: ReturnType<typeof database>, slug: string, keyRequir
 
 test('a keyless explore handoff adopts before the hosted task claim is taken', async () => {
   const d = database()
+  d.query("UPDATE project SET record_id=? WHERE name='fixture'").run(PROJECT)
   installWorkflow(d, 'contract-explore', false)
   installWorkflow(d, 'contract-target', true)
   d.query("UPDATE project SET settings=? WHERE name='fixture'").run(
@@ -89,9 +94,7 @@ test('a keyless explore handoff adopts before the hosted task claim is taken', a
   ).run(RECORD_CONTRACT_SPACE_A, RECORD_CONTRACT_SPACE_A)
   d.query('UPDATE step_catalogue SET space_id=?').run(RECORD_CONTRACT_SPACE_A)
   d.query('UPDATE step_catalogue_version SET space_id=?').run(RECORD_CONTRACT_SPACE_A)
-  const project = d
-    .query<{ record_id: string }, []>("SELECT record_id FROM project WHERE name='fixture'")
-    .get()!.record_id
+  const project = PROJECT
   d.query(
     `INSERT INTO task_flow
       (record_id,project_record_id,state,opening_machine_id,updated_machine_id,revision,created_at,updated_at)
@@ -104,6 +107,13 @@ test('a keyless explore handoff adopts before the hosted task claim is taken', a
   row.task_flow_record_id = FLOW
   const machine = row.opened_machine_id
   const workflow = '01990000-0000-7000-8000-000000024591'
+  const targetWorkflow = '01990000-0000-7000-8000-000000024598'
+  const targetWorkflowVersion = d
+    .query<{ record_id: string }, []>(
+      `SELECT v.record_id FROM workflow_version v JOIN workflow w ON w.record_id=v.workflow_record_id
+       WHERE w.slug='contract-target' AND v.status='production'`,
+    )
+    .get()!.record_id
   const catalogue = '01990000-0000-7000-8000-000000024592'
   await fixture.database.exec(`
     RESET ROLE;
@@ -117,9 +127,15 @@ test('a keyless explore handoff adopts before the hosted task claim is taken', a
       'mcp',now(),now(),now(),now());
     INSERT INTO workflow (id,space_id,slug,created_at,updated_at)
     VALUES ('${workflow}','${RECORD_CONTRACT_SPACE_A}','contract-explore',now(),now());
+    INSERT INTO workflow (id,space_id,slug,created_at,updated_at)
+    VALUES ('${targetWorkflow}','${RECORD_CONTRACT_SPACE_A}','contract-target',now(),now());
     INSERT INTO workflow_version
       (id,space_id,workflow_id,n,status,definition,author,reason,created_at,updated_at)
     VALUES ('${row.workflow_version_record_id}','${RECORD_CONTRACT_SPACE_A}','${workflow}',1,
+      'production','{}','test','contract',now(),now());
+    INSERT INTO workflow_version
+      (id,space_id,workflow_id,n,status,definition,author,reason,created_at,updated_at)
+    VALUES ('${targetWorkflowVersion}','${RECORD_CONTRACT_SPACE_A}','${targetWorkflow}',1,
       'production','{}','test','contract',now(),now());
     INSERT INTO step_catalogue (id,space_id,slug,created_at,updated_at)
     VALUES ('${catalogue}','${RECORD_CONTRACT_SPACE_A}','contract',now(),now());
@@ -136,7 +152,7 @@ test('a keyless explore handoff adopts before the hosted task claim is taken', a
        catalogue_version_id,arguments,active_ordinal,active_slug,state,closed_step_notes,enforcement,
        total_steps,opened_machine_id,last_advanced_machine_id,revision,created_at,updated_at)
     VALUES ('${row.record_id}','${RECORD_CONTRACT_SPACE_A}','${FLOW}','${project}',
-      ${row.id},'contract-explore','default','${context.session}','${row.workflow_version_record_id}',
+      100,'contract-explore','default','${context.session}','${row.workflow_version_record_id}',
       '${row.catalogue_version_record_id}','${row.args}',0,'score','running','[]','signed',1,
       '${machine}','${machine}',${row.revision},now(),now());
     UPDATE task_flow SET open_stage_record_id='${row.record_id}' WHERE id='${FLOW}';
@@ -157,12 +173,12 @@ test('a keyless explore handoff adopts before the hosted task claim is taken', a
     database: d,
     commitCount: () => 0,
     taskClaimPorts: {
-      take: ({ project, key, session }) =>
+      take: ({ project: projectName, key, session }) =>
         fixture.client.takeBoardClaim(
           {
             id: '01990000-0000-7000-8000-000000024593',
-            project,
-            projectId: project,
+            project: projectName,
+            projectId: PROJECT,
             subject: `task:${key}`,
             holderSession: session,
           },

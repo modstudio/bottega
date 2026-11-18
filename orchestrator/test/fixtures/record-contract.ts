@@ -5,7 +5,11 @@ import { recordApiClient, type RecordApiClient } from '../../src/record/record-a
 import { recordApiError } from '../../src/record/record-api-client-error.ts'
 import type { RecordIdentity } from '../../src/record/record-auth.ts'
 import { takeHostedBoardClaim } from '../../src/record/record-board-claims.ts'
-import { readRecordTaskFlow } from '../../src/record/record-task-flow.ts'
+import {
+  listRecordTaskFlowStages,
+  readRecordTaskFlow,
+  readRecordTaskFlowStage,
+} from '../../src/record/record-task-flow.ts'
 import { writeRecordTaskFlow } from '../../src/record/record-task-flow-write.ts'
 import { recordApiTestApp } from './record-api-app.ts'
 import {
@@ -38,12 +42,24 @@ export type RecordContractFixture = {
 
 function identity(): RecordIdentity {
   return {
-    user: { id: RECORD_CONTRACT_USER, email: 'contract@example.test' },
+    user: { id: RECORD_CONTRACT_USER, email: 'contract@example.test', emailVerified: true },
     activeSpaceId: RECORD_CONTRACT_SPACE_A,
     personalSpaceId: RECORD_CONTRACT_SPACE_A,
     memberships: [
-      { space_id: RECORD_CONTRACT_SPACE_A, slug: 'contract-a', permission: 'write' },
-      { space_id: RECORD_CONTRACT_SPACE_B, slug: 'contract-b', permission: 'write' },
+      {
+        space_id: RECORD_CONTRACT_SPACE_A,
+        name: 'Contract A',
+        slug: 'contract-a',
+        role: 'member',
+        permission: 'write',
+      },
+      {
+        space_id: RECORD_CONTRACT_SPACE_B,
+        name: 'Contract B',
+        slug: 'contract-b',
+        role: 'member',
+        permission: 'write',
+      },
     ],
   }
 }
@@ -67,6 +83,8 @@ export async function createRecordContractFixture(): Promise<RecordContractFixtu
   const app = recordApiTestApp(identity(), { ...idleSubjectDeps(), ...idleRecordApiDeps() }, {
     recordUrl: RECORD_CONTRACT_URL,
     readTaskFlow: readRecordTaskFlow,
+    readTaskFlowStage: readRecordTaskFlowStage,
+    listTaskFlowStages: listRecordTaskFlowStages,
     writeTaskFlow: writeRecordTaskFlow,
     takeBoardClaim: takeHostedBoardClaim,
   })
@@ -75,7 +93,10 @@ export async function createRecordContractFixture(): Promise<RecordContractFixtu
   const previousContainer = process.env.BOTTEGA_TEST_POSTGRES_CONTAINER
   process.env.BOTTEGA_TEST_POSTGRES_CONTAINER = 'record-contract'
   const client = recordApiClient(async <T>(path: string, init: ContractRequestInit = {}) => {
-    requestedRoutes.add(`${init.method?.toUpperCase() ?? 'GET'} ${path.split('?', 1)[0]}`)
+    const pathname = path
+      .split('?', 1)[0]!
+      .replace(/^\/v1\/task-flow\/stages\/[^/]+$/, '/v1/task-flow/stages/:id')
+    requestedRoutes.add(`${init.method?.toUpperCase() ?? 'GET'} ${pathname}`)
     const headers = recordRequestHeaders({
       destinationSpaceId: init.destinationSpaceId,
       headers: init.headers,
