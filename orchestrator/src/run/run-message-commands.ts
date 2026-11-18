@@ -2,6 +2,7 @@
 /** Owns answer, retry, and continuation command behavior. Must not know CLI grammar. */
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { LateWorkflowRulingResultSchema } from '../../../shared/orch-contract.ts'
 import { AGENTS } from '../agent/agent-registry.ts'
 import { resumePromptByteLimit } from '../agent/agents.ts'
 import {
@@ -37,6 +38,7 @@ import { answeredQuestionContextMoments } from '../workflow/workflow-context-mom
 import { answerValueArgs } from './answer-value-args.ts'
 import { parseQuestionIdentifier, resolveQuestionIdentifier } from './question-identifier.ts'
 import { rulingAttributionDecision } from './question-vocabulary.ts'
+import { answerClosedWorkflowQuestion } from './question-mutation.ts'
 import { rulingFileOfferLines } from './ruling-file-text.ts'
 import { type AnswerRunInput, answerRun, retryRun } from './run-answer.ts'
 import { continueRun, type RunControlPresentation, reportContinuedRun } from './run-control.ts'
@@ -277,6 +279,44 @@ export async function answerCommand(
   )) {
     await applyContextMoment(moment, json, context?.output, context?.ports)
   }
+}
+
+export async function answerClosedWorkflowQuestionCommand(
+  target: { questionRecordId: string; cursorRecordId: string },
+  argv: string[],
+  recordOnly: boolean,
+  json: boolean,
+  flags: Flags,
+  presentation: Presentation,
+  refusedOptions?: Readonly<Record<string, string>>,
+): Promise<void> {
+  const input = await answerInputFromArgv(
+    argv,
+    recordOnly,
+    json,
+    flags,
+    answerRunHelpers(presentation),
+    refusedOptions,
+  )
+  if (Array.isArray(input.rulings))
+    throw new Error('a workflow question accepts one ruling; pass the ruling as the message')
+  await answerClosedWorkflowQuestion({
+    questionId: target.questionRecordId,
+    cursorId: target.cursorRecordId,
+    ruling: input.rulings,
+    fromOperator: input.fromOperator,
+    channel: input.channel,
+  })
+  if (json)
+    console.log(
+      JSON.stringify(
+        LateWorkflowRulingResultSchema.parse({
+          outcome: 'recorded-late',
+          question_record_id: target.questionRecordId,
+        }),
+      ),
+    )
+  else console.log(`Late ruling recorded on question ${target.questionRecordId}.`)
 }
 
 export async function continueCommand(

@@ -5,6 +5,7 @@ import { notifyWaitingItem } from '../operator/operator-waiting.ts'
 import { projectByName } from '../project/projects.ts'
 import { maximumQuestionNumber } from '../question-store/question-store-read.ts'
 import { machineId } from '../record/machine-identity.ts'
+import { currentRecordWriteDecision } from '../record/record-write-authority.ts'
 import {
   taskFlowWriteTarget,
   writeHostedTaskFlow,
@@ -691,14 +692,25 @@ async function prepareWorkflowSelfRuling(
   database: Database,
 ): Promise<void> {
   if (!plan) return
-  database.exec('SAVEPOINT self_ruling_advance_preflight')
-  try {
-    taskFlowLocalStore(database).write('advance', payload, null)
-  } finally {
-    database.exec('ROLLBACK TO self_ruling_advance_preflight')
-    database.exec('RELEASE self_ruling_advance_preflight')
+  if (currentRecordWriteDecision(database).verdict !== 'hosted') {
+    // Record the ruling only once the local advance is known to apply.
+    database.exec('SAVEPOINT self_ruling_advance_preflight')
+    try {
+      writeLocalAdvance(database, payload, null)
+    } finally {
+      database.exec('ROLLBACK TO self_ruling_advance_preflight')
+      database.exec('RELEASE self_ruling_advance_preflight')
+    }
   }
   await recordWorkflowSelfRuling(plan, database)
+}
+
+function writeLocalAdvance(
+  database: Database,
+  payload: TaskFlowIntentInput<'advance'>,
+  hosted: TaskFlowIntentResult<'advance'> | null,
+): void {
+  taskFlowLocalStore(database).write('advance', payload, hosted)
 }
 
 async function applyWorkflowAdvanceLocally(input: {
@@ -712,7 +724,7 @@ async function applyWorkflowAdvanceLocally(input: {
   if (row.state === 'awaiting-ruling')
     await closeOpenWorkflowQuestion(row.record_id, 'advanced-without-ruling', at, d)
   writeTransaction(() => {
-    taskFlowLocalStore(d).write('advance', payload, hosted)
+    writeLocalAdvance(d, payload, hosted)
   }, d)
 }
 

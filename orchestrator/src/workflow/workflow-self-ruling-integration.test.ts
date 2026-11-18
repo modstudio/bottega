@@ -10,7 +10,11 @@ import {
   setStepCatalogueLocal,
 } from './step-catalogue.ts'
 import { workflowNextContextMoment } from './workflow-context-moment.ts'
-import { awaitWorkflowRuling, composeWorkflowWithCursor } from './workflow-cursor.ts'
+import {
+  awaitWorkflowRuling,
+  composeWorkflowWithCursor,
+  writeFinishingWorkflowAdvance,
+} from './workflow-cursor.ts'
 import { resolveWorkflowLiveAutonomy } from './workflow-cursor-live-autonomy.ts'
 import { getWorkflowStepWithCursor } from './workflow-cursor-serve.ts'
 import { selectAndNextWorkflowStep as nextWorkflowStep } from './workflow-cursor-test.fixture.ts'
@@ -19,6 +23,7 @@ import { seedWorkflows } from './workflow-seeds.ts'
 import { installWorkflowStoreFixture } from './workflow-store.fixture.ts'
 import { closeCursorWithTextCopy, closeCursorWithTextCopyResult } from './workflow-text-copy.ts'
 import { composeWorkflow } from './workflows.ts'
+import * as selfRulingMutation from './workflow-self-ruling-mutation.ts'
 
 const args = {
   key: 'DEV-1264',
@@ -104,7 +109,7 @@ function installProbe(d: Database): number {
   ).number
 }
 
-function selfRule(d: Database, question?: string): Promise<string> {
+function selfRule(d: Database, question?: string, ruling = 'Proceed.'): Promise<string> {
   return nextWorkflowStep(
     'flow',
     'fixture',
@@ -117,7 +122,7 @@ function selfRule(d: Database, question?: string): Promise<string> {
     ports,
     undefined,
     {
-      ruling: 'Proceed.',
+      ruling,
       basis: 'specification line 4',
       question,
       channel: 'mcp',
@@ -239,6 +244,86 @@ test('a hosted advance failure on an awaiting cursor does not close its question
     answered_at: expect.any(String),
     closed_at: null,
   })
+})
+
+test('a self-ruling hosted advance skips the local preflight and writes both records', async () => {
+  const d = database()
+  await openAtRuling(d)
+  const previousRecordApiUrl = process.env.BOTTEGA_RECORD_API_URL
+  process.env.BOTTEGA_RECORD_API_URL = 'https://record.example.test'
+  d.query(
+    'INSERT INTO record_install_binding (id,bound_at,record_origin) VALUES (1,?,?)',
+  ).run('2026-11-18', 'https://record.example.test')
+  d.query('UPDATE project SET settings=? WHERE name=?').run(
+    JSON.stringify({ space: 'fixture-space' }),
+    'fixture',
+  )
+  const advances: unknown[] = []
+  const hostedContext = {
+    whoami: async () => ({
+      user: { id: newRecordId() },
+      activeSpaceId: null,
+      personalSpaceId: null,
+      memberships: [{ space_id: newRecordId(), slug: 'fixture-space', permission: 'write' }],
+    }),
+    advanceTaskFlow: async (input: unknown) => {
+      advances.push(input)
+      return {} as never
+    },
+  }
+  const ruling = spyOn(selfRulingMutation, 'recordWorkflowSelfRuling').mockResolvedValue({
+    questionId: 17,
+  })
+
+  try {
+    const row = {
+      ...(d.query('SELECT * FROM workflow_cursor').get() as Record<string, unknown>),
+      task_flow_record_id: null,
+    } as never
+    await writeFinishingWorkflowAdvance({
+      row,
+      closed: [],
+      deleteTextIds: [],
+      callerSession: context.session,
+      database: d,
+      taskFlowClient: hostedContext,
+      selfRulingPlan: {} as never,
+    })
+    expect(ruling).toHaveBeenCalledTimes(1)
+    expect(advances).toHaveLength(1)
+  } finally {
+    ruling.mockRestore()
+    if (previousRecordApiUrl === undefined) delete process.env.BOTTEGA_RECORD_API_URL
+    else process.env.BOTTEGA_RECORD_API_URL = previousRecordApiUrl
+  }
+})
+
+test('a retried self-ruling reuses the recorded ruling and refuses different text', async () => {
+  const d = database()
+  await openAtRuling(d)
+  const write = spyOn(taskFlowWriter, 'writeHostedTaskFlow')
+  write.mockImplementationOnce(() => Promise.reject(new Error('injected hosted advance failure')))
+
+  try {
+    await expect(selfRule(d)).rejects.toThrow('injected hosted advance failure')
+    expect(d.query('SELECT count(*) count FROM question').get()).toEqual({ count: 1 })
+    expect(d.query('SELECT answer FROM question').get()).toEqual({ answer: 'Proceed.' })
+
+    await expect(selfRule(d, undefined, 'Stop.')).rejects.toThrow(
+      'already records ruling "Proceed."; it cannot be replaced with "Stop."',
+    )
+    expect(d.query('SELECT count(*) count FROM question').get()).toEqual({ count: 1 })
+
+    const result = await selfRule(d)
+    expect(result).toContain('Complete the review.')
+    expect(d.query('SELECT count(*) count FROM question').get()).toEqual({ count: 1 })
+    expect(d.query('SELECT ordinal,step_slug FROM workflow_cursor').get()).toEqual({
+      ordinal: 4,
+      step_slug: 'complete',
+    })
+  } finally {
+    write.mockRestore()
+  }
 })
 
 test('a failed workflow-question write does not write an await-ruling advance', async () => {

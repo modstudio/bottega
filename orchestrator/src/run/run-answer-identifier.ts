@@ -172,8 +172,8 @@ function workflowQuestionDecision(
     return {
       kind: 'refuse',
       reason:
-        `${questionReference(identifier)}'s workflow cursor ${question.cursorRecordId} is not on this machine; ` +
-        'rule it from the machine that holds that cursor',
+        `${questionReference(identifier)}'s workflow cursor ${question.cursorRecordId} could not be read; ` +
+        `check it with ${PLATFORM_SLUG} question inbox --all`,
     }
   if (question.state === 'ruled')
     return { kind: 'refuse', reason: `${questionReference(identifier)} is already ruled on` }
@@ -357,23 +357,19 @@ async function readQuestionFacts(
 }
 
 function readWorkflowQuestionFacts(
-  database: Database,
+  _database: Database,
   recordId: string,
   workflowCursorRecordId: string,
   row: Record<string, unknown>,
 ): WorkflowQuestionFacts {
-  const cursor = database
-    .query<{ number: number; project: string }, [string]>(
-      'SELECT number,project FROM workflow_cursor WHERE record_id=?',
-    )
-    .get(workflowCursorRecordId)
   const open = row.answered_at === null && row.closed_at === null
   return {
     kind: 'workflow-question',
     recordId,
     cursorRecordId: workflowCursorRecordId,
-    cursorNumber: cursor?.number ?? null,
-    project: cursor?.project ?? null,
+    cursorNumber:
+      typeof row.workflow_cursor_number === 'number' ? row.workflow_cursor_number : null,
+    project: typeof row.project_name === 'string' ? row.project_name : null,
     open,
     state: open ? 'open' : row.answered_at ? 'ruled' : 'closed',
   }

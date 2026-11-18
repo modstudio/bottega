@@ -250,20 +250,19 @@ export async function answerClosedWorkflowQuestion(
   },
   database: Database = db(),
 ): Promise<void> {
-  const cursor = database
-    .query<{ session_id: string | null; updated_at: string }, [string]>(
-      'SELECT session_id,updated_at FROM workflow_cursor WHERE record_id=?',
+  const row = await questionById(database, input.questionId)
+  if (!row)
+    throw new Error(
+      `question ${input.questionId} was not found; check the identifier with ${PLATFORM_SLUG} question inbox --all`,
     )
-    .get(input.cursorId)
-  if (!cursor) throw new Error(`workflow cursor ${input.cursorId} does not exist`)
   const actor = sessionId()
   const adoptionReason = authorizeWorkflowQuestionMutation({
-    owner: cursor.session_id,
+    owner: typeof row.workflow_owner === 'string' ? row.workflow_owner : null,
     actor,
     fromOperator: input.fromOperator,
     subject: `workflow question ${input.questionId}`,
     action: 'rule',
-    chainLastActivityAt: Date.parse(cursor.updated_at),
+    chainLastActivityAt: Date.parse(String(row.workflow_updated_at)),
     database,
   })
   await answerWorkflowQuestion(

@@ -378,7 +378,7 @@ test('a cursor question whose cursor is absent refuses without rendering a null 
   })
   expect(decision).toEqual({
     kind: 'refuse',
-    reason: `q881001's workflow cursor ${cursorRecordId} is not on this machine; rule it from the machine that holds that cursor`,
+    reason: `q881001's workflow cursor ${cursorRecordId} could not be read; check it with ${PLATFORM_SLUG} question inbox --all`,
   })
   expect(decision.kind === 'refuse' ? decision.reason : '').not.toContain('--cursor null')
 })
