@@ -37,6 +37,7 @@ export type RecordContractFixture = {
   database: PGlite
   requestedRoutes: Set<string>
   close(): Promise<void>
+  reload(): Promise<RecordContractFixture>
 }
 
 function identity(): RecordIdentity {
@@ -117,15 +118,20 @@ export async function createRecordContractFixture(): Promise<RecordContractFixtu
   if (previousContainer === undefined) delete process.env.BOTTEGA_TEST_POSTGRES_CONTAINER
   else process.env.BOTTEGA_TEST_POSTGRES_CONTAINER = previousContainer
   installRecordApiClient(client)
+  const close = async () => {
+    installRecordApiClient(createMemoryRecordApiClient())
+    restorePool()
+    await database.close()
+  }
   return {
     app,
     client,
     database,
     requestedRoutes,
-    async close() {
-      installRecordApiClient(createMemoryRecordApiClient())
-      restorePool()
-      await database.close()
+    close,
+    async reload() {
+      await close()
+      return createRecordContractFixture()
     },
   }
 }
