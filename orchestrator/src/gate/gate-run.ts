@@ -60,7 +60,7 @@ export type ArchitectGateRunner = (input: {
 
 export type ArchitectGateGitState = (cwd: string) => {
   headCommit: string
-  headTree?: string
+  headTree: string
   porcelainPaths: readonly string[]
 }
 
@@ -218,10 +218,6 @@ const observeGitState: ArchitectGateGitState = (cwd) => {
   }
 }
 
-function gateHeadCommit(cwd: string, observe: ArchitectGateGitState): string | null {
-  return decideGateHeadCommit(observe(cwd))
-}
-
 /** Who may run the gate, in which registered project and checkout, with which command. */
 function architectGateTarget(input: {
   cwd?: string
@@ -297,7 +293,7 @@ export async function runArchitectGate(input: {
     }
   }
   const treeBefore = before === null ? snapshotTree() : null
-  const cleanHeadTree = before === null ? null : (beforeState.headTree ?? null)
+  const cleanHeadTree = before === null ? null : beforeState.headTree
   const executionPath = gateCheckExecutionPath()
   const ran = await (input.runner ?? defaultRunner)({
     command,
@@ -307,7 +303,8 @@ export async function runArchitectGate(input: {
   })
   const checkExecutions = readGateCheckExecutions(executionPath, write)
   // Only a gate that starts clean and leaves HEAD and the tree unchanged is attributable.
-  const after = gateHeadCommit(checkoutTopLevel, observe)
+  const afterState = observe(checkoutTopLevel)
+  const after = decideGateHeadCommit(afterState)
   const treeAfter = before === null ? snapshotTree() : null
   const attribution = decideArchitectGateOutcome({
     headCommitBefore: before,

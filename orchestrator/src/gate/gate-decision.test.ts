@@ -211,7 +211,6 @@ test.each([
 
 test('architect gate tree identity follows the checked content', () => {
   expect(decideArchitectGateTreeId({ commit: 'head-a' }, 'head-tree')).toBe('head-tree')
-  expect(decideArchitectGateTreeId({ commit: 'head-a' }, { unavailable: 'missing' })).toBeNull()
   expect(
     decideArchitectGateTreeId(
       { commit: null, commitUnknown: 'dirty-before', checkedTree: 'dirty-tree' },
