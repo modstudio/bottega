@@ -19,6 +19,13 @@ export type ProjectCheckoutAdoptionOutcome =
 
 type Candidate = { path: string; facts: ProjectCheckoutFacts }
 
+export function isNotProjectCheckoutRegistrationCandidate(
+  project: Pick<RecordProject, 'name' | 'retiredAt'>,
+  localProjectNames: ReadonlySet<string>,
+): boolean {
+  return Boolean(project.retiredAt) || localProjectNames.has(project.name)
+}
+
 function checkoutRefusal(project: RecordProject, candidate: Candidate): string | null {
   const { path, facts } = candidate
   if (facts.refusal) return facts.refusal
@@ -51,7 +58,7 @@ export function decideProjectCheckoutAdoptions(input: {
   const localProjectNames = new Set(input.localProjects.map((project) => project.name))
   const outcomes: ProjectCheckoutAdoptionOutcome[] = []
   for (const project of input.hostedProjects) {
-    if (project.retiredAt || localProjectNames.has(project.name)) continue
+    if (isNotProjectCheckoutRegistrationCandidate(project, localProjectNames)) continue
     const candidate = input.candidates.get(project.name)
     if (!candidate) continue
     outcomes.push(checkoutOutcome(project, candidate))

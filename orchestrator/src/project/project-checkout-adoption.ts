@@ -7,10 +7,12 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { gitAt } from '../../../shared/git.ts'
 import { readHostedConfigIdentity } from '../../../shared/hosted-config-space.ts'
 import { readMachineValue } from '../../../shared/machine-config.ts'
+import type { RecordProject } from '../../../shared/record-project-contract.ts'
 import { recordApiClient } from '../record/record-api-client.ts'
 import { recordMemberships, requireRecordSpaceMembership } from '../record/record-space.ts'
 import {
   decideProjectCheckoutAdoptions,
+  isNotProjectCheckoutRegistrationCandidate,
   type ProjectCheckoutFacts,
 } from './project-checkout-adoption-decision.ts'
 import { type AddProjectInput, addProject } from './project-commands.ts'
@@ -22,10 +24,7 @@ export type ProjectCheckoutAdoptionReport =
   | { status: 'missing'; message: string }
   | { status: 'refused'; message: string }
 
-export function hostedProjectAddInput(
-  project: Parameters<typeof decideProjectCheckoutAdoptions>[0]['hostedProjects'][number],
-  path: string,
-): AddProjectInput {
+export function hostedProjectAddInput(project: RecordProject, path: string): AddProjectInput {
   return {
     path,
     name: project.name,
@@ -117,9 +116,28 @@ function checkoutFacts(path: string): ProjectCheckoutFacts {
   }
 }
 
-export async function registerCheckedOutHostedProjects(): Promise<ProjectCheckoutAdoptionReport[]> {
-  const pinned = readHostedConfigIdentity()
-  if (!pinned) return []
+type ProjectCheckoutAdoptionDependencies = {
+  readPinnedIdentity: typeof readHostedConfigIdentity
+  readCloneRoot: () => string
+}
+
+const projectCheckoutAdoptionDependencies: ProjectCheckoutAdoptionDependencies = {
+  readPinnedIdentity: readHostedConfigIdentity,
+  readCloneRoot: () => resolve(readMachineValue('projects.clone_root')),
+}
+
+export async function registerCheckedOutHostedProjects(
+  dependencies: ProjectCheckoutAdoptionDependencies = projectCheckoutAdoptionDependencies,
+): Promise<ProjectCheckoutAdoptionReport[]> {
+  const pinned = dependencies.readPinnedIdentity()
+  if (!pinned) {
+    return [
+      {
+        status: 'missing',
+        message: `projects checked out under ${dependencies.readCloneRoot()} are registered once this machine is initialized: ${PLATFORM_SLUG} config machine init`,
+      },
+    ]
+  }
   const client = recordApiClient()
   const identity = await recordMemberships(client)
   const membership = identity.memberships.find((row) => row.spaceId === pinned.spaceId)
@@ -127,10 +145,10 @@ export async function registerCheckedOutHostedProjects(): Promise<ProjectCheckou
   const hostedProjects = await client.listProjects({ destinationSpaceId: pinned.spaceId })
   const localProjects = [...projects(), ...projects({ retired: true })]
   const localProjectNames = new Set(localProjects.map((project) => project.name))
-  const cloneRoot = resolve(readMachineValue('projects.clone_root'))
+  const cloneRoot = dependencies.readCloneRoot()
   const candidates = new Map<string, { path: string; facts: ProjectCheckoutFacts }>()
   for (const project of hostedProjects) {
-    if (project.retiredAt || localProjectNames.has(project.name)) continue
+    if (isNotProjectCheckoutRegistrationCandidate(project, localProjectNames)) continue
     const path = join(cloneRoot, project.name)
     candidates.set(project.name, { path, facts: checkoutFacts(path) })
   }
@@ -173,4 +191,17 @@ export async function registerCheckedOutHostedProjects(): Promise<ProjectCheckou
     }
   }
   return reports
+}
+
+export async function reportCheckedOutHostedProjects(
+  presentation: { log(value: string): void },
+  retryCommand: string,
+): Promise<void> {
+  try {
+    for (const report of await registerCheckedOutHostedProjects()) presentation.log(report.message)
+  } catch (error) {
+    presentation.log(
+      `checked-out project registration failed: ${error instanceof Error ? error.message : String(error)}; run \`${retryCommand}\` again`,
+    )
+  }
 }

@@ -96,6 +96,7 @@ export const projectModules: ProjectModule[] = [
     '../../../shared/git.ts',
     '../../../shared/hosted-config-space.ts',
     '../../../shared/machine-config.ts',
+    '../../../shared/record-project-contract.ts',
     '../record/record-api-client.ts',
     '../record/record-space.ts',
     './project-checkout-adoption-decision.ts',

@@ -2,10 +2,11 @@ import { Database } from 'bun:sqlite'
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { CONFIG_HOME_ENV } from '../../../shared/config-directory.ts'
 import { KEYSTORE_ENV } from '../../../shared/key-store-constants.ts'
+import { readMachineValue } from '../../../shared/machine-config.ts'
 import { machineKeyId } from '../../../shared/machine-key-id.ts'
 import { writeMachineKey } from '../../../shared/machine-key-store.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
@@ -446,6 +447,7 @@ describe('record sign-in machine key claim failure', () => {
       'signed in a@example.test',
       'active record space none',
       `machine key claim failed: ${RECORD_ACTIVE_SPACE_REMEDY}`,
+      `projects checked out under ${resolve(readMachineValue('projects.clone_root'))} are registered once this machine is initialized: ${PLATFORM_SLUG} config machine init`,
       'no local task-flow or question history to upload',
       'local docs 0, revisions 0, scores 0, voids 0, deleted 0',
       'hosted docs 0, revisions 0, scores 0, voids 0',
