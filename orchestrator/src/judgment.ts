@@ -45,7 +45,7 @@ import {
   chainFailureMembers,
   rollUpRootAndEnqueue,
   scoredChainFailureKind,
-} from './run/run-liveness.ts'
+} from './run/run-root-rollup.ts'
 import { assertAgentWorkRun } from './run/synthetic-lifecycle-job.ts'
 import { pairPartners, parseRunIds, recordDuels, recordLosses, recordTies } from './score/duel.ts'
 import { type Delivery, type Fidelity, judgeability, type Quality, weigh } from './score/score.ts'
@@ -105,8 +105,7 @@ function requireJudgeableRun(
   flags: JudgmentFlags,
 ): JudgeableRun {
   if (!row) throw new Error(`no run ${requestedId}`)
-  const id = row.record_id
-  row.failure_kind = scoredChainFailureKind(chainFailureMembers(db(), id))
+  const id = chainJudgmentId(row)
   if (['running', 'asking'].includes(row.status)) {
     throw new Error(`run ${id} is ${row.status}, not terminal`)
   }
@@ -130,6 +129,11 @@ function requireJudgeableRun(
     throw new Error(`run ${id} is unowned; ${callerIdentityRefusal(callerIdentity(), 'judge')}`)
   }
   return row
+}
+
+function chainJudgmentId(row: { record_id: string; failure_kind: string | null }): string {
+  row.failure_kind = scoredChainFailureKind(chainFailureMembers(db(), row.record_id))
+  return row.record_id
 }
 
 function refuseForeignScore(
@@ -684,6 +688,16 @@ function scoreReviewGrades(
   return { output: loaded.output, grades }
 }
 
+function rollUpScoredChain(rootId: string, scoredAt: string): void {
+  if (!db().query('SELECT 1 FROM run WHERE parent_run_record_id=? LIMIT 1').get(rootId)) return
+  rollUpRootAndEnqueue(db(), rootId, null, machineId(), scoredAt, false)
+}
+
+function enqueueScoredChain(rootId: string, scoredAt: string): void {
+  rollUpScoredChain(rootId, scoredAt)
+  enqueueScoreRecord(db(), rootId, machineId())
+}
+
 export async function scoreRun(
   requestedId: string,
   flags: JudgmentFlags,
@@ -710,8 +724,7 @@ export async function scoreRun(
     evidence_excluded: string | null
   } | null
   if (!row) throw new Error(`no run ${requestedId}`)
-  const id = row.record_id
-  row.failure_kind = scoredChainFailureKind(chainFailureMembers(db(), id))
+  const id = chainJudgmentId(row)
   assertVoidTargetsRoot(requestedId, id, flags.has('void'))
   if (recordRequestedUnvoid(id, row.job, row.evidence_excluded, flags, options, presentation))
     return
@@ -846,10 +859,7 @@ export async function scoreRun(
     )
     reviveUnjudgedOwnerEvidence(id)
     auditRunMutation(scoreAuthority, wasScored ? 'rescore' : 'score', options.auditReason)
-    if (db().query('SELECT 1 FROM run WHERE parent_run_record_id=? LIMIT 1').get(id)) {
-      rollUpRootAndEnqueue(db(), id, null, machineId(), scoredAt, false)
-    }
-    enqueueScoreRecord(db(), id, machineId())
+    enqueueScoredChain(id, scoredAt)
   })
   const w = weigh(scoredDelivery, quality ?? null, scoredFidelity ?? null)
   const axes = [delivery, quality, scoredFidelity].filter(Boolean).join(' ')

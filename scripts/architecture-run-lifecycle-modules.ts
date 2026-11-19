@@ -268,6 +268,11 @@ export const runLifecycleModules: ArchitectureModule[] = [
   module('orchestrator/src/run/run-liveness-policy.ts', []),
   module('orchestrator/src/run/run-wall-deadline.ts', []),
   module('orchestrator/src/run/run-record-request-rate.ts', []),
+  module('orchestrator/src/run/run-root-rollup.ts', [
+    'bun:sqlite',
+    '../failure/failure.ts',
+    './run-outbox.ts',
+  ]),
   module('orchestrator/src/run/run-dispatch-rulings.ts', [
     './run-claim-inheritance.ts',
     './run-carried-attachments.ts',

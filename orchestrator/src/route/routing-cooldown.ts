@@ -128,6 +128,58 @@ function sameUtcDay(timestamp: number, now: number): boolean {
   return new Date(timestamp).toISOString().slice(0, 10) === new Date(now).toISOString().slice(0, 10)
 }
 
+function quotaResetDecision(
+  rows: readonly RecentTerminalRun[],
+  now: number,
+): { resetAt: number; clamped: boolean } {
+  const readings = rows
+    .filter(
+      (row) =>
+        row.quota_resets_at !== null &&
+        row.quota_resets_at * 1_000 > now &&
+        now - row.finished_at <= QUOTA_RESET_READING_WINDOW_MS,
+    )
+    .map((row) => row.quota_resets_at! * 1_000)
+  return {
+    resetAt: readings
+      .filter((resetAt) => resetAt - now <= QUOTA_RESET_CEILING_MS)
+      .reduce((newest, resetAt) => Math.max(newest, resetAt), 0),
+    clamped: readings.some((resetAt) => resetAt - now > QUOTA_RESET_CEILING_MS),
+  }
+}
+
+function ordinaryCoolingFailure(
+  agent: string,
+  ordered: readonly RecentTerminalRun[],
+  cooldownMinutes: number,
+  now: number,
+): CoolingFailure | null {
+  const latest = ordered.find(
+    (row) =>
+      !row.job.startsWith('agent-probe-') &&
+      (row.status === 'ok' ||
+        (row.failure_kind !== null && COOLS_DOWN.includes(row.failure_kind as FailureKind))),
+  )
+  if (latest?.status !== 'failed') return null
+  const minimumUntil = latest.finished_at + cooldownMinutes * 60_000
+  const reset =
+    latest.failure_kind === 'quota'
+      ? quotaResetDecision(ordered, now)
+      : { resetAt: 0, clamped: false }
+  const coolingUntil = Math.max(minimumUntil, reset.resetAt)
+  const active =
+    latest.failure_kind === 'daily_quota' ? sameUtcDay(latest.finished_at, now) : now < coolingUntil
+  if (!active) return null
+  return {
+    agent,
+    failure_kind: latest.failure_kind!,
+    mins_ago: latest.mins_ago,
+    cooling_until: new Date(coolingUntil).toISOString(),
+    vendor_reset_at: reset.resetAt ? new Date(reset.resetAt).toISOString() : null,
+    vendor_reset_clamped: reset.clamped,
+  }
+}
+
 /** Decide ordinary cooldowns and provider-error streaks from one bounded store read. */
 export function decideCoolingFailures(
   rows: readonly RecentTerminalRun[],
@@ -139,46 +191,8 @@ export function decideCoolingFailures(
   const result = new Map<string, CoolingFailure>()
   for (const [agent, agentRows] of byAgent) {
     const ordered = newestFirst(agentRows)
-    const latestAvailability = ordered.find(
-      (row) =>
-        !row.job.startsWith('agent-probe-') &&
-        (row.status === 'ok' ||
-          (row.failure_kind !== null && COOLS_DOWN.includes(row.failure_kind as FailureKind))),
-    )
-    if (latestAvailability?.status === 'failed') {
-      const minimumUntil = latestAvailability.finished_at + cooldownMinutes * 60_000
-      const resetRows = ordered.filter(
-        (row) =>
-          row.quota_resets_at !== null &&
-          row.quota_resets_at * 1_000 > now &&
-          now - row.finished_at <= QUOTA_RESET_READING_WINDOW_MS,
-      )
-      const clamped = resetRows.some(
-        (row) => row.quota_resets_at! * 1_000 - now > QUOTA_RESET_CEILING_MS,
-      )
-      const vendorReset =
-        latestAvailability.failure_kind === 'quota'
-          ? resetRows
-              .map((row) => row.quota_resets_at! * 1_000)
-              .filter((resetAt) => resetAt - now <= QUOTA_RESET_CEILING_MS)
-              .reduce((newest, resetAt) => Math.max(newest, resetAt), 0)
-          : 0
-      const coolingUntil = Math.max(minimumUntil, vendorReset)
-      const active =
-        latestAvailability.failure_kind === 'daily_quota'
-          ? sameUtcDay(latestAvailability.finished_at, now)
-          : now < coolingUntil
-      if (active) {
-        result.set(agent, {
-          agent,
-          failure_kind: latestAvailability.failure_kind!,
-          mins_ago: latestAvailability.mins_ago,
-          cooling_until: new Date(coolingUntil).toISOString(),
-          vendor_reset_at: vendorReset ? new Date(vendorReset).toISOString() : null,
-          vendor_reset_clamped: latestAvailability.failure_kind === 'quota' && clamped,
-        })
-      }
-    }
+    const ordinary = ordinaryCoolingFailure(agent, ordered, cooldownMinutes, now)
+    if (ordinary) result.set(agent, ordinary)
     const streak = providerErrorStreakCooling(ordered)
     if (streak && streak.mins_ago < cooldownMinutes)
       result.set(agent, {

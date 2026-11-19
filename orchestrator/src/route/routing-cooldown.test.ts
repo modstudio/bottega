@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   coolingRefusal,
   decideCoolingFailures,
@@ -82,7 +83,7 @@ test('a reset beyond the ceiling is ignored and named in the refusal', () => {
 
   expect(failure).toMatchObject({ vendor_reset_at: null, vendor_reset_clamped: true })
   expect(coolingRefusal('a', failure, 60)).toContain('beyond the 192h ceiling was ignored')
-  expect(coolingRefusal('a', failure, 60)).toContain('bottega agent probe a')
+  expect(coolingRefusal('a', failure, 60)).toContain(`${PLATFORM_SLUG} agent probe a`)
 })
 
 test('past and stale reset readings do not extend quota cooling', () => {

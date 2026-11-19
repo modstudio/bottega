@@ -7,7 +7,6 @@ import { SESSION_LIVE_MS } from '../../../shared/session-liveness.ts'
 import type { Database } from 'bun:sqlite'
 import { pidAlive } from '../../../shared/process-identity.ts'
 import { storeWritesRefused, writeTransaction } from '../database/db.ts'
-import { type FailureKind, PROVIDER_UNSERVED } from '../failure/failure.ts'
 import { inboxRunQuestions } from '../question-store/question-store-read.ts'
 import { machineId } from '../record/machine-identity.ts'
 import {
@@ -29,6 +28,7 @@ import { runLeaseState } from './run-lease.ts'
 import { STALE_AFTER_MS } from './run-liveness-policy.ts'
 import { enqueueRunRecord } from './run-outbox.ts'
 import { recordedOwnerProcess } from './run-owner-session-liveness.ts'
+import { rollUpRootAndEnqueue } from './run-root-rollup.ts'
 import {
   type RecordedRunSharedGitConfigInput,
   sharedGitConfigCheckSkipReason,
@@ -39,6 +39,8 @@ import {
   reconcileSupersededAskingTurns,
   supersededAskingTurnDecisions,
 } from './superseded-asking-turn-store.ts'
+
+export { rollUpRootAndEnqueue } from './run-root-rollup.ts'
 
 /** The common bound for callers following a detached run to its terminal state. */
 export const RUN_FOLLOW_TIMEOUT_MS = STALE_AFTER_MS + 60_000
@@ -62,176 +64,6 @@ export function chainTerminationAt(database: Database, memberId: string): string
   if (!member) return null
   const rootId = member.parent_run_record_id ?? member.record_id
   return chainTerminationAtForRoot(database, rootId)
-}
-
-export type ChainFailureMember = {
-  record_id: string
-  parent_run_record_id: string | null
-  failure_kind: string | null
-  own_failure_kind: string | null
-  turn: number
-  number: number
-}
-
-function memberOwnFailureKind(member: ChainFailureMember): string | null {
-  return member.parent_run_record_id === null
-    ? (member.own_failure_kind ?? member.failure_kind)
-    : member.failure_kind
-}
-
-/** A scored chain keeps the newest failure that describes agent work, if one exists. */
-export function scoredChainFailureKind(members: readonly ChainFailureMember[]): string | null {
-  const ordered = [...members].sort(
-    (left, right) => right.turn - left.turn || right.number - left.number,
-  )
-  const latest = ordered[0]
-  if (!latest) return null
-  return (
-    ordered
-      .map(memberOwnFailureKind)
-      .find((kind) => !PROVIDER_UNSERVED.has(kind as FailureKind)) ?? memberOwnFailureKind(latest)
-  )
-}
-
-export function chainFailureMembers(database: Database, rootId: string): ChainFailureMember[] {
-  return database
-    .query(
-      `SELECT record_id,parent_run_record_id,failure_kind,own_failure_kind,turn,number
-         FROM run
-        WHERE record_id=? OR parent_run_record_id=?`,
-    )
-    .all(rootId, rootId) as ChainFailureMember[]
-}
-
-/**
- * A root inherits the terminal status of the last turn of its chain.
- *
- * Counterpart of `resolveSupersededTurn` in failover.ts, which is child-only and
- * cannot touch a root: the root is routing evidence, and giving it a terminal
- * status inserts a judgment. That is the point here, not an accident. A chain
- * that ended stale is a real outcome of a real agent; hiding it would make the
- * router's picture of that agent better than the truth.
- *
- * Chain structure only — no pid, no agent_pid, no process.kill. A worker exits
- * when it stops to ask, so those are dead for every asking run including live
- * ones. A root with an unanswered question is waiting, not stranded, and is
- * left alone. A last turn that is still `asking` is recoverable (`orch
- * continue`), not ended, so it is left alone too.
- *
- * The root may be `asking` after the first turn, or `ok`/`failed` while a
- * later resumed turn finishes. The unanswered-question and last-terminal-turn
- * guards protect stranded roots without blocking ordinary resumed roll-up. `stopped`
- * and `stale` roots remain locked because those lifecycle decisions must not
- * be undone by a worker finishing concurrently, and a `running` root is a live
- * first turn that a stale child row must never overwrite (lens run 2277).
- *
- * The terminal turn's error and failure_kind are part of that state and travel
- * with its status. The deliberate kind exceptions are lifecycle outcomes that
- * would erase the root's judgment from routing: stale and abandoned children
- * always retain the root's kind, and the reaper identifies coordinator setup
- * deaths that do too.
- */
-function resolveRootFromLastTurnPreserving(
-  database: Database,
-  rootId: string,
-  preserveFailureKindForTurnId: string | null,
-  hasOpenQuestions: boolean,
-): number {
-  if (hasOpenQuestions) return 0
-  const hasDelivery = Boolean(
-    database
-      .query('SELECT 1 FROM score WHERE run_record_id=? AND delivery IS NOT NULL')
-      .get(rootId),
-  )
-  const scoredFailureKind = hasDelivery
-    ? scoredChainFailureKind(chainFailureMembers(database, rootId))
-    : null
-  return database
-    .query(
-      `UPDATE run AS root
-        SET status = (
-          SELECT last.status FROM run last
-           WHERE last.record_id = root.record_id OR last.parent_run_record_id = root.record_id
-           ORDER BY last.turn DESC, last.number DESC
-           LIMIT 1
-        ),
-            error = (
-          SELECT last.error FROM run last
-           WHERE last.record_id = root.record_id OR last.parent_run_record_id = root.record_id
-           ORDER BY last.turn DESC, last.number DESC
-           LIMIT 1
-        ),
-            failure_kind = (
-          SELECT CASE
-                   WHEN last.record_id = ? OR last.status = 'stale' OR last.failure_kind = 'abandoned'
-                     THEN root.failure_kind
-                   WHEN ? THEN ?
-                   ELSE last.failure_kind
-                 END
-            FROM run last
-           WHERE last.record_id = root.record_id OR last.parent_run_record_id = root.record_id
-           ORDER BY last.turn DESC, last.number DESC
-           LIMIT 1
-        ),
-            pre_confinement = (
-          SELECT last.pre_confinement FROM run last
-           WHERE last.record_id = root.record_id OR last.parent_run_record_id = root.record_id
-           ORDER BY last.turn DESC, last.number DESC
-           LIMIT 1
-        ),
-            confinement = (
-          SELECT last.confinement FROM run last
-           WHERE last.record_id = root.record_id OR last.parent_run_record_id = root.record_id
-           ORDER BY last.turn DESC, last.number DESC
-           LIMIT 1
-        ),
-            tests_ran = (
-          SELECT last.tests_ran FROM run last
-           WHERE last.record_id = root.record_id OR last.parent_run_record_id = root.record_id
-           ORDER BY last.turn DESC, last.number DESC
-           LIMIT 1
-        ),
-            tests_passed = (
-          SELECT last.tests_passed FROM run last
-           WHERE last.record_id = root.record_id OR last.parent_run_record_id = root.record_id
-           ORDER BY last.turn DESC, last.number DESC
-           LIMIT 1
-        ),
-            tests_claim_disagrees = (
-          SELECT last.tests_claim_disagrees FROM run last
-           WHERE last.record_id = root.record_id OR last.parent_run_record_id = root.record_id
-           ORDER BY last.turn DESC, last.number DESC
-           LIMIT 1
-        )
-      WHERE root.record_id = ?
-        AND root.parent_run_record_id IS NULL
-        AND root.status IN ('asking', 'ok', 'failed')
-        AND (
-          SELECT last.status FROM run last
-           WHERE last.record_id = root.record_id OR last.parent_run_record_id = root.record_id
-           ORDER BY last.turn DESC, last.number DESC
-           LIMIT 1
-        ) IN ('ok', 'failed', 'stale')`,
-    )
-    .run(preserveFailureKindForTurnId, hasDelivery ? 1 : 0, scoredFailureKind, rootId).changes
-}
-
-export function rollUpRootAndEnqueue(
-  database: Database,
-  rootId: string,
-  preserveFailureKindForTurnId: string | null,
-  machine: string,
-  finishedAt: string,
-  hasOpenQuestions: boolean,
-): number {
-  const changes = resolveRootFromLastTurnPreserving(
-    database,
-    rootId,
-    preserveFailureKindForTurnId,
-    hasOpenQuestions,
-  )
-  enqueueRunRecord(database, rootId, machine, finishedAt)
-  return changes
 }
 
 /** Append a terminal check result and serialize that same state for the hosted record. */

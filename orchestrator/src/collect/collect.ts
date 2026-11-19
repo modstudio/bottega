@@ -18,11 +18,11 @@ import {
 } from '../gate/worker-check-omissions.ts'
 import { parseMcpProbe } from '../mcp/mcp-probe.ts'
 import { failureReason, outcomeOf } from '../outcome.ts'
+import { CURRENT_RUN_MEMBER_JOIN_SQL } from '../run/live-run-member.ts'
 import { openRunChainRoots } from '../run/question-open.ts'
 import { HARNESS_EXECUTOR } from '../run/run-executor.ts'
 import { classifyRunIdentifier, resolveRunIdentifier } from '../run/run-identifier.ts'
 import type { ObservedDeadRun } from '../run/run-liveness.ts'
-import { currentRunMemberJoin } from '../run/live-run-member.ts'
 import type { FocusedTestExecutionObservation } from '../run/run-test-outcome.ts'
 import { refusalScoreGuidance } from '../score/refusal-guidance.ts'
 import {
@@ -36,6 +36,10 @@ export const COLLECTION_COMMANDS = new Set(['result', 'wait'])
 
 const THIN_OUTPUT_BYTES = 1024
 const THIN_OUTPUT_LATENCY_MS = 5 * 60_000
+
+function currentMemberQuery(head: string, tail: string): string {
+  return `${head}\n${CURRENT_RUN_MEMBER_JOIN_SQL}\n${tail}`
+}
 
 /** A reader-facing suspicion only: this never enters status, scoring, or routing. */
 export function thinOutputWarning(row: {
@@ -649,11 +653,12 @@ function unfinishedResultMessageForRun(
 ): string {
   const requested = database
     .query<{ number: number; status: string; failure_kind: string | null }, [string]>(
-      `SELECT requested.number,requested.status,current_run.failure_kind
+      currentMemberQuery(
+        `SELECT requested.number,requested.status,current_run.failure_kind
          FROM run requested
-         JOIN run root ON root.record_id=COALESCE(requested.parent_run_record_id,requested.record_id)
-         ${currentRunMemberJoin('root')}
-        WHERE requested.record_id=?`,
+         JOIN run root ON root.record_id=COALESCE(requested.parent_run_record_id,requested.record_id)`,
+        'WHERE requested.record_id=?',
+      ),
     )
     .get(requestedId)!
   return unfinishedResultMessage(
@@ -749,16 +754,17 @@ export async function collectResult(
   const chain = resolveFailover(database, id)
   const row = database
     .query(
-      `SELECT root.record_id, root.number, root.agent, root.job, root.status, root.latency_ms,
+      currentMemberQuery(
+        `SELECT root.record_id, root.number, root.agent, root.job, root.status, root.latency_ms,
             root.vendor_tokens, root.output_path, current_run.error,
             current_run.failure_kind, current_run.exit_code, root.parent_run_record_id,
             root.evidence_excluded, root.base_commit, root.cwd, root.mcp, root.mcp_server,
             root.mcp_connected, root.mcp_error, root.mcp_probe, root.review_provenance,
             root.provenance_status, root.worktree, root.branch, root.minted_branch,
             root.tests_ran, root.tests_passed, root.tests_claim_disagrees, root.executor
-       FROM run root
-       ${currentRunMemberJoin('root')}
-      WHERE root.record_id = ?`,
+       FROM run root`,
+        'WHERE root.record_id = ?',
+      ),
     )
     .get(chain.finalId) as CollectedRunRow | null
   if (!row) throw new Error(`no run ${id}`)
@@ -902,11 +908,12 @@ export async function collectWaitForRuns(
       const chain = resolveFailover(database, requestedId)
       const row = database
         .query(
-          `SELECT root.record_id, root.status, root.output_path, current_run.error,
+          currentMemberQuery(
+            `SELECT root.record_id, root.status, root.output_path, current_run.error,
                   current_run.failure_kind, current_run.exit_code
-             FROM run root
-             ${currentRunMemberJoin('root')}
-            WHERE root.record_id=?`,
+             FROM run root`,
+            'WHERE root.record_id=?',
+          ),
         )
         .get(chain.finalId) as {
         record_id: string

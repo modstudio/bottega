@@ -68,7 +68,10 @@ import type { RenewTaskClaim } from './run-task-claim-renewal.ts'
 import { type BlockerRow, blockersToRecord } from './run-terminal-blockers.ts'
 import { finalizeTerminalChain } from './run-terminal-chain.ts'
 import { terminalTurnChanged } from './run-terminal-change.ts'
-import { terminalLifecycleWrite } from './run-terminal-lifecycle-store.ts'
+import {
+  terminalLifecycleColumnValues,
+  terminalLifecycleWrite,
+} from './run-terminal-lifecycle-store.ts'
 import { applyConfinementPrecedence, applyVendorTermination } from './run-terminal-precedence.ts'
 import {
   applyPrematureFinalFailure,
@@ -969,10 +972,7 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
           costUsd,
           ...runUsageColumnValues(runUsageColumns(vendorUsage, AGENTS[name]?.billing)),
           effectiveModel,
-          recordedLifecycle.status,
-          recordedLifecycle.error,
-          recordedLifecycle.failureKind,
-          recordedLifecycle.failureKind,
+          ...terminalLifecycleColumnValues(recordedLifecycle),
           resolvedSession,
           preConfinement,
           confinementEvent ? JSON.stringify(confinementEvent) : null,

@@ -290,6 +290,7 @@ export const runLifecycleBoundarySpecs: ImportBoundary[] = [
       './run-liveness-policy.ts',
       './run-owner-session-liveness.ts',
       './run-outbox.ts',
+      './run-root-rollup.ts',
       './superseded-asking-turn-store.ts',
       './question-close.ts',
       './question-open.ts',

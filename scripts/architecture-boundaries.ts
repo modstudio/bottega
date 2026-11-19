@@ -588,6 +588,7 @@ export const importBoundaries: ImportBoundary[] = [
       './review/review-triage.ts',
       './review/review-vocabulary.ts',
       './run/run-authority.ts',
+      './run/run-root-rollup.ts',
       './run/synthetic-lifecycle-job.ts',
       './score/score.ts',
       './score/score-missing.ts',

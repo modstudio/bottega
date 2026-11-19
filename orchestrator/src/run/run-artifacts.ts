@@ -49,7 +49,10 @@ import {
   type RunArtifactListingEntry,
 } from './run-artifact-retention.ts'
 import { type GooseContextProfile, writeRunContextProfile } from './run-context-profile.ts'
-import { terminalLifecycleWrite } from './run-terminal-lifecycle-store.ts'
+import {
+  terminalLifecycleColumnValues,
+  terminalLifecycleWrite,
+} from './run-terminal-lifecycle-store.ts'
 import {
   quotaReadingsColumnValues,
   type RunQuotaColumns,
@@ -438,10 +441,7 @@ export function reconcileRun(id: string): string {
         snapshot.vendorCostUsd,
         ...runUsageColumnValues(snapshot),
         snapshot.model,
-        lifecycle.status,
-        lifecycle.error,
-        lifecycle.failureKind,
-        lifecycle.failureKind,
+        ...terminalLifecycleColumnValues(lifecycle),
         snapshot.vendorSession,
         snapshot.preConfinement,
         snapshot.confinement,

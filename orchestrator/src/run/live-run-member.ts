@@ -39,6 +39,8 @@ export function currentRunMemberJoin(rootAlias: string): string {
   )`
 }
 
+export const CURRENT_RUN_MEMBER_JOIN_SQL = currentRunMemberJoin('root')
+
 /** Current running members machine-wide, retaining the root session as their owner. */
 export function liveRunMembers(database: Database = db()): LiveRunMember[] {
   return database
