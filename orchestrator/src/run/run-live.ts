@@ -396,6 +396,8 @@ export type LiveInput = {
   writableRoots: string[]
   gitConfigEnvironment: Record<string, string> | undefined
   runtimeDir: string
+  temporaryDirectory: string | undefined
+  tempEnvironment: Record<string, string>
   recipeEnvironment: Record<string, string>
   launchEnvironment: Record<string, string>
   scratchDir: string
@@ -605,6 +607,8 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
     writableRoots,
     gitConfigEnvironment,
     runtimeDir,
+    temporaryDirectory,
+    tempEnvironment,
     recipeEnvironment,
     launchEnvironment,
     scratchDir,
@@ -743,7 +747,8 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
       writableRoots,
       gitConfigEnvironment,
       recipeEnvironment,
-      srt: srtScope(sandboxSelection.profile, runtimeDir, writesJob, recipeEnvironment),
+      tempEnvironment,
+      srt: srtScope(sandboxSelection.profile, runtimeDir, temporaryDirectory),
       resume: resumeFacts(opts.resume?.kind ?? null, claim.id, opts.resume?.parent ?? null)
         .carriesVendorSession,
       env: liveChildEnv(

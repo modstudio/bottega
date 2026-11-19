@@ -99,6 +99,20 @@ describe('sandbox runtime payloads', () => {
     expect(process.env.CLAUDE_CODE_TMPDIR).toBe(previous)
   })
 
+  test('temporary directory is restored when a launch rejects', async () => {
+    const previous = process.env.CLAUDE_CODE_TMPDIR
+    await expect(
+      withSandboxTemporaryDirectory('/runs/rejected/tmp', async () => {
+        expect(process.env.CLAUDE_CODE_TMPDIR).toBe('/runs/rejected/tmp')
+        throw new Error('launch rejected')
+      }),
+    ).rejects.toThrow('launch rejected')
+    expect(process.env.CLAUDE_CODE_TMPDIR).toBe(previous)
+    await withSandboxTemporaryDirectory(undefined, async () => {
+      expect(process.env.CLAUDE_CODE_TMPDIR).toBe(previous)
+    })
+  })
+
   test('source availability is exactly the installed library check', () => {
     expect(
       sandboxRuntimeAvailability(process.env, process.platform, process.arch, []).available,

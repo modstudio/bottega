@@ -18,7 +18,7 @@ import { RequiredMcpProbeRefusalError } from '../sandbox/project-mcp-preflight.t
 import { grokAskCommandFromConfig, grokAskServerCommand } from '../sandbox/sandbox.ts'
 import { carriedRefusalFailure } from './run-prelaunch-refusal.ts'
 import {
-  codexPrivateTempEnvironment,
+  readOnlyRunTempEnvironment,
   prepareClaimedWorkerMcpConfig,
   prepareWorkerHomeLaunch,
 } from './run-worker-home.ts'
@@ -32,13 +32,13 @@ afterEach(() => {
 test('every read-only launch uses its run-owned temp while a writer is unchanged', () => {
   const runtimeDir = '/runs/sandbox-root'
   const privateTemp = join(runtimeDir, 'tmp')
-  expect(codexPrivateTempEnvironment(false, privateTemp)).toEqual({
+  expect(readOnlyRunTempEnvironment(privateTemp)).toEqual({
     TMPDIR: privateTemp,
     TMP: privateTemp,
     TEMP: privateTemp,
     CLAUDE_CODE_TMPDIR: privateTemp,
   })
-  expect(codexPrivateTempEnvironment(true, privateTemp)).toEqual({})
+  expect(readOnlyRunTempEnvironment(undefined)).toEqual({})
 })
 
 test('a writer gets cwd-discovered MCP configuration and a reader does not', () => {

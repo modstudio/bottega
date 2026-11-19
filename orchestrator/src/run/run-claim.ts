@@ -6,7 +6,7 @@
  */
 
 import { randomUUID } from 'node:crypto'
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
+import { existsSync, lstatSync, mkdirSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { Agent } from '../agent/agents.ts'
@@ -107,7 +107,19 @@ import { taskBranchResolution } from './run-task-branch-resolution.ts'
 import { admitNewRunReference } from './run-task-reference.ts'
 
 function prepareReadOnlyRunTemp(writesJob: boolean, runtimeDir: string): void {
-  if (!writesJob) mkdirSync(runTempDir(runtimeDir), { recursive: true, mode: 0o700 })
+  if (writesJob) return
+  const path = runTempDir(runtimeDir)
+  try {
+    const stat = lstatSync(path)
+    if (!stat.isDirectory() || stat.isSymbolicLink()) {
+      throw new Error(
+        `run temp path ${path} is not a real directory; remedy: remove it and retry the run`,
+      )
+    }
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+    mkdirSync(path, { recursive: true, mode: 0o700 })
+  }
 }
 
 type ClaimOptions = {

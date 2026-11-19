@@ -33,11 +33,10 @@ import { prepareWorkerMcpConfig } from '../worktree/worktree-mcp.ts'
 import type { Worktree } from '../worktree/worktree-types.ts'
 import { childEnv } from './run-process.ts'
 
-export function codexPrivateTempEnvironment(
-  writesJob: boolean,
-  privateTemp: string,
+export function readOnlyRunTempEnvironment(
+  privateTemp: string | undefined,
 ): Record<string, string> {
-  if (writesJob) return {}
+  if (!privateTemp) return {}
   return {
     TMPDIR: privateTemp,
     TMP: privateTemp,

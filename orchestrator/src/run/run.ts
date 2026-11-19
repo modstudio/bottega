@@ -584,9 +584,11 @@ export async function run(
   const checkpointContainment = acpWriter.prepareCheckpoint(worktree, writingAcp, runtimeDir)
   const brokerNeedsNetwork = Boolean(runProject?.settings.mainStack?.consumers?.includes('gate'))
   const gitConfigEnvironment = workerGitConfigEnvironment(worktree, writesJob, requestedJob.name)
+  const temporaryDirectory = writesJob ? undefined : runTempDir(runtimeDir)
+  const tempEnvironment = workerHome.readOnlyRunTempEnvironment(temporaryDirectory)
   const recipeEnvironment = {
     ...workerHome.trackedWorkerEnvironment(repoJob, writesJob, worktree, claim.id),
-    ...workerHome.codexPrivateTempEnvironment(writesJob, runTempDir(runtimeDir)),
+    ...tempEnvironment,
   }
   assertConfiguredGitGuard(gitConfigEnvironment, writableRoots)
   let askLoopback: AskLoopback | null = null
@@ -696,7 +698,7 @@ export async function run(
             | undefined
           const probeTool = projectSettings?.mcp?.probe_tool ?? null
           const wrap = sandboxSelection.profile
-            ? srtLauncher(sandboxSelection.profile, runtimeDir, writesJob)
+            ? srtLauncher(sandboxSelection.profile, temporaryDirectory)
             : undefined
           const probe = await probeMcpServer({
             server: mcpServerName,
@@ -939,6 +941,8 @@ export async function run(
           writableRoots,
           gitConfigEnvironment,
           runtimeDir,
+          temporaryDirectory,
+          tempEnvironment,
           recipeEnvironment,
           launchEnvironment: { ...mcpEnvironment, ...probeLaunch.environment },
           scratchDir,

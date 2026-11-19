@@ -259,6 +259,7 @@ export type TransportStartOpts = {
   writableRoots?: ArgvOpts['writableRoots']
   gitConfigEnvironment?: ArgvOpts['gitConfigEnvironment']
   recipeEnvironment?: ArgvOpts['recipeEnvironment']
+  tempEnvironment?: Record<string, string>
   srt?: { profile: SandboxRuntimeConfig; runtimeDir: string; temporaryDirectory?: string }
   /** ACP binary. CLI uses `agent.bin`. */
   bin?: string
@@ -271,14 +272,13 @@ export type TransportStartOpts = {
 export function srtScope(
   profile: SandboxRuntimeConfig | null,
   runtimeDir: string,
-  writesJob: boolean,
-  recipeEnvironment: Record<string, string>,
+  temporaryDirectory: string | undefined,
 ): TransportStartOpts['srt'] {
   if (!profile) return undefined
   return {
     profile,
     runtimeDir,
-    ...(writesJob ? {} : { temporaryDirectory: recipeEnvironment.CLAUDE_CODE_TMPDIR }),
+    ...(temporaryDirectory ? { temporaryDirectory } : {}),
   }
 }
 

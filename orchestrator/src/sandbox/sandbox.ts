@@ -36,7 +36,7 @@ import { disabledProjectMcpServers } from '../mcp/mcp-probe.ts'
 import { createNoFollowFile } from '../no-follow-file.ts'
 import { type Project, projectAt } from '../project/projects.ts'
 import { mainStackGateAddresses } from '../resources/main-stack-network.ts'
-import { runHarnessStateDir, runTempDir, runWorkerHomeDir } from '../run-owned-paths.ts'
+import { runHarnessStateDir, runWorkerHomeDir } from '../run-owned-paths.ts'
 import { launchWithSandboxRuntime, resetSandboxRuntime } from './sandbox-runtime.ts'
 import { decideWeakerNetworkIsolation, endpointHost } from './weaker-network-isolation.ts'
 
@@ -662,10 +662,10 @@ export async function sandboxLaunchArgv(
   return launchWithSandboxRuntime(config, shellCommand([bin, ...argv]), temporaryDirectory)
 }
 
-/** Bind one run's temp directory into repeated SRT launches. */
-export function srtLauncher(profile: SandboxRuntimeConfig, runtimeDir: string, writesJob: boolean) {
+/** Bind one run's optional temp directory into repeated SRT launches. */
+export function srtLauncher(profile: SandboxRuntimeConfig, temporaryDirectory?: string) {
   return (bin: string, argv: string[]) =>
-    sandboxLaunchArgv(profile, bin, argv, writesJob ? undefined : runTempDir(runtimeDir))
+    sandboxLaunchArgv(profile, bin, argv, temporaryDirectory)
 }
 
 /** Release the process-scoped runtime resources provisioned for this run. */

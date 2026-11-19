@@ -255,7 +255,7 @@ function spawnCliChild(
   return lowerRunChildPriority(
     execa(launchArgv[0]!, launchArgv.slice(1), {
       cwd: opts.cwd,
-      env: cliChildEnvironment(opts.env, opts.recipeEnvironment),
+      env: cliChildEnvironment(opts.env, opts.tempEnvironment),
       stdin: stdinPrompt !== undefined ? 'pipe' : 'ignore',
       input: stdinPrompt,
       stdout: 'pipe',
@@ -306,9 +306,9 @@ async function cliLaunch(opts: TransportStartOpts) {
 /** Compose the exact environment handed to a CLI child. */
 export function cliChildEnvironment(
   environment: Record<string, string>,
-  recipeEnvironment: Record<string, string> | undefined,
+  tempEnvironment: Record<string, string> | undefined,
 ): Record<string, string> {
-  return { ...environment, ...recipeEnvironment }
+  return { ...environment, ...tempEnvironment }
 }
 
 // biome-ignore lint/complexity/noExcessiveLinesPerFunction: stream and process closure share one transport handle state
