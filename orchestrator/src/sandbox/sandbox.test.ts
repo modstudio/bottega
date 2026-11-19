@@ -300,6 +300,24 @@ test(`prepares Codex home without a user-registered ${WORKER_MCP_SERVER_NAME} se
   }
 })
 
+test('prepares Codex home with an empty config when the operator config is absent', () => {
+  const fixture = mkdtempSync(join(tmpdir(), 'orch-codex-no-config-'))
+  try {
+    const source = join(fixture, 'operator-codex')
+    const runDir = join(fixture, 'run')
+    mkdirSync(source)
+    writeFileSync(join(source, 'auth.json'), '{}')
+
+    const prepared = prepareCodexHome(runDir, { CODEX_HOME: source })
+    const config = join(prepared.CODEX_HOME!, 'config.toml')
+
+    expect(readFileSync(config, 'utf8')).toBe('')
+    expect(statSync(config).mode & 0o777).toBe(0o600)
+  } finally {
+    rmSync(fixture, { recursive: true, force: true })
+  }
+})
+
 test('Codex home refuses a missing credential with a login remedy', () => {
   const fixture = mkdtempSync(join(tmpdir(), 'orch-codex-auth-'))
   try {

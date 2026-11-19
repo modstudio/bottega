@@ -919,7 +919,9 @@ function codexConfigRefusal(path: string): Error {
 function secureCodexConfig(configSource: string, configTarget: string): void {
   const expected = lstatSync(configTarget, { throwIfNoEntry: false })
   if (!expected) {
-    const config = withoutRegisteredOrchAskServer(readFileSync(configSource, 'utf8'))
+    const config = withoutRegisteredOrchAskServer(
+      existsSync(configSource) ? readFileSync(configSource, 'utf8') : '',
+    )
     let descriptor: number
     try {
       descriptor = createNoFollowFile(configTarget)
@@ -988,11 +990,6 @@ export function prepareCodexHome(
     )
   }
   const configSource = join(source, 'config.toml')
-  if (!existsSync(configSource)) {
-    throw new Error(
-      `Codex worker home refusal: ${configSource} is absent; create the operator Codex configuration and retry`,
-    )
-  }
   const targetHome = join(runDir, 'codex')
   ensurePrivateDirectory(runDir)
   ensurePrivateDirectory(targetHome)
