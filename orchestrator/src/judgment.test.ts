@@ -297,9 +297,7 @@ describe('score ruling', () => {
 
   test('score refuses a harness-failed run even with force', async () => {
     const id = insert('failed')
-    db()
-      .query("UPDATE run SET failure_kind='harness',own_failure_kind='harness' WHERE record_id=?")
-      .run(id)
+    db().query("UPDATE run SET failure_kind='harness' WHERE record_id=?").run(id)
     await expect(score(id, ['none'], { force: true })).rejects.toThrow(
       "failure kind 'harness' is not evidence",
     )
@@ -316,16 +314,12 @@ describe('score ruling', () => {
   test("score --void accepts not-evidence failures for a '(pending)' run", async () => {
     const harness = insert('failed')
     db()
-      .query(
-        "UPDATE run SET agent='(pending)',failure_kind='harness',own_failure_kind='harness' WHERE record_id=?",
-      )
+      .query("UPDATE run SET agent='(pending)',failure_kind='harness' WHERE record_id=?")
       .run(harness)
     await score(harness, ['none'], { void: true })
     const capacity = insert('failed')
     db()
-      .query(
-        "UPDATE run SET agent='(pending)',failure_kind='capacity',own_failure_kind='capacity' WHERE record_id=?",
-      )
+      .query("UPDATE run SET agent='(pending)',failure_kind='capacity' WHERE record_id=?")
       .run(capacity)
     await score(capacity, ['none'], { void: true })
     expect(db().query('SELECT evidence_excluded FROM run WHERE record_id=?').get(capacity)).toEqual(
@@ -335,17 +329,11 @@ describe('score ruling', () => {
     )
     const nonVoidCapacity = insert('failed')
     db()
-      .query(
-        "UPDATE run SET agent='(pending)',failure_kind='capacity',own_failure_kind='capacity' WHERE record_id=?",
-      )
+      .query("UPDATE run SET agent='(pending)',failure_kind='capacity' WHERE record_id=?")
       .run(nonVoidCapacity)
     await expect(score(nonVoidCapacity, ['none'])).rejects.toThrow("placeholder '(pending)'")
     const other = insert('failed')
-    db()
-      .query(
-        "UPDATE run SET agent='(pending)',failure_kind='other',own_failure_kind='other' WHERE record_id=?",
-      )
-      .run(other)
+    db().query("UPDATE run SET agent='(pending)',failure_kind='other' WHERE record_id=?").run(other)
     await expect(score(other, ['none'], { void: true })).rejects.toThrow(
       "agent is the placeholder '(pending)'",
     )
@@ -804,9 +792,7 @@ describe('judge ruling', () => {
 
   test('an empty lens defaults reproduced and overlap while delivery none captures nothing', async () => {
     const failed = insert('failed', 'safety')
-    db()
-      .query("UPDATE run SET failure_kind='other',own_failure_kind='other' WHERE record_id=?")
-      .run(failed)
+    db().query("UPDATE run SET failure_kind='other' WHERE record_id=?").run(failed)
     await score(failed, ['none'])
     expect(
       db().query('SELECT record_id FROM review_lens WHERE run_record_id=?').get(failed),
@@ -816,9 +802,7 @@ describe('judge ruling', () => {
   test('score refuses an unevidenced clean lens without creating score or review rows', async () => {
     const id = insert('ok', 'review-lens')
     db()
-      .query(
-        "UPDATE run SET failure_kind='unevidenced',own_failure_kind='unevidenced',lens='empty',model='m' WHERE record_id=?",
-      )
+      .query("UPDATE run SET failure_kind='unevidenced',lens='empty',model='m' WHERE record_id=?")
       .run(id)
     await expect(
       score(id, ['full', 'right'], { coverage: 'empty', limits: 'named' }),

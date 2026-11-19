@@ -17,9 +17,7 @@ test("score --void excludes a stopped '(pending)' run without recording a score"
     status: 'stopped',
     session: 'orch-test-session',
   })
-  db()
-    .query("UPDATE run SET failure_kind='stopped',own_failure_kind='stopped' WHERE record_id=?")
-    .run(id)
+  db().query("UPDATE run SET failure_kind='stopped' WHERE record_id=?").run(id)
   await scoreRun(
     id,
     flags({ void: true }),
