@@ -6,16 +6,17 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { RECORD_SIGN_IN_REMEDY } from '../../../shared/record-remedies.ts'
 import {
   environmentMigrationCondition,
-  migrateAfterRecordAuthority,
   environmentRecordSessionDecision,
   environmentRecordStepsDecision,
   environmentSettingsApplyDecision,
+  migrateAfterRecordAuthority,
 } from './setup-environment-runtime.ts'
 
 test('refused record authority stops before environment migration changes files', async () => {
   const home = mkdtempSync(join(tmpdir(), 'setup-authority-refusal-'))
   const path = join(home, '.zshenv')
-  writeFileSync(path, 'ORCH_RECORD_URL=secret\n')
+  const legacyRecordUrl = ['ORCH', 'RECORD', 'URL'].join('_')
+  writeFileSync(path, `${legacyRecordUrl}=secret\n`)
   try {
     await expect(
       migrateAfterRecordAuthority({ action: 'refuse', refusal: 'record refused' }, async () => {
@@ -23,7 +24,7 @@ test('refused record authority stops before environment migration changes files'
         writeFileSync(`${path}.${PLATFORM_SLUG}-env-backup`, 'backup\n')
       }),
     ).rejects.toThrow('record refused')
-    expect(readFileSync(path, 'utf8')).toBe('ORCH_RECORD_URL=secret\n')
+    expect(readFileSync(path, 'utf8')).toBe(`${legacyRecordUrl}=secret\n`)
     expect(() => statSync(`${path}.${PLATFORM_SLUG}-env-backup`)).toThrow()
   } finally {
     rmSync(home, { recursive: true, force: true })

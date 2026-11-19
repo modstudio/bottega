@@ -290,65 +290,65 @@ export const setupEnvironmentService = {
         waitForSignInOnSessionError(authority, sessionPresent, error, waitForSignIn)
       const report = await migrateAfterRecordAuthority(initial, () =>
         migrateOperatorEnvironment(homedir(), {
-        platform: process.platform,
-        backupRoot: resolveStatePaths(process.env).orchestratorDirectory,
-        migrateSecrets: async (record) => {
-          if (initial.action === 'local-authoritative') {
-            notes.push('no hosted record: nothing to migrate')
-            return []
-          }
-          if (!runSessionRequiredSteps) return []
-          try {
-            return await migrateLegacyEnvironmentSecrets(undefined, { migrated: record })
-          } catch (error) {
-            if (waitOnSessionError(error)) return []
-            throw error
-          }
-        },
-        migrateRegister: () => migrateProjectSettingsText(environmentSettingsDecision),
-        migrateSettings: async () => {
-          if (!runSessionRequiredSteps || recordSessionUnavailable) return []
-          try {
-            return await migrateStoredSettingsEnvironmentNames(replacementEnvironmentName)
-          } catch (error) {
-            if (waitOnSessionError(error)) return []
-            throw error
-          }
-        },
-        preflight: async () => {
-          await assertProjectSettingsMigrationWritable(environmentSettingsDecision)
-          if (!runSessionRequiredSteps) return
-          try {
-            await assertStoredSettingsEnvironmentMigration(replacementEnvironmentName)
-          } catch (error) {
-            if (waitOnSessionError(error)) return
-            throw error
-          }
-        },
-        rerenderSettings: async () => {
-          if (recordSessionUnavailable) return false
-          let results: MachineSettingsApplyResult[]
-          try {
-            results = await applyMachineSettings({ check: false })
-          } catch (error) {
-            if (waitOnSessionError(error)) return false
-            throw error
-          }
-          const decision = environmentSettingsApplyDecision(
-            sessionPresent,
-            results.filter((result) => result.outcome === 'refused'),
-          )
-          if (decision.action === 'wait-for-sign-in') waitForSignIn()
-          if (decision.action === 'refuse') throw new Error(decision.refusal)
-          return results.some((result) => result.changed)
-        },
-        registerBackup: async () =>
-          [...projects(), ...projects({ retired: true })]
-            .filter((project) => environmentSettingsDecision(project.settings).names.length > 0)
-            .map((project) => project),
-        notes: () => notes,
-        processNamesRenamed,
-        preparedStateFileMigration,
+          platform: process.platform,
+          backupRoot: resolveStatePaths(process.env).orchestratorDirectory,
+          migrateSecrets: async (record) => {
+            if (initial.action === 'local-authoritative') {
+              notes.push('no hosted record: nothing to migrate')
+              return []
+            }
+            if (!runSessionRequiredSteps) return []
+            try {
+              return await migrateLegacyEnvironmentSecrets(undefined, { migrated: record })
+            } catch (error) {
+              if (waitOnSessionError(error)) return []
+              throw error
+            }
+          },
+          migrateRegister: () => migrateProjectSettingsText(environmentSettingsDecision),
+          migrateSettings: async () => {
+            if (!runSessionRequiredSteps || recordSessionUnavailable) return []
+            try {
+              return await migrateStoredSettingsEnvironmentNames(replacementEnvironmentName)
+            } catch (error) {
+              if (waitOnSessionError(error)) return []
+              throw error
+            }
+          },
+          preflight: async () => {
+            await assertProjectSettingsMigrationWritable(environmentSettingsDecision)
+            if (!runSessionRequiredSteps) return
+            try {
+              await assertStoredSettingsEnvironmentMigration(replacementEnvironmentName)
+            } catch (error) {
+              if (waitOnSessionError(error)) return
+              throw error
+            }
+          },
+          rerenderSettings: async () => {
+            if (recordSessionUnavailable) return false
+            let results: MachineSettingsApplyResult[]
+            try {
+              results = await applyMachineSettings({ check: false })
+            } catch (error) {
+              if (waitOnSessionError(error)) return false
+              throw error
+            }
+            const decision = environmentSettingsApplyDecision(
+              sessionPresent,
+              results.filter((result) => result.outcome === 'refused'),
+            )
+            if (decision.action === 'wait-for-sign-in') waitForSignIn()
+            if (decision.action === 'refuse') throw new Error(decision.refusal)
+            return results.some((result) => result.changed)
+          },
+          registerBackup: async () =>
+            [...projects(), ...projects({ retired: true })]
+              .filter((project) => environmentSettingsDecision(project.settings).names.length > 0)
+              .map((project) => project),
+          notes: () => notes,
+          processNamesRenamed,
+          preparedStateFileMigration,
         }),
       )
       const message = environmentMigrationMessage(report)
