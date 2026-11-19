@@ -10,7 +10,7 @@ import { isGroupKillablePgid, terminateProcessGroup } from '../idle-kill.ts'
 import { sampleProcesses } from '../process-resource-sampler.ts'
 import {
   createSandboxRuntimeConfig,
-  READONLY_LENS_DENY_SOCKETS,
+  readonlyLensSocketDenyPaths,
   type SandboxRuntimeConfig,
 } from '../sandbox/sandbox.ts'
 
@@ -189,7 +189,7 @@ export function filedIssueCommandPlan(input: {
   const worktree = resolve(input.worktree)
   const sandboxHome = resolve(input.sandboxHome)
   const denied = [
-    ...READONLY_LENS_DENY_SOCKETS,
+    ...readonlyLensSocketDenyPaths(),
     ...input.secretPaths,
     ...input.operatorEnvPaths,
   ].map((path) => resolve(path))

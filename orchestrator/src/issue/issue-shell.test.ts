@@ -9,7 +9,7 @@ import { GATE_COMMAND_TIMEOUT_MS } from '../gate/gate-decision.ts'
 import {
   expandHome,
   READONLY_LENS_DENY_PATHS,
-  READONLY_LENS_DENY_SOCKETS,
+  readonlyLensSocketDenyPaths,
 } from '../sandbox/sandbox.ts'
 import {
   filedIssueCommandPlan,
@@ -44,7 +44,7 @@ describe('filed issue command confinement', () => {
       expect(plan.profile.filesystem.denyRead).toEqual([
         ...READONLY_LENS_DENY_PATHS.map(expandHome).map((path) => resolve(path)),
         ...fileBackedSecretPaths(environment),
-        ...READONLY_LENS_DENY_SOCKETS,
+        ...readonlyLensSocketDenyPaths(),
         '/project/.env',
         '/keys/token',
         '/Users/operator/.claude/.env',

@@ -86,7 +86,7 @@ export const READONLY_LENS_DENY_PATHS = [
 /**
  * Host-control sockets are denied for every read-only worker.
  */
-export const READONLY_LENS_DENY_SOCKETS = ['/var/run/docker.sock', '/run/docker.sock'] as const
+const READONLY_LENS_DENY_SOCKETS = ['/var/run/docker.sock', '/run/docker.sock'] as const
 
 /** Shared SRT temp defaults denied to read-only workers. */
 export const READONLY_LENS_DENY_WRITE_PATHS = ['/tmp/claude', '/private/tmp/claude'] as const
@@ -191,7 +191,7 @@ export function readonlyLensReportInputs(
   keychainPaths: string[]
 } {
   return {
-    denyRead: [...protectedDenyPaths(project, environment), ...READONLY_LENS_DENY_SOCKETS],
+    denyRead: [...protectedDenyPaths(project, environment), ...readonlyLensSocketDenyPaths()],
     envFilePaths: readonlyLensOperatorEnvFileDenyPaths([
       expandHome(READONLY_LENS_OPERATOR_ENV_FILE),
       ...resolveEnvFilePaths(environment),
@@ -330,7 +330,7 @@ export function readonlyLensProfile(input: {
         allowLocalBinding: READONLY_LENS_ALLOW_LOCAL_BINDING,
       },
       filesystem: {
-        denyRead: [...protectedDenies, ...READONLY_LENS_DENY_SOCKETS],
+        denyRead: [...protectedDenies, ...readonlyLensSocketDenyPaths()],
         allowWithinDeny,
         allowWrite,
         denyWrite: input.denySharedTemp === false ? [] : [...READONLY_LENS_DENY_WRITE_PATHS],
@@ -338,6 +338,37 @@ export function readonlyLensProfile(input: {
     },
     environment,
   )
+}
+
+export type SocketPathResolver = (path: string) => string | null
+
+/** Canonicalize existing socket denies without changing their first-seen order. */
+export function canonicalSocketDenyPaths(
+  paths: readonly string[],
+  resolver: SocketPathResolver,
+): string[] {
+  const resolved: string[] = []
+  const seen = new Set<string>()
+  for (const path of paths) {
+    const canonical = resolver(path)
+    if (canonical === null || seen.has(canonical)) continue
+    seen.add(canonical)
+    resolved.push(canonical)
+  }
+  return resolved
+}
+
+const realSocketPath: SocketPathResolver = (path) => {
+  try {
+    return realpathSync(path)
+  } catch {
+    return null
+  }
+}
+
+/** Existing host-control sockets in the canonical form SRT can mask safely. */
+export function readonlyLensSocketDenyPaths(): string[] {
+  return canonicalSocketDenyPaths(READONLY_LENS_DENY_SOCKETS, realSocketPath)
 }
 
 const LOOPBACK_DOMAINS = ['localhost', '127.0.0.1', '[::1]'] as const
@@ -429,7 +460,7 @@ export function probeSandboxProfile(input: {
       allowLocalBinding: false,
     },
     filesystem: {
-      denyRead: [...new Set([...protectedDenies, ...READONLY_LENS_DENY_SOCKETS])],
+      denyRead: [...new Set([...protectedDenies, ...readonlyLensSocketDenyPaths()])],
       allowWithinDeny: [],
       allowWrite: [allowWrite],
       denyWrite: [],

@@ -28,6 +28,7 @@ import { ROOT } from '../database/db.ts'
 import { classify, NOT_EVIDENCE } from '../failure/failure.ts'
 import type { Project } from '../project/projects.ts'
 import {
+  canonicalSocketDenyPaths,
   createSandboxRuntimeConfig,
   grokAskCommandFromConfig,
   grokAskServerCommand,
@@ -39,11 +40,11 @@ import {
   prepareWorkerHomeMirror,
   probeSandboxProfile,
   READONLY_LENS_DENY_PATHS,
-  READONLY_LENS_DENY_SOCKETS,
   READONLY_LENS_DENY_WRITE_PATHS,
   readonlyLensDeniesLoginKeychain,
   readonlyLensDeniesOperatorEnvFile,
   readonlyLensProfile,
+  readonlyLensSocketDenyPaths,
   removeNewSandboxHomeAfterFailure,
   resetSandbox,
   sandboxReasonPrefix,
@@ -67,6 +68,40 @@ test('the writing ACP decision requires both ACP and repository writes', () => {
   expect(isWritingAcpRun('acp', true)).toBe(true)
   expect(isWritingAcpRun('acp', false)).toBe(false)
   expect(isWritingAcpRun('cli', true)).toBe(false)
+})
+
+test.each([
+  {
+    name: 'resolves a symlinked-parent path to its target',
+    paths: ['/var/run/docker.sock'],
+    resolved: { '/var/run/docker.sock': '/run/docker.sock' },
+    expected: ['/run/docker.sock'],
+  },
+  {
+    name: 'drops a missing path',
+    paths: ['/missing/docker.sock'],
+    resolved: {},
+    expected: [],
+  },
+  {
+    name: 'dedupes paths that resolve to one target',
+    paths: ['/var/run/docker.sock', '/run/docker.sock'],
+    resolved: {
+      '/var/run/docker.sock': '/run/docker.sock',
+      '/run/docker.sock': '/run/docker.sock',
+    },
+    expected: ['/run/docker.sock'],
+  },
+  {
+    name: 'keeps first-seen order',
+    paths: ['/second.sock', '/first.sock'],
+    resolved: { '/second.sock': '/canonical/second.sock', '/first.sock': '/canonical/first.sock' },
+    expected: ['/canonical/second.sock', '/canonical/first.sock'],
+  },
+])('$name', ({ paths, resolved, expected }) => {
+  expect(
+    canonicalSocketDenyPaths(paths, (path) => resolved[path as keyof typeof resolved] ?? null),
+  ).toEqual(expected)
 })
 
 const temporaryDirectories: string[] = []
@@ -451,7 +486,7 @@ test('probe sandbox profile denies network and writes except the throwaway direc
   expect(profile.filesystem.denyRead).toEqual(
     expect.arrayContaining([
       ...READONLY_LENS_DENY_PATHS.map((path) => path.replace(/^~/, homedir())),
-      ...READONLY_LENS_DENY_SOCKETS,
+      ...readonlyLensSocketDenyPaths(),
     ]),
   )
 })
@@ -534,8 +569,7 @@ describe('readonly-lens sandbox profile', () => {
       '/shared/absolute.secret',
       join(homedir(), '.tokens/private'),
       '/projects/fixture/config/operator.secret',
-      '/var/run/docker.sock',
-      '/run/docker.sock',
+      ...readonlyLensSocketDenyPaths(),
     ])
     expect(profile.filesystem.allowWithinDeny).toEqual([
       '/runs/tree',
@@ -737,7 +771,7 @@ describe('readonly-lens sandbox profile', () => {
     expect(selected.profile?.filesystem.denyRead).toEqual(
       expect.arrayContaining(READONLY_LENS_DENY_PATHS.map((path) => path.replace(/^~/, homedir()))),
     )
-    for (const socket of READONLY_LENS_DENY_SOCKETS) {
+    for (const socket of readonlyLensSocketDenyPaths()) {
       expect(selected.profile?.filesystem.denyRead).toContain(socket)
     }
     expect(selected.profile?.network.allowUnixSockets).toEqual([])
