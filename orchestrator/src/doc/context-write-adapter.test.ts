@@ -60,10 +60,7 @@ test('context pointers dispatch the workflow evidence forms through the shared p
   await expect(resolvedPointerTarget('92', database, adapter)).rejects.toThrow(
     'for a commit, pass the full SHA',
   )
-  for (const pointer of [
-    '#92',
-    'https://github.com/example/project/pull/92',
-  ])
+  for (const pointer of ['#92', 'https://github.com/example/project/pull/92'])
     await expect(resolvedPointerTarget(pointer, database, adapter)).rejects.toThrow(
       'reference is not visible in this project; no pull request #92 is recorded for this project; check the number',
     )

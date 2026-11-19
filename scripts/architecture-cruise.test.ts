@@ -37,9 +37,9 @@ test('identity reference guard counts predicates but not assignments', () => {
   expect(identityReferenceViolationCount('const number = row.number')).toBe(0)
   expect(identityReferenceViolationCount('label.number = row.number')).toBe(0)
   expect(identityReferenceViolationCount('SELECT id FROM task WHERE number=?')).toBe(1)
-  expect(identityReferenceViolationCount('add((parameter) => `s.number=${parameter}::integer`)')).toBe(
-    1,
-  )
+  expect(
+    identityReferenceViolationCount('add((parameter) => `s.number=${parameter}::integer`)'),
+  ).toBe(1)
   expect(
     identityReferenceViolationCount('SELECT id FROM task WHERE project=? AND number IN (?)'),
   ).toBe(1)
