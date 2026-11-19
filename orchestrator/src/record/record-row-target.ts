@@ -3,6 +3,10 @@
 
 import { z } from 'zod'
 import { type NoteLabel, parseNoteLabel } from '../../../shared/note-label.ts'
+import {
+  malformedReferenceRefusal,
+  NOTE_LABEL_FORMS,
+} from '../../../shared/reference-refusal.ts'
 
 export type RecordRowTarget =
   | { message: string; note?: never }
@@ -25,7 +29,7 @@ export function parseRecordRowTarget(value: unknown): ParsedRecordRowTarget {
     return { target: { message: String(body.message) }, body }
   }
   if (typeof body.note !== 'string')
-    return { error: `invalid note label '${String(body.note)}': expected project#number` }
+    return { error: malformedReferenceRefusal(String(body.note), NOTE_LABEL_FORMS) }
   try {
     return { target: { note: parseNoteLabel(body.note) }, body }
   } catch (error) {
@@ -33,7 +37,7 @@ export function parseRecordRowTarget(value: unknown): ParsedRecordRowTarget {
       error:
         error instanceof Error
           ? error.message
-          : `invalid note label '${String(body.note)}': expected project#number`,
+          : malformedReferenceRefusal(String(body.note), NOTE_LABEL_FORMS),
     }
   }
 }

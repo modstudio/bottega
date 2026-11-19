@@ -1,4 +1,5 @@
 import { parseReference, REFERENCE_PREFIXES } from './reference.ts'
+import { malformedReferenceRefusal, NOTE_LABEL_FORMS } from './reference-refusal.ts'
 
 export type NoteLabel = { project: string; number: number }
 
@@ -19,7 +20,7 @@ export function parseNoteLabel(value: string): NoteLabel {
     )
       return { project: qualifier.value, number }
   } catch {
-    // The note-label surface keeps its established refusal below.
+    // Normalize parser failures to the shared note-label refusal below.
   }
-  throw new Error(`invalid note label '${value}': expected project#number`)
+  throw new Error(malformedReferenceRefusal(value, NOTE_LABEL_FORMS))
 }

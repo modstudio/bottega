@@ -9,6 +9,8 @@ export const POINTER_REFERENCE_FORMS =
 export const NOTE_REFERENCE_FORMS =
   'n<number>, a number, <project>#<number>, <project>#n<number>, or a UUID'
 
+export const NOTE_LABEL_FORMS = '<project>#<number> or <project>#n<number>'
+
 export function malformedReferenceRefusal(
   reference: string,
   forms = POINTER_REFERENCE_FORMS,

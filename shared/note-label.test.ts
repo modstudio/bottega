@@ -14,6 +14,8 @@ describe('note label', () => {
   })
 
   test.each(['575', '#575', `${project}#0`, `${project}#-1`])('refuses %s', (value) => {
-    expect(() => parseNoteLabel(value)).toThrow('expected project#number')
+    expect(() => parseNoteLabel(value)).toThrow(
+      `reference ${JSON.stringify(value)} is malformed; pass <project>#<number> or <project>#n<number>`,
+    )
   })
 })
