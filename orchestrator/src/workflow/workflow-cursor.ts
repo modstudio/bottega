@@ -222,15 +222,14 @@ export async function composeWorkflowWithCursor(
   commitCount: CommitCountPort = readCommitsPastLanding,
   taskClaimPorts?: TaskCursorClaimPorts,
 ) {
-  const composition = composeWorkflow(slug, project, mode, args, d, selection, live.resolution)
-  if (!composition.mode || composition.needs.arguments)
-    return { ...composition, cursor: null, graduated: undefined }
+  const shape = composeWorkflow(slug, project, mode, args, d, selection)
+  if (!shape.mode || shape.needs.arguments) return { ...shape, cursor: null, graduated: undefined }
   await refuseLocalComposeBranch(
     {
-      project: composition.project,
-      workflow: composition.workflow,
-      mode: composition.mode,
-      arguments: composition.arguments,
+      project: shape.project,
+      workflow: shape.workflow,
+      mode: shape.mode,
+      arguments: shape.arguments,
     },
     context,
     d,
@@ -238,17 +237,21 @@ export async function composeWorkflowWithCursor(
   )
   await readThroughWorkflowCursorContext(project, context, d)
   await linkResolvedWorkflowTask(project, context, d)
-  const existing = keyOf(composition.arguments)
+  const existing = keyOf(shape.arguments)
     ? await findWorkflowCursor(
-        composition.project,
-        composition.workflow.slug,
-        composition.mode!.slug,
-        composition.arguments,
+        shape.project,
+        shape.workflow.slug,
+        shape.mode.slug,
+        shape.arguments,
         context,
         d,
       )
     : null
   const start = decideCursorStart(existing?.state ?? null)
+  const composition =
+    start === 'reuse'
+      ? shape
+      : composeWorkflow(slug, project, mode, args, d, selection, live.resolution)
   const handedOff =
     start === 'reuse'
       ? undefined

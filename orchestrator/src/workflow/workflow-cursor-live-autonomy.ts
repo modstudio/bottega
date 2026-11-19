@@ -35,6 +35,27 @@ type WorkflowLiveAutonomyInput = Omit<CursorLiveAutonomyInput, 'mode'> & {
 const errorReason = (error: unknown): string =>
   error instanceof Error ? error.message : String(error)
 
+export async function resolveCompositionLiveAutonomy(
+  input: WorkflowLiveAutonomyInput,
+  d: Database = db(),
+): Promise<LiveCursorAutonomy> {
+  const composition = composeWorkflow(input.slug, input.project, input.mode, input.args, d, {
+    ...input.selection,
+    mode: input.mode,
+  })
+  return {
+    resolution: await resolveProjectAutonomy(
+      composition.project,
+      composition.workflow.slug,
+      composition.workflow.defaultPreset,
+      catalogueStepsForAutonomy(composition.steps),
+      input.session,
+      undefined,
+      d,
+    ),
+  }
+}
+
 export async function resolveCursorLiveAutonomy(
   input: CursorLiveAutonomyInput,
   d: Database = db(),
@@ -54,15 +75,10 @@ export async function resolveCursorLiveAutonomy(
     input.context.taskFlowClient,
   )
   const autonomyRow = row && decideCursorStart(row.state) === 'reuse' ? row : null
-  let composition: ReturnType<typeof composeWorkflow>
   try {
-    composition = autonomyRow
-      ? cursorComposition(autonomyRow, d)
-      : composeWorkflow(input.slug, input.project, input.mode, input.args, d, {
-          ...input.selection,
-          mode: input.mode,
-        })
-    const stages = autonomyRow ? Object.keys(cursorAutonomy(autonomyRow)?.stages ?? {}) : []
+    if (!autonomyRow) return await resolveCompositionLiveAutonomy(input, d)
+    const composition = cursorComposition(autonomyRow, d)
+    const stages = Object.keys(cursorAutonomy(autonomyRow)?.stages ?? {})
     return {
       resolution: await resolveProjectAutonomy(
         composition.project,
@@ -78,7 +94,7 @@ export async function resolveCursorLiveAutonomy(
       ),
     }
   } catch (error) {
-    if (!autonomyRow) throw error
+    if (!row) throw error
     return { unavailableReason: errorReason(error) }
   }
 }

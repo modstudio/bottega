@@ -1,7 +1,7 @@
 import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { db, sessionId, writableDb } from '../database/db.ts'
-import { projects } from '../project/projects.ts'
+import { projectByName, projects } from '../project/projects.ts'
 import { effectiveProjectSpace } from '../project-space.ts'
 import { recordApiClient } from '../record/record-api-client.ts'
 import { applyWorkflowWriteResponse } from '../record/record-cache-workflow.ts'
@@ -35,7 +35,6 @@ import {
   stepNeedsCloseState,
   workflowCompositionFactExtras,
   workflowCompositionFactNeeds,
-  workflowProject,
 } from './workflow-project-facts.ts'
 import { workflowReadSpaceFor } from './workflow-read-space.ts'
 import { checkWorkflowRendering, renderCheckRefusal } from './workflow-render-check.ts'
@@ -815,7 +814,8 @@ export function composeWorkflow(
   if (refusal) throw new Error(refusal)
   const missing = missingWorkflowArguments(definition, mode ? [mode] : [], args)
   if (missing.length) needs.arguments = missing
-  const project = workflowProject(projectName, d)
+  const project = projectByName(projectName, d)
+  if (!project) throw new Error(`unknown project "${projectName}"`)
   const selectedEntries = mode
     ? expandWorkflowModeSteps(mode.steps, catalogue.definition.sequences ?? [])
     : []
@@ -940,7 +940,8 @@ export function getWorkflowStep(
   )
   if (missing.length)
     throw new Error(`missing required arguments: ${missing.map(({ name }) => name).join(', ')}`)
-  const project = workflowProject(projectName, d)
+  const project = projectByName(projectName, d)
+  if (!project) throw new Error(`unknown project "${projectName}"`)
   const effectiveAutonomy =
     autonomy ??
     resolveAutonomy(

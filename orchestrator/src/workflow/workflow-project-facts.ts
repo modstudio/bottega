@@ -27,14 +27,6 @@ import { workflowCursorResetRemedy } from './workflow-cursor-format.ts'
 
 export type WorkflowFactProject = Pick<Project, 'name' | 'stack' | 'settings'>
 
-export function workflowProject(projectName: string, d: Database): WorkflowFactProject {
-  const row = d
-    .query('SELECT name,stack,settings FROM project WHERE name=? AND retired_at IS NULL')
-    .get(projectName) as { name: string; stack: string | null; settings: string | null } | null
-  if (!row) throw new Error(`unknown project "${projectName}"`)
-  return { name: row.name, stack: row.stack, settings: JSON.parse(row.settings ?? '{}') }
-}
-
 export type MergedChangeSources = {
   landing(project: WorkflowFactProject, branch: string): string | null
   changedPaths(project: string, mergeCommit: string): readonly string[]

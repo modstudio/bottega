@@ -167,6 +167,54 @@ describe('workflow cursor stored autonomy', () => {
     )
   })
 
+  test('recomposing an open older version reuses its pinned composition', async () => {
+    const d = database()
+    const opened = await composeWorkflowWithCursor(
+      'flow',
+      'fixture',
+      'default',
+      args,
+      context,
+      d,
+      {},
+      {},
+    )
+    const current = showResolvedWorkflow('flow', undefined, null, d).definition
+    const draft = setWorkflowLocal(
+      'flow',
+      {
+        ...current,
+        modes: current.modes.map((mode) => ({
+          ...mode,
+          steps: [...mode.steps, 'diagnose'],
+        })),
+      },
+      'added step fixture',
+      'test',
+      d,
+    )
+    promoteWorkflowLocal('flow', draft.n, 'publish added step fixture', 'test', d)
+    const live = await resolveCursorLiveAutonomy(
+      { slug: 'flow', project: 'fixture', mode: 'default', args, context },
+      d,
+    )
+
+    const recomposed = await composeWorkflowWithCursor(
+      'flow',
+      'fixture',
+      'default',
+      args,
+      context,
+      d,
+      {},
+      live,
+    )
+
+    expect(recomposed.cursor.id).toBe(opened.cursor.id)
+    expect(recomposed.cursor.opened).toBeFalse()
+    expect(renderWorkflowComposition(recomposed)).not.toContain('diagnose')
+  })
+
   test('combines a stricter live resolution across autonomy subjects', async () => {
     const combined = combineCursorAutonomy(pinnedAutonomy(), liveAutonomy())
 
