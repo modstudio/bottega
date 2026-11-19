@@ -142,7 +142,7 @@ test('close-out closes an idle explore as answered and reports the session clean
     db().query('SELECT state,closed FROM workflow_cursor WHERE record_id=?').get(cursor.recordId),
   ).toEqual({ state: 'done', closed: expect.stringContaining('"outcome":"answered"') })
   await expect(showWorkflowText(workflowTextAttachmentToken(textRecordId), db())).rejects.toThrow(
-    'is not held on this machine',
+    "has no live workflow text or copy link in this machine's store",
   )
 })
 

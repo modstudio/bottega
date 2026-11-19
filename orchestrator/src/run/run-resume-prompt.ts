@@ -29,6 +29,9 @@ export async function packedResumePromptWithCarriedAttachments(
   parentId: string,
   dependencies: Parameters<typeof resolveCarriedAttachments>[1] = {},
 ): Promise<string> {
-  const carriedAttachments = await resolveCarriedAttachments([turnPrompt], dependencies)
+  const carriedAttachments = await resolveCarriedAttachments(
+    [{ label: 'resume turn', text: turnPrompt }],
+    dependencies,
+  )
   return packedResumePrompt(job, turnPrompt, parentId, carriedAttachments)
 }

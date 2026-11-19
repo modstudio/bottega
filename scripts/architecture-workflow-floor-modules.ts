@@ -162,7 +162,9 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     './task-read-port.ts',
     './workflow-task-reference.ts',
     './workflow-text.ts',
+    './workflow-text-missing.ts',
   ]),
+  module('orchestrator/src/workflow/workflow-text-missing.ts', ['../../../shared/brand.ts']),
   module('orchestrator/src/workflow/workflow-explore-lifecycle-close.ts', [
     'bun:sqlite',
     '../database/db.ts',

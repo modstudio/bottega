@@ -3,7 +3,16 @@ import { newRecordId } from '../../../shared/record-id.ts'
 import { addProject } from '../../test/fixtures/offline-branch-landing.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
+import {
+  missingWorkflowTextMessage,
+  WorkflowTextNotHeldError,
+} from '../workflow/workflow-text-missing.ts'
 import { prepareRunDispatchRulings } from './run-dispatch-rulings.ts'
+
+const missingAttachmentReader = (token: string) => async () => {
+  const missing = missingWorkflowTextMessage(token, 'local-authoritative')
+  throw new WorkflowTextNotHeldError(missing.condition, missing.remedy)
+}
 
 test('retry-root carries rulings and claim links from the retained parent task', async () => {
   const projectRecordId = addProject('retry-rulings', '/work/retry-rulings')
@@ -154,4 +163,108 @@ test('resolves an attachment token carried only by task text', async () => {
   )
 
   expect(prepared.carriedAttachments).toContain('Design body from the task text attachment.')
+})
+
+test('a dead attachment token carried only by the spec refuses dispatch', async () => {
+  const token = `attached-text:${newRecordId()}`
+  const projectRecordId = addProject('spec-attachment-refusal', '/work/spec-attachment-refusal')
+
+  await expect(
+    prepareRunDispatchRulings(
+      {
+        firstTurn: true,
+        workspaceSource: 'new',
+        parentRunRecordId: null,
+        projectName: 'spec-attachment-refusal',
+        projectRecordId,
+        key: 'DEV-2476',
+        repoJob: true,
+        callerCwd: '/work/spec-attachment-refusal',
+        probe: false,
+        spec: `Read ${token}`,
+      },
+      { attachmentReader: missingAttachmentReader(token) },
+    ),
+  ).rejects.toThrow(`${token} (from spec)`)
+})
+
+test('a dead attachment token carried only by a ruling refuses dispatch', async () => {
+  const token = `attached-text:${newRecordId()}`
+  const questionRecordId = newRecordId()
+  const projectRecordId = addProject('ruling-attachment-refusal', '/work/ruling-refusal')
+  const parent = addRun({ agent: 'codex', job: 'implement', projectRecordId })
+  db().query('UPDATE run SET task_record_id=? WHERE record_id=?').run('ruling-task-id', parent)
+  db()
+    .query(
+      `INSERT INTO question
+       (number,record_id,run_record_id,asked_at,question,answer,answered_at,answerer_kind)
+       VALUES ((SELECT COALESCE(MAX(number),0)+1 FROM question),?,?,?,?,'yes',?,'operator')`,
+    )
+    .run(
+      questionRecordId,
+      parent,
+      '2026-10-01T00:00:00.000Z',
+      `Should we read ${token}?`,
+      '2026-10-01T00:01:00.000Z',
+    )
+
+  await expect(
+    prepareRunDispatchRulings(
+      {
+        firstTurn: true,
+        workspaceSource: 'retained',
+        parentRunRecordId: parent,
+        projectName: null,
+        projectRecordId: null,
+        key: 'DEV-2476',
+        repoJob: true,
+        callerCwd: '/work/ruling-refusal',
+        probe: false,
+        spec: 'spec without an attachment token',
+      },
+      { attachmentReader: missingAttachmentReader(token) },
+    ),
+  ).rejects.toThrow(`${token} (from task rulings (question ${questionRecordId}))`)
+})
+
+test('writes a task-text attachment warning while resolving before a run is claimed', async () => {
+  const token = `attached-text:${newRecordId()}`
+  const projectRecordId = addProject('task-text-attachment-warning', '/work/task-text-warning')
+  const written: string[] = []
+  const missing = missingWorkflowTextMessage(token, 'local-authoritative')
+  const prepared = await prepareRunDispatchRulings(
+    {
+      firstTurn: true,
+      workspaceSource: 'new',
+      parentRunRecordId: null,
+      projectName: 'task-text-attachment-warning',
+      projectRecordId,
+      key: 'DEV-2476',
+      repoJob: true,
+      callerCwd: '/work/task-text-warning',
+      probe: false,
+      writesJob: true,
+      spec: 'spec without an attachment token',
+    },
+    {
+      taskTextReader: async (_project, key) => ({
+        available: true,
+        recordId: null,
+        key,
+        title: 'Missing attachment',
+        body: `Read ${token}`,
+        comments: [],
+      }),
+      attachmentReader: async () => {
+        throw new WorkflowTextNotHeldError(missing.condition, missing.remedy)
+      },
+      warningWriter: (warning) => written.push(warning),
+    },
+  )
+
+  expect(written).toEqual([`orch: warning: ${prepared.attachmentWarnings[0]}`])
+  expect(written[0]).toContain(token)
+  expect(written[0]).toContain('from task text')
+  expect(prepared.carriedAttachments).toContain(`${token} — unresolved (from task text)`)
+  expect(prepared.carriedAttachments).toContain(missing.condition)
 })

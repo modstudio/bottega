@@ -18,7 +18,7 @@ import {
 } from '../record/record-task-flow-write-client.ts'
 import { taskFlowRequestId } from '../record/record-task-flow-write-contract.ts'
 import type { LiveCursorAutonomy } from './autonomy.ts'
-import { taskFlowLocalStore, taskFlowReadStore } from './task-flow-store.ts'
+import { taskFlowLocalStore, taskFlowReadStore, taskFlowStoreMode } from './task-flow-store.ts'
 import { taskReader } from './task-read-port.ts'
 import { abandonSelectedWorkflowCursorForClose, nextWorkflowStep } from './workflow-cursor.ts'
 import { cursorName, workflowCursorReference } from './workflow-cursor-format.ts'
@@ -51,6 +51,7 @@ import {
   workflowTextAttachmentId,
   workflowTextAttachmentToken,
 } from './workflow-text.ts'
+import { missingWorkflowTextMessage, WorkflowTextNotHeldError } from './workflow-text-missing.ts'
 
 export type WorkflowTaskDocument = { reference: string; title: string }
 export type WorkflowTextDocumentPorts = {
@@ -458,15 +459,6 @@ export function workflowTextUncopiedReport(
     .join('\n')
 }
 
-export class WorkflowTextNotHeldError extends Error {
-  constructor(token: string) {
-    super(
-      `${token} is not held on this machine; no live workflow text or copy link was found, and an id from another machine is readable only through its task document`,
-    )
-    this.name = 'WorkflowTextNotHeldError'
-  }
-}
-
 export async function showWorkflowText(
   idInput: string,
   database: Database = db(),
@@ -481,7 +473,9 @@ export async function showWorkflowText(
     return { kind: 'live', id, cursor: live.cursor, stepSlug: live.step_slug, body: live.body }
   const copied = await store.copiedTextReference(id)
   if (copied) return { kind: 'redirect', id, documentReference: copied }
-  throw new WorkflowTextNotHeldError(workflowTextAttachmentToken(id))
+  const token = workflowTextAttachmentToken(id)
+  const message = missingWorkflowTextMessage(token, taskFlowStoreMode(database))
+  throw new WorkflowTextNotHeldError(message.condition, message.remedy)
 }
 
 export async function cursorForWorkflowTextCopy(

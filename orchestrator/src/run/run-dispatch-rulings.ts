@@ -1,11 +1,14 @@
 // concern: run dispatch rulings
 /** Resolves and renders the task rulings inherited by a dispatched run. */
 
-import { resolveCarriedAttachments } from './run-carried-attachments.ts'
+import {
+  type CarriedAttachmentSource,
+  resolveCarriedAttachments,
+} from './run-carried-attachments.ts'
 import { inheritedRunLinks } from './run-claim-inheritance.ts'
 import { admitNewRunReference } from './run-task-reference.ts'
 import { initialRunTaskText } from './run-task-text.ts'
-import { renderTaskRulings } from './task-rulings.ts'
+import { renderTaskRulings, taskRulingFreeText } from './task-rulings.ts'
 import { taskRulingsForDispatch } from './task-rulings-store.ts'
 
 type DispatchLinks = { taskRecordId: string | null; projectRecordId: string | null }
@@ -18,7 +21,11 @@ async function runDispatchRulingsSection(input: {
   resume: boolean
   project: string | null
   taskRecordId: string | null
-}): Promise<{ section: string; questionIds: string[] }> {
+}): Promise<{
+  section: string
+  questionIds: string[]
+  attachmentSources: CarriedAttachmentSource[]
+}> {
   const rulings = await taskRulingsForDispatch({
     resume: input.resume,
     project: input.project,
@@ -27,6 +34,10 @@ async function runDispatchRulingsSection(input: {
   return {
     section: renderTaskRulings(rulings),
     questionIds: rulings.rulings.map((ruling) => ruling.questionRecordId),
+    attachmentSources: rulings.rulings.map((ruling) => ({
+      label: `task rulings (question ${ruling.questionRecordId})`,
+      text: Object.values(taskRulingFreeText(ruling)).filter(Boolean).join('\n'),
+    })),
   }
 }
 
@@ -48,6 +59,7 @@ export async function prepareRunDispatchRulings(
   dependencies: {
     taskTextReader?: TaskTextReader
     attachmentReader?: AttachmentReader
+    warningWriter?: (warning: string) => void
   } = {},
 ): Promise<{
   section: string
@@ -55,6 +67,7 @@ export async function prepareRunDispatchRulings(
   links: DispatchLinks | null
   taskText: string
   carriedAttachments: string
+  attachmentWarnings: string[]
 }> {
   const key = input.key
   const inherited =
@@ -85,12 +98,28 @@ export async function prepareRunDispatchRulings(
     },
     { readTaskText: dependencies.taskTextReader },
   )
+  const attachmentWarnings: string[] = []
+  const warningWriter = dependencies.warningWriter ?? console.error
+  const carriedAttachments = await resolveCarriedAttachments(
+    [
+      { label: 'spec', text: input.spec },
+      ...rulings.attachmentSources,
+      { label: 'task text', text: taskText, missing: 'warn' },
+    ],
+    {
+      readAttachment: dependencies.attachmentReader,
+      onWarning: (warning) => {
+        warningWriter(`orch: warning: ${warning}`)
+        attachmentWarnings.push(warning)
+      },
+    },
+  )
   return {
-    ...rulings,
+    section: rulings.section,
+    questionIds: rulings.questionIds,
     links,
     taskText,
-    carriedAttachments: await resolveCarriedAttachments([input.spec, rulings.section, taskText], {
-      readAttachment: dependencies.attachmentReader,
-    }),
+    carriedAttachments,
+    attachmentWarnings,
   }
 }

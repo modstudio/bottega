@@ -319,7 +319,7 @@ export async function run(
       })
     }
   }
-  const dispatchRulings = await prepareRunDispatchRulings({
+  const preparedRulings = await prepareRunDispatchRulings({
     firstTurn: resume.isFirstTurn,
     workspaceSource: resume.workspaceSource,
     parentRunRecordId: opts.resume?.parent ?? null,
@@ -345,9 +345,9 @@ export async function run(
         : NO_REPO_PREAMBLE,
     infrastructure: infra,
     operatorKnowledge: operatorKnowledgeSection(pack ?? null),
-    taskRulings: dispatchRulings.section,
-    taskText: dispatchRulings.taskText,
-    carriedAttachments: dispatchRulings.carriedAttachments,
+    taskRulings: preparedRulings.section,
+    taskText: preparedRulings.taskText,
+    carriedAttachments: preparedRulings.carriedAttachments,
   })
   prompt = bindReviewInstructions({
     prompt,
@@ -535,10 +535,10 @@ export async function run(
     usingMcp,
     startedByUserId,
     replySchemaName,
-    carriedQuestionIds: dispatchRulings.questionIds,
+    carriedContext: preparedRulings,
     endpointKeySource: endpoint.key.source,
     credential: endpoint.credential,
-    precomputedLinks: dispatchRulings.links,
+    precomputedLinks: preparedRulings.links,
     assertDispatchAllowed: () => assertMigrationDispatchAllowed(db(), opts.resume !== undefined),
     recordDispatchRefusal: recordMigrationDispatchRefusal,
   })
@@ -571,8 +571,8 @@ export async function run(
     mcpConnection: claimedMcpConnection,
     usingMcp: claimedUsingMcp,
   } = claimedRun
-  const owner = { rootRunId: rootRunRecordId(claim.id), runId: claim.id, projectId: runProjectId }
   const localMachineId = machineId()
+  const owner = { rootRunId: rootRunRecordId(claim.id), runId: claim.id, projectId: runProjectId }
   runMigration.enableRunSchemaReload(claim.id)
   outPath = claimedOutputPath
   const initialBoard = await board(claimedBoundPrompt, promptPath, claim.id, resume.isFirstTurn)

@@ -1,6 +1,10 @@
 import type { Database } from 'bun:sqlite'
 import { describe, expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import {
+  createMemoryRecordApiClient,
+  installRecordApiClient,
+} from '../../test/fixtures/record-api.ts'
 import { testDatabaseFixture } from '../database/test-database.fixture.ts'
 import {
   productionStepCatalogue,
@@ -353,8 +357,23 @@ describe('workflow text lifecycle', () => {
     await abandon(abandoned, abandonedCursor, 'no longer needed')
     expect(rowCount(abandoned, abandonedCursor)).toBe(0)
     await expect(showWorkflowText(abandonedReference, abandoned)).rejects.toThrow(
-      `${abandonedReference} is not held on this machine; no live workflow text or copy link was found, and an id from another machine is readable only through its task document`,
+      `${abandonedReference} has no live workflow text or copy link in this machine's store; an id attached on another machine is readable only through its task document.`,
     )
+  })
+
+  test('a hosted miss names the record and caller spaces checked by show', async () => {
+    const previousRecordApiUrl = process.env.BOTTEGA_RECORD_API_URL
+    process.env.BOTTEGA_RECORD_API_URL = 'https://record.example.test'
+    installRecordApiClient(createMemoryRecordApiClient())
+    try {
+      await expect(
+        showWorkflowText('attached-text:11111111-1111-4111-8111-111111111111', database()),
+      ).rejects.toThrow('has no live workflow text or copy link in the record for your spaces')
+    } finally {
+      installRecordApiClient(null)
+      if (previousRecordApiUrl === undefined) delete process.env.BOTTEGA_RECORD_API_URL
+      else process.env.BOTTEGA_RECORD_API_URL = previousRecordApiUrl
+    }
   })
 
   test('the service refuses text over either live byte bound', async () => {
@@ -555,7 +574,9 @@ describe('task-linked workflow text preservation', () => {
     )
     expect(result).not.toContain('uncopied')
     expect(rowCount(d, cursor)).toBe(0)
-    await expect(showWorkflowText(reference, d)).rejects.toThrow('is not held on this machine')
+    await expect(showWorkflowText(reference, d)).rejects.toThrow(
+      "has no live workflow text or copy link in this machine's store",
+    )
   })
 
   test('refused close validation makes no document-port call', async () => {
