@@ -28,11 +28,11 @@ test('credential trust repair orders registration before trust and omits complet
 
 test('credential trust facts give a revoked machine key the init-new-key repair', () => {
   const facts = credentialMachineTrustFacts({
-      space: 'named-space',
-      machine: { keyId, publicKey: new Uint8Array([1, 2, 3]) },
-      machineRows: [{ keyId, revokedAt: '2026-11-10T00:00:00.000Z' }],
-      trust: { [keyId]: { public_key: 'public-key', label: 'fixture' } },
-    })
+    space: 'named-space',
+    machine: { keyId, publicKey: new Uint8Array([1, 2, 3]) },
+    machineRows: [{ keyId, revokedAt: '2026-11-10T00:00:00.000Z' }],
+    trust: { [keyId]: { public_key: 'public-key', label: 'fixture' } },
+  })
   expect(facts).toEqual({
     status: 'checked',
     registered: false,

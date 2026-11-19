@@ -20,7 +20,9 @@ const cause = (error: unknown) => (error instanceof Error ? error.message : Stri
 async function spaceLabel(client: TrustClient, space: CredentialMachineTrustSpace) {
   if (space.kind === 'known') return space.slug
   const memberships = parseRecordSpaceMemberships((await client.whoami()).memberships)
-  return memberships.find((membership) => membership.spaceId === space.spaceId)?.slug ?? space.spaceId
+  return (
+    memberships.find((membership) => membership.spaceId === space.spaceId)?.slug ?? space.spaceId
+  )
 }
 
 async function readFacts(
@@ -34,20 +36,6 @@ async function readFacts(
     trustedKeysForSpace(client, input.spaceId, env),
   ])
   return credentialMachineTrustFacts({ space: input.label, machine, machineRows, trust })
-}
-
-/** Read and derive this machine's credential trust facts for one record space. */
-export async function readCredentialMachineTrustFacts(
-  client: TrustClient,
-  input: { space: CredentialMachineTrustSpace; machine: MachineSource },
-  env: ConfigEnvironment = process.env,
-): Promise<CredentialMachineTrustFacts> {
-  const label = await spaceLabel(client, input.space)
-  return readFacts(
-    client,
-    { spaceId: input.space.spaceId, label, machine: input.machine },
-    env,
-  )
 }
 
 /** Preserve a useful, honest trust state when any failure-path read throws. */

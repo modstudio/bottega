@@ -45,41 +45,69 @@ function deps(overrides: Partial<GatherProviderCredentialTrustDependencies> = {}
 test('provider credential trust gathering skips inapplicable local states', async () => {
   expect(await gatherProviderCredentialTrustFacts([], [project('studio')], deps())).toEqual([])
   expect(
-    await gatherProviderCredentialTrustFacts(agent, [project('studio')],
-      deps({ sessionToken: () => null })),
+    await gatherProviderCredentialTrustFacts(
+      agent,
+      [project('studio')],
+      deps({ sessionToken: () => null }),
+    ),
   ).toEqual([])
   expect(await gatherProviderCredentialTrustFacts(agent, [project()], deps())).toEqual([])
 })
 
 test('provider credential trust gathering reports missing and throwing local reads', async () => {
   expect(
-    await gatherProviderCredentialTrustFacts(agent, [project('studio')],
-      deps({ machine: () => null })),
+    await gatherProviderCredentialTrustFacts(
+      agent,
+      [project('studio')],
+      deps({ machine: () => null }),
+    ),
   ).toEqual([
     { status: 'could-not-check', space: 'studio', reason: 'machine key is not initialized' },
   ])
   expect(
-    await gatherProviderCredentialTrustFacts(agent, [project('studio')],
-      deps({ sessionToken: () => { throw new Error('session failed') } })),
+    await gatherProviderCredentialTrustFacts(
+      agent,
+      [project('studio')],
+      deps({
+        sessionToken: () => {
+          throw new Error('session failed')
+        },
+      }),
+    ),
   ).toEqual([{ status: 'could-not-check', space: 'studio', reason: 'session failed' }])
   expect(
-    await gatherProviderCredentialTrustFacts(agent, [project('studio')],
-      deps({ machine: () => { throw new Error('key failed') } })),
+    await gatherProviderCredentialTrustFacts(
+      agent,
+      [project('studio')],
+      deps({
+        machine: () => {
+          throw new Error('key failed')
+        },
+      }),
+    ),
   ).toEqual([{ status: 'could-not-check', space: 'studio', reason: 'key failed' }])
 })
 
 test('provider credential trust gathering reports whoami, membership and trust-read failures', async () => {
   const twoProjects = [project('studio'), project('other')]
   expect(
-    await gatherProviderCredentialTrustFacts(agent, twoProjects,
-      deps({ client: () => client({ whoami: async () => { throw new Error('whoami failed') } }) })),
+    await gatherProviderCredentialTrustFacts(
+      agent,
+      twoProjects,
+      deps({
+        client: () =>
+          client({
+            whoami: async () => {
+              throw new Error('whoami failed')
+            },
+          }),
+      }),
+    ),
   ).toEqual([
     { status: 'could-not-check', space: 'studio', reason: 'whoami failed' },
     { status: 'could-not-check', space: 'other', reason: 'whoami failed' },
   ])
-  expect(
-    await gatherProviderCredentialTrustFacts(agent, [project('other')], deps()),
-  ).toEqual([
+  expect(await gatherProviderCredentialTrustFacts(agent, [project('other')], deps())).toEqual([
     {
       status: 'could-not-check',
       space: 'other',
@@ -87,17 +115,31 @@ test('provider credential trust gathering reports whoami, membership and trust-r
     },
   ])
   expect(
-    await gatherProviderCredentialTrustFacts(agent, [project('studio')],
-      deps({ client: () => client({ listMachineKeys: async () => { throw new Error('read failed') } }) })),
+    await gatherProviderCredentialTrustFacts(
+      agent,
+      [project('studio')],
+      deps({
+        client: () =>
+          client({
+            listMachineKeys: async () => {
+              throw new Error('read failed')
+            },
+          }),
+      }),
+    ),
   ).toEqual([{ status: 'could-not-check', space: 'studio', reason: 'read failed' }])
 })
 
 test('provider credential trust gathering returns checked facts for a matching row', async () => {
   expect(
-    await gatherProviderCredentialTrustFacts(agent, [project('studio')],
+    await gatherProviderCredentialTrustFacts(
+      agent,
+      [project('studio')],
       deps({
-        client: () => client({ listMachineKeys: async () => [{ keyId: machine.keyId, revokedAt: null }] }),
-      })),
+        client: () =>
+          client({ listMachineKeys: async () => [{ keyId: machine.keyId, revokedAt: null }] }),
+      }),
+    ),
   ).toEqual([
     {
       status: 'checked',

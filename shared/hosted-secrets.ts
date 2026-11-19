@@ -111,11 +111,7 @@ async function openedValue(
       throw new HostedSecretError(
         name,
         error.reason,
-        await missingHostedDataKeyWrapError(
-          deps.client,
-          identity,
-          deps.machine,
-        ),
+        await missingHostedDataKeyWrapError(deps.client, identity, deps.machine),
       )
     if (error instanceof HostedOpenError) throw new HostedSecretError(name, error.reason, error)
     throw new HostedSecretError(name, 'hosted-failure', error)
