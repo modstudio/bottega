@@ -79,4 +79,13 @@ test('descendants-closed names unfinished work and accepts done or dropped desce
       },
     }).action,
   ).toBe('allow')
+  expect(
+    decideFloorSatisfaction({
+      ...base,
+      evidence: {
+        task: { ...base.evidence.task, status: 'Active', statusCategory: 'active' },
+        descendants: [{ key: 'DEV-2', status: 'Done', statusCategory: 'done' }],
+      },
+    }).action,
+  ).toBe('refuse')
 })
