@@ -147,19 +147,19 @@ async function resolveTaskPointer(
   return parsed.kind === 'task' ? `task:${task.key}` : `task:${task.key}#comment:${parsed.id}`
 }
 
-function resolveStoredPointer(
+async function resolveStoredPointer(
   parsed: Extract<
     ReturnType<typeof parsePointerReference>,
     { kind: 'probe' | 'exec' | 'review-read' | 'attached-text' }
   >,
   pointer: string,
   database: Database,
-): string {
+): Promise<string> {
   const visible =
     parsed.kind === 'review-read'
       ? database.query('SELECT 1 FROM review_read WHERE record_id=?').get(parsed.recordId)
       : parsed.kind === 'attached-text'
-        ? database.query('SELECT 1 FROM workflow_step_text WHERE record_id=?').get(parsed.recordId)
+        ? await taskFlowReadStore(database).textAttachmentByRecordId(parsed.recordId)
         : database.query('SELECT 1 FROM probe WHERE record_id=?').get(parsed.recordId)
   if (visible) return pointer
   throw new ContextWriteRefusalError(

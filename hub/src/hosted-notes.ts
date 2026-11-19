@@ -13,7 +13,7 @@ import {
 } from './hosted-tasks.ts'
 import { type TaskIdentity, withHostedTenant } from './hosted-tenant.ts'
 import { projectHasRemoteTracker } from './hosted-write-mode.ts'
-import { hostedNoteIdentityByNumber } from './identity/identity.ts'
+import { hostedNoteIdentityByNumber } from './identity/hosted-identity.ts'
 import { nextNoteNumber } from './note-number.ts'
 import {
   type NotePromotionAnchor,

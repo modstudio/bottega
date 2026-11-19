@@ -14,11 +14,11 @@ export const identityModules = [
     '../../../shared/record-id.ts',
   ]),
   module('hub/src/identity/identity.ts', [
-    'bun',
     'bun:sqlite',
     '../../../shared/reference-refusal.ts',
     '../../../shared/reference.ts',
   ]),
+  module('hub/src/identity/hosted-identity.ts', ['bun']),
   module('orchestrator/src/identity/identity.ts', [
     'bun:sqlite',
     '../../../shared/identity-state-classes.ts',

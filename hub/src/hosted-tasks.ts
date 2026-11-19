@@ -6,7 +6,7 @@ import { DELETED_ON_HOSTED_RECORD_REASON } from './hosted-delete.ts'
 import { storedHubProjectId } from './hosted-project-identity.ts'
 import { hostedTaskJoin, repairHostedTaskReferences, taskIdFor } from './hosted-task-reference.ts'
 import { type TaskIdentity, withHostedTenant } from './hosted-tenant.ts'
-import { otherHostedTaskDocumentIdentityByNumber } from './identity/identity.ts'
+import { otherHostedTaskDocumentIdentityByNumber } from './identity/hosted-identity.ts'
 import type {
   PushedComment,
   PushedDocument,

@@ -4,8 +4,6 @@
 import { hasRecordIdShape } from './record-id.ts'
 import { malformedReferenceRefusal } from './reference-refusal.ts'
 
-export { POINTER_REFERENCE_FORMS } from './reference-refusal.ts'
-
 export type ReferenceKind = 'note' | 'question' | 'run' | 'task'
 export const REFERENCE_PREFIXES = { note: 'n', question: 'q', run: 'r' } as const
 

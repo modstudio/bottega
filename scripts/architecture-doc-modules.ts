@@ -69,6 +69,8 @@ export const docModules: DocModule[] = [
     'bun:sqlite',
     '../../../shared/brand.ts',
     '../../../shared/context-item-vocabulary.ts',
+    '../../../shared/reference-refusal.ts',
+    '../../../shared/reference.ts',
     '../board/board-claim-service.ts',
     '../database/db.ts',
     '../git/commit-resolution.ts',

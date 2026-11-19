@@ -3,12 +3,12 @@ import { PLATFORM_SLUG } from './brand.ts'
 import { newRecordId } from './record-id.ts'
 import {
   formatReference,
-  POINTER_REFERENCE_FORMS,
   parsePointerReference,
   parseReference,
 } from './reference.ts'
 import {
   malformedReferenceRefusal,
+  POINTER_REFERENCE_FORMS,
   referenceNotVisibleRefusal,
   referenceStoreUnreachableRefusal,
 } from './reference-refusal.ts'
