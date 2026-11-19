@@ -230,11 +230,7 @@ export async function resolvedPointerTarget(
   if (parsed.kind === 'commit') return ports.commit(parsed.sha)
   if (parsed.kind === 'pull-request') {
     const number = parsed.number
-    if (
-      number !== null &&
-      recordedPullRequest(number, database)
-    )
-      return String(number)
+    if (number !== null && recordedPullRequest(number, database)) return String(number)
     throw new ContextWriteRefusalError(
       referenceNotVisibleRefusal(
         'this project',

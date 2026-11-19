@@ -2,9 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from './brand.ts'
 import { newRecordId } from './record-id.ts'
 import { formatReference, parsePointerReference, parseReference } from './reference.ts'
-import {
-  POINTER_REFERENCE_FORMS,
-} from './reference-refusal.ts'
+import { POINTER_REFERENCE_FORMS } from './reference-refusal.ts'
 
 describe('record reference grammar', () => {
   test.each([
@@ -72,5 +70,4 @@ describe('record reference grammar', () => {
     'refuses malformed pointer form %s with the accepted forms',
     (value) => expect(() => parsePointerReference(value)).toThrow(POINTER_REFERENCE_FORMS),
   )
-
 })

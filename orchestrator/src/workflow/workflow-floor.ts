@@ -180,8 +180,7 @@ export function flagForFloor(kind: FloorKind): string {
   if (kind === 'ruling') return '--ruling <question id> or --review <review id>'
   if (kind === 'command-exit')
     return '--gate <gate execution id> or --run <run id> or --artifact probe:<id> or --artifact exec:<id>'
-  if (kind === 'recorded-artifact')
-    return `--artifact <${ARTIFACT_FORMS}>`
+  if (kind === 'recorded-artifact') return `--artifact <${ARTIFACT_FORMS}>`
   if (kind === 'tracker-transition') return '--task <KEY>'
   if (kind === 'review-owed')
     return `follow the remedy from \`${PLATFORM_SLUG} review tier <branch>\``

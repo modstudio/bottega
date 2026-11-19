@@ -68,9 +68,9 @@ test('context pointers dispatch the workflow evidence forms through the shared p
   await expect(resolvedPointerTarget('task:DEV-2473#comment:4', database, adapter)).resolves.toBe(
     'task:DEV-2473#comment:4',
   )
-  await expect(
-    resolvedPointerTarget('task:DEV-2473#comment:5', database, adapter),
-  ).rejects.toThrow('not visible in task DEV-2473; pass a comment id on that task')
+  await expect(resolvedPointerTarget('task:DEV-2473#comment:5', database, adapter)).rejects.toThrow(
+    'not visible in task DEV-2473; pass a comment id on that task',
+  )
   await expect(resolvedPointerTarget(`probe:${probeId}`, database, adapter)).resolves.toBe(
     `probe:${probeId}`,
   )
