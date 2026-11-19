@@ -32,7 +32,7 @@ test('machine doctor renders an old checkout Node notice without changing the ex
   }
   for (const line of developerNodeDoctorLines('checkout', 'v22.23.5')) presentation.log(line)
   expect(output).toEqual([
-    "developer Node Node v22.23.5 is older than Node 24, which the gate's architecture checks need",
+    "Node v22.23.5 is older than Node 24, which the gate's architecture checks need",
     '  install Node 24 or later',
   ])
   expect(exitCodes).toEqual([])

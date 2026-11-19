@@ -34,5 +34,5 @@ export function developerNodeDoctorLines(
   nodeVersion: string | null,
 ): string[] {
   const notice = developerNodeNotice({ installationKind, nodeVersion })
-  return notice ? [`developer Node ${notice.message}`, `  ${notice.fix}`] : []
+  return notice ? [notice.message, `  ${notice.fix}`] : []
 }
