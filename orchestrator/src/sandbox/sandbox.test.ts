@@ -101,7 +101,7 @@ test.each([
 ])('$name', ({ paths, resolved, expected }) => {
   expect(
     canonicalSocketDenyPaths(paths, (path) => resolved[path as keyof typeof resolved] ?? null),
-  ).toEqual(expected)
+  ).toEqual([...expected])
 })
 
 const temporaryDirectories: string[] = []
@@ -747,7 +747,7 @@ describe('readonly-lens sandbox profile', () => {
     expect(sandboxReasonPrefix(selected.sandbox)).toBe('sandbox')
   })
 
-  test('a read-only sandbox profile always denies Docker sockets', () => {
+  test('a read-only sandbox profile denies every existing Docker socket by canonical path', () => {
     const selected = selectReadonlySandbox({
       agent: 'grok',
       readsRepo: true,
