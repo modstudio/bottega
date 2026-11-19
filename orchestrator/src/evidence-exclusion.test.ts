@@ -205,7 +205,9 @@ WHERE row_id=(SELECT record_id FROM run WHERE record_id=?) ORDER BY id DESC`,
 
   test('says why a not-evidence failure verdict was not recorded', async () => {
     const id = insert('failed', 'understand')
-    db().query("UPDATE run SET failure_kind='quota' WHERE record_id=?").run(id)
+    db()
+      .query("UPDATE run SET failure_kind='quota',own_failure_kind='quota' WHERE record_id=?")
+      .run(id)
     const lines: string[] = []
     await scoreRun(
       id,

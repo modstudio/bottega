@@ -15,9 +15,7 @@ export type ChainFailureMember = {
 }
 
 function memberOwnFailureKind(member: ChainFailureMember): string | null {
-  return member.parent_run_record_id === null
-    ? (member.own_failure_kind ?? member.failure_kind)
-    : member.failure_kind
+  return member.parent_run_record_id === null ? member.own_failure_kind : member.failure_kind
 }
 
 /** A scored chain keeps the newest failure that describes agent work, if one exists. */
@@ -27,10 +25,11 @@ export function scoredChainFailureKind(members: readonly ChainFailureMember[]): 
   )
   const latest = ordered[0]
   if (!latest) return null
-  return (
-    ordered.map(memberOwnFailureKind).find((kind) => !PROVIDER_UNSERVED.has(kind as FailureKind)) ??
-    memberOwnFailureKind(latest)
+  const ownKinds = ordered.map(memberOwnFailureKind)
+  const agentWorkIndex = ownKinds.findIndex(
+    (kind) => !PROVIDER_UNSERVED.has(kind as FailureKind),
   )
+  return agentWorkIndex === -1 ? memberOwnFailureKind(latest) : (ownKinds[agentWorkIndex] ?? null)
 }
 
 export function chainFailureMembers(database: Database, rootId: string): ChainFailureMember[] {
