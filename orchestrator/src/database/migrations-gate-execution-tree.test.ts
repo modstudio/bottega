@@ -11,6 +11,7 @@ test('gate execution tree migration leaves existing rows without a tree identity
     expect(applyMigrations(database)).toEqual([
       '0235_gate_execution_tree',
       '0236_record_local_by_design',
+      '0237_run_own_failure_kind',
     ])
     expect(database.query('SELECT tree_id FROM gate_execution').get()).toEqual({ tree_id: null })
   } finally {

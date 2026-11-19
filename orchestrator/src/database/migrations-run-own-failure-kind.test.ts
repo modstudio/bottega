@@ -28,6 +28,14 @@ test('own failure kind backfill includes continued roots', () => {
       { record_id: terminalRoot, own_failure_kind: 'other' },
       { record_id: turn, own_failure_kind: 'quota' },
     ])
+
+    database.query("UPDATE run SET failure_kind='quota' WHERE record_id=?").run(continuedRoot)
+    expect(applyMigrations(database)).toEqual([])
+    expect(
+      database
+        .query('SELECT failure_kind,own_failure_kind FROM run WHERE record_id=?')
+        .get(continuedRoot),
+    ).toEqual({ failure_kind: 'quota', own_failure_kind: 'contract' })
   } finally {
     database.close()
   }
