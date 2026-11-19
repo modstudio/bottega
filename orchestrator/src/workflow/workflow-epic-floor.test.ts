@@ -1,10 +1,6 @@
 import { expect, test } from 'bun:test'
+import { descendantTaskFacts, selectEpicStartFloors } from './workflow-epic-floor.ts'
 import type { Floor } from './workflow-floor.ts'
-import {
-  descendantTaskFacts,
-  selectEpicStartFloors,
-  unfinishedDescendants,
-} from './workflow-epic-floor.ts'
 
 const floor = (kind: Floor['kind']): Floor => ({
   kind,
@@ -38,7 +34,5 @@ test('finds unfinished descendants recursively', () => {
     { key: 'DEV-2', parentKey: 'DEV-1', status: 'Done', statusCategory: 'done' },
     { key: 'DEV-3', parentKey: 'DEV-2', status: 'Active', statusCategory: 'active' },
   ]
-  expect(unfinishedDescendants(descendantTaskFacts('DEV-1', rows)).map(({ key }) => key)).toEqual([
-    'DEV-3',
-  ])
+  expect(descendantTaskFacts('DEV-1', rows).map(({ key }) => key)).toEqual(['DEV-2', 'DEV-3'])
 })

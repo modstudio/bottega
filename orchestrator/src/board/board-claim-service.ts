@@ -514,6 +514,24 @@ export function releaseSessionClaims(
   }, database)
 }
 
+export function renewQueuedClaimsOfSession(
+  session: string,
+  clock = Date.now(),
+  database = writableDb(),
+): number {
+  const now = new Date(clock).toISOString()
+  const rows = database
+    .query<{ record_id: string; duration_ms: number }, [string]>(
+      `SELECT record_id,duration_ms FROM board_claim
+       WHERE holder_session=? AND subject_kind='queued-task' AND closed_at IS NULL`,
+    )
+    .all(session)
+  const renew = database.query('UPDATE board_claim SET renewed_at=?,lapses_at=? WHERE record_id=?')
+  for (const row of rows)
+    renew.run(now, new Date(clock + row.duration_ms).toISOString(), row.record_id)
+  return rows.length
+}
+
 export function releaseTaskClaims(
   key: string,
   project: string,

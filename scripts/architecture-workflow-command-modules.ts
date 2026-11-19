@@ -12,6 +12,23 @@ const module = (file: string, allowed: string[]): WorkflowCommandModule => ({
 })
 
 export const workflowCommandModules: WorkflowCommandModule[] = [
+  module('orchestrator/src/workflow/workflow-child-queue.ts', []),
+  module('orchestrator/src/workflow/workflow-child-service.ts', [
+    'bun:sqlite',
+    '../board/board-claim-policy.ts',
+    '../board/board-operations.ts',
+    '../database/db.ts',
+    '../record/record-task-flow-contract.ts',
+    './task-flow-store.ts',
+    './task-read-port.ts',
+    './workflow-child-queue.ts',
+    './workflow-compose-claim.ts',
+    './workflow-cursor-compose.ts',
+    './workflow-cursor-live-autonomy.ts',
+    './workflow-cursor-selection.ts',
+    './workflow-cursor-trail.ts',
+    './workflows.ts',
+  ]),
   module('orchestrator/src/workflow/workflow-cursor-report.ts', [
     '../cli/args.ts',
     '../record/record-task-flow-contract.ts',
@@ -81,6 +98,7 @@ export const workflowCommandModules: WorkflowCommandModule[] = [
     'bun:sqlite',
     '../board/board-claim-policy.ts',
     '../board/board-operations.ts',
+    '../board/board-claim-service.ts',
     '../database/db.ts',
     '../project/projects.ts',
     '../run/run-task-claim-renewal.ts',

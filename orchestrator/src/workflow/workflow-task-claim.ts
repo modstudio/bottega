@@ -3,6 +3,7 @@
 
 import type { Database } from 'bun:sqlite'
 import { BOARD_CLAIM_DEFAULT_MS } from '../board/board-claim-policy.ts'
+import { renewQueuedClaimsOfSession } from '../board/board-claim-service.ts'
 import {
   type BoardClaimResult,
   boardClaimReleaseTask,
@@ -102,8 +103,10 @@ export async function followTaskCursorClaim(
 }
 
 export const renewTaskClaim: RenewTaskClaim = async (launchKey, session) => {
-  if (!launchKey || !session) return
+  if (!session) return
   const database = db()
+  renewQueuedClaimsOfSession(session, Date.now(), database)
+  if (!launchKey) return
   const project = await boardOpenTaskCursorProject(launchKey, session, database)
   if (!project) return
   await followTaskCursorClaim({

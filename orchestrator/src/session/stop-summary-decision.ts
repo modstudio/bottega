@@ -37,6 +37,7 @@ export type StopSummaryFacts = {
   displayTimezone?: string | null
   questionCounts: QuestionInboxCounts | null
   cursors: StopSummaryCursor[]
+  epicLines?: string[]
   reviewVerdictLines: string[]
   liveRuns: number
   incompleteReviews: number
@@ -132,6 +133,7 @@ export function decideStopSummary(facts: StopSummaryFacts): StopSummaryDecision 
   const lines = [
     `${formatStopTime(facts.now, facts.displayTimezone)}`,
     ...questionLines,
+    ...(facts.epicLines ?? []),
     ...facts.cursors.map(cursorLine),
     ...facts.cursors
       .map((cursor) => idleCursorLine(cursor, Date.parse(facts.now)))

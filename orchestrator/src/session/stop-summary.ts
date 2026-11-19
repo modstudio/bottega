@@ -11,6 +11,7 @@ import { UNSCORED_WHERE } from '../evidence/evidence-query.ts'
 import { LANDING_TREE_JOB, shipCursorWorksTree } from '../landing-tree/landing-tree.ts'
 import { questionInboxCountsForSession } from '../run/question-inbox-counts.ts'
 import { RUN_LIVE_STATUSES } from '../run/run-status.ts'
+import { sessionEpicWork } from '../workflow/workflow-child-service.ts'
 import {
   listWorkflowCursors,
   type WorkflowCursorListRow,
@@ -128,6 +129,8 @@ export async function sessionStopSummary(
   const session = options.session
   const now = options.now ?? new Date().toISOString()
   const cursors = await listWorkflowCursors({ session }, database)
+  const epicWork = await sessionEpicWork(session, database)
+  const epicCursorNumbers = new Set(epicWork.map(({ cursor }) => cursor))
   const questionCounts = await questionInboxCountsForSession(session, database)
   const livePlaceholders = RUN_LIVE_STATUSES.map(() => '?').join(',')
   const liveRuns =
@@ -187,17 +190,24 @@ export async function sessionStopSummary(
     now,
     displayTimezone: readCachedDisplayTimezone(options.stateEnvironment ?? process.env),
     questionCounts,
-    cursors: cursors.map((cursor) => ({
-      number: cursor.id,
-      project: cursor.project,
-      key: cursor.workflow_key || null,
-      workflow: cursor.workflow_slug,
-      step: cursor.step_slug,
-      ordinal: cursor.ordinal + 1,
-      total: cursor.total_steps,
-      updatedAt: cursor.updated_at,
-      questionNumber: cursor.question_number,
-    })),
+    epicLines: epicWork.flatMap((work) => [
+      `Epic: ${work.epic}`,
+      `Queue: ${work.queue.join(', ') || 'none'}`,
+      `Open: ${work.open.join(', ') || 'none'}`,
+    ]),
+    cursors: cursors
+      .filter((cursor) => !epicCursorNumbers.has(cursor.id))
+      .map((cursor) => ({
+        number: cursor.id,
+        project: cursor.project,
+        key: cursor.workflow_key || null,
+        workflow: cursor.workflow_slug,
+        step: cursor.step_slug,
+        ordinal: cursor.ordinal + 1,
+        total: cursor.total_steps,
+        updatedAt: cursor.updated_at,
+        questionNumber: cursor.question_number,
+      })),
     reviewVerdictLines,
     liveRuns,
     incompleteReviews: reviews.incompleteReviews,

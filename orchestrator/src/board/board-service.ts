@@ -7,6 +7,7 @@ import { SESSION_LIVE_MS } from '../../../shared/session-liveness.ts'
 import { classifyCaller } from '../caller-classification.ts'
 import { db, nowIso, writableDb, writeTransaction } from '../database/db.ts'
 import { projectAt } from '../project/projects.ts'
+import { renewQueuedClaimsOfSession } from './board-claim-service.ts'
 import { reapHostedBoardCache } from './board-hosted-cache.ts'
 import {
   architectIdentity,
@@ -113,6 +114,7 @@ export function recordPresence(
       beganAt ?? at,
       at,
     )
+  renewQueuedClaimsOfSession(identity.session, Date.parse(at))
   return true
 }
 

@@ -196,6 +196,7 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     './workflow-checkout-refusal.ts',
     './workflow-floor-refusal.ts',
   ]),
+  module('orchestrator/src/workflow/workflow-epic-floor.ts', ['./workflow-floor.ts']),
   module('orchestrator/src/workflow/workflow-artifact-evidence.ts', [
     './workflow-checkout-refusal.ts',
   ]),
@@ -237,6 +238,8 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     './workflow-floor-evidence-gather.ts',
     './workflow-floor-evidence-replay.ts',
     './workflow-obligation-floor.ts',
+    './workflow-epic-floor.ts',
+    './task-read-port.ts',
   ]),
   module('orchestrator/src/workflow/workflow-finish-live-writer.ts', ['../../../shared/brand.ts']),
   module('orchestrator/src/workflow/workflow-finish-live-writer-adapter.ts', [

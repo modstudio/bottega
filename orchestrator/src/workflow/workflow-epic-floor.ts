@@ -10,7 +10,10 @@ export type EpicTaskFact = {
   statusCategory: string | null
 }
 
-export function descendantTaskFacts(rootKey: string, tasks: readonly EpicTaskFact[]): EpicTaskFact[] {
+export function descendantTaskFacts(
+  rootKey: string,
+  tasks: readonly EpicTaskFact[],
+): EpicTaskFact[] {
   const children = new Map<string, EpicTaskFact[]>()
   for (const task of tasks) {
     if (!task.parentKey) continue
@@ -35,6 +38,3 @@ export function selectEpicStartFloors(
   const selected: FloorKind = input.hasChildren ? 'descendants-closed' : 'tracker-transition'
   return floors.filter(({ kind }) => kind === selected)
 }
-
-export const unfinishedDescendants = (tasks: readonly EpicTaskFact[]): EpicTaskFact[] =>
-  tasks.filter((task) => task.statusCategory !== 'done' && task.statusCategory !== 'dropped')

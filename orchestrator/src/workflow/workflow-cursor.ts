@@ -31,11 +31,7 @@ import {
 import { followComposeTaskClaim } from './workflow-compose-claim.ts'
 import { adoptWorkflowTask } from './workflow-cursor-adoption.ts'
 import { workflowKeyOf as keyOf, resolveCursorArguments } from './workflow-cursor-arguments.ts'
-import {
-  closeGraduatingExploreForReuse,
-  insertWorkflowCursor,
-  type WorkflowComposeInheritance,
-} from './workflow-cursor-compose.ts'
+import { closeGraduatingExploreForReuse, insertWorkflowCursor } from './workflow-cursor-compose.ts'
 import { cursorName } from './workflow-cursor-format.ts'
 import { abandonWorkflowCursor, closeOpenWorkflowQuestion } from './workflow-cursor-mutation.ts'
 import {
@@ -225,7 +221,6 @@ export async function composeWorkflowWithCursor(
   live: LiveCursorAutonomy,
   commitCount: CommitCountPort = readCommitsPastLanding,
   taskClaimPorts?: TaskCursorClaimPorts,
-  inheritance?: WorkflowComposeInheritance,
 ) {
   const shape = composeWorkflow(slug, project, mode, args, d, selection)
   if (!shape.mode || shape.needs.arguments) return { ...shape, cursor: null, graduated: undefined }
@@ -265,16 +260,7 @@ export async function composeWorkflowWithCursor(
   if (handedOff) row = handedOff.row
   else if (existing && start === 'reuse')
     row = await reuseWorkflowCursor(existing, args, context, d)
-  else
-    row = await insertWorkflowCursor(
-      composition,
-      context,
-      d,
-      live.resolution,
-      commitCount,
-      false,
-      inheritance,
-    )
+  else row = await insertWorkflowCursor(composition, context, d, live.resolution, commitCount)
   const claimWarning = handedOff
     ? handedOff.claimWarning
     : await followComposeTaskClaim(row, start === 'reuse', context, d, taskClaimPorts)
