@@ -27,6 +27,26 @@ export function selectPassingGateNumber(
   return null
 }
 
+export function passingGateNumberForProjectCommit(
+  projectId: string,
+  commit: string,
+  d: Database,
+): number | null {
+  const candidates = d
+    .query<GateCandidate, [string]>(
+      `SELECT g.record_id recordId,g.number,r.project_record_id AS projectId,g.cwd
+         FROM gate_execution g LEFT JOIN run r ON r.record_id=g.run_record_id
+        WHERE g.head_commit=? AND g.purpose='gate' AND g.finished_at IS NOT NULL AND g.exit_code=0 AND g.timed_out=0
+        ORDER BY g.finished_at DESC,g.record_id DESC`,
+    )
+    .all(commit)
+  return selectPassingGateNumber(
+    candidates,
+    projectId,
+    (gateCwd) => projectAt(gateCwd, d)?.recordId ?? null,
+  )
+}
+
 export function passingGateForCommit(
   commit: string,
   cwd = process.cwd(),
@@ -37,22 +57,10 @@ export function passingGateForCommit(
     throw new Error(`${PLATFORM_SLUG} gate passed: no registered project contains ${cwd}`)
   const normalized = commit.trim()
   if (!normalized) throw new Error(`${PLATFORM_SLUG} gate passed requires a commit`)
-  const candidates = d
-    .query<GateCandidate, [string]>(
-      `SELECT g.record_id recordId,g.number,r.project_record_id AS projectId,g.cwd
-         FROM gate_execution g LEFT JOIN run r ON r.record_id=g.run_record_id
-        WHERE g.head_commit=? AND g.purpose='gate' AND g.finished_at IS NOT NULL AND g.exit_code=0 AND g.timed_out=0
-        ORDER BY g.finished_at DESC,g.record_id DESC`,
-    )
-    .all(normalized)
   return {
     project: project.name,
     commit: normalized,
-    gateNumber: selectPassingGateNumber(
-      candidates,
-      project.recordId,
-      (gateCwd) => projectAt(gateCwd, d)?.recordId ?? null,
-    ),
+    gateNumber: passingGateNumberForProjectCommit(project.recordId, normalized, d),
   }
 }
 

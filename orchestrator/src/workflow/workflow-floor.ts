@@ -39,7 +39,7 @@ const ARTIFACT_FORMS =
 
 export const floorGuidance = {
   ruling: `call \`await_workflow_ruling\` (or \`${PLATFORM_SLUG} workflow await\`), answer it with \`rule_workflow\`, then pass \`--ruling <the returned question id>\`; where you rule the step yourself, pass \`self_ruling\` with \`self_ruling_basis\` (or \`--self-ruling <text>\` with \`--basis <text>\`) on the closing call`,
-  'command-exit': `run it with \`${PLATFORM_SLUG} workflow exec -- <command>\` and pass \`--artifact exec:<id>\``,
+  'command-exit': `run it with \`${PLATFORM_SLUG} workflow exec -- <command>\` and pass \`--artifact exec:<id>\`, pass \`--gate <gate execution id>\` for a gate floor, or pass \`--run <run id>\` for a run-backed command`,
   'recorded-artifact': `record or attach the artifact and pass \`--artifact <${ARTIFACT_FORMS}>\``,
   'tracker-transition': 'make the tracker transition and pass `--task <KEY>`',
   'descendants-closed':
@@ -131,6 +131,7 @@ export type ValidatedEvidence = {
     project: string | null
     commit: string | null
   }
+  passingGateForTree?: { number: number } | null
   run?: { id: string; terminal: boolean; exitCode: number | null }
   task?: {
     key: string
@@ -733,6 +734,7 @@ function floorUnmetMessage(
   if (floor.kind === 'command-exit' && floor.commandEvidence === 'gate')
     return gateFloorRefusal(
       evidence.tree ?? { project: 'this project', worktree: null, commit: null },
+      evidence.passingGateForTree,
     )
   const pullRequest = pullRequestUnmetMessage(floor, evidence)
   if (pullRequest) return pullRequest

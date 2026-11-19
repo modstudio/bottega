@@ -18,13 +18,23 @@ export function floorsAcceptPullRequestLink(
   return floors.some((floor) => floor.commandEvidence === 'pull-request')
 }
 
-export function gateFloorRefusal(tree: {
-  project: string
-  worktree?: string | null
-  commit: string | null
-}): string {
-  if (tree.commit)
-    return `floor command-exit is unmet: no passing gate record for ${tree.project} commit ${tree.commit}; run \`${PLATFORM_SLUG} gate run\` in the tree at commit ${tree.commit}, then pass \`--gate <gate execution id>\``
+export function gateFloorRefusal(
+  tree: {
+    project: string
+    worktree?: string | null
+    commit: string | null
+  },
+  passingGateForTree?: { number: number } | null,
+): string {
+  if (tree.commit) {
+    const condition = passingGateForTree
+      ? `floor command-exit is unmet: \`--gate\` was not passed; passing gate ${passingGateForTree.number} is recorded for ${tree.project} commit ${tree.commit}`
+      : `floor command-exit is unmet: no passing gate is recorded for ${tree.project} commit ${tree.commit}`
+    const remedy = passingGateForTree
+      ? `pass \`--gate ${passingGateForTree.number}\``
+      : `run \`${PLATFORM_SLUG} gate run\` in the tree at commit ${tree.commit}, then pass \`--gate <gate execution id>\``
+    return renderRefusal(refusal(condition, { kind: 'edit', text: remedy }))
+  }
   const condition = tree.worktree
     ? `the recorded cursor worktree ${tree.worktree} was removed or could not be resolved to a commit`
     : 'the cursor has no recorded worktree to resolve to a commit'

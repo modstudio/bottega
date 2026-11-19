@@ -27,6 +27,25 @@ test(
   stepQuestionRow(database, gather, CURSOR_RECORD_ID, identity),
 )
 
+test('gathers the newest passing gate for the tree only as refusal evidence', async () => {
+  const d = database()
+  expect((await gather(d, {})).passingGateForTree).toBeNull()
+
+  const run = insertRun(d, { project: 'fixture', launchKey: 'DEV-977' })
+  const gateRecordId = newRecordId()
+  d.query(
+    `INSERT INTO gate_execution
+      (record_id,run_record_id,requested_at,started_at,finished_at,exit_code,timed_out,head_commit)
+     VALUES (?1,?2,'2026-09-01','2026-09-01','2026-09-01',0,0,?3)`,
+  ).run(gateRecordId, run, 'abc')
+  const gate = d
+    .query<{ number: number }, [string]>('SELECT number FROM gate_execution WHERE record_id=?')
+    .get(gateRecordId)!
+
+  expect((await gather(d, {})).passingGateForTree).toEqual({ number: gate.number })
+  expect((await gather(d, {})).gate).toBeUndefined()
+})
+
 const operatorRulingFloor = {
   kind: 'ruling',
   deferrable: false,

@@ -1,12 +1,18 @@
 import { expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { migratedTestDatabase } from '../database/test-database.fixture.ts'
 import {
+  closingFlagsForFloor,
   decideFloorSatisfaction,
   type Floor,
+  type FloorDecision,
   type FloorSatisfactionInput,
+  floorGuidance,
+  floorKinds,
   type OpenObligation,
   type ValidatedEvidence,
 } from './workflow-floor.ts'
+import { applyFloorDecision } from './workflow-floor-apply.ts'
 import { floorFromObligationRow } from './workflow-obligation-floor.ts'
 import { selfRulingRefusal } from './workflow-self-ruling.ts'
 
@@ -54,6 +60,94 @@ function decide(
 function namedFlags(message: string): string[] {
   return [...new Set(message.match(/--(?:artifact|gate|review|ruling|run|task)\b/g) ?? [])]
 }
+
+for (const kind of floorKinds) {
+  test(`an unmet ${kind} floor refusal names a closing remedy`, async () => {
+    const floor = { ...base, kind }
+    let decision: FloorDecision
+    if (kind === 'review-owed') {
+      const database = migratedTestDatabase()
+      try {
+        decision = await applyFloorDecision(
+          {
+            id: 1,
+            record_id: ID,
+            project: 'fixture',
+            workflow_slug: 'flow',
+            mode_slug: 'default',
+            workflow_key: 'DEV-2509',
+            task_record_id: null,
+            args: '{}',
+            session_id: 'session',
+            created_at: '2026-11-19T00:00:00.000Z',
+            ordinal: 0,
+            step_slug: 'review',
+            state: 'running',
+            closed: '[]',
+            enforcement: 'floors',
+          },
+          [floor],
+          {},
+          {
+            reviewOwed: () => ({
+              action: 'refuse',
+              message: `floor review-owed is unmet; ${floorGuidance['review-owed']}`,
+            }),
+          },
+          false,
+          database,
+        )
+      } finally {
+        database.close()
+      }
+    } else {
+      decision = decide([floor], { tree: { project: PLATFORM_SLUG, commit: 'abc' } })
+    }
+
+    expect(decision.action).toBe('refuse')
+    if (decision.action !== 'refuse') return
+    expect(decision.message).toContain(kind)
+    if (kind === 'review-owed') {
+      expect(decision.message).toContain(floorGuidance[kind])
+      return
+    }
+    const closingFlags = namedFlags(closingFlagsForFloor(floor))
+    expect(closingFlags.length).toBeGreaterThan(0)
+    expect(closingFlags.some((flag) => decision.message.includes(flag))).toBe(true)
+  })
+}
+
+test('a gate refusal names an existing passing gate without telling the caller to run one', () => {
+  const floor = { ...base, kind: 'command-exit' as const, commandEvidence: 'gate' as const }
+  const decision = decide([floor], {
+    tree: { project: 'fixture', commit: 'abc' },
+    passingGateForTree: { number: 17 },
+  })
+  expect(decision.action).toBe('refuse')
+  if (decision.action !== 'refuse') return
+  expect(decision.message).toContain('--gate 17')
+  expect(decision.message).toContain('passing gate 17 is recorded for fixture commit abc')
+  expect(decision.message).not.toContain('gate run')
+})
+
+test('a gate refusal tells the caller to run a gate only when none passed', () => {
+  const floor = { ...base, kind: 'command-exit' as const, commandEvidence: 'gate' as const }
+  const decision = decide([floor], {
+    tree: { project: 'fixture', commit: 'abc' },
+    passingGateForTree: null,
+  })
+  expect(decision.action).toBe('refuse')
+  if (decision.action !== 'refuse') return
+  expect(decision.message).toContain('no passing gate is recorded for fixture commit abc')
+  expect(decision.message).toContain('gate run')
+  expect(decision.message).toContain('--gate <gate execution id>')
+})
+
+test('command-exit guidance names exec, gate, and run evidence', () => {
+  expect(floorGuidance['command-exit']).toContain('--artifact exec:<id>')
+  expect(floorGuidance['command-exit']).toContain('--gate <gate execution id>')
+  expect(floorGuidance['command-exit']).toContain('--run <run id>')
+})
 
 function evidenceFor(flag: string, floor: Floor): ValidatedEvidence {
   if (flag === '--ruling')
