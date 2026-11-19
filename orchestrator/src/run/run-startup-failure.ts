@@ -53,12 +53,13 @@ export function recordRunStartupFailure(
     const database = db()
     const changed = database
       .query(
-        `UPDATE run SET status='failed', failure_kind=?, error=?,
+        `UPDATE run SET status='failed', failure_kind=?, own_failure_kind=?, error=?,
          mcp_error=COALESCE(?,mcp_error), latency_ms=?
          WHERE record_id=? AND status='running'`,
       )
       // Keep this status predicate paired with exec.ts's self-contained fallback.
       .run(
+        options?.failureKind ?? 'harness',
         options?.failureKind ?? 'harness',
         message,
         options?.mcpError ?? null,
@@ -108,9 +109,9 @@ export function recordNeverStartedRunFailure(input: {
       .query(
         `INSERT INTO run
          (record_id,number,started_at,agent,job,repo,project_record_id,task_record_id,probe,cwd,prompt_sha,spec_sha,
-          prompt_bytes,prompt_head,status,failure_kind,error,latency_ms,session_id,docs_injected,mcp,
+          prompt_bytes,prompt_head,status,failure_kind,own_failure_kind,error,latency_ms,session_id,docs_injected,mcp,
           started_by_user_id,agent_explicit,executor,cursor_record_id,step_slug)
-         VALUES (?,?,?,'(pending)',?,?,?,?,?,?,?,?,?,?,'failed','harness',?,0,?,0,?,?,?,?,?,?)`,
+         VALUES (?,?,?,'(pending)',?,?,?,?,?,?,?,?,?,?,'failed','harness','harness',?,0,?,0,?,?,?,?,?,?)`,
       )
       .run(
         input.recordId,

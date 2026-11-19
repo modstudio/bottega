@@ -41,6 +41,11 @@ import {
   type ReviewSeverity,
 } from './review/review-vocabulary.ts'
 import { adoptRunMutation, auditRunMutation, runMutationActor } from './run/run-authority.ts'
+import {
+  chainFailureMembers,
+  rollUpRootAndEnqueue,
+  scoredChainFailureKind,
+} from './run/run-liveness.ts'
 import { assertAgentWorkRun } from './run/synthetic-lifecycle-job.ts'
 import { pairPartners, parseRunIds, recordDuels, recordLosses, recordTies } from './score/duel.ts'
 import { type Delivery, type Fidelity, judgeability, type Quality, weigh } from './score/score.ts'
@@ -101,6 +106,7 @@ function requireJudgeableRun(
 ): JudgeableRun {
   if (!row) throw new Error(`no run ${requestedId}`)
   const id = row.record_id
+  row.failure_kind = scoredChainFailureKind(chainFailureMembers(db(), id))
   if (['running', 'asking'].includes(row.status)) {
     throw new Error(`run ${id} is ${row.status}, not terminal`)
   }
@@ -705,6 +711,7 @@ export async function scoreRun(
   } | null
   if (!row) throw new Error(`no run ${requestedId}`)
   const id = row.record_id
+  row.failure_kind = scoredChainFailureKind(chainFailureMembers(db(), id))
   assertVoidTargetsRoot(requestedId, id, flags.has('void'))
   if (recordRequestedUnvoid(id, row.job, row.evidence_excluded, flags, options, presentation))
     return
@@ -839,6 +846,9 @@ export async function scoreRun(
     )
     reviveUnjudgedOwnerEvidence(id)
     auditRunMutation(scoreAuthority, wasScored ? 'rescore' : 'score', options.auditReason)
+    if (db().query('SELECT 1 FROM run WHERE parent_run_record_id=? LIMIT 1').get(id)) {
+      rollUpRootAndEnqueue(db(), id, null, machineId(), scoredAt, false)
+    }
     enqueueScoreRecord(db(), id, machineId())
   })
   const w = weigh(scoredDelivery, quality ?? null, scoredFidelity ?? null)

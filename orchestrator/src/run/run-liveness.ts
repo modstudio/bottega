@@ -7,6 +7,7 @@ import { SESSION_LIVE_MS } from '../../../shared/session-liveness.ts'
 import type { Database } from 'bun:sqlite'
 import { pidAlive } from '../../../shared/process-identity.ts'
 import { storeWritesRefused, writeTransaction } from '../database/db.ts'
+import { type FailureKind, PROVIDER_UNSERVED } from '../failure/failure.ts'
 import { inboxRunQuestions } from '../question-store/question-store-read.ts'
 import { machineId } from '../record/machine-identity.ts'
 import {
@@ -63,6 +64,45 @@ export function chainTerminationAt(database: Database, memberId: string): string
   return chainTerminationAtForRoot(database, rootId)
 }
 
+export type ChainFailureMember = {
+  record_id: string
+  parent_run_record_id: string | null
+  failure_kind: string | null
+  own_failure_kind: string | null
+  turn: number
+  number: number
+}
+
+function memberOwnFailureKind(member: ChainFailureMember): string | null {
+  return member.parent_run_record_id === null
+    ? (member.own_failure_kind ?? member.failure_kind)
+    : member.failure_kind
+}
+
+/** A scored chain keeps the newest failure that describes agent work, if one exists. */
+export function scoredChainFailureKind(members: readonly ChainFailureMember[]): string | null {
+  const ordered = [...members].sort(
+    (left, right) => right.turn - left.turn || right.number - left.number,
+  )
+  const latest = ordered[0]
+  if (!latest) return null
+  return (
+    ordered
+      .map(memberOwnFailureKind)
+      .find((kind) => !PROVIDER_UNSERVED.has(kind as FailureKind)) ?? memberOwnFailureKind(latest)
+  )
+}
+
+export function chainFailureMembers(database: Database, rootId: string): ChainFailureMember[] {
+  return database
+    .query(
+      `SELECT record_id,parent_run_record_id,failure_kind,own_failure_kind,turn,number
+         FROM run
+        WHERE record_id=? OR parent_run_record_id=?`,
+    )
+    .all(rootId, rootId) as ChainFailureMember[]
+}
+
 /**
  * A root inherits the terminal status of the last turn of its chain.
  *
@@ -98,6 +138,14 @@ function resolveRootFromLastTurnPreserving(
   hasOpenQuestions: boolean,
 ): number {
   if (hasOpenQuestions) return 0
+  const hasDelivery = Boolean(
+    database
+      .query('SELECT 1 FROM score WHERE run_record_id=? AND delivery IS NOT NULL')
+      .get(rootId),
+  )
+  const scoredFailureKind = hasDelivery
+    ? scoredChainFailureKind(chainFailureMembers(database, rootId))
+    : null
   return database
     .query(
       `UPDATE run AS root
@@ -117,6 +165,7 @@ function resolveRootFromLastTurnPreserving(
           SELECT CASE
                    WHEN last.record_id = ? OR last.status = 'stale' OR last.failure_kind = 'abandoned'
                      THEN root.failure_kind
+                   WHEN ? THEN ?
                    ELSE last.failure_kind
                  END
             FROM run last
@@ -164,7 +213,7 @@ function resolveRootFromLastTurnPreserving(
            LIMIT 1
         ) IN ('ok', 'failed', 'stale')`,
     )
-    .run(preserveFailureKindForTurnId, rootId).changes
+    .run(preserveFailureKindForTurnId, hasDelivery ? 1 : 0, scoredFailureKind, rootId).changes
 }
 
 export function rollUpRootAndEnqueue(
@@ -379,7 +428,8 @@ function terminalizeHarnessFailures(
 ): void {
   if (!ids.length) return
   const update = database.query(
-    `UPDATE run SET status='failed', failure_kind='harness', error=?, host_wait_since=NULL
+    `UPDATE run SET status='failed', failure_kind='harness', own_failure_kind='harness',
+                    error=?, host_wait_since=NULL
       WHERE record_id=? AND status='running'`,
   )
   for (const id of ids) {
@@ -484,7 +534,8 @@ export function reapStale(
   }
   if (abandonedBootstraps.length) {
     const update = d.query(
-      `UPDATE run SET status='failed', failure_kind='harness', host_wait_since=NULL,
+      `UPDATE run SET status='failed', failure_kind='harness', own_failure_kind='harness',
+              host_wait_since=NULL,
               error=? WHERE record_id=? AND status='running'`,
     )
     for (const id of abandonedBootstraps) {
@@ -604,7 +655,8 @@ function reapDeadRun(
   const reason = deadRunReason(row) + surviving
   const claimed = writeTransaction(() => {
     const update = d.query(
-      `UPDATE run SET status='stale', failure_kind='interrupted', error=?, host_wait_since=NULL
+      `UPDATE run SET status='stale', failure_kind='interrupted', own_failure_kind='interrupted',
+                      error=?, host_wait_since=NULL
         WHERE record_id=? AND status='running'`,
     )
     if (update.run(baseError, id).changes !== 1) return false
