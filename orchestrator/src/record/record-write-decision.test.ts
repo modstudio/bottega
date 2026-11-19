@@ -6,7 +6,7 @@ import { decideRecordWrite } from './record-write-decision.ts'
 const joinedLocalFacts = {
   machineJoined: true,
   localByDesign: false,
-  storePath: '/tmp/store.db',
+  discardStore: false,
   storeOverride: false,
 }
 
@@ -25,14 +25,13 @@ test('a joined machine refuses an unbound unconfigured store with both remedies'
   expect(decision.refusal).toContain(`cleared by: unset ${ORCHESTRATOR_DATABASE_ENV}`)
   expect(decision.refusal).toContain(`cleared by: ${PLATFORM_SLUG} record use <address>`)
 })
-
 test('marked and never-joined unbound stores remain local-authoritative', () => {
   const input = {
     recordApiConfigured: false,
     installBound: false,
     boundOrigin: null,
     resolvedOrigin: 'https://api.example.test',
-    storePath: '/tmp/store.db',
+    discardStore: false,
     storeOverride: false,
   }
   expect(decideRecordWrite({ ...input, machineJoined: true, localByDesign: true })).toEqual({
@@ -62,7 +61,7 @@ test('shared-state writes are hosted, local-authoritative, or refused from insta
       resolvedOrigin,
       machineJoined: true,
       localByDesign: true,
-      storePath: '/tmp/store.db',
+      discardStore: false,
       storeOverride: false,
     }),
   ).toEqual({ verdict: 'hosted' })
@@ -74,7 +73,7 @@ test('shared-state writes are hosted, local-authoritative, or refused from insta
       resolvedOrigin,
       machineJoined: false,
       localByDesign: false,
-      storePath: '/tmp/store.db',
+      discardStore: false,
       storeOverride: false,
     }),
   ).toEqual({ verdict: 'local-authoritative' })
@@ -85,7 +84,7 @@ test('shared-state writes are hosted, local-authoritative, or refused from insta
     resolvedOrigin,
     machineJoined: false,
     localByDesign: false,
-    storePath: '/tmp/store.db',
+    discardStore: false,
     storeOverride: false,
   })
   expect(unknownOrigin).toMatchObject({
@@ -143,7 +142,7 @@ test('an unreadable session stamp refuses an unbound unconfigured store', () => 
     resolvedOrigin: 'https://api.example.test',
     machineJoined: 'unreadable',
     localByDesign: false,
-    storePath: '/tmp/store.db',
+    discardStore: false,
     storeOverride: false,
   })
   expect(decision).toMatchObject({ verdict: 'refused', boundOrigin: null })
@@ -161,7 +160,7 @@ test('an unreadable session stamp does not override a local-by-design store', ()
       resolvedOrigin: 'https://api.example.test',
       machineJoined: 'unreadable',
       localByDesign: true,
-      storePath: '/tmp/store.db',
+      discardStore: false,
       storeOverride: false,
     }),
   ).toEqual({ verdict: 'local-authoritative' })
@@ -176,7 +175,7 @@ test('an unreadable session stamp does not override the discard store', () => {
       resolvedOrigin: 'https://api.example.test',
       machineJoined: 'unreadable',
       localByDesign: false,
-      storePath: '/dev/null',
+      discardStore: true,
       storeOverride: false,
     }),
   ).toEqual({ verdict: 'local-authoritative' })
@@ -190,24 +189,10 @@ test('an unreadable session stamp includes the store-override remedy when set', 
     resolvedOrigin: 'https://api.example.test',
     machineJoined: 'unreadable',
     localByDesign: false,
-    storePath: '/tmp/store.db',
+    discardStore: false,
     storeOverride: true,
   })
   if (decision.verdict !== 'refused') throw new Error('expected a refusal')
   expect(decision.refusal).toContain(`cleared by: unset ${ORCHESTRATOR_DATABASE_ENV}`)
   expect(decision.refusal).toContain(`cleared by: ${PLATFORM_SLUG} record use <address>`)
-})
-
-test('discard-store classification is platform-specific', () => {
-  const input = {
-    recordApiConfigured: false,
-    installBound: false,
-    boundOrigin: null,
-    resolvedOrigin: 'https://api.example.test',
-    ...joinedLocalFacts,
-  }
-  expect(decideRecordWrite({ ...input, storePath: '/dev/null' })).toEqual({
-    verdict: 'local-authoritative',
-  })
-  expect(decideRecordWrite({ ...input, storePath: 'nul' })).toMatchObject({ verdict: 'refused' })
 })

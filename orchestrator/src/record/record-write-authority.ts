@@ -5,7 +5,7 @@ import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { recordApiConfigured, resolvedRecordOrigin } from '../../../shared/record-api-url.ts'
 import { readRecordSessionStamp, UNREADABLE_STAMP } from '../../../shared/record-session.ts'
-import { ORCHESTRATOR_DATABASE_ENV } from '../../../shared/state-directory.ts'
+import { isDiscardStorePath, ORCHESTRATOR_DATABASE_ENV } from '../../../shared/state-directory.ts'
 import { db } from '../database/db.ts'
 import { readRecordInstallBinding } from './install-binding.ts'
 import { rememberHostedRecord } from './install-binding-write.ts'
@@ -27,7 +27,7 @@ export function currentRecordWriteDecision(
     resolvedOrigin,
     machineJoined: stamp === UNREADABLE_STAMP ? 'unreadable' : stamp !== null,
     localByDesign: readRecordLocalByDesign(database),
-    storePath: database.filename,
+    discardStore: isDiscardStorePath(database.filename),
     storeOverride: environment[ORCHESTRATOR_DATABASE_ENV] !== undefined,
   })
 }

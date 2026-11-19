@@ -3,7 +3,7 @@
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { refusal, renderRefusal } from '../../../shared/refusal.ts'
-import { isDiscardStorePath, ORCHESTRATOR_DATABASE_ENV } from '../../../shared/state-directory.ts'
+import { ORCHESTRATOR_DATABASE_ENV } from '../../../shared/state-directory.ts'
 
 export type RecordWriteDecision =
   | { verdict: 'hosted' | 'local-authoritative' }
@@ -21,7 +21,7 @@ export function decideRecordWrite(input: {
   resolvedOrigin: string
   machineJoined: boolean | 'unreadable'
   localByDesign: boolean
-  storePath: string
+  discardStore: boolean
   storeOverride: boolean
 }): RecordWriteDecision {
   const unboundStoreRemedies = () => [
@@ -33,7 +33,7 @@ export function decideRecordWrite(input: {
   // An explicitly configured address overrides the pin: record use is how an install switches records.
   if (input.recordApiConfigured) return { verdict: 'hosted' }
   if (!input.installBound) {
-    if (input.localByDesign || isDiscardStorePath(input.storePath)) {
+    if (input.localByDesign || input.discardStore) {
       return { verdict: 'local-authoritative' }
     }
     if (input.machineJoined === 'unreadable') {
