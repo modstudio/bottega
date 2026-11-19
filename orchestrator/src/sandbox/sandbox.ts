@@ -332,10 +332,7 @@ export function readonlyLensProfile(input: {
         allowLocalBinding: READONLY_LENS_ALLOW_LOCAL_BINDING,
       },
       filesystem: {
-        denyRead: [
-          ...protectedDenies,
-          ...(input.socketDenyPaths ?? readonlyLensSocketDenyPaths()),
-        ],
+        denyRead: [...protectedDenies, ...(input.socketDenyPaths ?? readonlyLensSocketDenyPaths())],
         allowWithinDeny,
         allowWrite,
         denyWrite: input.denySharedTemp === false ? [] : [...READONLY_LENS_DENY_WRITE_PATHS],

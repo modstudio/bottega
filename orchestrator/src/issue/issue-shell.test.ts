@@ -6,10 +6,7 @@ import { CONFIG_HOME_ENV } from '../../../shared/config-directory.ts'
 import { fileBackedSecretPaths } from '../../../shared/file-backed-secret-paths.ts'
 import { STATE_HOME_ENV } from '../../../shared/state-directory.ts'
 import { GATE_COMMAND_TIMEOUT_MS } from '../gate/gate-decision.ts'
-import {
-  expandHome,
-  READONLY_LENS_DENY_PATHS,
-} from '../sandbox/sandbox.ts'
+import { expandHome, READONLY_LENS_DENY_PATHS } from '../sandbox/sandbox.ts'
 import {
   filedIssueCommandPlan,
   filedIssueCommandResult,
