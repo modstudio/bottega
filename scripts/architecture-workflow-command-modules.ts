@@ -15,6 +15,7 @@ export const workflowCommandModules: WorkflowCommandModule[] = [
   module('orchestrator/src/workflow/workflow-task-tree.ts', []),
   module('orchestrator/src/workflow/workflow-child-queue.ts', [
     '../../../shared/brand.ts',
+    './workflow-cursor-format.ts',
     './workflow-task-tree.ts',
   ]),
   module('orchestrator/src/workflow/workflow-child-facts.ts', [

@@ -48,6 +48,7 @@ export async function gatherChildTaskFacts(
     )
     return {
       key: task.key,
+      project: task.project,
       parentKey: task.parent_key,
       number: Number(/(\d+)$/.exec(task.key)?.[1] ?? Number.MAX_SAFE_INTEGER),
       statusCategory: task.status_category,

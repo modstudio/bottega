@@ -2,10 +2,12 @@
 /** Pure queue/Open classification and child selection. */
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { workflowCursorReference } from './workflow-cursor-format.ts'
 import { descendantTaskKeys } from './workflow-task-tree.ts'
 
 export type ChildTaskFact = {
   key: string
+  project: string
   parentKey: string | null
   number: number
   statusCategory: string | null
@@ -75,7 +77,7 @@ export function childEligibility(
   )
     return {
       action: 'refuse',
-      message: `${requested} already has a plan-task cursor ${task.cursorNumber} (${task.cursorState}); finish it, or abandon it with ${PLATFORM_SLUG} workflow abandon --cursor ${task.cursorNumber}, before queueing it again`,
+      message: `${requested} already has a plan-task cursor ${task.cursorNumber} (${task.cursorState}); finish it, or abandon it with ${PLATFORM_SLUG} workflow abandon${workflowCursorReference(task.cursorNumber, task.project).cli}, before queueing it again`,
     }
   return { action: 'refuse', message: `${requested} is not queueable under this epic` }
 }
