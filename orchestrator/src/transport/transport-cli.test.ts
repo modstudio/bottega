@@ -8,7 +8,7 @@ import { runTempDir } from '../run-owned-paths.ts'
 import { parseCodexQuotaReadings } from './codex-quota.ts'
 import { CODEX_ROLLOUT_READ_CAP_BYTES, codexRolloutTextsSince } from './codex-rollout-files.ts'
 import { EMPTY_QUOTA_READINGS } from './quota-readings.ts'
-import { type TransportAgent, transportFor } from './transport.ts'
+import { srtScope, type TransportAgent, transportFor } from './transport.ts'
 import {
   CLI_OUTPUT_CAPTURE_BYTES,
   cliChildEnvironment,
@@ -37,6 +37,14 @@ test('the composed CLI child environment scopes temp to every read-only launch',
   for (const name of ['TMPDIR', 'TMP', 'TEMP', 'CLAUDE_CODE_TMPDIR']) {
     expect(writer).not.toHaveProperty(name)
   }
+  const profile = {} as never
+  const recipeEnvironment = codexPrivateTempEnvironment(false, privateTemp)
+  expect(srtScope(profile, runtimeDir, false, recipeEnvironment)?.temporaryDirectory).toBe(
+    privateTemp,
+  )
+  expect(srtScope(profile, runtimeDir, true, recipeEnvironment)).not.toHaveProperty(
+    'temporaryDirectory',
+  )
 })
 
 async function resultLineUsage(billing: TransportAgent['billing']) {

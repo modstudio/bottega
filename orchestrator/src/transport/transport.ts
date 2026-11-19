@@ -268,6 +268,20 @@ export type TransportStartOpts = {
   onWarning?: (message: string) => void
 }
 
+export function srtScope(
+  profile: SandboxRuntimeConfig | null,
+  runtimeDir: string,
+  writesJob: boolean,
+  recipeEnvironment: Record<string, string>,
+): TransportStartOpts['srt'] {
+  if (!profile) return undefined
+  return {
+    profile,
+    runtimeDir,
+    ...(writesJob ? {} : { temporaryDirectory: recipeEnvironment.CLAUDE_CODE_TMPDIR }),
+  }
+}
+
 export type TransportHandle = {
   pid: number | null
   /** Available once session/new or session/load has returned. */

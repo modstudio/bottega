@@ -49,6 +49,7 @@ import { askExposureEvent } from '../transport/codex-ask-exposure.ts'
 import { EMPTY_QUOTA_READINGS, type QuotaReadings } from '../transport/quota-readings.ts'
 import {
   EMPTY_VENDOR_USAGE,
+  srtScope,
   type TransportHandle,
   type TransportName,
   type TransportResult,
@@ -742,13 +743,7 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
       writableRoots,
       gitConfigEnvironment,
       recipeEnvironment,
-      srt: sandboxSelection.profile
-        ? {
-            profile: sandboxSelection.profile,
-            runtimeDir,
-            temporaryDirectory: writesJob ? undefined : recipeEnvironment.CLAUDE_CODE_TMPDIR,
-          }
-        : undefined,
+      srt: srtScope(sandboxSelection.profile, runtimeDir, writesJob, recipeEnvironment),
       resume: resumeFacts(opts.resume?.kind ?? null, claim.id, opts.resume?.parent ?? null)
         .carriesVendorSession,
       env: liveChildEnv(
