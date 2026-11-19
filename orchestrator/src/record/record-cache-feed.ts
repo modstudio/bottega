@@ -239,7 +239,7 @@ const workflowTable = (table: string): table is RecordWorkflowTable =>
 const portTable = (table: string): table is RecordPortTable =>
   (RECORD_PORT_TABLES as readonly string[]).includes(table)
 
-function orphanFamily(local: Database, change: Change): FallbackFamily | null {
+function orphanFamily(local: Database, change: Change): RecordCacheFallbackFamily | null {
   if (change.op === 'delete' || !change.row || typeof change.row !== 'object') return null
   const row = change.row as Record<string, unknown>
   const direct = directOrphanFamily(local, change.table, row)
@@ -260,7 +260,7 @@ function directOrphanFamily(
   local: Database,
   table: string,
   row: Record<string, unknown>,
-): FallbackFamily | null {
+): RecordCacheFallbackFamily | null {
   if (table === 'subject' && subjectOrphan(local, row)) return 'subject'
   if (table === 'doc' && docOrphan(local, row)) return 'doc'
   return null
