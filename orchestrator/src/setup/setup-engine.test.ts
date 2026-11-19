@@ -17,7 +17,7 @@ import {
   type SetupNotice,
 } from './setup-engine.ts'
 import type { SetupFacts } from './setup-facts.ts'
-import { legacyMcpServerName, type McpServer } from './setup-mcp.ts'
+import { HARNESS_MCP_CATALOGUE, legacyMcpServerName, type McpServer } from './setup-mcp.ts'
 import {
   plannedKeystoreAction,
   planSetupActions,
@@ -69,6 +69,7 @@ function proposeSetup(
 
 const machine = {
   machineLevel: 'full',
+  os: { platform: 'darwin', arch: 'arm64', wsl: false },
   recordApiUrl: 'https://api.example.test',
   recordApiConfigured: true,
   git: { path: '/bin/git', version: '1' },
@@ -928,17 +929,90 @@ const agent = (name: string, enabled = true, harness = name, probePassed = true)
   probePassed,
 })
 
-test('notices when an enabled built-in agent harness is absent', () => {
-  const plan = proposeSetup(machineWithHarness('codex', null, 'unknown'), [], [], [agent('codex')])
-  expect(plan.questions).toEqual([])
-  expect(plan.notices).toEqual([
-    {
-      message: 'codex agent is enabled but the codex harness is not installed',
-      fix: `install codex, or ${PLATFORM_SLUG} agent set codex --enabled false --reason "codex is not installed on this machine"`,
-      blocking: true,
-    },
-  ])
-})
+const installCommands = {
+  codex: {
+    darwin: 'brew install --cask codex',
+    linux: 'curl -fsSL https://chatgpt.com/codex/install.sh | CODEX_NON_INTERACTIVE=1 sh',
+  },
+  grok: {
+    darwin: 'curl -fsSL https://x.ai/cli/install.sh | bash',
+    linux: 'curl -fsSL https://x.ai/cli/install.sh | bash',
+  },
+  goose: {
+    darwin: 'brew install block-goose-cli',
+    linux:
+      'curl -fsSL https://github.com/aaif-goose/goose/releases/download/stable/download_cli.sh | CONFIGURE=false bash',
+  },
+} as const
+
+for (const harness of ['codex', 'grok', 'goose'] as const) {
+  for (const platform of ['darwin', 'linux', 'win32'] as const) {
+    const localAgent =
+      harness === 'goose' ? agent('goose-agent', true, harness) : agent(harness, true, harness)
+    test(`${harness} install decision on ${platform}`, () => {
+      const facts = {
+        ...machineWithHarness(harness, null, 'unknown'),
+        os: { platform, arch: 'x64', wsl: false },
+      } as SetupFacts
+      const plan = proposeSetup(facts, [], [], [localAgent])
+      const question = plan.questions.find(({ id }) => id === `harness:${harness}:install`)
+      if (platform === 'win32') {
+        expect(question).toBeUndefined()
+        expect(plan.notices).toContainEqual(
+          expect.objectContaining({
+            fix: expect.stringContaining(HARNESS_MCP_CATALOGUE[harness].documentation),
+          }),
+        )
+      } else {
+        const command = installCommands[harness][platform]
+        expect(question).toMatchObject({
+          question: `Install ${harness}? Runs: \`${command}\``,
+          recommendation: 'install',
+          options: [
+            expect.objectContaining({ id: 'install' }),
+            expect.objectContaining({ id: 'skip' }),
+          ],
+        })
+        expect(planSetupActions(plan, recommendedAnswers(plan))).toContainEqual({
+          kind: 'install-harness',
+          harness,
+          route: HARNESS_MCP_CATALOGUE[harness].install[platform],
+        })
+        expect(
+          planSetupActions(plan, {
+            ...recommendedAnswers(plan),
+            [`harness:${harness}:install`]: 'skip',
+          }),
+        ).toContainEqual({
+          kind: 'skip-harness-install',
+          harness,
+          route: HARNESS_MCP_CATALOGUE[harness].install[platform],
+        })
+      }
+    })
+
+    test(`${harness} present on ${platform} has no install decision`, () => {
+      const facts = {
+        ...machineWithHarness(harness, `/bin/${harness}`, 'signed-in'),
+        os: { platform, arch: 'x64', wsl: false },
+      } as SetupFacts
+      const plan = proposeSetup(facts, [], [], [localAgent])
+      expect(plan.questions.some(({ id }) => id === `harness:${harness}:install`)).toBe(false)
+      expect(plan.notices).toEqual([])
+    })
+
+    test(`${harness} disabled on ${platform} has no install decision`, () => {
+      const facts = {
+        ...machineWithHarness(harness, null, 'unknown'),
+        os: { platform, arch: 'x64', wsl: false },
+      } as SetupFacts
+      const disabled = { ...localAgent, enabled: false }
+      const plan = proposeSetup(facts, [], [], [disabled])
+      expect(plan.questions.some(({ id }) => id === `harness:${harness}:install`)).toBe(false)
+      expect(plan.notices).toEqual([])
+    })
+  }
+}
 
 test('notices when an enabled built-in agent harness is not signed in', () => {
   const plan = proposeSetup(
@@ -1043,13 +1117,5 @@ test('notices an installed unregistered non-built-in harness without guessing a 
       fix: `${PLATFORM_SLUG} agent add <name> --harness goose --backend <backend> --model <model>`,
       blocking: false,
     },
-  ])
-})
-
-test('treats absent harness facts as absent built-in CLIs', () => {
-  const plan = proposeSetup(machine, [], [], [agent('codex'), agent('grok')])
-  expect(plan.notices.map((notice) => notice.message)).toEqual([
-    'codex agent is enabled but the codex harness is not installed',
-    'grok agent is enabled but the grok harness is not installed',
   ])
 })

@@ -150,6 +150,7 @@ const plan = (questions: SetupQuestion[] = [], proposals: SetupProposal[] = []):
     facts: { machine: {}, repositories: [] },
     proposals,
     registrations: [],
+    harnessInstalls: [],
     questions,
     notices: [],
     folderSelection: {

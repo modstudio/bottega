@@ -8,9 +8,14 @@ import { developerNodeNotice } from './developer-node.ts'
 import type { RepositoryFacts } from './repository-facts-types.ts'
 import type { SetupFacts } from './setup-facts.ts'
 import type { LegacyPathSymlink } from './setup-legacy-path.ts'
-import type { LegacyMcpServerName } from './setup-mcp.ts'
 import {
+  HARNESS_MCP_CATALOGUE,
+  type HarnessInstallRoute,
+  type HarnessName,
+  harnessDocumentation,
+  harnessInstallRoute,
   harnessMcpServers,
+  type LegacyMcpServerName,
   legacyMcpServerName,
   type McpReadback,
   type McpServer,
@@ -78,11 +83,17 @@ type SetupRegistrationProposal = {
   legacyName?: LegacyMcpServerName
   workerOnly: boolean
 }
+export type SetupHarnessInstallProposal = {
+  harness: HarnessName
+  questionId: string
+  route: HarnessInstallRoute
+}
 
 export type SetupPlan = {
   facts: { machine: SetupFacts; repositories: RepositoryFacts[] }
   proposals: SetupProposal[]
   registrations: SetupRegistrationProposal[]
+  harnessInstalls?: SetupHarnessInstallProposal[]
   questions: SetupQuestion[]
   notices: SetupNotice[]
   folderSelection: { options: Array<{ path: string; name: string }>; defaults: string[] }
@@ -141,6 +152,7 @@ function globalUseQuestion(machine: SetupFacts): SetupQuestion {
 const questionId = (path: string, field: string) => `project:${encodeURIComponent(path)}:${field}`
 const registrationQuestionId = (harness: string, server?: string) =>
   `harness:${harness}:mcp-${server ? `replace-${server}` : 'register'}`
+const harnessInstallQuestionId = (harness: HarnessName) => `harness:${harness}:install`
 
 type HarnessFacts = SetupFacts['harnesses'][keyof SetupFacts['harnesses']]
 
@@ -418,9 +430,10 @@ function builtInAgentNotice(
       : null
   }
   if (!harness?.path) {
+    const route = harnessInstallRoute(name, machine.os.platform)
     return {
       message: `${name} agent is enabled but the ${name} harness is not installed`,
-      fix: `install ${name}, or ${PLATFORM_SLUG} agent set ${name} --enabled false --reason "${name} is not installed on this machine"`,
+      fix: `${route?.command ?? harnessDocumentation(name)}, or ${PLATFORM_SLUG} agent set ${name} --enabled false --reason "${name} is not installed on this machine"`,
       blocking: true,
     }
   }
@@ -445,6 +458,63 @@ function builtInAgentNotice(
         blocking: false,
       }
     : null
+}
+
+function neededHarnesses(agents: SetupAgent[]): HarnessName[] {
+  const names = new Set<HarnessName>()
+  for (const agent of agents) {
+    if (!agent.enabled) continue
+    const candidate = agent.name === 'codex' || agent.name === 'grok' ? agent.name : agent.harness
+    if (Object.hasOwn(HARNESS_MCP_CATALOGUE, candidate)) names.add(candidate as HarnessName)
+  }
+  return [...names]
+}
+
+function proposeHarnessInstalls(
+  machine: SetupFacts,
+  agents: SetupAgent[],
+  questions: SetupQuestion[],
+  notices: SetupNotice[],
+): SetupHarnessInstallProposal[] {
+  const builtIns = new Set(
+    agents
+      .filter((agent) => agent.enabled && (agent.name === 'codex' || agent.name === 'grok'))
+      .map((agent) => agent.name),
+  )
+  return neededHarnesses(agents).flatMap((harness) => {
+    if (machine.harnesses?.[harness]?.path) return []
+    const route = harnessInstallRoute(harness, machine.os.platform)
+    if (!route) {
+      if (!builtIns.has(harness)) {
+        notices.push({
+          message: `${harness} is needed by an enabled agent but has no install route for ${machine.os.platform}`,
+          fix: harnessDocumentation(harness),
+          blocking: false,
+        })
+      }
+      return []
+    }
+    const questionId = harnessInstallQuestionId(harness)
+    questions.push({
+      id: questionId,
+      question: `Install ${harness}? Runs: \`${route.command}\``,
+      options: [
+        {
+          id: 'install',
+          label: 'Install',
+          why: `Runs the documented ${harness} install command.`,
+        },
+        {
+          id: 'skip',
+          label: 'Skip',
+          why: `Leaves ${harness} uninstalled and reports the command to run by hand.`,
+        },
+      ],
+      recommendation: 'install',
+      why: `An enabled local agent needs the missing ${harness} harness.`,
+    })
+    return [{ harness, questionId, route }]
+  })
 }
 
 function agentNotices(machine: SetupFacts, agents: SetupAgent[]): SetupNotice[] {
@@ -765,6 +835,7 @@ export function proposeSetup(
     ...agentNotices(machine, agents),
     ...repositoryNotices,
   ]
+  const harnessInstalls = proposeHarnessInstalls(machine, agents, questions, notices)
   const registrations = proposeMcpRegistrations(machine, servers, questions, notices)
   const proposals = repositories.map((repository) =>
     proposeRepository(repository, register, occupied, questions, notices, resolveLifecycle),
@@ -774,6 +845,7 @@ export function proposeSetup(
     facts: { machine, repositories },
     proposals,
     registrations,
+    harnessInstalls,
     questions,
     notices,
     folderSelection: {

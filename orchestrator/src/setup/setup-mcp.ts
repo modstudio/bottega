@@ -9,6 +9,7 @@ import { LEGACY_MCP_SERVER_NAMES, type LegacyMcpServerName } from './setup-mcp-c
 
 export type { LegacyMcpServerName } from './setup-mcp-config.ts'
 export const SETUP_COMMAND_TIMEOUT_MS = 5_000
+export const HARNESS_INSTALL_TIMEOUT_MS = 10 * 60_000
 const MCP_SERVER_NAMES = [MCP_SERVER_NAME, WORKER_MCP_SERVER_NAME] as const
 export function legacyMcpServerName(name: McpServerName): LegacyMcpServerName {
   return LEGACY_MCP_SERVER_NAMES[name]
@@ -18,35 +19,79 @@ type HarnessMcpDescriptor = {
   support: 'automatic' | 'manual'
   servers: readonly McpServerName[]
   manualDocumentation: string | null
+  documentation: string
+  install?: Partial<Record<'darwin' | 'linux', HarnessInstallRoute>>
 }
+export type HarnessInstallRoute = { command: string; binDir?: string }
 export const HARNESS_MCP_CATALOGUE = {
   codex: {
     support: 'automatic',
     servers: MCP_SERVER_NAMES,
     manualDocumentation: null,
+    documentation: 'https://learn.chatgpt.com/docs/codex/cli',
+    install: {
+      darwin: { command: 'brew install --cask codex' },
+      linux: {
+        command: 'curl -fsSL https://chatgpt.com/codex/install.sh | CODEX_NON_INTERACTIVE=1 sh',
+        binDir: '~/.local/bin',
+      },
+    },
   },
   grok: {
     support: 'automatic',
     servers: MCP_SERVER_NAMES,
     manualDocumentation: null,
+    documentation: 'https://docs.x.ai/build/overview',
+    install: {
+      darwin: {
+        command: 'curl -fsSL https://x.ai/cli/install.sh | bash',
+        binDir: '~/.grok/bin',
+      },
+      linux: {
+        command: 'curl -fsSL https://x.ai/cli/install.sh | bash',
+        binDir: '~/.grok/bin',
+      },
+    },
   },
   claude: {
     support: 'automatic',
     servers: [MCP_SERVER_NAME],
     manualDocumentation: null,
+    documentation: 'https://docs.anthropic.com/en/docs/claude-code/overview',
   },
   opencode: {
     support: 'manual',
     servers: [MCP_SERVER_NAME],
     manualDocumentation: 'https://opencode.ai/v2/docs/mcp-servers',
+    documentation: 'https://opencode.ai/docs',
   },
   goose: {
     support: 'manual',
     servers: [MCP_SERVER_NAME],
     manualDocumentation: 'https://block.github.io/goose/',
+    documentation: 'https://goose-docs.ai/docs/getting-started/installation',
+    install: {
+      darwin: { command: 'brew install block-goose-cli' },
+      linux: {
+        command:
+          'curl -fsSL https://github.com/aaif-goose/goose/releases/download/stable/download_cli.sh | CONFIGURE=false bash',
+        binDir: '~/.local/bin',
+      },
+    },
   },
 } as const satisfies Record<string, HarnessMcpDescriptor>
 export type HarnessName = keyof typeof HARNESS_MCP_CATALOGUE
+export function harnessInstallRoute(
+  harness: HarnessName,
+  platform: NodeJS.Platform,
+): HarnessInstallRoute | null {
+  if (platform !== 'darwin' && platform !== 'linux') return null
+  const descriptor: HarnessMcpDescriptor = HARNESS_MCP_CATALOGUE[harness]
+  return descriptor.install?.[platform] ?? null
+}
+export function harnessDocumentation(harness: HarnessName): string {
+  return HARNESS_MCP_CATALOGUE[harness].documentation
+}
 export function harnessMcpServers(harness: HarnessName): readonly McpServerName[] {
   return HARNESS_MCP_CATALOGUE[harness].servers
 }
