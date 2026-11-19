@@ -3,6 +3,7 @@ export const TASK_IDENTITY_UUID_COLUMNS = [
   'task_flow.record_id',
   'task_flow.task_record_id',
   'task_flow.project_record_id',
+  'task_flow.parent_flow_record_id',
   'task_flow.open_stage_cursor_record_id',
   'task_flow.opening_machine_id',
   'task_flow.updated_machine_id',

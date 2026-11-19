@@ -47,7 +47,7 @@ const STAGE_SELECT = `
   s.created_at stage_created_at,s.updated_at stage_updated_at`
 
 const FLOW_SELECT = `
-  f.id,f.space_id,f.project_id,f.task_id,t.key task_key,f.state,f.open_stage_record_id,
+  f.id,f.space_id,f.project_id,f.task_id,f.parent_flow_record_id,t.key task_key,f.state,f.open_stage_record_id,
   (SELECT count(*)::integer FROM task_flow_stage open_stage
    WHERE open_stage.flow_record_id=f.id AND open_stage.space_id=f.space_id
      AND open_stage.state NOT IN (${TASK_FLOW_CLOSED_STAGE_STATES_SQL})) open_stage_count,

@@ -3,10 +3,12 @@
 
 import type { Database } from 'bun:sqlite'
 import { nowIso } from '../database/db.ts'
+import { taskReader } from './task-read-port.ts'
 import { cursorName, workflowCursorTakeoverRemedy } from './workflow-cursor-format.ts'
 import type { SelectableCursorRow, WorkflowCursorContext } from './workflow-cursor-selection.ts'
 import { currentStepActivatedAt, reentryBoundFloorInput } from './workflow-cursor-trail.ts'
 import { foreignCursorOwner } from './workflow-cursor-transition.ts'
+import { descendantTaskFacts, selectEpicStartFloors } from './workflow-epic-floor.ts'
 import type { WorkflowEvidenceInput } from './workflow-evidence-input.ts'
 import {
   decideFloorSatisfaction,
@@ -18,8 +20,6 @@ import type { FloorEvidencePorts } from './workflow-floor-evidence.ts'
 import { gatherValidatedEvidence } from './workflow-floor-evidence-gather.ts'
 import { invokeFloorEvidencePort } from './workflow-floor-evidence-replay.ts'
 import { openWorkflowObligations } from './workflow-obligation-floor.ts'
-import { descendantTaskFacts, selectEpicStartFloors } from './workflow-epic-floor.ts'
-import { taskReader } from './task-read-port.ts'
 
 type FloorCursor = Pick<
   SelectableCursorRow,
@@ -63,12 +63,14 @@ export async function applyFloorDecision(
   const args = JSON.parse(row.args) as Record<string, string>
   const declaredEvidenceFloors = floors.filter(({ kind }) => kind !== 'review-owed')
   const taskRows = declaredEvidenceFloors.some(({ kind }) => kind === 'descendants-closed')
-    ? taskReader().list({ project: row.project }).map((task) => ({
-        key: task.key,
-        parentKey: task.parent_key,
-        status: task.status,
-        statusCategory: task.status_category,
-      }))
+    ? taskReader()
+        .list({ project: row.project })
+        .map((task) => ({
+          key: task.key,
+          parentKey: task.parent_key,
+          status: task.status,
+          statusCategory: task.status_category,
+        }))
     : []
   const evidenceFloors = selectEpicStartFloors(declaredEvidenceFloors, {
     workflow: row.workflow_slug,

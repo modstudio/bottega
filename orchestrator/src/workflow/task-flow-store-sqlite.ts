@@ -372,9 +372,16 @@ class SqliteTaskFlowStore {
   } | null {
     return this.database
       .query<
-        { record_id: string; revision: number; open_stage_cursor_record_id: string | null; parent_flow_record_id: string | null },
+        {
+          record_id: string
+          revision: number
+          open_stage_cursor_record_id: string | null
+          parent_flow_record_id: string | null
+        },
         [string]
-      >('SELECT record_id,revision,open_stage_cursor_record_id,parent_flow_record_id FROM task_flow WHERE record_id=?')
+      >(
+        'SELECT record_id,revision,open_stage_cursor_record_id,parent_flow_record_id FROM task_flow WHERE record_id=?',
+      )
       .get(recordId)
   }
 

@@ -65,6 +65,7 @@ export const cleanupBoundarySpecs = [
       '../run/question-inbox-counts.ts',
       '../run/run-status.ts',
       './session-close-out.ts',
+      './session-epic-work.ts',
       './session-review-verdicts.ts',
       '../workflow/workflow-cursor-list.ts',
       './stop-summary-decision.ts',

@@ -43,8 +43,9 @@ export function childQueueState(
   return {
     queue: queueable
       .filter((task) => task.liveQueuedClaimSession === session)
-      .sort((left, right) =>
-        (left.queuedAt ?? '').localeCompare(right.queuedAt ?? '') || left.number - right.number,
+      .sort(
+        (left, right) =>
+          (left.queuedAt ?? '').localeCompare(right.queuedAt ?? '') || left.number - right.number,
       ),
     open: queueable
       .filter((task) => task.liveQueuedClaimSession === null)

@@ -11,12 +11,12 @@ import { UNSCORED_WHERE } from '../evidence/evidence-query.ts'
 import { LANDING_TREE_JOB, shipCursorWorksTree } from '../landing-tree/landing-tree.ts'
 import { questionInboxCountsForSession } from '../run/question-inbox-counts.ts'
 import { RUN_LIVE_STATUSES } from '../run/run-status.ts'
-import { sessionEpicWork } from '../workflow/workflow-child-service.ts'
 import {
   listWorkflowCursors,
   type WorkflowCursorListRow,
 } from '../workflow/workflow-cursor-list.ts'
 import { activeLandings } from './session-close-out.ts'
+import { sessionEpicWork } from './session-epic-work.ts'
 import {
   type SessionReviewVerdictGatherer,
   sessionReviewVerdictLines,

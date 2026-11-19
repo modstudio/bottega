@@ -5,10 +5,7 @@ import type { Database } from 'bun:sqlite'
 import { BOARD_CLAIM_DEFAULT_MS } from '../board/board-claim-policy.ts'
 import { boardClaimTake } from '../board/board-operations.ts'
 import { db, writeTransaction } from '../database/db.ts'
-import {
-  TASK_FLOW_OPEN_STAGE_STATES,
-  TASK_FLOW_STAGE_STATES,
-} from '../record/record-task-flow-contract.ts'
+import { TASK_FLOW_STAGE_STATES } from '../record/record-task-flow-contract.ts'
 import { taskFlowReadStore } from './task-flow-store.ts'
 import { type TaskReadRow, taskReader } from './task-read-port.ts'
 import { type ChildTaskFact, childQueueState, selectChildToStart } from './workflow-child-queue.ts'
@@ -95,6 +92,32 @@ async function nearestAncestorFlow(key: string, tasks: readonly TaskReadRow[], d
   return null
 }
 
+async function inheritedStart(
+  child: string,
+  tasks: readonly TaskReadRow[],
+  database: Database,
+  steps: readonly { slug: string }[],
+) {
+  const parentFlowRecordId = await nearestAncestorFlow(child, tasks, database)
+  if (!parentFlowRecordId) throw new Error(`${child} has no ancestor workflow flow to inherit`)
+  const parentFlow = await taskFlowReadStore(database).flowState(parentFlowRecordId)
+  const parentStage = parentFlow?.open_stage_cursor_record_id
+    ? await taskFlowReadStore(database).stageByRecordId(parentFlow.open_stage_cursor_record_id)
+    : null
+  if (!parentStage) throw new Error(`${child}'s ancestor flow has no stage to inherit`)
+  const startOrdinal = steps.findIndex(({ slug }) => slug === 'start')
+  if (startOrdinal < 0) throw new Error('plan-task has no start step')
+  const closed = (JSON.parse(parentStage.closed) as ClosedStep[])
+    .filter((step) => step.n <= startOrdinal)
+    .map((step) => ({
+      ...step,
+      note: `inherited from cursor ${parentStage.id} step ${step.slug}: ${step.note}`,
+    }))
+  if (closed.length !== startOrdinal)
+    throw new Error(`cursor ${parentStage.id} has not closed every plan-task step before start`)
+  return { parentFlowRecordId, startOrdinal, closed }
+}
+
 export async function queueWorkflowChild(
   input: { project: string; child: string; session: string; off: boolean },
   database: Database = db(),
@@ -178,13 +201,6 @@ export async function startWorkflowChild(
     throw new Error(selected.message)
   }
   const child = tasks.find(({ key }) => key === selected.task.key)!
-  const parentFlowRecordId = await nearestAncestorFlow(child.key, tasks, database)
-  if (!parentFlowRecordId) throw new Error(`${child.key} has no ancestor workflow flow to inherit`)
-  const parentFlow = await taskFlowReadStore(database).flowState(parentFlowRecordId)
-  const parentStage = parentFlow?.open_stage_cursor_record_id
-    ? await taskFlowReadStore(database).stageByRecordId(parentFlow.open_stage_cursor_record_id)
-    : null
-  if (!parentStage) throw new Error(`${child.key}'s ancestor flow has no stage to inherit`)
   const composition = composeWorkflow(
     'plan-task',
     input.project,
@@ -192,16 +208,7 @@ export async function startWorkflowChild(
     { key: child.key },
     database,
   )
-  const startOrdinal = composition.steps.findIndex(({ slug }) => slug === 'start')
-  if (startOrdinal < 0) throw new Error('plan-task has no start step')
-  const inherited = (JSON.parse(parentStage.closed) as ClosedStep[])
-    .filter((step) => step.n <= startOrdinal)
-    .map((step) => ({
-      ...step,
-      note: `inherited from cursor ${parentStage.id} step ${step.slug}: ${step.note}`,
-    }))
-  if (inherited.length !== startOrdinal)
-    throw new Error(`cursor ${parentStage.id} has not closed every plan-task step before start`)
+  const inheritance = await inheritedStart(child.key, tasks, database, composition.steps)
   const context = await resolveWorkflowCursorContext(
     input.project,
     { key: child.key },
@@ -222,10 +229,10 @@ export async function startWorkflowChild(
     undefined,
     false,
     {
-      parentFlowRecordId,
-      activeOrdinal: startOrdinal,
+      parentFlowRecordId: inheritance.parentFlowRecordId,
+      activeOrdinal: inheritance.startOrdinal,
       activeSlug: 'start',
-      closedStepNotes: inherited,
+      closedStepNotes: inheritance.closed,
     },
   )
   await followComposeTaskClaim(row, false, context, database, {
@@ -253,71 +260,6 @@ export async function startWorkflowChild(
   return {
     child: child.key,
     cursor: { id: row.id, n: row.ordinal + 1, slug: row.step_slug },
-    parentFlowRecordId,
+    parentFlowRecordId: inheritance.parentFlowRecordId,
   }
-}
-
-export async function sessionEpicWork(session: string, database: Database = db()) {
-  const sessionStages = await taskFlowReadStore(database).listOpenStages({ sessionId: session })
-  const claimProjects = database
-    .query<{ project: string }, [string]>(
-      'SELECT DISTINCT project FROM board_claim WHERE holder_session=? AND closed_at IS NULL',
-    )
-    .all(session)
-  const projects = [
-    ...new Set([
-      ...claimProjects.map(({ project }) => project),
-      ...sessionStages.map(({ project }) => project),
-    ]),
-  ]
-  const surfaces: Array<{ epic: string; queue: string[]; open: string[]; cursor: number }> = []
-  for (const project of projects) {
-    const tasks = taskReader().list({ project })
-    const facts = await childFacts(database, project, tasks)
-    const queued = new Set(
-      facts
-        .filter(({ liveQueuedClaimSession }) => liveQueuedClaimSession === session)
-        .map(({ key }) => ancestorKeys(key, tasks).at(-1))
-        .filter((key): key is string => Boolean(key)),
-    )
-    const projectStages = await taskFlowReadStore(database).listStages({
-      project,
-      states: [...TASK_FLOW_OPEN_STAGE_STATES],
-    })
-    const heldTaskKeys = new Set(
-      liveClaimRows(database, project)
-        .filter((claim) => claim.holder_session === session && claim.subject_kind === 'task')
-        .map(({ subject_value }) => subject_value),
-    )
-    const epicCursors = projectStages
-      .filter(
-        (stage) =>
-          stage.workflow_slug === 'plan-task' &&
-          stage.step_slug === 'start' &&
-          (stage.session_id === session || heldTaskKeys.has(stage.workflow_key)),
-      )
-      .map((stage) => ({ number: stage.id, workflow_key: stage.workflow_key }))
-    for (const epic of epicCursors) queued.add(epic.workflow_key)
-    for (const epicKey of queued) {
-      const cursor =
-        epicCursors.find(({ workflow_key }) => workflow_key === epicKey) ??
-        projectStages
-          .filter(
-            (stage) =>
-              stage.workflow_slug === 'plan-task' &&
-              stage.step_slug === 'start' &&
-              stage.workflow_key === epicKey,
-          )
-          .map((stage) => ({ number: stage.id, workflow_key: stage.workflow_key }))[0]
-      if (!cursor) continue
-      const state = childQueueState(epicKey, session, facts)
-      surfaces.push({
-        epic: epicKey,
-        queue: state.queue.map(({ key }) => key),
-        open: state.open.map(({ key }) => key),
-        cursor: cursor.number,
-      })
-    }
-  }
-  return surfaces
 }

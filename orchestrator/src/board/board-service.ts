@@ -7,7 +7,6 @@ import { SESSION_LIVE_MS } from '../../../shared/session-liveness.ts'
 import { classifyCaller } from '../caller-classification.ts'
 import { db, nowIso, writableDb, writeTransaction } from '../database/db.ts'
 import { projectAt } from '../project/projects.ts'
-import { renewQueuedClaimsOfSession } from './board-claim-service.ts'
 import { reapHostedBoardCache } from './board-hosted-cache.ts'
 import {
   architectIdentity,
@@ -114,7 +113,18 @@ export function recordPresence(
       beganAt ?? at,
       at,
     )
-  renewQueuedClaimsOfSession(identity.session, Date.parse(at))
+  const clock = Date.parse(at)
+  const queued = writableDb()
+    .query<{ record_id: string; duration_ms: number }, [string]>(
+      `SELECT record_id,duration_ms FROM board_claim
+       WHERE holder_session=? AND subject_kind='queued-task' AND closed_at IS NULL`,
+    )
+    .all(identity.session)
+  const renew = writableDb().query(
+    'UPDATE board_claim SET renewed_at=?,lapses_at=? WHERE record_id=?',
+  )
+  for (const claim of queued)
+    renew.run(at, new Date(clock + claim.duration_ms).toISOString(), claim.record_id)
   return true
 }
 

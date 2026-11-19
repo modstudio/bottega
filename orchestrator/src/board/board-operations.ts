@@ -891,6 +891,13 @@ export async function boardClaimRenew(id: string, inputContext?: Context) {
         }),
       )
 }
+export function boardQueuedClaimsRenew(
+  session: string,
+  clock = Date.now(),
+  database: Database = db(),
+) {
+  return renewQueuedClaimsOfSession(session, clock, database)
+}
 export async function boardClaimRelease(id: string, inputContext?: Context) {
   const c = context(inputContext)
   const resolved = resolveBoardClaimIdentifier(db(), id, c.env)
