@@ -55,6 +55,8 @@ export type {
 } from './step-catalogue-definition.ts'
 
 const SLUG = /^[a-z0-9][a-z0-9-]{0,63}$/
+const REPOSITORY_FILE_PATH =
+  /(?<![A-Za-z0-9_./:{-])((?:\.\/)?(?:\.?[A-Za-z0-9_-]+\/)+[A-Za-z0-9_.-]+\.(?:ts|tsx|js|mjs|cjs|md|json|jsonc|sql|py|php|yml|yaml|toml|sh))(?=$|[^A-Za-z0-9_/}-])/g
 const PLATFORM_INVOCATION = `(?:${PLATFORM_SLUG}|\\S*\\/bin\\/${PLATFORM_SLUG})`
 const object = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -134,6 +136,7 @@ export function validateStepCatalogue(value: unknown): string[] {
     validateReenter(item, errors)
     validateFloor(item, errors)
     validateNeeds(item, errors)
+    validateRepositoryFileCitations(item, errors)
     validateDispatchPrompts(item, errors)
     validatePrescribedJobs(item, errors)
   }
@@ -148,6 +151,20 @@ export function validateStepCatalogue(value: unknown): string[] {
     ),
   )
   return [...new Set(errors)]
+}
+
+function validateRepositoryFileCitations(
+  item: Record<string, unknown>,
+  errors: string[],
+): void {
+  if (typeof item.body !== 'string') return
+  const slug = String(item.slug ?? '')
+  for (const match of item.body.matchAll(REPOSITORY_FILE_PATH)) {
+    const path = match[1]!
+    errors.push(
+      `step "${slug}" body cites repository file ${path}; a step is served to every project, so name the file through a project fact or the project's canon instead`,
+    )
+  }
 }
 
 export function unknownWorkflowFactNeeds(
