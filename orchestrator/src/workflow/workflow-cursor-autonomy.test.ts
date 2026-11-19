@@ -13,7 +13,7 @@ import { composeWorkflowWithCursor } from './workflow-cursor.ts'
 import { combineCursorAutonomy, mapStoredAutonomyResolution } from './workflow-cursor-autonomy.ts'
 import { resolveCursorLiveAutonomy } from './workflow-cursor-live-autonomy.ts'
 import { getWorkflowStepWithCursor } from './workflow-cursor-serve.ts'
-import { abandonCursor } from './workflow-cursor-test.fixture.ts'
+import { abandonCursor, closeStep } from './workflow-cursor-test.fixture.ts'
 import { renderWorkflowComposition, renderWorkflowStep } from './workflow-render.ts'
 import { seedWorkflows } from './workflow-seeds.ts'
 import { installWorkflowStoreFixture } from './workflow-store.fixture.ts'
@@ -211,7 +211,7 @@ describe('workflow cursor stored autonomy', () => {
       live,
     )
 
-    expect(served.resolvedAutonomy).toEqual(live.resolution!.steps.rebase)
+    expect(served.resolvedAutonomy).toEqual(live.resolution!.steps.rebase!)
   })
 
   test('compose refuses an autonomy resolution that omits a selected step', () => {
@@ -225,11 +225,42 @@ describe('workflow cursor stored autonomy', () => {
           .map((step) => [step.slug, step.resolvedAutonomy]),
       ),
       rulings: composed.rulings,
+      shipTo: { value: 'trunk', scope: 'test' },
     }
 
     expect(() => composeWorkflow('flow', 'fixture', 'default', args, d, {}, autonomy)).toThrow(
       'workflow "flow" autonomy resolution has no entry for steps: lens',
     )
+  })
+
+  test('a null pre-migration snapshot falls back to catalogue defaults', async () => {
+    const d = database()
+    const composed = composeWorkflow('flow', 'fixture', 'default', args, d)
+    const resolution: AutonomyResolution = {
+      layers: [],
+      steps: {
+        ...Object.fromEntries(composed.steps.map((step) => [step.slug, step.resolvedAutonomy])),
+        rebase: { value: 'review', scope: 'session' },
+      },
+      rulings: { value: 'agent', scope: 'built-in' },
+      shipTo: { value: 'trunk', scope: 'built-in' },
+    }
+    await composeWorkflowWithCursor(
+      'flow',
+      'fixture',
+      'default',
+      args,
+      context,
+      d,
+      {},
+      { resolution },
+    )
+    d.query('UPDATE workflow_cursor SET autonomy=NULL').run()
+    await getWorkflowStepWithCursor('flow', 'fixture', 'rebase', args, 'default', context, d, {})
+    await closeStep('flow', 'fixture', 'default', args, 'rebased', context, d)
+    const row = d.query('SELECT closed FROM workflow_cursor').get() as { closed: string }
+
+    expect(JSON.parse(row.closed)[0].review).toBeUndefined()
   })
 
   test('carries a live fallback note through a pinned cursor composition', async () => {

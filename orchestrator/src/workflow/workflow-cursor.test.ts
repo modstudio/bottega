@@ -26,12 +26,7 @@ import {
 } from './workflow-cursor-test.fixture.ts'
 import { renderWorkflowComposition } from './workflow-render.ts'
 import { attachWorkflowText } from './workflow-text.ts'
-import {
-  composeWorkflow,
-  promoteWorkflowLocal,
-  setWorkflowLocal,
-  showResolvedWorkflow,
-} from './workflows.ts'
+import { promoteWorkflowLocal, setWorkflowLocal, showResolvedWorkflow } from './workflows.ts'
 
 describe('workflow cursor adapter', () => {
   test('a current production declaration can rebind an argument for an older pinned cursor', async () => {
@@ -1024,36 +1019,5 @@ describe('workflow cursor adapter', () => {
     expect(
       await nextWorkflowStep('flow', 'fixture', 'default', args, 'rebased', context, d),
     ).toContain('serves step 3 score')
-  })
-
-  test('a null pre-migration snapshot falls back to catalogue defaults', async () => {
-    const d = database()
-    const composed = composeWorkflow('flow', 'fixture', 'default', args, d)
-    const resolution = {
-      layers: [],
-      steps: {
-        ...Object.fromEntries(composed.steps.map((step) => [step.slug, step.resolvedAutonomy])),
-        rebase: { value: 'review' as const, scope: 'session' },
-      },
-      rulings: { value: 'agent' as const, scope: 'built-in' },
-      shipTo: { value: 'trunk' as const, scope: 'built-in' },
-    }
-    await composeWorkflowWithCursor(
-      'flow',
-      'fixture',
-      'default',
-      args,
-      context,
-      d,
-      {},
-      { resolution: resolution },
-    )
-    d.query('UPDATE workflow_cursor SET autonomy=NULL').run()
-    await getWorkflowStepWithCursor('flow', 'fixture', 'rebase', args, 'default', context, d, {})
-    await closeStep('flow', 'fixture', 'default', args, 'rebased', context, d)
-    const row = d.query('SELECT closed FROM workflow_cursor').get() as {
-      closed: string
-    }
-    expect(JSON.parse(row.closed)[0].review).toBeUndefined()
   })
 })
