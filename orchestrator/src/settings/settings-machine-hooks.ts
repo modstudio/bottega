@@ -17,7 +17,7 @@ import {
 } from '../session/context-review-decision.ts'
 import { isPlainObject, type OwnedSettings } from './settings.ts'
 
-const SCRIPT_FILES = [
+export const SCRIPT_FILES = [
   'block-agent.py',
   'no-attribution.py',
   'bun-cache-guard.py',
@@ -48,7 +48,7 @@ type HookEvent =
   | 'SessionStart'
   | 'PreCompact'
 type HookCondition = string | { absoluteBottega: 'run start' | 'board ask' | 'board post' }
-type ProductHookDeclaration = {
+export type ProductHookDeclaration = {
   event: HookEvent
   matcher?: string
   if?: HookCondition
@@ -68,7 +68,7 @@ export type MachineProductHooksResult = {
   superseded: SupersededProfileHook[]
 }
 
-const PRODUCT_HOOKS: readonly ProductHookDeclaration[] = [
+export const PRODUCT_HOOKS: readonly ProductHookDeclaration[] = [
   { event: 'PreToolUse', matcher: 'Agent|Task|Workflow', script: 'block-agent.py' },
   { event: 'PreToolUse', matcher: 'Bash', script: 'no-attribution.py' },
   { event: 'PreToolUse', matcher: 'Bash', script: 'bun-cache-guard.py' },

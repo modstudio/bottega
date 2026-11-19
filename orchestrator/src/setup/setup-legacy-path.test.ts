@@ -135,9 +135,10 @@ test('setup plan proposes removing a checkout-pointing symlink and leaves others
   const actions = planSetupActions(plan, recommendedAnswers(plan))
   expect(actions).toEqual([
     { kind: 'migrate-environment' },
+    { kind: 'install-verify' },
     { kind: 'remove-legacy-symlink', path: remove, target: orch },
   ])
-  expect(setupActionLine(actions[1]!)).toBe(`Remove leftover ${remove} symlink`)
+  expect(setupActionLine(actions[2]!)).toBe(`Remove leftover ${remove} symlink`)
 })
 
 test('setup apply removes a checkout-pointing symlink and refuses a file or foreign link', async () => {

@@ -66,7 +66,7 @@ describe('Claude home canon files', () => {
     })
   })
 
-  test('an empty store leaves unmarked files current', () => {
+  test('an empty store refuses even when no delete is planned', () => {
     const claudeHome = temporaryClaudeHome()
     writeFileSync(join(claudeHome.path, 'CLAUDE.md'), 'personal')
     const plan = planUserCanonHome({
@@ -76,10 +76,25 @@ describe('Claude home canon files', () => {
     })
 
     expect(decideUserCanonHomePlanApplication(0, [plan])).toEqual({
+      action: 'refuse-empty-store',
+      plans: [],
+      refused: [plan],
+    })
+    expect(userCanonHomePlanDrift(plan)).toBe(0)
+  })
+
+  test('a non-empty store proceeds when no delete is planned', () => {
+    const claudeHome = temporaryClaudeHome()
+    const plan = planUserCanonHome({
+      home: claudeHome,
+      rows: [{ slug: 'AGENTS.md', body: 'current' }],
+      files: [],
+    })
+
+    expect(decideUserCanonHomePlanApplication(1, [plan])).toEqual({
       action: 'apply',
       plans: [plan],
     })
-    expect(userCanonHomePlanDrift(plan)).toBe(0)
   })
 
   test('a non-empty store still deletes a managed file whose row is gone', () => {

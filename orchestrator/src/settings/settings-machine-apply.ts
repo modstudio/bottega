@@ -148,7 +148,9 @@ function applyUserSettings(
         target,
         outcome: 'refused',
         condition: 'no-settings-row',
-        detail: 'refusing settings render: no settings row for user',
+        detail:
+          'refusing settings render: no settings row for user\n' +
+          `cleared by: ${PLATFORM_SLUG} doc set --scope settings --user --slug settings`,
         changed: false,
       }
     }

@@ -79,12 +79,14 @@ export type SetupAction =
       route: HarnessInstallRoute
     }
   | { kind: 'migrate-environment' }
+  | { kind: 'install-verify' }
 
 /** Declare which planned action kinds require another action in the same plan to succeed. */
 export function setupActionPrerequisiteKinds(
   kind: SetupAction['kind'],
 ): readonly SetupAction['kind'][] {
   if (kind === 'add' || kind === 'set') return ['migrate-environment']
+  if (kind === 'install-verify') return ['migrate-environment']
   if (kind === 'install-schedules') return ['set-machine-level']
   return []
 }
@@ -99,6 +101,7 @@ export function setupActionChangesMachine(action: SetupAction): boolean {
     case 'install-schedules':
     case 'install-harness':
     case 'migrate-environment':
+    case 'install-verify':
     case 'set-machine-level':
     case 'set-global-use':
     case 'set-keystore':
@@ -121,6 +124,8 @@ export function setupActionLine(action: SetupAction): string {
       return `Remove leftover ${action.path} symlink`
     case 'migrate-environment':
       return 'Migrate operator environment names'
+    case 'install-verify':
+      return 'Render and verify harness settings and user canon'
     case 'install-schedules':
       return 'Install scheduled sweep and record sync'
     case 'install-harness':
@@ -343,6 +348,7 @@ export function planSetupActions(plan: SetupPlan, answers: SetupAnswers): SetupA
   return [
     ...(keystore ? [keystore] : []),
     { kind: 'migrate-environment' },
+    { kind: 'install-verify' },
     ...(globalUse ? [globalUse] : []),
     ...(machineLevel ? [machineLevel] : []),
     ...plannedHarnessInstalls(plan, answers),

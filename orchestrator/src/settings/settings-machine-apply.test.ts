@@ -123,7 +123,9 @@ describe('settings apply', () => {
       target: `settings ${join(root, '.claude', 'settings.json')}`,
       outcome: 'refused',
       condition: 'no-settings-row',
-      detail: 'refusing settings render: no settings row for user',
+      detail:
+        'refusing settings render: no settings row for user\n' +
+        `cleared by: ${PLATFORM_SLUG} doc set --scope settings --user --slug settings`,
       changed: false,
     })
   })
@@ -326,7 +328,7 @@ describe('settings apply', () => {
             outcome: 'refused',
             detail: expect.stringMatching(
               new RegExp(
-                `this store holds no user canon.*${PLATFORM_SLUG} doc canon import --user.*remove the files yourself`,
+                `no user canon rows have arrived.*${PLATFORM_SLUG} doc pull.*${PLATFORM_SLUG} doc set --scope canon --user`,
               ),
             ),
             changed: false,

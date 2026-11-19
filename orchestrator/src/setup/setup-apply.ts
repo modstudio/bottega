@@ -22,6 +22,10 @@ import {
   screenedMcpField,
 } from './setup-mcp.ts'
 import { migrateMcpConfigText } from './setup-mcp-config.ts'
+import {
+  applySetupInstallVerify,
+  type SetupInstallVerifyAdapters,
+} from './setup-install-verify-runtime.ts'
 import { type SetupAction, setupActionLine, setupActionPrerequisiteKinds } from './setup-planner.ts'
 import { applyMaintenanceSchedules } from './setup-schedule-runtime.ts'
 
@@ -253,6 +257,7 @@ export async function applySetupActions(
   environment: SetupEnvironmentService,
   runner: SetupCommandRunner = runSetupCommand,
   preparedStateFileMigration?: PreparedStateFileMigration | null,
+  installVerifyAdapters?: SetupInstallVerifyAdapters,
 ): Promise<SetupActionResult[]> {
   const results: SetupActionResult[] = []
   for (const action of actions) {
@@ -271,7 +276,14 @@ export async function applySetupActions(
       const applied =
         action.kind === 'install-schedules'
           ? await applyScheduleAction()
-          : await applySetupAction(action, service, environment, runner, preparedStateFileMigration)
+          : await applySetupAction(
+              action,
+              service,
+              environment,
+              runner,
+              preparedStateFileMigration,
+              installVerifyAdapters,
+            )
       results.push({ ...action, ...applied })
     } catch (error) {
       results.push({
@@ -329,6 +341,7 @@ async function applySetupAction(
   environment: SetupEnvironmentService,
   runner: SetupCommandRunner,
   preparedStateFileMigration?: PreparedStateFileMigration | null,
+  installVerifyAdapters?: SetupInstallVerifyAdapters,
 ): Promise<{
   status: SetupAppliedActionStatus
   message: string | null
@@ -342,6 +355,9 @@ async function applySetupAction(
   }
   if (action.kind === 'skip-harness-install') {
     return skippedHarnessInstall(action.harness, action.route)
+  }
+  if (action.kind === 'install-verify') {
+    return applySetupInstallVerify(installVerifyAdapters)
   }
   if (
     action.kind === 'unchanged' ||
