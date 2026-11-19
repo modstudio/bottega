@@ -16,9 +16,9 @@ import {
 } from '../../../shared/credential.ts'
 import {
   missingDataKeyWrapRemedy,
-  readCredentialMachineTrustFacts,
   uncheckedCredentialMachineTrustRemedy,
 } from '../../../shared/credential-machine-trust.ts'
+import { readCredentialMachineTrustFacts } from '../../../shared/credential-machine-trust-reader.ts'
 import {
   credentialScopeFromPayer,
   credentialSetRefusalText,

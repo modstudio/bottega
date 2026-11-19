@@ -2,7 +2,7 @@
 /** Gathers bounded hosted facts for the credential spaces provider-backed agents use. */
 
 import { configClient } from '../../../shared/config-client.ts'
-import { readCredentialMachineTrustFacts } from '../../../shared/credential-machine-trust.ts'
+import { readCredentialMachineTrustFacts } from '../../../shared/credential-machine-trust-reader.ts'
 import { machineKeyInfo, readMachineKey } from '../../../shared/machine-key-store.ts'
 import { readRecordSessionToken } from '../../../shared/record-session.ts'
 import {

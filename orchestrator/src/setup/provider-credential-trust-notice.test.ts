@@ -25,8 +25,7 @@ test('setup reports when provider credential trust could not be checked', () => 
     ]),
   ).toEqual([
     {
-      message:
-        'provider credential trust was not checked in record space studio: record timed out',
+      message: 'provider credential trust was not checked in record space studio: record timed out',
       fix: `${PLATFORM_SLUG} machine setup plan`,
       blocking: false,
     },

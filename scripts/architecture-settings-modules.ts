@@ -221,6 +221,7 @@ export const settingsModules: SettingsModule[] = [
     '../../../shared/brand.ts',
     '../../../shared/config-client.ts',
     '../../../shared/credential-machine-trust.ts',
+    '../../../shared/credential-machine-trust-reader.ts',
     '../../../shared/credential.ts',
     '../../../shared/credential-resolution.ts',
     '../../../shared/credential-value.ts',

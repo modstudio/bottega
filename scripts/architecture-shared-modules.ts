@@ -26,10 +26,11 @@ export const sharedModules: ArchitectureModule[] = [
     './record-space-membership.ts',
   ]),
   module('shared/credential.ts', []),
-  module('shared/credential-machine-trust.ts', [
-    './brand.ts',
+  module('shared/credential-machine-trust.ts', ['./brand.ts']),
+  module('shared/credential-machine-trust-reader.ts', [
     './config-client.ts',
     './config-directory.ts',
+    './credential-machine-trust.ts',
     './trust-log-keys.ts',
   ]),
   module('shared/credential-resolution.ts', ['./brand.ts', './credential.ts']),
@@ -115,6 +116,7 @@ export const sharedModules: ArchitectureModule[] = [
     './brand.ts',
     './config-client.ts',
     './credential-machine-trust.ts',
+    './credential-machine-trust-reader.ts',
     './hosted-config-space.ts',
     './record-space-membership.ts',
     './record-space-request.ts',

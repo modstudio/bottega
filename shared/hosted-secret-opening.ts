@@ -1,9 +1,4 @@
 import { PLATFORM_SLUG } from './brand.ts'
-import {
-  missingDataKeyWrapRemedy,
-  readCredentialMachineTrustFacts,
-  uncheckedCredentialMachineTrustRemedy,
-} from './credential-machine-trust.ts'
 import type {
   ConfigClient,
   ConfigDestination,
@@ -11,6 +6,12 @@ import type {
   ConfigWriteDestination,
   DataKey,
 } from './config-client.ts'
+import {
+  credentialMachineTrustFacts,
+  missingDataKeyWrapRemedy,
+  uncheckedCredentialMachineTrustRemedy,
+} from './credential-machine-trust.ts'
+import { readCredentialMachineTrustFacts } from './credential-machine-trust-reader.ts'
 import { type HostedConfigIdentity, readHostedConfigIdentity } from './hosted-config-space.ts'
 import {
   machineNotTrustedRemedy,
@@ -108,22 +109,16 @@ export async function destinationHostedIdentity(
     machine: machines.find((machine) => machine.keyId === destination.machine.keyId),
   })
   if (decision.allowed) return decision.identity
-  let facts
-  try {
-    facts = await readCredentialMachineTrustFacts(client, {
-      spaceId: destination.spaceId,
-      space: destination.spaceId,
-      machine: destination.machine,
-    })
-  } catch (error) {
-    throw new Error(
-      uncheckedCredentialMachineTrustRemedy(
-        { space: destination.spaceId, machine: destination.machine },
-        error instanceof Error ? error.message : String(error),
-      ),
-    )
-  }
-  throw new Error(machineNotTrustedRemedy(facts))
+  throw new Error(
+    machineNotTrustedRemedy(
+      credentialMachineTrustFacts({
+        space: destination.spaceId,
+        machine: destination.machine,
+        machineRows: machines,
+        trust: {},
+      }),
+    ),
+  )
 }
 
 /** Choose whether a secret opens with the pinned active-space identity or a destination identity. */

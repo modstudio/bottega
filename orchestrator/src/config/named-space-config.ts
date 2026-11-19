@@ -2,9 +2,9 @@
 /** Registers and trusts machine keys in one hosted space without changing the active space. */
 import { hostname } from 'node:os'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { noDataKeyWrapRemedy } from '../../../shared/credential-machine-trust.ts'
 import type { ConfigClient, ConfigWriteDestination } from '../../../shared/config-client.ts'
 import type { ConfigEnvironment } from '../../../shared/config-directory.ts'
+import { noDataKeyWrapRemedy } from '../../../shared/credential-machine-trust.ts'
 import { readHostedConfigIdentity } from '../../../shared/hosted-config-space.ts'
 import { machineKeyId } from '../../../shared/machine-key-id.ts'
 import { readMachineKey } from '../../../shared/machine-key-store.ts'
