@@ -92,12 +92,15 @@ export function combineCursorAutonomy(
 } {
   if (!live) return { resolution: pinned, looserLiveDifferences: [] }
   const differences: CursorAutonomyDifference[] = []
-  const steps = Object.fromEntries(
-    Object.entries(pinned.steps).map(([slug, entry]) => [
-      slug,
-      stricterEntry(`steps.${slug}`, entry, live.steps[slug], autonomyValues, differences),
-    ]),
-  )
+  const steps = {
+    ...live.steps,
+    ...Object.fromEntries(
+      Object.entries(pinned.steps).map(([slug, entry]) => [
+        slug,
+        stricterEntry(`steps.${slug}`, entry, live.steps[slug], autonomyValues, differences),
+      ]),
+    ),
+  }
   const stages = pinned.stages
     ? Object.fromEntries(
         Object.entries(pinned.stages).map(([stage, entry]) => [

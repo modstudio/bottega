@@ -36,6 +36,7 @@ import { awaitWorkflowRuling, composeWorkflowWithCursor } from './workflow-curso
 import { workflowKeyOf } from './workflow-cursor-arguments.ts'
 import { cursorCommandTarget } from './workflow-cursor-command-target.ts'
 import {
+  resolveCompositionLiveAutonomy,
   resolveCursorLiveAutonomy,
   resolveWorkflowLiveAutonomy,
 } from './workflow-cursor-live-autonomy.ts'
@@ -872,7 +873,8 @@ export async function composeCommand(
     cliWorkflowCursorContext(),
     options.hubTaskReader,
   )
-  const live = await resolveWorkflowLiveAutonomy({
+  const cursorPath = preliminary.mode && !preliminary.needs.arguments
+  const live = await (cursorPath ? resolveWorkflowLiveAutonomy : resolveCompositionLiveAutonomy)({
     slug: argv[2]!,
     project,
     mode: preliminary.mode?.slug,
@@ -881,22 +883,19 @@ export async function composeCommand(
     session,
     selection,
   })
-  const autonomy = live.resolution
-  const pure = composeWorkflow(argv[2]!, project, mode, args, undefined, selection, autonomy)
-  const result =
-    pure.mode && !pure.needs.arguments
-      ? await composeWorkflowWithCursor(
-          argv[2]!,
-          project,
-          mode,
-          args,
-          context,
-          undefined,
-          selection,
-          live,
-          options.commitCount,
-        )
-      : pure
+  const result = cursorPath
+    ? await composeWorkflowWithCursor(
+        argv[2]!,
+        project,
+        mode,
+        args,
+        context,
+        undefined,
+        selection,
+        live,
+        options.commitCount,
+      )
+    : composeWorkflow(argv[2]!, project, mode, args, undefined, selection, live.resolution)
   print(result, json ? undefined : renderWorkflowComposition(result))
   if (Object.keys(result.needs).length) presentation.setExitCode(2)
 }

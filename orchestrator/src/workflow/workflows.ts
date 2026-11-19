@@ -1,7 +1,7 @@
 import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { db, sessionId, writableDb } from '../database/db.ts'
-import { projects } from '../project/projects.ts'
+import { projectByName, projects } from '../project/projects.ts'
 import { effectiveProjectSpace } from '../project-space.ts'
 import { recordApiClient } from '../record/record-api-client.ts'
 import { applyWorkflowWriteResponse } from '../record/record-cache-workflow.ts'
@@ -24,6 +24,7 @@ import {
 } from './step-catalogue.ts'
 import { type VersionEvent, versionedLifecycle } from './versioned-lifecycle.ts'
 import { missingWorkflowArguments, refuseUnknownWorkflowArgument } from './workflow-arguments.ts'
+import { assertAutonomyCoverage } from './workflow-autonomy-coverage.ts'
 import { autonomyNoticeOutput } from './workflow-autonomy-output.ts'
 import { BUILT_IN_WORKFLOW_AUTHOR } from './workflow-built-ins.ts'
 import type { WorkflowDefinition, WorkflowMode, WorkflowModeStep } from './workflow-definition.ts'
@@ -786,14 +787,6 @@ export function workflowModeStepLists(
   }))
 }
 
-function workflowProject(projectName: string, d: Database) {
-  const row = d
-    .query('SELECT name,stack,settings FROM project WHERE name=? AND retired_at IS NULL')
-    .get(projectName) as { name: string; stack: string | null; settings: string | null } | null
-  if (!row) throw new Error(`unknown project "${projectName}"`)
-  return { name: row.name, stack: row.stack, settings: JSON.parse(row.settings ?? '{}') }
-}
-
 export function composeWorkflow(
   slug: string,
   projectName: string,
@@ -821,7 +814,8 @@ export function composeWorkflow(
   if (refusal) throw new Error(refusal)
   const missing = missingWorkflowArguments(definition, mode ? [mode] : [], args)
   if (missing.length) needs.arguments = missing
-  const project = workflowProject(projectName, d)
+  const project = projectByName(projectName, d)
+  if (!project) throw new Error(`unknown project "${projectName}"`)
   const selectedEntries = mode
     ? expandWorkflowModeSteps(mode.steps, catalogue.definition.sequences ?? [])
     : []
@@ -835,6 +829,7 @@ export function composeWorkflow(
       [builtInAutonomyScope(definition.defaultPreset)],
       slug,
     )
+  assertAutonomyCoverage(slug, projectName, mode?.slug, args, selected, effectiveAutonomy)
   const allNeeds = workflowCompositionFactNeeds(selected.flatMap((step) => step.needs))
   const { resolved, facts } = resolveWorkflowProjectFacts(
     project,
@@ -945,7 +940,8 @@ export function getWorkflowStep(
   )
   if (missing.length)
     throw new Error(`missing required arguments: ${missing.map(({ name }) => name).join(', ')}`)
-  const project = workflowProject(projectName, d)
+  const project = projectByName(projectName, d)
+  if (!project) throw new Error(`unknown project "${projectName}"`)
   const effectiveAutonomy =
     autonomy ??
     resolveAutonomy(
@@ -953,6 +949,7 @@ export function getWorkflowStep(
       [builtInAutonomyScope(definition.defaultPreset)],
       slug,
     )
+  assertAutonomyCoverage(slug, projectName, selection.mode, args, [step], effectiveAutonomy)
   const { facts } = resolveWorkflowProjectFacts(
     project,
     step.needs,

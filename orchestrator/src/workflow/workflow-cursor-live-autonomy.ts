@@ -13,6 +13,7 @@ import { workflowKeyOf } from './workflow-cursor-arguments.ts'
 import { cursorAutonomy } from './workflow-cursor-autonomy.ts'
 import { selectWorkflowCursor, type WorkflowCursorContext } from './workflow-cursor-selection.ts'
 import { cursorComposition } from './workflow-cursor-serve.ts'
+import { decideCursorStart } from './workflow-cursor-transition.ts'
 import { composeWorkflow, getWorkflowStep } from './workflows.ts'
 
 type CursorLiveAutonomyInput = {
@@ -34,6 +35,27 @@ type WorkflowLiveAutonomyInput = Omit<CursorLiveAutonomyInput, 'mode'> & {
 const errorReason = (error: unknown): string =>
   error instanceof Error ? error.message : String(error)
 
+export async function resolveCompositionLiveAutonomy(
+  input: WorkflowLiveAutonomyInput,
+  d: Database = db(),
+): Promise<LiveCursorAutonomy> {
+  const composition = composeWorkflow(input.slug, input.project, input.mode, input.args, d, {
+    ...input.selection,
+    mode: input.mode,
+  })
+  return {
+    resolution: await resolveProjectAutonomy(
+      composition.project,
+      composition.workflow.slug,
+      composition.workflow.defaultPreset,
+      catalogueStepsForAutonomy(composition.steps),
+      input.session,
+      undefined,
+      d,
+    ),
+  }
+}
+
 export async function resolveCursorLiveAutonomy(
   input: CursorLiveAutonomyInput,
   d: Database = db(),
@@ -52,15 +74,11 @@ export async function resolveCursorLiveAutonomy(
     input.context.taskStatusCategory,
     input.context.taskFlowClient,
   )
-  let composition: ReturnType<typeof composeWorkflow>
+  const autonomyRow = row && decideCursorStart(row.state) === 'reuse' ? row : null
   try {
-    composition = row
-      ? cursorComposition(row, d)
-      : composeWorkflow(input.slug, input.project, input.mode, input.args, d, {
-          ...input.selection,
-          mode: input.mode,
-        })
-    const stages = row ? Object.keys(cursorAutonomy(row)?.stages ?? {}) : []
+    if (!autonomyRow) return await resolveCompositionLiveAutonomy(input, d)
+    const composition = cursorComposition(autonomyRow, d)
+    const stages = Object.keys(cursorAutonomy(autonomyRow)?.stages ?? {})
     return {
       resolution: await resolveProjectAutonomy(
         composition.project,

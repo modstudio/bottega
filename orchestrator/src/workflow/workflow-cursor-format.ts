@@ -50,13 +50,34 @@ export function workflowCursorComposeCommand(row: {
   mode_slug: string
   args: string
 }): string {
-  const args = Object.entries(JSON.parse(row.args) as Record<string, string>)
+  return workflowComposeCommand(
+    row.workflow_slug,
+    row.project,
+    row.mode_slug,
+    JSON.parse(row.args) as Record<string, string>,
+  )
+}
+
+export function workflowComposeCommand(
+  slug: string,
+  project: string,
+  mode: string,
+  args: Record<string, string>,
+): string {
+  const renderedArgs = Object.entries(args)
     .map(([name, value]) => ` --arg ${shellWord(`${name}=${value}`)}`)
     .join('')
   return (
-    `${PLATFORM_SLUG} workflow compose ${shellWord(row.workflow_slug)} ` +
-    `--project ${shellWord(row.project)} --mode ${shellWord(row.mode_slug)}${args}`
+    `${PLATFORM_SLUG} workflow compose ${shellWord(slug)} ` +
+    `--project ${shellWord(project)} --mode ${shellWord(mode)}${renderedArgs}`
   )
+}
+
+export function workflowCursorResetRemedy(
+  cursor: { id: number; composeCommand: string },
+  project: string,
+): string {
+  return `${PLATFORM_SLUG} workflow abandon${workflowCursorReference(cursor.id, project).cli} --reason "<why>"; then start a new run with: ${cursor.composeCommand}`
 }
 
 export function workflowCursorTakeoverRemedy(

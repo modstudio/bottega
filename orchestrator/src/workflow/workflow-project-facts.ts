@@ -23,7 +23,7 @@ import {
 } from '../release/ship-to-reach.ts'
 import type { WorkflowAutonomyResolution } from './autonomy.ts'
 import { checkoutLanding } from './workflow-checkout-landing.ts'
-import { workflowCursorReference } from './workflow-cursor-format.ts'
+import { workflowCursorResetRemedy } from './workflow-cursor-format.ts'
 
 export type WorkflowFactProject = Pick<Project, 'name' | 'stack' | 'settings'>
 
@@ -158,7 +158,7 @@ function shipToFact(
     const cursor = 'cursor' in autonomy ? autonomy.cursor : undefined
     if (!cursor) throw new Error('resolved autonomy has no ship-to level')
     throw new Error(
-      `workflow cursor ${cursor.id}'s stored autonomy has no ship-to level; clear it with: ${PLATFORM_SLUG} workflow abandon${workflowCursorReference(cursor.id, project.name).cli} --reason "<why>"; then start a new run with: ${cursor.composeCommand}`,
+      `workflow cursor ${cursor.id}'s stored autonomy has no ship-to level; clear it with: ${workflowCursorResetRemedy(cursor, project.name)}`,
     )
   }
   if (autonomy.shipTo.complete === false)
