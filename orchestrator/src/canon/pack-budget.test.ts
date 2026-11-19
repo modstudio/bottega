@@ -6,10 +6,10 @@ import { newRecordId } from '../../../shared/record-id.ts'
 import { checkTreePackBudget } from '../../scripts/check-pack-budget.ts'
 import { setDoc } from '../../test/fixtures/docs.ts'
 import { dir } from '../../test/fixtures/store.ts'
-import { collectCanonLintInput } from './canon-files.ts'
 import { JOBS } from '../jobs/jobs.ts'
 import { upsertProject } from '../project/projects.ts'
 import { CanonBudgetError, compilePack } from './canon.ts'
+import { collectCanonLintInput } from './canon-files.ts'
 import { DEFAULT_PACK_BYTES, MAX_INJECT_DOC_BYTES } from './pack-budget.ts'
 
 const ROOT = fileURLToPath(new URL('../../..', import.meta.url)).replace(/\/$/, '')

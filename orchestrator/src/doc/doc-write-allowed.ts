@@ -8,7 +8,7 @@ import {
   type DocScope,
   docScopeHasProjectSubject,
 } from '../../../shared/docs.ts'
-import { type Refusal, refusal } from '../../../shared/refusal.ts'
+import { type Refusal, refusal, renderRefusal } from '../../../shared/refusal.ts'
 import { composeCanonRows } from '../canon/canon-hydrate.ts'
 import {
   type CanonFinding,
@@ -417,10 +417,15 @@ export function injectPackBudgetRefusal(input: {
     }))
     .sort((a, b) => b.bytes - a.bytes)
     .slice(0, 3)
-  return (
-    `canon pack ${input.job}/${input.project} would be ${bytes} bytes; ceiling is ${input.ceiling} bytes\n` +
-    `largest inject sections to demote: ${largest.map((doc) => `${doc.identity} (${doc.bytes} bytes)`).join(', ')}\n` +
-    'cleared by: shorten the document with bottega doc set, or set the named largest sections to delivery demand'
+  return renderRefusal(
+    refusal(
+      `canon pack ${input.job}/${input.project} would be ${bytes} bytes; ceiling is ${input.ceiling} bytes\n` +
+        `largest inject sections to demote: ${largest.map((doc) => `${doc.identity} (${doc.bytes} bytes)`).join(', ')}`,
+      {
+        kind: 'edit',
+        text: `shorten the document with ${PLATFORM_SLUG} doc set, or set the named largest sections to delivery demand`,
+      },
+    ),
   )
 }
 

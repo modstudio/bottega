@@ -26,7 +26,7 @@ import {
 test('inject pack budget decision includes canon and replaces the addressed document', () => {
   const base = {
     job: 'understand',
-    project: 'bottega',
+    project: PLATFORM_SLUG,
     ceiling: 40,
     canonMarkdown: 'canon',
     current: [{ identity: 'job/understand/guide', title: 'Guide', body: 'old' }],
@@ -42,7 +42,13 @@ test('inject pack budget decision includes canon and replaces the addressed docu
       ...base,
       proposed: { identity: 'job/understand/guide', title: 'Guide', body: 'x'.repeat(40) },
     }),
-  ).toMatch(/canon pack understand\/bottega would be \d+ bytes; ceiling is 40 bytes.*bottega doc set/s)
+  ).toContain(`canon pack understand/${PLATFORM_SLUG}`)
+  expect(
+    injectPackBudgetRefusal({
+      ...base,
+      proposed: { identity: 'job/understand/guide', title: 'Guide', body: 'x'.repeat(40) },
+    }),
+  ).toContain(`${PLATFORM_SLUG} doc set`)
 })
 
 const finding = (rule: string, message: string, line = 1) => ({

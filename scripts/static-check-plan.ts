@@ -303,10 +303,7 @@ const STATIC_CHECKS: readonly StaticCheckDeclaration[] = [
   script('scripts/generate-recipe-schema.ts', run, {
     extra: () => ['--check'],
   }),
-  script(
-    'orchestrator/scripts/check-pack-budget.ts',
-    run,
-  ),
+  script('orchestrator/scripts/check-pack-budget.ts', run),
   script('orchestrator/scripts/check-canon-lint.ts', run),
   script('scripts/quality/check-test-substance.ts', run, {
     extra: (qualityBase) => [qualityBase],

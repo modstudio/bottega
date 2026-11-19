@@ -175,9 +175,9 @@ function assertInjectSize(input: {
         ...listDocs({ scope: 'global', subject: null, status: 'current' }),
         ...listDocs({ scope: 'job', subject: jobName, status: 'current' }),
         ...listDocs({ scope: 'project', subject: project.name, status: 'current' }),
-      ].filter((doc) => isDocInjectedForRun(doc, jobName, project.name)).filter(
-        (doc) => `${doc.scope}/${doc.subject ?? '_'}/${doc.slug}` !== identity,
-      )
+      ]
+        .filter((doc) => isDocInjectedForRun(doc, jobName, project.name))
+        .filter((doc) => `${doc.scope}/${doc.subject ?? '_'}/${doc.slug}` !== identity)
       const canon = packedCanonMarkdownFromRows(
         project.name,
         listDocs({ scope: 'canon', subject: null, status: 'current' }),

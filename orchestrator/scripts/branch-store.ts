@@ -144,15 +144,3 @@ export function migrateStore(path: string): void {
     database.close()
   }
 }
-
-export function mintFixtureStore(destDir: string): string {
-  const path = join(destDir, FROZEN_STATE_NAMES.orchestratorDatabase)
-  const database = new Database(path, { create: true })
-  try {
-    database.exec('PRAGMA foreign_keys = ON;')
-    applyMigrations(database)
-  } finally {
-    database.close()
-  }
-  return path
-}

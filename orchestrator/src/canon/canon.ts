@@ -11,13 +11,10 @@ import { optionalCheckoutRoot } from '../../../shared/install-root.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { isCliCommand } from '../cli/args.ts'
 import { db, nowIso, storeWritesRefused, writeTransaction } from '../database/db.ts'
-import { isDocInjectedForRun } from '../doc/doc-injection.ts'
 import { type Doc, docsForRun, listDocs } from '../doc/docs.ts'
-import { type GateFacts, projectAtGateFacts } from '../gate/gate-facts.ts'
 import { targetGitEnvironment } from '../git/git-environment.ts'
 import { DEFAULT_PACK_BYTES, job as getJob, JOBS } from '../jobs/jobs.ts'
 import { projectAt, projectByName, projects } from '../project/projects.ts'
-import { classifyCanonFile } from './canon-lint.ts'
 import { joinPackSections, packedCanonMarkdownFromRows } from './pack-content.ts'
 
 function canonCheckoutRoot(): string | null {
@@ -388,28 +385,6 @@ function buildPack(job: string, cwd: string, budgetBytes: number): Pack {
 export function compilePack(input: { job: string; cwd: string }): Pack {
   const selected = getJob(input.job)
   return buildPack(input.job, input.cwd, selected.packBytes ?? DEFAULT_PACK_BYTES)
-}
-
-export function compilePackFromGateFacts(
-  input: { job: string; cwd: string },
-  facts: GateFacts,
-): Pack {
-  const selectedJob = getJob(input.job)
-  const project = projectAtGateFacts(input.cwd, facts)
-  const projectName = project?.name ?? null
-  const selected = facts.docs.filter((doc) => isDocInjectedForRun(doc, input.job, projectName))
-  const canon = packedCanonMarkdownFromRows(
-    projectName,
-    facts.docs.filter((doc) => doc.scope === 'canon' && doc.subject === null),
-    facts.docs.filter((doc) => doc.scope === 'canon' && doc.subject === projectName),
-  )
-  return assemblePack({
-    job: input.job,
-    projectName,
-    selected,
-    canon,
-    budgetBytes: selectedJob.packBytes ?? DEFAULT_PACK_BYTES,
-  })
 }
 
 function tracked(root: string): Set<string> | null {
