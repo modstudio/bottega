@@ -1,10 +1,10 @@
 // concern: hosted-row-release
 /** Releases verified hosted workflow history while retaining incomplete tables and their parents. */
 import type { Database } from 'bun:sqlite'
-import { mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { resolveStateRoot } from '../../../shared/state-directory.ts'
+import { BOUNDED_JSONL_ARCHIVE_KEEP, writeBoundedJsonlArchive } from '../jsonl-archive.ts'
 import { readRecordInstallBinding } from '../record/install-binding.ts'
 import { recordApiClient } from '../record/record-api-client.ts'
 import {
@@ -21,7 +21,7 @@ import {
 import { withSynchronousDatabaseForMigrationStep, writeTransaction } from './db.ts'
 
 const HOSTED_ROW_RELEASE_SHOWN_IDS = 5
-export const HOSTED_ROW_RELEASE_ARCHIVE_KEEP = 5
+export const HOSTED_ROW_RELEASE_ARCHIVE_KEEP = BOUNDED_JSONL_ARCHIVE_KEEP
 
 export type HostedRowReleaseDecision = {
   deleteIds: HostedRowIds
@@ -115,25 +115,17 @@ function defaultPresenceReader(input: Parameters<PresenceReader>[0]) {
 type ArchivedHostedRow = { table: HostedRowTable; row: Record<string, unknown> }
 type ArchiveWriter = (rows: readonly ArchivedHostedRow[]) => string
 
-function archiveTimestamp(now: Date): string {
-  return now.toISOString().replace(/[:.]/g, '-')
-}
-
 export function writeHostedRowReleaseArchive(
   rows: readonly ArchivedHostedRow[],
   input: { directory?: string; now?: Date } = {},
 ): string {
   const directory =
     input.directory ?? join(resolveStateRoot(process.env), 'archive', 'hosted-row-release')
-  mkdirSync(directory, { recursive: true, mode: 0o700 })
-  const path = join(directory, `${archiveTimestamp(input.now ?? new Date())}.jsonl`)
-  writeFileSync(path, `${rows.map((row) => JSON.stringify(row)).join('\n')}\n`, { mode: 0o600 })
-  const archives = readdirSync(directory)
-    .filter((name) => name.endsWith('.jsonl'))
-    .sort()
-  for (const name of archives.slice(0, -HOSTED_ROW_RELEASE_ARCHIVE_KEEP))
-    rmSync(join(directory, name))
-  return path
+  return writeBoundedJsonlArchive(rows, {
+    directory,
+    keep: HOSTED_ROW_RELEASE_ARCHIVE_KEEP,
+    now: input.now,
+  })
 }
 
 function rowsToArchive(database: Database, ids: HostedRowIds): ArchivedHostedRow[] {

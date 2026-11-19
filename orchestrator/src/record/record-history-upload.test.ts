@@ -168,9 +168,9 @@ type ImportClient = Pick<
 function dependencies(database: Database, client: ImportClient) {
   return {
     client: {
-      readTaskFlowPresence: async (input: Parameters<
-        NonNullable<RecordApiClient['readTaskFlowPresence']>
-      >[0]) => ({
+      readTaskFlowPresence: async (
+        input: Parameters<NonNullable<RecordApiClient['readTaskFlowPresence']>>[0],
+      ) => ({
         ...Object.fromEntries(Object.keys(input).map((key) => [key, []])),
         questionAuditIdentities: [],
       }),
@@ -451,11 +451,7 @@ test('sign-in skips a question whose audit is present under a different id', asy
       throw new Error('unexpected question import')
     },
   }
-  await uploadLocalWorkflowHistory(
-    [],
-    { log: () => undefined },
-    dependencies(database, client),
-  )
+  await uploadLocalWorkflowHistory([], { log: () => undefined }, dependencies(database, client))
   expect(imports).toBe(0)
   database.close()
 })
@@ -891,11 +887,7 @@ test('sync archives a question held by the record with different content', async
   expect(importedIds.filter((id) => id === questionId)).toHaveLength(1)
   expect(readdirSync(directory).filter((name) => !before.has(name))).toEqual(created)
 
-  await uploadLocalWorkflowHistory(
-    [],
-    { log: () => undefined },
-    dependencies(database, client),
-  )
+  await uploadLocalWorkflowHistory([], { log: () => undefined }, dependencies(database, client))
   expect(importedIds.filter((id) => id === questionId)).toHaveLength(1)
   expect(readdirSync(directory).filter((name) => !before.has(name))).toEqual(created)
   database.close()

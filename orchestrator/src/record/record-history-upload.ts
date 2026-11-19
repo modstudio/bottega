@@ -6,7 +6,7 @@ import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { resolveStateRoot } from '../../../shared/state-directory.ts'
 import { withDatabaseForMigrationStep } from '../database/db.ts'
-import { writeHostedRowReleaseArchive } from '../database/hosted-row-release.ts'
+import { BOUNDED_JSONL_ARCHIVE_KEEP, writeBoundedJsonlArchive } from '../jsonl-archive.ts'
 import type { ProjectAdoptionResult } from '../project/project-relink.ts'
 import {
   localQuestionHistory,
@@ -167,7 +167,9 @@ function storedHeldQuestionIds(database: Database): Set<string> {
   if (!row) return new Set()
   try {
     const ids: unknown = JSON.parse(row.value)
-    return new Set(Array.isArray(ids) ? ids.filter((id): id is string => typeof id === 'string') : [])
+    return new Set(
+      Array.isArray(ids) ? ids.filter((id): id is string => typeof id === 'string') : [],
+    )
   } catch {
     return new Set()
   }
@@ -391,6 +393,36 @@ async function historyDestinations(
   return destinations
 }
 
+async function uploadSignInQuestion(
+  history: LocalQuestionHistory[number],
+  present: PresentHistory,
+  pass: UploadPassState,
+  client: UploadDependencies['client'] & {
+    importQuestion: NonNullable<UploadDependencies['client']['importQuestion']>
+  },
+  destination: RecordWriteDestination,
+) {
+  if (!questionIsAbsent(history, present, pass.heldQuestionIds)) return null
+  const id = String(history.row.record_id)
+  try {
+    return await client.importQuestion(
+      {
+        requestId: taskFlowRequestId('import', ['question', id]),
+        question: questionSnapshotFromRow(history.row),
+        audits: history.audits,
+      },
+      destination,
+    )
+  } catch (cause) {
+    if (errorMessage(cause).includes(RECORD_QUESTION_DIFFERENT_CONTENT)) {
+      pass.heldQuestions.push(history)
+      pass.heldQuestionIds.add(id)
+      return null
+    }
+    return recordCall(() => Promise.reject(cause))
+  }
+}
+
 async function uploadProjectHistory(
   database: Database,
   project: HistoryProject,
@@ -417,26 +449,11 @@ async function uploadProjectHistory(
   const questions = localQuestionHistory(database, project.recordId)
   let uploadedQuestions = 0
   for (const history of questions) {
-    if (!questionIsAbsent(history, present, pass.heldQuestionIds)) continue
-    const id = String(history.row.record_id)
-    const question = {
-      requestId: taskFlowRequestId('import', ['question', id]),
-      question: questionSnapshotFromRow(history.row),
-      audits: history.audits,
-    }
-    try {
-      const result = await client.importQuestion(question, destination)
-      uploadedQuestions += 1
-      if (question.question.number !== result.number)
-        presentation.log(`q${question.question.number} -> q${result.number}`)
-    } catch (cause) {
-      if (errorMessage(cause).includes(RECORD_QUESTION_DIFFERENT_CONTENT)) {
-        pass.heldQuestions.push(history)
-        pass.heldQuestionIds.add(id)
-        continue
-      }
-      await recordCall(() => Promise.reject(cause))
-    }
+    const result = await uploadSignInQuestion(history, present, pass, client, destination)
+    if (!result) continue
+    uploadedQuestions += 1
+    const number = Number(history.row.number)
+    if (number !== result.number) presentation.log(`q${number} -> q${result.number}`)
   }
   presentation.log(
     `${project.name}: uploaded ${flows.length} task flows, ${stages} stages, ${uploadedQuestions} questions`,
@@ -455,26 +472,7 @@ async function uploadPersonalQuestionHistory(
 ): Promise<void> {
   let uploadedQuestions = 0
   for (const item of history) {
-    if (!questionIsAbsent(item, present, pass.heldQuestionIds)) continue
-    const id = String(item.row.record_id)
-    try {
-      await client.importQuestion(
-        {
-          requestId: taskFlowRequestId('import', ['question', id]),
-          question: questionSnapshotFromRow(item.row),
-          audits: item.audits,
-        },
-        destination,
-      )
-      uploadedQuestions += 1
-    } catch (cause) {
-      if (errorMessage(cause).includes(RECORD_QUESTION_DIFFERENT_CONTENT)) {
-        pass.heldQuestions.push(item)
-        pass.heldQuestionIds.add(id)
-        continue
-      }
-      await recordCall(() => Promise.reject(cause))
-    }
+    if (await uploadSignInQuestion(item, present, pass, client, destination)) uploadedQuestions += 1
   }
   presentation.log(`personal space: uploaded ${uploadedQuestions} questions`)
 }
@@ -597,7 +595,7 @@ type DestinationFor = (
 const errorMessage = (cause: unknown): string =>
   cause instanceof Error ? cause.message : String(cause)
 
-export function questionIsAbsent(
+function questionIsAbsent(
   history: LocalQuestionHistory[number],
   present: PresentHistory,
   heldQuestionIds: ReadonlySet<string> = new Set(),
@@ -748,12 +746,12 @@ async function uploadPersonalMissingHistory(
 
 function writeQuestionConflictArchive(histories: LocalQuestionHistory): string {
   const directory = join(resolveStateRoot(process.env), 'archive', 'history-upload-conflict')
-  return writeHostedRowReleaseArchive(
+  return writeBoundedJsonlArchive(
     histories.map((history) => ({
       table: 'question',
       row: { ...history.row, audits: history.audits },
     })),
-    { directory },
+    { directory, keep: BOUNDED_JSONL_ARCHIVE_KEEP },
   )
 }
 

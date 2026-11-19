@@ -9,13 +9,14 @@ const module = (file: string, allowed: string[]): ArchitectureModule => ({
 })
 
 export const databaseModules: ArchitectureModule[] = [
+  module('orchestrator/src/jsonl-archive.ts', ['node:fs', 'node:path']),
   module('orchestrator/src/database/hosted-table-guard.ts', ['bun:sqlite']),
   module('orchestrator/src/database/hosted-row-release.ts', [
     'bun:sqlite',
-    'node:fs',
     'node:path',
     '../../../shared/brand.ts',
     '../../../shared/state-directory.ts',
+    '../jsonl-archive.ts',
     '../record/install-binding.ts',
     '../record/record-api-client.ts',
     '../record/record-hosted-row-presence.ts',

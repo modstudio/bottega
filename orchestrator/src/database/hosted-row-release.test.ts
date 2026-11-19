@@ -200,7 +200,13 @@ function adapterDependencies(
 ) {
   return {
     withDatabase: <T>(action: (value: Database) => T) => action(database),
-    presence,
+    presence: async (input: Parameters<typeof presence>[0]) => {
+      const result = await presence(input)
+      return {
+        ...result,
+        questionAuditIdentities: result.questionAuditIdentities ?? [],
+      }
+    },
     archive: () => '/tmp/release.jsonl',
   }
 }
@@ -331,7 +337,7 @@ test('hosted row release archives exactly the rows it deletes before removing th
     { log: (line) => output.push(line) },
     {
       withDatabase: <T>(action: (value: Database) => T) => action(database),
-      presence: async (input) => input,
+      presence: async (input) => ({ ...input, questionAuditIdentities: [] }),
       archive: (rows) =>
         writeHostedRowReleaseArchive(rows, {
           directory,

@@ -21,6 +21,7 @@ import {
 } from './record-question-step.ts'
 import {
   type QuestionAuditIdentity,
+  questionAuditIdentitySchema,
   TASK_FLOW_CLOSED_STAGE_STATES_SQL,
 } from './record-task-flow-contract.ts'
 
@@ -64,11 +65,13 @@ export async function readRecordQuestionPresenceTransaction(
   return {
     questionIds: ids(questions),
     questionAuditIds: ids(questionAudits),
-    questionAuditIdentities: questionAuditIdentities.map((row) => ({
-      questionId: String(row.question_id),
-      action: String(row.action),
-      at: recordIso(row.at),
-    })),
+    questionAuditIdentities: questionAuditIdentities.map((row) =>
+      questionAuditIdentitySchema.parse({
+        questionId: String(row.question_id),
+        action: String(row.action),
+        at: recordIso(row.at),
+      }),
+    ),
   }
 }
 
