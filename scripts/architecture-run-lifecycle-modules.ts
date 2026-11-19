@@ -787,6 +787,7 @@ export const runLifecycleModules: ArchitectureModule[] = [
     './run-outbox.ts',
     './run-root-rollup.ts',
     './run-process.ts',
+    './run-question-readiness.ts',
     './run-resume-kind.ts',
     './run-task-claim-renewal.ts',
     './question-vocabulary.ts',
@@ -819,6 +820,11 @@ export const runLifecycleModules: ArchitectureModule[] = [
     '../failure/failure.ts',
     './question-close.ts',
     './run-root-rollup.ts',
+  ]),
+  module('orchestrator/src/run/run-question-readiness.ts', [
+    'bun:sqlite',
+    '../database/db.ts',
+    './run-outbox.ts',
   ]),
   module('orchestrator/src/run/run-terminal-fallback.ts', [
     './run-finish-error.ts',

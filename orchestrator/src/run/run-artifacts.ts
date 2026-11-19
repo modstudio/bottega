@@ -402,11 +402,10 @@ export function reconcileRun(id: string): string {
   } | null
   if (!row) throw new Error(`no run ${id}`)
   /**
-   * Reconciliation can restore an `asking` status only because question rows
-   * are inserted before the journalled terminal write. The snapshot carries no
-   * question payload. Making those inserts part of the terminal transaction
-   * therefore requires first making questions recoverable from this journal,
-   * or a failed transaction could reconcile to `asking` with nothing to answer.
+   * The terminal snapshot carries no question payload, so reconciliation never
+   * recreates questions. Reply collection makes the run answerable before the
+   * hosted question write, while this snapshot is persisted only after that
+   * write returns.
    */
   const appliedLifecycle = writeTransaction(() => {
     const lifecycle = terminalLifecycleWrite(

@@ -75,6 +75,7 @@ import { ASKED_VIA_LIVE, ASKED_VIA_REPLY, type AskedVia } from '../run/question-
 import { runScratchDir } from '../run/run-artifacts.ts'
 import { resolveRunIdentifier } from '../run/run-identifier.ts'
 import { enqueueRunRecord } from '../run/run-outbox.ts'
+import { markRunAsking } from '../run/run-question-readiness.ts'
 import { enableRunSchemaReload } from '../run/run-schema-reload-cause.ts'
 import { registerAskBoardTools } from './ask-board-tools.ts'
 import { writeAskServerFailure } from './ask-failure.ts'
@@ -465,7 +466,7 @@ export async function ask(
   const typed = WorkerQuestionSchema.parse(o)
   const awaitingOperatorAt = await initialQuestionWaitingAt(o.runId, askedAt)
   writeTransaction(() => {
-    db().query("UPDATE run SET status='asking' WHERE record_id=? AND status='running'").run(o.runId)
+    markRunAsking(db(), o.runId)
     enqueueRunRecord(db(), o.runId, machineId(), askedAt)
   })
   const id = await recordQuestion({

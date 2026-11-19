@@ -16,6 +16,7 @@ import { gooseProviderFile } from '../agent/goose-provider.ts'
 import { terminateProcessGroup } from '../idle-kill.ts'
 import { acpHarnessAttachesProjectServers } from '../mcp/mcp-native-attachment.ts'
 import { lowerRunChildPriority } from '../run/run-child-priority.ts'
+import { markRunAsking } from '../run/run-question-readiness.ts'
 import { runHarnessStateDir } from '../run-owned-paths.ts'
 import type { SandboxRuntimeConfig } from '../sandbox/sandbox.ts'
 import { sandboxLaunchArgv } from '../sandbox/sandbox.ts'
@@ -138,7 +139,6 @@ type GrokSessionResponse = {
 }
 
 const ACP_HANDSHAKE_TIMEOUT_MS = 60_000
-const MARK_RUN_ASKING_SQL = "UPDATE run SET status='asking' WHERE record_id=? AND status='running'"
 type AcpHandshakeStage = 'initialize' | 'session/load' | 'session/new'
 
 class AcpHandshakeTimeout extends Error {}
@@ -856,7 +856,7 @@ async function openAcp(opts: TransportStartOpts): Promise<TransportHandle> {
           if (runId) {
             const { ask } = await import('../ask/ask.ts')
             const { db } = await import('../database/db.ts')
-            db().query(MARK_RUN_ASKING_SQL).run(runId)
+            markRunAsking(db(), runId)
             const answer = await ask({
               runId,
               question: req.params.message,
