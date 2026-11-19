@@ -40,9 +40,7 @@ function facts(): SetupInstallVerifyFacts {
       exists: true,
       executable: true,
     })),
-    canonEntries: [
-      { harness: 'claude', path: '/home/operator/.claude/CLAUDE.md', exists: true },
-    ],
+    canonEntries: [{ harness: 'claude', path: '/home/operator/.claude/CLAUDE.md', exists: true }],
   }
 }
 
@@ -117,9 +115,7 @@ test('a skipped settings render refuses without verifying', async () => {
   let gathered = false
   await expect(
     applySetupInstallVerify({
-      applySettings: async () => [
-        { target: 'settings apply', outcome: 'skipped', changed: false },
-      ],
+      applySettings: async () => [{ target: 'settings apply', outcome: 'skipped', changed: false }],
       facts: () => {
         gathered = true
         return facts()

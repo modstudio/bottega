@@ -5,8 +5,8 @@ import { normalize } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   hookScriptPath,
-  shellQuote,
   type ProductHookDeclaration,
+  shellQuote,
 } from '../settings/settings-machine-hooks.ts'
 
 export type SetupInstallSettingsFileFact = {

@@ -16,11 +16,7 @@ import {
   applyMachineSettings,
   type MachineSettingsApplyResult,
 } from '../settings/settings-machine-apply.ts'
-import {
-  hookScriptPath,
-  PRODUCT_HOOKS,
-  SCRIPT_FILES,
-} from '../settings/settings-machine-hooks.ts'
+import { hookScriptPath, PRODUCT_HOOKS, SCRIPT_FILES } from '../settings/settings-machine-hooks.ts'
 import {
   type SetupInstallSettingsFileFact,
   type SetupInstallVerifyFacts,
