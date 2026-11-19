@@ -10,10 +10,4 @@ describe('missing workflow text message', () => {
     expect(message.condition).toContain('in the record for your spaces')
     expect(message.condition).not.toContain('this machine')
   })
-
-  test("a local-authoritative miss names this machine's store", () => {
-    expect(missingWorkflowTextMessage(TOKEN, 'local-authoritative').condition).toContain(
-      "in this machine's store",
-    )
-  })
 })

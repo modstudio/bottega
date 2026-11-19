@@ -19,7 +19,7 @@ type AttachmentReader = (token: string) => Promise<CarriedAttachment>
 export type CarriedAttachmentSource = {
   label: string
   text: string
-  missing?: 'refuse' | 'warn'
+  missing?: 'warn'
 }
 type CarriedAttachmentCandidate = { token: string; sources: string[]; refusalRequired: boolean }
 
@@ -62,6 +62,15 @@ function attachmentEntry(attachment: CarriedAttachment): string {
   )
 }
 
+function unresolvedAttachmentEntry({
+  token,
+  sources,
+  condition,
+  remedy,
+}: AttachmentFailure): string {
+  return `${token} — unresolved (from ${sources.join(', ')})\n\n${condition}\nRemedy: ${remedy}`
+}
+
 export function carriedAttachmentsSection(attachments: readonly CarriedAttachment[]): string {
   if (attachments.length === 0) return ''
   const heading = 'CARRIED ATTACHMENTS'
@@ -82,6 +91,16 @@ export function carriedAttachmentsSection(attachments: readonly CarriedAttachmen
     return boundUtf8(candidate, CARRIED_ATTACHMENTS_MAX_BYTES, marker)
   }
   return section
+}
+
+function carriedAttachmentsWithFailuresSection(
+  attachments: readonly CarriedAttachment[],
+  failures: readonly AttachmentFailure[],
+): string {
+  if (failures.length === 0) return carriedAttachmentsSection(attachments)
+  const rendered = carriedAttachmentsSection(attachments)
+  const unresolved = failures.map(unresolvedAttachmentEntry).join('\n\n')
+  return rendered ? `${rendered}\n\n${unresolved}` : `CARRIED ATTACHMENTS\n\n${unresolved}`
 }
 
 type AttachmentFailure = {
@@ -131,16 +150,18 @@ export async function resolveCarriedAttachments(
   const readAttachment = dependencies.readAttachment ?? showWorkflowText
   const resolved: CarriedAttachment[] = []
   const failures: AttachmentFailure[] = []
+  const warnings: AttachmentFailure[] = []
   for (const { token, sources, refusalRequired } of carriedTokens) {
     try {
       resolved.push(await readAttachment(token))
     } catch (cause) {
       const failure = attachmentFailure(cause, token, sources)
-      if (cause instanceof WorkflowTextNotHeldError && !refusalRequired)
+      if (cause instanceof WorkflowTextNotHeldError && !refusalRequired) {
         dependencies.onWarning?.(attachmentWarning(failure))
-      else failures.push(failure)
+        warnings.push(failure)
+      } else failures.push(failure)
     }
   }
   if (failures.length > 0) throw attachmentRefusal(failures)
-  return carriedAttachmentsSection(resolved)
+  return carriedAttachmentsWithFailuresSection(resolved, warnings)
 }

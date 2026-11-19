@@ -128,7 +128,7 @@ test('a later claim records a UUID ruling identity and never resurrects a failed
       usingMcp: false,
       startedByUserId: null,
       replySchemaName: 'WORKER_SCHEMA',
-      carriedQuestionIds: [carriedQuestionRecordId],
+      carriedContext: { questionIds: [carriedQuestionRecordId], attachmentWarnings: [] },
       endpointKeySource: 'project',
       credential: { credentialId: newRecordId(), payer: 'shared', binding: 'project' },
       assertDispatchAllowed: () => {},
@@ -138,7 +138,7 @@ test('a later claim records a UUID ruling identity and never resurrects a failed
         ...claimInput,
         opts: { job: 'review-lens' },
         stamp: 'unlinked-claim',
-        carriedQuestionIds: [],
+        carriedContext: { questionIds: [], attachmentWarnings: [] },
       }),
     ).rejects.toThrow(RUN_REFERENCE_REFUSAL)
 
@@ -187,7 +187,7 @@ test('a later claim records a UUID ruling identity and never resurrects a failed
       ...claimInput,
       opts: { job: 'review-lens' },
       stamp: 'implicit-transport-claim',
-      carriedQuestionIds: [],
+      carriedContext: { questionIds: [], attachmentWarnings: [] },
     })
     expect(
       db().query('SELECT transport_explicit FROM run WHERE record_id=?').get(implicit.claim.id),
@@ -206,7 +206,7 @@ test('a later claim records a UUID ruling identity and never resurrects a failed
         binding: { cursorRecordId, stepSlug: 'write' },
       },
       stamp: 'bound-fresh-claim',
-      carriedQuestionIds: [],
+      carriedContext: { questionIds: [], attachmentWarnings: [] },
       reviewTarget: { branch: 'DEV-2403-reviewed', commit: 'head', base: 'base' },
     })
     expect(
@@ -224,7 +224,7 @@ test('a later claim records a UUID ruling identity and never resurrects a failed
       stamp: 'harness-claim',
       name: 'harness',
       a: harnessAgent(),
-      carriedQuestionIds: [],
+      carriedContext: { questionIds: [], attachmentWarnings: [] },
     })
     expect(
       db()
@@ -259,7 +259,7 @@ test('a later claim records a UUID ruling identity and never resurrects a failed
           stamp: 'migrating-fresh-claim',
           prompt: refusedPrompt,
           originalPrompt: refusedPrompt,
-          carriedQuestionIds: [],
+          carriedContext: { questionIds: [], attachmentWarnings: [] },
           assertDispatchAllowed: () => assertMigrationDispatchAllowed(db(), false),
           recordDispatchRefusal: recordMigrationDispatchRefusal,
         }),
@@ -288,7 +288,7 @@ test('a later claim records a UUID ruling identity and never resurrects a failed
         ...claimInput,
         opts: { job: 'review-lens', reserveId: failedReservation },
         stamp: 'failed-reservation-claim',
-        carriedQuestionIds: [],
+        carriedContext: { questionIds: [], attachmentWarnings: [] },
       }),
     ).rejects.toThrow('is no longer claimable')
     expect(
@@ -319,7 +319,7 @@ test('a later claim records a UUID ruling identity and never resurrects a failed
           },
         },
         stamp: 'post-claim-setup-failure',
-        carriedQuestionIds: [],
+        carriedContext: { questionIds: [], attachmentWarnings: [] },
         deferredCwdMcpPlan: ['ensure-main-stack'],
       }),
     ).rejects.toThrow('deferred MCP main-stack step ran before project preflight')

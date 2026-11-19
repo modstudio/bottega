@@ -85,7 +85,7 @@ import { closeRun } from './run-close.ts'
 import { acquireRunCloseOutLeaseHandle } from './run-close-out-lease-handle.ts'
 import * as runConfinement from './run-confinement.ts'
 import { runDispatchPrompt } from './run-dispatch-prompt.ts'
-import * as dispatchRulings from './run-dispatch-rulings.ts'
+import { prepareRunDispatchRulings } from './run-dispatch-rulings.ts'
 import { runEvidence } from './run-evidence-context.ts'
 import { HARNESS_AGENT, intendedExecutor } from './run-executor.ts'
 import { assertConfiguredGitGuard, workerGitConfigEnvironment } from './run-git-guard.ts'
@@ -319,7 +319,7 @@ export async function run(
       })
     }
   }
-  const preparedRulings = await dispatchRulings.prepareRunDispatchRulings({
+  const preparedRulings = await prepareRunDispatchRulings({
     firstTurn: resume.isFirstTurn,
     workspaceSource: resume.workspaceSource,
     parentRunRecordId: opts.resume?.parent ?? null,
@@ -535,7 +535,7 @@ export async function run(
     usingMcp,
     startedByUserId,
     replySchemaName,
-    carriedQuestionIds: preparedRulings.questionIds,
+    carriedContext: preparedRulings,
     endpointKeySource: endpoint.key.source,
     credential: endpoint.credential,
     precomputedLinks: preparedRulings.links,
@@ -571,7 +571,7 @@ export async function run(
     mcpConnection: claimedMcpConnection,
     usingMcp: claimedUsingMcp,
   } = claimedRun
-  dispatchRulings.recordDispatchAttachmentWarnings(claim.id, preparedRulings.attachmentWarnings)
+  const localMachineId = machineId()
   const owner = { rootRunId: rootRunRecordId(claim.id), runId: claim.id, projectId: runProjectId }
   runMigration.enableRunSchemaReload(claim.id)
   outPath = claimedOutputPath
@@ -984,7 +984,7 @@ export async function run(
               proc,
               askLoopback,
               claim,
-              machineId: machineId(),
+              machineId: localMachineId,
               writesJob,
               worktree,
               launchKey,
@@ -1042,7 +1042,7 @@ export async function run(
             {
               runId: claim.id,
               started,
-              machineId: machineId(),
+              machineId: localMachineId,
             },
           ))
         } finally {

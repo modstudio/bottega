@@ -147,24 +147,19 @@ test('a dead token only in task text warns and does not refuse', async () => {
   expect(result.warnings).toHaveLength(1)
   expect(result.warnings[0]).toContain(FIRST)
   expect(result.warnings[0]).toContain('from task text')
-})
-
-test('a dead token only in a ruling refuses with its question id', async () => {
-  const result = await missingAttachmentResult([
-    { label: 'task rulings (question Q)', text: FIRST },
-  ])
-
-  expect(result.error?.message).toContain(FIRST)
-  expect(result.error?.message).toContain('from task rulings (question Q)')
-  expect(result.warnings).toEqual([])
-})
-
-test('a dead token only in the spec refuses with its section', async () => {
-  const result = await missingAttachmentResult([{ label: 'spec', text: FIRST }])
-
-  expect(result.error?.message).toContain(FIRST)
-  expect(result.error?.message).toContain('from spec')
-  expect(result.warnings).toEqual([])
+  const condition = missingWorkflowTextMessage(FIRST, 'local-authoritative').condition
+  const section = await resolveCarriedAttachments(
+    [{ label: 'task text', text: FIRST, missing: 'warn' }],
+    {
+      readAttachment: async () => {
+        const missing = missingWorkflowTextMessage(FIRST, 'local-authoritative')
+        throw new WorkflowTextNotHeldError(missing.condition, missing.remedy)
+      },
+    },
+  )
+  expect(section).toContain('CARRIED ATTACHMENTS')
+  expect(section).toContain(`${FIRST} — unresolved (from task text)`)
+  expect(section).toContain(condition)
 })
 
 test('a dead token in task text and the spec follows the stricter rule', async () => {

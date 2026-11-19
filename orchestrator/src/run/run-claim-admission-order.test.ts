@@ -63,7 +63,7 @@ test('claim records host admission before its repository tree plan runs', async 
     usingMcp: false,
     startedByUserId: null,
     replySchemaName: 'WORKER_SCHEMA',
-    carriedQuestionIds: [],
+    carriedContext: { questionIds: [], attachmentWarnings: [] },
     endpointKeySource: 'project',
     assertDispatchAllowed: () => {},
     admitDeps: {

@@ -25,7 +25,7 @@ export type TaskRulingRow = {
   candidate_count?: number
 }
 
-type CarriedTaskRuling = {
+export type CarriedTaskRuling = {
   questionId: number
   questionRecordId: string
   runId: string | null
@@ -38,6 +38,14 @@ type CarriedTaskRuling = {
   replacement: boolean
   questionTruncated: boolean
   rulingTruncated: boolean
+}
+
+export function taskRulingFreeText(ruling: CarriedTaskRuling): {
+  question: string
+  ruling: string
+  basis: string | null
+} {
+  return { question: ruling.question, ruling: ruling.ruling, basis: ruling.basis }
 }
 
 export type TaskRulingsSelection = {
@@ -84,13 +92,14 @@ function quoted(value: string): string {
 }
 
 function entryText(ruling: CarriedTaskRuling): string {
+  const text = taskRulingFreeText(ruling)
   const replacement = ruling.replacement ? ' (replaces an overturned ruling)' : ''
   const questionTruncated = ruling.questionTruncated ? ' (truncated)' : ''
   const rulingTruncated = ruling.rulingTruncated ? ' (truncated)' : ''
   return (
-    `- Question${questionTruncated}:\n${quoted(ruling.question)}\n` +
-    `  Ruling${replacement}${rulingTruncated}:\n${quoted(ruling.ruling)}\n` +
-    (ruling.basis ? `  Basis:\n${quoted(ruling.basis)}\n` : '') +
+    `- Question${questionTruncated}:\n${quoted(text.question)}\n` +
+    `  Ruling${replacement}${rulingTruncated}:\n${quoted(text.ruling)}\n` +
+    (text.basis ? `  Basis:\n${quoted(text.basis)}\n` : '') +
     `  Ruled by: ${ruling.ruledBy} · ${ruling.runId === null ? `workflow cursor ${ruling.workflowCursorId}` : `run ${ruling.runId}`} · ${ruling.date}`
   )
 }

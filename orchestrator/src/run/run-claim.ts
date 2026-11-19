@@ -19,7 +19,7 @@ import { db, nowIso, sessionId, writeTransaction } from '../database/db.ts'
 import type { ReviewLensInputStatuses } from '../database/review-lens-input-artifact.ts'
 import { namesRecordedRunTree } from '../dispatch/dispatch-preflight.ts'
 import { retargetRepositoryPromptForDispatch } from '../dispatch/prompt-retarget.ts'
-import { appendRunEvent } from '../events.ts'
+import { appendRunEvent, recordRunWarning } from '../events.ts'
 import { checkoutAliases, realpathOrSpelled } from '../git/checkout-identity.ts'
 import { branchOf, gitContext } from '../git/git-environment.ts'
 import { job, jobBoundInstruction } from '../jobs/jobs.ts'
@@ -209,7 +209,7 @@ export type ClaimInput = {
   usingMcp: boolean
   startedByUserId: string | null
   replySchemaName: string
-  carriedQuestionIds: string[]
+  carriedContext: { questionIds: string[]; attachmentWarnings: readonly string[] }
   endpointKeySource: 'agent' | 'project'
   credential?: CredentialPayment | null
   admitDeps?: HostCapacityWaitDeps
@@ -271,6 +271,10 @@ function prepareClaimFiles(input: ClaimInput, recordId: string, claimedPrompt: s
   )
 }
 
+function recordClaimAttachmentWarnings(runId: string, warnings: readonly string[]): void {
+  for (const warning of warnings) recordRunWarning(runId, warning)
+}
+
 // biome-ignore lint/complexity/noExcessiveLinesPerFunction: the claim coordinator preserves one ordered ownership transaction
 export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
   let {
@@ -306,7 +310,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
     usingMcp,
     startedByUserId,
     replySchemaName,
-    carriedQuestionIds,
+    carriedContext,
   } = input
   const resume = resumeFacts(
     opts.resume?.kind ?? null,
@@ -542,9 +546,10 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
         supersededQuestionState!,
       )
     }
-    recordCarriedRulings(claimed.id, carriedQuestionIds)
+    recordCarriedRulings(claimed.id, carriedContext.questionIds)
     return claimed
   })
+  recordClaimAttachmentWarnings(claim.id, carriedContext.attachmentWarnings)
   const runToken = randomUUID()
   const inheritedKeepTree =
     resume.workspaceSource === 'retained'

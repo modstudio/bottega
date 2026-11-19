@@ -1,7 +1,6 @@
 // concern: run dispatch rulings
 /** Resolves and renders the task rulings inherited by a dispatched run. */
 
-import { recordRunWarning } from '../events.ts'
 import {
   type CarriedAttachmentSource,
   resolveCarriedAttachments,
@@ -9,7 +8,7 @@ import {
 import { inheritedRunLinks } from './run-claim-inheritance.ts'
 import { admitNewRunReference } from './run-task-reference.ts'
 import { initialRunTaskText } from './run-task-text.ts'
-import { renderTaskRulings } from './task-rulings.ts'
+import { renderTaskRulings, taskRulingFreeText } from './task-rulings.ts'
 import { taskRulingsForDispatch } from './task-rulings-store.ts'
 
 type DispatchLinks = { taskRecordId: string | null; projectRecordId: string | null }
@@ -17,10 +16,6 @@ type TaskTextReader = NonNullable<Parameters<typeof initialRunTaskText>[1]>['rea
 type AttachmentReader = NonNullable<
   Parameters<typeof resolveCarriedAttachments>[1]
 >['readAttachment']
-
-export function recordDispatchAttachmentWarnings(runId: string, warnings: readonly string[]): void {
-  for (const warning of warnings) recordRunWarning(runId, warning)
-}
 
 async function runDispatchRulingsSection(input: {
   resume: boolean
@@ -41,7 +36,7 @@ async function runDispatchRulingsSection(input: {
     questionIds: rulings.rulings.map((ruling) => ruling.questionRecordId),
     attachmentSources: rulings.rulings.map((ruling) => ({
       label: `task rulings (question ${ruling.questionRecordId})`,
-      text: [ruling.question, ruling.ruling, ruling.basis].filter(Boolean).join('\n'),
+      text: Object.values(taskRulingFreeText(ruling)).filter(Boolean).join('\n'),
     })),
   }
 }
