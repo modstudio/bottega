@@ -412,7 +412,11 @@ async function sealPipedSecret(key: string, options: { space?: string }): Promis
   )
   if (process.stdin.isTTY) throw new Error('secret value must be provided on stdin')
   const client = hostedConfigClient()
-  const target = await resolveSecretWriteTarget('machine config secret set', space, client)
+  const target = await resolveSecretWriteTarget(
+    'machine config secret set',
+    typeof space === 'string' ? space : undefined,
+    client,
+  )
   const decision = sealSecretDecision(key, await Bun.stdin.text(), target.scope, target.spaceSlug)
   if (decision.kind === 'refuse') throw new Error(decision.refusal)
   await setSecret(key, decision.value, target.scope, client, {
@@ -426,7 +430,11 @@ async function deleteSelectedSecret(key: string, options: { space?: string }): P
     secretDeleteRemedy(key, 'space', '<slug>'),
   )
   const client = hostedConfigClient()
-  const target = await resolveSecretWriteTarget('machine config secret delete', space, client)
+  const target = await resolveSecretWriteTarget(
+    'machine config secret delete',
+    typeof space === 'string' ? space : undefined,
+    client,
+  )
   await deleteSecret(key, target.scope, client, { destination: target.destination })
 }
 
@@ -525,7 +533,11 @@ export async function deleteSelectedConfig(
   const expected = expectedRowVersion(options.expect)
   if (expected === null) throw new Error('delete expected row version must be a positive integer')
   const hostedClient = client ?? hostedConfigClient()
-  const target = await configWriteTarget('machine config delete', space, hostedClient)
+  const target = await configWriteTarget(
+    'machine config delete',
+    typeof space === 'string' ? space : undefined,
+    hostedClient,
+  )
   if (isShipToConfigKey(key)) {
     const selectedScope = target.scope
     const rows = (await listEntries(hostedClient, target.destination)).filter(
