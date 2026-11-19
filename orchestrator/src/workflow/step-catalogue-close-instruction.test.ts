@@ -1,7 +1,10 @@
 import { expect, test } from 'bun:test'
 import { fileURLToPath } from 'node:url'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { type CloseInstructionDecision, unsupportedCloseEvidenceFlags } from './step-catalogue.ts'
+import {
+  type CloseInstructionDecision,
+  unsupportedCloseEvidenceFlags,
+} from './step-catalogue-close-instruction.ts'
 import type { FloorEntry } from './step-catalogue-definition.ts'
 import { parseWorkflowTree } from './workflow-tree.ts'
 import { collectWorkflowTree } from './workflow-tree-files.ts'

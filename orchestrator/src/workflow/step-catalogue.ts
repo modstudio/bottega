@@ -14,6 +14,7 @@ import { applyWorkflowWriteResponse } from '../record/record-cache-workflow.ts'
 import { applyRecordWriteAuthority } from '../record/record-write-authority.ts'
 import { workerStoreWriteRefusal } from '../worker-store-write.ts'
 import { type AutonomyValue, autonomyStages, autonomyValues } from './autonomy.ts'
+import { closeInstructionTaskTargetErrors } from './step-catalogue-close-instruction.ts'
 import type {
   CatalogueSequence,
   CatalogueStep,
@@ -26,14 +27,7 @@ import {
   type WorkflowModeStep,
   workflowsAfterReplacement,
 } from './workflow-definition.ts'
-import {
-  type FloorKind,
-  flagForFloor,
-  floorGuidance,
-  floorKinds,
-  isFloorKind,
-  mayCloseOnAgentSelfRuling,
-} from './workflow-floor.ts'
+import { floorKinds, isFloorKind, mayCloseOnAgentSelfRuling } from './workflow-floor.ts'
 import { workflowHostedSpace } from './workflow-hosted-space.ts'
 import { workflowReadSpaceFor } from './workflow-read-space.ts'
 import { checkWorkflowRendering, renderCheckRefusal } from './workflow-render-check.ts'
@@ -61,72 +55,6 @@ const PLATFORM_INVOCATION = `(?:${PLATFORM_SLUG}|\\S*\\/bin\\/${PLATFORM_SLUG})`
 const object = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value)
 
-type UnsupportedCloseEvidenceFlag = {
-  flag: string
-  acceptingFloors: FloorKind[]
-}
-
-export type CloseInstructionDecision =
-  | { judged: false }
-  | { judged: true; findings: UnsupportedCloseEvidenceFlag[] }
-
-const evidenceFlagsByFloor = new Map(
-  floorKinds.map((floor) => [
-    floor,
-    new Set(`${floorGuidance[floor]} ${flagForFloor(floor)}`.match(/--[a-z][a-z-]*/g) ?? []),
-  ]),
-)
-
-const acceptingFloorsByFlag = new Map<string, FloorKind[]>()
-for (const floor of floorKinds) {
-  for (const flag of evidenceFlagsByFloor.get(floor) ?? []) {
-    const accepting = acceptingFloorsByFlag.get(flag) ?? []
-    accepting.push(floor)
-    acceptingFloorsByFlag.set(flag, accepting)
-  }
-}
-
-function closingSentences(body: string): string[] {
-  return body
-    .split(/\n{2,}/)
-    .flatMap((paragraph) => paragraph.match(/[^.!?]*(?:[.!?](?=\s|$)|$)/g) ?? [])
-    .filter((sentence) =>
-      /\b(?:close|closing|finish|finished|finishes|finishing|complete|completed|completes|completing)\b/i.test(
-        sentence,
-      ),
-    )
-}
-
-function closeInstructionFlags(sentence: string): string[] {
-  return (sentence.match(/--[a-z][a-z-]*/g) ?? []).filter((flag) => acceptingFloorsByFlag.has(flag))
-}
-
-function closeInstructionTaskTargets(sentence: string): string[] {
-  return [...sentence.matchAll(/(?:--task(?:=|\s+)|\btask:)(\{\{key\}\}|<[^>\r\n]+>|[A-Za-z0-9][A-Za-z0-9_-]*)/g)].map(
-    (match) => match[1]!,
-  )
-}
-
-export function unsupportedCloseEvidenceFlags(
-  declaredFloors: readonly FloorEntry[],
-  body: string,
-): CloseInstructionDecision {
-  // A templated floor resolves only at composition, so the authored text cannot be judged here.
-  if (declaredFloors.some((floor) => !isFloorKind(floor))) return { judged: false }
-  const named = new Set(closingSentences(body).flatMap(closeInstructionFlags))
-  const findings: UnsupportedCloseEvidenceFlag[] = []
-  for (const flag of named) {
-    const acceptingFloors = acceptingFloorsByFlag.get(flag)
-    if (!acceptingFloors) continue
-    if (declaredFloors.some((floor) => acceptingFloors.includes(floor as FloorKind))) continue
-    findings.push({ flag, acceptingFloors: [...acceptingFloors] })
-  }
-  return {
-    judged: true,
-    findings: findings.sort((left, right) => left.flag.localeCompare(right.flag)),
-  }
-}
-
 export function validateStepCatalogue(value: unknown): string[] {
   if (!object(value) || !Array.isArray(value.steps)) return ['steps must be an array']
   const errors: string[] = [],
@@ -143,7 +71,7 @@ export function validateStepCatalogue(value: unknown): string[] {
     validateFloor(item, errors)
     validateNeeds(item, errors)
     validateRepositoryFileCitations(item, errors)
-    validateCloseInstructionTaskTargets(item, errors)
+    errors.push(...closeInstructionTaskTargetErrors(item))
     validateDispatchPrompts(item, errors)
     validatePrescribedJobs(item, errors)
   }
@@ -158,20 +86,6 @@ export function validateStepCatalogue(value: unknown): string[] {
     ),
   )
   return [...new Set(errors)]
-}
-
-function validateCloseInstructionTaskTargets(
-  item: Record<string, unknown>,
-  errors: string[],
-): void {
-  if (typeof item.body !== 'string') return
-  const slug = String(item.slug ?? '')
-  for (const target of new Set(closingSentences(item.body).flatMap(closeInstructionTaskTargets))) {
-    if (target !== '{{key}}')
-      errors.push(
-        `step "${slug}" close instruction names task "${target}"; name the cursor task with {{key}}`,
-      )
-  }
 }
 
 function validateRepositoryFileCitations(item: Record<string, unknown>, errors: string[]): void {

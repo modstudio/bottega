@@ -1,5 +1,6 @@
 import { expect, test } from 'bun:test'
 import { fileURLToPath } from 'node:url'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { testDatabaseFixture } from '../database/test-database.fixture.ts'
 import {
@@ -58,18 +59,24 @@ test('every plan-task step renders on a keyless cursor in every mode', async () 
 })
 
 test('a keyed plan-task start renders its epic commands with the cursor key', () => {
-  const body = getWorkflowStep('plan-task', 'fixture', 'start', { key: 'DEV-2483' }, database()).body
+  const body = getWorkflowStep(
+    'plan-task',
+    'fixture',
+    'start',
+    { key: 'DEV-2483' },
+    database(),
+  ).body
 
-  expect(body).toContain('bottega workflow queue <child> --session <name>')
-  expect(body).toContain('bottega workflow start-child --cursor <cursor> [--task <child>]')
-  expect(body).toContain('bottega workflow next --cursor <cursor> --task DEV-2483')
+  expect(body).toContain(`${PLATFORM_SLUG} workflow queue <child> --session <name>`)
+  expect(body).toContain(`${PLATFORM_SLUG} workflow start-child --cursor <cursor> [--task <child>]`)
+  expect(body).toContain(`${PLATFORM_SLUG} workflow next --cursor <cursor> --task DEV-2483`)
   expect(body).not.toContain('{{key}}')
 })
 
 test('a keyless plan-task start renders the key argument placeholder', () => {
   const body = getWorkflowStep('plan-task', 'fixture', 'start', {}, database()).body
 
-  expect(body).toContain('bottega workflow next --cursor <cursor> --task <key>')
+  expect(body).toContain(`${PLATFORM_SLUG} workflow next --cursor <cursor> --task <key>`)
   expect(body).not.toContain('{{key}}')
 })
 
