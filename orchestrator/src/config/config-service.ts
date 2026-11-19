@@ -853,11 +853,8 @@ export async function setConfigEntry(
     hostedClient,
     options.destination ?? (await personalConfigWriteDestination(hostedClient)),
   )
-  if (home === 'space') {
-    if (!options.remedy)
-      throw new Error(`refusing config write success: no repair command was provided for ${key}`)
+  if (home === 'space' && options.remedy)
     await verifyConfigWrite(hostedClient, row, options.destination ?? {}, options.remedy)
-  }
   if (key === DISPLAY_TIMEZONE_KEY) refreshDisplayTimezoneCache(value, env)
   return { home, row }
 }

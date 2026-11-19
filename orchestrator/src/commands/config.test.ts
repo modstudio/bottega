@@ -2,6 +2,7 @@ import { expect, test } from 'bun:test'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { Command } from 'commander'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   type ConfigClient,
@@ -12,15 +13,17 @@ import { ConfigEntrySchema, MachineConfigFileEntrySchema } from '../../../shared
 import { CONFIG_HOME_ENV } from '../../../shared/config-directory.ts'
 import { writeHostedConfigIdentity } from '../../../shared/hosted-config-space.ts'
 import { getConfigEntry, listEntries, setConfigEntry } from '../config/config-service.ts'
-import { verifyConfigWrite } from '../config/config-write-verification.ts'
 import { secretWriteTarget } from '../config/secret-write-target.ts'
 import {
   assertConfigWriteAllowed,
+  configGetRequest,
   configListPresentation,
   configReadDestination,
   configReadPresentation,
   configSetPresentation,
+  configSpaceSelection,
   configWriteTarget,
+  register,
 } from './config.ts'
 
 const row = {
@@ -183,6 +186,41 @@ test('config writes route user scope to personal space and named scope independe
   )
 })
 
+test('config get accepts flag-first active space and key-first active or named space grammar', async () => {
+  const parsed: Array<ReturnType<typeof configGetRequest>> = []
+  const program = new Command().name(PLATFORM_SLUG).enablePositionalOptions().exitOverride()
+  register(program)
+  const get = program.commands
+    .find((command) => command.name() === 'config')!
+    .commands.find((command) => command.name() === 'get')!
+  get.action((key, options) => parsed.push(configGetRequest(key, options.space)))
+
+  await program.parseAsync(['config', 'get', '--space', 'autonomy.preset'], { from: 'user' })
+  await program.parseAsync(['config', 'get', 'autonomy.preset', '--space'], { from: 'user' })
+  await program.parseAsync(['config', 'get', 'autonomy.preset', '--space', 'other'], {
+    from: 'user',
+  })
+
+  expect(parsed).toEqual([
+    { key: 'autonomy.preset', space: true },
+    { key: 'autonomy.preset', space: true },
+    { key: 'autonomy.preset', space: 'other' },
+  ])
+})
+
+test('config space selection refuses empty and bare write slugs with the supplied remedy', () => {
+  const remedy = () =>
+    `${PLATFORM_SLUG} machine config set autonomy.preset autonomous --space <slug>`
+  for (const verb of ['get', 'list', 'set'] as const) {
+    expect(() => configSpaceSelection(verb, '', verb !== 'set', remedy)).toThrow(
+      `refusing machine config ${verb}: --space requires a slug; retry \`${remedy()}\``,
+    )
+  }
+  expect(() => configSpaceSelection('set', true, false, remedy)).toThrow(
+    'refusing machine config set: --space requires a slug',
+  )
+})
+
 test('named-space config reads route to the same destination as the write', async () => {
   const rows = new Map<string, ConfigEntry>()
   const destinationId = (destination: { destinationSpaceId?: string }) =>
@@ -241,15 +279,12 @@ test('named-space config reads route to the same destination as the write', asyn
     client,
     process.env,
     () => client,
-    target.destination,
+    {
+      destination: target.destination,
+      remedy: `${PLATFORM_SLUG} machine config set autonomy.stage.review review --space other`,
+    },
   )
   if (!('environment' in written.row)) throw new Error('expected a hosted row')
-  await verifyConfigWrite(
-    client,
-    written.row,
-    target.destination,
-    `${PLATFORM_SLUG} machine config set autonomy.stage.review review --space other`,
-  )
 
   const named = await configReadDestination('machine config get', 'other', client)
   await expect(

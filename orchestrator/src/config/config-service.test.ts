@@ -73,7 +73,7 @@ test('the declared home chooses machine and hosted keys and refuses an unsupport
     `${PLATFORM_SLUG} machine config get subscription.codex.monthly_usd`,
   )
   expect(() => configHome('routing.cost_policy', 'space', 'get')).toThrow(
-    `${PLATFORM_SLUG} machine config get --machine routing.cost_policy`,
+    `${PLATFORM_SLUG} machine config get routing.cost_policy --machine`,
   )
   expect(() => configHome('unknown.key')).toThrow(
     `accepted families are machine catalogue keys, display.timezone, autonomy.*, and subscription.<harness>.monthly_usd; inspect machine keys with \`${PLATFORM_SLUG} machine config list --machine\``,
@@ -217,6 +217,28 @@ test('invalid hosted subscription and autonomy values are refused before any wri
   expect(calls).toEqual([])
 })
 
+test('named-space config set refuses success when its written row cannot be read back', async () => {
+  const client = {
+    putEntry: async (key: string, input: { scope: 'space'; environment: string; value: string }) => ({
+      key,
+      ...input,
+      rowVersion: 2,
+      updatedAt: '2026-11-18T12:00:00.000Z',
+    }),
+    getEntry: async () => {
+      throw new ConfigClientError('response', '/v1/config/entries/autonomy.preset', 404)
+    },
+  } as unknown as ConfigClient
+  const remedy = `${PLATFORM_SLUG} machine config set autonomy.preset autonomous --space other`
+
+  await expect(
+    setConfigEntry('autonomy.preset', 'autonomous', 'space', undefined, client, process.env, () => client, {
+      destination: { destinationSpaceId: 'space-other' },
+      remedy,
+    }),
+  ).rejects.toThrow(`verify record access, then retry \`${remedy}\``)
+})
+
 test('display timezone validates before writing and a successful set refreshes the user cache', async () => {
   const root = mkdtempSync(join(tmpdir(), 'config-display-timezone-'))
   roots.push(root)
@@ -246,7 +268,7 @@ test('display timezone validates before writing and a successful set refreshes t
 
   await expect(
     setConfigEntry('display.timezone', 'America/New_York', undefined, null, client, env),
-  ).resolves.toMatchObject({ home: 'user', value: 'America/New_York' })
+  ).resolves.toMatchObject({ home: 'user', row: { value: 'America/New_York' } })
   expect(readCachedDisplayTimezone(env)).toBe('America/New_York')
 })
 
@@ -295,7 +317,7 @@ test('display timezone cache failures warn without failing successful hosted set
   try {
     await expect(
       setConfigEntry('display.timezone', row.value, undefined, null, client, env),
-    ).resolves.toMatchObject({ value: row.value })
+    ).resolves.toMatchObject({ row: { value: row.value } })
     await expect(getConfigEntry('display.timezone', undefined, client, env)).resolves.toMatchObject(
       {
         value: row.value,

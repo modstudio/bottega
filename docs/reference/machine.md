@@ -200,7 +200,7 @@ delete one configuration value
 
 ## bottega machine config get
 
-**Synopsis:** `bottega machine config get <key> [--space [slug]] [--machine] [--json]`
+**Synopsis:** `bottega machine config get [key] [--space [slug]] [--machine] [--json]`
 
 show one configuration value
 
