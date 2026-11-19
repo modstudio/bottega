@@ -415,6 +415,7 @@ export function createMemoryRecordApiClient(
     ...unusedContextItemClientMethods(),
     ...memoryTaskFlowClient(input),
     ...memoryQuestionClient(input),
+    cacheCounts: unusedIdentityAndSpace,
     async listChanges() {
       return { reset: { cursor: 'fixture-change-cursor', tables: [] } }
     },

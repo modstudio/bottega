@@ -9,10 +9,7 @@ import { RecordApiRequestError } from './record-api-client-response.ts'
 import type { RecordIdentity } from './record-auth.ts'
 import { recordCacheSpaces } from './record-cache.ts'
 import type { RecordCacheCounts } from './record-cache-counts-contract.ts'
-import {
-  recordCacheAddressOwner,
-  recordCacheSpaceOwnsSubject,
-} from './record-cache-ownership.ts'
+import { recordCacheAddressOwner, recordCacheSpaceOwnsSubject } from './record-cache-ownership.ts'
 
 type LocalCacheCounts = {
   byScope: Array<{ scope: string; docs: number }>

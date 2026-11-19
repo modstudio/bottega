@@ -11,6 +11,13 @@ const module = (file: string, allowed: string[]) => ({
 })
 
 export const recordCacheModules = [
+  module('orchestrator/src/record/record-cache-counts-contract.ts', []),
+  module('orchestrator/src/record/record-cache-ownership.ts', ['../doc/doc-write-allowed.ts']),
+  module('orchestrator/src/record/record-cache-doc-deferrals.ts', [
+    '../../../shared/brand.ts',
+    '../../../shared/refusal.ts',
+    './record-doc-list-shape.ts',
+  ]),
   module('orchestrator/src/record/record-api-client-counts.ts', [
     './record-api-client-paths.ts',
     './record-cache-counts-contract.ts',
