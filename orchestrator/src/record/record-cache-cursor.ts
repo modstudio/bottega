@@ -17,6 +17,10 @@ export function writeCursor(local: Database, key: string, value: string): void {
     .run(key, value)
 }
 
+export function deleteCursor(local: Database, key: string): void {
+  local.query('DELETE FROM schema_meta WHERE key=?').run(key)
+}
+
 export function readRecordCursor(
   local: Database,
   key: string,

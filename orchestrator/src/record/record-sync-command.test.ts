@@ -11,6 +11,7 @@ import {
   readOnlyDeferredLines,
   routingPoolLine,
   syncCommand,
+  waitingOnUnregisteredLines,
 } from './record-sync-command.ts'
 
 test('sync reports each row held by destination routing', async () => {
@@ -279,4 +280,16 @@ test('sync presentation reports only nonzero record-cache misses and its purge w
   expect(output).toContain('record cache docs skipped: 4')
   expect(output.some((line) => line.includes('subjects skipped'))).toBe(false)
   expect(output).toContain('record cache purge warning: memberships unavailable')
+})
+
+test('waiting docs are grouped once per unregistered project with its remedy', () => {
+  expect(
+    waitingOnUnregisteredLines([
+      { docId: 'doc-a', subjectId: 'subject-a', project: 'alpha' },
+      { docId: 'doc-a', subjectId: 'subject-b', project: 'alpha' },
+      { docId: 'doc-b', subjectId: 'subject-c', project: 'alpha' },
+    ]),
+  ).toEqual([
+    `record cache waiting: 2 docs on unregistered project alpha; cleared by: ${PLATFORM_SLUG} project add alpha`,
+  ])
 })

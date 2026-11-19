@@ -104,3 +104,4 @@ test('a hosted rename runs the local rename cascade inside the pull', async () =
     db().query('SELECT repo FROM run WHERE project_record_id=?').all('project-rename-pull'),
   ).toEqual([{ repo: 'pull-rename-new' }])
 })
+

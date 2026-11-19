@@ -76,6 +76,25 @@ function logRecordCacheCounts(
   ] as const)
     if (count) presentation.log(`${label}: ${count}`)
   if (result.purgeWarning) presentation.log(`record cache purge warning: ${result.purgeWarning}`)
+  for (const line of waitingOnUnregisteredLines(result.waitingOnUnregistered ?? []))
+    presentation.log(line)
+}
+
+export function waitingOnUnregisteredLines(
+  rows: NonNullable<Awaited<ReturnType<typeof syncRecord>>['waitingOnUnregistered']>,
+): string[] {
+  const waitingByProject = new Map<string, Set<string>>()
+  for (const row of rows) {
+    const docs = waitingByProject.get(row.project) ?? new Set<string>()
+    docs.add(row.docId)
+    waitingByProject.set(row.project, docs)
+  }
+  return [...waitingByProject]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(
+      ([project, docs]) =>
+        `record cache waiting: ${docs.size} ${docs.size === 1 ? 'doc' : 'docs'} on unregistered project ${project}; cleared by: ${PLATFORM_SLUG} project add ${project}`,
+    )
 }
 
 function logHeldRows(

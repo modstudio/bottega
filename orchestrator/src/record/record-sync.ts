@@ -615,6 +615,7 @@ function completedSyncResult(input: {
     | 'skippedDocs'
     | 'skippedSubjects'
     | 'purgeWarning'
+    | 'waitingOnUnregistered'
   >
 }): RecordSyncResult {
   return {
@@ -691,6 +692,7 @@ async function pullAfterSync(
     purgeKept: pull.purgeKept,
     skippedDocs: pull.skippedDocs,
     skippedSubjects: pull.skippedSubjects,
+    waitingOnUnregistered: pull.waitingOnUnregistered,
     ...(pull.purgeWarning ? { purgeWarning: pull.purgeWarning } : {}),
   }
 }
