@@ -47,6 +47,7 @@ export const recordTaskFlowModules: RecordModule[] = [
     './install-binding.ts',
     './record-api-client.ts',
     './record-api-client-paths.ts',
+    './record-api-client-response.ts',
     './record-hosted-row-presence.ts',
     './record-history-upload-state.ts',
     './record-question-contract.ts',

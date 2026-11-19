@@ -52,21 +52,18 @@ function addParents(
   return changed
 }
 
-/** Decide per-table retention and close retained parent references to a fixed point. */
-export function decideHostedRowRelease(
+function keepIncompleteHeldFlows(
+  kept: Record<HostedRowTable, Set<string>>,
   local: HostedRowIds,
   present: HostedRowPresence,
   references: HostedRowReferences,
-  heldQuestionIds: ReadonlySet<string> = new Set(),
-  heldFlowIds: ReadonlySet<string> = new Set(),
-): HostedRowReleaseDecision {
-  const kept = emptyHostedRowIds()
-  const keptTables: HostedRowReleaseDecision['keptTables'] = []
+  heldFlowIds: ReadonlySet<string>,
+): void {
   for (const flowId of heldFlowIds) {
     const cursorIds = new Set(
       [...local.workflow_cursor].filter((id) => references.cursorFlow.get(id) === flowId),
     )
-    const flowChildren = {
+    const children = {
       workflow_obligation: [...local.workflow_obligation].filter((id) =>
         cursorIds.has(references.obligationCursor.get(id) ?? ''),
       ),
@@ -77,16 +74,29 @@ export function decideHostedRowRelease(
         cursorIds.has(references.textCopyCursor.get(id) ?? ''),
       ),
     }
-    const hasAbsentChild = Object.entries(flowChildren).some(([table, ids]) =>
-      ids.some((id) => !present[table as keyof typeof flowChildren].has(id)),
+    const incomplete = Object.entries(children).some(([table, ids]) =>
+      ids.some((id) => !present[table as keyof typeof children].has(id)),
     )
-    if (!hasAbsentChild) continue
+    if (!incomplete) continue
     kept.task_flow.add(flowId)
     for (const id of cursorIds) kept.workflow_cursor.add(id)
-    for (const id of flowChildren.workflow_obligation) kept.workflow_obligation.add(id)
-    for (const id of flowChildren.workflow_step_text) kept.workflow_step_text.add(id)
-    for (const id of flowChildren.workflow_text_copy) kept.workflow_text_copy.add(id)
+    for (const id of children.workflow_obligation) kept.workflow_obligation.add(id)
+    for (const id of children.workflow_step_text) kept.workflow_step_text.add(id)
+    for (const id of children.workflow_text_copy) kept.workflow_text_copy.add(id)
   }
+}
+
+/** Decide per-table retention and close retained parent references to a fixed point. */
+export function decideHostedRowRelease(
+  local: HostedRowIds,
+  present: HostedRowPresence,
+  references: HostedRowReferences,
+  heldQuestionIds: ReadonlySet<string> = new Set(),
+  heldFlowIds: ReadonlySet<string> = new Set(),
+): HostedRowReleaseDecision {
+  const kept = emptyHostedRowIds()
+  const keptTables: HostedRowReleaseDecision['keptTables'] = []
+  keepIncompleteHeldFlows(kept, local, present, references, heldFlowIds)
   for (const table of HOSTED_ROW_TABLES) {
     const absent = [...local[table]].filter((id) => {
       if (present[table].has(id)) return false
