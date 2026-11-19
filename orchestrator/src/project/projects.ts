@@ -26,7 +26,6 @@ import type { Database } from 'bun:sqlite'
 import { existsSync, readFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { checkoutIsUnderProject } from '../../../shared/project-path.ts'
 import {
   gitAt,
   gitToplevel,
@@ -36,6 +35,7 @@ import {
   type SequenceState,
 } from '../../../shared/git.ts'
 import { githubRepository } from '../../../shared/github-repository.ts'
+import { checkoutIsUnderProject } from '../../../shared/project-path.ts'
 import { parseRecordSpaceMemberships } from '../../../shared/record-space-membership.ts'
 import { releaseTagVersion } from '../../../shared/release-tag.ts'
 import { db, nowIso, writableDb } from '../database/db.ts'

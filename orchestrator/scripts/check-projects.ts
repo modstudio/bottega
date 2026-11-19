@@ -6,8 +6,8 @@ import { migrationRefusal } from '../src/database/migrations.ts'
 import { GATE_FACTS_ENV } from '../src/gate/gate-facts.ts'
 import {
   classifyStore,
-  localGateRegistration,
   liveStorePath,
+  localGateRegistration,
   migrateStore,
   snapshotStore,
   withBranchStoreScratch,

@@ -163,6 +163,10 @@ test('registration probe handles absent, incomplete, matching, retired, lookalik
 
 test('registration skip remedy may name the main checkout instead of its worktree', () => {
   expect(
-    localGateRegistrationDecision('/main/.claude/worktrees/task', { kind: 'unregistered' }, '/main'),
-  ).toMatchObject({ message: expect.stringContaining(`${PLATFORM_SLUG} project add \"/main\"`) })
+    localGateRegistrationDecision(
+      '/main/.claude/worktrees/task',
+      { kind: 'unregistered' },
+      '/main',
+    ),
+  ).toMatchObject({ message: expect.stringContaining(`${PLATFORM_SLUG} project add "/main"`) })
 })

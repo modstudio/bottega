@@ -35,7 +35,9 @@ function main(): void {
             `  ${alwaysOnBytes}  always-on`,
             `  ${contextIndexBytes}  context-index`,
             ...(largestFile ? [`  ${largestFile.bytes}  ${largestFile.path}`] : []),
-            ...(largestFile ? [`largest contributing file: ${largestFile.path} (${largestFile.bytes} bytes)`] : []),
+            ...(largestFile
+              ? [`largest contributing file: ${largestFile.path} (${largestFile.bytes} bytes)`]
+              : []),
             'remedy: demote the named largest tier; never raise the pack budget (orchestrator/src/canon/pack-budget.ts)',
           ].join('\n'),
         )

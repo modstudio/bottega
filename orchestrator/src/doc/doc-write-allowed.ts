@@ -405,10 +405,7 @@ export function injectPackBudgetRefusal(input: {
   proposed?: InjectPackSection
 }): string | null {
   const docs = input.proposed
-    ? [
-        ...input.current.filter((doc) => doc.identity !== input.proposed!.identity),
-        input.proposed,
-      ]
+    ? [...input.current.filter((doc) => doc.identity !== input.proposed!.identity), input.proposed]
     : [...input.current]
   const operatorMarkdown = joinPackSections(...docs.map(renderPackDocSection))
   const markdown = joinPackSections(input.canonMarkdown, operatorMarkdown)
@@ -416,8 +413,7 @@ export function injectPackBudgetRefusal(input: {
   if (bytes <= input.ceiling) return null
   const largest = [
     ...(input.canonTiers ?? []),
-    ...docs
-    .map((doc) => ({
+    ...docs.map((doc) => ({
       label: doc.identity,
       bytes: Buffer.byteLength(renderPackDocSection(doc)),
     })),

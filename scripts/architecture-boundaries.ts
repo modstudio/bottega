@@ -431,6 +431,7 @@ export const importBoundaries: ImportBoundary[] = [
       '../canon/canon-hydrate.ts',
       '../canon/canon-write-gate.ts',
       '../canon/pack-budget.ts',
+      '../canon/pack-content.ts',
       '../canon/canon-lint.ts',
       '../settings/settings.ts',
       '../../../shared/docs.ts',

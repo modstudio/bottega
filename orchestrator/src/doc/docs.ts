@@ -147,7 +147,7 @@ function injectedDocsForPack(job: string, projectName: string | null): Doc[] {
   ].filter((doc) => isDocInjectedForRun(doc, job, projectName))
 }
 
-function assertPackSize(input: {
+type PackSizeInput = {
   scope: string
   subject: string | null
   slug: string
@@ -155,65 +155,98 @@ function assertPackSize(input: {
   body: string
   delivery?: 'inject' | 'demand'
   forceInject?: string
-}): void {
-  const isInject = input.delivery === 'inject'
-  const isCanon = input.scope === 'canon'
-  if (!isInject && !isCanon) return
-  if (isInject) {
-    const current = db().query('SELECT COALESCE(MAX(bytes), 0) AS bytes FROM canon_pack').get() as {
-      bytes: number
-    }
-    const oversized = refuseOversizedInject({
-      delivery: 'inject', body: input.body, forceInject: input.forceInject, packBytes: current.bytes,
-    })
-    if (oversized) throw new Error(oversized)
+}
+
+type PackProject = { name: string; path: string }
+
+function assertIndividualInjectSize(input: PackSizeInput): void {
+  if (input.delivery !== 'inject') return
+  const current = db().query('SELECT COALESCE(MAX(bytes), 0) AS bytes FROM canon_pack').get() as {
+    bytes: number
   }
-  if (!isCanon && !['global', 'job', 'project'].includes(input.scope)) return
+  const refusal = refuseOversizedInject({
+    delivery: 'inject',
+    body: input.body,
+    forceInject: input.forceInject,
+    packBytes: current.bytes,
+  })
+  if (refusal) throw new Error(refusal)
+}
+
+function affectedPackProjects(input: PackSizeInput, projectRows: PackProject[]): PackProject[] {
+  if (input.scope === 'canon') {
+    return input.subject === null
+      ? projectRows
+      : projectRows.filter((project) => project.name === input.subject)
+  }
+  if (input.scope === 'project') {
+    return projectRows.filter((project) => project.name === input.subject)
+  }
+  return projectRows.length ? projectRows : [{ name: '_', path: process.cwd() }]
+}
+
+function canonForPackWrite(input: PackSizeInput, projectName: string, identity: string) {
+  const globalCanon = listDocs({ scope: 'canon', subject: null, status: 'current' }).filter(
+    (doc) => `${doc.scope}/${doc.subject ?? '_'}/${doc.slug}` !== identity,
+  )
+  const projectCanon = listDocs({ scope: 'canon', subject: projectName, status: 'current' }).filter(
+    (doc) => `${doc.scope}/${doc.subject ?? '_'}/${doc.slug}` !== identity,
+  )
+  if (input.scope !== 'canon') {
+    return packedCanonMarkdownFromRows(projectName, globalCanon, projectCanon)
+  }
+  const proposed = { subject: input.subject, slug: input.slug, body: input.body }
+  return packedCanonMarkdownFromRows(
+    projectName,
+    input.subject === null ? [...globalCanon, proposed] : globalCanon,
+    input.subject === projectName ? [...projectCanon, proposed] : projectCanon,
+  )
+}
+
+function packBudgetRefusalFor(
+  input: PackSizeInput,
+  project: PackProject,
+  jobName: string,
+): string | null {
+  const identity = `${input.scope}/${input.subject ?? '_'}/${input.slug}`
+  const selected = injectedDocsForPack(jobName, project.name).filter(
+    (doc) => `${doc.scope}/${doc.subject ?? '_'}/${doc.slug}` !== identity,
+  )
+  const canon = canonForPackWrite(input, project.name, identity)
+  return injectPackBudgetRefusal({
+    job: jobName,
+    project: project.name,
+    ceiling: JOBS[jobName]?.packBytes ?? DEFAULT_PACK_BYTES,
+    canonMarkdown: canon.markdown,
+    canonTiers: [
+      { label: 'always-on', bytes: canon.alwaysOnBytes },
+      { label: 'context-index', bytes: canon.contextIndexBytes },
+    ],
+    current: selected.map((doc) => ({
+      identity: `${doc.scope}/${doc.subject ?? '_'}/${doc.slug}`,
+      title: doc.title,
+      body: doc.body,
+    })),
+    proposed:
+      input.delivery === 'inject' ? { identity, title: input.title, body: input.body } : undefined,
+  })
+}
+
+function assertPackSize(input: PackSizeInput): void {
+  assertIndividualInjectSize(input)
+  const measuresPack =
+    input.scope === 'canon' ||
+    (input.delivery === 'inject' && ['global', 'job', 'project'].includes(input.scope))
+  if (!measuresPack) return
   const projectRows = db().query('SELECT name,path FROM project ORDER BY name').all() as {
     name: string
     path: string
   }[]
-  const projectsToCheck = isCanon
-    ? input.subject === null
-      ? projectRows
-      : projectRows.filter((project) => project.name === input.subject)
-    : input.scope === 'project'
-      ? projectRows.filter((project) => project.name === input.subject)
-      : projectRows.length
-        ? projectRows
-        : [{ name: '_', path: process.cwd() }]
+  const projectsToCheck = affectedPackProjects(input, projectRows)
   const jobsToCheck = input.scope === 'job' && input.subject ? [input.subject] : Object.keys(JOBS)
-  const identity = `${input.scope}/${input.subject ?? '_'}/${input.slug}`
   for (const project of projectsToCheck) {
     for (const jobName of jobsToCheck) {
-      const selected = injectedDocsForPack(jobName, project.name)
-        .filter((doc) => `${doc.scope}/${doc.subject ?? '_'}/${doc.slug}` !== identity)
-      const proposedCanon = { subject: input.subject, slug: input.slug, body: input.body }
-      const globalCanon = listDocs({ scope: 'canon', subject: null, status: 'current' })
-        .filter((doc) => `${doc.scope}/${doc.subject ?? '_'}/${doc.slug}` !== identity)
-      const projectCanon = listDocs({ scope: 'canon', subject: project.name, status: 'current' })
-        .filter((doc) => `${doc.scope}/${doc.subject ?? '_'}/${doc.slug}` !== identity)
-      const canon = packedCanonMarkdownFromRows(
-        project.name,
-        isCanon && input.subject === null ? [...globalCanon, proposedCanon] : globalCanon,
-        isCanon && input.subject === project.name ? [...projectCanon, proposedCanon] : projectCanon,
-      )
-      const refusal = injectPackBudgetRefusal({
-        job: jobName,
-        project: project.name,
-        ceiling: JOBS[jobName]?.packBytes ?? DEFAULT_PACK_BYTES,
-        canonMarkdown: canon.markdown,
-        canonTiers: [
-          { label: 'always-on', bytes: canon.alwaysOnBytes },
-          { label: 'context-index', bytes: canon.contextIndexBytes },
-        ],
-        current: selected.map((doc) => ({
-          identity: `${doc.scope}/${doc.subject ?? '_'}/${doc.slug}`,
-          title: doc.title,
-          body: doc.body,
-        })),
-        proposed: isInject ? { identity, title: input.title, body: input.body } : undefined,
-      })
+      const refusal = packBudgetRefusalFor(input, project, jobName)
       if (refusal) throw new Error(refusal)
     }
   }

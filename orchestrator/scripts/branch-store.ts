@@ -9,7 +9,6 @@ import {
   PLATFORM_NAME,
   PLATFORM_SLUG,
 } from '../../shared/brand.ts'
-import { exitUnchecked } from '../../shared/check-execution.ts'
 import { mainCheckoutOf } from '../../shared/git.ts'
 import { checkoutIsUnderProject } from '../../shared/project-path.ts'
 import { DATABASE_RESOLUTION } from '../src/database/database-location.ts'
