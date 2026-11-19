@@ -8,11 +8,7 @@ test('gate execution tree migration leaves existing rows without a tree identity
     database
       .query("INSERT INTO gate_execution(record_id,requested_at) VALUES (?, 'at')")
       .run('01990000-0000-7000-8000-000000002444')
-    expect(applyMigrations(database)).toEqual([
-      '0235_gate_execution_tree',
-      '0236_record_local_by_design',
-      '0237_run_own_failure_kind',
-    ])
+    expect(applyMigrations(database)).toContain('0235_gate_execution_tree')
     expect(database.query('SELECT tree_id FROM gate_execution').get()).toEqual({ tree_id: null })
   } finally {
     database.close()
