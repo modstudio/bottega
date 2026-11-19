@@ -18,6 +18,7 @@ import { projectAt, projectByName, projects } from '../project/projects.ts'
 import {
   joinPackSections,
   packedCanonMarkdownFromRows,
+  renderPackBudgetBreach,
   renderPackDocSection,
 } from './pack-content.ts'
 
@@ -268,38 +269,24 @@ export function allNumericLiterals(cwd: string): {
   return { numericLiterals: report, canonFiles }
 }
 
-type PackBudgetRow = { bytes: number; label: string }
-
-function packBudgetRows(
-  pack: Pack,
-  alwaysOnBytes: number,
-  contextIndexBytes: number,
-): PackBudgetRow[] {
-  return [
-    { bytes: alwaysOnBytes, label: 'always-on' },
-    { bytes: contextIndexBytes, label: 'context-index' },
-    ...pack.docs.map((doc) => ({
-      bytes: doc.bytes,
-      label: `${doc.scope}/${doc.subject ?? '_'}/${doc.slug}`,
-    })),
-  ]
-    .filter((row) => row.bytes > 0)
-    .sort((a, b) => b.bytes - a.bytes)
-}
-
 export class CanonBudgetError extends Error {
   public pack: Pack
 
   constructor(pack: Pack, alwaysOnBytes = 0, contextIndexBytes = 0) {
-    const rows = packBudgetRows(pack, alwaysOnBytes, contextIndexBytes)
-    const largest = rows[0]?.label
     super(
-      [
-        `canon pack is ${pack.bytes} bytes; budget is ${pack.budgetBytes} bytes`,
-        ...rows.map((row) => `  ${row.bytes}  ${row.label}`),
-        ...(largest ? [`largest packed tier: ${largest}`] : []),
-        'remedy: demote the named largest tier; never raise the pack budget (orchestrator/src/canon/pack-budget.ts)',
-      ].join('\n'),
+      renderPackBudgetBreach({
+        header: `canon pack is ${pack.bytes} bytes; budget is ${pack.budgetBytes} bytes`,
+        tiers: [
+          { bytes: alwaysOnBytes, label: 'always-on' },
+          { bytes: contextIndexBytes, label: 'context-index' },
+          ...pack.docs.map((doc) => ({
+            bytes: doc.bytes,
+            label: `${doc.scope}/${doc.subject ?? '_'}/${doc.slug}`,
+          })),
+        ],
+        remedy:
+          'remedy: demote the named largest tier; never raise the pack budget (orchestrator/src/canon/pack-budget.ts)',
+      }),
     )
     this.pack = pack
     this.name = 'CanonBudgetError'
@@ -698,7 +685,7 @@ export function allInjectChecks(): { doc: PackDoc; findings: Finding[] }[] {
         subject: doc.subject,
         slug: doc.slug,
         title: doc.title,
-        bytes: Buffer.byteLength(`## ${doc.title}\n\n${doc.body}`),
+        bytes: Buffer.byteLength(renderPackDocSection(doc)),
       }
       const root = repoRootForDoc(doc)
       return {

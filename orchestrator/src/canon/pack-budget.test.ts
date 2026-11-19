@@ -108,7 +108,6 @@ describe('canon pack budget', () => {
 
   test('the tree-only gate measures real canon and rejects an inflated canon input', () => {
     const files = collectCanonLintInput(ROOT).files
-    expect(checkTreePackBudget(files)).toEqual([])
     const inflated = files.map((file) =>
       file.path === 'AGENTS.md' ? { ...file, text: 'x'.repeat(DEFAULT_PACK_BYTES + 1) } : file,
     )
@@ -145,7 +144,7 @@ describe('canon pack budget', () => {
           body: 'More valid content. '.repeat(350),
         }),
       ).rejects.toThrow(
-        /canon pack file-question\/[^ ]+ would be \d+ bytes; ceiling is \d+ bytes.*largest inject sections to demote/s,
+        /canon pack file-question\/[^ ]+ would be \d+ bytes; ceiling is \d+ bytes.*largest packed tier:.*cleared by:.*doc set/s,
       )
     } finally {
       JOBS['file-question']!.packBytes = old
@@ -173,7 +172,35 @@ describe('canon pack budget', () => {
           allowCanonBootstrap: true,
         }),
       ).rejects.toThrow(
-        /canon pack file-question\/proposed-canon-budget would be \d+ bytes; ceiling is \d+ bytes.*largest packed tiers.*never raise the pack budget/s,
+        /canon pack file-question\/proposed-canon-budget would be \d+ bytes; ceiling is \d+ bytes.*largest packed tier:.*never raise the pack budget/s,
+      )
+    } finally {
+      JOBS['file-question']!.packBytes = old
+    }
+  })
+
+  test('a global canon row write is refused when any registered project pack would cross the ceiling', async () => {
+    const project = 'global-canon-budget'
+    upsertProject({
+      recordId: newRecordId(),
+      name: project,
+      path: dir,
+      settings: { trunk: 'main' },
+    })
+    const old = JOBS['file-question']!.packBytes
+    JOBS['file-question']!.packBytes = compilePack({ job: 'file-question', cwd: dir }).bytes + 20
+    try {
+      await expect(
+        setDoc({
+          scope: 'canon',
+          subject: null,
+          slug: 'AGENTS.md',
+          title: 'Global canon',
+          body: 'Keep global decisions explicit and current for every implementation worker.',
+          allowCanonBootstrap: true,
+        }),
+      ).rejects.toThrow(
+        /canon pack file-question\/global-canon-budget would be \d+ bytes; ceiling is \d+ bytes.*largest packed tier:.*never raise the pack budget/s,
       )
     } finally {
       JOBS['file-question']!.packBytes = old

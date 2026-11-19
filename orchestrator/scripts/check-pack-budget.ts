@@ -2,7 +2,10 @@ import { fileURLToPath } from 'node:url'
 import { collectCanonLintInput } from '../src/canon/canon-files.ts'
 import type { CanonFile } from '../src/canon/canon-lint.ts'
 import { DEFAULT_PACK_BYTES } from '../src/canon/pack-budget.ts'
-import { packedCanonMarkdownFromTree } from '../src/canon/pack-content.ts'
+import {
+  packedCanonMarkdownFromTree,
+  renderPackBudgetBreach,
+} from '../src/canon/pack-content.ts'
 import { JOBS } from '../src/jobs/jobs.ts'
 
 export type TreePackBudgetFailure = {
@@ -19,7 +22,18 @@ export function checkTreePackBudget(files: CanonFile[]): TreePackBudgetFailure[]
   const bytes = Buffer.byteLength(packed.markdown)
   return Object.entries(JOBS).flatMap(([job, definition]) => {
     const ceiling = definition.packBytes ?? DEFAULT_PACK_BYTES
-    return bytes > ceiling ? [{ job, bytes, ceiling, ...packed }] : []
+    return bytes > ceiling
+      ? [
+          {
+            job,
+            bytes,
+            ceiling,
+            alwaysOnBytes: packed.alwaysOnBytes,
+            contextIndexBytes: packed.contextIndexBytes,
+            largestFile: packed.largestFile,
+          },
+        ]
+      : []
   })
 }
 
@@ -30,16 +44,16 @@ function main(): void {
     console.error(
       `tree canon pack budget failed for ${failures.length} job(s):\n${failures
         .map(({ job, bytes, ceiling, alwaysOnBytes, contextIndexBytes, largestFile }) =>
-          [
-            `${job}: ${bytes} bytes; ceiling ${ceiling} bytes`,
-            `  ${alwaysOnBytes}  always-on`,
-            `  ${contextIndexBytes}  context-index`,
-            ...(largestFile ? [`  ${largestFile.bytes}  ${largestFile.path}`] : []),
-            ...(largestFile
-              ? [`largest contributing file: ${largestFile.path} (${largestFile.bytes} bytes)`]
-              : []),
-            'remedy: demote the named largest tier; never raise the pack budget (orchestrator/src/canon/pack-budget.ts)',
-          ].join('\n'),
+          renderPackBudgetBreach({
+            header: `${job}: ${bytes} bytes; ceiling ${ceiling} bytes`,
+            tiers: [
+              { bytes: alwaysOnBytes, label: 'always-on' },
+              { bytes: contextIndexBytes, label: 'context-index' },
+              ...(largestFile ? [{ bytes: largestFile.bytes, label: largestFile.path }] : []),
+            ],
+            remedy:
+              'remedy: demote the named largest tier; never raise the pack budget (orchestrator/src/canon/pack-budget.ts)',
+          }),
         )
         .join('\n')}`,
     )

@@ -8,7 +8,7 @@ import {
   type DocScope,
   docScopeHasProjectSubject,
 } from '../../../shared/docs.ts'
-import { type Refusal, refusal, renderRefusal } from '../../../shared/refusal.ts'
+import { type Refusal, refusal } from '../../../shared/refusal.ts'
 import { composeCanonRows } from '../canon/canon-hydrate.ts'
 import {
   type CanonFinding,
@@ -18,7 +18,11 @@ import {
 } from '../canon/canon-lint.ts'
 import { decideNextCanonSet } from '../canon/canon-write-gate.ts'
 import { DEFAULT_PACK_BYTES, MAX_INJECT_DOC_BYTES } from '../canon/pack-budget.ts'
-import { joinPackSections, renderPackDocSection } from '../canon/pack-content.ts'
+import {
+  joinPackSections,
+  renderPackBudgetBreach,
+  renderPackDocSection,
+} from '../canon/pack-content.ts'
 import { refuseSettingsBody } from '../settings/settings.ts'
 import { type DocGenerator, REFERENCE_GENERATOR } from './doc-generator.ts'
 import { docLintRefusal, introducedDocFindings, type LintableDoc, lintDoc } from './doc-lint.ts'
@@ -411,29 +415,21 @@ export function injectPackBudgetRefusal(input: {
   const markdown = joinPackSections(input.canonMarkdown, operatorMarkdown)
   const bytes = Buffer.byteLength(markdown)
   if (bytes <= input.ceiling) return null
-  const largest = [
+  const tiers = [
     ...(input.canonTiers ?? []),
     ...docs.map((doc) => ({
       label: doc.identity,
       bytes: Buffer.byteLength(renderPackDocSection(doc)),
     })),
   ]
-    .sort((a, b) => b.bytes - a.bytes)
-    .slice(0, 3)
-  const largestLabel = largest[0]?.label
   const remedy = input.proposed
     ? `shorten the document with ${PLATFORM_SLUG} doc set, or set the named largest sections to delivery demand`
     : `shorten the canon row with ${PLATFORM_SLUG} doc set, or demote the named largest tier; never raise the pack budget (orchestrator/src/canon/pack-budget.ts)`
-  return renderRefusal(
-    refusal(
-      `canon pack ${input.job}/${input.project} would be ${bytes} bytes; ceiling is ${input.ceiling} bytes\n` +
-        `${input.proposed ? 'largest inject sections to demote' : 'largest packed tiers'}: ${largest.map((row) => `${row.label} (${row.bytes} bytes)`).join(', ')}${largestLabel ? `\nlargest packed tier: ${largestLabel}` : ''}`,
-      {
-        kind: 'edit',
-        text: remedy,
-      },
-    ),
-  )
+  return renderPackBudgetBreach({
+    header: `canon pack ${input.job}/${input.project} would be ${bytes} bytes; ceiling is ${input.ceiling} bytes`,
+    tiers,
+    remedy: `cleared by: ${remedy}`,
+  })
 }
 
 function refuseCanonPathCollision(input: {
