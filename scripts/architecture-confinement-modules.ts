@@ -12,6 +12,20 @@ const module = (file: string, allowed: string[]): ConfinementModule => ({
 })
 
 export const confinementModules: ConfinementModule[] = [
+  module('orchestrator/src/sandbox/sandbox-runtime.ts', [
+    'node:fs',
+    'node:path',
+    '@anthropic-ai/sandbox-runtime',
+    '../../../shared/embedded-assets.ts',
+    '../../../shared/sandbox-runtime-assets.ts',
+    '../../../shared/state-directory.ts',
+    '../../../shared/bounded-process.ts',
+    '../database/db.ts',
+  ]),
+  module('orchestrator/src/transport/sandbox-readiness.ts', [
+    '../../../shared/brand.ts',
+    '../sandbox/sandbox-runtime.ts',
+  ]),
   module('orchestrator/src/sandbox/record-connection-env.ts', []),
   module('orchestrator/src/sandbox/codex-sandbox.ts', []),
   module('orchestrator/src/sandbox/weaker-network-isolation.ts', ['node:net']),
