@@ -9,6 +9,12 @@ const module = (file: string, allowed: string[]): ArchitectureModule => ({
 })
 
 export const identityModules = [
+  module('hub/src/identity/identity.ts', [
+    'bun',
+    'bun:sqlite',
+    '../../../shared/reference-refusal.ts',
+    '../../../shared/reference.ts',
+  ]),
   module('orchestrator/src/identity/identity.ts', [
     'bun:sqlite',
     '../../../shared/identity-state-classes.ts',
@@ -19,7 +25,10 @@ export const identityModules = [
     '../record/machine-name.ts',
     './identity-local-run.ts',
   ]),
-  module('orchestrator/src/identity/identity-local-run.ts', ['bun:sqlite']),
+  module('orchestrator/src/identity/identity-local-run.ts', [
+    'bun:sqlite',
+    '../../../shared/reference-refusal.ts',
+  ]),
   module('orchestrator/src/identity/identity-context.ts', [
     'bun:sqlite',
     '../../../shared/machine-config.ts',

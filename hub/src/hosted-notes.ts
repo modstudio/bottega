@@ -13,6 +13,7 @@ import {
 } from './hosted-tasks.ts'
 import { type TaskIdentity, withHostedTenant } from './hosted-tenant.ts'
 import { projectHasRemoteTracker } from './hosted-write-mode.ts'
+import { hostedNoteIdentityByNumber } from './identity/identity.ts'
 import { nextNoteNumber } from './note-number.ts'
 import {
   type NotePromotionAnchor,
@@ -392,11 +393,12 @@ async function mirrorOneHostedNote(tx: SQL, identity: TaskIdentity, row: HostedN
   const promotedTaskId = promotedReference.key
     ? await taskIdFor(tx, identity.spaceId, promotedReference.key, promotedReference.id)
     : null
-  const existingByNumber = rows<{ id: string; space_id: string }>(
-    await tx`SELECT id, space_id FROM hub_note
-      WHERE space_id=${identity.spaceId}::uuid AND project_id=${projectId}::uuid
-      AND number=${row.number} FOR UPDATE`,
-  )[0]
+  const existingByNumber = await hostedNoteIdentityByNumber(
+    tx,
+    identity.spaceId,
+    projectId,
+    row.number,
+  )
   const existingById = rows<{ id: string; number: number; project_name: string; space_id: string }>(
     await tx`SELECT id, number::int number, project_name, space_id FROM hub_note WHERE id=${row.id}::uuid FOR UPDATE`,
   )[0]
