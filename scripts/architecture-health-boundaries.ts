@@ -10,6 +10,7 @@ export const healthBoundarySpecs: ImportBoundary[] = [
       'shared/install-root.ts',
       'shared/machine-config.ts',
       'orchestrator/src/agent/agent-auth.ts',
+      'orchestrator/src/agent/cli-version.ts',
       'orchestrator/src/agent/endpoint-api-key.ts',
       'orchestrator/src/agent/agent-registry.ts',
       'orchestrator/src/agent/agents.ts',
@@ -45,6 +46,7 @@ export const healthBoundarySpecs: ImportBoundary[] = [
       'orchestrator/src/record/record-api-client.ts',
       'orchestrator/src/record/record-space.ts',
       'orchestrator/src/run/run-task-linking.ts',
+      'orchestrator/src/setup/developer-node.ts',
     ],
     typeOnlyAllowed: [],
     reason:

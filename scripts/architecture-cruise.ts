@@ -2,11 +2,14 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { delimiter, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import {
+  MINIMUM_DEPENDENCY_CRUISER_NODE_MAJOR,
+  nodeVersionMajor,
+} from '../shared/node-requirement.ts'
 import { dependencyCruiserConfig } from './architecture.ts'
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url)).replace(/\/$/, '')
 const TYPESCRIPT_LOADER = join(ROOT, 'scripts/dependency-cruiser-typescript-loader.mjs')
-const MINIMUM_DEPENDENCY_CRUISER_NODE_MAJOR = 24
 const TYPESCRIPT_EXTENSIONS = ['ts', 'tsx']
 
 export const ARCHITECTURE_CRUISE_ROOTS = [
@@ -91,8 +94,8 @@ export function architectureCruiseCoverageViolations({
 }
 
 export function dependencyCruiserNodeVersionRefusal(version: string): string | undefined {
-  const major = Number.parseInt(version.replace(/^v/, '').split('.')[0] ?? '', 10)
-  if (Number.isInteger(major) && major >= MINIMUM_DEPENDENCY_CRUISER_NODE_MAJOR) return undefined
+  const major = nodeVersionMajor(version)
+  if (major !== null && major >= MINIMUM_DEPENDENCY_CRUISER_NODE_MAJOR) return undefined
   return `dependency-cruiser found Node ${version.trim() || '(unknown)'}; install Node ${MINIMUM_DEPENDENCY_CRUISER_NODE_MAJOR} or later, or set it up in CI`
 }
 

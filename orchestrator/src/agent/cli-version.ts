@@ -22,6 +22,11 @@ export function capturedCliVersion(capture: CliVersionCapture | null): string | 
   return parsedCliVersion(`${capture.stdout}\n${capture.stderr}`)
 }
 
+export function capturedVersionOutput(capture: CliVersionCapture | null): string | null {
+  if (!capture || capture.error || capture.timedOut || capture.exitCode !== 0) return null
+  return `${capture.stdout}\n${capture.stderr}`.trim() || null
+}
+
 export function captureCliVersion(bin: string): CliVersionCapture {
   try {
     const child = startBoundedSync([bin, '--version'], {

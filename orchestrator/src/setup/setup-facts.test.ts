@@ -41,6 +41,7 @@ function facts(overrides: Partial<Parameters<typeof classifySetupFacts>[0]> = {}
     arch: 'x64',
     procVersion: 'Linux version 6.1.0-microsoft-standard-WSL2',
     bun: { path: '/bin/bun', version: '1.3.0' },
+    node: { path: '/bin/node', version: command('v24.0.0') },
     git: { path: '/bin/git', version: command('git version 2.51.0') },
     gh: { path: '/bin/gh', version: command('gh version 2.80.0'), auth: command('', 0) },
     harnesses,
@@ -63,6 +64,7 @@ test('classifies missing binaries, versions, gh login, and WSL from captures', (
   const captured = facts({ git: { path: null, version: null } })
   expect(captured.os.wsl).toBe(true)
   expect(captured.git).toEqual({ path: null, version: null })
+  expect(captured.node).toEqual({ path: '/bin/node', version: 'v24.0.0' })
   expect(captured.gh).toEqual({ path: '/bin/gh', version: '2.80.0', loggedIn: true })
   expect(captured.harnesses.codex.version).toBe('1.2.3')
 
