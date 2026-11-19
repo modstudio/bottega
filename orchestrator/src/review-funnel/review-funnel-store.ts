@@ -3,8 +3,27 @@
 import type { Database } from 'bun:sqlite'
 import { sameChangeSql } from '../evidence/evidence-query.ts'
 import { acceptedReviewFindingSql, uniqueReviewFindingSql } from '../review/review-evidence-sql.ts'
-import type { ReviewFunnelVerdict } from './decide-review-funnel.ts'
+import type { ReviewFunnelFacts, ReviewFunnelVerdict } from './decide-review-funnel.ts'
 import type { FunnelReportDecisionRow, FunnelReportFindingRow } from './review-funnel-report.ts'
+
+export type ReviewFunnelRebaseCarryRow = {
+  recordId: string
+  facts: ReviewFunnelFacts
+  verdict: ReviewFunnelVerdict
+}
+
+export function reviewFunnelRebaseCarryRows(database: Database): ReviewFunnelRebaseCarryRow[] {
+  return database
+    .query<{ record_id: string; facts: string; verdict: string }, []>(
+      'SELECT record_id,facts,verdict FROM review_funnel_decision ORDER BY recorded_at,record_id',
+    )
+    .all()
+    .map((row) => ({
+      recordId: row.record_id,
+      facts: JSON.parse(row.facts) as ReviewFunnelFacts,
+      verdict: JSON.parse(row.verdict) as ReviewFunnelVerdict,
+    }))
+}
 
 export function reviewFunnelDecisionRows(database: Database): FunnelReportDecisionRow[] {
   return database

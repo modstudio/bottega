@@ -13,10 +13,10 @@ import {
   latestCompletedReview,
   mapPatchPaths,
   type PerPathPatch,
-  pathNeutralContentIdentity,
   postFixReviewDecision,
 } from './review-post-fix.ts'
 import { applicableRoundLensPlan } from './review-round-lens-plan.ts'
+import { pathNeutralContentIdentity } from './same-change.ts'
 
 const patch = (path: string, patchId: string, insertions = 1, deletions = 0): PerPathPatch => ({
   path,

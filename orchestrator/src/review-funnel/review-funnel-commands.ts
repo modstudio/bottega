@@ -53,7 +53,9 @@ export function rebaseCarryReviewFunnelCommand(flags: Flags, { log }: Presentati
     const result = row.unavailable
       ? `unavailable=${row.unavailable}`
       : `after=${row.after!.join(',') || 'none'} carried=${row.carried!.join(',') || 'none'}`
-    log(`${row.taskKey ?? row.recordId} ${row.head} before=${row.before.join(',')} ${result}`)
+    log(
+      `${row.taskKey ?? row.recordId} ${row.head} before=${row.before?.join(',') ?? 'unavailable'} ${result}`,
+    )
   }
 }
 

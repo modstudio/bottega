@@ -3,26 +3,30 @@
 
 import type { Database } from 'bun:sqlite'
 import { projectByName } from '../project/projects.ts'
-import { compareReplayedReview } from '../review/review-post-fix.ts'
+import {
+  compareReplayedReviewFacts,
+  type RebaseCarryDecision,
+  rebaseCarryDecision,
+} from '../review/review-post-fix.ts'
 import {
   reviewRemoteTrunkRefExists,
   reviewTrunkRef,
   spawnGitProbe,
 } from '../review/review-target.ts'
-import type { ReviewFunnelFacts, ReviewFunnelVerdict } from './decide-review-funnel.ts'
+import type { ReviewFunnelVerdict } from './decide-review-funnel.ts'
+import {
+  type ReviewFunnelRebaseCarryRow,
+  reviewFunnelRebaseCarryRows,
+} from './review-funnel-store.ts'
 
-export type RebaseCarryReportRow = {
-  recordId: string
-  facts: ReviewFunnelFacts
-  verdict: ReviewFunnelVerdict
-}
+export type RebaseCarryReportRow = ReviewFunnelRebaseCarryRow
 
 type RebaseCarryReportEntry = {
   recordId: string
   project: string
   taskKey: string | null
   head: string
-  before: string[]
+  before: string[] | null
   after: string[] | null
   carried: string[] | null
   unavailable: string | null
@@ -43,7 +47,10 @@ const rebaseChangedLenses = (verdict: ReviewFunnelVerdict): string[] =>
 /** Reduce recorded old-rule decisions after an adapter recomputes the new rule. */
 export function summarizeRebaseCarryRows(
   rows: readonly RebaseCarryReportRow[],
-  recompute: (row: RebaseCarryReportRow) => Readonly<Record<string, readonly string[]>>,
+  recompute: (row: RebaseCarryReportRow) => {
+    before: RebaseCarryDecision
+    after: RebaseCarryDecision
+  },
 ): RebaseCarryReport {
   const entries = rows.flatMap<RebaseCarryReportEntry>((row) => {
     const before = rebaseChangedLenses(row.verdict)
@@ -53,26 +60,29 @@ export function summarizeRebaseCarryRows(
       project: row.facts.change.project,
       taskKey: row.facts.change.taskKey,
       head: row.facts.change.head,
-      before,
     }
     try {
-      const reOwed = recompute(row)
-      const after = before.filter((lens) => Object.hasOwn(reOwed, lens))
+      const recomputed = recompute(row)
+      const recomputedBefore = before.filter((lens) =>
+        Object.hasOwn(recomputed.before.reOwedPathsByLens, lens),
+      )
+      const after = before.filter((lens) => Object.hasOwn(recomputed.after.reOwedPathsByLens, lens))
       return [
         {
           ...base,
+          before: recomputedBefore,
           after,
-          carried: before.filter((lens) => !after.includes(lens)),
+          carried: recomputedBefore.filter((lens) => !after.includes(lens)),
           unavailable: null,
         },
       ]
     } catch (cause) {
-      return [{ ...base, after: null, carried: null, unavailable: String(cause) }]
+      return [{ ...base, before: null, after: null, carried: null, unavailable: String(cause) }]
     }
   })
   return {
     rows: entries.length,
-    before: entries.reduce((sum, row) => sum + row.before.length, 0),
+    before: entries.reduce((sum, row) => sum + (row.before?.length ?? 0), 0),
     after: entries.reduce((sum, row) => sum + (row.after?.length ?? 0), 0),
     carried: entries.reduce((sum, row) => sum + (row.carried?.length ?? 0), 0),
     unavailable: entries.filter(({ unavailable }) => unavailable !== null).length,
@@ -80,22 +90,9 @@ export function summarizeRebaseCarryRows(
   }
 }
 
-function recordedRebaseRows(database: Database): RebaseCarryReportRow[] {
-  return database
-    .query<{ record_id: string; facts: string; verdict: string }, []>(
-      'SELECT record_id,facts,verdict FROM review_funnel_decision ORDER BY recorded_at,record_id',
-    )
-    .all()
-    .map((row) => ({
-      recordId: row.record_id,
-      facts: JSON.parse(row.facts) as ReviewFunnelFacts,
-      verdict: JSON.parse(row.verdict) as ReviewFunnelVerdict,
-    }))
-}
-
 /** Read the local decision log and compare each old re-owe with current exact-hunks policy. */
 export function reviewFunnelRebaseCarryReport(database: Database): RebaseCarryReport {
-  return summarizeRebaseCarryRows(recordedRebaseRows(database), (row) => {
+  return summarizeRebaseCarryRows(reviewFunnelRebaseCarryRows(database), (row) => {
     const postFix = row.facts.postFix
     if (postFix.completed === null || !('reviewedTip' in postFix) || !postFix.reviewedTip) {
       throw new Error('recorded decision has no reviewed tip')
@@ -108,12 +105,19 @@ export function reviewFunnelRebaseCarryReport(database: Database): RebaseCarryRe
       reviewRemoteTrunkRefExists(trunk, spawnGitProbe(project.path)),
       trunk,
     )
-    return compareReplayedReview(
+    const facts = compareReplayedReviewFacts(
       project.path,
       postFix.reviewedTip,
       row.facts.change.head,
       trunkRef,
       postFix.completed.pathsByLens,
-    ).reOwedPathsByLens
+    )
+    return {
+      before: rebaseCarryDecision({
+        ...facts,
+        files: facts.files.map((file) => ({ ...file, exactHunks: false })),
+      }),
+      after: rebaseCarryDecision(facts),
+    }
   })
 }

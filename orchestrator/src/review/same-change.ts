@@ -36,27 +36,55 @@ export type SameChangeDecision = {
 const samePaths = (left: readonly string[], right: readonly string[]) =>
   JSON.stringify([...left].sort()) === JSON.stringify([...right].sort())
 
-/**
- * Identify the verbatim hunk body, including context, while ignoring the line
- * coordinates that move when the same hunk is replayed onto a new base.
- */
-export function exactHunksIdentity(patch: string): string {
-  let inHunks = false
-  const hunks = patch
+/** Hash a single diff section by its content and metadata, independent of path and hunk offsets. */
+export function pathNeutralContentIdentity(section: string): string {
+  let header = true
+  const normalized = section
     .split('\n')
     .flatMap((line) => {
       if (line.startsWith('@@')) {
-        inHunks = true
+        header = false
         return ['@@']
       }
-      if (line === 'GIT binary patch' || line.startsWith('Binary files ')) {
-        inHunks = true
-        return [line === 'GIT binary patch' ? line : 'Binary files differ']
+      if (line === 'GIT binary patch') {
+        header = false
+        return [line]
       }
-      return inHunks ? [line] : []
+      if (line.startsWith('Binary files ')) {
+        header = false
+        return ['Binary files differ']
+      }
+      if (
+        header &&
+        (line.startsWith('diff --git ') ||
+          line.startsWith('index ') ||
+          line.startsWith('--- ') ||
+          line.startsWith('+++ ') ||
+          line.startsWith('rename from ') ||
+          line.startsWith('rename to ') ||
+          line.startsWith('copy from ') ||
+          line.startsWith('copy to '))
+      ) {
+        return []
+      }
+      return [line]
     })
     .join('\n')
-  return new Bun.CryptoHasher('sha256').update(hunks).digest('hex')
+  return new Bun.CryptoHasher('sha256').update(normalized).digest('hex')
+}
+
+type ExactHunksPatch = { exactHunksId?: string }
+
+/** Compare contextual per-path patch identities; absent identities never match. */
+export function sameExactHunks(
+  reviewed: ExactHunksPatch | null | undefined,
+  current: ExactHunksPatch | null | undefined,
+): boolean {
+  return (
+    reviewed?.exactHunksId !== undefined &&
+    current?.exactHunksId !== undefined &&
+    reviewed.exactHunksId === current.exactHunksId
+  )
 }
 
 /** Turn one persisted change tuple into facts without letting malformed path data match. */

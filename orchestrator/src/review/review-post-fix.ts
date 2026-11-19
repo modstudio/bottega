@@ -28,7 +28,7 @@ import {
   tierThreeRiskPaths,
 } from './review-tier-classifier.ts'
 import type { ReviewRoundEvidenceRow } from './review-yield.ts'
-import { exactHunksIdentity, sameChange } from './same-change.ts'
+import { pathNeutralContentIdentity, sameChange, sameExactHunks } from './same-change.ts'
 
 const POST_FIX_RELENS_TIER: ReviewTier['tier'] = 3
 
@@ -300,43 +300,6 @@ export function fixFilesFromPatches(
   })
 }
 
-/** Hash a single diff section by its content and metadata, independent of path and hunk offsets. */
-export function pathNeutralContentIdentity(section: string): string {
-  let header = true
-  const normalized = section
-    .split('\n')
-    .flatMap((line) => {
-      if (line.startsWith('@@')) {
-        header = false
-        return ['@@']
-      }
-      if (line === 'GIT binary patch') {
-        header = false
-        return [line]
-      }
-      if (line.startsWith('Binary files ')) {
-        header = false
-        return ['Binary files differ']
-      }
-      if (
-        header &&
-        (line.startsWith('diff --git ') ||
-          line.startsWith('index ') ||
-          line.startsWith('--- ') ||
-          line.startsWith('+++ ') ||
-          line.startsWith('rename from ') ||
-          line.startsWith('rename to ') ||
-          line.startsWith('copy from ') ||
-          line.startsWith('copy to '))
-      ) {
-        return []
-      }
-      return [line]
-    })
-    .join('\n')
-  return new Bun.CryptoHasher('sha256').update(normalized).digest('hex')
-}
-
 function changePatches(
   repo: string,
   tip: string,
@@ -370,7 +333,7 @@ function patchesForRange(repo: string, base: string, tip: string): PerPathPatch[
   const exactIdentities = mapGitDiffSections(
     repo,
     ['diff', '--binary', '--no-ext-diff', '--no-color', '--no-renames', `${base}..${tip}`],
-    exactHunksIdentity,
+    pathNeutralContentIdentity,
   )
   if (exactIdentities.length !== files.length) {
     throw new Error(
@@ -408,13 +371,13 @@ function mergeTreeReplay(input: {
   return { tree, conflictedPaths }
 }
 
-export function compareReplayedReview(
+export function compareReplayedReviewFacts(
   repo: string,
   reviewedTip: string,
   currentTip: string,
   trunkRef: string,
   pathsByLens: Readonly<Record<string, readonly string[]>>,
-): RebaseCarryDecision {
+): { files: RebaseFileComparison[]; pathsByLens: Readonly<Record<string, readonly string[]>> } {
   const reviewedBase = git(repo, ['merge-base', reviewedTip, trunkRef])
   if (!reviewedBase.ok) throw new Error(reviewedBase.err)
   const currentBase = git(repo, ['merge-base', currentTip, trunkRef])
@@ -435,20 +398,29 @@ export function compareReplayedReview(
   const paths = [...new Set([...replayedByPath.keys(), ...currentByPath.keys()])].sort()
   const conflicts = new Set(replay.conflictedPaths)
   const trunkChangedPaths = trunkChangedPathSet(trunk)
-  return rebaseCarryDecision({
+  return {
     files: paths.map((path) => ({
       path,
       replayed: replayedByPath.get(path) ?? null,
       current: currentByPath.get(path) ?? null,
       conflicted: conflicts.has(path),
       trunkChanged: trunkChangedPaths.has(path),
-      exactHunks:
-        reviewedByPath.has(path) &&
-        currentByPath.has(path) &&
-        reviewedByPath.get(path)?.exactHunksId === currentByPath.get(path)?.exactHunksId,
+      exactHunks: sameExactHunks(reviewedByPath.get(path), currentByPath.get(path)),
     })),
     pathsByLens,
-  })
+  }
+}
+
+function compareReplayedReview(
+  repo: string,
+  reviewedTip: string,
+  currentTip: string,
+  trunkRef: string,
+  pathsByLens: Readonly<Record<string, readonly string[]>>,
+): RebaseCarryDecision {
+  return rebaseCarryDecision(
+    compareReplayedReviewFacts(repo, reviewedTip, currentTip, trunkRef, pathsByLens),
+  )
 }
 
 /** Every path trunk could have changed, including both names of a rename. */

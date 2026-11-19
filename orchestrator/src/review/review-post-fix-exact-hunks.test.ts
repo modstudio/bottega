@@ -16,12 +16,13 @@ const comparison = (input: {
   conflicted: boolean
   exactHunks: boolean
   samePatch: boolean
+  trunkChanged?: boolean
 }): RebaseFileComparison => ({
   path: 'src/shared.ts',
   replayed: patch('reviewed'),
   current: patch(input.samePatch ? 'reviewed' : 'current'),
   conflicted: input.conflicted,
-  trunkChanged: input.conflicted,
+  trunkChanged: input.trunkChanged ?? input.conflicted,
   exactHunks: input.exactHunks,
 })
 
@@ -37,8 +38,8 @@ test.each([
     changed: true,
   },
   {
-    name: 'a non-conflicted file with a different patch is changed',
-    input: { conflicted: false, exactHunks: false, samePatch: false },
+    name: 'a non-conflicted file with a different patch is re-owed',
+    input: { conflicted: false, exactHunks: false, samePatch: false, trunkChanged: true },
     changed: true,
   },
   {
@@ -56,7 +57,8 @@ test.each([
     changed
       ? {
           fixFiles: [{ path: 'src/shared.ts', insertions: 1, deletions: 1 }],
-          reOwedPathsByLens: input.conflicted ? { correctness: ['src/shared.ts'] } : {},
+          reOwedPathsByLens:
+            input.conflicted || input.trunkChanged ? { correctness: ['src/shared.ts'] } : {},
         }
       : { fixFiles: [], reOwedPathsByLens: {} },
   )
