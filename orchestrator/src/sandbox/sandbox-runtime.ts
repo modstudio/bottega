@@ -8,7 +8,6 @@ import {
 } from '@anthropic-ai/sandbox-runtime'
 import { which } from 'bun'
 import { startBoundedSync } from '../../../shared/bounded-process.ts'
-import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   type EmbeddedRuntimeFile,
   embeddedDistributionManifest,
@@ -261,9 +260,10 @@ export function renderSandboxReadinessRefusal(
   failure: SandboxReadinessRefusal,
   runtime: RuntimeAvailability,
   originalError: string,
+  doctorCommand: string,
 ): string {
   if (runtime.available) {
-    return `sandbox runtime readiness failed: ${failure.signature}; run ${PLATFORM_SLUG} machine doctor on this machine`
+    return `sandbox runtime readiness failed: ${failure.signature}; run ${doctorCommand} on this machine`
   }
   const fixes = runtime.fixes.length ? `; ${runtime.fixes.join('; ')}` : ''
   const evidence = originalError.trim() || failure.evidence

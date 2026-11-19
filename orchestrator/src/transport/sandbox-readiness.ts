@@ -1,3 +1,4 @@
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   classifySandboxLaunchFailure,
   renderSandboxReadinessRefusal,
@@ -24,5 +25,6 @@ export function sandboxReadinessRefusal(input: {
     failure,
     sandboxRuntimeAvailability(),
     input.originalError ?? input.launchError,
+    `${PLATFORM_SLUG} machine doctor`,
   )
 }

@@ -18,7 +18,7 @@ function notices(machineLevel: SetupFacts['machineLevel'], available = false) {
     git: { path: '/bin/git', version: '1' },
     gh: { path: '/bin/gh', version: '1', loggedIn: true },
     sandboxRuntime: { ...runtime, available },
-  } as SetupFacts
+  } as unknown as SetupFacts
   return proposeSetup(resolveWorktreeLifecycle, facts, [], [], [], [], []).notices
 }
 

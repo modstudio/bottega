@@ -617,6 +617,10 @@ const declaredModules: ArchitectureModule[] = [
     '../../../shared/bounded-process.ts',
     '../database/db.ts',
   ]),
+  module('orchestrator/src/transport/sandbox-readiness.ts', [
+    '../../../shared/brand.ts',
+    '../sandbox/sandbox-runtime.ts',
+  ]),
   module('orchestrator/src/runtime/standard-calibration.ts', [
     './calibration-port.ts',
     '../review/review-calibration.ts',

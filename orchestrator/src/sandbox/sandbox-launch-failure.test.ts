@@ -31,15 +31,20 @@ test('renders unavailable and freshly available readiness rulings without invent
     remedy: '',
     fixes: ['install the profile', 'reload AppArmor'],
   }
-  expect(renderSandboxReadinessRefusal(failure, runtime, 'bwrap failed')).toBe(
+  expect(renderSandboxReadinessRefusal(failure, runtime, 'bwrap failed', 'doctor')).toBe(
     'sandbox runtime readiness failed; namespaces are blocked; install the profile; reload AppArmor\noriginal error: bwrap failed',
   )
   expect(
-    renderSandboxReadinessRefusal(failure, { ...runtime, available: true, fixes: [] }, 'ignored'),
+    renderSandboxReadinessRefusal(
+      failure,
+      { ...runtime, available: true, fixes: [] },
+      'ignored',
+      `${PLATFORM_SLUG} machine doctor`,
+    ),
   ).toBe(
     `sandbox runtime readiness failed: RTM_NEWADDR; run ${PLATFORM_SLUG} machine doctor on this machine`,
   )
-  expect(renderSandboxReadinessRefusal(failure, runtime, '')).toContain(
+  expect(renderSandboxReadinessRefusal(failure, runtime, '', 'doctor')).toContain(
     'original error: bwrap: loopback: Failed RTM_NEWADDR: Operation not permitted',
   )
 })

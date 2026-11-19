@@ -759,6 +759,22 @@ function acpPermissionDecision(
   )
 }
 
+function acpOpenFailure(error: unknown, stderr: string, opts: TransportStartOpts): Error {
+  if (error instanceof Error && error.message.startsWith('sandbox runtime readiness failed')) {
+    return error
+  }
+  const originalError = String((error as Error)?.message ?? error)
+  const joined = [originalError, stderr].filter(Boolean).join('\n')
+  const refusal = sandboxReadinessRefusal({
+    srt: Boolean(opts.srt),
+    turnFailed: true,
+    stderr,
+    launchError: originalError,
+    originalError: joined,
+  })
+  return new Error(refusal ?? joined, { cause: refusal ? error : undefined })
+}
+
 async function openAcp(opts: TransportStartOpts): Promise<TransportHandle> {
   const grok = opts.agent.name === 'grok'
   const genericHarness = opts.agent.harness === 'opencode' || opts.agent.harness === 'goose'
@@ -959,17 +975,7 @@ async function openAcp(opts: TransportStartOpts): Promise<TransportHandle> {
     }
     if (leaderSocket) rmSync(leaderSocket, { force: true })
     const stderr = Buffer.concat(stderrChunks).toString('utf8').trim()
-    const originalError = String((error as Error)?.message ?? error)
-    const joined = [originalError, stderr].filter(Boolean).join('\n')
-    if (originalError.startsWith('sandbox runtime readiness failed')) throw error
-    const refusal = sandboxReadinessRefusal({
-      srt: Boolean(opts.srt),
-      turnFailed: true,
-      stderr,
-      launchError: originalError,
-      originalError: joined,
-    })
-    throw new Error(refusal ?? joined, { cause: refusal ? error : undefined })
+    throw acpOpenFailure(error, stderr, opts)
   }
 
   let collectPromise: Promise<TransportResult> | null = null
