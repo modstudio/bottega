@@ -27,6 +27,7 @@ import {
 } from './record-api-client-board-stream.ts'
 import { type RecordChangesClient, recordChangesClient } from './record-api-client-changes.ts'
 import { recordConfigAccessClient } from './record-api-client-config-access.ts'
+import { type RecordCountsClient, recordCountsClient } from './record-api-client-counts.ts'
 import {
   recordApiUnreachable as classifyRecordApiUnreachable,
   recordApiError,
@@ -58,7 +59,6 @@ import {
 import { type RecordPortClient, recordPortClient } from './record-api-client-port.ts'
 import { RecordApiRequestError, responseRecord } from './record-api-client-response.ts'
 import type { RecordContextItemInput } from './record-context-items.ts'
-import type { RecordCacheCounts } from './record-cache-counts.ts'
 
 export { recordAuthRefusal, recordAuthToken } from './record-api-client-error.ts'
 export { RecordApiRequestError } from './record-api-client-response.ts'
@@ -242,6 +242,7 @@ export type RecordApiClient = ProjectIdentityClient &
   RecordPortClient &
   RecordWorkflowClient &
   RecordSettingsClient &
+  RecordCountsClient &
   ReturnType<typeof recordModerationClient> &
   ReturnType<typeof recordOutsideClient> &
   ReturnType<typeof recordConfigAccessClient> & {
@@ -404,14 +405,6 @@ export type RecordApiClient = ProjectIdentityClient &
       limit?: number
       cursor?: string | null
     }): Promise<{ items: Record<string, unknown>[]; nextCursor: string | null }>
-    counts(
-      destination?: RecordRequestDestination,
-    ): Promise<{ docs: number; revisions: number; scores: number; voids: number }>
-    cacheCounts(
-      destination: RecordRequestDestination,
-    ): Promise<
-      { docs: number; revisions: number; scores: number; voids: number } & RecordCacheCounts
-    >
     listBoardMessages(
       query?: HostedBoardOverviewFilters,
       signal?: AbortSignal,
@@ -776,6 +769,7 @@ export function recordApiClientOver(request: RecordClientRequest): RecordApiClie
     ...projectIdentityClient(request),
     ...recordProjectSubjectClient(request),
     ...recordRoutingEvidenceClient(request),
+    ...recordCountsClient(request),
     listScores: (query) => {
       const search = new URLSearchParams()
       if (query.updatedSince) search.set('updatedSince', query.updatedSince)
@@ -784,8 +778,6 @@ export function recordApiClientOver(request: RecordClientRequest): RecordApiClie
       const suffix = search.toString()
       return request(`/v1/scores${suffix ? `?${suffix}` : ''}`)
     },
-    counts: (destination) => request('/v1/docs/counts', destination),
-    cacheCounts: (destination) => request('/v1/docs/counts?by=scope', destination),
     ...recordBoardClient(request),
     ...recordApiBoardWatchClient(request),
   }

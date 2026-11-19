@@ -40,8 +40,8 @@ import { hostedBoardStatus, putHostedBoardReceipt } from './record-board-receipt
 import { createBoardStreamRegistry } from './record-board-stream.ts'
 import { takeHostedBoardSuccessor } from './record-board-successor.ts'
 import { createBoardWakeSource } from './record-board-wake.ts'
-import { importRecordCanon } from './record-canon-import.ts'
 import { countRecordCacheRows } from './record-cache-counts.ts'
+import { importRecordCanon } from './record-canon-import.ts'
 import {
   importRecordLensCatalogue,
   importRecordPortCatalogue,

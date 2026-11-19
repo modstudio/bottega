@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
-import { recordDoctorExitCode } from './record-doctor.ts'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { decideRecordCacheParity, type RecordCacheParityInput } from './record-cache-parity.ts'
+import { recordDoctorExitCode } from './record-doctor.ts'
 
 const base = {
   space: 'space-a',
@@ -34,7 +35,7 @@ describe('record cache parity decision', () => {
     expect(decision).toMatchObject({ status: 'fail' })
     expect(decision.detail).toContain('canon: 1 local; 2 hosted — missing locally')
     expect(decision.detail).toContain('subjects: 2 local; 3 hosted — missing locally')
-    expect(decision.detail).toContain('cleared by: run `bottega record pull`')
+    expect(decision.detail).toContain(`run \`${PLATFORM_SLUG} record pull\``)
     expect(recordDoctorExitCode([decision])).toBe(1)
   })
 

@@ -2,8 +2,8 @@
 /** Decides whether hosted document-cache rows are represented locally. */
 
 import type { Database } from 'bun:sqlite'
-import { DOC_SCOPES } from '../../../shared/docs.ts'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { DOC_SCOPES } from '../../../shared/docs.ts'
 import { recordApiClient } from './record-api-client.ts'
 import type { RecordIdentity } from './record-auth.ts'
 import { recordCacheSpaces } from './record-cache.ts'
@@ -104,7 +104,7 @@ export function decideRecordCacheParity(input: RecordCacheParityInput): RecordCa
   lines.push(
     `subjects: ${input.local.subjects} local; ${hostedSubjects} hosted — ${subjectResult.label}`,
   )
-  if (gap) lines.push(`cleared by: ${pullRemedy}`)
+  if (gap) lines.push(pullRemedy)
   return { name, status: gap ? 'fail' : 'pass', detail: lines.join('\n'), section: 'customer' }
 }
 
@@ -112,7 +112,7 @@ function localCacheCounts(local: Database, space: string): LocalCacheCounts {
   return {
     byScope: local
       .query<{ scope: string; docs: number }, [string]>(
-        'SELECT scope,count(*) AS docs FROM doc WHERE space_id=? AND deleted_at IS NULL GROUP BY scope ORDER BY scope',
+        'SELECT scope,count(*) AS docs FROM doc WHERE space_id=? GROUP BY scope ORDER BY scope',
       )
       .all(space),
     subjects: local

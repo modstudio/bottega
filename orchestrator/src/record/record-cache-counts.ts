@@ -1,6 +1,7 @@
 // concern: record-cache-counts
 /** Counts the hosted rows that can populate a machine's local document cache. */
 
+import { bindTenant } from '../../../shared/record/tenant.ts'
 import { docWriteProjectName } from '../doc/doc-write-allowed.ts'
 import type { RecordDocumentTenant } from './record-api-doc-tenant.ts'
 import { recordPool } from './record-pool.ts'
@@ -14,8 +15,7 @@ export async function countRecordCacheRows(
   input: RecordDocumentTenant,
 ): Promise<RecordCacheCounts> {
   return recordPool(input.url).begin(async (tx) => {
-    await tx`SELECT set_config('app.user_id', ${input.userId}, true)`
-    await tx`SELECT set_config('app.space_id', ${input.spaceId}, true)`
+    await bindTenant(tx, input)
     const docs = await tx`
       SELECT scope,subject,count(*)::integer AS docs
       FROM doc

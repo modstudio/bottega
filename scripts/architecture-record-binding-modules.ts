@@ -122,6 +122,7 @@ export const recordBindingModules: RecordModule[] = [
     'hono',
     './record-api-doc-tenant.ts',
     './record-auth.ts',
+    './record-cache-counts.ts',
   ]),
   module('orchestrator/src/record/record-api-doc-tenant.ts', [
     '../../../shared/personal-item-space.ts',
