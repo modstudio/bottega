@@ -742,7 +742,15 @@ test('sync uses the maintenance handle for bound hosted history instead of its g
       input: Parameters<NonNullable<RecordApiClient['readTaskFlowPresence']>>[0],
     ) => {
       presenceReads += 1
-      return input
+      return {
+        obligationIds: input.obligationIds ?? [],
+        textIds: input.textIds ?? [],
+        textCopyIds: input.textCopyIds ?? [],
+        questionAuditIds: input.questionAuditIds ?? [],
+        questionIds: input.questionIds ?? [],
+        stageIds: input.stageIds ?? [],
+        flowIds: input.flowIds ?? [],
+      }
     },
     importQuestion: async () => {
       throw new Error('unexpected question import')
