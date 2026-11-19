@@ -393,7 +393,7 @@ test('hosted row release archive retention keeps only the newest files', () => {
       directory,
       now: new Date(`2026-11-${String(day).padStart(2, '0')}T00:00:00.000Z`),
     })
-  const archives = readdirSync(directory)
+  const archives = readdirSync(directory).sort()
   expect(archives).toHaveLength(HOSTED_ROW_RELEASE_ARCHIVE_KEEP)
   expect(archives[0]).toContain('2026-11-03')
 })
