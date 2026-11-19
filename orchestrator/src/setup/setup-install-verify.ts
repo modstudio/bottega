@@ -1,12 +1,10 @@
 // concern: setup-install-verify
 /** Decides whether setup-rendered hooks and user canon landed. Pure: adapters supply plain facts. */
 
-import { normalize } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
-  hookScriptPath,
+  commandNamesHookScript,
   type ProductHookDeclaration,
-  shellQuote,
 } from '../settings/settings-machine-hooks.ts'
 
 export type SetupInstallSettingsFileFact = {
@@ -64,13 +62,6 @@ function handlersFor(settings: unknown, declaration: ProductHookDeclaration): Ho
   })
 }
 
-function commandNamesInstalledScript(command: string, expectedPath: string): boolean {
-  const normalized = normalize(expectedPath)
-  const singleQuoted = shellQuote(normalized)
-  if (command.includes(singleQuoted) || command.includes(`"${normalized}"`)) return true
-  return command.split(/\s+/).includes(normalized)
-}
-
 function missingHooks(
   facts: SetupInstallVerifyFacts,
   declarations: readonly ProductHookDeclaration[],
@@ -81,13 +72,12 @@ function missingHooks(
   }
   const available = new Map<string, number>()
   for (const declaration of declarations) {
-    const expected = hookScriptPath(facts.installRoot, declaration.script)
     const key = `${declaration.event}\0${declaration.matcher ?? ''}\0${declaration.script}`
     if (available.has(key)) continue
     available.set(
       key,
       handlersFor(file.settings, declaration).filter((handler) =>
-        commandNamesInstalledScript(handler.command, expected),
+        commandNamesHookScript(handler.command, declaration.script, facts.installRoot),
       ).length,
     )
   }

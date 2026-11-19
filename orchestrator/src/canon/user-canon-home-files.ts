@@ -47,10 +47,14 @@ export type UserCanonHomePlanDecision =
   | { action: 'apply'; plans: UserCanonHomePlan[] }
   | { action: 'refuse-empty-store' }
 
-export const EMPTY_USER_CANON_STORE_REFUSAL =
+const EMPTY_USER_CANON_STORE_REFUSAL =
   'no user canon rows have arrived in this store; ' +
   `run \`${PLATFORM_SLUG} record push\`; if this user truly has no canon, create it with ` +
   `\`${PLATFORM_SLUG} doc set --scope canon --user\``
+
+export function emptyUserCanonStoreRefusal(): string {
+  return `refusing user canon hydration: ${EMPTY_USER_CANON_STORE_REFUSAL}`
+}
 
 type CollectedFileState = { collectedText: string; collectedMode: number }
 type PlannedUserCanonWriteBase = {

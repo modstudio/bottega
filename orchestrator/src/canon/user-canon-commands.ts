@@ -17,7 +17,7 @@ import {
   applyUserCanonHomePlans,
   collectUserCanonHome,
   decideUserCanonHomePlanApplication,
-  EMPTY_USER_CANON_STORE_REFUSAL,
+  emptyUserCanonStoreRefusal,
   planUserCanonHome,
   type UserCanonHomePlan,
   userCanonHomeInstallationStatus,
@@ -36,7 +36,7 @@ function applicableUserCanonHomePlans(
   decision: ReturnType<typeof decideUserCanonHomePlanApplication>,
 ): UserCanonHomePlan[] {
   if (decision.action === 'apply') return decision.plans
-  throw new Error(`refusing user canon hydration: ${EMPTY_USER_CANON_STORE_REFUSAL}`)
+  throw new Error(emptyUserCanonStoreRefusal())
 }
 
 function printFindings(findings: Finding[], log: (...values: unknown[]) => void): void {

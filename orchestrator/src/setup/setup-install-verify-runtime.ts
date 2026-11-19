@@ -1,7 +1,7 @@
 // concern: setup-install-verify-runtime
 /** Gathers install facts and applies the setup render before pure verification. */
 
-import { accessSync, constants, existsSync, readFileSync, statSync } from 'node:fs'
+import { accessSync, constants, existsSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { assetPath } from '../../../shared/install-root.ts'
@@ -9,6 +9,8 @@ import { resolveRunsDirectory } from '../../../shared/state-directory.ts'
 import { userCanonHomesFromEnvironment } from '../canon/user-canon-home-files.ts'
 import {
   claudeHomeFromEnvironment,
+  managedSettingsPaths,
+  readSettingsJsonLenient,
   userLocalSettingsPath,
   userSettingsPath,
 } from '../settings/settings-files.ts'
@@ -34,35 +36,7 @@ function readSettingsFact(
   kind: SetupInstallSettingsFileFact['kind'],
   required: boolean,
 ): SetupInstallSettingsFileFact {
-  if (!existsSync(path)) return { path, kind, required, state: 'absent' }
-  try {
-    return {
-      path,
-      kind,
-      required,
-      state: 'readable',
-      settings: JSON.parse(readFileSync(path, 'utf8')),
-    }
-  } catch (error) {
-    return {
-      path,
-      kind,
-      required,
-      state: 'unreadable',
-      detail: error instanceof Error ? error.message : String(error),
-    }
-  }
-}
-
-function managedSettingsPaths(environment: NodeJS.ProcessEnv): string[] {
-  if (process.platform === 'darwin') {
-    return ['/Library/Application Support/ClaudeCode/managed-settings.json']
-  }
-  if (process.platform === 'win32') {
-    const programFiles = environment.ProgramFiles
-    return programFiles ? [join(programFiles, 'ClaudeCode', 'managed-settings.json')] : []
-  }
-  return ['/etc/claude-code/managed-settings.json']
+  return { path, kind, required, ...readSettingsJsonLenient(path) }
 }
 
 function gatherSetupInstallVerifyFacts(

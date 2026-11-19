@@ -173,10 +173,18 @@ export const PRODUCT_HOOKS: readonly ProductHookDeclaration[] = [
   { event: 'PreCompact', script: 'context-precompact.py' },
 ]
 
-export const shellQuote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`
+const shellQuote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`
 
-export function hookScriptPath(assetRoot: string, file: ScriptFile): string {
+export function hookScriptPath(assetRoot: string, file: string): string {
   return join(assetRoot, 'orchestrator', 'hooks', file)
+}
+
+export function commandNamesHookScript(command: string, file: string, assetRoot?: string): boolean {
+  const needle = assetRoot ? hookScriptPath(assetRoot, file) : `orchestrator/hooks/${file}`
+  const index = command.indexOf(needle)
+  if (index < 0) return false
+  const next = command[index + needle.length]
+  return next === undefined || next === "'" || next === '"' || /\s/.test(next)
 }
 
 function resolvedCondition(value: HookCondition | undefined, assetRoot: string) {
@@ -257,13 +265,9 @@ function declaredGroups(assetRoot: string, databasePath: string, globalUse: 'on'
 
 function declaredScript(command: unknown): RecognizedScriptFile | undefined {
   if (typeof command !== 'string') return undefined
-  return [...SCRIPT_FILES, ...LEGACY_SCRIPT_FILES].find((file) => {
-    const needle = `orchestrator/hooks/${file}`
-    const index = command.indexOf(needle)
-    if (index < 0) return false
-    const next = command[index + needle.length]
-    return next === undefined || next === "'" || next === '"' || /\s/.test(next)
-  })
+  return [...SCRIPT_FILES, ...LEGACY_SCRIPT_FILES].find((file) =>
+    commandNamesHookScript(command, file),
+  )
 }
 
 /** Replace profile copies of product hooks and append the canonical product declaration. */

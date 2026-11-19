@@ -16,7 +16,7 @@ import {
   applyUserCanonHomePlans,
   collectUserCanonHome,
   decideUserCanonHomePlanApplication,
-  EMPTY_USER_CANON_STORE_REFUSAL,
+  emptyUserCanonStoreRefusal,
   planUserCanonHome,
   type UserCanonHomePlan,
   userCanonHomePlanDrift,
@@ -336,7 +336,7 @@ function applyUserCanon(
     return planned.map((item) => ({
       target: item.target,
       outcome: 'refused',
-      detail: `refusing user canon hydration: ${EMPTY_USER_CANON_STORE_REFUSAL}`,
+      detail: emptyUserCanonStoreRefusal(),
       changed: false,
     }))
   }

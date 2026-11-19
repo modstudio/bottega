@@ -5,8 +5,10 @@ import { dirname, join } from 'node:path'
 import { SETTINGS_PARSE_REFUSAL } from './settings.ts'
 import {
   claudeHomeFromEnvironment,
+  managedSettingsPaths,
   readLocalPermissionLists,
   readSettingsFile,
+  readSettingsJsonLenient,
   userSettingsPath,
 } from './settings-files.ts'
 
@@ -22,6 +24,30 @@ function fixtureHome(): string {
 }
 
 describe('settings files', () => {
+  test('locates managed settings for each supported platform', () => {
+    expect(managedSettingsPaths({}, 'darwin')).toEqual([
+      '/Library/Application Support/ClaudeCode/managed-settings.json',
+    ])
+    expect(managedSettingsPaths({ ProgramFiles: 'C:\\Program Files' }, 'win32')).toEqual([
+      join('C:\\Program Files', 'ClaudeCode', 'managed-settings.json'),
+    ])
+    expect(managedSettingsPaths({}, 'linux')).toEqual(['/etc/claude-code/managed-settings.json'])
+  })
+
+  test('lenient JSON reads distinguish absent, readable, and unreadable settings', () => {
+    const claudeHome = fixtureHome()
+    mkdirSync(claudeHome, { recursive: true })
+    const path = userSettingsPath(claudeHome)
+    expect(readSettingsJsonLenient(path)).toEqual({ state: 'absent' })
+    writeFileSync(path, '{"disableAllHooks":true}')
+    expect(readSettingsJsonLenient(path)).toEqual({
+      state: 'readable',
+      settings: { disableAllHooks: true },
+    })
+    writeFileSync(path, '{')
+    expect(readSettingsJsonLenient(path)).toMatchObject({ state: 'unreadable' })
+  })
+
   test('reads owned keys from a fixture file and ignores the rest', () => {
     const claudeHome = fixtureHome()
     mkdirSync(claudeHome, { recursive: true })
