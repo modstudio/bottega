@@ -8,6 +8,10 @@ export function joinPackSections(...sections: string[]): string {
   return sections.filter((section) => section.length > 0).join('\n\n')
 }
 
+export function renderPackDocSection(doc: { title: string; body: string }): string {
+  return `## ${doc.title}\n\n${doc.body}`
+}
+
 const CONTEXT_INDEX_HEADING = [
   '## Path-scoped contexts',
   '',
@@ -61,6 +65,7 @@ export function packedCanonMarkdownFromTree(files: CanonFile[]): {
   markdown: string
   alwaysOnBytes: number
   contextIndexBytes: number
+  largestFile: { path: string; bytes: number } | null
 } {
   const classified = files.map((file) => ({ file, kind: classifyCanonFile(file) }))
   const alwaysOn = joinPackSections(
@@ -77,5 +82,9 @@ export function packedCanonMarkdownFromTree(files: CanonFile[]): {
     markdown: joinPackSections(alwaysOn, index),
     alwaysOnBytes: Buffer.byteLength(alwaysOn),
     contextIndexBytes: Buffer.byteLength(index),
+    largestFile:
+      files
+        .map((file) => ({ path: file.path, bytes: Buffer.byteLength(file.text) }))
+        .sort((a, b) => b.bytes - a.bytes || a.path.localeCompare(b.path))[0] ?? null,
   }
 }

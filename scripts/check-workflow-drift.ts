@@ -2,8 +2,7 @@ import type { Database } from 'bun:sqlite'
 import { fileURLToPath } from 'node:url'
 import {
   liveStorePath,
-  localGateRegistrationDecision,
-  probeLocalGateRegistration,
+  localGateRegistration,
 } from '../orchestrator/scripts/branch-store.ts'
 import { DB_PATH, openReadOnlyDatabase } from '../orchestrator/src/database/db.ts'
 import { planWorkflowHydration } from '../orchestrator/src/workflow/workflow-tree.ts'
@@ -77,10 +76,7 @@ function workflowDriftInput(checkout: string, database: Database): WorkflowDrift
 }
 
 if (import.meta.main) {
-  const registration = localGateRegistrationDecision(
-    root,
-    probeLocalGateRegistration(root, liveStorePath()),
-  )
+  const registration = localGateRegistration(root, liveStorePath())
   if (registration.kind === 'skip') {
     exitUnchecked(registration.message)
   }

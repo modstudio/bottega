@@ -1,15 +1,14 @@
 import { Database } from 'bun:sqlite'
 import { fileURLToPath } from 'node:url'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
+import { exitUnchecked } from '../../shared/check-execution.ts'
 import { migrationRefusal } from '../src/database/migrations.ts'
 import { GATE_FACTS_ENV } from '../src/gate/gate-facts.ts'
 import {
   classifyStore,
-  exitLocalGateRegistrationSkip,
+  localGateRegistration,
   liveStorePath,
-  localGateRegistrationDecision,
   migrateStore,
-  probeLocalGateRegistration,
   snapshotStore,
   withBranchStoreScratch,
   withMainGateFactsSnapshot,
@@ -37,9 +36,9 @@ function runGateFacts(path: string): number {
 
 if (import.meta.main) {
   const live = liveStorePath()
-  const registration = localGateRegistrationDecision(root, probeLocalGateRegistration(root, live))
+  const registration = localGateRegistration(root, live)
   if (registration.kind === 'skip') {
-    exitLocalGateRegistrationSkip(registration.message)
+    exitUnchecked(registration.message)
   }
   if (registration.kind === 'fail') {
     console.error(registration.message)

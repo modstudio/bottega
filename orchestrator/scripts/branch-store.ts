@@ -10,6 +10,8 @@ import {
   PLATFORM_SLUG,
 } from '../../shared/brand.ts'
 import { exitUnchecked } from '../../shared/check-execution.ts'
+import { mainCheckoutOf } from '../../shared/git.ts'
+import { checkoutIsUnderProject } from '../../shared/project-path.ts'
 import { DATABASE_RESOLUTION } from '../src/database/database-location.ts'
 import {
   applyMigrations,
@@ -37,6 +39,7 @@ export type LocalGateRegistrationDecision =
 export function localGateRegistrationDecision(
   checkout: string,
   probe: LocalGateRegistrationProbe,
+  registrationCheckout = checkout,
 ): LocalGateRegistrationDecision {
   if (probe.kind === 'registered') return { kind: 'run' }
   if (probe.kind === 'unreadable-store') {
@@ -53,7 +56,7 @@ export function localGateRegistrationDecision(
         : 'the project register has no project containing this checkout'
   return {
     kind: 'skip',
-    message: `checkout ${checkout} is not registered because ${reason}; remedy: ${PLATFORM_SLUG} project add ${JSON.stringify(checkout)}`,
+    message: `checkout ${checkout} is not registered because ${reason}; remedy: ${PLATFORM_SLUG} project add ${JSON.stringify(registrationCheckout)}`,
   }
 }
 
@@ -81,9 +84,9 @@ export function probeLocalGateRegistration(
       path: string
       retired_at: string | null
     }[]
+    // Deliberately omit git-toplevel validation: a false positive makes the full check fail closed.
     const registered = rows.some(
-      (row) =>
-        row.retired_at === null && (checkout === row.path || checkout.startsWith(`${row.path}/`)),
+      (row) => row.retired_at === null && checkoutIsUnderProject(checkout, row.path),
     )
     return registered ? { kind: 'registered' } : { kind: 'unregistered' }
   } catch (cause) {
@@ -96,8 +99,12 @@ export function probeLocalGateRegistration(
   }
 }
 
-export function exitLocalGateRegistrationSkip(message: string): never {
-  return exitUnchecked(message)
+export function localGateRegistration(checkout: string, storePath: string | null) {
+  return localGateRegistrationDecision(
+    checkout,
+    probeLocalGateRegistration(checkout, storePath),
+    mainCheckoutOf(checkout) ?? checkout,
+  )
 }
 
 export type GateStoreSource =

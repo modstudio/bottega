@@ -151,4 +151,32 @@ describe('canon pack budget', () => {
       JOBS['file-question']!.packBytes = old
     }
   })
+
+  test('a canon row write is refused when its affected project pack would cross the ceiling', async () => {
+    const project = 'proposed-canon-budget'
+    upsertProject({
+      recordId: newRecordId(),
+      name: project,
+      path: dir,
+      settings: { trunk: 'main' },
+    })
+    const old = JOBS['file-question']!.packBytes
+    JOBS['file-question']!.packBytes = compilePack({ job: 'file-question', cwd: dir }).bytes + 20
+    try {
+      await expect(
+        setDoc({
+          scope: 'canon',
+          subject: project,
+          slug: 'AGENTS.md',
+          title: 'Project canon',
+          body: 'Keep project decisions explicit and current for every implementation worker.',
+          allowCanonBootstrap: true,
+        }),
+      ).rejects.toThrow(
+        /canon pack file-question\/proposed-canon-budget would be \d+ bytes; ceiling is \d+ bytes.*largest packed tiers.*never raise the pack budget/s,
+      )
+    } finally {
+      JOBS['file-question']!.packBytes = old
+    }
+  })
 })

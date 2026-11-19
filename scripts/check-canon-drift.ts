@@ -3,8 +3,7 @@ import { fileURLToPath } from 'node:url'
 import {
   classifyStore,
   liveStorePath,
-  localGateRegistrationDecision,
-  probeLocalGateRegistration,
+  localGateRegistration,
   withBranchStoreScratch,
   withMainGateFactsSnapshot,
 } from '../orchestrator/scripts/branch-store.ts'
@@ -193,7 +192,7 @@ function checkCanonDrift(
 if (import.meta.main) {
   try {
     const live = liveStorePath()
-    const registration = localGateRegistrationDecision(root, probeLocalGateRegistration(root, live))
+    const registration = localGateRegistration(root, live)
     if (registration.kind === 'skip') {
       exitUnchecked(registration.message)
     }

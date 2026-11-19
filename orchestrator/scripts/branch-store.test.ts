@@ -9,6 +9,7 @@ import {
   classifyStore,
   localGateRegistrationDecision,
   migrateStore,
+  probeLocalGateRegistration,
   snapshotStore,
 } from './branch-store.ts'
 
@@ -121,4 +122,47 @@ test('local machine-state checks fail when a registered checkout store is unread
     kind: 'fail',
     message: `cannot read the project register for checkout ${checkout}: permission denied`,
   })
+})
+
+test('registration probe handles absent, incomplete, matching, retired, lookalike, and unreadable stores', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'orch-registration-probe-'))
+  const absent = join(dir, 'absent.db')
+  const empty = join(dir, 'empty.db')
+  const registered = join(dir, 'registered.db')
+  const unreadable = join(dir, 'unreadable.db')
+  try {
+    expect(probeLocalGateRegistration('/a/b', absent)).toMatchObject({
+      kind: 'unreadable-store',
+    })
+    const emptyDatabase = new Database(empty, { create: true })
+    emptyDatabase.close()
+    expect(probeLocalGateRegistration('/a/b', empty)).toEqual({ kind: 'absent-register' })
+
+    const database = new Database(registered, { create: true })
+    database.exec('CREATE TABLE project (path TEXT NOT NULL, retired_at TEXT)')
+    database.query('INSERT INTO project VALUES (?, ?)').run('/exact', null)
+    database.query('INSERT INTO project VALUES (?, ?)').run('/parent', null)
+    database.query('INSERT INTO project VALUES (?, ?)').run('/retired', '2026-01-01')
+    database.query('INSERT INTO project VALUES (?, ?)').run('/a/b', null)
+    database.close()
+    expect(probeLocalGateRegistration('/exact', registered)).toEqual({ kind: 'registered' })
+    expect(probeLocalGateRegistration('/parent/worktree', registered)).toEqual({
+      kind: 'registered',
+    })
+    expect(probeLocalGateRegistration('/retired', registered)).toEqual({ kind: 'unregistered' })
+    expect(probeLocalGateRegistration('/a/bc', registered)).toEqual({ kind: 'unregistered' })
+
+    writeFileSync(unreadable, 'not a sqlite database')
+    expect(probeLocalGateRegistration('/a/b', unreadable)).toMatchObject({
+      kind: 'unreadable-store',
+    })
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('registration skip remedy may name the main checkout instead of its worktree', () => {
+  expect(
+    localGateRegistrationDecision('/main/.claude/worktrees/task', { kind: 'unregistered' }, '/main'),
+  ).toMatchObject({ message: expect.stringContaining(`${PLATFORM_SLUG} project add \"/main\"`) })
 })

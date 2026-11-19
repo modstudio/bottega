@@ -18,6 +18,7 @@ import {
 } from '../canon/canon-lint.ts'
 import { decideNextCanonSet } from '../canon/canon-write-gate.ts'
 import { DEFAULT_PACK_BYTES, MAX_INJECT_DOC_BYTES } from '../canon/pack-budget.ts'
+import { joinPackSections, renderPackDocSection } from '../canon/pack-content.ts'
 import { refuseSettingsBody } from '../settings/settings.ts'
 import { type DocGenerator, REFERENCE_GENERATOR } from './doc-generator.ts'
 import { docLintRefusal, introducedDocFindings, type LintableDoc, lintDoc } from './doc-lint.ts'
@@ -399,31 +400,41 @@ export function injectPackBudgetRefusal(input: {
   project: string
   ceiling: number
   canonMarkdown: string
+  canonTiers?: readonly { label: string; bytes: number }[]
   current: readonly InjectPackSection[]
-  proposed: InjectPackSection
+  proposed?: InjectPackSection
 }): string | null {
-  const docs = [
-    ...input.current.filter((doc) => doc.identity !== input.proposed.identity),
-    input.proposed,
-  ]
-  const operatorMarkdown = docs.map((doc) => `## ${doc.title}\n\n${doc.body}`).join('\n\n')
-  const markdown = [input.canonMarkdown, operatorMarkdown].filter(Boolean).join('\n\n')
+  const docs = input.proposed
+    ? [
+        ...input.current.filter((doc) => doc.identity !== input.proposed!.identity),
+        input.proposed,
+      ]
+    : [...input.current]
+  const operatorMarkdown = joinPackSections(...docs.map(renderPackDocSection))
+  const markdown = joinPackSections(input.canonMarkdown, operatorMarkdown)
   const bytes = Buffer.byteLength(markdown)
   if (bytes <= input.ceiling) return null
-  const largest = docs
+  const largest = [
+    ...(input.canonTiers ?? []),
+    ...docs
     .map((doc) => ({
-      identity: doc.identity,
-      bytes: Buffer.byteLength(`## ${doc.title}\n\n${doc.body}`),
-    }))
+      label: doc.identity,
+      bytes: Buffer.byteLength(renderPackDocSection(doc)),
+    })),
+  ]
     .sort((a, b) => b.bytes - a.bytes)
     .slice(0, 3)
+  const largestLabel = largest[0]?.label
+  const remedy = input.proposed
+    ? `shorten the document with ${PLATFORM_SLUG} doc set, or set the named largest sections to delivery demand`
+    : `shorten the canon row with ${PLATFORM_SLUG} doc set, or demote the named largest tier; never raise the pack budget (orchestrator/src/canon/pack-budget.ts)`
   return renderRefusal(
     refusal(
       `canon pack ${input.job}/${input.project} would be ${bytes} bytes; ceiling is ${input.ceiling} bytes\n` +
-        `largest inject sections to demote: ${largest.map((doc) => `${doc.identity} (${doc.bytes} bytes)`).join(', ')}`,
+        `${input.proposed ? 'largest inject sections to demote' : 'largest packed tiers'}: ${largest.map((row) => `${row.label} (${row.bytes} bytes)`).join(', ')}${largestLabel ? `\nlargest packed tier: ${largestLabel}` : ''}`,
       {
         kind: 'edit',
-        text: `shorten the document with ${PLATFORM_SLUG} doc set, or set the named largest sections to delivery demand`,
+        text: remedy,
       },
     ),
   )

@@ -15,7 +15,11 @@ import { type Doc, docsForRun, listDocs } from '../doc/docs.ts'
 import { targetGitEnvironment } from '../git/git-environment.ts'
 import { DEFAULT_PACK_BYTES, job as getJob, JOBS } from '../jobs/jobs.ts'
 import { projectAt, projectByName, projects } from '../project/projects.ts'
-import { joinPackSections, packedCanonMarkdownFromRows } from './pack-content.ts'
+import {
+  joinPackSections,
+  packedCanonMarkdownFromRows,
+  renderPackDocSection,
+} from './pack-content.ts'
 
 function canonCheckoutRoot(): string | null {
   return optionalCheckoutRoot(import.meta.dir, process.env)
@@ -326,16 +330,14 @@ function assemblePack(input: {
   canon: ReturnType<typeof packedCanonMarkdownFromRows>
   budgetBytes: number
 }): Pack {
-  const operatorMarkdown = input.selected
-    .map((doc) => `## ${doc.title}\n\n${doc.body}`)
-    .join('\n\n')
+  const operatorMarkdown = joinPackSections(...input.selected.map(renderPackDocSection))
   const docs = input.selected.map((doc) => ({
     revisionId: doc.revisionId,
     scope: doc.scope,
     subject: doc.subject,
     slug: doc.slug,
     title: doc.title,
-    bytes: Buffer.byteLength(`## ${doc.title}\n\n${doc.body}`),
+    bytes: Buffer.byteLength(renderPackDocSection(doc)),
   }))
   const markdown = joinPackSections(input.canon.markdown, operatorMarkdown)
   const bytes = Buffer.byteLength(markdown)
