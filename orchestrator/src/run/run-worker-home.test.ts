@@ -18,9 +18,9 @@ import { RequiredMcpProbeRefusalError } from '../sandbox/project-mcp-preflight.t
 import { grokAskCommandFromConfig, grokAskServerCommand } from '../sandbox/sandbox.ts'
 import { carriedRefusalFailure } from './run-prelaunch-refusal.ts'
 import {
-  readOnlyRunTempEnvironment,
   prepareClaimedWorkerMcpConfig,
   prepareWorkerHomeLaunch,
+  readOnlyRunTempEnvironment,
 } from './run-worker-home.ts'
 
 const FRONT_DOOR = join('/', 'bin', PLATFORM_SLUG)

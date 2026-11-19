@@ -664,8 +664,7 @@ export async function sandboxLaunchArgv(
 
 /** Bind one run's optional temp directory into repeated SRT launches. */
 export function srtLauncher(profile: SandboxRuntimeConfig, temporaryDirectory?: string) {
-  return (bin: string, argv: string[]) =>
-    sandboxLaunchArgv(profile, bin, argv, temporaryDirectory)
+  return (bin: string, argv: string[]) => sandboxLaunchArgv(profile, bin, argv, temporaryDirectory)
 }
 
 /** Release the process-scoped runtime resources provisioned for this run. */

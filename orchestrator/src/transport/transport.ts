@@ -44,6 +44,12 @@ export type AcpPilotJob = (typeof ACP_PILOT_JOBS)[number]
 
 export type TransportName = 'cli' | 'acp'
 
+export type RunTempScope = {
+  runtimeDir: string
+  directory: string | undefined
+  environment: Record<string, string>
+}
+
 export type TransportPin = {
   pinnedTransport?: TransportName
   transportPinSource?: 'explicit' | 'environment'
@@ -271,14 +277,13 @@ export type TransportStartOpts = {
 
 export function srtScope(
   profile: SandboxRuntimeConfig | null,
-  runtimeDir: string,
-  temporaryDirectory: string | undefined,
+  runTemp: Pick<RunTempScope, 'runtimeDir' | 'directory'>,
 ): TransportStartOpts['srt'] {
   if (!profile) return undefined
   return {
     profile,
-    runtimeDir,
-    ...(temporaryDirectory ? { temporaryDirectory } : {}),
+    runtimeDir: runTemp.runtimeDir,
+    ...(runTemp.directory ? { temporaryDirectory: runTemp.directory } : {}),
   }
 }
 

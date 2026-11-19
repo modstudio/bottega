@@ -52,7 +52,7 @@ import {
 import * as rt from '../review/review-target.ts'
 import { pick } from '../route/route.ts'
 import { runningRunCountForHarness } from '../route/running-runs.ts'
-import { runTempDir } from '../run-owned-paths.ts'
+import { runTempDir as tempDir } from '../run-owned-paths.ts'
 import { type CodexMcpCatalogue, codexMcpSetupHeader } from '../sandbox/codex-mcp-scope.ts'
 import { decideCodexSandbox } from '../sandbox/codex-sandbox.ts'
 import { mergeMcpSetupHeader } from '../sandbox/project-mcp-scope.ts'
@@ -584,11 +584,10 @@ export async function run(
   const checkpointContainment = acpWriter.prepareCheckpoint(worktree, writingAcp, runtimeDir)
   const brokerNeedsNetwork = Boolean(runProject?.settings.mainStack?.consumers?.includes('gate'))
   const gitConfigEnvironment = workerGitConfigEnvironment(worktree, writesJob, requestedJob.name)
-  const temporaryDirectory = writesJob ? undefined : runTempDir(runtimeDir)
-  const tempEnvironment = workerHome.readOnlyRunTempEnvironment(temporaryDirectory)
+  const runTemp = workerHome.runTemp(runtimeDir, writesJob ? undefined : tempDir(runtimeDir))
   const recipeEnvironment = {
     ...workerHome.trackedWorkerEnvironment(repoJob, writesJob, worktree, claim.id),
-    ...tempEnvironment,
+    ...runTemp.environment,
   }
   assertConfiguredGitGuard(gitConfigEnvironment, writableRoots)
   let askLoopback: AskLoopback | null = null
@@ -697,9 +696,8 @@ export async function run(
             | { mcp?: { probe_tool?: string } }
             | undefined
           const probeTool = projectSettings?.mcp?.probe_tool ?? null
-          const wrap = sandboxSelection.profile
-            ? srtLauncher(sandboxSelection.profile, temporaryDirectory)
-            : undefined
+          const profile = sandboxSelection.profile
+          const wrap = profile ? srtLauncher(profile, runTemp.directory) : undefined
           const probe = await probeMcpServer({
             server: mcpServerName,
             config: probeConfig,
@@ -940,9 +938,7 @@ export async function run(
           mcpTrustGranted,
           writableRoots,
           gitConfigEnvironment,
-          runtimeDir,
-          temporaryDirectory,
-          tempEnvironment,
+          runTemp,
           recipeEnvironment,
           launchEnvironment: { ...mcpEnvironment, ...probeLaunch.environment },
           scratchDir,

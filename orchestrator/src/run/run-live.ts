@@ -49,6 +49,7 @@ import { askExposureEvent } from '../transport/codex-ask-exposure.ts'
 import { EMPTY_QUOTA_READINGS, type QuotaReadings } from '../transport/quota-readings.ts'
 import {
   EMPTY_VENDOR_USAGE,
+  type RunTempScope,
   srtScope,
   type TransportHandle,
   type TransportName,
@@ -395,9 +396,7 @@ export type LiveInput = {
   mcpTrustGranted: boolean
   writableRoots: string[]
   gitConfigEnvironment: Record<string, string> | undefined
-  runtimeDir: string
-  temporaryDirectory: string | undefined
-  tempEnvironment: Record<string, string>
+  runTemp: RunTempScope
   recipeEnvironment: Record<string, string>
   launchEnvironment: Record<string, string>
   scratchDir: string
@@ -565,7 +564,7 @@ function captureLiveGooseLedger(input: LiveInput) {
   return captureGooseLedger(
     {
       harness: input.a.harness ?? input.a.name,
-      runtimeDir: input.sandboxSelection.profile ? input.runtimeDir : null,
+      runtimeDir: input.sandboxSelection.profile ? input.runTemp.runtimeDir : null,
       outPath: input.outPath,
     },
     warnForRun(input.claim.id),
@@ -606,9 +605,6 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
     mcpTrustGranted,
     writableRoots,
     gitConfigEnvironment,
-    runtimeDir,
-    temporaryDirectory,
-    tempEnvironment,
     recipeEnvironment,
     launchEnvironment,
     scratchDir,
@@ -747,8 +743,8 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
       writableRoots,
       gitConfigEnvironment,
       recipeEnvironment,
-      tempEnvironment,
-      srt: srtScope(sandboxSelection.profile, runtimeDir, temporaryDirectory),
+      tempEnvironment: input.runTemp.environment,
+      srt: srtScope(sandboxSelection.profile, input.runTemp),
       resume: resumeFacts(opts.resume?.kind ?? null, claim.id, opts.resume?.parent ?? null)
         .carriesVendorSession,
       env: liveChildEnv(

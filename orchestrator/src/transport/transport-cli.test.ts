@@ -19,14 +19,8 @@ import {
 test('the composed CLI child environment scopes temp to every read-only launch', () => {
   const runtimeDir = '/runs/sandbox-root'
   const privateTemp = runTempDir(runtimeDir)
-  const reader = cliChildEnvironment(
-    { PATH: '/bin' },
-    readOnlyRunTempEnvironment(privateTemp),
-  )
-  const writer = cliChildEnvironment(
-    { PATH: '/bin' },
-    readOnlyRunTempEnvironment(undefined),
-  )
+  const reader = cliChildEnvironment({ PATH: '/bin' }, readOnlyRunTempEnvironment(privateTemp))
+  const writer = cliChildEnvironment({ PATH: '/bin' }, readOnlyRunTempEnvironment(undefined))
 
   expect(reader).toMatchObject({
     TMPDIR: privateTemp,
@@ -38,8 +32,12 @@ test('the composed CLI child environment scopes temp to every read-only launch',
     expect(writer).not.toHaveProperty(name)
   }
   const profile = {} as never
-  expect(srtScope(profile, runtimeDir, privateTemp)?.temporaryDirectory).toBe(privateTemp)
-  expect(srtScope(profile, runtimeDir, undefined)).not.toHaveProperty('temporaryDirectory')
+  expect(srtScope(profile, { runtimeDir, directory: privateTemp })?.temporaryDirectory).toBe(
+    privateTemp,
+  )
+  expect(srtScope(profile, { runtimeDir, directory: undefined })).not.toHaveProperty(
+    'temporaryDirectory',
+  )
 })
 
 async function resultLineUsage(billing: TransportAgent['billing']) {

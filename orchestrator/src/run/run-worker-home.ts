@@ -45,6 +45,10 @@ export function readOnlyRunTempEnvironment(
   }
 }
 
+export function runTemp(runtimeDir: string, directory: string | undefined) {
+  return { runtimeDir, directory, environment: readOnlyRunTempEnvironment(directory) }
+}
+
 function grokReaderMcpEnabled(harness: string, usingMcp: boolean): boolean {
   return harness === 'grok' && usingMcp
 }
