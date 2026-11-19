@@ -309,6 +309,9 @@ test('sync upserts once and a second pass has no run mutation', async () => {
     failed: 0,
     pending: 0,
     configured: true,
+    historyUploadLines: [
+      'workflow history upload skipped: record API lacks presence or import support',
+    ],
     quarantined: [],
     blocked: [],
   })
@@ -496,6 +499,9 @@ test('a re-score while the old payload is in flight remains pending and is deliv
     failed: 0,
     pending: 0,
     configured: true,
+    historyUploadLines: [
+      'workflow history upload skipped: record API lacks presence or import support',
+    ],
     quarantined: [],
     blocked: [],
   })
