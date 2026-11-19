@@ -120,7 +120,7 @@ test('a missing task document keeps the not-visible refusal distinct', async () 
   ]
   try {
     await expect(resolvedPointerTarget('DEV-2473/6', database)).rejects.toThrow(
-      'reference is not visible in task DEV-2473; pass a document number that `bottega task doc list DEV-2473` shows',
+      `reference is not visible in task DEV-2473; pass a document number that \`${PLATFORM_SLUG} task doc list DEV-2473\` shows`,
     )
   } finally {
     productionWorkflowTextDocumentPorts.list = list
