@@ -12,22 +12,24 @@ import type { RecordChangePage } from './record-api-client-changes.ts'
 import type { RecordIdentity } from './record-auth.ts'
 import { readCursor, writeCursor } from './record-cache-cursor.ts'
 import {
-  pendingRecordCacheFallbacks,
-  writePendingRecordCacheFallbacks,
-} from './record-cache-fallbacks.ts'
+  classifyDeferredDocFallbacks,
+  type DeferredDocFallbacks,
+  rememberKeysetDocDeferrals,
+} from './record-cache-deferred-fallbacks.ts'
 import {
   type DocApplyOutcome,
+  type DocDeferrals,
   type DocPullResult,
   hasDocDeferrals,
   recordCacheDocDeferralError,
   recordCacheDocReferencedSubjects,
   type SubjectDeferrals,
+  type WaitingOnUnregisteredProject,
 } from './record-cache-doc-deferrals.ts'
 import {
-  classifyDeferredDocFallbacks,
-  type DeferredDocFallbacks,
-  rememberKeysetDocDeferrals,
-} from './record-cache-deferred-fallbacks.ts'
+  pendingRecordCacheFallbacks,
+  writePendingRecordCacheFallbacks,
+} from './record-cache-fallbacks.ts'
 import {
   applyLensCatalogueRow,
   deleteLensCatalogueRow,
@@ -102,7 +104,13 @@ export type RecordCachePullResult = ReturnType<typeof emptyRecordCachePullResult
 
 export type KeysetResult = Omit<
   RecordCachePullResult,
-  'changes' | 'orphans' | 'deletesBlocked' | 'purgeKept' | 'purgeWarning' | 'reset'
+  | 'changes'
+  | 'orphans'
+  | 'deletesBlocked'
+  | 'purgeKept'
+  | 'purgeWarning'
+  | 'reset'
+  | 'waitingOnUnregistered'
 >
 type Dependencies = {
   cacheSpaces(

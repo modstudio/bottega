@@ -92,14 +92,13 @@ export function waitingOnUnregisteredLines(
   }
   return [...waitingByProject]
     .sort(([a], [b]) => a.localeCompare(b))
-    .map(
-      ([project, docs]) =>
-        renderRefusal(
-          refusal(
-            `record cache waiting: ${docs.size} ${docs.size === 1 ? 'doc' : 'docs'} on unregistered project ${project}`,
-            { kind: 'command', argv: [PLATFORM_SLUG, 'project', 'add', project] },
-          ),
+    .map(([project, docs]) =>
+      renderRefusal(
+        refusal(
+          `record cache waiting: ${docs.size} ${docs.size === 1 ? 'doc' : 'docs'} on unregistered project ${project}`,
+          { kind: 'command', argv: [PLATFORM_SLUG, 'project', 'add', project] },
         ),
+      ),
     )
 }
 

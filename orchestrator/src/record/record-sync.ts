@@ -616,6 +616,7 @@ function completedSyncResult(input: {
     | 'skippedSubjects'
     | 'purgeWarning'
     | 'waitingOnUnregistered'
+    | 'waitingOnUnregistered'
   >
 }): RecordSyncResult {
   return {

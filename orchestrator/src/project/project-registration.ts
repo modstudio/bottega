@@ -3,9 +3,9 @@
 import type { Database } from 'bun:sqlite'
 import { db, writeTransaction } from '../database/db.ts'
 import { writeProjectRegisterRow } from '../database/project-register-store.ts'
-import { rewindRecordCacheForProjectRegistration } from '../record/record-cache-registration.ts'
 import { rememberProjectSpace } from '../project-space-cache.ts'
-import { projectSettingsForStorage, type Project } from './projects.ts'
+import { rewindRecordCacheForProjectRegistration } from '../record/record-cache-registration.ts'
+import { type Project, projectSettingsForStorage } from './projects.ts'
 
 export function registerLocalProject(
   project: Project,

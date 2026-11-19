@@ -32,9 +32,9 @@ import {
 } from './project-hosted-write.ts'
 import { listedProjectJson, projectProblems } from './project-list-json.ts'
 import { fillProjectRecordIds } from './project-record-identity.ts'
+import { registerLocalProject } from './project-registration.ts'
 import { formatProjectRelink, relinkProjectByName } from './project-relink.ts'
 import { persistLocalProjectSet } from './project-rename.ts'
-import { registerLocalProject } from './project-registration.ts'
 import { projectSetSettingsPatch } from './project-set-space.ts'
 import {
   mergeProjectSettings,
