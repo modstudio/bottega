@@ -4,7 +4,7 @@ import { isAbsolute, relative, resolve } from 'node:path'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import type { NoteAnchorWire } from '../../shared/note-anchor.ts'
 import { parseNoteAnchorWire } from '../../shared/note-anchor.ts'
-import { formatNoteLabel, parseNoteLabel } from '../../shared/note-label.ts'
+import { formatNoteLabel } from '../../shared/note-label.ts'
 import { newRecordId } from '../../shared/record/schema.ts'
 import { hasRecordIdShape } from '../../shared/record-id.ts'
 import { projectOf } from './attribute.ts'
@@ -16,6 +16,7 @@ import {
   hostedWriteMode,
   projectWriteDecisionFor,
 } from './hosted-write-mode.ts'
+import { resolveNoteIdentity } from './identity/identity.ts'
 import { readInstallBinding } from './install-binding.ts'
 import { mergeNoteAnchors } from './note-anchor-merge.ts'
 import { applyHostedNote } from './note-cache.ts'
@@ -377,39 +378,7 @@ export function getNote(recordId: string): NoteRow {
 }
 
 export function resolveNoteReference(value: string, sessionProject: string | null): string {
-  if (hasRecordIdShape(value)) {
-    const recordId = value.toLowerCase()
-    if (db().query('SELECT 1 FROM note WHERE record_id=?').get(recordId)) return recordId
-    throw new Error(
-      `no note ${recordId}; use a project#number label or run \`${PLATFORM_SLUG} note list\``,
-    )
-  }
-  let project: string | null = sessionProject
-  let number: number
-  const isLabel = value.includes('#')
-  if (isLabel) {
-    const label = parseNoteLabel(value)
-    registeredProject(label.project)
-    project = label.project
-    number = label.number
-  } else {
-    if (!/^[1-9][0-9]*$/.test(value) || !Number.isSafeInteger(Number(value))) {
-      throw new Error(`invalid note '${value}': expected project#number, a number, or a UUID`)
-    }
-    number = Number(value)
-  }
-  const inProject = project
-    ? db()
-        .query<{ record_id: string }, [string, number]>(
-          'SELECT record_id FROM note WHERE project=? AND number=?',
-        )
-        .get(project, number)
-    : null
-  if (inProject) return inProject.record_id
-  const expected = formatNoteLabel(project ?? '<project>', number)
-  throw new Error(
-    `no note ${expected}; use a project#number label or run \`${PLATFORM_SLUG} note list\``,
-  )
+  return resolveNoteIdentity(db(), value, sessionProject, isRegisteredNoteProject)
 }
 
 export async function acknowledgeNote(

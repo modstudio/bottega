@@ -4,6 +4,7 @@ import { newRecordId } from '../../shared/record/schema.ts'
 import type { TaskSource } from '../../shared/task-source.ts'
 import { db, nowIso, writeTransaction } from './db.ts'
 import { applyHostedWriteLocally } from './hosted-local-apply.ts'
+import { taskDocumentIdentityByNumber } from './identity/identity.ts'
 import {
   drainHostedEditOutbox,
   queueHostedDocumentDelete,
@@ -60,14 +61,10 @@ function documentRecordId(value: string, scope: TaskScope = {}): string {
   if (UUID.test(value)) return value.toLowerCase()
   const label = parseTaskDocumentLabel(value)
   const taskId = resolveTask(db(), label.taskKey, scope.project)
-  const row = db()
-    .query<{ record_id: string }, [string, number]>(
-      `SELECT record_id FROM task_document WHERE task_record_id = ? AND number = ?`,
-    )
-    .get(taskId, label.number)
-  if (!row)
+  const recordId = taskDocumentIdentityByNumber(db(), taskId, label.number)
+  if (!recordId)
     throw new Error(`no task document ${formatTaskDocumentLabel(label.taskKey, label.number)}`)
-  return row.record_id
+  return recordId
 }
 
 function withDocumentLabel<T extends Omit<TaskDocumentSummary, 'label'>>(

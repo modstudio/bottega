@@ -1,16 +1,18 @@
 import { describe, expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from './brand.ts'
 import { newRecordId } from './record-id.ts'
-import { formatReference, parseReference } from './reference.ts'
+import { formatReference, parsePointerReference, parseReference } from './reference.ts'
+import { POINTER_REFERENCE_FORMS } from './reference-refusal.ts'
 
 describe('record reference grammar', () => {
   test.each([
     ['question', 42],
     ['run', 73],
+    ['note', 9],
   ] as const)('formats and parses a %s reference', (kind, number) => {
     expect(parseReference(formatReference(kind, number)).value).toEqual({
       kind: 'label',
-      prefix: kind === 'question' ? 'q' : 'r',
+      prefix: kind === 'question' ? 'q' : kind === 'run' ? 'r' : 'n',
       number,
     })
   })
@@ -42,4 +44,30 @@ describe('record reference grammar', () => {
   test('refuses a bare number without a kind', () => {
     expect(() => parseReference('42')).toThrow('a bare number requires a kind')
   })
+
+  test.each([
+    ['doc:project/workshop/identity', 'doc'],
+    [`doc:${newRecordId()}`, 'doc'],
+    ['task:DEV-2473', 'task'],
+    ['task:DEV-2473#comment:4', 'comment'],
+    ['DEV-2473/6', 'task-document'],
+    ['#42', 'pull-request'],
+    ['https://github.com/acme/app/pull/42', 'pull-request'],
+    ['1234567', 'run'],
+    ['007', 'run'],
+    ['r42', 'run'],
+    ['1234567890123456789012345678901234567890', 'commit'],
+    ['abc1234', 'commit'],
+    [`probe:${newRecordId()}`, 'probe'],
+    [`exec:${newRecordId()}`, 'exec'],
+    [`review-read:${newRecordId()}`, 'review-read'],
+    [`attached-text:${newRecordId()}`, 'attached-text'],
+  ] as const)('parses pointer and evidence form %s', (value, kind) => {
+    expect(parsePointerReference(value).kind).toBe(kind)
+  })
+
+  test.each(['doc:bad', 'task:nope', '#0', '123abc', 'abcdef', 'probe:bad'])(
+    'refuses malformed pointer form %s with the accepted forms',
+    (value) => expect(() => parsePointerReference(value)).toThrow(POINTER_REFERENCE_FORMS),
+  )
 })

@@ -3,6 +3,7 @@ import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { newRecordId } from '../../shared/record/schema.ts'
 import { db } from './db.ts'
 import type { HostedAcknowledgement, HostedNote } from './hosted-notes.ts'
+import { noteIdentityByNumber } from './identity/identity.ts'
 import { persistInstallBinding } from './install-binding.ts'
 import {
   hostedGetNote,
@@ -19,14 +20,10 @@ export function applyHostedNote(conn: Database, row: HostedNote) {
     conn.query('DELETE FROM note WHERE record_id=?').run(row.id)
     return
   }
-  const holder = conn
-    .query<{ record_id: string }, [string, number]>(
-      'SELECT record_id FROM note WHERE project=? AND number=?',
-    )
-    .get(row.project, row.number)
-  if (holder && holder.record_id !== row.id)
+  const holder = noteIdentityByNumber(conn, row.project, row.number)
+  if (holder && holder !== row.id)
     throw new Error(
-      `note ${row.project}#${row.number} belongs to UUID ${holder.record_id}, not incoming UUID ${row.id}; run \`${PLATFORM_SLUG} note list\``,
+      `note ${row.project}#${row.number} belongs to UUID ${holder}, not incoming UUID ${row.id}; run \`${PLATFORM_SLUG} note list\``,
     )
   const promotedTaskRecordId = row.promoted_task
     ? taskRecordIdFor(conn, row.promoted_task, row.project)

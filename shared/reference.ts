@@ -2,9 +2,10 @@
 /** Parses human record references without consulting a store, process, or clock. */
 
 import { hasRecordIdShape } from './record-id.ts'
+import { malformedReferenceRefusal } from './reference-refusal.ts'
 
-export type ReferenceKind = 'question' | 'run' | 'task'
-export const REFERENCE_PREFIXES = { question: 'q', run: 'r' } as const
+export type ReferenceKind = 'note' | 'question' | 'run' | 'task'
+export const REFERENCE_PREFIXES = { note: 'n', question: 'q', run: 'r' } as const
 
 export function formatReference(kind: keyof typeof REFERENCE_PREFIXES, number: number): string {
   return `${REFERENCE_PREFIXES[kind]}${number}`
@@ -82,4 +83,78 @@ export function parseReference(
 
   const { qualifier, remainder } = splitQualifier(original)
   return { qualifier, value: parseValue(original, remainder, referenceKind) }
+}
+
+export type PointerReference =
+  | { kind: 'doc'; address: string }
+  | { kind: 'task'; key: string }
+  | { kind: 'comment'; key: string; id: string }
+  | { kind: 'task-document'; key: string; number: number }
+  | { kind: 'run'; reference: ParsedReference; source: string; explicit: boolean }
+  | { kind: 'pull-request'; number: number | null; url: string | null }
+  | { kind: 'commit'; sha: string }
+  | { kind: 'probe' | 'exec' | 'review-read' | 'attached-text'; recordId: string }
+
+const taskKeyPattern = '[A-Z][A-Z0-9]*-[1-9][0-9]*'
+const githubPullRequestPattern = /^https:\/\/github\.com\/[^/\s]+\/[^/\s]+\/pull\/([1-9][0-9]*)$/i
+
+function parseNamedPointerReference(value: string): PointerReference | null {
+  const comment = new RegExp(`^task:(${taskKeyPattern})#comment:(\\S+)$`, 'i').exec(value)
+  if (comment) return { kind: 'comment', key: comment[1]!.toUpperCase(), id: comment[2]! }
+  const task = new RegExp(`^task:(${taskKeyPattern})$`, 'i').exec(value)
+  if (task) return { kind: 'task', key: task[1]!.toUpperCase() }
+  const taskDocument = new RegExp(`^(${taskKeyPattern})/([1-9][0-9]*)$`, 'i').exec(value)
+  if (taskDocument)
+    return {
+      kind: 'task-document',
+      key: taskDocument[1]!.toUpperCase(),
+      number: Number(taskDocument[2]),
+    }
+  const doc = /^doc:(\S+)$/i.exec(value)
+  if (doc) {
+    const address = doc[1]!
+    const path = /^[a-z][a-z0-9-]*\/(?:_|[A-Za-z0-9][A-Za-z0-9._-]*)\/(\S+)$/.exec(address)
+    if (hasRecordIdShape(address) || (path && !path[1]!.split('/').includes('..')))
+      return { kind: 'doc', address }
+    return null
+  }
+  const stored = /^(probe|exec|review-read|attached-text):(.+)$/i.exec(value)
+  if (!stored || !hasRecordIdShape(stored[2]!)) return null
+  return {
+    kind: stored[1]!.toLowerCase() as 'probe' | 'exec' | 'review-read' | 'attached-text',
+    recordId: stored[2]!.toLowerCase(),
+  }
+}
+
+/** Parses the syntax shared by durable context pointers and workflow evidence. */
+export function parsePointerReference(input: string): PointerReference {
+  const value = input.trim()
+  if (!value || value !== input) throw new Error(malformedReferenceRefusal(input))
+
+  const named = parseNamedPointerReference(value)
+  if (named) return named
+
+  const pullRequest = /^#([1-9][0-9]*)$/.exec(value)
+  if (pullRequest) return { kind: 'pull-request', number: Number(pullRequest[1]), url: null }
+  const pullRequestUrl = githubPullRequestPattern.exec(value)
+  if (pullRequestUrl) return { kind: 'pull-request', number: Number(pullRequestUrl[1]), url: value }
+
+  if (/^[0-9]{40}$/.test(value) || (/^[0-9a-f]{7,40}$/i.test(value) && /[a-f]/i.test(value)))
+    return { kind: 'commit', sha: value }
+  const explicitRun = /^run:(\S+)$/i.exec(value)
+  const source = explicitRun?.[1] ?? value
+  try {
+    const reference = parseReference(source, 'run')
+    const runValue = reference.value
+    if (
+      runValue.kind === 'record-id' ||
+      runValue.kind === 'number' ||
+      (runValue.kind === 'label' && runValue.prefix === REFERENCE_PREFIXES.run)
+    )
+      return { kind: 'run', reference, source, explicit: Boolean(explicitRun) }
+  } catch {
+    // The shared pointer refusal below owns malformed pointer wording.
+  }
+
+  throw new Error(malformedReferenceRefusal(input))
 }

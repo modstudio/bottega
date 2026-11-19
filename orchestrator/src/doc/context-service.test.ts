@@ -95,7 +95,7 @@ test('a pointer to a nonexistent document UUID is refused before write', async (
   })
   // A refusal, not a retryable failure: context moments suppress their retry hint on this class.
   await expect(write).rejects.toBeInstanceOf(ContextWriteRefusalError)
-  await expect(write).rejects.toThrow('does not resolve')
+  await expect(write).rejects.toThrow('not visible in the document store')
   expect((await getContext({ task: task.key })).items).toEqual([])
 })
 

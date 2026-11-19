@@ -6,6 +6,7 @@ import { DELETED_ON_HOSTED_RECORD_REASON } from './hosted-delete.ts'
 import { storedHubProjectId } from './hosted-project-identity.ts'
 import { hostedTaskJoin, repairHostedTaskReferences, taskIdFor } from './hosted-task-reference.ts'
 import { type TaskIdentity, withHostedTenant } from './hosted-tenant.ts'
+import { otherHostedTaskDocumentIdentityByNumber } from './identity/hosted-identity.ts'
 import type {
   PushedComment,
   PushedDocument,
@@ -461,16 +462,12 @@ export async function mirrorDocumentRow(
     await tx`SELECT id,space_id FROM hub_task_document WHERE id=${row.id}::uuid`,
   )[0]
   const numberHolder =
-    number === null
+    number === null || taskId === null
       ? null
-      : rows<{ id: string }>(
-          await tx`SELECT id FROM hub_task_document
-          WHERE space_id=${identity.spaceId}::uuid AND task_id=${taskId}::uuid
-            AND number=${number} AND id<>${row.id}::uuid`,
-        )[0]
+      : await otherHostedTaskDocumentIdentityByNumber(tx, identity.spaceId, taskId, number, row.id)
   if (numberHolder) {
     throw new Error(
-      `task document number collision: ${formatTaskDocumentLabel(row.task_key, number!)} belongs to UUID ${numberHolder.id}, not incoming UUID ${row.id}; run \`${PLATFORM_SLUG} task doc list ${row.task_key}\``,
+      `task document number collision: ${formatTaskDocumentLabel(row.task_key, number!)} belongs to UUID ${numberHolder}, not incoming UUID ${row.id}; run \`${PLATFORM_SLUG} task doc list ${row.task_key}\``,
     )
   }
   const decision = mirrorCollisionDecision(

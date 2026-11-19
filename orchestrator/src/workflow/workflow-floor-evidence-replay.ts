@@ -16,6 +16,7 @@ export type FloorEvidencePorts = {
   ) => CheckoutResolution
   viewPullRequest?: (project: string, reference: number | string) => PullRequestView
   readOriginUrl?: (project: string) => string | null
+  resolveCommit?: (checkout: string, reference: string) => string
   resolveTreeCommit?: (worktree: string) => string | null
   reviewOwed?: (project: string, args: Record<string, string>) => ReviewOwedFloorDecision
 }
@@ -82,6 +83,7 @@ function replayingPorts(real: FloorEvidencePorts, memo: Map<string, RecordedCall
     'readTask',
     'resolveCheckout',
     'viewPullRequest',
+    'resolveCommit',
     'resolveTreeCommit',
     'reviewOwed',
   ] as const) {

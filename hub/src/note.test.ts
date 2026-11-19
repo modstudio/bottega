@@ -445,17 +445,17 @@ describe('suggestion notes', () => {
       expect(resolveNoteReference('workshop#41', 'alpha')).toBe(workshopId)
       expect(resolveNoteReference('41', 'workshop')).toBe(workshopId)
       expect(() => resolveNoteReference('42', 'workshop')).toThrow(
-        `no note workshop#42; use a project#number label or run \`${PLATFORM_SLUG} note list\``,
+        'not visible in project workshop; pass the UUID or a <project>#<number> label',
       )
       expect(() => resolveNoteReference('42', null)).toThrow(
-        `no note <project>#42; use a project#number label or run \`${PLATFORM_SLUG} note list\``,
+        "not visible in the caller's project; pass the UUID or a <project>#<number> label",
       )
       expect(() => resolveNoteReference('alpha#41', 'workshop')).toThrow(
-        `no note alpha#41; use a project#number label or run \`${PLATFORM_SLUG} note list\``,
+        'not visible in project alpha; pass the UUID or a <project>#<number> label',
       )
       expect(resolveNoteReference(alphaId, 'workshop')).toBe(alphaId)
       expect(() => resolveNoteReference('99', 'workshop')).toThrow(
-        `no note workshop#99; use a project#number label or run \`${PLATFORM_SLUG} note list\``,
+        'not visible in project workshop; pass the UUID or a <project>#<number> label',
       )
     })
 

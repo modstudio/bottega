@@ -1,6 +1,7 @@
 import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { TASK_SOURCES, type TaskSource } from '../../shared/task-source.ts'
+import { otherTaskDocumentIdentityByNumber } from './identity/identity.ts'
 import { persistInstallBinding } from './install-binding.ts'
 import { adoptPendingHostedRow } from './outbox.ts'
 import { HOSTED_MACHINE_TABLES, reconcilePulledRow } from './pending-hosted-edit.ts'
@@ -214,14 +215,10 @@ function applyDocument(conn: Database, row: HostedChanges['documents'][number]) 
   const taskRecordId = requireChildTaskRecordId(conn, 'document', row)
   if (row.number === null)
     throw new Error(`live task document ${row.id} for task ${row.task_key} has no number`)
-  const collision = conn
-    .query<{ record_id: string }, [string, number, string]>(
-      `SELECT record_id FROM task_document WHERE task_record_id=? AND number=? AND record_id<>?`,
-    )
-    .get(taskRecordId, row.number, row.id)
+  const collision = otherTaskDocumentIdentityByNumber(conn, taskRecordId, row.number, row.id)
   if (collision) {
     throw new Error(
-      `task document number collision: ${formatTaskDocumentLabel(row.task_key, row.number)} belongs to UUID ${collision.record_id}, not incoming UUID ${row.id}; run \`${PLATFORM_SLUG} task doc list ${row.task_key}\``,
+      `task document number collision: ${formatTaskDocumentLabel(row.task_key, row.number)} belongs to UUID ${collision}, not incoming UUID ${row.id}; run \`${PLATFORM_SLUG} task doc list ${row.task_key}\``,
     )
   }
   conn

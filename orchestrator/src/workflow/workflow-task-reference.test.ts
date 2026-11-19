@@ -5,7 +5,22 @@ import {
   resolveOrPullHubTaskReference,
   taskPullFailureNamesMissingTask,
   taskReadRefusal,
+  taskReferenceFromShow,
 } from './workflow-task-reference.ts'
+
+test('fresh task reads preserve whether tracker comment ids were verifiable', () => {
+  const task = { key: 'DEV-1', record_id: 'task-1', project: 'alpha' }
+  expect(
+    taskReferenceFromShow({ task, tracker_comment_ids: [], tracker_comments_verifiable: false }),
+  ).toMatchObject({ commentsVerifiable: false, commentIds: [] })
+  expect(
+    taskReferenceFromShow({
+      task: { ...task },
+      tracker_comment_ids: ['4'],
+      tracker_comments_verifiable: true,
+    }),
+  ).toMatchObject({ commentsVerifiable: true, commentIds: ['4'] })
+})
 
 test('resolves a shared key only within the workflow project', async () => {
   const reader = async (project: string) => [

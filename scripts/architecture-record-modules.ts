@@ -820,7 +820,11 @@ export const recordModules: RecordModule[] = [
     './record-pool.ts',
     './record-row-target.ts',
   ]),
-  module('orchestrator/src/record/record-row-target.ts', ['zod', '../../../shared/note-label.ts']),
+  module('orchestrator/src/record/record-row-target.ts', [
+    'zod',
+    '../../../shared/note-label.ts',
+    '../../../shared/reference-refusal.ts',
+  ]),
   module('orchestrator/src/record/record-outside-intake.ts', [
     '../../../shared/record-timestamp.ts',
     'bun',

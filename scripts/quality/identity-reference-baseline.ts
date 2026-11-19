@@ -1,20 +1,11 @@
 /** Shrink-only production bypasses that predate the shared identity resolver. */
 export const identityReferenceBaseline: Readonly<Record<string, number>> = {
   'hub/scripts/test-postgres-evidence.ts': 1,
-  'hub/src/hosted-notes.ts': 1,
-  'hub/src/hosted-tasks.ts': 3,
-  'hub/src/ingest/runs.ts': 2,
-  'hub/src/note-cache.ts': 2,
-  'hub/src/note.ts': 2,
-  'hub/src/task-cache.ts': 2,
-  'hub/src/task-document.ts': 1,
   'orchestrator/src/board/board-message-identifier.ts': 1,
   'orchestrator/src/cli/program.ts': 1,
   'orchestrator/src/collect/collect.ts': 2,
   'orchestrator/src/commands/run-listing.ts': 1,
   'orchestrator/src/database/lens-port-migration-preflight.ts': 1,
-  'orchestrator/src/doc/context-write-adapter.ts': 1,
-  'orchestrator/src/doc/doc-revision-identifier.ts': 1,
   'orchestrator/src/gate/gate-identifier.ts': 1,
   'orchestrator/src/mcp/mcp-task-flow.fixture.ts': 1,
   'orchestrator/src/mcp/mcp.ts': 1,
@@ -39,5 +30,4 @@ export const identityReferenceBaseline: Readonly<Record<string, number>> = {
   'orchestrator/src/workflow/task-flow-store-sqlite.ts': 1,
   'orchestrator/src/workflow/probe-identifier.ts': 1,
   'orchestrator/src/workflow/workflow-floor-evidence.ts': 2,
-  'orchestrator/src/workflow/workflow-floor.ts': 1,
 }

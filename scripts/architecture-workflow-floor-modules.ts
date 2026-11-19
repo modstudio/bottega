@@ -187,7 +187,7 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
   ]),
   module('orchestrator/src/workflow/workflow-floor.ts', [
     '../../../shared/brand.ts',
-    '../../../shared/record-id.ts',
+    '../../../shared/reference.ts',
     '../../../shared/secret-shaped.ts',
     '../record/machine-name.ts',
     '../run/run-identifier-names.ts',
@@ -364,6 +364,7 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     '../database/database-location.ts',
     '../database/db.ts',
     '../doc/doc-reference-read.ts',
+    '../git/commit-resolution.ts',
     '../gate/gate-identifier.ts',
     '../project/projects.ts',
     '../review/review-group.ts',

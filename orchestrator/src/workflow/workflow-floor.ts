@@ -2,10 +2,10 @@
 /** Pure floor-satisfaction for a workflow step. Must not know stores, processes, or clocks. */
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { hasRecordIdShape } from '../../../shared/record-id.ts'
+import { type PointerReference, parsePointerReference } from '../../../shared/reference.ts'
 import { WITHHELD_SECRET_SHAPED } from '../../../shared/secret-shaped.ts'
 import { MachineLabelRefusal } from '../record/machine-name.ts'
-import { classifyRunIdentifier, machineLabelRefusal } from '../run/run-identifier-names.ts'
+import { machineLabelRefusal } from '../run/run-identifier-names.ts'
 import { parseProbeArtifact } from './probe-identifier.ts'
 import type {
   BottegaCommandIdentity,
@@ -33,11 +33,13 @@ export type FloorKind = (typeof floorKinds)[number]
 export type EnforcementMode = 'note-only' | 'floors'
 export type CommandEvidence = 'gate' | 'pull-request'
 
+const ARTIFACT_FORMS =
+  'doc:<scope>/<subject-or-_>/<slug> | doc:<UUID> | task:<KEY> | task:<KEY>#comment:<id> | run number or run id | probe:<id> | exec:<id> | review-read:<UUID> | attached-text:<UUID> | #<pull request number> | GitHub pull-request link | a commit SHA'
+
 export const floorGuidance = {
   ruling: `call \`await_workflow_ruling\` (or \`${PLATFORM_SLUG} workflow await\`), answer it with \`rule_workflow\`, then pass \`--ruling <the returned question id>\`; where you rule the step yourself, pass \`self_ruling\` with \`self_ruling_basis\` (or \`--self-ruling <text>\` with \`--basis <text>\`) on the closing call`,
   'command-exit': `run it with \`${PLATFORM_SLUG} workflow exec -- <command>\` and pass \`--artifact exec:<id>\``,
-  'recorded-artifact':
-    'record or attach the artifact and pass `--artifact <doc:<scope>/<subject-or-_>/<slug> | doc:<UUID> | task:<KEY> | task:<KEY>#comment:<id> | run number or run id | probe:<id> | exec:<id> | review-read:<UUID> | attached-text:<UUID> | GitHub pull-request link>`',
+  'recorded-artifact': `record or attach the artifact and pass \`--artifact <${ARTIFACT_FORMS}>\``,
   'tracker-transition': 'make the tracker transition and pass `--task <KEY>`',
   'review-owed': `run \`${PLATFORM_SLUG} review tier <branch>\` and follow its remedy until no lens is owed`,
 } satisfies Record<FloorKind, string>
@@ -80,6 +82,7 @@ export type ArtifactRef =
   | { kind: 'review-read'; recordId: string }
   | { kind: 'attached-text'; id: string }
   | { kind: 'pull-request'; url: string }
+  | { kind: 'commit'; sha: string }
   | { kind: 'id'; id: number }
 
 type ValidatedSatisfy =
@@ -177,8 +180,7 @@ export function flagForFloor(kind: FloorKind): string {
   if (kind === 'ruling') return '--ruling <question id> or --review <review id>'
   if (kind === 'command-exit')
     return '--gate <gate execution id> or --run <run id> or --artifact probe:<id> or --artifact exec:<id>'
-  if (kind === 'recorded-artifact')
-    return '--artifact <doc:<scope>/<subject-or-_>/<slug> | doc:<UUID> | task:<KEY> | task:<KEY>#comment:<id> | run number or run id | probe:<id> | exec:<id> | review-read:<UUID> | attached-text:<UUID> | GitHub pull-request link>'
+  if (kind === 'recorded-artifact') return `--artifact <${ARTIFACT_FORMS}>`
   if (kind === 'tracker-transition') return '--task <KEY>'
   if (kind === 'review-owed')
     return `follow the remedy from \`${PLATFORM_SLUG} review tier <branch>\``
@@ -196,43 +198,54 @@ export function closingFlagsForFloor(
   return flagForFloor(floor.kind)
 }
 
-function parseStoredArtifact(value: string): ArtifactRef | undefined {
-  const match = /^(review-read|attached-text):(.+)$/i.exec(value)
-  if (!match || !hasRecordIdShape(match[2]!)) return undefined
-  return match[1]!.toLowerCase() === 'review-read'
-    ? { kind: 'review-read', recordId: match[2]!.toLowerCase() }
-    : { kind: 'attached-text', id: match[2]!.toLowerCase() }
-}
-
 export function parseArtifactRef(value: string): ArtifactRef | { error: string } {
   const trimmed = value.trim()
-  const comment = /^task:([^#\s]+)#comment:(\S+)$/i.exec(trimmed)
-  if (comment) return { kind: 'comment', key: comment[1]!.toUpperCase(), id: comment[2]! }
-  const task = /^task:([^#\s]+)$/i.exec(trimmed)
-  if (task) return { kind: 'task', key: task[1]!.toUpperCase() }
   try {
-    const probeArtifact = parseProbeArtifact(trimmed)
-    if (probeArtifact?.identifier.kind === 'record-id')
-      return { kind: probeArtifact.kind, recordId: probeArtifact.identifier.recordId }
+    return artifactRefFromPointer(parsePointerReference(trimmed), trimmed)
   } catch (error) {
-    if (error instanceof MachineLabelRefusal) return { error: error.message }
-    // The generic artifact refusal below owns malformed artifact guidance.
+    const machineRefusal = legacyMachineLabelRefusal(trimmed)
+    if (machineRefusal) return { error: machineRefusal }
+    return { error: error instanceof Error ? error.message : String(error) }
   }
-  const doc = /^doc:(\S+)$/i.exec(trimmed)
-  if (doc) return { kind: 'doc', address: doc[1]! }
-  const run = /^run:(\S+)$/i.exec(trimmed)
-  if (run) return { kind: 'run', id: run[1]! }
-  const storedArtifact = parseStoredArtifact(trimmed)
-  if (storedArtifact) return storedArtifact
-  if (githubPullRequestUrlIn(trimmed) === trimmed) return { kind: 'pull-request', url: trimmed }
-  const runIdentifier = classifyRunIdentifier(trimmed)
-  if (runIdentifier?.kind === 'number') return { kind: 'id', id: runIdentifier.number }
-  if (runIdentifier?.kind === 'record-id') return { kind: 'run', id: runIdentifier.recordId }
-  const refusal = machineLabelRefusal(trimmed)
-  if (refusal) return { error: refusal }
-  return {
-    error: `--artifact ${trimmed} is not doc:<scope>/<subject-or-_>/<slug>, doc:<UUID>, task:<KEY>, task:<KEY>#comment:<id>, a run number or run id, probe:<id>, exec:<id>, review-read:<UUID>, attached-text:<UUID>, or a GitHub pull-request link`,
+}
+
+function artifactRefFromPointer(
+  parsed: PointerReference,
+  source: string,
+): ArtifactRef | { error: string } {
+  if (parsed.kind === 'task' || parsed.kind === 'comment' || parsed.kind === 'doc') return parsed
+  if (parsed.kind === 'pull-request')
+    return { kind: 'pull-request', url: parsed.url ?? `#${parsed.number}` }
+  if (parsed.kind === 'commit') return parsed
+  if (parsed.kind === 'run') return runArtifactRef(parsed, source)
+  if (parsed.kind === 'task-document')
+    return { error: `--artifact ${source} must use a doc: reference for a document` }
+  return parsed.kind === 'attached-text'
+    ? { kind: 'attached-text', id: parsed.recordId }
+    : { kind: parsed.kind, recordId: parsed.recordId }
+}
+
+function runArtifactRef(
+  parsed: Extract<PointerReference, { kind: 'run' }>,
+  source: string,
+): ArtifactRef | { error: string } {
+  if (parsed.reference.qualifier?.kind === 'machine') {
+    const refusal = legacyMachineLabelRefusal(source)
+    if (refusal) return { error: refusal }
   }
+  const value = parsed.reference.value
+  const id = value.kind === 'record-id' ? value.recordId : parsed.source
+  if (parsed.explicit || parsed.reference.qualifier) return { kind: 'run', id }
+  return value.kind === 'number' ? { kind: 'id', id: value.number } : { kind: 'run', id }
+}
+
+function legacyMachineLabelRefusal(value: string): string | null {
+  try {
+    parseProbeArtifact(value)
+  } catch (error) {
+    if (error instanceof MachineLabelRefusal) return error.message
+  }
+  return machineLabelRefusal(value)
 }
 
 export type ReviewReadArtifactDecision = { accepted: true } | { accepted: false; message: string }

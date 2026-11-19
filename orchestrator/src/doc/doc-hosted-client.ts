@@ -1,6 +1,7 @@
 // concern: doc-hosted-client
 /** Binds project-addressed hosted document operations to the register's destination. */
 
+import { hasRecordIdShape } from '../../../shared/record-id.ts'
 import type { RecordWriteOwner } from '../../../shared/record-write-space.ts'
 import { projectRowByName } from '../project/projects.ts'
 import { type RecordApiClient, recordApiClient } from '../record/record-api-client.ts'
@@ -56,6 +57,17 @@ export async function hostedDocClient(
     applySettingsPermission: (input) => client.applySettingsPermission(input, destination),
     applySettingsAutoMode: (input) => client.applySettingsAutoMode(input, destination),
   }
+}
+
+/** Read one shared-parser document reference through the hosted document store. */
+export async function readHostedDocReference(address: string): Promise<Record<string, unknown>> {
+  if (hasRecordIdShape(address)) return recordApiClient().getDoc(address)
+  const [scope, rawSubject, ...slugParts] = address.split('/')
+  const slug = slugParts.join('/')
+  if (!scope || !rawSubject || !slug)
+    throw new Error(`invalid document address ${JSON.stringify(address)}`)
+  const subject = rawSubject === '_' ? null : rawSubject
+  return (await hostedDocClient(scope, subject)).getDoc(encodeURIComponent(slug))
 }
 
 function docOwner(projectName: string | null): RecordWriteOwner {

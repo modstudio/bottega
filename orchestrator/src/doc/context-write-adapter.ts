@@ -3,10 +3,19 @@
 import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { splitContextHolder } from '../../../shared/context-item-vocabulary.ts'
+import { parsePointerReference } from '../../../shared/reference.ts'
+import {
+  referenceNotVisibleRefusal,
+  referenceStoreUnreachableRefusal,
+} from '../../../shared/reference-refusal.ts'
 import { liveClaimsOfSession } from '../board/board-claim-service.ts'
 import { db, sessionId } from '../database/db.ts'
 import { resolveCommitArgument } from '../git/commit-resolution.ts'
+import { resolveParsedReference } from '../identity/identity.ts'
+import { identityContext } from '../identity/identity-context.ts'
+import { ResolutionMissError } from '../identity/identity-local-run.ts'
 import { projectForTaskKey, projects, taskKeyPrefix } from '../project/projects.ts'
+import { RecordApiRequestError } from '../record/record-api-client.ts'
 import { taskFlowReadStore } from '../workflow/task-flow-store.ts'
 import {
   type HubTaskPuller,
@@ -18,7 +27,6 @@ import {
   taskKeyMap,
   taskReferenceForProjectKey,
 } from '../workflow/workflow-task-reference.ts'
-
 import { productionWorkflowTextDocumentPorts } from '../workflow/workflow-text-copy.ts'
 import { listContextItems } from './context-item-store.ts'
 import {
@@ -28,6 +36,7 @@ import {
   contextWriteRefusal,
   holderOwnershipRefusal,
 } from './doc-context-write.ts'
+import { readHostedDocReference } from './doc-hosted-client.ts'
 import { isScratchLocation } from './doc-resume-write.ts'
 import { taskContextHolder } from './doc-subjects.ts'
 
@@ -51,9 +60,21 @@ export type ContextFactsPorts = {
   task: HubTaskPuller
   pointer(value: string, database: Database): Promise<string | null>
 }
+export type PointerTargetPorts = {
+  document(address: string): Promise<void>
+  task(key: string, database: Database): Promise<ContextTask>
+  taskDocument(pointer: string): Promise<string>
+  commit(reference: string): string
+}
 export const CONTEXT_FACTS_PORTS_KEY = Symbol.for('orch.context-facts-ports')
 const portsHolder = globalThis as typeof globalThis & {
   [CONTEXT_FACTS_PORTS_KEY]?: ContextFactsPorts
+}
+
+function recordedPullRequest(number: number, database: Database): boolean {
+  return Boolean(
+    database.query('SELECT 1 FROM pull_request_ci WHERE pr_number=? LIMIT 1').get(number),
+  )
 }
 
 async function pointerRefusal(value: string, database: Database): Promise<string | null> {
@@ -70,7 +91,12 @@ async function resolveTaskDocumentPointer(pointer: string): Promise<string> {
   try {
     const docs = await productionWorkflowTextDocumentPorts.list(key, PLATFORM_SLUG)
     if (docs.some((doc) => doc.reference === pointer)) return pointer
-    throw new ContextWriteRefusalError(`task document ${pointer} does not resolve`)
+    throw new ContextWriteRefusalError(
+      referenceNotVisibleRefusal(
+        `task ${key}`,
+        `pass a document number that \`${PLATFORM_SLUG} task doc list ${key}\` shows`,
+      ),
+    )
   } catch (error) {
     if (error instanceof ContextWriteRefusalError) throw error
     throw new Error(
@@ -79,48 +105,148 @@ async function resolveTaskDocumentPointer(pointer: string): Promise<string> {
   }
 }
 
+async function resolveRunPointer(
+  reference: Extract<ReturnType<typeof parsePointerReference>, { kind: 'run' }>,
+  database: Database,
+): Promise<string> {
+  try {
+    return (
+      await resolveParsedReference(
+        reference.reference,
+        reference.source,
+        identityContext(database),
+        'run',
+      )
+    ).recordId
+  } catch (error) {
+    if (
+      !(error instanceof ResolutionMissError) ||
+      reference.explicit ||
+      reference.reference.qualifier ||
+      reference.reference.value.kind !== 'number'
+    )
+      throw error
+    const number = reference.reference.value.number
+    const pullRequest = recordedPullRequest(number, database)
+    throw new ContextWriteRefusalError(
+      pullRequest
+        ? `${error.message}; pass #<n> for a pull request`
+        : `${error.message}; for a commit, pass the full SHA`,
+    )
+  }
+}
+
+async function resolveDocPointer(address: string, ports: PointerTargetPorts): Promise<string> {
+  try {
+    await ports.document(address)
+    return `doc:${address}`
+  } catch (error) {
+    if (
+      (error instanceof RecordApiRequestError && error.status === 404) ||
+      (error instanceof Error && /\b(?:not found|does not exist)\b/i.test(error.message))
+    )
+      throw new ContextWriteRefusalError(
+        referenceNotVisibleRefusal('the document store', 'pass a visible doc reference'),
+      )
+    if (
+      error instanceof RecordApiRequestError &&
+      ((error.status !== null && error.status >= 400 && error.status < 500) ||
+        error.kind === 'refused' ||
+        error.kind === 'conflict')
+    )
+      throw new ContextWriteRefusalError(error.message)
+    throw new Error(
+      referenceStoreUnreachableRefusal(
+        'the document store',
+        error instanceof Error ? error.message : String(error),
+      ),
+    )
+  }
+}
+
+async function resolveTaskPointer(
+  parsed: Extract<ReturnType<typeof parsePointerReference>, { kind: 'task' | 'comment' }>,
+  database: Database,
+  ports: PointerTargetPorts,
+): Promise<string> {
+  const task = await ports.task(parsed.key, database)
+  if (parsed.kind === 'comment' && task.commentsVerifiable === false)
+    throw new ContextWriteRefusalError(
+      `task:${parsed.key}#comment:${parsed.id} cannot be verified because this tracker's task read does not report comment ids; use task:${parsed.key}`,
+    )
+  if (parsed.kind === 'comment' && !task.commentIds?.map(String).includes(parsed.id))
+    throw new ContextWriteRefusalError(
+      referenceNotVisibleRefusal(`task ${parsed.key}`, 'pass a comment id on that task'),
+    )
+  return parsed.kind === 'task' ? `task:${task.key}` : `task:${task.key}#comment:${parsed.id}`
+}
+
+async function resolveStoredPointer(
+  parsed: Extract<
+    ReturnType<typeof parsePointerReference>,
+    { kind: 'probe' | 'exec' | 'review-read' | 'attached-text' }
+  >,
+  pointer: string,
+  database: Database,
+): Promise<string> {
+  const visible =
+    parsed.kind === 'review-read'
+      ? database.query('SELECT 1 FROM review_read WHERE record_id=?').get(parsed.recordId)
+      : parsed.kind === 'attached-text'
+        ? await taskFlowReadStore(database).textAttachmentByRecordId(parsed.recordId)
+        : database
+            .query('SELECT 1 FROM probe WHERE record_id=? AND kind=?')
+            .get(parsed.recordId, parsed.kind)
+  if (visible) return pointer
+  throw new ContextWriteRefusalError(
+    referenceNotVisibleRefusal('this machine', 'pass the UUID of a visible record'),
+  )
+}
+
 /** Resolve the durable identity stored beside a pointer after the write gate accepts it. */
 export async function resolvedPointerTarget(
   value: string,
   database: Database = db(),
+  ports: PointerTargetPorts = {
+    document: async (address) => {
+      await readHostedDocReference(address)
+    },
+    task: async (key, targetDatabase) => {
+      const { task } = await resolveContextTaskWithProjectTasks(key, targetDatabase)
+      return (await pullHubTask(task.project, key)) ?? task
+    },
+    taskDocument: resolveTaskDocumentPointer,
+    commit: (reference) => resolveCommitArgument(process.cwd(), reference),
+  },
 ): Promise<string> {
   const pointer = value.trim()
   // A pointer that cannot be a durable target is a policy refusal, not a retryable failure.
   if (!pointer) throw new ContextWriteRefusalError('pointer must not be empty')
   if (isScratchLocation(pointer))
     throw new ContextWriteRefusalError('scratch paths are not durable pointers')
-  if (/^[A-Z][A-Z0-9]*-\d+\/\d+$/.test(pointer)) return resolveTaskDocumentPointer(pointer)
-  const stored = storedPointerRefusal(pointer, database)
-  if (stored !== undefined) {
-    if (stored) throw new ContextWriteRefusalError(stored)
-    return pointer
-  }
-  const pr = /^#?(\d+)$/.exec(pointer)
-  if (
-    pr &&
-    database.query('SELECT 1 FROM pull_request_ci WHERE pr_number=? LIMIT 1').get(Number(pr[1]))
-  )
-    return pr[1]!
+  let parsed: ReturnType<typeof parsePointerReference>
   try {
-    return resolveCommitArgument(process.cwd(), pointer)
-  } catch {}
-  throw new ContextWriteRefusalError(
-    `pointer ${JSON.stringify(pointer)} does not resolve as a task document, run, commit, pull request number, or doc-store record`,
-  )
-}
-
-function storedPointerRefusal(pointer: string, database: Database): string | null | undefined {
-  if (/^doc:[0-9a-f-]{36}$/i.test(pointer)) {
-    return database.query('SELECT 1 FROM doc WHERE record_id=?').get(pointer.slice(4))
-      ? null
-      : `doc-store record ${pointer} does not resolve`
+    parsed = parsePointerReference(pointer)
+  } catch (error) {
+    throw new ContextWriteRefusalError(error instanceof Error ? error.message : String(error))
   }
-  if (!/^[0-9a-f-]{36}$/i.test(pointer) && !/^\d+$/.test(pointer)) return undefined
-  return database
-    .query('SELECT 1 FROM run WHERE record_id=? OR number=?')
-    .get(pointer, Number(pointer) || -1)
-    ? null
-    : undefined
+  if (parsed.kind === 'task-document') return ports.taskDocument(`${parsed.key}/${parsed.number}`)
+  if (parsed.kind === 'run') return resolveRunPointer(parsed, database)
+  if (parsed.kind === 'commit') return ports.commit(parsed.sha)
+  if (parsed.kind === 'pull-request') {
+    const number = parsed.number
+    if (number !== null && recordedPullRequest(number, database)) return String(number)
+    throw new ContextWriteRefusalError(
+      referenceNotVisibleRefusal(
+        'this project',
+        `no pull request #${number} is recorded for this project; check the number`,
+      ),
+    )
+  }
+  if (parsed.kind === 'doc') return resolveDocPointer(parsed.address, ports)
+  if (parsed.kind === 'task' || parsed.kind === 'comment')
+    return resolveTaskPointer(parsed, database, ports)
+  return resolveStoredPointer(parsed, pointer, database)
 }
 
 const productionContextFactsPorts: ContextFactsPorts = {

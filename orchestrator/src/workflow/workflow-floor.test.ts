@@ -309,7 +309,7 @@ test('a run offered to an artifact floor names the same run artifact form', () =
   expect(decision).toEqual({
     action: 'refuse',
     message:
-      'floor recorded-artifact is unmet; pass --artifact <doc:<scope>/<subject-or-_>/<slug> | doc:<UUID> | task:<KEY> | task:<KEY>#comment:<id> | run number or run id | probe:<id> | exec:<id> | review-read:<UUID> | attached-text:<UUID> | GitHub pull-request link>; run 8 is accepted as --artifact 8 when it has a reply or a recorded artifact',
+      'floor recorded-artifact is unmet; pass --artifact <doc:<scope>/<subject-or-_>/<slug> | doc:<UUID> | task:<KEY> | task:<KEY>#comment:<id> | run number or run id | probe:<id> | exec:<id> | review-read:<UUID> | attached-text:<UUID> | #<pull request number> | GitHub pull-request link | a commit SHA>; run 8 is accepted as --artifact 8 when it has a reply or a recorded artifact',
   })
 })
 
@@ -988,7 +988,7 @@ test('parseArtifactRef accepts each recorded-artifact form', () => {
   expect(parseArtifactRef('8')).toEqual({ kind: 'id', id: 8 })
   expect(parseArtifactRef(RUN_RECORD_ID)).toEqual({ kind: 'run', id: RUN_RECORD_ID })
   expect(parseArtifactRef('nope')).toMatchObject({
-    error: expect.stringContaining('a run number or run id'),
+    error: expect.stringContaining('a run number'),
   })
 })
 

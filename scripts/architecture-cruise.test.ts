@@ -31,6 +31,26 @@ test('identity reference guard rejects a tagged-template number-column lookup', 
   ])
 })
 
+test('identity reference guard counts predicates but not assignments', () => {
+  expect(identityReferenceViolationCount('UPDATE task SET number=excluded.number')).toBe(0)
+  expect(identityReferenceViolationCount('UPDATE task SET changed=1, number=${n}')).toBe(0)
+  expect(identityReferenceViolationCount('const number = row.number')).toBe(0)
+  expect(identityReferenceViolationCount('label.number = row.number')).toBe(0)
+  expect(identityReferenceViolationCount('SELECT id FROM task WHERE number=?')).toBe(1)
+  expect(
+    identityReferenceViolationCount('add((parameter) => `s.number=${parameter}::integer`)'),
+  ).toBe(1)
+  expect(
+    identityReferenceViolationCount('SELECT id FROM task WHERE project=? AND number IN (?)'),
+  ).toBe(1)
+  expect(identityReferenceViolationCount('SELECT id FROM task t JOIN other o ON t.number=?')).toBe(
+    1,
+  )
+  expect(
+    identityReferenceViolationCount('SELECT project, count(*) FROM task HAVING number=?'),
+  ).toBe(1)
+})
+
 test('identity reference guard rejects a question-number helper call outside identity', () => {
   const added = identityReferenceViolationCount(
     'await questionByProjectNumber(database, number, projectId)',

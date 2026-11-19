@@ -407,6 +407,7 @@ export const hubModuleSpecs = [
       './offline-task-edits.ts',
       './task-client.ts',
       './task-document-label.ts',
+      './identity/identity.ts',
       './task-identity.ts',
       './task-write-destination.ts',
     ],

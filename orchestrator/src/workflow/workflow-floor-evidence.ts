@@ -16,6 +16,7 @@ import { resolveRunsDirectory } from '../database/database-location.ts'
 import { db } from '../database/db.ts'
 import { resolveDocReference } from '../doc/doc-reference-read.ts'
 import { landingGatePurposeRefusal, resolveGateIdentifier } from '../gate/gate-identifier.ts'
+import { resolveCommitArgument } from '../git/commit-resolution.ts'
 import { projectByName } from '../project/projects.ts'
 import {
   questionForWorkflowCursorByNumber,
@@ -579,6 +580,20 @@ async function resolveArtifact(
       ports.runHasArtifacts ?? runHasRecordedArtifacts,
     )
   if (ref.kind === 'pull-request') return { ref: ref.url, exists: true }
+  if (ref.kind === 'commit') {
+    const project = projectByName(identity.project, d)
+    if (!project) throw new Error(`project ${identity.project} is not registered`)
+    return {
+      ref: invokeFloorEvidencePort(
+        ports,
+        'resolveCommit',
+        resolveCommitArgument,
+        project.path,
+        ref.sha,
+      ),
+      exists: true,
+    }
+  }
   if (ref.kind === 'probe' || ref.kind === 'exec') {
     const row = d
       .query<
@@ -617,11 +632,11 @@ async function resolveArtifact(
 }
 
 function pullRequestEvidence(
-  url: string,
+  reference: string,
   identity: CursorIdentity,
   d: Database,
   ports: FloorEvidencePorts,
-  flag = `--artifact ${url}`,
+  flag = `--artifact ${reference}`,
 ): NonNullable<ValidatedArtifactEvidence['pullRequest']> {
   const project = projectByName(identity.project, d)
   if (!project) throw new Error(`project ${identity.project} is not registered`)
@@ -631,8 +646,19 @@ function pullRequestEvidence(
       `${flag} cannot be checked because this cursor has no branch or its project has no trunk`,
     )
   const fallback = productionFloorPorts().viewPullRequest!
-  const view = invokeFloorEvidencePort(ports, 'viewPullRequest', fallback, identity.project, url)
-  if (view.url.replace(/\/$/, '') !== url.replace(/\/$/, ''))
+  const number = /^#([1-9][0-9]*)$/.exec(reference)?.[1]
+  const view = invokeFloorEvidencePort(
+    ports,
+    'viewPullRequest',
+    fallback,
+    identity.project,
+    number ? Number(number) : reference,
+  )
+  const resolvedNumber = /\/pull\/([1-9][0-9]*)\/?$/i.exec(view.url)?.[1]
+  if (
+    (number && resolvedNumber !== number) ||
+    (!number && view.url.replace(/\/$/, '') !== reference.replace(/\/$/, ''))
+  )
     throw new Error(`${flag} resolved as ${view.url}, not the supplied pull-request link`)
   const originUrl = invokeFloorEvidencePort(
     ports,

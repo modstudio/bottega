@@ -2,6 +2,7 @@
 /** Resolves local run references without loading the full identity resolver graph. */
 
 import type { Database } from 'bun:sqlite'
+import { referenceNotVisibleRefusal } from '../../../shared/reference-refusal.ts'
 
 export type LocalRunIdentity = { record_id: string; project_record_id: string | null }
 export type LocalRunReference =
@@ -12,12 +13,12 @@ export class ResolutionMissError extends Error {}
 
 export function visibilityRefusal(scope: string): never {
   throw new ResolutionMissError(
-    `reference is not visible in ${scope}; pass the UUID or a qualified label`,
+    referenceNotVisibleRefusal(scope, 'pass the UUID or a qualified label'),
   )
 }
 
 export function uuidVisibilityRefusal(): never {
-  throw new ResolutionMissError('reference is not visible in any space you belong to')
+  throw new ResolutionMissError(referenceNotVisibleRefusal('any space you belong to'))
 }
 
 export function resolveLocalRun(

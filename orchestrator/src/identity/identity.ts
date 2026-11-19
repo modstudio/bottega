@@ -12,6 +12,7 @@ import {
   REFERENCE_PREFIXES,
   type ReferenceKind,
 } from '../../../shared/reference.ts'
+import { uuidQualifierRefusal } from '../../../shared/reference-refusal.ts'
 import { projectByName, projectByRecordId } from '../project/project-read.ts'
 import { cachedProjectSpaces } from '../project-space-cache.ts'
 import { questionById, questionByProjectNumber } from '../question-store/question-store-read.ts'
@@ -191,7 +192,8 @@ function validateRunQualifier(
     throw new Error(`invalid run reference ${JSON.stringify(String(reference))}`)
 }
 
-export async function resolve(
+export async function resolveParsedReference(
+  parsed: ParsedReference,
   reference: string | number,
   context: IdentityContext,
   expectedKind?: ResolvableKind,
@@ -199,7 +201,6 @@ export async function resolve(
   const cacheKey = `${expectedKind ?? ''}:${String(reference)}`
   const cached = context.identityMap.get(cacheKey)
   if (cached) return cached
-  const parsed = parseReference(reference, expectedKind)
   if (parsed.value.kind === 'task-key')
     throw new Error(`task reference ${parsed.value.key} is not migrated to identity resolution`)
   const kind = parsedKind(parsed, expectedKind)
@@ -209,8 +210,7 @@ export async function resolve(
     throw new Error(
       `reference ${JSON.stringify(String(reference))} names a ${kind}, expected ${expectedKind}`,
     )
-  if (parsed.qualifier && parsed.value.kind === 'record-id')
-    throw new Error('a UUID takes no qualifier; pass it bare')
+  if (parsed.qualifier && parsed.value.kind === 'record-id') throw new Error(uuidQualifierRefusal())
   if (kind === 'run') validateRunQualifier(reference, parsed, context)
 
   const result = !kind
@@ -220,4 +220,17 @@ export async function resolve(
       : await resolveQuestion(parsed, context)
   context.identityMap.set(cacheKey, result)
   return result
+}
+
+export async function resolve(
+  reference: string | number,
+  context: IdentityContext,
+  expectedKind?: ResolvableKind,
+): Promise<ResolvedIdentity> {
+  return resolveParsedReference(
+    parseReference(reference, expectedKind),
+    reference,
+    context,
+    expectedKind,
+  )
 }
