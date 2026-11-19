@@ -554,8 +554,7 @@ async function reportInstallationStatus(
 }
 
 async function reportProjectAgentKeys(log: DoctorPresentation['log']): Promise<void> {
-  const { projects } = await import('../project/projects.ts')
-  const registered = projects()
+  const registered = registeredProjects()
   const metered = Object.values(AGENTS).filter(
     (agent) => agent.enabled !== false && agent.billing === 'metered' && agent.apiKeySecret?.trim(),
   )
@@ -583,8 +582,7 @@ async function reportProjectAgentKeys(log: DoctorPresentation['log']): Promise<v
 }
 
 async function reportProjectMcpCredentials(log: DoctorPresentation['log']): Promise<void> {
-  const { projects } = await import('../project/projects.ts')
-  const lines = projects().flatMap((project) =>
+  const lines = registeredProjects().flatMap((project) =>
     credentialLinesFromRead(project.name, readMcpConfigResult(project.path)),
   )
   if (!lines.length) return
