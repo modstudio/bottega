@@ -132,6 +132,10 @@ export const COOLDOWN_MIN = 60
 /** Only this many of an agent's most recent judgments describe its current ability. */
 export const EVIDENCE_WINDOW = 40
 
+function optionalCoolingPhrase(failure: CoolingFailure | undefined): string | null {
+  return failure ? coolingPhrase(failure) : null
+}
+
 function operationalRoutingRefusal(
   name: string,
   subscriptionPacingHold: SubscriptionPacingHold | undefined,
@@ -340,14 +344,13 @@ function candidatePass(jobName: string, promptBytes = 0, options: CandidateOptio
     const a = AGENTS[name]!
     const currentModel = modelOverride ?? a.model
     const failure = coolingByAgent.get(name)
-    const cooling = failure ? coolingPhrase(failure) : null
     const billingHold = billingHoldByAgent.get(name)
     const subscriptionPacingHold = subscriptionPacingHoldByAgent.get(name)
     const operationalRefusal = operationalRoutingRefusal(
       name,
       subscriptionPacingHold,
       billingHold,
-      cooling,
+      optionalCoolingPhrase(failure),
       failure,
       coolingProbeAgent,
       displayTimezone,
@@ -429,7 +432,7 @@ function candidatePass(jobName: string, promptBytes = 0, options: CandidateOptio
       free: a.billing === 'none' || a.billing === 'free',
       eligible,
       why,
-      cooling,
+      cooling: optionalCoolingPhrase(failure),
       billingHold: billingHold ?? null,
       billingHoldRefusal: billingHold ? billingKeyHoldRefusal(billingHold) : null,
       subscriptionPacingHold: subscriptionPacingHold ?? null,

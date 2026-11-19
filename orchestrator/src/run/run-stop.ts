@@ -45,12 +45,12 @@ import {
 import { runCloseOutLeaseState } from './run-lease.ts'
 import { recordRunSharedGitConfigHeader } from './run-liveness.ts'
 import { enqueueRunRecord } from './run-outbox.ts'
-import { rollUpRootAndEnqueue } from './run-root-rollup.ts'
 import type {
   RunProcessTerminationPlan,
   TerminateRunProcessesResult,
   VerifiedRunProcessTermination,
 } from './run-process.ts'
+import { rollUpRootAndEnqueue } from './run-root-rollup.ts'
 import type { RecordedRunSharedGitConfigInput } from './shared-git-config-check.ts'
 import {
   decideStopCloseOut,
