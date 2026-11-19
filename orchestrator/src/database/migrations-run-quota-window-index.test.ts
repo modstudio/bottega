@@ -4,9 +4,9 @@ import { applyMigrations } from './migrations.ts'
 import { migrationBoundaryTestDatabase } from './test-database.fixture.ts'
 
 test('run quota window migration adds the bounded-reading index', () => {
-  const database = migrationBoundaryTestDatabase('0239_run_quota_account')
+  const database = migrationBoundaryTestDatabase('0238_run_quota_account')
   try {
-    expect(applyMigrations(database)).toContain('0239_run_quota_account')
+    expect(applyMigrations(database)).toContain('0238_run_quota_account')
     expect(
       database
         .query<{ name: string }, []>(

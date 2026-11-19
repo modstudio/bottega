@@ -3,9 +3,9 @@ import { applyMigrations } from './migrations.ts'
 import { migrationBoundaryTestDatabase } from './test-database.fixture.ts'
 
 test('run quota account migration adds the local account column', () => {
-  const database = migrationBoundaryTestDatabase('0239_run_quota_account')
+  const database = migrationBoundaryTestDatabase('0238_run_quota_account')
   try {
-    expect(applyMigrations(database)).toContain('0239_run_quota_account')
+    expect(applyMigrations(database)).toContain('0238_run_quota_account')
     expect(
       database
         .query<{ name: string; type: string }, []>(`PRAGMA table_info('run')`)
