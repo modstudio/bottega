@@ -16,9 +16,7 @@ export const DEFAULT_LOCAL_PROJECT_SETTINGS: ProjectSettings = {
   keyPrefixes: [DEFAULT_LOCAL_PROJECT_PREFIX],
 }
 
-export function defaultLocalProjectPath(
-  environment: StateEnvironment = process.env,
-): string {
+export function defaultLocalProjectPath(environment: StateEnvironment = process.env): string {
   return join(resolveStateRoot(environment), 'projects', DEFAULT_LOCAL_PROJECT_DIRECTORY)
 }
 

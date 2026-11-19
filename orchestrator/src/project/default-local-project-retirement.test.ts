@@ -110,7 +110,7 @@ test('sign-in keeps a built-in project referenced by a run', async () => {
 
 test('sign-in keeps a built-in project referenced by a workflow cursor', async () => {
   const d = database()
-  const { environment, path } = registerDefault(d, 'orch-default-cursor-')
+  const { environment } = registerDefault(d, 'orch-default-cursor-')
   d.exec('PRAGMA foreign_keys=OFF')
   try {
     d.query(

@@ -3,7 +3,6 @@
 
 import type { Database } from 'bun:sqlite'
 import { existsSync, readdirSync, rmdirSync } from 'node:fs'
-import type { StateEnvironment } from '../../../shared/state-directory.ts'
 import { db } from '../database/db.ts'
 import {
   DEFAULT_LOCAL_PROJECT_NAME,
@@ -12,13 +11,12 @@ import {
 } from '../database/project-register-store.ts'
 import { projectByName } from './project-read.ts'
 import { localProjectReferenceCounts } from './project-reference-counts.ts'
-import { stableSettingsJson, type StoredProjectSettings } from './project-settings.ts'
 
 export type DefaultLocalProjectRetirementFacts = {
   projectName: string
   projectPath: string
   defaultProjectPath: string
-  projectSettings: StoredProjectSettings
+  projectSettings: object
   hasSpace: boolean
   referenced: boolean
 }
@@ -29,8 +27,7 @@ export function shouldRetireDefaultLocalProject(
   return (
     facts.projectName === DEFAULT_LOCAL_PROJECT_NAME &&
     facts.projectPath === facts.defaultProjectPath &&
-    stableSettingsJson(facts.projectSettings) ===
-      stableSettingsJson(DEFAULT_LOCAL_PROJECT_SETTINGS) &&
+    Bun.deepEquals(facts.projectSettings, DEFAULT_LOCAL_PROJECT_SETTINGS) &&
     !facts.hasSpace &&
     !facts.referenced
   )
@@ -47,7 +44,7 @@ function removeEmptyDirectory(path: string): void {
 
 export async function retireUnusedDefaultLocalProject(
   database: Database = db(),
-  environment: StateEnvironment = process.env,
+  environment: Parameters<typeof defaultLocalProjectPath>[0] = process.env,
 ): Promise<boolean> {
   const project = projectByName(DEFAULT_LOCAL_PROJECT_NAME, database)
   if (!project) return false
