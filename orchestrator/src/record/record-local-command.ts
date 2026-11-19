@@ -5,7 +5,8 @@ import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { refusal, renderRefusal } from '../../../shared/refusal.ts'
 import { db } from '../database/db.ts'
-import { readRecordInstallBinding, setRecordLocalByDesign } from './install-binding.ts'
+import { readRecordInstallBinding } from './install-binding.ts'
+import { setRecordLocalByDesign } from './record-local-mark.ts'
 
 export function recordLocalCommand(
   enabled: boolean,

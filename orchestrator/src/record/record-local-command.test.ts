@@ -1,8 +1,8 @@
 import { expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { migratedTestDatabase } from '../database/test-database.fixture.ts'
-import { readRecordLocalByDesign } from './install-binding.ts'
 import { recordLocalCommand } from './record-local-command.ts'
+import { readRecordLocalByDesign } from './record-local-mark.ts'
 
 test('record local sets and clears the store mark', () => {
   const database = migratedTestDatabase()

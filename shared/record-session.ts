@@ -30,7 +30,7 @@ const ACCOUNT = 'record'
 const PROBE_ACCOUNT = 'record-probe'
 const FILE_REMEDY = `run ${PLATFORM_SLUG} machine setup, or choose the file keystore directly with ${PLATFORM_SLUG} machine config set --machine machine.keystore file`
 let memoizedToken: string | null | undefined
-const UNREADABLE_STAMP = Symbol('unreadable-record-session-stamp')
+export const UNREADABLE_STAMP = Symbol('unreadable-record-session-stamp')
 export type RecordSessionStamp = string | null | typeof UNREADABLE_STAMP
 let memoizedStamp: RecordSessionStamp | undefined
 let pendingToken: Promise<string | null> | null = null
@@ -48,9 +48,11 @@ function readFileToken(): string | null {
   return readOwnerOnlySecretFile(recordSessionPath(process.env), 'record session')?.trim() || null
 }
 
-export function readRecordSessionStamp(): RecordSessionStamp {
+export function readRecordSessionStamp(
+  environment: Readonly<Record<string, string | undefined>> = process.env,
+): RecordSessionStamp {
   try {
-    return readFileSync(recordSessionStampPath(process.env), 'utf8')
+    return readFileSync(recordSessionStampPath(environment), 'utf8')
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null
     return UNREADABLE_STAMP

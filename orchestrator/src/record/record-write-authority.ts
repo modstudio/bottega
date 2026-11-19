@@ -2,33 +2,33 @@
 /** Applies shared-state write authority at the hosted-record boundary. */
 
 import type { Database } from 'bun:sqlite'
-import { existsSync } from 'node:fs'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { recordApiConfigured, resolvedRecordOrigin } from '../../../shared/record-api-url.ts'
-import { recordSessionStampPath } from '../../../shared/state-directory.ts'
-import { DB_PATH, db } from '../database/db.ts'
-import { readRecordInstallBinding, readRecordLocalByDesign } from './install-binding.ts'
+import { readRecordSessionStamp, UNREADABLE_STAMP } from '../../../shared/record-session.ts'
+import { ORCHESTRATOR_DATABASE_ENV } from '../../../shared/state-directory.ts'
+import { db } from '../database/db.ts'
+import { readRecordInstallBinding } from './install-binding.ts'
 import { rememberHostedRecord } from './install-binding-write.ts'
+import { readRecordLocalByDesign } from './record-local-mark.ts'
 import { storedRecordToken } from './record-session.ts'
 import { decideRecordWrite, type RecordWriteDecision } from './record-write-decision.ts'
 
 export function currentRecordWriteDecision(
   database: Database = db(),
   environment: Readonly<Record<string, string | undefined>> = process.env,
-  storePath: string = DB_PATH,
 ): RecordWriteDecision {
   const binding = readRecordInstallBinding(database)
   const resolvedOrigin = resolvedRecordOrigin(environment)
+  const stamp = readRecordSessionStamp(environment)
   return decideRecordWrite({
     recordApiConfigured: recordApiConfigured(environment),
     installBound: binding.bound,
     boundOrigin: binding.recordOrigin,
     resolvedOrigin,
-    machineJoined: existsSync(recordSessionStampPath(environment)),
-    localByDesign:
-      storePath === '/dev/null' || storePath.toUpperCase() === 'NUL'
-        ? true
-        : readRecordLocalByDesign(database),
+    machineJoined: stamp === UNREADABLE_STAMP ? 'unreadable' : stamp !== null,
+    localByDesign: readRecordLocalByDesign(database),
+    storePath: database.filename,
+    storeOverride: environment[ORCHESTRATOR_DATABASE_ENV] !== undefined,
   })
 }
 

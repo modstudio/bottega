@@ -156,10 +156,7 @@ export const recordBindingModules: RecordModule[] = [
     './record-board-contract.ts',
     './record-board-tx.ts',
   ]),
-  module('orchestrator/src/record/install-binding.ts', [
-    'bun:sqlite',
-    '../../../shared/record-id.ts',
-  ]),
+  module('orchestrator/src/record/install-binding.ts', ['bun:sqlite']),
   module('orchestrator/src/record/install-binding-write.ts', [
     'bun:sqlite',
     '../../../shared/record-api-url.ts',
@@ -169,6 +166,7 @@ export const recordBindingModules: RecordModule[] = [
   module('orchestrator/src/record/record-write-decision.ts', [
     '../../../shared/brand.ts',
     '../../../shared/refusal.ts',
+    '../../../shared/state-directory.ts',
   ]),
   module('orchestrator/src/record/record-local-command.ts', [
     'bun:sqlite',
@@ -176,15 +174,21 @@ export const recordBindingModules: RecordModule[] = [
     '../../../shared/refusal.ts',
     '../database/db.ts',
     './install-binding.ts',
+    './record-local-mark.ts',
+  ]),
+  module('orchestrator/src/record/record-local-mark.ts', [
+    'bun:sqlite',
+    '../../../shared/record-id.ts',
   ]),
   module('orchestrator/src/record/record-write-authority.ts', [
-    'node:fs',
     '../../../shared/brand.ts',
     '../../../shared/record-api-url.ts',
+    '../../../shared/record-session.ts',
     '../../../shared/state-directory.ts',
     '../database/db.ts',
     './install-binding.ts',
     './install-binding-write.ts',
+    './record-local-mark.ts',
     './record-session.ts',
     './record-write-decision.ts',
   ]),

@@ -25,7 +25,7 @@ function unconfiguredEnvironment(stateHome: string): Record<string, string | und
 test('current write authority gathers binding and explicit-address facts', () => {
   const database = migratedTestDatabase()
   const environment = unconfiguredEnvironment('/tmp')
-  expect(currentRecordWriteDecision(database, environment, '/tmp/store.db')).toEqual({
+  expect(currentRecordWriteDecision(database, environment)).toEqual({
     verdict: 'local-authoritative',
   })
   database
@@ -33,7 +33,7 @@ test('current write authority gathers binding and explicit-address facts', () =>
       "INSERT INTO record_install_binding(id,bound_at,record_origin) VALUES (1,'2026-11-05',NULL)",
     )
     .run()
-  expect(currentRecordWriteDecision(database, environment, '/tmp/store.db')).toMatchObject({
+  expect(currentRecordWriteDecision(database, environment)).toMatchObject({
     verdict: 'refused',
     boundOrigin: null,
   })
@@ -48,12 +48,12 @@ test('a session stamp refuses an unbound store until the verb marks that store l
     const stamp = recordSessionStampPath(environment)
     mkdirSync(dirname(stamp), { recursive: true })
     writeFileSync(stamp, 'joined')
-    expect(currentRecordWriteDecision(database, environment, '/tmp/store.db')).toMatchObject({
+    expect(currentRecordWriteDecision(database, environment)).toMatchObject({
       verdict: 'refused',
       boundOrigin: null,
     })
     recordLocalCommand(true, { log: () => undefined }, database)
-    expect(currentRecordWriteDecision(database, environment, '/tmp/store.db')).toEqual({
+    expect(currentRecordWriteDecision(database, environment)).toEqual({
       verdict: 'local-authoritative',
     })
   } finally {
@@ -78,13 +78,10 @@ test('a marked store does not pass its authority to a child environment using an
       ...base,
       [ORCHESTRATOR_DATABASE_ENV]: '/tmp/unmarked-child.db',
     }
-    expect(
-      currentRecordWriteDecision(
-        child,
-        childEnvironment,
-        childEnvironment[ORCHESTRATOR_DATABASE_ENV],
-      ),
-    ).toMatchObject({ verdict: 'refused', boundOrigin: null })
+    expect(currentRecordWriteDecision(child, childEnvironment)).toMatchObject({
+      verdict: 'refused',
+      boundOrigin: null,
+    })
   } finally {
     marked.close()
     child.close()
@@ -92,20 +89,17 @@ test('a marked store does not pass its authority to a child environment using an
   }
 })
 
-test('a non-row store path is local by design on a joined machine', () => {
-  const stateHome = mkdtempSync(join(tmpdir(), 'record-write-null-store-'))
+test('an unreadable session stamp refuses an unbound unconfigured store', () => {
+  const stateHome = mkdtempSync(join(tmpdir(), 'record-write-unreadable-stamp-'))
   const database = migratedTestDatabase()
   const environment = unconfiguredEnvironment(stateHome)
   try {
     const stamp = recordSessionStampPath(environment)
-    mkdirSync(dirname(stamp), { recursive: true })
-    writeFileSync(stamp, 'joined')
-    expect(currentRecordWriteDecision(database, environment, '/dev/null')).toEqual({
-      verdict: 'local-authoritative',
-    })
-    expect(currentRecordWriteDecision(database, environment, 'NUL')).toEqual({
-      verdict: 'local-authoritative',
-    })
+    mkdirSync(stamp, { recursive: true })
+    const decision = currentRecordWriteDecision(database, environment)
+    expect(decision).toMatchObject({ verdict: 'refused', boundOrigin: null })
+    if (decision.verdict !== 'refused') throw new Error('expected a refusal')
+    expect(decision.refusal).toContain('record session stamp is unreadable')
   } finally {
     database.close()
     rmSync(stateHome, { recursive: true, force: true })

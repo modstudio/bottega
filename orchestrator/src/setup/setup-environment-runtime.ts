@@ -105,6 +105,14 @@ function initialRecordSessionDecision(
   return environmentRecordSessionDecision(authority, sessionPresent, { kind: 'not-run' })
 }
 
+export async function migrateAfterRecordAuthority<T>(
+  initial: EnvironmentRecordSessionDecision,
+  migrate: () => Promise<T>,
+): Promise<T> {
+  if (initial.action === 'refuse') throw new Error(initial.refusal)
+  return migrate()
+}
+
 type EnvironmentMigrationResult = {
   status: 'applied' | 'unchanged' | 'follow-up'
   message: string | null
@@ -280,11 +288,11 @@ export const setupEnvironmentService = {
       const { runSessionRequiredSteps } = environmentRecordStepsDecision(initial)
       const waitOnSessionError = (error: unknown) =>
         waitForSignInOnSessionError(authority, sessionPresent, error, waitForSignIn)
-      const report = await migrateOperatorEnvironment(homedir(), {
+      const report = await migrateAfterRecordAuthority(initial, () =>
+        migrateOperatorEnvironment(homedir(), {
         platform: process.platform,
         backupRoot: resolveStatePaths(process.env).orchestratorDirectory,
         migrateSecrets: async (record) => {
-          if (initial.action === 'refuse') throw new Error(initial.refusal)
           if (initial.action === 'local-authoritative') {
             notes.push('no hosted record: nothing to migrate')
             return []
@@ -341,7 +349,8 @@ export const setupEnvironmentService = {
         notes: () => notes,
         processNamesRenamed,
         preparedStateFileMigration,
-      })
+        }),
+      )
       const message = environmentMigrationMessage(report)
       const changed =
         report.processNamesRenamed > 0 ||

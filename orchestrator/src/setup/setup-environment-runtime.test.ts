@@ -1,11 +1,34 @@
 import { expect, test } from 'bun:test'
+import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { RECORD_SIGN_IN_REMEDY } from '../../../shared/record-remedies.ts'
 import {
   environmentMigrationCondition,
+  migrateAfterRecordAuthority,
   environmentRecordSessionDecision,
   environmentRecordStepsDecision,
   environmentSettingsApplyDecision,
 } from './setup-environment-runtime.ts'
+
+test('refused record authority stops before environment migration changes files', async () => {
+  const home = mkdtempSync(join(tmpdir(), 'setup-authority-refusal-'))
+  const path = join(home, '.zshenv')
+  writeFileSync(path, 'ORCH_RECORD_URL=secret\n')
+  try {
+    await expect(
+      migrateAfterRecordAuthority({ action: 'refuse', refusal: 'record refused' }, async () => {
+        writeFileSync(path, 'BOTTEGA_RECORD_URL=secret\n')
+        writeFileSync(`${path}.${PLATFORM_SLUG}-env-backup`, 'backup\n')
+      }),
+    ).rejects.toThrow('record refused')
+    expect(readFileSync(path, 'utf8')).toBe('ORCH_RECORD_URL=secret\n')
+    expect(() => statSync(`${path}.${PLATFORM_SLUG}-env-backup`)).toThrow()
+  } finally {
+    rmSync(home, { recursive: true, force: true })
+  }
+})
 
 test('marks only a sign-in-only environment follow-up as waiting for sign-in', () => {
   expect(environmentMigrationCondition(true, 0)).toEqual({ condition: 'waiting-for-sign-in' })

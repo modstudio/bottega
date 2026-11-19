@@ -18,4 +18,15 @@ describe('refusal rendering', () => {
       renderRefusal(refusal('the condition', { kind: 'edit', text: 'change the setting' })),
     ).toBe('the condition\ncleared by: change the setting')
   })
+
+  test('renders several remedies on separate cleared-by lines', () => {
+    expect(
+      renderRefusal(
+        refusal('the condition', [
+          { kind: 'edit', text: 'change the setting' },
+          { kind: 'command', argv: [PLATFORM_SLUG, 'repair'] },
+        ]),
+      ),
+    ).toBe(`the condition\ncleared by: change the setting\ncleared by: ${PLATFORM_SLUG} repair`)
+  })
 })
