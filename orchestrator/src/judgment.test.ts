@@ -15,7 +15,7 @@ import { machineId } from './record/machine-identity.ts'
 import { completeReview, recordReview } from './review/review-triage.ts'
 import { isRoutingEvidence } from './route/routing-evidence-query.ts'
 import { rollUpRootAndEnqueue } from './run/run-liveness.ts'
-import { scoredChainFailureKind } from './run/run-root-rollup.ts'
+import { type ChainFailureMember, scoredChainFailureKind } from './run/run-root-rollup.ts'
 import { pairPartners } from './score/duel.ts'
 import { refuseVerdict, VOID_EXCLUSION_REASON } from './verdict/verdict-rules.ts'
 
@@ -65,6 +65,16 @@ const judge = (
   )
 const insert = (status = 'ok', job = 'file-question') =>
   addRun({ agent: 'codex', job, status, session: process.env.CLAUDE_CODE_SESSION_ID ?? null })
+const insertTurn = (root: string, kind: string, turn: number, startedAt?: string) =>
+  addRun({
+    agent: 'codex',
+    job: 'file-question',
+    status: 'failed',
+    kind,
+    parent: root,
+    turn,
+    startedAt,
+  })
 
 const rollUp = (root: string) =>
   rollUpRootAndEnqueue(db(), root, null, machineId(), new Date().toISOString(), false)
@@ -88,6 +98,21 @@ const isUnscored = (root: string) =>
       .get(root),
   )
 
+const chainMember = (
+  recordId: string,
+  parentRunRecordId: string | null,
+  kind: string | null,
+  ownFailureKind: string | null,
+  turn: number,
+): ChainFailureMember => ({
+  record_id: recordId,
+  parent_run_record_id: parentRunRecordId,
+  failure_kind: kind,
+  own_failure_kind: ownFailureKind,
+  turn,
+  number: turn,
+})
+
 beforeEach(() => {
   process.env.CLAUDE_CODE_SESSION_ID = 'orch-test-session'
   delete process.env.CLAUDE_CODE_BRIDGE_SESSION_ID
@@ -95,20 +120,8 @@ beforeEach(() => {
 
 describe('score ruling', () => {
   test('a successful root can be scored after a quota turn', async () => {
-    const root = addRun({
-      agent: 'codex',
-      job: 'file-question',
-      status: 'ok',
-      session: process.env.CLAUDE_CODE_SESSION_ID,
-    })
-    addRun({
-      agent: 'codex',
-      job: 'file-question',
-      status: 'failed',
-      kind: 'quota',
-      parent: root,
-      turn: 2,
-    })
+    const root = insert()
+    insertTurn(root, 'quota', 2)
     rollUp(root)
 
     await score(root, ['full', 'right'])
@@ -120,22 +133,8 @@ describe('score ruling', () => {
   test('a scored chain treats a root with no own failure kind as agent work', () => {
     expect(
       scoredChainFailureKind([
-        {
-          record_id: 'root',
-          parent_run_record_id: null,
-          failure_kind: 'quota',
-          own_failure_kind: null,
-          turn: 1,
-          number: 1,
-        },
-        {
-          record_id: 'turn',
-          parent_run_record_id: 'root',
-          failure_kind: 'quota',
-          own_failure_kind: 'quota',
-          turn: 2,
-          number: 2,
-        },
+        chainMember('root', null, 'quota', null, 1),
+        chainMember('turn', 'root', 'quota', 'quota', 2),
       ]),
     ).toBeNull()
   })
@@ -149,15 +148,7 @@ describe('score ruling', () => {
       session: process.env.CLAUDE_CODE_SESSION_ID,
       startedAt: '2026-11-19T00:00:00.000Z',
     })
-    addRun({
-      agent: 'codex',
-      job: 'file-question',
-      status: 'failed',
-      kind: 'quota',
-      parent: root,
-      turn: 2,
-      startedAt: '2026-11-19T00:01:00.000Z',
-    })
+    insertTurn(root, 'quota', 2, '2026-11-19T00:01:00.000Z')
     rollUp(root)
 
     expect(rootEvidence(root).failureKind).toBe('quota')
@@ -181,15 +172,7 @@ describe('score ruling', () => {
       startedAt: '2026-11-19T00:00:00.000Z',
     })
     await score(root, ['full', 'right'])
-    addRun({
-      agent: 'codex',
-      job: 'file-question',
-      status: 'failed',
-      kind: 'quota',
-      parent: root,
-      turn: 2,
-      startedAt: '2027-11-19T00:01:00.000Z',
-    })
+    insertTurn(root, 'quota', 2, '2027-11-19T00:01:00.000Z')
     rollUp(root)
 
     expect(rootEvidence(root).failureKind).toBe('other')
@@ -207,15 +190,7 @@ describe('score ruling', () => {
       startedAt: '2026-11-19T00:00:00.000Z',
     })
     await score(root, ['full', 'right'])
-    addRun({
-      agent: 'codex',
-      job: 'file-question',
-      status: 'failed',
-      kind: 'contract',
-      parent: root,
-      turn: 2,
-      startedAt: '2027-11-19T00:01:00.000Z',
-    })
+    insertTurn(root, 'contract', 2, '2027-11-19T00:01:00.000Z')
     rollUp(root)
 
     expect(rootEvidence(root).failureKind).toBe('contract')
@@ -230,22 +205,8 @@ describe('score ruling', () => {
       kind: 'quota',
       session: process.env.CLAUDE_CODE_SESSION_ID,
     })
-    addRun({
-      agent: 'codex',
-      job: 'file-question',
-      status: 'failed',
-      kind: 'other',
-      parent: root,
-      turn: 2,
-    })
-    addRun({
-      agent: 'codex',
-      job: 'file-question',
-      status: 'failed',
-      kind: 'quota',
-      parent: root,
-      turn: 3,
-    })
+    insertTurn(root, 'other', 2)
+    insertTurn(root, 'quota', 3)
     rollUp(root)
 
     await score(root, ['full', 'right'])
@@ -262,14 +223,7 @@ describe('score ruling', () => {
       kind: 'quota',
       session: process.env.CLAUDE_CODE_SESSION_ID,
     })
-    addRun({
-      agent: 'codex',
-      job: 'file-question',
-      status: 'failed',
-      kind: 'quota',
-      parent: root,
-      turn: 2,
-    })
+    insertTurn(root, 'quota', 2)
     rollUp(root)
 
     await expect(score(root, ['full', 'right'])).rejects.toThrow(

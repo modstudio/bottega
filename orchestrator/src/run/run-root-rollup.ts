@@ -26,9 +26,7 @@ export function scoredChainFailureKind(members: readonly ChainFailureMember[]): 
   const latest = ordered[0]
   if (!latest) return null
   const ownKinds = ordered.map(memberOwnFailureKind)
-  const agentWorkIndex = ownKinds.findIndex(
-    (kind) => !PROVIDER_UNSERVED.has(kind as FailureKind),
-  )
+  const agentWorkIndex = ownKinds.findIndex((kind) => !PROVIDER_UNSERVED.has(kind as FailureKind))
   return agentWorkIndex === -1 ? memberOwnFailureKind(latest) : (ownKinds[agentWorkIndex] ?? null)
 }
 
