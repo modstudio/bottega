@@ -71,6 +71,7 @@ const subjectRow = (id: string, projectName: string) => ({
   definition: 'Feed subject.',
   position: 0,
   parentId: null,
+  state: 'active' as const,
   retiredAt: null,
   createdAt: '2026-11-05T00:00:00.000Z',
   updatedAt: '2026-11-05T00:00:00.000Z',
@@ -274,6 +275,76 @@ test('a failed doc fallback remains pending and is retried on the next sync', as
   ).toEqual({ value: '[]' })
 })
 
+test('a JSON-encoded related subject defers a feed doc and applies it after the subject arrives', async () => {
+  const projectRow = project()
+  const subject = newRecordId()
+  const document = newRecordId()
+  cursor('json-before')
+  spaces(['space-a'])
+  const row = {
+    ...docRow(document),
+    relatedSubjects: JSON.stringify([{ id: subject }]),
+  }
+  let request = 0
+  const client = feedClient(async () => {
+    if (request++ === 0)
+      return {
+        changes: [{ table: 'doc', id: document, space: 'space-a', op: 'upsert', row }],
+        cursor: 'json-doc',
+        lag: 0,
+        more: true,
+      }
+    if (request === 2)
+      return {
+        changes: [
+          {
+            table: 'subject',
+            id: subject,
+            space: 'space-a',
+            op: 'upsert',
+            row: subjectRow(subject, projectRow.name),
+          },
+        ],
+        cursor: 'json-subject',
+        lag: 0,
+        more: false,
+      }
+    return empty('json-subject')
+  })
+  client.listDocs = async () => ({ items: [row], nextCursor: null })
+  installRecordApiClient(client)
+
+  await pullRecordCache(db())
+  expect(db().query('SELECT 1 FROM doc WHERE record_id=?').get(document)).not.toBeNull()
+  expect(
+    db().query("SELECT value FROM schema_meta WHERE key='record_change_fallbacks'").get(),
+  ).toEqual({ value: '[]' })
+})
+
+test('pending subject fallbacks run before docs for the same space', async () => {
+  const projectRow = project('fallback-order')
+  const subject = newRecordId()
+  const document = newRecordId()
+  cursor('order-before')
+  spaces(['space-a'])
+  db()
+    .query("INSERT INTO schema_meta(key,value) VALUES ('record_change_fallbacks',?)")
+    .run('["doc:space-a","subject:space-a"]')
+  const client = feedClient(async () => empty('order-before'))
+  client.listProjectSubjects = async () => ({
+    items: [subjectRow(subject, projectRow.name)],
+    nextCursor: null,
+  })
+  client.listDocs = async () => ({
+    items: [{ ...docRow(document), relatedSubjects: [{ id: subject }] }],
+    nextCursor: null,
+  })
+  installRecordApiClient(client)
+
+  await pullRecordCache(db())
+  expect(db().query('SELECT 1 FROM doc WHERE record_id=?').get(document)).not.toBeNull()
+})
+
 test('record cache resets on 410 and purges only hosted rows from a lost space', async () => {
   const hosted = newRecordId()
   const local = newRecordId()
@@ -368,6 +439,37 @@ test('non-owned docs and subjects, including tombstones, are skipped while the c
   ).toEqual({
     value: 'owned-after',
   })
+})
+
+test('a subject upsert for a project absent from the ownership map is skipped', async () => {
+  const projectName = 'late-feed-project'
+  const subject = newRecordId()
+  cursor('unmapped-before')
+  spaces(['space-a'])
+  let request = 0
+  installRecordApiClient(
+    feedClient(async () => {
+      if (request++ > 0) return empty('unmapped-after')
+      project(projectName)
+      return {
+        changes: [
+          {
+            table: 'subject',
+            id: subject,
+            space: 'space-a',
+            op: 'upsert',
+            row: subjectRow(subject, projectName),
+          },
+        ],
+        cursor: 'unmapped-after',
+        lag: 0,
+        more: false,
+      }
+    }),
+  )
+
+  expect(await pullRecordCache(db())).toMatchObject({ subjects: 0, skippedSubjects: 1 })
+  expect(db().query('SELECT space_id FROM subject WHERE id=?').get(subject)).toBeNull()
 })
 
 test('move tombstones do not delete rows already upserted into another space', async () => {

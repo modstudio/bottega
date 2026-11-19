@@ -1842,6 +1842,14 @@
       "tag": "0239_epic_child_flows",
       "breakpoints": true,
       "compatibility": "fenced"
+    },
+    {
+      "idx": 240,
+      "version": "6",
+      "when": 1794758400014,
+      "tag": "0240_record_cache_cursor_rewind",
+      "breakpoints": true,
+      "compatibility": "fenced"
     }
   ]
 }
