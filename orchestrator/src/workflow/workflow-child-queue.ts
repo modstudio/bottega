@@ -77,7 +77,7 @@ export function childEligibility(
   )
     return {
       action: 'refuse',
-      message: `${requested} already has a plan-task cursor ${task.cursorNumber} (${task.cursorState}); finish it, or abandon it with ${PLATFORM_SLUG} workflow abandon${workflowCursorReference(task.cursorNumber, task.project).cli}, before queueing it again`,
+      message: `${requested} already has a plan-task cursor ${task.cursorNumber} (${task.cursorState}); finish it, or abandon it with ${PLATFORM_SLUG} workflow abandon${workflowCursorReference(task.cursorNumber, task.project).cli}, before queuing it again`,
     }
   return { action: 'refuse', message: `${requested} is not queueable under this epic` }
 }

@@ -67,7 +67,7 @@ test('a composed descendant refusal names its cursor, state, and abandon remedy'
   const state = childQueueState('DEV-1', 'mine', [composed])
   expect(selectChildToStart(state, [composed], 'DEV-2')).toEqual({
     action: 'refuse',
-    message: `DEV-2 already has a plan-task cursor 42 (running); finish it, or abandon it with ${PLATFORM_SLUG} workflow abandon --cursor 42 --project fixture, before queueing it again`,
+    message: `DEV-2 already has a plan-task cursor 42 (running); finish it, or abandon it with ${PLATFORM_SLUG} workflow abandon --cursor 42 --project fixture, before queuing it again`,
   })
   expect(selectChildToStart(state, [composed], 'DEV-9')).toEqual({
     action: 'refuse',
