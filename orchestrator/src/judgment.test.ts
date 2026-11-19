@@ -14,8 +14,11 @@ import { judgeRun, scoreRun } from './judgment.ts'
 import { machineId } from './record/machine-identity.ts'
 import { completeReview, recordReview } from './review/review-triage.ts'
 import { isRoutingEvidence } from './route/routing-evidence-query.ts'
-import { rollUpRootAndEnqueue } from './run/run-liveness.ts'
-import { type ChainFailureMember, scoredChainFailureKind } from './run/run-root-rollup.ts'
+import {
+  type ChainFailureMember,
+  rollUpRootAndEnqueue,
+  scoredChainFailureKind,
+} from './run/run-root-rollup.ts'
 import { pairPartners } from './score/duel.ts'
 import { refuseVerdict, VOID_EXCLUSION_REASON } from './verdict/verdict-rules.ts'
 
@@ -137,6 +140,30 @@ describe('score ruling', () => {
         chainMember('turn', 'root', 'quota', 'quota', 2),
       ]),
     ).toBeNull()
+  })
+
+  test('a stale interrupted turn does not displace the root evidence kind when scored', async () => {
+    const root = addRun({
+      agent: 'codex',
+      job: 'file-question',
+      status: 'failed',
+      kind: 'other',
+      session: process.env.CLAUDE_CODE_SESSION_ID,
+    })
+    addRun({
+      agent: 'codex',
+      job: 'file-question',
+      status: 'stale',
+      kind: 'interrupted',
+      parent: root,
+      turn: 2,
+    })
+    rollUp(root)
+
+    await score(root, ['full', 'right'])
+
+    expect(rootEvidence(root).failureKind).toBe('other')
+    expect(isRoutingEvidence(rootEvidence(root))).toBe(true)
   })
 
   test('a score recorded after a quota turn restores the root evidence kind', async () => {

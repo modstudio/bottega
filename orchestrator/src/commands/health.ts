@@ -10,7 +10,7 @@ import { blockersCommand, healthCommand } from '../health/health-commands.ts'
 import { JOBS } from '../jobs/jobs.ts'
 import { machineId } from '../record/machine-identity.ts'
 import { candidates, pick } from '../route/route.ts'
-import { rollUpRootAndEnqueue } from '../run/run-liveness.ts'
+import { rollUpRootAndEnqueue } from '../run/run-root-rollup.ts'
 import { acpRuntimeGaps } from '../transport/transport.ts'
 import { log, optionFlags } from './support.ts'
 

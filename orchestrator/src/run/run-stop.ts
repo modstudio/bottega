@@ -43,8 +43,9 @@ import {
   reauthorizeRunMutation,
 } from './run-authority.ts'
 import { runCloseOutLeaseState } from './run-lease.ts'
-import { recordRunSharedGitConfigHeader, rollUpRootAndEnqueue } from './run-liveness.ts'
+import { recordRunSharedGitConfigHeader } from './run-liveness.ts'
 import { enqueueRunRecord } from './run-outbox.ts'
+import { rollUpRootAndEnqueue } from './run-root-rollup.ts'
 import type {
   RunProcessTerminationPlan,
   TerminateRunProcessesResult,

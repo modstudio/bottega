@@ -1,7 +1,7 @@
 // concern: run-liveness
 import { SESSION_LIVE_MS } from '../../../shared/session-liveness.ts'
 /**
- * Knows process and chain liveness, stale transition, audit, root roll-up, and the paired run-record enqueue. Must not know routing, transports, reviews, or CLI adapters.
+ * Knows process and chain liveness, stale transition, audit, and the paired run-record enqueue. Must not know routing, transports, reviews, or CLI adapters.
  */
 
 import type { Database } from 'bun:sqlite'
@@ -39,8 +39,6 @@ import {
   reconcileSupersededAskingTurns,
   supersededAskingTurnDecisions,
 } from './superseded-asking-turn-store.ts'
-
-export { rollUpRootAndEnqueue } from './run-root-rollup.ts'
 
 /** The common bound for callers following a detached run to its terminal state. */
 export const RUN_FOLLOW_TIMEOUT_MS = STALE_AFTER_MS + 60_000

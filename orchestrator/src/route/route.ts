@@ -8,6 +8,7 @@ import {
   unavailableReason,
 } from '../agent/model-host.ts'
 import { failingDefaultCanonEvals } from '../canon/canon-eval-status.ts'
+import { readCachedDisplayTimezone } from '../config/display-timezone-cache.ts'
 import { db } from '../database/db.ts'
 import { noEligibleAgentRefusal } from '../jobs/delegation.ts'
 import { JOBS, job, jobContextBudget, OUTPUT_RESERVE } from '../jobs/jobs.ts'
@@ -138,10 +139,11 @@ function operationalRoutingRefusal(
   cooling: string | null,
   failure: CoolingFailure | undefined,
   probeAgent: string | undefined,
+  displayTimezone: string | null,
 ): string | null {
   if (probeAgent === name) return null
   if (billingHold) return billingKeyHoldRefusal(billingHold)
-  if (cooling && failure) return coolingRefusal(name, failure, COOLDOWN_MIN)
+  if (cooling && failure) return coolingRefusal(name, failure, COOLDOWN_MIN, displayTimezone)
   return subscriptionPacingHold?.refusal ?? null
 }
 
@@ -253,6 +255,7 @@ function candidatePass(jobName: string, promptBytes = 0, options: CandidateOptio
     credentialFacts,
   } = options
   const j = job(jobName)
+  const displayTimezone = readCachedDisplayTimezone(process.env)
   const readCurrentRepository = memoizedRepositoryReader(repositoryReader)
   const { mcpListing, routeProject, requiredMcpConfig, requiredMcpProject } = routingPassFacts(
     requiredMcp,
@@ -347,6 +350,7 @@ function candidatePass(jobName: string, promptBytes = 0, options: CandidateOptio
       cooling,
       failure,
       coolingProbeAgent,
+      displayTimezone,
     )
     const window = currentAgentEvidence(evidenceRows, a, currentModel)
     const recent = aggregateEvidence(window.rows)

@@ -8,7 +8,7 @@ import { db } from '../database/db.ts'
 import { machineId } from '../record/machine-identity.ts'
 import { candidates } from '../route/route.ts'
 import { isRoutingEvidence } from '../route/routing-evidence-query.ts'
-import { rollUpRootAndEnqueue } from '../run/run-liveness.ts'
+import { rollUpRootAndEnqueue } from '../run/run-root-rollup.ts'
 import { weigh } from '../score/score.ts'
 import { reclassifiedFailureKind, reclassifyFailuresCommand } from './failure-commands.ts'
 

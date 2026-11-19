@@ -109,16 +109,20 @@ function newestFirst(rows: readonly RecentTerminalRun[]): RecentTerminalRun[] {
 /** Repeated provider errors cool only when they are the agent's uninterrupted latest streak. */
 export function providerErrorStreakCooling(
   rows: readonly RecentTerminalRun[],
+  cooldownMinutes: number,
+  now: number,
 ): CoolingFailure | null {
   if (rows.length < PROVIDER_ERROR_STREAK) return null
   const recent = newestFirst(rows).slice(0, PROVIDER_ERROR_STREAK)
   if (!recent.every((row) => row.status === 'failed' && row.failure_kind === 'provider_error'))
     return null
+  const coolingUntil = recent[0]!.finished_at + cooldownMinutes * 60_000
+  if (now >= coolingUntil) return null
   return {
     agent: recent[0]!.agent,
     failure_kind: 'provider_error',
     mins_ago: recent[0]!.mins_ago,
-    cooling_until: null,
+    cooling_until: new Date(coolingUntil).toISOString(),
     vendor_reset_at: null,
     vendor_reset_clamped: false,
   }
@@ -193,12 +197,8 @@ export function decideCoolingFailures(
     const ordered = newestFirst(agentRows)
     const ordinary = ordinaryCoolingFailure(agent, ordered, cooldownMinutes, now)
     if (ordinary) result.set(agent, ordinary)
-    const streak = providerErrorStreakCooling(ordered)
-    if (streak && streak.mins_ago < cooldownMinutes)
-      result.set(agent, {
-        ...streak,
-        cooling_until: new Date(now + (cooldownMinutes - streak.mins_ago) * 60_000).toISOString(),
-      })
+    const streak = providerErrorStreakCooling(ordered, cooldownMinutes, now)
+    if (streak) result.set(agent, streak)
   }
   return result
 }
@@ -207,13 +207,14 @@ export function coolingRefusal(
   agent: string,
   failure: CoolingFailure,
   cooldownMinutes: number,
+  displayTimezone: string | null,
 ): string {
   const cooling = coolingPhrase(failure)
   const retry =
     failure.failure_kind === 'daily_quota'
       ? 'after the next UTC day'
       : failure.vendor_reset_at
-        ? `after ${formatEasternReset(failure.vendor_reset_at)} (vendor reset)`
+        ? `after ${formatVendorReset(failure.vendor_reset_at, displayTimezone)} (vendor reset)`
         : `after ${cooldownMinutes}m`
   const clamp = failure.vendor_reset_clamped
     ? `; vendor reset reading beyond the ${QUOTA_RESET_CEILING_MS / 60 / 60_000}h ceiling was ignored`
@@ -224,9 +225,9 @@ export function coolingRefusal(
   )
 }
 
-function formatEasternReset(instant: string): string {
+function formatVendorReset(instant: string, displayTimezone: string | null): string {
   return new Intl.DateTimeFormat('en-US', {
-    timeZone: 'America/New_York',
+    ...(displayTimezone ? { timeZone: displayTimezone } : {}),
     month: 'short',
     day: 'numeric',
     year: 'numeric',

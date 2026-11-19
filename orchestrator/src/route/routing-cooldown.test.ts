@@ -30,7 +30,7 @@ const row = (overrides: Partial<RecentTerminalRun> = {}): RecentTerminalRun => {
 }
 
 test('three consecutive provider errors cool the agent', () => {
-  expect(providerErrorStreakCooling([row(), row(), row()])).toMatchObject({
+  expect(providerErrorStreakCooling([row(), row(), row()], 60, Date.now())).toMatchObject({
     agent: 'a',
     failure_kind: 'provider_error',
   })
@@ -38,21 +38,21 @@ test('three consecutive provider errors cool the agent', () => {
 
 test('two provider errors followed by a success do not cool the agent', () => {
   expect(
-    providerErrorStreakCooling([
-      row(),
-      row(),
-      row({ status: 'ok', failure_kind: null, mins_ago: 3 }),
-    ]),
+    providerErrorStreakCooling(
+      [row(), row(), row({ status: 'ok', failure_kind: null, mins_ago: 3 })],
+      60,
+      Date.now(),
+    ),
   ).toBeNull()
 })
 
 test('a successful probe clears the provider-error streak', () => {
   expect(
-    providerErrorStreakCooling([
-      row(),
-      row(),
-      row({ job: 'agent-probe', status: 'ok', failure_kind: null }),
-    ]),
+    providerErrorStreakCooling(
+      [row(), row(), row({ job: 'agent-probe', status: 'ok', failure_kind: null })],
+      60,
+      Date.now(),
+    ),
   ).toBeNull()
 })
 
@@ -65,10 +65,14 @@ test('a vendor reset keeps quota cooling active beyond the minimum', () => {
     quota_resets_at: resetAt / 1_000,
   })
 
-  expect(decideCoolingFailures([quota], 60, NOW).get('a')).toMatchObject({
+  const failure = decideCoolingFailures([quota], 60, NOW).get('a')!
+  expect(failure).toMatchObject({
     vendor_reset_at: new Date(resetAt).toISOString(),
     cooling_until: new Date(resetAt).toISOString(),
   })
+  expect(coolingRefusal('a', failure, 60, 'America/Los_Angeles')).toContain(
+    'Nov 20, 2026 at 1:00 PM PST (vendor reset)',
+  )
   expect(decideCoolingFailures([quota], 60, resetAt + 1_000).get('a')).toBeUndefined()
 })
 
@@ -82,8 +86,12 @@ test('a reset beyond the ceiling is ignored and named in the refusal', () => {
   const failure = decideCoolingFailures([quota], 60, NOW).get('a')!
 
   expect(failure).toMatchObject({ vendor_reset_at: null, vendor_reset_clamped: true })
-  expect(coolingRefusal('a', failure, 60)).toContain('beyond the 192h ceiling was ignored')
-  expect(coolingRefusal('a', failure, 60)).toContain(`${PLATFORM_SLUG} agent probe a`)
+  expect(coolingRefusal('a', failure, 60, 'America/New_York')).toContain(
+    'beyond the 192h ceiling was ignored',
+  )
+  expect(coolingRefusal('a', failure, 60, 'America/New_York')).toContain(
+    `${PLATFORM_SLUG} agent probe a`,
+  )
 })
 
 test('past and stale reset readings do not extend quota cooling', () => {

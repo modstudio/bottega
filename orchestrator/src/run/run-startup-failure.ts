@@ -2,9 +2,9 @@
 /** Records and publishes startup failures before or after a run is claimed. */
 import { db, nowIso, writeTransaction } from '../database/db.ts'
 import { machineId } from '../record/machine-identity.ts'
-import { rollUpRootAndEnqueue } from './run-liveness.ts'
 import { nextRunNumber } from './run-number.ts'
 import { enqueueRunRecord } from './run-outbox.ts'
+import { rollUpRootAndEnqueue } from './run-root-rollup.ts'
 
 function enqueueFailedReservedRun(
   reserveId: string,

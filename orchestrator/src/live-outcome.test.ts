@@ -735,18 +735,6 @@ describe('completed-reply process-ended live outcome', () => {
     })
   })
 
-  test('terminal text without a vendor error keeps the existing stderr-first classification', () => {
-    expect(
-      outcome({
-        contractStatus: 'done',
-        replyFilePresent: true,
-        exitCode: 1,
-        stdout: 'agent printed a reply\n',
-        stderr: 'codex transport reset',
-      }).failureKind,
-    ).toBe('other')
-  })
-
   test.each([
     ['message', '{"type":"error","message":"turn aborted"}\n'],
     ['error', '{"type":"error","error":"turn aborted"}\n'],

@@ -2,7 +2,7 @@
 /** Selects and records the evidence kind of a completed conversation chain. */
 
 import type { Database } from 'bun:sqlite'
-import { type FailureKind, PROVIDER_UNSERVED } from '../failure/failure.ts'
+import { type FailureKind, NOT_EVIDENCE } from '../failure/failure.ts'
 import { enqueueRunRecord } from './run-outbox.ts'
 
 export type ChainFailureMember = {
@@ -27,7 +27,9 @@ export function scoredChainFailureKind(members: readonly ChainFailureMember[]): 
   if (!latest) return null
   if (ordered.length === 1) return latest.failure_kind
   const ownKinds = ordered.map(memberOwnFailureKind)
-  const agentWorkIndex = ownKinds.findIndex((kind) => !PROVIDER_UNSERVED.has(kind as FailureKind))
+  const agentWorkIndex = ownKinds.findIndex(
+    (kind) => kind === null || !NOT_EVIDENCE.includes(kind as FailureKind),
+  )
   return agentWorkIndex === -1 ? memberOwnFailureKind(latest) : (ownKinds[agentWorkIndex] ?? null)
 }
 

@@ -1,5 +1,9 @@
 // concern: failure-commands
-/** Knows failure evidence reclassification and its audit. Must not know runs, routing, transports, the CLI, or worktrees. */
+/**
+ * Knows run-chain shape only to choose reclassifiable failed rows: turns and
+ * roots without turns. Hands changed-turn root roll-up to the caller callback.
+ * Must not know routing, transports, the CLI, or worktrees.
+ */
 import { db, writableDb, writeTransaction } from '../database/db.ts'
 import { auditRunMutation, runMutationActor } from '../run/run-authority.ts'
 import { classify, type FailureKind, gooseVendorFailureKind } from './failure.ts'

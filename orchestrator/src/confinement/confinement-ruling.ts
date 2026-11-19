@@ -11,8 +11,8 @@ import { contentTree, targetGitEnvironment } from '../git/git-environment.ts'
 import { projectByName } from '../project/projects.ts'
 import { machineId } from '../record/machine-identity.ts'
 import { adoptRunMutation, auditRunMutation, authorizeRunMutation } from '../run/run-authority.ts'
-import { rollUpRootAndEnqueue } from '../run/run-liveness.ts'
 import { enqueueRunRecord } from '../run/run-outbox.ts'
+import { rollUpRootAndEnqueue } from '../run/run-root-rollup.ts'
 import { parseConfinement } from './confinement.ts'
 
 type ConfinementPresentation = { log(...values: unknown[]): void }
