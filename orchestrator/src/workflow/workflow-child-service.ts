@@ -1,5 +1,5 @@
 // concern: workflow child service
-/** Owns lazy epic-child queueing and inherited cursor composition. */
+/** Owns lazy epic-child queuing and inherited cursor composition. */
 
 import type { Database } from 'bun:sqlite'
 import { BOARD_CLAIM_DEFAULT_MS } from '../board/board-claim-policy.ts'
