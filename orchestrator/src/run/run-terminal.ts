@@ -707,7 +707,6 @@ function forgetTerminalProcess(proc: TerminalInput['proc']): void {
 
 export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
   let {
-    timer,
     checkpointTimer,
     resourceObserver,
     proc,
@@ -752,7 +751,7 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
     mcpRuling,
     workerEvents,
   } = input
-  clearRunTimers(timer, checkpointTimer)
+  clearRunTimers(input.timer, checkpointTimer)
   const resourceUsage = resourceObserver?.stop() ?? null
   forgetTerminalProcess(proc)
   if (proc?.pid && proc.pid !== process.pid) await terminateProcessGroup(proc.pid, { direct: proc })
@@ -824,7 +823,8 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
     acceptedQuestions,
   })
   ;({ status, failureKind, error } = vendorTermination.outcome)
-  acceptedQuestions = vendorTermination.acceptedQuestions; recordRunQuestionReadiness(input, claim.id, acceptedQuestions)
+  acceptedQuestions = vendorTermination.acceptedQuestions
+  recordRunQuestionReadiness(input, claim.id, acceptedQuestions)
   const readerReply = isReaderJob(opts.job) ? (parsedReply as ReaderReply | null) : null
   const parsedReview =
     requestedJob.findings && output && (status === 'ok' || confinementEvent)
@@ -881,6 +881,7 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
   ))
   // The run is already answerable locally; this hosted write may remain pending.
   const recordedQuestions = await recordTerminalQuestions(claim.id, acceptedQuestions)
+
   if (mcpSetupHeader) {
     output = output ? `${mcpSetupHeader}\n\n${output}` : mcpSetupHeader
     writeFileSync(outPath, output)
