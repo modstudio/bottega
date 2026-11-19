@@ -3,9 +3,17 @@
 import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { splitContextHolder } from '../../../shared/context-item-vocabulary.ts'
+import {
+  referenceNotVisibleRefusal,
+  referenceStoreUnreachableRefusal,
+} from '../../../shared/reference-refusal.ts'
+import { parsePointerReference } from '../../../shared/reference.ts'
 import { liveClaimsOfSession } from '../board/board-claim-service.ts'
 import { db, sessionId } from '../database/db.ts'
 import { resolveCommitArgument } from '../git/commit-resolution.ts'
+import { identityContext } from '../identity/identity-context.ts'
+import { ResolutionMissError } from '../identity/identity-local-run.ts'
+import { resolve } from '../identity/identity.ts'
 import { projectForTaskKey, projects, taskKeyPrefix } from '../project/projects.ts'
 import { taskFlowReadStore } from '../workflow/task-flow-store.ts'
 import {
@@ -20,6 +28,7 @@ import {
 } from '../workflow/workflow-task-reference.ts'
 
 import { productionWorkflowTextDocumentPorts } from '../workflow/workflow-text-copy.ts'
+import { RecordApiRequestError } from '../record/record-api-client.ts'
 import { listContextItems } from './context-item-store.ts'
 import {
   type ContextItem,
@@ -29,6 +38,7 @@ import {
   holderOwnershipRefusal,
 } from './doc-context-write.ts'
 import { isScratchLocation } from './doc-resume-write.ts'
+import { readHostedDocReference } from './doc-hosted-client.ts'
 import { taskContextHolder } from './doc-subjects.ts'
 
 export type ContextTask = HubTaskReference
@@ -89,38 +99,81 @@ export async function resolvedPointerTarget(
   if (!pointer) throw new ContextWriteRefusalError('pointer must not be empty')
   if (isScratchLocation(pointer))
     throw new ContextWriteRefusalError('scratch paths are not durable pointers')
-  if (/^[A-Z][A-Z0-9]*-\d+\/\d+$/.test(pointer)) return resolveTaskDocumentPointer(pointer)
-  const stored = storedPointerRefusal(pointer, database)
-  if (stored !== undefined) {
-    if (stored) throw new ContextWriteRefusalError(stored)
-    return pointer
-  }
-  const pr = /^#?(\d+)$/.exec(pointer)
-  if (
-    pr &&
-    database.query('SELECT 1 FROM pull_request_ci WHERE pr_number=? LIMIT 1').get(Number(pr[1]))
-  )
-    return pr[1]!
+  let parsed
   try {
-    return resolveCommitArgument(process.cwd(), pointer)
-  } catch {}
-  throw new ContextWriteRefusalError(
-    `pointer ${JSON.stringify(pointer)} does not resolve as a task document, run, commit, pull request number, or doc-store record`,
-  )
-}
-
-function storedPointerRefusal(pointer: string, database: Database): string | null | undefined {
-  if (/^doc:[0-9a-f-]{36}$/i.test(pointer)) {
-    return database.query('SELECT 1 FROM doc WHERE record_id=?').get(pointer.slice(4))
-      ? null
-      : `doc-store record ${pointer} does not resolve`
+    parsed = parsePointerReference(pointer)
+  } catch (error) {
+    throw new ContextWriteRefusalError(error instanceof Error ? error.message : String(error))
   }
-  if (!/^[0-9a-f-]{36}$/i.test(pointer) && !/^\d+$/.test(pointer)) return undefined
-  return database
-    .query('SELECT 1 FROM run WHERE record_id=? OR number=?')
-    .get(pointer, Number(pointer) || -1)
-    ? null
-    : undefined
+  if (parsed.kind === 'task-document') return resolveTaskDocumentPointer(pointer)
+  if (parsed.kind === 'run') {
+    try {
+      const resolved = await resolve(parsed.reference, identityContext(database), 'run')
+      return resolved.recordId
+    } catch (error) {
+      if (error instanceof ResolutionMissError && /^[0-9]+$/.test(parsed.reference))
+        throw new ContextWriteRefusalError(
+          `${error.message}; for a commit, pass the full SHA`,
+        )
+      throw error
+    }
+  }
+  if (parsed.kind === 'commit') return resolveCommitArgument(process.cwd(), parsed.sha)
+  if (parsed.kind === 'pull-request') {
+    const number = parsed.number
+    if (
+      number !== null &&
+      database.query('SELECT 1 FROM pull_request_ci WHERE pr_number=? LIMIT 1').get(number)
+    )
+      return String(number)
+    throw new ContextWriteRefusalError(
+      referenceNotVisibleRefusal('this project', `pass #<n> for a pull request`),
+    )
+  }
+  if (parsed.kind === 'doc') {
+    try {
+      await readHostedDocReference(parsed.address)
+      return `doc:${parsed.address}`
+    } catch (error) {
+      if (error instanceof RecordApiRequestError && error.status === 404)
+        throw new ContextWriteRefusalError(
+          referenceNotVisibleRefusal('the document store', 'pass a visible doc reference'),
+        )
+      throw new Error(
+        referenceStoreUnreachableRefusal(
+          'the document store',
+          error instanceof Error ? error.message : String(error),
+        ),
+      )
+    }
+  }
+  if (parsed.kind === 'task' || parsed.kind === 'comment') {
+    const { task: mirroredTask } = await resolveContextTaskWithProjectTasks(parsed.key, database)
+    const task =
+      parsed.kind === 'comment'
+        ? ((await pullHubTask(mirroredTask.project, parsed.key)) ?? mirroredTask)
+        : mirroredTask
+    if (parsed.kind === 'comment') {
+      const comments = task.commentIds
+      if (!comments?.map(String).includes(parsed.id))
+        throw new ContextWriteRefusalError(
+          referenceNotVisibleRefusal(`task ${parsed.key}`, 'pass a comment id on that task'),
+        )
+    }
+    return parsed.kind === 'task' ? `task:${task.key}` : `task:${task.key}#comment:${parsed.id}`
+  }
+  const table =
+    parsed.kind === 'review-read'
+      ? 'review_read'
+      : parsed.kind === 'attached-text'
+        ? 'workflow_text_copy'
+        : 'probe'
+  const column = parsed.kind === 'attached-text' ? 'workflow_text_record_id' : 'record_id'
+  if (database.query(`SELECT 1 FROM ${table} WHERE ${column}=?`).get(parsed.recordId))
+    return pointer
+  throw new ContextWriteRefusalError(
+    referenceNotVisibleRefusal('this machine', 'pass the UUID of a visible record'),
+  )
 }
 
 const productionContextFactsPorts: ContextFactsPorts = {

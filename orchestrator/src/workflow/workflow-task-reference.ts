@@ -18,6 +18,7 @@ export type HubTaskReference = {
   parent_key?: string | null
   source?: string | null
   status_category?: string | null
+  commentIds?: Array<string | number>
 }
 export type HubTaskReader = (project: string) => Promise<HubTaskReference[]>
 export type HubTaskPuller = (project: string, key: string) => Promise<HubTaskReference | null>
@@ -104,7 +105,20 @@ function taskReferenceFromShow(response: unknown): HubTaskReference | null {
   if (!response || typeof response !== 'object') throw new Error('response was not an object')
   const row = (response as { task?: unknown }).task
   if (row === undefined || row === null) return null
-  return taskReference(row)
+  const task = taskReference(row)
+  const record = response as {
+    comments?: Array<{ id?: unknown }>
+    tracker_comment_ids?: unknown
+  }
+  const supplied = Array.isArray(record.tracker_comment_ids)
+    ? record.tracker_comment_ids
+    : Array.isArray(record.comments)
+      ? record.comments.map((comment) => comment.id)
+      : []
+  task.commentIds = supplied.filter(
+    (id): id is string | number => typeof id === 'string' || typeof id === 'number',
+  )
+  return task
 }
 
 /**

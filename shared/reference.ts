@@ -95,7 +95,7 @@ export type PointerReference =
   | { kind: 'probe' | 'exec' | 'review-read' | 'attached-text'; recordId: string }
 
 export const POINTER_REFERENCE_FORMS =
-  'doc:<scope>/<subject-or-_>/<slug>, doc:<UUID>, task:<KEY>, task:<KEY>#comment:<id>, <KEY>/<document number>, a run number or r<number>, #<pull request number>, a GitHub pull-request link, a commit SHA, probe:<UUID>, exec:<UUID>, review-read:<UUID>, or attached-text:<UUID>'
+  'doc:<scope>/<subject-or-_>/<slug>, doc:<UUID>, task:<KEY>, task:<KEY>#comment:<id>, <KEY>/<document number>, a run number, r<number>, run:<number-or-UUID>, a run UUID, #<pull request number>, a GitHub pull-request link, a commit SHA, probe:<UUID>, exec:<UUID>, review-read:<UUID>, or attached-text:<UUID>'
 
 const taskKeyPattern = '[A-Z][A-Z0-9]*-[1-9][0-9]*'
 const githubPullRequestPattern = /^https:\/\/github\.com\/[^/\s]+\/[^/\s]+\/pull\/([1-9][0-9]*)$/i
@@ -149,6 +149,10 @@ export function parsePointerReference(input: string): PointerReference {
 
   if (/^[0-9]{40}$/.test(value) || (/^[0-9a-f]{7,40}$/i.test(value) && /[a-f]/i.test(value)))
     return { kind: 'commit', sha: value }
+  const explicitRun = /^run:(\S+)$/i.exec(value)
+  if (explicitRun && (/^[1-9][0-9]*$/.test(explicitRun[1]!) || hasRecordIdShape(explicitRun[1]!)))
+    return { kind: 'run', reference: explicitRun[1]! }
+  if (hasRecordIdShape(value)) return { kind: 'run', reference: value.toLowerCase() }
   if (/^(?:r[1-9][0-9]*|[1-9][0-9]*)$/.test(value)) return { kind: 'run', reference: value }
 
   throw new Error(
