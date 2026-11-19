@@ -113,6 +113,7 @@ function liveCacheClient(origin: string, token: string): RecordApiClient {
     retireProject: unused,
     purgeProject: unused,
     counts: unused,
+    cacheCounts: unused,
   }
 }
 

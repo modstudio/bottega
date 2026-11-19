@@ -51,6 +51,8 @@ import { RecordApiRequestError, recordApiClient, recordApiRequest } from './reco
 import { recordQuestionClient } from './record-api-client-question.ts'
 import { recordAttributionFailure } from './record-attribution.ts'
 import type { RecordIdentity } from './record-auth.ts'
+import { recordCacheParityChecks } from './record-cache-parity.ts'
+import type { RecordDoctorCheck } from './record-doctor-check.ts'
 import { recordPool } from './record-pool.ts'
 import { storedRecordToken } from './record-session.ts'
 
@@ -62,13 +64,8 @@ async function refuseOwnerConnection(postgres: SQL, operation: string): Promise<
     )
 }
 
-type RecordDoctorStatus = 'pass' | 'fail' | 'skipped'
-export type RecordDoctorCheck = {
-  name: string
-  status: RecordDoctorStatus
-  detail?: string
-  section?: 'customer' | 'operator'
-}
+export type { RecordDoctorCheck } from './record-doctor-check.ts'
+
 type QuarantinedDoctorRow = { id: number; kind: string; reason: string }
 export type RecordDoctorFacts = {
   apiConfigured: boolean
@@ -90,6 +87,7 @@ export type RecordDoctorFacts = {
   noDestinationWritesFailure?: string
   hubNoDestinationWrites?: NoDestinationWriteReport
   hubNoDestinationWritesFailure?: string
+  recordCacheChecks?: readonly RecordDoctorCheck[]
 }
 
 const API_CONFIGURATION_REMEDY = `run \`${PLATFORM_SLUG} record use <address>\``
@@ -338,6 +336,8 @@ export function decideRecordDoctorChecks(facts: RecordDoctorFacts): RecordDoctor
 
   checks.push(...(facts.agentCredentialChecks ?? []))
 
+  checks.push(...(facts.recordCacheChecks ?? []))
+
   checks.push(destinationlessWriteCheck(facts))
   checks.push(hostedHubDestinationlessWriteCheck(facts))
 
@@ -532,6 +532,7 @@ async function customerFacts(
   let identity: Awaited<ReturnType<ReturnType<typeof recordApiClient>['whoami']>> | null = null
   let client: ReturnType<typeof recordApiClient> | null = null
   let measurement: Awaited<ReturnType<typeof destinationlessWriteFacts>> = {}
+  let recordCacheChecks: RecordDoctorCheck[] = []
   const hubMeasurement = token
     ? await hostedHubDestinationlessWriteFacts({
         hostedUrl: readEnvValues(['BOTTEGA_HOSTED_URL']).BOTTEGA_HOSTED_URL,
@@ -566,6 +567,7 @@ async function customerFacts(
       }
     }
   }
+  if (identity?.activeSpaceId) recordCacheChecks = await recordCacheParityChecks(database, identity)
   return {
     apiConfigured,
     apiReachable,
@@ -580,6 +582,7 @@ async function customerFacts(
     projects,
     ...measurement,
     ...hubMeasurement,
+    recordCacheChecks,
     pendingOutboxRows: pendingOutboxCount(database),
     runRecordBackfill: inspectRunRecordBackfill(database),
     quarantinedOutboxRows: quarantinedOutboxRows(database).map((row) => ({

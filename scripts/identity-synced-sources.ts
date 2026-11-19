@@ -66,6 +66,7 @@ export const SYNCED_SOURCE_DECLARATIONS: SyncedSources = {
     'no local table; authentication inputs come from the user',
   ),
   ...readEntries('orchestrator', 'recordApiClient', [
+    'cacheCounts',
     'counts',
     'getBoardStatus',
     'getBoardThread',

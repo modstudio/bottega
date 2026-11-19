@@ -41,7 +41,10 @@ import {
   pullLensCatalogue,
   purgeLensCatalogueSpace,
 } from './record-cache-lens.ts'
-import { recordCacheSpaceOwnsAddress } from './record-cache-ownership.ts'
+import {
+  recordCacheSpaceOwnsAddress,
+  recordCacheSpaceOwnsSubject,
+} from './record-cache-ownership.ts'
 import {
   applyPortCatalogueRow,
   deletePortCatalogueRow,
@@ -439,7 +442,10 @@ function feedEntryOwned(local: Database, change: Change, ownership: Ownership): 
               'SELECT project.name FROM subject JOIN project ON project.record_id=subject.project_record_id WHERE subject.id=?',
             )
             .get(change.id)?.name
-    return project === undefined || ownership.projectSpaces.get(project) === change.space
+    return (
+      project === undefined ||
+      recordCacheSpaceOwnsSubject(project, change.space, ownership.projectSpaces)
+    )
   }
   return true
 }

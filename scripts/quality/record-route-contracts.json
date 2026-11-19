@@ -148,10 +148,6 @@
     "reason": "untested"
   },
   {
-    "route": "GET /v1/docs/counts",
-    "reason": "untested"
-  },
-  {
     "route": "GET /v1/docs/search",
     "reason": "untested"
   },

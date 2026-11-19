@@ -72,6 +72,7 @@ import {
   registerRecordWriteTelemetry,
 } from './record-api-write-telemetry.ts'
 import type { RecordIdentity } from './record-auth.ts'
+import type { RecordCacheCounts } from './record-cache-counts-contract.ts'
 import type { RecordCanonImportInput, RecordCanonImportResult } from './record-canon-import.ts'
 import type { ConfigTenant } from './record-config.ts'
 import { CONFIG_SCOPES } from './record-config.ts'
@@ -218,6 +219,7 @@ type RecordApiDeps = RecordSessionRouteDeps &
       input: Tenant & { from: string; to: string; count: number },
     ): Promise<{ docs: number; revisions: number }>
     countDocs(input: Tenant): Promise<{ docs: number; revisions: number }>
+    countCacheRows(input: Tenant): Promise<RecordCacheCounts>
     upsertScore(
       input: Tenant &
         Omit<VerdictInput, 'scoredBy'> & {

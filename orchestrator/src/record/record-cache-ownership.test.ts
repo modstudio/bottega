@@ -3,6 +3,7 @@ import {
   recordCacheAddressOwner,
   recordCacheProjectOwner,
   recordCacheSpaceOwnsAddress,
+  recordCacheSpaceOwnsSubject,
 } from './record-cache-ownership.ts'
 
 const projectSpaces = new Map<string, string | null>([
@@ -80,4 +81,10 @@ test('a pulling space may apply only documents whose address it owns', () => {
       projectSpaces,
     }),
   ).toBe(false)
+})
+
+test('a pulling space may apply only subjects whose project it owns', () => {
+  expect(recordCacheSpaceOwnsSubject('alpha', 'space-alpha', projectSpaces)).toBe(true)
+  expect(recordCacheSpaceOwnsSubject('alpha', 'space-active', projectSpaces)).toBe(false)
+  expect(recordCacheSpaceOwnsSubject('outside', 'space-active', projectSpaces)).toBe(false)
 })
