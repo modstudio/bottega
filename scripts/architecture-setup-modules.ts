@@ -136,6 +136,7 @@ export const setupModuleSpecs: readonly SetupModuleSpec[] = [
     file: 'orchestrator/src/setup/setup-engine.ts',
     allowed: [
       '../../../shared/brand.ts',
+      './developer-node.ts',
       './setup-mcp.ts',
       './setup-schedule-policy.ts',
       './setup-toolchain.ts',
@@ -150,6 +151,13 @@ export const setupModuleSpecs: readonly SetupModuleSpec[] = [
     ],
     reason:
       'Keep setup proposals pure and independent of stores, filesystems, commands, and processes.',
+  },
+  {
+    name: 'developer-node-boundary',
+    file: 'orchestrator/src/setup/developer-node.ts',
+    allowed: ['../../../shared/node-requirement.ts'],
+    typeOnlyAllowed: ['../../../shared/install-root.ts'],
+    reason: 'Keep the developer Node prerequisite decision pure and shared by setup and doctor.',
   },
   {
     name: 'setup-planner-boundary',

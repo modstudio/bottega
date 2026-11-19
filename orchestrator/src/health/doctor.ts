@@ -12,6 +12,7 @@ import {
 import { doctorAgentStatus } from '../agent/agent-auth.ts'
 import { AGENTS, type AgentRow, agentRows } from '../agent/agent-registry.ts'
 import { cliVersion, versionBelow } from '../agent/agents.ts'
+import { cliVersionAt } from '../agent/cli-version.ts'
 import { decideEffectiveEndpointApiKey, endpointApiKeyResolves } from '../agent/endpoint-api-key.ts'
 import {
   ensureLocalHealth,
@@ -66,6 +67,7 @@ import { runTaskReferenceDoctorLine } from '../run/run-task-linking.ts'
 import { type RuntimeAvailability, sandboxRuntimeAvailability } from '../sandbox/sandbox-runtime.ts'
 import { gwetAc1, quadraticWeightedKappa } from '../score/agreement.ts'
 import { DELIVERY, FIDELITY, QUALITY } from '../score/score.ts'
+import { developerNodeDoctorLines } from '../setup/developer-node.ts'
 import { keepTreeHold } from '../worktree/keep-tree-hold.ts'
 import { worktreeDirty } from '../worktree/worktree-attribution.ts'
 import { lifecycleReportLines } from '../worktree/worktree-lifecycle.ts'
@@ -543,6 +545,9 @@ async function reportInstallationStatus(
     log(`installation   identity unreadable — ${message}`)
     exitCode(1)
   }
+  const nodePath = Bun.which('node', { PATH: process.env.PATH })
+  const nodeVersion = cliVersionAt(nodePath)
+  for (const line of developerNodeDoctorLines(installationKind, nodePath, nodeVersion)) log(line)
   const launchAgents = await launchAgentDoctorReport(
     process.platform,
     undefined,

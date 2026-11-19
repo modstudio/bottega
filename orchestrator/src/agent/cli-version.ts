@@ -14,7 +14,7 @@ export type CliVersionCapture = {
 
 /** Keep the established agent-version grammar: only a full three-part version is accepted. */
 function parsedCliVersion(text: string): string | null {
-  return text.match(/\b\d+\.\d+\.\d+\b/)?.[0] ?? null
+  return text.match(/\bv?(\d+\.\d+\.\d+)\b/)?.[1] ?? null
 }
 
 export function capturedCliVersion(capture: CliVersionCapture | null): string | null {
@@ -43,4 +43,9 @@ export function captureCliVersion(bin: string): CliVersionCapture {
       error: error instanceof Error ? error.message : String(error),
     }
   }
+}
+
+/** Capture and parse a CLI version when the executable is present on PATH. */
+export function cliVersionAt(path: string | null): string | null {
+  return path === null ? null : capturedCliVersion(captureCliVersion(path))
 }
