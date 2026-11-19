@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { decideRecordWrite } from './record-write-decision.ts'
 
 const joinedLocalFacts = { machineJoined: true, localByDesign: false }
@@ -15,7 +16,7 @@ test('a joined machine refuses an unbound unconfigured store with both remedies'
   if (decision.verdict !== 'refused') throw new Error('expected a refusal')
   expect(decision.refusal).toContain('this machine has signed in to a hosted record')
   expect(decision.refusal).toContain('cleared by: unset BOTTEGA_ORCHESTRATOR_DB')
-  expect(decision.refusal).toContain('cleared by: bottega record use <address>')
+  expect(decision.refusal).toContain(`cleared by: ${PLATFORM_SLUG} record use <address>`)
 })
 
 test('marked and never-joined unbound stores remain local-authoritative', () => {

@@ -59,11 +59,11 @@ import {
   recordSpaceSwitchCommand,
   recordSpaceUnhideCommand,
 } from '../record/record-command.ts'
+import { recordLocalCommand } from '../record/record-local-command.ts'
 import { publishSnapshotsCommand } from '../record/record-publish.ts'
 import { pushCataloguesCommand } from '../record/record-push-catalogues.ts'
 import { pushDocsCommand } from '../record/record-push-docs.ts'
 import { restoreQuestionsCommand } from '../record/record-restore-questions.ts'
-import { recordLocalCommand } from '../record/record-local-command.ts'
 import { useHostedRecord } from '../record/record-use.ts'
 import { recordPublishAvailability, requireHostedRecord } from '../record/record-write-authority.ts'
 import { promptHidden } from './hidden-prompt.ts'
@@ -116,7 +116,7 @@ function registerLocalCommand(record: Command): void {
     .command('local')
     .description('mark this orchestrator store as deliberately local')
     .option('--off', 'clear the deliberately-local mark')
-    .action((options) => recordLocalCommand(!Boolean(options.off), { log }))
+    .action((options) => recordLocalCommand(!options.off, { log }))
 }
 
 function registerIdentityCommands(record: Command): void {

@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { migratedTestDatabase } from '../database/test-database.fixture.ts'
 import { readRecordLocalByDesign } from './install-binding.ts'
 import { recordLocalCommand } from './record-local-command.ts'
@@ -29,7 +30,7 @@ test('record local refuses a bound store and names record use', () => {
       )
       .run()
     expect(() => recordLocalCommand(true, { log: () => undefined }, database)).toThrow(
-      'cleared by: bottega record use <address>',
+      `cleared by: ${PLATFORM_SLUG} record use <address>`,
     )
     expect(readRecordLocalByDesign(database)).toBe(false)
   } finally {

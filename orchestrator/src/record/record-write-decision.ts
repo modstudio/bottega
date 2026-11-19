@@ -2,6 +2,7 @@
 /** Decides shared-state write authority from plain install facts. */
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { refusal, renderRefusal } from '../../../shared/refusal.ts'
 
 export type RecordWriteDecision =
   | { verdict: 'hosted' | 'local-authoritative' }
@@ -29,9 +30,18 @@ export function decideRecordWrite(input: {
       boundOrigin: null,
       resolvedOrigin: input.resolvedOrigin,
       refusal:
-        'this machine has signed in to a hosted record, but this store is not bound to it and no record address is set\n' +
-        'cleared by: unset BOTTEGA_ORCHESTRATOR_DB\n' +
-        `cleared by: ${PLATFORM_SLUG} record use <address>`,
+        renderRefusal(
+          refusal(
+            'this machine has signed in to a hosted record, but this store is not bound to it and no record address is set',
+            { kind: 'edit', text: 'unset BOTTEGA_ORCHESTRATOR_DB' },
+          ),
+        ) +
+        renderRefusal(
+          refusal('', {
+            kind: 'command',
+            argv: [PLATFORM_SLUG, 'record', 'use', '<address>'],
+          }),
+        ),
     }
   }
   if (input.boundOrigin === null) {
@@ -39,9 +49,12 @@ export function decideRecordWrite(input: {
       verdict: 'refused',
       boundOrigin: null,
       resolvedOrigin: input.resolvedOrigin,
-      refusal:
-        'this install is bound to a hosted record with no recorded address\n' +
-        `cleared by: ${PLATFORM_SLUG} record use <address>`,
+      refusal: renderRefusal(
+        refusal('this install is bound to a hosted record with no recorded address', {
+          kind: 'command',
+          argv: [PLATFORM_SLUG, 'record', 'use', '<address>'],
+        }),
+      ),
     }
   }
   if (input.boundOrigin === input.resolvedOrigin) return { verdict: 'hosted' }
@@ -49,8 +62,14 @@ export function decideRecordWrite(input: {
     verdict: 'refused',
     boundOrigin: input.boundOrigin,
     resolvedOrigin: input.resolvedOrigin,
-    refusal:
-      `this install is bound to ${input.boundOrigin}, but the resolved record origin is ${input.resolvedOrigin}\n` +
-      `cleared by: ${PLATFORM_SLUG} record use ${input.boundOrigin}`,
+    refusal: renderRefusal(
+      refusal(
+        `this install is bound to ${input.boundOrigin}, but the resolved record origin is ${input.resolvedOrigin}`,
+        {
+          kind: 'command',
+          argv: [PLATFORM_SLUG, 'record', 'use', input.boundOrigin],
+        },
+      ),
+    ),
   }
 }

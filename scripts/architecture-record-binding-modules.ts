@@ -163,10 +163,22 @@ export const recordBindingModules: RecordModule[] = [
     '../database/db.ts',
     './install-binding.ts',
   ]),
-  module('orchestrator/src/record/record-write-decision.ts', ['../../../shared/brand.ts']),
+  module('orchestrator/src/record/record-write-decision.ts', [
+    '../../../shared/brand.ts',
+    '../../../shared/refusal.ts',
+  ]),
+  module('orchestrator/src/record/record-local-command.ts', [
+    'bun:sqlite',
+    '../../../shared/brand.ts',
+    '../../../shared/refusal.ts',
+    '../database/db.ts',
+    './install-binding.ts',
+  ]),
   module('orchestrator/src/record/record-write-authority.ts', [
+    'node:fs',
     '../../../shared/brand.ts',
     '../../../shared/record-api-url.ts',
+    '../../../shared/state-directory.ts',
     '../database/db.ts',
     './install-binding.ts',
     './install-binding-write.ts',

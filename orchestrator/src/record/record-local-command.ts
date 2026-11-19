@@ -3,6 +3,7 @@
 
 import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { refusal, renderRefusal } from '../../../shared/refusal.ts'
 import { db } from '../database/db.ts'
 import { readRecordInstallBinding, setRecordLocalByDesign } from './install-binding.ts'
 
@@ -13,8 +14,12 @@ export function recordLocalCommand(
 ): void {
   if (readRecordInstallBinding(database).bound) {
     throw new Error(
-      'this store is bound to a hosted record\n' +
-        `cleared by: ${PLATFORM_SLUG} record use <address>`,
+      renderRefusal(
+        refusal('this store is bound to a hosted record', {
+          kind: 'command',
+          argv: [PLATFORM_SLUG, 'record', 'use', '<address>'],
+        }),
+      ),
     )
   }
   setRecordLocalByDesign(database, enabled)
