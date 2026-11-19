@@ -1815,7 +1815,23 @@
       "idx": 236,
       "version": "6",
       "when": 1794758400010,
-      "tag": "0236_epic_child_flows",
+      "tag": "0236_record_local_by_design",
+      "breakpoints": true,
+      "compatibility": "additive"
+    },
+    {
+      "idx": 237,
+      "version": "6",
+      "when": 1794758400011,
+      "tag": "0237_run_own_failure_kind",
+      "breakpoints": true,
+      "compatibility": "additive"
+    },
+    {
+      "idx": 238,
+      "version": "6",
+      "when": 1794758400012,
+      "tag": "0238_epic_child_flows",
       "breakpoints": true,
       "compatibility": "fenced"
     }

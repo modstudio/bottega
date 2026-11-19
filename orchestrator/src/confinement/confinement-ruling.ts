@@ -11,8 +11,8 @@ import { contentTree, targetGitEnvironment } from '../git/git-environment.ts'
 import { projectByName } from '../project/projects.ts'
 import { machineId } from '../record/machine-identity.ts'
 import { adoptRunMutation, auditRunMutation, authorizeRunMutation } from '../run/run-authority.ts'
-import { rollUpRootAndEnqueue } from '../run/run-liveness.ts'
 import { enqueueRunRecord } from '../run/run-outbox.ts'
+import { rollUpRootAndEnqueue } from '../run/run-root-rollup.ts'
 import { parseConfinement } from './confinement.ts'
 
 type ConfinementPresentation = { log(...values: unknown[]): void }
@@ -180,7 +180,7 @@ export function clearConfinement(
       throw new Error(`run ${id}'s confinement classification changed before it could be cleared`)
     }
     const update = db().query(
-      `UPDATE run SET status=?, failure_kind=?, error=?, pre_confinement=? WHERE record_id=?
+      `UPDATE run SET status=?1, failure_kind=?2, own_failure_kind=?2, error=?3, pre_confinement=?4 WHERE record_id=?5
           AND failure_kind IN ('escaped','confinement_unverified')`,
     )
     for (const { row, value } of transitions) {

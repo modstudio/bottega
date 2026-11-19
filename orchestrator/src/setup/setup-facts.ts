@@ -64,6 +64,7 @@ export type SetupFactsCapture = {
   arch: NodeJS.Architecture
   procVersion: string | null
   bun: { path: string; version: string }
+  node: { path: string | null; version: CommandCapture | null }
   git: { path: string | null; version: CommandCapture | null }
   gh: { path: string | null; version: CommandCapture | null; auth: CommandCapture | null }
   harnesses: Record<
@@ -95,6 +96,7 @@ export type SetupFacts = {
   recordApiConfigured: boolean
   os: { platform: NodeJS.Platform; arch: NodeJS.Architecture; wsl: boolean }
   bun: { path: string; version: string }
+  node: { path: string | null; version: string | null }
   git: { path: string | null; version: string | null }
   gh: { path: string | null; version: string | null; loggedIn: boolean }
   harnesses: Record<
@@ -131,6 +133,7 @@ export function classifySetupFacts(capture: SetupFactsCapture): SetupFacts {
       wsl: capture.platform === 'linux' && /microsoft|wsl/i.test(capture.procVersion ?? ''),
     },
     bun: capture.bun,
+    node: { path: capture.node.path, version: capturedCliVersion(capture.node.version) },
     git: { path: capture.git.path, version: capturedCliVersion(capture.git.version) },
     gh: {
       path: capture.gh.path,
@@ -242,6 +245,7 @@ export async function gatherSetupFacts(
 ): Promise<SetupFacts> {
   const gitPath = which('git', { PATH: process.env.PATH })
   const ghPath = which('gh', { PATH: process.env.PATH })
+  const nodePath = which('node', { PATH: process.env.PATH })
   const harnesses = Object.fromEntries(
     KNOWN_HARNESSES.map((name) => {
       const path = which(name, { PATH: process.env.PATH })
@@ -282,6 +286,7 @@ export async function gatherSetupFacts(
     arch: process.arch,
     procVersion: procVersion(),
     bun: { path: process.execPath, version: Bun.version },
+    node: { path: nodePath, version: versionCapture(nodePath) },
     git: { path: gitPath, version: versionCapture(gitPath) },
     gh: {
       path: ghPath,

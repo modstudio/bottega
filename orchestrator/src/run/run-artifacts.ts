@@ -49,7 +49,10 @@ import {
   type RunArtifactListingEntry,
 } from './run-artifact-retention.ts'
 import { type GooseContextProfile, writeRunContextProfile } from './run-context-profile.ts'
-import { terminalLifecycleWrite } from './run-terminal-lifecycle-store.ts'
+import {
+  terminalLifecycleColumnValues,
+  terminalLifecycleWrite,
+} from './run-terminal-lifecycle-store.ts'
 import {
   quotaReadingsColumnValues,
   type RunQuotaColumns,
@@ -418,7 +421,8 @@ export function reconcileRun(id: string): string {
         `UPDATE run SET latency_ms=?, exit_code=?, output_bytes=?, output_path=?, prompt_path=?,
                       vendor_tokens=?, model_calls=?, peak_call_tokens=?, quota_used_percent_start=?, quota_used_percent_end=?, quota_window_minutes=?, quota_resets_at=?, vendor_cost_usd=?, vendor_input_tokens=?, vendor_output_tokens=?,
                       vendor_estimated_cost_usd=?, vendor_cost_source=?, model=COALESCE(?, model),
-                      status=?, error=?, failure_kind=?, vendor_session=COALESCE(?, vendor_session),
+                      status=?, error=?, failure_kind=?, own_failure_kind=?,
+                      vendor_session=COALESCE(?, vendor_session),
                       pre_confinement=?, confinement=?, unreconciled=0,
                       files_changed=?, changed_paths=?, lines_added=?, lines_removed=?,
                       tests_ran=?, tests_passed=?, tests_claim_disagrees=?, deviations=?, escalations=?
@@ -437,9 +441,7 @@ export function reconcileRun(id: string): string {
         snapshot.vendorCostUsd,
         ...runUsageColumnValues(snapshot),
         snapshot.model,
-        lifecycle.status,
-        lifecycle.error,
-        lifecycle.failureKind,
+        ...terminalLifecycleColumnValues(lifecycle),
         snapshot.vendorSession,
         snapshot.preConfinement,
         snapshot.confinement,

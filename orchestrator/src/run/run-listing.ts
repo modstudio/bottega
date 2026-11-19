@@ -22,7 +22,7 @@ import { failureReason, type OutcomeRow, outcomeOf } from '../outcome.ts'
 import type { ProcessSample } from '../process-resource-sampler.ts'
 import { questionRulings } from '../question-store/question-store-read.ts'
 import { publishChangeCursor } from './collect-change.ts'
-import { currentRunMemberJoin, liveMemberStall } from './live-run-member.ts'
+import { liveMemberStall } from './live-run-member.ts'
 import { questionsForRunChains } from './question-open.ts'
 import type {
   AnswerChannel,
@@ -31,6 +31,7 @@ import type {
   QuestionDeliveryMode,
   QuestionDeliveryOutcome,
 } from './question-vocabulary.ts'
+import { currentRunMemberJoin } from './run-chain.ts'
 import { classifyRunIdentifier, resolveRunIdentifierOrNull } from './run-identifier.ts'
 import {
   isFreshRunHostWait,

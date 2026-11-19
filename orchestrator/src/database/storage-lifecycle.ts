@@ -228,7 +228,12 @@ export const orchestratorTableLifecycles: readonly TableLifecycle[] = [
     'One row per declared machine-local key is kept for the lifetime of that key.',
   ),
   ...boundedMachine(
-    ['hosted_pressure_cache', 'orch_schema_lock', 'record_install_binding'],
+    [
+      'hosted_pressure_cache',
+      'orch_schema_lock',
+      'record_install_binding',
+      'record_local_by_design',
+    ],
     'The single machine-local row is kept for the lifetime of this installation.',
   ),
   ...boundedMachine(

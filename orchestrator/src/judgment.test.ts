@@ -11,7 +11,14 @@ import { db } from './database/db.ts'
 import { UNSCORED_WHERE } from './evidence/evidence-query.ts'
 import { NOT_EVIDENCE } from './failure/failure.ts'
 import { judgeRun, scoreRun } from './judgment.ts'
+import { machineId } from './record/machine-identity.ts'
 import { completeReview, recordReview } from './review/review-triage.ts'
+import { isRoutingEvidence } from './route/routing-evidence-query.ts'
+import {
+  type ChainFailureMember,
+  rollUpRootAndEnqueue,
+  scoredChainFailureKind,
+} from './run/run-root-rollup.ts'
 import { pairPartners } from './score/duel.ts'
 import { refuseVerdict, VOID_EXCLUSION_REASON } from './verdict/verdict-rules.ts'
 
@@ -61,6 +68,53 @@ const judge = (
   )
 const insert = (status = 'ok', job = 'file-question') =>
   addRun({ agent: 'codex', job, status, session: process.env.CLAUDE_CODE_SESSION_ID ?? null })
+const insertTurn = (root: string, kind: string, turn: number, startedAt?: string) =>
+  addRun({
+    agent: 'codex',
+    job: 'file-question',
+    status: 'failed',
+    kind,
+    parent: root,
+    turn,
+    startedAt,
+  })
+
+const rollUp = (root: string) =>
+  rollUpRootAndEnqueue(db(), root, null, machineId(), new Date().toISOString(), false)
+
+const rootEvidence = (root: string) =>
+  db()
+    .query(
+      `SELECT r.status,r.failure_kind AS failureKind,s.delivery
+         FROM run r LEFT JOIN score s ON s.run_record_id=r.record_id
+        WHERE r.record_id=?`,
+    )
+    .get(root) as { status: string; failureKind: string | null; delivery: string | null }
+
+const isUnscored = (root: string) =>
+  Boolean(
+    db()
+      .query(
+        `SELECT 1 FROM run r LEFT JOIN score s ON s.run_record_id=r.record_id
+          WHERE r.record_id=? AND ${UNSCORED_WHERE}`,
+      )
+      .get(root),
+  )
+
+const chainMember = (
+  recordId: string,
+  parentRunRecordId: string | null,
+  kind: string | null,
+  ownFailureKind: string | null,
+  turn: number,
+): ChainFailureMember => ({
+  record_id: recordId,
+  parent_run_record_id: parentRunRecordId,
+  failure_kind: kind,
+  own_failure_kind: ownFailureKind,
+  turn,
+  number: turn,
+})
 
 beforeEach(() => {
   process.env.CLAUDE_CODE_SESSION_ID = 'orch-test-session'
@@ -68,6 +122,146 @@ beforeEach(() => {
 })
 
 describe('score ruling', () => {
+  test('a successful root can be scored after a quota turn', async () => {
+    const root = insert()
+    insertTurn(root, 'quota', 2)
+    rollUp(root)
+
+    await score(root, ['full', 'right'])
+
+    expect(rootEvidence(root).failureKind).toBeNull()
+    expect(isRoutingEvidence(rootEvidence(root))).toBe(true)
+  })
+
+  test('a scored chain treats a root with no own failure kind as agent work', () => {
+    expect(
+      scoredChainFailureKind([
+        chainMember('root', null, 'quota', null, 1),
+        chainMember('turn', 'root', 'quota', 'quota', 2),
+      ]),
+    ).toBeNull()
+  })
+
+  test('a stale interrupted turn does not displace the root evidence kind when scored', async () => {
+    const root = addRun({
+      agent: 'codex',
+      job: 'file-question',
+      status: 'failed',
+      kind: 'other',
+      session: process.env.CLAUDE_CODE_SESSION_ID,
+    })
+    addRun({
+      agent: 'codex',
+      job: 'file-question',
+      status: 'stale',
+      kind: 'interrupted',
+      parent: root,
+      turn: 2,
+    })
+    rollUp(root)
+
+    await score(root, ['full', 'right'])
+
+    expect(rootEvidence(root).failureKind).toBe('other')
+    expect(isRoutingEvidence(rootEvidence(root))).toBe(true)
+  })
+
+  test('a score recorded after a quota turn restores the root evidence kind', async () => {
+    const root = addRun({
+      agent: 'codex',
+      job: 'file-question',
+      status: 'failed',
+      kind: 'other',
+      session: process.env.CLAUDE_CODE_SESSION_ID,
+      startedAt: '2026-11-19T00:00:00.000Z',
+    })
+    insertTurn(root, 'quota', 2, '2026-11-19T00:01:00.000Z')
+    rollUp(root)
+
+    expect(rootEvidence(root).failureKind).toBe('quota')
+    expect(isUnscored(root)).toBe(false)
+    expect(isRoutingEvidence(rootEvidence(root))).toBe(false)
+
+    await score(root, ['full', 'right'])
+
+    expect(rootEvidence(root).failureKind).toBe('other')
+    expect(isUnscored(root)).toBe(false)
+    expect(isRoutingEvidence(rootEvidence(root))).toBe(true)
+  })
+
+  test('a scored root is not relisted when its later turn is quota', async () => {
+    const root = addRun({
+      agent: 'codex',
+      job: 'file-question',
+      status: 'failed',
+      kind: 'other',
+      session: process.env.CLAUDE_CODE_SESSION_ID,
+      startedAt: '2026-11-19T00:00:00.000Z',
+    })
+    await score(root, ['full', 'right'])
+    insertTurn(root, 'quota', 2, '2027-11-19T00:01:00.000Z')
+    rollUp(root)
+
+    expect(rootEvidence(root).failureKind).toBe('other')
+    expect(isUnscored(root)).toBe(false)
+    expect(isRoutingEvidence(rootEvidence(root))).toBe(true)
+  })
+
+  test('a scored root is relisted when its later turn is contract', async () => {
+    const root = addRun({
+      agent: 'codex',
+      job: 'file-question',
+      status: 'failed',
+      kind: 'other',
+      session: process.env.CLAUDE_CODE_SESSION_ID,
+      startedAt: '2026-11-19T00:00:00.000Z',
+    })
+    await score(root, ['full', 'right'])
+    insertTurn(root, 'contract', 2, '2027-11-19T00:01:00.000Z')
+    rollUp(root)
+
+    expect(rootEvidence(root).failureKind).toBe('contract')
+    expect(isUnscored(root)).toBe(true)
+  })
+
+  test('scoring uses a middle turn when the root and last turn are quota', async () => {
+    const root = addRun({
+      agent: 'codex',
+      job: 'file-question',
+      status: 'failed',
+      kind: 'quota',
+      session: process.env.CLAUDE_CODE_SESSION_ID,
+    })
+    insertTurn(root, 'other', 2)
+    insertTurn(root, 'quota', 3)
+    rollUp(root)
+
+    await score(root, ['full', 'right'])
+
+    expect(rootEvidence(root).failureKind).toBe('other')
+    expect(isRoutingEvidence(rootEvidence(root))).toBe(true)
+  })
+
+  test('an all-provider chain keeps quota and the existing score refusal', async () => {
+    const root = addRun({
+      agent: 'codex',
+      job: 'file-question',
+      status: 'failed',
+      kind: 'quota',
+      session: process.env.CLAUDE_CODE_SESSION_ID,
+    })
+    insertTurn(root, 'quota', 2)
+    rollUp(root)
+
+    await expect(score(root, ['full', 'right'])).rejects.toThrow(
+      "failure kind 'quota' is not evidence; void the run instead of scoring it",
+    )
+    seedScore(root, 'full', 'right')
+    rollUp(root)
+    expect(rootEvidence(root).failureKind).toBe('quota')
+    expect(isRoutingEvidence(rootEvidence(root))).toBe(false)
+  })
+
   test('score refuses lifecycle rows after preserving score --void', async () => {
     const id = insert('ok', 'landing-tree')
 

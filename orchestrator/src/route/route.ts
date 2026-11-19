@@ -8,6 +8,7 @@ import {
   unavailableReason,
 } from '../agent/model-host.ts'
 import { failingDefaultCanonEvals } from '../canon/canon-eval-status.ts'
+import { readCachedDisplayTimezone } from '../config/display-timezone-cache.ts'
 import { db } from '../database/db.ts'
 import { noEligibleAgentRefusal } from '../jobs/delegation.ts'
 import { JOBS, job, jobContextBudget, OUTPUT_RESERVE } from '../jobs/jobs.ts'
@@ -131,6 +132,10 @@ export const COOLDOWN_MIN = 60
 /** Only this many of an agent's most recent judgments describe its current ability. */
 export const EVIDENCE_WINDOW = 40
 
+function optionalCoolingPhrase(failure: CoolingFailure | undefined): string | null {
+  return failure ? coolingPhrase(failure) : null
+}
+
 function operationalRoutingRefusal(
   name: string,
   subscriptionPacingHold: SubscriptionPacingHold | undefined,
@@ -138,10 +143,11 @@ function operationalRoutingRefusal(
   cooling: string | null,
   failure: CoolingFailure | undefined,
   probeAgent: string | undefined,
+  displayTimezone: string | null,
 ): string | null {
   if (probeAgent === name) return null
   if (billingHold) return billingKeyHoldRefusal(billingHold)
-  if (cooling && failure) return coolingRefusal(name, failure, COOLDOWN_MIN)
+  if (cooling && failure) return coolingRefusal(name, failure, COOLDOWN_MIN, displayTimezone)
   return subscriptionPacingHold?.refusal ?? null
 }
 
@@ -253,6 +259,7 @@ function candidatePass(jobName: string, promptBytes = 0, options: CandidateOptio
     credentialFacts,
   } = options
   const j = job(jobName)
+  const displayTimezone = readCachedDisplayTimezone(process.env)
   const readCurrentRepository = memoizedRepositoryReader(repositoryReader)
   const { mcpListing, routeProject, requiredMcpConfig, requiredMcpProject } = routingPassFacts(
     requiredMcp,
@@ -289,7 +296,7 @@ function candidatePass(jobName: string, promptBytes = 0, options: CandidateOptio
     db(),
     agentList.map((agent) => agent.name),
   )
-  const coolingByAgent = decideCoolingFailures(terminalRuns, COOLDOWN_MIN)
+  const coolingByAgent = decideCoolingFailures(terminalRuns, COOLDOWN_MIN, Date.now())
   const billingHoldByAgent = new Map(
     decideBillingKeyHolds(agentList, terminalRuns).flatMap((hold) =>
       hold.agents.map((agent) => [agent, hold] as const),
@@ -337,16 +344,16 @@ function candidatePass(jobName: string, promptBytes = 0, options: CandidateOptio
     const a = AGENTS[name]!
     const currentModel = modelOverride ?? a.model
     const failure = coolingByAgent.get(name)
-    const cooling = failure ? coolingPhrase(failure) : null
     const billingHold = billingHoldByAgent.get(name)
     const subscriptionPacingHold = subscriptionPacingHoldByAgent.get(name)
     const operationalRefusal = operationalRoutingRefusal(
       name,
       subscriptionPacingHold,
       billingHold,
-      cooling,
+      optionalCoolingPhrase(failure),
       failure,
       coolingProbeAgent,
+      displayTimezone,
     )
     const window = currentAgentEvidence(evidenceRows, a, currentModel)
     const recent = aggregateEvidence(window.rows)
@@ -425,7 +432,7 @@ function candidatePass(jobName: string, promptBytes = 0, options: CandidateOptio
       free: a.billing === 'none' || a.billing === 'free',
       eligible,
       why,
-      cooling,
+      cooling: optionalCoolingPhrase(failure),
       billingHold: billingHold ?? null,
       billingHoldRefusal: billingHold ? billingKeyHoldRefusal(billingHold) : null,
       subscriptionPacingHold: subscriptionPacingHold ?? null,

@@ -13,6 +13,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { MCP_SERVER_NAME, PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { readMachineValue, readMachineValueWithSource } from '../../../shared/machine-config.ts'
+import { STATE_HOME_ENV } from '../../../shared/state-directory.ts'
 import { currentRecordWriteDecision } from '../record/record-write-authority.ts'
 import {
   applySetupActions as applySetupActionsWithService,
@@ -372,6 +373,7 @@ test('renames the injected process environment before the hosted record-write ga
   )
   const environment: Record<string, string | undefined> = {
     [legacyRecordApiUrl]: 'https://record.example.test',
+    [STATE_HOME_ENV]: process.env[STATE_HOME_ENV],
   }
   const results = await applySetupActions(
     [{ kind: 'migrate-environment' }],
@@ -397,7 +399,10 @@ test('renames the injected process environment before the hosted record-write ga
       message: '1 environment name renamed in-process',
     },
   ])
-  expect(environment).toEqual({ BOTTEGA_RECORD_API_URL: 'https://record.example.test' })
+  expect(environment).toEqual({
+    BOTTEGA_RECORD_API_URL: 'https://record.example.test',
+    [STATE_HOME_ENV]: process.env[STATE_HOME_ENV],
+  })
 })
 
 test('refuses conflicting running-process names before changing either one or exposing values', () => {

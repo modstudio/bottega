@@ -28,10 +28,13 @@ test('a finish failure terminalises and publishes a non-terminal run', async () 
   })
 
   expect(
-    db().query('SELECT status, failure_kind, error FROM run WHERE record_id=?').get(id),
+    db()
+      .query('SELECT status, failure_kind, own_failure_kind, error FROM run WHERE record_id=?')
+      .get(id),
   ).toEqual({
     status: 'failed',
     failure_kind: 'harness',
+    own_failure_kind: 'harness',
     error: 'finish failed: machine identity lookup broke',
   })
   expect(db().query("SELECT kind FROM outbox WHERE row_id=? AND kind='run'").get(id)).toEqual({

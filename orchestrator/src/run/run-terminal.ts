@@ -60,15 +60,18 @@ import {
 import type { RunCallUsage } from './run-call-usage.ts'
 import { type GooseContextProfile, writeRunContextProfile } from './run-context-profile.ts'
 import { markTerminalRecorded } from './run-finish-error.ts'
-import { rollUpRootAndEnqueue } from './run-liveness.ts'
 import { enqueueRunRecord } from './run-outbox.ts'
 import { errorTail, live, liveCheckpoints } from './run-process.ts'
 import { checkpointRoot, claimIdentity } from './run-resume-kind.ts'
+import { rollUpRootAndEnqueue } from './run-root-rollup.ts'
 import type { RenewTaskClaim } from './run-task-claim-renewal.ts'
 import { type BlockerRow, blockersToRecord } from './run-terminal-blockers.ts'
 import { finalizeTerminalChain } from './run-terminal-chain.ts'
 import { terminalTurnChanged } from './run-terminal-change.ts'
-import { terminalLifecycleWrite } from './run-terminal-lifecycle-store.ts'
+import {
+  terminalLifecycleColumnValues,
+  terminalLifecycleWrite,
+} from './run-terminal-lifecycle-store.ts'
 import { applyConfinementPrecedence, applyVendorTermination } from './run-terminal-precedence.ts'
 import {
   applyPrematureFinalFailure,
@@ -950,7 +953,7 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
           `UPDATE run SET latency_ms=?, exit_code=?, output_bytes=?, output_path=?, prompt_path=?,
                         vendor_tokens=?, model_calls=?, peak_call_tokens=?, quota_used_percent_start=?, quota_used_percent_end=?, quota_window_minutes=?, quota_resets_at=?, vendor_cost_usd=?, vendor_input_tokens=?, vendor_output_tokens=?,
                         vendor_estimated_cost_usd=?, vendor_cost_source=?, model=COALESCE(?, model),
-                        status=?, error=?, failure_kind=?,
+                        status=?, error=?, failure_kind=?, own_failure_kind=?,
                         host_wait_since=NULL,
                         vendor_session=COALESCE(?, vendor_session), pre_confinement=?, confinement=?,
                         review_provenance=?, provenance_status=?,
@@ -969,9 +972,7 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
           costUsd,
           ...runUsageColumnValues(runUsageColumns(vendorUsage, AGENTS[name]?.billing)),
           effectiveModel,
-          recordedLifecycle.status,
-          recordedLifecycle.error,
-          recordedLifecycle.failureKind,
+          ...terminalLifecycleColumnValues(recordedLifecycle),
           resolvedSession,
           preConfinement,
           confinementEvent ? JSON.stringify(confinementEvent) : null,

@@ -47,6 +47,20 @@ test('an ACP agent without loadSession fails without a second process', async ()
   expect(calls).toBe(1)
 })
 
+test('an ACP agent that fails at launch reports the launch error', async () => {
+  const result = await probeAgentResumes('acp', 'resume-token', async () => ({
+    status: 'failed',
+    output: "bwrap: Can't create file at /var/run/docker.sock",
+    sessionId: null,
+    loadSessionAdvertised: false,
+  }))
+
+  expect(result).toEqual({
+    ok: false,
+    output: "bwrap: Can't create file at /var/run/docker.sock",
+  })
+})
+
 test('an ACP agent that loads but loses the token fails', async () => {
   const result = await probeAgentResumes('acp', 'resume-token', async (input) =>
     input.session

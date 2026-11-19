@@ -4,6 +4,7 @@
 import { PLATFORM_NAME, PLATFORM_SLUG, WORKER_MCP_SERVER_NAME } from '../../../shared/brand.ts'
 import type { MachineLevel } from '../../../shared/machine-config.ts'
 import type { Project, ProjectSettings } from '../project/projects.ts'
+import { developerNodeNotice } from './developer-node.ts'
 import type { RepositoryFacts } from './repository-facts-types.ts'
 import type { SetupFacts } from './setup-facts.ts'
 import type { LegacyPathSymlink } from './setup-legacy-path.ts'
@@ -341,6 +342,12 @@ export function deriveKeyPrefix(name: string, occupied: ReadonlySet<string>): st
 
 function machineNotices(machine: SetupFacts): SetupNotice[] {
   const notices: SetupNotice[] = []
+  const nodeNotice = developerNodeNotice({
+    installationKind: machine.installationKind,
+    nodePath: machine.node?.path ?? null,
+    nodeVersion: machine.node?.version ?? null,
+  })
+  if (nodeNotice) notices.push({ ...nodeNotice, blocking: false })
   if (!machine.git.path)
     notices.push({ message: 'git is missing', fix: 'install git', blocking: true })
   if (!machine.gh.path)
