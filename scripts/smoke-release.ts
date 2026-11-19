@@ -132,7 +132,7 @@ printf '%s\\n' 'release sandbox smoke' > /tmp/probe-repository/README.md
 cp -R /workflow-tree /tmp/probe-repository/.agents
 git -C /tmp/probe-repository add README.md .agents
 git -C /tmp/probe-repository commit -m 'DEV-1123 release smoke fixture' >/dev/null
-printf '%s\\n' '{"keyPrefixes":["DEV"],"docs":{"protocol":"orch-docs"}}' > /tmp/release-smoke-settings.json
+printf '%s\\n' '{"keyPrefixes":["DEV"],"trunk":"main","docs":{"protocol":"orch-docs"}}' > /tmp/release-smoke-settings.json
 useradd --create-home --shell /bin/sh smoke
 mkdir -p /tmp/fake-bin /tmp/mcp-state /home/smoke/.codex
 cp /fake-harness /tmp/fake-bin/codex
