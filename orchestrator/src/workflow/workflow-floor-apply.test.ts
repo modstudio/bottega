@@ -1,11 +1,19 @@
 import { expect, test } from 'bun:test'
 import { newRecordId } from '../../../shared/record-id.ts'
+import { boardClaimList } from '../board/board-operations.ts'
 import { testDatabaseFixture } from '../database/test-database.fixture.ts'
 import { installTaskReader, type TaskReadPort } from './task-read-port.ts'
+import { composeWorkflowWithCursor } from './workflow-cursor.ts'
+import {
+  args,
+  context,
+  database,
+  selectAndNextWorkflowStep,
+} from './workflow-cursor-test.fixture.ts'
 import type { Floor } from './workflow-floor.ts'
 import { applyFloorDecision } from './workflow-floor-apply.ts'
 
-const database = testDatabaseFixture((d) => {
+const floorDatabase = testDatabaseFixture((d) => {
   d.query('INSERT INTO project (record_id,name,path,settings) VALUES (?,?,?,?)').run(
     newRecordId(),
     'fixture',
@@ -81,8 +89,35 @@ test('plan-task start floor selection does not create review debt without a revi
       },
     },
     true,
-    database(),
+    floorDatabase(),
   )
   expect(result.action).toBe('allow')
   expect(reviewOwedCalls).toBe(0)
+})
+
+test('a foreign keyed advance keeps the recorded taken-over claim behavior', async () => {
+  const d = database()
+  await composeWorkflowWithCursor('flow', 'fixture', 'default', args, context, d, {}, {})
+  d.query("UPDATE workflow_cursor SET enforcement='note-only'").run()
+
+  await selectAndNextWorkflowStep(
+    'flow',
+    'fixture',
+    'default',
+    args,
+    'closed by foreign session',
+    { ...context, session: 'foreign-session' },
+    d,
+  )
+
+  const claims = (
+    await boardClaimList('fixture', true, {
+      env: {},
+      database: d,
+      taskCursorAuthority: { mode: 'coverage-read', session: null },
+    })
+  ).claims
+  expect(claims).toHaveLength(2)
+  expect(claims[0]).toMatchObject({ holder: 'session-one', closeReason: 'taken-over' })
+  expect(claims[1]).toMatchObject({ holder: 'foreign-session', live: true })
 })
