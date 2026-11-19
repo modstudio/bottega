@@ -64,7 +64,7 @@ Resolution is by **containment**: a worktree under a registered checkout resolve
 
 **One guess survives, deliberately.** The metric still recovers a numbered clone from the path, because another machine checks out repositories that are the same repo under a different directory name and will never be registered here. It is a fallback for paths the register does not answer, not a second source of truth.
 
-The register seeds itself once from the run history. That is **data, not code**. A fresh checkout elsewhere has no history, seeds nothing, and starts with `bottega project add`.
+The register seeds itself once from the run history. That is **data, not code**. A fresh checkout elsewhere has no history and seeds nothing. On a signed-in machine, sign-in and `bottega machine config machine init` register each new hosted project checked out at `projects.clone_root`; anything else starts with `bottega project add`.
 
 **The stack is why this is not merely tidying.** Agents are not uniformly good, and a router keyed only on job type averages strength on one stack and weakness on another into a number true of neither. Stack rather than project so two apps on the same stack pool their evidence.
 

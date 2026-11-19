@@ -6,6 +6,7 @@ import { probeRecordSessionStore, writeRecordSessionToken } from '../../../share
 import { refusal } from '../../../shared/refusal.ts'
 import { automaticallyAdoptHostedBoard } from '../board/board-auto-adoption.ts'
 import { claimCurrentMachineKey } from '../config/config-service.ts'
+import { reportCheckedOutHostedProjects } from '../project/project-checkout-adoption.ts'
 import { adoptAllHostedProjectIdentities, formatProjectRelink } from '../project/project-relink.ts'
 import { RefusalError } from '../refusal-error.ts'
 import { activeSpaceInvariant } from './active-space-invariant.ts'
@@ -114,6 +115,7 @@ async function completeSignedInMachineSetup(presentation: Presentation): Promise
       `machine key claim failed: ${error instanceof Error ? error.message : String(error)}`,
     )
   }
+  await reportCheckedOutHostedProjects(presentation, `${PLATFORM_SLUG} record sign-in`)
   const adoptions = await adoptAllHostedProjectIdentities()
   for (const adoption of adoptions) {
     if (adoption.status === 'relinked') presentation.log(formatProjectRelink(adoption))

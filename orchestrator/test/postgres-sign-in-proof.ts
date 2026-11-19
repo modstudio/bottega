@@ -47,6 +47,9 @@ export function registerPostgresSignInProofs(input: {
       expect(output.filter((line) => line !== 'board now uses the hosted record')).toEqual([
         `signed in ${input.repair.email}`,
         expect.stringMatching(/^active record space user-\S+$/),
+        expect.stringMatching(
+          /^projects checked out under \S+ are registered once this machine is initialized: \S+ machine config machine init$/,
+        ),
         'no local task-flow or question history to upload',
         'local docs 0, revisions 0, scores 0, voids 0, deleted 0',
         'hosted docs 0, revisions 0, scores 0, voids 0',

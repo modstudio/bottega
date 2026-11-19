@@ -42,6 +42,7 @@ import {
   secretSetRemedy,
 } from '../config/secret-set-policy.ts'
 import { type pinnedConfigDestination, secretWriteTarget } from '../config/secret-write-target.ts'
+import { reportCheckedOutHostedProjects } from '../project/project-checkout-adoption.ts'
 import { isOrchWorkerProcess, type ProcessInventory } from '../run/run-process.ts'
 import { subscriptionMonthlyUsdKey } from '../run/run-subscription-cost.ts'
 import { registerMachineJoinCommands } from './machine-join-commands.ts'
@@ -322,15 +323,15 @@ function registerMachineCommands(config: Command): void {
         options.space,
         client,
       )
-      log(
-        await machineInit(
-          selected.spaceId,
-          options.label,
-          client,
-          process.env,
-          await requestedMachineNames(options),
-        ),
+      const keyId = await machineInit(
+        selected.spaceId,
+        options.label,
+        client,
+        process.env,
+        await requestedMachineNames(options),
       )
+      log(keyId)
+      await reportCheckedOutHostedProjects({ log }, `${PLATFORM_SLUG} machine config machine init`)
     })
   machine
     .command('show')
