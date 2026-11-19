@@ -35,26 +35,12 @@ test('checkout without Node gets the absent prerequisite notice', () => {
   })
 })
 
-test('checkout whose Node version probe fails gets a repair notice', () => {
+test('checkout whose Node version cannot be read gets a repair notice', () => {
   expect(
     developerNodeNotice({
       installationKind: 'checkout',
       nodePath: '/usr/local/bin/node',
       nodeVersion: null,
-    }),
-  ).toEqual({
-    message:
-      "node --version failed at /usr/local/bin/node; the gate's architecture checks need Node 24 or later",
-    fix: 'install Node 24 or later, or repair the node on PATH',
-  })
-})
-
-test('checkout whose Node version is unreadable gets a repair notice', () => {
-  expect(
-    developerNodeNotice({
-      installationKind: 'checkout',
-      nodePath: '/usr/local/bin/node',
-      nodeVersion: 'unknown',
     }),
   ).toEqual({
     message:

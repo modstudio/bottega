@@ -44,3 +44,8 @@ export function captureCliVersion(bin: string): CliVersionCapture {
     }
   }
 }
+
+/** Capture and parse a CLI version when the executable is present on PATH. */
+export function cliVersionAt(path: string | null): string | null {
+  return path === null ? null : capturedCliVersion(captureCliVersion(path))
+}

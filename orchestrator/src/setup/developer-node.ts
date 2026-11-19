@@ -29,18 +29,12 @@ export function developerNodeNotice({
   const repairFix = `install Node ${minimum} or later, or repair the node on PATH`
   if (nodeVersion === null) {
     return {
-      message: `node --version failed at ${nodePath}; the gate's architecture checks need Node ${minimum} or later`,
+      message: `could not read a Node version from ${nodePath}; the gate's architecture checks need Node ${minimum} or later`,
       fix: repairFix,
     }
   }
   const meetsMinimum = nodeVersionMeetsMinimum(nodeVersion)
   if (meetsMinimum === true) return null
-  if (meetsMinimum === null) {
-    return {
-      message: `could not read a Node version from ${nodePath}; the gate's architecture checks need Node ${minimum} or later`,
-      fix: repairFix,
-    }
-  }
   return {
     message: `Node ${nodeVersion} is older than Node ${minimum}, which the gate's architecture checks need`,
     fix: `install Node ${minimum} or later`,

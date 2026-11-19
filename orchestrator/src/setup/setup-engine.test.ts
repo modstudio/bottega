@@ -84,6 +84,34 @@ const machine = {
   },
 } as unknown as SetupFacts
 
+test('plans a non-blocking old-Node notice only for a checkout', () => {
+  const oldNode = { path: '/bin/node', version: '22.23.5' }
+  const checkout = proposeSetup(
+    { ...machine, installationKind: 'checkout', node: oldNode },
+    [],
+    [],
+    [],
+  )
+  expect(checkout.notices).toContainEqual({
+    message: "Node 22.23.5 is older than Node 24, which the gate's architecture checks need",
+    fix: 'install Node 24 or later',
+    blocking: false,
+  })
+
+  const distribution = proposeSetup(
+    {
+      ...machine,
+      installationKind: 'distribution',
+      node: oldNode,
+      os: { platform: 'linux', arch: 'x64', wsl: false },
+    },
+    [],
+    [],
+    [],
+  )
+  expect(distribution.notices).toEqual([])
+})
+
 test('does not plan a file keystore when the keychain is usable, unknown, or explicitly selected', () => {
   const keystore = (keychainUsable: boolean | null, source: SetupFacts['keystore']['source']) =>
     plannedKeystoreAction({
