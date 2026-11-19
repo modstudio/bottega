@@ -76,6 +76,13 @@ export const projectModules: ProjectModule[] = [
     './project-settings-patch.ts',
     './project-space-refusals.ts',
   ]),
+  module('orchestrator/src/project/project-registration.ts', [
+    'bun:sqlite',
+    '../database/db.ts',
+    '../database/project-register-store.ts',
+    '../project-space-cache.ts',
+    './projects.ts',
+  ]),
   module('orchestrator/src/project/project-add-decision.ts', [
     '../../../shared/brand.ts',
     '../../../shared/project-trunk.ts',

@@ -18,6 +18,36 @@ export type ReadonlyDocDeferrals = {
   readonly subjectDeferrals: ReadonlyMap<string, ReadonlySet<string>>
 }
 export type DocApplyOutcome = 'applied' | 'deferred' | 'deleted'
+export type WaitingOnUnregisteredProject = {
+  docId: string
+  subjectId: string
+  project: string
+}
+
+export function classifyRecordCacheSubjectDeferrals(
+  subjectDeferrals: ReadonlyMap<string, ReadonlySet<string>>,
+  hostedSubjectProjects: ReadonlyMap<string, string>,
+  projectSpaces: ReadonlyMap<string, string | null>,
+): {
+  waitingOnUnregistered: WaitingOnUnregisteredProject[]
+  refusing: SubjectDeferrals
+} {
+  const waitingOnUnregistered: WaitingOnUnregisteredProject[] = []
+  const refusing: SubjectDeferrals = new Map()
+  for (const [docId, subjectIds] of subjectDeferrals) {
+    for (const subjectId of subjectIds) {
+      const project = hostedSubjectProjects.get(subjectId)
+      if (project !== undefined && !projectSpaces.has(project)) {
+        waitingOnUnregistered.push({ docId, subjectId, project })
+        continue
+      }
+      const subjects = refusing.get(docId) ?? new Set<string>()
+      subjects.add(subjectId)
+      refusing.set(docId, subjects)
+    }
+  }
+  return { waitingOnUnregistered, refusing }
+}
 
 export function hasDocDeferrals(input: ReadonlyDocDeferrals): boolean {
   return input.unresolvedParents.size > 0 || input.subjectDeferrals.size > 0

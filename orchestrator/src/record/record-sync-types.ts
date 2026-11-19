@@ -7,6 +7,7 @@ import type { RunRecordBackfillResult } from '../run/run-outbox.ts'
 import type { LandingEvidenceBackfillResult } from './landing-outbox.ts'
 import type { QuarantinedOutboxRow } from './outbox-quarantine.ts'
 import type { RecordApiClient } from './record-api-client.ts'
+import type { WaitingOnUnregisteredProject } from './record-cache-doc-deferrals.ts'
 import type { ProjectRegisterPullResult } from './record-cache-projects.ts'
 import type { RoutingPoolPullResult } from './record-routing-pool.ts'
 
@@ -47,6 +48,7 @@ export type RecordSyncResult = {
   skippedDocs?: number
   skippedSubjects?: number
   purgeWarning?: string
+  waitingOnUnregistered?: WaitingOnUnregisteredProject[]
   quarantined: QuarantinedOutboxRow[]
   blocked: BlockedOutboxRow[]
   machineNameRefusal?: string

@@ -13,7 +13,6 @@ import { listLenses, selectProjectProfile } from '../lens/lenses.ts'
 import { credentialLinesFromRead } from '../mcp/mcp-credential-literal.ts'
 import { readMcpConfigResult } from '../mcp/mcp-probe.ts'
 import { effectiveProjectSpace } from '../project-space.ts'
-import { rememberProjectSpace } from '../project-space-cache.ts'
 import {
   pullRecordCataloguesForSpace,
   RecordCataloguePullError,
@@ -33,6 +32,7 @@ import {
 } from './project-hosted-write.ts'
 import { listedProjectJson, projectProblems } from './project-list-json.ts'
 import { fillProjectRecordIds } from './project-record-identity.ts'
+import { registerLocalProject } from './project-registration.ts'
 import { formatProjectRelink, relinkProjectByName } from './project-relink.ts'
 import { persistLocalProjectSet } from './project-rename.ts'
 import { projectSetSettingsPatch } from './project-set-space.ts'
@@ -318,8 +318,7 @@ export async function addProject(
   const wasRetired = Boolean(retiredProjectByName(input.name))
   const recordId =
     decision.kind === 'adopt' ? decision.recordId : await writeHostedProject(candidate)
-  upsertProject({ ...candidate, recordId })
-  if (targetSpace) rememberProjectSpace(db(), input.name, targetSpace.id)
+  registerLocalProject({ ...candidate, recordId }, targetSpace?.id ?? null)
   const project = projectByName(input.name)
   if (!project) throw new Error(`project ${input.name} was not registered`)
   return {

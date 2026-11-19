@@ -12,15 +12,28 @@ import type { RecordChangePage } from './record-api-client-changes.ts'
 import type { RecordIdentity } from './record-auth.ts'
 import { readCursor, writeCursor } from './record-cache-cursor.ts'
 import {
+  classifyDeferredDocFallbacks,
+  type DeferredDocFallbacks,
+  rememberKeysetDocDeferrals,
+} from './record-cache-deferred-fallbacks.ts'
+import {
   type DocApplyOutcome,
   type DocDeferrals,
   type DocPullResult,
   hasDocDeferrals,
-  type ReadonlyDocDeferrals,
   recordCacheDocDeferralError,
   recordCacheDocReferencedSubjects,
   type SubjectDeferrals,
+  type WaitingOnUnregisteredProject,
 } from './record-cache-doc-deferrals.ts'
+import {
+  pendingRecordCacheFallbacks,
+  type RecordCacheFallbackFamily,
+  recordCacheFallbackFamily,
+  recordCacheFallbackKey,
+  recordCacheFallbackSpace,
+  writePendingRecordCacheFallbacks,
+} from './record-cache-fallbacks.ts'
 import {
   applyLensCatalogueRow,
   deleteLensCatalogueRow,
@@ -36,6 +49,10 @@ import {
   pullPortCatalogue,
   purgePortCatalogueSpace,
 } from './record-cache-port.ts'
+import {
+  rememberRecordCacheProjectSpaces,
+  rewindChangedRecordCacheProjectSpaces,
+} from './record-cache-project-spaces.ts'
 import { type ProjectRegisterPullResult, pullProjectRegister } from './record-cache-projects.ts'
 import {
   applyWorkflowCatalogueRow,
@@ -63,7 +80,6 @@ import { RECORD_WORKFLOW_TABLES, type RecordWorkflowTable } from './record-workf
 const CURSOR = 'record_change_cursor'
 const SPACES = 'record_change_spaces'
 const PULL_SPACES = 'record_change_pull_spaces'
-const FALLBACKS = 'record_change_fallbacks'
 
 const emptyProject = (): ProjectRegisterPullResult => ({
   updated: 0,
@@ -90,12 +106,19 @@ export const emptyRecordCachePullResult = () => ({
   purgeKept: 0,
   purgeWarning: null as string | null,
   reset: false,
+  waitingOnUnregistered: [] as WaitingOnUnregisteredProject[],
 })
 export type RecordCachePullResult = ReturnType<typeof emptyRecordCachePullResult>
 
 export type KeysetResult = Omit<
   RecordCachePullResult,
-  'changes' | 'orphans' | 'deletesBlocked' | 'purgeKept' | 'purgeWarning' | 'reset'
+  | 'changes'
+  | 'orphans'
+  | 'deletesBlocked'
+  | 'purgeKept'
+  | 'purgeWarning'
+  | 'reset'
+  | 'waitingOnUnregistered'
 >
 type Dependencies = {
   cacheSpaces(
@@ -133,23 +156,13 @@ type Dependencies = {
 }
 type Change = RecordChangePage['changes'][number]
 type UpsertChange = Extract<Change, { op: 'upsert' }>
-type FallbackFamily = 'doc' | 'subject' | 'lens' | 'workflow' | 'port'
-const FALLBACK_FAMILY_ORDER: Record<FallbackFamily, number> = {
+const FALLBACK_FAMILY_ORDER: Record<RecordCacheFallbackFamily, number> = {
   subject: 0,
   doc: 1,
   lens: 2,
   workflow: 3,
   port: 4,
 }
-
-const pendingFallbacks = (local: Database): Set<string> => new Set(storedSpaces(local, FALLBACKS))
-
-const writePendingFallbacks = (local: Database, values: ReadonlySet<string>): void =>
-  writeCursor(local, FALLBACKS, JSON.stringify([...values].sort()))
-
-const fallbackSpace = (value: string): string => value.slice(value.indexOf(':') + 1)
-const fallbackFamily = (value: string): FallbackFamily =>
-  value.slice(0, value.indexOf(':')) as FallbackFamily
 
 const storedSpaces = (local: Database, key: string): string[] => {
   const value = readCursor(local, key)
@@ -189,9 +202,10 @@ function purgeLostSpaces(local: Database, spaces: readonly string[], deps: Depen
       kept += purgePortCatalogueSpace(local, space)
       kept += purgeRoutingPoolSpace(local, space)
     }
-    const pending = pendingFallbacks(local)
-    for (const value of pending) if (spaces.includes(fallbackSpace(value))) pending.delete(value)
-    writePendingFallbacks(local, pending)
+    const pending = pendingRecordCacheFallbacks(local)
+    for (const value of pending)
+      if (spaces.includes(recordCacheFallbackSpace(value))) pending.delete(value)
+    writePendingRecordCacheFallbacks(local, pending)
     return kept
   }, local)
 }
@@ -225,7 +239,7 @@ const workflowTable = (table: string): table is RecordWorkflowTable =>
 const portTable = (table: string): table is RecordPortTable =>
   (RECORD_PORT_TABLES as readonly string[]).includes(table)
 
-function orphanFamily(local: Database, change: Change): FallbackFamily | null {
+function orphanFamily(local: Database, change: Change): RecordCacheFallbackFamily | null {
   if (change.op === 'delete' || !change.row || typeof change.row !== 'object') return null
   const row = change.row as Record<string, unknown>
   const direct = directOrphanFamily(local, change.table, row)
@@ -246,7 +260,7 @@ function directOrphanFamily(
   local: Database,
   table: string,
   row: Record<string, unknown>,
-): FallbackFamily | null {
+): RecordCacheFallbackFamily | null {
   if (table === 'subject' && subjectOrphan(local, row)) return 'subject'
   if (table === 'doc' && docOrphan(local, row)) return 'doc'
   return null
@@ -353,7 +367,7 @@ function upsertChange(
     result.subjects++
   } else if (change.table === 'doc') {
     const outcome = deps.applyDoc(local, row, new Map(), new Map(), change.space)
-    if (outcome === 'deferred') fallbacks.add(`doc:${change.space}`)
+    if (outcome === 'deferred') fallbacks.add(recordCacheFallbackKey('doc', change.space))
     else result.docs++
   } else if (lensTable(change.table)) {
     applyLensCatalogueRow(local, change.table, row)
@@ -440,7 +454,7 @@ function applyFeedUpsert(
 ): void {
   const orphan = orphanFamily(local, change)
   if (orphan) {
-    fallbacks.add(`${orphan}:${change.space}`)
+    fallbacks.add(recordCacheFallbackKey(orphan, change.space))
     orphans.push(change)
     return
   }
@@ -490,9 +504,9 @@ function applyPage(
       if (!deleted || !pending.length) break
     }
     result.deletesBlocked += pending.length
-    const scheduled = pendingFallbacks(local)
+    const scheduled = pendingRecordCacheFallbacks(local)
     for (const value of fallbacks) scheduled.add(value)
-    writePendingFallbacks(local, scheduled)
+    writePendingRecordCacheFallbacks(local, scheduled)
     writeCursor(local, CURSOR, page.cursor)
     return true
   }, local)
@@ -534,42 +548,32 @@ function addResult(target: RecordCachePullResult, value: Partial<RecordCachePull
   }
   if (value.projectRegister) target.projectRegister = value.projectRegister
   if (value.purgeWarning) target.purgeWarning = value.purgeWarning
-}
-
-function collectDocDeferrals(
-  pulled: ReadonlyDocDeferrals,
-  unresolvedParents: Map<string, string>,
-  subjectDeferrals: SubjectDeferrals,
-): void {
-  for (const [child, parent] of pulled.unresolvedParents) unresolvedParents.set(child, parent)
-  for (const [doc, subjects] of pulled.subjectDeferrals)
-    subjectDeferrals.set(doc, new Set(subjects))
-}
-
-type DeferredDocFallbacks = Map<string, DocDeferrals>
-
-function combinedDocDeferrals(deferred: DeferredDocFallbacks) {
-  const unresolvedParents = new Map<string, string>()
-  const subjectDeferrals: SubjectDeferrals = new Map()
-  for (const value of deferred.values())
-    collectDocDeferrals(value, unresolvedParents, subjectDeferrals)
-  return { unresolvedParents, subjectDeferrals }
-}
-
-function rememberKeysetDeferrals(
-  deferred: DeferredDocFallbacks,
-  spaces: readonly string[],
-  pulled: DocDeferrals,
-  local: Database,
-): void {
-  if (!hasDocDeferrals(pulled)) return
-  const pending = pendingFallbacks(local)
-  for (const space of spaces) {
-    const key = `doc:${space}`
-    deferred.set(key, pulled)
-    pending.add(key)
+  if (value.waitingOnUnregistered) {
+    const known = new Set(
+      target.waitingOnUnregistered.map((row) => `${row.docId}\0${row.subjectId}\0${row.project}`),
+    )
+    for (const row of value.waitingOnUnregistered) {
+      const key = `${row.docId}\0${row.subjectId}\0${row.project}`
+      if (!known.has(key)) target.waitingOnUnregistered.push(row)
+      known.add(key)
+    }
   }
-  writePendingFallbacks(local, pending)
+}
+
+async function settleDocDeferrals(
+  deferred: DeferredDocFallbacks,
+  client: Pick<RecordApiClient, 'listProjectSubjects'>,
+  projectSpaces: ReadonlyMap<string, string | null>,
+  result: RecordCachePullResult,
+): Promise<void> {
+  const classified = await classifyDeferredDocFallbacks(deferred, client, projectSpaces)
+  addResult(result, { waitingOnUnregistered: classified.waitingOnUnregistered })
+  const error = recordCacheDocDeferralError(classified.deferrals)
+  if (error && classified.listingError)
+    throw new Error(
+      `${error.message}; hosted subject listing failed: ${classified.listingError.message}`,
+    )
+  if (error) throw error
 }
 
 async function runFallbacks(
@@ -583,11 +587,11 @@ async function runFallbacks(
   const cache = deps.cacheSpaces(identity, local)
   for (const value of [...fallbacks].sort(
     (a, b) =>
-      FALLBACK_FAMILY_ORDER[fallbackFamily(a)] - FALLBACK_FAMILY_ORDER[fallbackFamily(b)] ||
-      a.localeCompare(b),
+      FALLBACK_FAMILY_ORDER[recordCacheFallbackFamily(a)] -
+        FALLBACK_FAMILY_ORDER[recordCacheFallbackFamily(b)] || a.localeCompare(b),
   )) {
-    const family = fallbackFamily(value)
-    const space = fallbackSpace(value)
+    const family = recordCacheFallbackFamily(value)
+    const space = recordCacheFallbackSpace(value)
     let completed = true
     if (family === 'doc') {
       const pulled = await deps.pullDocs(local, identity, [space], cache.projectSpaces)
@@ -612,9 +616,9 @@ async function runFallbacks(
     }
     if (completed)
       writeTransaction(() => {
-        const pending = pendingFallbacks(local)
+        const pending = pendingRecordCacheFallbacks(local)
         pending.delete(value)
-        writePendingFallbacks(local, pending)
+        writePendingRecordCacheFallbacks(local, pending)
       }, local)
   }
   return result
@@ -630,7 +634,7 @@ async function resetAt(
   deferred: DeferredDocFallbacks,
 ) {
   const pulled = await deps.pullKeysets(local, identity, spaces)
-  rememberKeysetDeferrals(deferred, spaces, pulled, local)
+  rememberKeysetDocDeferrals(deferred, spaces, pulled, local)
   writeTransaction(() => {
     writeCursor(local, CURSOR, cursor)
     writeCursor(local, SPACES, JSON.stringify(remembered))
@@ -715,8 +719,12 @@ async function pullFeedPages(input: {
         ),
       )
       input.result.reset = true
-      const error = recordCacheDocDeferralError(combinedDocDeferrals(input.deferred))
-      if (error) throw error
+      await settleDocDeferrals(
+        input.deferred,
+        input.client,
+        input.cache.projectSpaces,
+        input.result,
+      )
       return input.result
     }
     const page = applyPage(input.local, cursor, response, input.deps, {
@@ -732,7 +740,7 @@ async function pullFeedPages(input: {
       input.result,
       await runFallbacks(
         input.local,
-        pendingFallbacks(input.local),
+        pendingRecordCacheFallbacks(input.local),
         input.identity,
         input.deps,
         input.deferred,
@@ -749,8 +757,12 @@ async function pullFeedPages(input: {
       )
     cursor = response.cursor
     if (!response.changes.length) {
-      const error = recordCacheDocDeferralError(combinedDocDeferrals(input.deferred))
-      if (error) throw error
+      await settleDocDeferrals(
+        input.deferred,
+        input.client,
+        input.cache.projectSpaces,
+        input.result,
+      )
       return input.result
     }
   }
@@ -768,6 +780,11 @@ export async function pullRecordCacheFeed(
   if ('stopped' in prepared) return prepared.stopped
   const { identity, spaces, remembered, previousPull, lost, purgeWarning } = prepared
   const cache = deps.cacheSpaces(identity, local)
+  rewindChangedRecordCacheProjectSpaces(local, cache.projectSpaces, new Set(previousPull))
+  const complete = (value: RecordCachePullResult): RecordCachePullResult => {
+    rememberRecordCacheProjectSpaces(local, cache.projectSpaces)
+    return value
+  }
   const result = emptyRecordCachePullResult()
   const deferred: DeferredDocFallbacks = new Map()
   result.purgeWarning = purgeWarning
@@ -785,9 +802,8 @@ export async function pullRecordCacheFeed(
         await resetAt(local, identity, spaces, nextRemembered, first.reset.cursor, deps, deferred),
       )
       result.reset = true
-      const error = recordCacheDocDeferralError(combinedDocDeferrals(deferred))
-      if (error) throw error
-      return result
+      await settleDocDeferrals(deferred, client, cache.projectSpaces, result)
+      return complete(result)
     }
     throw new Error('record change feed did not provide a reset cursor for an uninitialized cache')
   }
@@ -795,23 +811,28 @@ export async function pullRecordCacheFeed(
   if (joined.length) {
     const pulled = await deps.pullKeysets(local, identity, joined)
     addResult(result, pulled.result)
-    rememberKeysetDeferrals(deferred, joined, pulled, local)
+    rememberKeysetDocDeferrals(deferred, joined, pulled, local)
   }
-  addResult(result, await runFallbacks(local, pendingFallbacks(local), identity, deps, deferred))
+  addResult(
+    result,
+    await runFallbacks(local, pendingRecordCacheFallbacks(local), identity, deps, deferred),
+  )
   writeTransaction(() => {
     writeCursor(local, SPACES, JSON.stringify(nextRemembered))
     writeCursor(local, PULL_SPACES, JSON.stringify(spaces))
   }, local)
-  return pullFeedPages({
-    local,
-    cursor,
-    client,
-    deps,
-    identity,
-    spaces,
-    nextRemembered,
-    cache,
-    result,
-    deferred,
-  })
+  return complete(
+    await pullFeedPages({
+      local,
+      cursor,
+      client,
+      deps,
+      identity,
+      spaces,
+      nextRemembered,
+      cache,
+      result,
+      deferred,
+    }),
+  )
 }

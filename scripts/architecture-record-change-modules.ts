@@ -11,6 +11,22 @@ const module = (file: string, allowed: string[]): ArchitectureModule => ({
 })
 
 export const recordChangeModules = [
+  module('orchestrator/src/record/record-cache-fallbacks.ts', [
+    'bun:sqlite',
+    './record-cache-cursor.ts',
+  ]),
+  module('orchestrator/src/record/record-cache-project-spaces.ts', [
+    'bun:sqlite',
+    '../database/db.ts',
+    './record-cache-cursor.ts',
+    './record-cache-fallbacks.ts',
+  ]),
+  module('orchestrator/src/record/record-cache-deferred-fallbacks.ts', [
+    'bun:sqlite',
+    './record-api-client.ts',
+    './record-cache-doc-deferrals.ts',
+    './record-cache-fallbacks.ts',
+  ]),
   module('orchestrator/src/record/record-board-successor.ts', [
     './record-board-contract.ts',
     './record-board-tx.ts',
@@ -33,7 +49,10 @@ export const recordChangeModules = [
     './record-cache-lens.ts',
     './record-cache-cursor.ts',
     './record-cache-doc-deferrals.ts',
+    './record-cache-deferred-fallbacks.ts',
+    './record-cache-fallbacks.ts',
     './record-cache-ownership.ts',
+    './record-cache-project-spaces.ts',
     './record-cache-port.ts',
     './record-cache-projects.ts',
     './record-cache-workflow.ts',

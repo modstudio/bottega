@@ -26,6 +26,7 @@ export const recordMachineBoundaries: ImportBoundary[] = [
     [
       'node:os',
       '../../../shared/machine-config.ts',
+      '../../../shared/refusal.ts',
       '../../../shared/machine-label.ts',
       './machine-name.ts',
     ],
@@ -745,6 +746,7 @@ export const recordSyncCommandBoundaries: ImportBoundary[] = [
     [
       '../../../shared/brand.ts',
       '../../../shared/machine-config.ts',
+      '../../../shared/refusal.ts',
       '../board/board-auto-adoption.ts',
       './record-sync.ts',
       './record-tunnel-error.ts',

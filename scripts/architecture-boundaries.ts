@@ -685,6 +685,7 @@ export const importBoundaries: ImportBoundary[] = [
       './project-list-json.ts',
       './project-relink.ts',
       './project-rename.ts',
+      './project-registration.ts',
       './project-set-space.ts',
       './project-settings-patch.ts',
       './projects.ts',

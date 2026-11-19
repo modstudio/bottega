@@ -5,8 +5,11 @@ import {
   installRecordApiClient,
 } from '../../test/fixtures/record-api.ts'
 import { db } from '../database/db.ts'
+import { registerLocalProject } from '../project/project-registration.ts'
 import { upsertProject } from '../project/projects.ts'
 import { pullRecordCache } from './record-cache.ts'
+import { writeCursor } from './record-cache-cursor.ts'
+import { classifyRecordCacheSubjectDeferrals } from './record-cache-doc-deferrals.ts'
 import { encodeRecordCursor } from './record-cursor.ts'
 
 const UUID_V7 = /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
@@ -27,9 +30,6 @@ function ownershipTransitionFixture() {
   const workflowId = newRecordId()
   const portId = newRecordId()
   const activeAt = '2026-10-08T12:00:00.000Z'
-  const mappedAt = '2026-10-08T12:01:00.000Z'
-  let mapped = false
-  let registered = false
   let changes = 0
   const doc = (id: string, slug: string, relatedSubjects: Array<{ id: string }> = []) => ({
     id,
@@ -46,7 +46,7 @@ function ownershipTransitionFixture() {
     relatedSubjects,
     sourceFiles: [],
     createdAt: activeAt,
-    updatedAt: mapped ? mappedAt : activeAt,
+    updatedAt: activeAt,
     deletedAt: null,
   })
   const client = createMemoryRecordApiClient()
@@ -64,18 +64,7 @@ function ownershipTransitionFixture() {
       ? { reset: { cursor: 'ownership-reset', tables: [] } }
       : { changes: [], cursor: 'ownership-reset', lag: 0, more: false }
   client.listProjectSubjects = async (_query, destination) => {
-    const expectedSpace = mapped ? 'space-alpha' : 'space-active'
-    if (destination?.destinationSpaceId !== expectedSpace) return { items: [], nextCursor: null }
-    if (!registered) {
-      upsertProject({
-        recordId: projectRecordId,
-        name: projectName,
-        path: '/w/ownership-transition',
-        settings: {},
-      })
-      registered = true
-    }
-    const updatedAt = mapped ? mappedAt : activeAt
+    if (destination?.destinationSpaceId !== 'space-active') return { items: [], nextCursor: null }
     return {
       items: [
         {
@@ -88,15 +77,14 @@ function ownershipTransitionFixture() {
           state: 'active' as const,
           retiredAt: null,
           createdAt: activeAt,
-          updatedAt,
+          updatedAt: activeAt,
         },
       ],
       nextCursor: null,
     }
   }
   client.listDocs = async (_query, destination) => {
-    const expectedSpace = mapped ? 'space-alpha' : 'space-active'
-    return destination?.destinationSpaceId === expectedSpace
+    return destination?.destinationSpaceId === 'space-active'
       ? {
           items: [
             doc(referencedDocId, 'references-subject', [{ id: subjectId }]),
@@ -107,7 +95,7 @@ function ownershipTransitionFixture() {
       : { items: [], nextCursor: null }
   }
   client.listLensCatalogue = async (table, _query, destination) =>
-    !mapped && table === 'lens' && destination?.destinationSpaceId === 'space-active'
+    table === 'lens' && destination?.destinationSpaceId === 'space-active'
       ? {
           items: [
             {
@@ -130,7 +118,7 @@ function ownershipTransitionFixture() {
       : { items: [], nextCursor: null }
   client.listWorkflowCatalogue = async (table, _query, destination) => ({
     items:
-      !mapped && table === 'workflow' && destination?.destinationSpaceId === 'space-active'
+      table === 'workflow' && destination?.destinationSpaceId === 'space-active'
         ? [
             {
               id: workflowId,
@@ -146,7 +134,7 @@ function ownershipTransitionFixture() {
   })
   client.listPortCatalogue = async (table, _query, destination) => ({
     items:
-      !mapped && table === 'port_doctrine' && destination?.destinationSpaceId === 'space-active'
+      table === 'port_doctrine' && destination?.destinationSpaceId === 'space-active'
         ? [
             {
               id: portId,
@@ -173,13 +161,27 @@ function ownershipTransitionFixture() {
     lensId,
     workflowId,
     portId,
-    remap() {
-      mapped = true
+    register() {
+      registerLocalProject(
+        {
+          recordId: projectRecordId,
+          name: projectName,
+          path: '/w/ownership-transition',
+          stack: null,
+          canon: false,
+          retiredAt: null,
+          settings: { space: 'active' },
+        },
+        'space-active',
+        db(),
+      )
+    },
+    directWrite() {
       upsertProject({
         recordId: projectRecordId,
         name: projectName,
         path: '/w/ownership-transition',
-        settings: { space: 'alpha' },
+        settings: { space: 'active' },
       })
     },
   }
@@ -188,9 +190,15 @@ function ownershipTransitionFixture() {
 async function expectUnregisteredProjectDeferral(
   fixture: ReturnType<typeof ownershipTransitionFixture>,
 ): Promise<void> {
-  await expect(pullRecordCache(db())).rejects.toThrow(
-    `record cache deferred document ${fixture.referencedDocId}: subject ${fixture.subjectId} is not local`,
-  )
+  expect(await pullRecordCache(db())).toMatchObject({
+    waitingOnUnregistered: [
+      {
+        docId: fixture.referencedDocId,
+        subjectId: fixture.subjectId,
+        project: fixture.projectName,
+      },
+    ],
+  })
   expect(db().query('SELECT 1 FROM subject WHERE id=?').get(fixture.subjectId)).toBeNull()
   expect(db().query('SELECT 1 FROM doc WHERE record_id=?').get(fixture.referencedDocId)).toBeNull()
   expect(db().query('SELECT 1 FROM doc WHERE record_id=?').get(fixture.validDocId)).not.toBeNull()
@@ -215,27 +223,100 @@ test('an unregistered project defers its referencing doc after later keyset fami
   ).toBeNull()
 })
 
-test('a later project remap applies subjects and docs after the initial refusal', async () => {
+test('registration applies subjects and docs after the initial waiting pull', async () => {
   const fixture = ownershipTransitionFixture()
   await expectUnregisteredProjectDeferral(fixture)
-  fixture.remap()
+  fixture.register()
 
   expect(await pullRecordCache(db())).toMatchObject({ subjects: 1, docs: 2 })
   expect(db().query('SELECT space_id FROM subject WHERE id=?').get(fixture.subjectId)).toEqual({
-    space_id: 'space-alpha',
+    space_id: 'space-active',
   })
   expect(
     db().query('SELECT space_id FROM doc WHERE record_id=?').get(fixture.referencedDocId),
-  ).toEqual({ space_id: 'space-alpha' })
+  ).toEqual({ space_id: 'space-active' })
   expect(db().query('SELECT space_id FROM doc WHERE record_id=?').get(fixture.validDocId)).toEqual({
-    space_id: 'space-alpha',
+    space_id: 'space-active',
   })
   expect(
-    db().query("SELECT 1 FROM schema_meta WHERE key='record_subjects_cursor:space-alpha'").get(),
+    db().query("SELECT 1 FROM schema_meta WHERE key='record_subjects_cursor:space-active'").get(),
   ).not.toBeNull()
   expect(
-    db().query("SELECT 1 FROM schema_meta WHERE key='record_docs_cursor:space-alpha'").get(),
+    db().query("SELECT 1 FROM schema_meta WHERE key='record_docs_cursor:space-active'").get(),
   ).not.toBeNull()
+})
+
+test('registration heals skipped subjects when upgrading without a project map snapshot', async () => {
+  const fixture = ownershipTransitionFixture()
+  await expectUnregisteredProjectDeferral(fixture)
+  db().query("DELETE FROM schema_meta WHERE key='record_cache_project_spaces'").run()
+  fixture.register()
+
+  expect(await pullRecordCache(db())).toMatchObject({ subjects: 1, docs: 2 })
+  expect(db().query('SELECT 1 FROM subject WHERE id=?').get(fixture.subjectId)).not.toBeNull()
+  expect(
+    db().query('SELECT 1 FROM doc WHERE record_id=?').get(fixture.referencedDocId),
+  ).not.toBeNull()
+})
+
+test('a project mapped by a non-registration writer applies subjects and docs on the next pull', async () => {
+  const fixture = ownershipTransitionFixture()
+  await expectUnregisteredProjectDeferral(fixture)
+  fixture.directWrite()
+
+  expect(await pullRecordCache(db())).toMatchObject({ subjects: 1, docs: 2 })
+  expect(db().query('SELECT 1 FROM subject WHERE id=?').get(fixture.subjectId)).not.toBeNull()
+  expect(
+    db().query('SELECT 1 FROM doc WHERE record_id=?').get(fixture.referencedDocId),
+  ).not.toBeNull()
+})
+
+test('a first pull with no persisted project map does not clear keyset cursors', async () => {
+  const fixture = ownershipTransitionFixture()
+  fixture.directWrite()
+  const existingCursor = JSON.stringify({
+    at: '2026-10-01T12:00:00.000Z',
+    id: newRecordId(),
+  })
+  writeCursor(db(), 'record_subjects_cursor:space-active', existingCursor)
+  writeCursor(db(), 'record_docs_cursor:space-active', existingCursor)
+  db().exec(`CREATE TEMP TRIGGER reject_first_pull_rewind
+    BEFORE DELETE ON schema_meta
+    WHEN OLD.key IN ('record_subjects_cursor:space-active', 'record_docs_cursor:space-active')
+    BEGIN SELECT RAISE(FAIL, 'first pull rewound a cursor'); END`)
+
+  await expect(pullRecordCache(db())).resolves.toMatchObject({ subjects: 1, docs: 2 })
+  expect(
+    db().query("SELECT value FROM schema_meta WHERE key='record_cache_project_spaces'").get(),
+  ).toEqual({ value: JSON.stringify([[fixture.projectName, 'space-active']]) })
+})
+
+test('classifies only hosted subjects of absent projects as waiting', () => {
+  const waitingSubject = newRecordId()
+  const registeredSubject = newRecordId()
+  const unknownSubject = newRecordId()
+  const classified = classifyRecordCacheSubjectDeferrals(
+    new Map([
+      ['waiting-doc', new Set([waitingSubject])],
+      ['registered-doc', new Set([registeredSubject])],
+      ['unknown-doc', new Set([unknownSubject])],
+    ]),
+    new Map([
+      [waitingSubject, 'waiting-project'],
+      [registeredSubject, 'registered-project'],
+    ]),
+    new Map([['registered-project', 'space-active']]),
+  )
+
+  expect(classified.waitingOnUnregistered).toEqual([
+    { docId: 'waiting-doc', subjectId: waitingSubject, project: 'waiting-project' },
+  ])
+  expect(classified.refusing).toEqual(
+    new Map([
+      ['registered-doc', new Set([registeredSubject])],
+      ['unknown-doc', new Set([unknownSubject])],
+    ]),
+  )
 })
 
 test('replaces pulled related subjects and refuses subjects that are not local', async () => {
@@ -371,10 +452,17 @@ test('defers a document with a non-local subject until after later keyset famili
           endCursor: encodeRecordCursor({ at: updatedAt, id: lensId }),
         }
       : { items: [], nextCursor: null }
+  let subjectListings = 0
+  client.listProjectSubjects = async () => {
+    if (subjectListings++) throw new Error('hosted subject listing unavailable')
+    return { items: [], nextCursor: null }
+  }
   installRecordApiClient(client)
 
   await expect(pullRecordCache(db())).rejects.toThrow(
-    new RegExp(`${deferredDocId}.*${missingSubjectId}`),
+    new RegExp(
+      `${deferredDocId}[\\s\\S]*${missingSubjectId}[\\s\\S]*hosted subject listing unavailable`,
+    ),
   )
   expect(db().query('SELECT 1 FROM doc WHERE record_id=?').get(deferredDocId)).toBeNull()
   expect(db().query('SELECT 1 FROM doc WHERE record_id=?').get(validDocId)).not.toBeNull()

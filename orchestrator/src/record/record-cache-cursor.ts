@@ -3,6 +3,12 @@
 import type { Database } from 'bun:sqlite'
 import { parseStoredRecordCursor, type RecordCursor } from './record-cursor.ts'
 
+const DOCS_CURSOR = 'record_docs_cursor'
+const SUBJECTS_CURSOR = 'record_subjects_cursor'
+
+export const docsCursorKey = (spaceId: string): string => `${DOCS_CURSOR}:${spaceId}`
+export const subjectsCursorKey = (spaceId: string): string => `${SUBJECTS_CURSOR}:${spaceId}`
+
 export function readCursor(local: Database, key: string): string | undefined {
   return local
     .query<{ value: string }, [string]>('SELECT value FROM schema_meta WHERE key=?')
@@ -15,6 +21,10 @@ export function writeCursor(local: Database, key: string, value: string): void {
       'INSERT INTO schema_meta (key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value',
     )
     .run(key, value)
+}
+
+export function deleteCursor(local: Database, key: string): void {
+  local.query('DELETE FROM schema_meta WHERE key=?').run(key)
 }
 
 export function readRecordCursor(

@@ -11,6 +11,7 @@ import {
   readOnlyDeferredLines,
   routingPoolLine,
   syncCommand,
+  waitingOnUnregisteredLines,
 } from './record-sync-command.ts'
 
 test('sync reports each row held by destination routing', async () => {
@@ -247,36 +248,59 @@ test('sync presentation reports released run payloads skipped by backfill', asyn
 
 test('sync presentation reports only nonzero record-cache misses and its purge warning', async () => {
   const output: string[] = []
-  await syncCommand(
-    { backfill: false },
-    { log: (line) => output.push(line) },
-    {
-      sync: async () =>
-        ({
-          configured: true,
-          pushed: 0,
-          failed: 0,
-          pending: 0,
-          quarantined: [],
-          blocked: [],
-          orphans: 2,
-          deletesBlocked: 1,
-          purgeKept: 3,
-          skippedDocs: 4,
-          skippedSubjects: 0,
-          purgeWarning: 'memberships unavailable',
-        }) as never,
-      boardAdoption: {
-        database: db(),
-        hostedConfigured: () => false,
-        signedIn: () => false,
-      } as never,
-    },
-  )
+  let includeWaiting = true
+  const dependencies = {
+    sync: async () =>
+      ({
+        configured: true,
+        pushed: 0,
+        failed: 0,
+        pending: 0,
+        quarantined: [],
+        blocked: [],
+        orphans: 2,
+        deletesBlocked: 1,
+        purgeKept: 3,
+        skippedDocs: 4,
+        skippedSubjects: 0,
+        purgeWarning: 'memberships unavailable',
+        ...(includeWaiting
+          ? {
+              waitingOnUnregistered: [{ docId: 'doc-a', subjectId: 'subject-a', project: 'alpha' }],
+            }
+          : {}),
+      }) as never,
+    boardAdoption: {
+      database: db(),
+      hostedConfigured: () => false,
+      signedIn: () => false,
+    } as never,
+  }
+  await syncCommand({ backfill: false }, { log: (line) => output.push(line) }, dependencies)
   expect(output).toContain('record cache orphans: 2')
   expect(output).toContain('record cache deletes blocked: 1')
   expect(output).toContain('record cache purge rows kept: 3')
   expect(output).toContain('record cache docs skipped: 4')
   expect(output.some((line) => line.includes('subjects skipped'))).toBe(false)
   expect(output).toContain('record cache purge warning: memberships unavailable')
+  expect(output).toContain(
+    `record cache waiting: 1 doc on unregistered project alpha\ncleared by: ${PLATFORM_SLUG} project add alpha`,
+  )
+
+  includeWaiting = false
+  output.length = 0
+  await syncCommand({ backfill: false }, { log: (line) => output.push(line) }, dependencies)
+  expect(output.some((line) => line.startsWith('record cache waiting:'))).toBe(false)
+})
+
+test('waiting docs are grouped once per unregistered project with its remedy', () => {
+  expect(
+    waitingOnUnregisteredLines([
+      { docId: 'doc-a', subjectId: 'subject-a', project: 'alpha' },
+      { docId: 'doc-a', subjectId: 'subject-b', project: 'alpha' },
+      { docId: 'doc-b', subjectId: 'subject-c', project: 'alpha' },
+    ]),
+  ).toEqual([
+    `record cache waiting: 2 docs on unregistered project alpha\ncleared by: ${PLATFORM_SLUG} project add alpha`,
+  ])
 })
