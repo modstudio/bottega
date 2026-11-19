@@ -13,7 +13,7 @@ import {
   decideProjectCheckoutAdoptions,
   type ProjectCheckoutFacts,
 } from './project-checkout-adoption-decision.ts'
-import { addProject } from './project-commands.ts'
+import { type AddProjectInput, addProject } from './project-commands.ts'
 import type { ProjectSettings } from './project-settings.ts'
 import { projects, sniffStack } from './projects.ts'
 
@@ -21,6 +21,29 @@ export type ProjectCheckoutAdoptionReport =
   | { status: 'registered'; message: string }
   | { status: 'missing'; message: string }
   | { status: 'refused'; message: string }
+
+export function hostedProjectAddInput(
+  project: Parameters<typeof decideProjectCheckoutAdoptions>[0]['hostedProjects'][number],
+  path: string,
+): AddProjectInput {
+  return {
+    path,
+    name: project.name,
+    stack: project.stack ?? sniffStack(path),
+    canon: project.canon ?? true,
+    settings: (project.settings ?? {}) as ProjectSettings,
+    allowIncomplete: false,
+    selectedSpace: project.spaceId,
+  }
+}
+
+export function missingCheckoutMessage(input: {
+  name: string
+  space: string
+  path: string
+}): string {
+  return `${input.name} is in space ${input.space} but not checked out at ${input.path}; clone it there, or register a checkout kept elsewhere with: ${PLATFORM_SLUG} project add <path> --name ${input.name}`
+}
 
 function gitValue(path: string, args: string[], description: string): string {
   const result = gitAt(path, args, { budget: 'git-probe' })
@@ -122,7 +145,7 @@ export async function registerCheckedOutHostedProjects(): Promise<ProjectCheckou
     if (outcome.kind === 'missing') {
       reports.push({
         status: 'missing',
-        message: `${project.name} is in space ${slug} but not checked out at ${path}; clone it there or run: ${PLATFORM_SLUG} project add ${path} --name ${project.name}`,
+        message: missingCheckoutMessage({ name: project.name, space: slug, path }),
       })
       continue
     }
@@ -135,15 +158,7 @@ export async function registerCheckedOutHostedProjects(): Promise<ProjectCheckou
     }
     try {
       const { project: registered } = await addProject(
-        {
-          path,
-          name: project.name,
-          stack: sniffStack(path),
-          canon: true,
-          settings: (project.settings ?? {}) as ProjectSettings,
-          allowIncomplete: false,
-          selectedSpace: pinned.spaceId,
-        },
+        hostedProjectAddInput(project, path),
         requireRecordSpaceMembership,
       )
       reports.push({
