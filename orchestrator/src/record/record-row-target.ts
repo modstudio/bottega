@@ -3,10 +3,7 @@
 
 import { z } from 'zod'
 import { type NoteLabel, parseNoteLabel } from '../../../shared/note-label.ts'
-import {
-  malformedReferenceRefusal,
-  NOTE_LABEL_FORMS,
-} from '../../../shared/reference-refusal.ts'
+import { malformedReferenceRefusal, NOTE_LABEL_FORMS } from '../../../shared/reference-refusal.ts'
 
 export type RecordRowTarget =
   | { message: string; note?: never }
