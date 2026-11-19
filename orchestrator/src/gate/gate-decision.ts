@@ -147,6 +147,15 @@ export function decideArchitectGateOutcome(input: {
     : { commit: null, commitUnknown: 'changed-during' }
 }
 
+/** Record the content tree only when the gate's before and after observations agree. */
+export function decideArchitectGateTreeId(
+  outcome: ArchitectGateAttribution,
+  cleanHeadTree: GateTreeSnapshot | null,
+): string | null {
+  if (outcome.commit !== null) return typeof cleanHeadTree === 'string' ? cleanHeadTree : null
+  return outcome.commitUnknown === 'dirty-before' ? outcome.checkedTree : null
+}
+
 export function decideWorkerGateInput(
   input: GateInput | undefined,
   hasUncommittedTrackedChanges: boolean,

@@ -539,10 +539,10 @@ async function runPreparedGate(input: {
         headCommit: observedHeadCommit,
         porcelainPaths,
       })
-      db()
-        .query('UPDATE gate_execution SET head_commit=? WHERE record_id=?')
-        .run(headCommit, input.requestRecordId)
       if (gateInput.kind === 'committed') {
+        db()
+          .query('UPDATE gate_execution SET head_commit=?,tree_id=NULL WHERE record_id=?')
+          .run(headCommit, input.requestRecordId)
         await runGateProcess({
           command: input.prepared.command,
           worktree: input.prepared.worktree,
@@ -559,6 +559,9 @@ async function runPreparedGate(input: {
         baseCommit: input.prepared.baseCommit,
       })
       try {
+        db()
+          .query('UPDATE gate_execution SET head_commit=?,tree_id=? WHERE record_id=?')
+          .run(headCommit, gateIndex.treeId, input.requestRecordId)
         await runGateProcess({
           command: input.prepared.command,
           worktree: input.prepared.worktree,

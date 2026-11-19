@@ -169,6 +169,11 @@ test('records machine-readable checks emitted by a worker gate against its execu
   })
   try {
     await waitForFinishedGate(gateRecordId)
+    const gateRow = db()
+      .query('SELECT tree_id,output_tail FROM gate_execution WHERE record_id=?')
+      .get(gateRecordId) as { tree_id: string | null; output_tail: string }
+    expect(gateRow.tree_id).toMatch(/^[0-9a-f]{40}$/)
+    expect(gateRow.output_tail).toContain(`checked tree ${gateRow.tree_id}`)
     expect(
       db()
         .query(
