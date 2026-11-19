@@ -48,7 +48,8 @@ export const recordTaskFlowModules: RecordModule[] = [
     './record-api-client.ts',
     './record-api-client-paths.ts',
     './record-hosted-row-presence.ts',
-    './record-question-write.ts',
+    './record-history-upload-state.ts',
+    './record-question-contract.ts',
     './record-write-destination.ts',
     './record-task-flow-write-contract.ts',
   ]),
@@ -56,4 +57,5 @@ export const recordTaskFlowModules: RecordModule[] = [
     'bun:sqlite',
     './record-task-flow-contract.ts',
   ]),
+  module('orchestrator/src/record/record-history-upload-state.ts', ['bun:sqlite']),
 ]

@@ -18,7 +18,7 @@ import {
   uploadLocalWorkflowHistory,
   uploadMissingWorkflowHistory,
 } from './record-history-upload.ts'
-import { RECORD_QUESTION_DIFFERENT_CONTENT } from './record-question-write.ts'
+import { RECORD_QUESTION_DIFFERENT_CONTENT } from './record-question-contract.ts'
 import { syncRecord } from './record-sync.ts'
 
 const at = '2026-11-18T01:00:00.000Z'
@@ -602,6 +602,7 @@ test('sync history does not call the network for an unbound store', async () => 
   ).toEqual({
     failed: 0,
     lines: [],
+    skipped: false,
   })
   expect(calls).toBe(0)
   database.close()
@@ -630,6 +631,7 @@ test('sync history imports one question whose audit is absent and no task flow',
   ).toEqual({
     failed: 0,
     lines: [],
+    skipped: false,
   })
   expect({ questions, flows }).toEqual({ questions: 1, flows: 0 })
   database.close()
@@ -699,6 +701,7 @@ test('sync history repairs and imports one keyless flowless cursor', async () =>
   expect(result).toEqual({
     failed: 0,
     lines: ['repaired 1 unlinked local workflow stages'],
+    skipped: false,
   })
   expect(imports).toHaveLength(1)
   expect(imports[0]!.stages.map((row) => row.id)).toEqual([stageId])
@@ -747,6 +750,7 @@ test('sync history reports a keyed flowless repair skip and still imports an abs
   expect(result.lines).toEqual([
     'workflow history stage repair skipped: cursor 7 in project sync-keyed-orphan has a task but no task flow; ask the architect to repair that task-flow link, then sign in again',
   ])
+  expect(result.skipped).toBe(true)
   expect({ questions, flows }).toEqual({ questions: 1, flows: 0 })
   database.close()
 })
@@ -825,9 +829,10 @@ test('sync uses the maintenance handle for bound hosted history instead of its g
 })
 
 test('sync consumes audit identities from the presence reader before deciding to import', async () => {
-  for (const [action, expectedImports] of [
-    ['rule', 0],
-    ['answer', 1],
+  for (const [action, identityAt, expectedImports] of [
+    ['rule', at, 0],
+    ['answer', at, 1],
+    ['rule', '2026-11-18T02:00:00.000Z', 1],
   ] as const) {
     const database = migratedTestDatabase()
     database.exec('PRAGMA foreign_keys=OFF')
@@ -838,7 +843,7 @@ test('sync consumes audit identities from the presence reader before deciding to
       async (input) => ({
         ...input,
         questionAuditIds: [],
-        questionAuditIdentities: [{ questionId, action, at }],
+        questionAuditIdentities: [{ questionId, action, at: identityAt }],
       }),
       async (input) => {
         imports += 1

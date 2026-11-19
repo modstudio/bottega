@@ -26,6 +26,7 @@ export type HostedRowReferences = {
   stepTextCursor: ReadonlyMap<string, string>
   textCopyCursor: ReadonlyMap<string, string>
   auditQuestion: ReadonlyMap<string, string>
+  auditIdentity: ReadonlyMap<string, QuestionAuditIdentity>
   questionCursor: ReadonlyMap<string, string>
   cursorFlow: ReadonlyMap<string, string>
   cursorHandoff: ReadonlyMap<string, string>
@@ -105,6 +106,16 @@ export function collectHostedRowState(database: Database): HostedRowState {
       stepTextCursor: referenceMap(collected.workflow_step_text, 'cursor_record_id'),
       textCopyCursor: referenceMap(collected.workflow_text_copy, 'cursor_record_id'),
       auditQuestion: referenceMap(collected.question_mutation_audit, 'question_record_id'),
+      auditIdentity: new Map(
+        collected.question_mutation_audit.map((row) => [
+          String(row.record_id),
+          {
+            questionId: String(row.question_record_id),
+            action: String(row.action),
+            at: String(row.at),
+          },
+        ]),
+      ),
       questionCursor: referenceMap(collected.question, 'workflow_cursor_record_id'),
       cursorFlow: referenceMap(collected.workflow_cursor, 'task_flow_record_id'),
       cursorHandoff: referenceMap(collected.workflow_cursor, 'handed_off_from_record_id'),

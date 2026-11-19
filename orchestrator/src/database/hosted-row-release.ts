@@ -8,14 +8,20 @@ import { BOUNDED_JSONL_ARCHIVE_KEEP, writeBoundedJsonlArchive } from '../jsonl-a
 import { readRecordInstallBinding } from '../record/install-binding.ts'
 import { recordApiClient } from '../record/record-api-client.ts'
 import {
+  readHeldQuestionIds,
+  WORKFLOW_HISTORY_UPLOAD_FINGERPRINT_KEY,
+} from '../record/record-history-upload-state.ts'
+import {
   collectHostedRowState,
   emptyHostedRowIds,
   HOSTED_ROW_TABLES,
   type HostedRowIds,
+  type HostedRowPresence,
   type HostedRowReferences,
   type HostedRowTable,
   hostedRowIdsAreEmpty,
   type PresenceReader,
+  questionAuditIdentity,
   readHostedRowPresence,
 } from '../record/record-hosted-row-presence.ts'
 import { withSynchronousDatabaseForMigrationStep, writeTransaction } from './db.ts'
@@ -48,13 +54,22 @@ function addParents(
 /** Decide per-table retention and close retained parent references to a fixed point. */
 export function decideHostedRowRelease(
   local: HostedRowIds,
-  present: HostedRowIds,
+  present: HostedRowPresence,
   references: HostedRowReferences,
+  heldQuestionIds: ReadonlySet<string> = new Set(),
 ): HostedRowReleaseDecision {
   const kept = emptyHostedRowIds()
   const keptTables: HostedRowReleaseDecision['keptTables'] = []
   for (const table of HOSTED_ROW_TABLES) {
-    const absent = [...local[table]].filter((id) => !present[table].has(id))
+    const absent = [...local[table]].filter((id) => {
+      if (present[table].has(id)) return false
+      if (table === 'question') return !heldQuestionIds.has(id)
+      if (table !== 'question_mutation_audit') return true
+      const questionId = references.auditQuestion.get(id)
+      if (questionId && heldQuestionIds.has(questionId)) return false
+      const identity = references.auditIdentity.get(id)
+      return !identity || !present.questionAuditIdentities.has(questionAuditIdentity(identity))
+    })
     if (!absent.length) continue
     for (const id of local[table]) kept[table].add(id)
     keptTables.push({ table, absentIds: absent })
@@ -181,6 +196,9 @@ function deleteHostedRows(database: Database, ids: HostedRowIds): void {
     for (const id of ids.workflow_cursor) clearHandoff.run(id)
     // Children precede parents by foreign key.
     for (const table of HOSTED_ROW_TABLES) for (const id of ids[table]) statements[table].run(id)
+    database
+      .query('DELETE FROM schema_meta WHERE key=?')
+      .run(WORKFLOW_HISTORY_UPLOAD_FINGERPRINT_KEY)
   }, database)
 }
 
@@ -194,7 +212,7 @@ export async function releaseHostedRowsAfterUpdate(
     readRecordInstallBinding(database).bound ? collectHostedRowState(database) : null,
   )
   if (!state || hostedRowIdsAreEmpty(state.ids)) return
-  let present: HostedRowIds
+  let present: HostedRowPresence
   try {
     present = await readHostedRowPresence(state.ids, deps.presence ?? defaultPresenceReader)
   } catch (cause) {
@@ -202,7 +220,8 @@ export async function releaseHostedRowsAfterUpdate(
     presentation.log(`kept all local workflow history: record presence read failed: ${detail}`)
     return
   }
-  const decision = decideHostedRowRelease(state.ids, present, state.references)
+  const heldQuestionIds = withDatabase((database) => readHeldQuestionIds(database))
+  const decision = decideHostedRowRelease(state.ids, present, state.references, heldQuestionIds)
   const released = HOSTED_ROW_TABLES.reduce(
     (total, table) => total + decision.deleteIds[table].size,
     0,

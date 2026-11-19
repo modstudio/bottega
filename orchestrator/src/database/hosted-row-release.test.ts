@@ -5,9 +5,15 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
+import { decideHistoryUploadPass } from '../record/record-history-upload.ts'
+import {
+  storeHeldQuestionIds,
+  WORKFLOW_HISTORY_UPLOAD_FINGERPRINT_KEY,
+} from '../record/record-history-upload-state.ts'
 import {
   HOSTED_ROW_TABLES,
   type HostedRowIds,
+  type HostedRowPresence,
   type HostedRowReferences,
   type PresenceReader,
 } from '../record/record-hosted-row-presence.ts'
@@ -43,11 +49,21 @@ const noReferences = (): HostedRowReferences => ({
   stepTextCursor: new Map(),
   textCopyCursor: new Map(),
   auditQuestion: new Map(),
+  auditIdentity: new Map(),
   questionCursor: new Map(),
   cursorFlow: new Map(),
   cursorHandoff: new Map(),
   flowOpenCursor: new Map(),
 })
+
+function presence(
+  values: Partial<Record<(typeof HOSTED_ROW_TABLES)[number], string[]>>,
+  questionAuditIdentities: string[] = [],
+): HostedRowPresence {
+  return Object.assign(rowIds(values), {
+    questionAuditIdentities: new Set(questionAuditIdentities),
+  })
+}
 
 test('hosted row release table set matches the guarded hosted table set', () => {
   expect(new Set(HOSTED_ROW_TABLES)).toEqual(new Set(HOSTED_TABLES_WITHOUT_LOCAL_ACCESS))
@@ -55,7 +71,13 @@ test('hosted row release table set matches the guarded hosted table set', () => 
 
 test('hosted row release returns every local id when all are present', () => {
   const local = rowIds({ task_flow: ['flow'], workflow_cursor: ['stage'] })
-  expect(decideHostedRowRelease(local, local, noReferences())).toEqual({
+  expect(
+    decideHostedRowRelease(
+      local,
+      presence({ task_flow: ['flow'], workflow_cursor: ['stage'] }),
+      noReferences(),
+    ),
+  ).toEqual({
     deleteIds: local,
     keptTables: [],
   })
@@ -65,12 +87,41 @@ test('hosted row release keeps an incomplete table and its referenced parents', 
   const local = rowIds({ question: ['present', 'missing'], question_mutation_audit: ['audit'] })
   const refs = noReferences()
   refs.auditQuestion = new Map([['audit', 'present']])
-  const decision = decideHostedRowRelease(local, rowIds({ question: ['present'] }), refs)
+  const decision = decideHostedRowRelease(local, presence({ question: ['present'] }), refs)
   expect(decision.deleteIds).toEqual(rowIds({}))
   expect(decision.keptTables).toEqual([
     { table: 'question_mutation_audit', absentIds: ['audit'] },
     { table: 'question', absentIds: ['missing'] },
   ])
+})
+
+test('hosted row release accepts identity-matched audits and persisted held questions', () => {
+  const heldQuestion = newRecordId()
+  const presentQuestion = newRecordId()
+  const heldAudit = newRecordId()
+  const identityAudit = newRecordId()
+  const refs = noReferences()
+  refs.auditQuestion = new Map([
+    [heldAudit, heldQuestion],
+    [identityAudit, presentQuestion],
+  ])
+  refs.auditIdentity = new Map([
+    [heldAudit, { questionId: heldQuestion, action: 'rule', at }],
+    [identityAudit, { questionId: presentQuestion, action: 'answer', at }],
+  ])
+  const identity = `${presentQuestion}|answer|${Date.parse(at)}`
+  const local = rowIds({
+    question: [heldQuestion, presentQuestion],
+    question_mutation_audit: [heldAudit, identityAudit],
+  })
+  expect(
+    decideHostedRowRelease(
+      local,
+      presence({ question: [presentQuestion] }, [identity]),
+      refs,
+      new Set([heldQuestion]),
+    ),
+  ).toEqual({ deleteIds: local, keptTables: [] })
 })
 
 const at = '2026-11-18T12:00:00.000Z'
@@ -250,6 +301,25 @@ test('hosted row release deletes every verified table and a second run makes no 
   database.close()
 })
 
+test('hosted row release clears the upload fingerprint so the next pass uploads', async () => {
+  const database = migratedTestDatabase()
+  seedReleaseRows(database)
+  const fingerprint = [{ table: 'question', count: 1, maxRowid: 1 }]
+  database
+    .query('INSERT INTO schema_meta(key,value) VALUES (?,?)')
+    .run(WORKFLOW_HISTORY_UPLOAD_FINGERPRINT_KEY, JSON.stringify(fingerprint))
+  await releaseHostedRowsAfterUpdate(
+    { log: () => {} },
+    adapterDependencies(database, async (input) => input),
+  )
+  const stored = database
+    .query<{ value: string }, [string]>('SELECT value FROM schema_meta WHERE key=?')
+    .get(WORKFLOW_HISTORY_UPLOAD_FINGERPRINT_KEY)
+  expect(stored).toBeNull()
+  expect(decideHistoryUploadPass({ stored: null, current: fingerprint })).toBe('upload')
+  database.close()
+})
+
 test('hosted row release deletes a verified handoff-linked cursor pair', async () => {
   const database = migratedTestDatabase()
   const ids = seedReleaseRows(database)
@@ -263,6 +333,25 @@ test('hosted row release deletes a verified handoff-linked cursor pair', async (
     }),
   )
   expect(database.query('SELECT record_id FROM workflow_cursor').all()).toEqual([])
+  database.close()
+})
+
+test('hosted row release deletes a held question and its identity-matched audit', async () => {
+  const database = migratedTestDatabase()
+  const ids = seedReleaseRows(database)
+  const questionId = [...ids.question][0]!
+  storeHeldQuestionIds(database, new Set([questionId]))
+  await releaseHostedRowsAfterUpdate(
+    { log: () => {} },
+    adapterDependencies(database, async (input) => ({
+      ...input,
+      questionIds: [],
+      questionAuditIds: [],
+      questionAuditIdentities: [{ questionId, action: 'rule', at }],
+    })),
+  )
+  expect(database.query('SELECT record_id FROM question_mutation_audit').all()).toEqual([])
+  expect(database.query('SELECT record_id FROM question').all()).toEqual([])
   database.close()
 })
 

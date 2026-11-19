@@ -20,6 +20,7 @@ export const databaseModules: ArchitectureModule[] = [
     '../record/install-binding.ts',
     '../record/record-api-client.ts',
     '../record/record-hosted-row-presence.ts',
+    '../record/record-history-upload-state.ts',
     './db.ts',
   ]),
   module('orchestrator/src/database/session-identity.ts', [

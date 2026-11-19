@@ -21,7 +21,10 @@ import type {
   QuestionWriteBody,
   QuestionWriteResult,
 } from './record-question-contract.ts'
-import { RecordQuestionError } from './record-question-contract.ts'
+import {
+  RECORD_QUESTION_DIFFERENT_CONTENT,
+  RecordQuestionError,
+} from './record-question-contract.ts'
 import { allocateQuestionNumber } from './record-question-number.ts'
 import { QUESTION_STEP_CONFLICT_SET, questionValuesForWrite } from './record-question-step.ts'
 import { questionValues } from './record-question-values.ts'
@@ -34,8 +37,6 @@ type ExistingQuestion = {
   revision: number | string
   last_request_id: string | null
 }
-
-export const RECORD_QUESTION_DIFFERENT_CONTENT = 'already exists with different content'
 
 function requireRestoreNumber(intent: QuestionIntent, input: Tenant & QuestionWriteBody): void {
   if (intent !== 'restore' || input.question.number !== null) return

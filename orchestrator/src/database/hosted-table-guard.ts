@@ -79,7 +79,7 @@ export const HOSTED_LOCAL_SQL_ALLOWED_FILES = [
     pattern: /^orchestrator\/src\/record\/record-history-upload\.ts$/,
     reason:
       'History upload local hosted-table SQL requires the owned maintenance handle before hosted release',
-    expectedSites: 13,
+    expectedSites: 7,
   },
   {
     pattern: /^orchestrator\/src\/record\/record-hosted-row-presence\.ts$/,

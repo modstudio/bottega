@@ -19,12 +19,19 @@ import { readRecordInstallBinding } from './install-binding.ts'
 import { type RecordApiClient, recordApiClient } from './record-api-client.ts'
 import type { RecordWriteDestination } from './record-api-client-paths.ts'
 import {
+  readHeldQuestionIds,
+  storeHeldQuestionIds,
+  WORKFLOW_HISTORY_UPLOAD_FINGERPRINT_KEY,
+} from './record-history-upload-state.ts'
+import {
   collectHostedRowState,
+  HOSTED_ROW_TABLES,
+  type HostedRowTable,
   hostedRowIdsAreEmpty,
   questionAuditIdentity,
   readHostedRowPresence,
 } from './record-hosted-row-presence.ts'
-import { RECORD_QUESTION_DIFFERENT_CONTENT } from './record-question-write.ts'
+import { RECORD_QUESTION_DIFFERENT_CONTENT } from './record-question-contract.ts'
 import { type TaskFlowIntentInput, taskFlowRequestId } from './record-task-flow-write-contract.ts'
 import { recordWriteDestination } from './record-write-destination.ts'
 
@@ -34,8 +41,6 @@ type FlowImport = TaskFlowIntentInput<'import'>
 type FlowImportWithNumbers = { payload: FlowImport; numbers: Map<string, number> }
 type LocalQuestionHistory = ReturnType<typeof localQuestionHistory>
 
-const WORKFLOW_HISTORY_UPLOAD_FINGERPRINT_KEY = 'record_workflow_history_upload_fingerprint'
-const WORKFLOW_HISTORY_HELD_QUESTION_IDS_KEY = 'record_workflow_history_held_question_ids'
 export const HISTORY_UPLOAD_FAILURE_BOUND = 25
 export type HistoryUploadFingerprint = ReadonlyArray<{
   table: string
@@ -66,7 +71,7 @@ export function decideHistoryUploadPass(input: {
   stored: HistoryUploadFingerprint | null
   current: HistoryUploadFingerprint
 }): 'skip' | 'upload' {
-  // Rowid reuse can defer an upload, but release keeps absent rows, so this errs safely.
+  // A successful hosted-row release clears the stored fingerprint before rowids can be reused.
   return input.stored && JSON.stringify(input.stored) === JSON.stringify(input.current)
     ? 'skip'
     : 'upload'
@@ -76,64 +81,22 @@ function historyUploadFingerprint(database: Database): HistoryUploadFingerprint 
   const result = (table: string, row: { count: number; maxRowid: number | null }) => {
     return { table, count: row.count, maxRowid: row.maxRowid ?? 0 }
   }
-  return [
+  const sql = {
+    workflow_obligation: 'SELECT count(*) count,max(rowid) maxRowid FROM workflow_obligation',
+    workflow_step_text: 'SELECT count(*) count,max(rowid) maxRowid FROM workflow_step_text',
+    workflow_text_copy: 'SELECT count(*) count,max(rowid) maxRowid FROM workflow_text_copy',
+    question_mutation_audit:
+      'SELECT count(*) count,max(rowid) maxRowid FROM question_mutation_audit',
+    question: 'SELECT count(*) count,max(rowid) maxRowid FROM question',
+    workflow_cursor: 'SELECT count(*) count,max(rowid) maxRowid FROM workflow_cursor',
+    task_flow: 'SELECT count(*) count,max(rowid) maxRowid FROM task_flow',
+  } satisfies Record<HostedRowTable, string>
+  return HOSTED_ROW_TABLES.map((table) =>
     result(
-      'workflow_obligation',
-      database
-        .query<{ count: number; maxRowid: number | null }, []>(
-          'SELECT count(*) count,max(rowid) maxRowid FROM workflow_obligation',
-        )
-        .get()!,
+      table,
+      database.query<{ count: number; maxRowid: number | null }, []>(sql[table]).get()!,
     ),
-    result(
-      'workflow_step_text',
-      database
-        .query<{ count: number; maxRowid: number | null }, []>(
-          'SELECT count(*) count,max(rowid) maxRowid FROM workflow_step_text',
-        )
-        .get()!,
-    ),
-    result(
-      'workflow_text_copy',
-      database
-        .query<{ count: number; maxRowid: number | null }, []>(
-          'SELECT count(*) count,max(rowid) maxRowid FROM workflow_text_copy',
-        )
-        .get()!,
-    ),
-    result(
-      'question_mutation_audit',
-      database
-        .query<{ count: number; maxRowid: number | null }, []>(
-          'SELECT count(*) count,max(rowid) maxRowid FROM question_mutation_audit',
-        )
-        .get()!,
-    ),
-    result(
-      'question',
-      database
-        .query<{ count: number; maxRowid: number | null }, []>(
-          'SELECT count(*) count,max(rowid) maxRowid FROM question',
-        )
-        .get()!,
-    ),
-    result(
-      'workflow_cursor',
-      database
-        .query<{ count: number; maxRowid: number | null }, []>(
-          'SELECT count(*) count,max(rowid) maxRowid FROM workflow_cursor',
-        )
-        .get()!,
-    ),
-    result(
-      'task_flow',
-      database
-        .query<{ count: number; maxRowid: number | null }, []>(
-          'SELECT count(*) count,max(rowid) maxRowid FROM task_flow',
-        )
-        .get()!,
-    ),
-  ]
+  )
 }
 
 function storedHistoryUploadFingerprint(database: Database): HistoryUploadFingerprint | null {
@@ -158,30 +121,6 @@ function storeHistoryUploadFingerprint(
        ON CONFLICT(key) DO UPDATE SET value=excluded.value`,
     )
     .run(WORKFLOW_HISTORY_UPLOAD_FINGERPRINT_KEY, JSON.stringify(fingerprint))
-}
-
-function storedHeldQuestionIds(database: Database): Set<string> {
-  const row = database
-    .query<{ value: string }, [string]>('SELECT value FROM schema_meta WHERE key=?')
-    .get(WORKFLOW_HISTORY_HELD_QUESTION_IDS_KEY)
-  if (!row) return new Set()
-  try {
-    const ids: unknown = JSON.parse(row.value)
-    return new Set(
-      Array.isArray(ids) ? ids.filter((id): id is string => typeof id === 'string') : [],
-    )
-  } catch {
-    return new Set()
-  }
-}
-
-function storeHeldQuestionIds(database: Database, ids: ReadonlySet<string>): void {
-  database
-    .query(
-      `INSERT INTO schema_meta(key,value) VALUES (?,?)
-       ON CONFLICT(key) DO UPDATE SET value=excluded.value`,
-    )
-    .run(WORKFLOW_HISTORY_HELD_QUESTION_IDS_KEY, JSON.stringify([...ids].sort()))
 }
 
 function historyProjects(database: Database): HistoryProject[] {
@@ -402,25 +341,9 @@ async function uploadSignInQuestion(
   },
   destination: RecordWriteDestination,
 ) {
-  if (!questionIsAbsent(history, present, pass.heldQuestionIds)) return null
-  const id = String(history.row.record_id)
-  try {
-    return await client.importQuestion(
-      {
-        requestId: taskFlowRequestId('import', ['question', id]),
-        question: questionSnapshotFromRow(history.row),
-        audits: history.audits,
-      },
-      destination,
-    )
-  } catch (cause) {
-    if (errorMessage(cause).includes(RECORD_QUESTION_DIFFERENT_CONTENT)) {
-      pass.heldQuestions.push(history)
-      pass.heldQuestionIds.add(id)
-      return null
-    }
-    return recordCall(() => Promise.reject(cause))
-  }
+  const outcome = await attemptQuestionImport(history, present, pass, client, destination)
+  if (outcome.kind === 'failed') return recordCall(() => Promise.reject(outcome.cause))
+  return outcome.kind === 'imported' ? outcome.result : null
 }
 
 async function uploadProjectHistory(
@@ -506,7 +429,7 @@ async function uploadDatabaseHistory(
   )
   const pass: UploadPassState = {
     failed: 0,
-    heldQuestionIds: storedHeldQuestionIds(database),
+    heldQuestionIds: readHeldQuestionIds(database),
     heldQuestions: [],
     stopped: false,
   }
@@ -530,7 +453,7 @@ async function uploadDatabaseHistory(
       present,
       pass,
     )
-  const held = finishUploadPass(database, { failed: 0, lines: [] }, pass)
+  const held = finishUploadPass(database, { failed: 0, lines: [], skipped: false }, pass)
   for (const line of held.lines) presentation.log(line)
   if (held.failed > 0) throw new Error(held.lines.at(-1) ?? 'question conflict archive failed')
   presentation.log(
@@ -560,7 +483,7 @@ export async function uploadLocalWorkflowHistory(
   )
 }
 
-export type HistorySyncResult = { failed: number; lines: string[] }
+export type HistorySyncResult = { failed: number; lines: string[]; skipped: boolean }
 
 function flowIsAbsent(
   flow: FlowImport,
@@ -622,6 +545,41 @@ function recordUploadFailure(pass: UploadPassState): void {
   if (pass.failed === HISTORY_UPLOAD_FAILURE_BOUND) pass.stopped = true
 }
 
+type QuestionImportClient = Pick<SyncClient, 'importQuestion'>
+type QuestionImportAttempt =
+  | { kind: 'imported'; result: Awaited<ReturnType<QuestionImportClient['importQuestion']>> }
+  | { kind: 'held' }
+  | { kind: 'failed'; cause: unknown }
+
+async function attemptQuestionImport(
+  history: LocalQuestionHistory[number],
+  present: PresentHistory,
+  pass: UploadPassState,
+  client: QuestionImportClient,
+  destination: RecordWriteDestination,
+): Promise<QuestionImportAttempt> {
+  if (!questionIsAbsent(history, present, pass.heldQuestionIds)) return { kind: 'held' }
+  const id = String(history.row.record_id)
+  try {
+    const result = await client.importQuestion(
+      {
+        requestId: taskFlowRequestId('import', ['question', id]),
+        question: questionSnapshotFromRow(history.row),
+        audits: history.audits,
+      },
+      destination,
+    )
+    return { kind: 'imported', result }
+  } catch (cause) {
+    if (errorMessage(cause).includes(RECORD_QUESTION_DIFFERENT_CONTENT)) {
+      pass.heldQuestions.push(history)
+      pass.heldQuestionIds.add(id)
+      return { kind: 'held' }
+    }
+    return { kind: 'failed', cause }
+  }
+}
+
 async function uploadMissingFlows(
   flows: FlowImportWithNumbers[],
   present: PresentHistory,
@@ -629,7 +587,7 @@ async function uploadMissingFlows(
   destination: RecordWriteDestination,
   pass: UploadPassState,
 ): Promise<HistorySyncResult> {
-  const result: HistorySyncResult = { failed: 0, lines: [] }
+  const result: HistorySyncResult = { failed: 0, lines: [], skipped: false }
   for (const flow of flows) {
     if (pass.stopped) break
     if (!flowIsAbsent(flow.payload, present)) continue
@@ -653,30 +611,15 @@ async function uploadMissingQuestions(
   destination: RecordWriteDestination,
   pass: UploadPassState,
 ): Promise<HistorySyncResult> {
-  const result: HistorySyncResult = { failed: 0, lines: [] }
+  const result: HistorySyncResult = { failed: 0, lines: [], skipped: false }
   for (const history of histories) {
     if (pass.stopped) break
-    if (!questionIsAbsent(history, present, pass.heldQuestionIds)) continue
     const id = String(history.row.record_id)
-    try {
-      await client.importQuestion(
-        {
-          requestId: taskFlowRequestId('import', ['question', id]),
-          question: questionSnapshotFromRow(history.row),
-          audits: history.audits,
-        },
-        destination,
-      )
-    } catch (cause) {
-      if (errorMessage(cause).includes(RECORD_QUESTION_DIFFERENT_CONTENT)) {
-        pass.heldQuestions.push(history)
-        pass.heldQuestionIds.add(id)
-        continue
-      }
-      result.failed += 1
-      recordUploadFailure(pass)
-      result.lines.push(`workflow history question ${id} failed: ${errorMessage(cause)}`)
-    }
+    const outcome = await attemptQuestionImport(history, present, pass, client, destination)
+    if (outcome.kind !== 'failed') continue
+    result.failed += 1
+    recordUploadFailure(pass)
+    result.lines.push(`workflow history question ${id} failed: ${errorMessage(outcome.cause)}`)
   }
   return result
 }
@@ -685,6 +628,7 @@ function combineHistoryResults(...results: HistorySyncResult[]): HistorySyncResu
   return {
     failed: results.reduce((total, result) => total + result.failed, 0),
     lines: results.flatMap((result) => result.lines),
+    skipped: results.some((result) => result.skipped),
   }
 }
 
@@ -703,6 +647,7 @@ async function uploadProjectMissingHistory(
     return {
       failed: 0,
       lines: [`workflow history upload skipped for ${project.name}: ${errorMessage(cause)}`],
+      skipped: true,
     }
   }
   return combineHistoryResults(
@@ -732,7 +677,7 @@ async function uploadPersonalMissingHistory(
 ): Promise<HistorySyncResult> {
   const histories = localQuestionHistory(database, null)
   if (!histories.some((history) => questionIsAbsent(history, present, pass.heldQuestionIds)))
-    return { failed: 0, lines: [] }
+    return { failed: 0, lines: [], skipped: false }
   try {
     const destination = await destinationFor(client, null)
     return uploadMissingQuestions(histories, present, client, destination, pass)
@@ -740,6 +685,7 @@ async function uploadPersonalMissingHistory(
     return {
       failed: 0,
       lines: [`workflow history personal questions skipped: ${errorMessage(cause)}`],
+      skipped: true,
     }
   }
 }
@@ -790,18 +736,21 @@ export async function uploadMissingWorkflowHistory(
   withDatabase: WithMaintenanceDatabase = withDatabaseForMigrationStep,
 ): Promise<HistorySyncResult> {
   return withDatabase(async (database) => {
-    if (!readRecordInstallBinding(database).bound) return { failed: 0, lines: [] }
+    if (!readRecordInstallBinding(database).bound) return { failed: 0, lines: [], skipped: false }
     if (!client.readTaskFlowPresence || !client.importTaskFlow || !client.importQuestion)
       return {
         failed: 0,
         lines: ['workflow history upload skipped: record API lacks presence or import support'],
+        skipped: true,
       }
     const repairLines: string[] = []
+    let repairSkipped = false
     try {
       const repaired = taskFlowHistoryMaintenanceStore(database).repairUnlinkedKeylessStages()
       if (repaired > 0) repairLines.push(`repaired ${repaired} unlinked local workflow stages`)
     } catch (cause) {
       repairLines.push(`workflow history stage repair skipped: ${errorMessage(cause)}`)
+      repairSkipped = true
     }
     const fingerprint = historyUploadFingerprint(database)
     if (
@@ -810,12 +759,11 @@ export async function uploadMissingWorkflowHistory(
         current: fingerprint,
       }) === 'skip'
     )
-      return { failed: 0, lines: repairLines }
+      return { failed: 0, lines: repairLines, skipped: repairSkipped }
     const state = collectHostedRowState(database)
     if (hostedRowIdsAreEmpty(state.ids)) {
-      if (!repairLines.some((line) => line.includes('skipped')))
-        storeHistoryUploadFingerprint(database, fingerprint)
-      return { failed: 0, lines: repairLines }
+      if (!repairSkipped) storeHistoryUploadFingerprint(database, fingerprint)
+      return { failed: 0, lines: repairLines, skipped: repairSkipped }
     }
     const capable = client as SyncClient
     let present: PresentHistory
@@ -828,12 +776,13 @@ export async function uploadMissingWorkflowHistory(
           ...repairLines,
           `workflow history upload skipped: presence read failed: ${errorMessage(cause)}`,
         ],
+        skipped: true,
       }
     }
     const projects: HistorySyncResult[] = []
     const pass: UploadPassState = {
       failed: 0,
-      heldQuestionIds: storedHeldQuestionIds(database),
+      heldQuestionIds: readHeldQuestionIds(database),
       heldQuestions: [],
       stopped: false,
     }
@@ -851,15 +800,18 @@ export async function uploadMissingWorkflowHistory(
       )
     }
     const personal = pass.stopped
-      ? { failed: 0, lines: [] }
+      ? { failed: 0, lines: [], skipped: false }
       : await uploadPersonalMissingHistory(database, present, capable, destinationFor, pass)
     const result = finishUploadPass(
       database,
-      combineHistoryResults({ failed: 0, lines: repairLines }, ...projects, personal),
+      combineHistoryResults(
+        { failed: 0, lines: repairLines, skipped: repairSkipped },
+        ...projects,
+        personal,
+      ),
       pass,
     )
-    if (result.failed === 0 && !result.lines.some((line) => line.includes('skipped')))
-      storeHistoryUploadFingerprint(database, fingerprint)
+    if (result.failed === 0 && !result.skipped) storeHistoryUploadFingerprint(database, fingerprint)
     return result
   })
 }
