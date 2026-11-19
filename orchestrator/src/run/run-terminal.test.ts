@@ -1,12 +1,22 @@
-import { describe, expect, test } from 'bun:test'
+import { afterEach, describe, expect, test } from 'bun:test'
+import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import {
+  createMemoryRecordApiClient,
+  installRecordApiClient,
+} from '../../test/fixtures/record-api.ts'
 import { reviewReply } from '../../test/fixtures/replies.ts'
-import { addRun } from '../../test/fixtures/store.ts'
+import { addRun, dir } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
+import { job } from '../jobs/jobs.ts'
+import { identity } from '../record/record-api-identity.fixture.ts'
+import { EMPTY_QUOTA_READINGS } from '../transport/quota-readings.ts'
+import { EMPTY_VENDOR_USAGE } from '../transport/vendor-usage.ts'
 import { enqueueRunRecord } from './run-outbox.ts'
 import {
   artifactPersistenceOutcome,
   checkpointTerminalWork,
+  finishRun,
   questionsToInsert,
   recordArtifactPersistenceFailure,
   recordTerminalReviewEvidence,
@@ -15,6 +25,11 @@ import {
   writeTerminalOperationalState,
 } from './run-terminal.ts'
 import { finalizeTerminalChain } from './run-terminal-chain.ts'
+
+afterEach(() => {
+  installRecordApiClient(null)
+  delete process.env.BOTTEGA_RECORD_API_URL
+})
 
 test('an unverified observed test outcome stores claim disagreement as null', () => {
   const runId = addRun({ agent: 'codex', job: 'implement' })
@@ -193,6 +208,120 @@ describe('terminal question deduplication decision', () => {
 
     expect(questionsToInsert([], accepted)).toEqual(accepted.slice(0, 1))
   })
+})
+
+test('finish makes a reply question answerable before its store write finishes', async () => {
+  const runId = addRun({ agent: 'codex', job: 'implement', status: 'running' })
+  const question = {
+    kind: 'text' as const,
+    question: 'Which implementation should be used?',
+    why: 'The implementation depends on the ruling.',
+  }
+  let releaseWrite!: () => void
+  const heldWrite = new Promise<void>((resolve) => {
+    releaseWrite = resolve
+  })
+  let markWriteStarted!: () => void
+  const writeStarted = new Promise<void>((resolve) => {
+    markWriteStarted = resolve
+  })
+  const client = createMemoryRecordApiClient()
+  db().query("UPDATE project SET settings=json_set(settings,'$.space','space-a')").run()
+  process.env.BOTTEGA_RECORD_API_URL = 'https://record.test'
+  installRecordApiClient({
+    ...client,
+    whoami: async () => identity,
+    writeQuestion: async (_intent, body) => {
+      markWriteStarted()
+      await heldWrite
+      return {
+        id: body.question.id,
+        number: 1,
+        revision: body.question.revision,
+        applied: true,
+      }
+    },
+  })
+
+  const finishing = finishRun({
+    processless: true,
+    timer: null,
+    checkpointTimer: null,
+    resourceObserver: null,
+    proc: null,
+    askLoopback: null,
+    claim: { id: runId, number: 1 },
+    machineId: 'machine-terminal-question-order',
+    writesJob: true,
+    worktree: null,
+    launchKey: null,
+    failureKind: null,
+    endpointKey: { secretName: null, source: 'agent', projectName: null },
+    scratchDir: dir,
+    gitConfigEnvironment: undefined,
+    writingAcp: false,
+    checkpointContainment: { disableHooks: false, gitDir: null, hooksDir: null },
+    opts: { job: 'implement' },
+    watchedCheckouts: [],
+    confinementFailures: [],
+    frozenBefore: [],
+    callerRemoval: { attribution: 'unattributed', removalSession: null, removalRun: null },
+    removeIsolatedCwd: null,
+    changes: null,
+    provisionedMcpConfig: null,
+    started: Date.now(),
+    retargetDiagnostic: null,
+    error: null,
+    contract: {
+      status: 'asking',
+      summary: 'A ruling is required.',
+      files_changed: null,
+      change_guide: null,
+      questions: [question],
+      deviations: null,
+      blockers: null,
+      tests: null,
+    },
+    status: 'asking',
+    contractObjects: 1,
+    vendorTerminatedStream: null,
+    acceptedQuestions: [question],
+    requestedJob: job('implement'),
+    checkReviewedCommit: false,
+    output: 'A ruling is required.',
+    confinementEvent: null,
+    parsedReply: null,
+    runProjectName: null,
+    mcpConnection: null,
+    mcpMode: null,
+    declaredDeliverables: [],
+    mcpSetupHeader: null,
+    outPath: join(dir, 'terminal-question-order.out'),
+    preConfinement: null,
+    callerCwd: dir,
+    promptPath: join(dir, 'terminal-question-order.prompt'),
+    exitCode: 0,
+    vendorTokens: null,
+    callUsage: null,
+    costUsd: null,
+    vendorUsage: EMPTY_VENDOR_USAGE,
+    quotaReadings: EMPTY_QUOTA_READINGS,
+    effectiveModel: null,
+    resolvedSession: 'session-from-finished-worker',
+    name: 'codex',
+    artifactsPersisted: false,
+    mcpRuling: null,
+    workerEvents: [],
+  })
+
+  await writeStarted
+  expect(db().query('SELECT status,vendor_session FROM run WHERE record_id=?').get(runId)).toEqual({
+    status: 'asking',
+    vendor_session: 'session-from-finished-worker',
+  })
+
+  releaseWrite()
+  await finishing
 })
 
 describe('terminal checkpoint decision', () => {
