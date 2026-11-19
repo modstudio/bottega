@@ -13,13 +13,13 @@ import { RecordApiRequestError } from './record-api-client-response.ts'
 import { identity } from './record-api-identity.fixture.ts'
 import {
   decideRecordCacheParity,
-  recordCacheParityChecks,
   type RecordCacheParityInput,
+  recordCacheParityChecks,
 } from './record-cache-parity.ts'
 import {
   decideRecordDoctorChecks,
-  recordDoctorExitCode,
   type RecordDoctorCheck,
+  recordDoctorExitCode,
 } from './record-doctor.ts'
 
 const base = {

@@ -65,6 +65,7 @@ async function refuseOwnerConnection(postgres: SQL, operation: string): Promise<
 }
 
 export type { RecordDoctorCheck } from './record-doctor-check.ts'
+
 type QuarantinedDoctorRow = { id: number; kind: string; reason: string }
 export type RecordDoctorFacts = {
   apiConfigured: boolean

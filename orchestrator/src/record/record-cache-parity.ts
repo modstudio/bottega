@@ -8,10 +8,7 @@ import { recordApiClient } from './record-api-client.ts'
 import { RecordApiRequestError } from './record-api-client-response.ts'
 import type { RecordIdentity } from './record-auth.ts'
 import { recordCacheSpaces } from './record-cache.ts'
-import {
-  isRecordCacheCounts,
-  type RecordCacheCounts,
-} from './record-cache-counts-contract.ts'
+import { isRecordCacheCounts, type RecordCacheCounts } from './record-cache-counts-contract.ts'
 import { recordCacheAddressOwner, recordCacheSpaceOwnsSubject } from './record-cache-ownership.ts'
 import type { RecordDoctorCheck } from './record-doctor-check.ts'
 
