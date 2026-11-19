@@ -195,6 +195,7 @@ test('set credential names machine registration when the space has no data key',
   expect(refusal).toContain('record space studio has no data key yet')
   expect(refusal).toContain('machine config machine register --space studio')
   expect(refusal).not.toContain('machine config machine trust')
+  expect(refusal).not.toContain('lacks config access')
   expect(transport).toHaveBeenCalledTimes(1)
 })
 

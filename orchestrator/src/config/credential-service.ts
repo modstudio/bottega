@@ -193,9 +193,8 @@ function noDataKeyRefusal(address: CredentialAddress): Error {
   const binding = address.account
     ? 'account'
     : `project ${address.projectName} in space ${address.spaceName}`
-  const access = address.account ? '' : `; ${configAccessRemedy(address.spaceName)}`
   return new Error(
-    `cannot access credentials for ${binding}: ${noDataKeyRemedy(address.spaceName)}${access}`,
+    `cannot access credentials for ${binding}: ${noDataKeyRemedy(address.spaceName)}`,
   )
 }
 
