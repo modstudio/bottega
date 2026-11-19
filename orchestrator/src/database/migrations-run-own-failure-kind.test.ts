@@ -3,7 +3,7 @@ import { newRecordId } from '../../../shared/record-id.ts'
 import { applyMigrations } from './migrations.ts'
 import { fixtureProjectRecordId, migrationBoundaryTestDatabase } from './test-database.fixture.ts'
 
-test('own failure kind backfill leaves only continued roots unknown', () => {
+test('own failure kind backfill includes continued roots', () => {
   const database = migrationBoundaryTestDatabase('0236_run_own_failure_kind')
   try {
     const continuedRoot = newRecordId()
@@ -24,7 +24,7 @@ test('own failure kind backfill leaves only continued roots unknown', () => {
     expect(
       database.query('SELECT record_id,own_failure_kind FROM run ORDER BY number').all(),
     ).toEqual([
-      { record_id: continuedRoot, own_failure_kind: null },
+      { record_id: continuedRoot, own_failure_kind: 'contract' },
       { record_id: terminalRoot, own_failure_kind: 'other' },
       { record_id: turn, own_failure_kind: 'quota' },
     ])

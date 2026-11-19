@@ -1,11 +1,14 @@
 import { expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { addRun } from '../../test/fixtures/store.ts'
+import { db } from '../database/db.ts'
 import {
   coolingRefusal,
   decideCoolingFailures,
   providerErrorStreakCooling,
   QUOTA_RESET_CEILING_MS,
   QUOTA_RESET_READING_WINDOW_MS,
+  recentTerminalRuns,
   type RecentTerminalRun,
 } from './routing-cooldown.ts'
 
@@ -68,12 +71,28 @@ test('a vendor reset keeps quota cooling active beyond the minimum', () => {
   const failure = decideCoolingFailures([quota], 60, NOW).get('a')!
   expect(failure).toMatchObject({
     vendor_reset_at: new Date(resetAt).toISOString(),
-    cooling_until: new Date(resetAt).toISOString(),
   })
   expect(coolingRefusal('a', failure, 60, 'America/Los_Angeles')).toContain(
     'Nov 20, 2026 at 1:00 PM PST (vendor reset)',
   )
   expect(decideCoolingFailures([quota], 60, resetAt + 1_000).get('a')).toBeUndefined()
+})
+
+test('stored quota reset keeps the agent cooling beyond the minimum', () => {
+  const agent = 'stored-reset-agent'
+  const resetAt = NOW + 41 * 60 * 60_000
+  const run = addRun({
+    agent,
+    job: 'craft',
+    status: 'failed',
+    kind: 'quota',
+    startedAt: new Date(NOW - 61 * 60_000 - 1_000).toISOString(),
+  })
+  db().query('UPDATE run SET quota_resets_at=? WHERE record_id=?').run(resetAt / 1_000, run)
+
+  const failure = decideCoolingFailures(recentTerminalRuns(db(), [agent], NOW), 60, NOW).get(agent)
+  expect(failure?.vendor_reset_at).toBe(new Date(resetAt).toISOString())
+  expect(failure).toBeDefined()
 })
 
 test('a reset beyond the ceiling is ignored and named in the refusal', () => {

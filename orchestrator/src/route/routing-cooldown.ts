@@ -8,7 +8,6 @@ export type CoolingFailure = {
   agent: string
   failure_kind: string
   mins_ago: number
-  cooling_until: string | null
   vendor_reset_at: string | null
   vendor_reset_clamped: boolean
 }
@@ -122,7 +121,6 @@ export function providerErrorStreakCooling(
     agent: recent[0]!.agent,
     failure_kind: 'provider_error',
     mins_ago: recent[0]!.mins_ago,
-    cooling_until: new Date(coolingUntil).toISOString(),
     vendor_reset_at: null,
     vendor_reset_clamped: false,
   }
@@ -178,7 +176,6 @@ function ordinaryCoolingFailure(
     agent,
     failure_kind: latest.failure_kind!,
     mins_ago: latest.mins_ago,
-    cooling_until: new Date(coolingUntil).toISOString(),
     vendor_reset_at: reset.resetAt ? new Date(reset.resetAt).toISOString() : null,
     vendor_reset_clamped: reset.clamped,
   }
