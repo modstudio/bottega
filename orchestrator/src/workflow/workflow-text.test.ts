@@ -366,9 +366,9 @@ describe('workflow text lifecycle', () => {
     process.env.BOTTEGA_RECORD_API_URL = 'https://record.example.test'
     installRecordApiClient(createMemoryRecordApiClient())
     try {
-      await expect(showWorkflowText('attached-text:11111111-1111-4111-8111-111111111111', database())).rejects.toThrow(
-        'has no live workflow text or copy link in the record for your spaces',
-      )
+      await expect(
+        showWorkflowText('attached-text:11111111-1111-4111-8111-111111111111', database()),
+      ).rejects.toThrow('has no live workflow text or copy link in the record for your spaces')
     } finally {
       installRecordApiClient(null)
       if (previousRecordApiUrl === undefined) delete process.env.BOTTEGA_RECORD_API_URL
