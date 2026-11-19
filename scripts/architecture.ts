@@ -519,6 +519,10 @@ const declaredModules: ArchitectureModule[] = [
   ]),
   ...sharedModules,
   module('orchestrator/src/check/check-comment-parser-assets.ts', []),
+  module('orchestrator/src/check/local-gate-registration.ts', [
+    'bun:sqlite',
+    '../../../shared/brand.ts',
+  ]),
   module('shared/record/schema.ts', ['../brand.ts', '../record-id.ts']),
   module('shared/record/migration-session.ts', []),
   ...settingsModules,

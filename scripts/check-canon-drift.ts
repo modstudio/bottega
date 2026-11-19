@@ -20,6 +20,10 @@ import {
 } from '../orchestrator/src/canon/canon-hydrate.ts'
 import { storedRepositoryCanonRows } from '../orchestrator/src/canon/canon-stored-rows.ts'
 import { CODEX_PROJECT_DOC_PATH } from '../orchestrator/src/canon/codex-project-doc.ts'
+import {
+  localGateRegistrationDecision,
+  probeLocalGateRegistration,
+} from '../orchestrator/src/check/local-gate-registration.ts'
 import { DB_PATH, openReadOnlyDatabase } from '../orchestrator/src/database/db.ts'
 import { migrationRefusal } from '../orchestrator/src/database/migrations.ts'
 import {
@@ -30,6 +34,7 @@ import {
 import { type Project, projectAt } from '../orchestrator/src/project/projects.ts'
 import { startBoundedSync } from '../shared/bounded-process.ts'
 import { PLATFORM_SLUG } from '../shared/brand.ts'
+import { exitUnchecked } from '../shared/check-execution.ts'
 import { inspectionGitEnv } from '../shared/git.ts'
 import { nulPathListArgs, splitNulPaths } from '../shared/git-path-list.ts'
 import { resolveRegisteredLandingBase } from './landing-base.ts'
@@ -190,6 +195,11 @@ function checkCanonDrift(
 if (import.meta.main) {
   try {
     const live = liveStorePath()
+    const registration = localGateRegistrationDecision(root, probeLocalGateRegistration(root, live))
+    if (registration.kind === 'skip') {
+      exitUnchecked(registration.message)
+    }
+    if (registration.kind === 'fail') throw new Error(registration.message)
     const storeKind = classifyStore(live)
     const findings =
       storeKind === 'ahead'
