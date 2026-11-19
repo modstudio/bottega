@@ -106,7 +106,7 @@ test('first binding keeps a default project referenced by a workflow cursor', as
       '00000000-0000-7000-8000-000000000001',
       'explore',
       'default',
-      null,
+      'TASK-1',
       null,
       null,
       '',
