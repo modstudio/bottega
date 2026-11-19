@@ -39,16 +39,16 @@ import {
 } from './record-cache-lens.ts'
 import { recordCacheSpaceOwnsAddress } from './record-cache-ownership.ts'
 import {
-  rememberRecordCacheProjectSpaces,
-  rewindChangedRecordCacheProjectSpaces,
-} from './record-cache-project-spaces.ts'
-import {
   applyPortCatalogueRow,
   deletePortCatalogueRow,
   portCatalogueParentPresent,
   pullPortCatalogue,
   purgePortCatalogueSpace,
 } from './record-cache-port.ts'
+import {
+  rememberRecordCacheProjectSpaces,
+  rewindChangedRecordCacheProjectSpaces,
+} from './record-cache-project-spaces.ts'
 import { type ProjectRegisterPullResult, pullProjectRegister } from './record-cache-projects.ts'
 import {
   applyWorkflowCatalogueRow,
@@ -570,7 +570,9 @@ async function settleDocDeferrals(
   addResult(result, { waitingOnUnregistered: classified.waitingOnUnregistered })
   const error = recordCacheDocDeferralError(classified.deferrals)
   if (error && classified.listingError)
-    throw new Error(`${error.message}; hosted subject listing failed: ${classified.listingError.message}`)
+    throw new Error(
+      `${error.message}; hosted subject listing failed: ${classified.listingError.message}`,
+    )
   if (error) throw error
 }
 
@@ -819,16 +821,18 @@ export async function pullRecordCacheFeed(
     writeCursor(local, SPACES, JSON.stringify(nextRemembered))
     writeCursor(local, PULL_SPACES, JSON.stringify(spaces))
   }, local)
-  return complete(await pullFeedPages({
-    local,
-    cursor,
-    client,
-    deps,
-    identity,
-    spaces,
-    nextRemembered,
-    cache,
-    result,
-    deferred,
-  }))
+  return complete(
+    await pullFeedPages({
+      local,
+      cursor,
+      client,
+      deps,
+      identity,
+      spaces,
+      nextRemembered,
+      cache,
+      result,
+      deferred,
+    }),
+  )
 }

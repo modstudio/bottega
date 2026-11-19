@@ -253,7 +253,9 @@ test('a project mapped by a non-registration writer applies subjects and docs on
 
   expect(await pullRecordCache(db())).toMatchObject({ subjects: 1, docs: 2 })
   expect(db().query('SELECT 1 FROM subject WHERE id=?').get(fixture.subjectId)).not.toBeNull()
-  expect(db().query('SELECT 1 FROM doc WHERE record_id=?').get(fixture.referencedDocId)).not.toBeNull()
+  expect(
+    db().query('SELECT 1 FROM doc WHERE record_id=?').get(fixture.referencedDocId),
+  ).not.toBeNull()
 })
 
 test('a first pull with no persisted project map does not clear keyset cursors', async () => {
