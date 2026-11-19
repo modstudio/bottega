@@ -123,6 +123,7 @@ export async function syncCommand(
     throw new Error(enhanced, { cause: error })
   }
   await automaticallyAdoptHostedBoard(presentation, dependencies.boardAdoption)
+  for (const line of result.historyUploadLines ?? []) presentation.log(line)
   if (result.backfill) {
     presentation.log(
       `backfill enqueued ${result.backfill.enqueued}, refreshed-links ${result.backfill.refreshedLinks}, refreshed-numbers ${result.backfill.refreshedNumbers}, refreshed-roots ${result.backfill.refreshedRoots}, skipped-released ${result.backfill.skippedReleased}, skipped-live ${result.backfill.skippedLive}`,

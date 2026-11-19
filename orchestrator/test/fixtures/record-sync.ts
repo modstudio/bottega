@@ -87,6 +87,7 @@ export const options = (
   ],
 ) => ({
   local,
+  historyUploadWithDatabase: async <T>(action: (database: Database) => Promise<T>) => action(local),
   now: () => STAMP,
   identity: { id: MACHINE_ID, name: 'test-machine' },
   principal: {

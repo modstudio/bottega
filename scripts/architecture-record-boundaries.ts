@@ -53,7 +53,7 @@ export const recordAuthCommandBoundaries: ImportBoundary[] = [
       './record-email-verification-client.ts',
       './record-session.ts',
       './record-push-docs.ts',
-      './record-sign-in-history-upload.ts',
+      './record-history-upload.ts',
       './active-space-invariant.ts',
       './record-space.ts',
     ],
