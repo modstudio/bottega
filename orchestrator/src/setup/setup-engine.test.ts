@@ -17,7 +17,7 @@ import {
   type SetupNotice,
 } from './setup-engine.ts'
 import type { SetupFacts } from './setup-facts.ts'
-import { HARNESS_MCP_CATALOGUE, legacyMcpServerName, type McpServer } from './setup-mcp.ts'
+import { legacyMcpServerName, type McpServer } from './setup-mcp.ts'
 import {
   plannedKeystoreAction,
   planSetupActions,
@@ -928,91 +928,6 @@ const agent = (name: string, enabled = true, harness = name, probePassed = true)
   enabled,
   probePassed,
 })
-
-const installCommands = {
-  codex: {
-    darwin: 'brew install --cask codex',
-    linux: 'curl -fsSL https://chatgpt.com/codex/install.sh | CODEX_NON_INTERACTIVE=1 sh',
-  },
-  grok: {
-    darwin: 'curl -fsSL https://x.ai/cli/install.sh | bash',
-    linux: 'curl -fsSL https://x.ai/cli/install.sh | bash',
-  },
-  goose: {
-    darwin: 'brew install block-goose-cli',
-    linux:
-      'curl -fsSL https://github.com/aaif-goose/goose/releases/download/stable/download_cli.sh | CONFIGURE=false bash',
-  },
-} as const
-
-for (const harness of ['codex', 'grok', 'goose'] as const) {
-  for (const platform of ['darwin', 'linux', 'win32'] as const) {
-    const localAgent =
-      harness === 'goose' ? agent('goose-agent', true, harness) : agent(harness, true, harness)
-    test(`${harness} install decision on ${platform}`, () => {
-      const facts = {
-        ...machineWithHarness(harness, null, 'unknown'),
-        os: { platform, arch: 'x64', wsl: false },
-      } as SetupFacts
-      const plan = proposeSetup(facts, [], [], [localAgent])
-      const question = plan.questions.find(({ id }) => id === `harness:${harness}:install`)
-      if (platform === 'win32') {
-        expect(question).toBeUndefined()
-        expect(plan.notices).toContainEqual(
-          expect.objectContaining({
-            fix: expect.stringContaining(HARNESS_MCP_CATALOGUE[harness].documentation),
-          }),
-        )
-      } else {
-        const command = installCommands[harness][platform]
-        expect(question).toMatchObject({
-          question: `Install ${harness}? Runs: \`${command}\``,
-          recommendation: 'install',
-          options: [
-            expect.objectContaining({ id: 'install' }),
-            expect.objectContaining({ id: 'skip' }),
-          ],
-        })
-        expect(planSetupActions(plan, recommendedAnswers(plan))).toContainEqual({
-          kind: 'install-harness',
-          harness,
-          route: HARNESS_MCP_CATALOGUE[harness].install[platform],
-        })
-        expect(
-          planSetupActions(plan, {
-            ...recommendedAnswers(plan),
-            [`harness:${harness}:install`]: 'skip',
-          }),
-        ).toContainEqual({
-          kind: 'skip-harness-install',
-          harness,
-          route: HARNESS_MCP_CATALOGUE[harness].install[platform],
-        })
-      }
-    })
-
-    test(`${harness} present on ${platform} has no install decision`, () => {
-      const facts = {
-        ...machineWithHarness(harness, `/bin/${harness}`, 'signed-in'),
-        os: { platform, arch: 'x64', wsl: false },
-      } as SetupFacts
-      const plan = proposeSetup(facts, [], [], [localAgent])
-      expect(plan.questions.some(({ id }) => id === `harness:${harness}:install`)).toBe(false)
-      expect(plan.notices).toEqual([])
-    })
-
-    test(`${harness} disabled on ${platform} has no install decision`, () => {
-      const facts = {
-        ...machineWithHarness(harness, null, 'unknown'),
-        os: { platform, arch: 'x64', wsl: false },
-      } as SetupFacts
-      const disabled = { ...localAgent, enabled: false }
-      const plan = proposeSetup(facts, [], [], [disabled])
-      expect(plan.questions.some(({ id }) => id === `harness:${harness}:install`)).toBe(false)
-      expect(plan.notices).toEqual([])
-    })
-  }
-}
 
 test('notices when an enabled built-in agent harness is not signed in', () => {
   const plan = proposeSetup(

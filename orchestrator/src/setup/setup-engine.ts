@@ -83,7 +83,7 @@ type SetupRegistrationProposal = {
   legacyName?: LegacyMcpServerName
   workerOnly: boolean
 }
-export type SetupHarnessInstallProposal = {
+type SetupHarnessInstallProposal = {
   harness: HarnessName
   questionId: string
   route: HarnessInstallRoute
@@ -368,7 +368,7 @@ function machineNotices(machine: SetupFacts): SetupNotice[] {
     notices.push({
       message: 'gh is signed out',
       fix: 'gh auth login --hostname github.com',
-      blocking: true,
+      blocking: route !== null,
     })
   if (
     (machine.machineLevel === 'full' || machine.machineLevel === null) &&
