@@ -472,10 +472,13 @@ function reportRetrievalCheck(
   if (result.exitCode !== 0) presentation.exitCode(1)
 }
 
-function sandboxRuntimeDoctorLine(runtime: RuntimeAvailability): string {
+export function sandboxRuntimeDoctorLine(runtime: RuntimeAvailability): string {
   return runtime.available
     ? `sandbox        runtime available at ${runtime.location}`
-    : `sandbox        runtime NOT AVAILABLE at ${runtime.location}; ${runtime.remedy}`
+    : [
+        `sandbox        runtime NOT AVAILABLE at ${runtime.location}; ${runtime.condition}`,
+        ...runtime.fixes.map((fix) => `  ${fix}`),
+      ].join('\n')
 }
 
 async function reportDatabaseStatus(log: DoctorPresentation['log']): Promise<void> {

@@ -23,10 +23,22 @@ import {
 import {
   classifySandboxRuntimeAvailability,
   extractSandboxRuntime,
+  packageManagerFromOsRelease,
   SRT_LIBRARY,
   sandboxRuntimeAvailability,
   withSandboxTemporaryDirectory,
 } from './sandbox-runtime.ts'
+
+const availabilityFacts = {
+  location: '/runtime',
+  runtimePresent: true,
+  sourceCheckout: false,
+  missingSystemDependencies: [] as string[],
+  userNamespacesUsable: true as boolean | null,
+  bwrapPath: '/usr/bin/bwrap',
+  bwrapProfileLoaded: false,
+  packageManager: 'apt' as const,
+}
 
 const manifest = {
   name: PLATFORM_NAME,
@@ -122,29 +134,76 @@ describe('sandbox runtime payloads', () => {
     ).toBe(SRT_LIBRARY)
   })
 
-  test('missing system dependencies make the shared ruling unavailable with one remedy', () => {
-    expect(
-      classifySandboxRuntimeAvailability({
-        location: '/runtime',
-        runtimePresent: true,
-        sourceCheckout: false,
-        missingSystemDependencies: [
-          'ripgrep (rg) not found',
-          'bubblewrap (bwrap) not installed',
-          'socat not installed',
-        ],
-      }),
-    ).toEqual({
-      available: false,
-      location: '/runtime',
+  test('missing system dependencies make the shared ruling unavailable with an exact install command', () => {
+    const ruling = classifySandboxRuntimeAvailability({
+      ...availabilityFacts,
+      userNamespacesUsable: false,
       missingSystemDependencies: [
         'ripgrep (rg) not found',
         'bubblewrap (bwrap) not installed',
         'socat not installed',
       ],
-      remedy:
-        'install the missing sandbox system dependencies with the system package manager (ripgrep (rg) not found, bubblewrap (bwrap) not installed, socat not installed), then retry',
     })
+    expect(ruling.available).toBe(false)
+    expect(ruling.fixes).toEqual(['sudo apt-get install bubblewrap socat ripgrep'])
+    expect(ruling.remedy).not.toContain('AppArmor')
+  })
+
+  test('os-release selects package managers by ID before ID_LIKE', () => {
+    expect(packageManagerFromOsRelease('ID=ubuntu')).toBe('apt')
+    expect(packageManagerFromOsRelease('ID=linuxmint\nID_LIKE="ubuntu debian"')).toBe('apt')
+    expect(packageManagerFromOsRelease('ID=rocky\nID_LIKE="rhel fedora"')).toBe('dnf')
+    expect(packageManagerFromOsRelease('ID=arch')).toBe('pacman')
+    expect(packageManagerFromOsRelease('ID=gentoo')).toBe('unknown')
+  })
+
+  test('availability remedies keep runtime and namespace fixes in ruling order', () => {
+    const reinstall = classifySandboxRuntimeAvailability({
+      ...availabilityFacts,
+      runtimePresent: false,
+      userNamespacesUsable: null,
+    })
+    expect(reinstall.fixes).toEqual(['reinstall the sandbox runtime at /runtime, then retry'])
+
+    const profile = classifySandboxRuntimeAvailability({
+      ...availabilityFacts,
+      userNamespacesUsable: false,
+    })
+    expect(profile.fixes[0]).toContain("sudo tee /etc/apparmor.d/bwrap <<'EOF'")
+    expect(profile.fixes[0]).toContain('profile bwrap /usr/bin/bwrap flags=(unconfined)')
+    expect(profile.fixes[1]).toBe('sudo systemctl reload apparmor')
+
+    const conflict = classifySandboxRuntimeAvailability({
+      ...availabilityFacts,
+      userNamespacesUsable: false,
+      bwrapProfileLoaded: true,
+    })
+    expect(conflict.fixes).toEqual([expect.stringContaining('sudo aa-status | grep bwrap')])
+    expect(conflict.fixes[0]).toContain('/etc/apparmor.d/bwrap')
+
+    const alternatePath = classifySandboxRuntimeAvailability({
+      ...availabilityFacts,
+      userNamespacesUsable: false,
+      bwrapPath: '/opt/bin/bwrap',
+    })
+    expect(alternatePath.fixes).toEqual([
+      expect.stringContaining('bwrap was found at /opt/bin/bwrap'),
+    ])
+  })
+
+  test('Linux availability gathers namespace and AppArmor facts through injected ports', () => {
+    const observed: string[][] = []
+    const ruling = sandboxRuntimeAvailability(process.env, 'linux', process.arch, [], {
+      readOsRelease: () => 'ID=fedora',
+      resolveExecutable: (name) => (name === 'bwrap' ? '/usr/bin/bwrap' : '/bin/sh'),
+      probeUserNamespaces: (bwrap, shell) => {
+        observed.push([bwrap, shell])
+        return false
+      },
+      readApparmorProfiles: () => 'bwrap (enforce)\n',
+    })
+    expect(observed).toEqual([['/usr/bin/bwrap', '/bin/sh']])
+    expect(ruling.fixes[0]).toContain('sudo aa-status | grep bwrap')
   })
 
   test('embedded availability requires every host payload without extracting it', () => {
@@ -154,11 +213,13 @@ describe('sandbox runtime payloads', () => {
       registerEmbeddedAssets({ assets: {}, files: {}, manifest })
       expect(
         sandboxRuntimeAvailability({ BOTTEGA_STATE_HOME: state }, 'linux', 'arm64', []),
-      ).toEqual({
+      ).toMatchObject({
         available: false,
         location: join(state, 'runtime', manifest.version, 'sandbox-runtime'),
         missingSystemDependencies: [],
-        remedy: `reinstall the sandbox runtime at ${join(state, 'runtime', manifest.version, 'sandbox-runtime')}, then retry`,
+        fixes: [
+          `reinstall the sandbox runtime at ${join(state, 'runtime', manifest.version, 'sandbox-runtime')}, then retry`,
+        ],
       })
       registerEmbeddedAssets({
         assets: {},

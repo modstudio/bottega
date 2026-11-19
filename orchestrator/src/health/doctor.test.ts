@@ -17,8 +17,24 @@ import {
   registeredMainCheckoutDiagnosis,
   reportActiveSpaceDoctor,
   reportCheckoutRegister,
+  sandboxRuntimeDoctorLine,
   workerCheckDoctorFinding,
 } from './doctor.ts'
+
+test('sandbox doctor prints each readiness fix on its own indented line', () => {
+  expect(
+    sandboxRuntimeDoctorLine({
+      available: false,
+      location: '/runtime',
+      missingSystemDependencies: [],
+      condition: 'the namespace probe failed',
+      remedy: 'the namespace probe failed; first; second',
+      fixes: ['first', 'second'],
+    }),
+  ).toBe(
+    'sandbox        runtime NOT AVAILABLE at /runtime; the namespace probe failed\n  first\n  second',
+  )
+})
 
 test('machine doctor reports whoami active-space results without claiming unavailable checks pass', async () => {
   const passing = await activeSpaceDoctorDiagnosis(async () => ({

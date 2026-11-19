@@ -49,7 +49,10 @@ function facts(overrides: Partial<Parameters<typeof classifySetupFacts>[0]> = {}
       available: false,
       location: '/runtime',
       missingSystemDependencies: [],
-      remedy: 'reinstall the sandbox runtime at /runtime, then retry',
+      condition: 'the sandbox runtime is not installed completely',
+      remedy:
+        'the sandbox runtime is not installed completely; reinstall the sandbox runtime at /runtime, then retry',
+      fixes: ['reinstall the sandbox runtime at /runtime, then retry'],
     },
     ...overrides,
   })

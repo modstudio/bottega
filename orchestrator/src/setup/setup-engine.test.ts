@@ -73,7 +73,51 @@ const machine = {
   recordApiConfigured: true,
   git: { path: '/bin/git', version: '1' },
   gh: { path: '/bin/gh', version: '1', loggedIn: true },
+  sandboxRuntime: {
+    available: true,
+    location: '/runtime',
+    missingSystemDependencies: [],
+    condition: '',
+    remedy: '',
+    fixes: [],
+  },
 } as SetupFacts
+
+test('full setup presents each sandbox readiness fix as a non-blocking notice', () => {
+  const unavailable = {
+    available: false,
+    location: '/runtime',
+    missingSystemDependencies: ['bubblewrap (bwrap) not installed'],
+    condition: 'missing sandbox system dependencies (bubblewrap (bwrap) not installed)',
+    remedy: 'missing sandbox system dependencies; sudo apt-get install bubblewrap',
+    fixes: ['sudo apt-get install bubblewrap', 'rerun setup'],
+  }
+  const plan = proposeSetup(
+    {
+      ...machine,
+      sandboxRuntime: unavailable,
+    },
+    [],
+    [],
+    [],
+  )
+  expect(plan.notices).toEqual([
+    {
+      message: 'missing sandbox system dependencies (bubblewrap (bwrap) not installed)',
+      fix: 'sudo apt-get install bubblewrap',
+      blocking: false,
+    },
+    {
+      message: 'missing sandbox system dependencies (bubblewrap (bwrap) not installed)',
+      fix: 'rerun setup',
+      blocking: false,
+    },
+  ])
+  expect(
+    proposeSetup({ ...machine, machineLevel: 'record', sandboxRuntime: unavailable }, [], [], [])
+      .notices,
+  ).toEqual([])
+})
 
 test('does not plan a file keystore when the keychain is usable, unknown, or explicitly selected', () => {
   const keystore = (keychainUsable: boolean | null, source: SetupFacts['keystore']['source']) =>
