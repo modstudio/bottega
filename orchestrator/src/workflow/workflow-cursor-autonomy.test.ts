@@ -210,6 +210,7 @@ describe('workflow cursor stored autonomy', () => {
       live,
     )
 
+    if (!opened.cursor || !recomposed.cursor) throw new Error('expected workflow cursors')
     expect(recomposed.cursor.id).toBe(opened.cursor.id)
     expect(recomposed.cursor.opened).toBeFalse()
     expect(renderWorkflowComposition(recomposed)).not.toContain('diagnose')
