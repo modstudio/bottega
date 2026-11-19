@@ -3,6 +3,7 @@
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
+  CURRENT_DATA_KEY_PATH,
   ConfigClientError,
   type ConfigWriteDestination,
   configClient,
@@ -16,7 +17,7 @@ import {
 } from '../../../shared/credential.ts'
 import {
   missingDataKeyWrapRemedy,
-  noDataKeyRemedy,
+  spaceHasNoDataKeyRemedy,
 } from '../../../shared/credential-machine-trust.ts'
 import { readCredentialMachineTrustFactsOrUnchecked } from '../../../shared/credential-machine-trust-reader.ts'
 import {
@@ -194,7 +195,7 @@ function noDataKeyRefusal(address: CredentialAddress): Error {
     ? 'account'
     : `project ${address.projectName} in space ${address.spaceName}`
   return new Error(
-    `cannot access credentials for ${binding}: ${noDataKeyRemedy(address.spaceName)}`,
+    `cannot access credentials for ${binding}: ${spaceHasNoDataKeyRemedy(address.spaceName)}`,
   )
 }
 
@@ -244,7 +245,7 @@ export async function setCredential(
     if (
       error instanceof ConfigClientError &&
       error.status === 404 &&
-      error.route.split('?', 1)[0] === '/v1/config/data-keys/current'
+      error.route.split('?', 1)[0] === CURRENT_DATA_KEY_PATH
     )
       throw noDataKeyRefusal(address)
     throw error

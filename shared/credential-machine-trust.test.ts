@@ -2,8 +2,9 @@ import { expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from './brand.ts'
 import {
   credentialMachineTrustFacts,
+  credentialMachineTrustSteps,
   missingDataKeyWrapRemedy,
-  noDataKeyRemedy,
+  spaceHasNoDataKeyRemedy,
 } from './credential-machine-trust.ts'
 
 const space = 'studio'
@@ -26,24 +27,12 @@ test('an unregistered credential machine is told to register and then trust this
   )
 })
 
-test('a revoked credential machine is told to initialize, register, and trust a new key', () => {
-  const remedy = missingDataKeyWrapRemedy(facts([row({ revokedAt: '2026-11-10T00:00:00.000Z' })]))
-  expect(remedy).toContain(`${PLATFORM_SLUG} machine config machine init --space studio`)
-  expect(remedy).toContain(`${PLATFORM_SLUG} machine config machine trust <keyId> <publicKey>`)
-})
-
 test('a registered untrusted credential machine is told only to trust this key', () => {
   const remedy = missingDataKeyWrapRemedy(facts([row()]))
   expect(remedy).toContain(
     `${PLATFORM_SLUG} machine config machine trust machine-key AQID --space studio`,
   )
   expect(remedy).not.toContain('machine config machine register')
-})
-
-test('a trusted credential machine is told that its data-key wrap is missing', () => {
-  expect(missingDataKeyWrapRemedy(facts([row()], { [keyId]: {} }))).toBe(
-    `this machine has no data-key wrap in record space studio; from a machine that already opens that space, run \`${PLATFORM_SLUG} machine config machine trust machine-key AQID --space studio\``,
-  )
 })
 
 test('a registered and trusted unclaimed credential machine retains both facts', () => {
@@ -54,7 +43,7 @@ test('a registered and trusted unclaimed credential machine retains both facts',
   })
 })
 
-test('a credential machine key owned by another user offers both account-switch intents', () => {
+test('a credential machine key owned by another user offers only the supported account switch', () => {
   const observed = facts([row({ userId: 'other-user' })], { [keyId]: {} })
   const remedy = missingDataKeyWrapRemedy(observed)
   expect(observed).toMatchObject({
@@ -62,17 +51,17 @@ test('a credential machine key owned by another user offers both account-switch 
     trusted: false,
     ownedByAnotherUser: true,
   })
-  expect(remedy).toContain("sign back in as the account that owns this machine's key")
-  expect(remedy).toContain(`${PLATFORM_SLUG} machine config machine init --space studio`)
-  expect(remedy).toContain(`${PLATFORM_SLUG} machine config machine register --space studio`)
-  expect(remedy).toContain(
-    `${PLATFORM_SLUG} machine config machine trust <keyId> <publicKey> --space studio`,
+  expect(remedy).toBe(
+    "this machine's key in record space studio belongs to another account; sign back in as that account. Using this machine under a different account is not supported yet.",
   )
-  expect(remedy).not.toContain('machine config machine trust machine-key')
+  expect(credentialMachineTrustSteps(observed)).toEqual([])
+  expect(remedy).not.toContain('machine config machine init')
+  expect(remedy).not.toContain('machine config machine register')
+  expect(remedy).not.toContain('machine config machine trust')
 })
 
 test('a record space without a data key names registration and no trust command', () => {
-  const remedy = noDataKeyRemedy(space)
+  const remedy = spaceHasNoDataKeyRemedy(space)
   expect(remedy).toContain('record space studio has no data key yet')
   expect(remedy).toContain(`${PLATFORM_SLUG} machine config machine register --space studio`)
   expect(remedy).not.toContain('machine config machine trust')

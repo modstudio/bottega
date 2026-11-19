@@ -77,7 +77,7 @@ test('a project destination never consults machine keys in another space', async
   expect(listed).toBe(false)
 })
 
-test('a destination machine key owned by another user gives both intents with the space slug', async () => {
+test('a destination machine key owned by another user gives only the supported account switch', async () => {
   const keyId = 'machine-key'
   const client = {
     whoami: async () => ({
@@ -108,10 +108,11 @@ test('a destination machine key owned by another user gives both intents with th
     },
     { spaceId: space, userId: user },
   ).catch((error) => String(error))
-  expect(refusal).toContain("sign back in as the account that owns this machine's key")
-  expect(refusal).toContain('machine config machine init --space alpha')
-  expect(refusal).toContain('machine config machine register --space alpha')
-  expect(refusal).toContain('machine config machine trust <keyId> <publicKey> --space alpha')
-  expect(refusal).not.toContain('machine config machine trust machine-key')
+  expect(refusal).toContain(
+    "this machine's key in record space alpha belongs to another account; sign back in as that account. Using this machine under a different account is not supported yet.",
+  )
+  expect(refusal).not.toContain('machine config machine init')
+  expect(refusal).not.toContain('machine config machine register')
+  expect(refusal).not.toContain('machine config machine trust')
   expect(refusal).not.toContain(space)
 })

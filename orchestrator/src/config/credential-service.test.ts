@@ -200,6 +200,7 @@ test('set credential names machine registration when the space has no data key',
 })
 
 test('set credential gives the project access remedy when the data key has no wrap', async () => {
+  const keyId = await machineKeyId(pair.publicKey)
   const createDataKey = mock(async () => ({ id: '', version: 1 }))
   const client = {
     currentDataKey: async () => ({
@@ -210,12 +211,16 @@ test('set credential gives the project access remedy when the data key has no wr
       wraps: [],
     }),
     createDataKey,
-    listMachineKeys: async () => [],
+    listMachineKeys: async () => [{ keyId, userId: 'signed-in-user', revokedAt: null }],
     readTrustLog: async () => [],
+    whoami: async () => ({
+      user: { id: 'signed-in-user' },
+      memberships: [],
+    }),
   } as unknown as ConfigClient
-  await expect(setCredential(address, 'secret', client)).rejects.toThrow(
-    'machine config machine trust',
-  )
+  const refusal = await setCredential(address, 'secret', client).catch((error) => String(error))
+  expect(refusal).toContain('this machine is not trusted in record space studio')
+  expect(refusal).toContain('machine config machine trust')
   expect(createDataKey).not.toHaveBeenCalled()
 })
 
