@@ -20,6 +20,10 @@ export function projectNotRegisteredRefusal(project: string): string {
   return `project '${project}' is not registered; run \`${PLATFORM_SLUG} project list\``
 }
 
+export function uuidQualifierRefusal(): string {
+  return 'a UUID takes no qualifier; pass it bare'
+}
+
 export function referenceNotVisibleRefusal(scope: string, remedy?: string): string {
   return `reference is not visible in ${scope}${remedy ? `; ${remedy}` : ''}`
 }

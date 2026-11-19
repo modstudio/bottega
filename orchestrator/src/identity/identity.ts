@@ -12,6 +12,7 @@ import {
   REFERENCE_PREFIXES,
   type ReferenceKind,
 } from '../../../shared/reference.ts'
+import { uuidQualifierRefusal } from '../../../shared/reference-refusal.ts'
 import { projectByName, projectByRecordId } from '../project/project-read.ts'
 import { cachedProjectSpaces } from '../project-space-cache.ts'
 import { questionById, questionByProjectNumber } from '../question-store/question-store-read.ts'
@@ -210,7 +211,7 @@ export async function resolveParsedReference(
       `reference ${JSON.stringify(String(reference))} names a ${kind}, expected ${expectedKind}`,
     )
   if (parsed.qualifier && parsed.value.kind === 'record-id')
-    throw new Error('a UUID takes no qualifier; pass it bare')
+    throw new Error(uuidQualifierRefusal())
   if (kind === 'run') validateRunQualifier(reference, parsed, context)
 
   const result = !kind

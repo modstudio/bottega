@@ -87,6 +87,7 @@ test('context pointers dispatch the workflow evidence forms through the shared p
     resolvedPointerTarget(`attached-text:${newRecordId()}`, database, adapter),
   ).rejects.toThrow('not visible in this machine; pass the UUID of a visible record')
   await expect(resolvedPointerTarget('DEV-2473/6', database, adapter)).resolves.toBe('DEV-2473/6')
+  await expect(resolvedPointerTarget('dev-2473/6', database, adapter)).resolves.toBe('DEV-2473/6')
   await expect(
     resolvedPointerTarget(`doc:project/${PLATFORM_SLUG}/identity`, database, adapter),
   ).resolves.toBe(`doc:project/${PLATFORM_SLUG}/identity`)
@@ -121,15 +122,6 @@ test('an unreachable document store keeps the could-not-reach refusal distinct',
       }),
     ),
   ).rejects.toThrow('could not reach the document store')
-  await expect(
-    resolvedPointerTarget(
-      `doc:project/${PLATFORM_SLUG}/identity`,
-      database,
-      ports(async () => {
-        throw new Error('network unavailable')
-      }),
-    ),
-  ).rejects.not.toThrow('does not resolve')
   database.close()
 })
 

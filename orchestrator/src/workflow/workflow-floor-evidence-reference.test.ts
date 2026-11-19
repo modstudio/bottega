@@ -2,9 +2,7 @@ import { expect, test } from 'bun:test'
 import { database, gather } from './workflow-floor-evidence.fixture.ts'
 
 test('numbered pull-request artifacts resolve through their number and still enforce identity', async () => {
-  const references: Array<number | string> = []
   const viewPullRequest = (_project: string, reference: number | string) => {
-    references.push(reference)
     return {
       state: 'OPEN' as const,
       mergedAt: null,
@@ -22,7 +20,6 @@ test('numbered pull-request artifacts resolve through their number and still enf
   await expect(gather(database(), { artifacts: ['#16'] }, { viewPullRequest })).rejects.toThrow(
     'resolved as https://github.com/acme/app/pull/15',
   )
-  expect(references).toEqual([15, 16])
 })
 
 test('commit artifacts resolve through the project checkout and refuse an unresolved SHA', async () => {

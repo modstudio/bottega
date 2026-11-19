@@ -22,6 +22,7 @@ export const identityModules = [
   module('orchestrator/src/identity/identity.ts', [
     'bun:sqlite',
     '../../../shared/identity-state-classes.ts',
+    '../../../shared/reference-refusal.ts',
     '../../../shared/reference.ts',
     '../project/project-read.ts',
     '../project-space-cache.ts',

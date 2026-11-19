@@ -8,6 +8,7 @@ import {
   NOTE_REFERENCE_FORMS,
   projectNotRegisteredRefusal,
   referenceNotVisibleRefusal,
+  uuidQualifierRefusal,
 } from '../../../shared/reference-refusal.ts'
 
 export function resolveNoteIdentity(
@@ -27,7 +28,7 @@ export function resolveNoteIdentity(
   if (parsed.qualifier && !isRegistered(parsed.qualifier.value))
     throw new Error(projectNotRegisteredRefusal(parsed.qualifier.value))
   if (parsed.value.kind === 'record-id') {
-    if (parsed.qualifier) throw new Error('a UUID takes no qualifier; pass it bare')
+    if (parsed.qualifier) throw new Error(uuidQualifierRefusal())
     const row = database
       .query<{ record_id: string }, [string]>('SELECT record_id FROM note WHERE record_id=?')
       .get(parsed.value.recordId)

@@ -1,5 +1,5 @@
 const NUMBER_PREDICATE =
-  /\b(?:WHERE|AND|OR)\b(?:(?!\b(?:SELECT|INSERT|UPDATE|DELETE|SET|VALUES|ORDER|RETURNING|ON\s+CONFLICT)\b)[^;`'"])*?\b(?:[A-Za-z_$][\w$]*\.)?number\s*(?:=\s*(?:\?|\$\d+|\$\{|[A-Za-z_$][\w$]*\.number\b)|IN\s*\()/gi
+  /\b(?:WHERE|AND|OR|ON|HAVING)\b(?:(?!\b(?:SELECT|INSERT|UPDATE|DELETE|SET|VALUES|ORDER|RETURNING|ON\s+CONFLICT)\b)[^;`'"])*?\b(?:[A-Za-z_$][\w$]*\.)?number\s*(?:=\s*(?:\?|\$\d+|\$\{|[A-Za-z_$][\w$]*\.number\b)|IN\s*\()/gi
 const NUMBER_PREDICATE_FRAGMENT =
   /[`'"](?:[A-Za-z_$][\w$]*\.)?number\s*(?:=\s*(?:\?|\$\d+|\$\{|[A-Za-z_$][\w$]*\.number\b)|IN\s*\()/gi
 const IDENTIFIER_CLASSIFIER_CALL = /\bclassify[A-Za-z]+Identifier\s*\(/gi

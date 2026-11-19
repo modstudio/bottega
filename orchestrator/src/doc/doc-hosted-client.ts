@@ -67,7 +67,7 @@ export async function readHostedDocReference(address: string): Promise<Record<st
   if (!scope || !rawSubject || !slug)
     throw new Error(`invalid document address ${JSON.stringify(address)}`)
   const subject = rawSubject === '_' ? null : rawSubject
-  return (await hostedDocClient(scope, subject)).getDoc(slug)
+  return (await hostedDocClient(scope, subject)).getDoc(encodeURIComponent(slug))
 }
 
 function docOwner(projectName: string | null): RecordWriteOwner {
