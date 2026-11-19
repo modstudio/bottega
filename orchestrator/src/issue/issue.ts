@@ -769,7 +769,7 @@ export async function workIssue(key: string): Promise<void> {
   }
   const reporting = projectByName(issue.reportingProject)
   if (!reporting) throw new Error(`unknown reporting project "${issue.reportingProject}"`)
-  const sandboxRuntime = sandboxRuntimeAvailability()
+  const sandboxRuntime = await sandboxRuntimeAvailability()
   if (!srtInstalled(sandboxRuntime)) {
     const body = [
       'Coordinator could not attempt this issue because the sandbox runtime is unavailable.',

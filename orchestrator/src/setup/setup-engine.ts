@@ -351,6 +351,18 @@ function machineNotices(machine: SetupFacts): SetupNotice[] {
       fix: 'gh auth login --hostname github.com',
       blocking: true,
     })
+  if (
+    (machine.machineLevel === 'full' || machine.machineLevel === null) &&
+    !machine.sandboxRuntime.available
+  ) {
+    for (const fix of machine.sandboxRuntime.fixes) {
+      notices.push({
+        message: machine.sandboxRuntime.condition,
+        fix,
+        blocking: false,
+      })
+    }
+  }
   if (machine.installationKind === 'distribution' && machine.os?.platform === 'linux') {
     const schedulesRequired =
       (machine.schedules ?? []).some(({ installed }) => installed) ||

@@ -1,10 +1,13 @@
 // concern: sandbox-runtime availability and extracted payload adapter; must not know sandbox policy.
-import { existsSync } from 'node:fs'
+
+import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import {
   type SandboxRuntimeConfig as LibrarySandboxRuntimeConfig,
   SandboxManager,
 } from '@anthropic-ai/sandbox-runtime'
+import { which } from 'bun'
+import { startBoundedSync } from '../../../shared/bounded-process.ts'
 import {
   type EmbeddedRuntimeFile,
   embeddedDistributionManifest,
@@ -64,14 +67,100 @@ export type RuntimeAvailability = {
   available: boolean
   location: string
   missingSystemDependencies: string[]
+  condition: string
   remedy: string
+  fixes: string[]
+  sandboxProbeUnavailableReason: string | null
 }
+
+export type LinuxPackageManager = 'apt' | 'dnf' | 'pacman' | 'unknown'
 
 export type RuntimeAvailabilityFacts = {
   location: string
   runtimePresent: boolean
   sourceCheckout: boolean
   missingSystemDependencies: string[]
+  userNamespacesUsable: boolean | null
+  bwrapPath: string | null
+  bwrapProfileLoaded: boolean
+  packageManager: LinuxPackageManager
+  sandboxProbeUnavailableReason?: string | null
+}
+
+type AvailabilityPorts = {
+  readOsRelease?: () => string
+  resolveExecutable?: (name: string) => string | null
+  readApparmorProfiles?: () => string
+  probeUserNamespaces?: (bwrapPath: string, shellPath: string) => boolean | Promise<boolean>
+}
+
+const PACKAGES = ['bubblewrap', 'socat', 'ripgrep'] as const
+
+/** Pure distro decision for the host packages required by sandbox-runtime. */
+export function packageManagerFromOsRelease(text: string): LinuxPackageManager {
+  const fields = new Map<string, string>()
+  for (const line of text.split('\n')) {
+    const match = line.match(/^([A-Z_]+)=(.*)$/)
+    if (!match) continue
+    fields.set(
+      match[1]!,
+      match[2]!
+        .trim()
+        .replace(/^(["'])(.*)\1$/, '$2')
+        .toLowerCase(),
+    )
+  }
+  const ids = [fields.get('ID') ?? '', ...(fields.get('ID_LIKE') ?? '').split(/\s+/)].filter(
+    Boolean,
+  )
+  for (const id of ids) {
+    if (id === 'debian' || id === 'ubuntu') return 'apt'
+    if (id === 'fedora' || id === 'rhel' || id === 'centos') return 'dnf'
+    if (id === 'arch') return 'pacman'
+  }
+  return 'unknown'
+}
+
+function missingPackages(errors: string[]): string[] {
+  const packages = new Set<string>()
+  for (const error of errors) {
+    if (/ripgrep|\brg\b/i.test(error)) packages.add('ripgrep')
+    if (/bubblewrap|\bbwrap\b/i.test(error)) packages.add('bubblewrap')
+    if (/socat/i.test(error)) packages.add('socat')
+  }
+  return PACKAGES.filter((name) => packages.has(name))
+}
+
+function sandboxPackageInstallFix(manager: LinuxPackageManager, packages: string[]): string {
+  const names = packages.join(' ')
+  if (manager === 'apt') return `sudo apt-get install ${names}`
+  if (manager === 'dnf') return `sudo dnf install ${names}`
+  if (manager === 'pacman') return `sudo pacman -S ${names}`
+  return `install the missing sandbox system packages with the system package manager: ${names}`
+}
+
+const BWRAP_PROFILE = `abi <abi/4.0>,
+include <tunables/global>
+
+profile bwrap /usr/bin/bwrap flags=(unconfined) {
+  userns,
+  include if exists <local/bwrap>
+}`
+
+function userNamespaceFixes(facts: RuntimeAvailabilityFacts): string[] {
+  if (facts.userNamespacesUsable !== false) return []
+  if (facts.bwrapProfileLoaded)
+    return [
+      'a loaded AppArmor profile named bwrap still blocks the required namespace; run sudo aa-status | grep bwrap and inspect /etc/apparmor.d/bwrap or /usr/share/apparmor/extra-profiles/bwrap-userns-restrict',
+    ]
+  if (facts.bwrapPath !== '/usr/bin/bwrap')
+    return [
+      `the documented AppArmor profile covers /usr/bin/bwrap, but bwrap was found at ${facts.bwrapPath ?? 'an unknown path'}; configure an AppArmor profile for that executable path`,
+    ]
+  return [
+    `sudo tee /etc/apparmor.d/bwrap <<'EOF'\n${BWRAP_PROFILE}\nEOF`,
+    'sudo systemctl reload apparmor',
+  ]
 }
 
 /** Pure availability ruling shared by every sandbox-runtime consumer. */
@@ -79,26 +168,181 @@ export function classifySandboxRuntimeAvailability(
   facts: RuntimeAvailabilityFacts,
 ): RuntimeAvailability {
   const missingSystemDependencies = [...facts.missingSystemDependencies]
-  const remedy = missingSystemDependencies.length
-    ? `install the missing sandbox system dependencies with the system package manager (${missingSystemDependencies.join(', ')}), then retry`
-    : facts.sourceCheckout
-      ? `install the sandbox runtime at ${facts.location} with bun install, then retry`
-      : `reinstall the sandbox runtime at ${facts.location}, then retry`
+  const packages = missingPackages(missingSystemDependencies)
+  const fixes: string[] = []
+  if (packages.length) fixes.push(sandboxPackageInstallFix(facts.packageManager, packages))
+  if (!facts.runtimePresent)
+    fixes.push(
+      facts.sourceCheckout
+        ? `install the sandbox runtime at ${facts.location} with bun install, then retry`
+        : `reinstall the sandbox runtime at ${facts.location}, then retry`,
+    )
+  const bwrapMissing = packages.includes('bubblewrap')
+  if (!bwrapMissing) fixes.push(...userNamespaceFixes(facts))
+  const available =
+    facts.runtimePresent &&
+    missingSystemDependencies.length === 0 &&
+    facts.userNamespacesUsable !== false
+  const condition = missingSystemDependencies.length
+    ? `missing sandbox system dependencies (${missingSystemDependencies.join(', ')})`
+    : facts.userNamespacesUsable === false
+      ? 'the Linux sandbox cannot create the required user and network namespaces'
+      : 'the sandbox runtime is not installed completely'
+  const remedy = `${condition}; ${fixes.join('; ')}`
   return {
-    available: facts.runtimePresent && missingSystemDependencies.length === 0,
+    available,
     location: facts.location,
     missingSystemDependencies,
+    condition,
     remedy,
+    fixes,
+    sandboxProbeUnavailableReason: facts.sandboxProbeUnavailableReason ?? null,
+  }
+}
+
+async function defaultProbeUserNamespaces(
+  bwrapPath: string,
+  shellPath: string,
+  path: string,
+): Promise<boolean> {
+  const { cleanupBwrapMountPoints, wrapCommandWithSandboxLinux } = await import(
+    '@anthropic-ai/sandbox-runtime/dist/sandbox/linux-sandbox-utils.js'
+  )
+  const command = await wrapCommandWithSandboxLinux({
+    command: 'true',
+    needsNetworkRestriction: true,
+    writeConfig: { allowOnly: [], denyWithinAllow: [] },
+    bwrapPath,
+    binShell: shellPath,
+  })
+  try {
+    const result = startBoundedSync([shellPath, '-c', command], {
+      budget: 'sandbox-probe',
+      env: { PATH: path },
+    })
+    return result.exitCode === 0
+  } finally {
+    cleanupBwrapMountPoints()
+  }
+}
+
+export type SandboxLaunchFailureFacts = {
+  platform: NodeJS.Platform
+  sandboxKind: 'srt' | 'host'
+  turnFailed: boolean
+  stderr: string
+  launchError: string
+}
+
+export type SandboxReadinessRefusal = {
+  kind: 'sandbox-readiness'
+  signature: string
+  evidence: string
+}
+
+const SANDBOX_READINESS_SIGNATURE =
+  /RTM_NEWADDR|setting up uid map:\s*Permission denied|Sandbox dependencies not available|bubblewrap \(bwrap\) not installed/i
+
+/** Identify only Linux srt failures that host readiness can remedy. */
+export function classifySandboxLaunchFailure(
+  facts: SandboxLaunchFailureFacts,
+): SandboxReadinessRefusal | null {
+  if (!facts.turnFailed) return null
+  if (facts.platform !== 'linux' || facts.sandboxKind !== 'srt') return null
+  const text = `${facts.stderr}\n${facts.launchError}`
+  const match = text.match(SANDBOX_READINESS_SIGNATURE)
+  if (!match) return null
+  const evidence = text
+    .split('\n')
+    .find((line) => SANDBOX_READINESS_SIGNATURE.test(line))
+    ?.trim()
+  return { kind: 'sandbox-readiness', signature: match[0]!, evidence: evidence || match[0]! }
+}
+
+/** Pure presentation for a classified sandbox launch failure and a fresh host ruling. */
+export function renderSandboxReadinessRefusal(
+  failure: SandboxReadinessRefusal,
+  runtime: RuntimeAvailability,
+  originalError: string,
+  doctorCommand: string,
+): string {
+  if (runtime.available) {
+    return `sandbox runtime readiness failed: ${failure.signature}; run ${doctorCommand} on this machine`
+  }
+  const fixes = runtime.fixes.length ? `; ${runtime.fixes.join('; ')}` : ''
+  const evidence = originalError.trim() || failure.evidence
+  return `sandbox runtime readiness failed; ${runtime.condition}${fixes}\noriginal error: ${evidence}`
+}
+
+function profileNamedBwrap(text: string): boolean {
+  return text.split('\n').some((line) => /^bwrap(?:\s|$)/.test(line.trim()))
+}
+
+async function userNamespaceProbeVerdict(
+  linux: boolean,
+  bwrapPath: string | null,
+  bwrapMissing: boolean,
+  resolveExecutable: (name: string) => string | null,
+  probe: AvailabilityPorts['probeUserNamespaces'],
+): Promise<{ usable: boolean | null; unavailableReason: string | null }> {
+  if (!linux || !bwrapPath || bwrapMissing) return { usable: null, unavailableReason: null }
+  const shellPath = resolveExecutable('sh') ?? '/bin/sh'
+  try {
+    const usable = await (probe
+      ? probe(bwrapPath, shellPath)
+      : defaultProbeUserNamespaces(bwrapPath, shellPath, process.env.PATH ?? '/usr/bin:/bin'))
+    return { usable, unavailableReason: null }
+  } catch (error) {
+    return {
+      usable: null,
+      unavailableReason: error instanceof Error ? error.message : String(error),
+    }
   }
 }
 
 /** Gather host facts for the one availability ruling used by every caller. */
-export function sandboxRuntimeAvailability(
+export async function sandboxRuntimeAvailability(
   environment: StateEnvironment = process.env,
   platform: NodeJS.Platform = process.platform,
   arch: NodeJS.Architecture = process.arch,
   missingSystemDependencies: string[] = SandboxManager.checkDependencies().errors,
-): RuntimeAvailability {
+  ports: AvailabilityPorts = {},
+): Promise<RuntimeAvailability> {
+  const linux = platform === 'linux'
+  const resolveExecutable = ports.resolveExecutable ?? ((name) => which(name))
+  const bwrapPath = linux ? resolveExecutable('bwrap') : null
+  const bwrapMissing = missingPackages(missingSystemDependencies).includes('bubblewrap')
+  const probeVerdict = await userNamespaceProbeVerdict(
+    linux,
+    bwrapPath,
+    bwrapMissing,
+    resolveExecutable,
+    ports.probeUserNamespaces,
+  )
+  const userNamespacesUsable = probeVerdict.usable
+  let bwrapProfileLoaded = false
+  if (linux && userNamespacesUsable === false) {
+    try {
+      bwrapProfileLoaded = profileNamedBwrap(
+        (
+          ports.readApparmorProfiles ??
+          (() => readFileSync('/sys/kernel/security/apparmor/profiles', 'utf8'))
+        )(),
+      )
+    } catch {
+      bwrapProfileLoaded = false
+    }
+  }
+  let packageManager: LinuxPackageManager = 'unknown'
+  if (linux) {
+    try {
+      packageManager = packageManagerFromOsRelease(
+        (ports.readOsRelease ?? (() => readFileSync('/etc/os-release', 'utf8')))(),
+      )
+    } catch {
+      packageManager = 'unknown'
+    }
+  }
   const manifest = embeddedDistributionManifest()
   if (!manifest) {
     return classifySandboxRuntimeAvailability({
@@ -106,6 +350,11 @@ export function sandboxRuntimeAvailability(
       runtimePresent: existsSync(SRT_LIBRARY),
       sourceCheckout: true,
       missingSystemDependencies,
+      userNamespacesUsable,
+      bwrapPath,
+      bwrapProfileLoaded,
+      packageManager,
+      sandboxProbeUnavailableReason: probeVerdict.unavailableReason,
     })
   }
   const assets = sandboxRuntimeAssets(platform, arch)
@@ -120,10 +369,15 @@ export function sandboxRuntimeAvailability(
     location: extractedRoot(environment, manifest.version),
     sourceCheckout: false,
     missingSystemDependencies,
+    userNamespacesUsable,
+    bwrapPath,
+    bwrapProfileLoaded,
+    packageManager,
+    sandboxProbeUnavailableReason: probeVerdict.unavailableReason,
   })
 }
 
-export function srtInstalled(runtime = sandboxRuntimeAvailability()): boolean {
+export function srtInstalled(runtime: RuntimeAvailability): boolean {
   return runtime.available
 }
 

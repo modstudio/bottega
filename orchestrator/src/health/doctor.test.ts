@@ -17,8 +17,41 @@ import {
   registeredMainCheckoutDiagnosis,
   reportActiveSpaceDoctor,
   reportCheckoutRegister,
+  sandboxRuntimeDoctorLine,
   workerCheckDoctorFinding,
 } from './doctor.ts'
+
+test('sandbox doctor prints each readiness fix on its own indented line', () => {
+  expect(
+    sandboxRuntimeDoctorLine({
+      available: false,
+      location: '/runtime',
+      missingSystemDependencies: [],
+      condition: 'the namespace probe failed',
+      remedy: 'the namespace probe failed; first; second',
+      fixes: ['first', 'second'],
+      sandboxProbeUnavailableReason: null,
+    }),
+  ).toBe(
+    'sandbox        runtime NOT AVAILABLE at /runtime; the namespace probe failed\n  first\n  second',
+  )
+})
+
+test('sandbox doctor reports an unknown namespace probe without blocking availability', () => {
+  expect(
+    sandboxRuntimeDoctorLine({
+      available: true,
+      location: '/runtime',
+      missingSystemDependencies: [],
+      condition: 'the sandbox runtime is not installed completely',
+      remedy: 'the sandbox runtime is not installed completely; ',
+      fixes: [],
+      sandboxProbeUnavailableReason: 'wrapper import failed',
+    }),
+  ).toBe(
+    `sandbox        runtime available at /runtime\nsandbox probe unavailable: wrapper import failed; ${PLATFORM_NAME} cannot confirm the sandbox works on this host`,
+  )
+})
 
 test('machine doctor reports whoami active-space results without claiming unavailable checks pass', async () => {
   const passing = await activeSpaceDoctorDiagnosis(async () => ({

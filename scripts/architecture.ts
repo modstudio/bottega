@@ -612,15 +612,6 @@ const declaredModules: ArchitectureModule[] = [
   ]),
   ...setupModuleSpecs.map((spec) => module(spec.file, [...spec.allowed, ...spec.typeOnlyAllowed])),
   ...spareModules,
-  module('orchestrator/src/sandbox/sandbox-runtime.ts', [
-    'node:fs',
-    'node:path',
-    '@anthropic-ai/sandbox-runtime',
-    '../../../shared/embedded-assets.ts',
-    '../../../shared/sandbox-runtime-assets.ts',
-    '../../../shared/state-directory.ts',
-    '../database/db.ts',
-  ]),
   module('orchestrator/src/runtime/standard-calibration.ts', [
     './calibration-port.ts',
     '../review/review-calibration.ts',

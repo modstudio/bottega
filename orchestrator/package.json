@@ -21,7 +21,7 @@
   "dependencies": {
     "@agentclientprotocol/codex-acp": "^2.2.2",
     "@agentclientprotocol/sdk": "^1.9.0",
-    "@anthropic-ai/sandbox-runtime": "^0.0.75",
+    "@anthropic-ai/sandbox-runtime": "0.0.75",
     "@ast-grep/lang-bash": "0.0.8",
     "@ast-grep/lang-php": "0.0.7",
     "@ast-grep/lang-python": "0.0.6",

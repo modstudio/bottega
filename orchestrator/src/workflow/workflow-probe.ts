@@ -105,7 +105,7 @@ async function sandboxedRunner(
   database: Database,
   knownIdentifiers: readonly string[],
 ): Promise<ProbeRunResult> {
-  const runtime = sandboxRuntimeAvailability()
+  const runtime = await sandboxRuntimeAvailability()
   if (!runtime.available) {
     throw new Error(`${PLATFORM_SLUG} workflow probe refuses to run unsandboxed; ${runtime.remedy}`)
   }

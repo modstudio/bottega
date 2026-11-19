@@ -88,11 +88,11 @@ test('pins the merge-queue release smoke job', () => {
   expect(() =>
     checkCiWorkflow(
       workflow.replace(
-        "        if: github.event_name == 'merge_group' || github.event_name == 'workflow_dispatch'\n        run: bun scripts/smoke-release.ts",
+        "        if: github.event_name == 'pull_request' || github.event_name == 'merge_group' || github.event_name == 'workflow_dispatch'\n        run: bun scripts/smoke-release.ts",
         '        run: bun scripts/smoke-release.ts',
       ),
     ),
-  ).toThrow('not gated on merge_group or workflow_dispatch; add "if:')
+  ).toThrow('not gated on pull_request, merge_group or workflow_dispatch; add "if:')
 })
 
 test('pins the real-Postgres leg', () => {
@@ -364,7 +364,7 @@ function releaseSmokeJobFixture() {
     runs-on: ubuntu-latest
     steps:
       - name: Run release smoke
-        if: github.event_name == 'merge_group' || github.event_name == 'workflow_dispatch'
+        if: github.event_name == 'pull_request' || github.event_name == 'merge_group' || github.event_name == 'workflow_dispatch'
         run: bun scripts/smoke-release.ts
 `
 }

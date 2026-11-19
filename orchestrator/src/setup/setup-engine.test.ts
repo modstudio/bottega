@@ -73,7 +73,16 @@ const machine = {
   recordApiConfigured: true,
   git: { path: '/bin/git', version: '1' },
   gh: { path: '/bin/gh', version: '1', loggedIn: true },
-} as SetupFacts
+  sandboxRuntime: {
+    available: true,
+    location: '/runtime',
+    missingSystemDependencies: [],
+    condition: '',
+    remedy: '',
+    fixes: [],
+    sandboxProbeUnavailableReason: null,
+  },
+} as unknown as SetupFacts
 
 test('does not plan a file keystore when the keychain is usable, unknown, or explicitly selected', () => {
   const keystore = (keychainUsable: boolean | null, source: SetupFacts['keystore']['source']) =>

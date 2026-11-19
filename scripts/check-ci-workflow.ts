@@ -15,7 +15,7 @@ const playwrightTrustWorkspaceCommand =
   'git config --system --add safe.directory "$GITHUB_WORKSPACE"'
 const releaseSmokeCommand = 'bun scripts/smoke-release.ts'
 const ciReleaseSmokeCondition =
-  "github.event_name == 'merge_group' || github.event_name == 'workflow_dispatch'"
+  "github.event_name == 'pull_request' || github.event_name == 'merge_group' || github.event_name == 'workflow_dispatch'"
 
 export function agreedPlaywrightDependencyPin(
   pins: readonly { file: string; pin: string | undefined }[],
@@ -121,7 +121,7 @@ function checkCiReleaseSmokeJob(source: string): void {
   const step = workflowStepRunning(job, releaseSmokeCommand)
   if (!step?.includes(`if: ${ciReleaseSmokeCondition}`)) {
     throw new Error(
-      `.github/workflows/ci.yml release-smoke command is not gated on merge_group or workflow_dispatch; add "if: ${ciReleaseSmokeCondition}" to the step that runs ${releaseSmokeCommand}`,
+      `.github/workflows/ci.yml release-smoke command is not gated on pull_request, merge_group or workflow_dispatch; add "if: ${ciReleaseSmokeCondition}" to the step that runs ${releaseSmokeCommand}`,
     )
   }
 }

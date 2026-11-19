@@ -15,10 +15,12 @@ import {
 } from './codex-rollout-files.ts'
 import { classifyCodexThrottle } from './codex-throttle.ts'
 import { EMPTY_QUOTA_READINGS } from './quota-readings.ts'
+import { sandboxReadinessRefusal } from './sandbox-readiness.ts'
 import {
   type AgentTransport,
   type ArgvOpts,
   EMPTY_VENDOR_USAGE,
+  failureKindFromStop,
   type NormalizedEvent,
   outcomeFromTransport,
   registerTransport,
@@ -296,11 +298,58 @@ async function cliLaunch(opts: TransportStartOpts) {
       ? opts.agent.resumeArgv({ ...argvOpts, session: opts.session })
       : opts.agent.argv(argvOpts)
   const bin = opts.bin ?? opts.agent.bin
-  const launchArgv = opts.srt
-    ? await sandboxLaunchArgv(opts.srt.profile, bin, argv, opts.srt.temporaryDirectory)
-    : [bin, ...argv]
+  let launchArgv: string[]
+  try {
+    launchArgv = opts.srt
+      ? await sandboxLaunchArgv(opts.srt.profile, bin, argv, opts.srt.temporaryDirectory)
+      : [bin, ...argv]
+  } catch (error) {
+    const launchError = error instanceof Error ? error.message : String(error)
+    const launchFailed = true
+    const refusal = await sandboxReadinessRefusal({
+      srt: Boolean(opts.srt),
+      turnFailed: launchFailed,
+      stderr: '',
+      launchError,
+    })
+    if (refusal) throw new Error(refusal, { cause: error })
+    throw error
+  }
   const stdinPrompt = opts.agent.stdin && !opts.resume ? opts.prompt : undefined
   return { launchArgv, stdinPrompt }
+}
+
+async function cliTurnReadingWithSandboxReadiness(input: {
+  opts: TransportStartOpts
+  overflowed: CliStreamCapture | null
+  stdout: string
+  stderr: string
+  exitCode: number
+}) {
+  const reading = cliTurnReading({
+    overflowed: input.overflowed,
+    harness: workerHarnessName(input.opts.agent),
+    parseReply: () => input.opts.agent.parseReply?.(input.stdout) ?? null,
+    stdout: input.stdout,
+    stderr: input.stderr,
+  })
+  const turnFailed = reading.reply === null && (input.exitCode !== 0 || reading.replyError !== null)
+  const vendorFailureKind = failureKindFromStop(null, reading.replyError)
+  const preserveVendorFailure = ['capacity', 'daily_quota', 'quota', 'billing'].includes(
+    vendorFailureKind,
+  )
+  const refusal = preserveVendorFailure
+    ? null
+    : await sandboxReadinessRefusal({
+        srt: Boolean(input.opts.srt),
+        turnFailed,
+        stderr: input.stderr,
+        launchError: reading.replyError ?? '',
+      })
+  return {
+    ...reading,
+    replyError: refusal || reading.replyError,
+  }
 }
 
 /** Compose the exact environment handed to a CLI child. */
@@ -361,12 +410,12 @@ async function spawnCli(opts: TransportStartOpts): Promise<TransportHandle> {
         const signal = processResult.signal ?? null
         const exitCode =
           processResult.exitCode ?? (signal ? 128 + (osConstants.signals[signal] ?? 0) : 1)
-        const { reply, replyError, tokens } = cliTurnReading({
+        const { reply, replyError, tokens } = await cliTurnReadingWithSandboxReadiness({
+          opts,
           overflowed,
-          harness: workerHarnessName(opts.agent),
-          parseReply: () => opts.agent.parseReply?.(stdout) ?? null,
           stdout,
           stderr,
+          exitCode,
         })
         const usage = usageForBilling(opts.agent.billing, cliUsage(reply?.costUsd ?? null))
         const { quotaReadings, askExposure, overflow } = codexRolloutEvidence(
@@ -374,8 +423,6 @@ async function spawnCli(opts: TransportStartOpts): Promise<TransportHandle> {
           codexHome,
           rolloutOffsets,
         )
-        // Best-effort observation, reported where an operator will see it
-        // without changing what the turn did.
         if (overflow) opts.onWarning?.(overflow.message)
         const sessionId =
           opts.session ??

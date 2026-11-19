@@ -30,6 +30,7 @@ import {
   installAcpStreamTrace,
   traceAcpHandshake,
 } from './acp-trace.ts'
+import { sandboxReadinessRefusal } from './sandbox-readiness.ts'
 import {
   ACP_PILOT_TASK,
   type AgentTransport,
@@ -573,14 +574,26 @@ function writeGooseProviderFile(
   writeFileSync(join(directory, `${provider.name}.json`), provider.content)
 }
 
-function acpLaunchArgv(
+async function acpLaunchArgv(
   opts: TransportStartOpts,
   profile: SandboxRuntimeConfig | null,
   bin: string,
   agentArgv: string[],
-): Promise<string[]> | string[] {
+): Promise<string[]> {
   if (!profile || !opts.srt) return [bin, ...agentArgv]
-  return sandboxLaunchArgv(profile, bin, agentArgv, opts.srt.temporaryDirectory)
+  try {
+    return await sandboxLaunchArgv(profile, bin, agentArgv, opts.srt.temporaryDirectory)
+  } catch (error) {
+    const launchError = error instanceof Error ? error.message : String(error)
+    const refusal = await sandboxReadinessRefusal({
+      srt: Boolean(opts.srt),
+      turnFailed: true,
+      stderr: '',
+      launchError,
+    })
+    if (refusal) throw new Error(refusal, { cause: error })
+    throw error
+  }
 }
 
 function openAcpTrace(
@@ -744,6 +757,26 @@ function acpPermissionDecision(
     editLocations?.locations,
     editLocations?.admittedRoots,
   )
+}
+
+async function acpOpenFailure(
+  error: unknown,
+  stderr: string,
+  opts: TransportStartOpts,
+): Promise<Error> {
+  if (error instanceof Error && error.message.startsWith('sandbox runtime readiness failed')) {
+    return error
+  }
+  const originalError = String((error as Error)?.message ?? error)
+  const joined = [originalError, stderr].filter(Boolean).join('\n')
+  const refusal = await sandboxReadinessRefusal({
+    srt: Boolean(opts.srt),
+    turnFailed: true,
+    stderr,
+    launchError: originalError,
+    originalError: joined,
+  })
+  return new Error(refusal ?? joined, { cause: refusal ? error : undefined })
 }
 
 async function openAcp(opts: TransportStartOpts): Promise<TransportHandle> {
@@ -946,7 +979,7 @@ async function openAcp(opts: TransportStartOpts): Promise<TransportHandle> {
     }
     if (leaderSocket) rmSync(leaderSocket, { force: true })
     const stderr = Buffer.concat(stderrChunks).toString('utf8').trim()
-    throw new Error([String((error as Error)?.message ?? error), stderr].filter(Boolean).join('\n'))
+    throw await acpOpenFailure(error, stderr, opts)
   }
 
   let collectPromise: Promise<TransportResult> | null = null

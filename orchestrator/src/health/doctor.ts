@@ -2,7 +2,7 @@
 /** Knows machine and register diagnosis. Must not know transports, routing, run control, the CLI, or reviews by value. */
 
 import { existsSync, readFileSync } from 'node:fs'
-import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { PLATFORM_NAME, PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { type InstallationKind, installationIdentity } from '../../../shared/install-root.ts'
 import {
   type MachineLevel,
@@ -472,10 +472,19 @@ function reportRetrievalCheck(
   if (result.exitCode !== 0) presentation.exitCode(1)
 }
 
-function sandboxRuntimeDoctorLine(runtime: RuntimeAvailability): string {
+export function sandboxRuntimeDoctorLine(runtime: RuntimeAvailability): string {
+  const probeUnavailable = runtime.sandboxProbeUnavailableReason
+    ? `sandbox probe unavailable: ${runtime.sandboxProbeUnavailableReason}; ${PLATFORM_NAME} cannot confirm the sandbox works on this host`
+    : null
   return runtime.available
-    ? `sandbox        runtime available at ${runtime.location}`
-    : `sandbox        runtime NOT AVAILABLE at ${runtime.location}; ${runtime.remedy}`
+    ? [
+        `sandbox        runtime available at ${runtime.location}`,
+        ...(probeUnavailable ? [probeUnavailable] : []),
+      ].join('\n')
+    : [
+        `sandbox        runtime NOT AVAILABLE at ${runtime.location}; ${runtime.condition}`,
+        ...runtime.fixes.map((fix) => `  ${fix}`),
+      ].join('\n')
 }
 
 async function reportDatabaseStatus(log: DoctorPresentation['log']): Promise<void> {
@@ -664,7 +673,7 @@ function hasCoolingWorker(
   return machineLevel === 'full' && candidates('summarize').some((candidate) => candidate.cooling)
 }
 
-function reportWorkerRuntimeForInstallLevel(
+async function reportWorkerRuntimeForInstallLevel(
   machineLevel: MachineLevel,
   log: DoctorPresentation['log'],
   isReadonlySandboxCandidate: (input: {
@@ -688,7 +697,7 @@ function reportWorkerRuntimeForInstallLevel(
       }),
     )
     .map((agent) => agent.name)
-  log(sandboxRuntimeDoctorLine(sandboxRuntimeAvailability()))
+  log(sandboxRuntimeDoctorLine(await sandboxRuntimeAvailability()))
   log(`sandbox agents ${srtAgents.join(', ') || '(none)'} (read-only repository jobs)`)
   log(`acp            ${doctorAcpStatus(acpRuntimeGaps())}`)
   const local = localRegistrationDiagnosis(configuredUrl, modelHostModel())
@@ -847,7 +856,7 @@ export async function doctorCommand(
     if (probe.failed) exitCode(1)
     for (const line of rowReachabilityDiagnosis(row, configuredUrl)) log(line)
   }
-  const local = reportWorkerRuntimeForInstallLevel(
+  const local = await reportWorkerRuntimeForInstallLevel(
     machineLevel,
     log,
     isReadonlySandboxCandidate,
