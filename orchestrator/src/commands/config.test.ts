@@ -3,7 +3,11 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { type ConfigClient, ConfigClientError } from '../../../shared/config-client.ts'
+import {
+  type ConfigClient,
+  ConfigClientError,
+  type ConfigEntry,
+} from '../../../shared/config-client.ts'
 import { ConfigEntrySchema, MachineConfigFileEntrySchema } from '../../../shared/config-contract.ts'
 import { CONFIG_HOME_ENV } from '../../../shared/config-directory.ts'
 import { writeHostedConfigIdentity } from '../../../shared/hosted-config-space.ts'
@@ -180,7 +184,7 @@ test('config writes route user scope to personal space and named scope independe
 })
 
 test('named-space config reads route to the same destination as the write', async () => {
-  const rows = new Map<string, typeof row>()
+  const rows = new Map<string, ConfigEntry>()
   const destinationId = (destination: { destinationSpaceId?: string }) =>
     destination.destinationSpaceId ?? 'active-space'
   const storedAt = (key: string, scope: string, destination: { destinationSpaceId?: string }) =>
@@ -239,6 +243,7 @@ test('named-space config reads route to the same destination as the write', asyn
     () => client,
     target.destination,
   )
+  if (!('environment' in written.row)) throw new Error('expected a hosted row')
   await verifyConfigWrite(
     client,
     written.row,

@@ -3,7 +3,7 @@
 import { createInterface } from 'node:readline/promises'
 import type { Command } from 'commander'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import type { ConfigClient, ConfigDestination } from '../../../shared/config-client.ts'
+import type { ConfigClient, ConfigDestination, ConfigScope } from '../../../shared/config-client.ts'
 import { isDelegationKey } from '../../../shared/delegation-mode.ts'
 import { KEYSTORE_ENV } from '../../../shared/key-store-constants.ts'
 import { DISPLAY_TIMEZONE_KEY, listMachineEntries } from '../../../shared/machine-config.ts'
@@ -80,10 +80,7 @@ function registerConfigSet(config: Command): void {
         () => client ?? hostedConfigClient(),
         target?.destination,
       )
-      if (target?.scope === 'space') {
-        const remedy = `${PLATFORM_SLUG} machine config set ${write.key} ${write.value} --space ${target.spaceSlug}`
-        await verifyConfigWrite(client!, written.row, target.destination, remedy)
-      }
+      await verifyNamedSpaceConfigWrite(target, client, written, write.key, write.value)
       if (options.json) log(configSetPresentation(written))
       else {
         log(
@@ -166,6 +163,22 @@ export async function configReadDestination(
   if (typeof requested !== 'string') return {}
   const destination = await selectedMachineSpace(verb, requested, client)
   return { destinationSpaceId: destination.spaceId }
+}
+
+async function verifyNamedSpaceConfigWrite(
+  target: Awaited<ReturnType<typeof configWriteTarget>> | undefined,
+  client: ConfigClient | undefined,
+  written: Awaited<ReturnType<typeof setConfigEntry>>,
+  key: string,
+  value: string,
+): Promise<void> {
+  if (target?.scope !== 'space') return
+  const remedy = `${PLATFORM_SLUG} machine config set ${key} ${value} --space ${target.spaceSlug}`
+  if (!client || !('environment' in written.row))
+    throw new Error(
+      `refusing config write success: ${key} did not produce a hosted row; retry \`${remedy}\``,
+    )
+  await verifyConfigWrite(client, written.row, target.destination, remedy)
 }
 
 async function resolveSecretWriteTarget(
