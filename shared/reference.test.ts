@@ -1,11 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from './brand.ts'
 import { newRecordId } from './record-id.ts'
-import {
-  formatReference,
-  parsePointerReference,
-  parseReference,
-} from './reference.ts'
+import { formatReference, parsePointerReference, parseReference } from './reference.ts'
 import {
   malformedReferenceRefusal,
   POINTER_REFERENCE_FORMS,
