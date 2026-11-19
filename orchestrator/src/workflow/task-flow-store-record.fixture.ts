@@ -158,7 +158,7 @@ export const database = testDatabaseFixture((d) => {
   rememberProjectSpace(d, 'fixture', 'fixture-space')
 })
 
-type HostedObligation = HostedTaskFlowStageById['stage']['obligations'][number]
+type HostedObligation = NonNullable<HostedTaskFlowStageById['stage']['obligations']>[number]
 
 function hostedObligation(stageId: string): HostedObligation {
   return {
