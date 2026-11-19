@@ -638,6 +638,9 @@ const EXTERNAL_IDENTIFIERS: readonly ManifestColumn[] = [
     'workflow_event.session_id',
   ]),
   ...manifest('hosted', 'content fingerprint, not a row reference', ['hook_emission.text_hash']),
+  ...manifest('orchestrator', 'Git content tree fingerprint, not a row reference', [
+    'gate_execution.tree_id',
+  ]),
   ...manifest('hosted', 'identifier issued by the orchestrator run system', [
     'hub_task_comment.run_id',
     'hub_task_status_event.run_id',

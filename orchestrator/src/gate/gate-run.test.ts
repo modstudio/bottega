@@ -14,7 +14,7 @@ const repositoryPath = fileURLToPath(new URL('../../..', import.meta.url)).repla
 let priorDepth: string | undefined
 let priorSession: string | undefined
 const headCommit = 'a'.repeat(40)
-const cleanGitState = () => ({ headCommit, porcelainPaths: [] })
+const cleanGitState = () => ({ headCommit, headTree: 'head-tree', porcelainPaths: [] })
 const cleanCheckout = () => ({ presentMarkers: [] as const, unmergedPaths: [] as const })
 beforeEach(() => {
   priorDepth = process.env.BOTTEGA_DEPTH
@@ -51,8 +51,11 @@ test('a gate that dirties the tree while it runs is not attributed to HEAD', asy
     d,
     topLevel: () => repositoryPath,
     checkout: cleanCheckout,
-    gitState: () => ({ headCommit, porcelainPaths: ran ? [' M formatted.ts'] : [] }),
-    commitTree: () => 'clean-tree',
+    gitState: () => ({
+      headCommit,
+      headTree: 'clean-tree',
+      porcelainPaths: ran ? [' M formatted.ts'] : [],
+    }),
     write: () => {},
     runner: () => {
       ran = true
@@ -179,7 +182,6 @@ test('inserts valid check records in the transaction with the gate row', async (
     topLevel: () => repositoryPath,
     checkout: cleanCheckout,
     gitState: cleanGitState,
-    commitTree: () => 'head-tree',
     write: () => {},
     runner: ({ env }) => {
       writeFileSync(

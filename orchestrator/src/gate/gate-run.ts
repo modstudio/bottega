@@ -60,11 +60,11 @@ export type ArchitectGateRunner = (input: {
 
 export type ArchitectGateGitState = (cwd: string) => {
   headCommit: string
+  headTree?: string
   porcelainPaths: readonly string[]
 }
 
 type ArchitectGateTopLevel = (cwd: string) => string | null
-type ArchitectGateCommitTree = (cwd: string, commit: string) => string
 
 export type ArchitectGateRecord = { number: number; exitCode: number } & (
   | { commit: string }
@@ -201,7 +201,7 @@ const defaultRunner: ArchitectGateRunner = ({ command, cwd, env, write }) =>
   })
 
 const observeGitState: ArchitectGateGitState = (cwd) => {
-  const head = spawnSync('git', ['rev-parse', '--verify', 'HEAD^{commit}'], {
+  const head = spawnSync('git', ['rev-parse', 'HEAD^{commit}', 'HEAD^{tree}'], {
     cwd,
     encoding: 'utf8',
   })
@@ -212,18 +212,10 @@ const observeGitState: ArchitectGateGitState = (cwd) => {
   })
   if (status.status !== 0) throw new Error(gitCommandError(cwd, status, 'git status'))
   return {
-    headCommit: head.stdout.trim(),
+    headCommit: head.stdout.split('\n')[0]!.trim(),
+    headTree: head.stdout.split('\n')[1]!.trim(),
     porcelainPaths: status.stdout.split('\0').filter(Boolean),
   }
-}
-
-const observeCommitTree: ArchitectGateCommitTree = (cwd, commit) => {
-  const tree = spawnSync('git', ['rev-parse', '--verify', `${commit}^{tree}`], {
-    cwd,
-    encoding: 'utf8',
-  })
-  if (tree.status !== 0) throw new Error(gitCommandError(cwd, tree, `${commit}^{tree}`))
-  return tree.stdout.trim()
 }
 
 function gateHeadCommit(cwd: string, observe: ArchitectGateGitState): string | null {
@@ -277,7 +269,6 @@ export async function runArchitectGate(input: {
   checkout?: GateCheckoutObserver
   topLevel?: ArchitectGateTopLevel
   contentTree?: (cwd: string, failureContext?: string) => string
-  commitTree?: ArchitectGateCommitTree
   write?: (chunk: string) => void
 }): Promise<ArchitectGateRecord> {
   const { caller, project, gate, checkoutTopLevel } = architectGateTarget(input)
@@ -293,14 +284,8 @@ export async function runArchitectGate(input: {
   const command = resolveGateCommand(gate, checkoutTopLevel)
   const write = input.write ?? ((chunk) => process.stdout.write(chunk))
   const observe = input.gitState ?? observeGitState
-  const before = gateHeadCommit(checkoutTopLevel, observe)
-  const snapshotCommitTree = (commit: string) => {
-    try {
-      return (input.commitTree ?? observeCommitTree)(checkoutTopLevel, commit)
-    } catch (error) {
-      return { unavailable: error instanceof Error ? error.message : String(error) }
-    }
-  }
+  const beforeState = observe(checkoutTopLevel)
+  const before = decideGateHeadCommit(beforeState)
   const snapshotTree = () => {
     try {
       return (input.contentTree ?? architectGateTree)(
@@ -312,7 +297,7 @@ export async function runArchitectGate(input: {
     }
   }
   const treeBefore = before === null ? snapshotTree() : null
-  const cleanHeadTree = before === null ? null : snapshotCommitTree(before)
+  const cleanHeadTree = before === null ? null : (beforeState.headTree ?? null)
   const executionPath = gateCheckExecutionPath()
   const ran = await (input.runner ?? defaultRunner)({
     command,
