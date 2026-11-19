@@ -23,12 +23,12 @@ export const SOURCE_ROOT_ALLOWANCES: SourceRootAllowance[] = [
   },
   {
     path: 'orchestrator/src/sandbox/sandbox-runtime.ts',
-    line: 55,
+    line: 56,
     reason: 'installed payload resolution selects embedded files instead of this disk fallback',
   },
   {
     path: 'orchestrator/src/sandbox/sandbox.ts',
-    line: 300,
+    line: 304,
     reason: 'the source-root sandbox carveout is explicitly omitted for embedded distributions',
   },
 ]

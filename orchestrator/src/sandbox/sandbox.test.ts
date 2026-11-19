@@ -661,6 +661,7 @@ describe('readonly-lens sandbox profile', () => {
       '/projects/fixture/node_modules',
       join(homedir(), '.claude.json'),
       process.execPath,
+      ROOT,
     ])
     expect(profile.filesystem.allowWrite).toEqual(['/runs/tree', '/runs/evidence'])
     expect(profile.filesystem.denyWrite).toEqual(['/tmp/claude', '/private/tmp/claude'])

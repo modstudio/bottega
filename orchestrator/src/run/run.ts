@@ -696,7 +696,7 @@ export async function run(
             | undefined
           const probeTool = projectSettings?.mcp?.probe_tool ?? null
           const wrap = sandboxSelection.profile
-            ? srtLauncher(sandboxSelection.profile, runtimeDir)
+            ? srtLauncher(sandboxSelection.profile, runtimeDir, writesJob)
             : undefined
           const probe = await probeMcpServer({
             server: mcpServerName,

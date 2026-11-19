@@ -16,7 +16,7 @@ import { gooseProviderFile } from '../agent/goose-provider.ts'
 import { terminateProcessGroup } from '../idle-kill.ts'
 import { acpHarnessAttachesProjectServers } from '../mcp/mcp-native-attachment.ts'
 import { lowerRunChildPriority } from '../run/run-child-priority.ts'
-import { runHarnessStateDir, runTempDir } from '../run-owned-paths.ts'
+import { runHarnessStateDir } from '../run-owned-paths.ts'
 import type { SandboxRuntimeConfig } from '../sandbox/sandbox.ts'
 import { sandboxLaunchArgv } from '../sandbox/sandbox.ts'
 import { renderToolInput } from '../tool-event-text.ts'
@@ -580,7 +580,7 @@ function acpLaunchArgv(
   agentArgv: string[],
 ): Promise<string[]> | string[] {
   if (!profile || !opts.srt) return [bin, ...agentArgv]
-  return sandboxLaunchArgv(profile, bin, agentArgv, runTempDir(opts.srt.runtimeDir))
+  return sandboxLaunchArgv(profile, bin, agentArgv, opts.srt.temporaryDirectory)
 }
 
 function openAcpTrace(

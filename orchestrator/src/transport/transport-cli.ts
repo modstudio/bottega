@@ -5,7 +5,6 @@ import { workerHarnessName } from '../agent/worker-launch-env.ts'
 import { eventsFromVendorLine } from '../events.ts'
 import { DEFAULT_IDLE_GRACE_MS, terminateProcessGroup } from '../idle-kill.ts'
 import { lowerRunChildPriority } from '../run/run-child-priority.ts'
-import { runTempDir } from '../run-owned-paths.ts'
 import { sandboxLaunchArgv } from '../sandbox/sandbox.ts'
 import { codexAskExposureFromTexts } from './codex-ask-exposure.ts'
 import { harnessCollectsQuotaReadings, parseCodexQuotaReadings } from './codex-quota.ts'
@@ -253,18 +252,10 @@ function spawnCliChild(
   opts: TransportStartOpts,
   stdinPrompt: string | undefined,
 ) {
-  const temporaryEnvironment = opts.recipeEnvironment?.TMPDIR
-    ? {
-        TMPDIR: opts.recipeEnvironment.TMPDIR,
-        TMP: opts.recipeEnvironment.TMP!,
-        TEMP: opts.recipeEnvironment.TEMP!,
-        CLAUDE_CODE_TMPDIR: opts.recipeEnvironment.CLAUDE_CODE_TMPDIR!,
-      }
-    : {}
   return lowerRunChildPriority(
     execa(launchArgv[0]!, launchArgv.slice(1), {
       cwd: opts.cwd,
-      env: { ...opts.env, ...temporaryEnvironment },
+      env: cliChildEnvironment(opts.env, opts.recipeEnvironment),
       stdin: stdinPrompt !== undefined ? 'pipe' : 'ignore',
       input: stdinPrompt,
       stdout: 'pipe',
@@ -306,10 +297,18 @@ async function cliLaunch(opts: TransportStartOpts) {
       : opts.agent.argv(argvOpts)
   const bin = opts.bin ?? opts.agent.bin
   const launchArgv = opts.srt
-    ? await sandboxLaunchArgv(opts.srt.profile, bin, argv, runTempDir(opts.srt.runtimeDir))
+    ? await sandboxLaunchArgv(opts.srt.profile, bin, argv, opts.srt.temporaryDirectory)
     : [bin, ...argv]
   const stdinPrompt = opts.agent.stdin && !opts.resume ? opts.prompt : undefined
   return { launchArgv, stdinPrompt }
+}
+
+/** Compose the exact environment handed to a CLI child. */
+export function cliChildEnvironment(
+  environment: Record<string, string>,
+  recipeEnvironment: Record<string, string> | undefined,
+): Record<string, string> {
+  return { ...environment, ...recipeEnvironment }
 }
 
 // biome-ignore lint/complexity/noExcessiveLinesPerFunction: stream and process closure share one transport handle state

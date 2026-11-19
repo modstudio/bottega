@@ -612,7 +612,6 @@ const declaredModules: ArchitectureModule[] = [
     'node:path',
     '@anthropic-ai/sandbox-runtime',
     '../../../shared/embedded-assets.ts',
-    '../../../shared/install-root.ts',
     '../../../shared/sandbox-runtime-assets.ts',
     '../../../shared/state-directory.ts',
     '../database/db.ts',

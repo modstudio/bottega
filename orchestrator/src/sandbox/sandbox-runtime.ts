@@ -12,16 +12,16 @@ import {
   extractEmbeddedRuntime,
   resolveInstallFile,
 } from '../../../shared/embedded-assets.ts'
-import { installRoot } from '../../../shared/install-root.ts'
 import {
   type SandboxRuntimeAssets,
   type SandboxRuntimePayload,
   sandboxRuntimeAssets,
 } from '../../../shared/sandbox-runtime-assets.ts'
 import { resolveStateRoot, type StateEnvironment } from '../../../shared/state-directory.ts'
+import { ROOT } from '../database/db.ts'
 
 export const SRT_LIBRARY = join(
-  installRoot(),
+  ROOT,
   'node_modules',
   '@anthropic-ai',
   'sandbox-runtime',
@@ -53,7 +53,7 @@ function extractedRoot(environment: StateEnvironment, version: string): string {
 }
 
 function diskPayloadPath(relativePath: string): string {
-  return join(installRoot(), relativePath)
+  return join(ROOT, relativePath)
 }
 
 function payloads(assets: SandboxRuntimeAssets): SandboxRuntimePayload[] {

@@ -615,13 +615,13 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
     taskBranchAttachment = false
   let grokMcpEnvironment: Record<string, string> = {}
   const runtimeDirExisted = existsSync(runtimeDir)
-  prepareReadOnlyRunTemp(writesJob, runtimeDir)
   /** Cutting the worktree after the row exists throws for a non-repository or a
    * taken worktree path. This used to happen outside the try/finally below, so
    * its row stayed `running` with no process until the stale sweep guessed at it.
    * A run must write its own terminal state for setup as well as for the agent. */
   let cwd = callerCwd
   try {
+    prepareReadOnlyRunTemp(writesJob, runtimeDir)
     await admitFreshRepositoryRun(db(), claim.id, repoJob, !!opts.resume, input.admitDeps)
     switch (claimTreePlan.mode) {
       case 'attach':

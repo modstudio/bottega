@@ -742,7 +742,13 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
       writableRoots,
       gitConfigEnvironment,
       recipeEnvironment,
-      srt: sandboxSelection.profile ? { profile: sandboxSelection.profile, runtimeDir } : undefined,
+      srt: sandboxSelection.profile
+        ? {
+            profile: sandboxSelection.profile,
+            runtimeDir,
+            temporaryDirectory: writesJob ? undefined : recipeEnvironment.CLAUDE_CODE_TMPDIR,
+          }
+        : undefined,
       resume: resumeFacts(opts.resume?.kind ?? null, claim.id, opts.resume?.parent ?? null)
         .carriesVendorSession,
       env: liveChildEnv(

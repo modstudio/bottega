@@ -23,6 +23,7 @@ import { delimiter, isAbsolute, join, relative, resolve } from 'node:path'
 import type { SandboxRuntimeConfig as LibrarySandboxRuntimeConfig } from '@anthropic-ai/sandbox-runtime'
 import { PLATFORM_SLUG, WORKER_MCP_SERVER_NAME } from '../../../shared/brand.ts'
 import { type ConfigEnvironment, resolveEnvFilePaths } from '../../../shared/config-directory.ts'
+import { embeddedDistributionManifest } from '../../../shared/embedded-assets.ts'
 import { fileBackedSecretPaths } from '../../../shared/file-backed-secret-paths.ts'
 import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 import {
@@ -30,6 +31,7 @@ import {
   resolveHubDatabase,
   type StateEnvironment,
 } from '../../../shared/state-directory.ts'
+import { ROOT } from '../database/db.ts'
 import { disabledProjectMcpServers } from '../mcp/mcp-probe.ts'
 import { createNoFollowFile } from '../no-follow-file.ts'
 import { type Project, projectAt } from '../project/projects.ts'
@@ -299,6 +301,7 @@ export function readonlyLensProfile(input: {
       ...(input.nodeModuleLinks ?? linkedNodeModules(input.worktree)).map((path) => resolve(path)),
       join(homedir(), '.claude.json'),
       process.execPath,
+      ...(embeddedDistributionManifest() ? [] : [ROOT]),
     ]),
   ]
   // SRT reads are allow-by-default. This list only carves paths back out of
@@ -660,9 +663,9 @@ export async function sandboxLaunchArgv(
 }
 
 /** Bind one run's temp directory into repeated SRT launches. */
-export function srtLauncher(profile: SandboxRuntimeConfig, runtimeDir: string) {
+export function srtLauncher(profile: SandboxRuntimeConfig, runtimeDir: string, writesJob: boolean) {
   return (bin: string, argv: string[]) =>
-    sandboxLaunchArgv(profile, bin, argv, runTempDir(runtimeDir))
+    sandboxLaunchArgv(profile, bin, argv, writesJob ? undefined : runTempDir(runtimeDir))
 }
 
 /** Release the process-scoped runtime resources provisioned for this run. */
