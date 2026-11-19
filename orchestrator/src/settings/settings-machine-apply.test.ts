@@ -453,6 +453,12 @@ describe('settings apply', () => {
           superseded: [{ event: 'PreToolUse', matcher: 'Bash', script: 'git-guard.py' }],
         },
         { target: 'canon two', outcome: 'refused', detail: 'first\nsecond', changed: false },
+        {
+          target: 'project /projects/missing',
+          outcome: 'skipped',
+          detail: 'missing path',
+          changed: false,
+        },
         { target: 'settings apply', outcome: 'skipped', changed: false },
       ],
       (...values) => lines.push(values.join(' ')),
@@ -461,6 +467,7 @@ describe('settings apply', () => {
       'settings one: already current',
       'profile hook PreToolUse Bash git-guard.py is superseded by the product hook and can be deleted from the profile',
       'canon two: refused; first; second',
+      'project /projects/missing: skipped; missing path',
       'settings apply already running; skipped',
     ])
   })

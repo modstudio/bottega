@@ -15,6 +15,7 @@ import {
 import {
   applyMachineSettings,
   type MachineSettingsApplyResult,
+  settingsApplyLockSkipped,
 } from '../settings/settings-machine-apply.ts'
 import { hookScriptPath, PRODUCT_HOOKS, SCRIPT_FILES } from '../settings/settings-machine-hooks.ts'
 import {
@@ -117,8 +118,7 @@ export async function applySetupInstallVerify(
   adapters: SetupInstallVerifyAdapters = {},
 ): Promise<{ status: 'applied' | 'unchanged'; message: string }> {
   const results = await (adapters.applySettings ?? (() => applyMachineSettings({ check: false })))()
-  const skipped = results.filter((result) => result.outcome === 'skipped')
-  if (skipped.length > 0) {
+  if (results.some(settingsApplyLockSkipped)) {
     throw new Error(
       `settings apply skipped: another settings apply holds the settings-apply lock; ` +
         `re-run \`${PLATFORM_SLUG} machine setup apply\` after it finishes`,

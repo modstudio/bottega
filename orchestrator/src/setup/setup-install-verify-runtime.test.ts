@@ -1,7 +1,10 @@
 import { expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { RECORD_SIGN_IN_REMEDY } from '../../../shared/record-remedies.ts'
-import type { MachineSettingsApplyResult } from '../settings/settings-machine-apply.ts'
+import {
+  type MachineSettingsApplyResult,
+  SETTINGS_APPLY_LOCK_TARGET,
+} from '../settings/settings-machine-apply.ts'
 import {
   hookScriptPath,
   PRODUCT_HOOKS,
@@ -115,7 +118,9 @@ test('a skipped settings render refuses without verifying', async () => {
   let gathered = false
   await expect(
     applySetupInstallVerify({
-      applySettings: async () => [{ target: 'settings apply', outcome: 'skipped', changed: false }],
+      applySettings: async () => [
+        { target: SETTINGS_APPLY_LOCK_TARGET, outcome: 'skipped', changed: false },
+      ],
       facts: () => {
         gathered = true
         return facts()
@@ -123,4 +128,21 @@ test('a skipped settings render refuses without verifying', async () => {
     }),
   ).rejects.toThrow('another settings apply holds the settings-apply lock')
   expect(gathered).toBe(false)
+})
+
+test('a skipped registered project does not prevent verification', async () => {
+  const result = await applySetupInstallVerify({
+    applySettings: async () => [
+      ...current,
+      {
+        target: 'project /projects/missing',
+        outcome: 'skipped',
+        detail: 'missing path',
+        changed: false,
+      },
+    ],
+    facts,
+  })
+  expect(result.status).toBe('unchanged')
+  expect(result.message).toContain('hooks-present: ok')
 })

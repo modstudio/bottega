@@ -69,6 +69,12 @@ export type MachineSettingsApplyResult = {
   superseded?: SupersededProfileHook[]
 }
 
+export const SETTINGS_APPLY_LOCK_TARGET = 'settings apply'
+
+export function settingsApplyLockSkipped(result: MachineSettingsApplyResult): boolean {
+  return result.target === SETTINGS_APPLY_LOCK_TARGET && result.outcome === 'skipped'
+}
+
 type Dependencies = {
   environment: NodeJS.ProcessEnv
   pull(): Promise<unknown>
@@ -388,7 +394,7 @@ export async function applyMachineSettings(
   mkdirSync(stateDirectory, { recursive: true, mode: 0o700 })
   const lease = tryKernelLease(join(stateDirectory, 'settings-apply.lock'), true)
   if (!lease) {
-    return [{ target: 'settings apply', outcome: 'skipped', changed: false }]
+    return [{ target: SETTINGS_APPLY_LOCK_TARGET, outcome: 'skipped', changed: false }]
   }
   try {
     await applyRecordWriteAuthority({ local: () => undefined, hosted: deps.pull })
@@ -408,7 +414,7 @@ export function printMachineSettingsApplyResults(
   log: (...values: unknown[]) => void,
 ): void {
   for (const result of results) {
-    if (result.outcome === 'skipped') {
+    if (settingsApplyLockSkipped(result)) {
       log('settings apply already running; skipped')
       continue
     }
