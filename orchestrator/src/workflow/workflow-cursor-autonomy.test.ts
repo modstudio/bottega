@@ -11,12 +11,19 @@ import {
 import { autonomyNoticeOutput } from './workflow-autonomy-output.ts'
 import { composeWorkflowWithCursor } from './workflow-cursor.ts'
 import { combineCursorAutonomy, mapStoredAutonomyResolution } from './workflow-cursor-autonomy.ts'
+import { resolveCursorLiveAutonomy } from './workflow-cursor-live-autonomy.ts'
 import { getWorkflowStepWithCursor } from './workflow-cursor-serve.ts'
 import { abandonCursor } from './workflow-cursor-test.fixture.ts'
-import { renderWorkflowStep } from './workflow-render.ts'
+import { renderWorkflowComposition, renderWorkflowStep } from './workflow-render.ts'
 import { seedWorkflows } from './workflow-seeds.ts'
 import { installWorkflowStoreFixture } from './workflow-store.fixture.ts'
-import { composeWorkflow, getWorkflowStep } from './workflows.ts'
+import {
+  composeWorkflow,
+  getWorkflowStep,
+  promoteWorkflowLocal,
+  setWorkflowLocal,
+  showResolvedWorkflow,
+} from './workflows.ts'
 
 const args = { key: 'DEV-822', branch: 'DEV-822-work', worktree: '/tmp/work' }
 const context = { session: 'session-one', taskRecordId: 'task-DEV-822' }
@@ -114,6 +121,52 @@ async function composeShipToFlow(d: Database) {
 }
 
 describe('workflow cursor stored autonomy', () => {
+  test('recomposing after an abandoned older version stores autonomy for every current step', async () => {
+    const d = database()
+    await composeWorkflowWithCursor('flow', 'fixture', 'default', args, context, d, {}, {})
+    await abandonCursor('flow', 'fixture', 'default', args, 'operator stopped', context, d)
+    const current = showResolvedWorkflow('flow', undefined, null, d).definition
+    const draft = setWorkflowLocal(
+      'flow',
+      {
+        ...current,
+        modes: current.modes.map((mode) => ({
+          ...mode,
+          steps: [...mode.steps, 'diagnose'],
+        })),
+      },
+      'added step fixture',
+      'test',
+      d,
+    )
+    promoteWorkflowLocal('flow', draft.n, 'publish added step fixture', 'test', d)
+    const live = await resolveCursorLiveAutonomy(
+      { slug: 'flow', project: 'fixture', mode: 'default', args, context },
+      d,
+    )
+
+    const recomposed = await composeWorkflowWithCursor(
+      'flow',
+      'fixture',
+      'default',
+      args,
+      context,
+      d,
+      {},
+      live,
+    )
+
+    expect(renderWorkflowComposition(recomposed)).toContain('diagnose')
+    const stored = d
+      .query<{ autonomy: string }, []>(
+        'SELECT autonomy FROM workflow_cursor ORDER BY number DESC LIMIT 1',
+      )
+      .get()!
+    expect(Object.keys(JSON.parse(stored.autonomy).steps).sort()).toEqual(
+      recomposed.steps.map((step) => step.slug).sort(),
+    )
+  })
+
   test('combines a stricter live resolution across autonomy subjects', async () => {
     const combined = combineCursorAutonomy(pinnedAutonomy(), liveAutonomy())
 
@@ -134,6 +187,49 @@ describe('workflow cursor stored autonomy', () => {
       scope: 'live ship-to',
     })
     expect(combined.looserLiveDifferences).toEqual([])
+  })
+
+  test('serves a pinned step missing from stored autonomy with its live entry', async () => {
+    const d = database()
+    await composeWorkflowWithCursor('flow', 'fixture', 'default', args, context, d, {}, {})
+    const live = await resolveCursorLiveAutonomy(
+      { slug: 'flow', project: 'fixture', mode: 'default', args, context },
+      d,
+    )
+    replaceCursorAutonomy(d, (stored) => {
+      delete (stored.steps as Record<string, unknown>).rebase
+    })
+
+    const served = await getWorkflowStepWithCursor(
+      'flow',
+      'fixture',
+      'rebase',
+      args,
+      'default',
+      context,
+      d,
+      live,
+    )
+
+    expect(served.resolvedAutonomy).toEqual(live.resolution!.steps.rebase)
+  })
+
+  test('compose refuses an autonomy resolution that omits a selected step', () => {
+    const d = database()
+    const composed = composeWorkflow('flow', 'fixture', 'default', args, d)
+    const autonomy: AutonomyResolution = {
+      layers: [],
+      steps: Object.fromEntries(
+        composed.steps
+          .filter((step) => step.slug !== 'lens')
+          .map((step) => [step.slug, step.resolvedAutonomy]),
+      ),
+      rulings: composed.rulings,
+    }
+
+    expect(() => composeWorkflow('flow', 'fixture', 'default', args, d, {}, autonomy)).toThrow(
+      'workflow "flow" autonomy resolution has no entry for steps: lens',
+    )
   })
 
   test('carries a live fallback note through a pinned cursor composition', async () => {

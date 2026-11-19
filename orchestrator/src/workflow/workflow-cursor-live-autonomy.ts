@@ -13,6 +13,7 @@ import { workflowKeyOf } from './workflow-cursor-arguments.ts'
 import { cursorAutonomy } from './workflow-cursor-autonomy.ts'
 import { selectWorkflowCursor, type WorkflowCursorContext } from './workflow-cursor-selection.ts'
 import { cursorComposition } from './workflow-cursor-serve.ts'
+import { decideCursorStart } from './workflow-cursor-transition.ts'
 import { composeWorkflow, getWorkflowStep } from './workflows.ts'
 
 type CursorLiveAutonomyInput = {
@@ -52,15 +53,16 @@ export async function resolveCursorLiveAutonomy(
     input.context.taskStatusCategory,
     input.context.taskFlowClient,
   )
+  const autonomyRow = row && decideCursorStart(row.state) === 'reuse' ? row : null
   let composition: ReturnType<typeof composeWorkflow>
   try {
-    composition = row
-      ? cursorComposition(row, d)
+    composition = autonomyRow
+      ? cursorComposition(autonomyRow, d)
       : composeWorkflow(input.slug, input.project, input.mode, input.args, d, {
           ...input.selection,
           mode: input.mode,
         })
-    const stages = row ? Object.keys(cursorAutonomy(row)?.stages ?? {}) : []
+    const stages = autonomyRow ? Object.keys(cursorAutonomy(autonomyRow)?.stages ?? {}) : []
     return {
       resolution: await resolveProjectAutonomy(
         composition.project,
@@ -76,7 +78,7 @@ export async function resolveCursorLiveAutonomy(
       ),
     }
   } catch (error) {
-    if (!row) throw error
+    if (!autonomyRow) throw error
     return { unavailableReason: errorReason(error) }
   }
 }
