@@ -707,6 +707,18 @@ describe('completed-reply process-ended live outcome', () => {
     ).toBe('quota')
   })
 
+  test('a non-terminal event message does not displace stderr classification', () => {
+    expect(
+      outcome({
+        contractStatus: 'done',
+        replyFilePresent: true,
+        exitCode: 1,
+        stdout: JSON.stringify({ type: 'item.completed', message: usageLimit }) + '\n',
+        stderr: 'codex transport reset',
+      }).failureKind,
+    ).toBe('other')
+  })
+
   test('exit 1 with stderr and stdout both present records the stderr tail', () => {
     expect(
       outcome({

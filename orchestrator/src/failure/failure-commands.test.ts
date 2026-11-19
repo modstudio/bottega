@@ -323,8 +323,11 @@ describe('reclassify-failures', () => {
     expect(stdout).toContain(
       `kind is rolled up from its turns; its own failure cannot be reclassified because its error column holds the last turn's error; reclassify turn ${turnNumber} instead`,
     )
-    expect(db().query('SELECT failure_kind FROM run WHERE record_id=?').get(turn)).toEqual({
+    expect(
+      db().query('SELECT failure_kind, own_failure_kind FROM run WHERE record_id=?').get(turn),
+    ).toEqual({
       failure_kind: 'quota',
+      own_failure_kind: 'quota',
     })
     const row = db()
       .query(

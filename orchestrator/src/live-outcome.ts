@@ -15,6 +15,7 @@ import { failureKindFromStop, stopErrorMessage } from './transport/transport.ts'
 
 export const LAST_VENDOR_EVENT_TYPE_MAX = 64
 const CONTROL_CHARACTERS = /[\p{Cc}]/u
+const VENDOR_TERMINAL_FAILURE_EVENT_TYPES = new Set(['turn.failed', 'error'])
 
 export type LiveOutcomeFacts = {
   writesJob: boolean
@@ -227,7 +228,10 @@ function lastStdoutJsonlEvent(stdout: string): LastStdoutJsonlEvent | null {
 
 /** Prefer the vendor's terminal error event over incidental process output. */
 function vendorTerminalText(facts: Pick<LiveOutcomeFacts, 'stdout'>, fallback: string): string {
-  return lastStdoutJsonlEvent(facts.stdout)?.error?.trim() || fallback
+  const event = lastStdoutJsonlEvent(facts.stdout)
+  return event && VENDOR_TERMINAL_FAILURE_EVENT_TYPES.has(event.type)
+    ? event.error?.trim() || fallback
+    : fallback
 }
 
 function recordedLastVendorEventType(raw: string | null): string | null {

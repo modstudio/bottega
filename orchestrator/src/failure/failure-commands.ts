@@ -158,10 +158,7 @@ export function reclassifyFailuresCommand(
 
   const update = db().query(
     `UPDATE run SET failure_kind = ?,
-                    own_failure_kind = CASE
-                      WHEN parent_run_record_id IS NULL THEN ?
-                      ELSE own_failure_kind
-                    END
+                    own_failure_kind = ?
       WHERE record_id = ? AND status IN ('failed', 'stale')
         AND failure_kind IS ? AND error = ?`,
   )
