@@ -113,12 +113,8 @@ function parseNamedPointerReference(value: string): PointerReference | null {
   const doc = /^doc:(\S+)$/i.exec(value)
   if (doc) {
     const address = doc[1]!
-    if (
-      hasRecordIdShape(address) ||
-      /^[a-z][a-z0-9-]*\/(?:_|[A-Za-z0-9][A-Za-z0-9._-]*)\/[A-Za-z0-9][A-Za-z0-9._-]*$/.test(
-        address,
-      )
-    )
+    const path = /^[a-z][a-z0-9-]*\/(?:_|[A-Za-z0-9][A-Za-z0-9._-]*)\/(\S+)$/.exec(address)
+    if (hasRecordIdShape(address) || (path && !path[1]!.split('/').includes('..')))
       return { kind: 'doc', address }
     return null
   }

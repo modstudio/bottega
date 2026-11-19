@@ -4,6 +4,9 @@
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { parsePointerReference } from '../../../shared/reference.ts'
 import { WITHHELD_SECRET_SHAPED } from '../../../shared/secret-shaped.ts'
+import { MachineLabelRefusal } from '../record/machine-name.ts'
+import { machineLabelRefusal } from '../run/run-identifier-names.ts'
+import { parseProbeArtifact } from './probe-identifier.ts'
 import type {
   BottegaCommandIdentity,
   ValidatedArtifactEvidence,
@@ -213,6 +216,13 @@ export function parseArtifactRef(value: string): ArtifactRef | { error: string }
       ? { kind: 'attached-text', id: parsed.recordId }
       : { kind: parsed.kind, recordId: parsed.recordId }
   } catch (error) {
+    try {
+      parseProbeArtifact(trimmed)
+    } catch (probeError) {
+      if (probeError instanceof MachineLabelRefusal) return { error: probeError.message }
+    }
+    const machineRefusal = machineLabelRefusal(trimmed)
+    if (machineRefusal) return { error: machineRefusal }
     return { error: error instanceof Error ? error.message : String(error) }
   }
 }

@@ -62,8 +62,9 @@ export async function hostedDocClient(
 /** Read one shared-parser document reference through the hosted document store. */
 export async function readHostedDocReference(address: string): Promise<Record<string, unknown>> {
   if (hasRecordIdShape(address)) return recordApiClient().getDoc(address)
-  const [scope, rawSubject, slug, ...extra] = address.split('/')
-  if (!scope || !rawSubject || !slug || extra.length)
+  const [scope, rawSubject, ...slugParts] = address.split('/')
+  const slug = slugParts.join('/')
+  if (!scope || !rawSubject || !slug)
     throw new Error(`invalid document address ${JSON.stringify(address)}`)
   const subject = rawSubject === '_' ? null : rawSubject
   return (await hostedDocClient(scope, subject)).getDoc(slug)
