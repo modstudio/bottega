@@ -12,6 +12,19 @@ const verdict = (
 })
 
 describe('review-owed floor', () => {
+  test('refuses a live writer even when every lens is satisfied', () => {
+    expect(
+      decideReviewOwedFloor({
+        ...verdict('satisfied'),
+        liveWriter: { runId: 'run-writer', number: 42 },
+        remedy: `${PLATFORM_SLUG} run wait run-writer`,
+      }),
+    ).toEqual({
+      action: 'refuse',
+      message: `floor review-owed is unmet; live writing run 42 is building; remedy: \`${PLATFORM_SLUG} run wait run-writer\``,
+    })
+  })
+
   test.each(['owed', 'running', 'untriaged'] as const)(
     'refuses a %s lens with its status and the funnel remedy',
     (status) => {

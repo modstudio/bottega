@@ -102,6 +102,7 @@ export const reviewModuleSpecs = [
     file: 'orchestrator/src/review-funnel/gather-funnel-facts.ts',
     allowed: [
       '../branch/branch-landing-records.ts',
+      '../jobs/jobs.ts',
       '../pull-request/pr-admission.ts',
       './review-funnel-admission-evidence.ts',
       '../review/review-group.ts',
@@ -115,6 +116,7 @@ export const reviewModuleSpecs = [
       '../review/review-tier.ts',
       '../review/same-change-git.ts',
       '../review/same-change.ts',
+      '../run/branch-conversation-owner.ts',
       './review-funnel-plan-service.ts',
       './review-funnel-yield.ts',
     ],
@@ -396,6 +398,7 @@ export const reviewBoundarySpecs: ReviewBoundarySpec[] = [
     file: 'orchestrator/src/review-funnel/gather-funnel-facts.ts',
     allowed: [
       '../branch/branch-landing-records.ts',
+      '../jobs/jobs.ts',
       '../pull-request/pr-admission.ts',
       './review-funnel-admission-evidence.ts',
       '../review/review-group.ts',
@@ -409,6 +412,7 @@ export const reviewBoundarySpecs: ReviewBoundarySpec[] = [
       '../review/review-tier.ts',
       '../review/same-change-git.ts',
       '../review/same-change.ts',
+      '../run/branch-conversation-owner.ts',
       './review-funnel-plan-service.ts',
       './review-funnel-yield.ts',
     ],

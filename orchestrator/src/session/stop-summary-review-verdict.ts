@@ -23,7 +23,8 @@ export function stopSummaryReviewVerdictLine(fact: StopSummaryReviewVerdictFact)
   }
   const verdict = fact.verdict
   if (!verdict) return null
-  if (verdict.lenses.some((lens) => lens.status === 'running')) return null
+  if (verdict.lenses.some((lens) => lens.status === 'running' || lens.status === 'building'))
+    return null
   const owed = verdict.lenses.filter((lens) => lens.status === 'owed')
   if (owed.length) {
     const noun = owed.length === 1 ? 'lens' : 'lenses'

@@ -3,8 +3,8 @@ import { JOBS } from '../jobs/jobs.ts'
 import {
   aliveBranchConversationOwner,
   type BranchConversationRow,
+  jobWritesRepo,
 } from './branch-conversation-owner.ts'
-import { jobWritesRepo } from './branch-owner-guard.ts'
 
 const branch = 'DEV-772-orch-4878'
 const row = (overrides: Partial<BranchConversationRow> = {}): BranchConversationRow => ({

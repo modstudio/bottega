@@ -3,6 +3,7 @@
 
 import type { Database } from 'bun:sqlite'
 import { readLandedReviewIds } from '../branch/branch-landing-records.ts'
+import { JOBS } from '../jobs/jobs.ts'
 import type { Project } from '../project/projects.ts'
 import type { ApplicableReview, ReviewFunnelPlan } from '../review/review-applicability.ts'
 import {
@@ -31,10 +32,16 @@ import {
   exactChangeReplayContext,
   replayWitnessesForCurrent,
 } from '../review/same-change-git.ts'
+import {
+  aliveBranchConversationOwner,
+  type BranchConversationRow,
+  jobWritesRepo,
+} from '../run/branch-conversation-owner.ts'
 import type {
   ReviewFunnelFacts,
   ReviewFunnelLensState,
   ReviewFunnelLensStatus,
+  ReviewFunnelLiveWriter,
   ReviewFunnelRoundFact,
 } from './decide-review-funnel.ts'
 import {
@@ -95,6 +102,24 @@ function liveLensStates(
     )
     .all(project, ...lineage)
     .map((row) => ({ lens: row.lens, runId: row.record_id, state: RUNNING_LENS_STATUS }))
+}
+
+function liveWriter(
+  database: Database,
+  project: string,
+  branch: string,
+): ReviewFunnelLiveWriter | null {
+  const rows = database
+    .query<Omit<BranchConversationRow, 'writesRepo'>, [string, string]>(
+      `SELECT record_id,number,parent_run_record_id,status,branch,job FROM run
+       WHERE project_record_id=(SELECT record_id FROM project WHERE name=?)
+         AND branch=? AND status IN ('running','asking')
+       ORDER BY number`,
+    )
+    .all(project, branch)
+    .map((row) => ({ ...row, writesRepo: jobWritesRepo(row.job, JOBS) }))
+  const writer = aliveBranchConversationOwner(rows, branch, null)
+  return writer ? { runId: writer.record_id, number: writer.number } : null
 }
 
 export function overrideFacts(
@@ -328,7 +353,6 @@ export function gatherFunnelFacts(change: ReviewFunnelChange): ReviewFunnelFacts
     pathSet: identity.paths,
   }
   const reviews = reviewsForTriage(change.database, group)
-  const files = diffNumstat(change.cwd, change.base, change.head)
   const replay = exactChangeReplayContext(change.cwd, {
     project: change.project.name,
     trunk: change.project.settings.trunk,
@@ -377,9 +401,10 @@ export function gatherFunnelFacts(change: ReviewFunnelChange): ReviewFunnelFacts
       pathSet,
       paths: identity.paths,
     },
+    liveWriter: liveWriter(change.database, change.project.name, change.branch),
     stack: change.project.stack,
     yieldCells: reviewFunnelYieldCells(change.database, change.selectionWindow),
-    files,
+    files: diffNumstat(change.cwd, change.base, change.head),
     review: change.project.settings.review,
     branchReviews: reviews.branchReviews,
     postFix,

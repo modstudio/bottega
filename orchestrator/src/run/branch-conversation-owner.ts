@@ -11,6 +11,14 @@ export type BranchConversationRow = {
   writesRepo: boolean
 }
 
+export function jobWritesRepo(
+  job: string,
+  jobs: Readonly<Record<string, { needs: { writesRepo?: boolean } }>>,
+): boolean {
+  const definition = jobs[job]
+  return definition === undefined ? true : definition.needs.writesRepo === true
+}
+
 /** Return the first live run on this branch from a different conversation. */
 export function aliveBranchConversationOwner(
   rows: readonly BranchConversationRow[],

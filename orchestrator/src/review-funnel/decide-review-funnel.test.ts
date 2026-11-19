@@ -470,6 +470,54 @@ describe('decideReviewFunnel', () => {
     expect(verdict.remedy).toBe(`${PLATFORM_SLUG} run wait run-live`)
   })
 
+  test('a live writer turns owed lenses into building and waits for the build', () => {
+    const verdict = decideReviewFunnel(
+      facts({
+        liveWriter: { runId: 'run-writer', number: 42 },
+      }),
+      DEFAULT_REVIEW_FUNNEL_POLICY,
+    )
+    expect(verdict.lenses.filter(({ status }) => status === 'owed')).toEqual([])
+    expect(
+      verdict.lenses.filter(({ status }) => status === 'building').map(({ lens }) => lens),
+    ).toEqual(['correctness', 'craft'])
+    expect(verdict.next).toEqual({ action: 'wait-build' })
+    expect(verdict.remedy).toBe(`${PLATFORM_SLUG} run wait run-writer`)
+  })
+
+  test('a live writer replaces admission advice without changing satisfied lens statuses', () => {
+    const verdict = decideReviewFunnel(
+      facts({
+        files: [{ path: 'src/new.ts', insertions: 11, deletions: 0 }],
+        review: tierOneReview,
+        exactRead: true,
+        readCreditsRound: true,
+        triageComplete: true,
+        liveWriter: { runId: 'run-writer', number: 42 },
+        rounds: [
+          {
+            reviewRecordId: 'prior-review',
+            identity: 'prior-round',
+            provenance: {
+              recorded: false,
+              treeInspected: null,
+              runTree: null,
+              reviewedCommit: null,
+              headCommit: null,
+            },
+            landed: false,
+          },
+        ],
+      }),
+      DEFAULT_REVIEW_FUNNEL_POLICY,
+    )
+    expect(verdict.lenses.find(({ lens }) => lens === 'correctness')?.status).toBe(
+      'credited-by-read',
+    )
+    expect(verdict.next).toEqual({ action: 'wait-build' })
+    expect(verdict.remedy).toBe(`${PLATFORM_SLUG} run wait run-writer`)
+  })
+
   test('an untriaged lens asks to score its existing run', () => {
     const verdict = decideReviewFunnel(
       facts({

@@ -28,11 +28,14 @@ import {
   type ReviewLensSelectionReason,
 } from '../review/review-vocabulary.ts'
 import { ceilingWaivableGaps } from './review-funnel-admission-evidence.ts'
-import type { ReviewFunnelLensStatus } from './review-funnel-lens-status.ts'
+import type { ReviewFunnelLensStatus, ReviewFunnelLiveWriter } from './review-funnel-lens-status.ts'
 import type { ReviewFunnelPolicy, ReviewFunnelPolicyMode } from './review-funnel-policy.ts'
 import type { ReviewFunnelYieldCell } from './review-funnel-yield.ts'
 
-export type { ReviewFunnelLensStatus } from './review-funnel-lens-status.ts'
+export type {
+  ReviewFunnelLensStatus,
+  ReviewFunnelLiveWriter,
+} from './review-funnel-lens-status.ts'
 
 type ReviewFunnelChangeIdentity = {
   project: string
@@ -60,6 +63,7 @@ export type ReviewFunnelRoundFact = {
 
 export type ReviewFunnelFacts = {
   change: ReviewFunnelChangeIdentity
+  liveWriter?: ReviewFunnelLiveWriter | null
   stack: string | null
   yieldCells?: ReviewFunnelYieldCell[]
   files: ReviewTierFile[]
@@ -85,6 +89,7 @@ export type ReviewFunnelFacts = {
 
 type ReviewFunnelNextAction =
   | 'dispatch'
+  | 'wait-build'
   | 'wait'
   | 'triage'
   | 'record-read'
@@ -95,6 +100,7 @@ export type ReviewFunnelVerdict = {
   policyVersion: string
   mode: ReviewFunnelPolicyMode
   change: ReviewFunnelChangeIdentity
+  liveWriter?: ReviewFunnelLiveWriter
   tier: {
     tier: 0 | 1 | 2 | 3
     risk: 0 | 1 | 2 | 3
@@ -359,7 +365,8 @@ function lensVerdicts(facts: ReviewFunnelFacts, plan: ReturnType<typeof funnelPl
   return {
     sets,
     lenses: [...names].map((lens) => {
-      const status = lensStatus(lens, sets, facts.readCreditsRound)
+      const plannedStatus = lensStatus(lens, sets, facts.readCreditsRound)
+      const status = facts.liveWriter && plannedStatus === 'owed' ? 'building' : plannedStatus
       const selectionChange = enforcedSelection.find((change) => change.lens === lens)
       const selectionTookEffect =
         selectionChange?.reason === 'raised-by-yield' || selectionChange?.selected === false
@@ -389,6 +396,10 @@ function nextDecision(
   plan: ReturnType<typeof funnelPlan>,
   evidence: ReturnType<typeof lensVerdicts>,
 ): { next: ReviewFunnelVerdict['next']; remedy: string } {
+  if (facts.liveWriter) {
+    const next = { action: 'wait-build' as const }
+    return { next, remedy: remedyForNext(facts, next, facts.liveWriter.runId) }
+  }
   const dispatch = evidence.lenses.filter(({ status }) => status === 'owed').map(({ lens }) => lens)
   const waiting = evidence.lenses.find(({ status }) => status === 'running')
   const untriaged = evidence.lenses.find(({ status }) => status === 'untriaged')
@@ -425,7 +436,8 @@ function remedyForNext(
 ): string {
   const change = facts.change
   if (next.action === 'dispatch') return dispatchRemedy(change, next.lenses!)
-  if (next.action === 'wait') return `${PLATFORM_SLUG} run wait ${runId}`
+  if (next.action === 'wait' || next.action === 'wait-build')
+    return `${PLATFORM_SLUG} run wait ${runId}`
   if (next.action === 'triage') return `${PLATFORM_SLUG} score ${runId} ...`
   if (next.action === 'record-read')
     return `${PLATFORM_SLUG} review read --sha ${change.head} --note "<what was read and why it lands>"`
@@ -482,6 +494,7 @@ export function decideReviewFunnel(
     policyVersion,
     mode: mode(policy),
     change: facts.change,
+    ...(facts.liveWriter ? { liveWriter: facts.liveWriter } : {}),
     tier: {
       tier: plan.tier.tier,
       risk: plan.tier.risk,

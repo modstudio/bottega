@@ -20,6 +20,7 @@ export function replayReviewFunnelRows(
       policyVersion: candidate.policyVersion,
       mode: row.verdict.mode,
       change: row.verdict.change,
+      ...(row.verdict.liveWriter ? { liveWriter: row.verdict.liveWriter } : {}),
       tier: row.verdict.tier,
       budget: row.verdict.budget,
       selection: row.verdict.selection ?? {

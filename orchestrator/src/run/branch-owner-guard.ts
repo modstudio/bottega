@@ -6,15 +6,8 @@ import { JOBS } from '../jobs/jobs.ts'
 import {
   aliveBranchConversationOwner,
   type BranchConversationRow,
+  jobWritesRepo,
 } from './branch-conversation-owner.ts'
-
-export function jobWritesRepo(
-  job: string,
-  jobs: Readonly<Record<string, { needs: { writesRepo?: boolean } }>>,
-): boolean {
-  const definition = jobs[job]
-  return definition === undefined ? true : definition.needs.writesRepo === true
-}
 
 function aliveOwnerOnBranch(input: {
   branch: string
