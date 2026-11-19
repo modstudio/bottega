@@ -18,6 +18,7 @@ import {
   RecordCataloguePullError,
 } from '../record/record-cache-catalogues.ts'
 import { migrateCreate } from '../worktree/worktree-template.ts'
+import { decideProjectLandingBranch } from './project-add-decision.ts'
 import { projectAddDecision } from './project-add-record.ts'
 import { type ProjectSpaceFillRow, planProjectSpaceFill } from './project-fill-space.ts'
 import { spaceFillNeedsRuling } from './project-fill-space-decision.ts'
@@ -26,10 +27,6 @@ import {
   purgeProjectInHostedRecord,
   refuseHostedProjectSpaceChange,
 } from './project-hosted-write.ts'
-import {
-  decideProjectLandingBranch,
-  type ProjectLandingBranchDecision,
-} from './project-landing-branch.ts'
 import { listedProjectJson, projectProblems } from './project-list-json.ts'
 import { fillProjectRecordIds } from './project-record-identity.ts'
 import { formatProjectRelink, relinkProjectByName } from './project-relink.ts'
@@ -205,6 +202,24 @@ export type AddProjectInput = {
   selectedSpace?: string
 }
 
+type ProjectAddCandidate = Omit<Project, 'settings'> & { settings: ProjectSettings }
+
+function resolveProjectAddLandingBranch(candidate: ProjectAddCandidate): ProjectAddCandidate {
+  const gitWorkTree = candidate.settings.trunk ? false : isProjectRepository(candidate)
+  const decision = decideProjectLandingBranch({
+    path: candidate.path,
+    settings: candidate.settings,
+    gitWorkTree,
+    remoteDefaultBranch: gitWorkTree ? readOriginHeadBranch(candidate.path).branch : null,
+  })
+  if (decision.kind === 'refuse') throw new Error(decision.reason)
+  if (decision.kind !== 'branch') return candidate
+  return {
+    ...candidate,
+    settings: { ...candidate.settings, trunk: decision.trunk },
+  }
+}
+
 async function pullProjectAddCatalogues(
   input: AddProjectInput,
   targetSpace: { id: string; label: string },
@@ -224,12 +239,7 @@ async function pullProjectAddCatalogues(
 export async function addProject(
   input: AddProjectInput,
   requireMembership: (space: string) => Promise<unknown>,
-): Promise<{
-  project: Project
-  wasRetired: boolean
-  adoptedSpace?: string
-  trunkSource?: Extract<ProjectLandingBranchDecision, { kind: 'branch' }>['source']
-}> {
+): Promise<{ project: Project; wasRetired: boolean; adoptedSpace?: string }> {
   if (!existsSync(input.path)) throw new Error(`no such directory: ${input.path}`)
   const malformed = validateProjectSettings(input.settings, 'strict', input.path, {
     validateKeyPrefixes: Object.hasOwn(input.settings, 'keyPrefixes'),
@@ -248,7 +258,7 @@ export async function addProject(
   const { decision, targetSpace } = resolved
   if (decision.kind === 'refuse') throw new Error(decision.reason)
   if (targetSpace) await pullProjectAddCatalogues(input, targetSpace)
-  let candidate = {
+  const initialCandidate = {
     recordId: decision.kind === 'adopt' ? decision.recordId : newRecordId(),
     name: input.name,
     path: input.path,
@@ -257,20 +267,7 @@ export async function addProject(
     retiredAt: null,
     settings: decision.settings,
   }
-  const gitWorkTree = candidate.settings.trunk ? false : isProjectRepository(candidate)
-  const landingBranch = decideProjectLandingBranch({
-    path: candidate.path,
-    settings: candidate.settings,
-    gitWorkTree,
-    remoteDefaultBranch: gitWorkTree ? readOriginHeadBranch(candidate.path).branch : null,
-  })
-  if (landingBranch.kind === 'refuse') throw new Error(landingBranch.reason)
-  if (landingBranch.kind === 'branch') {
-    candidate = {
-      ...candidate,
-      settings: { ...candidate.settings, trunk: landingBranch.trunk },
-    }
-  }
+  const candidate = resolveProjectAddLandingBranch(initialCandidate)
   // Adopting merges the hosted row's settings with the requested ones, so the
   // merged row is read in strip mode; the requested settings were refused
   // strictly above.
@@ -295,7 +292,6 @@ export async function addProject(
   return {
     project,
     wasRetired,
-    ...(landingBranch.kind === 'branch' ? { trunkSource: landingBranch.source } : {}),
     ...(decision.kind === 'adopt' ? { adoptedSpace: decision.space } : {}),
   }
 }
@@ -321,7 +317,8 @@ async function addProjectCommand(
       throw new Error(`--settings must be JSON: ${e}`)
     }
   }
-  const { project, wasRetired, adoptedSpace, trunkSource } = await addProject(
+  const trunkWasDeclared = Boolean(settings.trunk?.trim())
+  const { project, wasRetired, adoptedSpace } = await addProject(
     {
       path,
       name,
@@ -346,7 +343,7 @@ async function addProjectCommand(
     const trunk = project.settings.trunk
     presentation.log(
       `registered ${name}  ${stack ?? `(no stack — ${PLATFORM_SLUG} project set ${name} --stack ...)`}  ` +
-        `${trunk && trunkSource ? `trunk ${trunk} (${trunkSource === 'origin/HEAD' ? 'from origin/HEAD' : 'declared'})  ` : ''}${path}`,
+        `${trunk ? `trunk ${trunk} (${trunkWasDeclared ? 'declared' : 'from origin/HEAD'})  ` : ''}${path}`,
     )
   }
   for (const w of worktreeWarnings(projectByName(name)!)) {

@@ -37,6 +37,7 @@ import {
 import { githubRepository } from '../../../shared/github-repository.ts'
 import { checkoutIsUnderProject } from '../../../shared/project-path.ts'
 import { parseRecordSpaceMemberships } from '../../../shared/record-space-membership.ts'
+import { refusal, renderRefusal } from '../../../shared/refusal.ts'
 import { releaseTagVersion } from '../../../shared/release-tag.ts'
 import { db, nowIso, writableDb } from '../database/db.ts'
 import {
@@ -251,7 +252,7 @@ export function isProjectRepository(project: Pick<Project, 'path'>): boolean {
   return gitToplevel(project.path) !== null
 }
 
-export type ProjectGitCapture = { exitCode: number; stdout: string; timedOut: boolean }
+type ProjectGitCapture = { exitCode: number; stdout: string; timedOut: boolean }
 export type ProjectGitRunner = (path: string, args: string[]) => ProjectGitCapture
 
 function runProjectGit(path: string, args: string[]): ProjectGitCapture {
@@ -279,6 +280,16 @@ export function projectRepositoryRefusal(project: Pick<Project, 'name' | 'path'>
   return isProjectRepository(project)
     ? null
     : `project ${project.name} has no repository: ${project.path} is not a git checkout`
+}
+
+export function missingProjectLandingBranchProblem(project: Project): string | null {
+  if (!isProjectRepository(project) || project.settings.trunk?.trim()) return null
+  return renderRefusal(
+    refusal(`${project.name} has no landing branch`, {
+      kind: 'edit',
+      text: `${PLATFORM_SLUG} project set ${project.name} --settings '{"trunk":"<branch>"}'`,
+    }),
+  )
 }
 
 /** The stack a directory's work is in, for routing. */

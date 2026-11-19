@@ -7,6 +7,7 @@ import {
   type RecordSpaceMembership,
   recordSpaceMembership,
 } from '../../../shared/record-space-membership.ts'
+import { refusal, renderRefusal } from '../../../shared/refusal.ts'
 import {
   hostedProjectColumns,
   PROJECT_SETTING_COLUMNS,
@@ -32,6 +33,38 @@ type AddProjectDecision =
 export type ProjectAddDecisionResult = {
   decision: AddProjectDecision
   targetSpace?: { id: string; label: string }
+}
+
+export type ProjectLandingBranchDecision =
+  | { kind: 'branch'; trunk: string; source: 'declared' | 'origin/HEAD' }
+  | { kind: 'untouched' }
+  | { kind: 'refuse'; reason: string }
+
+/** Decide how registration obtains a landing branch from facts gathered by its adapter. */
+export function decideProjectLandingBranch(input: {
+  path: string
+  settings: ProjectSettings
+  gitWorkTree: boolean
+  remoteDefaultBranch: string | null
+}): ProjectLandingBranchDecision {
+  const declared = input.settings.trunk?.trim()
+  if (declared) return { kind: 'branch', trunk: declared, source: 'declared' }
+  if (!input.gitWorkTree) return { kind: 'untouched' }
+  if (input.remoteDefaultBranch) {
+    return { kind: 'branch', trunk: input.remoteDefaultBranch, source: 'origin/HEAD' }
+  }
+  return {
+    kind: 'refuse',
+    reason: renderRefusal(
+      refusal(
+        `project add refused: cannot infer the landing branch of ${input.path}: refs/remotes/origin/HEAD is not set`,
+        {
+          kind: 'edit',
+          text: `git -C ${input.path} remote set-head origin --auto, or pass --settings '{"trunk":"<branch>"}'`,
+        },
+      ),
+    ),
+  }
 }
 
 function hostedSettingDiffs(requested: ProjectSettings, hosted: ProjectSettings): string[] {

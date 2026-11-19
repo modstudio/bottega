@@ -1,7 +1,7 @@
 import { expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import type { Project } from './projects.ts'
 import { projectProblems } from './project-list-json.ts'
+import type { Project } from './projects.ts'
 
 function project(name: string, path: string): Project {
   return {
@@ -17,7 +17,7 @@ function project(name: string, path: string): Project {
 
 test('project problems flags a git-backed row without a landing branch', () => {
   expect(projectProblems(project('probe', process.cwd()))).toContain(
-    `probe has no landing branch; cleared by: ${PLATFORM_SLUG} project set probe --settings '{"trunk":"<branch>"}'`,
+    `probe has no landing branch\ncleared by: ${PLATFORM_SLUG} project set probe --settings '{"trunk":"<branch>"}'`,
   )
 })
 

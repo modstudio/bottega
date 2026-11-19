@@ -14,7 +14,6 @@ const module = (file: string, allowed: string[]): ProjectModule => ({
 export const projectModules: ProjectModule[] = [
   module('orchestrator/src/project/branch-name.ts', []),
   module('orchestrator/src/project/project-list-json.ts', [
-    '../../../shared/brand.ts',
     './declared-project-space.ts',
     './projects.ts',
   ]),
@@ -30,7 +29,6 @@ export const projectModules: ProjectModule[] = [
     './project-settings.ts',
   ]),
   module('orchestrator/src/project/project-settings-patch.ts', []),
-  module('orchestrator/src/project/project-landing-branch.ts', ['./project-settings.ts']),
   module('orchestrator/src/project/project-purge-local.ts', [
     'bun:sqlite',
     'node:fs',
@@ -73,6 +71,7 @@ export const projectModules: ProjectModule[] = [
     '../../../shared/record-project-contract.ts',
     '../../../shared/record-space-membership.ts',
     '../../../shared/record-write-space.ts',
+    '../../../shared/refusal.ts',
     '../record/record-project-columns.ts',
     './project-settings.ts',
     './project-space-refusals.ts',

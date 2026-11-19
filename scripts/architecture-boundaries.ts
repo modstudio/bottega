@@ -674,6 +674,7 @@ export const importBoundaries: ImportBoundary[] = [
       '../record/record-cache-catalogues.ts',
       '../mcp/mcp-credential-literal.ts',
       '../mcp/mcp-probe.ts',
+      './project-add-decision.ts',
       './project-add-record.ts',
       './project-fill-space.ts',
       './project-fill-space-decision.ts',
