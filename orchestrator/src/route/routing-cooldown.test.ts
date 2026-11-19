@@ -8,8 +8,8 @@ import {
   providerErrorStreakCooling,
   QUOTA_RESET_CEILING_MS,
   QUOTA_RESET_READING_WINDOW_MS,
-  recentTerminalRuns,
   type RecentTerminalRun,
+  recentTerminalRuns,
 } from './routing-cooldown.ts'
 
 const NOW = Date.parse('2026-11-19T04:00:00.000Z')
@@ -88,7 +88,9 @@ test('stored quota reset keeps the agent cooling beyond the minimum', () => {
     kind: 'quota',
     startedAt: new Date(NOW - 61 * 60_000 - 1_000).toISOString(),
   })
-  db().query('UPDATE run SET quota_resets_at=? WHERE record_id=?').run(resetAt / 1_000, run)
+  db()
+    .query('UPDATE run SET quota_resets_at=? WHERE record_id=?')
+    .run(resetAt / 1_000, run)
 
   const failure = decideCoolingFailures(recentTerminalRuns(db(), [agent], NOW), 60, NOW).get(agent)
   expect(failure?.vendor_reset_at).toBe(new Date(resetAt).toISOString())
