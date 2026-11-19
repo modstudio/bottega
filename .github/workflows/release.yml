@@ -9,7 +9,29 @@ permissions:
   contents: write
 
 jobs:
+  release-smoke:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: .bun-version
+
+      - name: Install
+        run: bun install
+
+      - name: Allow unprivileged user namespaces for the sandbox
+        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+
+      - name: Run release smoke
+        run: bun scripts/smoke-release.ts
+
   release:
+    needs: release-smoke
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v4

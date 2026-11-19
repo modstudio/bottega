@@ -132,7 +132,7 @@ printf '%s\\n' 'release sandbox smoke' > /tmp/probe-repository/README.md
 cp -R /workflow-tree /tmp/probe-repository/.agents
 git -C /tmp/probe-repository add README.md .agents
 git -C /tmp/probe-repository commit -m 'DEV-1123 release smoke fixture' >/dev/null
-printf '%s\\n' '{"keyPrefixes":["DEV"],"docs":{"protocol":"orch-docs"}}' > /tmp/release-smoke-settings.json
+printf '%s\\n' '{"keyPrefixes":["DEV"],"trunk":"main","docs":{"protocol":"orch-docs"}}' > /tmp/release-smoke-settings.json
 useradd --create-home --shell /bin/sh smoke
 mkdir -p /tmp/fake-bin /tmp/mcp-state /home/smoke/.codex
 cp /fake-harness /tmp/fake-bin/codex
@@ -200,14 +200,14 @@ su -s /bin/sh smoke -c '
   ${installedBinary} workflow next --cursor "$cursor" --artifact "task:$smoke_task" --note "Release writing probe complete."
 '
 
-decoy=hub
-rm /tmp/bin/$decoy
-printf '#!/bin/sh\\necho preserved-hub\\n' > /tmp/bin/$decoy
-chmod 755 /tmp/bin/$decoy
+printf '%s\\n' 'preserve this unrelated file' > /tmp/bin/unrelated-file
 sh /install.sh
-legacy=orch; test ! -e /tmp/bin/$legacy
-test "$(/tmp/bin/$decoy)" = preserved-hub
-echo 'second install left a pre-existing hub path alone and did not create a leftover executable'
+test "$(cat /tmp/bin/unrelated-file)" = 'preserve this unrelated file'
+set -- /tmp/bin/*
+test "$#" -eq 2
+test "$1" = /tmp/bin/${PLATFORM_SLUG}
+test "$2" = /tmp/bin/unrelated-file
+echo 'second install preserved an unrelated file and left only it and ${PLATFORM_SLUG}'
 `
   console.log(`Docker release smoke (${target}) ran:`)
   console.log(containerScript.trim())
