@@ -86,6 +86,58 @@ test('first binding keeps a default project referenced by a run', async () => {
   })
 })
 
+test('first binding keeps a default project referenced by a workflow cursor', async () => {
+  const d = database()
+  const path = mkdtempSync(join(tmpdir(), 'orch-default-cursor-'))
+  registerDefault(d, path)
+  d.exec('PRAGMA foreign_keys=OFF')
+  try {
+    d.query(
+      `INSERT INTO workflow_cursor
+       (record_id,number,project,project_record_id,workflow_slug,mode_slug,workflow_key,
+        task_record_id,task_flow_record_id,instance_id,session_id,workflow_version_record_id,
+        catalogue_version_record_id,args,autonomy,ordinal,step_slug,state,closed,question,total_steps,
+        created_at,updated_at,enforcement,opened_machine_id,last_advanced_machine_id,revision)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+    ).run(
+      '00000000-0000-7000-8000-000000000003',
+      1,
+      'tasks',
+      '00000000-0000-7000-8000-000000000001',
+      'explore',
+      'default',
+      null,
+      null,
+      null,
+      '',
+      'session',
+      '00000000-0000-7000-8000-000000000004',
+      '00000000-0000-7000-8000-000000000005',
+      '{}',
+      'guided',
+      0,
+      'plan',
+      'running',
+      '[]',
+      null,
+      1,
+      '2026-11-19T00:00:00.000Z',
+      '2026-11-19T00:00:00.000Z',
+      'floors',
+      '00000000-0000-7000-8000-000000000006',
+      '00000000-0000-7000-8000-000000000006',
+      1,
+    )
+  } finally {
+    d.exec('PRAGMA foreign_keys=ON')
+  }
+
+  expect(await retireUnusedDefaultLocalProjectAtFirstBinding(false, d)).toBe(false)
+  expect(d.query("SELECT name FROM project WHERE name='tasks'").get()).toEqual({
+    name: 'tasks',
+  })
+})
+
 test('an already-bound store leaves the default project untouched', async () => {
   const d = database()
   const path = mkdtempSync(join(tmpdir(), 'orch-default-bound-'))

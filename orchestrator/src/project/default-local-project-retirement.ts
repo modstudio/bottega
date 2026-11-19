@@ -6,7 +6,7 @@ import { existsSync, readdirSync, rmdirSync } from 'node:fs'
 import { db } from '../database/db.ts'
 import { DEFAULT_LOCAL_PROJECT_NAME } from '../database/project-register-store.ts'
 import { projectByName } from './project-read.ts'
-import { projectReferenceCounts } from './project-reference-counts.ts'
+import { localProjectReferenceCounts } from './project-reference-counts.ts'
 
 export type DefaultLocalProjectRetirementFacts = {
   alreadyBound: boolean
@@ -42,7 +42,7 @@ export async function retireUnusedDefaultLocalProjectAtFirstBinding(
   if (alreadyBound) return false
   const project = projectByName(DEFAULT_LOCAL_PROJECT_NAME, database)
   if (!project) return false
-  const counts = await projectReferenceCounts(database, project.recordId)
+  const counts = await localProjectReferenceCounts(database, project.recordId)
   const shouldRetire = shouldRetireDefaultLocalProject({
     alreadyBound,
     projectName: project.name,
