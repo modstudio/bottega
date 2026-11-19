@@ -16,6 +16,19 @@ import { run } from './release-support.ts'
 
 const version = '0.1.0'
 const scratch = mkdtempSync(join(tmpdir(), `${PLATFORM_SLUG}-release-smoke-`))
+const VERIFY_RELEASE_PROBE_SCRIPT = `#!/bin/sh
+set -eu
+writing_worktree=$(cat /tmp/mcp-state/writing-worktree)
+writing_hooks=$(cat /tmp/mcp-state/writing-hooks)
+case "$writing_hooks" in
+  "$writing_worktree"/*)
+    echo "shared ref guard was installed inside writing worktree $writing_worktree" >&2
+    exit 1
+    ;;
+esac
+writing_branch=$(cat /tmp/mcp-state/writing-branch)
+test "$(git -C /tmp/probe-repository log -1 --format=%s "$writing_branch")" = "DEV-1091 guarded binary smoke"
+`
 
 async function freePort(): Promise<number> {
   const reservation = createServer()
@@ -65,6 +78,9 @@ try {
   const fakeHarness = join(scratch, 'fake-harness')
   writeFileSync(fakeHarness, FAKE_HARNESS_SCRIPT)
   chmodSync(fakeHarness, 0o755)
+  const verifyReleaseProbe = join(scratch, 'verify-release-probe')
+  writeFileSync(verifyReleaseProbe, VERIFY_RELEASE_PROBE_SCRIPT)
+  chmodSync(verifyReleaseProbe, 0o755)
   const containerScript = `set -eux
 exec 1>&2
 export DEBIAN_FRONTEND=noninteractive
@@ -113,8 +129,10 @@ git init --initial-branch=main /tmp/probe-repository >/dev/null
 git -C /tmp/probe-repository config user.email smoke@example.invalid
 git -C /tmp/probe-repository config user.name 'Release Smoke'
 printf '%s\\n' 'release sandbox smoke' > /tmp/probe-repository/README.md
-git -C /tmp/probe-repository add README.md
+cp -R /workflow-tree /tmp/probe-repository/.agents
+git -C /tmp/probe-repository add README.md .agents
 git -C /tmp/probe-repository commit -m 'DEV-1123 release smoke fixture' >/dev/null
+printf '%s\\n' '{"keyPrefixes":["DEV"],"docs":{"protocol":"orch-docs"}}' > /tmp/release-smoke-settings.json
 useradd --create-home --shell /bin/sh smoke
 mkdir -p /tmp/fake-bin /tmp/mcp-state /home/smoke/.codex
 cp /fake-harness /tmp/fake-bin/codex
@@ -138,16 +156,49 @@ su -s /bin/sh smoke -c '
   printf "%s\\n" "$agent_output" | grep "^grok "
   cd /tmp/probe-repository
   ${installedBinary} project add /tmp/probe-repository --name release-smoke
+  ${installedBinary} project set release-smoke --stack git --settings "$(cat /tmp/release-smoke-settings.json)"
+  ${installedBinary} workflow import --cwd /tmp/probe-repository --reason "DEV-2421 release smoke workflow"
+  ${installedBinary} workflow promote-tree --cwd /tmp/probe-repository --reason "DEV-2421 release smoke workflow"
+  smoke_task=$(${installedBinary} task new --project release-smoke --title "Verify installed release")
+  compose_output=$(${installedBinary} workflow compose verify-release --project release-smoke --arg key="$smoke_task" 2>&1)
+  printf "%s\\n" "$compose_output"
+  cursor=$(printf "%s\\n" "$compose_output" | sed -n "s/.*Cursor \\([0-9][0-9]*\\) was opened for workflow verify-release .*/\\1/p")
+  case "$cursor" in
+    ""|*[!0-9]*) echo "workflow compose did not report exactly one verify-release cursor number" >&2; exit 1 ;;
+  esac
+  printf "%s\\n" "$cursor" > /tmp/mcp-state/workflow-cursor
+  printf "%s\\n" "$smoke_task" > /tmp/mcp-state/smoke-task
+  ${installedBinary} workflow next --cursor "$cursor" --artifact "task:$smoke_task" --note "Probe repository and smoke task created."
   ${installedBinary} workflow probe -- git status --short
-  ${installedBinary} run start implement --agent codex --base main --follow --cwd /tmp/probe-repository "Make the release smoke fixture commit."
+  dispatch_output=$(${installedBinary} workflow dispatch implement --cursor "$cursor" --agent codex "Make the release smoke fixture commit." 2>&1)
+  printf "%s\\n" "$dispatch_output"
+  run_number=$(printf "%s\\n" "$dispatch_output" | sed -n "s/.*detached as run \\([0-9][0-9]*\\):.*/\\1/p")
+  case "$run_number" in
+    ""|*[!0-9]*) echo "workflow dispatch did not report exactly one detached run number" >&2; exit 1 ;;
+  esac
+  ${installedBinary} run wait "$run_number"
+  ${installedBinary} run result "$run_number"
+  ${installedBinary} workflow next --cursor "$cursor" --run "$run_number" --note "Writing probe completed."
 '
-writing_worktree=$(cat /tmp/mcp-state/writing-worktree)
-writing_hooks=$(cat /tmp/mcp-state/writing-hooks)
-case "$writing_hooks" in
-  "$writing_worktree"/*) echo "shared ref guard was installed inside writing worktree $writing_worktree" >&2; exit 1 ;;
-esac
-writing_branch=$(cat /tmp/mcp-state/writing-branch)
-test "$(su -s /bin/sh smoke -c "git -C /tmp/probe-repository log -1 --format=%s $writing_branch")" = 'DEV-1091 guarded binary smoke'
+su -s /bin/sh smoke -c '
+  set -eux
+  export HOME=/home/smoke
+  export BOTTEGA_STATE_HOME=/tmp/state
+  export CLAUDE_CODE_SESSION_ID=DEV-1123-release-smoke
+  export PATH=/tmp/fake-bin:/tmp/bin:/usr/bin:/bin
+  cd /tmp/probe-repository
+  cursor=$(cat /tmp/mcp-state/workflow-cursor)
+  smoke_task=$(cat /tmp/mcp-state/smoke-task)
+  exec_output=$(${installedBinary} workflow exec -- /tmp/verify-release-probe 2>&1)
+  printf "%s\\n" "$exec_output"
+  exec_id=$(printf "%s\\n" "$exec_output" | sed -n "s/^exec \\([0-9][0-9]*\\) passed$/\\1/p")
+  case "$exec_id" in
+    ""|*[!0-9]*) echo "workflow exec did not report exactly one passed exec number" >&2; exit 1 ;;
+  esac
+  ${installedBinary} workflow next --cursor "$cursor" --artifact "exec:$exec_id" --note "Guard placement and run commit verified."
+  ${installedBinary} task show "$smoke_task"
+  ${installedBinary} workflow next --cursor "$cursor" --artifact "task:$smoke_task" --note "Release writing probe complete."
+'
 
 decoy=hub
 rm /tmp/bin/$decoy
@@ -174,6 +225,10 @@ echo 'second install left a pre-existing hub path alone and did not create a lef
       `${join(import.meta.dir, '..', 'install.sh')}:/install.sh:ro`,
       '-v',
       `${fakeHarness}:/fake-harness:ro`,
+      '-v',
+      `${verifyReleaseProbe}:/tmp/verify-release-probe:ro`,
+      '-v',
+      `${join(import.meta.dir, '..', '.agents')}:/workflow-tree:ro`,
       'debian:stable-slim',
       'sh',
       '-c',
