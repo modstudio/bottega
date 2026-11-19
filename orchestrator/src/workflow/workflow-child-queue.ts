@@ -16,6 +16,26 @@ export type ChildTaskFact = {
 
 export type ChildQueueState = { queue: ChildTaskFact[]; open: ChildTaskFact[] }
 
+export type ChildClaimFact = {
+  subject_kind: string
+  subject_value: string
+  holder_session: string
+}
+
+export function sessionWorksUnderEpic(
+  claims: readonly ChildClaimFact[],
+  session: string,
+  rootKey: string,
+  descendants: ReadonlySet<string>,
+): boolean {
+  return claims.some(
+    (claim) =>
+      claim.holder_session === session &&
+      ((claim.subject_kind === 'task' && claim.subject_value === rootKey) ||
+        (claim.subject_kind === 'queued-task' && descendants.has(claim.subject_value))),
+  )
+}
+
 export type ChildEligibility =
   | { action: 'eligible'; task: ChildTaskFact; source: 'queue' | 'open' }
   | { action: 'refuse'; message: string }

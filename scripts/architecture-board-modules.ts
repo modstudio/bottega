@@ -212,7 +212,10 @@ export const boardModules: BoardModule[] = [
     './board-tags.ts',
     './board-text-secret.ts',
   ]),
-  module('orchestrator/src/board/board-queued-claim-renewal.ts', ['bun:sqlite']),
+  module('orchestrator/src/board/board-queued-claim-renewal.ts', [
+    'bun:sqlite',
+    '../database/db.ts',
+  ]),
   module('orchestrator/src/board/board-policy.ts', [
     '../../../shared/board-purpose.ts',
     '../../../shared/brand.ts',

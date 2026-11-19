@@ -137,7 +137,7 @@ async function workflowTextRows(
   const store = taskFlowReadStore(d, client)
   const stage = await store.stageByRecordId(cursorId)
   const rows = stage?.task_flow_record_id
-    ? await store.textsForFlowLineage(stage.task_flow_record_id)
+    ? await store.textsForFlowLineage(stage.task_flow_record_id, cursorId)
     : await store.textsForStage(cursorId)
   return rows.map((row) => ({
     id: row.id,

@@ -48,6 +48,7 @@ import {
   type ClaimView,
   claimProject,
   closeQueuedTaskClaim,
+  liveClaimsOfSession,
   listClaims,
   releaseClaim,
   releaseTaskClaims,
@@ -920,6 +921,32 @@ export function boardQueuedClaimClose(
     clock,
     database,
   )
+}
+
+/** Read live local claims through the board's liveness policy for workflow decisions. */
+export function boardLiveClaimsForProject(
+  project: string,
+  clock = Date.now(),
+  database: Database = db(),
+): ClaimView[] {
+  return listClaims(
+    project,
+    false,
+    {},
+    clock,
+    '',
+    database,
+    { mode: 'coverage-read', session: null },
+  ).claims
+}
+
+/** Read projects where a session holds a live local claim through the board's liveness policy. */
+export function boardLiveClaimProjectsForSession(
+  session: string,
+  clock = Date.now(),
+  database: Database = db(),
+): string[] {
+  return [...new Set(liveClaimsOfSession(session, clock, database).map(({ project }) => project))]
 }
 export async function boardClaimRelease(id: string, inputContext?: Context) {
   const c = context(inputContext)

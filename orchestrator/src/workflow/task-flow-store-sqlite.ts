@@ -385,9 +385,9 @@ class SqliteTaskFlowStore {
       .get(recordId)
   }
 
-  textsForFlowLineage(flowRecordId: string): TaskFlowTextRow[] {
+  textsForFlowLineage(flowRecordId: string, stageRecordId: string): TaskFlowTextRow[] {
     return this.database
-      .query<TaskFlowTextRow, [string]>(
+      .query<TaskFlowTextRow, [string, string]>(
         `WITH RECURSIVE lineage(record_id,parent_flow_record_id,depth) AS (
            SELECT record_id,parent_flow_record_id,0 FROM task_flow WHERE record_id=?
            UNION ALL
@@ -397,9 +397,10 @@ class SqliteTaskFlowStore {
          SELECT text.record_id id,text.cursor_record_id,text.step_ordinal,text.step_slug,text.body
            FROM lineage JOIN workflow_cursor cursor ON cursor.task_flow_record_id=lineage.record_id
            JOIN workflow_step_text text ON text.cursor_record_id=cursor.record_id
+          WHERE lineage.depth>0 OR cursor.record_id=?
           ORDER BY lineage.depth DESC,cursor.number,text.step_ordinal,text.rowid`,
       )
-      .all(flowRecordId)
+      .all(flowRecordId, stageRecordId)
   }
 
   textsForStage(stageRecordId: string): TaskFlowTextRow[] {
@@ -752,7 +753,8 @@ export function sqliteTaskFlowReadStore(database: Database): SqliteTaskFlowReadS
     waitingWorkflowQuestions: async () => local.waitingWorkflowQuestions(),
     flowState: async (recordId) => local.flowState(recordId),
     textsForStage: async (stageRecordId) => local.textsForStage(stageRecordId),
-    textsForFlowLineage: async (flowRecordId) => local.textsForFlowLineage(flowRecordId),
+    textsForFlowLineage: async (flowRecordId, stageRecordId) =>
+      local.textsForFlowLineage(flowRecordId, stageRecordId),
     textByRecordId: async (recordId) => local.textByRecordId(recordId),
     textAttachmentByRecordId: async (recordId) => local.textAttachmentByRecordId(recordId),
     textRecordIdsForStage: async (stageRecordId) => local.textRecordIdsForStage(stageRecordId),

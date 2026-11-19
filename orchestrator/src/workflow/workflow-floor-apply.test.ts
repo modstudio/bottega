@@ -1,7 +1,13 @@
 import { expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { boardClaimList } from '../board/board-operations.ts'
 import { testDatabaseFixture } from '../database/test-database.fixture.ts'
+import {
+  productionStepCatalogue,
+  promoteStepCatalogueLocal,
+  setStepCatalogueLocal,
+} from './step-catalogue.ts'
 import { installTaskReader, type TaskReadPort } from './task-read-port.ts'
 import { composeWorkflowWithCursor } from './workflow-cursor.ts'
 import {
@@ -12,6 +18,7 @@ import {
 } from './workflow-cursor-test.fixture.ts'
 import type { Floor } from './workflow-floor.ts'
 import { applyFloorDecision } from './workflow-floor-apply.ts'
+import { promoteWorkflowLocal, setWorkflowLocal } from './workflows.ts'
 
 const floorDatabase = testDatabaseFixture((d) => {
   d.query('INSERT INTO project (record_id,name,path,settings) VALUES (?,?,?,?)').run(
@@ -51,6 +58,100 @@ const floor = (kind: Floor['kind']): Floor => ({
   expectedStatus: 'active',
   requirePullRequest: false,
   operatorRuling: false,
+})
+
+function installKeylessWorkflow(
+  d: ReturnType<typeof database>,
+  slug: string,
+  steps: readonly string[],
+) {
+  const current = productionStepCatalogue(d).definition
+  const catalogue = setStepCatalogueLocal(
+    {
+      ...current,
+      steps: [
+        ...current.steps,
+        ...steps.map((slug) => ({
+          slug,
+          title: slug,
+          body: `Close ${slug}.`,
+          stage: 'plan' as const,
+          floor: ['recorded-artifact' as const],
+          jobs: [],
+          actions: [],
+          autonomy: 'auto' as const,
+          needs: [],
+        })),
+      ],
+    },
+    'keyless ownership fixture',
+    'test',
+    d,
+  )
+  promoteStepCatalogueLocal(catalogue.n, 'keyless ownership fixture', 'test', d)
+  const draft = setWorkflowLocal(
+    slug,
+    {
+      title: slug,
+      description: 'Exercises keyless cursor ownership on close.',
+      arguments: [],
+      modes: [{ slug: 'default', title: 'Default', default: true, steps }],
+    },
+    'keyless ownership fixture',
+    'test',
+    d,
+  )
+  promoteWorkflowLocal(slug, draft.n, 'keyless ownership fixture', 'test', d)
+}
+
+test.each([
+  { name: 'advance', steps: ['ownership-first', 'ownership-last'] },
+  { name: 'finish', steps: ['ownership-first'] },
+  {
+    name: 'advance with task adoption',
+    steps: ['ownership-first', 'ownership-last'],
+    task: 'DEV-2422',
+  },
+])('a foreign keyless $name refuses before writing', async ({ steps, task }) => {
+  const d = database()
+  const slug = `keyless-foreign-${steps.length}`
+  installKeylessWorkflow(d, slug, steps)
+  const owner = { session: 'owner-session' }
+  const keylessArgs = {}
+  const opened = await composeWorkflowWithCursor(
+    slug,
+    'fixture',
+    'default',
+    keylessArgs,
+    owner,
+    d,
+    {},
+    {},
+  )
+  const cursor = opened.cursor!.id
+  d.query("UPDATE workflow_cursor SET enforcement='note-only' WHERE number=?").run(cursor)
+
+  await expect(
+    selectAndNextWorkflowStep(
+      slug,
+      'fixture',
+      'default',
+      keylessArgs,
+      'closed by foreign session',
+      { session: 'foreign-session' },
+      d,
+      task ? { task } : {},
+      undefined,
+      cursor,
+    ),
+  ).rejects.toThrow(
+    `workflow cursor ${cursor} is owned by session owner-session; a keyless cursor changes owner only through an explicit takeover. Take it over with: ${PLATFORM_SLUG} workflow abandon --cursor ${cursor} --project fixture --owner-session owner-session; then compose a new cursor with: ${PLATFORM_SLUG} workflow compose ${slug} --project fixture --mode default`,
+  )
+  expect(
+    d
+      .query('SELECT session_id,workflow_key,ordinal,state FROM workflow_cursor WHERE number=?')
+      .get(cursor),
+  ).toEqual({ session_id: 'owner-session', workflow_key: '', ordinal: 0, state: 'running' })
 })
 
 test('plan-task start floor selection does not create review debt without a review-owed floor', async () => {

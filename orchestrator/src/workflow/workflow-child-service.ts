@@ -12,7 +12,12 @@ import { db } from '../database/db.ts'
 import { taskFlowReadStore } from './task-flow-store.ts'
 import { type TaskReadRow, taskReader } from './task-read-port.ts'
 import { childAncestorKeys, gatherChildTaskFacts, liveChildClaims } from './workflow-child-facts.ts'
-import { childEligibility, childQueueState, selectChildToStart } from './workflow-child-queue.ts'
+import {
+  childEligibility,
+  childQueueState,
+  selectChildToStart,
+  sessionWorksUnderEpic,
+} from './workflow-child-queue.ts'
 import { insertWorkflowCursor } from './workflow-cursor-compose.ts'
 import { resolveCompositionLiveAutonomy } from './workflow-cursor-live-autonomy.ts'
 import {
@@ -90,13 +95,7 @@ export async function queueWorkflowChild(
     root,
     tasks.map((task) => ({ key: task.key, parentKey: task.parent_key })),
   )
-  const sessionWorksUnderEpic = claims.some(
-    (claim) =>
-      claim.holder_session === input.callerSession &&
-      ((claim.subject_kind === 'task' && claim.subject_value === root) ||
-        (claim.subject_kind === 'queued-task' && descendants.has(claim.subject_value))),
-  )
-  if (!sessionWorksUnderEpic)
+  if (!sessionWorksUnderEpic(claims, input.callerSession, root, descendants))
     throw new Error(
       `calling session ${input.callerSession} does not hold epic ${root} or a queued child under it`,
     )
@@ -145,13 +144,7 @@ export async function startWorkflowChild(
     throw new Error(`cursor ${input.cursor} is not an epic cursor`)
   const claims = liveChildClaims(database, input.project)
   const descendants = descendantTaskKeys(epic.workflow_key, facts)
-  const callerWorksUnderEpic = claims.some(
-    (claim) =>
-      claim.holder_session === input.callerSession &&
-      ((claim.subject_kind === 'task' && claim.subject_value === epic.workflow_key) ||
-        (claim.subject_kind === 'queued-task' && descendants.has(claim.subject_value))),
-  )
-  if (!callerWorksUnderEpic)
+  if (!sessionWorksUnderEpic(claims, input.callerSession, epic.workflow_key, descendants))
     throw new Error(
       `calling session ${input.callerSession} does not hold epic ${epic.workflow_key} or a queued child under it`,
     )

@@ -2,6 +2,7 @@
 /** Gathers the one task/claim fact model used by child services and session surfaces. */
 
 import type { Database } from 'bun:sqlite'
+import { boardLiveClaimsForProject } from '../board/board-operations.ts'
 import { TASK_FLOW_STAGE_STATES } from '../record/record-task-flow-contract.ts'
 import { taskFlowReadStore } from './task-flow-store.ts'
 import type { TaskReadRow } from './task-read-port.ts'
@@ -16,12 +17,14 @@ export type LiveChildClaim = {
 }
 
 export function liveChildClaims(database: Database, project: string, now = Date.now()) {
-  return database
-    .query<LiveChildClaim, [string, string]>(
-      `SELECT subject_kind,subject_value,holder_session,taken_at FROM board_claim
-       WHERE project=? AND closed_at IS NULL AND lapses_at>? ORDER BY taken_at,record_id`,
-    )
-    .all(project, new Date(now).toISOString())
+  return boardLiveClaimsForProject(project, now, database)
+    .filter((claim) => claim.holder !== 'operator')
+    .map<LiveChildClaim>((claim) => ({
+      subject_kind: claim.subject.kind,
+      subject_value: claim.subject.value,
+      holder_session: claim.holder,
+      taken_at: claim.takenAt,
+    }))
 }
 
 export async function gatherChildTaskFacts(

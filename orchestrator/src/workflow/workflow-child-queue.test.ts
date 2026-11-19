@@ -1,5 +1,10 @@
 import { expect, test } from 'bun:test'
-import { type ChildTaskFact, childQueueState, selectChildToStart } from './workflow-child-queue.ts'
+import {
+  type ChildTaskFact,
+  childQueueState,
+  selectChildToStart,
+  sessionWorksUnderEpic,
+} from './workflow-child-queue.ts'
 
 const task = (
   values: Partial<ChildTaskFact> & Pick<ChildTaskFact, 'key' | 'number'>,
@@ -45,4 +50,35 @@ test('start-child picks this session queue before Open', () => {
     action: 'refuse',
     message: 'DEV-9 is not queueable under this epic',
   })
+})
+
+test('a session works under an epic through its epic claim or a queued descendant claim', () => {
+  const descendants = new Set(['DEV-2', 'DEV-3'])
+  expect(
+    sessionWorksUnderEpic(
+      [{ subject_kind: 'task', subject_value: 'DEV-1', holder_session: 'mine' }],
+      'mine',
+      'DEV-1',
+      descendants,
+    ),
+  ).toBeTrue()
+  expect(
+    sessionWorksUnderEpic(
+      [{ subject_kind: 'queued-task', subject_value: 'DEV-3', holder_session: 'mine' }],
+      'mine',
+      'DEV-1',
+      descendants,
+    ),
+  ).toBeTrue()
+  expect(
+    sessionWorksUnderEpic(
+      [
+        { subject_kind: 'queued-task', subject_value: 'DEV-9', holder_session: 'mine' },
+        { subject_kind: 'task', subject_value: 'DEV-1', holder_session: 'other' },
+      ],
+      'mine',
+      'DEV-1',
+      descendants,
+    ),
+  ).toBeFalse()
 })

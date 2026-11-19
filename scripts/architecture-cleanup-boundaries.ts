@@ -3,6 +3,7 @@ export const cleanupBoundarySpecs = [
     name: 'session-epic-work-boundary',
     file: 'orchestrator/src/session/session-epic-work.ts',
     allowed: [
+      '../board/board-operations.ts',
       '../database/db.ts',
       '../record/record-task-flow-contract.ts',
       '../workflow/task-flow-store.ts',
