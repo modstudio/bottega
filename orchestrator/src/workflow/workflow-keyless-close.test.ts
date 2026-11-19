@@ -1,5 +1,6 @@
 import { expect, test } from 'bun:test'
 import { fileURLToPath } from 'node:url'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { testDatabaseFixture } from '../database/test-database.fixture.ts'
 import {
@@ -55,6 +56,32 @@ test('every plan-task step renders on a keyless cursor in every mode', async () 
       expect(step.body).not.toContain('{{tracker.actions.')
     }
   }
+})
+
+test('a keyed plan-task start renders its epic commands with the cursor key', () => {
+  const body = getWorkflowStep(
+    'plan-task',
+    'fixture',
+    'start',
+    { key: 'DEV-2483' },
+    database(),
+  ).body
+
+  expect(body).toContain(
+    `${PLATFORM_SLUG} workflow queue <child> --session <name> --project fixture`,
+  )
+  expect(body).toContain(
+    `${PLATFORM_SLUG} workflow start-child --cursor <cursor> --project fixture [--task <child>]`,
+  )
+  expect(body).toContain(`${PLATFORM_SLUG} workflow next --cursor <cursor> --task DEV-2483`)
+  expect(body).not.toContain('{{key}}')
+})
+
+test('a keyless plan-task start renders the key argument placeholder', () => {
+  const body = getWorkflowStep('plan-task', 'fixture', 'start', {}, database()).body
+
+  expect(body).toContain(`${PLATFORM_SLUG} workflow next --cursor <cursor> --task <key>`)
+  expect(body).not.toContain('{{key}}')
 })
 
 test('a workflow without a key argument adopts --task and renders and closes its next step', async () => {

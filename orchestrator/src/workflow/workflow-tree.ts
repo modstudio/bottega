@@ -1,11 +1,8 @@
 // concern: workflow-tree
 /** Knows the pure markdown mirror for production workflows. Must not know filesystems, stores, commands, projects, or transports. */
 import { isDeepStrictEqual } from 'node:util'
-import {
-  type CatalogueSequence,
-  type CatalogueStep,
-  unsupportedCloseEvidenceFlags,
-} from './step-catalogue.ts'
+import type { CatalogueSequence, CatalogueStep } from './step-catalogue.ts'
+import { unsupportedCloseEvidenceFlags } from './step-catalogue-close-instruction.ts'
 import type { WorkflowDefinition } from './workflows.ts'
 
 export type WorkflowTreeStore = {
@@ -50,9 +47,9 @@ export function normalizeWorkflowYaml(yaml: string): string {
     .replace(/ +$/gm, '')
     .replace(/^([ ]*[a-zA-Z0-9_-]+):\n[ ]+\[\]$/gm, '$1: []')
     .replace(
-      /^(jobs|actions):\n((?:  - [^\n]+\n?)+)/gm,
+      /^(jobs|actions):\n((?: {2}- [^\n]+\n?)+)/gm,
       (_match, field: string, entries: string) => {
-        const values = entries.match(/^  - (.+)$/gm)?.map((entry) => entry.slice(4)) ?? []
+        const values = entries.match(/^ {2}- (.+)$/gm)?.map((entry) => entry.slice(4)) ?? []
         return `${field}: [${values.join(', ')}]\n`
       },
     )

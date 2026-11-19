@@ -35,8 +35,13 @@ export const workflowTreeModules: WorkflowTreeModule[] = [
     '../project/projects.ts',
     './workflow-promotion-admission.ts',
   ]),
+  module('orchestrator/src/workflow/step-catalogue-close-instruction.ts', [
+    './step-catalogue-definition.ts',
+    './workflow-floor.ts',
+  ]),
   module('orchestrator/src/workflow/workflow-tree.ts', [
     'node:util',
+    './step-catalogue-close-instruction.ts',
     './step-catalogue.ts',
     './workflow-step-sequences.ts',
     './workflows.ts',
