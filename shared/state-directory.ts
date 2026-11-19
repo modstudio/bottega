@@ -40,7 +40,7 @@ export function temporaryStateStoreMigrationAllowed(
 export const STATE_HOME_ENV = `${PLATFORM_SLUG.toUpperCase()}_STATE_HOME`
 export const ORCHESTRATOR_DATABASE_ENV = `${PLATFORM_SLUG.toUpperCase()}_ORCHESTRATOR_DB`
 export const ORCHESTRATOR_DATABASE_WRITE_ENV = `${ORCHESTRATOR_DATABASE_ENV}_WRITE`
-export function discardStorePath(platform: NodeJS.Platform = process.platform): string {
+function discardStorePath(platform: NodeJS.Platform = process.platform): string {
   return platform === 'win32' ? 'NUL' : '/dev/null'
 }
 

@@ -3,10 +3,7 @@
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { refusal, renderRefusal } from '../../../shared/refusal.ts'
-import {
-  isDiscardStorePath,
-  ORCHESTRATOR_DATABASE_ENV,
-} from '../../../shared/state-directory.ts'
+import { isDiscardStorePath, ORCHESTRATOR_DATABASE_ENV } from '../../../shared/state-directory.ts'
 
 export type RecordWriteDecision =
   | { verdict: 'hosted' | 'local-authoritative' }

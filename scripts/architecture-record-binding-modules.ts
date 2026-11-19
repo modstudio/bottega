@@ -170,8 +170,8 @@ export const recordBindingModules: RecordModule[] = [
   ]),
   module('orchestrator/src/record/record-local-command.ts', [
     'bun:sqlite',
-    '../../../shared/brand.ts',
     '../../../shared/refusal.ts',
+    '../../../shared/state-directory.ts',
     '../database/db.ts',
     './install-binding.ts',
     './record-local-mark.ts',

@@ -163,9 +163,6 @@
     "shared/test-git-repository.ts": 1
   },
   "commandCases": {
-    "orchestrator/src/record/record-local-command.ts#recordLocalCommand": {
-      "exemption": "record use switches the bound store through hosted discovery; record-use.test covers that network-backed effect"
-    },
     "orchestrator/src/record/record-write-decision.ts#decideRecordWrite": {
       "test": "orchestrator/src/record/record-write-decision.test.ts: shared-state writes are hosted, local-authoritative, or refused from install facts"
     },
