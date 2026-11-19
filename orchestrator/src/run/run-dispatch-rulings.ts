@@ -5,6 +5,7 @@ import {
   type CarriedAttachmentSource,
   resolveCarriedAttachments,
 } from './run-carried-attachments.ts'
+import { recordRunWarning } from '../events.ts'
 import { inheritedRunLinks } from './run-claim-inheritance.ts'
 import { admitNewRunReference } from './run-task-reference.ts'
 import { initialRunTaskText } from './run-task-text.ts'
@@ -16,6 +17,13 @@ type TaskTextReader = NonNullable<Parameters<typeof initialRunTaskText>[1]>['rea
 type AttachmentReader = NonNullable<
   Parameters<typeof resolveCarriedAttachments>[1]
 >['readAttachment']
+
+export function recordDispatchAttachmentWarnings(runId: string, warnings: readonly string[]): void {
+  for (const warning of warnings) {
+    console.error(`orch: warning: ${warning}`)
+    recordRunWarning(runId, warning)
+  }
+}
 
 async function runDispatchRulingsSection(input: {
   resume: boolean
@@ -66,6 +74,7 @@ export async function prepareRunDispatchRulings(
   links: DispatchLinks | null
   taskText: string
   carriedAttachments: string
+  attachmentWarnings: string[]
 }> {
   const key = input.key
   const inherited =
@@ -96,18 +105,24 @@ export async function prepareRunDispatchRulings(
     },
     { readTaskText: dependencies.taskTextReader },
   )
+  const attachmentWarnings: string[] = []
+  const carriedAttachments = await resolveCarriedAttachments(
+    [
+      { label: 'spec', text: input.spec },
+      ...rulings.attachmentSources,
+      { label: 'task text', text: taskText, missing: 'warn' },
+    ],
+    {
+      readAttachment: dependencies.attachmentReader,
+      onWarning: (warning) => attachmentWarnings.push(warning),
+    },
+  )
   return {
     section: rulings.section,
     questionIds: rulings.questionIds,
     links,
     taskText,
-    carriedAttachments: await resolveCarriedAttachments(
-      [
-        { label: 'spec', text: input.spec },
-        ...rulings.attachmentSources,
-        { label: 'task text', text: taskText },
-      ],
-      { readAttachment: dependencies.attachmentReader },
-    ),
+    carriedAttachments,
+    attachmentWarnings,
   }
 }

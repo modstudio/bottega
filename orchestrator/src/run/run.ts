@@ -85,7 +85,10 @@ import { closeRun } from './run-close.ts'
 import { acquireRunCloseOutLeaseHandle } from './run-close-out-lease-handle.ts'
 import * as runConfinement from './run-confinement.ts'
 import { runDispatchPrompt } from './run-dispatch-prompt.ts'
-import { prepareRunDispatchRulings } from './run-dispatch-rulings.ts'
+import {
+  prepareRunDispatchRulings,
+  recordDispatchAttachmentWarnings,
+} from './run-dispatch-rulings.ts'
 import { runEvidence } from './run-evidence-context.ts'
 import { HARNESS_AGENT, intendedExecutor } from './run-executor.ts'
 import { assertConfiguredGitGuard, workerGitConfigEnvironment } from './run-git-guard.ts'
@@ -571,8 +574,8 @@ export async function run(
     mcpConnection: claimedMcpConnection,
     usingMcp: claimedUsingMcp,
   } = claimedRun
+  recordDispatchAttachmentWarnings(claim.id, dispatchRulings.attachmentWarnings)
   const owner = { rootRunId: rootRunRecordId(claim.id), runId: claim.id, projectId: runProjectId }
-  const localMachineId = machineId()
   runMigration.enableRunSchemaReload(claim.id)
   outPath = claimedOutputPath
   const initialBoard = await board(claimedBoundPrompt, promptPath, claim.id, resume.isFirstTurn)
@@ -984,7 +987,7 @@ export async function run(
               proc,
               askLoopback,
               claim,
-              machineId: localMachineId,
+              machineId: machineId(),
               writesJob,
               worktree,
               launchKey,
@@ -1042,7 +1045,7 @@ export async function run(
             {
               runId: claim.id,
               started,
-              machineId: localMachineId,
+              machineId: machineId(),
             },
           ))
         } finally {

@@ -16,21 +16,26 @@ export const CARRIED_ATTACHMENTS_MAX_BYTES = TASK_TEXT_MAX_BYTES * 2
 export type CarriedAttachment = Awaited<ReturnType<typeof showWorkflowText>>
 type AttachmentReader = (token: string) => Promise<CarriedAttachment>
 
-export type CarriedAttachmentSource = { label: string; text: string }
-export type CarriedAttachmentToken = { token: string; sources: string[] }
+export type CarriedAttachmentSource = {
+  label: string
+  text: string
+  missing?: 'refuse' | 'warn'
+}
+type CarriedAttachmentCandidate = { token: string; sources: string[]; refusalRequired: boolean }
 
-export function carriedAttachmentTokens(
-  ...sections: readonly CarriedAttachmentSource[]
-): CarriedAttachmentToken[] {
-  const tokens = new Map<string, string[]>()
+function carriedAttachmentCandidates(
+  sections: readonly CarriedAttachmentSource[],
+): CarriedAttachmentCandidate[] {
+  const tokens = new Map<string, { sources: string[]; refusalRequired: boolean }>()
   for (const section of sections) {
     for (const token of workflowTextAttachmentTokens(section.text)) {
-      const sources = tokens.get(token) ?? []
-      if (!sources.includes(section.label)) sources.push(section.label)
-      tokens.set(token, sources)
+      const candidate = tokens.get(token) ?? { sources: [], refusalRequired: false }
+      if (!candidate.sources.includes(section.label)) candidate.sources.push(section.label)
+      if (section.missing !== 'warn') candidate.refusalRequired = true
+      tokens.set(token, candidate)
     }
   }
-  return [...tokens].map(([token, sources]) => ({ token, sources }))
+  return [...tokens].map(([token, candidate]) => ({ token, ...candidate }))
 }
 
 function truncationMarker(token: string, scope: 'attachment' | 'section'): string {
@@ -96,36 +101,47 @@ function attachmentRefusal(failures: AttachmentFailure[]): Error {
   return new Error(`carried attachments could not be resolved before dispatch:\n${details}`)
 }
 
+function attachmentWarning({ token, sources, condition, remedy }: AttachmentFailure): string {
+  return (
+    `carried attachment ${token} (from ${sources.join(', ')}) could not be resolved: ${condition}\n` +
+    `remedy: ${remedy}`
+  )
+}
+
+function attachmentFailure(
+  cause: unknown,
+  token: string,
+  sources: string[],
+): AttachmentFailure {
+  if (cause instanceof WorkflowTextNotHeldError) {
+    return { token, sources, condition: cause.condition, remedy: cause.remedy }
+  }
+  const message = cause instanceof Error ? cause.message : String(cause)
+  return {
+    token,
+    sources,
+    condition: `the workflow text store could not be read: ${message}`,
+    remedy:
+      'restore access to the workflow text store and retry dispatch, or paste the body into the spec',
+  }
+}
+
 export async function resolveCarriedAttachments(
   sections: readonly CarriedAttachmentSource[],
-  dependencies: { readAttachment?: AttachmentReader } = {},
+  dependencies: { readAttachment?: AttachmentReader; onWarning?: (warning: string) => void } = {},
 ): Promise<string> {
-  const carriedTokens = carriedAttachmentTokens(...sections)
+  const carriedTokens = carriedAttachmentCandidates(sections)
   if (carriedTokens.length === 0) return ''
   const readAttachment = dependencies.readAttachment ?? showWorkflowText
   const resolved: CarriedAttachment[] = []
   const failures: AttachmentFailure[] = []
-  for (const { token, sources } of carriedTokens) {
+  for (const { token, sources, refusalRequired } of carriedTokens) {
     try {
       resolved.push(await readAttachment(token))
     } catch (cause) {
-      if (cause instanceof WorkflowTextNotHeldError) {
-        failures.push({
-          token,
-          sources,
-          condition: cause.condition,
-          remedy: cause.remedy,
-        })
-      } else {
-        const message = cause instanceof Error ? cause.message : String(cause)
-        failures.push({
-          token,
-          sources,
-          condition: `the workflow text store could not be read: ${message}`,
-          remedy:
-            'restore access to the workflow text store and retry dispatch, or paste the body into the spec',
-        })
-      }
+      const failure = attachmentFailure(cause, token, sources)
+      if (refusalRequired) failures.push(failure)
+      else dependencies.onWarning?.(attachmentWarning(failure))
     }
   }
   if (failures.length > 0) throw attachmentRefusal(failures)

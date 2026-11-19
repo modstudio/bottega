@@ -8,29 +8,12 @@ import {
   CARRIED_ATTACHMENT_MAX_BYTES,
   CARRIED_ATTACHMENTS_MAX_BYTES,
   carriedAttachmentsSection,
-  carriedAttachmentTokens,
   resolveCarriedAttachments,
 } from './run-carried-attachments.ts'
 
 const FIRST = 'attached-text:11111111-1111-4111-8111-111111111111'
 const SECOND = 'attached-text:22222222-2222-4222-8222-222222222222'
 const THIRD = 'attached-text:33333333-3333-4333-8333-333333333333'
-
-describe('carried attachment tokens', () => {
-  test('collects distinct tokens across spec, rulings, and task text', () => {
-    expect(
-      carriedAttachmentTokens(
-        { label: 'spec', text: `spec ${FIRST} ${SECOND}` },
-        { label: 'task rulings (question Q)', text: `rulings ${SECOND}` },
-        { label: 'task text', text: `task ${THIRD} ${FIRST}` },
-      ),
-    ).toEqual([
-      { token: FIRST, sources: ['spec', 'task text'] },
-      { token: SECOND, sources: ['spec', 'task rulings (question Q)'] },
-      { token: THIRD, sources: ['task text'] },
-    ])
-  })
-})
 
 describe('carried attachment rendering', () => {
   test('renders live and redirected entries', () => {
@@ -118,4 +101,62 @@ test('a store failure carries its cause and a store remedy', async () => {
     `- ${FIRST} (from spec): the workflow text store could not be read: record service timed out\n` +
       '  remedy: restore access to the workflow text store and retry dispatch, or paste the body into the spec',
   )
+})
+
+async function missingAttachmentResult(
+  sections: Parameters<typeof resolveCarriedAttachments>[0],
+): Promise<{ error: Error | null; warnings: string[] }> {
+  const warnings: string[] = []
+  const missing = missingWorkflowTextMessage(FIRST, 'local-authoritative')
+  let error: Error | null = null
+  try {
+    await resolveCarriedAttachments(sections, {
+      readAttachment: async () => {
+        throw new WorkflowTextNotHeldError(missing.condition, missing.remedy)
+      },
+      onWarning: (warning) => warnings.push(warning),
+    })
+  } catch (cause) {
+    error = cause as Error
+  }
+  return { error, warnings }
+}
+
+test('a dead token only in task text warns and does not refuse', async () => {
+  const result = await missingAttachmentResult([
+    { label: 'task text', text: FIRST, missing: 'warn' },
+  ])
+
+  expect(result.error).toBeNull()
+  expect(result.warnings).toHaveLength(1)
+  expect(result.warnings[0]).toContain(FIRST)
+  expect(result.warnings[0]).toContain('from task text')
+})
+
+test('a dead token only in a ruling refuses with its question id', async () => {
+  const result = await missingAttachmentResult([
+    { label: 'task rulings (question Q)', text: FIRST },
+  ])
+
+  expect(result.error?.message).toContain(FIRST)
+  expect(result.error?.message).toContain('from task rulings (question Q)')
+  expect(result.warnings).toEqual([])
+})
+
+test('a dead token only in the spec refuses with its section', async () => {
+  const result = await missingAttachmentResult([{ label: 'spec', text: FIRST }])
+
+  expect(result.error?.message).toContain(FIRST)
+  expect(result.error?.message).toContain('from spec')
+  expect(result.warnings).toEqual([])
+})
+
+test('a dead token in task text and the spec follows the stricter rule', async () => {
+  const result = await missingAttachmentResult([
+    { label: 'task text', text: FIRST, missing: 'warn' },
+    { label: 'spec', text: FIRST },
+  ])
+
+  expect(result.error?.message).toContain(`from task text, spec`)
+  expect(result.warnings).toEqual([])
 })
