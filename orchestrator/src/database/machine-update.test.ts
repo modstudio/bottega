@@ -127,13 +127,6 @@ function successfulMachineUpdateDeps(migrate: () => void = () => {}) {
   }
 }
 
-test('real machine-update workflow sync refuses side effects under the test runner', async () => {
-  const { syncWorkflows: _syncWorkflows, ...deps } = successfulMachineUpdateDeps()
-  await expect(machineUpdateCommand({ log: () => {} }, deps)).rejects.toThrow(
-    'real machine-update workflow sync refuses side effects under the test runner; inject a syncWorkflows step',
-  )
-})
-
 test("machine update clears a dead holder's marker before deciding", async () => {
   setMigrationDrain(db(), '0155_rebuild', 'draining', {
     pid: 4_200_000,

@@ -2,11 +2,13 @@ import { expect, test } from 'bun:test'
 import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { startBoundedSync } from '../../../shared/bounded-process.ts'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { scrubbedGitEnv } from '../../../shared/git.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { db } from '../database/db.ts'
 import { projectAt } from '../project/projects.ts'
 import { applyWorkflowCatalogueRow } from '../record/record-cache-workflow.fixture.ts'
+import { workflowImportBase } from './workflow-import-branch.ts'
 import {
   hostedWorkflowRepositoryFixture,
   installHostedWorkflowTreeFixture,
@@ -17,7 +19,6 @@ import {
   workflowCommandPresentation,
 } from './workflow-store.fixture.ts'
 import { setWorkflowLocal } from './workflows.ts'
-import { workflowImportBase } from './workflow-import-branch.ts'
 
 const runGit = (cwd: string, args: string[]): string => {
   const result = startBoundedSync(['git', ...args], {
@@ -25,7 +26,8 @@ const runGit = (cwd: string, args: string[]): string => {
     cwd,
     env: scrubbedGitEnv(),
   })
-  if (result.exitCode !== 0) throw new Error(result.stderr.trim() || `git exited ${result.exitCode}`)
+  if (result.exitCode !== 0)
+    throw new Error(result.stderr.trim() || `git exited ${result.exitCode}`)
   return result.stdout.trim()
 }
 
@@ -60,7 +62,7 @@ test('workflow import names the registration and landing-branch remedies separat
       settings: {},
     } as never),
   ).toThrow(
-    'registered project fixture-project has no landing branch in settings.trunk; run bottega project set fixture-project --settings to set trunk',
+    `registered project fixture-project has no landing branch in settings.trunk; run ${PLATFORM_SLUG} project set fixture-project --settings to set trunk`,
   )
 })
 
@@ -68,8 +70,7 @@ test('workflow import accepts an intentional older production body only with a s
   const fixture = hostedWorkflowRepositoryFixture('intentional-reversion')
   const project = 'intentional-workflow-reversion'
   const path = join(fixture.worktree, '.agents', 'workflows', 'hosted.md')
-  const olderBody =
-    '---\ntitle: Hosted fixture\narguments: []\nmodes: []\n---\nHosted fixture.\n'
+  const olderBody = '---\ntitle: Hosted fixture\narguments: []\nmodes: []\n---\nHosted fixture.\n'
   const newerBody =
     '---\ntitle: Hosted fixture\narguments: []\nmodes: []\n---\nCurrent production body.\n'
   try {
@@ -151,13 +152,10 @@ test('workflow import accepts an intentional older production body only with a s
       '--reason',
       'intentional workflow reversion',
     ]
-    await expect(
-      runWorkflowCommand(argv, workflowCommandPresentation([])),
-    ).rejects.toThrow('refusing stale workflow tree reversion')
-    await runWorkflowCommand(
-      [...argv, '--since', beforeReversion],
-      workflowCommandPresentation([]),
+    await expect(runWorkflowCommand(argv, workflowCommandPresentation([]))).rejects.toThrow(
+      'refusing stale workflow tree reversion',
     )
+    await runWorkflowCommand([...argv, '--since', beforeReversion], workflowCommandPresentation([]))
   } finally {
     fixture.dispose()
   }

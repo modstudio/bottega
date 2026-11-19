@@ -447,13 +447,14 @@ write the production workflow tree into a project worktree
 
 ## bottega workflow import
 
-**Synopsis:** `bottega workflow import [--cwd <value>] [--reason <value>] [--author <value>] [--json]`
+**Synopsis:** `bottega workflow import [--cwd <value>] [--since <commit>] [--reason <value>] [--author <value>] [--json]`
 
 import a project workflow tree as draft definitions
 
 ### Options
 
 - `--cwd <value>`: select the project worktree to import
+- `--since <commit>`: measure changed workflow paths from this commit
 - `--reason <value>`: record why this change is being made
 - `--author <value>`: record who is making this change
 - `--json`: print JSON output

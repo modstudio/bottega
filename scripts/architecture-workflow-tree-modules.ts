@@ -52,6 +52,7 @@ export const workflowTreeModules: WorkflowTreeModule[] = [
     './workflow-tree-hydration.ts',
     './workflow-tree-store.ts',
   ]),
+  module('orchestrator/src/workflow/workflow-tree-sync-command.ts', []),
   module('orchestrator/src/workflow/workflow-tree-files.ts', [
     'node:fs',
     'node:path',

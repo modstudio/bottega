@@ -16,7 +16,6 @@ import {
 } from '../database/machine-update-mover.ts'
 import type { Project } from '../project/projects.ts'
 import { projectByName } from '../project/projects.ts'
-import { workflowTreeSyncCommands } from '../workflow/workflow-tree-commands.ts'
 import { type EntryClosure, entryClosureAtCommit } from '../release/release-entry-closure.ts'
 import {
   changedPaths,
@@ -39,6 +38,7 @@ import {
   type ShipCleanupReport,
   shipCleanup,
 } from '../ship-cleanup/ship-cleanup.ts'
+import { workflowTreeSyncCommands } from '../workflow/workflow-tree-sync-command.ts'
 import {
   LANDED_PULL_REQUEST_EXIT_CODES,
   MERGED_WITH_RESIDUE_EXIT_CODE,
@@ -249,12 +249,7 @@ function promotionOutput(input: {
 }): { output: string; error?: string } {
   if (input.result.ok) return { output: input.result.output }
   const reason = `merged PR #${input.prNumber} (${input.mergeCommit})`
-  const promotion = workflowTreeSyncCommands(
-    PLATFORM_SLUG,
-    input.project.path,
-    reason,
-    input.since,
-  )
+  const promotion = workflowTreeSyncCommands(PLATFORM_SLUG, input.project.path, reason, input.since)
     .map(({ argv }) =>
       argv
         .map((value) => (/^[A-Za-z0-9_./:-]+$/.test(value) ? value : JSON.stringify(value)))

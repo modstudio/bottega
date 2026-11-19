@@ -69,6 +69,7 @@ export const pullRequestModuleSpecs = [
       '../release/release-required.ts',
       '../release/ship-to-reach.ts',
       '../ship-cleanup/ship-cleanup.ts',
+      '../workflow/workflow-tree-sync-command.ts',
       './pr-admission.ts',
       './pr-landed-exit-codes.ts',
       './pr-merge-evidence.ts',

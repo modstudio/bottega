@@ -60,38 +60,6 @@ export function workflowProjectRefusal(input: {
   )
 }
 
-export type WorkflowTreeSyncCommand = {
-  stage: 'import' | 'promote'
-  argv: string[]
-}
-
-export function workflowTreeSyncCommands(
-  binary: string,
-  cwd: string,
-  reason: string,
-  since?: string | null,
-): WorkflowTreeSyncCommand[] {
-  return [
-    {
-      stage: 'import',
-      argv: [
-        binary,
-        'workflow',
-        'import',
-        '--cwd',
-        cwd,
-        '--reason',
-        reason,
-        ...(since ? ['--since', since] : []),
-      ],
-    },
-    {
-      stage: 'promote',
-      argv: [binary, 'workflow', 'promote-tree', '--cwd', cwd, '--reason', reason],
-    },
-  ]
-}
-
 export function workflowCommandProject(
   command: 'hydrate' | 'import' | 'promote' | 'promote-tree',
   options: TreeCommandOptions,

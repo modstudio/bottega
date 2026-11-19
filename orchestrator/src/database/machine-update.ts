@@ -24,7 +24,7 @@ import {
 } from '../project/main-checkout-invariant.ts'
 import { projectAt } from '../project/projects.ts'
 import { migrationInFlightRuns } from '../run/migration-in-flight-runs.ts'
-import { workflowTreeSyncCommands } from '../workflow/workflow-tree-commands.ts'
+import { workflowTreeSyncCommands } from '../workflow/workflow-tree-sync-command.ts'
 import { setupIncrementalVacuumAfterMachineUpdate } from './database-commands.ts'
 import { DATABASE_RESOLUTION, missingDatabaseMessage } from './database-location.ts'
 import {

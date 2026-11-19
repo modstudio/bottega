@@ -100,17 +100,12 @@ test('post-landing payload carries the release plan requirement source', () => {
 })
 
 test.each(
-  Object.keys(payload).filter(
-    (field) => field !== 'depth' && field !== 'workflowImportSince',
-  ),
-)(
-  'post-landing payload refuses missing %s',
-  (field) => {
-    const incomplete = { ...payload } as Record<string, unknown>
-    delete incomplete[field]
-    expect(() => parsePullRequestPostLandingPayload(JSON.stringify(incomplete))).toThrow(field)
-  },
-)
+  Object.keys(payload).filter((field) => field !== 'depth' && field !== 'workflowImportSince'),
+)('post-landing payload refuses missing %s', (field) => {
+  const incomplete = { ...payload } as Record<string, unknown>
+  delete incomplete[field]
+  expect(() => parsePullRequestPostLandingPayload(JSON.stringify(incomplete))).toThrow(field)
+})
 
 test.each(['', 5, false])(
   'post-landing payload refuses invalid workflowImportSince %p',
