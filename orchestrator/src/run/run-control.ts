@@ -351,7 +351,7 @@ export type ChainTurn = {
   executor?: 'external' | 'harness'
 }
 
-export function continuationWorker(rootId: string, latest: ChainTurn, hasCheckpoint: boolean) {
+function continuationWorker(rootId: string, latest: ChainTurn, hasCheckpoint: boolean) {
   const harness = harnessContinuationWorker(latest.executor)
   if (harness) return harness
   if (hasCheckpoint) return { agent: latest.agent, session: undefined }

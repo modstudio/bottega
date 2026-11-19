@@ -12,6 +12,7 @@ import { job } from '../jobs/jobs.ts'
 import { identity } from '../record/record-api-identity.fixture.ts'
 import { EMPTY_QUOTA_READINGS } from '../transport/quota-readings.ts'
 import { EMPTY_VENDOR_USAGE } from '../transport/vendor-usage.ts'
+import { answerResumeUnavailable } from './run-answer-resume.ts'
 import { enqueueRunRecord } from './run-outbox.ts'
 import {
   artifactPersistenceOutcome,
@@ -319,6 +320,15 @@ test('finish makes a reply question answerable before its store write finishes',
     status: 'asking',
     vendor_session: 'session-from-finished-worker',
   })
+  expect(
+    answerResumeUnavailable({
+      ownersLive: false,
+      skipResume: false,
+      executor: 'external',
+      vendorSession: 'session-from-finished-worker',
+      resumable: true,
+    }),
+  ).toBe(false)
 
   releaseWrite()
   await finishing

@@ -11,12 +11,12 @@ export function markRunAsking(database: Database, runId: string): void {
 }
 
 /** Persist the facts needed to answer or resume a reply-borne question. */
-export function recordRunQuestionReadiness<T extends readonly unknown[]>(
+export function recordRunQuestionReadiness(
   input: { machineId: string; resolvedSession: string | null },
   runId: string,
-  questions: T,
-): T {
-  const database = db()
+  questions: readonly unknown[],
+): void {
+  const database = db(true)
   writeTransaction(() => {
     database
       .query('UPDATE run SET vendor_session=COALESCE(?, vendor_session) WHERE record_id=?')
@@ -24,5 +24,4 @@ export function recordRunQuestionReadiness<T extends readonly unknown[]>(
     if (questions.length) markRunAsking(database, runId)
     enqueueRunRecord(database, runId, input.machineId, nowIso())
   }, database)
-  return questions
 }

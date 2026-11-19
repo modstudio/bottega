@@ -62,7 +62,7 @@ import { type GooseContextProfile, writeRunContextProfile } from './run-context-
 import { markTerminalRecorded } from './run-finish-error.ts'
 import { enqueueRunRecord } from './run-outbox.ts'
 import { errorTail, live, liveCheckpoints } from './run-process.ts'
-import { recordRunQuestionReadiness as readyRunForQuestions } from './run-question-readiness.ts'
+import { recordRunQuestionReadiness } from './run-question-readiness.ts'
 import { checkpointRoot, claimIdentity } from './run-resume-kind.ts'
 import { rollUpRootAndEnqueue } from './run-root-rollup.ts'
 import type { RenewTaskClaim } from './run-task-claim-renewal.ts'
@@ -824,7 +824,7 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
     acceptedQuestions,
   })
   ;({ status, failureKind, error } = vendorTermination.outcome)
-  acceptedQuestions = readyRunForQuestions(input, claim.id, vendorTermination.acceptedQuestions)
+  acceptedQuestions = vendorTermination.acceptedQuestions; recordRunQuestionReadiness(input, claim.id, acceptedQuestions)
   const readerReply = isReaderJob(opts.job) ? (parsedReply as ReaderReply | null) : null
   const parsedReview =
     requestedJob.findings && output && (status === 'ok' || confinementEvent)
@@ -881,7 +881,6 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
   ))
   // The run is already answerable locally; this hosted write may remain pending.
   const recordedQuestions = await recordTerminalQuestions(claim.id, acceptedQuestions)
-
   if (mcpSetupHeader) {
     output = output ? `${mcpSetupHeader}\n\n${output}` : mcpSetupHeader
     writeFileSync(outPath, output)
