@@ -185,6 +185,7 @@ const declaredModules: ArchitectureModule[] = [
     '../agent/agent-registry.ts',
     '../project/projects.ts',
     '../setup/provider-credential-trust.ts',
+    '../setup/provider-credential-trust-notice.ts',
   ]),
   module('orchestrator/src/project/project-agent-keys.ts', []),
   module('orchestrator/src/project/project-visibility.ts', [

@@ -159,10 +159,10 @@ export const setupModuleSpecs: readonly SetupModuleSpec[] = [
     file: 'orchestrator/src/setup/provider-credential-trust.ts',
     allowed: [
       '../../../shared/config-client.ts',
+      '../../../shared/credential-machine-trust.ts',
       '../../../shared/machine-key-store.ts',
       '../../../shared/record-session.ts',
       '../../../shared/record-space-membership.ts',
-      '../../../shared/trust-log-keys.ts',
       './provider-credential-trust-notice.ts',
       './setup-mcp.ts',
     ],

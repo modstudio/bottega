@@ -9,6 +9,7 @@ import {
   HOSTED_CONFIG_ENVIRONMENT,
   HostedOpenError,
   hostedIdentity,
+  missingHostedDataKeyWrapError,
   openHostedSecret,
   pinnedHostedSecretDestination,
 } from './hosted-secret-opening.ts'
@@ -105,6 +106,16 @@ async function openedValue(
     return new TextDecoder('utf-8', { fatal: true }).decode(plaintext)
   } catch (error) {
     if (error instanceof HostedSecretError) throw error
+    if (error instanceof HostedOpenError && error.reason === 'missing-wrap')
+      throw new HostedSecretError(
+        name,
+        error.reason,
+        await missingHostedDataKeyWrapError(
+          deps.client,
+          await hostedIdentity(deps.client, deps.pinnedIdentity),
+          deps.machine,
+        ),
+      )
     if (error instanceof HostedOpenError) throw new HostedSecretError(name, error.reason, error)
     throw new HostedSecretError(name, 'hosted-failure', error)
   }

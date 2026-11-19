@@ -225,6 +225,26 @@ test('set account credential gives the personal-space registration remedy', asyn
   ).rejects.toThrow('machine config machine register --space studio')
 })
 
+test('trusted machine without a wrap names the no-wrap condition', async () => {
+  const keyId = await machineKeyId(pair.publicKey)
+  await pinTrustedMachine(keyId, pair.publicKey, 'current')
+  const client = {
+    currentDataKey: async () => ({
+      id: '01990000-0000-7000-8000-000000000003',
+      version: 1,
+      createdAt: '2026-01-01T00:00:00.000Z',
+      retiredAt: null,
+      wraps: [],
+    }),
+    listMachineKeys: async () => [{ keyId, revokedAt: null }],
+    readTrustLog: async () => [],
+  } as unknown as ConfigClient
+  const refusal = await setCredential(address, 'secret', client).catch((error) => String(error))
+  expect(refusal).toContain('this machine has no data-key wrap in record space studio')
+  expect(refusal).not.toContain('null')
+  expect(refusal).not.toContain('not trusted')
+})
+
 test('set credential refuses a blank value with the credential remedy before writing', async () => {
   const putSecret = mock(async () => ({}))
   const client = { putSecret } as unknown as ConfigClient

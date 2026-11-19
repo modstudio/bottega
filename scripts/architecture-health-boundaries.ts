@@ -60,8 +60,9 @@ export const healthBoundarySpecs: ImportBoundary[] = [
       'orchestrator/src/agent/agent-registry.ts',
       'orchestrator/src/project/projects.ts',
       'orchestrator/src/setup/provider-credential-trust.ts',
+      'orchestrator/src/setup/provider-credential-trust-notice.ts',
     ],
     typeOnlyAllowed: [],
-    reason: 'Keep provider credential trust gathering out of the doctor presentation module.',
+    reason: 'Keep provider credential trust gathering separate from doctor presentation.',
   },
 ]

@@ -2,18 +2,15 @@
 /** Gathers bounded hosted facts for the credential spaces provider-backed agents use. */
 
 import { configClient } from '../../../shared/config-client.ts'
+import { readCredentialMachineTrustFacts } from '../../../shared/credential-machine-trust.ts'
 import { machineKeyInfo, readMachineKey } from '../../../shared/machine-key-store.ts'
 import { readRecordSessionToken } from '../../../shared/record-session.ts'
 import {
   parseRecordSpaceMemberships,
   recordSpaceMembership,
 } from '../../../shared/record-space-membership.ts'
-import { trustedKeysForSpace } from '../../../shared/trust-log-keys.ts'
 import type { Project } from '../project/projects.ts'
-import {
-  providerCredentialTrustNotices,
-  type SetupCredentialTrustFact,
-} from './provider-credential-trust-notice.ts'
+import type { SetupCredentialTrustFact } from './provider-credential-trust-notice.ts'
 import { SETUP_COMMAND_TIMEOUT_MS } from './setup-mcp.ts'
 
 type ProviderAgent = { enabled?: number | boolean; provider?: string | null }
@@ -63,36 +60,18 @@ export async function gatherProviderCredentialTrustFacts(
           reason: 'the signed-in user is not a member of that space',
         }
       try {
-        const [registered, trust] = await Promise.all([
-          boundedClient().listMachineKeys({ destinationSpaceId: membership.spaceId }),
-          trustedKeysForSpace(boundedClient(), membership.spaceId),
-        ])
+        const facts = await readCredentialMachineTrustFacts(boundedClient(), {
+          spaceId: membership.spaceId,
+          space: membership.slug,
+          machine,
+        })
         return {
           status: 'checked',
-          space: membership.slug,
-          keyId: machine.keyId,
-          publicKey: Buffer.from(machine.publicKey).toString('base64url'),
-          registered: registered.some(
-            (row) => row.keyId === machine.keyId && row.revokedAt === null,
-          ),
-          trusted: trust[machine.keyId] !== undefined,
+          ...facts,
         }
       } catch (error) {
         return { status: 'could-not-check', space: membership.slug, reason: cause(error) }
       }
     }),
   )
-}
-
-export async function reportProviderCredentialTrustDoctor(
-  log: (line: string) => void,
-  agents: readonly ProviderAgent[],
-  projects: readonly Project[],
-): Promise<void> {
-  const notices = providerCredentialTrustNotices(
-    await gatherProviderCredentialTrustFacts(agents, projects),
-  )
-  if (!notices.length) return
-  log('provider credential trust')
-  for (const notice of notices) log(`  ${notice.message}; ${notice.fix}`)
 }

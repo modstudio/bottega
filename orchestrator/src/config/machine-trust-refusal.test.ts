@@ -1,6 +1,9 @@
 import { expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { credentialMachineTrustSteps } from '../../../shared/credential-machine-trust.ts'
+import {
+  credentialMachineTrustFacts,
+  credentialMachineTrustSteps,
+} from '../../../shared/credential-machine-trust.ts'
 import { anchoredTrustRefusal, machineTrustRefusal } from './machine-trust-refusal.ts'
 
 const keyId = 'machine-key-id'
@@ -15,6 +18,23 @@ test('credential trust repair orders registration before trust and omits complet
     `${PLATFORM_SLUG} machine config machine trust ${keyId} public-key --space named-space`,
   ])
   expect(credentialMachineTrustSteps({ ...facts, registered: true, trusted: true })).toEqual([])
+})
+
+test('credential trust facts treat a revoked machine key as not registered', () => {
+  expect(
+    credentialMachineTrustFacts({
+      space: 'named-space',
+      machine: { keyId, publicKey: new Uint8Array([1, 2, 3]) },
+      machineRows: [{ keyId, revokedAt: '2026-11-10T00:00:00.000Z' }],
+      trust: { [keyId]: { public_key: 'public-key', label: 'fixture' } },
+    }),
+  ).toEqual({
+    registered: false,
+    trusted: true,
+    space: 'named-space',
+    keyId,
+    publicKey: 'AQID',
+  })
 })
 
 test('revoked machine registration keeps every repair in the named space', () => {

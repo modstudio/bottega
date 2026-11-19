@@ -14,7 +14,11 @@ import {
   type CredentialPayer,
   credentialIdentityKey,
 } from '../../../shared/credential.ts'
-import { credentialMachineTrustRemedy } from '../../../shared/credential-machine-trust.ts'
+import {
+  missingDataKeyWrapRemedy,
+  readCredentialMachineTrustFacts,
+  uncheckedCredentialMachineTrustRemedy,
+} from '../../../shared/credential-machine-trust.ts'
 import {
   credentialScopeFromPayer,
   credentialSetRefusalText,
@@ -40,7 +44,6 @@ import {
 } from '../../../shared/record-space-membership.ts'
 import { refusal, renderRefusal } from '../../../shared/refusal.ts'
 import { sealedValueIsEmpty, stripTrailingNewline } from '../../../shared/sealed-value.ts'
-import { trustedKeysForSpace } from '../../../shared/trust-log-keys.ts'
 import type { Project } from '../project/projects.ts'
 import { requireProjectRecordDestination } from '../record/record-project-destination-client.ts'
 import { deleteSecret, personalConfigWriteDestination, setSecret } from './config-service.ts'
@@ -153,17 +156,20 @@ async function missingWrapTrustRemedy(
   client: ReturnType<typeof configClient>,
 ): Promise<string> {
   const machine = await localMachine()
-  const [registered, trust] = await Promise.all([
-    client.listMachineKeys(destination(address)),
-    trustedKeysForSpace(client, address.destinationSpaceId),
-  ])
-  return credentialMachineTrustRemedy({
-    registered: registered.some((row) => row.keyId === machine.keyId && row.revokedAt === null),
-    trusted: trust[machine.keyId] !== undefined,
-    space: address.spaceName,
-    keyId: machine.keyId,
-    publicKey: Buffer.from(machine.publicKey).toString('base64url'),
-  })!
+  try {
+    return missingDataKeyWrapRemedy(
+      await readCredentialMachineTrustFacts(client, {
+        spaceId: address.destinationSpaceId,
+        space: address.spaceName,
+        machine,
+      }),
+    )
+  } catch (error) {
+    return uncheckedCredentialMachineTrustRemedy(
+      { space: address.spaceName, machine },
+      error instanceof Error ? error.message : String(error),
+    )
+  }
 }
 
 async function missingProjectWrapRefusal(
@@ -174,7 +180,7 @@ async function missingProjectWrapRefusal(
     ? `project ${address.projectName} in space ${address.spaceName}`
     : `space ${address.spaceName}`
   return new Error(
-    `cannot access credentials for ${binding}: this machine is not trusted; ${await missingWrapTrustRemedy(address, client)}; ${configAccessRemedy(address.spaceName)}`,
+    `cannot access credentials for ${binding}: ${await missingWrapTrustRemedy(address, client)}; ${configAccessRemedy(address.spaceName)}`,
   )
 }
 
