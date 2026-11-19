@@ -80,7 +80,7 @@ export function seedNeutralCodexQuotaReading(now = Date.now()): string {
   })
   db()
     .query(
-      `UPDATE run SET number=0, vendor_tokens=0, quota_used_percent_start=0,
+      `UPDATE run SET number=0, vendor_tokens=0, quota_account_id='test-account', quota_used_percent_start=0,
                       quota_used_percent_end=0, quota_window_minutes=?, quota_resets_at=?
         WHERE record_id=?`,
     )

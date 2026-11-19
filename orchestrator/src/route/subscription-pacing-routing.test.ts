@@ -14,7 +14,7 @@ test('candidates pace codex reading work but never implementation', () => {
   })
   db()
     .query(
-      `UPDATE run SET vendor_tokens=1000, quota_used_percent_start=21,
+      `UPDATE run SET vendor_tokens=1000, quota_account_id='test-account', quota_used_percent_start=21,
                       quota_used_percent_end=21, quota_window_minutes=?, quota_resets_at=?
         WHERE record_id=?`,
     )
@@ -44,7 +44,7 @@ test('a pacing probe bypasses every operational hold', () => {
   })
   db()
     .query(
-      `UPDATE run SET quota_used_percent_start=21, quota_used_percent_end=21,
+      `UPDATE run SET quota_account_id='test-account', quota_used_percent_start=21, quota_used_percent_end=21,
                       quota_window_minutes=?, quota_resets_at=? WHERE record_id=?`,
     )
     .run(windowMinutes, Math.floor((now + windowMinutes * 60_000 * 0.9) / 1000), reading)

@@ -40,7 +40,7 @@ const MIGRATIONS_REPLAYED_WITH_FOREIGN_KEYS_OFF = new Set([
   '0124_run_uuid_key',
   '0157_workflow_uuid_key',
   '0162_superseded_workflow_versions',
-  '0238_epic_child_flows',
+  '0239_epic_child_flows',
 ])
 
 const PROJECT_UUID_REBUILD_CASCADE_EDGES = [

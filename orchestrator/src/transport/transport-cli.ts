@@ -6,15 +6,19 @@ import { eventsFromVendorLine } from '../events.ts'
 import { DEFAULT_IDLE_GRACE_MS, terminateProcessGroup } from '../idle-kill.ts'
 import { lowerRunChildPriority } from '../run/run-child-priority.ts'
 import { sandboxLaunchArgv } from '../sandbox/sandbox.ts'
+import { currentQuotaAccountId } from './codex-account.ts'
 import { codexAskExposureFromTexts } from './codex-ask-exposure.ts'
-import { harnessCollectsQuotaReadings, parseCodexQuotaReadings } from './codex-quota.ts'
+import {
+  EMPTY_CODEX_ROLLOUT_QUOTA_READINGS,
+  harnessCollectsQuotaReadings,
+  parseCodexQuotaReadings,
+} from './codex-quota.ts'
 import {
   codexRolloutTextsSince,
   codexRolloutVersionHeads,
   confinedCodexRollouts,
 } from './codex-rollout-files.ts'
 import { classifyCodexThrottle } from './codex-throttle.ts'
-import { EMPTY_QUOTA_READINGS } from './quota-readings.ts'
 import { sandboxReadinessRefusal } from './sandbox-readiness.ts'
 import {
   type AgentTransport,
@@ -58,11 +62,20 @@ export function codexRolloutEvidence(
   offsets: Map<string, number>,
   capBytes?: number,
 ) {
-  if (!codex) return { quotaReadings: EMPTY_QUOTA_READINGS, askExposure: undefined, overflow: null }
+  if (!codex)
+    return {
+      quotaReadings: EMPTY_CODEX_ROLLOUT_QUOTA_READINGS,
+      askExposure: undefined,
+      overflow: null,
+    }
   const texts = codexRolloutTextsSince(home, offsets, capBytes)
   // A dropped slice has no readings to report; the overflow itself is the value.
   if (texts.overflow)
-    return { quotaReadings: EMPTY_QUOTA_READINGS, askExposure: undefined, overflow: texts.overflow }
+    return {
+      quotaReadings: EMPTY_CODEX_ROLLOUT_QUOTA_READINGS,
+      askExposure: undefined,
+      overflow: texts.overflow,
+    }
   return {
     quotaReadings: parseCodexQuotaReadings(texts.slice),
     // The version fallback reads bounded heads lazily, only when the slice
@@ -362,8 +375,10 @@ export function cliChildEnvironment(
 
 // biome-ignore lint/complexity/noExcessiveLinesPerFunction: stream and process closure share one transport handle state
 async function spawnCli(opts: TransportStartOpts): Promise<TransportHandle> {
-  const codex = harnessCollectsQuotaReadings(workerHarnessName(opts.agent))
+  const harness = workerHarnessName(opts.agent)
+  const codex = harnessCollectsQuotaReadings(harness)
   const codexHome = codex ? opts.env.CODEX_HOME : undefined
+  const quotaAccountId = currentQuotaAccountId(harness, opts.env)
   const rolloutOffsets = codexRolloutOffsets(codexHome)
   const { launchArgv, stdinPrompt } = await cliLaunch(opts)
   const p = spawnCliChild(launchArgv, opts, stdinPrompt)
@@ -463,7 +478,7 @@ async function spawnCli(opts: TransportStartOpts): Promise<TransportHandle> {
           parsed: reply ?? null,
           tokens,
           ...usage,
-          quotaReadings,
+          quotaReadings: { ...quotaReadings, quotaAccountId },
           askExposure,
           sessionId,
           stopReason,

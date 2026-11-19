@@ -202,7 +202,7 @@ function recordProbeOutcome(recordId: string, started: number, outcome: Transpor
   writableDb()
     .query(
       `UPDATE run SET status=?,latency_ms=?,exit_code=?,output_bytes=?,error=?,
-                      quota_used_percent_start=?,quota_used_percent_end=?,
+                      quota_account_id=?,quota_used_percent_start=?,quota_used_percent_end=?,
                       quota_window_minutes=?,quota_resets_at=? WHERE record_id=?`,
     )
     .run(

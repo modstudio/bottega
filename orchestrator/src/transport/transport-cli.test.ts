@@ -5,9 +5,8 @@ import { join } from 'node:path'
 import { dir } from '../../test/fixtures/store.ts'
 import { readOnlyRunTempEnvironment } from '../run/run-worker-home.ts'
 import { runTempDir } from '../run-owned-paths.ts'
-import { parseCodexQuotaReadings } from './codex-quota.ts'
+import { EMPTY_CODEX_ROLLOUT_QUOTA_READINGS, parseCodexQuotaReadings } from './codex-quota.ts'
 import { CODEX_ROLLOUT_READ_CAP_BYTES, codexRolloutTextsSince } from './codex-rollout-files.ts'
-import { EMPTY_QUOTA_READINGS } from './quota-readings.ts'
 import { srtScope, type TransportAgent, transportFor } from './transport.ts'
 import {
   CLI_OUTPUT_CAPTURE_BYTES,
@@ -199,7 +198,7 @@ test('Codex quota observation does not read a symlinked rollout', () => {
   symlinkSync(outside, join(sessions, 'rollout-linked.jsonl'))
   try {
     expect(parseCodexQuotaReadings(codexRolloutTextsSince(codexHome, new Map()).slice)).toEqual(
-      EMPTY_QUOTA_READINGS,
+      EMPTY_CODEX_ROLLOUT_QUOTA_READINGS,
     )
   } finally {
     rmSync(root, { recursive: true, force: true })
@@ -228,7 +227,7 @@ test('codexRolloutEvidence drops an over-cap slice and reports the overflow', ()
   try {
     const evidence = codexRolloutEvidence(true, root, new Map(), evidenceCapBytes)
 
-    expect(evidence.quotaReadings).toEqual(EMPTY_QUOTA_READINGS)
+    expect(evidence.quotaReadings).toEqual(EMPTY_CODEX_ROLLOUT_QUOTA_READINGS)
     expect(evidence.askExposure).toBeUndefined()
     expect(evidence.overflow?.message).toContain('CODEX_ROLLOUT_READ_CAP_BYTES')
   } finally {

@@ -124,6 +124,7 @@ const RUN_DETAIL_INTENTIONALLY_OMITTED_COLUMNS = {
   context_tool_schema_chars: RUN_DETAIL_USAGE_REASON,
   context_compactions: RUN_DETAIL_USAGE_REASON,
   context_cache_read_tokens: RUN_DETAIL_USAGE_REASON,
+  quota_account_id: RUN_DETAIL_USAGE_REASON,
   quota_used_percent_start: RUN_DETAIL_USAGE_REASON,
   quota_used_percent_end: RUN_DETAIL_USAGE_REASON,
   quota_window_minutes: RUN_DETAIL_USAGE_REASON,
