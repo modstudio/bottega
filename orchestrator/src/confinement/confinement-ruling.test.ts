@@ -2,8 +2,11 @@ import { afterEach, expect, mock, spyOn, test } from 'bun:test'
 import { mkdirSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { newRecordId } from '../../../shared/record-id.ts'
+import { flags } from '../../test/fixtures/judgment.ts'
 import { addRun, dir } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
+import { NOT_EVIDENCE } from '../failure/failure.ts'
+import { scoreRun } from '../judgment.ts'
 import { machineId } from '../record/machine-identity.ts'
 import { enqueueRunRecord } from '../run/run-outbox.ts'
 import { clearConfinement } from './confinement-ruling.ts'
@@ -26,7 +29,7 @@ function spawnResult(stdout: string): ReturnType<typeof Bun.spawnSync> {
   } as ReturnType<typeof Bun.spawnSync>
 }
 
-test('clearing confinement re-enqueues every transitioned run and the rolled-up root', () => {
+test('clearing confinement preserves the restored root kind when its chain is scored', async () => {
   const project = `confinement-ruling-${newRecordId()}`
   const repo = join(dir, project)
   fixturePath = repo
@@ -46,8 +49,8 @@ test('clearing confinement re-enqueues every transitioned run and the rolled-up 
     parent: root,
     turn: 2,
   })
-  const priorRoot = { status: 'failed', failureKind: null, error: 'pre-confinement failure' }
-  const priorChild = { status: 'ok', failureKind: null, error: null }
+  const priorRoot = { status: 'failed', failureKind: 'other', error: 'pre-confinement failure' }
+  const priorChild = { status: 'failed', failureKind: 'quota', error: 'vendor quota' }
   db()
     .query(
       `UPDATE run SET repo=?,worktree=?,branch='DEV-1371-test',head_commit=?,input_tree=?,
@@ -67,6 +70,19 @@ test('clearing confinement re-enqueues every transitioned run and the rolled-up 
 
   clearConfinement(child, { writer: 'architect', note: 'verified', tip: null }, { log: () => {} })
 
+  await scoreRun(
+    root,
+    flags({ force: true }),
+    {
+      words: ['full', 'right', 'faithful'],
+      note: null,
+      auditReason: null,
+      notEvidence: NOT_EVIDENCE,
+      dashboardAuthorized: false,
+    },
+    { log: () => {}, error: () => {}, pairHint: ({ id }) => id },
+  )
+
   const payloads = (runId: string) =>
     db()
       .query<{ payload: string }, [string]>(
@@ -77,11 +93,15 @@ test('clearing confinement re-enqueues every transitioned run and the rolled-up 
       .map(({ payload }) => JSON.parse(payload))
   expect(payloads(child)).toMatchObject([
     { status: 'failed', failureKind: 'confinement_unverified' },
-    { status: 'ok', failureKind: null },
+    { status: 'failed', failureKind: 'quota' },
   ])
   expect(payloads(root)).toMatchObject([
     { status: 'failed', failureKind: 'escaped' },
-    { status: 'failed', failureKind: null },
-    { status: 'ok', failureKind: null },
+    { status: 'failed', failureKind: 'other' },
+    { status: 'failed', failureKind: 'quota' },
+    { status: 'failed', failureKind: 'other' },
   ])
+  expect(
+    db().query('SELECT failure_kind,own_failure_kind FROM run WHERE record_id=?').get(root),
+  ).toEqual({ failure_kind: 'other', own_failure_kind: 'other' })
 })

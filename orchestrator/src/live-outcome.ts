@@ -15,6 +15,7 @@ import { failureKindFromStop, stopErrorMessage } from './transport/transport.ts'
 
 export const LAST_VENDOR_EVENT_TYPE_MAX = 64
 const CONTROL_CHARACTERS = /[\p{Cc}]/u
+const VENDOR_TERMINAL_FAILURE_EVENT_TYPES = new Set(['turn.failed', 'error'])
 
 export type LiveOutcomeFacts = {
   writesJob: boolean
@@ -75,6 +76,33 @@ function readerCompletedReply(facts: LiveOutcomeFacts): boolean {
   return !facts.writesJob && !facts.replyError && !!facts.output && !isNonAnswer(facts.output)
 }
 
+function contractTerminalClassifications(facts: LiveOutcomeFacts) {
+  const completedContractTerminal = vendorTerminalText(
+    facts,
+    facts.stderr.trim() || facts.stdout.trim(),
+  )
+  const missingContractTerminal = vendorTerminalText(
+    facts,
+    facts.stderr.trim() || facts.output || facts.stdout.trim(),
+  )
+  return {
+    completedContractTerminal,
+    completedContractFailureKind: classify(
+      completedContractTerminal,
+      facts.exitCode,
+      facts.timedOut,
+      facts.sandbox,
+    ),
+    missingContractTerminal,
+    classifiedMissingContract: classify(
+      missingContractTerminal,
+      facts.exitCode,
+      facts.timedOut,
+      facts.sandbox,
+    ),
+  }
+}
+
 function calculateOutcome(facts: LiveOutcomeFacts): CalculatedOutcome {
   const doneCompleted = doneCountsAsCompletedReply(facts)
   const completedReplyAtTimeout = doneCompleted || readerCompletedReply(facts)
@@ -106,20 +134,12 @@ function calculateOutcome(facts: LiveOutcomeFacts): CalculatedOutcome {
   const nonAnswerFailureKind = progressFallback
     ? 'premature-final'
     : classify(facts.output, facts.exitCode, facts.timedOut, facts.sandbox)
-  const completedContractTerminal = facts.stderr.trim() || facts.stdout.trim()
-  const completedContractFailureKind = classify(
+  const {
     completedContractTerminal,
-    facts.exitCode,
-    facts.timedOut,
-    facts.sandbox,
-  )
-  const missingContractTerminal = facts.stderr.trim() || facts.output || facts.stdout.trim()
-  const classifiedMissingContract = classify(
+    completedContractFailureKind,
     missingContractTerminal,
-    facts.exitCode,
-    facts.timedOut,
-    facts.sandbox,
-  )
+    classifiedMissingContract,
+  } = contractTerminalClassifications(facts)
   const missingContractFailureKind = FAILS_OVER.includes(classifiedMissingContract)
     ? classifiedMissingContract
     : 'contract'
@@ -204,6 +224,14 @@ function lastStdoutJsonlEvent(stdout: string): LastStdoutJsonlEvent | null {
   } catch {
     return null
   }
+}
+
+/** Prefer the vendor's terminal error event over incidental process output. */
+function vendorTerminalText(facts: Pick<LiveOutcomeFacts, 'stdout'>, fallback: string): string {
+  const event = lastStdoutJsonlEvent(facts.stdout)
+  return event && VENDOR_TERMINAL_FAILURE_EVENT_TYPES.has(event.type)
+    ? event.error?.trim() || fallback
+    : fallback
 }
 
 function recordedLastVendorEventType(raw: string | null): string | null {

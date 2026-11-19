@@ -241,7 +241,7 @@ always: true
 
 **Run** — one bounded execution of a job by an agent, recorded for judgment.
 
-**Chain** — the root run and its later turns; it inherits the last turn's state and the root carries the outcome.
+**Chain** — a root run and its turns; the root holds the outcome, last turn's state and last agent-work failure.
 
 **Turn** — a later row in the same conversation, created when a run is answered, retried, or continued.
 

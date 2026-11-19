@@ -3,7 +3,7 @@
 import type { Database } from 'bun:sqlite'
 import { type classify, FAILS_OVER } from '../failure/failure.ts'
 import { closeRunChainQuestions, QUESTION_CLOSE_CHAIN_TERMINAL } from './question-close.ts'
-import { rollUpRootAndEnqueue } from './run-liveness.ts'
+import { rollUpRootAndEnqueue } from './run-root-rollup.ts'
 
 export async function closeRunTerminalChainQuestions(
   database: Database,

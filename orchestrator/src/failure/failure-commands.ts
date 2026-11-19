@@ -1,5 +1,9 @@
 // concern: failure-commands
-/** Knows failure evidence reclassification and its audit. Must not know runs, routing, transports, the CLI, or worktrees. */
+/**
+ * Knows run-chain shape only to choose reclassifiable failed rows: turns and
+ * roots without turns. Hands changed-turn root roll-up to the caller callback.
+ * Must not know routing, transports, the CLI, or worktrees.
+ */
 import { db, writableDb, writeTransaction } from '../database/db.ts'
 import { auditRunMutation, runMutationActor } from '../run/run-authority.ts'
 import { classify, type FailureKind, gooseVendorFailureKind } from './failure.ts'
@@ -16,10 +20,14 @@ type FailureRow = {
   harness: string | null
   output_path: string | null
   executor: string
+  parent_run_record_id: string | null
+  has_turns: number
+  failed_turn_numbers: string | null
 }
 type PersistedOutputReader = (
   row: Pick<FailureRow, 'record_id' | 'output_path' | 'executor'>,
 ) => string | null
+type ChangedTurnRootsRollup = (rootIds: readonly string[], changedAt: string) => void
 
 /** Select the narrowly audited replacement for one stored failure kind and error. */
 export function reclassifiedFailureKind(
@@ -49,6 +57,23 @@ function matchedFailures(all: FailureRow[], readOutput: PersistedOutputReader) {
   })
 }
 
+function failureRows(): FailureRow[] {
+  return db()
+    .query(
+      `SELECT r.record_id, r.agent, r.job, r.status, r.failure_kind, r.error,
+              r.output_path, r.executor, r.parent_run_record_id, a.harness,
+              EXISTS(SELECT 1 FROM run child WHERE child.parent_run_record_id=r.record_id) AS has_turns,
+              (SELECT group_concat(child.number, ', ')
+                 FROM run child
+                WHERE child.parent_run_record_id=r.record_id
+                  AND child.status IN ('failed', 'stale')) AS failed_turn_numbers
+       FROM run r LEFT JOIN agent a ON a.name = r.agent
+      WHERE status IN ('failed', 'stale')
+      ORDER BY r.number`,
+    )
+    .all() as FailureRow[]
+}
+
 /**
  * Re-run quota/billing/auth signatures over old, unclassified failures, and
  * reclassify contract failures whose own Goose final message reports an
@@ -61,21 +86,17 @@ export function reclassifyFailuresCommand(
   flags: FailureFlags,
   presentation: FailurePresentation,
   readOutput: PersistedOutputReader,
+  rollUpChangedTurnRoots: ChangedTurnRootsRollup,
 ): void {
   const { has } = flags
   const { log } = presentation
   type CountRow = { agent: string; failure_kind: string | null; count: number }
 
-  const all = db()
-    .query(
-      `SELECT r.record_id, r.agent, r.job, r.status, r.failure_kind, r.error,
-              r.output_path, r.executor, a.harness
-       FROM run r LEFT JOIN agent a ON a.name = r.agent
-      WHERE status IN ('failed', 'stale')
-      ORDER BY r.number`,
-    )
-    .all() as FailureRow[]
+  const all = failureRows()
   const matched = matchedFailures(all, readOutput)
+  const applicable = matched.filter(
+    ({ row }) => row.parent_run_record_id !== null || !row.has_turns,
+  )
 
   const counts = (rows: { agent: string; failure_kind: string | null }[]): CountRow[] => {
     const grouped = new Map<string, CountRow>()
@@ -100,7 +121,7 @@ export function reclassifyFailuresCommand(
   }
 
   const before = counts(all)
-  const replacement = new Map(matched.map(({ row, kind }) => [row.record_id, kind]))
+  const replacement = new Map(applicable.map(({ row, kind }) => [row.record_id, kind]))
   const projected = counts(
     all.map((row) => ({
       agent: row.agent,
@@ -116,6 +137,12 @@ export function reclassifyFailuresCommand(
   )
   log(`\nPLAN (${matched.length} matched row${matched.length === 1 ? '' : 's'})`)
   for (const { row, kind } of matched) {
+    if (row.parent_run_record_id === null && row.has_turns) {
+      log(
+        `run ${row.record_id}  ${row.agent}/${row.job}  [${row.status}]  skipped: kind is rolled up from its turns; its own failure cannot be reclassified because its error column holds the last turn's error; reclassify turn ${row.failed_turn_numbers ?? '(none)'} instead`,
+      )
+      continue
+    }
     log(
       `run ${row.record_id}  ${row.agent}/${row.job}  [${row.status}]  ${row.failure_kind ?? 'null'} -> ${kind}`,
     )
@@ -126,7 +153,7 @@ export function reclassifyFailuresCommand(
 
   if (has('dry-run')) {
     log(
-      `\n${matched.length} row${matched.length === 1 ? '' : 's'} would be reclassified — dry run, no writes.`,
+      `\n${applicable.length} row${applicable.length === 1 ? '' : 's'} would be reclassified — dry run, no writes.`,
     )
     return
   }
@@ -134,16 +161,19 @@ export function reclassifyFailuresCommand(
   writableDb()
 
   const update = db().query(
-    `UPDATE run SET failure_kind = ?
+    `UPDATE run SET failure_kind = ?,
+                    own_failure_kind = ?
       WHERE record_id = ? AND status IN ('failed', 'stale')
         AND failure_kind IS ? AND error = ?`,
   )
   const apply = writeTransaction(() => {
     let changed = 0
-    for (const { row, kind } of matched) {
-      const result = update.run(kind, row.record_id, row.failure_kind, row.error)
+    const changedRoots = new Set<string>()
+    for (const { row, kind } of applicable) {
+      const result = update.run(kind, kind, row.record_id, row.failure_kind, row.error)
       changed += result.changes
       if (result.changes) {
+        if (row.parent_run_record_id) changedRoots.add(row.parent_run_record_id)
         auditRunMutation(
           runMutationActor(row.record_id),
           'reclassify',
@@ -151,6 +181,7 @@ export function reclassifyFailuresCommand(
         )
       }
     }
+    rollUpChangedTurnRoots([...changedRoots], new Date().toISOString())
     return changed
   })
   const changed = apply

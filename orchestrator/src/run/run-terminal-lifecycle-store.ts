@@ -23,3 +23,7 @@ export function terminalLifecycleWrite(
     { status, error, failureKind },
   )
 }
+
+export function terminalLifecycleColumnValues(lifecycle: StoredTerminalLifecycle) {
+  return [lifecycle.status, lifecycle.error, lifecycle.failureKind, lifecycle.failureKind] as const
+}

@@ -24,7 +24,7 @@ No CLI here reports remaining quota, so exhaustion is caught on the failure (`FA
 
 **Escaped** means an outside change overlapped the run's own diff: classified and attributed, never failed over, and landing that chain is refused even when marked unreviewed. Non-overlapping divergence is recorded and does not fail the run. **Confinement unverified** has the same terminal and landing-blocking effect, but records an observer failure. A checkout unavailable before launch is excluded with a warning that names the stale register entry. The detector never drops findings, scores, or the review.
 
-**Routing then avoids a `COOLS_DOWN` agent for `COOLDOWN_MIN` minutes**, unless it is the only one left. Only the most recent run is consulted; a single success clears it. **A probe is how you say "I fixed it"** — the cooling query is the one place probes are not filtered out. `bottega machine doctor` prints this when anything is cooling.
+**Routing then avoids a `COOLS_DOWN` agent for `COOLDOWN_MIN` minutes**, unless it is the only one left. A `quota` failure cools instead until the vendor's stated reset when that is later, up to `QUOTA_RESET_CEILING_MS`; the refusal names the reset in the display time zone and says when a reading beyond the ceiling was ignored (`orchestrator/src/route/routing-cooldown.ts:ordinaryCoolingFailure`). Only the most recent run is consulted; a single success clears it. **A probe is how you say "I fixed it"** — the cooling query is the one place probes are not filtered out. `bottega machine doctor` prints this when anything is cooling.
 
 A job may declare an idle limit; a run silent and idle past it is killed, fails over, and is not evidence.
 

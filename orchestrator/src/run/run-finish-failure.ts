@@ -33,7 +33,8 @@ export async function recordRunFinishFailure(input: {
     const error = `finish failed: ${detail}`
     const changed = database
       .query(
-        `UPDATE run SET status='failed', failure_kind='harness', error=?, latency_ms=?
+        `UPDATE run SET status='failed', failure_kind='harness', own_failure_kind='harness',
+                        error=?, latency_ms=?
          WHERE record_id=? AND status=?`,
       )
       .run(error, Date.now() - input.started, input.runId, row.status).changes

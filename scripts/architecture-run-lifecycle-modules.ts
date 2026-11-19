@@ -268,6 +268,13 @@ export const runLifecycleModules: ArchitectureModule[] = [
   module('orchestrator/src/run/run-liveness-policy.ts', []),
   module('orchestrator/src/run/run-wall-deadline.ts', []),
   module('orchestrator/src/run/run-record-request-rate.ts', []),
+  module('orchestrator/src/run/run-root-rollup.ts', [
+    'bun:sqlite',
+    '../database/db.ts',
+    '../failure/failure.ts',
+    '../record/machine-identity.ts',
+    './run-outbox.ts',
+  ]),
   module('orchestrator/src/run/run-dispatch-rulings.ts', [
     './run-claim-inheritance.ts',
     './run-carried-attachments.ts',
@@ -297,9 +304,9 @@ export const runLifecycleModules: ArchitectureModule[] = [
     '../database/db.ts',
     '../record/machine-identity.ts',
     '../record/record-api-client-task-flow.ts',
-    './run-liveness.ts',
     './run-number.ts',
     './run-outbox.ts',
+    './run-root-rollup.ts',
   ]),
   module('orchestrator/src/run/branch-conversation-owner.ts', []),
   module('orchestrator/src/run/branch-owner-guard.ts', [
@@ -771,8 +778,8 @@ export const runLifecycleModules: ArchitectureModule[] = [
     './run-call-usage.ts',
     './run-context-profile.ts',
     './run-finish-error.ts',
-    './run-liveness.ts',
     './run-outbox.ts',
+    './run-root-rollup.ts',
     './run-process.ts',
     './run-resume-kind.ts',
     './run-task-claim-renewal.ts',
@@ -805,7 +812,7 @@ export const runLifecycleModules: ArchitectureModule[] = [
     'bun:sqlite',
     '../failure/failure.ts',
     './question-close.ts',
-    './run-liveness.ts',
+    './run-root-rollup.ts',
   ]),
   module('orchestrator/src/run/run-terminal-fallback.ts', [
     './run-finish-error.ts',

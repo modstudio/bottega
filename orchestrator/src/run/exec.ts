@@ -69,7 +69,8 @@ async function recordStartupFailure(id: string, reason: string): Promise<void> {
     keepJournalSidecars(database)
     changed = database
       .query(
-        `UPDATE run SET status='failed', error=?, failure_kind='harness', latency_ms=0
+        `UPDATE run SET status='failed', error=?, failure_kind='harness',
+                        own_failure_kind='harness', latency_ms=0
          WHERE record_id=? AND status = 'running'`,
       )
       // Keep this status predicate paired with run-startup-failure.ts's shared writer.
