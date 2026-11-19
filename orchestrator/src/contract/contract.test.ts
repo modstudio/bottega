@@ -12,6 +12,7 @@ import {
   packResumePrompt,
   parseReaderReply,
   parseWorkerReply,
+  NO_REPO_PREAMBLE,
   READER_SCHEMA,
   REPLY_INSTANCE_INSTRUCTION,
   REVIEW_SCHEMA,
@@ -50,10 +51,11 @@ test('the harness worker preamble offers only the durable question path', () => 
   expect(preamble).not.toContain('live orchestrator tools are available')
 })
 
-test('the repository reader preamble directs temporary and escaped writes', () => {
-  const preamble = repositoryReaderPreamble(false)
-  expect(preamble).toContain('Temporary files go in $TMPDIR, which is removed with the run')
-  expect(preamble).toContain('written elsewhere in files_written')
+test('reader preambles direct temporary and escaped writes', () => {
+  for (const preamble of [repositoryReaderPreamble(false), NO_REPO_PREAMBLE]) {
+    expect(preamble).toContain('Temporary files go in $TMPDIR, which is removed with the run')
+    expect(preamble).toContain('written elsewhere in files_written')
+  }
 })
 
 const baseWorkerReply = {

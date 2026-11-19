@@ -106,7 +106,7 @@ import { recordRunStartupFailure } from './run-startup-failure.ts'
 import { taskBranchResolution } from './run-task-branch-resolution.ts'
 import { admitNewRunReference } from './run-task-reference.ts'
 
-function prepareReadOnlyRunTemp(writesJob: boolean, runtimeDir: string): void {
+export function prepareReadOnlyRunTemp(writesJob: boolean, runtimeDir: string): void {
   if (writesJob) return
   const path = runTempDir(runtimeDir)
   try {

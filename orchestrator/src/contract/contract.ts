@@ -1158,6 +1158,8 @@ export const NO_REPO_PREAMBLE = `
 This job needs no repository, so you have no repository worktree for this run.
 Answer from the supplied context and requested tools, and do not make external
 changes.
+Temporary files go in $TMPDIR, which is removed with the run; list any file
+written elsewhere in files_written.
 
 ${READER_DELIVERABLE_FIRST}
 `.trim()
