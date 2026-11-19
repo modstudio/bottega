@@ -40,6 +40,7 @@ const emptyPlan = (): SetupPlan => ({
   facts: { machine: {} as SetupPlan['facts']['machine'], repositories: [] },
   proposals: [],
   registrations: [],
+  harnessInstalls: [],
   questions: [],
   notices: [],
   folderSelection: { options: [], defaults: [] },

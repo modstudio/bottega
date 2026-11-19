@@ -160,6 +160,13 @@ export const setupModuleSpecs: readonly SetupModuleSpec[] = [
     reason: 'Keep the developer Node prerequisite decision pure and shared by setup and doctor.',
   },
   {
+    name: 'setup-harness-install-boundary',
+    file: 'orchestrator/src/setup/setup-harness-install.ts',
+    allowed: ['bun', 'node:fs', 'node:path', './setup-mcp.ts'],
+    typeOnlyAllowed: [],
+    reason: 'Keep bounded harness installation independent of setup policy, stores, and projects.',
+  },
+  {
     name: 'setup-planner-boundary',
     file: 'orchestrator/src/setup/setup-planner.ts',
     allowed: [
@@ -187,6 +194,7 @@ export const setupModuleSpecs: readonly SetupModuleSpec[] = [
       './setup-mcp.ts',
       './setup-mcp-config.ts',
       './setup-legacy-path.ts',
+      './setup-harness-install.ts',
       './setup-planner.ts',
       './setup-schedule-runtime.ts',
     ],

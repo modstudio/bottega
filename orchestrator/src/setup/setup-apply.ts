@@ -7,6 +7,7 @@ import { basename, dirname, isAbsolute, relative, resolve, sep } from 'node:path
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { MachineLevel } from '../../../shared/machine-config.ts'
 import type { PreparedStateFileMigration } from './setup-environment.ts'
+import { installHarness, skippedHarnessInstall } from './setup-harness-install.ts'
 import { removableLegacyPathTarget } from './setup-legacy-path.ts'
 import {
   commandFailureReason,
@@ -335,6 +336,12 @@ async function applySetupAction(
 }> {
   if (action.kind === 'migrate-environment') {
     return environment.migrateEnvironment(preparedStateFileMigration)
+  }
+  if (action.kind === 'install-harness') {
+    return installHarness(action.harness, action.route, runner)
+  }
+  if (action.kind === 'skip-harness-install') {
+    return skippedHarnessInstall(action.harness, action.route)
   }
   if (
     action.kind === 'unchanged' ||

@@ -11,7 +11,12 @@ import {
   type SetupProposal,
   type SetupQuestion,
 } from './setup-engine.ts'
-import type { HarnessName, LegacyMcpServerName, McpServer } from './setup-mcp.ts'
+import type {
+  HarnessInstallRoute,
+  HarnessName,
+  LegacyMcpServerName,
+  McpServer,
+} from './setup-mcp.ts'
 import type { McpConfigMigration } from './setup-mcp-config.ts'
 import { schedulePlatformSupported } from './setup-schedule-policy.ts'
 import { INFERRED_RECIPE_PATH } from './setup-toolchain.ts'
@@ -68,6 +73,11 @@ export type SetupAction =
       target: string
     }
   | { kind: 'install-schedules' }
+  | {
+      kind: 'install-harness' | 'skip-harness-install'
+      harness: HarnessName
+      route: HarnessInstallRoute
+    }
   | { kind: 'migrate-environment' }
 
 /** Declare which planned action kinds require another action in the same plan to succeed. */
@@ -87,6 +97,7 @@ export function setupActionChangesMachine(action: SetupAction): boolean {
     case 'migrate-mcp-config':
     case 'remove-legacy-symlink':
     case 'install-schedules':
+    case 'install-harness':
     case 'migrate-environment':
     case 'set-machine-level':
     case 'set-global-use':
@@ -95,6 +106,7 @@ export function setupActionChangesMachine(action: SetupAction): boolean {
     case 'unchanged':
     case 'mcp-unchanged':
     case 'mcp-skipped':
+    case 'skip-harness-install':
       return false
   }
 }
@@ -111,6 +123,10 @@ export function setupActionLine(action: SetupAction): string {
       return 'Migrate operator environment names'
     case 'install-schedules':
       return 'Install scheduled sweep and record sync'
+    case 'install-harness':
+      return `Install ${action.harness}`
+    case 'skip-harness-install':
+      return `Skip ${action.harness} install`
     case 'set-machine-level':
       return `Set machine install level to ${action.to}`
     case 'set-global-use':
@@ -237,6 +253,14 @@ function plannedRegistrations(
   })
 }
 
+function plannedHarnessInstalls(plan: SetupPlan, answers: SetupAnswers): SetupAction[] {
+  return (plan.harnessInstalls ?? []).map(({ harness, questionId, route }) => ({
+    kind: answers[questionId] === 'install' ? 'install-harness' : 'skip-harness-install',
+    harness,
+    route,
+  }))
+}
+
 export function planSetupActions(plan: SetupPlan, answers: SetupAnswers): SetupAction[] {
   const selectedLevel = selectedMachineLevel(plan, answers)
   const currentLevel = plan.facts?.machine?.machineLevel
@@ -250,7 +274,6 @@ export function planSetupActions(plan: SetupPlan, answers: SetupAnswers): SetupA
     selectedGlobalUse === undefined || currentGlobalUse === selectedGlobalUse
       ? null
       : { kind: 'set-global-use', from: currentGlobalUse, to: selectedGlobalUse }
-  const schedules = plannedScheduleActions(plan, selectedLevel)
   const keystore = plannedKeystoreAction(plan.facts.machine)
   const registrations = plannedRegistrations(plan, answers, selectedLevel)
   const projects: SetupAction[] = plan.proposals.map((proposal) => {
@@ -322,7 +345,8 @@ export function planSetupActions(plan: SetupPlan, answers: SetupAnswers): SetupA
     { kind: 'migrate-environment' },
     ...(globalUse ? [globalUse] : []),
     ...(machineLevel ? [machineLevel] : []),
-    ...schedules,
+    ...plannedHarnessInstalls(plan, answers),
+    ...plannedScheduleActions(plan, selectedLevel),
     ...registrations,
     ...migrations,
     ...legacySymlinks,

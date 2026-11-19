@@ -69,6 +69,7 @@ function proposeSetup(
 
 const machine = {
   machineLevel: 'full',
+  os: { platform: 'darwin', arch: 'arm64', wsl: false },
   recordApiUrl: 'https://api.example.test',
   recordApiConfigured: true,
   git: { path: '/bin/git', version: '1' },
@@ -928,18 +929,6 @@ const agent = (name: string, enabled = true, harness = name, probePassed = true)
   probePassed,
 })
 
-test('notices when an enabled built-in agent harness is absent', () => {
-  const plan = proposeSetup(machineWithHarness('codex', null, 'unknown'), [], [], [agent('codex')])
-  expect(plan.questions).toEqual([])
-  expect(plan.notices).toEqual([
-    {
-      message: 'codex agent is enabled but the codex harness is not installed',
-      fix: `install codex, or ${PLATFORM_SLUG} agent set codex --enabled false --reason "codex is not installed on this machine"`,
-      blocking: true,
-    },
-  ])
-})
-
 test('notices when an enabled built-in agent harness is not signed in', () => {
   const plan = proposeSetup(
     machineWithHarness('grok', '/bin/grok', 'signed-out'),
@@ -1043,13 +1032,5 @@ test('notices an installed unregistered non-built-in harness without guessing a 
       fix: `${PLATFORM_SLUG} agent add <name> --harness goose --backend <backend> --model <model>`,
       blocking: false,
     },
-  ])
-})
-
-test('treats absent harness facts as absent built-in CLIs', () => {
-  const plan = proposeSetup(machine, [], [], [agent('codex'), agent('grok')])
-  expect(plan.notices.map((notice) => notice.message)).toEqual([
-    'codex agent is enabled but the codex harness is not installed',
-    'grok agent is enabled but the grok harness is not installed',
   ])
 })
