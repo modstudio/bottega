@@ -36,6 +36,34 @@ export type SameChangeDecision = {
 const samePaths = (left: readonly string[], right: readonly string[]) =>
   JSON.stringify([...left].sort()) === JSON.stringify([...right].sort())
 
+/**
+ * Identify the verbatim hunk body, including context, while ignoring the line
+ * coordinates that move when the same hunk is replayed onto a new base.
+ */
+export function exactHunksIdentity(patch: string): string {
+  let inHunks = false
+  const hunks = patch
+    .split('\n')
+    .flatMap((line) => {
+      if (line.startsWith('@@')) {
+        inHunks = true
+        return ['@@']
+      }
+      if (line === 'GIT binary patch' || line.startsWith('Binary files ')) {
+        inHunks = true
+        return [line === 'GIT binary patch' ? line : 'Binary files differ']
+      }
+      return inHunks ? [line] : []
+    })
+    .join('\n')
+  return new Bun.CryptoHasher('sha256').update(hunks).digest('hex')
+}
+
+/** Whether two per-file patches have byte-identical hunks and context. */
+export function exactHunks(reviewedPatch: string, currentPatch: string): boolean {
+  return exactHunksIdentity(reviewedPatch) === exactHunksIdentity(currentPatch)
+}
+
 /** Turn one persisted change tuple into facts without letting malformed path data match. */
 export function storedChangeFacts(row: {
   patchId: string | null
