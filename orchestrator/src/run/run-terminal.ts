@@ -951,7 +951,7 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
       db()
         .query(
           `UPDATE run SET latency_ms=?, exit_code=?, output_bytes=?, output_path=?, prompt_path=?,
-                        vendor_tokens=?, model_calls=?, peak_call_tokens=?, quota_used_percent_start=?, quota_used_percent_end=?, quota_window_minutes=?, quota_resets_at=?, vendor_cost_usd=?, vendor_input_tokens=?, vendor_output_tokens=?,
+                        vendor_tokens=?, model_calls=?, peak_call_tokens=?, quota_account_id=?, quota_used_percent_start=?, quota_used_percent_end=?, quota_window_minutes=?, quota_resets_at=?, vendor_cost_usd=?, vendor_input_tokens=?, vendor_output_tokens=?,
                         vendor_estimated_cost_usd=?, vendor_cost_source=?, model=COALESCE(?, model),
                         status=?, error=?, failure_kind=?, own_failure_kind=?,
                         host_wait_since=NULL,

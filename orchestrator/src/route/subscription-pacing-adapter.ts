@@ -3,6 +3,7 @@
 import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { Agent } from '../agent/agents.ts'
+import { currentQuotaAccountId } from '../transport/codex-account.ts'
 import { harnessCollectsQuotaReadings } from '../transport/codex-quota.ts'
 import {
   decideSubscriptionPacing,
@@ -30,11 +31,10 @@ export function subscriptionPacingHolds(
     (agent) => agent.billing === 'subscription' && harnessCollectsQuotaReadings(agent.harness),
   )
   const now = input.now ?? Date.now()
-  const facts = subscriptionPacingFacts(
-    database,
-    paced.map((agent) => agent.harness!),
-    now,
+  const accounts = new Map(
+    paced.map((agent) => [agent.harness!, currentQuotaAccountId(agent.harness)]),
   )
+  const facts = subscriptionPacingFacts(database, accounts, now)
   return new Map(
     paced.flatMap((agent) => {
       const harnessFacts = facts.get(agent.harness!)

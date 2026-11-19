@@ -45,6 +45,7 @@ const terminalSnapshot = () => ({
   vendorTokens: 34,
   modelCalls: 2,
   peakCallTokens: 20,
+  quotaAccountId: 'test-account',
   quotaUsedPercentStart: 12,
   quotaUsedPercentEnd: 13,
   quotaWindowMinutes: 10_080,
@@ -80,6 +81,7 @@ test('terminal snapshot preserves every vendor usage field', () => {
     vendorTokens: 34,
     modelCalls: 2,
     peakCallTokens: 20,
+    quotaAccountId: 'test-account',
     quotaUsedPercentStart: 12,
     quotaUsedPercentEnd: 13,
     quotaWindowMinutes: 10_080,
@@ -101,7 +103,7 @@ test('reconcile restores every vendor usage column from the terminal snapshot', 
   expect(
     db()
       .query(
-        `SELECT vendor_tokens, model_calls, peak_call_tokens, quota_used_percent_start,
+        `SELECT vendor_tokens, model_calls, peak_call_tokens, quota_account_id, quota_used_percent_start,
                 quota_used_percent_end, quota_window_minutes, quota_resets_at,
                 vendor_cost_usd, vendor_input_tokens, vendor_output_tokens,
                 vendor_estimated_cost_usd, vendor_cost_source
@@ -112,6 +114,7 @@ test('reconcile restores every vendor usage column from the terminal snapshot', 
     vendor_tokens: 34,
     model_calls: 2,
     peak_call_tokens: 20,
+    quota_account_id: 'test-account',
     quota_used_percent_start: 12,
     quota_used_percent_end: 13,
     quota_window_minutes: 10_080,

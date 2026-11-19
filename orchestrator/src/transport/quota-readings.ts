@@ -2,6 +2,7 @@
 /** Harness-neutral quota readings carried from transports into run persistence. */
 
 export type QuotaReadings = {
+  quotaAccountId: string | null
   quotaUsedPercentStart: number | null
   quotaUsedPercentEnd: number | null
   quotaWindowMinutes: number | null
@@ -21,6 +22,7 @@ export function usableQuotaReset(resetsAt: number): boolean {
 }
 
 export const EMPTY_QUOTA_READINGS: QuotaReadings = {
+  quotaAccountId: null,
   quotaUsedPercentStart: null,
   quotaUsedPercentEnd: null,
   quotaWindowMinutes: null,

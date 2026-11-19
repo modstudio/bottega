@@ -4,12 +4,29 @@ import { join } from 'node:path'
 import { dir } from '../../test/preload.ts'
 import { db } from '../database/db.ts'
 import { readEventLog, runEventsPath } from '../events.ts'
+import { parseCodexAccountId } from '../transport/codex-account.ts'
 import type { AgentTransport, TransportHandle, TransportResult } from '../transport/transport.ts'
 import { EMPTY_VENDOR_USAGE } from '../transport/vendor-usage.ts'
 import { runProbeTurn } from './agent-probe-turn.ts'
 import { type Agent, BUILTIN_AGENTS } from './agents.ts'
 
+const fakeAuthTokenValues = [
+  'fake_dev_2482_access_token',
+  'fake_dev_2482_refresh_token',
+  'fake_dev_2482_id_token',
+] as const
+const quotaAccountId = parseCodexAccountId(
+  JSON.stringify({
+    tokens: {
+      account_id: 'test-account',
+      access_token: fakeAuthTokenValues[0],
+      refresh_token: fakeAuthTokenValues[1],
+      id_token: fakeAuthTokenValues[2],
+    },
+  }),
+)
 const quotaReadings = {
+  quotaAccountId,
   quotaUsedPercentStart: 12,
   quotaUsedPercentEnd: 13,
   quotaWindowMinutes: 10_080,
@@ -227,12 +244,13 @@ test.each(['ok', 'failed'] as const)(
     expect(
       db()
         .query(
-          `SELECT quota_used_percent_start, quota_used_percent_end,
+          `SELECT quota_account_id, quota_used_percent_start, quota_used_percent_end,
                   quota_window_minutes, quota_resets_at
              FROM run WHERE job=?`,
         )
         .get(`agent-probe-quota-reading-${status}`),
     ).toEqual({
+      quota_account_id: quotaReadings.quotaAccountId,
       quota_used_percent_start: quotaReadings.quotaUsedPercentStart,
       quota_used_percent_end: quotaReadings.quotaUsedPercentEnd,
       quota_window_minutes: quotaReadings.quotaWindowMinutes,
@@ -240,6 +258,33 @@ test.each(['ok', 'failed'] as const)(
     })
   },
 )
+
+test('a quota account reaches the run row without exposing auth token text in outputs', async () => {
+  const result = await runProbeTurn({
+    name: 'codex',
+    scratch: dir,
+    agent: BUILTIN_AGENTS.codex!,
+    transport: probeTransport('failed'),
+    id: 'quota-account-redaction',
+    prompt: 'report quota',
+  })
+  const row = db()
+    .query(`SELECT record_id,quota_account_id,error FROM run WHERE job=?`)
+    .get('agent-probe-quota-account-redaction') as {
+    record_id: string
+    quota_account_id: string | null
+    error: string | null
+  }
+  expect(row.quota_account_id).toBe('test-account')
+
+  const everyOutput = JSON.stringify({
+    reply: result,
+    logs: readEventLog(runEventsPath(row.record_id)),
+    error: row.error,
+    run: row,
+  })
+  for (const token of fakeAuthTokenValues) expect(everyOutput).not.toContain(token)
+})
 
 test('a probe warning is recorded against the probe run row', async () => {
   const base = probeTransport('ok')

@@ -8,9 +8,12 @@ import type { QuotaPacingCalibration, QuotaPacingReading } from './subscription-
 export const SUBSCRIPTION_PACING_WINDOW_LIMIT = 8
 
 export const SUBSCRIPTION_PACING_FACTS_SQL = `
-  WITH paced(harness) AS (SELECT value FROM json_each(?)),
+  WITH paced(harness, accountId) AS (
+         SELECT json_extract(value, '$.harness'), json_extract(value, '$.accountId')
+           FROM json_each(?)
+       ),
        paced_agent AS (
-         SELECT a.name AS agent, a.harness AS harness
+         SELECT a.name AS agent, a.harness AS harness, p.accountId AS accountId
            FROM agent a JOIN paced p ON p.harness = a.harness
           WHERE a.billing = 'subscription'
        ),
@@ -20,6 +23,7 @@ export const SUBSCRIPTION_PACING_FACTS_SQL = `
                   DENSE_RANK() OVER (PARTITION BY pa.harness ORDER BY r2.quota_resets_at DESC) AS rank
              FROM run r2 JOIN paced_agent pa ON pa.agent = r2.agent
             WHERE r2.quota_resets_at IS NOT NULL
+              AND r2.quota_account_id = pa.accountId
          ) WHERE rank <= ?
          GROUP BY harness, resetsAt
        ),
@@ -31,6 +35,7 @@ export const SUBSCRIPTION_PACING_FACTS_SQL = `
                 SUM(COALESCE(r.vendor_tokens, 0)) AS tokens
            FROM run r JOIN paced_agent pa ON pa.agent = r.agent
           WHERE r.quota_used_percent_start IS NOT NULL
+            AND r.quota_account_id = pa.accountId
             AND r.quota_used_percent_end IS NOT NULL
             AND r.quota_window_minutes IS NOT NULL
             AND r.quota_resets_at IS NOT NULL
@@ -54,13 +59,14 @@ export const SUBSCRIPTION_PACING_FACTS_SQL = `
                 ) AS rank
            FROM run r JOIN paced_agent pa ON pa.agent = r.agent
           WHERE r.status IN ('ok','failed')
+            AND r.quota_account_id = pa.accountId
             AND r.latency_ms IS NOT NULL AND r.quota_used_percent_end IS NOT NULL
             AND r.quota_window_minutes IS NOT NULL AND r.quota_resets_at IS NOT NULL
             AND ? >= r.quota_resets_at - r.quota_window_minutes * 60
             AND ? < r.quota_resets_at
        ),
        facts AS (
-         SELECT p.harness,
+         SELECT p.harness, p.accountId,
                 cr.usedPercentEnd AS readingUsedPercentEnd,
                 cr.windowMinutes AS readingWindowMinutes,
                 cr.resetsAt AS readingResetsAt, cr.finishedAt AS readingFinishedAt,
@@ -84,6 +90,7 @@ export const SUBSCRIPTION_PACING_FACTS_SQL = `
            SELECT SUM(COALESCE(r.vendor_tokens, 0))
              FROM paced_agent pa JOIN run r ON r.agent = pa.agent
             WHERE pa.harness = f.harness
+              AND r.quota_account_id = f.accountId
               AND r.status IN ('ok','failed') AND r.latency_ms IS NOT NULL
               AND ((f.readingFinishedAt IS NOT NULL
                     AND julianday(r.started_at) + r.latency_ms / 86400000.0 > f.readingFinishedAt
@@ -117,15 +124,15 @@ type StoredPacingFacts = {
 /** One query supplies current readings, the most recent qualified calibration, and current tokens. */
 export function subscriptionPacingFacts(
   database: Database,
-  harnesses: readonly string[],
+  pacedAccounts: ReadonlyMap<string, string | null>,
   now = Date.now(),
 ): Map<string, SubscriptionPacingFacts> {
-  if (harnesses.length === 0) return new Map()
+  if (pacedAccounts.size === 0) return new Map()
   const nowSeconds = now / 1000
   const rows = database
     .query(SUBSCRIPTION_PACING_FACTS_SQL)
     .all(
-      JSON.stringify([...new Set(harnesses)]),
+      JSON.stringify([...pacedAccounts].map(([harness, accountId]) => ({ harness, accountId }))),
       SUBSCRIPTION_PACING_WINDOW_LIMIT,
       QUOTA_MIN_WINDOW_PERCENT,
       nowSeconds,
