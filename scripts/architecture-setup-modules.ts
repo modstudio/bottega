@@ -216,6 +216,7 @@ export const setupModuleSpecs: readonly SetupModuleSpec[] = [
       'node:path',
       './setup-mcp.ts',
       './setup-mcp-config.ts',
+      './setup-install-verify-runtime.ts',
       './setup-legacy-path.ts',
       './setup-harness-install.ts',
       './setup-planner.ts',
@@ -224,6 +225,30 @@ export const setupModuleSpecs: readonly SetupModuleSpec[] = [
     typeOnlyAllowed: ['../../../shared/machine-config.ts', './setup-environment.ts'],
     reason:
       'Keep ordered application independent of project service implementation and CLI grammar.',
+  },
+  {
+    name: 'setup-install-verify-boundary',
+    file: 'orchestrator/src/setup/setup-install-verify.ts',
+    allowed: ['node:path', '../../../shared/brand.ts'],
+    typeOnlyAllowed: ['../settings/settings-machine-hooks.ts'],
+    reason: 'Keep install verification as a pure decision over adapter-supplied facts.',
+  },
+  {
+    name: 'setup-install-verify-runtime-boundary',
+    file: 'orchestrator/src/setup/setup-install-verify-runtime.ts',
+    allowed: [
+      'node:fs',
+      'node:path',
+      '../../../shared/install-root.ts',
+      '../../../shared/state-directory.ts',
+      '../canon/user-canon-home-files.ts',
+      '../settings/settings-files.ts',
+      '../settings/settings-machine-apply.ts',
+      '../settings/settings-machine-hooks.ts',
+      './setup-install-verify.ts',
+    ],
+    typeOnlyAllowed: [],
+    reason: 'Keep setup install fact collection and rendering separate from its pure decision.',
   },
   {
     name: 'setup-schedules-boundary',

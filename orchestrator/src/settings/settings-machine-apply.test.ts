@@ -328,7 +328,7 @@ describe('settings apply', () => {
             outcome: 'refused',
             detail: expect.stringMatching(
               new RegExp(
-                `no user canon rows have arrived.*${PLATFORM_SLUG} doc pull.*${PLATFORM_SLUG} doc set --scope canon --user`,
+                `no user canon rows have arrived.*${PLATFORM_SLUG} record push.*${PLATFORM_SLUG} doc set --scope canon --user`,
               ),
             ),
             changed: false,

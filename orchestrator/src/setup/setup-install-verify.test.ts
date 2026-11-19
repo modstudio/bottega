@@ -1,14 +1,18 @@
 import { expect, test } from 'bun:test'
 import { join } from 'node:path'
-import { withMachineProductHooks } from '../settings/settings-machine-hooks.ts'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import {
+  PRODUCT_HOOKS,
+  SCRIPT_FILES,
+  withMachineProductHooks,
+} from '../settings/settings-machine-hooks.ts'
 import {
   type SetupInstallVerifyCheck,
   type SetupInstallVerifyFacts,
   verifySetupInstall,
 } from './setup-install-verify.ts'
-import { PRODUCT_HOOKS, SCRIPT_FILES } from '../settings/settings-machine-hooks.ts'
 
-const INSTALL = '/installed/bottega'
+const INSTALL = `/installed/${PLATFORM_SLUG}`
 
 function facts(): SetupInstallVerifyFacts {
   const settings = withMachineProductHooks(

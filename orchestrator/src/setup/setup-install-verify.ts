@@ -2,6 +2,7 @@
 /** Decides whether setup-rendered hooks and user canon landed. Pure: adapters supply plain facts. */
 
 import { join, normalize } from 'node:path'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { ProductHookDeclaration } from '../settings/settings-machine-hooks.ts'
 
 export type SetupInstallSettingsFileFact = {
@@ -61,9 +62,9 @@ function handlersFor(settings: unknown, declaration: ProductHookDeclaration): Ho
 
 function commandNamesInstalledScript(command: string, expectedPath: string): boolean {
   const normalized = normalize(expectedPath)
-  return [normalized, `'${normalized}'`, `"${normalized}"`].some((candidate) =>
-    command.split(/\s+/).includes(candidate),
-  )
+  const singleQuoted = `'${normalized.replaceAll("'", "'\\''")}'`
+  if (command.includes(singleQuoted) || command.includes(`"${normalized}"`)) return true
+  return command.split(/\s+/).includes(normalized)
 }
 
 function missingHooks(
@@ -71,7 +72,7 @@ function missingHooks(
   declarations: readonly ProductHookDeclaration[],
 ): string[] {
   const file = userSettings(facts)
-  if (!file || file.state !== 'readable') {
+  if (file?.state !== 'readable') {
     return [`${file?.path ?? 'Claude user settings'} is ${file?.state ?? 'absent'}`]
   }
   const available = new Map<string, number>()
@@ -114,7 +115,7 @@ function hookCheck(
       missing.length === 0
         ? `${declarations.length} hook declarations present`
         : `missing: ${missing.join(', ')}`,
-    fix: 're-run `bottega machine setup apply` from this installation',
+    fix: `re-run \`${PLATFORM_SLUG} machine setup apply\` from this installation`,
   }
 }
 
@@ -129,7 +130,7 @@ function executableCheck(facts: SetupInstallVerifyFacts): SetupInstallVerifyChec
         : failed
             .map((script) => `${script.path} ${script.exists ? 'is not executable' : 'is absent'}`)
             .join(', '),
-    fix: 'restore executable hook scripts in this installation, then re-run `bottega machine setup apply`',
+    fix: `restore executable hook scripts in this installation, then re-run \`${PLATFORM_SLUG} machine setup apply\``,
   }
 }
 
@@ -154,7 +155,7 @@ function hooksEnabledCheck(facts: SetupInstallVerifyFacts): SetupInstallVerifyCh
       failures.length === 0
         ? 'no readable settings file disables product hooks'
         : failures.join(', '),
-    fix: 'make the named settings file readable and remove the hook-disabling setting, then re-run `bottega machine setup apply`',
+    fix: `make the named settings file readable and remove the hook-disabling setting, then re-run \`${PLATFORM_SLUG} machine setup apply\``,
   }
 }
 
@@ -167,7 +168,7 @@ function canonCheck(facts: SetupInstallVerifyFacts): SetupInstallVerifyCheck {
       missing.length === 0
         ? `${facts.canonEntries.length} installed harness canon entries present`
         : `missing: ${missing.map((entry) => `${entry.harness} ${entry.path}`).join(', ')}`,
-    fix: 'run `bottega doc pull`, then re-run `bottega machine setup apply`',
+    fix: `run \`${PLATFORM_SLUG} record push\`, then re-run \`${PLATFORM_SLUG} machine setup apply\``,
   }
 }
 

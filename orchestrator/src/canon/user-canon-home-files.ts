@@ -49,7 +49,7 @@ export type UserCanonHomePlanDecision =
 
 export const EMPTY_USER_CANON_STORE_REFUSAL =
   'no user canon rows have arrived in this store; ' +
-  `run \`${PLATFORM_SLUG} doc pull\`; if this user truly has no canon, create it with ` +
+  `run \`${PLATFORM_SLUG} record push\`; if this user truly has no canon, create it with ` +
   `\`${PLATFORM_SLUG} doc set --scope canon --user\``
 
 type CollectedFileState = { collectedText: string; collectedMode: number }

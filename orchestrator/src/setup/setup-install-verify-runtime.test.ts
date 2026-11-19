@@ -1,8 +1,9 @@
 import { expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { RECORD_SIGN_IN_REMEDY } from '../../../shared/record-remedies.ts'
 import type { MachineSettingsApplyResult } from '../settings/settings-machine-apply.ts'
-import { applySetupInstallVerify } from './setup-install-verify-runtime.ts'
 import type { SetupInstallVerifyFacts } from './setup-install-verify.ts'
+import { applySetupInstallVerify } from './setup-install-verify-runtime.ts'
 
 const current: MachineSettingsApplyResult[] = [
   { target: 'settings user', outcome: 'current', changed: false },
@@ -10,7 +11,7 @@ const current: MachineSettingsApplyResult[] = [
 
 function facts(): SetupInstallVerifyFacts {
   return {
-    installRoot: '/installed/bottega',
+    installRoot: `/installed/${PLATFORM_SLUG}`,
     hooks: [],
     settingsFiles: [
       {
@@ -46,7 +47,7 @@ test('a settings-row refusal names its target, condition, and row remedy', async
           condition: 'no-settings-row',
           detail:
             'refusing settings render: no settings row for user\n' +
-            'cleared by: bottega doc set --scope settings --user --slug settings',
+            `cleared by: ${PLATFORM_SLUG} doc set --scope settings --user --slug settings`,
           changed: false,
         },
       ],
@@ -71,5 +72,5 @@ test('a missing record session refuses with the sign-in remedy', async () => {
       },
       facts,
     }),
-  ).rejects.toThrow('bottega record sign-in')
+  ).rejects.toThrow(`${PLATFORM_SLUG} record sign-in`)
 })

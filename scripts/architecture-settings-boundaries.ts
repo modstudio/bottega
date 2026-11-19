@@ -67,6 +67,7 @@ export const settingsBoundarySpecs: ImportBoundary[] = [
       'shared/git.ts',
       'shared/install-root.ts',
       'shared/machine-config.ts',
+      'shared/refusal.ts',
       'shared/state-directory.ts',
       'orchestrator/src/doc/docs.ts',
       'orchestrator/src/project/projects.ts',

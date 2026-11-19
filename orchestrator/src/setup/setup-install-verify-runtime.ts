@@ -7,15 +7,15 @@ import { assetPath } from '../../../shared/install-root.ts'
 import { resolveRunsDirectory } from '../../../shared/state-directory.ts'
 import { userCanonHomesFromEnvironment } from '../canon/user-canon-home-files.ts'
 import {
-  applyMachineSettings,
-  type MachineSettingsApplyResult,
-} from '../settings/settings-machine-apply.ts'
-import { PRODUCT_HOOKS, SCRIPT_FILES } from '../settings/settings-machine-hooks.ts'
-import {
   claudeHomeFromEnvironment,
   userLocalSettingsPath,
   userSettingsPath,
 } from '../settings/settings-files.ts'
+import {
+  applyMachineSettings,
+  type MachineSettingsApplyResult,
+} from '../settings/settings-machine-apply.ts'
+import { PRODUCT_HOOKS, SCRIPT_FILES } from '../settings/settings-machine-hooks.ts'
 import {
   type SetupInstallSettingsFileFact,
   type SetupInstallVerifyFacts,
@@ -63,7 +63,7 @@ function managedSettingsPaths(environment: NodeJS.ProcessEnv): string[] {
   return ['/etc/claude-code/managed-settings.json']
 }
 
-export function gatherSetupInstallVerifyFacts(
+function gatherSetupInstallVerifyFacts(
   environment: NodeJS.ProcessEnv = process.env,
 ): SetupInstallVerifyFacts {
   const installRoot = assetPath()

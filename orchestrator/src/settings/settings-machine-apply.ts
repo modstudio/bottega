@@ -6,6 +6,7 @@ import { join } from 'node:path'
 import { MCP_SERVER_NAME, PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { assetPath } from '../../../shared/install-root.ts'
 import { readMachinePermissions, readMachineValue } from '../../../shared/machine-config.ts'
+import { renderRefusal } from '../../../shared/refusal.ts'
 import {
   resolveOrchestratorDatabase,
   resolveRunsDirectory,
@@ -133,6 +134,33 @@ function refusal(target: string, error: unknown): MachineSettingsApplyResult {
   }
 }
 
+function missingUserSettingsResult(target: string): MachineSettingsApplyResult {
+  return {
+    target,
+    outcome: 'refused',
+    condition: 'no-settings-row',
+    detail: renderRefusal({
+      condition: 'refusing settings render: no settings row for user',
+      remedies: [
+        {
+          kind: 'command',
+          argv: [
+            PLATFORM_SLUG,
+            'doc',
+            'set',
+            '--scope',
+            'settings',
+            '--user',
+            '--slug',
+            'settings',
+          ],
+        },
+      ],
+    }),
+    changed: false,
+  }
+}
+
 function applyUserSettings(
   owner: string,
   check: boolean,
@@ -143,17 +171,7 @@ function applyUserSettings(
   const target = `settings ${path}`
   try {
     const row = getDoc(SETTINGS_SCOPE, null, SETTINGS_SLUG, owner)
-    if (!row) {
-      return {
-        target,
-        outcome: 'refused',
-        condition: 'no-settings-row',
-        detail:
-          'refusing settings render: no settings row for user\n' +
-          `cleared by: ${PLATFORM_SLUG} doc set --scope settings --user --slug settings`,
-        changed: false,
-      }
-    }
+    if (!row) return missingUserSettingsResult(target)
     const parsed = readSettingsFile(path)
     const merged = mergeMachinePermissionOverlay(
       parseStoredOwnedSettings(row.body),

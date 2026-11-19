@@ -8,6 +8,10 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { MachineLevel } from '../../../shared/machine-config.ts'
 import type { PreparedStateFileMigration } from './setup-environment.ts'
 import { installHarness, skippedHarnessInstall } from './setup-harness-install.ts'
+import {
+  applySetupInstallVerify,
+  type SetupInstallVerifyAdapters,
+} from './setup-install-verify-runtime.ts'
 import { removableLegacyPathTarget } from './setup-legacy-path.ts'
 import {
   commandFailureReason,
@@ -22,10 +26,6 @@ import {
   screenedMcpField,
 } from './setup-mcp.ts'
 import { migrateMcpConfigText } from './setup-mcp-config.ts'
-import {
-  applySetupInstallVerify,
-  type SetupInstallVerifyAdapters,
-} from './setup-install-verify-runtime.ts'
 import { type SetupAction, setupActionLine, setupActionPrerequisiteKinds } from './setup-planner.ts'
 import { applyMaintenanceSchedules } from './setup-schedule-runtime.ts'
 

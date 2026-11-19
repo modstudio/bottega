@@ -147,7 +147,8 @@ describe('setup MCP tools', () => {
     expect(planCalls).toBe(1)
     expect(applied).toHaveLength(1)
     expect(outcome.actions[0]).toEqual({ kind: 'migrate-environment' })
-    expect(outcome.actions[1]).toMatchObject({
+    expect(outcome.actions[1]).toEqual({ kind: 'install-verify' })
+    expect(outcome.actions[2]).toMatchObject({
       kind: 'add',
       name: 'alpha',
       settings: { keyPrefixes: ['ALPHA'] },
@@ -173,7 +174,11 @@ describe('setup MCP tools', () => {
           folderPath: `${folder}/alpha`,
         },
       ],
-      changes: ['Migrate operator environment names', `Add project alpha (${folder}/alpha)`],
+      changes: [
+        'Migrate operator environment names',
+        'Render and verify harness settings and user canon',
+        `Add project alpha (${folder}/alpha)`,
+      ],
       folderSelection: fixturePlan().folderSelection,
     })
   })
@@ -232,12 +237,18 @@ describe('setup MCP tools', () => {
     expect(applied).toHaveLength(1)
     expect(applied[0]).toEqual([
       { kind: 'migrate-environment' },
+      { kind: 'install-verify' },
       expect.objectContaining({ kind: 'add', name: 'alpha', settings: { keyPrefixes: ['ALT'] } }),
       expect.objectContaining({ kind: 'unchanged', name: 'ready' }),
     ])
     expect(result.structuredContent).toEqual({
       actions: [
         { line: 'Migrate operator environment names', status: 'applied', message: null },
+        {
+          line: 'Render and verify harness settings and user canon',
+          status: 'applied',
+          message: null,
+        },
         { line: `Add project alpha (${folder}/alpha)`, status: 'applied', message: null },
         { line: `Project ready (${folder}/ready)`, status: 'applied', message: null },
       ],
