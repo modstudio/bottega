@@ -134,7 +134,7 @@ export async function registerCheckedOutHostedProjects(
     return [
       {
         status: 'missing',
-        message: `projects checked out under ${dependencies.readCloneRoot()} are registered once this machine is initialized: ${PLATFORM_SLUG} config machine init`,
+        message: `projects checked out under ${dependencies.readCloneRoot()} are registered once this machine is initialized: ${PLATFORM_SLUG} machine config machine init`,
       },
     ]
   }
