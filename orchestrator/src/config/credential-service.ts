@@ -2,6 +2,7 @@
 /** Seals and addresses typed credentials without exposing plaintext to the hosted record. */
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { credentialMachineTrustRemedy } from '../../../shared/credential-machine-trust.ts'
 import {
   ConfigClientError,
   type ConfigWriteDestination,
@@ -28,17 +29,15 @@ import {
   resolveHostedCredentialValue,
 } from '../../../shared/credential-value.ts'
 import type { OperatorCredentialIdentity } from '../../../shared/operator-credentials.ts'
-import {
-  configAccessRemedy,
-  machineNotTrustedRemedy,
-  recordSpaceMembershipRefusal,
-} from '../../../shared/record-remedies.ts'
+import { configAccessRemedy, recordSpaceMembershipRefusal } from '../../../shared/record-remedies.ts'
 import {
   parseRecordSpaceMemberships,
   recordSpaceMembership,
 } from '../../../shared/record-space-membership.ts'
 import { refusal, renderRefusal } from '../../../shared/refusal.ts'
 import { sealedValueIsEmpty, stripTrailingNewline } from '../../../shared/sealed-value.ts'
+import { localMachine } from '../../../shared/hosted-secret-row.ts'
+import { trustedKeysForSpace } from '../../../shared/trust-log-keys.ts'
 import type { Project } from '../project/projects.ts'
 import { requireProjectRecordDestination } from '../record/record-project-destination-client.ts'
 import { deleteSecret, personalConfigWriteDestination, setSecret } from './config-service.ts'
@@ -146,23 +145,49 @@ const destination = (address: CredentialAddress): ConfigWriteDestination => ({
   destinationSpaceId: address.destinationSpaceId,
   projectId: address.projectId,
 })
-function missingProjectWrapRefusal(address: CredentialAddress): Error {
+async function missingWrapTrustRemedy(
+  address: CredentialAddress,
+  client: ReturnType<typeof configClient>,
+): Promise<string> {
+  const machine = await localMachine()
+  const [registered, trust] = await Promise.all([
+    client.listMachineKeys(destination(address)),
+    trustedKeysForSpace(client, address.destinationSpaceId),
+  ])
+  return credentialMachineTrustRemedy({
+    registered: registered.some((row) => row.keyId === machine.keyId && row.revokedAt === null),
+    trusted: trust[machine.keyId] !== undefined,
+    space: address.spaceName,
+    keyId: machine.keyId,
+    publicKey: Buffer.from(machine.publicKey).toString('base64url'),
+  })!
+}
+
+async function missingProjectWrapRefusal(
+  address: CredentialAddress,
+  client: ReturnType<typeof configClient>,
+): Promise<Error> {
   const binding = address.projectName
     ? `project ${address.projectName} in space ${address.spaceName}`
     : `space ${address.spaceName}`
   return new Error(
-    `cannot access credentials for ${binding}: ${machineNotTrustedRemedy(address.spaceName)}; ${configAccessRemedy(address.spaceName)}`,
+    `cannot access credentials for ${binding}: this machine is not trusted; ${await missingWrapTrustRemedy(address, client)}; ${configAccessRemedy(address.spaceName)}`,
   )
 }
 
-function missingAccountWrapRefusal(address: CredentialAddress): Error {
+async function missingAccountWrapRefusal(
+  address: CredentialAddress,
+  client: ReturnType<typeof configClient>,
+): Promise<Error> {
   return new Error(
-    `cannot access account credentials: run \`${PLATFORM_SLUG} machine config machine register --space ${address.spaceName}\``,
+    `cannot access account credentials: ${await missingWrapTrustRemedy(address, client)}`,
   )
 }
 
-const missingWrapRefusal = (address: CredentialAddress) =>
-  address.account ? missingAccountWrapRefusal(address) : missingProjectWrapRefusal(address)
+const missingWrapRefusal = (address: CredentialAddress, client: ReturnType<typeof configClient>) =>
+  address.account
+    ? missingAccountWrapRefusal(address, client)
+    : missingProjectWrapRefusal(address, client)
 
 function missingCredentialRefusal(address: CredentialAddress): Error {
   return new Error(credentialSetRefusalText(address, 'missing', 'pipe its value to'))
@@ -202,13 +227,13 @@ export async function setCredential(
         },
         createDataKey: false,
         expectedRowVersion,
-        missingDestinationAccessRefusal: () => missingWrapRefusal(address),
+        missingDestinationAccessRefusal: () => missingWrapRefusal(address, client),
         remedy: credentialSetRemedy(address),
       },
     )
   } catch (error) {
     if (error instanceof ConfigClientError && error.status === 404)
-      throw missingWrapRefusal(address)
+      throw await missingWrapRefusal(address, client)
     throw error
   }
 }

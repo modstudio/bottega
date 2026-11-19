@@ -63,7 +63,7 @@ test('a project destination never consults machine keys in another space', async
   await expect(
     destinationHostedIdentity(
       client,
-      { spaceId: space, machineKeyId: 'machine' },
+      { spaceId: space, machineKeyId: 'machine', publicKey: 'public-key' },
       { spaceId: space, userId: user },
     ),
   ).rejects.toThrow('not a member')

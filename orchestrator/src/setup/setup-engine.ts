@@ -23,6 +23,10 @@ import {
 } from './setup-mcp.ts'
 import type { McpConfigMigration } from './setup-mcp-config.ts'
 import { schedulePlatformSupported } from './setup-schedule-policy.ts'
+import {
+  providerCredentialTrustNotices,
+  type SetupCredentialTrustFact,
+} from './provider-credential-trust-notice.ts'
 import { INFERRED_RECIPE_PATH, inferredRecipeContent, proposedGate } from './setup-toolchain.ts'
 
 export type SetupQuestion = {
@@ -50,6 +54,7 @@ export type SetupAgent = {
   harness: string
   enabled: number | boolean
   probePassed: number | boolean
+  provider?: string | null
 }
 export type SetupLifecycleResolver = (
   worktree: ProjectSettings['worktree'] | null | undefined,
@@ -833,6 +838,7 @@ export function proposeSetup(
   repositoryNotices: SetupNotice[] = [],
   servers: McpServer[] = [],
   hostedProjectNames: readonly string[] = [],
+  credentialTrustFacts: readonly SetupCredentialTrustFact[] = [],
 ): SetupPlan {
   const occupied = new Set(
     register
@@ -844,6 +850,7 @@ export function proposeSetup(
     ...machineNotices(machine),
     ...agentNotices(machine, agents),
     ...repositoryNotices,
+    ...providerCredentialTrustNotices(credentialTrustFacts),
   ]
   const harnessInstalls = proposeHarnessInstalls(machine, agents, questions, notices)
   const registrations = proposeMcpRegistrations(machine, servers, questions, notices)

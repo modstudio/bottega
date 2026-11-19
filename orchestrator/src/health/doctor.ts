@@ -68,6 +68,8 @@ import { type RuntimeAvailability, sandboxRuntimeAvailability } from '../sandbox
 import { gwetAc1, quadraticWeightedKappa } from '../score/agreement.ts'
 import { DELIVERY, FIDELITY, QUALITY } from '../score/score.ts'
 import { developerNodeDoctorLines } from '../setup/developer-node.ts'
+import { gatherProviderCredentialTrustFacts } from '../setup/provider-credential-trust.ts'
+import { providerCredentialTrustNotices } from '../setup/provider-credential-trust-notice.ts'
 import { keepTreeHold } from '../worktree/keep-tree-hold.ts'
 import { worktreeDirty } from '../worktree/worktree-attribution.ts'
 import { lifecycleReportLines } from '../worktree/worktree-lifecycle.ts'
@@ -633,6 +635,14 @@ async function reportAgents(
   await reportProjectMcpCredentials(presentation.log)
 }
 
+async function reportProviderCredentialTrust(log: DoctorPresentation['log']): Promise<void> {
+  const facts = await gatherProviderCredentialTrustFacts(Object.values(AGENTS), registeredProjects())
+  const notices = providerCredentialTrustNotices(facts)
+  if (!notices.length) return
+  log('provider credential trust')
+  for (const notice of notices) log(`  ${notice.message}; ${notice.fix}`)
+}
+
 function agentOperationalSuffix(
   candidate:
     | { cooling?: string | null; subscriptionPacingHold?: { refusal: string } | null }
@@ -648,6 +658,7 @@ async function reportAgentsAndDelegation(
   presentation: Pick<DoctorPresentation, 'log' | 'candidates'>,
   agentStatus: typeof doctorAgentStatus,
 ): Promise<void> {
+  await reportProviderCredentialTrust(presentation.log)
   await reportAgents(presentation, agentStatus)
   presentation.log('delegation')
   for (const line of configuredDelegationDoctorLines(
@@ -742,12 +753,6 @@ export async function doctorCommand(
   const { has } = flags
   const { log, exitCode, candidates, pick, jobs, acpRuntimeGaps, retrievalCheck } = presentation
   const machineLevel = readMachineValue('machine.level') as MachineLevel
-  // Probed BEFORE the agent list is printed, not after it. Doctor used to
-  // report `qwen36-goose ready` and `reachable NO` four lines apart and mean
-  // both: the roster asked whether it was configured and the probe asked
-  // whether it answered. Now the roster is told the answer first, so the
-  // status column and the routing table below it cannot contradict
-  // each other.
   const r = await workerHealthForInstallLevel(machineLevel)
   reportRetrievalCheck(await retrievalCheck(), presentation)
   const { CanonBudgetError, compilePack, findingsForPack } = await import('../canon/canon.ts')

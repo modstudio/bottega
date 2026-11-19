@@ -148,7 +148,7 @@ async function currentOrCreate(
   client: ConfigClient,
   destination: WriteDestination,
   createDataKey = true,
-  missingDestinationAccessRefusal?: () => Error,
+  missingDestinationAccessRefusal?: () => Error | Promise<Error>,
 ) {
   const machine = await localMachine()
   try {
@@ -157,7 +157,7 @@ async function currentOrCreate(
       await unwrap(client, key, machine, undefined, destination.destinationSpaceId)
     } catch (error) {
       if (error instanceof DataKeyWrapAccessError && missingDestinationAccessRefusal)
-        throw missingDestinationAccessRefusal()
+        throw await missingDestinationAccessRefusal()
       throw error
     }
     const remote = await unpinServerRevoked(client, destination)
@@ -527,7 +527,7 @@ export async function setSecret(
     }
     createDataKey?: boolean
     expectedRowVersion?: number
-    missingDestinationAccessRefusal?: () => Error
+    missingDestinationAccessRefusal?: () => Error | Promise<Error>
     remedy: string
   },
 ) {

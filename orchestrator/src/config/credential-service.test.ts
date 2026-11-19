@@ -198,6 +198,7 @@ test('set credential gives the project access remedy for every missing wrap outc
     const client = {
       currentDataKey,
       createDataKey,
+      listMachineKeys: async () => [],
       readTrustLog: async () => [],
     } as unknown as ConfigClient
     await expect(setCredential(address, 'secret', client)).rejects.toThrow(
@@ -212,6 +213,8 @@ test('set account credential gives the personal-space registration remedy', asyn
     currentDataKey: async () => {
       throw new ConfigClientError('response', '/v1/config/data-keys/current', 404)
     },
+    listMachineKeys: async () => [],
+    readTrustLog: async () => [],
   } as unknown as ConfigClient
   await expect(
     setCredential(

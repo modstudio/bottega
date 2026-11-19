@@ -31,6 +31,7 @@ import { nonInteractiveSetupFolders, selectSetupFolders } from './setup-folder-s
 import { captureLegacyPathSymlinks, pathDirectories } from './setup-legacy-path.ts'
 import { stableMcpServers } from './setup-mcp.ts'
 import { captureMcpConfigMigrations } from './setup-mcp-config-migration.ts'
+import { gatherProviderCredentialTrustFacts } from './provider-credential-trust.ts'
 import {
   planSetupActions,
   recommendedAnswers,
@@ -117,6 +118,7 @@ async function assembleSetupPlan(folders: string[]): Promise<SetupPlan> {
       blocking: false,
     }
   }
+  const credentialTrustFacts = await gatherProviderCredentialTrustFacts(state.agents, state.projects)
   const plan = proposeSetup(
     resolveWorktreeLifecycle,
     machine,
@@ -126,6 +128,7 @@ async function assembleSetupPlan(folders: string[]): Promise<SetupPlan> {
     repositories.notices,
     stableMcpServers(),
     hostedProjectNames,
+    credentialTrustFacts,
   )
   if (hostedReadNotice) plan.notices.push(hostedReadNotice)
   addMcpConfigMigrations(
@@ -168,7 +171,7 @@ function readSetupState(): {
       projects: projects(undefined, database),
       agents: database
         .query(
-          `SELECT name,harness,enabled,
+          `SELECT name,harness,enabled,provider,
              CASE WHEN json_extract(probe_result,'$.ok')=1 THEN 1 ELSE 0 END AS probePassed
              FROM agent ORDER BY name`,
         )

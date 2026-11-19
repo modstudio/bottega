@@ -81,7 +81,7 @@ export async function pinnedHostedSecretDestination(
 /** Establish the signed-in user's identity for a project destination space. */
 export async function destinationHostedIdentity(
   client: ConfigClient,
-  destination: { spaceId: string; machineKeyId: string },
+  destination: { spaceId: string; machineKeyId: string; publicKey: string },
   pinned = readHostedConfigIdentity(),
 ): Promise<HostedConfigIdentity> {
   if (!pinned)
@@ -103,7 +103,20 @@ export async function destinationHostedIdentity(
     machine: machines.find((machine) => machine.keyId === destination.machineKeyId),
   })
   if (decision.allowed) return decision.identity
-  throw new Error(machineNotTrustedRemedy(destination.spaceId))
+  throw new Error(
+    machineNotTrustedRemedy({
+      registered: Boolean(
+        machines.find(
+          (machine) =>
+            machine.keyId === destination.machineKeyId && machine.revokedAt === null,
+        ),
+      ),
+      trusted: false,
+      space: destination.spaceId,
+      keyId: destination.machineKeyId,
+      publicKey: destination.publicKey,
+    }),
+  )
 }
 
 /** Choose whether a secret opens with the pinned active-space identity or a destination identity. */
@@ -119,27 +132,39 @@ export async function hostedSecretIdentity(
   client: ConfigClient,
   destination: ConfigDestination,
   machineKeyId: string,
+  publicKey: string,
   pinned = readHostedConfigIdentity(),
 ): Promise<HostedConfigIdentity> {
   if (hostedSecretIdentityKind(destination.destinationSpaceId, pinned?.spaceId) === 'active')
     return hostedIdentity(client, pinned)
   return destinationHostedIdentity(
     client,
-    { spaceId: destination.destinationSpaceId!, machineKeyId },
+    { spaceId: destination.destinationSpaceId!, machineKeyId, publicKey },
     pinned,
   )
 }
 
 function trustedWrap(input: {
   key: DataKey
+  machine: MachineKeyPair & { keyId: string }
   trust: TrustedKeys
   identity: HostedConfigIdentity
+  registered?: boolean
 }): DataKey['wraps'][number] {
   const wrap = input.key.wraps.find((candidate) => input.trust[candidate.senderKeyId])
   if (wrap) return wrap
   if (input.key.wraps.length)
     throw new HostedOpenError('untrusted-sender', 'hosted secret data-key sender is not trusted')
-  throw new HostedOpenError('missing-wrap', machineNotTrustedRemedy(input.identity.spaceId))
+  throw new HostedOpenError(
+    'missing-wrap',
+    machineNotTrustedRemedy({
+      registered: input.registered ?? true,
+      trusted: false,
+      space: input.identity.spaceId,
+      keyId: input.machine.keyId,
+      publicKey: Buffer.from(input.machine.publicKey).toString('base64url'),
+    }),
+  )
 }
 
 /** The only operation that chooses a wrap and opens a hosted secret row. */
@@ -150,6 +175,7 @@ export async function openHostedSecret(input: {
   trust: TrustedKeys
   expected: { key: string; scope: ConfigSecret['scope']; environment: string }
   identity: HostedConfigIdentity
+  registered?: boolean
 }): Promise<Uint8Array> {
   const { row, expected } = input
   if (

@@ -25,11 +25,13 @@ export async function openHostedSecretRow(
   machine?: Awaited<ReturnType<typeof localMachine>>,
 ): Promise<Uint8Array> {
   const local = machine ?? (await localMachine())
-  const identity = await hostedSecretIdentity(client, destination, local.keyId)
-  const [full, key, trust] = await Promise.all([
+  const publicKey = Buffer.from(local.publicKey).toString('base64url')
+  const identity = await hostedSecretIdentity(client, destination, local.keyId, publicKey)
+  const [full, key, trust, machines] = await Promise.all([
     client.getSecret(row.key, row.scope, row.environment, destination),
     client.getDataKey(row.dekId, local.keyId, destination),
     trustedKeysForSpace(client, identity.spaceId),
+    client.listMachineKeys({ destinationSpaceId: identity.spaceId }),
   ])
   return openHostedSecret({
     row: full,
@@ -38,5 +40,8 @@ export async function openHostedSecretRow(
     trust,
     expected: { key: row.key, scope: row.scope, environment: row.environment },
     identity,
+    registered: machines.some(
+      (machine) => machine.keyId === local.keyId && machine.revokedAt === null,
+    ),
   })
 }
