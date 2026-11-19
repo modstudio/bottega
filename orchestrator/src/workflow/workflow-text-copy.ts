@@ -17,9 +17,8 @@ import {
   writeHostedTaskFlow,
 } from '../record/record-task-flow-write-client.ts'
 import { taskFlowRequestId } from '../record/record-task-flow-write-contract.ts'
-import { currentRecordWriteDecision } from '../record/record-write-authority.ts'
 import type { LiveCursorAutonomy } from './autonomy.ts'
-import { taskFlowLocalStore, taskFlowReadStore } from './task-flow-store.ts'
+import { taskFlowLocalStore, taskFlowReadStore, taskFlowStoreMode } from './task-flow-store.ts'
 import { taskReader } from './task-read-port.ts'
 import { abandonSelectedWorkflowCursorForClose, nextWorkflowStep } from './workflow-cursor.ts'
 import { cursorName, workflowCursorReference } from './workflow-cursor-format.ts'
@@ -475,9 +474,7 @@ export async function showWorkflowText(
   const copied = await store.copiedTextReference(id)
   if (copied) return { kind: 'redirect', id, documentReference: copied }
   const token = workflowTextAttachmentToken(id)
-  const decision = currentRecordWriteDecision(database)
-  if (decision.verdict === 'refused') throw new Error(decision.refusal)
-  const message = missingWorkflowTextMessage(token, decision.verdict)
+  const message = missingWorkflowTextMessage(token, taskFlowStoreMode(database))
   throw new WorkflowTextNotHeldError(message.condition, message.remedy)
 }
 

@@ -30,11 +30,13 @@ export function missingWorkflowTextMessage(
 }
 
 export class WorkflowTextNotHeldError extends Error {
-  constructor(
-    readonly condition: string,
-    readonly remedy: string,
-  ) {
+  readonly condition: string
+  readonly remedy: string
+
+  constructor(condition: string, remedy: string) {
     super(`${condition}\nremedy: ${remedy}`)
     this.name = 'WorkflowTextNotHeldError'
+    this.condition = condition
+    this.remedy = remedy
   }
 }

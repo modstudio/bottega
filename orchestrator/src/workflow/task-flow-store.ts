@@ -266,6 +266,12 @@ export function taskFlowWritesHosted(database: Database): boolean {
   return currentRecordWriteDecision(database).verdict === 'hosted'
 }
 
+export function taskFlowStoreMode(database: Database): 'hosted' | 'local-authoritative' {
+  const decision = currentRecordWriteDecision(database)
+  throwIfRecordRefused(decision)
+  return decision.verdict
+}
+
 export function writeLocalAdvance(
   database: Database,
   payload: TaskFlowIntentInput<'advance'>,
