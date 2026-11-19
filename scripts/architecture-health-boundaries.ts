@@ -47,9 +47,21 @@ export const healthBoundarySpecs: ImportBoundary[] = [
       'orchestrator/src/record/record-space.ts',
       'orchestrator/src/run/run-task-linking.ts',
       'orchestrator/src/setup/developer-node.ts',
+      'orchestrator/src/health/provider-credential-trust-doctor.ts',
     ],
     typeOnlyAllowed: [],
     reason:
       'Keep doctor independent of transports, routing, run control, the CLI, and reviews by value.',
+  },
+  {
+    name: 'provider-credential-trust-doctor-boundary',
+    file: 'orchestrator/src/health/provider-credential-trust-doctor.ts',
+    allowed: [
+      'orchestrator/src/agent/agent-registry.ts',
+      'orchestrator/src/project/projects.ts',
+      'orchestrator/src/setup/provider-credential-trust.ts',
+    ],
+    typeOnlyAllowed: [],
+    reason: 'Keep provider credential trust gathering out of the doctor presentation module.',
   },
 ]

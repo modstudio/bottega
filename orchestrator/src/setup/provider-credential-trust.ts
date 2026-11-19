@@ -4,14 +4,17 @@
 import { configClient } from '../../../shared/config-client.ts'
 import { machineKeyInfo, readMachineKey } from '../../../shared/machine-key-store.ts'
 import { readRecordSessionToken } from '../../../shared/record-session.ts'
-import { parseRecordSpaceMemberships, recordSpaceMembership } from '../../../shared/record-space-membership.ts'
+import {
+  parseRecordSpaceMemberships,
+  recordSpaceMembership,
+} from '../../../shared/record-space-membership.ts'
 import { trustedKeysForSpace } from '../../../shared/trust-log-keys.ts'
 import type { Project } from '../project/projects.ts'
-import type { SetupAgent } from './setup-engine.ts'
 import {
   providerCredentialTrustNotices,
   type SetupCredentialTrustFact,
 } from './provider-credential-trust-notice.ts'
+import type { SetupAgent } from './setup-engine.ts'
 import { SETUP_COMMAND_TIMEOUT_MS } from './setup-mcp.ts'
 
 const cause = (error: unknown) => (error instanceof Error ? error.message : String(error))
@@ -75,14 +78,15 @@ export async function gatherProviderCredentialTrustFacts(
   )
 }
 
-export async function providerCredentialTrustDoctorLines(
+export async function reportProviderCredentialTrustDoctor(
+  log: (line: string) => void,
   agents: readonly SetupAgent[],
   projects: readonly Project[],
-): Promise<string[]> {
+): Promise<void> {
   const notices = providerCredentialTrustNotices(
     await gatherProviderCredentialTrustFacts(agents, projects),
   )
-  return notices.length
-    ? ['provider credential trust', ...notices.map((notice) => `  ${notice.message}; ${notice.fix}`)]
-    : []
+  if (!notices.length) return
+  log('provider credential trust')
+  for (const notice of notices) log(`  ${notice.message}; ${notice.fix}`)
 }

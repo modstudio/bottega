@@ -1,10 +1,7 @@
 import { expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { credentialMachineTrustSteps } from '../../../shared/credential-machine-trust.ts'
-import {
-  anchoredTrustRefusal,
-  machineTrustRefusal,
-} from './machine-trust-refusal.ts'
+import { anchoredTrustRefusal, machineTrustRefusal } from './machine-trust-refusal.ts'
 
 const keyId = 'machine-key-id'
 

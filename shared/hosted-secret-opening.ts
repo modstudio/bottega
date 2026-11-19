@@ -107,8 +107,7 @@ export async function destinationHostedIdentity(
     machineNotTrustedRemedy({
       registered: Boolean(
         machines.find(
-          (machine) =>
-            machine.keyId === destination.machineKeyId && machine.revokedAt === null,
+          (machine) => machine.keyId === destination.machineKeyId && machine.revokedAt === null,
         ),
       ),
       trusted: false,

@@ -68,12 +68,12 @@ import { type RuntimeAvailability, sandboxRuntimeAvailability } from '../sandbox
 import { gwetAc1, quadraticWeightedKappa } from '../score/agreement.ts'
 import { DELIVERY, FIDELITY, QUALITY } from '../score/score.ts'
 import { developerNodeDoctorLines } from '../setup/developer-node.ts'
-import { providerCredentialTrustDoctorLines } from '../setup/provider-credential-trust.ts'
 import { keepTreeHold } from '../worktree/keep-tree-hold.ts'
 import { worktreeDirty } from '../worktree/worktree-attribution.ts'
 import { lifecycleReportLines } from '../worktree/worktree-lifecycle.ts'
 import { configuredDelegationDoctorLines } from './delegation-doctor.ts'
 import { launchAgentDoctorReport } from './launch-agent-doctor.ts'
+import { reportProviderCredentialTrustDoctor } from './provider-credential-trust-doctor.ts'
 
 type DoctorFlags = { has(name: string): boolean }
 type DoctorReporter = { log(value: string): void; exitCode(code: number): void }
@@ -634,11 +634,6 @@ async function reportAgents(
   await reportProjectMcpCredentials(presentation.log)
 }
 
-async function reportProviderCredentialTrust(log: DoctorPresentation['log']): Promise<void> {
-  for (const line of await providerCredentialTrustDoctorLines(
-    Object.values(AGENTS), registeredProjects())) log(line)
-}
-
 function agentOperationalSuffix(
   candidate:
     | { cooling?: string | null; subscriptionPacingHold?: { refusal: string } | null }
@@ -654,7 +649,7 @@ async function reportAgentsAndDelegation(
   presentation: Pick<DoctorPresentation, 'log' | 'candidates'>,
   agentStatus: typeof doctorAgentStatus,
 ): Promise<void> {
-  await reportProviderCredentialTrust(presentation.log)
+  await reportProviderCredentialTrustDoctor(presentation.log)
   await reportAgents(presentation, agentStatus)
   presentation.log('delegation')
   for (const line of configuredDelegationDoctorLines(

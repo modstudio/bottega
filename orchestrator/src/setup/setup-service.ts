@@ -13,6 +13,7 @@ import {
   requireRecordSpaceMembership,
 } from '../record/record-space.ts'
 import { resolveWorktreeLifecycle } from '../worktree/worktree-lifecycle.ts'
+import { gatherProviderCredentialTrustFacts } from './provider-credential-trust.ts'
 import { gatherRepositoryFactsReport } from './repository-facts.ts'
 import {
   applySetupActions,
@@ -31,7 +32,6 @@ import { nonInteractiveSetupFolders, selectSetupFolders } from './setup-folder-s
 import { captureLegacyPathSymlinks, pathDirectories } from './setup-legacy-path.ts'
 import { stableMcpServers } from './setup-mcp.ts'
 import { captureMcpConfigMigrations } from './setup-mcp-config-migration.ts'
-import { gatherProviderCredentialTrustFacts } from './provider-credential-trust.ts'
 import {
   planSetupActions,
   recommendedAnswers,
@@ -118,7 +118,10 @@ async function assembleSetupPlan(folders: string[]): Promise<SetupPlan> {
       blocking: false,
     }
   }
-  const credentialTrustFacts = await gatherProviderCredentialTrustFacts(state.agents, state.projects)
+  const credentialTrustFacts = await gatherProviderCredentialTrustFacts(
+    state.agents,
+    state.projects,
+  )
   const plan = proposeSetup(
     resolveWorktreeLifecycle,
     machine,

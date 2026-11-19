@@ -13,9 +13,7 @@ export function credentialMachineTrustSteps(facts: CredentialMachineTrustFacts):
   if (facts.trusted) return []
   const spaceOption = ` --space ${facts.space}`
   return [
-    ...(facts.registered
-      ? []
-      : [`${PLATFORM_SLUG} machine config machine register${spaceOption}`]),
+    ...(facts.registered ? [] : [`${PLATFORM_SLUG} machine config machine register${spaceOption}`]),
     `${PLATFORM_SLUG} machine config machine trust ${facts.keyId} ${facts.publicKey}${spaceOption}`,
   ]
 }
@@ -24,7 +22,5 @@ export function credentialMachineTrustRemedy(facts: CredentialMachineTrustFacts)
   const steps = credentialMachineTrustSteps(facts)
   if (!steps.length) return null
   const trust = `from a machine already trusted in that space, run \`${steps.at(-1)}\``
-  return steps.length === 1
-    ? trust
-    : `on this machine, run \`${steps[0]}\`; then ${trust}`
+  return steps.length === 1 ? trust : `on this machine, run \`${steps[0]}\`; then ${trust}`
 }

@@ -2,7 +2,6 @@
 /** Seals and addresses typed credentials without exposing plaintext to the hosted record. */
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { credentialMachineTrustRemedy } from '../../../shared/credential-machine-trust.ts'
 import {
   ConfigClientError,
   type ConfigWriteDestination,
@@ -15,6 +14,7 @@ import {
   type CredentialPayer,
   credentialIdentityKey,
 } from '../../../shared/credential.ts'
+import { credentialMachineTrustRemedy } from '../../../shared/credential-machine-trust.ts'
 import {
   credentialScopeFromPayer,
   credentialSetRefusalText,
@@ -28,15 +28,18 @@ import {
   resolveHostedCredential,
   resolveHostedCredentialValue,
 } from '../../../shared/credential-value.ts'
+import { localMachine } from '../../../shared/hosted-secret-row.ts'
 import type { OperatorCredentialIdentity } from '../../../shared/operator-credentials.ts'
-import { configAccessRemedy, recordSpaceMembershipRefusal } from '../../../shared/record-remedies.ts'
+import {
+  configAccessRemedy,
+  recordSpaceMembershipRefusal,
+} from '../../../shared/record-remedies.ts'
 import {
   parseRecordSpaceMemberships,
   recordSpaceMembership,
 } from '../../../shared/record-space-membership.ts'
 import { refusal, renderRefusal } from '../../../shared/refusal.ts'
 import { sealedValueIsEmpty, stripTrailingNewline } from '../../../shared/sealed-value.ts'
-import { localMachine } from '../../../shared/hosted-secret-row.ts'
 import { trustedKeysForSpace } from '../../../shared/trust-log-keys.ts'
 import type { Project } from '../project/projects.ts'
 import { requireProjectRecordDestination } from '../record/record-project-destination-client.ts'

@@ -5,6 +5,10 @@ import { PLATFORM_NAME, PLATFORM_SLUG, WORKER_MCP_SERVER_NAME } from '../../../s
 import type { MachineLevel } from '../../../shared/machine-config.ts'
 import type { Project, ProjectSettings } from '../project/projects.ts'
 import { developerNodeNotice } from './developer-node.ts'
+import {
+  providerCredentialTrustNotices,
+  type SetupCredentialTrustFact,
+} from './provider-credential-trust-notice.ts'
 import type { RepositoryFacts } from './repository-facts-types.ts'
 import type { SetupFacts } from './setup-facts.ts'
 import type { LegacyPathSymlink } from './setup-legacy-path.ts'
@@ -23,10 +27,6 @@ import {
 } from './setup-mcp.ts'
 import type { McpConfigMigration } from './setup-mcp-config.ts'
 import { schedulePlatformSupported } from './setup-schedule-policy.ts'
-import {
-  providerCredentialTrustNotices,
-  type SetupCredentialTrustFact,
-} from './provider-credential-trust-notice.ts'
 import { INFERRED_RECIPE_PATH, inferredRecipeContent, proposedGate } from './setup-toolchain.ts'
 
 export type SetupQuestion = {
