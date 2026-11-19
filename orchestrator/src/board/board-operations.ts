@@ -48,8 +48,8 @@ import {
   type ClaimView,
   claimProject,
   closeQueuedTaskClaim,
-  liveClaimsOfSession,
   listClaims,
+  liveClaimsOfSession,
   releaseClaim,
   releaseTaskClaims,
   renewClaim,
@@ -929,15 +929,10 @@ export function boardLiveClaimsForProject(
   clock = Date.now(),
   database: Database = db(),
 ): ClaimView[] {
-  return listClaims(
-    project,
-    false,
-    {},
-    clock,
-    '',
-    database,
-    { mode: 'coverage-read', session: null },
-  ).claims
+  return listClaims(project, false, {}, clock, '', database, {
+    mode: 'coverage-read',
+    session: null,
+  }).claims
 }
 
 /** Read projects where a session holds a live local claim through the board's liveness policy. */

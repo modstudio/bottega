@@ -14,10 +14,7 @@ import { descendantTaskKeys } from '../workflow/workflow-task-tree.ts'
 export async function sessionEpicWork(session: string, database: Database = db()) {
   const sessionStages = await taskFlowReadStore(database).listOpenStages({ sessionId: session })
   const claimProjects = boardLiveClaimProjectsForSession(session, Date.now(), database)
-  const projects = new Set([
-    ...claimProjects,
-    ...sessionStages.map(({ project }) => project),
-  ])
+  const projects = new Set([...claimProjects, ...sessionStages.map(({ project }) => project)])
   const surfaces: Array<{ epic: string; queue: string[]; open: string[]; cursor: number }> = []
   for (const project of projects) {
     const stages = await taskFlowReadStore(database).listStages({
@@ -36,8 +33,7 @@ export async function sessionEpicWork(session: string, database: Database = db()
     )
     for (const cursor of epicCursors) {
       const descendants = descendantTaskKeys(cursor.workflow_key, facts)
-      if (!sessionWorksUnderEpic(claims, session, cursor.workflow_key, descendants))
-        continue
+      if (!sessionWorksUnderEpic(claims, session, cursor.workflow_key, descendants)) continue
       const state = childQueueState(cursor.workflow_key, session, facts)
       surfaces.push({
         epic: cursor.workflow_key,

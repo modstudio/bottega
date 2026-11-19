@@ -415,9 +415,7 @@ class RecordTaskFlowReadStore {
     return lineage.reverse().flatMap((item) =>
       [item.stage, ...(item.otherStages ?? [])]
         .filter((stage): stage is NonNullable<typeof stage> => stage !== null)
-        .filter(
-          (stage) => item.flow.id !== flowRecordId || stage.id === stageRecordId,
-        )
+        .filter((stage) => item.flow.id !== flowRecordId || stage.id === stageRecordId)
         .sort((left, right) => left.number - right.number)
         .flatMap((stage) => (stage.stepTexts ?? []).map(textRow)),
     )
