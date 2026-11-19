@@ -450,7 +450,6 @@ test('a subject upsert for a project absent from the ownership map is skipped', 
   installRecordApiClient(
     feedClient(async () => {
       if (request++ > 0) return empty('unmapped-after')
-      project(projectName)
       return {
         changes: [
           {

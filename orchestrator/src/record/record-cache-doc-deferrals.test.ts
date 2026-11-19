@@ -24,6 +24,8 @@ function ownershipTransitionFixture() {
   const referencedDocId = newRecordId()
   const validDocId = newRecordId()
   const lensId = newRecordId()
+  const workflowId = newRecordId()
+  const portId = newRecordId()
   const activeAt = '2026-10-08T12:00:00.000Z'
   const mappedAt = '2026-10-08T12:01:00.000Z'
   let mapped = false
@@ -126,6 +128,41 @@ function ownershipTransitionFixture() {
           endCursor: encodeRecordCursor({ at: activeAt, id: lensId }),
         }
       : { items: [], nextCursor: null }
+  client.listWorkflowCatalogue = async (table, _query, destination) => ({
+    items:
+      !mapped && table === 'workflow' && destination?.destinationSpaceId === 'space-active'
+        ? [
+            {
+              id: workflowId,
+              spaceId: 'space-active',
+              slug: 'after-owned-docs',
+              generation: 1,
+              createdAt: activeAt,
+              updatedAt: activeAt,
+            },
+          ]
+        : [],
+    nextCursor: null,
+  })
+  client.listPortCatalogue = async (table, _query, destination) => ({
+    items:
+      !mapped && table === 'port_doctrine' && destination?.destinationSpaceId === 'space-active'
+        ? [
+            {
+              id: portId,
+              spaceId: 'space-active',
+              number: 1,
+              title: 'After owned docs',
+              body: 'The port family still runs.',
+              createdAt: activeAt,
+              retiredAt: null,
+              version: 1,
+              updatedAt: activeAt,
+            },
+          ]
+        : [],
+    nextCursor: null,
+  })
   installRecordApiClient(client)
   return {
     projectRecordId,
@@ -134,6 +171,8 @@ function ownershipTransitionFixture() {
     referencedDocId,
     validDocId,
     lensId,
+    workflowId,
+    portId,
     remap() {
       mapped = true
       upsertProject({
@@ -146,29 +185,35 @@ function ownershipTransitionFixture() {
   }
 }
 
-test('an unmapped project applies its subjects and referencing docs before later keyset families', async () => {
-  const fixture = ownershipTransitionFixture()
-
-  expect(await pullRecordCache(db())).toMatchObject({ subjects: 1, docs: 2, lensCatalogue: 1 })
-  expect(db().query('SELECT space_id FROM subject WHERE id=?').get(fixture.subjectId)).toEqual({
-    space_id: 'space-active',
-  })
-  expect(
-    db().query('SELECT 1 FROM doc WHERE record_id=?').get(fixture.referencedDocId),
-  ).not.toBeNull()
+async function expectUnregisteredProjectDeferral(
+  fixture: ReturnType<typeof ownershipTransitionFixture>,
+): Promise<void> {
+  await expect(pullRecordCache(db())).rejects.toThrow(
+    `record cache deferred document ${fixture.referencedDocId}: subject ${fixture.subjectId} is not local`,
+  )
+  expect(db().query('SELECT 1 FROM subject WHERE id=?').get(fixture.subjectId)).toBeNull()
+  expect(db().query('SELECT 1 FROM doc WHERE record_id=?').get(fixture.referencedDocId)).toBeNull()
   expect(db().query('SELECT 1 FROM doc WHERE record_id=?').get(fixture.validDocId)).not.toBeNull()
   expect(db().query('SELECT 1 FROM lens WHERE record_id=?').get(fixture.lensId)).not.toBeNull()
+  expect(db().query('SELECT 1 FROM workflow WHERE record_id=?').get(fixture.workflowId)).not.toBeNull()
+  expect(db().query('SELECT 1 FROM port_doctrine WHERE record_id=?').get(fixture.portId)).not.toBeNull()
+}
+
+test('an unregistered project defers its referencing doc after later keyset families run', async () => {
+  const fixture = ownershipTransitionFixture()
+
+  await expectUnregisteredProjectDeferral(fixture)
   expect(
     db().query("SELECT 1 FROM schema_meta WHERE key='record_subjects_cursor:space-active'").get(),
   ).not.toBeNull()
   expect(
     db().query("SELECT 1 FROM schema_meta WHERE key='record_docs_cursor:space-active'").get(),
-  ).not.toBeNull()
+  ).toBeNull()
 })
 
-test('a later project remap moves subjects and docs to the same owned space', async () => {
+test('a later project remap applies subjects and docs after the initial refusal', async () => {
   const fixture = ownershipTransitionFixture()
-  await pullRecordCache(db())
+  await expectUnregisteredProjectDeferral(fixture)
   fixture.remap()
 
   expect(await pullRecordCache(db())).toMatchObject({ subjects: 1, docs: 2 })

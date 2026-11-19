@@ -419,37 +419,25 @@ describe('record cache pull', () => {
     const projectName = 'late-project'
     const subjectId = newRecordId()
     const updatedAt = '2026-10-08T12:00:00.000Z'
-    let registered = false
     installRecordApiClient(
       clientWith({
-        listProjectSubjects: async () => {
-          if (!registered) {
-            upsertProject({
-              recordId: newRecordId(),
-              name: projectName,
-              path: '/w/late-project',
-              settings: {},
-            })
-            registered = true
-          }
-          return {
-            items: [
-              {
-                id: subjectId,
-                project: projectName,
-                name: 'Late subject',
-                definition: 'Must be cached in the active space.',
-                position: 0,
-                parentId: null,
-                state: 'active' as const,
-                retiredAt: null,
-                createdAt: updatedAt,
-                updatedAt,
-              },
-            ],
-            nextCursor: null,
-          }
-        },
+        listProjectSubjects: async () => ({
+          items: [
+            {
+              id: subjectId,
+              project: projectName,
+              name: 'Late subject',
+              definition: 'Must be cached in the active space.',
+              position: 0,
+              parentId: null,
+              state: 'active' as const,
+              retiredAt: null,
+              createdAt: updatedAt,
+              updatedAt,
+            },
+          ],
+          nextCursor: null,
+        }),
       }),
     )
 
