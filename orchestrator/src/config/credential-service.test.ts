@@ -245,7 +245,19 @@ test('set credential writes a project-bound row with its metadata and hint', asy
     recipientPublicKey: pair.publicKey,
   })
   const encode = (value: Uint8Array) => Buffer.from(value).toString('base64url')
-  const putSecret = mock(async (_key: string, input: object, _destination: object) => input)
+  const stored = new Map<string, Record<string, unknown>>()
+  const putSecret = mock(
+    async (key: string, input: Record<string, unknown>, destination: { projectId?: string | null }) => {
+      const row = {
+        ...input,
+        key,
+        rowVersion: 1,
+        updatedAt: '2026-11-18T00:00:00.000Z',
+      }
+      stored.set(String(destination.projectId ?? ''), row)
+      return row
+    },
+  )
   const dataKey = {
     id: dekId,
     version: 1,
@@ -266,7 +278,14 @@ test('set credential writes a project-bound row with its metadata and hint', asy
     listDataKeys: async () => [dataKey],
     listMachineKeys: async () => [],
     listSecrets: async () => [],
-    getSecret: async () => {
+    getSecret: async (
+      _key: string,
+      _scope: string,
+      _environment: string,
+      destination: { projectId?: string | null } = {},
+    ) => {
+      const row = stored.get(String(destination.projectId ?? ''))
+      if (row) return row
       throw new ConfigClientError('response', '/v1/config/secrets/OPENROUTER_API_KEY', 404)
     },
     whoami: async () => ({

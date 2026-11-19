@@ -4,6 +4,7 @@ import {
   type ConfigSecret,
   configClient,
 } from './config-client.ts'
+import { PLATFORM_SLUG } from './brand.ts'
 import type { HostedConfigIdentity } from './hosted-config-space.ts'
 import {
   HOSTED_CONFIG_ENVIRONMENT,
@@ -63,7 +64,16 @@ async function defaults(signal?: AbortSignal): Promise<Dependencies> {
     client,
     machine: await machineKeyInfo(pair),
     trust: await trustedKeysForSpace(client, identity.spaceId),
+    pinnedIdentity: identity,
   }
+}
+
+function pinnedDestination(deps: Dependencies): { destinationSpaceId: string } {
+  if (!deps.pinnedIdentity)
+    throw new Error(
+      `hosted config machine is not initialized; run \`${PLATFORM_SLUG} machine config machine init --space <slug>\``,
+    )
+  return { destinationSpaceId: deps.pinnedIdentity.spaceId }
 }
 
 async function rowInScope(
@@ -72,7 +82,12 @@ async function rowInScope(
   deps: Dependencies,
 ): Promise<(ConfigSecret & { envelope: string }) | undefined> {
   try {
-    return await deps.client.getSecret(name, scope, HOSTED_CONFIG_ENVIRONMENT)
+    return await deps.client.getSecret(
+      name,
+      scope,
+      HOSTED_CONFIG_ENVIRONMENT,
+      pinnedDestination(deps),
+    )
   } catch (error) {
     if (error instanceof ConfigClientError && error.status === 404) return undefined
     throw error
@@ -108,7 +123,7 @@ async function one(name: string, deps: Dependencies): Promise<OneSecret> {
   for (const scope of SECRET_SCOPES) {
     const row = await rowInScope(name, scope, deps)
     if (!row) continue
-    const key = await deps.client.getDataKey(row.dekId, deps.machine.keyId)
+    const key = await deps.client.getDataKey(row.dekId, deps.machine.keyId, pinnedDestination(deps))
     const value = await openedValue(name, row, scope, key, deps)
     if (!sealedValueIsEmpty(value)) return { value, sealedEmpty: false }
     blank = true

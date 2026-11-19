@@ -95,6 +95,13 @@ async function identity(client: ConfigClient, env: ConfigEnvironment = process.e
   return hostedIdentity(client, readHostedConfigIdentity(env))
 }
 
+export async function pinnedConfigDestination(
+  client: ConfigClient,
+  env: ConfigEnvironment = process.env,
+): Promise<WriteDestination> {
+  return { destinationSpaceId: (await identity(client, env)).spaceId }
+}
+
 export { personalConfigWriteDestination }
 
 async function unpinServerRevoked(client: ConfigClient, destination: ConfigDestination = {}) {
@@ -609,7 +616,7 @@ export async function setSecret(
       rowVersion,
     },
   })
-  return client.putSecret(
+  const written = await client.putSecret(
     key,
     {
       scope,
@@ -621,6 +628,24 @@ export async function setSecret(
     },
     destination,
   )
+  let read: (ConfigSecret & { envelope: string }) | null = null
+  try {
+    read = await client.getSecret(key, scope, environment, destination)
+  } catch (error) {
+    if (!isNotFound(error)) throw error
+  }
+  if (
+    !read ||
+    read.key !== key ||
+    read.scope !== scope ||
+    read.environment !== environment ||
+    read.rowVersion !== rowVersion ||
+    read.dekId !== dataKey.id
+  )
+    throw new Error(
+      `refusing sealed secret success: wrote ${key} in space ${spaceId} but could not read that row back from space ${destination.destinationSpaceId}; verify record access, then retry \`${PLATFORM_SLUG} machine config secret set ${key}\``,
+    )
+  return written
 }
 
 export async function deleteSecret(
@@ -1062,6 +1087,9 @@ export function deleteMachineEntry(key: string, env: ConfigEnvironment = process
   deleteMachineAutonomy(key, env)
 }
 
-export async function listSecrets(client = hostedConfigClient()) {
-  return client.listSecrets(HOSTED_CONFIG_ENVIRONMENT)
+export async function listSecrets(
+  client = hostedConfigClient(),
+  env: ConfigEnvironment = process.env,
+) {
+  return client.listSecrets(HOSTED_CONFIG_ENVIRONMENT, await pinnedConfigDestination(client, env))
 }

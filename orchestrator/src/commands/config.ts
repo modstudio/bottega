@@ -4,6 +4,7 @@ import { createInterface } from 'node:readline/promises'
 import type { Command } from 'commander'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { ConfigClient, ConfigScope } from '../../../shared/config-client.ts'
+import type { ConfigEnvironment } from '../../../shared/config-directory.ts'
 import { isDelegationKey } from '../../../shared/delegation-mode.ts'
 import { KEYSTORE_ENV } from '../../../shared/key-store-constants.ts'
 import { DISPLAY_TIMEZONE_KEY, listMachineEntries } from '../../../shared/machine-config.ts'
@@ -27,6 +28,7 @@ import {
   machineRevoke,
   machineShow,
   personalConfigWriteDestination,
+  pinnedConfigDestination,
   sealSecretDecision,
   setConfigEntry,
   setSecret,
@@ -125,6 +127,16 @@ export async function configWriteTarget(
     }
   }
   return { scope: 'user', destination: await personalConfigWriteDestination(client) }
+}
+
+export async function secretWriteTarget(
+  verb: string,
+  requested: string | undefined,
+  client: ConfigClient,
+  env: ConfigEnvironment = process.env,
+): Promise<{ scope: ConfigScope; destination: { destinationSpaceId: string } }> {
+  if (requested) return configWriteTarget(verb, requested, client)
+  return { scope: 'user', destination: await pinnedConfigDestination(client, env) }
 }
 function expectedRowVersion(value: string | undefined): number | null | undefined {
   if (value === undefined) return undefined
@@ -291,7 +303,7 @@ async function selectedMachineSpace(
 async function sealPipedSecret(key: string, options: { space?: string }): Promise<void> {
   if (process.stdin.isTTY) throw new Error('secret value must be provided on stdin')
   const client = hostedConfigClient()
-  const target = await configWriteTarget('machine config secret set', options.space, client)
+  const target = await secretWriteTarget('machine config secret set', options.space, client)
   const decision = sealSecretDecision(key, await Bun.stdin.text(), target.scope)
   if (decision.kind === 'refuse') throw new Error(decision.refusal)
   await setSecret(key, decision.value, target.scope, client, { destination: target.destination })
@@ -373,7 +385,11 @@ export function register(program: Command): void {
     .option('--space <slug>', 'delete the value from this record space')
     .action(async (key, options) => {
       const client = hostedConfigClient()
-      const target = await configWriteTarget('machine config secret delete', options.space, client)
+      const target = await secretWriteTarget(
+        'machine config secret delete',
+        options.space,
+        client,
+      )
       await deleteSecret(key, target.scope, client, { destination: target.destination })
     })
   secret

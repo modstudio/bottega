@@ -152,6 +152,7 @@ export async function rotationFixture(
   const revokeDestinations: string[] = []
   const trustLogClient = trackedTrustLogClient(trustLog)
   let oldRetiredAt: string | null = null
+  let hasSecret = resumeRow
   const client = {
     whoami: async () => ({ user: { id: userId }, activeSpaceId: spaceId }),
     currentDataKey: async () => current,
@@ -183,7 +184,7 @@ export async function rotationFixture(
       _environment: string,
       destination: { projectId?: string | null } = {},
     ) => {
-      if (!resumeRow) throw new ConfigClientError('response', '/v1/config/secrets', 404)
+      if (!hasSecret) throw new ConfigClientError('response', '/v1/config/secrets', 404)
       return secrets.find((row) => row.projectId === (destination.projectId ?? null))!
     },
     putSecret: async (
@@ -197,10 +198,11 @@ export async function rotationFixture(
       const updated = {
         ...secret,
         dekId: input.dekId,
-        rowVersion: secret.rowVersion + 1,
+        rowVersion: hasSecret ? secret.rowVersion + 1 : 1,
         envelope: input.envelope,
       }
       secrets = secrets.with(index, updated)
+      hasSecret = true
       return updated
     },
     addWraps: async (

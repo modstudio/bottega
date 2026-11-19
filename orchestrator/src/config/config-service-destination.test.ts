@@ -14,7 +14,7 @@ import {
   wrapDataKey,
 } from '../../../shared/secret-envelope.ts'
 import { pinTrustedMachine } from '../../../shared/trust-list.ts'
-import { claimCurrentMachineKey, machineRevoke, setSecret } from './config-service.ts'
+import { claimCurrentMachineKey, listSecrets, machineRevoke, setSecret } from './config-service.ts'
 import { rotationFixture } from './config-service-rotation.fixture.ts'
 
 const roots: string[] = []
@@ -71,6 +71,7 @@ async function destinationDataKeyFixture(hasCurrentDataKey: boolean) {
     machineKeys: [] as string[],
     trustLog: [] as string[],
   }
+  let stored: Record<string, unknown> | undefined
   const client = {
     whoami: async () => ({ user: { id: userId }, activeSpaceId, memberships: [] }),
     currentDataKey: async () => {
@@ -107,9 +108,18 @@ async function destinationDataKeyFixture(hasCurrentDataKey: boolean) {
       }
     },
     getSecret: async () => {
+      if (stored) return stored
       throw new ConfigClientError('response', '/v1/config/secrets/TOKEN', 404)
     },
-    putSecret: async () => ({}),
+    putSecret: async (key: string, input: Record<string, unknown>) => {
+      stored = {
+        ...input,
+        key,
+        rowVersion: 1,
+        updatedAt: '2026-11-18T00:00:00.000Z',
+      }
+      return stored
+    },
     listSecrets: async () => [],
     listDataKeys: async () => [existing],
   } as unknown as ConfigClient
@@ -141,6 +151,44 @@ test('a write to space B reads machine-key revocations from B', async () => {
   })
 
   expect(fixture.calls.machineKeys).toEqual([fixture.destinationSpaceId])
+})
+
+test('secret list names the pinned space instead of relying on the active tenant default', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'config-list-destination-'))
+  roots.push(root)
+  const env = { BOTTEGA_CONFIG_HOME: root, BOTTEGA_KEYSTORE: 'file' }
+  const spaceId = '01990000-0000-7000-8000-000000000031'
+  const userId = '01990000-0000-7000-8000-000000000032'
+  writeHostedConfigIdentity({ spaceId, userId }, env)
+  const destinations: string[] = []
+  const client = {
+    whoami: async () => ({ user: { id: userId }, activeSpaceId: spaceId }),
+    listSecrets: async (_environment: string, destination: { destinationSpaceId?: string }) => {
+      destinations.push(destination.destinationSpaceId ?? '')
+      return []
+    },
+  } as unknown as ConfigClient
+
+  await listSecrets(client, env)
+  expect(destinations).toEqual([spaceId])
+})
+
+test('secret set refuses success when its destination cannot read the written row back', async () => {
+  const fixture = await destinationDataKeyFixture(true)
+  fixture.client.putSecret = async (key, input) => ({
+    ...input,
+    key,
+    rowVersion: 1,
+    updatedAt: '2026-11-18T00:00:00.000Z',
+  })
+
+  await expect(
+    setSecret('TOKEN', 'value', 'space', fixture.client, {
+      destination: { destinationSpaceId: fixture.destinationSpaceId },
+    }),
+  ).rejects.toThrow(
+    `wrote TOKEN in space ${fixture.destinationSpaceId} but could not read that row back from space ${fixture.destinationSpaceId}`,
+  )
 })
 
 test('machine revoke sends wrap and revoke writes to the same active space', async () => {

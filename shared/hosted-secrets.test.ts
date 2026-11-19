@@ -47,13 +47,26 @@ async function fixture() {
     ).toString('base64url'),
   })
   const rows = new Map([['user:TOKEN', rowFor('TOKEN', 'user', 'hosted-value')]])
+  const destinations = { secrets: [] as string[], dataKeys: [] as string[] }
   const client = {
-    getSecret: async (name: string, scope: string) => {
+    getSecret: async (
+      name: string,
+      scope: string,
+      _environment: string,
+      destination: { destinationSpaceId?: string },
+    ) => {
+      destinations.secrets.push(destination.destinationSpaceId ?? '')
       const row = rows.get(`${scope}:${name}`)
       if (!row) throw new ConfigClientError('response', `/v1/config/secrets/${name}`, 404)
       return row
     },
-    getDataKey: async () => ({
+    getDataKey: async (
+      _id: string,
+      _recipient: string,
+      destination: { destinationSpaceId?: string },
+    ) => {
+      destinations.dataKeys.push(destination.destinationSpaceId ?? '')
+      return ({
       id: dekId,
       version: 1,
       createdAt: '2026-09-18T12:00:00.000Z',
@@ -66,7 +79,8 @@ async function fixture() {
           ciphertext: Buffer.from(wrapped.ciphertext).toString('base64url'),
         },
       ],
-    }),
+      })
+    },
     whoami: async () => ({ user: { id: userId }, activeSpaceId: spaceId }),
   } as unknown as ConfigClient
   return {
@@ -75,6 +89,7 @@ async function fixture() {
     dek,
     client,
     rows,
+    destinations,
     rowFor,
     trust: {
       [keyId]: {
@@ -92,6 +107,7 @@ test('hosted resolver fetches, unwraps and opens a sealed value', async () => {
     values: { TOKEN: 'hosted-value' },
     sealedEmpty: [],
   })
+  expect(deps.destinations).toEqual({ secrets: [spaceId], dataKeys: [spaceId] })
 })
 
 test('a sealed copy that is blank resolves as absent and reports itself sealed empty', async () => {
