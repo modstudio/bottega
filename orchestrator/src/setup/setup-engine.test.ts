@@ -81,7 +81,7 @@ const machine = {
     remedy: '',
     fixes: [],
   },
-} as SetupFacts
+} as unknown as SetupFacts
 
 test('does not plan a file keystore when the keychain is usable, unknown, or explicitly selected', () => {
   const keystore = (keychainUsable: boolean | null, source: SetupFacts['keystore']['source']) =>
