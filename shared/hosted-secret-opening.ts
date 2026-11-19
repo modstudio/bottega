@@ -9,12 +9,10 @@ import type {
 import {
   credentialMachineTrustFacts,
   missingDataKeyWrapRemedy,
-  uncheckedCredentialMachineTrustRemedy,
 } from './credential-machine-trust.ts'
-import { readCredentialMachineTrustFacts } from './credential-machine-trust-reader.ts'
+import { readCredentialMachineTrustFactsOrUnchecked } from './credential-machine-trust-reader.ts'
 import { type HostedConfigIdentity, readHostedConfigIdentity } from './hosted-config-space.ts'
 import {
-  machineNotTrustedRemedy,
   pinnedSpaceMismatchRemedy,
   pinnedUserMismatchRemedy,
   RECORD_ACTIVE_SPACE_REMEDY,
@@ -110,7 +108,7 @@ export async function destinationHostedIdentity(
   })
   if (decision.allowed) return decision.identity
   throw new Error(
-    machineNotTrustedRemedy(
+    missingDataKeyWrapRemedy(
       credentialMachineTrustFacts({
         space: destination.spaceId,
         machine: destination.machine,
@@ -163,26 +161,15 @@ function trustedWrap(input: {
 
 /** Gather current facts only after a missing wrap and attach the exact repair refusal. */
 export async function missingHostedDataKeyWrapError(
-  client: Pick<ConfigClient, 'listMachineKeys' | 'readTrustLog'>,
+  client: Pick<ConfigClient, 'listMachineKeys' | 'readTrustLog' | 'whoami'>,
   identity: HostedConfigIdentity,
   machine: MachineKeyPair & { keyId: string },
 ): Promise<HostedOpenError> {
-  try {
-    const facts = await readCredentialMachineTrustFacts(client, {
-      spaceId: identity.spaceId,
-      space: identity.spaceId,
-      machine,
-    })
-    return new HostedOpenError('missing-wrap', missingDataKeyWrapRemedy(facts))
-  } catch (error) {
-    return new HostedOpenError(
-      'missing-wrap',
-      uncheckedCredentialMachineTrustRemedy(
-        { space: identity.spaceId, machine },
-        error instanceof Error ? error.message : String(error),
-      ),
-    )
-  }
+  const facts = await readCredentialMachineTrustFactsOrUnchecked(client, {
+    space: { kind: 'membership', spaceId: identity.spaceId },
+    machine,
+  })
+  return new HostedOpenError('missing-wrap', missingDataKeyWrapRemedy(facts))
 }
 
 /** The only operation that chooses a wrap and opens a hosted secret row. */

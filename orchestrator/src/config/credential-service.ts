@@ -14,11 +14,8 @@ import {
   type CredentialPayer,
   credentialIdentityKey,
 } from '../../../shared/credential.ts'
-import {
-  missingDataKeyWrapRemedy,
-  uncheckedCredentialMachineTrustRemedy,
-} from '../../../shared/credential-machine-trust.ts'
-import { readCredentialMachineTrustFacts } from '../../../shared/credential-machine-trust-reader.ts'
+import { missingDataKeyWrapRemedy } from '../../../shared/credential-machine-trust.ts'
+import { readCredentialMachineTrustFactsOrUnchecked } from '../../../shared/credential-machine-trust-reader.ts'
 import {
   credentialScopeFromPayer,
   credentialSetRefusalText,
@@ -155,21 +152,12 @@ async function missingWrapTrustRemedy(
   address: CredentialAddress,
   client: ReturnType<typeof configClient>,
 ): Promise<string> {
-  const machine = await localMachine()
-  try {
-    return missingDataKeyWrapRemedy(
-      await readCredentialMachineTrustFacts(client, {
-        spaceId: address.destinationSpaceId,
-        space: address.spaceName,
-        machine,
-      }),
-    )
-  } catch (error) {
-    return uncheckedCredentialMachineTrustRemedy(
-      { space: address.spaceName, machine },
-      error instanceof Error ? error.message : String(error),
-    )
-  }
+  return missingDataKeyWrapRemedy(
+    await readCredentialMachineTrustFactsOrUnchecked(client, {
+      space: { kind: 'known', spaceId: address.destinationSpaceId, slug: address.spaceName },
+      machine: localMachine,
+    }),
+  )
 }
 
 async function missingProjectWrapRefusal(

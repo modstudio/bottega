@@ -163,10 +163,9 @@ export const setupModuleSpecs: readonly SetupModuleSpec[] = [
       '../../../shared/machine-key-store.ts',
       '../../../shared/record-session.ts',
       '../../../shared/record-space-membership.ts',
-      './provider-credential-trust-notice.ts',
       './setup-mcp.ts',
     ],
-    typeOnlyAllowed: ['../project/projects.ts'],
+    typeOnlyAllowed: ['../../../shared/credential-machine-trust.ts', '../project/projects.ts'],
     reason: 'Keep bounded hosted trust reads outside pure setup proposal policy.',
   },
   {

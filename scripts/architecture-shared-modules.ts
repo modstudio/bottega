@@ -31,6 +31,7 @@ export const sharedModules: ArchitectureModule[] = [
     './config-client.ts',
     './config-directory.ts',
     './credential-machine-trust.ts',
+    './record-space-membership.ts',
     './trust-log-keys.ts',
   ]),
   module('shared/credential-resolution.ts', ['./brand.ts', './credential.ts']),
@@ -106,7 +107,6 @@ export const sharedModules: ArchitectureModule[] = [
   module('shared/machine-key-id.ts', []),
   module('shared/record-remedies.ts', [
     './brand.ts',
-    './credential-machine-trust.ts',
     './refusal.ts',
   ]),
   module('shared/record-migrate-secret.ts', []),

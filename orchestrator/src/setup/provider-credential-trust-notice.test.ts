@@ -7,6 +7,7 @@ test('setup proposes the ordered provider credential trust notice from gathered 
     {
       status: 'checked',
       registered: false,
+      revoked: false,
       trusted: false,
       space: 'studio',
       keyId: 'key-id',
@@ -25,7 +26,7 @@ test('setup reports when provider credential trust could not be checked', () => 
     ]),
   ).toEqual([
     {
-      message: 'provider credential trust was not checked in record space studio: record timed out',
+      message: `credential trust could not be checked in record space studio: record timed out; if this machine is not registered there, on this machine run \`${PLATFORM_SLUG} machine config machine register --space studio\`; then from a machine already trusted in that space, run \`${PLATFORM_SLUG} machine config machine trust <keyId> <publicKey> --space studio\``,
       fix: `${PLATFORM_SLUG} machine setup plan`,
       blocking: false,
     },

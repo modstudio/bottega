@@ -7,31 +7,28 @@ import {
 
 type ProviderCredentialTrustNotice = { message: string; fix: string; blocking: false }
 
-export type SetupCredentialTrustFact =
-  | ({ status: 'checked' } & CredentialMachineTrustFacts)
-  | { status: 'could-not-check'; space: string; reason: string }
+export type SetupCredentialTrustFact = CredentialMachineTrustFacts
 
 export function providerCredentialTrustNotices(
   facts: readonly SetupCredentialTrustFact[],
 ): ProviderCredentialTrustNotice[] {
   return facts.flatMap((fact) => {
+    const remedy = credentialMachineTrustRemedy(fact)
+    if (!remedy) return []
     if (fact.status === 'could-not-check')
       return [
         {
-          message: `provider credential trust was not checked in record space ${fact.space}: ${fact.reason}`,
+          message: remedy,
           fix: `${PLATFORM_SLUG} machine setup plan`,
           blocking: false,
         },
       ]
-    const fix = credentialMachineTrustRemedy(fact)
-    return fix
-      ? [
-          {
-            message: `provider credentials in record space ${fact.space} cannot be opened because this machine is not trusted there`,
-            fix,
-            blocking: false,
-          },
-        ]
-      : []
+    return [
+      {
+        message: `provider credentials in record space ${fact.space} cannot be opened because this machine is not trusted there`,
+        fix: remedy,
+        blocking: false,
+      },
+    ]
   })
 }

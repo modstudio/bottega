@@ -94,6 +94,7 @@ async function openedValue(
   key: Awaited<ReturnType<ConfigClient['getDataKey']>>,
   deps: Dependencies,
 ): Promise<string> {
+  const identity = await hostedIdentity(deps.client, deps.pinnedIdentity)
   try {
     const plaintext = await openHostedSecret({
       row,
@@ -101,7 +102,7 @@ async function openedValue(
       machine: deps.machine,
       trust: deps.trust,
       expected: { key: name, scope, environment: HOSTED_CONFIG_ENVIRONMENT },
-      identity: await hostedIdentity(deps.client, deps.pinnedIdentity),
+      identity,
     })
     return new TextDecoder('utf-8', { fatal: true }).decode(plaintext)
   } catch (error) {
@@ -112,7 +113,7 @@ async function openedValue(
         error.reason,
         await missingHostedDataKeyWrapError(
           deps.client,
-          await hostedIdentity(deps.client, deps.pinnedIdentity),
+          identity,
           deps.machine,
         ),
       )

@@ -1,8 +1,4 @@
 import { PLATFORM_SLUG } from './brand.ts'
-import {
-  type CredentialMachineTrustFacts,
-  missingDataKeyWrapRemedy,
-} from './credential-machine-trust.ts'
 import { type RefusalRemedy, refusal, renderRefusal } from './refusal.ts'
 
 export function recordSignInRemedy(email: string): Extract<RefusalRemedy, { kind: 'command' }> {
@@ -52,9 +48,6 @@ export function recordUnreachableRefusal(
     ),
   )
 }
-
-export const machineNotTrustedRemedy = (facts: CredentialMachineTrustFacts) =>
-  missingDataKeyWrapRemedy(facts)
 
 export const configAccessRemedy = (space?: string) =>
   `signed-in user lacks config access${space ? ` in record space ${space}` : ''}; a space owner or admin grants it with \`${PLATFORM_SLUG} record space access grant <email>\``
