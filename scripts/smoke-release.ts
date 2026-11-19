@@ -109,7 +109,7 @@ printf '%s\\n' "$doctor_output" | grep -F 'socat not installed'
 mkdir -p /tmp/bootstrap-bin /tmp/missing-deps-repository
 printf '%s\\n' '#!/bin/sh' 'for arg in "$@"; do case "$arg" in --local-env-vars) printf "%s\\n" GIT_DIR; exit 0 ;; --show-toplevel) printf "%s\\n" /tmp/missing-deps-repository; exit 0 ;; esac; done' 'exit 1' > /tmp/bootstrap-bin/git
 chmod 755 /tmp/bootstrap-bin/git
-PATH=/tmp/bootstrap-bin:/tmp/bin:/usr/bin:/bin ${installedBinary} project add /tmp/missing-deps-repository --name missing-deps-smoke --allow-incomplete
+PATH=/tmp/bootstrap-bin:/tmp/bin:/usr/bin:/bin ${installedBinary} project add /tmp/missing-deps-repository --name missing-deps-smoke --allow-incomplete --settings '{"trunk":"main"}'
 set +e
 probe_output=$(cd /tmp/missing-deps-repository && PATH=/tmp/bootstrap-bin:/tmp/bin:/usr/bin:/bin ${installedBinary} workflow probe -- git status --short 2>&1)
 probe_status=$?
@@ -155,7 +155,7 @@ su -s /bin/sh smoke -c '
   printf "%s\\n" "$agent_output" | grep "^codex "
   printf "%s\\n" "$agent_output" | grep "^grok "
   cd /tmp/probe-repository
-  ${installedBinary} project add /tmp/probe-repository --name release-smoke
+  ${installedBinary} project add /tmp/probe-repository --name release-smoke --settings "{\"trunk\":\"main\"}"
   ${installedBinary} project set release-smoke --stack git --settings "$(cat /tmp/release-smoke-settings.json)"
   ${installedBinary} workflow import --cwd /tmp/probe-repository --reason "DEV-2421 release smoke workflow"
   ${installedBinary} workflow promote-tree --cwd /tmp/probe-repository --reason "DEV-2421 release smoke workflow"

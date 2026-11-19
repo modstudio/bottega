@@ -3,7 +3,7 @@
 import { readdirSync, realpathSync } from 'node:fs'
 import { basename, resolve } from 'node:path'
 import { gitAt } from '../../../shared/git.ts'
-import { sniffStack } from '../project/projects.ts'
+import { readOriginHeadBranch, sniffStack } from '../project/projects.ts'
 import type { RepositoryFacts } from './repository-facts-types.ts'
 import { detectRepositoryToolchain } from './repository-toolchain.ts'
 import type { SetupNotice } from './setup-engine.ts'
@@ -71,12 +71,7 @@ async function inspectRepository(
   const branch = runGit(path, ['symbolic-ref', '--quiet', '--short', 'HEAD'])
   const status = runGit(path, ['status', '--porcelain'])
   const origin = runGit(path, ['remote', 'get-url', 'origin'])
-  const remoteHead = runGit(path, [
-    'symbolic-ref',
-    '--quiet',
-    '--short',
-    'refs/remotes/origin/HEAD',
-  ])
+  const remoteHead = readOriginHeadBranch(path, runGit)
   const originUrl = redactOriginUrl(
     !origin.timedOut && origin.exitCode === 0 && origin.stdout ? origin.stdout : null,
   )
@@ -88,10 +83,7 @@ async function inspectRepository(
     clean: !status.timedOut && status.exitCode === 0 && status.stdout === '',
     originUrl,
     originHost: originHost(originUrl),
-    remoteDefaultBranch:
-      !remoteHead.timedOut && remoteHead.exitCode === 0 && remoteHead.stdout
-        ? remoteHead.stdout.replace(/^origin\//, '')
-        : null,
+    remoteDefaultBranch: !remoteHead.timedOut ? remoteHead.branch : null,
     stack: sniff(path),
     inspectionTimedOut: [branch, status, origin, remoteHead].some((capture) => capture.timedOut),
     ...(await detectRepositoryToolchain(path)),

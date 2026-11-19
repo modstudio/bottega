@@ -26,6 +26,10 @@ import {
   purgeProjectInHostedRecord,
   refuseHostedProjectSpaceChange,
 } from './project-hosted-write.ts'
+import {
+  decideProjectLandingBranch,
+  type ProjectLandingBranchDecision,
+} from './project-landing-branch.ts'
 import { listedProjectJson, projectProblems } from './project-list-json.ts'
 import { fillProjectRecordIds } from './project-record-identity.ts'
 import { formatProjectRelink, relinkProjectByName } from './project-relink.ts'
@@ -40,6 +44,7 @@ import {
   assertProjectRename,
   assertRegisterBranches,
   assertRegisterVisibility,
+  isProjectRepository,
   type Project,
   type ProjectSettings,
   projectByName,
@@ -48,6 +53,7 @@ import {
   projects,
   purgeLocalProjectRows,
   pushProjects,
+  readOriginHeadBranch,
   registerBranchCheck,
   removeProject,
   retiredProjectByName,
@@ -218,7 +224,12 @@ async function pullProjectAddCatalogues(
 export async function addProject(
   input: AddProjectInput,
   requireMembership: (space: string) => Promise<unknown>,
-): Promise<{ project: Project; wasRetired: boolean; adoptedSpace?: string }> {
+): Promise<{
+  project: Project
+  wasRetired: boolean
+  adoptedSpace?: string
+  trunkSource?: Extract<ProjectLandingBranchDecision, { kind: 'branch' }>['source']
+}> {
   if (!existsSync(input.path)) throw new Error(`no such directory: ${input.path}`)
   const malformed = validateProjectSettings(input.settings, 'strict', input.path, {
     validateKeyPrefixes: Object.hasOwn(input.settings, 'keyPrefixes'),
@@ -237,7 +248,7 @@ export async function addProject(
   const { decision, targetSpace } = resolved
   if (decision.kind === 'refuse') throw new Error(decision.reason)
   if (targetSpace) await pullProjectAddCatalogues(input, targetSpace)
-  const candidate = {
+  let candidate = {
     recordId: decision.kind === 'adopt' ? decision.recordId : newRecordId(),
     name: input.name,
     path: input.path,
@@ -245,6 +256,20 @@ export async function addProject(
     canon: input.canon,
     retiredAt: null,
     settings: decision.settings,
+  }
+  const gitWorkTree = candidate.settings.trunk ? false : isProjectRepository(candidate)
+  const landingBranch = decideProjectLandingBranch({
+    path: candidate.path,
+    settings: candidate.settings,
+    gitWorkTree,
+    remoteDefaultBranch: gitWorkTree ? readOriginHeadBranch(candidate.path).branch : null,
+  })
+  if (landingBranch.kind === 'refuse') throw new Error(landingBranch.reason)
+  if (landingBranch.kind === 'branch') {
+    candidate = {
+      ...candidate,
+      settings: { ...candidate.settings, trunk: landingBranch.trunk },
+    }
   }
   // Adopting merges the hosted row's settings with the requested ones, so the
   // merged row is read in strip mode; the requested settings were refused
@@ -270,6 +295,7 @@ export async function addProject(
   return {
     project,
     wasRetired,
+    ...(landingBranch.kind === 'branch' ? { trunkSource: landingBranch.source } : {}),
     ...(decision.kind === 'adopt' ? { adoptedSpace: decision.space } : {}),
   }
 }
@@ -295,7 +321,7 @@ async function addProjectCommand(
       throw new Error(`--settings must be JSON: ${e}`)
     }
   }
-  const { project, wasRetired, adoptedSpace } = await addProject(
+  const { project, wasRetired, adoptedSpace, trunkSource } = await addProject(
     {
       path,
       name,
@@ -317,8 +343,10 @@ async function addProjectCommand(
   } else if (wasRetired) {
     presentation.log(`un-retired ${name}`)
   } else {
+    const trunk = project.settings.trunk
     presentation.log(
-      `registered ${name}  ${stack ?? `(no stack — ${PLATFORM_SLUG} project set ${name} --stack ...)`}  ${path}`,
+      `registered ${name}  ${stack ?? `(no stack — ${PLATFORM_SLUG} project set ${name} --stack ...)`}  ` +
+        `${trunk && trunkSource ? `trunk ${trunk} (${trunkSource === 'origin/HEAD' ? 'from origin/HEAD' : 'declared'})  ` : ''}${path}`,
     )
   }
   for (const w of worktreeWarnings(projectByName(name)!)) {

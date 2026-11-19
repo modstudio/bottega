@@ -12,7 +12,7 @@ export function workflowImportBase(root: string, project: Project | null): strin
     throw new Error(
       project
         ? `workflow import refused: registered project ${project.name} has no landing branch in settings.trunk; ` +
-            `run ${PLATFORM_SLUG} project set ${project.name} --settings to set trunk`
+            `run ${PLATFORM_SLUG} project set ${project.name} --settings '{"trunk":"<branch>"}'`
         : "workflow import refused: no registered project owns this directory; run from a registered project's checkout",
     )
   }

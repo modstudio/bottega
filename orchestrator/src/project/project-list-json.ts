@@ -1,3 +1,4 @@
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { declaredProjectSpace } from './declared-project-space.ts'
 import {
   isProjectRepository,
@@ -24,8 +25,13 @@ export function listedProjectJson(project: Project) {
 
 export function projectProblems(project: Project): string[] {
   const declared = declaredProjectSpace(project)
+  const missingTrunk =
+    isProjectRepository(project) && !project.settings.trunk?.trim()
+      ? `${project.name} has no landing branch; cleared by: ${PLATFORM_SLUG} project set ${project.name} --settings '{"trunk":"<branch>"}'`
+      : null
   return [
     ...validateProjectSettings(project.settings, 'strip', project.path),
     ...('refused' in declared && !project.retiredAt ? [declared.refused] : []),
+    ...(missingTrunk ? [missingTrunk] : []),
   ]
 }

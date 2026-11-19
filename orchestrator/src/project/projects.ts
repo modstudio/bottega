@@ -251,6 +251,30 @@ export function isProjectRepository(project: Pick<Project, 'path'>): boolean {
   return gitToplevel(project.path) !== null
 }
 
+export type ProjectGitCapture = { exitCode: number; stdout: string; timedOut: boolean }
+export type ProjectGitRunner = (path: string, args: string[]) => ProjectGitCapture
+
+function runProjectGit(path: string, args: string[]): ProjectGitCapture {
+  const result = gitAt(path, args, { budget: 'git-probe' })
+  return {
+    exitCode: result.code,
+    stdout: result.stdout.trim(),
+    timedOut: result.timedOut,
+  }
+}
+
+/** Read the remote default branch once for project registration and setup discovery. */
+export function readOriginHeadBranch(
+  path: string,
+  runGit: ProjectGitRunner = runProjectGit,
+): { branch: string | null; timedOut: boolean } {
+  const result = runGit(path, ['symbolic-ref', '--quiet', '--short', 'refs/remotes/origin/HEAD'])
+  return {
+    branch: result.exitCode === 0 && result.stdout ? result.stdout.replace(/^origin\//, '') : null,
+    timedOut: result.timedOut,
+  }
+}
+
 export function projectRepositoryRefusal(project: Pick<Project, 'name' | 'path'>): string | null {
   return isProjectRepository(project)
     ? null
@@ -701,7 +725,7 @@ export function detachedCheckoutDecision(
 
 function registerBranchRemedy(landing: string, checkoutPath: string, projectName: string): string {
   return (
-    `cleared by: check out ${landing} in ${checkoutPath} or correct it with ${PLATFORM_SLUG} project set ${projectName} ` +
+    `cleared by: ${returnMainCheckoutToTrunkCommand(checkoutPath, landing)} or correct it with ${PLATFORM_SLUG} project set ${projectName} ` +
     `--settings '{"trunk":"<branch>"}'`
   )
 }

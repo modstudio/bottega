@@ -14,6 +14,7 @@ const module = (file: string, allowed: string[]): ProjectModule => ({
 export const projectModules: ProjectModule[] = [
   module('orchestrator/src/project/branch-name.ts', []),
   module('orchestrator/src/project/project-list-json.ts', [
+    '../../../shared/brand.ts',
     './declared-project-space.ts',
     './projects.ts',
   ]),
@@ -29,6 +30,7 @@ export const projectModules: ProjectModule[] = [
     './project-settings.ts',
   ]),
   module('orchestrator/src/project/project-settings-patch.ts', []),
+  module('orchestrator/src/project/project-landing-branch.ts', ['./project-settings.ts']),
   module('orchestrator/src/project/project-purge-local.ts', [
     'bun:sqlite',
     'node:fs',
