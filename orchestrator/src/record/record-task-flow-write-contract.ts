@@ -7,6 +7,9 @@ import { TASK_FLOW_STAGE_STATES } from './record-task-flow-contract.ts'
 
 const TASK_FLOW_REQUEST_ID_NAMESPACE = v5.URL
 
+/** Marks an insert-only import refusal caused specifically by different persisted content. */
+export const RECORD_TASK_FLOW_DIFFERENT_CONTENT = 'already exists with different content'
+
 /** Render stable trail entries only after the successor's display number is allocated. */
 export function workflowHandoffTrail(input: {
   closed: unknown[]

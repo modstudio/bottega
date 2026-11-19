@@ -35,7 +35,11 @@ import {
   readHostedRowPresence,
 } from './record-hosted-row-presence.ts'
 import { RECORD_QUESTION_DIFFERENT_CONTENT } from './record-question-contract.ts'
-import { type TaskFlowIntentInput, taskFlowRequestId } from './record-task-flow-write-contract.ts'
+import {
+  RECORD_TASK_FLOW_DIFFERENT_CONTENT,
+  type TaskFlowIntentInput,
+  taskFlowRequestId,
+} from './record-task-flow-write-contract.ts'
 import { recordWriteDestination } from './record-write-destination.ts'
 
 type Presentation = { log(value: string): void }
@@ -594,7 +598,11 @@ async function attemptFlowImport(
   try {
     return { kind: 'imported', result: await client.importTaskFlow(flow.payload, destination) }
   } catch (cause) {
-    if (cause instanceof RecordApiRequestError && cause.reason === 'already-exists') {
+    if (
+      cause instanceof RecordApiRequestError &&
+      cause.reason === 'already-exists' &&
+      cause.message.includes(RECORD_TASK_FLOW_DIFFERENT_CONTENT)
+    ) {
       pass.heldFlows.push(flow)
       pass.heldFlowIds.add(id)
       return { kind: 'held' }
@@ -754,11 +762,10 @@ function writeConflictArchive(
   const directory = join(resolveStateRoot(process.env), 'archive', 'history-upload-conflict')
   return writeBoundedJsonlArchive(
     [
-      ...flows.map((flow) => ({ kind: 'flow', id: flow.payload.flow.id, payload: flow.payload })),
+      ...flows.map((flow) => ({ table: 'task_flow', row: flow.payload })),
       ...histories.map((history) => ({
-        kind: 'question',
-        id: String(history.row.record_id),
-        payload: { ...history.row, audits: history.audits },
+        table: 'question',
+        row: { ...history.row, audits: history.audits },
       })),
     ],
     { directory, keep: BOUNDED_JSONL_ARCHIVE_KEEP },
@@ -870,6 +877,7 @@ export async function uploadMissingWorkflowHistory(
       heldQuestions: [],
     }
     for (const project of historyProjects(database)) {
+      if (pass.flowStopped && pass.questionStopped) break
       projects.push(
         await uploadProjectMissingHistory(
           database,

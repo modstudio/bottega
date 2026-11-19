@@ -20,6 +20,7 @@ import {
   uploadMissingWorkflowHistory,
 } from './record-history-upload.ts'
 import { RECORD_QUESTION_DIFFERENT_CONTENT } from './record-question-contract.ts'
+import { RECORD_TASK_FLOW_DIFFERENT_CONTENT } from './record-task-flow-write-contract.ts'
 import { syncRecord } from './record-sync.ts'
 
 const at = '2026-11-18T01:00:00.000Z'
@@ -892,9 +893,9 @@ test('sync archives a question held by the record with different content', async
   const created = readdirSync(directory).filter((name) => !before.has(name))
   expect(created).toHaveLength(1)
   const archived = JSON.parse(readFileSync(join(directory, created[0]!), 'utf8').trim())
-  expect(archived.kind).toBe('question')
-  expect(archived.id).toBe(questionId)
-  expect(archived.payload.audits).toHaveLength(1)
+  expect(archived.table).toBe('question')
+  expect(archived.row.record_id).toBe(questionId)
+  expect(archived.row.audits).toHaveLength(1)
 
   question(database, null, 92)
   const second = await uploadMissingWorkflowHistory(
@@ -940,6 +941,53 @@ test('sync stops importing after the question failure bound', async () => {
   database.close()
 })
 
+test('sync resolves no more destinations after both upload kinds stop', async () => {
+  const database = migratedTestDatabase()
+  database.exec('PRAGMA foreign_keys=OFF')
+  const firstProjectId = project(database, 'a-both-bounds')
+  for (let index = 0; index < HISTORY_UPLOAD_FAILURE_BOUND; index += 1) {
+    const flowId = flow(database, firstProjectId)
+    const stageId = stage(database, {
+      project: 'a-both-bounds',
+      projectId: firstProjectId,
+      number: 700 + index,
+      state: 'done',
+      flowId,
+    })
+    question(database, stageId, 700 + index)
+  }
+  linked(database, 'z-unvisited-project', 800)
+  question(database, null, 900)
+  bind(database)
+  const destinations: string[] = []
+  let flowImports = 0
+  let questionImports = 0
+  const client = syncClient(
+    absentPresence,
+    async () => {
+      questionImports += 1
+      throw new Error('question unavailable')
+    },
+    async () => {
+      flowImports += 1
+      throw new Error('flow unavailable')
+    },
+  )
+  const result = await uploadMissingWorkflowHistory(
+    client,
+    async (_client, owner) => {
+      destinations.push(owner?.kind === 'project' ? owner.name : 'personal')
+      return { destinationSpaceId: 'space' }
+    },
+    maintenanceHandle(database),
+  )
+  expect(flowImports).toBe(HISTORY_UPLOAD_FAILURE_BOUND)
+  expect(questionImports).toBe(HISTORY_UPLOAD_FAILURE_BOUND)
+  expect(result.failed).toBe(HISTORY_UPLOAD_FAILURE_BOUND * 2)
+  expect(destinations).toEqual(['a-both-bounds'])
+  database.close()
+})
+
 test('sync holds an already-existing flow once and stores the converged fingerprint', async () => {
   const database = migratedTestDatabase()
   database.exec('PRAGMA foreign_keys=OFF')
@@ -956,7 +1004,7 @@ test('sync holds an already-existing flow once and stores the converged fingerpr
     async () => {
       imports += 1
       throw new RecordApiRequestError(
-        'different flow',
+        `task_flow ${flowId} ${RECORD_TASK_FLOW_DIFFERENT_CONTENT}`,
         'conflict',
         409,
         null,
@@ -983,6 +1031,6 @@ test('sync holds an already-existing flow once and stores the converged fingerpr
   const created = readdirSync(directory).filter((name) => !before.has(name))
   expect(created).toHaveLength(1)
   const archived = JSON.parse(readFileSync(join(directory, created[0]!), 'utf8').trim())
-  expect(archived).toMatchObject({ kind: 'flow', id: flowId })
+  expect(archived).toMatchObject({ table: 'task_flow', row: { flow: { id: flowId } } })
   database.close()
 })

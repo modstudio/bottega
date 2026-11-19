@@ -17,6 +17,7 @@ import {
   type TaskFlowIntent,
   type TaskFlowIntentBody,
   type TaskFlowIntentResult,
+  RECORD_TASK_FLOW_DIFFERENT_CONTENT,
   workflowHandoffTrail,
 } from './record-task-flow-write-contract.ts'
 import {
@@ -159,7 +160,12 @@ function assertSameInsert(
 ) {
   for (const [key, value] of Object.entries(values)) {
     const column = recordColumnName(key)
-    if (!sameRecordValue(existing[column], value)) conflict(table, id, null, 'already-exists')
+    if (!sameRecordValue(existing[column], value))
+      refusal(
+        `${table} ${id} ${RECORD_TASK_FLOW_DIFFERENT_CONTENT}`,
+        `${table}.id=${id}`,
+        'already-exists',
+      )
   }
 }
 

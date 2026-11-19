@@ -10,6 +10,7 @@ import {
   uploadLocalWorkflowHistory,
   uploadMissingWorkflowHistory,
 } from './record-history-upload.ts'
+import { RECORD_TASK_FLOW_DIFFERENT_CONTENT } from './record-task-flow-write-contract.ts'
 
 const at = '2026-11-18T01:00:00.000Z'
 const absentPresence = async () => ({
@@ -147,6 +148,39 @@ test('stale flow refusals remain failures and are not held', async () => {
   database.close()
 })
 
+test('already-existing flow refusals without the content marker remain failures', async () => {
+  const database = migratedTestDatabase()
+  database.exec('PRAGMA foreign_keys=OFF')
+  const projectId = project(database, 'occupied-flow-slot'),
+    flowId = flow(database, projectId)
+  stage(database, 'occupied-flow-slot', projectId, flowId, 303)
+  bind(database)
+  let imports = 0
+  const record = client(
+    async () => {
+      imports += 1
+      throw new RecordApiRequestError(
+        'another open stage holds that slot and must be closed or abandoned first',
+        'conflict',
+        409,
+        null,
+        false,
+        null,
+        'already-exists',
+      )
+    },
+    async (input) => ({ id: input.question.id, number: 1, revision: 1, applied: true }),
+  )
+  const first = await uploadMissingWorkflowHistory(record, destination, handle(database))
+  await uploadMissingWorkflowHistory(record, destination, handle(database))
+  expect(first.failed).toBe(1)
+  expect(first.lines).toEqual([
+    `workflow history task flow ${flowId} failed: another open stage holds that slot and must be closed or abandoned first`,
+  ])
+  expect(imports).toBe(2)
+  database.close()
+})
+
 test('a full flow failure bound does not starve questions in a later project', async () => {
   const database = migratedTestDatabase()
   database.exec('PRAGMA foreign_keys=OFF')
@@ -192,7 +226,7 @@ test('sign-in holds an already-existing flow and continues importing the rest', 
       imported.push(input.flow.id)
       if (input.flow.id === held)
         throw new RecordApiRequestError(
-          'different flow',
+          `task_flow ${held} ${RECORD_TASK_FLOW_DIFFERENT_CONTENT}`,
           'conflict',
           409,
           null,

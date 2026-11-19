@@ -4,7 +4,10 @@ import { createHostedRecordFixture, pgliteSql } from '../../test/fixtures/hosted
 import type { QuestionImportBody, QuestionWriteBody } from './record-question-contract.ts'
 import { writeRecordQuestionTransaction } from './record-question-write.ts'
 import { writeRecordTaskFlowTransaction } from './record-task-flow-write.ts'
-import type { TaskFlowIntentBody } from './record-task-flow-write-contract.ts'
+import {
+  RECORD_TASK_FLOW_DIFFERENT_CONTENT,
+  type TaskFlowIntentBody,
+} from './record-task-flow-write-contract.ts'
 
 const SPACE = '01990000-0000-7000-8000-000000002500'
 const USER = '01990000-0000-7000-8000-000000002502'
@@ -314,7 +317,10 @@ test('task-flow import is exact and idempotent while minting stage numbers in bo
   changed.stages[0]!.activeSlug = 'changed'
   await expect(
     writeRecordTaskFlowTransaction('import', { ...principal, ...changed }, sql, pgliteJsonb),
-  ).rejects.toMatchObject({ reason: 'already-exists' })
+  ).rejects.toMatchObject({
+    message: `task_flow_stage ${STAGE_TWO} ${RECORD_TASK_FLOW_DIFFERENT_CONTENT}`,
+    reason: 'already-exists',
+  })
 
   const live = stage(STAGE_LIVE, 'live')
   const liveResult = await writeRecordTaskFlowTransaction(
