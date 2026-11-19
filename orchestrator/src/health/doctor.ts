@@ -474,7 +474,7 @@ function reportRetrievalCheck(
 
 export function sandboxRuntimeDoctorLine(runtime: RuntimeAvailability): string {
   const probeUnavailable = runtime.sandboxProbeUnavailableReason
-    ? `  sandbox probe unavailable: ${runtime.sandboxProbeUnavailableReason}; Bottega cannot confirm the sandbox works on this host`
+    ? `sandbox probe unavailable: ${runtime.sandboxProbeUnavailableReason}; Bottega cannot confirm the sandbox works on this host`
     : null
   return runtime.available
     ? [

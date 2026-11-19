@@ -91,10 +91,7 @@ type AvailabilityPorts = {
   readOsRelease?: () => string
   resolveExecutable?: (name: string) => string | null
   readApparmorProfiles?: () => string
-  probeUserNamespaces?: (
-    bwrapPath: string,
-    shellPath: string,
-  ) => boolean | Promise<boolean>
+  probeUserNamespaces?: (bwrapPath: string, shellPath: string) => boolean | Promise<boolean>
 }
 
 const PACKAGES = ['bubblewrap', 'socat', 'ripgrep'] as const
@@ -203,33 +200,30 @@ export function classifySandboxRuntimeAvailability(
   }
 }
 
-async function wrappedUserNamespaceProbeCommand(
+async function defaultProbeUserNamespaces(
   bwrapPath: string,
   shellPath: string,
-): Promise<string> {
-  const { wrapCommandWithSandboxLinux } = await import(
+  path: string,
+): Promise<boolean> {
+  const { cleanupBwrapMountPoints, wrapCommandWithSandboxLinux } = await import(
     '@anthropic-ai/sandbox-runtime/dist/sandbox/linux-sandbox-utils.js'
   )
-  return wrapCommandWithSandboxLinux({
+  const command = await wrapCommandWithSandboxLinux({
     command: 'true',
     needsNetworkRestriction: true,
     writeConfig: { allowOnly: [], denyWithinAllow: [] },
     bwrapPath,
     binShell: shellPath,
   })
-}
-
-async function defaultProbeUserNamespaces(
-  bwrapPath: string,
-  shellPath: string,
-  path: string,
-): Promise<boolean> {
-  const command = await wrappedUserNamespaceProbeCommand(bwrapPath, shellPath)
-  const result = startBoundedSync([shellPath, '-c', command], {
-    budget: 'sandbox-probe',
-    env: { PATH: path },
-  })
-  return result.exitCode === 0
+  try {
+    const result = startBoundedSync([shellPath, '-c', command], {
+      budget: 'sandbox-probe',
+      env: { PATH: path },
+    })
+    return result.exitCode === 0
+  } finally {
+    cleanupBwrapMountPoints()
+  }
 }
 
 export type SandboxLaunchFailureFacts = {

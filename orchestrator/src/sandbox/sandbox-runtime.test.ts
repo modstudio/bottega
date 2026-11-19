@@ -135,19 +135,23 @@ describe('sandbox runtime payloads', () => {
   })
 
   test('pinned Linux wrapper keeps the namespace probe confinement flags', async () => {
-    const { wrapCommandWithSandboxLinux } = await import(
+    const { cleanupBwrapMountPoints, wrapCommandWithSandboxLinux } = await import(
       '@anthropic-ai/sandbox-runtime/dist/sandbox/linux-sandbox-utils.js'
     )
-    const command = await wrapCommandWithSandboxLinux({
-      command: 'true',
-      needsNetworkRestriction: true,
-      writeConfig: { allowOnly: [], denyWithinAllow: [] },
-      bwrapPath: '/usr/bin/bwrap',
-      binShell: '/bin/sh',
-    })
-    expect(command).toContain('--ro-bind / /')
-    expect(command).toContain('--unshare-net')
-    expect(command).toContain('--unshare-user')
+    try {
+      const command = await wrapCommandWithSandboxLinux({
+        command: 'true',
+        needsNetworkRestriction: true,
+        writeConfig: { allowOnly: [], denyWithinAllow: [] },
+        bwrapPath: '/usr/bin/bwrap',
+        binShell: '/bin/sh',
+      })
+      expect(command).toContain('--ro-bind / /')
+      expect(command).toContain('--unshare-net')
+      expect(command).toContain('--unshare-user')
+    } finally {
+      cleanupBwrapMountPoints()
+    }
   })
 
   test('missing system dependencies make the shared ruling unavailable with an exact install command', () => {
@@ -256,14 +260,8 @@ describe('sandbox runtime payloads', () => {
         manifest,
       })
       expect(
-        (
-          await sandboxRuntimeAvailability(
-            { BOTTEGA_STATE_HOME: state },
-            'linux',
-            'arm64',
-            [],
-          )
-        ).available,
+        (await sandboxRuntimeAvailability({ BOTTEGA_STATE_HOME: state }, 'linux', 'arm64', []))
+          .available,
       ).toBe(true)
       expect(existsSync(join(state, 'runtime'))).toBe(false)
     } finally {
