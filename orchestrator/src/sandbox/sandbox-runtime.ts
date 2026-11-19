@@ -8,6 +8,7 @@ import {
 } from '@anthropic-ai/sandbox-runtime'
 import { which } from 'bun'
 import { startBoundedSync } from '../../../shared/bounded-process.ts'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   type EmbeddedRuntimeFile,
   embeddedDistributionManifest,
@@ -197,7 +198,7 @@ export function classifySandboxRuntimeAvailability(
   }
 }
 
-function defaultProbeUserNamespaces(bwrapPath: string, shellPath: string): boolean {
+function defaultProbeUserNamespaces(bwrapPath: string, shellPath: string, path: string): boolean {
   const result = startBoundedSync(
     [
       bwrapPath,
@@ -217,7 +218,7 @@ function defaultProbeUserNamespaces(bwrapPath: string, shellPath: string): boole
       '-c',
       'true',
     ],
-    { budget: 'sandbox-probe' },
+    { budget: 'sandbox-probe', env: { PATH: path } },
   )
   return result.exitCode === 0
 }
@@ -230,7 +231,14 @@ export type SandboxLaunchFailureFacts = {
   launchError: string
 }
 
-export type SandboxReadinessRefusal = { kind: 'sandbox-readiness' }
+export type SandboxReadinessRefusal = {
+  kind: 'sandbox-readiness'
+  signature: string
+  evidence: string
+}
+
+const SANDBOX_READINESS_SIGNATURE =
+  /RTM_NEWADDR|setting up uid map:\s*Permission denied|Sandbox dependencies not available|bubblewrap \(bwrap\) not installed/i
 
 /** Identify only Linux srt failures that host readiness can remedy. */
 export function classifySandboxLaunchFailure(
@@ -239,15 +247,49 @@ export function classifySandboxLaunchFailure(
   if (!facts.turnFailed) return null
   if (facts.platform !== 'linux' || facts.sandboxKind !== 'srt') return null
   const text = `${facts.stderr}\n${facts.launchError}`
-  return /RTM_NEWADDR|setting up uid map:\s*Permission denied|Sandbox dependencies not available|bubblewrap \(bwrap\) not installed/i.test(
-    text,
-  )
-    ? { kind: 'sandbox-readiness' }
-    : null
+  const match = text.match(SANDBOX_READINESS_SIGNATURE)
+  if (!match) return null
+  const evidence = text
+    .split('\n')
+    .find((line) => SANDBOX_READINESS_SIGNATURE.test(line))
+    ?.trim()
+  return { kind: 'sandbox-readiness', signature: match[0]!, evidence: evidence || match[0]! }
+}
+
+/** Pure presentation for a classified sandbox launch failure and a fresh host ruling. */
+export function renderSandboxReadinessRefusal(
+  failure: SandboxReadinessRefusal,
+  runtime: RuntimeAvailability,
+  originalError: string,
+): string {
+  if (runtime.available) {
+    return `sandbox runtime readiness failed: ${failure.signature}; run ${PLATFORM_SLUG} machine doctor on this machine`
+  }
+  const fixes = runtime.fixes.length ? `; ${runtime.fixes.join('; ')}` : ''
+  const evidence = originalError.trim() || failure.evidence
+  return `sandbox runtime readiness failed; ${runtime.condition}${fixes}\noriginal error: ${evidence}`
 }
 
 function profileNamedBwrap(text: string): boolean {
   return text.split('\n').some((line) => /^bwrap(?:\s|$)/.test(line.trim()))
+}
+
+function userNamespaceProbeVerdict(
+  linux: boolean,
+  bwrapPath: string | null,
+  bwrapMissing: boolean,
+  resolveExecutable: (name: string) => string | null,
+  probe: AvailabilityPorts['probeUserNamespaces'],
+): boolean | null {
+  if (!linux || !bwrapPath || bwrapMissing) return null
+  const shellPath = resolveExecutable('sh') ?? '/bin/sh'
+  try {
+    return probe
+      ? probe(bwrapPath, shellPath)
+      : defaultProbeUserNamespaces(bwrapPath, shellPath, process.env.PATH ?? '/usr/bin:/bin')
+  } catch {
+    return null
+  }
 }
 
 /** Gather host facts for the one availability ruling used by every caller. */
@@ -262,14 +304,13 @@ export function sandboxRuntimeAvailability(
   const resolveExecutable = ports.resolveExecutable ?? ((name) => which(name))
   const bwrapPath = linux ? resolveExecutable('bwrap') : null
   const bwrapMissing = missingPackages(missingSystemDependencies).includes('bubblewrap')
-  let userNamespacesUsable: boolean | null = null
-  if (linux && bwrapPath && !bwrapMissing) {
-    const shellPath = resolveExecutable('sh') ?? '/bin/sh'
-    userNamespacesUsable = (ports.probeUserNamespaces ?? defaultProbeUserNamespaces)(
-      bwrapPath,
-      shellPath,
-    )
-  }
+  const userNamespacesUsable = userNamespaceProbeVerdict(
+    linux,
+    bwrapPath,
+    bwrapMissing,
+    resolveExecutable,
+    ports.probeUserNamespaces,
+  )
   let bwrapProfileLoaded = false
   if (linux && userNamespacesUsable === false) {
     try {

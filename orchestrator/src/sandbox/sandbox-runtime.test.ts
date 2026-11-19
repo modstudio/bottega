@@ -206,6 +206,18 @@ describe('sandbox runtime payloads', () => {
     expect(ruling.fixes[0]).toContain('sudo aa-status | grep bwrap')
   })
 
+  test('Linux availability treats a namespace probe error as an unknown verdict', () => {
+    const ruling = sandboxRuntimeAvailability(process.env, 'linux', process.arch, [], {
+      readOsRelease: () => 'ID=ubuntu',
+      resolveExecutable: (name) => (name === 'bwrap' ? '/usr/bin/bwrap' : '/bin/sh'),
+      probeUserNamespaces: () => {
+        throw new Error('probe exceeded its bound')
+      },
+    })
+    expect(ruling.available).toBe(true)
+    expect(ruling.fixes).toEqual([])
+  })
+
   test('embedded availability requires every host payload without extracting it', () => {
     const state = mkdtempSync(join(tmpdir(), 'srt-availability-'))
     const paths = sandboxRuntimePayloadPaths('linux', 'arm64')

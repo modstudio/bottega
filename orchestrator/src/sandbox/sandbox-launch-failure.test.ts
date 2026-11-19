@@ -1,5 +1,6 @@
 import { expect, test } from 'bun:test'
-import { classifySandboxLaunchFailure } from './sandbox-runtime.ts'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { classifySandboxLaunchFailure, renderSandboxReadinessRefusal } from './sandbox-runtime.ts'
 
 const linuxSrtFailure = { platform: 'linux', sandboxKind: 'srt', turnFailed: true } as const
 
@@ -10,10 +11,37 @@ test('classifies Linux srt namespace and dependency failures as readiness refusa
     { stderr: '', launchError: 'Sandbox dependencies not available: socat not installed' },
     { stderr: '', launchError: 'bubblewrap (bwrap) not installed' },
   ]) {
-    expect(classifySandboxLaunchFailure({ ...linuxSrtFailure, ...failure })).toEqual({
+    expect(classifySandboxLaunchFailure({ ...linuxSrtFailure, ...failure })).toMatchObject({
       kind: 'sandbox-readiness',
     })
   }
+})
+
+test('renders unavailable and freshly available readiness rulings without inventing a remedy', () => {
+  const failure = {
+    kind: 'sandbox-readiness',
+    signature: 'RTM_NEWADDR',
+    evidence: 'bwrap: loopback: Failed RTM_NEWADDR: Operation not permitted',
+  } as const
+  const runtime = {
+    available: false,
+    location: '/runtime',
+    missingSystemDependencies: [],
+    condition: 'namespaces are blocked',
+    remedy: '',
+    fixes: ['install the profile', 'reload AppArmor'],
+  }
+  expect(renderSandboxReadinessRefusal(failure, runtime, 'bwrap failed')).toBe(
+    'sandbox runtime readiness failed; namespaces are blocked; install the profile; reload AppArmor\noriginal error: bwrap failed',
+  )
+  expect(
+    renderSandboxReadinessRefusal(failure, { ...runtime, available: true, fixes: [] }, 'ignored'),
+  ).toBe(
+    `sandbox runtime readiness failed: RTM_NEWADDR; run ${PLATFORM_SLUG} machine doctor on this machine`,
+  )
+  expect(renderSandboxReadinessRefusal(failure, runtime, '')).toContain(
+    'original error: bwrap: loopback: Failed RTM_NEWADDR: Operation not permitted',
+  )
 })
 
 test('does not reclassify ordinary command failures or non-srt sandboxes', () => {

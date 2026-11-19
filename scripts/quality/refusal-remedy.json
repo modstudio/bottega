@@ -145,7 +145,6 @@
     "orchestrator/src/run/run-diff.ts": 3,
     "orchestrator/src/session/session-close-out.ts": 1,
     "orchestrator/src/session/session-review-verdicts.ts": 3,
-    "orchestrator/src/transport/transport-acp.ts": 1,
     "orchestrator/src/workflow/workflow-store.fixture.ts": 1,
     "orchestrator/src/workflow/workflow-task-reference.ts": 1,
     "scripts/affected-tests.ts": 1,

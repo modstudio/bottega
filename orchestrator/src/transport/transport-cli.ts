@@ -6,10 +6,6 @@ import { eventsFromVendorLine } from '../events.ts'
 import { DEFAULT_IDLE_GRACE_MS, terminateProcessGroup } from '../idle-kill.ts'
 import { lowerRunChildPriority } from '../run/run-child-priority.ts'
 import { sandboxLaunchArgv } from '../sandbox/sandbox.ts'
-import {
-  classifySandboxLaunchFailure,
-  sandboxRuntimeAvailability,
-} from '../sandbox/sandbox-runtime.ts'
 import { codexAskExposureFromTexts } from './codex-ask-exposure.ts'
 import { harnessCollectsQuotaReadings, parseCodexQuotaReadings } from './codex-quota.ts'
 import {
@@ -19,10 +15,12 @@ import {
 } from './codex-rollout-files.ts'
 import { classifyCodexThrottle } from './codex-throttle.ts'
 import { EMPTY_QUOTA_READINGS } from './quota-readings.ts'
+import { sandboxReadinessRefusal } from './sandbox-readiness.ts'
 import {
   type AgentTransport,
   type ArgvOpts,
   EMPTY_VENDOR_USAGE,
+  failureKindFromStop,
   type NormalizedEvent,
   outcomeFromTransport,
   registerTransport,
@@ -307,29 +305,18 @@ async function cliLaunch(opts: TransportStartOpts) {
       : [bin, ...argv]
   } catch (error) {
     const launchError = error instanceof Error ? error.message : String(error)
-    const refusal = sandboxReadinessRefusal(opts, true, '', launchError)
+    const launchFailed = true
+    const refusal = sandboxReadinessRefusal({
+      srt: Boolean(opts.srt),
+      turnFailed: launchFailed,
+      stderr: '',
+      launchError,
+    })
     if (refusal) throw new Error(refusal, { cause: error })
     throw error
   }
   const stdinPrompt = opts.agent.stdin && !opts.resume ? opts.prompt : undefined
   return { launchArgv, stdinPrompt }
-}
-
-function sandboxReadinessRefusal(
-  opts: Pick<TransportStartOpts, 'srt'>,
-  turnFailed: boolean,
-  stderr: string,
-  launchError: string,
-): string | null {
-  const refusal = classifySandboxLaunchFailure({
-    platform: process.platform,
-    sandboxKind: opts.srt ? 'srt' : 'host',
-    turnFailed,
-    stderr,
-    launchError,
-  })
-  if (!refusal) return null
-  return `sandbox runtime readiness failed; ${sandboxRuntimeAvailability().remedy}`
 }
 
 function cliTurnReadingWithSandboxReadiness(input: {
@@ -347,10 +334,20 @@ function cliTurnReadingWithSandboxReadiness(input: {
     stderr: input.stderr,
   })
   const turnFailed = reading.reply === null && (input.exitCode !== 0 || reading.replyError !== null)
+  const vendorFailureKind = failureKindFromStop(null, reading.replyError)
+  const preserveVendorFailure = ['capacity', 'daily_quota', 'quota', 'billing'].includes(
+    vendorFailureKind,
+  )
   return {
     ...reading,
     replyError:
-      sandboxReadinessRefusal(input.opts, turnFailed, input.stderr, reading.replyError ?? '') ??
+      (!preserveVendorFailure &&
+        sandboxReadinessRefusal({
+          srt: Boolean(input.opts.srt),
+          turnFailed,
+          stderr: input.stderr,
+          launchError: reading.replyError ?? '',
+        })) ||
       reading.replyError,
   }
 }
