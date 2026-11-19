@@ -282,7 +282,9 @@ export function projectRepositoryRefusal(project: Pick<Project, 'name' | 'path'>
     : `project ${project.name} has no repository: ${project.path} is not a git checkout`
 }
 
-export function missingProjectLandingBranchProblem(project: Project): string | null {
+export function missingProjectLandingBranchProblem(
+  project: Pick<Project, 'name' | 'path' | 'settings'>,
+): string | null {
   if (!isProjectRepository(project) || project.settings.trunk?.trim()) return null
   return renderRefusal(
     refusal(`${project.name} has no landing branch`, {
@@ -771,7 +773,8 @@ export function registerBranchCheck(
     )
     canonIntegration = match?.[1] ?? null
   }
-  const problems: string[] = []
+  const missingLanding = missingProjectLandingBranchProblem(project)
+  const problems: string[] = missingLanding ? [missingLanding] : []
   if (landing && head !== landing) {
     problems.push(
       detachedDecision ??

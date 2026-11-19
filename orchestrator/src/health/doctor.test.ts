@@ -8,6 +8,7 @@ import {
 } from '../focused-test/focused-test-decision.ts'
 import { mainCheckoutInvariant } from '../project/main-checkout-invariant.ts'
 import { mergeProjectSettings, parseSettingsPatch } from '../project/project-settings-patch.ts'
+import { registerBranchCheck } from '../project/projects.ts'
 import { acpRuntimeGaps } from '../transport/transport.ts'
 import {
   activeSpaceDoctorDiagnosis,
@@ -174,6 +175,27 @@ test('machine doctor carries on after one checkout git inspection fails', () => 
   expect(exitCodes).toEqual([])
   expect(output).toContain('  broken check could not run — git refused this checkout')
   expect(output).toContain('  clean pass — branch main, tracked clean')
+})
+
+test('machine doctor asks to declare a missing repository landing branch', () => {
+  const output: string[] = []
+  const exitCodes: number[] = []
+  reportCheckoutRegister(
+    [{ name: 'probe', path: process.cwd(), settings: {} }],
+    { log: (line) => output.push(line), exitCode: (code) => exitCodes.push(code) },
+    () => null,
+    registerBranchCheck,
+    () => {
+      throw new Error('a checkout without a landing branch must not be inspected')
+    },
+    mainCheckoutInvariant,
+  )
+
+  expect(output).toContain('\nregister questions (not run failures):')
+  expect(output).toContain(
+    `  probe: probe has no landing branch\ncleared by: ${PLATFORM_SLUG} project set probe --settings '{"trunk":"<branch>"}'`,
+  )
+  expect(exitCodes).toEqual([])
 })
 
 afterEach(() => registerEmbeddedAssets(null))
