@@ -68,8 +68,7 @@ import { type RuntimeAvailability, sandboxRuntimeAvailability } from '../sandbox
 import { gwetAc1, quadraticWeightedKappa } from '../score/agreement.ts'
 import { DELIVERY, FIDELITY, QUALITY } from '../score/score.ts'
 import { developerNodeDoctorLines } from '../setup/developer-node.ts'
-import { gatherProviderCredentialTrustFacts } from '../setup/provider-credential-trust.ts'
-import { providerCredentialTrustNotices } from '../setup/provider-credential-trust-notice.ts'
+import { providerCredentialTrustDoctorLines } from '../setup/provider-credential-trust.ts'
 import { keepTreeHold } from '../worktree/keep-tree-hold.ts'
 import { worktreeDirty } from '../worktree/worktree-attribution.ts'
 import { lifecycleReportLines } from '../worktree/worktree-lifecycle.ts'
@@ -636,11 +635,8 @@ async function reportAgents(
 }
 
 async function reportProviderCredentialTrust(log: DoctorPresentation['log']): Promise<void> {
-  const facts = await gatherProviderCredentialTrustFacts(Object.values(AGENTS), registeredProjects())
-  const notices = providerCredentialTrustNotices(facts)
-  if (!notices.length) return
-  log('provider credential trust')
-  for (const notice of notices) log(`  ${notice.message}; ${notice.fix}`)
+  for (const line of await providerCredentialTrustDoctorLines(
+    Object.values(AGENTS), registeredProjects())) log(line)
 }
 
 function agentOperationalSuffix(

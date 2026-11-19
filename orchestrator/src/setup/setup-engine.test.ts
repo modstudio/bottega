@@ -16,7 +16,6 @@ import {
   type SetupAgent,
   type SetupNotice,
 } from './setup-engine.ts'
-import type { SetupCredentialTrustFact } from './provider-credential-trust-notice.ts'
 import type { SetupFacts } from './setup-facts.ts'
 import { legacyMcpServerName, type McpServer } from './setup-mcp.ts'
 import {
@@ -50,7 +49,6 @@ function proposeSetup(
   agents: SetupAgent[],
   notices: SetupNotice[] = [],
   servers: Parameters<typeof proposeSetupEngine>[6] = [],
-  credentialTrustFacts: SetupCredentialTrustFact[] = [],
 ) {
   const plan = proposeSetupEngine(
     resolveWorktreeLifecycle,
@@ -60,8 +58,6 @@ function proposeSetup(
     agents,
     notices,
     servers,
-    [],
-    credentialTrustFacts,
   )
   return {
     ...plan,
@@ -70,23 +66,6 @@ function proposeSetup(
     ),
   }
 }
-
-test('setup proposes the ordered provider credential trust notice from gathered facts', () => {
-  const plan = proposeSetup(machine, [], [], [], [], [], [
-    {
-      status: 'checked',
-      registered: false,
-      trusted: false,
-      space: 'studio',
-      keyId: 'key-id',
-      publicKey: 'public-key',
-    },
-  ])
-  const notice = plan.notices.find((item) => item.message.includes('provider credentials'))
-  expect(notice?.fix).toBe(
-    `on this machine, run \`${PLATFORM_SLUG} machine config machine register --space studio\`; then from a machine already trusted in that space, run \`${PLATFORM_SLUG} machine config machine trust key-id public-key --space studio\``,
-  )
-})
 
 const machine = {
   machineLevel: 'full',

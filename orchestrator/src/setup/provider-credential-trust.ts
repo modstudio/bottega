@@ -8,7 +8,10 @@ import { parseRecordSpaceMemberships, recordSpaceMembership } from '../../../sha
 import { trustedKeysForSpace } from '../../../shared/trust-log-keys.ts'
 import type { Project } from '../project/projects.ts'
 import type { SetupAgent } from './setup-engine.ts'
-import type { SetupCredentialTrustFact } from './provider-credential-trust-notice.ts'
+import {
+  providerCredentialTrustNotices,
+  type SetupCredentialTrustFact,
+} from './provider-credential-trust-notice.ts'
 import { SETUP_COMMAND_TIMEOUT_MS } from './setup-mcp.ts'
 
 const cause = (error: unknown) => (error instanceof Error ? error.message : String(error))
@@ -70,4 +73,16 @@ export async function gatherProviderCredentialTrustFacts(
       }
     }),
   )
+}
+
+export async function providerCredentialTrustDoctorLines(
+  agents: readonly SetupAgent[],
+  projects: readonly Project[],
+): Promise<string[]> {
+  const notices = providerCredentialTrustNotices(
+    await gatherProviderCredentialTrustFacts(agents, projects),
+  )
+  return notices.length
+    ? ['provider credential trust', ...notices.map((notice) => `  ${notice.message}; ${notice.fix}`)]
+    : []
 }

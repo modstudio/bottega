@@ -4,12 +4,6 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { refusal, renderRefusal } from '../../../shared/refusal.ts'
 import type { TrustedKeys } from '../../../shared/trust-log-keys.ts'
 
-export {
-  credentialMachineTrustRemedy,
-  credentialMachineTrustSteps,
-  type CredentialMachineTrustFacts,
-} from '../../../shared/credential-machine-trust.ts'
-
 type RegisteredMachineKey = { revokedAt: string | null }
 
 const localTrustLogRemedy = (spaceSlug: string) =>
