@@ -2,7 +2,10 @@
 /** Uploads local workflow history during sign-in and each hosted-record sync pass. */
 
 import type { Database } from 'bun:sqlite'
+import { mkdirSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { resolveStateRoot } from '../../../shared/state-directory.ts'
 import { withDatabaseForMigrationStep } from '../database/db.ts'
 import type { ProjectAdoptionResult } from '../project/project-relink.ts'
 import {
@@ -18,6 +21,7 @@ import type { RecordWriteDestination } from './record-api-client-paths.ts'
 import {
   collectHostedRowState,
   hostedRowIdsAreEmpty,
+  questionAuditIdentity,
   readHostedRowPresence,
 } from './record-hosted-row-presence.ts'
 import { type TaskFlowIntentInput, taskFlowRequestId } from './record-task-flow-write-contract.ts'
@@ -30,6 +34,7 @@ type FlowImportWithNumbers = { payload: FlowImport; numbers: Map<string, number>
 type LocalQuestionHistory = ReturnType<typeof localQuestionHistory>
 
 const WORKFLOW_HISTORY_UPLOAD_FINGERPRINT_KEY = 'record_workflow_history_upload_fingerprint'
+export const HISTORY_UPLOAD_FAILURE_BOUND = 25
 export type HistoryUploadFingerprint = ReadonlyArray<{
   table: string
   count: number
@@ -499,6 +504,11 @@ function flowIsAbsent(
 }
 
 type PresentHistory = Awaited<ReturnType<typeof readHostedRowPresence>>
+type UploadPassState = {
+  failed: number
+  heldQuestions: LocalQuestionHistory
+  stopped: boolean
+}
 type SyncClient = RecordApiClient & {
   readTaskFlowPresence: NonNullable<RecordApiClient['readTaskFlowPresence']>
   importTaskFlow: NonNullable<RecordApiClient['importTaskFlow']>
@@ -512,11 +522,29 @@ type DestinationFor = (
 const errorMessage = (cause: unknown): string =>
   cause instanceof Error ? cause.message : String(cause)
 
-function questionIsAbsent(history: LocalQuestionHistory[number], present: PresentHistory): boolean {
+export function questionIsAbsent(
+  history: LocalQuestionHistory[number],
+  present: PresentHistory,
+): boolean {
   return (
     !present.question.has(String(history.row.record_id)) ||
-    history.audits.some((audit) => !present.question_mutation_audit.has(String(audit.id)))
+    history.audits.some(
+      (audit) =>
+        !present.question_mutation_audit.has(String(audit.id)) &&
+        !present.questionAuditIdentities.has(
+          questionAuditIdentity({
+            questionId: String(audit.question_record_id),
+            action: String(audit.action),
+            at: String(audit.at),
+          }),
+        ),
+    )
   )
+}
+
+function recordUploadFailure(pass: UploadPassState): void {
+  pass.failed += 1
+  if (pass.failed === HISTORY_UPLOAD_FAILURE_BOUND) pass.stopped = true
 }
 
 async function uploadMissingFlows(
@@ -524,14 +552,17 @@ async function uploadMissingFlows(
   present: PresentHistory,
   client: SyncClient,
   destination: RecordWriteDestination,
+  pass: UploadPassState,
 ): Promise<HistorySyncResult> {
   const result: HistorySyncResult = { failed: 0, lines: [] }
   for (const flow of flows) {
+    if (pass.stopped) break
     if (!flowIsAbsent(flow.payload, present)) continue
     try {
       await client.importTaskFlow(flow.payload, destination)
     } catch (cause) {
       result.failed += 1
+      recordUploadFailure(pass)
       result.lines.push(
         `workflow history task flow ${flow.payload.flow.id} failed: ${errorMessage(cause)}`,
       )
@@ -545,9 +576,11 @@ async function uploadMissingQuestions(
   present: PresentHistory,
   client: SyncClient,
   destination: RecordWriteDestination,
+  pass: UploadPassState,
 ): Promise<HistorySyncResult> {
   const result: HistorySyncResult = { failed: 0, lines: [] }
   for (const history of histories) {
+    if (pass.stopped) break
     if (!questionIsAbsent(history, present)) continue
     const id = String(history.row.record_id)
     try {
@@ -560,7 +593,12 @@ async function uploadMissingQuestions(
         destination,
       )
     } catch (cause) {
+      if (errorMessage(cause).includes('already exists with different content')) {
+        pass.heldQuestions.push(history)
+        continue
+      }
       result.failed += 1
+      recordUploadFailure(pass)
       result.lines.push(`workflow history question ${id} failed: ${errorMessage(cause)}`)
     }
   }
@@ -580,6 +618,7 @@ async function uploadProjectMissingHistory(
   present: PresentHistory,
   client: SyncClient,
   destinationFor: DestinationFor,
+  pass: UploadPassState,
 ): Promise<HistorySyncResult> {
   let destination: RecordWriteDestination
   try {
@@ -591,12 +630,19 @@ async function uploadProjectMissingHistory(
     }
   }
   return combineHistoryResults(
-    await uploadMissingFlows(flowImports(database, project.recordId), present, client, destination),
+    await uploadMissingFlows(
+      flowImports(database, project.recordId),
+      present,
+      client,
+      destination,
+      pass,
+    ),
     await uploadMissingQuestions(
       localQuestionHistory(database, project.recordId),
       present,
       client,
       destination,
+      pass,
     ),
   )
 }
@@ -606,19 +652,58 @@ async function uploadPersonalMissingHistory(
   present: PresentHistory,
   client: SyncClient,
   destinationFor: DestinationFor,
+  pass: UploadPassState,
 ): Promise<HistorySyncResult> {
   const histories = localQuestionHistory(database, null)
   if (!histories.some((history) => questionIsAbsent(history, present)))
     return { failed: 0, lines: [] }
   try {
     const destination = await destinationFor(client, null)
-    return uploadMissingQuestions(histories, present, client, destination)
+    return uploadMissingQuestions(histories, present, client, destination, pass)
   } catch (cause) {
     return {
       failed: 0,
       lines: [`workflow history personal questions skipped: ${errorMessage(cause)}`],
     }
   }
+}
+
+function archiveTimestamp(now: Date): string {
+  return now.toISOString().replace(/[:.]/g, '-')
+}
+
+function writeQuestionConflictArchive(histories: LocalQuestionHistory): string {
+  const directory = join(resolveStateRoot(process.env), 'archive', 'history-upload-conflict')
+  mkdirSync(directory, { recursive: true, mode: 0o700 })
+  const path = join(directory, `${archiveTimestamp(new Date())}.jsonl`)
+  const lines = histories.map((history) =>
+    JSON.stringify({ ...history.row, audits: history.audits }),
+  )
+  writeFileSync(path, `${lines.join('\n')}\n`, { mode: 0o600 })
+  return path
+}
+
+function finishUploadPass(result: HistorySyncResult, pass: UploadPassState): HistorySyncResult {
+  if (pass.heldQuestions.length > 0) {
+    try {
+      const path = writeQuestionConflictArchive(pass.heldQuestions)
+      const ids = pass.heldQuestions
+        .slice(0, 3)
+        .map((history) => String(history.row.record_id))
+        .join(', ')
+      result.lines.push(
+        `${pass.heldQuestions.length} questions held by the record with different content; local copies archived to ${path}; first: ${ids}`,
+      )
+    } catch (cause) {
+      result.failed += pass.heldQuestions.length
+      result.lines.push(`workflow history question conflict archive failed: ${errorMessage(cause)}`)
+    }
+  }
+  if (pass.stopped)
+    result.lines.push(
+      `workflow history upload stopped after ${pass.failed} failures; the rest waits for the next sync`,
+    )
+  return result
 }
 
 /** Upload only flow and question aggregates containing rows absent from the record. */
@@ -669,14 +754,26 @@ export async function uploadMissingWorkflowHistory(
       }
     }
     const projects: HistorySyncResult[] = []
-    for (const project of historyProjects(database))
+    const pass: UploadPassState = { failed: 0, heldQuestions: [], stopped: false }
+    for (const project of historyProjects(database)) {
+      if (pass.stopped) break
       projects.push(
-        await uploadProjectMissingHistory(database, project, present, capable, destinationFor),
+        await uploadProjectMissingHistory(
+          database,
+          project,
+          present,
+          capable,
+          destinationFor,
+          pass,
+        ),
       )
-    const result = combineHistoryResults(
-      { failed: 0, lines: repairLines },
-      ...projects,
-      await uploadPersonalMissingHistory(database, present, capable, destinationFor),
+    }
+    const personal = pass.stopped
+      ? { failed: 0, lines: [] }
+      : await uploadPersonalMissingHistory(database, present, capable, destinationFor, pass)
+    const result = finishUploadPass(
+      combineHistoryResults({ failed: 0, lines: repairLines }, ...projects, personal),
+      pass,
     )
     if (result.failed === 0 && !result.lines.some((line) => line.includes('skipped')))
       storeHistoryUploadFingerprint(database, fingerprint)

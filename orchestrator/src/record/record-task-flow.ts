@@ -18,6 +18,7 @@ import {
   RECORD_TASK_FLOW_NOT_FOUND_MESSAGE,
   TASK_FLOW_CLOSED_STAGE_STATES_SQL,
   type TaskFlowPresence,
+  type TaskFlowPresenceResult,
   type TaskFlowReadQueryInput,
   type TaskFlowStageListQuery,
 } from './record-task-flow-contract.ts'
@@ -336,7 +337,7 @@ export async function readRecordTaskFlowProjectReferenceCounts(
  */
 export async function readRecordTaskFlowPresence(
   input: TenantPrincipal & { url: string } & TaskFlowPresence,
-): Promise<TaskFlowPresence> {
+): Promise<TaskFlowPresenceResult> {
   return recordPool(input.url).begin(async (tx) => {
     await bindTenant(tx, input)
     return readRecordTaskFlowPresenceTransaction(tx, input)
@@ -346,7 +347,7 @@ export async function readRecordTaskFlowPresence(
 export async function readRecordTaskFlowPresenceTransaction(
   tx: SQL,
   input: TaskFlowPresence,
-): Promise<TaskFlowPresence> {
+): Promise<TaskFlowPresenceResult> {
   const stages = input.stageIds.length
     ? await tx.unsafe(
         `SELECT id FROM task_flow_stage

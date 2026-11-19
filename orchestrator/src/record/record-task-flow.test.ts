@@ -295,5 +295,9 @@ test('presence returns every released table across member spaces and excludes ot
     textCopyIds: [COPY, SECOND.copy],
     questionIds: [QUESTION, SECOND.question],
     questionAuditIds: [QUESTION_AUDIT, SECOND.questionAudit],
+    questionAuditIdentities: [
+      { questionId: QUESTION, action: 'ask', at: expect.any(String) },
+      { questionId: SECOND.question, action: 'ask', at: expect.any(String) },
+    ],
   })
 })

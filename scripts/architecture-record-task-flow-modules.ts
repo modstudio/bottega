@@ -34,8 +34,11 @@ export const recordTaskFlowModules: RecordModule[] = [
   ]),
   module('orchestrator/src/record/record-history-upload.ts', [
     'bun:sqlite',
+    'node:fs',
+    'node:path',
     '../../../shared/brand.ts',
     '../../../shared/record-id.ts',
+    '../../../shared/state-directory.ts',
     '../database/db.ts',
     '../project/project-relink.ts',
     '../question-store/question-store-mutation.ts',

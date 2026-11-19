@@ -34,7 +34,11 @@ type RulingRead = Extract<RecordQuestionReadInput, { read: 'rulings' }>
 export async function readRecordQuestionPresenceTransaction(
   tx: SQL,
   input: { questionIds: string[]; questionAuditIds: string[] },
-): Promise<{ questionIds: string[]; questionAuditIds: string[] }> {
+): Promise<{
+  questionIds: string[]
+  questionAuditIds: string[]
+  questionAuditIdentities: Array<{ questionId: string; action: string; at: string }>
+}> {
   const questions = input.questionIds.length
     ? await tx.unsafe('SELECT id FROM question WHERE id=ANY($1::uuid[]) ORDER BY id', [
         input.questionIds,
@@ -46,8 +50,22 @@ export async function readRecordQuestionPresenceTransaction(
         [input.questionAuditIds],
       )
     : []
+  const questionAuditIdentities = input.questionIds.length
+    ? await tx.unsafe(
+        'SELECT question_id, action, at FROM question_mutation_audit WHERE question_id=ANY($1::uuid[])',
+        [input.questionIds],
+      )
+    : []
   const ids = (rows: Array<Record<string, unknown>>) => rows.map((row) => String(row.id))
-  return { questionIds: ids(questions), questionAuditIds: ids(questionAudits) }
+  return {
+    questionIds: ids(questions),
+    questionAuditIds: ids(questionAudits),
+    questionAuditIdentities: questionAuditIdentities.map((row) => ({
+      questionId: String(row.question_id),
+      action: String(row.action),
+      at: new Date(String(row.at)).toISOString(),
+    })),
+  }
 }
 
 async function recordQuestionRulingRows(

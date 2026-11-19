@@ -2,7 +2,11 @@
 /** Collects local hosted-history ids and reads their record presence in bounded batches. */
 
 import type { Database } from 'bun:sqlite'
-import { TASK_FLOW_PRESENCE_BATCH_MAX, type TaskFlowPresence } from './record-task-flow-contract.ts'
+import {
+  TASK_FLOW_PRESENCE_BATCH_MAX,
+  type TaskFlowPresence,
+  type TaskFlowPresenceResult,
+} from './record-task-flow-contract.ts'
 
 export const HOSTED_ROW_TABLES = [
   'workflow_obligation',
@@ -27,7 +31,16 @@ export type HostedRowReferences = {
   flowOpenCursor: ReadonlyMap<string, string>
 }
 export type HostedRowState = { ids: HostedRowIds; references: HostedRowReferences }
-export type PresenceReader = (input: TaskFlowPresence) => Promise<TaskFlowPresence>
+export type PresenceReader = (input: TaskFlowPresence) => Promise<TaskFlowPresenceResult>
+export type HostedRowPresence = HostedRowIds & { questionAuditIdentities: ReadonlySet<string> }
+
+export function questionAuditIdentity(input: {
+  questionId: string
+  action: string
+  at: string
+}): string {
+  return `${input.questionId}|${input.action}|${Date.parse(input.at)}`
+}
 
 const PRESENCE_FIELDS = {
   workflow_obligation: 'obligationIds',
@@ -122,8 +135,8 @@ function presenceRequest(local: HostedRowIds, batch: number): TaskFlowPresence {
 export async function readHostedRowPresence(
   local: HostedRowIds,
   read: PresenceReader,
-): Promise<HostedRowIds> {
-  const present = emptyHostedRowIds()
+): Promise<HostedRowPresence> {
+  const present = Object.assign(emptyHostedRowIds(), { questionAuditIdentities: new Set<string>() })
   const batches = Math.max(
     ...HOSTED_ROW_TABLES.map((table) =>
       Math.ceil(local[table].size / TASK_FLOW_PRESENCE_BATCH_MAX),
@@ -133,6 +146,8 @@ export async function readHostedRowPresence(
     const response = await read(presenceRequest(local, batch))
     for (const table of HOSTED_ROW_TABLES)
       for (const id of response[PRESENCE_FIELDS[table]]) present[table].add(id)
+    for (const identity of response.questionAuditIdentities ?? [])
+      present.questionAuditIdentities.add(questionAuditIdentity(identity))
   }
   return present
 }

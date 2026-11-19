@@ -1,6 +1,9 @@
 import type { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
+import { existsSync, readFileSync, readdirSync } from 'node:fs'
+import { join } from 'node:path'
 import { newRecordId } from '../../../shared/record-id.ts'
+import { resolveStateRoot } from '../../../shared/state-directory.ts'
 import { options as syncOptions } from '../../test/fixtures/record-sync.ts'
 import { fakePostgres } from '../../test/fixtures/record-sync-postgres.ts'
 import { guardHostedTables } from '../database/hosted-table-guard.ts'
@@ -11,9 +14,12 @@ import type { RecordQuestionClient } from './record-api-client-question.ts'
 import type { RecordTaskFlowClient } from './record-api-client-task-flow.ts'
 import {
   decideHistoryUploadPass,
+  HISTORY_UPLOAD_FAILURE_BOUND,
+  questionIsAbsent,
   uploadLocalWorkflowHistory,
   uploadMissingWorkflowHistory,
 } from './record-history-upload.ts'
+import { emptyHostedRowIds, questionAuditIdentity } from './record-hosted-row-presence.ts'
 import { syncRecord } from './record-sync.ts'
 
 const at = '2026-11-18T01:00:00.000Z'
@@ -765,5 +771,92 @@ test('sync uses the maintenance handle for bound hosted history instead of its g
     historyUploadWithDatabase: maintenanceHandle(database),
   })
   expect(presenceReads).toBe(1)
+  database.close()
+})
+
+test('question presence recognizes an audit by identity when its record id differs', () => {
+  const questionId = newRecordId()
+  const audit = {
+    id: newRecordId(),
+    question_record_id: questionId,
+    action: 'rule',
+    at,
+  }
+  const present = Object.assign(emptyHostedRowIds(), {
+    questionAuditIdentities: new Set([
+      questionAuditIdentity({ questionId, action: audit.action, at: audit.at }),
+    ]),
+  })
+  present.question.add(questionId)
+  expect(
+    questionIsAbsent({ row: { record_id: questionId }, audits: [audit] } as never, present),
+  ).toBe(false)
+  present.questionAuditIdentities.clear()
+  present.questionAuditIdentities.add(
+    questionAuditIdentity({ questionId, action: 'answer', at: audit.at }),
+  )
+  expect(
+    questionIsAbsent({ row: { record_id: questionId }, audits: [audit] } as never, present),
+  ).toBe(true)
+})
+
+test('sync archives a question held by the record with different content', async () => {
+  const database = migratedTestDatabase()
+  database.exec('PRAGMA foreign_keys=OFF')
+  const questionId = question(database, null, 91)
+  bind(database)
+  const directory = join(resolveStateRoot(process.env), 'archive', 'history-upload-conflict')
+  const before = new Set(existsSync(directory) ? readdirSync(directory) : [])
+  const client = syncClient(
+    absentPresence,
+    async () => {
+      throw new Error('already exists with different content')
+    },
+    async () => ({ revisions: {}, stages: [] }),
+  )
+  const result = await uploadMissingWorkflowHistory(
+    client,
+    syncDestination,
+    maintenanceHandle(database),
+  )
+  expect(result.failed).toBe(0)
+  expect(result.lines).toHaveLength(1)
+  expect(result.lines[0]).toContain(
+    `1 questions held by the record with different content; local copies archived to ${directory}`,
+  )
+  expect(result.lines[0]).toContain(`first: ${questionId}`)
+  const created = readdirSync(directory).filter((name) => !before.has(name))
+  expect(created).toHaveLength(1)
+  const archived = JSON.parse(readFileSync(join(directory, created[0]!), 'utf8').trim())
+  expect(archived.record_id).toBe(questionId)
+  expect(archived.audits).toHaveLength(1)
+  database.close()
+})
+
+test('sync stops importing after the pass-wide failure bound', async () => {
+  const database = migratedTestDatabase()
+  database.exec('PRAGMA foreign_keys=OFF')
+  for (let index = 0; index < HISTORY_UPLOAD_FAILURE_BOUND + 2; index += 1)
+    question(database, null, 200 + index)
+  bind(database)
+  let calls = 0
+  const client = syncClient(
+    absentPresence,
+    async () => {
+      calls += 1
+      throw new Error('generic import failure')
+    },
+    async () => ({ revisions: {}, stages: [] }),
+  )
+  const result = await uploadMissingWorkflowHistory(
+    client,
+    syncDestination,
+    maintenanceHandle(database),
+  )
+  expect(calls).toBe(HISTORY_UPLOAD_FAILURE_BOUND)
+  expect(result.failed).toBe(HISTORY_UPLOAD_FAILURE_BOUND)
+  expect(result.lines).toContain(
+    `workflow history upload stopped after ${HISTORY_UPLOAD_FAILURE_BOUND} failures; the rest waits for the next sync`,
+  )
   database.close()
 })
