@@ -2,7 +2,7 @@
 /** Knows machine and register diagnosis. Must not know transports, routing, run control, the CLI, or reviews by value. */
 
 import { existsSync, readFileSync } from 'node:fs'
-import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { PLATFORM_NAME, PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { type InstallationKind, installationIdentity } from '../../../shared/install-root.ts'
 import {
   type MachineLevel,
@@ -474,7 +474,7 @@ function reportRetrievalCheck(
 
 export function sandboxRuntimeDoctorLine(runtime: RuntimeAvailability): string {
   const probeUnavailable = runtime.sandboxProbeUnavailableReason
-    ? `sandbox probe unavailable: ${runtime.sandboxProbeUnavailableReason}; Bottega cannot confirm the sandbox works on this host`
+    ? `sandbox probe unavailable: ${runtime.sandboxProbeUnavailableReason}; ${PLATFORM_NAME} cannot confirm the sandbox works on this host`
     : null
   return runtime.available
     ? [

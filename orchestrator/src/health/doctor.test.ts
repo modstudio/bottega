@@ -49,7 +49,7 @@ test('sandbox doctor reports an unknown namespace probe without blocking availab
       sandboxProbeUnavailableReason: 'wrapper import failed',
     }),
   ).toBe(
-    'sandbox        runtime available at /runtime\nsandbox probe unavailable: wrapper import failed; Bottega cannot confirm the sandbox works on this host',
+    `sandbox        runtime available at /runtime\nsandbox probe unavailable: wrapper import failed; ${PLATFORM_NAME} cannot confirm the sandbox works on this host`,
   )
 })
 
