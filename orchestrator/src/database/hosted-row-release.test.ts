@@ -1,5 +1,6 @@
 import type { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import {
   decideHostedRowRelease,
@@ -304,7 +305,7 @@ test('hosted row release keeps one incomplete audit table and its question', asy
     task_flow: 0,
   })
   expect(output).toEqual([
-    `kept local question_mutation_audit: 1 ids absent from the record: ${missingAudit}; run bottega record sync, then bottega machine update`,
+    `kept local question_mutation_audit: 1 ids absent from the record: ${missingAudit}; run ${PLATFORM_SLUG} record sync, then ${PLATFORM_SLUG} machine update`,
     'released 5 local workflow history rows now on the record',
   ])
   database.close()
