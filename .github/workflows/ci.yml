@@ -339,8 +339,8 @@ jobs:
         if: github.event_name == 'pull_request' || github.event_name == 'merge_group' || github.event_name == 'workflow_dispatch'
         run: bun scripts/smoke-release.ts
       - name: Pass outside the release smoke events
-        if: github.event_name != 'merge_group' && github.event_name != 'workflow_dispatch'
-        run: "echo 'release smoke: no merge queue or dispatch event'"
+        if: github.event_name != 'pull_request' && github.event_name != 'merge_group' && github.event_name != 'workflow_dispatch'
+        run: "echo 'release smoke: no pull request, merge queue or dispatch event'"
 
   ci:
     if: always()
