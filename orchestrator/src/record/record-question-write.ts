@@ -35,6 +35,8 @@ type ExistingQuestion = {
   last_request_id: string | null
 }
 
+export const RECORD_QUESTION_DIFFERENT_CONTENT = 'already exists with different content'
+
 function requireRestoreNumber(intent: QuestionIntent, input: Tenant & QuestionWriteBody): void {
   if (intent !== 'restore' || input.question.number !== null) return
   throw new RecordQuestionError(
@@ -102,7 +104,7 @@ export async function writeRecordQuestion(
   } catch (error) {
     if (intent === 'import' && isUniqueViolation(error, 'question_mutation_audit_identity'))
       throw new RecordQuestionError(
-        `question ${input.question.id} already exists with different content`,
+        `question ${input.question.id} ${RECORD_QUESTION_DIFFERENT_CONTENT}`,
         409,
       )
     if (intent === 'import' && isUniqueViolation(error, 'question_pkey'))
@@ -231,7 +233,7 @@ function assertSameQuestionRow(
   for (const [key, value] of Object.entries(values)) {
     if (key === 'number' || key === 'lastRequestId') continue
     if (!sameRecordValue(existing[recordColumnName(key)], value))
-      throw new RecordQuestionError(`${table} ${id} already exists with different content`, 409)
+      throw new RecordQuestionError(`${table} ${id} ${RECORD_QUESTION_DIFFERENT_CONTENT}`, 409)
   }
 }
 

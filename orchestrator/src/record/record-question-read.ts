@@ -19,7 +19,10 @@ import {
   RECORD_QUESTION_INBOX_STEP_COLUMNS,
   RECORD_QUESTION_STEP_COLUMNS,
 } from './record-question-step.ts'
-import { TASK_FLOW_CLOSED_STAGE_STATES_SQL } from './record-task-flow-contract.ts'
+import {
+  type QuestionAuditIdentity,
+  TASK_FLOW_CLOSED_STAGE_STATES_SQL,
+} from './record-task-flow-contract.ts'
 
 type Tenant = { url: string } & TenantPrincipal
 type Row = Record<string, unknown>
@@ -38,7 +41,7 @@ export async function readRecordQuestionPresenceTransaction(
 ): Promise<{
   questionIds: string[]
   questionAuditIds: string[]
-  questionAuditIdentities: Array<{ questionId: string; action: string; at: string }>
+  questionAuditIdentities: QuestionAuditIdentity[]
 }> {
   const questions = input.questionIds.length
     ? await tx.unsafe('SELECT id FROM question WHERE id=ANY($1::uuid[]) ORDER BY id', [
@@ -53,7 +56,7 @@ export async function readRecordQuestionPresenceTransaction(
     : []
   const questionAuditIdentities: Array<Record<string, unknown>> = input.questionIds.length
     ? await tx.unsafe(
-        'SELECT question_id, action, at FROM question_mutation_audit WHERE question_id=ANY($1::uuid[])',
+        'SELECT question_id, action, at FROM question_mutation_audit WHERE question_id=ANY($1::uuid[]) ORDER BY question_id, action, at',
         [input.questionIds],
       )
     : []

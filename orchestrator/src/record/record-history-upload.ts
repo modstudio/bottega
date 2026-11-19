@@ -2,11 +2,11 @@
 /** Uploads local workflow history during sign-in and each hosted-record sync pass. */
 
 import type { Database } from 'bun:sqlite'
-import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { resolveStateRoot } from '../../../shared/state-directory.ts'
 import { withDatabaseForMigrationStep } from '../database/db.ts'
+import { writeHostedRowReleaseArchive } from '../database/hosted-row-release.ts'
 import type { ProjectAdoptionResult } from '../project/project-relink.ts'
 import {
   localQuestionHistory,
@@ -24,6 +24,7 @@ import {
   questionAuditIdentity,
   readHostedRowPresence,
 } from './record-hosted-row-presence.ts'
+import { RECORD_QUESTION_DIFFERENT_CONTENT } from './record-question-write.ts'
 import { type TaskFlowIntentInput, taskFlowRequestId } from './record-task-flow-write-contract.ts'
 import { recordWriteDestination } from './record-write-destination.ts'
 
@@ -34,6 +35,7 @@ type FlowImportWithNumbers = { payload: FlowImport; numbers: Map<string, number>
 type LocalQuestionHistory = ReturnType<typeof localQuestionHistory>
 
 const WORKFLOW_HISTORY_UPLOAD_FINGERPRINT_KEY = 'record_workflow_history_upload_fingerprint'
+const WORKFLOW_HISTORY_HELD_QUESTION_IDS_KEY = 'record_workflow_history_held_question_ids'
 export const HISTORY_UPLOAD_FAILURE_BOUND = 25
 export type HistoryUploadFingerprint = ReadonlyArray<{
   table: string
@@ -43,7 +45,7 @@ export type HistoryUploadFingerprint = ReadonlyArray<{
 type WithMaintenanceDatabase = <T>(action: (database: Database) => Promise<T>) => Promise<T>
 
 type UploadDependencies = {
-  client: Pick<RecordApiClient, 'importTaskFlow' | 'importQuestion'>
+  client: Pick<RecordApiClient, 'importTaskFlow' | 'importQuestion' | 'readTaskFlowPresence'>
   destination(project: string | null): Promise<RecordWriteDestination>
   withDatabase<T>(action: (database: Database) => Promise<T>): Promise<T>
 }
@@ -156,6 +158,28 @@ function storeHistoryUploadFingerprint(
        ON CONFLICT(key) DO UPDATE SET value=excluded.value`,
     )
     .run(WORKFLOW_HISTORY_UPLOAD_FINGERPRINT_KEY, JSON.stringify(fingerprint))
+}
+
+function storedHeldQuestionIds(database: Database): Set<string> {
+  const row = database
+    .query<{ value: string }, [string]>('SELECT value FROM schema_meta WHERE key=?')
+    .get(WORKFLOW_HISTORY_HELD_QUESTION_IDS_KEY)
+  if (!row) return new Set()
+  try {
+    const ids: unknown = JSON.parse(row.value)
+    return new Set(Array.isArray(ids) ? ids.filter((id): id is string => typeof id === 'string') : [])
+  } catch {
+    return new Set()
+  }
+}
+
+function storeHeldQuestionIds(database: Database, ids: ReadonlySet<string>): void {
+  database
+    .query(
+      `INSERT INTO schema_meta(key,value) VALUES (?,?)
+       ON CONFLICT(key) DO UPDATE SET value=excluded.value`,
+    )
+    .run(WORKFLOW_HISTORY_HELD_QUESTION_IDS_KEY, JSON.stringify([...ids].sort()))
 }
 
 function historyProjects(database: Database): HistoryProject[] {
@@ -376,6 +400,8 @@ async function uploadProjectHistory(
     importQuestion: NonNullable<UploadDependencies['client']['importQuestion']>
   },
   presentation: Presentation,
+  present: PresentHistory,
+  pass: UploadPassState,
 ): Promise<void> {
   const flows = flowImports(database, project.recordId)
   let stages = 0
@@ -388,18 +414,32 @@ async function uploadProjectHistory(
         presentation.log(`cursor ${old} -> cursor ${stage.number}`)
     }
   }
-  const questions = localQuestionHistory(database, project.recordId).map(({ row, audits }) => ({
-    requestId: taskFlowRequestId('import', ['question', String(row.record_id)]),
-    question: questionSnapshotFromRow(row),
-    audits,
-  }))
-  for (const question of questions) {
-    const result = await recordCall(() => client.importQuestion(question, destination))
-    if (question.question.number !== result.number)
-      presentation.log(`q${question.question.number} -> q${result.number}`)
+  const questions = localQuestionHistory(database, project.recordId)
+  let uploadedQuestions = 0
+  for (const history of questions) {
+    if (!questionIsAbsent(history, present, pass.heldQuestionIds)) continue
+    const id = String(history.row.record_id)
+    const question = {
+      requestId: taskFlowRequestId('import', ['question', id]),
+      question: questionSnapshotFromRow(history.row),
+      audits: history.audits,
+    }
+    try {
+      const result = await client.importQuestion(question, destination)
+      uploadedQuestions += 1
+      if (question.question.number !== result.number)
+        presentation.log(`q${question.question.number} -> q${result.number}`)
+    } catch (cause) {
+      if (errorMessage(cause).includes(RECORD_QUESTION_DIFFERENT_CONTENT)) {
+        pass.heldQuestions.push(history)
+        pass.heldQuestionIds.add(id)
+        continue
+      }
+      await recordCall(() => Promise.reject(cause))
+    }
   }
   presentation.log(
-    `${project.name}: uploaded ${flows.length} task flows, ${stages} stages, ${questions.length} questions`,
+    `${project.name}: uploaded ${flows.length} task flows, ${stages} stages, ${uploadedQuestions} questions`,
   )
 }
 
@@ -410,15 +450,33 @@ async function uploadPersonalQuestionHistory(
     importQuestion: NonNullable<UploadDependencies['client']['importQuestion']>
   },
   presentation: Presentation,
+  present: PresentHistory,
+  pass: UploadPassState,
 ): Promise<void> {
-  const questions = history.map(({ row, audits }) => ({
-    requestId: taskFlowRequestId('import', ['question', String(row.record_id)]),
-    question: questionSnapshotFromRow(row),
-    audits,
-  }))
-  for (const question of questions)
-    await recordCall(() => client.importQuestion(question, destination))
-  presentation.log(`personal space: uploaded ${questions.length} questions`)
+  let uploadedQuestions = 0
+  for (const item of history) {
+    if (!questionIsAbsent(item, present, pass.heldQuestionIds)) continue
+    const id = String(item.row.record_id)
+    try {
+      await client.importQuestion(
+        {
+          requestId: taskFlowRequestId('import', ['question', id]),
+          question: questionSnapshotFromRow(item.row),
+          audits: item.audits,
+        },
+        destination,
+      )
+      uploadedQuestions += 1
+    } catch (cause) {
+      if (errorMessage(cause).includes(RECORD_QUESTION_DIFFERENT_CONTENT)) {
+        pass.heldQuestions.push(item)
+        pass.heldQuestionIds.add(id)
+        continue
+      }
+      await recordCall(() => Promise.reject(cause))
+    }
+  }
+  presentation.log(`personal space: uploaded ${uploadedQuestions} questions`)
 }
 
 async function uploadDatabaseHistory(
@@ -434,8 +492,8 @@ async function uploadDatabaseHistory(
     presentation.log('no local task-flow or question history to upload')
     return
   }
-  const { importTaskFlow, importQuestion } = dependencies.client
-  if (!importTaskFlow || !importQuestion)
+  const { importTaskFlow, importQuestion, readTaskFlowPresence } = dependencies.client
+  if (!importTaskFlow || !importQuestion || !readTaskFlowPresence)
     throw new Error(
       'record API predates workflow history imports; release hosted-api, then sign in again',
     )
@@ -445,7 +503,16 @@ async function uploadDatabaseHistory(
     : null
   const repaired = taskFlowHistoryMaintenanceStore(database).repairUnlinkedKeylessStages()
   presentation.log(`repaired ${repaired} unlinked local workflow stages`)
-  const client = { ...dependencies.client, importTaskFlow, importQuestion }
+  const present = await recordCall(() =>
+    readHostedRowPresence(collectHostedRowState(database).ids, readTaskFlowPresence),
+  )
+  const pass: UploadPassState = {
+    failed: 0,
+    heldQuestionIds: storedHeldQuestionIds(database),
+    heldQuestions: [],
+    stopped: false,
+  }
+  const client = { ...dependencies.client, importTaskFlow, importQuestion, readTaskFlowPresence }
   for (const project of projects)
     await uploadProjectHistory(
       database,
@@ -453,6 +520,8 @@ async function uploadDatabaseHistory(
       destinations.get(project.name)!,
       client,
       presentation,
+      present,
+      pass,
     )
   if (personalDestination)
     await uploadPersonalQuestionHistory(
@@ -460,7 +529,12 @@ async function uploadDatabaseHistory(
       personalDestination,
       client,
       presentation,
+      present,
+      pass,
     )
+  const held = finishUploadPass(database, { failed: 0, lines: [] }, pass)
+  for (const line of held.lines) presentation.log(line)
+  if (held.failed > 0) throw new Error(held.lines.at(-1) ?? 'question conflict archive failed')
   presentation.log(
     `run \`${PLATFORM_SLUG} machine update\` to verify and release local workflow history`,
   )
@@ -506,6 +580,7 @@ function flowIsAbsent(
 type PresentHistory = Awaited<ReturnType<typeof readHostedRowPresence>>
 type UploadPassState = {
   failed: number
+  heldQuestionIds: Set<string>
   heldQuestions: LocalQuestionHistory
   stopped: boolean
 }
@@ -525,7 +600,9 @@ const errorMessage = (cause: unknown): string =>
 export function questionIsAbsent(
   history: LocalQuestionHistory[number],
   present: PresentHistory,
+  heldQuestionIds: ReadonlySet<string> = new Set(),
 ): boolean {
+  if (heldQuestionIds.has(String(history.row.record_id))) return false
   return (
     !present.question.has(String(history.row.record_id)) ||
     history.audits.some(
@@ -581,7 +658,7 @@ async function uploadMissingQuestions(
   const result: HistorySyncResult = { failed: 0, lines: [] }
   for (const history of histories) {
     if (pass.stopped) break
-    if (!questionIsAbsent(history, present)) continue
+    if (!questionIsAbsent(history, present, pass.heldQuestionIds)) continue
     const id = String(history.row.record_id)
     try {
       await client.importQuestion(
@@ -593,8 +670,9 @@ async function uploadMissingQuestions(
         destination,
       )
     } catch (cause) {
-      if (errorMessage(cause).includes('already exists with different content')) {
+      if (errorMessage(cause).includes(RECORD_QUESTION_DIFFERENT_CONTENT)) {
         pass.heldQuestions.push(history)
+        pass.heldQuestionIds.add(id)
         continue
       }
       result.failed += 1
@@ -655,7 +733,7 @@ async function uploadPersonalMissingHistory(
   pass: UploadPassState,
 ): Promise<HistorySyncResult> {
   const histories = localQuestionHistory(database, null)
-  if (!histories.some((history) => questionIsAbsent(history, present)))
+  if (!histories.some((history) => questionIsAbsent(history, present, pass.heldQuestionIds)))
     return { failed: 0, lines: [] }
   try {
     const destination = await destinationFor(client, null)
@@ -668,25 +746,26 @@ async function uploadPersonalMissingHistory(
   }
 }
 
-function archiveTimestamp(now: Date): string {
-  return now.toISOString().replace(/[:.]/g, '-')
-}
-
 function writeQuestionConflictArchive(histories: LocalQuestionHistory): string {
   const directory = join(resolveStateRoot(process.env), 'archive', 'history-upload-conflict')
-  mkdirSync(directory, { recursive: true, mode: 0o700 })
-  const path = join(directory, `${archiveTimestamp(new Date())}.jsonl`)
-  const lines = histories.map((history) =>
-    JSON.stringify({ ...history.row, audits: history.audits }),
+  return writeHostedRowReleaseArchive(
+    histories.map((history) => ({
+      table: 'question',
+      row: { ...history.row, audits: history.audits },
+    })),
+    { directory },
   )
-  writeFileSync(path, `${lines.join('\n')}\n`, { mode: 0o600 })
-  return path
 }
 
-function finishUploadPass(result: HistorySyncResult, pass: UploadPassState): HistorySyncResult {
+function finishUploadPass(
+  database: Database,
+  result: HistorySyncResult,
+  pass: UploadPassState,
+): HistorySyncResult {
   if (pass.heldQuestions.length > 0) {
     try {
       const path = writeQuestionConflictArchive(pass.heldQuestions)
+      storeHeldQuestionIds(database, pass.heldQuestionIds)
       const ids = pass.heldQuestions
         .slice(0, 3)
         .map((history) => String(history.row.record_id))
@@ -754,7 +833,12 @@ export async function uploadMissingWorkflowHistory(
       }
     }
     const projects: HistorySyncResult[] = []
-    const pass: UploadPassState = { failed: 0, heldQuestions: [], stopped: false }
+    const pass: UploadPassState = {
+      failed: 0,
+      heldQuestionIds: storedHeldQuestionIds(database),
+      heldQuestions: [],
+      stopped: false,
+    }
     for (const project of historyProjects(database)) {
       if (pass.stopped) break
       projects.push(
@@ -772,6 +856,7 @@ export async function uploadMissingWorkflowHistory(
       ? { failed: 0, lines: [] }
       : await uploadPersonalMissingHistory(database, present, capable, destinationFor, pass)
     const result = finishUploadPass(
+      database,
       combineHistoryResults({ failed: 0, lines: repairLines }, ...projects, personal),
       pass,
     )

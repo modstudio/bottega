@@ -201,10 +201,7 @@ function taskFlowReadClient(request: Request): Partial<RecordTaskFlowClient> {
         method: 'POST',
         body: JSON.stringify(input),
         ...destination,
-        schema: (body) => {
-          const parsed = taskFlowPresenceResultSchema.parse(body)
-          return { ...parsed, questionAuditIdentities: parsed.questionAuditIdentities ?? [] }
-        },
+        schema: (body) => taskFlowPresenceResultSchema.parse(body),
       }),
     readTaskFlowStage: (id, destination) =>
       readById(

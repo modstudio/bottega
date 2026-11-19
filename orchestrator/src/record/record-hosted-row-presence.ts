@@ -4,6 +4,7 @@
 import type { Database } from 'bun:sqlite'
 import {
   TASK_FLOW_PRESENCE_BATCH_MAX,
+  type QuestionAuditIdentity,
   type TaskFlowPresence,
   type TaskFlowPresenceResult,
 } from './record-task-flow-contract.ts'
@@ -34,11 +35,7 @@ export type HostedRowState = { ids: HostedRowIds; references: HostedRowReference
 export type PresenceReader = (input: TaskFlowPresence) => Promise<TaskFlowPresenceResult>
 export type HostedRowPresence = HostedRowIds & { questionAuditIdentities: ReadonlySet<string> }
 
-export function questionAuditIdentity(input: {
-  questionId: string
-  action: string
-  at: string
-}): string {
+export function questionAuditIdentity(input: QuestionAuditIdentity): string {
   return `${input.questionId}|${input.action}|${Date.parse(input.at)}`
 }
 
@@ -146,7 +143,7 @@ export async function readHostedRowPresence(
     const response = await read(presenceRequest(local, batch))
     for (const table of HOSTED_ROW_TABLES)
       for (const id of response[PRESENCE_FIELDS[table]]) present[table].add(id)
-    for (const identity of response.questionAuditIdentities ?? [])
+    for (const identity of response.questionAuditIdentities)
       present.questionAuditIdentities.add(questionAuditIdentity(identity))
   }
   return present

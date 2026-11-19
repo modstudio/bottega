@@ -15,11 +15,10 @@ import type { RecordTaskFlowClient } from './record-api-client-task-flow.ts'
 import {
   decideHistoryUploadPass,
   HISTORY_UPLOAD_FAILURE_BOUND,
-  questionIsAbsent,
   uploadLocalWorkflowHistory,
   uploadMissingWorkflowHistory,
 } from './record-history-upload.ts'
-import { emptyHostedRowIds, questionAuditIdentity } from './record-hosted-row-presence.ts'
+import { RECORD_QUESTION_DIFFERENT_CONTENT } from './record-question-write.ts'
 import { syncRecord } from './record-sync.ts'
 
 const at = '2026-11-18T01:00:00.000Z'
@@ -162,13 +161,21 @@ function adoption(name: string): ProjectAdoptionResult {
 }
 
 type ImportClient = Pick<
-  RecordTaskFlowClient & RecordQuestionClient,
-  'importTaskFlow' | 'importQuestion'
+  RecordApiClient & RecordTaskFlowClient & RecordQuestionClient,
+  'importTaskFlow' | 'importQuestion' | 'readTaskFlowPresence'
 >
 
 function dependencies(database: Database, client: ImportClient) {
   return {
-    client,
+    client: {
+      readTaskFlowPresence: async (input: Parameters<
+        NonNullable<RecordApiClient['readTaskFlowPresence']>
+      >[0]) => ({
+        ...Object.fromEntries(Object.keys(input).map((key) => [key, []])),
+        questionAuditIdentities: [],
+      }),
+      ...client,
+    },
     destination: async (name: string | null) => ({
       destinationSpaceId: name === null ? 'personal-space' : `${name}-space`,
     }),
@@ -425,6 +432,34 @@ test('projectless questions upload with audits to the personal space and are cou
   database.close()
 })
 
+test('sign-in skips a question whose audit is present under a different id', async () => {
+  const database = migratedTestDatabase()
+  database.exec('PRAGMA foreign_keys=OFF')
+  const questionId = question(database, null, 10)
+  let imports = 0
+  const client: ImportClient = {
+    readTaskFlowPresence: async (input) => ({
+      ...input,
+      questionAuditIds: [],
+      questionAuditIdentities: [{ questionId, action: 'rule', at }],
+    }),
+    importTaskFlow: async () => {
+      throw new Error('unexpected flow import')
+    },
+    importQuestion: async () => {
+      imports += 1
+      throw new Error('unexpected question import')
+    },
+  }
+  await uploadLocalWorkflowHistory(
+    [],
+    { log: () => undefined },
+    dependencies(database, client),
+  )
+  expect(imports).toBe(0)
+  database.close()
+})
+
 test('a missing import capability refuses before repairing local history', async () => {
   const database = migratedTestDatabase()
   database.exec('PRAGMA foreign_keys=OFF')
@@ -497,7 +532,13 @@ function syncClient(
   importTaskFlow: NonNullable<RecordApiClient['importTaskFlow']>,
 ): RecordApiClient {
   return {
-    readTaskFlowPresence: presence as NonNullable<RecordApiClient['readTaskFlowPresence']>,
+    readTaskFlowPresence: async (...args) => {
+      const result = (await presence(...args)) as Record<string, unknown>
+      return {
+        ...result,
+        questionAuditIdentities: result.questionAuditIdentities ?? [],
+      } as Awaited<ReturnType<NonNullable<RecordApiClient['readTaskFlowPresence']>>>
+    },
     importQuestion,
     importTaskFlow,
   } as RecordApiClient
@@ -774,30 +815,34 @@ test('sync uses the maintenance handle for bound hosted history instead of its g
   database.close()
 })
 
-test('question presence recognizes an audit by identity when its record id differs', () => {
-  const questionId = newRecordId()
-  const audit = {
-    id: newRecordId(),
-    question_record_id: questionId,
-    action: 'rule',
-    at,
+test('sync consumes audit identities from the presence reader before deciding to import', async () => {
+  for (const [action, expectedImports] of [
+    ['rule', 0],
+    ['answer', 1],
+  ] as const) {
+    const database = migratedTestDatabase()
+    database.exec('PRAGMA foreign_keys=OFF')
+    const questionId = question(database, null, action === 'rule' ? 81 : 82)
+    bind(database)
+    let imports = 0
+    const client = syncClient(
+      async (input) => ({
+        ...input,
+        questionAuditIds: [],
+        questionAuditIdentities: [{ questionId, action, at }],
+      }),
+      async (input) => {
+        imports += 1
+        return { id: input.question.id, number: 1, revision: 1, applied: true }
+      },
+      async () => {
+        throw new Error('unexpected flow import')
+      },
+    )
+    await uploadMissingWorkflowHistory(client, syncDestination, maintenanceHandle(database))
+    expect(imports).toBe(expectedImports)
+    database.close()
   }
-  const present = Object.assign(emptyHostedRowIds(), {
-    questionAuditIdentities: new Set([
-      questionAuditIdentity({ questionId, action: audit.action, at: audit.at }),
-    ]),
-  })
-  present.question.add(questionId)
-  expect(
-    questionIsAbsent({ row: { record_id: questionId }, audits: [audit] } as never, present),
-  ).toBe(false)
-  present.questionAuditIdentities.clear()
-  present.questionAuditIdentities.add(
-    questionAuditIdentity({ questionId, action: 'answer', at: audit.at }),
-  )
-  expect(
-    questionIsAbsent({ row: { record_id: questionId }, audits: [audit] } as never, present),
-  ).toBe(true)
 })
 
 test('sync archives a question held by the record with different content', async () => {
@@ -807,10 +852,14 @@ test('sync archives a question held by the record with different content', async
   bind(database)
   const directory = join(resolveStateRoot(process.env), 'archive', 'history-upload-conflict')
   const before = new Set(existsSync(directory) ? readdirSync(directory) : [])
+  const importedIds: string[] = []
   const client = syncClient(
     absentPresence,
-    async () => {
-      throw new Error('already exists with different content')
+    async (input) => {
+      importedIds.push(input.question.id)
+      if (input.question.id === questionId)
+        throw new Error(`question ${questionId} ${RECORD_QUESTION_DIFFERENT_CONTENT}`)
+      return { id: input.question.id, number: 92, revision: 1, applied: true }
     },
     async () => ({ revisions: {}, stages: [] }),
   )
@@ -828,8 +877,27 @@ test('sync archives a question held by the record with different content', async
   const created = readdirSync(directory).filter((name) => !before.has(name))
   expect(created).toHaveLength(1)
   const archived = JSON.parse(readFileSync(join(directory, created[0]!), 'utf8').trim())
-  expect(archived.record_id).toBe(questionId)
-  expect(archived.audits).toHaveLength(1)
+  expect(archived.table).toBe('question')
+  expect(archived.row.record_id).toBe(questionId)
+  expect(archived.row.audits).toHaveLength(1)
+
+  question(database, null, 92)
+  const second = await uploadMissingWorkflowHistory(
+    client,
+    syncDestination,
+    maintenanceHandle(database),
+  )
+  expect(second.lines.some((line) => line.includes('held by the record'))).toBe(false)
+  expect(importedIds.filter((id) => id === questionId)).toHaveLength(1)
+  expect(readdirSync(directory).filter((name) => !before.has(name))).toEqual(created)
+
+  await uploadLocalWorkflowHistory(
+    [],
+    { log: () => undefined },
+    dependencies(database, client),
+  )
+  expect(importedIds.filter((id) => id === questionId)).toHaveLength(1)
+  expect(readdirSync(directory).filter((name) => !before.has(name))).toEqual(created)
   database.close()
 })
 
