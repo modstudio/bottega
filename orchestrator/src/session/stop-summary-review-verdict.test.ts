@@ -65,6 +65,19 @@ test('omits owed lenses while any lens is running', () => {
   ).toBeNull()
 })
 
+test('omits a building branch', () => {
+  expect(
+    stopSummaryReviewVerdictLine({
+      branch: 'DEV-1234-work',
+      taskKey: 'DEV-1234',
+      verdict: verdict({
+        lenses: [{ lens: 'correctness', status: 'building', reason: 'initial' }],
+        next: { action: 'wait-build' },
+      }),
+    }),
+  ).toBeNull()
+})
+
 test('falls back to the branch when there is no task key', () => {
   expect(
     stopSummaryReviewVerdictLine({

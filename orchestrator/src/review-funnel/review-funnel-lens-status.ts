@@ -3,6 +3,7 @@
 
 const REVIEW_FUNNEL_LENS_STATUSES = [
   'owed',
+  'building',
   'running',
   'untriaged',
   'satisfied',

@@ -4,6 +4,7 @@
 import type { ReviewFunnelLensStatus } from '../review-funnel/review-funnel-lens-status.ts'
 
 type ReviewOwedVerdict = {
+  liveWriter?: { runId: string; number: number } | null
   lenses: readonly {
     lens: string
     status: ReviewFunnelLensStatus
@@ -20,6 +21,12 @@ const BLOCKING_LENS_STATUSES: ReadonlySet<ReviewFunnelLensStatus> = new Set([
 ])
 
 export function decideReviewOwedFloor(verdict: ReviewOwedVerdict): ReviewOwedFloorDecision {
+  if (verdict.liveWriter) {
+    return {
+      action: 'refuse',
+      message: `floor review-owed is unmet; live writing run ${verdict.liveWriter.number} is building; remedy: \`${verdict.remedy}\``,
+    }
+  }
   const blocking = verdict.lenses.filter(({ status }) => BLOCKING_LENS_STATUSES.has(status))
   if (!blocking.length) return { action: 'allow' }
   return {

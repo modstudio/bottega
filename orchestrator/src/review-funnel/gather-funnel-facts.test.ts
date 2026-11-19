@@ -102,6 +102,25 @@ function fixture(landingBranch: string) {
                ?,'fixture',?,'DEV-2336','correctness')`,
     )
     .run(liveRunId, projectId, branch)
+  const liveWriterId = newRecordId()
+  database
+    .query(
+      `INSERT INTO run
+       (record_id,number,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,turn,
+        project_record_id,repo,branch,launch_key)
+       VALUES (?,4,'2026-11-15T15:04:00Z','codex','implement','sha',1,'head','asking',1,
+               ?,'fixture',?,'DEV-2336')`,
+    )
+    .run(liveWriterId, projectId, branch)
+  database
+    .query(
+      `INSERT INTO run
+       (record_id,number,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,turn,
+        project_record_id,repo,branch,launch_key)
+       VALUES (?,5,'2026-11-15T15:04:30Z','codex','implement','sha',1,'head','ok',1,
+               ?,'fixture',?,'DEV-2336')`,
+    )
+    .run(newRecordId(), projectId, branch)
   database
     .query(
       `INSERT INTO landing_triage_snapshot
@@ -131,6 +150,7 @@ function fixture(landingBranch: string) {
   return {
     database,
     liveRunId,
+    liveWriterId,
     facts: gatherFunnelFacts({
       database,
       cwd: repo,
@@ -162,6 +182,15 @@ test('a running review-lens row carrying lens and branch is credited immediately
       runId: liveRunId,
       state: 'running',
     })
+  } finally {
+    database.close()
+  }
+})
+
+test('an asking writer is live while a running review lens and finished writer are not selected', () => {
+  const { database, facts, liveWriterId } = fixture(branch)
+  try {
+    expect(facts.liveWriter).toEqual({ runId: liveWriterId, number: 4 })
   } finally {
     database.close()
   }
