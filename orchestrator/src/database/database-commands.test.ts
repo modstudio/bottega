@@ -107,13 +107,14 @@ test('incremental vacuum setup waits for twice the store size in free space', ()
 test('incremental vacuum setup converts once and reports size and elapsed time', () => {
   const lines: string[] = []
   const times = [10, 15]
+  const withinRetention = new Date(Date.now() - 24 * 60 * 60 * 1_000).toISOString()
   db()
     .query(
       `INSERT INTO outbox (record_id,kind,row_id,payload,created_at,synced_at)
-     VALUES (?,'run','vacuum-prune','{}','2026-11-05','2026-11-05'),
-            (?,'run','vacuum-prune','{}','2026-11-05','2026-11-05')`,
+     VALUES (?1,'run','vacuum-prune','{}',?3,?3),
+            (?2,'run','vacuum-prune','{}',?3,?3)`,
     )
-    .run(randomUUID(), randomUUID())
+    .run(randomUUID(), randomUUID(), withinRetention)
   setupIncrementalVacuumAfterMachineUpdate(
     { log: (line) => lines.push(line) },
     {

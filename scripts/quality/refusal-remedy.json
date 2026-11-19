@@ -168,9 +168,6 @@
     "shared/test-git-repository.ts": 1
   },
   "commandCases": {
-    "orchestrator/src/database/hosted-row-release.ts#releaseRefusal": {
-      "test": "orchestrator/src/database/hosted-row-release.test.ts: hosted row release succeeds after sign-in makes presence readable"
-    },
     "shared/record-remedies.ts#recordUnreachableRefusal": {
       "test": "shared/record-remedies.test.ts: hosted-record unreachable refusal names the origin, outcome, and doctor remedy"
     },
