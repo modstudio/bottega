@@ -19,9 +19,9 @@ test('numbered pull-request artifacts resolve through their number and still enf
     artifact: { ref: '#15', exists: true },
     pullRequest: { url: 'https://github.com/acme/app/pull/15', head: 'DEV-977-work' },
   })
-  await expect(
-    gather(database(), { artifacts: ['#16'] }, { viewPullRequest }),
-  ).rejects.toThrow('resolved as https://github.com/acme/app/pull/15')
+  await expect(gather(database(), { artifacts: ['#16'] }, { viewPullRequest })).rejects.toThrow(
+    'resolved as https://github.com/acme/app/pull/15',
+  )
   expect(references).toEqual([15, 16])
 })
 

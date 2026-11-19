@@ -216,21 +216,26 @@ function artifactRefFromPointer(
   if (parsed.kind === 'pull-request')
     return { kind: 'pull-request', url: parsed.url ?? `#${parsed.number}` }
   if (parsed.kind === 'commit') return parsed
-  if (parsed.kind === 'run') {
-    if (parsed.reference.qualifier?.kind === 'machine') {
-      const refusal = legacyMachineLabelRefusal(source)
-      if (refusal) return { error: refusal }
-    }
-    const value = parsed.reference.value
-    const id = value.kind === 'record-id' ? value.recordId : parsed.source
-    if (parsed.explicit || parsed.reference.qualifier) return { kind: 'run', id }
-    return value.kind === 'number' ? { kind: 'id', id: value.number } : { kind: 'run', id }
-  }
+  if (parsed.kind === 'run') return runArtifactRef(parsed, source)
   if (parsed.kind === 'task-document')
     return { error: `--artifact ${source} must use a doc: reference for a document` }
   return parsed.kind === 'attached-text'
     ? { kind: 'attached-text', id: parsed.recordId }
     : { kind: parsed.kind, recordId: parsed.recordId }
+}
+
+function runArtifactRef(
+  parsed: Extract<PointerReference, { kind: 'run' }>,
+  source: string,
+): ArtifactRef | { error: string } {
+  if (parsed.reference.qualifier?.kind === 'machine') {
+    const refusal = legacyMachineLabelRefusal(source)
+    if (refusal) return { error: refusal }
+  }
+  const value = parsed.reference.value
+  const id = value.kind === 'record-id' ? value.recordId : parsed.source
+  if (parsed.explicit || parsed.reference.qualifier) return { kind: 'run', id }
+  return value.kind === 'number' ? { kind: 'id', id: value.number } : { kind: 'run', id }
 }
 
 function legacyMachineLabelRefusal(value: string): string | null {
