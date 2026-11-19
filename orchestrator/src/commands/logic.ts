@@ -69,6 +69,7 @@ import {
   typedQuestionBacktestCommand,
   typedQuestionCommand,
 } from '../typed-question/typed-question-commands.ts'
+import { renewTaskClaim } from '../workflow/workflow-task-claim.ts'
 import { registerDatabaseCommands } from './database.ts'
 import { ORCH_DO_OPTIONS } from './do-options.ts'
 import { efficiencyCommand, provisioningAliasOptions } from './efficiency-command.ts'
@@ -551,7 +552,7 @@ function registerRunResults(program: Command): void {
   describedCommand(program, 'finish <id>', 'record the reply from a harness-executed run')
     .allowExcessArguments(false)
     .action(async (id) => {
-      const result = await finishHarnessRun(localRunId(id))
+      const result = await finishHarnessRun(localRunId(id), { renewTaskClaim })
       presentation.printRunId(result.record_id)
     })
 }

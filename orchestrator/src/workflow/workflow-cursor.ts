@@ -57,6 +57,7 @@ import {
   decideStepOutcome,
 } from './workflow-cursor-transition.ts'
 import type { WorkflowEvidenceInput } from './workflow-evidence-input.ts'
+import { refuseFinishWithLiveWriter } from './workflow-finish-live-writer-adapter.ts'
 import {
   allowedCloseFloor,
   DEFAULT_EXPECTED_EXIT_CODE,
@@ -767,9 +768,7 @@ async function nextWorkflowStepImpl(
   outcome?: string,
   live?: LiveCursorAutonomy,
 ): Promise<WorkflowAdvanceResult> {
-  const slug = row.workflow_slug
-  const project = row.project
-  const mode = row.mode_slug
+  const { workflow_slug: slug, project, mode_slug: mode } = row
   const takeover = workflowTakeoverForAdvance(row, context)
   refuseTerminalCursor(row)
   const resolvedArguments = resolveCursorArguments(row, args, d)
@@ -792,6 +791,7 @@ async function nextWorkflowStepImpl(
     context.taskFlowClient,
     context.session,
   )
+  refuseFinishWithLiveWriter(d, row, close.advance.ordinal === null, context.session)
   let claimWarning = await persistWorkflowAdvance(
     row,
     composition,

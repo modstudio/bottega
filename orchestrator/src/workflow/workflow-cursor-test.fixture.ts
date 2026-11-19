@@ -29,6 +29,7 @@ import { seedWorkflows } from './workflow-seeds.ts'
 import type { WorkflowSelfRulingInput } from './workflow-self-ruling-mutation.ts'
 import { installWorkflowStoreFixture } from './workflow-store.fixture.ts'
 import type { TaskCursorClaimPorts } from './workflow-task-claim.ts'
+import { attachWorkflowTextByHandle } from './workflow-text.ts'
 
 export const database = testDatabaseFixture((d) => {
   seedWorkflows(d)
@@ -157,6 +158,14 @@ export const testPorts = {
     url: 'https://github.com/acme/app/pull/1',
   }),
   resolveTreeCommit: () => 'abc',
+}
+
+export async function attachWorkflowFloorArtifact(
+  row: Pick<SelectableCursorRow, 'id'>,
+  cursorContext: WorkflowCursorContext,
+  d: Database,
+): Promise<string> {
+  return await attachWorkflowTextByHandle(row.id, 'handoff floor evidence', cursorContext, d)
 }
 
 export function installEvidence(

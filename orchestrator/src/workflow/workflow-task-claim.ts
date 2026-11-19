@@ -7,8 +7,11 @@ import {
   type BoardClaimResult,
   boardClaimReleaseTask,
   boardClaimTake,
+  boardOpenTaskCursorProject,
 } from '../board/board-operations.ts'
+import { db } from '../database/db.ts'
 import { projectByName } from '../project/projects.ts'
+import type { RenewTaskClaim } from '../run/run-task-claim-renewal.ts'
 
 export type TaskCursorClaimVerb =
   | 'compose'
@@ -18,6 +21,7 @@ export type TaskCursorClaimVerb =
   | 'finish'
   | 'abandon'
   | 'handoff'
+  | 'renew'
 
 export type TaskCursorClaimDecision =
   | { action: 'none' }
@@ -95,6 +99,20 @@ export async function followTaskCursorClaim(
   }
   if (decision.action === 'release') await ports.release(decision)
   return { decision }
+}
+
+export const renewTaskClaim: RenewTaskClaim = async (launchKey, session) => {
+  if (!launchKey || !session) return
+  const database = db()
+  const project = await boardOpenTaskCursorProject(launchKey, session, database)
+  if (!project) return
+  await followTaskCursorClaim({
+    project,
+    taskKey: launchKey,
+    session,
+    verb: 'renew',
+    database,
+  })
 }
 
 export function taskClaimReleaseWarning(project: string, key: string, error: unknown): string {

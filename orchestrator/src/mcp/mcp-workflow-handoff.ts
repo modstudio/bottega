@@ -1,6 +1,8 @@
 import type { McpServer } from '@modelcontextprotocol/server'
 import { z } from 'zod'
 import { db } from '../database/db.ts'
+import { resolveGateIdentifier } from '../gate/gate-identifier.ts'
+import { resolveRunIdentifier } from '../run/run-identifier.ts'
 import type { CommitCountPort } from '../workflow/workflow-compose-branch.ts'
 import { resolveWorkflowLiveAutonomy } from '../workflow/workflow-cursor-live-autonomy.ts'
 import {
@@ -8,6 +10,8 @@ import {
   selectWorkflowCursorByHandle,
 } from '../workflow/workflow-cursor-selection.ts'
 import { handoffWorkflow } from '../workflow/workflow-handoff.ts'
+import { resolveOfferedArtifacts } from '../workflow/workflow-offered-artifacts.ts'
+import { productionWorkflowFloorPorts } from '../workflow/workflow-production-floor-ports.ts'
 import type { HubTaskReader } from '../workflow/workflow-task-reference.ts'
 
 type HandoffToolPorts = { hubTaskReader?: HubTaskReader; commitCount?: CommitCountPort }
@@ -29,9 +33,15 @@ export function registerWorkflowHandoffTool(
         reason: z.string().trim().min(1),
         mode: z.string().trim().min(1).optional(),
         args: z.record(z.string(), z.string()).optional(),
+        gate: z.union([z.number().int().positive(), z.uuid()]).optional(),
+        run: z.union([z.number().int().positive(), z.string().trim().min(1)]).optional(),
+        artifact: z
+          .union([z.string().trim().min(1), z.array(z.string().trim().min(1)).min(1)])
+          .optional(),
+        task: z.string().trim().min(1).optional(),
       }),
     },
-    async ({ workflow, cursor, project, reason, mode, args = {} }) => {
+    async ({ workflow, cursor, project, reason, mode, args = {}, gate, run, artifact, task }) => {
       const row = await selectWorkflowCursorByHandle({ project }, cursor, undefined, db())
       const { context } = await resolveMcpSelectedCursorContext(
         project,
@@ -58,6 +68,13 @@ export function registerWorkflowHandoffTool(
           context,
           live,
           commitCount: ports.commitCount,
+          evidence: {
+            gate: gate === undefined ? undefined : resolveGateIdentifier(db(), gate),
+            run: run === undefined ? undefined : resolveRunIdentifier(db(), run),
+            artifacts: resolveOfferedArtifacts(db(), artifact),
+            task,
+          },
+          floorPorts: productionWorkflowFloorPorts(),
         }),
       )
     },

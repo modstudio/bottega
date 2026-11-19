@@ -1,6 +1,7 @@
 // concern: board-operation-routing
 /** Routes board operations to the local store or hosted record without mixing their writes. */
 
+import type { Database } from 'bun:sqlite'
 import {
   BOARD_DEFAULT_ACK_DEADLINE_MS,
   boardDefaultExpiryMs,
@@ -938,6 +939,18 @@ export async function boardClaimList(
     claims: (all ? hosted.claims : hosted.claims.filter((claim) => claim.live)).map(claimResult),
   }
 }
+
+export async function boardOpenTaskCursorProject(
+  key: string,
+  session: string,
+  database: Database = db(),
+): Promise<string | null> {
+  const open = (await taskFlowReadStore(database).listOpenStages({ sessionId: session })).find(
+    (stage) => stage.workflow_key === key,
+  )
+  return open?.project ?? null
+}
+
 export async function boardClaimReleaseTask(key: string, project: string, inputContext?: Context) {
   const c = context(inputContext)
   const releaseAuthority =

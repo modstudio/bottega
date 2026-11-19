@@ -150,6 +150,29 @@ async function open(
   await composeWorkflowWithCursor(slug, 'fixture', 'default', openArgs, context, d, {}, {})
 }
 
+test('a keyed cursor cannot finish until its live writing run is terminal', async () => {
+  const d = database()
+  installConditionalFixture(d, 'finish-live-writer', [], [])
+  await open(d, 'finish-live-writer')
+  const project = d
+    .query<{ record_id: string }, []>("SELECT record_id FROM project WHERE name='fixture'")
+    .get()!.record_id
+  const run = d
+    .query<{ record_id: string }, (string | number | null)[]>(
+      `INSERT INTO run
+        (record_id,number,started_at,agent,job,repo,project_record_id,prompt_sha,prompt_bytes,prompt_head,status,launch_key,session_id)
+       VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM run),'2026-11-17','codex','implement','fixture',?,'sha',1,'build','running',?,?)
+       RETURNING record_id`,
+    )
+    .get(newRecordId(), project, args.key, context.session)!.record_id
+
+  await expect(closeChoice(d, 'finish-live-writer', 'clear')).rejects.toThrow(
+    'workflow handoff <next>',
+  )
+  d.query("UPDATE run SET status='ok' WHERE record_id=?").run(run)
+  await expect(closeChoice(d, 'finish-live-writer', 'clear')).resolves.toContain('finished')
+})
+
 describe('conditional workflow cursor advance', () => {
   test('a step declaring outcomes refuses a close without one', async () => {
     const d = database()

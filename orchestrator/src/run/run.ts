@@ -75,7 +75,7 @@ import { sha } from './prompt-sha.ts'
 import { assertAcpPolicyAllowed } from './run-acp-policy.ts'
 import * as acpWriter from './run-acp-writer.ts'
 import { capacityStartupFailure, selectAgentWithCapacityEvents } from './run-agent-capacity.ts'
-import { pruneRuns, RUNS_DIR, readDispatchState, unclaimedPaths } from './run-artifacts.ts'
+import { pruneRuns, RUNS_DIR, unclaimedPaths } from './run-artifacts.ts'
 import { resolveRunBase, shouldResolveRunBase } from './run-base-resolution.ts'
 import { prepareRunBoard as board, persistBoundPrompt } from './run-board-prompt.ts'
 import { claimRun } from './run-claim.ts'
@@ -89,6 +89,7 @@ import { runEvidence } from './run-evidence-context.ts'
 import { HARNESS_AGENT, intendedExecutor } from './run-executor.ts'
 import { assertConfiguredGitGuard, workerGitConfigEnvironment } from './run-git-guard.ts'
 import * as harness from './run-harness-launch.ts'
+import { inheritedRunDispatch } from './run-inherited-dispatch.ts'
 import { decideRunLaunch, resolveRunTransport, runTransportPin } from './run-launch.ts'
 import type { acquireRunLease } from './run-lease.ts'
 import { runLive } from './run-live.ts'
@@ -121,7 +122,6 @@ import {
   recordLegacySandboxHome,
   requiredRecordedRunLease,
 } from './run-resource-step-recording.ts'
-import { resumeFacts } from './run-resume-kind.ts'
 import { rootRunRecordId } from './run-root-record.ts'
 import { routedPromptBytes, routedPromptText } from './run-routing-input.ts'
 import * as runMigration from './run-schema-reload-cause.ts'
@@ -130,6 +130,7 @@ import {
   recordNeverStartedRunFailure,
   recordRunStartupFailure,
 } from './run-startup-failure.ts'
+import { type RenewTaskClaim, renewStartedClaim } from './run-task-claim-renewal.ts'
 import { admitNewRunReference } from './run-task-reference.ts'
 import type { TerminalInput } from './run-terminal.ts'
 import { finishRunWithFallback } from './run-terminal-fallback.ts'
@@ -141,8 +142,13 @@ import {
   snapshotWritingRunSharedGitConfig,
 } from './shared-git-config.ts'
 
+type RunDependencies = { renewTaskClaim?: RenewTaskClaim }
+
 // biome-ignore lint/complexity/noExcessiveLinesPerFunction: the lifecycle coordinator keeps one terminal ownership boundary
-export async function run(opts: RunOptions): Promise<RunResult> {
+export async function run(
+  opts: RunOptions,
+  dependencies: RunDependencies = {},
+): Promise<RunResult> {
   writableDb()
   assertMigrationDispatchAllowedAndRecord(db(), opts.resume !== undefined)
   runMigration.enableRunSchemaReload(opts.reserveId)
@@ -152,14 +158,8 @@ export async function run(opts: RunOptions): Promise<RunResult> {
     requestedJob.needs,
     opts.mcp,
   )
-  const prior = opts.resume
-  const resume = resumeFacts(prior?.kind ?? null, opts.reserveId ?? '', prior?.parent ?? null)
-  const inheritedDispatch =
-    resume.workspaceSource === 'retained' ? readDispatchState(prior!.parent) : null
-  const declaredDeliverables = opts.deliverables ?? inheritedDispatch?.deliverables ?? []
-  const timeoutMinutes = opts.timeoutMinutes ?? inheritedDispatch?.timeoutMinutes ?? undefined
+  const { resume, declaredDeliverables, timeoutMinutes } = inheritedRunDispatch(opts)
   const [writesJob, repoJob] = [!!requestedJob.needs.writesRepo, !!requestedJob.needs.readsRepo]
-  const forbidsRepo = requestedJob.needs.readsRepo === false
   const requestedTransport = resolveRunTransport(opts)
   const callerCwd = opts.cwd ?? process.cwd(),
     runProjectName = opts.repo ?? repoOf(callerCwd)
@@ -181,7 +181,6 @@ export async function run(opts: RunOptions): Promise<RunResult> {
     reviewTarget !== null,
   )
   const implicitReview = rt.implicitReviewClaim(callerCwd, !!reviewTarget, !!requestedJob.findings)
-  const coverageBase = reviewTarget?.base ?? implicitReview.coverageBase
   // Programmatic callers also refuse a bad ref before a run row or worktree exists.
   if (opts.base) {
     const internalRepositoryFailover = opts.automaticFailover && requestedJob.needs.readsRepo
@@ -461,7 +460,7 @@ export async function run(opts: RunOptions): Promise<RunResult> {
     mcpRequest,
     callerCwd,
     projectName: runProjectName ?? undefined,
-    forbidsRepo,
+    forbidsRepo: requestedJob.needs.readsRepo === false,
     repoJob,
     discoversMcpFromCwd: a.caps.discoversMcpFromCwd,
     agent: name,
@@ -526,10 +525,10 @@ export async function run(opts: RunOptions): Promise<RunResult> {
     declaredDeliverables,
     timeoutMinutes,
     timeoutMs: boundMs,
-    forbidsRepo,
+    forbidsRepo: requestedJob.needs.readsRepo === false,
     reviewTarget,
     implicitReview,
-    coverageBase,
+    coverageBase: reviewTarget?.base ?? implicitReview.coverageBase,
     readOnlyBase,
     deferredCwdMcpPlan,
     usingMcp,
@@ -542,6 +541,7 @@ export async function run(opts: RunOptions): Promise<RunResult> {
     assertDispatchAllowed: () => assertMigrationDispatchAllowed(db(), opts.resume !== undefined),
     recordDispatchRefusal: recordMigrationDispatchRefusal,
   })
+  await renewStartedClaim(db(), dependencies.renewTaskClaim, claimedRun)
   let {
     promptPath,
     outputPath: claimedOutputPath,
@@ -861,8 +861,7 @@ export async function run(opts: RunOptions): Promise<RunResult> {
       ? `${mcpSetupHeader}\n${skipLines.join('\n')}`
       : skipLines.join('\n')
   }
-  const frozenBefore = beforeFreeze.snapshots
-  const watchedCheckouts = frozenBefore
+  const watchedCheckouts = beforeFreeze.snapshots
   // The close-out lease covers both terminal recording and closeRun, even when either rejects.
   const releaseCloseOutLease = acquireRunCloseOutLeaseHandle(claim.id, (cause) => {
     error = String((cause as Error).message ?? cause)
@@ -989,6 +988,7 @@ export async function run(opts: RunOptions): Promise<RunResult> {
               writesJob,
               worktree,
               launchKey,
+              renewTaskClaim: dependencies.renewTaskClaim,
               failureKind,
               billingHoldDetail,
               endpointKey: endpoint.key,
@@ -998,7 +998,7 @@ export async function run(opts: RunOptions): Promise<RunResult> {
               opts,
               watchedCheckouts,
               confinementFailures,
-              frozenBefore,
+              frozenBefore: beforeFreeze.snapshots,
               callerRemoval: runConfinement.callerRemovalAtRunEnd(db(), callerCheckout, started),
               removeIsolatedCwd,
               changes,
@@ -1080,6 +1080,7 @@ export async function run(opts: RunOptions): Promise<RunResult> {
         outPath,
         contract,
         error,
+        renewTaskClaim: dependencies.renewTaskClaim,
         run,
       })
     })()

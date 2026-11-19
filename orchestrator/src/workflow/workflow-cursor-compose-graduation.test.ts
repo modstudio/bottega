@@ -6,6 +6,7 @@ import { taskFlowReadStore } from './task-flow-store.ts'
 import { composeWorkflowWithCursor } from './workflow-cursor.ts'
 import { closeGraduatingExploreForReuse } from './workflow-cursor-compose.ts'
 import { admissionEnforcingTaskClaimPorts, database } from './workflow-cursor-test.fixture.ts'
+import { handoffCommand } from './workflow-handoff-command.ts'
 import { composeWorkflow, promoteWorkflowLocal, setWorkflowLocal } from './workflows.ts'
 
 const live = {}
@@ -72,6 +73,49 @@ test('task-bound composition hands the session untouched explore cursor off', as
   expect(await taskFlowReadStore(d).stageByHandle('fixture', composed.cursor!.id)).toMatchObject({
     handed_off_from_record_id: source!.record_id,
   })
+})
+
+test('manual handoff of an untouched explore cursor still enforces its floor', async () => {
+  const d = database()
+  const session = 'manual-graduation-refusal'
+  const explore = await openExplore(d, session)
+
+  await expect(
+    handoffCommand(
+      [
+        'workflow',
+        'handoff',
+        'flow',
+        '--cursor',
+        String(explore.id),
+        '--project',
+        'fixture',
+        '--mode',
+        'default',
+        '--reason',
+        'manual graduation',
+        '--arg',
+        `key=${taskArgs.key}`,
+        '--arg',
+        `branch=${taskArgs.branch}`,
+        '--arg',
+        `worktree=${taskArgs.worktree}`,
+      ],
+      () => {},
+      {
+        database: d,
+        context: { session },
+        hubTaskReader: async () => [
+          {
+            key: taskArgs.key,
+            record_id: 'task-DEV-2323',
+            project: 'fixture',
+            status_category: 'active',
+          },
+        ],
+      },
+    ),
+  ).rejects.toThrow('floor recorded-artifact is unmet')
 })
 
 test('task-bound composition keeps an explore cursor with attached text intact', async () => {

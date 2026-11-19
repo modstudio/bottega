@@ -3,6 +3,7 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { decideKeyedRunCursorAdmission } from '../dispatch/keyed-run-cursor-admission.ts'
 import { selectBriefInFlight } from '../doc/context-brief.ts'
+import { resolveCarriedAttachments } from '../run/run-carried-attachments.ts'
 import { taskFlowHandoffLinks, taskFlowReadStore } from './task-flow-store.ts'
 import { awaitWorkflowRuling, composeWorkflowWithCursor } from './workflow-cursor.ts'
 import { adoptWorkflowTask } from './workflow-cursor-adoption.ts'
@@ -10,12 +11,15 @@ import { workflowCursorHandoffLinks } from './workflow-cursor-list.ts'
 import { resolveWorkflowCursorContext } from './workflow-cursor-selection.ts'
 import {
   admissionEnforcingTaskClaimPorts,
+  attachWorkflowFloorArtifact,
   database,
   selectAndNextWorkflowStep,
   testPorts,
 } from './workflow-cursor-test.fixture.ts'
 import { resolveWorkflowCursorSuccessor } from './workflow-cursor-transition.ts'
 import { handoffWorkflow } from './workflow-handoff.ts'
+import { attachWorkflowTextByHandle } from './workflow-text.ts'
+import { showWorkflowText } from './workflow-text-copy.ts'
 import { promoteWorkflowLocal, setWorkflowLocal } from './workflows.ts'
 
 function install(
@@ -156,6 +160,24 @@ function handoffCall(
     })
 }
 
+test('handoff refuses an unmet source floor before writing and succeeds with its evidence', async () => {
+  const fixture = await refusalFixture()
+  const remedy =
+    'floor recorded-artifact is unmet; pass --artifact <doc:<scope>/<subject-or-_>/<slug> | doc:<UUID> | task:<KEY> | task:<KEY>#comment:<id> | run number or run id | probe:<id> | exec:<id> | review-read:<UUID> | attached-text:<UUID> | GitHub pull-request link>'
+  await expectRefusalUnchanged(fixture, handoffCall(fixture), remedy, true)
+
+  const result = await handoffCall(fixture, {
+    evidence: {
+      artifacts: [await attachWorkflowFloorArtifact(fixture.row, refusalContext, fixture.d)],
+    },
+  })()
+
+  expect(await taskFlowReadStore(fixture.d).stageByHandle('fixture', result.cursor)).toMatchObject({
+    handed_off_from_record_id: fixture.row.record_id,
+    state: 'running',
+  })
+})
+
 test('handoff closes the old stage, opens and links the successor, moves context, and renews the same claim', async () => {
   const d = database()
   install(d, 'handoff-source', ['lens', 'score', 'complete'])
@@ -190,6 +212,12 @@ test('handoff closes the old stage, opens and links the successor, moves context
     testPorts,
   )
   const old = (await taskFlowReadStore(d).stageByHandle('fixture', oldNumber))!
+  const attachment = await attachWorkflowTextByHandle(
+    oldNumber,
+    'carried build context',
+    context,
+    d,
+  )
   d.query(`INSERT INTO context_item
     (record_id,holder_kind,holder_id,slug,kind,body,source,created_at,updated_at)
     VALUES (?,'cursor',?,'decision','fact','carry me','test',?,?)`).run(
@@ -240,6 +268,16 @@ test('handoff closes the old stage, opens and links the successor, moves context
   })
   expect(
     d
+      .query('SELECT cursor_record_id FROM workflow_step_text WHERE record_id=?')
+      .get(attachment.slice('attached-text:'.length)),
+  ).toEqual({ cursor_record_id: next.record_id })
+  await expect(
+    resolveCarriedAttachments([`dispatch ${attachment}`], {
+      readAttachment: (token) => showWorkflowText(token, d),
+    }),
+  ).resolves.toContain('carried build context')
+  expect(
+    d
       .query<{ record_id: string; closed_at: string | null }, [string]>(
         'SELECT record_id,closed_at FROM board_claim WHERE subject_value=?',
       )
@@ -283,6 +321,7 @@ test('keyless handoff takes the claim, adopts the key, and moves context to its 
     context,
     live: {},
     database: fixture.d,
+    evidence: { artifacts: [await attachWorkflowFloorArtifact(fixture.row, context, fixture.d)] },
     taskClaimPorts: admissionEnforcingTaskClaimPorts(fixture.d, { takes }),
   })
   const successor = (await taskFlowReadStore(fixture.d).stageByHandle('fixture', result.cursor))!
@@ -374,6 +413,7 @@ test('brief lineage lists a carried run under the real handoff successor', async
     context,
     live: {},
     database: fixture.d,
+    evidence: { artifacts: [await attachWorkflowFloorArtifact(fixture.row, context, fixture.d)] },
   })
   const successor = (await taskFlowReadStore(fixture.d).stageByHandle('fixture', result.cursor))!
   const selected = selectBriefInFlight(
@@ -401,6 +441,7 @@ function failingKeylessHandoff(
   fixture: Awaited<ReturnType<typeof keylessFixture>>,
   claimAction: 'taken' | 'renewed' | 'taken-over',
   releases: string[],
+  artifact: string,
 ) {
   return handoffWorkflow({
     row: fixture.row,
@@ -419,6 +460,7 @@ function failingKeylessHandoff(
     },
     live: {},
     database: fixture.d,
+    evidence: { artifacts: [artifact] },
     taskClaimPorts: admissionEnforcingTaskClaimPorts(fixture.d, {
       action: claimAction,
       releases,
@@ -433,7 +475,8 @@ test('keyless handoff failure before adoption reports that the cursor remains ke
     BEGIN SELECT RAISE(ABORT, 'adoption exploded'); END`)
 
   const releases: string[] = []
-  await expect(failingKeylessHandoff(fixture, 'taken', releases)).rejects.toThrow(
+  const artifact = await attachWorkflowFloorArtifact(fixture.row, fixture.context, fixture.d)
+  await expect(failingKeylessHandoff(fixture, 'taken', releases, artifact)).rejects.toThrow(
     `adoption exploded; cursor ${fixture.row.id} remains keyless`,
   )
   expect(releases).toEqual([])
@@ -446,9 +489,10 @@ test('keyless handoff failure after adoption reports that the cursor is keyed', 
     BEGIN SELECT RAISE(ABORT, 'successor exploded'); END`)
 
   const releases: string[] = []
+  const artifact = await attachWorkflowFloorArtifact(fixture.row, fixture.context, fixture.d)
   let message = ''
   try {
-    await failingKeylessHandoff(fixture, 'taken-over', releases)
+    await failingKeylessHandoff(fixture, 'taken-over', releases, artifact)
   } catch (error) {
     message = error instanceof Error ? error.message : String(error)
   }
@@ -467,7 +511,8 @@ test('a post-adoption open-stage refusal points at workflow cursors', async () =
     AFTER UPDATE OF workflow_key ON workflow_cursor
     BEGIN UPDATE task_flow SET open_stage_cursor_record_id=NULL WHERE record_id=NEW.task_flow_record_id; END`)
 
-  await expect(failingKeylessHandoff(fixture, 'taken', [])).rejects.toThrow(
+  const artifact = await attachWorkflowFloorArtifact(fixture.row, fixture.context, fixture.d)
+  await expect(failingKeylessHandoff(fixture, 'taken', [], artifact)).rejects.toThrow(
     `retry with workflow cursors --project fixture`,
   )
 })
@@ -478,10 +523,11 @@ test('keyless handoff failure preserves a claim renewed from this session', asyn
     BEFORE INSERT ON workflow_cursor WHEN NEW.handed_off_from_record_id IS NOT NULL
     BEGIN SELECT RAISE(ABORT, 'successor exploded'); END`)
   const releases: string[] = []
+  const artifact = await attachWorkflowFloorArtifact(fixture.row, fixture.context, fixture.d)
 
   let message = ''
   try {
-    await failingKeylessHandoff(fixture, 'renewed', releases)
+    await failingKeylessHandoff(fixture, 'renewed', releases, artifact)
   } catch (error) {
     message = error instanceof Error ? error.message : String(error)
   }
@@ -510,6 +556,9 @@ test('a refused keyless claim reports that the source cursor is now keyed and na
       context: { ...fixture.context, taskRecordId: 'task-DEV-HELD' },
       live: {},
       database: fixture.d,
+      evidence: {
+        artifacts: [await attachWorkflowFloorArtifact(fixture.row, fixture.context, fixture.d)],
+      },
       taskClaimPorts: {
         take: async () => {
           throw new Error('claim conflicts with: session holder-session')
@@ -538,6 +587,9 @@ test('keyless handoff without a target key gives the key remedy', async () => {
       context: fixture.context,
       live: {},
       database: fixture.d,
+      evidence: {
+        artifacts: [await attachWorkflowFloorArtifact(fixture.row, fixture.context, fixture.d)],
+      },
     }),
   ).rejects.toThrow('pass --arg key=<KEY>')
 })
@@ -546,6 +598,9 @@ test('keyed handoff defaults the target key to the source key', async () => {
   const fixture = await refusalFixture()
   const result = await handoffCall(fixture, {
     args: { branch: refusalArgs.branch, worktree: refusalArgs.worktree },
+    evidence: {
+      artifacts: [await attachWorkflowFloorArtifact(fixture.row, refusalContext, fixture.d)],
+    },
   })()
   expect(await taskFlowReadStore(fixture.d).stageByHandle('fixture', result.cursor)).toMatchObject({
     workflow_key: refusalArgs.key,
@@ -554,18 +609,24 @@ test('keyed handoff defaults the target key to the source key', async () => {
 
 test('handoff refuses an unknown workflow without changing the old cursor or opening a successor', async () => {
   const fixture = await refusalFixture()
+  const evidence = {
+    artifacts: [await attachWorkflowFloorArtifact(fixture.row, refusalContext, fixture.d)],
+  }
   await expectRefusalUnchanged(
     fixture,
-    handoffCall(fixture, { workflow: 'missing-handoff-target' }),
+    handoffCall(fixture, { workflow: 'missing-handoff-target', evidence }),
     'workflow "missing-handoff-target" has no production version; promote one',
   )
 })
 
 test('handoff refuses a missing required argument without changing the old cursor or opening a successor', async () => {
   const fixture = await refusalFixture()
+  const evidence = {
+    artifacts: [await attachWorkflowFloorArtifact(fixture.row, refusalContext, fixture.d)],
+  }
   await expectRefusalUnchanged(
     fixture,
-    handoffCall(fixture, { args: { key: refusalArgs.key } }),
+    handoffCall(fixture, { args: { key: refusalArgs.key }, evidence }),
     'workflow "handoff-target" needs arguments: branch, worktree; pass each with --arg k=v',
     true,
   )
@@ -573,27 +634,36 @@ test('handoff refuses a missing required argument without changing the old curso
 
 test('handoff refuses a mode the target workflow does not define without changing the old cursor or opening a successor', async () => {
   const fixture = await refusalFixture()
+  const evidence = {
+    artifacts: [await attachWorkflowFloorArtifact(fixture.row, refusalContext, fixture.d)],
+  }
   await expectRefusalUnchanged(
     fixture,
-    handoffCall(fixture, { mode: 'missing-mode' }),
+    handoffCall(fixture, { mode: 'missing-mode', evidence }),
     'workflow "handoff-target" has no mode "missing-mode"',
   )
 })
 
 test('handoff refuses ship-task with an empty branch without changing the old cursor or opening a successor', async () => {
   const fixture = await refusalFixture('ship-task')
+  const evidence = {
+    artifacts: [await attachWorkflowFloorArtifact(fixture.row, refusalContext, fixture.d)],
+  }
   await expectRefusalUnchanged(
     fixture,
-    handoffCall(fixture, { workflow: 'ship-task', commitCount: () => 0 }),
+    handoffCall(fixture, { workflow: 'ship-task', commitCount: () => 0, evidence }),
     `build the change first with \`${PLATFORM_SLUG} run start implement --key <key>\``,
   )
 })
 
 test('handoff refuses a different key without changing the old cursor or opening a successor', async () => {
   const fixture = await refusalFixture()
+  const evidence = {
+    artifacts: [await attachWorkflowFloorArtifact(fixture.row, refusalContext, fixture.d)],
+  }
   await expectRefusalUnchanged(
     fixture,
-    handoffCall(fixture, { args: { ...refusalArgs, key: 'DEV-OTHER' } }),
+    handoffCall(fixture, { args: { ...refusalArgs, key: 'DEV-OTHER' }, evidence }),
     `pass --arg key=${refusalArgs.key}`,
   )
 })
@@ -655,24 +725,30 @@ test('handoff refuses a missing reason without changing the old cursor or openin
 
 test('handoff refuses a stale revision without changing the old cursor or opening a successor', async () => {
   const fixture = await refusalFixture()
+  const evidence = {
+    artifacts: [await attachWorkflowFloorArtifact(fixture.row, refusalContext, fixture.d)],
+  }
   fixture.d
     .query('UPDATE workflow_cursor SET revision=revision+1 WHERE record_id=?')
     .run(fixture.row.record_id)
   await expectRefusalUnchanged(
     fixture,
-    handoffCall(fixture),
+    handoffCall(fixture, { evidence }),
     'changed while being handed off; rerun the command',
   )
 })
 
 test("handoff refuses a cursor that is not the task flow's open stage without changing it or opening a successor", async () => {
   const fixture = await refusalFixture()
+  const evidence = {
+    artifacts: [await attachWorkflowFloorArtifact(fixture.row, refusalContext, fixture.d)],
+  }
   fixture.d
     .query('UPDATE task_flow SET open_stage_cursor_record_id=NULL WHERE record_id=?')
     .run(fixture.row.task_flow_record_id!)
   await expectRefusalUnchanged(
     fixture,
-    handoffCall(fixture),
+    handoffCall(fixture, { evidence }),
     "is not the task flow's open stage; list workflow cursors and retry the current cursor",
   )
 })
@@ -680,6 +756,9 @@ test("handoff refuses a cursor that is not the task flow's open stage without ch
 test('handoff commits and reports a warning when its claim cannot be renewed', async () => {
   const fixture = await refusalFixture()
   const result = await handoffCall(fixture, {
+    evidence: {
+      artifacts: [await attachWorkflowFloorArtifact(fixture.row, refusalContext, fixture.d)],
+    },
     taskClaimPorts: {
       take: async () => {
         throw new Error('claim service unavailable')

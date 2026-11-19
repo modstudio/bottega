@@ -47,6 +47,7 @@ import type { Worktree } from '../worktree/worktree-types.ts'
 import { closeRunChainQuestions, QUESTION_CLOSE_CHAIN_TERMINAL } from './question-close.ts'
 import { selectAgentWithCapacityEvents } from './run-agent-capacity.ts'
 import { terminateRunProcesses } from './run-process.ts'
+import type { RenewTaskClaim } from './run-task-claim-renewal.ts'
 import type { RunResult } from './run-types.ts'
 
 type CloseOptions = {
@@ -124,7 +125,19 @@ export type CloseInput = {
   outPath: string
   contract: WorkerReply | null
   error: string | null
-  run: (opts: SuccessorOptions) => Promise<RunResult>
+  renewTaskClaim?: RenewTaskClaim
+  run: (
+    opts: SuccessorOptions,
+    dependencies: { renewTaskClaim?: RenewTaskClaim },
+  ) => Promise<RunResult>
+}
+
+async function dispatchFailoverSuccessor<T>(
+  run: (opts: T, dependencies: { renewTaskClaim?: RenewTaskClaim }) => Promise<RunResult>,
+  opts: T,
+  renewTaskClaim: RenewTaskClaim | undefined,
+): Promise<RunResult> {
+  return await run(opts, { renewTaskClaim })
 }
 
 function failoverRefusalMessage(id: string, reason: string, retryCommand: boolean): string {
@@ -479,48 +492,52 @@ export async function closeRun(input: CloseInput): Promise<RunResult> {
         // frame never reaches the ordinary terminal reclaim below.
         if (artifactsPersisted && worktree && reclaimsTreeByDefault(opts.job))
           await reclaimTerminalTree(claim.id, worktree, terminalTreePids, terminalTreePgid, true)
-        return await run({
-          job: opts.job,
-          prompt: originalPrompt,
-          agent: successorAgent,
-          transport: transportConstraints.successorTransport,
-          schemaPath: first.schema_path ?? undefined,
-          mcp: mcpRequestFromStored(first.mcp, first.mcp_error),
-          probe: !!first.probe,
-          probeContextLimit: opts.probeContextLimit,
-          probeReaderSuites: opts.probeReaderSuites,
-          label: first.label ?? undefined,
-          lens: first.lens ?? undefined,
-          lensInputs: successorReviewLensInputStatusesFromPrompt(first.prompt_path),
-          reviewRole: first.review_role ?? undefined,
-          cwd: first.launch_cwd ?? callerCwd,
-          repo: first.repo ?? undefined,
-          retryOf: claim.id,
-          noFailover: false,
-          ownerSession: first.session_id,
-          automaticFailover: true,
-          seed: first.launch_seed ?? undefined,
-          key: first.launch_key ?? undefined,
-          // Every repository successor must recreate the first attempt's
-          // immutable tree before carrying the same caller state. Falling back
-          // to current trunk makes a review failover depend on a later move.
-          base: repoJob ? (first.base_commit ?? first.launch_base ?? undefined) : undefined,
-          avoid: opts.avoid,
-          distinctModels: transportConstraints.distinctModels,
-          carry: opts.carry,
-          review: first.review_ref ?? undefined,
-          deliverables: declaredDeliverables,
-          timeoutMinutes,
-          keepTree,
-          resolvedReviewTarget:
-            first.review_ref && first.base_commit && first.head_commit
-              ? {
-                  branch: first.branch ?? resolveBranchRef(first.review_ref).branch,
-                  commit: first.head_commit,
-                  base: first.base_commit,
-                }
-              : undefined,
-        })
+        return await dispatchFailoverSuccessor(
+          run,
+          {
+            job: opts.job,
+            prompt: originalPrompt,
+            agent: successorAgent,
+            transport: transportConstraints.successorTransport,
+            schemaPath: first.schema_path ?? undefined,
+            mcp: mcpRequestFromStored(first.mcp, first.mcp_error),
+            probe: !!first.probe,
+            probeContextLimit: opts.probeContextLimit,
+            probeReaderSuites: opts.probeReaderSuites,
+            label: first.label ?? undefined,
+            lens: first.lens ?? undefined,
+            lensInputs: successorReviewLensInputStatusesFromPrompt(first.prompt_path),
+            reviewRole: first.review_role ?? undefined,
+            cwd: first.launch_cwd ?? callerCwd,
+            repo: first.repo ?? undefined,
+            retryOf: claim.id,
+            noFailover: false,
+            ownerSession: first.session_id,
+            automaticFailover: true,
+            seed: first.launch_seed ?? undefined,
+            key: first.launch_key ?? undefined,
+            // Every repository successor must recreate the first attempt's
+            // immutable tree before carrying the same caller state. Falling back
+            // to current trunk makes a review failover depend on a later move.
+            base: repoJob ? (first.base_commit ?? first.launch_base ?? undefined) : undefined,
+            avoid: opts.avoid,
+            distinctModels: transportConstraints.distinctModels,
+            carry: opts.carry,
+            review: first.review_ref ?? undefined,
+            deliverables: declaredDeliverables,
+            timeoutMinutes,
+            keepTree,
+            resolvedReviewTarget:
+              first.review_ref && first.base_commit && first.head_commit
+                ? {
+                    branch: first.branch ?? resolveBranchRef(first.review_ref).branch,
+                    commit: first.head_commit,
+                    base: first.base_commit,
+                  }
+                : undefined,
+          },
+          input.renewTaskClaim,
+        )
       } catch (e) {
         const successor = hasFailoverSuccessor(claim.id)
         // Once a successor exists its own terminal row is the explanation.

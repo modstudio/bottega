@@ -659,6 +659,9 @@ function writeHandoff(
       "UPDATE context_item SET holder_id=?,updated_at=? WHERE holder_kind='cursor' AND holder_id=?",
     )
     .run(stageId, newStage.updatedAt as SQLQueryBindings, oldReference.id)
+  database
+    .query('UPDATE workflow_step_text SET cursor_record_id=? WHERE cursor_record_id=?')
+    .run(stageId, oldReference.id)
   return { revisions: result, stage: { id: inserted.id, number: inserted.number } }
 }
 

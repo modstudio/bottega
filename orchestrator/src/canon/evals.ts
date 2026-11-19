@@ -31,6 +31,7 @@ import { parseReviewOutput, parseReviewReply } from '../review/review.ts'
 import { ANSWER_CHANNEL_CLI, ANSWERER_KIND_EVAL } from '../run/question-vocabulary.ts'
 import { run } from '../run/run.ts'
 import { auditRunMutation, runMutationActor } from '../run/run-authority.ts'
+import { renewTaskClaim } from '../workflow/workflow-task-claim.ts'
 import { checkDoc, compilePack } from './canon.ts'
 import {
   type CanonEvalProject,
@@ -494,7 +495,7 @@ async function runCanonEvalAttempt(
   rememberRunId: (id: string) => void,
 ): ReturnType<typeof run> {
   try {
-    return await run(input)
+    return await run(input, { renewTaskClaim })
   } catch (error) {
     const id = thrownEvalRunId(error)
     if (id !== null) rememberRunId(id)

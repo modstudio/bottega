@@ -604,6 +604,8 @@ async function applyHandoff(tx: SQL, input: Tenant, body: HandoffBody) {
   revisions[body.flow.id] = await updateRevisionRow(tx, 'task_flow', body.flow, body.requestId)
   await tx`UPDATE context_item SET holder_id=${body.newStage.id},updated_at=${body.newStage.updatedAt}::timestamptz
     WHERE space_id=${input.spaceId}::uuid AND holder_kind='cursor' AND holder_id=${body.oldStage.id}`
+  await tx`UPDATE workflow_step_text SET stage_record_id=${body.newStage.id}
+    WHERE space_id=${input.spaceId}::uuid AND stage_record_id=${body.oldStage.id}`
   return { revisions, stage: { id: body.newStage.id, number: inserted.number } }
 }
 

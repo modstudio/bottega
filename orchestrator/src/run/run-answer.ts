@@ -73,7 +73,6 @@ import {
 } from './run-control.ts'
 import { detach } from './run-dispatch.ts'
 import { packedResumePromptWithCarriedAttachments } from './run-resume-prompt.ts'
-
 import {
   previousAttemptTaskPointer,
   renderWritingRetryPrompt,
@@ -86,6 +85,7 @@ import {
   resolveRetryTree,
   resolveWritingRetryWorkspace,
 } from './run-retry-workspace.ts'
+import { type RenewTaskClaim, renewTaskClaimBestEffort } from './run-task-claim-renewal.ts'
 import { assertAgentWorkRun } from './synthetic-lifecycle-job.ts'
 
 type RunAnswerHelpers = {
@@ -93,8 +93,27 @@ type RunAnswerHelpers = {
   presentation: RunControlPresentation
   dispatch?: typeof detach
   dashboardAuthorized?: () => boolean
+  renewTaskClaim?: RenewTaskClaim
 }
 type RunFlags = { detach: boolean; follow: boolean; quiet: boolean }
+
+const renewAnsweredRunClaim = (helpers: RunAnswerHelpers, row: AnswerRootRow) =>
+  renewTaskClaimBestEffort(helpers.renewTaskClaim, row.launch_key, row.session_id, 'answer')
+
+async function finishAnswerMutation(
+  skipResume: boolean,
+  ownersLive: boolean,
+  authority: RootAuthority,
+  id: string,
+  helpers: RunAnswerHelpers,
+  row: AnswerRootRow,
+): Promise<void> {
+  writeTransaction(() => {
+    if (skipResume) db().query("UPDATE run SET status='asking' WHERE record_id=?").run(id)
+    if (skipResume || ownersLive) auditRunMutation(authority, 'answer')
+  })
+  await renewAnsweredRunClaim(helpers, row)
+}
 
 function allowsPartialRecordOnly(input: AnswerRunInput, ownersLive: boolean): boolean {
   return Boolean(input.allowPartialRecordOnly && input.recordOnly && !ownersLive)
@@ -594,7 +613,7 @@ export async function retryRun(
     neverStarted,
   )
   if (preliminaryPath?.action === 'continue') {
-    const resumed = await continueRun(id, undefined, helpers.argvResumeLimit)
+    const resumed = await continueRun(id, undefined, helpers.argvResumeLimit, undefined, helpers)
     auditRunMutation(
       retryAuthority,
       'retry',
@@ -959,10 +978,7 @@ export async function answerRun(
     open,
     refusal: (questionId) => `--q${questionId} is no longer open on this chain`,
   })
-  writeTransaction(() => {
-    if (skipResume) db().query("UPDATE run SET status='asking' WHERE record_id=?").run(id)
-    if (skipResume || ownersLive) auditRunMutation(answerAuthority, 'answer')
-  })
+  await finishAnswerMutation(skipResume, ownersLive, answerAuthority, id, helpers, row)
 
   if (skipResume) {
     if (!input.json)

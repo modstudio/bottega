@@ -298,6 +298,10 @@ function registerWorkflowAdvancement({
         .requiredOption('--cursor <value>', 'select this workflow cursor')
         .option('--mode <value>', 'select the target workflow mode')
         .option('--project <value>', 'select this registered project')
+        .option('--gate <value>', 'cite a gate as floor evidence')
+        .option('--run <value>', 'cite a run as floor evidence')
+        .addOption(collectedOption('--artifact <value>', 'cite an artifact as floor evidence'))
+        .option('--task <value>', 'cite a task as floor evidence')
         .addOption(
           collectedOption('--arg <value>', 'supply a target workflow argument as name=value'),
         ),

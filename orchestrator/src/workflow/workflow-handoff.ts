@@ -23,7 +23,12 @@ import { shellWord, workflowCursorReference } from './workflow-cursor-format.ts'
 import type { SelectableCursorRow, WorkflowCursorContext } from './workflow-cursor-selection.ts'
 import { cursorComposition } from './workflow-cursor-serve.ts'
 import { cursorOwnerAfter } from './workflow-cursor-transition.ts'
+import type { WorkflowEvidenceInput } from './workflow-evidence-input.ts'
+import { allowedCloseFloor, decideCloseFloors } from './workflow-floor.ts'
+import { applyFloorDecision } from './workflow-floor-apply.ts'
+import type { FloorEvidencePorts } from './workflow-floor-evidence.ts'
 import { handoffSourceRefusal, handoffTargetRefusal } from './workflow-handoff-refusal.ts'
+import { productionWorkflowFloorPorts } from './workflow-production-floor-ports.ts'
 import {
   followTaskCursorClaim,
   type TaskCursorClaimPorts,
@@ -43,6 +48,9 @@ type HandoffInput = {
   database?: Database
   commitCount?: CommitCountPort
   taskClaimPorts?: TaskCursorClaimPorts
+  evidence?: WorkflowEvidenceInput
+  floorPorts?: FloorEvidencePorts
+  graduatingUntouchedExplore?: true
 }
 
 export function handoffTargetArguments(
@@ -52,7 +60,7 @@ export function handoffTargetArguments(
   return row.workflow_key && !args.key ? { ...args, key: row.workflow_key } : args
 }
 
-async function validateHandoffTarget(input: HandoffInput, d: Database) {
+async function validateHandoffSource(input: HandoffInput, d: Database) {
   const row = input.row
   if (!input.reason.trim()) throw new Error('handoff reason is required; pass --reason "<why>"')
   const cursorLabel = `workflow cursor ${row.id}`
@@ -70,6 +78,37 @@ async function validateHandoffTarget(input: HandoffInput, d: Database) {
     throw new Error(
       `workflow cursor ${row.id} has open workflow question ${openQuestion.question}; answer it, then retry the handoff`,
     )
+}
+
+async function validateHandoffSourceFloor(input: HandoffInput, d: Database) {
+  const composition = cursorComposition(input.row, d)
+  const step = composition.steps[input.row.ordinal]!
+  const floors = decideCloseFloors(step, undefined, false)
+  allowedCloseFloor(
+    await applyFloorDecision(
+      input.row,
+      floors,
+      input.evidence ?? {},
+      input.floorPorts ?? productionWorkflowFloorPorts(),
+      true,
+      d,
+      input.context.taskFlowClient,
+      false,
+      undefined,
+      input.context.session,
+    ),
+    false,
+    step,
+  )
+}
+
+async function validateHandoffSourceForWrite(input: HandoffInput, d: Database) {
+  await validateHandoffSource(input, d)
+  if (!input.graduatingUntouchedExplore) await validateHandoffSourceFloor(input, d)
+}
+
+async function validateHandoffTarget(input: HandoffInput, d: Database) {
+  const row = input.row
   const targetArgs = handoffTargetArguments(row, input.args)
   const composition = composeWorkflow(
     input.workflow,
@@ -231,6 +270,7 @@ async function handoffKeyedWorkflow(input: HandoffInput, d: Database) {
 
 export async function handoffWorkflow(input: HandoffInput) {
   const d = input.database ?? db()
+  await validateHandoffSourceForWrite(input, d)
   if (input.row.workflow_key) return handoffKeyedWorkflow(input, d)
 
   const validated = await validateHandoffTarget(input, d)
@@ -318,6 +358,7 @@ export async function handoffGraduatingExplore(
     database,
     commitCount,
     taskClaimPorts,
+    graduatingUntouchedExplore: true,
   })
   const row = await taskFlowReadStore(database, context.taskFlowClient).stageByHandle(
     composition.project,

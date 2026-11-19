@@ -64,8 +64,9 @@ import { rollUpRootAndEnqueue } from './run-liveness.ts'
 import { enqueueRunRecord } from './run-outbox.ts'
 import { errorTail, live, liveCheckpoints } from './run-process.ts'
 import { checkpointRoot, claimIdentity } from './run-resume-kind.ts'
+import type { RenewTaskClaim } from './run-task-claim-renewal.ts'
 import { type BlockerRow, blockersToRecord } from './run-terminal-blockers.ts'
-import { finalizeTerminalChain, settleTerminalQuestionState } from './run-terminal-chain.ts'
+import { finalizeTerminalChain } from './run-terminal-chain.ts'
 import { terminalTurnChanged } from './run-terminal-change.ts'
 import { terminalLifecycleWrite } from './run-terminal-lifecycle-store.ts'
 import { applyConfinementPrecedence, applyVendorTermination } from './run-terminal-precedence.ts'
@@ -73,6 +74,7 @@ import {
   applyPrematureFinalFailure,
   terminalPrematureFinalRefusal,
 } from './run-terminal-premature.ts'
+import { settleTerminalStateWithClaimRenewal } from './run-terminal-task-claim.ts'
 import {
   type ObservedTestOutcome,
   observedTestOutcome,
@@ -227,6 +229,7 @@ export type TerminalInput = {
   writesJob: boolean
   worktree: Worktree | null
   launchKey: string | null
+  renewTaskClaim?: RenewTaskClaim
   failureKind: ReturnType<typeof classify> | null
   billingHoldDetail?: string
   endpointKey: EffectiveBillingKey
@@ -1075,12 +1078,9 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
       console.error(`orch: run ${claim.id} left unreconciled: ${detail}`)
     }
   }
-  const recorded = await settleTerminalQuestionState({
-    database: db(),
-    runId: claim.id,
-    rootId: claimIdentity(opts.resume).parent_run_record_id ?? claim.id,
-    preAnswer: () => preAnswerReplyQuestions(claim.id, recordedQuestions),
-  })
+  const recorded = await settleTerminalStateWithClaimRenewal(db(), input, () =>
+    preAnswerReplyQuestions(claim.id, recordedQuestions),
+  )
   return completeRecordedRun({
     runId: claim.id,
     recordedFailureKind: recorded.failure_kind,
