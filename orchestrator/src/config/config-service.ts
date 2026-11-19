@@ -881,6 +881,7 @@ export async function getConfigEntry(
   client: ConfigClient | undefined = undefined,
   env: ConfigEnvironment = process.env,
   clientFactory: () => ConfigClient = () => hostedConfigClient(env),
+  destination: ConfigDestination = {},
 ): Promise<ConfigReadResult> {
   const home = configHome(key, requested, 'get')
   if (home === 'machine') {
@@ -922,7 +923,7 @@ export async function getConfigEntry(
       ignoredHostedScopes: await ignoredHostedScopes(key, () => client ?? clientFactory()),
     }
   }
-  const row = await getEntry(key, home, client ?? clientFactory())
+  const row = await getEntry(key, home, client ?? clientFactory(), destination)
   if (key === DISPLAY_TIMEZONE_KEY) {
     if (!isDisplayTimezone(row.value)) {
       refreshDisplayTimezoneCache(null, env)

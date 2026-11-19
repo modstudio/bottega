@@ -90,6 +90,9 @@ export const settingsModules: SettingsModule[] = [
   module('orchestrator/src/config/secret-write-verification.ts', [
     '../../../shared/config-client.ts',
   ]),
+  module('orchestrator/src/config/config-write-verification.ts', [
+    '../../../shared/config-client.ts',
+  ]),
   module('orchestrator/src/config/secret-write-target.ts', [
     '../../../shared/config-client.ts',
     '../../../shared/config-directory.ts',
@@ -271,6 +274,7 @@ export const settingsModules: SettingsModule[] = [
     '../../../shared/record-write-space.ts',
     '../../../shared/ship-to.ts',
     '../config/config-service.ts',
+    '../config/config-write-verification.ts',
     '../config/display-timezone-cache.ts',
     '../config/hosted-config-call-outcome.ts',
     '../config/machine-trust.ts',

@@ -3,15 +3,17 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import type { ConfigClient } from '../../../shared/config-client.ts'
+import { type ConfigClient, ConfigClientError } from '../../../shared/config-client.ts'
 import { ConfigEntrySchema, MachineConfigFileEntrySchema } from '../../../shared/config-contract.ts'
 import { CONFIG_HOME_ENV } from '../../../shared/config-directory.ts'
 import { writeHostedConfigIdentity } from '../../../shared/hosted-config-space.ts'
-import { setConfigEntry } from '../config/config-service.ts'
+import { getConfigEntry, listEntries, setConfigEntry } from '../config/config-service.ts'
+import { verifyConfigWrite } from '../config/config-write-verification.ts'
 import { secretWriteTarget } from '../config/secret-write-target.ts'
 import {
   assertConfigWriteAllowed,
   configListPresentation,
+  configReadDestination,
   configReadPresentation,
   configSetPresentation,
   configWriteTarget,
@@ -170,10 +172,103 @@ test('config writes route user scope to personal space and named scope independe
   await expect(configWriteTarget('machine config set', 'named', client)).resolves.toEqual({
     scope: 'space',
     destination: { destinationSpaceId: 'named-space' },
+    spaceSlug: 'named',
   })
   await expect(configWriteTarget('machine config set', 'missing', client)).rejects.toThrow(
     'not a member of record space missing',
   )
+})
+
+test('named-space config reads route to the same destination as the write', async () => {
+  const rows = new Map<string, typeof row>()
+  const destinationId = (destination: { destinationSpaceId?: string }) =>
+    destination.destinationSpaceId ?? 'active-space'
+  const storedAt = (key: string, scope: string, destination: { destinationSpaceId?: string }) =>
+    `${destinationId(destination)}:${scope}:${key}`
+  const client = {
+    whoami: async () => ({
+      user: { id: 'user-a' },
+      activeSpaceId: 'active-space',
+      personalSpaceId: 'personal-space',
+      memberships: [
+        { space_id: 'active-space', slug: 'active', permission: 'write' },
+        { space_id: 'personal-space', slug: 'personal', permission: 'write' },
+        { space_id: 'other-space', slug: 'other', permission: 'write' },
+      ],
+    }),
+    getEntry: async (
+      key: string,
+      scope: string,
+      _environment: string,
+      destination: { destinationSpaceId?: string } = {},
+    ) => {
+      const stored = rows.get(storedAt(key, scope, destination))
+      if (!stored) throw new ConfigClientError('response', `/v1/config/entries/${key}`, 404)
+      return stored
+    },
+    putEntry: async (
+      key: string,
+      input: { scope: 'user' | 'space'; environment: string; value: string },
+      destination: { destinationSpaceId: string },
+    ) => {
+      const stored = {
+        key,
+        environment: input.environment,
+        scope: input.scope,
+        value: input.value,
+        rowVersion: 1,
+        updatedAt: '2026-11-18T12:00:00.000Z',
+      }
+      rows.set(storedAt(key, input.scope, destination), stored)
+      return stored
+    },
+    listEntries: async (_environment: string, destination: { destinationSpaceId?: string } = {}) =>
+      [...rows.entries()]
+        .filter(([location]) => location.startsWith(`${destinationId(destination)}:`))
+        .map(([, stored]) => stored),
+  } as unknown as ConfigClient
+
+  const target = await configWriteTarget('machine config set', 'other', client)
+  const written = await setConfigEntry(
+    'autonomy.stage.review',
+    'review',
+    target.scope,
+    undefined,
+    client,
+    process.env,
+    () => client,
+    target.destination,
+  )
+  await verifyConfigWrite(
+    client,
+    written.row,
+    target.destination,
+    `${PLATFORM_SLUG} machine config set autonomy.stage.review review --space other`,
+  )
+
+  const named = await configReadDestination('machine config get', 'other', client)
+  await expect(
+    getConfigEntry('autonomy.stage.review', 'space', client, process.env, () => client, named),
+  ).resolves.toMatchObject({ value: 'review', home: 'space' })
+  await expect(
+    getConfigEntry('autonomy.stage.review', undefined, client, process.env, () => client),
+  ).rejects.toThrow()
+  await expect(
+    getConfigEntry(
+      'autonomy.stage.review',
+      'space',
+      client,
+      process.env,
+      () => client,
+      await configReadDestination('machine config get', true, client),
+    ),
+  ).rejects.toThrow()
+
+  expect(await listEntries(client, named)).toEqual([written.row])
+  expect(
+    await listEntries(client, await configReadDestination('machine config list', true, client)),
+  ).toEqual([])
+  expect(await listEntries(client)).toEqual([])
 })
 
 test('an unflagged secret write uses the machine pinned space instead of personal space', async () => {
