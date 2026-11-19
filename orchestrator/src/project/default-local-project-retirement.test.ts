@@ -3,8 +3,8 @@ import { afterEach, expect, test } from 'bun:test'
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { testDatabaseFixture } from '../database/test-database.fixture.ts'
 import { writeProjectRegisterRow } from '../database/project-register-store.ts'
+import { testDatabaseFixture } from '../database/test-database.fixture.ts'
 import {
   retireUnusedDefaultLocalProjectAtFirstBinding,
   shouldRetireDefaultLocalProject,
