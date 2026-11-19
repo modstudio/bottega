@@ -73,8 +73,9 @@ import {
 import type { MachineNamePair } from '../record/machine-name.ts'
 import { claimCurrentMachineNames } from '../record/machine-name-command.ts'
 import { LEGACY_ENVIRONMENT_SECRET_NAMES } from '../setup/environment-name-migration.ts'
-import { configHome, setRemedy, validateHostedValue } from './config-entry-policy.ts'
+import * as configEntryPolicy from './config-entry-policy.ts'
 import { planRotation, shouldRotateAfterRevocation } from './config-service-rotation-policy.ts'
+import { verifyConfigWrite } from './config-write-verification.ts'
 import {
   bytes,
   claimMachineKey,
@@ -808,8 +809,8 @@ export async function getEntry(
   return client.getEntry(key, scope, HOSTED_CONFIG_ENVIRONMENT, destination)
 }
 
+export { configHome } from './config-entry-policy.ts'
 export type { ConfigHome }
-export { configHome }
 export type ConfigReadResult = {
   key: string
   value: string
@@ -828,18 +829,21 @@ export async function setConfigEntry(
   client: ConfigClient | undefined = undefined,
   env: ConfigEnvironment = process.env,
   clientFactory: () => ConfigClient = () => hostedConfigClient(env),
-  destination?: WriteDestination,
-) {
-  const home = configHome(key, requested)
+  options: { destination?: WriteDestination; remedy?: string } = {},
+): Promise<
+  | { home: 'machine'; row: ReturnType<typeof setMachineEntry> }
+  | { home: 'user' | 'space'; row: Awaited<ReturnType<typeof setEntry>> }
+> {
+  const home = configEntryPolicy.configHome(key, requested)
   if (home === 'machine') {
     if (expectedRowVersion !== undefined)
       throw new Error(
-        `refusing config key ${key}: --expect applies only to hosted values; write its machine home with \`${setRemedy(key, home)}\``,
+        `refusing config key ${key}: --expect applies only to hosted values; write its machine home with \`${configEntryPolicy.setRemedy(key, home)}\``,
       )
     const row = setMachineEntry(key, value, env)
-    return { key: row.key, value: String(row.value), home, row }
+    return { home, row }
   }
-  validateHostedValue(key, value)
+  configEntryPolicy.validateHostedValue(key, value)
   const hostedClient = client ?? clientFactory()
   const row = await setEntry(
     key,
@@ -847,16 +851,12 @@ export async function setConfigEntry(
     home,
     expectedRowVersion,
     hostedClient,
-    destination ?? (await personalConfigWriteDestination(hostedClient)),
+    options.destination ?? (await personalConfigWriteDestination(hostedClient)),
   )
+  if (home === 'space' && options.destination && options.remedy)
+    await verifyConfigWrite(hostedClient, row, options.destination, options.remedy)
   if (key === DISPLAY_TIMEZONE_KEY) refreshDisplayTimezoneCache(value, env)
-  return { key: row.key, value: row.value, home, row }
-}
-
-function machineSourceLabel(source: ReturnType<typeof readMachineValueWithSource>['source']) {
-  if (source.kind === 'environment') return `environment ${source.name}`
-  if (source.kind === 'machine-file') return 'machine.toml'
-  return 'default'
+  return { home, row }
 }
 
 async function ignoredHostedScopes(
@@ -881,14 +881,15 @@ export async function getConfigEntry(
   client: ConfigClient | undefined = undefined,
   env: ConfigEnvironment = process.env,
   clientFactory: () => ConfigClient = () => hostedConfigClient(env),
+  destination: ConfigDestination = {},
 ): Promise<ConfigReadResult> {
-  const home = configHome(key, requested, 'get')
+  const home = configEntryPolicy.configHome(key, requested, 'get')
   if (home === 'machine') {
     if (key.startsWith('autonomy.')) {
       const row = listMachineAutonomy(env).find((candidate) => candidate.key === key)
       if (!row)
         throw new Error(
-          `machine.toml has no value for ${key}; write it with \`${setRemedy(key, 'machine')}\``,
+          `machine.toml has no value for ${key}; write it with \`${configEntryPolicy.setRemedy(key, 'machine')}\``,
         )
       return {
         key,
@@ -903,7 +904,7 @@ export async function getConfigEntry(
       const value = readMachineFileValue(machineKey, env)
       if (value === undefined)
         throw new Error(
-          `machine.toml has no value for ${key}; write it with \`${setRemedy(key, 'machine')}\``,
+          `machine.toml has no value for ${key}; write it with \`${configEntryPolicy.setRemedy(key, 'machine')}\``,
         )
       return {
         key,
@@ -918,16 +919,16 @@ export async function getConfigEntry(
       key,
       value: String(resolved.value),
       home,
-      source: machineSourceLabel(resolved.source),
+      source: configEntryPolicy.machineSourceLabel(resolved.source),
       ignoredHostedScopes: await ignoredHostedScopes(key, () => client ?? clientFactory()),
     }
   }
-  const row = await getEntry(key, home, client ?? clientFactory())
+  const row = await getEntry(key, home, client ?? clientFactory(), destination)
   if (key === DISPLAY_TIMEZONE_KEY) {
     if (!isDisplayTimezone(row.value)) {
       refreshDisplayTimezoneCache(null, env)
       throw new Error(
-        `hosted user scope has no value for ${DISPLAY_TIMEZONE_KEY}; write it with \`${setRemedy(DISPLAY_TIMEZONE_KEY, 'user')}\``,
+        `hosted user scope has no value for ${DISPLAY_TIMEZONE_KEY}; write it with \`${configEntryPolicy.setRemedy(DISPLAY_TIMEZONE_KEY, 'user')}\``,
       )
     }
     refreshDisplayTimezoneCache(row.value, env)

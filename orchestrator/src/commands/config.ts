@@ -3,7 +3,7 @@
 import { createInterface } from 'node:readline/promises'
 import type { Command } from 'commander'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import type { ConfigClient, ConfigScope } from '../../../shared/config-client.ts'
+import type { ConfigClient, ConfigDestination, ConfigScope } from '../../../shared/config-client.ts'
 import { isDelegationKey } from '../../../shared/delegation-mode.ts'
 import { KEYSTORE_ENV } from '../../../shared/key-store-constants.ts'
 import { DISPLAY_TIMEZONE_KEY, listMachineEntries } from '../../../shared/machine-config.ts'
@@ -15,6 +15,7 @@ import {
   SHIP_TO_VALUES,
   storedShipToLevel,
 } from '../../../shared/ship-to.ts'
+import { setRemedy } from '../config/config-entry-policy.ts'
 import {
   configHome,
   deleteEntry,
@@ -35,7 +36,11 @@ import { hostedConfigClient } from '../config/hosted-config-call-outcome.ts'
 import { trustMachine } from '../config/machine-trust.ts'
 import { machineRegister } from '../config/named-space-config.ts'
 import { parseSecretRunArgs, runNamedSecrets } from '../config/secret-run.ts'
-import { sealSecretDecision, secretSetRemedy } from '../config/secret-set-policy.ts'
+import {
+  sealSecretDecision,
+  secretDeleteRemedy,
+  secretSetRemedy,
+} from '../config/secret-set-policy.ts'
 import { type pinnedConfigDestination, secretWriteTarget } from '../config/secret-write-target.ts'
 import { isOrchWorkerProcess, type ProcessInventory } from '../run/run-process.ts'
 import { subscriptionMonthlyUsdKey } from '../run/run-subscription-cost.ts'
@@ -60,14 +65,25 @@ function registerConfigSet(config: Command): void {
     .action(async (key, value, options) => {
       const write = shipToWrite(key, value)
       assertConfigWriteAllowed(write.key, write.value)
-      if (options.machine && options.space) {
+      const space = configSpaceSelection('set', options.space, false, () =>
+        setRemedy(write.key, 'space', '<slug>', write.value),
+      )
+      if (options.machine && space !== undefined) {
         throw new Error('refusing machine config set: --machine cannot be combined with --space')
       }
-      const requestedHome = options.machine ? 'machine' : options.space ? 'space' : undefined
+      const requestedHome = options.machine
+        ? 'machine'
+        : typeof space === 'string'
+          ? 'space'
+          : undefined
       const home = configHome(write.key, requestedHome)
       const client = home === 'machine' ? undefined : hostedConfigClient()
       const target = client
-        ? await configWriteTarget('machine config set', options.space, client)
+        ? await configWriteTarget(
+            'machine config set',
+            typeof space === 'string' ? space : undefined,
+            client,
+          )
         : undefined
       const written = await setConfigEntry(
         write.key,
@@ -77,55 +93,139 @@ function registerConfigSet(config: Command): void {
         client,
         process.env,
         () => client ?? hostedConfigClient(),
-        target?.destination,
+        {
+          destination: target?.destination,
+          ...(target?.scope === 'space'
+            ? {
+                remedy: setRemedy(write.key, 'space', target.spaceSlug, write.value),
+              }
+            : {}),
+        },
       )
-      if (options.json) log(configSetPresentation(written))
-      else {
-        log(
-          `wrote ${written.key} to ${written.home === 'machine' ? 'machine' : `hosted ${written.home} scope`}`,
-        )
-        if (
-          written.home === 'machine' &&
-          (written.key.startsWith('autonomy.') || written.key === 'machine.global_use')
-        )
-          log(
-            `machine settings take effect at the next session start (or after \`${PLATFORM_SLUG} machine settings apply\`)`,
-          )
-      }
+      logConfigSetResult(written, Boolean(options.json))
     })
+}
+
+function logConfigSetResult(
+  written: Awaited<ReturnType<typeof setConfigEntry>>,
+  json: boolean,
+): void {
+  if (json) {
+    log(configSetPresentation(written))
+    return
+  }
+  log(
+    `wrote ${written.row.key} to ${written.home === 'machine' ? 'machine' : `hosted ${written.home} scope`}`,
+  )
+  if (
+    written.home === 'machine' &&
+    (written.row.key.startsWith('autonomy.') || written.row.key === 'machine.global_use')
+  )
+    log(
+      `machine settings take effect at the next session start (or after \`${PLATFORM_SLUG} machine settings apply\`)`,
+    )
 }
 
 function registerConfigGet(config: Command): void {
   config
-    .command('get <key>')
+    .command('get [key]')
     .description('show one configuration value')
-    .option('--space', 'read the value from the active space scope')
+    .option('--space [slug]', 'read the value from the active or named space scope')
     .option('--machine', 'read the value from machine.toml only')
     .option('--json', 'write the configuration row as JSON')
-    .action(async (key, options) => {
-      if (options.machine && options.space)
+    .action(async (parsedKey, options) => {
+      const { key, space } = configGetRequest(parsedKey, options.space)
+      if (options.machine && space !== undefined)
         throw new Error('refusing machine config get: --machine cannot be combined with --space')
+      const requested = options.machine ? 'machine' : space !== undefined ? 'space' : undefined
+      const client =
+        configHome(key, requested, 'get') === 'machine' ? undefined : hostedConfigClient()
+      const destination = client
+        ? await configReadDestination('machine config get', space, client)
+        : undefined
       const result = await getConfigEntry(
         key,
-        options.machine ? 'machine' : options.space ? 'space' : undefined,
+        requested,
+        client,
+        process.env,
+        () => client ?? hostedConfigClient(),
+        destination,
       )
       for (const line of configReadPresentation(result, Boolean(options.json))) log(line)
     })
+}
+
+export function configGetRequest(
+  parsedKey: string | undefined,
+  parsedSpace: true | string | undefined,
+): { key: string; space: true | string | undefined } {
+  let key = parsedKey
+  let space = parsedSpace
+  if (key === undefined && typeof space === 'string' && space.length > 0) {
+    key = space
+    space = true
+  }
+  space = configSpaceSelection(
+    'get',
+    space,
+    true,
+    () => `${PLATFORM_SLUG} machine config get ${key ?? '<key>'} --space <slug>`,
+  )
+  if (key === undefined) throw new Error("missing required argument 'key'")
+  return { key, space }
 }
 
 export async function configWriteTarget(
   verb: string,
   requested: string | undefined,
   client: ConfigClient,
-): Promise<{ scope: ConfigScope; destination: { destinationSpaceId: string } }> {
+): Promise<
+  | {
+      scope: 'space'
+      destination: { destinationSpaceId: string }
+      spaceSlug: string
+    }
+  | {
+      scope: 'user'
+      destination: { destinationSpaceId: string }
+    }
+> {
   if (requested) {
     const destination = await selectedMachineSpace(verb, requested, client)
     return {
       scope: 'space',
       destination: { destinationSpaceId: destination.spaceId },
+      spaceSlug: destination.slug,
     }
   }
   return { scope: 'user', destination: await personalConfigWriteDestination(client) }
+}
+
+export async function configReadDestination(
+  verb: string,
+  requested: true | string | undefined,
+  client: ConfigClient,
+): Promise<ConfigDestination> {
+  if (typeof requested !== 'string') return {}
+  const destination = await selectedMachineSpace(verb, requested, client)
+  return { destinationSpaceId: destination.spaceId }
+}
+
+export function configSpaceSelection(
+  verb: 'delete' | 'get' | 'list' | 'secret delete' | 'secret set' | 'set',
+  requested: true | string | undefined,
+  allowActive: boolean,
+  remedy: () => string,
+): true | string | undefined {
+  if (requested === '')
+    throw new Error(
+      `refusing machine config ${verb}: --space requires a slug; retry \`${remedy()}\``,
+    )
+  if (requested === true && !allowActive)
+    throw new Error(
+      `refusing machine config ${verb}: --space requires a slug; retry \`${remedy()}\``,
+    )
+  return requested
 }
 
 async function resolveSecretWriteTarget(
@@ -307,9 +407,16 @@ async function selectedMachineSpace(
 
 /** Read the piped value, refuse a blank one, and seal the rest in the requested scope. */
 async function sealPipedSecret(key: string, options: { space?: string }): Promise<void> {
+  const space = configSpaceSelection('secret set', options.space, false, () =>
+    secretSetRemedy(key, 'space', '<slug>'),
+  )
   if (process.stdin.isTTY) throw new Error('secret value must be provided on stdin')
   const client = hostedConfigClient()
-  const target = await resolveSecretWriteTarget('machine config secret set', options.space, client)
+  const target = await resolveSecretWriteTarget(
+    'machine config secret set',
+    typeof space === 'string' ? space : undefined,
+    client,
+  )
   const decision = sealSecretDecision(key, await Bun.stdin.text(), target.scope, target.spaceSlug)
   if (decision.kind === 'refuse') throw new Error(decision.refusal)
   await setSecret(key, decision.value, target.scope, client, {
@@ -319,13 +426,41 @@ async function sealPipedSecret(key: string, options: { space?: string }): Promis
 }
 
 async function deleteSelectedSecret(key: string, options: { space?: string }): Promise<void> {
+  const space = configSpaceSelection('secret delete', options.space, false, () =>
+    secretDeleteRemedy(key, 'space', '<slug>'),
+  )
   const client = hostedConfigClient()
   const target = await resolveSecretWriteTarget(
     'machine config secret delete',
-    options.space,
+    typeof space === 'string' ? space : undefined,
     client,
   )
   await deleteSecret(key, target.scope, client, { destination: target.destination })
+}
+
+function registerConfigList(config: Command): void {
+  config
+    .command('list')
+    .description('list configuration values')
+    .option('--space [slug]', 'list values from the active or named space')
+    .option('--machine', 'list machine configuration values')
+    .option('--json', 'write the configuration rows as JSON')
+    .action(async (options) => {
+      const space = configSpaceSelection(
+        'list',
+        options.space,
+        true,
+        () => `${PLATFORM_SLUG} machine config list --space <slug>`,
+      )
+      if (options.machine && space !== undefined)
+        throw new Error('refusing machine config list: --machine cannot be combined with --space')
+      const client = options.machine ? undefined : hostedConfigClient()
+      const destination = client
+        ? await configReadDestination('machine config list', space, client)
+        : undefined
+      const rows = options.machine ? listMachineEntries() : await listEntries(client, destination)
+      for (const line of configListPresentation(rows, Boolean(options.json))) log(line)
+    })
 }
 
 export function register(program: Command): void {
@@ -333,58 +468,14 @@ export function register(program: Command): void {
   registerMachineCommands(config)
   registerConfigGet(config)
   registerConfigSet(config)
-  config
-    .command('list')
-    .description('list configuration values')
-    .option('--machine', 'list machine configuration values')
-    .option('--json', 'write the configuration rows as JSON')
-    .action(async (options) => {
-      const rows = options.machine ? listMachineEntries() : await listEntries()
-      for (const line of configListPresentation(rows, Boolean(options.json))) log(line)
-    })
+  registerConfigList(config)
   config
     .command('delete <key>')
     .description('delete one configuration value')
     .option('--space <slug>', 'delete the value from this record space')
     .option('--machine', 'delete the value from machine configuration')
     .option('--expect <rowVersion>', 'row version required before deleting')
-    .action(async (key, options) => {
-      assertConfigWriteAllowed(key, undefined)
-      if (options.machine) {
-        if (options.space || options.expect)
-          throw new Error(
-            'refusing machine config delete: --machine cannot be combined with --space or --expect',
-          )
-        deleteMachineEntry(key)
-        log(
-          `machine settings take effect at the next session start (or after \`${PLATFORM_SLUG} machine settings apply\`)`,
-        )
-        return
-      }
-      const expected = expectedRowVersion(options.expect)
-      if (expected === null)
-        throw new Error('delete expected row version must be a positive integer')
-      const client = hostedConfigClient()
-      const target = await configWriteTarget('machine config delete', options.space, client)
-      if (isShipToConfigKey(key)) {
-        const selectedScope = target.scope
-        const rows = (await listEntries(client, target.destination)).filter(
-          (row) => row.scope === selectedScope && isShipToConfigKey(row.key),
-        )
-        if (!rows.length)
-          await deleteEntry(key, selectedScope, expected, client, target.destination)
-        for (const row of rows) {
-          await deleteEntry(
-            row.key,
-            selectedScope,
-            row.key === key ? (expected ?? row.rowVersion) : row.rowVersion,
-            client,
-            target.destination,
-          )
-        }
-      } else await deleteEntry(key, target.scope, expected, client, target.destination)
-      if (key === DISPLAY_TIMEZONE_KEY) refreshDisplayTimezoneCache(null)
-    })
+    .action((key, options) => deleteSelectedConfig(key, options))
 
   const secret = config.command('secret').description('manage sealed configuration values')
   secret
@@ -414,4 +505,55 @@ export function register(program: Command): void {
     .action(async (_options, command: Command) => {
       process.exitCode = await runNamedSecrets(parseSecretRunArgs(rawArgv(command).slice(3)))
     })
+}
+
+export async function deleteSelectedConfig(
+  key: string,
+  options: { expect?: string; machine?: boolean; space?: string },
+  client?: ConfigClient,
+): Promise<void> {
+  assertConfigWriteAllowed(key, undefined)
+  const space = configSpaceSelection(
+    'delete',
+    options.space,
+    false,
+    () => `${PLATFORM_SLUG} machine config delete ${key} --space <slug>`,
+  )
+  if (options.machine) {
+    if (space !== undefined || options.expect)
+      throw new Error(
+        'refusing machine config delete: --machine cannot be combined with --space or --expect',
+      )
+    deleteMachineEntry(key)
+    log(
+      `machine settings take effect at the next session start (or after \`${PLATFORM_SLUG} machine settings apply\`)`,
+    )
+    return
+  }
+  const expected = expectedRowVersion(options.expect)
+  if (expected === null) throw new Error('delete expected row version must be a positive integer')
+  const hostedClient = client ?? hostedConfigClient()
+  const target = await configWriteTarget(
+    'machine config delete',
+    typeof space === 'string' ? space : undefined,
+    hostedClient,
+  )
+  if (isShipToConfigKey(key)) {
+    const selectedScope = target.scope
+    const rows = (await listEntries(hostedClient, target.destination)).filter(
+      (row) => row.scope === selectedScope && isShipToConfigKey(row.key),
+    )
+    if (!rows.length)
+      await deleteEntry(key, selectedScope, expected, hostedClient, target.destination)
+    for (const row of rows) {
+      await deleteEntry(
+        row.key,
+        selectedScope,
+        row.key === key ? (expected ?? row.rowVersion) : row.rowVersion,
+        hostedClient,
+        target.destination,
+      )
+    }
+  } else await deleteEntry(key, target.scope, expected, hostedClient, target.destination)
+  if (key === DISPLAY_TIMEZONE_KEY) refreshDisplayTimezoneCache(null)
 }

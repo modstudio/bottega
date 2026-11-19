@@ -200,13 +200,13 @@ delete one configuration value
 
 ## bottega machine config get
 
-**Synopsis:** `bottega machine config get <key> [--space] [--machine] [--json]`
+**Synopsis:** `bottega machine config get [key] [--space [slug]] [--machine] [--json]`
 
 show one configuration value
 
 ### Options
 
-- `--space`: read the value from the active space scope
+- `--space [slug]`: read the value from the active or named space scope
 - `--machine`: read the value from machine.toml only
 - `--json`: write the configuration row as JSON
 
@@ -226,12 +226,13 @@ display help for command
 
 ## bottega machine config list
 
-**Synopsis:** `bottega machine config list [--machine] [--json]`
+**Synopsis:** `bottega machine config list [--space [slug]] [--machine] [--json]`
 
 list configuration values
 
 ### Options
 
+- `--space [slug]`: list values from the active or named space
 - `--machine`: list machine configuration values
 - `--json`: write the configuration rows as JSON
 

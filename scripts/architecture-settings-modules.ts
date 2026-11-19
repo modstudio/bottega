@@ -76,6 +76,7 @@ export const settingsModules: SettingsModule[] = [
     '../record/machine-name.ts',
     './display-timezone-cache.ts',
     './config-entry-policy.ts',
+    './config-write-verification.ts',
     './trust-log-revoke.ts',
     './secret-set-policy.ts',
     './secret-write-verification.ts',
@@ -88,6 +89,9 @@ export const settingsModules: SettingsModule[] = [
     '../../../shared/sealed-value.ts',
   ]),
   module('orchestrator/src/config/secret-write-verification.ts', [
+    '../../../shared/config-client.ts',
+  ]),
+  module('orchestrator/src/config/config-write-verification.ts', [
     '../../../shared/config-client.ts',
   ]),
   module('orchestrator/src/config/secret-write-target.ts', [
@@ -271,6 +275,7 @@ export const settingsModules: SettingsModule[] = [
     '../../../shared/record-write-space.ts',
     '../../../shared/ship-to.ts',
     '../config/config-service.ts',
+    '../config/config-entry-policy.ts',
     '../config/display-timezone-cache.ts',
     '../config/hosted-config-call-outcome.ts',
     '../config/machine-trust.ts',
