@@ -6,8 +6,10 @@ import { eventsFromVendorLine } from '../events.ts'
 import { DEFAULT_IDLE_GRACE_MS, terminateProcessGroup } from '../idle-kill.ts'
 import { lowerRunChildPriority } from '../run/run-child-priority.ts'
 import { sandboxLaunchArgv } from '../sandbox/sandbox.ts'
-import { classifySandboxLaunchFailure } from '../sandbox/sandbox-launch-failure.ts'
-import { sandboxRuntimeAvailability } from '../sandbox/sandbox-runtime.ts'
+import {
+  classifySandboxLaunchFailure,
+  sandboxRuntimeAvailability,
+} from '../sandbox/sandbox-runtime.ts'
 import { codexAskExposureFromTexts } from './codex-ask-exposure.ts'
 import { harnessCollectsQuotaReadings, parseCodexQuotaReadings } from './codex-quota.ts'
 import {
@@ -328,6 +330,27 @@ function sandboxReadinessRefusal(
   return `sandbox runtime readiness failed; ${sandboxRuntimeAvailability().remedy}`
 }
 
+function cliTurnReadingWithSandboxReadiness(input: {
+  opts: TransportStartOpts
+  overflowed: CliStreamCapture | null
+  stdout: string
+  stderr: string
+}) {
+  const reading = cliTurnReading({
+    overflowed: input.overflowed,
+    harness: workerHarnessName(input.opts.agent),
+    parseReply: () => input.opts.agent.parseReply?.(input.stdout) ?? null,
+    stdout: input.stdout,
+    stderr: input.stderr,
+  })
+  return {
+    ...reading,
+    replyError:
+      sandboxReadinessRefusal(input.opts, input.stderr, reading.replyError ?? '') ??
+      reading.replyError,
+  }
+}
+
 /** Compose the exact environment handed to a CLI child. */
 export function cliChildEnvironment(
   environment: Record<string, string>,
@@ -386,27 +409,18 @@ async function spawnCli(opts: TransportStartOpts): Promise<TransportHandle> {
         const signal = processResult.signal ?? null
         const exitCode =
           processResult.exitCode ?? (signal ? 128 + (osConstants.signals[signal] ?? 0) : 1)
-        const {
-          reply,
-          replyError: parsedReplyError,
-          tokens,
-        } = cliTurnReading({
+        const { reply, replyError, tokens } = cliTurnReadingWithSandboxReadiness({
+          opts,
           overflowed,
-          harness: workerHarnessName(opts.agent),
-          parseReply: () => opts.agent.parseReply?.(stdout) ?? null,
           stdout,
           stderr,
         })
-        const replyError =
-          sandboxReadinessRefusal(opts, stderr, parsedReplyError ?? '') ?? parsedReplyError
         const usage = usageForBilling(opts.agent.billing, cliUsage(reply?.costUsd ?? null))
         const { quotaReadings, askExposure, overflow } = codexRolloutEvidence(
           codex,
           codexHome,
           rolloutOffsets,
         )
-        // Best-effort observation, reported where an operator will see it
-        // without changing what the turn did.
         if (overflow) opts.onWarning?.(overflow.message)
         const sessionId =
           opts.session ??

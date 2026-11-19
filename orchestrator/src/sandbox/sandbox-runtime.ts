@@ -1,6 +1,5 @@
 // concern: sandbox-runtime availability and extracted payload adapter; must not know sandbox policy.
 
-import { spawnSync } from 'node:child_process'
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import {
@@ -8,6 +7,7 @@ import {
   SandboxManager,
 } from '@anthropic-ai/sandbox-runtime'
 import { which } from 'bun'
+import { startBoundedSync } from '../../../shared/bounded-process.ts'
 import {
   type EmbeddedRuntimeFile,
   embeddedDistributionManifest,
@@ -129,7 +129,7 @@ function missingPackages(errors: string[]): string[] {
   return PACKAGES.filter((name) => packages.has(name))
 }
 
-export function sandboxPackageInstallFix(manager: LinuxPackageManager, packages: string[]): string {
+function sandboxPackageInstallFix(manager: LinuxPackageManager, packages: string[]): string {
   const names = packages.join(' ')
   if (manager === 'apt') return `sudo apt-get install ${names}`
   if (manager === 'dnf') return `sudo dnf install ${names}`
@@ -198,9 +198,9 @@ export function classifySandboxRuntimeAvailability(
 }
 
 function defaultProbeUserNamespaces(bwrapPath: string, shellPath: string): boolean {
-  const result = spawnSync(
-    bwrapPath,
+  const result = startBoundedSync(
     [
+      bwrapPath,
       '--new-session',
       '--die-with-parent',
       '--unshare-net',
@@ -217,9 +217,31 @@ function defaultProbeUserNamespaces(bwrapPath: string, shellPath: string): boole
       '-c',
       'true',
     ],
-    { timeout: 3_000, stdio: 'ignore' },
+    { budget: 'sandbox-probe' },
   )
-  return result.status === 0
+  return result.exitCode === 0
+}
+
+export type SandboxLaunchFailureFacts = {
+  platform: NodeJS.Platform
+  sandboxKind: 'srt' | 'host'
+  stderr: string
+  launchError: string
+}
+
+export type SandboxReadinessRefusal = { kind: 'sandbox-readiness' }
+
+/** Identify only Linux srt failures that host readiness can remedy. */
+export function classifySandboxLaunchFailure(
+  facts: SandboxLaunchFailureFacts,
+): SandboxReadinessRefusal | null {
+  if (facts.platform !== 'linux' || facts.sandboxKind !== 'srt') return null
+  const text = `${facts.stderr}\n${facts.launchError}`
+  return /RTM_NEWADDR|setting up uid map:\s*Permission denied|Sandbox dependencies not available|bubblewrap \(bwrap\) not installed/i.test(
+    text,
+  )
+    ? { kind: 'sandbox-readiness' }
+    : null
 }
 
 function profileNamedBwrap(text: string): boolean {

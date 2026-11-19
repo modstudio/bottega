@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { classifySandboxLaunchFailure } from './sandbox-launch-failure.ts'
+import { classifySandboxLaunchFailure } from './sandbox-runtime.ts'
 
 const linuxSrt = { platform: 'linux', sandboxKind: 'srt' } as const
 

@@ -18,12 +18,12 @@ export const SOURCE_ROOT_ALLOWANCES: SourceRootAllowance[] = [
   },
   {
     path: 'orchestrator/src/sandbox/sandbox-runtime.ts',
-    line: 24,
+    line: 27,
     reason: 'source availability checks node_modules only when no embedded manifest exists',
   },
   {
     path: 'orchestrator/src/sandbox/sandbox-runtime.ts',
-    line: 56,
+    line: 59,
     reason: 'installed payload resolution selects embedded files instead of this disk fallback',
   },
   {
