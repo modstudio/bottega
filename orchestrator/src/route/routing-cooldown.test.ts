@@ -73,7 +73,7 @@ test('a vendor reset keeps quota cooling active beyond the minimum', () => {
     vendor_reset_at: new Date(resetAt).toISOString(),
   })
   expect(coolingRefusal('a', failure, 60, 'America/Los_Angeles')).toContain(
-    'Nov 20, 2026 at 1:00 PM PST (vendor reset)',
+    'Nov 20, 2026, 1:00 PM PST (vendor reset)',
   )
   expect(decideCoolingFailures([quota], 60, resetAt + 1_000).get('a')).toBeUndefined()
 })

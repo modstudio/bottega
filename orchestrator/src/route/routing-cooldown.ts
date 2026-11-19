@@ -223,7 +223,7 @@ export function coolingRefusal(
 }
 
 function formatVendorReset(instant: string, displayTimezone: string | null): string {
-  return new Intl.DateTimeFormat('en-US', {
+  const parts = new Intl.DateTimeFormat('en-US', {
     ...(displayTimezone ? { timeZone: displayTimezone } : {}),
     month: 'short',
     day: 'numeric',
@@ -232,7 +232,10 @@ function formatVendorReset(instant: string, displayTimezone: string | null): str
     minute: '2-digit',
     hour12: true,
     timeZoneName: 'short',
-  }).format(new Date(instant))
+  }).formatToParts(new Date(instant))
+  const part = (type: Intl.DateTimeFormatPartTypes): string =>
+    parts.find((candidate) => candidate.type === type)?.value ?? ''
+  return `${part('month')} ${part('day')}, ${part('year')}, ${part('hour')}:${part('minute')} ${part('dayPeriod')} ${part('timeZoneName')}`
 }
 
 export function coolingPhrase(failure: Pick<CoolingFailure, 'failure_kind' | 'mins_ago'>): string {
