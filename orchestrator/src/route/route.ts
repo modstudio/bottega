@@ -289,7 +289,7 @@ function candidatePass(jobName: string, promptBytes = 0, options: CandidateOptio
     db(),
     agentList.map((agent) => agent.name),
   )
-  const coolingByAgent = decideCoolingFailures(terminalRuns, COOLDOWN_MIN)
+  const coolingByAgent = decideCoolingFailures(terminalRuns, COOLDOWN_MIN, Date.now())
   const billingHoldByAgent = new Map(
     decideBillingKeyHolds(agentList, terminalRuns).flatMap((hold) =>
       hold.agents.map((agent) => [agent, hold] as const),

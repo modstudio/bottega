@@ -672,6 +672,41 @@ describe('completed-reply process-ended error composition', () => {
 })
 
 describe('completed-reply process-ended live outcome', () => {
+  const usageLimit = "You've hit your usage limit. Please try again at Nov 21st, 2026 8:29 PM."
+
+  test('run 38251 classifies the last vendor error ahead of unrelated stderr', () => {
+    expect(
+      outcome({
+        contractStatus: 'done',
+        replyFilePresent: true,
+        exitCode: 1,
+        stdout:
+          '{"type":"item.completed","item":{"text":"done"}}\n' +
+          JSON.stringify({ type: 'turn.failed', error: { message: usageLimit } }) +
+          '\n',
+        stderr:
+          'ERROR codex_core::tools::router: error=apply_patch verification failed: context missing',
+      }).failureKind,
+    ).toBe('quota')
+  })
+
+  test('run 38258 classifies the vendor error when the writer reply is missing', () => {
+    expect(
+      outcome({
+        contractStatus: null,
+        replyFilePresent: false,
+        output: '',
+        exitCode: 1,
+        stdout:
+          JSON.stringify({ type: 'error', message: usageLimit }) +
+          '\n' +
+          JSON.stringify({ type: 'turn.failed', error: { message: usageLimit } }) +
+          '\n',
+        stderr: 'unrelated transport diagnostic',
+      }).failureKind,
+    ).toBe('quota')
+  })
+
   test('exit 1 with stderr and stdout both present records the stderr tail', () => {
     expect(
       outcome({
@@ -686,6 +721,18 @@ describe('completed-reply process-ended live outcome', () => {
       failureKind: 'other',
       error: `${endedNotice(1)}\nvendor stderr: codex transport reset`,
     })
+  })
+
+  test('terminal text without a vendor error keeps the existing stderr-first classification', () => {
+    expect(
+      outcome({
+        contractStatus: 'done',
+        replyFilePresent: true,
+        exitCode: 1,
+        stdout: 'agent printed a reply\n',
+        stderr: 'codex transport reset',
+      }).failureKind,
+    ).toBe('other')
   })
 
   test.each([

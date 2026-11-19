@@ -8,9 +8,14 @@ export type CoolingFailure = {
   agent: string
   failure_kind: string
   mins_ago: number
+  cooling_until: string | null
+  vendor_reset_at: string | null
+  vendor_reset_clamped: boolean
 }
 
 const PROVIDER_ERROR_STREAK = 3
+export const QUOTA_RESET_READING_WINDOW_MS = 8 * 24 * 60 * 60_000
+export const QUOTA_RESET_CEILING_MS = 8 * 24 * 60 * 60_000
 
 export type RecentTerminalRun = {
   record_id: string
@@ -21,6 +26,7 @@ export type RecentTerminalRun = {
   failure_kind: string | null
   endpoint_key_source: 'agent' | 'project' | null
   credential_id: string | null
+  quota_resets_at: number | null
   finished_at: number
   mins_ago: number
 }
@@ -76,6 +82,7 @@ export function recentTerminalRuns(
            )
        )
        SELECT r.record_id,r.number,r.agent,r.job,r.status,r.failure_kind,r.endpoint_key_source,r.credential_id,
+              r.quota_resets_at,
               r.started_at,r.latency_ms
          FROM selected JOIN run r USING(record_id)`,
     )
@@ -111,6 +118,9 @@ export function providerErrorStreakCooling(
     agent: recent[0]!.agent,
     failure_kind: 'provider_error',
     mins_ago: recent[0]!.mins_ago,
+    cooling_until: null,
+    vendor_reset_at: null,
+    vendor_reset_clamped: false,
   }
 }
 
@@ -122,7 +132,7 @@ function sameUtcDay(timestamp: number, now: number): boolean {
 export function decideCoolingFailures(
   rows: readonly RecentTerminalRun[],
   cooldownMinutes: number,
-  now = Date.now(),
+  now: number,
 ): Map<string, CoolingFailure> {
   const byAgent = new Map<string, RecentTerminalRun[]>()
   for (const row of rows) byAgent.set(row.agent, [...(byAgent.get(row.agent) ?? []), row])
@@ -136,20 +146,45 @@ export function decideCoolingFailures(
           (row.failure_kind !== null && COOLS_DOWN.includes(row.failure_kind as FailureKind))),
     )
     if (latestAvailability?.status === 'failed') {
+      const minimumUntil = latestAvailability.finished_at + cooldownMinutes * 60_000
+      const resetRows = ordered.filter(
+        (row) =>
+          row.quota_resets_at !== null &&
+          row.quota_resets_at * 1_000 > now &&
+          now - row.finished_at <= QUOTA_RESET_READING_WINDOW_MS,
+      )
+      const clamped = resetRows.some(
+        (row) => row.quota_resets_at! * 1_000 - now > QUOTA_RESET_CEILING_MS,
+      )
+      const vendorReset =
+        latestAvailability.failure_kind === 'quota'
+          ? resetRows
+              .map((row) => row.quota_resets_at! * 1_000)
+              .filter((resetAt) => resetAt - now <= QUOTA_RESET_CEILING_MS)
+              .reduce((newest, resetAt) => Math.max(newest, resetAt), 0)
+          : 0
+      const coolingUntil = Math.max(minimumUntil, vendorReset)
       const active =
         latestAvailability.failure_kind === 'daily_quota'
           ? sameUtcDay(latestAvailability.finished_at, now)
-          : latestAvailability.mins_ago < cooldownMinutes
+          : now < coolingUntil
       if (active) {
         result.set(agent, {
           agent,
           failure_kind: latestAvailability.failure_kind!,
           mins_ago: latestAvailability.mins_ago,
+          cooling_until: new Date(coolingUntil).toISOString(),
+          vendor_reset_at: vendorReset ? new Date(vendorReset).toISOString() : null,
+          vendor_reset_clamped: latestAvailability.failure_kind === 'quota' && clamped,
         })
       }
     }
     const streak = providerErrorStreakCooling(ordered)
-    if (streak && streak.mins_ago < cooldownMinutes) result.set(agent, streak)
+    if (streak && streak.mins_ago < cooldownMinutes)
+      result.set(agent, {
+        ...streak,
+        cooling_until: new Date(now + (cooldownMinutes - streak.mins_ago) * 60_000).toISOString(),
+      })
   }
   return result
 }
@@ -161,11 +196,31 @@ export function coolingRefusal(
 ): string {
   const cooling = coolingPhrase(failure)
   const retry =
-    failure.failure_kind === 'daily_quota' ? 'after the next UTC day' : `after ${cooldownMinutes}m`
+    failure.failure_kind === 'daily_quota'
+      ? 'after the next UTC day'
+      : failure.vendor_reset_at
+        ? `after ${formatEasternReset(failure.vendor_reset_at)} (vendor reset)`
+        : `after ${cooldownMinutes}m`
+  const clamp = failure.vendor_reset_clamped
+    ? `; vendor reset reading beyond the ${QUOTA_RESET_CEILING_MS / 60 / 60_000}h ceiling was ignored`
+    : ''
   return (
-    `vendor ${cooling}; retry ${retry} ` +
+    `vendor ${cooling}; retry ${retry}${clamp} ` +
     `or run '${PLATFORM_SLUG} agent probe ${agent}' to clear it`
   )
+}
+
+function formatEasternReset(instant: string): string {
+  return new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/New_York',
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+    timeZoneName: 'short',
+  }).format(new Date(instant))
 }
 
 export function coolingPhrase(failure: Pick<CoolingFailure, 'failure_kind' | 'mins_ago'>): string {

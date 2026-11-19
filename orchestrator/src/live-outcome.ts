@@ -106,14 +106,20 @@ function calculateOutcome(facts: LiveOutcomeFacts): CalculatedOutcome {
   const nonAnswerFailureKind = progressFallback
     ? 'premature-final'
     : classify(facts.output, facts.exitCode, facts.timedOut, facts.sandbox)
-  const completedContractTerminal = facts.stderr.trim() || facts.stdout.trim()
+  const completedContractTerminal = vendorTerminalText(
+    facts,
+    facts.stderr.trim() || facts.stdout.trim(),
+  )
   const completedContractFailureKind = classify(
     completedContractTerminal,
     facts.exitCode,
     facts.timedOut,
     facts.sandbox,
   )
-  const missingContractTerminal = facts.stderr.trim() || facts.output || facts.stdout.trim()
+  const missingContractTerminal = vendorTerminalText(
+    facts,
+    facts.stderr.trim() || facts.output || facts.stdout.trim(),
+  )
   const classifiedMissingContract = classify(
     missingContractTerminal,
     facts.exitCode,
@@ -204,6 +210,14 @@ function lastStdoutJsonlEvent(stdout: string): LastStdoutJsonlEvent | null {
   } catch {
     return null
   }
+}
+
+/** Prefer the vendor's terminal error event over incidental process output. */
+export function vendorTerminalText(
+  facts: Pick<LiveOutcomeFacts, 'stdout'>,
+  fallback: string,
+): string {
+  return lastStdoutJsonlEvent(facts.stdout)?.error?.trim() || fallback
 }
 
 function recordedLastVendorEventType(raw: string | null): string | null {
