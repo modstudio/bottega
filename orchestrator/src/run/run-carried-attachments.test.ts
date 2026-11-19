@@ -103,6 +103,22 @@ test('a store failure carries its cause and a store remedy', async () => {
   )
 })
 
+test('a store failure for a task-text-only token refuses instead of warning', async () => {
+  const warnings: string[] = []
+  await expect(
+    resolveCarriedAttachments([{ label: 'task text', text: FIRST, missing: 'warn' }], {
+      readAttachment: async () => {
+        throw new Error('record service timed out')
+      },
+      onWarning: (warning) => warnings.push(warning),
+    }),
+  ).rejects.toThrow(
+    `- ${FIRST} (from task text): the workflow text store could not be read: record service timed out\n` +
+      '  remedy: restore access to the workflow text store and retry dispatch, or paste the body into the spec',
+  )
+  expect(warnings).toEqual([])
+})
+
 async function missingAttachmentResult(
   sections: Parameters<typeof resolveCarriedAttachments>[0],
 ): Promise<{ error: Error | null; warnings: string[] }> {

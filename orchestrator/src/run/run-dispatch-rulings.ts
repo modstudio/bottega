@@ -19,10 +19,7 @@ type AttachmentReader = NonNullable<
 >['readAttachment']
 
 export function recordDispatchAttachmentWarnings(runId: string, warnings: readonly string[]): void {
-  for (const warning of warnings) {
-    console.error(`orch: warning: ${warning}`)
-    recordRunWarning(runId, warning)
-  }
+  for (const warning of warnings) recordRunWarning(runId, warning)
 }
 
 async function runDispatchRulingsSection(input: {
@@ -67,6 +64,7 @@ export async function prepareRunDispatchRulings(
   dependencies: {
     taskTextReader?: TaskTextReader
     attachmentReader?: AttachmentReader
+    warningWriter?: (warning: string) => void
   } = {},
 ): Promise<{
   section: string
@@ -106,6 +104,7 @@ export async function prepareRunDispatchRulings(
     { readTaskText: dependencies.taskTextReader },
   )
   const attachmentWarnings: string[] = []
+  const warningWriter = dependencies.warningWriter ?? console.error
   const carriedAttachments = await resolveCarriedAttachments(
     [
       { label: 'spec', text: input.spec },
@@ -114,7 +113,10 @@ export async function prepareRunDispatchRulings(
     ],
     {
       readAttachment: dependencies.attachmentReader,
-      onWarning: (warning) => attachmentWarnings.push(warning),
+      onWarning: (warning) => {
+        warningWriter(`orch: warning: ${warning}`)
+        attachmentWarnings.push(warning)
+      },
     },
   )
   return {

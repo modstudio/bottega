@@ -3,6 +3,10 @@ import { newRecordId } from '../../../shared/record-id.ts'
 import { addProject } from '../../test/fixtures/offline-branch-landing.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
+import {
+  missingWorkflowTextMessage,
+  WorkflowTextNotHeldError,
+} from '../workflow/workflow-text-missing.ts'
 import { prepareRunDispatchRulings } from './run-dispatch-rulings.ts'
 
 test('retry-root carries rulings and claim links from the retained parent task', async () => {
@@ -154,4 +158,44 @@ test('resolves an attachment token carried only by task text', async () => {
   )
 
   expect(prepared.carriedAttachments).toContain('Design body from the task text attachment.')
+})
+
+test('writes a task-text attachment warning while resolving before a run is claimed', async () => {
+  const token = `attached-text:${newRecordId()}`
+  const projectRecordId = addProject('task-text-attachment-warning', '/work/task-text-warning')
+  const written: string[] = []
+  const missing = missingWorkflowTextMessage(token, 'local-authoritative')
+  const prepared = await prepareRunDispatchRulings(
+    {
+      firstTurn: true,
+      workspaceSource: 'new',
+      parentRunRecordId: null,
+      projectName: 'task-text-attachment-warning',
+      projectRecordId,
+      key: 'DEV-2476',
+      repoJob: true,
+      callerCwd: '/work/task-text-warning',
+      probe: false,
+      writesJob: true,
+      spec: 'spec without an attachment token',
+    },
+    {
+      taskTextReader: async (_project, key) => ({
+        available: true,
+        recordId: null,
+        key,
+        title: 'Missing attachment',
+        body: `Read ${token}`,
+        comments: [],
+      }),
+      attachmentReader: async () => {
+        throw new WorkflowTextNotHeldError(missing.condition, missing.remedy)
+      },
+      warningWriter: (warning) => written.push(warning),
+    },
+  )
+
+  expect(written).toEqual([`orch: warning: ${prepared.attachmentWarnings[0]}`])
+  expect(written[0]).toContain(token)
+  expect(written[0]).toContain('from task text')
 })

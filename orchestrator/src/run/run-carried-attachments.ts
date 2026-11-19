@@ -136,8 +136,9 @@ export async function resolveCarriedAttachments(
       resolved.push(await readAttachment(token))
     } catch (cause) {
       const failure = attachmentFailure(cause, token, sources)
-      if (refusalRequired) failures.push(failure)
-      else dependencies.onWarning?.(attachmentWarning(failure))
+      if (cause instanceof WorkflowTextNotHeldError && !refusalRequired)
+        dependencies.onWarning?.(attachmentWarning(failure))
+      else failures.push(failure)
     }
   }
   if (failures.length > 0) throw attachmentRefusal(failures)
