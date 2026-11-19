@@ -10,6 +10,7 @@ import {
   HostedOpenError,
   hostedIdentity,
   openHostedSecret,
+  pinnedHostedSecretDestination,
 } from './hosted-secret-opening.ts'
 import { machineKeyInfo, readMachineKey } from './machine-key-store.ts'
 import { sealedValueIsEmpty } from './sealed-value.ts'
@@ -67,12 +68,6 @@ async function defaults(signal?: AbortSignal): Promise<Dependencies> {
   }
 }
 
-async function pinnedDestination(deps: Dependencies): Promise<{ destinationSpaceId: string }> {
-  return {
-    destinationSpaceId: (await hostedIdentity(deps.client, deps.pinnedIdentity)).spaceId,
-  }
-}
-
 async function rowInScope(
   name: string,
   scope: ConfigSecret['scope'],
@@ -83,7 +78,7 @@ async function rowInScope(
       name,
       scope,
       HOSTED_CONFIG_ENVIRONMENT,
-      await pinnedDestination(deps),
+      await pinnedHostedSecretDestination(deps.client, deps.pinnedIdentity),
     )
   } catch (error) {
     if (error instanceof ConfigClientError && error.status === 404) return undefined
@@ -123,7 +118,7 @@ async function one(name: string, deps: Dependencies): Promise<OneSecret> {
     const key = await deps.client.getDataKey(
       row.dekId,
       deps.machine.keyId,
-      await pinnedDestination(deps),
+      await pinnedHostedSecretDestination(deps.client, deps.pinnedIdentity),
     )
     const value = await openedValue(name, row, scope, key, deps)
     if (!sealedValueIsEmpty(value)) return { value, sealedEmpty: false }

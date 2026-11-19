@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { type ConfigClient, ConfigClientError } from '../../../shared/config-client.ts'
 import { CONFIG_HOME_ENV } from '../../../shared/config-directory.ts'
+import { writeHostedConfigIdentity } from '../../../shared/hosted-config-space.ts'
 import { machineKeyId } from '../../../shared/machine-key-id.ts'
 import { readMachineKey, writeMachineKey } from '../../../shared/machine-key-store.ts'
 import * as machineSigningKey from '../../../shared/machine-signing-key.ts'
@@ -62,6 +63,25 @@ afterEach(() => {
   if (previousKeystore === undefined) delete process.env.BOTTEGA_KEYSTORE
   else process.env.BOTTEGA_KEYSTORE = previousKeystore
 })
+
+function pinTestHostedIdentity() {
+  const root = mkdtempSync(join(tmpdir(), 'config-pinned-'))
+  roots.push(root)
+  process.env.BOTTEGA_CONFIG_HOME = root
+  const spaceId = '01990000-0000-7000-8000-000000000091'
+  const userId = '01990000-0000-7000-8000-000000000092'
+  writeHostedConfigIdentity({ spaceId, userId })
+  return {
+    spaceId,
+    userId,
+    whoami: {
+      user: { id: userId },
+      activeSpaceId: spaceId,
+      personalSpaceId: '01990000-0000-7000-8000-000000000099',
+      memberships: [],
+    },
+  }
+}
 
 test('the declared home chooses machine and hosted keys and refuses an unsupported scope with its remedy', () => {
   expect(configHome('routing.cost_policy')).toBe('machine')
@@ -384,6 +404,7 @@ test('the service refuses a blank value before touching the store', async () => 
   await expect(
     setSecret('EMPTY_KEY', '   \n', 'user', client, {
       destination: { destinationSpaceId: 'space-1' },
+      remedy: secretSetRemedy('EMPTY_KEY', 'user'),
     }),
   ).rejects.toThrow(sealedEmptyRefusal('EMPTY_KEY', 'user'))
   expect(calls).toEqual([])
@@ -404,9 +425,11 @@ test('the next secret operation rotates once only when a machine revocation is n
   const newer = await rotationFixture(roots, '2026-06-01T00:00:00.000Z')
   await setSecret('TOKEN', 'first', 'space', newer.client, {
     destination: { destinationSpaceId: newer.spaceId },
+    remedy: secretSetRemedy('TOKEN', 'space'),
   })
   await setSecret('TOKEN', 'second', 'space', newer.client, {
     destination: { destinationSpaceId: newer.spaceId },
+    remedy: secretSetRemedy('TOKEN', 'space'),
   })
   expect(newer.created).toHaveLength(1)
   expect(newer.retired).toEqual(['01990000-0000-7000-8000-000000000003'])
@@ -414,6 +437,7 @@ test('the next secret operation rotates once only when a machine revocation is n
   const older = await rotationFixture(roots, '2025-06-01T00:00:00.000Z')
   await setSecret('TOKEN', 'unchanged', 'space', older.client, {
     destination: { destinationSpaceId: older.spaceId },
+    remedy: secretSetRemedy('TOKEN', 'space'),
   })
   expect(older.created).toEqual([])
   expect(older.retired).toEqual([])
@@ -430,6 +454,7 @@ test('rotation excludes a record-revoked key that remains in the machine trust l
   )
   await setSecret('TOKEN', 'rotated', 'space', fixture.client, {
     destination: { destinationSpaceId: fixture.spaceId },
+    remedy: secretSetRemedy('TOKEN', 'space'),
   })
 
   expect(fixture.current().wraps.map((wrap) => wrap.recipientKeyId)).not.toContain(
@@ -604,6 +629,7 @@ test('a sealed environment migration refusal names the repair in the scope it wo
 })
 
 test('a setup restore refusal names the repair without a flag the secret delete verb lacks', async () => {
+  const pinned = pinTestHostedIdentity()
   const { ConfigClientError } = await import('../../../shared/config-client.ts')
   const row = {
     key: 'ORCH_RECORD_URL',
@@ -614,6 +640,7 @@ test('a setup restore refusal names the repair without a flag the secret delete 
     updatedAt: '2026-10-23T00:00:00.000Z',
   }
   const client = {
+    whoami: async () => pinned.whoami,
     getSecret: async (name: string, scope: string) => {
       if (name === 'ORCH_RECORD_URL' && scope === 'user') return row
       throw new ConfigClientError('response', '/v1/config/secrets', 404)
@@ -665,8 +692,10 @@ test('sealed environment migration verifies the decoded write before deleting th
 })
 
 test('production sealed migration wires listed scopes, not-found reads, decoding, write verification, and delete order', async () => {
+  const pinned = pinTestHostedIdentity()
   const values = new Map([['user:ORCH_RECORD_URL', new TextEncoder().encode('decoded-value')]])
   const calls: string[] = []
+  const destinations: Array<[string, string | undefined]> = []
   const row = (key: string) => ({
     key,
     environment: 'default',
@@ -676,12 +705,18 @@ test('production sealed migration wires listed scopes, not-found reads, decoding
     updatedAt: '2026-10-23T00:00:00.000Z',
   })
   const client = {
-    listSecrets: async () => [row('ORCH_RECORD_URL')],
-    whoami: async () => ({
-      personalSpaceId: 'space-personal',
-      memberships: [],
-    }),
-    getSecret: async (name: string, scope: string) => {
+    listSecrets: async (_environment: string, destination: { destinationSpaceId?: string }) => {
+      destinations.push(['list', destination.destinationSpaceId])
+      return [row('ORCH_RECORD_URL')]
+    },
+    whoami: async () => pinned.whoami,
+    getSecret: async (
+      name: string,
+      scope: string,
+      _environment: string,
+      destination: { destinationSpaceId?: string },
+    ) => {
+      destinations.push(['read', destination.destinationSpaceId])
       if (!values.has(`${scope}:${name}`)) {
         throw new (await import('../../../shared/config-client.ts')).ConfigClientError(
           'response',
@@ -696,11 +731,13 @@ test('production sealed migration wires listed scopes, not-found reads, decoding
   const migrated = await migrateLegacyEnvironmentSecrets(client, {
     plaintext: async (_client, secret) => values.get(`${secret.scope}:${secret.key}`)!,
     write: async (name, value, scope, _client, destination) => {
+      destinations.push(['write', destination.destinationSpaceId])
       calls.push(`write ${scope}:${name}=${value}`)
       calls.push(`write destination=${destination.destinationSpaceId}`)
       values.set(`${scope}:${name}`, new TextEncoder().encode(value))
     },
     delete: async (name, scope, _client, destination) => {
+      destinations.push(['delete', destination.destinationSpaceId])
       calls.push(`delete ${scope}:${name}`)
       calls.push(`delete destination=${destination.destinationSpaceId}`)
       values.delete(`${scope}:${name}`)
@@ -712,15 +749,23 @@ test('production sealed migration wires listed scopes, not-found reads, decoding
   ])
   expect(calls).toEqual([
     'write user:BOTTEGA_RECORD_URL=decoded-value',
-    'write destination=space-personal',
+    `write destination=${pinned.spaceId}`,
     'delete user:ORCH_RECORD_URL',
-    'delete destination=space-personal',
+    `delete destination=${pinned.spaceId}`,
   ])
+  expect(new Set(destinations.map(([, destination]) => destination))).toEqual(
+    new Set([pinned.spaceId]),
+  )
+  expect(new Set(destinations.map(([operation]) => operation))).toEqual(
+    new Set(['list', 'read', 'write', 'delete']),
+  )
 })
 
 test('sealed environment migration refuses a non-user scope before any write', async () => {
+  const pinned = pinTestHostedIdentity()
   const calls: string[] = []
   const client = {
+    whoami: async () => pinned.whoami,
     listSecrets: async () => [
       {
         key: 'ORCH_RECORD_URL',
@@ -749,8 +794,10 @@ test('sealed environment migration refuses a non-user scope before any write', a
 })
 
 test('sealed-secret restore renames only recorded names back without persisting plaintext', async () => {
+  const pinned = pinTestHostedIdentity()
   const values = new Map([['user:BOTTEGA_RECORD_URL', new TextEncoder().encode('decoded-value')]])
   const calls: string[] = []
+  const destinations: Array<[string, string | undefined]> = []
   const row = (key: string) => ({
     key,
     environment: 'default',
@@ -760,11 +807,14 @@ test('sealed-secret restore renames only recorded names back without persisting 
     updatedAt: '2026-10-23T00:00:00.000Z',
   })
   const client = {
-    whoami: async () => ({
-      personalSpaceId: 'space-personal',
-      memberships: [],
-    }),
-    getSecret: async (name: string, scope: string) => {
+    whoami: async () => pinned.whoami,
+    getSecret: async (
+      name: string,
+      scope: string,
+      _environment: string,
+      destination: { destinationSpaceId?: string },
+    ) => {
+      destinations.push(['read', destination.destinationSpaceId])
       if (!values.has(`${scope}:${name}`)) {
         throw new (await import('../../../shared/config-client.ts')).ConfigClientError(
           'response',
@@ -781,11 +831,13 @@ test('sealed-secret restore renames only recorded names back without persisting 
     client,
     {
       plaintext: async (_client, secret) => values.get(`${secret.scope}:${secret.key}`)!,
-      write: async (name, value, scope) => {
+      write: async (name, value, scope, _client, destination) => {
+        destinations.push(['write', destination.destinationSpaceId])
         calls.push(`write ${scope}:${name}`)
         values.set(`${scope}:${name}`, new TextEncoder().encode(value))
       },
-      delete: async (name, scope) => {
+      delete: async (name, scope, _client, destination) => {
+        destinations.push(['delete', destination.destinationSpaceId])
         calls.push(`delete ${scope}:${name}`)
         values.delete(`${scope}:${name}`)
       },
@@ -795,6 +847,12 @@ test('sealed-secret restore renames only recorded names back without persisting 
   expect(calls).toEqual(['write user:ORCH_RECORD_URL', 'delete user:BOTTEGA_RECORD_URL'])
   expect(values.has('user:ORCH_RECORD_URL')).toBe(true)
   expect(values.has('user:BOTTEGA_RECORD_URL')).toBe(false)
+  expect(new Set(destinations.map(([, destination]) => destination))).toEqual(
+    new Set([pinned.spaceId]),
+  )
+  expect(new Set(destinations.map(([operation]) => operation))).toEqual(
+    new Set(['read', 'write', 'delete']),
+  )
 })
 
 test('rotation plan retires an unreferenced old key and does so on a converged rerun', () => {

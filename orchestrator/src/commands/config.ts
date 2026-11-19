@@ -28,6 +28,7 @@ import {
   machineShow,
   personalConfigWriteDestination,
   pinnedConfigDestination,
+  secretWriteTarget as serviceSecretWriteTarget,
   setConfigEntry,
   setSecret,
 } from '../config/config-service.ts'
@@ -37,6 +38,7 @@ import { trustMachine } from '../config/machine-trust.ts'
 import { machineRegister } from '../config/named-space-config.ts'
 import { parseSecretRunArgs, runNamedSecrets } from '../config/secret-run.ts'
 import { sealSecretDecision } from '../config/secret-set-policy.ts'
+import { secretSetRemedy } from '../config/secret-set-policy.ts'
 import { isOrchWorkerProcess, type ProcessInventory } from '../run/run-process.ts'
 import { subscriptionMonthlyUsdKey } from '../run/run-subscription-cost.ts'
 import { registerMachineJoinCommands } from './machine-join-commands.ts'
@@ -134,8 +136,8 @@ export async function secretWriteTarget(
   client: ConfigClient,
   env: Parameters<typeof pinnedConfigDestination>[1] = process.env,
 ): Promise<{ scope: ConfigScope; destination: { destinationSpaceId: string } }> {
-  if (requested) return configWriteTarget(verb, requested, client)
-  return { scope: 'user', destination: await pinnedConfigDestination(client, env) }
+  const selected = requested ? await selectedMachineSpace(verb, requested, client) : undefined
+  return serviceSecretWriteTarget(selected?.spaceId, client, env)
 }
 function expectedRowVersion(value: string | undefined): number | null | undefined {
   if (value === undefined) return undefined
@@ -305,7 +307,10 @@ async function sealPipedSecret(key: string, options: { space?: string }): Promis
   const target = await secretWriteTarget('machine config secret set', options.space, client)
   const decision = sealSecretDecision(key, await Bun.stdin.text(), target.scope)
   if (decision.kind === 'refuse') throw new Error(decision.refusal)
-  await setSecret(key, decision.value, target.scope, client, { destination: target.destination })
+  await setSecret(key, decision.value, target.scope, client, {
+    destination: target.destination,
+    remedy: secretSetRemedy(key, target.scope),
+  })
 }
 
 export function register(program: Command): void {

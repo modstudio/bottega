@@ -87,7 +87,6 @@ export const settingsModules: SettingsModule[] = [
     '../../../shared/sealed-value.ts',
   ]),
   module('orchestrator/src/config/secret-write-verification.ts', [
-    '../../../shared/brand.ts',
     '../../../shared/config-client.ts',
   ]),
   module('orchestrator/src/config/config-entry-policy.ts', [

@@ -17,6 +17,7 @@ import {
 import {
   credentialScopeFromPayer,
   credentialSetRefusalText,
+  credentialSetRemedy,
 } from '../../../shared/credential-resolution.ts'
 import {
   type CredentialResolutionAddress,
@@ -202,6 +203,7 @@ export async function setCredential(
         createDataKey: false,
         expectedRowVersion,
         missingDestinationAccessRefusal: () => missingWrapRefusal(address),
+        remedy: credentialSetRemedy(address),
       },
     )
   } catch (error) {

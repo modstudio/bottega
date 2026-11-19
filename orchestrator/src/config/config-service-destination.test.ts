@@ -16,6 +16,7 @@ import {
 import { pinTrustedMachine } from '../../../shared/trust-list.ts'
 import { claimCurrentMachineKey, listSecrets, machineRevoke, setSecret } from './config-service.ts'
 import { rotationFixture } from './config-service-rotation.fixture.ts'
+import { secretSetRemedy } from './secret-set-policy.ts'
 
 const roots: string[] = []
 const previousConfigHome = process.env.BOTTEGA_CONFIG_HOME
@@ -131,6 +132,7 @@ test('a first write to space B creates and reads its data key in B and wraps for
 
   await setSecret('TOKEN', 'value', 'space', fixture.client, {
     destination: { destinationSpaceId: fixture.destinationSpaceId },
+    remedy: secretSetRemedy('TOKEN', 'space'),
   })
 
   expect(fixture.calls.create).toEqual([fixture.destinationSpaceId])
@@ -148,6 +150,7 @@ test('a write to space B reads machine-key revocations from B', async () => {
 
   await setSecret('TOKEN', 'value', 'space', fixture.client, {
     destination: { destinationSpaceId: fixture.destinationSpaceId },
+    remedy: secretSetRemedy('TOKEN', 'space'),
   })
 
   expect(fixture.calls.machineKeys).toEqual([fixture.destinationSpaceId])
@@ -185,6 +188,7 @@ test('secret set refuses success when its destination cannot read the written ro
   await expect(
     setSecret('TOKEN', 'value', 'space', fixture.client, {
       destination: { destinationSpaceId: fixture.destinationSpaceId },
+      remedy: secretSetRemedy('TOKEN', 'space'),
     }),
   ).rejects.toThrow(
     `wrote TOKEN in space ${fixture.destinationSpaceId} but could not read that row back from space ${fixture.destinationSpaceId}`,
