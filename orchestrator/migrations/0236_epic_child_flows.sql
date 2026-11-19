@@ -2,6 +2,7 @@ ALTER TABLE task_flow
   ADD COLUMN parent_flow_record_id TEXT REFERENCES task_flow(record_id);
 CREATE INDEX task_flow_parent_flow ON task_flow(parent_flow_record_id);
 --> statement-breakpoint
+PRAGMA foreign_keys=OFF;
 PRAGMA legacy_alter_table=ON;
 ALTER TABLE board_claim RENAME TO board_claim_dev_2483_old;
 CREATE TABLE board_claim (
@@ -24,3 +25,4 @@ CREATE INDEX board_claim_run ON board_claim(run_record_id,closed_at);
 CREATE INDEX board_claim_superseded ON board_claim(superseded_by_claim_record_id);
 CREATE INDEX board_claim_project_record_id ON board_claim(project_record_id);
 PRAGMA legacy_alter_table=OFF;
+PRAGMA foreign_keys=ON;

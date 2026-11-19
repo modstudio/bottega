@@ -1,5 +1,19 @@
 export const cleanupBoundarySpecs = [
   {
+    name: 'session-epic-work-boundary',
+    file: 'orchestrator/src/session/session-epic-work.ts',
+    allowed: [
+      '../database/db.ts',
+      '../record/record-task-flow-contract.ts',
+      '../workflow/task-flow-store.ts',
+      '../workflow/task-read-port.ts',
+      '../workflow/workflow-child-queue.ts',
+    ],
+    typeOnlyAllowed: ['bun:sqlite'],
+    reason:
+      'Keep the session epic surface as a read-only adapter over task, flow, and claim facts.',
+  },
+  {
     name: 'stop-summary-review-verdict-decision-boundary',
     file: 'orchestrator/src/session/stop-summary-review-verdict.ts',
     allowed: ['../../../shared/brand.ts'],

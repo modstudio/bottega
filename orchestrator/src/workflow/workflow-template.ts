@@ -16,13 +16,23 @@ export type WorkflowTemplateContext = {
 }
 
 export const KEYLESS_TRACKER_ACTION_KEY = '<KEY>'
-export const KEYLESS_WORKFLOW_KEY = '<key>'
+const KEYLESS_WORKFLOW_KEY = '<key>'
 
 export const keylessTrackerActionMetadata = (paths: ReadonlySet<string>) =>
   paths.size ? { keylessTrackerActionPaths: [...paths] } : {}
 
 export function workflowTemplatePlaceholders(template: string): string[] {
   return [...new Set([...template.matchAll(/\{\{([^{}]+)\}\}/g)].map((match) => match[1]!))]
+}
+
+function keylessWorkflowKey(
+  path: string,
+  value: unknown,
+  context: WorkflowTemplateContext | undefined,
+): string | null {
+  return path === 'key' && context !== undefined && !context.key && value === undefined
+    ? KEYLESS_WORKFLOW_KEY
+    : null
 }
 
 export type WorkflowStepTemplateField = 'body' | 'floor' | 'expectedStatus'
@@ -55,8 +65,7 @@ export function resolveWorkflowTemplate(
   return template.replace(/\{\{([^{}]+)\}\}/g, (_all, path: string) => {
     let value: unknown = values
     for (const part of path.split('.')) value = object(value) ? value[part] : undefined
-    if (path === 'key' && context && !context.key && value === undefined)
-      return KEYLESS_WORKFLOW_KEY
+    value = keylessWorkflowKey(path, value, context) ?? value
     if (value === undefined || value === null || typeof value === 'object') {
       const remedy = context?.argumentNames.has(path)
         ? `; pass --arg ${path}=<value> on this step or next call`
