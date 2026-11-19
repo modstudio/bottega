@@ -9,7 +9,6 @@ import { GATE_COMMAND_TIMEOUT_MS } from '../gate/gate-decision.ts'
 import {
   expandHome,
   READONLY_LENS_DENY_PATHS,
-  readonlyLensSocketDenyPaths,
 } from '../sandbox/sandbox.ts'
 import {
   filedIssueCommandPlan,
@@ -24,6 +23,7 @@ describe('filed issue command confinement', () => {
   test('denies secrets without carrying the coordinator environment', () => {
     const state = mkdtempSync(join(tmpdir(), 'issue-shell-state-'))
     const environment = { [CONFIG_HOME_ENV]: join(state, 'config'), [STATE_HOME_ENV]: state }
+    const socketDenyPaths = ['/test/run/docker.sock', '/test/custom/docker.sock']
     try {
       const plan = filedIssueCommandPlan({
         command: 'bun run check',
@@ -35,6 +35,7 @@ describe('filed issue command confinement', () => {
         secretPaths: ['/project/.env', '/keys/token'],
         workerEnvironment: { BOTTEGA_RUN_ID: '41' },
         environment,
+        socketDenyPaths,
       })
 
       expect(plan.argv).toEqual(['sh', '-lc', 'bun run check'])
@@ -44,7 +45,7 @@ describe('filed issue command confinement', () => {
       expect(plan.profile.filesystem.denyRead).toEqual([
         ...READONLY_LENS_DENY_PATHS.map(expandHome).map((path) => resolve(path)),
         ...fileBackedSecretPaths(environment),
-        ...readonlyLensSocketDenyPaths(),
+        ...socketDenyPaths,
         '/project/.env',
         '/keys/token',
         '/Users/operator/.claude/.env',

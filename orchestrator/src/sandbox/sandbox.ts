@@ -19,7 +19,7 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { homedir } from 'node:os'
-import { delimiter, isAbsolute, join, relative, resolve } from 'node:path'
+import { basename, delimiter, dirname, isAbsolute, join, relative, resolve } from 'node:path'
 import type { SandboxRuntimeConfig as LibrarySandboxRuntimeConfig } from '@anthropic-ai/sandbox-runtime'
 import { PLATFORM_SLUG, WORKER_MCP_SERVER_NAME } from '../../../shared/brand.ts'
 import { type ConfigEnvironment, resolveEnvFilePaths } from '../../../shared/config-directory.ts'
@@ -185,13 +185,14 @@ function protectedDenyPaths(project: Project | null, environment: ConfigEnvironm
 export function readonlyLensReportInputs(
   environment: ConfigEnvironment,
   project: Project | null = null,
+  socketDenyPaths: readonly string[] = readonlyLensSocketDenyPaths(),
 ): {
   denyRead: readonly string[]
   envFilePaths: string[]
   keychainPaths: string[]
 } {
   return {
-    denyRead: [...protectedDenyPaths(project, environment), ...readonlyLensSocketDenyPaths()],
+    denyRead: [...protectedDenyPaths(project, environment), ...socketDenyPaths],
     envFilePaths: readonlyLensOperatorEnvFileDenyPaths([
       expandHome(READONLY_LENS_OPERATOR_ENV_FILE),
       ...resolveEnvFilePaths(environment),
@@ -273,6 +274,7 @@ export function readonlyLensProfile(input: {
   mcpAllowlist?: string[]
   environment?: ConfigEnvironment
   denySharedTemp?: boolean
+  socketDenyPaths?: readonly string[]
 }): SandboxRuntimeConfig {
   const environment = input.environment ?? process.env
   const toolchain = (input.path ?? process.env.PATH ?? '')
@@ -330,7 +332,10 @@ export function readonlyLensProfile(input: {
         allowLocalBinding: READONLY_LENS_ALLOW_LOCAL_BINDING,
       },
       filesystem: {
-        denyRead: [...protectedDenies, ...readonlyLensSocketDenyPaths()],
+        denyRead: [
+          ...protectedDenies,
+          ...(input.socketDenyPaths ?? readonlyLensSocketDenyPaths()),
+        ],
         allowWithinDeny,
         allowWrite,
         denyWrite: input.denySharedTemp === false ? [] : [...READONLY_LENS_DENY_WRITE_PATHS],
@@ -340,9 +345,9 @@ export function readonlyLensProfile(input: {
   )
 }
 
-export type SocketPathResolver = (path: string) => string | null
+type SocketPathResolver = (path: string) => string | null
 
-/** Canonicalize existing socket denies without changing their first-seen order. */
+/** Canonicalize socket deny parents while preserving unresolved paths to fail closed. */
 export function canonicalSocketDenyPaths(
   paths: readonly string[],
   resolver: SocketPathResolver,
@@ -350,15 +355,16 @@ export function canonicalSocketDenyPaths(
   const resolved: string[] = []
   const seen = new Set<string>()
   for (const path of paths) {
-    const canonical = resolver(path)
-    if (canonical === null || seen.has(canonical)) continue
+    const parent = resolver(dirname(path))
+    const canonical = parent === null ? path : join(parent, basename(path))
+    if (seen.has(canonical)) continue
     seen.add(canonical)
     resolved.push(canonical)
   }
   return resolved
 }
 
-const realSocketPath: SocketPathResolver = (path) => {
+const realSocketParentPath: SocketPathResolver = (path) => {
   try {
     return realpathSync(path)
   } catch {
@@ -366,9 +372,9 @@ const realSocketPath: SocketPathResolver = (path) => {
   }
 }
 
-/** Existing host-control sockets in the canonical form SRT can mask safely. */
+/** Host-control sockets with canonical parents in the form SRT can mask safely. */
 export function readonlyLensSocketDenyPaths(): string[] {
-  return canonicalSocketDenyPaths(READONLY_LENS_DENY_SOCKETS, realSocketPath)
+  return canonicalSocketDenyPaths(READONLY_LENS_DENY_SOCKETS, realSocketParentPath)
 }
 
 const LOOPBACK_DOMAINS = ['localhost', '127.0.0.1', '[::1]'] as const
@@ -409,6 +415,7 @@ export function writerProfile(input: {
   baseUrl?: string | null
   nodeModuleLinks?: string[]
   environment?: ConfigEnvironment
+  socketDenyPaths?: readonly string[]
 }): SandboxRuntimeConfig {
   const worktree = resolve(input.worktree)
   const scratchDir = resolve(input.scratchDir)
@@ -447,6 +454,7 @@ export function probeSandboxProfile(input: {
   cwd: string
   project: Project
   environment?: ConfigEnvironment
+  socketDenyPaths?: readonly string[]
 }): SandboxRuntimeConfig {
   const allowWrite = resolve(input.allowWriteDir)
   const cwd = resolve(input.cwd)
@@ -460,7 +468,12 @@ export function probeSandboxProfile(input: {
       allowLocalBinding: false,
     },
     filesystem: {
-      denyRead: [...new Set([...protectedDenies, ...readonlyLensSocketDenyPaths()])],
+      denyRead: [
+        ...new Set([
+          ...protectedDenies,
+          ...(input.socketDenyPaths ?? readonlyLensSocketDenyPaths()),
+        ]),
+      ],
       allowWithinDeny: [],
       allowWrite: [allowWrite],
       denyWrite: [],
@@ -594,6 +607,7 @@ export function selectReadonlySandbox(input: {
   writingAcp?: boolean
   askAddress?: string
   sharedReader?: boolean
+  socketDenyPaths?: readonly string[]
 }): SandboxSelection {
   const kind = selectReadonlySandboxKind({
     agent: input.agent,
@@ -634,6 +648,7 @@ export function selectReadonlySandbox(input: {
         path: input.path,
         baseUrl: input.baseUrl,
         environment: input.environment,
+        socketDenyPaths: input.socketDenyPaths,
       }),
     }
   }
@@ -650,6 +665,7 @@ export function selectReadonlySandbox(input: {
       baseUrl: input.baseUrl,
       mcpAllowlist: input.mcpAllowlist,
       environment: input.environment,
+      socketDenyPaths: input.socketDenyPaths,
       allowWrite: readonlySandboxWriteRoots(input),
     }),
   }

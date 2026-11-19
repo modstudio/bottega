@@ -44,7 +44,7 @@ import {
   readonlyLensDeniesLoginKeychain,
   readonlyLensDeniesOperatorEnvFile,
   readonlyLensProfile,
-  readonlyLensSocketDenyPaths,
+  readonlyLensReportInputs,
   removeNewSandboxHomeAfterFailure,
   resetSandbox,
   sandboxReasonPrefix,
@@ -74,34 +74,42 @@ test.each([
   {
     name: 'resolves a symlinked-parent path to its target',
     paths: ['/var/run/docker.sock'],
-    resolved: { '/var/run/docker.sock': '/run/docker.sock' },
+    resolved: { '/var/run': '/run' },
     expected: ['/run/docker.sock'],
   },
   {
-    name: 'drops a missing path',
+    name: 'keeps a missing socket when its parent cannot be resolved',
     paths: ['/missing/docker.sock'],
     resolved: {},
-    expected: [],
+    expected: ['/missing/docker.sock'],
   },
   {
     name: 'dedupes paths that resolve to one target',
     paths: ['/var/run/docker.sock', '/run/docker.sock'],
     resolved: {
-      '/var/run/docker.sock': '/run/docker.sock',
-      '/run/docker.sock': '/run/docker.sock',
+      '/var/run': '/run',
+      '/run': '/run',
     },
     expected: ['/run/docker.sock'],
-  },
-  {
-    name: 'keeps first-seen order',
-    paths: ['/second.sock', '/first.sock'],
-    resolved: { '/second.sock': '/canonical/second.sock', '/first.sock': '/canonical/first.sock' },
-    expected: ['/canonical/second.sock', '/canonical/first.sock'],
   },
 ])('$name', ({ paths, resolved, expected }) => {
   expect(
     canonicalSocketDenyPaths(paths, (path) => resolved[path as keyof typeof resolved] ?? null),
   ).toEqual([...expected])
+})
+
+const TEST_SOCKET_DENY_PATHS = ['/test/run/docker.sock', '/test/custom/docker.sock'] as const
+
+test('confinement report inputs use the injected socket denies', () => {
+  const environment = {
+    HOME: '/Users/operator',
+    [STATE_HOME_ENV]: '/operator/state',
+    [CONFIG_HOME_ENV]: '/operator/config',
+  }
+
+  expect(readonlyLensReportInputs(environment, null, TEST_SOCKET_DENY_PATHS).denyRead).toEqual(
+    expect.arrayContaining(TEST_SOCKET_DENY_PATHS),
+  )
 })
 
 const temporaryDirectories: string[] = []
@@ -478,6 +486,7 @@ test('probe sandbox profile denies network and writes except the throwaway direc
     allowWriteDir: scratch,
     cwd: '/projects/fixture',
     project: fixtureProject(),
+    socketDenyPaths: TEST_SOCKET_DENY_PATHS,
   })
   expect(profile.network.allowedDomains).toEqual([])
   expect(profile.network.allowUnixSockets).toEqual([])
@@ -486,7 +495,7 @@ test('probe sandbox profile denies network and writes except the throwaway direc
   expect(profile.filesystem.denyRead).toEqual(
     expect.arrayContaining([
       ...READONLY_LENS_DENY_PATHS.map((path) => path.replace(/^~/, homedir())),
-      ...readonlyLensSocketDenyPaths(),
+      ...TEST_SOCKET_DENY_PATHS,
     ]),
   )
 })
@@ -560,6 +569,7 @@ describe('readonly-lens sandbox profile', () => {
       path: '/opt/toolchain/bin:/usr/bin',
       nodeModuleLinks: ['/projects/fixture/node_modules'],
       environment,
+      socketDenyPaths: TEST_SOCKET_DENY_PATHS,
     })
 
     expect(profile.filesystem.denyRead).toEqual([
@@ -569,7 +579,7 @@ describe('readonly-lens sandbox profile', () => {
       '/shared/absolute.secret',
       join(homedir(), '.tokens/private'),
       '/projects/fixture/config/operator.secret',
-      ...readonlyLensSocketDenyPaths(),
+      ...TEST_SOCKET_DENY_PATHS,
     ])
     expect(profile.filesystem.allowWithinDeny).toEqual([
       '/runs/tree',
@@ -747,7 +757,7 @@ describe('readonly-lens sandbox profile', () => {
     expect(sandboxReasonPrefix(selected.sandbox)).toBe('sandbox')
   })
 
-  test('a read-only sandbox profile denies every existing Docker socket by canonical path', () => {
+  test('a read-only sandbox profile denies every injected Docker socket path', () => {
     const selected = selectReadonlySandbox({
       agent: 'grok',
       readsRepo: true,
@@ -763,6 +773,7 @@ describe('readonly-lens sandbox profile', () => {
         [HARNESS_ENV_FILE_ENV]: '',
         DOCKER_HOST: 'unix:///custom/docker.sock',
       },
+      socketDenyPaths: TEST_SOCKET_DENY_PATHS,
     })
 
     expect(selected.sandbox).toBe('srt')
@@ -771,7 +782,7 @@ describe('readonly-lens sandbox profile', () => {
     expect(selected.profile?.filesystem.denyRead).toEqual(
       expect.arrayContaining(READONLY_LENS_DENY_PATHS.map((path) => path.replace(/^~/, homedir()))),
     )
-    for (const socket of readonlyLensSocketDenyPaths()) {
+    for (const socket of TEST_SOCKET_DENY_PATHS) {
       expect(selected.profile?.filesystem.denyRead).toContain(socket)
     }
     expect(selected.profile?.network.allowUnixSockets).toEqual([])
@@ -787,6 +798,7 @@ describe('readonly-lens sandbox profile', () => {
       agent: 'goose-openrouter',
       path: '/usr/bin',
       nodeModuleLinks: [],
+      socketDenyPaths: TEST_SOCKET_DENY_PATHS,
     })
 
     expect(profile.filesystem.allowWrite).toEqual([
@@ -801,6 +813,7 @@ describe('readonly-lens sandbox profile', () => {
     expect(profile.filesystem.allowWrite).not.toContain('/projects/main')
     expect(profile.filesystem.allowWrite).not.toContain('/projects/main/.git/objects')
     expect(profile.filesystem.denyWrite).toContain('/projects/main/.claude/worktrees/run-42/.git')
+    expect(profile.filesystem.denyRead).toEqual(expect.arrayContaining(TEST_SOCKET_DENY_PATHS))
     for (const path of READONLY_LENS_DENY_WRITE_PATHS) {
       expect(profile.filesystem.denyWrite).not.toContain(path)
     }

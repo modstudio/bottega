@@ -185,11 +185,12 @@ export function filedIssueCommandPlan(input: {
   secretPaths: readonly string[]
   workerEnvironment?: Readonly<Record<string, string>>
   environment?: ConfigEnvironment
+  socketDenyPaths?: readonly string[]
 }): FiledIssueCommandPlan {
   const worktree = resolve(input.worktree)
   const sandboxHome = resolve(input.sandboxHome)
   const denied = [
-    ...readonlyLensSocketDenyPaths(),
+    ...(input.socketDenyPaths ?? readonlyLensSocketDenyPaths()),
     ...input.secretPaths,
     ...input.operatorEnvPaths,
   ].map((path) => resolve(path))
