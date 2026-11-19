@@ -8,7 +8,7 @@ type BaseCounts = { docs: number; revisions: number; scores: number; voids: numb
 
 export type RecordCountsClient = {
   counts(destination?: RecordRequestDestination): Promise<BaseCounts>
-  cacheCounts(destination: RecordRequestDestination): Promise<BaseCounts & RecordCacheCounts>
+  cacheCounts?(destination: RecordRequestDestination): Promise<BaseCounts & RecordCacheCounts>
 }
 
 export const recordCountsClient = (request: RecordClientRequest): RecordCountsClient => ({

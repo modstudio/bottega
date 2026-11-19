@@ -138,6 +138,7 @@ export async function recordCacheParityChecks(
         local: localCacheCounts(local, space),
       }
       try {
+        if (!client.cacheCounts) return decideRecordCacheParity(base)
         const response = (await client.cacheCounts({
           destinationSpaceId: space,
         })) as Partial<RecordCacheCounts>
