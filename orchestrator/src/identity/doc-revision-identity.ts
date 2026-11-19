@@ -1,5 +1,5 @@
-// concern: document-revision-identity
-/** Resolves a user-facing revision number or UUID once, at the edge. */
+// concern: record-identity
+/** Resolves a user-facing document-revision number or UUID at the identity door. */
 
 import type { Database } from 'bun:sqlite'
 import { hasRecordIdShape } from '../../../shared/record-id.ts'

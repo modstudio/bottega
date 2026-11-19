@@ -261,7 +261,7 @@ test('a masked pr-create exec is met when its command and pull-request link stay
 test('parseArtifactRef accepts a GitHub pull-request URL only as the whole string', () => {
   expect(parseArtifactRef(url)).toEqual({ kind: 'pull-request', url })
   expect(parseArtifactRef(`${url}/files`)).toMatchObject({
-    error: expect.stringContaining('--artifact'),
+    error: expect.stringContaining('is malformed; pass'),
   })
   expect(githubPullRequestUrlIn(`opened ${url} thanks`)).toBe(url)
 })

@@ -988,7 +988,7 @@ test('parseArtifactRef accepts each recorded-artifact form', () => {
   expect(parseArtifactRef('8')).toEqual({ kind: 'id', id: 8 })
   expect(parseArtifactRef(RUN_RECORD_ID)).toEqual({ kind: 'run', id: RUN_RECORD_ID })
   expect(parseArtifactRef('nope')).toMatchObject({
-    error: expect.stringContaining('a run number or run id'),
+    error: expect.stringContaining('a run number'),
   })
 })
 

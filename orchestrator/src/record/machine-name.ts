@@ -28,7 +28,7 @@ export type MachineLabelDecision =
   | { kind: 'not-label' }
   | { kind: 'refused'; reason: string }
 
-export class MachineLabelRefusal extends Error {}
+class MachineLabelRefusal extends Error {}
 
 export function decideMachineLabel(
   input: string,

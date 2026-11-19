@@ -22,7 +22,6 @@ import {
   setContextItem,
 } from '../doc/context-service.ts'
 import { DocRevisionConflictError, REVISION_CONFLICT_CODE } from '../doc/doc-revision-conflict.ts'
-import { resolveDocRevisionIdentifier } from '../doc/doc-revision-identifier.ts'
 import { type SelectedDocWriteTree, withDocWriteTreeRemedy } from '../doc/doc-write-tree.ts'
 import {
   getDoc,
@@ -36,6 +35,7 @@ import {
   signedInDocOwner,
   storedDocWarnings,
 } from '../doc/docs.ts'
+import { resolveDocRevisionIdentifier } from '../identity/doc-revision-identity.ts'
 import { RecordApiRequestError } from '../record/record-api-client.ts'
 import { registerMcpDocConsumeTool } from './mcp-doc-consume-tool.ts'
 import { decideMcpDocWrite } from './mcp-doc-write.ts'

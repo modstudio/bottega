@@ -203,6 +203,7 @@ export function parseArtifactRef(value: string): ArtifactRef | { error: string }
       return { kind: 'pull-request', url: parsed.url ?? `#${parsed.number}` }
     if (parsed.kind === 'commit') return parsed
     if (parsed.kind === 'run') {
+      if (/^run:/i.test(trimmed)) return { kind: 'run', id: parsed.reference }
       const number = /^[1-9][0-9]*$/.test(parsed.reference) ? Number(parsed.reference) : null
       return number === null ? { kind: 'run', id: parsed.reference } : { kind: 'id', id: number }
     }

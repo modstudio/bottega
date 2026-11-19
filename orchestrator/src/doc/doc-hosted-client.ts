@@ -1,8 +1,8 @@
 // concern: doc-hosted-client
 /** Binds project-addressed hosted document operations to the register's destination. */
 
-import type { RecordWriteOwner } from '../../../shared/record-write-space.ts'
 import { hasRecordIdShape } from '../../../shared/record-id.ts'
+import type { RecordWriteOwner } from '../../../shared/record-write-space.ts'
 import { projectRowByName } from '../project/projects.ts'
 import { type RecordApiClient, recordApiClient } from '../record/record-api-client.ts'
 import { recordWriteDestination } from '../record/record-write-destination.ts'

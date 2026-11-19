@@ -14,9 +14,9 @@ import { viewPullRequest } from '../branch/merged-pull-request.ts'
 import { branchForTaskKey, pullRequestNumberForBranch } from '../branch/task-key-pull-request.ts'
 import { resolveRunsDirectory } from '../database/database-location.ts'
 import { db } from '../database/db.ts'
-import { resolveCommitArgument } from '../git/commit-resolution.ts'
 import { resolveDocReference } from '../doc/doc-reference-read.ts'
 import { landingGatePurposeRefusal, resolveGateIdentifier } from '../gate/gate-identifier.ts'
+import { resolveCommitArgument } from '../git/commit-resolution.ts'
 import { projectByName } from '../project/projects.ts'
 import {
   questionForWorkflowCursorByNumber,

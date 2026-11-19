@@ -2,6 +2,9 @@
 /** Parses human record references without consulting a store, process, or clock. */
 
 import { hasRecordIdShape } from './record-id.ts'
+import { malformedReferenceRefusal } from './reference-refusal.ts'
+
+export { POINTER_REFERENCE_FORMS } from './reference-refusal.ts'
 
 export type ReferenceKind = 'note' | 'question' | 'run' | 'task'
 export const REFERENCE_PREFIXES = { note: 'n', question: 'q', run: 'r' } as const
@@ -94,20 +97,10 @@ export type PointerReference =
   | { kind: 'commit'; sha: string }
   | { kind: 'probe' | 'exec' | 'review-read' | 'attached-text'; recordId: string }
 
-export const POINTER_REFERENCE_FORMS =
-  'doc:<scope>/<subject-or-_>/<slug>, doc:<UUID>, task:<KEY>, task:<KEY>#comment:<id>, <KEY>/<document number>, a run number, r<number>, run:<number-or-UUID>, a run UUID, #<pull request number>, a GitHub pull-request link, a commit SHA, probe:<UUID>, exec:<UUID>, review-read:<UUID>, or attached-text:<UUID>'
-
 const taskKeyPattern = '[A-Z][A-Z0-9]*-[1-9][0-9]*'
 const githubPullRequestPattern = /^https:\/\/github\.com\/[^/\s]+\/[^/\s]+\/pull\/([1-9][0-9]*)$/i
 
-/** Parses the syntax shared by durable context pointers and workflow evidence. */
-export function parsePointerReference(input: string): PointerReference {
-  const value = input.trim()
-  if (!value || value !== input)
-    throw new Error(
-      `reference ${JSON.stringify(input)} is malformed; pass ${POINTER_REFERENCE_FORMS}`,
-    )
-
+function parseNamedPointerReference(value: string): PointerReference | null {
   const comment = new RegExp(`^task:(${taskKeyPattern})#comment:(\\S+)$`, 'i').exec(value)
   if (comment) return { kind: 'comment', key: comment[1]!.toUpperCase(), id: comment[2]! }
   const task = new RegExp(`^task:(${taskKeyPattern})$`, 'i').exec(value)
@@ -119,7 +112,6 @@ export function parsePointerReference(input: string): PointerReference {
       key: taskDocument[1]!.toUpperCase(),
       number: Number(taskDocument[2]),
     }
-
   const doc = /^doc:(\S+)$/i.exec(value)
   if (doc) {
     const address = doc[1]!
@@ -130,17 +122,23 @@ export function parsePointerReference(input: string): PointerReference {
       )
     )
       return { kind: 'doc', address }
-    throw new Error(
-      `reference ${JSON.stringify(input)} is malformed; pass ${POINTER_REFERENCE_FORMS}`,
-    )
+    return null
   }
-
   const stored = /^(probe|exec|review-read|attached-text):(.+)$/i.exec(value)
-  if (stored && hasRecordIdShape(stored[2]!))
-    return {
-      kind: stored[1]!.toLowerCase() as 'probe' | 'exec' | 'review-read' | 'attached-text',
-      recordId: stored[2]!.toLowerCase(),
-    }
+  if (!stored || !hasRecordIdShape(stored[2]!)) return null
+  return {
+    kind: stored[1]!.toLowerCase() as 'probe' | 'exec' | 'review-read' | 'attached-text',
+    recordId: stored[2]!.toLowerCase(),
+  }
+}
+
+/** Parses the syntax shared by durable context pointers and workflow evidence. */
+export function parsePointerReference(input: string): PointerReference {
+  const value = input.trim()
+  if (!value || value !== input) throw new Error(malformedReferenceRefusal(input))
+
+  const named = parseNamedPointerReference(value)
+  if (named) return named
 
   const pullRequest = /^#([1-9][0-9]*)$/.exec(value)
   if (pullRequest) return { kind: 'pull-request', number: Number(pullRequest[1]), url: null }
@@ -155,7 +153,5 @@ export function parsePointerReference(input: string): PointerReference {
   if (hasRecordIdShape(value)) return { kind: 'run', reference: value.toLowerCase() }
   if (/^(?:r[1-9][0-9]*|[1-9][0-9]*)$/.test(value)) return { kind: 'run', reference: value }
 
-  throw new Error(
-    `reference ${JSON.stringify(input)} is malformed; pass ${POINTER_REFERENCE_FORMS}`,
-  )
+  throw new Error(malformedReferenceRefusal(input))
 }
