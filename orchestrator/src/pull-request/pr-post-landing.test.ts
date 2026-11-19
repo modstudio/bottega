@@ -183,6 +183,7 @@ test('a successful move fences this process and hands off the exact fixed identi
     headBranch: 'DEV-2004-post-landing',
     headCommit: 'head-commit',
     mergeCommit: 'merge-commit',
+    workflowImportSince: 'main-before',
     requiredRungs: ['hosted-api'],
     rungPlans: [
       {
@@ -589,6 +590,7 @@ const childPayload = (overrides: Partial<PullRequestPostLandingPayload> = {}) =>
   headBranch: pullRequest.headBranch,
   headCommit: pullRequest.headCommit,
   mergeCommit: 'merge-commit',
+  workflowImportSince: null,
   requiredRungs: ['hosted-api'],
   rungDecisionError: null,
   releaseRequired: true,

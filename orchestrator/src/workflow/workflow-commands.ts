@@ -1,5 +1,5 @@
 // concern: workflows
-/** Knows workflow command semantics and thin tree adapters. Must not know CLI grammar, runs, routing, or transports. */
+/** Owns store workflow commands: versions, catalogues, cursors, execution, and probes. */
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'

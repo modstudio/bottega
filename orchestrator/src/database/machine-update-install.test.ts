@@ -58,7 +58,10 @@ test.each([
         },
         install: () => events.push('install'),
         migrate: () => events.push('migrate'),
-        syncWorkflows: () => events.push('workflow-sync'),
+        syncWorkflows: (cwd, since) => {
+          expect({ cwd, since }).toEqual({ cwd: dir, since: 'before-commit' })
+          events.push('workflow-sync')
+        },
         runLaunchAgentsRefreshVerb: () => {},
       },
     )

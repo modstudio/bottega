@@ -16,6 +16,7 @@ import {
 } from '../database/machine-update-mover.ts'
 import type { Project } from '../project/projects.ts'
 import { projectByName } from '../project/projects.ts'
+import { workflowTreeSyncCommands } from '../workflow/workflow-tree-commands.ts'
 import { type EntryClosure, entryClosureAtCommit } from '../release/release-entry-closure.ts'
 import {
   changedPaths,
@@ -83,7 +84,7 @@ function moveMainForPostLanding(
   movesInstallation: boolean,
   depth?: string,
 ):
-  | { moved: true }
+  | { moved: true; headBefore: string }
   | { moved: false; detail: string; recovery: string; cleanupWasFenced?: boolean } {
   const retry = requiredMergeCommand(target, depth)
   const recovery = movesInstallation
@@ -124,7 +125,7 @@ function moveMainForPostLanding(
       cleanupWasFenced: true,
     }
   }
-  return { moved: true }
+  return { moved: true, headBefore }
 }
 
 const refuseRealPostLandingAdapterInTest = (): void => {
@@ -243,13 +244,23 @@ function promotionOutput(input: {
   project: Project
   prNumber: number
   mergeCommit: string
+  since?: string | null
   recovery?: string
 }): { output: string; error?: string } {
   if (input.result.ok) return { output: input.result.output }
   const reason = `merged PR #${input.prNumber} (${input.mergeCommit})`
-  const promotion =
-    `${PLATFORM_SLUG} workflow import --cwd ${input.project.path} --reason "${reason}", then ` +
-    `${PLATFORM_SLUG} workflow promote-tree --cwd ${input.project.path} --reason "${reason}"`
+  const promotion = workflowTreeSyncCommands(
+    PLATFORM_SLUG,
+    input.project.path,
+    reason,
+    input.since,
+  )
+    .map(({ argv }) =>
+      argv
+        .map((value) => (/^[A-Za-z0-9_./:-]+$/.test(value) ? value : JSON.stringify(value)))
+        .join(' '),
+    )
+    .join(', then ')
   const command = input.recovery
     ? input.recovery
     : input.result.stage === 'fetch'
@@ -420,6 +431,7 @@ export async function completePullRequestPostLanding(input: {
     headBranch: input.pullRequest.headBranch,
     headCommit: input.pullRequest.headCommit,
     mergeCommit: input.mergeCommit,
+    workflowImportSince: move.headBefore,
     requiredRungs: decision.required,
     rungPlans: decision.rungs,
     rungDecisionError: decision.error,
@@ -436,12 +448,22 @@ export async function completePullRequestPostLanding(input: {
   return postLandingHandOffOutcome(handedOff, input.target, input.depth)
 }
 
-function promoteWorkflowTree(project: Project, reason: string): WorkflowPromotionResult {
-  const binary = join(project.path, 'bin', PLATFORM_SLUG)
-  const imported = startBoundedSync(
-    [binary, 'workflow', 'import', '--cwd', project.path, '--reason', reason],
-    { budget: 'self-cli', cwd: project.path, env: process.env },
+function promoteWorkflowTree(
+  project: Project,
+  reason: string,
+  since: string | null,
+): WorkflowPromotionResult {
+  const [importCommand, promoteCommand] = workflowTreeSyncCommands(
+    `${project.path}/bin/${PLATFORM_SLUG}`,
+    project.path,
+    reason,
+    since,
   )
+  const imported = startBoundedSync(importCommand!.argv, {
+    budget: 'self-cli',
+    cwd: project.path,
+    env: process.env,
+  })
   if (imported.exitCode !== 0) {
     return {
       ok: false,
@@ -449,10 +471,11 @@ function promoteWorkflowTree(project: Project, reason: string): WorkflowPromotio
       detail: imported.stderr.trim() || `exit ${imported.exitCode}`,
     }
   }
-  const result = startBoundedSync(
-    [binary, 'workflow', 'promote-tree', '--cwd', project.path, '--reason', reason],
-    { budget: 'self-cli', cwd: project.path, env: process.env },
-  )
+  const result = startBoundedSync(promoteCommand!.argv, {
+    budget: 'self-cli',
+    cwd: project.path,
+    env: process.env,
+  })
   if (result.exitCode === 0) {
     return {
       ok: true,
@@ -469,7 +492,7 @@ function promoteWorkflowTree(project: Project, reason: string): WorkflowPromotio
 export type PullRequestPostLandingChildAdapter = {
   project(name: string, database: Database): Project | null
   verify(project: Project, mergeCommit: string): void
-  promote(project: Project, reason: string): WorkflowPromotionResult
+  promote(project: Project, reason: string, since: string | null): WorkflowPromotionResult
   release(input: {
     project: Project
     mergeCommit: string
@@ -493,9 +516,9 @@ function guardRealPostLandingChildAdapter(
       refuseRealPostLandingAdapterInTest()
       adapter.verify(project, mergeCommit)
     },
-    promote(project, reason) {
+    promote(project, reason, since) {
       refuseRealPostLandingAdapterInTest()
-      return adapter.promote(project, reason)
+      return adapter.promote(project, reason, since)
     },
     release(input) {
       refuseRealPostLandingAdapterInTest()
@@ -531,6 +554,7 @@ function workflowPromotionResultForChild(input: {
     return input.adapter.promote(
       input.project,
       `merged PR #${input.payload.prNumber} (${input.payload.mergeCommit})`,
+      input.payload.workflowImportSince,
     )
   } catch (cause) {
     if (cause instanceof BoundExceededError) throw cause
@@ -560,6 +584,7 @@ export async function runPullRequestPostLanding(
     project,
     prNumber: payload.prNumber,
     mergeCommit: payload.mergeCommit,
+    since: payload.workflowImportSince,
   })
   const rungPlans =
     payload.rungPlans ??

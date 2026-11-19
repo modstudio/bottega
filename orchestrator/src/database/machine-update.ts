@@ -24,6 +24,7 @@ import {
 } from '../project/main-checkout-invariant.ts'
 import { projectAt } from '../project/projects.ts'
 import { migrationInFlightRuns } from '../run/migration-in-flight-runs.ts'
+import { workflowTreeSyncCommands } from '../workflow/workflow-tree-commands.ts'
 import { setupIncrementalVacuumAfterMachineUpdate } from './database-commands.ts'
 import { DATABASE_RESOLUTION, missingDatabaseMessage } from './database-location.ts'
 import {
@@ -144,24 +145,24 @@ function runDependencyInstall(cwd: string): void {
   })
 }
 
-function runWorkflowSync(cwd: string): void {
+function runWorkflowSync(cwd: string, since: string): void {
+  if (process.env.NODE_ENV === 'test') {
+    throw new Error(
+      'real machine-update workflow sync refuses side effects under the test runner; inject a syncWorkflows step',
+    )
+  }
   const reason = 'machine update synchronized the registered landing branch'
-  for (const [verb, failureLabel] of [
-    ['import', `${PLATFORM_SLUG} workflow import`],
-    ['promote-tree', `${PLATFORM_SLUG} workflow promote-tree`],
-  ] as const) {
+  const commands = workflowTreeSyncCommands(
+    resolveInstallationPaths(cwd, {}).executable,
+    cwd,
+    reason,
+    since,
+  )
+  for (const command of commands) {
     runPostPullStep({
-      argv: [
-        resolveInstallationPaths(cwd, {}).executable,
-        'workflow',
-        verb,
-        '--cwd',
-        cwd,
-        '--reason',
-        reason,
-      ],
+      argv: command.argv,
       cwd,
-      failureLabel,
+      failureLabel: `${PLATFORM_SLUG} workflow ${command.stage === 'promote' ? 'promote-tree' : 'import'}`,
     })
   }
 }
@@ -231,7 +232,7 @@ type UpdateDependencies = {
   git?: (cwd: string, args: string[]) => string
   install?: (cwd: string) => void
   migrate?: (cwd: string) => void
-  syncWorkflows?: (cwd: string) => void
+  syncWorkflows?: (cwd: string, since: string) => void
   afterDrainPromoted?: () => void
   maintainStore?: (presentation: Presentation) => void
   identity?: InstallationIdentity
@@ -538,7 +539,7 @@ function applyCheckoutPull(input: {
   runGit: (cwd: string, args: string[]) => string
   install: (cwd: string) => void
   migrate: (cwd: string) => void
-}): void {
+}): string {
   const { target, runGit } = input
   const before = runGit(target, ['rev-parse', 'HEAD'])
   const beforePositions = requiredLocalStoreJournalPositions()
@@ -586,6 +587,7 @@ function applyCheckoutPull(input: {
       operation: 'migration',
     })
   }
+  return before
 }
 
 async function updateCheckout(presentation: Presentation, deps: UpdateDependencies): Promise<void> {
@@ -619,14 +621,15 @@ async function updateCheckout(presentation: Presentation, deps: UpdateDependenci
     }
   })
   assertNoActiveDrain(initial.activeDrain)
+  let beforePull = ''
   try {
     await applyWithMigrationGuard({
       presentation,
       decision: initial.decision,
       pendingMigration: initial.pendingMigration,
       deps,
-      apply: () =>
-        applyCheckoutPull({
+      apply: () => {
+        beforePull = applyCheckoutPull({
           target,
           branch,
           journal,
@@ -634,14 +637,14 @@ async function updateCheckout(presentation: Presentation, deps: UpdateDependenci
           runGit,
           install,
           migrate,
-        }),
+        })
+      },
     })
   } finally {
     clearMachineUpdateIntent()
   }
-  const syncWorkflows =
-    deps.syncWorkflows ?? (process.env.NODE_ENV === 'test' ? undefined : runWorkflowSync)
-  syncWorkflows?.(target)
+  const syncWorkflows = deps.syncWorkflows ?? runWorkflowSync
+  syncWorkflows(target, beforePull)
   const maintainStore = deps.maintainStore ?? setupIncrementalVacuumAfterMachineUpdate
   maintainStoreAfterUpdate(presentation, maintainStore)
   const refreshLaunchAgents = deps.runLaunchAgentsRefreshVerb ?? runLaunchAgentsRefreshVerb

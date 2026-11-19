@@ -122,9 +122,17 @@ function successfulMachineUpdateDeps(migrate: () => void = () => {}) {
       return args[0] === 'rev-parse' ? 'current-before' : ''
     },
     migrate,
+    syncWorkflows: () => {},
     runLaunchAgentsRefreshVerb: () => {},
   }
 }
+
+test('real machine-update workflow sync refuses side effects under the test runner', async () => {
+  const { syncWorkflows: _syncWorkflows, ...deps } = successfulMachineUpdateDeps()
+  await expect(machineUpdateCommand({ log: () => {} }, deps)).rejects.toThrow(
+    'real machine-update workflow sync refuses side effects under the test runner; inject a syncWorkflows step',
+  )
+})
 
 test("machine update clears a dead holder's marker before deciding", async () => {
   setMigrationDrain(db(), '0155_rebuild', 'draining', {
@@ -147,6 +155,7 @@ test("machine update clears a dead holder's marker before deciding", async () =>
       migrate: () => {
         migrated = true
       },
+      syncWorkflows: () => {},
       runLaunchAgentsRefreshVerb: () => {},
     },
   )
@@ -190,6 +199,7 @@ test('machine update proceeds when the hub store is absent and records position 
         migrate: () => {
           migrated = true
         },
+        syncWorkflows: () => {},
         runLaunchAgentsRefreshVerb: () => {},
       },
     )
@@ -224,6 +234,7 @@ test("machine update recovers a dead holder's intent before the new update", asy
           return args[0] === 'rev-parse' ? 'current-before' : ''
         },
         migrate: () => {},
+        syncWorkflows: () => {},
         runLaunchAgentsRefreshVerb: () => {},
       },
     )
@@ -437,6 +448,7 @@ test('machine update refuses when the install root is tracked-dirty after refres
           return ''
         },
         migrate: () => {},
+        syncWorkflows: () => {},
         runLaunchAgentsRefreshVerb: () => {
           refreshed = true
         },
@@ -475,6 +487,7 @@ test('an additive machine update marks only the store-open window around pull an
           expect(migrationDrain(db())).toBeNull()
           phases.push('migrate')
         },
+        syncWorkflows: () => {},
         runLaunchAgentsRefreshVerb: () => {},
       },
     )
@@ -625,6 +638,7 @@ test('a non-additive update waits for an admitted resume, then migrates behind t
           expect(migrationDrain(db())?.phase).toBe('migrating')
           events.push('migrate')
         },
+        syncWorkflows: () => {},
         runLaunchAgentsRefreshVerb: () => {},
       },
     )
@@ -839,6 +853,7 @@ test(`machine update targets the ${PLATFORM_NAME} checkout when the caller is an
         return args[0] === 'show' ? JSON.stringify({ entries: migrationJournal() }) : ''
       },
       migrate: () => {},
+      syncWorkflows: () => {},
       runLaunchAgentsRefreshVerb: () => {},
     },
   )
@@ -875,6 +890,7 @@ test('machine update defaults the target to the installation root', async () => 
         return ''
       },
       migrate: () => {},
+      syncWorkflows: () => {},
       runLaunchAgentsRefreshVerb: () => {},
     },
   )
@@ -903,6 +919,7 @@ test('machine update does not name the checkout when the caller is already there
             ? JSON.stringify({ entries: migrationJournal() })
             : '',
       migrate: () => {},
+      syncWorkflows: () => {},
       runLaunchAgentsRefreshVerb: () => {},
     },
   )
@@ -934,6 +951,7 @@ test('machine update keeps its successful result when store maintenance fails', 
               ? JSON.stringify({ entries: migrationJournal() })
               : '',
         migrate: () => {},
+        syncWorkflows: () => {},
         maintainStore: () => {
           throw new Error('store busy')
         },
@@ -973,6 +991,7 @@ test('checkout update refreshes through deps.cwd when the running identity root 
               ? JSON.stringify({ entries: migrationJournal() })
               : '',
         migrate: () => {},
+        syncWorkflows: () => {},
         maintainStore: () => {},
         runLaunchAgentsRefreshVerb: (binary) => refreshed.push(binary),
       },

@@ -1,7 +1,12 @@
 import { expect, test } from 'bun:test'
+import { writeFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { startBoundedSync } from '../../../shared/bounded-process.ts'
+import { scrubbedGitEnv } from '../../../shared/git.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { db } from '../database/db.ts'
 import { projectAt } from '../project/projects.ts'
+import { applyWorkflowCatalogueRow } from '../record/record-cache-workflow.fixture.ts'
 import {
   hostedWorkflowRepositoryFixture,
   installHostedWorkflowTreeFixture,
@@ -12,6 +17,17 @@ import {
   workflowCommandPresentation,
 } from './workflow-store.fixture.ts'
 import { setWorkflowLocal } from './workflows.ts'
+import { workflowImportBase } from './workflow-import-branch.ts'
+
+const runGit = (cwd: string, args: string[]): string => {
+  const result = startBoundedSync(['git', ...args], {
+    budget: 'git-plumbing',
+    cwd,
+    env: scrubbedGitEnv(),
+  })
+  if (result.exitCode !== 0) throw new Error(result.stderr.trim() || `git exited ${result.exitCode}`)
+  return result.stdout.trim()
+}
 
 test('workflow import refuses before writing when the landing branch has no merge base', async () => {
   const fixture = hostedWorkflowRepositoryFixture('import')
@@ -32,6 +48,119 @@ test('workflow import refuses before writing when the landing branch has no merg
     fixture.dispose()
   }
   expect(lines).toEqual([])
+})
+
+test('workflow import names the registration and landing-branch remedies separately', () => {
+  expect(() => workflowImportBase('/fixture/unregistered', null)).toThrow(
+    "no registered project owns this directory; run from a registered project's checkout",
+  )
+  expect(() =>
+    workflowImportBase('/fixture/registered', {
+      name: 'fixture-project',
+      settings: {},
+    } as never),
+  ).toThrow(
+    'registered project fixture-project has no landing branch in settings.trunk; run bottega project set fixture-project --settings to set trunk',
+  )
+})
+
+test('workflow import accepts an intentional older production body only with a since base that includes its change', async () => {
+  const fixture = hostedWorkflowRepositoryFixture('intentional-reversion')
+  const project = 'intentional-workflow-reversion'
+  const path = join(fixture.worktree, '.agents', 'workflows', 'hosted.md')
+  const olderBody =
+    '---\ntitle: Hosted fixture\narguments: []\nmodes: []\n---\nHosted fixture.\n'
+  const newerBody =
+    '---\ntitle: Hosted fixture\narguments: []\nmodes: []\n---\nCurrent production body.\n'
+  try {
+    runGit(fixture.worktree, ['branch', '-M', 'main'])
+    runGit(fixture.worktree, ['add', '.agents/workflows/hosted.md'])
+    runGit(fixture.worktree, [
+      '-c',
+      'user.name=Fixture',
+      '-c',
+      'user.email=fixture@example.test',
+      'commit',
+      '--quiet',
+      '-m',
+      'older workflow body',
+    ])
+    registerOwningWorkflowProject(project, fixture.worktree)
+    const spaceId = newRecordId()
+    installHostedWorkflowTreeFixture(project, spaceId, fixture.worktree)
+
+    writeFileSync(path, newerBody)
+    runGit(fixture.worktree, ['add', '.agents/workflows/hosted.md'])
+    runGit(fixture.worktree, [
+      '-c',
+      'user.name=Fixture',
+      '-c',
+      'user.email=fixture@example.test',
+      'commit',
+      '--quiet',
+      '-m',
+      'newer workflow body',
+    ])
+    const beforeReversion = runGit(fixture.worktree, ['rev-parse', 'HEAD'])
+    const workflow = db()
+      .query<{ record_id: string }, [string]>(
+        "SELECT record_id FROM workflow WHERE space_id = ? AND slug = 'hosted'",
+      )
+      .get(spaceId)!
+    db()
+      .query(
+        "UPDATE workflow_version SET status='retired',retired_at=? WHERE workflow_record_id=? AND status='production'",
+      )
+      .run('2026-10-21T12:00:00.000Z', workflow.record_id)
+    applyWorkflowCatalogueRow(db(), 'workflow_version', {
+      id: newRecordId(),
+      spaceId,
+      ownerId: workflow.record_id,
+      n: 2,
+      status: 'production',
+      definition: JSON.stringify({
+        title: 'Hosted fixture',
+        description: 'Current production body.',
+        arguments: [],
+        modes: [],
+      }),
+      author: 'hosted',
+      reason: 'new production body',
+      createdAt: '2026-10-21T12:00:00.000Z',
+      promotedAt: '2026-10-21T12:00:00.000Z',
+      retiredAt: null,
+    })
+
+    writeFileSync(path, olderBody)
+    runGit(fixture.worktree, ['add', '.agents/workflows/hosted.md'])
+    runGit(fixture.worktree, [
+      '-c',
+      'user.name=Fixture',
+      '-c',
+      'user.email=fixture@example.test',
+      'commit',
+      '--quiet',
+      '-m',
+      'restore older workflow body',
+    ])
+    const argv = [
+      'workflow',
+      'import',
+      '--cwd',
+      fixture.worktree,
+      '--reason',
+      'intentional workflow reversion',
+    ]
+    await expect(
+      runWorkflowCommand(argv, workflowCommandPresentation([])),
+    ).rejects.toThrow('refusing stale workflow tree reversion')
+    await runWorkflowCommand(
+      [...argv, '--since', beforeReversion],
+      workflowCommandPresentation([]),
+    )
+  } finally {
+    fixture.dispose()
+  }
 })
 
 test('workflow promote refuses an unlanded HEAD and records an operator override', async () => {
@@ -71,5 +200,8 @@ test('workflow promote refuses an unlanded HEAD and records an operator override
           ORDER BY e.at DESC LIMIT 1`,
       )
       .get(),
-  ).toEqual({ author: 'Shmuel Barkin', reason: 'emergency workflow repair' })
+  ).toEqual({
+    author: 'Shmuel Barkin',
+    reason: 'override by Shmuel Barkin: emergency workflow repair',
+  })
 })

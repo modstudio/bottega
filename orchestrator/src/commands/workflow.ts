@@ -597,7 +597,8 @@ function registerWorkflowTreeCommands({
         workflow
           .command('import')
           .description('import a project workflow tree as draft definitions')
-          .option('--cwd <value>', 'select the project worktree to import'),
+          .option('--cwd <value>', 'select the project worktree to import')
+          .option('--since <commit>', 'measure changed workflow paths from this commit'),
       ),
     ),
   )

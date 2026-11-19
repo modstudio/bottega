@@ -390,6 +390,17 @@ test('workflow tree project refusal is only required for a configured record wit
     'refusing workflow hydrate in /fixture/unowned: no registered project owns this directory\n' +
       "cleared by: run from a registered project's worktree, or pass --cwd for one",
   )
+  expect(
+    workflowProjectRefusal({
+      ...input,
+      command: 'promote',
+      project: null,
+      recordConfigured: true,
+    }),
+  ).toBe(
+    'refusing workflow promote in /fixture/unowned: no registered project owns this directory\n' +
+      "cleared by: run from a registered project's checkout",
+  )
 })
 
 test('workflow tree commands name their own refusal for an unowned configured directory', async () => {

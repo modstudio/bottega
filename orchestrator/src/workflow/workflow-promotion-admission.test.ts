@@ -40,8 +40,24 @@ describe('workflow promotion admission', () => {
       }),
     ).toEqual({
       verdict: 'allow',
-      reason: 'restore production immediately',
+      reason: 'override by Shmuel Barkin: restore production immediately',
       author: 'Shmuel Barkin',
+    })
+  })
+
+  test('refuses an operator override without a reason', () => {
+    expect(
+      decideWorkflowPromotionAdmission({
+        landingBranch: 'main',
+        landingBranchContainsHead: false,
+        fromOperator: true,
+        reason: '   ',
+        operatorName: 'Shmuel Barkin',
+      }),
+    ).toEqual({
+      verdict: 'refuse',
+      message:
+        'workflow promotion --from-operator requires a non-empty reason; rerun with --reason "<reason>" --from-operator',
     })
   })
 })

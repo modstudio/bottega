@@ -1,6 +1,7 @@
 // concern: workflow import landing-branch resolution
 /** Resolves the merge base required before a workflow import may write drafts. */
 
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { Project } from '../project/projects.ts'
 import { resolveReviewBase } from '../review/review-target.ts'
 import { resolveBase } from '../worktree/worktree-caller.ts'
@@ -9,7 +10,10 @@ export function workflowImportBase(root: string, project: Project | null): strin
   const trunk = project?.settings.trunk?.trim()
   if (!trunk) {
     throw new Error(
-      'workflow import refused: the registered project has no landing branch in settings.trunk',
+      project
+        ? `workflow import refused: registered project ${project.name} has no landing branch in settings.trunk; ` +
+            `run ${PLATFORM_SLUG} project set ${project.name} --settings to set trunk`
+        : "workflow import refused: no registered project owns this directory; run from a registered project's checkout",
     )
   }
   let base: string | null = null

@@ -1,5 +1,5 @@
 // concern: workflow tree commands
-/** Owns hydrate, import, and tree-promotion command semantics. */
+/** Owns workflow-tree commands and workflow-command checkout/project resolution. */
 
 import { resolve } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
@@ -51,10 +51,45 @@ export function workflowProjectRefusal(input: {
       `refusing workflow ${input.command} in ${input.root}: no registered project owns this directory`,
       {
         kind: 'edit',
-        text: "run from a registered project's worktree, or pass --cwd for one",
+        text:
+          input.command === 'promote'
+            ? "run from a registered project's checkout"
+            : "run from a registered project's worktree, or pass --cwd for one",
       },
     ),
   )
+}
+
+export type WorkflowTreeSyncCommand = {
+  stage: 'import' | 'promote'
+  argv: string[]
+}
+
+export function workflowTreeSyncCommands(
+  binary: string,
+  cwd: string,
+  reason: string,
+  since?: string | null,
+): WorkflowTreeSyncCommand[] {
+  return [
+    {
+      stage: 'import',
+      argv: [
+        binary,
+        'workflow',
+        'import',
+        '--cwd',
+        cwd,
+        '--reason',
+        reason,
+        ...(since ? ['--since', since] : []),
+      ],
+    },
+    {
+      stage: 'promote',
+      argv: [binary, 'workflow', 'promote-tree', '--cwd', cwd, '--reason', reason],
+    },
+  ]
 }
 
 export function workflowCommandProject(
@@ -139,7 +174,8 @@ export async function importCommand(
   options: TreeCommandOptions = {},
 ): Promise<void> {
   const { root, project } = workflowCommandProject('import', options)
-  const base = workflowImportBase(root, project)
+  const mergeBase = workflowImportBase(root, project)
+  const base = flagValue(argv, 'since') ?? mergeBase
   let changedPaths: Set<string> | undefined
   let skipped: string | undefined
   try {

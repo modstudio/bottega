@@ -15,10 +15,25 @@ export function decideWorkflowPromotionAdmission(input: {
   operatorName?: string | null
 }): WorkflowPromotionAdmission {
   if (input.fromOperator) {
+    const reason = input.reason?.trim()
+    if (!reason) {
+      return {
+        verdict: 'refuse',
+        message:
+          'workflow promotion --from-operator requires a non-empty reason; rerun with --reason "<reason>" --from-operator',
+      }
+    }
+    const operatorName = input.operatorName?.trim()
+    if (!operatorName) {
+      return {
+        verdict: 'refuse',
+        message: 'workflow promotion --from-operator requires the overriding operator identity',
+      }
+    }
     return {
       verdict: 'allow',
-      reason: input.reason,
-      author: input.operatorName?.trim() || 'Shmuel Barkin',
+      reason: `override by ${operatorName}: ${reason}`,
+      author: operatorName,
     }
   }
   if (input.landingBranch && input.landingBranchContainsHead) {
