@@ -4,7 +4,7 @@ import { delimiter, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
   MINIMUM_DEPENDENCY_CRUISER_NODE_MAJOR,
-  nodeVersionMajor,
+  nodeVersionMeetsMinimum,
 } from '../shared/node-requirement.ts'
 import { dependencyCruiserConfig } from './architecture.ts'
 
@@ -94,8 +94,7 @@ export function architectureCruiseCoverageViolations({
 }
 
 export function dependencyCruiserNodeVersionRefusal(version: string): string | undefined {
-  const major = nodeVersionMajor(version)
-  if (major !== null && major >= MINIMUM_DEPENDENCY_CRUISER_NODE_MAJOR) return undefined
+  if (nodeVersionMeetsMinimum(version) === true) return undefined
   return `dependency-cruiser found Node ${version.trim() || '(unknown)'}; install Node ${MINIMUM_DEPENDENCY_CRUISER_NODE_MAJOR} or later, or set it up in CI`
 }
 

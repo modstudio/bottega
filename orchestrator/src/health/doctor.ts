@@ -12,7 +12,7 @@ import {
 import { doctorAgentStatus } from '../agent/agent-auth.ts'
 import { AGENTS, type AgentRow, agentRows } from '../agent/agent-registry.ts'
 import { cliVersion, versionBelow } from '../agent/agents.ts'
-import { captureCliVersion, capturedVersionOutput } from '../agent/cli-version.ts'
+import { captureCliVersion, capturedCliVersion } from '../agent/cli-version.ts'
 import { decideEffectiveEndpointApiKey, endpointApiKeyResolves } from '../agent/endpoint-api-key.ts'
 import {
   ensureLocalHealth,
@@ -546,8 +546,8 @@ async function reportInstallationStatus(
     exitCode(1)
   }
   const nodePath = Bun.which('node', { PATH: process.env.PATH })
-  const nodeVersion = capturedVersionOutput(nodePath ? captureCliVersion(nodePath) : null)
-  for (const line of developerNodeDoctorLines(installationKind, nodeVersion)) log(line)
+  const nodeVersion = capturedCliVersion(nodePath ? captureCliVersion(nodePath) : null)
+  for (const line of developerNodeDoctorLines(installationKind, nodePath, nodeVersion)) log(line)
   const launchAgents = await launchAgentDoctorReport(
     process.platform,
     undefined,

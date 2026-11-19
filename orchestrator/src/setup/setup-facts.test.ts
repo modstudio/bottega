@@ -64,7 +64,7 @@ test('classifies missing binaries, versions, gh login, and WSL from captures', (
   const captured = facts({ git: { path: null, version: null } })
   expect(captured.os.wsl).toBe(true)
   expect(captured.git).toEqual({ path: null, version: null })
-  expect(captured.node).toEqual({ path: '/bin/node', version: 'v24.0.0' })
+  expect(captured.node).toEqual({ path: '/bin/node', version: '24.0.0' })
   expect(captured.gh).toEqual({ path: '/bin/gh', version: '2.80.0', loggedIn: true })
   expect(captured.harnesses.codex.version).toBe('1.2.3')
 

@@ -344,6 +344,7 @@ function machineNotices(machine: SetupFacts): SetupNotice[] {
   const notices: SetupNotice[] = []
   const nodeNotice = developerNodeNotice({
     installationKind: machine.installationKind,
+    nodePath: machine.node?.path ?? null,
     nodeVersion: machine.node?.version ?? null,
   })
   if (nodeNotice) notices.push({ ...nodeNotice, blocking: false })

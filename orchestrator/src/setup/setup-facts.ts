@@ -18,7 +18,6 @@ import {
   type CliVersionCapture,
   captureCliVersion,
   capturedCliVersion,
-  capturedVersionOutput,
 } from '../agent/cli-version.ts'
 import { localReachable } from '../agent/model-host.ts'
 import { sandboxRuntimeAvailability } from '../sandbox/sandbox-runtime.ts'
@@ -134,7 +133,7 @@ export function classifySetupFacts(capture: SetupFactsCapture): SetupFacts {
       wsl: capture.platform === 'linux' && /microsoft|wsl/i.test(capture.procVersion ?? ''),
     },
     bun: capture.bun,
-    node: { path: capture.node.path, version: capturedVersionOutput(capture.node.version) },
+    node: { path: capture.node.path, version: capturedCliVersion(capture.node.version) },
     git: { path: capture.git.path, version: capturedCliVersion(capture.git.version) },
     gh: {
       path: capture.gh.path,

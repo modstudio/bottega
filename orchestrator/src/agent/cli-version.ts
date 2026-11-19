@@ -14,17 +14,12 @@ export type CliVersionCapture = {
 
 /** Keep the established agent-version grammar: only a full three-part version is accepted. */
 function parsedCliVersion(text: string): string | null {
-  return text.match(/\b\d+\.\d+\.\d+\b/)?.[0] ?? null
+  return text.match(/\bv?(\d+\.\d+\.\d+)\b/)?.[1] ?? null
 }
 
 export function capturedCliVersion(capture: CliVersionCapture | null): string | null {
   if (!capture || capture.error || capture.timedOut || capture.exitCode !== 0) return null
   return parsedCliVersion(`${capture.stdout}\n${capture.stderr}`)
-}
-
-export function capturedVersionOutput(capture: CliVersionCapture | null): string | null {
-  if (!capture || capture.error || capture.timedOut || capture.exitCode !== 0) return null
-  return `${capture.stdout}\n${capture.stderr}`.trim() || null
 }
 
 export function captureCliVersion(bin: string): CliVersionCapture {
