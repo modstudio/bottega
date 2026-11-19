@@ -458,11 +458,17 @@ test('a partial hosted failure leaves all local rows in place', async () => {
 })
 
 function syncClient(
-  presence: RecordApiClient['readTaskFlowPresence'],
+  presence: (
+    ...args: Parameters<NonNullable<RecordApiClient['readTaskFlowPresence']>>
+  ) => Promise<unknown>,
   importQuestion: NonNullable<RecordApiClient['importQuestion']>,
   importTaskFlow: NonNullable<RecordApiClient['importTaskFlow']>,
 ): RecordApiClient {
-  return { readTaskFlowPresence: presence, importQuestion, importTaskFlow } as RecordApiClient
+  return {
+    readTaskFlowPresence: presence as NonNullable<RecordApiClient['readTaskFlowPresence']>,
+    importQuestion,
+    importTaskFlow,
+  } as RecordApiClient
 }
 
 const syncDestination = async () => ({ destinationSpaceId: 'space' })

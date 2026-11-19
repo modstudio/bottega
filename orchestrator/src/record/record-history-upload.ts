@@ -381,9 +381,9 @@ function flowIsAbsent(
   return (
     !present.task_flow.has(flow.flow.id) ||
     flow.stages.some((row) => !present.workflow_cursor.has(row.id)) ||
-    flow.obligations.some((row) => !present.workflow_obligation.has(row.id)) ||
-    flow.texts.some((row) => !present.workflow_step_text.has(row.id)) ||
-    flow.copies.some((row) => !present.workflow_text_copy.has(row.id))
+    (flow.obligations ?? []).some((row) => !present.workflow_obligation.has(row.id)) ||
+    (flow.texts ?? []).some((row) => !present.workflow_step_text.has(row.id)) ||
+    (flow.copies ?? []).some((row) => !present.workflow_text_copy.has(row.id))
   )
 }
 

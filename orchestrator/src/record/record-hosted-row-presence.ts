@@ -64,13 +64,23 @@ function referenceMap(
 /** Read the seven local hosted tables and their within-set parent references. */
 export function collectHostedRowState(database: Database): HostedRowState {
   const collected: Record<HostedRowTable, Record<string, unknown>[]> = {
-    workflow_obligation: database.query('SELECT * FROM workflow_obligation').all(),
-    workflow_step_text: database.query('SELECT * FROM workflow_step_text').all(),
-    workflow_text_copy: database.query('SELECT * FROM workflow_text_copy').all(),
-    question_mutation_audit: database.query('SELECT * FROM question_mutation_audit').all(),
-    question: database.query('SELECT * FROM question').all(),
-    workflow_cursor: database.query('SELECT * FROM workflow_cursor').all(),
-    task_flow: database.query('SELECT * FROM task_flow').all(),
+    workflow_obligation: database
+      .query<Record<string, unknown>, []>('SELECT * FROM workflow_obligation')
+      .all(),
+    workflow_step_text: database
+      .query<Record<string, unknown>, []>('SELECT * FROM workflow_step_text')
+      .all(),
+    workflow_text_copy: database
+      .query<Record<string, unknown>, []>('SELECT * FROM workflow_text_copy')
+      .all(),
+    question_mutation_audit: database
+      .query<Record<string, unknown>, []>('SELECT * FROM question_mutation_audit')
+      .all(),
+    question: database.query<Record<string, unknown>, []>('SELECT * FROM question').all(),
+    workflow_cursor: database
+      .query<Record<string, unknown>, []>('SELECT * FROM workflow_cursor')
+      .all(),
+    task_flow: database.query<Record<string, unknown>, []>('SELECT * FROM task_flow').all(),
   }
   const ids = Object.fromEntries(
     HOSTED_ROW_TABLES.map((table) => [
