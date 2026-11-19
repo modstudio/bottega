@@ -52,6 +52,7 @@ import { recordQuestionClient } from './record-api-client-question.ts'
 import { recordAttributionFailure } from './record-attribution.ts'
 import type { RecordIdentity } from './record-auth.ts'
 import { recordCacheParityChecks } from './record-cache-parity.ts'
+import type { RecordDoctorCheck } from './record-doctor-check.ts'
 import { recordPool } from './record-pool.ts'
 import { storedRecordToken } from './record-session.ts'
 
@@ -63,13 +64,7 @@ async function refuseOwnerConnection(postgres: SQL, operation: string): Promise<
     )
 }
 
-type RecordDoctorStatus = 'pass' | 'fail' | 'skipped'
-export type RecordDoctorCheck = {
-  name: string
-  status: RecordDoctorStatus
-  detail?: string
-  section?: 'customer' | 'operator'
-}
+export type { RecordDoctorCheck } from './record-doctor-check.ts'
 type QuarantinedDoctorRow = { id: number; kind: string; reason: string }
 export type RecordDoctorFacts = {
   apiConfigured: boolean

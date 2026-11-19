@@ -39,5 +39,6 @@ export const recordCacheModules = [
     './record-cache.ts',
     './record-cache-counts-contract.ts',
     './record-cache-ownership.ts',
+    './record-doctor-check.ts',
   ]),
 ]

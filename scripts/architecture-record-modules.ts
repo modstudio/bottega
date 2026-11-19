@@ -611,6 +611,7 @@ export const recordModules: RecordModule[] = [
     './record-api-client.ts',
     './record-session.ts',
   ]),
+  module('orchestrator/src/record/record-doctor-check.ts', []),
   module('orchestrator/src/record/record-doctor.ts', [
     '../../../shared/brand.ts',
     '../../../shared/env-source.ts',
@@ -637,6 +638,7 @@ export const recordModules: RecordModule[] = [
     './record-auth.ts',
     './record-attribution.ts',
     './record-cache-parity.ts',
+    './record-doctor-check.ts',
     './record-project-destination.ts',
     './record-session.ts',
     './record-pool.ts',

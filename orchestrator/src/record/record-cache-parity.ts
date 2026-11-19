@@ -8,8 +8,12 @@ import { recordApiClient } from './record-api-client.ts'
 import { RecordApiRequestError } from './record-api-client-response.ts'
 import type { RecordIdentity } from './record-auth.ts'
 import { recordCacheSpaces } from './record-cache.ts'
-import type { RecordCacheCounts } from './record-cache-counts-contract.ts'
+import {
+  isRecordCacheCounts,
+  type RecordCacheCounts,
+} from './record-cache-counts-contract.ts'
 import { recordCacheAddressOwner, recordCacheSpaceOwnsSubject } from './record-cache-ownership.ts'
+import type { RecordDoctorCheck } from './record-doctor-check.ts'
 
 type LocalCacheCounts = {
   byScope: Array<{ scope: string; docs: number }>
@@ -26,13 +30,6 @@ export type RecordCacheParityInput = {
   failureRemedy?: string
 }
 
-export type RecordCacheParityDecision = {
-  name: string
-  status: 'pass' | 'fail'
-  detail: string
-  section: 'customer'
-}
-
 const pullRemedy = `run \`${PLATFORM_SLUG} record pull\``
 const apiRemedy =
   'check BOTTEGA_RECORD_API_URL and make the hosted record API reachable, then retry'
@@ -43,7 +40,7 @@ function comparison(local: number, hosted: number): { label: string; gap: boolea
   return { label: 'ok', gap: false }
 }
 
-export function decideRecordCacheParity(input: RecordCacheParityInput): RecordCacheParityDecision {
+export function decideRecordCacheParity(input: RecordCacheParityInput): RecordDoctorCheck {
   const name = `record cache parity: ${input.space}`
   if (input.failure)
     return {
@@ -101,32 +98,6 @@ export function decideRecordCacheParity(input: RecordCacheParityInput): RecordCa
   return { name, status: gap ? 'fail' : 'pass', detail: lines.join('\n'), section: 'customer' }
 }
 
-function isRecordCacheCounts(value: unknown): value is RecordCacheCounts {
-  if (!value || typeof value !== 'object') return false
-  const response = value as Partial<RecordCacheCounts>
-  return (
-    Array.isArray(response.byScope) &&
-    response.byScope.every(
-      (row) =>
-        row !== null &&
-        typeof row === 'object' &&
-        typeof row.scope === 'string' &&
-        (row.project === null || typeof row.project === 'string') &&
-        typeof row.docs === 'number' &&
-        Number.isFinite(row.docs),
-    ) &&
-    Array.isArray(response.subjectsByProject) &&
-    response.subjectsByProject.every(
-      (row) =>
-        row !== null &&
-        typeof row === 'object' &&
-        typeof row.project === 'string' &&
-        typeof row.subjects === 'number' &&
-        Number.isFinite(row.subjects),
-    )
-  )
-}
-
 function localCacheCounts(local: Database, space: string): LocalCacheCounts {
   return {
     byScope: local
@@ -145,7 +116,7 @@ function localCacheCounts(local: Database, space: string): LocalCacheCounts {
 export async function recordCacheParityChecks(
   local: Database,
   identity: RecordIdentity,
-): Promise<RecordCacheParityDecision[]> {
+): Promise<RecordDoctorCheck[]> {
   const cache = recordCacheSpaces(identity, local)
   const client = recordApiClient()
   return Promise.all(
