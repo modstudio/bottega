@@ -51,6 +51,7 @@ import {
   releaseClaim,
   releaseTaskClaims,
   renewClaim,
+  renewQueuedClaimsOfSession,
   type TakeClaimInput,
   takeClaim,
 } from './board-claim-service.ts'

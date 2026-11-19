@@ -16,6 +16,7 @@ export type WorkflowTemplateContext = {
 }
 
 export const KEYLESS_TRACKER_ACTION_KEY = '<KEY>'
+export const KEYLESS_WORKFLOW_KEY = '<key>'
 
 export const keylessTrackerActionMetadata = (paths: ReadonlySet<string>) =>
   paths.size ? { keylessTrackerActionPaths: [...paths] } : {}
@@ -54,6 +55,8 @@ export function resolveWorkflowTemplate(
   return template.replace(/\{\{([^{}]+)\}\}/g, (_all, path: string) => {
     let value: unknown = values
     for (const part of path.split('.')) value = object(value) ? value[part] : undefined
+    if (path === 'key' && context && !context.key && value === undefined)
+      return KEYLESS_WORKFLOW_KEY
     if (value === undefined || value === null || typeof value === 'object') {
       const remedy = context?.argumentNames.has(path)
         ? `; pass --arg ${path}=<value> on this step or next call`

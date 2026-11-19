@@ -53,8 +53,17 @@ test('every plan-task step renders on a keyless cursor in every mode', async () 
     for (const { slug } of composition.steps) {
       const step = getWorkflowStep('plan-task', 'fixture', slug, {}, d, { mode: mode.slug })
       expect(step.body).not.toContain('{{tracker.actions.')
+      expect(step.body).not.toContain('{{key}}')
+      if (slug === 'start') expect(step.body).toContain('<key>')
     }
   }
+})
+
+test('a keyed plan-task start instruction renders its task key', () => {
+  const step = getWorkflowStep('plan-task', 'fixture', 'start', { key: 'DEV-2483' }, database(), {
+    mode: planTask.definition.modes[0]!.slug,
+  })
+  expect(step.body).toContain('--task DEV-2483')
 })
 
 test('a workflow without a key argument adopts --task and renders and closes its next step', async () => {

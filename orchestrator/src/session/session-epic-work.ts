@@ -73,6 +73,12 @@ export async function sessionEpicWork(session: string, database: Database = db()
   ])
   const surfaces: Array<{ epic: string; queue: string[]; open: string[]; cursor: number }> = []
   for (const project of projects) {
+    const stages = await taskFlowReadStore(database).listStages({
+      project,
+      states: [...TASK_FLOW_OPEN_STAGE_STATES],
+    })
+    if (!stages.some((stage) => stage.workflow_slug === 'plan-task' && stage.step_slug === 'start'))
+      continue
     const tasks = taskReader().list({ project })
     const facts = await taskFacts(database, project, tasks)
     const queuedEpics = new Set(
@@ -81,10 +87,6 @@ export async function sessionEpicWork(session: string, database: Database = db()
         .map(({ key }) => ancestors(key, tasks).at(-1))
         .filter((key): key is string => Boolean(key)),
     )
-    const stages = await taskFlowReadStore(database).listStages({
-      project,
-      states: [...TASK_FLOW_OPEN_STAGE_STATES],
-    })
     const heldKeys = new Set(
       database
         .query<{ subject_value: string }, [string, string, string]>(
