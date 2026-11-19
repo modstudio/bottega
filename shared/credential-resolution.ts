@@ -66,6 +66,20 @@ export type CredentialSetTarget = {
 }
 
 /** One refusal shape for every credential that must be set: names the binding and the exact set command. */
+export function credentialSetRemedy(target: CredentialSetTarget): string {
+  const name = credentialIdentityPath(target.provider, target.name, target.type)
+  const bindOption = target.account
+    ? ' --account'
+    : target.projectName
+      ? ` --project ${target.projectName}`
+      : ` --space ${target.spaceName}`
+  const payerOption = target.payer === 'shared' ? ' --shared' : ''
+  const modeOption = target.mode === 'default' ? '' : ` --mode ${target.mode}`
+  const environmentOption = target.environment === 'local' ? '' : ` --env ${target.environment}`
+  return `${PLATFORM_SLUG} credential set ${name}${bindOption}${payerOption}${modeOption}${environmentOption}`
+}
+
+/** One refusal shape for every credential that must be set: names the binding and the exact set command. */
 export function credentialSetRefusalText(
   target: CredentialSetTarget,
   condition: string,
@@ -77,15 +91,7 @@ export function credentialSetRefusalText(
     : target.projectName
       ? `project ${target.projectName}`
       : `space ${target.spaceName}`
-  const bindOption = target.account
-    ? ' --account'
-    : target.projectName
-      ? ` --project ${target.projectName}`
-      : ` --space ${target.spaceName}`
-  const payerOption = target.payer === 'shared' ? ' --shared' : ''
-  const modeOption = target.mode === 'default' ? '' : ` --mode ${target.mode}`
-  const environmentOption = target.environment === 'local' ? '' : ` --env ${target.environment}`
-  return `credential ${name} (mode ${target.mode}, env ${target.environment}) is ${condition} for ${binding}; ${action} \`${PLATFORM_SLUG} credential set ${name}${bindOption}${payerOption}${modeOption}${environmentOption}\``
+  return `credential ${name} (mode ${target.mode}, env ${target.environment}) is ${condition} for ${binding}; ${action} \`${credentialSetRemedy(target)}\``
 }
 
 type CredentialRequest = {

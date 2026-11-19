@@ -10,6 +10,7 @@ import {
   HostedOpenError,
   hostedIdentity,
   openHostedSecret,
+  pinnedHostedSecretDestination,
 } from './hosted-secret-opening.ts'
 import { machineKeyInfo, readMachineKey } from './machine-key-store.ts'
 import { sealedValueIsEmpty } from './sealed-value.ts'
@@ -63,6 +64,7 @@ async function defaults(signal?: AbortSignal): Promise<Dependencies> {
     client,
     machine: await machineKeyInfo(pair),
     trust: await trustedKeysForSpace(client, identity.spaceId),
+    pinnedIdentity: identity,
   }
 }
 
@@ -72,7 +74,12 @@ async function rowInScope(
   deps: Dependencies,
 ): Promise<(ConfigSecret & { envelope: string }) | undefined> {
   try {
-    return await deps.client.getSecret(name, scope, HOSTED_CONFIG_ENVIRONMENT)
+    return await deps.client.getSecret(
+      name,
+      scope,
+      HOSTED_CONFIG_ENVIRONMENT,
+      await pinnedHostedSecretDestination(deps.client, deps.pinnedIdentity),
+    )
   } catch (error) {
     if (error instanceof ConfigClientError && error.status === 404) return undefined
     throw error
@@ -108,7 +115,11 @@ async function one(name: string, deps: Dependencies): Promise<OneSecret> {
   for (const scope of SECRET_SCOPES) {
     const row = await rowInScope(name, scope, deps)
     if (!row) continue
-    const key = await deps.client.getDataKey(row.dekId, deps.machine.keyId)
+    const key = await deps.client.getDataKey(
+      row.dekId,
+      deps.machine.keyId,
+      await pinnedHostedSecretDestination(deps.client, deps.pinnedIdentity),
+    )
     const value = await openedValue(name, row, scope, key, deps)
     if (!sealedValueIsEmpty(value)) return { value, sealedEmpty: false }
     blank = true

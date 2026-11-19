@@ -3,7 +3,11 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { type ConfigClient, ConfigClientError } from '../../../shared/config-client.ts'
+import {
+  type ConfigClient,
+  ConfigClientError,
+  type ConfigWriteDestination,
+} from '../../../shared/config-client.ts'
 import { writeHostedConfigIdentity } from '../../../shared/hosted-config-space.ts'
 import { machineKeyId } from '../../../shared/machine-key-id.ts'
 import { writeMachineKey } from '../../../shared/machine-key-store.ts'
@@ -245,7 +249,19 @@ test('set credential writes a project-bound row with its metadata and hint', asy
     recipientPublicKey: pair.publicKey,
   })
   const encode = (value: Uint8Array) => Buffer.from(value).toString('base64url')
-  const putSecret = mock(async (_key: string, input: object, _destination: object) => input)
+  const stored = new Map<string, Record<string, unknown>>()
+  const putSecret = mock(
+    async (key: string, input: Record<string, unknown>, destination: ConfigWriteDestination) => {
+      const row = {
+        ...input,
+        key,
+        rowVersion: 1,
+        updatedAt: '2026-11-18T00:00:00.000Z',
+      }
+      stored.set(String(destination.projectId ?? ''), row)
+      return row
+    },
+  )
   const dataKey = {
     id: dekId,
     version: 1,
@@ -266,7 +282,14 @@ test('set credential writes a project-bound row with its metadata and hint', asy
     listDataKeys: async () => [dataKey],
     listMachineKeys: async () => [],
     listSecrets: async () => [],
-    getSecret: async () => {
+    getSecret: async (
+      _key: string,
+      _scope: string,
+      _environment: string,
+      destination: { projectId?: string | null } = {},
+    ) => {
+      const row = stored.get(String(destination.projectId ?? ''))
+      if (row) return row
       throw new ConfigClientError('response', '/v1/config/secrets/OPENROUTER_API_KEY', 404)
     },
     whoami: async () => ({

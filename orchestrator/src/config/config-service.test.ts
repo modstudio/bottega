@@ -32,13 +32,7 @@ import {
   machineInit,
   machineRevoke,
   machineTrust,
-  migrateLegacyEnvironmentSecrets,
-  restoreLegacyEnvironmentSecrets,
-  sealedEmptyRefusal,
-  sealSecretDecision,
-  secretDeleteRemedy,
   secretEnvironmentDecision,
-  secretSetRemedy,
   setConfigEntry,
   setEntry,
   setSecret,
@@ -46,6 +40,12 @@ import {
 import { rotationFixture } from './config-service-rotation.fixture.ts'
 import { planRotation } from './config-service-rotation-policy.ts'
 import { readCachedDisplayTimezone, writeCachedDisplayTimezone } from './display-timezone-cache.ts'
+import {
+  sealedEmptyRefusal,
+  sealSecretDecision,
+  secretDeleteRemedy,
+  secretSetRemedy,
+} from './secret-set-policy.ts'
 
 const roots: string[] = []
 let previousConfigHome: string | undefined, previousKeystore: string | undefined
@@ -346,13 +346,13 @@ test('secret set refuses an empty piped value and names the key and both remedie
 })
 
 test('a space-scope refusal names both repairs in the scope the set would have written', () => {
-  expect(sealedEmptyRefusal('EMPTY_KEY', 'space')).toBe(
+  expect(sealedEmptyRefusal('EMPTY_KEY', 'space', 'named-space')).toBe(
     `refusing to seal EMPTY_KEY: the value piped on stdin is empty, so no value was sealed\n` +
-      `cleared by: pipe the value on stdin to \`${PLATFORM_SLUG} machine config secret set EMPTY_KEY --space\`, or remove the sealed value with \`${PLATFORM_SLUG} machine config secret delete EMPTY_KEY --space\``,
+      `cleared by: pipe the value on stdin to \`${PLATFORM_SLUG} machine config secret set EMPTY_KEY --space named-space\`, or remove the sealed value with \`${PLATFORM_SLUG} machine config secret delete EMPTY_KEY --space named-space\``,
   )
-  expect(sealSecretDecision('EMPTY_KEY', '\n', 'space')).toEqual({
+  expect(sealSecretDecision('EMPTY_KEY', '\n', 'space', 'named-space')).toEqual({
     kind: 'refuse',
-    refusal: sealedEmptyRefusal('EMPTY_KEY', 'space'),
+    refusal: sealedEmptyRefusal('EMPTY_KEY', 'space', 'named-space'),
   })
 })
 
@@ -382,6 +382,7 @@ test('the service refuses a blank value before touching the store', async () => 
   await expect(
     setSecret('EMPTY_KEY', '   \n', 'user', client, {
       destination: { destinationSpaceId: 'space-1' },
+      remedy: secretSetRemedy('EMPTY_KEY', 'user'),
     }),
   ).rejects.toThrow(sealedEmptyRefusal('EMPTY_KEY', 'user'))
   expect(calls).toEqual([])
@@ -402,9 +403,11 @@ test('the next secret operation rotates once only when a machine revocation is n
   const newer = await rotationFixture(roots, '2026-06-01T00:00:00.000Z')
   await setSecret('TOKEN', 'first', 'space', newer.client, {
     destination: { destinationSpaceId: newer.spaceId },
+    remedy: secretSetRemedy('TOKEN', 'space'),
   })
   await setSecret('TOKEN', 'second', 'space', newer.client, {
     destination: { destinationSpaceId: newer.spaceId },
+    remedy: secretSetRemedy('TOKEN', 'space'),
   })
   expect(newer.created).toHaveLength(1)
   expect(newer.retired).toEqual(['01990000-0000-7000-8000-000000000003'])
@@ -412,6 +415,7 @@ test('the next secret operation rotates once only when a machine revocation is n
   const older = await rotationFixture(roots, '2025-06-01T00:00:00.000Z')
   await setSecret('TOKEN', 'unchanged', 'space', older.client, {
     destination: { destinationSpaceId: older.spaceId },
+    remedy: secretSetRemedy('TOKEN', 'space'),
   })
   expect(older.created).toEqual([])
   expect(older.retired).toEqual([])
@@ -428,6 +432,7 @@ test('rotation excludes a record-revoked key that remains in the machine trust l
   )
   await setSecret('TOKEN', 'rotated', 'space', fixture.client, {
     destination: { destinationSpaceId: fixture.spaceId },
+    remedy: secretSetRemedy('TOKEN', 'space'),
   })
 
   expect(fixture.current().wraps.map((wrap) => wrap.recipientKeyId)).not.toContain(
@@ -596,38 +601,7 @@ test('a sealed environment migration refusal names the repair in the scope it wo
     (error: Error) => error.message,
   )
   expect(refusal).toContain(
-    `run \`${PLATFORM_SLUG} machine config secret delete ORCH_RECORD_URL --space\`, then re-run ${PLATFORM_SLUG} machine setup apply`,
-  )
-  expect(refusal).not.toContain('--scope')
-})
-
-test('a setup restore refusal names the repair without a flag the secret delete verb lacks', async () => {
-  const { ConfigClientError } = await import('../../../shared/config-client.ts')
-  const row = {
-    key: 'ORCH_RECORD_URL',
-    environment: 'default',
-    scope: 'user' as const,
-    dekId: 'dek',
-    rowVersion: 1,
-    updatedAt: '2026-10-23T00:00:00.000Z',
-  }
-  const client = {
-    getSecret: async (name: string, scope: string) => {
-      if (name === 'ORCH_RECORD_URL' && scope === 'user') return row
-      throw new ConfigClientError('response', '/v1/config/secrets', 404)
-    },
-  } as unknown as ConfigClient
-
-  const refusal = await restoreLegacyEnvironmentSecrets(
-    [{ oldName: 'ORCH_RECORD_URL', newName: 'BOTTEGA_RECORD_URL', scope: 'user' }],
-    client,
-    { plaintext: async () => new TextEncoder().encode('value') },
-  ).then(
-    () => '',
-    (error: Error) => error.message,
-  )
-  expect(refusal).toContain(
-    `run \`${PLATFORM_SLUG} machine config secret delete ORCH_RECORD_URL\`, then re-run ${PLATFORM_SLUG} machine setup restore`,
+    `run \`${PLATFORM_SLUG} machine config secret delete ORCH_RECORD_URL --space <slug>\`, then re-run ${PLATFORM_SLUG} machine setup apply`,
   )
   expect(refusal).not.toContain('--scope')
 })
@@ -660,139 +634,6 @@ test('sealed environment migration verifies the decoded write before deleting th
   await expect(applyLegacyEnvironmentSecretMigration(store)).rejects.toThrow('did not verify')
   expect(calls).toEqual(['write user:BOTTEGA_RECORD_URL'])
   expect(values.get('user:ORCH_RECORD_URL')).toBe('secret-value')
-})
-
-test('production sealed migration wires listed scopes, not-found reads, decoding, write verification, and delete order', async () => {
-  const values = new Map([['user:ORCH_RECORD_URL', new TextEncoder().encode('decoded-value')]])
-  const calls: string[] = []
-  const row = (key: string) => ({
-    key,
-    environment: 'default',
-    scope: 'user' as const,
-    dekId: 'dek',
-    rowVersion: 1,
-    updatedAt: '2026-10-23T00:00:00.000Z',
-  })
-  const client = {
-    listSecrets: async () => [row('ORCH_RECORD_URL')],
-    whoami: async () => ({
-      personalSpaceId: 'space-personal',
-      memberships: [],
-    }),
-    getSecret: async (name: string, scope: string) => {
-      if (!values.has(`${scope}:${name}`)) {
-        throw new (await import('../../../shared/config-client.ts')).ConfigClientError(
-          'response',
-          '/v1/config/secrets',
-          404,
-        )
-      }
-      return row(name)
-    },
-  } as unknown as ConfigClient
-
-  const migrated = await migrateLegacyEnvironmentSecrets(client, {
-    plaintext: async (_client, secret) => values.get(`${secret.scope}:${secret.key}`)!,
-    write: async (name, value, scope, _client, destination) => {
-      calls.push(`write ${scope}:${name}=${value}`)
-      calls.push(`write destination=${destination.destinationSpaceId}`)
-      values.set(`${scope}:${name}`, new TextEncoder().encode(value))
-    },
-    delete: async (name, scope, _client, destination) => {
-      calls.push(`delete ${scope}:${name}`)
-      calls.push(`delete destination=${destination.destinationSpaceId}`)
-      values.delete(`${scope}:${name}`)
-    },
-  })
-
-  expect(migrated).toEqual([
-    { oldName: 'ORCH_RECORD_URL', newName: 'BOTTEGA_RECORD_URL', scope: 'user' },
-  ])
-  expect(calls).toEqual([
-    'write user:BOTTEGA_RECORD_URL=decoded-value',
-    'write destination=space-personal',
-    'delete user:ORCH_RECORD_URL',
-    'delete destination=space-personal',
-  ])
-})
-
-test('sealed environment migration refuses a non-user scope before any write', async () => {
-  const calls: string[] = []
-  const client = {
-    listSecrets: async () => [
-      {
-        key: 'ORCH_RECORD_URL',
-        environment: 'default',
-        scope: 'space' as const,
-        dekId: 'dek',
-        rowVersion: 1,
-        updatedAt: '2026-10-23T00:00:00.000Z',
-      },
-    ],
-  } as unknown as ConfigClient
-
-  const refusal = await migrateLegacyEnvironmentSecrets(client, {
-    write: async () => calls.push('write'),
-    delete: async () => calls.push('delete'),
-  }).then(
-    () => '',
-    (error: Error) => error.message,
-  )
-
-  expect(refusal).toContain('ORCH_RECORD_URL in space scope')
-  expect(refusal).toContain(
-    `${PLATFORM_SLUG} machine config secret set ORCH_RECORD_URL --space <slug>`,
-  )
-  expect(calls).toEqual([])
-})
-
-test('sealed-secret restore renames only recorded names back without persisting plaintext', async () => {
-  const values = new Map([['user:BOTTEGA_RECORD_URL', new TextEncoder().encode('decoded-value')]])
-  const calls: string[] = []
-  const row = (key: string) => ({
-    key,
-    environment: 'default',
-    scope: 'user' as const,
-    dekId: 'dek',
-    rowVersion: 1,
-    updatedAt: '2026-10-23T00:00:00.000Z',
-  })
-  const client = {
-    whoami: async () => ({
-      personalSpaceId: 'space-personal',
-      memberships: [],
-    }),
-    getSecret: async (name: string, scope: string) => {
-      if (!values.has(`${scope}:${name}`)) {
-        throw new (await import('../../../shared/config-client.ts')).ConfigClientError(
-          'response',
-          '/v1/config/secrets',
-          404,
-        )
-      }
-      return row(name)
-    },
-  } as unknown as ConfigClient
-
-  await restoreLegacyEnvironmentSecrets(
-    [{ oldName: 'ORCH_RECORD_URL', newName: 'BOTTEGA_RECORD_URL', scope: 'user' }],
-    client,
-    {
-      plaintext: async (_client, secret) => values.get(`${secret.scope}:${secret.key}`)!,
-      write: async (name, value, scope) => {
-        calls.push(`write ${scope}:${name}`)
-        values.set(`${scope}:${name}`, new TextEncoder().encode(value))
-      },
-      delete: async (name, scope) => {
-        calls.push(`delete ${scope}:${name}`)
-        values.delete(`${scope}:${name}`)
-      },
-    },
-  )
-
-  expect(calls).toEqual(['write user:ORCH_RECORD_URL', 'delete user:BOTTEGA_RECORD_URL'])
-  expect(values.has('user:ORCH_RECORD_URL')).toBe(true)
-  expect(values.has('user:BOTTEGA_RECORD_URL')).toBe(false)
 })
 
 test('rotation plan retires an unreferenced old key and does so on a converged rerun', () => {

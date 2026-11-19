@@ -51,7 +51,7 @@ import {
   pinnedUserMismatchRemedy,
   RECORD_ACTIVE_SPACE_REMEDY,
 } from '../../../shared/record-remedies.ts'
-import { sealedValueIsEmpty, stripTrailingNewline } from '../../../shared/sealed-value.ts'
+import { sealedValueIsEmpty } from '../../../shared/sealed-value.ts'
 import {
   generateDataKey,
   generateMachineKeyPair,
@@ -89,6 +89,9 @@ import { refreshDisplayTimezoneCache } from './display-timezone-cache.ts'
 import { hostedConfigClient } from './hosted-config-call-outcome.ts'
 import * as trustRefusal from './machine-trust-refusal.ts'
 import { personalConfigWriteDestination } from './personal-config-write-destination.ts'
+import { sealedEmptyRefusal, secretDeleteRemedy, secretSetRemedy } from './secret-set-policy.ts'
+import { pinnedConfigDestination } from './secret-write-target.ts'
+import { verifySecretWrite } from './secret-write-verification.ts'
 import { appendTrustLogRevoke } from './trust-log-revoke.ts'
 
 async function identity(client: ConfigClient, env: ConfigEnvironment = process.env) {
@@ -504,52 +507,6 @@ export async function machineRevoke(
   return result.completed
 }
 
-/** The scope flag one `machine config secret` repair carries: the verbs declare only `--space`. */
-function secretScopeFlag(scope: ConfigScope): string {
-  return scope === 'space' ? ' --space' : ''
-}
-
-/** The one spelling of the repair that pipes a value into `secret set` in the given scope. */
-export function secretSetRemedy(key: string, scope: ConfigScope): string {
-  return `${PLATFORM_SLUG} machine config secret set ${key}${secretScopeFlag(scope)}`
-}
-
-/** The one spelling of the repair that removes a sealed value in the given scope. */
-export function secretDeleteRemedy(key: string, scope: ConfigScope): string {
-  return `${PLATFORM_SLUG} machine config secret delete ${key}${secretScopeFlag(scope)}`
-}
-
-/**
- * The one refusal for a value that would be sealed blank: it names the key, says no value was
- * sealed, and names both repairs in the scope the write would have used. A blank copy is refused
- * wherever it would enter the store, so the service and the command render the same text.
- */
-export function sealedEmptyRefusal(key: string, scope: ConfigScope): string {
-  return (
-    `refusing to seal ${key}: the value piped on stdin is empty, so no value was sealed\n` +
-    `cleared by: pipe the value on stdin to \`${secretSetRemedy(key, scope)}\`, or remove the sealed value with \`${secretDeleteRemedy(key, scope)}\``
-  )
-}
-
-export type SealedSecretSetDecision =
-  | { kind: 'seal'; value: string }
-  | { kind: 'refuse'; refusal: string }
-
-/**
- * Decide `machine config secret set` from the text piped on stdin, before anything is written.
- *
- * A blank value is the mistake `secret set` used to seal: `echo | ... secret set KEY` stored an
- * empty copy that later resolved as a present secret.
- */
-export function sealSecretDecision(
-  key: string,
-  piped: string,
-  scope: ConfigScope,
-): SealedSecretSetDecision {
-  if (!sealedValueIsEmpty(piped)) return { kind: 'seal', value: stripTrailingNewline(piped) }
-  return { kind: 'refuse', refusal: sealedEmptyRefusal(key, scope) }
-}
-
 /**
  * Seal one secret. The service owns the invariant that a sealed value is never blank, so a blank
  * value is refused here before any read or write, not only at the command that pipes stdin.
@@ -570,6 +527,7 @@ export async function setSecret(
     createDataKey?: boolean
     expectedRowVersion?: number
     missingDestinationAccessRefusal?: () => Error
+    remedy: string
   },
 ) {
   if (sealedValueIsEmpty(value)) throw new Error(sealedEmptyRefusal(key, scope))
@@ -609,7 +567,7 @@ export async function setSecret(
       rowVersion,
     },
   })
-  return client.putSecret(
+  const written = await client.putSecret(
     key,
     {
       scope,
@@ -621,6 +579,13 @@ export async function setSecret(
     },
     destination,
   )
+  await verifySecretWrite(
+    client,
+    { key, scope, environment, rowVersion, dekId: dataKey.id },
+    destination,
+    options.remedy,
+  )
+  return written
 }
 
 export async function deleteSecret(
@@ -732,7 +697,8 @@ export async function migrateLegacyEnvironmentSecrets(
     migrated?: (migration: SecretEnvironmentMigration) => Promise<void>
   } = {},
 ): Promise<SecretEnvironmentMigration[]> {
-  const initial = await client.listSecrets(HOSTED_CONFIG_ENVIRONMENT)
+  const destination = await pinnedConfigDestination(client)
+  const initial = await client.listSecrets(HOSTED_CONFIG_ENVIRONMENT, destination)
   const nonUser = initial.find(
     (row) =>
       row.scope !== 'user' &&
@@ -741,11 +707,10 @@ export async function migrateLegacyEnvironmentSecrets(
       ),
   )
   if (nonUser) throw legacySecretNamedSpaceRefusal(nonUser.key, nonUser.scope)
-  const destination = await personalConfigWriteDestination(client)
   const read = async (name: string, scope: ConfigScope): Promise<string | null> => {
     let row: ConfigSecret
     try {
-      row = await client.getSecret(name, scope, HOSTED_CONFIG_ENVIRONMENT)
+      row = await client.getSecret(name, scope, HOSTED_CONFIG_ENVIRONMENT, destination)
     } catch (error) {
       if (isNotFound(error)) return null
       throw error
@@ -766,7 +731,11 @@ export async function migrateLegacyEnvironmentSecrets(
       write: async (name, value, scope) => {
         if (scope !== 'user') throw legacySecretNamedSpaceRefusal(name, scope)
         if (adapters.write) await adapters.write(name, value, scope, client, destination)
-        else await setSecret(name, value, scope, client, { destination })
+        else
+          await setSecret(name, value, scope, client, {
+            destination,
+            remedy: secretSetRemedy(name, scope),
+          })
       },
       delete: async (name, scope) => {
         if (scope !== 'user') throw legacySecretNamedSpaceRefusal(name, scope)
@@ -786,10 +755,11 @@ export async function restoreLegacyEnvironmentSecrets(
 ): Promise<void> {
   const unsupported = migrations.find((migration) => migration.scope !== 'user')
   if (unsupported) throw legacySecretNamedSpaceRefusal(unsupported.newName, unsupported.scope)
+  const destination = await pinnedConfigDestination(client)
   const plaintext = adapters.plaintext ?? openHostedSecretRow
   const read = async (name: string, scope: ConfigScope): Promise<string | null> => {
     try {
-      const row = await client.getSecret(name, scope, HOSTED_CONFIG_ENVIRONMENT)
+      const row = await client.getSecret(name, scope, HOSTED_CONFIG_ENVIRONMENT, destination)
       return new TextDecoder('utf-8', { fatal: true }).decode(await plaintext(client, row))
     } catch (error) {
       if (isNotFound(error)) return null
@@ -812,10 +782,13 @@ export async function restoreLegacyEnvironmentSecrets(
     }
     planned.push({ oldName, newName, scope, value: newValue })
   }
-  const destination = await personalConfigWriteDestination(client)
   for (const { oldName, newName, scope, value } of planned) {
     if (adapters.write) await adapters.write(oldName, value, scope, client, destination)
-    else await setSecret(oldName, value, scope, client, { destination })
+    else
+      await setSecret(oldName, value, scope, client, {
+        destination,
+        remedy: secretSetRemedy(oldName, scope),
+      })
     if ((await read(oldName, scope)) !== value) {
       throw new Error(
         `refusing setup restore: sealed secret ${oldName} did not verify after write in ${scope} scope; re-run ${PLATFORM_SLUG} machine setup restore`,
@@ -1062,6 +1035,9 @@ export function deleteMachineEntry(key: string, env: ConfigEnvironment = process
   deleteMachineAutonomy(key, env)
 }
 
-export async function listSecrets(client = hostedConfigClient()) {
-  return client.listSecrets(HOSTED_CONFIG_ENVIRONMENT)
+export async function listSecrets(
+  client = hostedConfigClient(),
+  env: ConfigEnvironment = process.env,
+) {
+  return client.listSecrets(HOSTED_CONFIG_ENVIRONMENT, await pinnedConfigDestination(client, env))
 }

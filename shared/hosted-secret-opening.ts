@@ -1,5 +1,11 @@
 import { PLATFORM_SLUG } from './brand.ts'
-import type { ConfigClient, ConfigDestination, ConfigSecret, DataKey } from './config-client.ts'
+import type {
+  ConfigClient,
+  ConfigDestination,
+  ConfigSecret,
+  ConfigWriteDestination,
+  DataKey,
+} from './config-client.ts'
 import { type HostedConfigIdentity, readHostedConfigIdentity } from './hosted-config-space.ts'
 import {
   machineNotTrustedRemedy,
@@ -62,6 +68,14 @@ export async function hostedIdentity(
     throw new Error(pinnedSpaceMismatchRemedy(pinned.spaceId))
   if (current.user.id !== pinned.userId) throw new Error(pinnedUserMismatchRemedy(pinned.userId))
   return pinned
+}
+
+/** Name the machine's pinned space for every unflagged hosted-secret operation. */
+export async function pinnedHostedSecretDestination(
+  client: ConfigClient,
+  pinned = readHostedConfigIdentity(),
+): Promise<ConfigWriteDestination> {
+  return { destinationSpaceId: (await hostedIdentity(client, pinned)).spaceId }
 }
 
 /** Establish the signed-in user's identity for a project destination space. */

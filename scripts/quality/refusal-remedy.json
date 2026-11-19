@@ -17,7 +17,6 @@
     "orchestrator/src/commands/host-load.ts": 1,
     "orchestrator/src/commands/machine-journal.ts": 1,
     "orchestrator/src/commands/settings.ts": 1,
-    "orchestrator/src/config/config-service.ts": 1,
     "orchestrator/src/config/secret-run.ts": 1,
     "orchestrator/src/confinement/confinement-ruling.ts": 1,
     "orchestrator/src/database/agent-port-baseline-uuid-migration-preflight.ts": 1,

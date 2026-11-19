@@ -77,6 +77,24 @@ export const settingsModules: SettingsModule[] = [
     './display-timezone-cache.ts',
     './config-entry-policy.ts',
     './trust-log-revoke.ts',
+    './secret-set-policy.ts',
+    './secret-write-verification.ts',
+    './secret-write-target.ts',
+  ]),
+  module('orchestrator/src/config/secret-set-policy.ts', [
+    '../../../shared/brand.ts',
+    '../../../shared/config-client.ts',
+    '../../../shared/refusal.ts',
+    '../../../shared/sealed-value.ts',
+  ]),
+  module('orchestrator/src/config/secret-write-verification.ts', [
+    '../../../shared/config-client.ts',
+  ]),
+  module('orchestrator/src/config/secret-write-target.ts', [
+    '../../../shared/config-client.ts',
+    '../../../shared/config-directory.ts',
+    '../../../shared/hosted-config-space.ts',
+    '../../../shared/hosted-secret-opening.ts',
   ]),
   module('orchestrator/src/config/config-entry-policy.ts', [
     '../../../shared/brand.ts',
@@ -258,6 +276,8 @@ export const settingsModules: SettingsModule[] = [
     '../config/machine-trust.ts',
     '../config/named-space-config.ts',
     '../config/secret-run.ts',
+    '../config/secret-set-policy.ts',
+    '../config/secret-write-target.ts',
     '../run/run-process.ts',
     '../run/run-subscription-cost.ts',
     './support.ts',

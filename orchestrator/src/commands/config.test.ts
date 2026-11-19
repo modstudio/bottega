@@ -6,7 +6,9 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { ConfigClient } from '../../../shared/config-client.ts'
 import { ConfigEntrySchema, MachineConfigFileEntrySchema } from '../../../shared/config-contract.ts'
 import { CONFIG_HOME_ENV } from '../../../shared/config-directory.ts'
+import { writeHostedConfigIdentity } from '../../../shared/hosted-config-space.ts'
 import { setConfigEntry } from '../config/config-service.ts'
+import { secretWriteTarget } from '../config/secret-write-target.ts'
 import {
   assertConfigWriteAllowed,
   configListPresentation,
@@ -172,6 +174,31 @@ test('config writes route user scope to personal space and named scope independe
   await expect(configWriteTarget('machine config set', 'missing', client)).rejects.toThrow(
     'not a member of record space missing',
   )
+})
+
+test('an unflagged secret write uses the machine pinned space instead of personal space', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'secret-write-target-'))
+  try {
+    const pinnedSpaceId = '01990000-0000-7000-8000-000000000011'
+    const userId = '01990000-0000-7000-8000-000000000012'
+    const env = { HOME: root, [CONFIG_HOME_ENV]: join(root, 'config') }
+    writeHostedConfigIdentity({ spaceId: pinnedSpaceId, userId }, env)
+    const client = {
+      whoami: async () => ({
+        user: { id: userId },
+        activeSpaceId: pinnedSpaceId,
+        personalSpaceId: '01990000-0000-7000-8000-000000000099',
+        memberships: [],
+      }),
+    } as unknown as ConfigClient
+
+    await expect(secretWriteTarget(undefined, client, env)).resolves.toEqual({
+      scope: 'user',
+      destination: { destinationSpaceId: pinnedSpaceId },
+    })
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
 })
 
 test('a config write without a personal space names the record sign-in remedy', async () => {
