@@ -388,11 +388,13 @@ class SqliteTaskFlowStore {
   textsForFlowLineage(flowRecordId: string, stageRecordId: string): TaskFlowTextRow[] {
     return this.database
       .query<TaskFlowTextRow, [string, string]>(
-        `WITH RECURSIVE lineage(record_id,parent_flow_record_id,depth) AS (
-           SELECT record_id,parent_flow_record_id,0 FROM task_flow WHERE record_id=?
+        `WITH RECURSIVE lineage(record_id,parent_flow_record_id,depth,path) AS (
+           SELECT record_id,parent_flow_record_id,0,','||record_id||',' FROM task_flow WHERE record_id=?
            UNION ALL
-           SELECT parent.record_id,parent.parent_flow_record_id,lineage.depth+1
+           SELECT parent.record_id,parent.parent_flow_record_id,lineage.depth+1,
+                  lineage.path||parent.record_id||','
              FROM task_flow parent JOIN lineage ON parent.record_id=lineage.parent_flow_record_id
+            WHERE instr(lineage.path,','||parent.record_id||',')=0
          )
          SELECT text.record_id id,text.cursor_record_id,text.step_ordinal,text.step_slug,text.body
            FROM lineage JOIN workflow_cursor cursor ON cursor.task_flow_record_id=lineage.record_id

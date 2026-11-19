@@ -12,6 +12,7 @@ export function descendantTaskKeys(rootKey: string, tasks: readonly ParentKeyFac
   const descendants = new Set<string>()
   const visit = (key: string) => {
     for (const child of children.get(key) ?? []) {
+      if (child === rootKey || descendants.has(child)) continue
       descendants.add(child)
       visit(child)
     }
@@ -24,7 +25,7 @@ export function ancestorTaskKeys(key: string, tasks: readonly ParentKeyFact[]): 
   const byKey = new Map(tasks.map((task) => [task.key, task]))
   const ancestors: string[] = []
   let parent = byKey.get(key)?.parentKey ?? null
-  while (parent) {
+  while (parent && parent !== key && !ancestors.includes(parent)) {
     ancestors.push(parent)
     parent = byKey.get(parent)?.parentKey ?? null
   }

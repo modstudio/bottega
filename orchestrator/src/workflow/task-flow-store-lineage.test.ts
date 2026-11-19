@@ -132,3 +132,44 @@ test('flow lineage reads this stage and ancestor flows, never sibling stages', a
       (await store.textsForFlowLineage(CHILD_FLOW_ID, CHILD_STAGE_ID)).map(({ body }) => body),
     ).toEqual(['fixture text', 'child text'])
 })
+
+test('flow lineage stops at a parent cycle', async () => {
+  const d = database()
+  d.query(
+    `INSERT INTO task_flow
+     (record_id,task_record_id,project_record_id,state,open_stage_cursor_record_id,
+      parent_flow_record_id,created_at,updated_at,opening_machine_id,updated_machine_id,revision)
+     VALUES (?,NULL,?,'open',NULL,?, ?,?,?,?,1)`,
+  ).run(
+    CHILD_FLOW_ID,
+    PROJECT_ID,
+    FLOW_ID,
+    '2026-11-12T00:00:00.000Z',
+    '2026-11-12T00:00:00.000Z',
+    MACHINE_ID,
+    MACHINE_ID,
+  )
+  d.query('UPDATE task_flow SET parent_flow_record_id=? WHERE record_id=?').run(
+    CHILD_FLOW_ID,
+    FLOW_ID,
+  )
+  const root = hostedStage()
+  root.flow.parentFlowRecordId = CHILD_FLOW_ID
+  const child = hostedStage({
+    taskless: true,
+    number: 3,
+    stageId: CHILD_STAGE_ID,
+    flowId: CHILD_FLOW_ID,
+  })
+  child.flow.parentFlowRecordId = FLOW_ID
+  child.stage.stepTexts = []
+  const local = sqliteTaskFlowReadStore(d)
+  const hosted = recordTaskFlowReadStore(
+    d,
+    createMemoryRecordApiClient({ taskFlowStages: [root, child] }),
+  )
+  for (const store of [local, hosted])
+    expect(
+      (await store.textsForFlowLineage(CHILD_FLOW_ID, CHILD_STAGE_ID)).map(({ body }) => body),
+    ).toEqual(['fixture text'])
+})

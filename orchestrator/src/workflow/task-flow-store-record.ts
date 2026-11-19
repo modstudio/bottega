@@ -408,12 +408,13 @@ class RecordTaskFlowReadStore {
   }
   async textsForFlowLineage(flowRecordId: string, stageRecordId: string) {
     const lineage: HostedTaskFlow[] = []
+    const visited = new Set<string>()
     let current = await this.flow({ flowRecordId })
-    while (current) {
+    while (current && !visited.has(current.flow.id)) {
+      visited.add(current.flow.id)
       lineage.push(current)
-      current = current.flow.parentFlowRecordId
-        ? await this.flow({ flowRecordId: current.flow.parentFlowRecordId })
-        : null
+      const parent = current.flow.parentFlowRecordId
+      current = parent && !visited.has(parent) ? await this.flow({ flowRecordId: parent }) : null
     }
     return lineage.reverse().flatMap((item) =>
       [item.stage, ...(item.otherStages ?? [])]
