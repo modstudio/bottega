@@ -7,18 +7,24 @@ import { db } from '../database/db.ts'
 import {
   DEFAULT_LOCAL_PROJECT_NAME,
   DEFAULT_LOCAL_PROJECT_SETTINGS,
+  deleteProjectRegisterRow,
   defaultLocalProjectPath,
 } from '../database/project-register-store.ts'
 import { projectByName } from './project-read.ts'
 import { localProjectReferenceCounts } from './project-reference-counts.ts'
+import type { StoredProjectSettings } from './project-settings.ts'
+import {
+  type HubTaskReader,
+  readHubTasks,
+} from '../workflow/workflow-task-reference.ts'
 
 export type DefaultLocalProjectRetirementFacts = {
   projectName: string
   projectPath: string
   defaultProjectPath: string
-  projectSettings: object
-  hasSpace: boolean
+  projectSettings: StoredProjectSettings
   referenced: boolean
+  taskCount: number
 }
 
 export function shouldRetireDefaultLocalProject(
@@ -28,8 +34,8 @@ export function shouldRetireDefaultLocalProject(
     facts.projectName === DEFAULT_LOCAL_PROJECT_NAME &&
     facts.projectPath === facts.defaultProjectPath &&
     Bun.deepEquals(facts.projectSettings, DEFAULT_LOCAL_PROJECT_SETTINGS) &&
-    !facts.hasSpace &&
-    !facts.referenced
+    !facts.referenced &&
+    facts.taskCount === 0
   )
 }
 
@@ -38,28 +44,41 @@ function removeEmptyDirectory(path: string): void {
   try {
     rmdirSync(path)
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== 'ENOTEMPTY') throw error
+    if ((error as NodeJS.ErrnoException).code !== 'ENOTEMPTY') {
+      console.warn(
+        `default local project directory removal failed: ${error instanceof Error ? error.message : String(error)}`,
+      )
+    }
   }
 }
 
 export async function retireUnusedDefaultLocalProject(
   database: Database = db(),
   environment: Parameters<typeof defaultLocalProjectPath>[0] = process.env,
+  hubTaskReader: HubTaskReader = readHubTasks,
 ): Promise<boolean> {
   const project = projectByName(DEFAULT_LOCAL_PROJECT_NAME, database)
   if (!project) return false
   const counts = await localProjectReferenceCounts(database, project.recordId)
+  let taskCount: number
+  try {
+    taskCount = (await hubTaskReader(project.name)).length
+  } catch (error) {
+    console.warn(
+      `default local project task read failed; keeping project: ${error instanceof Error ? error.message : String(error)}`,
+    )
+    return false
+  }
   const shouldRetire = shouldRetireDefaultLocalProject({
     projectName: project.name,
     projectPath: project.path,
     defaultProjectPath: defaultLocalProjectPath(environment),
     projectSettings: project.settings,
-    hasSpace: Boolean(project.settings.space),
     referenced: Object.values(counts).some((count) => count > 0),
+    taskCount,
   })
   if (!shouldRetire) return false
-  const removed =
-    database.query('DELETE FROM project WHERE record_id = ?').run(project.recordId).changes > 0
+  const removed = deleteProjectRegisterRow(database, project.recordId)
   if (removed) removeEmptyDirectory(project.path)
   return removed
 }

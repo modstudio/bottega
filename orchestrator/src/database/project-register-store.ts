@@ -49,6 +49,11 @@ export function writeProjectRegisterRow(database: Database, project: ProjectRegi
     )
 }
 
+/** Delete one local project-register row by its stable identity; returns whether a row changed. */
+export function deleteProjectRegisterRow(database: Database, recordId: string): boolean {
+  return database.query('DELETE FROM project WHERE record_id = ?').run(recordId).changes > 0
+}
+
 /** Mirror a hosted row onto the local row it is linked to by record id, lifecycle included; returns rows changed. */
 export function mirrorProjectRegisterRow(
   database: Database,

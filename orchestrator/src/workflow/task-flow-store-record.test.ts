@@ -702,6 +702,17 @@ test('machine-wide hosted reads return no rows when every project lacks a space'
   expect(await store.listOpenStages({})).toEqual([])
 })
 
+test('machine-wide hosted reads skip a project whose space is whitespace only', async () => {
+  const d = database()
+  d.query('UPDATE project SET settings = ?').run(JSON.stringify({ space: '   ' }))
+  const store = recordTaskFlowReadStore(
+    d,
+    createMemoryRecordApiClient({ taskFlowStages: [hostedStage()] }),
+  )
+
+  expect(await store.listOpenStages({})).toEqual([])
+})
+
 test('a hosted read aimed at a project without a space keeps the destination refusal', async () => {
   const d = database()
   d.query('UPDATE project SET settings = ?').run('{}')

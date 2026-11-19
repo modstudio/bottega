@@ -101,7 +101,13 @@ async function completeRecordSessionCommand(
   writeRecordSessionToken(result.token)
   rememberSignedInRecordUser(result.user)
   rememberHostedRecord()
-  await retireUnusedDefaultLocalProject()
+  try {
+    await retireUnusedDefaultLocalProject()
+  } catch (error) {
+    presentation.log(
+      `default local project retirement failed: ${error instanceof Error ? error.message : String(error)}`,
+    )
+  }
   const identity = await recordMemberships()
   const active = activeSpaceInvariant(identity)
   if (!active.holds) throw new Error(active.message)

@@ -17,8 +17,10 @@ export const projectModules: ProjectModule[] = [
     'node:fs',
     '../database/db.ts',
     '../database/project-register-store.ts',
+    '../workflow/workflow-task-reference.ts',
     './project-read.ts',
     './project-reference-counts.ts',
+    './project-settings.ts',
   ]),
   module('orchestrator/src/project/branch-name.ts', []),
   module('orchestrator/src/project/project-list-json.ts', [

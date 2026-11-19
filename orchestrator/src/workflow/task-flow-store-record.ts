@@ -17,6 +17,7 @@ import { isAbsentRecordKeyedRead } from '../record/record-api-client-response.ts
 import type { RecordTaskFlowClient } from '../record/record-api-client-task-flow.ts'
 import type { RecordIdentity } from '../record/record-auth.ts'
 import { requireProjectRecordDestination } from '../record/record-project-destination-client.ts'
+import { declaredRecordSpace } from '../project/declared-record-space.ts'
 import {
   type HostedTaskFlow,
   type HostedTaskFlowStageById,
@@ -172,7 +173,7 @@ class RecordTaskFlowReadStore {
   private async allDestinations(): Promise<RecordWriteDestination[]> {
     this.everyDestination ??= Promise.all(
       projects(undefined, this.database)
-        .filter(({ settings }) => Boolean(settings.space))
+        .filter(({ settings }) => declaredRecordSpace(settings) !== null)
         .map(({ name }) => this.destination(name)),
     ).then((destinations) => [
       ...new Map(

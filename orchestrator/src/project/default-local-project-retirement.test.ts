@@ -1,5 +1,5 @@
 import type { Database } from 'bun:sqlite'
-import { afterEach, expect, test } from 'bun:test'
+import { afterEach, expect, spyOn, test } from 'bun:test'
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -10,10 +10,7 @@ import {
   writeProjectRegisterRow,
 } from '../database/project-register-store.ts'
 import { testDatabaseFixture } from '../database/test-database.fixture.ts'
-import {
-  retireUnusedDefaultLocalProject,
-  shouldRetireDefaultLocalProject,
-} from './default-local-project-retirement.ts'
+import { retireUnusedDefaultLocalProject } from './default-local-project-retirement.ts'
 import type { ProjectSettings } from './project-settings.ts'
 
 const database = testDatabaseFixture(() => {})
@@ -23,28 +20,7 @@ afterEach(() => {
   for (const path of projectDirectories.splice(0)) rmSync(path, { recursive: true, force: true })
 })
 
-const facts = {
-  projectName: 'tasks',
-  projectPath: '/state/projects/tasks',
-  defaultProjectPath: '/state/projects/tasks',
-  projectSettings: DEFAULT_LOCAL_PROJECT_SETTINGS,
-  hasSpace: false,
-  referenced: false,
-}
-
-test('only an unused space-less project with the built-in identity retires', () => {
-  expect(shouldRetireDefaultLocalProject(facts)).toBe(true)
-  expect(shouldRetireDefaultLocalProject({ ...facts, projectName: 'other' })).toBe(false)
-  expect(shouldRetireDefaultLocalProject({ ...facts, projectPath: '/user/tasks' })).toBe(false)
-  expect(
-    shouldRetireDefaultLocalProject({
-      ...facts,
-      projectSettings: { ...DEFAULT_LOCAL_PROJECT_SETTINGS, keyPrefixes: ['OTHER'] },
-    }),
-  ).toBe(false)
-  expect(shouldRetireDefaultLocalProject({ ...facts, hasSpace: true })).toBe(false)
-  expect(shouldRetireDefaultLocalProject({ ...facts, referenced: true })).toBe(false)
-})
+const noTasks = async () => []
 
 function registerDefault(
   database: Database,
@@ -69,10 +45,10 @@ test('sign-in removes an unused built-in project and its empty directory', async
   const d = database()
   const { environment, path } = registerDefault(d, 'orch-default-retire-')
 
-  expect(await retireUnusedDefaultLocalProject(d, environment)).toBe(true)
+  expect(await retireUnusedDefaultLocalProject(d, environment, noTasks)).toBe(true)
   expect(d.query("SELECT name FROM project WHERE name='tasks'").get()).toBeNull()
   expect(existsSync(path)).toBe(false)
-  expect(await retireUnusedDefaultLocalProject(d, environment)).toBe(false)
+  expect(await retireUnusedDefaultLocalProject(d, environment, noTasks)).toBe(false)
 })
 
 test('sign-in keeps a built-in project referenced by a run', async () => {
@@ -102,7 +78,7 @@ test('sign-in keeps a built-in project referenced by a run', async () => {
     'cli',
   )
 
-  expect(await retireUnusedDefaultLocalProject(d, environment)).toBe(false)
+  expect(await retireUnusedDefaultLocalProject(d, environment, noTasks)).toBe(false)
   expect(d.query("SELECT name FROM project WHERE name='tasks'").get()).toEqual({
     name: 'tasks',
   })
@@ -153,7 +129,7 @@ test('sign-in keeps a built-in project referenced by a workflow cursor', async (
     d.exec('PRAGMA foreign_keys=ON')
   }
 
-  expect(await retireUnusedDefaultLocalProject(d, environment)).toBe(false)
+  expect(await retireUnusedDefaultLocalProject(d, environment, noTasks)).toBe(false)
   expect(d.query("SELECT name FROM project WHERE name='tasks'").get()).toEqual({
     name: 'tasks',
   })
@@ -173,7 +149,7 @@ test('sign-in keeps a user project named tasks at another path', async () => {
     settings: DEFAULT_LOCAL_PROJECT_SETTINGS,
   })
 
-  expect(await retireUnusedDefaultLocalProject(d, environment)).toBe(false)
+  expect(await retireUnusedDefaultLocalProject(d, environment, noTasks)).toBe(false)
   expect(d.query("SELECT name FROM project WHERE name='tasks'").get()).toEqual({
     name: 'tasks',
   })
@@ -185,7 +161,7 @@ test('sign-in keeps the built-in project when its default settings were changed'
     settings: { ...DEFAULT_LOCAL_PROJECT_SETTINGS, keyPrefixes: ['CHANGED'] },
   })
 
-  expect(await retireUnusedDefaultLocalProject(d, environment)).toBe(false)
+  expect(await retireUnusedDefaultLocalProject(d, environment, noTasks)).toBe(false)
   expect(d.query("SELECT name FROM project WHERE name='tasks'").get()).toEqual({
     name: 'tasks',
   })
@@ -197,6 +173,45 @@ test('retirement leaves a non-empty default project directory intact', async () 
   mkdirSync(join(path, 'kept'))
   writeFileSync(join(path, 'kept', 'data'), 'unique')
 
-  expect(await retireUnusedDefaultLocalProject(d, environment)).toBe(true)
+  expect(await retireUnusedDefaultLocalProject(d, environment, noTasks)).toBe(true)
   expect(existsSync(path)).toBe(true)
+})
+
+test('sign-in keeps a built-in project that holds a task', async () => {
+  const d = database()
+  const { environment } = registerDefault(d, 'orch-default-task-')
+
+  expect(
+    await retireUnusedDefaultLocalProject(d, environment, async () => [
+      {
+        key: 'TASK-1',
+        record_id: '00000000-0000-7000-8000-000000000009',
+        project: 'tasks',
+      },
+    ]),
+  ).toBe(false)
+  expect(d.query("SELECT name FROM project WHERE name='tasks'").get()).toEqual({
+    name: 'tasks',
+  })
+})
+
+test('an unreadable task list keeps the project', async () => {
+  const d = database()
+  const { environment } = registerDefault(d, 'orch-default-task-failure-')
+  const warning = spyOn(console, 'warn').mockImplementation(() => {})
+  try {
+    expect(
+      await retireUnusedDefaultLocalProject(d, environment, async () => {
+        throw new Error('hub task store unavailable')
+      }),
+    ).toBe(false)
+    expect(warning).toHaveBeenCalledWith(
+      'default local project task read failed; keeping project: hub task store unavailable',
+    )
+  } finally {
+    warning.mockRestore()
+  }
+  expect(d.query("SELECT name FROM project WHERE name='tasks'").get()).toEqual({
+    name: 'tasks',
+  })
 })
