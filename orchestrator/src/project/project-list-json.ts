@@ -1,6 +1,7 @@
 import { declaredProjectSpace } from './declared-project-space.ts'
 import {
   isProjectRepository,
+  missingProjectLandingBranchProblem,
   type Project,
   projectLifecycleForm,
   validateProjectSettings,
@@ -24,8 +25,10 @@ export function listedProjectJson(project: Project) {
 
 export function projectProblems(project: Project): string[] {
   const declared = declaredProjectSpace(project)
+  const missingTrunk = missingProjectLandingBranchProblem(project)
   return [
     ...validateProjectSettings(project.settings, 'strip', project.path),
     ...('refused' in declared && !project.retiredAt ? [declared.refused] : []),
+    ...(missingTrunk ? [missingTrunk] : []),
   ]
 }

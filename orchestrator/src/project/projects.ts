@@ -27,16 +27,20 @@ import { existsSync, readFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
+  type GitProbeRunner,
   gitAt,
   gitToplevel,
   inspectCheckout,
   resolvedPathsEqual,
+  runGitProbe,
   type SequenceKind,
   type SequenceState,
 } from '../../../shared/git.ts'
 import { githubRepository } from '../../../shared/github-repository.ts'
 import { checkoutIsUnderProject } from '../../../shared/project-path.ts'
+import { declaredTrunk } from '../../../shared/project-trunk.ts'
 import { parseRecordSpaceMemberships } from '../../../shared/record-space-membership.ts'
+import { refusal, renderRefusal } from '../../../shared/refusal.ts'
 import { releaseTagVersion } from '../../../shared/release-tag.ts'
 import { db, nowIso, writableDb } from '../database/db.ts'
 import {
@@ -251,10 +255,35 @@ export function isProjectRepository(project: Pick<Project, 'path'>): boolean {
   return gitToplevel(project.path) !== null
 }
 
+/** Read the remote default branch once for project registration and setup discovery. */
+export function readOriginHeadBranch(
+  path: string,
+  runGit: GitProbeRunner = runGitProbe,
+): { branch: string | null; timedOut: boolean; exitCode: number } {
+  const result = runGit(path, ['symbolic-ref', '--quiet', '--short', 'refs/remotes/origin/HEAD'])
+  return {
+    branch: result.exitCode === 0 && result.stdout ? result.stdout.replace(/^origin\//, '') : null,
+    timedOut: result.timedOut,
+    exitCode: result.exitCode,
+  }
+}
+
 export function projectRepositoryRefusal(project: Pick<Project, 'name' | 'path'>): string | null {
   return isProjectRepository(project)
     ? null
     : `project ${project.name} has no repository: ${project.path} is not a git checkout`
+}
+
+export function missingProjectLandingBranchProblem(
+  project: Pick<Project, 'name' | 'path' | 'settings'>,
+): string | null {
+  if (declaredTrunk(project.settings) || !isProjectRepository(project)) return null
+  return renderRefusal(
+    refusal(`${project.name} has no landing branch`, {
+      kind: 'edit',
+      text: `${PLATFORM_SLUG} project set ${project.name} --settings '{"trunk":"<branch>"}'`,
+    }),
+  )
 }
 
 /** The stack a directory's work is in, for routing. */
@@ -701,7 +730,7 @@ export function detachedCheckoutDecision(
 
 function registerBranchRemedy(landing: string, checkoutPath: string, projectName: string): string {
   return (
-    `cleared by: check out ${landing} in ${checkoutPath} or correct it with ${PLATFORM_SLUG} project set ${projectName} ` +
+    `cleared by: ${returnMainCheckoutToTrunkCommand(checkoutPath, landing)} or correct it with ${PLATFORM_SLUG} project set ${projectName} ` +
     `--settings '{"trunk":"<branch>"}'`
   )
 }
@@ -710,10 +739,7 @@ function registerBranchRemedy(landing: string, checkoutPath: string, projectName
 export function registerBranchCheck(
   project: Pick<Project, 'name' | 'path' | 'settings'>,
 ): RegisterBranchCheck {
-  const landing =
-    typeof project.settings.trunk === 'string' && project.settings.trunk.trim()
-      ? project.settings.trunk.trim()
-      : null
+  const landing = declaredTrunk(project.settings)
   const headResult = gitAt(project.path, ['symbolic-ref', '--quiet', '--short', 'HEAD'])
   const head = headResult.code === 0 ? headResult.stdout.trim() || null : null
   const tagResult =

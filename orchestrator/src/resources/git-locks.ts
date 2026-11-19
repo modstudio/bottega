@@ -3,6 +3,8 @@ import { join, relative, resolve, sep } from 'node:path'
 import { gitAt } from '../../../shared/git.ts'
 import { observeBoundedSubprocess, pidAlive } from '../../../shared/process-identity.ts'
 
+export { shellQuote } from '../../../shared/shell-quote.ts'
+
 export type GitLock = {
   path: string
   since: string
@@ -14,11 +16,6 @@ export type GitLock = {
 }
 
 const GIT_LOCK_LSOF_TIMEOUT_MS = 10_000
-
-/** Quotes one value for display in a pasteable POSIX shell command. */
-export function shellQuote(value: string): string {
-  return `'${value.replaceAll("'", "'\\''")}'`
-}
 
 function git(cwd: string, args: string[]): string | null {
   const p = gitAt(cwd, args)

@@ -2,11 +2,14 @@
 /** Decides whether project registration adopts, creates, or refuses without performing I/O. */
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { declaredTrunk } from '../../../shared/project-trunk.ts'
 import type { RecordProject } from '../../../shared/record-project-contract.ts'
 import {
   type RecordSpaceMembership,
   recordSpaceMembership,
 } from '../../../shared/record-space-membership.ts'
+import { refusal, renderRefusal } from '../../../shared/refusal.ts'
+import { shellQuote } from '../../../shared/shell-quote.ts'
 import {
   hostedProjectColumns,
   PROJECT_SETTING_COLUMNS,
@@ -32,6 +35,64 @@ type AddProjectDecision =
 export type ProjectAddDecisionResult = {
   decision: AddProjectDecision
   targetSpace?: { id: string; label: string }
+}
+
+export type ProjectLandingBranchDecision =
+  | { kind: 'branch'; trunk: string; source: 'declared' | 'origin/HEAD' }
+  | { kind: 'untouched' }
+  | { kind: 'refuse'; reason: string }
+
+/** Decide how registration obtains a landing branch from facts gathered by its adapter. */
+export function decideProjectLandingBranch(input: {
+  path: string
+  settings: ProjectSettings
+  gitWorkTree: boolean
+  remoteDefaultBranch: { branch: string | null; timedOut: boolean; exitCode: number }
+}): ProjectLandingBranchDecision {
+  const declared = declaredTrunk(input.settings)
+  if (declared) return { kind: 'branch', trunk: declared, source: 'declared' }
+  if (!input.gitWorkTree) return { kind: 'untouched' }
+  const remote = input.remoteDefaultBranch
+  if (remote.branch) {
+    return { kind: 'branch', trunk: remote.branch, source: 'origin/HEAD' }
+  }
+  if (remote.timedOut || (remote.exitCode !== 0 && remote.exitCode !== 1)) {
+    return {
+      kind: 'refuse',
+      reason: renderRefusal(
+        refusal(
+          remote.timedOut
+            ? `project add refused: git probe of refs/remotes/origin/HEAD at ${input.path} timed out`
+            : `project add refused: git probe of refs/remotes/origin/HEAD at ${input.path} could not be read (git exited ${remote.exitCode})`,
+          {
+            kind: 'edit',
+            text: `retry, or pass --settings '{"trunk":"<branch>"}'`,
+          },
+        ),
+      ),
+    }
+  }
+  return {
+    kind: 'refuse',
+    reason: renderRefusal(
+      refusal(
+        `project add refused: cannot infer the landing branch of ${input.path}: refs/remotes/origin/HEAD is not set`,
+        {
+          kind: 'edit',
+          text: `git -C ${shellQuote(input.path)} remote set-head origin --auto, or pass --settings '{"trunk":"<branch>"}'`,
+        },
+      ),
+    ),
+  }
+}
+
+export function inferredProjectLandingBranchRegisterRefusal(condition: string): string {
+  return renderRefusal(
+    refusal(condition, {
+      kind: 'edit',
+      text: `pass --settings '{"trunk":"<branch>"}'`,
+    }),
+  )
 }
 
 function hostedSettingDiffs(requested: ProjectSettings, hosted: ProjectSettings): string[] {

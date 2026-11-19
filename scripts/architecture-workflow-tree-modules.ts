@@ -21,6 +21,7 @@ export const workflowTreeModules: WorkflowTreeModule[] = [
   ]),
   module('orchestrator/src/workflow/workflow-import-branch.ts', [
     '../../../shared/brand.ts',
+    '../../../shared/project-trunk.ts',
     '../project/projects.ts',
     '../review/review-target.ts',
     '../worktree/worktree-caller.ts',

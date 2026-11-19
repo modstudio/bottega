@@ -107,9 +107,9 @@ printf '%s\\n' "$doctor_output" | grep -F 'bubblewrap (bwrap) not installed'
 printf '%s\\n' "$doctor_output" | grep -F 'socat not installed'
 
 mkdir -p /tmp/bootstrap-bin /tmp/missing-deps-repository
-printf '%s\\n' '#!/bin/sh' 'for arg in "$@"; do case "$arg" in --local-env-vars) printf "%s\\n" GIT_DIR; exit 0 ;; --show-toplevel) printf "%s\\n" /tmp/missing-deps-repository; exit 0 ;; esac; done' 'exit 1' > /tmp/bootstrap-bin/git
+printf '%s\\n' '#!/bin/sh' 'case " $* " in *" symbolic-ref --quiet --short HEAD "*) printf "%s\\n" main; exit 0 ;; esac' 'for arg in "$@"; do case "$arg" in --local-env-vars) printf "%s\\n" GIT_DIR; exit 0 ;; --show-toplevel) printf "%s\\n" /tmp/missing-deps-repository; exit 0 ;; esac; done' 'exit 1' > /tmp/bootstrap-bin/git
 chmod 755 /tmp/bootstrap-bin/git
-PATH=/tmp/bootstrap-bin:/tmp/bin:/usr/bin:/bin ${installedBinary} project add /tmp/missing-deps-repository --name missing-deps-smoke --allow-incomplete
+PATH=/tmp/bootstrap-bin:/tmp/bin:/usr/bin:/bin ${installedBinary} project add /tmp/missing-deps-repository --name missing-deps-smoke --allow-incomplete --settings '{"trunk":"main"}'
 set +e
 probe_output=$(cd /tmp/missing-deps-repository && PATH=/tmp/bootstrap-bin:/tmp/bin:/usr/bin:/bin ${installedBinary} workflow probe -- git status --short 2>&1)
 probe_status=$?
@@ -132,6 +132,10 @@ printf '%s\\n' 'release sandbox smoke' > /tmp/probe-repository/README.md
 cp -R /workflow-tree /tmp/probe-repository/.agents
 git -C /tmp/probe-repository add README.md .agents
 git -C /tmp/probe-repository commit -m 'DEV-1123 release smoke fixture' >/dev/null
+git clone --bare /tmp/probe-repository /tmp/probe-origin.git >/dev/null
+git -C /tmp/probe-repository remote add origin /tmp/probe-origin.git
+git -C /tmp/probe-repository fetch origin
+git -C /tmp/probe-repository remote set-head origin --auto
 printf '%s\\n' '{"keyPrefixes":["DEV"],"trunk":"main","docs":{"protocol":"orch-docs"}}' > /tmp/release-smoke-settings.json
 useradd --create-home --shell /bin/sh smoke
 mkdir -p /tmp/fake-bin /tmp/mcp-state /home/smoke/.codex
@@ -140,7 +144,7 @@ chmod 755 /tmp/fake-bin/codex
 printf '%s\\n' '{}' > /home/smoke/.codex/auth.json
 : > /home/smoke/.codex/config.toml
 sqlite3 /tmp/state/orchestrator/orchestrator.db "UPDATE agent SET caps=json_set(caps, '$.replyFile', json('true')), probed_at=datetime('now'), probe_result=json_object('ok', json('true'), 'source', 'release smoke fixture') WHERE name='codex';"
-chown -R smoke:smoke /tmp/state /tmp/probe-repository /tmp/mcp-state /home/smoke/.codex
+chown -R smoke:smoke /tmp/state /tmp/probe-repository /tmp/probe-origin.git /tmp/mcp-state /home/smoke/.codex
 su -s /bin/sh smoke -c '
   set -eux
   export HOME=/home/smoke
@@ -155,7 +159,9 @@ su -s /bin/sh smoke -c '
   printf "%s\\n" "$agent_output" | grep "^codex "
   printf "%s\\n" "$agent_output" | grep "^grok "
   cd /tmp/probe-repository
-  ${installedBinary} project add /tmp/probe-repository --name release-smoke
+  project_add_output=$(${installedBinary} project add /tmp/probe-repository --name release-smoke)
+  printf "%s\\n" "$project_add_output"
+  printf "%s\\n" "$project_add_output" | grep -F "trunk main (from origin/HEAD)"
   ${installedBinary} project set release-smoke --stack git --settings "$(cat /tmp/release-smoke-settings.json)"
   ${installedBinary} workflow import --cwd /tmp/probe-repository --reason "DEV-2421 release smoke workflow"
   ${installedBinary} workflow promote-tree --cwd /tmp/probe-repository --reason "DEV-2421 release smoke workflow"

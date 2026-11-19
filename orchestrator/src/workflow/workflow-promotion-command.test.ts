@@ -62,7 +62,7 @@ test('workflow import names the registration and landing-branch remedies separat
       settings: {},
     } as never),
   ).toThrow(
-    `registered project fixture-project has no landing branch in settings.trunk; run ${PLATFORM_SLUG} project set fixture-project --settings to set trunk`,
+    `registered project fixture-project has no landing branch in settings.trunk; run ${PLATFORM_SLUG} project set fixture-project --settings '{"trunk":"<branch>"}'`,
   )
 })
 

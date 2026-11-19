@@ -36,6 +36,17 @@ import {
 import { JOBS } from '../jobs/jobs.ts'
 import { credentialLinesFromRead } from '../mcp/mcp-credential-literal.ts'
 import { readMcpConfigResult } from '../mcp/mcp-probe.ts'
+import {
+  absentTreeTeardownPlan,
+  isProjectRepository,
+  missingProjectLandingBranchProblem,
+  type Project,
+  projectByName,
+  registerBranchCheck,
+  projects as registeredProjects,
+  resolvedWorktreeTool,
+  undeclaredCommitHooks,
+} from '../project/projects.ts'
 import { activeSpaceInvariant, RECORD_SIGN_IN_REMEDY } from '../record/active-space-invariant.ts'
 import { recordApiClient } from '../record/record-api-client.ts'
 import { recordMembershipsFromIdentity } from '../record/record-space.ts'
@@ -128,6 +139,21 @@ type RegisteredCheckout = {
 type BranchInspection = { landing: string | null; problems: string[] }
 type CheckoutInspection = { branch: string | null; trunk: string; trackedModified: boolean }
 type CheckoutDecision = { holds: true } | { holds: false; message: string }
+
+function addProblem(branch: BranchInspection, problem: string | null): BranchInspection {
+  return problem ? { ...branch, problems: [problem, ...branch.problems] } : branch
+}
+
+export function doctorRegisterBranchProblems(
+  project: Pick<Project, 'name' | 'path' | 'settings'>,
+): BranchInspection {
+  return addProblem(registerBranchCheck(project), missingProjectLandingBranchProblem(project))
+}
+
+function heldWorktreesLine(explicit: number, dirty: number): string {
+  return `held worktrees ${explicit + dirty} (${dirty} dirty, ${explicit} --keep-tree)`
+}
+
 type RegisteredMainCheckoutInspection<T extends RegisteredCheckout> = {
   project: T
   branch: BranchInspection
@@ -528,8 +554,7 @@ async function reportInstallationStatus(
 }
 
 async function reportProjectAgentKeys(log: DoctorPresentation['log']): Promise<void> {
-  const { projects } = await import('../project/projects.ts')
-  const registered = projects()
+  const registered = registeredProjects()
   const metered = Object.values(AGENTS).filter(
     (agent) => agent.enabled !== false && agent.billing === 'metered' && agent.apiKeySecret?.trim(),
   )
@@ -557,8 +582,7 @@ async function reportProjectAgentKeys(log: DoctorPresentation['log']): Promise<v
 }
 
 async function reportProjectMcpCredentials(log: DoctorPresentation['log']): Promise<void> {
-  const { projects } = await import('../project/projects.ts')
-  const lines = projects().flatMap((project) =>
+  const lines = registeredProjects().flatMap((project) =>
     credentialLinesFromRead(project.name, readMcpConfigResult(project.path)),
   )
   if (!lines.length) return
@@ -962,18 +986,7 @@ export async function doctorCommand(
     if (hold.held) explicitHolds++
     else if (existsSync(held.worktree) && worktreeDirty(held.worktree).dirty) dirtyHolds++
   }
-  log(
-    `held worktrees ${explicitHolds + dirtyHolds} (${dirtyHolds} dirty, ${explicitHolds} --keep-tree)`,
-  )
-  const {
-    absentTreeTeardownPlan,
-    projectByName,
-    projects: registeredProjects,
-    isProjectRepository,
-    resolvedWorktreeTool,
-    undeclaredCommitHooks,
-    registerBranchCheck,
-  } = await import('../project/projects.ts')
+  log(heldWorktreesLine(explicitHolds, dirtyHolds))
   const { mainCheckoutFacts, mainCheckoutInvariant } = await import(
     '../project/main-checkout-invariant.ts'
   )
@@ -983,7 +996,7 @@ export async function doctorCommand(
     repositoryProjects,
     presentation,
     undeclaredCommitHooks,
-    registerBranchCheck,
+    doctorRegisterBranchProblems,
     mainCheckoutFacts,
     mainCheckoutInvariant,
   )

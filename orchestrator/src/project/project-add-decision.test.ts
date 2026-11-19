@@ -1,11 +1,111 @@
 import { describe, expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { type AddHostedProject, decideProjectAdd } from './project-add-decision.ts'
+import {
+  type AddHostedProject,
+  decideProjectAdd,
+  decideProjectLandingBranch,
+  inferredProjectLandingBranchRegisterRefusal,
+} from './project-add-decision.ts'
 
 const memberships = [
   { spaceId: 'space-a', slug: 'alpha', permission: 'write' },
   { spaceId: 'space-b', slug: 'beta', permission: 'write' },
 ]
+
+describe('decideProjectLandingBranch', () => {
+  const path = '/projects/probe'
+  const remote = (
+    branch: string | null,
+    overrides: Partial<{ timedOut: boolean; exitCode: number }> = {},
+  ) => ({ branch, timedOut: false, exitCode: branch ? 0 : 1, ...overrides })
+
+  test('a supplied landing branch wins over the remote default', () => {
+    expect(
+      decideProjectLandingBranch({
+        path,
+        settings: { trunk: 'develop' },
+        gitWorkTree: true,
+        remoteDefaultBranch: remote('main'),
+      }),
+    ).toEqual({ kind: 'branch', trunk: 'develop', source: 'declared' })
+  })
+
+  test('the remote default supplies a missing landing branch', () => {
+    expect(
+      decideProjectLandingBranch({
+        path,
+        settings: {},
+        gitWorkTree: true,
+        remoteDefaultBranch: remote('main'),
+      }),
+    ).toEqual({ kind: 'branch', trunk: 'main', source: 'origin/HEAD' })
+  })
+
+  test('a git work tree without origin HEAD is refused with the exact remedy', () => {
+    expect(
+      decideProjectLandingBranch({
+        path,
+        settings: {},
+        gitWorkTree: true,
+        remoteDefaultBranch: remote(null),
+      }),
+    ).toEqual({
+      kind: 'refuse',
+      reason:
+        `project add refused: cannot infer the landing branch of ${path}: refs/remotes/origin/HEAD is not set\n` +
+        `cleared by: git -C '${path}' remote set-head origin --auto, or pass --settings '{"trunk":"<branch>"}'`,
+    })
+  })
+
+  test('the missing origin HEAD remedy quotes a path containing a space', () => {
+    expect(
+      decideProjectLandingBranch({
+        path: '/projects/release probe',
+        settings: {},
+        gitWorkTree: true,
+        remoteDefaultBranch: remote(null),
+      }),
+    ).toEqual({
+      kind: 'refuse',
+      reason:
+        'project add refused: cannot infer the landing branch of /projects/release probe: refs/remotes/origin/HEAD is not set\n' +
+        `cleared by: git -C '/projects/release probe' remote set-head origin --auto, or pass --settings '{"trunk":"<branch>"}'`,
+    })
+  })
+
+  test('a non-git path without a landing branch is left untouched', () => {
+    expect(
+      decideProjectLandingBranch({
+        path,
+        settings: {},
+        gitWorkTree: false,
+        remoteDefaultBranch: remote(null),
+      }),
+    ).toEqual({ kind: 'untouched' })
+  })
+
+  test('a timed-out remote default probe is refused without claiming the ref is unset', () => {
+    expect(
+      decideProjectLandingBranch({
+        path,
+        settings: {},
+        gitWorkTree: true,
+        remoteDefaultBranch: remote(null, { timedOut: true, exitCode: 128 }),
+      }),
+    ).toEqual({
+      kind: 'refuse',
+      reason:
+        `project add refused: git probe of refs/remotes/origin/HEAD at ${path} timed out\n` +
+        `cleared by: retry, or pass --settings '{"trunk":"<branch>"}'`,
+    })
+  })
+
+  test('an inferred landing branch invariant names the declaration remedy', () => {
+    expect(inferredProjectLandingBranchRegisterRefusal('probe: branch invariant')).toBe(
+      `probe: branch invariant\ncleared by: pass --settings '{"trunk":"<branch>"}'`,
+    )
+  })
+})
 
 function hosted(overrides: Partial<AddHostedProject> = {}): AddHostedProject {
   return {

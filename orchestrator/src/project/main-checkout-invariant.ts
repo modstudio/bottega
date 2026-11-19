@@ -2,8 +2,8 @@
 /** Decides and gathers the branch and tracked-cleanliness invariant for a registered main checkout. */
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { shellQuote } from '../../../shared/shell-quote.ts'
 import { git } from '../git/git-environment.ts'
-import { shellQuote } from '../resources/git-locks.ts'
 
 export type MainCheckoutFacts = {
   branch: string | null

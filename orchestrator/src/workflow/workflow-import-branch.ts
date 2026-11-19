@@ -2,17 +2,18 @@
 /** Resolves the merge base required before a workflow import may write drafts. */
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { declaredTrunk } from '../../../shared/project-trunk.ts'
 import type { Project } from '../project/projects.ts'
 import { resolveReviewBase } from '../review/review-target.ts'
 import { resolveBase } from '../worktree/worktree-caller.ts'
 
 export function workflowImportBase(root: string, project: Project | null): string {
-  const trunk = project?.settings.trunk?.trim()
+  const trunk = project ? declaredTrunk(project.settings) : null
   if (!trunk) {
     throw new Error(
       project
         ? `workflow import refused: registered project ${project.name} has no landing branch in settings.trunk; ` +
-            `run ${PLATFORM_SLUG} project set ${project.name} --settings to set trunk`
+            `run ${PLATFORM_SLUG} project set ${project.name} --settings '{"trunk":"<branch>"}'`
         : "workflow import refused: no registered project owns this directory; run from a registered project's checkout",
     )
   }
