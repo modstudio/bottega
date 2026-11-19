@@ -33,10 +33,8 @@ test('a reply question is answerable while its store write remains pending', asy
 
   const recordQuestions = async () => {
     recordRunQuestionReadiness(
-      { machineId: MACHINE_ID },
-      db(),
+      { machineId: MACHINE_ID, resolvedSession: 'session-from-finished-worker' },
       runId,
-      'session-from-finished-worker',
       [{}],
     )
     await heldWrite
@@ -69,10 +67,8 @@ test('a questionless reply persists its session without changing running status'
   const runId = addRun({ agent: 'codex', job: 'implement', status: 'running' })
 
   recordRunQuestionReadiness(
-    { machineId: MACHINE_ID },
-    db(),
+    { machineId: MACHINE_ID, resolvedSession: 'session-before-terminal-row' },
     runId,
-    'session-before-terminal-row',
     [],
   )
 

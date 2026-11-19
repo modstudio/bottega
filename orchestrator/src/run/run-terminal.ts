@@ -824,13 +824,7 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
     acceptedQuestions,
   })
   ;({ status, failureKind, error } = vendorTermination.outcome)
-  acceptedQuestions = readyRunForQuestions(
-    input,
-    db(),
-    claim.id,
-    resolvedSession,
-    vendorTermination.acceptedQuestions,
-  )
+  acceptedQuestions = readyRunForQuestions(input, claim.id, vendorTermination.acceptedQuestions)
   const readerReply = isReaderJob(opts.job) ? (parsedReply as ReaderReply | null) : null
   const parsedReview =
     requestedJob.findings && output && (status === 'ok' || confinementEvent)
