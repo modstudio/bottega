@@ -10,6 +10,7 @@ import { guardHostedTables } from '../database/hosted-table-guard.ts'
 import { migratedTestDatabase } from '../database/test-database.fixture.ts'
 import type { ProjectAdoptionResult } from '../project/project-relink.ts'
 import type { RecordApiClient } from './record-api-client.ts'
+import { RecordApiRequestError } from './record-api-client-response.ts'
 import type { RecordQuestionClient } from './record-api-client-question.ts'
 import type { RecordTaskFlowClient } from './record-api-client-task-flow.ts'
 import {
@@ -891,9 +892,9 @@ test('sync archives a question held by the record with different content', async
   const created = readdirSync(directory).filter((name) => !before.has(name))
   expect(created).toHaveLength(1)
   const archived = JSON.parse(readFileSync(join(directory, created[0]!), 'utf8').trim())
-  expect(archived.table).toBe('question')
-  expect(archived.row.record_id).toBe(questionId)
-  expect(archived.row.audits).toHaveLength(1)
+  expect(archived.kind).toBe('question')
+  expect(archived.id).toBe(questionId)
+  expect(archived.payload.audits).toHaveLength(1)
 
   question(database, null, 92)
   const second = await uploadMissingWorkflowHistory(
@@ -911,7 +912,7 @@ test('sync archives a question held by the record with different content', async
   database.close()
 })
 
-test('sync stops importing after the pass-wide failure bound', async () => {
+test('sync stops importing after the question failure bound', async () => {
   const database = migratedTestDatabase()
   database.exec('PRAGMA foreign_keys=OFF')
   for (let index = 0; index < HISTORY_UPLOAD_FAILURE_BOUND + 2; index += 1)
@@ -934,7 +935,197 @@ test('sync stops importing after the pass-wide failure bound', async () => {
   expect(calls).toBe(HISTORY_UPLOAD_FAILURE_BOUND)
   expect(result.failed).toBe(HISTORY_UPLOAD_FAILURE_BOUND)
   expect(result.lines).toContain(
-    `workflow history upload stopped after ${HISTORY_UPLOAD_FAILURE_BOUND} failures; the rest waits for the next sync`,
+    `workflow history question upload stopped after ${HISTORY_UPLOAD_FAILURE_BOUND} failures; the rest waits for the next sync`,
   )
+  database.close()
+})
+
+test('sync holds an already-existing flow once and stores the converged fingerprint', async () => {
+  const database = migratedTestDatabase()
+  database.exec('PRAGMA foreign_keys=OFF')
+  const projectId = project(database, 'held-flow')
+  const flowId = flow(database, projectId)
+  stage(database, { project: 'held-flow', projectId, number: 301, state: 'done', flowId })
+  bind(database)
+  const directory = join(resolveStateRoot(process.env), 'archive', 'history-upload-conflict')
+  const before = new Set(existsSync(directory) ? readdirSync(directory) : [])
+  let imports = 0
+  const client = syncClient(
+    absentPresence,
+    async () => ({ id: newRecordId(), number: 1, revision: 1, applied: true }),
+    async () => {
+      imports += 1
+      throw new RecordApiRequestError(
+        'different flow',
+        'conflict',
+        409,
+        null,
+        false,
+        null,
+        'already-exists',
+      )
+    },
+  )
+  const first = await uploadMissingWorkflowHistory(
+    client,
+    syncDestination,
+    maintenanceHandle(database),
+  )
+  const second = await uploadMissingWorkflowHistory(
+    client,
+    syncDestination,
+    maintenanceHandle(database),
+  )
+  expect(first.failed).toBe(0)
+  expect(first.lines[0]).toContain(`1 task flows held by the record with different content`)
+  expect(second).toEqual({ failed: 0, lines: [], skipped: false })
+  expect(imports).toBe(1)
+  const created = readdirSync(directory).filter((name) => !before.has(name))
+  expect(created).toHaveLength(1)
+  const archived = JSON.parse(readFileSync(join(directory, created[0]!), 'utf8').trim())
+  expect(archived).toMatchObject({ kind: 'flow', id: flowId })
+  database.close()
+})
+
+test('sync counts stale flow refusals without holding them', async () => {
+  const database = migratedTestDatabase()
+  database.exec('PRAGMA foreign_keys=OFF')
+  const projectId = project(database, 'stale-flow')
+  const flowId = flow(database, projectId)
+  stage(database, { project: 'stale-flow', projectId, number: 302, state: 'done', flowId })
+  bind(database)
+  let imports = 0
+  const client = syncClient(
+    absentPresence,
+    async () => ({ id: newRecordId(), number: 1, revision: 1, applied: true }),
+    async () => {
+      imports += 1
+      throw new RecordApiRequestError(
+        'stale flow',
+        'conflict',
+        409,
+        null,
+        false,
+        null,
+        'stale-revision',
+      )
+    },
+  )
+  const first = await uploadMissingWorkflowHistory(
+    client,
+    syncDestination,
+    maintenanceHandle(database),
+  )
+  await uploadMissingWorkflowHistory(client, syncDestination, maintenanceHandle(database))
+  expect(first.failed).toBe(1)
+  expect(first.lines).toEqual([`workflow history task flow ${flowId} failed: stale flow`])
+  expect(imports).toBe(2)
+  database.close()
+})
+
+test('a full flow failure bound does not starve questions in a later project', async () => {
+  const database = migratedTestDatabase()
+  database.exec('PRAGMA foreign_keys=OFF')
+  const firstProject = project(database, 'a-flow-bound')
+  for (let index = 0; index < HISTORY_UPLOAD_FAILURE_BOUND + 2; index += 1) {
+    const flowId = flow(database, firstProject)
+    stage(database, {
+      project: 'a-flow-bound',
+      projectId: firstProject,
+      number: 400 + index,
+      state: 'done',
+      flowId,
+    })
+  }
+  const laterProject = project(database, 'z-question')
+  const laterFlow = flow(database, laterProject)
+  const laterStage = stage(database, {
+    project: 'z-question',
+    projectId: laterProject,
+    number: 500,
+    state: 'done',
+    flowId: laterFlow,
+  })
+  const questionId = question(database, laterStage, 500)
+  bind(database)
+  let flowImports = 0
+  const questionImports: string[] = []
+  const client = syncClient(
+    absentPresence,
+    async (input) => {
+      questionImports.push(input.question.id)
+      return { id: input.question.id, number: 500, revision: 1, applied: true }
+    },
+    async () => {
+      flowImports += 1
+      throw new Error('flow unavailable')
+    },
+  )
+  const result = await uploadMissingWorkflowHistory(
+    client,
+    syncDestination,
+    maintenanceHandle(database),
+  )
+  expect(flowImports).toBe(HISTORY_UPLOAD_FAILURE_BOUND)
+  expect(questionImports).toEqual([questionId])
+  expect(result.lines).toContain(
+    `workflow history flow upload stopped after ${HISTORY_UPLOAD_FAILURE_BOUND} failures; the rest waits for the next sync`,
+  )
+  database.close()
+})
+
+test('sign-in holds an already-existing flow and continues importing the rest', async () => {
+  const database = migratedTestDatabase()
+  database.exec('PRAGMA foreign_keys=OFF')
+  const projectId = project(database, 'sign-in-held-flow')
+  const heldFlowId = flow(database, projectId)
+  stage(database, {
+    project: 'sign-in-held-flow',
+    projectId,
+    number: 601,
+    state: 'done',
+    flowId: heldFlowId,
+  })
+  const acceptedFlowId = flow(database, projectId)
+  stage(database, {
+    project: 'sign-in-held-flow',
+    projectId,
+    number: 602,
+    state: 'done',
+    flowId: acceptedFlowId,
+  })
+  const imported: string[] = []
+  const client: ImportClient = {
+    readTaskFlowPresence: async () => ({
+      ...(await absentPresence()),
+      questionAuditIdentities: [],
+    }),
+    importQuestion: async (input) => ({
+      id: input.question.id,
+      number: 1,
+      revision: 1,
+      applied: true,
+    }),
+    importTaskFlow: async (input) => {
+      imported.push(input.flow.id)
+      if (input.flow.id === heldFlowId)
+        throw new RecordApiRequestError(
+          'different flow',
+          'conflict',
+          409,
+          null,
+          false,
+          null,
+          'already-exists',
+        )
+      return { revisions: {}, stages: [] }
+    },
+  }
+  await uploadLocalWorkflowHistory(
+    [adoption('sign-in-held-flow')],
+    { log: () => {} },
+    dependencies(database, client),
+  )
+  expect(new Set(imported)).toEqual(new Set([heldFlowId, acceptedFlowId]))
   database.close()
 })
