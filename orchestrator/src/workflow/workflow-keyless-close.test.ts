@@ -67,8 +67,12 @@ test('a keyed plan-task start renders its epic commands with the cursor key', ()
     database(),
   ).body
 
-  expect(body).toContain(`${PLATFORM_SLUG} workflow queue <child> --session <name>`)
-  expect(body).toContain(`${PLATFORM_SLUG} workflow start-child --cursor <cursor> [--task <child>]`)
+  expect(body).toContain(
+    `${PLATFORM_SLUG} workflow queue <child> --session <name> --project fixture`,
+  )
+  expect(body).toContain(
+    `${PLATFORM_SLUG} workflow start-child --cursor <cursor> --project fixture [--task <child>]`,
+  )
   expect(body).toContain(`${PLATFORM_SLUG} workflow next --cursor <cursor> --task DEV-2483`)
   expect(body).not.toContain('{{key}}')
 })

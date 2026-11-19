@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   type CloseInstructionDecision,
+  closeInstructionTaskTargetErrors,
   unsupportedCloseEvidenceFlags,
 } from './step-catalogue-close-instruction.ts'
 import type { FloorEntry } from './step-catalogue-definition.ts'
@@ -91,6 +92,23 @@ const decisionCases: Array<{
 
 test.each(decisionCases)('$name', ({ floors, body, expected }) => {
   expect(unsupportedCloseEvidenceFlags(floors, body)).toEqual(expected)
+})
+
+test('a workflow close command names the cursor task even without close vocabulary', () => {
+  expect(
+    closeInstructionTaskTargetErrors({
+      slug: 'start',
+      body: `Hand the epic back with \`${PLATFORM_SLUG} workflow next --cursor <cursor> --task <child>\`.`,
+    }),
+  ).toEqual([
+    'step "start" close instruction names task "<child>"; name the cursor task with {{key}}',
+  ])
+  expect(
+    closeInstructionTaskTargetErrors({
+      slug: 'start',
+      body: `Hand the epic back with \`${PLATFORM_SLUG} workflow next --cursor <cursor> --task {{key}}\`.`,
+    }),
+  ).toEqual([])
 })
 
 test('authored workflow steps expose every close instruction the decision cannot judge', () => {

@@ -14,6 +14,16 @@ type UnsupportedCloseEvidenceFlag = {
   acceptingFloors: FloorKind[]
 }
 
+const CURSOR_TASK_KEY_PLACEHOLDER = '{{key}}'
+const ESCAPED_CURSOR_TASK_KEY_PLACEHOLDER = CURSOR_TASK_KEY_PLACEHOLDER.replace(
+  /[.*+?^${}()|[\]\\]/g,
+  '\\$&',
+)
+const CLOSE_INSTRUCTION_TASK_TARGET = new RegExp(
+  `(?:--task(?:=|\\s+)|\\btask:)(${ESCAPED_CURSOR_TASK_KEY_PLACEHOLDER}|<[^>\\r\\n]+>|[A-Za-z0-9][A-Za-z0-9_-]*)`,
+  'g',
+)
+
 export type CloseInstructionDecision =
   | { judged: false }
   | { judged: true; findings: UnsupportedCloseEvidenceFlag[] }
@@ -50,11 +60,14 @@ function closeInstructionFlags(sentence: string): string[] {
 }
 
 function closeInstructionTaskTargets(sentence: string): string[] {
-  return [
-    ...sentence.matchAll(
-      /(?:--task(?:=|\s+)|\btask:)(\{\{key\}\}|<[^>\r\n]+>|[A-Za-z0-9][A-Za-z0-9_-]*)/g,
-    ),
-  ].map((match) => match[1]!)
+  return [...sentence.matchAll(CLOSE_INSTRUCTION_TASK_TARGET)].map((match) => match[1]!)
+}
+
+function workflowCloseCommandSentences(body: string): string[] {
+  return body
+    .split(/\n{2,}/)
+    .flatMap((paragraph) => paragraph.match(/[^.!?]*(?:[.!?](?=\s|$)|$)/g) ?? [])
+    .filter((sentence) => /\bworkflow\s+(?:next|handoff)\b/.test(sentence))
 }
 
 export function unsupportedCloseEvidenceFlags(
@@ -80,12 +93,15 @@ export function unsupportedCloseEvidenceFlags(
 export function closeInstructionTaskTargetErrors(item: Record<string, unknown>): string[] {
   if (typeof item.body !== 'string') return []
   const slug = String(item.slug ?? '')
-  return [...new Set(closingSentences(item.body).flatMap(closeInstructionTaskTargets))].flatMap(
-    (target) =>
-      target === '{{key}}'
-        ? []
-        : [
-            `step "${slug}" close instruction names task "${target}"; name the cursor task with {{key}}`,
-          ],
+  const targetSentences = [
+    ...closingSentences(item.body),
+    ...workflowCloseCommandSentences(item.body),
+  ]
+  return [...new Set(targetSentences.flatMap(closeInstructionTaskTargets))].flatMap((target) =>
+    target === CURSOR_TASK_KEY_PLACEHOLDER
+      ? []
+      : [
+          `step "${slug}" close instruction names task "${target}"; name the cursor task with ${CURSOR_TASK_KEY_PLACEHOLDER}`,
+        ],
   )
 }
