@@ -155,10 +155,11 @@ test('notices credential trust with registration before trust', () => {
     ],
   )
   const notice = plan.notices.find(({ message }) => message.includes(space))
+  const fix = notice?.fix ?? ''
 
   expect(notice).toBeDefined()
-  expect(notice!.fix.indexOf('machine config machine register')).toBeLessThan(
-    notice!.fix.indexOf('machine config machine trust'),
+  expect(fix.indexOf('machine config machine register')).toBeLessThan(
+    fix.indexOf('machine config machine trust'),
   )
 })
 
