@@ -2,10 +2,7 @@ import { fileURLToPath } from 'node:url'
 import { collectCanonLintInput } from '../src/canon/canon-files.ts'
 import type { CanonFile } from '../src/canon/canon-lint.ts'
 import { DEFAULT_PACK_BYTES } from '../src/canon/pack-budget.ts'
-import {
-  packedCanonMarkdownFromTree,
-  renderPackBudgetBreach,
-} from '../src/canon/pack-content.ts'
+import { packedCanonMarkdownFromTree, renderPackBudgetBreach } from '../src/canon/pack-content.ts'
 import { JOBS } from '../src/jobs/jobs.ts'
 
 export type TreePackBudgetFailure = {

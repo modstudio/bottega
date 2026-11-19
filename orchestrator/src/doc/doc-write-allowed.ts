@@ -8,7 +8,7 @@ import {
   type DocScope,
   docScopeHasProjectSubject,
 } from '../../../shared/docs.ts'
-import { type Refusal, refusal } from '../../../shared/refusal.ts'
+import { type Refusal, refusal, renderRefusal } from '../../../shared/refusal.ts'
 import { composeCanonRows } from '../canon/canon-hydrate.ts'
 import {
   type CanonFinding,
@@ -428,7 +428,7 @@ export function injectPackBudgetRefusal(input: {
   return renderPackBudgetBreach({
     header: `canon pack ${input.job}/${input.project} would be ${bytes} bytes; ceiling is ${input.ceiling} bytes`,
     tiers,
-    remedy: `cleared by: ${remedy}`,
+    remedy: renderRefusal(refusal('', { kind: 'edit', text: remedy })).trimStart(),
   })
 }
 
