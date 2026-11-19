@@ -425,10 +425,7 @@ function feedEntryOwned(local: Database, change: Change, ownership: Ownership): 
               'SELECT project.name FROM subject JOIN project ON project.record_id=subject.project_record_id WHERE subject.id=?',
             )
             .get(change.id)?.name
-    return (
-      project === undefined ||
-      ownership.projectSpaces.get(project) === change.space
-    )
+    return project === undefined || ownership.projectSpaces.get(project) === change.space
   }
   return true
 }

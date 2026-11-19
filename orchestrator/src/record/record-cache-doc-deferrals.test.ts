@@ -195,8 +195,12 @@ async function expectUnregisteredProjectDeferral(
   expect(db().query('SELECT 1 FROM doc WHERE record_id=?').get(fixture.referencedDocId)).toBeNull()
   expect(db().query('SELECT 1 FROM doc WHERE record_id=?').get(fixture.validDocId)).not.toBeNull()
   expect(db().query('SELECT 1 FROM lens WHERE record_id=?').get(fixture.lensId)).not.toBeNull()
-  expect(db().query('SELECT 1 FROM workflow WHERE record_id=?').get(fixture.workflowId)).not.toBeNull()
-  expect(db().query('SELECT 1 FROM port_doctrine WHERE record_id=?').get(fixture.portId)).not.toBeNull()
+  expect(
+    db().query('SELECT 1 FROM workflow WHERE record_id=?').get(fixture.workflowId),
+  ).not.toBeNull()
+  expect(
+    db().query('SELECT 1 FROM port_doctrine WHERE record_id=?').get(fixture.portId),
+  ).not.toBeNull()
 }
 
 test('an unregistered project defers its referencing doc after later keyset families run', async () => {
