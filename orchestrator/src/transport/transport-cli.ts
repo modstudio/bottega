@@ -307,7 +307,7 @@ async function cliLaunch(opts: TransportStartOpts) {
       : [bin, ...argv]
   } catch (error) {
     const launchError = error instanceof Error ? error.message : String(error)
-    const refusal = sandboxReadinessRefusal(opts, '', launchError)
+    const refusal = sandboxReadinessRefusal(opts, true, '', launchError)
     if (refusal) throw new Error(refusal, { cause: error })
     throw error
   }
@@ -317,12 +317,14 @@ async function cliLaunch(opts: TransportStartOpts) {
 
 function sandboxReadinessRefusal(
   opts: Pick<TransportStartOpts, 'srt'>,
+  turnFailed: boolean,
   stderr: string,
   launchError: string,
 ): string | null {
   const refusal = classifySandboxLaunchFailure({
     platform: process.platform,
     sandboxKind: opts.srt ? 'srt' : 'host',
+    turnFailed,
     stderr,
     launchError,
   })
@@ -335,6 +337,7 @@ function cliTurnReadingWithSandboxReadiness(input: {
   overflowed: CliStreamCapture | null
   stdout: string
   stderr: string
+  exitCode: number
 }) {
   const reading = cliTurnReading({
     overflowed: input.overflowed,
@@ -343,10 +346,11 @@ function cliTurnReadingWithSandboxReadiness(input: {
     stdout: input.stdout,
     stderr: input.stderr,
   })
+  const turnFailed = reading.reply === null && (input.exitCode !== 0 || reading.replyError !== null)
   return {
     ...reading,
     replyError:
-      sandboxReadinessRefusal(input.opts, input.stderr, reading.replyError ?? '') ??
+      sandboxReadinessRefusal(input.opts, turnFailed, input.stderr, reading.replyError ?? '') ??
       reading.replyError,
   }
 }
@@ -414,6 +418,7 @@ async function spawnCli(opts: TransportStartOpts): Promise<TransportHandle> {
           overflowed,
           stdout,
           stderr,
+          exitCode,
         })
         const usage = usageForBilling(opts.agent.billing, cliUsage(reply?.costUsd ?? null))
         const { quotaReadings, askExposure, overflow } = codexRolloutEvidence(

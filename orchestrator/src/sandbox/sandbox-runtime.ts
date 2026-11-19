@@ -225,6 +225,7 @@ function defaultProbeUserNamespaces(bwrapPath: string, shellPath: string): boole
 export type SandboxLaunchFailureFacts = {
   platform: NodeJS.Platform
   sandboxKind: 'srt' | 'host'
+  turnFailed: boolean
   stderr: string
   launchError: string
 }
@@ -235,6 +236,7 @@ export type SandboxReadinessRefusal = { kind: 'sandbox-readiness' }
 export function classifySandboxLaunchFailure(
   facts: SandboxLaunchFailureFacts,
 ): SandboxReadinessRefusal | null {
+  if (!facts.turnFailed) return null
   if (facts.platform !== 'linux' || facts.sandboxKind !== 'srt') return null
   const text = `${facts.stderr}\n${facts.launchError}`
   return /RTM_NEWADDR|setting up uid map:\s*Permission denied|Sandbox dependencies not available|bubblewrap \(bwrap\) not installed/i.test(

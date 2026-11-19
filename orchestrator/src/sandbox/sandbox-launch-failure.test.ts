@@ -1,7 +1,7 @@
 import { expect, test } from 'bun:test'
 import { classifySandboxLaunchFailure } from './sandbox-runtime.ts'
 
-const linuxSrt = { platform: 'linux', sandboxKind: 'srt' } as const
+const linuxSrtFailure = { platform: 'linux', sandboxKind: 'srt', turnFailed: true } as const
 
 test('classifies Linux srt namespace and dependency failures as readiness refusals', () => {
   for (const failure of [
@@ -10,7 +10,7 @@ test('classifies Linux srt namespace and dependency failures as readiness refusa
     { stderr: '', launchError: 'Sandbox dependencies not available: socat not installed' },
     { stderr: '', launchError: 'bubblewrap (bwrap) not installed' },
   ]) {
-    expect(classifySandboxLaunchFailure({ ...linuxSrt, ...failure })).toEqual({
+    expect(classifySandboxLaunchFailure({ ...linuxSrtFailure, ...failure })).toEqual({
       kind: 'sandbox-readiness',
     })
   }
@@ -19,7 +19,7 @@ test('classifies Linux srt namespace and dependency failures as readiness refusa
 test('does not reclassify ordinary command failures or non-srt sandboxes', () => {
   expect(
     classifySandboxLaunchFailure({
-      ...linuxSrt,
+      ...linuxSrtFailure,
       stderr: 'fatal: not a git repository',
       launchError: '',
     }),
@@ -28,7 +28,20 @@ test('does not reclassify ordinary command failures or non-srt sandboxes', () =>
     classifySandboxLaunchFailure({
       platform: 'darwin',
       sandboxKind: 'srt',
+      turnFailed: true,
       stderr: 'RTM_NEWADDR',
+      launchError: '',
+    }),
+  ).toBeNull()
+})
+
+test('does not reclassify readiness text from a successful turn', () => {
+  expect(
+    classifySandboxLaunchFailure({
+      platform: 'linux',
+      sandboxKind: 'srt',
+      turnFailed: false,
+      stderr: 'worker test fixture: bwrap: loopback: Failed RTM_NEWADDR: Operation not permitted',
       launchError: '',
     }),
   ).toBeNull()
