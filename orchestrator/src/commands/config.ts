@@ -27,7 +27,7 @@ import {
   machineRevoke,
   machineShow,
   personalConfigWriteDestination,
-  pinnedConfigDestination,
+  type pinnedConfigDestination,
   secretWriteTarget as serviceSecretWriteTarget,
   setConfigEntry,
   setSecret,
@@ -37,8 +37,7 @@ import { hostedConfigClient } from '../config/hosted-config-call-outcome.ts'
 import { trustMachine } from '../config/machine-trust.ts'
 import { machineRegister } from '../config/named-space-config.ts'
 import { parseSecretRunArgs, runNamedSecrets } from '../config/secret-run.ts'
-import { sealSecretDecision } from '../config/secret-set-policy.ts'
-import { secretSetRemedy } from '../config/secret-set-policy.ts'
+import { sealSecretDecision, secretSetRemedy } from '../config/secret-set-policy.ts'
 import { isOrchWorkerProcess, type ProcessInventory } from '../run/run-process.ts'
 import { subscriptionMonthlyUsdKey } from '../run/run-subscription-cost.ts'
 import { registerMachineJoinCommands } from './machine-join-commands.ts'

@@ -17,11 +17,7 @@ import {
   readHostedConfigIdentity,
   writeHostedConfigIdentity,
 } from '../../../shared/hosted-config-space.ts'
-import {
-  HOSTED_CONFIG_ENVIRONMENT,
-  hostedIdentity,
-  pinnedHostedSecretDestination,
-} from '../../../shared/hosted-secret-opening.ts'
+import { HOSTED_CONFIG_ENVIRONMENT, hostedIdentity } from '../../../shared/hosted-secret-opening.ts'
 import { localMachine, openHostedSecretRow } from '../../../shared/hosted-secret-row.ts'
 import {
   type ConfigHome,
@@ -94,6 +90,7 @@ import { hostedConfigClient } from './hosted-config-call-outcome.ts'
 import * as trustRefusal from './machine-trust-refusal.ts'
 import { personalConfigWriteDestination } from './personal-config-write-destination.ts'
 import { sealedEmptyRefusal, secretDeleteRemedy, secretSetRemedy } from './secret-set-policy.ts'
+import { pinnedConfigDestination } from './secret-write-target.ts'
 import { verifySecretWrite } from './secret-write-verification.ts'
 import { appendTrustLogRevoke } from './trust-log-revoke.ts'
 
@@ -101,24 +98,7 @@ async function identity(client: ConfigClient, env: ConfigEnvironment = process.e
   return hostedIdentity(client, readHostedConfigIdentity(env))
 }
 
-export async function pinnedConfigDestination(
-  client: ConfigClient,
-  env: ConfigEnvironment = process.env,
-): Promise<WriteDestination> {
-  return pinnedHostedSecretDestination(client, readHostedConfigIdentity(env))
-}
-
-/** Choose the one service-owned target policy for flagged and unflagged secret commands. */
-export async function secretWriteTarget(
-  selectedSpaceId: string | undefined,
-  client: ConfigClient,
-  env: ConfigEnvironment = process.env,
-): Promise<{ scope: ConfigScope; destination: WriteDestination }> {
-  return selectedSpaceId
-    ? { scope: 'space', destination: { destinationSpaceId: selectedSpaceId } }
-    : { scope: 'user', destination: await pinnedConfigDestination(client, env) }
-}
-
+export { pinnedConfigDestination, secretWriteTarget } from './secret-write-target.ts'
 export { personalConfigWriteDestination }
 
 async function unpinServerRevoked(client: ConfigClient, destination: ConfigDestination = {}) {

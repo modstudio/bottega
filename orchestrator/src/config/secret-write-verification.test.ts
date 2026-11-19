@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { type ConfigClient, ConfigClientError } from '../../../shared/config-client.ts'
 import {
   type ExpectedSecret,
@@ -41,9 +42,9 @@ test('write verification uses the caller repair and names a project destination'
       client,
       expected,
       { destinationSpaceId: 'space-pinned', projectId: 'project-alpha' },
-      'bottega credential set openrouter/api-key --project alpha',
+      `${PLATFORM_SLUG} credential set openrouter/api-key --project alpha`,
     ),
   ).rejects.toThrow(
-    'wrote TOKEN in project project-alpha in space space-pinned but could not read that row back from project project-alpha in space space-pinned; verify record access, then retry `bottega credential set openrouter/api-key --project alpha`',
+    `wrote TOKEN in project project-alpha in space space-pinned but could not read that row back from project project-alpha in space space-pinned; verify record access, then retry \`${PLATFORM_SLUG} credential set openrouter/api-key --project alpha\``,
   )
 })

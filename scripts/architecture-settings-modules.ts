@@ -79,6 +79,7 @@ export const settingsModules: SettingsModule[] = [
     './trust-log-revoke.ts',
     './secret-set-policy.ts',
     './secret-write-verification.ts',
+    './secret-write-target.ts',
   ]),
   module('orchestrator/src/config/secret-set-policy.ts', [
     '../../../shared/brand.ts',
@@ -88,6 +89,12 @@ export const settingsModules: SettingsModule[] = [
   ]),
   module('orchestrator/src/config/secret-write-verification.ts', [
     '../../../shared/config-client.ts',
+  ]),
+  module('orchestrator/src/config/secret-write-target.ts', [
+    '../../../shared/config-client.ts',
+    '../../../shared/config-directory.ts',
+    '../../../shared/hosted-config-space.ts',
+    '../../../shared/hosted-secret-opening.ts',
   ]),
   module('orchestrator/src/config/config-entry-policy.ts', [
     '../../../shared/brand.ts',
