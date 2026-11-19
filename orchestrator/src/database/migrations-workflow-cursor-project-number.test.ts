@@ -118,7 +118,10 @@ test('workflow cursor project-number migration preserves identities and renumber
       'task_flow',
     ] as const
     const dependentRows = new Map(
-      dependents.map((table) => [table, database.query(`SELECT * FROM ${table}`).all()]),
+      dependents.map((table) => [
+        table,
+        database.query<Record<string, unknown>, []>(`SELECT * FROM ${table}`).all(),
+      ]),
     )
     expect(applyMigrations(database)).toContain(MIGRATION)
     expect(

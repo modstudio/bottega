@@ -100,6 +100,7 @@ function flowImport(): TaskFlowIntentBody<'import'> {
       id: FLOW,
       projectId: PROJECT,
       taskId: null,
+      parentFlowRecordId: null,
       state: 'done',
       openStageRecordId: null,
       openingMachineId: MACHINE,

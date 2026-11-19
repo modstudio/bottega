@@ -123,7 +123,7 @@ test('grandchild inherits from the nearest ancestor flow when its container has 
     d,
   )
   const rootFlow = await taskFlowReadStore(d).flowForTask('task-DEV-1')
-  expect(started.parentFlowRecordId).toBe(rootFlow?.record_id)
+  expect(started.parentFlowRecordId).toBe(rootFlow!.record_id)
 })
 
 test('queued caller starts its child, closes the queue as started, and owns the task claim', async () => {
