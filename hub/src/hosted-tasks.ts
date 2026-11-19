@@ -462,7 +462,7 @@ export async function mirrorDocumentRow(
     await tx`SELECT id,space_id FROM hub_task_document WHERE id=${row.id}::uuid`,
   )[0]
   const numberHolder =
-    number === null
+    number === null || taskId === null
       ? null
       : await otherHostedTaskDocumentIdentityByNumber(tx, identity.spaceId, taskId, number, row.id)
   if (numberHolder) {
