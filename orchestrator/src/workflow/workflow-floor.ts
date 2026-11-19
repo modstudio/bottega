@@ -217,6 +217,10 @@ function artifactRefFromPointer(
     return { kind: 'pull-request', url: parsed.url ?? `#${parsed.number}` }
   if (parsed.kind === 'commit') return parsed
   if (parsed.kind === 'run') {
+    if (parsed.reference.qualifier?.kind === 'machine') {
+      const refusal = legacyMachineLabelRefusal(source)
+      if (refusal) return { error: refusal }
+    }
     const value = parsed.reference.value
     const id = value.kind === 'record-id' ? value.recordId : parsed.source
     if (parsed.explicit || parsed.reference.qualifier) return { kind: 'run', id }
