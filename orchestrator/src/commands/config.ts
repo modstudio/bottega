@@ -15,6 +15,7 @@ import {
   SHIP_TO_VALUES,
   storedShipToLevel,
 } from '../../../shared/ship-to.ts'
+import { setRemedy } from '../config/config-entry-policy.ts'
 import {
   configHome,
   deleteEntry,
@@ -30,7 +31,6 @@ import {
   setConfigEntry,
   setSecret,
 } from '../config/config-service.ts'
-import { setRemedy } from '../config/config-entry-policy.ts'
 import { refreshDisplayTimezoneCache } from '../config/display-timezone-cache.ts'
 import { hostedConfigClient } from '../config/hosted-config-call-outcome.ts'
 import { trustMachine } from '../config/machine-trust.ts'
@@ -67,11 +67,19 @@ function registerConfigSet(config: Command): void {
       if (options.machine && space !== undefined) {
         throw new Error('refusing machine config set: --machine cannot be combined with --space')
       }
-      const requestedHome = options.machine ? 'machine' : typeof space === 'string' ? 'space' : undefined
+      const requestedHome = options.machine
+        ? 'machine'
+        : typeof space === 'string'
+          ? 'space'
+          : undefined
       const home = configHome(write.key, requestedHome)
       const client = home === 'machine' ? undefined : hostedConfigClient()
       const target = client
-        ? await configWriteTarget('machine config set', space, client)
+        ? await configWriteTarget(
+            'machine config set',
+            typeof space === 'string' ? space : undefined,
+            client,
+          )
         : undefined
       const written = await setConfigEntry(
         write.key,
@@ -84,24 +92,37 @@ function registerConfigSet(config: Command): void {
         {
           destination: target?.destination,
           ...(target?.scope === 'space'
-            ? { remedy: setRemedy(write.key, 'space', target.spaceSlug).replace('<value>', write.value) }
+            ? {
+                remedy: setRemedy(write.key, 'space', target.spaceSlug).replace(
+                  '<value>',
+                  write.value,
+                ),
+              }
             : {}),
         },
       )
-      if (options.json) log(configSetPresentation(written))
-      else {
-        log(
-          `wrote ${written.row.key} to ${written.home === 'machine' ? 'machine' : `hosted ${written.home} scope`}`,
-        )
-        if (
-          written.home === 'machine' &&
-          (written.row.key.startsWith('autonomy.') || written.row.key === 'machine.global_use')
-        )
-          log(
-            `machine settings take effect at the next session start (or after \`${PLATFORM_SLUG} machine settings apply\`)`,
-          )
-      }
+      logConfigSetResult(written, Boolean(options.json))
     })
+}
+
+function logConfigSetResult(
+  written: Awaited<ReturnType<typeof setConfigEntry>>,
+  json: boolean,
+): void {
+  if (json) {
+    log(configSetPresentation(written))
+    return
+  }
+  log(
+    `wrote ${written.row.key} to ${written.home === 'machine' ? 'machine' : `hosted ${written.home} scope`}`,
+  )
+  if (
+    written.home === 'machine' &&
+    (written.row.key.startsWith('autonomy.') || written.row.key === 'machine.global_use')
+  )
+    log(
+      `machine settings take effect at the next session start (or after \`${PLATFORM_SLUG} machine settings apply\`)`,
+    )
 }
 
 function registerConfigGet(config: Command): void {
@@ -115,11 +136,7 @@ function registerConfigGet(config: Command): void {
       const { key, space } = configGetRequest(parsedKey, options.space)
       if (options.machine && space !== undefined)
         throw new Error('refusing machine config get: --machine cannot be combined with --space')
-      const requested = options.machine
-        ? 'machine'
-        : space !== undefined
-          ? 'space'
-          : undefined
+      const requested = options.machine ? 'machine' : space !== undefined ? 'space' : undefined
       const client =
         configHome(key, requested, 'get') === 'machine' ? undefined : hostedConfigClient()
       const destination = client
@@ -147,8 +164,11 @@ export function configGetRequest(
     key = space
     space = true
   }
-  space = configSpaceSelection('get', space, true, () =>
-    `${PLATFORM_SLUG} machine config get ${key ?? '<key>'} --space <slug>`,
+  space = configSpaceSelection(
+    'get',
+    space,
+    true,
+    () => `${PLATFORM_SLUG} machine config get ${key ?? '<key>'} --space <slug>`,
   )
   if (key === undefined) throw new Error("missing required argument 'key'")
   return { key, space }
@@ -415,8 +435,11 @@ function registerConfigList(config: Command): void {
     .option('--machine', 'list machine configuration values')
     .option('--json', 'write the configuration rows as JSON')
     .action(async (options) => {
-      const space = configSpaceSelection('list', options.space, true, () =>
-        `${PLATFORM_SLUG} machine config list --space <slug>`,
+      const space = configSpaceSelection(
+        'list',
+        options.space,
+        true,
+        () => `${PLATFORM_SLUG} machine config list --space <slug>`,
       )
       if (options.machine && space !== undefined)
         throw new Error('refusing machine config list: --machine cannot be combined with --space')

@@ -193,7 +193,9 @@ test('config get accepts flag-first active space and key-first active or named s
   const get = program.commands
     .find((command) => command.name() === 'config')!
     .commands.find((command) => command.name() === 'get')!
-  get.action((key, options) => parsed.push(configGetRequest(key, options.space)))
+  get.action((key, options) => {
+    parsed.push(configGetRequest(key, options.space))
+  })
 
   await program.parseAsync(['config', 'get', '--space', 'autonomy.preset'], { from: 'user' })
   await program.parseAsync(['config', 'get', 'autonomy.preset', '--space'], { from: 'user' })

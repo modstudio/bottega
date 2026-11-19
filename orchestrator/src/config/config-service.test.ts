@@ -219,7 +219,10 @@ test('invalid hosted subscription and autonomy values are refused before any wri
 
 test('named-space config set refuses success when its written row cannot be read back', async () => {
   const client = {
-    putEntry: async (key: string, input: { scope: 'space'; environment: string; value: string }) => ({
+    putEntry: async (
+      key: string,
+      input: { scope: 'space'; environment: string; value: string },
+    ) => ({
       key,
       ...input,
       rowVersion: 2,
@@ -232,10 +235,19 @@ test('named-space config set refuses success when its written row cannot be read
   const remedy = `${PLATFORM_SLUG} machine config set autonomy.preset autonomous --space other`
 
   await expect(
-    setConfigEntry('autonomy.preset', 'autonomous', 'space', undefined, client, process.env, () => client, {
-      destination: { destinationSpaceId: 'space-other' },
-      remedy,
-    }),
+    setConfigEntry(
+      'autonomy.preset',
+      'autonomous',
+      'space',
+      undefined,
+      client,
+      process.env,
+      () => client,
+      {
+        destination: { destinationSpaceId: 'space-other' },
+        remedy,
+      },
+    ),
   ).rejects.toThrow(`verify record access, then retry \`${remedy}\``)
 })
 

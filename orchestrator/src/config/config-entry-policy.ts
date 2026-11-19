@@ -8,8 +8,15 @@ import {
   DISPLAY_TIMEZONE_KEY,
   isDisplayTimezone,
   isSubscriptionPriceKey,
+  type MachineValueSource,
   validateAutonomyEntry,
 } from '../../../shared/machine-config.ts'
+
+export function machineSourceLabel(source: MachineValueSource): string {
+  if (source.kind === 'environment') return `environment ${source.name}`
+  if (source.kind === 'machine-file') return 'machine.toml'
+  return 'default'
+}
 
 function acceptedHomes(key: string): readonly ConfigHome[] {
   const homes = configHomes(key)
@@ -25,11 +32,7 @@ function homeLabel(home: ConfigHome): string {
 
 export function setRemedy(key: string, home: ConfigHome, spaceSlug?: string): string {
   const flag =
-    home === 'machine'
-      ? ' --machine'
-      : home === 'space'
-        ? ` --space ${spaceSlug ?? '<slug>'}`
-        : ''
+    home === 'machine' ? ' --machine' : home === 'space' ? ` --space ${spaceSlug ?? '<slug>'}` : ''
   return `${PLATFORM_SLUG} machine config set ${key} <value>${flag}`
 }
 
