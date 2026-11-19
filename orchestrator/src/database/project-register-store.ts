@@ -16,6 +16,12 @@ export const DEFAULT_LOCAL_PROJECT_SETTINGS: ProjectSettings = {
   keyPrefixes: [DEFAULT_LOCAL_PROJECT_PREFIX],
 }
 
+export function defaultLocalProjectPath(
+  environment: StateEnvironment = process.env,
+): string {
+  return join(resolveStateRoot(environment), 'projects', DEFAULT_LOCAL_PROJECT_DIRECTORY)
+}
+
 export type ProjectRegisterWrite = {
   recordId: string
   name: string
@@ -73,7 +79,7 @@ export function initializeDefaultLocalProject(
     .query('SELECT 1 FROM project WHERE name = ?')
     .get(DEFAULT_LOCAL_PROJECT_NAME)
   if (exists) return
-  const path = join(resolveStateRoot(environment), 'projects', DEFAULT_LOCAL_PROJECT_DIRECTORY)
+  const path = defaultLocalProjectPath(environment)
   mkdirSync(path, { recursive: true })
   writeProjectRegisterRow(database, {
     recordId: newRecordId(),

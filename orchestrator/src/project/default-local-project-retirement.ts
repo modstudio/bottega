@@ -1,16 +1,24 @@
 // concern: default local project retirement
-/** Removes the unused local-only project when an install first binds to a hosted record. */
+/** Removes the unused built-in local-only project after an install binds to a hosted record. */
 
 import type { Database } from 'bun:sqlite'
 import { existsSync, readdirSync, rmdirSync } from 'node:fs'
+import type { StateEnvironment } from '../../../shared/state-directory.ts'
 import { db } from '../database/db.ts'
-import { DEFAULT_LOCAL_PROJECT_NAME } from '../database/project-register-store.ts'
+import {
+  DEFAULT_LOCAL_PROJECT_NAME,
+  DEFAULT_LOCAL_PROJECT_SETTINGS,
+  defaultLocalProjectPath,
+} from '../database/project-register-store.ts'
 import { projectByName } from './project-read.ts'
 import { localProjectReferenceCounts } from './project-reference-counts.ts'
+import { stableSettingsJson, type StoredProjectSettings } from './project-settings.ts'
 
 export type DefaultLocalProjectRetirementFacts = {
-  alreadyBound: boolean
   projectName: string
+  projectPath: string
+  defaultProjectPath: string
+  projectSettings: StoredProjectSettings
   hasSpace: boolean
   referenced: boolean
 }
@@ -19,8 +27,10 @@ export function shouldRetireDefaultLocalProject(
   facts: DefaultLocalProjectRetirementFacts,
 ): boolean {
   return (
-    !facts.alreadyBound &&
     facts.projectName === DEFAULT_LOCAL_PROJECT_NAME &&
+    facts.projectPath === facts.defaultProjectPath &&
+    stableSettingsJson(facts.projectSettings) ===
+      stableSettingsJson(DEFAULT_LOCAL_PROJECT_SETTINGS) &&
     !facts.hasSpace &&
     !facts.referenced
   )
@@ -35,17 +45,18 @@ function removeEmptyDirectory(path: string): void {
   }
 }
 
-export async function retireUnusedDefaultLocalProjectAtFirstBinding(
-  alreadyBound: boolean,
+export async function retireUnusedDefaultLocalProject(
   database: Database = db(),
+  environment: StateEnvironment = process.env,
 ): Promise<boolean> {
-  if (alreadyBound) return false
   const project = projectByName(DEFAULT_LOCAL_PROJECT_NAME, database)
   if (!project) return false
   const counts = await localProjectReferenceCounts(database, project.recordId)
   const shouldRetire = shouldRetireDefaultLocalProject({
-    alreadyBound,
     projectName: project.name,
+    projectPath: project.path,
+    defaultProjectPath: defaultLocalProjectPath(environment),
+    projectSettings: project.settings,
     hasSpace: Boolean(project.settings.space),
     referenced: Object.values(counts).some((count) => count > 0),
   })

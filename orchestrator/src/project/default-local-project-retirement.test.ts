@@ -3,12 +3,18 @@ import { afterEach, expect, test } from 'bun:test'
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { writeProjectRegisterRow } from '../database/project-register-store.ts'
+import type { StateEnvironment } from '../../../shared/state-directory.ts'
+import {
+  DEFAULT_LOCAL_PROJECT_SETTINGS,
+  defaultLocalProjectPath,
+  writeProjectRegisterRow,
+} from '../database/project-register-store.ts'
 import { testDatabaseFixture } from '../database/test-database.fixture.ts'
 import {
-  retireUnusedDefaultLocalProjectAtFirstBinding,
+  retireUnusedDefaultLocalProject,
   shouldRetireDefaultLocalProject,
 } from './default-local-project-retirement.ts'
+import type { ProjectSettings } from './project-settings.ts'
 
 const database = testDatabaseFixture(() => {})
 const projectDirectories: string[] = []
@@ -18,44 +24,60 @@ afterEach(() => {
 })
 
 const facts = {
-  alreadyBound: false,
   projectName: 'tasks',
+  projectPath: '/state/projects/tasks',
+  defaultProjectPath: '/state/projects/tasks',
+  projectSettings: DEFAULT_LOCAL_PROJECT_SETTINGS,
   hasSpace: false,
   referenced: false,
 }
 
-test('only an unused space-less default project retires at first binding', () => {
+test('only an unused space-less project with the built-in identity retires', () => {
   expect(shouldRetireDefaultLocalProject(facts)).toBe(true)
-  expect(shouldRetireDefaultLocalProject({ ...facts, alreadyBound: true })).toBe(false)
   expect(shouldRetireDefaultLocalProject({ ...facts, projectName: 'other' })).toBe(false)
+  expect(shouldRetireDefaultLocalProject({ ...facts, projectPath: '/user/tasks' })).toBe(false)
+  expect(
+    shouldRetireDefaultLocalProject({
+      ...facts,
+      projectSettings: { ...DEFAULT_LOCAL_PROJECT_SETTINGS, keyPrefixes: ['OTHER'] },
+    }),
+  ).toBe(false)
   expect(shouldRetireDefaultLocalProject({ ...facts, hasSpace: true })).toBe(false)
   expect(shouldRetireDefaultLocalProject({ ...facts, referenced: true })).toBe(false)
 })
 
-function registerDefault(database: Database, path: string, settings: object = {}): void {
-  projectDirectories.push(path)
+function registerDefault(
+  database: Database,
+  prefix: string,
+  options: { path?: string; settings?: ProjectSettings } = {},
+): { environment: StateEnvironment; path: string; root: string } {
+  const root = mkdtempSync(join(tmpdir(), prefix))
+  const environment = { BOTTEGA_STATE_HOME: root }
+  const path = options.path ?? defaultLocalProjectPath(environment)
+  mkdirSync(path, { recursive: true })
+  projectDirectories.push(root)
   writeProjectRegisterRow(database, {
     recordId: '00000000-0000-7000-8000-000000000001',
     name: 'tasks',
     path,
-    settings,
+    settings: options.settings ?? DEFAULT_LOCAL_PROJECT_SETTINGS,
   })
+  return { environment, path, root }
 }
 
-test('first binding removes an unused space-less default project and its empty directory', async () => {
+test('sign-in removes an unused built-in project and its empty directory', async () => {
   const d = database()
-  const path = mkdtempSync(join(tmpdir(), 'orch-default-retire-'))
-  registerDefault(d, path)
+  const { environment, path } = registerDefault(d, 'orch-default-retire-')
 
-  expect(await retireUnusedDefaultLocalProjectAtFirstBinding(false, d)).toBe(true)
+  expect(await retireUnusedDefaultLocalProject(d, environment)).toBe(true)
   expect(d.query("SELECT name FROM project WHERE name='tasks'").get()).toBeNull()
   expect(existsSync(path)).toBe(false)
+  expect(await retireUnusedDefaultLocalProject(d, environment)).toBe(false)
 })
 
-test('first binding keeps a default project referenced by a run', async () => {
+test('sign-in keeps a built-in project referenced by a run', async () => {
   const d = database()
-  const path = mkdtempSync(join(tmpdir(), 'orch-default-used-'))
-  registerDefault(d, path)
+  const { environment, path } = registerDefault(d, 'orch-default-used-')
   d.query(
     `INSERT INTO run
        (record_id,number,started_at,agent,job,repo,cwd,project_record_id,prompt_sha,prompt_bytes,
@@ -80,16 +102,15 @@ test('first binding keeps a default project referenced by a run', async () => {
     'cli',
   )
 
-  expect(await retireUnusedDefaultLocalProjectAtFirstBinding(false, d)).toBe(false)
+  expect(await retireUnusedDefaultLocalProject(d, environment)).toBe(false)
   expect(d.query("SELECT name FROM project WHERE name='tasks'").get()).toEqual({
     name: 'tasks',
   })
 })
 
-test('first binding keeps a default project referenced by a workflow cursor', async () => {
+test('sign-in keeps a built-in project referenced by a workflow cursor', async () => {
   const d = database()
-  const path = mkdtempSync(join(tmpdir(), 'orch-default-cursor-'))
-  registerDefault(d, path)
+  const { environment, path } = registerDefault(d, 'orch-default-cursor-')
   d.exec('PRAGMA foreign_keys=OFF')
   try {
     d.query(
@@ -132,18 +153,39 @@ test('first binding keeps a default project referenced by a workflow cursor', as
     d.exec('PRAGMA foreign_keys=ON')
   }
 
-  expect(await retireUnusedDefaultLocalProjectAtFirstBinding(false, d)).toBe(false)
+  expect(await retireUnusedDefaultLocalProject(d, environment)).toBe(false)
   expect(d.query("SELECT name FROM project WHERE name='tasks'").get()).toEqual({
     name: 'tasks',
   })
 })
 
-test('an already-bound store leaves the default project untouched', async () => {
+test('sign-in keeps a user project named tasks at another path', async () => {
   const d = database()
-  const path = mkdtempSync(join(tmpdir(), 'orch-default-bound-'))
-  registerDefault(d, path)
+  const root = mkdtempSync(join(tmpdir(), 'orch-default-user-path-'))
+  projectDirectories.push(root)
+  const environment = { BOTTEGA_STATE_HOME: root }
+  const path = join(root, 'user-checkout')
+  mkdirSync(path)
+  writeProjectRegisterRow(d, {
+    recordId: '00000000-0000-7000-8000-000000000001',
+    name: 'tasks',
+    path,
+    settings: DEFAULT_LOCAL_PROJECT_SETTINGS,
+  })
 
-  expect(await retireUnusedDefaultLocalProjectAtFirstBinding(true, d)).toBe(false)
+  expect(await retireUnusedDefaultLocalProject(d, environment)).toBe(false)
+  expect(d.query("SELECT name FROM project WHERE name='tasks'").get()).toEqual({
+    name: 'tasks',
+  })
+})
+
+test('sign-in keeps the built-in project when its default settings were changed', async () => {
+  const d = database()
+  const { environment } = registerDefault(d, 'orch-default-changed-', {
+    settings: { ...DEFAULT_LOCAL_PROJECT_SETTINGS, keyPrefixes: ['CHANGED'] },
+  })
+
+  expect(await retireUnusedDefaultLocalProject(d, environment)).toBe(false)
   expect(d.query("SELECT name FROM project WHERE name='tasks'").get()).toEqual({
     name: 'tasks',
   })
@@ -151,11 +193,10 @@ test('an already-bound store leaves the default project untouched', async () => 
 
 test('retirement leaves a non-empty default project directory intact', async () => {
   const d = database()
-  const path = mkdtempSync(join(tmpdir(), 'orch-default-nonempty-'))
+  const { environment, path } = registerDefault(d, 'orch-default-nonempty-')
   mkdirSync(join(path, 'kept'))
   writeFileSync(join(path, 'kept', 'data'), 'unique')
-  registerDefault(d, path)
 
-  expect(await retireUnusedDefaultLocalProjectAtFirstBinding(false, d)).toBe(true)
+  expect(await retireUnusedDefaultLocalProject(d, environment)).toBe(true)
   expect(existsSync(path)).toBe(true)
 })
