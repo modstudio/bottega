@@ -332,6 +332,9 @@ jobs:
       - name: Install
         if: github.event_name == 'merge_group' || github.event_name == 'workflow_dispatch'
         run: bun install
+      - name: Allow unprivileged user namespaces for the sandbox
+        if: github.event_name == 'merge_group' || github.event_name == 'workflow_dispatch'
+        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
       - name: Run release smoke
         if: github.event_name == 'merge_group' || github.event_name == 'workflow_dispatch'
         run: bun scripts/smoke-release.ts
