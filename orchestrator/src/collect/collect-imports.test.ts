@@ -19,6 +19,7 @@ const DEGRADED_COLLECTION_GRAPH = [
   '../../../shared/process-identity.ts',
   '../../../shared/question-vocabulary.ts',
   '../../../shared/record-id.ts',
+  '../../../shared/reference-refusal.ts',
   '../../../shared/reference.ts',
   '../../../shared/secret-shaped.ts',
   '../../../shared/self-spawn.ts',
