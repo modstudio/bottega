@@ -1,10 +1,15 @@
 import type { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
-import { mkdtempSync, readFileSync, readdirSync } from 'node:fs'
+import { mkdtempSync, readdirSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
+import {
+  HOSTED_ROW_TABLES,
+  type HostedRowIds,
+  type HostedRowReferences,
+} from '../record/record-hosted-row-presence.ts'
 import {
   decideHostedRowRelease,
   HOSTED_ROW_RELEASE_ARCHIVE_KEEP,
@@ -13,11 +18,6 @@ import {
 } from './hosted-row-release.ts'
 import { HOSTED_TABLES_WITHOUT_LOCAL_ACCESS } from './hosted-table-guard.ts'
 import { migratedTestDatabase } from './test-database.fixture.ts'
-import {
-  HOSTED_ROW_TABLES,
-  type HostedRowIds,
-  type HostedRowReferences,
-} from '../record/record-hosted-row-presence.ts'
 
 function rowIds(
   values: Partial<Record<(typeof HOSTED_ROW_TABLES)[number], string[]>>,
@@ -343,7 +343,13 @@ test('hosted row release archives exactly the rows it deletes before removing th
   const archived = readFileSync(archive, 'utf8')
     .trim()
     .split('\n')
-    .map((line) => JSON.parse(line) as { table: (typeof HOSTED_ROW_TABLES)[number]; row: { record_id: string } })
+    .map(
+      (line) =>
+        JSON.parse(line) as {
+          table: (typeof HOSTED_ROW_TABLES)[number]
+          row: { record_id: string }
+        },
+    )
   expect(
     Object.fromEntries(
       HOSTED_ROW_TABLES.map((table) => [
@@ -383,10 +389,10 @@ test('a failing hosted row release archive writer leaves every row in place', as
 test('hosted row release archive retention keeps only the newest files', () => {
   const directory = mkdtempSync(join(tmpdir(), 'hosted-row-release-retention-'))
   for (let day = 1; day <= HOSTED_ROW_RELEASE_ARCHIVE_KEEP + 2; day++)
-    writeHostedRowReleaseArchive(
-      [{ table: 'question', row: { record_id: String(day) } }],
-      { directory, now: new Date(`2026-11-${String(day).padStart(2, '0')}T00:00:00.000Z`) },
-    )
+    writeHostedRowReleaseArchive([{ table: 'question', row: { record_id: String(day) } }], {
+      directory,
+      now: new Date(`2026-11-${String(day).padStart(2, '0')}T00:00:00.000Z`),
+    })
   const archives = readdirSync(directory)
   expect(archives).toHaveLength(HOSTED_ROW_RELEASE_ARCHIVE_KEEP)
   expect(archives[0]).toContain('2026-11-03')

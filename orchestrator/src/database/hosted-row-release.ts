@@ -138,12 +138,32 @@ export function writeHostedRowReleaseArchive(
 
 function rowsToArchive(database: Database, ids: HostedRowIds): ArchivedHostedRow[] {
   const rows: ArchivedHostedRow[] = []
+  const statements = {
+    workflow_obligation: database.query<Record<string, unknown>, [string]>(
+      'SELECT * FROM workflow_obligation WHERE record_id=?',
+    ),
+    workflow_step_text: database.query<Record<string, unknown>, [string]>(
+      'SELECT * FROM workflow_step_text WHERE record_id=?',
+    ),
+    workflow_text_copy: database.query<Record<string, unknown>, [string]>(
+      'SELECT * FROM workflow_text_copy WHERE record_id=?',
+    ),
+    question_mutation_audit: database.query<Record<string, unknown>, [string]>(
+      'SELECT * FROM question_mutation_audit WHERE record_id=?',
+    ),
+    question: database.query<Record<string, unknown>, [string]>(
+      'SELECT * FROM question WHERE record_id=?',
+    ),
+    workflow_cursor: database.query<Record<string, unknown>, [string]>(
+      'SELECT * FROM workflow_cursor WHERE record_id=?',
+    ),
+    task_flow: database.query<Record<string, unknown>, [string]>(
+      'SELECT * FROM task_flow WHERE record_id=?',
+    ),
+  }
   for (const table of HOSTED_ROW_TABLES) {
-    const read = database.query<Record<string, unknown>, [string]>(
-      `SELECT * FROM ${table} WHERE record_id=?`,
-    )
     for (const id of ids[table]) {
-      const row = read.get(id)
+      const row = statements[table].get(id)
       if (row) rows.push({ table, row })
     }
   }
@@ -203,7 +223,9 @@ export async function releaseHostedRowsAfterUpdate(
       )
     } catch (cause) {
       const detail = cause instanceof Error ? cause.message : String(cause)
-      presentation.log(`kept all releasable local workflow history: archive write failed: ${detail}`)
+      presentation.log(
+        `kept all releasable local workflow history: archive write failed: ${detail}`,
+      )
       return
     }
   }

@@ -63,7 +63,7 @@ export const HOSTED_LOCAL_SQL_ALLOWED_FILES = [
   {
     pattern: /^orchestrator\/src\/database\/hosted-row-release\.ts$/,
     reason: 'Verifies and releases local copies on the migration-step handle',
-    expectedSites: 8,
+    expectedSites: 15,
   },
   {
     pattern: /^orchestrator\/src\/record\/(?:record-board-claims|record-projects|record-sync)\.ts$/,
@@ -79,7 +79,7 @@ export const HOSTED_LOCAL_SQL_ALLOWED_FILES = [
     pattern: /^orchestrator\/src\/record\/record-history-upload\.ts$/,
     reason:
       'History upload local hosted-table SQL requires the owned maintenance handle before hosted release',
-    expectedSites: 6,
+    expectedSites: 13,
   },
   {
     pattern: /^orchestrator\/src\/record\/record-hosted-row-presence\.ts$/,

@@ -12,7 +12,10 @@ export const databaseModules: ArchitectureModule[] = [
   module('orchestrator/src/database/hosted-table-guard.ts', ['bun:sqlite']),
   module('orchestrator/src/database/hosted-row-release.ts', [
     'bun:sqlite',
+    'node:fs',
+    'node:path',
     '../../../shared/brand.ts',
+    '../../../shared/state-directory.ts',
     '../record/install-binding.ts',
     '../record/record-api-client.ts',
     '../record/record-hosted-row-presence.ts',

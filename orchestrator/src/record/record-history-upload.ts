@@ -29,7 +29,7 @@ type FlowImport = TaskFlowIntentInput<'import'>
 type FlowImportWithNumbers = { payload: FlowImport; numbers: Map<string, number> }
 type LocalQuestionHistory = ReturnType<typeof localQuestionHistory>
 
-export const WORKFLOW_HISTORY_UPLOAD_FINGERPRINT_KEY = 'record_workflow_history_upload_fingerprint'
+const WORKFLOW_HISTORY_UPLOAD_FINGERPRINT_KEY = 'record_workflow_history_upload_fingerprint'
 export type HistoryUploadFingerprint = ReadonlyArray<{
   table: string
   count: number
@@ -66,22 +66,67 @@ export function decideHistoryUploadPass(input: {
 }
 
 function historyUploadFingerprint(database: Database): HistoryUploadFingerprint {
-  return [
-    'workflow_obligation',
-    'workflow_step_text',
-    'workflow_text_copy',
-    'question_mutation_audit',
-    'question',
-    'workflow_cursor',
-    'task_flow',
-  ].map((table) => {
-    const row = database
-      .query<{ count: number; maxRowid: number | null }, []>(
-        `SELECT count(*) count,max(rowid) maxRowid FROM ${table}`,
-      )
-      .get()!
+  const result = (table: string, row: { count: number; maxRowid: number | null }) => {
     return { table, count: row.count, maxRowid: row.maxRowid ?? 0 }
-  })
+  }
+  return [
+    result(
+      'workflow_obligation',
+      database
+        .query<{ count: number; maxRowid: number | null }, []>(
+          'SELECT count(*) count,max(rowid) maxRowid FROM workflow_obligation',
+        )
+        .get()!,
+    ),
+    result(
+      'workflow_step_text',
+      database
+        .query<{ count: number; maxRowid: number | null }, []>(
+          'SELECT count(*) count,max(rowid) maxRowid FROM workflow_step_text',
+        )
+        .get()!,
+    ),
+    result(
+      'workflow_text_copy',
+      database
+        .query<{ count: number; maxRowid: number | null }, []>(
+          'SELECT count(*) count,max(rowid) maxRowid FROM workflow_text_copy',
+        )
+        .get()!,
+    ),
+    result(
+      'question_mutation_audit',
+      database
+        .query<{ count: number; maxRowid: number | null }, []>(
+          'SELECT count(*) count,max(rowid) maxRowid FROM question_mutation_audit',
+        )
+        .get()!,
+    ),
+    result(
+      'question',
+      database
+        .query<{ count: number; maxRowid: number | null }, []>(
+          'SELECT count(*) count,max(rowid) maxRowid FROM question',
+        )
+        .get()!,
+    ),
+    result(
+      'workflow_cursor',
+      database
+        .query<{ count: number; maxRowid: number | null }, []>(
+          'SELECT count(*) count,max(rowid) maxRowid FROM workflow_cursor',
+        )
+        .get()!,
+    ),
+    result(
+      'task_flow',
+      database
+        .query<{ count: number; maxRowid: number | null }, []>(
+          'SELECT count(*) count,max(rowid) maxRowid FROM task_flow',
+        )
+        .get()!,
+    ),
+  ]
 }
 
 function storedHistoryUploadFingerprint(database: Database): HistoryUploadFingerprint | null {

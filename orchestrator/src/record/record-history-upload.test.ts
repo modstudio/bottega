@@ -9,12 +9,12 @@ import type { ProjectAdoptionResult } from '../project/project-relink.ts'
 import type { RecordApiClient } from './record-api-client.ts'
 import type { RecordQuestionClient } from './record-api-client-question.ts'
 import type { RecordTaskFlowClient } from './record-api-client-task-flow.ts'
-import { syncRecord } from './record-sync.ts'
 import {
   decideHistoryUploadPass,
   uploadLocalWorkflowHistory,
   uploadMissingWorkflowHistory,
 } from './record-history-upload.ts'
+import { syncRecord } from './record-sync.ts'
 
 const at = '2026-11-18T01:00:00.000Z'
 
@@ -508,8 +508,10 @@ const absentPresence = async () => ({
   flowIds: [],
 })
 
-const maintenanceHandle = (database: Database) =>
-  async <T>(action: (value: Database) => Promise<T>) => action(database)
+const maintenanceHandle =
+  (database: Database) =>
+  async <T>(action: (value: Database) => Promise<T>) =>
+    action(database)
 
 test('history upload pass skips only an unchanged stored fingerprint', () => {
   const current = [{ table: 'question', count: 1, maxRowid: 2 }]
@@ -604,7 +606,8 @@ test('sync history makes no import calls when every local id is present', async 
   expect(presenceReads).toBe(1)
   expect(imports).toBe(0)
   const stageId = database
-    .query<{ record_id: string }, []>('SELECT record_id FROM workflow_cursor').get()!.record_id
+    .query<{ record_id: string }, []>('SELECT record_id FROM workflow_cursor')
+    .get()!.record_id
   question(database, stageId, 2)
   await uploadMissingWorkflowHistory(client, syncDestination, maintenanceHandle(database))
   expect(presenceReads).toBe(2)
@@ -735,7 +738,9 @@ test('sync uses the maintenance handle for bound hosted history instead of its g
   const base = syncOptions(guardHostedTables(database), fakePostgres())
   const client = {
     ...base.client,
-    readTaskFlowPresence: async (input: Parameters<NonNullable<RecordApiClient['readTaskFlowPresence']>>[0]) => {
+    readTaskFlowPresence: async (
+      input: Parameters<NonNullable<RecordApiClient['readTaskFlowPresence']>>[0],
+    ) => {
       presenceReads += 1
       return input
     },
