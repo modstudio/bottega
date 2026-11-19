@@ -1,11 +1,11 @@
 // concern: run dispatch rulings
 /** Resolves and renders the task rulings inherited by a dispatched run. */
 
+import { recordRunWarning } from '../events.ts'
 import {
   type CarriedAttachmentSource,
   resolveCarriedAttachments,
 } from './run-carried-attachments.ts'
-import { recordRunWarning } from '../events.ts'
 import { inheritedRunLinks } from './run-claim-inheritance.ts'
 import { admitNewRunReference } from './run-task-reference.ts'
 import { initialRunTaskText } from './run-task-text.ts'

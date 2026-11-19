@@ -85,10 +85,7 @@ import { closeRun } from './run-close.ts'
 import { acquireRunCloseOutLeaseHandle } from './run-close-out-lease-handle.ts'
 import * as runConfinement from './run-confinement.ts'
 import { runDispatchPrompt } from './run-dispatch-prompt.ts'
-import {
-  prepareRunDispatchRulings,
-  recordDispatchAttachmentWarnings,
-} from './run-dispatch-rulings.ts'
+import * as dispatchRulings from './run-dispatch-rulings.ts'
 import { runEvidence } from './run-evidence-context.ts'
 import { HARNESS_AGENT, intendedExecutor } from './run-executor.ts'
 import { assertConfiguredGitGuard, workerGitConfigEnvironment } from './run-git-guard.ts'
@@ -322,7 +319,7 @@ export async function run(
       })
     }
   }
-  const dispatchRulings = await prepareRunDispatchRulings({
+  const preparedRulings = await dispatchRulings.prepareRunDispatchRulings({
     firstTurn: resume.isFirstTurn,
     workspaceSource: resume.workspaceSource,
     parentRunRecordId: opts.resume?.parent ?? null,
@@ -348,9 +345,9 @@ export async function run(
         : NO_REPO_PREAMBLE,
     infrastructure: infra,
     operatorKnowledge: operatorKnowledgeSection(pack ?? null),
-    taskRulings: dispatchRulings.section,
-    taskText: dispatchRulings.taskText,
-    carriedAttachments: dispatchRulings.carriedAttachments,
+    taskRulings: preparedRulings.section,
+    taskText: preparedRulings.taskText,
+    carriedAttachments: preparedRulings.carriedAttachments,
   })
   prompt = bindReviewInstructions({
     prompt,
@@ -538,10 +535,10 @@ export async function run(
     usingMcp,
     startedByUserId,
     replySchemaName,
-    carriedQuestionIds: dispatchRulings.questionIds,
+    carriedQuestionIds: preparedRulings.questionIds,
     endpointKeySource: endpoint.key.source,
     credential: endpoint.credential,
-    precomputedLinks: dispatchRulings.links,
+    precomputedLinks: preparedRulings.links,
     assertDispatchAllowed: () => assertMigrationDispatchAllowed(db(), opts.resume !== undefined),
     recordDispatchRefusal: recordMigrationDispatchRefusal,
   })
@@ -574,7 +571,7 @@ export async function run(
     mcpConnection: claimedMcpConnection,
     usingMcp: claimedUsingMcp,
   } = claimedRun
-  recordDispatchAttachmentWarnings(claim.id, dispatchRulings.attachmentWarnings)
+  dispatchRulings.recordDispatchAttachmentWarnings(claim.id, preparedRulings.attachmentWarnings)
   const owner = { rootRunId: rootRunRecordId(claim.id), runId: claim.id, projectId: runProjectId }
   runMigration.enableRunSchemaReload(claim.id)
   outPath = claimedOutputPath

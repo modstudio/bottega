@@ -108,11 +108,7 @@ function attachmentWarning({ token, sources, condition, remedy }: AttachmentFail
   )
 }
 
-function attachmentFailure(
-  cause: unknown,
-  token: string,
-  sources: string[],
-): AttachmentFailure {
+function attachmentFailure(cause: unknown, token: string, sources: string[]): AttachmentFailure {
   if (cause instanceof WorkflowTextNotHeldError) {
     return { token, sources, condition: cause.condition, remedy: cause.remedy }
   }
