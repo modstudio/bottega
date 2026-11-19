@@ -581,6 +581,10 @@ function recordUploadFailure(pass: UploadPassState, kind: 'flow' | 'question'): 
   }
 }
 
+function allUploadKindsStopped(pass: UploadPassState): boolean {
+  return pass.flowStopped && pass.questionStopped
+}
+
 type FlowImportClient = Pick<SyncClient, 'importTaskFlow'>
 type FlowImportAttempt =
   | { kind: 'imported'; result: Awaited<ReturnType<FlowImportClient['importTaskFlow']>> }
@@ -877,7 +881,7 @@ export async function uploadMissingWorkflowHistory(
       heldQuestions: [],
     }
     for (const project of historyProjects(database)) {
-      if (pass.flowStopped && pass.questionStopped) break
+      if (allUploadKindsStopped(pass)) break
       projects.push(
         await uploadProjectMissingHistory(
           database,

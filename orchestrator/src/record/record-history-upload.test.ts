@@ -20,8 +20,8 @@ import {
   uploadMissingWorkflowHistory,
 } from './record-history-upload.ts'
 import { RECORD_QUESTION_DIFFERENT_CONTENT } from './record-question-contract.ts'
-import { RECORD_TASK_FLOW_DIFFERENT_CONTENT } from './record-task-flow-write-contract.ts'
 import { syncRecord } from './record-sync.ts'
+import { RECORD_TASK_FLOW_DIFFERENT_CONTENT } from './record-task-flow-write-contract.ts'
 
 const at = '2026-11-18T01:00:00.000Z'
 

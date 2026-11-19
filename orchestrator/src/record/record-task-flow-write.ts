@@ -12,12 +12,12 @@ import { isUniqueViolation } from './record-config-error.ts'
 import { recordPool } from './record-pool.ts'
 import { allocateRecordSequence } from './record-sequence.ts'
 import {
+  RECORD_TASK_FLOW_DIFFERENT_CONTENT,
   type TaskFlowComposeResult,
   type TaskFlowImportResult,
   type TaskFlowIntent,
   type TaskFlowIntentBody,
   type TaskFlowIntentResult,
-  RECORD_TASK_FLOW_DIFFERENT_CONTENT,
   workflowHandoffTrail,
 } from './record-task-flow-write-contract.ts'
 import {
