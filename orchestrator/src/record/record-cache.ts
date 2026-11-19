@@ -22,16 +22,28 @@ import {
   writeCursor,
   writeRecordCursor,
 } from './record-cache-cursor.ts'
-import { emptyRecordCachePullResult, pullRecordCacheFeed } from './record-cache-feed.ts'
+import {
+  type DocApplyOutcome,
+  type DocDeferrals,
+  type DocPullResult,
+  hasDocDeferrals,
+  recordCacheDocReferencedSubjects,
+  type SubjectDeferrals,
+} from './record-cache-doc-deferrals.ts'
+import {
+  emptyRecordCachePullResult,
+  type KeysetResult,
+  pullRecordCacheFeed,
+} from './record-cache-feed.ts'
 import { pullLensCatalogue } from './record-cache-lens.ts'
 import { recordCacheSpaceOwnsAddress } from './record-cache-ownership.ts'
 import { pullPortCatalogue } from './record-cache-port.ts'
-import { type ProjectRegisterPullResult, pullProjectRegister } from './record-cache-projects.ts'
+import { pullProjectRegister } from './record-cache-projects.ts'
 import { pullWorkflowCatalogue } from './record-cache-workflow.ts'
 import { decodeRecordCursor, encodeRecordCursor, type RecordCursor } from './record-cursor.ts'
 import { recordDocList } from './record-doc-list-shape.ts'
 import { projectRecordDestination } from './record-project-destination.ts'
-import { pullRoutingPool, type RoutingPoolPullResult } from './record-routing-pool.ts'
+import { pullRoutingPool } from './record-routing-pool.ts'
 import { rememberSignedInRecordUser } from './record-session.ts'
 
 const DOCS_CURSOR = 'record_docs_cursor'
@@ -77,6 +89,7 @@ function applyDocPage(
     projectSpaces: ReadonlyMap<string, string | null>
   },
   unresolvedParents: Map<string, string>,
+  subjectDeferrals: SubjectDeferrals,
 ): { docs: number; skippedDocs: number; cursor?: RecordCursor } {
   let docs = 0
   let skippedDocs = 0
@@ -88,9 +101,15 @@ function applyDocPage(
       ...ownership,
     })
     if (owned) {
-      applyDoc(local, item, unresolvedParents, ownership.pullingSpaceId)
+      const applied = applyDoc(
+        local,
+        item,
+        unresolvedParents,
+        subjectDeferrals,
+        ownership.pullingSpaceId,
+      )
       resolveRememberedParents(local, unresolvedParents)
-      docs++
+      if (applied !== 'deferred') docs++
     } else {
       skippedDocs++
     }
@@ -106,8 +125,7 @@ async function pullDocsForSpace(
     spaceId: string
     activeSpaceId: string
     projectSpaces: ReadonlyMap<string, string | null>
-    unresolvedParents: Map<string, string>
-  },
+  } & DocDeferrals,
 ): Promise<{ docs: number; skippedDocs: number; cursorKey: string; cursor?: RecordCursor }> {
   const cursorKey = `${DOCS_CURSOR}:${input.spaceId}`
   let cursor = readRecordCursor(local, cursorKey, true)
@@ -142,6 +160,7 @@ async function pullDocsForSpace(
         page.items,
         { ...input, pullingSpaceId: input.spaceId },
         input.unresolvedParents,
+        input.subjectDeferrals,
       )
       docs += applied.docs
       skippedDocs += applied.skippedDocs
@@ -149,7 +168,7 @@ async function pullDocsForSpace(
         if (page.endCursor) cursor = decodeRecordCursor(page.endCursor)
         else if (unreadable.length === 0) cursor = applied.cursor ?? cursor
       }
-      if (cursor && input.unresolvedParents.size === 0) writeRecordCursor(local, cursorKey, cursor)
+      if (cursor && !hasDocDeferrals(input)) writeRecordCursor(local, cursorKey, cursor)
     }, local)
     if (unreadable.length > 0) cursorFrozen = true
     if (!page.nextCursor) break
@@ -163,57 +182,45 @@ async function pullDocs(
   identity: RecordIdentity,
   spaces: readonly string[],
   projectSpaces: ReadonlyMap<string, string | null>,
-): Promise<{ docs: number; skippedDocs: number }> {
+): Promise<DocPullResult> {
   let docs = 0
   let skippedDocs = 0
   const cursors = new Map<string, RecordCursor>()
   const unresolvedParents = new Map<string, string>()
+  const subjectDeferrals: SubjectDeferrals = new Map()
   for (const spaceId of spaces) {
     const pulled = await pullDocsForSpace(local, {
       spaceId,
       activeSpaceId: identity.activeSpaceId as string,
       projectSpaces,
       unresolvedParents,
+      subjectDeferrals,
     })
     docs += pulled.docs
     skippedDocs += pulled.skippedDocs
     if (pulled.cursor) cursors.set(pulled.cursorKey, pulled.cursor)
   }
-  if (unresolvedParents.size) {
-    const links = [...unresolvedParents]
-      .map(([child, parent]) => `${child} -> ${parent}`)
-      .sort()
-      .join(', ')
-    throw new Error(
-      `record cache could not resolve document parent links ${links}; cleared by: ensure the hosted parent documents are readable and refresh again`,
-    )
-  }
-  for (const [key, cursor] of cursors) writeRecordCursor(local, key, cursor)
-  return { docs, skippedDocs }
+  if (!hasDocDeferrals({ unresolvedParents, subjectDeferrals }))
+    for (const [key, cursor] of cursors) writeRecordCursor(local, key, cursor)
+  return { docs, skippedDocs, unresolvedParents, subjectDeferrals }
 }
 
 async function pullRecordCacheKeysets(
   local: Database = db(),
   suppliedIdentity?: RecordIdentity,
   requestedSpaces?: readonly string[],
-): Promise<{
-  docs: number
-  skippedDocs: number
-  subjects: number
-  skippedSubjects: number
-  scores: number
-  lensCatalogue: number
-  workflowCatalogue: number
-  portCatalogue: number
-  projectRegister: ProjectRegisterPullResult
-  routingPool: RoutingPoolPullResult
-}> {
+): Promise<{ result: KeysetResult } & DocDeferrals> {
   const hasMeta = local
     .query<{ n: number }, []>(
       "SELECT 1 AS n FROM sqlite_master WHERE type='table' AND name='schema_meta'",
     )
     .get()
-  if (!hasMeta) return emptyRecordCachePullResult()
+  if (!hasMeta)
+    return {
+      result: emptyRecordCachePullResult(),
+      unresolvedParents: new Map(),
+      subjectDeferrals: new Map(),
+    }
   const client = recordApiClient()
   const identity = suppliedIdentity ?? (await client.whoami())
   if (!identity.activeSpaceId) throw new Error(RECORD_ACTIVE_SPACE_REMEDY)
@@ -223,7 +230,12 @@ async function pullRecordCacheKeysets(
   const spaces = requestedSpaces ? [...requestedSpaces] : cache.spaces
   const projectRegister = await pullProjectRegister(local, spaces, client)
   cache = recordCacheSpaces(identity, local)
-  const pulledSubjects = await pullSubjects(local, spaces, cache.projectSpaces)
+  const pulledSubjects = await pullSubjects(
+    local,
+    spaces,
+    cache.projectSpaces,
+    identity.activeSpaceId,
+  )
   const pulledDocs = await pullDocs(local, identity, spaces, cache.projectSpaces)
   const lensCatalogue = await pullLensCatalogue(local, spaces)
   const workflowPull = await pullWorkflowCatalogue(local, spaces)
@@ -251,14 +263,19 @@ async function pullRecordCacheKeysets(
   }
   const routingPool = await pullRoutingPool(local, spaces)
   return {
-    ...pulledDocs,
-    ...pulledSubjects,
-    scores,
-    lensCatalogue,
-    workflowCatalogue: workflowPull.count,
-    portCatalogue: portPull.count,
-    projectRegister,
-    routingPool,
+    result: {
+      docs: pulledDocs.docs,
+      skippedDocs: pulledDocs.skippedDocs,
+      ...pulledSubjects,
+      scores,
+      lensCatalogue,
+      workflowCatalogue: workflowPull.count,
+      portCatalogue: portPull.count,
+      projectRegister,
+      routingPool,
+    },
+    unresolvedParents: pulledDocs.unresolvedParents,
+    subjectDeferrals: pulledDocs.subjectDeferrals,
   }
 }
 
@@ -266,6 +283,7 @@ async function pullSubjects(
   local: Database,
   spaces: readonly string[],
   projectSpaces: ReadonlyMap<string, string | null>,
+  activeSpaceId: string,
 ): Promise<{ subjects: number; skippedSubjects: number }> {
   const client = recordApiClient()
   let subjects = 0
@@ -339,22 +357,13 @@ function pulledDocAudiences(item: Record<string, unknown>): string {
   return encodeStoredDocAudiences(normalizeDocAudiences(values))
 }
 
-function pulledDocArticleFields(local: Database, item: Record<string, unknown>, recordId: string) {
-  const articleSubject =
-    item.articleSubject && typeof item.articleSubject === 'object'
-      ? (item.articleSubject as Record<string, unknown>)
-      : null
-  const articleSubjectId = articleSubject?.id == null ? null : String(articleSubject.id)
-  const relatedSubjects = recordDocList(item.relatedSubjects, {
-    document: recordId,
-    column: 'doc.related_subjects',
-    optional: true,
-  })
-  if (relatedSubjects.unwrapped)
-    console.warn(`unwrapped hosted document JSON string list: ${recordId} doc.related_subjects`)
-  const relatedSubjectIds = relatedSubjects.values.map((value) =>
-    String((value as Record<string, unknown>).id),
-  )
+function pulledDocArticleFields(
+  local: Database,
+  item: Record<string, unknown>,
+  recordId: string,
+  subjectDeferrals: SubjectDeferrals,
+) {
+  const { articleSubjectId, relatedSubjectIds } = recordCacheDocReferencedSubjects(item, recordId)
   const decodedSourceFiles = recordDocList(item.sourceFiles, {
     document: recordId,
     column: 'doc.source_files',
@@ -366,14 +375,16 @@ function pulledDocArticleFields(local: Database, item: Record<string, unknown>, 
   const checkedAgainstCommit =
     item.checkedAgainstCommit == null ? null : String(item.checkedAgainstCommit)
   const summary = item.summarySource === 'written' ? String(item.summary) : null
-  for (const id of [articleSubjectId, ...relatedSubjectIds].filter((value): value is string =>
-    Boolean(value),
-  )) {
-    if (!local.query('SELECT 1 FROM subject WHERE id=?').get(id))
-      throw new Error(
-        `record cache deferred document ${recordId}: subject ${id} is not local; cleared by: refresh subjects and pull again`,
-      )
+  const missing = new Set(
+    [articleSubjectId, ...relatedSubjectIds].filter(
+      (id): id is string => id !== null && !local.query('SELECT 1 FROM subject WHERE id=?').get(id),
+    ),
+  )
+  if (missing.size) {
+    subjectDeferrals.set(recordId, missing)
+    return null
   }
+  subjectDeferrals.delete(recordId)
   return { articleSubjectId, relatedSubjectIds, sourceFiles, checkedAgainstCommit, summary }
 }
 
@@ -405,18 +416,49 @@ const hostedDocInsertIdentity = (recordId: string, spaceId: string | undefined) 
   spaceId ?? null,
 ]
 
+function deletePulledDoc(
+  local: Database,
+  recordId: string,
+  unresolvedParents: Map<string, string>,
+  subjectDeferrals: SubjectDeferrals,
+): void {
+  unresolvedParents.delete(recordId)
+  subjectDeferrals.delete(recordId)
+  local.query('DELETE FROM doc WHERE record_id=?').run(recordId)
+}
+
+function refusePulledDocAddressCollision(
+  local: Database,
+  recordId: string,
+  scope: string,
+  subject: string | null,
+  owner: string | null,
+  slug: string,
+): void {
+  const byAddress = local
+    .query<{ record_id: string }, [string, string | null, string | null, string]>(
+      'SELECT record_id FROM doc WHERE scope=? AND subject IS ? AND owner IS ? AND slug=?',
+    )
+    .get(scope, subject, owner, slug)
+  if (byAddress) {
+    throw new Error(
+      `hosted document UUID ${recordId} collides with local document UUID ${byAddress.record_id} at ${scope}/${subject ?? '_'}/${slug}`,
+    )
+  }
+}
+
 function applyDoc(
   local: Database,
   item: Record<string, unknown>,
   unresolvedParents: Map<string, string>,
+  subjectDeferrals: SubjectDeferrals,
   hostedSpaceId?: string,
-): void {
+): DocApplyOutcome {
   const recordId = String(item.id)
   const deletedAt = item.deletedAt == null ? null : String(item.deletedAt)
   if (deletedAt) {
-    unresolvedParents.delete(recordId)
-    local.query('DELETE FROM doc WHERE record_id=?').run(recordId)
-    return
+    deletePulledDoc(local, recordId, unresolvedParents, subjectDeferrals)
+    return 'deleted'
   }
   const scope = String(item.scope)
   const subject = item.subject == null ? null : String(item.subject)
@@ -431,8 +473,10 @@ function applyDoc(
   const featured = item.featured == null ? false : Boolean(item.featured)
   const { status, kind, replacementSlug } = pulledDocLifecycle(item)
   const form = item.form == null ? null : String(item.form)
+  const articleFields = pulledDocArticleFields(local, item, recordId, subjectDeferrals)
+  if (!articleFields) return 'deferred'
   const { articleSubjectId, relatedSubjectIds, sourceFiles, checkedAgainstCommit, summary } =
-    pulledDocArticleFields(local, item, recordId)
+    articleFields
   const parentRecordId = item.parentId == null ? null : String(item.parentId)
   const parentId = pulledDocParentId(local, parentRecordId)
   if (parentRecordId && parentId == null) unresolvedParents.set(recordId, parentRecordId)
@@ -467,18 +511,9 @@ function applyDoc(
         ...hostedDocUpdateIdentity(hostedSpaceId, recordId),
       )
     syncPulledDocRelatedSubjects(local, recordId, relatedSubjectIds)
-    return
+    return 'applied'
   }
-  const byAddress = local
-    .query<{ record_id: string }, [string, string | null, string | null, string]>(
-      'SELECT record_id FROM doc WHERE scope=? AND subject IS ? AND owner IS ? AND slug=?',
-    )
-    .get(scope, subject, owner, slug)
-  if (byAddress) {
-    throw new Error(
-      `hosted document UUID ${recordId} collides with local document UUID ${byAddress.record_id} at ${scope}/${subject ?? '_'}/${slug}`,
-    )
-  }
+  refusePulledDocAddressCollision(local, recordId, scope, subject, owner, slug)
   local
     .query(
       `INSERT INTO doc (scope, subject, owner, project_record_id, slug, title, body, delivery, audiences, parent_record_id, position, featured, status, kind, form, article_subject_id, source_files, checked_against_commit, summary, replacement_slug, created_at, updated_at, record_id, space_id)
@@ -510,6 +545,7 @@ function applyDoc(
       ...hostedDocInsertIdentity(recordId, hostedSpaceId),
     )
   syncPulledDocRelatedSubjects(local, recordId, relatedSubjectIds)
+  return 'applied'
 }
 
 function deleteDocRecord(local: Database, recordId: string): boolean {

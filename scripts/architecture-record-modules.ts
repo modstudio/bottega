@@ -491,6 +491,11 @@ export const recordModules: RecordModule[] = [
     './record-project-destination.ts',
   ]),
   module('orchestrator/src/record/record-cache-ownership.ts', ['../doc/doc-write-allowed.ts']),
+  module('orchestrator/src/record/record-cache-doc-deferrals.ts', [
+    '../../../shared/brand.ts',
+    '../../../shared/refusal.ts',
+    './record-doc-list-shape.ts',
+  ]),
   module('orchestrator/src/record/record-doc-lifecycle.ts', [
     'bun',
     '../../../shared/docs.ts',

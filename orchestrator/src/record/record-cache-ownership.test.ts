@@ -1,11 +1,21 @@
 import { expect, test } from 'bun:test'
-import { recordCacheAddressOwner, recordCacheSpaceOwnsAddress } from './record-cache-ownership.ts'
+import {
+  recordCacheAddressOwner,
+  recordCacheProjectOwner,
+  recordCacheSpaceOwnsAddress,
+} from './record-cache-ownership.ts'
 
 const projectSpaces = new Map<string, string | null>([
   ['alpha', 'space-alpha'],
   ['fallback', 'space-active'],
   ['outside', null],
 ])
+
+test('a project uses its mapped destination or falls back to the active space', () => {
+  expect(recordCacheProjectOwner('alpha', 'space-active', projectSpaces)).toBe('space-alpha')
+  expect(recordCacheProjectOwner('outside', 'space-active', projectSpaces)).toBeNull()
+  expect(recordCacheProjectOwner('unmapped', 'space-active', projectSpaces)).toBe('space-active')
+})
 
 test('project addresses use their destination while other addresses use the active space', () => {
   expect(

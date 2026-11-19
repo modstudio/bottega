@@ -51,7 +51,6 @@
     "orchestrator/src/pull-request/pr-merge.ts": 4,
     "orchestrator/src/record/outbox-redaction.ts": 1,
     "orchestrator/src/record/outbox-secret-audit.ts": 1,
-    "orchestrator/src/record/record-cache.ts": 2,
     "orchestrator/src/record/record-doc-article-fields.ts": 3,
     "orchestrator/src/record/record-doc-mapping.ts": 1,
     "orchestrator/src/record/record-doc-transport-contract.ts": 1,
