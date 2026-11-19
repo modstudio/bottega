@@ -155,6 +155,14 @@ test('workflow import accepts an intentional older production body only with a s
     await expect(runWorkflowCommand(argv, workflowCommandPresentation([]))).rejects.toThrow(
       'refusing stale workflow tree reversion',
     )
+    await expect(
+      runWorkflowCommand(
+        [...argv, '--since', 'missing-since-commit'],
+        workflowCommandPresentation([]),
+      ),
+    ).rejects.toThrow(
+      'workflow import refused: --since missing-since-commit must name a commit in this checkout; omit it to measure from the merge base',
+    )
     await runWorkflowCommand([...argv, '--since', beforeReversion], workflowCommandPresentation([]))
   } finally {
     fixture.dispose()

@@ -9,6 +9,7 @@ import { projectAt, upsertProject } from '../project/projects.ts'
 import { rememberProjectSpace } from '../project-space-cache.ts'
 import { applyWorkflowCatalogueRow } from '../record/record-cache-workflow.fixture.ts'
 import { productionStepCatalogue } from './step-catalogue.ts'
+import { workflowProjectRefusal } from './workflow-command-project.ts'
 import { commandOutcome } from './workflow-commands.ts'
 import { composeWorkflowWithCursor } from './workflow-cursor.ts'
 import { recordWorkflowProbe } from './workflow-probe.ts'
@@ -26,7 +27,6 @@ import {
   registerOwningWorkflowProject as registerOwningProject,
   runWorkflowCommand as workflowCommand,
 } from './workflow-store.fixture.ts'
-import { workflowProjectRefusal } from './workflow-tree-commands.ts'
 import {
   promoteWorkflowLocal,
   resolvedWorkflowVersions,
@@ -388,7 +388,7 @@ test('workflow tree project refusal is only required for a configured record wit
   ).toBeNull()
   expect(workflowProjectRefusal({ ...input, project: null, recordConfigured: true })).toBe(
     'refusing workflow hydrate in /fixture/unowned: no registered project owns this directory\n' +
-      "cleared by: run from a registered project's worktree, or pass --cwd for one",
+      "cleared by: pass --cwd naming a registered project's checkout or worktree",
   )
   expect(
     workflowProjectRefusal({
@@ -416,7 +416,7 @@ test('workflow tree commands name their own refusal for an unowned configured di
         workflowCommand(['workflow', verb, ...extra, '--cwd', repositoryRoot], presentation([])),
       ).rejects.toThrow(
         `refusing workflow ${verb} in ${repositoryRoot}: no registered project owns this directory\n` +
-          "cleared by: run from a registered project's worktree, or pass --cwd for one",
+          "cleared by: pass --cwd naming a registered project's checkout or worktree",
       )
   } finally {
     if (priorRecordApiUrl === undefined) delete process.env.BOTTEGA_RECORD_API_URL

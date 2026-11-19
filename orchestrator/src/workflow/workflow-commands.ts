@@ -24,6 +24,7 @@ import {
   showResolvedStepCatalogue,
 } from './step-catalogue.ts'
 import { obligationUuid, positive, workflowArgs } from './workflow-command-arguments.ts'
+import { workflowCommandProject } from './workflow-command-project.ts'
 import * as recordShape from './workflow-command-record-shape.ts'
 import type { CommitCountPort } from './workflow-compose-branch.ts'
 import {
@@ -77,7 +78,6 @@ import {
   productionWorkflowTextDocumentPorts,
   type WorkflowTextDocumentPorts,
 } from './workflow-text-copy.ts'
-import { workflowCommandProject } from './workflow-tree-commands.ts'
 import { workflowWriteSpace } from './workflow-write-space.ts'
 import {
   composeWorkflow,
@@ -91,12 +91,6 @@ import {
   showResolvedWorkflow,
   workflowModeStepLists,
 } from './workflows.ts'
-
-export {
-  hydrateCommand,
-  importCommand,
-  promoteTreeCommand,
-} from './workflow-tree-commands.ts'
 
 export type WorkflowPresentation = {
   log(value: string): void

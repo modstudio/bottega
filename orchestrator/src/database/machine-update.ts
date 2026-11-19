@@ -158,11 +158,11 @@ function runWorkflowSync(cwd: string, since: string): void {
     reason,
     since,
   )
-  for (const command of commands) {
+  for (const argv of [commands.import, commands.promote]) {
     runPostPullStep({
-      argv: command.argv,
+      argv,
       cwd,
-      failureLabel: `${PLATFORM_SLUG} workflow ${command.stage === 'promote' ? 'promote-tree' : 'import'}`,
+      failureLabel: `${PLATFORM_SLUG} ${argv.slice(1, 3).join(' ')}`,
     })
   }
 }
@@ -643,13 +643,15 @@ async function updateCheckout(presentation: Presentation, deps: UpdateDependenci
   } finally {
     clearMachineUpdateIntent()
   }
+  const verifyMainCheckout = deps.verifyMainCheckout ?? verifyMainCheckoutInvariant
+  verifyMainCheckout(target, branch, runGit)
   const syncWorkflows = deps.syncWorkflows ?? runWorkflowSync
   syncWorkflows(target, beforePull)
   const maintainStore = deps.maintainStore ?? setupIncrementalVacuumAfterMachineUpdate
   maintainStoreAfterUpdate(presentation, maintainStore)
   const refreshLaunchAgents = deps.runLaunchAgentsRefreshVerb ?? runLaunchAgentsRefreshVerb
   refreshLaunchAgents(resolveInstallationPaths(target, {}).executable)
-  ;(deps.verifyMainCheckout ?? verifyMainCheckoutInvariant)(target, branch, runGit)
+  verifyMainCheckout(target, branch, runGit)
 }
 
 export async function machineUpdateCommandUnderLock(

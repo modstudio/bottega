@@ -249,8 +249,9 @@ function promotionOutput(input: {
 }): { output: string; error?: string } {
   if (input.result.ok) return { output: input.result.output }
   const reason = `merged PR #${input.prNumber} (${input.mergeCommit})`
-  const promotion = workflowTreeSyncCommands(PLATFORM_SLUG, input.project.path, reason, input.since)
-    .map(({ argv }) =>
+  const commands = workflowTreeSyncCommands(PLATFORM_SLUG, input.project.path, reason, input.since)
+  const promotion = [commands.import, commands.promote]
+    .map((argv) =>
       argv
         .map((value) => (/^[A-Za-z0-9_./:-]+$/.test(value) ? value : JSON.stringify(value)))
         .join(' '),
@@ -448,13 +449,13 @@ function promoteWorkflowTree(
   reason: string,
   since: string | null,
 ): WorkflowPromotionResult {
-  const [importCommand, promoteCommand] = workflowTreeSyncCommands(
-    `${project.path}/bin/${PLATFORM_SLUG}`,
+  const commands = workflowTreeSyncCommands(
+    join(project.path, 'bin', PLATFORM_SLUG),
     project.path,
     reason,
     since,
   )
-  const imported = startBoundedSync(importCommand!.argv, {
+  const imported = startBoundedSync(commands.import, {
     budget: 'self-cli',
     cwd: project.path,
     env: process.env,
@@ -466,7 +467,7 @@ function promoteWorkflowTree(
       detail: imported.stderr.trim() || `exit ${imported.exitCode}`,
     }
   }
-  const result = startBoundedSync(promoteCommand!.argv, {
+  const result = startBoundedSync(commands.promote, {
     budget: 'self-cli',
     cwd: project.path,
     env: process.env,

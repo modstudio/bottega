@@ -155,16 +155,9 @@ test("machine update clears a dead holder's marker before deciding", async () =>
   expect(migrationDrain(db())).toBeNull()
   expect(migrated).toBe(true)
   expect(existsSync(machineUpdateIntentPath(process.env))).toBeFalse()
-  expect(gitCalls.map((args) => (args.includes('pull') ? 'pull' : args[0]))).toEqual([
-    'branch',
-    'fetch',
-    'show',
-    'rev-parse',
-    'pull',
-    'diff',
-    'branch',
-    'status',
-  ])
+  expect(gitCalls.map((args) => (args.includes('pull') ? 'pull' : args[0])).join(' ')).toBe(
+    'branch fetch show rev-parse pull diff branch status branch status',
+  )
 })
 
 test('machine update proceeds when the hub store is absent and records position zero', async () => {
@@ -421,7 +414,7 @@ test('machine update leaves main pulled when the store position cannot be read a
   }
 })
 
-test('machine update refuses when the install root is tracked-dirty after refresh', async () => {
+test('machine update refuses a tracked-dirty install root before refresh', async () => {
   let refreshed = false
   await expect(
     machineUpdateCommand(
@@ -448,7 +441,7 @@ test('machine update refuses when the install root is tracked-dirty after refres
       },
     ),
   ).rejects.toThrow('checkout has tracked modifications')
-  expect(refreshed).toBe(true)
+  expect(refreshed).toBeFalse()
 })
 
 test('an additive machine update marks only the store-open window around pull and migrate', async () => {
@@ -856,7 +849,7 @@ test(`machine update targets the ${PLATFORM_NAME} checkout when the caller is an
     /^incremental vacuum setup: pruned 0 rows, \d+ bytes before, \d+ bytes after, \d+ms elapsed$/,
   )
   expect(projectPaths).toEqual([target])
-  expect(gitCwds).toEqual([target, target, target, target, target, target, target, target])
+  expect(gitCwds).toEqual(Array(10).fill(target))
 })
 
 test('machine update defaults the target to the installation root', async () => {
@@ -888,7 +881,7 @@ test('machine update defaults the target to the installation root', async () => 
     },
   )
   expect(projectPaths).toEqual([target])
-  expect(gitCwds).toEqual([target, target, target, target, target, target, target, target])
+  expect(gitCwds).toEqual(Array(10).fill(target))
   expect(journalRef).toBe(`origin/main:${ORCHESTRATOR_MIGRATION_JOURNAL_SOURCE.path}`)
 })
 

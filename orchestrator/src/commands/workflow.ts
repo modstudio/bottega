@@ -16,13 +16,10 @@ import {
   composeCommand,
   execCommand,
   forkWorkflowCommand,
-  hydrateCommand,
-  importCommand,
   listWorkflowCommand,
   nextCommand,
   probeCommand,
   promoteCatalogueCommand,
-  promoteTreeCommand,
   promoteWorkflowCommand,
   recordEvidenceCommand,
   renderCheckCommand,
@@ -49,6 +46,11 @@ import {
   copyWorkflowTextCommand,
   showWorkflowTextCommand,
 } from '../workflow/workflow-text-commands.ts'
+import {
+  hydrateCommand,
+  importCommand,
+  promoteTreeCommand,
+} from '../workflow/workflow-tree-commands.ts'
 import { workflowUncoveredCommand } from '../workflow/workflow-uncovered.ts'
 import { collect, log, productArgv, rawArgv } from './support.ts'
 

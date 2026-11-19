@@ -1,15 +1,13 @@
 // concern: workflow tree commands
-/** Owns workflow-tree commands and workflow-command checkout/project resolution. */
+/** Owns workflow-tree hydration, import, and promotion command semantics. */
 
-import { resolve } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { gitToplevel, resolvedPathsEqual } from '../../../shared/git.ts'
-import { recordApiConfigured } from '../../../shared/record-api-url.ts'
+import { resolvedPathsEqual } from '../../../shared/git.ts'
 import { refusal, renderRefusal } from '../../../shared/refusal.ts'
 import { flagValue, flagValues } from '../cli/args.ts'
 import { db } from '../database/db.ts'
 import { contentTree, reviewChangedPaths } from '../git/git-environment.ts'
-import { type Project, projectAt } from '../project/projects.ts'
+import { workflowCommandProject } from './workflow-command-project.ts'
 import { workflowImportBase } from './workflow-import-branch.ts'
 import { workflowImportLines } from './workflow-import-output.ts'
 import {
@@ -30,6 +28,7 @@ import {
   productionWorkflowTree,
   promoteMatchingWorkflowTreeDrafts,
 } from './workflow-tree-store.ts'
+import { workflowTreeSyncCommands } from './workflow-tree-sync-command.ts'
 
 type TreeCommandOptions = { cwd?: string; promotionContainsHead?: PromotionContainsHead }
 type TreePresentation = {
@@ -38,45 +37,6 @@ type TreePresentation = {
   setExitCode(code: number): void
 }
 type TreePrint = (value: unknown, line?: string) => void
-
-export function workflowProjectRefusal(input: {
-  command: 'hydrate' | 'import' | 'promote' | 'promote-tree'
-  root: string
-  project: string | null
-  recordConfigured: boolean
-}): string | null {
-  if (input.project || !input.recordConfigured) return null
-  return renderRefusal(
-    refusal(
-      `refusing workflow ${input.command} in ${input.root}: no registered project owns this directory`,
-      {
-        kind: 'edit',
-        text:
-          input.command === 'promote'
-            ? "run from a registered project's checkout"
-            : "run from a registered project's worktree, or pass --cwd for one",
-      },
-    ),
-  )
-}
-
-export function workflowCommandProject(
-  command: 'hydrate' | 'import' | 'promote' | 'promote-tree',
-  options: TreeCommandOptions,
-): { root: string; project: Project | null } {
-  const resolved = resolve(options.cwd ?? process.cwd())
-  const root = gitToplevel(resolved)
-  if (!root) throw new Error(`refusing ${resolved}: not a git repository`)
-  const project = projectAt(root)
-  const refusal = workflowProjectRefusal({
-    command,
-    root,
-    project: project?.name ?? null,
-    recordConfigured: recordApiConfigured(),
-  })
-  if (refusal) throw new Error(refusal)
-  return { root, project }
-}
 
 export function hydrateCommand(
   argv: string[],
@@ -143,12 +103,18 @@ export async function importCommand(
 ): Promise<void> {
   const { root, project } = workflowCommandProject('import', options)
   const mergeBase = workflowImportBase(root, project)
-  const base = flagValue(argv, 'since') ?? mergeBase
+  const since = flagValue(argv, 'since')
+  const base = since ?? mergeBase
   let changedPaths: Set<string> | undefined
   let skipped: string | undefined
   try {
     changedPaths = new Set(reviewChangedPaths(root, base, contentTree(root)))
   } catch (cause) {
+    if (since) {
+      throw new Error(
+        `workflow import refused: --since ${since} must name a commit in this checkout; omit it to measure from the merge base`,
+      )
+    }
     skipped = `workflow stale-reversion check skipped: ${String((cause as Error).message ?? cause)}`
   }
   const result = await importWorkflowTree(
@@ -196,8 +162,9 @@ export async function promoteTreeCommand(
     const items = plan.divergent.map((item) =>
       item.kind === 'catalogue' ? 'catalogue' : `workflow ${item.slug}`,
     )
+    const commands = workflowTreeSyncCommands(PLATFORM_SLUG, root, reason.trim())
     throw new Error(
-      `workflow promote-tree refused: tree ${items.join(', ')} matched neither production nor the newest draft; clear with: ${PLATFORM_SLUG} workflow import --cwd ${root}, then ${PLATFORM_SLUG} workflow promote-tree --cwd ${root} --reason "${reason.trim()}"`,
+      `workflow promote-tree refused: tree ${items.join(', ')} matched neither production nor the newest draft; clear with: ${commands.import.join(' ')}, then ${commands.promote.join(' ')}`,
     )
   }
 }

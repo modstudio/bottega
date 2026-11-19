@@ -12,6 +12,13 @@ const module = (file: string, allowed: string[]): WorkflowTreeModule => ({
 })
 
 export const workflowTreeModules: WorkflowTreeModule[] = [
+  module('orchestrator/src/workflow/workflow-command-project.ts', [
+    'node:path',
+    '../../../shared/git.ts',
+    '../../../shared/record-api-url.ts',
+    '../../../shared/refusal.ts',
+    '../project/projects.ts',
+  ]),
   module('orchestrator/src/workflow/workflow-import-branch.ts', [
     '../../../shared/brand.ts',
     '../project/projects.ts',
@@ -34,15 +41,13 @@ export const workflowTreeModules: WorkflowTreeModule[] = [
     './workflows.ts',
   ]),
   module('orchestrator/src/workflow/workflow-tree-commands.ts', [
-    'node:path',
     '../../../shared/brand.ts',
     '../../../shared/git.ts',
-    '../../../shared/record-api-url.ts',
     '../../../shared/refusal.ts',
     '../cli/args.ts',
     '../database/db.ts',
     '../git/git-environment.ts',
-    '../project/projects.ts',
+    './workflow-command-project.ts',
     './workflow-import-branch.ts',
     './workflow-import-output.ts',
     './workflow-promotion-command.ts',
@@ -51,6 +56,7 @@ export const workflowTreeModules: WorkflowTreeModule[] = [
     './workflow-tree-files.ts',
     './workflow-tree-hydration.ts',
     './workflow-tree-store.ts',
+    './workflow-tree-sync-command.ts',
   ]),
   module('orchestrator/src/workflow/workflow-tree-sync-command.ts', []),
   module('orchestrator/src/workflow/workflow-tree-files.ts', [
