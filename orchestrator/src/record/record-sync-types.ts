@@ -50,7 +50,6 @@ export type RecordSyncResult = {
   quarantined: QuarantinedOutboxRow[]
   blocked: BlockedOutboxRow[]
   machineNameRefusal?: string
-  historyUploadLines?: string[]
   held?: HeldRecordSyncRows[]
   routingHeld?: RoutingHeldOutboxRow[]
   parentDeferred?: ParentDeferredOutboxRow[]
@@ -73,13 +72,10 @@ export type RecordSyncOptions = {
   now?: () => string
   identity?: { id: string; shortName?: string; displayName?: string; name?: string }
   projectSpaces?: Record<string, string>
-  historyUploadWithDatabase?: <T>(action: (database: Database) => Promise<T>) => Promise<T>
   client?: {
     whoami: RecordApiClient['whoami']
     sync: NonNullable<RecordApiClient['sync']>
     readTaskFlowPresence?: RecordApiClient['readTaskFlowPresence']
-    importTaskFlow?: RecordApiClient['importTaskFlow']
-    importQuestion?: RecordApiClient['importQuestion']
     ensureSpaceBuiltIns?: RecordApiClient['ensureSpaceBuiltIns']
   }
 }
