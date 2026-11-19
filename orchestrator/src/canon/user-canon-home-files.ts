@@ -45,11 +45,16 @@ export type UserCanonHomePlan = {
 
 export type UserCanonHomePlanDecision =
   | { action: 'apply'; plans: UserCanonHomePlan[] }
-  | { action: 'refuse-empty-store'; plans: []; refused: UserCanonHomePlan[] }
+  | { action: 'refuse-empty-store' }
 
-export const EMPTY_USER_CANON_STORE_REFUSAL =
-  'this store holds no user canon while the home has files another store marked as managed; ' +
-  `keep them by importing with \`${PLATFORM_SLUG} doc canon import --user\`; or remove the files yourself`
+const EMPTY_USER_CANON_STORE_REFUSAL =
+  'no user canon rows have arrived in this store; ' +
+  `run \`${PLATFORM_SLUG} record push\`; if this user truly has no canon, create it with ` +
+  `\`${PLATFORM_SLUG} doc set --scope canon --user\``
+
+export function emptyUserCanonStoreRefusal(): string {
+  return `refusing user canon hydration: ${EMPTY_USER_CANON_STORE_REFUSAL}`
+}
 
 type CollectedFileState = { collectedText: string; collectedMode: number }
 type PlannedUserCanonWriteBase = {
@@ -116,15 +121,12 @@ export function userCanonHomePlanDrift(plan: UserCanonHomePlan): number {
   return plan.writes.length + plan.adopts.length + plan.deletes.length
 }
 
-/** Prevents an empty store from treating another store's managed files as stale rows. */
+/** Prevents an empty store from reporting a successful user-canon hydration. */
 export function decideUserCanonHomePlanApplication(
   rowCount: number,
   plans: UserCanonHomePlan[],
 ): UserCanonHomePlanDecision {
-  const refused = rowCount === 0 ? plans.filter((plan) => plan.deletes.length > 0) : []
-  return refused.length > 0
-    ? { action: 'refuse-empty-store', plans: [], refused }
-    : { action: 'apply', plans }
+  return rowCount === 0 ? { action: 'refuse-empty-store' } : { action: 'apply', plans }
 }
 
 export function collectUserCanonHome(target: UserCanonHomeTarget): UserCanonHomeFile[] {

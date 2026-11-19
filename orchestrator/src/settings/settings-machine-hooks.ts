@@ -17,7 +17,7 @@ import {
 } from '../session/context-review-decision.ts'
 import { isPlainObject, type OwnedSettings } from './settings.ts'
 
-const SCRIPT_FILES = [
+export const SCRIPT_FILES = [
   'block-agent.py',
   'no-attribution.py',
   'bun-cache-guard.py',
@@ -48,7 +48,7 @@ type HookEvent =
   | 'SessionStart'
   | 'PreCompact'
 type HookCondition = string | { absoluteBottega: 'run start' | 'board ask' | 'board post' }
-type ProductHookDeclaration = {
+export type ProductHookDeclaration = {
   event: HookEvent
   matcher?: string
   if?: HookCondition
@@ -68,7 +68,7 @@ export type MachineProductHooksResult = {
   superseded: SupersededProfileHook[]
 }
 
-const PRODUCT_HOOKS: readonly ProductHookDeclaration[] = [
+export const PRODUCT_HOOKS: readonly ProductHookDeclaration[] = [
   { event: 'PreToolUse', matcher: 'Agent|Task|Workflow', script: 'block-agent.py' },
   { event: 'PreToolUse', matcher: 'Bash', script: 'no-attribution.py' },
   { event: 'PreToolUse', matcher: 'Bash', script: 'bun-cache-guard.py' },
@@ -175,8 +175,27 @@ const PRODUCT_HOOKS: readonly ProductHookDeclaration[] = [
 
 const shellQuote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`
 
-function scriptPath(assetRoot: string, file: ScriptFile): string {
+export function hookScriptPath(assetRoot: string, file: string): string {
   return join(assetRoot, 'orchestrator', 'hooks', file)
+}
+
+export function commandNamesHookScript(command: string, file: string, assetRoot?: string): boolean {
+  const needle = assetRoot ? hookScriptPath(assetRoot, file) : `orchestrator/hooks/${file}`
+  let index = command.indexOf(needle)
+  while (index >= 0) {
+    const previous = command[index - 1]
+    const next = command[index + needle.length]
+    const startsToken =
+      previous === undefined ||
+      previous === "'" ||
+      previous === '"' ||
+      /\s/.test(previous) ||
+      (!assetRoot && (previous === '/' || previous === '\\'))
+    const endsToken = next === undefined || next === "'" || next === '"' || /\s/.test(next)
+    if (startsToken && endsToken) return true
+    index = command.indexOf(needle, index + 1)
+  }
+  return false
 }
 
 function resolvedCondition(value: HookCondition | undefined, assetRoot: string) {
@@ -196,7 +215,7 @@ function productCommand(
     `BOTTEGA_ORCHESTRATOR_DB=${shellQuote(databasePath)}`,
     `BOTTEGA_GLOBAL_USE=${globalUse}`,
     'python3',
-    shellQuote(scriptPath(assetRoot, file)),
+    shellQuote(hookScriptPath(assetRoot, file)),
   ].join(' ')
 }
 
@@ -257,13 +276,9 @@ function declaredGroups(assetRoot: string, databasePath: string, globalUse: 'on'
 
 function declaredScript(command: unknown): RecognizedScriptFile | undefined {
   if (typeof command !== 'string') return undefined
-  return [...SCRIPT_FILES, ...LEGACY_SCRIPT_FILES].find((file) => {
-    const needle = `orchestrator/hooks/${file}`
-    const index = command.indexOf(needle)
-    if (index < 0) return false
-    const next = command[index + needle.length]
-    return next === undefined || next === "'" || next === '"' || /\s/.test(next)
-  })
+  return [...SCRIPT_FILES, ...LEGACY_SCRIPT_FILES].find((file) =>
+    commandNamesHookScript(command, file),
+  )
 }
 
 /** Replace profile copies of product hooks and append the canonical product declaration. */

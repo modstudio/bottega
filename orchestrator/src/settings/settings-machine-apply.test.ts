@@ -123,7 +123,9 @@ describe('settings apply', () => {
       target: `settings ${join(root, '.claude', 'settings.json')}`,
       outcome: 'refused',
       condition: 'no-settings-row',
-      detail: 'refusing settings render: no settings row for user',
+      detail:
+        'refusing settings render: no settings row for user\n' +
+        `cleared by: ${PLATFORM_SLUG} doc set --scope settings --user --slug settings`,
       changed: false,
     })
   })
@@ -326,7 +328,7 @@ describe('settings apply', () => {
             outcome: 'refused',
             detail: expect.stringMatching(
               new RegExp(
-                `this store holds no user canon.*${PLATFORM_SLUG} doc canon import --user.*remove the files yourself`,
+                `no user canon rows have arrived.*${PLATFORM_SLUG} record push.*${PLATFORM_SLUG} doc set --scope canon --user`,
               ),
             ),
             changed: false,
@@ -451,6 +453,12 @@ describe('settings apply', () => {
           superseded: [{ event: 'PreToolUse', matcher: 'Bash', script: 'git-guard.py' }],
         },
         { target: 'canon two', outcome: 'refused', detail: 'first\nsecond', changed: false },
+        {
+          target: 'project /projects/missing',
+          outcome: 'skipped',
+          detail: 'missing path',
+          changed: false,
+        },
         { target: 'settings apply', outcome: 'skipped', changed: false },
       ],
       (...values) => lines.push(values.join(' ')),
@@ -459,6 +467,7 @@ describe('settings apply', () => {
       'settings one: already current',
       'profile hook PreToolUse Bash git-guard.py is superseded by the product hook and can be deleted from the profile',
       'canon two: refused; first; second',
+      'project /projects/missing: skipped; missing path',
       'settings apply already running; skipped',
     ])
   })

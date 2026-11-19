@@ -199,7 +199,9 @@ export function register(program: Command, service: SetupService = setupService)
     })
   setup
     .command('apply')
-    .description('apply a machine setup plan without prompts')
+    .description(
+      'apply a machine setup plan without prompts; render machine hooks and settings, hydrate user canon, and possibly run `claude mcp add` or `claude mcp remove`',
+    )
     .addOption(collectedOption('--in <folder>', 'folder to inspect'))
     .option('--yes', 'apply every recommended setup answer')
     .option('--answers <file>', 'JSON file containing explicit setup answers')

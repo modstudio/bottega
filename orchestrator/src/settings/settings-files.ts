@@ -19,6 +19,45 @@ export function userLocalSettingsPath(claudeHome: string): string {
   return join(claudeHome, 'settings.local.json')
 }
 
+export function managedSettingsPaths(
+  environment: NodeJS.ProcessEnv,
+  platform: NodeJS.Platform = process.platform,
+): string[] {
+  if (platform === 'darwin') {
+    return ['/Library/Application Support/ClaudeCode/managed-settings.json']
+  }
+  if (platform === 'win32') {
+    const programFiles = environment.ProgramFiles
+    return programFiles ? [join(programFiles, 'ClaudeCode', 'managed-settings.json')] : []
+  }
+  return ['/etc/claude-code/managed-settings.json']
+}
+
+export type LenientSettingsJsonRead =
+  | { state: 'absent' }
+  | { state: 'readable'; settings: unknown }
+  | { state: 'unreadable'; detail: string }
+
+export const SETTINGS_JSON_INVALID_DETAIL = 'settings file is not valid JSON'
+
+export function readSettingsJsonLenient(path: string): LenientSettingsJsonRead {
+  if (!existsSync(path)) return { state: 'absent' }
+  let text: string
+  try {
+    text = readRegularFile(path)
+  } catch (error) {
+    return {
+      state: 'unreadable',
+      detail: error instanceof Error ? error.message : String(error),
+    }
+  }
+  try {
+    return { state: 'readable', settings: JSON.parse(text) }
+  } catch {
+    return { state: 'unreadable', detail: SETTINGS_JSON_INVALID_DETAIL }
+  }
+}
+
 export function projectSettingsPath(root: string): string {
   return join(root, '.claude', 'settings.json')
 }

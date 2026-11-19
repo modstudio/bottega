@@ -12,7 +12,7 @@ import {
   CONTEXT_REVIEW_HOOK_TIMEOUT_SECONDS,
   CONTEXT_REVIEW_MIN_MS,
 } from '../session/context-review-decision.ts'
-import { withMachineProductHooks } from './settings-machine-hooks.ts'
+import { commandNamesHookScript, withMachineProductHooks } from './settings-machine-hooks.ts'
 
 const ASSET_ROOT = '/installed/product'
 const DATABASE = '/state/orchestrator/orchestrator.db'
@@ -72,6 +72,62 @@ const profileHooks = {
 function render(hooks: unknown) {
   return withMachineProductHooks({ permissions: {}, hooks }, ASSET_ROOT, DATABASE, 'on')
 }
+
+test('hook script command recognition requires both token boundaries', () => {
+  const file = 'git-guard.py'
+  const cases = [
+    {
+      name: 'rejects a longer root ending with the install root',
+      actual: () =>
+        commandNamesHookScript(
+          `python3 /prefix${ASSET_ROOT}/orchestrator/hooks/${file}`,
+          file,
+          ASSET_ROOT,
+        ),
+      expected: false,
+    },
+    {
+      name: 'rejects a script name extended by a suffix',
+      actual: () =>
+        commandNamesHookScript(
+          `python3 ${ASSET_ROOT}/orchestrator/hooks/${file}.bak`,
+          file,
+          ASSET_ROOT,
+        ),
+      expected: false,
+    },
+    {
+      name: 'accepts the rendered quoted form',
+      actual: () =>
+        commandNamesHookScript(
+          `python3 '${ASSET_ROOT}/orchestrator/hooks/${file}'`,
+          file,
+          ASSET_ROOT,
+        ),
+      expected: true,
+    },
+    {
+      name: 'accepts an unquoted form followed by an argument',
+      actual: () =>
+        commandNamesHookScript(
+          `python3 ${ASSET_ROOT}/orchestrator/hooks/${file} --check`,
+          file,
+          ASSET_ROOT,
+        ),
+      expected: true,
+    },
+    {
+      name: 'declared hooks are recognized under any root',
+      actual: () =>
+        render({
+          PreToolUse: [{ matcher: 'Bash', hooks: [handler(file)] }],
+        }).superseded.some((hook) => hook.script === file),
+      expected: true,
+    },
+  ]
+
+  for (const item of cases) expect(item.actual(), item.name).toBe(item.expected)
+})
 
 test('typed profile hooks and an empty profile render the same canonical product hooks', () => {
   const fromProfile = render(profileHooks)

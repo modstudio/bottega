@@ -41,6 +41,7 @@ const plannedAction = (
   return actions.find(
     (action) =>
       action.kind !== 'migrate-environment' &&
+      action.kind !== 'install-verify' &&
       action.kind !== 'set-machine-level' &&
       action.kind !== 'set-global-use',
   )
@@ -102,6 +103,7 @@ test('plans the fallback keystore before environment migration', () => {
 
   expect(kinds).toContain('set-keystore')
   expect(kinds.indexOf('set-keystore')).toBeLessThan(kinds.indexOf('migrate-environment'))
+  expect(kinds.indexOf('install-verify')).toBe(kinds.indexOf('migrate-environment') + 1)
 })
 
 test('folder defaults include registered paths and names found in hosted spaces', () => {

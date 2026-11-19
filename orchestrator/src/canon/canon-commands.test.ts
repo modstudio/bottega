@@ -27,6 +27,35 @@ test('user canon hydrate refuses writes from a worker process', async () => {
   )
 })
 
+test('user canon hydrate with zero rows and no installed home names the empty-store remedy', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'canon-empty-home-'))
+  const priorHome = process.env.HOME
+  const priorCodexHome = process.env.CODEX_HOME
+  const priorGrokHome = process.env.GROK_HOME
+  try {
+    process.env.HOME = root
+    process.env.CODEX_HOME = join(root, 'codex-not-installed')
+    process.env.GROK_HOME = join(root, 'grok-not-installed')
+    await expect(
+      userCanonHydrateCommand(
+        { has: (name) => name === 'check' },
+        { log: () => {}, exitCode: () => {} },
+        () => false,
+      ),
+    ).rejects.toThrow(
+      `refusing user canon hydration: no user canon rows have arrived in this store; run \`${PLATFORM_SLUG} record push\``,
+    )
+  } finally {
+    if (priorHome === undefined) delete process.env.HOME
+    else process.env.HOME = priorHome
+    if (priorCodexHome === undefined) delete process.env.CODEX_HOME
+    else process.env.CODEX_HOME = priorCodexHome
+    if (priorGrokHome === undefined) delete process.env.GROK_HOME
+    else process.env.GROK_HOME = priorGrokHome
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
 test('user canon hydrate refuses real harness homes outside the registered main checkout', async () => {
   const priorHome = process.env.HOME
   const priorCodexHome = process.env.CODEX_HOME

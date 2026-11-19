@@ -6,6 +6,7 @@ import { join } from 'node:path'
 import { MCP_SERVER_NAME, PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { assetPath } from '../../../shared/install-root.ts'
 import { readMachinePermissions, readMachineValue } from '../../../shared/machine-config.ts'
+import { renderRefusal } from '../../../shared/refusal.ts'
 import {
   resolveOrchestratorDatabase,
   resolveRunsDirectory,
@@ -15,7 +16,7 @@ import {
   applyUserCanonHomePlans,
   collectUserCanonHome,
   decideUserCanonHomePlanApplication,
-  EMPTY_USER_CANON_STORE_REFUSAL,
+  emptyUserCanonStoreRefusal,
   planUserCanonHome,
   type UserCanonHomePlan,
   userCanonHomePlanDrift,
@@ -66,6 +67,12 @@ export type MachineSettingsApplyResult = {
   detail?: string
   changed: boolean
   superseded?: SupersededProfileHook[]
+}
+
+export const SETTINGS_APPLY_LOCK_TARGET = 'settings apply'
+
+export function settingsApplyLockSkipped(result: MachineSettingsApplyResult): boolean {
+  return result.target === SETTINGS_APPLY_LOCK_TARGET && result.outcome === 'skipped'
 }
 
 type Dependencies = {
@@ -133,6 +140,33 @@ function refusal(target: string, error: unknown): MachineSettingsApplyResult {
   }
 }
 
+function missingUserSettingsResult(target: string): MachineSettingsApplyResult {
+  return {
+    target,
+    outcome: 'refused',
+    condition: 'no-settings-row',
+    detail: renderRefusal({
+      condition: 'refusing settings render: no settings row for user',
+      remedies: [
+        {
+          kind: 'command',
+          argv: [
+            PLATFORM_SLUG,
+            'doc',
+            'set',
+            '--scope',
+            'settings',
+            '--user',
+            '--slug',
+            'settings',
+          ],
+        },
+      ],
+    }),
+    changed: false,
+  }
+}
+
 function applyUserSettings(
   owner: string,
   check: boolean,
@@ -143,15 +177,7 @@ function applyUserSettings(
   const target = `settings ${path}`
   try {
     const row = getDoc(SETTINGS_SCOPE, null, SETTINGS_SLUG, owner)
-    if (!row) {
-      return {
-        target,
-        outcome: 'refused',
-        condition: 'no-settings-row',
-        detail: 'refusing settings render: no settings row for user',
-        changed: false,
-      }
-    }
+    if (!row) return missingUserSettingsResult(target)
     const parsed = readSettingsFile(path)
     const merged = mergeMachinePermissionOverlay(
       parseStoredOwnedSettings(row.body),
@@ -307,13 +333,10 @@ function applyUserCanon(
   const plans = planned.map((item) => item.plan!)
   const decision = decideUserCanonHomePlanApplication(rows.length, plans)
   if (decision.action === 'refuse-empty-store') {
-    const refused = new Set(decision.refused)
     return planned.map((item) => ({
       target: item.target,
       outcome: 'refused',
-      detail: refused.has(item.plan!)
-        ? `refusing user canon hydration: ${EMPTY_USER_CANON_STORE_REFUSAL}`
-        : 'not written: canon batch refused',
+      detail: emptyUserCanonStoreRefusal(),
       changed: false,
     }))
   }
@@ -371,7 +394,7 @@ export async function applyMachineSettings(
   mkdirSync(stateDirectory, { recursive: true, mode: 0o700 })
   const lease = tryKernelLease(join(stateDirectory, 'settings-apply.lock'), true)
   if (!lease) {
-    return [{ target: 'settings apply', outcome: 'skipped', changed: false }]
+    return [{ target: SETTINGS_APPLY_LOCK_TARGET, outcome: 'skipped', changed: false }]
   }
   try {
     await applyRecordWriteAuthority({ local: () => undefined, hosted: deps.pull })
@@ -391,7 +414,7 @@ export function printMachineSettingsApplyResults(
   log: (...values: unknown[]) => void,
 ): void {
   for (const result of results) {
-    if (result.outcome === 'skipped') {
+    if (settingsApplyLockSkipped(result)) {
       log('settings apply already running; skipped')
       continue
     }

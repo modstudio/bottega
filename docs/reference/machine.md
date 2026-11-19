@@ -1124,7 +1124,7 @@ set up this machine: level and projects
 
 **Synopsis:** `bottega machine setup apply [--in <folder>] [--yes] [--answers <file>] [--json] [--level <record|full>] [--include <folder>]`
 
-apply a machine setup plan without prompts
+apply a machine setup plan without prompts; render machine hooks and settings, hydrate user canon, and possibly run `claude mcp add` or `claude mcp remove`
 
 ### Options
 
