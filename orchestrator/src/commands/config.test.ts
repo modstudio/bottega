@@ -192,7 +192,9 @@ test('an unflagged secret write uses the machine pinned space instead of persona
       }),
     } as unknown as ConfigClient
 
-    await expect(secretWriteTarget('machine config secret set', undefined, client, env)).resolves.toEqual({
+    await expect(
+      secretWriteTarget('machine config secret set', undefined, client, env),
+    ).resolves.toEqual({
       scope: 'user',
       destination: { destinationSpaceId: pinnedSpaceId },
     })

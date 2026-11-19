@@ -4,7 +4,6 @@ import { createInterface } from 'node:readline/promises'
 import type { Command } from 'commander'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { ConfigClient, ConfigScope } from '../../../shared/config-client.ts'
-import type { ConfigEnvironment } from '../../../shared/config-directory.ts'
 import { isDelegationKey } from '../../../shared/delegation-mode.ts'
 import { KEYSTORE_ENV } from '../../../shared/key-store-constants.ts'
 import { DISPLAY_TIMEZONE_KEY, listMachineEntries } from '../../../shared/machine-config.ts'
@@ -29,7 +28,6 @@ import {
   machineShow,
   personalConfigWriteDestination,
   pinnedConfigDestination,
-  sealSecretDecision,
   setConfigEntry,
   setSecret,
 } from '../config/config-service.ts'
@@ -38,6 +36,7 @@ import { hostedConfigClient } from '../config/hosted-config-call-outcome.ts'
 import { trustMachine } from '../config/machine-trust.ts'
 import { machineRegister } from '../config/named-space-config.ts'
 import { parseSecretRunArgs, runNamedSecrets } from '../config/secret-run.ts'
+import { sealSecretDecision } from '../config/secret-set-policy.ts'
 import { isOrchWorkerProcess, type ProcessInventory } from '../run/run-process.ts'
 import { subscriptionMonthlyUsdKey } from '../run/run-subscription-cost.ts'
 import { registerMachineJoinCommands } from './machine-join-commands.ts'
@@ -133,7 +132,7 @@ export async function secretWriteTarget(
   verb: string,
   requested: string | undefined,
   client: ConfigClient,
-  env: ConfigEnvironment = process.env,
+  env: Parameters<typeof pinnedConfigDestination>[1] = process.env,
 ): Promise<{ scope: ConfigScope; destination: { destinationSpaceId: string } }> {
   if (requested) return configWriteTarget(verb, requested, client)
   return { scope: 'user', destination: await pinnedConfigDestination(client, env) }
@@ -385,11 +384,7 @@ export function register(program: Command): void {
     .option('--space <slug>', 'delete the value from this record space')
     .action(async (key, options) => {
       const client = hostedConfigClient()
-      const target = await secretWriteTarget(
-        'machine config secret delete',
-        options.space,
-        client,
-      )
+      const target = await secretWriteTarget('machine config secret delete', options.space, client)
       await deleteSecret(key, target.scope, client, { destination: target.destination })
     })
   secret

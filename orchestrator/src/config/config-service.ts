@@ -51,7 +51,7 @@ import {
   pinnedUserMismatchRemedy,
   RECORD_ACTIVE_SPACE_REMEDY,
 } from '../../../shared/record-remedies.ts'
-import { sealedValueIsEmpty, stripTrailingNewline } from '../../../shared/sealed-value.ts'
+import { sealedValueIsEmpty } from '../../../shared/sealed-value.ts'
 import {
   generateDataKey,
   generateMachineKeyPair,
@@ -89,6 +89,8 @@ import { refreshDisplayTimezoneCache } from './display-timezone-cache.ts'
 import { hostedConfigClient } from './hosted-config-call-outcome.ts'
 import * as trustRefusal from './machine-trust-refusal.ts'
 import { personalConfigWriteDestination } from './personal-config-write-destination.ts'
+import { sealedEmptyRefusal, secretDeleteRemedy } from './secret-set-policy.ts'
+import { verifySecretWrite } from './secret-write-verification.ts'
 import { appendTrustLogRevoke } from './trust-log-revoke.ts'
 
 async function identity(client: ConfigClient, env: ConfigEnvironment = process.env) {
@@ -511,52 +513,6 @@ export async function machineRevoke(
   return result.completed
 }
 
-/** The scope flag one `machine config secret` repair carries: the verbs declare only `--space`. */
-function secretScopeFlag(scope: ConfigScope): string {
-  return scope === 'space' ? ' --space' : ''
-}
-
-/** The one spelling of the repair that pipes a value into `secret set` in the given scope. */
-export function secretSetRemedy(key: string, scope: ConfigScope): string {
-  return `${PLATFORM_SLUG} machine config secret set ${key}${secretScopeFlag(scope)}`
-}
-
-/** The one spelling of the repair that removes a sealed value in the given scope. */
-export function secretDeleteRemedy(key: string, scope: ConfigScope): string {
-  return `${PLATFORM_SLUG} machine config secret delete ${key}${secretScopeFlag(scope)}`
-}
-
-/**
- * The one refusal for a value that would be sealed blank: it names the key, says no value was
- * sealed, and names both repairs in the scope the write would have used. A blank copy is refused
- * wherever it would enter the store, so the service and the command render the same text.
- */
-export function sealedEmptyRefusal(key: string, scope: ConfigScope): string {
-  return (
-    `refusing to seal ${key}: the value piped on stdin is empty, so no value was sealed\n` +
-    `cleared by: pipe the value on stdin to \`${secretSetRemedy(key, scope)}\`, or remove the sealed value with \`${secretDeleteRemedy(key, scope)}\``
-  )
-}
-
-export type SealedSecretSetDecision =
-  | { kind: 'seal'; value: string }
-  | { kind: 'refuse'; refusal: string }
-
-/**
- * Decide `machine config secret set` from the text piped on stdin, before anything is written.
- *
- * A blank value is the mistake `secret set` used to seal: `echo | ... secret set KEY` stored an
- * empty copy that later resolved as a present secret.
- */
-export function sealSecretDecision(
-  key: string,
-  piped: string,
-  scope: ConfigScope,
-): SealedSecretSetDecision {
-  if (!sealedValueIsEmpty(piped)) return { kind: 'seal', value: stripTrailingNewline(piped) }
-  return { kind: 'refuse', refusal: sealedEmptyRefusal(key, scope) }
-}
-
 /**
  * Seal one secret. The service owns the invariant that a sealed value is never blank, so a blank
  * value is refused here before any read or write, not only at the command that pipes stdin.
@@ -628,23 +584,11 @@ export async function setSecret(
     },
     destination,
   )
-  let read: (ConfigSecret & { envelope: string }) | null = null
-  try {
-    read = await client.getSecret(key, scope, environment, destination)
-  } catch (error) {
-    if (!isNotFound(error)) throw error
-  }
-  if (
-    !read ||
-    read.key !== key ||
-    read.scope !== scope ||
-    read.environment !== environment ||
-    read.rowVersion !== rowVersion ||
-    read.dekId !== dataKey.id
+  await verifySecretWrite(
+    client,
+    { key, scope, environment, rowVersion, dekId: dataKey.id },
+    destination,
   )
-    throw new Error(
-      `refusing sealed secret success: wrote ${key} in space ${spaceId} but could not read that row back from space ${destination.destinationSpaceId}; verify record access, then retry \`${PLATFORM_SLUG} machine config secret set ${key}\``,
-    )
   return written
 }
 

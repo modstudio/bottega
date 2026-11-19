@@ -247,7 +247,11 @@ test('set credential writes a project-bound row with its metadata and hint', asy
   const encode = (value: Uint8Array) => Buffer.from(value).toString('base64url')
   const stored = new Map<string, Record<string, unknown>>()
   const putSecret = mock(
-    async (key: string, input: Record<string, unknown>, destination: { projectId?: string | null }) => {
+    async (
+      key: string,
+      input: Record<string, unknown>,
+      destination: { projectId?: string | null },
+    ) => {
       const row = {
         ...input,
         key,

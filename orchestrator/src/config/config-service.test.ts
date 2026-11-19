@@ -34,11 +34,7 @@ import {
   machineTrust,
   migrateLegacyEnvironmentSecrets,
   restoreLegacyEnvironmentSecrets,
-  sealedEmptyRefusal,
-  sealSecretDecision,
-  secretDeleteRemedy,
   secretEnvironmentDecision,
-  secretSetRemedy,
   setConfigEntry,
   setEntry,
   setSecret,
@@ -46,6 +42,12 @@ import {
 import { rotationFixture } from './config-service-rotation.fixture.ts'
 import { planRotation } from './config-service-rotation-policy.ts'
 import { readCachedDisplayTimezone, writeCachedDisplayTimezone } from './display-timezone-cache.ts'
+import {
+  sealedEmptyRefusal,
+  sealSecretDecision,
+  secretDeleteRemedy,
+  secretSetRemedy,
+} from './secret-set-policy.ts'
 
 const roots: string[] = []
 let previousConfigHome: string | undefined, previousKeystore: string | undefined

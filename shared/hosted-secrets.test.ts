@@ -66,20 +66,20 @@ async function fixture() {
       destination: { destinationSpaceId?: string },
     ) => {
       destinations.dataKeys.push(destination.destinationSpaceId ?? '')
-      return ({
-      id: dekId,
-      version: 1,
-      createdAt: '2026-09-18T12:00:00.000Z',
-      retiredAt: null,
-      wraps: [
-        {
-          recipientKeyId: keyId,
-          senderKeyId: keyId,
-          enc: Buffer.from(wrapped.enc).toString('base64url'),
-          ciphertext: Buffer.from(wrapped.ciphertext).toString('base64url'),
-        },
-      ],
-      })
+      return {
+        id: dekId,
+        version: 1,
+        createdAt: '2026-09-18T12:00:00.000Z',
+        retiredAt: null,
+        wraps: [
+          {
+            recipientKeyId: keyId,
+            senderKeyId: keyId,
+            enc: Buffer.from(wrapped.enc).toString('base64url'),
+            ciphertext: Buffer.from(wrapped.ciphertext).toString('base64url'),
+          },
+        ],
+      }
     },
     whoami: async () => ({ user: { id: userId }, activeSpaceId: spaceId }),
   } as unknown as ConfigClient
