@@ -2,7 +2,7 @@
 /** Resolves the merge base required before a workflow import may write drafts. */
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { declaredTrunk } from '../project/project-settings.ts'
+import { declaredTrunk } from '../../../shared/project-trunk.ts'
 import type { Project } from '../project/projects.ts'
 import { resolveReviewBase } from '../review/review-target.ts'
 import { resolveBase } from '../worktree/worktree-caller.ts'

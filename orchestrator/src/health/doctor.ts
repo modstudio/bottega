@@ -36,12 +36,12 @@ import {
 import { JOBS } from '../jobs/jobs.ts'
 import { credentialLinesFromRead } from '../mcp/mcp-credential-literal.ts'
 import { readMcpConfigResult } from '../mcp/mcp-probe.ts'
-import { activeSpaceInvariant, RECORD_SIGN_IN_REMEDY } from '../record/active-space-invariant.ts'
 import {
   missingProjectLandingBranchProblem,
   type Project,
   registerBranchCheck,
 } from '../project/projects.ts'
+import { activeSpaceInvariant, RECORD_SIGN_IN_REMEDY } from '../record/active-space-invariant.ts'
 import { recordApiClient } from '../record/record-api-client.ts'
 import { recordMembershipsFromIdentity } from '../record/record-space.ts'
 import {

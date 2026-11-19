@@ -2,6 +2,7 @@
 /** Decides whether project registration adopts, creates, or refuses without performing I/O. */
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { declaredTrunk } from '../../../shared/project-trunk.ts'
 import type { RecordProject } from '../../../shared/record-project-contract.ts'
 import {
   type RecordSpaceMembership,
@@ -14,7 +15,7 @@ import {
   PROJECT_SETTINGS_NOT_IMPORTED,
 } from '../record/record-project-columns.ts'
 import { retiredHostedProjectMessage } from './project-retired-hosted.ts'
-import { declaredTrunk, type ProjectSettings, stableSettingsJson } from './project-settings.ts'
+import { type ProjectSettings, stableSettingsJson } from './project-settings.ts'
 import { PROJECT_SPACE_INPUTS_MUST_MATCH } from './project-space-refusals.ts'
 
 export type AddHostedProject = RecordProject

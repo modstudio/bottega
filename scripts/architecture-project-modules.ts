@@ -68,6 +68,7 @@ export const projectModules: ProjectModule[] = [
   ]),
   module('orchestrator/src/project/project-add-decision.ts', [
     '../../../shared/brand.ts',
+    '../../../shared/project-trunk.ts',
     '../../../shared/record-project-contract.ts',
     '../../../shared/record-space-membership.ts',
     '../../../shared/record-write-space.ts',

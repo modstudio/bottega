@@ -11,10 +11,10 @@ import { mergeProjectSettings, parseSettingsPatch } from '../project/project-set
 import { acpRuntimeGaps } from '../transport/transport.ts'
 import {
   activeSpaceDoctorDiagnosis,
-  doctorRegisterBranchProblems,
   affectedSelectorDoctorFinding,
   canonEvalDoctorDecision,
   doctorAcpStatus,
+  doctorRegisterBranchProblems,
   registeredMainCheckoutDiagnosis,
   reportActiveSpaceDoctor,
   reportCheckoutRegister,

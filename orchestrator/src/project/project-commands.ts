@@ -5,6 +5,7 @@
  */
 import { existsSync } from 'node:fs'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { declaredTrunk } from '../../../shared/project-trunk.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { renderRemovalReport as renderRecordRemovalReport } from '../../../shared/removal-report.ts'
 import { db, tryWriteContention, writeTransaction } from '../database/db.ts'
@@ -37,7 +38,6 @@ import {
   type SettingsPatchEffect,
   settingsPatchEffect,
 } from './project-settings-patch.ts'
-import { declaredTrunk } from './project-settings.ts'
 import {
   assertProjectRename,
   assertRegisterBranches,

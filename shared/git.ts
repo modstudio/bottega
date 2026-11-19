@@ -97,7 +97,7 @@ export function inspectionGitEnv(base: NodeJS.ProcessEnv = process.env): NodeJS.
 
 type GitResult = { code: number; stdout: string; stderr: string; timedOut: boolean }
 
-export type GitProbeCapture = { exitCode: number; stdout: string; timedOut: boolean }
+type GitProbeCapture = { exitCode: number; stdout: string; timedOut: boolean }
 export type GitProbeRunner = (path: string, args: string[]) => GitProbeCapture
 
 export function gitAt(

@@ -38,6 +38,7 @@ import {
 } from '../../../shared/git.ts'
 import { githubRepository } from '../../../shared/github-repository.ts'
 import { checkoutIsUnderProject } from '../../../shared/project-path.ts'
+import { declaredTrunk } from '../../../shared/project-trunk.ts'
 import { parseRecordSpaceMemberships } from '../../../shared/record-space-membership.ts'
 import { refusal, renderRefusal } from '../../../shared/refusal.ts'
 import { releaseTagVersion } from '../../../shared/release-tag.ts'
@@ -81,12 +82,11 @@ import {
   type ProjectReferenceCounts,
   projectReferenceCounts,
 } from './project-reference-counts.ts'
-import {
-  declaredTrunk,
-  type MainStackConsumer,
-  type ProjectSettings,
-  type StoredProjectSettings,
-  type WorktreeTool,
+import type {
+  MainStackConsumer,
+  ProjectSettings,
+  StoredProjectSettings,
+  WorktreeTool,
 } from './project-settings.ts'
 import {
   autonomyProblems,
