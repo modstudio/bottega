@@ -27,6 +27,7 @@ test('refuses a workflow with a missing or extra job', () => {
       if (job === 'orchestrator-hooks') return hooksJobFixture()
       if (job === processSuite.job) return processHooksJobFixture()
       if (job === 'postgres') return postgresJobFixture()
+      if (job === 'release-smoke') return releaseSmokeJobFixture().trimEnd()
       if (job === 'ci')
         return `  ${job}:\n    needs: [${expectedWorkflowJobNames()
           .filter((name) => name !== 'ci')
@@ -74,6 +75,24 @@ test('pins the declared CI-only process suite job', () => {
       workflow.replace(`run: ${suiteRunLine(processSuite.argv)}`, 'run: python3 -m unittest'),
     ),
   ).toThrow(`the ${processSuite.job} job must run its declared suite`)
+})
+
+test('pins the merge-queue release smoke job', () => {
+  const workflow = readWorkflowFixture()
+  expect(() => checkCiWorkflow(workflow.replace(releaseSmokeJobFixture(), ''))).toThrow(
+    'missing the release-smoke job; add a release-smoke job',
+  )
+  expect(() =>
+    checkCiWorkflow(workflow.replace('run: bun scripts/smoke-release.ts', 'run: bun test')),
+  ).toThrow('missing the release smoke command; add a step that runs exactly')
+  expect(() =>
+    checkCiWorkflow(
+      workflow.replace(
+        "        if: github.event_name == 'merge_group' || github.event_name == 'workflow_dispatch'\n        run: bun scripts/smoke-release.ts",
+        '        run: bun scripts/smoke-release.ts',
+      ),
+    ),
+  ).toThrow('not gated on merge_group or workflow_dispatch; add "if:')
 })
 
 test('pins the real-Postgres leg', () => {
@@ -257,6 +276,28 @@ test('accepts the real CI workflow', () => {
   ).not.toThrow()
 })
 
+test('accepts the real release workflow', () => {
+  expect(() =>
+    checkReleaseWorkflow(
+      readFileSync(new URL('../.github/workflows/release.yml', import.meta.url), 'utf8'),
+    ),
+  ).not.toThrow()
+})
+
+test('pins the release workflow smoke dependency', () => {
+  expect(() =>
+    checkReleaseWorkflow(releaseWorkflowFixture().replace(releaseSmokeJobFixture(), '')),
+  ).toThrow('missing the release-smoke job; add a release-smoke job')
+  expect(() =>
+    checkReleaseWorkflow(
+      releaseWorkflowFixture().replace('run: bun scripts/smoke-release.ts', 'run: bun test'),
+    ),
+  ).toThrow('missing the release smoke command; add a step that runs exactly')
+  expect(() =>
+    checkReleaseWorkflow(releaseWorkflowFixture().replace('    needs: release-smoke\n', '')),
+  ).toThrow('does not need release-smoke; add "needs: release-smoke"')
+})
+
 test('refuses a release upload outside the release publisher', () => {
   expect(() =>
     checkReleaseWorkflow(releaseWorkflowFixture(undefined, 'gh release upload "$TAG" artifact')),
@@ -287,7 +328,8 @@ on:
     tags:
       - 'v*'
 jobs:
-  release:
+${releaseSmokeJobFixture()}  release:
+    needs: release-smoke
     runs-on: macos-15
     steps:
       - uses: oven-sh/setup-bun@v2
@@ -307,6 +349,7 @@ function readWorkflowFixture() {
       if (job === 'orchestrator-hooks') return hooksJobFixture()
       if (job === processSuite.job) return processHooksJobFixture()
       if (job === 'postgres') return postgresJobFixture()
+      if (job === 'release-smoke') return releaseSmokeJobFixture().trimEnd()
       if (job === 'ci')
         return `  ${job}:\n    needs: [${expectedWorkflowJobNames()
           .filter((name) => name !== 'ci')
@@ -314,6 +357,16 @@ function readWorkflowFixture() {
       return `  ${job}:\n    runs-on: ubuntu-latest`
     })
     .join('\n')}\n`
+}
+
+function releaseSmokeJobFixture() {
+  return `  release-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run release smoke
+        if: github.event_name == 'merge_group' || github.event_name == 'workflow_dispatch'
+        run: bun scripts/smoke-release.ts
+`
 }
 
 function postgresJobFixture() {

@@ -319,6 +319,7 @@ jobs:
 
   release-smoke:
     runs-on: ubuntu-24.04
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
         if: github.event_name == 'merge_group' || github.event_name == 'workflow_dispatch'

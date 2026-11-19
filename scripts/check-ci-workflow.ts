@@ -13,6 +13,9 @@ const playwrightBrowserJobs = ['hub-web-smoke', 'hub-ui-stories'] as const
 const playwrightBunInstallCommand = 'npm install --global "bun@$(cat .bun-version)"'
 const playwrightTrustWorkspaceCommand =
   'git config --system --add safe.directory "$GITHUB_WORKSPACE"'
+const releaseSmokeCommand = 'bun scripts/smoke-release.ts'
+const ciReleaseSmokeCondition =
+  "github.event_name == 'merge_group' || github.event_name == 'workflow_dispatch'"
 
 export function agreedPlaywrightDependencyPin(
   pins: readonly { file: string; pin: string | undefined }[],
@@ -88,6 +91,46 @@ function workflowRunCommands(job: string): string[] {
     commands.push(block.join('\n'))
   }
   return commands
+}
+
+function workflowStepRunning(job: string, command: string): string | undefined {
+  const lines = job.split('\n')
+  const run = lines.findIndex((line) => {
+    const match = /^\s*(?:-\s+)?run:\s*(.*)$/.exec(line)
+    return match?.[1] === command
+  })
+  if (run < 0) return undefined
+  const start = lines.findLastIndex((line, index) => index <= run && /^ {6}-\s+/.test(line))
+  if (start < 0) return undefined
+  const end = lines.findIndex((line, index) => index > start && /^ {6}-\s+/.test(line))
+  return lines.slice(start, end < 0 ? undefined : end).join('\n')
+}
+
+function checkCiReleaseSmokeJob(source: string): void {
+  if (!workflowJobNames(source).includes('release-smoke')) {
+    throw new Error(
+      `.github/workflows/ci.yml is missing the release-smoke job; add a release-smoke job that runs ${releaseSmokeCommand}`,
+    )
+  }
+  const job = workflowJob(source, 'release-smoke')
+  if (!workflowRunCommands(job).includes(releaseSmokeCommand)) {
+    throw new Error(
+      `.github/workflows/ci.yml release-smoke job is missing the release smoke command; add a step that runs exactly ${releaseSmokeCommand}`,
+    )
+  }
+  const step = workflowStepRunning(job, releaseSmokeCommand)
+  if (!step?.includes(`if: ${ciReleaseSmokeCondition}`)) {
+    throw new Error(
+      `.github/workflows/ci.yml release-smoke command is not gated on merge_group or workflow_dispatch; add "if: ${ciReleaseSmokeCondition}" to the step that runs ${releaseSmokeCommand}`,
+    )
+  }
+}
+
+function workflowNeeds(job: string, dependency: string): boolean {
+  if (new RegExp(`^ {4}needs:\\s*${dependency}\\s*$`, 'm').test(job)) return true
+  const inline = job.match(/^ {4}needs:\s*\[([^\]]*)\]\s*$/m)
+  if (inline?.[1]?.split(',').some((name) => name.trim() === dependency)) return true
+  return new RegExp(`^ {6}-\\s+${dependency}\\s*$`, 'm').test(job)
 }
 
 type PlaywrightContainerImage = {
@@ -210,6 +253,7 @@ export function expectedWorkflowJobNames(): string[] {
 }
 
 export function checkCiWorkflow(source: string): void {
+  checkCiReleaseSmokeJob(source)
   const actual = workflowJobNames(source).sort()
   const expected = expectedWorkflowJobNames()
   if (JSON.stringify(actual) !== JSON.stringify(expected)) {
@@ -251,7 +295,24 @@ export function checkCiWorkflow(source: string): void {
 
 /** Keeps release creation inside the release publisher; check-bun-versions owns the Bun declaration. */
 export function checkReleaseWorkflow(source: string): void {
-  for (const command of workflowRunCommands(workflowJob(source, 'release'))) {
+  if (!workflowJobNames(source).includes('release-smoke')) {
+    throw new Error(
+      `.github/workflows/release.yml is missing the release-smoke job; add a release-smoke job that runs ${releaseSmokeCommand}`,
+    )
+  }
+  const smoke = workflowJob(source, 'release-smoke')
+  if (!workflowRunCommands(smoke).includes(releaseSmokeCommand)) {
+    throw new Error(
+      `.github/workflows/release.yml release-smoke job is missing the release smoke command; add a step that runs exactly ${releaseSmokeCommand}`,
+    )
+  }
+  const release = workflowJob(source, 'release')
+  if (!workflowNeeds(release, 'release-smoke')) {
+    throw new Error(
+      '.github/workflows/release.yml release job does not need release-smoke; add "needs: release-smoke" to the release job',
+    )
+  }
+  for (const command of workflowRunCommands(release)) {
     const directRelease = /\bgh\s+release\s+(upload|create)\b/.exec(command)
     if (directRelease) {
       throw new Error(
