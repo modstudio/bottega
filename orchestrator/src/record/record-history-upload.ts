@@ -1,5 +1,5 @@
-// concern: record-sign-in-history-upload
-/** Repairs and uploads local workflow history during the one-time hosted sign-in transition. */
+// concern: record-history-upload
+/** Uploads local workflow history during sign-in and each hosted-record sync pass. */
 
 import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
@@ -11,9 +11,14 @@ import {
   unattributedLocalQuestionHistory,
 } from '../question-store/question-store.ts'
 import { questionSnapshotFromRow } from '../question-store/question-store-mutation.ts'
-import { taskFlowHistoryMaintenanceStore } from '../workflow/task-flow-store.ts'
+import { readRecordInstallBinding } from './install-binding.ts'
 import { type RecordApiClient, recordApiClient } from './record-api-client.ts'
 import type { RecordWriteDestination } from './record-api-client-paths.ts'
+import {
+  collectHostedRowState,
+  hostedRowIdsAreEmpty,
+  readHostedRowPresence,
+} from './record-hosted-row-presence.ts'
 import { type TaskFlowIntentInput, taskFlowRequestId } from './record-task-flow-write-contract.ts'
 import { recordWriteDestination } from './record-write-destination.ts'
 
@@ -324,8 +329,6 @@ async function uploadDatabaseHistory(
   const personalDestination = personalQuestions.length
     ? await recordCall(() => dependencies.destination(null))
     : null
-  const repaired = taskFlowHistoryMaintenanceStore(database).repairUnlinkedKeylessStages()
-  presentation.log(`repaired ${repaired} unlinked local workflow stages`)
   const client = { ...dependencies.client, importTaskFlow, importQuestion }
   for (const project of projects)
     await uploadProjectHistory(
@@ -366,5 +369,178 @@ export async function uploadLocalWorkflowHistory(
   }
   await complete.withDatabase((database) =>
     uploadDatabaseHistory(database, adoptions, presentation, complete),
+  )
+}
+
+export type HistorySyncResult = { failed: number; lines: string[] }
+
+function flowIsAbsent(
+  flow: FlowImport,
+  present: Awaited<ReturnType<typeof readHostedRowPresence>>,
+): boolean {
+  return (
+    !present.task_flow.has(flow.flow.id) ||
+    flow.stages.some((row) => !present.workflow_cursor.has(row.id)) ||
+    flow.obligations.some((row) => !present.workflow_obligation.has(row.id)) ||
+    flow.texts.some((row) => !present.workflow_step_text.has(row.id)) ||
+    flow.copies.some((row) => !present.workflow_text_copy.has(row.id))
+  )
+}
+
+type PresentHistory = Awaited<ReturnType<typeof readHostedRowPresence>>
+type SyncClient = RecordApiClient & {
+  readTaskFlowPresence: NonNullable<RecordApiClient['readTaskFlowPresence']>
+  importTaskFlow: NonNullable<RecordApiClient['importTaskFlow']>
+  importQuestion: NonNullable<RecordApiClient['importQuestion']>
+}
+type DestinationFor = (
+  client: RecordApiClient,
+  owner: Parameters<typeof recordWriteDestination>[1],
+) => Promise<RecordWriteDestination>
+
+const errorMessage = (cause: unknown): string =>
+  cause instanceof Error ? cause.message : String(cause)
+
+function questionIsAbsent(history: LocalQuestionHistory[number], present: PresentHistory): boolean {
+  return (
+    !present.question.has(String(history.row.record_id)) ||
+    history.audits.some((audit) => !present.question_mutation_audit.has(String(audit.id)))
+  )
+}
+
+async function uploadMissingFlows(
+  flows: FlowImportWithNumbers[],
+  present: PresentHistory,
+  client: SyncClient,
+  destination: RecordWriteDestination,
+): Promise<HistorySyncResult> {
+  const result: HistorySyncResult = { failed: 0, lines: [] }
+  for (const flow of flows) {
+    if (!flowIsAbsent(flow.payload, present)) continue
+    try {
+      await client.importTaskFlow(flow.payload, destination)
+    } catch (cause) {
+      result.failed += 1
+      result.lines.push(
+        `workflow history task flow ${flow.payload.flow.id} failed: ${errorMessage(cause)}`,
+      )
+    }
+  }
+  return result
+}
+
+async function uploadMissingQuestions(
+  histories: LocalQuestionHistory,
+  present: PresentHistory,
+  client: SyncClient,
+  destination: RecordWriteDestination,
+): Promise<HistorySyncResult> {
+  const result: HistorySyncResult = { failed: 0, lines: [] }
+  for (const history of histories) {
+    if (!questionIsAbsent(history, present)) continue
+    const id = String(history.row.record_id)
+    try {
+      await client.importQuestion(
+        {
+          requestId: taskFlowRequestId('import', ['question', id]),
+          question: questionSnapshotFromRow(history.row),
+          audits: history.audits,
+        },
+        destination,
+      )
+    } catch (cause) {
+      result.failed += 1
+      result.lines.push(`workflow history question ${id} failed: ${errorMessage(cause)}`)
+    }
+  }
+  return result
+}
+
+function combineHistoryResults(...results: HistorySyncResult[]): HistorySyncResult {
+  return {
+    failed: results.reduce((total, result) => total + result.failed, 0),
+    lines: results.flatMap((result) => result.lines),
+  }
+}
+
+async function uploadProjectMissingHistory(
+  database: Database,
+  project: HistoryProject,
+  present: PresentHistory,
+  client: SyncClient,
+  destinationFor: DestinationFor,
+): Promise<HistorySyncResult> {
+  let destination: RecordWriteDestination
+  try {
+    destination = await destinationFor(client, { kind: 'project', name: project.name })
+  } catch (cause) {
+    return {
+      failed: 0,
+      lines: [`workflow history upload skipped for ${project.name}: ${errorMessage(cause)}`],
+    }
+  }
+  return combineHistoryResults(
+    await uploadMissingFlows(flowImports(database, project.recordId), present, client, destination),
+    await uploadMissingQuestions(
+      localQuestionHistory(database, project.recordId),
+      present,
+      client,
+      destination,
+    ),
+  )
+}
+
+async function uploadPersonalMissingHistory(
+  database: Database,
+  present: PresentHistory,
+  client: SyncClient,
+  destinationFor: DestinationFor,
+): Promise<HistorySyncResult> {
+  const histories = localQuestionHistory(database, null)
+  if (!histories.some((history) => questionIsAbsent(history, present)))
+    return { failed: 0, lines: [] }
+  try {
+    const destination = await destinationFor(client, null)
+    return uploadMissingQuestions(histories, present, client, destination)
+  } catch (cause) {
+    return {
+      failed: 0,
+      lines: [`workflow history personal questions skipped: ${errorMessage(cause)}`],
+    }
+  }
+}
+
+/** Upload only flow and question aggregates containing rows absent from the record. */
+export async function uploadMissingWorkflowHistory(
+  database: Database,
+  client: RecordApiClient,
+  destinationFor: DestinationFor = recordWriteDestination,
+): Promise<HistorySyncResult> {
+  if (!readRecordInstallBinding(database).bound) return { failed: 0, lines: [] }
+  if (!client.readTaskFlowPresence || !client.importTaskFlow || !client.importQuestion)
+    return {
+      failed: 0,
+      lines: ['workflow history upload skipped: record API lacks presence or import support'],
+    }
+  const state = collectHostedRowState(database)
+  if (hostedRowIdsAreEmpty(state.ids)) return { failed: 0, lines: [] }
+  const capable = client as SyncClient
+  let present: PresentHistory
+  try {
+    present = await readHostedRowPresence(state.ids, capable.readTaskFlowPresence)
+  } catch (cause) {
+    return {
+      failed: 0,
+      lines: [`workflow history upload skipped: presence read failed: ${errorMessage(cause)}`],
+    }
+  }
+  const projects: HistorySyncResult[] = []
+  for (const project of historyProjects(database))
+    projects.push(
+      await uploadProjectMissingHistory(database, project, present, capable, destinationFor),
+    )
+  return combineHistoryResults(
+    ...projects,
+    await uploadPersonalMissingHistory(database, present, capable, destinationFor),
   )
 }

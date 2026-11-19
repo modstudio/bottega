@@ -3,11 +3,23 @@ import { expect, test } from 'bun:test'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { migratedTestDatabase } from '../database/test-database.fixture.ts'
 import type { ProjectAdoptionResult } from '../project/project-relink.ts'
+import type { RecordApiClient } from './record-api-client.ts'
 import type { RecordQuestionClient } from './record-api-client-question.ts'
 import type { RecordTaskFlowClient } from './record-api-client-task-flow.ts'
-import { uploadLocalWorkflowHistory } from './record-sign-in-history-upload.ts'
+import {
+  uploadLocalWorkflowHistory,
+  uploadMissingWorkflowHistory,
+} from './record-history-upload.ts'
 
 const at = '2026-11-18T01:00:00.000Z'
+
+function bind(database: Database): void {
+  database
+    .query(
+      "INSERT INTO record_install_binding(id,bound_at,record_origin) VALUES (1,?,'https://record.test')",
+    )
+    .run(at)
+}
 
 function project(database: Database, name: string): string {
   const id = newRecordId()
@@ -291,7 +303,7 @@ test('an unmatched project refuses before repair or import', async () => {
   database.close()
 })
 
-test('repair creates one keyless flow for every stage state and is idempotent', async () => {
+test('flowless cursors are skipped without inventing a task flow', async () => {
   const database = migratedTestDatabase()
   database.exec('PRAGMA foreign_keys=OFF')
   const projectId = project(database, 'repair')
@@ -314,29 +326,12 @@ test('repair creates one keyless flow for every stage state and is idempotent', 
   const output: string[] = []
   const deps = dependencies(database, client)
   await uploadLocalWorkflowHistory([adoption('repair')], { log: (line) => output.push(line) }, deps)
-  await uploadLocalWorkflowHistory([adoption('repair')], { log: (line) => output.push(line) }, deps)
-  expect(output).toContain('repaired 4 unlinked local workflow stages')
-  expect(output).toContain('repaired 0 unlinked local workflow stages')
-  expect(
-    database
-      .query(
-        `SELECT cursor.state,flow.state flow_state,
-                COALESCE(flow.open_stage_cursor_record_id=cursor.record_id,0) is_open
-         FROM workflow_cursor cursor JOIN task_flow flow ON flow.record_id=cursor.task_flow_record_id
-         ORDER BY cursor.number`,
-      )
-      .all(),
-  ).toEqual([
-    { state: 'done', flow_state: 'done', is_open: 0 },
-    { state: 'abandoned', flow_state: 'dropped', is_open: 0 },
-    { state: 'running', flow_state: 'open', is_open: 1 },
-    { state: 'awaiting-ruling', flow_state: 'open', is_open: 1 },
-  ])
-  expect(database.query('SELECT count(*) n FROM task_flow').get()).toEqual({ n: 4 })
+  expect(output).toContain('repair: uploaded 0 task flows, 0 stages, 0 questions')
+  expect(database.query('SELECT count(*) n FROM task_flow').get()).toEqual({ n: 0 })
   database.close()
 })
 
-test('a keyed stage without a flow refuses before any local or hosted write', async () => {
+test('a keyed stage without a flow is skipped before any hosted write', async () => {
   const database = migratedTestDatabase()
   database.exec('PRAGMA foreign_keys=OFF')
   const projectId = project(database, 'keyed-orphan')
@@ -359,14 +354,10 @@ test('a keyed stage without a flow refuses before any local or hosted write', as
       throw new Error('unexpected')
     },
   }
-  await expect(
-    uploadLocalWorkflowHistory(
-      [adoption('keyed-orphan')],
-      { log: () => undefined },
-      dependencies(database, client),
-    ),
-  ).rejects.toThrow(
-    'cursor 7 in project keyed-orphan has a task but no task flow; ask the architect to repair that task-flow link, then sign in again',
+  await uploadLocalWorkflowHistory(
+    [adoption('keyed-orphan')],
+    { log: () => undefined },
+    dependencies(database, client),
   )
   expect(sends).toBe(0)
   expect(database.serialize()).toEqual(before)
@@ -463,5 +454,111 @@ test('a partial hosted failure leaves all local rows in place', async () => {
     ),
   ).rejects.toThrow('host unavailable; sign in again to retry')
   expect(database.serialize()).toEqual(before)
+  database.close()
+})
+
+function syncClient(
+  presence: RecordApiClient['readTaskFlowPresence'],
+  importQuestion: NonNullable<RecordApiClient['importQuestion']>,
+  importTaskFlow: NonNullable<RecordApiClient['importTaskFlow']>,
+): RecordApiClient {
+  return { readTaskFlowPresence: presence, importQuestion, importTaskFlow } as RecordApiClient
+}
+
+const syncDestination = async () => ({ destinationSpaceId: 'space' })
+
+test('sync history does not call the network for an unbound store', async () => {
+  const database = migratedTestDatabase()
+  let calls = 0
+  const client = syncClient(
+    async (input) => {
+      calls += 1
+      return input
+    },
+    async () => {
+      calls += 1
+      throw new Error('unexpected')
+    },
+    async () => {
+      calls += 1
+      throw new Error('unexpected')
+    },
+  )
+  expect(await uploadMissingWorkflowHistory(database, client, syncDestination)).toEqual({
+    failed: 0,
+    lines: [],
+  })
+  expect(calls).toBe(0)
+  database.close()
+})
+
+test('sync history imports one question whose audit is absent and no task flow', async () => {
+  const database = migratedTestDatabase()
+  database.exec('PRAGMA foreign_keys=OFF')
+  linked(database, 'sync-audit', 1)
+  bind(database)
+  let questions = 0
+  let flows = 0
+  const client = syncClient(
+    async (input) => ({ ...input, questionAuditIds: [] }),
+    async (input) => {
+      questions += 1
+      return { id: input.question.id, number: 1, revision: 1, applied: true }
+    },
+    async () => {
+      flows += 1
+      return { revisions: {}, stages: [] }
+    },
+  )
+  expect(await uploadMissingWorkflowHistory(database, client, syncDestination)).toEqual({
+    failed: 0,
+    lines: [],
+  })
+  expect({ questions, flows }).toEqual({ questions: 1, flows: 0 })
+  database.close()
+})
+
+test('sync history makes no import calls when every local id is present', async () => {
+  const database = migratedTestDatabase()
+  database.exec('PRAGMA foreign_keys=OFF')
+  linked(database, 'sync-present', 1)
+  bind(database)
+  let imports = 0
+  const client = syncClient(
+    async (input) => input,
+    async (input) => {
+      imports += 1
+      return { id: input.question.id, number: 1, revision: 1, applied: true }
+    },
+    async () => {
+      imports += 1
+      return { revisions: {}, stages: [] }
+    },
+  )
+  await uploadMissingWorkflowHistory(database, client, syncDestination)
+  expect(imports).toBe(0)
+  database.close()
+})
+
+test('sync history reports one failed question import and continues to the next', async () => {
+  const database = migratedTestDatabase()
+  database.exec('PRAGMA foreign_keys=OFF')
+  const { stageId } = linked(database, 'sync-continue', 1)
+  question(database, stageId, 2)
+  bind(database)
+  let calls = 0
+  const client = syncClient(
+    async (input) => ({ ...input, questionIds: [], questionAuditIds: [] }),
+    async (input) => {
+      calls += 1
+      if (calls === 1) throw new Error('first failed')
+      return { id: input.question.id, number: 2, revision: 1, applied: true }
+    },
+    async () => ({ revisions: {}, stages: [] }),
+  )
+  const result = await uploadMissingWorkflowHistory(database, client, syncDestination)
+  expect(calls).toBe(2)
+  expect(result.failed).toBe(1)
+  expect(result.lines[0]).toContain('first failed')
   database.close()
 })

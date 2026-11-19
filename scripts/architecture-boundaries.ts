@@ -855,6 +855,7 @@ export const importBoundaries: ImportBoundary[] = [
       './context-review-outbox.ts',
       './hook-emission-outbox.ts',
       './install-binding-write.ts',
+      './record-history-upload.ts',
       './landing-outbox.ts',
       './machine-identity.ts',
       './machine-name.ts',

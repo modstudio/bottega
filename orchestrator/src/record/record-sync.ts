@@ -44,6 +44,7 @@ import { PENDING_OUTBOX_PREDICATE_SQL } from './outbox-read.ts'
 import { RecordApiRequestError, recordApiClient } from './record-api-client.ts'
 import { builtInsEnsured, recordBuiltInsEnsured } from './record-built-ins-identity.ts'
 import { pullRecordCache } from './record-cache.ts'
+import { uploadMissingWorkflowHistory } from './record-history-upload.ts'
 import { type OversizedRecordSyncRow, planRecordSyncBatch } from './record-sync-batch.ts'
 import {
   RECORD_SYNC_BATCH_SIZE,
@@ -603,6 +604,7 @@ function completedSyncResult(input: {
   readOnlyDeferred: Map<string, number>
   backfill: RecordSyncResult['backfill']
   machineNameRefusal?: string
+  historyUploadLines?: string[]
   cachePull?: Pick<
     RecordSyncResult,
     | 'routingPool'
@@ -629,6 +631,7 @@ function completedSyncResult(input: {
     quarantined: quarantinedOutboxRows(input.local),
     blocked: input.blocked,
     ...(input.machineNameRefusal ? { machineNameRefusal: input.machineNameRefusal } : {}),
+    ...(input.historyUploadLines?.length ? { historyUploadLines: input.historyUploadLines } : {}),
     ...(input.held.size ? { held: [...input.held.values()] } : {}),
     ...(input.routingHeld.size ? { routingHeld: [...input.routingHeld.values()] } : {}),
     ...(input.parentDeferred.length ? { parentDeferred: input.parentDeferred } : {}),
@@ -794,6 +797,11 @@ export async function syncRecord(options: RecordSyncOptions = {}): Promise<Recor
     if (!batch.request.rows.length) break
   }
   cacheFirstSyncedMachineNames(options, identity, machineNameRefusal)
+  const history = await uploadMissingWorkflowHistory(
+    writableLocal,
+    client as ReturnType<typeof recordApiClient>,
+  )
+  failed += history.failed
   const cachePull = await pullAfterSync(options, writableLocal, session)
   rememberHostedRecord(writableLocal)
   const parentDeferred = refreshParentDeferredOutboxRows(writableLocal)
@@ -810,6 +818,7 @@ export async function syncRecord(options: RecordSyncOptions = {}): Promise<Recor
     readOnlyDeferred,
     backfill,
     machineNameRefusal,
+    historyUploadLines: history.lines,
     cachePull,
   })
 }

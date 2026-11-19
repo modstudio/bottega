@@ -15,10 +15,7 @@ import { hostedTaskFlowLocalStore } from './task-flow-store-hosted.ts'
 import type { TaskFlowWriteMethod } from './task-flow-store-methods.ts'
 import { resolveTaskFlowReadStore } from './task-flow-store-record.ts'
 import { sqliteTaskFlowLocalStore } from './task-flow-store-sqlite.ts'
-import {
-  repairUnlinkedKeylessStagesSqlite,
-  type TaskFlowSqliteWriteResult,
-} from './task-flow-store-sqlite-write.ts'
+import type { TaskFlowSqliteWriteResult } from './task-flow-store-sqlite-write.ts'
 import type {
   TaskFlowCloseOutStageRow,
   TaskFlowCursorLifecycleRow,
@@ -216,19 +213,6 @@ export interface TaskFlowLocalStore extends Pick<TaskFlowQueries, TaskFlowWriteM
 
 /** Async task-flow reads, implemented locally now and by the hosted record in the next slice. */
 export interface TaskFlowReadStore extends AsyncTaskFlowReads {}
-
-export interface TaskFlowHistoryMaintenanceStore {
-  repairUnlinkedKeylessStages(): number
-}
-
-/** Resolves sign-in history maintenance to the workflow-owned local store. */
-export function taskFlowHistoryMaintenanceStore(
-  database: Database,
-): TaskFlowHistoryMaintenanceStore {
-  return {
-    repairUnlinkedKeylessStages: () => repairUnlinkedKeylessStagesSqlite(database),
-  }
-}
 
 /** Reads complete handoff lineages from authoritative stage rows, including closed ancestors. */
 export async function taskFlowHandoffLinks(

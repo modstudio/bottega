@@ -141,10 +141,7 @@ const declaredModules: ArchitectureModule[] = [
   ]),
   module('orchestrator/src/workflow/task-flow-store-sqlite-write.ts', [
     'bun:sqlite',
-    '../../../shared/brand.ts',
     '../../../shared/record-id.ts',
-    '../database/db.ts',
-    '../record/record-task-flow-contract.ts',
     '../record/record-task-flow-write-contract.ts',
     './task-flow-decision.ts',
   ]),
