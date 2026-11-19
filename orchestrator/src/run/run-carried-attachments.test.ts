@@ -162,6 +162,26 @@ test('a dead token only in task text warns and does not refuse', async () => {
   expect(section).toContain(condition)
 })
 
+test('unresolved task-text entries count toward the carried attachments section cap', async () => {
+  const tokens = Array.from(
+    { length: 200 },
+    (_, index) => `attached-text:00000000-0000-4000-8000-${String(index).padStart(12, '0')}`,
+  )
+  const section = await resolveCarriedAttachments(
+    [{ label: 'task text', text: tokens.join('\n'), missing: 'warn' }],
+    {
+      readAttachment: async (token) => {
+        const missing = missingWorkflowTextMessage(token, 'local-authoritative')
+        throw new WorkflowTextNotHeldError(missing.condition, missing.remedy)
+      },
+    },
+  )
+
+  expect(Buffer.byteLength(section)).toBeLessThanOrEqual(CARRIED_ATTACHMENTS_MAX_BYTES)
+  expect(section).toContain('Carried attachments section truncated at attached-text:')
+  expect(section).not.toContain('\uFFFD')
+})
+
 test('a dead token in task text and the spec follows the stricter rule', async () => {
   const result = await missingAttachmentResult([
     { label: 'task text', text: FIRST, missing: 'warn' },

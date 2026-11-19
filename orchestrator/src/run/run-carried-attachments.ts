@@ -12,6 +12,7 @@ import { boundUtf8, TASK_TEXT_MAX_BYTES } from './run-pack-prompt.ts'
 
 export const CARRIED_ATTACHMENT_MAX_BYTES = TASK_TEXT_MAX_BYTES
 export const CARRIED_ATTACHMENTS_MAX_BYTES = TASK_TEXT_MAX_BYTES * 2
+const CARRIED_ATTACHMENTS_HEADING = 'CARRIED ATTACHMENTS'
 
 export type CarriedAttachment = Awaited<ReturnType<typeof showWorkflowText>>
 type AttachmentReader = (token: string) => Promise<CarriedAttachment>
@@ -62,6 +63,8 @@ function attachmentEntry(attachment: CarriedAttachment): string {
   )
 }
 
+type RenderedAttachmentEntry = { token: string; text: string }
+
 function unresolvedAttachmentEntry({
   token,
   sources,
@@ -73,34 +76,49 @@ function unresolvedAttachmentEntry({
 
 export function carriedAttachmentsSection(attachments: readonly CarriedAttachment[]): string {
   if (attachments.length === 0) return ''
-  const heading = 'CARRIED ATTACHMENTS'
-  const entries = attachments.map(attachmentEntry)
-  const full = `${heading}\n\n${entries.join('\n\n')}`
+  return boundedCarriedAttachmentsSection(
+    attachments.map((attachment) => ({
+      token: workflowTextAttachmentToken(attachment.id),
+      text: attachmentEntry(attachment),
+    })),
+  )
+}
+
+function boundedCarriedAttachmentsSection(entries: readonly RenderedAttachmentEntry[]): string {
+  if (entries.length === 0) return ''
+  const full = `${CARRIED_ATTACHMENTS_HEADING}\n\n${entries.map(({ text }) => text).join('\n\n')}`
   if (Buffer.byteLength(full) <= CARRIED_ATTACHMENTS_MAX_BYTES) return full
 
-  let section = heading
+  let section = CARRIED_ATTACHMENTS_HEADING
   for (let index = 0; index < entries.length; index += 1) {
     const separator = '\n\n'
-    const candidate = `${section}${separator}${entries[index]}`
+    const entry = entries[index]!
+    const candidate = `${section}${separator}${entry.text}`
     if (Buffer.byteLength(candidate) <= CARRIED_ATTACHMENTS_MAX_BYTES) {
       section = candidate
       continue
     }
-    const token = workflowTextAttachmentToken(attachments[index]!.id)
-    const marker = truncationMarker(token, 'section')
+    const marker = truncationMarker(entry.token, 'section')
     return boundUtf8(candidate, CARRIED_ATTACHMENTS_MAX_BYTES, marker)
   }
   return section
 }
 
-function carriedAttachmentsWithFailuresSection(
+function carriedAttachmentsWithUnresolvedWarningsSection(
   attachments: readonly CarriedAttachment[],
-  failures: readonly AttachmentFailure[],
+  unresolvedWarnings: readonly AttachmentFailure[],
 ): string {
-  if (failures.length === 0) return carriedAttachmentsSection(attachments)
-  const rendered = carriedAttachmentsSection(attachments)
-  const unresolved = failures.map(unresolvedAttachmentEntry).join('\n\n')
-  return rendered ? `${rendered}\n\n${unresolved}` : `CARRIED ATTACHMENTS\n\n${unresolved}`
+  if (unresolvedWarnings.length === 0) return carriedAttachmentsSection(attachments)
+  return boundedCarriedAttachmentsSection([
+    ...unresolvedWarnings.map((warning) => ({
+      token: warning.token,
+      text: unresolvedAttachmentEntry(warning),
+    })),
+    ...attachments.map((attachment) => ({
+      token: workflowTextAttachmentToken(attachment.id),
+      text: attachmentEntry(attachment),
+    })),
+  ])
 }
 
 type AttachmentFailure = {
@@ -163,5 +181,5 @@ export async function resolveCarriedAttachments(
     }
   }
   if (failures.length > 0) throw attachmentRefusal(failures)
-  return carriedAttachmentsWithFailuresSection(resolved, warnings)
+  return carriedAttachmentsWithUnresolvedWarningsSection(resolved, warnings)
 }
