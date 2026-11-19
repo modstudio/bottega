@@ -445,9 +445,11 @@ function staleReversionRefusal(
         ({ kind, slug, matchedVersion, productionVersion }) =>
           `- ${kind} ${slug}: tree matches production version ${matchedVersion}; current production version is ${productionVersion}`,
       )
-      .join('\n')}\nremedy: run ${PLATFORM_SLUG} workflow hydrate --cwd <tree> ${reversions
+      .join(
+        '\n',
+      )}\nremedy: in a project worktree, never the registered main checkout, run ${PLATFORM_SLUG} workflow hydrate --cwd <worktree> ${reversions
       .map(({ path }) => `--path ${path}`)
-      .join(' ')}, then commit the hydrated files`,
+      .join(' ')}, then commit the hydrated files and land them by pull request`,
   )
 }
 

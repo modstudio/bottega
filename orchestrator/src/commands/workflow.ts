@@ -16,13 +16,10 @@ import {
   composeCommand,
   execCommand,
   forkWorkflowCommand,
-  hydrateCommand,
-  importCommand,
   listWorkflowCommand,
   nextCommand,
   probeCommand,
   promoteCatalogueCommand,
-  promoteTreeCommand,
   promoteWorkflowCommand,
   recordEvidenceCommand,
   renderCheckCommand,
@@ -49,6 +46,11 @@ import {
   copyWorkflowTextCommand,
   showWorkflowTextCommand,
 } from '../workflow/workflow-text-commands.ts'
+import {
+  hydrateCommand,
+  importCommand,
+  promoteTreeCommand,
+} from '../workflow/workflow-tree-commands.ts'
 import { workflowUncoveredCommand } from '../workflow/workflow-uncovered.ts'
 import { collect, log, productArgv, rawArgv } from './support.ts'
 
@@ -69,6 +71,11 @@ const reasonOption = (command: Command) =>
   command.option('--reason <value>', 'record why this change is being made')
 const authorOption = (command: Command) =>
   command.option('--author <value>', 'record who is making this change')
+const promotionOptions = (command: Command) =>
+  authorOption(command).option(
+    '--from-operator',
+    "record Shmuel Barkin's override of landing-branch containment",
+  )
 const spaceOption = (command: Command) =>
   command.option('--space <slug>', 'write to this record space')
 const workflowArgv = (verb: string, args: string[], options: OptionValues) =>
@@ -183,24 +190,24 @@ function registerWorkflowVersions({
   handlerOptions,
   output,
 }: WorkflowRegistration): void {
-  for (const [verb, description, handler] of [
-    ['promote', 'promote a draft workflow version to production', promoteWorkflowCommand],
-    ['retire', 'retire a workflow version', retireWorkflowCommand],
+  for (const [verb, description] of [
+    ['promote', 'promote a draft workflow version to production'],
+    ['retire', 'retire a workflow version'],
   ] as const) {
-    jsonOption(
-      authorOption(
-        reasonOption(
-          workflow
-            .command(`${verb} <workflow> <version>`)
-            .description(description)
-            .option('--space <slug>', 'write to this record space'),
-        ),
-      ),
+    const command = reasonOption(
+      workflow
+        .command(`${verb} <workflow> <version>`)
+        .description(description)
+        .option('--space <slug>', 'write to this record space'),
     )
+    jsonOption(verb === 'promote' ? promotionOptions(command) : authorOption(command))
       .allowExcessArguments(false)
-      .action((slug, version, options) =>
-        handler(workflowArgv(verb, [slug, version], options), output(options)),
-      )
+      .action((slug, version, options) => {
+        const argv = workflowArgv(verb, [slug, version], options)
+        return verb === 'promote'
+          ? promoteWorkflowCommand(argv, output(options), handlerOptions)
+          : retireWorkflowCommand(argv, output(options))
+      })
   }
 
   jsonOption(
@@ -592,7 +599,8 @@ function registerWorkflowTreeCommands({
         workflow
           .command('import')
           .description('import a project workflow tree as draft definitions')
-          .option('--cwd <value>', 'select the project worktree to import'),
+          .option('--cwd <value>', 'select the project worktree to import')
+          .option('--since <commit>', 'measure changed workflow paths from this commit'),
       ),
     ),
   )
@@ -604,7 +612,7 @@ function registerWorkflowTreeCommands({
       }),
     )
 
-  authorOption(
+  promotionOptions(
     reasonOption(
       workflow
         .command('promote-tree')
@@ -669,19 +677,21 @@ function registerWorkflowCatalogue({
     .action((options) =>
       setCatalogueCommand(productArgv('catalogue', ['set'], options), output(options)),
     )
-  for (const [verb, description, handler] of [
-    ['promote', 'promote a draft step catalogue version to production', promoteCatalogueCommand],
-    ['retire', 'retire a step catalogue version', retireCatalogueCommand],
+  for (const [verb, description] of [
+    ['promote', 'promote a draft step catalogue version to production'],
+    ['retire', 'retire a step catalogue version'],
   ] as const) {
-    jsonOption(
-      authorOption(
-        reasonOption(spaceOption(catalogue.command(`${verb} <version>`).description(description))),
-      ),
+    const command = reasonOption(
+      spaceOption(catalogue.command(`${verb} <version>`).description(description)),
     )
+    jsonOption(verb === 'promote' ? promotionOptions(command) : authorOption(command))
       .allowExcessArguments(false)
-      .action((version, options) =>
-        handler(productArgv('catalogue', [verb, version], options), output(options)),
-      )
+      .action((version, options) => {
+        const argv = productArgv('catalogue', [verb, version], options)
+        return verb === 'promote'
+          ? promoteCatalogueCommand(argv, output(options), handlerOptions)
+          : retireCatalogueCommand(argv, output(options))
+      })
   }
   jsonOption(
     authorOption(

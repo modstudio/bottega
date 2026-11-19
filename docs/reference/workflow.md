@@ -180,7 +180,7 @@ fork the step catalogue into a new draft version
 
 ## bottega workflow catalogue promote
 
-**Synopsis:** `bottega workflow catalogue promote <version> [--space <slug>] [--reason <value>] [--author <value>] [--json]`
+**Synopsis:** `bottega workflow catalogue promote <version> [--space <slug>] [--reason <value>] [--author <value>] [--from-operator] [--json]`
 
 promote a draft step catalogue version to production
 
@@ -189,6 +189,7 @@ promote a draft step catalogue version to production
 - `--space <slug>`: write to this record space
 - `--reason <value>`: record why this change is being made
 - `--author <value>`: record who is making this change
+- `--from-operator`: record Shmuel Barkin's override of landing-branch containment
 - `--json`: print JSON output
 
 ### Related
@@ -446,13 +447,14 @@ write the production workflow tree into a project worktree
 
 ## bottega workflow import
 
-**Synopsis:** `bottega workflow import [--cwd <value>] [--reason <value>] [--author <value>] [--json]`
+**Synopsis:** `bottega workflow import [--cwd <value>] [--since <commit>] [--reason <value>] [--author <value>] [--json]`
 
 import a project workflow tree as draft definitions
 
 ### Options
 
 - `--cwd <value>`: select the project worktree to import
+- `--since <commit>`: measure changed workflow paths from this commit
 - `--reason <value>`: record why this change is being made
 - `--author <value>`: record who is making this change
 - `--json`: print JSON output
@@ -566,7 +568,7 @@ Options are documented by `--help`.
 
 ## bottega workflow promote
 
-**Synopsis:** `bottega workflow promote <workflow> <version> [--space <slug>] [--reason <value>] [--author <value>] [--json]`
+**Synopsis:** `bottega workflow promote <workflow> <version> [--space <slug>] [--reason <value>] [--author <value>] [--from-operator] [--json]`
 
 promote a draft workflow version to production
 
@@ -575,6 +577,7 @@ promote a draft workflow version to production
 - `--space <slug>`: write to this record space
 - `--reason <value>`: record why this change is being made
 - `--author <value>`: record who is making this change
+- `--from-operator`: record Shmuel Barkin's override of landing-branch containment
 - `--json`: print JSON output
 
 ### Related
@@ -583,7 +586,7 @@ promote a draft workflow version to production
 
 ## bottega workflow promote-tree
 
-**Synopsis:** `bottega workflow promote-tree [--cwd <value>] [--reason <value>] [--author <value>]`
+**Synopsis:** `bottega workflow promote-tree [--cwd <value>] [--reason <value>] [--author <value>] [--from-operator]`
 
 promote newest workflow drafts that match a project workflow tree
 
@@ -592,6 +595,7 @@ promote newest workflow drafts that match a project workflow tree
 - `--cwd <value>`: select the project workflow tree
 - `--reason <value>`: record why this change is being made
 - `--author <value>`: record who is making this change
+- `--from-operator`: record Shmuel Barkin's override of landing-branch containment
 
 ### Related
 

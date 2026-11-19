@@ -18,13 +18,10 @@ import {
   promoteStepCatalogueLocal,
   setStepCatalogueLocal,
 } from './step-catalogue.ts'
-import {
-  promoteTreeCommand,
-  type WorkflowCommandOptions,
-  type WorkflowPresentation,
-} from './workflow-commands.ts'
+import type { WorkflowCommandOptions, WorkflowPresentation } from './workflow-commands.ts'
 import { seedWorkflows } from './workflow-seeds.ts'
 import { parseWorkflowTree } from './workflow-tree.ts'
+import { promoteTreeCommand } from './workflow-tree-commands.ts'
 import { collectWorkflowTree } from './workflow-tree-files.ts'
 import { promoteWorkflowLocal, setWorkflowLocal, type WorkflowDefinition } from './workflows.ts'
 
@@ -205,6 +202,7 @@ export async function runPromoteTreeCommandFixture(label: string, divergent = fa
         workflowCommandPresentation(lines),
         {
           cwd: fixture.worktree,
+          promotionContainsHead: () => ({ contains: true }),
         },
       )
       return { lines, error: null }

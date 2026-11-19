@@ -15,6 +15,7 @@ const payload: PullRequestPostLandingPayload = {
   headBranch: 'DEV-2004-post-landing',
   headCommit: 'head',
   mergeCommit: 'merge',
+  workflowImportSince: 'main-before',
   requiredRungs: ['hosted-api'],
   rungDecisionError: null,
   releaseRequired: true,
@@ -37,6 +38,7 @@ const expectedPreviousBinaryPayload: PullRequestPostLandingPayload = {
   headBranch: 'DEV-2032-post-landing',
   headCommit: 'head',
   mergeCommit: 'merge',
+  workflowImportSince: null,
   requiredRungs: ['hosted-api'],
   rungPlans: [
     {
@@ -97,12 +99,20 @@ test('post-landing payload carries the release plan requirement source', () => {
   )
 })
 
-test.each(Object.keys(payload).filter((field) => field !== 'depth'))(
-  'post-landing payload refuses missing %s',
-  (field) => {
-    const incomplete = { ...payload } as Record<string, unknown>
-    delete incomplete[field]
-    expect(() => parsePullRequestPostLandingPayload(JSON.stringify(incomplete))).toThrow(field)
+test.each(
+  Object.keys(payload).filter((field) => field !== 'depth' && field !== 'workflowImportSince'),
+)('post-landing payload refuses missing %s', (field) => {
+  const incomplete = { ...payload } as Record<string, unknown>
+  delete incomplete[field]
+  expect(() => parsePullRequestPostLandingPayload(JSON.stringify(incomplete))).toThrow(field)
+})
+
+test.each(['', 5, false])(
+  'post-landing payload refuses invalid workflowImportSince %p',
+  (workflowImportSince) => {
+    expect(() =>
+      parsePullRequestPostLandingPayload(JSON.stringify({ ...payload, workflowImportSince })),
+    ).toThrow('workflowImportSince')
   },
 )
 

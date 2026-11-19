@@ -22,6 +22,7 @@ export type PullRequestPostLandingPayload = {
   headBranch: string
   headCommit: string
   mergeCommit: string
+  workflowImportSince: string | null
   requiredRungs: string[]
   rungPlans?: ReleaseRungPlan[]
   rungDecisionError: string | null
@@ -93,6 +94,14 @@ export function parsePullRequestPostLandingPayload(text: string): PullRequestPos
   for (const field of ['project', 'target', 'headBranch', 'headCommit', 'mergeCommit'] as const) {
     if (typeof row[field] !== 'string' || !row[field]) throw refusal(field, 'a non-empty string')
   }
+  if (row.workflowImportSince === undefined) row.workflowImportSince = null
+  if (
+    !(
+      row.workflowImportSince === null ||
+      (typeof row.workflowImportSince === 'string' && row.workflowImportSince)
+    )
+  )
+    throw refusal('workflowImportSince', 'a non-empty string or null')
   if (!Number.isSafeInteger(row.prNumber) || Number(row.prNumber) <= 0)
     throw refusal('prNumber', 'a positive integer')
   if (

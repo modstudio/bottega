@@ -9,7 +9,8 @@ import { projectAt, upsertProject } from '../project/projects.ts'
 import { rememberProjectSpace } from '../project-space-cache.ts'
 import { applyWorkflowCatalogueRow } from '../record/record-cache-workflow.fixture.ts'
 import { productionStepCatalogue } from './step-catalogue.ts'
-import { commandOutcome, workflowProjectRefusal } from './workflow-commands.ts'
+import { workflowProjectRefusal } from './workflow-command-project.ts'
+import { commandOutcome } from './workflow-commands.ts'
 import { composeWorkflowWithCursor } from './workflow-cursor.ts'
 import { recordWorkflowProbe } from './workflow-probe.ts'
 import {
@@ -369,31 +370,6 @@ test('workflow hydrate check resolves hosted production from the worktree withou
   expect(result.exitCodes).toEqual([])
 })
 
-test('workflow import resolves hosted production from the worktree without BOTTEGA_MAIN_CHECKOUT', async () => {
-  const fixture = hostedWorkflowRepositoryFixture('import')
-  const project = 'import-hosted-worktree'
-  registerOwningProject(project, fixture.mainCheckout)
-  expect(projectAt(fixture.worktree)?.name).toBe(project)
-  installHostedWorkflowTree(project, newRecordId(), fixture.worktree)
-  publishStaleLocalWorkflow('import-local-only')
-  const priorMainCheckout = process.env.BOTTEGA_MAIN_CHECKOUT
-  const lines: string[] = []
-  try {
-    delete process.env.BOTTEGA_MAIN_CHECKOUT
-    await workflowCommand(
-      ['workflow', 'import', '--cwd', fixture.worktree, '--reason', 'unchanged hosted tree'],
-      presentation(lines),
-    )
-  } finally {
-    if (priorMainCheckout === undefined) delete process.env.BOTTEGA_MAIN_CHECKOUT
-    else process.env.BOTTEGA_MAIN_CHECKOUT = priorMainCheckout
-    fixture.dispose()
-  }
-  expect(lines.join('\n')).toMatch(
-    /^workflow stale-reversion check skipped: .+\ncatalogue: no change\n(?:.+: no change\n?)+$/,
-  )
-})
-
 test('workflow tree project refusal is only required for a configured record without an owner', async () => {
   const input = { command: 'hydrate' as const, root: '/fixture/unowned' }
   expect(
@@ -412,7 +388,18 @@ test('workflow tree project refusal is only required for a configured record wit
   ).toBeNull()
   expect(workflowProjectRefusal({ ...input, project: null, recordConfigured: true })).toBe(
     'refusing workflow hydrate in /fixture/unowned: no registered project owns this directory\n' +
-      "cleared by: run from a registered project's worktree, or pass --cwd for one",
+      "cleared by: pass --cwd naming a registered project's checkout or worktree",
+  )
+  expect(
+    workflowProjectRefusal({
+      ...input,
+      command: 'promote',
+      project: null,
+      recordConfigured: true,
+    }),
+  ).toBe(
+    'refusing workflow promote in /fixture/unowned: no registered project owns this directory\n' +
+      "cleared by: run from a registered project's checkout",
   )
 })
 
@@ -429,7 +416,7 @@ test('workflow tree commands name their own refusal for an unowned configured di
         workflowCommand(['workflow', verb, ...extra, '--cwd', repositoryRoot], presentation([])),
       ).rejects.toThrow(
         `refusing workflow ${verb} in ${repositoryRoot}: no registered project owns this directory\n` +
-          "cleared by: run from a registered project's worktree, or pass --cwd for one",
+          "cleared by: pass --cwd naming a registered project's checkout or worktree",
       )
   } finally {
     if (priorRecordApiUrl === undefined) delete process.env.BOTTEGA_RECORD_API_URL

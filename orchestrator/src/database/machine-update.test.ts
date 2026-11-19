@@ -122,6 +122,7 @@ function successfulMachineUpdateDeps(migrate: () => void = () => {}) {
       return args[0] === 'rev-parse' ? 'current-before' : ''
     },
     migrate,
+    syncWorkflows: () => {},
     runLaunchAgentsRefreshVerb: () => {},
   }
 }
@@ -147,22 +148,16 @@ test("machine update clears a dead holder's marker before deciding", async () =>
       migrate: () => {
         migrated = true
       },
+      syncWorkflows: () => {},
       runLaunchAgentsRefreshVerb: () => {},
     },
   )
   expect(migrationDrain(db())).toBeNull()
   expect(migrated).toBe(true)
   expect(existsSync(machineUpdateIntentPath(process.env))).toBeFalse()
-  expect(gitCalls.map((args) => (args.includes('pull') ? 'pull' : args[0]))).toEqual([
-    'branch',
-    'fetch',
-    'show',
-    'rev-parse',
-    'pull',
-    'diff',
-    'branch',
-    'status',
-  ])
+  expect(gitCalls.map((args) => (args.includes('pull') ? 'pull' : args[0])).join(' ')).toBe(
+    'branch fetch show rev-parse pull diff branch status branch status',
+  )
 })
 
 test('machine update proceeds when the hub store is absent and records position zero', async () => {
@@ -190,6 +185,7 @@ test('machine update proceeds when the hub store is absent and records position 
         migrate: () => {
           migrated = true
         },
+        syncWorkflows: () => {},
         runLaunchAgentsRefreshVerb: () => {},
       },
     )
@@ -224,6 +220,7 @@ test("machine update recovers a dead holder's intent before the new update", asy
           return args[0] === 'rev-parse' ? 'current-before' : ''
         },
         migrate: () => {},
+        syncWorkflows: () => {},
         runLaunchAgentsRefreshVerb: () => {},
       },
     )
@@ -417,7 +414,7 @@ test('machine update leaves main pulled when the store position cannot be read a
   }
 })
 
-test('machine update refuses when the install root is tracked-dirty after refresh', async () => {
+test('machine update refuses a tracked-dirty install root before refresh', async () => {
   let refreshed = false
   await expect(
     machineUpdateCommand(
@@ -437,13 +434,14 @@ test('machine update refuses when the install root is tracked-dirty after refres
           return ''
         },
         migrate: () => {},
+        syncWorkflows: () => {},
         runLaunchAgentsRefreshVerb: () => {
           refreshed = true
         },
       },
     ),
   ).rejects.toThrow('checkout has tracked modifications')
-  expect(refreshed).toBe(true)
+  expect(refreshed).toBeFalse()
 })
 
 test('an additive machine update marks only the store-open window around pull and migrate', async () => {
@@ -475,6 +473,7 @@ test('an additive machine update marks only the store-open window around pull an
           expect(migrationDrain(db())).toBeNull()
           phases.push('migrate')
         },
+        syncWorkflows: () => {},
         runLaunchAgentsRefreshVerb: () => {},
       },
     )
@@ -625,6 +624,7 @@ test('a non-additive update waits for an admitted resume, then migrates behind t
           expect(migrationDrain(db())?.phase).toBe('migrating')
           events.push('migrate')
         },
+        syncWorkflows: () => {},
         runLaunchAgentsRefreshVerb: () => {},
       },
     )
@@ -839,6 +839,7 @@ test(`machine update targets the ${PLATFORM_NAME} checkout when the caller is an
         return args[0] === 'show' ? JSON.stringify({ entries: migrationJournal() }) : ''
       },
       migrate: () => {},
+      syncWorkflows: () => {},
       runLaunchAgentsRefreshVerb: () => {},
     },
   )
@@ -848,7 +849,7 @@ test(`machine update targets the ${PLATFORM_NAME} checkout when the caller is an
     /^incremental vacuum setup: pruned 0 rows, \d+ bytes before, \d+ bytes after, \d+ms elapsed$/,
   )
   expect(projectPaths).toEqual([target])
-  expect(gitCwds).toEqual([target, target, target, target, target, target, target, target])
+  expect(gitCwds).toEqual(Array(10).fill(target))
 })
 
 test('machine update defaults the target to the installation root', async () => {
@@ -875,11 +876,12 @@ test('machine update defaults the target to the installation root', async () => 
         return ''
       },
       migrate: () => {},
+      syncWorkflows: () => {},
       runLaunchAgentsRefreshVerb: () => {},
     },
   )
   expect(projectPaths).toEqual([target])
-  expect(gitCwds).toEqual([target, target, target, target, target, target, target, target])
+  expect(gitCwds).toEqual(Array(10).fill(target))
   expect(journalRef).toBe(`origin/main:${ORCHESTRATOR_MIGRATION_JOURNAL_SOURCE.path}`)
 })
 
@@ -903,6 +905,7 @@ test('machine update does not name the checkout when the caller is already there
             ? JSON.stringify({ entries: migrationJournal() })
             : '',
       migrate: () => {},
+      syncWorkflows: () => {},
       runLaunchAgentsRefreshVerb: () => {},
     },
   )
@@ -934,6 +937,7 @@ test('machine update keeps its successful result when store maintenance fails', 
               ? JSON.stringify({ entries: migrationJournal() })
               : '',
         migrate: () => {},
+        syncWorkflows: () => {},
         maintainStore: () => {
           throw new Error('store busy')
         },
@@ -973,6 +977,7 @@ test('checkout update refreshes through deps.cwd when the running identity root 
               ? JSON.stringify({ entries: migrationJournal() })
               : '',
         migrate: () => {},
+        syncWorkflows: () => {},
         maintainStore: () => {},
         runLaunchAgentsRefreshVerb: (binary) => refreshed.push(binary),
       },

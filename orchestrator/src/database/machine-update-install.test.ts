@@ -32,8 +32,8 @@ test.each([
 })
 
 test.each([
-  { changedPaths: 'package.json\0', expected: ['pull', 'install', 'migrate'] },
-  { changedPaths: 'shared/source.ts\0', expected: ['pull', 'migrate'] },
+  { changedPaths: 'package.json\0', expected: ['pull', 'install', 'migrate', 'workflow-sync'] },
+  { changedPaths: 'shared/source.ts\0', expected: ['pull', 'migrate', 'workflow-sync'] },
 ])(
   'machine update orders dependency refresh for pulled paths $changedPaths',
   async ({ changedPaths, expected }) => {
@@ -58,12 +58,47 @@ test.each([
         },
         install: () => events.push('install'),
         migrate: () => events.push('migrate'),
+        syncWorkflows: (cwd, since) => {
+          expect({ cwd, since }).toEqual({ cwd: dir, since: 'before-commit' })
+          events.push('workflow-sync')
+        },
         runLaunchAgentsRefreshVerb: () => {},
       },
     )
     expect(events).toEqual([...expected])
   },
 )
+
+test('machine update verifies the main checkout before synchronizing workflows', async () => {
+  let synchronized = false
+  await expect(
+    machineUpdateCommand(
+      { log: () => {} },
+      {
+        cwd: dir,
+        authorityRefusal: () => null,
+        project: () => ({
+          name: 'migration-update-fixture',
+          path: dir,
+          settings: { trunk: 'main' },
+        }),
+        git: (_cwd, args) => {
+          if (args[0] === 'branch') return 'main'
+          if (args[0] === 'show') return JSON.stringify({ entries: migrationJournal() })
+          return args[0] === 'rev-parse' ? 'before-commit' : ''
+        },
+        migrate: () => {},
+        verifyMainCheckout: () => {
+          throw new Error('tracked workflow edit remains')
+        },
+        syncWorkflows: () => {
+          synchronized = true
+        },
+      },
+    ),
+  ).rejects.toThrow('tracked workflow edit remains')
+  expect(synchronized).toBeFalse()
+})
 
 test('machine update restores main when dependency install fails after the pull', async () => {
   const gitCalls: string[][] = []

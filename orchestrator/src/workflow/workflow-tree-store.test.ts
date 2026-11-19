@@ -604,7 +604,7 @@ describe('importWorkflowTree', () => {
     expect(refusal?.message).toBe(
       'refusing stale workflow tree reversion:\n' +
         '- step blast-radius: tree matches production version 1; current production version is 2\n' +
-        `remedy: run ${PLATFORM_SLUG} workflow hydrate --cwd <tree> --path .agents/workflow-steps/blast-radius.md, then commit the hydrated files`,
+        `remedy: in a project worktree, never the registered main checkout, run ${PLATFORM_SLUG} workflow hydrate --cwd <worktree> --path .agents/workflow-steps/blast-radius.md, then commit the hydrated files and land them by pull request`,
     )
     expect(
       (d.query('SELECT COUNT(*) count FROM step_catalogue_version').get() as { count: number })
