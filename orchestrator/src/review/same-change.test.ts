@@ -35,8 +35,8 @@ test('exact hunk comparison requires both contextual identities to match', () =>
       { patchId: 'same', exactHunksId: 'two' },
     ),
   ).toBe(false)
-  expect(sameExactHunks(undefined, { exactHunksId: 'same' })).toBe(false)
-  expect(sameExactHunks({ exactHunksId: 'same' }, null)).toBe(false)
+  expect(sameExactHunks(undefined, { patchId: 'same', exactHunksId: 'same' })).toBe(false)
+  expect(sameExactHunks({ patchId: 'same', exactHunksId: 'same' }, null)).toBe(false)
 })
 
 const change = (zero: string | null, paths: string[] | null = ['src/a.ts'], patch = 'legacy') => ({

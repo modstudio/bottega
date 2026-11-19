@@ -73,7 +73,7 @@ export function pathNeutralContentIdentity(section: string): string {
   return new Bun.CryptoHasher('sha256').update(normalized).digest('hex')
 }
 
-type ExactHunksPatch = { exactHunksId?: string }
+type ExactHunksPatch = { patchId: string; exactHunksId?: string }
 
 /** Compare contextual per-path patch identities; absent identities never match. */
 export function sameExactHunks(

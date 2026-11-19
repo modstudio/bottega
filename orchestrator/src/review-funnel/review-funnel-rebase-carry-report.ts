@@ -14,10 +14,8 @@ import {
   spawnGitProbe,
 } from '../review/review-target.ts'
 import type { ReviewFunnelVerdict } from './decide-review-funnel.ts'
-import {
-  type ReviewFunnelRebaseCarryRow,
-  reviewFunnelRebaseCarryRows,
-} from './review-funnel-store.ts'
+import type { ReviewFunnelRebaseCarryRow } from './review-funnel-store.ts'
+import { reviewFunnelRebaseCarryRows } from './review-funnel-store.ts'
 
 export type RebaseCarryReportRow = ReviewFunnelRebaseCarryRow
 

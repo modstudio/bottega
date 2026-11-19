@@ -143,7 +143,7 @@ export const reviewModuleSpecs = [
       '../review/review-target.ts',
       './review-funnel-store.ts',
     ],
-    typeOnlyAllowed: ['bun:sqlite', './decide-review-funnel.ts', './review-funnel-store.ts'],
+    typeOnlyAllowed: ['bun:sqlite', './decide-review-funnel.ts'],
   },
   {
     file: 'orchestrator/src/review-funnel/review-funnel-store.ts',
@@ -443,7 +443,7 @@ export const reviewBoundarySpecs: ReviewBoundarySpec[] = [
       '../review/review-target.ts',
       './review-funnel-store.ts',
     ],
-    typeOnlyAllowed: ['bun:sqlite', './decide-review-funnel.ts', './review-funnel-store.ts'],
+    typeOnlyAllowed: ['bun:sqlite', './decide-review-funnel.ts'],
     reason: 'Keep historical rebase measurement separate from the live carry decision.',
   },
   {
