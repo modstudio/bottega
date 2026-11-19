@@ -145,6 +145,11 @@ export const workflowCommandModules: WorkflowCommandModule[] = [
     './task-flow-store-types.ts',
   ]),
   module('orchestrator/src/workflow/task-flow-store-methods.ts', []),
+  module('orchestrator/src/workflow/task-flow-store-record.fixture.ts', [
+    '../database/test-database.fixture.ts',
+    '../project-space-cache.ts',
+    '../record/record-task-flow-contract.ts',
+  ]),
   module('orchestrator/src/workflow/task-flow-store-types.ts', [
     '../record/record-task-flow-contract.ts',
     '../record/record-task-flow-write-contract.ts',

@@ -1,3 +1,4 @@
+import type { Database } from 'bun:sqlite'
 import { testDatabaseFixture } from '../database/test-database.fixture.ts'
 import { rememberProjectSpace } from '../project-space-cache.ts'
 import type { HostedTaskFlowStageById } from '../record/record-task-flow-contract.ts'
@@ -8,16 +9,16 @@ export const TASK_ID = '00000000-0000-4000-8000-000000000003'
 export const MACHINE_ID = '00000000-0000-4000-8000-000000000004'
 export const WORKFLOW_VERSION_ID = '00000000-0000-4000-8000-000000000005'
 export const CATALOGUE_VERSION_ID = '00000000-0000-4000-8000-000000000006'
-export const WORKFLOW_ID = '00000000-0000-4000-8000-000000000010'
-export const CATALOGUE_ID = '00000000-0000-4000-8000-000000000011'
+const WORKFLOW_ID = '00000000-0000-4000-8000-000000000010'
+const CATALOGUE_ID = '00000000-0000-4000-8000-000000000011'
 export const TEXT_ID = '00000000-0000-4000-8000-000000000012'
-export const COPY_ID = '00000000-0000-4000-8000-000000000013'
+const COPY_ID = '00000000-0000-4000-8000-000000000013'
 export const OBLIGATION_ID = '00000000-0000-4000-8000-000000000014'
 export const CHILD_FLOW_ID = '00000000-0000-4000-8000-000000000015'
 export const ABANDONED_STAGE_ID = '00000000-0000-4000-8000-000000000016'
 export const CHILD_STAGE_ID = '00000000-0000-4000-8000-000000000017'
 
-export const database = testDatabaseFixture((d) => {
+function seedDefinitions(d: Database) {
   d.query('INSERT INTO project (record_id,name,path,stack,settings) VALUES (?,?,?,?,?)').run(
     PROJECT_ID,
     'fixture',
@@ -45,6 +46,9 @@ export const database = testDatabaseFixture((d) => {
      (record_id,catalogue_record_id,n,status,definition,author,reason,created_at)
      VALUES (?,?,1,'production','{}','test','fixture',?)`,
   ).run(CATALOGUE_VERSION_ID, CATALOGUE_ID, '2026-11-12T00:00:00.000Z')
+}
+
+function seedFlow(d: Database) {
   d.query(
     `INSERT INTO task_flow
      (record_id,task_record_id,project_record_id,state,open_stage_cursor_record_id,created_at,
@@ -101,6 +105,9 @@ export const database = testDatabaseFixture((d) => {
     '00000000-0000-4000-8000-000000000007',
     FLOW_ID,
   )
+}
+
+function seedStageRows(d: Database) {
   d.query(
     `INSERT INTO workflow_step_text
      (record_id,cursor_record_id,step_ordinal,step_slug,body,created_at) VALUES (?,?,?,?,?,?)`,
@@ -142,8 +149,40 @@ export const database = testDatabaseFixture((d) => {
     'fixture obligation',
     '2026-11-12T00:00:00.000Z',
   )
+}
+
+export const database = testDatabaseFixture((d) => {
+  seedDefinitions(d)
+  seedFlow(d)
+  seedStageRows(d)
   rememberProjectSpace(d, 'fixture', 'fixture-space')
 })
+
+type HostedObligation = HostedTaskFlowStageById['stage']['obligations'][number]
+
+function hostedObligation(stageId: string): HostedObligation {
+  return {
+    id: OBLIGATION_ID,
+    stageRecordId: stageId,
+    stepOrdinal: 0,
+    stepSlug: 'plan',
+    floor: 'command-exit',
+    requirePullRequest: true,
+    expectedExitCode: 0,
+    expectedStatus: 'done',
+    floorDeferrable: true,
+    reason: 'fixture obligation',
+    sessionId: null,
+    createdAt: '2026-11-12T00:00:00.000Z',
+    satisfiedAt: null,
+    satisfiedStepOrdinal: null,
+    satisfiedStepSlug: null,
+    satisfiedEvidence: null,
+    abandonedAt: null,
+    abandonedReason: null,
+    operatorRuling: false,
+  }
+}
 
 export function hostedStage(
   input: {
@@ -205,29 +244,7 @@ export function hostedStage(
       revision: 1,
       createdAt: '2026-11-12T00:00:00.000Z',
       updatedAt: '2026-11-12T00:00:00.000Z',
-      obligations: [
-        {
-          id: OBLIGATION_ID,
-          stageRecordId: stageId,
-          stepOrdinal: 0,
-          stepSlug: 'plan',
-          floor: 'command-exit',
-          requirePullRequest: true,
-          expectedExitCode: 0,
-          expectedStatus: 'done',
-          floorDeferrable: true,
-          reason: 'fixture obligation',
-          sessionId: null,
-          createdAt: '2026-11-12T00:00:00.000Z',
-          satisfiedAt: null,
-          satisfiedStepOrdinal: null,
-          satisfiedStepSlug: null,
-          satisfiedEvidence: null,
-          abandonedAt: null,
-          abandonedReason: null,
-          operatorRuling: false,
-        },
-      ],
+      obligations: [hostedObligation(stageId)],
       stepTexts: [
         {
           id: TEXT_ID,
