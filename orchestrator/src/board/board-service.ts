@@ -23,6 +23,7 @@ import {
   replySuccessorAddressing,
   selectPushNotices,
 } from './board-push-policy.ts'
+import { renewLiveQueuedClaimsOfSession } from './board-queued-claim-renewal.ts'
 import { renderBoardNotice, renderBoardNoticeOneLine } from './board-render.ts'
 import {
   addressed,
@@ -113,6 +114,7 @@ export function recordPresence(
       beganAt ?? at,
       at,
     )
+  renewLiveQueuedClaimsOfSession(identity.session, Date.parse(at), writableDb())
   return true
 }
 

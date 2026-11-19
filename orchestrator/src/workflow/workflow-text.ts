@@ -134,7 +134,12 @@ async function workflowTextRows(
   d: Database,
   client?: WorkflowCursorContext['taskFlowClient'],
 ): Promise<WorkflowTextRow[]> {
-  return (await taskFlowReadStore(d, client).textsForStage(cursorId)).map((row) => ({
+  const store = taskFlowReadStore(d, client)
+  const stage = await store.stageByRecordId(cursorId)
+  const rows = stage?.task_flow_record_id
+    ? await store.textsForFlowLineage(stage.task_flow_record_id, cursorId)
+    : await store.textsForStage(cursorId)
+  return rows.map((row) => ({
     id: row.id,
     cursorId: row.cursor_record_id,
     stepOrdinal: row.step_ordinal,

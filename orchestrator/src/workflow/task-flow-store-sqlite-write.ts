@@ -88,11 +88,14 @@ function applyFlowValues(database: Database, mutation: Mutation, next: number): 
     key in mutation.values ? storedValue(key, mutation.values[key]) : null
   database
     .query(`UPDATE task_flow SET
-    state=COALESCE(?,state),open_stage_cursor_record_id=CASE WHEN ? THEN ? ELSE open_stage_cursor_record_id END,
+    state=COALESCE(?,state),parent_flow_record_id=CASE WHEN ? THEN ? ELSE parent_flow_record_id END,
+    open_stage_cursor_record_id=CASE WHEN ? THEN ? ELSE open_stage_cursor_record_id END,
     opening_machine_id=COALESCE(?,opening_machine_id),updated_machine_id=COALESCE(?,updated_machine_id),
     created_at=COALESCE(?,created_at),updated_at=COALESCE(?,updated_at),revision=? WHERE record_id=?`)
     .run(
       value('state'),
+      'parentFlowRecordId' in mutation.values,
+      value('parentFlowRecordId'),
       'openStageRecordId' in mutation.values,
       value('openStageRecordId'),
       value('openingMachineId'),
@@ -169,14 +172,15 @@ function updateMutation(
 function insertFlow(database: Database, row: SqlRow, revisionValue: number): void {
   database
     .query(`INSERT INTO task_flow
-      (record_id,task_record_id,project_record_id,state,open_stage_cursor_record_id,created_at,updated_at,
+      (record_id,task_record_id,project_record_id,parent_flow_record_id,state,open_stage_cursor_record_id,created_at,updated_at,
        opening_machine_id,updated_machine_id,revision)
-      VALUES (?,?,?,?,?,?,?,?,?,?)`)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?)`)
     .run(
       // @ts-expect-error The validated intent guarantees every required SQLite binding.
       row.id,
       row.taskId,
       row.projectId,
+      row.parentFlowRecordId,
       row.state,
       row.openStageRecordId,
       row.createdAt,
@@ -434,6 +438,7 @@ function sourceFlowForAdopt(
     {
       id: flowRecordId,
       taskId: body.taskId ?? null,
+      parentFlowRecordId: null,
       projectId: project.project_record_id,
       state: body.state ?? 'open',
       openStageRecordId: stageId,

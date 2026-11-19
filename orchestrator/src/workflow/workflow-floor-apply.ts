@@ -3,10 +3,12 @@
 
 import type { Database } from 'bun:sqlite'
 import { nowIso } from '../database/db.ts'
+import { taskReader } from './task-read-port.ts'
 import { cursorName, workflowCursorTakeoverRemedy } from './workflow-cursor-format.ts'
 import type { SelectableCursorRow, WorkflowCursorContext } from './workflow-cursor-selection.ts'
 import { currentStepActivatedAt, reentryBoundFloorInput } from './workflow-cursor-trail.ts'
 import { foreignCursorOwner } from './workflow-cursor-transition.ts'
+import { descendantTaskFacts, selectEpicStartFloors } from './workflow-epic-floor.ts'
 import type { WorkflowEvidenceInput } from './workflow-evidence-input.ts'
 import {
   decideFloorSatisfaction,
@@ -59,8 +61,23 @@ export async function applyFloorDecision(
 ): Promise<FloorDecision> {
   const foreignOwner = foreignCursorOwner(row, callerSession)
   const args = JSON.parse(row.args) as Record<string, string>
-  const evidenceFloors = floors.filter(({ kind }) => kind !== 'review-owed')
-  if (row.enforcement === 'floors' && evidenceFloors.length !== floors.length) {
+  const declaredEvidenceFloors = floors.filter(({ kind }) => kind !== 'review-owed')
+  const taskRows = declaredEvidenceFloors.some(({ kind }) => kind === 'descendants-closed')
+    ? taskReader()
+        .list({ project: row.project })
+        .map((task) => ({
+          key: task.key,
+          parentKey: task.parent_key,
+          status: task.status,
+          statusCategory: task.status_category,
+        }))
+    : []
+  const evidenceFloors = selectEpicStartFloors(declaredEvidenceFloors, {
+    workflow: row.workflow_slug,
+    step: row.step_slug,
+    hasChildren: taskRows.some((task) => task.parentKey === row.workflow_key),
+  })
+  if (row.enforcement === 'floors' && floors.some(({ kind }) => kind === 'review-owed')) {
     const reviewOwed = invokeFloorEvidencePort(
       ports,
       'reviewOwed',
@@ -96,6 +113,8 @@ export async function applyFloorDecision(
     d: database,
     taskFlowClient: client,
   })
+  if (evidenceFloors.some(({ kind }) => kind === 'descendants-closed'))
+    validated.descendants = descendantTaskFacts(row.workflow_key, taskRows)
   if (selfRulingId !== undefined)
     validated.ruling = {
       id: selfRulingId,

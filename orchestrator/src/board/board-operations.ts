@@ -47,7 +47,9 @@ import {
   type BoardTaskCursorAuthority,
   type ClaimView,
   claimProject,
+  closeQueuedTaskClaim,
   listClaims,
+  liveClaimsOfSession,
   releaseClaim,
   releaseTaskClaims,
   renewClaim,
@@ -71,6 +73,7 @@ import {
   parseAudience,
   standingPostingRefusal,
 } from './board-policy.ts'
+import { renewLiveQueuedClaimsOfSession } from './board-queued-claim-renewal.ts'
 import type { ReplyAudienceOption } from './board-reply-audience.ts'
 import {
   acknowledgeNotice,
@@ -185,7 +188,7 @@ export type BoardStatusResult = {
 export type BoardClaimResult = {
   recordId: string
   project: string
-  subject: { kind: 'task' | 'path' | 'resource'; value: string }
+  subject: { kind: 'task' | 'path' | 'resource' | 'queued-task'; value: string }
   holder: string
   note: string | null
   runId: string | null
@@ -831,12 +834,21 @@ function hostedClaimRunId(runId: string | undefined, env: Environment): string |
 
 export async function boardClaimTake(input: TakeClaimInput, inputContext?: Context) {
   const c = context(inputContext)
-  const takeAuthority = c.taskCursorAuthority?.mode === 'take' ? c.taskCursorAuthority : undefined
-  if (input.subject.startsWith('task:') && !takeAuthority)
+  const takeAuthority =
+    c.taskCursorAuthority?.mode === 'take' ||
+    c.taskCursorAuthority?.mode === 'start-child' ||
+    c.taskCursorAuthority?.mode === 'queue-take'
+      ? c.taskCursorAuthority
+      : undefined
+  if (
+    input.subject.startsWith('task:') &&
+    takeAuthority?.mode !== 'take' &&
+    takeAuthority?.mode !== 'start-child'
+  )
     throw new Error(
       `task claims follow task cursors; run workflow compose … --arg key=${input.subject.slice('task:'.length)} instead`,
     )
-  if (takeAuthority) input = { ...input, force: true }
+  if (takeAuthority?.mode === 'take') input = { ...input, force: true }
   const project = claimProject(input.project, c.env, c.cwd, c.database, takeAuthority)
   const callerProject = projectAt(c.cwd, c.database)
   const targetProject = projectByName(project, c.database)
@@ -887,6 +899,49 @@ export async function boardClaimRenew(id: string, inputContext?: Context) {
           holderSession: boardActor(c.env).session,
         }),
       )
+}
+/** Workflow renewal routes through board operations so workflow code never imports board storage. */
+export function boardQueuedClaimsRenew(
+  session: string,
+  clock = Date.now(),
+  database: Database = db(),
+) {
+  return renewLiveQueuedClaimsOfSession(session, clock, database)
+}
+export function boardQueuedClaimClose(
+  input: { project: string; key: string; session: string; reason: 'released' | 'started' },
+  clock = Date.now(),
+  database: Database = db(),
+) {
+  return closeQueuedTaskClaim(
+    input.project,
+    input.key,
+    input.session,
+    input.reason,
+    clock,
+    database,
+  )
+}
+
+/** Read live local claims through the board's liveness policy for workflow decisions. */
+export function boardLiveClaimsForProject(
+  project: string,
+  clock = Date.now(),
+  database: Database = db(),
+): ClaimView[] {
+  return listClaims(project, false, {}, clock, '', database, {
+    mode: 'coverage-read',
+    session: null,
+  }).claims
+}
+
+/** Read projects where a session holds a live local claim through the board's liveness policy. */
+export function boardLiveClaimProjectsForSession(
+  session: string,
+  clock = Date.now(),
+  database: Database = db(),
+): string[] {
+  return [...new Set(liveClaimsOfSession(session, clock, database).map(({ project }) => project))]
 }
 export async function boardClaimRelease(id: string, inputContext?: Context) {
   const c = context(inputContext)

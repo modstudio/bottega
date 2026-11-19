@@ -41,6 +41,7 @@ import { resolveReviewIdentifier } from '../review/review-identifier.ts'
 import { catalogueStepsForAutonomy, parseAutonomy } from '../workflow/autonomy.ts'
 import { resolveProjectAutonomy } from '../workflow/autonomy-scopes.ts'
 import { taskReader } from '../workflow/task-read-port.ts'
+import { queueWorkflowChild, startWorkflowChild } from '../workflow/workflow-child-service.ts'
 import {
   type CommitCountPort,
   type LandingBranchPorts,
@@ -557,7 +558,54 @@ function registerCoreTools(server: McpServer, ports: DocsMcpPorts): void {
   registerWorkflowListTool(server)
 }
 
+function registerWorkflowChildTools(server: McpServer): void {
+  server.registerTool(
+    'queue_workflow_child',
+    {
+      description: 'Queue or release an epic child for a session without opening a cursor.',
+      inputSchema: z.object({
+        project: z.string().trim().min(1),
+        child: z.string().trim().min(1),
+        session: z.string().trim().min(1),
+        off: z.boolean().optional(),
+      }),
+    },
+    async ({ project, child, session, off }) => {
+      const callerSession = mcpWorkflowCursorContext().session
+      if (!callerSession) throw new Error('queue_workflow_child requires a calling session')
+      return text(
+        await queueWorkflowChild({
+          project,
+          child,
+          session,
+          callerSession,
+          off: off ?? false,
+        }),
+      )
+    },
+  )
+}
+
 function registerWorkflowActionTools(server: McpServer, ports: DocsMcpPorts): void {
+  registerWorkflowChildTools(server)
+
+  server.registerTool(
+    'start_workflow_child',
+    {
+      description: 'Open an inherited child cursor from an epic cursor at start.',
+      inputSchema: z.object({
+        project: z.string().trim().min(1),
+        cursor: z.number().int().positive(),
+        task: z.string().trim().min(1).optional(),
+      }),
+    },
+    async ({ project, cursor, task }) => {
+      const callerSession = mcpWorkflowCursorContext().session
+      if (!callerSession) throw new Error('start_workflow_child requires a calling session')
+      return text(await startWorkflowChild({ project, cursor, task, callerSession }))
+    },
+  )
+
   server.registerTool(
     'compose_workflow',
     {

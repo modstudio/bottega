@@ -402,8 +402,27 @@ class RecordTaskFlowReadStore {
           record_id: result.flow.id,
           revision: result.flow.revision,
           open_stage_cursor_record_id: result.flow.openStageRecordId,
+          parent_flow_record_id: result.flow.parentFlowRecordId ?? null,
         }
       : null
+  }
+  async textsForFlowLineage(flowRecordId: string, stageRecordId: string) {
+    const lineage: HostedTaskFlow[] = []
+    const visited = new Set<string>()
+    let current = await this.flow({ flowRecordId })
+    while (current && !visited.has(current.flow.id)) {
+      visited.add(current.flow.id)
+      lineage.push(current)
+      const parent = current.flow.parentFlowRecordId
+      current = parent && !visited.has(parent) ? await this.flow({ flowRecordId: parent }) : null
+    }
+    return lineage.reverse().flatMap((item) =>
+      [item.stage, ...(item.otherStages ?? [])]
+        .filter((stage): stage is NonNullable<typeof stage> => stage !== null)
+        .filter((stage) => item.flow.id !== flowRecordId || stage.id === stageRecordId)
+        .sort((left, right) => left.number - right.number)
+        .flatMap((stage) => (stage.stepTexts ?? []).map(textRow)),
+    )
   }
   async textsForStage(stageRecordId: string) {
     const result = await this.byId(stageRecordId)

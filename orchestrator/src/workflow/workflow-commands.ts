@@ -23,6 +23,7 @@ import {
   setStepCatalogue,
   showResolvedStepCatalogue,
 } from './step-catalogue.ts'
+import { queueWorkflowChild, startWorkflowChild } from './workflow-child-service.ts'
 import { obligationUuid, positive, workflowArgs } from './workflow-command-arguments.ts'
 import { workflowCommandProject } from './workflow-command-project.ts'
 import * as recordShape from './workflow-command-record-shape.ts'
@@ -898,4 +899,37 @@ export async function composeCommand(
     : composeWorkflow(argv[2]!, project, mode, args, undefined, selection, live.resolution)
   print(result, json ? undefined : renderWorkflowComposition(result))
   if (Object.keys(result.needs).length) presentation.setExitCode(2)
+}
+
+export async function queueChildCommand(argv: string[], print: WorkflowPrint): Promise<void> {
+  const project = flagValue(argv, 'project')
+  const session = flagValue(argv, 'session')
+  if (!project) throw new Error('--project is required')
+  if (!session) throw new Error('--session is required')
+  const callerSession = cliWorkflowCursorContext().session
+  if (!callerSession) throw new Error('workflow queue requires a calling session')
+  print(
+    await queueWorkflowChild({
+      project,
+      child: argv[2]!,
+      session,
+      callerSession,
+      off: argv.includes('--off'),
+    }),
+  )
+}
+
+export async function startChildCommand(argv: string[], print: WorkflowPrint): Promise<void> {
+  const project = flagValue(argv, 'project')
+  if (!project) throw new Error('--project is required')
+  const callerSession = cliWorkflowCursorContext().session
+  if (!callerSession) throw new Error('workflow start-child requires a calling session')
+  print(
+    await startWorkflowChild({
+      project,
+      cursor: positive(flagValue(argv, 'cursor'), '--cursor')!,
+      task: flagValue(argv, 'task'),
+      callerSession,
+    }),
+  )
 }

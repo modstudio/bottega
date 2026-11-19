@@ -8,6 +8,7 @@ import {
   boardClaimReleaseTask,
   boardClaimTake,
   boardOpenTaskCursorProject,
+  boardQueuedClaimsRenew,
 } from '../board/board-operations.ts'
 import { db } from '../database/db.ts'
 import { projectByName } from '../project/projects.ts'
@@ -102,8 +103,10 @@ export async function followTaskCursorClaim(
 }
 
 export const renewTaskClaim: RenewTaskClaim = async (launchKey, session) => {
-  if (!launchKey || !session) return
+  if (!session) return
   const database = db()
+  boardQueuedClaimsRenew(session, Date.now(), database)
+  if (!launchKey) return
   const project = await boardOpenTaskCursorProject(launchKey, session, database)
   if (!project) return
   await followTaskCursorClaim({

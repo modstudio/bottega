@@ -270,6 +270,7 @@ function flowImport(
         id: flowId,
         projectId,
         taskId: (flow.task_record_id as string | null) ?? null,
+        parentFlowRecordId: (flow.parent_flow_record_id as string | null) ?? null,
         state: flow.state as 'open' | 'done' | 'dropped',
         openStageRecordId: (flow.open_stage_cursor_record_id as string | null) ?? null,
         openingMachineId: requiredString(

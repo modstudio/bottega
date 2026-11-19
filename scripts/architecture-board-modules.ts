@@ -194,6 +194,7 @@ export const boardModules: BoardModule[] = [
     './board-hosted-receipt-cache.ts',
     './board-claim-policy.ts',
     './board-claim-service.ts',
+    './board-queued-claim-renewal.ts',
     './board-delivery.ts',
     './board-mode.ts',
     './board-message-identifier.ts',
@@ -210,6 +211,10 @@ export const boardModules: BoardModule[] = [
     './board-policy.ts',
     './board-tags.ts',
     './board-text-secret.ts',
+  ]),
+  module('orchestrator/src/board/board-queued-claim-renewal.ts', [
+    'bun:sqlite',
+    '../database/db.ts',
   ]),
   module('orchestrator/src/board/board-policy.ts', [
     '../../../shared/board-purpose.ts',
@@ -273,6 +278,7 @@ export const boardModules: BoardModule[] = [
     '../database/db.ts',
     '../project/projects.ts',
     './board-hosted-cache.ts',
+    './board-queued-claim-renewal.ts',
     './board-policy.ts',
     './board-push-policy.ts',
     './board-render.ts',

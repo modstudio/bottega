@@ -16,6 +16,7 @@ import {
   type WorkflowCursorListRow,
 } from '../workflow/workflow-cursor-list.ts'
 import { activeLandings } from './session-close-out.ts'
+import { sessionEpicWork } from './session-epic-work.ts'
 import {
   type SessionReviewVerdictGatherer,
   sessionReviewVerdictLines,
@@ -128,6 +129,8 @@ export async function sessionStopSummary(
   const session = options.session
   const now = options.now ?? new Date().toISOString()
   const cursors = await listWorkflowCursors({ session }, database)
+  const epicWork = await sessionEpicWork(session, database)
+  const epicCursorNumbers = new Set(epicWork.map(({ cursor }) => cursor))
   const questionCounts = await questionInboxCountsForSession(session, database)
   const livePlaceholders = RUN_LIVE_STATUSES.map(() => '?').join(',')
   const liveRuns =
@@ -187,17 +190,20 @@ export async function sessionStopSummary(
     now,
     displayTimezone: readCachedDisplayTimezone(options.stateEnvironment ?? process.env),
     questionCounts,
-    cursors: cursors.map((cursor) => ({
-      number: cursor.id,
-      project: cursor.project,
-      key: cursor.workflow_key || null,
-      workflow: cursor.workflow_slug,
-      step: cursor.step_slug,
-      ordinal: cursor.ordinal + 1,
-      total: cursor.total_steps,
-      updatedAt: cursor.updated_at,
-      questionNumber: cursor.question_number,
-    })),
+    epicWork,
+    cursors: cursors
+      .filter((cursor) => !epicCursorNumbers.has(cursor.id))
+      .map((cursor) => ({
+        number: cursor.id,
+        project: cursor.project,
+        key: cursor.workflow_key || null,
+        workflow: cursor.workflow_slug,
+        step: cursor.step_slug,
+        ordinal: cursor.ordinal + 1,
+        total: cursor.total_steps,
+        updatedAt: cursor.updated_at,
+        questionNumber: cursor.question_number,
+      })),
     reviewVerdictLines,
     liveRuns,
     incompleteReviews: reviews.incompleteReviews,

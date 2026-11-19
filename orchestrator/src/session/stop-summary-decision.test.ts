@@ -41,6 +41,33 @@ describe('Stop summary decision', () => {
     })
   })
 
+  test('epic work renders before ordinary cursor lines', () => {
+    const result = decideStopSummary(
+      facts({
+        epicWork: [{ epic: 'DEV-1', queue: ['DEV-2'], open: ['DEV-3'], cursor: 9 }],
+        cursors: [
+          {
+            number: 10,
+            project: PLATFORM_SLUG,
+            key: 'DEV-2',
+            workflow: 'plan-task',
+            step: 'start',
+            ordinal: 10,
+            total: 10,
+            updatedAt: NOW,
+            questionNumber: null,
+          },
+        ],
+      }),
+    )
+    expect(result.lines.slice(2)).toEqual([
+      'Epic: DEV-1',
+      'Queue: DEV-2',
+      'Open: DEV-3',
+      'DEV-2 · plan-task · step start (10 of 10)',
+    ])
+  })
+
   test('questions lead and cursors stay short, including keyless explore', () => {
     const result = decideStopSummary(
       facts({

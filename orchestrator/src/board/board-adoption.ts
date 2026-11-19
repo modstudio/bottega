@@ -85,7 +85,7 @@ function ledger(database: Database): Map<string, LedgerRow> {
 type ClaimRow = {
   record_id: string
   project: string
-  subject_kind: 'task' | 'path' | 'resource'
+  subject_kind: 'task' | 'path' | 'resource' | 'queued-task'
   subject_value: string
   holder_session: string | null
   note: string | null

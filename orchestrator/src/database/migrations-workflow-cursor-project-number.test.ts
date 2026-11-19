@@ -118,7 +118,10 @@ test('workflow cursor project-number migration preserves identities and renumber
       'task_flow',
     ] as const
     const dependentRows = new Map(
-      dependents.map((table) => [table, database.query(`SELECT * FROM ${table}`).all()]),
+      dependents.map((table) => [
+        table,
+        database.query<Record<string, unknown>, []>(`SELECT * FROM ${table}`).all(),
+      ]),
     )
     expect(applyMigrations(database)).toContain(MIGRATION)
     expect(
@@ -142,7 +145,12 @@ test('workflow cursor project-number migration preserves identities and renumber
       { project: 'project-b', record_id: 'stage-b-second', number: 2 },
     ])
     for (const table of dependents) {
-      expect(database.query(`SELECT * FROM ${table}`).all()).toEqual(dependentRows.get(table)!)
+      const before = dependentRows.get(table)!
+      const expected =
+        table === 'task_flow'
+          ? before.map((row) => ({ ...row, parent_flow_record_id: null }))
+          : before
+      expect(database.query(`SELECT * FROM ${table}`).all()).toEqual(expected)
     }
     expect(database.query('PRAGMA foreign_key_check').all()).toEqual([])
     expect(() =>

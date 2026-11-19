@@ -49,6 +49,12 @@ import type { GraduatedExplore } from './workflow-handoff-types.ts'
 import type { composeWorkflow } from './workflows.ts'
 
 type Composition = ReturnType<typeof composeWorkflow>
+export type WorkflowComposeInheritance = {
+  parentFlowRecordId: string
+  activeOrdinal: number
+  activeSlug: string
+  closedStepNotes: unknown[]
+}
 type ExistingFlow = { record_id: string; revision: number } | null
 type ComposeFacts = {
   rowInput: WorkflowCursorInsert
@@ -173,6 +179,7 @@ async function readComposeFacts(
   autonomy: AutonomyResolution | undefined,
   database: Database,
   keylessOrdinalOffset = 0,
+  inheritance?: WorkflowComposeInheritance,
 ): Promise<ComposeFacts> {
   const key = workflowKeyOf(composition.arguments)
   const projectRecordId = database
@@ -244,10 +251,10 @@ async function readComposeFacts(
       catalogueVersionRecordId: composition.catalogue.record_id,
       args: JSON.stringify(composition.arguments),
       autonomy: autonomyJson,
-      ordinal: 0,
-      stepSlug: composition.steps[0]!.slug,
+      ordinal: inheritance?.activeOrdinal ?? 0,
+      stepSlug: inheritance?.activeSlug ?? composition.steps[0]!.slug,
       state: 'running',
-      closed: '[]',
+      closed: JSON.stringify(inheritance?.closedStepNotes ?? []),
       question: null,
       totalSteps: composition.steps.length,
       createdAt: at,
@@ -265,6 +272,7 @@ function composeIntent(
   composition: Composition,
   context: WorkflowCursorContext,
   facts: ComposeFacts,
+  inheritance?: WorkflowComposeInheritance,
 ): TaskFlowIntentInput<'compose'> {
   const { existingFlow, flowRecordId, projectRecordId, rowInput, machine, at } = facts
   return {
@@ -292,6 +300,7 @@ function composeIntent(
             id: flowRecordId,
             projectId: projectRecordId,
             taskId: context.taskRecordId ?? null,
+            parentFlowRecordId: inheritance?.parentFlowRecordId ?? null,
             state: taskFlowState(context.taskStatusCategory) ?? 'open',
             openStageRecordId: rowInput.recordId,
             openingMachineId: machine,
@@ -312,7 +321,9 @@ function composeIntent(
       workflowVersionId: composition.workflow.record_id,
       catalogueVersionId: composition.catalogue.record_id,
       arguments: composition.arguments,
-      activeSlug: composition.steps[0]!.slug,
+      activeOrdinal: rowInput.ordinal,
+      activeSlug: rowInput.stepSlug,
+      closedStepNotes: JSON.parse(rowInput.closed) as unknown[],
       autonomy: facts.autonomyJson,
       totalSteps: composition.steps.length,
       openedMachineId: machine,
@@ -424,6 +435,7 @@ export async function insertWorkflowCursor(
   autonomy?: AutonomyResolution,
   commitCount: CommitCountPort = readCommitsPastLanding,
   keylessSiblingRetry = false,
+  inheritance?: WorkflowComposeInheritance,
 ): Promise<SelectableCursorRow> {
   const refusal = workflowComposeBranchRefusal({
     workflow: composition.workflow.slug,
@@ -439,10 +451,11 @@ export async function insertWorkflowCursor(
     autonomy,
     database,
     keylessSiblingRetry ? 1 : 0,
+    inheritance,
   )
   const target = taskFlowWriteTarget(composition.project, database)
   try {
-    const payload = composeIntent(composition, context, facts)
+    const payload = composeIntent(composition, context, facts, inheritance)
     const hosted = await writeHostedTaskFlow('compose', payload, target, context.taskFlowClient)
     return applyHostedCompose(hosted, payload, facts, composition, database)
   } catch (error) {

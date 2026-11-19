@@ -36,11 +36,13 @@ workflows and their cursors
 - [bottega workflow probe](#bottega-workflow-probe)
 - [bottega workflow promote](#bottega-workflow-promote)
 - [bottega workflow promote-tree](#bottega-workflow-promote-tree)
+- [bottega workflow queue](#bottega-workflow-queue)
 - [bottega workflow render-check](#bottega-workflow-render-check)
 - [bottega workflow retire](#bottega-workflow-retire)
 - [bottega workflow rule](#bottega-workflow-rule)
 - [bottega workflow set](#bottega-workflow-set)
 - [bottega workflow show](#bottega-workflow-show)
+- [bottega workflow start-child](#bottega-workflow-start-child)
 - [bottega workflow step](#bottega-workflow-step)
 - [bottega workflow text](#bottega-workflow-text)
 - [bottega workflow text copy](#bottega-workflow-text-copy)
@@ -77,11 +79,13 @@ workflows and their cursors
 - [bottega workflow probe](./workflow.md#bottega-workflow-probe)
 - [bottega workflow promote](./workflow.md#bottega-workflow-promote)
 - [bottega workflow promote-tree](./workflow.md#bottega-workflow-promote-tree)
+- [bottega workflow queue](./workflow.md#bottega-workflow-queue)
 - [bottega workflow render-check](./workflow.md#bottega-workflow-render-check)
 - [bottega workflow retire](./workflow.md#bottega-workflow-retire)
 - [bottega workflow rule](./workflow.md#bottega-workflow-rule)
 - [bottega workflow set](./workflow.md#bottega-workflow-set)
 - [bottega workflow show](./workflow.md#bottega-workflow-show)
+- [bottega workflow start-child](./workflow.md#bottega-workflow-start-child)
 - [bottega workflow step](./workflow.md#bottega-workflow-step)
 - [bottega workflow text](./workflow.md#bottega-workflow-text)
 - [bottega workflow uncovered](./workflow.md#bottega-workflow-uncovered)
@@ -601,6 +605,23 @@ promote newest workflow drafts that match a project workflow tree
 
 - [bottega workflow](./workflow.md#bottega-workflow)
 
+## bottega workflow queue
+
+**Synopsis:** `bottega workflow queue <child> [--session <name>] [--project <value>] [--off] [--json]`
+
+line an epic child up for a session without opening a cursor
+
+### Options
+
+- `--session <name>`: session that will start the child
+- `--project <value>`: registered project
+- `--off`: release this queued child
+- `--json`: print JSON output
+
+### Related
+
+- [bottega workflow](./workflow.md#bottega-workflow)
+
 ## bottega workflow render-check
 
 **Synopsis:** `bottega workflow render-check [--json]`
@@ -679,6 +700,23 @@ show a workflow definition
 ### Options
 
 - `--version <value>`: show this workflow version
+- `--json`: print JSON output
+
+### Related
+
+- [bottega workflow](./workflow.md#bottega-workflow)
+
+## bottega workflow start-child
+
+**Synopsis:** `bottega workflow start-child [--cursor <value>] [--project <value>] [--task <child>] [--json]`
+
+open the next inherited child cursor for an epic
+
+### Options
+
+- `--cursor <value>`: epic cursor
+- `--project <value>`: registered project
+- `--task <child>`: specific queued or Open child
 - `--json`: print JSON output
 
 ### Related

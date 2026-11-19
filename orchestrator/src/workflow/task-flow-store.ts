@@ -132,7 +132,9 @@ interface TaskFlowQueries {
     record_id: string
     revision: number
     open_stage_cursor_record_id: string | null
+    parent_flow_record_id: string | null
   } | null
+  textsForFlowLineage(flowRecordId: string, stageRecordId: string): TaskFlowTextRow[]
   textsForStage(stageRecordId: string): TaskFlowTextRow[]
   textByRecordId(recordId: string): TaskFlowTextBodyRow | null
   textAttachmentByRecordId(recordId: string): TaskFlowTextRow | null

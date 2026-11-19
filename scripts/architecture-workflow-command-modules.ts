@@ -12,6 +12,37 @@ const module = (file: string, allowed: string[]): WorkflowCommandModule => ({
 })
 
 export const workflowCommandModules: WorkflowCommandModule[] = [
+  module('orchestrator/src/workflow/workflow-task-tree.ts', []),
+  module('orchestrator/src/workflow/workflow-child-queue.ts', [
+    '../../../shared/brand.ts',
+    './workflow-cursor-format.ts',
+    './workflow-task-tree.ts',
+  ]),
+  module('orchestrator/src/workflow/workflow-child-facts.ts', [
+    'bun:sqlite',
+    '../board/board-operations.ts',
+    '../record/record-task-flow-contract.ts',
+    './task-flow-store.ts',
+    './task-read-port.ts',
+    './workflow-child-queue.ts',
+    './workflow-task-tree.ts',
+  ]),
+  module('orchestrator/src/workflow/workflow-child-service.ts', [
+    'bun:sqlite',
+    '../board/board-claim-policy.ts',
+    '../board/board-operations.ts',
+    '../database/db.ts',
+    './task-flow-store.ts',
+    './task-read-port.ts',
+    './workflow-child-facts.ts',
+    './workflow-child-queue.ts',
+    './workflow-cursor-compose.ts',
+    './workflow-cursor-live-autonomy.ts',
+    './workflow-cursor-selection.ts',
+    './workflow-cursor-trail.ts',
+    './workflow-task-tree.ts',
+    './workflows.ts',
+  ]),
   module('orchestrator/src/workflow/workflow-cursor-report.ts', [
     '../cli/args.ts',
     '../record/record-task-flow-contract.ts',
@@ -114,6 +145,11 @@ export const workflowCommandModules: WorkflowCommandModule[] = [
     './task-flow-store-types.ts',
   ]),
   module('orchestrator/src/workflow/task-flow-store-methods.ts', []),
+  module('orchestrator/src/workflow/task-flow-store-record.fixture.ts', [
+    '../database/test-database.fixture.ts',
+    '../project-space-cache.ts',
+    '../record/record-task-flow-contract.ts',
+  ]),
   module('orchestrator/src/workflow/task-flow-store-types.ts', [
     '../record/record-task-flow-contract.ts',
     '../record/record-task-flow-write-contract.ts',

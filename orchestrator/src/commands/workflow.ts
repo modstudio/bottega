@@ -21,6 +21,7 @@ import {
   probeCommand,
   promoteCatalogueCommand,
   promoteWorkflowCommand,
+  queueChildCommand,
   recordEvidenceCommand,
   renderCheckCommand,
   retireCatalogueCommand,
@@ -30,6 +31,7 @@ import {
   setWorkflowCommand,
   showCatalogueCommand,
   showWorkflowCommand,
+  startChildCommand,
   stepCommand,
   type WorkflowCommandOptions,
   type WorkflowPresentation,
@@ -249,6 +251,32 @@ function registerWorkflowRendering({
   handlerOptions,
   output,
 }: WorkflowRegistration): void {
+  jsonOption(
+    workflow
+      .command('queue <child>')
+      .description('line an epic child up for a session without opening a cursor')
+      .requiredOption('--session <name>', 'session that will start the child')
+      .requiredOption('--project <value>', 'registered project')
+      .option('--off', 'release this queued child'),
+  )
+    .allowExcessArguments(false)
+    .action((child, options) =>
+      queueChildCommand(workflowArgv('queue', [child], options), output(options)),
+    )
+
+  jsonOption(
+    workflow
+      .command('start-child')
+      .description('open the next inherited child cursor for an epic')
+      .requiredOption('--cursor <value>', 'epic cursor')
+      .requiredOption('--project <value>', 'registered project')
+      .option('--task <child>', 'specific queued or Open child'),
+  )
+    .allowExcessArguments(false)
+    .action((options) =>
+      startChildCommand(workflowArgv('start-child', [], options), output(options)),
+    )
+
   jsonOption(
     workflow
       .command('compose <workflow>')
