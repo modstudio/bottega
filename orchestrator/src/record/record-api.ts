@@ -218,6 +218,10 @@ type RecordApiDeps = RecordSessionRouteDeps &
       input: Tenant & { from: string; to: string; count: number },
     ): Promise<{ docs: number; revisions: number }>
     countDocs(input: Tenant): Promise<{ docs: number; revisions: number }>
+    countCacheRows(input: Tenant): Promise<{
+      byScope: Array<{ scope: string; project: string | null; docs: number }>
+      subjectsByProject: Array<{ project: string; subjects: number }>
+    }>
     upsertScore(
       input: Tenant &
         Omit<VerdictInput, 'scoredBy'> & {

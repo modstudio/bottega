@@ -614,8 +614,12 @@ try {
     ['bun', 'test', '--timeout', '30000', 'src/record/record-port-catalogue-postgres.test.ts'],
     { BOTTEGA_TEST_PORT_CATALOGUE_URL: portCatalogueUrl },
   )
-  if (workflowCatalogue !== 0 || lensCatalogue !== 0 || portCatalogue !== 0)
-    throw new EarlyExit(workflowCatalogue || lensCatalogue || portCatalogue)
+  const docCounts = await run(
+    ['bun', 'test', '--timeout', '30000', 'src/record/record-api-doc-counts-postgres.test.ts'],
+    { BOTTEGA_TEST_DOC_COUNTS_URL: portCatalogueUrl },
+  )
+  if (workflowCatalogue !== 0 || lensCatalogue !== 0 || portCatalogue !== 0 || docCounts !== 0)
+    throw new EarlyExit(workflowCatalogue || lensCatalogue || portCatalogue || docCounts)
 
   const cleanRecordPool = await run(
     ['bun', 'test', '--timeout', '30000', 'src/record/record-pool-postgres.test.ts'],

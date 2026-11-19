@@ -52,7 +52,7 @@ import { rememberSignedInRecordUser } from './record-session.ts'
 const DOCS_CURSOR = 'record_docs_cursor'
 const SCORES_CURSOR = 'record_scores_cursor'
 
-function recordCacheSpaces(
+export function recordCacheSpaces(
   identity: RecordIdentity,
   local: Database,
 ): {

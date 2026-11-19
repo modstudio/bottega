@@ -64,6 +64,7 @@ function appWith(session: RecordIdentity | null, overrides: Record<string, unkno
     restoreDoc: async () => ({ id: 'x', revisionId: 'x' }),
     renameDocSubject: async () => ({ docs: 0, revisions: 0 }),
     countDocs: async () => ({ docs: 0, revisions: 0 }),
+    countCacheRows: async () => ({ byScope: [], subjectsByProject: [] }),
     applySettingsPermission: async () => ({
       revision: 'x',
       permissions: { allow: [], ask: [], deny: [] },

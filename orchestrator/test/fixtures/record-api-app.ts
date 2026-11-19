@@ -61,6 +61,7 @@ export const recordApiTestApp = (
     restoreDoc: async () => ({ id, revisionId: id }),
     renameDocSubject: async () => ({ docs: 0, revisions: 0 }),
     countDocs: async () => ({ docs: 0, revisions: 0 }),
+    countCacheRows: async () => ({ byScope: [], subjectsByProject: [] }),
     applySettingsPermission: async () => ({
       revision: id,
       permissions: { allow: [], ask: [], deny: [] },

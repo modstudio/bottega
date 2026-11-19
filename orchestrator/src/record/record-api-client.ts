@@ -58,6 +58,7 @@ import {
 import { type RecordPortClient, recordPortClient } from './record-api-client-port.ts'
 import { RecordApiRequestError, responseRecord } from './record-api-client-response.ts'
 import type { RecordContextItemInput } from './record-context-items.ts'
+import type { RecordCacheCounts } from './record-cache-counts.ts'
 
 export { recordAuthRefusal, recordAuthToken } from './record-api-client-error.ts'
 export { RecordApiRequestError } from './record-api-client-response.ts'
@@ -406,6 +407,11 @@ export type RecordApiClient = ProjectIdentityClient &
     counts(
       destination?: RecordRequestDestination,
     ): Promise<{ docs: number; revisions: number; scores: number; voids: number }>
+    cacheCounts(
+      destination: RecordRequestDestination,
+    ): Promise<
+      { docs: number; revisions: number; scores: number; voids: number } & RecordCacheCounts
+    >
     listBoardMessages(
       query?: HostedBoardOverviewFilters,
       signal?: AbortSignal,
@@ -779,6 +785,7 @@ export function recordApiClientOver(request: RecordClientRequest): RecordApiClie
       return request(`/v1/scores${suffix ? `?${suffix}` : ''}`)
     },
     counts: (destination) => request('/v1/docs/counts', destination),
+    cacheCounts: (destination) => request('/v1/docs/counts?by=scope', destination),
     ...recordBoardClient(request),
     ...recordApiBoardWatchClient(request),
   }
