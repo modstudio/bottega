@@ -62,6 +62,7 @@ import { type GooseContextProfile, writeRunContextProfile } from './run-context-
 import { markTerminalRecorded } from './run-finish-error.ts'
 import { enqueueRunRecord } from './run-outbox.ts'
 import { errorTail, live, liveCheckpoints } from './run-process.ts'
+import { recordRunQuestionReadiness } from './run-question-readiness.ts'
 import { checkpointRoot, claimIdentity } from './run-resume-kind.ts'
 import { rollUpRootAndEnqueue } from './run-root-rollup.ts'
 import type { RenewTaskClaim } from './run-task-claim-renewal.ts'
@@ -706,7 +707,6 @@ function forgetTerminalProcess(proc: TerminalInput['proc']): void {
 
 export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
   let {
-    timer,
     checkpointTimer,
     resourceObserver,
     proc,
@@ -751,7 +751,7 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
     mcpRuling,
     workerEvents,
   } = input
-  clearRunTimers(timer, checkpointTimer)
+  clearRunTimers(input.timer, checkpointTimer)
   const resourceUsage = resourceObserver?.stop() ?? null
   forgetTerminalProcess(proc)
   if (proc?.pid && proc.pid !== process.pid) await terminateProcessGroup(proc.pid, { direct: proc })
@@ -824,6 +824,7 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
   })
   ;({ status, failureKind, error } = vendorTermination.outcome)
   acceptedQuestions = vendorTermination.acceptedQuestions
+  recordRunQuestionReadiness(input, claim.id, acceptedQuestions)
   const readerReply = isReaderJob(opts.job) ? (parsedReply as ReaderReply | null) : null
   const parsedReview =
     requestedJob.findings && output && (status === 'ok' || confinementEvent)
@@ -878,7 +879,7 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
       exitCode,
     }),
   ))
-  // Questions precede the terminal row so `asking` is never stored without an inbox entry.
+  // The run is already answerable locally; this hosted write may remain pending.
   const recordedQuestions = await recordTerminalQuestions(claim.id, acceptedQuestions)
 
   if (mcpSetupHeader) {
