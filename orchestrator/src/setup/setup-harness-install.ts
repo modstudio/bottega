@@ -56,7 +56,7 @@ export function installHarness(
   route: HarnessInstallRoute,
   runner: SetupCommandRunner = runSetupCommand,
   detector: HarnessInstallDetector = defaultDetector,
-  environment: { HOME?: string } = process.env,
+  environment: { HOME?: string } = { HOME: process.env.HOME },
 ): HarnessInstallOutcome {
   const result = runner(['/bin/sh', '-c', route.command], HARNESS_INSTALL_TIMEOUT_MS)
   if (result.exitCode !== 0 || result.timedOut || result.error) {

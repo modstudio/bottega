@@ -368,7 +368,7 @@ function machineNotices(machine: SetupFacts): SetupNotice[] {
     notices.push({
       message: 'gh is signed out',
       fix: 'gh auth login --hostname github.com',
-      blocking: route !== null,
+      blocking: true,
     })
   if (
     (machine.machineLevel === 'full' || machine.machineLevel === null) &&
@@ -434,7 +434,7 @@ function builtInAgentNotice(
     return {
       message: `${name} agent is enabled but the ${name} harness is not installed`,
       fix: `${route?.command ?? harnessDocumentation(name)}, or ${PLATFORM_SLUG} agent set ${name} --enabled false --reason "${name} is not installed on this machine"`,
-      blocking: true,
+      blocking: route !== null,
     }
   }
   if (harness.auth === 'signed-out') {
