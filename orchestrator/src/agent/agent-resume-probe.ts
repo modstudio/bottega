@@ -41,6 +41,9 @@ export async function probeAgentResumes(
   const first = await runTurn({
     prompt: `Remember this exact token for the next turn: ${token}. Reply with exactly: remembered`,
   })
+  if (first.status === 'failed') {
+    return { ok: false, output: first.output || 'ACP first session failed' }
+  }
   if (!first.loadSessionAdvertised) {
     return { ok: false, output: 'ACP initialize did not advertise loadSession' }
   }
