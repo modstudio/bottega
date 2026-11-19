@@ -20,9 +20,9 @@ import {
   recordApiSignUp,
 } from './record-api-client.ts'
 import { recordApiSendVerificationEmail } from './record-email-verification-client.ts'
-import { uploadLocalWorkflowHistory } from './record-history-upload.ts'
 import { pushDocsCommand } from './record-push-docs.ts'
 import { rememberSignedInRecordUser } from './record-session.ts'
+import { uploadLocalWorkflowHistory } from './record-sign-in-history-upload.ts'
 import { recordMemberships } from './record-space.ts'
 
 type Presentation = { log(value: string): void }
