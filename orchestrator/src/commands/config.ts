@@ -27,8 +27,6 @@ import {
   machineRevoke,
   machineShow,
   personalConfigWriteDestination,
-  type pinnedConfigDestination,
-  secretWriteTarget as serviceSecretWriteTarget,
   setConfigEntry,
   setSecret,
 } from '../config/config-service.ts'
@@ -38,6 +36,7 @@ import { trustMachine } from '../config/machine-trust.ts'
 import { machineRegister } from '../config/named-space-config.ts'
 import { parseSecretRunArgs, runNamedSecrets } from '../config/secret-run.ts'
 import { sealSecretDecision, secretSetRemedy } from '../config/secret-set-policy.ts'
+import { type pinnedConfigDestination, secretWriteTarget } from '../config/secret-write-target.ts'
 import { isOrchWorkerProcess, type ProcessInventory } from '../run/run-process.ts'
 import { subscriptionMonthlyUsdKey } from '../run/run-subscription-cost.ts'
 import { registerMachineJoinCommands } from './machine-join-commands.ts'
@@ -129,14 +128,21 @@ export async function configWriteTarget(
   return { scope: 'user', destination: await personalConfigWriteDestination(client) }
 }
 
-export async function secretWriteTarget(
+async function resolveSecretWriteTarget(
   verb: string,
   requested: string | undefined,
   client: ConfigClient,
   env: Parameters<typeof pinnedConfigDestination>[1] = process.env,
-): Promise<{ scope: ConfigScope; destination: { destinationSpaceId: string } }> {
+): Promise<{
+  scope: ConfigScope
+  destination: { destinationSpaceId: string }
+  spaceSlug?: string
+}> {
   const selected = requested ? await selectedMachineSpace(verb, requested, client) : undefined
-  return serviceSecretWriteTarget(selected?.spaceId, client, env)
+  return {
+    ...(await secretWriteTarget(selected?.spaceId, client, env)),
+    ...(selected ? { spaceSlug: selected.slug } : {}),
+  }
 }
 function expectedRowVersion(value: string | undefined): number | null | undefined {
   if (value === undefined) return undefined
@@ -303,13 +309,23 @@ async function selectedMachineSpace(
 async function sealPipedSecret(key: string, options: { space?: string }): Promise<void> {
   if (process.stdin.isTTY) throw new Error('secret value must be provided on stdin')
   const client = hostedConfigClient()
-  const target = await secretWriteTarget('machine config secret set', options.space, client)
-  const decision = sealSecretDecision(key, await Bun.stdin.text(), target.scope)
+  const target = await resolveSecretWriteTarget('machine config secret set', options.space, client)
+  const decision = sealSecretDecision(key, await Bun.stdin.text(), target.scope, target.spaceSlug)
   if (decision.kind === 'refuse') throw new Error(decision.refusal)
   await setSecret(key, decision.value, target.scope, client, {
     destination: target.destination,
-    remedy: secretSetRemedy(key, target.scope),
+    remedy: secretSetRemedy(key, target.scope, target.spaceSlug),
   })
+}
+
+async function deleteSelectedSecret(key: string, options: { space?: string }): Promise<void> {
+  const client = hostedConfigClient()
+  const target = await resolveSecretWriteTarget(
+    'machine config secret delete',
+    options.space,
+    client,
+  )
+  await deleteSecret(key, target.scope, client, { destination: target.destination })
 }
 
 export function register(program: Command): void {
@@ -386,11 +402,7 @@ export function register(program: Command): void {
     .command('delete <key>')
     .description('delete one sealed configuration value')
     .option('--space <slug>', 'delete the value from this record space')
-    .action(async (key, options) => {
-      const client = hostedConfigClient()
-      const target = await secretWriteTarget('machine config secret delete', options.space, client)
-      await deleteSecret(key, target.scope, client, { destination: target.destination })
-    })
+    .action(deleteSelectedSecret)
   secret
     .command('run')
     .description('run a command with named secrets resolved')

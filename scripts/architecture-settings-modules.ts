@@ -277,6 +277,7 @@ export const settingsModules: SettingsModule[] = [
     '../config/named-space-config.ts',
     '../config/secret-run.ts',
     '../config/secret-set-policy.ts',
+    '../config/secret-write-target.ts',
     '../run/run-process.ts',
     '../run/run-subscription-cost.ts',
     './support.ts',

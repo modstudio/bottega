@@ -98,7 +98,6 @@ async function identity(client: ConfigClient, env: ConfigEnvironment = process.e
   return hostedIdentity(client, readHostedConfigIdentity(env))
 }
 
-export { pinnedConfigDestination, secretWriteTarget } from './secret-write-target.ts'
 export { personalConfigWriteDestination }
 
 async function unpinServerRevoked(client: ConfigClient, destination: ConfigDestination = {}) {

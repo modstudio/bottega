@@ -8,13 +8,13 @@ import { ConfigEntrySchema, MachineConfigFileEntrySchema } from '../../../shared
 import { CONFIG_HOME_ENV } from '../../../shared/config-directory.ts'
 import { writeHostedConfigIdentity } from '../../../shared/hosted-config-space.ts'
 import { setConfigEntry } from '../config/config-service.ts'
+import { secretWriteTarget } from '../config/secret-write-target.ts'
 import {
   assertConfigWriteAllowed,
   configListPresentation,
   configReadPresentation,
   configSetPresentation,
   configWriteTarget,
-  secretWriteTarget,
 } from './config.ts'
 
 const row = {
@@ -192,9 +192,7 @@ test('an unflagged secret write uses the machine pinned space instead of persona
       }),
     } as unknown as ConfigClient
 
-    await expect(
-      secretWriteTarget('machine config secret set', undefined, client, env),
-    ).resolves.toEqual({
+    await expect(secretWriteTarget(undefined, client, env)).resolves.toEqual({
       scope: 'user',
       destination: { destinationSpaceId: pinnedSpaceId },
     })

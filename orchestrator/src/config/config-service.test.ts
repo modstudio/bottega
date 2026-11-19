@@ -346,13 +346,13 @@ test('secret set refuses an empty piped value and names the key and both remedie
 })
 
 test('a space-scope refusal names both repairs in the scope the set would have written', () => {
-  expect(sealedEmptyRefusal('EMPTY_KEY', 'space')).toBe(
+  expect(sealedEmptyRefusal('EMPTY_KEY', 'space', 'named-space')).toBe(
     `refusing to seal EMPTY_KEY: the value piped on stdin is empty, so no value was sealed\n` +
-      `cleared by: pipe the value on stdin to \`${PLATFORM_SLUG} machine config secret set EMPTY_KEY --space\`, or remove the sealed value with \`${PLATFORM_SLUG} machine config secret delete EMPTY_KEY --space\``,
+      `cleared by: pipe the value on stdin to \`${PLATFORM_SLUG} machine config secret set EMPTY_KEY --space named-space\`, or remove the sealed value with \`${PLATFORM_SLUG} machine config secret delete EMPTY_KEY --space named-space\``,
   )
-  expect(sealSecretDecision('EMPTY_KEY', '\n', 'space')).toEqual({
+  expect(sealSecretDecision('EMPTY_KEY', '\n', 'space', 'named-space')).toEqual({
     kind: 'refuse',
-    refusal: sealedEmptyRefusal('EMPTY_KEY', 'space'),
+    refusal: sealedEmptyRefusal('EMPTY_KEY', 'space', 'named-space'),
   })
 })
 
@@ -601,7 +601,7 @@ test('a sealed environment migration refusal names the repair in the scope it wo
     (error: Error) => error.message,
   )
   expect(refusal).toContain(
-    `run \`${PLATFORM_SLUG} machine config secret delete ORCH_RECORD_URL --space\`, then re-run ${PLATFORM_SLUG} machine setup apply`,
+    `run \`${PLATFORM_SLUG} machine config secret delete ORCH_RECORD_URL --space <slug>\`, then re-run ${PLATFORM_SLUG} machine setup apply`,
   )
   expect(refusal).not.toContain('--scope')
 })
