@@ -10,7 +10,7 @@ import {
 } from '../workflow/step-catalogue.ts'
 import { removeDoc } from './docs.ts'
 
-const targetSlug = '.agents/reference/removal-target.md'
+const targetSlug = 'removal-target.md'
 const targetBody = '---\ndescription: Removal target\n---\n\n# Target\n'
 const citation = `Read [the target](${targetSlug}).\n`
 

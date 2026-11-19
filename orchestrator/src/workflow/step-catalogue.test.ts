@@ -231,8 +231,8 @@ test('step bodies refuse repository-relative file citations', () => {
     'step "design" body cites repository file .agents/rules/a.md; a step is served to every project, so name the file through a project fact or the project\'s canon instead',
   )
   for (const citation of [
-    '/absolute/path/to/main-checkout/bin/bottega',
-    './bin/bottega',
+    `/absolute/path/to/main-checkout/bin/${PLATFORM_SLUG}`,
+    `./bin/${PLATFORM_SLUG}`,
     '{{gate}}',
     'https://example.com/a.md',
   ]) {

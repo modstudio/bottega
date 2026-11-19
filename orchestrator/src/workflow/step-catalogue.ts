@@ -153,10 +153,7 @@ export function validateStepCatalogue(value: unknown): string[] {
   return [...new Set(errors)]
 }
 
-function validateRepositoryFileCitations(
-  item: Record<string, unknown>,
-  errors: string[],
-): void {
+function validateRepositoryFileCitations(item: Record<string, unknown>, errors: string[]): void {
   if (typeof item.body !== 'string') return
   const slug = String(item.slug ?? '')
   for (const match of item.body.matchAll(REPOSITORY_FILE_PATH)) {
