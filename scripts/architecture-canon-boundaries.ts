@@ -20,6 +20,13 @@ const canonFilesBoundarySpecs: ImportBoundary[] = [
     reason:
       'Keep canon file collection independent of stores, commands, runs, routing, transports, and worktrees.',
   },
+  {
+    name: 'canon-pack-content-boundary',
+    file: `${source}pack-content.ts`,
+    allowed: ['shared/canon-frontmatter.ts', `${source}canon-hydrate.ts`, `${source}canon-lint.ts`],
+    typeOnlyAllowed: [],
+    reason: 'Keep pack composition a pure decision over supplied canon content.',
+  },
 ]
 
 const canonEditGuardBoundarySpecs: ImportBoundary[] = [

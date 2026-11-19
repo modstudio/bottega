@@ -4,7 +4,6 @@ import { join } from 'node:path'
 import { $ } from 'bun'
 import { startBoundedSync } from '../../../shared/bounded-process.ts'
 import { CONCERNS, PLATFORM_NAME, PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { canonFrontmatter } from '../../../shared/canon-frontmatter.ts'
 import { CANON_REFERENCE_EXEMPTIONS, canonReferencePath } from '../../../shared/canon-references.ts'
 import { docScopeHasProjectSubject } from '../../../shared/docs.ts'
 import { nulPathListArgs, splitNulPaths } from '../../../shared/git-path-list.ts'
@@ -12,14 +11,16 @@ import { optionalCheckoutRoot } from '../../../shared/install-root.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { isCliCommand } from '../cli/args.ts'
 import { db, nowIso, storeWritesRefused, writeTransaction } from '../database/db.ts'
-import { isDocInjectedForRun } from '../doc/doc-injection.ts'
 import { type Doc, docsForRun, listDocs } from '../doc/docs.ts'
-import { type GateFacts, projectAtGateFacts } from '../gate/gate-facts.ts'
 import { targetGitEnvironment } from '../git/git-environment.ts'
 import { DEFAULT_PACK_BYTES, job as getJob, JOBS } from '../jobs/jobs.ts'
 import { projectAt, projectByName, projects } from '../project/projects.ts'
-import { composeCanonRows } from './canon-hydrate.ts'
-import { classifyCanonFile } from './canon-lint.ts'
+import {
+  joinPackSections,
+  packedCanonMarkdownFromRows,
+  renderPackBudgetBreach,
+  renderPackDocSection,
+} from './pack-content.ts'
 
 function canonCheckoutRoot(): string | null {
   return optionalCheckoutRoot(import.meta.dir, process.env)
@@ -268,99 +269,27 @@ export function allNumericLiterals(cwd: string): {
   return { numericLiterals: report, canonFiles }
 }
 
-type PackBudgetRow = { bytes: number; label: string }
-
-function packBudgetRows(
-  pack: Pack,
-  alwaysOnBytes: number,
-  contextIndexBytes: number,
-): PackBudgetRow[] {
-  return [
-    { bytes: alwaysOnBytes, label: 'always-on' },
-    { bytes: contextIndexBytes, label: 'context-index' },
-    ...pack.docs.map((doc) => ({
-      bytes: doc.bytes,
-      label: `${doc.scope}/${doc.subject ?? '_'}/${doc.slug}`,
-    })),
-  ]
-    .filter((row) => row.bytes > 0)
-    .sort((a, b) => b.bytes - a.bytes)
-}
-
 export class CanonBudgetError extends Error {
   public pack: Pack
 
   constructor(pack: Pack, alwaysOnBytes = 0, contextIndexBytes = 0) {
-    const rows = packBudgetRows(pack, alwaysOnBytes, contextIndexBytes)
-    const largest = rows[0]?.label
     super(
-      [
-        `canon pack is ${pack.bytes} bytes; budget is ${pack.budgetBytes} bytes`,
-        ...rows.map((row) => `  ${row.bytes}  ${row.label}`),
-        ...(largest ? [`largest packed tier: ${largest}`] : []),
-        'remedy: demote the named largest tier; never raise the pack budget (orchestrator/src/canon/pack-budget.ts)',
-      ].join('\n'),
+      renderPackBudgetBreach({
+        header: `canon pack is ${pack.bytes} bytes; budget is ${pack.budgetBytes} bytes`,
+        tiers: [
+          { bytes: alwaysOnBytes, label: 'always-on' },
+          { bytes: contextIndexBytes, label: 'context-index' },
+          ...pack.docs.map((doc) => ({
+            bytes: doc.bytes,
+            label: `${doc.scope}/${doc.subject ?? '_'}/${doc.slug}`,
+          })),
+        ],
+        remedy:
+          'remedy: demote the named largest tier; never raise the pack budget (orchestrator/src/canon/pack-budget.ts)',
+      }),
     )
     this.pack = pack
     this.name = 'CanonBudgetError'
-  }
-}
-
-const CONTEXT_INDEX_HEADING = [
-  '## Path-scoped contexts',
-  '',
-  'Read the context file in your worktree before editing a path it governs.',
-].join('\n')
-
-function joinPackSections(...sections: string[]): string {
-  return sections.filter((section) => section.length > 0).join('\n\n')
-}
-
-function contextIndexMarkdown(rows: Pick<Doc, 'slug' | 'body'>[]): string {
-  if (!rows.length) return ''
-  const lines = rows.map((row) => {
-    const meta = canonFrontmatter(row.body)
-    const description = meta?.description ?? ''
-    const globs = (meta?.paths ?? []).map((path) => `\`${path}\``).join(', ')
-    return `- \`${row.slug}\` — ${description} — ${globs}`
-  })
-  return `${CONTEXT_INDEX_HEADING}\n\n${lines.join('\n')}`
-}
-
-/** Always-on bodies plus a context index; cards, references, and aliases are omitted. */
-function packedCanonMarkdownFromRows(
-  projectName: string | null,
-  globalRows: Pick<Doc, 'subject' | 'slug' | 'body'>[],
-  projectRows: Pick<Doc, 'subject' | 'slug' | 'body'>[],
-): {
-  markdown: string
-  alwaysOnBytes: number
-  contextIndexBytes: number
-} {
-  if (!projectName) return { markdown: '', alwaysOnBytes: 0, contextIndexBytes: 0 }
-  const rows = composeCanonRows(globalRows, [], projectRows)
-  if (!rows.length) return { markdown: '', alwaysOnBytes: 0, contextIndexBytes: 0 }
-  const classified = rows.map((row) => ({
-    row,
-    kind: classifyCanonFile({ path: row.slug, text: row.body }),
-  }))
-  const alwaysOnFor = (subject: string | null) =>
-    joinPackSections(
-      ...classified
-        .filter(({ row, kind }) => row.subject === subject && kind === 'entry')
-        .map(({ row }) => row.body),
-      ...classified
-        .filter(({ row, kind }) => row.subject === subject && kind === 'rule')
-        .map(({ row }) => row.body),
-    )
-  const alwaysOn = joinPackSections(alwaysOnFor(null), alwaysOnFor(projectName))
-  const index = contextIndexMarkdown(
-    classified.filter(({ kind }) => kind === 'context').map(({ row }) => row),
-  )
-  return {
-    markdown: joinPackSections(alwaysOn, index),
-    alwaysOnBytes: Buffer.byteLength(alwaysOn),
-    contextIndexBytes: Buffer.byteLength(index),
   }
 }
 
@@ -388,16 +317,14 @@ function assemblePack(input: {
   canon: ReturnType<typeof packedCanonMarkdownFromRows>
   budgetBytes: number
 }): Pack {
-  const operatorMarkdown = input.selected
-    .map((doc) => `## ${doc.title}\n\n${doc.body}`)
-    .join('\n\n')
+  const operatorMarkdown = joinPackSections(...input.selected.map(renderPackDocSection))
   const docs = input.selected.map((doc) => ({
     revisionId: doc.revisionId,
     scope: doc.scope,
     subject: doc.subject,
     slug: doc.slug,
     title: doc.title,
-    bytes: Buffer.byteLength(`## ${doc.title}\n\n${doc.body}`),
+    bytes: Buffer.byteLength(renderPackDocSection(doc)),
   }))
   const markdown = joinPackSections(input.canon.markdown, operatorMarkdown)
   const bytes = Buffer.byteLength(markdown)
@@ -447,28 +374,6 @@ function buildPack(job: string, cwd: string, budgetBytes: number): Pack {
 export function compilePack(input: { job: string; cwd: string }): Pack {
   const selected = getJob(input.job)
   return buildPack(input.job, input.cwd, selected.packBytes ?? DEFAULT_PACK_BYTES)
-}
-
-export function compilePackFromGateFacts(
-  input: { job: string; cwd: string },
-  facts: GateFacts,
-): Pack {
-  const selectedJob = getJob(input.job)
-  const project = projectAtGateFacts(input.cwd, facts)
-  const projectName = project?.name ?? null
-  const selected = facts.docs.filter((doc) => isDocInjectedForRun(doc, input.job, projectName))
-  const canon = packedCanonMarkdownFromRows(
-    projectName,
-    facts.docs.filter((doc) => doc.scope === 'canon' && doc.subject === null),
-    facts.docs.filter((doc) => doc.scope === 'canon' && doc.subject === projectName),
-  )
-  return assemblePack({
-    job: input.job,
-    projectName,
-    selected,
-    canon,
-    budgetBytes: selectedJob.packBytes ?? DEFAULT_PACK_BYTES,
-  })
 }
 
 function tracked(root: string): Set<string> | null {
@@ -780,7 +685,7 @@ export function allInjectChecks(): { doc: PackDoc; findings: Finding[] }[] {
         subject: doc.subject,
         slug: doc.slug,
         title: doc.title,
-        bytes: Buffer.byteLength(`## ${doc.title}\n\n${doc.body}`),
+        bytes: Buffer.byteLength(renderPackDocSection(doc)),
       }
       const root = repoRootForDoc(doc)
       return {

@@ -18,6 +18,11 @@ import { collectCanonLintInput as productionCanonLintInput } from '../canon/cano
 import { type CanonRow, composeCanonRows } from '../canon/canon-hydrate.ts'
 import { decideNextCanonSet, decideUserCanonImport } from '../canon/canon-write-gate.ts'
 import { DEFAULT_PACK_BYTES } from '../canon/pack-budget.ts'
+import {
+  joinPackSections,
+  packedCanonMarkdownFromRows,
+  renderPackDocSection,
+} from '../canon/pack-content.ts'
 import { db, nowIso, writableDb } from '../database/db.ts'
 import { JOBS } from '../jobs/jobs.ts'
 import { projectAt, projectByName, projects } from '../project/projects.ts'
@@ -103,6 +108,7 @@ import {
   docWriteProjectName,
   forcedDocDelivery,
   globalCanonWriteTargets,
+  injectPackBudgetRefusal,
   refuseOversizedInject,
   refuseOwnedDocAddress,
   refuseProjectOrGlobalInject,
@@ -133,7 +139,15 @@ async function assertRestoredDocWriteAllowed(input: DocWriteAllowedInput): Promi
   return warnings
 }
 
-function assertInjectSize(input: {
+function injectedDocsForPack(job: string, projectName: string | null): Doc[] {
+  return [
+    ...listDocs({ scope: 'global', subject: null, status: 'current' }),
+    ...listDocs({ scope: 'job', subject: job, status: 'current' }),
+    ...(projectName ? listDocs({ scope: 'project', subject: projectName, status: 'current' }) : []),
+  ].filter((doc) => isDocInjectedForRun(doc, job, projectName))
+}
+
+type PackSizeInput = {
   scope: string
   subject: string | null
   slug: string
@@ -141,83 +155,99 @@ function assertInjectSize(input: {
   body: string
   delivery?: 'inject' | 'demand'
   forceInject?: string
-}): void {
+}
+
+type PackProject = { name: string; path: string }
+
+function assertIndividualInjectSize(input: PackSizeInput): void {
   if (input.delivery !== 'inject') return
   const current = db().query('SELECT COALESCE(MAX(bytes), 0) AS bytes FROM canon_pack').get() as {
     bytes: number
   }
-  const oversized = refuseOversizedInject({
+  const refusal = refuseOversizedInject({
     delivery: 'inject',
     body: input.body,
     forceInject: input.forceInject,
     packBytes: current.bytes,
   })
-  if (oversized) throw new Error(oversized)
+  if (refusal) throw new Error(refusal)
+}
 
-  if (!['global', 'job', 'project'].includes(input.scope)) return
+function affectedPackProjects(input: PackSizeInput, projectRows: PackProject[]): PackProject[] {
+  if (input.scope === 'canon') {
+    return input.subject === null
+      ? projectRows
+      : projectRows.filter((project) => project.name === input.subject)
+  }
+  if (input.scope === 'project') {
+    return projectRows.filter((project) => project.name === input.subject)
+  }
+  return projectRows.length ? projectRows : [{ name: '_', path: process.cwd() }]
+}
+
+function canonForPackWrite(input: PackSizeInput, projectName: string, identity: string) {
+  const globalCanon = listDocs({ scope: 'canon', subject: null, status: 'current' }).filter(
+    (doc) => `${doc.scope}/${doc.subject ?? '_'}/${doc.slug}` !== identity,
+  )
+  const projectCanon = listDocs({ scope: 'canon', subject: projectName, status: 'current' }).filter(
+    (doc) => `${doc.scope}/${doc.subject ?? '_'}/${doc.slug}` !== identity,
+  )
+  if (input.scope !== 'canon') {
+    return packedCanonMarkdownFromRows(projectName, globalCanon, projectCanon)
+  }
+  const proposed = { subject: input.subject, slug: input.slug, body: input.body }
+  return packedCanonMarkdownFromRows(
+    projectName,
+    input.subject === null ? [...globalCanon, proposed] : globalCanon,
+    input.subject === projectName ? [...projectCanon, proposed] : projectCanon,
+  )
+}
+
+function packBudgetRefusalFor(
+  input: PackSizeInput,
+  project: PackProject,
+  jobName: string,
+): string | null {
+  const identity = `${input.scope}/${input.subject ?? '_'}/${input.slug}`
+  const selected = injectedDocsForPack(jobName, project.name).filter(
+    (doc) => `${doc.scope}/${doc.subject ?? '_'}/${doc.slug}` !== identity,
+  )
+  const canon = canonForPackWrite(input, project.name, identity)
+  return injectPackBudgetRefusal({
+    job: jobName,
+    project: project.name,
+    ceiling: JOBS[jobName]?.packBytes ?? DEFAULT_PACK_BYTES,
+    canonMarkdown: canon.markdown,
+    canonTiers: [
+      { label: 'always-on', bytes: canon.alwaysOnBytes },
+      { label: 'context-index', bytes: canon.contextIndexBytes },
+    ],
+    current: selected.map((doc) => ({
+      identity: `${doc.scope}/${doc.subject ?? '_'}/${doc.slug}`,
+      title: doc.title,
+      body: doc.body,
+    })),
+    proposed:
+      input.delivery === 'inject' ? { identity, title: input.title, body: input.body } : undefined,
+  })
+}
+
+function assertPackSize(input: PackSizeInput): void {
+  assertIndividualInjectSize(input)
+  const measuresPack =
+    input.scope === 'canon' ||
+    (input.delivery === 'inject' && ['global', 'job', 'project'].includes(input.scope))
+  if (!measuresPack) return
   const projectRows = db().query('SELECT name,path FROM project ORDER BY name').all() as {
     name: string
     path: string
   }[]
-  const projectsToCheck =
-    input.scope === 'project'
-      ? projectRows.filter((project) => project.name === input.subject)
-      : projectRows.length
-        ? projectRows
-        : [{ name: '_', path: process.cwd() }]
+  const projectsToCheck = affectedPackProjects(input, projectRows)
   const jobsToCheck = input.scope === 'job' && input.subject ? [input.subject] : Object.keys(JOBS)
-  const identity = `${input.scope}/${input.subject ?? '_'}/${input.slug}`
   for (const project of projectsToCheck) {
     for (const jobName of jobsToCheck) {
-      const selected = docsForRun({ job: jobName, cwd: project.path }).filter(
-        (doc) => `${doc.scope}/${doc.subject ?? '_'}/${doc.slug}` !== identity,
-      )
-      const proposed: Doc = {
-        record_id: '00000000-0000-4000-8000-000000000000',
-        project_record_id: null,
-        scope: input.scope as DocScope,
-        subject: input.subject,
-        owner: null,
-        slug: input.slug,
-        title: input.title,
-        body: input.body,
-        delivery: 'inject',
-        audiences: ['technical'],
-        featured: false,
-        status: 'current',
-        kind: 'working',
-        form: null,
-        article_subject_id: null,
-        articleSubject: null,
-        relatedSubjects: [],
-        sourceFiles: [],
-        checkedAgainstCommit: null,
-        summary: null,
-        replacement_slug: null,
-        parent_record_id: null,
-        parent_slug: null,
-        position: 0,
-        created_at: '',
-        updated_at: '',
-        revision: null,
-      }
-      const docs = [...selected, proposed]
-      const packBytes = Buffer.byteLength(docsMarkdown(docs))
-      const budget = JOBS[jobName]?.packBytes ?? DEFAULT_PACK_BYTES
-      if (packBytes <= budget) continue
-      const largest = docs
-        .map((doc) => ({
-          name: `${doc.scope}/${doc.subject ?? '_'}/${doc.slug}`,
-          bytes: Buffer.byteLength(`## ${doc.title}\n\n${doc.body}`),
-        }))
-        .sort((a, b) => b.bytes - a.bytes)
-        .slice(0, 3)
-      throw new Error(
-        `canon pack ${jobName}/${project.name} would be ${packBytes} bytes, ` +
-          `${packBytes - budget} bytes over its ${budget} byte ceiling\n` +
-          `largest inject sections to demote: ${largest.map((doc) => `${doc.name} (${doc.bytes} bytes)`).join(', ')}\n` +
-          'cleared by: demote the named largest inject sections to demand documents',
-      )
+      const refusal = packBudgetRefusalFor(input, project, jobName)
+      if (refusal) throw new Error(refusal)
     }
   }
 }
@@ -339,7 +369,7 @@ async function assertDocWriteAllowed(input: DocWriteAllowedInput): Promise<strin
   if (inject) throw new Error(inject)
   const settings = refuseSettingsBody(input.scope, input.body)
   if (settings) throw new Error(settings)
-  assertInjectSize(input)
+  assertPackSize(input)
   return assertCanonWriteAllowed(input)
 }
 
@@ -676,11 +706,7 @@ export type InjectedDoc = Doc & { revision_id: string }
 
 export function docsForRun(input: { job: string; cwd: string }): InjectedDoc[] {
   const project = projectAt(input.cwd)
-  const docs = [
-    ...listDocs({ scope: 'global', subject: null, status: 'current' }),
-    ...listDocs({ scope: 'job', subject: input.job, status: 'current' }),
-    ...(project ? listDocs({ scope: 'project', subject: project.name, status: 'current' }) : []),
-  ].filter((doc) => isDocInjectedForRun(doc, input.job, project?.name ?? null))
+  const docs = injectedDocsForPack(input.job, project?.name ?? null)
   const latest = db().query(
     'SELECT record_id FROM doc_revision WHERE doc_record_id=? ORDER BY number DESC LIMIT 1',
   )
@@ -696,7 +722,7 @@ export function docsForRun(input: { job: string; cwd: string }): InjectedDoc[] {
 }
 
 export function docsMarkdown(docs: Doc[]): string {
-  return docs.map((doc) => `## ${doc.title}\n\n${doc.body}`).join('\n\n')
+  return joinPackSections(...docs.map(renderPackDocSection))
 }
 
 type OpenResume = { slug: string; title: string; age: string; at: number }

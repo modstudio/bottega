@@ -55,7 +55,6 @@
     "orchestrator/src/worktree/worktree-provision.ts": 2,
     "orchestrator/src/worktree/worktree-readonly.ts": 1,
     "orchestrator/src/worktree/worktree-tool.ts": 1,
-    "orchestrator/scripts/check-pack-budget.ts": 2,
     "orchestrator/scripts/check-projects.ts": 2,
     "orchestrator/scripts/test-postgres-rls.ts": 7,
     "scripts/architecture-cruise.ts": 2,

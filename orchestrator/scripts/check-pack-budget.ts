@@ -1,129 +1,62 @@
-import { Database } from 'bun:sqlite'
 import { fileURLToPath } from 'node:url'
-import { CanonBudgetError, compilePack, compilePackFromGateFacts } from '../src/canon/canon.ts'
+import { collectCanonLintInput } from '../src/canon/canon-files.ts'
+import type { CanonFile } from '../src/canon/canon-lint.ts'
 import { DEFAULT_PACK_BYTES } from '../src/canon/pack-budget.ts'
-import { migrationRefusal } from '../src/database/migrations.ts'
-import { GATE_FACTS_ENV, type GateFacts, readGateFactsFile } from '../src/gate/gate-facts.ts'
+import { packedCanonMarkdownFromTree, renderPackBudgetBreach } from '../src/canon/pack-content.ts'
 import { JOBS } from '../src/jobs/jobs.ts'
-import { projects } from '../src/project/projects.ts'
-import { registerStandardHooks } from '../src/runtime/store-hooks.ts'
-import {
-  classifyStore,
-  liveStorePath,
-  migrateStore,
-  mintFixtureStore,
-  snapshotStore,
-  withBranchStoreScratch,
-  withMainGateFactsSnapshot,
-} from './branch-store.ts'
 
-registerStandardHooks()
-
-export function checkPackBudget(facts?: GateFacts): string[] {
-  const failures: string[] = []
-  for (const project of facts?.projects ?? projects()) {
-    for (const job of Object.keys(JOBS)) {
-      try {
-        if (facts) compilePackFromGateFacts({ job, cwd: project.path }, facts)
-        else compilePack({ job, cwd: project.path })
-      } catch (error) {
-        if (error instanceof CanonBudgetError)
-          failures.push(`${project.name}/${job}\n${error.message}`)
-        else throw error
-      }
-    }
-  }
-  return failures
+export type TreePackBudgetFailure = {
+  job: string
+  bytes: number
+  ceiling: number
+  alwaysOnBytes: number
+  contextIndexBytes: number
+  largestFile: { path: string; bytes: number } | null
 }
 
-const READY = 'BOTTEGA_PACK_BUDGET_READY'
-
-function report(failures: string[]): void {
-  if (failures.length) {
-    console.error(
-      `canon pack budget failed for ${failures.length} project/job combination(s):\n${failures.join('\n\n')}`,
-    )
-    process.exit(1)
-  }
-  console.log(`canon pack budget ok (ceiling ${DEFAULT_PACK_BYTES} bytes)`)
-}
-
-function runReady(store: string): number {
-  const child = Bun.spawnSync([process.execPath, fileURLToPath(import.meta.url)], {
-    env: { ...process.env, BOTTEGA_ORCHESTRATOR_DB: store, [READY]: '1' },
-    stdout: 'inherit',
-    stderr: 'inherit',
+export function checkTreePackBudget(files: CanonFile[]): TreePackBudgetFailure[] {
+  const packed = packedCanonMarkdownFromTree(files)
+  const bytes = Buffer.byteLength(packed.markdown)
+  return Object.entries(JOBS).flatMap(([job, definition]) => {
+    const ceiling = definition.packBytes ?? DEFAULT_PACK_BYTES
+    return bytes > ceiling
+      ? [
+          {
+            job,
+            bytes,
+            ceiling,
+            alwaysOnBytes: packed.alwaysOnBytes,
+            contextIndexBytes: packed.contextIndexBytes,
+            largestFile: packed.largestFile,
+          },
+        ]
+      : []
   })
-  return child.exitCode ?? 1
-}
-
-function runGateFacts(path: string): number {
-  const child = Bun.spawnSync([process.execPath, fileURLToPath(import.meta.url)], {
-    env: { ...process.env, [GATE_FACTS_ENV]: path, [READY]: '1' },
-    stdout: 'inherit',
-    stderr: 'inherit',
-  })
-  return child.exitCode ?? 1
 }
 
 function main(): void {
-  if (process.env[READY] === '1') {
-    const factsPath = process.env[GATE_FACTS_ENV]
-    report(checkPackBudget(factsPath ? readGateFactsFile(factsPath) : undefined))
-    return
-  }
-
-  const live = liveStorePath()
-  if (!live) {
-    const code = withBranchStoreScratch('pack-budget', (dir) => {
-      const minted = mintFixtureStore(dir)
-      console.log('canon pack budget: no live store; checking fixture-minted store')
-      return runReady(minted)
-    })
-    process.exit(code)
-  }
-
-  const kind = classifyStore(live)
-  if (kind === 'ahead') {
-    const code = withBranchStoreScratch('pack-budget', (dir) =>
-      withMainGateFactsSnapshot(
-        kind,
-        dir,
-        (snapshotError) => {
-          const database = new Database(live, { readonly: true })
-          try {
-            console.error(migrationRefusal(database))
-            console.error(String((snapshotError as Error).message ?? snapshotError))
-          } finally {
-            database.close()
-          }
-          return 1
-        },
-        (snapshot) => {
-          console.log(
-            `canon pack budget: gate-facts snapshot took ${snapshot.elapsedMs.toFixed(1)} ms`,
-          )
-          return runGateFacts(snapshot.path)
-        },
-      ),
+  const root = fileURLToPath(new URL('../..', import.meta.url))
+  const failures = checkTreePackBudget(collectCanonLintInput(root).files)
+  if (failures.length) {
+    console.error(
+      `tree canon pack budget failed for ${failures.length} job(s):\n${failures
+        .map(({ job, bytes, ceiling, alwaysOnBytes, contextIndexBytes, largestFile }) =>
+          renderPackBudgetBreach({
+            header: `${job}: ${bytes} bytes; ceiling ${ceiling} bytes`,
+            tiers: [
+              { bytes: alwaysOnBytes, label: 'always-on' },
+              { bytes: contextIndexBytes, label: 'context-index' },
+              ...(largestFile ? [{ bytes: largestFile.bytes, label: largestFile.path }] : []),
+            ],
+            remedy:
+              'remedy: demote the named largest tier; never raise the pack budget (orchestrator/src/canon/pack-budget.ts)',
+          }),
+        )
+        .join('\n')}`,
     )
-    process.exit(code)
+    process.exit(1)
   }
-  if (kind === 'current') {
-    console.log('canon pack budget: reading live store in place (read-only)')
-    report(checkPackBudget())
-    return
-  }
-
-  const code = withBranchStoreScratch('pack-budget', (dir) => {
-    const snapshot = snapshotStore(live, dir)
-    migrateStore(snapshot)
-    console.log(
-      'canon pack budget: snapshotted live store, migrated the snapshot, checking packs there',
-    )
-    return runReady(snapshot)
-  })
-  process.exit(code)
+  console.log(`tree canon pack budget ok for ${Object.keys(JOBS).length} jobs`)
 }
 
 if (import.meta.main) main()

@@ -8,7 +8,7 @@ import {
   type DocScope,
   docScopeHasProjectSubject,
 } from '../../../shared/docs.ts'
-import { type Refusal, refusal } from '../../../shared/refusal.ts'
+import { type Refusal, refusal, renderRefusal } from '../../../shared/refusal.ts'
 import { composeCanonRows } from '../canon/canon-hydrate.ts'
 import {
   type CanonFinding,
@@ -18,6 +18,11 @@ import {
 } from '../canon/canon-lint.ts'
 import { decideNextCanonSet } from '../canon/canon-write-gate.ts'
 import { DEFAULT_PACK_BYTES, MAX_INJECT_DOC_BYTES } from '../canon/pack-budget.ts'
+import {
+  joinPackSections,
+  renderPackBudgetBreach,
+  renderPackDocSection,
+} from '../canon/pack-content.ts'
 import { refuseSettingsBody } from '../settings/settings.ts'
 import { type DocGenerator, REFERENCE_GENERATOR } from './doc-generator.ts'
 import { docLintRefusal, introducedDocFindings, type LintableDoc, lintDoc } from './doc-lint.ts'
@@ -385,6 +390,46 @@ export function refuseOversizedInject(input: {
     'invariant: oversized narrative belongs on demand so an accepted write cannot break the canon pack gate\n' +
     'cleared by: use --delivery demand, shorten the document, or pass --force-inject "<reason>"'
   )
+}
+
+export type InjectPackSection = {
+  identity: string
+  title: string
+  body: string
+}
+
+/** Decides whether one proposed injected document fits in one affected pack. */
+export function injectPackBudgetRefusal(input: {
+  job: string
+  project: string
+  ceiling: number
+  canonMarkdown: string
+  canonTiers?: readonly { label: string; bytes: number }[]
+  current: readonly InjectPackSection[]
+  proposed?: InjectPackSection
+}): string | null {
+  const docs = input.proposed
+    ? [...input.current.filter((doc) => doc.identity !== input.proposed!.identity), input.proposed]
+    : [...input.current]
+  const operatorMarkdown = joinPackSections(...docs.map(renderPackDocSection))
+  const markdown = joinPackSections(input.canonMarkdown, operatorMarkdown)
+  const bytes = Buffer.byteLength(markdown)
+  if (bytes <= input.ceiling) return null
+  const tiers = [
+    ...(input.canonTiers ?? []),
+    ...docs.map((doc) => ({
+      label: doc.identity,
+      bytes: Buffer.byteLength(renderPackDocSection(doc)),
+    })),
+  ]
+  const remedy = input.proposed
+    ? `shorten the document with ${PLATFORM_SLUG} doc set, or set the named largest sections to delivery demand`
+    : `shorten the canon row with ${PLATFORM_SLUG} doc set, or demote the named largest tier; never raise the pack budget (orchestrator/src/canon/pack-budget.ts)`
+  return renderPackBudgetBreach({
+    header: `canon pack ${input.job}/${input.project} would be ${bytes} bytes; ceiling is ${input.ceiling} bytes`,
+    tiers,
+    remedy: renderRefusal(refusal('', { kind: 'edit', text: remedy })).trimStart(),
+  })
 }
 
 function refuseCanonPathCollision(input: {

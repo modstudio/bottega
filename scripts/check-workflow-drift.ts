@@ -1,5 +1,6 @@
 import type { Database } from 'bun:sqlite'
 import { fileURLToPath } from 'node:url'
+import { liveStorePath, localGateRegistration } from '../orchestrator/scripts/branch-store.ts'
 import { DB_PATH, openReadOnlyDatabase } from '../orchestrator/src/database/db.ts'
 import { planWorkflowHydration } from '../orchestrator/src/workflow/workflow-tree.ts'
 import { collectWorkflowTree } from '../orchestrator/src/workflow/workflow-tree-files.ts'
@@ -8,6 +9,7 @@ import {
   productionWorkflowTree,
 } from '../orchestrator/src/workflow/workflow-tree-store.ts'
 import { PLATFORM_SLUG } from '../shared/brand.ts'
+import { exitUnchecked } from '../shared/check-execution.ts'
 import { branchChangedPaths, registeredProjectAt } from './check-canon-drift.ts'
 import { resolveRegisteredLandingBase } from './landing-base.ts'
 
@@ -71,6 +73,14 @@ function workflowDriftInput(checkout: string, database: Database): WorkflowDrift
 }
 
 if (import.meta.main) {
+  const registration = localGateRegistration(root, liveStorePath())
+  if (registration.kind === 'skip') {
+    exitUnchecked(registration.message)
+  }
+  if (registration.kind === 'fail') {
+    console.error(registration.message)
+    process.exit(1)
+  }
   const started = performance.now()
   let database: Database | undefined
   let input: WorkflowDriftInput | undefined

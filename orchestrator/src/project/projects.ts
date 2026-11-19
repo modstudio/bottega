@@ -35,6 +35,7 @@ import {
   type SequenceState,
 } from '../../../shared/git.ts'
 import { githubRepository } from '../../../shared/github-repository.ts'
+import { checkoutIsUnderProject } from '../../../shared/project-path.ts'
 import { parseRecordSpaceMemberships } from '../../../shared/record-space-membership.ts'
 import { releaseTagVersion } from '../../../shared/release-tag.ts'
 import { db, nowIso, writableDb } from '../database/db.ts'
@@ -209,7 +210,7 @@ export function retiredProjectAt(cwd: string, database: Database = db()): Projec
   let best: Project | null = null
   for (const p of projects({ retired: true }, database)) {
     if (!isProjectRepository(p)) continue
-    if (cwd === p.path || cwd.startsWith(`${p.path}/`)) {
+    if (checkoutIsUnderProject(cwd, p.path)) {
       if (!best || p.path.length > best.path.length) best = p
     }
   }

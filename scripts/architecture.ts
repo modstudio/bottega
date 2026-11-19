@@ -241,6 +241,11 @@ const declaredModules: ArchitectureModule[] = [
   ...contextHealthModules,
   ...sessionLossesModules,
   ...sessionReportModules,
+  module('orchestrator/src/canon/pack-content.ts', [
+    '../../../shared/canon-frontmatter.ts',
+    './canon-hydrate.ts',
+    './canon-lint.ts',
+  ]),
   module('orchestrator/src/doc/canon-removal.ts', [
     '../canon/canon-files.ts',
     '../canon/canon-hydrate.ts',

@@ -35,7 +35,7 @@ function migrationVersion(database: Database): number {
   return (database.query('PRAGMA user_version').get() as { user_version: number }).user_version
 }
 
-export function collectGateFacts(database: Database = db()): GateFacts {
+function collectGateFacts(database: Database = db()): GateFacts {
   const activeProjects = projects(undefined, database)
   const projectNames = new Set(activeProjects.map(({ name }) => name))
   const docs = listDocsStore({ status: 'current' }, database)

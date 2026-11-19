@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url'
 import {
   classifyStore,
   liveStorePath,
+  localGateRegistration,
   withBranchStoreScratch,
   withMainGateFactsSnapshot,
 } from '../orchestrator/scripts/branch-store.ts'
@@ -30,6 +31,7 @@ import {
 import { type Project, projectAt } from '../orchestrator/src/project/projects.ts'
 import { startBoundedSync } from '../shared/bounded-process.ts'
 import { PLATFORM_SLUG } from '../shared/brand.ts'
+import { exitUnchecked } from '../shared/check-execution.ts'
 import { inspectionGitEnv } from '../shared/git.ts'
 import { nulPathListArgs, splitNulPaths } from '../shared/git-path-list.ts'
 import { resolveRegisteredLandingBase } from './landing-base.ts'
@@ -190,6 +192,11 @@ function checkCanonDrift(
 if (import.meta.main) {
   try {
     const live = liveStorePath()
+    const registration = localGateRegistration(root, live)
+    if (registration.kind === 'skip') {
+      exitUnchecked(registration.message)
+    }
+    if (registration.kind === 'fail') throw new Error(registration.message)
     const storeKind = classifyStore(live)
     const findings =
       storeKind === 'ahead'

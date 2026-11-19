@@ -36,7 +36,6 @@
     "orchestrator/src/doc/doc-status.ts": 4,
     "orchestrator/src/doc/doc-tree-rules.ts": 9,
     "orchestrator/src/doc/doc-write-allowed.ts": 12,
-    "orchestrator/src/doc/docs.ts": 1,
     "orchestrator/src/doc/local-doc-tree-service.ts": 2,
     "orchestrator/src/host-load-series.ts": 1,
     "orchestrator/src/lens/lenses.ts": 1,
