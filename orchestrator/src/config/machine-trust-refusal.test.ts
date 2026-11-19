@@ -45,7 +45,7 @@ test('credential trust facts give a revoked machine key the init-new-key repair'
   expect(credentialMachineTrustSteps(facts)).toEqual([
     `${PLATFORM_SLUG} machine config machine init --space named-space`,
     `${PLATFORM_SLUG} machine config machine register --space named-space`,
-    `${PLATFORM_SLUG} machine config machine trust ${keyId} AQID --space named-space`,
+    `${PLATFORM_SLUG} machine config machine trust <keyId> <publicKey> --space named-space`,
   ])
 })
 

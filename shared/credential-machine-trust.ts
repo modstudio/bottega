@@ -58,7 +58,12 @@ export function credentialMachineTrustFacts(input: {
 /** Order the complete repair for a machine that cannot open credentials in one space. */
 export function credentialMachineTrustSteps(facts: CheckedCredentialMachineTrustFacts): string[] {
   const commands = credentialMachineTrustCommands(facts)
-  if (facts.revoked) return [commands.init, commands.register, commands.trust]
+  if (facts.revoked)
+    return [
+      commands.init,
+      commands.register,
+      credentialMachineTrustCommands({ space: facts.space }).trust,
+    ]
   if (facts.trusted) return []
   return [...(facts.registered ? [] : [commands.register]), commands.trust]
 }

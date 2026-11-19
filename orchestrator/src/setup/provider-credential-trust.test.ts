@@ -137,7 +137,19 @@ test('provider credential trust gathering returns checked facts for a matching r
       [project('studio')],
       deps({
         client: () =>
-          client({ listMachineKeys: async () => [{ keyId: machine.keyId, revokedAt: null }] }),
+          client({
+            listMachineKeys: async () => [
+              {
+                keyId: machine.keyId,
+                publicKey: 'AQID',
+                signingPublicKey: null,
+                label: 'test',
+                createdAt: '2026-11-19T00:00:00.000Z',
+                revokedAt: null,
+                userId: 'user-id',
+              },
+            ],
+          }),
       }),
     ),
   ).toEqual([
