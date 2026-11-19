@@ -49,9 +49,6 @@ export function recordUnreachableRefusal(
   )
 }
 
-export const machineNotTrustedRemedy = (spaceId: string) =>
-  `this machine is not trusted in record space ${spaceId}; from a machine trusted there, run \`${PLATFORM_SLUG} machine config machine trust <keyId> <publicKey> --space ${spaceId}\``
-
 export const configAccessRemedy = (space?: string) =>
   `signed-in user lacks config access${space ? ` in record space ${space}` : ''}; a space owner or admin grants it with \`${PLATFORM_SLUG} record space access grant <email>\``
 

@@ -6,9 +6,13 @@ import type {
   ConfigWriteDestination,
   DataKey,
 } from './config-client.ts'
+import {
+  credentialMachineTrustFacts,
+  missingDataKeyWrapRemedy,
+} from './credential-machine-trust.ts'
+import { readCredentialMachineTrustFactsOrUnchecked } from './credential-machine-trust-reader.ts'
 import { type HostedConfigIdentity, readHostedConfigIdentity } from './hosted-config-space.ts'
 import {
-  machineNotTrustedRemedy,
   pinnedSpaceMismatchRemedy,
   pinnedUserMismatchRemedy,
   RECORD_ACTIVE_SPACE_REMEDY,
@@ -81,7 +85,7 @@ export async function pinnedHostedSecretDestination(
 /** Establish the signed-in user's identity for a project destination space. */
 export async function destinationHostedIdentity(
   client: ConfigClient,
-  destination: { spaceId: string; machineKeyId: string },
+  destination: { spaceId: string; machine: MachineKeyPair & { keyId: string } },
   pinned = readHostedConfigIdentity(),
 ): Promise<HostedConfigIdentity> {
   if (!pinned)
@@ -100,10 +104,19 @@ export async function destinationHostedIdentity(
   const decision = decideHostedSpaceOpen({
     destinationSpaceId: destination.spaceId,
     userId: current.user.id,
-    machine: machines.find((machine) => machine.keyId === destination.machineKeyId),
+    machine: machines.find((machine) => machine.keyId === destination.machine.keyId),
   })
   if (decision.allowed) return decision.identity
-  throw new Error(machineNotTrustedRemedy(destination.spaceId))
+  throw new Error(
+    missingDataKeyWrapRemedy(
+      credentialMachineTrustFacts({
+        space: destination.spaceId,
+        machine: destination.machine,
+        machineRows: machines,
+        trust: {},
+      }),
+    ),
+  )
 }
 
 /** Choose whether a secret opens with the pinned active-space identity or a destination identity. */
@@ -118,20 +131,21 @@ export function hostedSecretIdentityKind(
 export async function hostedSecretIdentity(
   client: ConfigClient,
   destination: ConfigDestination,
-  machineKeyId: string,
+  machine: MachineKeyPair & { keyId: string },
   pinned = readHostedConfigIdentity(),
 ): Promise<HostedConfigIdentity> {
   if (hostedSecretIdentityKind(destination.destinationSpaceId, pinned?.spaceId) === 'active')
     return hostedIdentity(client, pinned)
   return destinationHostedIdentity(
     client,
-    { spaceId: destination.destinationSpaceId!, machineKeyId },
+    { spaceId: destination.destinationSpaceId!, machine },
     pinned,
   )
 }
 
 function trustedWrap(input: {
   key: DataKey
+  machine: MachineKeyPair & { keyId: string }
   trust: TrustedKeys
   identity: HostedConfigIdentity
 }): DataKey['wraps'][number] {
@@ -139,7 +153,23 @@ function trustedWrap(input: {
   if (wrap) return wrap
   if (input.key.wraps.length)
     throw new HostedOpenError('untrusted-sender', 'hosted secret data-key sender is not trusted')
-  throw new HostedOpenError('missing-wrap', machineNotTrustedRemedy(input.identity.spaceId))
+  throw new HostedOpenError(
+    'missing-wrap',
+    'hosted secret data key has no wrap addressed to this machine',
+  )
+}
+
+/** Gather current facts only after a missing wrap and attach the exact repair refusal. */
+export async function missingHostedDataKeyWrapError(
+  client: Pick<ConfigClient, 'listMachineKeys' | 'readTrustLog' | 'whoami'>,
+  identity: HostedConfigIdentity,
+  machine: MachineKeyPair & { keyId: string },
+): Promise<HostedOpenError> {
+  const facts = await readCredentialMachineTrustFactsOrUnchecked(client, {
+    space: { kind: 'membership', spaceId: identity.spaceId },
+    machine,
+  })
+  return new HostedOpenError('missing-wrap', missingDataKeyWrapRemedy(facts))
 }
 
 /** The only operation that chooses a wrap and opens a hosted secret row. */

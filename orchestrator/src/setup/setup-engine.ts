@@ -5,6 +5,10 @@ import { PLATFORM_NAME, PLATFORM_SLUG, WORKER_MCP_SERVER_NAME } from '../../../s
 import type { MachineLevel } from '../../../shared/machine-config.ts'
 import type { Project, ProjectSettings } from '../project/projects.ts'
 import { developerNodeNotice } from './developer-node.ts'
+import {
+  providerCredentialTrustNotices,
+  type SetupCredentialTrustFact,
+} from './provider-credential-trust-notice.ts'
 import type { RepositoryFacts } from './repository-facts-types.ts'
 import type { SetupFacts } from './setup-facts.ts'
 import type { LegacyPathSymlink } from './setup-legacy-path.ts'
@@ -50,6 +54,7 @@ export type SetupAgent = {
   harness: string
   enabled: number | boolean
   probePassed: number | boolean
+  provider?: string | null
 }
 export type SetupLifecycleResolver = (
   worktree: ProjectSettings['worktree'] | null | undefined,
@@ -833,6 +838,7 @@ export function proposeSetup(
   repositoryNotices: SetupNotice[] = [],
   servers: McpServer[] = [],
   hostedProjectNames: readonly string[] = [],
+  credentialTrustFacts: readonly SetupCredentialTrustFact[] = [],
 ): SetupPlan {
   const occupied = new Set(
     register
@@ -844,6 +850,7 @@ export function proposeSetup(
     ...machineNotices(machine),
     ...agentNotices(machine, agents),
     ...repositoryNotices,
+    ...providerCredentialTrustNotices(credentialTrustFacts),
   ]
   const harnessInstalls = proposeHarnessInstalls(machine, agents, questions, notices)
   const registrations = proposeMcpRegistrations(machine, servers, questions, notices)

@@ -1,11 +1,17 @@
 import { expect, test } from 'bun:test'
-import { join } from 'node:path'
 import {
   MCP_SERVER_NAME,
   PLATFORM_SLUG,
   RECORD_API_ORIGIN,
   WORKER_MCP_SERVER_NAME,
 } from '../../../shared/brand.ts'
+import {
+  FRONT_DOOR,
+  machine,
+  machineWithMcp,
+  orchServer,
+  workerServer,
+} from '../../test/fixtures/setup-engine.ts'
 import type { Project, ProjectSettings } from '../project/projects.ts'
 import { resolveWorktreeLifecycle } from '../worktree/worktree-lifecycle.ts'
 import type { RepositoryFacts } from './repository-facts.ts'
@@ -17,7 +23,7 @@ import {
   type SetupNotice,
 } from './setup-engine.ts'
 import type { SetupFacts } from './setup-facts.ts'
-import { legacyMcpServerName, type McpServer } from './setup-mcp.ts'
+import { legacyMcpServerName } from './setup-mcp.ts'
 import {
   plannedKeystoreAction,
   planSetupActions,
@@ -26,8 +32,6 @@ import {
   validateSetupAnswers,
 } from './setup-planner.ts'
 import { INFERRED_RECIPE_PATH, inferredRecipeContent } from './setup-toolchain.ts'
-
-const FRONT_DOOR = join('/', 'bin', PLATFORM_SLUG)
 
 const plannedAction = (
   plan: Parameters<typeof planSetupActions>[0],
@@ -49,6 +53,7 @@ function proposeSetup(
   agents: SetupAgent[],
   notices: SetupNotice[] = [],
   servers: Parameters<typeof proposeSetupEngine>[6] = [],
+  credentialTrustFacts: Parameters<typeof proposeSetupEngine>[8] = [],
 ) {
   const plan = proposeSetupEngine(
     resolveWorktreeLifecycle,
@@ -58,6 +63,8 @@ function proposeSetup(
     agents,
     notices,
     servers,
+    [],
+    credentialTrustFacts,
   )
   return {
     ...plan,
@@ -66,24 +73,6 @@ function proposeSetup(
     ),
   }
 }
-
-const machine = {
-  machineLevel: 'full',
-  os: { platform: 'darwin', arch: 'arm64', wsl: false },
-  recordApiUrl: 'https://api.example.test',
-  recordApiConfigured: true,
-  git: { path: '/bin/git', version: '1' },
-  gh: { path: '/bin/gh', version: '1', loggedIn: true },
-  sandboxRuntime: {
-    available: true,
-    location: '/runtime',
-    missingSystemDependencies: [],
-    condition: '',
-    remedy: '',
-    fixes: [],
-    sandboxProbeUnavailableReason: null,
-  },
-} as unknown as SetupFacts
 
 test('does not plan a file keystore when the keychain is usable, unknown, or explicitly selected', () => {
   const keystore = (keychainUsable: boolean | null, source: SetupFacts['keystore']['source']) =>
@@ -134,27 +123,6 @@ test('folder defaults include registered paths and names found in hosted spaces'
   expect(plan.folderSelection.defaults).toEqual(['/work/local', '/work/hosted'])
 })
 
-function machineWithMcp(
-  harness: 'claude' | 'codex' | 'grok' | 'opencode' | 'goose',
-  mcp: NonNullable<SetupFacts['harnesses']['codex']['mcp']>,
-  auth: SetupFacts['harnesses']['codex']['auth'] = 'signed-in',
-): SetupFacts {
-  return {
-    ...machine,
-    harnesses: Object.fromEntries(
-      ['claude', 'codex', 'grok', 'opencode', 'goose'].map((name) => [
-        name,
-        {
-          path: name === harness ? `/bin/${name}` : null,
-          version: name === harness ? '1' : null,
-          auth,
-          mcp: name === harness ? mcp : null,
-        },
-      ]),
-    ) as SetupFacts['harnesses'],
-  }
-}
-
 test('does not notice a missing record address because setup has a built-in address', () => {
   const plan = proposeSetup(
     { ...machine, recordApiUrl: RECORD_API_ORIGIN, recordApiConfigured: false },
@@ -165,16 +133,35 @@ test('does not notice a missing record address because setup has a built-in addr
   expect(plan.notices.some(({ message }) => message.includes('record address'))).toBe(false)
 })
 
-const orchServer: McpServer = {
-  name: MCP_SERVER_NAME,
-  command: FRONT_DOOR,
-  args: ['mcp'],
-}
-const workerServer: McpServer = {
-  name: WORKER_MCP_SERVER_NAME,
-  command: FRONT_DOOR,
-  args: ['mcp', 'ask-server'],
-}
+test('notices credential trust with registration before trust', () => {
+  const space = 'studio'
+  const plan = proposeSetup(
+    machine,
+    [],
+    [],
+    [],
+    [],
+    [],
+    [
+      {
+        status: 'checked',
+        registered: false,
+        revoked: false,
+        trusted: false,
+        space,
+        keyId: 'machine-key',
+        publicKey: 'machine-public-key',
+      },
+    ],
+  )
+  const notice = plan.notices.find(({ message }) => message.includes(space))
+  const fix = notice?.fix ?? ''
+
+  expect(notice).toBeDefined()
+  expect(fix.indexOf('machine config machine register')).toBeLessThan(
+    fix.indexOf('machine config machine trust'),
+  )
+})
 
 test('recommends the install level from signed-in harness facts unless a setting exists', () => {
   expect(

@@ -73,6 +73,7 @@ import { worktreeDirty } from '../worktree/worktree-attribution.ts'
 import { lifecycleReportLines } from '../worktree/worktree-lifecycle.ts'
 import { configuredDelegationDoctorLines } from './delegation-doctor.ts'
 import { launchAgentDoctorReport } from './launch-agent-doctor.ts'
+import { reportProviderCredentialTrustDoctor } from './provider-credential-trust-doctor.ts'
 
 type DoctorFlags = { has(name: string): boolean }
 type DoctorReporter = { log(value: string): void; exitCode(code: number): void }
@@ -648,6 +649,7 @@ async function reportAgentsAndDelegation(
   presentation: Pick<DoctorPresentation, 'log' | 'candidates'>,
   agentStatus: typeof doctorAgentStatus,
 ): Promise<void> {
+  await reportProviderCredentialTrustDoctor(presentation.log)
   await reportAgents(presentation, agentStatus)
   presentation.log('delegation')
   for (const line of configuredDelegationDoctorLines(
@@ -742,12 +744,6 @@ export async function doctorCommand(
   const { has } = flags
   const { log, exitCode, candidates, pick, jobs, acpRuntimeGaps, retrievalCheck } = presentation
   const machineLevel = readMachineValue('machine.level') as MachineLevel
-  // Probed BEFORE the agent list is printed, not after it. Doctor used to
-  // report `qwen36-goose ready` and `reachable NO` four lines apart and mean
-  // both: the roster asked whether it was configured and the probe asked
-  // whether it answered. Now the roster is told the answer first, so the
-  // status column and the routing table below it cannot contradict
-  // each other.
   const r = await workerHealthForInstallLevel(machineLevel)
   reportRetrievalCheck(await retrievalCheck(), presentation)
   const { CanonBudgetError, compilePack, findingsForPack } = await import('../canon/canon.ts')

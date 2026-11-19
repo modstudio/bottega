@@ -189,6 +189,7 @@ export const settingsModules: SettingsModule[] = [
   ]),
   module('orchestrator/src/config/machine-trust-refusal.ts', [
     '../../../shared/brand.ts',
+    '../../../shared/credential-machine-trust.ts',
     '../../../shared/refusal.ts',
     '../../../shared/trust-log-keys.ts',
   ]),
@@ -201,6 +202,7 @@ export const settingsModules: SettingsModule[] = [
   module('orchestrator/src/config/named-space-config.ts', [
     'node:os',
     '../../../shared/brand.ts',
+    '../../../shared/credential-machine-trust.ts',
     '../../../shared/config-client.ts',
     '../../../shared/config-directory.ts',
     '../../../shared/hosted-config-space.ts',
@@ -219,6 +221,8 @@ export const settingsModules: SettingsModule[] = [
   module('orchestrator/src/config/credential-service.ts', [
     '../../../shared/brand.ts',
     '../../../shared/config-client.ts',
+    '../../../shared/credential-machine-trust.ts',
+    '../../../shared/credential-machine-trust-reader.ts',
     '../../../shared/credential.ts',
     '../../../shared/credential-resolution.ts',
     '../../../shared/credential-value.ts',
@@ -227,6 +231,7 @@ export const settingsModules: SettingsModule[] = [
     '../../../shared/record-remedies.ts',
     '../../../shared/record-space-membership.ts',
     '../../../shared/sealed-value.ts',
+    '../../../shared/hosted-secret-row.ts',
     '../project/projects.ts',
     '../record/record-project-destination-client.ts',
     './config-service.ts',

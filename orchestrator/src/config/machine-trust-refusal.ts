@@ -1,6 +1,7 @@
 // concern: machine-trust-refusal
 /** Separates repairable missing registration from irrevocable machine-key revocation. */
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { credentialMachineTrustCommands } from '../../../shared/credential-machine-trust.ts'
 import { refusal, renderRefusal } from '../../../shared/refusal.ts'
 import type { TrustedKeys } from '../../../shared/trust-log-keys.ts'
 
@@ -52,9 +53,9 @@ export function machineTrustRefusal(
   registered: RegisteredMachineKey | undefined,
   spaceSlug: string,
 ): string | null {
-  const spaceOption = ` --space ${spaceSlug}`
-  const registerCommand = `${PLATFORM_SLUG} machine config machine register${spaceOption}`
-  const trustCommand = `${PLATFORM_SLUG} machine config machine trust <keyId> <publicKey>${spaceOption}`
+  const commands = credentialMachineTrustCommands({ space: spaceSlug })
+  const registerCommand = commands.register
+  const trustCommand = commands.trust
   const trustAgain = `trust it again with \`${trustCommand}\``
   const trustNewKey = `trust the new key with \`${trustCommand}\``
   if (!registered)
@@ -68,7 +69,7 @@ export function machineTrustRefusal(
     return renderRefusal(
       refusal(`machine key ${keyId} was revoked in this space and cannot be trusted again`, {
         kind: 'edit',
-        text: `on that machine run \`${PLATFORM_SLUG} machine config machine init${spaceOption}\` to make a new key, then \`${registerCommand}\`, and ${trustNewKey}`,
+        text: `on that machine run \`${commands.init}\` to make a new key, then \`${registerCommand}\`, and ${trustNewKey}`,
       }),
     )
   return null

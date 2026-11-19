@@ -1,8 +1,53 @@
 import { expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import {
+  credentialMachineTrustFacts,
+  credentialMachineTrustSteps,
+} from '../../../shared/credential-machine-trust.ts'
 import { anchoredTrustRefusal, machineTrustRefusal } from './machine-trust-refusal.ts'
 
 const keyId = 'machine-key-id'
+
+test('credential trust repair orders registration before trust and omits completed steps', () => {
+  const facts = {
+    status: 'checked' as const,
+    space: 'named-space',
+    keyId,
+    publicKey: 'public-key',
+    revoked: false,
+  }
+  expect(credentialMachineTrustSteps({ ...facts, registered: false, trusted: false })).toEqual([
+    `${PLATFORM_SLUG} machine config machine register --space named-space`,
+    `${PLATFORM_SLUG} machine config machine trust ${keyId} public-key --space named-space`,
+  ])
+  expect(credentialMachineTrustSteps({ ...facts, registered: true, trusted: false })).toEqual([
+    `${PLATFORM_SLUG} machine config machine trust ${keyId} public-key --space named-space`,
+  ])
+  expect(credentialMachineTrustSteps({ ...facts, registered: true, trusted: true })).toEqual([])
+})
+
+test('credential trust facts give a revoked machine key the init-new-key repair', () => {
+  const facts = credentialMachineTrustFacts({
+    space: 'named-space',
+    machine: { keyId, publicKey: new Uint8Array([1, 2, 3]) },
+    machineRows: [{ keyId, revokedAt: '2026-11-10T00:00:00.000Z' }],
+    trust: { [keyId]: { public_key: 'public-key', label: 'fixture' } },
+  })
+  expect(facts).toEqual({
+    status: 'checked',
+    registered: false,
+    revoked: true,
+    trusted: true,
+    space: 'named-space',
+    keyId,
+    publicKey: 'AQID',
+  })
+  expect(credentialMachineTrustSteps(facts)).toEqual([
+    `${PLATFORM_SLUG} machine config machine init --space named-space`,
+    `${PLATFORM_SLUG} machine config machine register --space named-space`,
+    `${PLATFORM_SLUG} machine config machine trust <keyId> <publicKey> --space named-space`,
+  ])
+})
 
 test('revoked machine registration keeps every repair in the named space', () => {
   expect(machineTrustRefusal(keyId, { revokedAt: '2026-11-10T00:00:00.000Z' }, 'named-space')).toBe(

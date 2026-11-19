@@ -14,6 +14,8 @@ import {
   type CredentialPayer,
   credentialIdentityKey,
 } from '../../../shared/credential.ts'
+import { missingDataKeyWrapRemedy } from '../../../shared/credential-machine-trust.ts'
+import { readCredentialMachineTrustFactsOrUnchecked } from '../../../shared/credential-machine-trust-reader.ts'
 import {
   credentialScopeFromPayer,
   credentialSetRefusalText,
@@ -27,10 +29,10 @@ import {
   resolveHostedCredential,
   resolveHostedCredentialValue,
 } from '../../../shared/credential-value.ts'
+import { localMachine } from '../../../shared/hosted-secret-row.ts'
 import type { OperatorCredentialIdentity } from '../../../shared/operator-credentials.ts'
 import {
   configAccessRemedy,
-  machineNotTrustedRemedy,
   recordSpaceMembershipRefusal,
 } from '../../../shared/record-remedies.ts'
 import {
@@ -146,23 +148,43 @@ const destination = (address: CredentialAddress): ConfigWriteDestination => ({
   destinationSpaceId: address.destinationSpaceId,
   projectId: address.projectId,
 })
-function missingProjectWrapRefusal(address: CredentialAddress): Error {
+async function missingWrapTrustRemedy(
+  address: CredentialAddress,
+  client: ReturnType<typeof configClient>,
+): Promise<string> {
+  return missingDataKeyWrapRemedy(
+    await readCredentialMachineTrustFactsOrUnchecked(client, {
+      space: { kind: 'known', spaceId: address.destinationSpaceId, slug: address.spaceName },
+      machine: localMachine,
+    }),
+  )
+}
+
+async function missingProjectWrapRefusal(
+  address: CredentialAddress,
+  client: ReturnType<typeof configClient>,
+): Promise<Error> {
   const binding = address.projectName
     ? `project ${address.projectName} in space ${address.spaceName}`
     : `space ${address.spaceName}`
   return new Error(
-    `cannot access credentials for ${binding}: ${machineNotTrustedRemedy(address.spaceName)}; ${configAccessRemedy(address.spaceName)}`,
+    `cannot access credentials for ${binding}: ${await missingWrapTrustRemedy(address, client)}; ${configAccessRemedy(address.spaceName)}`,
   )
 }
 
-function missingAccountWrapRefusal(address: CredentialAddress): Error {
+async function missingAccountWrapRefusal(
+  address: CredentialAddress,
+  client: ReturnType<typeof configClient>,
+): Promise<Error> {
   return new Error(
-    `cannot access account credentials: run \`${PLATFORM_SLUG} machine config machine register --space ${address.spaceName}\``,
+    `cannot access account credentials: ${await missingWrapTrustRemedy(address, client)}`,
   )
 }
 
-const missingWrapRefusal = (address: CredentialAddress) =>
-  address.account ? missingAccountWrapRefusal(address) : missingProjectWrapRefusal(address)
+const missingWrapRefusal = (address: CredentialAddress, client: ReturnType<typeof configClient>) =>
+  address.account
+    ? missingAccountWrapRefusal(address, client)
+    : missingProjectWrapRefusal(address, client)
 
 function missingCredentialRefusal(address: CredentialAddress): Error {
   return new Error(credentialSetRefusalText(address, 'missing', 'pipe its value to'))
@@ -202,13 +224,13 @@ export async function setCredential(
         },
         createDataKey: false,
         expectedRowVersion,
-        missingDestinationAccessRefusal: () => missingWrapRefusal(address),
+        missingDestinationAccessRefusal: () => missingWrapRefusal(address, client),
         remedy: credentialSetRemedy(address),
       },
     )
   } catch (error) {
     if (error instanceof ConfigClientError && error.status === 404)
-      throw missingWrapRefusal(address)
+      throw await missingWrapRefusal(address, client)
     throw error
   }
 }

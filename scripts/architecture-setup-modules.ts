@@ -34,6 +34,7 @@ export const setupModuleSpecs: readonly SetupModuleSpec[] = [
       '../project/projects.ts',
       '../record/record-space.ts',
       '../worktree/worktree-lifecycle.ts',
+      './provider-credential-trust.ts',
       './repository-facts.ts',
       './setup-apply.ts',
       './setup-engine.ts',
@@ -137,6 +138,7 @@ export const setupModuleSpecs: readonly SetupModuleSpec[] = [
     allowed: [
       '../../../shared/brand.ts',
       './developer-node.ts',
+      './provider-credential-trust-notice.ts',
       './setup-mcp.ts',
       './setup-schedule-policy.ts',
       './setup-toolchain.ts',
@@ -151,6 +153,27 @@ export const setupModuleSpecs: readonly SetupModuleSpec[] = [
     ],
     reason:
       'Keep setup proposals pure and independent of stores, filesystems, commands, and processes.',
+  },
+  {
+    name: 'provider-credential-trust-boundary',
+    file: 'orchestrator/src/setup/provider-credential-trust.ts',
+    allowed: [
+      '../../../shared/config-client.ts',
+      '../../../shared/credential-machine-trust-reader.ts',
+      '../../../shared/machine-key-store.ts',
+      '../../../shared/record-session.ts',
+      '../../../shared/record-space-membership.ts',
+      './setup-mcp.ts',
+    ],
+    typeOnlyAllowed: ['../../../shared/credential-machine-trust.ts', '../project/projects.ts'],
+    reason: 'Keep bounded hosted trust reads outside pure setup proposal policy.',
+  },
+  {
+    name: 'provider-credential-trust-notice-boundary',
+    file: 'orchestrator/src/setup/provider-credential-trust-notice.ts',
+    allowed: ['../../../shared/brand.ts', '../../../shared/credential-machine-trust.ts'],
+    typeOnlyAllowed: [],
+    reason: 'Keep credential trust notice rendering pure and shared by setup and doctor.',
   },
   {
     name: 'developer-node-boundary',

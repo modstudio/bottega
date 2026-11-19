@@ -4,7 +4,12 @@
 import { PLATFORM_SLUG } from './brand.ts'
 import type { ConfigClient, ConfigDestination, ConfigSecret } from './config-client.ts'
 import type { ConfigEnvironment } from './config-directory.ts'
-import { hostedSecretIdentity, openHostedSecret } from './hosted-secret-opening.ts'
+import {
+  HostedOpenError,
+  hostedSecretIdentity,
+  missingHostedDataKeyWrapError,
+  openHostedSecret,
+} from './hosted-secret-opening.ts'
 import { machineKeyInfo, readMachineKey } from './machine-key-store.ts'
 import { trustedKeysForSpace } from './trust-log-keys.ts'
 
@@ -25,18 +30,24 @@ export async function openHostedSecretRow(
   machine?: Awaited<ReturnType<typeof localMachine>>,
 ): Promise<Uint8Array> {
   const local = machine ?? (await localMachine())
-  const identity = await hostedSecretIdentity(client, destination, local.keyId)
+  const identity = await hostedSecretIdentity(client, destination, local)
   const [full, key, trust] = await Promise.all([
     client.getSecret(row.key, row.scope, row.environment, destination),
     client.getDataKey(row.dekId, local.keyId, destination),
     trustedKeysForSpace(client, identity.spaceId),
   ])
-  return openHostedSecret({
-    row: full,
-    key,
-    machine: local,
-    trust,
-    expected: { key: row.key, scope: row.scope, environment: row.environment },
-    identity,
-  })
+  try {
+    return await openHostedSecret({
+      row: full,
+      key,
+      machine: local,
+      trust,
+      expected: { key: row.key, scope: row.scope, environment: row.environment },
+      identity,
+    })
+  } catch (error) {
+    if (error instanceof HostedOpenError && error.reason === 'missing-wrap')
+      throw await missingHostedDataKeyWrapError(client, identity, local)
+    throw error
+  }
 }

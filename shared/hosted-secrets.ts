@@ -9,6 +9,7 @@ import {
   HOSTED_CONFIG_ENVIRONMENT,
   HostedOpenError,
   hostedIdentity,
+  missingHostedDataKeyWrapError,
   openHostedSecret,
   pinnedHostedSecretDestination,
 } from './hosted-secret-opening.ts'
@@ -93,6 +94,7 @@ async function openedValue(
   key: Awaited<ReturnType<ConfigClient['getDataKey']>>,
   deps: Dependencies,
 ): Promise<string> {
+  const identity = await hostedIdentity(deps.client, deps.pinnedIdentity)
   try {
     const plaintext = await openHostedSecret({
       row,
@@ -100,11 +102,17 @@ async function openedValue(
       machine: deps.machine,
       trust: deps.trust,
       expected: { key: name, scope, environment: HOSTED_CONFIG_ENVIRONMENT },
-      identity: await hostedIdentity(deps.client, deps.pinnedIdentity),
+      identity,
     })
     return new TextDecoder('utf-8', { fatal: true }).decode(plaintext)
   } catch (error) {
     if (error instanceof HostedSecretError) throw error
+    if (error instanceof HostedOpenError && error.reason === 'missing-wrap')
+      throw new HostedSecretError(
+        name,
+        error.reason,
+        await missingHostedDataKeyWrapError(deps.client, identity, deps.machine),
+      )
     if (error instanceof HostedOpenError) throw new HostedSecretError(name, error.reason, error)
     throw new HostedSecretError(name, 'hosted-failure', error)
   }

@@ -4,6 +4,7 @@ import { hostname } from 'node:os'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { ConfigClient, ConfigWriteDestination } from '../../../shared/config-client.ts'
 import type { ConfigEnvironment } from '../../../shared/config-directory.ts'
+import { noDataKeyWrapRemedy } from '../../../shared/credential-machine-trust.ts'
 import { readHostedConfigIdentity } from '../../../shared/hosted-config-space.ts'
 import { machineKeyId } from '../../../shared/machine-key-id.ts'
 import { readMachineKey } from '../../../shared/machine-key-store.ts'
@@ -75,9 +76,7 @@ async function wrapsForNamedSpace(
 }
 
 function trustRemedy(space: NamedSpace, keyId: string, publicKey: string): Error {
-  return new Error(
-    `this machine has no data-key wrap in record space ${space.slug}; from a machine that already opens that space, run \`${PLATFORM_SLUG} machine config machine trust ${keyId} ${publicKey} --space ${space.slug}\``,
-  )
+  return new Error(noDataKeyWrapRemedy({ space: space.slug, keyId, publicKey }))
 }
 
 export async function machineRegister(
