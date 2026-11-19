@@ -72,6 +72,7 @@ import {
   parseAudience,
   standingPostingRefusal,
 } from './board-policy.ts'
+import { renewLiveQueuedClaimsOfSession } from './board-queued-claim-renewal.ts'
 import type { ReplyAudienceOption } from './board-reply-audience.ts'
 import {
   acknowledgeNotice,
@@ -96,7 +97,6 @@ import {
   readThread,
   replyToThread,
 } from './board-thread-service.ts'
-import { renewLiveQueuedClaimsOfSession } from './board-queued-claim-renewal.ts'
 import { type BoardDestinationResolver, boardWriteDestination } from './board-write-destination.ts'
 
 type Environment = Record<string, string | undefined>
@@ -899,6 +899,7 @@ export async function boardClaimRenew(id: string, inputContext?: Context) {
         }),
       )
 }
+/** Workflow renewal routes through board operations so workflow code never imports board storage. */
 export function boardQueuedClaimsRenew(
   session: string,
   clock = Date.now(),
@@ -906,7 +907,6 @@ export function boardQueuedClaimsRenew(
 ) {
   return renewLiveQueuedClaimsOfSession(session, clock, database)
 }
-
 export function boardQueuedClaimClose(
   input: { project: string; key: string; session: string; reason: 'released' | 'started' },
   clock = Date.now(),

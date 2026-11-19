@@ -8,7 +8,6 @@ import { classifyCaller } from '../caller-classification.ts'
 import { db, nowIso, writableDb, writeTransaction } from '../database/db.ts'
 import { projectAt } from '../project/projects.ts'
 import { reapHostedBoardCache } from './board-hosted-cache.ts'
-import { renewLiveQueuedClaimsOfSession } from './board-queued-claim-renewal.ts'
 import {
   architectIdentity,
   messageCanBeReaped,
@@ -24,6 +23,7 @@ import {
   replySuccessorAddressing,
   selectPushNotices,
 } from './board-push-policy.ts'
+import { renewLiveQueuedClaimsOfSession } from './board-queued-claim-renewal.ts'
 import { renderBoardNotice, renderBoardNoticeOneLine } from './board-render.ts'
 import {
   addressed,

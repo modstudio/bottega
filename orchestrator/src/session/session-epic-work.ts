@@ -3,16 +3,11 @@
 
 import type { Database } from 'bun:sqlite'
 import { db } from '../database/db.ts'
-import {
-  TASK_FLOW_OPEN_STAGE_STATES,
-} from '../record/record-task-flow-contract.ts'
+import { TASK_FLOW_OPEN_STAGE_STATES } from '../record/record-task-flow-contract.ts'
 import { taskFlowReadStore } from '../workflow/task-flow-store.ts'
 import { taskReader } from '../workflow/task-read-port.ts'
+import { gatherChildTaskFacts, liveChildClaims } from '../workflow/workflow-child-facts.ts'
 import { childQueueState } from '../workflow/workflow-child-queue.ts'
-import {
-  gatherChildTaskFacts,
-  liveChildClaims,
-} from '../workflow/workflow-child-facts.ts'
 import { descendantTaskKeys } from '../workflow/workflow-task-tree.ts'
 
 export async function sessionEpicWork(session: string, database: Database = db()) {

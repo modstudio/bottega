@@ -64,6 +64,8 @@ test('a keyed plan-task start instruction renders its task key', () => {
     mode: planTask.definition.modes[0]!.slug,
   })
   expect(step.body).toContain('--task DEV-2483')
+  expect(step.body).toContain('workflow queue <child> --session <name> --project fixture')
+  expect(step.body).toContain('workflow start-child --cursor <cursor> --project fixture')
 })
 
 test('a workflow without a key argument adopts --task and renders and closes its next step', async () => {

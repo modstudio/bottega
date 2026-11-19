@@ -31,9 +31,15 @@ export function childEligibility(
   if (open) return { action: 'eligible', task: open, source: 'open' }
   const task = tasks.find(({ key }) => key === requested)
   if (task?.liveTaskClaimSession)
-    return { action: 'refuse', message: `${requested} is claimed by session ${task.liveTaskClaimSession}` }
+    return {
+      action: 'refuse',
+      message: `${requested} is claimed by session ${task.liveTaskClaimSession}`,
+    }
   if (task?.liveQueuedClaimSession)
-    return { action: 'refuse', message: `${requested} is queued for session ${task.liveQueuedClaimSession}` }
+    return {
+      action: 'refuse',
+      message: `${requested} is queued for session ${task.liveQueuedClaimSession}`,
+    }
   return { action: 'refuse', message: `${requested} is not queueable under this epic` }
 }
 
@@ -75,9 +81,7 @@ export function selectChildToStart(
 ): { action: 'start'; task: ChildTaskFact } | { action: 'refuse'; message: string } {
   if (requested) {
     const decision = childEligibility(state, tasks, requested)
-    return decision.action === 'eligible'
-      ? { action: 'start', task: decision.task }
-      : decision
+    return decision.action === 'eligible' ? { action: 'start', task: decision.task } : decision
   }
   const task = state.queue[0] ?? state.open[0]
   return task

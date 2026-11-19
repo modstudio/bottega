@@ -2,8 +2,8 @@ import { expect, test } from 'bun:test'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { testDatabaseFixture } from '../database/test-database.fixture.ts'
 import { installTaskReader, type TaskReadPort } from './task-read-port.ts'
-import { applyFloorDecision } from './workflow-floor-apply.ts'
 import type { Floor } from './workflow-floor.ts'
+import { applyFloorDecision } from './workflow-floor-apply.ts'
 
 const database = testDatabaseFixture((d) => {
   d.query('INSERT INTO project (record_id,name,path,settings) VALUES (?,?,?,?)').run(
@@ -63,8 +63,7 @@ test('plan-task start floor selection does not create review debt without a revi
       ordinal: 1,
       step_slug: 'start',
       state: 'running',
-      closed:
-        '[{"n":1,"slug":"write","note":"planned","at":"2026-11-19T00:00:00.000Z"}]',
+      closed: '[{"n":1,"slug":"write","note":"planned","at":"2026-11-19T00:00:00.000Z"}]',
       enforcement: 'floors',
     },
     [floor('tracker-transition'), floor('descendants-closed')],

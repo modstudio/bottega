@@ -3,10 +3,7 @@
 
 export type ParentKeyFact = { key: string; parentKey: string | null }
 
-export function descendantTaskKeys(
-  rootKey: string,
-  tasks: readonly ParentKeyFact[],
-): Set<string> {
+export function descendantTaskKeys(rootKey: string, tasks: readonly ParentKeyFact[]): Set<string> {
   const children = new Map<string, string[]>()
   for (const task of tasks) {
     if (!task.parentKey) continue

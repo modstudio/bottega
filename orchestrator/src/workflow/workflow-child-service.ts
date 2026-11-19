@@ -3,17 +3,16 @@
 
 import type { Database } from 'bun:sqlite'
 import { BOARD_CLAIM_DEFAULT_MS } from '../board/board-claim-policy.ts'
-import { boardClaimTake, boardQueuedClaimClose } from '../board/board-operations.ts'
+import {
+  boardClaimReleaseTask,
+  boardClaimTake,
+  boardQueuedClaimClose,
+} from '../board/board-operations.ts'
 import { db } from '../database/db.ts'
 import { taskFlowReadStore } from './task-flow-store.ts'
 import { type TaskReadRow, taskReader } from './task-read-port.ts'
+import { childAncestorKeys, gatherChildTaskFacts, liveChildClaims } from './workflow-child-facts.ts'
 import { childEligibility, childQueueState, selectChildToStart } from './workflow-child-queue.ts'
-import {
-  childAncestorKeys,
-  gatherChildTaskFacts,
-  liveChildClaims,
-} from './workflow-child-facts.ts'
-import { followComposeTaskClaim } from './workflow-compose-claim.ts'
 import { insertWorkflowCursor } from './workflow-cursor-compose.ts'
 import { resolveCompositionLiveAutonomy } from './workflow-cursor-live-autonomy.ts'
 import {
@@ -173,51 +172,57 @@ export async function startWorkflowChild(
     { key: child.key },
     { ...cliWorkflowCursorContext(), session: input.callerSession },
   )
-  const live = await resolveCompositionLiveAutonomy({
-    slug: 'plan-task',
-    project: input.project,
-    mode: epic.mode_slug,
-    args: { key: child.key },
-    context,
-  })
-  const row = await insertWorkflowCursor(
-    composition,
-    context,
-    database,
-    live.resolution,
-    undefined,
-    false,
+  const live = await resolveCompositionLiveAutonomy(
     {
-      parentFlowRecordId: inheritance.parentFlowRecordId,
-      activeOrdinal: inheritance.startOrdinal,
-      activeSlug: 'start',
-      closedStepNotes: inheritance.closed,
+      slug: 'plan-task',
+      project: input.project,
+      mode: epic.mode_slug,
+      args: { key: child.key },
+      context,
+    },
+    database,
+  )
+  await (ports.takeTaskClaim ?? boardClaimTake)(
+    { project: input.project, subject: `task:${child.key}` },
+    {
+      database,
+      taskCursorAuthority: { mode: 'start-child', session: input.callerSession },
     },
   )
-  await followComposeTaskClaim(row, false, context, database, {
-    take: async (claimInput) => {
-      const claim = await (ports.takeTaskClaim ?? boardClaimTake)(
-        { project: claimInput.project, subject: `task:${claimInput.key}` },
-        {
-          database,
-          taskCursorAuthority: { mode: 'start-child', session: claimInput.session },
-        },
-      )
-      // Take the task claim first; a stranded queued claim is harmless and lapses naturally.
-      boardQueuedClaimClose(
-        {
-          project: claimInput.project,
-          key: claimInput.key,
-          session: claimInput.session,
-          reason: 'started',
-        },
-        Date.now(),
-        database,
-      )
-      return claim
+  let row: Awaited<ReturnType<typeof insertWorkflowCursor>>
+  try {
+    row = await insertWorkflowCursor(
+      composition,
+      context,
+      database,
+      live.resolution,
+      undefined,
+      false,
+      {
+        parentFlowRecordId: inheritance.parentFlowRecordId,
+        activeOrdinal: inheritance.startOrdinal,
+        activeSlug: 'start',
+        closedStepNotes: inheritance.closed,
+      },
+    )
+  } catch (error) {
+    await boardClaimReleaseTask(child.key, input.project, {
+      database,
+      taskCursorAuthority: { mode: 'release', session: input.callerSession },
+    })
+    throw error
+  }
+  // Take the task claim first; a stranded queued claim is harmless and lapses naturally.
+  boardQueuedClaimClose(
+    {
+      project: input.project,
+      key: child.key,
+      session: input.callerSession,
+      reason: 'started',
     },
-    release: async () => ({ released: 0 }),
-  })
+    Date.now(),
+    database,
+  )
   return {
     child: child.key,
     cursor: { id: row.id, n: row.ordinal + 1, slug: row.step_slug },

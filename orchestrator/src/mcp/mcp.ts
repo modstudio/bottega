@@ -558,7 +558,7 @@ function registerCoreTools(server: McpServer, ports: DocsMcpPorts): void {
   registerWorkflowListTool(server)
 }
 
-function registerWorkflowActionTools(server: McpServer, ports: DocsMcpPorts): void {
+function registerWorkflowChildTools(server: McpServer): void {
   server.registerTool(
     'queue_workflow_child',
     {
@@ -584,6 +584,10 @@ function registerWorkflowActionTools(server: McpServer, ports: DocsMcpPorts): vo
       )
     },
   )
+}
+
+function registerWorkflowActionTools(server: McpServer, ports: DocsMcpPorts): void {
+  registerWorkflowChildTools(server)
 
   server.registerTool(
     'start_workflow_child',
