@@ -16,6 +16,10 @@ export const DEFAULT_LOCAL_PROJECT_SETTINGS: ProjectSettings = {
   keyPrefixes: [DEFAULT_LOCAL_PROJECT_PREFIX],
 }
 
+export function defaultLocalProjectPath(environment: StateEnvironment = process.env): string {
+  return join(resolveStateRoot(environment), 'projects', DEFAULT_LOCAL_PROJECT_DIRECTORY)
+}
+
 export type ProjectRegisterWrite = {
   recordId: string
   name: string
@@ -43,6 +47,11 @@ export function writeProjectRegisterRow(database: Database, project: ProjectRegi
       project.canon ? 1 : 0,
       JSON.stringify(project.settings ?? {}),
     )
+}
+
+/** Delete one local project-register row by its stable identity; returns whether a row changed. */
+export function deleteProjectRegisterRow(database: Database, recordId: string): boolean {
+  return database.query('DELETE FROM project WHERE record_id = ?').run(recordId).changes > 0
 }
 
 /** Mirror a hosted row onto the local row it is linked to by record id, lifecycle included; returns rows changed. */
@@ -73,7 +82,7 @@ export function initializeDefaultLocalProject(
     .query('SELECT 1 FROM project WHERE name = ?')
     .get(DEFAULT_LOCAL_PROJECT_NAME)
   if (exists) return
-  const path = join(resolveStateRoot(environment), 'projects', DEFAULT_LOCAL_PROJECT_DIRECTORY)
+  const path = defaultLocalProjectPath(environment)
   mkdirSync(path, { recursive: true })
   writeProjectRegisterRow(database, {
     recordId: newRecordId(),

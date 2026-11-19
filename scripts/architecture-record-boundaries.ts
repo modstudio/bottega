@@ -45,6 +45,7 @@ export const recordAuthCommandBoundaries: ImportBoundary[] = [
       '../refusal-error.ts',
       '../board/board-auto-adoption.ts',
       '../config/config-service.ts',
+      '../project/default-local-project-retirement.ts',
       '../project/project-checkout-adoption.ts',
       '../project/project-relink.ts',
       './install-binding-write.ts',
