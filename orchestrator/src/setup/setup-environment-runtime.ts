@@ -105,6 +105,15 @@ function initialRecordSessionDecision(
   return environmentRecordSessionDecision(authority, sessionPresent, { kind: 'not-run' })
 }
 
+export async function migrateOperatorEnvironmentAfterRecordAuthority(
+  initial: EnvironmentRecordSessionDecision,
+  home: string,
+  adapters: Parameters<typeof migrateOperatorEnvironment>[1],
+): Promise<Awaited<ReturnType<typeof migrateOperatorEnvironment>>> {
+  if (initial.action === 'refuse') throw new Error(initial.refusal)
+  return migrateOperatorEnvironment(home, adapters)
+}
+
 type EnvironmentMigrationResult = {
   status: 'applied' | 'unchanged' | 'follow-up'
   message: string | null
@@ -116,6 +125,31 @@ export function environmentMigrationCondition(
   followUpCount: number,
 ): Pick<EnvironmentMigrationResult, 'condition'> | Record<string, never> {
   return recordSessionUnavailable && followUpCount === 0 ? { condition: 'waiting-for-sign-in' } : {}
+}
+
+function environmentMigrationResult(
+  report: Awaited<ReturnType<typeof migrateOperatorEnvironment>>,
+  recordSessionUnavailable: boolean,
+): EnvironmentMigrationResult {
+  const message = environmentMigrationMessage(report)
+  const changed =
+    report.processNamesRenamed > 0 ||
+    report.files.length > 0 ||
+    report.secrets.length > 0 ||
+    report.register.length > 0 ||
+    report.settings.length > 0 ||
+    report.backupDirectory !== null ||
+    report.notes.length > 0
+  return {
+    status:
+      recordSessionUnavailable || report.followUps.length
+        ? 'follow-up'
+        : changed
+          ? 'applied'
+          : 'unchanged',
+    message,
+    ...environmentMigrationCondition(recordSessionUnavailable, report.followUps.length),
+  }
 }
 
 export function environmentRecordSessionDecision(
@@ -280,11 +314,10 @@ export const setupEnvironmentService = {
       const { runSessionRequiredSteps } = environmentRecordStepsDecision(initial)
       const waitOnSessionError = (error: unknown) =>
         waitForSignInOnSessionError(authority, sessionPresent, error, waitForSignIn)
-      const report = await migrateOperatorEnvironment(homedir(), {
+      const report = await migrateOperatorEnvironmentAfterRecordAuthority(initial, homedir(), {
         platform: process.platform,
         backupRoot: resolveStatePaths(process.env).orchestratorDirectory,
         migrateSecrets: async (record) => {
-          if (initial.action === 'refuse') throw new Error(initial.refusal)
           if (initial.action === 'local-authoritative') {
             notes.push('no hosted record: nothing to migrate')
             return []
@@ -342,24 +375,6 @@ export const setupEnvironmentService = {
         processNamesRenamed,
         preparedStateFileMigration,
       })
-      const message = environmentMigrationMessage(report)
-      const changed =
-        report.processNamesRenamed > 0 ||
-        report.files.length > 0 ||
-        report.secrets.length > 0 ||
-        report.register.length > 0 ||
-        report.settings.length > 0 ||
-        report.backupDirectory !== null ||
-        report.notes.length > 0
-      return {
-        status:
-          recordSessionUnavailable || report.followUps.length
-            ? 'follow-up'
-            : changed
-              ? 'applied'
-              : 'unchanged',
-        message,
-        ...environmentMigrationCondition(recordSessionUnavailable, report.followUps.length),
-      }
+      return environmentMigrationResult(report, recordSessionUnavailable)
     }),
 }

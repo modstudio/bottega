@@ -15,7 +15,7 @@ import { basename, dirname, join, resolve } from 'node:path'
 import { FROZEN_STATE_NAMES } from '../../shared/brand.ts'
 import { WORKER_ENVIRONMENT_MARKERS } from '../../shared/caller-classification.ts'
 import { CONFIG_HOME_ENV, HARNESS_ENV_FILE_ENV } from '../../shared/config-directory.ts'
-import { STATE_HOME_ENV } from '../../shared/state-directory.ts'
+import { recordSessionStampPath, STATE_HOME_ENV } from '../../shared/state-directory.ts'
 import { createTestHubDatabaseGuard, mintTestHubDatabase } from '../../shared/test-hub-database.ts'
 import { DOC_SECRET_SCANNER_KEY } from '../src/doc/doc-secret-scan.ts'
 import type { SecretScanner } from '../src/secret-scan/secret-scan.ts'
@@ -305,6 +305,7 @@ afterEach(() => {
     if (callerEnvironmentKey(key)) delete process.env[key]
   }
   Object.assign(process.env, callerEnvironmentBeforeTest)
+  rmSync(recordSessionStampPath({ [STATE_HOME_ENV]: testStateHome }), { force: true })
 })
 
 /**

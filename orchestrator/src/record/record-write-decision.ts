@@ -2,6 +2,8 @@
 /** Decides shared-state write authority from plain install facts. */
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { refusal, renderRefusal } from '../../../shared/refusal.ts'
+import { ORCHESTRATOR_DATABASE_ENV } from '../../../shared/state-directory.ts'
 
 export type RecordWriteDecision =
   | { verdict: 'hosted' | 'local-authoritative' }
@@ -17,18 +19,62 @@ export function decideRecordWrite(input: {
   installBound: boolean
   boundOrigin: string | null
   resolvedOrigin: string
+  machineJoined: boolean | 'unreadable'
+  localByDesign: boolean
+  discardStore: boolean
+  storeOverride: boolean
 }): RecordWriteDecision {
+  const unboundStoreRemedies = () => [
+    ...(input.storeOverride
+      ? ([{ kind: 'edit', text: `unset ${ORCHESTRATOR_DATABASE_ENV}` }] as const)
+      : []),
+    { kind: 'command' as const, argv: [PLATFORM_SLUG, 'record', 'use', '<address>'] },
+  ]
   // An explicitly configured address overrides the pin: record use is how an install switches records.
   if (input.recordApiConfigured) return { verdict: 'hosted' }
-  if (!input.installBound) return { verdict: 'local-authoritative' }
+  if (!input.installBound) {
+    if (input.localByDesign || input.discardStore) {
+      return { verdict: 'local-authoritative' }
+    }
+    if (input.machineJoined === 'unreadable') {
+      return {
+        verdict: 'refused',
+        boundOrigin: null,
+        resolvedOrigin: input.resolvedOrigin,
+        refusal: renderRefusal(
+          refusal(
+            'whether this machine has joined a hosted record could not be established because the record session stamp is unreadable',
+            unboundStoreRemedies(),
+          ),
+        ),
+      }
+    }
+    if (!input.machineJoined) {
+      return { verdict: 'local-authoritative' }
+    }
+    return {
+      verdict: 'refused',
+      boundOrigin: null,
+      resolvedOrigin: input.resolvedOrigin,
+      refusal: renderRefusal(
+        refusal(
+          'this machine has signed in to a hosted record, but this store is not bound to it and no record address is set',
+          unboundStoreRemedies(),
+        ),
+      ),
+    }
+  }
   if (input.boundOrigin === null) {
     return {
       verdict: 'refused',
       boundOrigin: null,
       resolvedOrigin: input.resolvedOrigin,
-      refusal:
-        'this install is bound to a hosted record with no recorded address\n' +
-        `cleared by: ${PLATFORM_SLUG} record use <address>`,
+      refusal: renderRefusal(
+        refusal('this install is bound to a hosted record with no recorded address', {
+          kind: 'command',
+          argv: [PLATFORM_SLUG, 'record', 'use', '<address>'],
+        }),
+      ),
     }
   }
   if (input.boundOrigin === input.resolvedOrigin) return { verdict: 'hosted' }
@@ -36,8 +82,14 @@ export function decideRecordWrite(input: {
     verdict: 'refused',
     boundOrigin: input.boundOrigin,
     resolvedOrigin: input.resolvedOrigin,
-    refusal:
-      `this install is bound to ${input.boundOrigin}, but the resolved record origin is ${input.resolvedOrigin}\n` +
-      `cleared by: ${PLATFORM_SLUG} record use ${input.boundOrigin}`,
+    refusal: renderRefusal(
+      refusal(
+        `this install is bound to ${input.boundOrigin}, but the resolved record origin is ${input.resolvedOrigin}`,
+        {
+          kind: 'command',
+          argv: [PLATFORM_SLUG, 'record', 'use', input.boundOrigin],
+        },
+      ),
+    ),
   }
 }

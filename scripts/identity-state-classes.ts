@@ -304,6 +304,12 @@ export const STATE_CLASSES: readonly StateClassDeclaration[] = [
     "This install's record binding",
     PORTABLE_RULING,
   ),
+  machine(
+    'orchestrator',
+    'record_local_by_design',
+    "This store's explicit local-authority mark",
+    'Shmuel Barkin, DEV-2477: deliberately local stores carry a store-level local-by-design mark',
+  ),
   synced('orchestrator', 'release_ledger', 'Outbox source for releases'),
   machine(
     'orchestrator',
