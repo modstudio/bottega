@@ -6,6 +6,7 @@ import { parseReference, REFERENCE_PREFIXES } from '../../../shared/reference.ts
 import {
   malformedReferenceRefusal,
   NOTE_REFERENCE_FORMS,
+  projectNotRegisteredRefusal,
   referenceNotVisibleRefusal,
 } from '../../../shared/reference-refusal.ts'
 
@@ -24,9 +25,7 @@ export function resolveNoteIdentity(
   if (parsed.qualifier?.kind === 'machine')
     throw new Error(malformedReferenceRefusal(value, NOTE_REFERENCE_FORMS))
   if (parsed.qualifier && !isRegistered(parsed.qualifier.value))
-    throw new Error(
-      `project '${parsed.qualifier.value}' is not registered; run \`bottega project list\``,
-    )
+    throw new Error(projectNotRegisteredRefusal(parsed.qualifier.value))
   if (parsed.value.kind === 'record-id') {
     const row = database
       .query<{ record_id: string }, [string]>('SELECT record_id FROM note WHERE record_id=?')

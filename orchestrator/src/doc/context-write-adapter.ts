@@ -11,7 +11,7 @@ import {
 import { liveClaimsOfSession } from '../board/board-claim-service.ts'
 import { db, sessionId } from '../database/db.ts'
 import { resolveCommitArgument } from '../git/commit-resolution.ts'
-import { resolve, resolveParsedReference } from '../identity/identity.ts'
+import { resolveParsedReference } from '../identity/identity.ts'
 import { identityContext } from '../identity/identity-context.ts'
 import { ResolutionMissError } from '../identity/identity-local-run.ts'
 import { projectForTaskKey, projects, taskKeyPrefix } from '../project/projects.ts'

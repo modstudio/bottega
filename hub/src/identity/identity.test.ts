@@ -1,5 +1,6 @@
 import { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { NOTE_REFERENCE_FORMS } from '../../../shared/reference-refusal.ts'
 import { resolveNoteIdentity } from './identity.ts'
@@ -18,9 +19,9 @@ test('note references share one project-scoped identity lookup', () => {
     expect(() => resolveNoteIdentity(database, reference, 'workshop')).toThrow(
       `reference ${JSON.stringify(reference)} is malformed; pass ${NOTE_REFERENCE_FORMS}`,
     )
-  const bottegaId = newRecordId()
-  database.run('INSERT INTO note VALUES (?,?,?)', [bottegaId, 'bottega', 3])
-  for (const reference of ['bottega#3', 'bottega#n3'])
-    expect(resolveNoteIdentity(database, reference, 'workshop', () => true)).toBe(bottegaId)
+  const platformId = newRecordId()
+  database.run('INSERT INTO note VALUES (?,?,?)', [platformId, PLATFORM_SLUG, 3])
+  for (const reference of [`${PLATFORM_SLUG}#3`, `${PLATFORM_SLUG}#n3`])
+    expect(resolveNoteIdentity(database, reference, 'workshop', () => true)).toBe(platformId)
   database.close()
 })
