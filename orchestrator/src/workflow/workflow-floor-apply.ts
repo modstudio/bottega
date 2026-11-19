@@ -18,6 +18,8 @@ import type { FloorEvidencePorts } from './workflow-floor-evidence.ts'
 import { gatherValidatedEvidence } from './workflow-floor-evidence-gather.ts'
 import { invokeFloorEvidencePort } from './workflow-floor-evidence-replay.ts'
 import { openWorkflowObligations } from './workflow-obligation-floor.ts'
+import { descendantTaskFacts, selectEpicStartFloors } from './workflow-epic-floor.ts'
+import { taskReader } from './task-read-port.ts'
 
 type FloorCursor = Pick<
   SelectableCursorRow,
@@ -59,7 +61,20 @@ export async function applyFloorDecision(
 ): Promise<FloorDecision> {
   const foreignOwner = foreignCursorOwner(row, callerSession)
   const args = JSON.parse(row.args) as Record<string, string>
-  const evidenceFloors = floors.filter(({ kind }) => kind !== 'review-owed')
+  const declaredEvidenceFloors = floors.filter(({ kind }) => kind !== 'review-owed')
+  const taskRows = declaredEvidenceFloors.some(({ kind }) => kind === 'descendants-closed')
+    ? taskReader().list({ project: row.project }).map((task) => ({
+        key: task.key,
+        parentKey: task.parent_key,
+        status: task.status,
+        statusCategory: task.status_category,
+      }))
+    : []
+  const evidenceFloors = selectEpicStartFloors(declaredEvidenceFloors, {
+    workflow: row.workflow_slug,
+    step: row.step_slug,
+    hasChildren: taskRows.some((task) => task.parentKey === row.workflow_key),
+  })
   if (row.enforcement === 'floors' && evidenceFloors.length !== floors.length) {
     const reviewOwed = invokeFloorEvidencePort(
       ports,
@@ -96,6 +111,8 @@ export async function applyFloorDecision(
     d: database,
     taskFlowClient: client,
   })
+  if (evidenceFloors.some(({ kind }) => kind === 'descendants-closed'))
+    validated.descendants = descendantTaskFacts(row.workflow_key, taskRows)
   if (selfRulingId !== undefined)
     validated.ruling = {
       id: selfRulingId,

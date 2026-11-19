@@ -309,6 +309,8 @@ export function workflowStageInsert(input: {
   catalogueVersionId: string
   arguments: Record<string, string>
   activeSlug: string
+  activeOrdinal?: number
+  closedStepNotes?: unknown[]
   autonomy: string | null
   totalSteps: number
   openedMachineId: string
@@ -316,9 +318,9 @@ export function workflowStageInsert(input: {
 }) {
   return {
     ...input,
-    activeOrdinal: 0,
+    activeOrdinal: input.activeOrdinal ?? 0,
     state: 'running' as const,
-    closedStepNotes: [],
+    closedStepNotes: input.closedStepNotes ?? [],
     question: null,
     enforcement: 'floors' as const,
     takenOverFromMachineId: null,

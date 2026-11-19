@@ -27,6 +27,7 @@ export const taskFlow = pgTable.withRLS(
       .notNull()
       .references(() => project.id),
     taskId: uuid('task_id').references(() => hubTask.id),
+    parentFlowRecordId: uuid('parent_flow_record_id'),
     state: text().notNull(),
     openStageRecordId: uuid('open_stage_record_id'),
     openingMachineId: uuid('opening_machine_id')
@@ -42,6 +43,12 @@ export const taskFlow = pgTable.withRLS(
   },
   (table) => [
     index('task_flow_task_id_idx').on(table.taskId),
+    index('task_flow_parent_flow_record_id_idx').on(table.parentFlowRecordId),
+    foreignKey({
+      columns: [table.parentFlowRecordId],
+      foreignColumns: [table.id],
+      name: 'task_flow_parent_flow_record_id_fkey',
+    }),
     uniqueIndex('task_flow_space_task_unique')
       .on(table.spaceId, table.taskId)
       .where(sql`${table.taskId} IS NOT NULL`),

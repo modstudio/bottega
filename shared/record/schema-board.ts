@@ -212,7 +212,7 @@ export const boardClaim = pgTable.withRLS(
       index('board_claim_superseded_idx').on(table.supersededByClaimId),
       check(
         'board_claim_subject_kind_check',
-        sql`${table.subjectKind} IN ('task','path','resource')`,
+        sql`${table.subjectKind} IN ('task','path','resource','queued-task')`,
       ),
       check(
         'board_claim_close_check',
@@ -222,7 +222,7 @@ export const boardClaim = pgTable.withRLS(
       check(
         'board_claim_close_reason_check',
         sql`${table.closeReason} IS NULL OR ${table.closeReason} IN
-          ('released','lapsed','run-ended','task-closed','taken-over')`,
+          ('released','lapsed','run-ended','task-closed','taken-over','started')`,
       ),
       pgPolicy('board_claim_actor_select', {
         for: 'select',

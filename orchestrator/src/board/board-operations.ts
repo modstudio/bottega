@@ -185,7 +185,7 @@ export type BoardStatusResult = {
 export type BoardClaimResult = {
   recordId: string
   project: string
-  subject: { kind: 'task' | 'path' | 'resource'; value: string }
+  subject: { kind: 'task' | 'path' | 'resource' | 'queued-task'; value: string }
   holder: string
   note: string | null
   runId: string | null
@@ -831,12 +831,15 @@ function hostedClaimRunId(runId: string | undefined, env: Environment): string |
 
 export async function boardClaimTake(input: TakeClaimInput, inputContext?: Context) {
   const c = context(inputContext)
-  const takeAuthority = c.taskCursorAuthority?.mode === 'take' ? c.taskCursorAuthority : undefined
-  if (input.subject.startsWith('task:') && !takeAuthority)
+  const takeAuthority =
+    c.taskCursorAuthority?.mode === 'take' || c.taskCursorAuthority?.mode === 'queue-take'
+      ? c.taskCursorAuthority
+      : undefined
+  if (input.subject.startsWith('task:') && takeAuthority?.mode !== 'take')
     throw new Error(
       `task claims follow task cursors; run workflow compose … --arg key=${input.subject.slice('task:'.length)} instead`,
     )
-  if (takeAuthority) input = { ...input, force: true }
+  if (takeAuthority?.mode === 'take') input = { ...input, force: true }
   const project = claimProject(input.project, c.env, c.cwd, c.database, takeAuthority)
   const callerProject = projectAt(c.cwd, c.database)
   const targetProject = projectByName(project, c.database)

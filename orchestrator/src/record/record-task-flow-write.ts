@@ -176,9 +176,9 @@ async function insertFlow(
     return Number(existing.revision)
   }
   await tx`INSERT INTO task_flow
-    (id,space_id,project_id,task_id,state,open_stage_record_id,opening_machine_id,updated_machine_id,
+    (id,space_id,project_id,task_id,parent_flow_record_id,state,open_stage_record_id,opening_machine_id,updated_machine_id,
      revision,last_request_id,created_at,updated_at)
-    VALUES (${row.id}::uuid,${spaceId}::uuid,${row.projectId}::uuid,${row.taskId}::uuid,${row.state},
+    VALUES (${row.id}::uuid,${spaceId}::uuid,${row.projectId}::uuid,${row.taskId}::uuid,${row.parentFlowRecordId}::uuid,${row.state},
       ${row.openStageRecordId}::uuid,${row.openingMachineId}::uuid,${row.updatedMachineId}::uuid,
       ${revision},${requestId}::uuid,${row.createdAt}::timestamptz,${row.updatedAt}::timestamptz)`
   return revision

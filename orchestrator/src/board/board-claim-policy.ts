@@ -9,8 +9,14 @@ const BOARD_CLAIM_RESOURCE_MAX_CHARS = 200
 export type ClaimActor =
   | { kind: 'operator'; session: null }
   | { kind: 'architect'; session: string }
-export type ClaimSubject = { kind: 'task' | 'path' | 'resource'; value: string }
-export type ClaimCloseReason = 'released' | 'lapsed' | 'run-ended' | 'task-closed' | 'taken-over'
+export type ClaimSubject = { kind: 'task' | 'path' | 'resource' | 'queued-task'; value: string }
+export type ClaimCloseReason =
+  | 'released'
+  | 'lapsed'
+  | 'run-ended'
+  | 'task-closed'
+  | 'taken-over'
+  | 'started'
 export type ClaimLiveness = {
   closed: boolean
   lapsesAt: number
@@ -67,10 +73,10 @@ export const mayForceClaim = (actor: ClaimActor): boolean => actor.kind === 'ope
 export function parseClaimSubject(expression: string): ClaimSubject {
   if (/[\r\n\u2028\u2029]/.test(expression))
     throw new Error('claim subject contains a line break; remove it and retry')
-  const match = /^(task|path|resource):(.*)$/.exec(expression)
+  const match = /^(task|path|resource|queued-task):(.*)$/.exec(expression)
   if (!match)
     throw new Error(
-      `invalid claim subject ${expression}; use task:<KEY>, path:<glob>, or resource:<name>`,
+      `invalid claim subject ${expression}; use task:<KEY>, queued-task:<KEY>, path:<glob>, or resource:<name>`,
     )
   const kind = match[1] as ClaimSubject['kind']
   const value = match[2]!.trim()

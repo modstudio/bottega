@@ -117,6 +117,8 @@ function toHostedFlow(row: Record<string, unknown>): HostedTaskFlow['flow'] {
     id: String(row.id),
     projectId: String(row.project_id),
     taskId: row.task_id == null ? null : String(row.task_id),
+    parentFlowRecordId:
+      row.parent_flow_record_id == null ? null : String(row.parent_flow_record_id),
     taskKey: row.task_key == null ? null : String(row.task_key),
     state: String(row.state) as HostedTaskFlow['flow']['state'],
     openStageRecordId: row.open_stage_record_id == null ? null : String(row.open_stage_record_id),

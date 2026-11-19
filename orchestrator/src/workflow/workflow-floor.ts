@@ -27,6 +27,7 @@ export const floorKinds = [
   'command-exit',
   'recorded-artifact',
   'tracker-transition',
+  'descendants-closed',
   'review-owed',
 ] as const
 export type FloorKind = (typeof floorKinds)[number]
@@ -41,6 +42,8 @@ export const floorGuidance = {
   'command-exit': `run it with \`${PLATFORM_SLUG} workflow exec -- <command>\` and pass \`--artifact exec:<id>\``,
   'recorded-artifact': `record or attach the artifact and pass \`--artifact <${ARTIFACT_FORMS}>\``,
   'tracker-transition': 'make the tracker transition and pass `--task <KEY>`',
+  'descendants-closed':
+    'finish or drop every descendant, move the epic to done, and pass `--task <KEY>`',
   'review-owed': `run \`${PLATFORM_SLUG} review tier <branch>\` and follow its remedy until no lens is owed`,
 } satisfies Record<FloorKind, string>
 
@@ -139,6 +142,7 @@ export type ValidatedEvidence = {
       | { kind: 'read-error'; reason: string }
     trackerStates: TrackerStates
   }
+  descendants?: Array<{ key: string; status: string | null; statusCategory: string | null }>
   deferReason?: string
   satisfy?: ValidatedSatisfy
   tree?: { project: string; worktree?: string | null; commit: string | null }
@@ -181,7 +185,7 @@ export function flagForFloor(kind: FloorKind): string {
   if (kind === 'command-exit')
     return '--gate <gate execution id> or --run <run id> or --artifact probe:<id> or --artifact exec:<id>'
   if (kind === 'recorded-artifact') return `--artifact <${ARTIFACT_FORMS}>`
-  if (kind === 'tracker-transition') return '--task <KEY>'
+  if (kind === 'tracker-transition' || kind === 'descendants-closed') return '--task <KEY>'
   if (kind === 'review-owed')
     return `follow the remedy from \`${PLATFORM_SLUG} review tier <branch>\``
   throw new Error(`unknown floor kind "${String(kind)}"`)
@@ -656,6 +660,13 @@ function floorIsMet(floor: Floor, evidence: ValidatedEvidence, freshRulingAfter?
         )
       : (evidence.artifacts ?? []).some((entry) => entry.artifact.exists)
   if (floor.kind === 'tracker-transition') return taskMet(floor, evidence)
+  if (floor.kind === 'descendants-closed')
+    return (
+      taskMet(floor, evidence) &&
+      (evidence.descendants ?? []).every(
+        (task) => task.statusCategory === 'done' || task.statusCategory === 'dropped',
+      )
+    )
   throw new Error(`unknown floor kind "${String(floor.kind)}"`)
 }
 
@@ -705,6 +716,13 @@ function floorUnmetMessage(
   evidence: ValidatedEvidence,
   freshRulingAfter?: string,
 ): string {
+  if (floor.kind === 'descendants-closed') {
+    const unfinished = (evidence.descendants ?? []).filter(
+      (task) => task.statusCategory !== 'done' && task.statusCategory !== 'dropped',
+    )
+    if (unfinished.length)
+      return `floor descendants-closed is unmet; unfinished descendants: ${unfinished.map((task) => `${task.key} (${task.status ?? task.statusCategory ?? 'unset'})`).join(', ')}; finish or drop them, move the epic to done, then pass --task <KEY>`
+  }
   if (isOperatorRulingFloor(floor))
     return operatorRulingRemedy(
       evidence.stepQuestion,
@@ -722,7 +740,7 @@ function floorUnmetMessage(
     `floor ${floor.kind} is unmet; pass ${closingFlagsForFloor(floor)}` +
     (floor.kind === 'command-exit'
       ? ` with exit code ${floor.expectedExitCode}`
-      : floor.kind === 'tracker-transition'
+      : floor.kind === 'tracker-transition' || floor.kind === 'descendants-closed'
         ? trackerUnmetMessage(floor, evidence)
         : '')
   if (floor.kind === 'recorded-artifact' && evidence.runOffered !== undefined)

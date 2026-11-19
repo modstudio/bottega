@@ -75,7 +75,7 @@ export type TakeClaimInput = {
 }
 
 export type BoardTaskCursorAuthority = {
-  mode: 'take' | 'release' | 'coverage-read'
+  mode: 'take' | 'queue-take' | 'release' | 'coverage-read'
   session: string | null
 }
 
@@ -369,8 +369,11 @@ export function takeClaim(
   taskCursorAuthority?: BoardTaskCursorAuthority,
 ): TakeClaimResult {
   const cursorSession =
-    taskCursorAuthority?.mode === 'take' ? taskCursorAuthority.session : undefined
-  const internalTake = taskCursorAuthority?.mode === 'take'
+    taskCursorAuthority?.mode === 'take' || taskCursorAuthority?.mode === 'queue-take'
+      ? taskCursorAuthority.session
+      : undefined
+  const internalTake =
+    taskCursorAuthority?.mode === 'take' || taskCursorAuthority?.mode === 'queue-take'
   const actor: ClaimActor = cursorSession
     ? { kind: 'architect', session: cursorSession }
     : claimActor(env)

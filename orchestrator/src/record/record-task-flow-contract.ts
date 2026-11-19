@@ -136,6 +136,7 @@ const hostedTaskFlowSummarySchema = z.object({
   id: z.string().uuid(),
   projectId: z.string().uuid(),
   taskId: z.string().uuid().nullable(),
+  parentFlowRecordId: nullableId.optional(),
   taskKey: z.string().nullable(),
   state: z.enum(['open', 'done', 'dropped']),
   openStageRecordId: nullableId,

@@ -42,6 +42,7 @@ const flowInsert = z.object({
   id,
   projectId: id,
   taskId: nullableId,
+  parentFlowRecordId: nullableId.default(null),
   state: z.enum(['open', 'done', 'dropped']),
   openStageRecordId: nullableId,
   openingMachineId: id,
@@ -92,6 +93,7 @@ const flowComposeValues = z.object({
   openingMachineId: id.optional(),
   updatedMachineId: id,
   updatedAt: stamp,
+  parentFlowRecordId: nullableId.optional(),
 })
 const stageComposeValues = z.object({
   flowRecordId: id.optional(),
