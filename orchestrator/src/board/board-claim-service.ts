@@ -75,7 +75,7 @@ export type TakeClaimInput = {
 }
 
 export type BoardTaskCursorAuthority = {
-  mode: 'take' | 'queue-take' | 'release' | 'coverage-read'
+  mode: 'take' | 'start-child' | 'queue-take' | 'release' | 'coverage-read'
   session: string | null
 }
 
@@ -369,11 +369,15 @@ export function takeClaim(
   taskCursorAuthority?: BoardTaskCursorAuthority,
 ): TakeClaimResult {
   const cursorSession =
-    taskCursorAuthority?.mode === 'take' || taskCursorAuthority?.mode === 'queue-take'
+    taskCursorAuthority?.mode === 'take' ||
+    taskCursorAuthority?.mode === 'start-child' ||
+    taskCursorAuthority?.mode === 'queue-take'
       ? taskCursorAuthority.session
       : undefined
   const internalTake =
-    taskCursorAuthority?.mode === 'take' || taskCursorAuthority?.mode === 'queue-take'
+    taskCursorAuthority?.mode === 'take' ||
+    taskCursorAuthority?.mode === 'start-child' ||
+    taskCursorAuthority?.mode === 'queue-take'
   const actor: ClaimActor = cursorSession
     ? { kind: 'architect', session: cursorSession }
     : claimActor(env)
@@ -514,22 +518,29 @@ export function releaseSessionClaims(
   }, database)
 }
 
-export function renewQueuedClaimsOfSession(
+export function closeQueuedTaskClaim(
+  project: string,
+  key: string,
   session: string,
+  requestedReason: 'released' | 'started',
   clock = Date.now(),
   database = writableDb(),
-): number {
-  const now = new Date(clock).toISOString()
-  const rows = database
-    .query<{ record_id: string; duration_ms: number }, [string]>(
-      `SELECT record_id,duration_ms FROM board_claim
-       WHERE holder_session=? AND subject_kind='queued-task' AND closed_at IS NULL`,
-    )
-    .all(session)
-  const renew = database.query('UPDATE board_claim SET renewed_at=?,lapses_at=? WHERE record_id=?')
-  for (const row of rows)
-    renew.run(now, new Date(clock + row.duration_ms).toISOString(), row.record_id)
-  return rows.length
+): { closed: number; reason: ClaimCloseReason | null } {
+  return writeTransaction(() => {
+    const row = database
+      .query(
+        `SELECT ${CLAIM_COLUMNS} FROM board_claim
+         WHERE project=? AND subject_kind='queued-task' AND subject_value=?
+           AND holder_session=? AND closed_at IS NULL ORDER BY taken_at LIMIT 1`,
+      )
+      .get(project, key, session) as ClaimRow | null
+    if (!row) return { closed: 0, reason: null }
+    const reason = rowLive(row, clock, database) ? requestedReason : 'lapsed'
+    database
+      .query('UPDATE board_claim SET closed_at=?,close_reason=? WHERE record_id=?')
+      .run(new Date(clock).toISOString(), reason, row.record_id)
+    return { closed: 1, reason }
+  }, database)
 }
 
 export function releaseTaskClaims(

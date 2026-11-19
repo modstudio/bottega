@@ -77,7 +77,7 @@ export async function applyFloorDecision(
     step: row.step_slug,
     hasChildren: taskRows.some((task) => task.parentKey === row.workflow_key),
   })
-  if (row.enforcement === 'floors' && evidenceFloors.length !== floors.length) {
+  if (row.enforcement === 'floors' && floors.some(({ kind }) => kind === 'review-owed')) {
     const reviewOwed = invokeFloorEvidencePort(
       ports,
       'reviewOwed',

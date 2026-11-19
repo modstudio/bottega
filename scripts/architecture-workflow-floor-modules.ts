@@ -196,7 +196,10 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     './workflow-checkout-refusal.ts',
     './workflow-floor-refusal.ts',
   ]),
-  module('orchestrator/src/workflow/workflow-epic-floor.ts', ['./workflow-floor.ts']),
+  module('orchestrator/src/workflow/workflow-epic-floor.ts', [
+    './workflow-floor.ts',
+    './workflow-task-tree.ts',
+  ]),
   module('orchestrator/src/workflow/workflow-artifact-evidence.ts', [
     './workflow-checkout-refusal.ts',
   ]),

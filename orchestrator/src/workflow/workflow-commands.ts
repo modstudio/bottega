@@ -906,11 +906,14 @@ export async function queueChildCommand(argv: string[], print: WorkflowPrint): P
   const session = flagValue(argv, 'session')
   if (!project) throw new Error('--project is required')
   if (!session) throw new Error('--session is required')
+  const callerSession = cliWorkflowCursorContext().session
+  if (!callerSession) throw new Error('workflow queue requires a calling session')
   print(
     await queueWorkflowChild({
       project,
       child: argv[2]!,
       session,
+      callerSession,
       off: argv.includes('--off'),
     }),
   )
@@ -919,11 +922,14 @@ export async function queueChildCommand(argv: string[], print: WorkflowPrint): P
 export async function startChildCommand(argv: string[], print: WorkflowPrint): Promise<void> {
   const project = flagValue(argv, 'project')
   if (!project) throw new Error('--project is required')
+  const callerSession = cliWorkflowCursorContext().session
+  if (!callerSession) throw new Error('workflow start-child requires a calling session')
   print(
     await startWorkflowChild({
       project,
       cursor: positive(flagValue(argv, 'cursor'), '--cursor')!,
       task: flagValue(argv, 'task'),
+      callerSession,
     }),
   )
 }

@@ -190,11 +190,7 @@ export async function sessionStopSummary(
     now,
     displayTimezone: readCachedDisplayTimezone(options.stateEnvironment ?? process.env),
     questionCounts,
-    epicLines: epicWork.flatMap((work) => [
-      `Epic: ${work.epic}`,
-      `Queue: ${work.queue.join(', ') || 'none'}`,
-      `Open: ${work.open.join(', ') || 'none'}`,
-    ]),
+    epicWork,
     cursors: cursors
       .filter((cursor) => !epicCursorNumbers.has(cursor.id))
       .map((cursor) => ({

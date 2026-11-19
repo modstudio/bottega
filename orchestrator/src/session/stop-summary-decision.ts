@@ -37,7 +37,7 @@ export type StopSummaryFacts = {
   displayTimezone?: string | null
   questionCounts: QuestionInboxCounts | null
   cursors: StopSummaryCursor[]
-  epicLines?: string[]
+  epicWork?: Array<{ epic: string; queue: string[]; open: string[]; cursor: number }>
   reviewVerdictLines: string[]
   liveRuns: number
   incompleteReviews: number
@@ -103,6 +103,14 @@ function cursorLine(cursor: StopSummaryCursor): string {
   return `${owner} · step ${cursor.step} (${cursor.ordinal} of ${cursor.total})`
 }
 
+function epicWorkLines(work: NonNullable<StopSummaryFacts['epicWork']>[number]): string[] {
+  return [
+    `Epic: ${work.epic}`,
+    `Queue: ${work.queue.join(', ') || 'none'}`,
+    `Open: ${work.open.join(', ') || 'none'}`,
+  ]
+}
+
 function idleCursorLine(cursor: StopSummaryCursor, now: number): string | null {
   const idle = idleKeylessCursor(cursor, now)
   if (!idle) return null
@@ -133,7 +141,7 @@ export function decideStopSummary(facts: StopSummaryFacts): StopSummaryDecision 
   const lines = [
     `${formatStopTime(facts.now, facts.displayTimezone)}`,
     ...questionLines,
-    ...(facts.epicLines ?? []),
+    ...(facts.epicWork ?? []).flatMap(epicWorkLines),
     ...facts.cursors.map(cursorLine),
     ...facts.cursors
       .map((cursor) => idleCursorLine(cursor, Date.parse(facts.now)))

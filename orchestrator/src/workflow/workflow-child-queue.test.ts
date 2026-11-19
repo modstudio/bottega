@@ -36,10 +36,13 @@ test('start-child picks this session queue before Open', () => {
   })
   const open = task({ key: 'DEV-2', number: 2 })
   const state = childQueueState('DEV-1', 'mine', [open, queued])
-  expect(selectChildToStart(state)).toEqual({ action: 'start', task: queued })
-  expect(selectChildToStart(state, 'DEV-2')).toEqual({ action: 'start', task: open })
-  expect(selectChildToStart(state, 'DEV-9')).toEqual({
+  expect(selectChildToStart(state, [open, queued])).toEqual({ action: 'start', task: queued })
+  expect(selectChildToStart(state, [open, queued], 'DEV-2')).toEqual({
+    action: 'start',
+    task: open,
+  })
+  expect(selectChildToStart(state, [open, queued], 'DEV-9')).toEqual({
     action: 'refuse',
-    message: 'DEV-9 is not queued for this session or Open',
+    message: 'DEV-9 is not queueable under this epic',
   })
 })

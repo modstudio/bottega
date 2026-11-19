@@ -7,7 +7,9 @@ export const cleanupBoundarySpecs = [
       '../record/record-task-flow-contract.ts',
       '../workflow/task-flow-store.ts',
       '../workflow/task-read-port.ts',
+      '../workflow/workflow-child-facts.ts',
       '../workflow/workflow-child-queue.ts',
+      '../workflow/workflow-task-tree.ts',
     ],
     typeOnlyAllowed: ['bun:sqlite'],
     reason:

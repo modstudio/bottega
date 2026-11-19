@@ -47,11 +47,11 @@ import {
   type BoardTaskCursorAuthority,
   type ClaimView,
   claimProject,
+  closeQueuedTaskClaim,
   listClaims,
   releaseClaim,
   releaseTaskClaims,
   renewClaim,
-  renewQueuedClaimsOfSession,
   type TakeClaimInput,
   takeClaim,
 } from './board-claim-service.ts'
@@ -96,6 +96,7 @@ import {
   readThread,
   replyToThread,
 } from './board-thread-service.ts'
+import { renewLiveQueuedClaimsOfSession } from './board-queued-claim-renewal.ts'
 import { type BoardDestinationResolver, boardWriteDestination } from './board-write-destination.ts'
 
 type Environment = Record<string, string | undefined>
@@ -833,10 +834,16 @@ function hostedClaimRunId(runId: string | undefined, env: Environment): string |
 export async function boardClaimTake(input: TakeClaimInput, inputContext?: Context) {
   const c = context(inputContext)
   const takeAuthority =
-    c.taskCursorAuthority?.mode === 'take' || c.taskCursorAuthority?.mode === 'queue-take'
+    c.taskCursorAuthority?.mode === 'take' ||
+    c.taskCursorAuthority?.mode === 'start-child' ||
+    c.taskCursorAuthority?.mode === 'queue-take'
       ? c.taskCursorAuthority
       : undefined
-  if (input.subject.startsWith('task:') && takeAuthority?.mode !== 'take')
+  if (
+    input.subject.startsWith('task:') &&
+    takeAuthority?.mode !== 'take' &&
+    takeAuthority?.mode !== 'start-child'
+  )
     throw new Error(
       `task claims follow task cursors; run workflow compose … --arg key=${input.subject.slice('task:'.length)} instead`,
     )
@@ -897,7 +904,22 @@ export function boardQueuedClaimsRenew(
   clock = Date.now(),
   database: Database = db(),
 ) {
-  return renewQueuedClaimsOfSession(session, clock, database)
+  return renewLiveQueuedClaimsOfSession(session, clock, database)
+}
+
+export function boardQueuedClaimClose(
+  input: { project: string; key: string; session: string; reason: 'released' | 'started' },
+  clock = Date.now(),
+  database: Database = db(),
+) {
+  return closeQueuedTaskClaim(
+    input.project,
+    input.key,
+    input.session,
+    input.reason,
+    clock,
+    database,
+  )
 }
 export async function boardClaimRelease(id: string, inputContext?: Context) {
   const c = context(inputContext)

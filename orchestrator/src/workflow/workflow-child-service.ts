@@ -3,12 +3,16 @@
 
 import type { Database } from 'bun:sqlite'
 import { BOARD_CLAIM_DEFAULT_MS } from '../board/board-claim-policy.ts'
-import { boardClaimTake } from '../board/board-operations.ts'
-import { db, writeTransaction } from '../database/db.ts'
-import { TASK_FLOW_STAGE_STATES } from '../record/record-task-flow-contract.ts'
+import { boardClaimTake, boardQueuedClaimClose } from '../board/board-operations.ts'
+import { db } from '../database/db.ts'
 import { taskFlowReadStore } from './task-flow-store.ts'
 import { type TaskReadRow, taskReader } from './task-read-port.ts'
-import { type ChildTaskFact, childQueueState, selectChildToStart } from './workflow-child-queue.ts'
+import { childEligibility, childQueueState, selectChildToStart } from './workflow-child-queue.ts'
+import {
+  childAncestorKeys,
+  gatherChildTaskFacts,
+  liveChildClaims,
+} from './workflow-child-facts.ts'
 import { followComposeTaskClaim } from './workflow-compose-claim.ts'
 import { insertWorkflowCursor } from './workflow-cursor-compose.ts'
 import { resolveCompositionLiveAutonomy } from './workflow-cursor-live-autonomy.ts'
@@ -18,72 +22,22 @@ import {
   selectWorkflowCursorByHandle,
 } from './workflow-cursor-selection.ts'
 import type { ClosedStep } from './workflow-cursor-trail.ts'
+import { descendantTaskKeys } from './workflow-task-tree.ts'
 import { composeWorkflow } from './workflows.ts'
 
-const taskNumber = (key: string): number =>
-  Number(/(\d+)$/.exec(key)?.[1] ?? Number.MAX_SAFE_INTEGER)
-
-function liveClaimRows(database: Database, project: string, now = Date.now()) {
-  return database
-    .query<
-      { subject_kind: string; subject_value: string; holder_session: string; taken_at: string },
-      [string, string]
-    >(
-      `SELECT subject_kind,subject_value,holder_session,taken_at FROM board_claim
-       WHERE project=? AND closed_at IS NULL AND lapses_at>? ORDER BY taken_at,record_id`,
-    )
-    .all(project, new Date(now).toISOString())
-}
-
-async function childFacts(
-  database: Database,
-  project: string,
-  tasks: readonly TaskReadRow[],
-): Promise<ChildTaskFact[]> {
-  const cursors = new Set(
-    (
-      await taskFlowReadStore(database).listStages({
-        project,
-        states: [...TASK_FLOW_STAGE_STATES],
-      })
-    ).map(({ workflow_key }) => workflow_key),
-  )
-  const claims = liveClaimRows(database, project)
-  return tasks.map((task) => ({
-    key: task.key,
-    parentKey: task.parent_key,
-    number: taskNumber(task.key),
-    statusCategory: task.status_category,
-    cursorEverComposed: cursors.has(task.key),
-    liveTaskClaimSession:
-      claims.find((claim) => claim.subject_kind === 'task' && claim.subject_value === task.key)
-        ?.holder_session ?? null,
-    liveQueuedClaimSession:
-      claims.find(
-        (claim) => claim.subject_kind === 'queued-task' && claim.subject_value === task.key,
-      )?.holder_session ?? null,
-    queuedAt:
-      claims.find(
-        (claim) => claim.subject_kind === 'queued-task' && claim.subject_value === task.key,
-      )?.taken_at ?? null,
-  }))
-}
-
-function ancestorKeys(key: string, tasks: readonly TaskReadRow[]): string[] {
-  const byKey = new Map(tasks.map((task) => [task.key, task]))
-  const keys: string[] = []
-  let parent = byKey.get(key)?.parent_key ?? null
-  while (parent) {
-    keys.push(parent)
-    parent = byKey.get(parent)?.parent_key ?? null
-  }
-  return keys
+type StartChildClaimContext = Parameters<typeof boardClaimTake>[1]
+type StartChildClaimInput = Parameters<typeof boardClaimTake>[0]
+export type WorkflowChildServicePorts = {
+  takeTaskClaim?: (
+    input: StartChildClaimInput,
+    context: StartChildClaimContext,
+  ) => ReturnType<typeof boardClaimTake>
 }
 
 async function nearestAncestorFlow(key: string, tasks: readonly TaskReadRow[], database: Database) {
   const byKey = new Map(tasks.map((task) => [task.key, task]))
   const store = taskFlowReadStore(database)
-  for (const ancestor of ancestorKeys(key, tasks)) {
+  for (const ancestor of childAncestorKeys(key, tasks)) {
     const recordId = byKey.get(ancestor)?.record_id
     if (!recordId) continue
     const flow = await store.flowForTask(recordId)
@@ -119,46 +73,46 @@ async function inheritedStart(
 }
 
 export async function queueWorkflowChild(
-  input: { project: string; child: string; session: string; off: boolean },
+  input: {
+    project: string
+    child: string
+    session: string
+    callerSession: string
+    off: boolean
+  },
   database: Database = db(),
 ) {
   const tasks = taskReader().list({ project: input.project })
-  const ancestors = ancestorKeys(input.child, tasks)
+  const ancestors = childAncestorKeys(input.child, tasks)
   if (!ancestors.length) throw new Error(`${input.child} is not a child task`)
-  const claims = liveClaimRows(database, input.project)
-  const sessionWorksUnderEpic = ancestors.some((key) =>
-    claims.some(
-      (claim) =>
-        claim.holder_session === input.session &&
-        ((claim.subject_kind === 'task' && claim.subject_value === key) ||
-          (claim.subject_kind === 'queued-task' && claim.subject_value === input.child)),
-    ),
+  const root = ancestors.at(-1)!
+  const claims = liveChildClaims(database, input.project)
+  const descendants = descendantTaskKeys(
+    root,
+    tasks.map((task) => ({ key: task.key, parentKey: task.parent_key })),
+  )
+  const sessionWorksUnderEpic = claims.some(
+    (claim) =>
+      claim.holder_session === input.callerSession &&
+      ((claim.subject_kind === 'task' && claim.subject_value === root) ||
+        (claim.subject_kind === 'queued-task' && descendants.has(claim.subject_value))),
   )
   if (!sessionWorksUnderEpic)
     throw new Error(
-      `session ${input.session} does not hold an epic or queued child above ${input.child}`,
+      `calling session ${input.callerSession} does not hold epic ${root} or a queued child under it`,
     )
   if (input.off) {
-    const changed = database
-      .query(
-        `UPDATE board_claim SET closed_at=?,close_reason='released'
-         WHERE project=? AND subject_kind='queued-task' AND subject_value=?
-           AND holder_session=? AND closed_at IS NULL`,
-      )
-      .run(new Date().toISOString(), input.project, input.child, input.session).changes
-    return { action: 'released' as const, child: input.child, released: changed }
+    const closed = boardQueuedClaimClose(
+      { project: input.project, key: input.child, session: input.session, reason: 'released' },
+      Date.now(),
+      database,
+    )
+    return { action: closed.reason ?? 'none', child: input.child, released: closed.closed }
   }
-  const facts = await childFacts(database, input.project, tasks)
-  const root = ancestors.at(-1)!
+  const facts = await gatherChildTaskFacts(database, input.project, tasks)
   const state = childQueueState(root, input.session, facts)
-  const child = facts.find((task) => task.key === input.child)
-  if (!child) throw new Error(`${input.child} was not found`)
-  if (child.liveTaskClaimSession)
-    throw new Error(`${input.child} is claimed by session ${child.liveTaskClaimSession}`)
-  if (child.liveQueuedClaimSession && child.liveQueuedClaimSession !== input.session)
-    throw new Error(`${input.child} is queued for session ${child.liveQueuedClaimSession}`)
-  if (!state.open.some(({ key }) => key === input.child) && child.liveQueuedClaimSession === null)
-    throw new Error(`${input.child} is not queueable under epic ${root}`)
+  const eligibility = childEligibility(state, facts, input.child)
+  if (eligibility.action === 'refuse') throw new Error(eligibility.message)
   const claim = await boardClaimTake(
     {
       project: input.project,
@@ -174,8 +128,9 @@ export async function queueWorkflowChild(
 }
 
 export async function startWorkflowChild(
-  input: { project: string; cursor: number; task?: string },
+  input: { project: string; cursor: number; task?: string; callerSession: string },
   database: Database = db(),
+  ports: WorkflowChildServicePorts = {},
 ) {
   const epic = await selectWorkflowCursorByHandle(
     { project: input.project, workflow: 'plan-task' },
@@ -185,21 +140,25 @@ export async function startWorkflowChild(
   )
   if (epic.workflow_slug !== 'plan-task' || epic.step_slug !== 'start')
     throw new Error(`cursor ${input.cursor} is not an epic plan-task cursor at start`)
-  if (!epic.session_id) throw new Error(`cursor ${input.cursor} has no owning session`)
   const tasks = taskReader().list({ project: input.project })
-  const facts = await childFacts(database, input.project, tasks)
-  const state = childQueueState(epic.workflow_key, epic.session_id, facts)
+  const facts = await gatherChildTaskFacts(database, input.project, tasks)
   if (!facts.some((task) => task.parentKey === epic.workflow_key))
     throw new Error(`cursor ${input.cursor} is not an epic cursor`)
-  const selected = selectChildToStart(state, input.task)
-  if (selected.action === 'refuse') {
-    const held = facts.find(({ key }) => key === input.task)
-    if (held?.liveQueuedClaimSession)
-      throw new Error(`${held.key} is queued for session ${held.liveQueuedClaimSession}`)
-    if (held?.liveTaskClaimSession)
-      throw new Error(`${held.key} is claimed by session ${held.liveTaskClaimSession}`)
-    throw new Error(selected.message)
-  }
+  const claims = liveChildClaims(database, input.project)
+  const descendants = descendantTaskKeys(epic.workflow_key, facts)
+  const callerWorksUnderEpic = claims.some(
+    (claim) =>
+      claim.holder_session === input.callerSession &&
+      ((claim.subject_kind === 'task' && claim.subject_value === epic.workflow_key) ||
+        (claim.subject_kind === 'queued-task' && descendants.has(claim.subject_value))),
+  )
+  if (!callerWorksUnderEpic)
+    throw new Error(
+      `calling session ${input.callerSession} does not hold epic ${epic.workflow_key} or a queued child under it`,
+    )
+  const state = childQueueState(epic.workflow_key, input.callerSession, facts)
+  const selected = selectChildToStart(state, facts, input.task)
+  if (selected.action === 'refuse') throw new Error(selected.message)
   const child = tasks.find(({ key }) => key === selected.task.key)!
   const composition = composeWorkflow(
     'plan-task',
@@ -212,7 +171,7 @@ export async function startWorkflowChild(
   const context = await resolveWorkflowCursorContext(
     input.project,
     { key: child.key },
-    { ...cliWorkflowCursorContext(), session: epic.session_id },
+    { ...cliWorkflowCursorContext(), session: input.callerSession },
   )
   const live = await resolveCompositionLiveAutonomy({
     slug: 'plan-task',
@@ -237,22 +196,24 @@ export async function startWorkflowChild(
   )
   await followComposeTaskClaim(row, false, context, database, {
     take: async (claimInput) => {
-      const claim = await boardClaimTake(
+      const claim = await (ports.takeTaskClaim ?? boardClaimTake)(
         { project: claimInput.project, subject: `task:${claimInput.key}` },
         {
           database,
-          taskCursorAuthority: { mode: 'take', session: claimInput.session },
+          taskCursorAuthority: { mode: 'start-child', session: claimInput.session },
         },
       )
-      writeTransaction(() => {
-        database
-          .query(
-            `UPDATE board_claim SET closed_at=?,close_reason='started'
-               WHERE project=? AND subject_kind='queued-task' AND subject_value=?
-                 AND holder_session=? AND closed_at IS NULL`,
-          )
-          .run(new Date().toISOString(), claimInput.project, claimInput.key, claimInput.session)
-      }, database)
+      // Take the task claim first; a stranded queued claim is harmless and lapses naturally.
+      boardQueuedClaimClose(
+        {
+          project: claimInput.project,
+          key: claimInput.key,
+          session: claimInput.session,
+          reason: 'started',
+        },
+        Date.now(),
+        database,
+      )
       return claim
     },
     release: async () => ({ released: 0 }),

@@ -570,8 +570,19 @@ function registerWorkflowActionTools(server: McpServer, ports: DocsMcpPorts): vo
         off: z.boolean().optional(),
       }),
     },
-    async ({ project, child, session, off }) =>
-      text(await queueWorkflowChild({ project, child, session, off: off ?? false })),
+    async ({ project, child, session, off }) => {
+      const callerSession = mcpWorkflowCursorContext().session
+      if (!callerSession) throw new Error('queue_workflow_child requires a calling session')
+      return text(
+        await queueWorkflowChild({
+          project,
+          child,
+          session,
+          callerSession,
+          off: off ?? false,
+        }),
+      )
+    },
   )
 
   server.registerTool(
@@ -584,7 +595,11 @@ function registerWorkflowActionTools(server: McpServer, ports: DocsMcpPorts): vo
         task: z.string().trim().min(1).optional(),
       }),
     },
-    async ({ project, cursor, task }) => text(await startWorkflowChild({ project, cursor, task })),
+    async ({ project, cursor, task }) => {
+      const callerSession = mcpWorkflowCursorContext().session
+      if (!callerSession) throw new Error('start_workflow_child requires a calling session')
+      return text(await startWorkflowChild({ project, cursor, task, callerSession }))
+    },
   )
 
   server.registerTool(

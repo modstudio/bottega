@@ -2,6 +2,7 @@
 /** Purely selects the start floor and classifies recursive descendant completion. */
 
 import type { Floor, FloorKind } from './workflow-floor.ts'
+import { descendantTaskKeys } from './workflow-task-tree.ts'
 
 export type EpicTaskFact = {
   key: string
@@ -14,20 +15,8 @@ export function descendantTaskFacts(
   rootKey: string,
   tasks: readonly EpicTaskFact[],
 ): EpicTaskFact[] {
-  const children = new Map<string, EpicTaskFact[]>()
-  for (const task of tasks) {
-    if (!task.parentKey) continue
-    children.set(task.parentKey, [...(children.get(task.parentKey) ?? []), task])
-  }
-  const descendants: EpicTaskFact[] = []
-  const visit = (key: string) => {
-    for (const child of children.get(key) ?? []) {
-      descendants.push(child)
-      visit(child.key)
-    }
-  }
-  visit(rootKey)
-  return descendants
+  const descendants = descendantTaskKeys(rootKey, tasks)
+  return tasks.filter(({ key }) => descendants.has(key))
 }
 
 export function selectEpicStartFloors(
