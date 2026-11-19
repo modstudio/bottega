@@ -16,9 +16,11 @@ import {
   clearRecordSessionToken,
   forgetRecordSessionToken,
   probeRecordSessionStore,
+  readRecordSessionStamp,
   readRecordSessionToken,
   readRecordSessionTokenAsync,
   type SecurityRunner,
+  UNREADABLE_STAMP,
   writeRecordSessionToken,
 } from './record-session.ts'
 import {
@@ -354,6 +356,16 @@ describe('file-backed record session', () => {
 
     expect(readRecordSessionToken(unusedRunner)).toBeNull()
     expect(runnerCalls).toBe(0)
+  })
+
+  test('clearing the token preserves the session stamp', () => {
+    writeRecordSessionToken('token', unusedRunner)
+    clearRecordSessionToken(unusedRunner)
+
+    expect(existsSync(recordSessionPath(process.env))).toBe(false)
+    const stamp = readRecordSessionStamp()
+    expect(stamp).not.toBeNull()
+    expect(stamp).not.toBe(UNREADABLE_STAMP)
   })
 
   test('refuses a session file with wider permissions and names its path', () => {
