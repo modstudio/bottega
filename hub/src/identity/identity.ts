@@ -3,16 +3,30 @@
 
 import type { Database } from 'bun:sqlite'
 import { parseReference, REFERENCE_PREFIXES } from '../../../shared/reference.ts'
-import { referenceNotVisibleRefusal } from '../../../shared/reference-refusal.ts'
+import {
+  malformedReferenceRefusal,
+  NOTE_REFERENCE_FORMS,
+  referenceNotVisibleRefusal,
+} from '../../../shared/reference-refusal.ts'
 
 export function resolveNoteIdentity(
   database: Database,
   value: string,
   sessionProject: string | null,
+  isRegistered: (project: string) => boolean = () => true,
 ): string {
-  const parsed = parseReference(value, 'note')
+  let parsed: ReturnType<typeof parseReference>
+  try {
+    parsed = parseReference(value, 'note')
+  } catch {
+    throw new Error(malformedReferenceRefusal(value, NOTE_REFERENCE_FORMS))
+  }
   if (parsed.qualifier?.kind === 'machine')
-    throw new Error('note references accept a project qualifier, not a machine qualifier')
+    throw new Error(malformedReferenceRefusal(value, NOTE_REFERENCE_FORMS))
+  if (parsed.qualifier && !isRegistered(parsed.qualifier.value))
+    throw new Error(
+      `project '${parsed.qualifier.value}' is not registered; run \`bottega project list\``,
+    )
   if (parsed.value.kind === 'record-id') {
     const row = database
       .query<{ record_id: string }, [string]>('SELECT record_id FROM note WHERE record_id=?')
@@ -27,15 +41,9 @@ export function resolveNoteIdentity(
     parsed.value.kind !== 'label' || parsed.value.prefix === REFERENCE_PREFIXES.note
   const project = parsed.qualifier?.value ?? sessionProject
   if (number === null || !validLabel)
-    throw new Error('a note reference must be n<number>, a number, <project>#<number>, or a UUID')
-  const row = project
-    ? database
-        .query<{ record_id: string }, [string, number]>(
-          'SELECT record_id FROM note WHERE project=? AND number=?',
-        )
-        .get(project, number)
-    : null
-  if (row) return row.record_id
+    throw new Error(malformedReferenceRefusal(value, NOTE_REFERENCE_FORMS))
+  const recordId = project ? noteIdentityByNumber(database, project, number) : null
+  if (recordId) return recordId
   throw new Error(
     referenceNotVisibleRefusal(
       project ? `project ${project}` : "the caller's project",

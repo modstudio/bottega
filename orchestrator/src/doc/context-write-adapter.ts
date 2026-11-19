@@ -11,7 +11,7 @@ import {
 import { liveClaimsOfSession } from '../board/board-claim-service.ts'
 import { db, sessionId } from '../database/db.ts'
 import { resolveCommitArgument } from '../git/commit-resolution.ts'
-import { resolve } from '../identity/identity.ts'
+import { resolve, resolveParsedReference } from '../identity/identity.ts'
 import { identityContext } from '../identity/identity-context.ts'
 import { ResolutionMissError } from '../identity/identity-local-run.ts'
 import { projectForTaskKey, projects, taskKeyPrefix } from '../project/projects.ts'
@@ -97,14 +97,26 @@ async function resolveTaskDocumentPointer(pointer: string): Promise<string> {
   }
 }
 
-async function resolveRunPointer(reference: string, database: Database): Promise<string> {
+async function resolveRunPointer(
+  reference: Extract<ReturnType<typeof parsePointerReference>, { kind: 'run' }>,
+  database: Database,
+): Promise<string> {
   try {
-    return (await resolve(reference, identityContext(database), 'run')).recordId
+    return (
+      await resolveParsedReference(
+        reference.reference,
+        reference.source,
+        identityContext(database),
+        'run',
+      )
+    ).recordId
   } catch (error) {
-    if (!(error instanceof ResolutionMissError) || !/^[0-9]+$/.test(reference)) throw error
+    if (!(error instanceof ResolutionMissError) || reference.reference.value.kind !== 'number')
+      throw error
+    const number = reference.reference.value.number
     const pullRequest = database
       .query('SELECT 1 FROM pull_request_ci WHERE pr_number=? LIMIT 1')
-      .get(Number(reference))
+      .get(number)
     throw new ContextWriteRefusalError(
       pullRequest
         ? `${error.message}; pass #<n> for a pull request`
@@ -125,6 +137,13 @@ async function resolveDocPointer(address: string, ports: PointerTargetPorts): Pr
       throw new ContextWriteRefusalError(
         referenceNotVisibleRefusal('the document store', 'pass a visible doc reference'),
       )
+    if (
+      error instanceof RecordApiRequestError &&
+      ((error.status !== null && error.status >= 400 && error.status < 500) ||
+        error.kind === 'refused' ||
+        error.kind === 'conflict')
+    )
+      throw new ContextWriteRefusalError(error.message)
     throw new Error(
       referenceStoreUnreachableRefusal(
         'the document store',
@@ -140,6 +159,10 @@ async function resolveTaskPointer(
   ports: PointerTargetPorts,
 ): Promise<string> {
   const task = await ports.task(parsed.key, database)
+  if (parsed.kind === 'comment' && task.commentsVerifiable === false)
+    throw new ContextWriteRefusalError(
+      `task:${parsed.key}#comment:${parsed.id} cannot be verified because this tracker's task read does not report comment ids; use task:${parsed.key}`,
+    )
   if (parsed.kind === 'comment' && !task.commentIds?.map(String).includes(parsed.id))
     throw new ContextWriteRefusalError(
       referenceNotVisibleRefusal(`task ${parsed.key}`, 'pass a comment id on that task'),
@@ -195,7 +218,7 @@ export async function resolvedPointerTarget(
     throw new ContextWriteRefusalError(error instanceof Error ? error.message : String(error))
   }
   if (parsed.kind === 'task-document') return ports.taskDocument(pointer)
-  if (parsed.kind === 'run') return resolveRunPointer(parsed.reference, database)
+  if (parsed.kind === 'run') return resolveRunPointer(parsed, database)
   if (parsed.kind === 'commit') return ports.commit(parsed.sha)
   if (parsed.kind === 'pull-request') {
     const number = parsed.number

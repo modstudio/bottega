@@ -583,7 +583,16 @@ async function resolveArtifact(
   if (ref.kind === 'commit') {
     const project = projectByName(identity.project, d)
     if (!project) throw new Error(`project ${identity.project} is not registered`)
-    return { ref: resolveCommitArgument(project.path, ref.sha), exists: true }
+    return {
+      ref: invokeFloorEvidencePort(
+        ports,
+        'resolveCommit',
+        resolveCommitArgument,
+        project.path,
+        ref.sha,
+      ),
+      exists: true,
+    }
   }
   if (ref.kind === 'probe' || ref.kind === 'exec') {
     const row = d
@@ -645,7 +654,11 @@ function pullRequestEvidence(
     identity.project,
     number ? Number(number) : reference,
   )
-  if (!number && view.url.replace(/\/$/, '') !== reference.replace(/\/$/, ''))
+  const resolvedNumber = /\/pull\/([1-9][0-9]*)\/?$/i.exec(view.url)?.[1]
+  if (
+    (number && resolvedNumber !== number) ||
+    (!number && view.url.replace(/\/$/, '') !== reference.replace(/\/$/, ''))
+  )
     throw new Error(`${flag} resolved as ${view.url}, not the supplied pull-request link`)
   const originUrl = invokeFloorEvidencePort(
     ports,

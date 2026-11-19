@@ -210,7 +210,6 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     'bun:sqlite',
     'node:fs',
     '../database/db.ts',
-    '../git/commit-resolution.ts',
     '../project/projects.ts',
     '../review-funnel/review-funnel-decision-log.ts',
     '../review-funnel/review-funnel-verdict-service.ts',

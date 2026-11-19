@@ -217,9 +217,10 @@ function artifactRefFromPointer(
     return { kind: 'pull-request', url: parsed.url ?? `#${parsed.number}` }
   if (parsed.kind === 'commit') return parsed
   if (parsed.kind === 'run') {
-    if (/^run:/i.test(source)) return { kind: 'run', id: parsed.reference }
-    const number = /^[1-9][0-9]*$/.test(parsed.reference) ? Number(parsed.reference) : null
-    return number === null ? { kind: 'run', id: parsed.reference } : { kind: 'id', id: number }
+    const value = parsed.reference.value
+    const id = value.kind === 'record-id' ? value.recordId : parsed.source
+    if (parsed.explicit || parsed.reference.qualifier) return { kind: 'run', id }
+    return value.kind === 'number' ? { kind: 'id', id: value.number } : { kind: 'run', id }
   }
   if (parsed.kind === 'task-document')
     return { error: `--artifact ${source} must use a doc: reference for a document` }

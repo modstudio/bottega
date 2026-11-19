@@ -7,3 +7,9 @@ test('a qualified note reference refuses an unregistered project before lookup',
     `project 'unregistered' is not registered; run \`${PLATFORM_SLUG} project list\``,
   )
 })
+
+test('a qualified n-label reaches the same registration check through the shared parser', () => {
+  expect(() => resolveNoteReference(`${PLATFORM_SLUG}#n3`, 'workshop')).toThrow(
+    `project '${PLATFORM_SLUG}' is not registered; run \`${PLATFORM_SLUG} project list\``,
+  )
+})

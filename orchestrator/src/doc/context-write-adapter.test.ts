@@ -2,6 +2,7 @@ import { expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { fixtureProjectRecordId, migratedTestDatabase } from '../database/test-database.fixture.ts'
+import { RecordApiRequestError } from '../record/record-api-client.ts'
 import { type PointerTargetPorts, resolvedPointerTarget } from './context-write-adapter.ts'
 
 function ports(document: PointerTargetPorts['document'] = async () => {}): PointerTargetPorts {
@@ -87,5 +88,48 @@ test('an unreachable document store keeps the could-not-reach refusal distinct',
       }),
     ),
   ).rejects.not.toThrow('does not resolve')
+  database.close()
+})
+
+test('a document-store destination refusal preserves its remedy as a context refusal', async () => {
+  const database = migratedTestDatabase()
+  await expect(
+    resolvedPointerTarget(
+      `doc:project/${PLATFORM_SLUG}/identity`,
+      database,
+      ports(async () => {
+        throw new RecordApiRequestError(
+          'project has no declared record space; declare one before retrying',
+          'refused',
+          409,
+        )
+      }),
+    ),
+  ).rejects.toThrow('project has no declared record space; declare one before retrying')
+  await expect(
+    resolvedPointerTarget(
+      `doc:project/${PLATFORM_SLUG}/identity`,
+      database,
+      ports(async () => {
+        throw new RecordApiRequestError('membership is required; join the space', 'refused', 403)
+      }),
+    ),
+  ).rejects.not.toThrow('could not reach')
+  database.close()
+})
+
+test('a comment pointer refuses distinctly when the tracker cannot report comment ids', async () => {
+  const database = migratedTestDatabase()
+  const adapter = ports()
+  adapter.task = async (key) => ({
+    key,
+    record_id: newRecordId(),
+    project: PLATFORM_SLUG,
+    commentIds: [],
+    commentsVerifiable: false,
+  })
+  await expect(resolvedPointerTarget('task:DEV-2473#comment:4', database, adapter)).rejects.toThrow(
+    "cannot be verified because this tracker's task read does not report comment ids; use task:DEV-2473",
+  )
   database.close()
 })

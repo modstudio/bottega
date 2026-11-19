@@ -90,7 +90,7 @@ export type PointerReference =
   | { kind: 'task'; key: string }
   | { kind: 'comment'; key: string; id: string }
   | { kind: 'task-document'; key: string; number: number }
-  | { kind: 'run'; reference: string }
+  | { kind: 'run'; reference: ParsedReference; source: string; explicit: boolean }
   | { kind: 'pull-request'; number: number | null; url: string | null }
   | { kind: 'commit'; sha: string }
   | { kind: 'probe' | 'exec' | 'review-read' | 'attached-text'; recordId: string }
@@ -142,10 +142,19 @@ export function parsePointerReference(input: string): PointerReference {
   if (/^[0-9]{40}$/.test(value) || (/^[0-9a-f]{7,40}$/i.test(value) && /[a-f]/i.test(value)))
     return { kind: 'commit', sha: value }
   const explicitRun = /^run:(\S+)$/i.exec(value)
-  if (explicitRun && (/^[1-9][0-9]*$/.test(explicitRun[1]!) || hasRecordIdShape(explicitRun[1]!)))
-    return { kind: 'run', reference: explicitRun[1]! }
-  if (hasRecordIdShape(value)) return { kind: 'run', reference: value.toLowerCase() }
-  if (/^(?:r[1-9][0-9]*|[1-9][0-9]*)$/.test(value)) return { kind: 'run', reference: value }
+  const source = explicitRun?.[1] ?? value
+  try {
+    const reference = parseReference(source, 'run')
+    const runValue = reference.value
+    if (
+      runValue.kind === 'record-id' ||
+      runValue.kind === 'number' ||
+      (runValue.kind === 'label' && runValue.prefix === REFERENCE_PREFIXES.run)
+    )
+      return { kind: 'run', reference, source, explicit: Boolean(explicitRun) }
+  } catch {
+    // The shared pointer refusal below owns malformed pointer wording.
+  }
 
   throw new Error(malformedReferenceRefusal(input))
 }

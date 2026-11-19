@@ -191,7 +191,8 @@ function validateRunQualifier(
     throw new Error(`invalid run reference ${JSON.stringify(String(reference))}`)
 }
 
-export async function resolve(
+export async function resolveParsedReference(
+  parsed: ParsedReference,
   reference: string | number,
   context: IdentityContext,
   expectedKind?: ResolvableKind,
@@ -199,7 +200,6 @@ export async function resolve(
   const cacheKey = `${expectedKind ?? ''}:${String(reference)}`
   const cached = context.identityMap.get(cacheKey)
   if (cached) return cached
-  const parsed = parseReference(reference, expectedKind)
   if (parsed.value.kind === 'task-key')
     throw new Error(`task reference ${parsed.value.key} is not migrated to identity resolution`)
   const kind = parsedKind(parsed, expectedKind)
@@ -220,4 +220,17 @@ export async function resolve(
       : await resolveQuestion(parsed, context)
   context.identityMap.set(cacheKey, result)
   return result
+}
+
+export async function resolve(
+  reference: string | number,
+  context: IdentityContext,
+  expectedKind?: ResolvableKind,
+): Promise<ResolvedIdentity> {
+  return resolveParsedReference(
+    parseReference(reference, expectedKind),
+    reference,
+    context,
+    expectedKind,
+  )
 }

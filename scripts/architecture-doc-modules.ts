@@ -34,8 +34,6 @@ export const docModules: DocModule[] = [
   module('orchestrator/src/doc/doc-context-write.ts', [
     '../../../shared/brand.ts',
     '../../../shared/context-item-vocabulary.ts',
-    '../../../shared/reference-refusal.ts',
-    '../../../shared/reference.ts',
     '../../../shared/record-shape.ts',
     '../workflow/workflow-task-reference.ts',
   ]),

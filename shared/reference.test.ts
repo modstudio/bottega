@@ -59,6 +59,7 @@ describe('record reference grammar', () => {
     ['#42', 'pull-request'],
     ['https://github.com/acme/app/pull/42', 'pull-request'],
     ['1234567', 'run'],
+    ['007', 'run'],
     ['r42', 'run'],
     ['1234567890123456789012345678901234567890', 'commit'],
     ['abc1234', 'commit'],

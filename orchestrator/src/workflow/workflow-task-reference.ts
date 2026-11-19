@@ -19,6 +19,7 @@ export type HubTaskReference = {
   source?: string | null
   status_category?: string | null
   commentIds?: Array<string | number>
+  commentsVerifiable?: boolean
 }
 export type HubTaskReader = (project: string) => Promise<HubTaskReference[]>
 export type HubTaskPuller = (project: string, key: string) => Promise<HubTaskReference | null>
@@ -101,7 +102,7 @@ function taskReference(row: unknown): HubTaskReference {
   return row as HubTaskReference
 }
 
-function taskReferenceFromShow(response: unknown): HubTaskReference | null {
+export function taskReferenceFromShow(response: unknown): HubTaskReference | null {
   if (!response || typeof response !== 'object') throw new Error('response was not an object')
   const row = (response as { task?: unknown }).task
   if (row === undefined || row === null) return null
@@ -109,6 +110,7 @@ function taskReferenceFromShow(response: unknown): HubTaskReference | null {
   const record = response as {
     comments?: Array<{ id?: unknown }>
     tracker_comment_ids?: unknown
+    tracker_comments_verifiable?: unknown
   }
   const supplied = Array.isArray(record.tracker_comment_ids)
     ? record.tracker_comment_ids
@@ -118,6 +120,7 @@ function taskReferenceFromShow(response: unknown): HubTaskReference | null {
   task.commentIds = supplied.filter(
     (id): id is string | number => typeof id === 'string' || typeof id === 'number',
   )
+  task.commentsVerifiable = record.tracker_comments_verifiable !== false
   return task
 }
 
