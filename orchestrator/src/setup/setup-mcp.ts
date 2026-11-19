@@ -241,7 +241,7 @@ function stringArray(value: unknown): string[] | null {
   return Array.isArray(value) && value.every((item) => typeof item === 'string') ? value : null
 }
 
-function resultFailure(result: SetupCommandResult): string | null {
+export function resultFailure(result: SetupCommandResult): string | null {
   if (result.timedOut) return 'timed out'
   if (result.error) return 'spawn error'
   if (result.exitCode !== 0) return `exit code ${String(result.exitCode)}`

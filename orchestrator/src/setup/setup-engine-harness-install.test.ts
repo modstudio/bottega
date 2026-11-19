@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { proposeSetup, type SetupAgent } from './setup-engine.ts'
 import type { SetupFacts } from './setup-facts.ts'
 import { HARNESS_MCP_CATALOGUE } from './setup-mcp.ts'
@@ -94,6 +95,7 @@ for (const harness of ['codex', 'grok', 'goose'] as const) {
           expect.objectContaining({ id: 'skip' }),
         ],
       })
+      expect(plan.notices).toEqual([])
       expect(planSetupActions(plan, recommendedAnswers(plan))).toContainEqual({
         kind: 'install-harness',
         harness,
@@ -105,29 +107,46 @@ for (const harness of ['codex', 'grok', 'goose'] as const) {
         route: HARNESS_MCP_CATALOGUE[harness].install[platform],
       })
     })
-
-    test(`${harness} present on ${platform} has no install decision`, () => {
-      const plan = proposeSetup(
-        resolveLifecycle,
-        machineWithHarness(harness, `/bin/${harness}`, platform),
-        [],
-        [],
-        [agent(harness, true)],
-      )
-      expect(plan.questions.some(({ id }) => id === `harness:${harness}:install`)).toBe(false)
-      expect(plan.notices).toEqual([])
-    })
-
-    test(`${harness} disabled on ${platform} has no install decision`, () => {
-      const plan = proposeSetup(
-        resolveLifecycle,
-        machineWithHarness(harness, null, platform),
-        [],
-        [],
-        [agent(harness, false)],
-      )
-      expect(plan.questions.some(({ id }) => id === `harness:${harness}:install`)).toBe(false)
-      expect(plan.notices).toEqual([])
-    })
   }
+
+  test(`${harness} present has no install decision`, () => {
+    const plan = proposeSetup(
+      resolveLifecycle,
+      machineWithHarness(harness, `/bin/${harness}`, 'darwin'),
+      [],
+      [],
+      [agent(harness, true)],
+    )
+    expect(plan.questions.some(({ id }) => id === `harness:${harness}:install`)).toBe(false)
+    expect(plan.notices).toEqual([])
+  })
+
+  test(`${harness} disabled has no install decision`, () => {
+    const plan = proposeSetup(
+      resolveLifecycle,
+      machineWithHarness(harness, null, 'darwin'),
+      [],
+      [],
+      [agent(harness, false)],
+    )
+    expect(plan.questions.some(({ id }) => id === `harness:${harness}:install`)).toBe(false)
+    expect(plan.notices).toEqual([])
+  })
 }
+
+test('claude-code agent without claude gets the documentation notice', () => {
+  const plan = proposeSetup(
+    resolveLifecycle,
+    machineWithHarness('claude', null, 'darwin'),
+    [],
+    [],
+    [{ name: 'claude-agent', harness: 'claude-code', enabled: true, probePassed: true }],
+  )
+  expect(plan.questions.some(({ id }) => id === 'harness:claude:install')).toBe(false)
+  expect(plan.notices).toContainEqual({
+    message:
+      'claude is needed by enabled agent(s) claude-agent but is not installed, and setup has no install route for darwin',
+    fix: `${HARNESS_MCP_CATALOGUE.claude.documentation}, or ${PLATFORM_SLUG} agent set claude-agent --enabled false --reason "claude is not installed on this machine"`,
+    blocking: false,
+  })
+})

@@ -9,7 +9,6 @@ import type { RepositoryFacts } from './repository-facts-types.ts'
 import type { SetupFacts } from './setup-facts.ts'
 import type { LegacyPathSymlink } from './setup-legacy-path.ts'
 import {
-  HARNESS_MCP_CATALOGUE,
   type HarnessInstallRoute,
   type HarnessName,
   harnessDocumentation,
@@ -407,8 +406,22 @@ function machineNotices(machine: SetupFacts): SetupNotice[] {
   return notices
 }
 
+const HARNESS_CATALOGUE_NAMES = {
+  codex: 'codex',
+  grok: 'grok',
+  opencode: 'opencode',
+  goose: 'goose',
+  'claude-code': 'claude',
+} as const satisfies Record<string, HarnessName>
+
+function harnessCatalogueName(harness: string): HarnessName | null {
+  return Object.hasOwn(HARNESS_CATALOGUE_NAMES, harness)
+    ? HARNESS_CATALOGUE_NAMES[harness as keyof typeof HARNESS_CATALOGUE_NAMES]
+    : null
+}
+
 const UNREGISTERED_HARNESSES = [
-  { fact: 'claude', harness: 'claude-code' },
+  { fact: HARNESS_CATALOGUE_NAMES['claude-code'], harness: 'claude-code' },
   { fact: 'opencode', harness: 'opencode' },
   { fact: 'goose', harness: 'goose' },
 ] as const
@@ -429,14 +442,7 @@ function builtInAgentNotice(
         }
       : null
   }
-  if (!harness?.path) {
-    const route = harnessInstallRoute(name, machine.os.platform)
-    return {
-      message: `${name} agent is enabled but the ${name} harness is not installed`,
-      fix: `${route?.command ?? harnessDocumentation(name)}, or ${PLATFORM_SLUG} agent set ${name} --enabled false --reason "${name} is not installed on this machine"`,
-      blocking: route !== null,
-    }
-  }
+  if (!harness?.path) return null
   if (harness.auth === 'signed-out') {
     return {
       message: `${name} agent is enabled but the ${name} harness is not signed in`,
@@ -460,14 +466,20 @@ function builtInAgentNotice(
     : null
 }
 
-function neededHarnesses(agents: SetupAgent[]): HarnessName[] {
-  const names = new Set<HarnessName>()
+function neededHarnesses(agents: SetupAgent[]): Array<{ harness: HarnessName; agents: string[] }> {
+  const names = new Map<HarnessName, string[]>()
   for (const agent of agents) {
     if (!agent.enabled) continue
-    const candidate = agent.name === 'codex' || agent.name === 'grok' ? agent.name : agent.harness
-    if (Object.hasOwn(HARNESS_MCP_CATALOGUE, candidate)) names.add(candidate as HarnessName)
+    const candidate =
+      agent.name === 'codex' || agent.name === 'grok'
+        ? agent.name
+        : harnessCatalogueName(agent.harness)
+    if (!candidate) continue
+    const agentNames = names.get(candidate) ?? []
+    agentNames.push(agent.name)
+    names.set(candidate, agentNames)
   }
-  return [...names]
+  return [...names].map(([harness, harnessAgents]) => ({ harness, agents: harnessAgents }))
 }
 
 function proposeHarnessInstalls(
@@ -476,22 +488,20 @@ function proposeHarnessInstalls(
   questions: SetupQuestion[],
   notices: SetupNotice[],
 ): SetupHarnessInstallProposal[] {
-  const builtIns = new Set(
-    agents
-      .filter((agent) => agent.enabled && (agent.name === 'codex' || agent.name === 'grok'))
-      .map((agent) => agent.name),
-  )
-  return neededHarnesses(agents).flatMap((harness) => {
+  return neededHarnesses(agents).flatMap(({ harness, agents: agentNames }) => {
     if (machine.harnesses?.[harness]?.path) return []
     const route = harnessInstallRoute(harness, machine.os.platform)
     if (!route) {
-      if (!builtIns.has(harness)) {
-        notices.push({
-          message: `${harness} is needed by an enabled agent but has no install route for ${machine.os.platform}`,
-          fix: harnessDocumentation(harness),
-          blocking: false,
-        })
-      }
+      notices.push({
+        message: `${harness} is needed by enabled agent(s) ${agentNames.join(', ')} but is not installed, and setup has no install route for ${machine.os.platform}`,
+        fix: `${harnessDocumentation(harness)}, or ${agentNames
+          .map(
+            (name) =>
+              `${PLATFORM_SLUG} agent set ${name} --enabled false --reason "${harness} is not installed on this machine"`,
+          )
+          .join('; ')}`,
+        blocking: false,
+      })
       return []
     }
     const questionId = harnessInstallQuestionId(harness)

@@ -5,10 +5,10 @@ import { statSync } from 'node:fs'
 import { join } from 'node:path'
 import { which } from 'bun'
 import {
-  commandFailureReason,
   HARNESS_INSTALL_TIMEOUT_MS,
   type HarnessInstallRoute,
   type HarnessName,
+  resultFailure,
   runSetupCommand,
   type SetupCommandRunner,
 } from './setup-mcp.ts'
@@ -59,9 +59,8 @@ export function installHarness(
   environment: { HOME?: string } = { HOME: process.env.HOME },
 ): HarnessInstallOutcome {
   const result = runner(['/bin/sh', '-c', route.command], HARNESS_INSTALL_TIMEOUT_MS)
-  if (result.exitCode !== 0 || result.timedOut || result.error) {
-    return manualInstallNotice(harness, commandFailureReason(result), route.command)
-  }
+  const failure = resultFailure(result)
+  if (failure) return manualInstallNotice(harness, failure, route.command)
   const path = detector.which(harness)
   if (path) return { status: 'applied', message: `installed ${harness} at ${path}` }
   if (route.binDir) {
