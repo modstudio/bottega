@@ -6,13 +6,13 @@ import {
 } from '../sandbox/sandbox-runtime.ts'
 
 /** Classify and render one failed sandbox launch without probing successful turns. */
-export function sandboxReadinessRefusal(input: {
+export async function sandboxReadinessRefusal(input: {
   srt: boolean
   turnFailed: boolean
   stderr: string
   launchError: string
   originalError?: string
-}): string | null {
+}): Promise<string | null> {
   const failure = classifySandboxLaunchFailure({
     platform: process.platform,
     sandboxKind: input.srt ? 'srt' : 'host',
@@ -23,7 +23,7 @@ export function sandboxReadinessRefusal(input: {
   if (!failure) return null
   return renderSandboxReadinessRefusal(
     failure,
-    sandboxRuntimeAvailability(),
+    await sandboxRuntimeAvailability(),
     input.originalError ?? input.launchError,
     `${PLATFORM_SLUG} machine doctor`,
   )

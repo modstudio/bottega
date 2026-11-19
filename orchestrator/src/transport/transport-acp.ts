@@ -585,7 +585,7 @@ async function acpLaunchArgv(
     return await sandboxLaunchArgv(profile, bin, agentArgv, opts.srt.temporaryDirectory)
   } catch (error) {
     const launchError = error instanceof Error ? error.message : String(error)
-    const refusal = sandboxReadinessRefusal({
+    const refusal = await sandboxReadinessRefusal({
       srt: Boolean(opts.srt),
       turnFailed: true,
       stderr: '',
@@ -759,13 +759,17 @@ function acpPermissionDecision(
   )
 }
 
-function acpOpenFailure(error: unknown, stderr: string, opts: TransportStartOpts): Error {
+async function acpOpenFailure(
+  error: unknown,
+  stderr: string,
+  opts: TransportStartOpts,
+): Promise<Error> {
   if (error instanceof Error && error.message.startsWith('sandbox runtime readiness failed')) {
     return error
   }
   const originalError = String((error as Error)?.message ?? error)
   const joined = [originalError, stderr].filter(Boolean).join('\n')
-  const refusal = sandboxReadinessRefusal({
+  const refusal = await sandboxReadinessRefusal({
     srt: Boolean(opts.srt),
     turnFailed: true,
     stderr,
@@ -975,7 +979,7 @@ async function openAcp(opts: TransportStartOpts): Promise<TransportHandle> {
     }
     if (leaderSocket) rmSync(leaderSocket, { force: true })
     const stderr = Buffer.concat(stderrChunks).toString('utf8').trim()
-    throw acpOpenFailure(error, stderr, opts)
+    throw await acpOpenFailure(error, stderr, opts)
   }
 
   let collectPromise: Promise<TransportResult> | null = null

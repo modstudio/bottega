@@ -473,8 +473,14 @@ function reportRetrievalCheck(
 }
 
 export function sandboxRuntimeDoctorLine(runtime: RuntimeAvailability): string {
+  const probeUnavailable = runtime.sandboxProbeUnavailableReason
+    ? `  sandbox probe unavailable: ${runtime.sandboxProbeUnavailableReason}; Bottega cannot confirm the sandbox works on this host`
+    : null
   return runtime.available
-    ? `sandbox        runtime available at ${runtime.location}`
+    ? [
+        `sandbox        runtime available at ${runtime.location}`,
+        ...(probeUnavailable ? [probeUnavailable] : []),
+      ].join('\n')
     : [
         `sandbox        runtime NOT AVAILABLE at ${runtime.location}; ${runtime.condition}`,
         ...runtime.fixes.map((fix) => `  ${fix}`),
@@ -667,7 +673,7 @@ function hasCoolingWorker(
   return machineLevel === 'full' && candidates('summarize').some((candidate) => candidate.cooling)
 }
 
-function reportWorkerRuntimeForInstallLevel(
+async function reportWorkerRuntimeForInstallLevel(
   machineLevel: MachineLevel,
   log: DoctorPresentation['log'],
   isReadonlySandboxCandidate: (input: {
@@ -691,7 +697,7 @@ function reportWorkerRuntimeForInstallLevel(
       }),
     )
     .map((agent) => agent.name)
-  log(sandboxRuntimeDoctorLine(sandboxRuntimeAvailability()))
+  log(sandboxRuntimeDoctorLine(await sandboxRuntimeAvailability()))
   log(`sandbox agents ${srtAgents.join(', ') || '(none)'} (read-only repository jobs)`)
   log(`acp            ${doctorAcpStatus(acpRuntimeGaps())}`)
   const local = localRegistrationDiagnosis(configuredUrl, modelHostModel())
@@ -850,7 +856,7 @@ export async function doctorCommand(
     if (probe.failed) exitCode(1)
     for (const line of rowReachabilityDiagnosis(row, configuredUrl)) log(line)
   }
-  const local = reportWorkerRuntimeForInstallLevel(
+  const local = await reportWorkerRuntimeForInstallLevel(
     machineLevel,
     log,
     isReadonlySandboxCandidate,

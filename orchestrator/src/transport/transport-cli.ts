@@ -306,7 +306,7 @@ async function cliLaunch(opts: TransportStartOpts) {
   } catch (error) {
     const launchError = error instanceof Error ? error.message : String(error)
     const launchFailed = true
-    const refusal = sandboxReadinessRefusal({
+    const refusal = await sandboxReadinessRefusal({
       srt: Boolean(opts.srt),
       turnFailed: launchFailed,
       stderr: '',
@@ -319,7 +319,7 @@ async function cliLaunch(opts: TransportStartOpts) {
   return { launchArgv, stdinPrompt }
 }
 
-function cliTurnReadingWithSandboxReadiness(input: {
+async function cliTurnReadingWithSandboxReadiness(input: {
   opts: TransportStartOpts
   overflowed: CliStreamCapture | null
   stdout: string
@@ -338,17 +338,17 @@ function cliTurnReadingWithSandboxReadiness(input: {
   const preserveVendorFailure = ['capacity', 'daily_quota', 'quota', 'billing'].includes(
     vendorFailureKind,
   )
+  const refusal = preserveVendorFailure
+    ? null
+    : await sandboxReadinessRefusal({
+        srt: Boolean(input.opts.srt),
+        turnFailed,
+        stderr: input.stderr,
+        launchError: reading.replyError ?? '',
+      })
   return {
     ...reading,
-    replyError:
-      (!preserveVendorFailure &&
-        sandboxReadinessRefusal({
-          srt: Boolean(input.opts.srt),
-          turnFailed,
-          stderr: input.stderr,
-          launchError: reading.replyError ?? '',
-        })) ||
-      reading.replyError,
+    replyError: refusal || reading.replyError,
   }
 }
 
@@ -410,7 +410,7 @@ async function spawnCli(opts: TransportStartOpts): Promise<TransportHandle> {
         const signal = processResult.signal ?? null
         const exitCode =
           processResult.exitCode ?? (signal ? 128 + (osConstants.signals[signal] ?? 0) : 1)
-        const { reply, replyError, tokens } = cliTurnReadingWithSandboxReadiness({
+        const { reply, replyError, tokens } = await cliTurnReadingWithSandboxReadiness({
           opts,
           overflowed,
           stdout,

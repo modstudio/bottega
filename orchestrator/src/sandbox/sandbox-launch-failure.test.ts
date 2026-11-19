@@ -30,6 +30,7 @@ test('renders unavailable and freshly available readiness rulings without invent
     condition: 'namespaces are blocked',
     remedy: '',
     fixes: ['install the profile', 'reload AppArmor'],
+    sandboxProbeUnavailableReason: null,
   }
   expect(renderSandboxReadinessRefusal(failure, runtime, 'bwrap failed', 'doctor')).toBe(
     'sandbox runtime readiness failed; namespaces are blocked; install the profile; reload AppArmor\noriginal error: bwrap failed',

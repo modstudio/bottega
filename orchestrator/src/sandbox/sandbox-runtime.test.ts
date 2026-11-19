@@ -125,13 +125,29 @@ describe('sandbox runtime payloads', () => {
     })
   })
 
-  test('source availability is exactly the installed library check', () => {
+  test('source availability is exactly the installed library check', async () => {
     expect(
-      sandboxRuntimeAvailability(process.env, process.platform, process.arch, []).available,
+      (await sandboxRuntimeAvailability(process.env, process.platform, process.arch, [])).available,
     ).toBe(existsSync(SRT_LIBRARY))
     expect(
-      sandboxRuntimeAvailability(process.env, process.platform, process.arch, []).location,
+      (await sandboxRuntimeAvailability(process.env, process.platform, process.arch, [])).location,
     ).toBe(SRT_LIBRARY)
+  })
+
+  test('pinned Linux wrapper keeps the namespace probe confinement flags', async () => {
+    const { wrapCommandWithSandboxLinux } = await import(
+      '@anthropic-ai/sandbox-runtime/dist/sandbox/linux-sandbox-utils.js'
+    )
+    const command = await wrapCommandWithSandboxLinux({
+      command: 'true',
+      needsNetworkRestriction: true,
+      writeConfig: { allowOnly: [], denyWithinAllow: [] },
+      bwrapPath: '/usr/bin/bwrap',
+      binShell: '/bin/sh',
+    })
+    expect(command).toContain('--ro-bind / /')
+    expect(command).toContain('--unshare-net')
+    expect(command).toContain('--unshare-user')
   })
 
   test('missing system dependencies make the shared ruling unavailable with an exact install command', () => {
@@ -191,9 +207,9 @@ describe('sandbox runtime payloads', () => {
     ])
   })
 
-  test('Linux availability gathers namespace and AppArmor facts through injected ports', () => {
+  test('Linux availability gathers namespace and AppArmor facts through injected ports', async () => {
     const observed: string[][] = []
-    const ruling = sandboxRuntimeAvailability(process.env, 'linux', process.arch, [], {
+    const ruling = await sandboxRuntimeAvailability(process.env, 'linux', process.arch, [], {
       readOsRelease: () => 'ID=fedora',
       resolveExecutable: (name) => (name === 'bwrap' ? '/usr/bin/bwrap' : '/bin/sh'),
       probeUserNamespaces: (bwrap, shell) => {
@@ -206,8 +222,8 @@ describe('sandbox runtime payloads', () => {
     expect(ruling.fixes[0]).toContain('sudo aa-status | grep bwrap')
   })
 
-  test('Linux availability treats a namespace probe error as an unknown verdict', () => {
-    const ruling = sandboxRuntimeAvailability(process.env, 'linux', process.arch, [], {
+  test('Linux availability treats a namespace probe error as a visible unknown verdict', async () => {
+    const ruling = await sandboxRuntimeAvailability(process.env, 'linux', process.arch, [], {
       readOsRelease: () => 'ID=ubuntu',
       resolveExecutable: (name) => (name === 'bwrap' ? '/usr/bin/bwrap' : '/bin/sh'),
       probeUserNamespaces: () => {
@@ -216,15 +232,16 @@ describe('sandbox runtime payloads', () => {
     })
     expect(ruling.available).toBe(true)
     expect(ruling.fixes).toEqual([])
+    expect(ruling.sandboxProbeUnavailableReason).toBe('probe exceeded its bound')
   })
 
-  test('embedded availability requires every host payload without extracting it', () => {
+  test('embedded availability requires every host payload without extracting it', async () => {
     const state = mkdtempSync(join(tmpdir(), 'srt-availability-'))
     const paths = sandboxRuntimePayloadPaths('linux', 'arm64')
     try {
       registerEmbeddedAssets({ assets: {}, files: {}, manifest })
       expect(
-        sandboxRuntimeAvailability({ BOTTEGA_STATE_HOME: state }, 'linux', 'arm64', []),
+        await sandboxRuntimeAvailability({ BOTTEGA_STATE_HOME: state }, 'linux', 'arm64', []),
       ).toMatchObject({
         available: false,
         location: join(state, 'runtime', manifest.version, 'sandbox-runtime'),
@@ -239,7 +256,14 @@ describe('sandbox runtime payloads', () => {
         manifest,
       })
       expect(
-        sandboxRuntimeAvailability({ BOTTEGA_STATE_HOME: state }, 'linux', 'arm64', []).available,
+        (
+          await sandboxRuntimeAvailability(
+            { BOTTEGA_STATE_HOME: state },
+            'linux',
+            'arm64',
+            [],
+          )
+        ).available,
       ).toBe(true)
       expect(existsSync(join(state, 'runtime'))).toBe(false)
     } finally {

@@ -80,6 +80,7 @@ const machine = {
     condition: '',
     remedy: '',
     fixes: [],
+    sandboxProbeUnavailableReason: null,
   },
 } as unknown as SetupFacts
 

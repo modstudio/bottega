@@ -53,6 +53,7 @@ function facts(overrides: Partial<Parameters<typeof classifySetupFacts>[0]> = {}
       remedy:
         'the sandbox runtime is not installed completely; reinstall the sandbox runtime at /runtime, then retry',
       fixes: ['reinstall the sandbox runtime at /runtime, then retry'],
+      sandboxProbeUnavailableReason: null,
     },
     ...overrides,
   })

@@ -70,6 +70,7 @@ export type RuntimeAvailability = {
   condition: string
   remedy: string
   fixes: string[]
+  sandboxProbeUnavailableReason: string | null
 }
 
 export type LinuxPackageManager = 'apt' | 'dnf' | 'pacman' | 'unknown'
@@ -83,13 +84,17 @@ export type RuntimeAvailabilityFacts = {
   bwrapPath: string | null
   bwrapProfileLoaded: boolean
   packageManager: LinuxPackageManager
+  sandboxProbeUnavailableReason?: string | null
 }
 
 type AvailabilityPorts = {
   readOsRelease?: () => string
   resolveExecutable?: (name: string) => string | null
   readApparmorProfiles?: () => string
-  probeUserNamespaces?: (bwrapPath: string, shellPath: string) => boolean
+  probeUserNamespaces?: (
+    bwrapPath: string,
+    shellPath: string,
+  ) => boolean | Promise<boolean>
 }
 
 const PACKAGES = ['bubblewrap', 'socat', 'ripgrep'] as const
@@ -194,31 +199,36 @@ export function classifySandboxRuntimeAvailability(
     condition,
     remedy,
     fixes,
+    sandboxProbeUnavailableReason: facts.sandboxProbeUnavailableReason ?? null,
   }
 }
 
-function defaultProbeUserNamespaces(bwrapPath: string, shellPath: string, path: string): boolean {
-  const result = startBoundedSync(
-    [
-      bwrapPath,
-      '--new-session',
-      '--die-with-parent',
-      '--unshare-net',
-      '--dev',
-      '/dev',
-      '--unshare-pid',
-      '--unshare-user',
-      '--cap-drop',
-      'ALL',
-      '--proc',
-      '/proc',
-      '--',
-      shellPath,
-      '-c',
-      'true',
-    ],
-    { budget: 'sandbox-probe', env: { PATH: path } },
+async function wrappedUserNamespaceProbeCommand(
+  bwrapPath: string,
+  shellPath: string,
+): Promise<string> {
+  const { wrapCommandWithSandboxLinux } = await import(
+    '@anthropic-ai/sandbox-runtime/dist/sandbox/linux-sandbox-utils.js'
   )
+  return wrapCommandWithSandboxLinux({
+    command: 'true',
+    needsNetworkRestriction: true,
+    writeConfig: { allowOnly: [], denyWithinAllow: [] },
+    bwrapPath,
+    binShell: shellPath,
+  })
+}
+
+async function defaultProbeUserNamespaces(
+  bwrapPath: string,
+  shellPath: string,
+  path: string,
+): Promise<boolean> {
+  const command = await wrappedUserNamespaceProbeCommand(bwrapPath, shellPath)
+  const result = startBoundedSync([shellPath, '-c', command], {
+    budget: 'sandbox-probe',
+    env: { PATH: path },
+  })
   return result.exitCode === 0
 }
 
@@ -274,43 +284,48 @@ function profileNamedBwrap(text: string): boolean {
   return text.split('\n').some((line) => /^bwrap(?:\s|$)/.test(line.trim()))
 }
 
-function userNamespaceProbeVerdict(
+async function userNamespaceProbeVerdict(
   linux: boolean,
   bwrapPath: string | null,
   bwrapMissing: boolean,
   resolveExecutable: (name: string) => string | null,
   probe: AvailabilityPorts['probeUserNamespaces'],
-): boolean | null {
-  if (!linux || !bwrapPath || bwrapMissing) return null
+): Promise<{ usable: boolean | null; unavailableReason: string | null }> {
+  if (!linux || !bwrapPath || bwrapMissing) return { usable: null, unavailableReason: null }
   const shellPath = resolveExecutable('sh') ?? '/bin/sh'
   try {
-    return probe
+    const usable = await (probe
       ? probe(bwrapPath, shellPath)
-      : defaultProbeUserNamespaces(bwrapPath, shellPath, process.env.PATH ?? '/usr/bin:/bin')
-  } catch {
-    return null
+      : defaultProbeUserNamespaces(bwrapPath, shellPath, process.env.PATH ?? '/usr/bin:/bin'))
+    return { usable, unavailableReason: null }
+  } catch (error) {
+    return {
+      usable: null,
+      unavailableReason: error instanceof Error ? error.message : String(error),
+    }
   }
 }
 
 /** Gather host facts for the one availability ruling used by every caller. */
-export function sandboxRuntimeAvailability(
+export async function sandboxRuntimeAvailability(
   environment: StateEnvironment = process.env,
   platform: NodeJS.Platform = process.platform,
   arch: NodeJS.Architecture = process.arch,
   missingSystemDependencies: string[] = SandboxManager.checkDependencies().errors,
   ports: AvailabilityPorts = {},
-): RuntimeAvailability {
+): Promise<RuntimeAvailability> {
   const linux = platform === 'linux'
   const resolveExecutable = ports.resolveExecutable ?? ((name) => which(name))
   const bwrapPath = linux ? resolveExecutable('bwrap') : null
   const bwrapMissing = missingPackages(missingSystemDependencies).includes('bubblewrap')
-  const userNamespacesUsable = userNamespaceProbeVerdict(
+  const probeVerdict = await userNamespaceProbeVerdict(
     linux,
     bwrapPath,
     bwrapMissing,
     resolveExecutable,
     ports.probeUserNamespaces,
   )
+  const userNamespacesUsable = probeVerdict.usable
   let bwrapProfileLoaded = false
   if (linux && userNamespacesUsable === false) {
     try {
@@ -345,6 +360,7 @@ export function sandboxRuntimeAvailability(
       bwrapPath,
       bwrapProfileLoaded,
       packageManager,
+      sandboxProbeUnavailableReason: probeVerdict.unavailableReason,
     })
   }
   const assets = sandboxRuntimeAssets(platform, arch)
@@ -363,10 +379,11 @@ export function sandboxRuntimeAvailability(
     bwrapPath,
     bwrapProfileLoaded,
     packageManager,
+    sandboxProbeUnavailableReason: probeVerdict.unavailableReason,
   })
 }
 
-export function srtInstalled(runtime = sandboxRuntimeAvailability()): boolean {
+export function srtInstalled(runtime: RuntimeAvailability): boolean {
   return runtime.available
 }
 

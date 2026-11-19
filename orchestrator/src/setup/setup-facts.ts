@@ -76,7 +76,7 @@ export type SetupFactsCapture = {
     }
   >
   localModelHost: Awaited<ReturnType<typeof localReachable>>
-  sandboxRuntime: ReturnType<typeof sandboxRuntimeAvailability>
+  sandboxRuntime: Awaited<ReturnType<typeof sandboxRuntimeAvailability>>
 }
 
 export type SetupFacts = {
@@ -107,7 +107,7 @@ export type SetupFacts = {
     }
   >
   localModelHost: Awaited<ReturnType<typeof localReachable>>
-  sandboxRuntime: ReturnType<typeof sandboxRuntimeAvailability>
+  sandboxRuntime: Awaited<ReturnType<typeof sandboxRuntimeAvailability>>
 }
 
 export function classifySetupFacts(capture: SetupFactsCapture): SetupFacts {
@@ -290,6 +290,6 @@ export async function gatherSetupFacts(
     },
     harnesses,
     localModelHost: await localReachable(),
-    sandboxRuntime: sandboxRuntimeAvailability(),
+    sandboxRuntime: await sandboxRuntimeAvailability(),
   })
 }

@@ -10,6 +10,7 @@ const runtime = {
   condition: 'sandbox namespaces are blocked',
   remedy: '',
   fixes: ['install profile', 'reload AppArmor'],
+  sandboxProbeUnavailableReason: null,
 }
 
 function notices(machineLevel: SetupFacts['machineLevel'], available = false) {
