@@ -181,10 +181,21 @@ export function hookScriptPath(assetRoot: string, file: string): string {
 
 export function commandNamesHookScript(command: string, file: string, assetRoot?: string): boolean {
   const needle = assetRoot ? hookScriptPath(assetRoot, file) : `orchestrator/hooks/${file}`
-  const index = command.indexOf(needle)
-  if (index < 0) return false
-  const next = command[index + needle.length]
-  return next === undefined || next === "'" || next === '"' || /\s/.test(next)
+  let index = command.indexOf(needle)
+  while (index >= 0) {
+    const previous = command[index - 1]
+    const next = command[index + needle.length]
+    const startsToken =
+      previous === undefined ||
+      previous === "'" ||
+      previous === '"' ||
+      /\s/.test(previous) ||
+      (!assetRoot && (previous === '/' || previous === '\\'))
+    const endsToken = next === undefined || next === "'" || next === '"' || /\s/.test(next)
+    if (startsToken && endsToken) return true
+    index = command.indexOf(needle, index + 1)
+  }
+  return false
 }
 
 function resolvedCondition(value: HookCondition | undefined, assetRoot: string) {
