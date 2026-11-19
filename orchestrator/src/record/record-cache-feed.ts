@@ -28,6 +28,10 @@ import {
 } from './record-cache-doc-deferrals.ts'
 import {
   pendingRecordCacheFallbacks,
+  type RecordCacheFallbackFamily,
+  recordCacheFallbackFamily,
+  recordCacheFallbackKey,
+  recordCacheFallbackSpace,
   writePendingRecordCacheFallbacks,
 } from './record-cache-fallbacks.ts'
 import {
@@ -152,18 +156,13 @@ type Dependencies = {
 }
 type Change = RecordChangePage['changes'][number]
 type UpsertChange = Extract<Change, { op: 'upsert' }>
-type FallbackFamily = 'doc' | 'subject' | 'lens' | 'workflow' | 'port'
-const FALLBACK_FAMILY_ORDER: Record<FallbackFamily, number> = {
+const FALLBACK_FAMILY_ORDER: Record<RecordCacheFallbackFamily, number> = {
   subject: 0,
   doc: 1,
   lens: 2,
   workflow: 3,
   port: 4,
 }
-
-const fallbackSpace = (value: string): string => value.slice(value.indexOf(':') + 1)
-const fallbackFamily = (value: string): FallbackFamily =>
-  value.slice(0, value.indexOf(':')) as FallbackFamily
 
 const storedSpaces = (local: Database, key: string): string[] => {
   const value = readCursor(local, key)
@@ -204,7 +203,8 @@ function purgeLostSpaces(local: Database, spaces: readonly string[], deps: Depen
       kept += purgeRoutingPoolSpace(local, space)
     }
     const pending = pendingRecordCacheFallbacks(local)
-    for (const value of pending) if (spaces.includes(fallbackSpace(value))) pending.delete(value)
+    for (const value of pending)
+      if (spaces.includes(recordCacheFallbackSpace(value))) pending.delete(value)
     writePendingRecordCacheFallbacks(local, pending)
     return kept
   }, local)
@@ -367,7 +367,7 @@ function upsertChange(
     result.subjects++
   } else if (change.table === 'doc') {
     const outcome = deps.applyDoc(local, row, new Map(), new Map(), change.space)
-    if (outcome === 'deferred') fallbacks.add(`doc:${change.space}`)
+    if (outcome === 'deferred') fallbacks.add(recordCacheFallbackKey('doc', change.space))
     else result.docs++
   } else if (lensTable(change.table)) {
     applyLensCatalogueRow(local, change.table, row)
@@ -454,7 +454,7 @@ function applyFeedUpsert(
 ): void {
   const orphan = orphanFamily(local, change)
   if (orphan) {
-    fallbacks.add(`${orphan}:${change.space}`)
+    fallbacks.add(recordCacheFallbackKey(orphan, change.space))
     orphans.push(change)
     return
   }
@@ -587,11 +587,11 @@ async function runFallbacks(
   const cache = deps.cacheSpaces(identity, local)
   for (const value of [...fallbacks].sort(
     (a, b) =>
-      FALLBACK_FAMILY_ORDER[fallbackFamily(a)] - FALLBACK_FAMILY_ORDER[fallbackFamily(b)] ||
-      a.localeCompare(b),
+      FALLBACK_FAMILY_ORDER[recordCacheFallbackFamily(a)] -
+        FALLBACK_FAMILY_ORDER[recordCacheFallbackFamily(b)] || a.localeCompare(b),
   )) {
-    const family = fallbackFamily(value)
-    const space = fallbackSpace(value)
+    const family = recordCacheFallbackFamily(value)
+    const space = recordCacheFallbackSpace(value)
     let completed = true
     if (family === 'doc') {
       const pulled = await deps.pullDocs(local, identity, [space], cache.projectSpaces)

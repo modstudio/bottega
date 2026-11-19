@@ -246,6 +246,19 @@ test('registration applies subjects and docs after the initial waiting pull', as
   ).not.toBeNull()
 })
 
+test('registration heals skipped subjects when upgrading without a project map snapshot', async () => {
+  const fixture = ownershipTransitionFixture()
+  await expectUnregisteredProjectDeferral(fixture)
+  db().query("DELETE FROM schema_meta WHERE key='record_cache_project_spaces'").run()
+  fixture.register()
+
+  expect(await pullRecordCache(db())).toMatchObject({ subjects: 1, docs: 2 })
+  expect(db().query('SELECT 1 FROM subject WHERE id=?').get(fixture.subjectId)).not.toBeNull()
+  expect(
+    db().query('SELECT 1 FROM doc WHERE record_id=?').get(fixture.referencedDocId),
+  ).not.toBeNull()
+})
+
 test('a project mapped by a non-registration writer applies subjects and docs on the next pull', async () => {
   const fixture = ownershipTransitionFixture()
   await expectUnregisteredProjectDeferral(fixture)

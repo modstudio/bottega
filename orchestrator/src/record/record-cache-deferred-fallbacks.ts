@@ -12,12 +12,12 @@ import {
 } from './record-cache-doc-deferrals.ts'
 import {
   pendingRecordCacheFallbacks,
+  recordCacheFallbackKey,
+  recordCacheFallbackSpace,
   writePendingRecordCacheFallbacks,
 } from './record-cache-fallbacks.ts'
 
 export type DeferredDocFallbacks = Map<string, DocDeferrals>
-
-const fallbackSpace = (value: string): string => value.slice(value.indexOf(':') + 1)
 
 function combinedDocDeferrals(deferred: DeferredDocFallbacks): DocDeferrals {
   const unresolvedParents = new Map<string, string>()
@@ -39,7 +39,7 @@ export function rememberKeysetDocDeferrals(
   if (!hasDocDeferrals(pulled)) return
   const pending = pendingRecordCacheFallbacks(local)
   for (const space of spaces) {
-    const key = `doc:${space}`
+    const key = recordCacheFallbackKey('doc', space)
     deferred.set(key, pulled)
     pending.add(key)
   }
@@ -59,7 +59,7 @@ export async function classifyDeferredDocFallbacks(
   const hostedSubjectProjects = new Map<string, string>()
   const spaces = new Set<string>()
   for (const [fallback, value] of deferred)
-    if (value.subjectDeferrals.size) spaces.add(fallbackSpace(fallback))
+    if (value.subjectDeferrals.size) spaces.add(recordCacheFallbackSpace(fallback))
   try {
     for (const space of spaces) {
       let cursor: string | undefined

@@ -17,8 +17,11 @@ import { applySubjectRecord } from '../subject/subjects.ts'
 import { recordApiClient, recordApiClientInjected } from './record-api-client.ts'
 import type { RecordIdentity } from './record-auth.ts'
 import {
+  deleteCursor,
+  docsCursorKey,
   readCursor,
   readRecordCursor,
+  subjectsCursorKey,
   writeCursor,
   writeRecordCursor,
 } from './record-cache-cursor.ts'
@@ -47,11 +50,7 @@ import { pullRoutingPool } from './record-routing-pool.ts'
 import { rememberSignedInRecordUser } from './record-session.ts'
 
 const DOCS_CURSOR = 'record_docs_cursor'
-const SUBJECTS_CURSOR = 'record_subjects_cursor'
 const SCORES_CURSOR = 'record_scores_cursor'
-function deleteCursor(local: Database, key: string): void {
-  local.query('DELETE FROM schema_meta WHERE key=?').run(key)
-}
 
 function recordCacheSpaces(
   identity: RecordIdentity,
@@ -127,7 +126,7 @@ async function pullDocsForSpace(
     projectSpaces: ReadonlyMap<string, string | null>
   } & DocDeferrals,
 ): Promise<{ docs: number; skippedDocs: number; cursorKey: string; cursor?: RecordCursor }> {
-  const cursorKey = `${DOCS_CURSOR}:${input.spaceId}`
+  const cursorKey = docsCursorKey(input.spaceId)
   let cursor = readRecordCursor(local, cursorKey, true)
   if (input.spaceId === input.activeSpaceId && cursor === undefined) {
     const legacy = readCursor(local, DOCS_CURSOR)
@@ -289,7 +288,7 @@ async function pullSubjects(
   let subjects = 0
   let skippedSubjects = 0
   for (const spaceId of spaces) {
-    const cursorKey = `${SUBJECTS_CURSOR}:${spaceId}`
+    const cursorKey = subjectsCursorKey(spaceId)
     let cursor = readRecordCursor(local, cursorKey)
     let requestCursor = cursor ? encodeRecordCursor(cursor) : undefined
     for (;;) {
@@ -571,8 +570,8 @@ function purgeDocSpace(local: Database, spaceId: string): number {
       .all(spaceId)
     for (const { record_id } of ids) if (deleteDocRecord(local, record_id)) progress = true
   }
-  local.query('DELETE FROM schema_meta WHERE key=?').run(`${DOCS_CURSOR}:${spaceId}`)
-  local.query('DELETE FROM schema_meta WHERE key=?').run(`${SUBJECTS_CURSOR}:${spaceId}`)
+  deleteCursor(local, docsCursorKey(spaceId))
+  deleteCursor(local, subjectsCursorKey(spaceId))
   return local
     .query<{ n: number }, [string]>('SELECT COUNT(*) AS n FROM doc WHERE space_id=?')
     .get(spaceId)!.n

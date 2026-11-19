@@ -3,6 +3,12 @@
 import type { Database } from 'bun:sqlite'
 import { parseStoredRecordCursor, type RecordCursor } from './record-cursor.ts'
 
+const DOCS_CURSOR = 'record_docs_cursor'
+const SUBJECTS_CURSOR = 'record_subjects_cursor'
+
+export const docsCursorKey = (spaceId: string): string => `${DOCS_CURSOR}:${spaceId}`
+export const subjectsCursorKey = (spaceId: string): string => `${SUBJECTS_CURSOR}:${spaceId}`
+
 export function readCursor(local: Database, key: string): string | undefined {
   return local
     .query<{ value: string }, [string]>('SELECT value FROM schema_meta WHERE key=?')

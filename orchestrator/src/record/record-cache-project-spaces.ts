@@ -1,8 +1,18 @@
 // concern: record-cache-project-spaces
-/** Tracks pull ownership transitions and schedules the keyset rereads they require. */
+/**
+ * Tracks the project-to-space map as of the last completed pull and schedules the keyset
+ * rereads required by ownership transitions. This snapshot stays separate from the
+ * record_project_spaces route cache because registration updates that cache before any pull.
+ */
 import type { Database } from 'bun:sqlite'
 import { writeTransaction } from '../database/db.ts'
-import { deleteCursor, readCursor, writeCursor } from './record-cache-cursor.ts'
+import {
+  deleteCursor,
+  docsCursorKey,
+  readCursor,
+  subjectsCursorKey,
+  writeCursor,
+} from './record-cache-cursor.ts'
 import { addPendingRecordCacheFallbacks } from './record-cache-fallbacks.ts'
 
 const PROJECT_SPACES = 'record_cache_project_spaces'
@@ -24,8 +34,7 @@ export function rewindChangedRecordCacheProjectSpaces(
   projectSpaces: ReadonlyMap<string, string | null>,
   previouslyPulledSpaces: ReadonlySet<string>,
 ): void {
-  const previous = readProjectSpaces(local)
-  if (previous === null) return
+  const previous = readProjectSpaces(local) ?? new Map<string, string | null>()
   const rewind = new Set<string>()
   for (const [project, spaceId] of projectSpaces) {
     if (
@@ -38,8 +47,8 @@ export function rewindChangedRecordCacheProjectSpaces(
   if (!rewind.size) return
   writeTransaction(() => {
     for (const spaceId of rewind) {
-      deleteCursor(local, `record_subjects_cursor:${spaceId}`)
-      deleteCursor(local, `record_docs_cursor:${spaceId}`)
+      deleteCursor(local, subjectsCursorKey(spaceId))
+      deleteCursor(local, docsCursorKey(spaceId))
       addPendingRecordCacheFallbacks(local, spaceId, ['subject', 'doc'])
     }
   }, local)

@@ -7,6 +7,17 @@ const FALLBACKS = 'record_change_fallbacks'
 
 export type RecordCacheFallbackFamily = 'doc' | 'subject' | 'lens' | 'workflow' | 'port'
 
+export const recordCacheFallbackKey = (
+  family: RecordCacheFallbackFamily,
+  spaceId: string,
+): string => `${family}:${spaceId}`
+
+export const recordCacheFallbackFamily = (value: string): RecordCacheFallbackFamily =>
+  value.slice(0, value.indexOf(':')) as RecordCacheFallbackFamily
+
+export const recordCacheFallbackSpace = (value: string): string =>
+  value.slice(value.indexOf(':') + 1)
+
 export function pendingRecordCacheFallbacks(local: Database): Set<string> {
   const value = readCursor(local, FALLBACKS)
   if (!value) return new Set()
@@ -31,6 +42,6 @@ export function addPendingRecordCacheFallbacks(
   families: readonly RecordCacheFallbackFamily[],
 ): void {
   const pending = pendingRecordCacheFallbacks(local)
-  for (const family of families) pending.add(`${family}:${spaceId}`)
+  for (const family of families) pending.add(recordCacheFallbackKey(family, spaceId))
   writePendingRecordCacheFallbacks(local, pending)
 }
