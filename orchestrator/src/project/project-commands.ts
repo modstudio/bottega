@@ -8,6 +8,7 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { declaredTrunk } from '../../../shared/project-trunk.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { renderRemovalReport as renderRecordRemovalReport } from '../../../shared/removal-report.ts'
+import { refusal, renderRefusal } from '../../../shared/refusal.ts'
 import { db, tryWriteContention, writeTransaction } from '../database/db.ts'
 import { listLenses, selectProjectProfile } from '../lens/lenses.ts'
 import { credentialLinesFromRead } from '../mcp/mcp-credential-literal.ts'
@@ -297,7 +298,21 @@ export async function addProject(
   if (adoptedMalformed.length) throw new Error(adoptedMalformed.join('\n'))
   const incomplete = incompleteWorktreeProblems(candidate)
   if (incomplete.length && !input.allowIncomplete) throw new Error(incomplete.join('\n'))
-  assertRegisterBranches(candidate)
+  try {
+    assertRegisterBranches(candidate)
+  } catch (error) {
+    if (trunkSource !== 'origin/HEAD') throw error
+    const condition = error instanceof Error ? error.message : String(error)
+    throw new Error(
+      renderRefusal(
+        refusal(condition, {
+          kind: 'edit',
+          text: `pass --settings '{"trunk":"<branch>"}'`,
+        }),
+      ),
+      { cause: error },
+    )
+  }
   verifyAndRecordVisibility(candidate)
   const wasRetired = Boolean(retiredProjectByName(input.name))
   const recordId =

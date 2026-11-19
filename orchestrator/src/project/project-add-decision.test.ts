@@ -52,7 +52,23 @@ describe('decideProjectLandingBranch', () => {
       kind: 'refuse',
       reason:
         `project add refused: cannot infer the landing branch of ${path}: refs/remotes/origin/HEAD is not set\n` +
-        `cleared by: git -C ${path} remote set-head origin --auto, or pass --settings '{"trunk":"<branch>"}'`,
+        `cleared by: git -C '${path}' remote set-head origin --auto, or pass --settings '{"trunk":"<branch>"}'`,
+    })
+  })
+
+  test('the missing origin HEAD remedy quotes a path containing a space', () => {
+    expect(
+      decideProjectLandingBranch({
+        path: '/projects/release probe',
+        settings: {},
+        gitWorkTree: true,
+        remoteDefaultBranch: remote(null),
+      }),
+    ).toEqual({
+      kind: 'refuse',
+      reason:
+        'project add refused: cannot infer the landing branch of /projects/release probe: refs/remotes/origin/HEAD is not set\n' +
+        `cleared by: git -C '/projects/release probe' remote set-head origin --auto, or pass --settings '{"trunk":"<branch>"}'`,
     })
   })
 

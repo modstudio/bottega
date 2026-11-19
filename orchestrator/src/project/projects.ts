@@ -739,10 +739,7 @@ function registerBranchRemedy(landing: string, checkoutPath: string, projectName
 export function registerBranchCheck(
   project: Pick<Project, 'name' | 'path' | 'settings'>,
 ): RegisterBranchCheck {
-  const landing =
-    typeof project.settings.trunk === 'string' && project.settings.trunk.trim()
-      ? project.settings.trunk.trim()
-      : null
+  const landing = declaredTrunk(project.settings)
   const headResult = gitAt(project.path, ['symbolic-ref', '--quiet', '--short', 'HEAD'])
   const head = headResult.code === 0 ? headResult.stdout.trim() || null : null
   const tagResult =

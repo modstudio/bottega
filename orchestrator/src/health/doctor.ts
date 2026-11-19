@@ -37,9 +37,15 @@ import { JOBS } from '../jobs/jobs.ts'
 import { credentialLinesFromRead } from '../mcp/mcp-credential-literal.ts'
 import { readMcpConfigResult } from '../mcp/mcp-probe.ts'
 import {
+  absentTreeTeardownPlan,
+  isProjectRepository,
   missingProjectLandingBranchProblem,
   type Project,
+  projectByName,
+  projects as registeredProjects,
   registerBranchCheck,
+  resolvedWorktreeTool,
+  undeclaredCommitHooks,
 } from '../project/projects.ts'
 import { activeSpaceInvariant, RECORD_SIGN_IN_REMEDY } from '../record/active-space-invariant.ts'
 import { recordApiClient } from '../record/record-api-client.ts'
@@ -983,14 +989,6 @@ export async function doctorCommand(
     else if (existsSync(held.worktree) && worktreeDirty(held.worktree).dirty) dirtyHolds++
   }
   log(heldWorktreesLine(explicitHolds, dirtyHolds))
-  const {
-    absentTreeTeardownPlan,
-    projectByName,
-    projects: registeredProjects,
-    isProjectRepository,
-    resolvedWorktreeTool,
-    undeclaredCommitHooks,
-  } = await import('../project/projects.ts')
   const { mainCheckoutFacts, mainCheckoutInvariant } = await import(
     '../project/main-checkout-invariant.ts'
   )

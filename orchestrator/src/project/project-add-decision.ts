@@ -9,6 +9,7 @@ import {
   recordSpaceMembership,
 } from '../../../shared/record-space-membership.ts'
 import { refusal, renderRefusal } from '../../../shared/refusal.ts'
+import { shellQuote } from '../../../shared/shell-quote.ts'
 import {
   hostedProjectColumns,
   PROJECT_SETTING_COLUMNS,
@@ -78,7 +79,7 @@ export function decideProjectLandingBranch(input: {
         `project add refused: cannot infer the landing branch of ${input.path}: refs/remotes/origin/HEAD is not set`,
         {
           kind: 'edit',
-          text: `git -C ${input.path} remote set-head origin --auto, or pass --settings '{"trunk":"<branch>"}'`,
+          text: `git -C ${shellQuote(input.path)} remote set-head origin --auto, or pass --settings '{"trunk":"<branch>"}'`,
         },
       ),
     ),

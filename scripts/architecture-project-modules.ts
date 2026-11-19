@@ -19,8 +19,8 @@ export const projectModules: ProjectModule[] = [
   ]),
   module('orchestrator/src/project/main-checkout-invariant.ts', [
     '../../../shared/brand.ts',
+    '../../../shared/shell-quote.ts',
     '../git/git-environment.ts',
-    '../resources/git-locks.ts',
   ]),
   module('orchestrator/src/project/project-worktree-resolution.ts', [
     'node:fs',
@@ -73,6 +73,7 @@ export const projectModules: ProjectModule[] = [
     '../../../shared/record-space-membership.ts',
     '../../../shared/record-write-space.ts',
     '../../../shared/refusal.ts',
+    '../../../shared/shell-quote.ts',
     '../record/record-project-columns.ts',
     './project-settings.ts',
     './project-space-refusals.ts',
