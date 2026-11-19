@@ -36,14 +36,7 @@ function applicableUserCanonHomePlans(
   decision: ReturnType<typeof decideUserCanonHomePlanApplication>,
 ): UserCanonHomePlan[] {
   if (decision.action === 'apply') return decision.plans
-  throw new Error(
-    decision.refused
-      .map(
-        (plan) =>
-          `${plan.home.mapping.harness} ${plan.home.path}: refusing user canon hydration: ${EMPTY_USER_CANON_STORE_REFUSAL}`,
-      )
-      .join('\n'),
-  )
+  throw new Error(`refusing user canon hydration: ${EMPTY_USER_CANON_STORE_REFUSAL}`)
 }
 
 function printFindings(findings: Finding[], log: (...values: unknown[]) => void): void {

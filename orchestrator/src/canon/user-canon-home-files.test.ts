@@ -61,8 +61,6 @@ describe('Claude home canon files', () => {
 
     expect(decideUserCanonHomePlanApplication(0, [plan])).toEqual({
       action: 'refuse-empty-store',
-      plans: [],
-      refused: [plan],
     })
   })
 
@@ -77,8 +75,6 @@ describe('Claude home canon files', () => {
 
     expect(decideUserCanonHomePlanApplication(0, [plan])).toEqual({
       action: 'refuse-empty-store',
-      plans: [],
-      refused: [plan],
     })
     expect(userCanonHomePlanDrift(plan)).toBe(0)
   })

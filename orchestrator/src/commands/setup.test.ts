@@ -48,6 +48,16 @@ function stubSetupService(overrides: Partial<SetupService>): SetupService {
   }
 }
 
+test('setup apply help names its machine-wide settings, canon, and Claude MCP writes', () => {
+  const program = new Command()
+  register(program, stubSetupService({}))
+  const setup = program.commands.find((command) => command.name() === 'setup')!
+  const apply = setup.commands.find((command) => command.name() === 'apply')!
+  expect(apply.description()).toContain('render machine hooks and settings')
+  expect(apply.description()).toContain('hydrate user canon')
+  expect(apply.description()).toContain('`claude mcp add` or `claude mcp remove`')
+})
+
 describe('setup plan state-file action', () => {
   let root: string
 

@@ -1,7 +1,7 @@
 import { expect, test } from 'bun:test'
-import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
+  hookScriptPath,
   PRODUCT_HOOKS,
   SCRIPT_FILES,
   withMachineProductHooks,
@@ -41,7 +41,7 @@ function facts(): SetupInstallVerifyFacts {
     ],
     scripts: SCRIPT_FILES.map((file) => ({
       file,
-      path: join(INSTALL, 'orchestrator', 'hooks', file),
+      path: hookScriptPath(INSTALL, file),
       exists: true,
       executable: true,
     })),
@@ -143,4 +143,5 @@ test('missing canon for an installed harness fails user-canon-present', () => {
   const result = check(verifySetupInstall(input), 'user-canon-present')
   expect(result.ok).toBe(false)
   expect(result.detail).toContain('codex')
+  expect(result.fix).toContain(`${PLATFORM_SLUG} doc set --scope canon --user`)
 })

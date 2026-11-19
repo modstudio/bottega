@@ -173,9 +173,9 @@ export const PRODUCT_HOOKS: readonly ProductHookDeclaration[] = [
   { event: 'PreCompact', script: 'context-precompact.py' },
 ]
 
-const shellQuote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`
+export const shellQuote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`
 
-function scriptPath(assetRoot: string, file: ScriptFile): string {
+export function hookScriptPath(assetRoot: string, file: ScriptFile): string {
   return join(assetRoot, 'orchestrator', 'hooks', file)
 }
 
@@ -196,7 +196,7 @@ function productCommand(
     `BOTTEGA_ORCHESTRATOR_DB=${shellQuote(databasePath)}`,
     `BOTTEGA_GLOBAL_USE=${globalUse}`,
     'python3',
-    shellQuote(scriptPath(assetRoot, file)),
+    shellQuote(hookScriptPath(assetRoot, file)),
   ].join(' ')
 }
 

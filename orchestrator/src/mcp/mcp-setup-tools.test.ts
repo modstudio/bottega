@@ -128,6 +128,15 @@ function serviceFor(
 }
 
 describe('setup MCP tools', () => {
+  test('setup_apply describes its machine-wide settings, canon, and Claude MCP writes', async () => {
+    const tools = await withClient(serviceFor(fixturePlan()), (client) => client.listTools())
+    const description = tools.tools.find((tool) => tool.name === 'setup_apply')?.description
+    expect(description).toContain('render machine hooks and settings')
+    expect(description).toContain('hydrate user canon')
+    expect(description).toContain('`claude mcp add` or `claude mcp remove`')
+    expect(description).toContain("Answers must be the user's choices from setup_plan")
+  })
+
   test('the CLI-only recommended apply plans once and applies that plan recommendations', async () => {
     let planCalls = 0
     const applied: SetupAction[][] = []

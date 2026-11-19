@@ -3,6 +3,7 @@
 
 import { accessSync, constants, existsSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { assetPath } from '../../../shared/install-root.ts'
 import { resolveRunsDirectory } from '../../../shared/state-directory.ts'
 import { userCanonHomesFromEnvironment } from '../canon/user-canon-home-files.ts'
@@ -15,7 +16,11 @@ import {
   applyMachineSettings,
   type MachineSettingsApplyResult,
 } from '../settings/settings-machine-apply.ts'
-import { PRODUCT_HOOKS, SCRIPT_FILES } from '../settings/settings-machine-hooks.ts'
+import {
+  hookScriptPath,
+  PRODUCT_HOOKS,
+  SCRIPT_FILES,
+} from '../settings/settings-machine-hooks.ts'
 import {
   type SetupInstallSettingsFileFact,
   type SetupInstallVerifyFacts,
@@ -69,7 +74,7 @@ function gatherSetupInstallVerifyFacts(
   const installRoot = assetPath()
   const claudeHome = claudeHomeFromEnvironment(environment)
   const scriptFacts = SCRIPT_FILES.map((file) => {
-    const path = join(installRoot, 'orchestrator', 'hooks', file)
+    const path = hookScriptPath(installRoot, file)
     const exists = existsSync(path) && statSync(path).isFile()
     let executable = false
     if (exists) {
@@ -116,6 +121,13 @@ export async function applySetupInstallVerify(
   adapters: SetupInstallVerifyAdapters = {},
 ): Promise<{ status: 'applied' | 'unchanged'; message: string }> {
   const results = await (adapters.applySettings ?? (() => applyMachineSettings({ check: false })))()
+  const skipped = results.filter((result) => result.outcome === 'skipped')
+  if (skipped.length > 0) {
+    throw new Error(
+      `settings apply skipped: another settings apply holds the settings-apply lock; ` +
+        `re-run \`${PLATFORM_SLUG} machine setup apply\` after it finishes`,
+    )
+  }
   const refused = results.filter((result) => result.outcome === 'refused')
   if (refused.length > 0) {
     throw new Error(

@@ -327,13 +327,10 @@ function applyUserCanon(
   const plans = planned.map((item) => item.plan!)
   const decision = decideUserCanonHomePlanApplication(rows.length, plans)
   if (decision.action === 'refuse-empty-store') {
-    const refused = new Set(decision.refused)
     return planned.map((item) => ({
       target: item.target,
       outcome: 'refused',
-      detail: refused.has(item.plan!)
-        ? `refusing user canon hydration: ${EMPTY_USER_CANON_STORE_REFUSAL}`
-        : 'not written: canon batch refused',
+      detail: `refusing user canon hydration: ${EMPTY_USER_CANON_STORE_REFUSAL}`,
       changed: false,
     }))
   }

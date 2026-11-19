@@ -229,8 +229,12 @@ export const setupModuleSpecs: readonly SetupModuleSpec[] = [
   {
     name: 'setup-install-verify-boundary',
     file: 'orchestrator/src/setup/setup-install-verify.ts',
-    allowed: ['node:path', '../../../shared/brand.ts'],
-    typeOnlyAllowed: ['../settings/settings-machine-hooks.ts'],
+    allowed: [
+      'node:path',
+      '../../../shared/brand.ts',
+      '../settings/settings-machine-hooks.ts',
+    ],
+    typeOnlyAllowed: [],
     reason: 'Keep install verification as a pure decision over adapter-supplied facts.',
   },
   {
@@ -239,6 +243,7 @@ export const setupModuleSpecs: readonly SetupModuleSpec[] = [
     allowed: [
       'node:fs',
       'node:path',
+      '../../../shared/brand.ts',
       '../../../shared/install-root.ts',
       '../../../shared/state-directory.ts',
       '../canon/user-canon-home-files.ts',

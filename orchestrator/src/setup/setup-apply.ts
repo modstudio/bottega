@@ -8,10 +8,7 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { MachineLevel } from '../../../shared/machine-config.ts'
 import type { PreparedStateFileMigration } from './setup-environment.ts'
 import { installHarness, skippedHarnessInstall } from './setup-harness-install.ts'
-import {
-  applySetupInstallVerify,
-  type SetupInstallVerifyAdapters,
-} from './setup-install-verify-runtime.ts'
+import { applySetupInstallVerify } from './setup-install-verify-runtime.ts'
 import { removableLegacyPathTarget } from './setup-legacy-path.ts'
 import {
   commandFailureReason,
@@ -257,7 +254,6 @@ export async function applySetupActions(
   environment: SetupEnvironmentService,
   runner: SetupCommandRunner = runSetupCommand,
   preparedStateFileMigration?: PreparedStateFileMigration | null,
-  installVerifyAdapters?: SetupInstallVerifyAdapters,
 ): Promise<SetupActionResult[]> {
   const results: SetupActionResult[] = []
   for (const action of actions) {
@@ -276,14 +272,7 @@ export async function applySetupActions(
       const applied =
         action.kind === 'install-schedules'
           ? await applyScheduleAction()
-          : await applySetupAction(
-              action,
-              service,
-              environment,
-              runner,
-              preparedStateFileMigration,
-              installVerifyAdapters,
-            )
+          : await applySetupAction(action, service, environment, runner, preparedStateFileMigration)
       results.push({ ...action, ...applied })
     } catch (error) {
       results.push({
@@ -341,7 +330,6 @@ async function applySetupAction(
   environment: SetupEnvironmentService,
   runner: SetupCommandRunner,
   preparedStateFileMigration?: PreparedStateFileMigration | null,
-  installVerifyAdapters?: SetupInstallVerifyAdapters,
 ): Promise<{
   status: SetupAppliedActionStatus
   message: string | null
@@ -357,7 +345,7 @@ async function applySetupAction(
     return skippedHarnessInstall(action.harness, action.route)
   }
   if (action.kind === 'install-verify') {
-    return applySetupInstallVerify(installVerifyAdapters)
+    return applySetupInstallVerify()
   }
   if (
     action.kind === 'unchanged' ||

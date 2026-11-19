@@ -45,7 +45,7 @@ export type UserCanonHomePlan = {
 
 export type UserCanonHomePlanDecision =
   | { action: 'apply'; plans: UserCanonHomePlan[] }
-  | { action: 'refuse-empty-store'; plans: []; refused: UserCanonHomePlan[] }
+  | { action: 'refuse-empty-store' }
 
 export const EMPTY_USER_CANON_STORE_REFUSAL =
   'no user canon rows have arrived in this store; ' +
@@ -122,9 +122,7 @@ export function decideUserCanonHomePlanApplication(
   rowCount: number,
   plans: UserCanonHomePlan[],
 ): UserCanonHomePlanDecision {
-  return rowCount === 0
-    ? { action: 'refuse-empty-store', plans: [], refused: plans }
-    : { action: 'apply', plans }
+  return rowCount === 0 ? { action: 'refuse-empty-store' } : { action: 'apply', plans }
 }
 
 export function collectUserCanonHome(target: UserCanonHomeTarget): UserCanonHomeFile[] {

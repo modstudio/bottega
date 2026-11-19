@@ -348,10 +348,10 @@ export function planSetupActions(plan: SetupPlan, answers: SetupAnswers): SetupA
   return [
     ...(keystore ? [keystore] : []),
     { kind: 'migrate-environment' },
-    { kind: 'install-verify' },
     ...(globalUse ? [globalUse] : []),
     ...(machineLevel ? [machineLevel] : []),
     ...plannedHarnessInstalls(plan, answers),
+    { kind: 'install-verify' },
     ...plannedScheduleActions(plan, selectedLevel),
     ...registrations,
     ...migrations,

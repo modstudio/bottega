@@ -335,6 +335,10 @@ test('record plan skips the worker MCP server and still registers the main serve
     from: null,
     to: 'record',
   })
+  const kinds = actions.map((action) => action.kind)
+  expect(kinds.indexOf('install-verify')).toBeGreaterThan(kinds.indexOf('migrate-environment'))
+  expect(kinds.indexOf('install-verify')).toBeGreaterThan(kinds.indexOf('set-global-use'))
+  expect(kinds.indexOf('install-verify')).toBeGreaterThan(kinds.indexOf('set-machine-level'))
   expect(actions).toContainEqual(
     expect.objectContaining({
       kind: 'mcp-skipped',

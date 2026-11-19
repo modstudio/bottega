@@ -152,7 +152,7 @@ export function registerSetupTools(
     'setup_apply',
     {
       description:
-        "Register MCP servers in harnesses, register projects, and possibly write a recipe file. Answers must be the user's choices from setup_plan.",
+        "Register MCP servers in harnesses, register projects, and possibly write a recipe file. Also render machine hooks and settings, hydrate user canon, and possibly run `claude mcp add` or `claude mcp remove`. Answers must be the user's choices from setup_plan.",
       inputSchema: z
         .object({
           folders: foldersSchema,

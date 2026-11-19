@@ -1,9 +1,13 @@
 // concern: setup-install-verify
 /** Decides whether setup-rendered hooks and user canon landed. Pure: adapters supply plain facts. */
 
-import { join, normalize } from 'node:path'
+import { normalize } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import type { ProductHookDeclaration } from '../settings/settings-machine-hooks.ts'
+import {
+  hookScriptPath,
+  shellQuote,
+  type ProductHookDeclaration,
+} from '../settings/settings-machine-hooks.ts'
 
 export type SetupInstallSettingsFileFact = {
   path: string
@@ -62,7 +66,7 @@ function handlersFor(settings: unknown, declaration: ProductHookDeclaration): Ho
 
 function commandNamesInstalledScript(command: string, expectedPath: string): boolean {
   const normalized = normalize(expectedPath)
-  const singleQuoted = `'${normalized.replaceAll("'", "'\\''")}'`
+  const singleQuoted = shellQuote(normalized)
   if (command.includes(singleQuoted) || command.includes(`"${normalized}"`)) return true
   return command.split(/\s+/).includes(normalized)
 }
@@ -77,7 +81,7 @@ function missingHooks(
   }
   const available = new Map<string, number>()
   for (const declaration of declarations) {
-    const expected = join(facts.installRoot, 'orchestrator', 'hooks', declaration.script)
+    const expected = hookScriptPath(facts.installRoot, declaration.script)
     const key = `${declaration.event}\0${declaration.matcher ?? ''}\0${declaration.script}`
     if (available.has(key)) continue
     available.set(
@@ -168,7 +172,10 @@ function canonCheck(facts: SetupInstallVerifyFacts): SetupInstallVerifyCheck {
       missing.length === 0
         ? `${facts.canonEntries.length} installed harness canon entries present`
         : `missing: ${missing.map((entry) => `${entry.harness} ${entry.path}`).join(', ')}`,
-    fix: `run \`${PLATFORM_SLUG} record push\`, then re-run \`${PLATFORM_SLUG} machine setup apply\``,
+    fix:
+      `run \`${PLATFORM_SLUG} record push\`, then re-run \`${PLATFORM_SLUG} machine setup apply\`; ` +
+      `if this user's canon lacks the AGENTS.md entry row, create it with ` +
+      `\`${PLATFORM_SLUG} doc set --scope canon --user\``,
   }
 }
 
