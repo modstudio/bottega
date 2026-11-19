@@ -4,6 +4,7 @@
 import { MCP_SERVER_NAME, PLATFORM_SLUG, WORKER_MCP_SERVER_NAME } from '../../../shared/brand.ts'
 import { redactSecretShaped } from '../../../shared/secret-shaped.ts'
 import { bottegaEntryArgv, bottegaMcpServeArgv } from '../../../shared/self-spawn.ts'
+import { DISCARD_STORE_PATH } from '../../../shared/state-directory.ts'
 import { LEGACY_MCP_SERVER_NAMES, type LegacyMcpServerName } from './setup-mcp-config.ts'
 
 export type { LegacyMcpServerName } from './setup-mcp-config.ts'
@@ -102,7 +103,7 @@ export function runSetupCommand(
     const env = { ...process.env }
     delete env.CLAUDE_CODE_SESSION_ID
     delete env.CLAUDE_CODE_BRIDGE_SESSION_ID
-    env.BOTTEGA_ORCHESTRATOR_DB = process.platform === 'win32' ? 'NUL' : '/dev/null'
+    env.BOTTEGA_ORCHESTRATOR_DB = DISCARD_STORE_PATH
     const child = Bun.spawnSync(argv, {
       stdout: 'pipe',
       stderr: 'pipe',

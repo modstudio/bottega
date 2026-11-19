@@ -40,10 +40,12 @@ describe('pull-request create outcome', () => {
     ).toEqual({
       refusal: {
         condition: 'gh pr create failed: authentication required',
-        remedy: {
-          kind: 'edit',
-          text: `fix the reported GitHub condition, then rerun ${PLATFORM_SLUG} pr create`,
-        },
+        remedies: [
+          {
+            kind: 'edit',
+            text: `fix the reported GitHub condition, then rerun ${PLATFORM_SLUG} pr create`,
+          },
+        ],
       },
       output: '',
       finalizePullRequestNumber: null,

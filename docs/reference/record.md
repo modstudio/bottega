@@ -9,6 +9,7 @@ the hosted record and outbox
 - [bottega record doctor](#bottega-record-doctor)
 - [bottega record help](#bottega-record-help)
 - [bottega record lease](#bottega-record-lease)
+- [bottega record local](#bottega-record-local)
 - [bottega record migrate](#bottega-record-migrate)
 - [bottega record outbox](#bottega-record-outbox)
 - [bottega record outbox discard](#bottega-record-outbox-discard)
@@ -79,6 +80,7 @@ the hosted record and outbox
 - [bottega record doctor](./record.md#bottega-record-doctor)
 - [bottega record help](./record.md#bottega-record-help)
 - [bottega record lease](./record.md#bottega-record-lease)
+- [bottega record local](./record.md#bottega-record-local)
 - [bottega record migrate](./record.md#bottega-record-migrate)
 - [bottega record outbox](./record.md#bottega-record-outbox)
 - [bottega record public-doc](./record.md#bottega-record-public-doc)
@@ -140,6 +142,20 @@ show the current local collect lease
 ### Options
 
 - `--json`: write the lease state as JSON
+
+### Related
+
+- [bottega record](./record.md#bottega-record)
+
+## bottega record local
+
+**Synopsis:** `bottega record local [--off]`
+
+mark this orchestrator store as deliberately local
+
+### Options
+
+- `--off`: clear the deliberately-local mark
 
 ### Related
 

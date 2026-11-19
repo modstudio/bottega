@@ -43,13 +43,14 @@ import {
   reauthorizeRunMutation,
 } from './run-authority.ts'
 import { runCloseOutLeaseState } from './run-lease.ts'
-import { recordRunSharedGitConfigHeader, rollUpRootAndEnqueue } from './run-liveness.ts'
+import { recordRunSharedGitConfigHeader } from './run-liveness.ts'
 import { enqueueRunRecord } from './run-outbox.ts'
 import type {
   RunProcessTerminationPlan,
   TerminateRunProcessesResult,
   VerifiedRunProcessTermination,
 } from './run-process.ts'
+import { rollUpRootAndEnqueue } from './run-root-rollup.ts'
 import type { RecordedRunSharedGitConfigInput } from './shared-git-config-check.ts'
 import {
   decideStopCloseOut,
@@ -332,7 +333,7 @@ function commitStoppedRun(
   const next = adoptRunMutation(reauthorizeRunMutation(authority, 'stop'), 'stop')
   const changed = db()
     .query(
-      "UPDATE run SET status='stopped', error='stopped by architect', failure_kind='stopped', host_wait_since=NULL WHERE record_id=? AND status='running'",
+      "UPDATE run SET status='stopped', error='stopped by architect', failure_kind='stopped', own_failure_kind='stopped', host_wait_since=NULL WHERE record_id=? AND status='running'",
     )
     .run(row.record_id)
   if (changed.changes !== 1) {
@@ -345,7 +346,7 @@ function commitStoppedRun(
   if (row.record_id !== next.rootId) {
     db()
       .query(
-        "UPDATE run SET status='stopped', error='stopped by architect', failure_kind='stopped', host_wait_since=NULL WHERE record_id=?",
+        "UPDATE run SET status='stopped', error='stopped by architect', failure_kind='stopped', own_failure_kind='stopped', host_wait_since=NULL WHERE record_id=?",
       )
       .run(next.rootId)
   }

@@ -131,10 +131,11 @@ function recordLandingTreeFailure(recordId: string, startedAt: string, error: un
     const lifecycle = terminalLifecycleWrite(db(), recordId, 'failed', detail, null)
     db()
       .query(
-        'UPDATE run SET status=?,failure_kind=?,error=?,latency_ms=?,exit_code=1 WHERE record_id=?',
+        'UPDATE run SET status=?,failure_kind=?,own_failure_kind=?,error=?,latency_ms=?,exit_code=1 WHERE record_id=?',
       )
       .run(
         lifecycle.status,
+        lifecycle.failureKind,
         lifecycle.failureKind,
         lifecycle.error,
         Math.max(0, Date.now() - Date.parse(startedAt)),
@@ -198,10 +199,11 @@ async function finishLandingTreeOpen(
     const lifecycle = terminalLifecycleWrite(database, recordId, 'ok', null, null)
     database
       .query(
-        'UPDATE run SET status=?,failure_kind=?,error=?,latency_ms=?,exit_code=0 WHERE record_id=?',
+        'UPDATE run SET status=?,failure_kind=?,own_failure_kind=?,error=?,latency_ms=?,exit_code=0 WHERE record_id=?',
       )
       .run(
         lifecycle.status,
+        lifecycle.failureKind,
         lifecycle.failureKind,
         lifecycle.error,
         Math.max(0, Date.now() - Date.parse(startedAt)),

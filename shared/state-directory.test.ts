@@ -14,6 +14,7 @@ import { PLATFORM_SLUG } from './brand.ts'
 import {
   ensureHubLoginTokenDirectory,
   hubLoginTokenDirectory,
+  isDiscardStorePath,
   legacyStoreRefusal,
   realPathForPotentialPath,
   resolveHubDatabase,
@@ -23,6 +24,12 @@ import {
   STATE_HOME_ENV,
   temporaryStateStoreMigrationAllowed,
 } from './state-directory.ts'
+
+test('discard-store paths are classified for the supplied platform', () => {
+  expect(isDiscardStorePath('/dev/null', 'darwin')).toBeTrue()
+  expect(isDiscardStorePath('nul', 'darwin')).toBeFalse()
+  expect(isDiscardStorePath('NUL', 'win32')).toBeTrue()
+})
 
 test('only a real path inside the OS temporary directory earns scratch migration authority', () => {
   const temporaryDirectory = realPathForPotentialPath(tmpdir())

@@ -14,6 +14,7 @@ export const runStopBoundarySpecs = [
       './run-lease.ts',
       './run-liveness.ts',
       './run-outbox.ts',
+      './run-root-rollup.ts',
       './stop-close-out-decision.ts',
       './stopped-worktree-decision.ts',
       './question-vocabulary.ts',

@@ -511,7 +511,7 @@ export const importBoundaries: ImportBoundary[] = [
     'failure-commands-boundary',
     'orchestrator/src/failure/failure-commands.ts',
     ['../database/db.ts', './failure.ts', '../run/run-authority.ts'],
-    'Keep failure command adapters independent of runs, routing, transports, the CLI, and worktrees.',
+    'Allow failure commands to inspect run-chain shape only to select turns or childless roots, while the caller callback owns roll-up; keep them independent of routing, transports, the CLI, and worktrees.',
   ),
   boundary(
     'git-environment-boundary',
@@ -588,6 +588,7 @@ export const importBoundaries: ImportBoundary[] = [
       './review/review-triage.ts',
       './review/review-vocabulary.ts',
       './run/run-authority.ts',
+      './run/run-root-rollup.ts',
       './run/synthetic-lifecycle-job.ts',
       './score/score.ts',
       './score/score-missing.ts',

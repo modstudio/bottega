@@ -616,6 +616,24 @@ describe('routing counts failures as evidence', () => {
     expect(candidates('craft').find((x) => x.agent === 'codex')!.cooling).toBeNull()
   })
 
+  test('candidates excludes an agent until its stored vendor reset', () => {
+    const resetAt = Date.now() + 41 * 60 * 60_000
+    const run = addRun({
+      agent: 'codex',
+      job: 'craft',
+      status: 'failed',
+      kind: 'quota',
+      startedAt: new Date(Date.now() - 61 * 60_000).toISOString(),
+    })
+    db()
+      .query('UPDATE run SET quota_resets_at=? WHERE record_id=?')
+      .run(resetAt / 1_000, run)
+
+    const candidate = candidates('craft').find((item) => item.agent === 'codex')!
+    expect(candidate.eligible).toBe(false)
+    expect(candidate.why).toContain('(vendor reset)')
+  })
+
   test('daily quota cools only through its UTC day while minute quota uses the ordinary cooldown', () => {
     const startOfUtcDay = new Date()
     startOfUtcDay.setUTCHours(0, 0, 0, 0)

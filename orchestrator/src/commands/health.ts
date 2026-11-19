@@ -8,6 +8,7 @@ import { doctorCommand } from '../health/doctor.ts'
 import { blockersCommand, healthCommand } from '../health/health-commands.ts'
 import { JOBS } from '../jobs/jobs.ts'
 import { candidates, pick } from '../route/route.ts'
+import { rollUpChangedTurnRoots } from '../run/run-root-rollup.ts'
 import { acpRuntimeGaps } from '../transport/transport.ts'
 import { log, optionFlags } from './support.ts'
 
@@ -36,7 +37,12 @@ export function register(program: Command): void {
     .option('--dry-run', 'report reclassifications without writing them')
     .allowExcessArguments(false)
     .action((options) => {
-      reclassifyFailuresCommand(optionFlags(options), { log }, persistedRunOutput)
+      reclassifyFailuresCommand(
+        optionFlags(options),
+        { log },
+        persistedRunOutput,
+        rollUpChangedTurnRoots,
+      )
     })
 
   program

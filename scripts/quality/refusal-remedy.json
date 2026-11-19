@@ -57,7 +57,6 @@
     "orchestrator/src/record/record-doc-transport-contract.ts": 1,
     "orchestrator/src/record/record-doctor.ts": 2,
     "orchestrator/src/record/record-subjects.ts": 5,
-    "orchestrator/src/record/record-write-decision.ts": 2,
     "orchestrator/src/review/review-continuation-findings.ts": 2,
     "orchestrator/src/review/review-record-command.ts": 3,
     "orchestrator/src/review/review-target.ts": 2,
@@ -164,6 +163,9 @@
     "shared/test-git-repository.ts": 1
   },
   "commandCases": {
+    "orchestrator/src/record/record-write-decision.ts#decideRecordWrite": {
+      "test": "orchestrator/src/record/record-write-decision.test.ts: shared-state writes are hosted, local-authoritative, or refused from install facts"
+    },
     "shared/record-remedies.ts#recordUnreachableRefusal": {
       "test": "shared/record-remedies.test.ts: hosted-record unreachable refusal names the origin, outcome, and doctor remedy"
     },

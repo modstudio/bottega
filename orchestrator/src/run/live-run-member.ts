@@ -12,6 +12,7 @@ import { processTreeCpuMoving } from '../idle-kill.ts'
 import { jobIdleKillMs } from '../jobs/jobs.ts'
 import type { ProcessSample } from '../process-resource-sampler.ts'
 import { idleStallMs, stalledRunDetail, stalledRunState } from '../stalled-run.ts'
+import { currentRunMemberJoin } from './run-chain.ts'
 import { isRunQueuedForCapacity } from './run-liveness-policy.ts'
 
 export type LiveRunMember = {
@@ -27,16 +28,6 @@ export type LiveRunMember = {
   host_wait_since?: string | null
   capacity_wait_since?: string | null
   status?: string
-}
-
-/** One definition of the member whose status and process represent a conversation now. */
-export function currentRunMemberJoin(rootAlias: string): string {
-  if (!/^[a-z][a-z0-9_]*$/i.test(rootAlias)) throw new Error('invalid run query alias')
-  return `JOIN run current_run ON current_run.record_id = (
-    SELECT member.record_id FROM run member
-     WHERE member.record_id = ${rootAlias}.record_id OR member.parent_run_record_id = ${rootAlias}.record_id
-     ORDER BY member.turn DESC, member.number DESC LIMIT 1
-  )`
 }
 
 /** Current running members machine-wide, retaining the root session as their owner. */

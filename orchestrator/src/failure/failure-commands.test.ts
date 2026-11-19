@@ -5,7 +5,10 @@ import { addRun, dir, score } from '../../test/fixtures/store.ts'
 import { trackedTestResidue } from '../../test/residue.ts'
 import { persistedRunOutput } from '../collect/collect.ts'
 import { db } from '../database/db.ts'
+import { machineId } from '../record/machine-identity.ts'
 import { candidates } from '../route/route.ts'
+import { isRoutingEvidence } from '../route/routing-evidence-query.ts'
+import { rollUpChangedTurnRoots, rollUpRootAndEnqueue } from '../run/run-root-rollup.ts'
 import { weigh } from '../score/score.ts'
 import { reclassifiedFailureKind, reclassifyFailuresCommand } from './failure-commands.ts'
 
@@ -18,6 +21,7 @@ describe('reclassify-failures', () => {
         { has: (name) => args.includes(`--${name}`) },
         { log: (...values) => lines.push(values.join(' ')) },
         persistedRunOutput,
+        rollUpChangedTurnRoots,
       )
       return { exitCode: 0, stdout: new TextEncoder().encode(lines.join('\n')) }
     } catch (cause) {
@@ -253,4 +257,90 @@ describe('reclassify-failures', () => {
       failure_kind: 'billing',
     })
   }, 20_000)
+
+  test('reclassifies a scored childless root and keeps its own kind in sync', () => {
+    const root = addRun({
+      agent: 'codex',
+      job: 'review-lens',
+      status: 'failed',
+      kind: 'other',
+    })
+    score(root, 'full', 'right')
+    db()
+      .query('UPDATE run SET error=?, own_failure_kind=NULL WHERE record_id=?')
+      .run("You've hit your usage limit", root)
+
+    const applied = runCli('reclassify-failures')
+
+    expect(applied.exitCode).toBe(0)
+    const row = db()
+      .query(
+        `SELECT r.status, r.failure_kind AS failureKind, r.own_failure_kind,
+                s.delivery
+           FROM run r JOIN score s ON s.run_record_id=r.record_id
+          WHERE r.record_id=?`,
+      )
+      .get(root) as {
+      status: string
+      failureKind: string | null
+      own_failure_kind: string | null
+      delivery: string | null
+    }
+    expect(row.own_failure_kind).toBe('quota')
+    expect(row.failureKind).toBe('quota')
+    expect(isRoutingEvidence(row)).toBe(false)
+  })
+
+  test('reclassifies a turn, skips its rolled-up root, and re-rolls scored evidence', () => {
+    const root = addRun({
+      agent: 'codex',
+      job: 'review-lens',
+      status: 'failed',
+      kind: 'other',
+    })
+    score(root, 'full', 'right')
+    const turn = addRun({
+      agent: 'codex',
+      job: 'review-lens',
+      status: 'failed',
+      kind: 'other',
+      parent: root,
+      turn: 2,
+    })
+    db().query('UPDATE run SET error=? WHERE record_id=?').run("You've hit your usage limit", turn)
+    rollUpRootAndEnqueue(db(), root, null, machineId(), new Date().toISOString(), false)
+
+    const applied = runCli('reclassify-failures')
+    const stdout = new TextDecoder().decode(applied.stdout)
+
+    expect(applied.exitCode).toBe(0)
+    const turnNumber = (
+      db().query('SELECT number FROM run WHERE record_id=?').get(turn) as { number: number }
+    ).number
+    expect(stdout).toContain(
+      `kind is rolled up from its turns; its own failure cannot be reclassified because its error column holds the last turn's error; reclassify turn ${turnNumber} instead`,
+    )
+    expect(
+      db().query('SELECT failure_kind, own_failure_kind FROM run WHERE record_id=?').get(turn),
+    ).toEqual({
+      failure_kind: 'quota',
+      own_failure_kind: 'quota',
+    })
+    const row = db()
+      .query(
+        `SELECT r.status, r.failure_kind AS failureKind, r.own_failure_kind,
+                s.delivery
+           FROM run r JOIN score s ON s.run_record_id=r.record_id
+          WHERE r.record_id=?`,
+      )
+      .get(root) as {
+      status: string
+      failureKind: string | null
+      own_failure_kind: string | null
+      delivery: string | null
+    }
+    expect(row.own_failure_kind).toBe('other')
+    expect(row.failureKind).toBe('other')
+    expect(isRoutingEvidence(row)).toBe(true)
+  })
 })

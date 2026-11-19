@@ -313,6 +313,7 @@ export const setupModuleSpecs: readonly SetupModuleSpec[] = [
       '../../../shared/brand.ts',
       '../../../shared/secret-shaped.ts',
       '../../../shared/self-spawn.ts',
+      '../../../shared/state-directory.ts',
       './setup-mcp-config.ts',
       '../../../shared/bounded-process.ts',
     ],

@@ -429,7 +429,7 @@ async function detachResolved(
     if (inserted && spec.resume?.kind === 'retry-root' && spec.resume.retireAsking) {
       db()
         .query(
-          `UPDATE run SET status='failed',failure_kind='stopped',
+          `UPDATE run SET status='failed',failure_kind='stopped',own_failure_kind='stopped',
              error='record-only rulings recovered by retry root'
            WHERE (record_id=? OR parent_run_record_id=?) AND status='asking'`,
         )

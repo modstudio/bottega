@@ -75,10 +75,11 @@ function recordHookTreeFailure(recordId: string, startedAt: string, detail: stri
     const lifecycle = terminalLifecycleWrite(db(), recordId, 'failed', detail, null)
     db()
       .query(
-        `UPDATE run SET status=?,failure_kind=?,error=?,latency_ms=?,exit_code=1 WHERE record_id=?`,
+        `UPDATE run SET status=?,failure_kind=?,own_failure_kind=?,error=?,latency_ms=?,exit_code=1 WHERE record_id=?`,
       )
       .run(
         lifecycle.status,
+        lifecycle.failureKind,
         lifecycle.failureKind,
         lifecycle.error,
         Math.max(0, Date.now() - Date.parse(startedAt)),
@@ -92,10 +93,11 @@ function recordHookTreeSuccess(recordId: string, startedAt: string): void {
     const lifecycle = terminalLifecycleWrite(db(), recordId, 'ok', null, null)
     db()
       .query(
-        `UPDATE run SET status=?,failure_kind=?,error=?,latency_ms=?,exit_code=0 WHERE record_id=?`,
+        `UPDATE run SET status=?,failure_kind=?,own_failure_kind=?,error=?,latency_ms=?,exit_code=0 WHERE record_id=?`,
       )
       .run(
         lifecycle.status,
+        lifecycle.failureKind,
         lifecycle.failureKind,
         lifecycle.error,
         Math.max(0, Date.now() - Date.parse(startedAt)),

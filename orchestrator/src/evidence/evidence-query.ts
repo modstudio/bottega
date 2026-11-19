@@ -68,7 +68,8 @@ function unscoredWhere(exclusion: string): string {
                   ORDER BY c.turn DESC LIMIT 1), r.status) <> 'running'
    AND (s.delivery IS NULL
         OR s.scored_at < (SELECT MAX(COALESCE(c.started_at, ''))
-                            FROM run c WHERE c.parent_run_record_id = r.record_id))`
+                            FROM run c WHERE c.parent_run_record_id = r.record_id
+                              AND COALESCE(c.failure_kind, '') NOT IN (${PROVIDER_UNSERVED_SQL})))`
 }
 
 export const UNSCORED_WHERE = unscoredWhere('r.evidence_excluded IS NULL')

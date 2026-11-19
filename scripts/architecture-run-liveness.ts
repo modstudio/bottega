@@ -10,6 +10,7 @@ const liveRunMemberSpec = {
     '../process-resource-sampler.ts',
     '../jobs/jobs.ts',
     '../stalled-run.ts',
+    './run-chain.ts',
     './run-liveness-policy.ts',
   ],
   typeOnlyAllowed: [],

@@ -34,10 +34,10 @@ export function addRun(o: {
   db()
     .query(
       `INSERT INTO run (record_id, number, started_at, agent, job, prompt_sha, spec_sha, prompt_bytes, prompt_head,
-                      status, latency_ms, probe, failure_kind, parent_run_record_id, turn, session_id, stack,
+                      status, latency_ms, probe, failure_kind, own_failure_kind, parent_run_record_id, turn, session_id, stack,
                       model, lens, repo, input_tree, head_commit, transport, task_record_id,
                       project_record_id)
-     VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM run),?,?,?,?,?,?,'head',?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+     VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM run),?,?,?,?,?,?,'head',?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     )
     .run(
       recordId,
@@ -50,6 +50,7 @@ export function addRun(o: {
       o.status ?? 'ok',
       o.latency ?? 1000,
       o.probe ?? 0,
+      o.kind ?? null,
       o.kind ?? null,
       o.parent ?? null,
       o.turn ?? 1,

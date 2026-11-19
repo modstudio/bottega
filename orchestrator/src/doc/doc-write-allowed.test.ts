@@ -350,10 +350,12 @@ describe('decideDocRevisionWrite', () => {
       reason: 'stale-revision',
       refusal: {
         condition: 'refusing canon update at current revision revision-2',
-        remedy: {
-          kind: 'edit',
-          text: `re-read the doc, then re-apply the edit with ${PLATFORM_SLUG} doc set revision-test --scope canon --expect revision-2`,
-        },
+        remedies: [
+          {
+            kind: 'edit',
+            text: `re-read the doc, then re-apply the edit with ${PLATFORM_SLUG} doc set revision-test --scope canon --expect revision-2`,
+          },
+        ],
       },
     })
     expect(
@@ -380,10 +382,12 @@ describe('decideDocRevisionWrite', () => {
       reason: 'stale-revision',
       refusal: {
         condition: 'refusing settings update at current revision revision-2',
-        remedy: {
-          kind: 'edit',
-          text: `read the settings, then write them with ${PLATFORM_SLUG} machine settings import --user`,
-        },
+        remedies: [
+          {
+            kind: 'edit',
+            text: `read the settings, then write them with ${PLATFORM_SLUG} machine settings import --user`,
+          },
+        ],
       },
     })
   })
