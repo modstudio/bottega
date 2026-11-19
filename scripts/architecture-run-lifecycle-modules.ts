@@ -270,7 +270,9 @@ export const runLifecycleModules: ArchitectureModule[] = [
   module('orchestrator/src/run/run-record-request-rate.ts', []),
   module('orchestrator/src/run/run-root-rollup.ts', [
     'bun:sqlite',
+    '../database/db.ts',
     '../failure/failure.ts',
+    '../record/machine-identity.ts',
     './run-outbox.ts',
   ]),
   module('orchestrator/src/run/run-dispatch-rulings.ts', [

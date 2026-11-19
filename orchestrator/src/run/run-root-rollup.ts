@@ -2,7 +2,9 @@
 /** Selects and records the evidence kind of a completed conversation chain. */
 
 import type { Database } from 'bun:sqlite'
-import { type FailureKind, NOT_EVIDENCE } from '../failure/failure.ts'
+import { db } from '../database/db.ts'
+import { type FailureKind, PROVIDER_UNSERVED } from '../failure/failure.ts'
+import { machineId } from '../record/machine-identity.ts'
 import { enqueueRunRecord } from './run-outbox.ts'
 
 export type ChainFailureMember = {
@@ -28,7 +30,7 @@ export function scoredChainFailureKind(members: readonly ChainFailureMember[]): 
   if (ordered.length === 1) return latest.failure_kind
   const ownKinds = ordered.map(memberOwnFailureKind)
   const agentWorkIndex = ownKinds.findIndex(
-    (kind) => kind === null || !NOT_EVIDENCE.includes(kind as FailureKind),
+    (kind) => kind === null || !PROVIDER_UNSERVED.has(kind as FailureKind),
   )
   return agentWorkIndex === -1 ? memberOwnFailureKind(latest) : (ownKinds[agentWorkIndex] ?? null)
 }
@@ -128,4 +130,9 @@ export function rollUpRootAndEnqueue(
   )
   enqueueRunRecord(database, rootId, machine, finishedAt)
   return changes
+}
+
+export function rollUpChangedTurnRoots(rootIds: readonly string[], changedAt: string): void {
+  for (const rootId of rootIds)
+    rollUpRootAndEnqueue(db(), rootId, null, machineId(), changedAt, false)
 }

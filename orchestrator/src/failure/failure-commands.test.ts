@@ -8,7 +8,7 @@ import { db } from '../database/db.ts'
 import { machineId } from '../record/machine-identity.ts'
 import { candidates } from '../route/route.ts'
 import { isRoutingEvidence } from '../route/routing-evidence-query.ts'
-import { rollUpRootAndEnqueue } from '../run/run-root-rollup.ts'
+import { rollUpChangedTurnRoots, rollUpRootAndEnqueue } from '../run/run-root-rollup.ts'
 import { weigh } from '../score/score.ts'
 import { reclassifiedFailureKind, reclassifyFailuresCommand } from './failure-commands.ts'
 
@@ -21,10 +21,7 @@ describe('reclassify-failures', () => {
         { has: (name) => args.includes(`--${name}`) },
         { log: (...values) => lines.push(values.join(' ')) },
         persistedRunOutput,
-        (rootIds, changedAt) => {
-          for (const rootId of rootIds)
-            rollUpRootAndEnqueue(db(), rootId, null, machineId(), changedAt, false)
-        },
+        rollUpChangedTurnRoots,
       )
       return { exitCode: 0, stdout: new TextEncoder().encode(lines.join('\n')) }
     } catch (cause) {

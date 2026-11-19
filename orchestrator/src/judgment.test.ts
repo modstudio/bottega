@@ -142,28 +142,33 @@ describe('score ruling', () => {
     ).toBeNull()
   })
 
-  test('a stale interrupted turn does not displace the root evidence kind when scored', async () => {
+  test('a harness turn is selected over the root evidence kind and refused', async () => {
     const root = addRun({
       agent: 'codex',
       job: 'file-question',
       status: 'failed',
-      kind: 'other',
+      kind: 'contract',
       session: process.env.CLAUDE_CODE_SESSION_ID,
     })
     addRun({
       agent: 'codex',
       job: 'file-question',
-      status: 'stale',
-      kind: 'interrupted',
+      status: 'failed',
+      kind: 'harness',
       parent: root,
       turn: 2,
     })
     rollUp(root)
 
-    await score(root, ['full', 'right'])
-
-    expect(rootEvidence(root).failureKind).toBe('other')
-    expect(isRoutingEvidence(rootEvidence(root))).toBe(true)
+    expect(
+      scoredChainFailureKind([
+        chainMember('root', null, 'harness', 'contract', 1),
+        chainMember('turn', 'root', 'harness', 'harness', 2),
+      ]),
+    ).toBe('harness')
+    await expect(score(root, ['full', 'right'])).rejects.toThrow(
+      "failure kind 'harness' is not evidence; void the run instead of scoring it",
+    )
   })
 
   test('a score recorded after a quota turn restores the root evidence kind', async () => {

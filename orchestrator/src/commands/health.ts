@@ -2,15 +2,13 @@
 /** Registers health reporting adapters. Must not own their behavior. */
 import type { Command } from 'commander'
 import { persistedRunOutput } from '../collect/collect.ts'
-import { db } from '../database/db.ts'
 import { checkRetrieval } from '../doc/doc-search.ts'
 import { reclassifyFailuresCommand } from '../failure/failure-commands.ts'
 import { doctorCommand } from '../health/doctor.ts'
 import { blockersCommand, healthCommand } from '../health/health-commands.ts'
 import { JOBS } from '../jobs/jobs.ts'
-import { machineId } from '../record/machine-identity.ts'
 import { candidates, pick } from '../route/route.ts'
-import { rollUpRootAndEnqueue } from '../run/run-root-rollup.ts'
+import { rollUpChangedTurnRoots } from '../run/run-root-rollup.ts'
 import { acpRuntimeGaps } from '../transport/transport.ts'
 import { log, optionFlags } from './support.ts'
 
@@ -43,10 +41,7 @@ export function register(program: Command): void {
         optionFlags(options),
         { log },
         persistedRunOutput,
-        (rootIds, changedAt) => {
-          for (const rootId of rootIds)
-            rollUpRootAndEnqueue(db(), rootId, null, machineId(), changedAt, false)
-        },
+        rollUpChangedTurnRoots,
       )
     })
 
