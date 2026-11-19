@@ -209,7 +209,13 @@ test('records the worker gate head before synthetic index preparation fails', as
   git(root, 'config', 'user.name', 'Fixture')
   git(root, 'add', 'scripts/gate')
   git(root, 'commit', '-qm', 'base')
-  const base = git(root, 'commit-tree', git(root, 'rev-parse', 'HEAD^{tree}'), '-m', 'recorded base')
+  const base = git(
+    root,
+    'commit-tree',
+    git(root, 'rev-parse', 'HEAD^{tree}'),
+    '-m',
+    'recorded base',
+  )
   writeFileSync(join(root, 'head.txt'), 'head')
   git(root, 'add', 'head.txt')
   git(root, 'commit', '-qm', 'head')

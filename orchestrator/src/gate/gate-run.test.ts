@@ -86,7 +86,7 @@ test('inserts a finished dirty-tree gate without attributing it to HEAD', async 
     d,
     topLevel: () => repositoryPath,
     checkout: cleanCheckout,
-    gitState: () => ({ headCommit, porcelainPaths: ['?? dirty.txt'] }),
+    gitState: () => ({ headCommit, headTree: 'head-tree', porcelainPaths: ['?? dirty.txt'] }),
     contentTree: () => {
       snapshotCalls += 1
       return 'tree123'
@@ -142,7 +142,7 @@ test('records a dirty-tree gate when checked-tree snapshots are unavailable', as
     d,
     topLevel: () => repositoryPath,
     checkout: cleanCheckout,
-    gitState: () => ({ headCommit, porcelainPaths: ['?? dirty.txt'] }),
+    gitState: () => ({ headCommit, headTree: 'head-tree', porcelainPaths: ['?? dirty.txt'] }),
     contentTree: (_cwd, failureContext) => {
       expect(failureContext).toBe(' while snapshotting the checked tree')
       throw new Error(`git write-tree failed${failureContext}`)
