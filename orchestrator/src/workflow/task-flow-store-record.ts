@@ -171,7 +171,9 @@ class RecordTaskFlowReadStore {
 
   private async allDestinations(): Promise<RecordWriteDestination[]> {
     this.everyDestination ??= Promise.all(
-      projects(undefined, this.database).map(({ name }) => this.destination(name)),
+      projects(undefined, this.database)
+        .filter(({ settings }) => Boolean(settings.space))
+        .map(({ name }) => this.destination(name)),
     ).then((destinations) => [
       ...new Map(
         destinations.map((destination) => [destination.destinationSpaceId, destination]),

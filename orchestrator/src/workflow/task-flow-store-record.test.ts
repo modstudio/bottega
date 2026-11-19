@@ -634,6 +634,13 @@ test('machine-wide hosted reads merge every registered project space', async () 
     'bun',
     JSON.stringify({ space: 'fixture-2' }),
   )
+  d.query('INSERT INTO project (record_id,name,path,stack,settings) VALUES (?,?,?,?,?)').run(
+    '00000000-0000-4000-8000-000000000026',
+    'local-only',
+    '/local-only',
+    'bun',
+    '{}',
+  )
   const second = hostedStage({
     number: 1,
     stageId: '00000000-0000-4000-8000-000000000021',
@@ -682,6 +689,27 @@ test('machine-wide hosted reads merge every registered project space', async () 
   expect((await store.textByRecordId(secondTextId))?.body).toBe('fixture text')
   expect((await store.obligationByRecordId(secondObligationId))?.id).toBe(secondObligationId)
   expect(whoamiCalls).toBe(1)
+})
+
+test('machine-wide hosted reads return no rows when every project lacks a space', async () => {
+  const d = database()
+  d.query('UPDATE project SET settings = ?').run('{}')
+  const store = recordTaskFlowReadStore(
+    d,
+    createMemoryRecordApiClient({ taskFlowStages: [hostedStage()] }),
+  )
+
+  expect(await store.listOpenStages({})).toEqual([])
+})
+
+test('a hosted read aimed at a project without a space keeps the destination refusal', async () => {
+  const d = database()
+  d.query('UPDATE project SET settings = ?').run('{}')
+  const store = recordTaskFlowReadStore(d, createMemoryRecordApiClient({ taskFlowStages: [] }))
+
+  await expect(store.listOpenStages({ project: 'fixture' })).rejects.toThrow(
+    'project fixture has no declared record space',
+  )
 })
 
 test('each hosted task-flow keyed read uses one destination-free request', async () => {

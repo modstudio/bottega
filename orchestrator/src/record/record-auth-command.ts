@@ -6,10 +6,13 @@ import { probeRecordSessionStore, writeRecordSessionToken } from '../../../share
 import { refusal } from '../../../shared/refusal.ts'
 import { automaticallyAdoptHostedBoard } from '../board/board-auto-adoption.ts'
 import { claimCurrentMachineKey } from '../config/config-service.ts'
+import { db } from '../database/db.ts'
+import { retireUnusedDefaultLocalProjectAtFirstBinding } from '../project/default-local-project-retirement.ts'
 import { reportCheckedOutHostedProjects } from '../project/project-checkout-adoption.ts'
 import { adoptAllHostedProjectIdentities, formatProjectRelink } from '../project/project-relink.ts'
 import { RefusalError } from '../refusal-error.ts'
 import { activeSpaceInvariant } from './active-space-invariant.ts'
+import { readRecordInstallBinding } from './install-binding.ts'
 import { rememberHostedRecord } from './install-binding-write.ts'
 import {
   RecordApiRequestError,
@@ -99,7 +102,9 @@ async function completeRecordSessionCommand(
 ): Promise<void> {
   writeRecordSessionToken(result.token)
   rememberSignedInRecordUser(result.user)
+  const alreadyBound = readRecordInstallBinding(db()).bound
   rememberHostedRecord()
+  await retireUnusedDefaultLocalProjectAtFirstBinding(alreadyBound)
   const identity = await recordMemberships()
   const active = activeSpaceInvariant(identity)
   if (!active.holds) throw new Error(active.message)
