@@ -42,6 +42,7 @@ export const recordQuestionModules: RecordModule[] = [
   module('orchestrator/src/record/record-question-read.ts', [
     'bun',
     '../../../shared/record/record-changes.ts',
+    '../../../shared/record-timestamp.ts',
     '../../../shared/record/tenant.ts',
     './record-pool.ts',
     './record-task-flow-contract.ts',

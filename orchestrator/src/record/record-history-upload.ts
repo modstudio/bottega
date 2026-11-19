@@ -533,7 +533,7 @@ export function questionIsAbsent(
         !present.question_mutation_audit.has(String(audit.id)) &&
         !present.questionAuditIdentities.has(
           questionAuditIdentity({
-            questionId: String(audit.question_record_id),
+            questionId: String(history.row.record_id),
             action: String(audit.action),
             at: String(audit.at),
           }),

@@ -8,6 +8,7 @@ import {
   readRecordChanges,
 } from '../../../shared/record/record-changes.ts'
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
+import { recordIso } from '../../../shared/record-timestamp.ts'
 import { recordPool } from './record-pool.ts'
 import {
   type QuestionReadInput,
@@ -50,7 +51,7 @@ export async function readRecordQuestionPresenceTransaction(
         [input.questionAuditIds],
       )
     : []
-  const questionAuditIdentities = input.questionIds.length
+  const questionAuditIdentities: Array<Record<string, unknown>> = input.questionIds.length
     ? await tx.unsafe(
         'SELECT question_id, action, at FROM question_mutation_audit WHERE question_id=ANY($1::uuid[])',
         [input.questionIds],
@@ -63,7 +64,7 @@ export async function readRecordQuestionPresenceTransaction(
     questionAuditIdentities: questionAuditIdentities.map((row) => ({
       questionId: String(row.question_id),
       action: String(row.action),
-      at: new Date(String(row.at)).toISOString(),
+      at: recordIso(row.at),
     })),
   }
 }

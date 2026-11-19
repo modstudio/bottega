@@ -1,6 +1,6 @@
 import type { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
-import { existsSync, readFileSync, readdirSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { resolveStateRoot } from '../../../shared/state-directory.ts'
