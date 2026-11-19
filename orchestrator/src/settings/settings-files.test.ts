@@ -9,6 +9,7 @@ import {
   readLocalPermissionLists,
   readSettingsFile,
   readSettingsJsonLenient,
+  SETTINGS_JSON_INVALID_DETAIL,
   userSettingsPath,
 } from './settings-files.ts'
 
@@ -46,6 +47,18 @@ describe('settings files', () => {
     })
     writeFileSync(path, '{')
     expect(readSettingsJsonLenient(path)).toMatchObject({ state: 'unreadable' })
+  })
+
+  test('lenient JSON reads do not expose malformed settings content', () => {
+    const claudeHome = fixtureHome()
+    mkdirSync(claudeHome, { recursive: true })
+    const path = userSettingsPath(claudeHome)
+    writeFileSync(path, '{"env":{"K":ghp_ABCdef1234567890xyz}}')
+
+    const result = readSettingsJsonLenient(path)
+
+    expect(result).toEqual({ state: 'unreadable', detail: SETTINGS_JSON_INVALID_DETAIL })
+    expect(result.state === 'unreadable' ? result.detail : '').not.toContain('ghp_')
   })
 
   test('reads owned keys from a fixture file and ignores the rest', () => {

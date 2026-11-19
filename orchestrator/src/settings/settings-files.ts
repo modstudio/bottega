@@ -38,15 +38,23 @@ export type LenientSettingsJsonRead =
   | { state: 'readable'; settings: unknown }
   | { state: 'unreadable'; detail: string }
 
+export const SETTINGS_JSON_INVALID_DETAIL = 'settings file is not valid JSON'
+
 export function readSettingsJsonLenient(path: string): LenientSettingsJsonRead {
   if (!existsSync(path)) return { state: 'absent' }
+  let text: string
   try {
-    return { state: 'readable', settings: JSON.parse(readRegularFile(path)) }
+    text = readRegularFile(path)
   } catch (error) {
     return {
       state: 'unreadable',
       detail: error instanceof Error ? error.message : String(error),
     }
+  }
+  try {
+    return { state: 'readable', settings: JSON.parse(text) }
+  } catch {
+    return { state: 'unreadable', detail: SETTINGS_JSON_INVALID_DETAIL }
   }
 }
 
