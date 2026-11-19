@@ -29,6 +29,14 @@ type FlowImport = TaskFlowIntentInput<'import'>
 type FlowImportWithNumbers = { payload: FlowImport; numbers: Map<string, number> }
 type LocalQuestionHistory = ReturnType<typeof localQuestionHistory>
 
+export const WORKFLOW_HISTORY_UPLOAD_FINGERPRINT_KEY = 'record_workflow_history_upload_fingerprint'
+export type HistoryUploadFingerprint = ReadonlyArray<{
+  table: string
+  count: number
+  maxRowid: number
+}>
+type WithMaintenanceDatabase = <T>(action: (database: Database) => Promise<T>) => Promise<T>
+
 type UploadDependencies = {
   client: Pick<RecordApiClient, 'importTaskFlow' | 'importQuestion'>
   destination(project: string | null): Promise<RecordWriteDestination>
@@ -44,6 +52,60 @@ const nullableJson = (value: unknown): unknown => (value == null ? null : json(v
 const requiredString = (value: unknown, label: string): string => {
   if (typeof value === 'string' && value.length > 0) return value
   throw new Error(`${label} is missing; run \`${PLATFORM_SLUG} machine doctor\`, then retry`)
+}
+
+/** Decide whether local hosted-history ids changed since the last successful upload pass. */
+export function decideHistoryUploadPass(input: {
+  stored: HistoryUploadFingerprint | null
+  current: HistoryUploadFingerprint
+}): 'skip' | 'upload' {
+  // Rowid reuse can defer an upload, but release keeps absent rows, so this errs safely.
+  return input.stored && JSON.stringify(input.stored) === JSON.stringify(input.current)
+    ? 'skip'
+    : 'upload'
+}
+
+function historyUploadFingerprint(database: Database): HistoryUploadFingerprint {
+  return [
+    'workflow_obligation',
+    'workflow_step_text',
+    'workflow_text_copy',
+    'question_mutation_audit',
+    'question',
+    'workflow_cursor',
+    'task_flow',
+  ].map((table) => {
+    const row = database
+      .query<{ count: number; maxRowid: number | null }, []>(
+        `SELECT count(*) count,max(rowid) maxRowid FROM ${table}`,
+      )
+      .get()!
+    return { table, count: row.count, maxRowid: row.maxRowid ?? 0 }
+  })
+}
+
+function storedHistoryUploadFingerprint(database: Database): HistoryUploadFingerprint | null {
+  const row = database
+    .query<{ value: string }, [string]>('SELECT value FROM schema_meta WHERE key=?')
+    .get(WORKFLOW_HISTORY_UPLOAD_FINGERPRINT_KEY)
+  if (!row) return null
+  try {
+    return JSON.parse(row.value) as HistoryUploadFingerprint
+  } catch {
+    return null
+  }
+}
+
+function storeHistoryUploadFingerprint(
+  database: Database,
+  fingerprint: HistoryUploadFingerprint,
+): void {
+  database
+    .query(
+      `INSERT INTO schema_meta(key,value) VALUES (?,?)
+       ON CONFLICT(key) DO UPDATE SET value=excluded.value`,
+    )
+    .run(WORKFLOW_HISTORY_UPLOAD_FINGERPRINT_KEY, JSON.stringify(fingerprint))
 }
 
 function historyProjects(database: Database): HistoryProject[] {
@@ -515,46 +577,63 @@ async function uploadPersonalMissingHistory(
 
 /** Upload only flow and question aggregates containing rows absent from the record. */
 export async function uploadMissingWorkflowHistory(
-  database: Database,
   client: RecordApiClient,
   destinationFor: DestinationFor = recordWriteDestination,
+  withDatabase: WithMaintenanceDatabase = withDatabaseForMigrationStep,
 ): Promise<HistorySyncResult> {
-  if (!readRecordInstallBinding(database).bound) return { failed: 0, lines: [] }
-  if (!client.readTaskFlowPresence || !client.importTaskFlow || !client.importQuestion)
-    return {
-      failed: 0,
-      lines: ['workflow history upload skipped: record API lacks presence or import support'],
+  return withDatabase(async (database) => {
+    if (!readRecordInstallBinding(database).bound) return { failed: 0, lines: [] }
+    if (!client.readTaskFlowPresence || !client.importTaskFlow || !client.importQuestion)
+      return {
+        failed: 0,
+        lines: ['workflow history upload skipped: record API lacks presence or import support'],
+      }
+    const repairLines: string[] = []
+    try {
+      const repaired = taskFlowHistoryMaintenanceStore(database).repairUnlinkedKeylessStages()
+      if (repaired > 0) repairLines.push(`repaired ${repaired} unlinked local workflow stages`)
+    } catch (cause) {
+      repairLines.push(`workflow history stage repair skipped: ${errorMessage(cause)}`)
     }
-  const repairLines: string[] = []
-  try {
-    const repaired = taskFlowHistoryMaintenanceStore(database).repairUnlinkedKeylessStages()
-    if (repaired > 0) repairLines.push(`repaired ${repaired} unlinked local workflow stages`)
-  } catch (cause) {
-    repairLines.push(`workflow history stage repair skipped: ${errorMessage(cause)}`)
-  }
-  const state = collectHostedRowState(database)
-  if (hostedRowIdsAreEmpty(state.ids)) return { failed: 0, lines: repairLines }
-  const capable = client as SyncClient
-  let present: PresentHistory
-  try {
-    present = await readHostedRowPresence(state.ids, capable.readTaskFlowPresence)
-  } catch (cause) {
-    return {
-      failed: 0,
-      lines: [
-        ...repairLines,
-        `workflow history upload skipped: presence read failed: ${errorMessage(cause)}`,
-      ],
-    }
-  }
-  const projects: HistorySyncResult[] = []
-  for (const project of historyProjects(database))
-    projects.push(
-      await uploadProjectMissingHistory(database, project, present, capable, destinationFor),
+    const fingerprint = historyUploadFingerprint(database)
+    if (
+      decideHistoryUploadPass({
+        stored: storedHistoryUploadFingerprint(database),
+        current: fingerprint,
+      }) === 'skip'
     )
-  return combineHistoryResults(
-    { failed: 0, lines: repairLines },
-    ...projects,
-    await uploadPersonalMissingHistory(database, present, capable, destinationFor),
-  )
+      return { failed: 0, lines: repairLines }
+    const state = collectHostedRowState(database)
+    if (hostedRowIdsAreEmpty(state.ids)) {
+      if (!repairLines.some((line) => line.includes('skipped')))
+        storeHistoryUploadFingerprint(database, fingerprint)
+      return { failed: 0, lines: repairLines }
+    }
+    const capable = client as SyncClient
+    let present: PresentHistory
+    try {
+      present = await readHostedRowPresence(state.ids, capable.readTaskFlowPresence)
+    } catch (cause) {
+      return {
+        failed: 0,
+        lines: [
+          ...repairLines,
+          `workflow history upload skipped: presence read failed: ${errorMessage(cause)}`,
+        ],
+      }
+    }
+    const projects: HistorySyncResult[] = []
+    for (const project of historyProjects(database))
+      projects.push(
+        await uploadProjectMissingHistory(database, project, present, capable, destinationFor),
+      )
+    const result = combineHistoryResults(
+      { failed: 0, lines: repairLines },
+      ...projects,
+      await uploadPersonalMissingHistory(database, present, capable, destinationFor),
+    )
+    if (result.failed === 0 && !result.lines.some((line) => line.includes('skipped')))
+      storeHistoryUploadFingerprint(database, fingerprint)
+    return result
+  })
 }

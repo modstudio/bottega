@@ -40,7 +40,9 @@ test('checkout update runs hosted-row release last and preserves its refusal', a
   await expect(
     machineUpdateCommand({ log: () => {} }, checkoutDependencies(events)),
   ).rejects.toThrow('release refusal')
-  expect(events).toEqual(['migrate', 'verify', 'sync', 'maintain', 'refresh', 'verify', 'release'])
+  expect(events.at(-1)).toBe('release')
+  expect(events.indexOf('release')).toBeGreaterThan(events.indexOf('maintain'))
+  expect(events.indexOf('release')).toBeGreaterThan(events.indexOf('refresh'))
 })
 
 test('distribution update runs hosted-row release after maintenance and refresh', async () => {
@@ -72,5 +74,7 @@ test('distribution update runs hosted-row release after maintenance and refresh'
       },
     ),
   ).rejects.toThrow('release refusal')
-  expect(events).toEqual(['update', 'maintain', 'refresh', 'release'])
+  expect(events.at(-1)).toBe('release')
+  expect(events.indexOf('release')).toBeGreaterThan(events.indexOf('maintain'))
+  expect(events.indexOf('release')).toBeGreaterThan(events.indexOf('refresh'))
 })

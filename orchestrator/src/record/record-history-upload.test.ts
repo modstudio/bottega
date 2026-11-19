@@ -1,12 +1,17 @@
 import type { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
 import { newRecordId } from '../../../shared/record-id.ts'
+import { options as syncOptions } from '../../test/fixtures/record-sync.ts'
+import { fakePostgres } from '../../test/fixtures/record-sync-postgres.ts'
+import { guardHostedTables } from '../database/hosted-table-guard.ts'
 import { migratedTestDatabase } from '../database/test-database.fixture.ts'
 import type { ProjectAdoptionResult } from '../project/project-relink.ts'
 import type { RecordApiClient } from './record-api-client.ts'
 import type { RecordQuestionClient } from './record-api-client-question.ts'
 import type { RecordTaskFlowClient } from './record-api-client-task-flow.ts'
+import { syncRecord } from './record-sync.ts'
 import {
+  decideHistoryUploadPass,
   uploadLocalWorkflowHistory,
   uploadMissingWorkflowHistory,
 } from './record-history-upload.ts'
@@ -503,6 +508,21 @@ const absentPresence = async () => ({
   flowIds: [],
 })
 
+const maintenanceHandle = (database: Database) =>
+  async <T>(action: (value: Database) => Promise<T>) => action(database)
+
+test('history upload pass skips only an unchanged stored fingerprint', () => {
+  const current = [{ table: 'question', count: 1, maxRowid: 2 }]
+  expect(decideHistoryUploadPass({ stored: current, current })).toBe('skip')
+  expect(
+    decideHistoryUploadPass({
+      stored: current,
+      current: [{ table: 'question', count: 2, maxRowid: 3 }],
+    }),
+  ).toBe('upload')
+  expect(decideHistoryUploadPass({ stored: null, current })).toBe('upload')
+})
+
 test('sync history does not call the network for an unbound store', async () => {
   const database = migratedTestDatabase()
   let calls = 0
@@ -520,7 +540,9 @@ test('sync history does not call the network for an unbound store', async () => 
       throw new Error('unexpected')
     },
   )
-  expect(await uploadMissingWorkflowHistory(database, client, syncDestination)).toEqual({
+  expect(
+    await uploadMissingWorkflowHistory(client, syncDestination, maintenanceHandle(database)),
+  ).toEqual({
     failed: 0,
     lines: [],
   })
@@ -546,7 +568,9 @@ test('sync history imports one question whose audit is absent and no task flow',
       return { revisions: {}, stages: [] }
     },
   )
-  expect(await uploadMissingWorkflowHistory(database, client, syncDestination)).toEqual({
+  expect(
+    await uploadMissingWorkflowHistory(client, syncDestination, maintenanceHandle(database)),
+  ).toEqual({
     failed: 0,
     lines: [],
   })
@@ -560,8 +584,12 @@ test('sync history makes no import calls when every local id is present', async 
   linked(database, 'sync-present', 1)
   bind(database)
   let imports = 0
+  let presenceReads = 0
   const client = syncClient(
-    async (input) => input,
+    async (input) => {
+      presenceReads += 1
+      return input
+    },
     async (input) => {
       imports += 1
       return { id: input.question.id, number: 1, revision: 1, applied: true }
@@ -571,8 +599,15 @@ test('sync history makes no import calls when every local id is present', async 
       return { revisions: {}, stages: [] }
     },
   )
-  await uploadMissingWorkflowHistory(database, client, syncDestination)
+  await uploadMissingWorkflowHistory(client, syncDestination, maintenanceHandle(database))
+  await uploadMissingWorkflowHistory(client, syncDestination, maintenanceHandle(database))
+  expect(presenceReads).toBe(1)
   expect(imports).toBe(0)
+  const stageId = database
+    .query<{ record_id: string }, []>('SELECT record_id FROM workflow_cursor').get()!.record_id
+  question(database, stageId, 2)
+  await uploadMissingWorkflowHistory(client, syncDestination, maintenanceHandle(database))
+  expect(presenceReads).toBe(2)
   database.close()
 })
 
@@ -598,7 +633,11 @@ test('sync history repairs and imports one keyless flowless cursor', async () =>
       return { revisions: {}, stages: input.stages.map((row) => ({ id: row.id, number: 1 })) }
     },
   )
-  const result = await uploadMissingWorkflowHistory(database, client, syncDestination)
+  const result = await uploadMissingWorkflowHistory(
+    client,
+    syncDestination,
+    maintenanceHandle(database),
+  )
   expect(result).toEqual({
     failed: 0,
     lines: ['repaired 1 unlinked local workflow stages'],
@@ -641,7 +680,11 @@ test('sync history reports a keyed flowless repair skip and still imports an abs
       return { revisions: {}, stages: [] }
     },
   )
-  const result = await uploadMissingWorkflowHistory(database, client, syncDestination)
+  const result = await uploadMissingWorkflowHistory(
+    client,
+    syncDestination,
+    maintenanceHandle(database),
+  )
   expect(result.failed).toBe(0)
   expect(result.lines).toEqual([
     'workflow history stage repair skipped: cursor 7 in project sync-keyed-orphan has a task but no task flow; ask the architect to repair that task-flow link, then sign in again',
@@ -657,8 +700,12 @@ test('sync history reports one failed question import and continues to the next'
   question(database, stageId, 2)
   bind(database)
   let calls = 0
+  let presenceReads = 0
   const client = syncClient(
-    async (input) => ({ ...input, questionIds: [], questionAuditIds: [] }),
+    async (input) => {
+      presenceReads += 1
+      return { ...input, questionIds: [], questionAuditIds: [] }
+    },
     async (input) => {
       calls += 1
       if (calls === 1) throw new Error('first failed')
@@ -666,9 +713,44 @@ test('sync history reports one failed question import and continues to the next'
     },
     async () => ({ revisions: {}, stages: [] }),
   )
-  const result = await uploadMissingWorkflowHistory(database, client, syncDestination)
+  const result = await uploadMissingWorkflowHistory(
+    client,
+    syncDestination,
+    maintenanceHandle(database),
+  )
   expect(calls).toBe(2)
   expect(result.failed).toBe(1)
   expect(result.lines[0]).toContain('first failed')
+  await uploadMissingWorkflowHistory(client, syncDestination, maintenanceHandle(database))
+  expect(presenceReads).toBe(2)
+  database.close()
+})
+
+test('sync uses the maintenance handle for bound hosted history instead of its guarded handle', async () => {
+  const database = migratedTestDatabase()
+  database.exec('PRAGMA foreign_keys=OFF')
+  linked(database, 'sync-guarded', 1)
+  bind(database)
+  let presenceReads = 0
+  const base = syncOptions(guardHostedTables(database), fakePostgres())
+  const client = {
+    ...base.client,
+    readTaskFlowPresence: async (input: Parameters<NonNullable<RecordApiClient['readTaskFlowPresence']>>[0]) => {
+      presenceReads += 1
+      return input
+    },
+    importQuestion: async () => {
+      throw new Error('unexpected question import')
+    },
+    importTaskFlow: async () => {
+      throw new Error('unexpected flow import')
+    },
+  }
+  await syncRecord({
+    ...base,
+    client,
+    historyUploadWithDatabase: maintenanceHandle(database),
+  })
+  expect(presenceReads).toBe(1)
   database.close()
 })

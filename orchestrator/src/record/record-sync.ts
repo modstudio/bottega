@@ -798,8 +798,9 @@ export async function syncRecord(options: RecordSyncOptions = {}): Promise<Recor
   }
   cacheFirstSyncedMachineNames(options, identity, machineNameRefusal)
   const history = await uploadMissingWorkflowHistory(
-    writableLocal,
     client as ReturnType<typeof recordApiClient>,
+    undefined,
+    options.historyUploadWithDatabase,
   )
   failed += history.failed
   const cachePull = await pullAfterSync(options, writableLocal, session)

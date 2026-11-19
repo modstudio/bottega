@@ -1,7 +1,10 @@
 // concern: hosted-row-release
 /** Releases verified hosted workflow history while retaining incomplete tables and their parents. */
 import type { Database } from 'bun:sqlite'
+import { mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { resolveStateRoot } from '../../../shared/state-directory.ts'
 import { readRecordInstallBinding } from '../record/install-binding.ts'
 import { recordApiClient } from '../record/record-api-client.ts'
 import {
@@ -10,6 +13,7 @@ import {
   HOSTED_ROW_TABLES,
   type HostedRowIds,
   type HostedRowReferences,
+  type HostedRowTable,
   hostedRowIdsAreEmpty,
   type PresenceReader,
   readHostedRowPresence,
@@ -17,13 +21,9 @@ import {
 import { withSynchronousDatabaseForMigrationStep, writeTransaction } from './db.ts'
 
 const HOSTED_ROW_RELEASE_SHOWN_IDS = 5
+export const HOSTED_ROW_RELEASE_ARCHIVE_KEEP = 5
 
-export type { HostedRowIds, HostedRowReferences } from '../record/record-hosted-row-presence.ts'
-export { HOSTED_ROW_TABLES }
-
-type HostedRowTable = (typeof HOSTED_ROW_TABLES)[number]
 export type HostedRowReleaseDecision = {
-  kind: 'nothing' | 'release'
   deleteIds: HostedRowIds
   keptTables: Array<{ table: HostedRowTable; absentIds: readonly string[] }>
 }
@@ -86,7 +86,6 @@ export function decideHostedRowRelease(
   for (const table of HOSTED_ROW_TABLES)
     for (const id of local[table]) if (!kept[table].has(id)) deleteIds[table].add(id)
   return {
-    kind: hostedRowIdsAreEmpty(local) ? 'nothing' : 'release',
     deleteIds,
     keptTables,
   }
@@ -103,12 +102,52 @@ type WithDatabase = <T>(action: (database: Database) => T) => T
 export type HostedRowReleaseDependencies = {
   withDatabase?: WithDatabase
   presence?: PresenceReader
+  archive?: ArchiveWriter
 }
 
 function defaultPresenceReader(input: Parameters<PresenceReader>[0]) {
   const read = recordApiClient().readTaskFlowPresence
-  if (!read) throw new Error('record API predates task-flow presence reads')
+  if (!read)
+    throw new Error('record API predates task-flow presence reads; release hosted-api, then retry')
   return read(input)
+}
+
+type ArchivedHostedRow = { table: HostedRowTable; row: Record<string, unknown> }
+type ArchiveWriter = (rows: readonly ArchivedHostedRow[]) => string
+
+function archiveTimestamp(now: Date): string {
+  return now.toISOString().replace(/[:.]/g, '-')
+}
+
+export function writeHostedRowReleaseArchive(
+  rows: readonly ArchivedHostedRow[],
+  input: { directory?: string; now?: Date } = {},
+): string {
+  const directory =
+    input.directory ?? join(resolveStateRoot(process.env), 'archive', 'hosted-row-release')
+  mkdirSync(directory, { recursive: true, mode: 0o700 })
+  const path = join(directory, `${archiveTimestamp(input.now ?? new Date())}.jsonl`)
+  writeFileSync(path, `${rows.map((row) => JSON.stringify(row)).join('\n')}\n`, { mode: 0o600 })
+  const archives = readdirSync(directory)
+    .filter((name) => name.endsWith('.jsonl'))
+    .sort()
+  for (const name of archives.slice(0, -HOSTED_ROW_RELEASE_ARCHIVE_KEEP))
+    rmSync(join(directory, name))
+  return path
+}
+
+function rowsToArchive(database: Database, ids: HostedRowIds): ArchivedHostedRow[] {
+  const rows: ArchivedHostedRow[] = []
+  for (const table of HOSTED_ROW_TABLES) {
+    const read = database.query<Record<string, unknown>, [string]>(
+      `SELECT * FROM ${table} WHERE record_id=?`,
+    )
+    for (const id of ids[table]) {
+      const row = read.get(id)
+      if (row) rows.push({ table, row })
+    }
+  }
+  return rows
 }
 
 function deleteHostedRows(database: Database, ids: HostedRowIds): void {
@@ -152,13 +191,26 @@ export async function releaseHostedRowsAfterUpdate(
     return
   }
   const decision = decideHostedRowRelease(state.ids, present, state.references)
-  withDatabase((database) => deleteHostedRows(database, decision.deleteIds))
-  for (const report of decision.keptTables)
-    presentation.log(keptTableLine(report.table, report.absentIds))
   const released = HOSTED_ROW_TABLES.reduce(
     (total, table) => total + decision.deleteIds[table].size,
     0,
   )
+  let archivePath: string | null = null
+  if (released) {
+    try {
+      archivePath = withDatabase((database) =>
+        (deps.archive ?? writeHostedRowReleaseArchive)(rowsToArchive(database, decision.deleteIds)),
+      )
+    } catch (cause) {
+      const detail = cause instanceof Error ? cause.message : String(cause)
+      presentation.log(`kept all releasable local workflow history: archive write failed: ${detail}`)
+      return
+    }
+  }
+  withDatabase((database) => deleteHostedRows(database, decision.deleteIds))
+  if (archivePath) presentation.log(`archived released local workflow history at ${archivePath}`)
+  for (const report of decision.keptTables)
+    presentation.log(keptTableLine(report.table, report.absentIds))
   if (released)
     presentation.log(`released ${released} local workflow history rows now on the record`)
 }

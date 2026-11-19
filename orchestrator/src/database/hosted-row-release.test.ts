@@ -1,16 +1,23 @@
 import type { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
+import { mkdtempSync, readFileSync, readdirSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import {
   decideHostedRowRelease,
-  HOSTED_ROW_TABLES,
-  type HostedRowIds,
-  type HostedRowReferences,
+  HOSTED_ROW_RELEASE_ARCHIVE_KEEP,
   releaseHostedRowsAfterUpdate,
+  writeHostedRowReleaseArchive,
 } from './hosted-row-release.ts'
 import { HOSTED_TABLES_WITHOUT_LOCAL_ACCESS } from './hosted-table-guard.ts'
 import { migratedTestDatabase } from './test-database.fixture.ts'
+import {
+  HOSTED_ROW_TABLES,
+  type HostedRowIds,
+  type HostedRowReferences,
+} from '../record/record-hosted-row-presence.ts'
 
 function rowIds(
   values: Partial<Record<(typeof HOSTED_ROW_TABLES)[number], string[]>>,
@@ -44,7 +51,6 @@ test('hosted row release table set matches the guarded hosted table set', () => 
 test('hosted row release returns every local id when all are present', () => {
   const local = rowIds({ task_flow: ['flow'], workflow_cursor: ['stage'] })
   expect(decideHostedRowRelease(local, local, noReferences())).toEqual({
-    kind: 'release',
     deleteIds: local,
     keptTables: [],
   })
@@ -195,6 +201,7 @@ function adapterDependencies(
   return {
     withDatabase: <T>(action: (value: Database) => T) => action(database),
     presence,
+    archive: () => '/tmp/release.jsonl',
   }
 }
 
@@ -222,7 +229,10 @@ test('hosted row release deletes every verified table and a second run makes no 
   expect(tableCounts(database)).toEqual(
     Object.fromEntries(HOSTED_ROW_TABLES.map((table) => [table, 0])),
   )
-  expect(output).toEqual(['released 7 local workflow history rows now on the record'])
+  expect(output).toEqual([
+    'archived released local workflow history at /tmp/release.jsonl',
+    'released 7 local workflow history rows now on the record',
+  ])
   expect([...expected.task_flow]).toHaveLength(1)
   expect([...expected.workflow_cursor]).toHaveLength(1)
   database.close()
@@ -305,10 +315,81 @@ test('hosted row release keeps one incomplete audit table and its question', asy
     task_flow: 0,
   })
   expect(output).toEqual([
+    'archived released local workflow history at /tmp/release.jsonl',
     `kept local question_mutation_audit: 1 ids absent from the record: ${missingAudit}; run ${PLATFORM_SLUG} record sync, then ${PLATFORM_SLUG} machine update`,
     'released 5 local workflow history rows now on the record',
   ])
   database.close()
+})
+
+test('hosted row release archives exactly the rows it deletes before removing them', async () => {
+  const database = migratedTestDatabase()
+  const ids = seedReleaseRows(database)
+  const directory = mkdtempSync(join(tmpdir(), 'hosted-row-release-'))
+  const output: string[] = []
+  await releaseHostedRowsAfterUpdate(
+    { log: (line) => output.push(line) },
+    {
+      withDatabase: <T>(action: (value: Database) => T) => action(database),
+      presence: async (input) => input,
+      archive: (rows) =>
+        writeHostedRowReleaseArchive(rows, {
+          directory,
+          now: new Date('2026-11-19T12:34:56.000Z'),
+        }),
+    },
+  )
+  const archive = join(directory, readdirSync(directory)[0]!)
+  const archived = readFileSync(archive, 'utf8')
+    .trim()
+    .split('\n')
+    .map((line) => JSON.parse(line) as { table: (typeof HOSTED_ROW_TABLES)[number]; row: { record_id: string } })
+  expect(
+    Object.fromEntries(
+      HOSTED_ROW_TABLES.map((table) => [
+        table,
+        archived.filter((entry) => entry.table === table).map((entry) => entry.row.record_id),
+      ]),
+    ),
+  ).toEqual(Object.fromEntries(HOSTED_ROW_TABLES.map((table) => [table, [...ids[table]]])))
+  expect(tableCounts(database)).toEqual(
+    Object.fromEntries(HOSTED_ROW_TABLES.map((table) => [table, 0])),
+  )
+  expect(output[0]).toBe(`archived released local workflow history at ${archive}`)
+  database.close()
+})
+
+test('a failing hosted row release archive writer leaves every row in place', async () => {
+  const database = migratedTestDatabase()
+  seedReleaseRows(database)
+  const before = tableCounts(database)
+  const output: string[] = []
+  await releaseHostedRowsAfterUpdate(
+    { log: (line) => output.push(line) },
+    {
+      ...adapterDependencies(database, async (input) => input),
+      archive: () => {
+        throw new Error('disk full')
+      },
+    },
+  )
+  expect(tableCounts(database)).toEqual(before)
+  expect(output).toEqual([
+    'kept all releasable local workflow history: archive write failed: disk full',
+  ])
+  database.close()
+})
+
+test('hosted row release archive retention keeps only the newest files', () => {
+  const directory = mkdtempSync(join(tmpdir(), 'hosted-row-release-retention-'))
+  for (let day = 1; day <= HOSTED_ROW_RELEASE_ARCHIVE_KEEP + 2; day++)
+    writeHostedRowReleaseArchive(
+      [{ table: 'question', row: { record_id: String(day) } }],
+      { directory, now: new Date(`2026-11-${String(day).padStart(2, '0')}T00:00:00.000Z`) },
+    )
+  const archives = readdirSync(directory)
+  expect(archives).toHaveLength(HOSTED_ROW_RELEASE_ARCHIVE_KEEP)
+  expect(archives[0]).toContain('2026-11-03')
 })
 
 test('hosted row release does nothing for an unbound store', async () => {
