@@ -32,3 +32,11 @@ export function recordCacheSpaceOwnsAddress(input: {
 }): boolean {
   return recordCacheAddressOwner(input) === input.pullingSpaceId
 }
+
+export function recordCacheSpaceOwnsSubject(
+  project: string,
+  space: string,
+  projectSpaces: ReadonlyMap<string, string | null>,
+): boolean {
+  return projectSpaces.get(project) === space
+}

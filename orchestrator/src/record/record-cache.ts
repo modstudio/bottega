@@ -39,7 +39,10 @@ import {
   pullRecordCacheFeed,
 } from './record-cache-feed.ts'
 import { pullLensCatalogue } from './record-cache-lens.ts'
-import { recordCacheSpaceOwnsAddress } from './record-cache-ownership.ts'
+import {
+  recordCacheSpaceOwnsAddress,
+  recordCacheSpaceOwnsSubject,
+} from './record-cache-ownership.ts'
 import { pullPortCatalogue } from './record-cache-port.ts'
 import { pullProjectRegister } from './record-cache-projects.ts'
 import { pullWorkflowCatalogue } from './record-cache-workflow.ts'
@@ -304,7 +307,7 @@ async function pullSubjects(
       if (!page.items.length) break
       writeTransaction(() => {
         for (const row of page.items) {
-          if (projectSpaces.get(row.project) !== spaceId) {
+          if (!recordCacheSpaceOwnsSubject(row.project, spaceId, projectSpaces)) {
             skippedSubjects++
           } else {
             applySubjectRecord(row, local, spaceId)

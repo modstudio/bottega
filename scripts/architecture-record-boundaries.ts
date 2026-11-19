@@ -166,6 +166,7 @@ export const recordApiBoundaries: ImportBoundary[] = [
       './record-cursor.ts',
       './record-auth.ts',
       './record-canon-import.ts',
+      './record-cache-counts-contract.ts',
       './record-context-items.ts',
       './record-docs.ts',
       './record-snapshots.ts',

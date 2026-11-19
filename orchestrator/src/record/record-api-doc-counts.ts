@@ -4,7 +4,10 @@
 import type { Context, Hono } from 'hono'
 import type { RecordDocumentTenant } from './record-api-doc-tenant.ts'
 import type { RecordIdentity } from './record-auth.ts'
-import type { RecordCacheCounts } from './record-cache-counts.ts'
+import {
+  RECORD_CACHE_COUNTS_BY_SCOPE,
+  type RecordCacheCounts,
+} from './record-cache-counts-contract.ts'
 
 type ApiEnvironment = { Variables: { identity: RecordIdentity; destinationSpaceId?: string } }
 
@@ -25,7 +28,8 @@ export function registerRecordDocCountsRoute(
     if (!tenant) return ports.noSpace(context)
     const docs = await deps.countDocs(tenant)
     const scores = await deps.countScores(tenant)
-    if (context.req.query('by') !== 'scope') return context.json({ ...docs, ...scores })
+    if (context.req.query('by') !== RECORD_CACHE_COUNTS_BY_SCOPE)
+      return context.json({ ...docs, ...scores })
     const cache = await deps.countCacheRows(tenant)
     return context.json({ ...docs, ...scores, ...cache })
   })

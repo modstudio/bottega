@@ -49,7 +49,7 @@ describe('record cache parity decision', () => {
     expect(decision.detail).toContain('subjects: 5 local; 3 hosted — extra locally')
   })
 
-  test('unowned groups are excluded and unknown scopes are listed as not mirrored', () => {
+  test('unowned groups are excluded and every owned scope is compared', () => {
     const decision = decideRecordCacheParity({
       ...base,
       hosted: {
@@ -61,9 +61,9 @@ describe('record cache parity decision', () => {
         ],
       },
     })
-    expect(decision.status).toBe('pass')
+    expect(decision.status).toBe('fail')
     expect(decision.detail).not.toContain('9')
-    expect(decision.detail).toContain('future: 4 hosted — not mirrored')
+    expect(decision.detail).toContain('future: 0 local; 4 hosted — missing locally')
   })
 
   test('a missing breakdown or unreachable host fails without presenting zero', () => {

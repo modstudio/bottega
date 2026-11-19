@@ -3,12 +3,16 @@
 
 import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { DOC_SCOPES } from '../../../shared/docs.ts'
+import { RECORD_SIGN_IN_REMEDY } from '../../../shared/record-remedies.ts'
 import { recordApiClient } from './record-api-client.ts'
+import { RecordApiRequestError } from './record-api-client-response.ts'
 import type { RecordIdentity } from './record-auth.ts'
 import { recordCacheSpaces } from './record-cache.ts'
-import type { RecordCacheCounts } from './record-cache-counts.ts'
-import { recordCacheAddressOwner } from './record-cache-ownership.ts'
+import type { RecordCacheCounts } from './record-cache-counts-contract.ts'
+import {
+  recordCacheAddressOwner,
+  recordCacheSpaceOwnsSubject,
+} from './record-cache-ownership.ts'
 
 type LocalCacheCounts = {
   byScope: Array<{ scope: string; docs: number }>
@@ -22,6 +26,7 @@ export type RecordCacheParityInput = {
   local: LocalCacheCounts
   hosted?: RecordCacheCounts
   failure?: string
+  failureRemedy?: string
 }
 
 export type RecordCacheParityDecision = {
@@ -47,7 +52,7 @@ export function decideRecordCacheParity(input: RecordCacheParityInput): RecordCa
     return {
       name,
       status: 'fail',
-      detail: `could not establish: ${input.failure}; ${apiRemedy}`,
+      detail: `could not establish: ${input.failure}; ${input.failureRemedy ?? apiRemedy}`,
       section: 'customer',
     }
   if (!input.hosted)
@@ -61,7 +66,6 @@ export function decideRecordCacheParity(input: RecordCacheParityInput): RecordCa
 
   const localByScope = new Map(input.local.byScope.map((row) => [row.scope, row.docs]))
   const hostedByScope = new Map<string, number>()
-  const notMirrored = new Map<string, number>()
   for (const row of input.hosted.byScope) {
     const owner = recordCacheAddressOwner({
       scope: row.scope,
@@ -70,20 +74,13 @@ export function decideRecordCacheParity(input: RecordCacheParityInput): RecordCa
       projectSpaces: input.projectSpaces,
     })
     if (owner !== input.space) continue
-    const target = DOC_SCOPES.includes(row.scope as (typeof DOC_SCOPES)[number])
-      ? hostedByScope
-      : notMirrored
-    target.set(row.scope, (target.get(row.scope) ?? 0) + row.docs)
+    hostedByScope.set(row.scope, (hostedByScope.get(row.scope) ?? 0) + row.docs)
   }
 
   let gap = false
   const scopes = new Set([...localByScope.keys(), ...hostedByScope.keys()])
   const lines = [...scopes]
-    .sort((left, right) => {
-      const leftIndex = DOC_SCOPES.indexOf(left as (typeof DOC_SCOPES)[number])
-      const rightIndex = DOC_SCOPES.indexOf(right as (typeof DOC_SCOPES)[number])
-      return leftIndex - rightIndex || left.localeCompare(right)
-    })
+    .sort((left, right) => left.localeCompare(right))
     .map((scope) => {
       const local = localByScope.get(scope) ?? 0
       const hosted = hostedByScope.get(scope) ?? 0
@@ -91,12 +88,11 @@ export function decideRecordCacheParity(input: RecordCacheParityInput): RecordCa
       gap ||= result.gap
       return `${scope}: ${local} local; ${hosted} hosted — ${result.label}`
     })
-  for (const [scope, docs] of [...notMirrored].sort(([left], [right]) => left.localeCompare(right)))
-    lines.push(`${scope}: ${docs} hosted — not mirrored`)
-
   const hostedSubjects = input.hosted.subjectsByProject.reduce(
     (total, row) =>
-      input.projectSpaces.get(row.project) === input.space ? total + row.subjects : total,
+      recordCacheSpaceOwnsSubject(row.project, input.space, input.projectSpaces)
+        ? total + row.subjects
+        : total,
     0,
   )
   const subjectResult = comparison(input.local.subjects, hostedSubjects)
@@ -106,6 +102,32 @@ export function decideRecordCacheParity(input: RecordCacheParityInput): RecordCa
   )
   if (gap) lines.push(pullRemedy)
   return { name, status: gap ? 'fail' : 'pass', detail: lines.join('\n'), section: 'customer' }
+}
+
+function isRecordCacheCounts(value: unknown): value is RecordCacheCounts {
+  if (!value || typeof value !== 'object') return false
+  const response = value as Partial<RecordCacheCounts>
+  return (
+    Array.isArray(response.byScope) &&
+    response.byScope.every(
+      (row) =>
+        row !== null &&
+        typeof row === 'object' &&
+        typeof row.scope === 'string' &&
+        (row.project === null || typeof row.project === 'string') &&
+        typeof row.docs === 'number' &&
+        Number.isFinite(row.docs),
+    ) &&
+    Array.isArray(response.subjectsByProject) &&
+    response.subjectsByProject.every(
+      (row) =>
+        row !== null &&
+        typeof row === 'object' &&
+        typeof row.project === 'string' &&
+        typeof row.subjects === 'number' &&
+        Number.isFinite(row.subjects),
+    )
+  )
 }
 
 function localCacheCounts(local: Database, space: string): LocalCacheCounts {
@@ -138,21 +160,21 @@ export async function recordCacheParityChecks(
         local: localCacheCounts(local, space),
       }
       try {
-        if (!client.cacheCounts) return decideRecordCacheParity(base)
-        const response = (await client.cacheCounts({
+        const response: unknown = await client.cacheCounts({
           destinationSpaceId: space,
-        })) as Partial<RecordCacheCounts>
+        })
         return decideRecordCacheParity({
           ...base,
-          hosted:
-            Array.isArray(response.byScope) && Array.isArray(response.subjectsByProject)
-              ? (response as RecordCacheCounts)
-              : undefined,
+          hosted: isRecordCacheCounts(response) ? response : undefined,
         })
       } catch (error) {
         return decideRecordCacheParity({
           ...base,
           failure: error instanceof Error ? error.message : String(error),
+          failureRemedy:
+            error instanceof RecordApiRequestError && error.kind === 'refused'
+              ? RECORD_SIGN_IN_REMEDY
+              : undefined,
         })
       }
     }),

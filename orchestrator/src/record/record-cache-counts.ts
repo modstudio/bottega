@@ -4,12 +4,8 @@
 import { bindTenant } from '../../../shared/record/tenant.ts'
 import { docWriteProjectName } from '../doc/doc-write-allowed.ts'
 import type { RecordDocumentTenant } from './record-api-doc-tenant.ts'
+import type { RecordCacheCounts } from './record-cache-counts-contract.ts'
 import { recordPool } from './record-pool.ts'
-
-export type RecordCacheCounts = {
-  byScope: Array<{ scope: string; project: string | null; docs: number }>
-  subjectsByProject: Array<{ project: string; subjects: number }>
-}
 
 export async function countRecordCacheRows(
   input: RecordDocumentTenant,
