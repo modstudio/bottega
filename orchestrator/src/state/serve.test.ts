@@ -31,9 +31,12 @@ const RUN_DETAIL_ROUTING_REASON =
 const RUN_DETAIL_COLLECTION_REASON =
   'Collector sequence metadata is presented only through changed-after cursors.'
 const RUN_DETAIL_SECRET_REASON = 'Authentication material is never published by run show.'
+const RUN_DETAIL_LOCAL_EVIDENCE_REASON =
+  'A member own failure kind is local roll-up input; detail presents the chain evidence kind.'
 
 const RUN_DETAIL_INTENTIONALLY_OMITTED_COLUMNS = {
   number: RUN_DETAIL_ALIAS_REASON,
+  own_failure_kind: RUN_DETAIL_LOCAL_EVIDENCE_REASON,
   repo: RUN_DETAIL_DISPLAY_DEFERRED_REASON,
   prompt_sha: RUN_DETAIL_ARTIFACT_ACCOUNTING_REASON,
   prompt_bytes: RUN_DETAIL_ARTIFACT_ACCOUNTING_REASON,
