@@ -1,5 +1,5 @@
 const NUMBER_PREDICATE =
-  /\b(?:[A-Za-z_$][\w$]*\.)?number\s*(?:=\s*(?:\?|\$\d+|\$\{|[A-Za-z_$][\w$]*\.number\b)|IN\s*\()/gi
+  /\b(?:WHERE|AND|OR)\b(?:(?!\b(?:SELECT|INSERT|UPDATE|DELETE|SET|VALUES|ORDER|RETURNING|ON\s+CONFLICT)\b)[^;`'"])*?\b(?:[A-Za-z_$][\w$]*\.)?number\s*(?:=\s*(?:\?|\$\d+|\$\{|[A-Za-z_$][\w$]*\.number\b)|IN\s*\()/gi
 const IDENTIFIER_CLASSIFIER_CALL = /\bclassify[A-Za-z]+Identifier\s*\(/gi
 const QUESTION_NUMBER_HELPER_CALL = /\b(?:questionByProjectNumber|questionByUnscopedNumber)\s*\(/g
 
@@ -20,7 +20,8 @@ export function identityReferenceGuardViolations(
 ): string[] {
   const files = new Set([...Object.keys(counts), ...Object.keys(baseline)])
   return [...files].flatMap((file) => {
-    if (file.startsWith('orchestrator/src/identity/')) return []
+    if (file.startsWith('orchestrator/src/identity/') || file.startsWith('hub/src/identity/'))
+      return []
     const current = counts[file] ?? 0
     const allowed = baseline[file] ?? 0
     if (current === allowed) return []

@@ -17,7 +17,7 @@ test('identity reference guard rejects an interpolated number-column lookup outs
     'orchestrator/src/run/new.ts',
   )
   expect(identityReferenceGuardViolations({ 'orchestrator/src/run/new.ts': added }, {})).toEqual([
-    'orchestrator/src/run/new.ts: production identity bypass count grew from 0 to 3; resolve the reference through identity/',
+    'orchestrator/src/run/new.ts: production identity bypass count grew from 0 to 2; resolve the reference through identity/',
   ])
 })
 
@@ -29,6 +29,15 @@ test('identity reference guard rejects a tagged-template number-column lookup', 
   expect(identityReferenceGuardViolations({ 'orchestrator/src/run/new.ts': added }, {})).toEqual([
     'orchestrator/src/run/new.ts: production identity bypass count grew from 0 to 1; resolve the reference through identity/',
   ])
+})
+
+test('identity reference guard counts predicates but not assignments', () => {
+  expect(identityReferenceViolationCount('UPDATE task SET number=excluded.number')).toBe(0)
+  expect(identityReferenceViolationCount('label.number = row.number')).toBe(0)
+  expect(identityReferenceViolationCount('SELECT id FROM task WHERE number=?')).toBe(1)
+  expect(identityReferenceViolationCount('SELECT id FROM task WHERE project=? AND number IN (?)')).toBe(
+    1,
+  )
 })
 
 test('identity reference guard rejects a question-number helper call outside identity', () => {
