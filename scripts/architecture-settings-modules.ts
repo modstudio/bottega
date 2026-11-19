@@ -343,6 +343,7 @@ export const settingsModules: SettingsModule[] = [
     '../../../shared/install-root.ts',
     '../../../shared/state-directory.ts',
     '../../../shared/machine-config.ts',
+    '../../../shared/refusal.ts',
     '../canon/user-canon-home-files.ts',
     '../database/db.ts',
     '../doc/docs.ts',

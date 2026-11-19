@@ -160,6 +160,7 @@ export const settingsBoundarySpecs: ImportBoundary[] = [
       'shared/install-root.ts',
       'shared/state-directory.ts',
       'shared/machine-config.ts',
+      'shared/refusal.ts',
       'orchestrator/src/canon/user-canon-home-files.ts',
       'orchestrator/src/database/db.ts',
       'orchestrator/src/doc/docs.ts',
