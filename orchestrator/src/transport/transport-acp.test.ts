@@ -13,6 +13,7 @@ import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { AGENTS } from '../agent/agent-registry.ts'
 import { decideEndpointApiKey } from '../agent/endpoint-api-key.ts'
+import { readOnlyRunTempEnvironment } from '../run/run-worker-home.ts'
 import {
   ACP_PILOT_TASK,
   acpRuntimeGaps,
@@ -59,6 +60,31 @@ import {
   persistAcpUpdates,
   resolveAcpEditLocations,
 } from './transport-acp.ts'
+
+test('ACP children receive the read-only run temp environment and writers receive none', () => {
+  const privateTemp = '/runs/sandbox-root/tmp'
+  const childEnvironment = (privateTemp: string | undefined) =>
+    acpEnvironment({
+      agent: AGENTS.codex!,
+      cwd: '/tmp',
+      env: { PATH: '/bin' },
+      prompt: 'test',
+      outPath: '/tmp/out',
+      startedAt: 0,
+      recipeEnvironment: readOnlyRunTempEnvironment(privateTemp),
+    })
+
+  expect(childEnvironment(privateTemp)).toMatchObject({
+    TMPDIR: privateTemp,
+    TMP: privateTemp,
+    TEMP: privateTemp,
+    CLAUDE_CODE_TMPDIR: privateTemp,
+  })
+  const writer = childEnvironment(undefined)
+  for (const name of ['TMPDIR', 'TMP', 'TEMP', 'CLAUDE_CODE_TMPDIR']) {
+    expect(writer).not.toHaveProperty(name)
+  }
+})
 
 test.each([
   ['resolved endpoint key', { apiKeySecret: 'ENDPOINT_KEY' }, 'resolved-key'],

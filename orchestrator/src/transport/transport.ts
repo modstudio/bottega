@@ -44,6 +44,12 @@ export type AcpPilotJob = (typeof ACP_PILOT_JOBS)[number]
 
 export type TransportName = 'cli' | 'acp'
 
+export type RunTempScope = {
+  runtimeDir: string
+  directory: string | undefined
+  environment: Record<string, string>
+}
+
 export type TransportPin = {
   pinnedTransport?: TransportName
   transportPinSource?: 'explicit' | 'environment'
@@ -259,13 +265,26 @@ export type TransportStartOpts = {
   writableRoots?: ArgvOpts['writableRoots']
   gitConfigEnvironment?: ArgvOpts['gitConfigEnvironment']
   recipeEnvironment?: ArgvOpts['recipeEnvironment']
-  srt?: { profile: SandboxRuntimeConfig; runtimeDir: string }
+  tempEnvironment?: Record<string, string>
+  srt?: { profile: SandboxRuntimeConfig; runtimeDir: string; temporaryDirectory?: string }
   /** ACP binary. CLI uses `agent.bin`. */
   bin?: string
   /** First turn vs resumeArgv. Session may exist on a first grok turn too. */
   resume?: boolean
   /** Best-effort run warning recorder owned by the lifecycle adapter. */
   onWarning?: (message: string) => void
+}
+
+export function srtScope(
+  profile: SandboxRuntimeConfig | null,
+  runTemp: Pick<RunTempScope, 'runtimeDir' | 'directory'>,
+): TransportStartOpts['srt'] {
+  if (!profile) return undefined
+  return {
+    profile,
+    runtimeDir: runTemp.runtimeDir,
+    ...(runTemp.directory ? { temporaryDirectory: runTemp.directory } : {}),
+  }
 }
 
 export type TransportHandle = {

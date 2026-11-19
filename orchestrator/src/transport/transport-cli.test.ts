@@ -3,15 +3,42 @@ import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSyn
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { dir } from '../../test/fixtures/store.ts'
+import { readOnlyRunTempEnvironment } from '../run/run-worker-home.ts'
+import { runTempDir } from '../run-owned-paths.ts'
 import { parseCodexQuotaReadings } from './codex-quota.ts'
 import { CODEX_ROLLOUT_READ_CAP_BYTES, codexRolloutTextsSince } from './codex-rollout-files.ts'
 import { EMPTY_QUOTA_READINGS } from './quota-readings.ts'
-import { type TransportAgent, transportFor } from './transport.ts'
+import { srtScope, type TransportAgent, transportFor } from './transport.ts'
 import {
   CLI_OUTPUT_CAPTURE_BYTES,
+  cliChildEnvironment,
   codexRolloutEvidence,
   startCliStreamReaders,
 } from './transport-cli.ts'
+
+test('the composed CLI child environment scopes temp to every read-only launch', () => {
+  const runtimeDir = '/runs/sandbox-root'
+  const privateTemp = runTempDir(runtimeDir)
+  const reader = cliChildEnvironment({ PATH: '/bin' }, readOnlyRunTempEnvironment(privateTemp))
+  const writer = cliChildEnvironment({ PATH: '/bin' }, readOnlyRunTempEnvironment(undefined))
+
+  expect(reader).toMatchObject({
+    TMPDIR: privateTemp,
+    TMP: privateTemp,
+    TEMP: privateTemp,
+    CLAUDE_CODE_TMPDIR: privateTemp,
+  })
+  for (const name of ['TMPDIR', 'TMP', 'TEMP', 'CLAUDE_CODE_TMPDIR']) {
+    expect(writer).not.toHaveProperty(name)
+  }
+  const profile = {} as never
+  expect(srtScope(profile, { runtimeDir, directory: privateTemp })?.temporaryDirectory).toBe(
+    privateTemp,
+  )
+  expect(srtScope(profile, { runtimeDir, directory: undefined })).not.toHaveProperty(
+    'temporaryDirectory',
+  )
+})
 
 async function resultLineUsage(billing: TransportAgent['billing']) {
   const resultLine = JSON.stringify({

@@ -580,7 +580,7 @@ function acpLaunchArgv(
   agentArgv: string[],
 ): Promise<string[]> | string[] {
   if (!profile || !opts.srt) return [bin, ...agentArgv]
-  return sandboxLaunchArgv(profile, bin, agentArgv)
+  return sandboxLaunchArgv(profile, bin, agentArgv, opts.srt.temporaryDirectory)
 }
 
 function openAcpTrace(

@@ -30,6 +30,7 @@ export const SRT_LIBRARY = join(
 )
 
 let sandboxInitialized = false
+let sandboxOperationTail = Promise.resolve()
 type ExtractedRuntime = {
   root: string
   javaAgentJarPath: string
@@ -202,22 +203,58 @@ async function prepareSandboxRuntimeConfig(): Promise<Partial<LibrarySandboxRunt
   }
 }
 
+async function serializedSandboxOperation<T>(operation: () => Promise<T>): Promise<T> {
+  const preceding = sandboxOperationTail
+  let release = () => {}
+  sandboxOperationTail = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  await preceding
+  try {
+    return await operation()
+  } finally {
+    release()
+  }
+}
+
+/** Scope SRT's process-env-only temp input to one serialized launch. */
+export async function withSandboxTemporaryDirectory<T>(
+  temporaryDirectory: string | undefined,
+  operation: () => Promise<T>,
+): Promise<T> {
+  return serializedSandboxOperation(async () => {
+    const previous = process.env.CLAUDE_CODE_TMPDIR
+    if (temporaryDirectory) process.env.CLAUDE_CODE_TMPDIR = temporaryDirectory
+    try {
+      return await operation()
+    } finally {
+      if (previous === undefined) delete process.env.CLAUDE_CODE_TMPDIR
+      else process.env.CLAUDE_CODE_TMPDIR = previous
+    }
+  })
+}
+
 export async function launchWithSandboxRuntime(
   config: LibrarySandboxRuntimeConfig,
   command: string,
+  temporaryDirectory?: string,
 ): Promise<string[]> {
-  const payload = await prepareSandboxRuntimeConfig()
-  const configured = { ...config, ...payload }
-  if (sandboxInitialized) SandboxManager.updateConfig(configured)
-  else {
-    await SandboxManager.initialize(configured)
-    sandboxInitialized = true
-  }
-  return (await SandboxManager.wrapWithSandboxArgv(command)).argv
+  return withSandboxTemporaryDirectory(temporaryDirectory, async () => {
+    const payload = await prepareSandboxRuntimeConfig()
+    const configured = { ...config, ...payload }
+    if (sandboxInitialized) SandboxManager.updateConfig(configured)
+    else {
+      await SandboxManager.initialize(configured)
+      sandboxInitialized = true
+    }
+    return (await SandboxManager.wrapWithSandboxArgv(command)).argv
+  })
 }
 
 export async function resetSandboxRuntime(): Promise<void> {
-  if (!sandboxInitialized) return
-  await SandboxManager.reset()
-  sandboxInitialized = false
+  await serializedSandboxOperation(async () => {
+    if (!sandboxInitialized) return
+    await SandboxManager.reset()
+    sandboxInitialized = false
+  })
 }

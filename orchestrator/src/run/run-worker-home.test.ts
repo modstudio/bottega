@@ -17,12 +17,28 @@ import type { Project } from '../project/projects.ts'
 import { RequiredMcpProbeRefusalError } from '../sandbox/project-mcp-preflight.ts'
 import { grokAskCommandFromConfig, grokAskServerCommand } from '../sandbox/sandbox.ts'
 import { carriedRefusalFailure } from './run-prelaunch-refusal.ts'
-import { prepareClaimedWorkerMcpConfig, prepareWorkerHomeLaunch } from './run-worker-home.ts'
+import {
+  prepareClaimedWorkerMcpConfig,
+  prepareWorkerHomeLaunch,
+  readOnlyRunTempEnvironment,
+} from './run-worker-home.ts'
 
 const FRONT_DOOR = join('/', 'bin', PLATFORM_SLUG)
 const roots: string[] = []
 afterEach(() => {
   while (roots.length) rmSync(roots.pop()!, { recursive: true, force: true })
+})
+
+test('every read-only launch uses its run-owned temp while a writer is unchanged', () => {
+  const runtimeDir = '/runs/sandbox-root'
+  const privateTemp = join(runtimeDir, 'tmp')
+  expect(readOnlyRunTempEnvironment(privateTemp)).toEqual({
+    TMPDIR: privateTemp,
+    TMP: privateTemp,
+    TEMP: privateTemp,
+    CLAUDE_CODE_TMPDIR: privateTemp,
+  })
+  expect(readOnlyRunTempEnvironment(undefined)).toEqual({})
 })
 
 test('a writer gets cwd-discovered MCP configuration and a reader does not', () => {

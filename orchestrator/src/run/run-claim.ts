@@ -6,7 +6,7 @@
  */
 
 import { randomUUID } from 'node:crypto'
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
+import { existsSync, lstatSync, mkdirSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { Agent } from '../agent/agents.ts'
@@ -41,7 +41,7 @@ import { teardownTerminalRunResources } from '../resources/resource-ownership.ts
 import type { ReviewRole } from '../review/review-role.ts'
 import { attributedLaunchKey, type ResolvedReviewTarget } from '../review/review-target.ts'
 import { resolveSupersededTurn } from '../route/failover.ts'
-import { runOwnedPaths } from '../run-owned-paths.ts'
+import { runOwnedPaths, runTempDir } from '../run-owned-paths.ts'
 import { type KeepTreeExemption, recordedKeepTreeExemption } from '../worktree/keep-tree-hold.ts'
 import { writerTreeBaseRef } from '../worktree/trunk-base-choice.ts'
 import { createWorkerWorktree, worktreeExists } from '../worktree/worktree.ts'
@@ -105,6 +105,22 @@ import { assertRetryRootWorkspace } from './run-retry-claim.ts'
 import { recordRunStartupFailure } from './run-startup-failure.ts'
 import { taskBranchResolution } from './run-task-branch-resolution.ts'
 import { admitNewRunReference } from './run-task-reference.ts'
+
+export function prepareReadOnlyRunTemp(writesJob: boolean, runtimeDir: string): void {
+  if (writesJob) return
+  const path = runTempDir(runtimeDir)
+  try {
+    const stat = lstatSync(path)
+    if (!stat.isDirectory() || stat.isSymbolicLink()) {
+      throw new Error(
+        `run temp path ${path} is not a real directory; remedy: remove it and retry the run`,
+      )
+    }
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+    mkdirSync(path, { recursive: true, mode: 0o700 })
+  }
+}
 
 type ClaimOptions = {
   binding?: RunWorkflowBinding
@@ -617,6 +633,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
    * A run must write its own terminal state for setup as well as for the agent. */
   let cwd = callerCwd
   try {
+    prepareReadOnlyRunTemp(writesJob, runtimeDir)
     await admitFreshRepositoryRun(db(), claim.id, repoJob, !!opts.resume, input.admitDeps)
     switch (claimTreePlan.mode) {
       case 'attach':

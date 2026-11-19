@@ -1,6 +1,4 @@
 // concern: run worker home provisioning and failed-launch cleanup
-import { mkdirSync } from 'node:fs'
-import { join } from 'node:path'
 import type { Agent } from '../agent/agents.ts'
 import { workerHarnessName } from '../agent/worker-launch-env.ts'
 import type { McpMode } from '../mcp/mcp-preflight.ts'
@@ -35,15 +33,20 @@ import { prepareWorkerMcpConfig } from '../worktree/worktree-mcp.ts'
 import type { Worktree } from '../worktree/worktree-types.ts'
 import { childEnv } from './run-process.ts'
 
-export function codexPrivateTempEnvironment(
-  harness: string,
-  repoJob: boolean,
-  scratchDir: string,
+export function readOnlyRunTempEnvironment(
+  privateTemp: string | undefined,
 ): Record<string, string> {
-  if (harness !== 'codex' || repoJob) return {}
-  const privateTemp = join(scratchDir, 'tmp')
-  mkdirSync(privateTemp, { recursive: true, mode: 0o700 })
-  return { TMPDIR: privateTemp, TMP: privateTemp, TEMP: privateTemp }
+  if (!privateTemp) return {}
+  return {
+    TMPDIR: privateTemp,
+    TMP: privateTemp,
+    TEMP: privateTemp,
+    CLAUDE_CODE_TMPDIR: privateTemp,
+  }
+}
+
+export function runTemp(runtimeDir: string, directory: string | undefined) {
+  return { runtimeDir, directory, environment: readOnlyRunTempEnvironment(directory) }
 }
 
 function grokReaderMcpEnabled(harness: string, usingMcp: boolean): boolean {
