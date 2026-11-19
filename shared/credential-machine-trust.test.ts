@@ -46,6 +46,14 @@ test('a trusted credential machine is told that its data-key wrap is missing', (
   )
 })
 
+test('a registered and trusted unclaimed credential machine retains both facts', () => {
+  expect(facts([row({ userId: null })], { [keyId]: {} })).toMatchObject({
+    registered: true,
+    trusted: true,
+    ownedByAnotherUser: false,
+  })
+})
+
 test('a credential machine key owned by another user offers both account-switch intents', () => {
   const observed = facts([row({ userId: 'other-user' })], { [keyId]: {} })
   const remedy = missingDataKeyWrapRemedy(observed)

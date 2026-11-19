@@ -245,7 +245,7 @@ export async function setCredential(
     if (
       error instanceof ConfigClientError &&
       error.status === 404 &&
-      error.route === '/v1/config/data-keys/current'
+      error.route.split('?', 1)[0] === '/v1/config/data-keys/current'
     )
       throw noDataKeyRefusal(address)
     throw error

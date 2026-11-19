@@ -47,7 +47,9 @@ export function credentialMachineTrustFacts(input: {
 }): CheckedCredentialMachineTrustFacts {
   const registration = input.machineRows.find((row) => row.keyId === input.machine.keyId)
   const ownedByAnotherUser =
-    registration !== undefined && registration.userId !== input.signedInUserId
+    registration !== undefined &&
+    registration.userId !== null &&
+    registration.userId !== input.signedInUserId
   return {
     status: 'checked',
     registered:

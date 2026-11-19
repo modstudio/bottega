@@ -9,6 +9,7 @@ test('setup proposes the ordered provider credential trust notice from gathered 
       registered: false,
       revoked: false,
       trusted: false,
+      ownedByAnotherUser: false,
       space: 'studio',
       keyId: 'key-id',
       publicKey: 'public-key',

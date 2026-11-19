@@ -7,6 +7,7 @@ import {
   type ConfigClient,
   ConfigClientError,
   type ConfigWriteDestination,
+  configClient,
 } from '../../../shared/config-client.ts'
 import { writeHostedConfigIdentity } from '../../../shared/hosted-config-space.ts'
 import { machineKeyId } from '../../../shared/machine-key-id.ts'
@@ -182,19 +183,19 @@ test('operator identity replaces identity fields and retains project binding fie
 })
 
 test('set credential names machine registration when the space has no data key', async () => {
-  const createDataKey = mock(async () => ({ id: '', version: 1 }))
-  const client = {
-    currentDataKey: async () => {
-      throw new ConfigClientError('response', '/v1/config/data-keys/current', 404)
-    },
-    createDataKey,
-  } as unknown as ConfigClient
+  const transport = mock(async (input: RequestInfo | URL) => {
+    expect(String(input)).toMatch(
+      /^https:\/\/record\.test\/v1\/config\/data-keys\/current\?recipientKeyId=.+$/,
+    )
+    return Response.json({ error: 'missing' }, { status: 404 })
+  })
+  const client = configClient({ BOTTEGA_RECORD_API_URL: 'https://record.test' }, transport, 'token')
   const refusal = await setCredential(address, 'secret', client).catch((error) => String(error))
   expect(refusal).toContain('cannot access credentials for project alpha in space studio')
   expect(refusal).toContain('record space studio has no data key yet')
   expect(refusal).toContain('machine config machine register --space studio')
   expect(refusal).not.toContain('machine config machine trust')
-  expect(createDataKey).not.toHaveBeenCalled()
+  expect(transport).toHaveBeenCalledTimes(1)
 })
 
 test('set credential gives the project access remedy when the data key has no wrap', async () => {
@@ -218,13 +219,11 @@ test('set credential gives the project access remedy when the data key has no wr
 })
 
 test('set account credential gives the personal-space registration remedy', async () => {
-  const client = {
-    currentDataKey: async () => {
-      throw new ConfigClientError('response', '/v1/config/data-keys/current', 404)
-    },
-    listMachineKeys: async () => [],
-    readTrustLog: async () => [],
-  } as unknown as ConfigClient
+  const client = configClient(
+    { BOTTEGA_RECORD_API_URL: 'https://record.test' },
+    async () => Response.json({ error: 'missing' }, { status: 404 }),
+    'token',
+  )
   await expect(
     setCredential(
       { ...address, account: true, projectId: null, projectName: undefined },
