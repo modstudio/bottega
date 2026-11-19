@@ -39,6 +39,10 @@ import {
 } from './record-cache-lens.ts'
 import { recordCacheSpaceOwnsAddress } from './record-cache-ownership.ts'
 import {
+  rememberRecordCacheProjectSpaces,
+  rewindChangedRecordCacheProjectSpaces,
+} from './record-cache-project-spaces.ts'
+import {
   applyPortCatalogueRow,
   deletePortCatalogueRow,
   portCatalogueParentPresent,
@@ -565,6 +569,8 @@ async function settleDocDeferrals(
   const classified = await classifyDeferredDocFallbacks(deferred, client, projectSpaces)
   addResult(result, { waitingOnUnregistered: classified.waitingOnUnregistered })
   const error = recordCacheDocDeferralError(classified.deferrals)
+  if (error && classified.listingError)
+    throw new Error(`${error.message}; hosted subject listing failed: ${classified.listingError.message}`)
   if (error) throw error
 }
 
@@ -772,6 +778,11 @@ export async function pullRecordCacheFeed(
   if ('stopped' in prepared) return prepared.stopped
   const { identity, spaces, remembered, previousPull, lost, purgeWarning } = prepared
   const cache = deps.cacheSpaces(identity, local)
+  rewindChangedRecordCacheProjectSpaces(local, cache.projectSpaces, new Set(previousPull))
+  const complete = (value: RecordCachePullResult): RecordCachePullResult => {
+    rememberRecordCacheProjectSpaces(local, cache.projectSpaces)
+    return value
+  }
   const result = emptyRecordCachePullResult()
   const deferred: DeferredDocFallbacks = new Map()
   result.purgeWarning = purgeWarning
@@ -790,7 +801,7 @@ export async function pullRecordCacheFeed(
       )
       result.reset = true
       await settleDocDeferrals(deferred, client, cache.projectSpaces, result)
-      return result
+      return complete(result)
     }
     throw new Error('record change feed did not provide a reset cursor for an uninitialized cache')
   }
@@ -808,7 +819,7 @@ export async function pullRecordCacheFeed(
     writeCursor(local, SPACES, JSON.stringify(nextRemembered))
     writeCursor(local, PULL_SPACES, JSON.stringify(spaces))
   }, local)
-  return pullFeedPages({
+  return complete(await pullFeedPages({
     local,
     cursor,
     client,
@@ -819,5 +830,5 @@ export async function pullRecordCacheFeed(
     cache,
     result,
     deferred,
-  })
+  }))
 }

@@ -81,7 +81,6 @@ export const projectModules: ProjectModule[] = [
     '../database/db.ts',
     '../database/project-register-store.ts',
     '../project-space-cache.ts',
-    '../record/record-cache-registration.ts',
     './projects.ts',
   ]),
   module('orchestrator/src/project/project-add-decision.ts', [

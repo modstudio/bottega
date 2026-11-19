@@ -15,8 +15,9 @@ export const recordChangeModules = [
     'bun:sqlite',
     './record-cache-cursor.ts',
   ]),
-  module('orchestrator/src/record/record-cache-registration.ts', [
+  module('orchestrator/src/record/record-cache-project-spaces.ts', [
     'bun:sqlite',
+    '../database/db.ts',
     './record-cache-cursor.ts',
     './record-cache-fallbacks.ts',
   ]),

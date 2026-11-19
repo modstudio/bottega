@@ -8,6 +8,7 @@ import { db } from '../database/db.ts'
 import { registerLocalProject } from '../project/project-registration.ts'
 import { upsertProject } from '../project/projects.ts'
 import { pullRecordCache } from './record-cache.ts'
+import { writeCursor } from './record-cache-cursor.ts'
 import { classifyRecordCacheSubjectDeferrals } from './record-cache-doc-deferrals.ts'
 import { encodeRecordCursor } from './record-cursor.ts'
 
@@ -175,6 +176,14 @@ function ownershipTransitionFixture() {
         db(),
       )
     },
+    directWrite() {
+      upsertProject({
+        recordId: projectRecordId,
+        name: projectName,
+        path: '/w/ownership-transition',
+        settings: { space: 'active' },
+      })
+    },
   }
 }
 
@@ -235,6 +244,36 @@ test('registration applies subjects and docs after the initial waiting pull', as
   expect(
     db().query("SELECT 1 FROM schema_meta WHERE key='record_docs_cursor:space-active'").get(),
   ).not.toBeNull()
+})
+
+test('a project mapped by a non-registration writer applies subjects and docs on the next pull', async () => {
+  const fixture = ownershipTransitionFixture()
+  await expectUnregisteredProjectDeferral(fixture)
+  fixture.directWrite()
+
+  expect(await pullRecordCache(db())).toMatchObject({ subjects: 1, docs: 2 })
+  expect(db().query('SELECT 1 FROM subject WHERE id=?').get(fixture.subjectId)).not.toBeNull()
+  expect(db().query('SELECT 1 FROM doc WHERE record_id=?').get(fixture.referencedDocId)).not.toBeNull()
+})
+
+test('a first pull with no persisted project map does not clear keyset cursors', async () => {
+  const fixture = ownershipTransitionFixture()
+  fixture.directWrite()
+  const existingCursor = JSON.stringify({
+    at: '2026-10-01T12:00:00.000Z',
+    id: newRecordId(),
+  })
+  writeCursor(db(), 'record_subjects_cursor:space-active', existingCursor)
+  writeCursor(db(), 'record_docs_cursor:space-active', existingCursor)
+  db().exec(`CREATE TEMP TRIGGER reject_first_pull_rewind
+    BEFORE DELETE ON schema_meta
+    WHEN OLD.key IN ('record_subjects_cursor:space-active', 'record_docs_cursor:space-active')
+    BEGIN SELECT RAISE(FAIL, 'first pull rewound a cursor'); END`)
+
+  await expect(pullRecordCache(db())).resolves.toMatchObject({ subjects: 1, docs: 2 })
+  expect(
+    db().query("SELECT value FROM schema_meta WHERE key='record_cache_project_spaces'").get(),
+  ).toEqual({ value: JSON.stringify([[fixture.projectName, 'space-active']]) })
 })
 
 test('classifies only hosted subjects of absent projects as waiting', () => {
@@ -398,10 +437,17 @@ test('defers a document with a non-local subject until after later keyset famili
           endCursor: encodeRecordCursor({ at: updatedAt, id: lensId }),
         }
       : { items: [], nextCursor: null }
+  let subjectListings = 0
+  client.listProjectSubjects = async () => {
+    if (subjectListings++) throw new Error('hosted subject listing unavailable')
+    return { items: [], nextCursor: null }
+  }
   installRecordApiClient(client)
 
   await expect(pullRecordCache(db())).rejects.toThrow(
-    new RegExp(`${deferredDocId}.*${missingSubjectId}`),
+    new RegExp(
+      `${deferredDocId}[\\s\\S]*${missingSubjectId}[\\s\\S]*hosted subject listing unavailable`,
+    ),
   )
   expect(db().query('SELECT 1 FROM doc WHERE record_id=?').get(deferredDocId)).toBeNull()
   expect(db().query('SELECT 1 FROM doc WHERE record_id=?').get(validDocId)).not.toBeNull()

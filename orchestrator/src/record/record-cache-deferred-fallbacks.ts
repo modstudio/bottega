@@ -53,24 +53,33 @@ export async function classifyDeferredDocFallbacks(
 ): Promise<{
   deferrals: ReadonlyDocDeferrals
   waitingOnUnregistered: WaitingOnUnregisteredProject[]
+  listingError: Error | null
 }> {
+  const combined = combinedDocDeferrals(deferred)
   const hostedSubjectProjects = new Map<string, string>()
   const spaces = new Set<string>()
   for (const [fallback, value] of deferred)
     if (value.subjectDeferrals.size) spaces.add(fallbackSpace(fallback))
-  for (const space of spaces) {
-    let cursor: string | undefined
-    for (;;) {
-      const page = await client.listProjectSubjects(
-        { includeRetired: true, cursor, limit: 100 },
-        { destinationSpaceId: space },
-      )
-      for (const subject of page.items) hostedSubjectProjects.set(subject.id, subject.project)
-      if (!page.nextCursor) break
-      cursor = page.nextCursor
+  try {
+    for (const space of spaces) {
+      let cursor: string | undefined
+      for (;;) {
+        const page = await client.listProjectSubjects(
+          { includeRetired: true, cursor, limit: 100 },
+          { destinationSpaceId: space },
+        )
+        for (const subject of page.items) hostedSubjectProjects.set(subject.id, subject.project)
+        if (!page.nextCursor) break
+        cursor = page.nextCursor
+      }
+    }
+  } catch (error) {
+    return {
+      deferrals: combined,
+      waitingOnUnregistered: [],
+      listingError: error instanceof Error ? error : new Error(String(error)),
     }
   }
-  const combined = combinedDocDeferrals(deferred)
   const classified = classifyRecordCacheSubjectDeferrals(
     combined.subjectDeferrals,
     hostedSubjectProjects,
@@ -82,5 +91,6 @@ export async function classifyDeferredDocFallbacks(
       subjectDeferrals: classified.refusing,
     },
     waitingOnUnregistered: classified.waitingOnUnregistered,
+    listingError: null,
   }
 }
