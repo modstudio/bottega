@@ -1,12 +1,10 @@
 import { expect, test } from 'bun:test'
 import { SUBSCRIPTION_PACING_FACTS_SQL } from '../route/subscription-pacing-store.ts'
-import { applyMigrations } from './migrations.ts'
-import { migrationBoundaryTestDatabase } from './test-database.fixture.ts'
+import { migratedTestDatabase } from './test-database.fixture.ts'
 
 test('run quota window migration adds the bounded-reading index', () => {
-  const database = migrationBoundaryTestDatabase('0238_run_quota_account')
+  const database = migratedTestDatabase()
   try {
-    expect(applyMigrations(database)).toContain('0238_run_quota_account')
     expect(
       database
         .query<{ name: string }, []>(

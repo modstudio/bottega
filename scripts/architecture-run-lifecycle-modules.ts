@@ -38,7 +38,12 @@ export const runLifecycleModules: ArchitectureModule[] = [
     './keyed-run-cursor-admission.ts',
   ]),
   module('orchestrator/src/transport/quota-readings.ts', []),
-  module('orchestrator/src/transport/codex-account.ts', ['node:fs', 'node:path']),
+  module('orchestrator/src/transport/codex-account.ts', [
+    'node:fs',
+    'node:os',
+    'node:path',
+    '../../../shared/user-canon-home.ts',
+  ]),
   module('orchestrator/src/transport/codex-quota.ts', ['./quota-readings.ts']),
   module('orchestrator/src/close/conversation-liveness.ts', [
     'node:fs',

@@ -1,6 +1,15 @@
 // concern: codex-quota
 /** Parses quota readings from the Codex rollout text written by one turn. */
-import { EMPTY_QUOTA_READINGS, type QuotaReadings, usableQuotaReset } from './quota-readings.ts'
+import { type QuotaReadings, usableQuotaReset } from './quota-readings.ts'
+
+export type CodexRolloutQuotaReadings = Omit<QuotaReadings, 'quotaAccountId'>
+
+export const EMPTY_CODEX_ROLLOUT_QUOTA_READINGS: CodexRolloutQuotaReadings = Object.freeze({
+  quotaUsedPercentStart: null,
+  quotaUsedPercentEnd: null,
+  quotaWindowMinutes: null,
+  quotaResetsAt: null,
+})
 
 type PrimaryRateLimit = { usedPercent: number; windowMinutes: number; resetsAt: number }
 
@@ -43,7 +52,7 @@ function quotaReadingFromLine(line: string): PrimaryRateLimit | null {
 }
 
 /** Invalid and unrelated JSONL lines are ignored; no valid readings yields all nulls. */
-export function parseCodexQuotaReadings(text: string): QuotaReadings {
+export function parseCodexQuotaReadings(text: string): CodexRolloutQuotaReadings {
   const readings: PrimaryRateLimit[] = []
   for (const line of text.split('\n')) {
     const reading = quotaReadingFromLine(line)
@@ -51,9 +60,8 @@ export function parseCodexQuotaReadings(text: string): QuotaReadings {
   }
   const last = readings.at(-1)
   const first = last && readings.find((reading) => reading.resetsAt === last.resetsAt)
-  if (!first || !last) return EMPTY_QUOTA_READINGS
+  if (!first || !last) return EMPTY_CODEX_ROLLOUT_QUOTA_READINGS
   return {
-    quotaAccountId: null,
     quotaUsedPercentStart: first.usedPercent,
     quotaUsedPercentEnd: last.usedPercent,
     quotaWindowMinutes: last.windowMinutes,

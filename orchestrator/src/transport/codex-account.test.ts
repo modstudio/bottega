@@ -2,7 +2,7 @@ import { expect, test } from 'bun:test'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { parseCodexAccountId, readCodexAccountId } from './codex-account.ts'
+import { currentQuotaAccountId, parseCodexAccountId, readCodexAccountId } from './codex-account.ts'
 
 test('Codex account parsing returns only tokens.account_id', () => {
   expect(parseCodexAccountId(JSON.stringify({ tokens: { account_id: 'account-fixture' } }))).toBe(
@@ -38,7 +38,23 @@ test('Codex account reader does not expose token text', () => {
   try {
     const result = readCodexAccountId(root)
     expect(result).toBe('account-fixture')
-    expect(JSON.stringify(result)).not.toContain('fake_dev_2482_')
+    expect(currentQuotaAccountId('codex', { CODEX_HOME: root }, '/unused')).toBe('account-fixture')
+    expect(currentQuotaAccountId('claude', { CODEX_HOME: root }, '/unused')).toBeNull()
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('Codex quota account falls back to the declared directory under home', () => {
+  const root = mkdtempSync(join(tmpdir(), 'orch-codex-account-home-'))
+  const codexHome = join(root, '.codex')
+  mkdirSync(codexHome, { recursive: true })
+  writeFileSync(
+    join(codexHome, 'auth.json'),
+    JSON.stringify({ tokens: { account_id: 'account-from-home' } }),
+  )
+  try {
+    expect(currentQuotaAccountId('codex', {}, root)).toBe('account-from-home')
   } finally {
     rmSync(root, { recursive: true, force: true })
   }

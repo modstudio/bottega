@@ -1,7 +1,11 @@
 // concern: codex account identity
 /** Reads only Codex's non-secret account identity from its authentication file. */
 import { readFileSync } from 'node:fs'
+import { homedir } from 'node:os'
 import { join } from 'node:path'
+import { USER_CANON_HOME_MAPPINGS } from '../../../shared/user-canon-home.ts'
+
+const CODEX_HOME_MAPPING = USER_CANON_HOME_MAPPINGS.find((mapping) => mapping.harness === 'codex')!
 
 /** Malformed JSON and documents without a string account id have no account identity. */
 export function parseCodexAccountId(text: string): string | null {
@@ -20,4 +24,16 @@ export function readCodexAccountId(codexHome: string): string | null {
   } catch {
     return null
   }
+}
+
+/** Resolves the account source declared for a quota-reading harness. */
+export function currentQuotaAccountId(
+  harness: string | undefined,
+  env: Record<string, string | undefined> = process.env,
+  home: string = homedir(),
+): string | null {
+  if (harness !== CODEX_HOME_MAPPING.harness) return null
+  const override = CODEX_HOME_MAPPING.homeOverrideEnvironment
+  const codexHome = (override && env[override]) || join(home, CODEX_HOME_MAPPING.defaultDirectory)
+  return readCodexAccountId(codexHome)
 }

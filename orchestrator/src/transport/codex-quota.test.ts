@@ -1,6 +1,5 @@
 import { expect, test } from 'bun:test'
-import { parseCodexQuotaReadings } from './codex-quota.ts'
-import { EMPTY_QUOTA_READINGS } from './quota-readings.ts'
+import { EMPTY_CODEX_ROLLOUT_QUOTA_READINGS, parseCodexQuotaReadings } from './codex-quota.ts'
 
 const tokenCount = (usedPercent: number, windowMinutes = 10_080, resetsAt = 1_793_774_132) =>
   JSON.stringify({
@@ -25,7 +24,6 @@ test('takes the first and last primary quota readings from rollout fixture lines
     tokenCount(13),
   ].join('\n')
   expect(parseCodexQuotaReadings(text)).toEqual({
-    quotaAccountId: null,
     quotaUsedPercentStart: 12,
     quotaUsedPercentEnd: 13,
     quotaWindowMinutes: 10_080,
@@ -34,7 +32,9 @@ test('takes the first and last primary quota readings from rollout fixture lines
 })
 
 test('missing or garbled fixture lines leave quota readings null', () => {
-  expect(parseCodexQuotaReadings('{garbled}\n{"type":"event_msg"}')).toEqual(EMPTY_QUOTA_READINGS)
+  expect(parseCodexQuotaReadings('{garbled}\n{"type":"event_msg"}')).toEqual(
+    EMPTY_CODEX_ROLLOUT_QUOTA_READINGS,
+  )
 })
 
 test('drops primary readings with invalid ranges', () => {
@@ -46,7 +46,7 @@ test('drops primary readings with invalid ranges', () => {
     tokenCount(1, 10_080, 1e20),
     tokenCount(Number.NaN),
   ]) {
-    expect(parseCodexQuotaReadings(line)).toEqual(EMPTY_QUOTA_READINGS)
+    expect(parseCodexQuotaReadings(line)).toEqual(EMPTY_CODEX_ROLLOUT_QUOTA_READINGS)
   }
 })
 
@@ -62,7 +62,6 @@ test('uses the first reading from the last quota window when a turn crosses a re
       ].join('\n'),
     ),
   ).toEqual({
-    quotaAccountId: null,
     quotaUsedPercentStart: 1,
     quotaUsedPercentEnd: 2,
     quotaWindowMinutes: 10_080,
