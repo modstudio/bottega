@@ -202,11 +202,11 @@ test('an unreadable task list keeps the project', async () => {
   try {
     expect(
       await retireUnusedDefaultLocalProject(d, environment, async () => {
-        throw new Error('hub task store unavailable')
+        throw new Error('task list unavailable')
       }),
     ).toBe(false)
     expect(warning).toHaveBeenCalledWith(
-      'default local project task read failed; keeping project: hub task store unavailable',
+      'default local project task read failed; keeping project: task list unavailable',
     )
   } finally {
     warning.mockRestore()

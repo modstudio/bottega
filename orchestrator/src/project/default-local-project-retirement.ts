@@ -7,18 +7,15 @@ import { db } from '../database/db.ts'
 import {
   DEFAULT_LOCAL_PROJECT_NAME,
   DEFAULT_LOCAL_PROJECT_SETTINGS,
-  deleteProjectRegisterRow,
   defaultLocalProjectPath,
+  deleteProjectRegisterRow,
 } from '../database/project-register-store.ts'
+import { type HubTaskReader, readHubTasks } from '../workflow/workflow-task-reference.ts'
 import { projectByName } from './project-read.ts'
 import { localProjectReferenceCounts } from './project-reference-counts.ts'
 import type { StoredProjectSettings } from './project-settings.ts'
-import {
-  type HubTaskReader,
-  readHubTasks,
-} from '../workflow/workflow-task-reference.ts'
 
-export type DefaultLocalProjectRetirementFacts = {
+type DefaultLocalProjectRetirementFacts = {
   projectName: string
   projectPath: string
   defaultProjectPath: string
@@ -27,9 +24,7 @@ export type DefaultLocalProjectRetirementFacts = {
   taskCount: number
 }
 
-export function shouldRetireDefaultLocalProject(
-  facts: DefaultLocalProjectRetirementFacts,
-): boolean {
+function shouldRetireDefaultLocalProject(facts: DefaultLocalProjectRetirementFacts): boolean {
   return (
     facts.projectName === DEFAULT_LOCAL_PROJECT_NAME &&
     facts.projectPath === facts.defaultProjectPath &&
