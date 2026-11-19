@@ -219,6 +219,27 @@ test('steps must declare every job their bodies prescribe', () => {
   }
 })
 
+test('step bodies refuse repository-relative file citations', () => {
+  const definition = (body: string) => ({
+    steps: [{ ...step, stage: 'plan' as const, body }],
+  })
+
+  expect(validateStepCatalogue(definition('Read scripts/x.ts.'))).toContain(
+    'step "design" body cites repository file scripts/x.ts; a step is served to every project, so name the file through a project fact or the project\'s canon instead',
+  )
+  expect(validateStepCatalogue(definition('Read `.agents/rules/a.md`.'))).toContain(
+    'step "design" body cites repository file .agents/rules/a.md; a step is served to every project, so name the file through a project fact or the project\'s canon instead',
+  )
+  for (const citation of [
+    `/absolute/path/to/main-checkout/bin/${PLATFORM_SLUG}`,
+    `./bin/${PLATFORM_SLUG}`,
+    '{{gate}}',
+    'https://example.com/a.md',
+  ]) {
+    expect(validateStepCatalogue(definition(`Run ${citation}.`))).toEqual([])
+  }
+})
+
 test('operatorRuling requires a ruling floor', () => {
   expect(
     validateStepCatalogue({
