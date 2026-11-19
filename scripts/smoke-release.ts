@@ -161,7 +161,7 @@ su -s /bin/sh smoke -c '
   cd /tmp/probe-repository
   project_add_output=$(${installedBinary} project add /tmp/probe-repository --name release-smoke)
   printf "%s\\n" "$project_add_output"
-  printf "%s\\n" "$project_add_output" | grep -F 'trunk main (from origin/HEAD)'
+  printf "%s\\n" "$project_add_output" | grep -F "trunk main (from origin/HEAD)"
   ${installedBinary} project set release-smoke --stack git --settings "$(cat /tmp/release-smoke-settings.json)"
   ${installedBinary} workflow import --cwd /tmp/probe-repository --reason "DEV-2421 release smoke workflow"
   ${installedBinary} workflow promote-tree --cwd /tmp/probe-repository --reason "DEV-2421 release smoke workflow"
