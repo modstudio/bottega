@@ -3,7 +3,7 @@
 
 import type { Database } from 'bun:sqlite'
 import { db } from '../database/db.ts'
-import { type FailureKind, PROVIDER_UNSERVED } from '../failure/failure.ts'
+import { type FailureKind, NOT_EVIDENCE } from '../failure/failure.ts'
 import { machineId } from '../record/machine-identity.ts'
 import { enqueueRunRecord } from './run-outbox.ts'
 
@@ -30,7 +30,7 @@ export function scoredChainFailureKind(members: readonly ChainFailureMember[]): 
   if (ordered.length === 1) return latest.failure_kind
   const ownKinds = ordered.map(memberOwnFailureKind)
   const agentWorkIndex = ownKinds.findIndex(
-    (kind) => kind === null || !PROVIDER_UNSERVED.has(kind as FailureKind),
+    (kind) => kind === null || !NOT_EVIDENCE.includes(kind as FailureKind),
   )
   return agentWorkIndex === -1 ? memberOwnFailureKind(latest) : (ownKinds[agentWorkIndex] ?? null)
 }
