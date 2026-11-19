@@ -107,7 +107,7 @@ printf '%s\\n' "$doctor_output" | grep -F 'bubblewrap (bwrap) not installed'
 printf '%s\\n' "$doctor_output" | grep -F 'socat not installed'
 
 mkdir -p /tmp/bootstrap-bin /tmp/missing-deps-repository
-printf '%s\\n' '#!/bin/sh' 'for arg in "$@"; do case "$arg" in --local-env-vars) printf "%s\\n" GIT_DIR; exit 0 ;; --show-toplevel) printf "%s\\n" /tmp/missing-deps-repository; exit 0 ;; esac; done' 'exit 1' > /tmp/bootstrap-bin/git
+printf '%s\\n' '#!/bin/sh' 'case " $* " in *" symbolic-ref --quiet --short HEAD "*) printf "%s\\n" main; exit 0 ;; esac' 'for arg in "$@"; do case "$arg" in --local-env-vars) printf "%s\\n" GIT_DIR; exit 0 ;; --show-toplevel) printf "%s\\n" /tmp/missing-deps-repository; exit 0 ;; esac; done' 'exit 1' > /tmp/bootstrap-bin/git
 chmod 755 /tmp/bootstrap-bin/git
 PATH=/tmp/bootstrap-bin:/tmp/bin:/usr/bin:/bin ${installedBinary} project add /tmp/missing-deps-repository --name missing-deps-smoke --allow-incomplete --settings '{"trunk":"main"}'
 set +e

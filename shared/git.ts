@@ -97,6 +97,9 @@ export function inspectionGitEnv(base: NodeJS.ProcessEnv = process.env): NodeJS.
 
 type GitResult = { code: number; stdout: string; stderr: string; timedOut: boolean }
 
+export type GitProbeCapture = { exitCode: number; stdout: string; timedOut: boolean }
+export type GitProbeRunner = (path: string, args: string[]) => GitProbeCapture
+
 export function gitAt(
   path: string,
   args: string[],
@@ -125,6 +128,16 @@ export function gitAt(
     }
     if (error instanceof BoundExceededError) throw error
     return { code: 128, stdout: '', stderr: '', timedOut: false }
+  }
+}
+
+/** Run one bounded, read-only git probe and normalize its captured result. */
+export const runGitProbe: GitProbeRunner = (path, args) => {
+  const result = gitAt(path, args, { budget: 'git-probe' })
+  return {
+    exitCode: result.code,
+    stdout: result.stdout.trim(),
+    timedOut: result.timedOut,
   }
 }
 

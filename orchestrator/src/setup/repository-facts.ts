@@ -2,7 +2,7 @@
 /** Detects repository facts. Must not know the project register, setup policy, or CLI grammar. */
 import { readdirSync, realpathSync } from 'node:fs'
 import { basename, resolve } from 'node:path'
-import { gitAt } from '../../../shared/git.ts'
+import { type GitProbeRunner, runGitProbe } from '../../../shared/git.ts'
 import { readOriginHeadBranch, sniffStack } from '../project/projects.ts'
 import type { RepositoryFacts } from './repository-facts-types.ts'
 import { detectRepositoryToolchain } from './repository-toolchain.ts'
@@ -10,25 +10,14 @@ import type { SetupNotice } from './setup-engine.ts'
 
 export type { RepositoryFacts } from './repository-facts-types.ts'
 
-type RepositoryGitCapture = { exitCode: number; stdout: string; timedOut: boolean }
-export type RepositoryGitRunner = (path: string, args: string[]) => RepositoryGitCapture
 export type RepositoryFactsReport = {
   repositories: RepositoryFacts[]
   notices: SetupNotice[]
 }
 
-function git(path: string, args: string[]): RepositoryGitCapture {
-  const child = gitAt(path, args, { budget: 'git-probe' })
-  return {
-    exitCode: child.code,
-    stdout: child.stdout.trim(),
-    timedOut: child.timedOut,
-  }
-}
-
 function repositoryRoot(
   path: string,
-  runGit: RepositoryGitRunner,
+  runGit: GitProbeRunner,
 ): { root: string | null; timedOut: boolean } {
   const result = runGit(path, ['rev-parse', '--show-toplevel'])
   if (result.timedOut) return { root: null, timedOut: true }
@@ -65,7 +54,7 @@ function originHost(url: string | null): string | null {
 
 async function inspectRepository(
   path: string,
-  runGit: RepositoryGitRunner,
+  runGit: GitProbeRunner,
   sniff: (path: string) => string | null,
 ): Promise<RepositoryFacts> {
   const branch = runGit(path, ['symbolic-ref', '--quiet', '--short', 'HEAD'])
@@ -93,7 +82,7 @@ async function inspectRepository(
 /** Find a repository at each input and among only its immediate child directories. */
 export async function gatherRepositoryFactsReport(
   folders: string[],
-  runGit: RepositoryGitRunner = git,
+  runGit: GitProbeRunner = runGitProbe,
   sniff: (path: string) => string | null = sniffStack,
 ): Promise<RepositoryFactsReport> {
   const repositories = new Map<string, RepositoryFacts>()

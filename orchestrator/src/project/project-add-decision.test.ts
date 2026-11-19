@@ -13,6 +13,10 @@ const memberships = [
 
 describe('decideProjectLandingBranch', () => {
   const path = '/projects/probe'
+  const remote = (
+    branch: string | null,
+    overrides: Partial<{ timedOut: boolean; exitCode: number }> = {},
+  ) => ({ branch, timedOut: false, exitCode: branch ? 0 : 1, ...overrides })
 
   test('a supplied landing branch wins over the remote default', () => {
     expect(
@@ -20,7 +24,7 @@ describe('decideProjectLandingBranch', () => {
         path,
         settings: { trunk: 'develop' },
         gitWorkTree: true,
-        remoteDefaultBranch: 'main',
+        remoteDefaultBranch: remote('main'),
       }),
     ).toEqual({ kind: 'branch', trunk: 'develop', source: 'declared' })
   })
@@ -31,7 +35,7 @@ describe('decideProjectLandingBranch', () => {
         path,
         settings: {},
         gitWorkTree: true,
-        remoteDefaultBranch: 'main',
+        remoteDefaultBranch: remote('main'),
       }),
     ).toEqual({ kind: 'branch', trunk: 'main', source: 'origin/HEAD' })
   })
@@ -42,7 +46,7 @@ describe('decideProjectLandingBranch', () => {
         path,
         settings: {},
         gitWorkTree: true,
-        remoteDefaultBranch: null,
+        remoteDefaultBranch: remote(null),
       }),
     ).toEqual({
       kind: 'refuse',
@@ -58,9 +62,25 @@ describe('decideProjectLandingBranch', () => {
         path,
         settings: {},
         gitWorkTree: false,
-        remoteDefaultBranch: null,
+        remoteDefaultBranch: remote(null),
       }),
     ).toEqual({ kind: 'untouched' })
+  })
+
+  test('a timed-out remote default probe is refused without claiming the ref is unset', () => {
+    expect(
+      decideProjectLandingBranch({
+        path,
+        settings: {},
+        gitWorkTree: true,
+        remoteDefaultBranch: remote(null, { timedOut: true, exitCode: 128 }),
+      }),
+    ).toEqual({
+      kind: 'refuse',
+      reason:
+        `project add refused: git probe of refs/remotes/origin/HEAD at ${path} timed out\n` +
+        `cleared by: retry, or pass --settings '{"trunk":"<branch>"}'`,
+    })
   })
 })
 

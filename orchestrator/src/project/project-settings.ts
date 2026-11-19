@@ -22,6 +22,13 @@ import type {
 
 export type MainStackConsumer = 'gate' | 'mcp' | 'worktree-create'
 
+/** Return the normalized landing branch only when settings declare one. */
+export function declaredTrunk(settings: { trunk?: unknown }): string | null {
+  return typeof settings.trunk === 'string' && settings.trunk.trim()
+    ? settings.trunk.trim()
+    : null
+}
+
 export const DEFAULT_TASK_KEY_PATTERN = '^[A-Z][A-Z0-9]+-[0-9]+$'
 
 /** A project's own worktree lifecycle, as declared commands. */

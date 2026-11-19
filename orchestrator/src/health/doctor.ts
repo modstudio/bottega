@@ -37,6 +37,11 @@ import { JOBS } from '../jobs/jobs.ts'
 import { credentialLinesFromRead } from '../mcp/mcp-credential-literal.ts'
 import { readMcpConfigResult } from '../mcp/mcp-probe.ts'
 import { activeSpaceInvariant, RECORD_SIGN_IN_REMEDY } from '../record/active-space-invariant.ts'
+import {
+  missingProjectLandingBranchProblem,
+  type Project,
+  registerBranchCheck,
+} from '../project/projects.ts'
 import { recordApiClient } from '../record/record-api-client.ts'
 import { recordMembershipsFromIdentity } from '../record/record-space.ts'
 import {
@@ -131,6 +136,12 @@ type CheckoutDecision = { holds: true } | { holds: false; message: string }
 
 function addProblem(branch: BranchInspection, problem: string | null): BranchInspection {
   return problem ? { ...branch, problems: [problem, ...branch.problems] } : branch
+}
+
+export function doctorRegisterBranchProblems(
+  project: Pick<Project, 'name' | 'path' | 'settings'>,
+): BranchInspection {
+  return addProblem(registerBranchCheck(project), missingProjectLandingBranchProblem(project))
 }
 
 function heldWorktreesLine(explicit: number, dirty: number): string {
@@ -977,10 +988,8 @@ export async function doctorCommand(
     projectByName,
     projects: registeredProjects,
     isProjectRepository,
-    missingProjectLandingBranchProblem,
     resolvedWorktreeTool,
     undeclaredCommitHooks,
-    registerBranchCheck,
   } = await import('../project/projects.ts')
   const { mainCheckoutFacts, mainCheckoutInvariant } = await import(
     '../project/main-checkout-invariant.ts'
@@ -991,8 +1000,7 @@ export async function doctorCommand(
     repositoryProjects,
     presentation,
     undeclaredCommitHooks,
-    (project) =>
-      addProblem(registerBranchCheck(project), missingProjectLandingBranchProblem(project)),
+    doctorRegisterBranchProblems,
     mainCheckoutFacts,
     mainCheckoutInvariant,
   )

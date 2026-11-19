@@ -14,7 +14,7 @@ import {
   PROJECT_SETTINGS_NOT_IMPORTED,
 } from '../record/record-project-columns.ts'
 import { retiredHostedProjectMessage } from './project-retired-hosted.ts'
-import { type ProjectSettings, stableSettingsJson } from './project-settings.ts'
+import { declaredTrunk, type ProjectSettings, stableSettingsJson } from './project-settings.ts'
 import { PROJECT_SPACE_INPUTS_MUST_MATCH } from './project-space-refusals.ts'
 
 export type AddHostedProject = RecordProject
@@ -45,13 +45,30 @@ export function decideProjectLandingBranch(input: {
   path: string
   settings: ProjectSettings
   gitWorkTree: boolean
-  remoteDefaultBranch: string | null
+  remoteDefaultBranch: { branch: string | null; timedOut: boolean; exitCode: number }
 }): ProjectLandingBranchDecision {
-  const declared = input.settings.trunk?.trim()
+  const declared = declaredTrunk(input.settings)
   if (declared) return { kind: 'branch', trunk: declared, source: 'declared' }
   if (!input.gitWorkTree) return { kind: 'untouched' }
-  if (input.remoteDefaultBranch) {
-    return { kind: 'branch', trunk: input.remoteDefaultBranch, source: 'origin/HEAD' }
+  const remote = input.remoteDefaultBranch
+  if (remote.branch) {
+    return { kind: 'branch', trunk: remote.branch, source: 'origin/HEAD' }
+  }
+  if (remote.timedOut || (remote.exitCode !== 0 && remote.exitCode !== 1)) {
+    return {
+      kind: 'refuse',
+      reason: renderRefusal(
+        refusal(
+          remote.timedOut
+            ? `project add refused: git probe of refs/remotes/origin/HEAD at ${input.path} timed out`
+            : `project add refused: git probe of refs/remotes/origin/HEAD at ${input.path} could not be read (git exited ${remote.exitCode})`,
+          {
+            kind: 'edit',
+            text: `retry, or pass --settings '{"trunk":"<branch>"}'`,
+          },
+        ),
+      ),
+    }
   }
   return {
     kind: 'refuse',

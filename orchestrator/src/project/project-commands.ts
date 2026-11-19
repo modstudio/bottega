@@ -37,6 +37,7 @@ import {
   type SettingsPatchEffect,
   settingsPatchEffect,
 } from './project-settings-patch.ts'
+import { declaredTrunk } from './project-settings.ts'
 import {
   assertProjectRename,
   assertRegisterBranches,
@@ -204,19 +205,30 @@ export type AddProjectInput = {
 
 type ProjectAddCandidate = Omit<Project, 'settings'> & { settings: ProjectSettings }
 
-function resolveProjectAddLandingBranch(candidate: ProjectAddCandidate): ProjectAddCandidate {
-  const gitWorkTree = candidate.settings.trunk ? false : isProjectRepository(candidate)
+function resolveProjectAddLandingBranch(candidate: ProjectAddCandidate): {
+  candidate: ProjectAddCandidate
+  source: 'declared' | 'origin/HEAD' | null
+} {
+  const declared = declaredTrunk(candidate.settings)
+  const gitWorkTree = isProjectRepository(candidate)
+  const remoteDefaultBranch =
+    !declared && gitWorkTree
+      ? readOriginHeadBranch(candidate.path)
+      : { branch: null, timedOut: false, exitCode: 0 }
   const decision = decideProjectLandingBranch({
     path: candidate.path,
     settings: candidate.settings,
     gitWorkTree,
-    remoteDefaultBranch: gitWorkTree ? readOriginHeadBranch(candidate.path).branch : null,
+    remoteDefaultBranch,
   })
   if (decision.kind === 'refuse') throw new Error(decision.reason)
-  if (decision.kind !== 'branch') return candidate
+  if (decision.kind !== 'branch') return { candidate, source: null }
   return {
-    ...candidate,
-    settings: { ...candidate.settings, trunk: decision.trunk },
+    candidate: {
+      ...candidate,
+      settings: { ...candidate.settings, trunk: decision.trunk },
+    },
+    source: decision.source,
   }
 }
 
@@ -239,7 +251,12 @@ async function pullProjectAddCatalogues(
 export async function addProject(
   input: AddProjectInput,
   requireMembership: (space: string) => Promise<unknown>,
-): Promise<{ project: Project; wasRetired: boolean; adoptedSpace?: string }> {
+): Promise<{
+  project: Project
+  wasRetired: boolean
+  trunkSource: 'declared' | 'origin/HEAD' | null
+  adoptedSpace?: string
+}> {
   if (!existsSync(input.path)) throw new Error(`no such directory: ${input.path}`)
   const malformed = validateProjectSettings(input.settings, 'strict', input.path, {
     validateKeyPrefixes: Object.hasOwn(input.settings, 'keyPrefixes'),
@@ -267,7 +284,7 @@ export async function addProject(
     retiredAt: null,
     settings: decision.settings,
   }
-  const candidate = resolveProjectAddLandingBranch(initialCandidate)
+  const { candidate, source: trunkSource } = resolveProjectAddLandingBranch(initialCandidate)
   // Adopting merges the hosted row's settings with the requested ones, so the
   // merged row is read in strip mode; the requested settings were refused
   // strictly above.
@@ -292,6 +309,7 @@ export async function addProject(
   return {
     project,
     wasRetired,
+    trunkSource,
     ...(decision.kind === 'adopt' ? { adoptedSpace: decision.space } : {}),
   }
 }
@@ -317,8 +335,7 @@ async function addProjectCommand(
       throw new Error(`--settings must be JSON: ${e}`)
     }
   }
-  const trunkWasDeclared = Boolean(settings.trunk?.trim())
-  const { project, wasRetired, adoptedSpace } = await addProject(
+  const { project, wasRetired, trunkSource, adoptedSpace } = await addProject(
     {
       path,
       name,
@@ -343,7 +360,7 @@ async function addProjectCommand(
     const trunk = project.settings.trunk
     presentation.log(
       `registered ${name}  ${stack ?? `(no stack — ${PLATFORM_SLUG} project set ${name} --stack ...)`}  ` +
-        `${trunk ? `trunk ${trunk} (${trunkWasDeclared ? 'declared' : 'from origin/HEAD'})  ` : ''}${path}`,
+        `${trunk ? `trunk ${trunk} (${trunkSource === 'declared' ? 'declared' : 'from origin/HEAD'})  ` : ''}${path}`,
     )
   }
   for (const w of worktreeWarnings(projectByName(name)!)) {

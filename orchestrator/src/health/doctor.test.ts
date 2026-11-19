@@ -8,10 +8,10 @@ import {
 } from '../focused-test/focused-test-decision.ts'
 import { mainCheckoutInvariant } from '../project/main-checkout-invariant.ts'
 import { mergeProjectSettings, parseSettingsPatch } from '../project/project-settings-patch.ts'
-import { missingProjectLandingBranchProblem, registerBranchCheck } from '../project/projects.ts'
 import { acpRuntimeGaps } from '../transport/transport.ts'
 import {
   activeSpaceDoctorDiagnosis,
+  doctorRegisterBranchProblems,
   affectedSelectorDoctorFinding,
   canonEvalDoctorDecision,
   doctorAcpStatus,
@@ -184,11 +184,7 @@ test('machine doctor asks to declare a missing repository landing branch', () =>
     [{ name: 'probe', path: process.cwd(), settings: {} }],
     { log: (line) => output.push(line), exitCode: (code) => exitCodes.push(code) },
     () => null,
-    (project) => {
-      const problem = missingProjectLandingBranchProblem(project)
-      const branch = registerBranchCheck(project)
-      return problem ? { ...branch, problems: [problem, ...branch.problems] } : branch
-    },
+    doctorRegisterBranchProblems,
     () => {
       throw new Error('a checkout without a landing branch must not be inspected')
     },

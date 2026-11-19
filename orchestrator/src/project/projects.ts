@@ -27,10 +27,12 @@ import { existsSync, readFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
+  type GitProbeRunner,
   gitAt,
   gitToplevel,
   inspectCheckout,
   resolvedPathsEqual,
+  runGitProbe,
   type SequenceKind,
   type SequenceState,
 } from '../../../shared/git.ts'
@@ -79,11 +81,12 @@ import {
   type ProjectReferenceCounts,
   projectReferenceCounts,
 } from './project-reference-counts.ts'
-import type {
-  MainStackConsumer,
-  ProjectSettings,
-  StoredProjectSettings,
-  WorktreeTool,
+import {
+  declaredTrunk,
+  type MainStackConsumer,
+  type ProjectSettings,
+  type StoredProjectSettings,
+  type WorktreeTool,
 } from './project-settings.ts'
 import {
   autonomyProblems,
@@ -252,27 +255,16 @@ export function isProjectRepository(project: Pick<Project, 'path'>): boolean {
   return gitToplevel(project.path) !== null
 }
 
-type ProjectGitCapture = { exitCode: number; stdout: string; timedOut: boolean }
-export type ProjectGitRunner = (path: string, args: string[]) => ProjectGitCapture
-
-function runProjectGit(path: string, args: string[]): ProjectGitCapture {
-  const result = gitAt(path, args, { budget: 'git-probe' })
-  return {
-    exitCode: result.code,
-    stdout: result.stdout.trim(),
-    timedOut: result.timedOut,
-  }
-}
-
 /** Read the remote default branch once for project registration and setup discovery. */
 export function readOriginHeadBranch(
   path: string,
-  runGit: ProjectGitRunner = runProjectGit,
-): { branch: string | null; timedOut: boolean } {
+  runGit: GitProbeRunner = runGitProbe,
+): { branch: string | null; timedOut: boolean; exitCode: number } {
   const result = runGit(path, ['symbolic-ref', '--quiet', '--short', 'refs/remotes/origin/HEAD'])
   return {
     branch: result.exitCode === 0 && result.stdout ? result.stdout.replace(/^origin\//, '') : null,
     timedOut: result.timedOut,
+    exitCode: result.exitCode,
   }
 }
 
@@ -285,7 +277,7 @@ export function projectRepositoryRefusal(project: Pick<Project, 'name' | 'path'>
 export function missingProjectLandingBranchProblem(
   project: Pick<Project, 'name' | 'path' | 'settings'>,
 ): string | null {
-  if (!isProjectRepository(project) || project.settings.trunk?.trim()) return null
+  if (declaredTrunk(project.settings) || !isProjectRepository(project)) return null
   return renderRefusal(
     refusal(`${project.name} has no landing branch`, {
       kind: 'edit',

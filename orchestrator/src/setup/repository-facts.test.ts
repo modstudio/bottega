@@ -2,7 +2,8 @@ import { afterAll, beforeAll, expect, test } from 'bun:test'
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { gatherRepositoryFactsReport, type RepositoryGitRunner } from './repository-facts.ts'
+import type { GitProbeRunner } from '../../../shared/git.ts'
+import { gatherRepositoryFactsReport } from './repository-facts.ts'
 
 let directory = ''
 beforeAll(() => {
@@ -20,7 +21,7 @@ beforeAll(() => {
   }
 })
 
-function fakeGit(origins: Map<string, string>, timedOutPath: string): RepositoryGitRunner {
+function fakeGit(origins: Map<string, string>, timedOutPath: string): GitProbeRunner {
   return (path, args) => {
     const command = args.join(' ')
     if (command === 'rev-parse --show-toplevel') {
