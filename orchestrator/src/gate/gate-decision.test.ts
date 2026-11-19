@@ -5,6 +5,7 @@ import {
   brokerGateEnvironment,
   changedGateToolingPaths,
   decideArchitectGateOutcome,
+  decideArchitectGateTreeId,
   decideBrokerLaunch,
   decideGateCancellation,
   decideGateCheckoutRefusal,
@@ -206,6 +207,19 @@ test.each([
   ],
 ] as const)('decides architect gate attribution for %s', (_name, input, expected) => {
   expect(decideArchitectGateOutcome(input)).toEqual(expected)
+})
+
+test('architect gate tree identity follows the checked content', () => {
+  expect(decideArchitectGateTreeId({ commit: 'head-a' }, 'head-tree')).toBe('head-tree')
+  expect(
+    decideArchitectGateTreeId(
+      { commit: null, commitUnknown: 'dirty-before', checkedTree: 'dirty-tree' },
+      null,
+    ),
+  ).toBe('dirty-tree')
+  expect(
+    decideArchitectGateTreeId({ commit: null, commitUnknown: 'changed-during' }, 'head-tree'),
+  ).toBeNull()
 })
 
 test('a merge in progress with unmerged paths is refused, naming them', () => {

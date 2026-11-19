@@ -5,6 +5,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  renameSync,
   rmSync,
   symlinkSync,
   writeFileSync,
@@ -169,6 +170,11 @@ test('records machine-readable checks emitted by a worker gate against its execu
   })
   try {
     await waitForFinishedGate(gateRecordId)
+    const gateRow = db()
+      .query('SELECT tree_id,output_tail FROM gate_execution WHERE record_id=?')
+      .get(gateRecordId) as { tree_id: string | null; output_tail: string }
+    expect(gateRow.tree_id).toMatch(/^[0-9a-f]{40}$/)
+    expect(gateRow.output_tail).toContain(`checked tree ${gateRow.tree_id}`)
     expect(
       db()
         .query(
@@ -184,6 +190,97 @@ test('records machine-readable checks emitted by a worker gate against its execu
     })
     expect(git(root, 'diff', '--cached', '--name-only')).toBe('')
     expect(git(root, 'rev-parse', 'HEAD')).toBe(head)
+  } finally {
+    await broker.close()
+    rmSync(root, { recursive: true, force: true })
+    rmSync(scratch, { recursive: true, force: true })
+  }
+})
+
+test('records the worker gate head before synthetic index preparation fails', async () => {
+  const root = mkdtempSync(join(dir, 'gate-broker-index-failure-'))
+  const scratch = mkdtempSync(join(dir, 'gate-broker-index-failure-scratch-'))
+  mkdirSync(join(root, 'scripts'))
+  const gatePath = join(root, 'scripts', 'gate')
+  writeFileSync(gatePath, '#!/bin/sh\nexit 0\n')
+  chmodSync(gatePath, 0o755)
+  git(root, 'init', '-q')
+  git(root, 'config', 'user.email', 'fixture@example.com')
+  git(root, 'config', 'user.name', 'Fixture')
+  git(root, 'add', 'scripts/gate')
+  git(root, 'commit', '-qm', 'base')
+  const base = git(
+    root,
+    'commit-tree',
+    git(root, 'rev-parse', 'HEAD^{tree}'),
+    '-m',
+    'recorded base',
+  )
+  writeFileSync(join(root, 'head.txt'), 'head')
+  git(root, 'add', 'head.txt')
+  git(root, 'commit', '-qm', 'head')
+  const head = git(root, 'rev-parse', 'HEAD')
+
+  const projectId = (
+    db()
+      .query(
+        `INSERT INTO project (record_id,name,path,stack,settings) VALUES (?,?,?,?,?) RETURNING record_id AS id`,
+      )
+      .get(
+        newRecordId(),
+        'gate-broker-index-failure-fixture',
+        root,
+        'bun',
+        JSON.stringify({ gate: 'scripts/gate' }),
+      ) as { id: string }
+  ).id
+  const runId = (
+    db()
+      .query(
+        `INSERT INTO run
+          (record_id,number,started_at,agent,job,project_record_id,prompt_sha,prompt_bytes,prompt_head,status,worktree,base_commit,head_commit,worktree_source)
+         VALUES ('${newRecordId()}',(SELECT COALESCE(MAX(number),0)+1 FROM run),?,?,?,?,?,1,'fixture','running',?,?,?,'git') RETURNING record_id AS id`,
+      )
+      .get(new Date().toISOString(), 'codex', 'implement', projectId, 'sha', root, base, head) as {
+      id: string
+    }
+  ).id
+  const gateRecordId = (
+    db()
+      .query(
+        `INSERT INTO gate_execution (record_id,run_record_id,requested_at) VALUES ('${newRecordId()}',?,?) RETURNING record_id`,
+      )
+      .get(runId, new Date().toISOString()) as { record_id: string }
+  ).record_id
+  const baseObject = join(root, '.git', 'objects', base.slice(0, 2), base.slice(2))
+  const hiddenBaseObject = `${baseObject}.hidden`
+
+  const broker = startGateBroker({
+    runId,
+    scratchDir: scratch,
+    environment: { BOTTEGA_MAIN_CHECKOUT: root },
+    confinement: { kind: 'host' },
+    withHostSlot: async (run) => {
+      renameSync(baseObject, hiddenBaseObject)
+      try {
+        return await run()
+      } finally {
+        renameSync(hiddenBaseObject, baseObject)
+      }
+    },
+  })
+  try {
+    await waitForFinishedGate(gateRecordId)
+    const row = db()
+      .query('SELECT head_commit,tree_id,output_tail FROM gate_execution WHERE record_id=?')
+      .get(gateRecordId) as {
+      head_commit: string | null
+      tree_id: string | null
+      output_tail: string
+    }
+    expect(row.head_commit).toBe(head)
+    expect(row.tree_id).toBeNull()
+    expect(row.output_tail).toContain('git read-tree')
   } finally {
     await broker.close()
     rmSync(root, { recursive: true, force: true })

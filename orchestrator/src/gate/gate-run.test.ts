@@ -14,7 +14,7 @@ const repositoryPath = fileURLToPath(new URL('../../..', import.meta.url)).repla
 let priorDepth: string | undefined
 let priorSession: string | undefined
 const headCommit = 'a'.repeat(40)
-const cleanGitState = () => ({ headCommit, porcelainPaths: [] })
+const cleanGitState = () => ({ headCommit, headTree: 'head-tree', porcelainPaths: [] })
 const cleanCheckout = () => ({ presentMarkers: [] as const, unmergedPaths: [] as const })
 beforeEach(() => {
   priorDepth = process.env.BOTTEGA_DEPTH
@@ -51,7 +51,11 @@ test('a gate that dirties the tree while it runs is not attributed to HEAD', asy
     d,
     topLevel: () => repositoryPath,
     checkout: cleanCheckout,
-    gitState: () => ({ headCommit, porcelainPaths: ran ? [' M formatted.ts'] : [] }),
+    gitState: () => ({
+      headCommit,
+      headTree: 'clean-tree',
+      porcelainPaths: ran ? [' M formatted.ts'] : [],
+    }),
     write: () => {},
     runner: () => {
       ran = true
@@ -64,7 +68,10 @@ test('a gate that dirties the tree while it runs is not attributed to HEAD', asy
       }
     },
   })
-  expect(d.query('SELECT head_commit FROM gate_execution').get()).toEqual({ head_commit: null })
+  expect(d.query('SELECT head_commit,tree_id FROM gate_execution').get()).toEqual({
+    head_commit: null,
+    tree_id: null,
+  })
   expect(
     d.query<{ record_id: string }, []>('SELECT record_id FROM gate_execution').get()?.record_id,
   ).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i)
@@ -79,7 +86,7 @@ test('inserts a finished dirty-tree gate without attributing it to HEAD', async 
     d,
     topLevel: () => repositoryPath,
     checkout: cleanCheckout,
-    gitState: () => ({ headCommit, porcelainPaths: ['?? dirty.txt'] }),
+    gitState: () => ({ headCommit, headTree: 'head-tree', porcelainPaths: ['?? dirty.txt'] }),
     contentTree: () => {
       snapshotCalls += 1
       return 'tree123'
@@ -108,7 +115,7 @@ test('inserts a finished dirty-tree gate without attributing it to HEAD', async 
   expect(
     d
       .query(
-        `SELECT run_record_id,started_at,finished_at,exit_code,tooling_paths,head_commit,cwd,output_artifact
+        `SELECT run_record_id,started_at,finished_at,exit_code,tooling_paths,head_commit,tree_id,cwd,output_artifact
            FROM gate_execution`,
       )
       .get(),
@@ -119,6 +126,7 @@ test('inserts a finished dirty-tree gate without attributing it to HEAD', async 
     exit_code: 0,
     tooling_paths: '[]',
     head_commit: null,
+    tree_id: 'tree123',
     cwd: repositoryPath,
     output_artifact: null,
   })
@@ -134,7 +142,7 @@ test('records a dirty-tree gate when checked-tree snapshots are unavailable', as
     d,
     topLevel: () => repositoryPath,
     checkout: cleanCheckout,
-    gitState: () => ({ headCommit, porcelainPaths: ['?? dirty.txt'] }),
+    gitState: () => ({ headCommit, headTree: 'head-tree', porcelainPaths: ['?? dirty.txt'] }),
     contentTree: (_cwd, failureContext) => {
       expect(failureContext).toBe(' while snapshotting the checked tree')
       throw new Error(`git write-tree failed${failureContext}`)
@@ -160,7 +168,10 @@ test('records a dirty-tree gate when checked-tree snapshots are unavailable', as
     checkedTree: null,
     treeUnavailable: 'git write-tree failed while snapshotting the checked tree',
   })
-  expect(d.query('SELECT head_commit FROM gate_execution').get()).toEqual({ head_commit: null })
+  expect(d.query('SELECT head_commit,tree_id FROM gate_execution').get()).toEqual({
+    head_commit: null,
+    tree_id: null,
+  })
 })
 
 test('inserts valid check records in the transaction with the gate row', async () => {
@@ -195,8 +206,9 @@ test('inserts valid check records in the transaction with the gate row', async (
     },
   })
   expect(result.commit).toBe(headCommit)
-  expect(d.query('SELECT head_commit FROM gate_execution').get()).toEqual({
+  expect(d.query('SELECT head_commit,tree_id FROM gate_execution').get()).toEqual({
     head_commit: headCommit,
+    tree_id: 'head-tree',
   })
   expect(
     d
