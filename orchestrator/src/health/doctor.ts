@@ -128,6 +128,15 @@ type RegisteredCheckout = {
 type BranchInspection = { landing: string | null; problems: string[] }
 type CheckoutInspection = { branch: string | null; trunk: string; trackedModified: boolean }
 type CheckoutDecision = { holds: true } | { holds: false; message: string }
+
+function addProblem(branch: BranchInspection, problem: string | null): BranchInspection {
+  return problem ? { ...branch, problems: [problem, ...branch.problems] } : branch
+}
+
+function heldWorktreesLine(explicit: number, dirty: number): string {
+  return `held worktrees ${explicit + dirty} (${dirty} dirty, ${explicit} --keep-tree)`
+}
+
 type RegisteredMainCheckoutInspection<T extends RegisteredCheckout> = {
   project: T
   branch: BranchInspection
@@ -962,14 +971,13 @@ export async function doctorCommand(
     if (hold.held) explicitHolds++
     else if (existsSync(held.worktree) && worktreeDirty(held.worktree).dirty) dirtyHolds++
   }
-  log(
-    `held worktrees ${explicitHolds + dirtyHolds} (${dirtyHolds} dirty, ${explicitHolds} --keep-tree)`,
-  )
+  log(heldWorktreesLine(explicitHolds, dirtyHolds))
   const {
     absentTreeTeardownPlan,
     projectByName,
     projects: registeredProjects,
     isProjectRepository,
+    missingProjectLandingBranchProblem,
     resolvedWorktreeTool,
     undeclaredCommitHooks,
     registerBranchCheck,
@@ -983,7 +991,8 @@ export async function doctorCommand(
     repositoryProjects,
     presentation,
     undeclaredCommitHooks,
-    registerBranchCheck,
+    (project) =>
+      addProblem(registerBranchCheck(project), missingProjectLandingBranchProblem(project)),
     mainCheckoutFacts,
     mainCheckoutInvariant,
   )

@@ -773,8 +773,7 @@ export function registerBranchCheck(
     )
     canonIntegration = match?.[1] ?? null
   }
-  const missingLanding = missingProjectLandingBranchProblem(project)
-  const problems: string[] = missingLanding ? [missingLanding] : []
+  const problems: string[] = []
   if (landing && head !== landing) {
     problems.push(
       detachedDecision ??
