@@ -3,9 +3,9 @@
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
-  CURRENT_DATA_KEY_PATH,
   ConfigClientError,
   type ConfigWriteDestination,
+  CURRENT_DATA_KEY_PATH,
   configClient,
 } from '../../../shared/config-client.ts'
 import {
