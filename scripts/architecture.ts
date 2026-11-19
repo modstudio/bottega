@@ -181,6 +181,11 @@ const declaredModules: ArchitectureModule[] = [
     './launch-agent-doctor.ts',
     '../../../shared/bounded-process.ts',
   ]),
+  module('orchestrator/src/health/provider-credential-trust-doctor.ts', [
+    '../agent/agent-registry.ts',
+    '../project/projects.ts',
+    '../setup/provider-credential-trust.ts',
+  ]),
   module('orchestrator/src/project/project-agent-keys.ts', []),
   module('orchestrator/src/project/project-visibility.ts', [
     '../../../shared/brand.ts',

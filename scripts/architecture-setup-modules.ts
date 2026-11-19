@@ -166,7 +166,7 @@ export const setupModuleSpecs: readonly SetupModuleSpec[] = [
       './provider-credential-trust-notice.ts',
       './setup-mcp.ts',
     ],
-    typeOnlyAllowed: ['../project/projects.ts', './setup-engine.ts'],
+    typeOnlyAllowed: ['../project/projects.ts'],
     reason: 'Keep bounded hosted trust reads outside pure setup proposal policy.',
   },
   {

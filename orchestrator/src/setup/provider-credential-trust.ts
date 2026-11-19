@@ -14,8 +14,9 @@ import {
   providerCredentialTrustNotices,
   type SetupCredentialTrustFact,
 } from './provider-credential-trust-notice.ts'
-import type { SetupAgent } from './setup-engine.ts'
 import { SETUP_COMMAND_TIMEOUT_MS } from './setup-mcp.ts'
+
+type ProviderAgent = { enabled?: number | boolean; provider?: string | null }
 
 const cause = (error: unknown) => (error instanceof Error ? error.message : String(error))
 
@@ -24,10 +25,15 @@ const boundedClient = () =>
 
 /** Read each distinct provider credential space once; unsigned-in machines have no hosted fact. */
 export async function gatherProviderCredentialTrustFacts(
-  agents: readonly SetupAgent[],
+  agents: readonly ProviderAgent[],
   projects: readonly Project[],
 ): Promise<SetupCredentialTrustFact[]> {
-  if (!agents.some((agent) => agent.enabled && agent.provider?.trim())) return []
+  if (
+    !agents.some(
+      (agent) => agent.enabled !== false && agent.enabled !== 0 && agent.provider?.trim(),
+    )
+  )
+    return []
   if (!readRecordSessionToken()) return []
   const declared = [
     ...new Set(projects.map((project) => project.settings.space?.trim()).filter(Boolean)),
@@ -80,7 +86,7 @@ export async function gatherProviderCredentialTrustFacts(
 
 export async function reportProviderCredentialTrustDoctor(
   log: (line: string) => void,
-  agents: readonly SetupAgent[],
+  agents: readonly ProviderAgent[],
   projects: readonly Project[],
 ): Promise<void> {
   const notices = providerCredentialTrustNotices(
