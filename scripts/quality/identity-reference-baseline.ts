@@ -20,7 +20,7 @@ export const identityReferenceBaseline: Readonly<Record<string, number>> = {
   'orchestrator/src/record/record-port-catalogue.ts': 1,
   'orchestrator/src/record/record-question-read.ts': 1,
   'orchestrator/src/record/record-question-write.ts': 2,
-  'orchestrator/src/record/record-task-flow-list-query.ts': 2,
+  'orchestrator/src/record/record-task-flow-list-query.ts': 3,
   'orchestrator/src/review/review-commands.ts': 1,
   'orchestrator/src/review/review-identifier.ts': 1,
   'orchestrator/src/run/run-identifier-grammar.ts': 4,

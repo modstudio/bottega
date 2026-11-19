@@ -205,7 +205,10 @@ export async function resolvedPointerTarget(
     )
       return String(number)
     throw new ContextWriteRefusalError(
-      referenceNotVisibleRefusal('this project', `pass #<n> for a pull request`),
+      referenceNotVisibleRefusal(
+        'this project',
+        `no pull request #${number} is recorded for this project; check the number`,
+      ),
     )
   }
   if (parsed.kind === 'doc') return resolveDocPointer(parsed.address, ports)

@@ -4,7 +4,7 @@ import { isAbsolute, relative, resolve } from 'node:path'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import type { NoteAnchorWire } from '../../shared/note-anchor.ts'
 import { parseNoteAnchorWire } from '../../shared/note-anchor.ts'
-import { formatNoteLabel } from '../../shared/note-label.ts'
+import { formatNoteLabel, parseNoteLabel } from '../../shared/note-label.ts'
 import { newRecordId } from '../../shared/record/schema.ts'
 import { hasRecordIdShape } from '../../shared/record-id.ts'
 import { projectOf } from './attribute.ts'
@@ -378,6 +378,7 @@ export function getNote(recordId: string): NoteRow {
 }
 
 export function resolveNoteReference(value: string, sessionProject: string | null): string {
+  if (value.includes('#')) registeredProject(parseNoteLabel(value).project)
   return resolveNoteIdentity(db(), value, sessionProject)
 }
 

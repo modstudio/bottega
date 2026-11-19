@@ -453,6 +453,9 @@ describe('suggestion notes', () => {
       expect(() => resolveNoteReference('alpha#41', 'workshop')).toThrow(
         'not visible in project alpha; pass the UUID or a <project>#<number> label',
       )
+      expect(() => resolveNoteReference('unregistered#41', 'workshop')).toThrow(
+        "project 'unregistered' is not registered; run `bottega project list`",
+      )
       expect(resolveNoteReference(alphaId, 'workshop')).toBe(alphaId)
       expect(() => resolveNoteReference('99', 'workshop')).toThrow(
         'not visible in project workshop; pass the UUID or a <project>#<number> label',
