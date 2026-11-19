@@ -436,8 +436,8 @@ function remedyForNext(
 ): string {
   const change = facts.change
   if (next.action === 'dispatch') return dispatchRemedy(change, next.lenses!)
-  if (next.action === 'wait-build') return `${PLATFORM_SLUG} run wait ${runId}`
-  if (next.action === 'wait') return `${PLATFORM_SLUG} run wait ${runId}`
+  if (next.action === 'wait' || next.action === 'wait-build')
+    return `${PLATFORM_SLUG} run wait ${runId}`
   if (next.action === 'triage') return `${PLATFORM_SLUG} score ${runId} ...`
   if (next.action === 'record-read')
     return `${PLATFORM_SLUG} review read --sha ${change.head} --note "<what was read and why it lands>"`
