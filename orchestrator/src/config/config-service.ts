@@ -86,6 +86,7 @@ import {
   wrapsForRecipients,
 } from './data-key-access.ts'
 import { refreshDisplayTimezoneCache } from './display-timezone-cache.ts'
+import { verifyConfigWrite } from './config-write-verification.ts'
 import { hostedConfigClient } from './hosted-config-call-outcome.ts'
 import * as trustRefusal from './machine-trust-refusal.ts'
 import { personalConfigWriteDestination } from './personal-config-write-destination.ts'
@@ -828,8 +829,11 @@ export async function setConfigEntry(
   client: ConfigClient | undefined = undefined,
   env: ConfigEnvironment = process.env,
   clientFactory: () => ConfigClient = () => hostedConfigClient(env),
-  destination?: WriteDestination,
-) {
+  options: { destination?: WriteDestination; remedy?: string } = {},
+): Promise<
+  | { home: 'machine'; row: ReturnType<typeof setMachineEntry> }
+  | { home: 'user' | 'space'; row: Awaited<ReturnType<typeof setEntry>> }
+> {
   const home = configHome(key, requested)
   if (home === 'machine') {
     if (expectedRowVersion !== undefined)
@@ -837,7 +841,7 @@ export async function setConfigEntry(
         `refusing config key ${key}: --expect applies only to hosted values; write its machine home with \`${setRemedy(key, home)}\``,
       )
     const row = setMachineEntry(key, value, env)
-    return { key: row.key, value: String(row.value), home, row }
+    return { home, row }
   }
   validateHostedValue(key, value)
   const hostedClient = client ?? clientFactory()
@@ -847,10 +851,15 @@ export async function setConfigEntry(
     home,
     expectedRowVersion,
     hostedClient,
-    destination ?? (await personalConfigWriteDestination(hostedClient)),
+    options.destination ?? (await personalConfigWriteDestination(hostedClient)),
   )
+  if (home === 'space') {
+    if (!options.remedy)
+      throw new Error(`refusing config write success: no repair command was provided for ${key}`)
+    await verifyConfigWrite(hostedClient, row, options.destination ?? {}, options.remedy)
+  }
   if (key === DISPLAY_TIMEZONE_KEY) refreshDisplayTimezoneCache(value, env)
-  return { key: row.key, value: row.value, home, row }
+  return { home, row }
 }
 
 function machineSourceLabel(source: ReturnType<typeof readMachineValueWithSource>['source']) {

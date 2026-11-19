@@ -23,9 +23,14 @@ function homeLabel(home: ConfigHome): string {
   return home === 'machine' ? 'machine' : `hosted ${home} scope`
 }
 
-export function setRemedy(key: string, home: ConfigHome): string {
-  const flag = home === 'machine' ? '--machine ' : home === 'space' ? '--space ' : ''
-  return `${PLATFORM_SLUG} machine config set ${flag}${key} <value>`
+export function setRemedy(key: string, home: ConfigHome, spaceSlug?: string): string {
+  const flag =
+    home === 'machine'
+      ? ' --machine'
+      : home === 'space'
+        ? ` --space ${spaceSlug ?? '<slug>'}`
+        : ''
+  return `${PLATFORM_SLUG} machine config set ${key} <value>${flag}`
 }
 
 function getRemedy(key: string): string {
@@ -39,7 +44,7 @@ function getRemedy(key: string): string {
       ? ` [${flags.join('|')}]`
       : ''
     : ` ${flags.join('|')}`
-  return `${PLATFORM_SLUG} machine config get${selector} ${key}`
+  return `${PLATFORM_SLUG} machine config get ${key}${selector}`
 }
 
 export function configHome(

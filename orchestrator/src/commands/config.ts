@@ -30,7 +30,7 @@ import {
   setConfigEntry,
   setSecret,
 } from '../config/config-service.ts'
-import { verifyConfigWrite } from '../config/config-write-verification.ts'
+import { setRemedy } from '../config/config-entry-policy.ts'
 import { refreshDisplayTimezoneCache } from '../config/display-timezone-cache.ts'
 import { hostedConfigClient } from '../config/hosted-config-call-outcome.ts'
 import { trustMachine } from '../config/machine-trust.ts'
@@ -61,14 +61,17 @@ function registerConfigSet(config: Command): void {
     .action(async (key, value, options) => {
       const write = shipToWrite(key, value)
       assertConfigWriteAllowed(write.key, write.value)
-      if (options.machine && options.space) {
+      const space = configSpaceSelection('set', options.space, false, () =>
+        setRemedy(write.key, 'space', '<slug>').replace('<value>', write.value),
+      )
+      if (options.machine && space !== undefined) {
         throw new Error('refusing machine config set: --machine cannot be combined with --space')
       }
-      const requestedHome = options.machine ? 'machine' : options.space ? 'space' : undefined
+      const requestedHome = options.machine ? 'machine' : typeof space === 'string' ? 'space' : undefined
       const home = configHome(write.key, requestedHome)
       const client = home === 'machine' ? undefined : hostedConfigClient()
       const target = client
-        ? await configWriteTarget('machine config set', options.space, client)
+        ? await configWriteTarget('machine config set', space, client)
         : undefined
       const written = await setConfigEntry(
         write.key,
@@ -78,17 +81,21 @@ function registerConfigSet(config: Command): void {
         client,
         process.env,
         () => client ?? hostedConfigClient(),
-        target?.destination,
+        {
+          destination: target?.destination,
+          ...(target?.scope === 'space'
+            ? { remedy: setRemedy(write.key, 'space', target.spaceSlug).replace('<value>', write.value) }
+            : {}),
+        },
       )
-      await verifyNamedSpaceConfigWrite(target, client, written, write.key, write.value)
       if (options.json) log(configSetPresentation(written))
       else {
         log(
-          `wrote ${written.key} to ${written.home === 'machine' ? 'machine' : `hosted ${written.home} scope`}`,
+          `wrote ${written.row.key} to ${written.home === 'machine' ? 'machine' : `hosted ${written.home} scope`}`,
         )
         if (
           written.home === 'machine' &&
-          (written.key.startsWith('autonomy.') || written.key === 'machine.global_use')
+          (written.row.key.startsWith('autonomy.') || written.row.key === 'machine.global_use')
         )
           log(
             `machine settings take effect at the next session start (or after \`${PLATFORM_SLUG} machine settings apply\`)`,
@@ -99,23 +106,24 @@ function registerConfigSet(config: Command): void {
 
 function registerConfigGet(config: Command): void {
   config
-    .command('get <key>')
+    .command('get [key]')
     .description('show one configuration value')
     .option('--space [slug]', 'read the value from the active or named space scope')
     .option('--machine', 'read the value from machine.toml only')
     .option('--json', 'write the configuration row as JSON')
-    .action(async (key, options) => {
-      if (options.machine && options.space)
+    .action(async (parsedKey, options) => {
+      const { key, space } = configGetRequest(parsedKey, options.space)
+      if (options.machine && space !== undefined)
         throw new Error('refusing machine config get: --machine cannot be combined with --space')
       const requested = options.machine
         ? 'machine'
-        : options.space !== undefined
+        : space !== undefined
           ? 'space'
           : undefined
       const client =
         configHome(key, requested, 'get') === 'machine' ? undefined : hostedConfigClient()
       const destination = client
-        ? await configReadDestination('machine config get', options.space, client)
+        ? await configReadDestination('machine config get', space, client)
         : undefined
       const result = await getConfigEntry(
         key,
@@ -127,6 +135,23 @@ function registerConfigGet(config: Command): void {
       )
       for (const line of configReadPresentation(result, Boolean(options.json))) log(line)
     })
+}
+
+export function configGetRequest(
+  parsedKey: string | undefined,
+  parsedSpace: true | string | undefined,
+): { key: string; space: true | string | undefined } {
+  let key = parsedKey
+  let space = parsedSpace
+  if (key === undefined && typeof space === 'string' && space.length > 0) {
+    key = space
+    space = true
+  }
+  space = configSpaceSelection('get', space, true, () =>
+    `${PLATFORM_SLUG} machine config get ${key ?? '<key>'} --space <slug>`,
+  )
+  if (key === undefined) throw new Error("missing required argument 'key'")
+  return { key, space }
 }
 
 export async function configWriteTarget(
@@ -165,20 +190,21 @@ export async function configReadDestination(
   return { destinationSpaceId: destination.spaceId }
 }
 
-async function verifyNamedSpaceConfigWrite(
-  target: Awaited<ReturnType<typeof configWriteTarget>> | undefined,
-  client: ConfigClient | undefined,
-  written: Awaited<ReturnType<typeof setConfigEntry>>,
-  key: string,
-  value: string,
-): Promise<void> {
-  if (target?.scope !== 'space') return
-  const remedy = `${PLATFORM_SLUG} machine config set ${key} ${value} --space ${target.spaceSlug}`
-  if (!client || !('environment' in written.row))
+export function configSpaceSelection(
+  verb: 'get' | 'list' | 'set',
+  requested: true | string | undefined,
+  allowActive: boolean,
+  remedy: () => string,
+): true | string | undefined {
+  if (requested === '')
     throw new Error(
-      `refusing config write success: ${key} did not produce a hosted row; retry \`${remedy}\``,
+      `refusing machine config ${verb}: --space requires a slug; retry \`${remedy()}\``,
     )
-  await verifyConfigWrite(client, written.row, target.destination, remedy)
+  if (requested === true && !allowActive)
+    throw new Error(
+      `refusing machine config ${verb}: --space requires a slug; retry \`${remedy()}\``,
+    )
+  return requested
 }
 
 async function resolveSecretWriteTarget(
@@ -389,11 +415,14 @@ function registerConfigList(config: Command): void {
     .option('--machine', 'list machine configuration values')
     .option('--json', 'write the configuration rows as JSON')
     .action(async (options) => {
-      if (options.machine && options.space !== undefined)
+      const space = configSpaceSelection('list', options.space, true, () =>
+        `${PLATFORM_SLUG} machine config list --space <slug>`,
+      )
+      if (options.machine && space !== undefined)
         throw new Error('refusing machine config list: --machine cannot be combined with --space')
       const client = options.machine ? undefined : hostedConfigClient()
       const destination = client
-        ? await configReadDestination('machine config list', options.space, client)
+        ? await configReadDestination('machine config list', space, client)
         : undefined
       const rows = options.machine ? listMachineEntries() : await listEntries(client, destination)
       for (const line of configListPresentation(rows, Boolean(options.json))) log(line)
