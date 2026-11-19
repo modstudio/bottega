@@ -33,6 +33,8 @@ export const recordChangeModules = [
     './record-cache-lens.ts',
     './record-cache-cursor.ts',
     './record-cache-doc-deferrals.ts',
+    './record-cache-deferred-fallbacks.ts',
+    './record-cache-fallbacks.ts',
     './record-cache-ownership.ts',
     './record-cache-port.ts',
     './record-cache-projects.ts',

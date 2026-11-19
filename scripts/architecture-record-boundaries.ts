@@ -26,6 +26,7 @@ export const recordMachineBoundaries: ImportBoundary[] = [
     [
       'node:os',
       '../../../shared/machine-config.ts',
+      '../../../shared/refusal.ts',
       '../../../shared/machine-label.ts',
       './machine-name.ts',
     ],

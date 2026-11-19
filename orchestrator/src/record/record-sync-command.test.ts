@@ -290,6 +290,6 @@ test('waiting docs are grouped once per unregistered project with its remedy', (
       { docId: 'doc-b', subjectId: 'subject-c', project: 'alpha' },
     ]),
   ).toEqual([
-    `record cache waiting: 2 docs on unregistered project alpha; cleared by: ${PLATFORM_SLUG} project add alpha`,
+    `record cache waiting: 2 docs on unregistered project alpha\ncleared by: ${PLATFORM_SLUG} project add alpha`,
   ])
 })

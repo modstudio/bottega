@@ -548,91 +548,16 @@ function addResult(target: RecordCachePullResult, value: Partial<RecordCachePull
   }
 }
 
-function collectDocDeferrals(
-  pulled: ReadonlyDocDeferrals,
-  unresolvedParents: Map<string, string>,
-  subjectDeferrals: SubjectDeferrals,
-): void {
-  for (const [child, parent] of pulled.unresolvedParents) unresolvedParents.set(child, parent)
-  for (const [doc, subjects] of pulled.subjectDeferrals)
-    subjectDeferrals.set(doc, new Set(subjects))
-}
-
-type DeferredDocFallbacks = Map<string, DocDeferrals>
-
-function combinedDocDeferrals(deferred: DeferredDocFallbacks) {
-  const unresolvedParents = new Map<string, string>()
-  const subjectDeferrals: SubjectDeferrals = new Map()
-  for (const value of deferred.values())
-    collectDocDeferrals(value, unresolvedParents, subjectDeferrals)
-  return { unresolvedParents, subjectDeferrals }
-}
-
-async function classifyDocDeferrals(
-  deferred: DeferredDocFallbacks,
-  client: Pick<RecordApiClient, 'listProjectSubjects'>,
-  projectSpaces: ReadonlyMap<string, string | null>,
-): Promise<{
-  deferrals: ReadonlyDocDeferrals
-  waitingOnUnregistered: WaitingOnUnregisteredProject[]
-}> {
-  const hostedSubjectProjects = new Map<string, string>()
-  const spaces = new Set<string>()
-  for (const [fallback, value] of deferred)
-    if (value.subjectDeferrals.size) spaces.add(fallbackSpace(fallback))
-  for (const space of spaces) {
-    let cursor: string | undefined
-    for (;;) {
-      const page = await client.listProjectSubjects(
-        { includeRetired: true, cursor, limit: 100 },
-        { destinationSpaceId: space },
-      )
-      for (const subject of page.items) hostedSubjectProjects.set(subject.id, subject.project)
-      if (!page.nextCursor) break
-      cursor = page.nextCursor
-    }
-  }
-  const combined = combinedDocDeferrals(deferred)
-  const classified = classifyRecordCacheSubjectDeferrals(
-    combined.subjectDeferrals,
-    hostedSubjectProjects,
-    projectSpaces,
-  )
-  return {
-    deferrals: {
-      unresolvedParents: combined.unresolvedParents,
-      subjectDeferrals: classified.refusing,
-    },
-    waitingOnUnregistered: classified.waitingOnUnregistered,
-  }
-}
-
 async function settleDocDeferrals(
   deferred: DeferredDocFallbacks,
   client: Pick<RecordApiClient, 'listProjectSubjects'>,
   projectSpaces: ReadonlyMap<string, string | null>,
   result: RecordCachePullResult,
 ): Promise<void> {
-  const classified = await classifyDocDeferrals(deferred, client, projectSpaces)
+  const classified = await classifyDeferredDocFallbacks(deferred, client, projectSpaces)
   addResult(result, { waitingOnUnregistered: classified.waitingOnUnregistered })
   const error = recordCacheDocDeferralError(classified.deferrals)
   if (error) throw error
-}
-
-function rememberKeysetDeferrals(
-  deferred: DeferredDocFallbacks,
-  spaces: readonly string[],
-  pulled: DocDeferrals,
-  local: Database,
-): void {
-  if (!hasDocDeferrals(pulled)) return
-  const pending = pendingRecordCacheFallbacks(local)
-  for (const space of spaces) {
-    const key = `doc:${space}`
-    deferred.set(key, pulled)
-    pending.add(key)
-  }
-  writePendingRecordCacheFallbacks(local, pending)
 }
 
 async function runFallbacks(
@@ -693,7 +618,7 @@ async function resetAt(
   deferred: DeferredDocFallbacks,
 ) {
   const pulled = await deps.pullKeysets(local, identity, spaces)
-  rememberKeysetDeferrals(deferred, spaces, pulled, local)
+  rememberKeysetDocDeferrals(deferred, spaces, pulled, local)
   writeTransaction(() => {
     writeCursor(local, CURSOR, cursor)
     writeCursor(local, SPACES, JSON.stringify(remembered))
@@ -865,7 +790,7 @@ export async function pullRecordCacheFeed(
   if (joined.length) {
     const pulled = await deps.pullKeysets(local, identity, joined)
     addResult(result, pulled.result)
-    rememberKeysetDeferrals(deferred, joined, pulled, local)
+    rememberKeysetDocDeferrals(deferred, joined, pulled, local)
   }
   addResult(
     result,
