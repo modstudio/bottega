@@ -1,7 +1,10 @@
 // concern: run dispatch rulings
 /** Resolves and renders the task rulings inherited by a dispatched run. */
 
-import { resolveCarriedAttachments } from './run-carried-attachments.ts'
+import {
+  type CarriedAttachmentSource,
+  resolveCarriedAttachments,
+} from './run-carried-attachments.ts'
 import { inheritedRunLinks } from './run-claim-inheritance.ts'
 import { admitNewRunReference } from './run-task-reference.ts'
 import { initialRunTaskText } from './run-task-text.ts'
@@ -18,7 +21,11 @@ async function runDispatchRulingsSection(input: {
   resume: boolean
   project: string | null
   taskRecordId: string | null
-}): Promise<{ section: string; questionIds: string[] }> {
+}): Promise<{
+  section: string
+  questionIds: string[]
+  attachmentSources: CarriedAttachmentSource[]
+}> {
   const rulings = await taskRulingsForDispatch({
     resume: input.resume,
     project: input.project,
@@ -27,6 +34,10 @@ async function runDispatchRulingsSection(input: {
   return {
     section: renderTaskRulings(rulings),
     questionIds: rulings.rulings.map((ruling) => ruling.questionRecordId),
+    attachmentSources: rulings.rulings.map((ruling) => ({
+      label: `task rulings (question ${ruling.questionRecordId})`,
+      text: [ruling.question, ruling.ruling, ruling.basis].filter(Boolean).join('\n'),
+    })),
   }
 }
 
@@ -86,11 +97,17 @@ export async function prepareRunDispatchRulings(
     { readTaskText: dependencies.taskTextReader },
   )
   return {
-    ...rulings,
+    section: rulings.section,
+    questionIds: rulings.questionIds,
     links,
     taskText,
-    carriedAttachments: await resolveCarriedAttachments([input.spec, rulings.section, taskText], {
-      readAttachment: dependencies.attachmentReader,
-    }),
+    carriedAttachments: await resolveCarriedAttachments(
+      [
+        { label: 'spec', text: input.spec },
+        ...rulings.attachmentSources,
+        { label: 'task text', text: taskText },
+      ],
+      { readAttachment: dependencies.attachmentReader },
+    ),
   }
 }

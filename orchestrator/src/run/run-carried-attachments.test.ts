@@ -1,6 +1,9 @@
 import { describe, expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { WorkflowTextNotHeldError } from '../workflow/workflow-text-copy.ts'
+import {
+  missingWorkflowTextMessage,
+  WorkflowTextNotHeldError,
+} from '../workflow/workflow-text-missing.ts'
 import {
   CARRIED_ATTACHMENT_MAX_BYTES,
   CARRIED_ATTACHMENTS_MAX_BYTES,
@@ -17,11 +20,15 @@ describe('carried attachment tokens', () => {
   test('collects distinct tokens across spec, rulings, and task text', () => {
     expect(
       carriedAttachmentTokens(
-        `spec ${FIRST} ${SECOND}`,
-        `rulings ${SECOND}`,
-        `task ${THIRD} ${FIRST}`,
+        { label: 'spec', text: `spec ${FIRST} ${SECOND}` },
+        { label: 'task rulings (question Q)', text: `rulings ${SECOND}` },
+        { label: 'task text', text: `task ${THIRD} ${FIRST}` },
       ),
-    ).toEqual([FIRST, SECOND, THIRD])
+    ).toEqual([
+      { token: FIRST, sources: ['spec', 'task text'] },
+      { token: SECOND, sources: ['spec', 'task rulings (question Q)'] },
+      { token: THIRD, sources: ['task text'] },
+    ])
   })
 })
 
@@ -79,29 +86,36 @@ describe('carried attachment rendering', () => {
 })
 
 test('an unknown token refuses with its condition and remedy', async () => {
+  const missing = missingWorkflowTextMessage(FIRST, 'local-authoritative')
   await expect(
-    resolveCarriedAttachments([`spec ${FIRST}`], {
-      readAttachment: async () => {
-        throw new WorkflowTextNotHeldError(FIRST)
+    resolveCarriedAttachments(
+      [
+        { label: 'spec', text: `spec ${FIRST}` },
+        { label: 'task rulings (question Q)', text: `ruling ${FIRST}` },
+      ],
+      {
+        readAttachment: async () => {
+          throw new WorkflowTextNotHeldError(missing.condition, missing.remedy)
+        },
       },
-    }),
+    ),
   ).rejects.toThrow(
-    `carried attachments could not be resolved before dispatch:\n- ${FIRST}: ${FIRST} is not held on this machine; ` +
-      'no live workflow text or copy link was found, and an id from another ' +
-      `machine is readable only through its task document\n  remedy: re-attach the text with ${PLATFORM_SLUG} workflow attach, ` +
+    `carried attachments could not be resolved before dispatch:\n- ${FIRST} (from spec, task rulings (question Q)): ` +
+      `${FIRST} has no live workflow text or copy link in this machine's store; ` +
+      `an id attached on another machine is readable only through its task document.\n  remedy: re-attach the text with ${PLATFORM_SLUG} workflow attach, ` +
       "read another machine's attachment through its task document, or paste the body into the spec",
   )
 })
 
 test('a store failure carries its cause and a store remedy', async () => {
   await expect(
-    resolveCarriedAttachments([`spec ${FIRST}`], {
+    resolveCarriedAttachments([{ label: 'spec', text: `spec ${FIRST}` }], {
       readAttachment: async () => {
         throw new Error('record service timed out')
       },
     }),
   ).rejects.toThrow(
-    `- ${FIRST}: the workflow text store could not be read: record service timed out\n` +
+    `- ${FIRST} (from spec): the workflow text store could not be read: record service timed out\n` +
       '  remedy: restore access to the workflow text store and retry dispatch, or paste the body into the spec',
   )
 })

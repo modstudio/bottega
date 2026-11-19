@@ -279,6 +279,7 @@ export const runLifecycleModules: ArchitectureModule[] = [
   module('orchestrator/src/run/run-carried-attachments.ts', [
     '../../../shared/brand.ts',
     '../workflow/workflow-text-copy.ts',
+    '../workflow/workflow-text-missing.ts',
     '../workflow/workflow-text.ts',
     './run-pack-prompt.ts',
   ]),

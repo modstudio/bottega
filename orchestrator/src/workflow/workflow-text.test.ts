@@ -353,7 +353,7 @@ describe('workflow text lifecycle', () => {
     await abandon(abandoned, abandonedCursor, 'no longer needed')
     expect(rowCount(abandoned, abandonedCursor)).toBe(0)
     await expect(showWorkflowText(abandonedReference, abandoned)).rejects.toThrow(
-      `${abandonedReference} is not held on this machine; no live workflow text or copy link was found, and an id from another machine is readable only through its task document`,
+      `${abandonedReference} has no live workflow text or copy link in this machine's store; an id attached on another machine is readable only through its task document.`,
     )
   })
 
@@ -555,7 +555,9 @@ describe('task-linked workflow text preservation', () => {
     )
     expect(result).not.toContain('uncopied')
     expect(rowCount(d, cursor)).toBe(0)
-    await expect(showWorkflowText(reference, d)).rejects.toThrow('is not held on this machine')
+    await expect(showWorkflowText(reference, d)).rejects.toThrow(
+      "has no live workflow text or copy link in this machine's store",
+    )
   })
 
   test('refused close validation makes no document-port call', async () => {

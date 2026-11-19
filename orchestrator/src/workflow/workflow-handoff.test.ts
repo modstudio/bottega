@@ -272,7 +272,7 @@ test('handoff closes the old stage, opens and links the successor, moves context
       .get(attachment.slice('attached-text:'.length)),
   ).toEqual({ cursor_record_id: next.record_id })
   await expect(
-    resolveCarriedAttachments([`dispatch ${attachment}`], {
+    resolveCarriedAttachments([{ label: 'spec', text: `dispatch ${attachment}` }], {
       readAttachment: (token) => showWorkflowText(token, d),
     }),
   ).resolves.toContain('carried build context')

@@ -6,7 +6,8 @@ import {
   workflowTextAttachmentToken,
   workflowTextAttachmentTokens,
 } from '../workflow/workflow-text.ts'
-import { showWorkflowText, WorkflowTextNotHeldError } from '../workflow/workflow-text-copy.ts'
+import { showWorkflowText } from '../workflow/workflow-text-copy.ts'
+import { WorkflowTextNotHeldError } from '../workflow/workflow-text-missing.ts'
 import { boundUtf8, TASK_TEXT_MAX_BYTES } from './run-pack-prompt.ts'
 
 export const CARRIED_ATTACHMENT_MAX_BYTES = TASK_TEXT_MAX_BYTES
@@ -15,12 +16,21 @@ export const CARRIED_ATTACHMENTS_MAX_BYTES = TASK_TEXT_MAX_BYTES * 2
 export type CarriedAttachment = Awaited<ReturnType<typeof showWorkflowText>>
 type AttachmentReader = (token: string) => Promise<CarriedAttachment>
 
-export function carriedAttachmentTokens(...sections: readonly string[]): string[] {
-  const tokens = new Set<string>()
+export type CarriedAttachmentSource = { label: string; text: string }
+export type CarriedAttachmentToken = { token: string; sources: string[] }
+
+export function carriedAttachmentTokens(
+  ...sections: readonly CarriedAttachmentSource[]
+): CarriedAttachmentToken[] {
+  const tokens = new Map<string, string[]>()
   for (const section of sections) {
-    for (const token of workflowTextAttachmentTokens(section)) tokens.add(token)
+    for (const token of workflowTextAttachmentTokens(section.text)) {
+      const sources = tokens.get(token) ?? []
+      if (!sources.includes(section.label)) sources.push(section.label)
+      tokens.set(token, sources)
+    }
   }
-  return [...tokens]
+  return [...tokens].map(([token, sources]) => ({ token, sources }))
 }
 
 function truncationMarker(token: string, scope: 'attachment' | 'section'): string {
@@ -69,40 +79,48 @@ export function carriedAttachmentsSection(attachments: readonly CarriedAttachmen
   return section
 }
 
-type AttachmentFailure = { token: string; condition: string; remedy: string }
+type AttachmentFailure = {
+  token: string
+  sources: string[]
+  condition: string
+  remedy: string
+}
 
 function attachmentRefusal(failures: AttachmentFailure[]): Error {
   const details = failures
-    .map(({ token, condition, remedy }) => `- ${token}: ${condition}\n  remedy: ${remedy}`)
+    .map(
+      ({ token, sources, condition, remedy }) =>
+        `- ${token} (from ${sources.join(', ')}): ${condition}\n  remedy: ${remedy}`,
+    )
     .join('\n')
   return new Error(`carried attachments could not be resolved before dispatch:\n${details}`)
 }
 
 export async function resolveCarriedAttachments(
-  sections: readonly string[],
+  sections: readonly CarriedAttachmentSource[],
   dependencies: { readAttachment?: AttachmentReader } = {},
 ): Promise<string> {
-  const tokens = carriedAttachmentTokens(...sections)
-  if (tokens.length === 0) return ''
+  const carriedTokens = carriedAttachmentTokens(...sections)
+  if (carriedTokens.length === 0) return ''
   const readAttachment = dependencies.readAttachment ?? showWorkflowText
   const resolved: CarriedAttachment[] = []
   const failures: AttachmentFailure[] = []
-  for (const token of tokens) {
+  for (const { token, sources } of carriedTokens) {
     try {
       resolved.push(await readAttachment(token))
     } catch (cause) {
       if (cause instanceof WorkflowTextNotHeldError) {
         failures.push({
           token,
-          condition: cause.message,
-          remedy:
-            `re-attach the text with ${PLATFORM_SLUG} workflow attach, read another machine's ` +
-            'attachment through its task document, or paste the body into the spec',
+          sources,
+          condition: cause.condition,
+          remedy: cause.remedy,
         })
       } else {
         const message = cause instanceof Error ? cause.message : String(cause)
         failures.push({
           token,
+          sources,
           condition: `the workflow text store could not be read: ${message}`,
           remedy:
             'restore access to the workflow text store and retry dispatch, or paste the body into the spec',
