@@ -3,6 +3,8 @@ import { fileURLToPath } from 'node:url'
 import {
   classifyStore,
   liveStorePath,
+  localGateRegistrationDecision,
+  probeLocalGateRegistration,
   withBranchStoreScratch,
   withMainGateFactsSnapshot,
 } from '../orchestrator/scripts/branch-store.ts'
@@ -20,10 +22,6 @@ import {
 } from '../orchestrator/src/canon/canon-hydrate.ts'
 import { storedRepositoryCanonRows } from '../orchestrator/src/canon/canon-stored-rows.ts'
 import { CODEX_PROJECT_DOC_PATH } from '../orchestrator/src/canon/codex-project-doc.ts'
-import {
-  localGateRegistrationDecision,
-  probeLocalGateRegistration,
-} from '../orchestrator/src/check/local-gate-registration.ts'
 import { DB_PATH, openReadOnlyDatabase } from '../orchestrator/src/database/db.ts'
 import { migrationRefusal } from '../orchestrator/src/database/migrations.ts'
 import {

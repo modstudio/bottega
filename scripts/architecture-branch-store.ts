@@ -8,6 +8,7 @@ export const branchStoreModuleSpecs = [
       'node:os',
       'node:path',
       '../../shared/brand.ts',
+      '../../shared/check-execution.ts',
       '../src/database/database-location.ts',
       '../src/database/migrations.ts',
       '../src/gate/gate-facts-contract.ts',

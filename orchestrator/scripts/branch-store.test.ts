@@ -3,8 +3,14 @@ import { expect, test } from 'bun:test'
 import { copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { applyMigrations, MIGRATIONS_FOLDER, migrationJournal } from '../src/database/migrations.ts'
-import { classifyStore, migrateStore, snapshotStore } from './branch-store.ts'
+import {
+  classifyStore,
+  localGateRegistrationDecision,
+  migrateStore,
+  snapshotStore,
+} from './branch-store.ts'
 
 function writeMigrationFolder(folder: string, entries = migrationJournal().slice(0, -1)): void {
   mkdirSync(join(folder, 'meta'), { recursive: true })
@@ -70,4 +76,49 @@ test('snapshots a prior store, migrates the snapshot, and leaves the source unch
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }
+})
+
+test('local machine-state checks run for a registered checkout', () => {
+  expect(
+    localGateRegistrationDecision('/home/dev/Projects/bottega', { kind: 'registered' }),
+  ).toEqual({ kind: 'run' })
+})
+
+test('local machine-state checks skip an unregistered checkout with the registration remedy', () => {
+  const checkout = '/home/dev/Projects/bottega'
+  expect(localGateRegistrationDecision(checkout, { kind: 'unregistered' })).toEqual({
+    kind: 'skip',
+    message: `checkout ${checkout} is not registered because the project register has no project containing this checkout; remedy: ${PLATFORM_SLUG} project add ${JSON.stringify(checkout)}`,
+  })
+})
+
+test('local machine-state checks skip an absent store', () => {
+  expect(
+    localGateRegistrationDecision('/home/dev/Projects/bottega', { kind: 'absent-store' }),
+  ).toMatchObject({
+    kind: 'skip',
+    message: expect.stringContaining('the orchestrator store is absent'),
+  })
+})
+
+test('local machine-state checks skip a store without a project table', () => {
+  expect(
+    localGateRegistrationDecision('/home/dev/Projects/bottega', { kind: 'absent-register' }),
+  ).toMatchObject({
+    kind: 'skip',
+    message: expect.stringContaining('the orchestrator store has no project register'),
+  })
+})
+
+test('local machine-state checks fail when a registered checkout store is unreadable', () => {
+  const checkout = '/home/dev/Projects/bottega'
+  expect(
+    localGateRegistrationDecision(checkout, {
+      kind: 'unreadable-store',
+      detail: 'permission denied',
+    }),
+  ).toEqual({
+    kind: 'fail',
+    message: `cannot read the project register for checkout ${checkout}: permission denied`,
+  })
 })

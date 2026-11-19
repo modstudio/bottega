@@ -1,10 +1,10 @@
 import type { Database } from 'bun:sqlite'
 import { fileURLToPath } from 'node:url'
-import { liveStorePath } from '../orchestrator/scripts/branch-store.ts'
 import {
+  liveStorePath,
   localGateRegistrationDecision,
   probeLocalGateRegistration,
-} from '../orchestrator/src/check/local-gate-registration.ts'
+} from '../orchestrator/scripts/branch-store.ts'
 import { DB_PATH, openReadOnlyDatabase } from '../orchestrator/src/database/db.ts'
 import { planWorkflowHydration } from '../orchestrator/src/workflow/workflow-tree.ts'
 import { collectWorkflowTree } from '../orchestrator/src/workflow/workflow-tree-files.ts'
