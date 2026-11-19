@@ -26,7 +26,12 @@ import {
 } from './workflow-cursor-test.fixture.ts'
 import { renderWorkflowComposition } from './workflow-render.ts'
 import { attachWorkflowText } from './workflow-text.ts'
-import { promoteWorkflowLocal, setWorkflowLocal, showResolvedWorkflow } from './workflows.ts'
+import {
+  composeWorkflow,
+  promoteWorkflowLocal,
+  setWorkflowLocal,
+  showResolvedWorkflow,
+} from './workflows.ts'
 
 describe('workflow cursor adapter', () => {
   test('a current production declaration can rebind an argument for an older pinned cursor', async () => {
@@ -1023,9 +1028,13 @@ describe('workflow cursor adapter', () => {
 
   test('a null pre-migration snapshot falls back to catalogue defaults', async () => {
     const d = database()
+    const composed = composeWorkflow('flow', 'fixture', 'default', args, d)
     const resolution = {
       layers: [],
-      steps: { rebase: { value: 'review' as const, scope: 'session' } },
+      steps: {
+        ...Object.fromEntries(composed.steps.map((step) => [step.slug, step.resolvedAutonomy])),
+        rebase: { value: 'review' as const, scope: 'session' },
+      },
       rulings: { value: 'agent' as const, scope: 'built-in' },
       shipTo: { value: 'trunk' as const, scope: 'built-in' },
     }
