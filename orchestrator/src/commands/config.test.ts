@@ -12,6 +12,7 @@ import {
 import { ConfigEntrySchema, MachineConfigFileEntrySchema } from '../../../shared/config-contract.ts'
 import { CONFIG_HOME_ENV } from '../../../shared/config-directory.ts'
 import { writeHostedConfigIdentity } from '../../../shared/hosted-config-space.ts'
+import { setRemedy } from '../config/config-entry-policy.ts'
 import { getConfigEntry, listEntries, setConfigEntry } from '../config/config-service.ts'
 import { secretWriteTarget } from '../config/secret-write-target.ts'
 import {
@@ -23,6 +24,7 @@ import {
   configSetPresentation,
   configSpaceSelection,
   configWriteTarget,
+  deleteSelectedConfig,
   register,
 } from './config.ts'
 
@@ -213,13 +215,34 @@ test('config get accepts flag-first active space and key-first active or named s
 test('config space selection refuses empty and bare write slugs with the supplied remedy', () => {
   const remedy = () =>
     `${PLATFORM_SLUG} machine config set autonomy.preset autonomous --space <slug>`
-  for (const verb of ['get', 'list', 'set'] as const) {
-    expect(() => configSpaceSelection(verb, '', verb !== 'set', remedy)).toThrow(
+  for (const verb of ['delete', 'get', 'list', 'secret delete', 'secret set', 'set'] as const) {
+    expect(() => configSpaceSelection(verb, '', verb === 'get' || verb === 'list', remedy)).toThrow(
       `refusing machine config ${verb}: --space requires a slug; retry \`${remedy()}\``,
     )
   }
   expect(() => configSpaceSelection('set', true, false, remedy)).toThrow(
     'refusing machine config set: --space requires a slug',
+  )
+})
+
+test('config delete refuses an empty space slug before deleting', async () => {
+  let deletes = 0
+  const client = {
+    deleteEntry: async () => {
+      deletes += 1
+      return { deleted: true as const }
+    },
+  } as unknown as ConfigClient
+
+  await expect(deleteSelectedConfig('display.timezone', { space: '' }, client)).rejects.toThrow(
+    `refusing machine config delete: --space requires a slug; retry \`${PLATFORM_SLUG} machine config delete display.timezone --space <slug>\``,
+  )
+  expect(deletes).toBe(0)
+})
+
+test('config set remedy preserves replacement tokens in the value', () => {
+  expect(setRemedy('autonomy.preset', 'space', 'other', 'on$&')).toBe(
+    `${PLATFORM_SLUG} machine config set autonomy.preset on$& --space other`,
   )
 })
 
