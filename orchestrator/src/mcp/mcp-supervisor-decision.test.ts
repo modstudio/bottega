@@ -234,6 +234,33 @@ describe('MCP supervisor decision', () => {
     ).toEqual([{ type: 'exit', code: 0 }])
   })
 
+  test('drains only in-flight responses while shutting down', () => {
+    let state = transition(initialMcpSupervisorState(), {
+      type: 'client-message',
+      message: request('received-before-eof'),
+    }).state
+    state = transition(state, { type: 'client-close' }).state
+
+    const answered = transition(state, {
+      type: 'child-message',
+      message: response('received-before-eof'),
+    })
+    expect(answered.actions).toEqual([
+      { type: 'send-client', message: response('received-before-eof') },
+    ])
+    expect(answered.state.inFlight).toEqual([])
+
+    expect(
+      transition(state, { type: 'child-message', message: response('unknown') }).actions,
+    ).toEqual([])
+    expect(
+      transition(state, {
+        type: 'child-message',
+        message: notification('notifications/tools/list_changed'),
+      }).actions,
+    ).toEqual([])
+  })
+
   test('splits newline-framed JSON across chunks', () => {
     const decoder = new JsonLineDecoder()
     expect(decoder.push('{"jsonrpc":"2.0",')).toEqual([])

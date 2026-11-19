@@ -317,9 +317,30 @@ jobs:
         if: github.event_name != 'pull_request' && github.event_name != 'merge_group'
         run: "echo 'record rehearsal: no merge guard event'"
 
+  release-smoke:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        if: github.event_name == 'merge_group' || github.event_name == 'workflow_dispatch'
+        with:
+          fetch-depth: 0
+      - uses: oven-sh/setup-bun@v2
+        if: github.event_name == 'merge_group' || github.event_name == 'workflow_dispatch'
+        with:
+          bun-version-file: .bun-version
+      - name: Install
+        if: github.event_name == 'merge_group' || github.event_name == 'workflow_dispatch'
+        run: bun install
+      - name: Run release smoke
+        if: github.event_name == 'merge_group' || github.event_name == 'workflow_dispatch'
+        run: bun scripts/smoke-release.ts
+      - name: Pass outside the release smoke events
+        if: github.event_name != 'merge_group' && github.event_name != 'workflow_dispatch'
+        run: "echo 'release smoke: no merge queue or dispatch event'"
+
   ci:
     if: always()
-    needs: [secrets, static, cli, orchestrator, orchestrator-hooks, orchestrator-hooks-process, postgres, hub, hub-data, hub-ui-stories, hub-web, hub-web-smoke, hub-deploy-site, retrieval, shared, root, record-rehearsal]
+    needs: [secrets, static, cli, orchestrator, orchestrator-hooks, orchestrator-hooks-process, postgres, hub, hub-data, hub-ui-stories, hub-web, hub-web-smoke, hub-deploy-site, retrieval, shared, root, record-rehearsal, release-smoke]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:

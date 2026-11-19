@@ -206,6 +206,16 @@ function clientMessage(
 }
 
 function childMessage(state: McpSupervisorState, message: JsonRpcMessage): McpSupervisorTransition {
+  if (
+    state.phase === 'shutting-down' &&
+    isResponse(message) &&
+    state.inFlight.some((id) => sameId(id, message.id))
+  ) {
+    return {
+      state: forgetResponse(state, message),
+      actions: [{ type: 'send-client', message }],
+    }
+  }
   if (state.phase === 'replaying' && isResponse(message) && message.id === state.replayId) {
     const replayed = sendBuffered(state)
     return {
