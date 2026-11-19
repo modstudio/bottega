@@ -3,9 +3,10 @@ import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { newRecordId } from '../../../shared/record-id.ts'
-import { checkPackBudget } from '../../scripts/check-pack-budget.ts'
+import { checkTreePackBudget } from '../../scripts/check-pack-budget.ts'
 import { setDoc } from '../../test/fixtures/docs.ts'
 import { dir } from '../../test/fixtures/store.ts'
+import { collectCanonLintInput } from './canon-files.ts'
 import { JOBS } from '../jobs/jobs.ts'
 import { upsertProject } from '../project/projects.ts'
 import { CanonBudgetError, compilePack } from './canon.ts'
@@ -98,13 +99,24 @@ describe('canon pack budget', () => {
       expect(message.indexOf('job/understand/largest')).toBeLessThan(
         message.indexOf('job/understand/smallest'),
       )
-      const failures = checkPackBudget()
-      expect(failures.some((row) => row.includes('job/understand/largest'))).toBe(true)
     } finally {
       JOBS.understand!.packBytes = measured.bytes
     }
     expect(() => compilePack({ job: 'understand', cwd: dir })).not.toThrow()
     JOBS.understand!.packBytes = old
+  })
+
+  test('the tree-only gate measures real canon and rejects an inflated canon input', () => {
+    const files = collectCanonLintInput(ROOT).files
+    expect(checkTreePackBudget(files)).toEqual([])
+    const inflated = files.map((file) =>
+      file.path === 'AGENTS.md' ? { ...file, text: 'x'.repeat(DEFAULT_PACK_BYTES + 1) } : file,
+    )
+    const failures = checkTreePackBudget(inflated)
+    expect(failures.length).toBe(Object.keys(JOBS).length)
+    expect(failures[0]).toEqual(
+      expect.objectContaining({ bytes: expect.any(Number), ceiling: expect.any(Number) }),
+    )
   })
 
   test('a small inject write is refused when its affected pack would cross the ceiling', async () => {
@@ -133,7 +145,7 @@ describe('canon pack budget', () => {
           body: 'More valid content. '.repeat(350),
         }),
       ).rejects.toThrow(
-        /canon pack file-question\/[^ ]+ would be .* bytes over.*largest inject sections to demote/s,
+        /canon pack file-question\/[^ ]+ would be \d+ bytes; ceiling is \d+ bytes.*largest inject sections to demote/s,
       )
     } finally {
       JOBS['file-question']!.packBytes = old

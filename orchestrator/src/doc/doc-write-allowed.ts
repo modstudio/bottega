@@ -387,6 +387,43 @@ export function refuseOversizedInject(input: {
   )
 }
 
+export type InjectPackSection = {
+  identity: string
+  title: string
+  body: string
+}
+
+/** Decides whether one proposed injected document fits in one affected pack. */
+export function injectPackBudgetRefusal(input: {
+  job: string
+  project: string
+  ceiling: number
+  canonMarkdown: string
+  current: readonly InjectPackSection[]
+  proposed: InjectPackSection
+}): string | null {
+  const docs = [
+    ...input.current.filter((doc) => doc.identity !== input.proposed.identity),
+    input.proposed,
+  ]
+  const operatorMarkdown = docs.map((doc) => `## ${doc.title}\n\n${doc.body}`).join('\n\n')
+  const markdown = [input.canonMarkdown, operatorMarkdown].filter(Boolean).join('\n\n')
+  const bytes = Buffer.byteLength(markdown)
+  if (bytes <= input.ceiling) return null
+  const largest = docs
+    .map((doc) => ({
+      identity: doc.identity,
+      bytes: Buffer.byteLength(`## ${doc.title}\n\n${doc.body}`),
+    }))
+    .sort((a, b) => b.bytes - a.bytes)
+    .slice(0, 3)
+  return (
+    `canon pack ${input.job}/${input.project} would be ${bytes} bytes; ceiling is ${input.ceiling} bytes\n` +
+    `largest inject sections to demote: ${largest.map((doc) => `${doc.identity} (${doc.bytes} bytes)`).join(', ')}\n` +
+    'cleared by: shorten the document with bottega doc set, or set the named largest sections to delivery demand'
+  )
+}
+
 function refuseCanonPathCollision(input: {
   scope: string
   subject: string | null

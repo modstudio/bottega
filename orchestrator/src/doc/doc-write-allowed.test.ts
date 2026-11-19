@@ -12,6 +12,7 @@ import {
   decideDocRevisionWrite,
   docWriteProjectName,
   globalCanonWriteTargets,
+  injectPackBudgetRefusal,
   MISSING_HOSTED_REVISION_REMEDY,
   referenceWriteRefusal,
   refuseArticleDelivery,
@@ -21,6 +22,28 @@ import {
   refuseSettingsAddress,
   userCanonWriteTargets,
 } from './doc-write-allowed.ts'
+
+test('inject pack budget decision includes canon and replaces the addressed document', () => {
+  const base = {
+    job: 'understand',
+    project: 'bottega',
+    ceiling: 40,
+    canonMarkdown: 'canon',
+    current: [{ identity: 'job/understand/guide', title: 'Guide', body: 'old' }],
+  }
+  expect(
+    injectPackBudgetRefusal({
+      ...base,
+      proposed: { identity: 'job/understand/guide', title: 'Guide', body: 'short' },
+    }),
+  ).toBeNull()
+  expect(
+    injectPackBudgetRefusal({
+      ...base,
+      proposed: { identity: 'job/understand/guide', title: 'Guide', body: 'x'.repeat(40) },
+    }),
+  ).toMatch(/canon pack understand\/bottega would be \d+ bytes; ceiling is 40 bytes.*bottega doc set/s)
+})
 
 const finding = (rule: string, message: string, line = 1) => ({
   file: 'AGENTS.md',

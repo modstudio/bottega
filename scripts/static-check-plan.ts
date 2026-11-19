@@ -305,10 +305,7 @@ const STATIC_CHECKS: readonly StaticCheckDeclaration[] = [
   }),
   script(
     'orchestrator/scripts/check-pack-budget.ts',
-    omit('slow: 6.3s CPU under the worker check; the landing gate and CI run it', 'run 25620', {
-      noSubjects:
-        "it compiles packs against the operator's live store snapshot, which a worker cannot open",
-    }),
+    run,
   ),
   script('orchestrator/scripts/check-canon-lint.ts', run),
   script('scripts/quality/check-test-substance.ts', run, {
