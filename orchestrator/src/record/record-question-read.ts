@@ -8,6 +8,7 @@ import {
   readRecordChanges,
 } from '../../../shared/record/record-changes.ts'
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
+import { recordIso } from '../../../shared/record-timestamp.ts'
 import { recordPool } from './record-pool.ts'
 import {
   type QuestionReadInput,
@@ -18,7 +19,11 @@ import {
   RECORD_QUESTION_INBOX_STEP_COLUMNS,
   RECORD_QUESTION_STEP_COLUMNS,
 } from './record-question-step.ts'
-import { TASK_FLOW_CLOSED_STAGE_STATES_SQL } from './record-task-flow-contract.ts'
+import {
+  type QuestionAuditIdentity,
+  questionAuditIdentitySchema,
+  TASK_FLOW_CLOSED_STAGE_STATES_SQL,
+} from './record-task-flow-contract.ts'
 
 type Tenant = { url: string } & TenantPrincipal
 type Row = Record<string, unknown>
@@ -34,7 +39,11 @@ type RulingRead = Extract<RecordQuestionReadInput, { read: 'rulings' }>
 export async function readRecordQuestionPresenceTransaction(
   tx: SQL,
   input: { questionIds: string[]; questionAuditIds: string[] },
-): Promise<{ questionIds: string[]; questionAuditIds: string[] }> {
+): Promise<{
+  questionIds: string[]
+  questionAuditIds: string[]
+  questionAuditIdentities: QuestionAuditIdentity[]
+}> {
   const questions = input.questionIds.length
     ? await tx.unsafe('SELECT id FROM question WHERE id=ANY($1::uuid[]) ORDER BY id', [
         input.questionIds,
@@ -46,8 +55,24 @@ export async function readRecordQuestionPresenceTransaction(
         [input.questionAuditIds],
       )
     : []
+  const questionAuditIdentities: Array<Record<string, unknown>> = input.questionIds.length
+    ? await tx.unsafe(
+        'SELECT question_id, action, at FROM question_mutation_audit WHERE question_id=ANY($1::uuid[]) ORDER BY question_id, action, at',
+        [input.questionIds],
+      )
+    : []
   const ids = (rows: Array<Record<string, unknown>>) => rows.map((row) => String(row.id))
-  return { questionIds: ids(questions), questionAuditIds: ids(questionAudits) }
+  return {
+    questionIds: ids(questions),
+    questionAuditIds: ids(questionAudits),
+    questionAuditIdentities: questionAuditIdentities.map((row) =>
+      questionAuditIdentitySchema.parse({
+        questionId: String(row.question_id),
+        action: String(row.action),
+        at: recordIso(row.at),
+      }),
+    ),
+  }
 }
 
 async function recordQuestionRulingRows(

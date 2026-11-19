@@ -21,7 +21,10 @@ import type {
   QuestionWriteBody,
   QuestionWriteResult,
 } from './record-question-contract.ts'
-import { RecordQuestionError } from './record-question-contract.ts'
+import {
+  RECORD_QUESTION_DIFFERENT_CONTENT,
+  RecordQuestionError,
+} from './record-question-contract.ts'
 import { allocateQuestionNumber } from './record-question-number.ts'
 import { QUESTION_STEP_CONFLICT_SET, questionValuesForWrite } from './record-question-step.ts'
 import { questionValues } from './record-question-values.ts'
@@ -102,7 +105,7 @@ export async function writeRecordQuestion(
   } catch (error) {
     if (intent === 'import' && isUniqueViolation(error, 'question_mutation_audit_identity'))
       throw new RecordQuestionError(
-        `question ${input.question.id} already exists with different content`,
+        `question ${input.question.id} ${RECORD_QUESTION_DIFFERENT_CONTENT}`,
         409,
       )
     if (intent === 'import' && isUniqueViolation(error, 'question_pkey'))
@@ -231,7 +234,7 @@ function assertSameQuestionRow(
   for (const [key, value] of Object.entries(values)) {
     if (key === 'number' || key === 'lastRequestId') continue
     if (!sameRecordValue(existing[recordColumnName(key)], value))
-      throw new RecordQuestionError(`${table} ${id} already exists with different content`, 409)
+      throw new RecordQuestionError(`${table} ${id} ${RECORD_QUESTION_DIFFERENT_CONTENT}`, 409)
   }
 }
 

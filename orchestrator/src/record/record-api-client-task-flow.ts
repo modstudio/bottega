@@ -20,11 +20,11 @@ import {
   hostedTaskFlowStageByIdSchema,
   hostedTaskFlowStageListSchema,
   hostedTaskFlowTextByIdSchema,
-  type TaskFlowPresence,
   type TaskFlowPresenceInput,
+  type TaskFlowPresenceResult,
   type TaskFlowReadQueryInput,
   type TaskFlowStageListQueryInput,
-  taskFlowPresenceInputSchema,
+  taskFlowPresenceResultSchema,
 } from './record-task-flow-contract.ts'
 import {
   type TaskFlowAdoptResult,
@@ -72,7 +72,7 @@ export type RecordTaskFlowClient = {
   readTaskFlowPresence?(
     input: TaskFlowPresenceInput,
     destination?: RecordRequestDestination,
-  ): Promise<TaskFlowPresence>
+  ): Promise<TaskFlowPresenceResult>
   readTaskFlowStage?(
     id: string,
     destination?: RecordRequestDestination,
@@ -201,7 +201,7 @@ function taskFlowReadClient(request: Request): Partial<RecordTaskFlowClient> {
         method: 'POST',
         body: JSON.stringify(input),
         ...destination,
-        schema: (body) => taskFlowPresenceInputSchema.parse(body),
+        schema: (body) => taskFlowPresenceResultSchema.parse(body),
       }),
     readTaskFlowStage: (id, destination) =>
       readById(

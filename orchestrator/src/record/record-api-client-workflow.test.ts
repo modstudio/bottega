@@ -123,7 +123,7 @@ test('task-flow presence posts every id batch without requiring a destination sp
       body: init?.body as string | undefined,
       destinationSpaceId: init?.destinationSpaceId,
     })
-    return {
+    const body = {
       flowIds: [ID],
       stageIds: [],
       obligationIds: [],
@@ -131,7 +131,8 @@ test('task-flow presence posts every id batch without requiring a destination sp
       textCopyIds: [],
       questionIds: [],
       questionAuditIds: [],
-    } as never
+    }
+    return (init?.schema ? init.schema(body) : body) as never
   })
   const input = {
     flowIds: [ID],
@@ -142,7 +143,10 @@ test('task-flow presence posts every id batch without requiring a destination sp
     questionIds: [],
     questionAuditIds: [],
   }
-  await expect(client.readTaskFlowPresence!(input)).resolves.toEqual(input)
+  await expect(client.readTaskFlowPresence!(input)).resolves.toEqual({
+    ...input,
+    questionAuditIdentities: [],
+  })
   expect(requests).toEqual([
     {
       path: '/v1/task-flow/presence',

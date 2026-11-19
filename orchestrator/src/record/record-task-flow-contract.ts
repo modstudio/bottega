@@ -220,6 +220,20 @@ export const taskFlowPresenceInputSchema = z
 export type TaskFlowPresenceInput = z.input<typeof taskFlowPresenceInputSchema>
 export type TaskFlowPresence = z.output<typeof taskFlowPresenceInputSchema>
 
+export const questionAuditIdentitySchema = z
+  .object({
+    questionId: z.string().uuid(),
+    action: z.string().min(1),
+    at: z.string().min(1),
+  })
+  .strict()
+export type QuestionAuditIdentity = z.output<typeof questionAuditIdentitySchema>
+
+export const taskFlowPresenceResultSchema = taskFlowPresenceInputSchema.extend({
+  questionAuditIdentities: z.array(questionAuditIdentitySchema).default([]),
+})
+export type TaskFlowPresenceResult = z.output<typeof taskFlowPresenceResultSchema>
+
 export const TASK_FLOW_UUID_READ_SELECTORS = ['flowRecordId', 'taskId'] as const
 
 const taskFlowUuidReadSelectorShape = Object.fromEntries(
