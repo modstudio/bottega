@@ -14,7 +14,7 @@ import {
 import { hostedTaskFlowLocalStore } from './task-flow-store-hosted.ts'
 import type { TaskFlowWriteMethod } from './task-flow-store-methods.ts'
 import { resolveTaskFlowReadStore } from './task-flow-store-record.ts'
-import { sqliteTaskFlowLocalStore } from './task-flow-store-sqlite.ts'
+import { sqliteTaskFlowLocalStore, sqliteTaskFlowReadStore } from './task-flow-store-sqlite.ts'
 import {
   repairUnlinkedKeylessStagesSqlite,
   type TaskFlowSqliteWriteResult,
@@ -288,4 +288,12 @@ export function taskFlowReadStore(
   client?: Parameters<typeof resolveTaskFlowReadStore>[1],
 ): TaskFlowReadStore {
   return resolveTaskFlowReadStore(database, client)
+}
+
+/** Count local task-flow rows while deciding whether a local project row can be removed. */
+export async function localTaskFlowProjectReferenceCounts(
+  database: Database,
+  projectRecordId: string,
+): Promise<{ workflow_cursor: number; task_flow: number }> {
+  return sqliteTaskFlowReadStore(database).projectReferenceCounts(projectRecordId)
 }
