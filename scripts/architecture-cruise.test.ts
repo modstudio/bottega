@@ -46,9 +46,9 @@ test('identity reference guard counts predicates but not assignments', () => {
   expect(identityReferenceViolationCount('SELECT id FROM task t JOIN other o ON t.number=?')).toBe(
     1,
   )
-  expect(identityReferenceViolationCount('SELECT project, count(*) FROM task HAVING number=?')).toBe(
-    1,
-  )
+  expect(
+    identityReferenceViolationCount('SELECT project, count(*) FROM task HAVING number=?'),
+  ).toBe(1)
 })
 
 test('identity reference guard rejects a question-number helper call outside identity', () => {

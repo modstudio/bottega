@@ -210,8 +210,7 @@ export async function resolveParsedReference(
     throw new Error(
       `reference ${JSON.stringify(String(reference))} names a ${kind}, expected ${expectedKind}`,
     )
-  if (parsed.qualifier && parsed.value.kind === 'record-id')
-    throw new Error(uuidQualifierRefusal())
+  if (parsed.qualifier && parsed.value.kind === 'record-id') throw new Error(uuidQualifierRefusal())
   if (kind === 'run') validateRunQualifier(reference, parsed, context)
 
   const result = !kind

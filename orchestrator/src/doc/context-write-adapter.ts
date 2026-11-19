@@ -225,8 +225,7 @@ export async function resolvedPointerTarget(
   } catch (error) {
     throw new ContextWriteRefusalError(error instanceof Error ? error.message : String(error))
   }
-  if (parsed.kind === 'task-document')
-    return ports.taskDocument(`${parsed.key}/${parsed.number}`)
+  if (parsed.kind === 'task-document') return ports.taskDocument(`${parsed.key}/${parsed.number}`)
   if (parsed.kind === 'run') return resolveRunPointer(parsed, database)
   if (parsed.kind === 'commit') return ports.commit(parsed.sha)
   if (parsed.kind === 'pull-request') {
