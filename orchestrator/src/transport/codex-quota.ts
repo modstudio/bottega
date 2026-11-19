@@ -53,6 +53,7 @@ export function parseCodexQuotaReadings(text: string): QuotaReadings {
   const first = last && readings.find((reading) => reading.resetsAt === last.resetsAt)
   if (!first || !last) return EMPTY_QUOTA_READINGS
   return {
+    quotaAccountId: null,
     quotaUsedPercentStart: first.usedPercent,
     quotaUsedPercentEnd: last.usedPercent,
     quotaWindowMinutes: last.windowMinutes,

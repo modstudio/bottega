@@ -144,6 +144,7 @@ test('Codex quota observation reads only the turn-appended part of a nested roll
   try {
     const offsets = new Map([[realpathSync(rollout), Buffer.byteLength(earlierTurn)]])
     expect(parseCodexQuotaReadings(codexRolloutTextsSince(codexHome, offsets).slice)).toEqual({
+      quotaAccountId: null,
       quotaUsedPercentStart: 12,
       quotaUsedPercentEnd: 15,
       quotaWindowMinutes: 10_080,

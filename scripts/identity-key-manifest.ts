@@ -658,6 +658,9 @@ const EXTERNAL_IDENTIFIERS: readonly ManifestColumn[] = [
     'hub_task_comment.actor_user_id',
     'hub_task_status_event.actor_user_id',
   ]),
+  ...manifest('orchestrator', 'identifier issued by the Codex authentication provider', [
+    'run.quota_account_id',
+  ]),
   ...manifest('orchestrator', 'identifier issued by the project task tracker', [
     'branch_disposal.task_key',
     'review_funnel_decision.task_key',

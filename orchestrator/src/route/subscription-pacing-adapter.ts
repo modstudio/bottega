@@ -1,8 +1,11 @@
 // concern: route subscription pacing adapter
 /** Gathers quota facts once and decides every subscription pacing hold for a routing pass. */
 import type { Database } from 'bun:sqlite'
+import { homedir } from 'node:os'
+import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { Agent } from '../agent/agents.ts'
+import { readCodexAccountId } from '../transport/codex-account.ts'
 import { harnessCollectsQuotaReadings } from '../transport/codex-quota.ts'
 import {
   decideSubscriptionPacing,
@@ -30,11 +33,13 @@ export function subscriptionPacingHolds(
     (agent) => agent.billing === 'subscription' && harnessCollectsQuotaReadings(agent.harness),
   )
   const now = input.now ?? Date.now()
-  const facts = subscriptionPacingFacts(
-    database,
-    paced.map((agent) => agent.harness!),
-    now,
+  const accounts = new Map(
+    paced.map((agent) => [
+      agent.harness!,
+      readCodexAccountId(process.env.CODEX_HOME ?? join(homedir(), '.codex')),
+    ]),
   )
+  const facts = subscriptionPacingFacts(database, accounts, now)
   return new Map(
     paced.flatMap((agent) => {
       const harnessFacts = facts.get(agent.harness!)

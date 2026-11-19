@@ -33,6 +33,20 @@ const docSecretScannerHolder = globalThis as typeof globalThis & {
 docSecretScannerHolder[DOC_SECRET_SCANNER_KEY] = () => ({ status: 'clean' })
 
 export const dir = mkdtempSync(join(tmpdir(), 'orch-test-'))
+const originalCodexHome = process.env.CODEX_HOME
+const testCodexHome = join(dir, 'codex-home')
+mkdirSync(testCodexHome)
+writeFileSync(
+  join(testCodexHome, 'auth.json'),
+  JSON.stringify({ tokens: { account_id: 'test-account' } }),
+)
+beforeAll(() => {
+  process.env.CODEX_HOME = testCodexHome
+})
+afterAll(() => {
+  if (originalCodexHome === undefined) delete process.env.CODEX_HOME
+  else process.env.CODEX_HOME = originalCodexHome
+})
 const originalPath = process.env.PATH
 const originalFetch = globalThis.fetch
 const provisionedPostgresContainer = process.env.BOTTEGA_TEST_POSTGRES_CONTAINER

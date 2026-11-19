@@ -25,6 +25,7 @@ test('takes the first and last primary quota readings from rollout fixture lines
     tokenCount(13),
   ].join('\n')
   expect(parseCodexQuotaReadings(text)).toEqual({
+    quotaAccountId: null,
     quotaUsedPercentStart: 12,
     quotaUsedPercentEnd: 13,
     quotaWindowMinutes: 10_080,
@@ -61,6 +62,7 @@ test('uses the first reading from the last quota window when a turn crosses a re
       ].join('\n'),
     ),
   ).toEqual({
+    quotaAccountId: null,
     quotaUsedPercentStart: 1,
     quotaUsedPercentEnd: 2,
     quotaWindowMinutes: 10_080,

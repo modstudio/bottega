@@ -44,6 +44,7 @@ export type RunQuotaColumns = QuotaReadings
 
 export function quotaReadingsColumnValues(readings: RunQuotaColumns) {
   return [
+    readings.quotaAccountId,
     readings.quotaUsedPercentStart,
     readings.quotaUsedPercentEnd,
     readings.quotaWindowMinutes,

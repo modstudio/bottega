@@ -6,6 +6,7 @@ import { eventsFromVendorLine } from '../events.ts'
 import { DEFAULT_IDLE_GRACE_MS, terminateProcessGroup } from '../idle-kill.ts'
 import { lowerRunChildPriority } from '../run/run-child-priority.ts'
 import { sandboxLaunchArgv } from '../sandbox/sandbox.ts'
+import { readCodexAccountId } from './codex-account.ts'
 import { codexAskExposureFromTexts } from './codex-ask-exposure.ts'
 import { harnessCollectsQuotaReadings, parseCodexQuotaReadings } from './codex-quota.ts'
 import {
@@ -364,6 +365,7 @@ export function cliChildEnvironment(
 async function spawnCli(opts: TransportStartOpts): Promise<TransportHandle> {
   const codex = harnessCollectsQuotaReadings(workerHarnessName(opts.agent))
   const codexHome = codex ? opts.env.CODEX_HOME : undefined
+  const quotaAccountId = codex && codexHome ? readCodexAccountId(codexHome) : null
   const rolloutOffsets = codexRolloutOffsets(codexHome)
   const { launchArgv, stdinPrompt } = await cliLaunch(opts)
   const p = spawnCliChild(launchArgv, opts, stdinPrompt)
@@ -463,7 +465,7 @@ async function spawnCli(opts: TransportStartOpts): Promise<TransportHandle> {
           parsed: reply ?? null,
           tokens,
           ...usage,
-          quotaReadings,
+          quotaReadings: { ...quotaReadings, quotaAccountId },
           askExposure,
           sessionId,
           stopReason,

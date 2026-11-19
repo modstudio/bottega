@@ -1,4 +1,6 @@
 import { expect, test } from 'bun:test'
+import { writeFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
 import { candidates } from './route.ts'
@@ -14,7 +16,7 @@ test('candidates pace codex reading work but never implementation', () => {
   })
   db()
     .query(
-      `UPDATE run SET vendor_tokens=1000, quota_used_percent_start=21,
+      `UPDATE run SET vendor_tokens=1000, quota_account_id='test-account', quota_used_percent_start=21,
                       quota_used_percent_end=21, quota_window_minutes=?, quota_resets_at=?
         WHERE record_id=?`,
     )
@@ -44,7 +46,7 @@ test('a pacing probe bypasses every operational hold', () => {
   })
   db()
     .query(
-      `UPDATE run SET quota_used_percent_start=21, quota_used_percent_end=21,
+      `UPDATE run SET quota_account_id='test-account', quota_used_percent_start=21, quota_used_percent_end=21,
                       quota_window_minutes=?, quota_resets_at=? WHERE record_id=?`,
     )
     .run(windowMinutes, Math.floor((now + windowMinutes * 60_000 * 0.9) / 1000), reading)
@@ -73,4 +75,33 @@ test('candidates show the no-data pacing hold', () => {
     subscriptionPacingHold: { estimatePercent: null },
   })
   expect(refusal.endsWith('agent probe codex --fresh')).toBe(true)
+})
+
+test('switching to an account without a reading gives the no-data hold', () => {
+  const now = Date.now()
+  const reading = addRun({
+    agent: 'codex',
+    job: 'understand',
+    startedAt: new Date(now - 60_000).toISOString(),
+  })
+  db()
+    .query(
+      `UPDATE run SET quota_account_id='test-account', quota_used_percent_start=10,
+                      quota_used_percent_end=10, quota_window_minutes=10080,
+                      quota_resets_at=? WHERE record_id=?`,
+    )
+    .run(Math.floor((now + 9_000_000) / 1000), reading)
+
+  const authPath = join(process.env.CODEX_HOME!, 'auth.json')
+  writeFileSync(authPath, JSON.stringify({ tokens: { account_id: 'switched-account' } }))
+  try {
+    expect(candidates('understand').find((candidate) => candidate.agent === 'codex')).toMatchObject(
+      {
+        eligible: false,
+        subscriptionPacingHold: { estimatePercent: null },
+      },
+    )
+  } finally {
+    writeFileSync(authPath, JSON.stringify({ tokens: { account_id: 'test-account' } }))
+  }
 })
