@@ -86,6 +86,15 @@ export function decideProjectLandingBranch(input: {
   }
 }
 
+export function inferredProjectLandingBranchRegisterRefusal(condition: string): string {
+  return renderRefusal(
+    refusal(condition, {
+      kind: 'edit',
+      text: `pass --settings '{"trunk":"<branch>"}'`,
+    }),
+  )
+}
+
 function hostedSettingDiffs(requested: ProjectSettings, hosted: ProjectSettings): string[] {
   const hostedColumns = hostedProjectColumns(hosted, 'hosted')
   const requestedColumns = hostedProjectColumns(requested, 'requested')

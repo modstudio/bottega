@@ -42,8 +42,8 @@ import {
   missingProjectLandingBranchProblem,
   type Project,
   projectByName,
-  projects as registeredProjects,
   registerBranchCheck,
+  projects as registeredProjects,
   resolvedWorktreeTool,
   undeclaredCommitHooks,
 } from '../project/projects.ts'

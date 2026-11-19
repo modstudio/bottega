@@ -2,7 +2,6 @@ import { existsSync, lstatSync, readdirSync, readFileSync } from 'node:fs'
 import { join, relative, resolve, sep } from 'node:path'
 import { gitAt } from '../../../shared/git.ts'
 import { observeBoundedSubprocess, pidAlive } from '../../../shared/process-identity.ts'
-import { shellQuote } from '../../../shared/shell-quote.ts'
 
 export { shellQuote } from '../../../shared/shell-quote.ts'
 

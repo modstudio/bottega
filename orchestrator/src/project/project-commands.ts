@@ -8,7 +8,6 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { declaredTrunk } from '../../../shared/project-trunk.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { renderRemovalReport as renderRecordRemovalReport } from '../../../shared/removal-report.ts'
-import { refusal, renderRefusal } from '../../../shared/refusal.ts'
 import { db, tryWriteContention, writeTransaction } from '../database/db.ts'
 import { listLenses, selectProjectProfile } from '../lens/lenses.ts'
 import { credentialLinesFromRead } from '../mcp/mcp-credential-literal.ts'
@@ -20,7 +19,10 @@ import {
   RecordCataloguePullError,
 } from '../record/record-cache-catalogues.ts'
 import { migrateCreate } from '../worktree/worktree-template.ts'
-import { decideProjectLandingBranch } from './project-add-decision.ts'
+import {
+  decideProjectLandingBranch,
+  inferredProjectLandingBranchRegisterRefusal,
+} from './project-add-decision.ts'
 import { projectAddDecision } from './project-add-record.ts'
 import { type ProjectSpaceFillRow, planProjectSpaceFill } from './project-fill-space.ts'
 import { spaceFillNeedsRuling } from './project-fill-space-decision.ts'
@@ -233,6 +235,19 @@ function resolveProjectAddLandingBranch(candidate: ProjectAddCandidate): {
   }
 }
 
+function assertProjectAddRegisterBranches(
+  candidate: ProjectAddCandidate,
+  source: 'declared' | 'origin/HEAD' | null,
+): void {
+  try {
+    assertRegisterBranches(candidate)
+  } catch (error) {
+    if (source !== 'origin/HEAD') throw error
+    const condition = error instanceof Error ? error.message : String(error)
+    throw new Error(inferredProjectLandingBranchRegisterRefusal(condition), { cause: error })
+  }
+}
+
 async function pullProjectAddCatalogues(
   input: AddProjectInput,
   targetSpace: { id: string; label: string },
@@ -298,21 +313,7 @@ export async function addProject(
   if (adoptedMalformed.length) throw new Error(adoptedMalformed.join('\n'))
   const incomplete = incompleteWorktreeProblems(candidate)
   if (incomplete.length && !input.allowIncomplete) throw new Error(incomplete.join('\n'))
-  try {
-    assertRegisterBranches(candidate)
-  } catch (error) {
-    if (trunkSource !== 'origin/HEAD') throw error
-    const condition = error instanceof Error ? error.message : String(error)
-    throw new Error(
-      renderRefusal(
-        refusal(condition, {
-          kind: 'edit',
-          text: `pass --settings '{"trunk":"<branch>"}'`,
-        }),
-      ),
-      { cause: error },
-    )
-  }
+  assertProjectAddRegisterBranches(candidate, trunkSource)
   verifyAndRecordVisibility(candidate)
   const wasRetired = Boolean(retiredProjectByName(input.name))
   const recordId =

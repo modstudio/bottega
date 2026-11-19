@@ -4,6 +4,7 @@ import {
   type AddHostedProject,
   decideProjectAdd,
   decideProjectLandingBranch,
+  inferredProjectLandingBranchRegisterRefusal,
 } from './project-add-decision.ts'
 
 const memberships = [
@@ -97,6 +98,12 @@ describe('decideProjectLandingBranch', () => {
         `project add refused: git probe of refs/remotes/origin/HEAD at ${path} timed out\n` +
         `cleared by: retry, or pass --settings '{"trunk":"<branch>"}'`,
     })
+  })
+
+  test('an inferred landing branch invariant names the declaration remedy', () => {
+    expect(inferredProjectLandingBranchRegisterRefusal('probe: branch invariant')).toBe(
+      `probe: branch invariant\ncleared by: pass --settings '{"trunk":"<branch>"}'`,
+    )
   })
 })
 
