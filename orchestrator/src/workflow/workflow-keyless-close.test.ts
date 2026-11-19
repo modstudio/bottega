@@ -57,6 +57,22 @@ test('every plan-task step renders on a keyless cursor in every mode', async () 
   }
 })
 
+test('a keyed plan-task start renders its epic commands with the cursor key', () => {
+  const body = getWorkflowStep('plan-task', 'fixture', 'start', { key: 'DEV-2483' }, database()).body
+
+  expect(body).toContain('bottega workflow queue <child> --session <name>')
+  expect(body).toContain('bottega workflow start-child --cursor <cursor> [--task <child>]')
+  expect(body).toContain('bottega workflow next --cursor <cursor> --task DEV-2483')
+  expect(body).not.toContain('{{key}}')
+})
+
+test('a keyless plan-task start renders the key argument placeholder', () => {
+  const body = getWorkflowStep('plan-task', 'fixture', 'start', {}, database()).body
+
+  expect(body).toContain('bottega workflow next --cursor <cursor> --task <key>')
+  expect(body).not.toContain('{{key}}')
+})
+
 test('a workflow without a key argument adopts --task and renders and closes its next step', async () => {
   const d = database()
   const current = productionStepCatalogue(d).definition

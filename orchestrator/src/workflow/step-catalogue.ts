@@ -101,6 +101,12 @@ function closeInstructionFlags(sentence: string): string[] {
   return (sentence.match(/--[a-z][a-z-]*/g) ?? []).filter((flag) => acceptingFloorsByFlag.has(flag))
 }
 
+function closeInstructionTaskTargets(sentence: string): string[] {
+  return [...sentence.matchAll(/(?:--task(?:=|\s+)|\btask:)(\{\{key\}\}|<[^>\r\n]+>|[A-Za-z0-9][A-Za-z0-9_-]*)/g)].map(
+    (match) => match[1]!,
+  )
+}
+
 export function unsupportedCloseEvidenceFlags(
   declaredFloors: readonly FloorEntry[],
   body: string,
@@ -137,6 +143,7 @@ export function validateStepCatalogue(value: unknown): string[] {
     validateFloor(item, errors)
     validateNeeds(item, errors)
     validateRepositoryFileCitations(item, errors)
+    validateCloseInstructionTaskTargets(item, errors)
     validateDispatchPrompts(item, errors)
     validatePrescribedJobs(item, errors)
   }
@@ -151,6 +158,20 @@ export function validateStepCatalogue(value: unknown): string[] {
     ),
   )
   return [...new Set(errors)]
+}
+
+function validateCloseInstructionTaskTargets(
+  item: Record<string, unknown>,
+  errors: string[],
+): void {
+  if (typeof item.body !== 'string') return
+  const slug = String(item.slug ?? '')
+  for (const target of new Set(closingSentences(item.body).flatMap(closeInstructionTaskTargets))) {
+    if (target !== '{{key}}')
+      errors.push(
+        `step "${slug}" close instruction names task "${target}"; name the cursor task with {{key}}`,
+      )
+  }
 }
 
 function validateRepositoryFileCitations(item: Record<string, unknown>, errors: string[]): void {

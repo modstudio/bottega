@@ -70,6 +70,22 @@ test('new catalogue versions require a stage and reject legacy proof names', () 
   ).toContain('step "design" has invalid floor kind "human-ruling"')
 })
 
+test('close instructions name the cursor task with the key placeholder', () => {
+  const staged = { ...step, stage: 'plan' as const, floor: ['recorded-artifact'] }
+  expect(
+    validateStepCatalogue({
+      steps: [{ ...staged, body: 'Close this step with `--artifact task:<KEY>`.' }],
+    }),
+  ).toContain(
+    'step "design" close instruction names task "<KEY>"; name the cursor task with {{key}}',
+  )
+  expect(
+    validateStepCatalogue({
+      steps: [{ ...staged, body: 'Close this step with `--artifact task:{{key}}`.' }],
+    }),
+  ).toEqual([])
+})
+
 test('expectedStatus accepts one string or a non-empty string list', () => {
   const staged = { ...step, stage: 'plan' as const }
   expect(validateStepCatalogue({ steps: [{ ...staged, expectedStatus: 'active' }] })).toEqual([])
