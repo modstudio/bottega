@@ -63,17 +63,35 @@ async function inheritedStart(
     ? await taskFlowReadStore(database).stageByRecordId(parentFlow.open_stage_cursor_record_id)
     : null
   if (!parentStage) throw new Error(`${child}'s ancestor flow has no stage to inherit`)
-  const startOrdinal = steps.findIndex(({ slug }) => slug === 'start')
+  return {
+    parentFlowRecordId,
+    ...inheritClosedSteps(parentStage.id, JSON.parse(parentStage.closed) as ClosedStep[], steps),
+  }
+}
+
+export function inheritClosedSteps(
+  parentCursor: number,
+  parentClosed: readonly ClosedStep[],
+  childSteps: readonly { slug: string }[],
+) {
+  const startOrdinal = childSteps.findIndex(({ slug }) => slug === 'start')
   if (startOrdinal < 0) throw new Error('plan-task has no start step')
-  const closed = (JSON.parse(parentStage.closed) as ClosedStep[])
-    .filter((step) => step.n <= startOrdinal)
-    .map((step) => ({
+  const required = childSteps.slice(0, startOrdinal)
+  const parentBySlug = new Map(parentClosed.map((step) => [step.slug, step]))
+  const missing = required.filter(({ slug }) => !parentBySlug.has(slug)).map(({ slug }) => slug)
+  if (missing.length)
+    throw new Error(
+      `cursor ${parentCursor} is missing inherited plan-task steps: ${missing.join(', ')}`,
+    )
+  const closed = required.map(({ slug }, index) => {
+    const step = parentBySlug.get(slug)!
+    return {
       ...step,
-      note: `inherited from cursor ${parentStage.id} step ${step.slug}: ${step.note}`,
-    }))
-  if (closed.length !== startOrdinal)
-    throw new Error(`cursor ${parentStage.id} has not closed every plan-task step before start`)
-  return { parentFlowRecordId, startOrdinal, closed }
+      n: index + 1,
+      note: `inherited from cursor ${parentCursor} step ${step.slug}: ${step.note}`,
+    }
+  })
+  return { startOrdinal, closed }
 }
 
 export async function queueWorkflowChild(

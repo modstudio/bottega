@@ -32,14 +32,15 @@ export async function gatherChildTaskFacts(
   project: string,
   tasks: readonly TaskReadRow[],
 ): Promise<ChildTaskFact[]> {
-  const cursors = new Set(
-    (
-      await taskFlowReadStore(database).listStages({
-        project,
-        states: [...TASK_FLOW_STAGE_STATES],
-      })
-    ).map(({ workflow_key }) => workflow_key),
-  )
+  const cursors = new Map<string, { number: number; state: string }>()
+  for (const cursor of await taskFlowReadStore(database).listStages({
+    project,
+    states: [...TASK_FLOW_STAGE_STATES],
+  })) {
+    const existing = cursors.get(cursor.workflow_key)
+    if (!existing || existing.number < cursor.id)
+      cursors.set(cursor.workflow_key, { number: cursor.id, state: cursor.state })
+  }
   const claims = liveChildClaims(database, project)
   return tasks.map((task) => {
     const queued = claims.find(
@@ -51,6 +52,8 @@ export async function gatherChildTaskFacts(
       number: Number(/(\d+)$/.exec(task.key)?.[1] ?? Number.MAX_SAFE_INTEGER),
       statusCategory: task.status_category,
       cursorEverComposed: cursors.has(task.key),
+      cursorNumber: cursors.get(task.key)?.number ?? null,
+      cursorState: cursors.get(task.key)?.state ?? null,
       liveTaskClaimSession:
         claims.find((claim) => claim.subject_kind === 'task' && claim.subject_value === task.key)
           ?.holder_session ?? null,

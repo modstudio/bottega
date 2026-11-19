@@ -12,6 +12,8 @@ const task = (
   parentKey: 'DEV-1',
   statusCategory: 'open',
   cursorEverComposed: false,
+  cursorNumber: null,
+  cursorState: null,
   liveTaskClaimSession: null,
   liveQueuedClaimSession: null,
   queuedAt: null,
@@ -47,6 +49,26 @@ test('start-child picks this session queue before Open', () => {
     task: open,
   })
   expect(selectChildToStart(state, [open, queued], 'DEV-9')).toEqual({
+    action: 'refuse',
+    message: 'DEV-9 is not queueable under this epic',
+  })
+})
+
+test('a composed descendant refusal names its cursor, state, and abandon remedy', () => {
+  const composed = task({
+    key: 'DEV-2',
+    number: 2,
+    cursorEverComposed: true,
+    cursorNumber: 42,
+    cursorState: 'running',
+  })
+  const state = childQueueState('DEV-1', 'mine', [composed])
+  expect(selectChildToStart(state, [composed], 'DEV-2')).toEqual({
+    action: 'refuse',
+    message:
+      'DEV-2 already has a plan-task cursor 42 (running); finish it, or abandon it with bottega workflow abandon --cursor 42, before queueing it again',
+  })
+  expect(selectChildToStart(state, [composed], 'DEV-9')).toEqual({
     action: 'refuse',
     message: 'DEV-9 is not queueable under this epic',
   })

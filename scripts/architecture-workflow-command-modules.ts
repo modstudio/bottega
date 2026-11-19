@@ -13,7 +13,10 @@ const module = (file: string, allowed: string[]): WorkflowCommandModule => ({
 
 export const workflowCommandModules: WorkflowCommandModule[] = [
   module('orchestrator/src/workflow/workflow-task-tree.ts', []),
-  module('orchestrator/src/workflow/workflow-child-queue.ts', ['./workflow-task-tree.ts']),
+  module('orchestrator/src/workflow/workflow-child-queue.ts', [
+    '../../../shared/brand.ts',
+    './workflow-task-tree.ts',
+  ]),
   module('orchestrator/src/workflow/workflow-child-facts.ts', [
     'bun:sqlite',
     '../board/board-operations.ts',

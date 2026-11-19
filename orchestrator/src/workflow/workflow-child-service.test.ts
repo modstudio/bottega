@@ -5,7 +5,11 @@ import { testDatabaseFixture } from '../database/test-database.fixture.ts'
 import { sessionStopSummary } from '../session/stop-summary.ts'
 import { taskFlowReadStore } from './task-flow-store.ts'
 import { installTaskReader, type TaskReadPort, type TaskReadRow } from './task-read-port.ts'
-import { queueWorkflowChild, startWorkflowChild } from './workflow-child-service.ts'
+import {
+  inheritClosedSteps,
+  queueWorkflowChild,
+  startWorkflowChild,
+} from './workflow-child-service.ts'
 import { composeWorkflowWithCursor } from './workflow-cursor.ts'
 import { seedCurrentWorkflowTreeFixture } from './workflow-store.fixture.ts'
 import { composeWorkflow } from './workflows.ts'
@@ -112,6 +116,25 @@ test('start-child opens at start with inherited closures and parent flow', async
   expect(
     flows.find(({ task_record_id }) => task_record_id === 'task-DEV-2')?.parent_flow_record_id,
   ).toBe(flows.find(({ task_record_id }) => task_record_id === 'task-DEV-1')?.record_id)
+})
+
+test('inherited start maps parent closures to child ordinals by slug', () => {
+  const at = '2026-11-19T00:00:00.000Z'
+  const inherited = inheritClosedSteps(
+    7,
+    [
+      { n: 1, slug: 'design', note: 'designed', at },
+      { n: 2, slug: 'design-signoff', note: 'approved', at },
+      { n: 3, slug: 'write', note: 'written', at },
+    ],
+    [{ slug: 'design' }, { slug: 'write' }, { slug: 'start' }],
+  )
+  expect(inherited).toMatchObject({ startOrdinal: 2 })
+  expect(inherited.closed.map(({ n, slug }) => ({ n, slug }))).toEqual([
+    { n: 1, slug: 'design' },
+    { n: 2, slug: 'write' },
+  ])
+  expect(inherited.closed[1]?.note).toContain('cursor 7 step write: written')
 })
 
 test('grandchild inherits from the nearest ancestor flow when its container has none', async () => {

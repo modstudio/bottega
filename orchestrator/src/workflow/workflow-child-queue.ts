@@ -1,6 +1,7 @@
 // concern: workflow child queue
 /** Pure queue/Open classification and child selection. */
 
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { descendantTaskKeys } from './workflow-task-tree.ts'
 
 export type ChildTaskFact = {
@@ -9,12 +10,18 @@ export type ChildTaskFact = {
   number: number
   statusCategory: string | null
   cursorEverComposed: boolean
+  cursorNumber: number | null
+  cursorState: string | null
   liveTaskClaimSession: string | null
   liveQueuedClaimSession: string | null
   queuedAt: string | null
 }
 
-export type ChildQueueState = { queue: ChildTaskFact[]; open: ChildTaskFact[] }
+export type ChildQueueState = {
+  queue: ChildTaskFact[]
+  open: ChildTaskFact[]
+  descendantKeys: ReadonlySet<string>
+}
 
 export type ChildClaimFact = {
   subject_kind: string
@@ -60,6 +67,16 @@ export function childEligibility(
       action: 'refuse',
       message: `${requested} is queued for session ${task.liveQueuedClaimSession}`,
     }
+  if (
+    task?.cursorEverComposed &&
+    task.cursorNumber !== null &&
+    task.cursorState !== null &&
+    state.descendantKeys.has(requested)
+  )
+    return {
+      action: 'refuse',
+      message: `${requested} already has a plan-task cursor ${task.cursorNumber} (${task.cursorState}); finish it, or abandon it with ${PLATFORM_SLUG} workflow abandon --cursor ${task.cursorNumber}, before queueing it again`,
+    }
   return { action: 'refuse', message: `${requested} is not queueable under this epic` }
 }
 
@@ -82,6 +99,7 @@ export function childQueueState(
       task.liveTaskClaimSession === null,
   )
   return {
+    descendantKeys: descendants,
     queue: queueable
       .filter((task) => task.liveQueuedClaimSession === session)
       .sort(
