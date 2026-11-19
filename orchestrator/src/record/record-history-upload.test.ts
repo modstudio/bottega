@@ -166,15 +166,22 @@ type ImportClient = Pick<
 >
 
 function dependencies(database: Database, client: ImportClient) {
+  const readTaskFlowPresence =
+    client.readTaskFlowPresence ??
+    (async () => ({
+      obligationIds: [],
+      textIds: [],
+      textCopyIds: [],
+      questionAuditIds: [],
+      questionIds: [],
+      stageIds: [],
+      flowIds: [],
+      questionAuditIdentities: [],
+    }))
   return {
     client: {
-      readTaskFlowPresence: async (
-        input: Parameters<NonNullable<RecordApiClient['readTaskFlowPresence']>>[0],
-      ) => ({
-        ...Object.fromEntries(Object.keys(input).map((key) => [key, []])),
-        questionAuditIdentities: [],
-      }),
       ...client,
+      readTaskFlowPresence,
     },
     destination: async (name: string | null) => ({
       destinationSpaceId: name === null ? 'personal-space' : `${name}-space`,
@@ -439,8 +446,13 @@ test('sign-in skips a question whose audit is present under a different id', asy
   let imports = 0
   const client: ImportClient = {
     readTaskFlowPresence: async (input) => ({
-      ...input,
+      obligationIds: input.obligationIds ?? [],
+      textIds: input.textIds ?? [],
+      textCopyIds: input.textCopyIds ?? [],
       questionAuditIds: [],
+      questionIds: input.questionIds ?? [],
+      stageIds: input.stageIds ?? [],
+      flowIds: input.flowIds ?? [],
       questionAuditIdentities: [{ questionId, action: 'rule', at }],
     }),
     importTaskFlow: async () => {
@@ -793,6 +805,7 @@ test('sync uses the maintenance handle for bound hosted history instead of its g
         questionIds: input.questionIds ?? [],
         stageIds: input.stageIds ?? [],
         flowIds: input.flowIds ?? [],
+        questionAuditIdentities: [],
       }
     },
     importQuestion: async () => {

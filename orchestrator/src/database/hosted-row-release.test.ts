@@ -9,7 +9,12 @@ import {
   HOSTED_ROW_TABLES,
   type HostedRowIds,
   type HostedRowReferences,
+  type PresenceReader,
 } from '../record/record-hosted-row-presence.ts'
+import type {
+  TaskFlowPresence,
+  TaskFlowPresenceResult,
+} from '../record/record-task-flow-contract.ts'
 import {
   decideHostedRowRelease,
   HOSTED_ROW_RELEASE_ARCHIVE_KEEP,
@@ -196,17 +201,18 @@ function seedHandoffCursor(database: Database, predecessorRecordId: string, numb
 
 function adapterDependencies(
   database: Database,
-  presence: NonNullable<Parameters<typeof releaseHostedRowsAfterUpdate>[1]>['presence'],
+  presence: (input: TaskFlowPresence) => Promise<TaskFlowPresence | TaskFlowPresenceResult>,
 ) {
   return {
     withDatabase: <T>(action: (value: Database) => T) => action(database),
-    presence: async (input: Parameters<typeof presence>[0]) => {
+    presence: (async (input) => {
       const result = await presence(input)
       return {
         ...result,
-        questionAuditIdentities: result.questionAuditIdentities ?? [],
+        questionAuditIdentities:
+          'questionAuditIdentities' in result ? result.questionAuditIdentities : [],
       }
-    },
+    }) satisfies PresenceReader,
     archive: () => '/tmp/release.jsonl',
   }
 }

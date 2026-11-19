@@ -181,5 +181,6 @@ export async function proveTaskFlowRecordReads(input: {
     textCopyIds: [],
     questionIds: [],
     questionAuditIds: [],
+    questionAuditIdentities: [],
   })
 }
