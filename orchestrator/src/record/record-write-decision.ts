@@ -17,10 +17,23 @@ export function decideRecordWrite(input: {
   installBound: boolean
   boundOrigin: string | null
   resolvedOrigin: string
+  machineJoined: boolean
+  localByDesign: boolean
 }): RecordWriteDecision {
   // An explicitly configured address overrides the pin: record use is how an install switches records.
   if (input.recordApiConfigured) return { verdict: 'hosted' }
-  if (!input.installBound) return { verdict: 'local-authoritative' }
+  if (!input.installBound) {
+    if (!input.machineJoined || input.localByDesign) return { verdict: 'local-authoritative' }
+    return {
+      verdict: 'refused',
+      boundOrigin: null,
+      resolvedOrigin: input.resolvedOrigin,
+      refusal:
+        'this machine has signed in to a hosted record, but this store is not bound to it and no record address is set\n' +
+        'cleared by: unset BOTTEGA_ORCHESTRATOR_DB\n' +
+        `cleared by: ${PLATFORM_SLUG} record use <address>`,
+    }
+  }
   if (input.boundOrigin === null) {
     return {
       verdict: 'refused',

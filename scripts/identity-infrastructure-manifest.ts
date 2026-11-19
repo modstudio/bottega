@@ -48,6 +48,11 @@ export const INFRASTRUCTURE_IDENTITIES: readonly InfrastructureIdentity[] = [
   },
   { store: 'orchestrator', table: 'orch_schema_lock', reason: 'schema migration lock' },
   { store: 'orchestrator', table: 'record_install_binding', reason: 'singleton install binding' },
+  {
+    store: 'orchestrator',
+    table: 'record_local_by_design',
+    reason: 'singleton explicit local-authority mark',
+  },
   { store: 'orchestrator', table: 'board_reach_recording', reason: 'singleton reach cursor' },
   { store: 'orchestrator', table: 'schema_meta', reason: 'schema metadata keyed by setting name' },
   { store: 'orchestrator', table: 'session_seen', reason: 'replaceable session liveness cache' },

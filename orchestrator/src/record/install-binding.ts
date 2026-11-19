@@ -13,6 +13,21 @@ export const NEVER_BOUND: RecordInstallBinding = {
   recordOrigin: null,
 }
 
+export function readRecordLocalByDesign(database: Database): boolean {
+  const table = database
+    .query<{ name: string }, []>(
+      "SELECT name FROM sqlite_master WHERE type='table' AND name='record_local_by_design'",
+    )
+    .get()
+  if (!table) return false
+  return Boolean(database.query('SELECT 1 FROM record_local_by_design WHERE id = 1').get())
+}
+
+export function setRecordLocalByDesign(database: Database, enabled: boolean): void {
+  if (enabled) database.query('INSERT OR IGNORE INTO record_local_by_design(id) VALUES (1)').run()
+  else database.query('DELETE FROM record_local_by_design WHERE id = 1').run()
+}
+
 export function recordInstallBindingHasOrigin(database: Database): boolean {
   return database
     .query<{ name: string }, []>("SELECT name FROM pragma_table_info('record_install_binding')")

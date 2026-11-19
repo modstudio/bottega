@@ -63,6 +63,7 @@ import { publishSnapshotsCommand } from '../record/record-publish.ts'
 import { pushCataloguesCommand } from '../record/record-push-catalogues.ts'
 import { pushDocsCommand } from '../record/record-push-docs.ts'
 import { restoreQuestionsCommand } from '../record/record-restore-questions.ts'
+import { recordLocalCommand } from '../record/record-local-command.ts'
 import { useHostedRecord } from '../record/record-use.ts'
 import { recordPublishAvailability, requireHostedRecord } from '../record/record-write-authority.ts'
 import { promptHidden } from './hidden-prompt.ts'
@@ -108,6 +109,14 @@ function registerUseCommand(record: Command): void {
     .description('bind this machine to a hosted record')
     .argument('<address>', 'public record API address', httpAddress)
     .action((address) => useHostedRecord(String(address), { log, warn: console.warn }))
+}
+
+function registerLocalCommand(record: Command): void {
+  record
+    .command('local')
+    .description('mark this orchestrator store as deliberately local')
+    .option('--off', 'clear the deliberately-local mark')
+    .action((options) => recordLocalCommand(!Boolean(options.off), { log }))
 }
 
 function registerIdentityCommands(record: Command): void {
@@ -574,6 +583,7 @@ function registerOutboxCommands(record: Command): void {
 export function register(program: Command): void {
   const record = program.command('record').description('manage the hosted record and its outbox')
   registerUseCommand(record)
+  registerLocalCommand(record)
   registerIdentityCommands(record)
   registerPublicDocCommands(record)
   registerPushCommands(record)

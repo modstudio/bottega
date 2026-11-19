@@ -2,10 +2,12 @@
 /** Applies shared-state write authority at the hosted-record boundary. */
 
 import type { Database } from 'bun:sqlite'
+import { existsSync } from 'node:fs'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { recordApiConfigured, resolvedRecordOrigin } from '../../../shared/record-api-url.ts'
-import { db } from '../database/db.ts'
-import { readRecordInstallBinding } from './install-binding.ts'
+import { recordSessionStampPath } from '../../../shared/state-directory.ts'
+import { DB_PATH, db } from '../database/db.ts'
+import { readRecordInstallBinding, readRecordLocalByDesign } from './install-binding.ts'
 import { rememberHostedRecord } from './install-binding-write.ts'
 import { storedRecordToken } from './record-session.ts'
 import { decideRecordWrite, type RecordWriteDecision } from './record-write-decision.ts'
@@ -13,6 +15,7 @@ import { decideRecordWrite, type RecordWriteDecision } from './record-write-deci
 export function currentRecordWriteDecision(
   database: Database = db(),
   environment: Readonly<Record<string, string | undefined>> = process.env,
+  storePath: string = DB_PATH,
 ): RecordWriteDecision {
   const binding = readRecordInstallBinding(database)
   const resolvedOrigin = resolvedRecordOrigin(environment)
@@ -21,6 +24,11 @@ export function currentRecordWriteDecision(
     installBound: binding.bound,
     boundOrigin: binding.recordOrigin,
     resolvedOrigin,
+    machineJoined: existsSync(recordSessionStampPath(environment)),
+    localByDesign:
+      storePath === '/dev/null' || storePath.toUpperCase() === 'NUL'
+        ? true
+        : readRecordLocalByDesign(database),
   })
 }
 
