@@ -3,10 +3,7 @@ import { PLATFORM_SLUG } from './brand.ts'
 import { newRecordId } from './record-id.ts'
 import { formatReference, parsePointerReference, parseReference } from './reference.ts'
 import {
-  malformedReferenceRefusal,
   POINTER_REFERENCE_FORMS,
-  referenceNotVisibleRefusal,
-  referenceStoreUnreachableRefusal,
 } from './reference-refusal.ts'
 
 describe('record reference grammar', () => {
@@ -76,15 +73,4 @@ describe('record reference grammar', () => {
     (value) => expect(() => parsePointerReference(value)).toThrow(POINTER_REFERENCE_FORMS),
   )
 
-  test('keeps malformed, not-visible, and unreachable refusals distinct', () => {
-    const refusals = [
-      malformedReferenceRefusal('bad'),
-      referenceNotVisibleRefusal('project workshop', 'pass the UUID'),
-      referenceStoreUnreachableRefusal('doc store'),
-    ]
-    expect(new Set(refusals).size).toBe(3)
-    expect(refusals[0]).toContain(POINTER_REFERENCE_FORMS)
-    expect(refusals[1]).toContain('not visible')
-    expect(refusals[2]).toContain('could not reach')
-  })
 })

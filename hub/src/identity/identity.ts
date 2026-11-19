@@ -14,7 +14,7 @@ export function resolveNoteIdentity(
   database: Database,
   value: string,
   sessionProject: string | null,
-  isRegistered: (project: string) => boolean = () => true,
+  isRegistered: (project: string) => boolean,
 ): string {
   let parsed: ReturnType<typeof parseReference>
   try {
@@ -27,6 +27,7 @@ export function resolveNoteIdentity(
   if (parsed.qualifier && !isRegistered(parsed.qualifier.value))
     throw new Error(projectNotRegisteredRefusal(parsed.qualifier.value))
   if (parsed.value.kind === 'record-id') {
+    if (parsed.qualifier) throw new Error('a UUID takes no qualifier; pass it bare')
     const row = database
       .query<{ record_id: string }, [string]>('SELECT record_id FROM note WHERE record_id=?')
       .get(parsed.value.recordId)

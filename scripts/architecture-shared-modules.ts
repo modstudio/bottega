@@ -42,7 +42,7 @@ export const sharedModules: ArchitectureModule[] = [
   module('shared/store-ahead-remedy.ts', ['./brand.ts', './install-root.ts', './refusal.ts']),
   module('shared/gate-timing-directory.ts', ['./brand.ts', './state-directory.ts']),
   module('shared/command-spellings.ts', []),
-  module('shared/note-label.ts', []),
+  module('shared/note-label.ts', ['./reference.ts']),
   module('shared/record/postgres-error.ts', []),
   module('shared/record/record-changes.ts', ['bun', 'node:buffer', './tenant.ts']),
   ...proseModules,

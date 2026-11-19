@@ -1,3 +1,5 @@
+import { parseReference, REFERENCE_PREFIXES } from './reference.ts'
+
 export type NoteLabel = { project: string; number: number }
 
 export function formatNoteLabel(project: string, number: number): string {
@@ -5,17 +7,16 @@ export function formatNoteLabel(project: string, number: number): string {
 }
 
 export function parseNoteLabel(value: string): NoteLabel {
-  const separator = value.lastIndexOf('#')
-  const project = value.slice(0, separator)
-  const numberText = value.slice(separator + 1)
-  const number = Number(numberText)
-  if (
-    separator < 1 ||
-    !numberText ||
-    !/^[1-9][0-9]*$/.test(numberText) ||
-    !Number.isSafeInteger(number)
-  ) {
-    throw new Error(`invalid note label '${value}': expected project#number`)
+  try {
+    const parsed = parseReference(value, 'note')
+    const number = 'number' in parsed.value ? parsed.value.number : null
+    const qualifiedNote =
+      parsed.qualifier?.kind === 'project' &&
+      (parsed.value.kind === 'number' ||
+        (parsed.value.kind === 'label' && parsed.value.prefix === REFERENCE_PREFIXES.note))
+    if (qualifiedNote && number !== null) return { project: parsed.qualifier.value, number }
+  } catch {
+    // The note-label surface keeps its established refusal below.
   }
-  return { project, number }
+  throw new Error(`invalid note label '${value}': expected project#number`)
 }

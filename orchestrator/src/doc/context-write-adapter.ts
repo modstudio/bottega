@@ -62,16 +62,19 @@ export type ContextFactsPorts = {
 }
 export type PointerTargetPorts = {
   document(address: string): Promise<void>
-  task(
-    key: string,
-    database: Database,
-  ): Promise<ContextTask & { commentIds?: Array<string | number> }>
+  task(key: string, database: Database): Promise<ContextTask>
   taskDocument(pointer: string): Promise<string>
   commit(reference: string): string
 }
 export const CONTEXT_FACTS_PORTS_KEY = Symbol.for('orch.context-facts-ports')
 const portsHolder = globalThis as typeof globalThis & {
   [CONTEXT_FACTS_PORTS_KEY]?: ContextFactsPorts
+}
+
+function recordedPullRequest(number: number, database: Database): boolean {
+  return Boolean(
+    database.query('SELECT 1 FROM pull_request_ci WHERE pr_number=? LIMIT 1').get(number),
+  )
 }
 
 async function pointerRefusal(value: string, database: Database): Promise<string | null> {
@@ -111,12 +114,15 @@ async function resolveRunPointer(
       )
     ).recordId
   } catch (error) {
-    if (!(error instanceof ResolutionMissError) || reference.reference.value.kind !== 'number')
+    if (
+      !(error instanceof ResolutionMissError) ||
+      reference.explicit ||
+      reference.reference.qualifier ||
+      reference.reference.value.kind !== 'number'
+    )
       throw error
     const number = reference.reference.value.number
-    const pullRequest = database
-      .query('SELECT 1 FROM pull_request_ci WHERE pr_number=? LIMIT 1')
-      .get(number)
+    const pullRequest = recordedPullRequest(number, database)
     throw new ContextWriteRefusalError(
       pullRequest
         ? `${error.message}; pass #<n> for a pull request`
@@ -183,7 +189,9 @@ async function resolveStoredPointer(
       ? database.query('SELECT 1 FROM review_read WHERE record_id=?').get(parsed.recordId)
       : parsed.kind === 'attached-text'
         ? await taskFlowReadStore(database).textAttachmentByRecordId(parsed.recordId)
-        : database.query('SELECT 1 FROM probe WHERE record_id=?').get(parsed.recordId)
+        : database
+            .query('SELECT 1 FROM probe WHERE record_id=? AND kind=?')
+            .get(parsed.recordId, parsed.kind)
   if (visible) return pointer
   throw new ContextWriteRefusalError(
     referenceNotVisibleRefusal('this machine', 'pass the UUID of a visible record'),
@@ -224,7 +232,7 @@ export async function resolvedPointerTarget(
     const number = parsed.number
     if (
       number !== null &&
-      database.query('SELECT 1 FROM pull_request_ci WHERE pr_number=? LIMIT 1').get(number)
+      recordedPullRequest(number, database)
     )
       return String(number)
     throw new ContextWriteRefusalError(

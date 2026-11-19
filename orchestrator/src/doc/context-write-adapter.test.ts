@@ -37,6 +37,24 @@ test('context pointers dispatch the workflow evidence forms through the shared p
        VALUES (?,'run-fixture',?,91,'collection',1,'2026-01-01')`,
     )
     .run(newRecordId(), projectId)
+  const probeId = newRecordId()
+  database
+    .query(
+      `INSERT INTO probe
+       (record_id,command,cwd,exit_code,output_tail,created_at,kind)
+       VALUES (?,'[]','/fixture',0,'','2026-01-01','probe')`,
+    )
+    .run(probeId)
+  const attachedTextId = newRecordId()
+  database.exec('PRAGMA foreign_keys=OFF')
+  database
+    .query(
+      `INSERT INTO workflow_step_text
+       (record_id,cursor_record_id,step_ordinal,step_slug,body,created_at)
+       VALUES (?,? ,0,'fixture','body','2026-01-01')`,
+    )
+    .run(attachedTextId, newRecordId())
+  database.exec('PRAGMA foreign_keys=ON')
 
   const adapter = ports()
   await expect(resolvedPointerTarget('42', database, adapter)).resolves.toBe(runId)
@@ -50,6 +68,24 @@ test('context pointers dispatch the workflow evidence forms through the shared p
   await expect(resolvedPointerTarget('task:DEV-2473#comment:4', database, adapter)).resolves.toBe(
     'task:DEV-2473#comment:4',
   )
+  await expect(
+    resolvedPointerTarget('task:DEV-2473#comment:5', database, adapter),
+  ).rejects.toThrow('not visible in task DEV-2473; pass a comment id on that task')
+  await expect(resolvedPointerTarget(`probe:${probeId}`, database, adapter)).resolves.toBe(
+    `probe:${probeId}`,
+  )
+  await expect(resolvedPointerTarget(`probe:${newRecordId()}`, database, adapter)).rejects.toThrow(
+    'not visible in this machine; pass the UUID of a visible record',
+  )
+  await expect(resolvedPointerTarget(`exec:${probeId}`, database, adapter)).rejects.toThrow(
+    'not visible in this machine; pass the UUID of a visible record',
+  )
+  await expect(
+    resolvedPointerTarget(`attached-text:${attachedTextId}`, database, adapter),
+  ).resolves.toBe(`attached-text:${attachedTextId}`)
+  await expect(
+    resolvedPointerTarget(`attached-text:${newRecordId()}`, database, adapter),
+  ).rejects.toThrow('not visible in this machine; pass the UUID of a visible record')
   await expect(resolvedPointerTarget('DEV-2473/6', database, adapter)).resolves.toBe('DEV-2473/6')
   await expect(
     resolvedPointerTarget(`doc:project/${PLATFORM_SLUG}/identity`, database, adapter),
@@ -60,6 +96,12 @@ test('context pointers dispatch the workflow evidence forms through the shared p
   )
   await expect(resolvedPointerTarget('92', database, adapter)).rejects.toThrow(
     'for a commit, pass the full SHA',
+  )
+  await expect(resolvedPointerTarget('run:92', database, adapter)).rejects.not.toThrow(
+    'for a commit, pass the full SHA',
+  )
+  await expect(resolvedPointerTarget('run:91', database, adapter)).rejects.not.toThrow(
+    'pass #<n> for a pull request',
   )
   for (const pointer of ['#92', 'https://github.com/example/project/pull/92'])
     await expect(resolvedPointerTarget(pointer, database, adapter)).rejects.toThrow(

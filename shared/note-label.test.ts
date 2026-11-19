@@ -10,6 +10,7 @@ describe('note label', () => {
       project,
       number: 575,
     })
+    expect(parseNoteLabel('workshop#n41')).toEqual({ project: 'workshop', number: 41 })
   })
 
   test.each(['575', '#575', `${project}#0`, `${project}#-1`])('refuses %s', (value) => {
