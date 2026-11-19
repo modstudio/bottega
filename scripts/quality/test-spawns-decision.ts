@@ -20,6 +20,39 @@ export type SpawnRuleResult =
   | { status: 'pass'; measuredFiles: number }
   | { status: 'fail'; violations: SpawnViolation[] }
 
+export type MockModuleBaseline = Readonly<Record<string, string>>
+export type MockModuleViolation = { file: string; line: number; reason: string }
+
+/**
+ * A test outside the baseline may not call mock.module. A baselined test may
+ * retain its one existing call, but a second call fails, and removing the last
+ * call makes the baseline stale so the allowance can only shrink.
+ */
+export function mockModuleViolations({
+  callsByFile,
+  baseline,
+}: {
+  callsByFile: ReadonlyMap<string, readonly number[]>
+  baseline: MockModuleBaseline
+}): MockModuleViolation[] {
+  const remedy = 'mock.module is process-global; inject a seam, or seed a real fixture'
+  const violations: MockModuleViolation[] = []
+  for (const [file, lines] of callsByFile) {
+    const allowed = file in baseline ? 1 : 0
+    for (const line of lines.slice(allowed)) violations.push({ file, line, reason: remedy })
+  }
+  for (const file of Object.keys(baseline)) {
+    if (!callsByFile.has(file)) {
+      violations.push({
+        file,
+        line: 1,
+        reason: 'stale mock.module baseline entry; remove it because the baseline may only shrink',
+      })
+    }
+  }
+  return violations
+}
+
 /**
  * A file above the limit and unbudgeted is a new offender; a budgeted file
  * above its recorded count grew. A budgeted file that improved never fails,

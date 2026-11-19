@@ -2,12 +2,39 @@ import { expect, test } from 'bun:test'
 import {
   decideSpawnRule,
   loweredSpawnBaseline,
+  mockModuleViolations,
   type SpawnBaseline,
   shardOfCommand,
   spawnViolations,
 } from './test-spawns-decision.ts'
 
 const baseline: SpawnBaseline = { files: { 'orchestrator/src/heavy.test.ts': 30 } }
+
+test('the mock.module baseline refuses a new call and a stale entry', () => {
+  const mockBaseline = { 'shared/existing.test.ts': 'partial dependency stub' }
+  expect(
+    mockModuleViolations({
+      callsByFile: new Map([
+        ['shared/existing.test.ts', [8]],
+        ['shared/new.test.ts', [12]],
+      ]),
+      baseline: mockBaseline,
+    }),
+  ).toEqual([
+    {
+      file: 'shared/new.test.ts',
+      line: 12,
+      reason: 'mock.module is process-global; inject a seam, or seed a real fixture',
+    },
+  ])
+  expect(mockModuleViolations({ callsByFile: new Map(), baseline: mockBaseline })).toEqual([
+    {
+      file: 'shared/existing.test.ts',
+      line: 1,
+      reason: 'stale mock.module baseline entry; remove it because the baseline may only shrink',
+    },
+  ])
+})
 
 test('a new file above the limit fails', () => {
   expect(

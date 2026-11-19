@@ -1,8 +1,11 @@
-import '../orchestrator/test/preload.ts'
 import '../hub/test/preload.ts'
-import { beforeEach, expect, test } from 'bun:test'
+import { Database } from 'bun:sqlite'
+import { afterAll, beforeAll, beforeEach, expect, test } from 'bun:test'
 import { projectRegisterReader } from '../hub/src/project-register-reader.ts'
 import { resetFixtureStore } from '../hub/test/run-fixtures.ts'
+import { DB_PATH, db } from '../orchestrator/src/database/db.ts'
+import { applyMigrations } from '../orchestrator/src/database/migrations.ts'
+import { registerStandardRuntime } from '../orchestrator/src/runtime/runtime-registration.ts'
 import { taskReader } from '../orchestrator/src/workflow/task-read-port.ts'
 import { addProject } from '../orchestrator/test/fixtures/offline-branch-landing.ts'
 import { OrchProjectListSchema } from '../shared/orch-contract.ts'
@@ -10,9 +13,25 @@ import { installCliTaskReader } from './task-read-adapter.ts'
 
 let projectRecordId: string
 
+beforeAll(() => {
+  registerStandardRuntime()
+  const database = new Database(DB_PATH, { create: true })
+  try {
+    database.exec('PRAGMA foreign_keys = ON;')
+    applyMigrations(database)
+  } finally {
+    database.close()
+  }
+})
+
 beforeEach(() => {
   resetFixtureStore()
+  db().query("DELETE FROM project WHERE name = 'alpha'").run()
   projectRecordId = addProject('alpha', '/fixtures/repos/alpha')
+})
+
+afterAll(() => {
+  db().query("DELETE FROM project WHERE name = 'alpha'").run()
 })
 
 test('installing the CLI adapter leaves hub unloaded until the first read', () => {
