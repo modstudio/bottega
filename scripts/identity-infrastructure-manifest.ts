@@ -51,7 +51,7 @@ export const INFRASTRUCTURE_IDENTITIES: readonly InfrastructureIdentity[] = [
   {
     store: 'orchestrator',
     table: 'record_local_by_design',
-    reason: 'singleton explicit local-authority mark',
+    reason: 'presence-only explicit local-authority mark',
   },
   { store: 'orchestrator', table: 'board_reach_recording', reason: 'singleton reach cursor' },
   { store: 'orchestrator', table: 'schema_meta', reason: 'schema metadata keyed by setting name' },

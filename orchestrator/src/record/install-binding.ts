@@ -2,6 +2,7 @@
 /** Owns the monotonic local fact that this store has attached to a hosted record. */
 
 import type { Database } from 'bun:sqlite'
+import { newRecordId } from '../../../shared/record-id.ts'
 
 export type RecordInstallBinding =
   | { bound: false; boundAt: null; recordOrigin: null }
@@ -20,12 +21,17 @@ export function readRecordLocalByDesign(database: Database): boolean {
     )
     .get()
   if (!table) return false
-  return Boolean(database.query('SELECT 1 FROM record_local_by_design WHERE id = 1').get())
+  return Boolean(database.query('SELECT 1 FROM record_local_by_design LIMIT 1').get())
 }
 
 export function setRecordLocalByDesign(database: Database, enabled: boolean): void {
-  if (enabled) database.query('INSERT OR IGNORE INTO record_local_by_design(id) VALUES (1)').run()
-  else database.query('DELETE FROM record_local_by_design WHERE id = 1').run()
+  if (enabled)
+    database
+      .query(
+        "INSERT INTO record_local_by_design(record_id,mark) SELECT ?,'local' WHERE NOT EXISTS (SELECT 1 FROM record_local_by_design)",
+      )
+      .run(newRecordId())
+  else database.query('DELETE FROM record_local_by_design').run()
 }
 
 export function recordInstallBindingHasOrigin(database: Database): boolean {

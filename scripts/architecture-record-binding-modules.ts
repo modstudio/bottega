@@ -156,7 +156,10 @@ export const recordBindingModules: RecordModule[] = [
     './record-board-contract.ts',
     './record-board-tx.ts',
   ]),
-  module('orchestrator/src/record/install-binding.ts', ['bun:sqlite']),
+  module('orchestrator/src/record/install-binding.ts', [
+    'bun:sqlite',
+    '../../../shared/record-id.ts',
+  ]),
   module('orchestrator/src/record/install-binding-write.ts', [
     'bun:sqlite',
     '../../../shared/record-api-url.ts',

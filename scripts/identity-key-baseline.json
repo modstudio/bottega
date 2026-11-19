@@ -16,7 +16,6 @@
     "presence:primary-key",
     "question_delivery:primary-key",
     "record_install_binding:primary-key",
-    "record_local_by_design:primary-key",
     "run.launch_key:reference",
     "schema_meta:primary-key",
     "session_seen:primary-key",

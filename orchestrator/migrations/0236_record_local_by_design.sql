@@ -1,3 +1,4 @@
 CREATE TABLE record_local_by_design (
-  id INTEGER PRIMARY KEY CHECK (id = 1)
+  record_id TEXT PRIMARY KEY,
+  mark TEXT NOT NULL CHECK (mark = 'local')
 );
