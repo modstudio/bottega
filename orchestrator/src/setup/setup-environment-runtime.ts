@@ -105,12 +105,13 @@ function initialRecordSessionDecision(
   return environmentRecordSessionDecision(authority, sessionPresent, { kind: 'not-run' })
 }
 
-export async function migrateAfterRecordAuthority<T>(
+export async function migrateOperatorEnvironmentAfterRecordAuthority(
   initial: EnvironmentRecordSessionDecision,
-  migrate: () => Promise<T>,
-): Promise<T> {
+  home: string,
+  adapters: Parameters<typeof migrateOperatorEnvironment>[1],
+): Promise<Awaited<ReturnType<typeof migrateOperatorEnvironment>>> {
   if (initial.action === 'refuse') throw new Error(initial.refusal)
-  return migrate()
+  return migrateOperatorEnvironment(home, adapters)
 }
 
 type EnvironmentMigrationResult = {
@@ -288,8 +289,10 @@ export const setupEnvironmentService = {
       const { runSessionRequiredSteps } = environmentRecordStepsDecision(initial)
       const waitOnSessionError = (error: unknown) =>
         waitForSignInOnSessionError(authority, sessionPresent, error, waitForSignIn)
-      const report = await migrateAfterRecordAuthority(initial, () =>
-        migrateOperatorEnvironment(homedir(), {
+      const report = await migrateOperatorEnvironmentAfterRecordAuthority(
+        initial,
+        homedir(),
+        {
           platform: process.platform,
           backupRoot: resolveStatePaths(process.env).orchestratorDirectory,
           migrateSecrets: async (record) => {
@@ -349,7 +352,7 @@ export const setupEnvironmentService = {
           notes: () => notes,
           processNamesRenamed,
           preparedStateFileMigration,
-        }),
+        },
       )
       const message = environmentMigrationMessage(report)
       const changed =

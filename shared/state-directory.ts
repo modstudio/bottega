@@ -40,13 +40,18 @@ export function temporaryStateStoreMigrationAllowed(
 export const STATE_HOME_ENV = `${PLATFORM_SLUG.toUpperCase()}_STATE_HOME`
 export const ORCHESTRATOR_DATABASE_ENV = `${PLATFORM_SLUG.toUpperCase()}_ORCHESTRATOR_DB`
 export const ORCHESTRATOR_DATABASE_WRITE_ENV = `${ORCHESTRATOR_DATABASE_ENV}_WRITE`
-export const DISCARD_STORE_PATH = process.platform === 'win32' ? 'NUL' : '/dev/null'
+export function discardStorePath(platform: NodeJS.Platform = process.platform): string {
+  return platform === 'win32' ? 'NUL' : '/dev/null'
+}
+
+export const DISCARD_STORE_PATH = discardStorePath(process.platform)
 export const HUB_DATABASE_ENV = `${PLATFORM_SLUG.toUpperCase()}_HUB_DB`
 const RECORD_SYNC_QUEUE_DIRECTORY = 'record-sync-queue'
 export const RECORD_SYNC_PENDING_MARKER = 'pending'
 
 export function isDiscardStorePath(path: string, platform = process.platform): boolean {
-  return platform === 'win32' ? path.toUpperCase() === 'NUL' : path === '/dev/null'
+  const discard = discardStorePath(platform)
+  return platform === 'win32' ? path.toUpperCase() === discard : path === discard
 }
 
 /** Resolve the per-user state root using only the supplied environment. */

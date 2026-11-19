@@ -1,9 +1,9 @@
-// concern: record-install-binding
+// concern: record-local-mark
 /** Marks an unbound orchestrator store as deliberately local. */
 
 import type { Database } from 'bun:sqlite'
-import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { refusal, renderRefusal } from '../../../shared/refusal.ts'
+import { ORCHESTRATOR_DATABASE_ENV } from '../../../shared/state-directory.ts'
 import { db } from '../database/db.ts'
 import { readRecordInstallBinding } from './install-binding.ts'
 import { setRecordLocalByDesign } from './record-local-mark.ts'
@@ -13,12 +13,12 @@ export function recordLocalCommand(
   presentation: { log(value: string): void },
   database: Database = db(),
 ): void {
-  if (readRecordInstallBinding(database).bound) {
+  if (enabled && readRecordInstallBinding(database).bound) {
     throw new Error(
       renderRefusal(
-        refusal('this store is bound to a hosted record', {
-          kind: 'command',
-          argv: [PLATFORM_SLUG, 'record', 'use', '<address>'],
+        refusal('this store is bound to a hosted record, so it cannot be local by design', {
+          kind: 'edit',
+          text: `point ${ORCHESTRATOR_DATABASE_ENV} at an unbound store, then rerun record local`,
         }),
       ),
     )

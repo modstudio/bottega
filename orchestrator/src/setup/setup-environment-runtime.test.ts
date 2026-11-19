@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
@@ -9,23 +9,34 @@ import {
   environmentRecordSessionDecision,
   environmentRecordStepsDecision,
   environmentSettingsApplyDecision,
-  migrateAfterRecordAuthority,
+  migrateOperatorEnvironmentAfterRecordAuthority,
 } from './setup-environment-runtime.ts'
 
 test('refused record authority stops before environment migration changes files', async () => {
   const home = mkdtempSync(join(tmpdir(), 'setup-authority-refusal-'))
   const path = join(home, '.zshenv')
+  const backupRoot = join(home, 'backups')
   const legacyRecordUrl = ['ORCH', 'RECORD', 'URL'].join('_')
   writeFileSync(path, `${legacyRecordUrl}=secret\n`)
   try {
     await expect(
-      migrateAfterRecordAuthority({ action: 'refuse', refusal: 'record refused' }, async () => {
-        writeFileSync(path, 'BOTTEGA_RECORD_URL=secret\n')
-        writeFileSync(`${path}.${PLATFORM_SLUG}-env-backup`, 'backup\n')
-      }),
+      migrateOperatorEnvironmentAfterRecordAuthority(
+        { action: 'refuse', refusal: 'record refused' },
+        home,
+        {
+          platform: process.platform,
+          backupRoot,
+          preflight: async () => undefined,
+          migrateSecrets: async () => [],
+          migrateRegister: async () => [],
+          migrateSettings: async () => [],
+          rerenderSettings: async () => false,
+        },
+      ),
     ).rejects.toThrow('record refused')
     expect(readFileSync(path, 'utf8')).toBe(`${legacyRecordUrl}=secret\n`)
-    expect(() => statSync(`${path}.${PLATFORM_SLUG}-env-backup`)).toThrow()
+    expect(existsSync(`${path}.${PLATFORM_SLUG}-env-backup`)).toBe(false)
+    expect(existsSync(backupRoot)).toBe(false)
   } finally {
     rmSync(home, { recursive: true, force: true })
   }

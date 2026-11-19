@@ -1,5 +1,6 @@
 import { expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { ORCHESTRATOR_DATABASE_ENV } from '../../../shared/state-directory.ts'
 import { decideRecordWrite } from './record-write-decision.ts'
 
 const joinedLocalFacts = {
@@ -21,7 +22,7 @@ test('a joined machine refuses an unbound unconfigured store with both remedies'
   expect(decision).toMatchObject({ verdict: 'refused', boundOrigin: null })
   if (decision.verdict !== 'refused') throw new Error('expected a refusal')
   expect(decision.refusal).toContain('this machine has signed in to a hosted record')
-  expect(decision.refusal).toContain('cleared by: unset BOTTEGA_ORCHESTRATOR_DB')
+  expect(decision.refusal).toContain(`cleared by: unset ${ORCHESTRATOR_DATABASE_ENV}`)
   expect(decision.refusal).toContain(`cleared by: ${PLATFORM_SLUG} record use <address>`)
 })
 
@@ -130,7 +131,7 @@ test('a joined store without an override names only record use', () => {
     ...joinedLocalFacts,
   })
   if (decision.verdict !== 'refused') throw new Error('expected a refusal')
-  expect(decision.refusal).not.toContain('unset BOTTEGA_ORCHESTRATOR_DB')
+  expect(decision.refusal).not.toContain(`unset ${ORCHESTRATOR_DATABASE_ENV}`)
   expect(decision.refusal).toContain(`cleared by: ${PLATFORM_SLUG} record use <address>`)
 })
 
@@ -148,6 +149,52 @@ test('an unreadable session stamp refuses an unbound unconfigured store', () => 
   expect(decision).toMatchObject({ verdict: 'refused', boundOrigin: null })
   if (decision.verdict !== 'refused') throw new Error('expected a refusal')
   expect(decision.refusal).toContain('record session stamp is unreadable')
+  expect(decision.refusal).toContain(`cleared by: ${PLATFORM_SLUG} record use <address>`)
+})
+
+test('an unreadable session stamp does not override a local-by-design store', () => {
+  expect(
+    decideRecordWrite({
+      recordApiConfigured: false,
+      installBound: false,
+      boundOrigin: null,
+      resolvedOrigin: 'https://api.example.test',
+      machineJoined: 'unreadable',
+      localByDesign: true,
+      storePath: '/tmp/store.db',
+      storeOverride: false,
+    }),
+  ).toEqual({ verdict: 'local-authoritative' })
+})
+
+test('an unreadable session stamp does not override the discard store', () => {
+  expect(
+    decideRecordWrite({
+      recordApiConfigured: false,
+      installBound: false,
+      boundOrigin: null,
+      resolvedOrigin: 'https://api.example.test',
+      machineJoined: 'unreadable',
+      localByDesign: false,
+      storePath: '/dev/null',
+      storeOverride: false,
+    }),
+  ).toEqual({ verdict: 'local-authoritative' })
+})
+
+test('an unreadable session stamp includes the store-override remedy when set', () => {
+  const decision = decideRecordWrite({
+    recordApiConfigured: false,
+    installBound: false,
+    boundOrigin: null,
+    resolvedOrigin: 'https://api.example.test',
+    machineJoined: 'unreadable',
+    localByDesign: false,
+    storePath: '/tmp/store.db',
+    storeOverride: true,
+  })
+  if (decision.verdict !== 'refused') throw new Error('expected a refusal')
+  expect(decision.refusal).toContain(`cleared by: unset ${ORCHESTRATOR_DATABASE_ENV}`)
   expect(decision.refusal).toContain(`cleared by: ${PLATFORM_SLUG} record use <address>`)
 })
 
