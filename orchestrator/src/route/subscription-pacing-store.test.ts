@@ -115,6 +115,32 @@ test('pacing facts use only the selected account and exclude unknown-account row
   })
 })
 
+test('switching to an account without a reading gives the no-data decision', () => {
+  const now = Date.now()
+  const reading = addRun({
+    agent: 'codex',
+    job: 'understand',
+    startedAt: new Date(now - 60_000).toISOString(),
+  })
+  db()
+    .query(
+      `UPDATE run SET quota_account_id='account-a', quota_used_percent_start=10,
+                      quota_used_percent_end=10, quota_window_minutes=10080,
+                      quota_resets_at=? WHERE record_id=?`,
+    )
+    .run(Math.floor((now + 9_000_000) / 1000), reading)
+
+  const facts = subscriptionPacingFacts(db(), new Map([['codex', 'account-b']]), now).get('codex')!
+  expect(
+    decideSubscriptionPacing({
+      now,
+      ...facts,
+      writesRepo: false,
+      highStakesLens: false,
+    }),
+  ).toMatchObject({ estimatePercent: null })
+})
+
 test('calibration beyond the bounded window search is unavailable', () => {
   const now = Date.now()
   const windowMinutes = 10_080
