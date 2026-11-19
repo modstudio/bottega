@@ -242,7 +242,6 @@ export const settingsModules: SettingsModule[] = [
     '../config/credential-service.ts',
     '../config/credential-presentation.ts',
     '../config/secret-run.ts',
-    '../config/secret-set-policy.ts',
     '../project/projects.ts',
     '../record/record-project-destination.ts',
     '../record/record-project-destination-client.ts',
