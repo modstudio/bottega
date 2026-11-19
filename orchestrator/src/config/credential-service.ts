@@ -14,7 +14,10 @@ import {
   type CredentialPayer,
   credentialIdentityKey,
 } from '../../../shared/credential.ts'
-import { missingDataKeyWrapRemedy } from '../../../shared/credential-machine-trust.ts'
+import {
+  missingDataKeyWrapRemedy,
+  noDataKeyRemedy,
+} from '../../../shared/credential-machine-trust.ts'
 import { readCredentialMachineTrustFactsOrUnchecked } from '../../../shared/credential-machine-trust-reader.ts'
 import {
   credentialScopeFromPayer,
@@ -186,6 +189,16 @@ const missingWrapRefusal = (address: CredentialAddress, client: ReturnType<typeo
     ? missingAccountWrapRefusal(address, client)
     : missingProjectWrapRefusal(address, client)
 
+function noDataKeyRefusal(address: CredentialAddress): Error {
+  const binding = address.account
+    ? 'account'
+    : `project ${address.projectName} in space ${address.spaceName}`
+  const access = address.account ? '' : `; ${configAccessRemedy(address.spaceName)}`
+  return new Error(
+    `cannot access credentials for ${binding}: ${noDataKeyRemedy(address.spaceName)}${access}`,
+  )
+}
+
 function missingCredentialRefusal(address: CredentialAddress): Error {
   return new Error(credentialSetRefusalText(address, 'missing', 'pipe its value to'))
 }
@@ -229,8 +242,12 @@ export async function setCredential(
       },
     )
   } catch (error) {
-    if (error instanceof ConfigClientError && error.status === 404)
-      throw await missingWrapRefusal(address, client)
+    if (
+      error instanceof ConfigClientError &&
+      error.status === 404 &&
+      error.route === '/v1/config/data-keys/current'
+    )
+      throw noDataKeyRefusal(address)
     throw error
   }
 }

@@ -6,10 +6,7 @@ import type {
   ConfigWriteDestination,
   DataKey,
 } from './config-client.ts'
-import {
-  credentialMachineTrustFacts,
-  missingDataKeyWrapRemedy,
-} from './credential-machine-trust.ts'
+import { missingDataKeyWrapRemedy } from './credential-machine-trust.ts'
 import { readCredentialMachineTrustFactsOrUnchecked } from './credential-machine-trust-reader.ts'
 import { type HostedConfigIdentity, readHostedConfigIdentity } from './hosted-config-space.ts'
 import {
@@ -109,11 +106,9 @@ export async function destinationHostedIdentity(
   if (decision.allowed) return decision.identity
   throw new Error(
     missingDataKeyWrapRemedy(
-      credentialMachineTrustFacts({
-        space: destination.spaceId,
+      await readCredentialMachineTrustFactsOrUnchecked(client, {
+        space: { kind: 'membership', spaceId: destination.spaceId },
         machine: destination.machine,
-        machineRows: machines,
-        trust: {},
       }),
     ),
   )

@@ -76,3 +76,42 @@ test('a project destination never consults machine keys in another space', async
   ).rejects.toThrow('not a member')
   expect(listed).toBe(false)
 })
+
+test('a destination machine key owned by another user gives both intents with the space slug', async () => {
+  const keyId = 'machine-key'
+  const client = {
+    whoami: async () => ({
+      user: { id: user },
+      activeSpaceId: space,
+      memberships: [
+        {
+          space_id: space,
+          slug: membership.slug,
+          permission: membership.permission,
+        },
+      ],
+    }),
+    listMachineKeys: async () => [
+      { keyId, userId: 'other-user', revokedAt: null, publicKey: 'AQID' },
+    ],
+    readTrustLog: async () => [],
+  } as never
+  const refusal = await destinationHostedIdentity(
+    client,
+    {
+      spaceId: space,
+      machine: {
+        keyId,
+        publicKey: new Uint8Array([1, 2, 3]),
+        privateKey: new Uint8Array([4, 5, 6]),
+      },
+    },
+    { spaceId: space, userId: user },
+  ).catch((error) => String(error))
+  expect(refusal).toContain("sign back in as the account that owns this machine's key")
+  expect(refusal).toContain('machine config machine init --space alpha')
+  expect(refusal).toContain('machine config machine register --space alpha')
+  expect(refusal).toContain('machine config machine trust <keyId> <publicKey> --space alpha')
+  expect(refusal).not.toContain('machine config machine trust machine-key')
+  expect(refusal).not.toContain(space)
+})
