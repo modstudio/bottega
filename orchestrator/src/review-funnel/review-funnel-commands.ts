@@ -9,9 +9,9 @@ import {
   reviewFunnelPolicyAt,
   setReviewFunnelPolicy,
 } from './review-funnel-policy.ts'
+import { reviewFunnelRebaseCarryReport } from './review-funnel-rebase-carry-report.ts'
 import { replayReviewFunnelRows } from './review-funnel-replay.ts'
 import { reviewFunnelReport } from './review-funnel-report.ts'
-import { reviewFunnelRebaseCarryReport } from './review-funnel-rebase-carry-report.ts'
 import { reviewFunnelDecisionRows, reviewFunnelFindingRows } from './review-funnel-store.ts'
 
 type Flags = { has(name: string): boolean; flag(name: string): string | undefined }
@@ -41,7 +41,10 @@ export function reportReviewFunnelCommand(flags: Flags, { log }: Presentation): 
 
 export function rebaseCarryReviewFunnelCommand(flags: Flags, { log }: Presentation): void {
   const report = reviewFunnelRebaseCarryReport(db())
-  if (flags.has('json')) return log(JSON.stringify(report))
+  if (flags.has('json')) {
+    log(JSON.stringify(report))
+    return
+  }
   log(
     `Rebase changed-file re-owes: before=${report.before} after=${report.after} ` +
       `carried=${report.carried} unavailable=${report.unavailable} across ${report.rows} row(s).`,

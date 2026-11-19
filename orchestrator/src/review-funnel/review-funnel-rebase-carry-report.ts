@@ -17,7 +17,7 @@ export type RebaseCarryReportRow = {
   verdict: ReviewFunnelVerdict
 }
 
-export type RebaseCarryReportEntry = {
+type RebaseCarryReportEntry = {
   recordId: string
   project: string
   taskKey: string | null

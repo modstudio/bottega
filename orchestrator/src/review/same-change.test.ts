@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import {
-  exactHunks,
+  exactHunksIdentity,
   type SameChangeDecision,
   type SameChangeFacts,
   sameChange,
@@ -12,8 +12,8 @@ test('exact hunks include context but ignore moved line coordinates', () => {
   const reviewed = '@@ -2,3 +2,3 @@\n context\n-old\n+new\n context\n'
   const moved = '@@ -20,3 +20,3 @@\n context\n-old\n+new\n context\n'
   const changedContext = '@@ -20,3 +20,3 @@\n other context\n-old\n+new\n context\n'
-  expect(exactHunks(reviewed, moved)).toBe(true)
-  expect(exactHunks(reviewed, changedContext)).toBe(false)
+  expect(exactHunksIdentity(reviewed)).toBe(exactHunksIdentity(moved))
+  expect(exactHunksIdentity(reviewed)).not.toBe(exactHunksIdentity(changedContext))
 })
 
 const change = (zero: string | null, paths: string[] | null = ['src/a.ts'], patch = 'legacy') => ({

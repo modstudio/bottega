@@ -59,11 +59,6 @@ export function exactHunksIdentity(patch: string): string {
   return new Bun.CryptoHasher('sha256').update(hunks).digest('hex')
 }
 
-/** Whether two per-file patches have byte-identical hunks and context. */
-export function exactHunks(reviewedPatch: string, currentPatch: string): boolean {
-  return exactHunksIdentity(reviewedPatch) === exactHunksIdentity(currentPatch)
-}
-
 /** Turn one persisted change tuple into facts without letting malformed path data match. */
 export function storedChangeFacts(row: {
   patchId: string | null

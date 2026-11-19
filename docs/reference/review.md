@@ -16,6 +16,7 @@ review runs, lenses, tiers, and confinement
 - [bottega review funnel](#bottega-review-funnel)
 - [bottega review funnel help](#bottega-review-funnel-help)
 - [bottega review funnel policy](#bottega-review-funnel-policy)
+- [bottega review funnel rebase-carry](#bottega-review-funnel-rebase-carry)
 - [bottega review funnel replay](#bottega-review-funnel-replay)
 - [bottega review funnel report](#bottega-review-funnel-report)
 - [bottega review lens](#bottega-review-lens)
@@ -193,6 +194,7 @@ inspect and replay review-funnel decisions
 - [bottega review](./review.md#bottega-review)
 - [bottega review funnel help](./review.md#bottega-review-funnel-help)
 - [bottega review funnel policy](./review.md#bottega-review-funnel-policy)
+- [bottega review funnel rebase-carry](./review.md#bottega-review-funnel-rebase-carry)
 - [bottega review funnel replay](./review.md#bottega-review-funnel-replay)
 - [bottega review funnel report](./review.md#bottega-review-funnel-report)
 
@@ -215,6 +217,20 @@ show or set the global review-funnel policy
 ### Options
 
 - `--set <json-file>`: validate and set a policy JSON file
+
+### Related
+
+- [bottega review funnel](./review.md#bottega-review-funnel)
+
+## bottega review funnel rebase-carry
+
+**Synopsis:** `bottega review funnel rebase-carry [--json]`
+
+report past rebase changed-file re-owes under exact-hunks carry
+
+### Options
+
+- `--json`: write the report as JSON
 
 ### Related
 

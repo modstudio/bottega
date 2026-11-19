@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test'
+import { PLATFORM_NAME } from '../../../shared/brand.ts'
 import type { ReviewFunnelFacts, ReviewFunnelVerdict } from './decide-review-funnel.ts'
 import {
   type RebaseCarryReportRow,
@@ -9,7 +10,7 @@ const row = (taskKey: string, lenses: string[]): RebaseCarryReportRow => ({
   recordId: taskKey,
   facts: {
     change: {
-      project: 'bottega',
+      project: PLATFORM_NAME,
       taskKey,
       branch: taskKey,
       head: `head-${taskKey}`,
@@ -17,7 +18,7 @@ const row = (taskKey: string, lenses: string[]): RebaseCarryReportRow => ({
       pathSet: '[]',
       paths: [],
     },
-  } as ReviewFunnelFacts,
+  } as unknown as ReviewFunnelFacts,
   verdict: {
     lenses: lenses.map((lens) => ({ lens, status: 'owed', reason: 'rebase-changed-file' })),
   } as ReviewFunnelVerdict,
