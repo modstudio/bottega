@@ -36,6 +36,57 @@ export type SameChangeDecision = {
 const samePaths = (left: readonly string[], right: readonly string[]) =>
   JSON.stringify([...left].sort()) === JSON.stringify([...right].sort())
 
+/** Hash a single diff section by its content and metadata, independent of path and hunk offsets. */
+export function pathNeutralContentIdentity(section: string): string {
+  let header = true
+  const normalized = section
+    .split('\n')
+    .flatMap((line) => {
+      if (line.startsWith('@@')) {
+        header = false
+        return ['@@']
+      }
+      if (line === 'GIT binary patch') {
+        header = false
+        return [line]
+      }
+      if (line.startsWith('Binary files ')) {
+        header = false
+        return ['Binary files differ']
+      }
+      if (
+        header &&
+        (line.startsWith('diff --git ') ||
+          line.startsWith('index ') ||
+          line.startsWith('--- ') ||
+          line.startsWith('+++ ') ||
+          line.startsWith('rename from ') ||
+          line.startsWith('rename to ') ||
+          line.startsWith('copy from ') ||
+          line.startsWith('copy to '))
+      ) {
+        return []
+      }
+      return [line]
+    })
+    .join('\n')
+  return new Bun.CryptoHasher('sha256').update(normalized).digest('hex')
+}
+
+type ExactHunksPatch = { patchId: string; exactHunksId?: string }
+
+/** Compare contextual per-path patch identities; absent identities never match. */
+export function sameExactHunks(
+  reviewed: ExactHunksPatch | null | undefined,
+  current: ExactHunksPatch | null | undefined,
+): boolean {
+  return (
+    reviewed?.exactHunksId !== undefined &&
+    current?.exactHunksId !== undefined &&
+    reviewed.exactHunksId === current.exactHunksId
+  )
+}
+
 /** Turn one persisted change tuple into facts without letting malformed path data match. */
 export function storedChangeFacts(row: {
   patchId: string | null

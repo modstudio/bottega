@@ -34,6 +34,7 @@ import { scopeProposalReviewCommand } from '../review/review-scope-proposal-comm
 import { restoreReviewTriageCommand } from '../review/review-triage-restore.ts'
 import {
   policyReviewFunnelCommand,
+  rebaseCarryReviewFunnelCommand,
   replayReviewFunnelCommand,
   reportReviewFunnelCommand,
 } from '../review-funnel/review-funnel-commands.ts'
@@ -212,6 +213,13 @@ function registerReviewFunnel(review: Command, run: ReviewRunner): void {
     .option('--json', 'write the report as JSON')
     .action((_options, command) =>
       run(command, (_argv, flags, output) => reportReviewFunnelCommand(flags, output)),
+    )
+  funnel
+    .command('rebase-carry')
+    .description('report past rebase changed-file re-owes under exact-hunks carry')
+    .option('--json', 'write the report as JSON')
+    .action((_options, command) =>
+      run(command, (_argv, flags, output) => rebaseCarryReviewFunnelCommand(flags, output)),
     )
   funnel
     .command('replay')

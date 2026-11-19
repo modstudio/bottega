@@ -9,6 +9,7 @@ import {
   reviewFunnelPolicyAt,
   setReviewFunnelPolicy,
 } from './review-funnel-policy.ts'
+import { reviewFunnelRebaseCarryReport } from './review-funnel-rebase-carry-report.ts'
 import { replayReviewFunnelRows } from './review-funnel-replay.ts'
 import { reviewFunnelReport } from './review-funnel-report.ts'
 import { reviewFunnelDecisionRows, reviewFunnelFindingRows } from './review-funnel-store.ts'
@@ -36,6 +37,26 @@ export function reportReviewFunnelCommand(flags: Flags, { log }: Presentation): 
         `refusals_after_following_tier=${row.refusalsAfterFollowingTier} rounds=${JSON.stringify(row.roundsPerTier)} ` +
         `accepted=${JSON.stringify(row.acceptedFindingsPerRound)} unique=${JSON.stringify(row.uniqueFindingsPerRound)}`,
     )
+}
+
+export function rebaseCarryReviewFunnelCommand(flags: Flags, { log }: Presentation): void {
+  const report = reviewFunnelRebaseCarryReport(db())
+  if (flags.has('json')) {
+    log(JSON.stringify(report))
+    return
+  }
+  log(
+    `Rebase changed-file re-owes: before=${report.before} after=${report.after} ` +
+      `carried=${report.carried} unavailable=${report.unavailable} across ${report.rows} row(s).`,
+  )
+  for (const row of report.entries) {
+    const result = row.unavailable
+      ? `unavailable=${row.unavailable}`
+      : `after=${row.after!.join(',') || 'none'} carried=${row.carried!.join(',') || 'none'}`
+    log(
+      `${row.taskKey ?? row.recordId} ${row.head} before=${row.before?.join(',') ?? 'unavailable'} ${result}`,
+    )
+  }
 }
 
 function policyFile(path: string) {

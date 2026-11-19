@@ -1,11 +1,43 @@
 import { describe, expect, test } from 'bun:test'
 import {
+  pathNeutralContentIdentity,
   type SameChangeDecision,
   type SameChangeFacts,
   sameChange,
+  sameExactHunks,
   sameStoredChangeOrWitness,
   storedChangeFacts,
 } from './same-change.ts'
+
+test('exact hunks include context but ignore moved line coordinates', () => {
+  const reviewed = '@@ -2,3 +2,3 @@\n context\n-old\n+new\n context\n'
+  const moved = '@@ -20,3 +20,3 @@\n context\n-old\n+new\n context\n'
+  const changedContext = '@@ -20,3 +20,3 @@\n other context\n-old\n+new\n context\n'
+  expect(pathNeutralContentIdentity(reviewed)).toBe(pathNeutralContentIdentity(moved))
+  expect(pathNeutralContentIdentity(reviewed)).not.toBe(pathNeutralContentIdentity(changedContext))
+})
+
+test('mode-only exact hunks do not match an empty section', () => {
+  const modeOnly = 'diff --git a/script.sh b/script.sh\nold mode 100644\nnew mode 100755\n'
+  expect(pathNeutralContentIdentity(modeOnly)).not.toBe(pathNeutralContentIdentity(''))
+})
+
+test('exact hunk comparison requires both contextual identities to match', () => {
+  expect(
+    sameExactHunks(
+      { patchId: 'one', exactHunksId: 'same' },
+      { patchId: 'two', exactHunksId: 'same' },
+    ),
+  ).toBe(true)
+  expect(
+    sameExactHunks(
+      { patchId: 'same', exactHunksId: 'one' },
+      { patchId: 'same', exactHunksId: 'two' },
+    ),
+  ).toBe(false)
+  expect(sameExactHunks(undefined, { patchId: 'same', exactHunksId: 'same' })).toBe(false)
+  expect(sameExactHunks({ patchId: 'same', exactHunksId: 'same' }, null)).toBe(false)
+})
 
 const change = (zero: string | null, paths: string[] | null = ['src/a.ts'], patch = 'legacy') => ({
   patchId: patch,

@@ -356,6 +356,7 @@ export const PLATFORM_COMMAND_WORDS = [
   'review funnel',
   'review funnel help',
   'review funnel policy',
+  'review funnel rebase-carry',
   'review funnel replay',
   'review funnel report',
   'review lens',

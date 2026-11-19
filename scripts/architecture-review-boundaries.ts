@@ -136,6 +136,16 @@ export const reviewModuleSpecs = [
     typeOnlyAllowed: ['./decide-review-funnel.ts', './review-funnel-decision-log.ts'],
   },
   {
+    file: 'orchestrator/src/review-funnel/review-funnel-rebase-carry-report.ts',
+    allowed: [
+      '../project/projects.ts',
+      '../review/review-post-fix.ts',
+      '../review/review-target.ts',
+      './review-funnel-store.ts',
+    ],
+    typeOnlyAllowed: ['bun:sqlite', './decide-review-funnel.ts'],
+  },
+  {
     file: 'orchestrator/src/review-funnel/review-funnel-store.ts',
     allowed: ['../evidence/evidence-query.ts', '../review/review-evidence-sql.ts'],
     typeOnlyAllowed: ['bun:sqlite', './decide-review-funnel.ts', './review-funnel-report.ts'],
@@ -170,6 +180,7 @@ export const reviewModuleSpecs = [
       '../database/db.ts',
       './decide-review-funnel.ts',
       './review-funnel-policy.ts',
+      './review-funnel-rebase-carry-report.ts',
       './review-funnel-report.ts',
       './review-funnel-replay.ts',
       './review-funnel-store.ts',
@@ -424,6 +435,18 @@ export const reviewBoundarySpecs: ReviewBoundarySpec[] = [
     reason: 'Keep report policy pure over plain logged rows.',
   },
   {
+    name: 'review-funnel-rebase-carry-report-boundary',
+    file: 'orchestrator/src/review-funnel/review-funnel-rebase-carry-report.ts',
+    allowed: [
+      '../project/projects.ts',
+      '../review/review-post-fix.ts',
+      '../review/review-target.ts',
+      './review-funnel-store.ts',
+    ],
+    typeOnlyAllowed: ['bun:sqlite', './decide-review-funnel.ts'],
+    reason: 'Keep historical rebase measurement separate from the live carry decision.',
+  },
+  {
     name: 'review-funnel-store-boundary',
     file: 'orchestrator/src/review-funnel/review-funnel-store.ts',
     allowed: ['../evidence/evidence-query.ts', '../review/review-evidence-sql.ts'],
@@ -460,6 +483,7 @@ export const reviewBoundarySpecs: ReviewBoundarySpec[] = [
       '../database/db.ts',
       './decide-review-funnel.ts',
       './review-funnel-policy.ts',
+      './review-funnel-rebase-carry-report.ts',
       './review-funnel-report.ts',
       './review-funnel-replay.ts',
       './review-funnel-store.ts',
