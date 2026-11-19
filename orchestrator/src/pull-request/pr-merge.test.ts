@@ -635,6 +635,48 @@ test('an incomplete admission refuses with its review remedy without merging', a
   expect(merged).toBe(false)
 })
 
+test('a building admission refuses with the live-writer wait remedy without merging', async () => {
+  registerProject([])
+  recordPassingGate()
+  let merged = false
+  expect(
+    async () =>
+      await mergePullRequest(
+        '42',
+        cwd,
+        adapter({
+          admission: () => ({
+            change: {
+              branch: pullRequest.headBranch,
+              tip: pullRequest.headCommit,
+              base: 'base',
+              group: { patchId: 'patch' },
+              tier: 2,
+            } as PullRequestChange,
+            decision: {
+              kind: 'measured',
+              verdict: {
+                next: { action: 'wait-build' },
+                remedy: `${PLATFORM_SLUG} run wait run-writer`,
+              } as never,
+              complete: false,
+              overrideId: null,
+              overrideReason: null,
+              triage: { complete: true, snapshot: {} } as TriageDecision,
+            },
+          }),
+          merge: () => {
+            merged = true
+            return 'unexpected'
+          },
+        }),
+      ),
+  ).toThrow(
+    `refusing merge: review funnel requires wait-build\ncleared by: ${PLATFORM_SLUG} run wait run-writer\nthen ${PLATFORM_SLUG} pr merge 42`,
+  )
+  expect(merged).toBe(false)
+})
+
 test('an empty admission refuses merge with the pull-request remedy', async () => {
   registerProject([])
   recordPassingGate()

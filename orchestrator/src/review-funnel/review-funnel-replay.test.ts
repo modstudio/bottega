@@ -49,6 +49,49 @@ test('replaying logged facts through the active policy reports zero diffs', () =
   ).toEqual({ diffs: [], selectionNotExercised: [] })
 })
 
+test('replaying a live-writer verdict through the active policy reports zero diffs', () => {
+  const facts: ReviewFunnelFacts = {
+    stack: null,
+    change: {
+      project: PLATFORM_SLUG,
+      taskKey: 'DEV-2498',
+      branch: 'building-fixture',
+      head: 'head',
+      patchId: 'patch',
+      pathSet: '[]',
+      paths: [],
+    },
+    liveWriter: { runId: 'run-writer', number: 42 },
+    files: [],
+    review: undefined,
+    branchReviews: [],
+    postFix: { completed: null },
+    rounds: [],
+    currentRoundIdentity: null,
+    lensStates: [],
+    exactRead: true,
+    readCreditsRound: false,
+    ceilingRuling: false,
+    overriddenLenses: [],
+    triageComplete: true,
+    admissionGap: {
+      unfinishedReviewNumbers: [],
+      undisposedFindings: [],
+      missingLenses: [],
+      architectReadRequired: false,
+      nonLensGaps: [],
+    },
+    yieldCells: [],
+  }
+  const verdict = decideReviewFunnel(facts, DEFAULT_REVIEW_FUNNEL_POLICY, 'builtin')
+  expect(
+    replayReviewFunnelRows([{ recordId: 'building-decision', facts, verdict }], {
+      policy: DEFAULT_REVIEW_FUNNEL_POLICY,
+      policyVersion: 'builtin',
+    }),
+  ).toEqual({ diffs: [], selectionNotExercised: [] })
+})
+
 test('replay reports an evaluate verdict changed by enforced yield selection', () => {
   const facts: ReviewFunnelFacts = {
     stack: 'typescript',

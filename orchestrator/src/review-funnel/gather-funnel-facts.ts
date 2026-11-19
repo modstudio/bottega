@@ -41,6 +41,7 @@ import type {
   ReviewFunnelFacts,
   ReviewFunnelLensState,
   ReviewFunnelLensStatus,
+  ReviewFunnelLiveWriter,
   ReviewFunnelRoundFact,
 } from './decide-review-funnel.ts'
 import {
@@ -107,7 +108,7 @@ function liveWriter(
   database: Database,
   project: string,
   branch: string,
-): ReviewFunnelFacts['liveWriter'] {
+): ReviewFunnelLiveWriter | null {
   const rows = database
     .query<Omit<BranchConversationRow, 'writesRepo'>, [string, string]>(
       `SELECT record_id,number,parent_run_record_id,status,branch,job FROM run

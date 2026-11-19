@@ -49,6 +49,7 @@ import {
   type AdmissionWithTriage,
   admissionDecision,
   type EvaluatedAdmission,
+  funnelRefusal,
   type PullRequestAdmission,
   type PullRequestChange,
   recordMergeAdmission,
@@ -774,7 +775,10 @@ function collectMergeAdmission(
       number: pullRequest.number,
       complete: false,
       triageRefusal: triage.complete
-        ? `review funnel refused this change; cleared by: run ${PLATFORM_SLUG} review tier for the pull-request head`
+        ? funnelRefusal(
+            `review funnel requires ${checked.decision.verdict.next.action}`,
+            checked.decision.verdict,
+          )
         : triageRefusal(checked.change, triage),
     }),
   }

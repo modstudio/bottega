@@ -238,7 +238,7 @@ function emptyAdmission(
   }
 }
 
-function funnelRefusal(condition: string, verdict: ReviewFunnelVerdict): string {
+export function funnelRefusal(condition: string, verdict: ReviewFunnelVerdict): string {
   return renderRefusal(refusal(condition, { kind: 'edit', text: verdict.remedy }))
 }
 

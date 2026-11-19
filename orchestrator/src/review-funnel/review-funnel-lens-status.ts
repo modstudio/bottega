@@ -14,3 +14,5 @@ const REVIEW_FUNNEL_LENS_STATUSES = [
 ] as const
 
 export type ReviewFunnelLensStatus = (typeof REVIEW_FUNNEL_LENS_STATUSES)[number]
+
+export type ReviewFunnelLiveWriter = { runId: string; number: number }

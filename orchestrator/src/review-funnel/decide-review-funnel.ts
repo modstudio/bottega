@@ -28,11 +28,14 @@ import {
   type ReviewLensSelectionReason,
 } from '../review/review-vocabulary.ts'
 import { ceilingWaivableGaps } from './review-funnel-admission-evidence.ts'
-import type { ReviewFunnelLensStatus } from './review-funnel-lens-status.ts'
+import type { ReviewFunnelLensStatus, ReviewFunnelLiveWriter } from './review-funnel-lens-status.ts'
 import type { ReviewFunnelPolicy, ReviewFunnelPolicyMode } from './review-funnel-policy.ts'
 import type { ReviewFunnelYieldCell } from './review-funnel-yield.ts'
 
-export type { ReviewFunnelLensStatus } from './review-funnel-lens-status.ts'
+export type {
+  ReviewFunnelLensStatus,
+  ReviewFunnelLiveWriter,
+} from './review-funnel-lens-status.ts'
 
 type ReviewFunnelChangeIdentity = {
   project: string
@@ -60,7 +63,7 @@ export type ReviewFunnelRoundFact = {
 
 export type ReviewFunnelFacts = {
   change: ReviewFunnelChangeIdentity
-  liveWriter?: { runId: string; number: number } | null
+  liveWriter?: ReviewFunnelLiveWriter | null
   stack: string | null
   yieldCells?: ReviewFunnelYieldCell[]
   files: ReviewTierFile[]
@@ -97,7 +100,7 @@ export type ReviewFunnelVerdict = {
   policyVersion: string
   mode: ReviewFunnelPolicyMode
   change: ReviewFunnelChangeIdentity
-  liveWriter?: { runId: string; number: number }
+  liveWriter?: ReviewFunnelLiveWriter
   tier: {
     tier: 0 | 1 | 2 | 3
     risk: 0 | 1 | 2 | 3
