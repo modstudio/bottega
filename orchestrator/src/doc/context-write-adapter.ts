@@ -91,7 +91,12 @@ async function resolveTaskDocumentPointer(pointer: string): Promise<string> {
   try {
     const docs = await productionWorkflowTextDocumentPorts.list(key, PLATFORM_SLUG)
     if (docs.some((doc) => doc.reference === pointer)) return pointer
-    throw new ContextWriteRefusalError(`task document ${pointer} does not resolve`)
+    throw new ContextWriteRefusalError(
+      referenceNotVisibleRefusal(
+        `task ${key}`,
+        `pass a document number that \`${PLATFORM_SLUG} task doc list ${key}\` shows`,
+      ),
+    )
   } catch (error) {
     if (error instanceof ContextWriteRefusalError) throw error
     throw new Error(

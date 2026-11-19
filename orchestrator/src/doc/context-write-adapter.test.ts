@@ -3,6 +3,7 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { fixtureProjectRecordId, migratedTestDatabase } from '../database/test-database.fixture.ts'
 import { RecordApiRequestError } from '../record/record-api-client.ts'
+import { productionWorkflowTextDocumentPorts } from '../workflow/workflow-text-copy.ts'
 import { type PointerTargetPorts, resolvedPointerTarget } from './context-write-adapter.ts'
 
 function ports(document: PointerTargetPorts['document'] = async () => {}): PointerTargetPorts {
@@ -109,6 +110,22 @@ test('context pointers dispatch the workflow evidence forms through the shared p
       'reference is not visible in this project; no pull request #92 is recorded for this project; check the number',
     )
   database.close()
+})
+
+test('a missing task document keeps the not-visible refusal distinct', async () => {
+  const database = migratedTestDatabase()
+  const list = productionWorkflowTextDocumentPorts.list
+  productionWorkflowTextDocumentPorts.list = async () => [
+    { reference: 'DEV-2473/5', title: 'rulings' },
+  ]
+  try {
+    await expect(resolvedPointerTarget('DEV-2473/6', database)).rejects.toThrow(
+      'reference is not visible in task DEV-2473; pass a document number that `bottega task doc list DEV-2473` shows',
+    )
+  } finally {
+    productionWorkflowTextDocumentPorts.list = list
+    database.close()
+  }
 })
 
 test('an unreachable document store keeps the could-not-reach refusal distinct', async () => {
