@@ -8,6 +8,7 @@ import {
 } from '../focused-test/focused-test-decision.ts'
 import { mainCheckoutInvariant } from '../project/main-checkout-invariant.ts'
 import { mergeProjectSettings, parseSettingsPatch } from '../project/project-settings-patch.ts'
+import { developerNodeDoctorLines } from '../setup/developer-node.ts'
 import { acpRuntimeGaps } from '../transport/transport.ts'
 import {
   activeSpaceDoctorDiagnosis,
@@ -18,7 +19,6 @@ import {
   registeredMainCheckoutDiagnosis,
   reportActiveSpaceDoctor,
   reportCheckoutRegister,
-  reportDeveloperNodeDoctor,
   sandboxRuntimeDoctorLine,
   workerCheckDoctorFinding,
 } from './doctor.ts'
@@ -26,13 +26,14 @@ import {
 test('machine doctor renders an old checkout Node notice without changing the exit code', () => {
   const output: string[] = []
   const exitCodes: number[] = []
-  reportDeveloperNodeDoctor(
-    { log: (line) => output.push(line), exitCode: (code) => exitCodes.push(code) },
-    'checkout',
-    'v22.23.5',
-  )
+  const presentation = {
+    log: (line: string) => output.push(line),
+    exitCode: (code: number) => exitCodes.push(code),
+  }
+  for (const line of developerNodeDoctorLines('checkout', 'v22.23.5')) presentation.log(line)
   expect(output).toEqual([
-    "developer Node Node v22.23.5 is older than Node 24, which the gate's architecture checks need\n  install Node 24 or later",
+    "developer Node Node v22.23.5 is older than Node 24, which the gate's architecture checks need",
+    '  install Node 24 or later',
   ])
   expect(exitCodes).toEqual([])
 })

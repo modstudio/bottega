@@ -28,3 +28,11 @@ export function developerNodeNotice({
     fix: `install Node ${minimum} or later`,
   }
 }
+
+export function developerNodeDoctorLines(
+  installationKind: InstallationKind | null,
+  nodeVersion: string | null,
+): string[] {
+  const notice = developerNodeNotice({ installationKind, nodeVersion })
+  return notice ? [`developer Node ${notice.message}`, `  ${notice.fix}`] : []
+}

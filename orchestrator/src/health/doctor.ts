@@ -10,9 +10,9 @@ import {
   readMachineValue,
 } from '../../../shared/machine-config.ts'
 import { doctorAgentStatus } from '../agent/agent-auth.ts'
-import { captureCliVersion, capturedVersionOutput } from '../agent/cli-version.ts'
 import { AGENTS, type AgentRow, agentRows } from '../agent/agent-registry.ts'
 import { cliVersion, versionBelow } from '../agent/agents.ts'
+import { captureCliVersion, capturedVersionOutput } from '../agent/cli-version.ts'
 import { decideEffectiveEndpointApiKey, endpointApiKeyResolves } from '../agent/endpoint-api-key.ts'
 import {
   ensureLocalHealth,
@@ -67,7 +67,7 @@ import { runTaskReferenceDoctorLine } from '../run/run-task-linking.ts'
 import { type RuntimeAvailability, sandboxRuntimeAvailability } from '../sandbox/sandbox-runtime.ts'
 import { gwetAc1, quadraticWeightedKappa } from '../score/agreement.ts'
 import { DELIVERY, FIDELITY, QUALITY } from '../score/score.ts'
-import { developerNodeNotice } from '../setup/developer-node.ts'
+import { developerNodeDoctorLines } from '../setup/developer-node.ts'
 import { keepTreeHold } from '../worktree/keep-tree-hold.ts'
 import { worktreeDirty } from '../worktree/worktree-attribution.ts'
 import { lifecycleReportLines } from '../worktree/worktree-lifecycle.ts'
@@ -515,15 +515,6 @@ export function sandboxRuntimeDoctorLine(runtime: RuntimeAvailability): string {
       ].join('\n')
 }
 
-export function reportDeveloperNodeDoctor(
-  presentation: Pick<DoctorPresentation, 'log' | 'exitCode'>,
-  installationKind: InstallationKind | null,
-  nodeVersion: string | null,
-): void {
-  const notice = developerNodeNotice({ installationKind, nodeVersion })
-  if (notice) presentation.log(`developer Node ${notice.message}\n  ${notice.fix}`)
-}
-
 async function reportDatabaseStatus(log: DoctorPresentation['log']): Promise<void> {
   db()
   log(`database       ${DB_PATH}`)
@@ -555,11 +546,8 @@ async function reportInstallationStatus(
     exitCode(1)
   }
   const nodePath = Bun.which('node', { PATH: process.env.PATH })
-  reportDeveloperNodeDoctor(
-    presentation,
-    installationKind,
-    capturedVersionOutput(nodePath ? captureCliVersion(nodePath) : null),
-  )
+  const nodeVersion = capturedVersionOutput(nodePath ? captureCliVersion(nodePath) : null)
+  for (const line of developerNodeDoctorLines(installationKind, nodeVersion)) log(line)
   const launchAgents = await launchAgentDoctorReport(
     process.platform,
     undefined,
