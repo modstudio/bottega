@@ -40,6 +40,7 @@ export const recordTaskFlowModules: RecordModule[] = [
     '../project/project-relink.ts',
     '../question-store/question-store-mutation.ts',
     '../question-store/question-store.ts',
+    '../workflow/task-flow-store.ts',
     './install-binding.ts',
     './record-api-client.ts',
     './record-api-client-paths.ts',

@@ -303,7 +303,7 @@ test('an unmatched project refuses before repair or import', async () => {
   database.close()
 })
 
-test('flowless cursors are skipped without inventing a task flow', async () => {
+test('repair creates one keyless flow for every stage state and is idempotent', async () => {
   const database = migratedTestDatabase()
   database.exec('PRAGMA foreign_keys=OFF')
   const projectId = project(database, 'repair')
@@ -326,12 +326,29 @@ test('flowless cursors are skipped without inventing a task flow', async () => {
   const output: string[] = []
   const deps = dependencies(database, client)
   await uploadLocalWorkflowHistory([adoption('repair')], { log: (line) => output.push(line) }, deps)
-  expect(output).toContain('repair: uploaded 0 task flows, 0 stages, 0 questions')
-  expect(database.query('SELECT count(*) n FROM task_flow').get()).toEqual({ n: 0 })
+  await uploadLocalWorkflowHistory([adoption('repair')], { log: (line) => output.push(line) }, deps)
+  expect(output).toContain('repaired 4 unlinked local workflow stages')
+  expect(output).toContain('repaired 0 unlinked local workflow stages')
+  expect(
+    database
+      .query(
+        `SELECT cursor.state,flow.state flow_state,
+                COALESCE(flow.open_stage_cursor_record_id=cursor.record_id,0) is_open
+         FROM workflow_cursor cursor JOIN task_flow flow ON flow.record_id=cursor.task_flow_record_id
+         ORDER BY cursor.number`,
+      )
+      .all(),
+  ).toEqual([
+    { state: 'done', flow_state: 'done', is_open: 0 },
+    { state: 'abandoned', flow_state: 'dropped', is_open: 0 },
+    { state: 'running', flow_state: 'open', is_open: 1 },
+    { state: 'awaiting-ruling', flow_state: 'open', is_open: 1 },
+  ])
+  expect(database.query('SELECT count(*) n FROM task_flow').get()).toEqual({ n: 4 })
   database.close()
 })
 
-test('a keyed stage without a flow is skipped before any hosted write', async () => {
+test('a keyed stage without a flow refuses before any local or hosted write', async () => {
   const database = migratedTestDatabase()
   database.exec('PRAGMA foreign_keys=OFF')
   const projectId = project(database, 'keyed-orphan')
@@ -354,10 +371,14 @@ test('a keyed stage without a flow is skipped before any hosted write', async ()
       throw new Error('unexpected')
     },
   }
-  await uploadLocalWorkflowHistory(
-    [adoption('keyed-orphan')],
-    { log: () => undefined },
-    dependencies(database, client),
+  await expect(
+    uploadLocalWorkflowHistory(
+      [adoption('keyed-orphan')],
+      { log: () => undefined },
+      dependencies(database, client),
+    ),
+  ).rejects.toThrow(
+    'cursor 7 in project keyed-orphan has a task but no task flow; ask the architect to repair that task-flow link, then sign in again',
   )
   expect(sends).toBe(0)
   expect(database.serialize()).toEqual(before)
@@ -472,6 +493,15 @@ function syncClient(
 }
 
 const syncDestination = async () => ({ destinationSpaceId: 'space' })
+const absentPresence = async () => ({
+  obligationIds: [],
+  textIds: [],
+  textCopyIds: [],
+  questionAuditIds: [],
+  questionIds: [],
+  stageIds: [],
+  flowIds: [],
+})
 
 test('sync history does not call the network for an unbound store', async () => {
   const database = migratedTestDatabase()
@@ -543,6 +573,80 @@ test('sync history makes no import calls when every local id is present', async 
   )
   await uploadMissingWorkflowHistory(database, client, syncDestination)
   expect(imports).toBe(0)
+  database.close()
+})
+
+test('sync history repairs and imports one keyless flowless cursor', async () => {
+  const database = migratedTestDatabase()
+  database.exec('PRAGMA foreign_keys=OFF')
+  const projectId = project(database, 'sync-repair')
+  const stageId = stage(database, {
+    project: 'sync-repair',
+    projectId,
+    number: 1,
+    state: 'running',
+  })
+  bind(database)
+  const imports: Array<Parameters<NonNullable<RecordApiClient['importTaskFlow']>>[0]> = []
+  const client = syncClient(
+    absentPresence,
+    async () => {
+      throw new Error('unexpected question import')
+    },
+    async (input) => {
+      imports.push(input)
+      return { revisions: {}, stages: input.stages.map((row) => ({ id: row.id, number: 1 })) }
+    },
+  )
+  const result = await uploadMissingWorkflowHistory(database, client, syncDestination)
+  expect(result).toEqual({
+    failed: 0,
+    lines: ['repaired 1 unlinked local workflow stages'],
+  })
+  expect(imports).toHaveLength(1)
+  expect(imports[0]!.stages.map((row) => row.id)).toEqual([stageId])
+  expect(
+    database
+      .query<{ task_flow_record_id: string | null }, [string]>(
+        'SELECT task_flow_record_id FROM workflow_cursor WHERE record_id=?',
+      )
+      .get(stageId)?.task_flow_record_id,
+  ).toBe(imports[0]!.flow.id)
+  database.close()
+})
+
+test('sync history reports a keyed flowless repair skip and still imports an absent question', async () => {
+  const database = migratedTestDatabase()
+  database.exec('PRAGMA foreign_keys=OFF')
+  const projectId = project(database, 'sync-keyed-orphan')
+  stage(database, {
+    project: 'sync-keyed-orphan',
+    projectId,
+    number: 7,
+    state: 'running',
+    taskId: newRecordId(),
+  })
+  question(database, null, 9)
+  bind(database)
+  let questions = 0
+  let flows = 0
+  const client = syncClient(
+    absentPresence,
+    async (input) => {
+      questions += 1
+      return { id: input.question.id, number: 9, revision: 1, applied: true }
+    },
+    async () => {
+      flows += 1
+      return { revisions: {}, stages: [] }
+    },
+  )
+  const result = await uploadMissingWorkflowHistory(database, client, syncDestination)
+  expect(result.failed).toBe(0)
+  expect(result.lines).toEqual([
+    'workflow history stage repair skipped: cursor 7 in project sync-keyed-orphan has a task but no task flow; ask the architect to repair that task-flow link, then sign in again',
+  ])
+  expect({ questions, flows }).toEqual({ questions: 1, flows: 0 })
   database.close()
 })
 

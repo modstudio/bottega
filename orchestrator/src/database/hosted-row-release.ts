@@ -95,7 +95,7 @@ export function decideHostedRowRelease(
 function keptTableLine(table: HostedRowTable, ids: readonly string[]): string {
   const shown = ids.slice(0, HOSTED_ROW_RELEASE_SHOWN_IDS)
   const omitted = ids.length - shown.length
-  return `kept local ${table}: ${ids.length} ids absent from the record: ${shown.join(', ')}${omitted ? `, and ${omitted} more` : ''}; retry with ${PLATFORM_SLUG} record sign-in`
+  return `kept local ${table}: ${ids.length} ids absent from the record: ${shown.join(', ')}${omitted ? `, and ${omitted} more` : ''}; run ${PLATFORM_SLUG} record sync, then ${PLATFORM_SLUG} machine update`
 }
 
 type Presentation = { log(value: string): void }

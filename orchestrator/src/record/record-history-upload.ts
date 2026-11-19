@@ -11,6 +11,7 @@ import {
   unattributedLocalQuestionHistory,
 } from '../question-store/question-store.ts'
 import { questionSnapshotFromRow } from '../question-store/question-store-mutation.ts'
+import { taskFlowHistoryMaintenanceStore } from '../workflow/task-flow-store.ts'
 import { readRecordInstallBinding } from './install-binding.ts'
 import { type RecordApiClient, recordApiClient } from './record-api-client.ts'
 import type { RecordWriteDestination } from './record-api-client-paths.ts'
@@ -329,6 +330,8 @@ async function uploadDatabaseHistory(
   const personalDestination = personalQuestions.length
     ? await recordCall(() => dependencies.destination(null))
     : null
+  const repaired = taskFlowHistoryMaintenanceStore(database).repairUnlinkedKeylessStages()
+  presentation.log(`repaired ${repaired} unlinked local workflow stages`)
   const client = { ...dependencies.client, importTaskFlow, importQuestion }
   for (const project of projects)
     await uploadProjectHistory(
@@ -522,8 +525,15 @@ export async function uploadMissingWorkflowHistory(
       failed: 0,
       lines: ['workflow history upload skipped: record API lacks presence or import support'],
     }
+  const repairLines: string[] = []
+  try {
+    const repaired = taskFlowHistoryMaintenanceStore(database).repairUnlinkedKeylessStages()
+    if (repaired > 0) repairLines.push(`repaired ${repaired} unlinked local workflow stages`)
+  } catch (cause) {
+    repairLines.push(`workflow history stage repair skipped: ${errorMessage(cause)}`)
+  }
   const state = collectHostedRowState(database)
-  if (hostedRowIdsAreEmpty(state.ids)) return { failed: 0, lines: [] }
+  if (hostedRowIdsAreEmpty(state.ids)) return { failed: 0, lines: repairLines }
   const capable = client as SyncClient
   let present: PresentHistory
   try {
@@ -531,7 +541,10 @@ export async function uploadMissingWorkflowHistory(
   } catch (cause) {
     return {
       failed: 0,
-      lines: [`workflow history upload skipped: presence read failed: ${errorMessage(cause)}`],
+      lines: [
+        ...repairLines,
+        `workflow history upload skipped: presence read failed: ${errorMessage(cause)}`,
+      ],
     }
   }
   const projects: HistorySyncResult[] = []
@@ -540,6 +553,7 @@ export async function uploadMissingWorkflowHistory(
       await uploadProjectMissingHistory(database, project, present, capable, destinationFor),
     )
   return combineHistoryResults(
+    { failed: 0, lines: repairLines },
     ...projects,
     await uploadPersonalMissingHistory(database, present, capable, destinationFor),
   )

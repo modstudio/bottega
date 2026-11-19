@@ -303,7 +303,10 @@ test('hosted row release keeps one incomplete audit table and its question', asy
     workflow_cursor: 0,
     task_flow: 0,
   })
-  expect(output[0]).toContain(missingAudit)
+  expect(output).toEqual([
+    `kept local question_mutation_audit: 1 ids absent from the record: ${missingAudit}; run bottega record sync, then bottega machine update`,
+    'released 5 local workflow history rows now on the record',
+  ])
   database.close()
 })
 

@@ -2,7 +2,10 @@
 /** Applies the hosted record's task-flow intent vocabulary to the local-only store. */
 
 import type { Database, SQLQueryBindings } from 'bun:sqlite'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
+import { writeTransaction } from '../database/db.ts'
+import { isClosedStageState, isOpenStageState } from '../record/record-task-flow-contract.ts'
 import {
   type TaskFlowIntentInput,
   type TaskFlowIntentResult,
@@ -182,6 +185,78 @@ function insertFlow(database: Database, row: SqlRow, revisionValue: number): voi
       row.updatedMachineId,
       revisionValue,
     )
+}
+
+type UnlinkedCursor = {
+  record_id: string
+  number: number
+  project: string
+  project_record_id: string
+  task_record_id: string | null
+  state: string
+  created_at: string
+  updated_at: string
+  opened_machine_id: string | null
+  last_advanced_machine_id: string | null
+}
+
+function requiredCursorMachine(value: string | null, cursor: number, role: string): string {
+  if (value) return value
+  throw new Error(
+    `cursor ${cursor} ${role} machine is missing; run \`${PLATFORM_SLUG} machine doctor\`, then retry`,
+  )
+}
+
+/** Repairs pre-task-flow keyless stages as one workflow-owned maintenance write. */
+export function repairUnlinkedKeylessStagesSqlite(database: Database): number {
+  const rows = database
+    .query<UnlinkedCursor, []>(
+      `SELECT record_id,number,project,project_record_id,task_record_id,state,created_at,updated_at,
+              opened_machine_id,last_advanced_machine_id
+       FROM workflow_cursor WHERE task_flow_record_id IS NULL ORDER BY project_record_id,number`,
+    )
+    .all()
+  const keyed = rows.find((row) => row.task_record_id !== null)
+  if (keyed)
+    throw new Error(
+      `cursor ${keyed.number} in project ${keyed.project} has a task but no task flow; ask the architect to repair that task-flow link, then sign in again`,
+    )
+  const unknown = rows.find((row) => !isOpenStageState(row.state) && !isClosedStageState(row.state))
+  if (unknown)
+    throw new Error(
+      `cursor ${unknown.number} in project ${unknown.project} has unknown state ${unknown.state}; repair that workflow stage, then sign in again`,
+    )
+  return writeTransaction(() => {
+    for (const row of rows) {
+      const flowId = newRecordId()
+      const open = isOpenStageState(row.state)
+      insertFlow(
+        database,
+        {
+          id: flowId,
+          taskId: null,
+          projectId: row.project_record_id,
+          state: open ? 'open' : row.state === 'done' ? 'done' : 'dropped',
+          openStageRecordId: open ? row.record_id : null,
+          createdAt: row.created_at,
+          updatedAt: row.updated_at,
+          openingMachineId: requiredCursorMachine(row.opened_machine_id, row.number, 'opening'),
+          updatedMachineId: requiredCursorMachine(
+            row.last_advanced_machine_id,
+            row.number,
+            'updated',
+          ),
+        },
+        1,
+      )
+      database
+        .query(
+          'UPDATE workflow_cursor SET task_flow_record_id=? WHERE record_id=? AND task_flow_record_id IS NULL',
+        )
+        .run(flowId, row.record_id)
+    }
+    return rows.length
+  }, database)
 }
 
 function nextCursorNumber(database: Database, projectRecordId: string): number {
