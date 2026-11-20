@@ -24,7 +24,6 @@ export const hubModuleSpecs = [
     allowed: [
       'node:fs',
       '../../shared/brand.ts',
-      '../../shared/record-call-trace.ts',
       '../../shared/install-root.ts',
       '../../shared/orch-contract.ts',
       '../../shared/process-identity.ts',
@@ -304,6 +303,7 @@ export const hubModuleSpecs = [
     file: 'hub/src/hosted-route-identity.ts',
     allowed: [
       '../../shared/brand.ts',
+      '../../shared/record-call-trace.ts',
       '../../shared/record-request-headers.ts',
       '../../shared/record-no-destination-write-contract.ts',
       '../../shared/record-no-destination-write-counter.ts',

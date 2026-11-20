@@ -3,7 +3,7 @@
 
 import { PLATFORM_SLUG } from './brand.ts'
 
-export const RECORD_TRACE_ENV = `${PLATFORM_SLUG.toUpperCase()}_RECORD_TRACE`
+const RECORD_TRACE_ENV = `${PLATFORM_SLUG.toUpperCase()}_RECORD_TRACE`
 
 export type RecordCallTrace = {
   routeClass: string
@@ -199,7 +199,7 @@ export function formatRecordCallSummary(calls: readonly RecordCallTrace[]): stri
   return [...summaries, combineSummaries(summaries)].map(summaryLine)
 }
 
-export function formatRecordCall(call: RecordCallTrace): string {
+function formatRecordCall(call: RecordCallTrace): string {
   return [
     'record-trace-call',
     `route=${call.routeClass}`,
@@ -212,7 +212,7 @@ export function formatRecordCall(call: RecordCallTrace): string {
   ].join(' ')
 }
 
-export function recordRecordCallTrace(call: RecordCallTrace): void {
+function recordRecordCallTrace(call: RecordCallTrace): void {
   traceState.attempts += 1
   if (!configuredMode) return
   recordedCalls.push(call)

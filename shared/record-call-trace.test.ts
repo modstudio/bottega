@@ -81,7 +81,7 @@ test('traced record fetch captures the request and response measurements', async
       new Response('body', {
         status: 201,
         headers: { 'content-length': '4', 'server-timing': 'app;dur=2.5' },
-      })) as typeof fetch,
+      })) as unknown as typeof fetch,
     (call) => calls.push(call),
   )
 
