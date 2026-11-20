@@ -1,5 +1,13 @@
 import { describe, expect, test } from 'bun:test'
-import { codexWritableRoots, decideCodexSandbox } from './codex-sandbox.ts'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import {
+  CODEX_PERMISSION_PROFILE,
+  codexPermissionProfileArgs,
+  codexPermissionProfileInput,
+  codexPermissionWritableRoots,
+  codexWritableRoots,
+  decideCodexSandbox,
+} from './codex-sandbox.ts'
 
 describe('Codex sandbox decision', () => {
   test('workspace-write never opens network access for Docker', () => {
@@ -10,14 +18,149 @@ describe('Codex sandbox decision', () => {
   })
 })
 
-test('native writable roots include temporary directories once', () => {
+test('repository writable roots include temporary directories once', () => {
   expect(
-    codexWritableRoots('workspace-write', '/run/tree', ['/run/scratch'], '/private/tmp'),
+    codexWritableRoots('workspace-write', '/run/tree', ['/run/scratch'], '/private/tmp', true),
   ).toEqual(['/run/tree', '/run/scratch', '/tmp', '/private/tmp'])
-  expect(codexWritableRoots('workspace-write', '/run/tree', ['/tmp'], '/tmp')).toEqual([
+  expect(codexWritableRoots('workspace-write', '/run/tree', ['/tmp'], '/tmp', true)).toEqual([
     '/run/tree',
     '/tmp',
   ])
-  expect(codexWritableRoots('read-only', '/run/tree', [], '/tmp')).toBeNull()
-  expect(codexWritableRoots('danger-full-access', '/run/tree', [], '/tmp')).toBeNull()
+  expect(codexWritableRoots('read-only', '/run/tree', [], '/tmp', true)).toBeNull()
+  expect(codexWritableRoots('danger-full-access', '/run/tree', [], '/tmp', true)).toBeNull()
+})
+
+test('non-repository writable roots exclude shared temporary directories', () => {
+  expect(
+    codexWritableRoots(
+      'workspace-write',
+      '/run/isolate',
+      ['/run/isolate/scratch'],
+      '/private/tmp',
+      false,
+    ),
+  ).toEqual(['/run/isolate', '/run/isolate/scratch'])
+})
+
+test('permission input gives readers exactly the shared write roots and preserves writer roots', () => {
+  const profile = {
+    network: {
+      allowedDomains: [],
+      deniedDomains: [],
+      allowUnixSockets: [],
+      allowLocalBinding: false,
+    },
+    filesystem: {
+      denyRead: ['/state'],
+      allowWithinDeny: ['/run'],
+      allowWrite: ['/run/runtime', '/run/scratch'],
+      denyWrite: [],
+    },
+  }
+  const launch = {
+    profile,
+    sandbox: 'workspace-write' as const,
+    cwd: '/run/tree',
+    writableRoots: ['/run/scratch'],
+    tempDir: '/private/tmp/codex-run',
+  }
+
+  const readerRoots = codexPermissionWritableRoots({ ...launch, writesRepository: false })
+  expect(readerRoots).toEqual(['/run/runtime', '/run/scratch'])
+  expect(
+    codexPermissionProfileInput({
+      profile,
+      cwd: launch.cwd,
+      writableRoots: readerRoots,
+      directoryListings: {},
+    }).writableRoots,
+  ).toEqual(readerRoots)
+  const writerRoots = codexPermissionWritableRoots({ ...launch, writesRepository: true })
+  expect(writerRoots).toEqual(['/run/tree', '/run/scratch', '/tmp', '/private/tmp/codex-run'])
+  expect(
+    codexPermissionProfileInput({
+      profile,
+      cwd: launch.cwd,
+      writableRoots: writerRoots,
+      directoryListings: {},
+    }).writableRoots,
+  ).toEqual(writerRoots)
+})
+
+describe('Codex permission profile', () => {
+  const args = (network = false, writableRoots = ['/projects/own/tree', '/state/run/scratch']) =>
+    codexPermissionProfileArgs({
+      filesystem: {
+        denyRead: ['/projects/sibling', '/state', '/projects/own/declared.secret'],
+        allowRead: ['/projects/own/tree', '/state/run', '/runtime/assets'],
+        denyWrite: [],
+      },
+      writableRoots,
+      network,
+    })
+
+  test('maps the shared read profile and current writable roots', () => {
+    expect(args()).toEqual([
+      '-c',
+      `default_permissions="${PLATFORM_SLUG}"`,
+      '-c',
+      `permissions.${PLATFORM_SLUG}.filesystem={":root"="read","/projects/own/tree"="write","/state/run"="read","/runtime/assets"="read","/state/run/scratch"="write","/projects/sibling"="deny","/state"="deny","/projects/own/declared.secret"="deny"}`,
+    ])
+  })
+
+  test('write denies override broader writable roots while preserving read denies', () => {
+    const rendered = codexPermissionProfileArgs({
+      filesystem: {
+        denyRead: ['/tmp/secret'],
+        allowRead: [],
+        denyWrite: ['/tmp/readonly', '/tmp/secret'],
+      },
+      writableRoots: ['/tmp'],
+      network: false,
+    }).find((arg) => arg.startsWith(`permissions.${PLATFORM_SLUG}.filesystem=`))
+    expect(rendered).toContain('"/tmp"="write"')
+    expect(rendered).toContain('"/tmp/readonly"="read"')
+    expect(rendered).toContain('"/tmp/secret"="deny"')
+  })
+
+  test('network is emitted only when the run enables it', () => {
+    expect(args()).not.toContain(`permissions.${CODEX_PERMISSION_PROFILE}.network.enabled=true`)
+    expect(args(true)).toContain(`permissions.${CODEX_PERMISSION_PROFILE}.network.enabled=true`)
+  })
+
+  test('translation refuses a glob deny with a rebuild remedy', () => {
+    const profile = {
+      network: {
+        allowedDomains: [],
+        deniedDomains: [],
+        allowUnixSockets: [],
+        allowLocalBinding: false,
+      },
+      filesystem: {
+        denyRead: ['/projects/own/.claude/worktrees/*'],
+        allowWithinDeny: ['/projects/own/.claude/worktrees/own'],
+        allowWrite: [],
+        denyWrite: [],
+      },
+    }
+    const cwd = '/projects/own/.claude/worktrees/own'
+    const writableRoots = codexPermissionWritableRoots({
+      profile,
+      sandbox: 'workspace-write',
+      cwd,
+      writableRoots: [],
+      tempDir: '/tmp/run',
+      writesRepository: true,
+    })
+    expect(() =>
+      codexPermissionProfileInput({
+        profile,
+        cwd,
+        writableRoots,
+        directoryListings: {
+          '/projects/own/.claude/worktrees': ['own'],
+        },
+      }),
+    ).toThrow('rebuild the Codex profile from the current worktree-root directory listing')
+  })
 })

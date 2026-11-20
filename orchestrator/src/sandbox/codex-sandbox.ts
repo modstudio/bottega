@@ -5,9 +5,66 @@
  * they must not probe the vendor.
  */
 
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { type CodexDirectoryListing, decideCodexLiteralDenyRead } from './codex-deny-policy.ts'
+import type { SandboxRuntimeConfig } from './sandbox.ts'
+
 export type CodexSandboxRuling = {
   sandbox: 'read-only' | 'workspace-write'
   workspaceWriteNetworkAccess: boolean
+}
+
+export type CodexPermissionFilesystem = {
+  denyRead: readonly string[]
+  allowRead: readonly string[]
+  denyWrite: readonly string[]
+}
+
+export type CodexPermissionProfileInput = {
+  filesystem: CodexPermissionFilesystem
+  writableRoots: string[]
+}
+
+export const CODEX_PERMISSION_PROFILE = PLATFORM_SLUG
+
+function tomlString(value: string): string {
+  return JSON.stringify(value)
+}
+
+const GLOB_CHARACTER = /[*?[]/
+
+function refuseGlobDeny(paths: readonly string[]): void {
+  const glob = paths.find((path) => GLOB_CHARACTER.test(path))
+  if (!glob) return
+  throw new Error(
+    `codex permission profile refusal: deny path ${glob} contains a glob character; rebuild the Codex profile from the current worktree-root directory listing`,
+  )
+}
+
+/** Render the native Codex permission profile from the shared read policy and current write roots. */
+export function codexPermissionProfileArgs(input: {
+  filesystem: CodexPermissionFilesystem
+  writableRoots: readonly string[]
+  network: boolean
+}): string[] {
+  const permissions = new Map<string, 'read' | 'write' | 'deny'>([[':root', 'read']])
+  for (const path of input.filesystem.allowRead) permissions.set(path, 'read')
+  for (const path of input.writableRoots) permissions.set(path, 'write')
+  for (const path of input.filesystem.denyWrite) permissions.set(path, 'read')
+  // Codex resolves a more specific entry first and deny wins at equal specificity.
+  for (const path of input.filesystem.denyRead) permissions.set(path, 'deny')
+  const filesystem = [...permissions]
+    .map(([path, access]) => `${tomlString(path)}=${tomlString(access)}`)
+    .join(',')
+  return [
+    '-c',
+    `default_permissions=${tomlString(CODEX_PERMISSION_PROFILE)}`,
+    '-c',
+    `permissions.${CODEX_PERMISSION_PROFILE}.filesystem={${filesystem}}`,
+    ...(input.network
+      ? ['-c', `permissions.${CODEX_PERMISSION_PROFILE}.network.enabled=true`]
+      : []),
+  ]
 }
 
 /** Decide Codex's native sandbox separately from the srt/host outer seam. */
@@ -22,11 +79,50 @@ export function decideCodexSandbox(): CodexSandboxRuling {
 export function codexWritableRoots(
   sandbox: CodexSandboxRuling['sandbox'] | 'danger-full-access',
   cwd: string,
-  extraRoots: string[],
+  extraRoots: readonly string[],
   tmpDir: string | undefined,
+  repository: boolean,
 ): string[] | null {
   if (sandbox !== 'workspace-write') return null
-  return [...new Set([cwd, ...extraRoots, '/tmp', tmpDir ?? '/tmp'])]
+  return [...new Set([cwd, ...extraRoots, ...(repository ? ['/tmp', tmpDir ?? '/tmp'] : [])])]
+}
+
+/** Select the writable roots for one Codex permission-profile launch. */
+export function codexPermissionWritableRoots(input: {
+  profile: SandboxRuntimeConfig
+  sandbox: CodexSandboxRuling['sandbox'] | 'danger-full-access'
+  cwd: string
+  writableRoots: readonly string[]
+  tempDir: string | undefined
+  writesRepository: boolean
+}): string[] {
+  return input.writesRepository
+    ? (codexWritableRoots(input.sandbox, input.cwd, input.writableRoots, input.tempDir, true) ?? [])
+    : [...input.profile.filesystem.allowWrite]
+}
+
+/** Translate one shared runtime profile and its already-selected writable roots for Codex. */
+export function codexPermissionProfileInput(input: {
+  profile: SandboxRuntimeConfig
+  cwd: string
+  writableRoots: readonly string[]
+  directoryListings: CodexDirectoryListing
+  opaquePaths?: readonly string[]
+}): CodexPermissionProfileInput {
+  refuseGlobDeny(input.profile.filesystem.denyRead)
+  return {
+    filesystem: {
+      denyRead: decideCodexLiteralDenyRead({
+        denyRead: input.profile.filesystem.denyRead,
+        protectedPaths: [input.cwd, ...input.writableRoots],
+        directoryListings: input.directoryListings,
+        opaquePaths: input.opaquePaths,
+      }),
+      allowRead: input.profile.filesystem.allowWithinDeny,
+      denyWrite: input.profile.filesystem.denyWrite,
+    },
+    writableRoots: [...input.writableRoots],
+  }
 }
 
 /**
