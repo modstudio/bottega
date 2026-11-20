@@ -49,5 +49,6 @@ export const continueCommandDefinition = (program: Command): Command =>
       .option('--follow', 'wait for the continuation and print its result')
       .option('--detach', 'return after starting the continuation')
       .option('--quiet', 'suppress collection guidance and followed output')
+      .option('--cursor <number>', 'select the held workflow cursor for this keyed continuation')
       .option('--findings', 'include prior review findings in the continuation'),
   )

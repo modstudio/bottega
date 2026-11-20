@@ -19,6 +19,13 @@ import {
   gateFloorRefusal,
   type PassingGateForTree,
 } from './workflow-floor-refusal.ts'
+import {
+  type DispatchWaiverFact,
+  dispatchObligationRefusal,
+  judgingObligationRefusal,
+  type StepRunObligation,
+  type WorkflowRunChainEvidence,
+} from './workflow-run-obligation.ts'
 
 type TrackerStateCategory = 'backlog' | 'open' | 'active' | 'review' | 'done' | 'dropped'
 type TrackerStates = Record<string, TrackerStateCategory>
@@ -154,6 +161,9 @@ export type ValidatedEvidence = {
   deferReason?: string
   satisfy?: ValidatedSatisfy
   tree?: { project: string; worktree?: string | null; commit: string | null }
+  dispatchRuns?: WorkflowRunChainEvidence[]
+  judgedRuns?: WorkflowRunChainEvidence[]
+  metDispatchWaiverFacts?: DispatchWaiverFact[]
 }
 
 export const isOperatorRulingFloor = (floor: Pick<Floor, 'kind' | 'operatorRuling'>): boolean =>
@@ -186,6 +196,8 @@ export type FloorSatisfactionInput = {
   openObligations: OpenObligation[]
   freshRulingAfter?: string
   cursorTakeoverRemedy?: string
+  workflowKey?: string
+  step?: StepRunObligation
 }
 
 export function flagForFloor(kind: FloorKind): string {
@@ -1011,6 +1023,18 @@ export function decideFloorSatisfaction(input: FloorSatisfactionInput): FloorDec
   const met = input.floors.filter((floor) =>
     floorIsMet(floor, input.evidence, input.freshRulingAfter),
   )
+  const obligationInput = {
+    workflowKey: input.workflowKey,
+    selectedFloors: input.floors.map((floor) => floor.kind),
+    metWaiverFacts: input.evidence.metDispatchWaiverFacts ?? [],
+    step: input.step,
+    dispatchRuns: input.evidence.dispatchRuns,
+    judgedRuns: input.evidence.judgedRuns,
+  }
+  const dispatchRefusal = dispatchObligationRefusal(obligationInput)
+  if (dispatchRefusal) return { action: 'refuse', message: dispatchRefusal }
+  const judgingRefusal = judgingObligationRefusal(obligationInput)
+  if (judgingRefusal) return { action: 'refuse', message: judgingRefusal }
   const commandFailure = commandExitFailureRefusal(input.floors, input.evidence, met)
   if (commandFailure) return { action: 'refuse', message: commandFailure }
   const bindingRefusal = input.evidence.artifacts

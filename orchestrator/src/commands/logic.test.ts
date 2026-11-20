@@ -241,7 +241,7 @@ test('continue admits the later turn and records an attributed override on its c
     continueCommandDependencies: {
       admitKeyedTurn: async (input) => {
         admissions.push(input)
-        return 'operator override warning'
+        return { warning: 'operator override warning', binding: undefined }
       },
       continueRun: async () => ({ childId: 'child-record-id', job: 'implement' }),
       reportContinuedRun: async () => {},

@@ -255,7 +255,7 @@ export const runLifecycleBoundarySpecs: ImportBoundary[] = [
       '../../../shared/brand.ts',
       '../collect/collect.ts',
       '../database/db.ts',
-      '../evidence/evidence-query.ts',
+      '../evidence/pending-score-sql.ts',
       '../outcome.ts',
       '../events.ts',
       '../idle-kill.ts',

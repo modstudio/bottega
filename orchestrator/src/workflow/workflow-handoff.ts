@@ -88,6 +88,7 @@ async function validateHandoffSourceFloor(input: HandoffInput, d: Database) {
     await applyFloorDecision(
       input.row,
       floors,
+      step,
       input.evidence ?? {},
       input.floorPorts ?? productionWorkflowFloorPorts(),
       true,

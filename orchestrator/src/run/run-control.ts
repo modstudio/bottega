@@ -65,6 +65,11 @@ export type RunControlPresentation = {
   printRunId(id: string): void
 }
 
+type ContinueRunDependencies = {
+  renewTaskClaim?: RenewTaskClaim
+  binding?: { cursorRecordId: string; stepSlug: string }
+}
+
 export type HarnessHandoff = {
   run: number
   record_id: string
@@ -511,17 +516,18 @@ function continuationLaunch(
   id: string,
   treeDecision: ContinuationTreeDecision,
   writesRepo: boolean,
-  project: Project | null,
-): ResumeLaunchOptions {
+  context: { project: Project | null; binding: ContinueRunDependencies['binding'] },
+): ResumeLaunchOptions & { binding?: ContinueRunDependencies['binding'] } {
   return {
     ...inherited,
+    binding: context.binding,
     lensInputs: continuationLensInputs(id),
     seed: requireContinuationProvision({
       rootId: id,
       treeDecision,
       recordedSeed: inherited.seed,
       writesRepo,
-      project,
+      project: context.project,
     }).seed,
   }
 }
@@ -710,7 +716,7 @@ export async function continueRun(
   message: string | undefined,
   argvResumeLimit: RunControlPresentation['argvResumeLimit'],
   produceMessage?: () => string | undefined,
-  dependencies: { renewTaskClaim?: RenewTaskClaim } = {},
+  dependencies: ContinueRunDependencies = {},
 ): Promise<{ childId: string; job: string }> {
   let authority = authorizeRunMutation(id, 'continue')
   const row = db()
@@ -817,7 +823,7 @@ export async function continueRun(
     id,
     treeDecision,
     Boolean(jobNeeds.writesRepo),
-    project,
+    { project, binding: dependencies.binding },
   )
   const prompt = continuationPrompt(id, row.job, checkpoint, continuationMessage)
   await refuseOversizedResumePrompt({

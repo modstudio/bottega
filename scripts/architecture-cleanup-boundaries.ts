@@ -77,7 +77,7 @@ export const cleanupBoundarySpecs = [
       '../config/display-timezone-cache.ts',
       '../close/close-out-in-flight.ts',
       '../database/db.ts',
-      '../evidence/evidence-query.ts',
+      '../evidence/pending-score-sql.ts',
       '../landing-tree/landing-tree.ts',
       '../run/question-inbox-counts.ts',
       '../run/run-status.ts',
@@ -277,7 +277,7 @@ export const cleanupBoundarySpecs = [
     file: 'orchestrator/src/session/resume-handoff-selection.ts',
     allowed: [
       'bun:sqlite',
-      '../evidence/evidence-query.ts',
+      '../evidence/pending-score-sql.ts',
       './session-close-out.ts',
       './session-close-out-decision.ts',
     ],

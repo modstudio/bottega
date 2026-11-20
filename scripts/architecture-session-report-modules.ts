@@ -15,7 +15,7 @@ export const sessionReportModules: SessionReportModule[] = [
   module('orchestrator/src/session-report/session-report-adapter.ts', [
     'bun:sqlite',
     '../database/db.ts',
-    '../evidence/evidence-query.ts',
+    '../evidence/pending-score-sql.ts',
     '../record/record-write-authority.ts',
     '../run/question-open.ts',
     '../workflow/task-flow-store.ts',

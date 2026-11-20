@@ -1,10 +1,13 @@
 import { expect, test } from 'bun:test'
+import { EventEmitter } from 'node:events'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
+import { db } from '../database/db.ts'
 import { job } from '../jobs/jobs.ts'
 import { resolveLens } from '../lens/lenses.ts'
 import { upsertProject } from '../project/projects.ts'
 import { sha } from '../run/prompt-sha.ts'
+import { detach as detachRun } from '../run/run-dispatch.ts'
 import { SPEC_UNSETTLED_QUESTION } from '../typed-question/spec-unsettled-question.ts'
 import {
   composeDispatchPrompt,
@@ -17,6 +20,101 @@ import {
   validateContinueBranchOptions,
   warnForUnsettledSpec,
 } from './dispatch-commands.ts'
+import { harnessCursorAdapter } from './keyed-run-cursor-admission-adapter.ts'
+
+test('a keyed run-start dispatch under a held cursor writes its current step binding', async () => {
+  const project = `cursor-binding-${newRecordId()}`
+  const projectId = newRecordId()
+  const cursorRecordId = newRecordId()
+  const harnessSession = `cursor-session-${newRecordId()}`
+  upsertProject({ recordId: projectId, name: project, path: import.meta.dir })
+  db().exec('PRAGMA foreign_keys=OFF')
+  db()
+    .query(
+      `INSERT INTO workflow_cursor
+        (record_id,number,project,project_record_id,workflow_slug,mode_slug,workflow_key,instance_id,
+         session_id,workflow_version_record_id,catalogue_version_record_id,args,ordinal,step_slug,state,
+         closed,total_steps,created_at,updated_at,revision)
+       VALUES (?,77123,?,?,'fix-defect','default','DEV-2496','',?, ?,?,'{}',3,'implement-fix',
+               'running','[]',7,'2026-11-20','2026-11-20',1)`,
+    )
+    .run(cursorRecordId, project, projectId, harnessSession, newRecordId(), newRecordId())
+  db().exec('PRAGMA foreign_keys=ON')
+  process.env.CLAUDE_CODE_SESSION_ID = harnessSession
+  const spawnCoordinator = (() => {
+    const child = new EventEmitter() as EventEmitter & { pid: number; unref(): void }
+    child.pid = process.pid
+    child.unref = () => {}
+    queueMicrotask(() => child.emit('spawn'))
+    return child
+  }) as never
+  let runId: string | null = null
+  try {
+    await dispatchCommand(
+      ['do', 'understand'],
+      {
+        has: (name) => ['key', 'porcelain'].includes(name),
+        flag: (name) => (name === 'key' ? 'DEV-2496' : name === 'repo' ? project : undefined),
+        values: () => [],
+      },
+      {
+        usage: () => {
+          throw new Error('unexpected usage')
+        },
+        doUsage: () => {
+          throw new Error('unexpected do usage')
+        },
+        error: () => {},
+        readPrompt: async () => 'Read the current implementation.',
+        askTypedQuestion: async () => null,
+        specIdentity: () => 'binding-test',
+        validateSchema: () => {},
+        warnCallerDrift: () => {},
+        warnTaskBranchBypass: () => {},
+        resolveTaskBranchForDispatch: async () => null,
+        checkoutHasUncommittedWork: () => false,
+        resolveBase: (_cwd, base) => base,
+        isWorktreeRelativeRef: () => false,
+        implicitReviewWarning: () => 'unused',
+        resolveReviewTarget: () => null,
+        resolveCallerCheckout: () => ({
+          callerCwd: import.meta.dir,
+          launchCwd: import.meta.dir,
+          notice: null,
+        }),
+        resolveDispatchOptions: async () => ({
+          agent: 'harness',
+          agentExplicit: true,
+          transport: 'cli',
+          transportExplicit: false,
+          avoid: [],
+          distinctModels: [],
+          mcp: undefined,
+          agentHarness: null,
+        }),
+        harnessCursorAdapter,
+        lookupTaskKey: async () => ({ state: 'found' }),
+        recordRunWarning: () => {},
+        earlierReviewRejections: noEarlierReviewRejections,
+        reviewLensInputs: noLensInputs,
+        detach: async (jobName, prompt, _wait, spec) => {
+          runId = await detachRun(jobName, prompt, spec, 'harness', spawnCoordinator)
+          return runId
+        },
+        follow: async () => {},
+        runNumber: () => 1,
+        detachedResult: () => {},
+      },
+    )
+    expect(runId).not.toBeNull()
+    expect(
+      db().query('SELECT cursor_record_id,step_slug FROM run WHERE record_id=?').get(runId!),
+    ).toEqual({ cursor_record_id: cursorRecordId, step_slug: 'implement-fix' })
+  } finally {
+    if (runId) db().query("UPDATE run SET status='stopped' WHERE record_id=?").run(runId)
+    delete process.env.CLAUDE_CODE_SESSION_ID
+  }
+})
 
 test('an unbound keyed harness dispatch refuses before detach', async () => {
   const project = `cursor-admission-${newRecordId()}`

@@ -31,6 +31,7 @@ import { floorKinds, isFloorKind, mayCloseOnAgentSelfRuling } from './workflow-f
 import { workflowHostedSpace } from './workflow-hosted-space.ts'
 import { workflowReadSpaceFor } from './workflow-read-space.ts'
 import { checkWorkflowRendering, renderCheckRefusal } from './workflow-render-check.ts'
+import { dispatchWaiverFacts } from './workflow-run-obligation.ts'
 import { workflowPromotionReport } from './workflow-shared-promotion.ts'
 import {
   type CataloguePromotionPorts,
@@ -74,6 +75,7 @@ export function validateStepCatalogue(value: unknown): string[] {
     errors.push(...closeInstructionTaskTargetErrors(item))
     validateDispatchPrompts(item, errors)
     validatePrescribedJobs(item, errors)
+    validateDispatchObligations(item, errors)
   }
   errors.push(
     ...validateCatalogueSequences(
@@ -200,6 +202,42 @@ function validatePrescribedJobs(item: Record<string, unknown>, errors: string[])
       errors.push(
         `step "${slug}" prescribes job "${job}" but does not declare it in jobs; add "${job}" to the step's jobs`,
       )
+  }
+}
+
+function validateDispatchObligations(item: Record<string, unknown>, errors: string[]): void {
+  const slug = String(item.slug ?? '')
+  if (item.dispatch !== undefined && item.dispatch !== 'required')
+    errors.push(`step "${slug}" dispatch must be "required"`)
+  validateDispatchWaivers(item, slug, errors)
+  validateJudgedJobs(item, slug, errors)
+}
+
+function validateDispatchWaivers(
+  item: Record<string, unknown>,
+  slug: string,
+  errors: string[],
+): void {
+  if (item.dispatchWaivedBy === undefined) return
+  if (item.dispatch !== 'required')
+    errors.push(`step "${slug}" dispatchWaivedBy requires dispatch: required`)
+  if (!Array.isArray(item.dispatchWaivedBy)) {
+    errors.push(`step "${slug}" dispatchWaivedBy must be an array of dispatch waiver facts`)
+    return
+  }
+  for (const fact of item.dispatchWaivedBy) {
+    if (!(dispatchWaiverFacts as readonly unknown[]).includes(fact))
+      errors.push(`step "${slug}" dispatchWaivedBy names unknown fact "${String(fact)}"`)
+  }
+}
+
+function validateJudgedJobs(item: Record<string, unknown>, slug: string, errors: string[]): void {
+  if (item.judges !== undefined) {
+    if (!Array.isArray(item.judges)) errors.push(`step "${slug}" judges must be an array`)
+    else
+      for (const entry of item.judges)
+        if (typeof entry !== 'string' || !(entry in JOBS))
+          errors.push(`step "${slug}" judges unknown job "${String(entry)}"`)
   }
 }
 

@@ -360,7 +360,7 @@ export function installWorkflowStoreFixture(d: Database): void {
       stage: 'review' as const,
       body: 'Fix accepted findings.',
       floor: ['command-exit' as const, 'recorded-artifact' as const],
-      ...{ jobs: ['implement'], actions: [] },
+      ...{ jobs: [], actions: [] },
       autonomy: 'ask' as const,
       needs: [],
     },

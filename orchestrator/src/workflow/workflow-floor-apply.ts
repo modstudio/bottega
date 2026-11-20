@@ -8,6 +8,7 @@ import { cursorName, workflowCursorTakeoverRemedy } from './workflow-cursor-form
 import type { SelectableCursorRow, WorkflowCursorContext } from './workflow-cursor-selection.ts'
 import { currentStepActivatedAt, reentryBoundFloorInput } from './workflow-cursor-trail.ts'
 import { foreignCursorOwner } from './workflow-cursor-transition.ts'
+import { gatherNoAcceptedFindingsFact } from './workflow-dispatch-waiver-evidence.ts'
 import { descendantTaskFacts, selectEpicStartFloors } from './workflow-epic-floor.ts'
 import type { WorkflowEvidenceInput } from './workflow-evidence-input.ts'
 import {
@@ -20,6 +21,8 @@ import type { FloorEvidencePorts } from './workflow-floor-evidence.ts'
 import { gatherValidatedEvidence } from './workflow-floor-evidence-gather.ts'
 import { invokeFloorEvidencePort } from './workflow-floor-evidence-replay.ts'
 import { openWorkflowObligations } from './workflow-obligation-floor.ts'
+import type { DispatchWaiverFact, StepRunObligation } from './workflow-run-obligation.ts'
+import { gatherWorkflowRunChains } from './workflow-run-obligation-evidence.ts'
 
 type FloorCursor = Pick<
   SelectableCursorRow,
@@ -47,9 +50,49 @@ export function refuseForeignKeylessCursor(row: FloorCursor, callerSession?: str
     )
 }
 
+function gatherDispatchWaiverFacts(
+  row: FloorCursor,
+  floors: Floor[],
+  step: StepRunObligation,
+  ports: FloorEvidencePorts,
+  args: Record<string, string>,
+  database: Database,
+): { facts: DispatchWaiverFact[]; refusal?: Extract<FloorDecision, { action: 'refuse' }> } {
+  const facts: DispatchWaiverFact[] = []
+  const checksReviewOwed = floors.some(({ kind }) => kind === 'review-owed')
+  const gathersNoLensOwed = step.dispatchWaivedBy?.includes('no-lens-owed') ?? false
+  if (row.enforcement === 'floors' && (checksReviewOwed || gathersNoLensOwed)) {
+    const reviewOwed = invokeFloorEvidencePort(
+      ports,
+      'reviewOwed',
+      () => {
+        throw new Error('floor evidence port reviewOwed has no implementation')
+      },
+      row.project,
+      args,
+    )
+    if (checksReviewOwed && reviewOwed.action === 'refuse') return { facts, refusal: reviewOwed }
+    if (reviewOwed.noLensOwed) facts.push('no-lens-owed')
+  }
+  if (row.enforcement === 'floors' && step.dispatchWaivedBy?.includes('no-accepted-findings')) {
+    const gathered = invokeFloorEvidencePort(
+      ports,
+      'noAcceptedFindings',
+      gatherNoAcceptedFindingsFact,
+      row.project,
+      args,
+      database,
+    )
+    if (gathered.action === 'refuse') return { facts, refusal: gathered }
+    facts.push(...gathered.facts)
+  }
+  return { facts }
+}
+
 export async function applyFloorDecision(
   row: FloorCursor,
   floors: Floor[],
+  step: StepRunObligation,
   evidence: WorkflowEvidenceInput,
   ports: FloorEvidencePorts,
   finishing: boolean,
@@ -75,18 +118,8 @@ export async function applyFloorDecision(
     step: row.step_slug,
     hasChildren: taskRows.some((task) => task.parentKey === row.workflow_key),
   })
-  if (row.enforcement === 'floors' && floors.some(({ kind }) => kind === 'review-owed')) {
-    const reviewOwed = invokeFloorEvidencePort(
-      ports,
-      'reviewOwed',
-      () => {
-        throw new Error('floor evidence port reviewOwed has no implementation')
-      },
-      row.project,
-      args,
-    )
-    if (reviewOwed.action === 'refuse') return reviewOwed
-  }
+  const waiver = gatherDispatchWaiverFacts(row, floors, step, ports, args, database)
+  if (waiver.refusal) return waiver.refusal
   const validated = await gatherValidatedEvidence({
     cursorId: row.record_id,
     cursorState: row.state,
@@ -113,6 +146,8 @@ export async function applyFloorDecision(
   })
   if (evidenceFloors.some(({ kind }) => kind === 'descendants-closed'))
     validated.descendants = descendantTaskFacts(row.workflow_key, taskRows)
+  attachRunObligationEvidence(validated, row, step, database)
+  validated.metDispatchWaiverFacts = waiver.facts
   if (selfRulingId !== undefined)
     validated.ruling = {
       id: selfRulingId,
@@ -128,9 +163,28 @@ export async function applyFloorDecision(
     enforcement: row.enforcement ?? 'note-only',
     finishing,
     openObligations: await openWorkflowObligations(row.record_id, database, client),
+    workflowKey: row.workflow_key,
+    step,
     ...(foreignOwner
       ? { cursorTakeoverRemedy: workflowCursorTakeoverRemedy(row, foreignOwner) }
       : {}),
     ...reentryBoundFloorInput(requireRuling, row.closed, row.step_slug),
   })
+}
+
+function attachRunObligationEvidence(
+  evidence: Parameters<typeof decideFloorSatisfaction>[0]['evidence'],
+  row: FloorCursor,
+  step: StepRunObligation,
+  database: Database,
+): void {
+  if (step.dispatch === 'required')
+    evidence.dispatchRuns = gatherWorkflowRunChains(
+      row.record_id,
+      step.jobs,
+      database,
+      row.step_slug,
+    )
+  if (step.judges?.length)
+    evidence.judgedRuns = gatherWorkflowRunChains(row.record_id, step.judges, database)
 }

@@ -146,7 +146,7 @@ function registerAnswerQuestionsTool(
     async ({ run_record_id, rulings, from_operator, record_only }) => {
       const resolved = await resolveAnswerRulings(rulings, from_operator ?? false)
       const run = await resolve(run_record_id, identityContext(db()), 'run')
-      const warning = await admitKeyedTurn({ runId: run.recordId, turn: 'answer' })
+      const admission = await admitKeyedTurn({ runId: run.recordId, turn: 'answer' })
       const report = await answerRun(
         run.recordId,
         {
@@ -159,7 +159,7 @@ function registerAnswerQuestionsTool(
         },
         answerRunHelpers(presentation),
       )
-      recordKeyedTurnOverride(report.result.resumed_record_id ?? run.recordId, warning)
+      recordKeyedTurnOverride(report.result.resumed_record_id ?? run.recordId, admission.warning)
       const textByQuestion = new Map(
         resolved.map((ruling) => [ruling.questionId, ruling.text] as const),
       )

@@ -1,6 +1,10 @@
 import { expect, test } from 'bun:test'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
+import { spawnFixtureGitSync } from '../../test/fixtures/spawn.ts'
 import { boardClaimList } from '../board/board-operations.ts'
 import { testDatabaseFixture } from '../database/test-database.fixture.ts'
 import {
@@ -16,6 +20,7 @@ import {
   database,
   selectAndNextWorkflowStep,
 } from './workflow-cursor-test.fixture.ts'
+import { gatherNoAcceptedFindingsFact } from './workflow-dispatch-waiver-evidence.ts'
 import type { Floor } from './workflow-floor.ts'
 import { applyFloorDecision } from './workflow-floor-apply.ts'
 import { promoteWorkflowLocal, setWorkflowLocal } from './workflows.ts'
@@ -154,7 +159,7 @@ test.each([
   ).toEqual({ session_id: 'owner-session', workflow_key: '', ordinal: 0, state: 'running' })
 })
 
-test('plan-task start floor selection does not create review debt without a review-owed floor', async () => {
+test('plan-task start refuses zero dispatches without creating review debt', async () => {
   installTaskReader(taskPort)
   let reviewOwedCalls = 0
   const result = await applyFloorDecision(
@@ -176,6 +181,7 @@ test('plan-task start floor selection does not create review debt without a revi
       enforcement: 'floors',
     },
     [floor('tracker-transition'), floor('descendants-closed')],
+    { slug: 'start', jobs: ['implement'], dispatch: 'required' },
     { task: 'DEV-1' },
     {
       readTask: (key) => ({
@@ -192,8 +198,131 @@ test('plan-task start floor selection does not create review debt without a revi
     true,
     floorDatabase(),
   )
-  expect(result.action).toBe('allow')
+  expect(result).toMatchObject({ action: 'refuse' })
+  if (result.action === 'refuse')
+    expect(result.message).toContain('no implement run was dispatched from this cursor')
   expect(reviewOwedCalls).toBe(0)
+})
+
+test.each([
+  [true, 'allow'],
+  [false, 'refuse'],
+] as const)(
+  'review-lenses no-lens-owed=%s decides the zero-run waiver',
+  async (noLensOwed, action) => {
+    const result = await applyFloorDecision(
+      {
+        id: 2,
+        record_id: newRecordId(),
+        project: 'fixture',
+        workflow_slug: 'fix-defect',
+        mode_slug: 'default',
+        workflow_key: 'DEV-1',
+        task_record_id: null,
+        args: '{"key":"DEV-1","branch":"DEV-1-fix"}',
+        session_id: 'session-a',
+        created_at: '2026-11-19T00:00:00.000Z',
+        ordinal: 0,
+        step_slug: 'review-lenses',
+        state: 'running',
+        closed: '[]',
+        enforcement: 'floors',
+      },
+      [floor('review-owed')],
+      {
+        slug: 'review-lenses',
+        jobs: ['review-lens'],
+        dispatch: 'required',
+        dispatchWaivedBy: ['no-lens-owed'],
+      },
+      {},
+      { reviewOwed: () => ({ action: 'allow', noLensOwed }) },
+      false,
+      floorDatabase(),
+    )
+    expect(result.action).toBe(action)
+  },
+)
+
+test('an unresolvable waiver branch refuses with the required arguments and does not waive', async () => {
+  const result = await applyFloorDecision(
+    {
+      id: 3,
+      record_id: newRecordId(),
+      project: 'fixture',
+      workflow_slug: 'fix-defect',
+      mode_slug: 'default',
+      workflow_key: 'DEV-1',
+      task_record_id: null,
+      args: '{"key":"DEV-1","branch":"missing-branch"}',
+      session_id: 'session-a',
+      created_at: '2026-11-19T00:00:00.000Z',
+      ordinal: 0,
+      step_slug: 'apply-findings',
+      state: 'running',
+      closed: '[]',
+      enforcement: 'floors',
+    },
+    [],
+    {
+      slug: 'apply-findings',
+      jobs: ['implement'],
+      dispatch: 'required',
+      dispatchWaivedBy: ['no-accepted-findings'],
+    },
+    {},
+    {},
+    false,
+    floorDatabase(),
+  )
+
+  expect(result).toEqual({
+    action: 'refuse',
+    message: expect.stringMatching(
+      /no-accepted-findings cannot be established: cannot resolve the current tip of branch missing-branch[\s\S]*--arg worktree=<path>[\s\S]*--arg branch=<branch>/,
+    ),
+  })
+})
+
+test('no accepted findings refuses instead of throwing when no measured review round exists', () => {
+  const repository = mkdtempSync(join(tmpdir(), 'workflow-no-accepted-findings-'))
+  const git = (...args: string[]) => {
+    const result = spawnFixtureGitSync(args, { cwd: repository })
+    if (result.exitCode !== 0) throw new Error(result.stderr.toString())
+  }
+  try {
+    git('init', '-b', 'main')
+    git('config', 'user.email', 'fixture@example.com')
+    git('config', 'user.name', 'Fixture')
+    writeFileSync(join(repository, 'file.txt'), 'base\n')
+    git('add', 'file.txt')
+    git('commit', '-m', 'base')
+    git('checkout', '-b', 'DEV-1-change')
+    writeFileSync(join(repository, 'file.txt'), 'changed\n')
+    git('commit', '-am', 'change')
+    const d = floorDatabase()
+    d.query('INSERT INTO project (record_id,name,path,settings) VALUES (?,?,?,?)').run(
+      newRecordId(),
+      'waiver-fixture',
+      repository,
+      JSON.stringify({ trunk: 'main' }),
+    )
+
+    expect(
+      gatherNoAcceptedFindingsFact(
+        'waiver-fixture',
+        { worktree: repository, branch: 'DEV-1-change' },
+        d,
+      ),
+    ).toEqual({
+      action: 'refuse',
+      message: expect.stringContaining(
+        'no-accepted-findings cannot be established: the review lineage for branch DEV-1-change has no measured review rounds; cleared by: run and judge the review lenses for the current change',
+      ),
+    })
+  } finally {
+    rmSync(repository, { recursive: true, force: true })
+  }
 })
 
 test('a foreign keyed advance keeps the recorded taken-over claim behavior', async () => {

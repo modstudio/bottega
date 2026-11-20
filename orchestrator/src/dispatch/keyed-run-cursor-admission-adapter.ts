@@ -18,8 +18,11 @@ export function harnessCursorAdapter() {
     harnessSession: identity?.kind === 'identity' ? identity.session : null,
     readOpenCursors: async (session: string) =>
       (await openQuestionStages(db(), session)).map((cursor) => ({
+        recordId: cursor.record_id,
+        number: cursor.number,
         project: cursor.project,
         workflowKey: cursor.workflow_key,
+        stepSlug: cursor.step_slug,
       })),
   }
 }
@@ -31,10 +34,11 @@ type AdmitKeyedTurnInput =
       turn: Exclude<KeyedRunTurn, 'start' | 'answer'>
       overrideReason?: string
       fromOperator: boolean
+      cursor?: number
     }
 
 /** Admit one later turn using its chain root's key, project, and cursor binding. */
-export async function admitKeyedTurn(input: AdmitKeyedTurnInput): Promise<string | null> {
+export async function admitKeyedTurn(input: AdmitKeyedTurnInput) {
   const rootId = rootRunRecordId(input.runId)
   const facts = inheritedRunFacts(rootId)
   const project = facts.project_record_id ? projectByRecordId(facts.project_record_id) : null
@@ -45,14 +49,19 @@ export async function admitKeyedTurn(input: AdmitKeyedTurnInput): Promise<string
       key: facts.launch_key ?? undefined,
       project: project?.name ?? null,
       bindingPresent: facts.cursor_record_id !== null,
+      rootCursorRecordId: facts.cursor_record_id,
       harnessSession: adapter.harnessSession,
       overrideReason: input.turn === 'answer' ? undefined : input.overrideReason,
       fromOperator: input.turn === 'answer' ? false : input.fromOperator,
+      cursor: input.turn === 'answer' ? undefined : input.cursor,
     },
     adapter.readOpenCursors,
   )
   if (decision.kind === 'refuse') throw new Error(decision.message)
-  return decision.kind === 'allow-with-override' ? decision.warning : null
+  return {
+    warning: decision.kind === 'allow-with-override' ? decision.warning : null,
+    binding: decision.kind === 'allow' ? decision.binding : undefined,
+  }
 }
 
 /** Record an admission override on the run whose turn it admitted. */

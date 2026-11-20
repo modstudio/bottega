@@ -3,6 +3,7 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   checkKeyedRunCursorAdmission,
   decideKeyedRunCursorAdmission,
+  keyedCursorOption,
 } from './keyed-run-cursor-admission.ts'
 
 const base = {
@@ -11,20 +12,29 @@ const base = {
   project: PLATFORM_SLUG,
   bindingPresent: false,
   harnessSession: 'session-fixture',
-  heldCursors: [] as Array<{ project: string; workflowKey: string }>,
+  heldCursors: [] as Array<{
+    recordId: string
+    number: number
+    project: string
+    workflowKey: string
+    stepSlug: string
+  }>,
   overrideReason: undefined,
   fromOperator: false,
 }
 
 describe('keyed run cursor admission', () => {
+  test('the shared cursor option accepts only positive integers', () => {
+    expect(keyedCursorOption(undefined)).toBeUndefined()
+    expect(keyedCursorOption('4')).toBe(4)
+    expect(() => keyedCursorOption('0')).toThrow('--cursor must be a positive integer')
+    expect(() => keyedCursorOption('1.5')).toThrow('--cursor must be a positive integer')
+  })
+
   test.each([
     ['keyless', { key: undefined }],
     ['unkeyed later turn', { turn: 'retry' as const, key: undefined }],
     ['workflow-bound', { bindingPresent: true }],
-    [
-      'harness holding the task cursor',
-      { heldCursors: [{ project: PLATFORM_SLUG, workflowKey: 'DEV-2293' }] },
-    ],
   ])('allows %s', (_name, change) => {
     expect(decideKeyedRunCursorAdmission({ ...base, ...change })).toEqual({ kind: 'allow' })
   })
@@ -34,9 +44,94 @@ describe('keyed run cursor admission', () => {
       decideKeyedRunCursorAdmission({
         ...base,
         turn: 'continue',
-        heldCursors: [{ project: PLATFORM_SLUG, workflowKey: 'DEV-2293' }],
+        heldCursors: [
+          {
+            recordId: 'cursor-record',
+            number: 17,
+            project: PLATFORM_SLUG,
+            workflowKey: 'DEV-2293',
+            stepSlug: 'apply-findings',
+          },
+        ],
       }),
-    ).toEqual({ kind: 'allow' })
+    ).toEqual({
+      kind: 'allow',
+      binding: { cursorRecordId: 'cursor-record', stepSlug: 'apply-findings' },
+    })
+  })
+
+  test('a bound root held at a later step binds the new turn to that step', () => {
+    expect(
+      decideKeyedRunCursorAdmission({
+        ...base,
+        turn: 'continue',
+        bindingPresent: true,
+        rootCursorRecordId: 'cursor-record',
+        heldCursors: [
+          {
+            recordId: 'cursor-record',
+            number: 17,
+            project: PLATFORM_SLUG,
+            workflowKey: 'DEV-2293',
+            stepSlug: 'apply-findings',
+          },
+        ],
+      }),
+    ).toEqual({
+      kind: 'allow',
+      binding: { cursorRecordId: 'cursor-record', stepSlug: 'apply-findings' },
+    })
+  })
+
+  test('a bound root refuses --cursor naming a different cursor', () => {
+    const decision = decideKeyedRunCursorAdmission({
+      ...base,
+      turn: 'continue',
+      bindingPresent: true,
+      rootCursorRecordId: 'cursor-record',
+      cursor: 18,
+      heldCursors: [
+        {
+          recordId: 'cursor-record',
+          number: 17,
+          project: PLATFORM_SLUG,
+          workflowKey: 'DEV-2293',
+          stepSlug: 'apply-findings',
+        },
+      ],
+    })
+    expect(decision).toEqual({
+      kind: 'refuse',
+      message: expect.stringContaining('root is bound to workflow cursor 17, not cursor 18'),
+    })
+  })
+
+  test('two matching cursors require --cursor and the selected cursor binds', () => {
+    const heldCursors = [
+      {
+        recordId: 'cursor-17',
+        number: 17,
+        project: PLATFORM_SLUG,
+        workflowKey: 'DEV-2293',
+        stepSlug: 'implement-fix',
+      },
+      {
+        recordId: 'cursor-18',
+        number: 18,
+        project: PLATFORM_SLUG,
+        workflowKey: 'DEV-2293',
+        stepSlug: 'review-lenses',
+      },
+    ]
+    const ambiguous = decideKeyedRunCursorAdmission({ ...base, heldCursors })
+    expect(ambiguous).toEqual({
+      kind: 'refuse',
+      message: expect.stringContaining('--cursor <number>'),
+    })
+    expect(decideKeyedRunCursorAdmission({ ...base, heldCursors, cursor: 18 })).toEqual({
+      kind: 'allow',
+      binding: { cursorRecordId: 'cursor-18', stepSlug: 'review-lenses' },
+    })
   })
 
   test('a keyed later turn without its cursor is refused with every workflow remedy', () => {
@@ -78,8 +173,30 @@ describe('keyed run cursor admission', () => {
   })
 
   test.each([
-    ['the key in another project', [{ project: 'segnavia', workflowKey: 'DEV-2293' }]],
-    ['only a keyless cursor', [{ project: PLATFORM_SLUG, workflowKey: '' }]],
+    [
+      'the key in another project',
+      [
+        {
+          recordId: 'other-project',
+          number: 17,
+          project: 'segnavia',
+          workflowKey: 'DEV-2293',
+          stepSlug: 'start',
+        },
+      ],
+    ],
+    [
+      'only a keyless cursor',
+      [
+        {
+          recordId: 'keyless',
+          number: 17,
+          project: PLATFORM_SLUG,
+          workflowKey: '',
+          stepSlug: 'start',
+        },
+      ],
+    ],
   ])('refuses a harness holding %s', (_name, heldCursors) => {
     expect(decideKeyedRunCursorAdmission({ ...base, heldCursors })).toEqual({
       kind: 'refuse',

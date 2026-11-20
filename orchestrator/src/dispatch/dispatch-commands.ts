@@ -36,6 +36,7 @@ import { preflight, resolvedFindingsLens } from './dispatch-preflight.ts'
 import { executionRequirementRefusal } from './execution-requirement.ts'
 import {
   checkKeyedRunCursorAdmission,
+  keyedCursorOption,
   type OpenKeyedRunCursors,
 } from './keyed-run-cursor-admission.ts'
 import { decideProbeLaunchOverrides } from './probe-launch-overrides.ts'
@@ -229,8 +230,9 @@ async function keyedRunCursorWarningForDispatch(input: {
   bindingPresent: boolean
   overrideReason: string | undefined
   fromOperator: boolean
+  cursor?: number
   adapter: DispatchPresentation['harnessCursorAdapter']
-}): Promise<string | null> {
+}) {
   const { harnessSession, readOpenCursors } = input.adapter()
   const decision = await checkKeyedRunCursorAdmission(
     {
@@ -241,11 +243,15 @@ async function keyedRunCursorWarningForDispatch(input: {
       overrideReason: input.overrideReason,
       fromOperator: input.fromOperator,
       harnessSession,
+      cursor: input.cursor,
     },
     readOpenCursors,
   )
   if (decision.kind === 'refuse') throw new Error(decision.message)
-  return decision.kind === 'allow-with-override' ? decision.warning : null
+  return {
+    warning: decision.kind === 'allow-with-override' ? decision.warning : null,
+    binding: decision.kind === 'allow' ? decision.binding : undefined,
+  }
 }
 
 async function cursorWarningFor(
@@ -253,15 +259,26 @@ async function cursorWarningFor(
   presentation: DispatchPresentation,
   binding: { cursorRecordId: string; stepSlug: string } | undefined,
   project: string | null,
-): Promise<string | null> {
+) {
   return keyedRunCursorWarningForDispatch({
     key: flags.flag('key'),
     project,
     bindingPresent: Boolean(binding),
     overrideReason: flags.flag('override-unbound'),
     fromOperator: flags.has('from-operator'),
+    cursor: keyedCursorOption(flags.flag('cursor')),
     adapter: presentation.harnessCursorAdapter,
   })
+}
+
+async function cursorForDispatch(
+  flags: DispatchFlags,
+  presentation: DispatchPresentation,
+  binding: { cursorRecordId: string; stepSlug: string } | undefined,
+  project: string | null,
+) {
+  const admission = await cursorWarningFor(flags, presentation, binding, project)
+  return { warning: admission.warning, binding: binding ?? admission.binding }
 }
 
 type SpecWarningInput = {
@@ -762,7 +779,7 @@ export async function dispatchCommand(
   reportCallerCheckoutNotice(notice, porcelain, error)
   const dispatchProject = assertDispatchableProject(explicitRepo, callerCwd, Boolean(requestedCwd))
   const dispatchProjectName = dispatchProject?.name ?? null
-  const cursorWarning = await cursorWarningFor(flags, presentation, binding, dispatchProjectName)
+  const cursor = await cursorForDispatch(flags, presentation, binding, dispatchProjectName)
   // Check project-required inputs before reading the prompt so a missing key does not pay for stdin.
   const { base, reviewRef, resolvedReviewTarget, seed } = prepareDispatchTarget({
     flags,
@@ -863,7 +880,7 @@ export async function dispatchCommand(
   const detachByDefault = !has('follow')
   if (has('detach') || detachByDefault) {
     const id = await detach(jobName, prompt, false, {
-      ...{ agent, agentExplicit, binding },
+      ...{ agent, agentExplicit, binding: cursor.binding },
       schema,
       label: flag('label'),
       lens,
@@ -892,7 +909,7 @@ export async function dispatchCommand(
       resolvedTaskBranch,
       lensInputs,
     })
-    recordDispatchWarnings(id, [taskKeyWarning, cursorWarning], recordRunWarning)
+    recordDispatchWarnings(id, [taskKeyWarning, cursor.warning], recordRunWarning)
     presentation.detachedResult(id, json)
     if (!has('quiet') && !porcelain) {
       error(detachedRunCollectRemedy(id, presentation.runNumber))
@@ -926,7 +943,7 @@ export async function dispatchCommand(
    * genuinely stuck run still returns control rather than hanging for ever.
    */
   const id = await detach(jobName, prompt, true, {
-    ...{ agent, agentExplicit, schema, lens, binding },
+    ...{ agent, agentExplicit, schema, lens, binding: cursor.binding },
     reviewRole,
     label: flag('label'),
     mcp: resolved.mcp,
@@ -952,6 +969,6 @@ export async function dispatchCommand(
     resolvedTaskBranch,
     lensInputs,
   })
-  recordDispatchWarnings(id, [taskKeyWarning, cursorWarning], recordRunWarning)
+  recordDispatchWarnings(id, [taskKeyWarning, cursor.warning], recordRunWarning)
   await follow(id, has('quiet'))
 }

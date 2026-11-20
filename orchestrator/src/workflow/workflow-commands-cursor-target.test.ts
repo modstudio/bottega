@@ -47,7 +47,7 @@ test('next by cursor alone reads the authoritative row and links the hosted task
   const flowId = newRecordId()
   const stageId = newRecordId()
   const remoteMachine = newRecordId()
-  const steps = ['diagnose', 'fix-defect-fix']
+  const steps = ['diagnose', 'blast-radius']
   upsertProject({
     recordId: newRecordId(),
     name: project,

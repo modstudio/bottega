@@ -12,21 +12,25 @@ const floor = (kind: Floor['kind']): Floor => ({
 })
 
 test('selects one start floor from whether the task is an epic', () => {
-  const floors = [floor('tracker-transition'), floor('descendants-closed')]
+  const floors = [
+    floor('tracker-transition'),
+    floor('recorded-artifact'),
+    floor('descendants-closed'),
+  ]
   expect(
     selectEpicStartFloors(floors, {
       workflow: 'plan-task',
       step: 'start',
       hasChildren: true,
     }).map(({ kind }) => kind),
-  ).toEqual(['descendants-closed'])
+  ).toEqual(['recorded-artifact', 'descendants-closed'])
   expect(
     selectEpicStartFloors(floors, {
       workflow: 'plan-task',
       step: 'start',
       hasChildren: false,
     }).map(({ kind }) => kind),
-  ).toEqual(['tracker-transition'])
+  ).toEqual(['tracker-transition', 'recorded-artifact'])
 })
 
 test('finds unfinished descendants recursively', () => {

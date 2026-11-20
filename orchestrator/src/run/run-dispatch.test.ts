@@ -184,7 +184,7 @@ test('a detached review placeholder records its lens and resolved review branch'
   db().query("UPDATE run SET status='stopped' WHERE record_id=?").run(runId)
 })
 
-test('a harness continuation placeholder carries its executor and parent binding before claim', async () => {
+test('a harness continuation placeholder carries its executor and current cursor binding before claim', async () => {
   process.env.BOTTEGA_DEPTH = '0'
   const root = addRun({ agent: 'harness', job: 'review-lens', status: 'asking' })
   const cursorRecordId = newRecordId()
@@ -232,8 +232,8 @@ test('a harness continuation placeholder carries its executor and parent binding
     executor: 'harness',
     evidence_excluded: null,
     harness_wall_bound_ms: 17 * 60_000,
-    cursor_record_id: cursorRecordId,
-    step_slug: 'review',
+    cursor_record_id: explicitCursorRecordId,
+    step_slug: 'different-step',
   })
 })
 

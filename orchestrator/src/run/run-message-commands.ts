@@ -59,6 +59,7 @@ const continueCommandDependencies: ContinueCommandDependencies = { continueRun, 
 type KeyedTurnCommandOptions = {
   overrideReason?: string
   fromOperator: boolean
+  cursor?: number
 }
 
 type KeyedTurnCommandDependencies = {
@@ -221,7 +222,7 @@ export async function retryCommand(
   admission: KeyedTurnCommandOptions = defaultKeyedTurnOptions,
   dependencies: KeyedTurnCommandDependencies = {},
 ): Promise<void> {
-  const warning = await (dependencies.admitKeyedTurn ?? admitKeyedTurn)({
+  const admissionResult = await (dependencies.admitKeyedTurn ?? admitKeyedTurn)({
     runId: id,
     turn: 'retry',
     ...admission,
@@ -231,7 +232,10 @@ export async function retryCommand(
     options,
     answerRunHelpers(presentation),
   )
-  ;(dependencies.recordKeyedTurnOverride ?? recordKeyedTurnOverride)(resumedId, warning)
+  ;(dependencies.recordKeyedTurnOverride ?? recordKeyedTurnOverride)(
+    resumedId,
+    admissionResult.warning,
+  )
 }
 
 export async function answerCommand(
@@ -247,7 +251,7 @@ export async function answerCommand(
 ): Promise<void> {
   const helpers = answerRunHelpers(presentation)
   const input = await answerInputFromArgv(argv, recordOnly, json, flags, helpers, refusedOptions)
-  const warning = await (dependencies.admitKeyedTurn ?? admitKeyedTurn)({
+  const admissionResult = await (dependencies.admitKeyedTurn ?? admitKeyedTurn)({
     runId: id,
     turn: 'answer',
   })
@@ -258,7 +262,7 @@ export async function answerCommand(
   )
   ;(dependencies.recordKeyedTurnOverride ?? recordKeyedTurnOverride)(
     result.resumed_record_id ?? id,
-    warning,
+    admissionResult.warning,
   )
   const answerByQuestion = new Map(
     Array.isArray(input.rulings)
@@ -350,7 +354,7 @@ export async function continueCommand(
     CONTINUE_WORKING_FORMS,
     chain ? argvResumeLimit(chain.agent) : undefined,
   )
-  const warning = await (dependencies.admitKeyedTurn ?? admitKeyedTurn)({
+  const admissionResult = await (dependencies.admitKeyedTurn ?? admitKeyedTurn)({
     runId: id,
     turn: 'continue',
     ...admission,
@@ -360,9 +364,15 @@ export async function continueCommand(
     message,
     argvResumeLimit,
     includeFindings ? () => renderFindings(id, message) : undefined,
-    { renewTaskClaim: dependencies.renewTaskClaim ?? renewTaskClaim },
+    {
+      renewTaskClaim: dependencies.renewTaskClaim ?? renewTaskClaim,
+      binding: admissionResult.binding,
+    },
   )
-  ;(dependencies.recordKeyedTurnOverride ?? recordKeyedTurnOverride)(resumed.childId, warning)
+  ;(dependencies.recordKeyedTurnOverride ?? recordKeyedTurnOverride)(
+    resumed.childId,
+    admissionResult.warning,
+  )
   await dependencies.reportContinuedRun(
     resumed.childId,
     resumed.job,

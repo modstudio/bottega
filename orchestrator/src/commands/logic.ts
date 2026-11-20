@@ -17,6 +17,7 @@ import { peekCommand, resultCommand, waitCommand } from '../collect/collection-c
 import { contractCommand } from '../contract/contract-command.ts'
 import { db, sessionId } from '../database/db.ts'
 import { doCommand, pickPreviewCommand } from '../dispatch/dispatch-cli-service.ts'
+import { keyedCursorOption } from '../dispatch/keyed-run-cursor-admission.ts'
 import { enforcementCommand } from '../enforcement/enforcement-commands.ts'
 import { epicCommand } from '../epic/epic-commands.ts'
 import { pendingCommand } from '../evidence/pending-commands.ts'
@@ -98,7 +99,16 @@ const collectedOption = (flags: string, description: string) =>
   repeatable(new Option(flags, description).argParser(collect).default([]))
 
 const localRunId = (input: string | number) => resolveRunIdentifier(db(), input)
-const CONTINUE_USAGE = `${PLATFORM_SLUG} run continue <id> [--findings] [--follow] [--override-unbound "<reason>" --from-operator] [--file PATH | "<what next>"]`
+const CONTINUE_USAGE = `${PLATFORM_SLUG} run continue <id> [--findings] [--follow] [--cursor <number>] [--override-unbound "<reason>" --from-operator] [--file PATH | "<what next>"]`
+const keyedTurnOptions = (options: {
+  overrideUnbound?: string
+  fromOperator?: boolean
+  cursor?: string
+}) => ({
+  overrideReason: options.overrideUnbound,
+  fromOperator: Boolean(options.fromOperator),
+  cursor: keyedCursorOption(options.cursor),
+})
 const displayRunNumber = (recordId: string): number =>
   (db().query('SELECT number FROM run WHERE record_id=?').get(recordId) as { number: number })
     .number
@@ -722,10 +732,7 @@ export function register(program: Command, dependencies: LogicDependencies = {})
       localRunId(id),
       { agent: options.agent, model: options.model, flags: runFlags(options) },
       presentation,
-      {
-        overrideReason: options.overrideUnbound,
-        fromOperator: Boolean(options.fromOperator),
-      },
+      keyedTurnOptions(options),
     ),
   )
   answerCommandDefinition(program).action((id, _message, options, command) =>
@@ -746,10 +753,7 @@ export function register(program: Command, dependencies: LogicDependencies = {})
           message,
         ),
       dependencies.continueCommandDependencies,
-      {
-        overrideReason: options.overrideUnbound,
-        fromOperator: Boolean(options.fromOperator),
-      },
+      keyedTurnOptions(options),
     )
   })
   registerDoCommand(program)

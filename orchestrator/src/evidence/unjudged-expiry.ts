@@ -5,7 +5,7 @@ import { gatherOwnerActivity } from '../cleanup/owner-activity.ts'
 import { db, writeTransaction } from '../database/db.ts'
 import { machineId } from '../record/machine-identity.ts'
 import { enqueueRunRecord } from '../run/run-outbox.ts'
-import { UNSCORED_WHERE } from './evidence-query.ts'
+import { UNSCORED_WHERE } from './pending-score-sql.ts'
 
 export type UnjudgedRun = {
   record_id: string

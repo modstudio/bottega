@@ -1,3 +1,4 @@
+import type { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
 import {
   type FloorEvidencePorts,
@@ -70,6 +71,32 @@ test('inline default ports use the same miss and replay path', async () => {
     ),
   )
   expect(result).toBe('abc123')
+  expect(calls).toBe(1)
+})
+
+test('no-accepted-findings evidence is recorded and replayed once', async () => {
+  let calls = 0
+  const database = {} as Database
+  const result = await withReplayedFloorEvidenceAsync(
+    {
+      noAcceptedFindings: () => {
+        calls += 1
+        return { action: 'allow', facts: ['no-accepted-findings'] }
+      },
+    },
+    async (replay) =>
+      invokeFloorEvidencePort(
+        replay,
+        'noAcceptedFindings',
+        () => {
+          throw new Error('production fallback must not run')
+        },
+        'fixture',
+        { branch: 'DEV-1' },
+        database,
+      ),
+  )
+  expect(result).toEqual({ action: 'allow', facts: ['no-accepted-findings'] })
   expect(calls).toBe(1)
 })
 

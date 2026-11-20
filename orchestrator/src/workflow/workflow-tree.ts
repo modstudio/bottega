@@ -47,7 +47,7 @@ export function normalizeWorkflowYaml(yaml: string): string {
     .replace(/ +$/gm, '')
     .replace(/^([ ]*[a-zA-Z0-9_-]+):\n[ ]+\[\]$/gm, '$1: []')
     .replace(
-      /^(jobs|actions):\n((?: {2}- [^\n]+\n?)+)/gm,
+      /^(jobs|actions|dispatchWaivedBy|judges):\n((?: {2}- [^\n]+\n?)+)/gm,
       (_match, field: string, entries: string) => {
         const values = entries.match(/^ {2}- (.+)$/gm)?.map((entry) => entry.slice(4)) ?? []
         return `${field}: [${values.join(', ')}]\n`
@@ -84,6 +84,9 @@ function renderedFiles(store: WorkflowTreeStore): WorkflowTreeFile[] {
         ...(step.operatorRuling ? { operatorRuling: true } : {}),
         ...(step.commandEvidence ? { commandEvidence: step.commandEvidence } : {}),
         jobs: step.jobs,
+        ...(step.dispatch ? { dispatch: step.dispatch } : {}),
+        ...(step.dispatchWaivedBy?.length ? { dispatchWaivedBy: step.dispatchWaivedBy } : {}),
+        ...(step.judges?.length ? { judges: step.judges } : {}),
         ...(step.actions.length ? { actions: step.actions } : {}),
         autonomy: step.autonomy,
         needs: step.needs,
@@ -192,12 +195,52 @@ const commandEvidenceFrom = (frontMatter: Record<string, unknown>) =>
     ? {}
     : { commandEvidence: frontMatter.commandEvidence as CatalogueStep['commandEvidence'] }
 
+type StepFrontmatterKey = Exclude<keyof CatalogueStep, 'slug' | 'body'>
+
+const STEP_FRONTMATTER_KEY_SCHEMA = {
+  title: true,
+  stage: true,
+  floor: true,
+  outcomes: true,
+  rulingOutcomes: true,
+  reenter: true,
+  deferrable: true,
+  expectedExitCodes: true,
+  expectedStatus: true,
+  requirePullRequest: true,
+  operatorRuling: true,
+  commandEvidence: true,
+  jobs: true,
+  dispatch: true,
+  dispatchWaivedBy: true,
+  judges: true,
+  actions: true,
+  autonomy: true,
+  needs: true,
+} satisfies Record<StepFrontmatterKey, true>
+
+const STEP_FRONTMATTER_KEYS = new Set<string>(Object.keys(STEP_FRONTMATTER_KEY_SCHEMA))
+
+function refuseUnknownStepFrontmatter(
+  file: WorkflowTreeFile,
+  frontMatter: Record<string, unknown>,
+) {
+  const unknown = Object.keys(frontMatter).find((key) => !STEP_FRONTMATTER_KEYS.has(key))
+  if (!unknown) return
+  throw new Error(
+    `${file.path}: unknown workflow step frontmatter key "${unknown}"; ` +
+      `a new step setting lands in two pull requests: first the parser support for ${unknown}, ` +
+      'then the step files once that is on main.',
+  )
+}
+
 function parsedCatalogueStep(
   file: WorkflowTreeFile,
   slug: string,
   frontMatter: Record<string, unknown>,
   body: string,
 ): CatalogueStep {
+  refuseUnknownStepFrontmatter(file, frontMatter)
   const step: CatalogueStep = {
     slug,
     title: frontMatter.title as string,
@@ -214,6 +257,17 @@ function parsedCatalogueStep(
     ...stepBooleanOptionsFrom(frontMatter),
     ...commandEvidenceFrom(frontMatter),
     jobs: frontMatter.jobs as string[],
+    ...(frontMatter.dispatch === undefined
+      ? {}
+      : { dispatch: frontMatter.dispatch as CatalogueStep['dispatch'] }),
+    ...(frontMatter.dispatchWaivedBy === undefined
+      ? {}
+      : {
+          dispatchWaivedBy: frontMatter.dispatchWaivedBy as CatalogueStep['dispatchWaivedBy'],
+        }),
+    ...(frontMatter.judges === undefined
+      ? {}
+      : { judges: frontMatter.judges as CatalogueStep['judges'] }),
     actions: (frontMatter.actions ?? []) as string[],
     autonomy: frontMatter.autonomy as CatalogueStep['autonomy'],
     needs: frontMatter.needs as CatalogueStep['needs'],

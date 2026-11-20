@@ -87,6 +87,7 @@ for (const kind of floorKinds) {
             enforcement: 'floors',
           },
           [floor],
+          { slug: 'review', jobs: [] },
           {},
           {
             reviewOwed: () => ({

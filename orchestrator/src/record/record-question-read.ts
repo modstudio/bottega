@@ -423,7 +423,7 @@ async function rows(tx: SQL, input: QuestionReadInput): Promise<Row[]> {
     return limited(
       (await tx.unsafe(
         `SELECT stage.id::text record_id,stage.number,project.name project,stage.workflow workflow_slug,
-        stage.mode mode_slug,stage.workflow_key,stage.state,stage.updated_at::text updated_at,
+        stage.mode mode_slug,stage.workflow_key,stage.active_slug step_slug,stage.state,stage.updated_at::text updated_at,
         (SELECT q.id::text FROM question q WHERE q.workflow_cursor_record_id=stage.id
           AND q.answered_at IS NULL AND q.closed_at IS NULL LIMIT 1) open_question_record_id
        FROM task_flow_stage stage JOIN project ON project.id=stage.project_id

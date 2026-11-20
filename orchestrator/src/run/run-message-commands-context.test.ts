@@ -265,7 +265,7 @@ test('retry records its admission override on the new retry root', async () => {
     { printRunId: () => {} },
     { overrideReason: 'Operator approved.', fromOperator: true },
     {
-      admitKeyedTurn: async () => 'operator override warning',
+      admitKeyedTurn: async () => ({ warning: 'operator override warning', binding: undefined }),
       retryRun: async () => retryRoot,
       recordKeyedTurnOverride: (runId, warning) => warnings.push({ runId, warning }),
     },

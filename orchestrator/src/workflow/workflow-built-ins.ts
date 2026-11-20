@@ -100,6 +100,7 @@ export type SeedCatalogueStep = {
   expectedStatus?: string
   requirePullRequest?: boolean
   jobs: string[]
+  dispatch?: 'required'
   actions: string[]
   stage: AutonomyStage
   autonomy: AutonomyValue
@@ -134,6 +135,9 @@ export function catalogueDefinition() {
         stage: stages[seed.slug]![legacy.slug]!,
         floor: floors[seed.slug]![legacy.slug]!,
         jobs: legacy.job === null ? [] : [legacy.job],
+        ...(seed.slug === 'fix-defect' && legacy.slug === 'fix'
+          ? { dispatch: 'required' as const }
+          : {}),
         actions: [],
         autonomy: legacy.autonomy as SeedCatalogueStep['autonomy'],
         needs: catalogueNeeds(seed.slug, legacy.slug, legacy.gate !== null),
