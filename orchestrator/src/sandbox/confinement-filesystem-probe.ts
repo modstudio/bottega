@@ -174,12 +174,17 @@ export async function runConfinementFilesystemProbes(): Promise<ConfinementFiles
       mkdirSync(join(path, '..'), { recursive: true })
       writeFileSync(path, 'fixture')
     }
+    targets.push({
+      name: 'running package.json',
+      path: join(runningInstall.root, 'package.json'),
+      expected: 'readable',
+    })
     mkdirSync(runtimeDir, { recursive: true })
     mkdirSync(scratchDir, { recursive: true })
     mkdirSync(state.hubDirectory, { recursive: true })
     copyHubFixture(hubDatabase)
     process.env[STATE_HOME_ENV] = stateRoot
-    const cliArgv = bottegaEntryArgv(PLATFORM_SLUG, join(fixtureInstall.root, 'bin', PLATFORM_SLUG))
+    const cliArgv = bottegaEntryArgv(PLATFORM_SLUG)
     const commandArgv = [...cliArgv, 'task', 'list', '--json']
     const common = {
       worktree,
