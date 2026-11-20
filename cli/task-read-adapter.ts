@@ -1,5 +1,12 @@
-import { installProjectRegisterReader } from '../hub/src/project-register-reader.ts'
-import { installConfinementProbeTaskCreator } from '../orchestrator/src/sandbox/confinement-probe-task-port.ts'
+import { Database } from 'bun:sqlite'
+import {
+  installProjectRegisterReader,
+  projectRegisterReader,
+} from '../hub/src/project-register-reader.ts'
+import {
+  type ConfinementProbeTaskInput,
+  installConfinementProbeTaskCreator,
+} from '../orchestrator/src/sandbox/confinement-probe-task-port.ts'
 import {
   installTaskReader,
   type TaskReadPort,
@@ -14,8 +21,10 @@ type HubTaskReads = {
 let loadedHubTaskReads: HubTaskReads | undefined
 
 type ProjectRegisterReads = {
+  migrations: typeof import('../orchestrator/src/database/migrations.ts')
   project: typeof import('../orchestrator/src/project/project-read.ts')
   presentation: typeof import('../orchestrator/src/project/project-list-json.ts')
+  registration: typeof import('../orchestrator/src/project/project-registration.ts')
   contract: typeof import('../shared/orch-contract.ts')
 }
 
@@ -25,10 +34,14 @@ let loadedProjectRegisterReads: ProjectRegisterReads | undefined
 function projectRegisterReads(): ProjectRegisterReads {
   if (loadedProjectRegisterReads) return loadedProjectRegisterReads
   loadedProjectRegisterReads = {
+    migrations:
+      require('../orchestrator/src/database/migrations.ts') as typeof import('../orchestrator/src/database/migrations.ts'),
     project:
       require('../orchestrator/src/project/project-read.ts') as typeof import('../orchestrator/src/project/project-read.ts'),
     presentation:
       require('../orchestrator/src/project/project-list-json.ts') as typeof import('../orchestrator/src/project/project-list-json.ts'),
+    registration:
+      require('../orchestrator/src/project/project-registration.ts') as typeof import('../orchestrator/src/project/project-registration.ts'),
     contract: require('../shared/orch-contract.ts') as typeof import('../shared/orch-contract.ts'),
   }
   return loadedProjectRegisterReads
@@ -44,6 +57,19 @@ function hubTaskReads(): HubTaskReads {
     projects: require('../hub/src/projects.ts') as typeof import('../hub/src/projects.ts'),
   }
   return loadedHubTaskReads
+}
+
+function registerConfinementProbeProject(input: ConfinementProbeTaskInput) {
+  const register = projectRegisterReads()
+  const fixtureRegister = new Database(input.orchestratorDatabase, { create: true })
+  try {
+    fixtureRegister.exec('PRAGMA foreign_keys = ON;')
+    register.migrations.applyMigrations(fixtureRegister)
+    register.registration.registerLocalProject(input.project, null, fixtureRegister)
+    return register.presentation.listedProjectJson(input.project)
+  } finally {
+    fixtureRegister.close()
+  }
 }
 
 /** Build the CLI-owned port without loading its hub implementation. */
@@ -79,18 +105,26 @@ export function installCliTaskReader(): void {
       project.projects(options).map(presentation.listedProjectJson),
     )
   })
-  installConfinementProbeTaskCreator((connection) => {
+  installConfinementProbeTaskCreator((connection, input) => {
     const hub = hubTaskReads()
-    const project = hub.projects
-      .projects()
-      .find((candidate) => candidate.settings.keyPrefixes?.length && !candidate.settings.tracker)
-    if (!project)
-      throw new Error('confinement probe needs a registered local-task project with a key prefix')
-    const task = hub.task.createLocalTaskInTransaction(
-      connection,
-      { project: project.name, title: 'Verify confined CLI access' },
-      { skipDuplicateCheck: true },
-    )
-    return { key: task.key, project: { name: project.name, recordId: project.record_id } }
+    const fixtureProject = registerConfinementProbeProject(input)
+    const priorReader = projectRegisterReader()
+    if (!priorReader) throw new Error('confinement probe needs the installed project reader')
+    installProjectRegisterReader(() => [fixtureProject])
+    hub.projects.refreshProjects()
+    try {
+      const task = hub.task.createLocalTaskInTransaction(
+        connection,
+        { project: fixtureProject.name, title: 'Verify confined CLI access' },
+        { skipDuplicateCheck: true },
+      )
+      return {
+        key: task.key,
+        project: { name: fixtureProject.name, recordId: fixtureProject.record_id },
+      }
+    } finally {
+      installProjectRegisterReader(priorReader)
+      hub.projects.refreshProjects()
+    }
   })
 }

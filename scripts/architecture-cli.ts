@@ -24,13 +24,16 @@ export const cliModules = [
   {
     file: 'cli/task-read-adapter.ts',
     allowed: [
+      'bun:sqlite',
       'hub/src/project-register-reader.ts',
       'hub/src/task.ts',
       'hub/src/task-document.ts',
       'hub/src/projects.ts',
       'orchestrator/src/sandbox/confinement-probe-task-port.ts',
+      'orchestrator/src/database/migrations.ts',
       'orchestrator/src/project/project-list-json.ts',
       'orchestrator/src/project/project-read.ts',
+      'orchestrator/src/project/project-registration.ts',
       'orchestrator/src/workflow/task-read-port.ts',
       'shared/orch-contract.ts',
     ],

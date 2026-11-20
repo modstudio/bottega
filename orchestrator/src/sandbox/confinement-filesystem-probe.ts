@@ -33,7 +33,10 @@ import { targetGitEnvironment, worktreeGitDir } from '../git/git-environment.ts'
 import type { Project } from '../project/projects.ts'
 import { prepareSharedRefGuard, workerSharedGitRoots } from '../resources/ref-guard.ts'
 import { workerChildEnvironment } from '../run/run-worker-home.ts'
-import { createConfinementProbeTask } from './confinement-probe-task-port.ts'
+import {
+  type ConfinementProbeTask,
+  createConfinementProbeTask,
+} from './confinement-probe-task-port.ts'
 import {
   type RunningInstallLayout,
   resolveRunningInstallLayout,
@@ -92,6 +95,9 @@ const NOT_COVERED: ConfinementFilesystemProbeRow[] = [
     reason: 'BOTTEGA_SANDBOX=host bypasses SRT',
   },
 ]
+
+const PROBE_PROJECT_NAME = 'confinement-probe'
+const PROBE_TASK_PREFIX = ['CONFINEMENT', 'PROBE'].join('')
 
 function fixtureProject(
   recordId: string,
@@ -512,7 +518,12 @@ function probeAccessTargets(input: {
       path: join(input.siblingPath, '.mcp.json'),
       expected: 'denied',
     },
-    { name: 'orchestrator store', path: input.orchestratorDatabase, expected: 'denied' },
+    {
+      name: 'orchestrator store',
+      path: input.orchestratorDatabase,
+      expected: 'denied',
+      plant: false,
+    },
     { name: 'own secret', path: join(input.ownPath, 'declared.secret'), expected: 'denied' },
     {
       name: 'same-project sibling worktree',
@@ -541,6 +552,30 @@ function probeAccessTargets(input: {
     })
   }
   return targets
+}
+
+function createProbeTaskFixture(
+  hubWriter: Database,
+  orchestratorDatabase: string,
+  ownPath: string,
+): { own: Project; task: ConfinementProbeTask } {
+  const own = fixtureProject(Bun.randomUUIDv7(), PROBE_PROJECT_NAME, ownPath, ['declared.secret'])
+  own.settings.keyPrefixes = [PROBE_TASK_PREFIX]
+  const task = createConfinementProbeTask(hubWriter, {
+    orchestratorDatabase,
+    project: {
+      ...own,
+      retiredAt: null,
+      settings: {
+        keyPrefixes: [PROBE_TASK_PREFIX],
+        secretPaths: ['declared.secret'],
+      },
+    },
+  })
+  if (task.project.name !== own.name || task.project.recordId !== own.recordId) {
+    throw new Error('confinement probe task was created for the wrong fixture project')
+  }
+  return { own, task }
 }
 
 function createProbeFixture(root: string) {
@@ -586,10 +621,12 @@ function createProbeFixture(root: string) {
   mkdirSync(scratchDir, { recursive: true })
   mkdirSync(state.hubDirectory, { recursive: true })
   const hubWriter = openLiveHubFixture(hubDatabase)
-  const probeTask = createConfinementProbeTask(hubWriter)
+  const { own, task: probeTask } = createProbeTaskFixture(
+    hubWriter,
+    state.orchestratorDatabase,
+    ownPath,
+  )
   const commandLabel = `${PLATFORM_SLUG} task show <probe task>`
-  const { name: projectName, recordId: projectRecordId } = probeTask.project
-  const own = fixtureProject(projectRecordId, projectName, ownPath, ['declared.secret'])
   const sibling = fixtureProject('sibling', 'sibling', siblingPath)
   const registeredProjects = [
     own,
