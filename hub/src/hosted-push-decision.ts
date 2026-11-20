@@ -1,5 +1,5 @@
-import { recordDate } from '../../shared/record-timestamp.ts'
 import { canonicalJson } from '../../shared/canonical-json.ts'
+import { recordDate } from '../../shared/record-timestamp.ts'
 import { DELETED_ON_HOSTED_RECORD_REASON } from './hosted-delete.ts'
 import { mergeNoteAnchors } from './note-anchor-merge.ts'
 import type {

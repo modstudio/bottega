@@ -121,6 +121,7 @@ export const hubModuleSpecs = [
   {
     file: 'hub/src/hosted-push-decision.ts',
     allowed: [
+      '../../shared/canonical-json.ts',
       '../../shared/record-timestamp.ts',
       './hosted-delete.ts',
       './note-anchor-merge.ts',

@@ -4,6 +4,7 @@ import type { SQL } from 'bun'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { RECORD_ACTOR_ROLE } from '../../shared/record/schema.ts'
 import { bindTenant } from '../../shared/record/tenant.ts'
+import { hostedIntervalRow, hostedTaskRow } from '../test/hosted-push-rows.ts'
 import { createHostedRecordFixture, pgliteSql } from '../test/hosted-record-fixture.ts'
 import { db, writeTransaction } from './db.ts'
 import { DELETED_ON_HOSTED_RECORD_REASON } from './hosted-delete.ts'
@@ -13,7 +14,6 @@ import { drainHostedOutbox } from './outbox.ts'
 import {
   type HostedPushChange,
   type ParsedHostedPushChange,
-  type PushedInterval,
   type PushedStatusEvent,
   type PushedTask,
   parseHostedPushItem,
@@ -45,49 +45,11 @@ const row = (id: string, at: string, task = taskId): PushedStatusEvent => ({
   deleted_at: null,
 })
 
-const taskRow = (id: string, key: string, source: PushedTask['source'] = 'mcp'): PushedTask => ({
-  id,
-  key,
-  project: 'workshop',
-  project_name: 'workshop',
-  projectId,
-  title: key,
-  status: 'active',
-  status_category: 'active',
-  parent_key: null,
-  parent_id: null,
-  body: null,
-  assignee: null,
-  opened_at: '2026-10-09T10:00:00.000Z',
-  closed_at: null,
-  source,
-  first_seen: '2026-10-09T10:00:00.000Z',
-  last_seen: '2026-10-09T11:00:00.000Z',
-  created_at: '2026-10-09T10:00:00.000Z',
-  updated_at: '2026-10-09T11:00:00.000Z',
-  deleted_at: null,
-  next_document_number: 1,
-})
+const taskRow = (id: string, key: string, source: PushedTask['source'] = 'mcp') =>
+  hostedTaskRow(id, key, projectId, source)
 
-const intervalRow = (id: string, startAt = '2026-10-12T16:54:46.612Z'): PushedInterval => ({
-  id,
-  task_key: 'DEV-1240',
-  project_name: 'workshop',
-  projectId,
-  source: 'orch',
-  agent: 'codex',
-  job: 'writing',
-  start_at: startAt,
-  end_at: '2026-10-12T16:55:15.905Z',
-  claude_tokens: 0,
-  vendor_tokens: 100,
-  vendor_cost_usd: null,
-  ref: 'orch:11154:turn:11154',
-  via: 'task-key',
-  open: 0,
-  session_id: null,
-  user_id: userId,
-})
+const intervalRow = (id: string, startAt?: string) =>
+  hostedIntervalRow(id, projectId, userId, startAt)
 
 const parseInputs = (inputs: HostedPushChange[]): ParsedHostedPushChange[] =>
   inputs.map((input) => {
