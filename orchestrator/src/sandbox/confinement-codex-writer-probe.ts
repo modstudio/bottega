@@ -2,7 +2,7 @@
 
 import { PLATFORM_NAME } from '../../../shared/brand.ts'
 
-export type CommandProbeStatus = 'ran' | 'failed' | 'refused'
+type CommandProbeStatus = 'ran' | 'failed' | 'refused'
 export type CommandProbe = { status: CommandProbeStatus; reason: string }
 
 export const CODEX_PROBE_MODE = `codex sandbox -P ran without --approve-for-me; branch lifecycle belongs to ${PLATFORM_NAME.toLowerCase()} tree`
@@ -39,7 +39,10 @@ export function codexWriterProbeOutput(stdout: string): {
       .split(/\r?\n/)
       .map((line) => line.split('=', 2) as [string, string]),
   )
-  const command = (name: string, expected: Exclude<CommandProbeStatus, 'failed'> = 'ran') => ({
+  const command = (
+    name: string,
+    expected: Exclude<CommandProbeStatus, 'failed'> = 'ran',
+  ): CommandProbe => ({
     status: values.get(name) === expected ? expected : 'failed',
     reason:
       values.get(name) === expected

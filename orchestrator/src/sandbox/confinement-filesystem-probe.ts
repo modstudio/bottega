@@ -76,7 +76,7 @@ export type ConfinementFilesystemProbeRow = {
     | 'Codex post-launch sibling gap'
     | 'read-only MCP'
     | 'host override'
-  status: FilesystemProbeAccess | CommandProbeStatus | 'committed' | 'refused'
+  status: FilesystemProbeAccess | CommandProbe['status'] | 'committed' | 'refused'
   paths: Record<string, FilesystemProbeAccess>
   commands?: Record<string, CommandProbe>
   reason?: string
