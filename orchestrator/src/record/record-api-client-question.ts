@@ -1,13 +1,12 @@
 // concern: record-api-client-question
 /** Calls the hosted question routes and validates write results. */
 
-import type { RecordRequestDestination, RecordWriteDestination } from './record-api-client-paths.ts'
-import { RecordApiRequestError } from './record-api-client-response.ts'
-import type { RecordIdentity } from './record-auth.ts'
 import {
   RUN_QUESTION_OWNER_NOT_LIVE_CODE,
   RunQuestionOwnerNotLiveError,
 } from '../question-store/run-question-write-guard.ts'
+import type { RecordRequestDestination, RecordWriteDestination } from './record-api-client-paths.ts'
+import type { RecordIdentity } from './record-auth.ts'
 import {
   type QuestionImportBody,
   type QuestionLiveIntent,
@@ -21,6 +20,17 @@ type Request = <T>(
   path: string,
   init?: RequestInit & { schema?: (body: unknown) => T; destinationSpaceId?: string },
 ) => Promise<T>
+
+function isOwnerNotLiveResponse(error: unknown): error is { status: 409; code: string } {
+  return (
+    error !== null &&
+    typeof error === 'object' &&
+    'status' in error &&
+    error.status === 409 &&
+    'code' in error &&
+    error.code === RUN_QUESTION_OWNER_NOT_LIVE_CODE
+  )
+}
 
 export type RecordQuestionClient = {
   whoami?(): Promise<RecordIdentity>
@@ -68,12 +78,7 @@ async function writeQuestion(
       schema: (body) => questionWriteResultSchema.parse(body),
     })
   } catch (error) {
-    if (
-      error instanceof RecordApiRequestError &&
-      error.status === 409 &&
-      error.code === RUN_QUESTION_OWNER_NOT_LIVE_CODE &&
-      input.question.runId
-    )
+    if (isOwnerNotLiveResponse(error) && input.question.runId)
       throw new RunQuestionOwnerNotLiveError(input.question.runId)
     throw error
   }
@@ -96,8 +101,11 @@ export const recordQuestionClient = (request: Request): RecordQuestionClient => 
           },
       })
     },
-    writeQuestion: (intent, input, destination) =>
-      writeQuestion(request, intent, input, destination),
+    writeQuestion: (
+      intent: QuestionLiveIntent,
+      input: QuestionWriteBody,
+      destination: RecordWriteDestination,
+    ) => writeQuestion(request, intent, input, destination),
     importQuestion: (input: QuestionImportBody, destination: RecordWriteDestination) =>
       request('/v1/questions/import', {
         method: 'POST',

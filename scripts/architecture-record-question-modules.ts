@@ -33,6 +33,7 @@ export const recordQuestionModules: RecordModule[] = [
     './record-question-contract.ts',
   ]),
   module('orchestrator/src/record/record-api-client-question.ts', [
+    '../question-store/run-question-write-guard.ts',
     './record-api-client-paths.ts',
     './record-auth.ts',
     './record-question-contract.ts',
