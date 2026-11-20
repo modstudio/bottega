@@ -361,6 +361,7 @@ export function installWorkflowStoreFixture(d: Database): void {
       body: 'Fix accepted findings.',
       floor: ['command-exit' as const, 'recorded-artifact' as const],
       ...{ jobs: ['implement'], actions: [] },
+      dispatch: 'required' as const,
       autonomy: 'ask' as const,
       needs: [],
     },

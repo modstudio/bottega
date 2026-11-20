@@ -176,6 +176,7 @@ test('plan-task start floor selection does not create review debt without a revi
       enforcement: 'floors',
     },
     [floor('tracker-transition'), floor('descendants-closed')],
+    { slug: 'start', jobs: [] },
     { task: 'DEV-1' },
     {
       readTask: (key) => ({

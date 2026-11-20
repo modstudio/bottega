@@ -9,6 +9,7 @@ import type { SelectableCursorRow, WorkflowCursorContext } from './workflow-curs
 import { currentStepActivatedAt, reentryBoundFloorInput } from './workflow-cursor-trail.ts'
 import { foreignCursorOwner } from './workflow-cursor-transition.ts'
 import { descendantTaskFacts, selectEpicStartFloors } from './workflow-epic-floor.ts'
+import type { CatalogueStep } from './step-catalogue-definition.ts'
 import type { WorkflowEvidenceInput } from './workflow-evidence-input.ts'
 import {
   decideFloorSatisfaction,
@@ -16,7 +17,10 @@ import {
   type Floor,
   type FloorDecision,
 } from './workflow-floor.ts'
-import type { FloorEvidencePorts } from './workflow-floor-evidence.ts'
+import {
+  type FloorEvidencePorts,
+  gatherWorkflowRunChains,
+} from './workflow-floor-evidence.ts'
 import { gatherValidatedEvidence } from './workflow-floor-evidence-gather.ts'
 import { invokeFloorEvidencePort } from './workflow-floor-evidence-replay.ts'
 import { openWorkflowObligations } from './workflow-obligation-floor.ts'
@@ -50,6 +54,7 @@ export function refuseForeignKeylessCursor(row: FloorCursor, callerSession?: str
 export async function applyFloorDecision(
   row: FloorCursor,
   floors: Floor[],
+  step: Pick<CatalogueStep, 'slug' | 'jobs' | 'dispatch' | 'dispatchWaivedBy' | 'judges'>,
   evidence: WorkflowEvidenceInput,
   ports: FloorEvidencePorts,
   finishing: boolean,
@@ -77,6 +82,7 @@ export async function applyFloorDecision(
     step: row.step_slug,
     hasChildren: taskRows.some((task) => task.parentKey === row.workflow_key),
   })
+  const externallyMetFloors: Floor['kind'][] = []
   if (row.enforcement === 'floors' && floors.some(({ kind }) => kind === 'review-owed')) {
     const reviewOwed = invokeFloorEvidencePort(
       ports,
@@ -88,6 +94,7 @@ export async function applyFloorDecision(
       args,
     )
     if (reviewOwed.action === 'refuse') return reviewOwed
+    externallyMetFloors.push('review-owed')
   }
   const validated = await gatherValidatedEvidence({
     cursorId: row.record_id,
@@ -115,6 +122,15 @@ export async function applyFloorDecision(
   })
   if (evidenceFloors.some(({ kind }) => kind === 'descendants-closed'))
     validated.descendants = descendantTaskFacts(row.workflow_key, taskRows)
+  if (step.dispatch === 'required')
+    validated.dispatchRuns = gatherWorkflowRunChains(
+      row.record_id,
+      step.jobs,
+      database,
+      row.step_slug,
+    )
+  if (step.judges?.length)
+    validated.judgedRuns = gatherWorkflowRunChains(row.record_id, step.judges, database)
   if (selfRulingId !== undefined)
     validated.ruling = {
       id: selfRulingId,
@@ -130,6 +146,9 @@ export async function applyFloorDecision(
     enforcement: row.enforcement ?? 'note-only',
     finishing,
     openObligations: await openWorkflowObligations(row.record_id, database, client),
+    workflowKey: row.workflow_key,
+    step,
+    externallyMetFloors,
     ...(foreignOwner
       ? { cursorTakeoverRemedy: workflowCursorTakeoverRemedy(row, foreignOwner) }
       : {}),

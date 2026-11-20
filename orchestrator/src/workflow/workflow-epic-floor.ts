@@ -24,6 +24,6 @@ export function selectEpicStartFloors(
   input: { workflow: string; step: string; hasChildren: boolean },
 ): Floor[] {
   if (input.workflow !== 'plan-task' || input.step !== 'start') return [...floors]
-  const selected: FloorKind = input.hasChildren ? 'descendants-closed' : 'tracker-transition'
-  return floors.filter(({ kind }) => kind === selected)
+  const unselected: FloorKind = input.hasChildren ? 'tracker-transition' : 'descendants-closed'
+  return floors.filter(({ kind }) => kind !== unselected)
 }

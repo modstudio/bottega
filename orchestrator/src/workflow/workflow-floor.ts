@@ -195,8 +195,8 @@ export type FloorSatisfactionInput = {
   openObligations: OpenObligation[]
   freshRulingAfter?: string
   cursorTakeoverRemedy?: string
-  workflowKey: string
-  step: {
+  workflowKey?: string
+  step?: {
     slug: string
     jobs: string[]
     dispatch?: 'required'
@@ -906,16 +906,17 @@ function dispatchObligationRefusal(
   input: FloorSatisfactionInput,
   metFloors: readonly FloorKind[],
 ): string | null {
-  if (input.step.dispatch !== 'required') return null
+  const step = input.step
+  if (step?.dispatch !== 'required') return null
   if (input.floors.some((floor) => floor.kind === 'descendants-closed')) return null
-  const waived = (input.step.dispatchWaivedBy ?? []).find((kind) => metFloors.includes(kind))
+  const waived = (step.dispatchWaivedBy ?? []).find((kind) => metFloors.includes(kind))
   if (waived) return null
   const runs = input.evidence.dispatchRuns ?? []
   if (!runs.length) {
-    const job = input.step.jobs[0] ?? '<job>'
+    const job = step.jobs[0] ?? '<job>'
     return (
-      `dispatch obligation is unmet: no ${input.step.jobs.join(' or ') || 'declared-job'} run was dispatched ` +
-      `from this cursor at step ${input.step.slug}; dispatch one with ` +
+      `dispatch obligation is unmet: no ${step.jobs.join(' or ') || 'declared-job'} run was dispatched ` +
+      `from this cursor at step ${step.slug}; dispatch one with ` +
       `\`${PLATFORM_SLUG} run start ${job} --key ${input.workflowKey || '<KEY>'} ...\` from this cursor`
     )
   }
@@ -935,11 +936,12 @@ function dispatchObligationRefusal(
 }
 
 function judgingObligationRefusal(input: FloorSatisfactionInput): string | null {
-  if (!input.step.judges?.length) return null
+  const judges = input.step?.judges
+  if (!judges?.length) return null
   const unscored = (input.evidence.judgedRuns ?? []).filter((run) => run.needsVerdict)
   if (!unscored.length) return null
   return (
-    `judging obligation is unmet: ${input.step.judges.join(' or ')} run ` +
+    `judging obligation is unmet: ${judges.join(' or ')} run ` +
     `${unscored.map((run) => run.number).join(', ')} ${unscored.length === 1 ? 'is' : 'are'} unscored; ` +
     `score each chain with ${scoreRemedy(unscored)}`
   )

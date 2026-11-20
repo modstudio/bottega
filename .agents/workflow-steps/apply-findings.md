@@ -6,6 +6,8 @@ floor:
   - recorded-artifact
   - review-owed
 jobs: [implement]
+dispatch: required
+dispatchWaivedBy: [review-owed]
 autonomy: ask
 needs: []
 ---

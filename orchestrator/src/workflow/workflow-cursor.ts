@@ -441,6 +441,7 @@ async function closeFloorsForStep(
     await applyFloorDecision(
       row,
       floors,
+      currentStep,
       floorEvidence,
       ports,
       advance.ordinal === null,

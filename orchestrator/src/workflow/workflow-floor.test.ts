@@ -206,6 +206,115 @@ test('an unfinished review round refusal names every unfinished review id', () =
   })
 })
 
+const dispatchStep = {
+  slug: 'start',
+  jobs: ['implement'],
+  dispatch: 'required' as const,
+}
+const terminalDispatch = { number: 41, job: 'implement', terminal: true, needsVerdict: false }
+
+test.each([
+  ['zero runs', [], 'no implement run was dispatched'],
+  [
+    'a running chain',
+    [{ ...terminalDispatch, terminal: false }],
+    'run 41 is not terminal',
+  ],
+  [
+    'an unscored terminal chain',
+    [{ ...terminalDispatch, needsVerdict: true }],
+    'run 41 still needs a verdict',
+  ],
+] as const)('a required dispatch refuses %s', (_name, dispatchRuns, message) => {
+  const decision = decide({
+    floors: [tracker],
+    evidence: { ...closedTask, dispatchRuns: [...dispatchRuns] },
+    workflowKey: 'DEV-1',
+    step: dispatchStep,
+  })
+  expect(decision).toMatchObject({ action: 'refuse' })
+  if (decision.action === 'refuse') expect(decision.message).toContain(message)
+})
+
+test.each(['scored', 'voided'])('a terminal %s dispatch allows', () => {
+  expect(
+    decide({
+      floors: [tracker],
+      evidence: { ...closedTask, dispatchRuns: [terminalDispatch] },
+      workflowKey: 'DEV-1',
+      step: dispatchStep,
+    }).action,
+  ).toBe('allow')
+})
+
+test('a chain filtered out for another cursor or step does not count as the dispatch', () => {
+  expect(
+    decide({
+      floors: [tracker],
+      evidence: { ...closedTask, dispatchRuns: [] },
+      workflowKey: 'DEV-1',
+      step: dispatchStep,
+    }).action,
+  ).toBe('refuse')
+})
+
+test('a terminal unscored review lens satisfies its dispatch step', () => {
+  expect(
+    decide({
+      floors: [artifact],
+      evidence: {
+        ...presentArtifact,
+        dispatchRuns: [
+          { number: 51, job: 'review-lens', terminal: true, needsVerdict: true },
+        ],
+      },
+      workflowKey: 'DEV-1',
+      step: { slug: 'review-lenses', jobs: ['review-lens'], dispatch: 'required' },
+    }).action,
+  ).toBe('allow')
+})
+
+test('a judging step refuses an unscored lens chain', () => {
+  const decision = decide({
+    floors: [ruling],
+    evidence: {
+      ...answeredRuling,
+      judgedRuns: [{ number: 51, job: 'review-lens', terminal: true, needsVerdict: true }],
+    },
+    workflowKey: 'DEV-1',
+    step: { slug: 'triage-findings', jobs: [], judges: ['review-lens'] },
+  })
+  expect(decision).toMatchObject({ action: 'refuse' })
+  if (decision.action === 'refuse') expect(decision.message).toContain(`${PLATFORM_SLUG} score 51`)
+})
+
+test('a met declarative waiver floor allows zero dispatches', () => {
+  expect(
+    decide({
+      floors: [artifact],
+      evidence: presentArtifact,
+      workflowKey: 'DEV-1',
+      step: {
+        ...dispatchStep,
+        slug: 'apply-findings',
+        dispatchWaivedBy: ['review-owed'],
+      },
+      externallyMetFloors: ['review-owed'],
+    }).action,
+  ).toBe('allow')
+})
+
+test('a selected descendants-closed floor allows zero dispatches', () => {
+  expect(
+    decide({
+      floors: [{ ...tracker, kind: 'descendants-closed' }],
+      evidence: { ...closedTask, descendants: [] },
+      workflowKey: 'DEV-1',
+      step: dispatchStep,
+    }).action,
+  ).toBe('allow')
+})
+
 test('a bound operator answer satisfies an operator ruling floor', () => {
   const evidence: ValidatedEvidence = {
     ruling: { ...answeredRuling.ruling!, answeredByOperator: true },

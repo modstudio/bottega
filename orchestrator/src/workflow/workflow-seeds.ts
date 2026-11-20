@@ -64,7 +64,7 @@ function seedWorkflowEvent(
 function seedCatalogue(d: Database, now: string): void {
   const seeded = catalogueDefinition(),
     seededDefinition = JSON.stringify(seeded),
-    revision = 6,
+    revision = 7,
     reason = `seed r${revision}`
   requireValidSeedCatalogue(seeded)
   let catalogue = d

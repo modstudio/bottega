@@ -5,6 +5,8 @@ floor:
   - recorded-artifact
   - review-owed
 jobs: [review-lens]
+dispatch: required
+dispatchWaivedBy: [review-owed]
 autonomy: auto
 needs:
   - tracker

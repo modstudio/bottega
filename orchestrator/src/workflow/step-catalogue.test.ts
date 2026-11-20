@@ -219,6 +219,50 @@ test('step validation names unknown jobs and actions with the step slug', () => 
   )
 })
 
+test('dispatch and judging vocabulary is validated beside jobs', () => {
+  const staged = { ...step, stage: 'review' as const, floor: ['review-owed' as const] }
+  expect(
+    validateStepCatalogue({
+      steps: [
+        {
+          ...staged,
+          jobs: ['review-lens'],
+          dispatch: 'required',
+          dispatchWaivedBy: ['review-owed'],
+          judges: ['review-lens'],
+        },
+      ],
+    }),
+  ).toEqual([])
+  expect(
+    validateStepCatalogue({
+      steps: [
+        {
+          ...staged,
+          dispatch: 'optional',
+          dispatchWaivedBy: ['recorded-artifact'],
+          judges: ['unknown'],
+        },
+      ],
+    }),
+  ).toEqual(
+    expect.arrayContaining([
+      'step "design" dispatch must be "required"',
+      'step "design" dispatchWaivedBy requires dispatch: required',
+      'step "design" dispatchWaivedBy names undeclared floor kind "recorded-artifact"',
+      'step "design" judges unknown job "unknown"',
+    ]),
+  )
+})
+
+test('a repository-writing job requires dispatch: required', () => {
+  expect(
+    validateStepCatalogue({
+      steps: [{ ...step, stage: 'implement' as const, jobs: ['implement'] }],
+    }),
+  ).toContain('step "design" declares repository-writing job "implement" but not dispatch: required')
+})
+
 test('steps must declare every job their bodies prescribe', () => {
   const staged = { ...step, stage: 'review' as const }
   for (const command of [
@@ -367,7 +411,15 @@ test('pull-request commandEvidence requires a capable floor and cannot defer com
 
 test(`${PLATFORM_SLUG} run start dispatches require a prompt or file`, () => {
   const definition = (body: string) => ({
-    steps: [{ ...step, stage: 'implement', body, jobs: ['implement', 'review-lens'] }],
+    steps: [
+      {
+        ...step,
+        stage: 'implement',
+        body,
+        jobs: ['implement', 'review-lens'],
+        dispatch: 'required',
+      },
+    ],
   })
 
   expect(
