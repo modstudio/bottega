@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url'
 import { ESLint } from 'eslint'
 import {
   RECORD_TIMESTAMP_COMPARISON_REMEDY,
+  RECORD_TIMESTAMP_COMPARISON_SELECTORS,
   RECORD_TIMESTAMP_GUARD_SCOPE,
 } from '../hub/src/record-timestamp-guard.ts'
 
@@ -46,7 +47,13 @@ async function checkRecordTimestampComparisons() {
   const files = selectRecordTimestampGuardFiles(
     readdirSync(resolve(ROOT, 'hub/src')).map((file) => `hub/src/${file}`),
   ).map((file) => resolve(ROOT, file))
-  const findings = recordTimestampMessages(await new ESLint({ cwd: ROOT }).lintFiles(files))
+  const eslint = new ESLint({
+    cwd: ROOT,
+    overrideConfig: {
+      rules: { 'no-restricted-syntax': ['error', ...RECORD_TIMESTAMP_COMPARISON_SELECTORS] },
+    },
+  })
+  const findings = recordTimestampMessages(await eslint.lintFiles(files))
   for (const finding of findings) {
     console.error(`${relative(ROOT, finding.filePath)}:${finding.line}: ${finding.message}`)
   }

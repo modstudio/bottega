@@ -260,6 +260,7 @@ export const hubModuleSpecs = [
     allowed: ['../../shared/record-id.ts', './push-contract.ts'],
   },
   { file: 'hub/src/task-push-plan.ts', allowed: ['../../shared/brand.ts', './push-contract.ts'] },
+  { file: 'hub/src/record-timestamp-guard.ts', allowed: [] },
   {
     file: 'hub/src/push-contract.ts',
     allowed: ['../../shared/record-id.ts', '../../shared/task-source.ts'],
