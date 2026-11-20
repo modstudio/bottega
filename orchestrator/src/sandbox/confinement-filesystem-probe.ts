@@ -281,7 +281,7 @@ function installFixture(root: string, running: RunningInstallLayout): RunningIns
 }
 
 function probeWorkerEnvironment(environment: Record<string, string>): Record<string, string> {
-  return workerChildEnvironment({
+  const child = workerChildEnvironment({
     agent: BUILTIN_AGENTS.grok!,
     sandbox: 'srt',
     runRecordId: 'confinement-filesystem-probe',
@@ -291,6 +291,8 @@ function probeWorkerEnvironment(environment: Record<string, string>): Record<str
     stateEnvironment: environment,
     includeStore: true,
   })
+  child.BOTTEGA_ORCHESTRATOR_DB = resolveOrchestratorDatabase(environment)
+  return child
 }
 
 function probeHubOpenMode(hubDatabase: string): string {

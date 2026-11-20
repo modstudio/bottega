@@ -39,6 +39,7 @@ import {
   reportReviewFunnelCommand,
 } from '../review-funnel/review-funnel-commands.ts'
 import { resolveRunIdentifier } from '../run/run-identifier.ts'
+import { countRunConfinement } from '../run/run-confinement-count.ts'
 import { loadSubscriptionCostContext } from '../run/run-subscription-prices.ts'
 import {
   formatConfinementFilesystemProbes,
@@ -52,7 +53,6 @@ import {
 } from '../sandbox/confinement-report.ts'
 import {
   formatConfinementRunMeasurement,
-  measureConfinementRuns,
 } from '../sandbox/confinement-run-measurement.ts'
 import { readonlyLensReportInputs } from '../sandbox/sandbox.ts'
 import { type CliFlags, log, optionFlags } from './support.ts'
@@ -82,7 +82,7 @@ async function confinementReportCommand(flags: CliFlags): Promise<void> {
     mcp: parseConfinementMcpSelector(flags.has('mcp'), flags.flag('mcp')),
   })
   const probes = await runConfinementFilesystemProbes()
-  const runMeasurement = measureConfinementRuns(db(), flags.flag('since'))
+  const runMeasurement = countRunConfinement(db(), flags.flag('since'))
   if (flags.has('json')) {
     log(JSON.stringify({ rows, filesystemProbes: probes, readOnlyRuns: runMeasurement }))
     return

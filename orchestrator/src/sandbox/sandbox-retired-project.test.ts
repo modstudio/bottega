@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { STATE_HOME_ENV } from '../../../shared/state-directory.ts'
 import { db, writableDb } from '../database/db.ts'
-import { type Project, projectsForSandboxDeny } from '../project/projects.ts'
+import { type Project, projectsIncludingRetired } from '../project/projects.ts'
 import { readonlyLensProfile } from './sandbox.ts'
 
 test('the sandbox deny universe includes a retired checkout, its parent, and its worktree root', () => {
@@ -32,7 +32,7 @@ test('the sandbox deny universe includes a retired checkout, its parent, and its
       worktree: '/projects/fixture/.claude/worktrees/run',
       runtimeDir: join(state, 'orchestrator/runs/sandbox-run'),
       project: own,
-      registeredProjects: [own, ...projectsForSandboxDeny(db())],
+      registeredProjects: [own, ...projectsIncludingRetired(db())],
       agent: 'grok',
       path: '/usr/bin',
       nodeModuleLinks: [],

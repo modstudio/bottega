@@ -19,7 +19,7 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { homedir } from 'node:os'
-import { basename, delimiter, dirname, isAbsolute, join, resolve } from 'node:path'
+import { basename, delimiter, dirname, isAbsolute, join, relative, resolve } from 'node:path'
 import type { SandboxRuntimeConfig as LibrarySandboxRuntimeConfig } from '@anthropic-ai/sandbox-runtime'
 import { PLATFORM_SLUG, WORKER_MCP_SERVER_NAME } from '../../../shared/brand.ts'
 import { type ConfigEnvironment, resolveEnvFilePaths } from '../../../shared/config-directory.ts'
@@ -29,10 +29,10 @@ import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 import { ensureHubLoginTokenDirectory } from '../../../shared/state-directory.ts'
 import { disabledProjectMcpServers } from '../mcp/mcp-probe.ts'
 import { createNoFollowFile } from '../no-follow-file.ts'
-import { type Project, projectAt, projectsForSandboxDeny } from '../project/projects.ts'
+import { type Project, projectAt, projectsIncludingRetired } from '../project/projects.ts'
 import { mainStackGateAddresses } from '../resources/main-stack-network.ts'
 import { runHarnessStateDir, runWorkerHomeDir } from '../run-owned-paths.ts'
-import { areaReadPolicy, assembleAreaReadProfile, isAtOrBelow } from './area-read-policy.ts'
+import { areaReadPolicy } from './area-read-policy.ts'
 import {
   type RunningInstallLayout,
   resolveRunningInstallLayout,
@@ -61,6 +61,29 @@ export type SandboxRuntimeConfig = {
 
 /** Pin operator state before a worker's isolated HOME changes implicit resolution. */
 export type RunSandbox = 'host' | 'srt'
+
+const isAtOrBelow = (path: string, parent: string) => {
+  const fromParent = relative(parent, path)
+  return fromParent === '' || (!fromParent.startsWith('..') && !isAbsolute(fromParent))
+}
+
+/** Assemble broad area policy and protected denies in sandbox-runtime field names. */
+function assembleAreaReadProfile(input: {
+  areaDeny: readonly string[]
+  candidateAllows: readonly string[]
+  protectedDenies: readonly string[]
+  socketDenyPaths: readonly string[]
+}): { denyRead: string[]; allowWithinDeny: string[] } {
+  return {
+    denyRead: [...new Set([...input.areaDeny, ...input.protectedDenies, ...input.socketDenyPaths])],
+    allowWithinDeny: [...new Set(input.candidateAllows)].filter(
+      (allowed) =>
+        !input.protectedDenies.some(
+          (denied) => isAtOrBelow(allowed, denied) || isAtOrBelow(denied, allowed),
+        ),
+    ),
+  }
+}
 
 function emptyProjectRegisterRefusal(): string {
   return renderRefusal(
@@ -531,7 +554,7 @@ export function probeSandboxProfileForCwd(input: {
     allowWriteDir: input.allowWriteDir,
     cwd: input.cwd,
     project,
-    registeredProjects: projectsForSandboxDeny(input.database),
+    registeredProjects: projectsIncludingRetired(input.database),
   })
 }
 

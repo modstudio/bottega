@@ -7,7 +7,7 @@ import { db } from '../database/db.ts'
 import { appendRunEvent } from '../events.ts'
 import type { ProcessSample } from '../process-resource-sampler.ts'
 import { runDetail } from '../state/serve.ts'
-import { runIdentityMap, runListingCommand } from './run-listing.ts'
+import { parseRunListSince, runIdentityMap, runListingCommand } from './run-listing.ts'
 import { RUN_HOST_WAIT_MAX_MS, RUN_HOST_WAIT_POLL_MS } from './run-liveness-policy.ts'
 import type { SubscriptionCostContext } from './run-subscription-cost.ts'
 import { subscriptionCostFacts } from './run-subscription-cost-store.ts'
@@ -77,6 +77,17 @@ function command(
 function insert(status: string, job = 'implement') {
   return addRun({ agent: 'codex', job, status })
 }
+
+test('run-list --since normalizes offsets and treats an empty value as absent', () => {
+  expect(parseRunListSince('2026-11-19T01:02:03-05:00')).toBe('2026-11-19T06:02:03.000Z')
+  expect(parseRunListSince('')).toBeUndefined()
+})
+
+test('run-list --since refuses a malformed instant with the accepted form', () => {
+  expect(() => parseRunListSince('nonsense')).toThrow(
+    'provide --since as an ISO 8601 timestamp, for example 2026-11-19T06:02:03.000Z',
+  )
+})
 
 function runNumber(recordId: string): number {
   return db()

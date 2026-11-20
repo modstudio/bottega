@@ -1,6 +1,6 @@
 // concern: pure broad-area read policy; must not know sandbox-runtime or secret paths.
 
-import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import {
   resolveHubDatabase,
   resolveOrchestratorDatabase,
@@ -13,40 +13,6 @@ import { mainCheckoutWorktreeHint } from '../project/projects.ts'
 import { runHarnessStateDir } from '../run-owned-paths.ts'
 
 export type AreaReadPolicy = { deny: string[]; allow: string[] }
-
-export const isAtOrBelow = (path: string, parent: string) => {
-  const fromParent = relative(parent, path)
-  return fromParent === '' || (!fromParent.startsWith('..') && !isAbsolute(fromParent))
-}
-
-/** Keep a broad-area carve-back only when it cannot reopen a protected secret path. */
-function carveBackOutsideProtected(
-  candidates: readonly string[],
-  protectedDenies: readonly string[],
-): string[] {
-  return candidates.filter(
-    (allowed) =>
-      !protectedDenies.some(
-        (denied) => isAtOrBelow(allowed, denied) || isAtOrBelow(denied, allowed),
-      ),
-  )
-}
-
-/** Assemble the shared read-deny and safe carve-back portion of every SRT profile. */
-export function assembleAreaReadProfile(input: {
-  areaDeny: readonly string[]
-  candidateAllows: readonly string[]
-  protectedDenies: readonly string[]
-  socketDenyPaths: readonly string[]
-}): { denyRead: string[]; allowWithinDeny: string[] } {
-  return {
-    denyRead: [...new Set([...input.areaDeny, ...input.protectedDenies, ...input.socketDenyPaths])],
-    allowWithinDeny: carveBackOutsideProtected(
-      [...new Set(input.candidateAllows)],
-      input.protectedDenies,
-    ),
-  }
-}
 
 /** Broad machine areas hidden from workers, with only run-owned paths carved back in. */
 export function areaReadPolicy(input: {

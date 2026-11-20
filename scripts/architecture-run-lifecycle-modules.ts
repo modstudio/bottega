@@ -315,6 +315,11 @@ export const runLifecycleModules: ArchitectureModule[] = [
     './run-root-rollup.ts',
   ]),
   module('orchestrator/src/run/run-sandbox-recording.ts', ['bun:sqlite', '../sandbox/sandbox.ts']),
+  module('orchestrator/src/run/run-confinement-count.ts', [
+    'bun:sqlite',
+    '../jobs/jobs.ts',
+    './run-listing.ts',
+  ]),
   module('orchestrator/src/run/branch-conversation-owner.ts', []),
   module('orchestrator/src/run/branch-owner-guard.ts', [
     '../database/db.ts',

@@ -115,8 +115,8 @@ export { projectLifecycleForm, resolvedWorktreeTool } from './project-worktree-r
 export type { MainStackConsumer, Project, ProjectSettings, WorktreeTool }
 export { projectByName, projectRowByName, projects }
 
-/** Active and retired checkouts that every sandbox read policy must deny by default. */
-export function projectsForSandboxDeny(database: Database = db()): Project[] {
+/** Every registered project, including retired rows. */
+export function projectsIncludingRetired(database: Database = db()): Project[] {
   return [...projects({}, database), ...projects({ retired: true }, database)]
 }
 
