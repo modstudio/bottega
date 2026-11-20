@@ -340,6 +340,7 @@ export const hubModuleSpecs = [
   {
     file: 'hub/src/hosted-session-send.ts',
     allowed: [
+      '../../shared/record-call-trace.ts',
       '../../shared/record-remedies.ts',
       '../../shared/record-request-headers.ts',
       '../../shared/record-session.ts',

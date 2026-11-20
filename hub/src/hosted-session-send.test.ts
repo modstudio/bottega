@@ -1,5 +1,6 @@
-import { expect, test } from 'bun:test'
+import { expect, mock, spyOn, test } from 'bun:test'
 import { CALLER_HEADER_NAME, withRecordCaller } from '../../shared/record-caller.ts'
+import * as recordCallTrace from '../../shared/record-call-trace.ts'
 import { sendHostedSessionRequest } from './hosted-session-send.ts'
 import { hostedCreateTask } from './task-client.ts'
 
@@ -73,4 +74,23 @@ test('hosted session writes require and send a destination while reads remain un
       },
     )
   void compileOnlyClient
+})
+
+test('hosted session sends pass through the record trace seam', async () => {
+  const trace = spyOn(recordCallTrace, 'tracedRecordFetch')
+  try {
+    const response = await sendHostedSessionRequest({
+      ...common,
+      url: 'https://hub.example.test/v1/tasks',
+      method: 'GET',
+      fetch: async () =>
+        new Response('[]', { headers: { 'content-length': '2', 'content-type': 'application/json' } }),
+    })
+
+    expect(await response.json()).toEqual([])
+    expect(trace).toHaveBeenCalledTimes(1)
+    expect(trace.mock.calls[0]?.[0]).toBe('https://hub.example.test/v1/tasks')
+  } finally {
+    mock.restore()
+  }
 })

@@ -97,3 +97,18 @@ test('traced record fetch captures the request and response measurements', async
   })
   expect(calls[0]!.clientMs).toBeGreaterThanOrEqual(0)
 })
+
+test('traced record fetch counts a response body when content-length is absent', async () => {
+  const calls: RecordCallTrace[] = []
+  const response = await tracedRecordFetch(
+    'https://record.test/v1/tasks',
+    {},
+    (async () => new Response('chunked body')) as unknown as typeof fetch,
+    (call) => calls.push(call),
+  )
+
+  expect(await response.text()).toBe('chunked body')
+  for (let attempt = 0; calls.length === 0 && attempt < 10; attempt++) await Bun.sleep(0)
+  expect(calls).toHaveLength(1)
+  expect(calls[0]).toMatchObject({ routeClass: 'record-tasks', responseBytes: 12 })
+})

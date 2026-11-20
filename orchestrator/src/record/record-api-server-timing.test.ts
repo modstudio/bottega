@@ -20,3 +20,21 @@ test('record API timing wrapper adds Server-Timing to success and error response
   expect(error.response.status).toBe(403)
   expect(error.response.headers.get('server-timing')).toBe('app;dur=4.5')
 })
+
+test('record API timing wrapper preserves a response with immutable headers', async () => {
+  const passThrough = new Response('pass-through')
+  Object.defineProperty(passThrough.headers, 'set', {
+    value: () => {
+      throw new TypeError('immutable')
+    },
+  })
+  const timed = await timedRecordApiResponse(
+    { fetch: () => passThrough },
+    new Request('https://record.test/source'),
+    () => 1,
+  )
+
+  expect(timed.response).toBe(passThrough)
+  expect(timed.response.status).toBe(200)
+  expect(timed.response.headers.get('server-timing')).toBeNull()
+})

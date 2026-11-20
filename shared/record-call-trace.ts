@@ -42,23 +42,32 @@ export function recordRouteClass(path: string): string {
     'catalogues',
     'changes',
     'config-access',
+    'context-items',
     'docs',
     'invitations',
     'lens-catalogue',
     'machine',
+    'members',
+    'notes',
+    'operator-waiting-emails',
     'outside-blocks',
     'outside-intake',
     'port-catalogue',
     'projects',
+    'releases',
+    'report-subscriptions',
+    'reviews',
     'routing-evidence',
     'runs',
     'scores',
+    'sends',
     'settings',
     'snapshots',
     'spaces',
     'storage',
     'subjects',
     'sync',
+    'tasks',
     'task-flow',
     'whoami',
     'workflow-catalogue',
@@ -231,19 +240,33 @@ export async function tracedRecordFetch(
   const routeClass = recordRouteClass(new URL(url).pathname)
   try {
     const response = await transport(url, init)
-    const call = {
+    const responseBytes = contentLength(response.headers)
+    const common = {
       routeClass,
       method: init.method ?? 'GET',
       status: response.status,
       requestBytes: bodyBytes(init.body),
-      responseBytes: contentLength(response.headers),
-      clientMs: performance.now() - startedAt,
       serverMs: parseServerTiming(response.headers.get('server-timing')),
     }
-    if (observer === recordRecordCallTrace) {
-      recordedCalls.push(call)
-      if (configuredMode === 'calls') process.stderr.write(`${formatRecordCall(call)}\n`)
-    } else observer(call)
+    const finish = (measuredResponseBytes: number | null) => {
+      const call = {
+        ...common,
+        responseBytes: measuredResponseBytes,
+        clientMs: performance.now() - startedAt,
+      }
+      if (observer === recordRecordCallTrace) {
+        recordedCalls.push(call)
+        if (configuredMode === 'calls') process.stderr.write(`${formatRecordCall(call)}\n`)
+      } else observer(call)
+    }
+    if (responseBytes !== null) finish(responseBytes)
+    else if (response.body === null) finish(0)
+    else
+      void response
+        .clone()
+        .arrayBuffer()
+        .then((body) => finish(body.byteLength))
+        .catch(() => finish(null))
     return response
   } catch (error) {
     const call = {

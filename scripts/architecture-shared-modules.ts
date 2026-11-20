@@ -93,6 +93,7 @@ export const sharedModules: ArchitectureModule[] = [
     './hosted-call-observation.ts',
     './http-json.ts',
     './record-api-url.ts',
+    './record-call-trace.ts',
     './record-session.ts',
     './record-request-headers.ts',
     './record-remedies.ts',

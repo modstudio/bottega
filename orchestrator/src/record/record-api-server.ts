@@ -227,7 +227,11 @@ export async function timedRecordApiResponse(
   const started = now()
   const response = await app.fetch(request)
   const durationMs = now() - started
-  response.headers.set('server-timing', `app;dur=${durationMs.toFixed(1)}`)
+  try {
+    response.headers.set('server-timing', `app;dur=${durationMs.toFixed(1)}`)
+  } catch {
+    // Redirects and pass-through fetch responses can have immutable headers.
+  }
   return { response, durationMs }
 }
 
