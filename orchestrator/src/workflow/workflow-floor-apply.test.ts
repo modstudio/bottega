@@ -239,6 +239,46 @@ test.each([
   },
 )
 
+test('an unresolvable waiver branch refuses with the required arguments and does not waive', async () => {
+  const result = await applyFloorDecision(
+    {
+      id: 3,
+      record_id: newRecordId(),
+      project: 'fixture',
+      workflow_slug: 'fix-defect',
+      mode_slug: 'default',
+      workflow_key: 'DEV-1',
+      task_record_id: null,
+      args: '{"key":"DEV-1","branch":"missing-branch"}',
+      session_id: 'session-a',
+      created_at: '2026-11-19T00:00:00.000Z',
+      ordinal: 0,
+      step_slug: 'apply-findings',
+      state: 'running',
+      closed: '[]',
+      enforcement: 'floors',
+    },
+    [],
+    {
+      slug: 'apply-findings',
+      jobs: ['implement'],
+      dispatch: 'required',
+      dispatchWaivedBy: ['no-accepted-findings'],
+    },
+    {},
+    {},
+    false,
+    floorDatabase(),
+  )
+
+  expect(result).toEqual({
+    action: 'refuse',
+    message: expect.stringMatching(
+      /no-accepted-findings cannot be established: cannot resolve the current tip of branch missing-branch[\s\S]*--arg worktree=<path>[\s\S]*--arg branch=<branch>/,
+    ),
+  })
+})
+
 test('a foreign keyed advance keeps the recorded taken-over claim behavior', async () => {
   const d = database()
   await composeWorkflowWithCursor('flow', 'fixture', 'default', args, context, d, {}, {})

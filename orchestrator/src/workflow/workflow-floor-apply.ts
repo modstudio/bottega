@@ -107,8 +107,11 @@ export async function applyFloorDecision(
     if (checksReviewOwed && reviewOwed.action === 'refuse') return reviewOwed
     if (reviewOwed.noLensOwed) metDispatchWaiverFacts.push('no-lens-owed')
   }
-  if (row.enforcement === 'floors' && step.dispatchWaivedBy?.includes('no-accepted-findings'))
-    metDispatchWaiverFacts.push(...gatherNoAcceptedFindingsFact(row.project, args, database))
+  if (row.enforcement === 'floors' && step.dispatchWaivedBy?.includes('no-accepted-findings')) {
+    const gathered = gatherNoAcceptedFindingsFact(row.project, args, database)
+    if (gathered.action === 'refuse') return gathered
+    metDispatchWaiverFacts.push(...gathered.facts)
+  }
   const validated = await gatherValidatedEvidence({
     cursorId: row.record_id,
     cursorState: row.state,

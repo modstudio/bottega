@@ -3,6 +3,7 @@
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { refusal, renderRefusal } from '../../../shared/refusal.ts'
+import { workflowCursorReference } from '../workflow/workflow-cursor-format.ts'
 
 export type KeyedRunTurn = 'start' | 'continue' | 'answer' | 'retry'
 
@@ -21,6 +22,7 @@ export type KeyedRunCursorAdmissionInput = {
   key: string | undefined
   project: string | null
   bindingPresent: boolean
+  rootCursorRecordId?: string | null
   harnessSession: string | null
   heldCursors: readonly KeyedRunCursor[]
   cursor?: number
@@ -97,13 +99,44 @@ function decideMatchingCursor(
   }
 }
 
+function decideBoundRootCursor(
+  input: KeyedRunCursorAdmissionInput,
+): KeyedRunCursorAdmission | null {
+  if (!input.rootCursorRecordId) return null
+  const heldRoot = input.heldCursors.find(({ recordId }) => recordId === input.rootCursorRecordId)
+  if (!heldRoot) return { kind: 'allow' }
+  if (input.cursor !== undefined && input.cursor !== heldRoot.number) {
+    return {
+      kind: 'refuse',
+      message: renderRefusal(
+        refusal(
+          `refusing keyed run turn because its root is bound to workflow cursor ${heldRoot.number}, not cursor ${input.cursor}`,
+          {
+            kind: 'edit',
+            text:
+              'rerun without --cursor or with' +
+              workflowCursorReference(heldRoot.number, heldRoot.project).cli,
+          },
+        ),
+      ),
+    }
+  }
+  return {
+    kind: 'allow',
+    binding: { cursorRecordId: heldRoot.recordId, stepSlug: heldRoot.stepSlug },
+  }
+}
+
 /** Apply cursor ownership and operator-override policy without reaching process or storage. */
 export function decideKeyedRunCursorAdmission(
   input: KeyedRunCursorAdmissionInput,
 ): KeyedRunCursorAdmission {
-  if (!input.key || input.bindingPresent) {
+  if (!input.key || (input.bindingPresent && !input.rootCursorRecordId)) {
     return { kind: 'allow' }
   }
+
+  const boundRootDecision = decideBoundRootCursor(input)
+  if (boundRootDecision) return boundRootDecision
 
   if (canOverride(input.turn) && input.overrideReason !== undefined) {
     const reason = input.overrideReason.trim()
@@ -187,7 +220,7 @@ export async function checkKeyedRunCursorAdmission(
   const decisionWithoutCursors = decideKeyedRunCursorAdmission({ ...input, heldCursors: [] })
   if (
     !input.key ||
-    input.bindingPresent ||
+    (input.bindingPresent && !input.rootCursorRecordId) ||
     !input.harnessSession ||
     input.overrideReason !== undefined
   ) {

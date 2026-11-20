@@ -296,9 +296,9 @@ describe('run continuation', () => {
       .get()!.record_id
     db()
       .query(
-        "UPDATE run SET launch_key='DEV-2496',vendor_session='vendor-session' WHERE record_id=?",
+        "UPDATE run SET launch_key='DEV-2496',vendor_session='vendor-session',cursor_record_id=?,step_slug='implement-fix' WHERE record_id=?",
       )
-      .run(root)
+      .run(cursorRecordId, root)
     db().exec('PRAGMA foreign_keys=OFF')
     db()
       .query(
@@ -311,6 +311,17 @@ describe('run continuation', () => {
                  '2026-11-20','2026-11-20',1)`,
       )
       .run(cursorRecordId, projectId, newRecordId(), newRecordId())
+    db()
+      .query(
+        `INSERT INTO workflow_cursor
+          (record_id,number,project,project_record_id,workflow_slug,mode_slug,workflow_key,instance_id,
+           session_id,workflow_version_record_id,catalogue_version_record_id,args,ordinal,step_slug,state,
+           closed,total_steps,created_at,updated_at,revision)
+         VALUES (?,77125,'continuation-fixture',?,'fix-defect','default','DEV-2496','alternate',
+                 'orch-test-session',?,?,'{}',2,'review-lenses','running','[]',7,
+                 '2026-11-20','2026-11-20',1)`,
+      )
+      .run(newRecordId(), projectId, newRecordId(), newRecordId())
     db().exec('PRAGMA foreign_keys=ON')
 
     const admission = await admitKeyedTurn({

@@ -49,6 +49,7 @@ export async function admitKeyedTurn(input: AdmitKeyedTurnInput) {
       key: facts.launch_key ?? undefined,
       project: project?.name ?? null,
       bindingPresent: facts.cursor_record_id !== null,
+      rootCursorRecordId: facts.cursor_record_id,
       harnessSession: adapter.harnessSession,
       overrideReason: input.turn === 'answer' ? undefined : input.overrideReason,
       fromOperator: input.turn === 'answer' ? false : input.fromOperator,

@@ -52,6 +52,52 @@ describe('keyed run cursor admission', () => {
     })
   })
 
+  test('a bound root held at a later step binds the new turn to that step', () => {
+    expect(
+      decideKeyedRunCursorAdmission({
+        ...base,
+        turn: 'continue',
+        bindingPresent: true,
+        rootCursorRecordId: 'cursor-record',
+        heldCursors: [
+          {
+            recordId: 'cursor-record',
+            number: 17,
+            project: PLATFORM_SLUG,
+            workflowKey: 'DEV-2293',
+            stepSlug: 'apply-findings',
+          },
+        ],
+      }),
+    ).toEqual({
+      kind: 'allow',
+      binding: { cursorRecordId: 'cursor-record', stepSlug: 'apply-findings' },
+    })
+  })
+
+  test('a bound root refuses --cursor naming a different cursor', () => {
+    const decision = decideKeyedRunCursorAdmission({
+      ...base,
+      turn: 'continue',
+      bindingPresent: true,
+      rootCursorRecordId: 'cursor-record',
+      cursor: 18,
+      heldCursors: [
+        {
+          recordId: 'cursor-record',
+          number: 17,
+          project: PLATFORM_SLUG,
+          workflowKey: 'DEV-2293',
+          stepSlug: 'apply-findings',
+        },
+      ],
+    })
+    expect(decision).toEqual({
+      kind: 'refuse',
+      message: expect.stringContaining('root is bound to workflow cursor 17, not cursor 18'),
+    })
+  })
+
   test('two matching cursors require --cursor and the selected cursor binds', () => {
     const heldCursors = [
       {
