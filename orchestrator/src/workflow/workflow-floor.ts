@@ -19,6 +19,10 @@ import {
   gateFloorRefusal,
   type PassingGateForTree,
 } from './workflow-floor-refusal.ts'
+import {
+  dispatchObligationRefusal,
+  judgingObligationRefusal,
+} from './workflow-run-obligation.ts'
 
 type TrackerStateCategory = 'backlog' | 'open' | 'active' | 'review' | 'done' | 'dropped'
 type TrackerStates = Record<string, TrackerStateCategory>
@@ -898,55 +902,6 @@ function unfinishedReviewRefusal(floors: Floor[], evidence: ValidatedEvidence): 
   return `floor ruling is unmet: review ids ${unfinished.join(', ')} in this round are unfinished`
 }
 
-function scoreRemedy(runs: readonly WorkflowRunChainEvidence[]): string {
-  return runs.map((run) => `\`${PLATFORM_SLUG} score ${run.number} ...\``).join(', ')
-}
-
-function dispatchObligationRefusal(
-  input: FloorSatisfactionInput,
-  metFloors: readonly FloorKind[],
-): string | null {
-  const step = input.step
-  if (step?.dispatch !== 'required') return null
-  if (input.floors.some((floor) => floor.kind === 'descendants-closed')) return null
-  const waived = (step.dispatchWaivedBy ?? []).find((kind) => metFloors.includes(kind))
-  if (waived) return null
-  const runs = input.evidence.dispatchRuns ?? []
-  if (!runs.length) {
-    const job = step.jobs[0] ?? '<job>'
-    return (
-      `dispatch obligation is unmet: no ${step.jobs.join(' or ') || 'declared-job'} run was dispatched ` +
-      `from this cursor at step ${step.slug}; dispatch one with ` +
-      `\`${PLATFORM_SLUG} run start ${job} --key ${input.workflowKey || '<KEY>'} ...\` from this cursor`
-    )
-  }
-  const running = runs.filter((run) => !run.terminal)
-  if (running.length)
-    return (
-      `dispatch obligation is unmet: run ${running.map((run) => run.number).join(', ')} ` +
-      `${running.length === 1 ? 'is' : 'are'} not terminal; wait for each dispatched chain to finish, then score it`
-    )
-  const unscored = runs.filter((run) => run.job !== 'review-lens' && run.needsVerdict)
-  if (unscored.length)
-    return (
-      `dispatch obligation is unmet: run ${unscored.map((run) => run.number).join(', ')} ` +
-      `${unscored.length === 1 ? 'still needs' : 'still need'} a verdict; score each chain with ${scoreRemedy(unscored)}`
-    )
-  return null
-}
-
-function judgingObligationRefusal(input: FloorSatisfactionInput): string | null {
-  const judges = input.step?.judges
-  if (!judges?.length) return null
-  const unscored = (input.evidence.judgedRuns ?? []).filter((run) => run.needsVerdict)
-  if (!unscored.length) return null
-  return (
-    `judging obligation is unmet: ${judges.join(' or ')} run ` +
-    `${unscored.map((run) => run.number).join(', ')} ${unscored.length === 1 ? 'is' : 'are'} unscored; ` +
-    `score each chain with ${scoreRemedy(unscored)}`
-  )
-}
-
 function evidenceRefs(evidence: ValidatedEvidence): EvidenceRef[] {
   const refs: EvidenceRef[] = []
   if (evidence.ruling) refs.push({ flag: '--ruling', value: String(evidence.ruling.id) })
@@ -1081,9 +1036,17 @@ export function decideFloorSatisfaction(input: FloorSatisfactionInput): FloorDec
   const metFloorKinds = [
     ...new Set([...met.map((floor) => floor.kind), ...(input.externallyMetFloors ?? [])]),
   ]
-  const dispatchRefusal = dispatchObligationRefusal(input, metFloorKinds)
+  const obligationInput = {
+    workflowKey: input.workflowKey,
+    selectedFloors: input.floors.map((floor) => floor.kind),
+    metFloors: metFloorKinds,
+    step: input.step,
+    dispatchRuns: input.evidence.dispatchRuns,
+    judgedRuns: input.evidence.judgedRuns,
+  }
+  const dispatchRefusal = dispatchObligationRefusal(obligationInput)
   if (dispatchRefusal) return { action: 'refuse', message: dispatchRefusal }
-  const judgingRefusal = judgingObligationRefusal(input)
+  const judgingRefusal = judgingObligationRefusal(obligationInput)
   if (judgingRefusal) return { action: 'refuse', message: judgingRefusal }
   const commandFailure = commandExitFailureRefusal(input.floors, input.evidence, met)
   if (commandFailure) return { action: 'refuse', message: commandFailure }

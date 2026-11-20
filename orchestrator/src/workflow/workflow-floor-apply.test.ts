@@ -154,7 +154,7 @@ test.each([
   ).toEqual({ session_id: 'owner-session', workflow_key: '', ordinal: 0, state: 'running' })
 })
 
-test('plan-task start floor selection does not create review debt without a review-owed floor', async () => {
+test('plan-task start refuses zero dispatches without creating review debt', async () => {
   installTaskReader(taskPort)
   let reviewOwedCalls = 0
   const result = await applyFloorDecision(
@@ -176,7 +176,7 @@ test('plan-task start floor selection does not create review debt without a revi
       enforcement: 'floors',
     },
     [floor('tracker-transition'), floor('descendants-closed')],
-    { slug: 'start', jobs: [] },
+    { slug: 'start', jobs: ['implement'], dispatch: 'required' },
     { task: 'DEV-1' },
     {
       readTask: (key) => ({
@@ -193,7 +193,9 @@ test('plan-task start floor selection does not create review debt without a revi
     true,
     floorDatabase(),
   )
-  expect(result.action).toBe('allow')
+  expect(result).toMatchObject({ action: 'refuse' })
+  if (result.action === 'refuse')
+    expect(result.message).toContain('no implement run was dispatched from this cursor')
   expect(reviewOwedCalls).toBe(0)
 })
 

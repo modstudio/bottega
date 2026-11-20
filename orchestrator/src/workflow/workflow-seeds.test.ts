@@ -181,7 +181,7 @@ describe('workflow projection and seeds', () => {
   test('fresh stores seed current revisions as production version 1', () => {
     const d = database()
     const catalogue = productionStepCatalogue(d)
-    expect(catalogue.reason).toBe('seed r6')
+    expect(catalogue.reason).toBe('seed r7')
     expect(validateStepCatalogue(catalogue.definition)).toEqual([])
     expect(catalogue.definition.steps.map(({ slug }) => slug)).toEqual([
       'diagnose',
@@ -252,7 +252,7 @@ describe('workflow projection and seeds', () => {
     expect(showStepCatalogue(1, d).status).toBe('retired')
     const advanced = showStepCatalogue(2, d)
     expect(advanced.status).toBe('production')
-    expect(advanced.reason).toBe('seed r6')
+    expect(advanced.reason).toBe('seed r7')
     expect(advanced.definition.steps.find(({ slug }) => slug === 'ship')?.body).toContain(
       '`ship-task` workflow',
     )
