@@ -28,11 +28,13 @@ import {
   extractSandboxRuntime,
   packageManagerFromOsRelease,
   prepareSandboxRuntimeConfig,
-  SRT_LIBRARY,
   sandboxRuntimeAvailability,
+  srtLibrary,
   withSandboxTemporaryDirectory,
 } from './sandbox-runtime.ts'
 import { workerRuntimeReadCarvebacks } from './worker-runtime-read-carvebacks.ts'
+
+const SRT_LIBRARY = srtLibrary()
 
 const availabilityFacts = {
   location: '/runtime',

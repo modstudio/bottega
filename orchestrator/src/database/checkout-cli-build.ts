@@ -116,7 +116,16 @@ export function buildCheckoutCli(
   const temporaryStamp = join(destination, `.checkout-cli-stamp-${suffix}`)
   try {
     const result = startBoundedSync(
-      ['bun', 'build', '--compile', `cli/${PLATFORM_SLUG}.ts`, '--outfile', temporaryBinary],
+      [
+        'bun',
+        'build',
+        '--compile',
+        '--define',
+        'BOTTEGA_COMPILED_CHECKOUT_BUILD=true',
+        `cli/${PLATFORM_SLUG}.ts`,
+        '--outfile',
+        temporaryBinary,
+      ],
       {
         budget: 'machine-update',
         cwd: checkoutRoot,

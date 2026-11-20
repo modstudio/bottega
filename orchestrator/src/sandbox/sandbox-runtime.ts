@@ -27,15 +27,17 @@ import {
 } from '../../../shared/sandbox-runtime-assets.ts'
 import { resolveStateRoot, type StateEnvironment } from '../../../shared/state-directory.ts'
 
-export const SRT_LIBRARY = join(
-  runningInstallRoot(import.meta.dir, process.env),
-  'orchestrator',
-  'node_modules',
-  '@anthropic-ai',
-  'sandbox-runtime',
-  'dist',
-  'index.js',
-)
+export function srtLibrary(environment: StateEnvironment = process.env): string {
+  return join(
+    runningInstallRoot(import.meta.dir, environment),
+    'orchestrator',
+    'node_modules',
+    '@anthropic-ai',
+    'sandbox-runtime',
+    'dist',
+    'index.js',
+  )
+}
 
 let sandboxInitialized = false
 let sandboxOperationTail = Promise.resolve()
@@ -356,8 +358,8 @@ export async function sandboxRuntimeAvailability(
   const manifest = embeddedDistributionManifest()
   if (!manifest) {
     return classifySandboxRuntimeAvailability({
-      location: SRT_LIBRARY,
-      runtimePresent: existsSync(SRT_LIBRARY),
+      location: srtLibrary(environment),
+      runtimePresent: existsSync(srtLibrary(environment)),
       sourceCheckout: true,
       missingSystemDependencies,
       userNamespacesUsable,
@@ -429,7 +431,7 @@ export async function extractSandboxRuntime(
 ): Promise<ExtractedRuntime> {
   const manifest = embeddedDistributionManifest()
   if (!manifest) {
-    return { root: join(SRT_LIBRARY, '..', '..'), javaAgentJarPath: '' }
+    return { root: join(srtLibrary(ports.environment), '..', '..'), javaAgentJarPath: '' }
   }
   const environment = ports.environment ?? process.env
   const platform = ports.platform ?? process.platform

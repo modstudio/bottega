@@ -21,10 +21,11 @@ type CheckoutCliBinaryStat = {
 }
 
 export type CheckoutCliFreshnessFacts = {
-  /** HEAD resolved without packed refs. Detached HEAD has a value while refSha stays null. */
+  /** HEAD sha, either detached directly or resolved from its symbolic loose ref. */
   headSha: string | null
-  /** The sha read from the loose ref named by HEAD. */
+  /** The sha read from a symbolic HEAD's loose ref; null for a detached HEAD. */
   refSha: string | null
+  symbolicHead: boolean
   stampContents: string | null
   binaryStat: CheckoutCliBinaryStat | null
   readError: boolean
@@ -50,8 +51,7 @@ export function decideCliBinaryFreshness(facts: CheckoutCliFreshnessFacts): bool
   if (
     facts.readError ||
     !facts.headSha ||
-    !facts.refSha ||
-    facts.headSha !== facts.refSha ||
+    (facts.symbolicHead && (!facts.refSha || facts.headSha !== facts.refSha)) ||
     !facts.stampContents ||
     !facts.binaryStat
   )
@@ -72,16 +72,18 @@ function checkoutCliFreshnessFacts(
 ): CheckoutCliFreshnessFacts {
   let headSha: string | null = null
   let refSha: string | null = null
+  let symbolicHead = false
   let stampContents: string | null = null
   let binaryStat: CheckoutCliBinaryStat | null = null
   let readError = false
   try {
     if (!statSync(join(checkoutRoot, '.git')).isDirectory())
-      return { headSha, refSha, stampContents, binaryStat, readError: false }
+      return { headSha, refSha, symbolicHead, stampContents, binaryStat, readError: false }
     const head = readFileSync(join(checkoutRoot, '.git', 'HEAD'), 'utf8').trim()
     if (/^[0-9a-f]{40,64}$/i.test(head)) {
       headSha = head
     } else if (head.startsWith('ref: ')) {
+      symbolicHead = true
       const ref = head.slice('ref: '.length)
       if (/^refs\/[A-Za-z0-9._/-]+$/.test(ref) && !ref.includes('..') && !ref.includes('//')) {
         refSha = readFileSync(join(checkoutRoot, '.git', ref), 'utf8').trim()
@@ -98,7 +100,7 @@ function checkoutCliFreshnessFacts(
   } catch {
     readError = true
   }
-  return { headSha, refSha, stampContents, binaryStat, readError }
+  return { headSha, refSha, symbolicHead, stampContents, binaryStat, readError }
 }
 
 /** Select the current checkout CLI on the host before constructing a confined run environment. */

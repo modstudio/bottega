@@ -27,8 +27,11 @@ import {
   commentFindings,
 } from './check-comments.ts'
 
-const REPOSITORY_ROOT = runningInstallRoot(import.meta.dir, process.env)
 const LANGUAGE_PACKAGES = { bash, php, python }
+
+function repositoryRoot(environment: StateEnvironment = process.env): string {
+  return runningInstallRoot(import.meta.dir, environment)
+}
 
 const SOURCE_GLOBS = [
   '*.ts',
@@ -192,7 +195,7 @@ function embeddedRegistrations(
   const expected = assets.map((asset) => {
     const source = (ports.resolveFile ?? resolveInstallFile)(
       asset.packagePath,
-      join(REPOSITORY_ROOT, asset.packagePath),
+      join(repositoryRoot(ports.environment), asset.packagePath),
     )
     if (!source) {
       throw missingParserRefusal(

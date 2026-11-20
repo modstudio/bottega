@@ -20,6 +20,8 @@
     "shared/trust-log.ts": ["exports"],
     // Lazy-required from transport.ts; knip does not follow that require as export use.
     "orchestrator/src/transport/ajv-validator.ts": ["exports"],
+    // The checkout confinement guard reaches this production seam through a dynamic import.
+    "orchestrator/src/transport/transport-acp.ts": ["exports"],
     // rehearse.sh's eval imports the export.
     "orchestrator/src/postgres/migration-failure.ts": ["exports"],
     // Cloudflare loads this default export through wrangler.toml rather than an import.

@@ -9,6 +9,30 @@ export type InstallEnvironment = Record<string, string | undefined>
 
 /** The platform-specific installation-root override is derived from the one canonical slug. */
 export const INSTALL_HOME_ENV = `${PLATFORM_SLUG.toUpperCase()}_HOME`
+const CHECKOUT_ROOT_ENV = `${PLATFORM_SLUG.toUpperCase()}_CHECKOUT_ROOT`
+
+declare const BOTTEGA_COMPILED_CHECKOUT_BUILD: boolean | undefined
+
+/** True only in the checkout-specific compiled CLI built by machine update. */
+function compiledCheckoutCli(): boolean {
+  return (
+    typeof BOTTEGA_COMPILED_CHECKOUT_BUILD !== 'undefined' &&
+    BOTTEGA_COMPILED_CHECKOUT_BUILD === true
+  )
+}
+
+export type CompiledCheckoutRootFacts = {
+  marked: boolean
+  value: string | undefined
+  absolute: boolean
+  checkoutRoot: boolean
+}
+
+/** Decide the marked checkout binary's root using only already-gathered facts. */
+export function decideCompiledCheckoutRoot(facts: CompiledCheckoutRootFacts): string | null {
+  if (!facts.marked) return null
+  return facts.value && facts.absolute && facts.checkoutRoot ? facts.value : null
+}
 
 export const DIST_MANIFEST = `.${PLATFORM_SLUG}-dist.json`
 
@@ -79,11 +103,29 @@ function runningInstallEnvironment(env: InstallEnvironment): InstallEnvironment 
   return runningEnvironment
 }
 
+function compiledCheckoutRoot(env: InstallEnvironment): string | null {
+  const marked = compiledCheckoutCli()
+  if (!marked) return null
+  const value = env[CHECKOUT_ROOT_ENV]
+  const decision = decideCompiledCheckoutRoot({
+    marked,
+    value,
+    absolute: Boolean(value && isAbsolute(value)),
+    checkoutRoot: Boolean(value && isCheckoutRoot(value)),
+  })
+  if (decision) return decision
+  throw new Error(
+    `compiled checkout CLI requires ${CHECKOUT_ROOT_ENV} to name an absolute ${PLATFORM_NAME} checkout root; launch it through the checkout launcher script`,
+  )
+}
+
 /** Read the running code's identity without following an installation target override. */
 export function runningInstallationIdentity(
   fromDirectory: string,
   env: InstallEnvironment,
 ): InstallationIdentity {
+  const checkoutRoot = compiledCheckoutRoot(env)
+  if (checkoutRoot) return installationIdentity(checkoutRoot, { [INSTALL_HOME_ENV]: checkoutRoot })
   return installationIdentity(fromDirectory, runningInstallEnvironment(env))
 }
 
@@ -101,6 +143,8 @@ export function runningInstallationKind(
 
 /** Resolve the running code's own distribution or checkout, ignoring a designated install. */
 export function runningInstallRoot(fromDirectory: string, env: InstallEnvironment): string {
+  const checkoutRoot = compiledCheckoutRoot(env)
+  if (checkoutRoot) return checkoutRoot
   return resolveInstallRoot(fromDirectory, runningInstallEnvironment(env))
 }
 

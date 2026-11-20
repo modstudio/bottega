@@ -30,7 +30,7 @@ if test -n "$binary" && test -f "$stamp"; then
   if test -n "$stamp_size" && test "$binary_size" = "$stamp_size" &&
     test -n "$stamp_mtime" && test "$binary_mtime" = "$stamp_mtime" &&
     test -n "$stamp_inode" && test "$binary_inode" = "$stamp_inode"; then
-    export BOTTEGA_HOME="$root"
+    export BOTTEGA_CHECKOUT_ROOT="$root"
     exec "$binary" "$@"
   fi
 fi
