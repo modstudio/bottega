@@ -1,10 +1,15 @@
 import type { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
+import { existsSync, readdirSync, readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { newRecordId } from '../../../shared/record-id.ts'
+import { resolveStateRoot } from '../../../shared/state-directory.ts'
 import { migratedTestDatabase } from '../database/test-database.fixture.ts'
 import type { ProjectAdoptionResult } from '../project/project-relink.ts'
 import type { RecordApiClient } from './record-api-client.ts'
+import { recordApiError } from './record-api-client-error.ts'
 import { RecordApiRequestError } from './record-api-client-response.ts'
+import { recordTaskFlowClient } from './record-api-client-task-flow.ts'
 import {
   HISTORY_UPLOAD_FAILURE_BOUND,
   uploadLocalWorkflowHistory,
@@ -112,6 +117,20 @@ function client(
     importQuestion,
   } as unknown as RecordApiClient
 }
+function revisionConflictImport(message: string, reason: 'already-exists') {
+  return recordTaskFlowClient(async () => {
+    throw recordApiError(
+      {
+        error: message,
+        condition: message,
+        reason,
+        currentRevision: null,
+        code: 'revision-conflict',
+      },
+      409,
+    )
+  }).importTaskFlow!
+}
 function adoption(name: string): ProjectAdoptionResult {
   const id = newRecordId()
   return { name, oldId: id, newId: id, status: 'already-linked', rewritten: {}, retried: 0 }
@@ -156,18 +175,14 @@ test('already-existing flow refusals without the content marker remain failures'
   stage(database, 'occupied-flow-slot', projectId, flowId, 303)
   bind(database)
   let imports = 0
+  const importTaskFlow = revisionConflictImport(
+    'another open stage holds that slot and must be closed or abandoned first',
+    'already-exists',
+  )
   const record = client(
-    async () => {
+    async (input, destination) => {
       imports += 1
-      throw new RecordApiRequestError(
-        'another open stage holds that slot and must be closed or abandoned first',
-        'conflict',
-        409,
-        null,
-        false,
-        null,
-        'already-exists',
-      )
+      return importTaskFlow(input, destination)
     },
     async (input) => ({ id: input.question.id, number: 1, revision: 1, applied: true }),
   )
@@ -178,6 +193,40 @@ test('already-existing flow refusals without the content marker remain failures'
     `workflow history task flow ${flowId} failed: another open stage holds that slot and must be closed or abandoned first`,
   ])
   expect(imports).toBe(2)
+  database.close()
+})
+
+test('sync holds an already-existing flow once and stores the converged fingerprint', async () => {
+  const database = migratedTestDatabase()
+  database.exec('PRAGMA foreign_keys=OFF')
+  const projectId = project(database, 'held-flow'),
+    flowId = flow(database, projectId)
+  stage(database, 'held-flow', projectId, flowId, 301)
+  bind(database)
+  const directory = join(resolveStateRoot(process.env), 'archive', 'history-upload-conflict')
+  const before = new Set(existsSync(directory) ? readdirSync(directory) : [])
+  let imports = 0
+  const importTaskFlow = revisionConflictImport(
+    `task_flow ${flowId} ${RECORD_TASK_FLOW_DIFFERENT_CONTENT}`,
+    'already-exists',
+  )
+  const record = client(
+    async (input, destination) => {
+      imports += 1
+      return importTaskFlow(input, destination)
+    },
+    async (input) => ({ id: input.question.id, number: 1, revision: 1, applied: true }),
+  )
+  const first = await uploadMissingWorkflowHistory(record, destination, handle(database))
+  const second = await uploadMissingWorkflowHistory(record, destination, handle(database))
+  expect(first.failed).toBe(0)
+  expect(first.lines[0]).toContain(`1 task flows held by the record with different content`)
+  expect(second).toEqual({ failed: 0, lines: [], skipped: false })
+  expect(imports).toBe(1)
+  const created = readdirSync(directory).filter((name) => !before.has(name))
+  expect(created).toHaveLength(1)
+  const archived = JSON.parse(readFileSync(join(directory, created[0]!), 'utf8').trim())
+  expect(archived).toMatchObject({ table: 'task_flow', row: { flow: { id: flowId } } })
   database.close()
 })
 
@@ -221,19 +270,14 @@ test('sign-in holds an already-existing flow and continues importing the rest', 
   stage(database, 'sign-in-held-flow', projectId, held, 601)
   stage(database, 'sign-in-held-flow', projectId, accepted, 602)
   const imported: string[] = []
+  const importHeldFlow = revisionConflictImport(
+    `task_flow ${held} ${RECORD_TASK_FLOW_DIFFERENT_CONTENT}`,
+    'already-exists',
+  )
   const record = client(
-    async (input) => {
+    async (input, destination) => {
       imported.push(input.flow.id)
-      if (input.flow.id === held)
-        throw new RecordApiRequestError(
-          `task_flow ${held} ${RECORD_TASK_FLOW_DIFFERENT_CONTENT}`,
-          'conflict',
-          409,
-          null,
-          false,
-          null,
-          'already-exists',
-        )
+      if (input.flow.id === held) return importHeldFlow(input, destination)
       return { revisions: {}, stages: [] }
     },
     async (input) => ({ id: input.question.id, number: 1, revision: 1, applied: true }),

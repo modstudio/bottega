@@ -39,6 +39,7 @@ export const recordTaskFlowModules: RecordModule[] = [
     '../../../shared/record-id.ts',
     '../../../shared/state-directory.ts',
     '../database/db.ts',
+    '../doc/doc-revision-conflict.ts',
     '../jsonl-archive.ts',
     '../project/project-relink.ts',
     '../question-store/question-store-mutation.ts',

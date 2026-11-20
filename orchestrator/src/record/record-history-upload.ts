@@ -6,6 +6,7 @@ import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { resolveStateRoot } from '../../../shared/state-directory.ts'
 import { withDatabaseForMigrationStep } from '../database/db.ts'
+import { DocRevisionConflictError } from '../doc/doc-revision-conflict.ts'
 import { BOUNDED_JSONL_ARCHIVE_KEEP, writeBoundedJsonlArchive } from '../jsonl-archive.ts'
 import type { ProjectAdoptionResult } from '../project/project-relink.ts'
 import {
@@ -18,7 +19,6 @@ import { taskFlowHistoryMaintenanceStore } from '../workflow/task-flow-store.ts'
 import { readRecordInstallBinding } from './install-binding.ts'
 import { type RecordApiClient, recordApiClient } from './record-api-client.ts'
 import type { RecordWriteDestination } from './record-api-client-paths.ts'
-import { RecordApiRequestError } from './record-api-client-response.ts'
 import {
   readHeldFlowIds,
   readHeldQuestionIds,
@@ -603,7 +603,7 @@ async function attemptFlowImport(
     return { kind: 'imported', result: await client.importTaskFlow(flow.payload, destination) }
   } catch (cause) {
     if (
-      cause instanceof RecordApiRequestError &&
+      cause instanceof DocRevisionConflictError &&
       cause.reason === 'already-exists' &&
       cause.message.includes(RECORD_TASK_FLOW_DIFFERENT_CONTENT)
     ) {

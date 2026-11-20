@@ -11,7 +11,6 @@ import { migratedTestDatabase } from '../database/test-database.fixture.ts'
 import type { ProjectAdoptionResult } from '../project/project-relink.ts'
 import type { RecordApiClient } from './record-api-client.ts'
 import type { RecordQuestionClient } from './record-api-client-question.ts'
-import { RecordApiRequestError } from './record-api-client-response.ts'
 import type { RecordTaskFlowClient } from './record-api-client-task-flow.ts'
 import {
   decideHistoryUploadPass,
@@ -21,7 +20,6 @@ import {
 } from './record-history-upload.ts'
 import { RECORD_QUESTION_DIFFERENT_CONTENT } from './record-question-contract.ts'
 import { syncRecord } from './record-sync.ts'
-import { RECORD_TASK_FLOW_DIFFERENT_CONTENT } from './record-task-flow-write-contract.ts'
 
 const at = '2026-11-18T01:00:00.000Z'
 
@@ -211,7 +209,6 @@ test('empty history prints only the empty upload line', async () => {
   expect(output).toEqual(['no local task-flow or question history to upload'])
   database.close()
 })
-
 test('two projects upload repeatably to their own spaces and preserve every local row', async () => {
   const database = migratedTestDatabase()
   database.exec('PRAGMA foreign_keys=OFF')
@@ -985,52 +982,5 @@ test('sync resolves no more destinations after both upload kinds stop', async ()
   expect(questionImports).toBe(HISTORY_UPLOAD_FAILURE_BOUND)
   expect(result.failed).toBe(HISTORY_UPLOAD_FAILURE_BOUND * 2)
   expect(destinations).toEqual(['a-both-bounds'])
-  database.close()
-})
-
-test('sync holds an already-existing flow once and stores the converged fingerprint', async () => {
-  const database = migratedTestDatabase()
-  database.exec('PRAGMA foreign_keys=OFF')
-  const projectId = project(database, 'held-flow')
-  const flowId = flow(database, projectId)
-  stage(database, { project: 'held-flow', projectId, number: 301, state: 'done', flowId })
-  bind(database)
-  const directory = join(resolveStateRoot(process.env), 'archive', 'history-upload-conflict')
-  const before = new Set(existsSync(directory) ? readdirSync(directory) : [])
-  let imports = 0
-  const client = syncClient(
-    absentPresence,
-    async () => ({ id: newRecordId(), number: 1, revision: 1, applied: true }),
-    async () => {
-      imports += 1
-      throw new RecordApiRequestError(
-        `task_flow ${flowId} ${RECORD_TASK_FLOW_DIFFERENT_CONTENT}`,
-        'conflict',
-        409,
-        null,
-        false,
-        null,
-        'already-exists',
-      )
-    },
-  )
-  const first = await uploadMissingWorkflowHistory(
-    client,
-    syncDestination,
-    maintenanceHandle(database),
-  )
-  const second = await uploadMissingWorkflowHistory(
-    client,
-    syncDestination,
-    maintenanceHandle(database),
-  )
-  expect(first.failed).toBe(0)
-  expect(first.lines[0]).toContain(`1 task flows held by the record with different content`)
-  expect(second).toEqual({ failed: 0, lines: [], skipped: false })
-  expect(imports).toBe(1)
-  const created = readdirSync(directory).filter((name) => !before.has(name))
-  expect(created).toHaveLength(1)
-  const archived = JSON.parse(readFileSync(join(directory, created[0]!), 'utf8').trim())
-  expect(archived).toMatchObject({ table: 'task_flow', row: { flow: { id: flowId } } })
   database.close()
 })
