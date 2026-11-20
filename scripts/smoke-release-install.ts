@@ -99,6 +99,7 @@ export function releaseInstallEnvironment(
   env.BOTTEGA_INSTALL_DIR = paths.bin
   env.BOTTEGA_KEYSTORE = 'file'
   env.BOTTEGA_DOWNLOAD_BASE_URL = `file://${paths.mirror}`
+  env.CODEX_HOME = join(paths.home, '.codex')
   env.PATH = `${paths.stub}:${join(paths.home, '.grok', 'bin')}:${paths.bin}:/usr/bin:/bin:/usr/sbin:/sbin`
   return env
 }
@@ -311,8 +312,10 @@ function assertSecondSetupSkipsInstallerCalls(
 async function runExtractedHookProof(
   version: string,
   paths: InstallProofPaths,
+  executable: string,
   env: Record<string, string | undefined>,
   failures: string[],
+  rendered: boolean,
 ): Promise<StepResult> {
   const runtimeRoot = join(paths.state, 'runtime', version, 'assets')
   recordProofAssertion(
@@ -321,7 +324,7 @@ async function runExtractedHookProof(
     `setup apply did not extract the runtime tree at ${runtimeRoot}`,
   )
   const settingsPath = join(paths.home, '.claude', 'settings.json')
-  if (!existsSync(settingsPath)) {
+  if (rendered && !existsSync(settingsPath)) {
     return {
       name: 'extracted hook',
       exitCode: 1,
@@ -329,10 +332,13 @@ async function runExtractedHookProof(
       stderr: '',
     }
   }
-  const command = renderedHookCommand(
-    JSON.parse(readFileSync(settingsPath, 'utf8')) as unknown,
-    'test-substance-guard.py',
-  )
+  const hook = join(runtimeRoot, 'orchestrator', 'hooks', 'test-substance-guard.py')
+  const command = rendered
+    ? renderedHookCommand(
+        JSON.parse(readFileSync(settingsPath, 'utf8')) as unknown,
+        'test-substance-guard.py',
+      )
+    : `BOTTEGA_BIN=${shellQuote(executable)} python3 ${shellQuote(hook)}`
   if (command === null) {
     return {
       name: 'extracted hook',
@@ -430,15 +436,55 @@ async function proveReleaseInstall(version: string, keep: boolean): Promise<numb
     )
 
     results.push(await runStep('setup apply', setupArgv, paths.home, env))
-    results.push(
-      await runStep(
+    const settingsPath = join(paths.home, '.claude', 'settings.json')
+    mkdirSync(join(paths.home, '.claude'), { recursive: true })
+    writeFileSync(settingsPath, '{}\n')
+    const settingsImport = await runStep(
+      'settings import',
+      [executable, 'machine', 'settings', 'import', '--user'],
+      paths.home,
+      env,
+    )
+    const canonSet = await runStep(
+      'canon set',
+      [
+        executable,
+        'doc',
+        'set',
+        'release-proof',
+        '--scope',
+        'canon',
+        '--user',
+        '--title',
+        'Release proof',
+        '--reason',
+        'seed release install proof',
+      ],
+      paths.home,
+      env,
+      'Release proof canon.\n',
+    )
+    results.push(settingsImport, canonSet)
+    const seeded = settingsImport.exitCode === 0 && canonSet.exitCode === 0
+    if (seeded) {
+      const settingsApply = await runStep(
         'settings apply',
         [executable, 'machine', 'settings', 'apply'],
         paths.home,
         env,
+      )
+      results.push(settingsApply)
+    }
+    results.push(
+      await runExtractedHookProof(
+        version,
+        paths,
+        executable,
+        env,
+        assertionFailures,
+        seeded,
       ),
     )
-    results.push(await runExtractedHookProof(version, paths, env, assertionFailures))
     const firstInstallerCounts = harnessInstallerInvocationCounts(
       readProofLog(brewLog),
       readProofLog(curlLog),
