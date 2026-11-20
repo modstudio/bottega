@@ -23,7 +23,7 @@ import {
   questionChangedAfterRefusal,
 } from '../record/record-question-contract.ts'
 import {
-  QuestionProjectDestinationRefusal,
+  ProjectRecordDestinationRefusal,
   questionWriteDestinations,
 } from '../record/record-question-destination.ts'
 import { compareQuestionsByAsk } from './question-order.ts'
@@ -167,7 +167,7 @@ export class RecordQuestionStore implements QuestionStore {
     try {
       return (await this.destination(projectId)).destinationSpaceId
     } catch (error) {
-      if (error instanceof QuestionProjectDestinationRefusal) return null
+      if (error instanceof ProjectRecordDestinationRefusal) return null
       throw error
     }
   }

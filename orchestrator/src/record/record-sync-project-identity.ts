@@ -3,7 +3,7 @@
 import type { SQL } from 'bun'
 import {
   MISSING_PROJECT_ID_REMEDY,
-  projectOutsideRequestSpacePrefix,
+  projectOutsideRequestSpaceMessage,
   projectOutsideRequestSpaceRemedy,
 } from '../../../shared/record-project-identity.ts'
 import { OutboxRowError } from './outbox-failure.ts'
@@ -38,7 +38,11 @@ export async function projectRecordId(
   })
   if (resolved.status !== 'found') {
     throw new OutboxRowError(
-      `${projectOutsideRequestSpacePrefix(requestedId)}${principal.spaceId}${projectName ? ` (project ${JSON.stringify(projectName)})` : ''}`,
+      projectOutsideRequestSpaceMessage({
+        projectId: requestedId,
+        requestSpaceId: principal.spaceId,
+        projectName,
+      }),
       'row-validation',
       null,
       projectOutsideRequestSpaceRemedy({

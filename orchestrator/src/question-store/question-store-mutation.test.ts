@@ -52,24 +52,27 @@ function recordClient(
     questions?: Record<string, unknown>[]
     intents?: QuestionIntent[]
     closedAts?: (string | null)[]
+    whoami?: RecordApiClient['whoami']
   } = {},
 ): RecordApiClient {
   const client = createMemoryRecordApiClient({ questions: options.questions })
   return {
     ...client,
-    whoami: async () => ({
-      user: { id: newRecordId() },
-      activeSpaceId: PROJECT_SPACE_ID,
-      personalSpaceId: PERSONAL_SPACE_ID,
-      memberships: [
-        {
-          space_id: PROJECT_SPACE_ID,
-          name: 'Fixture',
-          slug: 'fixture',
-          permission: 'write',
-        },
-      ],
-    }),
+    whoami:
+      options.whoami ??
+      (async () => ({
+        user: { id: newRecordId() },
+        activeSpaceId: PROJECT_SPACE_ID,
+        personalSpaceId: PERSONAL_SPACE_ID,
+        memberships: [
+          {
+            space_id: PROJECT_SPACE_ID,
+            name: 'Fixture',
+            slug: 'fixture',
+            permission: 'write',
+          },
+        ],
+      })),
     readQuestions: async (input, destination) => {
       if (!options.questions || destination) return { items: [] }
       const result = await client.readQuestions!(input)
@@ -351,5 +354,49 @@ test("an open question still links when its project's space is undeclared", asyn
   expect(linked).toEqual({ recordId: ID, number: 1 })
   expect(intents).toEqual(['link'])
   expect(writtenSpaces).toEqual([PERSONAL_SPACE_ID])
+  database.close()
+})
+
+test('an unexpected destination identity failure refuses without writing', async () => {
+  const database = migratedTestDatabase()
+  seedProject(database)
+  const openQuestion = row({
+    record_id: ID,
+    question_record_id: ID,
+    workflow_cursor_record_id: CURSOR_ID,
+    workflow_key: 'DEV-2515',
+    project_record_id: PROJECT_ID,
+    awaiting_operator_at: STAMP,
+    closed_at: null,
+    answered_at: null,
+    workflow_step_ordinal: 1,
+    workflow_step_slug: 'implement',
+  })
+  const writtenSpaces: string[] = []
+  const failure = new Error('record identity unavailable')
+  installRecordApiClient(
+    recordClient(writtenSpaces, {
+      questions: [openQuestion],
+      whoami: async () => Promise.reject(failure),
+    }),
+  )
+
+  await expect(
+    upsertWorkflowQuestion(
+      {
+        cursorId: CURSOR_ID,
+        projectId: PROJECT_ID,
+        workflowKey: 'DEV-2515',
+        workflowTaskRecordId: null,
+        cursorOrdinal: 0,
+        stepSlug: 'implement',
+        question: 'Proceed?',
+        at: STAMP,
+      },
+      database,
+    ),
+  ).rejects.toThrow('record identity unavailable')
+
+  expect(writtenSpaces).toEqual([])
   database.close()
 })

@@ -108,7 +108,10 @@ export async function upsertWorkflowQuestion(
   if (open) {
     const openId = String(open.record_id)
     const row = await questionById(database, openId)
-    if (!row) throw new Error(`question ${openId} disappeared before it could be linked`)
+    if (!row)
+      throw new Error(
+        `question ${openId} disappeared before it could be linked; rerun the command, then retry`,
+      )
     const projectSpace =
       input.projectId && row.project_record_id !== null
         ? await hostedQuestionProjectSpace(database, input.projectId)

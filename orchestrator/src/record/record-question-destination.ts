@@ -13,8 +13,9 @@ import {
   requireProjectRecordDestination,
 } from './record-project-destination-client.ts'
 
+export { ProjectRecordDestinationRefusal }
+
 export class QuestionWriteIdentityError extends Error {}
-export class QuestionProjectDestinationRefusal extends Error {}
 
 type DestinationInput = {
   database: Database
@@ -47,16 +48,10 @@ async function resolveQuestionWriteDestination(
       )
     throw new Error(`project ${projectId} is not registered; register it, then retry`)
   }
-  try {
-    return {
-      destinationSpaceId: await requireProjectRecordDestination(project.name, project.settings, {
-        whoami: input.whoami,
-      }),
-    }
-  } catch (error) {
-    if (error instanceof ProjectRecordDestinationRefusal)
-      throw new QuestionProjectDestinationRefusal(error.message, { cause: error })
-    throw error
+  return {
+    destinationSpaceId: await requireProjectRecordDestination(project.name, project.settings, {
+      whoami: input.whoami,
+    }),
   }
 }
 

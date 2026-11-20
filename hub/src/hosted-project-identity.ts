@@ -3,7 +3,7 @@
 import type { SQL } from 'bun'
 import {
   MISSING_PROJECT_ID_REMEDY,
-  projectOutsideRequestSpacePrefix,
+  projectOutsideRequestSpaceMessage,
   projectOutsideRequestSpaceRemedy,
   type RecordProjectIdentityResult,
   recordProjectIdentityDecision,
@@ -54,7 +54,7 @@ export async function storedHubProjectId(
   })
   if (resolved.status === 'found') return resolved.project.id
   throw new Error(
-    `${projectOutsideRequestSpacePrefix(input.projectId)}${spaceId}${input.projectName ? ` (project ${JSON.stringify(input.projectName)})` : ''}; ` +
+    `${projectOutsideRequestSpaceMessage({ projectId: input.projectId, requestSpaceId: spaceId, projectName: input.projectName })}; ` +
       projectOutsideRequestSpaceRemedy({ requestSpaceId: spaceId, projectName: input.projectName }),
   )
 }

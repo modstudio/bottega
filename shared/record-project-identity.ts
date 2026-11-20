@@ -8,6 +8,14 @@ export function projectOutsideRequestSpacePrefix(projectId: string): string {
   return `record project ${projectId} is absent from request space `
 }
 
+export function projectOutsideRequestSpaceMessage(input: {
+  projectId: string
+  requestSpaceId: string
+  projectName?: string | null
+}): string {
+  return `${projectOutsideRequestSpacePrefix(input.projectId)}${input.requestSpaceId}${input.projectName ? ` (project ${JSON.stringify(input.projectName)})` : ''}`
+}
+
 export function projectOutsideRequestSpaceRemedy(input: {
   requestSpaceId: string
   projectName?: string | null
