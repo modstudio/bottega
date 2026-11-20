@@ -11,6 +11,7 @@ import { BUILTIN_AGENTS } from '../src/agent/agents.ts'
 import { buildCheckoutCli, verifyCheckoutCliBuild } from '../src/database/checkout-cli-build.ts'
 import { probeMcpServer } from '../src/mcp/mcp-probe.ts'
 import type { Project } from '../src/project/projects.ts'
+import { childEnv } from '../src/run/run-process.ts'
 import { readonlyLensProfile, resetSandbox, sandboxLaunchArgv } from '../src/sandbox/sandbox.ts'
 import type { TransportStartOpts } from '../src/transport/transport.ts'
 import { acpWorkerChannel } from '../src/transport/transport-acp.ts'
@@ -46,12 +47,33 @@ function migrateTemporaryStore(checkout: string, environment: Record<string, str
   }
 }
 
+function guardRunEnvironment(
+  environment: Record<string, string>,
+  forceSource: boolean,
+): Record<string, string> {
+  return childEnv(
+    BUILTIN_AGENTS.codex!,
+    'checkout-cli-confinement',
+    'checkout-cli-confinement-token',
+    environment,
+    true,
+    undefined,
+    {},
+    null,
+    null,
+    false,
+    forceSource ? () => false : undefined,
+  )
+}
+
 async function main(): Promise<void> {
   const checkout = resolve(import.meta.dir, '../..')
   try {
     if (!statSync(join(checkout, '.git')).isDirectory()) throw new Error()
   } catch {
-    throw new Error('checkout CLI confinement proof requires a real checkout; run from a real checkout')
+    throw new Error(
+      'checkout CLI confinement proof requires a real checkout; run from a real checkout',
+    )
   }
   const forceSource = process.argv.includes('--force-source')
   const root = mkdtempSync(join(tmpdir(), `${PLATFORM_SLUG}-checkout-cli-confinement-`))
@@ -72,7 +94,7 @@ async function main(): Promise<void> {
     migrateTemporaryStore(checkout, environment)
     const built = buildCheckoutCli(checkout, environment)
     verifyCheckoutCliBuild(built)
-    if (forceSource) rmSync(built.stamp, { force: true })
+    const runEnvironment = guardRunEnvironment(environment, forceSource)
     const outside = fixtureProject('outside-project', 'outside-project', cwd)
     const registeredProjects = [
       outside,
@@ -85,13 +107,13 @@ async function main(): Promise<void> {
       project: outside,
       registeredProjects,
       agent: 'codex',
-      environment,
+      environment: runEnvironment,
       socketDenyPaths: [],
     })
     const opts: TransportStartOpts = {
       agent: BUILTIN_AGENTS.codex!,
       cwd,
-      env: environment,
+      env: runEnvironment,
       prompt: '',
       outPath: join(runtimeDir, 'output'),
       startedAt: Date.now(),
@@ -112,8 +134,9 @@ async function main(): Promise<void> {
         env: serverEnvironment,
       },
       cwd,
-      env: environment,
-      wrap: (command, args) => sandboxLaunchArgv(profile, command, args, runtimeDir, environment),
+      env: runEnvironment,
+      wrap: (command, args) =>
+        sandboxLaunchArgv(profile, command, args, runtimeDir, runEnvironment),
     })
     if (!result.ok) {
       if (forceSource && result.error.includes('Cannot find package')) {
@@ -123,7 +146,9 @@ async function main(): Promise<void> {
       throw new Error(`confined ask-server tools/list failed: ${result.error}`)
     }
     if (forceSource)
-      throw new Error('forced source launch unexpectedly reached confined bottega-ask tools')
+      throw new Error(
+        `forced source launch unexpectedly reached confined ${WORKER_MCP_SERVER_NAME} tools`,
+      )
     const listed = new Set(result.listedTools ?? [])
     const missing = REQUIRED_TOOLS.filter((name) => !listed.has(name))
     if (missing.length > 0)

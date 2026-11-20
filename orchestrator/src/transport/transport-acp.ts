@@ -667,6 +667,7 @@ export function acpWorkerChannel(opts: TransportStartOpts): acp.McpServer[] {
         'BOTTEGA_RUN_ID',
         'BOTTEGA_RUN_TOKEN',
         'BOTTEGA_ORCHESTRATOR_DB',
+        'BOTTEGA_CLI_BINARY',
       ].flatMap((name) => (opts.env[name] ? [{ name, value: opts.env[name]! }] : [])),
     },
   ]

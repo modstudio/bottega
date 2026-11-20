@@ -3,74 +3,35 @@
 script_path=$(readlink -f "$0" 2>/dev/null || echo "$0")
 root=$(dirname "$script_path")/..
 
-version=
-while IFS= read -r package_line; do
-  case "$package_line" in
-    *'"version": "'*)
-      version=${package_line#*'"version": "'}
-      version=${version%%'"'*}
-      break
-      ;;
-  esac
-done < "$root/package.json"
-
-if test -n "$BOTTEGA_STATE_HOME"; then
-  binary_root=$BOTTEGA_STATE_HOME
-elif test -n "$XDG_STATE_HOME"; then
-  binary_root=$XDG_STATE_HOME/bottega
-elif test -n "$HOME"; then
-  binary_root=$HOME/.local/state/bottega
-else
-  binary_root=
-fi
-binary=$binary_root/runtime/$version/checkout-cli/bottega
+binary=$BOTTEGA_CLI_BINARY
 stamp=$binary.stamp
 
-stamp_head=
 stamp_size=
 stamp_mtime=
 stamp_inode=
-if test -n "$version" && test -d "$root/.git" && test -f "$stamp"; then
+if test -n "$binary" && test -f "$stamp"; then
   while IFS='=' read -r stamp_key stamp_value; do
     case "$stamp_key" in
-      head) stamp_head=$stamp_value ;;
       size) stamp_size=$stamp_value ;;
       mtime) stamp_mtime=$stamp_value ;;
       inode) stamp_inode=$stamp_value ;;
     esac
   done < "$stamp"
-  head_line=
-  if IFS= read -r head_line < "$root/.git/HEAD"; then
-    case "$head_line" in
-      'ref: refs/'*)
-        head_ref=${head_line#'ref: '}
-        case "$head_ref" in
-          *'..'*|*'//'*) ;;
-          *)
-            head_sha=
-            if IFS= read -r head_sha < "$root/.git/$head_ref"; then
-              kernel=$(uname 2>/dev/null) || kernel=
-              case "$kernel" in
-                Darwin) binary_stat=$(stat -f '%z %m %i' "$binary" 2>/dev/null) || binary_stat= ;;
-                Linux) binary_stat=$(stat -c '%s %Y %i' "$binary" 2>/dev/null) || binary_stat= ;;
-                *) binary_stat= ;;
-              esac
-              binary_size=${binary_stat%% *}
-              binary_stat_rest=${binary_stat#* }
-              binary_mtime=${binary_stat_rest%% *}
-              binary_inode=${binary_stat_rest#* }
-              if test -n "$stamp_head" && test "$head_sha" = "$stamp_head" &&
-                test -n "$stamp_size" && test "$binary_size" = "$stamp_size" &&
-                test -n "$stamp_mtime" && test "$binary_mtime" = "$stamp_mtime" &&
-                test -n "$stamp_inode" && test "$binary_inode" = "$stamp_inode"; then
-                export BOTTEGA_HOME="$root"
-                exec "$binary" "$@"
-              fi
-            fi
-            ;;
-        esac
-        ;;
-    esac
+  kernel=$(uname 2>/dev/null) || kernel=
+  case "$kernel" in
+    Darwin) binary_stat=$(stat -f '%z %m %i' "$binary" 2>/dev/null) || binary_stat= ;;
+    Linux) binary_stat=$(stat -c '%s %Y %i' "$binary" 2>/dev/null) || binary_stat= ;;
+    *) binary_stat= ;;
+  esac
+  binary_size=${binary_stat%% *}
+  binary_stat_rest=${binary_stat#* }
+  binary_mtime=${binary_stat_rest%% *}
+  binary_inode=${binary_stat_rest#* }
+  if test -n "$stamp_size" && test "$binary_size" = "$stamp_size" &&
+    test -n "$stamp_mtime" && test "$binary_mtime" = "$stamp_mtime" &&
+    test -n "$stamp_inode" && test "$binary_inode" = "$stamp_inode"; then
+    export BOTTEGA_HOME="$root"
+    exec "$binary" "$@"
   fi
 fi
 

@@ -1,18 +1,13 @@
 import { expect, test } from 'bun:test'
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PLATFORM_NAME, PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { registerEmbeddedAssets } from '../../../shared/embedded-assets.ts'
 import { WORKER_RUNTIME_ASSETS } from '../../../shared/runtime-assets-in-sandbox.ts'
 import { STATE_HOME_ENV } from '../../../shared/state-directory.ts'
 import type { Project } from '../project/projects.ts'
-import { workerRuntimeReadCarvebacks } from './worker-runtime-read-carvebacks.ts'
-import {
-  checkoutGitReadCarveouts,
-  runningInstallReadCarveouts,
-} from './install-read-policy.ts'
+import { runningInstallReadCarveouts } from './install-read-policy.ts'
 import { probeSandboxProfile, readonlyLensProfile, writerProfile } from './sandbox.ts'
+import { workerRuntimeReadCarvebacks } from './worker-runtime-read-carvebacks.ts'
 
 function fixtureProject(recordId: string, name: string, path: string): Project {
   return {
@@ -81,36 +76,12 @@ test('running install carve-backs contain install paths only', () => {
   ).toEqual(['/install'])
 })
 
-test('a checkout launcher carves back only HEAD, its loose ref, the binary, and its stamp', () => {
-  const root = mkdtempSync(join(tmpdir(), 'checkout-launcher-carvebacks-'))
-  const ref = 'refs/heads/main'
-  const layout = {
-    kind: 'checkout' as const,
-    root,
-    workspaceDirectories: [],
-  }
+test('a checkout launcher carves back only the binary and its stamp', () => {
   const environment = { HOME: '/operator', [STATE_HOME_ENV]: '/operator/state' }
-  mkdirSync(join(root, '.git', 'refs', 'heads'), { recursive: true })
-  writeFileSync(join(root, '.git', 'HEAD'), `ref: ${ref}\n`)
-  writeFileSync(join(root, '.git', ref), 'abc123\n')
-  try {
-    expect([
-      ...checkoutGitReadCarveouts(layout),
-      ...workerRuntimeReadCarvebacks(environment, null),
-    ]).toEqual([
-      join(root, '.git', 'HEAD'),
-      join(root, '.git', ref),
-      `/operator/state/runtime/0.5.12/${WORKER_RUNTIME_ASSETS.checkoutCli}`,
-      `/operator/state/runtime/0.5.12/${WORKER_RUNTIME_ASSETS.checkoutCliStamp}`,
-    ])
-
-    rmSync(join(root, '.git', ref))
-    expect(checkoutGitReadCarveouts(layout)).toEqual([join(root, '.git', 'HEAD')])
-    writeFileSync(join(root, '.git', 'HEAD'), 'abc123\n')
-    expect(checkoutGitReadCarveouts(layout)).toEqual([join(root, '.git', 'HEAD')])
-  } finally {
-    rmSync(root, { recursive: true, force: true })
-  }
+  expect(workerRuntimeReadCarvebacks(environment, null)).toEqual([
+    `/operator/state/runtime/0.5.12/${WORKER_RUNTIME_ASSETS.checkoutCli}`,
+    `/operator/state/runtime/0.5.12/${WORKER_RUNTIME_ASSETS.checkoutCliStamp}`,
+  ])
 })
 
 test('embedded runtime assets are carved back for every area profile regardless of install layout', () => {

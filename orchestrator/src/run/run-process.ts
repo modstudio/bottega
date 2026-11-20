@@ -18,6 +18,10 @@ import { depth } from '../dispatch/dispatch-preflight.ts'
 import { DEFAULT_IDLE_GRACE_MS, isGroupKillablePgid, terminateProcessGroup } from '../idle-kill.ts'
 import { isForwardedChildEnvName } from '../sandbox/record-connection-env.ts'
 import {
+  type CheckoutCliFreshnessDecision,
+  checkoutCliBinaryEnvironment,
+} from './checkout-cli-freshness.ts'
+import {
   type CheckpointContainment,
   checkpointRun,
   checkpointSkippedLine,
@@ -36,6 +40,7 @@ export function childEnv(
   jobContextTokens?: number | null,
   promptBytes?: number | null,
   writesRepo?: boolean | null,
+  cliFreshnessDecision?: CheckoutCliFreshnessDecision,
 ): Record<string, string> {
   const env: Record<string, string> = {}
   for (const [k, v] of Object.entries(process.env)) {
@@ -84,6 +89,8 @@ export function childEnv(
     ...workerLaunchEnv(workerHarnessName(a)),
   }
   if (!includeStore) delete child.BOTTEGA_ORCHESTRATOR_DB
+  delete child.BOTTEGA_CLI_BINARY
+  Object.assign(child, checkoutCliBinaryEnvironment(child, cliFreshnessDecision))
   return child
 }
 export type LiveProcess = { pid?: number | null; kill(sig?: number | string): void }
