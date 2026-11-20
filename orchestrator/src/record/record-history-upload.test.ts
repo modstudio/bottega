@@ -8,6 +8,7 @@ import { options as syncOptions } from '../../test/fixtures/record-sync.ts'
 import { fakePostgres } from '../../test/fixtures/record-sync-postgres.ts'
 import { guardHostedTables } from '../database/hosted-table-guard.ts'
 import { migratedTestDatabase } from '../database/test-database.fixture.ts'
+import { RECORD_DIFFERENT_CONTENT } from '../doc/doc-revision-conflict.ts'
 import type { ProjectAdoptionResult } from '../project/project-relink.ts'
 import type { RecordApiClient } from './record-api-client.ts'
 import type { RecordQuestionClient } from './record-api-client-question.ts'
@@ -18,7 +19,6 @@ import {
   uploadLocalWorkflowHistory,
   uploadMissingWorkflowHistory,
 } from './record-history-upload.ts'
-import { RECORD_QUESTION_DIFFERENT_CONTENT } from './record-question-contract.ts'
 import { syncRecord } from './record-sync.ts'
 
 const at = '2026-11-18T01:00:00.000Z'
@@ -871,7 +871,7 @@ test('sync archives a question held by the record with different content', async
     async (input) => {
       importedIds.push(input.question.id)
       if (input.question.id === questionId)
-        throw new Error(`question ${questionId} ${RECORD_QUESTION_DIFFERENT_CONTENT}`)
+        throw new Error(`question ${questionId} ${RECORD_DIFFERENT_CONTENT}`)
       return { id: input.question.id, number: 92, revision: 1, applied: true }
     },
     async () => ({ revisions: {}, stages: [] }),

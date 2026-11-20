@@ -6,7 +6,10 @@ import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { resolveStateRoot } from '../../../shared/state-directory.ts'
 import { withDatabaseForMigrationStep } from '../database/db.ts'
-import { DocRevisionConflictError } from '../doc/doc-revision-conflict.ts'
+import {
+  DocRevisionConflictError,
+  RECORD_DIFFERENT_CONTENT,
+} from '../doc/doc-revision-conflict.ts'
 import { BOUNDED_JSONL_ARCHIVE_KEEP, writeBoundedJsonlArchive } from '../jsonl-archive.ts'
 import type { ProjectAdoptionResult } from '../project/project-relink.ts'
 import {
@@ -34,9 +37,7 @@ import {
   questionAuditIdentity,
   readHostedRowPresence,
 } from './record-hosted-row-presence.ts'
-import { RECORD_QUESTION_DIFFERENT_CONTENT } from './record-question-contract.ts'
 import {
-  RECORD_TASK_FLOW_DIFFERENT_CONTENT,
   type TaskFlowIntentInput,
   taskFlowRequestId,
 } from './record-task-flow-write-contract.ts'
@@ -448,16 +449,7 @@ async function uploadDatabaseHistory(
   const present = await recordCall(() =>
     readHostedRowPresence(collectHostedRowState(database).ids, readTaskFlowPresence),
   )
-  const pass: UploadPassState = {
-    flowFailed: 0,
-    flowStopped: false,
-    heldFlowIds: readHeldFlowIds(database),
-    heldFlows: [],
-    questionFailed: 0,
-    questionStopped: false,
-    heldQuestionIds: readHeldQuestionIds(database),
-    heldQuestions: [],
-  }
+  const pass = newUploadPassState(database)
   const client = { ...dependencies.client, importTaskFlow, importQuestion, readTaskFlowPresence }
   for (const project of projects)
     await uploadProjectHistory(
@@ -513,9 +505,7 @@ export type HistorySyncResult = { failed: number; lines: string[]; skipped: bool
 function flowIsAbsent(
   flow: FlowImport,
   present: Awaited<ReturnType<typeof readHostedRowPresence>>,
-  heldFlowIds: ReadonlySet<string> = new Set(),
 ): boolean {
-  if (heldFlowIds.has(flow.flow.id)) return false
   return (
     !present.task_flow.has(flow.flow.id) ||
     flow.stages.some((row) => !present.workflow_cursor.has(row.id)) ||
@@ -535,6 +525,18 @@ type UploadPassState = {
   questionStopped: boolean
   heldQuestionIds: Set<string>
   heldQuestions: LocalQuestionHistory
+}
+function newUploadPassState(database: Database): UploadPassState {
+  return {
+    flowFailed: 0,
+    flowStopped: false,
+    heldFlowIds: readHeldFlowIds(database),
+    heldFlows: [],
+    questionFailed: 0,
+    questionStopped: false,
+    heldQuestionIds: readHeldQuestionIds(database),
+    heldQuestions: [],
+  }
 }
 type SyncClient = RecordApiClient & {
   readTaskFlowPresence: NonNullable<RecordApiClient['readTaskFlowPresence']>
@@ -605,7 +607,7 @@ async function attemptFlowImport(
     if (
       cause instanceof DocRevisionConflictError &&
       cause.reason === 'already-exists' &&
-      cause.message.includes(RECORD_TASK_FLOW_DIFFERENT_CONTENT)
+      cause.message.includes(RECORD_DIFFERENT_CONTENT)
     ) {
       pass.heldFlows.push(flow)
       pass.heldFlowIds.add(id)
@@ -641,7 +643,7 @@ async function attemptQuestionImport(
     )
     return { kind: 'imported', result }
   } catch (cause) {
-    if (errorMessage(cause).includes(RECORD_QUESTION_DIFFERENT_CONTENT)) {
+    if (errorMessage(cause).includes(RECORD_DIFFERENT_CONTENT)) {
       pass.heldQuestions.push(history)
       pass.heldQuestionIds.add(id)
       return { kind: 'held' }
@@ -660,7 +662,7 @@ async function uploadMissingFlows(
   const result: HistorySyncResult = { failed: 0, lines: [], skipped: false }
   for (const flow of flows) {
     if (pass.flowStopped) break
-    if (!flowIsAbsent(flow.payload, present, pass.heldFlowIds)) continue
+    if (!flowIsAbsent(flow.payload, present)) continue
     const outcome = await attemptFlowImport(flow, pass, client, destination)
     if (outcome.kind === 'failed') {
       result.failed += 1
@@ -870,16 +872,7 @@ export async function uploadMissingWorkflowHistory(
       }
     }
     const projects: HistorySyncResult[] = []
-    const pass: UploadPassState = {
-      flowFailed: 0,
-      flowStopped: false,
-      heldFlowIds: readHeldFlowIds(database),
-      heldFlows: [],
-      questionFailed: 0,
-      questionStopped: false,
-      heldQuestionIds: readHeldQuestionIds(database),
-      heldQuestions: [],
-    }
+    const pass = newUploadPassState(database)
     for (const project of historyProjects(database)) {
       if (allUploadKindsStopped(pass)) break
       projects.push(

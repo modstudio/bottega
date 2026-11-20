@@ -6,13 +6,15 @@
 import type { SQL } from 'bun'
 import { bindJsonb } from '../../../shared/record/jsonb-sql.ts'
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
-import { DocRevisionConflictError } from '../doc/doc-revision-conflict.ts'
+import {
+  DocRevisionConflictError,
+  RECORD_DIFFERENT_CONTENT,
+} from '../doc/doc-revision-conflict.ts'
 import { handoffSourceRefusal, handoffTargetRefusal } from '../workflow/workflow-handoff-refusal.ts'
 import { isUniqueViolation } from './record-config-error.ts'
 import { recordPool } from './record-pool.ts'
 import { allocateRecordSequence } from './record-sequence.ts'
 import {
-  RECORD_TASK_FLOW_DIFFERENT_CONTENT,
   type TaskFlowComposeResult,
   type TaskFlowImportResult,
   type TaskFlowIntent,
@@ -162,7 +164,7 @@ function assertSameInsert(
     const column = recordColumnName(key)
     if (!sameRecordValue(existing[column], value))
       refusal(
-        `${table} ${id} ${RECORD_TASK_FLOW_DIFFERENT_CONTENT}`,
+        `${table} ${id} ${RECORD_DIFFERENT_CONTENT}`,
         `${table}.id=${id}`,
         'already-exists',
       )

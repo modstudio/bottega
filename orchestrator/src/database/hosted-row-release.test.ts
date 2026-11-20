@@ -120,7 +120,7 @@ test('hosted row release accepts identity-matched audits and persisted held ques
       local,
       presence({ question: [presentQuestion] }, [identity]),
       refs,
-      new Set([heldQuestion]),
+      { questions: new Set([heldQuestion]), flows: new Set() },
     ),
   ).toEqual({ deleteIds: local, keptTables: [] })
 })

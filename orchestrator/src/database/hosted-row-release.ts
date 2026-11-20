@@ -91,9 +91,13 @@ export function decideHostedRowRelease(
   local: HostedRowIds,
   present: HostedRowPresence,
   references: HostedRowReferences,
-  heldQuestionIds: ReadonlySet<string> = new Set(),
-  heldFlowIds: ReadonlySet<string> = new Set(),
+  held: { questions: ReadonlySet<string>; flows: ReadonlySet<string> } = {
+    questions: new Set(),
+    flows: new Set(),
+  },
 ): HostedRowReleaseDecision {
+  const heldQuestionIds = held.questions
+  const heldFlowIds = held.flows
   const kept = emptyHostedRowIds()
   const keptTables: HostedRowReleaseDecision['keptTables'] = []
   keepIncompleteHeldFlows(kept, local, present, references, heldFlowIds)
@@ -268,8 +272,7 @@ export async function releaseHostedRowsAfterUpdate(
     state.ids,
     present,
     state.references,
-    heldIds.questions,
-    heldIds.flows,
+    heldIds,
   )
   const released = HOSTED_ROW_TABLES.reduce(
     (total, table) => total + decision.deleteIds[table].size,

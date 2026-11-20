@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { resolveStateRoot } from '../../../shared/state-directory.ts'
 import { migratedTestDatabase } from '../database/test-database.fixture.ts'
+import { RECORD_DIFFERENT_CONTENT } from '../doc/doc-revision-conflict.ts'
 import type { ProjectAdoptionResult } from '../project/project-relink.ts'
 import type { RecordApiClient } from './record-api-client.ts'
 import { recordApiError } from './record-api-client-error.ts'
@@ -15,7 +16,6 @@ import {
   uploadLocalWorkflowHistory,
   uploadMissingWorkflowHistory,
 } from './record-history-upload.ts'
-import { RECORD_TASK_FLOW_DIFFERENT_CONTENT } from './record-task-flow-write-contract.ts'
 
 const at = '2026-11-18T01:00:00.000Z'
 const absentPresence = async () => ({
@@ -207,7 +207,7 @@ test('sync holds an already-existing flow once and stores the converged fingerpr
   const before = new Set(existsSync(directory) ? readdirSync(directory) : [])
   let imports = 0
   const importTaskFlow = revisionConflictImport(
-    `task_flow ${flowId} ${RECORD_TASK_FLOW_DIFFERENT_CONTENT}`,
+    `task_flow ${flowId} ${RECORD_DIFFERENT_CONTENT}`,
     'already-exists',
   )
   const record = client(
@@ -271,7 +271,7 @@ test('sign-in holds an already-existing flow and continues importing the rest', 
   stage(database, 'sign-in-held-flow', projectId, accepted, 602)
   const imported: string[] = []
   const importHeldFlow = revisionConflictImport(
-    `task_flow ${held} ${RECORD_TASK_FLOW_DIFFERENT_CONTENT}`,
+    `task_flow ${held} ${RECORD_DIFFERENT_CONTENT}`,
     'already-exists',
   )
   const record = client(

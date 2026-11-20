@@ -1,13 +1,11 @@
 import { afterEach, beforeEach, expect, test } from 'bun:test'
 import type { PGlite } from '@electric-sql/pglite'
 import { createHostedRecordFixture, pgliteSql } from '../../test/fixtures/hosted-record.ts'
+import { RECORD_DIFFERENT_CONTENT } from '../doc/doc-revision-conflict.ts'
 import type { QuestionImportBody, QuestionWriteBody } from './record-question-contract.ts'
 import { writeRecordQuestionTransaction } from './record-question-write.ts'
 import { writeRecordTaskFlowTransaction } from './record-task-flow-write.ts'
-import {
-  RECORD_TASK_FLOW_DIFFERENT_CONTENT,
-  type TaskFlowIntentBody,
-} from './record-task-flow-write-contract.ts'
+import type { TaskFlowIntentBody } from './record-task-flow-write-contract.ts'
 
 const SPACE = '01990000-0000-7000-8000-000000002500'
 const USER = '01990000-0000-7000-8000-000000002502'
@@ -318,7 +316,7 @@ test('task-flow import is exact and idempotent while minting stage numbers in bo
   await expect(
     writeRecordTaskFlowTransaction('import', { ...principal, ...changed }, sql, pgliteJsonb),
   ).rejects.toMatchObject({
-    message: `task_flow_stage ${STAGE_TWO} ${RECORD_TASK_FLOW_DIFFERENT_CONTENT}`,
+    message: `task_flow_stage ${STAGE_TWO} ${RECORD_DIFFERENT_CONTENT}`,
     reason: 'already-exists',
   })
 
