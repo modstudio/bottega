@@ -67,6 +67,8 @@ function cliTaskReadAdapter(): TaskReadPort {
 
 /** Install the lazy CLI-owned adapter into the orchestrator process. */
 export function installCliTaskReader(): void {
+  loadedHubTaskReads = undefined
+  loadedProjectRegisterReads = undefined
   installTaskReader(cliTaskReadAdapter())
   installProjectRegisterReader((options) => {
     const { project, presentation, contract } = projectRegisterReads()

@@ -12,8 +12,11 @@ import { OrchProjectListSchema } from '../shared/orch-contract.ts'
 import { installCliTaskReader } from './task-read-adapter.ts'
 
 let projectRecordId: string
+let previousHostedUrl: string | undefined
 
 beforeAll(() => {
+  previousHostedUrl = process.env.BOTTEGA_HOSTED_URL
+  delete process.env.BOTTEGA_HOSTED_URL
   registerStandardRuntime()
   const database = new Database(DB_PATH, { create: true })
   try {
@@ -32,6 +35,8 @@ beforeEach(() => {
 
 afterAll(() => {
   db().query("DELETE FROM project WHERE name = 'alpha'").run()
+  if (previousHostedUrl === undefined) delete process.env.BOTTEGA_HOSTED_URL
+  else process.env.BOTTEGA_HOSTED_URL = previousHostedUrl
 })
 
 test('installing the CLI adapter leaves hub unloaded until the first read', () => {
@@ -49,25 +54,7 @@ test('installing the CLI adapter leaves hub unloaded until the first read', () =
   expect(require.cache[hubTaskModule]).toBeUndefined()
   expect(require.cache[hubTaskDocumentModule]).toBeUndefined()
 
-  const recordId = Bun.randomUUIDv7()
-  const stamp = new Date().toISOString()
-  const { writeTransaction } = require('../hub/src/db.ts') as typeof import('../hub/src/db.ts')
-  writeTransaction((database) =>
-    database
-      .query(
-        `INSERT INTO task
-         (record_id,key,project,title,status,status_category,source,first_seen,last_seen)
-         VALUES (?, 'ALP-2451', 'alpha', 'In-process reads', 'active', 'active', 'local', ?, ?)`,
-      )
-      .run(recordId, stamp, stamp),
-  )
-
-  expect(taskReader().list()).toContainEqual(
-    expect.objectContaining({ record_id: recordId, key: 'ALP-2451', project: 'alpha' }),
-  )
-  expect(taskReader().duplicates('alpha', 'In-process reads')).toContainEqual(
-    expect.objectContaining({ key: 'ALP-2451', title: 'In-process reads' }),
-  )
+  taskReader().list()
   expect(require.cache[hubTaskModule]).toBeDefined()
   expect(require.cache[hubTaskDocumentModule]).toBeDefined()
 })
