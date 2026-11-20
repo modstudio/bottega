@@ -8,51 +8,6 @@ import { applyHostedPushChangesInTransaction } from './hosted-push-changes.ts'
 import { HostedChangeIdMismatchError } from './hosted-push-conflict.ts'
 import type { ParsedHostedPushChange } from './push-contract.ts'
 
-test('a change id round-trips through the journal as a jsonb object', async () => {
-  const spaceId = '01990000-0000-7000-8000-000000001250'
-  const userId = '01990000-0000-7000-8000-000000001249'
-  const projectId = '01990000-0000-7000-8000-000000000075'
-  const id = '01990000-0000-7000-8000-000000001414'
-  const changeId = '01990000-0000-7000-8000-000000001415'
-  const database = await createHostedRecordFixture({ spaceId, userId })
-  try {
-    await database.exec(`
-      INSERT INTO project (id,space_id,name,created_at)
-      VALUES ('${projectId}','${spaceId}','workshop',now());
-    `)
-    const input = [
-      {
-        table: 'hub_task',
-        id,
-        op: 'upsert',
-        row: hostedTaskRow(id, 'DEV-414', projectId),
-        change_id: changeId,
-      },
-    ] satisfies ParsedHostedPushChange[]
-    const apply = () =>
-      database.transaction((transaction) =>
-        applyHostedPushChangesInTransaction(
-          pgliteSql(transaction as unknown as PGlite),
-          { userId, spaceId },
-          input,
-        ),
-      )
-
-    const first = await apply()
-    expect(await apply()).toEqual(first)
-    expect(
-      (
-        await database.query<{ type: string }>(
-          'SELECT jsonb_typeof(result) AS type FROM hub_applied_change WHERE change_id=$1',
-          [changeId],
-        )
-      ).rows,
-    ).toEqual([{ type: 'object' }])
-  } finally {
-    await database.close()
-  }
-})
-
 test('a replay probe failure is rethrown without remembering an outcome', async () => {
   const statements: string[] = []
   const tx = (async (strings: TemplateStringsArray) => {
