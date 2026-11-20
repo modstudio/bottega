@@ -180,10 +180,8 @@ export async function recordWorkflowProbe(
   if (!command.length) throw new Error(`${PLATFORM_SLUG} workflow probe needs a command after --`)
   const cwd = input.cwd ?? process.cwd()
   const database = input.d ?? db()
-  if (!projectAt(cwd, database))
-    throw new Error(`${PLATFORM_SLUG} workflow probe: no registered project contains ${cwd}`)
-  assertWorkflowEvidenceCheckout(cwd, database, 'workflow probe')
   assertWorkingDirectory(cwd)
+  assertWorkflowEvidenceCheckout(cwd, database, 'workflow probe')
   // Capture the head the probe command will run against.
   const preCommandHead = resolveEvidenceHead(cwd, input)
   probeSandboxProfileForCwd({ allowWriteDir: cwd, cwd, database })
