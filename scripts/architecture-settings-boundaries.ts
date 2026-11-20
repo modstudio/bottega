@@ -226,6 +226,7 @@ export const settingsBoundarySpecs: ImportBoundary[] = [
     file: `${source}settings-machine-hooks.ts`,
     allowed: [
       'shared/brand.ts',
+      'shared/shell-quote.ts',
       'node:path',
       'orchestrator/src/board/board-delivery.ts',
       'orchestrator/src/session/context-review-decision.ts',

@@ -210,12 +210,8 @@ test('product hook rendering is a fixed point', () => {
 })
 
 test('global use off is rendered into every product hook command', () => {
-  const hooks = withMachineProductHooks(
-    { permissions: {}, hooks: {} },
-    DATABASE,
-    'off',
-    RUNTIME,
-  ).settings.hooks
+  const hooks = withMachineProductHooks({ permissions: {}, hooks: {} }, DATABASE, 'off', RUNTIME)
+    .settings.hooks
   const commands = JSON.stringify(hooks)
   expect(commands.match(/BOTTEGA_GLOBAL_USE=off/g)).toHaveLength(27)
 })

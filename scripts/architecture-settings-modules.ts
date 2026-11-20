@@ -394,6 +394,7 @@ export const settingsModules: SettingsModule[] = [
   ]),
   module('orchestrator/src/settings/settings-machine-hooks.ts', [
     '../../../shared/brand.ts',
+    '../../../shared/shell-quote.ts',
     'node:path',
     '../board/board-delivery.ts',
     '../session/context-review-decision.ts',

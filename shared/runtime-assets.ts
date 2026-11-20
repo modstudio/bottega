@@ -16,22 +16,13 @@ import { resolveStateRoot, type StateEnvironment } from './state-directory.ts'
 const RUNTIME_DIRECTORY = 'assets'
 
 /** Whether runtime assets come from the compiled binary rather than a checkout. */
-export function runtimeAssetsAreEmbedded(): boolean {
+function runtimeAssetsAreEmbedded(): boolean {
   return embeddedDistributionManifest() !== null
 }
 
 /** The version-scoped root containing extracted runtime assets. */
-export function extractedRuntimeRootPath(stateRoot: string, version: string): string {
+function extractedRuntimeRootPath(stateRoot: string, version: string): string {
   return join(stateRoot, 'runtime', version, RUNTIME_DIRECTORY)
-}
-
-/** The extracted location of one declared runtime asset. */
-export function extractedRuntimeAssetPath(
-  stateRoot: string,
-  version: string,
-  asset: { destination: string },
-): string {
-  return join(extractedRuntimeRootPath(stateRoot, version), asset.destination)
 }
 
 function extractedRuntimeRoot(environment: StateEnvironment): string {
