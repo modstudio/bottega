@@ -74,11 +74,10 @@ test('Codex writer profile literally denies existing siblings without denying it
   expect(permissionInput.filesystem.denyRead).toEqual(
     expect.arrayContaining([siblingA, siblingB, siblingPath]),
   )
-  expect(
-    permissionInput.filesystem.denyRead.some(
-      (denied) => isAtOrBelow(worktree, denied) || isAtOrBelow(denied, worktree),
-    ),
-  ).toBe(false)
+  expect(permissionInput.filesystem.denyRead.some((denied) => isAtOrBelow(denied, worktree))).toBe(
+    false,
+  )
+  expect(permissionInput.filesystem.denyRead).toContain(projects)
   for (const path of [
     ...permissionInput.filesystem.denyRead,
     ...permissionInput.filesystem.allowRead,
@@ -99,4 +98,47 @@ test('Codex writer profile literally denies existing siblings without denying it
   expect(filesystemArg).toContain(`${JSON.stringify(worktree)}="write"`)
   expect(filesystemArg).toContain(`${JSON.stringify('/tmp')}="write"`)
   expect(filesystemArg).toContain(`${JSON.stringify('/private/tmp/codex-run')}="write"`)
+})
+
+test('Codex translation preserves ancestor state denies for a no-repo reader', () => {
+  const state = temporaryDirectory()
+  const projects = temporaryDirectory()
+  const ownPath = join(projects, 'own')
+  const runDirectory = join(state, 'orchestrator', 'runs', 'reader-run')
+  mkdirSync(ownPath, { recursive: true })
+  mkdirSync(runDirectory, { recursive: true })
+  const project: Project = {
+    recordId: '01990000-0000-7000-8000-000000001216',
+    name: 'own',
+    path: ownPath,
+    stack: 'node',
+    canon: true,
+    retiredAt: null,
+    settings: {},
+  }
+  const selected = selectReadonlySandbox({
+    agent: 'codex',
+    readsRepo: false,
+    writesRepo: false,
+    worktree: runDirectory,
+    runtimeDir: runDirectory,
+    scratchDir: join(runDirectory, 'scratch'),
+    project: null,
+    sharedReader: true,
+    registeredProjects: [project],
+    environment: { HOME: homedir(), [STATE_HOME_ENV]: state },
+    path: '/usr/bin',
+  })
+  const permissionInput = codexPermissionProfileInput({
+    profile: selected.codexProfile!,
+    sandbox: 'workspace-write',
+    cwd: runDirectory,
+    writableRoots: [],
+    tempDir: join(runDirectory, 'tmp'),
+    writesRepository: false,
+  })
+  const statePaths = resolveStatePaths({ [STATE_HOME_ENV]: state })
+  expect(permissionInput.filesystem.denyRead).toEqual(
+    expect.arrayContaining([statePaths.root, statePaths.orchestratorRuns]),
+  )
 })

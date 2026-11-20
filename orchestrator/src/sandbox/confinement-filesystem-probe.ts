@@ -110,6 +110,14 @@ const NOT_COVERED: ConfinementFilesystemProbeRow[] = [
 const PROBE_PROJECT_NAME = 'confinement-probe'
 const PROBE_TASK_PREFIX = 'CONFINEMENTPROBE'
 
+function codexShellArgument(index: number): string {
+  return `\${${index}}`
+}
+
+function codexReadProbe(index: number): string {
+  return `if /bin/cat "${codexShellArgument(index)}" >/dev/null 2>&1; then echo readable; else echo denied; fi`
+}
+
 async function launchCodexWriterProbe(
   profile: ReturnType<typeof readonlyLensProfile>,
   targets: readonly AccessTarget[],
@@ -138,9 +146,10 @@ async function launchCodexWriterProbe(
       }),
       network: false,
     })
-    const ownTree = targets.find(({ name }) => name === 'own tree')!
-    const sibling = targets.find(({ name }) => name === 'same-project sibling worktree')!
+    const measuredTargets = targets.filter(({ createAfterLaunch }) => !createAfterLaunch)
     const writePath = join(cwd, '.codex-confinement-write')
+    const accessScript = measuredTargets.map((_, index) => codexReadProbe(index + 2)).join('\n')
+    const writeArgument = codexShellArgument(measuredTargets.length + 2)
     const result = await startBounded(
       [
         codex,
@@ -151,12 +160,11 @@ async function launchCodexWriterProbe(
         '--',
         '/bin/sh',
         '-c',
-        '/bin/pwd\nif /bin/cat "$2" >/dev/null 2>&1; then echo readable; else echo denied; fi\nif printf fixture >"$3" 2>/dev/null; then /bin/rm -f "$3"; echo readable; else echo denied; fi\nif /bin/cat "$4" >/dev/null 2>&1; then echo readable; else echo denied; fi',
+        `/bin/pwd\n${accessScript}\nif printf fixture >"${writeArgument}" 2>/dev/null; then /bin/rm -f "${writeArgument}"; echo readable; else echo denied; fi`,
         'probe',
         cwd,
-        ownTree.path,
+        ...measuredTargets.map(({ path }) => path),
         writePath,
-        sibling.path,
       ],
       {
         budget: 'sandbox-probe',
@@ -175,16 +183,20 @@ async function launchCodexWriterProbe(
     const values = result.stdout.trim().split(/\r?\n/)
     const expectedCwd = realPathForPotentialPath(cwd)
     const pwd = values[0] === expectedCwd ? 'ran' : 'failed'
-    const paths: Record<string, FilesystemProbeAccess> = {
-      'own tree read': values[1] === 'readable' ? 'readable' : 'denied',
-      'own tree write': values[2] === 'readable' ? 'readable' : 'denied',
-      'same-project sibling worktree': values[3] === 'denied' ? 'denied' : 'readable',
-    }
-    const passed =
-      pwd === 'ran' &&
-      paths['own tree read'] === 'readable' &&
-      paths['own tree write'] === 'readable' &&
-      paths['same-project sibling worktree'] === 'denied'
+    const paths = Object.fromEntries(
+      measuredTargets.map(({ name }, index) => [
+        name,
+        values[index + 1] === 'readable' || values[index + 1] === 'denied'
+          ? values[index + 1]
+          : 'not covered',
+      ]),
+    ) as Record<string, FilesystemProbeAccess>
+    const ownTreeWrite = values[measuredTargets.length + 1] === 'readable' ? 'ran' : 'failed'
+    const accessVerdict = probeVerdict(measuredTargets, paths, {
+      status: 'ran',
+      reason: 'Codex access targets measured',
+    })
+    const passed = pwd === 'ran' && ownTreeWrite === 'ran' && accessVerdict.status === 'denied'
     return {
       family: 'Codex writer',
       status: passed ? 'ran' : 'failed',
@@ -194,8 +206,12 @@ async function launchCodexWriterProbe(
           status: pwd,
           reason: pwd === 'ran' ? 'own tree' : `expected ${expectedCwd}; got ${values[0]}`,
         },
+        'own tree write': {
+          status: ownTreeWrite,
+          reason: ownTreeWrite === 'ran' ? 'write succeeded' : 'write was denied',
+        },
       },
-      reason: passed ? undefined : 'pwd, own-tree read/write, or sibling denial failed',
+      reason: passed ? undefined : 'pwd, own-tree write, or an access-target expectation failed',
     }
   } catch (error) {
     return {

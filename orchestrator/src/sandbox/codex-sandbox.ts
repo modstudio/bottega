@@ -6,7 +6,6 @@
  */
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { isAtOrBelow } from './area-read-policy.ts'
 import type { SandboxRuntimeConfig } from './sandbox.ts'
 
 export type CodexSandboxRuling = {
@@ -95,12 +94,9 @@ export function codexPermissionProfileInput(input: {
   writesRepository: boolean
 }): CodexPermissionProfileInput {
   refuseGlobDeny(input.profile.filesystem.denyRead)
-  const denyRead = input.profile.filesystem.denyRead.filter(
-    (denied) => !isAtOrBelow(input.cwd, denied),
-  )
   return {
     filesystem: {
-      denyRead,
+      denyRead: input.profile.filesystem.denyRead,
       allowRead: input.profile.filesystem.allowWithinDeny,
     },
     writableRoots: input.writesRepository
