@@ -117,7 +117,7 @@ export type SetupCommandRunner = (
   timeoutMs: number,
   options?: { cwd?: string },
 ) => SetupCommandResult
-export type AsyncSetupCommandRunner = (
+type AsyncSetupCommandRunner = (
   argv: string[],
   options?: { cwd?: string },
 ) => Promise<SetupCommandResult>
@@ -395,7 +395,7 @@ export function readMcpRegistration(
 }
 
 /** Async read grammar for Claude, whose independent placement reads run concurrently. */
-export async function readMcpRegistrationAsync(
+async function readMcpRegistrationAsync(
   harness: 'claude',
   bin: string,
   name: McpServerName | LegacyMcpServerName,

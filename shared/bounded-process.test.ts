@@ -75,12 +75,22 @@ test('named deadline helpers share the budget and distinguish output breaches', 
   expect(boundedDeadlineMs('setup-command')).toBe(CALL_BUDGETS['setup-command'].deadlineMs)
   expect(
     isDeadlineBreach(
-      new BoundExceededError('probe', 'setup-command', 'deadline', boundedDeadlineMs('setup-command')),
+      new BoundExceededError(
+        'probe',
+        'setup-command',
+        'deadline',
+        boundedDeadlineMs('setup-command'),
+      ),
     ),
   ).toBe(true)
   expect(
     isDeadlineBreach(
-      new BoundExceededError('probe', 'setup-command', 'output', CALL_BUDGETS['setup-command'].outputBytes),
+      new BoundExceededError(
+        'probe',
+        'setup-command',
+        'output',
+        CALL_BUDGETS['setup-command'].outputBytes,
+      ),
     ),
   ).toBe(false)
 })
