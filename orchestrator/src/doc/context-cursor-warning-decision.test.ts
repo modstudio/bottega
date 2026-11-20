@@ -2,6 +2,7 @@ import { expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   contextCursorWarning,
+  cursorAncestorTasks,
   taskHoldersCarriedByOpenCursors,
   tasksCarriedByOpenCursors,
 } from './context-cursor-warning-decision.ts'
@@ -28,6 +29,24 @@ test.each([
       task: tasks[0]!,
       openCursors: [{ project: PLATFORM_SLUG, taskKey }],
       tasks,
+    }),
+  ).toBeNull()
+})
+
+test('a cursor on a grandchild carries the target through resolved ancestor reads', async () => {
+  const target = tasks[0]!
+  const ancestors = await cursorAncestorTasks({
+    task: target,
+    openCursors: [{ project: PLATFORM_SLUG, taskKey: 'DEV-3' }],
+    lookup: async (project, key) =>
+      tasks.find((task) => task.project === project && task.key === key) ?? null,
+  })
+
+  expect(
+    contextCursorWarning({
+      task: target,
+      openCursors: [{ project: PLATFORM_SLUG, taskKey: 'DEV-3' }],
+      tasks: ancestors,
     }),
   ).toBeNull()
 })

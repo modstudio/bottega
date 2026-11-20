@@ -7,6 +7,31 @@ export type CarriedTaskPair = { key: string; project: string }
 type TaskIdentity = CarriedTaskPair
 type TaskParent = TaskIdentity & { parent_key?: string | null }
 type CursorTask = { project: string; taskKey: string | null }
+export const CONTEXT_CURSOR_ANCESTOR_DEPTH = 32
+
+/** Resolve the bounded ancestor chains needed to decide whether open cursors carry a task. */
+export async function cursorAncestorTasks(input: {
+  task: TaskIdentity
+  openCursors: readonly CursorTask[]
+  lookup(project: string, key: string): Promise<TaskParent | null>
+}): Promise<TaskParent[]> {
+  const tasks = new Map<string, TaskParent>()
+  for (const cursor of input.openCursors) {
+    if (cursor.project !== input.task.project || !cursor.taskKey) continue
+    let key: string | null = cursor.taskKey
+    const visited = new Set<string>()
+    for (let depth = 0; key && depth < CONTEXT_CURSOR_ANCESTOR_DEPTH; depth++) {
+      if (visited.has(key)) break
+      visited.add(key)
+      const scopedKey = `${cursor.project}\0${key}`
+      const task = await input.lookup(cursor.project, key)
+      tasks.set(scopedKey, task ?? { project: cursor.project, key })
+      if (key === input.task.key || !task?.parent_key) break
+      key = task.parent_key
+    }
+  }
+  return [...tasks.values()]
+}
 
 /** Names each cursor task and every same-project ancestor, including missing cursor tasks. */
 export function tasksCarriedByOpenCursors(

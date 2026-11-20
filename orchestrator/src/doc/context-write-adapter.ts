@@ -8,6 +8,7 @@ import {
   referenceNotVisibleRefusal,
   referenceStoreUnreachableRefusal,
 } from '../../../shared/reference-refusal.ts'
+import { namesMissingTaskRecord } from '../../../shared/task-missing.ts'
 import { liveClaimsOfSession } from '../board/board-claim-service.ts'
 import { db, sessionId } from '../database/db.ts'
 import { resolveCommitArgument } from '../git/commit-resolution.ts'
@@ -21,8 +22,8 @@ import {
   type HubTaskPuller,
   type HubTaskReference,
   pullHubTask,
-  readHubTask,
-  readHubTaskByRecordId,
+  readHubTaskReference,
+  readHubTaskReferenceByRecordId,
   readHubTaskChildren,
   resolveOrPullHubTaskReference,
 } from '../workflow/workflow-task-reference.ts'
@@ -213,7 +214,7 @@ export async function resolvedPointerTarget(
       await readHostedDocReference(address)
     },
     task: async (key, targetDatabase) => {
-      const { task } = await resolveContextTaskWithProjectTasks(key, targetDatabase)
+      const { task } = await resolveContextTaskWithChildren(key, targetDatabase)
       return (await pullHubTask(task.project, key)) ?? task
     },
     taskDocument: resolveTaskDocumentPointer,
@@ -252,8 +253,8 @@ export async function resolvedPointerTarget(
 
 const productionContextFactsPorts: ContextFactsPorts = {
   task: pullHubTask,
-  lookup: readHubTask,
-  record: readHubTaskByRecordId,
+  lookup: readHubTaskReference,
+  record: readHubTaskReferenceByRecordId,
   children: readHubTaskChildren,
   pointer: pointerRefusal,
 }
@@ -271,12 +272,12 @@ export async function contextCursorOwner(holder: string, database: Database = db
   return row ? { session_id: row.session_id, project: row.project } : null
 }
 
-/** Resolve a task while retaining the project task-list read used to resolve it. */
-export async function resolveContextTaskWithProjectTasks(
+/** Resolve one task and the direct children needed to classify its context profile. */
+export async function resolveContextTaskWithChildren(
   value: string,
   database: Database = db(),
   ports: ContextFactsPorts = defaultContextFactsPorts(),
-): Promise<{ task: ContextTask; tasks: ContextTask[] }> {
+): Promise<{ task: ContextTask; children: ContextTask[] }> {
   const key = value.trim().toUpperCase()
   const prefix = taskKeyPrefix(key) ?? key.split('-', 1)[0] ?? key
   const project = projectForTaskKey(key, projects(undefined, database))
@@ -284,19 +285,22 @@ export async function resolveContextTaskWithProjectTasks(
   const task = await resolveOrPullHubTaskReference(
     project.name,
     key,
-    async (name) => {
-      const found = await ports.lookup(name, key)
-      return found ? [found] : []
-    },
+    ports.lookup,
     ports.task,
   )
-  const projectTasks = await ports.children(project.name, task.key)
+  const children = await ports.children(project.name, task.key)
   return {
     task,
-    tasks: projectTasks.some((candidate) => candidate.record_id === task.record_id)
-      ? projectTasks
-      : [...projectTasks, task],
+    children,
   }
+}
+
+export async function lookupContextTask(
+  project: string,
+  key: string,
+  ports: ContextFactsPorts = defaultContextFactsPorts(),
+) {
+  return ports.lookup(project, key)
 }
 
 type ContextTaskByRecordId = { task: ContextTask | null; unreadable: string[] }
@@ -309,7 +313,11 @@ export async function resolveContextTaskByRecordId(
 ): Promise<ContextTaskByRecordId> {
   try {
     return { task: await ports.record(recordId), unreadable: [] }
-  } catch {
+  } catch (error) {
+    if (
+      namesMissingTaskRecord(error instanceof Error ? error.message : String(error), recordId)
+    )
+      return { task: null, unreadable: [] }
     return { task: null, unreadable: projects(undefined, database).map((row) => row.name) }
   }
 }

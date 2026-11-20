@@ -12,7 +12,10 @@ import { applyRecordWriteAuthority } from '../record/record-write-authority.ts'
 import { taskFlowReadStore } from '../workflow/task-flow-store.ts'
 import { openKeylessCursorsForSession } from '../workflow/workflow-cursor-list.ts'
 import type { HubTaskReference } from '../workflow/workflow-task-reference.ts'
-import { contextCursorWarning } from './context-cursor-warning-decision.ts'
+import {
+  contextCursorWarning,
+  cursorAncestorTasks,
+} from './context-cursor-warning-decision.ts'
 import { hostedContextItemClient } from './context-item-hosted-client.ts'
 import {
   getContextItem,
@@ -26,9 +29,10 @@ import {
   assertContextDropAllowed,
   assertContextSetAllowed,
   contextCursorOwner,
-  contextProfileForHolder,
-  resolveContextTaskWithProjectTasks,
+  lookupContextTask,
+  resolveContextTaskWithChildren,
   resolvedPointerTarget,
+  taskProfile,
 } from './context-write-adapter.ts'
 import {
   type ContextTaskIdentity,
@@ -44,7 +48,7 @@ export type ContextHolderSelection = { task?: string; session?: string; cursor?:
 type ResolvedContextHolder = {
   holder: string
   task: ContextTaskIdentity | null
-  projectTasks: HubTaskReference[]
+  children: HubTaskReference[]
 }
 
 async function resolveContextHolder(
@@ -54,33 +58,36 @@ async function resolveContextHolder(
   if (selection.cursor && (selection.task || selection.session))
     throw new Error('select exactly one context holder')
   if (selection.cursor)
-    return { holder: cursorContextHolder(selection.cursor), task: null, projectTasks: [] }
+    return { holder: cursorContextHolder(selection.cursor), task: null, children: [] }
   if (selection.task) {
-    const resolved = await resolveContextTaskWithProjectTasks(selection.task)
+    const resolved = await resolveContextTaskWithChildren(selection.task)
     return {
       holder: taskContextHolder(resolved.task.record_id),
       task: resolved.task,
-      projectTasks: resolved.tasks,
+      children: resolved.children,
     }
   }
   const owner = selection.session ?? sessionId()
   if (!owner) throw new Error('no caller session; pass --task KEY or --session ID')
-  return { holder: `session:${owner}`, task: null, projectTasks: [] }
+  return { holder: `session:${owner}`, task: null, children: [] }
 }
 
-async function taskCursorWarning(
-  task: ContextTaskIdentity,
-  tasks: readonly HubTaskReference[],
-): Promise<string | null> {
+async function taskCursorWarning(task: ContextTaskIdentity): Promise<string | null> {
   try {
     const cursors = await taskFlowReadStore(db()).listOpenStages({ project: task.project })
+    const openCursors = cursors.map((cursor) => ({
+      project: cursor.project,
+      taskKey: cursor.workflow_key || null,
+    }))
+    const cursorAncestors = await cursorAncestorTasks({
+      task,
+      openCursors,
+      lookup: lookupContextTask,
+    })
     return contextCursorWarning({
       task,
-      tasks,
-      openCursors: cursors.map((cursor) => ({
-        project: cursor.project,
-        taskKey: cursor.workflow_key || null,
-      })),
+      tasks: cursorAncestors,
+      openCursors,
     })
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error)
@@ -89,8 +96,8 @@ async function taskCursorWarning(
 }
 
 export async function getContext(selection: ContextHolderSelection) {
-  const { holder, task } = await resolveContextHolder(selection)
-  const profile = await contextProfileForHolder(holder, undefined, task ?? undefined)
+  const { holder, task, children } = await resolveContextHolder(selection)
+  const profile = task ? taskProfile(task.key, children) : 'session'
   const items = listContextItems(holder)
   const cursorHolders = selection.session
     ? await listOpenCursorContextHolders(selection.session)
@@ -315,7 +322,7 @@ export async function setContextItem(
   },
 ) {
   assertWorkerDocStoreWriteAllowed('setContextItem')
-  const { holder, task, projectTasks } = await resolveContextHolder(input)
+  const { holder, task } = await resolveContextHolder(input)
   writableDb()
   const questionNumber = /^(?:q)(\d+)$/.exec(input.source.trim())
   const item = {
@@ -376,7 +383,7 @@ export async function setContextItem(
       })
     },
   })
-  const warning = task ? await taskCursorWarning(task, projectTasks) : null
+  const warning = task ? await taskCursorWarning(task) : null
   return {
     task: task?.key ?? null,
     holder: written.holder,

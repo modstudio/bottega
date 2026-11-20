@@ -4,7 +4,12 @@ import { newRecordId } from '../../../shared/record-id.ts'
 import { fixtureProjectRecordId, migratedTestDatabase } from '../database/test-database.fixture.ts'
 import { RecordApiRequestError } from '../record/record-api-client.ts'
 import { productionWorkflowTextDocumentPorts } from '../workflow/workflow-text-copy.ts'
-import { type PointerTargetPorts, resolvedPointerTarget } from './context-write-adapter.ts'
+import {
+  type ContextFactsPorts,
+  type PointerTargetPorts,
+  resolveContextTaskByRecordId,
+  resolvedPointerTarget,
+} from './context-write-adapter.ts'
 
 function ports(document: PointerTargetPorts['document'] = async () => {}): PointerTargetPorts {
   return {
@@ -182,5 +187,46 @@ test('a comment pointer refuses distinctly when the tracker cannot report commen
   await expect(resolvedPointerTarget('task:DEV-2473#comment:4', database, adapter)).rejects.toThrow(
     "cannot be verified because this tracker's task read does not report comment ids; use task:DEV-2473",
   )
+  database.close()
+})
+
+function contextFacts(record: ContextFactsPorts['record']): ContextFactsPorts {
+  return {
+    task: async () => null,
+    lookup: async () => null,
+    record,
+    children: async () => [],
+    pointer: async () => null,
+  }
+}
+
+test('a missing task record returns null without marking projects unreadable', async () => {
+  const database = migratedTestDatabase()
+  const recordId = newRecordId()
+  const result = await resolveContextTaskByRecordId(
+    recordId,
+    database,
+    contextFacts(async () => {
+      throw new Error(`no task record ${recordId.toUpperCase()}`)
+    }),
+  )
+
+  expect(result).toEqual({ task: null, unreadable: [] })
+  database.close()
+})
+
+test('a task-record transport failure marks registered projects unreadable', async () => {
+  const database = migratedTestDatabase()
+  fixtureProjectRecordId(database)
+  const result = await resolveContextTaskByRecordId(
+    newRecordId(),
+    database,
+    contextFacts(async () => {
+      throw new Error('record service unavailable')
+    }),
+  )
+
+  expect(result.task).toBeNull()
+  expect(result.unreadable).toContain('run-fixture')
   database.close()
 })
