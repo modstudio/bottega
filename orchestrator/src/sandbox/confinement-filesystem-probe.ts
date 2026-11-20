@@ -221,31 +221,49 @@ async function launchCommand(
   }
 }
 
+const PROBE_OUTBOUND_TIMEOUT_MS = 5_000
+
 async function launchWorkflowNetworkProbe(
   profile: ReturnType<typeof probeSandboxProfile>,
   environment: Record<string, string>,
   scratchDir: string,
 ): Promise<Record<string, CommandProbe>> {
   const script = String.raw`
-const server = Bun.serve({
-  hostname: '127.0.0.1',
-  port: 0,
-  async fetch(request) {
-    return new Response(await request.text())
-  },
-})
+async function probeLoopback() {
+  const server = Bun.serve({
+    hostname: '127.0.0.1',
+    port: 0,
+    async fetch(request) {
+      return new Response(await request.text())
+    },
+  })
+  try {
+    const response = await fetch(server.url, { method: 'POST', body: 'probe' })
+    if ((await response.text()) !== 'probe') throw new Error('loopback byte exchange failed')
+  } finally {
+    await server.stop(true)
+  }
+}
 try {
-  const response = await fetch(server.url, { method: 'POST', body: 'probe' })
-  if ((await response.text()) !== 'probe') throw new Error('loopback byte exchange failed')
-} finally {
-  await server.stop(true)
+  await probeLoopback()
+  console.log('loopback listen+connect=ran')
+} catch (error) {
+  console.log('loopback listen+connect=failed: ' + error.name + ': ' + error.message)
+  process.exit(1)
 }
-console.log('loopback listen+connect=ran')
-const outbound = await fetch('http://example.com/', { signal: AbortSignal.timeout(500) })
-if (outbound.status !== 403) {
-  throw new Error('non-loopback outbound was not refused by the proxy; status ' + outbound.status)
+try {
+  const outbound = await fetch('http://example.com/', {
+    signal: AbortSignal.timeout(${PROBE_OUTBOUND_TIMEOUT_MS}),
+  })
+  if (outbound.status !== 403) {
+    console.log('non-loopback outbound=failed: status ' + outbound.status)
+    process.exit(1)
+  }
+  console.log('non-loopback outbound=ran')
+} catch (error) {
+  console.log('non-loopback outbound=failed: ' + error.name + ': ' + error.message)
+  process.exit(1)
 }
-console.log('non-loopback outbound=ran')
 `
   const result = await launchSandboxProbe(
     profile,
@@ -256,18 +274,18 @@ console.log('non-loopback outbound=ran')
     { environment: { BUN_BE_BUN: '1' } },
   )
   const output = result.stdout.split(/\r?\n/)
-  const reason =
-    result.exitCode === 0
-      ? 'loopback exchange succeeded and non-loopback connection was denied'
-      : `exit ${result.exitCode ?? 'unknown'}: ${stderrTail(result.stderr)}`
+  const successReason = 'loopback exchange succeeded and non-loopback connection was denied'
+  const fallbackReason = `exit ${result.exitCode ?? 'unknown'}: ${stderrTail(result.stderr)}`
+  const loopbackFailure = output.find((line) => line.startsWith('loopback listen+connect=failed:'))
+  const outboundFailure = output.find((line) => line.startsWith('non-loopback outbound=failed:'))
   return {
     'loopback listen+connect': {
       status: output.includes('loopback listen+connect=ran') ? 'ran' : 'failed',
-      reason,
+      reason: loopbackFailure ?? (result.exitCode === 0 ? successReason : fallbackReason),
     },
     'non-loopback outbound': {
       status: output.includes('non-loopback outbound=ran') ? 'ran' : 'failed',
-      reason,
+      reason: outboundFailure ?? (result.exitCode === 0 ? successReason : fallbackReason),
     },
   }
 }
