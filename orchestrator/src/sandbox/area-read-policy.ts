@@ -9,11 +9,12 @@ import {
   type StateEnvironment,
 } from '../../../shared/state-directory.ts'
 import type { Project } from '../project/projects.ts'
+import { mainCheckoutWorktreeHint } from '../project/projects.ts'
 import { runHarnessStateDir } from '../run-owned-paths.ts'
 
 export type AreaReadPolicy = { deny: string[]; allow: string[] }
 
-const isAtOrBelow = (path: string, parent: string) => {
+export const isAtOrBelow = (path: string, parent: string) => {
   const fromParent = relative(parent, path)
   return fromParent === '' || (!fromParent.startsWith('..') && !isAbsolute(fromParent))
 }
@@ -24,7 +25,10 @@ export function carveBackOutsideProtected(
   protectedDenies: readonly string[],
 ): string[] {
   return candidates.filter(
-    (allowed) => !protectedDenies.some((denied) => isAtOrBelow(allowed, denied)),
+    (allowed) =>
+      !protectedDenies.some(
+        (denied) => isAtOrBelow(allowed, denied) || isAtOrBelow(denied, allowed),
+      ),
   )
 }
 
@@ -47,6 +51,9 @@ export function areaReadPolicy(input: {
   const orchestratorDatabase = resolveOrchestratorDatabase(input.environment)
   const runsDirectory = resolveRunsDirectory(input.environment)
   const checkoutParents = input.registeredProjects.map((project) => dirname(resolve(project.path)))
+  const worktreeRoots = input.registeredProjects.map((project) =>
+    resolve(mainCheckoutWorktreeHint(project.path)),
+  )
   const siblingCheckouts = input.registeredProjects
     .filter((project) => !input.project || project.recordId !== input.project.recordId)
     .map((project) => resolve(project.path))
@@ -60,6 +67,7 @@ export function areaReadPolicy(input: {
         runsDirectory,
         ...checkoutParents,
         ...siblingCheckouts,
+        ...worktreeRoots,
       ]),
     ],
     allow: [

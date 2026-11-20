@@ -13,15 +13,17 @@ import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { classifyCaller } from '../../../shared/caller-classification.ts'
 import { HARNESS_ENV_FILE_ENV, PLATFORM_ENV_FILE_ENV } from '../../../shared/config-directory.ts'
-import { ORCHESTRATOR_DATABASE_ENV, resolveHubDatabase } from '../../../shared/state-directory.ts'
+import {
+  ORCHESTRATOR_DATABASE_ENV,
+  resolveHubDatabase,
+  resolveOrchestratorDatabase,
+  STATE_HOME_ENV,
+} from '../../../shared/state-directory.ts'
 import type { Agent } from '../agent/agents.ts'
 import type { Project } from '../project/projects.ts'
 import { RequiredMcpProbeRefusalError } from '../sandbox/project-mcp-preflight.ts'
 import { grokAskCommandFromConfig, grokAskServerCommand } from '../sandbox/sandbox.ts'
-import {
-  workerSandboxEnvironment,
-  workflowProbeStateEnvironment,
-} from '../sandbox/worker-sandbox-environment.ts'
+import { workflowProbeStateEnvironment } from '../sandbox/worker-sandbox-environment.ts'
 import { carriedRefusalFailure } from './run-prelaunch-refusal.ts'
 import {
   prepareClaimedWorkerMcpConfig,
@@ -36,17 +38,11 @@ afterEach(() => {
   while (roots.length) rmSync(roots.pop()!, { recursive: true, force: true })
 })
 
-test('an SRT worker explicitly disables both denied operator env files', () => {
-  expect(workerSandboxEnvironment()).toEqual({
-    [HARNESS_ENV_FILE_ENV]: '',
-    [PLATFORM_ENV_FILE_ENV]: '',
+test('a workflow probe pins the default store beneath the configured state home', () => {
+  const environment = { [STATE_HOME_ENV]: '/fixtures/state' }
+  expect(workflowProbeStateEnvironment(environment)).toEqual({
+    [ORCHESTRATOR_DATABASE_ENV]: resolveOrchestratorDatabase(environment),
   })
-})
-
-test('a workflow probe pins the orchestrator store passed to its read-only carve-out', () => {
-  expect(
-    workflowProbeStateEnvironment({ [ORCHESTRATOR_DATABASE_ENV]: '/fixtures/orchestrator.db' }),
-  ).toEqual({ [ORCHESTRATOR_DATABASE_ENV]: '/fixtures/orchestrator.db' })
 })
 
 test('every read-only launch uses its run-owned temp while a writer is unchanged', () => {

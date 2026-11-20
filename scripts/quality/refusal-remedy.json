@@ -162,6 +162,9 @@
     "shared/test-git-repository.ts": 1
   },
   "commandCases": {
+    "orchestrator/src/sandbox/sandbox.ts#emptyProjectRegisterRefusal": {
+      "test": "orchestrator/src/sandbox/sandbox-selection.test.ts: an SRT agent profile refuses an empty project register with its remedy"
+    },
     "orchestrator/src/record/record-sync-command.ts#waitingOnUnregisteredLines": {
       "test": "orchestrator/src/record/record-sync-command.test.ts: waiting docs are grouped once per unregistered project with its remedy"
     },

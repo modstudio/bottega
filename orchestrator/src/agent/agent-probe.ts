@@ -324,7 +324,10 @@ async function registrationWriterCapabilities(input: {
     agent: input.agent,
     path: input.path,
     environment: input.environment,
-    registeredProjects: projects({}, writableDb()),
+    registeredProjects: [
+      ...projects({}, writableDb()),
+      ...projects({ retired: true }, writableDb()),
+    ],
   }
   const ports = writingProbePorts(({ prompt, ...confinement }) =>
     input.runOne('writing', prompt, confinement),

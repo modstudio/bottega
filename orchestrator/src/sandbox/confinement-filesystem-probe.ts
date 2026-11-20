@@ -15,6 +15,7 @@ import { join } from 'node:path'
 import { startBounded } from '../../../shared/bounded-process.ts'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { HARNESS_ENV_FILE_ENV, PLATFORM_ENV_FILE_ENV } from '../../../shared/config-directory.ts'
+import { installationExecutable } from '../../../shared/install-root.ts'
 import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 import {
   hubLoginTokenDirectory,
@@ -129,7 +130,7 @@ async function launchProbe(
     if (result.exitCode !== 0) {
       return {
         family,
-        status: 'not covered',
+        status: 'failed',
         paths: {},
         reason: `filesystem launch exited ${result.exitCode ?? 'unknown'}: ${firstErrorLine(result.stderr)}`,
       }
@@ -142,17 +143,34 @@ async function launchProbe(
       ]),
     ) as Record<string, FilesystemProbeAccess>
     const measured = targets.every(({ name, expected }) => paths[name] === expected)
+    const unmeasured = targets.some(({ name }) => paths[name] === 'not covered')
+    const unexpectedlyReadable = targets.some(
+      ({ name, expected }) => expected === 'denied' && paths[name] === 'readable',
+    )
     const command = await launchCommand(profile, commandArgv, environment, hubOpenMode)
     return {
       family,
-      status: measured && command.status === 'ran' ? 'denied' : 'readable',
+      status: unmeasured
+        ? 'not covered'
+        : unexpectedlyReadable
+          ? 'readable'
+          : measured && command.status === 'ran'
+            ? 'denied'
+            : 'failed',
       paths,
       commands: { [`${PLATFORM_SLUG} task show DEV-2510`]: command },
+      reason: unmeasured
+        ? 'one or more filesystem probe output lines were missing'
+        : !measured && !unexpectedlyReadable
+          ? 'one or more expected-readable paths were denied'
+          : command.status === 'failed'
+            ? 'the real CLI verb failed'
+            : undefined,
     }
   } catch (error) {
     return {
       family,
-      status: 'not covered',
+      status: 'failed',
       paths: {},
       reason: error instanceof Error ? error.message : String(error),
     }
@@ -226,10 +244,7 @@ function installFixture(root: string, running: RunningInstallLayout): RunningIns
   }
   const fixtureBin = join(root, 'bin')
   mkdirSync(fixtureBin)
-  copyFileSync(
-    join(runningInstallReadCarveouts(running)[0]!, PLATFORM_SLUG),
-    join(fixtureBin, PLATFORM_SLUG),
-  )
+  copyFileSync(installationExecutable(running.root, running.kind), join(fixtureBin, PLATFORM_SLUG))
   writeFileSync(join(root, 'package.json'), JSON.stringify({ name: 'probe-install' }))
   writeFileSync(join(root, '.env'), 'PLANTED_INSTALL_SECRET=fixture\n')
   return {
@@ -265,7 +280,8 @@ function probeHubOpenMode(hubDatabase: string): string {
 
 function createProbeFixture(root: string) {
   const ownPath = join(root, 'projects', 'own')
-  const worktree = join(root, 'worktrees', 'own')
+  const worktree = join(ownPath, '.claude', 'worktrees', 'own')
+  const siblingWorktree = join(ownPath, '.claude', 'worktrees', 'sibling')
   const siblingPath = join(root, 'projects', 'sibling')
   const stateRoot = join(root, 'state')
   const runningInstall = resolveRunningInstallLayout(process.env)
@@ -295,6 +311,16 @@ function createProbeFixture(root: string) {
     { name: 'sibling .mcp.json', path: join(siblingPath, '.mcp.json'), expected: 'denied' },
     { name: 'orchestrator store', path: state.orchestratorDatabase, expected: 'denied' },
     { name: 'own secret', path: join(ownPath, 'declared.secret'), expected: 'denied' },
+    {
+      name: 'same-project sibling worktree',
+      path: join(siblingWorktree, '.env'),
+      expected: 'denied',
+    },
+    {
+      name: 'another run directory',
+      path: join(state.orchestratorRuns, 'another-run', 'planted.txt'),
+      expected: 'denied',
+    },
     { name: 'own tree', path: join(worktree, 'visible.txt'), expected: 'readable' },
     {
       name: 'own .git objects',
@@ -424,6 +450,7 @@ export function formatConfinementFilesystemProbes(
     const commands = Object.entries(row.commands ?? {})
       .map(([name, result]) => `${name}=${result.status}(${result.reason})`)
       .join(' ')
-    return `filesystem-probe  ${row.family}  ${row.status}  ${paths}${commands ? ` ${commands}` : ''}`
+    const reason = row.reason ? ` reason=${row.reason}` : ''
+    return `filesystem-probe  ${row.family}  ${row.status}  ${paths}${commands ? ` ${commands}` : ''}${reason}`
   })
 }

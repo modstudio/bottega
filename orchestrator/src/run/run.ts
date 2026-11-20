@@ -617,7 +617,7 @@ export async function run(
         runtimeDir,
         scratchDir,
         project: runProject,
-        registeredProjects: projects({}, db()),
+        registeredProjects: [...projects({}, db()), ...projects({ retired: true }, db())],
         override: process.env.BOTTEGA_SANDBOX,
         path: process.env.PATH,
         baseUrl: a.baseUrl,

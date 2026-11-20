@@ -600,6 +600,7 @@ describe('readonly-lens sandbox profile', () => {
       join(state, 'orchestrator', 'orchestrator.db'),
       join(state, 'orchestrator', 'runs'),
       '/projects',
+      '/projects/fixture/.claude/worktrees',
       join('/Users/operator/.config/platform', `${PLATFORM_SLUG}.env`),
       '/shared/absolute.secret',
       join(homedir(), '.tokens/private'),
@@ -613,7 +614,6 @@ describe('readonly-lens sandbox profile', () => {
       resolveHubDatabase(environment),
       `${resolveHubDatabase(environment)}-wal`,
       `${resolveHubDatabase(environment)}-shm`,
-      '/projects/fixture',
       '/projects/fixture/.git',
       '/opt/toolchain/bin',
       '/usr/bin',
@@ -668,7 +668,8 @@ describe('readonly-lens sandbox profile', () => {
       resolveOrchestratorDatabase(environment),
     )
     expect(profile.filesystem.denyRead).toContain('/projects/sibling')
-    expect(profile.filesystem.denyRead).toContain('/projects')
+    expect(profile.filesystem.denyRead).toContain('/projects/fixture/.claude/worktrees')
+    expect(profile.filesystem.denyRead).toContain('/projects/sibling/.claude/worktrees')
     expect(profile.filesystem.denyRead).toContain('/projects/fixture/config/operator.secret')
     for (const allowed of [
       '/projects/fixture/.claude/worktrees/run',
@@ -679,7 +680,6 @@ describe('readonly-lens sandbox profile', () => {
       resolveHubDatabase(environment),
       `${resolveHubDatabase(environment)}-wal`,
       `${resolveHubDatabase(environment)}-shm`,
-      '/projects/fixture',
       '/projects/fixture/.git',
     ]) {
       expect(profile.filesystem.allowWithinDeny).toContain(allowed)
@@ -1004,7 +1004,7 @@ describe('readonly-lens sandbox profile', () => {
     })
   })
 
-  test('a no-repo sandbox requires its root but not a registered project', () => {
+  test('a no-repo sandbox requires its root but not an own project', () => {
     expect(() =>
       selectReadonlySandbox({
         agent: 'grok',
@@ -1023,6 +1023,7 @@ describe('readonly-lens sandbox profile', () => {
         worktree: '/runs/isolates/42',
         runtimeDir: '/runs/sandbox-42',
         project: null,
+        registeredProjects: [fixtureProject()],
       }).sandbox,
     ).toBe('srt')
   })
