@@ -38,6 +38,13 @@ import { codexPermissionLaunchProfileInput } from './codex-permission-profile-ad
 import { codexPermissionProfileArgs } from './codex-sandbox.ts'
 import { codexGapAccessTargets } from './confinement-codex-gap-fixture.ts'
 import {
+  CODEX_GIT_MUTATION_PROBE,
+  CODEX_PROBE_MODE,
+  type CommandProbe,
+  codexShellArgument,
+  codexWriterProbeOutput,
+} from './confinement-codex-writer-probe.ts'
+import {
   type ConfinementProbeTask,
   createConfinementProbeTask,
 } from './confinement-probe-task-port.ts'
@@ -57,8 +64,6 @@ import {
 } from './sandbox.ts'
 
 type FilesystemProbeAccess = 'denied' | 'readable' | 'not covered'
-type CommandProbeStatus = 'ran' | 'failed' | 'refused'
-type CommandProbe = { status: CommandProbeStatus; reason: string }
 export type ConfinementFilesystemProbeRow = {
   family:
     | 'goose'
@@ -104,13 +109,6 @@ const NOT_COVERED: ConfinementFilesystemProbeRow[] = [
 
 const PROBE_PROJECT_NAME = 'confinement-probe'
 const PROBE_TASK_PREFIX = 'CONFINEMENTPROBE'
-const CODEX_PROBE_MODE =
-  'codex sandbox -P ran without --approve-for-me; branch lifecycle belongs to bottega tree'
-
-function codexShellArgument(index: number): string {
-  return `\${${index}}`
-}
-
 function codexWriterProbeRow(
   result: Awaited<ReturnType<typeof startBounded>>,
   measuredTargets: readonly AccessTarget[],
@@ -123,21 +121,7 @@ function codexWriterProbeRow(
       reason: `filesystem launch exited ${result.exitCode ?? 'unknown'}: ${firstErrorLine(result.stderr)}`,
     }
   }
-  const values = new Map(
-    result.stdout
-      .trim()
-      .split(/\r?\n/)
-      .map((line) => line.split('=', 2) as [string, string]),
-  )
-  const command = (name: string, expected: Exclude<CommandProbeStatus, 'failed'> = 'ran') => ({
-    status: values.get(name) === expected ? expected : 'failed',
-    reason:
-      values.get(name) === expected
-        ? expected === 'ran'
-          ? 'succeeded'
-          : 'sandbox refusal held'
-        : 'failed',
-  })
+  const { values, commands } = codexWriterProbeOutput(result.stdout)
   const paths = Object.fromEntries(
     measuredTargets.map(({ name }, index) => [
       name,
@@ -146,14 +130,6 @@ function codexWriterProbeRow(
         : 'not covered',
     ]),
   ) as Record<string, FilesystemProbeAccess>
-  const commands = {
-    pwd: command('pwd'),
-    'git status': command('git-status'),
-    'git commit': command('git-commit'),
-    'git log': command('git-log'),
-    'git branch -d': command('git-branch-delete', 'refused'),
-    'git pack-refs': command('git-pack-refs', 'refused'),
-  }
   const accessVerdict = probeVerdict(measuredTargets, paths, {
     status: 'ran',
     reason: 'Codex access targets measured',
@@ -230,23 +206,7 @@ async function launchCodexWriterProbe(
 if git status --short >/dev/null; then echo git-status=ran; else echo git-status=failed; fi
 if printf fixture >${JSON.stringify(canaryPath)} && git add ${JSON.stringify(canaryPath)} && git commit -qm codex-confinement-canary; then echo git-commit=ran; else echo git-commit=failed; fi
 if git log --format=%s -1 | grep -Fx codex-confinement-canary >/dev/null; then echo git-log=ran; else echo git-log=failed; fi
-if git branch codex-confinement-delete; then
-  branch_delete_output="$(git branch -d codex-confinement-delete 2>&1)"
-  branch_delete_status=$?
-  case "$branch_delete_status:$branch_delete_output" in
-    0:*) echo git-branch-delete=failed ;;
-    *"packed-refs.lock"*"Operation not permitted"*) echo git-branch-delete=refused ;;
-    *) echo git-branch-delete=failed ;;
-  esac
-else echo git-branch-delete=failed
-fi
-pack_refs_output="$(git pack-refs --all 2>&1)"
-pack_refs_status=$?
-case "$pack_refs_status:$pack_refs_output" in
-  0:*) echo git-pack-refs=failed ;;
-  *"packed-refs.lock"*"Operation not permitted"*) echo git-pack-refs=refused ;;
-  *) echo git-pack-refs=failed ;;
-esac
+${CODEX_GIT_MUTATION_PROBE}
 ${accessScript}`,
         'probe',
         realPathForPotentialPath(cwd),

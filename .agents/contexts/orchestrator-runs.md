@@ -1,5 +1,5 @@
 ---
-description: Disposable runs, worktrees, locks, escalation, cleanup, and the test gate.
+description: Runs, worktrees, confinement, and tests.
 paths:
   - orchestrator/src/**
   - orchestrator/hooks/**
@@ -92,9 +92,9 @@ The durable protocol is `status: blocked` in the return contract. The live chann
 
 **The run id comes from the environment, never from the tool arguments.**
 
-**A writing job gets MCP whether or not the caller asked for it.**
+**Writing jobs get MCP, requested or not.**
 
-**Codex confinement uses a named permission profile.** Never deny its tree, writable roots or ancestors. Each launch denies present siblings; later siblings stay readable until the next turn. A writer can commit but cannot delete branches or pack refs, because `.git/packed-refs` is shared across the project's worktrees.
+**Codex named profiles** never deny own tree, write roots or ancestors; each launch denies siblings. New siblings stay readable until the next turn. Writers commit but cannot delete branches or pack refs because worktrees share `.git/packed-refs`.
 
 **Headless grok must never be able to prompt.** Every grok run uses `bypassPermissions`. The worktree and the dirtied-tree detector are the guards.
 

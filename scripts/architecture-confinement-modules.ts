@@ -113,6 +113,9 @@ export const confinementModules: ConfinementModule[] = [
     '../project/projects.ts',
   ]),
   module('orchestrator/src/sandbox/confinement-codex-gap-fixture.ts', ['node:path']),
+  module('orchestrator/src/sandbox/confinement-codex-writer-probe.ts', [
+    '../../../shared/brand.ts',
+  ]),
   module('orchestrator/src/sandbox/confinement-run-measurement.ts', [
     '../run/run-confinement-count.ts',
   ]),
@@ -138,6 +141,7 @@ export const confinementModules: ConfinementModule[] = [
     './confinement-probe-task-port.ts',
     './codex-permission-profile-adapter.ts',
     './confinement-codex-gap-fixture.ts',
+    './confinement-codex-writer-probe.ts',
     './codex-sandbox.ts',
     './sandbox-selection-policy.ts',
     './sandbox.ts',
