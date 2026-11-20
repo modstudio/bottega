@@ -1,6 +1,6 @@
 // concern: pure broad-area read policy; must not know sandbox-runtime or secret paths.
 
-import { dirname, join, resolve } from 'node:path'
+import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
 import {
   resolveHubDatabase,
   resolveOrchestratorDatabase,
@@ -12,6 +12,21 @@ import type { Project } from '../project/projects.ts'
 import { runHarnessStateDir } from '../run-owned-paths.ts'
 
 export type AreaReadPolicy = { deny: string[]; allow: string[] }
+
+const isAtOrBelow = (path: string, parent: string) => {
+  const fromParent = relative(parent, path)
+  return fromParent === '' || (!fromParent.startsWith('..') && !isAbsolute(fromParent))
+}
+
+/** Keep a broad-area carve-back only when it cannot reopen a protected secret path. */
+export function carveBackOutsideProtected(
+  candidates: readonly string[],
+  protectedDenies: readonly string[],
+): string[] {
+  return candidates.filter(
+    (allowed) => !protectedDenies.some((denied) => isAtOrBelow(allowed, denied)),
+  )
+}
 
 /** Broad machine areas hidden from workers, with only run-owned paths carved back in. */
 export function areaReadPolicy(input: {

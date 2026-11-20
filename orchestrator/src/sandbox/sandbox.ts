@@ -40,7 +40,7 @@ import { createNoFollowFile } from '../no-follow-file.ts'
 import { type Project, projectAt, projects } from '../project/projects.ts'
 import { mainStackGateAddresses } from '../resources/main-stack-network.ts'
 import { runHarnessStateDir, runWorkerHomeDir } from '../run-owned-paths.ts'
-import { areaReadPolicy } from './area-read-policy.ts'
+import { areaReadPolicy, carveBackOutsideProtected } from './area-read-policy.ts'
 import {
   type RunningInstallLayout,
   resolveRunningInstallLayout,
@@ -193,16 +193,6 @@ function protectedDenyPaths(project: Project | null, environment: ConfigEnvironm
       ...resolveSecretPaths(project),
     ]),
   ]
-}
-
-/** Keep a broad-area carve-back only when it cannot reopen a protected secret path. */
-export function carveBackOutsideProtected(
-  candidates: readonly string[],
-  protectedDenies: readonly string[],
-): string[] {
-  return candidates.filter(
-    (allowed) => !protectedDenies.some((denied) => isAtOrBelow(allowed, denied)),
-  )
 }
 
 /** Resolved deny lists a confinement report needs; the report itself reads no home. */

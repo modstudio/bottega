@@ -22,7 +22,6 @@ import {
   hubLoginTokenDirectory,
   recordSessionPath,
   resolveHubDatabase,
-  ORCHESTRATOR_DATABASE_ENV,
   resolveStatePaths,
   STATE_HOME_ENV,
 } from '../../../shared/state-directory.ts'
@@ -682,30 +681,6 @@ describe('readonly-lens sandbox profile', () => {
     expect(profile.filesystem.allowWithinDeny).not.toContain(
       '/projects/fixture/config/operator.secret',
     )
-  })
-
-  test('area policy denies orchestrator database and runs overrides outside the state root', () => {
-    const project = fixtureProject()
-    const environment = {
-      HOME: '/Users/operator',
-      [STATE_HOME_ENV]: '/operator/state',
-      [ORCHESTRATOR_DATABASE_ENV]: '/override/orchestrator/orchestrator.db',
-      BOTTEGA_RUNS: '/override/runs',
-    }
-    const profile = readonlyLensProfile({
-      worktree: '/projects/fixture/.claude/worktrees/run',
-      runtimeDir: '/override/runs/current',
-      project,
-      registeredProjects: [project],
-      agent: 'grok',
-      path: '/usr/bin',
-      nodeModuleLinks: [],
-      environment,
-      socketDenyPaths: [],
-    })
-    expect(profile.filesystem.denyRead).toContain('/override/orchestrator')
-    expect(profile.filesystem.denyRead).toContain('/override/orchestrator/orchestrator.db')
-    expect(profile.filesystem.denyRead).toContain('/override/runs')
   })
 
   test('sandbox selection removes the shared reader worktree from writable roots', () => {

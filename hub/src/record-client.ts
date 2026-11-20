@@ -1,7 +1,7 @@
 import { TRPCError } from '@trpc/server'
 import { z } from 'zod'
-import packageMetadata from '../../package.json' with { type: 'json' }
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
+import { installationIdentity } from '../../shared/install-root.ts'
 import {
   CREDENTIAL_BINDINGS,
   CREDENTIAL_ENVIRONMENTS,
@@ -42,6 +42,11 @@ import {
 import { recordBigintSchema } from './record-bigint.ts'
 import { recordBoardClient } from './record-board-client.ts'
 import { type RecordClientOptions, recordWriteDestinationHeaders } from './record-client-options.ts'
+
+function runningVersion(): string {
+  const identity = installationIdentity(import.meta.dir, process.env)
+  return identity.kind === 'distribution' ? identity.manifest.version : identity.version
+}
 
 export function requiredRecordApiUrl(): string {
   return resolveRecordApiUrl()
@@ -533,7 +538,7 @@ async function request<T>(
   const headers = recordRequestHeaders({ bearerToken: options.bearerToken, headers: init.headers })
   if (options.headers.cookie) headers.set('Cookie', options.headers.cookie)
   if (options.headers.authorization) headers.set('Authorization', options.headers.authorization)
-  headers.set('user-agent', `${PLATFORM_SLUG}/${packageMetadata.version}`)
+  headers.set('user-agent', `${PLATFORM_SLUG}/${runningVersion()}`)
   const url = `${options.baseUrl.replace(/\/$/, '')}${path}`
   const fetchImpl = options.fetch ?? globalThis.fetch
   const signal = init.signal ? AbortSignal.any([init.signal, controller.signal]) : controller.signal

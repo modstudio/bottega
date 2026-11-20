@@ -80,7 +80,7 @@ async function launchProbe(
       family,
       status: measured && command.status === 'ran' ? 'denied' : 'readable',
       paths,
-      commands: { [`${PLATFORM_SLUG} task list --json`]: command },
+      commands: { [`${PLATFORM_SLUG} task show DEV-2510`]: command },
     }
   } catch (error) {
     return { family, status: 'not covered', paths: {}, reason: error instanceof Error ? error.message : String(error) }
@@ -104,7 +104,7 @@ async function launchCrossProjectCliProbe(
       family: 'cross-project CLI',
       status: version.status === 'ran' && verb.status === 'ran' ? 'ran' : 'failed',
       paths: { 'install .env': access.status === 'ran' ? 'readable' : 'denied' },
-      commands: { [`${PLATFORM_SLUG} --version`]: version, [`${PLATFORM_SLUG} task list --json`]: verb },
+      commands: { [`${PLATFORM_SLUG} --version`]: version, [`${PLATFORM_SLUG} task show DEV-2510`]: verb },
       reason: version.status === 'ran' && verb.status === 'ran' ? undefined : 'one or more CLI probes failed',
     }
   } catch (error) {
@@ -124,8 +124,9 @@ function installFixture(root: string, running: RunningInstallLayout): RunningIns
   for (const name of ['cli', 'shared', 'hub', 'orchestrator', 'node_modules']) {
     symlinkSync(join(running.root, name), join(root, name), 'dir')
   }
-  mkdirSync(join(root, 'bin'))
-  copyFileSync(join(running.root, 'bin', PLATFORM_SLUG), join(root, 'bin', PLATFORM_SLUG))
+  const fixtureBin = join(root, 'bin')
+  mkdirSync(fixtureBin)
+  copyFileSync(join(runningInstallReadCarveouts(running)[0]!, PLATFORM_SLUG), join(fixtureBin, PLATFORM_SLUG))
   writeFileSync(join(root, 'package.json'), JSON.stringify({ name: 'probe-install' }))
   writeFileSync(join(root, '.env'), 'PLANTED_INSTALL_SECRET=fixture\n')
   return { kind: 'checkout', root, workspaceDirectories: [join(root, 'hub'), join(root, 'orchestrator')] }
@@ -185,7 +186,7 @@ export async function runConfinementFilesystemProbes(): Promise<ConfinementFiles
     copyHubFixture(hubDatabase)
     process.env[STATE_HOME_ENV] = stateRoot
     const cliArgv = bottegaEntryArgv(PLATFORM_SLUG)
-    const commandArgv = [...cliArgv, 'task', 'list', '--json']
+    const commandArgv = [...cliArgv, 'task', 'show', 'DEV-2510']
     const common = {
       worktree,
       runtimeDir,
