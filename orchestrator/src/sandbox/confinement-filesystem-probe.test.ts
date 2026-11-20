@@ -1,7 +1,16 @@
 import { describe, expect, test } from 'bun:test'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { probeVerdict } from './confinement-filesystem-probe.ts'
 
 const ran = { status: 'ran', reason: 'exit 0' } as const
+
+test('confinement probe command and report labels contain no literal task key', () => {
+  for (const file of ['confinement-filesystem-probe.ts', 'confinement-report.ts']) {
+    const source = readFileSync(join(import.meta.dir, file), 'utf8')
+    expect(source).not.toMatch(/[A-Z]+-[0-9]+/)
+  }
+})
 
 describe('probeVerdict', () => {
   test('reports an unexpectedly readable denied target', () => {

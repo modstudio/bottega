@@ -1,4 +1,5 @@
 import { installProjectRegisterReader } from '../hub/src/project-register-reader.ts'
+import { installConfinementProbeTaskCreator } from '../orchestrator/src/sandbox/confinement-probe-task-port.ts'
 import {
   installTaskReader,
   type TaskReadPort,
@@ -7,6 +8,7 @@ import {
 type HubTaskReads = {
   task: typeof import('../hub/src/task.ts')
   document: typeof import('../hub/src/task-document.ts')
+  projects: typeof import('../hub/src/projects.ts')
 }
 
 let loadedHubTaskReads: HubTaskReads | undefined
@@ -39,6 +41,7 @@ function hubTaskReads(): HubTaskReads {
     task: require('../hub/src/task.ts') as typeof import('../hub/src/task.ts'),
     document:
       require('../hub/src/task-document.ts') as typeof import('../hub/src/task-document.ts'),
+    projects: require('../hub/src/projects.ts') as typeof import('../hub/src/projects.ts'),
   }
   return loadedHubTaskReads
 }
@@ -75,5 +78,19 @@ export function installCliTaskReader(): void {
     return contract.OrchProjectListSchema.parse(
       project.projects(options).map(presentation.listedProjectJson),
     )
+  })
+  installConfinementProbeTaskCreator((connection) => {
+    const hub = hubTaskReads()
+    const project = hub.projects
+      .projects()
+      .find((candidate) => candidate.settings.keyPrefixes?.length && !candidate.settings.tracker)
+    if (!project)
+      throw new Error('confinement probe needs a registered local-task project with a key prefix')
+    const task = hub.task.createLocalTaskInTransaction(
+      connection,
+      { project: project.name, title: 'Verify confined CLI access' },
+      { skipDuplicateCheck: true },
+    )
+    return { key: task.key, project: { name: project.name, recordId: project.record_id } }
   })
 }
