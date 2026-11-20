@@ -25,6 +25,7 @@ import { hookScriptPath, PRODUCT_HOOKS, SCRIPT_FILES } from '../settings/setting
 import {
   type SetupInstallSettingsFileFact,
   type SetupInstallVerifyFacts,
+  sessionIndependentSetupInstallChecks,
   verifySetupInstall,
 } from './setup-install-verify.ts'
 
@@ -120,14 +121,18 @@ export async function applySetupInstallVerify(
   }
   const decision = settingsApplyDecision(sessionPresent, results)
   if (decision.action === 'refuse') throw new Error(refusedSettingsMessage(decision.refused))
+  const checks = verifySetupInstall((adapters.facts ?? gatherSetupInstallVerifyFacts)())
   if (decision.action === 'wait-for-sign-in') {
+    const sessionIndependentChecks = sessionIndependentSetupInstallChecks(checks)
+    if (sessionIndependentChecks.some((check) => !check.ok)) {
+      throw new Error(renderedChecks(sessionIndependentChecks, true))
+    }
     return {
       status: 'follow-up',
       message: SIGN_IN_FOLLOW_UP,
       condition: 'waiting-for-sign-in',
     }
   }
-  const checks = verifySetupInstall((adapters.facts ?? gatherSetupInstallVerifyFacts)())
   if (checks.some((check) => !check.ok)) throw new Error(renderedChecks(checks, true))
   return {
     status: results.some((result) => result.changed) ? 'applied' : 'unchanged',

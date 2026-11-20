@@ -20,7 +20,7 @@ const migrationPaths =
   "orchestrator/migrations hub/migrations hub/src/migrations.ts shared/migration-source.ts ':(glob)orchestrator/src/database/*migration*.ts'"
 const migrationCommand = `./bin/${PLATFORM_SLUG} machine migrate`
 const installProofPaths =
-  'install.sh scripts/smoke-release-install.ts scripts/build-binary.ts scripts/build-release-artifacts.ts scripts/release-config.ts orchestrator/src/setup/ orchestrator/src/settings/ orchestrator/src/canon/ orchestrator/src/health/ hub/src/doctor.ts orchestrator/migrations hub/migrations'
+  'install.sh scripts/smoke-release-install.ts scripts/build-binary.ts scripts/build-release-artifacts.ts scripts/release-config.ts orchestrator/src/setup/ orchestrator/src/settings/ orchestrator/src/canon/ orchestrator/src/health/ hub/src/doctor.ts orchestrator/migrations hub/migrations shared/launch-agent-liveness.ts shared/launchd-owners.ts shared/install-root.ts orchestrator/src/record/record-session.ts'
 const aggregateAcceptance =
   '.value.result == "success" or ((.key == "migration-compatibility" or .key == "install-proof") and .value.result == "skipped")'
 const installProofCommand = 'bun run release:install-proof -- "v$(jq -r .version package.json)"'
