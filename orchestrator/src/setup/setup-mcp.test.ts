@@ -1,6 +1,7 @@
 import { expect, test } from 'bun:test'
 import { join } from 'node:path'
 import { MCP_SERVER_NAME, PLATFORM_SLUG, WORKER_MCP_SERVER_NAME } from '../../../shared/brand.ts'
+import { BoundExceededError } from '../../../shared/call-budgets.ts'
 import {
   captureHarnessMcpFacts,
   classifyMcpRegistration,
@@ -13,6 +14,7 @@ import {
   registeredCommandResolves,
   SETUP_COMMAND_TIMEOUT_MS,
   type SetupCommandResult,
+  setupCommandFailure,
   stableMcpServers,
 } from './setup-mcp.ts'
 import { mcpRegistrationWriteRefusal } from './setup-registration-write.ts'
@@ -25,6 +27,32 @@ const result = (stdout: string, exitCode = 0, stderr = ''): SetupCommandResult =
   stderr,
   timedOut: false,
   error: null,
+})
+
+test('classifies async setup command deadline and output failures', () => {
+  expect(
+    setupCommandFailure(
+      new BoundExceededError('claude mcp get', 'setup-command', 'deadline', 5_000),
+    ),
+  ).toEqual({ exitCode: null, stdout: '', stderr: '', timedOut: true, error: null })
+  expect(
+    setupCommandFailure(
+      new BoundExceededError('claude mcp get', 'setup-command', 'output', 1_048_576),
+    ),
+  ).toEqual({
+    exitCode: null,
+    stdout: '',
+    stderr: '',
+    timedOut: false,
+    error: 'output exceeded',
+  })
+  expect(setupCommandFailure(new Error('cannot spawn'))).toEqual({
+    exitCode: null,
+    stdout: '',
+    stderr: '',
+    timedOut: false,
+    error: 'cannot spawn',
+  })
 })
 
 test('captures absent and registered CLI read-backs through the bounded runner', () => {

@@ -12,6 +12,7 @@ export type CallBudgetName =
   | 'release-publish'
   | 'agent-cli'
   | 'sandbox-probe'
+  | 'setup-command'
   | 'keychain'
   | 'docker'
   | 'gh'
@@ -60,6 +61,7 @@ export const CALL_BUDGETS: Readonly<Record<CallBudgetName, CallBudget>> = Object
   'release-publish': { deadlineMs: 1_800_000, outputBytes: 16 * MIB, graceMs: 5_000 },
   'agent-cli': { deadlineMs: 60_000, outputBytes: 16 * MIB, graceMs: 5_000 },
   'sandbox-probe': { deadlineMs: 3_000, outputBytes: 1 * MIB, graceMs: 1_000 },
+  'setup-command': { deadlineMs: 5_000, outputBytes: 4 * MIB, graceMs: 1_000 },
   keychain: { deadlineMs: 120_000, outputBytes: 16 * MIB, graceMs: 5_000 },
   docker: { deadlineMs: 120_000, outputBytes: 16 * MIB, graceMs: 5_000 },
   gh: { deadlineMs: 60_000, outputBytes: 16 * MIB, graceMs: 5_000 },

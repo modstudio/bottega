@@ -88,8 +88,16 @@ function deps() {
         timedOut: false,
         error: null,
       }),
+      asyncRunner: async () => ({
+        exitCode: 0,
+        stdout: '',
+        stderr: '',
+        timedOut: false,
+        error: null,
+      }),
     }),
     reconcileMcp: () => ({ changed: false }),
+    reconcileMcpAsync: async () => ({ changed: false }),
   }
 }
 

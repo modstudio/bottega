@@ -1,6 +1,6 @@
 import { existsSync, readFileSync, realpathSync, statSync } from 'node:fs'
 import { basename, dirname, join, resolve } from 'node:path'
-import { startBoundedSync } from './bounded-process.ts'
+import { isDeadlineBreach, startBoundedSync } from './bounded-process.ts'
 import { BoundExceededError, type CallBudgetName } from './call-budgets.ts'
 
 /**
@@ -123,7 +123,7 @@ export function gitAt(
     }
   } catch (error) {
     // A deadline breach keeps the timed-out answer callers report; an output breach still escapes.
-    if (error instanceof BoundExceededError && error.bound === 'deadline') {
+    if (isDeadlineBreach(error)) {
       return { code: 128, stdout: '', stderr: '', timedOut: true }
     }
     if (error instanceof BoundExceededError) throw error

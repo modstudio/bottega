@@ -113,6 +113,21 @@ export function isDeadlineAbort(error: unknown): boolean {
   return error instanceof DOMException && error.name === 'TimeoutError'
 }
 
+/** Identify the deadline failure emitted by a named bounded process. */
+export function isDeadlineBreach(error: unknown): boolean {
+  return error instanceof BoundExceededError && error.bound === 'deadline'
+}
+
+/** Identify the output-limit failure emitted by a named bounded process. */
+export function isOutputBreach(error: unknown): boolean {
+  return error instanceof BoundExceededError && error.bound === 'output'
+}
+
+/** Read a named process deadline without exposing the mutable budget table to callers. */
+export function boundedDeadlineMs(budget: CallBudgetName): number {
+  return CALL_BUDGETS[budget].deadlineMs
+}
+
 function commandText(argv: readonly string[]): string {
   return argv.join(' ')
 }

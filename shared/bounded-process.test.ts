@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, expect, mock, test } from 'bun:test'
 import { PLATFORM_SLUG } from './brand.ts'
-import { CALL_BUDGETS } from './call-budgets.ts'
+import { BoundExceededError, CALL_BUDGETS } from './call-budgets.ts'
 
 const SENTINEL = 'BOTTEGA_BOUNDED_PROCESS_ENV_SENTINEL'
 const execaMock = mock(
@@ -28,9 +28,14 @@ const execaMock = mock(
 
 mock.module('execa', () => ({ execa: execaMock }))
 
-const { parentBoundSignalExitCode, startBounded, startParentBound } = await import(
-  './bounded-process.ts'
-)
+const {
+  boundedDeadlineMs,
+  isDeadlineBreach,
+  isOutputBreach,
+  parentBoundSignalExitCode,
+  startBounded,
+  startParentBound,
+} = await import('./bounded-process.ts')
 
 let previousSentinel: string | undefined
 
@@ -65,6 +70,26 @@ test('a deliberate git probe budget keeps its declared deadline', async () => {
   await startBounded(['git', 'rev-parse'], { budget: 'git-probe' })
 
   expect(execaMock.mock.calls[0]?.[2]?.timeout).toBe(CALL_BUDGETS['git-probe'].deadlineMs)
+})
+
+test('named breach helpers distinguish deadline and output breaches', () => {
+  expect(
+    isDeadlineBreach(
+      new BoundExceededError(
+        'probe',
+        'setup-command',
+        'deadline',
+        boundedDeadlineMs('setup-command'),
+      ),
+    ),
+  ).toBe(true)
+  expect(isDeadlineBreach(new BoundExceededError('probe', 'setup-command', 'output', 1))).toBe(
+    false,
+  )
+  expect(isOutputBreach(new BoundExceededError('probe', 'setup-command', 'output', 1))).toBe(true)
+  expect(isOutputBreach(new BoundExceededError('probe', 'setup-command', 'deadline', 1))).toBe(
+    false,
+  )
 })
 
 test('tracked child exit flags compose into the parent signal decision', () => {

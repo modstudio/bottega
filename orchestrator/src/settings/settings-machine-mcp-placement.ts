@@ -7,10 +7,12 @@ import { basename, dirname, join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { claudeMcpPlacementPath, type StateEnvironment } from '../../../shared/state-directory.ts'
 import type {
+  ClaudeMcpRegistrationAsyncPort,
   ClaudeMcpRegistrationPort,
   McpServer,
   mutateClaudeMcpRegistration,
   reconcileClaudeMcpRegistration,
+  reconcileClaudeMcpRegistrationAsync,
 } from '../setup/setup-mcp.ts'
 import {
   type ClaudeMcpPlacement,
@@ -30,6 +32,7 @@ export type ClaudeMcpPlacementResult = {
 }
 
 type ReconcileInput = Parameters<typeof reconcileClaudeMcpRegistration>[0]
+type ReconcileAsyncInput = Parameters<typeof reconcileClaudeMcpRegistrationAsync>[0]
 type MutateInput = Parameters<typeof mutateClaudeMcpRegistration>[0]
 type PlacementDependencies = {
   environment: StateEnvironment
@@ -39,6 +42,11 @@ type PlacementDependencies = {
   write: typeof writeClaudeMcpPlacement
   reconcile(input: ReconcileInput): { changed: boolean; detail?: string }
   mutate(input: MutateInput): void
+}
+
+type AsyncPlacementDependencies = Omit<PlacementDependencies, 'port'> & {
+  port(): ClaudeMcpRegistrationAsyncPort | null
+  reconcileAsync(input: ReconcileAsyncInput): Promise<{ changed: boolean; detail?: string }>
 }
 
 function parsePlacement(value: unknown): ClaudeMcpPlacement {
@@ -127,10 +135,10 @@ function plannedTargets(plan: MachineSettingsScopePlan): string[] {
   ]
 }
 
-function checkPlacement(
+async function checkPlacement(
   plan: MachineSettingsScopePlan,
-  deps: PlacementDependencies,
-): ClaudeMcpPlacementResult[] {
+  deps: AsyncPlacementDependencies,
+): Promise<ClaudeMcpPlacementResult[]> {
   const port = deps.port()
   if (!port) {
     return plannedTargets(plan).map((name) => refused(name, 'Claude executable was not found'))
@@ -151,21 +159,23 @@ function checkPlacement(
           present: project.action === 'register',
         })),
     ]
-  return inputs.map((input) => {
-    try {
-      const reconciled = deps.reconcile({
-        port,
-        server: deps.server,
-        scope: input.scope,
-        cwd: input.cwd,
-        present: input.present,
-        check: true,
-      })
-      return result(input.target, reconciled.changed, reconciled.detail)
-    } catch (error) {
-      return refused(input.target, error)
-    }
-  })
+  return Promise.all(
+    inputs.map(async (input) => {
+      try {
+        const reconciled = await deps.reconcileAsync({
+          port,
+          server: deps.server,
+          scope: input.scope,
+          cwd: input.cwd,
+          present: input.present,
+          check: true,
+        })
+        return result(input.target, reconciled.changed, reconciled.detail)
+      } catch (error) {
+        return refused(input.target, error)
+      }
+    }),
+  )
 }
 
 function applyPlacementCall(
@@ -245,13 +255,10 @@ function applyPlacementCalls(
   return [...results.values()]
 }
 
-/** Reconcile writes from the placement record; only --check reads every Claude scope. */
-export function reconcileClaudeMcpPlacementPlan(
-  check: boolean,
+function applyClaudeMcpPlacementWrites(
   plan: MachineSettingsScopePlan,
   deps: PlacementDependencies,
 ): ClaudeMcpPlacementResult[] {
-  if (check) return checkPlacement(plan, deps)
   const names = plannedTargets(plan)
   let recorded: ClaudeMcpPlacement | null
   try {
@@ -273,4 +280,14 @@ export function reconcileClaudeMcpPlacementPlan(
     return [...results.values()]
   }
   return applyPlacementCalls(decision, deps, results)
+}
+
+/** Check placements concurrently, or apply placement-record writes in order. */
+export async function reconcileClaudeMcpPlacementPlanAsync(
+  check: boolean,
+  plan: MachineSettingsScopePlan,
+  deps: AsyncPlacementDependencies,
+): Promise<ClaudeMcpPlacementResult[]> {
+  if (check) return checkPlacement(plan, deps)
+  return applyClaudeMcpPlacementWrites(plan, deps)
 }
