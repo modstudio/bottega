@@ -156,7 +156,7 @@ export async function timedHostedResponse(
 ): Promise<{
   response: Response
   accessLine: string
-  headersMutable: boolean
+  countBody: boolean
   caller: ReturnType<typeof inboundCaller>
 }> {
   const started = now()
@@ -187,19 +187,14 @@ function startHostedServer(environment: ServerEnvironment = process.env) {
     idleTimeout: hostedServer.HOSTED_SERVER_IDLE_TIMEOUT_SECONDS,
     port: config.port,
     fetch: async (request) => {
-      const { response, accessLine, headersMutable, caller } = await timedHostedResponse(
+      const { response, accessLine, countBody, caller } = await timedHostedResponse(
         requestHandler,
         request,
       )
       const method = request.method
       const pathname = new URL(request.url).pathname
       console.log(accessLine)
-      if (
-        !headersMutable ||
-        hostedServer.contentLength(response.headers) !== null ||
-        response.body === null
-      )
-        return response
+      if (!countBody) return response
       return hostedServer.countResponseBody(
         response,
         () => {},

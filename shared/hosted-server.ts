@@ -88,7 +88,7 @@ export function hostedTimedResponse(input: {
   pathname: string
   durationMs: number
   caller?: string | null
-}): { response: Response; accessLine: string; headersMutable: boolean } {
+}): { response: Response; accessLine: string; countBody: boolean } {
   let headersMutable = true
   try {
     input.response.headers.set('server-timing', `app;dur=${input.durationMs.toFixed(1)}`)
@@ -106,7 +106,10 @@ export function hostedTimedResponse(input: {
       responseBytes: contentLength(input.response.headers),
       caller: input.caller,
     }),
-    headersMutable,
+    countBody:
+      headersMutable &&
+      contentLength(input.response.headers) === null &&
+      input.response.body !== null,
   }
 }
 

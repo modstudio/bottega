@@ -3,7 +3,6 @@
 import { readBuiltCommit } from '../../../shared/built-commit.ts'
 import {
   type BodyCountFinish,
-  contentLength,
   countResponseBody,
   HOSTED_SERVER_IDLE_TIMEOUT_SECONDS,
   hostedAccessBodyLogLine,
@@ -244,11 +243,7 @@ export async function timedRecordApiResponse(
     durationMs,
     caller,
   })
-  if (
-    !timed.headersMutable ||
-    contentLength(timed.response.headers) !== null ||
-    timed.response.body === null
-  )
+  if (!timed.countBody)
     return { response: timed.response, durationMs, accessLine: timed.accessLine }
   return {
     response: countResponseBody(
