@@ -349,7 +349,6 @@ export const settingsModules: SettingsModule[] = [
     '../database/db.ts',
     '../doc/docs.ts',
     '../project/project-lock.ts',
-    '../record/record-cache.ts',
     '../record/record-write-authority.ts',
     '../run/run-process.ts',
     '../setup/setup-mcp.ts',

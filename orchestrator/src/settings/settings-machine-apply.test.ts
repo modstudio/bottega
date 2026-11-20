@@ -210,6 +210,98 @@ describe('settings apply', () => {
     })
   })
 
+  test('a hosted install refuses unreadable personal rows without rendering a partial set', async () => {
+    const hosted = createMemoryRecordApiClient()
+    await hosted.upsertDoc(
+      {
+        scope: 'settings',
+        subject: null,
+        owner: OWNER,
+        slug: 'settings',
+        title: 'settings',
+        body: serializeOwnedSettings({
+          permissions: { allow: ['Bash(partial *)'] },
+          hooks: {},
+          envKeys: [],
+        }),
+        delivery: 'demand',
+        audiences: ['technical'],
+        position: 0,
+        reason: 'hosted fixture settings',
+        author: OWNER,
+      },
+      { destinationSpaceId: 'personal-space' },
+    )
+    installRecordApiClient({
+      ...hosted,
+      whoami: async () => ({
+        user: { id: OWNER },
+        activeSpaceId: 'organization-space',
+        personalSpaceId: 'personal-space',
+        memberships: [],
+      }),
+      listDocs: async (query, destination) => {
+        const page = await hosted.listDocs(query, destination)
+        return query.scope === 'settings'
+          ? {
+              ...page,
+              unreadable: [{ id: 'settings-row-id', reason: 'invalid settings payload' }],
+            }
+          : page
+      },
+    })
+    process.env.BOTTEGA_RECORD_API_URL = RECORD_API_URL
+
+    await expect(applyMachineSettings({ check: false }, deps())).rejects.toThrow(
+      'settings-row-id: invalid settings payload',
+    )
+    expect(existsSync(join(root, '.claude', 'settings.json'))).toBe(false)
+    expect(existsSync(join(root, '.codex', 'AGENTS.md'))).toBe(false)
+  })
+
+  test('a hosted install gives the personal-space remedy for empty user canon', async () => {
+    const hosted = createMemoryRecordApiClient()
+    await hosted.upsertDoc(
+      {
+        scope: 'settings',
+        subject: null,
+        owner: OWNER,
+        slug: 'settings',
+        title: 'settings',
+        body: serializeOwnedSettings({ permissions: {}, hooks: {}, envKeys: [] }),
+        delivery: 'demand',
+        audiences: ['technical'],
+        position: 0,
+        reason: 'hosted fixture settings',
+        author: OWNER,
+      },
+      { destinationSpaceId: 'personal-space' },
+    )
+    installRecordApiClient({
+      ...hosted,
+      whoami: async () => ({
+        user: { id: OWNER },
+        activeSpaceId: 'organization-space',
+        personalSpaceId: 'personal-space',
+        memberships: [],
+      }),
+    })
+    process.env.BOTTEGA_RECORD_API_URL = RECORD_API_URL
+
+    const refusals = (await applyMachineSettings({ check: true }, deps())).filter(
+      (result) => result.condition === 'empty-user-canon-store',
+    )
+
+    expect(refusals).toHaveLength(2)
+    expect(refusals.every((result) => result.detail?.includes('hosted personal space'))).toBe(true)
+    expect(
+      refusals.every((result) =>
+        result.detail?.includes(`${PLATFORM_SLUG} doc set --scope canon --user`),
+      ),
+    ).toBe(true)
+    expect(refusals.every((result) => !result.detail?.includes('record push'))).toBe(true)
+  })
+
   test('marks a missing user settings row as a structured refusal', async () => {
     db().query("DELETE FROM doc WHERE scope='settings' AND owner=?").run(OWNER)
     expect((await applyMachineSettings({ check: false }, deps()))[0]).toEqual({

@@ -15,6 +15,7 @@ import {
   applyUserCanonHomePlans,
   collectUserCanonHome,
   decideUserCanonHomePlanApplication,
+  emptyHostedUserCanonStoreRefusal,
   emptyUserCanonStoreRefusal,
   planUserCanonHome,
   type UserCanonHomePlan,
@@ -22,7 +23,7 @@ import {
   userCanonHomesFromEnvironment,
 } from '../canon/user-canon-home-files.ts'
 import { db } from '../database/db.ts'
-import { getDoc, listDocs, listHostedPersonalDocs, signedInDocOwner } from '../doc/docs.ts'
+import { getDoc, listDocs, readHostedUserSettingsDocuments, signedInDocOwner } from '../doc/docs.ts'
 import { tryKernelLease } from '../project/project-lock.ts'
 import { applyRecordWriteAuthority } from '../record/record-write-authority.ts'
 import { isOrchWorkerProcess } from '../run/run-process.ts'
@@ -113,6 +114,7 @@ type Dependencies = {
 }
 
 type UserSettingsDocuments = {
+  source: 'local' | 'hosted'
   settings: { body: string } | null
   canon: Array<{ slug: string; body: string }>
 }
@@ -192,20 +194,19 @@ function missingUserSettingsResult(target: string): MachineSettingsApplyResult {
 
 function localUserSettingsDocuments(owner: string): UserSettingsDocuments {
   return {
+    source: 'local',
     settings: getDoc(SETTINGS_SCOPE, null, SETTINGS_SLUG, owner),
     canon: listDocs({ scope: 'canon', subject: null, owner, status: 'current' }),
   }
 }
 
 async function hostedUserSettingsDocuments(owner: string): Promise<UserSettingsDocuments> {
-  const [settings = [], canon = []] = await listHostedPersonalDocs([
-    { scope: SETTINGS_SCOPE, subject: null },
-    { scope: 'canon', subject: null, status: 'current' },
-  ])
+  const { settings, canon } = await readHostedUserSettingsDocuments()
   const settingsRow = settings.find(
     (row) => row.slug === SETTINGS_SLUG && row.owner === owner && typeof row.body === 'string',
   )
   return {
+    source: 'hosted',
     settings: settingsRow ? { body: settingsRow.body as string } : null,
     canon: canon.flatMap((row) =>
       row.owner === owner && typeof row.slug === 'string' && typeof row.body === 'string'
@@ -345,6 +346,7 @@ function assertMachineSettingsWriteAuthority(
 
 function applyUserCanon(
   rows: UserSettingsDocuments['canon'],
+  source: UserSettingsDocuments['source'],
   check: boolean,
   deps: Dependencies,
 ): MachineSettingsApplyResult[] {
@@ -383,7 +385,8 @@ function applyUserCanon(
       target: item.target,
       outcome: 'refused',
       condition: 'empty-user-canon-store',
-      detail: emptyUserCanonStoreRefusal(),
+      detail:
+        source === 'hosted' ? emptyHostedUserCanonStoreRefusal() : emptyUserCanonStoreRefusal(),
       changed: false,
     }))
   }
@@ -454,7 +457,7 @@ export async function applyMachineSettings(
     )
     return [
       applyUserSettings(documents.settings, input.check, deps),
-      ...applyUserCanon(documents.canon, input.check, deps),
+      ...applyUserCanon(documents.canon, documents.source, input.check, deps),
       ...applyClaudeMcpPlacement(input.check, deps),
     ]
   } finally {

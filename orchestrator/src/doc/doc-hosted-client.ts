@@ -33,6 +33,10 @@ type HostedDocClient = {
 }
 
 type HostedPersonalDocQuery = Parameters<HostedDocClient['listDocs']>[0]
+type HostedDocListResult = {
+  items: Record<string, unknown>[]
+  unreadable: Array<{ id: string; reason: string }>
+}
 
 export async function hostedDocClient(
   scope: string,
@@ -64,25 +68,37 @@ export async function hostedDocClient(
 async function listAllHostedDocs(
   list: HostedDocClient['listDocs'],
   query: HostedPersonalDocQuery,
-): Promise<Record<string, unknown>[]> {
+): Promise<HostedDocListResult> {
   const items: Record<string, unknown>[] = []
+  const unreadable: HostedDocListResult['unreadable'] = []
   let cursor: string | null = null
   do {
     const page = await list({ ...query, limit: 100, cursor })
     items.push(...page.items)
+    unreadable.push(...(page.unreadable ?? []))
     cursor = page.nextCursor
   } while (cursor)
-  return items
+  return { items, unreadable }
 }
 
-/** Read personal-space document scopes through one destination resolution. */
-export async function listHostedPersonalDocs(
-  queries: readonly HostedPersonalDocQuery[],
-): Promise<Record<string, unknown>[][]> {
-  const first = queries[0]
-  if (!first?.scope) throw new Error('a hosted personal document scope is required')
-  const client = await hostedDocClient(first.scope, null)
-  return Promise.all(queries.map((query) => listAllHostedDocs(client.listDocs, query)))
+/** Read the user settings inputs from the signed-in user's personal space. */
+export async function readHostedUserSettingsDocuments(): Promise<{
+  settings: Record<string, unknown>[]
+  canon: Record<string, unknown>[]
+}> {
+  const client = await hostedDocClient('settings', null)
+  const [settings, canon] = await Promise.all([
+    listAllHostedDocs(client.listDocs, { scope: 'settings', subject: null }),
+    listAllHostedDocs(client.listDocs, { scope: 'canon', subject: null, status: 'current' }),
+  ])
+  const unreadable = [...settings.unreadable, ...canon.unreadable]
+  if (unreadable.length > 0) {
+    throw new Error(
+      'refusing settings apply: hosted personal document rows could not be read: ' +
+        unreadable.map(({ id, reason }) => `${id}: ${reason}`).join('; '),
+    )
+  }
+  return { settings: settings.items, canon: canon.items }
 }
 
 /** Read one shared-parser document reference through the hosted document store. */
