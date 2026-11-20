@@ -130,7 +130,7 @@ async function handoffFromAuthor(
         probe: options.probe,
         machine: options.machine,
         transfer: options.transfer,
-        resumeHandoffRootIds: resumeHandoffOwedRootIds(database, author),
+        resumeHandoffRootIds: await resumeHandoffOwedRootIds(database, author),
       },
     )
     const handoff = adoptionHandoff(author, report, command, options.machine ?? 'unknown')

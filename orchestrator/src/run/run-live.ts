@@ -571,8 +571,9 @@ function captureLiveGooseLedger(input: LiveInput) {
   )
 }
 
-function codexTransportMcpScope(scope: CodexMcpScope | null) {
+function codexTransportMcpScope(scope: CodexMcpScope | null, writableRoots: string[]) {
   return {
+    writableRoots,
     projectServers: scope?.servers,
     withheldProjectServers: scope?.withheld.map((server) => server.name),
   }
@@ -603,7 +604,6 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
     mcpServerName,
     codexMcpScope,
     mcpTrustGranted,
-    writableRoots,
     gitConfigEnvironment,
     recipeEnvironment,
     launchEnvironment,
@@ -737,10 +737,9 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
       sandboxWorkspaceWriteNetworkAccess: codexSandbox.workspaceWriteNetworkAccess,
       mcp: usingMcp,
       mcpServer: mcpServerName ?? undefined,
-      ...codexTransportMcpScope(codexMcpScope),
+      ...codexTransportMcpScope(codexMcpScope, input.writableRoots),
       projectMcpSelection: input.projectMcpSelection,
       trustCwd: mcpTrustGranted ? cwd : undefined,
-      writableRoots,
       gitConfigEnvironment,
       recipeEnvironment,
       tempEnvironment: input.runTemp.environment,
@@ -755,9 +754,8 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
         repoJob,
         claim.number,
         requestedJob,
-        // The composed prompt's own size, measured where the prompt is final:
-        // some jobs' material arrives inline here (a `summarize` prompt carries
-        // its document) rather than in the working set the job declares.
+        // Measure where the prompt is final: some jobs' material arrives inline
+        // rather than in the working set the job declares.
         Buffer.byteLength(prompt, 'utf8'),
       ),
       onWarning: warnForRun(claim.id),
@@ -813,8 +811,7 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
         })
       }
     }
-    // Two timeouts, composed, not one: the wall stays, and idle kill is the
-    // second, shorter no-activity bound. Do not replace the wall.
+    // Keep both the wall timeout and the shorter idle timeout.
     wallArmedAtMs = Date.now()
     const expireWall = () => {
       rearmWallDeadline = () => {}

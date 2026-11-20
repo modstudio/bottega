@@ -85,13 +85,14 @@ add a comment to a task
 
 ## bottega task comment-delete
 
-**Synopsis:** `bottega task comment-delete <key> <comment-id> [--project <X>]`
+**Synopsis:** `bottega task comment-delete <key> <comment-id> [--project <X>] [--expect <revision>]`
 
 delete one of your task comments
 
 ### Options
 
 - `--project <X>`: resolve the task in this project
+- `--expect <revision>`: require this current comment revision
 
 ### Related
 
@@ -99,13 +100,14 @@ delete one of your task comments
 
 ## bottega task comment-edit
 
-**Synopsis:** `bottega task comment-edit <key> <comment-id> <text> [--project <X>]`
+**Synopsis:** `bottega task comment-edit <key> <comment-id> <text> [--project <X>] [--expect <revision>]`
 
 edit one of your task comments
 
 ### Options
 
 - `--project <X>`: resolve the task in this project
+- `--expect <revision>`: require this current comment revision
 
 ### Related
 
@@ -342,7 +344,7 @@ what has been worked on, newest window first
 
 ## bottega task set
 
-**Synopsis:** `bottega task set <key> [--project <X>] [--title <text>] [--status <Y>] [--parent <key>] [--no-parent] [--assignee <name>] [--force] [--abandon <reason>] [--body <text>] [--body-file <path>]`
+**Synopsis:** `bottega task set <key> [--project <X>] [--title <text>] [--status <Y>] [--parent <key>] [--no-parent] [--assignee <name>] [--expect <revision>] [--force] [--abandon <reason>] [--body <text>] [--body-file <path>]`
 
 change task fields; external trackers support status when adapted
 
@@ -354,6 +356,7 @@ change task fields; external trackers support status when adapted
 - `--parent <key>`: replace the parent task key
 - `--no-parent`: clear the parent task
 - `--assignee <name>`: replace the task assignee
+- `--expect <revision>`: require this task revision for title or body replacement
 - `--force`: allow replacing an existing task body
 - `--abandon <reason>`: record why unlanded work may be abandoned
 - `--body <text>`: use this text as the task body

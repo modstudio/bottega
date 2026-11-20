@@ -15,6 +15,10 @@ type HostedSessionRequestBase = {
   fetch: (input: string, init: RequestInit) => Promise<Response>
 }
 
+export class HostedSessionTransportError extends Error {
+  override readonly name = 'HostedSessionTransportError'
+}
+
 export type HostedSessionMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
 export type HostedOutsideNoteBody = {
   project: string
@@ -48,7 +52,9 @@ async function send(
       })
     } catch (error) {
       const detail = error instanceof Error ? error.message : String(error)
-      throw new Error(recordUnreachableRefusal(input.origin, detail, input.safety))
+      throw new HostedSessionTransportError(
+        recordUnreachableRefusal(input.origin, detail, input.safety),
+      )
     }
   }
   return input.token === undefined

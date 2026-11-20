@@ -6,11 +6,9 @@ import { RECORD_ACTOR_ROLE } from '../../shared/record/schema.ts'
 import { bindTenant } from '../../shared/record/tenant.ts'
 import { hostedIntervalRow, hostedTaskRow } from '../test/hosted-push-rows.ts'
 import { createHostedRecordFixture, pgliteSql } from '../test/hosted-record-fixture.ts'
-import { db, writeTransaction } from './db.ts'
 import { DELETED_ON_HOSTED_RECORD_REASON } from './hosted-delete.ts'
 import { applyHostedPushChangesInTransaction } from './hosted-push-changes.ts'
 import { HostedChangeIdMismatchError, HostedRevisionConflictError } from './hosted-push-conflict.ts'
-import { drainHostedOutbox } from './outbox.ts'
 import {
   type HostedPushChange,
   type ParsedHostedPushChange,
@@ -18,10 +16,6 @@ import {
   type PushedTask,
   parseHostedPushItem,
 } from './push-contract.ts'
-import { closeTask, commentTask, setTask } from './task.ts'
-import { UNATTRIBUTED } from './task-attribution.ts'
-import type { HostedTaskIdentity } from './task-client.ts'
-import { deleteTaskDocument, updateTaskDocument } from './task-document.ts'
 
 const spaceId = '01990000-0000-7000-8000-000000001250'
 const taskId = '01990000-0000-7000-8000-000000001251'
@@ -657,150 +651,6 @@ test('unguarded updates increment revisions and document changes compare text ve
       },
     ]),
   ).rejects.toMatchObject({ currentRevision: 'v1' })
-})
-
-test('offline commands later drain through the real outbox into hosted task rows', async () => {
-  const machineTaskId = '01990000-0000-7000-8000-000000001320'
-  const documentId = '01990000-0000-7000-8000-000000001321'
-  const at = '2026-10-11T16:00:00.000Z'
-  const unavailable = {
-    baseUrl: 'https://unreachable.example.test',
-    token: 'test',
-    fetch: async () => {
-      throw new Error('hosted hub unavailable')
-    },
-  }
-  writeTransaction((conn) => {
-    conn
-      .query(
-        `INSERT INTO task
-        (record_id,key,project,project_record_id,title,status,status_category,source,first_seen,last_seen,updated_at)
-        VALUES (?,'GAM-320','gamma',?,'Before','open','open','local',?,?,?)`,
-      )
-      .run(machineTaskId, projectId, at, at, at)
-    conn
-      .query(
-        `INSERT INTO task_document
-        (record_id,task_key,task_record_id,number,title,body,version,created_at,updated_at)
-        VALUES (?,'GAM-320',?,1,'Before','body','v1',?,?)`,
-      )
-      .run(documentId, machineTaskId, at, at)
-  })
-  expect(
-    await apply([
-      {
-        table: 'hub_task',
-        id: machineTaskId,
-        op: 'upsert',
-        row: {
-          ...taskRow(machineTaskId, 'GAM-320', 'local'),
-          project: 'gamma',
-          project_name: 'gamma',
-        },
-      },
-      {
-        table: 'hub_task_document',
-        id: documentId,
-        op: 'upsert',
-        row: {
-          id: documentId,
-          task_key: 'GAM-320',
-          task_id: machineTaskId,
-          project_name: 'gamma',
-          number: 1,
-          role: null,
-          title: 'Before',
-          body: 'body',
-          version: 'v1',
-          created_at: at,
-          updated_at: at,
-          deleted_at: null,
-        },
-      },
-    ]),
-  ).toEqual([
-    { id: machineTaskId, status: 'applied' },
-    { id: documentId, status: 'applied' },
-  ])
-
-  const registered = () => [{ name: 'gamma', settings: { keyPrefixes: ['GAM'], space: spaceId } }]
-  const hostedIdentity = async (): Promise<HostedTaskIdentity> => ({
-    userId,
-    activeSpaceId: spaceId,
-    memberships: [{ spaceId, slug: 'gamma', permission: 'write' as const }],
-    capabilities: {
-      spacePush: true,
-      spacePushTables: [
-        'hub_task',
-        'hub_task_comment',
-        'hub_task_document',
-        'hub_task_status_event',
-      ],
-    },
-  })
-  const sent: HostedPushChange[] = []
-  const drain = () =>
-    drainHostedOutbox({
-      identity: hostedIdentity,
-      registered,
-      push: async (changes) => {
-        sent.push(...changes)
-        return apply(changes)
-      },
-    })
-
-  await setTask('GAM-320', { recordId: machineTaskId }, { title: 'Offline title' }, UNATTRIBUTED, {
-    hosted: unavailable,
-  })
-  expect((await drain()).sent).toBe(1)
-  expect(
-    (await database.query(`SELECT title FROM hub_task WHERE id=$1`, [machineTaskId])).rows,
-  ).toEqual([{ title: 'Offline title' }])
-
-  await commentTask('GAM-320', { recordId: machineTaskId }, 'Offline comment', UNATTRIBUTED, {
-    hosted: unavailable,
-  })
-  expect((await drain()).sent).toBe(1)
-  expect(
-    (await database.query(`SELECT body FROM hub_task_comment WHERE task_id=$1`, [machineTaskId]))
-      .rows,
-  ).toEqual([{ body: 'Offline comment' }])
-
-  await updateTaskDocument(documentId, { title: 'Offline document' }, { hosted: unavailable })
-  expect((await drain()).sent).toBe(1)
-  expect(
-    (await database.query(`SELECT title FROM hub_task_document WHERE id=$1`, [documentId])).rows,
-  ).toEqual([{ title: 'Offline document' }])
-
-  await closeTask('GAM-320', { recordId: machineTaskId }, UNATTRIBUTED, {
-    hosted: unavailable,
-    classify: async () => ({
-      project: 'gamma',
-      key: 'GAM-320',
-      dryRun: true,
-      deleted: [],
-      kept: [],
-      operator: [],
-      wouldDelete: [],
-      errors: [],
-    }),
-  })
-  expect((await drain()).sent).toBe(2)
-  const statusEvent = sent.find((change) => change.table === 'hub_task_status_event')
-  if (!statusEvent) throw new Error('expected a drained status event')
-  expect(await apply([statusEvent])).toEqual([{ id: statusEvent.id, status: 'duplicate' }])
-
-  await deleteTaskDocument(documentId, { hosted: unavailable })
-  expect((await drain()).sent).toBe(1)
-  expect(
-    (
-      await database.query(
-        `SELECT deleted_at IS NOT NULL AS deleted FROM hub_task_document WHERE id=$1`,
-        [documentId],
-      )
-    ).rows,
-  ).toEqual([{ deleted: true }])
-  expect(db().query(`SELECT 1 FROM hosted_outbox`).all()).toHaveLength(0)
 })
 
 test('comment and document pushes apply their route effects and deduplicate deletes', async () => {

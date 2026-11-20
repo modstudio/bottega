@@ -35,11 +35,11 @@ const row = (key: string, parentKey: string | null): TaskReadRow => ({
 function installTasks(tasks: TaskReadRow[]) {
   const byKey = new Map(tasks.map((task) => [task.key, task]))
   const port: TaskReadPort = {
-    list: ({ project } = {}) => tasks.filter((task) => !project || task.project === project),
-    show: (key) => ({ task: byKey.get(key)! }),
-    duplicates: () => [],
-    documents: () => [],
-    document: () => ({ id: 'none', label: 'none', title: 'none', body: '', version: '1' }),
+    list: async ({ project } = {}) => tasks.filter((task) => !project || task.project === project),
+    show: async (key) => ({ task: byKey.get(key)! }),
+    duplicates: async () => [],
+    documents: async () => [],
+    document: async () => ({ id: 'none', label: 'none', title: 'none', body: '', version: '1' }),
   }
   installTaskReader(port)
 }

@@ -1,21 +1,19 @@
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, spyOn, test } from 'bun:test'
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { declareFixtureProjectSpace } from '../test/fixture-project-space.ts'
-import { fixtureRecordId, resetFixtureStore } from '../test/run-fixtures.ts'
+import { resetFixtureStore } from '../test/run-fixtures.ts'
 import { db, writeTransaction } from './db.ts'
 import { DUPLICATE_TITLE_FIXTURE } from './duplicate-matcher.fixture.ts'
+import { HOSTED_UNREACHABLE_REMEDY } from './hosted-write-mode.ts'
 import { writeTrackerCache } from './ingest/trackers.ts'
 import { persistInstallBinding } from './install-binding.ts'
-import { loadOutboxChange } from './outbox-row.ts'
 import { projectRecordIdFor } from './project-record-id.ts'
 import {
   closeTask,
   commentTask,
   createTask,
-  deleteTaskComment,
   duplicateCandidates,
   duplicateScore,
-  editTaskComment,
   listTasks,
   setTask,
   setTaskBody,
@@ -55,6 +53,35 @@ const hosted = {
       return Response.json(
         (body as Array<{ id: string }>).map(({ id }) => ({ id, status: 'applied' })),
       )
+    if (init?.method !== 'POST' && url.pathname.startsWith('/v1/tasks/')) {
+      const task = db()
+        .query<Record<string, unknown>, [string, string]>(
+          `SELECT record_id id,key,project,project project_name,title,status,status_category,
+                  parent_key,parent_record_id parent_id,body,assignee,opened_at,closed_at,source,first_seen,last_seen,
+                  first_seen created_at,last_seen updated_at,next_document_number
+             FROM task WHERE record_id=? OR key=?`,
+        )
+        .get(key, key)
+      if (!task) return Response.json({ error: 'missing' }, { status: 404 })
+      const taskId = String(task.id)
+      const comments = db()
+        .query<Record<string, unknown>, [string]>(
+          `SELECT record_id id,task_key,task_record_id task_id,body,created_at,updated_at,deleted_at,
+                  actor_user_id,actor_name,agent,run_id FROM task_comment WHERE task_record_id=?`,
+        )
+        .all(taskId)
+      const documents = db()
+        .query<Record<string, unknown>, [string]>(
+          `SELECT record_id id,number,task_key,task_record_id task_id,role,title,body,version,
+                  created_at,updated_at,NULL deleted_at FROM task_document WHERE task_record_id=?`,
+        )
+        .all(taskId)
+      return Response.json({
+        task: { ...task, deleted_at: null, revision: 1 },
+        comments,
+        documents,
+      })
+    }
     if (url.pathname === '/v1/tasks') {
       const project = body.project as string
       const prefixes: Record<string, string> = {
@@ -110,7 +137,7 @@ const hosted = {
         title: body.title,
         body: body.body,
         version: body.version,
-        number: showTask(key).task.next_document_number,
+        number: (await showTask(key)).task.next_document_number,
         created_at: at,
         updated_at: at,
         deleted_at: null,
@@ -163,182 +190,24 @@ describe('hosted-authoritative existing-row edits', () => {
     },
   }
 
-  test('set, comment, and close save locally and queue while offline', async () => {
-    const id = seed('GAM-70', 'gamma')
-    const messages: unknown[] = []
-    const stdout: unknown[] = []
-    const error = spyOn(console, 'error').mockImplementation((message) => messages.push(message))
-    const log = spyOn(console, 'log').mockImplementation((message) => stdout.push(message))
-    try {
-      await setTask('GAM-70', { recordId: id }, { title: 'Offline title' }, UNATTRIBUTED, {
-        hosted: unreachable,
-      })
-      await commentTask('GAM-70', { recordId: id }, 'offline comment', UNATTRIBUTED, {
-        hosted: unreachable,
-      })
-      await closeTask('GAM-70', { recordId: id }, UNATTRIBUTED, {
-        hosted: unreachable,
-        classify: async () => ({ ...branchClassification('GAM-70'), project: 'gamma' }),
-      })
-    } finally {
-      error.mockRestore()
-      log.mockRestore()
-    }
-    expect(messages).toEqual([
-      expect.stringContaining('hosted change saved and queued'),
-      expect.stringContaining('hosted change saved and queued'),
-      expect.stringContaining('hosted change saved and queued'),
-    ])
-    expect(stdout).toEqual([])
-    expect(db().query(`SELECT title,status_category FROM task WHERE record_id=?`).get(id)).toEqual({
-      title: 'Offline title',
-      status_category: 'done',
-    })
-    expect(
-      db()
-        .query<{ table_name: string }, []>(
-          `SELECT table_name FROM hosted_outbox ORDER BY table_name`,
-        )
-        .all()
-        .map((row) => row.table_name),
-    ).toEqual(['hub_task', 'hub_task_comment', 'hub_task_status_event'])
-  })
-
-  test('an attributed status change persists attribution locally and in its hosted outbox row', async () => {
-    const id = seed('GAM-74', 'gamma')
-    const attribution = {
-      actorUserId: 'user-1',
-      actorName: 'Person',
-      agent: 'codex',
-      runId: '14372',
-    }
-    const error = spyOn(console, 'error').mockImplementation(() => {})
-    try {
-      await setTask('GAM-74', { recordId: id }, { status: 'active' }, attribution, {
-        hosted: unreachable,
-      })
-    } finally {
-      error.mockRestore()
-    }
-    const event = db()
-      .query<
-        {
-          record_id: string
-          actor_user_id: string | null
-          actor_name: string | null
-          agent: string | null
-          run_id: string | null
-        },
-        [string]
-      >(
-        `SELECT record_id,actor_user_id,actor_name,agent,run_id
-         FROM task_status_event WHERE task_record_id=?`,
-      )
-      .get(id)!
-    expect(event).toMatchObject({
-      actor_user_id: attribution.actorUserId,
-      actor_name: attribution.actorName,
-      agent: attribution.agent,
-      run_id: attribution.runId,
-    })
-    const pointer = db()
-      .query<{ table_name: string; row_id: string; operation: 'upsert' | 'delete' }, [string]>(
-        `SELECT table_name,row_id,operation FROM hosted_outbox WHERE row_id=?`,
-      )
-      .get(event.record_id)!
-    const change = loadOutboxChange(db(), pointer)!.change
-    expect(change.table).toBe('hub_task_status_event')
-    if (change.table !== 'hub_task_status_event' || change.op !== 'upsert')
-      throw new Error('expected status event upsert')
-    expect(change.row).toMatchObject({
-      actor_user_id: attribution.actorUserId,
-      actor_name: attribution.actorName,
-      agent: attribution.agent,
-      run_id: attribution.runId,
-    })
-  })
-
-  test('an applied or rejected after-write drain reports its outcome and keeps rejections', async () => {
-    const sentId = seed('GAM-71', 'gamma')
-    const rejectedId = seed('GAM-72', 'gamma')
-    let reject = false
+  test('an unreachable hosted record refuses without changing the local row or outbox', async () => {
+    const id = seed('GAM-79', 'gamma')
     const fetch = async (input: string, init?: RequestInit) => {
-      const url = new URL(input)
-      if (url.pathname === '/v1/tasks/identity')
-        return Response.json({
-          userId: 'user-1',
-          activeSpaceId: 'declared-gamma-space',
-          memberships: [{ spaceId: 'declared-gamma-space', slug: 'gamma', permission: 'write' }],
-          capabilities: { spacePush: true, spacePushTables: ['hub_task'] },
-        })
-      const changes = JSON.parse(String(init?.body)) as Array<{ id: string }>
-      return Response.json(
-        changes.map(({ id }) =>
-          reject ? { id, status: 'rejected', reason: 'policy says no' } : { id, status: 'applied' },
-        ),
-      )
+      if (init?.method === 'POST') throw new Error('record unavailable')
+      const response = await hosted.fetch(input, init)
+      return response
     }
-    const messages: unknown[] = []
-    const stdout: unknown[] = []
-    const error = spyOn(console, 'error').mockImplementation((message) => messages.push(message))
-    const log = spyOn(console, 'log').mockImplementation((message) => stdout.push(message))
-    try {
-      const hosted = { baseUrl: 'https://hub.example.test', token: 'test', fetch }
-      await setTask('GAM-71', { recordId: sentId }, { title: 'Sent' }, UNATTRIBUTED, { hosted })
-      reject = true
-      await setTask('GAM-72', { recordId: rejectedId }, { title: 'Rejected' }, UNATTRIBUTED, {
-        hosted,
-      })
-    } finally {
-      error.mockRestore()
-      log.mockRestore()
-    }
-    expect(messages).toEqual([
-      'hosted change sent',
-      `hosted change rejected: policy says no; inspect it with \`${PLATFORM_SLUG} record outbox\``,
-    ])
-    expect(stdout).toEqual([])
-    expect(
-      db().query(`SELECT last_error FROM hosted_outbox WHERE row_id=?`).get(rejectedId),
-    ).toEqual({
-      last_error: 'policy says no',
-    })
-  })
 
-  test('an after-write drain held by the collector reports saved and queued without sending', async () => {
-    const id = seed('GAM-73', 'gamma')
-    writeTransaction((conn) =>
-      conn
-        .query(`INSERT INTO setting(key,value) VALUES ('hosted-outbox.lease',?)`)
-        .run(JSON.stringify({ holder: 'outbox:collector', until: Date.now() + 60_000 })),
-    )
-    const requests: string[] = []
-    const messages: unknown[] = []
-    const log = spyOn(console, 'error').mockImplementation((message) => messages.push(message))
-    try {
-      await setTask(
-        'GAM-73',
-        { recordId: id },
-        { title: 'Queued behind collector' },
-        UNATTRIBUTED,
-        {
-          hosted: {
-            ...hosted,
-            fetch: async (...args) => {
-              requests.push(new URL(args[0]).pathname)
-              return hosted.fetch(...args)
-            },
-          },
-        },
-      )
-    } finally {
-      log.mockRestore()
-    }
-    expect(requests).toEqual(['/v1/tasks/identity'])
-    expect(messages).toEqual([
-      `hosted change saved and queued: another process is draining; the collector fast cycle will send it; inspect it with \`${PLATFORM_SLUG} record outbox\``,
-    ])
-    expect(db().query(`SELECT 1 FROM hosted_outbox WHERE row_id=?`).get(id)).not.toBeNull()
+    const refused = await setTask('GAM-79', { recordId: id }, { status: 'active' }, UNATTRIBUTED, {
+      hosted: { ...hosted, fetch },
+    }).catch((error: unknown) => error)
+    expect(refused).toBeInstanceOf(Error)
+    expect((refused as Error).message).toContain(HOSTED_UNREACHABLE_REMEDY)
+    expect((refused as Error).message).not.toContain('saved and queued')
+    expect(db().query(`SELECT status_category FROM task WHERE record_id=?`).get(id)).toEqual({
+      status_category: 'open',
+    })
+    expect(db().query(`SELECT 1 FROM hosted_outbox`).all()).toHaveLength(0)
   })
 
   test('new still needs hosting and local-authoritative edits queue nothing', async () => {
@@ -357,79 +226,6 @@ describe('local task tracker', () => {
   declareFixtureProjectSpace('beta', 'space-beta')
   declareFixtureProjectSpace('delta', 'space-delta')
   declareFixtureProjectSpace('workshop', 'space-workshop')
-  describe('with hosted comment authorship', () => {
-    let previousHostedUrl: string | undefined
-
-    beforeEach(() => {
-      previousHostedUrl = process.env.BOTTEGA_HOSTED_URL
-      process.env.BOTTEGA_HOSTED_URL = 'https://hub.example.test'
-    })
-
-    afterEach(() => {
-      if (previousHostedUrl === undefined) delete process.env.BOTTEGA_HOSTED_URL
-      else process.env.BOTTEGA_HOSTED_URL = previousHostedUrl
-    })
-
-    test('comment authors may edit and delete while other record users are refused', async () => {
-      resetFixtureStore()
-      const key = 'BET-AUTHOR'
-      seed(key, 'beta')
-      const author = { actorUserId: 'user-1', actorName: 'Person', agent: 'codex', runId: '42' }
-      const other = { ...author, actorUserId: 'user-2' }
-      const comment = await commentTask(key, {}, 'first', author)
-      await expect(editTaskComment(key, {}, comment.id, 'first', author)).rejects.toThrow(
-        'unchanged',
-      )
-      await expect(editTaskComment(key, {}, comment.id, '', author)).rejects.toThrow('required')
-      await expect(editTaskComment(key, {}, comment.id, 'other', other)).rejects.toThrow(
-        'another author',
-      )
-      await expect(
-        editTaskComment(key, {}, comment.id, 'unknown identity', {
-          ...author,
-          actorUserId: null,
-        }),
-      ).rejects.toThrow('record sign-in')
-      await writeTransaction((conn) =>
-        conn.query(`UPDATE task_comment SET actor_user_id=NULL WHERE record_id=?`).run(comment.id),
-      )
-      await expect(editTaskComment(key, {}, comment.id, 'older', author)).rejects.toThrow(
-        'predates recorded authorship',
-      )
-      await writeTransaction((conn) =>
-        conn
-          .query(`UPDATE task_comment SET actor_user_id=? WHERE record_id=?`)
-          .run(author.actorUserId, comment.id),
-      )
-      const beforeEdit = db()
-        .query<{ generation: number }, [string]>(
-          `SELECT generation FROM hosted_outbox WHERE table_name='hub_task_comment' AND row_id=?`,
-        )
-        .get(comment.id)!
-      await editTaskComment(key, {}, comment.id, 'edited', author)
-      const afterEdit = db()
-        .query<{ generation: number }, [string]>(
-          `SELECT generation FROM hosted_outbox WHERE table_name='hub_task_comment' AND row_id=?`,
-        )
-        .get(comment.id)!
-      expect(afterEdit.generation).toBeGreaterThan(beforeEdit.generation)
-      expect(showTask(key).comments[0]).toMatchObject({
-        body: 'edited',
-        actor_name: 'Person',
-        agent: 'codex',
-      })
-      await deleteTaskComment(key, {}, comment.id, author)
-      expect(
-        db()
-          .query<{ generation: number }, [string]>(
-            `SELECT generation FROM hosted_outbox WHERE table_name='hub_task_comment' AND row_id=?`,
-          )
-          .get(comment.id)!.generation,
-      ).toBeGreaterThan(afterEdit.generation)
-      expect(showTask(key).comments).toEqual([])
-      await expect(deleteTaskComment(key, {}, comment.id, author)).rejects.toThrow('not found')
-    })
-  })
   test('a project without a declared space refuses with the declaration remedy', () => {
     expect(() => hostedTaskWriteOptions('alpha', hosted)).toThrow(
       `${PLATFORM_SLUG} project set alpha --space <slug>`,
@@ -470,7 +266,7 @@ describe('local task tracker', () => {
     seed('DEL-900', 'delta', 'mcp')
     const task = await createTask({ project: 'delta', title: 'After tracker task' }, { hosted })
     expect(task.key).toBe('DEL-901')
-    expect(showTask('DEL-900').task.source).toBe('mcp')
+    expect((await showTask('DEL-900')).task.source).toBe('mcp')
   })
 
   test('refuses issuance when the registered project has no prefix', async () => {
@@ -497,7 +293,7 @@ describe('local task tracker', () => {
     expect(child.parent_key).toBe(parent.key)
     expect(child.record_id).not.toBeNull()
     expect(child.parent_record_id).toBe(parent.record_id)
-    expect(showTask(child.key).task.parent_key).toBe(parent.key)
+    expect((await showTask(child.key)).task.parent_key).toBe(parent.key)
   })
 
   test('a local task survives the tracker ingest write path', async () => {
@@ -524,7 +320,7 @@ describe('local task tracker', () => {
       '2026-09-02T00:00:00.000Z',
       [],
     )
-    const after = showTask(local.key).task
+    const after = (await showTask(local.key)).task
     expect(after.source).toBe('local')
     expect(after.title).toBe('Keep this local')
     expect(after.status_category).toBe('open')
@@ -594,100 +390,6 @@ describe('local task tracker', () => {
     expect(scores['best unrelated']).toBeLessThan(0.2)
   })
 
-  test('work.task returns the local record with comments, documents, runs and project', async () => {
-    const task = await createTask(
-      { project: 'workshop', title: 'Inspectable task', body: 'Task body' },
-      { hosted },
-    )
-    const comment = await commentTask(task.key, {}, 'A useful comment', UNATTRIBUTED, { hosted })
-    expect(comment.task_record_id).toBe(task.record_id)
-    const ordinaryId = Bun.randomUUIDv7()
-    const handoffId = Bun.randomUUIDv7()
-    writeTransaction((conn) => {
-      const at = new Date().toISOString()
-      const insertDocument = conn.query(
-        `INSERT INTO task_document
-        (record_id,task_key,task_record_id,number,role,title,body,version,created_at,updated_at)
-        VALUES (?,?,?,?,?,?,?,?,?,?)`,
-      )
-      insertDocument.run(
-        ordinaryId,
-        task.key,
-        task.record_id,
-        1,
-        null,
-        'Notes',
-        '# Notes',
-        'ordinary-version',
-        at,
-        at,
-      )
-      insertDocument.run(
-        handoffId,
-        task.key,
-        task.record_id,
-        2,
-        'handoff',
-        'Handoff',
-        '# Handoff',
-        'handoff-version',
-        at,
-        at,
-      )
-      conn
-        .query(
-          `INSERT INTO interval
-        (record_id, task_key, task_record_id, project, source, agent, job, start_at, end_at, vendor_tokens, ref, open)
-       VALUES (?, ?, ?, 'workshop', 'orch', 'codex', 'implement', ?, ?, 123, '${`orch:${fixtureRecordId(1812)}`}', 0)`,
-        )
-        .run(
-          'interval-root',
-          task.key,
-          task.record_id,
-          '2026-09-05T10:00:00.000Z',
-          '2026-09-05T10:01:00.000Z',
-        )
-      conn
-        .query(
-          `INSERT INTO interval
-        (record_id, task_key, task_record_id, project, source, agent, job, start_at, end_at, vendor_tokens, ref, open)
-       VALUES (?, ?, ?, 'workshop', 'orch', 'codex', 'implement', ?, ?, 45, '${`orch:${fixtureRecordId(1812)}:turn:${fixtureRecordId(1813)}`}', 0)`,
-        )
-        .run(
-          'interval-turn',
-          task.key,
-          task.record_id,
-          '2026-09-05T10:02:00.000Z',
-          '2026-09-05T10:03:00.000Z',
-        )
-    })
-
-    const result = taskRecord(task.key.toLowerCase())
-    expect(result.task).toMatchObject({ key: task.key, title: 'Inspectable task' })
-    expect(result.task.source).toBe('local')
-    expect(result.capabilities).toMatchObject({
-      setStatus: { allowed: true },
-      setTitle: { allowed: true },
-      setBody: { allowed: true },
-      comment: { allowed: true },
-      documents: { allowed: true },
-    })
-    expect(result.comments).toEqual([
-      expect.objectContaining({
-        id: comment.id,
-        body: comment.body,
-        createdAt: comment.created_at,
-      }),
-    ])
-    expect(result.documents.map((document) => document.id)).toEqual([handoffId, ordinaryId])
-    expect(result.documents[0]?.body).toBe('# Handoff')
-    expect(result.runs).toEqual([
-      expect.objectContaining({ id: fixtureRecordId(1813), agent: 'codex' }),
-      expect.objectContaining({ id: fixtureRecordId(1812), agent: 'codex' }),
-    ])
-    expect(taskRecord(task.key).task.key).toBe(task.key)
-  })
-
   describe('task body compare-and-swap', () => {
     test('writes only the matching version', async () => {
       resetFixtureStore()
@@ -698,7 +400,7 @@ describe('local task tracker', () => {
       await expect(setTaskBody('ignored', { recordId: id }, 'stale', firstVersion)).rejects.toThrow(
         'body changed since version',
       )
-      expect(showTask('ignored', { recordId: id }).task.body).toBe('second')
+      expect((await showTask('ignored', { recordId: id })).task.body).toBe('second')
     })
 
     const expectCapabilityRefusal = async () => {
@@ -724,25 +426,9 @@ describe('local task tracker', () => {
 
       test('honors capability refusal', expectCapabilityRefusal)
     })
-
-    describe('with a hosted URL', () => {
-      let previousHostedUrl: string | undefined
-
-      beforeEach(() => {
-        previousHostedUrl = process.env.BOTTEGA_HOSTED_URL
-        process.env.BOTTEGA_HOSTED_URL = 'https://hub.example.test'
-      })
-
-      afterEach(() => {
-        if (previousHostedUrl === undefined) delete process.env.BOTTEGA_HOSTED_URL
-        else process.env.BOTTEGA_HOSTED_URL = previousHostedUrl
-      })
-
-      test('honors capability refusal', expectCapabilityRefusal)
-    })
   })
 
-  test('task detail joins comments by task identity and orders equal timestamps by UUID', () => {
+  test('task detail joins comments by task identity and orders equal timestamps by UUID', async () => {
     const recordId = seed('SAME-77', 'alpha')
     const otherRecordId = seed('SAME-77', 'beta')
     writeTransaction((conn) => {
@@ -755,13 +441,15 @@ describe('local task tracker', () => {
         )
         .run(recordId, otherRecordId, recordId)
     })
-    expect(showTask('SAME-77', { recordId }).comments.map((row) => [row.id, row.body])).toEqual([
+    expect(
+      (await showTask('SAME-77', { recordId })).comments.map((row) => [row.id, row.body]),
+    ).toEqual([
       ['01990000-0000-7000-8000-000000000001', 'alpha first'],
       ['01990000-0000-7000-8000-000000000002', 'alpha second'],
     ])
   })
 
-  test('task-child display keys never override their task UUID links', () => {
+  test('task-child display keys never override their task UUID links', async () => {
     const linkedId = seed('LINK-1', 'alpha')
     const labelId = seed('LABEL-2', 'alpha')
     writeTransaction((conn) => {
@@ -789,57 +477,16 @@ describe('local task tracker', () => {
         .run(linkedId)
     })
 
-    const linked = taskRecord('LINK-1', { recordId: linkedId })
-    const label = taskRecord('LABEL-2', { recordId: labelId })
+    const linked = await taskRecord('LINK-1', { recordId: linkedId })
+    const label = await taskRecord('LABEL-2', { recordId: labelId })
     expect(linked.comments.map((row) => row.body)).toEqual(['linked comment'])
     expect(linked.documents.map((row) => row.title)).toEqual(['linked document'])
     expect(linked.statusEvents.map((row) => row.toStatus)).toEqual(['active'])
     expect(label.comments).toEqual([])
     expect(label.documents).toEqual([])
     expect(label.statusEvents).toEqual([])
-    expect(listTasks({ parent: 'LINK-1' }).map((row) => row.record_id)).toEqual([labelId])
-    expect(listTasks({ parent: 'LABEL-2' })).toEqual([])
-  })
-})
-
-describe('declared project space task writes', () => {
-  beforeEach(resetFixtureStore)
-
-  test('every canonical task write sends the space declared by the project register', async () => {
-    const requests: Array<{ method: string; pathname: string; space: string | null }> = []
-    const fetch = async (input: string, init?: RequestInit) => {
-      const url = new URL(input)
-      const method = init?.method ?? 'GET'
-      requests.push({
-        method,
-        pathname: url.pathname,
-        space: new Headers(init?.headers).get('x-record-space'),
-      })
-
-      return hosted.fetch(input, init)
-    }
-    const options = { hosted: { ...hosted, fetch } }
-    const title = `Declared space ${crypto.randomUUID()}`
-
-    const created = await createTask({ project: 'gamma', title }, options)
-    await createTask(
-      { project: 'gamma', title },
-      { ...options, allowDuplicateReason: 'intentional duplicate' },
-    )
-    await setTask(created.key, {}, { title: 'Renamed in declared space' }, UNATTRIBUTED, options)
-    await closeTask(created.key, {}, UNATTRIBUTED, {
-      ...options,
-      classify: async () => branchClassification(created.key),
-    })
-    await commentTask(created.key, {}, 'declared space comment', UNATTRIBUTED, options)
-    expect(requests).toEqual([
-      { method: 'POST', pathname: '/v1/tasks', space: 'declared-gamma-space' },
-      { method: 'POST', pathname: '/v1/tasks', space: 'declared-gamma-space' },
-      ...Array.from({ length: 4 }, () => [
-        { method: 'GET', pathname: '/v1/tasks/identity', space: null },
-        { method: 'POST', pathname: '/v1/changes', space: 'declared-gamma-space' },
-      ]).flat(),
-    ])
+    expect((await listTasks({ parent: 'LINK-1' })).map((row) => row.record_id)).toEqual([labelId])
+    expect(await listTasks({ parent: 'LABEL-2' })).toEqual([])
   })
 })
 
@@ -892,7 +539,7 @@ describe('local-authoritative task writes', () => {
           ]),
       }),
     ).rejects.toThrow(`${created.key}-worker: unlanded; 2 commits not on trunk`)
-    expect(showTask(created.key).task.status_category).toBe('open')
+    expect((await showTask(created.key)).task.status_category).toBe('open')
   })
 
   test('set allows a done transition when every branch is landed or deleted', async () => {
@@ -919,7 +566,7 @@ describe('local-authoritative task writes', () => {
       }),
     ).rejects.toThrow('task BET-998 is not local')
     expect(classified).toBeFalse()
-    expect(showTask('BET-998').task.status_category).toBe('open')
+    expect((await showTask('BET-998')).task.status_category).toBe('open')
   })
 
   test('a failed abandon comment leaves the task open', async () => {
@@ -941,7 +588,7 @@ describe('local-authoritative task writes', () => {
         },
       }),
     ).rejects.toThrow('comment write failed')
-    expect(showTask(created.key).task.status_category).toBe('open')
+    expect((await showTask(created.key)).task.status_category).toBe('open')
   })
 
   test('a remote-tracker project refuses local writes when hosting is absent', async () => {
@@ -957,7 +604,7 @@ describe('local-authoritative task writes', () => {
     ).rejects.toThrow("project 'workshop' belongs to a hosted space")
   })
 
-  test('a hosted-space task remains readable when hosting is unavailable', () => {
+  test('a hosted-space task remains readable when hosting is unavailable', async () => {
     writeTransaction((conn) => persistInstallBinding(conn, 'space-a'))
     const recordId = seed('DEV-READ-OFFLINE', 'workshop')
     writeTransaction((conn) =>
@@ -977,7 +624,7 @@ describe('local-authoritative task writes', () => {
         ),
     )
 
-    const result = taskRecord('DEV-READ-OFFLINE', {}, 'user-1')
+    const result = await taskRecord('DEV-READ-OFFLINE', {}, 'user-1')
     expect(result.comments).toEqual([expect.objectContaining({ canEdit: false, canDelete: false })])
   })
 

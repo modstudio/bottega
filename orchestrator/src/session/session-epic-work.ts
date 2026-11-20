@@ -23,7 +23,7 @@ export async function sessionEpicWork(session: string, database: Database = db()
     })
     if (!stages.some((stage) => stage.workflow_slug === 'plan-task' && stage.step_slug === 'start'))
       continue
-    const tasks = taskReader().list({ project })
+    const tasks = await taskReader().list({ project })
     const facts = await gatherChildTaskFacts(database, project, tasks)
     const claims = liveChildClaims(database, project).filter(
       ({ holder_session }) => holder_session === session,

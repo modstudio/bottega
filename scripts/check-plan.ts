@@ -240,6 +240,7 @@ export const ROOT_TEST_FILES = [
   'scripts/record-migration-force-rls-lifts.test.ts',
   'scripts/record-migration-set.test.ts',
   'scripts/check-record-rehearsal.test.ts',
+  'scripts/pull-request-change-base.test.ts',
   'scripts/record-rehearse.test.ts',
   'scripts/postgres-migration-rls.test.ts',
   'scripts/check-test-placement.test.ts',

@@ -84,7 +84,7 @@ async function hub(args: string[]): Promise<string> {
 async function task(
   key: string,
 ): Promise<{ task: FiledIssueTaskRow; comments?: { body?: unknown }[] }> {
-  return taskReader().show(key, { project: PLATFORM_SLUG })
+  return await taskReader().show(key, { project: PLATFORM_SLUG })
 }
 
 /** Explicit retries may reclaim handed-back issues; the queue never does. */
@@ -211,7 +211,7 @@ export async function dispatchFiledIssues(key?: string): Promise<boolean> {
     await claimAndWork(key.toUpperCase(), false)
     return false
   }
-  const rows = taskReader().list({ project: PLATFORM_SLUG })
+  const rows = await taskReader().list({ project: PLATFORM_SLUG })
   const candidates = eligibleFiledIssueTasks(rows, liveLease)
   const dispatched = new Set<string>()
   let taken = 0

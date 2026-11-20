@@ -247,7 +247,7 @@ describe('array-mcp task writes', () => {
       ),
     ).rejects.toThrow('tracker refused the transition')
 
-    expect(showTask('ADN-1659').task).toMatchObject({
+    expect((await showTask('ADN-1659')).task).toMatchObject({
       status: 'todo',
       status_category: 'open',
     })
@@ -270,7 +270,7 @@ describe('array-mcp task writes', () => {
       ),
     ).rejects.toThrow('tracker refused the status')
 
-    expect(showTask('ADN-1659').task).toMatchObject({
+    expect((await showTask('ADN-1659')).task).toMatchObject({
       status: 'todo',
       status_category: 'open',
     })
@@ -334,7 +334,7 @@ describe('array-mcp task writes', () => {
     )
     let cursorState = 'running'
     const calls: string[] = []
-    const current = showTask('ADN-1659').task
+    const current = (await showTask('ADN-1659')).task
 
     const row = await setTaskThroughTracker(
       'ADN-1659',
@@ -376,7 +376,7 @@ describe('array-mcp task writes', () => {
     writeTransaction((conn) =>
       conn.query(`UPDATE task SET source='local' WHERE key='ADN-1659'`).run(),
     )
-    const current = showTask('ADN-1659').task
+    const current = (await showTask('ADN-1659')).task
     const written = { ...current, status: 'done', status_category: 'done' } as const
 
     try {
@@ -430,7 +430,7 @@ describe('array-mcp task writes', () => {
     ).rejects.toThrow(
       'tracker answered with status cancelled after in_progress was requested for task ADN-1659',
     )
-    expect(showTask('ADN-1659').task).toMatchObject({
+    expect((await showTask('ADN-1659')).task).toMatchObject({
       status: 'cancelled',
       status_category: 'dropped',
     })
@@ -488,7 +488,7 @@ describe('array-mcp task writes', () => {
           ? 'returned category open after category active was requested'
           : 'returned cancelled after in_progress was requested',
       )
-      expect(showTask('ADN-1659').task).toMatchObject(
+      expect((await showTask('ADN-1659')).task).toMatchObject(
         protocol === 'workspace-mcp'
           ? { status: 'Open', status_category: 'open' }
           : { status: 'cancelled', status_category: 'dropped' },
@@ -535,7 +535,7 @@ describe('array-mcp task writes', () => {
           },
         ),
       ).rejects.toThrow('cursor-mcp status confirmation for task ADN-1659 returned')
-      expect(showTask('ADN-1659').task).toMatchObject({
+      expect((await showTask('ADN-1659')).task).toMatchObject({
         status: 'todo',
         status_category: 'open',
       })
@@ -574,7 +574,7 @@ describe('array-mcp task writes', () => {
         },
       ),
     ).rejects.toThrow('workspace-mcp status confirmation for task ADN-1659 returned no status')
-    expect(showTask('ADN-1659').task).toMatchObject({
+    expect((await showTask('ADN-1659')).task).toMatchObject({
       status: 'todo',
       status_category: 'open',
     })

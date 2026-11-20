@@ -1,6 +1,6 @@
 import type { SQL } from 'bun'
-import { canonicalJson } from '../../shared/canonical-json.ts'
 import { sameRecordInstant } from '../../shared/record-timestamp.ts'
+import { bindJsonb } from '../../shared/record/jsonb-sql.ts'
 import { DELETED_ON_HOSTED_RECORD_REASON } from './hosted-delete.ts'
 import { applyDayChangeInTransaction, applyIntervalChangeInTransaction } from './hosted-evidence.ts'
 import { storedHubProjectId } from './hosted-project-identity.ts'
@@ -122,7 +122,7 @@ async function rememberOutcome(
   if (!input.change_id) return
   const inserted = (await tx`INSERT INTO hub_applied_change (change_id,space_id,result,applied_at)
     VALUES (${input.change_id}::uuid,${identity.spaceId}::uuid,
-      ${canonicalJson({ fingerprint, outcome })}::jsonb,now())
+      ${bindJsonb(tx, { fingerprint, outcome })},now())
     ON CONFLICT (change_id) DO NOTHING
     RETURNING change_id`) as Array<{ change_id: string }>
   if (!inserted[0])

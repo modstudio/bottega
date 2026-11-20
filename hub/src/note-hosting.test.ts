@@ -474,7 +474,7 @@ describe('hosted promotion title', () => {
     const promoted = await promoteNote(note.id, { hosted: stub.options, title })
 
     expect(promoted.promoted_task).toBe('GAM-1')
-    expect(showTask('GAM-1', { project: 'gamma' }).task.title).toBe(title)
+    expect((await showTask('GAM-1', { project: 'gamma' })).task.title).toBe(title)
     expect(stub.seen.find((seen) => seen.path.endsWith('/promote'))?.body).toEqual({ title })
     expect(stub.seen.filter((seen) => seen.path === '/v1/changes')).toHaveLength(0)
   })

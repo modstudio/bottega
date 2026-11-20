@@ -57,10 +57,13 @@ function taskStatusObservation(
   )
 }
 
-export function observeTaskStatus(key: string | null, project: string): TaskStatusObservation {
+export async function observeTaskStatus(
+  key: string | null,
+  project: string,
+): Promise<TaskStatusObservation> {
   if (!key) return { raw: null, category: null, lastSeen: null, verified: false, detail: 'unkeyed' }
   try {
-    const parsed = taskReader().show(key, { project })
+    const parsed = await taskReader().show(key, { project })
     const raw = typeof parsed.task.status === 'string' ? parsed.task.status : null
     const lastSeen = typeof parsed.task.last_seen === 'string' ? parsed.task.last_seen : null
     return taskStatusObservation(raw, lastSeen, parsed.task.status_category)

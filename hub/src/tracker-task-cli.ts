@@ -35,7 +35,7 @@ export type FreshTaskResult = {
   commentsVerifiable: boolean
   /** The tracker read's own comment ids; empty when it reports none. */
   commentIds: string[]
-  shown?: ReturnType<typeof showTask>
+  shown?: Awaited<ReturnType<typeof showTask>>
 }
 
 /**
@@ -51,11 +51,11 @@ function reportedCommentIds(
   return source.readCommentIds ? source.readCommentIds(client, key) : Promise.resolve(null)
 }
 
-function projectForTask(
+async function projectForTask(
   key: string,
   projectName: string | undefined,
   registered: RegisteredProject[],
-): RegisteredProject {
+): Promise<RegisteredProject> {
   if (projectName) {
     const project = registered.find((candidate) => candidate.name === projectName)
     if (!project) throw new Error(`unknown project '${projectName}'`)
@@ -64,7 +64,7 @@ function projectForTask(
   const prefix = key.toUpperCase().split('-', 1)[0]
   const matches = registered.filter((project) => project.settings.keyPrefixes?.includes(prefix!))
   if (matches.length === 1) return matches[0]!
-  const stored = listTasks().filter((task) => task.key === key.toUpperCase())
+  const stored = (await listTasks()).filter((task) => task.key === key.toUpperCase())
   if (stored.length === 1) {
     const project = registered.find((candidate) => candidate.name === stored[0]!.project)
     if (project) return project
@@ -80,7 +80,11 @@ export async function refreshTrackerTask(
   projectName?: string,
   dependencies: FreshTaskDependencies = {},
 ): Promise<FreshTaskResult> {
-  const project = projectForTask(key, projectName, (dependencies.registeredProjects ?? projects)())
+  const project = await projectForTask(
+    key,
+    projectName,
+    (dependencies.registeredProjects ?? projects)(),
+  )
   const source = (dependencies.sourceFor ?? trackerSourceFor)(project)
   if (!source) return { trackerRead: false, commentsVerifiable: true, commentIds: [] }
   if (!source.lookup)
@@ -109,7 +113,7 @@ export async function refreshTrackerTask(
           guard.assertHeld()
           return {
             commentIds,
-            shown: (dependencies.readBack ?? showTask)(task.key, { project: task.project }),
+            shown: await (dependencies.readBack ?? showTask)(task.key, { project: task.project }),
           }
         },
         dependencies.leaseWaitMs,
@@ -140,7 +144,7 @@ export async function createTrackerOwnedTask(
   if (taskCreationDestination(project) !== 'tracker') return null
 
   const task = trackerTaskInput(project, input)
-  const candidates = duplicateCandidates(listTasks({ project: input.project }), input.title)
+  const candidates = duplicateCandidates(await listTasks({ project: input.project }), input.title)
   options.afterDuplicateSearch?.()
   if (candidates.length && options.allowDuplicateReason === undefined)
     throw new DuplicateTaskError(candidates)

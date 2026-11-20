@@ -92,6 +92,10 @@ export const confinementModules: ConfinementModule[] = [
     './record-connection-env.ts',
     './sandbox.ts',
   ]),
+  module('orchestrator/src/sandbox/confinement-probe-task-port.ts', [
+    'bun:sqlite',
+    '../project/projects.ts',
+  ]),
   module('orchestrator/src/sandbox/confinement-run-measurement.ts', [
     '../run/run-confinement-count.ts',
   ]),
@@ -114,6 +118,7 @@ export const confinementModules: ConfinementModule[] = [
     '../resources/ref-guard.ts',
     '../run/run-worker-home.ts',
     './install-read-policy.ts',
+    './confinement-probe-task-port.ts',
     './sandbox.ts',
   ]),
 ]

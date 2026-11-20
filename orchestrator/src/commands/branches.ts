@@ -43,8 +43,8 @@ export function register(program: Command): void {
     .option('--operator', 'authorize disposal of unique work for an open task')
     .option('--json', 'write the disposal record as JSON')
     .allowExcessArguments(false)
-    .action((target, options) => {
-      const result = disposeBranch({
+    .action(async (target, options) => {
+      const result = await disposeBranch({
         target,
         reason: options.reason,
         note: options.note,

@@ -223,11 +223,11 @@ async function openCursors(database: Database, session: string): Promise<OpenCur
   return await openQuestionStages(database, session)
 }
 
-function observeOwnedBranch(
+async function observeOwnedBranch(
   item: { project: string; branch: string; taskKey: string | null },
   runs: readonly SessionOwnedRun[],
   projectReport: ReturnType<typeof branchesReport>['projects'][number],
-): { branch: SessionOwnedBranch; evidence: UnprovedBranchEvidence | null } | null {
+): Promise<{ branch: SessionOwnedBranch; evidence: UnprovedBranchEvidence | null } | null> {
   const row = projectReport.keys
     .flatMap((key) => key.branches)
     .find((branch) => branch.branch === item.branch)
@@ -241,7 +241,7 @@ function observeOwnedBranch(
     branch,
     evidence: {
       ...item,
-      taskStatus: observeTaskStatus(item.taskKey, item.project).detail,
+      taskStatus: (await observeTaskStatus(item.taskKey, item.project)).detail,
       commitsAhead: row.commitsNotOnTrunk,
       patchEquivalence:
         row.state === 'unknown' ? `unknown${row.error ? `: ${row.error}` : ''}` : 'none found',
@@ -267,7 +267,7 @@ function observeOwnedBranch(
   }
 }
 
-export function branchFacts(runs: readonly SessionOwnedRun[], dryRun: boolean) {
+export async function branchFacts(runs: readonly SessionOwnedRun[], dryRun: boolean) {
   const wanted = new Map<string, { project: string; branch: string; taskKey: string | null }>()
   for (const run of runs) {
     if (run.project && run.mintedBranch)
@@ -287,7 +287,7 @@ export function branchFacts(runs: readonly SessionOwnedRun[], dryRun: boolean) {
       dryRunLandingRepair: dryRun,
     }).projects[0]!
     for (const item of items) {
-      const observation = observeOwnedBranch(item, runs, projectReport)
+      const observation = await observeOwnedBranch(item, runs, projectReport)
       if (!observation) continue
       branches.push(observation.branch)
       if (observation.evidence) evidence.push(observation.evidence)
@@ -510,7 +510,7 @@ async function gather(database: Database, session: string, dryRun: boolean) {
   const landings = activeLandings(database, session)
   const reviews = incompleteReviews(database, session)
   const cursors = await openCursors(database, session)
-  const branchInventory = branchFacts(runs, dryRun)
+  const branchInventory = await branchFacts(runs, dryRun)
   const held = heldRunResources(database, runs)
   const facts: SessionOwnershipFacts = {
     session,

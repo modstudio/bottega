@@ -207,7 +207,7 @@ describe('project.list', () => {
   test('returns the project register rows', async () => {
     const rows = await caller.project.list()
 
-    expect(rows).toHaveLength(9)
+    expect(rows).toHaveLength(10)
     expect(rows[0]).toEqual({
       record_id: '01990000-0000-7000-8000-000000001101',
       name: 'alpha',
@@ -399,7 +399,9 @@ describe('work.task', () => {
       code: 'BAD_REQUEST',
       message: 'task EXT-1 is not local',
     })
-    await expect(writes.setTitle({ key: 'EXT-1', scope: {}, title: 'No' })).rejects.toMatchObject({
+    await expect(
+      writes.setTitle({ key: 'EXT-1', scope: {}, title: 'No', expectedRevision: 1 }),
+    ).rejects.toMatchObject({
       code: 'BAD_REQUEST',
       message: 'task EXT-1 is not local',
     })

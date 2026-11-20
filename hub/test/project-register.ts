@@ -70,6 +70,16 @@ console.log(
       settings: { keyPrefixes: ['DEL', 'SHUL'] },
     },
     {
+      id: 10,
+      record_id: '01990000-0000-7000-8000-000000001110',
+      name: 'eta',
+      path: '/fixtures/repos/eta',
+      stack: null,
+      canon: true,
+      repository: true,
+      settings: { keyPrefixes: ['ETA'], space: 'declared-gamma-space' },
+    },
+    {
       id: 5,
       record_id: '01990000-0000-7000-8000-000000000075',
       name: 'workshop',

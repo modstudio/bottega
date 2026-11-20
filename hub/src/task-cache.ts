@@ -10,6 +10,7 @@ import { HOSTED_STATUS_EVENT_TABLE } from './push-contract.ts'
 import { isSameStatusEvent, statusEventIdentity } from './status-event-identity.ts'
 import type { hostedTaskChanges } from './task-client.ts'
 import { formatTaskDocumentLabel } from './task-document-label.ts'
+import { hostedTaskRow } from './task-hosted-record.ts'
 import { taskIdentityDecision } from './task-identity.ts'
 
 type HostedChanges = Awaited<ReturnType<typeof hostedTaskChanges>>
@@ -20,6 +21,46 @@ type HostedChangeRow =
   | HostedChanges['statusEvents'][number]
 
 type HostedTaskChild = Exclude<HostedChangeRow, HostedChanges['tasks'][number]>
+
+export function cacheCreatedHostedTask(conn: Database, row: HostedChanges['tasks'][number]): void {
+  const task = hostedTaskRow(row)
+  conn
+    .query(`INSERT INTO task
+    (record_id,key,project,project_record_id,title,status,status_category,parent_key,parent_record_id,body,assignee,opened_at,closed_at,
+     updated_at,source,first_seen,last_seen,next_document_number,retired_reason)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+    ON CONFLICT(project,key) DO UPDATE SET record_id=excluded.record_id,
+      project_record_id=COALESCE(excluded.project_record_id,task.project_record_id),
+      title=excluded.title,status=excluded.status,status_category=excluded.status_category,
+      parent_key=excluded.parent_key,parent_record_id=excluded.parent_record_id,
+      body=excluded.body,assignee=excluded.assignee,
+      opened_at=excluded.opened_at,closed_at=excluded.closed_at,updated_at=excluded.updated_at,
+      source=excluded.source,first_seen=excluded.first_seen,last_seen=excluded.last_seen,
+      next_document_number=MAX(task.next_document_number,excluded.next_document_number),
+      retired_reason=excluded.retired_reason`)
+    .run(
+      task.record_id,
+      task.key,
+      task.project,
+      task.project_record_id ?? null,
+      task.title,
+      task.status,
+      task.status_category,
+      task.parent_key,
+      task.parent_record_id,
+      task.body,
+      task.assignee,
+      task.opened_at,
+      task.closed_at,
+      task.updated_at,
+      task.source,
+      task.first_seen,
+      task.last_seen,
+      task.next_document_number,
+      task.retired_reason ?? null,
+    )
+  persistInstallBinding(conn)
+}
 
 function cachedTaskRecordId(conn: Database, recordId: string | null | undefined) {
   if (!recordId) return null
@@ -34,7 +75,7 @@ export function childTaskRecordId(conn: Database, row: { task_id?: string | null
   return cachedTaskRecordId(conn, row.task_id)
 }
 
-export function parentTaskRecordId(
+function parentTaskRecordId(
   conn: Database,
   row: { parent_id?: string | null; parent_key: string | null; project: string },
 ) {

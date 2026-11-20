@@ -23,5 +23,5 @@ afterAll(() => {
 test('task set reads its replacement body from a file', async () => {
   const task = await createTask({ project: 'workshop', title: 'Body file task' })
   expect(await main(['task', 'set', task.key, '--body-file', bodyFile])).toBe(0)
-  expect(showTask(task.key).task.body).toBe('Body read from a file.\n')
+  expect((await showTask(task.key)).task.body).toBe('Body read from a file.\n')
 })
