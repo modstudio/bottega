@@ -3,13 +3,13 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { PGlite } from '@electric-sql/pglite'
+import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import {
   createHostedRecordFixture,
   pgliteSql,
 } from '../../orchestrator/test/fixtures/hosted-record.ts'
 import { createNoDestinationWriteCounter } from '../../shared/record-no-destination-write-counter.ts'
 import { forgetRecordSessionToken, writeRecordSessionToken } from '../../shared/record-session.ts'
-import { declareFixtureProjectSpace } from '../test/fixture-project-space.ts'
 import { resetFixtureStore } from '../test/run-fixtures.ts'
 import { db } from './db.ts'
 import { hostedRequestHandler } from './hosted.ts'
@@ -31,8 +31,7 @@ import { taskBodyVersion } from './task-detail.ts'
 const spaceId = '01990000-0000-7000-8000-000000002520'
 const userId = '01990000-0000-7000-8000-000000002521'
 const projectId = projectRecordIdFor('gamma')
-const alphaProjectId = projectRecordIdFor('alpha')
-const stateRoot = mkdtempSync(join(tmpdir(), 'bottega-task-record-app-'))
+const stateRoot = mkdtempSync(join(tmpdir(), `${PLATFORM_SLUG}-task-record-app-`))
 const previous = {
   fetch: globalThis.fetch,
   hostedUrl: process.env.BOTTEGA_HOSTED_URL,
@@ -43,18 +42,13 @@ const previous = {
 let database: PGlite
 let recordFetch: (input: string, init?: RequestInit) => Promise<Response>
 
-declareFixtureProjectSpace('gamma', 'declared-gamma-space')
-declareFixtureProjectSpace('alpha', 'declared-gamma-space')
-
 beforeAll(async () => {
   database = await createHostedRecordFixture({ spaceId, userId })
   await database.exec(`
     RESET ROLE;
     UPDATE space SET slug='declared-gamma-space' WHERE id='${spaceId}';
     INSERT INTO project (id,space_id,name,key_prefixes,created_at)
-    VALUES
-      ('${projectId}','${spaceId}','gamma',ARRAY['GAM'],now()),
-      ('${alphaProjectId}','${spaceId}','alpha',ARRAY['ALP'],now());
+    VALUES ('${projectId}','${spaceId}','gamma',ARRAY['GAM'],now());
     SET ROLE record_actor;
   `)
   const client = pgliteSql(database)
@@ -181,14 +175,14 @@ test('hosted task body writes preserve tracker capability refusals', async () =>
     INSERT INTO hub_task
       (id,space_id,project_name,project_id,key,project,title,status,status_category,source,first_seen,last_seen,created_at,updated_at)
     VALUES
-      ('${id}','${spaceId}','alpha','${alphaProjectId}','ALP-998','alpha','External','open','open','mcp',now(),now(),now(),now());
+      ('${id}','${spaceId}','gamma','${projectId}','GAM-998','gamma','External','open','open','mcp',now(),now(),now(),now());
     SET ROLE record_actor;
   `)
   await expect(
-    setTaskBody('ALP-998', { project: 'alpha' }, 'refused', taskBodyVersion(null), {
+    setTaskBody('GAM-998', { project: 'gamma' }, 'refused', taskBodyVersion(null), {
       hosted: hosted(),
     }),
-  ).rejects.toThrow('No adapter has proven a task description write')
+  ).rejects.toThrow('hub cannot establish what its tracker accepts')
 })
 
 test('hosted writes use the project-declared record space', async () => {
