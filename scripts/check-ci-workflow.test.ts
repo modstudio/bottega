@@ -28,10 +28,12 @@ test('refuses a workflow with a missing or extra job', () => {
       if (job === processSuite.job) return processHooksJobFixture()
       if (job === 'postgres') return postgresJobFixture()
       if (job === 'release-smoke') return releaseSmokeJobFixture().trimEnd()
+      if (job === 'migration-paths') return migrationPathsJobFixture()
+      if (job === 'migration-compatibility') return migrationCompatibilityJobFixture()
       if (job === 'ci')
         return `  ${job}:\n    needs: [${expectedWorkflowJobNames()
           .filter((name) => name !== 'ci')
-          .join(', ')}]`
+          .join(', ')}]\n    steps:\n      - run: jq -e 'all(to_entries[]; .value.result == "success" or (.key == "migration-compatibility" and .value.result == "skipped"))'`
       return `  ${job}:\n    runs-on: ubuntu-latest`
     })
     .join('\n')}\n`
@@ -54,6 +56,26 @@ test('requires every planned job to block the aggregate ci job', () => {
       ),
     ).toThrow(job)
   }
+})
+
+test('pins the migration compatibility path gate and macOS proof', () => {
+  const workflow = readWorkflowFixture()
+  expect(() =>
+    checkCiWorkflow(workflow.replace('runs-on: macos-15', 'runs-on: macos-14')),
+  ).toThrow('must run on macos-15')
+  expect(() =>
+    checkCiWorkflow(
+      workflow.replace('./bin/bottega machine migrate', './bin/bottega machine doctor'),
+    ),
+  ).toThrow('must run ./bin/bottega machine migrate')
+  expect(() =>
+    checkCiWorkflow(
+      workflow.replace(
+        'git diff --quiet "$BASE_SHA" HEAD -- orchestrator/migrations hub/migrations',
+        'git diff --quiet "$BASE_SHA" HEAD',
+      ),
+    ),
+  ).toThrow('must compare orchestrator/migrations hub/migrations')
 })
 
 test('pins the Python hook leg', () => {
@@ -350,13 +372,34 @@ function readWorkflowFixture() {
       if (job === processSuite.job) return processHooksJobFixture()
       if (job === 'postgres') return postgresJobFixture()
       if (job === 'release-smoke') return releaseSmokeJobFixture().trimEnd()
+      if (job === 'migration-paths') return migrationPathsJobFixture()
+      if (job === 'migration-compatibility') return migrationCompatibilityJobFixture()
       if (job === 'ci')
         return `  ${job}:\n    needs: [${expectedWorkflowJobNames()
           .filter((name) => name !== 'ci')
-          .join(', ')}]`
+          .join(', ')}]\n    steps:\n      - run: jq -e 'all(to_entries[]; .value.result == "success" or (.key == "migration-compatibility" and .value.result == "skipped"))'`
       return `  ${job}:\n    runs-on: ubuntu-latest`
     })
     .join('\n')}\n`
+}
+
+function migrationPathsJobFixture() {
+  return `  migration-paths:
+    runs-on: ubuntu-24.04
+    outputs:
+      changed: ${'$'}{{ steps.changes.outputs.changed }}
+    steps:
+      - run: git diff --quiet "$BASE_SHA" HEAD -- orchestrator/migrations hub/migrations`
+}
+
+function migrationCompatibilityJobFixture() {
+  return `  migration-compatibility:
+    needs: migration-paths
+    if: needs.migration-paths.outputs.changed == 'true'
+    runs-on: macos-15
+    steps:
+      - run: bun -e "select sqlite_version() version"
+      - run: ./bin/bottega machine migrate`
 }
 
 function releaseSmokeJobFixture() {
