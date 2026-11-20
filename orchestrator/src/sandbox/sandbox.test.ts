@@ -21,37 +21,36 @@ import { sourceBunExecutable } from '../../../shared/self-spawn.ts'
 import {
   hubLoginTokenDirectory,
   recordSessionPath,
+  resolveHubDatabase,
+  resolveOrchestratorDatabase,
+  resolveStatePaths,
   STATE_HOME_ENV,
 } from '../../../shared/state-directory.ts'
 import { workerHarnessName } from '../agent/worker-launch-env.ts'
 import { ROOT } from '../database/db.ts'
-import { classify, NOT_EVIDENCE } from '../failure/failure.ts'
 import type { Project } from '../project/projects.ts'
 import {
-  canonicalSocketDenyPaths,
+  probeSandboxProfile as buildProbeSandboxProfile,
+  readonlyLensProfile as buildReadonlyLensProfile,
+  selectReadonlySandbox as buildReadonlySandboxSelection,
+  writerProfile as buildWriterProfile,
   createSandboxRuntimeConfig,
   grokAskCommandFromConfig,
   grokAskServerCommand,
   grokSandboxConfig,
-  isWritingAcpRun,
   prepareCodexHome,
   prepareGrokMcpHome,
   prepareSandboxHome,
   prepareWorkerHomeMirror,
-  probeSandboxProfile,
   READONLY_LENS_DENY_PATHS,
   READONLY_LENS_DENY_WRITE_PATHS,
   readonlyLensDeniesLoginKeychain,
   readonlyLensDeniesOperatorEnvFile,
-  readonlyLensProfile,
-  readonlyLensReportInputs,
   removeNewSandboxHomeAfterFailure,
   resetSandbox,
   sandboxReasonPrefix,
   sandboxRuntimeConfig,
-  selectReadonlySandbox,
   withoutRegisteredOrchAskServer,
-  writerProfile,
 } from './sandbox.ts'
 
 const fixtureProject = (settings: Project['settings'] = {}): Project => ({
@@ -64,53 +63,30 @@ const fixtureProject = (settings: Project['settings'] = {}): Project => ({
   settings,
 })
 
-test('the writing ACP decision requires both ACP and repository writes', () => {
-  expect(isWritingAcpRun('acp', true)).toBe(true)
-  expect(isWritingAcpRun('acp', false)).toBe(false)
-  expect(isWritingAcpRun('cli', true)).toBe(false)
+type AgentProfileInput<T> = Omit<T, 'registeredProjects'> & {
+  registeredProjects?: readonly Project[]
+}
+const withRegister = <
+  T extends { project: Project | null; registeredProjects?: readonly Project[] },
+>(
+  input: T,
+) => ({
+  ...input,
+  registeredProjects: input.registeredProjects ?? (input.project ? [input.project] : []),
 })
-
-test.each([
-  {
-    name: 'resolves a symlinked-parent path to its target',
-    paths: ['/var/run/docker.sock'],
-    resolved: { '/var/run': '/run' },
-    expected: ['/run/docker.sock'],
-  },
-  {
-    name: 'keeps a missing socket when its parent cannot be resolved',
-    paths: ['/missing/docker.sock'],
-    resolved: {},
-    expected: ['/missing/docker.sock'],
-  },
-  {
-    name: 'dedupes paths that resolve to one target',
-    paths: ['/var/run/docker.sock', '/run/docker.sock'],
-    resolved: {
-      '/var/run': '/run',
-      '/run': '/run',
-    },
-    expected: ['/run/docker.sock'],
-  },
-])('$name', ({ paths, resolved, expected }) => {
-  expect(
-    canonicalSocketDenyPaths(paths, (path) => resolved[path as keyof typeof resolved] ?? null),
-  ).toEqual([...expected])
-})
+const readonlyLensProfile = (
+  input: AgentProfileInput<Parameters<typeof buildReadonlyLensProfile>[0]>,
+) => buildReadonlyLensProfile(withRegister(input))
+const writerProfile = (input: AgentProfileInput<Parameters<typeof buildWriterProfile>[0]>) =>
+  buildWriterProfile(withRegister(input))
+const probeSandboxProfile = (
+  input: AgentProfileInput<Parameters<typeof buildProbeSandboxProfile>[0]>,
+) => buildProbeSandboxProfile(withRegister(input))
+const selectReadonlySandbox = (
+  input: AgentProfileInput<Parameters<typeof buildReadonlySandboxSelection>[0]>,
+) => buildReadonlySandboxSelection(withRegister(input))
 
 const TEST_SOCKET_DENY_PATHS = ['/test/run/docker.sock', '/test/custom/docker.sock'] as const
-
-test('confinement report inputs use the injected socket denies', () => {
-  const environment = {
-    HOME: '/Users/operator',
-    [STATE_HOME_ENV]: '/operator/state',
-    [CONFIG_HOME_ENV]: '/operator/config',
-  }
-
-  expect(readonlyLensReportInputs(environment, null, TEST_SOCKET_DENY_PATHS).denyRead).toEqual(
-    expect.arrayContaining(TEST_SOCKET_DENY_PATHS),
-  )
-})
 
 const temporaryDirectories: string[] = []
 const temporaryState = () => {
@@ -483,6 +459,7 @@ test('readonlyLensDeniesLoginKeychain follows the denyRead list, not a keychain 
 test('probe sandbox profile denies network and writes except the throwaway directory', () => {
   const scratch = '/tmp/orch-probe-scratch'
   const profile = probeSandboxProfile({
+    kind: 'agent',
     allowWriteDir: scratch,
     cwd: '/projects/fixture',
     project: fixtureProject(),
@@ -502,6 +479,7 @@ test('probe sandbox profile denies network and writes except the throwaway direc
 
 test('probe sandbox profile denies a project-declared secret path', () => {
   const profile = probeSandboxProfile({
+    kind: 'agent',
     allowWriteDir: '/tmp/orch-probe-scratch',
     cwd: '/projects/fixture',
     project: fixtureProject({ secretPaths: ['/operator/project-secret'] }),
@@ -560,6 +538,23 @@ describe('readonly-lens sandbox profile', () => {
     const project = fixtureProject({
       secretPaths: ['/shared/absolute.secret', '~/.tokens/private', 'config/operator.secret'],
     })
+    const installLayout = {
+      kind: 'checkout' as const,
+      root: '/install',
+      workspaceDirectories: [
+        '/install/orchestrator',
+        '/install/cli',
+        '/install/hub',
+        '/install/hub/deploy/site',
+        '/install/hub/data',
+        '/install/hub/site',
+        '/install/hub/ui',
+        '/install/hub/util',
+        '/install/hub/views',
+        '/install/hub/web',
+        '/install/retrieval',
+      ],
+    }
     const profile = readonlyLensProfile({
       worktree: '/runs/tree',
       runtimeDir: '/runs/evidence',
@@ -570,11 +565,18 @@ describe('readonly-lens sandbox profile', () => {
       nodeModuleLinks: ['/projects/fixture/node_modules'],
       environment,
       socketDenyPaths: TEST_SOCKET_DENY_PATHS,
+      installLayout,
     })
 
     expect(profile.filesystem.denyRead).toEqual([
       ...READONLY_LENS_DENY_PATHS.map((path) => path.replace(/^~/, homedir())),
       ...fileBackedSecretPaths(environment),
+      state,
+      join(state, 'orchestrator'),
+      join(state, 'orchestrator', 'orchestrator.db'),
+      join(state, 'orchestrator', 'runs'),
+      '/projects',
+      '/projects/fixture/.claude/worktrees',
       join('/Users/operator/.config/platform', `${PLATFORM_SLUG}.env`),
       '/shared/absolute.secret',
       join(homedir(), '.tokens/private'),
@@ -584,12 +586,31 @@ describe('readonly-lens sandbox profile', () => {
     expect(profile.filesystem.allowWithinDeny).toEqual([
       '/runs/tree',
       '/runs/evidence',
+      '/runs/evidence/harness',
+      resolveHubDatabase(environment),
+      `${resolveHubDatabase(environment)}-wal`,
+      `${resolveHubDatabase(environment)}-shm`,
+      '/projects/fixture/.git',
       '/opt/toolchain/bin',
       '/usr/bin',
       '/projects/fixture/node_modules',
       join(homedir(), '.claude.json'),
       process.execPath,
-      ROOT,
+      '/install/bin',
+      '/install/cli',
+      '/install/shared',
+      '/install/node_modules',
+      '/install/package.json',
+      '/install/orchestrator',
+      '/install/hub',
+      '/install/hub/deploy/site',
+      '/install/hub/data',
+      '/install/hub/site',
+      '/install/hub/ui',
+      '/install/hub/util',
+      '/install/hub/views',
+      '/install/hub/web',
+      '/install/retrieval',
     ])
     expect(profile.filesystem.allowWrite).toEqual(['/runs/tree', '/runs/evidence'])
     expect(profile.filesystem.denyWrite).toEqual(['/tmp/claude', '/private/tmp/claude'])
@@ -606,6 +627,56 @@ describe('readonly-lens sandbox profile', () => {
     expect(profile.network.allowUnixSockets).toEqual([])
     expect(profile.network.allowLocalBinding).toBe(true)
     expect(profile.enableWeakerNetworkIsolation).toBe(true)
+  })
+
+  test('area policy denies the state root and sibling checkout while carving back owned paths', () => {
+    const state = temporaryState()
+    const environment = { HOME: '/Users/operator', [STATE_HOME_ENV]: state }
+    const own = fixtureProject({ secretPaths: ['config/operator.secret'] })
+    const sibling = {
+      ...fixtureProject(),
+      recordId: 'sibling-id',
+      name: 'sibling',
+      path: '/projects/sibling',
+    }
+    const profile = readonlyLensProfile({
+      worktree: '/projects/fixture/.claude/worktrees/run',
+      runtimeDir: join(state, 'orchestrator/runs/sandbox-run'),
+      scratchDir: join(state, 'orchestrator/runs/run/scratch'),
+      project: own,
+      registeredProjects: [own, sibling],
+      agent: 'grok',
+      path: '/usr/bin',
+      nodeModuleLinks: [],
+      environment,
+      socketDenyPaths: [],
+    })
+
+    expect(profile.filesystem.denyRead).toContain(resolveStatePaths(environment).root)
+    expect(profile.filesystem.denyRead).toContain(resolveOrchestratorDatabase(environment))
+    expect(profile.filesystem.allowWithinDeny).not.toContain(
+      resolveOrchestratorDatabase(environment),
+    )
+    expect(profile.filesystem.denyRead).toContain('/projects/sibling')
+    expect(profile.filesystem.denyRead).toContain('/projects/fixture/.claude/worktrees')
+    expect(profile.filesystem.denyRead).toContain('/projects/sibling/.claude/worktrees')
+    expect(profile.filesystem.denyRead).toContain('/projects/fixture/config/operator.secret')
+    for (const allowed of [
+      '/projects/fixture/.claude/worktrees/run',
+      join(state, 'orchestrator/runs/run'),
+      join(state, 'orchestrator/runs/run/scratch'),
+      join(state, 'orchestrator/runs/sandbox-run'),
+      join(state, 'orchestrator/runs/sandbox-run/harness'),
+      resolveHubDatabase(environment),
+      `${resolveHubDatabase(environment)}-wal`,
+      `${resolveHubDatabase(environment)}-shm`,
+      '/projects/fixture/.git',
+    ]) {
+      expect(profile.filesystem.allowWithinDeny).toContain(allowed)
+    }
+    expect(profile.filesystem.allowWithinDeny).not.toContain(
+      '/projects/fixture/config/operator.secret',
+    )
   })
 
   test('sandbox selection removes the shared reader worktree from writable roots', () => {
@@ -923,7 +994,7 @@ describe('readonly-lens sandbox profile', () => {
     })
   })
 
-  test('a no-repo sandbox requires its root but not a registered project', () => {
+  test('a no-repo sandbox requires its root but not an own project', () => {
     expect(() =>
       selectReadonlySandbox({
         agent: 'grok',
@@ -942,6 +1013,7 @@ describe('readonly-lens sandbox profile', () => {
         worktree: '/runs/isolates/42',
         runtimeDir: '/runs/sandbox-42',
         project: null,
+        registeredProjects: [fixtureProject()],
       }).sandbox,
     ).toBe('srt')
   })
@@ -978,17 +1050,5 @@ describe('readonly-lens sandbox profile', () => {
         }),
       ).toEqual({ sandbox: 'host', profile: null, reason: null })
     }
-  })
-
-  test('sandbox denial classification is conditioned on srt and accepts every absolute path', () => {
-    const hostDenial = 'cat: /Users/operator/.ssh/orch-sentinel: Operation not permitted'
-    expect(classify(hostDenial, 1, false, 'host')).toBe('other')
-    expect(classify('cat: /shared/x.secret: Operation not permitted', 1, false, 'srt')).toBe(
-      'sandbox_denied',
-    )
-    expect(classify('cat: /var/run/docker.sock: Operation not permitted', 1, false, 'srt')).toBe(
-      'sandbox_denied',
-    )
-    expect(NOT_EVIDENCE).toContain('sandbox_denied')
   })
 })

@@ -96,6 +96,7 @@ test('the ACP resume probe runs both turns inside one real-run-shaped sandbox li
         scratch: root,
         agent: { name: 'fixture', baseUrl: null } as Agent,
         environment: { ...process.env },
+        registeredProjects: [],
       },
       {
         createWorktree(path) {
