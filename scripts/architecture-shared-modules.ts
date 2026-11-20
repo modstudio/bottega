@@ -9,6 +9,7 @@ const module = (file: string, allowed: string[]): ArchitectureModule => ({
 })
 
 export const sharedModules: ArchitectureModule[] = [
+  module('shared/tree-run-scripts.ts', []),
   module('shared/launch-agent-liveness.ts', ['node:fs', 'node:path', './bounded-process.ts']),
   module('shared/project-trunk.ts', []),
   module('shared/distribution-manifest.ts', ['./brand.ts']),

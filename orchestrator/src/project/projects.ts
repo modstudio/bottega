@@ -104,6 +104,7 @@ import {
   retiredReadonlyDockerProblems,
   reviewLensProblems,
   sweepHonorsHeldProblems,
+  treeRunScriptProblems,
   visibilityProblems,
 } from './project-settings-refusals.ts'
 import {
@@ -112,6 +113,7 @@ import {
   githubForgeVisibilityLookup,
 } from './project-visibility.ts'
 
+export { treeRunScriptProblems } from './project-settings-refusals.ts'
 export { projectLifecycleForm, resolvedWorktreeTool } from './project-worktree-resolution.ts'
 export type { MainStackConsumer, Project, ProjectSettings, WorktreeTool }
 export { projectByName, projectRowByName, projects }
@@ -601,6 +603,11 @@ export function validateProjectSettings(
     ...gateToolingProblems(settings.gateTooling),
     ...workerCheckProblems(settings.workerCheck),
     ...projectAgentKeyProblems(settings.agentKeys),
+    ...treeRunScriptProblems(
+      context.projectNameAfterWrite ?? context.currentProjectName,
+      settings,
+      mode,
+    ),
   ]
 
   if (invalidOptionalStringArray(settings.secretPaths)) {
@@ -712,6 +719,11 @@ export function validateRegisterWrite(input: {
   return [
     ...new Set([
       ...validateProjectSettings(input.merged, 'strip', input.projectPath, input.context),
+      ...treeRunScriptProblems(
+        input.context?.projectNameAfterWrite ?? input.context?.currentProjectName,
+        input.merged,
+        'strict',
+      ),
       ...(input.supplied ? suppliedUnknownKeyProblems(input.supplied) : []),
     ]),
   ]

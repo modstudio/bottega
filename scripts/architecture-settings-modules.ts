@@ -34,6 +34,7 @@ export const settingsModules: SettingsModule[] = [
   module('orchestrator/src/project/project-settings-refusals.ts', [
     '../../../shared/brand.ts',
     '../../../shared/repository-visibility.ts',
+    '../../../shared/tree-run-scripts.ts',
     '../gate/gate-decision.ts',
     '../workflow/autonomy.ts',
     './project-injection.ts',

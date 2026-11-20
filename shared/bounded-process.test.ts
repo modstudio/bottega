@@ -28,7 +28,9 @@ const execaMock = mock(
 
 mock.module('execa', () => ({ execa: execaMock }))
 
-const { startBounded, startParentBound } = await import('./bounded-process.ts')
+const { parentBoundSignalExitCode, startBounded, startParentBound } = await import(
+  './bounded-process.ts'
+)
 
 let previousSentinel: string | undefined
 
@@ -65,6 +67,24 @@ test('a deliberate git probe budget keeps its declared deadline', async () => {
   expect(execaMock.mock.calls[0]?.[2]?.timeout).toBe(CALL_BUDGETS['git-probe'].deadlineMs)
 })
 
+test('tracked child exit flags compose into the parent signal decision', () => {
+  const cases: Array<{
+    name: string
+    signal: 'SIGINT' | 'SIGTERM'
+    flags: boolean[]
+    expected: number | null
+  }> = [
+    { name: 'no children exits', signal: 'SIGTERM', flags: [], expected: 143 },
+    { name: 'one default child exits', signal: 'SIGTERM', flags: [true], expected: 143 },
+    { name: 'only opted-out children wait', signal: 'SIGTERM', flags: [false], expected: null },
+    { name: 'mixed children exit', signal: 'SIGTERM', flags: [false, true], expected: 143 },
+    { name: 'SIGINT exits with its code', signal: 'SIGINT', flags: [], expected: 130 },
+  ]
+  for (const row of cases) {
+    expect(parentBoundSignalExitCode(row.signal, row.flags), row.name).toBe(row.expected)
+  }
+})
+
 test('a parent-bound child keeps all three relay pipes streaming', async () => {
   const originalSpawn = Bun.spawn
   const launches: unknown[][] = []
@@ -96,6 +116,31 @@ test('a parent-bound child keeps all three relay pipes streaming', async () => {
         },
       ],
     ])
+  } finally {
+    Bun.spawn = originalSpawn
+  }
+})
+
+test('a parent-bound child can inherit all three stdio streams', () => {
+  const originalSpawn = Bun.spawn
+  const launches: unknown[][] = []
+  const child = { exited: Promise.resolve(0), kill: () => {} } as unknown as ReturnType<
+    typeof startParentBound
+  >
+  Bun.spawn = ((...args: unknown[]) => {
+    launches.push(args)
+    return child
+  }) as typeof Bun.spawn
+  try {
+    startParentBound([`/installed/${PLATFORM_SLUG}`, 'credential'], {
+      name: 'credential child',
+      inheritStdio: true,
+    })
+    expect(launches[0]?.[1]).toMatchObject({
+      stdin: 'inherit',
+      stdout: 'inherit',
+      stderr: 'inherit',
+    })
   } finally {
     Bun.spawn = originalSpawn
   }

@@ -35,7 +35,30 @@ export function operatorCredentialSetCommand(definition: OperatorCredentialDefin
   return `${PLATFORM_SLUG} credential set ${credentialIdentityPath(provider, name, type)} --project ${PLATFORM_SLUG}`
 }
 
-export function operatorCredentialResolveCommand(definition: OperatorCredentialDefinition): string {
+function operatorCredentialResolveArgv(definition: OperatorCredentialDefinition): string[] {
   const { provider, name, type } = definition.identity
-  return `${PLATFORM_SLUG} credential resolve ${credentialIdentityPath(provider, name, type)} --project ${PLATFORM_SLUG}`
+  return [
+    'credential',
+    'resolve',
+    credentialIdentityPath(provider, name, type),
+    '--project',
+    PLATFORM_SLUG,
+  ]
+}
+
+export function operatorCredentialResolveCommand(definition: OperatorCredentialDefinition): string {
+  return [PLATFORM_SLUG, ...operatorCredentialResolveArgv(definition)].join(' ')
+}
+
+export function operatorCredentialRevealArgv(
+  definition: OperatorCredentialDefinition,
+  argv: readonly string[],
+): string[] {
+  return [
+    ...operatorCredentialResolveArgv(definition),
+    '--reveal-to-env',
+    definition.overrideVariable,
+    '--',
+    ...argv,
+  ]
 }

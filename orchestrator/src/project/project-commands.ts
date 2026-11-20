@@ -61,6 +61,7 @@ import {
   retiredProjectRefusal,
   retireWrittenProject,
   sniffStack,
+  treeRunScriptProblems,
   unretireWrittenProject,
   upsertProject,
   validateProjectSettings,
@@ -311,6 +312,7 @@ export async function addProject(
     register: projects(),
     enabledLensIds: enabledLensIds(targetSpace?.id ?? null),
   })
+  adoptedMalformed.push(...treeRunScriptProblems(input.name, candidate.settings, 'strict'))
   if (adoptedMalformed.length) throw new Error(adoptedMalformed.join('\n'))
   const incomplete = incompleteWorktreeProblems(candidate)
   if (incomplete.length && !input.allowIncomplete) throw new Error(incomplete.join('\n'))
