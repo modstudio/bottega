@@ -160,6 +160,7 @@ async function refreshStepServe(
     live,
   )
   if (prepared.index === 0 && prepared.row && decideCursorStart(prepared.row.state) === 'retire') {
+    refuseMissingWorkflowArguments(prepared.composition)
     await insertWorkflowCursor(prepared.composition, context, database, autonomy, commitCount)
     prepared = await prepareStepServe(
       slug,
@@ -175,6 +176,15 @@ async function refreshStepServe(
     )
   }
   return prepared
+}
+
+function refuseMissingWorkflowArguments(
+  composition: ReturnType<typeof composeWorkflow>,
+): void {
+  if (composition.needs.arguments)
+    throw new Error(
+      `missing required arguments: ${composition.needs.arguments.map(({ name }) => name).join(', ')}`,
+    )
 }
 
 function serveDecision(
@@ -270,24 +280,6 @@ async function prepareWorkflowStepKeyAdoption(input: {
   autonomy?: AutonomyResolution
   cursor?: number
 }) {
-  if (input.cursor === undefined) {
-    const preview = composeWorkflow(
-      input.slug,
-      input.project,
-      input.mode,
-      input.args,
-      input.database,
-      { mode: input.mode },
-      input.autonomy,
-    )
-    if (preview.needs.arguments)
-      throw new Error(
-        `missing required arguments: ${preview.needs.arguments.map(({ name }) => name).join(', ')}`,
-      )
-    resolveWorkflowStepReference(input.stepSlug, [
-      { mode: input.mode, steps: preview.steps.map((step) => step.slug) },
-    ])
-  }
   await readThroughWorkflowCursorContext(input.project, input.context, input.database)
   await linkResolvedWorkflowTask(input.project, input.context, input.database)
   const selected = await selectWorkflowCursorForKeyAdoption({
@@ -400,7 +392,10 @@ async function serveWorkflowStepWithCursor(
   let { row } = prepared
   const { opensCursor, composition, requested, index, input, resolvedArguments } = prepared
   const decision = serveDecision(prepared, slug, mode, args)
-  if (!row) row = await insertWorkflowCursor(composition, context, database, autonomy, commitCount)
+  if (!row) {
+    refuseMissingWorkflowArguments(composition)
+    row = await insertWorkflowCursor(composition, context, database, autonomy, commitCount)
+  }
   await applyServeTransition(row, decision, context, database, resolvedArguments)
   const served = await withWorkflowTextFacts(
     await getWorkflowStep(

@@ -391,6 +391,93 @@ test('implicit adoption refuses two keyless cursors and names each explicit reme
   ).toEqual({ workflow_key: 'DEV-2532' })
 })
 
+test('serve by key reuses a keyed cursor with its stored required arguments', async () => {
+  const d = currentDatabase()
+  const slug = 'stored-required-argument'
+  const draft = setWorkflowLocal(
+    slug,
+    {
+      title: 'Stored required argument',
+      description: 'Exercises keyed serve argument reuse.',
+      arguments: [
+        { name: 'key', required: true, description: 'Task key.' },
+        { name: 'branch', required: true, description: 'Task branch.' },
+      ],
+      modes: [{ slug: 'default', title: 'Default', default: true, steps: ['frame'] }],
+    },
+    'test fixture',
+    'test',
+    d,
+  )
+  promoteWorkflowLocal(slug, draft.n, 'test fixture', 'test', d)
+  const key = 'DEV-2532'
+  const cursorContext = { session: context.session, taskRecordId: `task-${key}` }
+  const opened = await composeWorkflowWithCursor(
+    slug,
+    'fixture',
+    'default',
+    { key, branch: 'DEV-2532-work' },
+    cursorContext,
+    d,
+    {},
+    { resolution: resolutionFor(slug, 'default', d) },
+  )
+
+  const served = await getWorkflowStepWithCursor(
+    slug,
+    'fixture',
+    'frame',
+    { key },
+    'default',
+    cursorContext,
+    d,
+    { resolution: resolutionFor(slug, 'default', d) },
+  )
+
+  expect(served.cursor).toBe(opened.cursor!.id)
+  expect(d.query('SELECT count(*) AS count FROM workflow_cursor').get()).toEqual({ count: 1 })
+  expect(
+    JSON.parse(
+      d
+        .query<{ args: string }, [number]>('SELECT args FROM workflow_cursor WHERE number=?')
+        .get(opened.cursor!.id)!.args,
+    ),
+  ).toEqual({ key, branch: 'DEV-2532-work' })
+})
+
+test('an unresolvable hub key refuses before adopting a keyless cursor', async () => {
+  const d = currentDatabase()
+  const live = { resolution: resolutionFor('explore', 'default', d) }
+  const opened = await composeWorkflowWithCursor(
+    'explore',
+    'fixture',
+    'default',
+    {},
+    { session: context.session },
+    d,
+    {},
+    live,
+  )
+
+  await expect(
+    composeWorkflowWithCursor(
+      'explore',
+      'fixture',
+      'default',
+      { key: 'DEV-MISSING' },
+      { session: context.session, taskRecordId: null },
+      d,
+      {},
+      live,
+    ),
+  ).rejects.toThrow(
+    'task key DEV-MISSING names no task in hub; check it with `bottega task show DEV-MISSING` or file the task first',
+  )
+  expect(
+    d.query('SELECT workflow_key,args FROM workflow_cursor WHERE number=?').get(opened.cursor!.id),
+  ).toEqual({ workflow_key: '', args: '{}' })
+})
+
 test('missing required key previews compose and refuses serve without opening a cursor', async () => {
   const d = currentDatabase()
   const slug = 'required-key-preview'

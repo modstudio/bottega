@@ -1,7 +1,9 @@
 // concern: workflow cursor task adoption
 /** Atomically adopts a task key and republishes every cursor-bound question. */
 import type { Database } from 'bun:sqlite'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { nowIso, writeTransaction } from '../database/db.ts'
+import { projectByName } from '../project/project-read.ts'
 import {
   mutateQuestion,
   requireQuestionMutationApplied,
@@ -95,6 +97,13 @@ export async function selectWorkflowCursorForKeyAdoption(input: {
     )
   }
   if (!row) return { row: null, adopted: false }
+  if (
+    projectByName(input.project, input.database)?.settings.tracker?.protocol === 'hub' &&
+    input.context.taskRecordId === null
+  )
+    throw new Error(
+      `task key ${key} names no task in hub; check it with \`${PLATFORM_SLUG} task show ${key}\` or file the task first`,
+    )
   await adoptWorkflowTask(
     row,
     key,
