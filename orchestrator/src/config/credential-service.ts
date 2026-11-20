@@ -35,10 +35,7 @@ import {
 } from '../../../shared/credential-value.ts'
 import { localMachine } from '../../../shared/hosted-secret-row.ts'
 import type { OperatorCredentialIdentity } from '../../../shared/operator-credentials.ts'
-import {
-  configAccessRemedy,
-  recordSpaceMembershipRefusal,
-} from '../../../shared/record-remedies.ts'
+import { recordSpaceMembershipRefusal } from '../../../shared/record-remedies.ts'
 import {
   parseRecordSpaceMemberships,
   recordSpaceMembership,
@@ -164,15 +161,19 @@ async function missingWrapTrustRemedy(
   )
 }
 
+function credentialBinding(address: CredentialAddress): string {
+  if (address.account) return 'account'
+  return address.projectName
+    ? `project ${address.projectName} in space ${address.spaceName}`
+    : `space ${address.spaceName}`
+}
+
 async function missingProjectWrapRefusal(
   address: CredentialAddress,
   client: ReturnType<typeof configClient>,
 ): Promise<Error> {
-  const binding = address.projectName
-    ? `project ${address.projectName} in space ${address.spaceName}`
-    : `space ${address.spaceName}`
   return new Error(
-    `cannot access credentials for ${binding}: ${await missingWrapTrustRemedy(address, client)}; ${configAccessRemedy(address.spaceName)}`,
+    `cannot access credentials for ${credentialBinding(address)}: ${await missingWrapTrustRemedy(address, client)}`,
   )
 }
 
@@ -191,11 +192,8 @@ const missingWrapRefusal = (address: CredentialAddress, client: ReturnType<typeo
     : missingProjectWrapRefusal(address, client)
 
 function noDataKeyRefusal(address: CredentialAddress): Error {
-  const binding = address.account
-    ? 'account'
-    : `project ${address.projectName} in space ${address.spaceName}`
   return new Error(
-    `cannot access credentials for ${binding}: ${spaceHasNoDataKeyRemedy(address.spaceName)}`,
+    `cannot access credentials for ${credentialBinding(address)}: ${spaceHasNoDataKeyRemedy(address.spaceName)}`,
   )
 }
 

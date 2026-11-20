@@ -199,7 +199,22 @@ test('set credential names machine registration when the space has no data key',
   expect(transport).toHaveBeenCalledTimes(1)
 })
 
-test('set credential gives the project access remedy when the data key has no wrap', async () => {
+test('set credential without a project name names its space when it has no data key', async () => {
+  const client = configClient(
+    { BOTTEGA_RECORD_API_URL: 'https://record.test' },
+    async () => Response.json({ error: 'missing' }, { status: 404 }),
+    'token',
+  )
+  const refusal = await setCredential(
+    { ...address, projectName: undefined },
+    'secret',
+    client,
+  ).catch((error) => String(error))
+  expect(refusal).toContain('cannot access credentials for space studio:')
+  expect(refusal).not.toContain('undefined')
+})
+
+test('set credential gives the machine trust remedy when the data key has no wrap', async () => {
   const keyId = await machineKeyId(pair.publicKey)
   const createDataKey = mock(async () => ({ id: '', version: 1 }))
   const client = {
@@ -221,7 +236,30 @@ test('set credential gives the project access remedy when the data key has no wr
   const refusal = await setCredential(address, 'secret', client).catch((error) => String(error))
   expect(refusal).toContain('this machine is not trusted in record space studio')
   expect(refusal).toContain('machine config machine trust')
+  expect(refusal).not.toContain('lacks config access')
   expect(createDataKey).not.toHaveBeenCalled()
+})
+
+test('set credential account-switch refusal does not claim config access is missing', async () => {
+  const keyId = await machineKeyId(pair.publicKey)
+  const client = {
+    currentDataKey: async () => ({
+      id: '01990000-0000-7000-8000-000000000003',
+      version: 1,
+      createdAt: '2026-01-01T00:00:00.000Z',
+      retiredAt: null,
+      wraps: [],
+    }),
+    listMachineKeys: async () => [{ keyId, userId: 'other-user', revokedAt: null }],
+    readTrustLog: async () => [],
+    whoami: async () => ({
+      user: { id: 'signed-in-user' },
+      memberships: [],
+    }),
+  } as unknown as ConfigClient
+  const refusal = await setCredential(address, 'secret', client).catch((error) => String(error))
+  expect(refusal).toContain('belongs to another account; sign back in as that account')
+  expect(refusal).not.toContain('lacks config access')
 })
 
 test('set account credential gives the personal-space registration remedy', async () => {
