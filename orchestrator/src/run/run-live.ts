@@ -571,8 +571,9 @@ function captureLiveGooseLedger(input: LiveInput) {
   )
 }
 
-function codexTransportMcpScope(scope: CodexMcpScope | null) {
+function codexTransportMcpScope(scope: CodexMcpScope | null, writableRoots: string[]) {
   return {
+    writableRoots,
     projectServers: scope?.servers,
     withheldProjectServers: scope?.withheld.map((server) => server.name),
   }
@@ -603,7 +604,6 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
     mcpServerName,
     codexMcpScope,
     mcpTrustGranted,
-    writableRoots,
     gitConfigEnvironment,
     recipeEnvironment,
     launchEnvironment,
@@ -737,10 +737,9 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
       sandboxWorkspaceWriteNetworkAccess: codexSandbox.workspaceWriteNetworkAccess,
       mcp: usingMcp,
       mcpServer: mcpServerName ?? undefined,
-      ...codexTransportMcpScope(codexMcpScope),
+      ...codexTransportMcpScope(codexMcpScope, input.writableRoots),
       projectMcpSelection: input.projectMcpSelection,
       trustCwd: mcpTrustGranted ? cwd : undefined,
-      writableRoots,
       gitConfigEnvironment,
       recipeEnvironment,
       tempEnvironment: input.runTemp.environment,
