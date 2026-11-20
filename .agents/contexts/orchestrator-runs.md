@@ -94,7 +94,7 @@ The durable protocol is `status: blocked` in the return contract. The live chann
 
 **A writing job gets MCP whether or not the caller asked for it.**
 
-**Codex confinement uses a named permission profile.** Never deny its tree, writable roots or ancestors. Each launch denies present siblings; later siblings stay readable until the next turn.
+**Codex confinement uses a named permission profile.** Never deny its tree, writable roots or ancestors. Each launch denies present siblings; later siblings stay readable until the next turn. A writer can commit but cannot delete branches or pack refs, because `.git/packed-refs` is shared across the project's worktrees.
 
 **Headless grok must never be able to prompt.** Every grok run uses `bypassPermissions`. The worktree and the dirtied-tree detector are the guards.
 

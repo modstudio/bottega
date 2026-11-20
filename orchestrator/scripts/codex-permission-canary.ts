@@ -18,6 +18,25 @@ function run(argv: string[], cwd: string, env: NodeJS.ProcessEnv = process.env):
   return result.stdout
 }
 
+function assertSandboxRefusal(
+  permissionArgs: string[],
+  command: string[],
+  cwd: string,
+  env: NodeJS.ProcessEnv,
+): void {
+  const result = startBoundedSync(
+    ['codex', 'sandbox', '-P', PLATFORM_SLUG, ...permissionArgs, '--', ...command],
+    { budget: 'sandbox-probe', cwd, env },
+  )
+  const output = `${result.stdout}${result.stderr}`
+  if (result.exitCode === 0) throw new Error(`${command.join(' ')} unexpectedly succeeded`)
+  if (!output.includes('packed-refs.lock') || !output.includes('Operation not permitted')) {
+    throw new Error(
+      `${command.join(' ')} exited ${result.exitCode} without the expected sandbox refusal\n${output}`,
+    )
+  }
+}
+
 function project(recordId: string, name: string, path: string): Project {
   return {
     recordId,
@@ -97,24 +116,33 @@ try {
     'git add canary.txt',
     'git commit -qm canary',
     'git log --format=%s -1 | grep -Fx canary',
+    'git branch canary-delete',
     `if cat ${JSON.stringify(join(sibling, 'sibling-secret.txt'))} >/dev/null 2>&1; then exit 41; fi`,
     `if cat ${JSON.stringify(join(other, 'secret.txt'))} >/dev/null 2>&1; then exit 42; fi`,
   ].join('\n')
+  const sandboxEnvironment = {
+    ...environment,
+    ...gitEnvironment,
+    GIT_AUTHOR_NAME: 'Codex Canary',
+    GIT_AUTHOR_EMAIL: 'canary@example.invalid',
+    GIT_COMMITTER_NAME: 'Codex Canary',
+    GIT_COMMITTER_EMAIL: 'canary@example.invalid',
+  }
   const output = run(
     ['codex', 'sandbox', '-P', PLATFORM_SLUG, ...permissionArgs, '--', '/bin/sh', '-c', script],
     own,
-    {
-      ...environment,
-      ...gitEnvironment,
-      GIT_AUTHOR_NAME: 'Codex Canary',
-      GIT_AUTHOR_EMAIL: 'canary@example.invalid',
-      GIT_COMMITTER_NAME: 'Codex Canary',
-      GIT_COMMITTER_EMAIL: 'canary@example.invalid',
-    },
+    sandboxEnvironment,
   )
   if (!output.includes('canary')) throw new Error('Codex canary commit was absent from git log')
+  assertSandboxRefusal(
+    permissionArgs,
+    ['git', 'branch', '-d', 'canary-delete'],
+    own,
+    sandboxEnvironment,
+  )
+  assertSandboxRefusal(permissionArgs, ['git', 'pack-refs', '--all'], own, sandboxEnvironment)
   console.log(
-    'Codex permission canary passed: git operations succeeded and sibling reads were denied',
+    'Codex permission canary passed: commits succeeded, packed-refs mutations and sibling reads were denied',
   )
 } finally {
   rmSync(root, { recursive: true, force: true })

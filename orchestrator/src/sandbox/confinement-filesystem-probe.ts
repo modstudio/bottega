@@ -57,7 +57,7 @@ import {
 } from './sandbox.ts'
 
 type FilesystemProbeAccess = 'denied' | 'readable' | 'not covered'
-type CommandProbeStatus = 'ran' | 'failed'
+type CommandProbeStatus = 'ran' | 'failed' | 'refused'
 type CommandProbe = { status: CommandProbeStatus; reason: string }
 export type ConfinementFilesystemProbeRow = {
   family:
@@ -104,7 +104,8 @@ const NOT_COVERED: ConfinementFilesystemProbeRow[] = [
 
 const PROBE_PROJECT_NAME = 'confinement-probe'
 const PROBE_TASK_PREFIX = 'CONFINEMENTPROBE'
-const CODEX_PROBE_MODE = 'codex sandbox -P ran without --approve-for-me'
+const CODEX_PROBE_MODE =
+  'codex sandbox -P ran without --approve-for-me; branch lifecycle belongs to bottega tree'
 
 function codexShellArgument(index: number): string {
   return `\${${index}}`
@@ -128,9 +129,14 @@ function codexWriterProbeRow(
       .split(/\r?\n/)
       .map((line) => line.split('=', 2) as [string, string]),
   )
-  const command = (name: string): CommandProbe => ({
-    status: values.get(name) === 'ran' ? 'ran' : 'failed',
-    reason: values.get(name) === 'ran' ? 'succeeded' : 'failed',
+  const command = (name: string, expected: Exclude<CommandProbeStatus, 'failed'> = 'ran') => ({
+    status: values.get(name) === expected ? expected : 'failed',
+    reason:
+      values.get(name) === expected
+        ? expected === 'ran'
+          ? 'succeeded'
+          : 'sandbox refusal held'
+        : 'failed',
   })
   const paths = Object.fromEntries(
     measuredTargets.map(({ name }, index) => [
@@ -145,13 +151,15 @@ function codexWriterProbeRow(
     'git status': command('git-status'),
     'git commit': command('git-commit'),
     'git log': command('git-log'),
+    'git branch -d': command('git-branch-delete', 'refused'),
+    'git pack-refs': command('git-pack-refs', 'refused'),
   }
   const accessVerdict = probeVerdict(measuredTargets, paths, {
     status: 'ran',
     reason: 'Codex access targets measured',
   })
   const passed =
-    Object.values(commands).every(({ status }) => status === 'ran') &&
+    Object.values(commands).every(({ status }) => status !== 'failed') &&
     accessVerdict.status === 'denied'
   return {
     family: 'Codex writer',
@@ -222,6 +230,23 @@ async function launchCodexWriterProbe(
 if git status --short >/dev/null; then echo git-status=ran; else echo git-status=failed; fi
 if printf fixture >${JSON.stringify(canaryPath)} && git add ${JSON.stringify(canaryPath)} && git commit -qm codex-confinement-canary; then echo git-commit=ran; else echo git-commit=failed; fi
 if git log --format=%s -1 | grep -Fx codex-confinement-canary >/dev/null; then echo git-log=ran; else echo git-log=failed; fi
+if git branch codex-confinement-delete; then
+  branch_delete_output="$(git branch -d codex-confinement-delete 2>&1)"
+  branch_delete_status=$?
+  case "$branch_delete_status:$branch_delete_output" in
+    0:*) echo git-branch-delete=failed ;;
+    *"packed-refs.lock"*"Operation not permitted"*) echo git-branch-delete=refused ;;
+    *) echo git-branch-delete=failed ;;
+  esac
+else echo git-branch-delete=failed
+fi
+pack_refs_output="$(git pack-refs --all 2>&1)"
+pack_refs_status=$?
+case "$pack_refs_status:$pack_refs_output" in
+  0:*) echo git-pack-refs=failed ;;
+  *"packed-refs.lock"*"Operation not permitted"*) echo git-pack-refs=refused ;;
+  *) echo git-pack-refs=failed ;;
+esac
 ${accessScript}`,
         'probe',
         realPathForPotentialPath(cwd),
