@@ -312,3 +312,44 @@ test("a projectless open cursor question is closed and re-asked in the project's
   expect(inserted.recordId).not.toBe(ID)
   database.close()
 })
+
+test("an open question still links when its project's space is undeclared", async () => {
+  const database = migratedTestDatabase()
+  database
+    .query('INSERT INTO project(record_id,name,path,stack,settings) VALUES (?,?,?,?,?)')
+    .run(PROJECT_ID, 'question-mutation-fixture', '/fixture', 'bun', '{}')
+  const openQuestion = row({
+    record_id: ID,
+    question_record_id: ID,
+    workflow_cursor_record_id: CURSOR_ID,
+    workflow_key: 'DEV-2515',
+    project_record_id: PROJECT_ID,
+    awaiting_operator_at: STAMP,
+    closed_at: null,
+    answered_at: null,
+    workflow_step_ordinal: 1,
+    workflow_step_slug: 'implement',
+  })
+  const writtenSpaces: string[] = []
+  const intents: QuestionIntent[] = []
+  installRecordApiClient(recordClient(writtenSpaces, { questions: [openQuestion], intents }))
+
+  const linked = await upsertWorkflowQuestion(
+    {
+      cursorId: CURSOR_ID,
+      projectId: PROJECT_ID,
+      workflowKey: 'DEV-2515',
+      workflowTaskRecordId: null,
+      cursorOrdinal: 0,
+      stepSlug: 'implement',
+      question: 'Proceed?',
+      at: STAMP,
+    },
+    database,
+  )
+
+  expect(linked).toEqual({ recordId: ID, number: 1 })
+  expect(intents).toEqual(['link'])
+  expect(writtenSpaces).toEqual([PERSONAL_SPACE_ID])
+  database.close()
+})

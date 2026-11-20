@@ -89,7 +89,7 @@ test('a supplied projectId unknown or from another space refuses the write', asy
   await expect(
     storedHubProjectId(tx, spaceId, { projectId: foreignId, projectName: 'elsewhere' }),
   ).rejects.toThrow(
-    `record project ${foreignId} ("elsewhere") is absent from request space ${spaceId}; request was sent to record space ${spaceId}; find project "elsewhere"'s declared space slug in settings.space from \`${PLATFORM_SLUG} project list --json\`, then retry against that space`,
+    `record project ${foreignId} is absent from request space ${spaceId} (project "elsewhere"); request was sent to record space ${spaceId}; find project "elsewhere"'s declared space slug in settings.space from \`${PLATFORM_SLUG} project list --json\`, then retry against that space`,
   )
   await expect(storedHubProjectId(tx, spaceId, { projectName: 'missing' })).rejects.toThrow(
     `run \`${PLATFORM_SLUG} machine migrate\``,

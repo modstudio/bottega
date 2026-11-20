@@ -4,6 +4,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { projectOutsideRequestSpacePrefix } from '../../../shared/record-project-identity.ts'
 import { CONFIG_HOME_ENV } from '../../../shared/config-directory.ts'
 import { KEYSTORE_ENV } from '../../../shared/key-store-constants.ts'
 import { readMachineValue } from '../../../shared/machine-config.ts'
@@ -135,8 +136,8 @@ test('relink rewrites every registered reference and only pending matching paylo
     )
     .run(
       pending,
-      `record project ${oldId} is absent from request space space-a`,
-      `record project ${oldId} is absent from request space space-a`,
+      `${projectOutsideRequestSpacePrefix(oldId)}space-a (project "local"); request was sent to record space space-a`,
+      `${projectOutsideRequestSpacePrefix(oldId)}space-a (project "local"); request was sent to record space space-a`,
       newRecordId(),
     )
 

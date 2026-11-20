@@ -10,6 +10,8 @@ import {
   projectRecordDestination,
 } from './record-project-destination.ts'
 
+export class ProjectRecordDestinationRefusal extends Error {}
+
 export function projectDestinationFromIdentity(
   project: string,
   settings: ProjectSettings | StoredProjectSettings | undefined,
@@ -28,6 +30,6 @@ export async function requireProjectRecordDestination(
   client: { whoami(): Promise<RecordIdentity> },
 ): Promise<string> {
   const decision = projectDestinationFromIdentity(project, settings, await client.whoami())
-  if ('refused' in decision) throw new Error(decision.remedy)
+  if ('refused' in decision) throw new ProjectRecordDestinationRefusal(decision.remedy)
   return decision.spaceId
 }
