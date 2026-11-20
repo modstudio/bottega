@@ -21,6 +21,7 @@ import {
   installRecordSessionRunner,
   memoryRecordSession,
 } from '../../test/fixtures/record-session.ts'
+import { withDatabaseForMigrationStep } from '../database/db.ts'
 import { completeSignInCommand } from '../record/record-auth-command.ts'
 import { PROJECT_REFERENCE_REPORT } from './project-reference-counts.ts'
 import {
@@ -306,6 +307,7 @@ test('record sign-in adopts a local project with a hosted namesake', async () =>
     await completeSignInCommand(
       { token: 'token', user: { id: 'user-a', email: 'a@example.test' } },
       { log: (line) => output.push(line) },
+      withDatabaseForMigrationStep,
     )
   } finally {
     installRecordSessionRunner(null)
@@ -364,6 +366,7 @@ test('record sign-in reports one adoption failure and continues to a later proje
     await completeSignInCommand(
       { token: 'token', user: { id: 'user-a', email: 'a@example.test' } },
       { log: (line) => output.push(line) },
+      withDatabaseForMigrationStep,
     )
   } finally {
     installRecordSessionRunner(null)
@@ -443,6 +446,7 @@ describe('record sign-in machine key claim failure', () => {
     await completeSignInCommand(
       { token: 'token', user: { id: 'user-a', email: 'a@example.test' } },
       { log: (line) => output.push(line) },
+      withDatabaseForMigrationStep,
     )
     expect(output).toEqual([
       'signed in a@example.test',

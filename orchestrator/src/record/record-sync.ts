@@ -11,7 +11,7 @@ import {
 } from '../../../shared/record-space-membership.ts'
 import { recordSpaceAccessDecision } from '../../../shared/record-space-request.ts'
 import { recordWriteSpace } from '../../../shared/record-write-space.ts'
-import { db, nowIso } from '../database/db.ts'
+import { db, nowIso, withDatabaseForMigrationStep } from '../database/db.ts'
 import { declaredProjectRecordSpace } from '../project/declared-record-space.ts'
 import { backfillReleaseRecords } from '../release/release-outbox.ts'
 import { backfillReviewRecords } from '../review/review-outbox.ts'
@@ -800,11 +800,13 @@ export async function syncRecord(options: RecordSyncOptions = {}): Promise<Recor
     if (!batch.request.rows.length) break
   }
   cacheFirstSyncedMachineNames(options, identity, machineNameRefusal)
-  const history = await uploadMissingWorkflowHistory(
-    client as ReturnType<typeof recordApiClient>,
-    undefined,
-    options.historyUploadWithDatabase,
-  )
+  const history = options.skipHistoryUpload
+    ? { failed: 0, lines: [], skipped: true }
+    : await uploadMissingWorkflowHistory(
+        client as ReturnType<typeof recordApiClient>,
+        undefined,
+        options.historyUploadWithDatabase ?? withDatabaseForMigrationStep,
+      )
   failed += history.failed
   const cachePull = await pullAfterSync(options, writableLocal, session)
   rememberHostedRecord(writableLocal)

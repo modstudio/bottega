@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test'
+import { withDatabaseForMigrationStep } from '../src/database/db.ts'
 import { signInCommand, whoamiCommand } from '../src/record/record-auth-command.ts'
 import { recordSpaceListCommand, recordSpaceSwitchCommand } from '../src/record/record-command.ts'
 import { recordMemberships } from '../src/record/record-space.ts'
@@ -16,9 +17,12 @@ export function registerCustomerAuthProof(input: {
     delete process.env.BETTER_AUTH_SECRET
     try {
       const output: string[] = []
-      await signInCommand(input.email, async () => input.password, {
-        log: (value) => output.push(value),
-      })
+      await signInCommand(
+        input.email,
+        async () => input.password,
+        { log: (value) => output.push(value) },
+        withDatabaseForMigrationStep,
+      )
       const identity: string[] = []
       await whoamiCommand({ log: (value) => identity.push(value) })
       await recordSpaceListCommand({ log: (value) => output.push(value) })

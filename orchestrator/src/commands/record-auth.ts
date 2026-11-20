@@ -15,6 +15,7 @@ import {
 } from '../../../shared/outside-write-decision.ts'
 import { isHttpAddress } from '../../../shared/record-client-addresses.ts'
 import { hasRecordIdShape } from '../../../shared/record-id.ts'
+import { withDatabaseForMigrationStep } from '../database/db.ts'
 import { projects } from '../project/projects.ts'
 import { retireOutboxRowWithDependencyProof } from '../record/outbox-operator.ts'
 import { retryOutboxRow, retryOutboxRowsMatching } from '../record/outbox-quarantine.ts'
@@ -137,7 +138,7 @@ function registerIdentityCommands(record: Command): void {
     .requiredOption('--email <email>', 'email address of the account')
     .action((options) =>
       hostedCommand(`${PLATFORM_SLUG} record sign-in`, () =>
-        signInCommand(String(options.email), promptPassword, { log }),
+        signInCommand(String(options.email), promptPassword, { log }, withDatabaseForMigrationStep),
       ),
     )
   record

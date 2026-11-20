@@ -20,7 +20,10 @@ import {
   recordApiSignUp,
 } from './record-api-client.ts'
 import { recordApiSendVerificationEmail } from './record-email-verification-client.ts'
-import { uploadLocalWorkflowHistory } from './record-history-upload.ts'
+import {
+  uploadLocalWorkflowHistory,
+  type WithMaintenanceDatabase,
+} from './record-history-upload.ts'
 import { pushDocsCommand } from './record-push-docs.ts'
 import { rememberSignedInRecordUser } from './record-session.ts'
 import { recordMemberships } from './record-space.ts'
@@ -115,7 +118,10 @@ async function completeRecordSessionCommand(
   presentation.log(`active record space ${active.active?.slug ?? active.active?.spaceId ?? 'none'}`)
 }
 
-async function completeSignedInMachineSetup(presentation: Presentation): Promise<void> {
+async function completeSignedInMachineSetup(
+  presentation: Presentation,
+  withDatabase: WithMaintenanceDatabase,
+): Promise<void> {
   try {
     await claimCurrentMachineKey()
   } catch (error) {
@@ -133,7 +139,7 @@ async function completeSignedInMachineSetup(presentation: Presentation): Promise
         `${adoption.name}: project identity adoption failed: ${adoption.message}; run \`${PLATFORM_SLUG} project relink ${adoption.name}\``,
       )
   }
-  await uploadLocalWorkflowHistory(adoptions, presentation)
+  await uploadLocalWorkflowHistory(adoptions, presentation, { withDatabase })
   await pushDocsCommand({ dryRun: false }, presentation)
   await automaticallyAdoptHostedBoard(presentation, { signedIn: () => true })
 }
@@ -142,20 +148,22 @@ export async function signInCommand(
   email: string,
   readPassword: () => Promise<string>,
   presentation: Presentation,
+  withDatabase: WithMaintenanceDatabase,
   dependencies: RecordAuthCommandDependencies = recordAuthCommandDependencies,
 ): Promise<void> {
   const password = await recordPassword(readPassword)
   dependencies.probeSessionStore()
   const result = await dependencies.signIn(email, password)
-  await completeSignInCommand(result, presentation)
+  await completeSignInCommand(result, presentation, withDatabase)
 }
 
 export async function completeSignInCommand(
   result: RecordSessionResult,
   presentation: Presentation,
+  withDatabase: WithMaintenanceDatabase,
 ): Promise<void> {
   await completeRecordSessionCommand(result, presentation, 'signed in')
-  await completeSignedInMachineSetup(presentation)
+  await completeSignedInMachineSetup(presentation, withDatabase)
 }
 
 export async function whoamiCommand(presentation: Presentation): Promise<void> {

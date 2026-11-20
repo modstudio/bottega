@@ -9,7 +9,7 @@ import {
 import { syncRecord } from '../record/record-sync.ts'
 
 const pushQuestionRun: QuestionRunPusher = async (database, runId) => {
-  await syncRecord({ local: database })
+  await syncRecord({ local: database, skipHistoryUpload: true })
   const synced = database
     .query<{ synced_at: string | null }, [string]>(
       `SELECT synced_at FROM outbox WHERE kind='run' AND row_id=? ORDER BY id DESC LIMIT 1`,
