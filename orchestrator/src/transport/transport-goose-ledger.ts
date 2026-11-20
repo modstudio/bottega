@@ -12,7 +12,7 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { dirname, join, sep } from 'node:path'
-import { containsSecretShaped, redactSecretShaped } from '../../../shared/secret-shaped.ts'
+import { redactSecretShaped } from '../../../shared/secret-shaped.ts'
 import { runHarnessStateDir } from '../run-owned-paths.ts'
 import { gooseContextProfile } from './transport-goose-context-profile.ts'
 
@@ -61,11 +61,8 @@ function copyRedactedLedger(
   try {
     output = redactSecretShaped(new TextDecoder('utf-8', { fatal: true }).decode(bytes)).text
   } catch {
-    if (containsSecretShaped(bytes.toString('latin1'))) {
-      onWarning(`Goose ledger copy skipped non-UTF-8 file with secret-shaped bytes ${source}`)
-      return
-    }
-    output = bytes
+    onWarning(`Goose ledger copy skipped non-UTF-8 file ${source}`)
+    return
   }
   mkdirSync(dirname(destination), { recursive: true })
   writeFileSync(destination, output, { mode: stat.mode })

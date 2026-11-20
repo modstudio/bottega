@@ -16,6 +16,7 @@ test('read-only runs are counted by sandbox and reason while old null reasons ar
      VALUES (?,?,?,'grok',?,'sha',1,'head','ok',?,?,?)`,
   )
   insert.run(newRecordId(), 1, '2026-11-19T00:00:00.000Z', 'understand', projectId, 'host', null)
+  insert.run(newRecordId(), 5, '2026-11-19T00:30:00.000Z', 'understand', projectId, null, null)
   insert.run(
     newRecordId(),
     2,
@@ -30,11 +31,12 @@ test('read-only runs are counted by sandbox and reason while old null reasons ar
 
   const measurement = countRunConfinement(database, undefined, NOW)
   expect(measurement.rows).toEqual([
+    { sandbox: 'unrecorded', reason: 'unrecorded', count: 1 },
     { sandbox: 'host', reason: 'unrecorded', count: 1 },
     { sandbox: 'srt', reason: 'eligible read-only repository run', count: 1 },
   ])
   expect(formatConfinementRunMeasurement(measurement)[0]).toBe(
-    'read-only-run-window  since=2026-11-13T12:00:00.000Z (default seven days)',
+    'read-only-run-window  since=2026-11-13T12:00:00.000Z (default 7 days)',
   )
   database.close()
 })

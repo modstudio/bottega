@@ -1,9 +1,14 @@
 // concern: formats run-concern confinement counts for the sandbox report.
 
-import type { RunConfinementCounts } from '../run/run-confinement-count.ts'
+import {
+  CONFINEMENT_RUN_WINDOW_DAYS,
+  type RunConfinementCounts,
+} from '../run/run-confinement-count.ts'
 
 export function formatConfinementRunMeasurement(measurement: RunConfinementCounts): string[] {
-  const defaultLabel = measurement.defaultWindow ? ' (default seven days)' : ''
+  const defaultLabel = measurement.defaultWindow
+    ? ` (default ${CONFINEMENT_RUN_WINDOW_DAYS} days)`
+    : ''
   return [
     `read-only-run-window  since=${measurement.since}${defaultLabel}`,
     ...measurement.rows.map(

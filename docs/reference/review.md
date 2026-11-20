@@ -163,7 +163,7 @@ report sandbox inputs and execute real filesystem probes
 - `--agent <value>`: include only this agent
 - `--job <value>`: report a reading, writing, or named job
 - `--mcp [value]`: filter by whether MCP access is enabled
-- `--since <value>`: count read-only runs since this ISO instant (default: seven days)
+- `--since <value>`: count read-only runs since this ISO instant (default: 7 days)
 - `--json`: write the report as JSON
 
 ### Related

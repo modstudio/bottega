@@ -163,6 +163,7 @@ export const run = pgTable.withRLS(
       'run_credential_binding_check',
       sql`${table.credentialBinding} IS NULL OR ${table.credentialBinding} IN ('space', 'project')`,
     ),
+    check('run_sandbox_check', sql`${table.sandbox} IN ('host', 'srt')`),
     check(
       'run_task_or_project_unless_probe',
       sql`${table.probe} OR ${table.taskId} IS NOT NULL OR ${table.projectId} IS NOT NULL`,

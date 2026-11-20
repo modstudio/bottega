@@ -39,6 +39,7 @@ import {
   reportReviewFunnelCommand,
 } from '../review-funnel/review-funnel-commands.ts'
 import { countRunConfinement } from '../run/run-confinement-count.ts'
+import { CONFINEMENT_RUN_WINDOW_DAYS } from '../run/run-confinement-count.ts'
 import { resolveRunIdentifier } from '../run/run-identifier.ts'
 import { loadSubscriptionCostContext } from '../run/run-subscription-prices.ts'
 import {
@@ -435,7 +436,10 @@ function registerConfinement(program: Command): void {
     .option('--agent <value>', 'include only this agent')
     .option('--job <value>', 'report a reading, writing, or named job')
     .option('--mcp [value]', 'filter by whether MCP access is enabled')
-    .option('--since <value>', 'count read-only runs since this ISO instant (default: seven days)')
+    .option(
+      '--since <value>',
+      `count read-only runs since this ISO instant (default: ${CONFINEMENT_RUN_WINDOW_DAYS} days)`,
+    )
     .option('--json', 'write the report as JSON')
     .allowExcessArguments(false)
     .action(async (options) => {

@@ -677,6 +677,64 @@ describe('readonly-lens sandbox profile', () => {
     )
   })
 
+  test('a node_modules link into another registered project is not re-allowed', () => {
+    const own = fixtureProject()
+    const sibling = { ...fixtureProject(), recordId: 'sibling-id', path: '/projects/sibling' }
+    const warnings: string[] = []
+    const profile = readonlyLensProfile({
+      worktree: '/runs/tree',
+      runtimeDir: '/runs/evidence',
+      project: own,
+      registeredProjects: [own, sibling],
+      agent: 'grok',
+      path: '/usr/bin',
+      nodeModuleLinks: ['/projects/sibling/node_modules'],
+      installLayout: { kind: 'distribution', root: '/install', workspaceDirectories: [] },
+      onWarning: (message) => warnings.push(message),
+    })
+
+    expect(profile.filesystem.allowWithinDeny).not.toContain('/projects/sibling/node_modules')
+    expect(warnings).toEqual([expect.stringContaining('/projects/sibling/node_modules')])
+  })
+
+  test('a node_modules link into per-user state is not re-allowed', () => {
+    const state = temporaryState()
+    const warnings: string[] = []
+    const profile = readonlyLensProfile({
+      worktree: '/runs/tree',
+      runtimeDir: '/runs/evidence',
+      project: fixtureProject(),
+      agent: 'grok',
+      path: '/usr/bin',
+      nodeModuleLinks: [join(state, 'shared-node_modules')],
+      environment: { HOME: '/Users/operator', [STATE_HOME_ENV]: state },
+      installLayout: { kind: 'distribution', root: '/install', workspaceDirectories: [] },
+      onWarning: (message) => warnings.push(message),
+    })
+
+    expect(profile.filesystem.allowWithinDeny).not.toContain(join(state, 'shared-node_modules'))
+    expect(warnings).toEqual([expect.stringContaining(join(state, 'shared-node_modules'))])
+  })
+
+  test('a node_modules link under the run project main checkout stays re-allowed', () => {
+    const warnings: string[] = []
+    const profile = readonlyLensProfile({
+      worktree: '/runs/tree',
+      runtimeDir: '/runs/evidence',
+      project: fixtureProject(),
+      agent: 'grok',
+      path: '/usr/bin',
+      nodeModuleLinks: ['/projects/fixture/packages/ui/node_modules'],
+      installLayout: { kind: 'distribution', root: '/install', workspaceDirectories: [] },
+      onWarning: (message) => warnings.push(message),
+    })
+
+    expect(profile.filesystem.allowWithinDeny).toContain(
+      '/projects/fixture/packages/ui/node_modules',
+    )
+    expect(warnings).toEqual([])
+  })
+
   test('sandbox selection removes the shared reader worktree from writable roots', () => {
     const selected = selectReadonlySandbox({
       agent: 'grok',

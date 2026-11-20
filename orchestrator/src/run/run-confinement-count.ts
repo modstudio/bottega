@@ -4,7 +4,8 @@ import type { Database } from 'bun:sqlite'
 import { isReadOnlyRepositoryJob, JOBS } from '../jobs/jobs.ts'
 import { parseRunListSince } from './run-listing-since.ts'
 
-const CONFINEMENT_RUN_WINDOW_MS = 7 * 24 * 60 * 60 * 1000
+export const CONFINEMENT_RUN_WINDOW_DAYS = 7
+const CONFINEMENT_RUN_WINDOW_MS = CONFINEMENT_RUN_WINDOW_DAYS * 24 * 60 * 60 * 1000
 const UNRECORDED_SANDBOX_VALUE = 'unrecorded'
 
 type RunConfinementCount = {

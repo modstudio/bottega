@@ -32,13 +32,13 @@ import { createNoFollowFile } from '../no-follow-file.ts'
 import { type Project, projectAt, projectsIncludingRetired } from '../project/projects.ts'
 import { mainStackGateAddresses } from '../resources/main-stack-network.ts'
 import { runHarnessStateDir, runWorkerHomeDir } from '../run-owned-paths.ts'
-import { areaReadPolicy } from './area-read-policy.ts'
+import { areaReadPolicy, isAtOrBelow } from './area-read-policy.ts'
 import {
   type RunningInstallLayout,
   resolveRunningInstallLayout,
   runningInstallReadCarveouts,
 } from './install-read-policy.ts'
-import { assembleAreaReadProfile, isAtOrBelow } from './sandbox-area-read-profile.ts'
+import { assembleAreaReadProfile } from './sandbox-area-read-profile.ts'
 import { launchWithSandboxRuntime, resetSandboxRuntime } from './sandbox-runtime.ts'
 import { decideWeakerNetworkIsolation, endpointHost } from './weaker-network-isolation.ts'
 
@@ -279,6 +279,7 @@ export function readonlyLensProfile(input: {
   denySharedTemp?: boolean
   socketDenyPaths?: readonly string[]
   installLayout?: RunningInstallLayout
+  onWarning?: (message: string) => void
 }): SandboxRuntimeConfig {
   if (input.registeredProjects.length === 0) {
     throw new Error(emptyProjectRegisterRefusal())
@@ -301,6 +302,7 @@ export function readonlyLensProfile(input: {
     ),
   ]
   const protectedDenies = protectedDenyPaths(input.project, environment)
+  const installLayout = input.installLayout ?? resolveRunningInstallLayout(environment)
   refuseProtectedOverlap('readonly-lens', protectedDenies, worktree, runtimeDir)
   const areas = areaReadPolicy({
     worktree,
@@ -310,18 +312,28 @@ export function readonlyLensProfile(input: {
     registeredProjects: input.registeredProjects,
     environment,
   })
+  const nodeModuleLinks = (input.nodeModuleLinks ?? linkedNodeModules(input.worktree))
+    .map((path) => resolve(path))
+    .filter((path) => {
+      const promoted = [input.project?.path, installLayout.root]
+        .filter((root): root is string => root !== undefined)
+        .some((root) => isAtOrBelow(path, resolve(root)))
+      if (!promoted) {
+        const warn = input.onWarning ?? console.warn
+        warn(`sandbox ignored node_modules link outside the project and running install: ${path}`)
+      }
+      return promoted
+    })
   const candidateAllows = [
     ...new Set([
       ...areas.allow,
       worktree,
       runtimeDir,
       ...toolchain,
-      ...(input.nodeModuleLinks ?? linkedNodeModules(input.worktree)).map((path) => resolve(path)),
+      ...nodeModuleLinks,
       join(homedir(), '.claude.json'),
       process.execPath,
-      ...runningInstallReadCarveouts(
-        input.installLayout ?? resolveRunningInstallLayout(environment),
-      ),
+      ...runningInstallReadCarveouts(installLayout),
     ]),
   ]
   // SRT reads are allow-by-default. This list only carves paths back out of
