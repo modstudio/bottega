@@ -64,6 +64,7 @@ import { sharedModules } from './architecture-shared-modules.ts'
 import { spareModules } from './architecture-spare-modules.ts'
 import { subjectModules } from './architecture-subject-modules.ts'
 import { testSubstanceModules } from './architecture-test-substance-modules.ts'
+import { treeRunScriptArchitectureRule } from './architecture-tree-run-scripts.ts'
 import { typedQuestionModules } from './architecture-typed-question-modules.ts'
 import { uiArchitectureRules, viewArchitectureRules } from './architecture-ui-layers.ts'
 import { workflowAutonomyModules } from './architecture-workflow-autonomy-modules.ts'
@@ -72,22 +73,15 @@ import { workflowFloorModules } from './architecture-workflow-floor-modules.ts'
 import { workflowTreeModules } from './architecture-workflow-tree-modules.ts'
 import { worktreeModules } from './architecture-worktree-modules.ts'
 import { REPOSITORY_ROOT_DATA_IMPORTS } from './repository-root-data-imports.ts'
-import { TREE_RUN_SCRIPTS } from '../shared/tree-run-scripts.ts'
 
 export type ArchitectureModule = { file: string; allowed: string[]; typeOnlyAllowed?: string[] }
-type ArchitectureException = { from: string; to: string; dependencyTypes: string[]; reason: string }
-type ConcernManifest = {
-  roots: typeof CONCERNS
-  shared: { root: 'shared'; reason: string }
-  exceptions: ArchitectureException[]
-}
 
 const module = (file: string, allowed: string[]): ArchitectureModule => ({
   file,
   allowed: allowed.map((target) => (target.startsWith('.') ? join(dirname(file), target) : target)),
 })
 
-const concerns: ConcernManifest = {
+const concerns = {
   roots: CONCERNS,
   shared: { root: 'shared', reason: 'Shared code may depend on no platform concern.' },
   exceptions: [
@@ -954,22 +948,7 @@ export function architectureRules() {
     activeSpaceResolverRule,
     recordPoolInstallerRule,
     sqliteAdapterImportRule,
-    {
-      name: 'tree-run-scripts-reach-no-orchestrator-store',
-      severity: 'error',
-      comment: "Scripts run from a disposable tree must not open the tree binary's local store.",
-      from: { path: TREE_RUN_SCRIPTS.map(exactArchitecturePath).join('|') },
-      to: {
-        path: [
-          'orchestrator/src/project/projects.ts',
-          'orchestrator/src/project/project-read.ts',
-          'orchestrator/src/database/db.ts',
-        ]
-          .map(exactArchitecturePath)
-          .join('|'),
-        reachable: true,
-      },
-    },
+    treeRunScriptArchitectureRule(exactArchitecturePath),
     {
       name: 'import-record-api-server-transitive-boundary',
       severity: 'error',

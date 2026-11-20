@@ -3,6 +3,7 @@ import { existsSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { REHEARSAL_NOTICE_LIMIT } from '../orchestrator/src/postgres/migration-notices.ts'
 import { hostedApiFetch } from '../shared/bounded-fetch.ts'
+import { startBounded, startBoundedSync, startParentBound } from '../shared/bounded-process.ts'
 import { PLATFORM_SLUG } from '../shared/brand.ts'
 import { credentialIdentityPath } from '../shared/credential.ts'
 import {
@@ -73,12 +74,11 @@ function mainCheckoutFacts(env: Readonly<Record<string, string | undefined>>): M
   const configured = env[MAIN_CHECKOUT_VARIABLE]?.trim()
   let mainCheckout = configured ? resolve(configured) : null
   if (!mainCheckout) {
-    const commonDirectory = Bun.spawnSync(['git', 'rev-parse', '--git-common-dir'], {
-      stdout: 'pipe',
-      stderr: 'pipe',
+    const commonDirectory = startBoundedSync(['git', 'rev-parse', '--git-common-dir'], {
+      budget: 'git-plumbing',
     })
     if (commonDirectory.exitCode === 0) {
-      const value = commonDirectory.stdout.toString().trim()
+      const value = commonDirectory.stdout.trim()
       if (value) mainCheckout = dirname(resolve(value))
     }
   }
@@ -220,9 +220,8 @@ async function realCommandRunner(
   argv: readonly string[],
   options: { env?: Record<string, string>; timeoutMs?: number } = {},
 ): Promise<CommandResult> {
-  const child = Bun.spawn([...argv], {
-    stdout: 'pipe',
-    stderr: 'pipe',
+  const child = startParentBound(argv, {
+    name: 'record rehearsal command',
     env: { ...process.env, ...options.env },
   })
   let timedOut = false
@@ -508,13 +507,13 @@ if (import.meta.main) {
     process.exit(1)
   }
   if (credential.kind === 'rerun') {
-    const child = Bun.spawn(credential.argv, {
+    const child = await startBounded(credential.argv, {
+      budget: 'release-publish',
       env: process.env,
-      stdin: 'inherit',
-      stdout: 'inherit',
-      stderr: 'inherit',
     })
-    process.exit(await child.exited)
+    if (child.stdout) process.stdout.write(child.stdout)
+    if (child.stderr) process.stderr.write(child.stderr)
+    process.exit(child.exitCode)
   }
   const token = process.env[tokenName]?.trim()
   if (!token) {

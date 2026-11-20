@@ -14,7 +14,7 @@ function settings(run: string): ProjectSettings {
   }
 }
 
-test('refuses an unlisted Bottega tree-run script at the register write edge', () => {
+test('refuses an unlisted platform tree-run script at the register write edge', () => {
   expect(
     validateRegisterWrite({
       merged: settings('bun scripts/unlisted.ts'),
@@ -34,7 +34,7 @@ test('accepts the declared record rehearsal tree-run script', () => {
   ).toEqual([])
 })
 
-test('does not apply Bottega tree-run declarations to another project', () => {
+test('does not apply platform tree-run declarations to another project', () => {
   expect(
     validateRegisterWrite({
       merged: settings('bun scripts/arbitrary.ts'),

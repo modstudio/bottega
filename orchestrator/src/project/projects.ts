@@ -77,7 +77,6 @@ import {
 import { type SettingsObjectMode, validateProjectInjectionSettings } from './project-injection.ts'
 import { localProjectPurgeRefusals, purgeLocalOrchestratorProject } from './project-purge-local.ts'
 import { projectPushRefusalMessage } from './project-push-refusal.ts'
-import { treeRunScriptProblems } from './project-tree-run-script.ts'
 import { type Project, projectByName, projectRowByName, projects } from './project-read.ts'
 import {
   PROJECT_REFERENCE_REPORT,
@@ -107,6 +106,7 @@ import {
   sweepHonorsHeldProblems,
   visibilityProblems,
 } from './project-settings-refusals.ts'
+import { treeRunScriptProblems } from './project-tree-run-script.ts'
 import {
   assertForgeVisibility,
   type ForgeVisibilityLookup,

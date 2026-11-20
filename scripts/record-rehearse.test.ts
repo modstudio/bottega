@@ -4,6 +4,7 @@ import {
   rehearsalMigrateFailureOutput,
   rehearsalNoticeOutput,
 } from '../orchestrator/src/postgres/migration-notices.ts'
+import { PLATFORM_SLUG } from '../shared/brand.ts'
 import {
   launchedMachineId,
   machineExitCode,
@@ -25,23 +26,24 @@ REHEARSAL PASS ${hash}`
 
 test('re-runs through the main binary without putting a credential on argv or logs', () => {
   const secret = 'fake-secret-value'
+  const mainCheckout = `/projects/${PLATFORM_SLUG}`
   const log = spyOn(console, 'log').mockImplementation(() => {})
   const error = spyOn(console, 'error').mockImplementation(() => {})
   try {
     const decision = rehearsalCredentialDecision(
       { UNRELATED_SECRET: secret },
       ['/opt/bun', 'scripts/record-rehearse.ts', '--fixture'],
-      { mainCheckout: '/projects/bottega', mainCheckoutExists: true, binaryExists: true },
+      { mainCheckout, mainCheckoutExists: true, binaryExists: true },
     )
     expect(decision).toEqual({
       kind: 'rerun',
       argv: [
-        '/projects/bottega/bin/bottega',
+        `${mainCheckout}/bin/${PLATFORM_SLUG}`,
         'credential',
         'resolve',
         'fly/rehearsal/token',
         '--project',
-        'bottega',
+        PLATFORM_SLUG,
         '--reveal-to-env',
         'BOTTEGA_RECORD_REHEARSAL_FLY_TOKEN',
         '--',
@@ -70,15 +72,15 @@ test('uses a present override without re-running the script', () => {
 })
 
 test('refuses a missing main binary with both credential remedies', () => {
+  const mainCheckout = `/projects/${PLATFORM_SLUG}`
   const decision = rehearsalCredentialDecision({}, ['/opt/bun', 'scripts/record-rehearse.ts'], {
-    mainCheckout: '/projects/bottega',
+    mainCheckout,
     mainCheckoutExists: true,
     binaryExists: false,
   })
   expect(decision).toEqual({
     kind: 'refuse',
-    message:
-      'record rehearsal cannot resolve its Fly token because the main checkout binary does not exist: /projects/bottega/bin/bottega; set BOTTEGA_RECORD_REHEARSAL_FLY_TOKEN, or set BOTTEGA_MAIN_CHECKOUT to a main checkout whose bin/bottega exists',
+    message: `record rehearsal cannot resolve its Fly token because the main checkout binary does not exist: ${mainCheckout}/bin/${PLATFORM_SLUG}; set BOTTEGA_RECORD_REHEARSAL_FLY_TOKEN, or set BOTTEGA_MAIN_CHECKOUT to a main checkout whose bin/${PLATFORM_SLUG} exists`,
   })
 })
 
