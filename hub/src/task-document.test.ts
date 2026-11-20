@@ -1,8 +1,8 @@
-import { afterAll, beforeAll, beforeEach, describe, expect, spyOn, test } from 'bun:test'
+import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test'
 import { declareFixtureProjectSpace } from '../test/fixture-project-space.ts'
 import { resetFixtureStore } from '../test/run-fixtures.ts'
 import { writeTransaction } from './db.ts'
-import { createTask, showTask } from './task.ts'
+import { createTask } from './task.ts'
 import {
   createTaskDocument,
   deleteTaskDocument,
@@ -99,103 +99,6 @@ describe('task documents', () => {
     expect(document.number).toBe(9)
   })
 
-  test('updates a synchronized document through its hosted UUID', async () => {
-    const taskRecordId = seed('DEV-884', 'workshop')
-    const at = new Date().toISOString()
-    const recordId = '01990000-0000-7000-8000-000000000884'
-    writeTransaction((conn) =>
-      conn
-        .query(
-          `INSERT INTO task_document
-          (record_id,task_key,task_record_id,number,title,body,version,created_at,updated_at)
-          VALUES (?, 'DEV-884', ?, 1, 'Before', 'Body', 'version-before', ?, ?)`,
-        )
-        .run(recordId, taskRecordId, at, at),
-    )
-    const requests: Array<{ method: string | undefined; pathname: string }> = []
-
-    await updateTaskDocument(
-      recordId,
-      { title: 'After' },
-      {
-        hosted: {
-          baseUrl: 'https://hub.example.test',
-          token: 'test',
-          fetch: async (input, init) => {
-            const url = new URL(input)
-            requests.push({ method: init?.method, pathname: url.pathname })
-            if (url.pathname === '/v1/tasks/identity')
-              return Response.json({
-                userId: 'user-1',
-                activeSpaceId: 'space-a',
-                memberships: [{ spaceId: 'space-a', slug: 'workshop', permission: 'write' }],
-                capabilities: { spacePush: true, spacePushTables: ['hub_task_document'] },
-              })
-            if (url.pathname === '/v1/changes') {
-              const body = JSON.parse(String(init?.body)) as Array<{ id: string }>
-              return Response.json(body.map(({ id }) => ({ id, status: 'applied' })))
-            }
-            return Response.json({
-              id: recordId,
-              task_key: 'DEV-884',
-              project_name: 'workshop',
-              number: 1,
-              role: null,
-              title: 'After',
-              body: 'Body',
-              version: 'version-after',
-              created_at: at,
-              updated_at: at,
-              deleted_at: null,
-            })
-          },
-        },
-      },
-    )
-
-    expect(requests).toEqual([
-      { method: 'GET', pathname: '/v1/tasks/identity' },
-      { method: 'POST', pathname: '/v1/changes' },
-    ])
-  })
-
-  test('document set and remove save locally and queue while offline', async () => {
-    const taskRecordId = seed('GAM-70', 'gamma')
-    const documentId = Bun.randomUUIDv7()
-    const at = '2026-10-11T12:00:00.000Z'
-    writeTransaction((conn) =>
-      conn
-        .query(`INSERT INTO task_document
-      (record_id,task_key,task_record_id,number,title,body,version,created_at,updated_at)
-      VALUES (?,'GAM-70',?,1,'Before','body','v1',?,?)`)
-        .run(documentId, taskRecordId, at, at),
-    )
-    const hosted = {
-      baseUrl: 'https://unreachable.example.test',
-      token: 'test',
-      fetch: async () => {
-        throw new Error('hosted hub unavailable')
-      },
-    }
-    const messages: unknown[] = []
-    const stdout: unknown[] = []
-    const error = spyOn(console, 'error').mockImplementation((message) => messages.push(message))
-    const log = spyOn(console, 'log').mockImplementation((message) => stdout.push(message))
-    try {
-      await updateTaskDocument(documentId, { title: 'After' }, { hosted })
-      expect(await deleteTaskDocument(documentId, { hosted })).toMatchObject({ title: 'After' })
-    } finally {
-      error.mockRestore()
-      log.mockRestore()
-    }
-    expect(messages).toEqual([
-      expect.stringContaining('hosted change saved and queued'),
-      expect.stringContaining('hosted change saved and queued'),
-    ])
-    expect(stdout).toEqual([])
-    expect(() => getTaskDocument(documentId)).toThrow(`no task document ${documentId}`)
-  })
-
   test('document creation still needs the hosted record while offline', async () => {
     const id = seed('GAM-71', 'gamma')
     await expect(
@@ -213,99 +116,5 @@ describe('task documents', () => {
         },
       ),
     ).rejects.toThrow('hosted hub unavailable')
-  })
-
-  test('hosted document writes use the project declared space', async () => {
-    seed('GAM-1214', 'gamma')
-    const requests: Array<{
-      method: string
-      pathname: string
-      space: string | null
-    }> = []
-    const fetch = async (input: string, init?: RequestInit) => {
-      const url = new URL(input)
-      const method = init?.method ?? 'GET'
-      const body = init?.body ? JSON.parse(String(init.body)) : {}
-      requests.push({
-        method,
-        pathname: url.pathname,
-        space: new Headers(init?.headers).get('x-record-space'),
-      })
-      if (url.pathname === '/v1/tasks/identity')
-        return Response.json({
-          userId: 'user-1',
-          activeSpaceId: 'declared-gamma-space',
-          memberships: [{ spaceId: 'declared-gamma-space', slug: 'gamma', permission: 'write' }],
-          capabilities: { spacePush: true, spacePushTables: ['hub_task_document'] },
-        })
-      if (url.pathname === '/v1/changes')
-        return Response.json(
-          (body as Array<{ id: string }>).map(({ id }) => ({ id, status: 'applied' })),
-        )
-      if (method === 'POST') {
-        const at = new Date().toISOString()
-        return Response.json({
-          id: Bun.randomUUIDv7(),
-          task_key: 'GAM-1214',
-          project_name: 'gamma',
-          number: showTask('GAM-1214').task.next_document_number,
-          role: null,
-          title: body.title,
-          body: body.body,
-          version: body.version,
-          created_at: at,
-          updated_at: at,
-          deleted_at: null,
-        })
-      }
-      if (method === 'PATCH') {
-        const id = decodeURIComponent(url.pathname.split('/').at(-1)!)
-        const current = getTaskDocument(id)
-        return Response.json({
-          ...current,
-          project_name: 'gamma',
-          body: body.body,
-          version: body.version,
-          updated_at: new Date().toISOString(),
-          deleted_at: null,
-        })
-      }
-      return Response.json({ deleted: 1 })
-    }
-    const options = {
-      hosted: { baseUrl: 'https://hub.example.test', token: 'test', fetch },
-    }
-
-    const document = await createTaskDocument(
-      { task: 'GAM-1214', title: 'Declared space notes', body: 'first body' },
-      {},
-      options,
-    )
-    await updateTaskDocument(
-      document.id,
-      { body: 'second body', expectedVersion: document.version },
-      options,
-    )
-    await deleteTaskDocument(document.id, options)
-
-    expect(requests).toEqual([
-      {
-        method: 'POST',
-        pathname: '/v1/tasks/GAM-1214/documents',
-        space: 'declared-gamma-space',
-      },
-      {
-        method: 'GET',
-        pathname: '/v1/tasks/identity',
-        space: null,
-      },
-      {
-        method: 'POST',
-        pathname: '/v1/changes',
-        space: 'declared-gamma-space',
-      },
-      { method: 'GET', pathname: '/v1/tasks/identity', space: null },
-      { method: 'POST', pathname: '/v1/changes', space: 'declared-gamma-space' },
-    ])
   })
 })

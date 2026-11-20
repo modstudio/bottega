@@ -1,0 +1,49 @@
+import { db } from './db.ts'
+import { listTaskDocuments, type TaskDocumentSummary } from './task-document.ts'
+import { resolveTask, type TaskScope, taskByRecordId, taskRecordId } from './task-identity.ts'
+import type { TaskRow } from './task-row.ts'
+import type { TaskComment } from './task-types.ts'
+import { registeredTaskProject } from './task-write-destination.ts'
+
+export function listLocalTasks(
+  filters: { project?: string; status?: string; parent?: string } = {},
+): TaskRow[] {
+  const clauses: string[] = []
+  const values: string[] = []
+  if (filters.project) {
+    registeredTaskProject(filters.project)
+    clauses.push('project = ?')
+    values.push(filters.project)
+  }
+  if (filters.status) {
+    clauses.push('status_category = ?')
+    values.push(filters.status)
+  }
+  if (filters.parent) {
+    clauses.push('parent_record_id = ?')
+    values.push(resolveTask(db(), filters.parent, filters.project))
+  }
+  return db()
+    .query<TaskRow, string[]>(
+      `SELECT * FROM task ${clauses.length ? `WHERE ${clauses.join(' AND ')}` : ''}
+       ORDER BY project, key`,
+    )
+    .all(...values)
+}
+
+export function showLocalTask(
+  key: string,
+  scope: TaskScope = {},
+): { task: TaskRow; comments: TaskComment[]; documents: TaskDocumentSummary[] } {
+  const upper = key.toUpperCase()
+  const recordId = taskRecordId(upper, scope)
+  const task = taskByRecordId<TaskRow>(recordId)
+  const comments = db()
+    .query<TaskComment, [string]>(
+      `SELECT record_id AS id, task_key, task_record_id, body, created_at,updated_at,deleted_at,
+       actor_user_id,actor_name,agent,run_id FROM task_comment
+       WHERE task_record_id = ? AND deleted_at IS NULL ORDER BY created_at, record_id`,
+    )
+    .all(recordId)
+  return { task, comments, documents: listTaskDocuments(upper, { recordId }) }
+}

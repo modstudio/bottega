@@ -93,15 +93,6 @@ function reportHostedEditDelivery(result: HostedEditDelivery): void {
     )
 }
 
-export function queueHostedDocumentUpsert(
-  conn: Database,
-  id: string,
-  at: string,
-  fields: readonly string[],
-) {
-  queueHostedChange(conn, HOSTED_DOCUMENT_TABLE, id, 'upsert', at, fields)
-}
-
 export function queueHostedDocumentDelete(conn: Database, id: string, project: string, at: string) {
   queueHostedChange(conn, HOSTED_DOCUMENT_TABLE, id, 'delete', at)
   conn

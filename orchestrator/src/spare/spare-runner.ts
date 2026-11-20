@@ -74,9 +74,9 @@ function resolveSpareAgent(): string | null {
 }
 
 /** Whether the configured task key resolves to a real task. */
-function taskKeyResolves(key: string): boolean {
+async function taskKeyResolves(key: string): Promise<boolean> {
   try {
-    taskReader().show(key)
+    await taskReader().show(key)
     return true
   } catch {
     return false
@@ -479,7 +479,7 @@ type SpareSetup =
   | { ok: false; code: number; message: string }
 
 /** Resolve the job, the task key, the agent and the window before anything is dispatched. */
-function resolveSpareSetup(options: SpareRunOptions): SpareSetup {
+async function resolveSpareSetup(options: SpareRunOptions): Promise<SpareSetup> {
   const job = (options.job ?? 'docs-drift') as SpareJob
   if (!SUPPORTED_JOBS.includes(job)) {
     return {
@@ -493,7 +493,7 @@ function resolveSpareSetup(options: SpareRunOptions): SpareSetup {
   if (!key) {
     return { ok: false, code: 0, message: 'spare: spare.task_key is unset; skipping the night' }
   }
-  if (!taskKeyResolves(key)) {
+  if (!(await taskKeyResolves(key))) {
     return {
       ok: false,
       code: 0,
@@ -540,7 +540,7 @@ export async function spareRunCommand(
   options: SpareRunOptions,
   write: (line: string) => void,
 ): Promise<number> {
-  const setup = resolveSpareSetup(options)
+  const setup = await resolveSpareSetup(options)
   if (!setup.ok) {
     write(setup.message)
     return setup.code

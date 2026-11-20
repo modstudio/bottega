@@ -19,6 +19,7 @@ export type TaskDetail = {
     sourceProtocol: string | null
     updatedAt: string | null
     spaceName: string | null
+    revision?: number
   }
   bodyVersion: string
   comments: {
@@ -30,6 +31,7 @@ export type TaskDetail = {
     updatedAt: string | null
     canEdit: boolean
     canDelete: boolean
+    revision?: number
   }[]
   documents: {
     id: string
@@ -86,6 +88,7 @@ export type LocalTaskDetailRows = {
     source: string
     source_protocol: string | null
     updated_at: string | null
+    revision?: number
   }
   comments: {
     id: string
@@ -95,6 +98,7 @@ export type LocalTaskDetailRows = {
     actor_user_id: string | null
     actor_name: string | null
     agent: string | null
+    revision?: number
   }[]
   documents: Array<{
     id: string
@@ -147,8 +151,9 @@ export function localTaskDetail(
       sourceProtocol: task.source_protocol,
       updatedAt: task.updated_at,
       spaceName: null,
+      revision: task.revision,
     },
-    bodyVersion: taskBodyVersion(task.body),
+    bodyVersion: task.revision === undefined ? taskBodyVersion(task.body) : String(task.revision),
     comments: rows.comments.map((row) => ({
       id: row.id,
       body: row.body,
@@ -164,6 +169,7 @@ export function localTaskDetail(
         rows.capabilities.comment.allowed &&
         writeDecision.mode !== 'refused' &&
         commentAuthorDecision(writeDecision.mode, readerUserId, row.actor_user_id).allowed,
+      revision: row.revision,
     })),
     documents: rows.documents.map((row) => ({
       id: row.id,
@@ -260,6 +266,7 @@ export function hostedTaskDetailFromRows(
       sourceProtocol: rows.task.source_protocol,
       updatedAt: rows.task.updated_at,
       spaceName: rows.task.space_name,
+      revision: rows.task.revision,
     },
     measures: rows.measures,
     measureCoverage: rows.measureCoverage,

@@ -213,13 +213,13 @@ async function handoff(key: string, title: string, body: string) {
   const path = join(dir, 'body.md')
   try {
     writeFileSync(path, body)
-    const documents = taskReader().documents(key, { project: PLATFORM_SLUG }) as {
+    const documents = (await taskReader().documents(key, { project: PLATFORM_SLUG })) as {
       id: string
       role: string | null
     }[]
     const existing = documents.find((document) => document.role === 'handoff')
     if (existing) {
-      const current = taskReader().document(existing.id)
+      const current = await taskReader().document(existing.id)
       await hub([
         'task',
         'doc',
@@ -327,7 +327,7 @@ export async function priorIssueRecord(
     documents?: { id?: unknown; role?: unknown }[]
   },
   showDocument: (id: string) => Promise<string> = async (id) =>
-    JSON.stringify(taskReader().document(id)),
+    JSON.stringify(await taskReader().document(id)),
 ): Promise<string> {
   const comments = taskCommentBodies(shown)
   const documents: string[] = []
@@ -750,7 +750,7 @@ const run = (input: Parameters<typeof dispatchRun>[0]) => dispatchRun(input, { r
 /** Work exactly one named issue; every durable fact is written before its tree is released. */
 export async function workIssue(key: string): Promise<void> {
   const started = Date.now()
-  const shown = taskReader().show(key, { project: PLATFORM_SLUG })
+  const shown = await taskReader().show(key, { project: PLATFORM_SLUG })
   const issue = parseFiledIssue(shown)
   const priorRecord = await priorIssueRecord(shown)
   if (issue.kind !== 'defect') {

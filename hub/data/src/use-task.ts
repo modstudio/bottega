@@ -15,6 +15,7 @@ const isTaskBodyConflict = (error: unknown): boolean =>
 
 function useCommentActions(
   localInput: { key: string; scope: { recordId?: string } },
+  detail: TaskRecordResponse | null,
   refused: string | undefined,
   refresh: () => Promise<unknown>,
 ) {
@@ -35,7 +36,13 @@ function useCommentActions(
     editComment: {
       run: async ({ id, body }: { id: string; body: string }) => {
         if (refused) return
-        await editComment.mutateAsync({ ...localInput, commentId: id, body })
+        const expectedRevision = detail?.comments.find((comment) => comment.id === id)?.revision
+        await editComment.mutateAsync({
+          ...localInput,
+          commentId: id,
+          body,
+          ...(expectedRevision === undefined ? {} : { expectedRevision }),
+        })
         await refresh()
       },
       pending: editComment.isPending,
@@ -45,7 +52,12 @@ function useCommentActions(
     deleteComment: {
       run: async ({ id }: { id: string }) => {
         if (refused) return
-        await deleteComment.mutateAsync({ ...localInput, commentId: id })
+        const expectedRevision = detail?.comments.find((comment) => comment.id === id)?.revision
+        await deleteComment.mutateAsync({
+          ...localInput,
+          commentId: id,
+          ...(expectedRevision === undefined ? {} : { expectedRevision }),
+        })
         await refresh()
       },
       pending: deleteComment.isPending,
@@ -68,7 +80,12 @@ type TaskMutation<Input> = {
 function draftAction(
   detail: TaskRecordResponse | null,
   localInput: { key: string; scope: { recordId?: string } },
-  setTitle: TaskMutation<{ key: string; scope: { recordId?: string }; title: string }>,
+  setTitle: TaskMutation<{
+    key: string
+    scope: { recordId?: string }
+    title: string
+    expectedRevision?: number
+  }>,
   setBody: TaskMutation<{
     key: string
     scope: { recordId?: string }
@@ -91,8 +108,15 @@ function draftAction(
             body: draft.body,
             expectedVersion: detail.bodyVersion,
           })
-        if (title !== (detail.task.title ?? '').trim() && !titleRefused)
-          await setTitle.mutateAsync({ ...localInput, title })
+        if (title !== (detail.task.title ?? '').trim() && !titleRefused) {
+          await setTitle.mutateAsync({
+            ...localInput,
+            title,
+            ...(detail.task.revision === undefined
+              ? {}
+              : { expectedRevision: detail.task.revision }),
+          })
+        }
       } catch {
         return false
       } finally {
@@ -124,7 +148,12 @@ export function useTask(key: string, recordId?: string) {
   const setBody = useMutation(trpc.work.setBody.mutationOptions())
   const refresh = () => queryClient.invalidateQueries()
   const capability = detail?.capabilities
-  const commentActions = useCommentActions(localInput, refusal(capability?.comment), refresh)
+  const commentActions = useCommentActions(
+    localInput,
+    detail,
+    refusal(capability?.comment),
+    refresh,
+  )
 
   return {
     detail,
@@ -133,7 +162,14 @@ export function useTask(key: string, recordId?: string) {
       setTitle: {
         run: async (title: string) => {
           if (refusal(capability?.setTitle)) return
-          await setTitle.mutateAsync({ ...localInput, title })
+          if (!query.data) return
+          await setTitle.mutateAsync({
+            ...localInput,
+            title,
+            ...(query.data.task.revision === undefined
+              ? {}
+              : { expectedRevision: query.data.task.revision }),
+          })
           await refresh()
         },
         pending: setTitle.isPending,

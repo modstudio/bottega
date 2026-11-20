@@ -18,11 +18,14 @@ function pendingScoreRootIds(database: Database, rootIds: readonly string[]): Se
   return new Set(rows.map((row) => row.record_id))
 }
 
-export function resumeHandoffOwedRootIds(database: Database, session: string): string[] {
+export async function resumeHandoffOwedRootIds(
+  database: Database,
+  session: string,
+): Promise<string[]> {
   const runs = ownedRuns(database, session)
   const rootIds = [...new Set(runs.map((run) => run.rootRecordId))]
   const pendingScores = pendingScoreRootIds(database, rootIds)
-  const branches = branchFacts(runs, true).branches
+  const branches = (await branchFacts(runs, true)).branches
   const held = heldRunResources(database, runs).resources
   const membersByRoot = Map.groupBy(runs, (run) => run.rootRecordId)
   return rootIds.filter((rootId) => {

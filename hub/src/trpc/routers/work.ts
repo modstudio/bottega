@@ -139,20 +139,35 @@ function commentProcedures(deps: WorkDeps) {
           ...taskIdentityInput,
           commentId: z.string().uuid(),
           body: z.string().trim().min(1),
+          expectedRevision: z.number().int().positive().optional(),
         }),
       )
       .mutation(async ({ input: value }) => {
         const attribution = await deps.machineAttribution()
         return write(() =>
-          deps.editTaskComment(value.key, value.scope, value.commentId, value.body, attribution),
+          deps.editTaskComment(value.key, value.scope, value.commentId, value.body, attribution, {
+            ...(value.expectedRevision === undefined
+              ? {}
+              : { expectedRevision: value.expectedRevision }),
+          }),
         )
       }),
     deleteComment: t.procedure
-      .input(z.object({ ...taskIdentityInput, commentId: z.string().uuid() }))
+      .input(
+        z.object({
+          ...taskIdentityInput,
+          commentId: z.string().uuid(),
+          expectedRevision: z.number().int().positive().optional(),
+        }),
+      )
       .mutation(async ({ input: value }) => {
         const attribution = await deps.machineAttribution()
         return write(() =>
-          deps.deleteTaskComment(value.key, value.scope, value.commentId, attribution),
+          deps.deleteTaskComment(value.key, value.scope, value.commentId, attribution, {
+            ...(value.expectedRevision === undefined
+              ? {}
+              : { expectedRevision: value.expectedRevision }),
+          }),
         )
       }),
   }
@@ -189,7 +204,7 @@ export function createWorkRouter(given: Partial<WorkDeps> = {}) {
         // An unavailable record identity makes hosted comments non-editable, not unreadable.
       }
       try {
-        return deps.taskRecord(value.key, value.scope, readerUserId)
+        return await deps.taskRecord(value.key, value.scope, readerUserId)
       } catch (cause) {
         const message = cause instanceof Error ? cause.message : String(cause)
         if (message.startsWith('no task ')) throw new TRPCError({ code: 'NOT_FOUND', message })
@@ -202,12 +217,17 @@ export function createWorkRouter(given: Partial<WorkDeps> = {}) {
         z.object({
           ...taskIdentityInput,
           title: z.string().trim().min(1).max(500),
+          expectedRevision: z.number().int().positive().optional(),
         }),
       )
       .mutation(async ({ input: value }) => {
         const attribution = await deps.machineAttribution()
         return write(() =>
-          deps.setTask(value.key, value.scope, { title: value.title }, attribution),
+          deps.setTask(value.key, value.scope, { title: value.title }, attribution, {
+            ...(value.expectedRevision === undefined
+              ? {}
+              : { expectedRevision: value.expectedRevision }),
+          }),
         )
       }),
     setBody: setBodyProcedure(deps),

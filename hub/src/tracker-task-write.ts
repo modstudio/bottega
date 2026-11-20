@@ -47,6 +47,7 @@ type TrackerWriteDependencies = TrackerConnectionDependencies & {
 }
 type TrackerWriteOptions = {
   force?: boolean
+  expectedRevision?: number
   abandonReason?: string
   confirm: string
   /** The destination the write belongs to, so a hosted local row lands where its caller read it. */
@@ -159,7 +160,7 @@ async function writeExternalStatus(
     project.settings.keyPrefixes ?? [],
   )
   if (result.refusal) throw new Error(result.refusal)
-  return showTask(task.key, { recordId: task.record_id }).task
+  return (await showTask(task.key, { recordId: task.record_id })).task
 }
 
 async function prepareExternalDoneTransition(
@@ -183,7 +184,7 @@ export async function setTaskThroughTracker(
   options: TrackerWriteOptions,
   dependencies: TrackerWriteDependencies = {},
 ): Promise<TaskRow> {
-  const current = showTask(key, scope).task
+  const current = (await showTask(key, scope)).task
   const requestedCategory = changes.status
     ? current.source === 'local'
       ? localTaskStatusCategory(changes.status)
@@ -238,7 +239,7 @@ export async function closeTaskThroughTracker(
   options: Pick<TrackerWriteOptions, 'abandonReason' | 'confirm'>,
   dependencies: TrackerWriteDependencies = {},
 ): Promise<TaskRow> {
-  const current = showTask(key, scope).task
+  const current = (await showTask(key, scope)).task
   if (current.source === 'local') {
     return (dependencies.localClose ?? closeTask)(key, scope, attribution, options)
   }
@@ -262,7 +263,7 @@ export async function commentTaskThroughTracker(
   attribution: Attribution,
   dependencies: TrackerWriteDependencies = {},
 ): Promise<TaskComment> {
-  const current = showTask(key, scope).task
+  const current = (await showTask(key, scope)).task
   if (current.source === 'local') {
     return (dependencies.localComment ?? commentTask)(key, scope, body, attribution)
   }

@@ -44,11 +44,11 @@ const task = {
 }
 
 const taskPort: TaskReadPort = {
-  list: () => [task],
-  show: () => ({ task }),
-  duplicates: () => [],
-  documents: () => [],
-  document: () => ({ id: 'none', label: 'none', title: 'none', body: '', version: '1' }),
+  list: async () => [task],
+  show: async () => ({ task }),
+  duplicates: async () => [],
+  documents: async () => [],
+  document: async () => ({ id: 'none', label: 'none', title: 'none', body: '', version: '1' }),
 }
 
 const floor = (kind: Floor['kind']): Floor => ({

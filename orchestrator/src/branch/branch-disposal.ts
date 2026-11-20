@@ -22,6 +22,7 @@ import { assertBranchRefMayBeCreated, assertBranchRefMayBeDeleted } from './bran
 import { settleDeletedBranch } from './branch-settlement.ts'
 import { isProbeOnlyMint } from './branch-state.ts'
 import { branchesReport, UNKEYED_BRANCH_GROUP } from './branches.ts'
+import { taskKeyToken } from './other-branch-state.ts'
 import { observeTaskStatus, type TaskStatusObservation } from './task-status-observation.ts'
 
 const BRANCH_DISPOSAL_ARCHIVE_RETENTION_MS = 30 * 24 * 60 * 60 * 1_000
@@ -156,12 +157,12 @@ export function composeBranchDisposalRefusal(input: {
   return `${prefix}cleared by: ${PLATFORM_SLUG} tree branch prune --project ${project} --key <KEY>`
 }
 
-function planBranchDisposal(input: {
+async function planBranchDisposal(input: {
   target: string
   reason: string
   note: string
   operator?: boolean
-}): DisposalPlan {
+}): Promise<DisposalPlan> {
   const separator = input.target.indexOf(':')
   if (separator < 1 || separator === input.target.length - 1)
     throw new Error('branch disposal target must be <project>:<branch>')
@@ -178,6 +179,8 @@ function planBranchDisposal(input: {
   const ref = observeGitRef(project.path, `refs/heads/${branch}`)
   if (ref.outcome === 'failed') throw new Error(ref.detail)
   if (ref.outcome === 'absent') throw new Error(`branch ${branch} has no ref; nothing to dispose`)
+  const observedTaskKey = taskKeyToken(branch, project.settings.keyPrefixes ?? [])
+  const taskStatus = await observeTaskStatus(observedTaskKey, projectName)
   const projectReport = branchesReport({ project: projectName, branch }).projects[0]!
   if (projectReport.error) throw new Error(projectReport.error)
   const keyGroup = projectReport.keys.find((group) =>
@@ -190,7 +193,6 @@ function planBranchDisposal(input: {
     .all(project.recordId, branch) as { probe: number }[]
   const runMinted = mintingRuns.length > 0
   const probeOnly = isProbeOnlyMint(mintingRuns.map((run) => run.probe === 1))
-  const taskStatus = observeTaskStatus(taskKey, projectName)
   const decision = decideBranchDisposal({
     runMinted,
     probeOnly,
@@ -295,7 +297,7 @@ const branchDisposalDependencies: BranchDisposalDependencies = {
   record: recordDisposal,
 }
 
-export function disposeBranch(
+export async function disposeBranch(
   input: {
     target: string
     reason: string
@@ -303,8 +305,8 @@ export function disposeBranch(
     operator?: boolean
   },
   dependencies: BranchDisposalDependencies = branchDisposalDependencies,
-): BranchDisposalResult {
-  const plan = planBranchDisposal(input)
+): Promise<BranchDisposalResult> {
+  const plan = await planBranchDisposal(input)
   withWorktreeCreateLock(plan.project.path, () => {
     const currentTip = git(plan.project.path, [
       'rev-parse',

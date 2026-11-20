@@ -63,14 +63,12 @@ export async function applyFloorDecision(
   const args = JSON.parse(row.args) as Record<string, string>
   const declaredEvidenceFloors = floors.filter(({ kind }) => kind !== 'review-owed')
   const taskRows = declaredEvidenceFloors.some(({ kind }) => kind === 'descendants-closed')
-    ? taskReader()
-        .list({ project: row.project })
-        .map((task) => ({
-          key: task.key,
-          parentKey: task.parent_key,
-          status: task.status,
-          statusCategory: task.status_category,
-        }))
+    ? (await taskReader().list({ project: row.project })).map((task) => ({
+        key: task.key,
+        parentKey: task.parent_key,
+        status: task.status,
+        statusCategory: task.status_category,
+      }))
     : []
   const evidenceFloors = selectEpicStartFloors(declaredEvidenceFloors, {
     workflow: row.workflow_slug,

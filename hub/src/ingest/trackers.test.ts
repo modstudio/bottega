@@ -681,8 +681,8 @@ describe('tracker assignees', () => {
       updatedAt: null,
       assignee: null,
     })
-    expect(showTask('ALP-899').task.assignee).toBeNull()
-    expect(showTask('ALP-899').task.external_id).toBe('tracker-alp-899')
+    expect((await showTask('ALP-899')).task.assignee).toBeNull()
+    expect((await showTask('ALP-899')).task.external_id).toBe('tracker-alp-899')
     expect(
       db()
         .query<{ count: number }, []>(

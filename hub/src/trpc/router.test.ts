@@ -399,7 +399,9 @@ describe('work.task', () => {
       code: 'BAD_REQUEST',
       message: 'task EXT-1 is not local',
     })
-    await expect(writes.setTitle({ key: 'EXT-1', scope: {}, title: 'No' })).rejects.toMatchObject({
+    await expect(
+      writes.setTitle({ key: 'EXT-1', scope: {}, title: 'No', expectedRevision: 1 }),
+    ).rejects.toMatchObject({
       code: 'BAD_REQUEST',
       message: 'task EXT-1 is not local',
     })

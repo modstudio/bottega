@@ -11,6 +11,17 @@ type MintedHubDatabase = {
 
 let mintedHubDatabase: MintedHubDatabase | null = null
 
+/** Capture the active test-store provenance and environment for a scoped replacement. */
+export function captureTestHubDatabase(): () => void {
+  const capturedDatabase = mintedHubDatabase
+  const capturedPath = process.env.BOTTEGA_HUB_DB
+  return () => {
+    mintedHubDatabase = capturedDatabase
+    if (capturedPath === undefined) delete process.env.BOTTEGA_HUB_DB
+    else process.env.BOTTEGA_HUB_DB = capturedPath
+  }
+}
+
 function canonicalPath(path: string): string {
   let existing = resolve(path)
   const missing: string[] = []

@@ -438,7 +438,7 @@ describe('epic scoreboard', () => {
     }))
     const reads: { project: string; parent: string }[] = []
     expect(
-      await epicChildren(PLATFORM_SLUG, 'DEV-500', (filters) => {
+      await epicChildren(PLATFORM_SLUG, 'DEV-500', async (filters) => {
         reads.push(filters)
         return rows
       }),

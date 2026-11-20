@@ -17,7 +17,7 @@ export const readTaskThroughCli = async (
   try {
     return {
       exitCode: 0,
-      stdout: JSON.stringify(taskReader().show(key, { project: project.name })),
+      stdout: JSON.stringify(await taskReader().show(key, { project: project.name })),
       stderr: '',
     }
   } catch (error) {

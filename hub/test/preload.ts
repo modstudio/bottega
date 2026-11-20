@@ -18,6 +18,7 @@ process.env.BOTTEGA_ORCH = fixture
 const { directory: databaseDir } = mintTestHubDatabase(FROZEN_STATE_NAMES.hubDatabase)
 const originalConfigHome = process.env[CONFIG_HOME_ENV]
 const originalHarnessEnvFile = process.env[HARNESS_ENV_FILE_ENV]
+const originalHostedUrl = process.env.BOTTEGA_HOSTED_URL
 const originalRecordApiUrl = process.env.BOTTEGA_RECORD_API_URL
 const originalStateHome = process.env[STATE_HOME_ENV]
 const configDir = mkdtempSync(join(tmpdir(), 'hub-test-config-'))
@@ -33,6 +34,7 @@ symlinkSync(
 )
 machineId(HUB_MIGRATION_BACKFILL_VALUES.machine_id)
 process.env[HARNESS_ENV_FILE_ENV] = ''
+delete process.env.BOTTEGA_HOSTED_URL
 delete process.env.BOTTEGA_RECORD_API_URL
 const assertTestHubDatabase = createTestHubDatabaseGuard()
 assertTestHubDatabase()
@@ -49,6 +51,8 @@ afterAll(() => {
   else process.env[CONFIG_HOME_ENV] = originalConfigHome
   if (originalHarnessEnvFile === undefined) delete process.env[HARNESS_ENV_FILE_ENV]
   else process.env[HARNESS_ENV_FILE_ENV] = originalHarnessEnvFile
+  if (originalHostedUrl === undefined) delete process.env.BOTTEGA_HOSTED_URL
+  else process.env.BOTTEGA_HOSTED_URL = originalHostedUrl
   if (originalRecordApiUrl === undefined) delete process.env.BOTTEGA_RECORD_API_URL
   else process.env.BOTTEGA_RECORD_API_URL = originalRecordApiUrl
   if (originalStateHome === undefined) delete process.env[STATE_HOME_ENV]
