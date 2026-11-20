@@ -4,6 +4,14 @@ import { PLATFORM_SLUG } from './brand.ts'
 
 export const MISSING_PROJECT_ID_REMEDY = `run \`${PLATFORM_SLUG} machine migrate\` to fill local project UUIDs`
 
+export function projectOutsideRequestSpaceRemedy(input: {
+  requestSpaceId: string
+  projectName?: string | null
+}): string {
+  const project = input.projectName ? `project ${JSON.stringify(input.projectName)}` : 'the project'
+  return `request was sent to record space ${input.requestSpaceId}; find ${project}'s declared space slug in settings.space from \`${PLATFORM_SLUG} project list --json\`, then retry against that space`
+}
+
 export type RecordProjectFacts = {
   id: string
   name: string

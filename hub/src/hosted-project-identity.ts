@@ -3,6 +3,7 @@
 import type { SQL } from 'bun'
 import {
   MISSING_PROJECT_ID_REMEDY,
+  projectOutsideRequestSpaceRemedy,
   type RecordProjectIdentityResult,
   recordProjectIdentityDecision,
 } from '../../shared/record-project-identity.ts'
@@ -51,5 +52,8 @@ export async function storedHubProjectId(
     spaceId,
   })
   if (resolved.status === 'found') return resolved.project.id
-  throw new Error(`record project ${input.projectId} is absent from request space ${spaceId}`)
+  throw new Error(
+    `record project ${input.projectId}${input.projectName ? ` (${JSON.stringify(input.projectName)})` : ''} is absent from request space ${spaceId}; ` +
+      projectOutsideRequestSpaceRemedy({ requestSpaceId: spaceId, projectName: input.projectName }),
+  )
 }

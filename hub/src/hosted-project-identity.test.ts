@@ -82,11 +82,14 @@ test('a supplied projectId unknown or from another space refuses the write', asy
   `)
   const tx = pgliteSql(database)
   await bindTenant(tx, identity)
+  const remedy = `request was sent to record space ${spaceId}; find the project's declared space slug in settings.space from \`${PLATFORM_SLUG} project list --json\`, then retry against that space`
   await expect(storedHubProjectId(tx, spaceId, { projectId: unknownId })).rejects.toThrow(
-    `record project ${unknownId} is absent from request space ${spaceId}`,
+    `record project ${unknownId} is absent from request space ${spaceId}; ${remedy}`,
   )
-  await expect(storedHubProjectId(tx, spaceId, { projectId: foreignId })).rejects.toThrow(
-    `record project ${foreignId} is absent from request space ${spaceId}`,
+  await expect(
+    storedHubProjectId(tx, spaceId, { projectId: foreignId, projectName: 'elsewhere' }),
+  ).rejects.toThrow(
+    `record project ${foreignId} ("elsewhere") is absent from request space ${spaceId}; request was sent to record space ${spaceId}; find project "elsewhere"'s declared space slug in settings.space from \`${PLATFORM_SLUG} project list --json\`, then retry against that space`,
   )
   await expect(storedHubProjectId(tx, spaceId, { projectName: 'missing' })).rejects.toThrow(
     `run \`${PLATFORM_SLUG} machine migrate\``,

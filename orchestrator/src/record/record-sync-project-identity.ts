@@ -1,8 +1,10 @@
 // concern: record-sync-project-identity
 /** Resolves and caches hosted project UUIDs for one sync request. */
 import type { SQL } from 'bun'
-import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { MISSING_PROJECT_ID_REMEDY } from '../../../shared/record-project-identity.ts'
+import {
+  MISSING_PROJECT_ID_REMEDY,
+  projectOutsideRequestSpaceRemedy,
+} from '../../../shared/record-project-identity.ts'
 import { OutboxRowError } from './outbox-failure.ts'
 import { resolveRecordProjectIdentity } from './record-project-identity.ts'
 import type { RecordPrincipal } from './record-sync-contract.ts'
@@ -35,10 +37,13 @@ export async function projectRecordId(
   })
   if (resolved.status !== 'found') {
     throw new OutboxRowError(
-      `record project ${requestedId} is absent from request space ${principal.spaceId}`,
+      `record project ${requestedId}${projectName ? ` (${JSON.stringify(projectName)})` : ''} is absent from request space ${principal.spaceId}`,
       'row-validation',
       null,
-      `send it to the space that holds the project (\`${PLATFORM_SLUG} project list --json\` names it), then retry`,
+      projectOutsideRequestSpaceRemedy({
+        requestSpaceId: principal.spaceId,
+        projectName,
+      }),
     )
   }
   projectIds?.set(cacheKey, resolved.project.id)
