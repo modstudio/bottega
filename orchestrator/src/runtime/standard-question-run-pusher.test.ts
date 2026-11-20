@@ -78,7 +78,16 @@ test('standard question run pusher skips workflow history upload', async () => {
     ...options(database, fakePostgres()).client,
     readTaskFlowPresence: async (input) => {
       presenceReads += 1
-      return { ...input, questionAuditIdentities: [] }
+      return {
+        stageIds: input.stageIds ?? [],
+        flowIds: input.flowIds ?? [],
+        obligationIds: input.obligationIds ?? [],
+        textIds: input.textIds ?? [],
+        textCopyIds: input.textCopyIds ?? [],
+        questionIds: input.questionIds ?? [],
+        questionAuditIds: input.questionAuditIds ?? [],
+        questionAuditIdentities: [],
+      }
     },
     importTaskFlow: async () => {
       throw new Error('unexpected flow import')
