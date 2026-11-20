@@ -23,7 +23,11 @@ import { decideTaskFlowReadStatus, type TaskFlowReadStatus } from './task-flow-d
 import { taskFlowReadStore } from './task-flow-store.ts'
 import type { TaskFlowStageCursorRow } from './task-flow-store-types.ts'
 import { workflowKeyOf } from './workflow-cursor-arguments.ts'
-import { workflowCursorListCommand, workflowTaskBindingCommand } from './workflow-cursor-format.ts'
+import {
+  workflowCursorListCommand,
+  workflowCursorReference,
+  workflowTaskBindingCommand,
+} from './workflow-cursor-format.ts'
 import { workflowCursorProject } from './workflow-cursor-project.ts'
 import { hasClosedStep } from './workflow-cursor-trail.ts'
 import { type HubTaskReader, resolveHubTaskReference } from './workflow-task-reference.ts'
@@ -236,7 +240,10 @@ export async function selectOwnedKeylessWorkflowCursorForAdoption(
   if (rows.length > 1)
     throw new Error(
       `more than one open keyless workflow cursor matches; rerun with one cursor handle:\n${rows
-        .map((row) => `${cursorCandidate(row)}; rerun with --cursor ${row.id}`)
+        .map(
+          (row) =>
+            `${cursorCandidate(row)}; rerun with${workflowCursorReference(row.id, row.project).cli}`,
+        )
         .join('\n')}`,
     )
   return rows[0] ?? null

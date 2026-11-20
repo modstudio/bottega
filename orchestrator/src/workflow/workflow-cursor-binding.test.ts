@@ -368,8 +368,8 @@ test('implicit adoption refuses two keyless cursors and names each explicit reme
       live,
     ),
   ).rejects.toThrow(
-    `cursor ${first.cursor!.id}, unassigned, explore default, step 1 frame; rerun with --cursor ${first.cursor!.id}\n` +
-      `cursor ${second.cursor!.id}, unassigned, explore default, step 1 frame; rerun with --cursor ${second.cursor!.id}`,
+    `cursor ${first.cursor!.id}, unassigned, explore default, step 1 frame; rerun with --cursor ${first.cursor!.id} --project fixture\n` +
+      `cursor ${second.cursor!.id}, unassigned, explore default, step 1 frame; rerun with --cursor ${second.cursor!.id} --project fixture`,
   )
 
   const adopted = await composeWorkflowWithCursor(

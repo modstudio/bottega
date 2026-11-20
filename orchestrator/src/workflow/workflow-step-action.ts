@@ -2,8 +2,10 @@
 /** Authorizes dispatch and landing against the current step of one workflow cursor. */
 
 import type { Database } from 'bun:sqlite'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { db } from '../database/db.ts'
 import { type Job, job } from '../jobs/jobs.ts'
+import { workflowCursorReference } from './workflow-cursor-format.ts'
 import {
   cliWorkflowCursorContext,
   selectWorkflowCursorByHandle,
@@ -13,6 +15,7 @@ import { cursorComposition } from './workflow-cursor-serve.ts'
 export type StepActionTarget = {
   cursor: number
   cursorRecordId: string
+  project: string
   workflowSlug: string
   stepSlug: string
   taskKey: string
@@ -37,6 +40,7 @@ export async function stepActionTarget(
   return {
     cursor: row.id,
     cursorRecordId: row.record_id,
+    project: row.project,
     workflowSlug: row.workflow_slug,
     stepSlug: step.slug,
     taskKey: row.workflow_key,
@@ -55,6 +59,7 @@ export type StepDispatchDecision =
 /** Decide whether the current step and cursor may dispatch this declared job. */
 export function decideStepDispatch(input: {
   cursor: number
+  project: string
   taskKey: string
   workflowSlug: string
   stepSlug: string
@@ -66,7 +71,7 @@ export function decideStepDispatch(input: {
       action: 'refuse',
       reason:
         `workflow ${input.workflowSlug} cursor ${input.cursor} has no task key, and ${input.job.name} writes the repository; ` +
-        `adopt the task key in place with bottega workflow step ${input.workflowSlug} --cursor ${input.cursor} --arg key=<KEY>`,
+        `adopt the task key in place with ${PLATFORM_SLUG} workflow step ${input.workflowSlug}${workflowCursorReference(input.cursor, input.project).cli} --arg key=<KEY>`,
     }
   if (input.taskKey && !input.stepJobs.includes(input.job.name)) {
     const declared = input.stepJobs.length ? input.stepJobs.join(', ') : 'none'
@@ -89,6 +94,7 @@ export async function dispatchForStep(
   const target = await (ports.read ?? stepActionTarget)(input.cursor)
   const decision = decideStepDispatch({
     cursor: input.cursor,
+    project: target.project,
     taskKey: target.taskKey,
     workflowSlug: target.workflowSlug,
     stepSlug: target.stepSlug,

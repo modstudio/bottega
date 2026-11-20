@@ -266,7 +266,7 @@ list step catalogue versions
 
 ## bottega workflow compose
 
-**Synopsis:** `bottega workflow compose <workflow> [--version <value>] [--catalogue-version <value>] [--mode <value>] [--project <value>] [--arg <value>] [--autonomy <value>] [--json]`
+**Synopsis:** `bottega workflow compose <workflow> [--version <value>] [--catalogue-version <value>] [--mode <value>] [--cursor <value>] [--project <value>] [--arg <value>] [--autonomy <value>] [--json]`
 
 compose a workflow for a project and create its cursor when ready
 
@@ -275,6 +275,7 @@ compose a workflow for a project and create its cursor when ready
 - `--version <value>`: compose this workflow version
 - `--catalogue-version <value>`: compose with this step catalogue version
 - `--mode <value>`: select this workflow mode
+- `--cursor <value>`: select an open keyless workflow cursor to adopt
 - `--project <value>`: compose for this registered project
 - `--arg <value>`: supply a workflow argument as name=value
 - `--autonomy <value>`: override an autonomy scope
