@@ -456,7 +456,7 @@ test('readonlyLensDeniesLoginKeychain follows the denyRead list, not a keychain 
   ).toBe(false)
 })
 
-test('probe sandbox profile denies network and writes except the throwaway directory', () => {
+test('probe sandbox profile allows loopback and writes only to the throwaway directory', () => {
   const scratch = '/tmp/orch-probe-scratch'
   const profile = probeSandboxProfile({
     allowWriteDir: scratch,
@@ -464,9 +464,9 @@ test('probe sandbox profile denies network and writes except the throwaway direc
     project: fixtureProject(),
     socketDenyPaths: TEST_SOCKET_DENY_PATHS,
   })
-  expect(profile.network.allowedDomains).toEqual([])
+  expect(profile.network.allowedDomains).toEqual(['localhost', '127.0.0.1', '[::1]'])
   expect(profile.network.allowUnixSockets).toEqual([])
-  expect(profile.network.allowLocalBinding).toBe(false)
+  expect(profile.network.allowLocalBinding).toBe(true)
   expect(profile.filesystem.allowWrite).toEqual([resolve(scratch)])
   expect(profile.filesystem.denyRead).toEqual(
     expect.arrayContaining([

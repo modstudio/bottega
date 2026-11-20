@@ -43,10 +43,10 @@ import {
   runningInstallReadCarveouts,
 } from './install-read-policy.ts'
 import {
-  type SandboxRuntimeConfig,
   probeSandboxProfile,
   readonlyLensProfile,
   resetSandbox,
+  type SandboxRuntimeConfig,
   sandboxLaunchArgv,
   writerProfile,
 } from './sandbox.ts'
@@ -200,14 +200,11 @@ async function launchSandboxProbe(
   scratchDir: string,
   options: { cwd?: string; environment?: Record<string, string> } = {},
 ) {
-  return startBounded(
-    await sandboxLaunchArgv(profile, executable, argv, scratchDir, environment),
-    {
-      budget: 'sandbox-probe',
-      cwd: options.cwd,
-      env: { ...process.env, ...environment, ...options.environment },
-    },
-  )
+  return startBounded(await sandboxLaunchArgv(profile, executable, argv, scratchDir, environment), {
+    budget: 'sandbox-probe',
+    cwd: options.cwd,
+    env: { ...process.env, ...environment, ...options.environment },
+  })
 }
 
 async function launchCommand(
@@ -217,13 +214,7 @@ async function launchCommand(
   scratchDir: string,
   hubOpenMode?: string,
 ): Promise<CommandProbe> {
-  const result = await launchSandboxProbe(
-    profile,
-    argv[0]!,
-    argv.slice(1),
-    environment,
-    scratchDir,
-  )
+  const result = await launchSandboxProbe(profile, argv[0]!, argv.slice(1), environment, scratchDir)
   return {
     status: result.exitCode === 0 ? 'ran' : 'failed',
     reason: `exit ${result.exitCode ?? 'unknown'}${result.exitCode === 0 ? '' : `: ${firstErrorLine(result.stderr)}`}${hubOpenMode ? `; hub open mode: ${hubOpenMode}` : ''}`,
