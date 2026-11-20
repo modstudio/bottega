@@ -4,9 +4,9 @@ import type { SQL } from 'bun'
 import {
   encodeRecordChangeCursor,
   MAX_RECORD_CHANGE_PAGE_SIZE,
-  readRecordChangeHead,
   type RecordChangeCursor,
   type RecordChangeReadPage,
+  readRecordChangeHead,
   readRecordChanges,
 } from '../../../shared/record/record-changes.ts'
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
