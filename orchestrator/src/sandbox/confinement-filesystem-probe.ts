@@ -36,6 +36,7 @@ import { prepareSharedRefGuard, workerSharedGitRoots } from '../resources/ref-gu
 import { workerChildEnvironment } from '../run/run-worker-home.ts'
 import { codexPermissionLaunchProfileInput } from './codex-permission-profile-adapter.ts'
 import { codexPermissionProfileArgs } from './codex-sandbox.ts'
+import { codexGapAccessTargets } from './confinement-codex-gap-fixture.ts'
 import {
   type ConfinementProbeTask,
   createConfinementProbeTask,
@@ -109,6 +110,78 @@ function codexShellArgument(index: number): string {
   return `\${${index}}`
 }
 
+function codexWriterProbeRow(
+  result: Awaited<ReturnType<typeof startBounded>>,
+  measuredTargets: readonly AccessTarget[],
+): ConfinementFilesystemProbeRow {
+  if (result.exitCode !== 0) {
+    return {
+      family: 'Codex writer',
+      status: 'failed',
+      paths: {},
+      reason: `filesystem launch exited ${result.exitCode ?? 'unknown'}: ${firstErrorLine(result.stderr)}`,
+    }
+  }
+  const values = new Map(
+    result.stdout
+      .trim()
+      .split(/\r?\n/)
+      .map((line) => line.split('=', 2) as [string, string]),
+  )
+  const command = (name: string): CommandProbe => ({
+    status: values.get(name) === 'ran' ? 'ran' : 'failed',
+    reason: values.get(name) === 'ran' ? 'succeeded' : 'failed',
+  })
+  const paths = Object.fromEntries(
+    measuredTargets.map(({ name }, index) => [
+      name,
+      values.get(`path:${index}`) === 'readable' || values.get(`path:${index}`) === 'denied'
+        ? values.get(`path:${index}`)
+        : 'not covered',
+    ]),
+  ) as Record<string, FilesystemProbeAccess>
+  const commands = {
+    pwd: command('pwd'),
+    'git status': command('git-status'),
+    'git commit': command('git-commit'),
+    'git log': command('git-log'),
+  }
+  const accessVerdict = probeVerdict(measuredTargets, paths, {
+    status: 'ran',
+    reason: 'Codex access targets measured',
+  })
+  const passed =
+    Object.values(commands).every(({ status }) => status === 'ran') &&
+    accessVerdict.status === 'denied'
+  return {
+    family: 'Codex writer',
+    status: passed ? 'ran' : 'failed',
+    paths,
+    commands,
+    reason: passed ? CODEX_PROBE_MODE : `${CODEX_PROBE_MODE}; access expectation failed`,
+  }
+}
+
+function codexWriterPermissionArgs(
+  profile: ReturnType<typeof readonlyLensProfile>,
+  cwd: string,
+  tempDir: string,
+): string[] {
+  const branch = gitFixture(['symbolic-ref', '--short', 'HEAD'], cwd)
+  const gitRoots = [worktreeGitDir(cwd), ...workerSharedGitRoots(cwd, branch)]
+  return codexPermissionProfileArgs({
+    ...codexPermissionLaunchProfileInput({
+      profile,
+      sandbox: 'workspace-write',
+      cwd,
+      writableRoots: [...profile.filesystem.allowWrite, ...gitRoots],
+      tempDir,
+      writesRepository: true,
+    }),
+    network: false,
+  })
+}
+
 async function launchCodexWriterProbe(
   profile: ReturnType<typeof readonlyLensProfile>,
   targets: readonly AccessTarget[],
@@ -126,19 +199,7 @@ async function launchCodexWriterProbe(
     }
   }
   try {
-    const branch = gitFixture(['symbolic-ref', '--short', 'HEAD'], cwd)
-    const gitRoots = [worktreeGitDir(cwd), ...workerSharedGitRoots(cwd, branch)]
-    const permissionArgs = codexPermissionProfileArgs({
-      ...codexPermissionLaunchProfileInput({
-        profile,
-        sandbox: 'workspace-write',
-        cwd,
-        writableRoots: [...profile.filesystem.allowWrite, ...gitRoots],
-        tempDir,
-        writesRepository: true,
-      }),
-      network: false,
-    })
+    const permissionArgs = codexWriterPermissionArgs(profile, cwd, tempDir)
     const measuredTargets = targets.filter(({ createAfterLaunch }) => !createAfterLaunch)
     const accessScript = measuredTargets
       .map(
@@ -182,52 +243,7 @@ ${accessScript}`,
         },
       },
     )
-    if (result.exitCode !== 0) {
-      return {
-        family: 'Codex writer',
-        status: 'failed',
-        paths: {},
-        reason: `filesystem launch exited ${result.exitCode ?? 'unknown'}: ${firstErrorLine(result.stderr)}`,
-      }
-    }
-    const values = new Map(
-      result.stdout
-        .trim()
-        .split(/\r?\n/)
-        .map((line) => line.split('=', 2) as [string, string]),
-    )
-    const command = (name: string): CommandProbe => ({
-      status: values.get(name) === 'ran' ? 'ran' : 'failed',
-      reason: values.get(name) === 'ran' ? 'succeeded' : 'failed',
-    })
-    const paths = Object.fromEntries(
-      measuredTargets.map(({ name }, index) => [
-        name,
-        values.get(`path:${index}`) === 'readable' || values.get(`path:${index}`) === 'denied'
-          ? values.get(`path:${index}`)
-          : 'not covered',
-      ]),
-    ) as Record<string, FilesystemProbeAccess>
-    const accessVerdict = probeVerdict(measuredTargets, paths, {
-      status: 'ran',
-      reason: 'Codex access targets measured',
-    })
-    const commands = {
-      pwd: command('pwd'),
-      'git status': command('git-status'),
-      'git commit': command('git-commit'),
-      'git log': command('git-log'),
-    }
-    const passed =
-      Object.values(commands).every(({ status }) => status === 'ran') &&
-      accessVerdict.status === 'denied'
-    return {
-      family: 'Codex writer',
-      status: passed ? 'ran' : 'failed',
-      paths,
-      commands,
-      reason: passed ? CODEX_PROBE_MODE : `${CODEX_PROBE_MODE}; access expectation failed`,
-    }
+    return codexWriterProbeRow(result, measuredTargets)
   } catch (error) {
     return {
       family: 'Codex writer',
@@ -814,6 +830,21 @@ function createProbeTaskFixture(
   return { own, task }
 }
 
+function filesystemProbeEnvironment(
+  root: string,
+  stateRoot: string,
+  hubDatabase: string,
+): Record<string, string> {
+  return {
+    ...process.env,
+    HOME: join(root, 'home'),
+    [STATE_HOME_ENV]: stateRoot,
+    BOTTEGA_HUB_DB: hubDatabase,
+    [HARNESS_ENV_FILE_ENV]: '',
+    [PLATFORM_ENV_FILE_ENV]: '',
+  } as Record<string, string>
+}
+
 function createProbeFixture(root: string, hubSource: string) {
   const ownPath = join(root, 'projects', 'own')
   const worktree = join(ownPath, '.claude', 'worktrees', 'own')
@@ -823,14 +854,7 @@ function createProbeFixture(root: string, hubSource: string) {
   const runningInstall = resolveRunningInstallLayout(process.env)
   const fixtureInstall = installFixture(join(root, 'projects', 'install'), runningInstall)
   const hubDatabase = join(stateRoot, 'hub', 'hub.db')
-  const environment = {
-    ...process.env,
-    HOME: join(root, 'home'),
-    [STATE_HOME_ENV]: stateRoot,
-    BOTTEGA_HUB_DB: hubDatabase,
-    [HARNESS_ENV_FILE_ENV]: '',
-    [PLATFORM_ENV_FILE_ENV]: '',
-  } as Record<string, string>
+  const environment = filesystemProbeEnvironment(root, stateRoot, hubDatabase)
   const state = resolveStatePaths(environment)
   const runtimeDir = join(state.orchestratorRuns, 'sandbox-probe')
   const scratchDir = join(state.orchestratorRuns, 'probe', 'scratch')
@@ -842,23 +866,7 @@ function createProbeFixture(root: string, hubSource: string) {
     orchestratorDatabase: state.orchestratorDatabase,
     orchestratorRuns: state.orchestratorRuns,
   })
-  const codexGapTargets: AccessTarget[] = [
-    {
-      name: 'new sibling worktree',
-      path: join(ownPath, '.claude', 'worktrees', 'created-after-codex-launch', 'secret'),
-      expected: 'readable',
-    },
-    {
-      name: 'new project under projects root',
-      path: join(root, 'projects', 'created-after-codex-launch', 'secret'),
-      expected: 'readable',
-    },
-    {
-      name: 'new top-level entry in main checkout',
-      path: join(ownPath, 'created-after-codex-launch', 'secret'),
-      expected: 'readable',
-    },
-  ]
+  const codexGapTargets = codexGapAccessTargets(root, ownPath)
   initializeProbeGitFixture(ownPath, worktree)
   for (const { path, plant = true } of targets) {
     if (!plant) continue
@@ -918,11 +926,32 @@ function createProbeFixture(root: string, hubSource: string) {
   }
 }
 
+async function launchCodexProbeRows(
+  fixture: ReturnType<typeof createProbeFixture>,
+): Promise<ConfinementFilesystemProbeRow[]> {
+  const { common } = fixture
+  const profile = () => codexPermissionProfile({ ...common, agent: 'codex' })
+  return [
+    await launchCodexWriterProbe(
+      profile(),
+      fixture.targets,
+      common.worktree,
+      fixture.environment,
+      join(common.runtimeDir, 'tmp'),
+    ),
+    await launchCodexPostLaunchGapProbe(
+      profile(),
+      fixture.codexGapTargets,
+      common.worktree,
+      fixture.environment,
+      join(common.runtimeDir, 'tmp'),
+    ),
+  ]
+}
+
 /** Execute each SRT profile family against planted sibling, state, secret, and own-tree paths. */
 export async function runConfinementFilesystemProbes(): Promise<ConfinementFilesystemProbeRow[]> {
-  const probeParent = tmpdir()
-  mkdirSync(probeParent, { recursive: true })
-  const root = mkdtempSync(join(probeParent, `${PLATFORM_SLUG}-confinement-probe-`))
+  const root = mkdtempSync(join(tmpdir(), `${PLATFORM_SLUG}-confinement-probe-`))
   const priorStateRoot = process.env[STATE_HOME_ENV]
   const priorHubDatabase = process.env[HUB_DATABASE_ENV]
   const hubSource = resolveHubDatabase(process.env)
@@ -981,26 +1010,7 @@ export async function runConfinementFilesystemProbes(): Promise<ConfinementFiles
         fixture.hubOpenMode,
         fixture.commandLabel,
       ),
-      await launchCodexWriterProbe(
-        codexPermissionProfile({
-          ...common,
-          agent: 'codex',
-        }),
-        fixture.targets,
-        common.worktree,
-        fixture.environment,
-        join(common.runtimeDir, 'tmp'),
-      ),
-      await launchCodexPostLaunchGapProbe(
-        codexPermissionProfile({
-          ...common,
-          agent: 'codex',
-        }),
-        fixture.codexGapTargets,
-        common.worktree,
-        fixture.environment,
-        join(common.runtimeDir, 'tmp'),
-      ),
+      ...(await launchCodexProbeRows(fixture)),
       ...NOT_COVERED,
     ]
   } finally {

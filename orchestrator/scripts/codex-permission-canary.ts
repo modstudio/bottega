@@ -1,6 +1,7 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { startBoundedSync } from '../../shared/bounded-process.ts'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { targetGitEnvironment, worktreeGitDir } from '../src/git/git-environment.ts'
 import type { Project } from '../src/project/projects.ts'
@@ -10,13 +11,11 @@ import { codexPermissionProfileArgs } from '../src/sandbox/codex-sandbox.ts'
 import { codexPermissionProfile } from '../src/sandbox/sandbox.ts'
 
 function run(argv: string[], cwd: string, env: NodeJS.ProcessEnv = process.env): string {
-  const result = Bun.spawnSync(argv, { cwd, env, stdout: 'pipe', stderr: 'pipe' })
+  const result = startBoundedSync(argv, { budget: 'sandbox-probe', cwd, env })
   if (result.exitCode !== 0) {
-    throw new Error(
-      `${argv.join(' ')} exited ${result.exitCode}\n${result.stdout.toString()}${result.stderr.toString()}`,
-    )
+    throw new Error(`${argv.join(' ')} exited ${result.exitCode}\n${result.stdout}${result.stderr}`)
   }
-  return result.stdout.toString()
+  return result.stdout
 }
 
 function project(recordId: string, name: string, path: string): Project {

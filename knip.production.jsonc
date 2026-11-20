@@ -117,6 +117,7 @@
         // Launched by path from src/sandbox/sandbox.ts for Grok's MCP configuration.
         "src/ask/ask-proxy.ts!",
         "scripts/acp-parity.ts!",
+        "scripts/codex-permission-canary.ts!",
         "scripts/check-canon-lint.ts!",
         "scripts/check-pack-budget.ts!",
         "scripts/check-projects.ts!",

@@ -3,10 +3,10 @@
 import { readdirSync } from 'node:fs'
 import { isAbsolute, relative, resolve } from 'node:path'
 import { realPathForPotentialPath } from '../../../shared/state-directory.ts'
-import { codexDenyListingDirectories, type CodexDirectoryListing } from './codex-deny-policy.ts'
+import { codexDenyListingDirectories } from './codex-deny-policy.ts'
 import {
-  codexPermissionProfileInput,
   type CodexPermissionProfileInput,
+  codexPermissionProfileInput,
   codexWritableRoots,
 } from './codex-sandbox.ts'
 import type { SandboxRuntimeConfig } from './sandbox.ts'
@@ -75,5 +75,3 @@ export function codexPermissionLaunchProfileInput(input: {
     opaquePaths,
   })
 }
-
-export type { CodexDirectoryListing }

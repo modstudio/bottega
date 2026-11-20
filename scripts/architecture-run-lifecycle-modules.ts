@@ -605,6 +605,7 @@ export const runLifecycleModules: ArchitectureModule[] = [
   ),
   module('orchestrator/src/run/run-codex-permission-profile.ts', [
     '../sandbox/codex-mcp-scope.ts',
+    '../sandbox/codex-permission-profile-adapter.ts',
     '../sandbox/codex-sandbox.ts',
     '../sandbox/sandbox.ts',
     '../transport/transport.ts',

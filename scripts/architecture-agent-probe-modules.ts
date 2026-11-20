@@ -102,6 +102,7 @@ export const agentProbeModules = [
     '../run/run-number.ts',
     '../run/run-usage-columns.ts',
     '../sandbox/codex-sandbox.ts',
+    '../sandbox/codex-permission-profile-adapter.ts',
     '../sandbox/sandbox.ts',
     '../transport/codex-quota.ts',
     '../transport/quota-readings.ts',
