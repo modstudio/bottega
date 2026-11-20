@@ -18,10 +18,10 @@ import {
   decideCursorStart,
   type decideCursorTransition,
   stepPass,
+  workflowCursorStepSuccessor,
 } from './workflow-cursor-transition.ts'
 import { cursorAutonomyLines, renderWorkflowStep, withSelfRuling } from './workflow-render.ts'
 import type { WorkflowSelfRulingInput } from './workflow-self-ruling-mutation.ts'
-import { workflowCursorStepSuccessor } from './workflow-step-sequences.ts'
 import { withWorkflowTextFacts } from './workflow-text.ts'
 import { type composeWorkflow, getWorkflowStep } from './workflows.ts'
 

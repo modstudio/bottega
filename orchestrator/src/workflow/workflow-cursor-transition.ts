@@ -170,7 +170,7 @@ function forwardAdvance(
 }
 
 /** Select the successor a pointer may name before the current step's outcome is known. */
-export function decidePointerAdvance(
+function decidePointerAdvance(
   steps: readonly ConditionalStep[],
   trail: readonly OutcomeTrailEntry[],
   currentOrdinal: number,
@@ -183,6 +183,22 @@ export function decidePointerAdvance(
   )
     return { ordinal: immediateOrdinal, skipped: [] }
   return forwardAdvance(steps, trail, immediateOrdinal)
+}
+
+export function workflowCursorStepSuccessor(
+  steps: readonly (ConditionalStep & { title: string })[],
+  trail: readonly OutcomeTrailEntry[],
+  currentOrdinal: number,
+) {
+  const advance = decidePointerAdvance(steps, trail, currentOrdinal)
+  if (advance.ordinal === null) return null
+  const entry = steps[advance.ordinal]!
+  return {
+    n: advance.ordinal + 1,
+    slug: entry.slug,
+    title: entry.title,
+    ...(entry.when ? { when: entry.when } : {}),
+  }
 }
 
 /** Select the next ordinal, skips, any re-entry, and whether a ruling floor applies. */

@@ -38,9 +38,9 @@ import {
   decideCursorStart,
   decideCursorTransition,
   stepPass,
+  workflowCursorStepSuccessor,
 } from './workflow-cursor-transition.ts'
 import { resolveWorkflowStepReference } from './workflow-step-reference.ts'
-import { workflowCursorStepSuccessor } from './workflow-step-sequences.ts'
 import { linkResolvedWorkflowTask } from './workflow-task-linking.ts'
 import { withWorkflowTextFacts } from './workflow-text.ts'
 import { composeWorkflow, getWorkflowStep } from './workflows.ts'
