@@ -145,8 +145,6 @@ async function refreshStepServe(
   live: LiveCursorAutonomy | undefined,
   commitCount: CommitCountPort,
 ) {
-  await readThroughWorkflowCursorContext(project, context, database)
-  await linkResolvedWorkflowTask(project, context, database)
   let prepared = await prepareStepServe(
     slug,
     project,
@@ -270,16 +268,12 @@ async function applyServeTransition(
 async function prepareWorkflowStepKeyAdoption(input: {
   slug: string
   project: string
-  stepSlug: string
   args: Record<string, string>
   mode: string
   context: WorkflowCursorContext
   database: Database
-  autonomy?: AutonomyResolution
   cursor?: number
 }) {
-  await readThroughWorkflowCursorContext(input.project, input.context, input.database)
-  await linkResolvedWorkflowTask(input.project, input.context, input.database)
   const selected = await selectWorkflowCursorForKeyAdoption({
     project: input.project,
     workflow: input.slug,
@@ -297,6 +291,7 @@ async function prepareWorkflowStepKeyAdoption(input: {
       verb: 'compose',
       database: input.database,
     })
+  return selected.adopted ? selected.row?.id : undefined
 }
 
 function serveNotices(input: {
@@ -349,17 +344,18 @@ async function serveWorkflowStepWithCursor(
   live?: LiveCursorAutonomy,
   commitCount: CommitCountPort = readCommitsPastLanding,
 ) {
-  await prepareWorkflowStepKeyAdoption({
+  await readThroughWorkflowCursorContext(project, context, database)
+  await linkResolvedWorkflowTask(project, context, database)
+  const selectedCursor = await prepareWorkflowStepKeyAdoption({
     slug,
     project,
-    stepSlug,
     mode,
     args,
     cursor,
     context,
     database,
-    autonomy,
   })
+  const preparedCursor = selectedCursor ?? cursor
   let prepared = await prepareStepServe(
     slug,
     project,
@@ -369,7 +365,7 @@ async function serveWorkflowStepWithCursor(
     context,
     database,
     autonomy,
-    cursor,
+    preparedCursor,
     live,
   )
   if (!(prepared.index === 0 && prepared.row && decideCursorStart(prepared.row.state) === 'retire'))
@@ -383,7 +379,7 @@ async function serveWorkflowStepWithCursor(
     context,
     database,
     autonomy,
-    cursor,
+    preparedCursor,
     live,
     commitCount,
   )

@@ -333,6 +333,59 @@ test('compose adopts the session single advanced keyless cursor without losing p
   })
 })
 
+test('serve adopts one advanced keyless cursor in place for a non-hub tracker', async () => {
+  const d = currentDatabase()
+  d.query('UPDATE project SET settings=? WHERE name=?').run(
+    JSON.stringify({
+      gate: 'bun run check',
+      trunk: 'develop',
+      tracker: { protocol: 'workspace-mcp' },
+      docs: { protocol: 'orch-docs' },
+    }),
+    'fixture',
+  )
+  const live = { resolution: resolutionFor('explore', 'default', d) }
+  const opened = await composeWorkflowWithCursor(
+    'explore',
+    'fixture',
+    'default',
+    {},
+    { session: context.session },
+    d,
+    {},
+    live,
+  )
+  const recordId = d
+    .query<{ record_id: string }, [number]>('SELECT record_id FROM workflow_cursor WHERE number=?')
+    .get(opened.cursor!.id)!.record_id
+  const closed = [{ n: 1, slug: opened.steps[0]!.slug, note: 'planned', at: '2026-11-20' }]
+  const activeStep = opened.steps[1]!.slug
+  d.query('UPDATE workflow_cursor SET ordinal=1,step_slug=?,closed=? WHERE record_id=?').run(
+    activeStep,
+    JSON.stringify(closed),
+    recordId,
+  )
+
+  const served = await getWorkflowStepWithCursor(
+    'explore',
+    'fixture',
+    activeStep,
+    { key: 'DEV-2532' },
+    'default',
+    { session: context.session, taskRecordId: null },
+    d,
+    live,
+  )
+
+  expect(served.cursor).toBe(opened.cursor!.id)
+  expect(d.query('SELECT count(*) AS count FROM workflow_cursor').get()).toEqual({ count: 1 })
+  expect(d.query('SELECT record_id,workflow_key,closed FROM workflow_cursor').get()).toEqual({
+    record_id: recordId,
+    workflow_key: 'DEV-2532',
+    closed: JSON.stringify(closed),
+  })
+})
+
 test('implicit adoption refuses two keyless cursors and names each explicit remedy', async () => {
   const d = currentDatabase()
   const live = { resolution: resolutionFor('explore', 'default', d) }

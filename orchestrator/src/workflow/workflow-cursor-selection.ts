@@ -28,10 +28,7 @@ import {
   workflowCursorReference,
   workflowTaskBindingCommand,
 } from './workflow-cursor-format.ts'
-import {
-  workflowCursorProject,
-  workflowCursorProjectUsesHubTracker,
-} from './workflow-cursor-project.ts'
+import { workflowCursorProject } from './workflow-cursor-project.ts'
 import { hasClosedStep } from './workflow-cursor-trail.ts'
 import { type HubTaskReader, resolveHubTaskReference } from './workflow-task-reference.ts'
 import { resolveWorkflowMode, showResolvedWorkflow } from './workflows.ts'
@@ -52,10 +49,6 @@ export type WorkflowCursorContext = {
   taskStatusCategory?: string | null
   taskFlowRead?: TaskFlowReadStatus
   taskFlowClient?: RecordTaskFlowClient
-}
-
-export function workflowProjectUsesHubTracker(project: string, database: Database): boolean {
-  return workflowCursorProjectUsesHubTracker(project, database)
 }
 
 const MCP_INSTANCE = randomUUID()

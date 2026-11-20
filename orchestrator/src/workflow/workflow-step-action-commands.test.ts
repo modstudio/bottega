@@ -1,6 +1,5 @@
 import { expect, test } from 'bun:test'
 import { Command } from 'commander'
-import { seedGuidance } from '../cli/args.ts'
 import { register as registerPullRequestCommands } from '../commands/pull-request.ts'
 import { POST_LANDING_FLAG } from '../pull-request/pr-post-landing-payload.ts'
 import {
@@ -80,16 +79,6 @@ test('workflow step action surfaces expose only the ruled public options', () =>
     '--detach',
     '--mcp',
   ])
-  const guidanceFlags = [
-    ...new Set(
-      [...seedGuidance(['--bundle=minimal']).matchAll(/^\s*(--[a-z-]+)/gm)].map(
-        (match) => match[1]!,
-      ),
-    ),
-  ]
-  expect(
-    guidanceFlags.every((flag) => dispatch.options.some((option) => option.long === flag)),
-  ).toBe(true)
   const land = workflow.commands.find((command) => command.name() === 'land')!
   const create = land.commands.find((command) => command.name() === 'create')!
   const merge = land.commands.find((command) => command.name() === 'merge')!

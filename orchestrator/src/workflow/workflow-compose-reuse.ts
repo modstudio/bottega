@@ -10,23 +10,9 @@ import {
 import { taskFlowRequestId } from '../record/record-task-flow-write-contract.ts'
 import { taskFlowLocalStore } from './task-flow-store.ts'
 import type { TaskFlowIntentInput } from './task-flow-store-types.ts'
-import { selectWorkflowCursorForKeyAdoption } from './workflow-cursor-adoption.ts'
-import { resolveCursorArguments, workflowKeyOf } from './workflow-cursor-arguments.ts'
+import { resolveCursorArguments } from './workflow-cursor-arguments.ts'
 import type { SelectableCursorRow, WorkflowCursorContext } from './workflow-cursor-selection.ts'
 import { cursorOwnerAfter } from './workflow-cursor-transition.ts'
-
-export async function selectWorkflowCursorForCompose(input: {
-  project: string
-  workflow: string
-  mode: string
-  args: Record<string, string>
-  cursor?: number
-  context: WorkflowCursorContext
-  database: Database
-}): Promise<{ row: SelectableCursorRow | null; adopted: boolean }> {
-  if (!workflowKeyOf(input.args)) return { row: null, adopted: false }
-  return selectWorkflowCursorForKeyAdoption(input)
-}
 
 export async function reuseWorkflowCursor(
   existing: SelectableCursorRow,

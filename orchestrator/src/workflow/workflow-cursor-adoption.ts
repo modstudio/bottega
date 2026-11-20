@@ -21,13 +21,13 @@ import {
   unresolvedHubTaskKeyRefusal,
   workflowCursorTakeoverRemedy,
 } from './workflow-cursor-format.ts'
+import { workflowCursorProjectUsesHubTracker } from './workflow-cursor-project.ts'
 import {
   findWorkflowCursor,
   type SelectableCursorRow,
   selectByHandle,
   selectOwnedKeylessWorkflowCursorForAdoption,
   type WorkflowCursorContext,
-  workflowProjectUsesHubTracker,
 } from './workflow-cursor-selection.ts'
 import { foreignCursorOwner } from './workflow-cursor-transition.ts'
 
@@ -100,7 +100,7 @@ export async function selectWorkflowCursorForKeyAdoption(input: {
   }
   if (!row) return { row: null, adopted: false }
   if (
-    workflowProjectUsesHubTracker(input.project, input.database) &&
+    workflowCursorProjectUsesHubTracker(input.project, input.database) &&
     input.context.taskRecordId === null
   )
     throw new Error(unresolvedHubTaskKeyRefusal(key))

@@ -29,8 +29,11 @@ import {
   workflowComposeBranchRefusal,
 } from './workflow-compose-branch.ts'
 import { followComposeTaskClaim } from './workflow-compose-claim.ts'
-import { reuseWorkflowCursor, selectWorkflowCursorForCompose } from './workflow-compose-reuse.ts'
-import { adoptWorkflowTask } from './workflow-cursor-adoption.ts'
+import { reuseWorkflowCursor } from './workflow-compose-reuse.ts'
+import {
+  adoptWorkflowTask,
+  selectWorkflowCursorForKeyAdoption,
+} from './workflow-cursor-adoption.ts'
 import { workflowKeyOf as keyOf, resolveCursorArguments } from './workflow-cursor-arguments.ts'
 import { closeGraduatingExploreForReuse, insertWorkflowCursor } from './workflow-cursor-compose.ts'
 import { cursorName } from './workflow-cursor-format.ts'
@@ -196,7 +199,7 @@ export async function composeWorkflowWithCursor(
   )
   await readThroughWorkflowCursorContext(project, context, d)
   await linkResolvedWorkflowTask(project, context, d)
-  const selected = await selectWorkflowCursorForCompose({
+  const selected = await selectWorkflowCursorForKeyAdoption({
     project: shape.project,
     workflow: shape.workflow.slug,
     mode: shape.mode.slug,
