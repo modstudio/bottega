@@ -281,6 +281,7 @@ function createProbeFixture(root: string) {
       installLayout: fixtureInstall,
       environment,
       socketDenyPaths: [],
+      orchestratorStoreAccess: 'deny' as const,
     },
   }
 }

@@ -37,6 +37,7 @@ test('a different project can read only the running checkout runtime', () => {
     nodeModuleLinks: [],
     environment,
     socketDenyPaths: [],
+    orchestratorStoreAccess: 'deny',
   })
 
   expect(profile.filesystem.denyRead).toContain(installRoot)

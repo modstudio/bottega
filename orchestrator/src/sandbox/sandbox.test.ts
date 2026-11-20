@@ -22,6 +22,7 @@ import {
   hubLoginTokenDirectory,
   recordSessionPath,
   resolveHubDatabase,
+  resolveOrchestratorDatabase,
   resolveStatePaths,
   STATE_HOME_ENV,
 } from '../../../shared/state-directory.ts'
@@ -65,7 +66,7 @@ const fixtureProject = (settings: Project['settings'] = {}): Project => ({
   settings,
 })
 
-type WithOptionalRegister<T> = Omit<T, 'registeredProjects'> & {
+type AgentProfileInput<T> = Omit<T, 'registeredProjects' | 'orchestratorStoreAccess'> & {
   registeredProjects?: readonly Project[]
 }
 const withRegister = <
@@ -75,17 +76,18 @@ const withRegister = <
 ) => ({
   ...input,
   registeredProjects: input.registeredProjects ?? (input.project ? [input.project] : []),
+  orchestratorStoreAccess: 'deny' as const,
 })
 const readonlyLensProfile = (
-  input: WithOptionalRegister<Parameters<typeof buildReadonlyLensProfile>[0]>,
+  input: AgentProfileInput<Parameters<typeof buildReadonlyLensProfile>[0]>,
 ) => buildReadonlyLensProfile(withRegister(input))
-const writerProfile = (input: WithOptionalRegister<Parameters<typeof buildWriterProfile>[0]>) =>
+const writerProfile = (input: AgentProfileInput<Parameters<typeof buildWriterProfile>[0]>) =>
   buildWriterProfile(withRegister(input))
 const probeSandboxProfile = (
-  input: WithOptionalRegister<Parameters<typeof buildProbeSandboxProfile>[0]>,
+  input: AgentProfileInput<Parameters<typeof buildProbeSandboxProfile>[0]>,
 ) => buildProbeSandboxProfile(withRegister(input))
 const selectReadonlySandbox = (
-  input: WithOptionalRegister<Parameters<typeof buildReadonlySandboxSelection>[0]>,
+  input: AgentProfileInput<Parameters<typeof buildReadonlySandboxSelection>[0]>,
 ) => buildReadonlySandboxSelection(withRegister(input))
 
 test.each([
@@ -661,6 +663,8 @@ describe('readonly-lens sandbox profile', () => {
     })
 
     expect(profile.filesystem.denyRead).toContain(resolveStatePaths(environment).root)
+    expect(profile.filesystem.denyRead).toContain(resolveOrchestratorDatabase(environment))
+    expect(profile.filesystem.allowWithinDeny).not.toContain(resolveOrchestratorDatabase(environment))
     expect(profile.filesystem.denyRead).toContain('/projects/sibling')
     expect(profile.filesystem.denyRead).toContain('/projects')
     expect(profile.filesystem.denyRead).toContain('/projects/fixture/config/operator.secret')
@@ -680,6 +684,24 @@ describe('readonly-lens sandbox profile', () => {
     }
     expect(profile.filesystem.allowWithinDeny).not.toContain(
       '/projects/fixture/config/operator.secret',
+    )
+
+    const workflowProfile = buildProbeSandboxProfile({
+      allowWriteDir: join(state, 'orchestrator/runs/workflow/scratch'),
+      cwd: '/projects/fixture/.claude/worktrees/run',
+      project: own,
+      registeredProjects: [own, sibling],
+      environment,
+      socketDenyPaths: [],
+      orchestratorStoreAccess: 'allow-read',
+    })
+    const orchestratorStore = resolveOrchestratorDatabase(environment)
+    expect(workflowProfile.filesystem.allowWithinDeny).toEqual(
+      expect.arrayContaining([
+        orchestratorStore,
+        `${orchestratorStore}-wal`,
+        `${orchestratorStore}-shm`,
+      ]),
     )
   })
 

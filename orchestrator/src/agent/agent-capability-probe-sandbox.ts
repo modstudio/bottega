@@ -110,6 +110,7 @@ export async function withCapabilityProbeSandbox<T>(
       environment: input.environment,
       writingAcp: true,
       askAddress: askListener.address,
+      orchestratorStoreAccess: 'deny',
     })
     if (!selection.profile) throw new Error('registration capability probe did not select srt')
     return await operation({

@@ -32,7 +32,9 @@ import { fileBackedSecretPaths } from '../../../shared/file-backed-secret-paths.
 import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 import {
   ensureHubLoginTokenDirectory,
+  ORCHESTRATOR_DATABASE_ENV,
   resolveHubDatabase,
+  resolveOrchestratorDatabase,
   type StateEnvironment,
 } from '../../../shared/state-directory.ts'
 import { disabledProjectMcpServers } from '../mcp/mcp-probe.ts'
@@ -75,6 +77,11 @@ export function workerStateEnvironment(environment: StateEnvironment): Record<st
 /** Explicitly disable host env-file reads inside every SRT worker. */
 export function workerSandboxEnvironment(): Record<string, string> {
   return { [HARNESS_ENV_FILE_ENV]: '', [PLATFORM_ENV_FILE_ENV]: '' }
+}
+
+/** Pin the architect-authored workflow probe to the store its profile carves back. */
+export function workflowProbeStateEnvironment(environment: StateEnvironment): Record<string, string> {
+  return { [ORCHESTRATOR_DATABASE_ENV]: resolveOrchestratorDatabase(environment) }
 }
 
 export type RunSandbox = 'host' | 'srt'
@@ -291,6 +298,7 @@ export function readonlyLensProfile(input: {
   denySharedTemp?: boolean
   socketDenyPaths?: readonly string[]
   installLayout?: RunningInstallLayout
+  orchestratorStoreAccess: 'deny' | 'allow-read'
 }): SandboxRuntimeConfig {
   const environment = input.environment ?? process.env
   const toolchain = (input.path ?? process.env.PATH ?? '')
@@ -318,6 +326,7 @@ export function readonlyLensProfile(input: {
     project: input.project,
     registeredProjects: input.registeredProjects,
     environment,
+    orchestratorStoreAccess: input.orchestratorStoreAccess,
   })
   const candidateAllows = [
     ...new Set([
@@ -445,6 +454,7 @@ export function writerProfile(input: {
   nodeModuleLinks?: string[]
   environment?: ConfigEnvironment
   socketDenyPaths?: readonly string[]
+  orchestratorStoreAccess: 'deny' | 'allow-read'
 }): SandboxRuntimeConfig {
   const worktree = resolve(input.worktree)
   const scratchDir = resolve(input.scratchDir)
@@ -485,6 +495,7 @@ export function probeSandboxProfile(input: {
   registeredProjects: readonly Project[]
   environment?: ConfigEnvironment
   socketDenyPaths?: readonly string[]
+  orchestratorStoreAccess: 'deny' | 'allow-read'
 }): SandboxRuntimeConfig {
   const allowWrite = resolve(input.allowWriteDir)
   const cwd = resolve(input.cwd)
@@ -497,6 +508,7 @@ export function probeSandboxProfile(input: {
     project: input.project,
     registeredProjects: input.registeredProjects,
     environment: input.environment ?? process.env,
+    orchestratorStoreAccess: input.orchestratorStoreAccess,
   })
   return {
     network: {
@@ -533,6 +545,7 @@ export function probeSandboxProfileForCwd(input: {
     cwd: input.cwd,
     project,
     registeredProjects: projects({}, input.database),
+    orchestratorStoreAccess: 'allow-read',
   })
 }
 
@@ -649,6 +662,7 @@ export function selectReadonlySandbox(input: {
   askAddress?: string
   sharedReader?: boolean
   socketDenyPaths?: readonly string[]
+  orchestratorStoreAccess: 'deny' | 'allow-read'
 }): SandboxSelection {
   const kind = selectReadonlySandboxKind({
     agent: input.agent,
@@ -691,6 +705,7 @@ export function selectReadonlySandbox(input: {
         baseUrl: input.baseUrl,
         environment: input.environment,
         socketDenyPaths: input.socketDenyPaths,
+        orchestratorStoreAccess: input.orchestratorStoreAccess,
       }),
     }
   }
@@ -710,6 +725,7 @@ export function selectReadonlySandbox(input: {
       environment: input.environment,
       socketDenyPaths: input.socketDenyPaths,
       allowWrite: readonlySandboxWriteRoots(input),
+      orchestratorStoreAccess: input.orchestratorStoreAccess,
     }),
   }
 }

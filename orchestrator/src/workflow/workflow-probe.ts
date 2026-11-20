@@ -22,7 +22,13 @@ import {
 } from '../database/db.ts'
 import { boundedGateOutputTail, GATE_OUTPUT_TAIL_BYTES } from '../gate/gate-decision.ts'
 import { projectAt } from '../project/projects.ts'
-import { probeSandboxProfileForCwd, resetSandbox, sandboxLaunchArgv } from '../sandbox/sandbox.ts'
+import {
+  probeSandboxProfileForCwd,
+  resetSandbox,
+  sandboxLaunchArgv,
+  workerSandboxEnvironment,
+  workflowProbeStateEnvironment,
+} from '../sandbox/sandbox.ts'
 import { sandboxRuntimeAvailability } from '../sandbox/sandbox-runtime.ts'
 import { assertEvidenceCheckoutIdentity } from '../worktree/evidence-checkout.ts'
 import { handOffWorkflowEvidence } from './workflow-evidence-handoff.ts'
@@ -96,6 +102,8 @@ function probeEnv(scratch: string): NodeJS.ProcessEnv {
     HOME: process.env.HOME ?? homedir(),
     LANG: process.env.LANG ?? 'C.UTF-8',
     TMPDIR: scratch,
+    ...workerSandboxEnvironment(),
+    ...workflowProbeStateEnvironment(process.env),
   }
 }
 
