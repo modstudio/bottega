@@ -3,6 +3,7 @@
 
 import type { Database } from 'bun:sqlite'
 import {
+  continuationLineageHasAcceptedFindings,
   continuationLineageHasMeasuredRound,
   continuationRoundHasAcceptedFindings,
 } from '../review/review-continuation-findings.ts'
@@ -39,7 +40,12 @@ export function gatherNoAcceptedFindingsFact(
   if (!measured)
     return refusal(`could not measure the current change group for branch ${resolved.branch}`)
   if (!continuationLineageHasMeasuredRound(database, measured.group)) {
-    return { action: 'allow', facts: ['no-accepted-findings'] }
+    return {
+      action: 'allow',
+      facts: continuationLineageHasAcceptedFindings(database, measured.group)
+        ? []
+        : ['no-accepted-findings'],
+    }
   }
   return {
     action: 'allow',

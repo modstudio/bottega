@@ -381,6 +381,42 @@ test('a measured review round with an accepted finding withholds no accepted fin
   }
 })
 
+test('an unmeasured review with an accepted finding withholds no accepted findings', () => {
+  const fixture = noAcceptedFindingsFixture()
+  try {
+    const runRecordId = newRecordId()
+    fixture.d
+      .query(
+        `INSERT INTO run
+           (record_id,number,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,repo,
+            project_record_id,branch,lens,model)
+         VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM run),'2026-11-19','codex','review-lens',
+                 'sha',1,'head','ok','waiver-fixture',?,'DEV-1-change','correctness','fixture-model')`,
+      )
+      .run(runRecordId, fixture.projectRecordId)
+    const output = reviewReply(1, 'high')
+    const reviewRecordId = recordReview(runRecordId, output, fixture.d)
+    gradeReviewLens(
+      runRecordId,
+      output,
+      { reproduced: 'all', coverage: 'adequate', limits: 'absent', overlap: 'none' },
+      fixture.d,
+    )
+    triageFinding(reviewRecordId, 1, 'accepted', undefined, 'high', fixture.d)
+    completeReview(reviewRecordId, fixture.d)
+
+    expect(
+      gatherNoAcceptedFindingsFact(
+        'waiver-fixture',
+        { worktree: fixture.repository, branch: 'DEV-1-change' },
+        fixture.d,
+      ),
+    ).toEqual({ action: 'allow', facts: [] })
+  } finally {
+    fixture.dispose()
+  }
+})
+
 test('a foreign keyed advance keeps the recorded taken-over claim behavior', async () => {
   const d = database()
   await composeWorkflowWithCursor('flow', 'fixture', 'default', args, context, d, {}, {})
