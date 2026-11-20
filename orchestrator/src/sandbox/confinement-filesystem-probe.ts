@@ -513,7 +513,7 @@ async function launchCrossProjectCliProbe(
     const [askCommand, ...askArgs] = bottegaEntryArgv('ask-server')
     const askResult = await probeMcpServer({
       server: WORKER_MCP_SERVER_NAME,
-      config: { command: askCommand!, args: askArgs },
+      config: { name: WORKER_MCP_SERVER_NAME, command: askCommand!, args: askArgs },
       cwd,
       env: environment,
       wrap: (command, args) => sandboxLaunchArgv(profile, command, args, scratchDir, environment),

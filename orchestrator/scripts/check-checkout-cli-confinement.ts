@@ -96,7 +96,12 @@ async function main(): Promise<void> {
     )
     const result = await probeMcpServer({
       server: WORKER_MCP_SERVER_NAME,
-      config: { command: server.command, args: server.args, env: serverEnvironment },
+      config: {
+        name: WORKER_MCP_SERVER_NAME,
+        command: server.command,
+        args: server.args,
+        env: serverEnvironment,
+      },
       cwd,
       env: environment,
       wrap: (command, args) => sandboxLaunchArgv(profile, command, args, runtimeDir, environment),

@@ -1,9 +1,9 @@
 import { expect, test } from 'bun:test'
-import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { createHash } from 'node:crypto'
 import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { checkoutCliBuildFailure, verifyCheckoutCliBuild } from './checkout-cli-build.ts'
 
 function hash(path: string): string {
