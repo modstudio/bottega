@@ -755,9 +755,8 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
         repoJob,
         claim.number,
         requestedJob,
-        // The composed prompt's own size, measured where the prompt is final:
-        // some jobs' material arrives inline here (a `summarize` prompt carries
-        // its document) rather than in the working set the job declares.
+        // Measure where the prompt is final: some jobs' material arrives inline
+        // rather than in the working set the job declares.
         Buffer.byteLength(prompt, 'utf8'),
       ),
       onWarning: warnForRun(claim.id),
@@ -813,8 +812,7 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
         })
       }
     }
-    // Two timeouts, composed, not one: the wall stays, and idle kill is the
-    // second, shorter no-activity bound. Do not replace the wall.
+    // Keep both the wall timeout and the shorter idle timeout.
     wallArmedAtMs = Date.now()
     const expireWall = () => {
       rearmWallDeadline = () => {}
