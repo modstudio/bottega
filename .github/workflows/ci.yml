@@ -357,7 +357,9 @@ jobs:
           bun-version-file: .bun-version
       - name: Find pull request change base
         if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
-        run: echo "BASE_SHA=$(bun scripts/pull-request-change-base.ts)" >> "$GITHUB_ENV"
+        run: |
+          base=$(bun scripts/pull-request-change-base.ts)
+          echo "BASE_SHA=$base" >> "$GITHUB_ENV"
       - name: Find migration changes
         id: changes
         run: |
