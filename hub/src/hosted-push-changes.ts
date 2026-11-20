@@ -109,13 +109,7 @@ function assertFieldGuards(
   }
 }
 
-const TIMESTAMP_GUARD_FIELDS = new Set([
-  'closed_at',
-  'deleted_at',
-  'last_seen_at',
-  'stale_at',
-  'updated_at',
-])
+const TIMESTAMP_GUARD_FIELDS = new Set(['deleted_at', 'last_seen_at', 'stale_at', 'updated_at'])
 
 function guardValuesMatch(field: string, current: unknown, expected: unknown): boolean {
   if (TIMESTAMP_GUARD_FIELDS.has(field) && current !== null && expected !== null) {
