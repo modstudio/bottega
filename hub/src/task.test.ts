@@ -4,9 +4,9 @@ import { declareFixtureProjectSpace } from '../test/fixture-project-space.ts'
 import { resetFixtureStore } from '../test/run-fixtures.ts'
 import { db, writeTransaction } from './db.ts'
 import { DUPLICATE_TITLE_FIXTURE } from './duplicate-matcher.fixture.ts'
+import { HOSTED_UNREACHABLE_REMEDY } from './hosted-write-mode.ts'
 import { writeTrackerCache } from './ingest/trackers.ts'
 import { persistInstallBinding } from './install-binding.ts'
-import { HOSTED_UNREACHABLE_REMEDY } from './hosted-write-mode.ts'
 import { projectRecordIdFor } from './project-record-id.ts'
 import {
   closeTask,
@@ -198,13 +198,9 @@ describe('hosted-authoritative existing-row edits', () => {
       return response
     }
 
-    const refused = await setTask(
-      'GAM-79',
-      { recordId: id },
-      { status: 'active' },
-      UNATTRIBUTED,
-      { hosted: { ...hosted, fetch } },
-    ).catch((error: unknown) => error)
+    const refused = await setTask('GAM-79', { recordId: id }, { status: 'active' }, UNATTRIBUTED, {
+      hosted: { ...hosted, fetch },
+    }).catch((error: unknown) => error)
     expect(refused).toBeInstanceOf(Error)
     expect((refused as Error).message).toContain(HOSTED_UNREACHABLE_REMEDY)
     expect((refused as Error).message).not.toContain('saved and queued')
