@@ -21,9 +21,10 @@ import { applySettingsWrite } from './settings-write.ts'
 const OWNER = '01990000-0000-7000-8000-000000000001'
 const CANON_BODY =
   '---\ndescription: Personal operating rule\nalways: true\n---\n\n# Personal\n\nKeep this rule.\n'
+const RECORD_API_URL = 'https://record-api.example.test'
 let root = ''
 let environment: NodeJS.ProcessEnv
-let pulls = 0
+let priorRecordApiUrl: string | undefined
 
 beforeEach(async () => {
   root = mkdtempSync(join(tmpdir(), 'settings-machine-apply-'))
@@ -34,7 +35,7 @@ beforeEach(async () => {
     BOTTEGA_STATE_HOME: join(root, 'state'),
     CODEX_HOME: join(root, '.codex'),
   }
-  pulls = 0
+  priorRecordApiUrl = process.env.BOTTEGA_RECORD_API_URL
   installRecordApiClient(createMemoryRecordApiClient())
   await setDoc({
     scope: 'settings',
@@ -64,6 +65,8 @@ beforeEach(async () => {
 })
 
 afterEach(() => {
+  if (priorRecordApiUrl === undefined) delete process.env.BOTTEGA_RECORD_API_URL
+  else process.env.BOTTEGA_RECORD_API_URL = priorRecordApiUrl
   installRecordApiClient(null)
   rmSync(root, { recursive: true, force: true })
 })
@@ -75,9 +78,6 @@ function deps() {
     runsDirectory: join(root, 'runs'),
     workerProcess: () => false,
     owner: async () => OWNER,
-    pull: async () => {
-      pulls++
-    },
     projectPaths: () => [],
     claudeMcpPort: () => ({
       bin: 'claude',
@@ -117,6 +117,99 @@ function writeCurrentSettings() {
 }
 
 describe('settings apply', () => {
+  test('a hosted install reads personal settings and canon without pulling the record cache', async () => {
+    const hosted = createMemoryRecordApiClient()
+    await hosted.upsertDoc(
+      {
+        scope: 'settings',
+        subject: null,
+        owner: OWNER,
+        slug: 'settings',
+        title: 'settings',
+        body: serializeOwnedSettings({
+          permissions: { allow: ['Bash(hosted *)'] },
+          hooks: {},
+          envKeys: [],
+        }),
+        delivery: 'demand',
+        audiences: ['technical'],
+        position: 0,
+        reason: 'hosted fixture settings',
+        author: OWNER,
+      },
+      { destinationSpaceId: 'personal-space' },
+    )
+    await hosted.upsertDoc(
+      {
+        scope: 'canon',
+        subject: null,
+        owner: OWNER,
+        slug: 'AGENTS.md',
+        title: 'AGENTS.md',
+        body: CANON_BODY.replace('Keep this rule.', 'Keep this hosted rule.'),
+        delivery: 'demand',
+        audiences: ['technical'],
+        position: 0,
+        status: 'current',
+        reason: 'hosted fixture canon',
+        author: OWNER,
+      },
+      { destinationSpaceId: 'personal-space' },
+    )
+    const reads: Array<{ scope?: string; destination?: string }> = []
+    installRecordApiClient({
+      ...hosted,
+      whoami: async () => ({
+        user: { id: OWNER },
+        activeSpaceId: 'organization-space',
+        personalSpaceId: 'personal-space',
+        memberships: [],
+      }),
+      listDocs: async (query, destination) => {
+        reads.push({ scope: query.scope, destination: destination?.destinationSpaceId })
+        return hosted.listDocs(query, destination)
+      },
+    })
+    process.env.BOTTEGA_RECORD_API_URL = RECORD_API_URL
+    writeCurrentSettings()
+
+    const results = await applyMachineSettings({ check: false }, deps())
+
+    expect(reads).toEqual([
+      { scope: 'settings', destination: 'personal-space' },
+      { scope: 'canon', destination: 'personal-space' },
+    ])
+    expect(results[0]).toMatchObject({ outcome: 'applied', changed: true })
+    expect(readFileSync(join(root, '.claude', 'settings.json'), 'utf8')).toContain('Bash(hosted *)')
+    expect(readFileSync(join(root, '.codex', 'AGENTS.md'), 'utf8')).toContain(
+      'Keep this hosted rule.',
+    )
+  })
+
+  test('a hosted install refuses a missing personal settings doc with the named remedy', async () => {
+    const hosted = createMemoryRecordApiClient()
+    installRecordApiClient({
+      ...hosted,
+      whoami: async () => ({
+        user: { id: OWNER },
+        activeSpaceId: 'organization-space',
+        personalSpaceId: 'personal-space',
+        memberships: [],
+      }),
+    })
+    process.env.BOTTEGA_RECORD_API_URL = RECORD_API_URL
+
+    expect((await applyMachineSettings({ check: true }, deps()))[0]).toEqual({
+      target: `settings ${join(root, '.claude', 'settings.json')}`,
+      outcome: 'refused',
+      condition: 'no-settings-row',
+      detail:
+        'refusing settings render: no settings row for user\n' +
+        `cleared by: ${PLATFORM_SLUG} doc set --scope settings --user --slug settings`,
+      changed: false,
+    })
+  })
+
   test('marks a missing user settings row as a structured refusal', async () => {
     db().query("DELETE FROM doc WHERE scope='settings' AND owner=?").run(OWNER)
     expect((await applyMachineSettings({ check: false }, deps()))[0]).toEqual({
@@ -134,7 +227,6 @@ describe('settings apply', () => {
     writeCurrentSettings()
     const before = readFileSync(join(root, '.claude', 'settings.json'), 'utf8')
     const results = await applyMachineSettings({ check: true }, deps())
-    expect(pulls).toBe(0)
     expect(results[0]).toMatchObject({ outcome: 'current', changed: false })
     expect(results.slice(1)).toEqual(
       expect.arrayContaining([
@@ -366,22 +458,18 @@ describe('settings apply', () => {
     expect(results.slice(1, -1).every((result) => result.outcome === 'applied')).toBe(true)
   })
 
-  test('refuses from an orchestrator worker before pulling or opening writable state', async () => {
+  test('refuses from an orchestrator worker before reading documents or opening writable state', async () => {
     await expect(
       applyMachineSettings(
         { check: true },
         {
           workerProcess: () => true,
-          pull: async () => {
-            pulls++
-          },
         },
       ),
     ).rejects.toThrow('refusing settings apply from an orchestrator worker run')
-    expect(pulls).toBe(0)
   })
 
-  test('a secondary checkout refuses real harness homes before pulling', async () => {
+  test('a secondary checkout refuses real harness homes before reading documents', async () => {
     await expect(
       applyMachineSettings(
         { check: false },
@@ -395,16 +483,12 @@ describe('settings apply', () => {
           runningFromRegisteredMainCheckout: false,
           registeredMainCheckout: root,
           binaryRepositoryRoot: root,
-          pull: async () => {
-            pulls++
-          },
         },
       ),
     ).rejects.toThrow(`cleared by: run \`${root}/bin/${PLATFORM_SLUG} machine settings apply\``)
-    expect(pulls).toBe(0)
   })
 
-  test('a mixed temporary and real harness environment is refused before pulling', async () => {
+  test('a mixed temporary and real harness environment is refused before reading documents', async () => {
     await expect(
       applyMachineSettings(
         { check: false },
@@ -418,13 +502,9 @@ describe('settings apply', () => {
           workerProcess: () => false,
           runningFromRegisteredMainCheckout: false,
           registeredMainCheckout: '/projects/main',
-          pull: async () => {
-            pulls++
-          },
         },
       ),
     ).rejects.toThrow("real harness homes may only be written from this machine's installed copy")
-    expect(pulls).toBe(0)
   })
 
   test('skips successfully when another settings apply holds the per-user lock', async () => {
@@ -436,7 +516,6 @@ describe('settings apply', () => {
       expect(await applyMachineSettings({ check: false }, deps())).toEqual([
         { target: 'settings apply', outcome: 'skipped', changed: false },
       ])
-      expect(pulls).toBe(0)
     } finally {
       lease!.release()
     }

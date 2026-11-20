@@ -32,6 +32,8 @@ type HostedDocClient = {
   [Method in HostedDocMethod]: BindWriteDestination<RecordApiClient[Method]>
 }
 
+type HostedPersonalDocQuery = Parameters<HostedDocClient['listDocs']>[0]
+
 export async function hostedDocClient(
   scope: string,
   subject: string | null,
@@ -57,6 +59,30 @@ export async function hostedDocClient(
     applySettingsPermission: (input) => client.applySettingsPermission(input, destination),
     applySettingsAutoMode: (input) => client.applySettingsAutoMode(input, destination),
   }
+}
+
+async function listAllHostedDocs(
+  list: HostedDocClient['listDocs'],
+  query: HostedPersonalDocQuery,
+): Promise<Record<string, unknown>[]> {
+  const items: Record<string, unknown>[] = []
+  let cursor: string | null = null
+  do {
+    const page = await list({ ...query, limit: 100, cursor })
+    items.push(...page.items)
+    cursor = page.nextCursor
+  } while (cursor)
+  return items
+}
+
+/** Read personal-space document scopes through one destination resolution. */
+export async function listHostedPersonalDocs(
+  queries: readonly HostedPersonalDocQuery[],
+): Promise<Record<string, unknown>[][]> {
+  const first = queries[0]
+  if (!first?.scope) throw new Error('a hosted personal document scope is required')
+  const client = await hostedDocClient(first.scope, null)
+  return Promise.all(queries.map((query) => listAllHostedDocs(client.listDocs, query)))
 }
 
 /** Read one shared-parser document reference through the hosted document store. */
