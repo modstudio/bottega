@@ -38,9 +38,11 @@ export function recordRouteClass(path: string): string {
   if (pathname.startsWith('/v1/board/stream')) return 'record-board-stream'
   const family = pathname.match(/^\/v1\/([^/]+)/)?.[1]
   const known = new Set([
+    'active-space',
     'board',
     'catalogues',
     'changes',
+    'config',
     'config-access',
     'context-items',
     'docs',

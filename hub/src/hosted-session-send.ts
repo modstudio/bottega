@@ -1,10 +1,10 @@
+import { tracedRecordFetch } from '../../shared/record-call-trace.ts'
 import {
   type HostedRequestSafety,
   RECORD_SIGN_IN_REMEDY,
   recordUnreachableRefusal,
 } from '../../shared/record-remedies.ts'
 import { recordRequestHeaders } from '../../shared/record-request-headers.ts'
-import { tracedRecordFetch } from '../../shared/record-call-trace.ts'
 import { sendWithStoredRecordSessionToken } from '../../shared/record-session.ts'
 
 type HostedSessionRequestBase = {

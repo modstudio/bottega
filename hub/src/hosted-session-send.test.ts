@@ -1,6 +1,6 @@
 import { expect, mock, spyOn, test } from 'bun:test'
-import { CALLER_HEADER_NAME, withRecordCaller } from '../../shared/record-caller.ts'
 import * as recordCallTrace from '../../shared/record-call-trace.ts'
+import { CALLER_HEADER_NAME, withRecordCaller } from '../../shared/record-caller.ts'
 import { sendHostedSessionRequest } from './hosted-session-send.ts'
 import { hostedCreateTask } from './task-client.ts'
 
@@ -84,7 +84,9 @@ test('hosted session sends pass through the record trace seam', async () => {
       url: 'https://hub.example.test/v1/tasks',
       method: 'GET',
       fetch: async () =>
-        new Response('[]', { headers: { 'content-length': '2', 'content-type': 'application/json' } }),
+        new Response('[]', {
+          headers: { 'content-length': '2', 'content-type': 'application/json' },
+        }),
     })
 
     expect(await response.json()).toEqual([])
