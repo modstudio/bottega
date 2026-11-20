@@ -400,7 +400,6 @@ export const settingsModules: SettingsModule[] = [
     './settings.ts',
   ]),
   module('orchestrator/src/settings/settings-machine-runtime.ts', [
-    '../../../shared/brand.ts',
     '../../../shared/install-root.ts',
     '../../../shared/runtime-assets.ts',
     '../../../shared/self-spawn.ts',

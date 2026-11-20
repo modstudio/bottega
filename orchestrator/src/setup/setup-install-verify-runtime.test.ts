@@ -116,12 +116,17 @@ test('signed-out settings decisions stay follow-ups after a grok canon home is i
   expect(first.action).toBe('wait-for-sign-in')
   expect(second.action).toBe(first.action)
 
+  let runtimePrepared = false
   const applied = await applySetupInstallVerify(false, {
+    prepareRuntime: () => {
+      runtimePrepared = true
+    },
     applySettings: async () => [missingSettings, emptyGrokCanon],
     facts: () => {
       throw new Error('signed-out follow-up must not gather verification facts')
     },
   })
+  expect(runtimePrepared).toBe(true)
   expect(applied).toEqual({
     status: 'follow-up',
     condition: 'waiting-for-sign-in',

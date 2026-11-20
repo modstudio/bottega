@@ -32,6 +32,7 @@ import {
 export type SetupInstallVerifyAdapters = {
   applySettings?: () => Promise<MachineSettingsApplyResult[]>
   facts?: () => SetupInstallVerifyFacts
+  prepareRuntime?: () => void
 }
 
 const SIGN_IN_FOLLOW_UP =
@@ -113,6 +114,9 @@ export async function applySetupInstallVerify(
   message: string
   condition?: 'waiting-for-sign-in'
 }> {
+  const prepareRuntime =
+    adapters.prepareRuntime ?? (() => runtimeAssetPath('orchestrator/hooks/session-start.py'))
+  prepareRuntime()
   const results = await (adapters.applySettings ?? (() => applyMachineSettings({ check: false })))()
   if (results.some(settingsApplyLockSkipped)) {
     throw new Error(

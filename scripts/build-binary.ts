@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { commentParserAssets } from '../orchestrator/src/check/check-comment-parser-assets.ts'
@@ -18,6 +18,7 @@ const repositoryRoot = resolve(import.meta.dir, '..')
 
 function generatedAssetModule(
   textPaths: string[],
+  literalTextPaths: string[],
   filePaths: string[],
   manifest: ReturnType<typeof distributionManifest>,
 ): string {
@@ -35,6 +36,12 @@ function generatedAssetModule(
     .join('\n')
   const assetEntries = textPaths
     .map((path, index) => `${JSON.stringify(path)}: asset${index}`)
+    .concat(
+      literalTextPaths.map(
+        (path) =>
+          `${JSON.stringify(path)}: ${JSON.stringify(readFileSync(join(repositoryRoot, path), 'utf8'))}`,
+      ),
+    )
     .join(',\n')
   const fileEntries = filePaths
     .map((path, index) => `${JSON.stringify(path)}: file${index}`)
@@ -154,13 +161,13 @@ export async function buildBinary(
             (asset) => asset.packagePath,
           ),
         ],
+        RUNTIME_ASSETS.filter((asset) => asset.packagePath.endsWith('.json')).map(
+          (asset) => asset.packagePath,
+        ),
         [
           ...(await webAssetPaths()),
           ...sandboxRuntimePayloadPaths(platform, arch),
           ...commentParserPaths,
-          ...RUNTIME_ASSETS.filter((asset) => asset.packagePath.endsWith('.json')).map(
-            (asset) => asset.packagePath,
-          ),
         ],
         manifest,
       ),
