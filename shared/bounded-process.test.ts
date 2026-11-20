@@ -28,7 +28,9 @@ const execaMock = mock(
 
 mock.module('execa', () => ({ execa: execaMock }))
 
-const { startBounded, startParentBound } = await import('./bounded-process.ts')
+const { parentBoundSignalExitCode, startBounded, startParentBound } = await import(
+  './bounded-process.ts'
+)
 
 let previousSentinel: string | undefined
 
@@ -63,6 +65,12 @@ test('a deliberate git probe budget keeps its declared deadline', async () => {
   await startBounded(['git', 'rev-parse'], { budget: 'git-probe' })
 
   expect(execaMock.mock.calls[0]?.[2]?.timeout).toBe(CALL_BUDGETS['git-probe'].deadlineMs)
+})
+
+test('a parent-bound caller exits on signals unless it explicitly waits for cleanup', () => {
+  expect(parentBoundSignalExitCode('SIGINT')).toBe(130)
+  expect(parentBoundSignalExitCode('SIGTERM')).toBe(143)
+  expect(parentBoundSignalExitCode('SIGTERM', false)).toBeNull()
 })
 
 test('a parent-bound child keeps all three relay pipes streaming', async () => {

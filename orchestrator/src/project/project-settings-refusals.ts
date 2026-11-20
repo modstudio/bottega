@@ -16,10 +16,55 @@
 import { isAbsolute } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { repositoryVisibility } from '../../../shared/repository-visibility.ts'
+import { TREE_RUN_SCRIPTS, TREE_RUN_SCRIPTS_MODULE } from '../../../shared/tree-run-scripts.ts'
 import { GATE_INPUTS } from '../gate/gate-decision.ts'
 import { validateAutonomySettings } from '../workflow/autonomy.ts'
 import type { SettingsObjectMode } from './project-injection.ts'
 import type { ProjectSettings } from './project-settings.ts'
+
+function scriptsFiles(command: string): string[] {
+  return [...command.matchAll(/(?:^|[\s"'])(?:\.\/)?(scripts\/[^\s"']+)/g)].map(
+    (match) => match[1]!.replace(/[;|&]+$/, ''),
+  )
+}
+
+function treeRunCommands(settings: ProjectSettings): Array<[field: string, command: string]> {
+  const commands: Array<[string, string]> = []
+  const add = (field: string, command: string | undefined) => {
+    if (command !== undefined) commands.push([field, command])
+  }
+  add('gate', settings.gate)
+  add('workerCheck', settings.workerCheck)
+  if (settings.focusedTests) {
+    add('focusedTests', [settings.focusedTests.command, ...settings.focusedTests.args].join(' '))
+  }
+  const recipe = settings.worktree?.recipe
+  for (const field of ['install', 'migrate', 'serve', 'stop', 'after'] as const) {
+    add(`worktree.recipe.${field}`, recipe?.[field])
+  }
+  for (const [index, entry] of (settings.release?.beforePullRequest ?? []).entries()) {
+    add(`release.beforePullRequest.${index}.run`, entry.run)
+  }
+  // Release deploy and reference publish run from the main checkout, so their scripts are excluded.
+  return commands
+}
+
+/** Keep every Bottega register command that runs a tree script inside the reachability guard. */
+export function treeRunScriptProblems(
+  projectName: string | undefined,
+  settings: ProjectSettings,
+): string[] {
+  if (projectName !== PLATFORM_SLUG) return []
+  const listed = new Set<string>(TREE_RUN_SCRIPTS)
+  return treeRunCommands(settings).flatMap(([field, command]) =>
+    scriptsFiles(command)
+      .filter((file) => !listed.has(file))
+      .map(
+        (file) =>
+          `${field} executes unlisted tree script ${file}; add it to ${TREE_RUN_SCRIPTS_MODULE}`,
+      ),
+  )
+}
 
 /**
  * The keys of a map this binary does not know, in the mode its reader declares.

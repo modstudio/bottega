@@ -104,9 +104,9 @@ import {
   retiredReadonlyDockerProblems,
   reviewLensProblems,
   sweepHonorsHeldProblems,
+  treeRunScriptProblems,
   visibilityProblems,
 } from './project-settings-refusals.ts'
-import { treeRunScriptProblems } from './project-tree-run-script.ts'
 import {
   assertForgeVisibility,
   type ForgeVisibilityLookup,
@@ -602,10 +602,7 @@ export function validateProjectSettings(
     ...gateToolingProblems(settings.gateTooling),
     ...workerCheckProblems(settings.workerCheck),
     ...projectAgentKeyProblems(settings.agentKeys),
-    ...treeRunScriptProblems(
-      context.projectNameAfterWrite ?? context.currentProjectName,
-      settings.release,
-    ),
+    ...treeRunScriptProblems(context.projectNameAfterWrite ?? context.currentProjectName, settings),
   ]
 
   if (invalidOptionalStringArray(settings.secretPaths)) {

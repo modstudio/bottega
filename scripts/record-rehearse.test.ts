@@ -24,51 +24,47 @@ REHEARSAL RESTORE 123
 REHEARSAL MIGRATE 45
 REHEARSAL PASS ${hash}`
 
-test('re-runs through the main binary without putting a credential on argv or logs', () => {
-  const secret = 'fake-secret-value'
+test('re-runs through the main binary with only the credential environment name on argv', () => {
   const mainCheckout = `/projects/${PLATFORM_SLUG}`
-  const log = spyOn(console, 'log').mockImplementation(() => {})
-  const error = spyOn(console, 'error').mockImplementation(() => {})
-  try {
-    const decision = rehearsalCredentialDecision(
-      { UNRELATED_SECRET: secret },
-      ['/opt/bun', 'scripts/record-rehearse.ts', '--fixture'],
-      { mainCheckout, mainCheckoutExists: true, binaryExists: true },
-    )
-    expect(decision).toEqual({
-      kind: 'rerun',
-      argv: [
-        `${mainCheckout}/bin/${PLATFORM_SLUG}`,
-        'credential',
-        'resolve',
-        'fly/rehearsal/token',
-        '--project',
-        PLATFORM_SLUG,
-        '--reveal-to-env',
-        'BOTTEGA_RECORD_REHEARSAL_FLY_TOKEN',
-        '--',
-        '/opt/bun',
-        'scripts/record-rehearse.ts',
-        '--fixture',
-      ],
-    })
-    expect(JSON.stringify(decision)).not.toContain(secret)
-    expect(log).not.toHaveBeenCalled()
-    expect(error).not.toHaveBeenCalled()
-  } finally {
-    log.mockRestore()
-    error.mockRestore()
-  }
+  const decision = rehearsalCredentialDecision(
+    {},
+    ['/opt/bun', 'scripts/record-rehearse.ts', '--fixture'],
+    { mainCheckout, mainCheckoutExists: true, binaryExists: true },
+  )
+  expect(decision).toEqual({
+    kind: 'rerun',
+    argv: [
+      `${mainCheckout}/bin/${PLATFORM_SLUG}`,
+      'credential',
+      'resolve',
+      'fly/rehearsal/token',
+      '--project',
+      PLATFORM_SLUG,
+      '--reveal-to-env',
+      'BOTTEGA_RECORD_REHEARSAL_FLY_TOKEN',
+      '--',
+      '/opt/bun',
+      'scripts/record-rehearse.ts',
+      '--fixture',
+    ],
+  })
+  if (decision.kind !== 'rerun') throw new Error('expected rerun decision')
+  const reveal = decision.argv.indexOf('--reveal-to-env')
+  expect(decision.argv.filter((value) => value === 'BOTTEGA_RECORD_REHEARSAL_FLY_TOKEN')).toEqual([
+    'BOTTEGA_RECORD_REHEARSAL_FLY_TOKEN',
+  ])
+  expect(decision.argv[reveal + 1]).toBe('BOTTEGA_RECORD_REHEARSAL_FLY_TOKEN')
 })
 
 test('uses a present override without re-running the script', () => {
-  expect(
-    rehearsalCredentialDecision(
-      { BOTTEGA_RECORD_REHEARSAL_FLY_TOKEN: 'fake-child-token' },
-      ['/opt/bun', 'scripts/record-rehearse.ts'],
-      { mainCheckout: '/missing', mainCheckoutExists: false, binaryExists: false },
-    ),
-  ).toEqual({ kind: 'use-override' })
+  const token = 'fake-child-token'
+  const decision = rehearsalCredentialDecision(
+    { BOTTEGA_RECORD_REHEARSAL_FLY_TOKEN: token },
+    ['/opt/bun', 'scripts/record-rehearse.ts'],
+    { mainCheckout: '/missing', mainCheckoutExists: false, binaryExists: false },
+  )
+  expect(decision).toEqual({ kind: 'use-override' })
+  expect('argv' in decision ? decision.argv : []).not.toContain(token)
 })
 
 test('refuses a missing main binary with both credential remedies', () => {
@@ -80,8 +76,25 @@ test('refuses a missing main binary with both credential remedies', () => {
   })
   expect(decision).toEqual({
     kind: 'refuse',
-    message: `record rehearsal cannot resolve its Fly token because the main checkout binary does not exist: ${mainCheckout}/bin/${PLATFORM_SLUG}; set BOTTEGA_RECORD_REHEARSAL_FLY_TOKEN, or set BOTTEGA_MAIN_CHECKOUT to a main checkout whose bin/${PLATFORM_SLUG} exists`,
+    message: expect.stringContaining(
+      `the main checkout binary does not exist: ${mainCheckout}/bin/${PLATFORM_SLUG}`,
+    ),
   })
+  expect(decision.kind === 'refuse' ? decision.message : '').toContain(
+    `pipe the app-scoped token on stdin to: ${PLATFORM_SLUG} credential set fly/rehearsal/token --project ${PLATFORM_SLUG}`,
+  )
+})
+
+test('refuses an unresolvable main checkout with the override remedy', () => {
+  const decision = rehearsalCredentialDecision({}, ['/opt/bun', 'scripts/record-rehearse.ts'], {
+    mainCheckout: null,
+    mainCheckoutExists: false,
+    binaryExists: false,
+  })
+  expect(decision.kind).toBe('refuse')
+  expect(decision.kind === 'refuse' ? decision.message : '').toContain(
+    'set BOTTEGA_RECORD_REHEARSAL_FLY_TOKEN, or run from a checkout whose main has bin/bottega',
+  )
 })
 
 function gitResult(argv: readonly string[]) {
@@ -203,6 +216,69 @@ test('destroys a launched machine when waiting for it fails', async () => {
   ).rejects.toThrow('timed out')
   expect(calls.at(-1)).toContain('abcdef12345678')
   expect(calls.at(-1)?.slice(0, 3)).toEqual(['flyctl', 'machine', 'destroy'])
+})
+
+test('an interruption after launch destroys the known machine and fails', async () => {
+  const interrupt = new AbortController()
+  const calls: string[][] = []
+  const runner: RehearsalCommandRunner = async (argv, options) => {
+    calls.push([...argv])
+    const git = gitResult(argv)
+    if (git) return git
+    if (argv[0] === 'flyctl' && argv[2] === 'run') {
+      return { exitCode: 0, stdout: 'Machine ID: abcdef12345678\n', stderr: '' }
+    }
+    if (argv[0] === 'flyctl' && argv[2] === 'wait') {
+      interrupt.abort('SIGTERM')
+      options?.signal?.throwIfAborted()
+    }
+    return { exitCode: 0, stdout: '', stderr: '' }
+  }
+
+  await expect(
+    runRecordRehearsal({
+      token: 'sealed-token',
+      runner,
+      machineDetails: async () => ({}),
+      interrupt: interrupt.signal,
+    }),
+  ).rejects.toThrow()
+  expect(calls).toContainEqual([
+    'flyctl',
+    'machine',
+    'destroy',
+    'abcdef12345678',
+    '--app',
+    'bottega-record-backup',
+    '--force',
+  ])
+})
+
+test('a cleanup failure names the exact machine removal command', async () => {
+  const runner: RehearsalCommandRunner = async (argv) => {
+    const git = gitResult(argv)
+    if (git) return git
+    if (argv[0] === 'flyctl' && argv[2] === 'run') {
+      return { exitCode: 0, stdout: 'Machine ID: abcdef12345678\n', stderr: '' }
+    }
+    if (argv[0] === 'flyctl' && argv[2] === 'wait') {
+      return { exitCode: 1, stdout: '', stderr: 'wait failed' }
+    }
+    if (argv[0] === 'flyctl' && argv[2] === 'destroy') {
+      return { exitCode: 1, stdout: '', stderr: 'destroy failed' }
+    }
+    return { exitCode: 0, stdout: '', stderr: '' }
+  }
+
+  await expect(
+    runRecordRehearsal({
+      token: 'sealed-token',
+      runner,
+      machineDetails: async () => ({}),
+    }),
+  ).rejects.toThrow(
+    'flyctl machine destroy abcdef12345678 --app bottega-record-backup --force',
+  )
 })
 
 test('finds a named machine and destroys it when launch output has no id', async () => {

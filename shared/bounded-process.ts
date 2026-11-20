@@ -30,9 +30,15 @@ type ParentBoundProcessOptions = {
   name: string
   cwd?: string
   env?: Record<string, string | undefined>
+  exitOnSignal?: boolean
+  streamOutput?: boolean
 }
 
-type ParentBoundChild = { exited: Promise<number>; kill(signal?: NodeJS.Signals): void }
+type ParentBoundChild = {
+  exited: Promise<number>
+  kill(signal?: NodeJS.Signals): void
+  exitOnSignal: boolean
+}
 
 const parentBoundChildren = new Set<ParentBoundChild>()
 let parentBoundHooksInstalled = false
@@ -41,18 +47,31 @@ function killParentBoundChildren(signal: NodeJS.Signals): void {
   for (const child of parentBoundChildren) child.kill(signal)
 }
 
+/** The default preserves the parent-bound contract; an opted-out parent waits for its child. */
+export function parentBoundSignalExitCode(
+  signal: 'SIGINT' | 'SIGTERM',
+  exitOnSignal = true,
+): number | null {
+  if (!exitOnSignal) return null
+  return signal === 'SIGINT' ? 130 : 143
+}
+
+function handleParentBoundSignal(signal: 'SIGINT' | 'SIGTERM'): void {
+  const children = [...parentBoundChildren]
+  killParentBoundChildren(signal)
+  const exitCode = parentBoundSignalExitCode(
+    signal,
+    children.length === 0 || children.some((child) => child.exitOnSignal),
+  )
+  if (exitCode !== null) process.exit(exitCode)
+}
+
 function installParentBoundHooks(): void {
   if (parentBoundHooksInstalled) return
   parentBoundHooksInstalled = true
   process.once('exit', () => killParentBoundChildren('SIGTERM'))
-  process.once('SIGINT', () => {
-    killParentBoundChildren('SIGINT')
-    process.exit(130)
-  })
-  process.once('SIGTERM', () => {
-    killParentBoundChildren('SIGTERM')
-    process.exit(143)
-  })
+  process.once('SIGINT', () => handleParentBoundSignal('SIGINT'))
+  process.once('SIGTERM', () => handleParentBoundSignal('SIGTERM'))
 }
 
 /** Start a streaming child whose lifetime is bounded by this parent instead of a deadline. */
@@ -62,12 +81,13 @@ export function startParentBound(argv: readonly string[], options: ParentBoundPr
   const child = Bun.spawn([...argv], {
     cwd: options.cwd,
     env: options.env,
-    stdin: 'pipe',
-    stdout: 'pipe',
-    stderr: 'pipe',
+    stdin: options.streamOutput ? 'inherit' : 'pipe',
+    stdout: options.streamOutput ? 'inherit' : 'pipe',
+    stderr: options.streamOutput ? 'inherit' : 'pipe',
   })
-  parentBoundChildren.add(child)
-  void child.exited.then(() => parentBoundChildren.delete(child))
+  const tracked = Object.assign(child, { exitOnSignal: options.exitOnSignal !== false })
+  parentBoundChildren.add(tracked)
+  void child.exited.then(() => parentBoundChildren.delete(tracked))
   return child
 }
 

@@ -1,13 +1,13 @@
 #!/usr/bin/env bun
 import { existsSync } from 'node:fs'
-import { dirname, join, resolve } from 'node:path'
+import { join, resolve } from 'node:path'
 import { REHEARSAL_NOTICE_LIMIT } from '../orchestrator/src/postgres/migration-notices.ts'
 import { hostedApiFetch } from '../shared/bounded-fetch.ts'
-import { startBounded, startBoundedSync, startParentBound } from '../shared/bounded-process.ts'
-import { PLATFORM_SLUG } from '../shared/brand.ts'
-import { credentialIdentityPath } from '../shared/credential.ts'
+import { startParentBound } from '../shared/bounded-process.ts'
+import { FROZEN_ENV_NAMES, PLATFORM_SLUG } from '../shared/brand.ts'
+import { mainCheckoutOf } from '../shared/git.ts'
 import {
-  operatorCredentialResolveCommand,
+  operatorCredentialResolveArgv,
   operatorCredentialSetCommand,
   RECORD_REHEARSAL_OPERATOR_CREDENTIAL,
 } from '../shared/operator-credentials.ts'
@@ -25,7 +25,7 @@ const GITHUB_STATUS_DESCRIPTION_LIMIT = 140
 const rehearsalCredential = RECORD_REHEARSAL_OPERATOR_CREDENTIAL
 const tokenName = rehearsalCredential.overrideVariable
 const sealingCommand = operatorCredentialSetCommand(rehearsalCredential)
-const MAIN_CHECKOUT_VARIABLE = 'BOTTEGA_MAIN_CHECKOUT'
+const MAIN_CHECKOUT_VARIABLE = FROZEN_ENV_NAMES.mainCheckout
 
 export type MainCheckoutFacts = {
   mainCheckout: string | null
@@ -53,15 +53,14 @@ export function rehearsalCredentialDecision(
         : `the main checkout binary does not exist: ${join(mainCheckout, 'bin', PLATFORM_SLUG)}`
     return {
       kind: 'refuse',
-      message: `record rehearsal cannot resolve its Fly token because ${condition}; set ${tokenName}, or set ${MAIN_CHECKOUT_VARIABLE} to a main checkout whose bin/${PLATFORM_SLUG} exists`,
+      message: `record rehearsal cannot resolve its Fly token because ${condition}; set ${tokenName}, or run from a checkout whose main has bin/${PLATFORM_SLUG}. To seal the credential instead, pipe the app-scoped token on stdin to: ${sealingCommand}`,
     }
   }
-  const resolveArgv = operatorCredentialResolveCommand(rehearsalCredential).split(' ')
   return {
     kind: 'rerun',
     argv: [
       join(mainCheckout, 'bin', PLATFORM_SLUG),
-      ...resolveArgv.slice(1),
+      ...operatorCredentialResolveArgv(rehearsalCredential),
       '--reveal-to-env',
       tokenName,
       '--',
@@ -72,16 +71,13 @@ export function rehearsalCredentialDecision(
 
 function mainCheckoutFacts(env: Readonly<Record<string, string | undefined>>): MainCheckoutFacts {
   const configured = env[MAIN_CHECKOUT_VARIABLE]?.trim()
-  let mainCheckout = configured ? resolve(configured) : null
-  if (!mainCheckout) {
-    const commonDirectory = startBoundedSync(['git', 'rev-parse', '--git-common-dir'], {
-      budget: 'git-plumbing',
-    })
-    if (commonDirectory.exitCode === 0) {
-      const value = commonDirectory.stdout.trim()
-      if (value) mainCheckout = dirname(resolve(value))
+  let mainCheckout: string | null = configured ? resolve(configured) : null
+  if (!mainCheckout)
+    try {
+      mainCheckout = mainCheckoutOf(process.cwd())
+    } catch {
+      mainCheckout = null
     }
-  }
   return {
     mainCheckout,
     mainCheckoutExists: mainCheckout ? existsSync(mainCheckout) : false,
@@ -92,7 +88,7 @@ function mainCheckoutFacts(env: Readonly<Record<string, string | undefined>>): M
 type CommandResult = { exitCode: number; stdout: string; stderr: string }
 export type RehearsalCommandRunner = (
   argv: readonly string[],
-  options?: { env?: Record<string, string>; timeoutMs?: number },
+  options?: { env?: Record<string, string>; timeoutMs?: number; signal?: AbortSignal },
 ) => Promise<CommandResult>
 
 export type RehearsalLines = {
@@ -218,11 +214,13 @@ function checked(result: CommandResult, argv: readonly string[]): string {
 
 async function realCommandRunner(
   argv: readonly string[],
-  options: { env?: Record<string, string>; timeoutMs?: number } = {},
+  options: { env?: Record<string, string>; timeoutMs?: number; signal?: AbortSignal } = {},
 ): Promise<CommandResult> {
-  const child = startParentBound(argv, {
-    name: 'record rehearsal command',
+  options.signal?.throwIfAborted()
+  const child = Bun.spawn([...argv], {
     env: { ...process.env, ...options.env },
+    stdout: 'pipe',
+    stderr: 'pipe',
   })
   let timedOut = false
   const timer = options.timeoutMs
@@ -231,12 +229,16 @@ async function realCommandRunner(
         child.kill()
       }, options.timeoutMs)
     : undefined
+  const abort = () => child.kill(options.signal?.reason === 'SIGINT' ? 'SIGINT' : 'SIGTERM')
+  options.signal?.addEventListener('abort', abort, { once: true })
   const [exitCode, stdout, stderr] = await Promise.all([
     child.exited,
     new Response(child.stdout).text(),
     new Response(child.stderr).text(),
   ])
   if (timer) clearTimeout(timer)
+  options.signal?.removeEventListener('abort', abort)
+  options.signal?.throwIfAborted()
   return {
     exitCode: timedOut ? 124 : exitCode,
     stdout,
@@ -244,11 +246,16 @@ async function realCommandRunner(
   }
 }
 
-async function realMachineDetails(machineId: string, token: string): Promise<unknown> {
+async function realMachineDetails(
+  machineId: string,
+  token: string,
+  signal?: AbortSignal,
+): Promise<unknown> {
   const response = await hostedApiFetch(
     `https://api.machines.dev/v1/apps/${REHEARSAL_APP}/machines/${machineId}`,
     {
       headers: { Authorization: `Bearer ${token}` },
+      signal,
     },
   )
   if (!response.ok)
@@ -343,13 +350,17 @@ async function cleanupMachine(
   knownMachineId: string | null,
   flyEnv: Record<string, string>,
 ): Promise<Error | undefined> {
+  const listCommand = `flyctl machine list --app ${REHEARSAL_APP}`
   let machineId = knownMachineId
   if (!machineId) {
     const listArgv = ['flyctl', 'machine', 'list', '--app', REHEARSAL_APP, '--json']
-    const listed = await runner(listArgv, { env: flyEnv })
+    const listed = await runner(listArgv, {
+      env: flyEnv,
+      timeoutMs: (FLY_WAIT_TIMEOUT_SECONDS + 30) * 1000,
+    })
     if (listed.exitCode !== 0) {
       return new Error(
-        `record rehearsal cleanup could not find ${machineName}: ${listed.stderr.trim() || listed.stdout.trim()}`,
+        `record rehearsal cleanup could not find ${machineName}: ${listed.stderr.trim() || listed.stdout.trim()}; remove it after locating it with: ${listCommand}`,
       )
     }
     try {
@@ -357,15 +368,20 @@ async function cleanupMachine(
       const machine = machines.find((candidate) => candidate.name === machineName)
       if (typeof machine?.id === 'string') machineId = machine.id
     } catch {
-      return new Error(`record rehearsal cleanup could not parse machine list for ${machineName}`)
+      return new Error(
+        `record rehearsal cleanup could not parse the machine list for ${machineName}; remove it after locating it with: ${listCommand}`,
+      )
     }
   }
   if (!machineId) return undefined
   const destroyArgv = ['flyctl', 'machine', 'destroy', machineId, '--app', REHEARSAL_APP, '--force']
-  const destroyed = await runner(destroyArgv, { env: flyEnv })
+  const destroyed = await runner(destroyArgv, {
+    env: flyEnv,
+    timeoutMs: (FLY_WAIT_TIMEOUT_SECONDS + 30) * 1000,
+  })
   if (destroyed.exitCode === 0) return undefined
   return new Error(
-    `record rehearsal cleanup failed for ${machineName} (${machineId}): ${destroyed.stderr.trim() || destroyed.stdout.trim()}`,
+    `record rehearsal cleanup failed for ${machineName} (${machineId}): ${destroyed.stderr.trim() || destroyed.stdout.trim()}; remove it with: ${destroyArgv.join(' ')}`,
   )
 }
 
@@ -442,13 +458,16 @@ async function rehearsalFailure(
 export async function runRecordRehearsal(input: {
   token: string
   runner: RehearsalCommandRunner
-  machineDetails: (machineId: string, token: string) => Promise<unknown>
+  machineDetails: (machineId: string, token: string, signal?: AbortSignal) => Promise<unknown>
+  interrupt?: AbortSignal
 }): Promise<RehearsalLines> {
+  const runner: RehearsalCommandRunner = (argv, options = {}) =>
+    input.runner(argv, { ...options, signal: input.interrupt })
   const gitStatusArgv = ['git', 'status', '--porcelain']
-  if (checked(await input.runner(gitStatusArgv), gitStatusArgv)) {
+  if (checked(await runner(gitStatusArgv), gitStatusArgv)) {
     throw new Error('record rehearsal refuses a dirty working tree; commit the tree and rerun it')
   }
-  const sha = await remoteHead(input.runner)
+  const sha = await remoteHead(runner)
   const machineName = `record-rehearsal-${sha.slice(0, 8)}-${Date.now()}`
   const flyEnv = { FLY_API_TOKEN: input.token }
   let statusPosted = false
@@ -457,7 +476,7 @@ export async function runRecordRehearsal(input: {
   let failure: unknown
   try {
     const runArgv = runMachineArgv(machineName)
-    const runResult = await input.runner(runArgv, {
+    const runResult = await runner(runArgv, {
       env: flyEnv,
       timeoutMs: REHEARSAL_WAIT_TIMEOUT_MS,
     })
@@ -467,17 +486,17 @@ export async function runRecordRehearsal(input: {
       throw new Error(
         `flyctl machine run did not report the launched Machine ID for ${machineName}`,
       )
-    await waitForMachineToStop(input.runner, machineId, flyEnv)
-    const details = await input.machineDetails(machineId, input.token)
+    await waitForMachineToStop(runner, machineId, flyEnv)
+    const details = await input.machineDetails(machineId, input.token, input.interrupt)
     const logsArgv = ['flyctl', 'logs', '--app', REHEARSAL_APP, '--no-tail', '--machine', machineId]
-    const logs = checked(await input.runner(logsArgv, { env: flyEnv }), logsArgv)
+    const logs = checked(await runner(logsArgv, { env: flyEnv }), logsArgv)
     const lines = parseRehearsalLines(logs)
     const status = rehearsalStatus(lines, machineExitCode(details))
-    await postStatus(input.runner, sha, status)
+    await postStatus(runner, sha, status)
     statusPosted = true
     if (status.state === 'failure') throw new Error(status.failure)
     try {
-      await rerunFailedRecordRehearsal(input.runner, sha)
+      await rerunFailedRecordRehearsal(runner, sha)
     } catch (rerunError) {
       const detail = rerunError instanceof Error ? rerunError.message : String(rerunError)
       const retryCommand = /gh run rerun \d+ --job \d+/.exec(detail)?.[0]
@@ -487,13 +506,36 @@ export async function runRecordRehearsal(input: {
     }
     result = lines
   } catch (error) {
-    failure = await rehearsalFailure(input.runner, sha, machineName, error, statusPosted)
+    failure = input.interrupt?.aborted
+      ? new Error(`machine ${machineName}: interrupted by ${String(input.interrupt.reason)}`)
+      : await rehearsalFailure(runner, sha, machineName, error, statusPosted)
   } finally {
     failure = (await cleanupMachine(input.runner, machineName, machineId, flyEnv)) ?? failure
   }
   if (failure) throw failure
   if (!result) throw new Error('record rehearsal finished without a result')
   return result
+}
+
+function rehearsalInterrupt(): { signal: AbortSignal; dispose: () => void } {
+  const controller = new AbortController()
+  let interrupted = false
+  const handle = (signal: 'SIGINT' | 'SIGTERM') => {
+    if (interrupted) process.exit(signal === 'SIGINT' ? 130 : 143)
+    interrupted = true
+    controller.abort(signal)
+  }
+  const interrupt = () => handle('SIGINT')
+  const terminate = () => handle('SIGTERM')
+  process.on('SIGINT', interrupt)
+  process.on('SIGTERM', terminate)
+  return {
+    signal: controller.signal,
+    dispose: () => {
+      process.off('SIGINT', interrupt)
+      process.off('SIGTERM', terminate)
+    },
+  }
 }
 
 if (import.meta.main) {
@@ -504,36 +546,33 @@ if (import.meta.main) {
   )
   if (credential.kind === 'refuse') {
     console.error(credential.message)
-    process.exit(1)
-  }
-  if (credential.kind === 'rerun') {
-    const child = await startBounded(credential.argv, {
-      budget: 'release-publish',
-      env: process.env,
-    })
-    if (child.stdout) process.stdout.write(child.stdout)
-    if (child.stderr) process.stderr.write(child.stderr)
-    process.exit(child.exitCode)
-  }
-  const token = process.env[tokenName]?.trim()
-  if (!token) {
-    console.error(
-      `${credentialIdentityPath(rehearsalCredential.identity.provider, rehearsalCredential.identity.name, rehearsalCredential.identity.type)} is required unless ${tokenName} is set. Pipe the app-scoped token on stdin to: ${sealingCommand}`,
-    )
-    process.exit(1)
-  }
-  try {
-    const lines = await runRecordRehearsal({
-      token,
-      runner: realCommandRunner,
-      machineDetails: realMachineDetails,
-    })
-    console.log(`record rehearsal passed migration-set ${lines.hash}`)
-    for (const line of renderRehearsalNotices(lines)) console.log(line)
-  } catch (error) {
-    console.error(
-      `record rehearsal failed: ${error instanceof Error ? error.message : String(error)}`,
-    )
     process.exitCode = 1
+  } else if (credential.kind === 'rerun') {
+    const child = startParentBound(credential.argv, {
+      name: 'record rehearsal credential child',
+      env: process.env,
+      exitOnSignal: false,
+      streamOutput: true,
+    })
+    process.exitCode = await child.exited
+  } else {
+    const interrupt = rehearsalInterrupt()
+    try {
+      const lines = await runRecordRehearsal({
+        token: process.env[tokenName]!.trim(),
+        runner: realCommandRunner,
+        machineDetails: realMachineDetails,
+        interrupt: interrupt.signal,
+      })
+      console.log(`record rehearsal passed migration-set ${lines.hash}`)
+      for (const line of renderRehearsalNotices(lines)) console.log(line)
+    } catch (error) {
+      console.error(
+        `record rehearsal failed: ${error instanceof Error ? error.message : String(error)}`,
+      )
+      process.exitCode = 1
+    } finally {
+      interrupt.dispose()
+    }
   }
 }
