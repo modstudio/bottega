@@ -3,7 +3,6 @@
 
 import { startBunBounded } from '../../../shared/bounded-process.ts'
 import { MCP_SERVER_NAME, PLATFORM_SLUG, WORKER_MCP_SERVER_NAME } from '../../../shared/brand.ts'
-import { BoundExceededError } from '../../../shared/call-budgets.ts'
 import { redactSecretShaped } from '../../../shared/secret-shaped.ts'
 import { bottegaEntryArgv, bottegaMcpServeArgv } from '../../../shared/self-spawn.ts'
 import { DISCARD_STORE_PATH } from '../../../shared/state-directory.ts'
@@ -205,7 +204,11 @@ export async function runSetupCommandAsync(
       error: null,
     }
   } catch (error) {
-    const timedOut = error instanceof BoundExceededError && error.bound === 'deadline'
+    const timedOut =
+      error instanceof Error &&
+      error.name === 'BoundExceededError' &&
+      'bound' in error &&
+      error.bound === 'deadline'
     return {
       exitCode: null,
       stdout: '',
