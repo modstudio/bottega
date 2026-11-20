@@ -418,7 +418,11 @@ async function runHeartbeatArmProof(
     'hooks',
     'orch-heartbeat.sh',
   )
-  const command = distributionHeartbeatCommand(executable, script, 'release-proof-heartbeat')
+  const command = distributionHeartbeatCommand(
+    executable,
+    script,
+    '01990000-0000-7000-8000-000000000252',
+  )
   const child = startParentBound(['sh', '-c', command], {
     name: 'release install heartbeat proof',
     cwd: paths.home,
