@@ -44,6 +44,7 @@ function codexPermissionLaunchProfile(input: {
         input.cwd,
         input.writableRoots,
         input.runTemp.directory,
+        input.repoJob,
       ) ?? [],
   }
 }

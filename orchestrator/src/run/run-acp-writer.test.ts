@@ -85,12 +85,26 @@ test('recorded confinement exposes sandbox roots and leaves host workers unprove
       [],
       '/tmp',
       'workspace-write',
+      true,
     ),
   ).toEqual(['/run/tree'])
-  expect(confinementRoots(null, 'grok', '/run/tree', [], '/tmp', 'workspace-write')).toBeNull()
   expect(
-    confinementRoots(null, 'codex', '/run/tree', ['/run/scratch'], '/tmp', 'workspace-write'),
+    confinementRoots(null, 'grok', '/run/tree', [], '/tmp', 'workspace-write', true),
+  ).toBeNull()
+  expect(
+    confinementRoots(null, 'codex', '/run/tree', ['/run/scratch'], '/tmp', 'workspace-write', true),
   ).toEqual(['/run/tree', '/run/scratch', '/tmp'])
+  expect(
+    confinementRoots(
+      null,
+      'codex',
+      '/run/isolate',
+      ['/run/isolate/scratch'],
+      '/private/tmp',
+      'workspace-write',
+      false,
+    ),
+  ).toEqual(['/run/isolate', '/run/isolate/scratch'])
 })
 
 test.skipIf(sandboxDeniesLoopbackBinding)(

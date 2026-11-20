@@ -119,6 +119,7 @@ async function launchCodexProbe(
           cwd,
           profile.filesystem.allowWrite,
           environment.TMPDIR,
+          true,
         ) ?? [],
       network: false,
     })

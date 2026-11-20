@@ -64,6 +64,7 @@ export function prepareHarnessConfinement(input: {
     ),
     tmpDir: process.env.TMPDIR,
     codexSandbox: 'danger-full-access',
+    repoJob: Boolean(input.worktree),
     callerCwd: input.callerCwd,
     isolatedCwd: input.isolatedCwd,
     runProject,
@@ -94,6 +95,7 @@ export function freezeBeforeRunCheckouts(input: {
   writableRoots: string[]
   tmpDir: string | undefined
   codexSandbox: 'read-only' | 'workspace-write' | 'danger-full-access'
+  repoJob: boolean
   callerCwd: string
   isolatedCwd: string | null
   runProject: { name: string } | null
@@ -107,6 +109,7 @@ export function freezeBeforeRunCheckouts(input: {
     input.writableRoots,
     input.tmpDir,
     input.codexSandbox,
+    input.repoJob,
   )
   const callerCheckout = input.runProject
     ? (gitContext(input.callerCwd, 'rev-parse', '--show-toplevel') ?? input.callerCwd)

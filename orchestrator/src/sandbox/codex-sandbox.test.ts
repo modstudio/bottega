@@ -16,16 +16,28 @@ describe('Codex sandbox decision', () => {
   })
 })
 
-test('native writable roots include temporary directories once', () => {
+test('repository writable roots include temporary directories once', () => {
   expect(
-    codexWritableRoots('workspace-write', '/run/tree', ['/run/scratch'], '/private/tmp'),
+    codexWritableRoots('workspace-write', '/run/tree', ['/run/scratch'], '/private/tmp', true),
   ).toEqual(['/run/tree', '/run/scratch', '/tmp', '/private/tmp'])
-  expect(codexWritableRoots('workspace-write', '/run/tree', ['/tmp'], '/tmp')).toEqual([
+  expect(codexWritableRoots('workspace-write', '/run/tree', ['/tmp'], '/tmp', true)).toEqual([
     '/run/tree',
     '/tmp',
   ])
-  expect(codexWritableRoots('read-only', '/run/tree', [], '/tmp')).toBeNull()
-  expect(codexWritableRoots('danger-full-access', '/run/tree', [], '/tmp')).toBeNull()
+  expect(codexWritableRoots('read-only', '/run/tree', [], '/tmp', true)).toBeNull()
+  expect(codexWritableRoots('danger-full-access', '/run/tree', [], '/tmp', true)).toBeNull()
+})
+
+test('non-repository writable roots exclude shared temporary directories', () => {
+  expect(
+    codexWritableRoots(
+      'workspace-write',
+      '/run/isolate',
+      ['/run/isolate/scratch'],
+      '/private/tmp',
+      false,
+    ),
+  ).toEqual(['/run/isolate', '/run/isolate/scratch'])
 })
 
 describe('Codex permission profile', () => {

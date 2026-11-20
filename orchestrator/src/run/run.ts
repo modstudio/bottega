@@ -846,6 +846,7 @@ export async function run(
     writableRoots,
     tmpDir: process.env.TMPDIR,
     codexSandbox: codexSandbox.sandbox,
+    repoJob,
     callerCwd,
     isolatedCwd,
     runProject,

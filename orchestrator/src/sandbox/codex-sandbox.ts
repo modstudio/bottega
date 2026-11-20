@@ -62,9 +62,10 @@ export function codexWritableRoots(
   cwd: string,
   extraRoots: string[],
   tmpDir: string | undefined,
+  repository: boolean,
 ): string[] | null {
   if (sandbox !== 'workspace-write') return null
-  return [...new Set([cwd, ...extraRoots, '/tmp', tmpDir ?? '/tmp'])]
+  return [...new Set([cwd, ...extraRoots, ...(repository ? ['/tmp', tmpDir ?? '/tmp'] : [])])]
 }
 
 /**

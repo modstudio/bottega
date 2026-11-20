@@ -39,9 +39,12 @@ export function confinementRoots(
   extraRoots: string[],
   tmpDir: string | undefined,
   codexSandbox: 'read-only' | 'workspace-write' | 'danger-full-access',
+  repository: boolean,
 ): string[] | null {
   if (srtProfile) return srtProfile.filesystem.allowWrite
-  return agent === 'codex' ? codexWritableRoots(codexSandbox, cwd, extraRoots, tmpDir) : null
+  return agent === 'codex'
+    ? codexWritableRoots(codexSandbox, cwd, extraRoots, tmpDir, repository)
+    : null
 }
 
 /** Pure per-run facts used by every host checkpoint path. */

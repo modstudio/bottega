@@ -209,7 +209,8 @@ function startProbeTransport(
               allowRead: codexProfile.filesystem.allowWithinDeny,
             },
             writableRoots:
-              codexWritableRoots('workspace-write', cwd, [scratchDir], environment.TMPDIR) ?? [],
+              codexWritableRoots('workspace-write', cwd, [scratchDir], environment.TMPDIR, true) ??
+              [],
           },
         }
       : {}),
