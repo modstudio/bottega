@@ -516,19 +516,18 @@ function continuationLaunch(
   id: string,
   treeDecision: ContinuationTreeDecision,
   writesRepo: boolean,
-  project: Project | null,
-  binding: ContinueRunDependencies['binding'],
+  context: { project: Project | null; binding: ContinueRunDependencies['binding'] },
 ): ResumeLaunchOptions & { binding?: ContinueRunDependencies['binding'] } {
   return {
     ...inherited,
-    binding,
+    binding: context.binding,
     lensInputs: continuationLensInputs(id),
     seed: requireContinuationProvision({
       rootId: id,
       treeDecision,
       recordedSeed: inherited.seed,
       writesRepo,
-      project,
+      project: context.project,
     }).seed,
   }
 }
@@ -824,8 +823,7 @@ export async function continueRun(
     id,
     treeDecision,
     Boolean(jobNeeds.writesRepo),
-    project,
-    dependencies.binding,
+    { project, binding: dependencies.binding },
   )
   const prompt = continuationPrompt(id, row.job, checkpoint, continuationMessage)
   await refuseOversizedResumePrompt({
