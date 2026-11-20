@@ -3,7 +3,6 @@
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { RunIdentity } from '../../../shared/orch-contract.ts'
-import { refusal, renderRefusal } from '../../../shared/refusal.ts'
 import {
   type FailoverSuccessor,
   failoverSuccessors,
@@ -34,6 +33,7 @@ import type {
 } from './question-vocabulary.ts'
 import { currentRunMemberJoin } from './run-chain.ts'
 import { classifyRunIdentifier, resolveRunIdentifierOrNull } from './run-identifier.ts'
+import { parseRunListSince } from './run-listing-since.ts'
 import {
   isFreshRunHostWait,
   isRunQueuedForCapacity,
@@ -465,23 +465,6 @@ function addExactFilter(
   if (!value) return
   where.push(clause)
   args.push(value)
-}
-
-/** Normalize a run-list window to the UTC timestamp form stored in SQLite. */
-export function parseRunListSince(value: string | undefined): string | undefined {
-  if (value === undefined || value.trim() === '') return undefined
-  const instant = Date.parse(value)
-  if (!Number.isFinite(instant)) {
-    throw new Error(
-      renderRefusal(
-        refusal(`invalid --since value: ${JSON.stringify(value)}`, {
-          kind: 'edit',
-          text: 'provide --since as an ISO 8601 timestamp, for example 2026-11-19T06:02:03.000Z',
-        }),
-      ),
-    )
-  }
-  return new Date(instant).toISOString()
 }
 
 function resolveRequestedRunIds(values: string[]): { ids: string[]; unknown: string[] } {
