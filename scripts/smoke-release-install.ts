@@ -31,6 +31,7 @@ type StepResult = {
 }
 
 const GROK_INSTALLER_URL = 'https://x.ai/cli/install.sh'
+const HEARTBEAT_PROOF_SESSION = '01990000-0000-7000-8000-000000000252'
 
 export type HarnessInstallerInvocationCounts = {
   brewCodex: number
@@ -418,11 +419,7 @@ async function runHeartbeatArmProof(
     'hooks',
     'orch-heartbeat.sh',
   )
-  const command = distributionHeartbeatCommand(
-    executable,
-    script,
-    '01990000-0000-7000-8000-000000000252',
-  )
+  const command = distributionHeartbeatCommand(executable, script, HEARTBEAT_PROOF_SESSION)
   const child = startParentBound(['sh', '-c', command], {
     name: 'release install heartbeat proof',
     cwd: paths.home,
@@ -582,7 +579,6 @@ async function proveReleaseInstall(version: string, keep: boolean): Promise<numb
     const seededSettings = await seedProofSettings(paths, executable, env)
     results.push(...seededSettings)
     results.push(await runExtractedHookProof(version, paths, env, assertionFailures))
-    results.push(await runHeartbeatArmProof(version, paths, executable, env, assertionFailures))
     const firstInstallerCounts = harnessInstallerInvocationCounts(
       readProofLog(brewLog),
       readProofLog(curlLog),
@@ -603,6 +599,7 @@ async function proveReleaseInstall(version: string, keep: boolean): Promise<numb
     results.push(
       await runStep('doctor (second)', [executable, 'machine', 'doctor'], paths.home, env),
     )
+    results.push(await runHeartbeatArmProof(version, paths, executable, env, assertionFailures))
     return reportProof(results, assertionFailures)
   } finally {
     if (keep) console.log(`kept release install proof at ${root}`)

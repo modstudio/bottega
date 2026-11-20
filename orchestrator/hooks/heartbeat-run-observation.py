@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Parse the run-list JSON shape shared by heartbeat live and completion reads."""
+from __future__ import annotations
 
 import datetime
 import json

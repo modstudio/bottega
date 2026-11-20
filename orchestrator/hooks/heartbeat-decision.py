@@ -4,6 +4,7 @@
 Tick exits with HEARTBEAT_KEEP_LOOP_EXIT_STATUS while watching must continue and
 HEARTBEAT_CLEAR_EXIT_STATUS only for CLEAR, when the shell should stop watching.
 """
+from __future__ import annotations
 
 import os
 import sys

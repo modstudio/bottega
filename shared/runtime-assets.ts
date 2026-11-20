@@ -51,7 +51,7 @@ function extractedRuntimeRoot(environment: StateEnvironment): string {
 /** Resolve the root shared by every declared runtime asset. */
 export function runtimeAssetRoot(environment: StateEnvironment = process.env): string {
   if (!runtimeAssetsAreEmbedded()) return realpathSync(assetPath())
-  return extractedRuntimeRoot(environment)
+  return realpathSync(extractedRuntimeRoot(environment))
 }
 
 /** Resolve a declared runtime asset to a verified, ordinary filesystem path. */
