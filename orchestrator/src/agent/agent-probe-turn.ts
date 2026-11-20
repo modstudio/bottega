@@ -7,10 +7,12 @@ import { newRecordId } from '../../../shared/record-id.ts'
 import type { ProjectCredentialTarget } from '../config/credential-service.ts'
 import { writableDb } from '../database/db.ts'
 import { recordRunWarning } from '../events.ts'
+import { type Project, projectsIncludingRetired } from '../project/projects.ts'
 import { workerMcpLaunchSelection, writerProxyRoute } from '../run/run-mcp-launch-scope.ts'
 import { nextRunNumber } from '../run/run-number.ts'
 import { quotaReadingsColumnValues } from '../run/run-usage-columns.ts'
-import { prepareCodexHome } from '../sandbox/sandbox.ts'
+import { codexPermissionProfileInput } from '../sandbox/codex-sandbox.ts'
+import { prepareCodexHome, readonlyLensProfile } from '../sandbox/sandbox.ts'
 import { harnessCollectsQuotaReadings } from '../transport/codex-quota.ts'
 import { EMPTY_QUOTA_READINGS } from '../transport/quota-readings.ts'
 import type {
@@ -164,6 +166,29 @@ function startProbeTransport(
   cwd: string,
   scratchDir: string,
 ) {
+  const syntheticProject: Project = {
+    recordId: 'registration-probe',
+    name: 'registration-probe',
+    path: cwd,
+    stack: null,
+    canon: false,
+    retiredAt: null,
+    settings: {},
+  }
+  const codexProfile =
+    input.agent.name === 'codex'
+      ? (input.writing?.profile ??
+        readonlyLensProfile({
+          worktree: cwd,
+          runtimeDir: join(scratchDir, 'codex-confinement-runtime'),
+          scratchDir,
+          project: syntheticProject,
+          registeredProjects: [...projectsIncludingRetired(writableDb()), syntheticProject],
+          agent: 'codex',
+          environment,
+          allowWrite: [scratchDir],
+        }))
+      : null
   return input.transport.start({
     agent: input.agent,
     cwd,
@@ -175,7 +200,18 @@ function startProbeTransport(
     startedAt: started,
     write: true,
     sandbox: 'workspace-write',
-    ...(input.writing ? {} : { writableRoots: [scratchDir] }),
+    ...(codexProfile
+      ? {
+          codexPermissionProfile: codexPermissionProfileInput({
+            profile: codexProfile,
+            sandbox: 'workspace-write',
+            cwd,
+            writableRoots: [scratchDir],
+            tempDir: environment.TMPDIR,
+            writesRepository: true,
+          }),
+        }
+      : {}),
     writingAcp: Boolean(input.writing),
     home: input.writing?.workerHomeDir,
     session: input.session,

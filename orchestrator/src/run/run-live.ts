@@ -70,6 +70,7 @@ import { createCheckpointSchedule } from './checkpoint-schedule.ts'
 import { prepareLaterRunBoardPrompt } from './run-board-prompt.ts'
 import { foldRunCallUsage, type RunCallUsage } from './run-call-usage.ts'
 import { raiseForHostCapacityWait } from './run-claim-host-capacity.ts'
+import { codexTransportScope } from './run-codex-permission-profile.ts'
 import type { GooseContextProfile } from './run-context-profile.ts'
 import { startRunAfterHostCapacity, waitForLiveRunHostCapacity } from './run-host-capacity.ts'
 import { type IdleKillState, idleSnapshotObserver, performIdleKill } from './run-idle-kill.ts'
@@ -571,13 +572,6 @@ function captureLiveGooseLedger(input: LiveInput) {
   )
 }
 
-function codexTransportMcpScope(scope: CodexMcpScope | null) {
-  return {
-    projectServers: scope?.servers,
-    withheldProjectServers: scope?.withheld.map((server) => server.name),
-  }
-}
-
 export async function runLive(input: LiveInput): Promise<LiveResult> {
   let {
     repoJob,
@@ -603,7 +597,6 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
     mcpServerName,
     codexMcpScope,
     mcpTrustGranted,
-    writableRoots,
     gitConfigEnvironment,
     recipeEnvironment,
     launchEnvironment,
@@ -737,10 +730,9 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
       sandboxWorkspaceWriteNetworkAccess: codexSandbox.workspaceWriteNetworkAccess,
       mcp: usingMcp,
       mcpServer: mcpServerName ?? undefined,
-      ...codexTransportMcpScope(codexMcpScope),
+      ...codexTransportScope(codexMcpScope, input),
       projectMcpSelection: input.projectMcpSelection,
       trustCwd: mcpTrustGranted ? cwd : undefined,
-      writableRoots,
       gitConfigEnvironment,
       recipeEnvironment,
       tempEnvironment: input.runTemp.environment,
@@ -755,9 +747,8 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
         repoJob,
         claim.number,
         requestedJob,
-        // The composed prompt's own size, measured where the prompt is final:
-        // some jobs' material arrives inline here (a `summarize` prompt carries
-        // its document) rather than in the working set the job declares.
+        // Measure where the prompt is final: some jobs' material arrives inline
+        // rather than in the working set the job declares.
         Buffer.byteLength(prompt, 'utf8'),
       ),
       onWarning: warnForRun(claim.id),
@@ -813,8 +804,7 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
         })
       }
     }
-    // Two timeouts, composed, not one: the wall stays, and idle kill is the
-    // second, shorter no-activity bound. Do not replace the wall.
+    // Keep both the wall timeout and the shorter idle timeout.
     wallArmedAtMs = Date.now()
     const expireWall = () => {
       rearmWallDeadline = () => {}
