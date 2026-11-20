@@ -27,6 +27,7 @@ export const RECORD_CHANGE_CHILD_TABLES = [
 ] as const
 
 export const RECORD_CHANGE_EXCLUDED_TABLES = {
+  hub_applied_change: 'replay outcomes are server-internal and never enter a working set',
   hub_interval: 'no feed serves this table; the working-set slice decides its sync',
   hub_day: 'no feed serves this table; the working-set slice decides its sync',
   doc_revision: 'doc history stays hosted-only',

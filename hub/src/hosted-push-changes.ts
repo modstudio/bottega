@@ -1,12 +1,22 @@
 import type { SQL } from 'bun'
+import { canonicalJson } from '../../shared/canonical-json.ts'
 import { DELETED_ON_HOSTED_RECORD_REASON } from './hosted-delete.ts'
 import { applyDayChangeInTransaction, applyIntervalChangeInTransaction } from './hosted-evidence.ts'
 import { storedHubProjectId } from './hosted-project-identity.ts'
 import {
+  fieldConflict,
+  HostedChangeIdMismatchError,
+  HostedRevisionConflictError,
+  revisionConflict,
+} from './hosted-push-conflict.ts'
+import {
+  changeFingerprint,
   decideDocumentUpsert,
   decideNoteAcknowledgementUpsert,
   decideNoteUpsert,
+  decidePushGuards,
   decideTaskUpsert,
+  sameInstant,
 } from './hosted-push-decision.ts'
 import { taskIdFor } from './hosted-task-reference.ts'
 import {
@@ -43,7 +53,80 @@ type PushDeclaration = {
     tx: SQL,
     identity: TaskIdentity,
     input: ParsedHostedPushChange,
+    appliedIndex: number,
   ): Promise<Extract<HostedPushOutcome, { status: 'applied' | 'duplicate' }>>
+}
+
+function assertPushGuards(
+  input: ParsedHostedPushChange,
+  current: (object & { revision?: number; version?: string }) | undefined,
+  appliedIndex: number,
+): void {
+  const decision = decidePushGuards(input, current)
+  if (decision.kind === 'revision-conflict')
+    throw revisionConflict({
+      table: input.table,
+      id: input.id,
+      expected: decision.expected,
+      current: decision.current,
+      key: decision.key,
+      appliedIndex,
+    })
+  if (decision.kind === 'field-conflict')
+    throw fieldConflict({
+      table: input.table,
+      id: input.id,
+      key: decision.key,
+      field: decision.field,
+      currentValue: decision.currentValue,
+      currentRevision: decision.currentRevision,
+      appliedIndex,
+    })
+}
+
+type StoredAppliedChange = {
+  fingerprint: string
+  outcome: HostedPushOutcome
+}
+
+async function replayedOutcome(
+  tx: SQL,
+  identity: TaskIdentity,
+  input: ParsedHostedPushChange,
+  fingerprint: string,
+  appliedIndex: number,
+): Promise<HostedPushOutcome | null> {
+  if (!input.change_id) return null
+  const rows = (await tx`SELECT result FROM hub_applied_change
+    WHERE change_id=${input.change_id}::uuid AND space_id=${identity.spaceId}::uuid`) as Array<{
+    result: StoredAppliedChange | string
+  }>
+  if (!rows[0]) return null
+  const stored =
+    typeof rows[0].result === 'string'
+      ? (JSON.parse(rows[0].result) as StoredAppliedChange)
+      : rows[0].result
+  if (stored.fingerprint !== fingerprint)
+    throw new HostedChangeIdMismatchError(input.table, input.id, input.change_id, appliedIndex)
+  return stored.outcome
+}
+
+async function rememberOutcome(
+  tx: SQL,
+  identity: TaskIdentity,
+  input: ParsedHostedPushChange,
+  fingerprint: string,
+  outcome: HostedPushOutcome,
+  appliedIndex: number,
+): Promise<void> {
+  if (!input.change_id) return
+  const inserted = (await tx`INSERT INTO hub_applied_change (change_id,space_id,result,applied_at)
+    VALUES (${input.change_id}::uuid,${identity.spaceId}::uuid,
+      ${canonicalJson({ fingerprint, outcome })}::jsonb,now())
+    ON CONFLICT (change_id) DO NOTHING
+    RETURNING change_id`) as Array<{ change_id: string }>
+  if (!inserted[0])
+    throw new HostedChangeIdMismatchError(input.table, input.id, input.change_id, appliedIndex)
 }
 
 async function requireLiveChildTask(
@@ -96,9 +179,7 @@ export type HostedCommentPushDecision =
   | { kind: 'reject'; reason: string }
 
 const sameTimestamp = (left: string | Date | null, right: string | Date | null) =>
-  left === null || right === null
-    ? left === right
-    : new Date(left).getTime() === new Date(right).getTime()
+  left === null || right === null ? left === right : sameInstant(left, right)
 
 const commentPushMatches = (stored: StoredCommentPushRow, pushed: PushedComment) =>
   stored.id === pushed.id &&
@@ -199,9 +280,15 @@ async function upsertHostedNoteFromPush(
   return { id: input.id, status: 'applied' as const }
 }
 
-async function applyHostedNotePush(tx: SQL, identity: TaskIdentity, input: NotePushChange) {
-  const existing = (await tx`SELECT *,number::int number FROM hub_note
+async function applyHostedNotePush(
+  tx: SQL,
+  identity: TaskIdentity,
+  input: NotePushChange,
+  appliedIndex: number,
+) {
+  const existing = (await tx`SELECT *,number::int number,revision::int revision FROM hub_note
     WHERE id=${input.id}::uuid AND space_id=${identity.spaceId}::uuid FOR UPDATE`) as PushedNote[]
+  assertPushGuards(input, existing[0], appliedIndex)
   return input.op === 'delete'
     ? deleteHostedNoteFromPush(tx, identity, input, existing[0])
     : upsertHostedNoteFromPush(tx, identity, input, existing[0])
@@ -209,11 +296,12 @@ async function applyHostedNotePush(tx: SQL, identity: TaskIdentity, input: NoteP
 
 const PUSHABLE_HUB_CHANGES: Record<PushableHubChangeTable, PushDeclaration> = {
   [HOSTED_TASK_TABLE]: {
-    async apply(tx, identity, input) {
+    async apply(tx, identity, input, appliedIndex) {
       if (input.table !== HOSTED_TASK_TABLE)
         throw new Error(`${input.table} was routed to the task handler`)
       const existing =
-        (await tx`SELECT * FROM hub_task WHERE id=${input.id}::uuid AND space_id=${identity.spaceId}::uuid`) as PushedTask[]
+        (await tx`SELECT *,revision::int revision FROM hub_task WHERE id=${input.id}::uuid AND space_id=${identity.spaceId}::uuid FOR UPDATE`) as PushedTask[]
+      assertPushGuards(input, existing[0], appliedIndex)
       const decision = decideTaskUpsert(existing[0] ?? null, input.row, input.fields ?? null)
       if (decision.kind === 'reject') throw new Error(decision.reason)
       if (decision.kind === 'duplicate') return { id: input.id, status: 'duplicate' }
@@ -229,13 +317,14 @@ const PUSHABLE_HUB_CHANGES: Record<PushableHubChangeTable, PushDeclaration> = {
     },
   },
   [HOSTED_COMMENT_TABLE]: {
-    async apply(tx, identity, input) {
+    async apply(tx, identity, input, appliedIndex) {
       if (input.table !== HOSTED_COMMENT_TABLE)
         throw new Error(`${input.table} was routed to the task comment handler`)
       const existing = (await tx`SELECT id::text id,task_key,body,created_at,updated_at,deleted_at,
           actor_user_id,actor_name,agent,run_id,project_name,task_id::text task_id
-          FROM hub_task_comment WHERE id=${input.id}::uuid
+          ,revision::int revision FROM hub_task_comment WHERE id=${input.id}::uuid
             AND space_id=${identity.spaceId}::uuid FOR UPDATE`) as StoredCommentPushRow[]
+      assertPushGuards(input, existing[0], appliedIndex)
       const decision = decideHostedCommentPush(existing[0] ?? null, input.row, identity.userId)
       if (decision.kind === 'reject') throw new Error(decision.reason)
       if (decision.kind === 'duplicate') return { id: input.id, status: 'duplicate' }
@@ -247,10 +336,11 @@ const PUSHABLE_HUB_CHANGES: Record<PushableHubChangeTable, PushDeclaration> = {
     },
   },
   [HOSTED_DOCUMENT_TABLE]: {
-    async apply(tx, identity, input) {
+    async apply(tx, identity, input, appliedIndex) {
       if (input.table !== HOSTED_DOCUMENT_TABLE) throw new Error('wrong document handler')
       const existing =
-        (await tx`SELECT * FROM hub_task_document WHERE id=${input.id}::uuid AND space_id=${identity.spaceId}::uuid`) as PushedDocument[]
+        (await tx`SELECT * FROM hub_task_document WHERE id=${input.id}::uuid AND space_id=${identity.spaceId}::uuid FOR UPDATE`) as PushedDocument[]
+      assertPushGuards(input, existing[0], appliedIndex)
       if (input.op === 'delete') {
         if (!existing.length || existing[0]!.deleted_at)
           return { id: input.id, status: 'duplicate' }
@@ -309,9 +399,9 @@ const PUSHABLE_HUB_CHANGES: Record<PushableHubChangeTable, PushDeclaration> = {
     },
   },
   [HOSTED_NOTE_TABLE]: {
-    async apply(tx, identity, input) {
+    async apply(tx, identity, input, appliedIndex) {
       if (input.table !== HOSTED_NOTE_TABLE) throw new Error('wrong note handler')
-      return applyHostedNotePush(tx, identity, input as NotePushChange)
+      return applyHostedNotePush(tx, identity, input as NotePushChange, appliedIndex)
     },
   },
   [HOSTED_NOTE_ACKNOWLEDGEMENT_TABLE]: {
@@ -370,16 +460,30 @@ export async function applyHostedPushChangesInTransaction(
   }))
   const outcomes = new Array<HostedPushOutcome>(inputs.length)
   for (const { input, index } of ordered) {
+    const fingerprint = changeFingerprint(input)
     await tx.unsafe('SAVEPOINT hub_push_row')
+    let replayProbeCompleted = false
+    let outcome: HostedPushOutcome
     try {
-      const outcome = await PUSHABLE_HUB_CHANGES[input.table]!.apply(tx, identity, input)
+      const replay = await replayedOutcome(tx, identity, input, fingerprint, index)
+      replayProbeCompleted = true
+      if (replay) {
+        await tx.unsafe('RELEASE SAVEPOINT hub_push_row')
+        outcomes[index] = replay
+        continue
+      }
+      outcome = await PUSHABLE_HUB_CHANGES[input.table]!.apply(tx, identity, input, index)
+      await rememberOutcome(tx, identity, input, fingerprint, outcome, index)
       await tx.unsafe('RELEASE SAVEPOINT hub_push_row')
-      outcomes[index] = outcome
     } catch (error) {
       await tx.unsafe('ROLLBACK TO SAVEPOINT hub_push_row')
       await tx.unsafe('RELEASE SAVEPOINT hub_push_row')
-      outcomes[index] = { id: input.id, status: 'rejected', reason: (error as Error).message }
+      if (error instanceof HostedRevisionConflictError) throw error
+      if (error instanceof HostedChangeIdMismatchError) throw error
+      if (!replayProbeCompleted) throw error
+      outcome = { id: input.id, status: 'rejected', reason: (error as Error).message }
     }
+    outcomes[index] = outcome
   }
   return outcomes
 }

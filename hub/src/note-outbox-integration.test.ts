@@ -1,9 +1,11 @@
 import { afterAll, beforeAll, expect, test } from 'bun:test'
 import type { PGlite } from '@electric-sql/pglite'
 import type { SQL } from 'bun'
+import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { createHostedRecordFixture, pgliteSql } from '../test/hosted-record-fixture.ts'
 import { db, writeTransaction } from './db.ts'
 import { DELETED_ON_HOSTED_RECORD_REASON } from './hosted-delete.ts'
+import { createHostedNote } from './hosted-notes.ts'
 import { applyHostedPushChangesInTransaction } from './hosted-push-changes.ts'
 import { acknowledgeNote, createNote, dropNote, mergeNote } from './note.ts'
 import { drainHostedOutbox } from './outbox.ts'
@@ -181,6 +183,44 @@ beforeAll(async () => {
 
 afterAll(async () => {
   if (database) await database.close()
+})
+
+test('field compare-and-set compares note timestamps as instants and rejects a stale field', async () => {
+  const noteId = '01990000-0000-7000-8000-000000001309'
+  const initialSeenAt = '2026-10-09T10:00:00.000Z'
+  const nextSeenAt = '2026-10-09T11:00:00.000Z'
+  const initial = noteRow(noteId, 309, { last_seen_at: initialSeenAt })
+  await seedHostedNote(initial)
+  await apply([
+    {
+      table: 'hub_note',
+      id: noteId,
+      op: 'upsert',
+      row: { ...initial, last_seen_at: nextSeenAt },
+      fields: ['last_seen_at'],
+      from: { last_seen_at: initialSeenAt },
+    },
+  ])
+  try {
+    await apply([
+      {
+        table: 'hub_note',
+        id: noteId,
+        op: 'upsert',
+        row: { ...initial, last_seen_at: '2026-10-09T12:00:00.000Z' },
+        fields: ['last_seen_at'],
+        from: { last_seen_at: initialSeenAt },
+      },
+    ])
+    throw new Error('expected a field conflict')
+  } catch (error) {
+    expect(error).toMatchObject({
+      field: 'last_seen_at',
+      currentRevision: '2',
+      currentValue: new Date(nextSeenAt),
+    })
+    expect((error as Error).message).toContain(`cleared by: ${PLATFORM_SLUG} note list --json`)
+  }
 })
 
 test('two machine sightings append once each and repeated delivery writes no change', async () => {
@@ -470,6 +510,24 @@ test('repeat sighting succeeds offline, queues, and later drains to the hosted n
     anchors: JSON.parse(machine.anchors),
     sightings: machine.sightings,
   })
+})
+
+test('a hosted same-sighting write increments the note revision', async () => {
+  const noteId = '01990000-0000-7000-8000-000000001326'
+  await seedHostedNote(noteRow(noteId, 326))
+
+  const same = await createHostedNote(pgliteSql(database), identity, {
+    project: 'workshop',
+    projectId,
+    text: 'repeat sighting',
+    anchor: '{"kind":"run","session_id":"second"}',
+    sameAs: noteId,
+  })
+
+  expect(same).toMatchObject({ id: noteId, sightings: 2 })
+  expect(
+    (await database.query(`SELECT revision::int FROM hub_note WHERE id=$1`, [noteId])).rows,
+  ).toEqual([{ revision: 2 }])
 })
 
 test('keep succeeds offline, queues, and later drains one hosted acknowledgement', async () => {

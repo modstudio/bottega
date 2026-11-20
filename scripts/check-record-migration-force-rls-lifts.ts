@@ -9,6 +9,15 @@ const migrationsFolder = join(root, 'shared', 'record', 'migrations')
 
 const EXEMPTIONS: ReadonlyMap<string, ReadonlyMap<string, string>> = new Map([
   [
+    '20261120033811_dev_2479_hub_applied_change_prune',
+    new Map([
+      [
+        '*',
+        'EXECUTE replaces the record_move_project_space function definition and does not read or write table rows',
+      ],
+    ]),
+  ],
+  [
     '20261116134103_dev_2354_context_review_force',
     new Map([
       [

@@ -14,6 +14,7 @@ test('record retention reports both prune outcomes under an acquired lock', asyn
     await runLockedRecordRetention({
       tryLock: async () => true,
       pruneRecordChanges: async () => 2,
+      pruneHubAppliedChanges: async () => 11,
       pruneContention: async () => 3,
       pruneNoDestinationWrite: async () => 5,
       pruneBoardPresence: async () => 4,
@@ -24,6 +25,7 @@ test('record retention reports both prune outcomes under an acquired lock', asyn
     acquired: true,
     outcomes: {
       recordChange: { deleted: 2 },
+      hubAppliedChange: { deleted: 11 },
       contention: { deleted: 3 },
       noDestinationWrite: { deleted: 5 },
       boardPresence: { deleted: 4 },
@@ -42,6 +44,7 @@ test('record retention pass reports both deleted counts and one duration', async
       acquired: true,
       outcomes: {
         recordChange: { deleted: 12 },
+        hubAppliedChange: { deleted: 11 },
         contention: { deleted: 7 },
         noDestinationWrite: { deleted: 5 },
         boardPresence: { deleted: 2 },
@@ -54,7 +57,7 @@ test('record retention pass reports both deleted counts and one duration', async
   })
 
   expect(lines).toEqual([
-    'record retention: record_change 12 deleted, contention 7 deleted, no_destination_write 5 deleted, board_presence 2 deleted, machine_join 3 deleted, claim_challenge 4 deleted in 27ms',
+    'record retention: record_change 12 deleted, hub_applied_change 11 deleted, contention 7 deleted, no_destination_write 5 deleted, board_presence 2 deleted, machine_join 3 deleted, claim_challenge 4 deleted in 27ms',
   ])
 })
 
@@ -69,6 +72,10 @@ test('record retention still prunes contention when record change pruning fails'
         pruneRecordChanges: async () => {
           calls.push('record_change')
           throw new Error('record change unavailable')
+        },
+        pruneHubAppliedChanges: async () => {
+          calls.push('hub_applied_change')
+          return 11
         },
         pruneContention: async () => {
           calls.push('contention')
@@ -97,6 +104,7 @@ test('record retention still prunes contention when record change pruning fails'
 
   expect(calls).toEqual([
     'record_change',
+    'hub_applied_change',
     'contention',
     'no_destination_write',
     'board_presence',
@@ -104,7 +112,7 @@ test('record retention still prunes contention when record change pruning fails'
     'claim_challenge',
   ])
   expect(lines).toEqual([
-    'record retention: record_change failed (record change unavailable), contention 7 deleted, no_destination_write 5 deleted, board_presence 2 deleted, machine_join 3 deleted, claim_challenge 4 deleted in 0ms',
+    'record retention: record_change failed (record change unavailable), hub_applied_change 11 deleted, contention 7 deleted, no_destination_write 5 deleted, board_presence 2 deleted, machine_join 3 deleted, claim_challenge 4 deleted in 0ms',
   ])
 })
 
@@ -119,6 +127,10 @@ test('record change prune pass skips without pruning when the transaction lock i
         pruneRecordChanges: async () => {
           pruneCalls += 1
           return 4
+        },
+        pruneHubAppliedChanges: async () => {
+          pruneCalls += 1
+          return 10
         },
         pruneContention: async () => {
           pruneCalls += 1
@@ -185,7 +197,7 @@ test('a failing record change prune pass is logged and the interval keeps runnin
   expect(intervalMilliseconds).toEqual([RECORD_RETENTION_INTERVAL_MS])
   expect(pruneCalls).toBe(1)
   expect(lines).toEqual([
-    'record retention failed after 0ms: database unavailable; verify record database connectivity and that record_change_prune(), contention_prune(), no_destination_write_prune(), board_presence_prune(), machine_join_prune(), and machine_key_claim_challenge_prune() are installed; the next interval will retry',
+    'record retention failed after 0ms: database unavailable; verify record database connectivity and that record_change_prune(), hub_applied_change_prune(), contention_prune(), no_destination_write_prune(), board_presence_prune(), machine_join_prune(), and machine_key_claim_challenge_prune() are installed; the next interval will retry',
   ])
 
   intervalCallbacks[0]!()
@@ -204,6 +216,7 @@ test('stopping record retention clears its start timeout and interval', () => {
       acquired: true,
       outcomes: {
         recordChange: { deleted: 0 },
+        hubAppliedChange: { deleted: 0 },
         contention: { deleted: 0 },
         noDestinationWrite: { deleted: 0 },
         boardPresence: { deleted: 0 },
@@ -222,6 +235,7 @@ test('stopping record retention clears its start timeout and interval', () => {
       acquired: true,
       outcomes: {
         recordChange: { deleted: 0 },
+        hubAppliedChange: { deleted: 0 },
         contention: { deleted: 0 },
         noDestinationWrite: { deleted: 0 },
         boardPresence: { deleted: 0 },
