@@ -1,6 +1,6 @@
 {
   "name": "bottega",
-  "version": "0.5.9",
+  "version": "0.5.10",
   "license": "MIT",
   "private": true,
   "workspaces": [
@@ -76,5 +76,8 @@
   },
   "overrides": {
     "@types/node": "22.20.3"
+  },
+  "patchedDependencies": {
+    "@anthropic-ai/sandbox-runtime@0.0.75": "patches/@anthropic-ai%2Fsandbox-runtime@0.0.75.patch"
   }
 }

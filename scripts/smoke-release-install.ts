@@ -1,8 +1,18 @@
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, join, resolve } from 'node:path'
-import { startBounded } from '../shared/bounded-process.ts'
+import { startBounded, startParentBound } from '../shared/bounded-process.ts'
 import { MCP_SERVER_NAME, PLATFORM_SLUG, WORKER_MCP_SERVER_NAME } from '../shared/brand.ts'
+import { renderedBoardHeartbeatGuidance } from '../shared/heartbeat-guidance.ts'
+import { shellQuote } from '../shared/shell-quote.ts'
 import { parseBinaryTarget } from './build-binary.ts'
 import { buildReleaseArtifact, writeChecksumSet } from './build-release-artifacts.ts'
 import { releaseVersion, stripInheritedOverrides } from './release-support.ts'
@@ -19,9 +29,11 @@ type StepResult = {
   name: string
   exitCode: number
   output: string
+  stderr: string
 }
 
 const GROK_INSTALLER_URL = 'https://x.ai/cli/install.sh'
+const HEARTBEAT_PROOF_SESSION = '01990000-0000-7000-8000-000000000252'
 
 export type HarnessInstallerInvocationCounts = {
   brewCodex: number
@@ -57,6 +69,28 @@ export function releaseDownloadsReachedCurl(
   )
 }
 
+function object(value: unknown): Record<string, unknown> | null {
+  return typeof value === 'object' && value !== null ? (value as Record<string, unknown>) : null
+}
+
+function array(value: unknown): unknown[] {
+  return Array.isArray(value) ? value : []
+}
+
+export function renderedHookCommand(settings: unknown, script: string): string | null {
+  const hooks = object(object(settings)?.hooks)
+  const groups = hooks ? Object.values(hooks).flatMap(array) : []
+  return (
+    groups
+      .flatMap((group) => array(object(group)?.hooks))
+      .map((handler) => object(handler)?.command)
+      .find(
+        (command): command is string =>
+          typeof command === 'string' && command.includes(`/orchestrator/hooks/${script}`),
+      ) ?? null
+  )
+}
+
 export function releaseInstallEnvironment(
   inherited: Record<string, string | undefined>,
   paths: InstallProofPaths,
@@ -68,12 +102,9 @@ export function releaseInstallEnvironment(
   env.BOTTEGA_INSTALL_DIR = paths.bin
   env.BOTTEGA_KEYSTORE = 'file'
   env.BOTTEGA_DOWNLOAD_BASE_URL = `file://${paths.mirror}`
+  env.CODEX_HOME = join(paths.home, '.codex')
   env.PATH = `${paths.stub}:${join(paths.home, '.grok', 'bin')}:${paths.bin}:/usr/bin:/bin:/usr/sbin:/sbin`
   return env
-}
-
-function shellQuote(value: string): string {
-  return `'${value.replaceAll("'", `'"'"'`)}'`
 }
 
 function launchctlStub(stateFile: string, logFile: string): string {
@@ -221,12 +252,14 @@ async function runStep(
   argv: string[],
   cwd: string,
   env: Record<string, string | undefined>,
+  stdin?: string,
 ): Promise<StepResult> {
-  const result = await startBounded(argv, { budget: 'self-cli', cwd, env })
+  const result = await startBounded(argv, { budget: 'self-cli', cwd, env, stdin })
   return {
     name,
     exitCode: result.exitCode,
     output: [result.stdout, result.stderr].filter(Boolean).join('\n'),
+    stderr: result.stderr,
   }
 }
 
@@ -275,6 +308,227 @@ function assertSecondSetupSkipsInstallerCalls(
   )
 }
 
+async function runExtractedHookProof(
+  version: string,
+  paths: InstallProofPaths,
+  env: Record<string, string | undefined>,
+  failures: string[],
+): Promise<StepResult> {
+  const runtimeRoot = join(paths.state, 'runtime', version, 'assets')
+  recordProofAssertion(
+    failures,
+    existsSync(runtimeRoot),
+    `setup apply did not extract the runtime tree at ${runtimeRoot}`,
+  )
+  const settingsPath = join(paths.home, '.claude', 'settings.json')
+  if (!existsSync(settingsPath)) {
+    return {
+      name: 'extracted hook',
+      exitCode: 1,
+      output: `settings apply did not render ${settingsPath}`,
+      stderr: '',
+    }
+  }
+  const command = renderedHookCommand(
+    JSON.parse(readFileSync(settingsPath, 'utf8')) as unknown,
+    'test-substance-guard.py',
+  )
+  if (command === null) {
+    return {
+      name: 'extracted hook',
+      exitCode: 1,
+      output: `setup apply did not render test-substance-guard.py in ${settingsPath}`,
+      stderr: '',
+    }
+  }
+  const result = await runStep(
+    'extracted hook',
+    ['sh', '-c', command],
+    paths.home,
+    env,
+    JSON.stringify({
+      tool_name: 'Write',
+      cwd: paths.home,
+      tool_input: {
+        file_path: join(paths.home, 'example.test.ts'),
+        content: "test('release hook', () => expect(1).toBe(1))\n",
+      },
+    }),
+  )
+  recordProofAssertion(
+    failures,
+    !result.stderr.includes('could not start') && !result.stderr.includes('timed out'),
+    `extracted hook judge did not start or timed out: ${result.stderr.trim()}`,
+  )
+  return result
+}
+
+async function runHeartbeatArmProof(
+  version: string,
+  paths: InstallProofPaths,
+  executable: string,
+  env: Record<string, string | undefined>,
+  failures: string[],
+): Promise<StepResult> {
+  const script = join(
+    paths.state,
+    'runtime',
+    version,
+    'assets',
+    'orchestrator',
+    'hooks',
+    'orch-heartbeat.sh',
+  )
+  const guidance = renderedBoardHeartbeatGuidance({
+    session: HEARTBEAT_PROOF_SESSION,
+    script,
+    distributionExecutable: executable,
+  })
+  const prefix = 'Arm under Monitor: '
+  if (!guidance.startsWith(prefix)) {
+    return {
+      name: 'heartbeat arm',
+      exitCode: 1,
+      output: guidance,
+      stderr: 'distribution heartbeat guidance did not render a runnable command',
+    }
+  }
+  const command = guidance.slice(prefix.length)
+  let child: ReturnType<typeof startParentBound>
+  try {
+    child = startParentBound(['sh', '-c', command], {
+      name: 'release install heartbeat proof',
+      cwd: paths.home,
+      env,
+    })
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    recordProofAssertion(failures, false, `heartbeat arm failed to start: ${message}`)
+    return { name: 'heartbeat arm', exitCode: 1, output: '', stderr: message }
+  }
+  const stdoutPromise = new Response(child.stdout).text()
+  const stderrPromise = new Response(child.stderr).text()
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const outcome = await Promise.race([
+    child.exited.then((exitCode) => ({ state: 'exited' as const, exitCode })),
+    new Promise<{ state: 'running'; exitCode: null }>((resolve) => {
+      timer = setTimeout(() => resolve({ state: 'running', exitCode: null }), 5_000)
+    }),
+  ])
+  if (timer) clearTimeout(timer)
+  if (outcome.state === 'running') {
+    child.kill()
+    await child.exited
+  }
+  const [output, stderr] = await Promise.all([stdoutPromise, stderrPromise])
+  const degraded = output.split('\n').some((line) => line.includes('DEGRADED'))
+  const passed = !degraded && (outcome.state === 'running' || outcome.exitCode === 0)
+  recordProofAssertion(failures, !degraded, `heartbeat arm degraded: ${output.trim()}`)
+  recordProofAssertion(
+    failures,
+    outcome.state === 'running' || outcome.exitCode === 0,
+    `heartbeat arm exited ${outcome.exitCode}`,
+  )
+  return {
+    name: 'heartbeat arm',
+    exitCode: passed ? 0 : 1,
+    output,
+    stderr,
+  }
+}
+
+async function prepareReleaseProof(
+  version: string,
+  root: string,
+  paths: InstallProofPaths,
+): Promise<{ archive: string; releaseDirectory: string }> {
+  const releaseDirectory = join(paths.mirror, 'download', `v${version}`)
+  mkdirSync(releaseDirectory, { recursive: true })
+  const target = parseBinaryTarget(`darwin-${process.arch}`)
+  const archive = await buildReleaseArtifact(`v${version}`, releaseDirectory, target)
+  writeChecksumSet(releaseDirectory, [archive])
+  for (const directory of [paths.home, paths.state, paths.bin, paths.stub]) {
+    mkdirSync(directory, { recursive: true })
+  }
+  const stubs = [
+    {
+      path: join(paths.stub, 'launchctl'),
+      text: launchctlStub(join(root, 'launchctl-state'), join(root, 'launchctl.log')),
+    },
+    {
+      path: join(paths.stub, 'brew'),
+      text: brewStub(join(paths.stub, 'codex'), join(root, 'brew.log')),
+    },
+    { path: join(paths.stub, 'curl'), text: curlStub(join(root, 'curl.log')) },
+  ]
+  for (const stub of stubs) {
+    writeFileSync(stub.path, stub.text)
+    chmodSync(stub.path, 0o755)
+  }
+  return { archive, releaseDirectory }
+}
+
+async function seedProofSettings(
+  paths: InstallProofPaths,
+  executable: string,
+  env: Record<string, string | undefined>,
+): Promise<StepResult[]> {
+  mkdirSync(join(paths.home, '.claude'), { recursive: true })
+  writeFileSync(join(paths.home, '.claude', 'settings.json'), '{}\n')
+  const settingsImport = await runStep(
+    'settings import',
+    [executable, 'machine', 'settings', 'import', '--user'],
+    paths.home,
+    env,
+  )
+  const canonSet = await runStep(
+    'canon set',
+    [
+      executable,
+      'doc',
+      'set',
+      'AGENTS.md',
+      '--scope',
+      'canon',
+      '--user',
+      '--title',
+      'Release proof canon',
+      '--reason',
+      'seed release install proof',
+    ],
+    paths.home,
+    env,
+    'Release proof canon.\n',
+  )
+  const results = [settingsImport, canonSet]
+  const seeded = results.every((result) => result.exitCode === 0)
+  if (seeded) {
+    results.push(
+      await runStep(
+        'settings apply',
+        [executable, 'machine', 'settings', 'apply'],
+        paths.home,
+        env,
+      ),
+    )
+  }
+  return results
+}
+
+function reportProof(results: StepResult[], assertionFailures: string[]): number {
+  for (const result of results) {
+    console.log(`${result.name} exit ${result.exitCode}`)
+    if ((result.exitCode !== 0 || result.name === 'extracted hook') && result.output) {
+      console.log(result.output)
+    }
+    if (result.name === 'heartbeat arm') {
+      console.log(`heartbeat arm stdout: ${result.output.trim() || '<empty>'}`)
+    }
+  }
+  for (const failure of assertionFailures) console.error(`proof assertion failed: ${failure}`)
+  return results.some((result) => result.exitCode !== 0) || assertionFailures.length ? 1 : 0
+}
+
 async function proveReleaseInstall(version: string, keep: boolean): Promise<number> {
   if (process.platform !== 'darwin') {
     console.error('release install proof requires darwin')
@@ -290,31 +544,7 @@ async function proveReleaseInstall(version: string, keep: boolean): Promise<numb
     mirror: join(root, 'mirror'),
   }
   try {
-    const releaseDirectory = join(paths.mirror, 'download', `v${version}`)
-    mkdirSync(releaseDirectory, { recursive: true })
-    const target = parseBinaryTarget(`darwin-${process.arch}`)
-    const archive = await buildReleaseArtifact(`v${version}`, releaseDirectory, target)
-    writeChecksumSet(releaseDirectory, [archive])
-
-    for (const directory of [paths.home, paths.state, paths.bin, paths.stub]) {
-      mkdirSync(directory, { recursive: true })
-    }
-    const stubs = [
-      {
-        path: join(paths.stub, 'launchctl'),
-        text: launchctlStub(join(root, 'launchctl-state'), join(root, 'launchctl.log')),
-      },
-      {
-        path: join(paths.stub, 'brew'),
-        text: brewStub(join(paths.stub, 'codex'), join(root, 'brew.log')),
-      },
-      { path: join(paths.stub, 'curl'), text: curlStub(join(root, 'curl.log')) },
-    ]
-    for (const stub of stubs) {
-      writeFileSync(stub.path, stub.text)
-      chmodSync(stub.path, 0o755)
-    }
-
+    const { archive, releaseDirectory } = await prepareReleaseProof(version, root, paths)
     const env = releaseInstallEnvironment(process.env, paths)
     const repositoryRoot = resolve(import.meta.dir, '..')
     const executable = join(paths.bin, PLATFORM_SLUG)
@@ -342,6 +572,9 @@ async function proveReleaseInstall(version: string, keep: boolean): Promise<numb
     )
 
     results.push(await runStep('setup apply', setupArgv, paths.home, env))
+    const seededSettings = await seedProofSettings(paths, executable, env)
+    results.push(...seededSettings)
+    results.push(await runExtractedHookProof(version, paths, env, assertionFailures))
     const firstInstallerCounts = harnessInstallerInvocationCounts(
       readProofLog(brewLog),
       readProofLog(curlLog),
@@ -362,12 +595,8 @@ async function proveReleaseInstall(version: string, keep: boolean): Promise<numb
     results.push(
       await runStep('doctor (second)', [executable, 'machine', 'doctor'], paths.home, env),
     )
-    for (const result of results) {
-      console.log(`${result.name} exit ${result.exitCode}`)
-      if (result.exitCode !== 0 && result.output) console.log(result.output)
-    }
-    for (const failure of assertionFailures) console.error(`proof assertion failed: ${failure}`)
-    return results.some((result) => result.exitCode !== 0) || assertionFailures.length ? 1 : 0
+    results.push(await runHeartbeatArmProof(version, paths, executable, env, assertionFailures))
+    return reportProof(results, assertionFailures)
   } finally {
     if (keep) console.log(`kept release install proof at ${root}`)
     else rmSync(root, { recursive: true, force: true })

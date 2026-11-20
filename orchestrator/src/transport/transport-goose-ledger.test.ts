@@ -109,7 +109,7 @@ test('masks secret-shaped text in every retained ledger file', () => {
   }
 })
 
-test('preserves modes and skips invalid UTF-8 containing secret-shaped bytes', () => {
+test('preserves modes for text and never copies an invalid UTF-8 ledger file', () => {
   const root = mkdtempSync(join(tmpdir(), 'goose-ledger-binary-'))
   try {
     const input = {
@@ -120,20 +120,18 @@ test('preserves modes and skips invalid UTF-8 containing secret-shaped bytes', (
     const logs = gooseLedgerCopyPaths(input)[0]!
     mkdirSync(logs.source, { recursive: true })
     const regular = join(logs.source, 'regular.log')
-    writeFileSync(regular, Buffer.from([0xff, 0x00, 0x01]), { mode: 0o640 })
+    writeFileSync(regular, 'ordinary ledger', { mode: 0o640 })
     writeFileSync(
       join(logs.source, 'secret.log'),
-      Buffer.concat([Buffer.from([0xff]), Buffer.from('Authorization: Bearer fixture-live-token')]),
+      Buffer.from('é Authorization: Bearer fixture-live-token', 'utf16le'),
     )
     const warnings: string[] = []
     preserveGooseLedger(input, (message) => warnings.push(message))
     const copied = join(logs.destination, 'regular.log')
-    expect(readFileSync(copied)).toEqual(Buffer.from([0xff, 0x00, 0x01]))
+    expect(readFileSync(copied, 'utf8')).toBe('ordinary ledger')
     expect(statSync(copied).mode & 0o777).toBe(0o640)
     expect(existsSync(join(logs.destination, 'secret.log'))).toBe(false)
-    expect(warnings).toEqual([
-      expect.stringContaining('skipped non-UTF-8 file with secret-shaped bytes'),
-    ])
+    expect(warnings).toEqual([expect.stringContaining('skipped non-UTF-8 file')])
   } finally {
     rmSync(root, { recursive: true, force: true })
   }

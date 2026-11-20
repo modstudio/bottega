@@ -3,7 +3,6 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { assetPath } from '../../../shared/install-root.ts'
 import { resolveOrchestratorDatabase } from '../../../shared/state-directory.ts'
 import {
   createMemoryRecordApiClient,
@@ -16,6 +15,7 @@ import { tryKernelLease } from '../project/project-lock.ts'
 import { serializeOwnedSettings } from './settings.ts'
 import { applyMachineSettings, printMachineSettingsApplyResults } from './settings-machine-apply.ts'
 import { withMachineProductHooks } from './settings-machine-hooks.ts'
+import { resolveMachineHookRuntime } from './settings-machine-runtime.ts'
 import { applySettingsWrite } from './settings-write.ts'
 
 const OWNER = '01990000-0000-7000-8000-000000000001'
@@ -104,9 +104,9 @@ function writeCurrentSettings() {
             hooks: {},
             autoMode: { allow: ['$defaults', 'Bash(docker compose *)'] },
           },
-          assetPath(),
           join(root, 'state', 'orchestrator', 'orchestrator.db'),
           'on',
+          resolveMachineHookRuntime(),
         ).settings,
         env: {},
       },
@@ -201,9 +201,9 @@ describe('settings apply', () => {
       {
         ...withMachineProductHooks(
           { permissions: { allow: ['Bash(orch *)'] }, hooks: {} },
-          assetPath(),
           resolveOrchestratorDatabase(environment),
           'on',
+          resolveMachineHookRuntime(),
         ).settings,
         env: {},
       },

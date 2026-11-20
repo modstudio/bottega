@@ -9,6 +9,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(__file__))
 from registered_scope import should_hook_act
+from hook_paths import bottega_bin
 from hook_emission import record_emission
 
 
@@ -91,8 +92,7 @@ def main():
     if path is None or payload.get("tool_name") not in EDITOR_TOOLS:
         return unchecked(path or "<unknown test file>", "tool input is not a supported editor shape")
 
-    install_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
-    bottega = os.path.join(install_root, "bin", "bottega")
+    bottega = bottega_bin()
     try:
         result = subprocess.run(
             [bottega, "gate", "test-substance", "judge", "--tool-input"],

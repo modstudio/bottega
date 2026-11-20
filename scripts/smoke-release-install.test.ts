@@ -1,9 +1,10 @@
 import { expect, test } from 'bun:test'
-import { PLATFORM_NAME } from '../shared/brand.ts'
+import { PLATFORM_NAME, PLATFORM_SLUG } from '../shared/brand.ts'
 import {
   harnessInstallerInvocationCounts,
   releaseDownloadsReachedCurl,
   releaseInstallEnvironment,
+  renderedHookCommand,
 } from './smoke-release-install.ts'
 
 test('release install environment drops inherited product and harness overrides', () => {
@@ -31,6 +32,7 @@ test('release install environment drops inherited product and harness overrides'
   expect(env.BOTTEGA_STATE_HOME).toBe('/proof/state')
   expect(env.BOTTEGA_INSTALL_DIR).toBe('/proof/bin')
   expect(env.BOTTEGA_DOWNLOAD_BASE_URL).toBe('file:///proof/mirror')
+  expect(env.CODEX_HOME).toBe('/proof/home/.codex')
   expect(env.PATH).toBe(
     '/proof/stub:/proof/home/.grok/bin:/proof/bin:/usr/bin:/bin:/usr/sbin:/sbin',
   )
@@ -57,4 +59,24 @@ test('release proof log decisions distinguish installers from forwarded download
       archive,
     ),
   ).toBe(false)
+})
+
+test('release proof selects the product hook command rendered by setup apply', () => {
+  const command = `BOTTEGA_BIN='/proof/bin/${PLATFORM_SLUG}' python3 '/proof/runtime/orchestrator/hooks/test-substance-guard.py'`
+  expect(
+    renderedHookCommand(
+      {
+        hooks: {
+          PreToolUse: [
+            {
+              matcher: 'Write|Edit|MultiEdit',
+              hooks: [{ type: 'command', command }],
+            },
+          ],
+        },
+      },
+      'test-substance-guard.py',
+    ),
+  ).toBe(command)
+  expect(renderedHookCommand({ hooks: {} }, 'test-substance-guard.py')).toBeNull()
 })

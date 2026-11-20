@@ -277,6 +277,9 @@
       },
     },
   },
+  "patchedDependencies": {
+    "@anthropic-ai/sandbox-runtime@0.0.75": "patches/@anthropic-ai%2Fsandbox-runtime@0.0.75.patch",
+  },
   "overrides": {
     "@types/node": "22.20.3",
   },

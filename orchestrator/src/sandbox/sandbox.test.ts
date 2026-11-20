@@ -459,7 +459,6 @@ test('readonlyLensDeniesLoginKeychain follows the denyRead list, not a keychain 
 test('probe sandbox profile denies network and writes except the throwaway directory', () => {
   const scratch = '/tmp/orch-probe-scratch'
   const profile = probeSandboxProfile({
-    kind: 'agent',
     allowWriteDir: scratch,
     cwd: '/projects/fixture',
     project: fixtureProject(),
@@ -479,7 +478,6 @@ test('probe sandbox profile denies network and writes except the throwaway direc
 
 test('probe sandbox profile denies a project-declared secret path', () => {
   const profile = probeSandboxProfile({
-    kind: 'agent',
     allowWriteDir: '/tmp/orch-probe-scratch',
     cwd: '/projects/fixture',
     project: fixtureProject({ secretPaths: ['/operator/project-secret'] }),
@@ -576,7 +574,7 @@ describe('readonly-lens sandbox profile', () => {
       join(state, 'orchestrator', 'orchestrator.db'),
       join(state, 'orchestrator', 'runs'),
       '/projects',
-      '/projects/fixture/.claude/worktrees',
+      ...(process.platform === 'darwin' ? ['/projects/fixture/.claude/worktrees/*'] : []),
       join('/Users/operator/.config/platform', `${PLATFORM_SLUG}.env`),
       '/shared/absolute.secret',
       join(homedir(), '.tokens/private'),
@@ -658,7 +656,9 @@ describe('readonly-lens sandbox profile', () => {
       resolveOrchestratorDatabase(environment),
     )
     expect(profile.filesystem.denyRead).toContain('/projects/sibling')
-    expect(profile.filesystem.denyRead).toContain('/projects/fixture/.claude/worktrees')
+    if (process.platform === 'darwin') {
+      expect(profile.filesystem.denyRead).toContain('/projects/fixture/.claude/worktrees/*')
+    }
     expect(profile.filesystem.denyRead).toContain('/projects/sibling/.claude/worktrees')
     expect(profile.filesystem.denyRead).toContain('/projects/fixture/config/operator.secret')
     for (const allowed of [

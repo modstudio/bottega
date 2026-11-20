@@ -10,6 +10,7 @@ import time
 sys.path.insert(0, os.path.dirname(__file__))
 from registered_scope import should_hook_act
 from hook_emission import record_emission
+from hook_paths import bottega_bin
 
 
 JUDGE_TIMEOUT_SECONDS = 8
@@ -88,8 +89,7 @@ def main():
         return 0
     if payload.get("tool_name") not in EDITOR_TOOLS:
         return unchecked(path, "tool input is not a supported editor shape")
-    install_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
-    binary = os.path.join(install_root, "bin", "bottega")
+    binary = bottega_bin()
     try:
         result = subprocess.run(
             [

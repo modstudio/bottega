@@ -55,7 +55,6 @@ const RUN_DETAIL_INTENTIONALLY_OMITTED_COLUMNS = {
   no_failover: RUN_DETAIL_ROUTING_REASON,
   automatic_failover: RUN_DETAIL_ROUTING_REASON,
   route_reason: RUN_DETAIL_ROUTING_REASON,
-  sandbox: RUN_DETAIL_LAUNCH_INTERNAL_REASON,
   branch: RUN_DETAIL_DISPLAY_DEFERRED_REASON,
   worktree: RUN_DETAIL_DISPLAY_DEFERRED_REASON,
   worktree_source: RUN_DETAIL_LAUNCH_INTERNAL_REASON,
@@ -181,6 +180,18 @@ test('live child turns publish their chain root for hub badge matching', async (
 })
 
 describe('run detail', () => {
+  test('shows the recorded sandbox kind and its dedicated reason', async () => {
+    const id = addRun({ agent: 'grok', job: 'understand' })
+    db()
+      .query('UPDATE run SET sandbox=?,sandbox_reason=? WHERE record_id=?')
+      .run('host', 'MCP was requested', id)
+
+    expect(await runDetail(id)).toMatchObject({
+      sandbox: 'host',
+      sandbox_reason: 'MCP was requested',
+    })
+  })
+
   test('shows workflow binding aliases only when the run is bound', async () => {
     const bound = addRun({ agent: 'codex', job: 'implement' })
     db()

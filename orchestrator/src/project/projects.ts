@@ -116,6 +116,11 @@ export { projectLifecycleForm, resolvedWorktreeTool } from './project-worktree-r
 export type { MainStackConsumer, Project, ProjectSettings, WorktreeTool }
 export { projectByName, projectRowByName, projects }
 
+/** Every registered project, including retired rows. */
+export function projectsIncludingRetired(database: Database = db()): Project[] {
+  return [...projects({}, database), ...projects({ retired: true }, database)]
+}
+
 /** The sole registered project declaring the task key's prefix, when there is one. */
 export function taskKeyPrefix(key: string): string | null {
   return /^([A-Z][A-Z0-9]*)-/.exec(key)?.[1] ?? null

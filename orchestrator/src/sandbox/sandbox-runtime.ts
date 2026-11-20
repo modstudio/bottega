@@ -15,16 +15,21 @@ import {
   extractEmbeddedRuntime,
   resolveInstallFile,
 } from '../../../shared/embedded-assets.ts'
+import { runningInstallRoot } from '../../../shared/install-root.ts'
+import {
+  WORKER_RUNTIME_ASSETS,
+  workerRuntimeAssetPaths,
+} from '../../../shared/runtime-assets-in-sandbox.ts'
 import {
   type SandboxRuntimeAssets,
   type SandboxRuntimePayload,
   sandboxRuntimeAssets,
 } from '../../../shared/sandbox-runtime-assets.ts'
 import { resolveStateRoot, type StateEnvironment } from '../../../shared/state-directory.ts'
-import { ROOT } from '../database/db.ts'
 
 export const SRT_LIBRARY = join(
-  ROOT,
+  runningInstallRoot(import.meta.dir, process.env),
+  'orchestrator',
   'node_modules',
   '@anthropic-ai',
   'sandbox-runtime',
@@ -51,12 +56,17 @@ type ExtractionPorts = {
 
 type ExpectedPayload = SandboxRuntimePayload & EmbeddedRuntimeFile
 
-function extractedRoot(environment: StateEnvironment, version: string): string {
-  return join(resolveStateRoot(environment), 'runtime', version, 'sandbox-runtime')
+/** The extracted payload root used by a compiled distribution, when one is running. */
+export function extractedSandboxRuntimeRoot(environment: StateEnvironment): string | undefined {
+  const manifest = embeddedDistributionManifest()
+  if (!manifest) return undefined
+  return workerRuntimeAssetPaths(resolveStateRoot(environment), manifest.version, {
+    sandboxRuntime: WORKER_RUNTIME_ASSETS.sandboxRuntime,
+  })[0]
 }
 
-function diskPayloadPath(relativePath: string): string {
-  return join(ROOT, relativePath)
+function diskPayloadPath(relativePath: string, environment: StateEnvironment): string {
+  return join(runningInstallRoot(import.meta.dir, environment), relativePath)
 }
 
 function payloads(assets: SandboxRuntimeAssets): SandboxRuntimePayload[] {
@@ -364,9 +374,9 @@ export async function sandboxRuntimeAvailability(
       (required.length > 1 || platform === 'darwin') &&
       required.every(
         ({ packagePath }) =>
-          resolveInstallFile(packagePath, diskPayloadPath(packagePath)) !== undefined,
+          resolveInstallFile(packagePath, diskPayloadPath(packagePath, environment)) !== undefined,
       ),
-    location: extractedRoot(environment, manifest.version),
+    location: extractedSandboxRuntimeRoot(environment)!,
     sourceCheckout: false,
     missingSystemDependencies,
     userNamespacesUsable,
@@ -387,6 +397,7 @@ async function expectedPayloads(
   arch: NodeJS.Architecture,
   resolveFile: NonNullable<ExtractionPorts['resolveFile']>,
   readFile: NonNullable<ExtractionPorts['readFile']>,
+  environment: StateEnvironment,
 ): Promise<ExpectedPayload[]> {
   const required = payloads(assets)
   if (required.length === 1 && platform !== 'darwin') {
@@ -394,7 +405,7 @@ async function expectedPayloads(
   }
   return Promise.all(
     required.map(async (asset) => {
-      const source = resolveFile(asset.packagePath, diskPayloadPath(asset.packagePath))
+      const source = resolveFile(asset.packagePath, diskPayloadPath(asset.packagePath, environment))
       if (!source) {
         throw new Error(`compiled sandbox runtime payload is missing: ${asset.packagePath}`)
       }
@@ -430,8 +441,9 @@ export async function extractSandboxRuntime(
     arch,
     ports.resolveFile ?? resolveInstallFile,
     ports.readFile ?? ((path) => Bun.file(path).arrayBuffer()),
+    environment,
   )
-  const root = extractedRoot(environment, manifest.version)
+  const root = extractedSandboxRuntimeRoot(environment)!
   await extractEmbeddedRuntime(root, expected, 'sandbox runtime')
   return runtimePaths(root, assets)
 }
@@ -447,9 +459,12 @@ function runtimePaths(root: string, assets: SandboxRuntimeAssets): ExtractedRunt
   }
 }
 
-async function prepareSandboxRuntimeConfig(): Promise<Partial<LibrarySandboxRuntimeConfig>> {
+export async function prepareSandboxRuntimeConfig(
+  environment: StateEnvironment,
+  ports: Omit<ExtractionPorts, 'environment'> = {},
+): Promise<Partial<LibrarySandboxRuntimeConfig>> {
   if (!embeddedDistributionManifest()) return {}
-  const runtime = await extractSandboxRuntime()
+  const runtime = await extractSandboxRuntime({ ...ports, environment })
   return {
     javaAgentJarPath: runtime.javaAgentJarPath,
     ...(runtime.seccompApplyPath ? { seccomp: { applyPath: runtime.seccompApplyPath } } : {}),
@@ -492,9 +507,10 @@ export async function launchWithSandboxRuntime(
   config: LibrarySandboxRuntimeConfig,
   command: string,
   temporaryDirectory?: string,
+  environment: StateEnvironment = process.env,
 ): Promise<string[]> {
   return withSandboxTemporaryDirectory(temporaryDirectory, async () => {
-    const payload = await prepareSandboxRuntimeConfig()
+    const payload = await prepareSandboxRuntimeConfig(environment)
     const configured = { ...config, ...payload }
     if (sandboxInitialized) SandboxManager.updateConfig(configured)
     else {

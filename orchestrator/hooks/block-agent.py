@@ -59,19 +59,20 @@ import json, os, re, sqlite3, subprocess, sys, time, uuid
 sys.path.insert(0, os.path.dirname(__file__))
 from registered_scope import should_hook_act
 from hook_emission import record_emission
+from hook_paths import bottega_bin
 
 ALLOW = {"claude-code-guide"}
 
 ORCHESTRATOR_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 DB = os.environ.get("BOTTEGA_ORCHESTRATOR_DB") or subprocess.check_output(
-    ["bun", "--no-env-file", os.path.join(ORCHESTRATOR_ROOT, "..", "shared", "state-directory.ts"),
-     "orchestrator", "database"], text=True,
-).strip()
+    [bottega_bin(), "machine", "store-path"], text=True,
+)
+DB = (DB.splitlines() or [""])[0].strip()
 # Where a decision goes when sqlite will not take it. A gate that cannot say
 # what it did is the thing this table exists to prevent, so a failed write has
 # to leave a mark somewhere rather than evaporate.
-FALLBACK_LOG = os.path.join(os.path.dirname(DB), "spawn-fallback.log")
-BOTTEGA_BIN = os.path.abspath(os.path.join(ORCHESTRATOR_ROOT, "..", "bin", "bottega"))
+FALLBACK_LOG = os.path.join(os.path.dirname(DB), "spawn-fallback.log") if DB else None
+BOTTEGA_BIN = bottega_bin()
 
 # A declaration, not a vocabulary match. The old fuzzy list ("online", "docs",
 # "benchmark", "pricing") is gone: it is what made rewording work.
@@ -167,6 +168,13 @@ def log(decision, why, inp, event, payload=None):
         decision,
         why,
     )
+    if not DB:
+        print(
+            "bottega: spawn decision not persisted (orchestrator store path unresolved): "
+            + "\t".join("" if value is None else str(value) for value in row),
+            file=sys.stderr,
+        )
+        return
     try:
         # Python is the hook's language-local minter; a Bun process per event would make the gate expensive.
         # Mint inside the same fail-open boundary as the write so a minter failure is recorded like any
@@ -200,6 +208,8 @@ def main() -> int:
         print(f"bottega: hook payload could not be parsed ({e.__class__.__name__}: {e})", file=sys.stderr)
         try:
             row = (time.strftime("%Y-%m-%dT%H:%M:%S"), "payload could not be parsed")
+            if FALLBACK_LOG is None:
+                raise OSError("orchestrator store path unresolved")
             with open(FALLBACK_LOG, "a") as fh:
                 fh.write("\t".join(row) + "\n")
         except Exception:

@@ -15,7 +15,7 @@ const migrationCommand = `./bin/${PLATFORM_SLUG} machine migrate`
 const migrationPaths =
   "orchestrator/migrations hub/migrations hub/src/migrations.ts shared/migration-source.ts ':(glob)orchestrator/src/database/*migration*.ts'"
 const installProofPaths =
-  'install.sh scripts/smoke-release-install.ts scripts/build-binary.ts scripts/build-release-artifacts.ts scripts/release-config.ts orchestrator/src/setup/ orchestrator/src/settings/ orchestrator/src/canon/ orchestrator/src/health/ hub/src/doctor.ts orchestrator/migrations hub/migrations shared/launch-agent-liveness.ts shared/launchd-owners.ts shared/install-root.ts orchestrator/src/record/record-session.ts'
+  'install.sh scripts/smoke-release-install.ts scripts/build-binary.ts scripts/build-release-artifacts.ts scripts/release-config.ts orchestrator/hooks/ orchestrator/src/setup/ orchestrator/src/settings/ orchestrator/src/canon/ orchestrator/src/health/ orchestrator/src/mcp/mcp-board-tools.ts hub/src/doctor.ts orchestrator/migrations hub/migrations shared/attribution-markers.json shared/embedded-assets.ts shared/heartbeat-guidance.ts shared/launch-agent-liveness.ts shared/launchd-owners.ts shared/install-root.ts shared/runtime-assets.ts shared/secret-shaped-rules.json shared/self-spawn.ts shared/shell-quote.ts shared/store-write-lock.c shared/store-write-lock.ts orchestrator/src/record/record-session.ts'
 const installProofCommand = 'bun run release:install-proof -- "v$(jq -r .version package.json)"'
 const processSuite = CI_ONLY_SUITES[0]!
 const playwrightPin = (

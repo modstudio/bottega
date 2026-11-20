@@ -201,18 +201,97 @@ export function extractEmbeddedRuntime(
   return root
 }
 
-export type RefGuardRuntimeAsset = {
+export type RuntimeAsset = {
   packagePath: string
   destination: string
-  mode: 0o755
+  mode: 0o644 | 0o755
 }
 
-/** The single definition of the shared ref guard shipped in a compiled binary. */
-export const REF_GUARD_RUNTIME_ASSET: RefGuardRuntimeAsset = {
-  packagePath: 'orchestrator/hooks/reference-transaction',
-  destination: 'ref-guard/reference-transaction',
-  mode: 0o755,
-}
+const executableHooks = new Set([
+  'block-agent.py',
+  'git-guard.py',
+  'heartbeat-guard.py',
+  'heartbeat-remind.py',
+  'no-attribution.py',
+  'orch-heartbeat.sh',
+  'protect-main-checkout.py',
+  'reference-transaction',
+  'session-brief.py',
+  'workflow-cursor-reminder.py',
+])
+
+const runtimeHookFiles = [
+  'block-agent.py',
+  'board-ack-guard.py',
+  'board-interrupt.py',
+  'board_hook_common.py',
+  'bun-cache-guard.py',
+  'context-precompact.py',
+  'context-review.py',
+  'git-guard.py',
+  'heartbeat-board-observation.py',
+  'heartbeat-decision.py',
+  'heartbeat-guard.py',
+  'heartbeat-remind.py',
+  'heartbeat-run-observation.py',
+  'hook_emission.py',
+  'hook_paths.py',
+  'hub-import-guard.py',
+  'inbox_question_decision.py',
+  'no-attribution.py',
+  'notice_transport.py',
+  'orch-heartbeat.sh',
+  'protect-main-checkout.py',
+  'protect_main_checkout.py',
+  'reference-transaction',
+  'registered_scope.py',
+  'registered_scope_decision.py',
+  'secret_shaped.py',
+  'session-brief.py',
+  'session-start-context.json',
+  'session-start.py',
+  'stop-summary.py',
+  'test-substance-guard.py',
+  'workflow-cursor-reminder.py',
+] as const
+
+/** Directory prefixes whose contents the binary builder embeds wholesale. */
+export const EMBEDDED_ASSET_PREFIXES = [
+  'orchestrator/migrations',
+  'hub/migrations',
+  'hub/web/dist',
+  'ops/launchd',
+  'ops/systemd',
+] as const
+
+/** Every real file that an installed binary exposes to an outside process. */
+export const RUNTIME_ASSETS: readonly RuntimeAsset[] = [
+  ...runtimeHookFiles.map((file) => ({
+    packagePath: `orchestrator/hooks/${file}`,
+    destination: `orchestrator/hooks/${file}`,
+    mode: executableHooks.has(file) ? (0o755 as const) : (0o644 as const),
+  })),
+  {
+    packagePath: 'shared/store-write-lock.c',
+    destination: 'shared/store-write-lock.c',
+    mode: 0o644,
+  },
+  {
+    packagePath: 'shared/secret-shaped-rules.json',
+    destination: 'shared/secret-shaped-rules.json',
+    mode: 0o644,
+  },
+  {
+    packagePath: 'shared/attribution-markers.json',
+    destination: 'shared/attribution-markers.json',
+    mode: 0o644,
+  },
+]
+
+/** The ref guard entry retained as a named consumer-facing member of the runtime set. */
+export const REF_GUARD_RUNTIME_ASSET = RUNTIME_ASSETS.find(
+  (asset) => asset.packagePath === 'orchestrator/hooks/reference-transaction',
+)!
 
 type EmbeddedAssetRegistry = Readonly<Record<string, string>>
 type EmbeddedFileRegistry = Readonly<Record<string, string>>

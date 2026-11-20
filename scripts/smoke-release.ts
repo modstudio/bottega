@@ -163,6 +163,9 @@ su -s /bin/sh smoke -c '
   printf "%s\\n" "$project_add_output"
   printf "%s\\n" "$project_add_output" | grep -F "trunk main (from origin/HEAD)"
   ${installedBinary} project set release-smoke --stack git --settings "$(cat /tmp/release-smoke-settings.json)"
+  confinement_output=$(${installedBinary} review confinement report 2>&1)
+  printf "%s\\n" "$confinement_output"
+  printf "%s\\n" "$confinement_output" | grep -F "filesystem-probe  extracted ref guard executes under the area deny  committed"
   ${installedBinary} workflow import --cwd /tmp/probe-repository --reason "DEV-2421 release smoke workflow"
   ${installedBinary} workflow promote-tree --cwd /tmp/probe-repository --reason "DEV-2421 release smoke workflow"
   smoke_task=$(${installedBinary} task new --project release-smoke --title "Verify installed release")

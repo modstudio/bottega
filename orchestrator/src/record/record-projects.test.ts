@@ -132,7 +132,7 @@ test('the real record app refuses a stale project revision and names the pull re
   expect(staleBody).toEqual({
     error:
       `project ${projectId} changed since revision 1; now 2.\n` +
-      `cleared by: ${PLATFORM_SLUG} record pull`,
+      `cleared by: ${PLATFORM_SLUG} record sync`,
     code: 'revision-conflict',
     reason: 'stale-revision',
     condition: `project ${projectId} changed since revision 1; now 2.`,
@@ -188,7 +188,7 @@ test('project set refuses after another machine writes a newer project revision'
     await expect(runProjectSet('set-stale')).rejects.toMatchObject({
       kind: 'conflict',
       currentRevision: String(created.revision + 1),
-      message: expect.stringContaining(`${PLATFORM_SLUG} record pull`),
+      message: expect.stringContaining(`${PLATFORM_SLUG} record sync`),
     })
   } finally {
     installRecordApiClient(createMemoryRecordApiClient())
@@ -233,7 +233,7 @@ test('retire returns the revision used by a same-machine unretire and preserves 
   expect(await staleUnretire.json()).toEqual({
     error:
       `project ${retirementProjectId} changed since revision ${secondRetire.revision}; now ${anotherMachine.revision}.\n` +
-      `cleared by: ${PLATFORM_SLUG} record pull`,
+      `cleared by: ${PLATFORM_SLUG} record sync`,
     code: 'revision-conflict',
     reason: 'stale-revision',
     condition: `project ${retirementProjectId} changed since revision ${secondRetire.revision}; now ${anotherMachine.revision}.`,

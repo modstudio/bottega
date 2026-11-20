@@ -945,10 +945,10 @@ function hasNewStoreSeedMarker(database: Database): boolean {
   )
 }
 
-function seedCurrentProjectSchema(database: Database, newStore: boolean): void {
-  initializeDefaultLocalProject(database, newStore)
+function seedCurrentProjectSchema(database: Database, seedPending: boolean): void {
+  initializeDefaultLocalProject(database, seedPending)
   seedProjects(database)
-  if (newStore) database.query('DELETE FROM schema_meta WHERE key=?').run(NEW_STORE_SEED_MARKER)
+  if (seedPending) database.query('DELETE FROM schema_meta WHERE key=?').run(NEW_STORE_SEED_MARKER)
 }
 
 /** Main-checkout binary only: apply pending, ordered Drizzle migrations. */

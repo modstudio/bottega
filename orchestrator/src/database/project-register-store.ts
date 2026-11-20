@@ -86,13 +86,16 @@ export function mirrorProjectRegisterRow(
     ).changes
 }
 
-/** Register the built-in tracker project only while creating a brand-new store. */
+/**
+ * Register the built-in tracker project only while the store's register is unseeded. The durable
+ * form of this state is the new_store_seed_pending schema_meta marker.
+ */
 export function initializeDefaultLocalProject(
   database: Database,
-  newStore: boolean,
+  seedPending: boolean,
   environment: StateEnvironment = process.env,
 ): void {
-  if (!newStore) return
+  if (!seedPending) return
   const exists = database
     .query('SELECT 1 FROM project WHERE name = ?')
     .get(DEFAULT_LOCAL_PROJECT_NAME)

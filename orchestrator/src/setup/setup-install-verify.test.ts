@@ -1,7 +1,7 @@
 import { expect, test } from 'bun:test'
+import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
-  hookScriptPath,
   PRODUCT_HOOKS,
   SCRIPT_FILES,
   withMachineProductHooks,
@@ -13,13 +13,18 @@ import {
 } from './setup-install-verify.ts'
 
 const INSTALL = `/installed/${PLATFORM_SLUG}`
+const scriptPath = (file: string) => join(INSTALL, 'orchestrator', 'hooks', file)
+const RUNTIME = {
+  executable: join(INSTALL, 'bin', PLATFORM_SLUG),
+  scriptPath,
+}
 
 function facts(): SetupInstallVerifyFacts {
   const settings = withMachineProductHooks(
     { permissions: {}, hooks: {} },
-    INSTALL,
     '/state/orchestrator.db',
     'on',
+    RUNTIME,
   ).settings
   return {
     installRoot: INSTALL,
@@ -41,8 +46,10 @@ function facts(): SetupInstallVerifyFacts {
     ],
     scripts: SCRIPT_FILES.map((file) => ({
       file,
-      path: hookScriptPath(INSTALL, file),
+      path: scriptPath(file),
+      assetRoot: INSTALL,
       exists: true,
+      readable: true,
       executable: true,
     })),
     canonEntries: [
@@ -76,6 +83,24 @@ function removeHook(input: SetupInstallVerifyFacts, script: string): void {
   }
 }
 
+function replaceHookCommand(
+  input: SetupInstallVerifyFacts,
+  script: string,
+  replacement: (command: string) => string,
+): void {
+  const hooks = userSettings(input).hooks as Record<
+    string,
+    Array<{ hooks: Array<{ command: string }> }>
+  >
+  for (const groups of Object.values(hooks)) {
+    for (const group of groups) {
+      for (const handler of group.hooks) {
+        if (handler.command.includes(`/${script}`)) handler.command = replacement(handler.command)
+      }
+    }
+  }
+}
+
 test('all rendered facts pass every named install check', () => {
   expect(verifySetupInstall(facts()).every((candidate) => candidate.ok)).toBe(true)
 })
@@ -93,10 +118,37 @@ test('a hook pointing to another installation fails hooks-present', () => {
   expect(check(verifySetupInstall(input), 'hooks-present')).toMatchObject({ ok: false })
 })
 
-test('a non-executable hook script fails hook-scripts-executable', () => {
+test('rendered hooks are recognized under the verified extracted runtime root', () => {
+  const input = facts()
+  const runtimeRoot = '/state/runtime/1.2.3/assets'
+  const settings = userSettings(input)
+  settings.hooks = JSON.parse(JSON.stringify(settings.hooks).replaceAll(INSTALL, runtimeRoot))
+  for (const script of input.scripts) {
+    script.path = join(runtimeRoot, 'orchestrator', 'hooks', script.file)
+    script.assetRoot = runtimeRoot
+  }
+  expect(check(verifySetupInstall(input), 'hooks-present')).toMatchObject({ ok: true })
+})
+
+test('an interpreter-invoked hook script must be readable but need not be executable', () => {
   const input = facts()
   input.scripts[0]!.executable = false
-  expect(check(verifySetupInstall(input), 'hook-scripts-executable')).toMatchObject({ ok: false })
+  expect(check(verifySetupInstall(input), 'hook-scripts-accessible')).toMatchObject({ ok: true })
+  input.scripts[0]!.readable = false
+  expect(check(verifySetupInstall(input), 'hook-scripts-accessible')).toMatchObject({ ok: false })
+})
+
+test('a directly invoked hook script must be executable', () => {
+  const input = facts()
+  const script = input.scripts[0]!
+  replaceHookCommand(input, script.file, (command) =>
+    command.replace(/(?:[A-Za-z_][A-Za-z0-9_]*=(?:'[^']*'|\S+)\s+)*python3\s+/, ''),
+  )
+  script.executable = false
+  expect(check(verifySetupInstall(input), 'hook-scripts-accessible')).toMatchObject({
+    ok: false,
+    detail: `${script.path} is not executable for direct invocation`,
+  })
 })
 
 test('disableAllHooks in user settings fails hooks-not-disabled', () => {

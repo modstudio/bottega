@@ -64,25 +64,31 @@ cd "$ROOT" 2>/dev/null || {
   echo "DEGRADED: launch directory removed; re-arm from the main checkout"
   exit 2
 }
-main_checkout=${BOTTEGA_MAIN_CHECKOUT:-}
-if [ -z "$main_checkout" ]; then
-  common_dir=$(git -C "$ROOT" rev-parse --path-format=absolute --git-common-dir) || {
-    echo "DEGRADED: cannot resolve the main checkout; re-arm from the main checkout"
-    exit 2
-  }
-  main_checkout=$(dirname "$common_dir")
+if [[ "${BOTTEGA_BIN:-}" = /* ]]; then
+  BOTTEGA="$BOTTEGA_BIN"
+else
+  main_checkout=${BOTTEGA_MAIN_CHECKOUT:-}
+  if [ -z "$main_checkout" ]; then
+    common_dir=$(git -C "$ROOT" rev-parse --path-format=absolute --git-common-dir) || {
+      echo "DEGRADED: cannot resolve the main checkout; re-arm from the main checkout"
+      exit 2
+    }
+    main_checkout=$(dirname "$common_dir")
+  fi
+  BOTTEGA="$main_checkout/bin/bottega"
 fi
-BOTTEGA="$main_checkout/bin/bottega"
 if [ -n "${BOTTEGA_ORCHESTRATOR_DB:-}" ]; then
   case "$BOTTEGA_ORCHESTRATOR_DB" in
     /*) DB_PATH="$BOTTEGA_ORCHESTRATOR_DB" ;;
     *) DB_PATH="$CALLER_DIRECTORY/$BOTTEGA_ORCHESTRATOR_DB" ;;
   esac
 else
-  DB_PATH=$(bun --no-env-file "$ROOT/../shared/state-directory.ts" orchestrator database) || {
+  # Read the whole listing: piping to head under pipefail races the CLI's later lines into SIGPIPE.
+  store_paths=$("$BOTTEGA" machine store-path) || {
     echo "DEGRADED: cannot resolve orchestrator database"
     exit 2
   }
+  DB_PATH=${store_paths%%$'\n'*}
 fi
 export BOTTEGA_ORCHESTRATOR_DB="$DB_PATH"
 

@@ -9,11 +9,17 @@ type WorkspaceManifest = {
   workspaces?: string[] | { packages?: string[] }
 }
 
-export type RunningInstallLayout = {
-  kind: 'distribution' | 'checkout'
-  root: string
-  workspaceDirectories: string[]
-}
+export type RunningInstallLayout =
+  | {
+      kind: 'checkout'
+      root: string
+      workspaceDirectories: string[]
+    }
+  | {
+      kind: 'distribution'
+      root: string
+      workspaceDirectories: string[]
+    }
 
 function runningInstallRootForSandbox(environment: ConfigEnvironment): string {
   return runningInstallRoot(import.meta.dir, environment)
@@ -23,7 +29,11 @@ function runningInstallRootForSandbox(environment: ConfigEnvironment): string {
 export function resolveRunningInstallLayout(environment: ConfigEnvironment): RunningInstallLayout {
   const root = runningInstallRootForSandbox(environment)
   if (runningInstallationKind(import.meta.dir, environment) === 'distribution') {
-    return { kind: 'distribution', root, workspaceDirectories: [] }
+    return {
+      kind: 'distribution',
+      root,
+      workspaceDirectories: [],
+    }
   }
   const manifestPath = join(root, 'package.json')
   let manifest: WorkspaceManifest

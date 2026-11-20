@@ -64,7 +64,7 @@ test('confinement clear without --writer or --note still prints the clear usage'
   ).rejects.toThrow(CLEAR_USAGE)
 })
 
-test('confinement report accepts --agent, --job, --mcp, and --json without executing the report', () => {
+test('confinement report accepts selectors and JSON without executing the report', () => {
   const program = confinementProgram()
   const confinement = program.commands.find((command) => command.name() === 'confinement')!
   const report = confinement.commands.find((command) => command.name() === 'report')!
@@ -76,6 +76,8 @@ test('confinement report accepts --agent, --job, --mcp, and --json without execu
     'reading',
     '--mcp',
     'false',
+    '--since',
+    '2026-11-13T00:00:00.000Z',
   ])
   expect(parsed.unknown).toEqual([])
   expect(report.opts()).toMatchObject({
@@ -83,5 +85,6 @@ test('confinement report accepts --agent, --job, --mcp, and --json without execu
     agent: 'grok',
     job: 'reading',
     mcp: 'false',
+    since: '2026-11-13T00:00:00.000Z',
   })
 })

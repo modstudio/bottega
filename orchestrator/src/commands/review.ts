@@ -38,6 +38,7 @@ import {
   replayReviewFunnelCommand,
   reportReviewFunnelCommand,
 } from '../review-funnel/review-funnel-commands.ts'
+import { CONFINEMENT_RUN_WINDOW_DAYS, countRunConfinement } from '../run/run-confinement-count.ts'
 import { resolveRunIdentifier } from '../run/run-identifier.ts'
 import { loadSubscriptionCostContext } from '../run/run-subscription-prices.ts'
 import {
@@ -50,11 +51,12 @@ import {
   parseConfinementMcpSelector,
   reportConfinement,
 } from '../sandbox/confinement-report.ts'
+import { formatConfinementRunMeasurement } from '../sandbox/confinement-run-measurement.ts'
 import { readonlyLensReportInputs } from '../sandbox/sandbox.ts'
 import { type CliFlags, log, optionFlags } from './support.ts'
 
 const CLEAR_USAGE = `${PLATFORM_SLUG} review confinement clear <run-id> --writer <text> --note <text> [--tip <current-tip>]`
-const REPORT_USAGE = `${PLATFORM_SLUG} review confinement report [--agent <name>] [--job reading|writing|<job>] [--mcp [true|false]] [--json]`
+const REPORT_USAGE = `${PLATFORM_SLUG} review confinement report [--agent <name>] [--job reading|writing|<job>] [--mcp [true|false]] [--since <ISO>] [--json]`
 
 async function confinementReportCommand(flags: CliFlags): Promise<void> {
   const lens = readonlyLensReportInputs(process.env)
@@ -78,13 +80,16 @@ async function confinementReportCommand(flags: CliFlags): Promise<void> {
     mcp: parseConfinementMcpSelector(flags.has('mcp'), flags.flag('mcp')),
   })
   const probes = await runConfinementFilesystemProbes()
+  const runMeasurement = countRunConfinement(db(), flags.flag('since'))
   if (flags.has('json')) {
-    log(JSON.stringify({ rows, filesystemProbes: probes }))
+    log(JSON.stringify({ rows, filesystemProbes: probes, readOnlyRuns: runMeasurement }))
     return
   }
   for (const line of formatConfinementReport(rows, false)) log(line)
   log('')
   for (const line of formatConfinementFilesystemProbes(probes)) log(line)
+  log('')
+  for (const line of formatConfinementRunMeasurement(runMeasurement)) log(line)
 }
 
 const reviewPresentation = {
@@ -430,6 +435,10 @@ function registerConfinement(program: Command): void {
     .option('--agent <value>', 'include only this agent')
     .option('--job <value>', 'report a reading, writing, or named job')
     .option('--mcp [value]', 'filter by whether MCP access is enabled')
+    .option(
+      '--since <value>',
+      `count read-only runs since this ISO instant (default: ${CONFINEMENT_RUN_WINDOW_DAYS} days)`,
+    )
     .option('--json', 'write the report as JSON')
     .allowExcessArguments(false)
     .action(async (options) => {

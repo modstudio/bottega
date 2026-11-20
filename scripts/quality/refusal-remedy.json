@@ -145,7 +145,7 @@
     "orchestrator/src/workflow/workflow-store.fixture.ts": 1,
     "orchestrator/src/workflow/workflow-task-reference.ts": 1,
     "scripts/affected-tests.ts": 1,
-    "scripts/check-bun-versions.ts": 1,
+    "scripts/repository-dockerfiles.ts": 1,
     "scripts/check-dead-code.ts": 1,
     "scripts/check-harness-mirror.ts": 1,
     "scripts/check-legacy-names.ts": 1,

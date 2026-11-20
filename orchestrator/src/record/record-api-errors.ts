@@ -35,7 +35,7 @@ export function renderRecordApiRefusal(context: Context, error: unknown): Respon
       revisionConflictBody(
         new DocRevisionConflictError(
           renderRefusal(
-            refusal(condition, { kind: 'command', argv: [PLATFORM_SLUG, 'record', 'pull'] }),
+            refusal(condition, { kind: 'command', argv: [PLATFORM_SLUG, 'record', 'sync'] }),
           ),
           condition,
           'stale-revision',

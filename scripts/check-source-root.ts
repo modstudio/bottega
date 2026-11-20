@@ -13,17 +13,17 @@ export type SourceRootAllowance = { path: string; line: number; reason: string }
 export const SOURCE_ROOT_ALLOWANCES: SourceRootAllowance[] = [
   {
     path: 'orchestrator/src/resources/ref-guard-runtime.ts',
-    line: 29,
+    line: 20,
     reason: 'the tracked hook path is selected only when no embedded manifest exists',
   },
   {
     path: 'orchestrator/src/sandbox/sandbox-runtime.ts',
-    line: 27,
+    line: 31,
     reason: 'source availability checks node_modules only when no embedded manifest exists',
   },
   {
     path: 'orchestrator/src/sandbox/sandbox-runtime.ts',
-    line: 59,
+    line: 77,
     reason: 'installed payload resolution selects embedded files instead of this disk fallback',
   },
   {

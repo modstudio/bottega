@@ -14,7 +14,7 @@ import { nowIso, writableDb, writeTransaction } from '../database/db.ts'
 import { billingHoldForFailure } from '../failure/failure.ts'
 import { JOBS } from '../jobs/jobs.ts'
 import { acpHarnessProjectServersConfirmable } from '../mcp/mcp-native-attachment.ts'
-import { projectAt, projects } from '../project/projects.ts'
+import { projectAt, projectsIncludingRetired } from '../project/projects.ts'
 import { machineId } from '../record/machine-identity.ts'
 import { nextRunNumber } from '../run/run-number.ts'
 import { enqueueRunRecord } from '../run/run-outbox.ts'
@@ -324,10 +324,7 @@ async function registrationWriterCapabilities(input: {
     agent: input.agent,
     path: input.path,
     environment: input.environment,
-    registeredProjects: [
-      ...projects({}, writableDb()),
-      ...projects({ retired: true }, writableDb()),
-    ],
+    registeredProjects: projectsIncludingRetired(writableDb()),
   }
   const ports = writingProbePorts(({ prompt, ...confinement }) =>
     input.runOne('writing', prompt, confinement),

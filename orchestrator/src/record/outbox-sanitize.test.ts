@@ -33,13 +33,14 @@ const kinds: KindCase[] = [
       label: SAFE,
       error: SAFE,
       routeReason: SAFE,
+      sandboxReason: SAFE,
       closeOutDetail: SAFE,
       evidenceUnvoid: { note: SAFE },
       reviewProvenance: { commands_run: [SAFE] },
     },
-    path: 'error',
+    path: 'sandboxReason',
     plant: (payload) => {
-      payload.error = SECRET
+      payload.sandboxReason = SECRET
     },
   },
   {

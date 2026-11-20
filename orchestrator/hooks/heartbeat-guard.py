@@ -23,14 +23,16 @@ import uuid
 sys.path.insert(0, os.path.dirname(__file__))
 from registered_scope import should_hook_act
 from hook_emission import record_emission
+from hook_paths import bottega_bin
 
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
 PROCESS_LIST_PS_TIMEOUT_SECONDS = 2
 DB = os.environ.get("BOTTEGA_ORCHESTRATOR_DB") or subprocess.check_output(
-    ["bun", "--no-env-file", os.path.join(ROOT, "shared", "state-directory.ts"), "orchestrator", "database"],
+    [bottega_bin(), "machine", "store-path"],
     text=True,
-).strip()
+)
+DB = (DB.splitlines() or [""])[0].strip()
 
 
 def load_hook_module(name: str, filename: str):
@@ -44,10 +46,6 @@ def load_hook_module(name: str, filename: str):
 
 def heartbeat_path() -> str:
     return os.path.abspath(os.path.join(os.path.dirname(__file__), "orch-heartbeat.sh"))
-
-
-def bottega_path() -> str:
-    return os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "bin", "bottega"))
 
 
 def uuid_string(value) -> bool:
@@ -108,6 +106,8 @@ def live_landing_ids(session_id: str):
     reproduces the failure this function exists to close.
     """
     path = landing_db_path()
+    if not path:
+        return None
     if not os.path.exists(path):
         return []
     try:
@@ -127,7 +127,7 @@ def live_landing_ids(session_id: str):
 def live_runs(session_id: str):
     try:
         result = subprocess.run(
-            [bottega_path(), "run", "list", "--limit", "200", "--json"],
+            [bottega_bin(), "run", "list", "--limit", "200", "--json"],
             capture_output=True,
             text=True,
             timeout=5,

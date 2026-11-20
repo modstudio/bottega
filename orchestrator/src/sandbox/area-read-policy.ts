@@ -14,22 +14,40 @@ import { runHarnessStateDir } from '../run-owned-paths.ts'
 
 export type AreaReadPolicy = { deny: string[]; allow: string[] }
 
+export type AreaReadPlatform = 'darwin' | 'linux'
+
 export const isAtOrBelow = (path: string, parent: string) => {
   const fromParent = relative(parent, path)
   return fromParent === '' || (!fromParent.startsWith('..') && !isAbsolute(fromParent))
 }
 
-/** Keep a broad-area carve-back only when it cannot reopen a protected secret path. */
+/** A carve-back may never reopen a protected path or one of its parents. */
 export function carveBackOutsideProtected(
-  candidates: readonly string[],
+  allowed: string,
   protectedDenies: readonly string[],
-): string[] {
-  return candidates.filter(
-    (allowed) =>
-      !protectedDenies.some(
-        (denied) => isAtOrBelow(allowed, denied) || isAtOrBelow(denied, allowed),
-      ),
+): boolean {
+  return !protectedDenies.some(
+    (denied) => isAtOrBelow(allowed, denied) || isAtOrBelow(denied, allowed),
   )
+}
+
+/**
+ * Hide sibling worktrees without placing a literal deny above the run's own tree.
+ * macOS keeps the glob as a live Seatbelt regex. Linux SRT expands deny globs
+ * before launch, so its profile can cover only the sibling entries present then.
+ */
+export function ownProjectWorktreeDenies(input: {
+  root: string
+  worktree: string
+  platform: AreaReadPlatform
+  entries: readonly string[]
+}): string[] {
+  const root = resolve(input.root)
+  const worktree = resolve(input.worktree)
+  if (input.platform === 'darwin') return [join(root, '*')]
+  return input.entries
+    .map((entry) => resolve(entry))
+    .filter((entry) => isAtOrBelow(entry, root) && !isAtOrBelow(worktree, entry))
 }
 
 /** Broad machine areas hidden from workers, with only run-owned paths carved back in. */
@@ -40,6 +58,8 @@ export function areaReadPolicy(input: {
   project: Project | null
   registeredProjects: readonly Project[]
   environment: StateEnvironment
+  platform: AreaReadPlatform
+  ownWorktreeRootEntries: readonly string[]
 }): AreaReadPolicy {
   const worktree = resolve(input.worktree)
   const runtimeDir = resolve(input.runtimeDir)
@@ -50,9 +70,17 @@ export function areaReadPolicy(input: {
   const orchestratorDatabase = resolveOrchestratorDatabase(input.environment)
   const runsDirectory = resolveRunsDirectory(input.environment)
   const checkoutParents = input.registeredProjects.map((project) => dirname(resolve(project.path)))
-  const worktreeRoots = input.registeredProjects.map((project) =>
-    resolve(mainCheckoutWorktreeHint(project.path)),
-  )
+  const worktreeRoots = input.registeredProjects.flatMap((project) => {
+    const root = resolve(mainCheckoutWorktreeHint(project.path))
+    return input.project && project.recordId === input.project.recordId
+      ? ownProjectWorktreeDenies({
+          root,
+          worktree,
+          platform: input.platform,
+          entries: input.ownWorktreeRootEntries,
+        })
+      : [root]
+  })
   const siblingCheckouts = input.registeredProjects
     .filter((project) => !input.project || project.recordId !== input.project.recordId)
     .map((project) => resolve(project.path))
