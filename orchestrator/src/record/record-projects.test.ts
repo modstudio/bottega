@@ -8,6 +8,7 @@ import type { RecordIdentity } from './record-auth.ts'
 import { hostedProjectColumns } from './record-project-columns.ts'
 import {
   mapRecordProjectRow,
+  type RecordProjectUpsertInput,
   retireHostedProjectRow,
   upsertHostedProjectRow,
 } from './record-projects.ts'
@@ -52,14 +53,14 @@ function recordApp() {
         )
         return rows.rows.map(mapRecordProjectRow)
       },
-      upsertProject: async (input) => {
+      upsertProject: async (input: RecordProjectUpsertInput & { spaceId: string }) => {
         const written = await upsertHostedProjectRow(sql, {
           ...input,
           columns: hostedProjectColumns(input.settings, input.name),
         })
         return { ...written, name: input.name }
       },
-      retireProject: (input) => retireHostedProjectRow(sql, input),
+      retireProject: (input: { spaceId: string; id: string }) => retireHostedProjectRow(sql, input),
     },
   )
 }

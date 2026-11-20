@@ -991,7 +991,7 @@ describe('record API presentation routes', () => {
     const app = appWith(identity, {
       retireProject: async (input: { id: string }) => {
         calls.push(input.id)
-        return { name: 'probe' }
+        return { name: 'probe', revision: 1 }
       },
     })
     const response = await app.request(`/v1/projects/${id}/retire`, {
