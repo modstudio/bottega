@@ -27,12 +27,13 @@ export async function writeProjectToHostedRecord(
     canon?: boolean
     settings?: ProjectSettings | StoredProjectSettings
     retiredAt?: string | null
+    recordRevision?: number | null
   },
   destinationSpaceId?: string,
-): Promise<string> {
+): Promise<{ recordId: string; recordRevision: number | null }> {
   const recordId = p.recordId ?? newRecordId()
   return applyRecordWriteAuthority({
-    local: () => recordId,
+    local: () => ({ recordId, recordRevision: p.recordRevision ?? null }),
     hosted: async () => {
       const client = recordApiClient()
       const destination =
@@ -46,10 +47,11 @@ export async function writeProjectToHostedRecord(
           canon: Boolean(p.canon),
           settings: p.settings ?? {},
           retiredAt: p.retiredAt ?? null,
+          expectedRevision: p.recordRevision ?? null,
         },
         { destinationSpaceId: destination },
       )
-      return result.id
+      return { recordId: result.id, recordRevision: result.revision ?? p.recordRevision ?? null }
     },
   })
 }

@@ -11,6 +11,7 @@ import { db } from '../database/db.ts'
 import { rememberHostedRecord } from '../record/install-binding-write.ts'
 import type { RecordApiClient } from '../record/record-api-client.ts'
 import { fillAbsentProjectSettings, projectCommand } from './project-commands.ts'
+import { writeProjectToHostedRecord } from './project-hosted-write.ts'
 import { projectByName, upsertProject } from './projects.ts'
 
 async function runProject(
@@ -95,6 +96,32 @@ test('a bound store refuses before adding a local row and names record use', asy
     'record use https://staging.example.test',
   )
   expect(projectByName('bound-refusal')).toBeNull()
+})
+
+test('a hosted project write carries and returns the last-seen revision', async () => {
+  rememberHostedRecord()
+  process.env.BOTTEGA_RECORD_API_URL = 'https://record-api.example.test'
+  const inputs: Array<{ expectedRevision?: number | null }> = []
+  installRecordApiClient({
+    ...createMemoryRecordApiClient(),
+    upsertProject: async (input) => {
+      inputs.push(input)
+      return { id: input.id, name: input.name, revision: 8 }
+    },
+  })
+
+  expect(
+    await writeProjectToHostedRecord(
+      {
+        recordId: newRecordId(),
+        recordRevision: 7,
+        name: 'revision-write',
+        path: '/w/revision-write',
+      },
+      newRecordId(),
+    ),
+  ).toMatchObject({ recordRevision: 8 })
+  expect(inputs).toEqual([expect.objectContaining({ expectedRevision: 7 })])
 })
 
 function recordingClient(calls: string[]): RecordApiClient {

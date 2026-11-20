@@ -8,6 +8,8 @@ import type { StoredProjectSettings } from './project-settings.ts'
 export type Project = {
   /** Hosted record identity, minted locally when this install has no hosted record. */
   recordId: string
+  /** Record revision most recently read or written by this machine. */
+  recordRevision?: number | null
   /** What it is called. Matches the directory name by default, not necessarily. */
   name: string
   /** Absolute path to its main checkout. */
@@ -38,6 +40,7 @@ export type Project = {
 
 type ProjectRow = {
   record_id: string
+  record_revision?: number | null
   name: string
   path: string
   stack: string | null
@@ -58,6 +61,7 @@ function parseProject(row: ProjectRow): Project {
   }
   return {
     recordId: row.record_id,
+    recordRevision: row.record_revision ?? null,
     name: row.name,
     path: row.path,
     stack: row.stack,

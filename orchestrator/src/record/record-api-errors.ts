@@ -2,6 +2,8 @@
 /** Maps hosted-service refusals to their HTTP status without hiding unexpected failures. */
 
 import type { Context } from 'hono'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { refusal, renderRefusal } from '../../../shared/refusal.ts'
 import { DocRevisionConflictError, revisionConflictBody } from '../doc/doc-revision-conflict.ts'
 import { OutboxRowError } from './outbox-failure.ts'
 import { RecordBoardError } from './record-board-contract.ts'
@@ -27,6 +29,15 @@ export function renderRecordApiRefusal(context: Context, error: unknown): Respon
     return context.json(revisionConflictBody(error), 409)
   if (error instanceof RecordProjectSpaceConflictError)
     return context.json(projectSpaceConflictResponse(error), error.status)
+  if (error instanceof RecordProjectError && error.code === 'revision-conflict')
+    return context.json(
+      {
+        error: renderRefusal(
+          refusal(error.message, { kind: 'command', argv: [PLATFORM_SLUG, 'record', 'pull'] }),
+        ),
+      },
+      error.status,
+    )
   if (error instanceof RecordQuestionError)
     return context.json(
       error.code ? { error: error.message, code: error.code } : { error: error.message },

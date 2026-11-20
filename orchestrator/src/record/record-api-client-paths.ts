@@ -76,9 +76,10 @@ export type ProjectIdentityClient = {
       canon: boolean
       settings: Record<string, unknown>
       retiredAt: string | null
+      expectedRevision?: number | null
     },
     destination: RecordWriteDestination,
-  ): Promise<{ id: string; name: string }>
+  ): Promise<{ id: string; name: string; revision?: number }>
   listProjects(destination?: RecordRequestDestination): Promise<RecordProject[]>
   retireProject(id: string, destination: RecordWriteDestination): Promise<{ name: string }>
   purgeProject(
@@ -150,7 +151,7 @@ export function docSearchParams(query: {
 export function projectIdentityClient(request: RecordClientRequest): ProjectIdentityClient {
   return {
     upsertProject: (input, destination) =>
-      request<{ id: string; name: string }>('/v1/projects', {
+      request<{ id: string; name: string; revision?: number }>('/v1/projects', {
         method: 'PUT',
         body: JSON.stringify(input),
         ...destination,

@@ -22,6 +22,7 @@ export function defaultLocalProjectPath(environment: StateEnvironment = process.
 
 export type ProjectRegisterWrite = {
   recordId: string
+  recordRevision?: number | null
   name: string
   path: string
   stack?: string | null
@@ -33,14 +34,16 @@ export type ProjectRegisterWrite = {
 export function writeProjectRegisterRow(database: Database, project: ProjectRegisterWrite): void {
   database
     .query(
-      `INSERT INTO project (record_id, name, path, stack, canon, settings, retired_at) VALUES (?,?,?,?,?,?,NULL)
+      `INSERT INTO project (record_id, record_revision, name, path, stack, canon, settings, retired_at) VALUES (?,?,?,?,?,?,?,NULL)
        ON CONFLICT(name) DO UPDATE SET path=excluded.path, stack=excluded.stack,
                                        canon=excluded.canon, settings=excluded.settings,
                                        record_id=COALESCE(project.record_id, excluded.record_id),
+                                       record_revision=COALESCE(excluded.record_revision, project.record_revision),
                                        retired_at=NULL`,
     )
     .run(
       project.recordId,
+      project.recordRevision ?? null,
       project.name,
       project.path.replace(/\/$/, ''),
       project.stack ?? null,
@@ -60,13 +63,16 @@ export function mirrorProjectRegisterRow(
   project: Omit<ProjectRegisterWrite, 'path'> & { retiredAt: string | null },
 ): number {
   return database
-    .query('UPDATE project SET name=?,stack=?,canon=?,settings=?,retired_at=? WHERE record_id=?')
+    .query(
+      'UPDATE project SET name=?,stack=?,canon=?,settings=?,retired_at=?,record_revision=? WHERE record_id=?',
+    )
     .run(
       project.name,
       project.stack ?? null,
       project.canon ? 1 : 0,
       JSON.stringify(project.settings ?? {}),
       project.retiredAt,
+      project.recordRevision ?? null,
       project.recordId,
     ).changes
 }

@@ -56,6 +56,7 @@ export async function pullProjectRegister(
       }
       const changed = mirrorProjectRegisterRow(local, {
         recordId: update.project.recordId,
+        recordRevision: update.project.recordRevision,
         name: update.project.name,
         stack: update.project.stack,
         canon: update.project.canon,

@@ -1,0 +1,1 @@
+ALTER TABLE "project" ADD COLUMN "revision" bigint DEFAULT 1 NOT NULL;

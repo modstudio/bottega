@@ -26,6 +26,7 @@ type AddProjectDecision =
   | {
       kind: 'adopt'
       recordId: string
+      recordRevision: number | null
       stack: string | null
       settings: ProjectSettings
       space: string
@@ -167,6 +168,7 @@ function decideHostedAdoption(input: {
   return {
     kind: 'adopt',
     recordId: hosted.id,
+    recordRevision: hosted.revision ?? null,
     stack: hosted.stack,
     settings: { ...(hosted.settings as ProjectSettings), ...requestedLocal, space },
     space,

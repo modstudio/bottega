@@ -129,6 +129,7 @@ const INTEGER_VALUES: readonly ManifestColumn[] = [
     'port_doctrine.version',
     'port_ref.version',
     'port_ref_source.position',
+    'project.record_revision',
     'release_ledger.commits_behind_trunk',
     'score.number',
     'entity_number_counter.last_number',

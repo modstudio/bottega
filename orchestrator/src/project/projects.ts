@@ -351,9 +351,10 @@ export async function writeHostedProject(
     canon?: boolean
     settings?: ProjectSettings
     retiredAt?: string | null
+    recordRevision?: number | null
   },
   destinationSpaceId?: string,
-): Promise<string> {
+): Promise<{ recordId: string; recordRevision: number | null }> {
   return writeProjectToHostedRecord(
     { ...p, settings: projectSettingsForStorage(p.settings) },
     destinationSpaceId,
@@ -365,9 +366,9 @@ export async function pushProjects(): Promise<string[]> {
   const names: string[] = []
   const refusals: RecordProjectSpaceConflictError[] = []
   for (const project of [...projects(), ...projects({ retired: true })]) {
-    let recordId: string
+    let written: { recordId: string; recordRevision: number | null }
     try {
-      recordId = await writeHostedProject({
+      written = await writeHostedProject({
         recordId: project.recordId,
         name: project.name,
         path: project.path,
@@ -375,14 +376,18 @@ export async function pushProjects(): Promise<string[]> {
         canon: project.canon,
         settings: project.settings,
         retiredAt: project.retiredAt,
+        recordRevision: project.recordRevision,
       })
     } catch (error) {
       if (!(error instanceof RecordProjectSpaceConflictError)) throw error
       refusals.push(error)
       continue
     }
-    if (project.recordId !== recordId)
+    if (project.recordId !== written.recordId)
       throw new Error(`hosted project identity changed for ${project.name}`)
+    db()
+      .query('UPDATE project SET record_revision=? WHERE record_id=?')
+      .run(written.recordRevision, project.recordId)
     names.push(project.name)
   }
   if (refusals.length) {
@@ -495,7 +500,7 @@ export function unretireProject(name: string): boolean {
 export async function unretireWrittenProject(name: string): Promise<boolean> {
   const project = projectRowByName(name)
   if (!project) throw new Error(`no project "${name}"`)
-  await writeHostedProject({
+  const written = await writeHostedProject({
     recordId: project.recordId,
     name: project.name,
     path: project.path,
@@ -503,7 +508,11 @@ export async function unretireWrittenProject(name: string): Promise<boolean> {
     canon: project.canon,
     settings: project.settings,
     retiredAt: null,
+    recordRevision: project.recordRevision,
   })
+  db()
+    .query('UPDATE project SET record_revision=? WHERE record_id=?')
+    .run(written.recordRevision, project.recordId)
   return unretireProject(name)
 }
 
