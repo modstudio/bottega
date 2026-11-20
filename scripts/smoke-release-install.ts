@@ -1,6 +1,6 @@
-import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { basename, join, resolve } from 'node:path'
 import { startBounded } from '../shared/bounded-process.ts'
 import { MCP_SERVER_NAME, PLATFORM_SLUG, WORKER_MCP_SERVER_NAME } from '../shared/brand.ts'
 import { parseBinaryTarget } from './build-binary.ts'
@@ -19,6 +19,42 @@ type StepResult = {
   name: string
   exitCode: number
   output: string
+}
+
+const GROK_INSTALLER_URL = 'https://x.ai/cli/install.sh'
+
+export type HarnessInstallerInvocationCounts = {
+  brewCodex: number
+  curlGrok: number
+}
+
+function invocationLines(log: string): string[] {
+  return log
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
+}
+
+export function harnessInstallerInvocationCounts(
+  brewLog: string,
+  curlLog: string,
+): HarnessInstallerInvocationCounts {
+  return {
+    brewCodex: invocationLines(brewLog).filter((line) => line === 'install --cask codex').length,
+    curlGrok: invocationLines(curlLog).filter((line) => line === `-fsSL ${GROK_INSTALLER_URL}`)
+      .length,
+  }
+}
+
+export function releaseDownloadsReachedCurl(
+  curlLog: string,
+  releaseUrl: string,
+  archiveName: string,
+): boolean {
+  const lines = invocationLines(curlLog)
+  return [`${releaseUrl}/SHA256SUMS`, `${releaseUrl}/${archiveName}`].every((url) =>
+    lines.some((line) => line.startsWith(`-fsSL ${url} -o `)),
+  )
 }
 
 export function releaseInstallEnvironment(
@@ -85,9 +121,11 @@ exit 0
 `
 }
 
-function brewStub(codexPath: string): string {
+function brewStub(codexPath: string, logFile: string): string {
   const codex = shellQuote(codexPath)
+  const log = shellQuote(logFile)
   return `#!/bin/sh
+printf '%s\\n' "$*" >> ${log}
 if [ "$#" -eq 3 ] && [ "$1" = 'install' ] && [ "$2" = '--cask' ] && [ "$3" = 'codex' ]; then
   cat > ${codex} <<'BOTTEGA_CODEX_STUB'
 #!/bin/sh
@@ -128,9 +166,11 @@ exit 64
 `
 }
 
-function curlStub(): string {
+function curlStub(logFile: string): string {
+  const log = shellQuote(logFile)
   return `#!/bin/sh
-if [ "$#" -eq 2 ] && [ "$1" = '-fsSL' ] && [ "$2" = 'https://x.ai/cli/install.sh' ]; then
+printf '%s\\n' "$*" >> ${log}
+if [ "$#" -eq 2 ] && [ "$1" = '-fsSL' ] && [ "$2" = '${GROK_INSTALLER_URL}' ]; then
   cat <<'BOTTEGA_GROK_INSTALLER'
 #!/bin/sh
 set -eu
@@ -190,6 +230,51 @@ async function runStep(
   }
 }
 
+function readProofLog(path: string): string {
+  try {
+    return readFileSync(path, 'utf8')
+  } catch {
+    return ''
+  }
+}
+
+function recordProofAssertion(failures: string[], condition: boolean, message: string): void {
+  if (!condition) failures.push(message)
+}
+
+function assertFirstSetupInstallerCalls(
+  failures: string[],
+  counts: HarnessInstallerInvocationCounts,
+): void {
+  recordProofAssertion(
+    failures,
+    counts.brewCodex === 1,
+    `first setup apply expected one brew install --cask codex call, saw ${counts.brewCodex}`,
+  )
+  recordProofAssertion(
+    failures,
+    counts.curlGrok === 1,
+    `first setup apply expected one ${GROK_INSTALLER_URL} request, saw ${counts.curlGrok}`,
+  )
+}
+
+function assertSecondSetupSkipsInstallerCalls(
+  failures: string[],
+  first: HarnessInstallerInvocationCounts,
+  second: HarnessInstallerInvocationCounts,
+): void {
+  recordProofAssertion(
+    failures,
+    second.brewCodex === first.brewCodex,
+    'second setup apply re-ran brew even though codex was already installed',
+  )
+  recordProofAssertion(
+    failures,
+    second.curlGrok === first.curlGrok,
+    'second setup apply re-requested the grok installer even though grok was already installed',
+  )
+}
+
 async function proveReleaseInstall(version: string, keep: boolean): Promise<number> {
   if (process.platform !== 'darwin') {
     console.error('release install proof requires darwin')
@@ -219,8 +304,11 @@ async function proveReleaseInstall(version: string, keep: boolean): Promise<numb
         path: join(paths.stub, 'launchctl'),
         text: launchctlStub(join(root, 'launchctl-state'), join(root, 'launchctl.log')),
       },
-      { path: join(paths.stub, 'brew'), text: brewStub(join(paths.stub, 'codex')) },
-      { path: join(paths.stub, 'curl'), text: curlStub() },
+      {
+        path: join(paths.stub, 'brew'),
+        text: brewStub(join(paths.stub, 'codex'), join(root, 'brew.log')),
+      },
+      { path: join(paths.stub, 'curl'), text: curlStub(join(root, 'curl.log')) },
     ]
     for (const stub of stubs) {
       writeFileSync(stub.path, stub.text)
@@ -230,25 +318,56 @@ async function proveReleaseInstall(version: string, keep: boolean): Promise<numb
     const env = releaseInstallEnvironment(process.env, paths)
     const repositoryRoot = resolve(import.meta.dir, '..')
     const executable = join(paths.bin, PLATFORM_SLUG)
-    const steps = [
-      ['install', ['sh', join(repositoryRoot, 'install.sh'), `v${version}`]],
-      ['setup apply', [executable, 'machine', 'setup', 'apply', '--yes', '--level', 'full']],
-      ['doctor', [executable, 'machine', 'doctor']],
-      [
-        'setup apply (second)',
-        [executable, 'machine', 'setup', 'apply', '--yes', '--level', 'full'],
-      ],
-      ['doctor (second)', [executable, 'machine', 'doctor']],
-    ] as const
+    const setupArgv = [executable, 'machine', 'setup', 'apply', '--yes', '--level', 'full']
+    const curlLog = join(root, 'curl.log')
+    const brewLog = join(root, 'brew.log')
+    const assertionFailures: string[] = []
     const results: StepResult[] = []
-    for (const [name, argv] of steps) {
-      results.push(await runStep(name, [...argv], paths.home, env))
-    }
+    results.push(
+      await runStep(
+        'install',
+        ['sh', join(repositoryRoot, 'install.sh'), `v${version}`],
+        paths.home,
+        env,
+      ),
+    )
+    recordProofAssertion(
+      assertionFailures,
+      releaseDownloadsReachedCurl(
+        readProofLog(curlLog),
+        `file://${releaseDirectory}`,
+        basename(archive),
+      ),
+      'install.sh release downloads did not both pass through the real curl path',
+    )
+
+    results.push(await runStep('setup apply', setupArgv, paths.home, env))
+    const firstInstallerCounts = harnessInstallerInvocationCounts(
+      readProofLog(brewLog),
+      readProofLog(curlLog),
+    )
+    assertFirstSetupInstallerCalls(assertionFailures, firstInstallerCounts)
+
+    results.push(await runStep('doctor', [executable, 'machine', 'doctor'], paths.home, env))
+    results.push(await runStep('setup apply (second)', setupArgv, paths.home, env))
+    const secondInstallerCounts = harnessInstallerInvocationCounts(
+      readProofLog(brewLog),
+      readProofLog(curlLog),
+    )
+    assertSecondSetupSkipsInstallerCalls(
+      assertionFailures,
+      firstInstallerCounts,
+      secondInstallerCounts,
+    )
+    results.push(
+      await runStep('doctor (second)', [executable, 'machine', 'doctor'], paths.home, env),
+    )
     for (const result of results) {
       console.log(`${result.name} exit ${result.exitCode}`)
       if (result.exitCode !== 0 && result.output) console.log(result.output)
     }
-    return results.some((result) => result.exitCode !== 0) ? 1 : 0
+    for (const failure of assertionFailures) console.error(`proof assertion failed: ${failure}`)
+    return results.some((result) => result.exitCode !== 0) || assertionFailures.length ? 1 : 0
   } finally {
     if (keep) console.log(`kept release install proof at ${root}`)
     else rmSync(root, { recursive: true, force: true })
