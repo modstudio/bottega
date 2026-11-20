@@ -1,5 +1,10 @@
 import { expect, test } from 'bun:test'
-import { decideRecordRehearsal, mergeGroupPullRequest } from './check-record-rehearsal.ts'
+import {
+  decideRecordRehearsal,
+  mergeGroupPullRequest,
+  recordRehearsalFailureMessage,
+} from './check-record-rehearsal.ts'
+import { PullRequestChangeBaseRefusal } from './pull-request-change-base.ts'
 import {
   RECORD_REHEARSAL_STATUS_CONTEXT,
   recordRehearsalDescription,
@@ -146,4 +151,19 @@ test('parses the pull request from a merge-group ref', () => {
   expect(mergeGroupPullRequest('gh-readonly-queue/main/pr-1573-deadbeef')).toBe(1573)
   expect(mergeGroupPullRequest('main')).toBeNull()
   expect(mergeGroupPullRequest('refs/heads/main')).toBeNull()
+})
+
+test('reports a change-base refusal without the rehearsal remedy', () => {
+  const refusal = new PullRequestChangeBaseRefusal(
+    'GitHub event push is not a pull_request or merge_group event; gate this step on pull_request and merge_group events',
+  )
+  expect(recordRehearsalFailureMessage(refusal)).toBe(
+    `record rehearsal check failed: ${refusal.message}`,
+  )
+})
+
+test('reports other failures with the rehearsal remedy', () => {
+  expect(recordRehearsalFailureMessage(new Error('status request failed'))).toBe(
+    'record rehearsal check failed: status request failed; run bun scripts/record-rehearse.ts',
+  )
 })

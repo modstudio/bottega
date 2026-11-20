@@ -5,6 +5,12 @@ import { fileURLToPath } from 'node:url'
 import { startBoundedSync } from '../shared/bounded-process.ts'
 import { budgetForArgv } from '../shared/call-budgets.ts'
 import { nulPathListArgs, splitNulPaths } from '../shared/git-path-list.ts'
+import {
+  headHasSecondParent,
+  PullRequestChangeBaseRefusal,
+  type PullRequestChangeEvent,
+  pullRequestChangeBase,
+} from './pull-request-change-base.ts'
 import { recordMigrationSetHashFrom } from './record-migration-set.ts'
 import {
   RECORD_REHEARSAL_STATUS_CONTEXT,
@@ -72,8 +78,15 @@ export function decideRecordRehearsal(input: {
 
 type GitHubEvent = {
   number?: number
-  pull_request?: { base?: { sha?: string }; head?: { sha?: string } }
-  merge_group?: { base_sha?: string; head_ref?: string }
+  pull_request?: { head?: { sha?: string } }
+  merge_group?: { head_ref?: string }
+}
+
+export function recordRehearsalFailureMessage(error: unknown): string {
+  const detail = error instanceof Error ? error.message : String(error)
+  return `record rehearsal check failed: ${detail}${
+    error instanceof PullRequestChangeBaseRefusal ? '' : `; ${remedy}`
+  }`
 }
 
 function command(argv: string[]): string {
@@ -123,15 +136,20 @@ function earlierHeadStatuses(
 if (import.meta.main) {
   try {
     const eventPath = process.env.GITHUB_EVENT_PATH
+    const eventName = process.env.GITHUB_EVENT_NAME
     const repository = process.env.GITHUB_REPOSITORY
-    if (!eventPath || !repository)
-      throw new Error('GITHUB_EVENT_PATH and GITHUB_REPOSITORY are required')
-    const event = JSON.parse(readFileSync(eventPath, 'utf8')) as GitHubEvent
-    const baseSha = event.pull_request?.base?.sha ?? event.merge_group?.base_sha
-    if (!baseSha)
-      throw new Error('GitHub event does not carry a pull request or merge-group base sha')
+    if (!eventPath || !eventName || !repository)
+      throw new Error('GITHUB_EVENT_PATH, GITHUB_EVENT_NAME and GITHUB_REPOSITORY are required')
+    const eventPayload = JSON.parse(readFileSync(eventPath, 'utf8')) as unknown
+    const event = eventPayload as GitHubEvent
+    const base = pullRequestChangeBase(
+      eventPayload as PullRequestChangeEvent,
+      eventName,
+      eventName === 'pull_request' ? headHasSecondParent() : false,
+    )
+    if (base.refusal) throw new PullRequestChangeBaseRefusal(base.refusal)
     const changed = splitNulPaths(
-      command(['git', ...nulPathListArgs(['diff', '--name-only', `${baseSha}...HEAD`])]),
+      command(['git', ...nulPathListArgs(['diff', '--name-only', `${base.revision}...HEAD`])]),
     ).some((path) => path.startsWith('shared/record/migrations/'))
     let currentHeadStatuses: CommitStatus[] = []
     let priorStatuses: CommitStatus[] = []
@@ -152,9 +170,7 @@ if (import.meta.main) {
     console[decision.pass ? 'log' : 'error'](decision.message)
     if (!decision.pass) process.exitCode = 1
   } catch (error) {
-    console.error(
-      `record rehearsal check failed: ${error instanceof Error ? error.message : String(error)}; ${remedy}`,
-    )
+    console.error(recordRehearsalFailureMessage(error))
     process.exitCode = 1
   }
 }
