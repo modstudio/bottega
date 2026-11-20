@@ -196,17 +196,6 @@ test('a close preserves a stored project that has moved out of the question spac
   changedProject.audit.at = '2026-11-17T15:00:00.000Z'
   await expect(
     writeRecordQuestionTransaction('close', { ...principal, ...changedProject }, sql),
-  ).rejects.toThrow(`record project ${FOREIGN_PROJECT} is absent from request space ${SPACE}`)
-
-  const link = questionWrite(REWRITE_REQUEST, 2)
-  link.question.projectId = PROJECT
-  await expect(
-    writeRecordQuestionTransaction('link', { ...principal, ...link }, sql),
-  ).rejects.toThrow(`record project ${PROJECT} is absent from request space ${SPACE}`)
-
-  const close = { ...changedProject, question: { ...changedProject.question, projectId: PROJECT } }
-  await expect(
-    writeRecordQuestionTransaction('close', { ...principal, ...close }, sql),
   ).resolves.toMatchObject({ applied: true, revision: 2 })
   expect(
     (

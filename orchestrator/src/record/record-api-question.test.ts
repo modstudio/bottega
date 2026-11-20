@@ -5,12 +5,22 @@ import {
   type RecordChangeCursor,
 } from '../../../shared/record/record-changes.ts'
 import {
+  createRecordContractFixture,
+  RECORD_CONTRACT_SPACE_A,
+  RECORD_CONTRACT_SPACE_B,
+  RECORD_CONTRACT_USER,
+} from '../../test/fixtures/record-contract.ts'
+import {
   type RecordQuestionRouteDeps,
   registerRecordQuestionRoutes,
 } from './record-api-question.ts'
 import type { RecordIdentity } from './record-auth.ts'
 import { RECORD_KEYED_NOT_VISIBLE_CODE } from './record-keyed-read.ts'
-import { UnboundedQuestionRulingsError } from './record-question-contract.ts'
+import {
+  type QuestionIntent,
+  type QuestionWriteBody,
+  UnboundedQuestionRulingsError,
+} from './record-question-contract.ts'
 import { readRecordQuestions } from './record-question-read.ts'
 
 const tenant = {
@@ -262,4 +272,224 @@ test('an unknown direct question write intent is named in the refusal', async ()
   )
   expect(response.status).toBe(400)
   expect(await response.json()).toMatchObject({ error: expect.stringContaining('(intent):') })
+})
+
+const MUTATING_INTENTS = [
+  'answer',
+  'close',
+  'file',
+  'link',
+  'overturn',
+  'relay',
+  'abandon',
+] as const satisfies readonly QuestionIntent[]
+const CONTRACT_MACHINE = '01990000-0000-7000-8000-000000025000'
+const OUTSIDE_PROJECT = '01990000-0000-7000-8000-000000025001'
+const CONTRACT_STAMP = '2026-11-20T12:00:00.000Z'
+
+function contractId(sequence: number): string {
+  return `01990000-0000-7000-8000-${String(sequence).padStart(12, '0')}`
+}
+
+function mutationBody(
+  intent: (typeof MUTATING_INTENTS)[number],
+  questionId: string,
+  requestId: string,
+  number: number,
+): QuestionWriteBody {
+  const question: QuestionWriteBody['question'] = {
+    id: questionId,
+    number,
+    runId: null,
+    workflowKey: null,
+    workflowTaskId: null,
+    workflowCursorRecordId: null,
+    projectId: OUTSIDE_PROJECT,
+    machineId: CONTRACT_MACHINE,
+    revision: 2,
+    askedAt: CONTRACT_STAMP,
+    question: 'Which way?',
+    options: null,
+    recommendation: null,
+    why: null,
+    askedVia: 'contract-test',
+    kind: 'text',
+    typedOptions: null,
+    criteria: null,
+    levels: null,
+    answer: null,
+    answerValue: null,
+    answerBasis: null,
+    answeredAt: null,
+    answeredBy: null,
+    answeredByName: null,
+    answeredByKind: null,
+    answererKind: null,
+    answerChannel: null,
+    jevPick: null,
+    jevConfidence: null,
+    jevProbabilities: null,
+    jevModel: null,
+    jevInputTokens: null,
+    jevError: null,
+    jevAgreed: null,
+    jevQuestionVersion: null,
+    jevFits: null,
+    jevOrderFlipped: null,
+    awaitingOperatorAt: null,
+    relayedBy: null,
+    overturnedAt: null,
+    overturnedBy: null,
+    overturnedByName: null,
+    overturnReason: null,
+    replacement: null,
+    filedAs: null,
+    filedRef: null,
+    filedRecordId: null,
+    filedLabel: null,
+    filedAt: null,
+    closedAt: null,
+    closeReason: null,
+    withheldFields: [],
+    createdAt: CONTRACT_STAMP,
+    updatedAt: CONTRACT_STAMP,
+  }
+  if (intent === 'answer' || intent === 'abandon') {
+    question.answer = intent === 'answer' ? 'Proceed' : '(abandoned)'
+    question.answerBasis = intent === 'answer' ? 'Contract ruling' : 'Question abandoned'
+    question.answeredAt = CONTRACT_STAMP
+    question.answeredBy = 'contract-test'
+    question.answererKind = 'agent'
+    question.answerChannel = 'cli'
+  } else if (intent === 'close') {
+    question.closedAt = CONTRACT_STAMP
+    question.closeReason = 'Superseded'
+  } else if (intent === 'file') {
+    question.filedAs = 'issue'
+    question.filedRef = 'DEV-2515'
+    question.filedLabel = 'Question project identity'
+    question.filedAt = CONTRACT_STAMP
+  } else if (intent === 'link') {
+    question.workflowKey = 'contract-flow'
+    question.question = 'Which linked way?'
+  } else if (intent === 'overturn') {
+    question.overturnedAt = CONTRACT_STAMP
+    question.overturnedBy = 'contract-test'
+    question.overturnReason = 'Earlier ruling was incomplete'
+    question.replacement = 'Use the replacement'
+  } else {
+    question.awaitingOperatorAt = CONTRACT_STAMP
+    question.relayedBy = 'contract-test'
+  }
+  return {
+    requestId,
+    question,
+    audit: { action: intent, actorSession: 'contract-test', at: CONTRACT_STAMP, reason: null },
+  }
+}
+
+test('existing question mutations keep the stored project while asks still resolve payload projects', async () => {
+  const fixture = await createRecordContractFixture()
+  const seeded = MUTATING_INTENTS.flatMap((intent, intentIndex) =>
+    ([OUTSIDE_PROJECT, null] as const).map((storedProject, projectIndex) => ({
+      intent,
+      id: contractId(25_100 + intentIndex * 2 + projectIndex),
+      number: intentIndex * 2 + projectIndex + 1,
+      storedProject,
+    })),
+  )
+  try {
+    await fixture.database.exec(`
+      RESET ROLE;
+      INSERT INTO machine (id,user_id,name,registered_at,last_seen)
+      VALUES ('${CONTRACT_MACHINE}','${RECORD_CONTRACT_USER}','Question mutation machine',now(),now());
+      INSERT INTO project (id,space_id,name,key_prefixes,created_at)
+      VALUES ('${OUTSIDE_PROJECT}','${RECORD_CONTRACT_SPACE_B}','outside-question-project',ARRAY['OUT'],now());
+      INSERT INTO question
+        (id,space_id,project_id,machine_id,number,revision,withheld_fields,asked_at,question,created_at,updated_at)
+      VALUES
+        ${seeded
+          .map(
+            (row) =>
+              `('${row.id}','${RECORD_CONTRACT_SPACE_A}',${row.storedProject ? `'${row.storedProject}'` : 'NULL'},` +
+              `'${CONTRACT_MACHINE}',${row.number},1,'[]','${CONTRACT_STAMP}','Which way?',` +
+              `'${CONTRACT_STAMP}','${CONTRACT_STAMP}')`,
+          )
+          .join(',\n')};
+      SET ROLE record_actor;
+    `)
+
+    const mutationResults: Array<{
+      intent: string
+      responses: Array<{ status: number; applied: unknown }>
+    }> = []
+    for (const [intentIndex, intent] of MUTATING_INTENTS.entries()) {
+      const pair = seeded.filter((row) => row.intent === intent)
+      const responses = await Promise.all(
+        pair.map((row, projectIndex) =>
+          fixture.app.request(`/v1/questions/${intent}`, {
+            method: 'POST',
+            headers: {
+              'content-type': 'application/json',
+              'x-record-space': RECORD_CONTRACT_SPACE_A,
+            },
+            body: JSON.stringify(
+              mutationBody(
+                intent,
+                row.id,
+                contractId(25_200 + intentIndex * 2 + projectIndex),
+                row.number,
+              ),
+            ),
+          }),
+        ),
+      )
+      const bodies = await Promise.all(responses.map((response) => response.json()))
+      mutationResults.push({
+        intent,
+        responses: responses.map((response, index) => ({
+          status: response.status,
+          applied: (bodies[index] as { applied?: unknown }).applied,
+        })),
+      })
+    }
+    expect(mutationResults).toEqual(
+      MUTATING_INTENTS.map((intent) => ({
+        intent,
+        responses: [
+          { status: 200, applied: true },
+          { status: 200, applied: true },
+        ],
+      })),
+    )
+
+    const projects = await fixture.database.query<{ id: string; project_id: string | null }>(`
+      SELECT id::text,project_id::text FROM question
+      WHERE id IN (${seeded.map((row) => `'${row.id}'`).join(',')})
+      ORDER BY number
+    `)
+    expect(projects.rows).toEqual(
+      seeded.map((row) => ({ id: row.id, project_id: row.storedProject })),
+    )
+
+    const askBody = mutationBody('link', contractId(25_300), contractId(25_301), seeded.length + 1)
+    askBody.question.workflowKey = null
+    askBody.audit.action = 'ask'
+    const refusedAsk = await fixture.app.request('/v1/questions/ask', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-record-space': RECORD_CONTRACT_SPACE_A,
+      },
+      body: JSON.stringify(askBody),
+    })
+    expect(refusedAsk.status).toBe(422)
+    expect(await refusedAsk.json()).toMatchObject({
+      error: expect.stringContaining(
+        `record project ${OUTSIDE_PROJECT} is absent from request space ${RECORD_CONTRACT_SPACE_A}`,
+      ),
+    })
+  } finally {
+    await fixture.close()
+  }
 })

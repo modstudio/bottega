@@ -105,7 +105,7 @@ async function projectIdForQuestionWrite(
   existing: ExistingQuestion | undefined,
   tx: SQL,
 ): Promise<string | null> {
-  if (intent === 'close' && existing && input.question.projectId === existing.project_id)
+  if (existing && intent !== 'ask' && intent !== 'import' && intent !== 'restore')
     return existing.project_id
   return projectRecordId(tx, input.question, input)
 }
