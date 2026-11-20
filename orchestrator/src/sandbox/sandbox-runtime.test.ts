@@ -5,6 +5,7 @@ import {
   lstatSync,
   mkdirSync,
   mkdtempSync,
+  realpathSync,
   readdirSync,
   readFileSync,
   rmSync,
@@ -181,6 +182,35 @@ describe('sandbox runtime payloads', () => {
       expect(command).toContain('--unshare-user')
     } finally {
       cleanupBwrapMountPoints()
+    }
+  })
+
+  test('pinned Linux wrapper lets a nested write bind override an ancestor read carve-back', async () => {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), 'srt-bind-order-')))
+    const denied = join(root, 'denied')
+    const readable = join(denied, 'readable')
+    const writable = join(readable, 'writable')
+    mkdirSync(writable, { recursive: true })
+    const { cleanupBwrapMountPoints, wrapCommandWithSandboxLinux } = await import(
+      '@anthropic-ai/sandbox-runtime/dist/sandbox/linux-sandbox-utils.js'
+    )
+    try {
+      const command = await wrapCommandWithSandboxLinux({
+        command: 'true',
+        needsNetworkRestriction: false,
+        readConfig: { denyOnly: [denied], allowWithinDeny: [readable] },
+        writeConfig: { allowOnly: [writable], denyWithinAllow: [] },
+        bwrapPath: '/usr/bin/bwrap',
+        binShell: '/bin/sh',
+      })
+      const readBind = `--ro-bind ${readable} ${readable}`
+      const writeBind = `--bind ${writable} ${writable}`
+      expect(command).toContain(readBind)
+      expect(command).toContain(writeBind)
+      expect(command.lastIndexOf(writeBind)).toBeGreaterThan(command.indexOf(readBind))
+    } finally {
+      cleanupBwrapMountPoints()
+      rmSync(root, { recursive: true, force: true })
     }
   })
 
