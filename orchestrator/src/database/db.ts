@@ -931,11 +931,7 @@ function seedProjects(d: Database): void {
 
 /** Main-checkout binary only: apply pending, ordered Drizzle migrations. */
 export function migrateDatabase(
-  input: {
-    beforeMigration?: string
-    beforeApply?: BeforeMigrationApply
-    newStore?: boolean
-  } = {},
+  input: { beforeMigration?: string; beforeApply?: BeforeMigrationApply; newStore?: boolean } = {},
 ): {
   path: string
   versions: string[]

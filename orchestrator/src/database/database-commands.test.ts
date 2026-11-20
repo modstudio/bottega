@@ -205,9 +205,7 @@ test('a staged migration seeds a fresh store only after reaching the current sch
     const database = new Database(DB_PATH, { readonly: true, create: false })
     try {
       expect(
-        database
-          .query<{ name: string }, []>("SELECT name FROM project WHERE name='tasks'")
-          .get(),
+        database.query<{ name: string }, []>("SELECT name FROM project WHERE name='tasks'").get(),
       ).toEqual({ name: 'tasks' })
       expect(
         database
