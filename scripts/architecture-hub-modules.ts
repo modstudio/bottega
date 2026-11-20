@@ -6,6 +6,7 @@ export const hubModuleSpecs = [
       '../../shared/orch-contract.ts',
       './attribute.ts',
       './collect.ts',
+      './collector-leg-state.ts',
       './db.ts',
       './excerpt.ts',
       './ingest/runs.ts',
@@ -271,6 +272,10 @@ export const hubModuleSpecs = [
   { file: 'hub/src/outbox-fast-cycle.ts', allowed: [] },
   { file: 'hub/src/collect-cadence.ts', allowed: [] },
   {
+    file: 'hub/src/collector-leg-state.ts',
+    allowed: ['./collect-cadence.ts', './db.ts'],
+  },
+  {
     file: 'hub/src/collect-tracker-counts.ts',
     allowed: ['../../shared/brand.ts', './ingest/trackers.ts'],
   },
@@ -515,6 +520,7 @@ export const hubModuleSpecs = [
       '../../shared/removal-report.ts',
       '../../shared/update-lock.ts',
       './collect.ts',
+      './collector-leg-state.ts',
       './db.ts',
       './doctor.ts',
       './fixture-question-reclaim.ts',

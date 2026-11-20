@@ -15,6 +15,7 @@ import {
 import { ToolbarBand } from '@bottega/hub-ui/toolbar-band'
 import { compactTokens, duration } from '@bottega/hub-util/format'
 import { type ReactNode, useEffect } from 'react'
+import type { CollectorLegHealth } from '../work-summary/work-summary.ts'
 import { responseSubtitle } from '../work-summary/work-summary.ts'
 import { insightStyles } from './insights.styles.ts'
 
@@ -24,6 +25,7 @@ type Strip = {
   activeAgents: string[]
   tasksShipped: number
   collectedAt: string | null
+  collectorLegs: CollectorLegHealth[]
   servingSince: string
   counts: { flight: number; done: number; runs: number }
 }

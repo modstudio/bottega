@@ -2,7 +2,8 @@ import { engagedMs, human } from '../../shared/interval.ts'
 import type { OrchBlockers } from '../../shared/orch-contract.ts'
 import { attributeRun } from './attribute.ts'
 import { leaseHolder } from './collect.ts'
-import { db, nowIso } from './db.ts'
+import { collectorLegStates, collectorLegView } from './collector-leg-state.ts'
+import { nowIso } from './db.ts'
 import { promptLens } from './excerpt.ts'
 import { chainVendorTokens, executionSpans } from './ingest/runs.ts'
 import { state as orchState, blockers as readBlockers, readRuns } from './orch.ts'
@@ -150,19 +151,6 @@ async function orchBlockers(days: number): Promise<OrchBlockers | null> {
 const VIEWS = ['flight', 'board', 'done', 'ratio', 'spend', 'routing', 'runs', 'settings'] as const
 export type View = (typeof VIEWS)[number]
 
-/** Single-quote a value so the command can be pasted into a shell as-is. */
-function setting(key: string): string | null {
-  const row = db()
-    .query<{ value: string }, [string]>(`SELECT value FROM setting WHERE key = ?`)
-    .get(key)
-  if (!row) return null
-  try {
-    return JSON.parse(row.value) as string
-  } catch {
-    return row.value
-  }
-}
-
 /**
  * The strip above the nav.
  *
@@ -177,9 +165,10 @@ export function strip(hours: number) {
   const rows = window.tasks
   const active = new Set(rows.flatMap((r) => r.activeAgents))
   const r = ratioSummary(14, false)
+  const collection = collectorLegView(collectorLegStates())
   return {
     window: `${hours}h`,
-    collectedAt: setting('collect.at'),
+    ...collection,
     // What CODE is answering, not just how fresh its data is.
     //
     // `bottega dashboard start` reads its TypeScript once at import, so a running server goes

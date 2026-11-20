@@ -201,6 +201,7 @@ const recordCoreRouter = t.router({
     })
     return {
       collectedAt: null,
+      collectorLegs: [],
       servingSince: HOSTED_STARTED_AT,
       activeAgents: [...new Set(live.map((run) => run.agent))],
       view: 'runs' as const,

@@ -23,6 +23,7 @@ import {
   watch,
   withLease,
 } from './collect.ts'
+import { collectorLegStates } from './collector-leg-state.ts'
 import {
   db,
   formatMigrationRepairSummary,
@@ -243,6 +244,18 @@ async function migrateHubDatabase(): Promise<void> {
 }
 
 function registerCollectionCommands(program: Command): void {
+  program
+    .command('collector-legs')
+    .description('show persisted collector-leg state')
+    .option('--json', 'write the collector-leg state as JSON')
+    .action((options: { json?: boolean }) => {
+      requireDatabase()
+      const states = collectorLegStates()
+      if (options.json) console.log(JSON.stringify(states))
+      else
+        for (const state of states)
+          console.log(`${state.source}: ${state.failingSince ? 'failing' : 'current'}`)
+    })
   program
     .command('lease')
     .description('show the current collect lease without changing it')

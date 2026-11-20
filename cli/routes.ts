@@ -237,6 +237,7 @@ export const ROUTES = (
       'incrementally ingest every source; --since rebuilds a window',
     ),
     route('record lease', 'hub', 'lease', 'show the current local collect lease'),
+    route('record collector-legs', 'hub', 'collector-legs', 'show persisted collector-leg state'),
     route('record push', 'orch', 'sync', "push this machine's orchestrator record"),
     route(
       'record outbox trace',

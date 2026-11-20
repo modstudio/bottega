@@ -15,6 +15,7 @@ import {
   type WatchTick,
   watchCycleDecision,
 } from './collect-watch-schedule.ts'
+import { recordCollectorLegFailure, recordCollectorLegSuccess } from './collector-leg-state.ts'
 import { db, hostedDeliveryRefusal, nowIso, writeTransaction } from './db.ts'
 import {
   type HostedChangeLegReport,
@@ -236,14 +237,18 @@ async function settleTimedLeg<T>(
   success: (value: T) => CollectLegSuccess | null,
 ): Promise<CollectLegResult | null> {
   const startedAt = Date.now()
+  let details: CollectLegSuccess | null
   try {
-    const details = success(await work())
-    return details === null ? null : { source, ...details, durationMs: Date.now() - startedAt }
+    details = success(await work())
   } catch (error) {
     const message = (error as Error).message
-    console.error(`hub: ${source} collect failed: ${message}`)
+    const transition = recordCollectorLegFailure(source, message, nowIso())
+    if (transition.logFailure) console.error(`hub: ${source} collect failed: ${message}`)
     return { source, ok: false, error: message, durationMs: Date.now() - startedAt }
   }
+  const transition = recordCollectorLegSuccess(source, nowIso())
+  if (transition.logRecovery) console.error(`hub: ${source} collect recovered`)
+  return details === null ? null : { source, ...details, durationMs: Date.now() - startedAt }
 }
 
 async function settleLeg<T>(
@@ -719,7 +724,6 @@ export async function collectFast(
   if (runsFastLeg) {
     rollUpDays()
     guard?.assertHeld('roll up days')
-    stampSetting('collect.at')
   }
   return results
 }
@@ -863,7 +867,6 @@ async function collectSlow(
       rollUpDays()
       guard?.assertHeld('roll up days')
     }
-    stampSetting('collect.at')
   }
   return results
 }
@@ -958,7 +961,6 @@ export async function collectOnce(
   guard.assertHeld(previous)
   rollUpDays()
   guard.assertHeld('roll up days')
-  stampSetting('collect.at')
   return results
 }
 

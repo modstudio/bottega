@@ -272,6 +272,7 @@ export const PLATFORM_COMMAND_WORDS = [
   'question stats',
   'record',
   'record audit-secrets',
+  'record collector-legs',
   'record doctor',
   'record help',
   'record lease',
