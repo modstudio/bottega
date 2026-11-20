@@ -56,6 +56,19 @@ test('hosted rulings decode opaque cursors and malformed cursors give a fresh-cu
   expect(response.status).toBe(200)
   expect(received).toEqual(cursor)
 
+  let receivedPage: unknown
+  const pageApi = app({
+    readQuestions: async (input) => {
+      if (input.read === 'rulings') receivedPage = input.changedAfter
+      return { items: [] }
+    },
+  })
+  const encoded = encodeRecordChangeCursor(cursor)
+  expect(
+    (await pageApi.request(`/v1/questions?read=rulings&changedAfter=page:7:${encoded}`)).status,
+  ).toBe(200)
+  expect(receivedPage).toEqual({ questionNumber: 7, changeHead: cursor })
+
   const malformed = await api.request('/v1/questions?read=rulings&changedAfter=bad')
   expect(malformed.status).toBe(422)
   expect(await malformed.json()).toEqual({

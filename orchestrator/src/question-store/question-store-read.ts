@@ -292,7 +292,7 @@ export async function questionRulingsPaged(
   store: QuestionStore,
   kind: 'workflow' | 'run' | 'all',
 ): Promise<Record<string, unknown>[]> {
-  const items: Record<string, unknown>[] = []
+  const items = new Map<string, Record<string, unknown>>()
   let changedAfter: string | undefined
   let more = true
   while (more) {
@@ -301,14 +301,15 @@ export async function questionRulingsPaged(
       kind,
       ...(changedAfter === undefined ? { limit: 100 } : { changedAfter }),
     })
-    items.push(...(result.items as Record<string, unknown>[]))
+    for (const item of result.items as Record<string, unknown>[])
+      items.set(item.record_id as string, item)
     more = result.more === true
-    if (!more) return items
+    if (!more) return [...items.values()]
     if (!result.cursor)
       throw new Error('question rulings page says more without a continuation cursor')
     changedAfter = result.cursor
   }
-  return items
+  return [...items.values()]
 }
 
 export async function questionTaskRulings(

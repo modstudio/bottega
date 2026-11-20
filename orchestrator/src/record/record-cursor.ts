@@ -1,6 +1,11 @@
 // concern: record-cursor
 /** Owns the opaque paging cursor shared by record API route families. */
 import { z } from 'zod'
+import {
+  decodeRecordChangeCursor,
+  encodeRecordChangeCursor,
+} from '../../../shared/record/record-changes.ts'
+import type { RulingPageCursor } from './record-question-contract.ts'
 
 export type RecordCursor = { at: string; id: string }
 export const recordCursorAt = Symbol('recordCursorAt')
@@ -49,6 +54,23 @@ export function decodeTaskFlowStageListCursor(value: string): TaskFlowStageListC
   return taskFlowStageListCursorSchema.parse(
     JSON.parse(Buffer.from(value, 'base64url').toString('utf8')),
   )
+}
+
+export function encodeRulingPageCursor(cursor: RulingPageCursor): string {
+  const page = `page:${String(cursor.questionNumber)}`
+  return cursor.changeHead ? `${page}:${encodeRecordChangeCursor(cursor.changeHead)}` : page
+}
+
+export function parseRulingPageCursor(value: string): RulingPageCursor {
+  const [number, encodedHead, ...extra] = value.slice(5).split(':')
+  if (!value.startsWith('page:') || !number || extra.length > 0 || encodedHead === '')
+    throw new Error('ruling page cursor is malformed')
+  const questionNumber = Number(number)
+  if (!Number.isSafeInteger(questionNumber)) throw new Error('ruling page cursor is malformed')
+  return {
+    questionNumber,
+    ...(encodedHead ? { changeHead: decodeRecordChangeCursor(encodedHead) } : {}),
+  }
 }
 
 export const recordCursorOf = (row: RecordCursorRow | RecordListCursorRow): RecordCursor => {

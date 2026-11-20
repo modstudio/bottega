@@ -27,6 +27,11 @@ export const recordQuestionModules: RecordModule[] = [
     '../../../shared/brand.ts',
     '../../../shared/record/record-changes.ts',
   ]),
+  module('orchestrator/src/record/record-cursor.ts', [
+    'zod',
+    '../../../shared/record/record-changes.ts',
+    './record-question-contract.ts',
+  ]),
   module('orchestrator/src/record/record-api-client-question.ts', [
     './record-api-client-paths.ts',
     './record-auth.ts',
@@ -36,6 +41,7 @@ export const recordQuestionModules: RecordModule[] = [
     'hono',
     '../../../shared/record/record-changes.ts',
     './record-auth.ts',
+    './record-cursor.ts',
     './record-keyed-read.ts',
     './record-question-contract.ts',
   ]),
@@ -44,6 +50,7 @@ export const recordQuestionModules: RecordModule[] = [
     '../../../shared/record/record-changes.ts',
     '../../../shared/record-timestamp.ts',
     '../../../shared/record/tenant.ts',
+    './record-cursor.ts',
     './record-pool.ts',
     './record-task-flow-contract.ts',
     './record-question-contract.ts',

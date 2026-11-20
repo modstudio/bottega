@@ -7,6 +7,7 @@ import {
   type RecordChangeCursor,
 } from '../../../shared/record/record-changes.ts'
 import type { RecordIdentity } from './record-auth.ts'
+import { parseRulingPageCursor } from './record-cursor.ts'
 import { recordKeyedNotVisibleRefusal } from './record-keyed-read.ts'
 import {
   type QuestionIntent,
@@ -18,6 +19,7 @@ import {
   questionReadSchema,
   questionWriteSchema,
   type RecordQuestionReadInput,
+  type RulingPageCursor,
   UnboundedQuestionRulingsError,
 } from './record-question-contract.ts'
 
@@ -59,13 +61,11 @@ async function rulingReadResponse(
       },
       422,
     )
-  let changedAfter: RecordChangeCursor | { questionNumber: number }
+  let changedAfter: RecordChangeCursor | RulingPageCursor
   try {
     changedAfter = encodedChangedAfter.startsWith('page:')
-      ? { questionNumber: Number(encodedChangedAfter.slice(5)) }
+      ? parseRulingPageCursor(encodedChangedAfter)
       : decodeRecordChangeCursor(encodedChangedAfter)
-    if ('questionNumber' in changedAfter && !Number.isSafeInteger(changedAfter.questionNumber))
-      throw new Error('shape')
   } catch {
     return context.json(
       {

@@ -1,8 +1,13 @@
 import { afterAll, beforeAll, expect, test } from 'bun:test'
 import type { PGlite } from '@electric-sql/pglite'
+import {
+  decodeRecordChangeCursor,
+  encodeRecordChangeCursor,
+} from '../../../shared/record/record-changes.ts'
 import { bindTenant } from '../../../shared/record/tenant.ts'
 import { createHostedRecordFixture, pgliteSql } from '../../test/fixtures/hosted-record.ts'
-import { readRecordQuestionRows } from './record-question-read.ts'
+import { installRecordPool } from '../../test/fixtures/record-pool-injection.ts'
+import { readRecordQuestionRows, readRecordQuestions } from './record-question-read.ts'
 
 const spaceId = '01990000-0000-7000-8000-000000004001'
 const userId = '01990000-0000-7000-8000-000000004002'
@@ -30,6 +35,8 @@ const inheritedTaskKeyTurnId = '01990000-0000-7000-8000-000000004041'
 const otherVisibleProjectId = '01990000-0000-7000-8000-000000004040'
 
 let database: PGlite
+const fixtureUrl = 'postgres://question-ruling-read.test/record'
+let restorePool: (() => void) | undefined
 
 beforeAll(async () => {
   database = await createHostedRecordFixture({ spaceId, userId })
@@ -149,9 +156,11 @@ beforeAll(async () => {
        '${projectId}','${machineId}',12,1,'[]',now(),'visible parent inherited task key',NULL,NULL,now(),now());
     SET ROLE record_actor;
   `)
+  restorePool = installRecordPool(fixtureUrl, pgliteSql(database))
 })
 
 afterAll(async () => {
+  restorePool?.()
   if (database) await database.close()
 })
 
@@ -257,4 +266,126 @@ test('hosted task rulings use the visible root task and exclude absent or invisi
   })
   expect(result.items.map((row) => row.question)).toEqual(['visible parent ruling'])
   expect(result.items[0]?.run_record_id).toBe(visibleParentId)
+})
+
+test('ruling bootstrap pages hand over their captured change head and replay drain changes', async () => {
+  const first = await readRecordQuestions({
+    url: fixtureUrl,
+    userId,
+    spaceId,
+    read: 'rulings',
+    kind: 'all',
+    limit: 1,
+  })
+  expect(first.more).toBe(true)
+  expect(first.cursor).toMatch(/^page:\d+:[^:]+$/)
+  const [, firstNumber, encodedHead] = first.cursor!.split(':')
+  const head = decodeRecordChangeCursor(encodedHead!)
+
+  const drainQuestionId = '01990000-0000-7000-8000-000000004044'
+  await database.exec(`
+    RESET ROLE;
+    INSERT INTO question
+      (id,space_id,run_id,workflow_task_id,project_id,machine_id,number,revision,withheld_fields,
+       asked_at,question,answer,answered_at,created_at,updated_at)
+    VALUES
+      ('${drainQuestionId}','${spaceId}','${firstRunId}','${taskId}','${projectId}','${machineId}',
+       100,1,'[]',now(),'answered during drain','yes',now(),now(),now());
+    SET ROLE record_actor;
+  `)
+
+  const final = await readRecordQuestions({
+    url: fixtureUrl,
+    userId,
+    spaceId,
+    read: 'rulings',
+    kind: 'all',
+    changedAfter: { questionNumber: Number(firstNumber), changeHead: head },
+  })
+  expect(final.more).toBe(false)
+  expect(final.cursor).toBe(encodedHead)
+
+  const replay = await readRecordQuestions({
+    url: fixtureUrl,
+    userId,
+    spaceId,
+    read: 'rulings',
+    kind: 'all',
+    changedAfter: head,
+  })
+  expect(replay.items.map((row) => row.record_id)).toContain(drainQuestionId)
+})
+
+test('resets and legacy page cursors restart a bounded bootstrap with a fresh head', async () => {
+  const current = await readRecordQuestions({
+    url: fixtureUrl,
+    userId,
+    spaceId,
+    read: 'rulings',
+    kind: 'all',
+    limit: 1,
+  })
+  const encodedHead = current.cursor!.split(':').at(-1)!
+  const head = decodeRecordChangeCursor(encodedHead)
+  await database.exec(`
+    RESET ROLE;
+    UPDATE record_change_horizon
+    SET xid='${head.xid.toString()}'::xid8,seq=${head.seq.toString()}
+    WHERE singleton;
+    SET ROLE record_actor;
+  `)
+  const reset = await readRecordQuestions({
+    url: fixtureUrl,
+    userId,
+    spaceId,
+    read: 'rulings',
+    kind: 'all',
+    changedAfter: { xid: 0n, seq: 0n },
+  })
+  expect(reset.reset).toBe(true)
+  expect(reset.items.length).toBeLessThanOrEqual(100)
+  expect(reset.cursor).toBeString()
+
+  const legacy = await readRecordQuestions({
+    url: fixtureUrl,
+    userId,
+    spaceId,
+    read: 'rulings',
+    kind: 'all',
+    changedAfter: { questionNumber: 1 },
+  })
+  expect(legacy.reset).toBe(true)
+  expect(legacy.items[0]?.number).toBe(1)
+  expect(decodeRecordChangeCursor(legacy.cursor!)).toEqual(head)
+  expect(encodeRecordChangeCursor(head)).toBe(encodedHead)
+})
+
+test('a bootstrap handover head never falls behind the prune horizon', async () => {
+  const current = await readRecordQuestions({
+    url: fixtureUrl,
+    userId,
+    spaceId,
+    read: 'rulings',
+    kind: 'all',
+    limit: 1,
+  })
+  const currentHead = decodeRecordChangeCursor(current.cursor!.split(':').at(-1)!)
+  const horizon = { xid: currentHead.xid + 100n, seq: currentHead.seq }
+  await database.exec(`
+    RESET ROLE;
+    UPDATE record_change_horizon
+    SET xid='${horizon.xid.toString()}'::xid8,seq=${horizon.seq.toString()}
+    WHERE singleton;
+    SET ROLE record_actor;
+  `)
+
+  const bootstrap = await readRecordQuestions({
+    url: fixtureUrl,
+    userId,
+    spaceId,
+    read: 'rulings',
+    kind: 'all',
+    limit: 1,
+  })
+  expect(decodeRecordChangeCursor(bootstrap.cursor!.split(':').at(-1)!)).toEqual(horizon)
 })
