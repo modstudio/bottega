@@ -13,6 +13,7 @@ import { hostedRequestHandler } from './hosted.ts'
 import { applyHostedPushChanges } from './hosted-push-changes.ts'
 import { listHostedTasks } from './hosted-task-list.ts'
 import { createHostedDocument, createHostedTask, getHostedTask } from './hosted-tasks.ts'
+import { HOSTED_UNREACHABLE_REMEDY } from './hosted-write-mode.ts'
 import { projectRecordIdFor } from './project-record-id.ts'
 import {
   commentTask,
@@ -226,6 +227,70 @@ test('hosted writes use the project-declared record space', async () => {
     'declared-gamma-space',
     'declared-gamma-space',
   ])
+})
+
+test('an unreachable hosted task update refuses without queueing the write', async () => {
+  const task = await recordCreate(
+    { project: 'gamma', title: 'Unreachable update' },
+    { hosted: hosted() },
+  )
+  const unreachableChanges = async (input: string, init?: RequestInit) => {
+    if (init?.method === 'POST' && input.endsWith('/v1/changes')) throw new Error('offline')
+    return recordFetch(input, init)
+  }
+
+  const refused = await setTask(
+    task.key,
+    { project: 'gamma' },
+    { status: 'active' },
+    { actorUserId: userId, actorName: 'Record author', agent: null, runId: null },
+    { hosted: { ...hosted(), fetch: unreachableChanges } },
+  ).catch((error: unknown) => error)
+
+  expect(refused).toBeInstanceOf(Error)
+  expect((refused as Error).message).toContain(HOSTED_UNREACHABLE_REMEDY)
+  expect((refused as Error).message).not.toContain('saved and queued')
+  expect(
+    db()
+      .query<{ count: number }, [string]>(`SELECT count(*) count FROM hosted_outbox WHERE row_id=?`)
+      .get(task.record_id)!.count,
+  ).toBe(0)
+})
+
+test('a stale hosted body replacement names the current revision and preserves the body', async () => {
+  const task = await recordCreate(
+    { project: 'gamma', title: 'Revision guard', body: 'Before' },
+    { hosted: hosted() },
+  )
+  const initialRevision = task.revision!
+  const accepted = await setTaskBody(
+    task.key,
+    { project: 'gamma' },
+    'Accepted',
+    String(initialRevision),
+    { hosted: hosted() },
+  )
+  if (accepted.revision === undefined) throw new Error('hosted task has no revision')
+
+  const refused = await setTaskBody(
+    task.key,
+    { project: 'gamma' },
+    'Stale',
+    String(initialRevision),
+    { hosted: hosted() },
+  ).catch((error: unknown) => error)
+
+  expect(refused).toBeInstanceOf(Error)
+  expect((refused as Error).message).toContain(
+    `hub_task ${task.record_id} changed since revision ${initialRevision}; now ${accepted.revision}.`,
+  )
+  await database.exec('RESET ROLE;')
+  const stored = await database.query<{ body: string; revision: number }>(
+    `SELECT body,revision::int revision FROM hub_task WHERE id=$1`,
+    [task.record_id],
+  )
+  await database.exec('SET ROLE record_actor;')
+  expect(stored.rows).toEqual([{ body: 'Accepted', revision: accepted.revision }])
 })
 
 test('hosted document updates use the declared space and refuse a stale version', async () => {
