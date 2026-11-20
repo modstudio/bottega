@@ -223,12 +223,28 @@ async function launchCommand(
 
 const PROBE_OUTBOUND_TIMEOUT_MS = 5_000
 
+type OutboundRefusalInput = { status: number } | { errorCode: string }
+type OutboundRefusalDecision = { refused: boolean; reason: string }
+
+export const decideOutboundRefusal: (input: OutboundRefusalInput) => OutboundRefusalDecision =
+  function decideOutboundRefusal(input) {
+    if ('status' in input) {
+      return input.status === 403
+        ? { refused: true, reason: 'refused: status 403' }
+        : { refused: false, reason: `status ${input.status}` }
+    }
+    return input.errorCode === 'ECONNRESET'
+      ? { refused: true, reason: 'refused: connection reset' }
+      : { refused: false, reason: `error ${input.errorCode}` }
+  }
+
 async function launchWorkflowNetworkProbe(
   profile: ReturnType<typeof probeSandboxProfile>,
   environment: Record<string, string>,
   scratchDir: string,
 ): Promise<Record<string, CommandProbe>> {
   const script = String.raw`
+const decideOutboundRefusal = ${decideOutboundRefusal.toString()}
 async function probeLoopback() {
   const server = Bun.serve({
     hostname: '127.0.0.1',
@@ -255,12 +271,18 @@ try {
   const outbound = await fetch('http://example.com/', {
     signal: AbortSignal.timeout(${PROBE_OUTBOUND_TIMEOUT_MS}),
   })
-  if (outbound.status !== 403) {
-    console.log('non-loopback outbound=failed: status ' + outbound.status)
+  const decision = decideOutboundRefusal({ status: outbound.status })
+  if (!decision.refused) {
+    console.log('non-loopback outbound=failed: ' + decision.reason)
     process.exit(1)
   }
-  console.log('non-loopback outbound=ran')
+  console.log('non-loopback outbound=ran: ' + decision.reason)
 } catch (error) {
+  const decision = decideOutboundRefusal({ errorCode: error.code ?? error.name })
+  if (decision.refused) {
+    console.log('non-loopback outbound=ran: ' + decision.reason)
+    process.exit(0)
+  }
   console.log('non-loopback outbound=failed: ' + error.name + ': ' + error.message)
   process.exit(1)
 }
@@ -277,6 +299,7 @@ try {
   const successReason = 'loopback exchange succeeded and non-loopback connection was denied'
   const fallbackReason = `exit ${result.exitCode ?? 'unknown'}: ${stderrTail(result.stderr)}`
   const loopbackFailure = output.find((line) => line.startsWith('loopback listen+connect=failed:'))
+  const outboundSuccess = output.find((line) => line.startsWith('non-loopback outbound=ran: '))
   const outboundFailure = output.find((line) => line.startsWith('non-loopback outbound=failed:'))
   return {
     'loopback listen+connect': {
@@ -284,8 +307,11 @@ try {
       reason: loopbackFailure ?? (result.exitCode === 0 ? successReason : fallbackReason),
     },
     'non-loopback outbound': {
-      status: output.includes('non-loopback outbound=ran') ? 'ran' : 'failed',
-      reason: outboundFailure ?? (result.exitCode === 0 ? successReason : fallbackReason),
+      status: outboundSuccess ? 'ran' : 'failed',
+      reason:
+        outboundSuccess?.slice('non-loopback outbound=ran: '.length) ??
+        outboundFailure ??
+        (result.exitCode === 0 ? successReason : fallbackReason),
     },
   }
 }

@@ -1,9 +1,23 @@
 import { describe, expect, test } from 'bun:test'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { probeVerdict } from './confinement-filesystem-probe.ts'
+import { decideOutboundRefusal, probeVerdict } from './confinement-filesystem-probe.ts'
 
 const ran = { status: 'ran', reason: 'exit 0' } as const
+
+describe('decideOutboundRefusal', () => {
+  test.each([
+    [{ status: 403 }, { refused: true, reason: 'refused: status 403' }],
+    [{ errorCode: 'ECONNRESET' }, { refused: true, reason: 'refused: connection reset' }],
+    [{ status: 200 }, { refused: false, reason: 'status 200' }],
+    [{ status: 502 }, { refused: false, reason: 'status 502' }],
+    [{ errorCode: 'TimeoutError' }, { refused: false, reason: 'error TimeoutError' }],
+    [{ errorCode: 'AbortError' }, { refused: false, reason: 'error AbortError' }],
+    [{ errorCode: 'UNKNOWN' }, { refused: false, reason: 'error UNKNOWN' }],
+  ] as const)('decides whether %o proves proxy refusal', (input, expected) => {
+    expect(decideOutboundRefusal(input)).toEqual(expected)
+  })
+})
 
 test('confinement probe command and report labels contain no literal task key', () => {
   for (const file of ['confinement-filesystem-probe.ts', 'confinement-report.ts']) {
