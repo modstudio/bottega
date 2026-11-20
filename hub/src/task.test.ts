@@ -1,21 +1,18 @@
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, spyOn, test } from 'bun:test'
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { declareFixtureProjectSpace } from '../test/fixture-project-space.ts'
-import { fixtureRecordId, resetFixtureStore } from '../test/run-fixtures.ts'
+import { resetFixtureStore } from '../test/run-fixtures.ts'
 import { db, writeTransaction } from './db.ts'
 import { DUPLICATE_TITLE_FIXTURE } from './duplicate-matcher.fixture.ts'
 import { writeTrackerCache } from './ingest/trackers.ts'
 import { persistInstallBinding } from './install-binding.ts'
-import { loadOutboxChange } from './outbox-row.ts'
 import { projectRecordIdFor } from './project-record-id.ts'
 import {
   closeTask,
   commentTask,
   createTask,
-  deleteTaskComment,
   duplicateCandidates,
   duplicateScore,
-  editTaskComment,
   listTasks,
   setTask,
   setTaskBody,

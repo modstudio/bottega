@@ -39,7 +39,7 @@ afterAll(() => {
   else process.env.BOTTEGA_HOSTED_URL = previousHostedUrl
 })
 
-test('installing the CLI adapter leaves hub unloaded until the first read', () => {
+test('installing the CLI adapter leaves hub unloaded until the first read', async () => {
   const hubTaskModule = require.resolve('../hub/src/task.ts')
   const hubTaskDocumentModule = require.resolve('../hub/src/task-document.ts')
   const hubDatabaseModule = require.resolve('../hub/src/db.ts')
@@ -54,7 +54,7 @@ test('installing the CLI adapter leaves hub unloaded until the first read', () =
   expect(require.cache[hubTaskModule]).toBeUndefined()
   expect(require.cache[hubTaskDocumentModule]).toBeUndefined()
 
-  taskReader().list()
+  await taskReader().list()
   expect(require.cache[hubTaskModule]).toBeDefined()
   expect(require.cache[hubTaskDocumentModule]).toBeDefined()
 })

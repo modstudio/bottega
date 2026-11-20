@@ -482,8 +482,9 @@ function totalRow(rows: EpicTaskScore[], timing: DurationMetrics): EpicTaskScore
 export async function epicChildren(
   project: string,
   epicKey: string,
-  reader: (filters: { project: string; parent: string }) => Promise<readonly TaskReadRow[]> = (filters) =>
-    taskReader().list(filters),
+  reader: (filters: { project: string; parent: string }) => Promise<readonly TaskReadRow[]> = (
+    filters,
+  ) => taskReader().list(filters),
 ): Promise<EpicChild[]> {
   const parsed: unknown = await reader({ project, parent: epicKey })
   if (

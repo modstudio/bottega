@@ -1,8 +1,8 @@
-import { afterAll, beforeAll, beforeEach, describe, expect, spyOn, test } from 'bun:test'
+import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test'
 import { declareFixtureProjectSpace } from '../test/fixture-project-space.ts'
 import { resetFixtureStore } from '../test/run-fixtures.ts'
 import { writeTransaction } from './db.ts'
-import { createTask, showTask } from './task.ts'
+import { createTask } from './task.ts'
 import {
   createTaskDocument,
   deleteTaskDocument,
@@ -117,5 +117,4 @@ describe('task documents', () => {
       ),
     ).rejects.toThrow('hosted hub unavailable')
   })
-
 })

@@ -56,7 +56,7 @@ const dependencies = (lookup: TrackerSource['lookup']) => ({
     ran: true as const,
     value: await fn({ assertHeld() {} }),
   }),
-  readBack: () => shown,
+  readBack: async () => shown,
 })
 
 describe('fresh tracker task read', () => {

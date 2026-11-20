@@ -498,8 +498,7 @@ export async function taskRecord(
   scope: TaskScope = {},
   readerUserId: string | null = null,
 ): Promise<TaskDetail> {
-  if (resolveHostedUrl())
-    return taskRecordFromRows(await showHostedTask(key, scope), readerUserId)
+  if (resolveHostedUrl()) return taskRecordFromRows(await showHostedTask(key, scope), readerUserId)
   return taskRecordFromRows(showLocalTask(key, scope), readerUserId)
 }
 
@@ -513,6 +512,9 @@ export async function setTaskBody(
   const upper = key.toUpperCase()
   if (hostedConfigured(options.hosted)) {
     const current = (await showHostedTask(upper, scope, options.hosted)).task
+    const project = projects().find((candidate) => candidate.name === current.project) ?? null
+    const capability = trackerCapabilities({ source: current.source, project }).setBody
+    if (!capability.allowed) throw new Error(capability.reason)
     const row = pushedTask(current, { body }, nowIso())
     await sendHostedChanges(
       [

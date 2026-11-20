@@ -3,22 +3,35 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { PGlite } from '@electric-sql/pglite'
+import {
+  createHostedRecordFixture,
+  pgliteSql,
+} from '../../orchestrator/test/fixtures/hosted-record.ts'
 import { createNoDestinationWriteCounter } from '../../shared/record-no-destination-write-counter.ts'
 import { forgetRecordSessionToken, writeRecordSessionToken } from '../../shared/record-session.ts'
-import { createHostedRecordFixture, pgliteSql } from '../../orchestrator/test/fixtures/hosted-record.ts'
 import { declareFixtureProjectSpace } from '../test/fixture-project-space.ts'
 import { resetFixtureStore } from '../test/run-fixtures.ts'
 import { db } from './db.ts'
+import { hostedRequestHandler } from './hosted.ts'
 import { applyHostedPushChanges } from './hosted-push-changes.ts'
 import { listHostedTasks } from './hosted-task-list.ts'
 import { createHostedTask, getHostedTask } from './hosted-tasks.ts'
-import { hostedRequestHandler } from './hosted.ts'
 import { projectRecordIdFor } from './project-record-id.ts'
-import { createTask, showTask } from './task.ts'
+import {
+  commentTask,
+  createTask,
+  deleteTaskComment,
+  editTaskComment,
+  setTaskBody,
+  showTask,
+  taskRecord,
+} from './task.ts'
+import { taskBodyVersion } from './task-detail.ts'
 
 const spaceId = '01990000-0000-7000-8000-000000002520'
 const userId = '01990000-0000-7000-8000-000000002521'
 const projectId = projectRecordIdFor('gamma')
+const alphaProjectId = projectRecordIdFor('alpha')
 const stateRoot = mkdtempSync(join(tmpdir(), 'bottega-task-record-app-'))
 const previous = {
   fetch: globalThis.fetch,
@@ -28,8 +41,10 @@ const previous = {
   stateHome: process.env.BOTTEGA_STATE_HOME,
 }
 let database: PGlite
+let recordFetch: (input: string, init?: RequestInit) => Promise<Response>
 
 declareFixtureProjectSpace('gamma', 'declared-gamma-space')
+declareFixtureProjectSpace('alpha', 'declared-gamma-space')
 
 beforeAll(async () => {
   database = await createHostedRecordFixture({ spaceId, userId })
@@ -37,7 +52,9 @@ beforeAll(async () => {
     RESET ROLE;
     UPDATE space SET slug='declared-gamma-space' WHERE id='${spaceId}';
     INSERT INTO project (id,space_id,name,key_prefixes,created_at)
-    VALUES ('${projectId}','${spaceId}','gamma',ARRAY['GAM'],now());
+    VALUES
+      ('${projectId}','${spaceId}','gamma',ARRAY['GAM'],now()),
+      ('${alphaProjectId}','${spaceId}','alpha',ARRAY['ALP'],now());
     SET ROLE record_actor;
   `)
   const client = pgliteSql(database)
@@ -45,9 +62,7 @@ beforeAll(async () => {
     Response.json({
       user: { id: userId, name: 'Record author' },
       activeSpaceId: spaceId,
-      memberships: [
-        { space_id: spaceId, slug: 'declared-gamma-space', permission: 'write' },
-      ],
+      memberships: [{ space_id: spaceId, slug: 'declared-gamma-space', permission: 'write' }],
     })
   const handler = hostedRequestHandler(
     {
@@ -67,12 +82,15 @@ beforeAll(async () => {
   )
   const appFetch = (input: string | URL | Request, init?: RequestInit) =>
     handler(new Request(input, init))
+  recordFetch = (input, init) => appFetch(input, init)
   globalThis.fetch = appFetch as typeof fetch
   process.env.BOTTEGA_HOSTED_URL = 'https://hub.example.test'
   process.env.BOTTEGA_KEYSTORE = 'file'
   process.env.BOTTEGA_STATE_HOME = stateRoot
   delete process.env.NODE_ENV
   writeRecordSessionToken('test')
+  if (previous.nodeEnv === undefined) delete process.env.NODE_ENV
+  else process.env.NODE_ENV = previous.nodeEnv
 })
 
 beforeEach(resetFixtureStore)
@@ -94,13 +112,13 @@ afterAll(async () => {
 })
 
 test('a hosted write is immediately readable from a fresh empty local store without pull', async () => {
-  const created = await createTask(
+  const created = await recordCreate(
     { project: 'gamma', title: 'Record-authoritative acceptance' },
     {
       hosted: {
         baseUrl: 'https://hub.example.test',
         token: 'test',
-        fetch: globalThis.fetch as (input: string, init?: RequestInit) => Promise<Response>,
+        fetch: recordFetch,
       },
     },
   )
@@ -108,7 +126,7 @@ test('a hosted write is immediately readable from a fresh empty local store with
   resetFixtureStore()
   expect(dbTaskCount()).toBe(0)
 
-  const shown = await showTask(created.key, { project: 'gamma' })
+  const shown = await recordShow(created.key, { project: 'gamma' })
   expect(shown.task).toMatchObject({
     record_id: created.record_id,
     key: created.key,
@@ -118,6 +136,150 @@ test('a hosted write is immediately readable from a fresh empty local store with
   expect(dbTaskCount()).toBe(0)
 })
 
+const hosted = () => ({ baseUrl: 'https://hub.example.test', token: 'test', fetch: recordFetch })
+
+test('comment authors may edit and delete while other record users are refused', async () => {
+  const task = await recordCreate(
+    { project: 'gamma', title: 'Comment authorship' },
+    { hosted: hosted() },
+  )
+  const author = { actorUserId: userId, actorName: 'Record author', agent: 'codex', runId: '42' }
+  const other = { ...author, actorUserId: '01990000-0000-7000-8000-000000002599' }
+  const comment = await commentTask(task.key, { project: 'gamma' }, 'first', author, {
+    hosted: hosted(),
+  })
+
+  await expect(
+    editTaskComment(task.key, { project: 'gamma' }, comment.id, 'other', other, {
+      hosted: hosted(),
+      expectedRevision: comment.revision,
+    }),
+  ).rejects.toThrow('another author')
+  const edited = await editTaskComment(
+    task.key,
+    { project: 'gamma' },
+    comment.id,
+    'edited',
+    author,
+    {
+      hosted: hosted(),
+      expectedRevision: comment.revision,
+    },
+  )
+  expect((await recordShow(task.key, { project: 'gamma' })).comments[0]?.body).toBe('edited')
+  await deleteTaskComment(task.key, { project: 'gamma' }, comment.id, author, {
+    hosted: hosted(),
+    expectedRevision: edited.revision,
+  })
+  expect((await recordShow(task.key, { project: 'gamma' })).comments).toEqual([])
+})
+
+test('hosted task body writes preserve tracker capability refusals', async () => {
+  const id = '01990000-0000-7000-8000-000000002598'
+  await database.exec(`
+    RESET ROLE;
+    INSERT INTO hub_task
+      (id,space_id,project_name,project_id,key,project,title,status,status_category,source,first_seen,last_seen,created_at,updated_at)
+    VALUES
+      ('${id}','${spaceId}','alpha','${alphaProjectId}','ALP-998','alpha','External','open','open','mcp',now(),now(),now(),now());
+    SET ROLE record_actor;
+  `)
+  await expect(
+    setTaskBody('ALP-998', { project: 'alpha' }, 'refused', taskBodyVersion(null), {
+      hosted: hosted(),
+    }),
+  ).rejects.toThrow('No adapter has proven a task description write')
+})
+
+test('hosted writes use the project-declared record space', async () => {
+  const requests: Array<{ method: string; space: string | null }> = []
+  const fetch = async (input: string, init?: RequestInit) => {
+    requests.push({
+      method: init?.method ?? 'GET',
+      space: new Headers(init?.headers).get('x-record-space'),
+    })
+    return recordFetch(input, init)
+  }
+  const options = { hosted: { baseUrl: 'https://hub.example.test', token: 'test', fetch } }
+  const task = await recordCreate({ project: 'gamma', title: 'Declared destination' }, options)
+  await commentTask(
+    task.key,
+    { project: 'gamma' },
+    'declared comment',
+    { actorUserId: userId, actorName: null, agent: null, runId: null },
+    options,
+  )
+
+  expect(requests.filter(({ method }) => method === 'POST').map(({ space }) => space)).toEqual([
+    'declared-gamma-space',
+    'declared-gamma-space',
+  ])
+})
+
+test('work.task composes the hosted task, comments, documents, and project', async () => {
+  const task = await recordCreate(
+    { project: 'gamma', title: 'Inspectable hosted task', body: 'Task body' },
+    { hosted: hosted() },
+  )
+  const comment = await commentTask(
+    task.key,
+    { project: 'gamma' },
+    'A useful comment',
+    { actorUserId: userId, actorName: 'Record author', agent: null, runId: null },
+    { hosted: hosted() },
+  )
+  const documentId = '01990000-0000-7000-8000-000000002597'
+  await database.exec(`
+    RESET ROLE;
+    INSERT INTO hub_task_document
+      (id,space_id,project_name,project_id,task_key,task_id,number,role,title,body,version,created_at,updated_at)
+    VALUES
+      ('${documentId}','${spaceId}','gamma','${projectId}','${task.key}','${task.record_id}',1,'handoff','Handoff','# Handoff','v1',now(),now());
+    SET ROLE record_actor;
+  `)
+  const result = await recordTaskRecord(task.key, { project: 'gamma' }, userId)
+  expect(result.task).toMatchObject({ key: task.key, project: 'gamma' })
+  expect(result.comments).toEqual([expect.objectContaining({ id: comment.id, canEdit: true })])
+  expect(result.documents).toEqual([expect.objectContaining({ id: documentId, body: '# Handoff' })])
+  expect(result.runs).toEqual([])
+})
+
 function dbTaskCount(): number {
   return db().query<{ count: number }, []>('SELECT count(*) count FROM task').get()!.count
+}
+
+async function recordShow(key: string, scope: { project: string }) {
+  const nodeEnv = process.env.NODE_ENV
+  delete process.env.NODE_ENV
+  try {
+    return await showTask(key, scope)
+  } finally {
+    if (nodeEnv === undefined) delete process.env.NODE_ENV
+    else process.env.NODE_ENV = nodeEnv
+  }
+}
+
+async function recordCreate(
+  input: Parameters<typeof createTask>[0],
+  options: Parameters<typeof createTask>[1],
+) {
+  const nodeEnv = process.env.NODE_ENV
+  delete process.env.NODE_ENV
+  try {
+    return await createTask(input, options)
+  } finally {
+    if (nodeEnv === undefined) delete process.env.NODE_ENV
+    else process.env.NODE_ENV = nodeEnv
+  }
+}
+
+async function recordTaskRecord(key: string, scope: { project: string }, readerUserId: string) {
+  const nodeEnv = process.env.NODE_ENV
+  delete process.env.NODE_ENV
+  try {
+    return await taskRecord(key, scope, readerUserId)
+  } finally {
+    if (nodeEnv === undefined) delete process.env.NODE_ENV
+    else process.env.NODE_ENV = nodeEnv
+  }
 }
