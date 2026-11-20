@@ -33,6 +33,7 @@ const LEAVES: Record<OutboxSanitizeKind, readonly SecretLeaf[]> = {
     { at: 'label', style: 'value' },
     { at: 'error', style: 'value' },
     { at: 'routeReason', style: 'value' },
+    { at: 'sandboxReason', style: 'value' },
     { at: 'closeOutDetail', style: 'value' },
     { at: 'evidenceUnvoid.note', style: 'value' },
     { at: 'reviewProvenance', style: 'walk' },

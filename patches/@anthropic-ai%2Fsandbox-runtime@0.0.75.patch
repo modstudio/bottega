@@ -1,0 +1,41 @@
+diff --git a/dist/sandbox/linux-sandbox-utils.js b/dist/sandbox/linux-sandbox-utils.js
+index 185a9bd6a092041c24190a9216d2aa88ef910dd4..fe68286af86adab05a63b54a5e9cdc1353a9a9b2 100644
+--- a/dist/sandbox/linux-sandbox-utils.js
++++ b/dist/sandbox/linux-sandbox-utils.js
+@@ -637,13 +637,6 @@ function resolveSymlinkDenyDest(normalizedPath) {
+ function pushReadDenyDirMounts(args, normalizedPath, allowedWritePaths, readAllowPaths) {
+     const denySep = normalizedPath === '/' ? '/' : normalizedPath + '/';
+     args.push('--tmpfs', normalizedPath);
+-    // tmpfs wiped any earlier write binds under this path — restore them.
+-    for (const writePath of allowedWritePaths) {
+-        if (writePath.startsWith(denySep) || writePath === normalizedPath) {
+-            args.push('--bind', writePath, writePath);
+-            logForDebugging(`[Sandbox Linux] Re-bound write path wiped by denyRead tmpfs: ${writePath}`);
+-        }
+-    }
+     // Re-allow specific paths within the denied directory (allowRead overrides denyRead).
+     // After mounting tmpfs over the denied dir, bind back the allowed subdirectories
+     // so they are readable again.
+@@ -651,6 +644,6 @@ function pushReadDenyDirMounts(args, normalizedPath, allowedWritePaths, readAllo
+                 continue;
+             }
+-            // Skip only if a write path was re-bound just above AND covers
++            // Skip only if a write path will be re-bound below AND covers
+             // allowPath. A write path that's an ancestor of the deny dir isn't
+             // re-bound (it wasn't wiped), so allowPath under it still needs
+             // its own ro-bind here.
+@@ -666,6 +659,14 @@ function pushReadDenyDirMounts(args, normalizedPath, allowedWritePaths, readAllo
+             logForDebugging(`[Sandbox Linux] Re-allowed read access within denied region: ${allowPath}`);
+         }
+     }
++    // tmpfs wiped any earlier write binds under this path — restore them after
++    // read carve-backs so an allowed write nested below one remains writable.
++    for (const writePath of allowedWritePaths) {
++        if (writePath.startsWith(denySep) || writePath === normalizedPath) {
++            args.push('--bind', writePath, writePath);
++            logForDebugging(`[Sandbox Linux] Re-bound write path wiped by denyRead tmpfs: ${writePath}`);
++        }
++    }
+ }
+ /**
+  * Generate filesystem bind mount arguments for bwrap

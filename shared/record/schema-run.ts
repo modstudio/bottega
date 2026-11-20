@@ -112,6 +112,8 @@ export const run = pgTable.withRLS(
     transport: text(),
     sessionId: text('session_id'),
     routeReason: text('route_reason'),
+    sandbox: text(),
+    sandboxReason: text('sandbox_reason'),
     credentialId: uuid('credential_id'),
     credentialPayer: text('credential_payer'),
     credentialBinding: text('credential_binding'),
@@ -161,6 +163,7 @@ export const run = pgTable.withRLS(
       'run_credential_binding_check',
       sql`${table.credentialBinding} IS NULL OR ${table.credentialBinding} IN ('space', 'project')`,
     ),
+    check('run_sandbox_check', sql`${table.sandbox} IN ('host', 'srt')`),
     check(
       'run_task_or_project_unless_probe',
       sql`${table.probe} OR ${table.taskId} IS NOT NULL OR ${table.projectId} IS NOT NULL`,

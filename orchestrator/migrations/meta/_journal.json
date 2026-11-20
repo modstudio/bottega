@@ -1850,6 +1850,14 @@
       "tag": "0240_record_cache_cursor_rewind",
       "breakpoints": true,
       "compatibility": "fenced"
+    },
+    {
+      "idx": 241,
+      "version": "6",
+      "when": 1794758400015,
+      "tag": "0241_run_sandbox_reason",
+      "breakpoints": true,
+      "compatibility": "additive"
     }
   ]
 }

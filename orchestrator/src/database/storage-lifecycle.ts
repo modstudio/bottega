@@ -251,6 +251,7 @@ export const orchestratorTableLifecycles: readonly TableLifecycle[] = [
       'prompt_head',
       'error',
       'route_reason',
+      'sandbox_reason',
       'changed_paths',
       'deviations',
       'escalations',
