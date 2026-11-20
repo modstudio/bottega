@@ -42,6 +42,7 @@ import {
 } from './settings-files.ts'
 import { adoptionCandidates, lintSettings, type SettingsTarget } from './settings-lint.ts'
 import { withMachineProductHooks } from './settings-machine-hooks.ts'
+import { resolveMachineHookRuntime } from './settings-machine-runtime.ts'
 import { editSettingsPermission, type SettingsPermissionOperation } from './settings-permission.ts'
 import { mergeMachinePermissionOverlay } from './settings-permission-overlay.ts'
 import {
@@ -360,6 +361,7 @@ function effectiveStoredSettings(
     assetPath(),
     resolveOrchestratorDatabase(process.env),
     readMachineValue('machine.global_use') as 'on' | 'off',
+    resolveMachineHookRuntime(),
   ).settings
 }
 

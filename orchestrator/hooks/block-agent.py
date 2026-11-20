@@ -59,6 +59,7 @@ import json, os, re, sqlite3, subprocess, sys, time, uuid
 sys.path.insert(0, os.path.dirname(__file__))
 from registered_scope import should_hook_act
 from hook_emission import record_emission
+from hook_paths import bottega_bin
 
 ALLOW = {"claude-code-guide"}
 
@@ -71,7 +72,7 @@ DB = os.environ.get("BOTTEGA_ORCHESTRATOR_DB") or subprocess.check_output(
 # what it did is the thing this table exists to prevent, so a failed write has
 # to leave a mark somewhere rather than evaporate.
 FALLBACK_LOG = os.path.join(os.path.dirname(DB), "spawn-fallback.log")
-BOTTEGA_BIN = os.path.abspath(os.path.join(ORCHESTRATOR_ROOT, "..", "bin", "bottega"))
+BOTTEGA_BIN = bottega_bin()
 
 # A declaration, not a vocabulary match. The old fuzzy list ("online", "docs",
 # "benchmark", "pricing") is gone: it is what made rewording work.

@@ -4,6 +4,9 @@ import os
 
 
 def bottega_bin():
+    configured = os.environ.get("BOTTEGA_BIN")
+    if configured and os.path.isabs(configured):
+        return configured
     root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
     return os.path.join(root, "bin", "bottega")
 

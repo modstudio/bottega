@@ -6,7 +6,7 @@
 import { cc, FFIType, ptr } from 'bun:ffi'
 import { closeSync, constants, openSync } from 'node:fs'
 import { platform } from 'node:os'
-import { assetPath } from './install-root.ts'
+import { runtimeAssetPath } from './runtime-assets.ts'
 
 const F_WRLCK = 3
 const F_UNLCK = 2
@@ -57,9 +57,11 @@ function loadDarwinFcntl(): DarwinFcntl | null {
   // a path relative to this module would follow each concern's bundle depth instead.
   let helperPath: string
   try {
-    helperPath = assetPath('shared', 'store-write-lock.c')
+    helperPath = runtimeAssetPath('shared/store-write-lock.c')
   } catch (error) {
-    darwinFcntlFailure = error instanceof Error ? error.message : String(error)
+    darwinFcntlFailure = `cannot resolve the WAL write-lock helper: ${
+      error instanceof Error ? error.message : String(error)
+    }; reinstall the platform runtime assets, then retry`
     return null
   }
   try {
@@ -67,7 +69,7 @@ function loadDarwinFcntl(): DarwinFcntl | null {
   } catch (error) {
     darwinFcntlFailure = `cannot compile ${helperPath} to probe the WAL write-lock holder: ${
       error instanceof Error ? error.message : String(error)
-    }`
+    }; install a C compiler with the platform development tools, then retry`
   }
   return darwinFcntl
 }

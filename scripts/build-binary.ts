@@ -7,7 +7,7 @@ import {
   SYSTEMD_UNIT_SUFFIXES,
 } from '../orchestrator/src/setup/setup-schedule-policy.ts'
 import { PLATFORM_SLUG } from '../shared/brand.ts'
-import { REF_GUARD_RUNTIME_ASSET, registerEmbeddedAssets } from '../shared/embedded-assets.ts'
+import { registerEmbeddedAssets, RUNTIME_ASSETS } from '../shared/embedded-assets.ts'
 import { LAUNCHD_TEMPLATE_OWNERS } from '../shared/launchd-owners.ts'
 import { BINARY_TARGETS, type BinaryTarget } from '../shared/release-artifacts.ts'
 import { sandboxRuntimePayloadPaths } from '../shared/sandbox-runtime-assets.ts'
@@ -150,7 +150,7 @@ export async function buildBinary(
         [
           ...(await migrationAssetPaths()),
           ...(await scheduleTemplateAssetPaths()),
-          REF_GUARD_RUNTIME_ASSET.packagePath,
+          ...RUNTIME_ASSETS.map((asset) => asset.packagePath),
         ],
         [
           ...(await webAssetPaths()),

@@ -12,7 +12,7 @@ import {
   realpathSync,
 } from 'node:fs'
 import { basename, dirname } from 'node:path'
-import { assetPath } from '../../../shared/install-root.ts'
+import { runtimeAssetPath } from '../../../shared/runtime-assets.ts'
 import {
   MONITOR_CAPABILITY_PATH_ENV,
   MONITOR_CAPABILITY_TOKEN_ENV,
@@ -150,8 +150,8 @@ function deliveryAuthorized(): boolean {
       executable = words[1]
     if (!executable) return false
     const hooks = new Set([
-      realpathSync(assetPath('orchestrator', 'hooks', 'orch-heartbeat.sh')),
-      realpathSync(assetPath('orchestrator', 'hooks', 'session-brief.py')),
+      runtimeAssetPath('orchestrator/hooks/orch-heartbeat.sh'),
+      runtimeAssetPath('orchestrator/hooks/session-brief.py'),
     ])
     try {
       return hooks.has(realpathSync(executable))

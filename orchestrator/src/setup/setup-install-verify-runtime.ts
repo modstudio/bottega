@@ -5,6 +5,7 @@ import { accessSync, constants, existsSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { assetPath } from '../../../shared/install-root.ts'
+import { runtimeAssetPath } from '../../../shared/runtime-assets.ts'
 import { recordSignInRemedy } from '../../../shared/record-remedies.ts'
 import { resolveRunsDirectory } from '../../../shared/state-directory.ts'
 import { userCanonHomesFromEnvironment } from '../canon/user-canon-home-files.ts'
@@ -21,7 +22,7 @@ import {
   settingsApplyDecision,
   settingsApplyLockSkipped,
 } from '../settings/settings-machine-apply.ts'
-import { hookScriptPath, PRODUCT_HOOKS, SCRIPT_FILES } from '../settings/settings-machine-hooks.ts'
+import { PRODUCT_HOOKS, SCRIPT_FILES } from '../settings/settings-machine-hooks.ts'
 import {
   type SetupInstallSettingsFileFact,
   type SetupInstallVerifyFacts,
@@ -61,7 +62,7 @@ function gatherSetupInstallVerifyFacts(
   const installRoot = assetPath()
   const claudeHome = claudeHomeFromEnvironment(environment)
   const scriptFacts = SCRIPT_FILES.map((file) => {
-    const path = hookScriptPath(installRoot, file)
+    const path = runtimeAssetPath(`orchestrator/hooks/${file}`, environment)
     const exists = existsSync(path) && statSync(path).isFile()
     let executable = false
     if (exists) {

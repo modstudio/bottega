@@ -48,6 +48,10 @@ type HookEvent =
   | 'SessionStart'
   | 'PreCompact'
 type HookCondition = string | { absoluteBottega: 'run start' | 'board ask' | 'board post' }
+export type MachineHookRuntime = {
+  executable: string
+  scriptPath(file: ScriptFile): string
+}
 export type ProductHookDeclaration = {
   event: HookEvent
   matcher?: string
@@ -198,9 +202,9 @@ export function commandNamesHookScript(command: string, file: string, assetRoot?
   return false
 }
 
-function resolvedCondition(value: HookCondition | undefined, assetRoot: string) {
+function resolvedCondition(value: HookCondition | undefined, executable: string) {
   if (typeof value === 'string' || value === undefined) return value
-  return `Bash(${join(assetRoot, 'bin', PLATFORM_SLUG)} ${value.absoluteBottega}:*)`
+  return `Bash(${executable} ${value.absoluteBottega}:*)`
 }
 
 function productCommand(
@@ -208,14 +212,16 @@ function productCommand(
   assetRoot: string,
   databasePath: string,
   globalUse: 'on' | 'off',
+  runtime: MachineHookRuntime,
   environment: string[] = [],
 ): string {
   return [
     ...environment,
+    `BOTTEGA_BIN=${shellQuote(runtime.executable)}`,
     `BOTTEGA_ORCHESTRATOR_DB=${shellQuote(databasePath)}`,
     `BOTTEGA_GLOBAL_USE=${globalUse}`,
     'python3',
-    shellQuote(hookScriptPath(assetRoot, file)),
+    shellQuote(runtime.scriptPath(file)),
   ].join(' ')
 }
 
@@ -224,8 +230,9 @@ function boardCommand(
   assetRoot: string,
   databasePath: string,
   globalUse: 'on' | 'off',
+  runtime: MachineHookRuntime,
 ): string {
-  return productCommand(file, assetRoot, databasePath, globalUse, [
+  return productCommand(file, assetRoot, databasePath, globalUse, runtime, [
     `BOARD_PUSH_REFRESH_SECONDS=${BOARD_PUSH_REFRESH_SECONDS}`,
     `BOARD_PUSH_REMIND_SECONDS=${BOARD_PUSH_REMIND_SECONDS}`,
     `BOARD_PUSH_RETRY_SECONDS=${BOARD_PUSH_RETRY_SECONDS}`,
@@ -243,30 +250,36 @@ function declaredHandler(
   assetRoot: string,
   databasePath: string,
   globalUse: 'on' | 'off',
+  runtime: MachineHookRuntime,
 ) {
-  const hookCondition = resolvedCondition(declaration.if, assetRoot)
+  const hookCondition = resolvedCondition(declaration.if, runtime.executable)
   return {
     type: 'command',
     command: declaration.boardEnvironment
-      ? boardCommand(declaration.script, assetRoot, databasePath, globalUse)
-      : productCommand(declaration.script, assetRoot, databasePath, globalUse),
+      ? boardCommand(declaration.script, assetRoot, databasePath, globalUse, runtime)
+      : productCommand(declaration.script, assetRoot, databasePath, globalUse, runtime),
     ...(hookCondition === undefined ? {} : { if: hookCondition }),
     ...(declaration.timeout === undefined ? {} : { timeout: declaration.timeout }),
   }
 }
 
-function declaredGroups(assetRoot: string, databasePath: string, globalUse: 'on' | 'off') {
+function declaredGroups(
+  assetRoot: string,
+  databasePath: string,
+  globalUse: 'on' | 'off',
+  runtime: MachineHookRuntime,
+) {
   const groups = new Map<HookEvent, Array<Record<string, unknown>>>()
   for (const declaration of PRODUCT_HOOKS) {
     const eventGroups = groups.get(declaration.event) ?? []
     const previous = eventGroups.at(-1)
     const previousMatcher = isPlainObject(previous) ? previous.matcher : undefined
     if (previous && previousMatcher === declaration.matcher && Array.isArray(previous.hooks)) {
-      previous.hooks.push(declaredHandler(declaration, assetRoot, databasePath, globalUse))
+      previous.hooks.push(declaredHandler(declaration, assetRoot, databasePath, globalUse, runtime))
     } else {
       eventGroups.push({
         ...(declaration.matcher === undefined ? {} : { matcher: declaration.matcher }),
-        hooks: [declaredHandler(declaration, assetRoot, databasePath, globalUse)],
+        hooks: [declaredHandler(declaration, assetRoot, databasePath, globalUse, runtime)],
       })
     }
     groups.set(declaration.event, eventGroups)
@@ -287,12 +300,16 @@ export function withMachineProductHooks(
   assetRoot: string,
   databasePath: string,
   globalUse: 'on' | 'off',
+  runtime: MachineHookRuntime = {
+    executable: join(assetRoot, 'bin', PLATFORM_SLUG),
+    scriptPath: (file) => hookScriptPath(assetRoot, file),
+  },
 ): MachineProductHooksResult {
   const profileHooks = isPlainObject(settings.hooks) ? settings.hooks : {}
   const superseded: SupersededProfileHook[] = []
   const hooks = withoutSupersededProfileHooks(profileHooks, superseded)
 
-  for (const [event, groups] of declaredGroups(assetRoot, databasePath, globalUse)) {
+  for (const [event, groups] of declaredGroups(assetRoot, databasePath, globalUse, runtime)) {
     const existing = Array.isArray(hooks[event]) ? hooks[event] : []
     hooks[event] = [...existing, ...groups]
   }

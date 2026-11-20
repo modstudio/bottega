@@ -48,6 +48,7 @@ import {
 } from './settings-env.ts'
 import { claudeHomeFromEnvironment, readSettingsFile, userSettingsPath } from './settings-files.ts'
 import { type SupersededProfileHook, withMachineProductHooks } from './settings-machine-hooks.ts'
+import { resolveMachineHookRuntime } from './settings-machine-runtime.ts'
 import {
   readClaudeMcpPlacement,
   reconcileClaudeMcpPlacementPlan,
@@ -209,6 +210,7 @@ function applyUserSettings(
       assetPath(),
       resolveOrchestratorDatabase(deps.environment),
       readMachineValue('machine.global_use', deps.environment) as 'on' | 'off',
+      resolveMachineHookRuntime(),
     )
     const owned = productHooks.settings
     const secretsPath = userSettingsEnvPath(home)

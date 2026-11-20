@@ -38,6 +38,7 @@ import {
   userSettingsPath,
 } from './settings-files.ts'
 import { withMachineProductHooks } from './settings-machine-hooks.ts'
+import { resolveMachineHookRuntime } from './settings-machine-runtime.ts'
 import { assertCurrentMachineHomeWriteAuthority } from './settings-machine-write-authority.ts'
 import { mergeMachinePermissionOverlay } from './settings-permission-overlay.ts'
 import {
@@ -66,6 +67,7 @@ function withProductHooksForTarget(target: Target, settings: OwnedSettings): Own
     assetPath(),
     resolveOrchestratorDatabase(process.env),
     readMachineValue('machine.global_use') as 'on' | 'off',
+    resolveMachineHookRuntime(),
   ).settings
 }
 
