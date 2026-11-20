@@ -7,6 +7,13 @@ import { projectAt, projectByName } from '../project/projects.ts'
 
 type TreeEvidence = { project: string; commit: string | null }
 type PassingGateEvidence = { number: number } | null | undefined
+type FloorEvidence = { kind: string; commandEvidence?: string }
+
+export function hasGateCommandExitFloor(floors: FloorEvidence[]): boolean {
+  return floors.some(
+    (floor) => floor.kind === 'command-exit' && floor.commandEvidence === 'gate',
+  )
+}
 
 export function gatherPassingGateForTree(
   tree: TreeEvidence,
