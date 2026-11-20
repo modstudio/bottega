@@ -18,7 +18,6 @@ export type RunningInstallLayout =
   | {
       kind: 'distribution'
       root: string
-      executablePath: string
       workspaceDirectories: string[]
     }
 
@@ -33,7 +32,6 @@ export function resolveRunningInstallLayout(environment: ConfigEnvironment): Run
     return {
       kind: 'distribution',
       root,
-      executablePath: process.execPath,
       workspaceDirectories: [],
     }
   }
@@ -70,14 +68,4 @@ export function runningInstallReadCarveouts(layout: RunningInstallLayout): strin
       ...layout.workspaceDirectories,
     ]),
   ]
-}
-
-/** Stable readable file used to prove the running install carve-back. */
-export function runningInstallProbeTarget(layout: RunningInstallLayout): {
-  name: string
-  path: string
-} {
-  return layout.kind === 'distribution'
-    ? { name: 'running distribution binary', path: layout.executablePath }
-    : { name: 'running checkout package.json', path: join(layout.root, 'package.json') }
 }

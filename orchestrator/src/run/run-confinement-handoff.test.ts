@@ -68,7 +68,7 @@ async function loadRunUnderTest(): Promise<typeof import('./run.ts').run> {
         scratchDir: input.callerCwd,
         worktree: null,
         changes: null,
-        isolatedCwd: input.callerCwd,
+        isolatedCwd: null,
         removeIsolatedCwd: null,
         provisionedMcpConfig: null,
         retargetDiagnostic: null,
