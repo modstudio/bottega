@@ -255,6 +255,16 @@ test('dispatch and judging vocabulary is validated beside jobs', () => {
   )
 })
 
+test('a repository-writing job requires dispatch: required', () => {
+  expect(
+    validateStepCatalogue({
+      steps: [{ ...step, stage: 'implement' as const, jobs: ['implement'] }],
+    }),
+  ).toContain(
+    'step "design" declares repository-writing job "implement" but not dispatch: required',
+  )
+})
+
 test('steps must declare every job their bodies prescribe', () => {
   const staged = { ...step, stage: 'review' as const }
   for (const command of [

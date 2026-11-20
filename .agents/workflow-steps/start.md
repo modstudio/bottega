@@ -6,6 +6,7 @@ floor:
   - descendants-closed
 expectedStatus: "{{tracker.states.active}}"
 jobs: [implement]
+dispatch: required
 autonomy: auto
 needs:
   - tracker

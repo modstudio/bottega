@@ -211,6 +211,7 @@ function validateDispatchObligations(item: Record<string, unknown>, errors: stri
     errors.push(`step "${slug}" dispatch must be "required"`)
   validateDispatchWaivers(item, slug, errors)
   validateJudgedJobs(item, slug, errors)
+  validateWritingJobDispatch(item, slug, errors)
 }
 
 function validateDispatchWaivers(
@@ -238,6 +239,25 @@ function validateJudgedJobs(item: Record<string, unknown>, slug: string, errors:
       for (const entry of item.judges)
         if (typeof entry !== 'string' || !(entry in JOBS))
           errors.push(`step "${slug}" judges unknown job "${String(entry)}"`)
+  }
+}
+
+function validateWritingJobDispatch(
+  item: Record<string, unknown>,
+  slug: string,
+  errors: string[],
+): void {
+  if (Array.isArray(item.jobs)) {
+    for (const entry of item.jobs) {
+      if (
+        typeof entry === 'string' &&
+        JOBS[entry]?.needs.writesRepo &&
+        item.dispatch !== 'required'
+      )
+        errors.push(
+          `step "${slug}" declares repository-writing job "${entry}" but not dispatch: required`,
+        )
+    }
   }
 }
 
