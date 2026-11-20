@@ -199,9 +199,7 @@ describe('workflow rendering', () => {
       renderWorkflowStep(
         getWorkflowStep('flow', 'fixture', 'rebase', args, d, { mode: 'default' }),
       ),
-    ).toContain(
-      `Evidence for command-exit: run it with \`${PLATFORM_SLUG} workflow exec -- <command>\` and pass \`--artifact exec:<id>\`.`,
-    )
+    ).toContain(`Evidence for command-exit: ${floorGuidance['command-exit']}.`)
     expect(
       renderWorkflowStep(getWorkflowStep('flow', 'fixture', 'lens', args, d, { mode: 'default' })),
     ).toContain('review-read:<UUID>')

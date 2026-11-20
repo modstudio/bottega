@@ -52,12 +52,14 @@ import {
   flagForFloor,
   floorGuidance,
   githubPullRequestUrlIn,
+  hasGateFloor,
   parseArtifactRef,
   pullRequestCreateArgv,
   type ValidatedEvidence,
 } from './workflow-floor.ts'
 import { gitText, productionResolveCheckout } from './workflow-floor-evidence-checkout.ts'
 import { positiveEvidenceId } from './workflow-floor-evidence-input.ts'
+import { gatherPassingGateForTree } from './workflow-floor-evidence-passing-gate.ts'
 import {
   type FloorEvidencePorts,
   invokeFloorEvidencePort,
@@ -1004,16 +1006,16 @@ async function gatherArtifactEvidence(
 export async function gatherValidatedEvidenceBase(
   input: GatherValidatedEvidenceInput,
 ): Promise<ValidatedEvidence> {
-  const d = input.d ?? db()
-  const ports = input.ports ?? {}
+  const { d = db(), ports = {} } = input
   const resolveCheckout = evidenceCheckoutResolver(input.identity, ports, d)
   const gathered: ValidatedEvidence = {}
   gathered.tree = gatherTreeEvidence(input.identity, ports)
   const ruling = positiveEvidenceId(input.evidence.ruling, '--ruling')
   const review = input.evidence.review
   const gateRecordId = resolveOfferedGate(d, input.evidence.gate)
-  const run = input.evidence.run
-  const satisfies = input.evidence.satisfies
+  const { run, satisfies } = input.evidence
+  const n = hasGateFloor(input.floors) && gatherPassingGateForTree(gathered.tree, d)
+  if (n !== false) gathered.passingGateForTree = n == null ? n : { number: n }
   if (ruling)
     gathered.ruling = await gatherRuling(
       ruling,

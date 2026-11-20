@@ -17,6 +17,7 @@ import {
   commandExitMismatchRefusal,
   floorsAcceptPullRequestLink,
   gateFloorRefusal,
+  type PassingGateForTree,
 } from './workflow-floor-refusal.ts'
 
 type TrackerStateCategory = 'backlog' | 'open' | 'active' | 'review' | 'done' | 'dropped'
@@ -34,12 +35,18 @@ export type FloorKind = (typeof floorKinds)[number]
 export type EnforcementMode = 'note-only' | 'floors'
 export type CommandEvidence = 'gate' | 'pull-request'
 
+export function hasGateFloor(
+  floors: ReadonlyArray<{ kind: string; commandEvidence?: string }>,
+): boolean {
+  return floors.some((floor) => floor.kind === 'command-exit' && floor.commandEvidence === 'gate')
+}
+
 const ARTIFACT_FORMS =
   'doc:<scope>/<subject-or-_>/<slug> | doc:<UUID> | task:<KEY> | task:<KEY>#comment:<id> | run number or run id | probe:<id> | exec:<id> | review-read:<UUID> | attached-text:<UUID> | #<pull request number> | GitHub pull-request link | a commit SHA'
 
 export const floorGuidance = {
   ruling: `call \`await_workflow_ruling\` (or \`${PLATFORM_SLUG} workflow await\`), answer it with \`rule_workflow\`, then pass \`--ruling <the returned question id>\`; where you rule the step yourself, pass \`self_ruling\` with \`self_ruling_basis\` (or \`--self-ruling <text>\` with \`--basis <text>\`) on the closing call`,
-  'command-exit': `run it with \`${PLATFORM_SLUG} workflow exec -- <command>\` and pass \`--artifact exec:<id>\``,
+  'command-exit': `run it with \`${PLATFORM_SLUG} workflow exec -- <command>\` and pass \`--artifact exec:<id>\`, pass \`--gate <gate execution id>\` for a gate floor, or pass \`--run <run id>\` for a run-backed command`,
   'recorded-artifact': `record or attach the artifact and pass \`--artifact <${ARTIFACT_FORMS}>\``,
   'tracker-transition': 'make the tracker transition and pass `--task <KEY>`',
   'descendants-closed':
@@ -131,6 +138,7 @@ export type ValidatedEvidence = {
     project: string | null
     commit: string | null
   }
+  passingGateForTree?: PassingGateForTree
   run?: { id: string; terminal: boolean; exitCode: number | null }
   task?: {
     key: string
@@ -733,6 +741,8 @@ function floorUnmetMessage(
   if (floor.kind === 'command-exit' && floor.commandEvidence === 'gate')
     return gateFloorRefusal(
       evidence.tree ?? { project: 'this project', worktree: null, commit: null },
+      evidence.passingGateForTree,
+      evidence.gate !== undefined,
     )
   const pullRequest = pullRequestUnmetMessage(floor, evidence)
   if (pullRequest) return pullRequest
