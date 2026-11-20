@@ -448,13 +448,12 @@ export async function runConfinementFilesystemProbes(): Promise<ConfinementFiles
       await launchProbe(
         'workflow probe',
         probeSandboxProfile({
-          allowWriteDir: common.runtimeDir,
+          allowWriteDir: common.scratchDir,
           cwd: common.worktree,
           project: common.project,
           registeredProjects: common.registeredProjects,
           environment: common.environment,
           socketDenyPaths: common.socketDenyPaths,
-          installLayout: common.installLayout,
         }),
         targets,
         commandArgv,

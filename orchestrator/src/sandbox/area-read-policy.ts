@@ -20,7 +20,7 @@ export const isAtOrBelow = (path: string, parent: string) => {
 }
 
 /** Keep a broad-area carve-back only when it cannot reopen a protected secret path. */
-export function carveBackOutsideProtected(
+function carveBackOutsideProtected(
   candidates: readonly string[],
   protectedDenies: readonly string[],
 ): string[] {
