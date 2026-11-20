@@ -13,6 +13,7 @@ import type { AutonomyResolution, LiveCursorAutonomy } from './autonomy.ts'
 import { taskFlowLocalStore } from './task-flow-store.ts'
 import type { TaskFlowIntentInput } from './task-flow-store-types.ts'
 import { type CommitCountPort, readCommitsPastLanding } from './workflow-compose-branch.ts'
+import { selectWorkflowCursorForKeyAdoption } from './workflow-cursor-adoption.ts'
 import { resolveCursorArguments, workflowKeyOf } from './workflow-cursor-arguments.ts'
 import { cursorAutonomy } from './workflow-cursor-autonomy.ts'
 import { insertWorkflowCursor } from './workflow-cursor-compose.ts'
@@ -40,6 +41,7 @@ import {
   stepPass,
 } from './workflow-cursor-transition.ts'
 import { resolveWorkflowStepReference } from './workflow-step-reference.ts'
+import { followTaskCursorClaim } from './workflow-task-claim.ts'
 import { linkResolvedWorkflowTask } from './workflow-task-linking.ts'
 import { withWorkflowTextFacts } from './workflow-text.ts'
 import { composeWorkflow, getWorkflowStep } from './workflows.ts'
@@ -257,6 +259,93 @@ async function applyServeTransition(
   }, database)
 }
 
+async function prepareWorkflowStepKeyAdoption(input: {
+  slug: string
+  project: string
+  stepSlug: string
+  args: Record<string, string>
+  mode: string
+  context: WorkflowCursorContext
+  database: Database
+  autonomy?: AutonomyResolution
+  cursor?: number
+}) {
+  if (input.cursor === undefined) {
+    const preview = composeWorkflow(
+      input.slug,
+      input.project,
+      input.mode,
+      input.args,
+      input.database,
+      { mode: input.mode },
+      input.autonomy,
+    )
+    if (preview.needs.arguments)
+      throw new Error(
+        `missing required arguments: ${preview.needs.arguments.map(({ name }) => name).join(', ')}`,
+      )
+    resolveWorkflowStepReference(input.stepSlug, [
+      { mode: input.mode, steps: preview.steps.map((step) => step.slug) },
+    ])
+  }
+  await readThroughWorkflowCursorContext(input.project, input.context, input.database)
+  await linkResolvedWorkflowTask(input.project, input.context, input.database)
+  const selected = await selectWorkflowCursorForKeyAdoption({
+    project: input.project,
+    workflow: input.slug,
+    mode: input.mode,
+    args: input.args,
+    cursor: input.cursor,
+    context: input.context,
+    database: input.database,
+  })
+  if (selected.adopted)
+    await followTaskCursorClaim({
+      project: input.project,
+      taskKey: workflowKeyOf(input.args),
+      session: input.context.session,
+      verb: 'compose',
+      database: input.database,
+    })
+}
+
+function serveNotices(input: {
+  row: CursorRow
+  session?: string | null
+  opensCursor: boolean
+  suppliedCursor?: number
+  slug: string
+  mode: string
+  requested: { slug: string }
+  requestedIndex: number
+  decision: Extract<ReturnType<typeof decideCursorTransition>, { action: 'serve' }>
+}): string {
+  const openNotice = input.opensCursor
+    ? formatCursorOpened({
+        cursor: input.row.id,
+        workflow: input.slug,
+        mode: input.mode,
+        key: input.row.workflow_key,
+        step: 1,
+        stepSlug: input.row.step_slug,
+      })
+    : !input.suppliedCursor && input.row.workflow_key
+      ? formatCursorResumed({
+          cursor: input.row.id,
+          key: input.row.workflow_key,
+          step: input.row.ordinal + 1,
+          stepSlug: input.row.step_slug,
+        })
+      : undefined
+  const redirectNotice =
+    input.decision.slug !== input.requested.slug
+      ? `Requested step ${input.requestedIndex + 1} ${input.requested.slug}; serving active step ${input.decision.ordinal + 1} ${input.decision.slug}.`
+      : undefined
+  return [openNotice, redirectNotice, foreignCursorOwnerNotice(input.row, input.session)]
+    .filter(Boolean)
+    .join('\n')
+}
+
 async function serveWorkflowStepWithCursor(
   slug: string,
   project: string,
@@ -270,6 +359,17 @@ async function serveWorkflowStepWithCursor(
   live?: LiveCursorAutonomy,
   commitCount: CommitCountPort = readCommitsPastLanding,
 ) {
+  await prepareWorkflowStepKeyAdoption({
+    slug,
+    project,
+    stepSlug,
+    mode,
+    args,
+    cursor,
+    context,
+    database,
+    autonomy,
+  })
   let prepared = await prepareStepServe(
     slug,
     project,
@@ -301,7 +401,6 @@ async function serveWorkflowStepWithCursor(
   const { opensCursor, composition, requested, index, input, resolvedArguments } = prepared
   const decision = serveDecision(prepared, slug, mode, args)
   if (!row) row = await insertWorkflowCursor(composition, context, database, autonomy, commitCount)
-  const ownerNotice = foreignCursorOwnerNotice(row, context.session)
   await applyServeTransition(row, decision, context, database, resolvedArguments)
   const served = await withWorkflowTextFacts(
     await getWorkflowStep(
@@ -317,34 +416,23 @@ async function serveWorkflowStepWithCursor(
     database,
     context.taskFlowClient,
   )
-  const openNotice = opensCursor
-    ? formatCursorOpened({
-        cursor: row.id,
-        workflow: slug,
-        mode,
-        key: row.workflow_key,
-        step: 1,
-        stepSlug: row.step_slug,
-      })
-    : !cursor && row.workflow_key
-      ? formatCursorResumed({
-          cursor: row.id,
-          key: row.workflow_key,
-          step: row.ordinal + 1,
-          stepSlug: row.step_slug,
-        })
-      : undefined
-  const redirectNotice =
-    decision.slug !== requested.slug
-      ? `Requested step ${index + 1} ${requested.slug}; serving active step ${decision.ordinal + 1} ${decision.slug}.`
-      : undefined
   const flow = (JSON.parse(row.closed) as CursorTrailEntry[]).filter(isClosedStep)
   return {
     ...served,
     cursor: row.id,
     flow,
     pass: stepPass(flow, composition.steps, decision.ordinal),
-    notice: [openNotice, redirectNotice, ownerNotice].filter(Boolean).join('\n'),
+    notice: serveNotices({
+      row,
+      session: context.session,
+      opensCursor,
+      suppliedCursor: cursor,
+      slug,
+      mode,
+      requested,
+      requestedIndex: index,
+      decision,
+    }),
   }
 }
 

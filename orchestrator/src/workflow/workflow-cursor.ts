@@ -29,7 +29,10 @@ import {
   workflowComposeBranchRefusal,
 } from './workflow-compose-branch.ts'
 import { followComposeTaskClaim } from './workflow-compose-claim.ts'
-import { adoptWorkflowTask } from './workflow-cursor-adoption.ts'
+import {
+  adoptWorkflowTask,
+  selectWorkflowCursorForKeyAdoption,
+} from './workflow-cursor-adoption.ts'
 import { workflowKeyOf as keyOf, resolveCursorArguments } from './workflow-cursor-arguments.ts'
 import { closeGraduatingExploreForReuse, insertWorkflowCursor } from './workflow-cursor-compose.ts'
 import { cursorName } from './workflow-cursor-format.ts'
@@ -221,6 +224,7 @@ export async function composeWorkflowWithCursor(
   live: LiveCursorAutonomy,
   commitCount: CommitCountPort = readCommitsPastLanding,
   taskClaimPorts?: TaskCursorClaimPorts,
+  cursorHandle?: number,
 ) {
   const shape = composeWorkflow(slug, project, mode, args, d, selection)
   if (!shape.mode || shape.needs.arguments) return { ...shape, cursor: null, graduated: undefined }
@@ -237,16 +241,18 @@ export async function composeWorkflowWithCursor(
   )
   await readThroughWorkflowCursorContext(project, context, d)
   await linkResolvedWorkflowTask(project, context, d)
-  const existing = keyOf(shape.arguments)
-    ? await findWorkflowCursor(
-        shape.project,
-        shape.workflow.slug,
-        shape.mode.slug,
-        shape.arguments,
+  const selected = keyOf(shape.arguments)
+    ? await selectWorkflowCursorForKeyAdoption({
+        project: shape.project,
+        workflow: shape.workflow.slug,
+        mode: shape.mode.slug,
+        args: shape.arguments,
+        cursor: cursorHandle,
         context,
-        d,
-      )
-    : null
+        database: d,
+      })
+    : { row: null, adopted: false }
+  const existing = selected.row
   const start = decideCursorStart(existing?.state ?? null)
   const composition =
     start === 'reuse'
@@ -261,9 +267,22 @@ export async function composeWorkflowWithCursor(
   else if (existing && start === 'reuse')
     row = await reuseWorkflowCursor(existing, args, context, d)
   else row = await insertWorkflowCursor(composition, context, d, live.resolution, commitCount)
+  if (selected.adopted)
+    await followTaskCursorClaim(
+      {
+        project: row.project,
+        taskKey: row.workflow_key,
+        session: context.session,
+        verb: 'compose',
+        database: d,
+      },
+      taskClaimPorts,
+    )
   const claimWarning = handedOff
     ? handedOff.claimWarning
-    : await followComposeTaskClaim(row, start === 'reuse', context, d, taskClaimPorts)
+    : selected.adopted
+      ? null
+      : await followComposeTaskClaim(row, start === 'reuse', context, d, taskClaimPorts)
   const cursor = {
     id: row.id,
     n: row.ordinal + 1,

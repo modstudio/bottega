@@ -219,6 +219,29 @@ function refuseAmbiguousKeylessCursors(rows: SelectableCursorRow[]): never {
   )
 }
 
+export async function selectOwnedKeylessWorkflowCursorForAdoption(
+  identity: Required<Pick<WorkflowCursorSelector, 'project' | 'workflow' | 'mode'>>,
+  ownerSession: string | null | undefined,
+  d: Database,
+  client?: RecordTaskFlowClient,
+): Promise<SelectableCursorRow | null> {
+  if (!ownerSession) return null
+  const rows = await taskFlowReadStore(d, client).openKeylessStages({
+    project: identity.project,
+    workflow: identity.workflow,
+    mode: identity.mode,
+    sessionId: ownerSession,
+    untouched: false,
+  })
+  if (rows.length > 1)
+    throw new Error(
+      `more than one open keyless workflow cursor matches; rerun with one cursor handle:\n${rows
+        .map((row) => `${cursorCandidate(row)}; rerun with --cursor ${row.id}`)
+        .join('\n')}`,
+    )
+  return rows[0] ?? null
+}
+
 function validateIdentity(
   row: SelectableCursorRow,
   identity: WorkflowCursorSelector,

@@ -1,5 +1,6 @@
 import { expect, test } from 'bun:test'
 import { Command } from 'commander'
+import { seedGuidance } from '../cli/args.ts'
 import { register as registerPullRequestCommands } from '../commands/pull-request.ts'
 import { POST_LANDING_FLAG } from '../pull-request/pr-post-landing-payload.ts'
 import {
@@ -19,6 +20,7 @@ test('workflow dispatch preserves its allowed run-start inputs and adds the curs
       model: 'gpt-test',
       mcp: 'prefer',
       detach: true,
+      seed: '--bundle=minimal',
     },
     {
       read: async () => ({
@@ -51,6 +53,8 @@ test('workflow dispatch preserves its allowed run-start inputs and adds the curs
         '--mcp',
         'prefer',
         '--detach',
+        '--seed',
+        '--bundle=minimal',
         '--key',
         'DEV-2283',
       ],
@@ -71,9 +75,20 @@ test('workflow step action surfaces expose only the ruled public options', () =>
     '--agent',
     '--file',
     '--model',
+    '--seed',
     '--detach',
     '--mcp',
   ])
+  const guidanceFlags = [
+    ...new Set(
+      [...seedGuidance(['--bundle=minimal']).matchAll(/^\s*(--[a-z-]+)/gm)].map(
+        (match) => match[1]!,
+      ),
+    ),
+  ]
+  expect(
+    guidanceFlags.every((flag) => dispatch.options.some((option) => option.long === flag)),
+  ).toBe(true)
   const land = workflow.commands.find((command) => command.name() === 'land')!
   const create = land.commands.find((command) => command.name() === 'create')!
   const merge = land.commands.find((command) => command.name() === 'merge')!

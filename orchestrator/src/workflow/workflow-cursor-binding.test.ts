@@ -8,10 +8,16 @@ import {
   bindTaskKeyWorktree,
   decideCursorBranchBinding,
 } from './workflow-cursor-binding.ts'
+import { getWorkflowStepWithCursor } from './workflow-cursor-serve.ts'
 import { closeStep, context } from './workflow-cursor-test.fixture.ts'
 import { expandWorkflowSteps } from './workflow-step-sequences.ts'
 import { seedCurrentWorkflowTreeFixture } from './workflow-store.fixture.ts'
-import { getWorkflowStep, showResolvedWorkflow } from './workflows.ts'
+import {
+  getWorkflowStep,
+  promoteWorkflowLocal,
+  setWorkflowLocal,
+  showResolvedWorkflow,
+} from './workflows.ts'
 
 const currentDatabase = testDatabaseFixture((d) =>
   seedCurrentWorkflowTreeFixture(d, ['explore', 'fix-defect'], 'DEV-2449 current workflow fixture'),
@@ -282,6 +288,154 @@ test('a writing run bound to explore skips undeclared branch and worktree handle
   expect(
     d.query('SELECT args,closed FROM workflow_cursor WHERE record_id=?').get(cursor.record_id),
   ).toEqual({ args: cursor.args, closed: cursor.closed })
+})
+
+test('compose adopts the session single advanced keyless cursor without losing progress', async () => {
+  const d = currentDatabase()
+  const live = { resolution: resolutionFor('explore', 'default', d) }
+  const opened = await composeWorkflowWithCursor(
+    'explore',
+    'fixture',
+    'default',
+    {},
+    { session: context.session },
+    d,
+    {},
+    live,
+  )
+  const recordId = d
+    .query<{ record_id: string }, [number]>('SELECT record_id FROM workflow_cursor WHERE number=?')
+    .get(opened.cursor!.id)!.record_id
+  const closed = [{ n: 1, slug: opened.steps[0]!.slug, note: 'planned', at: '2026-11-20' }]
+  d.query('UPDATE workflow_cursor SET ordinal=1,step_slug=?,closed=? WHERE record_id=?').run(
+    opened.steps[1]!.slug,
+    JSON.stringify(closed),
+    recordId,
+  )
+
+  const adopted = await composeWorkflowWithCursor(
+    'explore',
+    'fixture',
+    'default',
+    { key: 'DEV-2532' },
+    { session: context.session, taskRecordId: 'task-DEV-2532' },
+    d,
+    {},
+    live,
+  )
+
+  expect(adopted.cursor!.id).toBe(opened.cursor!.id)
+  expect(d.query('SELECT record_id,workflow_key,closed FROM workflow_cursor').get()).toEqual({
+    record_id: recordId,
+    workflow_key: 'DEV-2532',
+    closed: JSON.stringify(closed),
+  })
+})
+
+test('implicit adoption refuses two keyless cursors and names each explicit remedy', async () => {
+  const d = currentDatabase()
+  const live = { resolution: resolutionFor('explore', 'default', d) }
+  const first = await composeWorkflowWithCursor(
+    'explore',
+    'fixture',
+    'default',
+    {},
+    { session: context.session },
+    d,
+    {},
+    live,
+  )
+  const second = await composeWorkflowWithCursor(
+    'explore',
+    'fixture',
+    'default',
+    {},
+    { session: context.session },
+    d,
+    {},
+    live,
+  )
+
+  await expect(
+    composeWorkflowWithCursor(
+      'explore',
+      'fixture',
+      'default',
+      { key: 'DEV-2532' },
+      { session: context.session, taskRecordId: 'task-DEV-2532' },
+      d,
+      {},
+      live,
+    ),
+  ).rejects.toThrow(
+    `cursor ${first.cursor!.id}, unassigned, explore default, step 1 frame; rerun with --cursor ${first.cursor!.id}\n` +
+      `cursor ${second.cursor!.id}, unassigned, explore default, step 1 frame; rerun with --cursor ${second.cursor!.id}`,
+  )
+
+  const adopted = await composeWorkflowWithCursor(
+    'explore',
+    'fixture',
+    'default',
+    { key: 'DEV-2532' },
+    { session: context.session, taskRecordId: 'task-DEV-2532' },
+    d,
+    {},
+    live,
+    undefined,
+    undefined,
+    second.cursor!.id,
+  )
+  expect(adopted.cursor!.id).toBe(second.cursor!.id)
+  expect(
+    d.query('SELECT workflow_key FROM workflow_cursor WHERE number=?').get(second.cursor!.id),
+  ).toEqual({ workflow_key: 'DEV-2532' })
+})
+
+test('missing required key previews compose and refuses serve without opening a cursor', async () => {
+  const d = currentDatabase()
+  const slug = 'required-key-preview'
+  const draft = setWorkflowLocal(
+    slug,
+    {
+      title: 'Required key preview',
+      description: 'Exercises required argument validation before cursor insertion.',
+      arguments: [{ name: 'key', required: true, description: 'Task key.' }],
+      modes: [{ slug: 'default', title: 'Default', default: true, steps: ['frame'] }],
+    },
+    'test fixture',
+    'test',
+    d,
+  )
+  promoteWorkflowLocal(slug, draft.n, 'test fixture', 'test', d)
+  const before = d
+    .query<{ count: number }, []>('SELECT count(*) AS count FROM workflow_cursor')
+    .get()!
+  const preview = await composeWorkflowWithCursor(
+    slug,
+    'fixture',
+    'default',
+    {},
+    { session: context.session },
+    d,
+    {},
+    { resolution: resolutionFor(slug, 'default', d) },
+  )
+  expect(preview.needs.arguments?.map(({ name }) => name)).toEqual(['key'])
+  expect(d.query('SELECT count(*) AS count FROM workflow_cursor').get()).toEqual(before)
+
+  await expect(
+    getWorkflowStepWithCursor(
+      slug,
+      'fixture',
+      'frame',
+      {},
+      'default',
+      { session: context.session },
+      d,
+      { resolution: resolutionFor(slug, 'default', d) },
+    ),
+  ).rejects.toThrow('missing required arguments: key')
+  expect(d.query('SELECT count(*) AS count FROM workflow_cursor').get()).toEqual(before)
 })
 
 describe('task-key worktree binding', () => {

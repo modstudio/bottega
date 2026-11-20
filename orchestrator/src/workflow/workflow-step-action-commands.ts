@@ -37,7 +37,7 @@ const dispatchPresentation = {
   cwd: process.cwd,
 }
 
-const dispatchOptionNames = new Set(['file', 'agent', 'model', 'mcp', 'detach'])
+const dispatchOptionNames = new Set(['file', 'agent', 'model', 'mcp', 'detach', 'seed'])
 
 function optionName(option: (typeof ORCH_DO_OPTIONS)[number]): string {
   if ('name' in option) return option.name

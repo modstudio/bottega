@@ -66,7 +66,7 @@ export function decideStepDispatch(input: {
       action: 'refuse',
       reason:
         `workflow ${input.workflowSlug} cursor ${input.cursor} has no task key, and ${input.job.name} writes the repository; ` +
-        'compose plan-task for a task, or hand this cursor off with workflow handoff, then dispatch from that keyed cursor',
+        `adopt the task key in place with bottega workflow step ${input.workflowSlug} --cursor ${input.cursor} --arg key=<KEY>`,
     }
   if (input.taskKey && !input.stepJobs.includes(input.job.name)) {
     const declared = input.stepJobs.length ? input.stepJobs.join(', ') : 'none'
