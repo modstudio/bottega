@@ -1,5 +1,11 @@
 import { expect, test } from 'bun:test'
-import { nullableRecordDate, nullableRecordIso, recordDate } from './record-timestamp.ts'
+import {
+  nullableRecordDate,
+  nullableRecordIso,
+  recordDate,
+  recordIso,
+  sameRecordInstant,
+} from './record-timestamp.ts'
 
 test('keeps milliseconds from a Date returned by the record driver', () => {
   const source = new Date('2026-11-04T13:29:14.207Z')
@@ -28,4 +34,15 @@ test('the nullable projections pass null through and keep a Date driver value to
   expect(nullableRecordIso(null)).toBeNull()
   expect(nullableRecordDate(undefined)).toBeNull()
   expect(nullableRecordDate(source)?.getMilliseconds()).toBe(207)
+})
+
+test('record instant equality uses the millisecond precision of the canonical form', () => {
+  const milliseconds = '2026-11-04T13:29:14.207Z'
+  const microseconds = '2026-11-04T13:29:14.207999Z'
+
+  expect(recordIso(microseconds)).toBe(milliseconds)
+  expect(sameRecordInstant(microseconds, milliseconds)).toBeTrue()
+  expect(sameRecordInstant(null, undefined)).toBeTrue()
+  expect(sameRecordInstant(null, milliseconds)).toBeFalse()
+  expect(sameRecordInstant(milliseconds, null)).toBeFalse()
 })

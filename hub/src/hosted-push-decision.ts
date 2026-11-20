@@ -1,5 +1,5 @@
 import { canonicalJson } from '../../shared/canonical-json.ts'
-import { recordDate } from '../../shared/record-timestamp.ts'
+import { recordDate, recordIso, sameRecordInstant } from '../../shared/record-timestamp.ts'
 import { DELETED_ON_HOSTED_RECORD_REASON } from './hosted-delete.ts'
 import { mergeNoteAnchors } from './note-anchor-merge.ts'
 import type {
@@ -10,7 +10,7 @@ import type {
   PushedNoteAcknowledgement,
   PushedTask,
 } from './push-contract.ts'
-import { GUARDED_REVISION_FIELDS } from './push-contract.ts'
+import { GUARDED_REVISION_FIELDS, RECORD_TIMESTAMP_FIELDS } from './push-contract.ts'
 
 type GuardedStoredRow = object & { revision?: number; version?: string }
 
@@ -46,17 +46,9 @@ function storedRevision(
     : null
 }
 
-const TIMESTAMP_GUARD_FIELDS = new Set(['deleted_at', 'last_seen_at', 'stale_at', 'updated_at'])
-
-export function sameInstant(left: unknown, right: unknown): boolean {
-  const leftMillis = new Date(left as string | Date).getTime()
-  const rightMillis = new Date(right as string | Date).getTime()
-  return Number.isFinite(leftMillis) && Number.isFinite(rightMillis) && leftMillis === rightMillis
-}
-
 function guardValuesMatch(field: string, current: unknown, expected: unknown): boolean {
-  if (TIMESTAMP_GUARD_FIELDS.has(field) && current !== null && expected !== null)
-    return sameInstant(current, expected)
+  if (RECORD_TIMESTAMP_FIELDS.includes(field as (typeof RECORD_TIMESTAMP_FIELDS)[number]))
+    return sameRecordInstant(current, expected)
   return canonicalJson(current) === canonicalJson(expected)
 }
 
@@ -108,14 +100,16 @@ type Decision<Row> =
       resolveParent?: { key: string | null; preferred: string | null }
     }
 
-const instant = (value: unknown) =>
-  value instanceof Date
-    ? value.toISOString()
-    : value === null || value === undefined
-      ? value
-      : recordDate(value).toISOString()
-const same = (left: unknown, right: unknown) =>
-  left instanceof Date || right instanceof Date ? instant(left) === instant(right) : left === right
+const instant = (value: unknown) => (value == null ? value : recordIso(value))
+const scalar = (value: unknown) =>
+  value === null || (typeof value !== 'object' && typeof value !== 'function')
+const same = (field: string, left: unknown, right: unknown) => {
+  if (RECORD_TIMESTAMP_FIELDS.includes(field as (typeof RECORD_TIMESTAMP_FIELDS)[number]))
+    return sameRecordInstant(left, right)
+  return scalar(left) && scalar(right)
+    ? left === right
+    : canonicalJson(left) === canonicalJson(right)
+}
 const later = (left: unknown, right: unknown) =>
   recordDate(left).getTime() >= recordDate(right).getTime()
     ? (instant(left) as string)
@@ -154,10 +148,10 @@ export function decideNoteUpsert(
           : stored.stale_reason,
   }
   if (
-    same(values.anchors, stored.anchors) &&
+    same('anchors', values.anchors, stored.anchors) &&
     values.sightings === stored.sightings &&
-    same(values.last_seen_at, stored.last_seen_at) &&
-    same(values.stale_at, stored.stale_at) &&
+    same('last_seen_at', values.last_seen_at, stored.last_seen_at) &&
+    same('stale_at', values.stale_at, stored.stale_at) &&
     values.stale_reason === stored.stale_reason
   )
     return { kind: 'duplicate' }
@@ -174,7 +168,7 @@ export function decideNoteAcknowledgementUpsert(
   if (
     stored &&
     !stored.deleted_at &&
-    same(stored.acknowledged_at, acknowledgedAt) &&
+    same('acknowledged_at', stored.acknowledged_at, acknowledgedAt) &&
     stored.sightings === incoming.sightings
   )
     return { kind: 'duplicate' }
@@ -215,9 +209,9 @@ export function decideTaskUpsert(
       'deleted_at',
     ]
     if (
-      compared.every((field) => same(stored[field], incoming[field])) &&
+      compared.every((field) => same(field, stored[field], incoming[field])) &&
       (!Object.hasOwn(incoming, 'retired_reason') ||
-        same(stored.retired_reason ?? null, incoming.retired_reason ?? null)) &&
+        same('retired_reason', stored.retired_reason ?? null, incoming.retired_reason ?? null)) &&
       stored.next_document_number >= incoming.next_document_number
     )
       return { kind: 'duplicate' }
@@ -225,7 +219,7 @@ export function decideTaskUpsert(
   }
   if (
     fields.every((field) =>
-      same(stored[field as keyof PushedTask], incoming[field as keyof PushedTask]),
+      same(field, stored[field as keyof PushedTask], incoming[field as keyof PushedTask]),
     )
   )
     return { kind: 'duplicate' }
@@ -268,13 +262,13 @@ export function decideDocumentUpsert(
       'updated_at',
       'deleted_at',
     ]
-    return compared.every((field) => same(stored[field], incoming[field]))
+    return compared.every((field) => same(field, stored[field], incoming[field]))
       ? { kind: 'duplicate' }
       : { kind: 'replace', row: incoming }
   }
   if (
     fields.every((field) =>
-      same(stored[field as keyof PushedDocument], incoming[field as keyof PushedDocument]),
+      same(field, stored[field as keyof PushedDocument], incoming[field as keyof PushedDocument]),
     )
   )
     return { kind: 'duplicate' }

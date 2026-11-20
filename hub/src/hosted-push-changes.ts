@@ -1,5 +1,6 @@
 import type { SQL } from 'bun'
 import { canonicalJson } from '../../shared/canonical-json.ts'
+import { sameRecordInstant } from '../../shared/record-timestamp.ts'
 import { DELETED_ON_HOSTED_RECORD_REASON } from './hosted-delete.ts'
 import { applyDayChangeInTransaction, applyIntervalChangeInTransaction } from './hosted-evidence.ts'
 import { storedHubProjectId } from './hosted-project-identity.ts'
@@ -16,7 +17,6 @@ import {
   decideNoteUpsert,
   decidePushGuards,
   decideTaskUpsert,
-  sameInstant,
 } from './hosted-push-decision.ts'
 import { taskIdFor } from './hosted-task-reference.ts'
 import {
@@ -178,15 +178,12 @@ export type HostedCommentPushDecision =
   | { kind: 'duplicate' }
   | { kind: 'reject'; reason: string }
 
-const sameTimestamp = (left: string | Date | null, right: string | Date | null) =>
-  left === null || right === null ? left === right : sameInstant(left, right)
-
 const commentPushMatches = (stored: StoredCommentPushRow, pushed: PushedComment) =>
   stored.id === pushed.id &&
   stored.task_key === pushed.task_key &&
   stored.body === pushed.body &&
-  sameTimestamp(stored.updated_at, pushed.updated_at) &&
-  sameTimestamp(stored.deleted_at, pushed.deleted_at) &&
+  sameRecordInstant(stored.updated_at, pushed.updated_at) &&
+  sameRecordInstant(stored.deleted_at, pushed.deleted_at) &&
   (pushed.actor_user_id == null || stored.actor_user_id === pushed.actor_user_id) &&
   (pushed.actor_name == null || stored.actor_name === pushed.actor_name) &&
   (pushed.agent == null || stored.agent === pushed.agent) &&

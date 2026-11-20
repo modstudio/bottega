@@ -7,6 +7,18 @@ const importMetaUrlPathnameSelector = {
   message: 'Use fileURLToPath(new URL(..., import.meta.url)) for filesystem paths.',
 }
 
+const recordTimestampComparisonSelectors = [
+  {
+    selector:
+      "BinaryExpression[operator=/^(===|!==|==|!=)$/] > CallExpression[callee.type='MemberExpression'][callee.property.name='getTime']",
+    message: 'Compare record timestamps with sameRecordInstant from shared/record-timestamp.ts.',
+  },
+  {
+    selector: "BinaryExpression[operator='instanceof'][right.name='Date']",
+    message: 'Compare record timestamps with sameRecordInstant from shared/record-timestamp.ts.',
+  },
+]
+
 const recordPushModules = [
   'orchestrator/src/record/outbox-failure.ts',
   'orchestrator/src/record/outbox-held-contract.ts',
@@ -79,6 +91,17 @@ export default [
           message:
             'record push modules throw OutboxRowError for row content (row-fatal) or RecordSyncWiringError for wiring invariants (pass-fatal); a bare Error fails the whole sync batch',
         },
+      ],
+    },
+  },
+  {
+    files: ['hub/src/hosted-push-*.ts'],
+    ignores: ['hub/src/hosted-push-*.test.ts'],
+    rules: {
+      'no-restricted-syntax': [
+        'error',
+        importMetaUrlPathnameSelector,
+        ...recordTimestampComparisonSelectors,
       ],
     },
   },

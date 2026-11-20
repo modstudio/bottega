@@ -1,13 +1,16 @@
 import { expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { DELETED_ON_HOSTED_RECORD_REASON } from './hosted-delete.ts'
+import { decideHostedCommentPush } from './hosted-push-changes.ts'
 import {
   decideDocumentUpsert,
   decideNoteAcknowledgementUpsert,
   decideNoteUpsert,
+  decidePushGuards,
   decideTaskUpsert,
 } from './hosted-push-decision.ts'
 import type {
+  PushedComment,
   PushedDocument,
   PushedNote,
   PushedNoteAcknowledgement,
@@ -171,4 +174,139 @@ test('acknowledgement decisions compare timestamps as instants and never move th
       acknowledgement,
     ),
   ).toEqual({ kind: 'duplicate' })
+})
+
+test('record timestamp spellings agree across guards, upserts, and comment matching', () => {
+  const canonical = '2026-10-11T12:00:00.000Z'
+  const equivalentForms = [
+    canonical,
+    '2026-10-11T12:00:00.000+00:00',
+    '2026-10-11T12:00:00.000999Z',
+    '2026-10-11T12:00:00Z',
+  ] as const
+  const canonicalTask = { ...task, updated_at: canonical }
+  const document: PushedDocument = {
+    id: Bun.randomUUIDv7(),
+    number: 1,
+    task_key: task.key,
+    task_id: task.id,
+    project_name: task.project,
+    role: null,
+    title: 'title',
+    body: 'body',
+    version: 'v1',
+    created_at: canonical,
+    updated_at: canonical,
+    deleted_at: null,
+  }
+  const note: PushedNote = {
+    id: Bun.randomUUIDv7(),
+    number: 1,
+    project: PLATFORM_SLUG,
+    project_name: PLATFORM_SLUG,
+    text: 'note',
+    area: null,
+    anchors: '[]',
+    sightings: 0,
+    created_at: canonical,
+    last_seen_at: canonical,
+    stale_at: null,
+    stale_reason: null,
+    promoted_task: null,
+    promoted_task_id: null,
+    updated_at: canonical,
+    deleted_at: null,
+  }
+  const comment: PushedComment = {
+    id: Bun.randomUUIDv7(),
+    task_key: task.key,
+    task_id: task.id,
+    project_name: task.project,
+    body: 'body',
+    created_at: canonical,
+    updated_at: canonical,
+    deleted_at: null,
+    actor_user_id: '01990000-0000-7000-8000-000000001249',
+    actor_name: 'Person',
+    agent: null,
+    run_id: null,
+  }
+
+  for (const form of equivalentForms) {
+    for (const storedValue of [form, new Date(form)] as const) {
+      const storedTimestamp = storedValue as unknown as string
+      expect(
+        decidePushGuards(
+          { ...task, table: 'hub_task', op: 'upsert', row: task, from: { updated_at: canonical } },
+          { ...task, updated_at: storedValue } as object,
+        ).kind,
+      ).toBe('ok')
+      expect(
+        decidePushGuards(
+          { ...task, table: 'hub_task', op: 'upsert', row: task, from: { opened_at: canonical } },
+          { ...task, opened_at: storedValue } as object,
+        ).kind,
+      ).toBe('ok')
+      expect(
+        decideTaskUpsert({ ...task, updated_at: storedTimestamp }, canonicalTask, null).kind,
+      ).toBe('duplicate')
+      expect(
+        decideTaskUpsert({ ...task, updated_at: storedTimestamp }, canonicalTask, ['updated_at'])
+          .kind,
+      ).toBe('duplicate')
+      expect(
+        decideDocumentUpsert({ ...document, updated_at: storedTimestamp }, document, null).kind,
+      ).toBe('duplicate')
+      expect(
+        decideDocumentUpsert({ ...document, updated_at: storedTimestamp }, document, ['updated_at'])
+          .kind,
+      ).toBe('duplicate')
+      expect(
+        decideNoteUpsert({ ...note, last_seen_at: storedTimestamp }, note, ['last_seen_at']).kind,
+      ).toBe('duplicate')
+      expect(
+        decideHostedCommentPush(
+          { ...comment, actor_user_id: comment.actor_user_id!, updated_at: storedTimestamp },
+          comment,
+          comment.actor_user_id!,
+        ).kind,
+      ).toBe('duplicate')
+    }
+  }
+
+  const different = '2026-10-11T11:59:59.999Z'
+  expect(
+    decidePushGuards(
+      { ...task, table: 'hub_task', op: 'upsert', row: task, from: { updated_at: canonical } },
+      { ...task, updated_at: different } as object,
+    ).kind,
+  ).toBe('field-conflict')
+  expect(
+    decidePushGuards(
+      { ...task, table: 'hub_task', op: 'upsert', row: task, from: { opened_at: canonical } },
+      { ...task, opened_at: different } as object,
+    ).kind,
+  ).toBe('field-conflict')
+  expect(decideTaskUpsert({ ...task, updated_at: different }, canonicalTask, null).kind).toBe(
+    'replace',
+  )
+  expect(
+    decideTaskUpsert({ ...task, updated_at: different }, canonicalTask, ['updated_at']).kind,
+  ).toBe('patch')
+  expect(decideDocumentUpsert({ ...document, updated_at: different }, document, null).kind).toBe(
+    'replace',
+  )
+  expect(
+    decideDocumentUpsert({ ...document, updated_at: different }, document, ['updated_at']).kind,
+  ).toBe('patch')
+  expect(decideNoteUpsert({ ...note, last_seen_at: different }, note, ['last_seen_at']).kind).toBe(
+    'patch',
+  )
+  expect(
+    decideHostedCommentPush(
+      { ...comment, actor_user_id: comment.actor_user_id!, updated_at: different },
+      comment,
+      comment.actor_user_id!,
+    ).kind,
+  ).toBe('apply')
 })
