@@ -361,6 +361,8 @@ function codexCommon(o: Omit<ArgvOpts, 'prompt'>): string[] {
     a.push(
       ...codexPermissionProfileArgs({
         ...o.codexPermissionProfile,
+        // Codex reaches the Docker socket through this switch. It also opens
+        // outbound network, which the ruling accepts for projects that declare the flag.
         network: o.sandboxWorkspaceWriteNetworkAccess === true,
       }),
     )

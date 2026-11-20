@@ -1,7 +1,7 @@
 // concern: Codex permission-profile launch adapter
 
 import type { CodexMcpScope } from '../sandbox/codex-mcp-scope.ts'
-import { codexWritableRoots } from '../sandbox/codex-sandbox.ts'
+import { codexPermissionProfileInput } from '../sandbox/codex-sandbox.ts'
 import type { SandboxRuntimeConfig } from '../sandbox/sandbox.ts'
 import type { ArgvOpts } from '../transport/transport.ts'
 
@@ -34,18 +34,12 @@ function codexPermissionLaunchProfile(input: {
 }): ArgvOpts['codexPermissionProfile'] {
   const profile = input.sandboxSelection.codexProfile
   if (input.name !== 'codex' || !profile) return undefined
-  return {
-    filesystem: {
-      denyRead: profile.filesystem.denyRead,
-      allowRead: profile.filesystem.allowWithinDeny,
-    },
-    writableRoots:
-      codexWritableRoots(
-        input.codexSandbox.sandbox,
-        input.cwd,
-        input.writableRoots,
-        input.runTemp.directory,
-        input.repoJob,
-      ) ?? [],
-  }
+  return codexPermissionProfileInput({
+    profile,
+    sandbox: input.codexSandbox.sandbox,
+    cwd: input.cwd,
+    writableRoots: input.writableRoots,
+    tempDir: input.runTemp.directory,
+    repository: input.repoJob,
+  })
 }

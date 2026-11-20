@@ -12,15 +12,17 @@ import {
   withheldClassNamesForwardedFrom,
 } from './record-connection-env.ts'
 import {
-  isReadonlySandboxCandidate,
   isWritingAcpRun,
   READONLY_LENS_ALLOW_LOCAL_BINDING,
-  type RunSandbox,
   readonlyLensDeniesLoginKeychain,
   readonlyLensDeniesOperatorEnvFile,
-  selectReadonlySandboxKind,
   workerHomeLinksEnvFile,
 } from './sandbox.ts'
+import {
+  isReadonlySandboxCandidate,
+  type RunSandbox,
+  selectReadonlySandboxKind,
+} from './sandbox-selection-policy.ts'
 
 const CONFINEMENT_JOB_KINDS = ['reading', 'writing'] as const
 export type ConfinementJobKind = (typeof CONFINEMENT_JOB_KINDS)[number]

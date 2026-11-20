@@ -53,6 +53,9 @@ export function selectReadonlySandboxKind(input: {
       throw new Error('writing ACP sandbox refusal: BOTTEGA_SANDBOX=host cannot bypass srt')
     return { sandbox: 'srt', reason: null, missingRoot: false }
   }
+  // Preserve the repository seam exactly: an unregistered or not-yet-cut
+  // readonly checkout was already a host run. No-repo jobs have no such
+  // fallback because their isolate is the boundary this selector must build.
   if (input.readsRepo && (!input.worktreePresent || !input.projectPresent))
     return { sandbox: 'host', reason: null, missingRoot: false }
   if (input.override === 'host') {

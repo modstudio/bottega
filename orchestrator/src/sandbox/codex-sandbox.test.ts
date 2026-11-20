@@ -3,6 +3,7 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   CODEX_PERMISSION_PROFILE,
   codexPermissionProfileArgs,
+  codexPermissionProfileInput,
   codexWritableRoots,
   decideCodexSandbox,
 } from './codex-sandbox.ts'
@@ -38,6 +39,41 @@ test('non-repository writable roots exclude shared temporary directories', () =>
       false,
     ),
   ).toEqual(['/run/isolate', '/run/isolate/scratch'])
+})
+
+test('permission input preserves repository temp roots without granting them to no-repo launches', () => {
+  const profile = {
+    network: {
+      allowedDomains: [],
+      deniedDomains: [],
+      allowUnixSockets: [],
+      allowLocalBinding: false,
+    },
+    filesystem: {
+      denyRead: ['/state'],
+      allowWithinDeny: ['/run'],
+      allowWrite: [],
+      denyWrite: [],
+    },
+  }
+  const launch = {
+    profile,
+    sandbox: 'workspace-write' as const,
+    cwd: '/run/tree',
+    writableRoots: ['/run/scratch'],
+    tempDir: '/private/tmp/codex-run',
+  }
+
+  expect(codexPermissionProfileInput({ ...launch, repository: false }).writableRoots).toEqual([
+    '/run/tree',
+    '/run/scratch',
+  ])
+  expect(codexPermissionProfileInput({ ...launch, repository: true }).writableRoots).toEqual([
+    '/run/tree',
+    '/run/scratch',
+    '/tmp',
+    '/private/tmp/codex-run',
+  ])
 })
 
 describe('Codex permission profile', () => {

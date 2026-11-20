@@ -6,6 +6,7 @@
  */
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import type { SandboxRuntimeConfig } from './sandbox.ts'
 
 export type CodexSandboxRuling = {
   sandbox: 'read-only' | 'workspace-write'
@@ -15,6 +16,11 @@ export type CodexSandboxRuling = {
 export type CodexPermissionFilesystem = {
   denyRead: readonly string[]
   allowRead: readonly string[]
+}
+
+export type CodexPermissionProfileInput = {
+  filesystem: CodexPermissionFilesystem
+  writableRoots: string[]
 }
 
 export const CODEX_PERMISSION_PROFILE = PLATFORM_SLUG
@@ -60,12 +66,37 @@ export function decideCodexSandbox(): CodexSandboxRuling {
 export function codexWritableRoots(
   sandbox: CodexSandboxRuling['sandbox'] | 'danger-full-access',
   cwd: string,
-  extraRoots: string[],
+  extraRoots: readonly string[],
   tmpDir: string | undefined,
   repository: boolean,
 ): string[] | null {
   if (sandbox !== 'workspace-write') return null
   return [...new Set([cwd, ...extraRoots, ...(repository ? ['/tmp', tmpDir ?? '/tmp'] : [])])]
+}
+
+/** Translate one shared runtime profile and the launch's write facts for Codex. */
+export function codexPermissionProfileInput(input: {
+  profile: SandboxRuntimeConfig
+  sandbox: CodexSandboxRuling['sandbox'] | 'danger-full-access'
+  cwd: string
+  writableRoots: readonly string[]
+  tempDir: string | undefined
+  repository: boolean
+}): CodexPermissionProfileInput {
+  return {
+    filesystem: {
+      denyRead: input.profile.filesystem.denyRead,
+      allowRead: input.profile.filesystem.allowWithinDeny,
+    },
+    writableRoots:
+      codexWritableRoots(
+        input.sandbox,
+        input.cwd,
+        input.writableRoots,
+        input.tempDir,
+        input.repository,
+      ) ?? [],
+  }
 }
 
 /**

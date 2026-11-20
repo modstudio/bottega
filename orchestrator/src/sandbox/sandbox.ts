@@ -68,13 +68,6 @@ export type SandboxRuntimeConfig = {
   enableWeakerNetworkIsolation?: boolean
 }
 
-/** Pin operator state before a worker's isolated HOME changes implicit resolution. */
-export {
-  isReadonlySandboxCandidate,
-  type RunSandbox,
-  selectReadonlySandboxKind,
-} from './sandbox-selection-policy.ts'
-
 function emptyProjectRegisterRefusal(): string {
   return renderRefusal(
     refusal(`${PLATFORM_SLUG} sandbox refusal: the project register is empty`, {

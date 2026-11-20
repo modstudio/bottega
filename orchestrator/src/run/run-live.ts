@@ -714,6 +714,7 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
       cwd,
       prompt,
       outPath,
+      // A fresh Grok CLI id is not resumable; ACP would issue session/load for a nonexistent session.
       session:
         transportName === 'acp' && opts.resume?.kind === 'continue'
           ? opts.resume?.session
@@ -767,7 +768,8 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
     effectiveModel = handle.effectiveModel ?? null
     if (effectiveModel)
       db().query('UPDATE run SET model=? WHERE record_id=?').run(effectiveModel, claim.id)
-    // Testing the vendor pid while output finalizes would mark the run stale.
+    // The vendor pid stays the worker's while output and questions are finalized;
+    // testing it then would mark a still-finalizing run stale.
     // Recorded HERE, before the wait, not after it. Written afterwards it is
     // always the pid of a process that has already exited.
     // Idle is silence of the VENDOR, not of orchestrator's own setup. last_event_at

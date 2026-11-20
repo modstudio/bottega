@@ -11,7 +11,7 @@ import { type Project, projectsIncludingRetired } from '../project/projects.ts'
 import { workerMcpLaunchSelection, writerProxyRoute } from '../run/run-mcp-launch-scope.ts'
 import { nextRunNumber } from '../run/run-number.ts'
 import { quotaReadingsColumnValues } from '../run/run-usage-columns.ts'
-import { codexWritableRoots } from '../sandbox/codex-sandbox.ts'
+import { codexPermissionProfileInput } from '../sandbox/codex-sandbox.ts'
 import { prepareCodexHome, readonlyLensProfile } from '../sandbox/sandbox.ts'
 import { harnessCollectsQuotaReadings } from '../transport/codex-quota.ts'
 import { EMPTY_QUOTA_READINGS } from '../transport/quota-readings.ts'
@@ -203,15 +203,14 @@ function startProbeTransport(
     ...(input.writing ? {} : { writableRoots: [scratchDir] }),
     ...(codexProfile
       ? {
-          codexPermissionProfile: {
-            filesystem: {
-              denyRead: codexProfile.filesystem.denyRead,
-              allowRead: codexProfile.filesystem.allowWithinDeny,
-            },
-            writableRoots:
-              codexWritableRoots('workspace-write', cwd, [scratchDir], environment.TMPDIR, true) ??
-              [],
-          },
+          codexPermissionProfile: codexPermissionProfileInput({
+            profile: codexProfile,
+            sandbox: 'workspace-write',
+            cwd,
+            writableRoots: [scratchDir],
+            tempDir: environment.TMPDIR,
+            repository: true,
+          }),
         }
       : {}),
     writingAcp: Boolean(input.writing),

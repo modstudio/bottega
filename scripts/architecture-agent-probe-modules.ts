@@ -13,7 +13,6 @@ export const agentProbeModules = [
   module('orchestrator/src/agent/provider-credential-routing.ts', [
     '../config/credential-service.ts',
     '../project/projects.ts',
-    '../project/projects.ts',
     './agent-registry.ts',
   ]),
   module('orchestrator/src/agent/openrouter.ts', []),

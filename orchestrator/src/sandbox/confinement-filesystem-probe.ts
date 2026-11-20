@@ -33,7 +33,7 @@ import { targetGitEnvironment, worktreeGitDir } from '../git/git-environment.ts'
 import type { Project } from '../project/projects.ts'
 import { prepareSharedRefGuard, workerSharedGitRoots } from '../resources/ref-guard.ts'
 import { workerChildEnvironment } from '../run/run-worker-home.ts'
-import { codexPermissionProfileArgs, codexWritableRoots } from './codex-sandbox.ts'
+import { codexPermissionProfileArgs, codexPermissionProfileInput } from './codex-sandbox.ts'
 import {
   type RunningInstallLayout,
   resolveRunningInstallLayout,
@@ -109,18 +109,14 @@ async function launchCodexProbe(
   }
   try {
     const permissionArgs = codexPermissionProfileArgs({
-      filesystem: {
-        denyRead: profile.filesystem.denyRead,
-        allowRead: profile.filesystem.allowWithinDeny,
-      },
-      writableRoots:
-        codexWritableRoots(
-          'workspace-write',
-          cwd,
-          profile.filesystem.allowWrite,
-          environment.TMPDIR,
-          true,
-        ) ?? [],
+      ...codexPermissionProfileInput({
+        profile,
+        sandbox: 'workspace-write',
+        cwd,
+        writableRoots: profile.filesystem.allowWrite,
+        tempDir: environment.TMPDIR,
+        repository: true,
+      }),
       network: false,
     })
     const result = await startBounded(

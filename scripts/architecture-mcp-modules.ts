@@ -196,6 +196,7 @@ export const mcpModules: McpModule[] = [
     'node:path',
     '@decimalturn/toml-patch',
     './mcp-reader-scope.ts',
+    './sandbox-selection-policy.ts',
     './sandbox.ts',
   ]),
   module('orchestrator/src/sandbox/grok-reader-mcp-inspect.ts', [
