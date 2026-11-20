@@ -216,6 +216,7 @@ const HOSTED_TASK_UPDATE_COLUMNS = [
   'parent_key',
   'body',
   'assignee',
+  'closed_at',
 ] as const satisfies readonly (keyof PushedTask)[]
 
 type HostedPushGuards = {

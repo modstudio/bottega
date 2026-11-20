@@ -97,15 +97,33 @@ function assertFieldGuards(
 ): void {
   for (const [field, expected] of Object.entries(input.from ?? {})) {
     const currentValue = current?.[field] ?? null
-    if (current === undefined || !Object.is(currentValue, expected))
+    if (current === undefined || !guardValuesMatch(field, currentValue, expected))
       throw fieldConflict({
         table: input.table,
         id: input.id,
+        key: changeKey(input),
         field,
         currentValue,
         currentRevision: storedRevision(input, current),
       })
   }
+}
+
+const TIMESTAMP_GUARD_FIELDS = new Set([
+  'closed_at',
+  'deleted_at',
+  'last_seen_at',
+  'stale_at',
+  'updated_at',
+])
+
+function guardValuesMatch(field: string, current: unknown, expected: unknown): boolean {
+  if (TIMESTAMP_GUARD_FIELDS.has(field) && current !== null && expected !== null) {
+    const currentMillis = new Date(current as string | Date).getTime()
+    const expectedMillis = new Date(expected as string | Date).getTime()
+    return Number.isFinite(currentMillis) && currentMillis === expectedMillis
+  }
+  return canonicalJson(current) === canonicalJson(expected)
 }
 
 function assertPushGuards(
@@ -199,8 +217,7 @@ async function applyTaskPatch(
     body=CASE WHEN ${has('body')} THEN ${values.body ?? null} ELSE body END,
     assignee=CASE WHEN ${has('assignee')} THEN ${values.assignee ?? null} ELSE assignee END,
     closed_at=CASE WHEN ${has('closed_at')} THEN ${values.closed_at ?? null}::timestamptz ELSE closed_at END,
-    updated_at=${values.updated_at!}::timestamptz,last_seen=${values.last_seen!}::timestamptz,
-    revision=revision+1
+    updated_at=${values.updated_at!}::timestamptz,last_seen=${values.last_seen!}::timestamptz
     WHERE id=${id}::uuid AND space_id=${identity.spaceId}::uuid`
 }
 
@@ -288,7 +305,7 @@ async function deleteHostedNoteFromPush(
   current: PushedNote | undefined,
 ) {
   if (!current || current.deleted_at) return { id: input.id, status: 'duplicate' as const }
-  await tx`UPDATE hub_note SET deleted_at=now(),updated_at=now(),revision=revision+1
+  await tx`UPDATE hub_note SET deleted_at=now(),updated_at=now()
     WHERE id=${input.id}::uuid AND space_id=${identity.spaceId}::uuid`
   await tx`UPDATE hub_note_acknowledgement SET deleted_at=now(),updated_at=now()
     WHERE note_id=${input.id}::uuid AND space_id=${identity.spaceId}::uuid AND deleted_at IS NULL`
@@ -309,7 +326,7 @@ async function upsertHostedNoteFromPush(
   const values = decision.values
   await tx`UPDATE hub_note SET anchors=${values.anchors!},sightings=${values.sightings!},
     last_seen_at=${values.last_seen_at!}::timestamptz,stale_at=${values.stale_at ?? null}::timestamptz,
-    stale_reason=${values.stale_reason ?? null},updated_at=now(),revision=revision+1
+    stale_reason=${values.stale_reason ?? null},updated_at=now()
     WHERE id=${input.id}::uuid AND space_id=${identity.spaceId}::uuid`
   return { id: input.id, status: 'applied' as const }
 }
@@ -360,7 +377,7 @@ const PUSHABLE_HUB_CHANGES: Record<PushableHubChangeTable, PushDeclaration> = {
       await requireLiveChildTask(tx, identity, input.row)
       await mirrorCommentRow(tx, identity, input.row)
       const taskId = await taskIdFor(tx, identity.spaceId, input.row.task_key, input.row.task_id)
-      await tx`UPDATE hub_task SET updated_at=GREATEST(updated_at,${input.row.updated_at}::timestamptz),last_seen=GREATEST(last_seen,${input.row.updated_at}::timestamptz),revision=revision+1 WHERE id=${taskId}::uuid AND space_id=${identity.spaceId}::uuid`
+      await tx`UPDATE hub_task SET updated_at=GREATEST(updated_at,${input.row.updated_at}::timestamptz),last_seen=GREATEST(last_seen,${input.row.updated_at}::timestamptz) WHERE id=${taskId}::uuid AND space_id=${identity.spaceId}::uuid`
       return { id: input.id, status: 'applied' }
     },
   },

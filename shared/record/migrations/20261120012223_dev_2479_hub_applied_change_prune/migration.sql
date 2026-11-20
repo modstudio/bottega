@@ -1,5 +1,28 @@
 ALTER TABLE public.hub_applied_change FORCE ROW LEVEL SECURITY;
 
+CREATE FUNCTION public.hub_guarded_revision_bump() RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  NEW.revision := OLD.revision + 1;
+  RETURN NEW;
+END
+$$;
+
+ALTER FUNCTION public.hub_guarded_revision_bump() OWNER TO record_owner;
+
+CREATE TRIGGER hub_task_revision_bump
+BEFORE UPDATE ON public.hub_task
+FOR EACH ROW EXECUTE FUNCTION public.hub_guarded_revision_bump();
+
+CREATE TRIGGER hub_note_revision_bump
+BEFORE UPDATE ON public.hub_note
+FOR EACH ROW EXECUTE FUNCTION public.hub_guarded_revision_bump();
+
+CREATE TRIGGER hub_task_comment_revision_bump
+BEFORE UPDATE ON public.hub_task_comment
+FOR EACH ROW EXECUTE FUNCTION public.hub_guarded_revision_bump();
+
 ALTER TABLE public.hub_applied_change ADD CONSTRAINT "hub_applied_change_result_not_json_string_check" CHECK (jsonb_typeof("result") <> 'string') NOT VALID;
 ALTER TABLE "hub_applied_change" VALIDATE CONSTRAINT "hub_applied_change_result_not_json_string_check";
 

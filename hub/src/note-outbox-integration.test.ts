@@ -4,6 +4,7 @@ import type { SQL } from 'bun'
 import { createHostedRecordFixture, pgliteSql } from '../test/hosted-record-fixture.ts'
 import { db, writeTransaction } from './db.ts'
 import { DELETED_ON_HOSTED_RECORD_REASON } from './hosted-delete.ts'
+import { createHostedNote } from './hosted-notes.ts'
 import { applyHostedPushChangesInTransaction } from './hosted-push-changes.ts'
 import { acknowledgeNote, createNote, dropNote, mergeNote } from './note.ts'
 import { drainHostedOutbox } from './outbox.ts'
@@ -470,6 +471,24 @@ test('repeat sighting succeeds offline, queues, and later drains to the hosted n
     anchors: JSON.parse(machine.anchors),
     sightings: machine.sightings,
   })
+})
+
+test('a hosted same-sighting write increments the note revision', async () => {
+  const noteId = '01990000-0000-7000-8000-000000001326'
+  await seedHostedNote(noteRow(noteId, 326))
+
+  const same = await createHostedNote(pgliteSql(database), identity, {
+    project: 'workshop',
+    projectId,
+    text: 'repeat sighting',
+    anchor: '{"kind":"run","session_id":"second"}',
+    sameAs: noteId,
+  })
+
+  expect(same).toMatchObject({ id: noteId, sightings: 2 })
+  expect(
+    (await database.query(`SELECT revision::int FROM hub_note WHERE id=$1`, [noteId])).rows,
+  ).toEqual([{ revision: 2 }])
 })
 
 test('keep succeeds offline, queues, and later drains one hosted acknowledgement', async () => {

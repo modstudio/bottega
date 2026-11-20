@@ -562,20 +562,11 @@ test('change ids replay the stored outcome and reject a different payload', asyn
   ).rejects.toBeInstanceOf(HostedChangeIdMismatchError)
 })
 
-test('field compare-and-set permits independent task patches and rejects a stale field', async () => {
+test('field compare-and-set compares timestamps as instants and rejects a stale field', async () => {
   const id = '01990000-0000-7000-8000-000000001420'
-  const original = { ...taskRow(id, 'DEV-420'), title: 'Old title', status: 'active' }
+  const closedAt = '2026-10-09T12:00:00.000Z'
+  const original = { ...taskRow(id, 'DEV-420'), title: 'Old title', closed_at: closedAt }
   await apply([{ table: 'hub_task', id, op: 'upsert', row: original }])
-  await apply([
-    {
-      table: 'hub_task',
-      id,
-      op: 'upsert',
-      row: { ...original, status: 'review' },
-      fields: ['status'],
-      from: { status: 'active' },
-    },
-  ])
   await apply([
     {
       table: 'hub_task',
@@ -586,25 +577,36 @@ test('field compare-and-set permits independent task patches and rejects a stale
       from: { title: 'Old title' },
     },
   ])
+  await apply([
+    {
+      table: 'hub_task',
+      id,
+      op: 'upsert',
+      row: { ...original, closed_at: '2026-10-09T13:00:00.000Z' },
+      fields: ['closed_at'],
+      from: { closed_at: closedAt },
+    },
+  ])
   try {
     await apply([
       {
         table: 'hub_task',
         id,
         op: 'upsert',
-        row: { ...original, title: 'Other title' },
-        fields: ['title'],
-        from: { title: 'Old title' },
+        row: { ...original, closed_at: '2026-10-09T14:00:00.000Z' },
+        fields: ['closed_at'],
+        from: { closed_at: closedAt },
       },
     ])
     throw new Error('expected a field conflict')
   } catch (error) {
-    expect(error).toMatchObject({ field: 'title', currentValue: 'New title' })
+    expect(error).toMatchObject({
+      field: 'closed_at',
+      currentRevision: '3',
+      currentValue: new Date('2026-10-09T13:00:00.000Z'),
+    })
+    expect((error as Error).message).toContain(`cleared by: ${PLATFORM_SLUG} task show DEV-420`)
   }
-  expect(
-    (await database.query(`SELECT title,status,revision::int FROM hub_task WHERE id=$1`, [id]))
-      .rows,
-  ).toEqual([{ title: 'New title', status: 'review', revision: 3 }])
 })
 
 test('unguarded updates increment revisions and document changes compare text versions', async () => {

@@ -72,6 +72,7 @@ export function revisionConflict(input: {
 export function fieldConflict(input: {
   table: PushableHubChangeTable
   id: string
+  key: string
   field: string
   currentValue: unknown
   currentRevision: number | string | null
@@ -79,7 +80,12 @@ export function fieldConflict(input: {
   return new HostedRevisionConflictError(
     input.table,
     input.id,
-    `${input.table} ${input.id} field ${input.field} changed; now ${JSON.stringify(input.currentValue)}`,
+    renderRefusal(
+      refusal(
+        `${input.table} ${input.id} field ${input.field} changed; now ${JSON.stringify(input.currentValue)}`,
+        { kind: 'command', argv: [PLATFORM_SLUG, 'task', 'show', input.key] },
+      ),
+    ),
     input.currentRevision === null ? null : String(input.currentRevision),
     input.field,
     input.currentValue,
