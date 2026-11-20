@@ -321,6 +321,14 @@ async function runExtractedHookProof(
     `setup apply did not extract the runtime tree at ${runtimeRoot}`,
   )
   const settingsPath = join(paths.home, '.claude', 'settings.json')
+  if (!existsSync(settingsPath)) {
+    return {
+      name: 'extracted hook',
+      exitCode: 1,
+      output: `settings apply did not render ${settingsPath}`,
+      stderr: '',
+    }
+  }
   const command = renderedHookCommand(
     JSON.parse(readFileSync(settingsPath, 'utf8')) as unknown,
     'test-substance-guard.py',
@@ -422,6 +430,14 @@ async function proveReleaseInstall(version: string, keep: boolean): Promise<numb
     )
 
     results.push(await runStep('setup apply', setupArgv, paths.home, env))
+    results.push(
+      await runStep(
+        'settings apply',
+        [executable, 'machine', 'settings', 'apply'],
+        paths.home,
+        env,
+      ),
+    )
     results.push(await runExtractedHookProof(version, paths, env, assertionFailures))
     const firstInstallerCounts = harnessInstallerInvocationCounts(
       readProofLog(brewLog),
