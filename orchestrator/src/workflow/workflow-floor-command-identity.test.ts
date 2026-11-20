@@ -29,7 +29,11 @@ test(`command identity accepts only registered ${PLATFORM_SLUG} executable paths
     return path
   }
   const mainExecutable = executable(main, 'main-executable')
-  const installedExecutable = executable(installed, 'installed-executable')
+  mkdirSync(installed, { recursive: true })
+  const installedTarget = join(root, 'installed-executable')
+  writeFileSync(installedTarget, '')
+  const installedExecutable = join(installed, PLATFORM_SLUG)
+  symlinkSync(installedTarget, installedExecutable)
   const unrelatedExecutable = executable(join(root, 'unrelated'), 'unrelated-executable')
   writeFileSync(
     join(installed, DIST_MANIFEST),

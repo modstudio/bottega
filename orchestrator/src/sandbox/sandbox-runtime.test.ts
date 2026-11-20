@@ -7,6 +7,7 @@ import {
   mkdtempSync,
   readdirSync,
   readFileSync,
+  realpathSync,
   rmSync,
   statSync,
   symlinkSync,
@@ -22,12 +23,15 @@ import {
 } from '../../../shared/sandbox-runtime-assets.ts'
 import {
   classifySandboxRuntimeAvailability,
+  extractedSandboxRuntimeRoot,
   extractSandboxRuntime,
   packageManagerFromOsRelease,
+  prepareSandboxRuntimeConfig,
   SRT_LIBRARY,
   sandboxRuntimeAvailability,
   withSandboxTemporaryDirectory,
 } from './sandbox-runtime.ts'
+import { workerRuntimeReadCarvebacks } from './worker-runtime-read-carvebacks.ts'
 
 const availabilityFacts = {
   location: '/runtime',
@@ -78,6 +82,33 @@ function quarantines(final: string): string[] {
 }
 
 describe('sandbox runtime payloads', () => {
+  test('the extracted distribution runtime root has one canonical derivation', () => {
+    expect(extractedSandboxRuntimeRoot({ BOTTEGA_STATE_HOME: '/operator/state' })).toBeUndefined()
+    registerEmbeddedAssets({ assets: {}, files: {}, manifest })
+    expect(extractedSandboxRuntimeRoot({ BOTTEGA_STATE_HOME: '/operator/state' })).toBe(
+      '/operator/state/runtime/1.2.3/sandbox-runtime',
+    )
+  })
+
+  test('profile carve-backs and launch payloads use the same explicit state environment', async () => {
+    const { root, final, ports } = fixture()
+    const previous = process.env.BOTTEGA_STATE_HOME
+    process.env.BOTTEGA_STATE_HOME = join(root, 'different-process-state')
+    try {
+      const carvebacks = workerRuntimeReadCarvebacks(ports.environment, manifest)
+      const payload = await prepareSandboxRuntimeConfig(ports.environment, ports)
+
+      expect(carvebacks).toContain(final)
+      expect(payload.javaAgentJarPath).toStartWith(`${final}/`)
+      expect(payload.seccomp?.applyPath).toStartWith(`${final}/`)
+      expect(payload.javaAgentJarPath).not.toContain('different-process-state')
+    } finally {
+      if (previous === undefined) delete process.env.BOTTEGA_STATE_HOME
+      else process.env.BOTTEGA_STATE_HOME = previous
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
   test('temporary directory is scoped to one launch and restored before the next', async () => {
     const previous = process.env.CLAUDE_CODE_TMPDIR
     let releaseFirst = () => {}
@@ -151,6 +182,35 @@ describe('sandbox runtime payloads', () => {
       expect(command).toContain('--unshare-user')
     } finally {
       cleanupBwrapMountPoints()
+    }
+  })
+
+  test('pinned Linux wrapper lets a nested write bind override an ancestor read carve-back', async () => {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), 'srt-bind-order-')))
+    const denied = join(root, 'denied')
+    const readable = join(denied, 'readable')
+    const writable = join(readable, 'writable')
+    mkdirSync(writable, { recursive: true })
+    const { cleanupBwrapMountPoints, wrapCommandWithSandboxLinux } = await import(
+      '@anthropic-ai/sandbox-runtime/dist/sandbox/linux-sandbox-utils.js'
+    )
+    try {
+      const command = await wrapCommandWithSandboxLinux({
+        command: 'true',
+        needsNetworkRestriction: false,
+        readConfig: { denyOnly: [denied], allowWithinDeny: [readable] },
+        writeConfig: { allowOnly: [writable], denyWithinAllow: [] },
+        bwrapPath: '/usr/bin/bwrap',
+        binShell: '/bin/sh',
+      })
+      const readBind = `--ro-bind ${readable} ${readable}`
+      const writeBind = `--bind ${writable} ${writable}`
+      expect(command).toContain(readBind)
+      expect(command).toContain(writeBind)
+      expect(command.lastIndexOf(writeBind)).toBeGreaterThan(command.indexOf(readBind))
+    } finally {
+      cleanupBwrapMountPoints()
+      rmSync(root, { recursive: true, force: true })
     }
   })
 

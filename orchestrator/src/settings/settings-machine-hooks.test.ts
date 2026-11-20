@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test'
+import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   BOARD_ACK_STOP_BLOCKS,
@@ -16,6 +17,10 @@ import { commandNamesHookScript, withMachineProductHooks } from './settings-mach
 
 const ASSET_ROOT = '/installed/product'
 const DATABASE = '/state/orchestrator/orchestrator.db'
+const RUNTIME = {
+  executable: join(ASSET_ROOT, 'bin', PLATFORM_SLUG),
+  scriptPath: (file: string) => join(ASSET_ROOT, 'orchestrator', 'hooks', file),
+}
 const OLD_ROOT = '/Users/operator/Projects/bottega'
 const command = (file: string) => `python3 ${OLD_ROOT}/orchestrator/hooks/${file}`
 const handler = (file: string, extra: Record<string, unknown> = {}) => ({
@@ -70,7 +75,7 @@ const profileHooks = {
 }
 
 function render(hooks: unknown) {
-  return withMachineProductHooks({ permissions: {}, hooks }, ASSET_ROOT, DATABASE, 'on')
+  return withMachineProductHooks({ permissions: {}, hooks }, DATABASE, 'on', RUNTIME)
 }
 
 test('hook script command recognition requires both token boundaries', () => {
@@ -189,23 +194,23 @@ test('test substance guard covers every editor tool from the rendered install', 
   expect(group?.hooks).toEqual([
     {
       type: 'command',
-      command: `BOTTEGA_ORCHESTRATOR_DB='${DATABASE}' BOTTEGA_GLOBAL_USE=on python3 '${ASSET_ROOT}/orchestrator/hooks/test-substance-guard.py'`,
+      command: `BOTTEGA_BIN='${ASSET_ROOT}/bin/${PLATFORM_SLUG}' BOTTEGA_ORCHESTRATOR_DB='${DATABASE}' BOTTEGA_GLOBAL_USE=on python3 '${ASSET_ROOT}/orchestrator/hooks/test-substance-guard.py'`,
     },
     {
       type: 'command',
-      command: `BOTTEGA_ORCHESTRATOR_DB='${DATABASE}' BOTTEGA_GLOBAL_USE=on python3 '${ASSET_ROOT}/orchestrator/hooks/hub-import-guard.py'`,
+      command: `BOTTEGA_BIN='${ASSET_ROOT}/bin/${PLATFORM_SLUG}' BOTTEGA_ORCHESTRATOR_DB='${DATABASE}' BOTTEGA_GLOBAL_USE=on python3 '${ASSET_ROOT}/orchestrator/hooks/hub-import-guard.py'`,
     },
   ])
 })
 
 test('product hook rendering is a fixed point', () => {
   const first = render({})
-  const second = withMachineProductHooks(first.settings, ASSET_ROOT, DATABASE, 'on')
+  const second = withMachineProductHooks(first.settings, DATABASE, 'on', RUNTIME)
   expect(second.settings.hooks).toEqual(first.settings.hooks)
 })
 
 test('global use off is rendered into every product hook command', () => {
-  const hooks = withMachineProductHooks({ permissions: {}, hooks: {} }, ASSET_ROOT, DATABASE, 'off')
+  const hooks = withMachineProductHooks({ permissions: {}, hooks: {} }, DATABASE, 'off', RUNTIME)
     .settings.hooks
   const commands = JSON.stringify(hooks)
   expect(commands.match(/BOTTEGA_GLOBAL_USE=off/g)).toHaveLength(27)

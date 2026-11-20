@@ -2,10 +2,8 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { startBoundedSync } from '../shared/bounded-process.ts'
-import { inspectionGitEnv } from '../shared/git.ts'
-import { nulPathListArgs, splitNulPaths } from '../shared/git-path-list.ts'
 import { BUN_VERSION_FILE, declaredBunVersion } from './release-config.ts'
+import { repositoryDockerfiles } from './repository-dockerfiles.ts'
 
 export type BunImagePin = { path: string; line: number; version: string }
 export type WorkflowSource = { path: string; source: string }
@@ -76,11 +74,6 @@ export function decideRunningBunVersion(declared: string, running: string): stri
   return `running Bun ${running} differs from ${BUN_VERSION_FILE} ${declared}; install it with curl -fsSL https://bun.com/install | bash -s "bun-v${declared}", or update ${BUN_VERSION_FILE}`
 }
 
-function isDockerfile(path: string): boolean {
-  const name = path.split('/').at(-1) ?? ''
-  return name === 'Dockerfile' || name.endsWith('.Dockerfile')
-}
-
 /** The version a FROM image reference names for oven/bun, or `null` when it is another image. */
 function bunVersionOf(reference: string): string | null {
   const image = /^(?:[^\s/]+\/)*oven\/bun(?::([^\s@]+))?(?:@\S+)?$/i.exec(reference)
@@ -98,23 +91,6 @@ export function bunImagePins(path: string, source: string): BunImagePin[] {
     if (version) pins.push({ path, line: index + 1, version })
   }
   return pins
-}
-
-/** Tracked and untracked, unignored Dockerfiles, so a worker's new image is judged before it is committed. */
-function repositoryDockerfiles(root: string): string[] {
-  const result = startBoundedSync(
-    ['git', ...nulPathListArgs(['ls-files', '--cached', '--others', '--exclude-standard'])],
-    { budget: 'git-plumbing', cwd: root, env: inspectionGitEnv() },
-  )
-  if (result.exitCode !== 0) {
-    throw new Error(
-      `could not list the repository's Dockerfiles: ${result.stderr.toString().trim() || `git exited ${result.exitCode}`}; run git ls-files from the repository root`,
-    )
-  }
-  // A tracked file deleted in the working tree builds no image.
-  return splitNulPaths(result.stdout.toString())
-    .filter((path) => isDockerfile(path) && existsSync(resolve(root, path)))
-    .sort()
 }
 
 function workflowSources(root: string): WorkflowSource[] {

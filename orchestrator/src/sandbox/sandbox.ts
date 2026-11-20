@@ -29,17 +29,21 @@ import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 import { ensureHubLoginTokenDirectory } from '../../../shared/state-directory.ts'
 import { disabledProjectMcpServers } from '../mcp/mcp-probe.ts'
 import { createNoFollowFile } from '../no-follow-file.ts'
-import { type Project, projectAt, projects } from '../project/projects.ts'
+import { type Project, projectAt, projectsIncludingRetired } from '../project/projects.ts'
 import { mainStackGateAddresses } from '../resources/main-stack-network.ts'
 import { runHarnessStateDir, runWorkerHomeDir } from '../run-owned-paths.ts'
-import { areaReadPolicy, carveBackOutsideProtected, isAtOrBelow } from './area-read-policy.ts'
+import { areaReadPolicy, isAtOrBelow } from './area-read-policy.ts'
 import {
   type RunningInstallLayout,
   resolveRunningInstallLayout,
   runningInstallReadCarveouts,
 } from './install-read-policy.ts'
+import { linkedNodeModules, permittedNodeModuleCarvebacks } from './node-module-read-carvebacks.ts'
+import { assembleAreaReadProfile } from './sandbox-area-read-profile.ts'
 import { launchWithSandboxRuntime, resetSandboxRuntime } from './sandbox-runtime.ts'
 import { decideWeakerNetworkIsolation, endpointHost } from './weaker-network-isolation.ts'
+import { workerRuntimeReadCarvebacks } from './worker-runtime-read-carvebacks.ts'
+import { ownWorktreeRootEntries } from './worktree-root-entries.ts'
 
 export type SandboxRuntimeConfig = {
   network: {
@@ -229,39 +233,6 @@ function refuseProtectedOverlap(
   }
 }
 
-/**
- * Find dependency roots linked from the disposable checkout into its main
- * checkout. Only directory entries named node_modules are followed; arbitrary
- * symlinks are not promoted into sandbox read grants.
- */
-function linkedNodeModules(worktree: string): string[] {
-  const found = new Set<string>()
-  const visit = (dir: string, depth: number) => {
-    if (depth > 4) return
-    let entries: import('node:fs').Dirent[]
-    try {
-      entries = readdirSync(dir, { withFileTypes: true })
-    } catch {
-      return
-    }
-    for (const entry of entries) {
-      if (entry.name === '.git' || entry.name === '.claude') continue
-      const path = join(dir, entry.name)
-      if (entry.name === 'node_modules') {
-        try {
-          if (lstatSync(path).isSymbolicLink()) found.add(realpathSync(path))
-        } catch {
-          /* a broken link is not a readable dependency root */
-        }
-        continue
-      }
-      if (entry.isDirectory()) visit(path, depth + 1)
-    }
-  }
-  visit(worktree, 0)
-  return [...found].sort()
-}
-
 export function readonlyLensProfile(input: {
   worktree: string
   runtimeDir: string
@@ -278,10 +249,11 @@ export function readonlyLensProfile(input: {
   denySharedTemp?: boolean
   socketDenyPaths?: readonly string[]
   installLayout?: RunningInstallLayout
+  onWarning?: (message: string) => void
+  platform?: 'darwin' | 'linux'
+  ownWorktreeRootEntries?: readonly string[]
 }): SandboxRuntimeConfig {
-  if (input.registeredProjects.length === 0) {
-    throw new Error(emptyProjectRegisterRefusal())
-  }
+  if (input.registeredProjects.length === 0) throw new Error(emptyProjectRegisterRefusal())
   const environment = input.environment ?? process.env
   const toolchain = (input.path ?? process.env.PATH ?? '')
     .split(delimiter)
@@ -300,6 +272,8 @@ export function readonlyLensProfile(input: {
     ),
   ]
   const protectedDenies = protectedDenyPaths(input.project, environment)
+  const installLayout = input.installLayout ?? resolveRunningInstallLayout(environment)
+  const runningInstallRoot = resolveRunningInstallLayout(environment).root
   refuseProtectedOverlap('readonly-lens', protectedDenies, worktree, runtimeDir)
   const areas = areaReadPolicy({
     worktree,
@@ -308,6 +282,15 @@ export function readonlyLensProfile(input: {
     project: input.project,
     registeredProjects: input.registeredProjects,
     environment,
+    platform: input.platform ?? (process.platform === 'linux' ? 'linux' : 'darwin'),
+    ownWorktreeRootEntries: input.ownWorktreeRootEntries ?? ownWorktreeRootEntries(input.project),
+  })
+  const nodeModuleLinks = permittedNodeModuleCarvebacks({
+    links: input.nodeModuleLinks ?? linkedNodeModules(input.worktree),
+    areaDenies: areas.deny,
+    projectRoot: input.project?.path,
+    runningInstallRoot,
+    onWarning: input.onWarning ?? console.warn,
   })
   const candidateAllows = [
     ...new Set([
@@ -315,17 +298,21 @@ export function readonlyLensProfile(input: {
       worktree,
       runtimeDir,
       ...toolchain,
-      ...(input.nodeModuleLinks ?? linkedNodeModules(input.worktree)).map((path) => resolve(path)),
+      ...nodeModuleLinks,
       join(homedir(), '.claude.json'),
       process.execPath,
-      ...runningInstallReadCarveouts(
-        input.installLayout ?? resolveRunningInstallLayout(environment),
-      ),
+      ...runningInstallReadCarveouts(installLayout),
+      ...workerRuntimeReadCarvebacks(environment),
     ]),
   ]
   // SRT reads are allow-by-default. This list only carves paths back out of
   // denyRead; it is not, and must not be read as, a read confinement boundary.
-  const allowWithinDeny = carveBackOutsideProtected(candidateAllows, protectedDenies)
+  const readProfile = assembleAreaReadProfile({
+    areaDeny: areas.deny,
+    candidateAllows,
+    protectedDenies,
+    socketDenyPaths: input.socketDenyPaths ?? readonlyLensSocketDenyPaths(),
+  })
   const isolation = decideWeakerNetworkIsolation({ base_url: input.baseUrl })
   return createSandboxRuntimeConfig(
     {
@@ -347,14 +334,7 @@ export function readonlyLensProfile(input: {
         allowLocalBinding: READONLY_LENS_ALLOW_LOCAL_BINDING,
       },
       filesystem: {
-        denyRead: [
-          ...new Set([
-            ...areas.deny,
-            ...protectedDenies,
-            ...(input.socketDenyPaths ?? readonlyLensSocketDenyPaths()),
-          ]),
-        ],
-        allowWithinDeny,
+        ...readProfile,
         allowWrite,
         denyWrite: input.denySharedTemp === false ? [] : [...READONLY_LENS_DENY_WRITE_PATHS],
       },
@@ -435,6 +415,7 @@ export function writerProfile(input: {
   nodeModuleLinks?: string[]
   environment?: ConfigEnvironment
   socketDenyPaths?: readonly string[]
+  installLayout?: RunningInstallLayout
 }): SandboxRuntimeConfig {
   const worktree = resolve(input.worktree)
   const scratchDir = resolve(input.scratchDir)
@@ -469,32 +450,46 @@ export function writerProfile(input: {
 
 /** Write-deny everywhere except a throwaway directory; no network; protected secrets denied. */
 export function probeSandboxProfile(input: {
-  kind: 'agent' | 'workflow-probe'
   allowWriteDir: string
   cwd: string
   project: Project
   registeredProjects: readonly Project[]
   environment?: ConfigEnvironment
   socketDenyPaths?: readonly string[]
+  installLayout?: RunningInstallLayout
+  platform?: 'darwin' | 'linux'
+  ownWorktreeRootEntries?: readonly string[]
 }): SandboxRuntimeConfig {
-  if (input.registeredProjects.length === 0) {
-    throw new Error(emptyProjectRegisterRefusal())
-  }
+  if (input.registeredProjects.length === 0) throw new Error(emptyProjectRegisterRefusal())
   const allowWrite = resolve(input.allowWriteDir)
   const cwd = resolve(input.cwd)
-  const protectedDenies = protectedDenyPaths(input.project, input.environment ?? process.env)
+  const environment = input.environment ?? process.env
+  const protectedDenies = protectedDenyPaths(input.project, environment)
   refuseProtectedOverlap('probe', protectedDenies, cwd, allowWrite)
-  const areas =
-    input.kind === 'agent'
-      ? areaReadPolicy({
-          worktree: cwd,
-          runtimeDir: allowWrite,
-          scratchDir: allowWrite,
-          project: input.project,
-          registeredProjects: input.registeredProjects,
-          environment: input.environment ?? process.env,
-        })
-      : { deny: [], allow: [] }
+  const areas = areaReadPolicy({
+    worktree: cwd,
+    runtimeDir: allowWrite,
+    scratchDir: allowWrite,
+    project: input.project,
+    registeredProjects: input.registeredProjects,
+    environment,
+    platform: input.platform ?? (process.platform === 'linux' ? 'linux' : 'darwin'),
+    ownWorktreeRootEntries: input.ownWorktreeRootEntries ?? ownWorktreeRootEntries(input.project),
+  })
+  const readProfile = assembleAreaReadProfile({
+    areaDeny: areas.deny,
+    candidateAllows: [
+      ...areas.allow,
+      cwd,
+      allowWrite,
+      ...runningInstallReadCarveouts(
+        input.installLayout ?? resolveRunningInstallLayout(environment),
+      ),
+      ...workerRuntimeReadCarvebacks(environment),
+    ],
+    protectedDenies,
+    socketDenyPaths: input.socketDenyPaths ?? readonlyLensSocketDenyPaths(),
+  })
   return {
     network: {
       allowedDomains: [],
@@ -503,14 +498,7 @@ export function probeSandboxProfile(input: {
       allowLocalBinding: false,
     },
     filesystem: {
-      denyRead: [
-        ...new Set([
-          ...protectedDenies,
-          ...areas.deny,
-          ...(input.socketDenyPaths ?? readonlyLensSocketDenyPaths()),
-        ]),
-      ],
-      allowWithinDeny: carveBackOutsideProtected(areas.allow, protectedDenies),
+      ...readProfile,
       allowWrite: [allowWrite],
       denyWrite: [],
     },
@@ -526,14 +514,10 @@ export function probeSandboxProfileForCwd(input: {
   if (!project)
     throw new Error(`${PLATFORM_SLUG} workflow probe: no registered project contains ${input.cwd}`)
   return probeSandboxProfile({
-    kind: 'workflow-probe',
     allowWriteDir: input.allowWriteDir,
     cwd: input.cwd,
     project,
-    registeredProjects: [
-      ...projects({}, input.database),
-      ...projects({ retired: true }, input.database),
-    ],
+    registeredProjects: projectsIncludingRetired(input.database),
   })
 }
 
@@ -747,10 +731,12 @@ export async function sandboxLaunchArgv(
   bin: string,
   argv: string[],
   temporaryDirectory?: string,
+  environment: ConfigEnvironment = process.env,
 ): Promise<string[]> {
-  ensureHubLoginTokenDirectory(process.env)
+  ensureHubLoginTokenDirectory(environment)
   const config = sandboxRuntimeConfig(profile)
-  return launchWithSandboxRuntime(config, shellCommand([bin, ...argv]), temporaryDirectory)
+  const command = shellCommand([bin, ...argv])
+  return launchWithSandboxRuntime(config, command, temporaryDirectory, environment)
 }
 
 /** Bind one run's optional temp directory into repeated SRT launches. */

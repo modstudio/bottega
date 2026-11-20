@@ -4,7 +4,6 @@ import type { Database } from 'bun:sqlite'
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { MCP_SERVER_NAME, PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { assetPath } from '../../../shared/install-root.ts'
 import { readMachinePermissions, readMachineValue } from '../../../shared/machine-config.ts'
 import { renderRefusal } from '../../../shared/refusal.ts'
 import {
@@ -54,6 +53,7 @@ import {
   writeClaudeMcpPlacement,
 } from './settings-machine-mcp-placement.ts'
 import { registeredProjectScopeFact } from './settings-machine-projects.ts'
+import { resolveMachineHookRuntime } from './settings-machine-runtime.ts'
 import { decideMachineSettingsScope } from './settings-machine-scope.ts'
 import { assertCurrentMachineHomeWriteAuthority } from './settings-machine-write-authority.ts'
 import { mergeMachinePermissionOverlay } from './settings-permission-overlay.ts'
@@ -206,9 +206,9 @@ function applyUserSettings(
     )
     const productHooks = withMachineProductHooks(
       merged.settings,
-      assetPath(),
       resolveOrchestratorDatabase(deps.environment),
       readMachineValue('machine.global_use', deps.environment) as 'on' | 'off',
+      resolveMachineHookRuntime(),
     )
     const owned = productHooks.settings
     const secretsPath = userSettingsEnvPath(home)

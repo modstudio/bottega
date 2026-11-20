@@ -150,6 +150,7 @@ export const hostedTableLifecycles: readonly TableLifecycle[] = [
       'prompt_head',
       'error',
       'route_reason',
+      'sandbox_reason',
       'files_changed',
       'changed_paths',
       'outside_worktree_writes',

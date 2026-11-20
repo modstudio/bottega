@@ -40,6 +40,7 @@ import { grokTrustHeadings, grokTrustPathFromHeading } from '../sandbox/grok-tru
 import { keepTreeHold } from '../worktree/keep-tree-hold.ts'
 import { worktreeDirty } from '../worktree/worktree-attribution.ts'
 import { missingPrunableWorktrees } from '../worktree/worktree-porcelain.ts'
+import { observeCollectorLegFailures } from './collector-leg-conditions.ts'
 import { treeDatabaseConnectionConditions } from './database-connection-conditions.ts'
 import { hostPressureObservation, persistedHostPressureDetail } from './host-pressure-conditions.ts'
 import { branchInventoryDecision, branchMonitorConditions } from './monitor-branches.ts'
@@ -129,6 +130,7 @@ async function initialMonitorObservations(
   const diskPressure = await diskPressureObservation(clock)
   const hostPressure = hostPressureObservation(database, clock)
   const collectLease = observeCollectLease(clock)
+  const collectorLegs = observeCollectorLegFailures(clock)
   const hostedPressure = await checkHostedPressureCached({ database, clock })
   const hostedHealth = await checkHostedHealth(database, clock)
   return {
@@ -139,8 +141,9 @@ async function initialMonitorObservations(
       ...staleCustomerGuideCommandConditions(),
       ...diskPressure.conditions,
       ...collectLease.conditions,
+      ...collectorLegs.conditions,
     ],
-    errors: [...diskPressure.errors, ...collectLease.errors],
+    errors: [...diskPressure.errors, ...collectLease.errors, ...collectorLegs.errors],
     hostPressure: hostPressure.report,
   }
 }

@@ -33,6 +33,7 @@ import type {
 } from './question-vocabulary.ts'
 import { currentRunMemberJoin } from './run-chain.ts'
 import { classifyRunIdentifier, resolveRunIdentifierOrNull } from './run-identifier.ts'
+import { parseRunListSince } from './run-listing-since.ts'
 import {
   isFreshRunHostWait,
   isRunQueuedForCapacity,
@@ -788,7 +789,7 @@ export async function runListingCommand(
   addExactFilter(where, args, 'r.agent = ?', flag('agent'))
   const onlyUnscored = has('unscored')
   const { cte: unscoredCte, join: unscoredJoin } = unscoredListingClauses(onlyUnscored, where)
-  const sinceFlag = flag('since')
+  const sinceFlag = parseRunListSince(flag('since'))
   const requested = resolveRequestedRunIds(values('id'))
   const { ids: requestedIds, unknown: unknownRecordIds } = requested
   // Runs normally presents one canonical row per resumed conversation. If a caller names a child

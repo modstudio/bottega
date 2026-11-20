@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { commentParserAssets } from '../orchestrator/src/check/check-comment-parser-assets.ts'
@@ -7,7 +7,11 @@ import {
   SYSTEMD_UNIT_SUFFIXES,
 } from '../orchestrator/src/setup/setup-schedule-policy.ts'
 import { PLATFORM_SLUG } from '../shared/brand.ts'
-import { REF_GUARD_RUNTIME_ASSET, registerEmbeddedAssets } from '../shared/embedded-assets.ts'
+import {
+  EMBEDDED_ASSET_PREFIXES,
+  RUNTIME_ASSETS,
+  registerEmbeddedAssets,
+} from '../shared/embedded-assets.ts'
 import { LAUNCHD_TEMPLATE_OWNERS } from '../shared/launchd-owners.ts'
 import { BINARY_TARGETS, type BinaryTarget } from '../shared/release-artifacts.ts'
 import { sandboxRuntimePayloadPaths } from '../shared/sandbox-runtime-assets.ts'
@@ -18,6 +22,7 @@ const repositoryRoot = resolve(import.meta.dir, '..')
 
 function generatedAssetModule(
   textPaths: string[],
+  literalTextPaths: string[],
   filePaths: string[],
   manifest: ReturnType<typeof distributionManifest>,
 ): string {
@@ -35,6 +40,12 @@ function generatedAssetModule(
     .join('\n')
   const assetEntries = textPaths
     .map((path, index) => `${JSON.stringify(path)}: asset${index}`)
+    .concat(
+      literalTextPaths.map(
+        (path) =>
+          `${JSON.stringify(path)}: ${JSON.stringify(readFileSync(join(repositoryRoot, path), 'utf8'))}`,
+      ),
+    )
     .join(',\n')
   const fileEntries = filePaths
     .map((path, index) => `${JSON.stringify(path)}: file${index}`)
@@ -67,7 +78,7 @@ export async function embeddedAssetPaths(
 
 async function migrationAssetPaths(): Promise<string[]> {
   const paths: string[] = []
-  for (const root of ['orchestrator/migrations', 'hub/migrations']) {
+  for (const root of EMBEDDED_ASSET_PREFIXES.filter((path) => path.endsWith('/migrations'))) {
     paths.push(...(await embeddedAssetPaths(root)))
   }
   return paths.sort()
@@ -90,7 +101,7 @@ async function scheduleTemplateAssetPaths(): Promise<string[]> {
 }
 
 async function webAssetPaths(): Promise<string[]> {
-  const root = 'hub/web/dist'
+  const root = EMBEDDED_ASSET_PREFIXES.find((path) => path.endsWith('/web/dist'))!
   const paths = await embeddedAssetPaths(root)
   if (paths.length === 0) throw new Error('hub/web/dist is empty after the web build')
   return paths
@@ -150,8 +161,13 @@ export async function buildBinary(
         [
           ...(await migrationAssetPaths()),
           ...(await scheduleTemplateAssetPaths()),
-          REF_GUARD_RUNTIME_ASSET.packagePath,
+          ...RUNTIME_ASSETS.filter((asset) => !asset.packagePath.endsWith('.json')).map(
+            (asset) => asset.packagePath,
+          ),
         ],
+        RUNTIME_ASSETS.filter((asset) => asset.packagePath.endsWith('.json')).map(
+          (asset) => asset.packagePath,
+        ),
         [
           ...(await webAssetPaths()),
           ...sandboxRuntimePayloadPaths(platform, arch),

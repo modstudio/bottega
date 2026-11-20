@@ -23,7 +23,7 @@ from notice_transport import (
 from registered_scope import orch_worker_session
 from registered_scope import should_hook_act
 from hook_emission import launch_detached, record_emission, text_stats
-from hook_paths import state_root as _state_root
+from hook_paths import bottega_bin, state_root as _state_root
 
 with open(
     os.path.join(os.path.dirname(__file__), "session-start-context.json"),
@@ -577,7 +577,7 @@ def main() -> int:
             return 0
         sid = payload.get("session_id") or os.environ.get("CLAUDE_CODE_SESSION_ID")
         brief_source = payload.get("source") in ("compact", "resume")
-        bottega = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "bin", "bottega"))
+        bottega = bottega_bin()
         if not os.access(bottega, os.X_OK):
             message = f"Inbox command is missing or not executable: {bottega}; question state is unknown."
             output = {

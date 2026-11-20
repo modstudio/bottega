@@ -199,6 +199,7 @@ export const ROOT_TEST_FILES = [
   'scripts/check-remedy-text.test.ts',
   'scripts/check-hook-binary.test.ts',
   'scripts/check-install-paths.test.ts',
+  'scripts/check-runtime-assets.test.ts',
   'scripts/check-rehearsal-image-imports.test.ts',
   'scripts/architecture-cruise.test.ts',
   'scripts/architecture-hub-data.test.ts',

@@ -89,6 +89,22 @@ class SpawnIdentityTest(unittest.TestCase):
             self.assertTrue(row[0].startswith("\t"))
             self.assertIn("\tallowed\ttest", row[0])
 
+    def test_unresolved_store_reports_to_stderr_without_writing_in_cwd(self):
+        with tempfile.TemporaryDirectory() as folder:
+            block_agent = self.load_hook(" ")
+            stderr = io.StringIO()
+            previous = os.getcwd()
+            try:
+                os.chdir(folder)
+                with redirect_stderr(stderr):
+                    block_agent.log("denied", "test", {}, "PreToolUse", {})
+            finally:
+                os.chdir(previous)
+
+            self.assertIn("orchestrator store path unresolved", stderr.getvalue())
+            self.assertIn("\tdenied\ttest", stderr.getvalue())
+            self.assertEqual(os.listdir(folder), [])
+
     def test_machine_harness_setting_admits_native_agent_with_distinct_decision(self):
         with tempfile.TemporaryDirectory() as folder:
             block_agent = self.load_hook(os.path.join(folder, "orchestrator.db"))
