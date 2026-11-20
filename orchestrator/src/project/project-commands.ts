@@ -293,6 +293,7 @@ export async function addProject(
   if (targetSpace) await pullProjectAddCatalogues(input, targetSpace)
   const initialCandidate = {
     recordId: decision.kind === 'adopt' ? decision.recordId : newRecordId(),
+    recordRevision: decision.kind === 'adopt' ? decision.recordRevision : null,
     name: input.name,
     path: input.path,
     stack: decision.kind === 'adopt' ? decision.stack : input.stack,
@@ -316,9 +317,14 @@ export async function addProject(
   assertProjectAddRegisterBranches(candidate, trunkSource)
   verifyAndRecordVisibility(candidate)
   const wasRetired = Boolean(retiredProjectByName(input.name))
-  const recordId =
-    decision.kind === 'adopt' ? decision.recordId : await writeHostedProject(candidate)
-  registerLocalProject({ ...candidate, recordId }, targetSpace?.id ?? null)
+  const written =
+    decision.kind === 'adopt'
+      ? { recordId: decision.recordId, recordRevision: decision.recordRevision }
+      : await writeHostedProject({
+          ...candidate,
+          recordRevision: candidate.recordRevision ?? null,
+        })
+  registerLocalProject({ ...candidate, ...written }, targetSpace?.id ?? null)
   const project = projectByName(input.name)
   if (!project) throw new Error(`project ${input.name} was not registered`)
   return {
@@ -417,7 +423,10 @@ export async function migrateProjectSettingsText(
   for (const plan of plans) {
     const { snapshot, settings } = plan
     const candidate = { ...snapshot, settings }
-    const recordId = await writeHostedProject(candidate, plan.destinationSpaceId)
+    const written = await writeHostedProject(
+      { ...candidate, recordRevision: candidate.recordRevision ?? null },
+      plan.destinationSpaceId,
+    )
     writeTransaction(() => {
       const current = projectRowByName(snapshot.name)
       if (!current || JSON.stringify(current.settings) !== JSON.stringify(snapshot.settings)) {
@@ -425,7 +434,7 @@ export async function migrateProjectSettingsText(
           `project ${snapshot.name} changed during environment migration; re-run the command`,
         )
       }
-      upsertProject({ ...candidate, recordId })
+      upsertProject({ ...candidate, ...written })
     })
     changed.push({ project: snapshot.name, names: plan.names })
   }
@@ -449,8 +458,11 @@ export async function restoreMigratedProjectRows(rows: unknown[]): Promise<void>
       throw new Error('invalid project row in setup backup')
     }
     const destination = await hostedProjectDestination(project.name, project.settings)
-    const recordId = await writeHostedProject(project, destination?.destinationSpaceId)
-    writeTransaction(() => upsertProject({ ...project, recordId }))
+    const written = await writeHostedProject(
+      { ...project, recordRevision: project.recordRevision ?? null },
+      destination?.destinationSpaceId,
+    )
+    writeTransaction(() => upsertProject({ ...project, ...written }))
   }
 }
 
@@ -546,14 +558,18 @@ function fillCandidate(current: Project, input: FillAbsentProjectInput): FillCan
 async function writeHostedFillCandidate(
   snapshot: Project,
   candidate: FillCandidate,
-): Promise<string> {
-  if (!candidate.project) return snapshot.recordId
+): Promise<{ recordId: string; recordRevision: number | null }> {
+  if (!candidate.project)
+    return { recordId: snapshot.recordId, recordRevision: snapshot.recordRevision ?? null }
   const destination = await hostedProjectDestination(
     candidate.project.name,
     candidate.project.settings,
   )
   await refuseHostedProjectSpaceChange(snapshot, candidate.project.settings, destination)
-  return writeHostedProject(candidate.project, destination?.destinationSpaceId)
+  return writeHostedProject(
+    { ...candidate.project, recordRevision: candidate.project.recordRevision ?? null },
+    destination?.destinationSpaceId,
+  )
 }
 
 /** Atomically fills setup-owned gaps without overwriting a value written since planning. */
@@ -570,7 +586,7 @@ export async function fillAbsentProjectSettings(
       ? (dependencies.branchChecker ?? registerBranchCheck)(checked.project)
       : null
     try {
-      const recordId = await writeHostedFillCandidate(snapshot, checked)
+      const written = await writeHostedFillCandidate(snapshot, checked)
       writeTransaction(() => {
         const current = projectByName(input.name)
         if (!current) throw new Error(`no project "${input.name}"`)
@@ -586,8 +602,8 @@ export async function fillAbsentProjectSettings(
           throw new FillAbsentProjectChanged()
         }
         assertRegisterBranches(next.project, branchCheck!)
-        upsertProject({ ...next.project, recordId })
-        candidate = { ...next.project, recordId }
+        upsertProject({ ...next.project, ...written })
+        candidate = { ...next.project, ...written }
       })
       break
     } catch (error) {
@@ -684,9 +700,12 @@ async function persistSetProject(
   destinationSpaceId?: string,
 ): Promise<void> {
   const renamed = nextName === currentName ? null : assertProjectRename(currentName, nextName)
-  const recordId = await writeHostedProject(candidate, destinationSpaceId)
+  const written = await writeHostedProject(
+    { ...candidate, recordRevision: candidate.recordRevision ?? null },
+    destinationSpaceId,
+  )
   const nextTrunk = typeof candidate.settings.trunk === 'string' ? candidate.settings.trunk : null
-  persistLocalProjectSet(renamed, currentName, nextName, { ...candidate, recordId })
+  persistLocalProjectSet(renamed, currentName, nextName, { ...candidate, ...written })
   if (previousTrunk === nextTrunk) return
   tryWriteContention({
     resourceKind: 'register',
@@ -704,6 +723,7 @@ function projectSetCandidate(
 ): Project {
   return {
     recordId: project.recordId,
+    recordRevision: project.recordRevision ?? null,
     name: flags.flag('name') ?? currentName,
     path: flags.flag('path') ?? project.path,
     stack: flags.flag('stack') ?? project.stack,

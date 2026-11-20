@@ -12,6 +12,7 @@ export const RecordProjectSchema = z.object({
   landingBranch: z.string().nullable(),
   color: z.string().nullable(),
   colorDark: z.string().nullable(),
+  revision: z.number().int().positive().optional(),
   retiredAt: z.string().nullable(),
   canon: z.boolean().optional(),
   settings: z.record(z.string(), z.unknown()).optional(),

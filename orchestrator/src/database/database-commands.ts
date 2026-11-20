@@ -48,10 +48,12 @@ type MigrateCommandActions = {
   migrate(input?: { beforeMigration?: string }): {
     path: string
     versions: string[]
+    created?: boolean
   }
   migrateCutover?(): {
     path: string
     versions: string[]
+    created?: boolean
     files?: RunFilesystemMigrationReport
   }
   contracted(): Promise<boolean>

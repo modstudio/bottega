@@ -15,7 +15,7 @@ import {
   migrateCommand,
   setupIncrementalVacuumAfterMachineUpdate,
 } from './database-commands.ts'
-import { closeDatabaseForFixture, db } from './db.ts'
+import { closeDatabaseForFixture, DATABASE_RESOLUTION, DB_PATH, db, migrateDatabase } from './db.ts'
 import type { MigrationDrainDecision } from './migration-drain-decision.ts'
 import { migrationDrain } from './migration-drain-state.ts'
 import {
@@ -190,6 +190,60 @@ test('migrate contracts only after identity fill succeeds', async () => {
     'after',
     'backfill',
   ])
+})
+
+test('a staged migration seeds a fresh store only after reaching the current schema', async () => {
+  const resolutionMethod = DATABASE_RESOLUTION.method
+  closeDatabaseForFixture()
+  try {
+    for (const suffix of ['', '-wal', '-shm', '-journal'])
+      rmSync(`${DB_PATH}${suffix}`, { force: true })
+    DATABASE_RESOLUTION.method = 'state-root'
+
+    await migrateCommand({ log: () => {} })
+
+    const database = new Database(DB_PATH, { readonly: true, create: false })
+    try {
+      expect(
+        database.query<{ name: string }, []>("SELECT name FROM project WHERE name='tasks'").get(),
+      ).toEqual({ name: 'tasks' })
+      expect(
+        database
+          .query<{ name: string }, []>(
+            "SELECT name FROM pragma_table_info('project') WHERE name='record_revision'",
+          )
+          .get(),
+      ).toEqual({ name: 'record_revision' })
+    } finally {
+      database.close()
+    }
+  } finally {
+    DATABASE_RESOLUTION.method = resolutionMethod
+  }
+})
+
+test('a staged migration resumed in a new command still seeds the fresh store', async () => {
+  const resolutionMethod = DATABASE_RESOLUTION.method
+  closeDatabaseForFixture()
+  try {
+    for (const suffix of ['', '-wal', '-shm', '-journal'])
+      rmSync(`${DB_PATH}${suffix}`, { force: true })
+    DATABASE_RESOLUTION.method = 'state-root'
+
+    migrateDatabase({ beforeMigration: '0115_project_identity_contract' })
+    await migrateCommand({ log: () => {} })
+
+    const database = new Database(DB_PATH, { readonly: true, create: false })
+    try {
+      expect(
+        database.query<{ name: string }, []>("SELECT name FROM project WHERE name='tasks'").get(),
+      ).toEqual({ name: 'tasks' })
+    } finally {
+      database.close()
+    }
+  } finally {
+    DATABASE_RESOLUTION.method = resolutionMethod
+  }
 })
 
 test('an apply-now migrate runs inside the store-open migration window', async () => {

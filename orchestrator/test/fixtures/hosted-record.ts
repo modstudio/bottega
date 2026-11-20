@@ -75,6 +75,10 @@ function pgliteQuery(database: Pick<PGlite, 'query'>): SQL {
     return result(statement, parameters)
   }
   query.options = {}
+  query.array = (values: unknown[], type: string) => ({
+    sql: `$1::${type}[]`,
+    parameters: [values],
+  })
   query.unsafe = (sql: string, parameters?: unknown[]) => {
     if (parameters === undefined) return { sql, parameters: [] }
     return result(sql, parameters)

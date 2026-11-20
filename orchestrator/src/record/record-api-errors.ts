@@ -2,6 +2,8 @@
 /** Maps hosted-service refusals to their HTTP status without hiding unexpected failures. */
 
 import type { Context } from 'hono'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { refusal, renderRefusal } from '../../../shared/refusal.ts'
 import { DocRevisionConflictError, revisionConflictBody } from '../doc/doc-revision-conflict.ts'
 import { OutboxRowError } from './outbox-failure.ts'
 import { RecordBoardError } from './record-board-contract.ts'
@@ -12,7 +14,7 @@ import {
   projectSpaceConflictResponse,
   RecordProjectSpaceConflictError,
 } from './record-project-space-contract.ts'
-import { RecordProjectError } from './record-projects.ts'
+import { RecordProjectError, RecordProjectRevisionConflictError } from './record-projects.ts'
 import { RecordQuestionError } from './record-question-contract.ts'
 import { SpaceDeleteError } from './record-trial-space-contract.ts'
 import { RecordVerdictError } from './record-verdicts.ts'
@@ -27,6 +29,22 @@ export function renderRecordApiRefusal(context: Context, error: unknown): Respon
     return context.json(revisionConflictBody(error), 409)
   if (error instanceof RecordProjectSpaceConflictError)
     return context.json(projectSpaceConflictResponse(error), error.status)
+  if (error instanceof RecordProjectRevisionConflictError) {
+    const condition = error.message
+    return context.json(
+      revisionConflictBody(
+        new DocRevisionConflictError(
+          renderRefusal(
+            refusal(condition, { kind: 'command', argv: [PLATFORM_SLUG, 'record', 'sync'] }),
+          ),
+          condition,
+          'stale-revision',
+          error.currentRevision,
+        ),
+      ),
+      error.status,
+    )
+  }
   if (error instanceof RecordQuestionError)
     return context.json(
       error.code ? { error: error.message, code: error.code } : { error: error.message },

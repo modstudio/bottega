@@ -22,6 +22,7 @@ export function defaultLocalProjectPath(environment: StateEnvironment = process.
 
 export type ProjectRegisterWrite = {
   recordId: string
+  recordRevision?: number | null
   name: string
   path: string
   stack?: string | null
@@ -33,14 +34,16 @@ export type ProjectRegisterWrite = {
 export function writeProjectRegisterRow(database: Database, project: ProjectRegisterWrite): void {
   database
     .query(
-      `INSERT INTO project (record_id, name, path, stack, canon, settings, retired_at) VALUES (?,?,?,?,?,?,NULL)
+      `INSERT INTO project (record_id, record_revision, name, path, stack, canon, settings, retired_at) VALUES (?,?,?,?,?,?,?,NULL)
        ON CONFLICT(name) DO UPDATE SET path=excluded.path, stack=excluded.stack,
                                        canon=excluded.canon, settings=excluded.settings,
                                        record_id=COALESCE(project.record_id, excluded.record_id),
+                                       record_revision=COALESCE(excluded.record_revision, project.record_revision),
                                        retired_at=NULL`,
     )
     .run(
       project.recordId,
+      project.recordRevision ?? null,
       project.name,
       project.path.replace(/\/$/, ''),
       project.stack ?? null,
@@ -54,30 +57,45 @@ export function deleteProjectRegisterRow(database: Database, recordId: string): 
   return database.query('DELETE FROM project WHERE record_id = ?').run(recordId).changes > 0
 }
 
+/** Store the last hosted revision observed for one project-register row. */
+export function storeProjectRecordRevision(
+  database: Database,
+  recordId: string,
+  revision: number | null,
+): void {
+  database.query('UPDATE project SET record_revision=? WHERE record_id=?').run(revision, recordId)
+}
+
 /** Mirror a hosted row onto the local row it is linked to by record id, lifecycle included; returns rows changed. */
 export function mirrorProjectRegisterRow(
   database: Database,
   project: Omit<ProjectRegisterWrite, 'path'> & { retiredAt: string | null },
 ): number {
   return database
-    .query('UPDATE project SET name=?,stack=?,canon=?,settings=?,retired_at=? WHERE record_id=?')
+    .query(
+      'UPDATE project SET name=?,stack=?,canon=?,settings=?,retired_at=?,record_revision=? WHERE record_id=?',
+    )
     .run(
       project.name,
       project.stack ?? null,
       project.canon ? 1 : 0,
       JSON.stringify(project.settings ?? {}),
       project.retiredAt,
+      project.recordRevision ?? null,
       project.recordId,
     ).changes
 }
 
-/** Register the built-in tracker project only while creating a brand-new store. */
+/**
+ * Register the built-in tracker project only while the store's register is unseeded. The durable
+ * form of this state is the new_store_seed_pending schema_meta marker.
+ */
 export function initializeDefaultLocalProject(
   database: Database,
-  newStore: boolean,
+  seedPending: boolean,
   environment: StateEnvironment = process.env,
 ): void {
-  if (!newStore) return
+  if (!seedPending) return
   const exists = database
     .query('SELECT 1 FROM project WHERE name = ?')
     .get(DEFAULT_LOCAL_PROJECT_NAME)

@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { projectProblems } from './project-list-json.ts'
+import { listedProjectJson, projectProblems } from './project-list-json.ts'
 import type { Project } from './projects.ts'
 
 function project(name: string, path: string): Project {
@@ -25,4 +25,10 @@ test('project problems leaves the built-in non-repository tasks row unflagged', 
   expect(projectProblems(project('tasks', '/not/a/repository')).join('\n')).not.toContain(
     'landing branch',
   )
+})
+
+test('the local project list contract does not expose the hosted write revision', () => {
+  expect(
+    listedProjectJson({ ...project('tasks', '/not/a/repository'), recordRevision: 7 }),
+  ).not.toHaveProperty('recordRevision')
 })

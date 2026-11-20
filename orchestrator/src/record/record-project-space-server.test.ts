@@ -63,7 +63,7 @@ test('the project route renders a typed 409 naming the sent project and request 
       upsertProject: async () => {
         throw new RecordProjectSpaceConflictError(conflict)
       },
-      retireProject: async () => ({ name: 'unused' }),
+      retireProject: async () => ({ name: 'unused', revision: 1 }),
       purgeProject: async () => ({ nothingToRemove: true, tables: [] }),
     },
     {
@@ -130,7 +130,7 @@ test('the purge route binds every caller membership and renders guard refusals a
     {
       readProjects: async () => [],
       upsertProject: async () => ({ id: projectId, name: 'unused' }),
-      retireProject: async () => ({ name: 'unused' }),
+      retireProject: async () => ({ name: 'unused', revision: 1 }),
       purgeProject: async (input) => {
         expect(input.spaceIds).toEqual([conflict.spaceId, otherSpaceId])
         throw new RecordProjectPurgeError('caller-owner guard failed: proof refusal')

@@ -57,7 +57,7 @@ function clientWith(overrides: Partial<RecordApiClient> = {}): RecordApiClient {
     renameSubject: async () => ({ docs: 0, revisions: 0 }),
     upsertProject: async () => ({ id: newRecordId(), name: 'unused' }),
     listProjects: async () => [],
-    retireProject: async () => ({ name: 'unused' }),
+    retireProject: async () => ({ name: 'unused', revision: 1 }),
     listProjectSubjects: async () => ({ items: [], nextCursor: null }),
     addProjectSubject: async () => {
       throw new Error('hosted subjects are unused in this fixture')

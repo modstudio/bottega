@@ -141,6 +141,7 @@ describe('decideProjectAdd', () => {
       decision: {
         kind: 'adopt',
         recordId: 'project-a',
+        recordRevision: null,
         stack: 'typescript',
         settings: {
           trunk: 'main',

@@ -11,7 +11,13 @@ import { db } from '../database/db.ts'
 import { rememberHostedRecord } from '../record/install-binding-write.ts'
 import type { RecordApiClient } from '../record/record-api-client.ts'
 import { fillAbsentProjectSettings, projectCommand } from './project-commands.ts'
-import { projectByName, upsertProject } from './projects.ts'
+import { writeProjectToHostedRecord } from './project-hosted-write.ts'
+import {
+  projectByName,
+  retiredProjectByName,
+  retireWrittenProject,
+  upsertProject,
+} from './projects.ts'
 
 async function runProject(
   args: string[],
@@ -68,7 +74,7 @@ test('fresh stores add, fill, retire, and unretire locally without a hosted call
     },
     retireProject: async (name) => {
       hosted.push(`retire:${name}`)
-      return { name }
+      return { name, revision: 1 }
     },
   })
   const path = mkdtempSync(join(tmpdir(), 'orch-local-project-'))
@@ -95,6 +101,87 @@ test('a bound store refuses before adding a local row and names record use', asy
     'record use https://staging.example.test',
   )
   expect(projectByName('bound-refusal')).toBeNull()
+})
+
+test('a hosted project write carries and returns the last-seen revision', async () => {
+  rememberHostedRecord()
+  process.env.BOTTEGA_RECORD_API_URL = 'https://record-api.example.test'
+  const inputs: Array<{ expectedRevision?: number | null }> = []
+  installRecordApiClient({
+    ...createMemoryRecordApiClient(),
+    upsertProject: async (input) => {
+      inputs.push(input)
+      return { id: input.id, name: input.name, revision: 8 }
+    },
+  })
+
+  expect(
+    await writeProjectToHostedRecord(
+      {
+        recordId: newRecordId(),
+        recordRevision: 7,
+        name: 'revision-write',
+        path: '/w/revision-write',
+      },
+      newRecordId(),
+    ),
+  ).toMatchObject({ recordRevision: 8 })
+  expect(inputs).toEqual([expect.objectContaining({ expectedRevision: 7 })])
+})
+
+test('a hosted retire stores the bumped revision for the next local write', async () => {
+  rememberHostedRecord()
+  process.env.BOTTEGA_RECORD_API_URL = 'https://record-api.example.test'
+  const recordId = newRecordId()
+  upsertProject({
+    recordId,
+    recordRevision: 7,
+    name: 'retire-revision',
+    path: '/w/retire-revision',
+    settings: { space: 'fixture' },
+  })
+  installRecordApiClient({
+    ...createMemoryRecordApiClient(),
+    whoami: async () => ({
+      user: { id: 'user-a' },
+      activeSpaceId: 'space-a',
+      personalSpaceId: 'space-a',
+      memberships: [{ space_id: 'space-a', slug: 'fixture', permission: 'write' as const }],
+    }),
+    retireProject: async () => ({ name: 'retire-revision', revision: 8 }),
+  })
+
+  expect(await retireWrittenProject('retire-revision')).toBe('retired')
+  expect(retiredProjectByName('retire-revision')).toMatchObject({
+    retiredAt: expect.any(String),
+    recordRevision: 8,
+  })
+})
+
+test('a hosted retire preserves the last-seen revision when an older server omits it', async () => {
+  rememberHostedRecord()
+  process.env.BOTTEGA_RECORD_API_URL = 'https://record-api.example.test'
+  const recordId = newRecordId()
+  upsertProject({
+    recordId,
+    recordRevision: 7,
+    name: 'retire-old-server',
+    path: '/w/retire-old-server',
+    settings: { space: 'fixture' },
+  })
+  installRecordApiClient({
+    ...createMemoryRecordApiClient(),
+    whoami: async () => ({
+      user: { id: 'user-a' },
+      activeSpaceId: 'space-a',
+      personalSpaceId: 'space-a',
+      memberships: [{ space_id: 'space-a', slug: 'fixture', permission: 'write' as const }],
+    }),
+    retireProject: async () => ({ name: 'retire-old-server' }),
+  })
+
+  expect(await retireWrittenProject('retire-old-server')).toBe('retired')
+  expect(retiredProjectByName('retire-old-server')).toMatchObject({ recordRevision: 7 })
 })
 
 function recordingClient(calls: string[]): RecordApiClient {
