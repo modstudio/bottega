@@ -29,6 +29,7 @@ import { workerHarnessName } from '../agent/worker-launch-env.ts'
 import { ROOT } from '../database/db.ts'
 import { classify, NOT_EVIDENCE } from '../failure/failure.ts'
 import type { Project } from '../project/projects.ts'
+import { runningInstallReadCarveouts } from './install-read-policy.ts'
 import {
   canonicalSocketDenyPaths,
   createSandboxRuntimeConfig,
@@ -55,7 +56,6 @@ import {
   withoutRegisteredOrchAskServer,
   writerProfile,
 } from './sandbox.ts'
-import { runningInstallReadCarveouts } from './install-read-policy.ts'
 
 const fixtureProject = (settings: Project['settings'] = {}): Project => ({
   recordId: '01990000-0000-7000-8000-000000001214',

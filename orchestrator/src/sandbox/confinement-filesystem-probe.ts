@@ -7,10 +7,7 @@ import { startBounded } from '../../../shared/bounded-process.ts'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { resolveStatePaths, STATE_HOME_ENV } from '../../../shared/state-directory.ts'
 import type { Project } from '../project/projects.ts'
-import {
-  runningBottegaEntryArgv,
-  runningInstallRootForSandbox,
-} from './install-read-policy.ts'
+import { runningBottegaEntryArgv, runningInstallRootForSandbox } from './install-read-policy.ts'
 import { readonlyLensProfile, resetSandbox, sandboxLaunchArgv, writerProfile } from './sandbox.ts'
 
 type FilesystemProbeAccess = 'denied' | 'readable' | 'not covered'
@@ -48,8 +45,7 @@ async function launchCrossProjectCliProbe(
       family: 'cross-project CLI',
       status: 'denied',
       paths: { [`${PLATFORM_SLUG} --version`]: 'denied', 'install .env': 'not covered' },
-      reason:
-        'real running install used; its CLI failed, and no .env was planted in that checkout',
+      reason: 'real running install used; its CLI failed, and no .env was planted in that checkout',
     }
   } finally {
     await resetSandbox()

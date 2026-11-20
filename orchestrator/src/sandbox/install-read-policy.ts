@@ -4,10 +4,7 @@ import { readFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { ConfigEnvironment } from '../../../shared/config-directory.ts'
-import {
-  runningInstallationKind,
-  runningInstallRoot,
-} from '../../../shared/install-root.ts'
+import { runningInstallationKind, runningInstallRoot } from '../../../shared/install-root.ts'
 import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 
 type WorkspaceManifest = {

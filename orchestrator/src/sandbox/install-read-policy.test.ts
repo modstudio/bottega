@@ -3,10 +3,7 @@ import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { STATE_HOME_ENV } from '../../../shared/state-directory.ts'
 import type { Project } from '../project/projects.ts'
-import {
-  runningInstallReadCarveouts,
-  runningInstallRootForSandbox,
-} from './install-read-policy.ts'
+import { runningInstallReadCarveouts, runningInstallRootForSandbox } from './install-read-policy.ts'
 import { readonlyLensProfile } from './sandbox.ts'
 
 function fixtureProject(recordId: string, name: string, path: string): Project {
