@@ -176,15 +176,15 @@ const importAndPromoteCurrentTree = async (d: Database) => {
 }
 
 describe('importWorkflowTree', () => {
-  test('an unknown step key refuses the whole import before any draft is written', async () => {
+  test('an unknown step key refuses the whole import before any draft is written', () => {
     const d = database()
     const tree = renderedTree(d)
     const target = tree.find(({ path }) => path === '.agents/workflow-steps/blast-radius.md')!
-    target.body = target.body.replace('jobs: []', 'jobs: []\nfutureSetting: enabled')
+    target.body = target.body.replace('\n---\n', '\nfutureSetting: enabled\n---\n')
 
-    await expect(
+    expect(() =>
       importWorkflowTree(parseWorkflowTree(tree), 'unknown step setting', 'worker', d),
-    ).rejects.toThrow(
+    ).toThrow(
       '.agents/workflow-steps/blast-radius.md: unknown workflow step frontmatter key "futureSetting"; ' +
         'a new step setting lands in two pull requests: first the parser support for futureSetting, ' +
         'then the step files once that is on main.',
