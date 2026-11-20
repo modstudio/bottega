@@ -14,9 +14,9 @@ import {
 import {
   openQuestionForWorkflowStep,
   questionById,
+  questionProjectSpace,
   unlinkedWorkflowQuestions,
 } from '../question-store/question-store-read.ts'
-import { questionStore } from '../question-store/question-store.ts'
 import { rulingActor } from './question-vocabulary.ts'
 import { adoptedMutationReason } from './run-authority.ts'
 import {
@@ -30,6 +30,17 @@ import type { SessionProcessProbe } from './session-liveness-adapter.ts'
 import { sessionLivenessEvidence } from './session-liveness-adapter.ts'
 
 export type QuestionMutationAction = 'rule' | 'overturn' | 'file' | 'close'
+
+type WorkflowQuestionInput = {
+  cursorId: string
+  projectId: string | null
+  workflowKey: string
+  workflowTaskRecordId: string | null
+  cursorOrdinal: number
+  stepSlug: string
+  question: string
+  at: string
+}
 
 export function authorizeWorkflowQuestionMutation(input: {
   owner: string | null
@@ -87,17 +98,49 @@ export function authorizeWorkflowQuestionMutation(input: {
   return refusal()
 }
 
+async function replaceWorkflowQuestion(
+  input: WorkflowQuestionInput,
+  openId: string,
+  row: Record<string, unknown>,
+  database: Database,
+): Promise<{ recordId: string; number: number }> {
+  const reason = `re-asked in its project's declared record space`
+  const inserted = await askQuestion(database, {
+    workflowCursorRecordId: input.cursorId,
+    projectId: input.projectId,
+    workflowKey: input.workflowKey || null,
+    workflowTaskId: input.workflowTaskRecordId,
+    askedAt: input.at,
+    question: input.question,
+    askedVia: 'workflow',
+    awaitingOperatorAt: input.at,
+  })
+  try {
+    const mutation = await mutateQuestion(database, {
+      id: openId,
+      intent: 'close',
+      at: input.at,
+      actorSession: sessionId(),
+      reason,
+      changes: {
+        closedAt: input.at,
+        closeReason: reason,
+      },
+    })
+    requireQuestionMutationApplied(mutation, row)
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error)
+    throw new Error(
+      `replacement question ${inserted.number} (record ${inserted.id}) exists; ` +
+        `close stray question ${openId} with \`${PLATFORM_SLUG} question close ${openId} --reason <why>\`; close failed: ${detail}`,
+      { cause: error },
+    )
+  }
+  return { recordId: inserted.id, number: inserted.number }
+}
+
 export async function upsertWorkflowQuestion(
-  input: {
-    cursorId: string
-    projectId: string | null
-    workflowKey: string
-    workflowTaskRecordId: string | null
-    cursorOrdinal: number
-    stepSlug: string
-    question: string
-    at: string
-  },
+  input: WorkflowQuestionInput,
   database: Database = db(),
 ): Promise<{ recordId: string; number: number }> {
   const open = await openQuestionForWorkflowStep(database, {
@@ -114,7 +157,7 @@ export async function upsertWorkflowQuestion(
       )
     const projectSpace =
       input.projectId && row.project_record_id !== null
-        ? ((await questionStore(database).projectSpace?.(input.projectId)) ?? null)
+        ? await questionProjectSpace(database, input.projectId)
         : null
     const openSpace = typeof row?.space_id === 'string' ? row.space_id : null
     if (
@@ -122,39 +165,7 @@ export async function upsertWorkflowQuestion(
       (row?.project_record_id === null ||
         (projectSpace !== null && openSpace !== null && openSpace !== projectSpace))
     ) {
-      const reason = `re-asked in its project's declared record space`
-      const inserted = await askQuestion(database, {
-        workflowCursorRecordId: input.cursorId,
-        projectId: input.projectId,
-        workflowKey: input.workflowKey || null,
-        workflowTaskId: input.workflowTaskRecordId,
-        askedAt: input.at,
-        question: input.question,
-        askedVia: 'workflow',
-        awaitingOperatorAt: input.at,
-      })
-      try {
-        const mutation = await mutateQuestion(database, {
-          id: openId,
-          intent: 'close',
-          at: input.at,
-          actorSession: sessionId(),
-          reason,
-          changes: {
-            closedAt: input.at,
-            closeReason: reason,
-          },
-        })
-        requireQuestionMutationApplied(mutation, row)
-      } catch (error) {
-        const detail = error instanceof Error ? error.message : String(error)
-        throw new Error(
-          `replacement question ${inserted.number} (record ${inserted.id}) exists; ` +
-            `close stray question ${openId} with \`${PLATFORM_SLUG} question close ${openId} --reason <why>\`; close failed: ${detail}`,
-          { cause: error },
-        )
-      }
-      return { recordId: inserted.id, number: inserted.number }
+      return replaceWorkflowQuestion(input, openId, row, database)
     } else {
       const mutation = await mutateQuestion(database, {
         id: openId,

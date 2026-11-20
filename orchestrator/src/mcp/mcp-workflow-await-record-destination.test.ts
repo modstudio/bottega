@@ -3,10 +3,10 @@ import { Client, InMemoryTransport } from '@modelcontextprotocol/client'
 import { PLATFORM_NAME, PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   createRecordContractFixture,
-  type RecordContractFixture,
   RECORD_CONTRACT_SPACE_A,
   RECORD_CONTRACT_SPACE_B,
   RECORD_CONTRACT_USER,
+  type RecordContractFixture,
 } from '../../test/fixtures/record-contract.ts'
 import { db } from '../database/db.ts'
 import { rememberActiveRecordSpace } from '../project-space.ts'
