@@ -21,6 +21,8 @@ const migrationPaths =
 const migrationCommand = `./bin/${PLATFORM_SLUG} machine migrate`
 const installProofPaths =
   'install.sh scripts/smoke-release-install.ts scripts/build-binary.ts scripts/build-release-artifacts.ts scripts/release-config.ts orchestrator/src/setup/ orchestrator/src/settings/ orchestrator/src/canon/ orchestrator/src/health/ hub/src/doctor.ts orchestrator/migrations hub/migrations'
+const aggregateAcceptance =
+  '.value.result == "success" or ((.key == "migration-compatibility" or .key == "install-proof") and .value.result == "skipped")'
 const installProofCommand = 'bun run release:install-proof -- "v$(jq -r .version package.json)"'
 const ciReleaseSmokeCondition =
   "github.event_name == 'pull_request' || github.event_name == 'merge_group' || github.event_name == 'workflow_dispatch'"
@@ -160,8 +162,10 @@ function checkMigrationCompatibilityJobs(source: string): void {
     throw new Error('migration-compatibility job must print the SQLite version Bun links')
 
   const aggregate = workflowJob(source, 'ci')
-  if (!aggregate.includes('.key == "migration-compatibility"'))
-    throw new Error('ci aggregate must accept a path-skipped migration-compatibility job')
+  if (!aggregate.includes(aggregateAcceptance))
+    throw new Error(
+      `ci aggregate must accept only success, or skipped for path-gated jobs: ${aggregateAcceptance}`,
+    )
 }
 
 function checkInstallProofJob(source: string): void {
@@ -182,7 +186,7 @@ function checkInstallProofJob(source: string): void {
     throw new Error(`install-proof job must run ${installProofCommand}`)
 
   const aggregate = workflowJob(source, 'ci')
-  if (!aggregate.includes('.key == "install-proof"'))
+  if (!aggregate.includes(aggregateAcceptance))
     throw new Error('ci aggregate must accept a path-skipped install-proof job')
 }
 

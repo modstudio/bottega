@@ -116,6 +116,18 @@ test('pins the release install proof path gate and macOS job', () => {
   ).toThrow('install-proof job must skip unless install proof paths changed')
 })
 
+test('refuses an aggregate that lets a path-gated job fail', () => {
+  const workflow = readWorkflowFixture()
+  expect(() =>
+    checkCiWorkflow(
+      workflow.replace(
+        'or .key == "install-proof") and .value.result == "skipped"',
+        'or .key == "install-proof") and .value.result != "cancelled"',
+      ),
+    ),
+  ).toThrow('ci aggregate must accept only success, or skipped for path-gated jobs')
+})
+
 test('pins the Python hook leg', () => {
   const workflow = readWorkflowFixture()
   expect(() =>
