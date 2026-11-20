@@ -50,7 +50,7 @@ const NULLABLE_QUESTION_TIMESTAMPS = [
 const REQUIRED_QUESTION_TIMESTAMPS = ['asked_at', 'created_at', 'updated_at'] as const
 
 /** Normalize a record question row before it crosses the question-store boundary. */
-export function mapRecordQuestionRow(row: Row): Row {
+function mapRecordQuestionRow(row: Row): Row {
   const mapped = { ...row }
   for (const column of REQUIRED_QUESTION_TIMESTAMPS) {
     if (column in mapped) mapped[column] = recordIso(mapped[column])
@@ -150,7 +150,7 @@ async function recordQuestionRulingRows(
      ORDER BY q.number${sqlLimit}`,
     values,
   )) as Row[]
-  return rows.map(mapRecordQuestionRow)
+  return rows
 }
 
 const QUESTION_DETAIL_COLUMNS = `q.id::text record_id,q.space_id::text space_id,q.number,q.run_id::text run_record_id,
@@ -240,7 +240,7 @@ async function recordQuestionDetails(tx: SQL, input: QuestionDetailInput): Promi
      WHERE ${filter.predicate} ORDER BY q.number`,
     filter.values,
   )) as Row[]
-  return rows.map(mapRecordQuestionRow)
+  return rows
 }
 
 async function boundedIdentityRows(tx: SQL, input: QuestionReadInput): Promise<Row[] | null> {
@@ -483,7 +483,7 @@ export async function readRecordQuestionRows(
   tx: SQL,
   input: Exclude<QuestionReadInput, { read: 'rulings' }>,
 ): Promise<{ items: Row[]; cursor?: string; more?: boolean }> {
-  const items = await rows(tx, input)
+  const items = (await rows(tx, input)).map(mapRecordQuestionRow)
   if (input.read !== 'inbox' || input.limit === undefined) return { items }
   const offset = input.changedAfter === undefined ? 0 : Number(input.changedAfter)
   const page = items.slice(0, input.limit)
@@ -612,12 +612,16 @@ export async function readRecordQuestions(
       throw new UnboundedQuestionRulingsError()
     const client = recordPool(input.url)
     if (input.limit !== undefined || (input.changedAfter && 'questionNumber' in input.changedAfter))
-      return readRulingPage(client, input)
-    return readRulingChanges(client, input)
+      return mapQuestionReadResult(await readRulingPage(client, input))
+    return mapQuestionReadResult(await readRulingChanges(client, input))
   }
   const client = recordPool(input.url)
   return client.begin(async (tx) => {
     await bindTenant(tx, input)
     return readRecordQuestionRows(tx, input)
   })
+}
+
+function mapQuestionReadResult<T extends { items: Row[] }>(result: T): T {
+  return { ...result, items: result.items.map(mapRecordQuestionRow) }
 }

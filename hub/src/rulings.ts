@@ -25,7 +25,7 @@ const FIVE_MINUTES_MS = 5 * 60_000
 const ONE_HOUR_MS = 60 * 60_000
 
 export type RulingMeasureQuestion = {
-  question_id: string
+  question_record_id: string
   asked_at: string
   answered_at: string | null
   asked_via: AskedVia | null
@@ -35,7 +35,7 @@ export type RulingMeasureQuestion = {
 }
 
 export type RulingMeasureDelivery = {
-  question_id: string
+  question_record_id: string
   mode: QuestionDeliveryMode
   outcome: QuestionDeliveryOutcome
 }
@@ -83,8 +83,8 @@ export function measureRulings(
     const askedAt = Date.parse(question.asked_at)
     return Number.isFinite(askedAt) && askedAt >= startsAt && askedAt <= now
   })
-  const questionIds = new Set(questions.map((question) => question.question_id))
-  const deliveries = deliveryRows.filter((delivery) => questionIds.has(delivery.question_id))
+  const questionIds = new Set(questions.map((question) => question.question_record_id))
+  const deliveries = deliveryRows.filter((row) => questionIds.has(row.question_record_id))
   const waits = questions.flatMap((question) => {
     if (question.answered_at == null) return []
     const wait = Date.parse(question.answered_at) - Date.parse(question.asked_at)
@@ -107,7 +107,7 @@ export function measureRulings(
     const delivered = (mode: QuestionDeliveryMode) =>
       deliveries.some(
         (delivery) =>
-          delivery.question_id === question.question_id &&
+          delivery.question_record_id === question.question_record_id &&
           delivery.mode === mode &&
           delivery.outcome === 'delivered',
       )
@@ -267,12 +267,12 @@ export function rulingsPayload(now = Date.now()) {
 export function rulingsStatsPayload(days = DEFAULT_STATS_DAYS, now = Date.now()) {
   const questionRows = db()
     .query<RulingMeasureQuestion, []>(
-      `SELECT record_id question_id, asked_at, answered_at, asked_via, answerer_kind, overturned_at, closed_at FROM question`,
+      `SELECT record_id question_record_id, asked_at, answered_at, asked_via, answerer_kind, overturned_at, closed_at FROM question`,
     )
     .all()
   const deliveryRows = db()
     .query<RulingMeasureDelivery, []>(
-      `SELECT q.record_id question_id,d.mode,d.outcome FROM question_delivery d
+      `SELECT q.record_id question_record_id,d.mode,d.outcome FROM question_delivery d
        JOIN question q ON q.record_id=d.question_record_id`,
     )
     .all()

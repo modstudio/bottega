@@ -182,6 +182,32 @@ test('hosted targeted question reads enforce run, task, and session scope', asyn
   expect(session.items.map((row) => row.number)).toEqual([1, 2])
 })
 
+test('hosted detail reads normalize timestamptz values at the public reader boundary', async () => {
+  await database.exec(`
+    RESET ROLE;
+    UPDATE question
+    SET asked_at='2026-11-17 04:05:04.603+00',
+        answered_at='2026-11-17 05:06:07.008+00'
+    WHERE id='01990000-0000-7000-8000-000000004012';
+    SET ROLE record_actor;
+  `)
+
+  const sql = pgliteSql(database)
+  const forRuns = await readRecordQuestionRows(sql, {
+    read: 'for-runs',
+    runIds: [firstRunId],
+  })
+  const byNumber = await readRecordQuestionRows(sql, { read: 'by-number', number: 2 })
+  const expected = {
+    asked_at: '2026-11-17T04:05:04.603Z',
+    answered_at: '2026-11-17T05:06:07.008Z',
+  }
+
+  expect(forRuns.items.find((row) => row.number === 2)).toMatchObject(expected)
+  expect(byNumber.items).toHaveLength(1)
+  expect(byNumber.items[0]).toMatchObject(expected)
+})
+
 async function questionsForCrossSpaceRun(spaceIds: string[], principalUserId = userId) {
   const sql = pgliteSql(database)
   return sql.begin(async (tx) => {
