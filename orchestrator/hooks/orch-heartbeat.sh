@@ -83,10 +83,12 @@ if [ -n "${BOTTEGA_ORCHESTRATOR_DB:-}" ]; then
     *) DB_PATH="$CALLER_DIRECTORY/$BOTTEGA_ORCHESTRATOR_DB" ;;
   esac
 else
-  DB_PATH=$("$BOTTEGA" machine store-path | head -n 1) || {
+  # Read the whole listing: piping to head under pipefail races the CLI's later lines into SIGPIPE.
+  store_paths=$("$BOTTEGA" machine store-path) || {
     echo "DEGRADED: cannot resolve orchestrator database"
     exit 2
   }
+  DB_PATH=${store_paths%%$'\n'*}
 fi
 export BOTTEGA_ORCHESTRATOR_DB="$DB_PATH"
 
