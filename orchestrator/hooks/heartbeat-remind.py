@@ -35,6 +35,7 @@ def checkout_hooks() -> bool:
 
 
 def arm_context(session_id: str, checkout: bool | None = None) -> str:
+    # Distribution text mirrors shared/heartbeat-guidance.ts.
     is_checkout = checkout_hooks() if checkout is None else checkout
     arm = f"{heartbeat_path()} {session_id}"
     if is_checkout:

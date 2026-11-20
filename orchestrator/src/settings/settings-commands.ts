@@ -2,7 +2,6 @@
 /** Knows settings import and render --check command semantics. Must not know runs, routing, transports, the CLI, or worktrees. */
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { assetPath } from '../../../shared/install-root.ts'
 import { readMachinePermissions, readMachineValue } from '../../../shared/machine-config.ts'
 import type { Finding } from '../../../shared/ratchet.ts'
 import { renderRefusal } from '../../../shared/refusal.ts'
@@ -358,7 +357,6 @@ function effectiveStoredSettings(
   const merged = mergeMachinePermissionOverlay(hosted, readMachinePermissions()).settings
   return withMachineProductHooks(
     merged,
-    assetPath(),
     resolveOrchestratorDatabase(process.env),
     readMachineValue('machine.global_use') as 'on' | 'off',
     resolveMachineHookRuntime(),

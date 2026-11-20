@@ -11,6 +11,8 @@ import { tmpdir } from 'node:os'
 import { basename, join, resolve } from 'node:path'
 import { startBounded, startParentBound } from '../shared/bounded-process.ts'
 import { MCP_SERVER_NAME, PLATFORM_SLUG, WORKER_MCP_SERVER_NAME } from '../shared/brand.ts'
+import { renderedBoardHeartbeatGuidance } from '../shared/heartbeat-guidance.ts'
+import { shellQuote } from '../shared/shell-quote.ts'
 import { parseBinaryTarget } from './build-binary.ts'
 import { buildReleaseArtifact, writeChecksumSet } from './build-release-artifacts.ts'
 import { releaseVersion, stripInheritedOverrides } from './release-support.ts'
@@ -103,18 +105,6 @@ export function releaseInstallEnvironment(
   env.CODEX_HOME = join(paths.home, '.codex')
   env.PATH = `${paths.stub}:${join(paths.home, '.grok', 'bin')}:${paths.bin}:/usr/bin:/bin:/usr/sbin:/sbin`
   return env
-}
-
-function shellQuote(value: string): string {
-  return `'${value.replaceAll("'", `'"'"'`)}'`
-}
-
-export function distributionHeartbeatCommand(
-  executable: string,
-  script: string,
-  session: string,
-): string {
-  return `BOTTEGA_BIN=${shellQuote(executable)} ${script} ${session}`
 }
 
 function launchctlStub(stateFile: string, logFile: string): string {
@@ -373,36 +363,6 @@ async function runExtractedHookProof(
   return result
 }
 
-async function firstOutputLine(
-  stream: ReadableStream<Uint8Array>,
-  timeoutMs: number,
-): Promise<string | null> {
-  const reader = stream.getReader()
-  const decoder = new TextDecoder()
-  let pending = ''
-  const read = async (): Promise<string | null> => {
-    for (;;) {
-      const chunk = await reader.read()
-      if (chunk.done) return pending || null
-      pending += decoder.decode(chunk.value, { stream: true })
-      const newline = pending.indexOf('\n')
-      if (newline >= 0) return pending.slice(0, newline)
-    }
-  }
-  let timeout: ReturnType<typeof setTimeout> | undefined
-  try {
-    return await Promise.race([
-      read(),
-      new Promise<null>((resolve) => {
-        timeout = setTimeout(() => resolve(null), timeoutMs)
-      }),
-    ])
-  } finally {
-    if (timeout) clearTimeout(timeout)
-    await reader.cancel().catch(() => {})
-  }
-}
-
 async function runHeartbeatArmProof(
   version: string,
   paths: InstallProofPaths,
@@ -419,27 +379,60 @@ async function runHeartbeatArmProof(
     'hooks',
     'orch-heartbeat.sh',
   )
-  const command = distributionHeartbeatCommand(executable, script, HEARTBEAT_PROOF_SESSION)
-  const child = startParentBound(['sh', '-c', command], {
-    name: 'release install heartbeat proof',
-    cwd: paths.home,
-    env,
+  const guidance = renderedBoardHeartbeatGuidance({
+    session: HEARTBEAT_PROOF_SESSION,
+    script,
+    distributionExecutable: executable,
   })
+  const prefix = 'Arm under Monitor: '
+  if (!guidance.startsWith(prefix)) {
+    return {
+      name: 'heartbeat arm',
+      exitCode: 1,
+      output: guidance,
+      stderr: 'distribution heartbeat guidance did not render a runnable command',
+    }
+  }
+  const command = guidance.slice(prefix.length)
+  let child: ReturnType<typeof startParentBound>
+  try {
+    child = startParentBound(['sh', '-c', command], {
+      name: 'release install heartbeat proof',
+      cwd: paths.home,
+      env,
+    })
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    recordProofAssertion(failures, false, `heartbeat arm failed to start: ${message}`)
+    return { name: 'heartbeat arm', exitCode: 1, output: '', stderr: message }
+  }
+  const stdoutPromise = new Response(child.stdout).text()
   const stderrPromise = new Response(child.stderr).text()
-  const line = await firstOutputLine(child.stdout, 5_000)
-  child.kill()
-  await child.exited
-  const stderr = await stderrPromise
-  recordProofAssertion(failures, line !== null, 'heartbeat arm produced no line within 5 seconds')
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const outcome = await Promise.race([
+    child.exited.then((exitCode) => ({ state: 'exited' as const, exitCode })),
+    new Promise<{ state: 'running'; exitCode: null }>((resolve) => {
+      timer = setTimeout(() => resolve({ state: 'running', exitCode: null }), 5_000)
+    }),
+  ])
+  if (timer) clearTimeout(timer)
+  if (outcome.state === 'running') {
+    child.kill()
+    await child.exited
+  }
+  const [output, stderr] = await Promise.all([stdoutPromise, stderrPromise])
+  const degraded = output.split('\n').some((line) => line.includes('DEGRADED'))
+  const passed = !degraded && (outcome.state === 'running' || outcome.exitCode === 0)
+  recordProofAssertion(failures, !degraded, `heartbeat arm degraded: ${output.trim()}`)
   recordProofAssertion(
     failures,
-    line !== null && !line.startsWith('DEGRADED') && !line.includes(' DEGRADED '),
-    `heartbeat arm degraded: ${line ?? '<no output>'}`,
+    outcome.state === 'running' || outcome.exitCode === 0,
+    `heartbeat arm exited ${outcome.exitCode}`,
   )
   return {
     name: 'heartbeat arm',
-    exitCode: line !== null && !line.startsWith('DEGRADED') && !line.includes(' DEGRADED ') ? 0 : 1,
-    output: line ?? '',
+    exitCode: passed ? 0 : 1,
+    output,
     stderr,
   }
 }
@@ -527,6 +520,9 @@ function reportProof(results: StepResult[], assertionFailures: string[]): number
     console.log(`${result.name} exit ${result.exitCode}`)
     if ((result.exitCode !== 0 || result.name === 'extracted hook') && result.output) {
       console.log(result.output)
+    }
+    if (result.name === 'heartbeat arm') {
+      console.log(`heartbeat arm stdout: ${result.output.trim() || '<empty>'}`)
     }
   }
   for (const failure of assertionFailures) console.error(`proof assertion failed: ${failure}`)

@@ -3,6 +3,7 @@
 
 import { dirname, join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { shellQuote } from '../../../shared/shell-quote.ts'
 import {
   BOARD_ACK_STOP_BLOCKS,
   BOARD_PRESENCE_REFRESH_SECONDS,
@@ -177,8 +178,6 @@ export const PRODUCT_HOOKS: readonly ProductHookDeclaration[] = [
   { event: 'PreCompact', script: 'context-precompact.py' },
 ]
 
-const shellQuote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`
-
 export function commandNamesHookScript(command: string, file: string, assetRoot?: string): boolean {
   const needle = assetRoot
     ? join(assetRoot, 'orchestrator', 'hooks', file)
@@ -291,7 +290,6 @@ function declaredScript(command: unknown): RecognizedScriptFile | undefined {
 /** Replace profile copies of product hooks and append the canonical product declaration. */
 export function withMachineProductHooks(
   settings: OwnedSettings,
-  assetRoot: string,
   databasePath: string,
   globalUse: 'on' | 'off',
   runtime: MachineHookRuntime,

@@ -101,6 +101,10 @@ class HeartbeatGuardRunIdentityTest(unittest.TestCase):
             f"{heartbeat_guard.heartbeat_path()} session",
         )
 
+    def test_unresolved_landing_store_is_unknowable(self):
+        with patch.object(heartbeat_guard, "landing_db_path", return_value=""):
+            self.assertIsNone(heartbeat_guard.live_landing_ids("session"))
+
 
 if __name__ == "__main__":
     unittest.main()

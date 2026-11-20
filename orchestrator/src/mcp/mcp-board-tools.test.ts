@@ -3,11 +3,12 @@ import { resolve } from 'node:path'
 import { Client } from '@modelcontextprotocol/client'
 import { InMemoryTransport, McpServer } from '@modelcontextprotocol/server'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { renderedBoardHeartbeatGuidance } from '../../../shared/heartbeat-guidance.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { BOARD_TITLE_MAX_CHARS } from '../board/board-policy.ts'
 import { postNotice } from '../board/board-service.ts'
 import { db } from '../database/db.ts'
-import { registerBoardTools, renderedBoardHeartbeatGuidance } from './mcp-board-tools.ts'
+import { registerBoardTools } from './mcp-board-tools.ts'
 
 let identityKeys: string[] = []
 let identityEnvironment: Record<string, string | undefined> = {}
@@ -167,7 +168,7 @@ test('heartbeat guidance carries the installed binary only for a distribution', 
       distributionExecutable: `/install dir/${PLATFORM_SLUG}'s`,
     }),
   ).toBe(
-    `Arm under Monitor: BOTTEGA_BIN='/install dir/${PLATFORM_SLUG}'"'"'s' /state/runtime/1/assets/orchestrator/hooks/orch-heartbeat.sh session-1`,
+    `Arm under Monitor: BOTTEGA_BIN='/install dir/${PLATFORM_SLUG}'\\''s' /state/runtime/1/assets/orchestrator/hooks/orch-heartbeat.sh session-1`,
   )
 })
 

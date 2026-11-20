@@ -75,7 +75,7 @@ const profileHooks = {
 }
 
 function render(hooks: unknown) {
-  return withMachineProductHooks({ permissions: {}, hooks }, ASSET_ROOT, DATABASE, 'on', RUNTIME)
+  return withMachineProductHooks({ permissions: {}, hooks }, DATABASE, 'on', RUNTIME)
 }
 
 test('hook script command recognition requires both token boundaries', () => {
@@ -205,14 +205,13 @@ test('test substance guard covers every editor tool from the rendered install', 
 
 test('product hook rendering is a fixed point', () => {
   const first = render({})
-  const second = withMachineProductHooks(first.settings, ASSET_ROOT, DATABASE, 'on', RUNTIME)
+  const second = withMachineProductHooks(first.settings, DATABASE, 'on', RUNTIME)
   expect(second.settings.hooks).toEqual(first.settings.hooks)
 })
 
 test('global use off is rendered into every product hook command', () => {
   const hooks = withMachineProductHooks(
     { permissions: {}, hooks: {} },
-    ASSET_ROOT,
     DATABASE,
     'off',
     RUNTIME,

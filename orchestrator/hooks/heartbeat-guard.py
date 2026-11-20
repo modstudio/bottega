@@ -106,6 +106,8 @@ def live_landing_ids(session_id: str):
     reproduces the failure this function exists to close.
     """
     path = landing_db_path()
+    if not path:
+        return None
     if not os.path.exists(path):
         return []
     try:

@@ -22,7 +22,6 @@ const RUNTIME = {
 function facts(): SetupInstallVerifyFacts {
   const settings = withMachineProductHooks(
     { permissions: {}, hooks: {} },
-    INSTALL,
     '/state/orchestrator.db',
     'on',
     RUNTIME,

@@ -1,7 +1,9 @@
 import type { McpServer } from '@modelcontextprotocol/server'
 import { z } from 'zod'
 import { BOARD_PURPOSES, defaultBoardPurpose } from '../../../shared/board-purpose.ts'
-import { runtimeAssetPath, runtimeAssetsAreEmbedded } from '../../../shared/runtime-assets.ts'
+import { renderedBoardHeartbeatGuidance } from '../../../shared/heartbeat-guidance.ts'
+import { runtimeAssetPath } from '../../../shared/runtime-assets.ts'
+import { installedBottegaExecutable } from '../../../shared/self-spawn.ts'
 import { readBoardNotices } from '../board/board-delivery.ts'
 import { resolveLocalBoardMessageIdentifier } from '../board/board-message-identifier.ts'
 import {
@@ -34,21 +36,6 @@ const result = (value: unknown) => ({
   ],
 })
 
-function shellQuote(value: string): string {
-  return `'${value.replaceAll("'", `'"'"'`)}'`
-}
-
-export function renderedBoardHeartbeatGuidance(input: {
-  session: string
-  script: string
-  distributionExecutable: string | null
-}): string {
-  if (input.distributionExecutable) {
-    return `Arm under Monitor: BOTTEGA_BIN=${shellQuote(input.distributionExecutable)} ${input.script} ${input.session}`
-  }
-  return `Arm under Monitor from the main checkout: ${input.script} ${input.session}`
-}
-
 function boardHeartbeatGuidance(
   env: Record<string, string | undefined> = process.env,
 ): string | null {
@@ -57,7 +44,7 @@ function boardHeartbeatGuidance(
   return renderedBoardHeartbeatGuidance({
     session,
     script: runtimeAssetPath('orchestrator/hooks/orch-heartbeat.sh'),
-    distributionExecutable: runtimeAssetsAreEmbedded() ? process.execPath : null,
+    distributionExecutable: installedBottegaExecutable(),
   })
 }
 

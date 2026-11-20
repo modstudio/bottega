@@ -4,7 +4,6 @@ import type { Database } from 'bun:sqlite'
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { MCP_SERVER_NAME, PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { assetPath } from '../../../shared/install-root.ts'
 import { readMachinePermissions, readMachineValue } from '../../../shared/machine-config.ts'
 import { renderRefusal } from '../../../shared/refusal.ts'
 import {
@@ -207,7 +206,6 @@ function applyUserSettings(
     )
     const productHooks = withMachineProductHooks(
       merged.settings,
-      assetPath(),
       resolveOrchestratorDatabase(deps.environment),
       readMachineValue('machine.global_use', deps.environment) as 'on' | 'off',
       resolveMachineHookRuntime(),

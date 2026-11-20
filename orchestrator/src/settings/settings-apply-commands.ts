@@ -3,7 +3,6 @@
 import { realpathSync } from 'node:fs'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { gitToplevel } from '../../../shared/git.ts'
-import { assetPath } from '../../../shared/install-root.ts'
 import { readMachinePermissions, readMachineValue } from '../../../shared/machine-config.ts'
 import { resolveOrchestratorDatabase } from '../../../shared/state-directory.ts'
 import { getDoc, setDoc, signedInDocOwner } from '../doc/docs.ts'
@@ -64,7 +63,6 @@ function withProductHooksForTarget(target: Target, settings: OwnedSettings): Own
   if (target.kind === 'project') return settings
   return withMachineProductHooks(
     settings,
-    assetPath(),
     resolveOrchestratorDatabase(process.env),
     readMachineValue('machine.global_use') as 'on' | 'off',
     resolveMachineHookRuntime(),

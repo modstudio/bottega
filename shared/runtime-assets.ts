@@ -62,8 +62,5 @@ export function runtimeAssetPath(
   const asset = RUNTIME_ASSETS.find((entry) => entry.packagePath === packagePath)
   if (!asset) throw new Error(`runtime asset is not declared: ${packagePath}`)
   if (!runtimeAssetsAreEmbedded()) return realpathSync(assetPath(packagePath))
-  const manifest = embeddedDistributionManifest()!
-  const stateRoot = resolveStateRoot(environment)
-  runtimeAssetRoot(environment)
-  return realpathSync(extractedRuntimeAssetPath(stateRoot, manifest.version, asset))
+  return realpathSync(join(runtimeAssetRoot(environment), asset.destination))
 }

@@ -33,7 +33,6 @@ function facts(): SetupInstallVerifyFacts {
         state: 'readable',
         settings: withMachineProductHooks(
           { permissions: {}, hooks: {} },
-          installRoot,
           '/state/orchestrator.db',
           'on',
           {

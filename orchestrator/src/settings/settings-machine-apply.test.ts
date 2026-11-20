@@ -3,7 +3,6 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { assetPath } from '../../../shared/install-root.ts'
 import { resolveOrchestratorDatabase } from '../../../shared/state-directory.ts'
 import {
   createMemoryRecordApiClient,
@@ -105,7 +104,6 @@ function writeCurrentSettings() {
             hooks: {},
             autoMode: { allow: ['$defaults', 'Bash(docker compose *)'] },
           },
-          assetPath(),
           join(root, 'state', 'orchestrator', 'orchestrator.db'),
           'on',
           resolveMachineHookRuntime(),
@@ -203,7 +201,6 @@ describe('settings apply', () => {
       {
         ...withMachineProductHooks(
           { permissions: { allow: ['Bash(orch *)'] }, hooks: {} },
-          assetPath(),
           resolveOrchestratorDatabase(environment),
           'on',
           resolveMachineHookRuntime(),
