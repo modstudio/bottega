@@ -126,7 +126,7 @@ export function decideNoteUpsert(
     sightings: merged.sightings,
     last_seen_at: selected.has('last_seen_at')
       ? later(stored.last_seen_at, incoming.last_seen_at)
-      : nullableRecordIso(stored.last_seen_at),
+      : nullableRecordIso(stored.last_seen_at)!,
     stale_at:
       merged.appended > 0 ? null : selected.has('stale_at') ? incoming.stale_at : stored.stale_at,
     stale_reason:
@@ -153,7 +153,7 @@ export function decideNoteAcknowledgementUpsert(
 ): Decision<PushedNoteAcknowledgement> {
   const acknowledgedAt = stored
     ? later(stored.acknowledged_at, incoming.acknowledged_at)
-    : nullableRecordIso(incoming.acknowledged_at)
+    : nullableRecordIso(incoming.acknowledged_at)!
   if (
     stored &&
     !stored.deleted_at &&

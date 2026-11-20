@@ -8,7 +8,7 @@ const ROOT = fileURLToPath(new URL('..', import.meta.url)).replace(/\/$/, '')
 const REMEDY = 'Compare record timestamps with sameRecordInstant from shared/record-timestamp.ts.'
 type EslintResults = Awaited<ReturnType<ESLint['lintText']>>
 
-export function recordTimestampMessages(results: EslintResults) {
+function recordTimestampMessages(results: EslintResults) {
   return results.flatMap((result) =>
     result.messages
       .filter((message) => message.ruleId === 'no-restricted-syntax' && message.message === REMEDY)
@@ -17,13 +17,6 @@ export function recordTimestampMessages(results: EslintResults) {
         line: message.line,
         message: message.message,
       })),
-  )
-}
-
-export async function lintRecordTimestampSource(source: string, filename: string) {
-  const eslint = new ESLint({ cwd: ROOT })
-  return recordTimestampMessages(
-    await eslint.lintText(source, { filePath: resolve(ROOT, 'hub/src', filename) }),
   )
 }
 
