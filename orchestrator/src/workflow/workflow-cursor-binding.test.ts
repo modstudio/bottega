@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { testDatabaseFixture } from '../database/test-database.fixture.ts'
 import { productionStepCatalogue } from './step-catalogue.ts'
@@ -471,7 +472,7 @@ test('an unresolvable hub key refuses before adopting a keyless cursor', async (
       live,
     ),
   ).rejects.toThrow(
-    'task key DEV-MISSING names no task in hub; check it with `bottega task show DEV-MISSING` or file the task first',
+    `task key DEV-MISSING names no task in hub; check it with \`${PLATFORM_SLUG} task show DEV-MISSING\` or file the task first`,
   )
   expect(
     d.query('SELECT workflow_key,args FROM workflow_cursor WHERE number=?').get(opened.cursor!.id),

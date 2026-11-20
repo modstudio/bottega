@@ -178,9 +178,7 @@ async function refreshStepServe(
   return prepared
 }
 
-function refuseMissingWorkflowArguments(
-  composition: ReturnType<typeof composeWorkflow>,
-): void {
+function refuseMissingWorkflowArguments(composition: ReturnType<typeof composeWorkflow>): void {
   if (composition.needs.arguments)
     throw new Error(
       `missing required arguments: ${composition.needs.arguments.map(({ name }) => name).join(', ')}`,
