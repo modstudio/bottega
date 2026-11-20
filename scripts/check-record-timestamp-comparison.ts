@@ -3,15 +3,22 @@ import { readdirSync } from 'node:fs'
 import { relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { ESLint } from 'eslint'
+import {
+  RECORD_TIMESTAMP_COMPARISON_REMEDY,
+  RECORD_TIMESTAMP_GUARD_SCOPE,
+} from '../shared/record-timestamp-guard.js'
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url)).replace(/\/$/, '')
-const REMEDY = 'Compare record timestamps with sameRecordInstant from shared/record-timestamp.ts.'
 type EslintResults = Awaited<ReturnType<ESLint['lintText']>>
 
 function recordTimestampMessages(results: EslintResults) {
   return results.flatMap((result) =>
     result.messages
-      .filter((message) => message.ruleId === 'no-restricted-syntax' && message.message === REMEDY)
+      .filter(
+        (message) =>
+          message.ruleId === 'no-restricted-syntax' &&
+          message.message === RECORD_TIMESTAMP_COMPARISON_REMEDY,
+      )
       .map((message) => ({
         filePath: result.filePath,
         line: message.line,
@@ -20,13 +27,25 @@ function recordTimestampMessages(results: EslintResults) {
   )
 }
 
-async function checkRecordTimestampComparisons() {
-  const files = readdirSync(resolve(ROOT, 'hub/src'))
-    .filter(
-      (file) =>
-        file.startsWith('hosted-push-') && file.endsWith('.ts') && !file.endsWith('.test.ts'),
+export function selectRecordTimestampGuardFiles(paths: readonly string[]): string[] {
+  const fileGlobs = RECORD_TIMESTAMP_GUARD_SCOPE.files.map((pattern) => new Bun.Glob(pattern))
+  const ignoreGlobs = RECORD_TIMESTAMP_GUARD_SCOPE.ignores.map((pattern) => new Bun.Glob(pattern))
+  const selected = paths.filter(
+    (path) =>
+      fileGlobs.some((glob) => glob.match(path)) && !ignoreGlobs.some((glob) => glob.match(path)),
+  )
+  if (selected.length === 0) {
+    throw new Error(
+      `No files matched record timestamp guard scope ${RECORD_TIMESTAMP_GUARD_SCOPE.files.join(', ')} excluding ${RECORD_TIMESTAMP_GUARD_SCOPE.ignores.join(', ')}`,
     )
-    .map((file) => resolve(ROOT, 'hub/src', file))
+  }
+  return selected
+}
+
+async function checkRecordTimestampComparisons() {
+  const files = selectRecordTimestampGuardFiles(
+    readdirSync(resolve(ROOT, 'hub/src')).map((file) => `hub/src/${file}`),
+  ).map((file) => resolve(ROOT, file))
   const findings = recordTimestampMessages(await new ESLint({ cwd: ROOT }).lintFiles(files))
   for (const finding of findings) {
     console.error(`${relative(ROOT, finding.filePath)}:${finding.line}: ${finding.message}`)

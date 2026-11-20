@@ -1,27 +1,15 @@
 import parser from '@typescript-eslint/parser'
 import sonarjs from 'eslint-plugin-sonarjs'
+import {
+  RECORD_TIMESTAMP_COMPARISON_SELECTORS,
+  RECORD_TIMESTAMP_GUARD_SCOPE,
+} from './shared/record-timestamp-guard.js'
 
 const importMetaUrlPathnameSelector = {
   selector:
     "MemberExpression[property.name='pathname'][object.type='NewExpression'][object.callee.name='URL'][object.arguments.1.type='MemberExpression'][object.arguments.1.object.type='MetaProperty'][object.arguments.1.object.meta.name='import'][object.arguments.1.object.property.name='meta'][object.arguments.1.property.name='url']",
   message: 'Use fileURLToPath(new URL(..., import.meta.url)) for filesystem paths.',
 }
-
-const recordTimestampComparisonSelectors = [
-  {
-    selector: "CallExpression[callee.type='MemberExpression'][callee.property.name='getTime']",
-    message: 'Compare record timestamps with sameRecordInstant from shared/record-timestamp.ts.',
-  },
-  {
-    selector: "BinaryExpression[operator='instanceof'][right.name='Date']",
-    message: 'Compare record timestamps with sameRecordInstant from shared/record-timestamp.ts.',
-  },
-  {
-    selector:
-      "BinaryExpression[operator=/^(===|!==|==|!=)$/][left.type='MemberExpression'][right.type='MemberExpression'][left.property.name=/^(at|first_seen|last_seen|.*_at)$/][right.property.name=/^(at|first_seen|last_seen|.*_at)$/]",
-    message: 'Compare record timestamps with sameRecordInstant from shared/record-timestamp.ts.',
-  },
-]
 
 const recordPushModules = [
   'orchestrator/src/record/outbox-failure.ts',
@@ -99,13 +87,12 @@ export default [
     },
   },
   {
-    files: ['hub/src/hosted-push-*.ts'],
-    ignores: ['hub/src/hosted-push-*.test.ts'],
+    ...RECORD_TIMESTAMP_GUARD_SCOPE,
     rules: {
       'no-restricted-syntax': [
         'error',
         importMetaUrlPathnameSelector,
-        ...recordTimestampComparisonSelectors,
+        ...RECORD_TIMESTAMP_COMPARISON_SELECTORS,
       ],
     },
   },

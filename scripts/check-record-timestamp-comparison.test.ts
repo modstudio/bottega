@@ -1,9 +1,15 @@
 import { expect, test } from 'bun:test'
 import { resolve } from 'node:path'
 import { ESLint } from 'eslint'
+import { RECORD_TIMESTAMP_FIELDS } from '../hub/src/push-contract.ts'
+import {
+  RECORD_TIMESTAMP_COMPARISON_REMEDY,
+  RECORD_TIMESTAMP_GUARD_FIELDS,
+  RECORD_TIMESTAMP_GUARD_SCOPE,
+} from '../shared/record-timestamp-guard.js'
+import { selectRecordTimestampGuardFiles } from './check-record-timestamp-comparison.ts'
 
 const ROOT = resolve(import.meta.dir, '..')
-const REMEDY = 'Compare record timestamps with sameRecordInstant from shared/record-timestamp.ts.'
 
 async function lintRecordTimestampSource(source: string) {
   const results = await new ESLint({ cwd: ROOT }).lintText(source, {
@@ -11,10 +17,22 @@ async function lintRecordTimestampSource(source: string) {
   })
   return results.flatMap((result) =>
     result.messages.filter(
-      (message) => message.ruleId === 'no-restricted-syntax' && message.message === REMEDY,
+      (message) =>
+        message.ruleId === 'no-restricted-syntax' &&
+        message.message === RECORD_TIMESTAMP_COMPARISON_REMEDY,
     ),
   )
 }
+
+test('record timestamp guard field roster matches the pushed-row contract', () => {
+  expect([...RECORD_TIMESTAMP_GUARD_FIELDS].sort()).toEqual([...RECORD_TIMESTAMP_FIELDS].sort())
+})
+
+test('record timestamp guard refuses an empty file selection', () => {
+  expect(() => selectRecordTimestampGuardFiles([])).toThrow(
+    `No files matched record timestamp guard scope ${RECORD_TIMESTAMP_GUARD_SCOPE.files.join(', ')} excluding ${RECORD_TIMESTAMP_GUARD_SCOPE.ignores.join(', ')}`,
+  )
+})
 
 test('record timestamp comparison guard refuses every raw form and permits unrelated equality', async () => {
   const refused = await lintRecordTimestampSource(
