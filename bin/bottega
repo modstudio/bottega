@@ -55,11 +55,14 @@ if test -n "$version" && test -d "$root/.git" && test -f "$stamp"; then
                 Linux) binary_stat=$(stat -c '%s %Y %i' "$binary" 2>/dev/null) || binary_stat= ;;
                 *) binary_stat= ;;
               esac
-              set -- $binary_stat
+              binary_size=${binary_stat%% *}
+              binary_stat_rest=${binary_stat#* }
+              binary_mtime=${binary_stat_rest%% *}
+              binary_inode=${binary_stat_rest#* }
               if test -n "$stamp_head" && test "$head_sha" = "$stamp_head" &&
-                test -n "$stamp_size" && test "$1" = "$stamp_size" &&
-                test -n "$stamp_mtime" && test "$2" = "$stamp_mtime" &&
-                test -n "$stamp_inode" && test "$3" = "$stamp_inode"; then
+                test -n "$stamp_size" && test "$binary_size" = "$stamp_size" &&
+                test -n "$stamp_mtime" && test "$binary_mtime" = "$stamp_mtime" &&
+                test -n "$stamp_inode" && test "$binary_inode" = "$stamp_inode"; then
                 export BOTTEGA_HOME="$root"
                 exec "$binary" "$@"
               fi
