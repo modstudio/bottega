@@ -64,9 +64,9 @@ test('permission input gives readers exactly the shared write roots and preserve
     tempDir: '/private/tmp/codex-run',
   }
 
-  expect(
-    codexPermissionProfileInput({ ...launch, writesRepository: false }).writableRoots,
-  ).toEqual(['/run/runtime', '/run/scratch'])
+  expect(codexPermissionProfileInput({ ...launch, writesRepository: false }).writableRoots).toEqual(
+    ['/run/runtime', '/run/scratch'],
+  )
   expect(
     codexPermissionProfileInput({ ...launch, writesRepository: false }).writableRoots,
   ).not.toContain('/run/tree')

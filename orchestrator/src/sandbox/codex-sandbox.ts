@@ -89,13 +89,8 @@ export function codexPermissionProfileInput(input: {
       allowRead: input.profile.filesystem.allowWithinDeny,
     },
     writableRoots: input.writesRepository
-      ? (codexWritableRoots(
-          input.sandbox,
-          input.cwd,
-          input.writableRoots,
-          input.tempDir,
-          true,
-        ) ?? [])
+      ? (codexWritableRoots(input.sandbox, input.cwd, input.writableRoots, input.tempDir, true) ??
+        [])
       : input.profile.filesystem.allowWrite,
   }
 }

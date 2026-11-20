@@ -118,6 +118,7 @@ export const confinementModules: ConfinementModule[] = [
     '../run/run-worker-home.ts',
     './install-read-policy.ts',
     './codex-sandbox.ts',
+    './sandbox-selection-policy.ts',
     './sandbox.ts',
   ]),
 ]

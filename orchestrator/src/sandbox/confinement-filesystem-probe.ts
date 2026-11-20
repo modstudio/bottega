@@ -46,6 +46,7 @@ import {
   sandboxLaunchArgv,
   writerProfile,
 } from './sandbox.ts'
+import { readonlySandboxWriteRoots } from './sandbox-selection-policy.ts'
 
 type FilesystemProbeAccess = 'denied' | 'readable' | 'not covered'
 type CommandProbeStatus = 'ran' | 'failed'
@@ -775,7 +776,11 @@ export async function runConfinementFilesystemProbes(): Promise<ConfinementFiles
         hubOpenMode,
       ),
       await launchCodexProbe(
-        readonlyLensProfile({ ...common, agent: 'codex', sharedReader: true }),
+        readonlyLensProfile({
+          ...common,
+          agent: 'codex',
+          allowWrite: readonlySandboxWriteRoots({ ...common, sharedReader: true }),
+        }),
         targets,
         common.worktree,
         environment,
