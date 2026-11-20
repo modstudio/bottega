@@ -1,12 +1,101 @@
 import { recordDate } from '../../shared/record-timestamp.ts'
+import { canonicalJson } from '../../shared/canonical-json.ts'
 import { DELETED_ON_HOSTED_RECORD_REASON } from './hosted-delete.ts'
 import { mergeNoteAnchors } from './note-anchor-merge.ts'
 import type {
+  GuardedPushTable,
+  ParsedHostedPushChange,
   PushedDocument,
   PushedNote,
   PushedNoteAcknowledgement,
   PushedTask,
 } from './push-contract.ts'
+import { GUARDED_REVISION_FIELDS } from './push-contract.ts'
+
+type GuardedStoredRow = object & { revision?: number; version?: string }
+
+export type PushGuardDecision =
+  | { kind: 'ok' }
+  | {
+      kind: 'revision-conflict'
+      expected: number | string
+      current: number | string | null
+      key: string
+    }
+  | {
+      kind: 'field-conflict'
+      field: string
+      currentValue: unknown
+      currentRevision: number | string | null
+      key: string
+    }
+
+function changeKey(input: ParsedHostedPushChange): string {
+  if (input.op === 'delete') return input.id
+  const row = input.row as unknown as Record<string, unknown>
+  return String(row.key ?? row.task_key ?? input.id)
+}
+
+function storedRevision(
+  input: ParsedHostedPushChange,
+  current: GuardedStoredRow | undefined,
+): number | string | null {
+  const field = GUARDED_REVISION_FIELDS[input.table as GuardedPushTable]
+  return field
+    ? (((current as Record<string, unknown> | undefined)?.[field] as number | string) ?? null)
+    : null
+}
+
+const TIMESTAMP_GUARD_FIELDS = new Set(['deleted_at', 'last_seen_at', 'stale_at', 'updated_at'])
+
+export function sameInstant(left: unknown, right: unknown): boolean {
+  const leftMillis = new Date(left as string | Date).getTime()
+  const rightMillis = new Date(right as string | Date).getTime()
+  return Number.isFinite(leftMillis) && Number.isFinite(rightMillis) && leftMillis === rightMillis
+}
+
+function guardValuesMatch(field: string, current: unknown, expected: unknown): boolean {
+  if (TIMESTAMP_GUARD_FIELDS.has(field) && current !== null && expected !== null)
+    return sameInstant(current, expected)
+  return canonicalJson(current) === canonicalJson(expected)
+}
+
+export function decidePushGuards(
+  input: ParsedHostedPushChange,
+  current: GuardedStoredRow | undefined,
+): PushGuardDecision {
+  const currentRevision = storedRevision(input, current)
+  if (input.expected_revision !== undefined) {
+    const matches =
+      input.expected_revision === 0
+        ? current === undefined
+        : current !== undefined && currentRevision === input.expected_revision
+    if (!matches)
+      return {
+        kind: 'revision-conflict',
+        expected: input.expected_revision,
+        current: currentRevision,
+        key: changeKey(input),
+      }
+  }
+  for (const [field, expected] of Object.entries(input.from ?? {})) {
+    const currentValue = (current as Record<string, unknown> | undefined)?.[field] ?? null
+    if (current === undefined || !guardValuesMatch(field, currentValue, expected))
+      return {
+        kind: 'field-conflict',
+        field,
+        currentValue,
+        currentRevision,
+        key: changeKey(input),
+      }
+  }
+  return { kind: 'ok' }
+}
+
+export function changeFingerprint(input: ParsedHostedPushChange): string {
+  const { change_id: _changeId, ...payload } = input
+  return new Bun.CryptoHasher('sha256').update(canonicalJson(payload)).digest('hex')
+}
 
 type Decision<Row> =
   | { kind: 'duplicate' }

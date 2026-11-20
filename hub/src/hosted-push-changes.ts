@@ -10,10 +10,13 @@ import {
   revisionConflict,
 } from './hosted-push-conflict.ts'
 import {
+  changeFingerprint,
   decideDocumentUpsert,
   decideNoteAcknowledgementUpsert,
   decideNoteUpsert,
+  decidePushGuards,
   decideTaskUpsert,
+  sameInstant,
 } from './hosted-push-decision.ts'
 import { taskIdFor } from './hosted-task-reference.ts'
 import {
@@ -50,90 +53,35 @@ type PushDeclaration = {
     tx: SQL,
     identity: TaskIdentity,
     input: ParsedHostedPushChange,
+    appliedIndex: number,
   ): Promise<Extract<HostedPushOutcome, { status: 'applied' | 'duplicate' }>>
-}
-
-type GuardedStoredRow = Record<string, unknown> & {
-  revision?: number | string
-  version?: string
-}
-
-function changeKey(input: ParsedHostedPushChange): string {
-  if (input.op === 'delete') return input.id
-  const row = input.row as unknown as Record<string, unknown>
-  return String(row.key ?? row.task_key ?? input.id)
-}
-
-function storedRevision(
-  input: ParsedHostedPushChange,
-  current: GuardedStoredRow | undefined,
-): number | string | null {
-  return (input.table === HOSTED_DOCUMENT_TABLE ? current?.version : current?.revision) ?? null
-}
-
-function assertRevisionGuard(
-  input: ParsedHostedPushChange,
-  current: GuardedStoredRow | undefined,
-): void {
-  if (input.expected_revision === undefined) return
-  const currentRevision = storedRevision(input, current)
-  const matches =
-    input.expected_revision === 0
-      ? current === undefined
-      : current !== undefined && currentRevision === input.expected_revision
-  if (!matches)
-    throw revisionConflict({
-      table: input.table,
-      id: input.id,
-      expected: input.expected_revision,
-      current: currentRevision,
-      key: changeKey(input),
-    })
-}
-
-function assertFieldGuards(
-  input: ParsedHostedPushChange,
-  current: GuardedStoredRow | undefined,
-): void {
-  for (const [field, expected] of Object.entries(input.from ?? {})) {
-    const currentValue = current?.[field] ?? null
-    if (current === undefined || !guardValuesMatch(field, currentValue, expected))
-      throw fieldConflict({
-        table: input.table,
-        id: input.id,
-        key: changeKey(input),
-        field,
-        currentValue,
-        currentRevision: storedRevision(input, current),
-      })
-  }
-}
-
-const TIMESTAMP_GUARD_FIELDS = new Set(['deleted_at', 'last_seen_at', 'stale_at', 'updated_at'])
-
-function sameInstant(left: unknown, right: unknown): boolean {
-  const leftMillis = new Date(left as string | Date).getTime()
-  const rightMillis = new Date(right as string | Date).getTime()
-  return Number.isFinite(leftMillis) && Number.isFinite(rightMillis) && leftMillis === rightMillis
-}
-
-function guardValuesMatch(field: string, current: unknown, expected: unknown): boolean {
-  if (TIMESTAMP_GUARD_FIELDS.has(field) && current !== null && expected !== null)
-    return sameInstant(current, expected)
-  return canonicalJson(current) === canonicalJson(expected)
 }
 
 function assertPushGuards(
   input: ParsedHostedPushChange,
-  current: GuardedStoredRow | undefined,
+  current: (object & { revision?: number; version?: string }) | undefined,
+  appliedIndex: number,
 ): void {
-  assertRevisionGuard(input, current)
-  assertFieldGuards(input, current)
-}
-
-function changeFingerprint(input: ParsedHostedPushChange): string {
-  const { change_id: _changeId, ...payload } = input
-  return new Bun.CryptoHasher('sha256').update(canonicalJson(payload)).digest('hex')
+  const decision = decidePushGuards(input, current)
+  if (decision.kind === 'revision-conflict')
+    throw revisionConflict({
+      table: input.table,
+      id: input.id,
+      expected: decision.expected,
+      current: decision.current,
+      key: decision.key,
+      appliedIndex,
+    })
+  if (decision.kind === 'field-conflict')
+    throw fieldConflict({
+      table: input.table,
+      id: input.id,
+      key: decision.key,
+      field: decision.field,
+      currentValue: decision.currentValue,
+      currentRevision: decision.currentRevision,
+      appliedIndex,
+    })
 }
 
 type StoredAppliedChange = {
@@ -146,6 +94,7 @@ async function replayedOutcome(
   identity: TaskIdentity,
   input: ParsedHostedPushChange,
   fingerprint: string,
+  appliedIndex: number,
 ): Promise<HostedPushOutcome | null> {
   if (!input.change_id) return null
   const rows = (await tx`SELECT result FROM hub_applied_change
@@ -158,7 +107,7 @@ async function replayedOutcome(
       ? (JSON.parse(rows[0].result) as StoredAppliedChange)
       : rows[0].result
   if (stored.fingerprint !== fingerprint)
-    throw new HostedChangeIdMismatchError(input.table, input.id, input.change_id)
+    throw new HostedChangeIdMismatchError(input.table, input.id, input.change_id, appliedIndex)
   return stored.outcome
 }
 
@@ -326,10 +275,15 @@ async function upsertHostedNoteFromPush(
   return { id: input.id, status: 'applied' as const }
 }
 
-async function applyHostedNotePush(tx: SQL, identity: TaskIdentity, input: NotePushChange) {
+async function applyHostedNotePush(
+  tx: SQL,
+  identity: TaskIdentity,
+  input: NotePushChange,
+  appliedIndex: number,
+) {
   const existing = (await tx`SELECT *,number::int number,revision::int revision FROM hub_note
     WHERE id=${input.id}::uuid AND space_id=${identity.spaceId}::uuid FOR UPDATE`) as PushedNote[]
-  assertPushGuards(input, existing[0] as unknown as GuardedStoredRow | undefined)
+  assertPushGuards(input, existing[0], appliedIndex)
   return input.op === 'delete'
     ? deleteHostedNoteFromPush(tx, identity, input, existing[0])
     : upsertHostedNoteFromPush(tx, identity, input, existing[0])
@@ -337,12 +291,12 @@ async function applyHostedNotePush(tx: SQL, identity: TaskIdentity, input: NoteP
 
 const PUSHABLE_HUB_CHANGES: Record<PushableHubChangeTable, PushDeclaration> = {
   [HOSTED_TASK_TABLE]: {
-    async apply(tx, identity, input) {
+    async apply(tx, identity, input, appliedIndex) {
       if (input.table !== HOSTED_TASK_TABLE)
         throw new Error(`${input.table} was routed to the task handler`)
       const existing =
         (await tx`SELECT *,revision::int revision FROM hub_task WHERE id=${input.id}::uuid AND space_id=${identity.spaceId}::uuid FOR UPDATE`) as PushedTask[]
-      assertPushGuards(input, existing[0] as unknown as GuardedStoredRow | undefined)
+      assertPushGuards(input, existing[0], appliedIndex)
       const decision = decideTaskUpsert(existing[0] ?? null, input.row, input.fields ?? null)
       if (decision.kind === 'reject') throw new Error(decision.reason)
       if (decision.kind === 'duplicate') return { id: input.id, status: 'duplicate' }
@@ -358,14 +312,14 @@ const PUSHABLE_HUB_CHANGES: Record<PushableHubChangeTable, PushDeclaration> = {
     },
   },
   [HOSTED_COMMENT_TABLE]: {
-    async apply(tx, identity, input) {
+    async apply(tx, identity, input, appliedIndex) {
       if (input.table !== HOSTED_COMMENT_TABLE)
         throw new Error(`${input.table} was routed to the task comment handler`)
       const existing = (await tx`SELECT id::text id,task_key,body,created_at,updated_at,deleted_at,
           actor_user_id,actor_name,agent,run_id,project_name,task_id::text task_id
           ,revision::int revision FROM hub_task_comment WHERE id=${input.id}::uuid
             AND space_id=${identity.spaceId}::uuid FOR UPDATE`) as StoredCommentPushRow[]
-      assertPushGuards(input, existing[0] as unknown as GuardedStoredRow | undefined)
+      assertPushGuards(input, existing[0], appliedIndex)
       const decision = decideHostedCommentPush(existing[0] ?? null, input.row, identity.userId)
       if (decision.kind === 'reject') throw new Error(decision.reason)
       if (decision.kind === 'duplicate') return { id: input.id, status: 'duplicate' }
@@ -377,11 +331,11 @@ const PUSHABLE_HUB_CHANGES: Record<PushableHubChangeTable, PushDeclaration> = {
     },
   },
   [HOSTED_DOCUMENT_TABLE]: {
-    async apply(tx, identity, input) {
+    async apply(tx, identity, input, appliedIndex) {
       if (input.table !== HOSTED_DOCUMENT_TABLE) throw new Error('wrong document handler')
       const existing =
         (await tx`SELECT * FROM hub_task_document WHERE id=${input.id}::uuid AND space_id=${identity.spaceId}::uuid FOR UPDATE`) as PushedDocument[]
-      assertPushGuards(input, existing[0] as unknown as GuardedStoredRow | undefined)
+      assertPushGuards(input, existing[0], appliedIndex)
       if (input.op === 'delete') {
         if (!existing.length || existing[0]!.deleted_at)
           return { id: input.id, status: 'duplicate' }
@@ -440,9 +394,9 @@ const PUSHABLE_HUB_CHANGES: Record<PushableHubChangeTable, PushDeclaration> = {
     },
   },
   [HOSTED_NOTE_TABLE]: {
-    async apply(tx, identity, input) {
+    async apply(tx, identity, input, appliedIndex) {
       if (input.table !== HOSTED_NOTE_TABLE) throw new Error('wrong note handler')
-      return applyHostedNotePush(tx, identity, input as NotePushChange)
+      return applyHostedNotePush(tx, identity, input as NotePushChange, appliedIndex)
     },
   },
   [HOSTED_NOTE_ACKNOWLEDGEMENT_TABLE]: {
@@ -506,34 +460,24 @@ export async function applyHostedPushChangesInTransaction(
     let replayProbeCompleted = false
     let outcome: HostedPushOutcome
     try {
-      const replay = await replayedOutcome(tx, identity, input, fingerprint)
+      const replay = await replayedOutcome(tx, identity, input, fingerprint, index)
       replayProbeCompleted = true
       if (replay) {
         await tx.unsafe('RELEASE SAVEPOINT hub_push_row')
         outcomes[index] = replay
         continue
       }
-      outcome = await PUSHABLE_HUB_CHANGES[input.table]!.apply(tx, identity, input)
+      outcome = await PUSHABLE_HUB_CHANGES[input.table]!.apply(tx, identity, input, index)
+      await rememberOutcome(tx, identity, input, fingerprint, outcome)
       await tx.unsafe('RELEASE SAVEPOINT hub_push_row')
     } catch (error) {
       await tx.unsafe('ROLLBACK TO SAVEPOINT hub_push_row')
       await tx.unsafe('RELEASE SAVEPOINT hub_push_row')
-      if (error instanceof HostedRevisionConflictError)
-        throw new HostedRevisionConflictError(
-          error.table,
-          error.id,
-          error.condition,
-          error.currentRevision,
-          error.field,
-          error.currentValue,
-          index,
-        )
-      if (error instanceof HostedChangeIdMismatchError)
-        throw new HostedChangeIdMismatchError(error.table, error.id, error.changeId, index)
+      if (error instanceof HostedRevisionConflictError) throw error
+      if (error instanceof HostedChangeIdMismatchError) throw error
       if (!replayProbeCompleted) throw error
       outcome = { id: input.id, status: 'rejected', reason: (error as Error).message }
     }
-    await rememberOutcome(tx, identity, input, fingerprint, outcome)
     outcomes[index] = outcome
   }
   return outcomes

@@ -559,8 +559,49 @@ test('change ids replay the stored outcome and reject a different payload', asyn
     (await database.query(`SELECT revision::int FROM hub_task WHERE id=$1`, [id])).rows,
   ).toEqual([{ revision: 1 }])
   await expect(
+    apply([
+      {
+        ...change,
+        change_id: '01990000-0000-7000-8000-000000001412',
+      },
+    ]),
+  ).rejects.toMatchObject({ currentRevision: '1' })
+  await expect(
     apply([{ ...change, row: { ...change.row, title: 'different' } }]),
   ).rejects.toBeInstanceOf(HostedChangeIdMismatchError)
+})
+
+test('a rejected change id is retried after its missing state arrives', async () => {
+  const parentId = '01990000-0000-7000-8000-000000001413'
+  const commentId = '01990000-0000-7000-8000-000000001414'
+  const changeId = '01990000-0000-7000-8000-000000001415'
+  const comment = {
+    table: 'hub_task_comment' as const,
+    id: commentId,
+    op: 'upsert' as const,
+    change_id: changeId,
+    row: {
+      id: commentId,
+      task_key: 'DEV-413',
+      task_id: parentId,
+      project_name: 'workshop',
+      body: 'arrived first',
+      created_at: '2026-10-09T12:00:00.000Z',
+      updated_at: '2026-10-09T12:00:00.000Z',
+      deleted_at: null,
+    },
+  }
+  expect(await apply([comment])).toEqual([
+    { id: commentId, status: 'rejected', reason: expect.stringContaining('no live hosted task') },
+  ])
+  expect(
+    (await database.query(`SELECT 1 FROM hub_applied_change WHERE change_id=$1`, [changeId])).rows,
+  ).toHaveLength(0)
+
+  await apply([
+    { table: 'hub_task', id: parentId, op: 'upsert', row: taskRow(parentId, 'DEV-413') },
+  ])
+  expect(await apply([comment])).toEqual([{ id: commentId, status: 'applied' }])
 })
 
 test('field compare-and-set permits independent task patches and rejects a stale field', async () => {

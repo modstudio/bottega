@@ -240,21 +240,22 @@ test('push route returns typed guard and replay refusals at original batch posit
       const error = new HostedRevisionConflictError(
         'hub_task',
         id,
-        'hub_task changed',
+        'hub_task changed\ncleared by: bottega task show DEV-90',
+        'hub_task changed since revision 6; now 7.',
         '7',
+        0,
         'status',
         'review',
-        0,
       )
       throw error
     },
   })
   expect(revision?.status).toBe(409)
   expect(await revision?.json()).toEqual({
-    error: 'hub_task changed',
+    error: 'hub_task changed\ncleared by: bottega task show DEV-90',
     code: 'revision-conflict',
     reason: 'stale-revision',
-    condition: 'hub_task changed',
+    condition: 'hub_task changed since revision 6; now 7.',
     currentRevision: '7',
     index: 1,
     table: 'hub_task',

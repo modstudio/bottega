@@ -22,6 +22,15 @@ export const PUSHABLE_HUB_CHANGE_TABLES = [
 
 export type PushableHubChangeTable = (typeof PUSHABLE_HUB_CHANGE_TABLES)[number]
 
+export const GUARDED_REVISION_FIELDS = {
+  [HOSTED_TASK_TABLE]: 'revision',
+  [HOSTED_COMMENT_TABLE]: 'revision',
+  [HOSTED_DOCUMENT_TABLE]: 'version',
+  [HOSTED_NOTE_TABLE]: 'revision',
+} as const
+
+export type GuardedPushTable = keyof typeof GUARDED_REVISION_FIELDS
+
 export const PUSHABLE_HUB_DELETE_ACCEPTANCE = {
   [HOSTED_TASK_TABLE]: false,
   [HOSTED_STATUS_EVENT_TABLE]: false,
@@ -120,6 +129,7 @@ export type PushedNote = {
   promoted_task_id: string | null
   updated_at: string
   deleted_at: string | null
+  revision?: number
 }
 
 export type PushedNoteAcknowledgement = {
@@ -163,6 +173,7 @@ export type PushedTask = {
   deleted_at: string | null
   next_document_number: number
   retired_reason?: string | null
+  revision?: number
 }
 
 export type PushedComment = {
@@ -179,6 +190,7 @@ export type PushedComment = {
   actor_name?: string | null
   agent?: string | null
   run_id?: string | null
+  revision?: number
 }
 export type PushedDocument = {
   id: string
@@ -763,13 +775,13 @@ function parseExpectedRevision(
   table: PushableHubChangeTable,
 ): ParsedExpectedRevision {
   if (value === undefined) return { ok: true, value: undefined }
-  if (table === HOSTED_DOCUMENT_TABLE)
+  const revisionField = GUARDED_REVISION_FIELDS[table as GuardedPushTable]
+  if (revisionField === 'version')
     return typeof value === 'string'
       ? { ok: true, value }
       : { ok: false, error: `${table} expected_revision must be a string` }
-  const revisioned =
-    table === HOSTED_TASK_TABLE || table === HOSTED_COMMENT_TABLE || table === HOSTED_NOTE_TABLE
-  if (!revisioned) return { ok: false, error: `${table} does not accept expected_revision` }
+  if (revisionField !== 'revision')
+    return { ok: false, error: `${table} does not accept expected_revision` }
   return Number.isSafeInteger(value) && Number(value) >= 0
     ? { ok: true, value: value as number }
     : { ok: false, error: `${table} expected_revision must be a non-negative safe integer` }

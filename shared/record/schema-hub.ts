@@ -13,6 +13,7 @@ import {
   jsonb,
   pgPolicy,
   pgTable,
+  primaryKey,
   text,
   timestamp,
   unique,
@@ -237,12 +238,13 @@ export const hubNote = pgTable.withRLS(
 export const hubAppliedChange = pgTable.withRLS(
   'hub_applied_change',
   {
-    changeId: uuid('change_id').primaryKey(),
+    changeId: uuid('change_id').notNull(),
     spaceId: spaceIdentity(),
     result: jsonb().notNull(),
     appliedAt: timestamp('applied_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
+    primaryKey({ columns: [table.spaceId, table.changeId] }),
     index('hub_applied_change_applied_at_idx').on(table.appliedAt),
     ...tenantPolicies('hub_applied_change', table.spaceId),
     pgPolicy('hub_applied_change_owner_all', {
