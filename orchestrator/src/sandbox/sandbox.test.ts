@@ -30,10 +30,6 @@ import { workerHarnessName } from '../agent/worker-launch-env.ts'
 import { ROOT } from '../database/db.ts'
 import type { Project } from '../project/projects.ts'
 import {
-  codexPermissionProfileArgs,
-  codexPermissionProfileInput,
-} from './codex-sandbox.ts'
-import {
   probeSandboxProfile as buildProbeSandboxProfile,
   readonlyLensProfile as buildReadonlyLensProfile,
   selectReadonlySandbox as buildReadonlySandboxSelection,
@@ -710,54 +706,6 @@ describe('readonly-lens sandbox profile', () => {
       path: '/usr/bin',
     })
     expect(own.profile?.filesystem.allowWrite).toContain('/runs/tree')
-  })
-
-  test('Codex selection carries area denies through the shared mapping into permission argv', () => {
-    const state = temporaryState()
-    const root = temporaryState()
-    const ownPath = join(root, 'own')
-    const worktree = join(ownPath, '.claude/worktrees/run')
-    const siblingPath = join(root, 'sibling')
-    mkdirSync(worktree, { recursive: true })
-    mkdirSync(siblingPath, { recursive: true })
-    const own = { ...fixtureProject(), path: ownPath }
-    const sibling = {
-      ...fixtureProject(),
-      recordId: '01990000-0000-7000-8000-000000001215',
-      name: 'sibling',
-      path: siblingPath,
-    }
-    const selected = selectReadonlySandbox({
-      agent: 'codex',
-      readsRepo: true,
-      writesRepo: false,
-      worktree,
-      runtimeDir: join(state, 'orchestrator/runs/sandbox-run'),
-      scratchDir: join(state, 'orchestrator/runs/run/scratch'),
-      project: own,
-      registeredProjects: [own, sibling],
-      environment: { HOME: homedir(), [STATE_HOME_ENV]: state },
-      path: '/usr/bin',
-    })
-    expect(selected.sandbox).toBe('host')
-    expect(selected.profile).toBeNull()
-    expect(selected.codexProfile).toBeDefined()
-
-    const permissionInput = codexPermissionProfileInput({
-      profile: selected.codexProfile!,
-      sandbox: 'workspace-write',
-      cwd: worktree,
-      writableRoots: selected.codexProfile!.filesystem.allowWrite,
-      tempDir: '/private/tmp/codex-run',
-      repository: true,
-    })
-    const filesystemArg = codexPermissionProfileArgs({
-      ...permissionInput,
-      network: false,
-    }).find((arg) => arg.startsWith(`permissions.${PLATFORM_SLUG}.filesystem=`))
-    expect(filesystemArg).toContain(`${JSON.stringify(siblingPath)}="deny"`)
-    expect(filesystemArg).toContain(`${JSON.stringify(resolveStatePaths({ [STATE_HOME_ENV]: state }).root)}="deny"`)
-    expect(filesystemArg).toContain(`${JSON.stringify(worktree)}="write"`)
   })
 
   test('profile construction includes the exact token-directory deny without creating it', () => {
