@@ -714,12 +714,12 @@ function createProbeTaskFixture(
 }
 
 function probeFixtureEnvironment(root: string, stateRoot: string, hubDatabase: string) {
-  const environment: Record<string, string> = {
+  const environment = {
     ...process.env,
     HOME: join(root, 'home'),
     [STATE_HOME_ENV]: stateRoot,
     BOTTEGA_HUB_DB: hubDatabase,
-  }
+  } as Record<string, string>
   delete environment[HARNESS_ENV_FILE_ENV]
   delete environment[PLATFORM_ENV_FILE_ENV]
   const harnessEnvFile = join(environment.HOME!, '.claude', '.env')
