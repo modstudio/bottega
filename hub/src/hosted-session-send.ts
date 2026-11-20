@@ -16,7 +16,7 @@ type HostedSessionRequestBase = {
 }
 
 class HostedSessionTransportError extends Error {
-  readonly name = 'HostedSessionTransportError'
+  override readonly name = 'HostedSessionTransportError'
 }
 
 export type HostedSessionMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
