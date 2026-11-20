@@ -20,11 +20,13 @@ import {
   sandboxRuntimeAssets,
   sandboxRuntimePayloadPaths,
 } from '../../../shared/sandbox-runtime-assets.ts'
+import { runningInstallReadCarveouts } from './install-read-policy.ts'
 import {
   classifySandboxRuntimeAvailability,
   extractedSandboxRuntimeRoot,
   extractSandboxRuntime,
   packageManagerFromOsRelease,
+  prepareSandboxRuntimeConfig,
   SRT_LIBRARY,
   sandboxRuntimeAvailability,
   withSandboxTemporaryDirectory,
@@ -85,6 +87,30 @@ describe('sandbox runtime payloads', () => {
     expect(extractedSandboxRuntimeRoot({ BOTTEGA_STATE_HOME: '/operator/state' })).toBe(
       '/operator/state/runtime/1.2.3/sandbox-runtime',
     )
+  })
+
+  test('profile carve-backs and launch payloads use the same explicit state environment', async () => {
+    const { root, final, ports } = fixture()
+    const previous = process.env.BOTTEGA_STATE_HOME
+    process.env.BOTTEGA_STATE_HOME = join(root, 'different-process-state')
+    try {
+      const carvebacks = runningInstallReadCarveouts({
+        kind: 'distribution',
+        root: '/install',
+        workspaceDirectories: [],
+        extractedWorkerRuntimeAssetPaths: [final],
+      })
+      const payload = await prepareSandboxRuntimeConfig(ports.environment, ports)
+
+      expect(carvebacks).toContain(final)
+      expect(payload.javaAgentJarPath).toStartWith(`${final}/`)
+      expect(payload.seccomp?.applyPath).toStartWith(`${final}/`)
+      expect(payload.javaAgentJarPath).not.toContain('different-process-state')
+    } finally {
+      if (previous === undefined) delete process.env.BOTTEGA_STATE_HOME
+      else process.env.BOTTEGA_STATE_HOME = previous
+      rmSync(root, { recursive: true, force: true })
+    }
   })
 
   test('temporary directory is scoped to one launch and restored before the next', async () => {

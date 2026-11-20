@@ -172,10 +172,13 @@ async function launchCommand(
   environment: Record<string, string>,
   hubOpenMode?: string,
 ): Promise<CommandProbe> {
-  const result = await startBounded(await sandboxLaunchArgv(profile, argv[0]!, argv.slice(1)), {
-    budget: 'sandbox-probe',
-    env: { ...process.env, ...environment },
-  })
+  const result = await startBounded(
+    await sandboxLaunchArgv(profile, argv[0]!, argv.slice(1), undefined, environment),
+    {
+      budget: 'sandbox-probe',
+      env: { ...process.env, ...environment },
+    },
+  )
   return {
     status: result.exitCode === 0 ? 'ran' : 'failed',
     reason: `exit ${result.exitCode ?? 'unknown'}${result.exitCode === 0 ? '' : `: ${firstErrorLine(result.stderr)}`}${hubOpenMode ? `; hub open mode: ${hubOpenMode}` : ''}`,
@@ -217,6 +220,7 @@ async function releaseAfterLaunchFixture(
 async function runFilesystemAccessProbe(
   profile: ReturnType<typeof readonlyLensProfile>,
   targets: readonly AccessTarget[],
+  environment: Record<string, string>,
 ) {
   const fixture = afterLaunchFixture(profile, targets)
   if (fixture) {
@@ -228,13 +232,19 @@ async function runFilesystemAccessProbe(
     const script = fixture
       ? '/usr/bin/touch "$1"\nwhile ! /bin/test -e "$2"; do /bin/sleep 0.01; done\nshift 2\nfor path\ndo\nif /bin/cat "$path" >/dev/null 2>&1; then echo readable; else echo denied; fi\ndone'
       : 'for path\ndo\nif /bin/cat "$path" >/dev/null 2>&1; then echo readable; else echo denied; fi\ndone'
-    const argv = await sandboxLaunchArgv(profile, '/bin/sh', [
-      '-c',
-      script,
-      'probe',
-      ...(fixture ? [fixture.ready, fixture.release] : []),
-      ...targets.map(({ path }) => path),
-    ])
+    const argv = await sandboxLaunchArgv(
+      profile,
+      '/bin/sh',
+      [
+        '-c',
+        script,
+        'probe',
+        ...(fixture ? [fixture.ready, fixture.release] : []),
+        ...targets.map(({ path }) => path),
+      ],
+      undefined,
+      environment,
+    )
     const running = startBounded(argv, { budget: 'sandbox-probe' })
     if (fixture) await releaseAfterLaunchFixture(fixture, running)
     return await running
@@ -256,7 +266,7 @@ async function launchProbe(
   hubOpenMode: string,
 ): Promise<ConfinementFilesystemProbeRow> {
   try {
-    const result = await runFilesystemAccessProbe(profile, targets)
+    const result = await runFilesystemAccessProbe(profile, targets, environment)
     if (result.exitCode !== 0) {
       return {
         family,
@@ -367,7 +377,13 @@ async function launchExtractedRefGuardProbe(
   }
   try {
     const result = await startBounded(
-      await sandboxLaunchArgv(refUpdateProfile, 'git', ['commit', '--allow-empty', '-m', 'probe']),
+      await sandboxLaunchArgv(
+        refUpdateProfile,
+        'git',
+        ['commit', '--allow-empty', '-m', 'probe'],
+        undefined,
+        environment,
+      ),
       {
         budget: 'sandbox-probe',
         cwd: worktree,

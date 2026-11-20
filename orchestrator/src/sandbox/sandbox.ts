@@ -263,10 +263,10 @@ export function readonlyLensProfile(input: {
   socketDenyPaths?: readonly string[]
   installLayout?: RunningInstallLayout
   onWarning?: (message: string) => void
+  platform?: 'darwin' | 'linux'
+  ownWorktreeRootEntries?: readonly string[]
 }): SandboxRuntimeConfig {
-  if (input.registeredProjects.length === 0) {
-    throw new Error(emptyProjectRegisterRefusal())
-  }
+  if (input.registeredProjects.length === 0) throw new Error(emptyProjectRegisterRefusal())
   const environment = input.environment ?? process.env
   const toolchain = (input.path ?? process.env.PATH ?? '')
     .split(delimiter)
@@ -295,8 +295,8 @@ export function readonlyLensProfile(input: {
     project: input.project,
     registeredProjects: input.registeredProjects,
     environment,
-    platform: process.platform === 'linux' ? 'linux' : 'darwin',
-    ownWorktreeRootEntries: ownWorktreeRootEntries(input.project),
+    platform: input.platform ?? (process.platform === 'linux' ? 'linux' : 'darwin'),
+    ownWorktreeRootEntries: input.ownWorktreeRootEntries ?? ownWorktreeRootEntries(input.project),
   })
   const nodeModuleLinks = permittedNodeModuleCarvebacks({
     links: input.nodeModuleLinks ?? linkedNodeModules(input.worktree),
@@ -469,10 +469,10 @@ export function probeSandboxProfile(input: {
   environment?: ConfigEnvironment
   socketDenyPaths?: readonly string[]
   installLayout?: RunningInstallLayout
+  platform?: 'darwin' | 'linux'
+  ownWorktreeRootEntries?: readonly string[]
 }): SandboxRuntimeConfig {
-  if (input.registeredProjects.length === 0) {
-    throw new Error(emptyProjectRegisterRefusal())
-  }
+  if (input.registeredProjects.length === 0) throw new Error(emptyProjectRegisterRefusal())
   const allowWrite = resolve(input.allowWriteDir)
   const cwd = resolve(input.cwd)
   const environment = input.environment ?? process.env
@@ -485,8 +485,8 @@ export function probeSandboxProfile(input: {
     project: input.project,
     registeredProjects: input.registeredProjects,
     environment,
-    platform: process.platform === 'linux' ? 'linux' : 'darwin',
-    ownWorktreeRootEntries: ownWorktreeRootEntries(input.project),
+    platform: input.platform ?? (process.platform === 'linux' ? 'linux' : 'darwin'),
+    ownWorktreeRootEntries: input.ownWorktreeRootEntries ?? ownWorktreeRootEntries(input.project),
   })
   const readProfile = assembleAreaReadProfile({
     areaDeny: areas.deny,
@@ -742,10 +742,12 @@ export async function sandboxLaunchArgv(
   bin: string,
   argv: string[],
   temporaryDirectory?: string,
+  environment: ConfigEnvironment = process.env,
 ): Promise<string[]> {
-  ensureHubLoginTokenDirectory(process.env)
+  ensureHubLoginTokenDirectory(environment)
   const config = sandboxRuntimeConfig(profile)
-  return launchWithSandboxRuntime(config, shellCommand([bin, ...argv]), temporaryDirectory)
+  const command = shellCommand([bin, ...argv])
+  return launchWithSandboxRuntime(config, command, temporaryDirectory, environment)
 }
 
 /** Bind one run's optional temp directory into repeated SRT launches. */

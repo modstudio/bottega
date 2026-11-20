@@ -465,9 +465,12 @@ function runtimePaths(root: string, assets: SandboxRuntimeAssets): ExtractedRunt
   }
 }
 
-async function prepareSandboxRuntimeConfig(): Promise<Partial<LibrarySandboxRuntimeConfig>> {
+export async function prepareSandboxRuntimeConfig(
+  environment: StateEnvironment,
+  ports: Omit<ExtractionPorts, 'environment'> = {},
+): Promise<Partial<LibrarySandboxRuntimeConfig>> {
   if (!embeddedDistributionManifest()) return {}
-  const runtime = await extractSandboxRuntime()
+  const runtime = await extractSandboxRuntime({ ...ports, environment })
   return {
     javaAgentJarPath: runtime.javaAgentJarPath,
     ...(runtime.seccompApplyPath ? { seccomp: { applyPath: runtime.seccompApplyPath } } : {}),
@@ -510,9 +513,10 @@ export async function launchWithSandboxRuntime(
   config: LibrarySandboxRuntimeConfig,
   command: string,
   temporaryDirectory?: string,
+  environment: StateEnvironment = process.env,
 ): Promise<string[]> {
   return withSandboxTemporaryDirectory(temporaryDirectory, async () => {
-    const payload = await prepareSandboxRuntimeConfig()
+    const payload = await prepareSandboxRuntimeConfig(environment)
     const configured = { ...config, ...payload }
     if (sandboxInitialized) SandboxManager.updateConfig(configured)
     else {

@@ -21,6 +21,8 @@ const profileForLinks = (input: {
   links: string[]
   environment?: Record<string, string>
   warnings: string[]
+  platform?: 'darwin' | 'linux'
+  ownWorktreeRootEntries?: string[]
 }) =>
   readonlyLensProfile({
     worktree: '/runs/tree',
@@ -38,6 +40,8 @@ const profileForLinks = (input: {
       extractedWorkerRuntimeAssetPaths: [],
     },
     onWarning: (message) => input.warnings.push(message),
+    platform: input.platform,
+    ownWorktreeRootEntries: input.ownWorktreeRootEntries,
   })
 
 test('a node_modules link into another registered project is not re-allowed', () => {
@@ -83,18 +87,23 @@ test('a node_modules link under the run project main checkout stays re-allowed',
   expect(warnings).toEqual([])
 })
 
-test('a node_modules link into a sibling worktree is not re-allowed', () => {
-  const warnings: string[] = []
-  const link = '/projects/fixture/.claude/worktrees/other-run/node_modules'
-  const profile = profileForLinks({
-    project: fixtureProject(),
-    links: [link],
-    warnings,
-  })
+for (const platform of ['darwin', 'linux'] as const) {
+  test(`a node_modules link into a sibling worktree is not re-allowed on ${platform}`, () => {
+    const warnings: string[] = []
+    const sibling = '/projects/fixture/.claude/worktrees/other-run'
+    const link = `${sibling}/node_modules`
+    const profile = profileForLinks({
+      project: fixtureProject(),
+      links: [link],
+      warnings,
+      platform,
+      ownWorktreeRootEntries: platform === 'linux' ? [sibling] : [],
+    })
 
-  expect(profile.filesystem.allowWithinDeny).not.toContain(link)
-  expect(warnings).toEqual([expect.stringContaining(link)])
-})
+    expect(profile.filesystem.allowWithinDeny).not.toContain(link)
+    expect(warnings).toEqual([expect.stringContaining(link)])
+  })
+}
 
 test('an area deny must be strictly inside the root that admits a node_modules link', () => {
   const root = '/install'
