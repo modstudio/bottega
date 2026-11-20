@@ -2,7 +2,12 @@
 /** Measures record API HTTP calls without coupling callers to a concern-specific client. */
 
 import { PLATFORM_SLUG } from './brand.ts'
-import { type BodyCountFinish, contentLength, countResponseBody } from './hosted-server.ts'
+import {
+  type BodyCountFinish,
+  bodyNeedsStreamedCount,
+  contentLength,
+  countResponseBody,
+} from './hosted-server.ts'
 
 const RECORD_TRACE_ENV = `${PLATFORM_SLUG.toUpperCase()}_RECORD_TRACE`
 
@@ -250,7 +255,7 @@ export async function tracedRecordFetch(
       ...common,
       responseBytes: responseBytes ?? 0,
       clientMs: performance.now() - startedAt,
-      open: responseBytes === null && response.body !== null,
+      open: bodyNeedsStreamedCount(response),
       finish: null,
     }
     if (runtimeTrace && call.open) activeCalls.add(call)
@@ -259,7 +264,7 @@ export async function tracedRecordFetch(
       call.clientMs = performance.now() - startedAt
       finishRecordCall(call, kind, runtimeTrace, observer)
     }
-    if (responseBytes !== null || response.body === null) {
+    if (!bodyNeedsStreamedCount(response)) {
       finish(responseBytes ?? 0, 'complete')
       return response
     }

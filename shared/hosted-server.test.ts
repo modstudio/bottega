@@ -1,5 +1,9 @@
 import { expect, test } from 'bun:test'
-import { hostedAccessBodyLogLine, hostedAccessLogLine } from './hosted-server.ts'
+import {
+  hostedAccessBodyLogLine,
+  hostedAccessLogLine,
+  hostedTimedResponse,
+} from './hosted-server.ts'
 
 test('hosted access line includes the caller header token', () => {
   expect(
@@ -37,4 +41,31 @@ test('hosted body completion line names measured bytes and finish state', () => 
       caller: 'cli:board/watch',
     }),
   ).toBe('GET /v1/board/stream 200 body bytes=24 finish=cancelled caller=cli:board/watch')
+})
+
+test('hosted timed response counts only bodies without a known length', () => {
+  const countable = hostedTimedResponse({
+    response: new Response('streamed'),
+    method: 'GET',
+    pathname: '/v1/tasks',
+    durationMs: 2.25,
+  })
+  const knownLength = hostedTimedResponse({
+    response: new Response('fixed', { headers: { 'content-length': '5' } }),
+    method: 'GET',
+    pathname: '/v1/tasks',
+    durationMs: 2.25,
+  })
+  const empty = hostedTimedResponse({
+    response: new Response(null),
+    method: 'HEAD',
+    pathname: '/v1/tasks',
+    durationMs: 2.25,
+  })
+
+  expect(countable.countBody).toBe(true)
+  expect(countable.method).toBe('GET')
+  expect(countable.pathname).toBe('/v1/tasks')
+  expect(knownLength.countBody).toBe(false)
+  expect(empty.countBody).toBe(false)
 })

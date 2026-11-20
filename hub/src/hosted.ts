@@ -149,6 +149,32 @@ export function hostedRequestHandler(
   }
 }
 
+export async function hubTimedResponse(
+  requestHandler: (request: Request) => Response | Promise<Response>,
+  request: Request,
+  now: () => number = performance.now.bind(performance),
+): Promise<{
+  response: Response
+  accessLine: string
+  countBody: boolean
+  method: string
+  pathname: string
+  caller: ReturnType<typeof inboundCaller>
+}> {
+  const started = now()
+  const caller = inboundCaller(request.headers.get(CALLER_HEADER_NAME))
+  const response = await withRecordCaller(caller.scope, () => requestHandler(request))
+  const durationMs = now() - started
+  const timed = hostedServer.hostedTimedResponse({
+    response,
+    method: request.method,
+    pathname: new URL(request.url).pathname,
+    durationMs,
+    caller: caller.logged,
+  })
+  return { ...timed, caller }
+}
+
 function startHostedServer(environment: ServerEnvironment = process.env) {
   const config = hostedServerConfig(environment)
   const recordDatabase = new SQL(recordServiceUrl(config.recordDatabaseUrl))
@@ -163,24 +189,12 @@ function startHostedServer(environment: ServerEnvironment = process.env) {
     idleTimeout: hostedServer.HOSTED_SERVER_IDLE_TIMEOUT_SECONDS,
     port: config.port,
     fetch: async (request) => {
-      const started = performance.now()
-      const caller = inboundCaller(request.headers.get(CALLER_HEADER_NAME))
-      const response = await withRecordCaller(caller.scope, () => requestHandler(request))
-      const durationMs = performance.now() - started
-      const method = request.method
-      const pathname = new URL(request.url).pathname
-      console.log(
-        hostedServer.hostedAccessLogLine({
-          method,
-          pathname,
-          status: response.status,
-          durationMs,
-          responseBytes: hostedServer.contentLength(response.headers),
-          caller: caller.logged,
-        }),
+      const { response, accessLine, countBody, method, pathname, caller } = await hubTimedResponse(
+        requestHandler,
+        request,
       )
-      if (hostedServer.contentLength(response.headers) !== null || response.body === null)
-        return response
+      console.log(accessLine)
+      if (!countBody) return response
       return hostedServer.countResponseBody(
         response,
         () => {},

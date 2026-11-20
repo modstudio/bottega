@@ -13,6 +13,10 @@ export function contentLength(headers: Headers): number | null {
   return Number.isSafeInteger(parsed) ? parsed : null
 }
 
+export function bodyNeedsStreamedCount(response: Response): boolean {
+  return contentLength(response.headers) === null && response.body !== null
+}
+
 export type BodyCountFinish = 'complete' | 'error' | 'cancelled'
 
 /** Wrap a response body with bounded, backpressured byte counting. */
@@ -80,6 +84,42 @@ export function hostedAccessLogLine(input: {
   caller?: string | null
 }): string {
   return `${input.method} ${input.pathname} ${input.status} ${Math.round(input.durationMs)}ms bytes=${input.responseBytes ?? '-'} caller=${input.caller ?? '-'}`
+}
+
+export function hostedTimedResponse(input: {
+  response: Response
+  method: string
+  pathname: string
+  durationMs: number
+  caller?: string | null
+}): {
+  response: Response
+  accessLine: string
+  countBody: boolean
+  method: string
+  pathname: string
+} {
+  let headersMutable = true
+  try {
+    input.response.headers.set('server-timing', `app;dur=${input.durationMs.toFixed(1)}`)
+  } catch {
+    // Redirects and pass-through fetch responses can have immutable headers.
+    headersMutable = false
+  }
+  return {
+    response: input.response,
+    method: input.method,
+    pathname: input.pathname,
+    accessLine: hostedAccessLogLine({
+      method: input.method,
+      pathname: input.pathname,
+      status: input.response.status,
+      durationMs: input.durationMs,
+      responseBytes: contentLength(input.response.headers),
+      caller: input.caller,
+    }),
+    countBody: headersMutable && bodyNeedsStreamedCount(input.response),
+  }
 }
 
 export function hostedAccessBodyLogLine(input: {
