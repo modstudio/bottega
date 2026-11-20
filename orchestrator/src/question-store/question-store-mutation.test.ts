@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import {
   createMemoryRecordApiClient,
@@ -53,6 +54,7 @@ function recordClient(
     intents?: QuestionIntent[]
     closedAts?: (string | null)[]
     whoami?: RecordApiClient['whoami']
+    writeFailure?: { intent: QuestionIntent; error: Error }
   } = {},
 ): RecordApiClient {
   const client = createMemoryRecordApiClient({ questions: options.questions })
@@ -88,6 +90,7 @@ function recordClient(
       options.intents?.push(intent)
       options.closedAts?.push(input.question.closedAt)
       writtenSpaces.push(destination.destinationSpaceId)
+      if (intent === options.writeFailure?.intent) throw options.writeFailure.error
       return client.writeQuestion!(intent, input, destination)
     },
   } as RecordApiClient
@@ -309,10 +312,61 @@ test("a projectless open cursor question is closed and re-asked in the project's
     database,
   )
 
-  expect(intents).toEqual(['close', 'ask'])
-  expect(closedAts).toEqual([STAMP, null])
-  expect(writtenSpaces).toEqual([PERSONAL_SPACE_ID, PROJECT_SPACE_ID])
+  expect(intents).toEqual(['ask', 'close'])
+  expect(closedAts).toEqual([null, STAMP])
+  expect(writtenSpaces).toEqual([PROJECT_SPACE_ID, PERSONAL_SPACE_ID])
   expect(inserted.recordId).not.toBe(ID)
+  database.close()
+})
+
+test('a replacement ask is reported when closing the stray question fails', async () => {
+  const database = migratedTestDatabase()
+  seedProject(database)
+  const openQuestion = row({
+    record_id: ID,
+    question_record_id: ID,
+    workflow_cursor_record_id: CURSOR_ID,
+    workflow_key: 'DEV-2515',
+    project_record_id: null,
+    awaiting_operator_at: STAMP,
+    closed_at: null,
+    answered_at: null,
+    workflow_step_ordinal: 1,
+    workflow_step_slug: 'implement',
+  })
+  const writtenSpaces: string[] = []
+  const intents: QuestionIntent[] = []
+  installRecordApiClient(
+    recordClient(writtenSpaces, {
+      questions: [openQuestion],
+      intents,
+      writeFailure: { intent: 'close', error: new Error('close refused') },
+    }),
+  )
+
+  await expect(
+    upsertWorkflowQuestion(
+      {
+        cursorId: CURSOR_ID,
+        projectId: PROJECT_ID,
+        workflowKey: 'DEV-2515',
+        workflowTaskRecordId: null,
+        cursorOrdinal: 0,
+        stepSlug: 'implement',
+        question: 'Proceed?',
+        at: STAMP,
+      },
+      database,
+    ),
+  ).rejects.toThrow(
+    new RegExp(
+      `replacement question 2 \\(record .+\\) exists; close stray question ${ID} with ` +
+        `\`${PLATFORM_SLUG} question close ${ID} --reason <why>\`; close failed: close refused`,
+    ),
+  )
+
+  expect(intents).toEqual(['ask', 'close'])
+  expect(writtenSpaces).toEqual([PROJECT_SPACE_ID, PERSONAL_SPACE_ID])
   database.close()
 })
 

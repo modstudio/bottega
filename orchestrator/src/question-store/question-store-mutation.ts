@@ -34,13 +34,6 @@ const json = (value: unknown): unknown => {
   }
 }
 
-export async function hostedQuestionProjectSpace(
-  database: Database,
-  projectId: string,
-): Promise<string | null> {
-  return (await questionStore(database).projectSpace?.(projectId)) ?? null
-}
-
 export function questionSnapshotFromRow(row: Record<string, unknown>): Snapshot {
   const askedAt = timestamp('askedAt', row.asked_at)
   return {

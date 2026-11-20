@@ -8,7 +8,6 @@ import { callerIdentityRefusal } from '../caller-classification.ts'
 import { callerIdentity, db, sessionId } from '../database/db.ts'
 import {
   askQuestion,
-  hostedQuestionProjectSpace,
   mutateQuestion,
   requireQuestionMutationApplied,
 } from '../question-store/question-store-mutation.ts'
@@ -17,6 +16,7 @@ import {
   questionById,
   unlinkedWorkflowQuestions,
 } from '../question-store/question-store-read.ts'
+import { questionStore } from '../question-store/question-store.ts'
 import { rulingActor } from './question-vocabulary.ts'
 import { adoptedMutationReason } from './run-authority.ts'
 import {
@@ -114,7 +114,7 @@ export async function upsertWorkflowQuestion(
       )
     const projectSpace =
       input.projectId && row.project_record_id !== null
-        ? await hostedQuestionProjectSpace(database, input.projectId)
+        ? ((await questionStore(database).projectSpace?.(input.projectId)) ?? null)
         : null
     const openSpace = typeof row?.space_id === 'string' ? row.space_id : null
     if (
@@ -123,18 +123,38 @@ export async function upsertWorkflowQuestion(
         (projectSpace !== null && openSpace !== null && openSpace !== projectSpace))
     ) {
       const reason = `re-asked in its project's declared record space`
-      const mutation = await mutateQuestion(database, {
-        id: openId,
-        intent: 'close',
-        at: input.at,
-        actorSession: sessionId(),
-        reason,
-        changes: {
-          closedAt: input.at,
-          closeReason: reason,
-        },
+      const inserted = await askQuestion(database, {
+        workflowCursorRecordId: input.cursorId,
+        projectId: input.projectId,
+        workflowKey: input.workflowKey || null,
+        workflowTaskId: input.workflowTaskRecordId,
+        askedAt: input.at,
+        question: input.question,
+        askedVia: 'workflow',
+        awaitingOperatorAt: input.at,
       })
-      requireQuestionMutationApplied(mutation, row)
+      try {
+        const mutation = await mutateQuestion(database, {
+          id: openId,
+          intent: 'close',
+          at: input.at,
+          actorSession: sessionId(),
+          reason,
+          changes: {
+            closedAt: input.at,
+            closeReason: reason,
+          },
+        })
+        requireQuestionMutationApplied(mutation, row)
+      } catch (error) {
+        const detail = error instanceof Error ? error.message : String(error)
+        throw new Error(
+          `replacement question ${inserted.number} (record ${inserted.id}) exists; ` +
+            `close stray question ${openId} with \`${PLATFORM_SLUG} question close ${openId} --reason <why>\`; close failed: ${detail}`,
+          { cause: error },
+        )
+      }
+      return { recordId: inserted.id, number: inserted.number }
     } else {
       const mutation = await mutateQuestion(database, {
         id: openId,
