@@ -261,8 +261,13 @@ test('a repository-writing job requires dispatch: required', () => {
       steps: [{ ...step, stage: 'implement' as const, jobs: ['implement'] }],
     }),
   ).toContain(
-    'step "design" declares repository-writing job "implement" but not dispatch: required',
+    'step "design" declares repository-writing job "implement" without dispatch; add "dispatch: required" to the step',
   )
+  expect(
+    validateStepCatalogue({
+      steps: [{ ...step, stage: 'implement' as const, jobs: ['implement'], dispatch: 'optional' }],
+    }),
+  ).toEqual(['step "design" dispatch must be "required"'])
 })
 
 test('steps must declare every job their bodies prescribe', () => {

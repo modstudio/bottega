@@ -247,17 +247,12 @@ function validateWritingJobDispatch(
   slug: string,
   errors: string[],
 ): void {
-  if (Array.isArray(item.jobs)) {
-    for (const entry of item.jobs) {
-      if (
-        typeof entry === 'string' &&
-        JOBS[entry]?.needs.writesRepo &&
-        item.dispatch !== 'required'
+  if (item.dispatch !== undefined || !Array.isArray(item.jobs)) return
+  for (const job of item.jobs as string[]) {
+    if (JOBS[job]?.needs.writesRepo)
+      errors.push(
+        `step "${slug}" declares repository-writing job "${job}" without dispatch; add "dispatch: required" to the step`,
       )
-        errors.push(
-          `step "${slug}" declares repository-writing job "${entry}" but not dispatch: required`,
-        )
-    }
   }
 }
 
