@@ -49,3 +49,16 @@ export function operatorCredentialResolveArgv(definition: OperatorCredentialDefi
 export function operatorCredentialResolveCommand(definition: OperatorCredentialDefinition): string {
   return [PLATFORM_SLUG, ...operatorCredentialResolveArgv(definition)].join(' ')
 }
+
+export function operatorCredentialRevealArgv(
+  definition: OperatorCredentialDefinition,
+  argv: readonly string[],
+): string[] {
+  return [
+    ...operatorCredentialResolveArgv(definition),
+    '--reveal-to-env',
+    definition.overrideVariable,
+    '--',
+    ...argv,
+  ]
+}

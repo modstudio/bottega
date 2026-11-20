@@ -602,7 +602,11 @@ export function validateProjectSettings(
     ...gateToolingProblems(settings.gateTooling),
     ...workerCheckProblems(settings.workerCheck),
     ...projectAgentKeyProblems(settings.agentKeys),
-    ...treeRunScriptProblems(context.projectNameAfterWrite ?? context.currentProjectName, settings),
+    ...treeRunScriptProblems(
+      context.projectNameAfterWrite ?? context.currentProjectName,
+      settings,
+      mode,
+    ),
   ]
 
   if (invalidOptionalStringArray(settings.secretPaths)) {
@@ -714,6 +718,11 @@ export function validateRegisterWrite(input: {
   return [
     ...new Set([
       ...validateProjectSettings(input.merged, 'strip', input.projectPath, input.context),
+      ...treeRunScriptProblems(
+        input.context?.projectNameAfterWrite ?? input.context?.currentProjectName,
+        input.merged,
+        'strict',
+      ),
       ...(input.supplied ? suppliedUnknownKeyProblems(input.supplied) : []),
     ]),
   ]

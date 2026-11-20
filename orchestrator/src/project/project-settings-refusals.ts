@@ -18,15 +18,24 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { repositoryVisibility } from '../../../shared/repository-visibility.ts'
 import { TREE_RUN_SCRIPTS, TREE_RUN_SCRIPTS_MODULE } from '../../../shared/tree-run-scripts.ts'
 import { GATE_INPUTS } from '../gate/gate-decision.ts'
+import type { Recipe } from '../recipe/recipe.ts'
 import { validateAutonomySettings } from '../workflow/autonomy.ts'
 import type { SettingsObjectMode } from './project-injection.ts'
 import type { ProjectSettings } from './project-settings.ts'
 
 function scriptsFiles(command: string): string[] {
-  return [...command.matchAll(/(?:^|[\s"'])(?:\.\/)?(scripts\/[^\s"']+)/g)].map((match) =>
+  return [...command.matchAll(/(?:^|[\s"'])(?:\.\/)?((?:[^\s"'|;&]+\/)*scripts\/[^\s"'|;&]+)/g)].map((match) =>
     match[1]!.replace(/[;|&]+$/, ''),
   )
 }
+
+const TREE_RUN_RECIPE_FIELDS = [
+  'install',
+  'migrate',
+  'serve',
+  'stop',
+  'after',
+] as const satisfies readonly (keyof Recipe)[]
 
 function treeRunCommands(settings: ProjectSettings): Array<[field: string, command: string]> {
   const commands: Array<[string, string]> = []
@@ -43,13 +52,14 @@ function treeRunCommands(settings: ProjectSettings): Array<[field: string, comma
     }
   }
   const recipe = settings.worktree?.recipe
-  for (const field of ['install', 'migrate', 'serve', 'stop', 'after'] as const) {
+  for (const field of TREE_RUN_RECIPE_FIELDS) {
     add(`worktree.recipe.${field}`, recipe?.[field])
   }
   for (const [index, entry] of (settings.release?.beforePullRequest ?? []).entries()) {
     add(`release.beforePullRequest.${index}.run`, entry.run)
   }
   // Release deploy and reference publish run from the main checkout, so their scripts are excluded.
+  // The tracked recipe in bottega.jsonc is pull-request-reviewed tree data and runs no scripts/ file.
   return commands
 }
 
@@ -57,8 +67,9 @@ function treeRunCommands(settings: ProjectSettings): Array<[field: string, comma
 export function treeRunScriptProblems(
   projectName: string | undefined,
   settings: ProjectSettings,
+  mode: SettingsObjectMode,
 ): string[] {
-  if (projectName !== PLATFORM_SLUG) return []
+  if (mode !== 'strict' || projectName !== PLATFORM_SLUG) return []
   const listed = new Set<string>(TREE_RUN_SCRIPTS)
   return treeRunCommands(settings).flatMap(([field, command]) =>
     scriptsFiles(command)

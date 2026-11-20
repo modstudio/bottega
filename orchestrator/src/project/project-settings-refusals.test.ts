@@ -1,7 +1,7 @@
 import { expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { ProjectSettings } from './project-settings.ts'
-import { validateRegisterWrite } from './projects.ts'
+import { validateProjectSettings, validateRegisterWrite } from './projects.ts'
 
 function settings(run: string): ProjectSettings {
   return {
@@ -28,17 +28,23 @@ test('register writes normalize every tree-script command form and scope the pla
       'node ./scripts/x.ts --flag',
       'bun "scripts/x.ts"',
       'sh -c "bun scripts/x.ts"',
+      'bun hub/scripts/x.ts',
+      'bun ./hub/scripts/x.ts',
     ].map((run) => ({
       name: run,
       project: PLATFORM_SLUG,
       settings: settings(run),
-      problem:
-        'release.beforePullRequest.0.run executes unlisted tree script scripts/x.ts; add it to shared/tree-run-scripts.ts',
+      problem: `release.beforePullRequest.0.run executes unlisted tree script ${run.includes('hub/') ? 'hub/scripts/x.ts' : 'scripts/x.ts'}; add it to shared/tree-run-scripts.ts`,
     })),
     {
       name: 'listed rehearsal',
       project: PLATFORM_SLUG,
       settings: settings('bun scripts/record-rehearse.ts'),
+    },
+    {
+      name: 'listed nested script',
+      project: PLATFORM_SLUG,
+      settings: settings('bun hub/scripts/test-postgres-evidence.ts'),
     },
     {
       name: 'other project',
@@ -63,4 +69,20 @@ test('register writes normalize every tree-script command form and scope the pla
       row.name,
     ).toEqual(row.problem ? [row.problem] : [])
   }
+})
+
+test('tree-script guard applies only to strict register writes', () => {
+  const unlisted = settings('bun scripts/newer.ts')
+  expect(
+    validateProjectSettings(unlisted, 'strip', undefined, {
+      currentProjectName: PLATFORM_SLUG,
+    }),
+  ).toEqual([])
+  expect(
+    validateProjectSettings(unlisted, 'strict', undefined, {
+      currentProjectName: PLATFORM_SLUG,
+    }),
+  ).toEqual([
+    'release.beforePullRequest.0.run executes unlisted tree script scripts/newer.ts; add it to shared/tree-run-scripts.ts',
+  ])
 })

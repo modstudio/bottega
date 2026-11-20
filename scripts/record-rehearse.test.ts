@@ -242,7 +242,8 @@ test('an interruption after launch destroys the known machine and fails', async 
       machineDetails: async () => ({}),
       interrupt: interrupt.signal,
     }),
-  ).rejects.toThrow()
+  ).rejects.toThrow('interrupted by SIGTERM')
+  expect(calls.some((argv) => argv[0] === 'gh')).toBe(false)
   expect(calls).toContainEqual([
     'flyctl',
     'machine',

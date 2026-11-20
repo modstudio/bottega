@@ -6,7 +6,7 @@ import type { SQL } from 'bun'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { readEnvValues, resolveEnvValuesWithHosted } from '../../../shared/env-source.ts'
 import {
-  operatorCredentialResolveCommand,
+  operatorCredentialRevealArgv,
   RECORD_MIGRATE_OPERATOR_CREDENTIAL,
 } from '../../../shared/operator-credentials.ts'
 import {
@@ -769,7 +769,7 @@ async function operatorRecordChecks(input: {
       checks.push({
         name,
         status: 'skipped',
-        detail: `${RECORD_MIGRATE_OPERATOR_CREDENTIAL.overrideVariable} not set; run with the stored credential using ${operatorCredentialResolveCommand(RECORD_MIGRATE_OPERATOR_CREDENTIAL)} --reveal-to-env ${RECORD_MIGRATE_OPERATOR_CREDENTIAL.overrideVariable} -- ${PLATFORM_SLUG} record doctor`,
+        detail: `${RECORD_MIGRATE_OPERATOR_CREDENTIAL.overrideVariable} not set; run with the stored credential using ${[PLATFORM_SLUG, ...operatorCredentialRevealArgv(RECORD_MIGRATE_OPERATOR_CREDENTIAL, [PLATFORM_SLUG, 'record', 'doctor'])].join(' ')}`,
       })
     return checks
   }

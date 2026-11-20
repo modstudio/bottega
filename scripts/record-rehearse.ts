@@ -3,11 +3,11 @@ import { existsSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { REHEARSAL_NOTICE_LIMIT } from '../orchestrator/src/postgres/migration-notices.ts'
 import { hostedApiFetch } from '../shared/bounded-fetch.ts'
-import { startParentBound } from '../shared/bounded-process.ts'
+import { parentBoundSignalExitCode, startParentBound } from '../shared/bounded-process.ts'
 import { FROZEN_ENV_NAMES, PLATFORM_SLUG } from '../shared/brand.ts'
 import { mainCheckoutOf } from '../shared/git.ts'
 import {
-  operatorCredentialResolveArgv,
+  operatorCredentialRevealArgv,
   operatorCredentialSetCommand,
   RECORD_REHEARSAL_OPERATOR_CREDENTIAL,
 } from '../shared/operator-credentials.ts'
@@ -60,11 +60,7 @@ export function rehearsalCredentialDecision(
     kind: 'rerun',
     argv: [
       join(mainCheckout, 'bin', PLATFORM_SLUG),
-      ...operatorCredentialResolveArgv(rehearsalCredential),
-      '--reveal-to-env',
-      tokenName,
-      '--',
-      ...argv,
+      ...operatorCredentialRevealArgv(rehearsalCredential, argv),
     ],
   }
 }
@@ -521,7 +517,7 @@ function rehearsalInterrupt(): { signal: AbortSignal; dispose: () => void } {
   const controller = new AbortController()
   let interrupted = false
   const handle = (signal: 'SIGINT' | 'SIGTERM') => {
-    if (interrupted) process.exit(signal === 'SIGINT' ? 130 : 143)
+    if (interrupted) process.exit(parentBoundSignalExitCode(signal, [])!)
     interrupted = true
     controller.abort(signal)
   }
@@ -552,7 +548,7 @@ if (import.meta.main) {
       name: 'record rehearsal credential child',
       env: process.env,
       exitOnSignal: false,
-      streamOutput: true,
+      inheritStdio: true,
     })
     process.exitCode = await child.exited
   } else {
