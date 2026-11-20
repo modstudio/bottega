@@ -139,11 +139,12 @@ async function main(): Promise<void> {
         sandboxLaunchArgv(profile, command, args, runtimeDir, runEnvironment),
     })
     if (!result.ok) {
-      if (forceSource && result.error.includes('Cannot find package')) {
+      const error = result.error ?? 'unknown MCP probe failure'
+      if (forceSource && error.includes('Cannot find package')) {
         console.log('forced source launch failed with the package-resolution error')
         return
       }
-      throw new Error(`confined ask-server tools/list failed: ${result.error}`)
+      throw new Error(`confined ask-server tools/list failed: ${error}`)
     }
     if (forceSource)
       throw new Error(

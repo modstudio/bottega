@@ -112,6 +112,7 @@ export function checkoutCliBinaryEnvironment(
     ...environment,
     [INSTALL_HOME_ENV]: checkoutRoot,
   })
+  if (identity.kind !== 'checkout') return {}
   const [binary, stamp] = workerRuntimeAssetPaths(resolveStateRoot(environment), identity.version, {
     checkoutCli: WORKER_RUNTIME_ASSETS.checkoutCli,
     checkoutCliStamp: WORKER_RUNTIME_ASSETS.checkoutCliStamp,
