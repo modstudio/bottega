@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { REF_GUARD_RUNTIME_ASSET } from './embedded-assets.ts'
-import { WORKER_RUNTIME_ASSETS, workerRuntimeAssetPaths } from './runtime-assets-in-sandbox.ts'
 import { extractedRuntimeAssetPath } from './runtime-assets.ts'
+import { WORKER_RUNTIME_ASSETS, workerRuntimeAssetPaths } from './runtime-assets-in-sandbox.ts'
 
 test('worker runtime assets resolve only their exact declared paths', () => {
   const paths = workerRuntimeAssetPaths('/state', '1.2.3')

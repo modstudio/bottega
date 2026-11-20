@@ -8,8 +8,8 @@ import {
   embeddedRuntimeDigest,
   extractEmbeddedRuntime,
   RUNTIME_ASSETS,
-  readInstallAsset,
   type RuntimeAsset,
+  readInstallAsset,
 } from './embedded-assets.ts'
 import { assetPath } from './install-root.ts'
 import { resolveStateRoot, type StateEnvironment } from './state-directory.ts'
@@ -17,7 +17,9 @@ import { resolveStateRoot, type StateEnvironment } from './state-directory.ts'
 const RUNTIME_DIRECTORY = 'assets'
 
 /** Compose a runtime asset's path relative to its version-scoped directory. */
-export function extractedRuntimeAssetRelativePath(asset: Pick<RuntimeAsset, 'destination'>): string {
+export function extractedRuntimeAssetRelativePath(
+  asset: Pick<RuntimeAsset, 'destination'>,
+): string {
   return join(RUNTIME_DIRECTORY, asset.destination)
 }
 
@@ -27,7 +29,7 @@ function runtimeAssetsAreEmbedded(): boolean {
 }
 
 /** The version-scoped root containing extracted runtime assets. */
-export function extractedRuntimeRootPath(stateRoot: string, version: string): string {
+function extractedRuntimeRootPath(stateRoot: string, version: string): string {
   return join(stateRoot, 'runtime', version, RUNTIME_DIRECTORY)
 }
 
@@ -67,6 +69,10 @@ export function runtimeAssetPath(
 ): string {
   const asset = RUNTIME_ASSETS.find((entry) => entry.packagePath === packagePath)
   if (!asset) throw new Error(`runtime asset is not declared: ${packagePath}`)
-  if (!runtimeAssetsAreEmbedded()) return realpathSync(assetPath(packagePath))
-  return realpathSync(join(runtimeAssetRoot(environment), asset.destination))
+  const manifest = embeddedDistributionManifest()
+  if (!manifest) return realpathSync(assetPath(packagePath))
+  runtimeAssetRoot(environment)
+  return realpathSync(
+    extractedRuntimeAssetPath(resolveStateRoot(environment), manifest.version, asset),
+  )
 }
