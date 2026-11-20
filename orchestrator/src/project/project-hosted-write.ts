@@ -57,11 +57,11 @@ export async function writeProjectToHostedRecord(
 }
 
 export async function retireProjectInHostedRecord(
-  project: { name: string; recordId: string },
+  project: { name: string; recordId: string; recordRevision?: number | null },
   settings: ProjectSettings | StoredProjectSettings,
-): Promise<void> {
-  await applyRecordWriteAuthority({
-    local: () => undefined,
+): Promise<number | null> {
+  return applyRecordWriteAuthority({
+    local: () => project.recordRevision ?? null,
     hosted: async () => {
       const client = recordApiClient()
       const destinationSpaceId = await requireProjectRecordDestination(
@@ -69,7 +69,8 @@ export async function retireProjectInHostedRecord(
         settings,
         client,
       )
-      return client.retireProject(project.recordId, { destinationSpaceId })
+      const result = await client.retireProject(project.recordId, { destinationSpaceId })
+      return result.revision
     },
   })
 }

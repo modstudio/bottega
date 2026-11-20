@@ -346,14 +346,19 @@ export async function upsertRecordProject(
 
 export async function retireRecordProject(
   input: Tenant & { id: string },
-): Promise<{ name: string }> {
-  return tenant(input, async (tx) => {
-    const rows = await tx`
-      UPDATE project SET retired_at = now()
-      WHERE space_id=${input.spaceId}::uuid AND id=${input.id}::uuid
-      RETURNING name
-    `
-    if (!rows.length) throw new RecordProjectError(`hosted project ${input.id} not found`, 404)
-    return { name: String(rows[0]!.name) }
-  })
+): Promise<{ name: string; revision: number }> {
+  return tenant(input, (tx) => retireHostedProjectRow(tx, input))
+}
+
+export async function retireHostedProjectRow(
+  tx: SQL,
+  input: { spaceId: string; id: string },
+): Promise<{ name: string; revision: number }> {
+  const rows = await tx`
+    UPDATE project SET retired_at = now()
+    WHERE space_id=${input.spaceId}::uuid AND id=${input.id}::uuid
+    RETURNING name, revision
+  `
+  if (!rows.length) throw new RecordProjectError(`hosted project ${input.id} not found`, 404)
+  return { name: String(rows[0]!.name), revision: Number(rows[0]!.revision) }
 }

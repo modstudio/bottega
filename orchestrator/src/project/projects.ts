@@ -293,6 +293,7 @@ export function stackAt(cwd: string): string | null {
 
 export function upsertProject(p: {
   recordId: string
+  recordRevision?: number | null
   name: string
   path: string
   stack?: string | null
@@ -484,7 +485,10 @@ export function retireProject(name: string): 'retired' | 'already-retired' {
 export async function retireWrittenProject(name: string): Promise<'retired' | 'already-retired'> {
   const project = projectRowByName(name)
   if (!project) throw new Error(`no project "${name}"`)
-  await retireProjectInHostedRecord(project, project.settings)
+  const recordRevision = await retireProjectInHostedRecord(project, project.settings)
+  db()
+    .query('UPDATE project SET record_revision=? WHERE record_id=?')
+    .run(recordRevision, project.recordId)
   return retireProject(name)
 }
 

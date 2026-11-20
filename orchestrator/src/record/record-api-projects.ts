@@ -33,7 +33,7 @@ export function registerRecordProjectRoutes(
     upsertProject(
       input: Tenant & RecordProjectUpsertInput,
     ): Promise<{ id: string; name: string; revision?: number }>
-    retireProject(input: Tenant & { id: string }): Promise<{ name: string }>
+    retireProject(input: Tenant & { id: string }): Promise<{ name: string; revision: number }>
     purgeProject(
       input: Tenant & { id: string; confirmation: string },
     ): Promise<RecordProjectPurgeResult>

@@ -977,7 +977,7 @@ export function createMemoryRecordApiClient(
     },
     listProjects: async () => [],
     async retireProject(name) {
-      return { name }
+      return { name, revision: 1 }
     },
     async purgeProject() {
       return { nothingToRemove: true, tables: [] }

@@ -12,7 +12,12 @@ import { rememberHostedRecord } from '../record/install-binding-write.ts'
 import type { RecordApiClient } from '../record/record-api-client.ts'
 import { fillAbsentProjectSettings, projectCommand } from './project-commands.ts'
 import { writeProjectToHostedRecord } from './project-hosted-write.ts'
-import { projectByName, upsertProject } from './projects.ts'
+import {
+  projectByName,
+  retiredProjectByName,
+  retireWrittenProject,
+  upsertProject,
+} from './projects.ts'
 
 async function runProject(
   args: string[],
@@ -69,7 +74,7 @@ test('fresh stores add, fill, retire, and unretire locally without a hosted call
     },
     retireProject: async (name) => {
       hosted.push(`retire:${name}`)
-      return { name }
+      return { name, revision: 1 }
     },
   })
   const path = mkdtempSync(join(tmpdir(), 'orch-local-project-'))
@@ -122,6 +127,35 @@ test('a hosted project write carries and returns the last-seen revision', async 
     ),
   ).toMatchObject({ recordRevision: 8 })
   expect(inputs).toEqual([expect.objectContaining({ expectedRevision: 7 })])
+})
+
+test('a hosted retire stores the bumped revision for the next local write', async () => {
+  rememberHostedRecord()
+  process.env.BOTTEGA_RECORD_API_URL = 'https://record-api.example.test'
+  const recordId = newRecordId()
+  upsertProject({
+    recordId,
+    recordRevision: 7,
+    name: 'retire-revision',
+    path: '/w/retire-revision',
+    settings: { space: 'fixture' },
+  })
+  installRecordApiClient({
+    ...createMemoryRecordApiClient(),
+    whoami: async () => ({
+      user: { id: 'user-a' },
+      activeSpaceId: 'space-a',
+      personalSpaceId: 'space-a',
+      memberships: [{ space_id: 'space-a', slug: 'fixture', permission: 'write' as const }],
+    }),
+    retireProject: async () => ({ name: 'retire-revision', revision: 8 }),
+  })
+
+  expect(await retireWrittenProject('retire-revision')).toBe('retired')
+  expect(retiredProjectByName('retire-revision')).toMatchObject({
+    retiredAt: expect.any(String),
+    recordRevision: 8,
+  })
 })
 
 function recordingClient(calls: string[]): RecordApiClient {

@@ -81,7 +81,10 @@ export type ProjectIdentityClient = {
     destination: RecordWriteDestination,
   ): Promise<{ id: string; name: string; revision?: number }>
   listProjects(destination?: RecordRequestDestination): Promise<RecordProject[]>
-  retireProject(id: string, destination: RecordWriteDestination): Promise<{ name: string }>
+  retireProject(
+    id: string,
+    destination: RecordWriteDestination,
+  ): Promise<{ name: string; revision: number }>
   purgeProject(
     id: string,
     confirmation: string,
@@ -162,7 +165,7 @@ export function projectIdentityClient(request: RecordClientRequest): ProjectIden
         schema: (body) => RecordProjectsSchema.parse(body),
       }),
     retireProject: (id, destination) =>
-      request<{ name: string }>(`/v1/projects/${encodeURIComponent(id)}/retire`, {
+      request<{ name: string; revision: number }>(`/v1/projects/${encodeURIComponent(id)}/retire`, {
         method: 'POST',
         ...destination,
       }),

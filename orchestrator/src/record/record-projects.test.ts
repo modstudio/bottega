@@ -6,11 +6,16 @@ import { idleRecordApiDeps, idleSubjectDeps } from '../../test/fixtures/record-a
 import { recordApiTestApp } from '../../test/fixtures/record-api-app.ts'
 import type { RecordIdentity } from './record-auth.ts'
 import { hostedProjectColumns } from './record-project-columns.ts'
-import { mapRecordProjectRow, upsertHostedProjectRow } from './record-projects.ts'
+import {
+  mapRecordProjectRow,
+  retireHostedProjectRow,
+  upsertHostedProjectRow,
+} from './record-projects.ts'
 
 const spaceId = '01990000-0000-7000-8000-000000002200'
 const userId = '01990000-0000-7000-8000-000000002201'
 const projectId = '01990000-0000-7000-8000-000000002202'
+const retirementProjectId = '01990000-0000-7000-8000-000000002203'
 let database: PGlite
 
 beforeAll(async () => {
@@ -54,13 +59,14 @@ function recordApp() {
         })
         return { ...written, name: input.name }
       },
+      retireProject: (input) => retireHostedProjectRow(sql, input),
     },
   )
 }
 
-function projectBody(name: string, expectedRevision?: number): string {
+function projectBody(name: string, expectedRevision?: number, id = projectId): string {
   return JSON.stringify({
-    id: projectId,
+    id,
     name,
     path: '/w/project-revision',
     stack: null,
@@ -75,11 +81,12 @@ function putProject(
   application: ReturnType<typeof recordApp>,
   name: string,
   expectedRevision?: number,
+  id?: string,
 ) {
   return application.request('/v1/projects', {
     method: 'PUT',
     headers: { 'content-type': 'application/json', 'x-record-space': spaceId },
-    body: projectBody(name, expectedRevision),
+    body: projectBody(name, expectedRevision, id),
   })
 }
 
@@ -109,4 +116,44 @@ test('the real record app refuses a stale project revision and names the pull re
     (await database.query<{ name: string }>('SELECT name FROM project WHERE id=$1', [projectId]))
       .rows,
   ).toEqual([{ name: 'newer-project' }])
+})
+
+test('retire returns the revision used by a same-machine unretire and preserves stale refusal', async () => {
+  const application = recordApp()
+  const created = (await (
+    await putProject(application, 'retire-revision', undefined, retirementProjectId)
+  ).json()) as { revision: number }
+  const retire = await application.request(`/v1/projects/${retirementProjectId}/retire`, {
+    method: 'POST',
+    headers: { 'x-record-space': spaceId },
+  })
+  expect(await retire.json()).toEqual({ name: 'retire-revision', revision: created.revision + 1 })
+
+  const unretired = (await (
+    await putProject(application, 'retire-revision', created.revision + 1, retirementProjectId)
+  ).json()) as { revision: number }
+  expect(unretired.revision).toBe(created.revision + 2)
+
+  const secondRetire = (await (
+    await application.request(`/v1/projects/${retirementProjectId}/retire`, {
+      method: 'POST',
+      headers: { 'x-record-space': spaceId },
+    })
+  ).json()) as { revision: number }
+  const anotherMachine = (await (
+    await putProject(application, 'other-machine-write', secondRetire.revision, retirementProjectId)
+  ).json()) as { revision: number }
+  const staleUnretire = await putProject(
+    application,
+    'retire-revision',
+    secondRetire.revision,
+    retirementProjectId,
+  )
+  expect(anotherMachine.revision).toBe(secondRetire.revision + 1)
+  expect(staleUnretire.status).toBe(409)
+  expect(await staleUnretire.json()).toEqual({
+    error:
+      `project ${retirementProjectId} changed since revision ${secondRetire.revision}; now ${anotherMachine.revision}.\n` +
+      `cleared by: ${PLATFORM_SLUG} record pull`,
+  })
 })
