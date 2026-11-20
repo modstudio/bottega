@@ -127,7 +127,7 @@ async function launchCodexProbe(
         codex,
         'sandbox',
         '-P',
-        'bottega',
+        PLATFORM_SLUG,
         ...permissionArgs,
         '--',
         '/bin/sh',

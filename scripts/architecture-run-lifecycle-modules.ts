@@ -561,6 +561,7 @@ export const runLifecycleModules: ArchitectureModule[] = [
       './tool-call-burst.ts',
       './run-call-usage.ts',
       './run-context-profile.ts',
+      './run-codex-permission-profile.ts',
       '../sandbox/codex-mcp-scope.ts',
       '../sandbox/project-mcp-scope.ts',
       '../confinement/confinement.ts',
@@ -597,6 +598,12 @@ export const runLifecycleModules: ArchitectureModule[] = [
     ],
     ['../review/review-target.ts'],
   ),
+  module('orchestrator/src/run/run-codex-permission-profile.ts', [
+    '../sandbox/codex-mcp-scope.ts',
+    '../sandbox/codex-sandbox.ts',
+    '../sandbox/sandbox.ts',
+    '../transport/transport.ts',
+  ]),
   module('orchestrator/src/transport/codex-ask-exposure.ts', [
     '../../../shared/brand.ts',
     '../contract/codex-mcp-tool.ts',

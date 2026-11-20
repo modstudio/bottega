@@ -1,5 +1,7 @@
 import { describe, expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
+  CODEX_PERMISSION_PROFILE,
   codexPermissionProfileArgs,
   codexWritableRoots,
   decideCodexSandbox,
@@ -40,9 +42,9 @@ describe('Codex permission profile', () => {
   test('maps the shared read profile and current writable roots', () => {
     expect(args()).toEqual([
       '-c',
-      'default_permissions="bottega"',
+      `default_permissions="${PLATFORM_SLUG}"`,
       '-c',
-      'permissions.bottega.filesystem={":root"="read","/projects/own/tree"="write","/state/run"="read","/runtime/assets"="read","/state/run/scratch"="write","/projects/sibling"="deny","/state"="deny","/projects/own/declared.secret"="deny"}',
+      `permissions.${PLATFORM_SLUG}.filesystem={":root"="read","/projects/own/tree"="write","/state/run"="read","/runtime/assets"="read","/state/run/scratch"="write","/projects/sibling"="deny","/state"="deny","/projects/own/declared.secret"="deny"}`,
     ])
   })
 
@@ -51,7 +53,7 @@ describe('Codex permission profile', () => {
   })
 
   test('network is emitted only when the run enables it', () => {
-    expect(args()).not.toContain('permissions.bottega.network.enabled=true')
-    expect(args(true)).toContain('permissions.bottega.network.enabled=true')
+    expect(args()).not.toContain(`permissions.${CODEX_PERMISSION_PROFILE}.network.enabled=true`)
+    expect(args(true)).toContain(`permissions.${CODEX_PERMISSION_PROFILE}.network.enabled=true`)
   })
 })

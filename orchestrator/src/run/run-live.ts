@@ -43,7 +43,6 @@ import { processStartTime } from '../project/project-lock.ts'
 import { orchestratorProseGate } from '../prose-service.ts'
 import type { ResolvedReviewTarget } from '../review/review-target.ts'
 import type { CodexMcpScope } from '../sandbox/codex-mcp-scope.ts'
-import { codexWritableRoots } from '../sandbox/codex-sandbox.ts'
 import type { ProjectMcpSelection } from '../sandbox/project-mcp-scope.ts'
 import type { SandboxSelection } from '../sandbox/sandbox.ts'
 import { askExposureEvent } from '../transport/codex-ask-exposure.ts'
@@ -71,6 +70,10 @@ import { createCheckpointSchedule } from './checkpoint-schedule.ts'
 import { prepareLaterRunBoardPrompt } from './run-board-prompt.ts'
 import { foldRunCallUsage, type RunCallUsage } from './run-call-usage.ts'
 import { raiseForHostCapacityWait } from './run-claim-host-capacity.ts'
+import {
+  codexPermissionLaunchProfile,
+  codexTransportMcpScope,
+} from './run-codex-permission-profile.ts'
 import type { GooseContextProfile } from './run-context-profile.ts'
 import { startRunAfterHostCapacity, waitForLiveRunHostCapacity } from './run-host-capacity.ts'
 import { type IdleKillState, idleSnapshotObserver, performIdleKill } from './run-idle-kill.ts'
@@ -572,13 +575,6 @@ function captureLiveGooseLedger(input: LiveInput) {
   )
 }
 
-function codexTransportMcpScope(scope: CodexMcpScope | null) {
-  return {
-    projectServers: scope?.servers,
-    withheldProjectServers: scope?.withheld.map((server) => server.name),
-  }
-}
-
 export async function runLive(input: LiveInput): Promise<LiveResult> {
   let {
     repoJob,
@@ -721,7 +717,6 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
       cwd,
       prompt,
       outPath,
-      // A fresh Grok CLI id is not resumable; ACP would issue session/load for a nonexistent session.
       session:
         transportName === 'acp' && opts.resume?.kind === 'continue'
           ? opts.resume?.session
@@ -742,23 +737,7 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
       projectMcpSelection: input.projectMcpSelection,
       trustCwd: mcpTrustGranted ? cwd : undefined,
       writableRoots,
-      ...(name === 'codex' && sandboxSelection.codexProfile
-        ? {
-            codexPermissionProfile: {
-              filesystem: {
-                denyRead: sandboxSelection.codexProfile.filesystem.denyRead,
-                allowRead: sandboxSelection.codexProfile.filesystem.allowWithinDeny,
-              },
-              writableRoots:
-                codexWritableRoots(
-                  codexSandbox.sandbox,
-                  cwd,
-                  writableRoots,
-                  input.runTemp.directory,
-                ) ?? [],
-            },
-          }
-        : {}),
+      codexPermissionProfile: codexPermissionLaunchProfile(input),
       gitConfigEnvironment,
       recipeEnvironment,
       tempEnvironment: input.runTemp.environment,
@@ -773,9 +752,8 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
         repoJob,
         claim.number,
         requestedJob,
-        // The composed prompt's own size, measured where the prompt is final:
-        // some jobs' material arrives inline here (a `summarize` prompt carries
-        // its document) rather than in the working set the job declares.
+        // Measure where the prompt is final: some jobs' material arrives inline
+        // rather than in the working set the job declares.
         Buffer.byteLength(prompt, 'utf8'),
       ),
       onWarning: warnForRun(claim.id),

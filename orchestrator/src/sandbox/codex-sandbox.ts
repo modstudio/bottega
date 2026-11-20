@@ -5,6 +5,8 @@
  * they must not probe the vendor.
  */
 
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+
 export type CodexSandboxRuling = {
   sandbox: 'read-only' | 'workspace-write'
   workspaceWriteNetworkAccess: boolean
@@ -15,7 +17,7 @@ export type CodexPermissionFilesystem = {
   allowRead: readonly string[]
 }
 
-const CODEX_PERMISSION_PROFILE = 'bottega'
+export const CODEX_PERMISSION_PROFILE = PLATFORM_SLUG
 
 function tomlString(value: string): string {
   return JSON.stringify(value)

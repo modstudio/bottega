@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { BUILTIN_AGENTS } from './agents.ts'
 
 const shellSets = (argv: string[]) =>
@@ -38,7 +39,7 @@ describe('codex worker shell environment', () => {
       write: true,
       codexPermissionProfile,
     })
-    expect(argv).toContain('permissions.bottega.network.enabled=true')
+    expect(argv).toContain(`permissions.${PLATFORM_SLUG}.network.enabled=true`)
     expect(argv).toContain('--approve-for-me')
     expect(argv).not.toContain('-s')
   })
@@ -73,7 +74,7 @@ describe('codex worker shell environment', () => {
       'shell_environment_policy.set.TMP="/runs/42/scratch/tmp"',
       'shell_environment_policy.set.TEMP="/runs/42/scratch/tmp"',
     ])
-    expect(noRepositoryJob).not.toContain('permissions.bottega.network.enabled=true')
+    expect(noRepositoryJob).not.toContain(`permissions.${PLATFORM_SLUG}.network.enabled=true`)
     expect(repositoryReader.join(' ')).not.toContain('sandbox_workspace_write')
     expect(shellSets(repositoryReader)).not.toContainEqual(
       expect.stringMatching(/^shell_environment_policy\.set\.(?:TMPDIR|TMP|TEMP)=/),
