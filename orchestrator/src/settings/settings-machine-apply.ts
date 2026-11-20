@@ -73,6 +73,23 @@ export function settingsApplyResultWaitsForSignIn(result: MachineSettingsApplyRe
   return result.condition === 'no-settings-row' || result.condition === 'empty-user-canon-store'
 }
 
+export type SettingsApplyDecision = {
+  action: 'continue' | 'wait-for-sign-in' | 'refuse'
+  refused: MachineSettingsApplyResult[]
+}
+
+export function settingsApplyDecision(
+  sessionPresent: boolean,
+  results: readonly MachineSettingsApplyResult[],
+): SettingsApplyDecision {
+  const refused = results.filter((result) => result.outcome === 'refused')
+  if (refused.length === 0) return { action: 'continue', refused }
+  if (!sessionPresent && refused.every(settingsApplyResultWaitsForSignIn)) {
+    return { action: 'wait-for-sign-in', refused }
+  }
+  return { action: 'refuse', refused }
+}
+
 export const SETTINGS_APPLY_LOCK_TARGET = 'settings apply'
 
 export function settingsApplyLockSkipped(result: MachineSettingsApplyResult): boolean {

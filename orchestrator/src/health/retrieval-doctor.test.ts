@@ -6,10 +6,12 @@ import {
 } from './retrieval-doctor.ts'
 
 test('retrieval doctor is informational until configured and fails when configured but down', async () => {
-  expect(retrievalIsConfigured('', false)).toBe(false)
-  expect(retrievalIsConfigured('http://model-host/v1', false)).toBe(true)
-  expect(retrievalIsConfigured('', true)).toBe(true)
-  expect(retrievalDoctorDecision(false)).toEqual({
+  expect(retrievalIsConfigured('', false, {})).toBe(false)
+  expect(retrievalIsConfigured('http://model-host/v1', false, {})).toBe(true)
+  expect(retrievalIsConfigured('', true, {})).toBe(true)
+  expect(retrievalIsConfigured('', false, { BOTTEGA_EMBED_URL: 'http://embed/v1' })).toBe(true)
+  expect(retrievalIsConfigured('', false, { BOTTEGA_RERANK_URL: 'http://rerank/v1' })).toBe(true)
+  expect(retrievalDoctorDecision({ configured: false })).toEqual({
     lines: ['retrieval  not configured (optional)'],
     failed: false,
   })
@@ -22,7 +24,7 @@ test('retrieval doctor is informational until configured and fails when configur
     async () => ({ stdout: 'embedding unreachable', stderr: '', exitCode: 1 }),
   )
   expect(lines).toEqual([
-    'retrieval endpoints (optional; search_code and doc search unavailable)',
+    'retrieval endpoints FAIL — search_code and doc search unavailable',
     '  embedding unreachable',
   ])
   expect(exits).toEqual([1])

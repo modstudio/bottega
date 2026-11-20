@@ -4,6 +4,7 @@ import { RECORD_SIGN_IN_REMEDY } from '../../../shared/record-remedies.ts'
 import {
   type MachineSettingsApplyResult,
   SETTINGS_APPLY_LOCK_TARGET,
+  settingsApplyDecision,
 } from '../settings/settings-machine-apply.ts'
 import {
   hookScriptPath,
@@ -12,7 +13,6 @@ import {
   withMachineProductHooks,
 } from '../settings/settings-machine-hooks.ts'
 import type { SetupInstallVerifyFacts } from './setup-install-verify.ts'
-import { setupInstallSettingsDecision } from './setup-install-verify-decision.ts'
 import { applySetupInstallVerify } from './setup-install-verify-runtime.ts'
 
 const current: MachineSettingsApplyResult[] = [
@@ -111,8 +111,8 @@ test('signed-out settings decisions stay follow-ups after a grok canon home is i
     detail: 'refusing user canon hydration: empty store',
     changed: false,
   }
-  const first = setupInstallSettingsDecision(false, [missingSettings])
-  const second = setupInstallSettingsDecision(false, [missingSettings, emptyGrokCanon])
+  const first = settingsApplyDecision(false, [missingSettings])
+  const second = settingsApplyDecision(false, [missingSettings, emptyGrokCanon])
   expect(first.action).toBe('wait-for-sign-in')
   expect(second.action).toBe(first.action)
 
@@ -131,7 +131,7 @@ test('signed-out settings decisions stay follow-ups after a grok canon home is i
 
 test('signed-in settings and canon refusals still refuse', () => {
   expect(
-    setupInstallSettingsDecision(true, [
+    settingsApplyDecision(true, [
       {
         target: 'settings user',
         outcome: 'refused',

@@ -74,13 +74,14 @@ import { lifecycleReportLines } from '../worktree/worktree-lifecycle.ts'
 import { configuredDelegationDoctorLines } from './delegation-doctor.ts'
 import { launchAgentDoctorReport } from './launch-agent-doctor.ts'
 import { reportProviderCredentialTrustDoctor } from './provider-credential-trust-doctor.ts'
-import { reportRetrievalDoctor, retrievalIsConfigured } from './retrieval-doctor.ts'
+import {
+  type RetrievalCheckResult,
+  type RetrievalDoctorReporter,
+  reportRetrieval,
+} from './retrieval-doctor.ts'
 
 type DoctorFlags = { has(name: string): boolean }
-type DoctorReporter = { log(value: string): void; exitCode(code: number): void }
-type DoctorPresentation = {
-  log(...values: unknown[]): void
-  exitCode(code: number): void
+type DoctorPresentation = RetrievalDoctorReporter & {
   candidates(job: string): {
     agent: string
     eligible: boolean
@@ -98,7 +99,7 @@ type DoctorPresentation = {
   pick(job: string): { agent: string }
   jobs(): string[]
   acpRuntimeGaps(): string | null
-  retrievalCheck(): Promise<{ stdout: string; stderr: string; exitCode: number }>
+  retrievalCheck(): Promise<RetrievalCheckResult>
 }
 
 export async function activeSpaceDoctorDiagnosis(
@@ -122,7 +123,7 @@ export async function activeSpaceDoctorDiagnosis(
 }
 
 export async function reportActiveSpaceDoctor(
-  presentation: DoctorReporter,
+  presentation: RetrievalDoctorReporter,
   diagnose: () => Promise<{ line: string; failed: boolean }> = activeSpaceDoctorDiagnosis,
 ): Promise<void> {
   const diagnosis = await diagnose()
@@ -688,6 +689,9 @@ function routedJobsForInstallLevel(machineLevel: MachineLevel, jobs: () => strin
   return machineLevel === 'full' ? jobs() : []
 }
 
+const retrievalFacts = (url: string) =>
+  [url, registeredLocalAgent(agentRows(), url) !== null] as const
+
 function hasCoolingWorker(
   machineLevel: MachineLevel,
   candidates: DoctorPresentation['candidates'],
@@ -727,15 +731,6 @@ async function reportWorkerRuntimeForInstallLevel(
   return local
 }
 
-function reportConfiguredRetrieval(
-  configuredUrl: string,
-  presentation: DoctorReporter,
-  check: DoctorPresentation['retrievalCheck'],
-): Promise<void> {
-  const installed = registeredLocalAgent(agentRows(), configuredUrl) !== null
-  return reportRetrievalDoctor(retrievalIsConfigured(configuredUrl, installed), presentation, check)
-}
-
 export async function doctorCommand(
   flags: DoctorFlags,
   presentation: DoctorPresentation,
@@ -745,8 +740,8 @@ export async function doctorCommand(
   const { log, exitCode, candidates, pick, jobs, acpRuntimeGaps, retrievalCheck } = presentation
   const machineLevel = readMachineValue('machine.level') as MachineLevel
   const r = await workerHealthForInstallLevel(machineLevel)
-  const configuredUrl = modelHostUrl()
-  await reportConfiguredRetrieval(configuredUrl, presentation, retrievalCheck)
+  const [configuredUrl, installed] = retrievalFacts(modelHostUrl())
+  await reportRetrieval(configuredUrl, installed, process.env, presentation, retrievalCheck)
   const { CanonBudgetError, compilePack, findingsForPack } = await import('../canon/canon.ts')
   const { listDocs } = await import('../doc/docs.ts')
   const { DEFAULT_PACK_BYTES, MAX_INJECT_DOC_BYTES } = await import('../canon/pack-budget.ts')

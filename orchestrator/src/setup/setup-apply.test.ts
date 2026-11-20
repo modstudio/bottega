@@ -39,6 +39,7 @@ const applySetupActions = (
   service: SetupProjectService,
   runner?: Parameters<typeof applySetupActionsWithService>[3],
   environment: SetupEnvironmentService = {
+    recordSessionPresent: () => false,
     migrateEnvironment: async () => ({ status: 'unchanged', message: null }),
   },
 ) => applySetupActionsWithService(actions, service, environment, runner)

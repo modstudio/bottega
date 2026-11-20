@@ -62,7 +62,7 @@ export type SetupProjectService = {
 }
 
 export type SetupEnvironmentService = {
-  recordSessionPresent?(): boolean
+  recordSessionPresent(): boolean
   migrateEnvironment(prepared?: PreparedStateFileMigration | null): Promise<{
     status: SetupAppliedActionStatus
     message: string | null
@@ -346,7 +346,7 @@ async function applySetupAction(
     return skippedHarnessInstall(action.harness, action.route)
   }
   if (action.kind === 'install-verify') {
-    return applySetupInstallVerify(environment.recordSessionPresent?.() ?? false)
+    return applySetupInstallVerify(environment.recordSessionPresent())
   }
   if (
     action.kind === 'unchanged' ||

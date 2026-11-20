@@ -1,4 +1,3 @@
-import { startBoundedSync } from '../../../shared/bounded-process.ts'
 // concern: doctor
 /** Reports installer-owned launch agents without changing their launchd state. */
 
@@ -25,7 +24,11 @@ import {
   gatherLaunchAgentSkipFacts,
   launchAgentSkipReason,
 } from '../../../shared/launch-agent-skip.ts'
-import { isCheckoutOnlyLaunchAgentInstaller } from '../../../shared/launchd-owners.ts'
+import {
+  isCheckoutOnlyLaunchAgentInstaller,
+  launchAgentLoaded,
+  NOT_INSTALLED_BY_RELEASE_INSTALL,
+} from '../../../shared/launchd-owners.ts'
 import { type MachineLevel, readMachineValue } from '../../../shared/machine-config.ts'
 import {
   RECORD_SYNC_PENDING_MARKER,
@@ -48,7 +51,7 @@ export type LaunchAgentLoadObservation =
 export type LaunchAgentDoctorDecision = {
   skipped: Array<{ label: string; reason: string }>
   findings: Array<{ label: string; command: string }>
-  informational: Array<{ label: string; reason: 'not installed by a release install' }>
+  informational: Array<{ label: string; reason: typeof NOT_INSTALLED_BY_RELEASE_INSTALL }>
   definitionFindings: Array<{
     label: string
     reason: 'program missing' | 'definition drifted'
@@ -172,7 +175,7 @@ export function decideLaunchAgentDoctor(input: {
         input.installationKind !== 'checkout' &&
         isCheckoutOnlyLaunchAgentInstaller(command),
     )
-    .map(({ label }) => ({ label, reason: 'not installed by a release install' }) as const)
+    .map(({ label }) => ({ label, reason: NOT_INSTALLED_BY_RELEASE_INSTALL }) as const)
   const informationalLabels = new Set(informational.map(({ label }) => label))
   return {
     skipped,
@@ -346,15 +349,12 @@ function loadedLaunchAgentLabels(
   const launchctl = Bun.which('launchctl')
   const uid = process.getuid?.()
   if (!launchctl || uid === undefined) return { kind: 'unavailable', reason: 'launchctl missing' }
-  const domain = startBoundedSync([launchctl, 'print', `gui/${uid}`], { budget: 'process-table' })
-  if (domain.exitCode !== 0) return { kind: 'unavailable', reason: 'gui domain unreachable' }
   const loaded = new Set<string>()
   for (const { label } of owners) {
     if (skipReasons[label] && !isMaintenanceScheduleLabel(label)) continue
-    const child = startBoundedSync([launchctl, 'print', `gui/${uid}/${label}`], {
-      budget: 'process-table',
-    })
-    if (child.exitCode === 0) loaded.add(label)
+    const observation = launchAgentLoaded(label)
+    if (observation === null) return { kind: 'unavailable', reason: 'gui domain unreachable' }
+    if (observation) loaded.add(label)
   }
   return { kind: 'available', loadedLabels: loaded }
 }

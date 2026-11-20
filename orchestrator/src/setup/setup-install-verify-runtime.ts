@@ -17,6 +17,7 @@ import {
 import {
   applyMachineSettings,
   type MachineSettingsApplyResult,
+  settingsApplyDecision,
   settingsApplyLockSkipped,
 } from '../settings/settings-machine-apply.ts'
 import { hookScriptPath, PRODUCT_HOOKS, SCRIPT_FILES } from '../settings/settings-machine-hooks.ts'
@@ -25,11 +26,23 @@ import {
   type SetupInstallVerifyFacts,
   verifySetupInstall,
 } from './setup-install-verify.ts'
-import { setupInstallSettingsDecision } from './setup-install-verify-decision.ts'
 
 export type SetupInstallVerifyAdapters = {
   applySettings?: () => Promise<MachineSettingsApplyResult[]>
   facts?: () => SetupInstallVerifyFacts
+}
+
+const SIGN_IN_FOLLOW_UP =
+  `not signed in: user settings and user canon wait for sign-in; run ` +
+  `${PLATFORM_SLUG} record sign-in --email <email>, then re-run ${PLATFORM_SLUG} machine setup apply`
+
+function refusedSettingsMessage(refused: readonly MachineSettingsApplyResult[]): string {
+  return refused
+    .map(
+      (result) =>
+        `${result.target}: ${result.condition ? `${result.condition}; ` : ''}${result.detail ?? 'refused'}`,
+    )
+    .join('\n')
 }
 
 function readSettingsFact(
@@ -104,12 +117,12 @@ export async function applySetupInstallVerify(
         `re-run \`${PLATFORM_SLUG} machine setup apply\` after it finishes`,
     )
   }
-  const decision = setupInstallSettingsDecision(sessionPresent, results)
-  if (decision.action === 'refuse') throw new Error(decision.message)
+  const decision = settingsApplyDecision(sessionPresent, results)
+  if (decision.action === 'refuse') throw new Error(refusedSettingsMessage(decision.refused))
   if (decision.action === 'wait-for-sign-in') {
     return {
       status: 'follow-up',
-      message: decision.message,
+      message: SIGN_IN_FOLLOW_UP,
       condition: 'waiting-for-sign-in',
     }
   }

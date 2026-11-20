@@ -235,13 +235,6 @@ export const setupModuleSpecs: readonly SetupModuleSpec[] = [
     reason: 'Keep install verification as a pure decision over adapter-supplied facts.',
   },
   {
-    name: 'setup-install-verify-decision-boundary',
-    file: 'orchestrator/src/setup/setup-install-verify-decision.ts',
-    allowed: ['../../../shared/brand.ts', '../settings/settings-machine-apply.ts'],
-    typeOnlyAllowed: [],
-    reason: 'Keep sign-in follow-up classification pure and separate from setup install adapters.',
-  },
-  {
     name: 'setup-install-verify-runtime-boundary',
     file: 'orchestrator/src/setup/setup-install-verify-runtime.ts',
     allowed: [
@@ -254,7 +247,6 @@ export const setupModuleSpecs: readonly SetupModuleSpec[] = [
       '../settings/settings-files.ts',
       '../settings/settings-machine-apply.ts',
       '../settings/settings-machine-hooks.ts',
-      './setup-install-verify-decision.ts',
       './setup-install-verify.ts',
     ],
     typeOnlyAllowed: [],

@@ -15,7 +15,7 @@ const playwrightBunInstallCommand = 'npm install --global "bun@$(cat .bun-versio
 const playwrightTrustWorkspaceCommand =
   'git config --system --add safe.directory "$GITHUB_WORKSPACE"'
 const releaseSmokeCommand = 'bun scripts/smoke-release.ts'
-const migrationJobs = ['migration-paths', 'migration-compatibility', 'install-proof'] as const
+const pathGatedJobs = ['migration-paths', 'migration-compatibility', 'install-proof'] as const
 const migrationPaths =
   "orchestrator/migrations hub/migrations hub/src/migrations.ts shared/migration-source.ts ':(glob)orchestrator/src/database/*migration*.ts'"
 const migrationCommand = `./bin/${PLATFORM_SLUG} machine migrate`
@@ -307,7 +307,7 @@ export function expectedWorkflowJobNames(): string[] {
     'static',
     ...CHECK_LEGS.flatMap((leg) => (leg.ciJob === null ? [] : [leg.ciJob])),
     ...CI_ONLY_JOBS,
-    ...migrationJobs,
+    ...pathGatedJobs,
     'root',
     'ci',
   ].sort()

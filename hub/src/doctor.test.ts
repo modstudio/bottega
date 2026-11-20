@@ -54,9 +54,16 @@ describe(`${PLATFORM_SLUG} machine doctor`, () => {
     expect(await hubDoctorLines()).toContain('collect slow   FAIL — never completed')
   })
 
-  test('reports checkout-only slow collection as not installed in a distribution', () => {
-    expect(slowCollectionDoctorDecision('distribution', { status: 'missing', ageMs: null })).toBe(
+  test('judges distribution slow collection from its observed launch-agent state', () => {
+    const missing = { status: 'missing', ageMs: null } as const
+    expect(slowCollectionDoctorDecision('distribution', false, missing)).toBe(
       'collect slow   not installed by a release install',
+    )
+    expect(slowCollectionDoctorDecision('distribution', true, missing)).toBe(
+      'collect slow   FAIL — never completed',
+    )
+    expect(slowCollectionDoctorDecision('distribution', null, missing)).toBe(
+      'collect slow   FAIL — never completed',
     )
   })
 

@@ -1,9 +1,6 @@
 import { type InstallationKind, runningInstallationKind } from '../../shared/install-root.ts'
-import {
-  isCheckoutOnlyLaunchAgentInstaller,
-  launchdOwnerCommand,
-} from '../../shared/launchd-owners.ts'
-import { slowCollectionHealth } from './collect-slow-health.ts'
+import { launchAgentLoaded, NOT_INSTALLED_BY_RELEASE_INSTALL } from '../../shared/launchd-owners.ts'
+import { type SlowCollectionHealth, slowCollectionHealth } from './collect-slow-health.ts'
 import { DB_PATH, db } from './db.ts'
 import { resolveHostedUrl } from './hosted-url.ts'
 import { formatProjectWriteModes } from './hosted-write-mode.ts'
@@ -77,17 +74,13 @@ function questionCommitTaskLinkDoctor(): string[] {
   ]
 }
 
-type SlowCollectionHealth = ReturnType<typeof slowCollectionHealth>
-
 export function slowCollectionDoctorDecision(
   installationKind: InstallationKind,
+  loaded: boolean | null,
   health: SlowCollectionHealth,
 ): string {
-  if (
-    installationKind === 'distribution' &&
-    isCheckoutOnlyLaunchAgentInstaller(launchdOwnerCommand('hub'))
-  ) {
-    return 'collect slow   not installed by a release install'
+  if (installationKind !== 'checkout' && loaded === false) {
+    return `collect slow   ${NOT_INSTALLED_BY_RELEASE_INSTALL}`
   }
   if (health.ageMs === null)
     return health.status === 'missing'
@@ -103,6 +96,7 @@ export function slowCollectionDoctorLine(
 ): string {
   return slowCollectionDoctorDecision(
     installationKind,
+    launchAgentLoaded('com.user.hub-collect'),
     slowCollectionHealth(now, readSettingStamp('collect.slow.at')),
   )
 }
