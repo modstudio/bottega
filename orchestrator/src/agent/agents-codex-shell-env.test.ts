@@ -62,7 +62,6 @@ describe('codex worker shell environment', () => {
       prompt: 'p',
       out: '/tmp/out',
       sandbox: 'workspace-write',
-      writableRoots: ['/runs/42/scratch'],
       codexPermissionProfile,
       recipeEnvironment: tempEnvironment,
     })
@@ -134,7 +133,6 @@ describe('codex worker shell environment', () => {
       out: '/tmp/out',
       sandbox: 'workspace-write',
       write: true,
-      writableRoots: ['/repo/.git/objects'],
       codexPermissionProfile,
       ...{
         gitObjectEnvironment: {

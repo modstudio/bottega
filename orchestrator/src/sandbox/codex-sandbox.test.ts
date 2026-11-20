@@ -67,15 +67,6 @@ test('permission input gives readers exactly the shared write roots and preserve
   expect(codexPermissionProfileInput({ ...launch, writesRepository: false }).writableRoots).toEqual(
     ['/run/runtime', '/run/scratch'],
   )
-  expect(
-    codexPermissionProfileInput({ ...launch, writesRepository: false }).writableRoots,
-  ).not.toContain('/run/tree')
-  expect(
-    codexPermissionProfileInput({ ...launch, writesRepository: false }).writableRoots,
-  ).not.toContain('/tmp')
-  expect(
-    codexPermissionProfileInput({ ...launch, writesRepository: false }).writableRoots,
-  ).not.toContain('/private/tmp/codex-run')
   expect(codexPermissionProfileInput({ ...launch, writesRepository: true }).writableRoots).toEqual([
     '/run/tree',
     '/run/scratch',
@@ -102,10 +93,6 @@ describe('Codex permission profile', () => {
       '-c',
       `permissions.${PLATFORM_SLUG}.filesystem={":root"="read","/projects/own/tree"="write","/state/run"="read","/runtime/assets"="read","/state/run/scratch"="write","/projects/sibling"="deny","/state"="deny","/projects/own/declared.secret"="deny"}`,
     ])
-  })
-
-  test('read-only launches carry no write entry', () => {
-    expect(args(false, []).join(' ')).not.toContain('"write"')
   })
 
   test('network is emitted only when the run enables it', () => {

@@ -200,7 +200,6 @@ function startProbeTransport(
     startedAt: started,
     write: true,
     sandbox: 'workspace-write',
-    ...(input.writing ? {} : { writableRoots: [scratchDir] }),
     ...(codexProfile
       ? {
           codexPermissionProfile: codexPermissionProfileInput({
