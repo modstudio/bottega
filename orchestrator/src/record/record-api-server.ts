@@ -232,7 +232,7 @@ export async function timedRecordApiResponse(
     finish: BodyCountFinish,
   ) => void = () => {},
   caller: string | null = null,
-): Promise<{ response: Response; durationMs: number; accessLine: string }> {
+): Promise<{ response: Response; accessLine: string }> {
   const started = now()
   const response = await app.fetch(request)
   const durationMs = now() - started
@@ -243,15 +243,13 @@ export async function timedRecordApiResponse(
     durationMs,
     caller,
   })
-  if (!timed.countBody)
-    return { response: timed.response, durationMs, accessLine: timed.accessLine }
+  if (!timed.countBody) return { response: timed.response, accessLine: timed.accessLine }
   return {
     response: countResponseBody(
       timed.response,
       () => {},
       (bytes, finish) => onBodyBytes(bytes, timed.response.status, durationMs, finish),
     ),
-    durationMs,
     accessLine: timed.accessLine,
   }
 }

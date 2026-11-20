@@ -149,7 +149,7 @@ export function hostedRequestHandler(
   }
 }
 
-export async function timedHostedResponse(
+export async function hubTimedResponse(
   requestHandler: (request: Request) => Response | Promise<Response>,
   request: Request,
   now: () => number = performance.now.bind(performance),
@@ -187,12 +187,10 @@ function startHostedServer(environment: ServerEnvironment = process.env) {
     idleTimeout: hostedServer.HOSTED_SERVER_IDLE_TIMEOUT_SECONDS,
     port: config.port,
     fetch: async (request) => {
-      const { response, accessLine, countBody, caller } = await timedHostedResponse(
+      const { response, accessLine, countBody, method, pathname, caller } = await hubTimedResponse(
         requestHandler,
         request,
       )
-      const method = request.method
-      const pathname = new URL(request.url).pathname
       console.log(accessLine)
       if (!countBody) return response
       return hostedServer.countResponseBody(

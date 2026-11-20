@@ -13,6 +13,10 @@ export function contentLength(headers: Headers): number | null {
   return Number.isSafeInteger(parsed) ? parsed : null
 }
 
+export function bodyNeedsStreamedCount(response: Response): boolean {
+  return contentLength(response.headers) === null && response.body !== null
+}
+
 export type BodyCountFinish = 'complete' | 'error' | 'cancelled'
 
 /** Wrap a response body with bounded, backpressured byte counting. */
@@ -88,7 +92,13 @@ export function hostedTimedResponse(input: {
   pathname: string
   durationMs: number
   caller?: string | null
-}): { response: Response; accessLine: string; countBody: boolean } {
+}): {
+  response: Response
+  accessLine: string
+  countBody: boolean
+  method: string
+  pathname: string
+} {
   let headersMutable = true
   try {
     input.response.headers.set('server-timing', `app;dur=${input.durationMs.toFixed(1)}`)
@@ -98,6 +108,8 @@ export function hostedTimedResponse(input: {
   }
   return {
     response: input.response,
+    method: input.method,
+    pathname: input.pathname,
     accessLine: hostedAccessLogLine({
       method: input.method,
       pathname: input.pathname,
@@ -106,10 +118,7 @@ export function hostedTimedResponse(input: {
       responseBytes: contentLength(input.response.headers),
       caller: input.caller,
     }),
-    countBody:
-      headersMutable &&
-      contentLength(input.response.headers) === null &&
-      input.response.body !== null,
+    countBody: headersMutable && bodyNeedsStreamedCount(input.response),
   }
 }
 

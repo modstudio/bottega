@@ -6,7 +6,7 @@ import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { CONFIG_HOME_ENV, HARNESS_ENV_FILE_ENV } from '../../shared/config-directory.ts'
 import { INSTALL_HOME_ENV } from '../../shared/install-root.ts'
 import { createNoDestinationWriteCounter } from '../../shared/record-no-destination-write-counter.ts'
-import { hostedRequestHandler, hostedServerConfig, timedHostedResponse } from './hosted.ts'
+import { hostedRequestHandler, hostedServerConfig, hubTimedResponse } from './hosted.ts'
 import { hostedRouter } from './trpc/hosted-router.ts'
 
 describe('hosted server config', () => {
@@ -216,7 +216,7 @@ describe('hosted destination-less write report', () => {
   }) as typeof fetch
 
   test('refuses an unauthenticated caller', async () => {
-    const { response } = await timedHostedResponse(
+    const { response } = await hubTimedResponse(
       hostedRequestHandler(config),
       new Request('https://hub.example.test/v1/health/no-destination-writes'),
       (() => {
