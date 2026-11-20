@@ -160,6 +160,10 @@ export class RecordQuestionStore implements QuestionStore {
     })
   }
 
+  async projectSpace(projectId: string): Promise<string> {
+    return (await this.destination(projectId)).destinationSpaceId
+  }
+
   private allDestinations(): Promise<RecordWriteDestination[]> {
     this.everyDestination ??= (
       this.input.client.whoami

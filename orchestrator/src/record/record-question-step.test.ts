@@ -8,6 +8,7 @@ import { writeRecordQuestionTransaction } from './record-question-write.ts'
 
 const SPACE = '01990000-0000-7000-8000-000000002360'
 const OTHER_SPACE = '01990000-0000-7000-8000-000000002374'
+const FOREIGN_PROJECT = '01990000-0000-7000-8000-000000002375'
 const USER = '01990000-0000-7000-8000-000000002361'
 const PROJECT = '01990000-0000-7000-8000-000000002362'
 const MACHINE = '01990000-0000-7000-8000-000000002363'
@@ -172,6 +173,48 @@ test('a stored cursor question remains closable when its cursor is in another sp
   await expect(
     writeRecordQuestionTransaction('close', { ...principal, ...close }, sql),
   ).resolves.toMatchObject({ applied: true, revision: 2 })
+})
+
+test('a close preserves a stored project that has moved out of the question space', async () => {
+  const sql = pgliteSql(postgres)
+  const ask = questionWrite()
+  ask.question.projectId = PROJECT
+  await writeRecordQuestionTransaction('ask', { ...principal, ...ask }, sql)
+  await postgres.exec(`
+    RESET ROLE;
+    INSERT INTO space (id,name,slug,created_at)
+    VALUES ('${OTHER_SPACE}','Moved project space','moved-project-space',now());
+    UPDATE project SET space_id='${OTHER_SPACE}' WHERE id='${PROJECT}';
+    SET ROLE record_actor;
+  `)
+  const changedProject = questionWrite(REWRITE_REQUEST, 2)
+  changedProject.question.projectId = FOREIGN_PROJECT
+  changedProject.question.closedAt = '2026-11-17T15:00:00.000Z'
+  changedProject.question.closeReason = 'Re-ask through the cursor project.'
+  changedProject.question.updatedAt = '2026-11-17T15:00:00.000Z'
+  changedProject.audit.action = 'close'
+  changedProject.audit.at = '2026-11-17T15:00:00.000Z'
+  await expect(
+    writeRecordQuestionTransaction('close', { ...principal, ...changedProject }, sql),
+  ).rejects.toThrow(`record project ${FOREIGN_PROJECT} is absent from request space ${SPACE}`)
+
+  const link = questionWrite(REWRITE_REQUEST, 2)
+  link.question.projectId = PROJECT
+  await expect(
+    writeRecordQuestionTransaction('link', { ...principal, ...link }, sql),
+  ).rejects.toThrow(`record project ${PROJECT} is absent from request space ${SPACE}`)
+
+  const close = { ...changedProject, question: { ...changedProject.question, projectId: PROJECT } }
+  await expect(
+    writeRecordQuestionTransaction('close', { ...principal, ...close }, sql),
+  ).resolves.toMatchObject({ applied: true, revision: 2 })
+  expect(
+    (
+      await postgres.query(
+        `SELECT project_id::text,closed_at IS NOT NULL closed FROM question WHERE id='${QUESTION}'`,
+      )
+    ).rows,
+  ).toEqual([{ project_id: PROJECT, closed: true }])
 })
 
 test('production hosted write keeps the question step through a later-step rewrite', async () => {

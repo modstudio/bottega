@@ -8,6 +8,7 @@ import { callerIdentityRefusal } from '../caller-classification.ts'
 import { callerIdentity, db, sessionId } from '../database/db.ts'
 import {
   askQuestion,
+  hostedQuestionProjectSpace,
   mutateQuestion,
   requireQuestionMutationApplied,
 } from '../question-store/question-store-mutation.ts'
@@ -107,16 +108,25 @@ export async function upsertWorkflowQuestion(
   if (open) {
     const openId = String(open.record_id)
     const row = await questionById(database, openId)
-    if (row?.project_record_id === null && input.projectId) {
+    const projectSpace = input.projectId
+      ? await hostedQuestionProjectSpace(database, input.projectId)
+      : null
+    const openSpace = typeof row?.space_id === 'string' ? row.space_id : null
+    if (
+      input.projectId &&
+      (row?.project_record_id === null ||
+        (projectSpace !== null && openSpace !== null && openSpace !== projectSpace))
+    ) {
+      const reason = `re-asked in its project's declared record space`
       const mutation = await mutateQuestion(database, {
         id: openId,
         intent: 'close',
         at: input.at,
         actorSession: sessionId(),
-        reason: `re-asked in its project's record space (DEV-2373)`,
+        reason,
         changes: {
           closedAt: input.at,
-          closeReason: `re-asked in its project's record space (DEV-2373)`,
+          closeReason: reason,
         },
       })
       requireQuestionMutationApplied(mutation, row)
