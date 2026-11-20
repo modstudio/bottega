@@ -253,11 +253,9 @@ function applyPlacementCalls(
 
 /** Reconcile writes from the placement record; only --check reads every Claude scope. */
 export function reconcileClaudeMcpPlacementPlan(
-  check: boolean,
   plan: MachineSettingsScopePlan,
   deps: PlacementDependencies,
 ): ClaudeMcpPlacementResult[] {
-  if (check) throw new Error('use reconcileClaudeMcpPlacementPlanAsync for placement checks')
   const names = plannedTargets(plan)
   let recorded: ClaudeMcpPlacement | null
   try {
@@ -288,5 +286,5 @@ export async function reconcileClaudeMcpPlacementPlanAsync(
   deps: PlacementDependencies,
 ): Promise<ClaudeMcpPlacementResult[]> {
   if (check) return checkPlacement(plan, deps)
-  return reconcileClaudeMcpPlacementPlan(false, plan, deps)
+  return reconcileClaudeMcpPlacementPlan(plan, deps)
 }

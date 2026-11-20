@@ -1,7 +1,7 @@
 // concern: setup-mcp
 /** Knows harness MCP CLI grammar and bounded execution. Must not know setup questions or projects. */
 
-import { startBunBounded } from '../../../shared/bounded-process.ts'
+import { startBounded } from '../../../shared/bounded-process.ts'
 import { MCP_SERVER_NAME, PLATFORM_SLUG, WORKER_MCP_SERVER_NAME } from '../../../shared/brand.ts'
 import { redactSecretShaped } from '../../../shared/secret-shaped.ts'
 import { bottegaEntryArgv, bottegaMcpServeArgv } from '../../../shared/self-spawn.ts'
@@ -115,7 +115,6 @@ export type SetupCommandRunner = (
 ) => SetupCommandResult
 type AsyncSetupCommandRunner = (
   argv: string[],
-  timeoutMs: number,
   options?: { cwd?: string },
 ) => Promise<SetupCommandResult>
 export type McpReadback =
@@ -182,7 +181,6 @@ export function runSetupCommand(
 
 export async function runSetupCommandAsync(
   argv: string[],
-  timeoutMs = SETUP_COMMAND_TIMEOUT_MS,
   options?: { cwd?: string },
 ): Promise<SetupCommandResult> {
   try {
@@ -190,10 +188,7 @@ export async function runSetupCommandAsync(
     delete env.CLAUDE_CODE_SESSION_ID
     delete env.CLAUDE_CODE_BRIDGE_SESSION_ID
     env.BOTTEGA_ORCHESTRATOR_DB = DISCARD_STORE_PATH
-    if (timeoutMs !== SETUP_COMMAND_TIMEOUT_MS) {
-      throw new Error(`async setup commands require the ${SETUP_COMMAND_TIMEOUT_MS} ms timeout`)
-    }
-    const result = await startBunBounded(argv, {
+    const result = await startBounded(argv, {
       budget: 'setup-command',
       env,
       cwd: options?.cwd,
@@ -480,7 +475,6 @@ async function currentClaudeMcpRegistrationAsync(
   if (!runner) return currentClaudeMcpRegistration(input, commandCwd)
   const result = await runner(
     mcpReadArgv('claude', input.port.bin, input.server.name),
-    SETUP_COMMAND_TIMEOUT_MS,
     { cwd: commandCwd },
   )
   return parseClaude(result, input.server.name)

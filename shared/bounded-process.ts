@@ -169,36 +169,6 @@ export async function startBounded(
   return { exitCode: exitCode(result.exitCode), stdout: result.stdout, stderr: result.stderr }
 }
 
-/** Run independent short-lived commands through Bun while enforcing a named deadline and output bound. */
-export async function startBunBounded(
-  argv: readonly string[],
-  options: BoundedProcessOptions,
-): Promise<BoundedResult> {
-  if (!argv.length) throw new TypeError('startBunBounded requires a non-empty argv')
-  const budgetName = effectiveBudgetForArgv(argv, options.budget)
-  const budget = CALL_BUDGETS[budgetName]
-  const child = Bun.spawn([...argv], {
-    cwd: options.cwd,
-    env: options.env,
-    stdin: options.stdin === undefined ? 'ignore' : stdinInput(options.stdin),
-    stdout: 'pipe',
-    stderr: 'pipe',
-    timeout: budget.deadlineMs,
-  })
-  const [childExitCode, stdout, stderr] = await Promise.all([
-    child.exited,
-    new Response(child.stdout).text(),
-    new Response(child.stderr).text(),
-  ])
-  if (child.exitedDueToTimeout) {
-    throw new BoundExceededError(commandText(argv), budgetName, 'deadline', budget.deadlineMs)
-  }
-  if (Buffer.byteLength(stdout) + Buffer.byteLength(stderr) > budget.outputBytes) {
-    throw new BoundExceededError(commandText(argv), budgetName, 'output', budget.outputBytes)
-  }
-  return { exitCode: exitCode(childExitCode), stdout, stderr }
-}
-
 function killProcessGroup(pid: number): void {
   try {
     process.kill(-pid, 'SIGKILL')

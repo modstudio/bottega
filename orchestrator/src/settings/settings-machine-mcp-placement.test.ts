@@ -47,7 +47,7 @@ test('first global user placement records state without resolving or calling Cla
   const environment = { BOTTEGA_STATE_HOME: root }
   let portCalls = 0
   try {
-    const results = reconcileClaudeMcpPlacementPlan(false, decideMachineSettingsScope('on', []), {
+    const results = reconcileClaudeMcpPlacementPlan(decideMachineSettingsScope('on', []), {
       environment,
       port: () => {
         portCalls++
@@ -81,7 +81,7 @@ test('first local placement reads user once, then writes projects without readba
     { path: '/projects/two', exists: true, gitMainCheckout: true },
   ])
   try {
-    reconcileClaudeMcpPlacementPlan(false, plan, {
+    reconcileClaudeMcpPlacementPlan(plan, {
       environment,
       port: () => ({ bin: 'claude', runner: () => fixtureCommandResult() }),
       server: stableMcpServers()[0]!,
@@ -114,7 +114,6 @@ test('a failed recorded removal converges through one scoped reconcile', () => {
   try {
     writeClaudeMcpPlacement(environment, { scope: 'user', projectPaths: [] })
     const results = reconcileClaudeMcpPlacementPlan(
-      false,
       decideMachineSettingsScope('off', [
         { path: '/projects/one', exists: true, gitMainCheckout: true },
       ]),
@@ -160,7 +159,7 @@ test('placement checks issue every read before awaiting results and isolate fail
     () => rejectSerial(new Error(`reads were serialized; only ${started.length} started`)),
     100,
   )
-  const asyncRunner = (_argv: string[], _timeoutMs: number, options?: { cwd?: string }) => {
+  const asyncRunner = (_argv: string[], options?: { cwd?: string }) => {
     started.push(options?.cwd)
     const promise = new Promise<ReturnType<typeof fixtureCommandResult>>((resolve) => {
       pending.push(resolve)
