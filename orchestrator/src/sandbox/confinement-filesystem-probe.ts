@@ -170,10 +170,11 @@ async function launchCommand(
   profile: ReturnType<typeof readonlyLensProfile>,
   argv: string[],
   environment: Record<string, string>,
+  scratchDir: string,
   hubOpenMode?: string,
 ): Promise<CommandProbe> {
   const result = await startBounded(
-    await sandboxLaunchArgv(profile, argv[0]!, argv.slice(1), undefined, environment),
+    await sandboxLaunchArgv(profile, argv[0]!, argv.slice(1), scratchDir, environment),
     {
       budget: 'sandbox-probe',
       env: { ...process.env, ...environment },
@@ -221,6 +222,7 @@ async function runFilesystemAccessProbe(
   profile: ReturnType<typeof readonlyLensProfile>,
   targets: readonly AccessTarget[],
   environment: Record<string, string>,
+  scratchDir: string,
 ) {
   const fixture = afterLaunchFixture(profile, targets)
   if (fixture) {
@@ -242,7 +244,7 @@ async function runFilesystemAccessProbe(
         ...(fixture ? [fixture.ready, fixture.release] : []),
         ...targets.map(({ path }) => path),
       ],
-      undefined,
+      scratchDir,
       environment,
     )
     const running = startBounded(argv, { budget: 'sandbox-probe' })
@@ -263,10 +265,11 @@ async function launchProbe(
   targets: readonly AccessTarget[],
   commandArgv: string[],
   environment: Record<string, string>,
+  scratchDir: string,
   hubOpenMode: string,
 ): Promise<ConfinementFilesystemProbeRow> {
   try {
-    const result = await runFilesystemAccessProbe(profile, targets, environment)
+    const result = await runFilesystemAccessProbe(profile, targets, environment, scratchDir)
     if (result.exitCode !== 0) {
       return {
         family,
@@ -282,7 +285,7 @@ async function launchProbe(
         values[index] === 'denied' || values[index] === 'readable' ? values[index] : 'not covered',
       ]),
     ) as Record<string, FilesystemProbeAccess>
-    const command = await launchCommand(profile, commandArgv, environment, hubOpenMode)
+    const command = await launchCommand(profile, commandArgv, environment, scratchDir, hubOpenMode)
     return {
       family,
       ...probeVerdict(targets, paths, command),
@@ -307,15 +310,21 @@ async function launchCrossProjectCliProbe(
   cliArgv: string[],
   commandArgv: string[],
   environment: Record<string, string>,
+  scratchDir: string,
   hubOpenMode: string,
 ): Promise<ConfinementFilesystemProbeRow> {
   try {
     const targets: AccessTarget[] = [
       { name: 'install .env', path: installEnvPath, expected: 'denied' },
     ]
-    const access = await launchCommand(profile, ['/bin/cat', installEnvPath], environment)
-    const version = await launchCommand(profile, [...cliArgv, '--version'], environment)
-    const verb = await launchCommand(profile, commandArgv, environment, hubOpenMode)
+    const access = await launchCommand(
+      profile,
+      ['/bin/cat', installEnvPath],
+      environment,
+      scratchDir,
+    )
+    const version = await launchCommand(profile, [...cliArgv, '--version'], environment, scratchDir)
+    const verb = await launchCommand(profile, commandArgv, environment, scratchDir, hubOpenMode)
     const paths = { 'install .env': access.status === 'ran' ? 'readable' : 'denied' } as const
     const command: CommandProbe = {
       status: version.status === 'ran' && verb.status === 'ran' ? 'ran' : 'failed',
@@ -381,7 +390,7 @@ async function launchExtractedRefGuardProbe(
         refUpdateProfile,
         'git',
         ['commit', '--allow-empty', '-m', 'probe'],
-        undefined,
+        scratchDir,
         environment,
       ),
       {
@@ -635,30 +644,25 @@ export async function runConfinementFilesystemProbes(): Promise<ConfinementFiles
       hubOpenMode,
     } = fixture
     process.env[STATE_HOME_ENV] = stateRoot
+    const launch = (
+      family: Parameters<typeof launchProbe>[0],
+      profile: Parameters<typeof launchProbe>[1],
+    ) =>
+      launchProbe(
+        family,
+        profile,
+        targets,
+        commandArgv,
+        environment,
+        common.scratchDir,
+        hubOpenMode,
+      )
     return [
-      await launchProbe(
-        'goose',
-        readonlyLensProfile({ ...common, agent: 'goose' }),
-        targets,
-        commandArgv,
-        environment,
-        hubOpenMode,
-      ),
-      await launchProbe(
-        'grok',
-        readonlyLensProfile({ ...common, agent: 'grok' }),
-        targets,
-        commandArgv,
-        environment,
-        hubOpenMode,
-      ),
-      await launchProbe(
+      await launch('goose', readonlyLensProfile({ ...common, agent: 'goose' })),
+      await launch('grok', readonlyLensProfile({ ...common, agent: 'grok' })),
+      await launch(
         'ACP writer',
         writerProfile({ ...common, agent: 'grok', askAddress: '127.0.0.1:1' }),
-        targets,
-        commandArgv,
-        environment,
-        hubOpenMode,
       ),
       await launchExtractedRefGuardProbe(
         writerProfile({ ...common, agent: 'grok', askAddress: '127.0.0.1:1' }),
@@ -666,7 +670,7 @@ export async function runConfinementFilesystemProbes(): Promise<ConfinementFiles
         common.scratchDir,
         environment,
       ),
-      await launchProbe(
+      await launch(
         'workflow probe',
         probeSandboxProfile({
           allowWriteDir: common.scratchDir,
@@ -676,10 +680,6 @@ export async function runConfinementFilesystemProbes(): Promise<ConfinementFiles
           environment: common.environment,
           socketDenyPaths: common.socketDenyPaths,
         }),
-        targets,
-        commandArgv,
-        environment,
-        hubOpenMode,
       ),
       await launchCrossProjectCliProbe(
         readonlyLensProfile({ ...common, agent: 'grok' }),
@@ -687,6 +687,7 @@ export async function runConfinementFilesystemProbes(): Promise<ConfinementFiles
         cliArgv,
         commandArgv,
         environment,
+        common.scratchDir,
         hubOpenMode,
       ),
       ...NOT_COVERED,
