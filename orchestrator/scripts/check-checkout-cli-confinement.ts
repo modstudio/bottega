@@ -7,7 +7,7 @@ import { startBoundedSync } from '../../shared/bounded-process.ts'
 import { PLATFORM_NAME, PLATFORM_SLUG, WORKER_MCP_SERVER_NAME } from '../../shared/brand.ts'
 import { resolveOrchestratorDatabase, STATE_HOME_ENV } from '../../shared/state-directory.ts'
 import { BUILTIN_AGENTS } from '../src/agent/agents.ts'
-import { buildCheckoutCli } from '../src/database/checkout-cli-build.ts'
+import { buildCheckoutCli, verifyCheckoutCliBuild } from '../src/database/checkout-cli-build.ts'
 import { probeMcpServer } from '../src/mcp/mcp-probe.ts'
 import type { Project } from '../src/project/projects.ts'
 import { readonlyLensProfile, resetSandbox, sandboxLaunchArgv } from '../src/sandbox/sandbox.ts'
@@ -62,6 +62,7 @@ async function main(): Promise<void> {
   try {
     migrateTemporaryStore(checkout, environment)
     const built = buildCheckoutCli(checkout, environment)
+    verifyCheckoutCliBuild(built)
     if (process.argv.includes('--force-source')) rmSync(built.stamp, { force: true })
     const outside = fixtureProject('outside-project', 'outside-project', cwd)
     const registeredProjects = [

@@ -10,6 +10,7 @@
     "test:gate": "bun test/run-gate.ts",
     "test:postgres": "bun scripts/test-postgres-rls.ts",
     "test:postgres:falsify": "bun scripts/test-postgres-rls.ts --falsify",
+    "check:checkout-cli-confinement": "bun scripts/check-checkout-cli-confinement.ts",
     "identity:inventory": "bun ../scripts/check-identity-inventory.ts --base=$(git merge-base HEAD origin/main)",
     "import:postgres:projects": "bun scripts/import-postgres-projects.ts",
     "test": "bun test src"

@@ -25,6 +25,7 @@ function checkoutDependencies(events: string[]) {
     },
     migrate: () => events.push('migrate'),
     syncWorkflows: () => events.push('sync'),
+    buildCli: () => events.push('build'),
     maintainStore: () => events.push('maintain'),
     runLaunchAgentsRefreshVerb: () => events.push('refresh'),
     verifyMainCheckout: () => events.push('verify'),
@@ -43,6 +44,7 @@ test('checkout update runs hosted-row release last and preserves its refusal', a
   expect(events.at(-1)).toBe('release')
   expect(events.indexOf('release')).toBeGreaterThan(events.indexOf('maintain'))
   expect(events.indexOf('release')).toBeGreaterThan(events.indexOf('refresh'))
+  expect(events.indexOf('build')).toBeGreaterThan(events.indexOf('sync'))
 })
 
 test('distribution update runs hosted-row release after maintenance and refresh', async () => {

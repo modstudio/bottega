@@ -22,7 +22,6 @@
     "check": "bun scripts/check.ts",
     "check:worker": "bun scripts/check.ts --worker",
     "check:suite": "bun scripts/check.ts --suite",
-    "check:checkout-cli-confinement": "bun orchestrator/scripts/check-checkout-cli-confinement.ts",
     "typecheck:scripts": "tsc --noEmit -p scripts/tsconfig.json",
     "typecheck:shared": "tsc --noEmit -p shared/tsconfig.json",
     "test:focused": "bun scripts/test-focused.ts",

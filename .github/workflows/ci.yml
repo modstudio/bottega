@@ -362,10 +362,10 @@ jobs:
       - name: Allow unprivileged user namespaces for the sandbox
         run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
       - name: Prove confined checkout ask-server tools
-        run: bun run check:checkout-cli-confinement
+        run: bun run --cwd orchestrator check:checkout-cli-confinement
       - name: Prove source-launch mutation fails
         run: |
-          if bun run check:checkout-cli-confinement -- --force-source; then
+          if bun run --cwd orchestrator check:checkout-cli-confinement -- --force-source; then
             echo "forced source launch unexpectedly reached bottega-ask"
             exit 1
           fi

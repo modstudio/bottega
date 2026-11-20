@@ -1,7 +1,15 @@
 // concern: atomically compiled checkout CLI used by confined worker processes.
 
 import { createHash } from 'node:crypto'
-import { chmodSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import {
+  chmodSync,
+  mkdirSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs'
 import { dirname, join } from 'node:path'
 import { startBoundedSync } from '../../../shared/bounded-process.ts'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
@@ -16,9 +24,13 @@ import { resolveStateRoot, type StateEnvironment } from '../../../shared/state-d
 export type CheckoutCliBuildResult = {
   binary: string
   stamp: string
+  lockfile: string
   head: string
   lockHash: string
   binaryHash: string
+  size: number
+  mtime: number
+  inode: number
 }
 
 function sha256(path: string): string {
@@ -29,10 +41,44 @@ function checkoutHead(checkoutRoot: string): string {
   const result = gitAt(checkoutRoot, ['rev-parse', 'HEAD'])
   if (result.code !== 0) {
     throw new Error(
-      `git rev-parse HEAD failed with exit ${result.code}: ${result.stderr.trim()}; rerun ${PLATFORM_SLUG} machine update`,
+      `git rev-parse HEAD failed with exit ${result.code}: ${result.stderr.trim()}; cleared by: rerun ${PLATFORM_SLUG} machine update`,
     )
   }
   return result.stdout.trim()
+}
+
+function stampValues(path: string): Record<string, string> {
+  return Object.fromEntries(
+    readFileSync(path, 'utf8')
+      .trim()
+      .split('\n')
+      .map((line) => {
+        const separator = line.indexOf('=')
+        return separator < 1 ? ['', ''] : [line.slice(0, separator), line.slice(separator + 1)]
+      })
+      .filter(([key]) => key),
+  )
+}
+
+/** Re-hash a published build and its lockfile against the stamp written last. */
+export function verifyCheckoutCliBuild(build: CheckoutCliBuildResult): void {
+  const stamp = stampValues(build.stamp)
+  const metadata = statSync(build.binary)
+  const expected = {
+    head: build.head,
+    lock: sha256(build.lockfile),
+    binary: sha256(build.binary),
+    size: String(metadata.size),
+    mtime: String(Math.trunc(metadata.mtimeMs / 1_000)),
+    inode: String(metadata.ino),
+  }
+  for (const [key, value] of Object.entries(expected)) {
+    if (stamp[key] !== value) {
+      throw new Error(
+        `compiled checkout CLI stamp ${key} verification failed; rerun ${PLATFORM_SLUG} machine update`,
+      )
+    }
+  }
 }
 
 /** Compile and atomically publish the checkout CLI, with its proof stamp written last. */
@@ -66,18 +112,27 @@ export function buildCheckoutCli(
     )
     if (result.exitCode !== 0) {
       throw new Error(
-        `bun build --compile failed with exit ${result.exitCode}${result.stderr.trim() ? `: ${result.stderr.trim()}` : ''}; rerun ${PLATFORM_SLUG} machine update`,
+        `bun build --compile failed with exit ${result.exitCode}${result.stderr.trim() ? `: ${result.stderr.trim()}` : ''}; cleared by: rerun ${PLATFORM_SLUG} machine update`,
       )
     }
     chmodSync(temporaryBinary, 0o755)
     const head = checkoutHead(checkoutRoot)
-    const lockHash = sha256(join(checkoutRoot, 'bun.lock'))
+    const lockfile = join(checkoutRoot, 'bun.lock')
+    const lockHash = sha256(lockfile)
     const binaryHash = sha256(temporaryBinary)
-    const contents = `head=${head}\nlock=${lockHash}\nbinary=${binaryHash}\n`
+    const metadata = statSync(temporaryBinary)
+    const size = metadata.size
+    const mtime = Math.trunc(metadata.mtimeMs / 1_000)
+    const inode = metadata.ino
+    const contents =
+      `head=${head}\nlock=${lockHash}\nbinary=${binaryHash}\n` +
+      `size=${size}\nmtime=${mtime}\ninode=${inode}\n`
     writeFileSync(temporaryStamp, contents, { mode: 0o600 })
     renameSync(temporaryBinary, binary)
     renameSync(temporaryStamp, stamp)
-    return { binary, stamp, head, lockHash, binaryHash }
+    const build = { binary, stamp, lockfile, head, lockHash, binaryHash, size, mtime, inode }
+    verifyCheckoutCliBuild(build)
+    return build
   } finally {
     rmSync(temporaryBinary, { force: true })
     rmSync(temporaryStamp, { force: true })
