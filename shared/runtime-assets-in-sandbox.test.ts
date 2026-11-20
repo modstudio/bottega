@@ -1,8 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import {
-  WORKER_RUNTIME_ASSETS,
-  workerRuntimeAssetPaths,
-} from './runtime-assets-in-sandbox.ts'
+import { WORKER_RUNTIME_ASSETS, workerRuntimeAssetPaths } from './runtime-assets-in-sandbox.ts'
 
 test('worker runtime assets resolve only their exact declared paths', () => {
   expect(workerRuntimeAssetPaths('/state', '1.2.3')).toEqual([

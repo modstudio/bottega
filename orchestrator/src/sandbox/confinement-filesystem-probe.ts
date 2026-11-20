@@ -28,8 +28,10 @@ import {
 } from '../../../shared/state-directory.ts'
 import { decideStoreAccess } from '../../../shared/store-access.ts'
 import { BUILTIN_AGENTS } from '../agent/agents.ts'
+import { assertBranchRefMayBeCreated } from '../branch/branch-ref-guard.ts'
+import { targetGitEnvironment, worktreeGitDir } from '../git/git-environment.ts'
 import type { Project } from '../project/projects.ts'
-import { prepareSharedRefGuard } from '../resources/ref-guard.ts'
+import { prepareSharedRefGuard, workerSharedGitRoots } from '../resources/ref-guard.ts'
 import { workerChildEnvironment } from '../run/run-worker-home.ts'
 import {
   type RunningInstallLayout,
@@ -54,7 +56,7 @@ export type ConfinementFilesystemProbeRow = {
     | 'ACP writer'
     | 'workflow probe'
     | 'cross-project CLI'
-    | 'writer ref update'
+    | 'extracted ref guard executes under the area deny'
     | 'Codex'
     | 'read-only MCP'
     | 'host override'
@@ -116,11 +118,29 @@ function stderrTail(stderr: string): string {
 }
 
 function gitFixture(argv: string[], cwd: string): string {
-  const result = startBoundedSync(['git', ...argv], { budget: 'git-plumbing', cwd })
+  const result = startBoundedSync(['git', ...argv], {
+    budget: 'git-plumbing',
+    cwd,
+    env: targetGitEnvironment(cwd),
+  })
   if (result.exitCode !== 0) {
-    throw new Error(`git ${argv.join(' ')} failed: ${stderrTail(result.stderr)}`)
+    throw new Error(`git fixture command failed with exit ${result.exitCode}: ${argv.join(' ')}`)
   }
   return result.stdout.trim()
+}
+
+function initializeProbeGitFixture(ownPath: string, worktree: string): void {
+  mkdirSync(ownPath, { recursive: true })
+  gitFixture(['init', '--initial-branch=main'], ownPath)
+  gitFixture(['config', 'user.email', 'confinement-probe@example.invalid'], ownPath)
+  gitFixture(['config', 'user.name', 'Confinement Probe'], ownPath)
+  writeFileSync(join(ownPath, 'fixture.txt'), 'fixture')
+  gitFixture(['add', 'fixture.txt'], ownPath)
+  gitFixture(['commit', '-m', 'probe fixture'], ownPath)
+  mkdirSync(dirname(worktree), { recursive: true })
+  assertBranchRefMayBeCreated(ownPath, 'probe-writer')
+  // branch-ref-guard: assertBranchRefMayBeCreated
+  gitFixture(['worktree', 'add', '-b', 'probe-writer', worktree], ownPath)
 }
 
 export function probeVerdict(
@@ -322,7 +342,7 @@ async function launchCrossProjectCliProbe(
   }
 }
 
-async function launchWriterRefUpdateProbe(
+async function launchExtractedRefGuardProbe(
   profile: ReturnType<typeof writerProfile>,
   worktree: string,
   scratchDir: string,
@@ -331,9 +351,23 @@ async function launchWriterRefUpdateProbe(
   const before = gitFixture(['rev-parse', 'HEAD'], worktree)
   const branch = gitFixture(['symbolic-ref', '--short', 'HEAD'], worktree)
   const guardEnvironment = prepareSharedRefGuard(worktree, `refs/heads/${branch}`)
+  // Probe-only: production ACP commits are host-owned. These exact linked-worktree
+  // metadata roots let this row prove that an extracted runtime asset executes
+  // under the area deny for profiles (such as Codex in slice 2) that update refs in SRT.
+  const refUpdateProfile = {
+    ...profile,
+    filesystem: {
+      ...profile.filesystem,
+      allowWrite: [
+        ...profile.filesystem.allowWrite,
+        worktreeGitDir(worktree),
+        ...workerSharedGitRoots(worktree, branch),
+      ],
+    },
+  }
   try {
     const result = await startBounded(
-      await sandboxLaunchArgv(profile, 'git', ['commit', '--allow-empty', '-m', 'probe']),
+      await sandboxLaunchArgv(refUpdateProfile, 'git', ['commit', '--allow-empty', '-m', 'probe']),
       {
         budget: 'sandbox-probe',
         cwd: worktree,
@@ -352,7 +386,7 @@ async function launchWriterRefUpdateProbe(
     const after = gitFixture(['rev-parse', 'HEAD'], worktree)
     const committed = result.exitCode === 0 && before !== after
     return {
-      family: 'writer ref update',
+      family: 'extracted ref guard executes under the area deny',
       status: committed ? 'committed' : 'refused',
       paths: {},
       reason: committed
@@ -361,7 +395,7 @@ async function launchWriterRefUpdateProbe(
     }
   } catch (error) {
     return {
-      family: 'writer ref update',
+      family: 'extracted ref guard executes under the area deny',
       status: 'refused',
       paths: {},
       reason: error instanceof Error ? error.message : String(error),
@@ -517,15 +551,7 @@ function createProbeFixture(root: string) {
     orchestratorDatabase: state.orchestratorDatabase,
     orchestratorRuns: state.orchestratorRuns,
   })
-  mkdirSync(ownPath, { recursive: true })
-  gitFixture(['init', '--initial-branch=main'], ownPath)
-  gitFixture(['config', 'user.email', 'confinement-probe@example.invalid'], ownPath)
-  gitFixture(['config', 'user.name', 'Confinement Probe'], ownPath)
-  writeFileSync(join(ownPath, 'fixture.txt'), 'fixture')
-  gitFixture(['add', 'fixture.txt'], ownPath)
-  gitFixture(['commit', '-m', 'probe fixture'], ownPath)
-  mkdirSync(dirname(worktree), { recursive: true })
-  gitFixture(['worktree', 'add', '-b', 'probe-writer', worktree], ownPath)
+  initializeProbeGitFixture(ownPath, worktree)
   for (const { path, plant = true } of targets) {
     if (!plant) continue
     mkdirSync(join(path, '..'), { recursive: true })
@@ -618,7 +644,7 @@ export async function runConfinementFilesystemProbes(): Promise<ConfinementFiles
         environment,
         hubOpenMode,
       ),
-      await launchWriterRefUpdateProbe(
+      await launchExtractedRefGuardProbe(
         writerProfile({ ...common, agent: 'grok', askAddress: '127.0.0.1:1' }),
         common.worktree,
         common.scratchDir,

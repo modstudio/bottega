@@ -16,14 +16,14 @@ import {
   resolveInstallFile,
 } from '../../../shared/embedded-assets.ts'
 import {
+  WORKER_RUNTIME_ASSETS,
+  workerRuntimeAssetPaths,
+} from '../../../shared/runtime-assets-in-sandbox.ts'
+import {
   type SandboxRuntimeAssets,
   type SandboxRuntimePayload,
   sandboxRuntimeAssets,
 } from '../../../shared/sandbox-runtime-assets.ts'
-import {
-  WORKER_RUNTIME_ASSETS,
-  workerRuntimeAssetPaths,
-} from '../../../shared/runtime-assets-in-sandbox.ts'
 import { resolveStateRoot, type StateEnvironment } from '../../../shared/state-directory.ts'
 import { ROOT } from '../database/db.ts'
 

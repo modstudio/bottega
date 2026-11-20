@@ -4,7 +4,7 @@ import { isAbsolute, join, relative, resolve, win32 } from 'node:path'
 import { REF_GUARD_RUNTIME_ASSET } from './embedded-assets.ts'
 
 /** The extraction directory owned by the sandbox-runtime payload adapter. */
-export const SANDBOX_RUNTIME_ASSET_DIRECTORY = 'sandbox-runtime'
+const SANDBOX_RUNTIME_ASSET_DIRECTORY = 'sandbox-runtime'
 
 /** Paths relative to <state>/runtime/<version> required inside worker sandboxes. */
 export const WORKER_RUNTIME_ASSETS = {
