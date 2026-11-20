@@ -357,6 +357,7 @@ export const CI_ONLY_JOBS = [
   'postgres',
   'record-rehearsal',
   'release-smoke',
+  'checkout-cli-confinement',
   'hub-ui-stories',
   'hub-web-smoke',
   ...CI_ONLY_SUITES.map((suite) => suite.job),

@@ -8,9 +8,16 @@ test('worker runtime assets resolve only their exact declared paths', () => {
   expect(paths).toEqual([
     '/state/runtime/1.2.3/sandbox-runtime',
     '/state/runtime/1.2.3/assets/orchestrator/hooks/reference-transaction',
+    `/state/runtime/1.2.3/${WORKER_RUNTIME_ASSETS.checkoutCli}`,
+    `/state/runtime/1.2.3/${WORKER_RUNTIME_ASSETS.checkoutCliStamp}`,
   ])
   expect(paths).toContain(extractedRuntimeAssetPath('/state', '1.2.3', REF_GUARD_RUNTIME_ASSET))
-  expect(Object.keys(WORKER_RUNTIME_ASSETS)).toEqual(['sandboxRuntime', 'refGuard'])
+  expect(Object.keys(WORKER_RUNTIME_ASSETS)).toEqual([
+    'sandboxRuntime',
+    'refGuard',
+    'checkoutCli',
+    'checkoutCliStamp',
+  ])
 })
 
 describe.each([

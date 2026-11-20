@@ -644,7 +644,7 @@ export function acpMcpServers(opts: TransportStartOpts): acp.McpServer[] {
   return [...acpWorkerChannel(opts), ...acpProjectMcpServers(opts.projectMcpSelection)]
 }
 
-function acpWorkerChannel(opts: TransportStartOpts): acp.McpServer[] {
+export function acpWorkerChannel(opts: TransportStartOpts): acp.McpServer[] {
   if (!opts.env.BOTTEGA_RUN_ID || !opts.env.BOTTEGA_RUN_TOKEN) return []
   if (opts.writingAcp && opts.ask?.kind === 'endpoint') {
     return [

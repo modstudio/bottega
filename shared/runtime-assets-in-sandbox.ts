@@ -1,16 +1,20 @@
 // concern: extracted runtime assets that sandboxed workers read or execute.
 
 import { isAbsolute, join, relative, resolve, win32 } from 'node:path'
+import { PLATFORM_SLUG } from './brand.ts'
 import { REF_GUARD_RUNTIME_ASSET } from './embedded-assets.ts'
 import { extractedRuntimeAssetRelativePath } from './runtime-assets.ts'
 
 /** The extraction directory owned by the sandbox-runtime payload adapter. */
 const SANDBOX_RUNTIME_ASSET_DIRECTORY = 'sandbox-runtime'
+const CHECKOUT_CLI_DIRECTORY = 'checkout-cli'
 
 /** Paths relative to <state>/runtime/<version> required inside worker sandboxes. */
 export const WORKER_RUNTIME_ASSETS = {
   sandboxRuntime: SANDBOX_RUNTIME_ASSET_DIRECTORY,
   refGuard: extractedRuntimeAssetRelativePath(REF_GUARD_RUNTIME_ASSET),
+  checkoutCli: join(CHECKOUT_CLI_DIRECTORY, PLATFORM_SLUG),
+  checkoutCliStamp: join(CHECKOUT_CLI_DIRECTORY, `${PLATFORM_SLUG}.stamp`),
 } as const
 
 function safeRuntimeAsset(entry: string, versionRoot: string): string {

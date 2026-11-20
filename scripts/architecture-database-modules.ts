@@ -9,6 +9,17 @@ const module = (file: string, allowed: string[]): ArchitectureModule => ({
 })
 
 export const databaseModules: ArchitectureModule[] = [
+  module('orchestrator/src/database/checkout-cli-build.ts', [
+    'node:crypto',
+    'node:fs',
+    'node:path',
+    '../../../shared/bounded-process.ts',
+    '../../../shared/brand.ts',
+    '../../../shared/git.ts',
+    '../../../shared/install-root.ts',
+    '../../../shared/runtime-assets-in-sandbox.ts',
+    '../../../shared/state-directory.ts',
+  ]),
   module('orchestrator/src/jsonl-archive.ts', ['node:fs', 'node:path']),
   module('orchestrator/src/database/hosted-table-guard.ts', ['bun:sqlite']),
   module('orchestrator/src/database/hosted-row-release.ts', [

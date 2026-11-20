@@ -1,2 +1,79 @@
 #!/bin/sh
-exec bun --no-env-file "$(dirname "$(readlink -f "$0" 2>/dev/null || echo "$0")")/../cli/bottega.ts" "$@"
+
+script_path=$(readlink -f "$0" 2>/dev/null || echo "$0")
+root=$(dirname "$script_path")/..
+
+hash_file() {
+  if command -v shasum >/dev/null 2>&1; then
+    hash_output=$(shasum -a 256 "$1") || return 1
+  elif command -v sha256sum >/dev/null 2>&1; then
+    hash_output=$(sha256sum "$1") || return 1
+  else
+    return 1
+  fi
+  set -- $hash_output
+  test -n "$1" || return 1
+  printf '%s' "$1"
+}
+
+version=
+while IFS= read -r package_line; do
+  case "$package_line" in
+    *'"version": "'*)
+      version=${package_line#*'"version": "'}
+      version=${version%%'"'*}
+      break
+      ;;
+  esac
+done < "$root/package.json"
+
+if test -n "$BOTTEGA_STATE_HOME"; then
+  binary_root=$BOTTEGA_STATE_HOME
+elif test -n "$XDG_STATE_HOME"; then
+  binary_root=$XDG_STATE_HOME/bottega
+elif test -n "$HOME"; then
+  binary_root=$HOME/.local/state/bottega
+else
+  binary_root=
+fi
+binary=$binary_root/runtime/$version/checkout-cli/bottega
+stamp=$binary.stamp
+
+stamp_head=
+stamp_lock=
+stamp_binary=
+if test -n "$version" && test -d "$root/.git" && test -f "$stamp"; then
+  while IFS='=' read -r stamp_key stamp_value; do
+    case "$stamp_key" in
+      head) stamp_head=$stamp_value ;;
+      lock) stamp_lock=$stamp_value ;;
+      binary) stamp_binary=$stamp_value ;;
+    esac
+  done < "$stamp"
+  head_line=
+  if IFS= read -r head_line < "$root/.git/HEAD"; then
+    case "$head_line" in
+      'ref: refs/'*)
+        head_ref=${head_line#'ref: '}
+        case "$head_ref" in
+          *'..'*|*'//'*) ;;
+          *)
+            head_sha=
+            if IFS= read -r head_sha < "$root/.git/$head_ref"; then
+              lock_hash=$(hash_file "$root/bun.lock") || lock_hash=
+              binary_hash=$(hash_file "$binary") || binary_hash=
+              if test -n "$stamp_head" && test "$head_sha" = "$stamp_head" &&
+                test -n "$stamp_lock" && test "$lock_hash" = "$stamp_lock" &&
+                test -n "$stamp_binary" && test "$binary_hash" = "$stamp_binary"; then
+                export BOTTEGA_HOME="$root"
+                exec "$binary" "$@"
+              fi
+            fi
+            ;;
+        esac
+        ;;
+    esac
+  fi
+fi
+
+exec bun --no-env-file "$root/cli/bottega.ts" "$@"

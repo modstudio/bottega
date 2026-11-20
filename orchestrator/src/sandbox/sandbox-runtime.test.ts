@@ -17,6 +17,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { PLATFORM_NAME } from '../../../shared/brand.ts'
 import { registerEmbeddedAssets } from '../../../shared/embedded-assets.ts'
+import { WORKER_RUNTIME_ASSETS } from '../../../shared/runtime-assets-in-sandbox.ts'
 import {
   sandboxRuntimeAssets,
   sandboxRuntimePayloadPaths,
@@ -107,6 +108,21 @@ describe('sandbox runtime payloads', () => {
       else process.env.BOTTEGA_STATE_HOME = previous
       rmSync(root, { recursive: true, force: true })
     }
+  })
+
+  test('a checkout carves back only its compiled CLI and stamp beneath the denied state root', () => {
+    const carvebacks = workerRuntimeReadCarvebacks(
+      { BOTTEGA_STATE_HOME: '/operator/state', HOME: '/operator' },
+      null,
+    )
+    expect(carvebacks).toEqual([
+      `/operator/state/runtime/0.5.12/${WORKER_RUNTIME_ASSETS.checkoutCli}`,
+      `/operator/state/runtime/0.5.12/${WORKER_RUNTIME_ASSETS.checkoutCliStamp}`,
+    ])
+    expect(carvebacks).not.toContain('/operator/state')
+    expect(
+      carvebacks.every((path) => path.startsWith('/operator/state/runtime/0.5.12/')),
+    ).toBeTrue()
   })
 
   test('temporary directory is scoped to one launch and restored before the next', async () => {
