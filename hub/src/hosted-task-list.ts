@@ -19,7 +19,9 @@ import {
 } from './hosted-tasks.ts'
 import { type TaskIdentity, withHostedTenant } from './hosted-tenant.ts'
 
-const streams = ['tasks', 'comments', 'documents', 'statusEvents'] as const
+const changeStreams = ['tasks', 'comments', 'documents', 'statusEvents'] as const
+const listStreams = ['tasks'] as const
+const streams = changeStreams
 type TaskStream = (typeof streams)[number]
 type TaskCursorRow = HostedPullMeasuredRow<
   HostedTask | HostedComment | HostedDocument | HostedStatusEvent
@@ -126,19 +128,21 @@ export async function listHostedTasks(
   filters: HostedTaskListFilters,
 ) {
   return withHostedTenant(client, identity, async (tx) => {
+    const selectedStreams = filters.includeDeleted ? changeStreams : listStreams
     const limit = hostedPullLimit(filters.limit)
-    let cursor = decodeHostedPullCursor(filters.cursor, streams, filters.updatedSince)
+    let cursor = decodeHostedPullCursor(filters.cursor, selectedStreams, filters.updatedSince)
     const parentId = filters.parent ? await taskIdFor(tx, identity.spaceId, filters.parent) : null
 
     for (;;) {
       const candidates = await taskCandidates(tx, identity, filters, cursor, parentId, limit)
-      const result = hostedPullPage(streams, cursor, candidates, limit)
+      const result = hostedPullPage(selectedStreams, cursor, candidates, limit)
       if (result.kind === 'advance') {
         cursor = result.cursor
         continue
       }
+      const page = taskPage(cursor.stream, result.rows)
       return {
-        ...taskPage(cursor.stream, result.rows),
+        ...(filters.includeDeleted ? page : { tasks: page.tasks }),
         cursor: encodeHostedPullCursor(result.cursor),
         more: result.more,
       }

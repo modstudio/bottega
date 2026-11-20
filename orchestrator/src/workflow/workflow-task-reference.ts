@@ -22,6 +22,8 @@ export type HubTaskReference = {
   commentsVerifiable?: boolean
 }
 export type HubTaskReader = (project: string) => Promise<HubTaskReference[]>
+export type HubTaskLookup = (project: string, key: string) => Promise<HubTaskReference | null>
+export type HubTaskRecordLookup = (recordId: string) => Promise<HubTaskReference | null>
 export type HubTaskPuller = (project: string, key: string) => Promise<HubTaskReference | null>
 export type HubTaskKeyMap = ReadonlyMap<string, readonly HubTaskReference[]>
 
@@ -157,6 +159,25 @@ export async function readHubTasks(project: string): Promise<HubTaskReference[]>
   return (await taskReader().list({ project })).map(taskReference)
 }
 
+export async function readHubTask(project: string, key: string): Promise<HubTaskReference | null> {
+  try {
+    return taskReferenceFromShow(await taskReader().show(key, { project }))
+  } catch (error) {
+    if (taskPullFailureNamesMissingTask(error, key)) return null
+    throw error
+  }
+}
+
+export async function readHubTaskByRecordId(recordId: string): Promise<HubTaskReference | null> {
+  try {
+    return taskReferenceFromShow(await taskReader().show(recordId, { recordId }))
+  } catch (error) {
+    if (namesMissingTask(error instanceof Error ? error.message : String(error), recordId))
+      return null
+    throw error
+  }
+}
+
 export async function pullHubTask(project: string, key: string): Promise<HubTaskReference | null> {
   let output: string
   try {
@@ -178,10 +199,11 @@ export function taskPullFailureNamesMissingTask(error: unknown, key: string): bo
 export async function resolveHubTaskReference(
   project: string | null,
   key: string,
-  reader: HubTaskReader = readHubTasks,
+  reader?: HubTaskReader,
 ): Promise<HubTaskReference | null> {
   if (!project) return null
   try {
+    if (!reader) return await readHubTask(project, key)
     const rows = await reader(project)
     return taskReferenceForProjectKey(taskKeyMap(rows), project, key)
   } catch (error) {
@@ -193,7 +215,7 @@ export async function resolveHubTaskReference(
 export async function resolveOrPullHubTaskReference(
   project: string,
   key: string,
-  reader: HubTaskReader = readHubTasks,
+  reader?: HubTaskReader,
   puller: HubTaskPuller = pullHubTask,
 ): Promise<HubTaskReference> {
   const mirrored = await resolveHubTaskReference(project, key, reader)

@@ -289,26 +289,24 @@ export const hostedCreateDocument = (
     options,
     'non-idempotent',
   )
-export async function hostedListTasks(options?: HostedRequestOptions) {
-  type Result = {
-    tasks: HostedTask[]
-    comments: HostedComment[]
-    documents: HostedDocument[]
-    statusEvents: import('./hosted-tasks.ts').HostedStatusEvent[]
-  }
-  const rows = { tasks: [], comments: [], documents: [], statusEvents: [] } as Result
+export async function hostedListTasks(
+  options?: HostedRequestOptions,
+  filters: { project?: string; status?: string; parent?: string } = {},
+) {
+  type Result = { tasks: HostedTask[] }
+  const rows: Result = { tasks: [] }
   let cursor: string | null = null
   for (;;) {
     const query = new URLSearchParams()
     if (cursor) query.set('cursor', cursor)
+    if (filters.project) query.set('project', filters.project)
+    if (filters.status) query.set('status', filters.status)
+    if (filters.parent) query.set('parent', filters.parent.toUpperCase())
     const page = await readRequest<Result & { cursor: string; more: boolean }>(
       `/v1/tasks?${query}`,
       options,
     )
     rows.tasks.push(...page.tasks)
-    rows.comments.push(...page.comments)
-    rows.documents.push(...page.documents)
-    rows.statusEvents.push(...page.statusEvents)
     if (!page.more) return { ...rows, cursor: page.cursor, more: false }
     if (page.cursor === cursor) throw new Error('hosted task list cursor did not advance')
     cursor = page.cursor

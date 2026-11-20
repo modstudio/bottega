@@ -276,6 +276,7 @@ export const ROOT_TEST_FILES = [
   'scripts/check-outbox-serialization.test.ts',
   'scripts/check-outbox-insert-site.test.ts',
   'scripts/check-record-request-headers.test.ts',
+  'scripts/check-task-single-read.test.ts',
   'scripts/check-record-route-contracts.test.ts',
   'scripts/check-hosted-local-sql.test.ts',
   'orchestrator/scripts/time-wait-guard.test.ts',

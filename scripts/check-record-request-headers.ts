@@ -179,24 +179,40 @@ function isFetchFallback(node: ts.Expression): boolean {
   )
 }
 
-function sameScopeInitializer(
+function visibleInitializer(
   identifier: ts.Identifier,
   call: ts.CallExpression,
 ): ts.Expression | undefined {
-  let scope: ts.Node | undefined = call.parent
-  while (scope && !ts.isBlock(scope) && !ts.isSourceFile(scope)) scope = scope.parent
-  if (!scope || (!ts.isBlock(scope) && !ts.isSourceFile(scope))) return undefined
-  for (const statement of scope.statements) {
-    if (!ts.isVariableStatement(statement)) continue
-    for (const declaration of statement.declarationList.declarations)
-      if (ts.isIdentifier(declaration.name) && declaration.name.text === identifier.text)
-        return declaration.initializer
+  for (let scope: ts.Node | undefined = call.parent; scope; scope = scope.parent) {
+    if (!ts.isBlock(scope) && !ts.isSourceFile(scope)) continue
+    for (const statement of scope.statements) {
+      if (!ts.isVariableStatement(statement)) continue
+      for (const declaration of statement.declarationList.declarations)
+        if (ts.isIdentifier(declaration.name) && declaration.name.text === identifier.text)
+          return declaration.initializer
+    }
   }
   return undefined
 }
 
-function nodeText(node: ts.Node | undefined, sourceFile: ts.SourceFile): string {
-  return node?.getText(sourceFile) ?? ''
+function resolvedExpressionText(
+  node: ts.Expression | undefined,
+  call: ts.CallExpression,
+  sourceFile: ts.SourceFile,
+  seen = new Set<string>(),
+): string {
+  if (!node) return ''
+  const direct = node.getText(sourceFile)
+  if (ts.isIdentifier(node)) {
+    if (seen.has(node.text)) return direct
+    seen.add(node.text)
+    return `${direct} ${resolvedExpressionText(visibleInitializer(node, call), call, sourceFile, seen)}`
+  }
+  const nested: string[] = []
+  ts.forEachChild(node, (child) => {
+    if (ts.isExpression(child)) nested.push(resolvedExpressionText(child, call, sourceFile, seen))
+  })
+  return `${direct} ${nested.join(' ')}`
 }
 
 function enclosingFunctionName(node: ts.Node): string | undefined {
@@ -215,18 +231,13 @@ export function recordFetchViolations(source: string, file: string): RecordFetch
       const fallbackFetch = isFetchFallback(node.expression)
       const name = fallbackFetch ? 'fetch' : calledName(node)
       const firstArgument = node.arguments[0]
-      const initializer =
-        firstArgument && ts.isIdentifier(firstArgument)
-          ? sameScopeInitializer(firstArgument, node)
-          : undefined
-      const first =
-        `${nodeText(firstArgument, sourceFile)} ${nodeText(initializer, sourceFile)}`.trim()
+      const first = resolvedExpressionText(firstArgument, node, sourceFile)
       const hostedBoundedFetch =
         name === 'boundedFetch' && literalText(node.arguments[0]) === 'hosted-api'
       const opaqueHostedSend =
         name === 'fetch' &&
         ts.isPropertyAccessExpression(node.expression) &&
-        /(?:^|\.)input\.url$/.test(first)
+        /(?:^|\s)input\.url(?:\s|$)/.test(first)
       const recordResolvedFetch =
         name === 'fetch' &&
         /(?:resolveRecordApiUrl|resolveHostedUrl|recordApiUrl|hostedUrl)/.test(first)
