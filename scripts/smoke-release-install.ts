@@ -2,7 +2,7 @@ import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:f
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { startBounded } from '../shared/bounded-process.ts'
-import { PLATFORM_SLUG } from '../shared/brand.ts'
+import { MCP_SERVER_NAME, PLATFORM_SLUG, WORKER_MCP_SERVER_NAME } from '../shared/brand.ts'
 import { parseBinaryTarget } from './build-binary.ts'
 import { buildReleaseArtifact, writeChecksumSet } from './build-release-artifacts.ts'
 import { releaseVersion, stripInheritedOverrides } from './release-support.ts'
@@ -32,7 +32,7 @@ export function releaseInstallEnvironment(
   env.BOTTEGA_INSTALL_DIR = paths.bin
   env.BOTTEGA_KEYSTORE = 'file'
   env.BOTTEGA_DOWNLOAD_BASE_URL = `file://${paths.mirror}`
-  env.PATH = `${paths.stub}:${paths.bin}:/usr/bin:/bin:/usr/sbin:/sbin`
+  env.PATH = `${paths.stub}:${join(paths.home, '.grok', 'bin')}:${paths.bin}:/usr/bin:/bin:/usr/sbin:/sbin`
   return env
 }
 
@@ -85,6 +85,97 @@ exit 0
 `
 }
 
+function brewStub(codexPath: string): string {
+  const codex = shellQuote(codexPath)
+  return `#!/bin/sh
+if [ "$#" -eq 3 ] && [ "$1" = 'install' ] && [ "$2" = '--cask' ] && [ "$3" = 'codex' ]; then
+  cat > ${codex} <<'BOTTEGA_CODEX_STUB'
+#!/bin/sh
+state="$HOME/.${PLATFORM_SLUG}-proof-codex-mcp"
+mkdir -p "$state"
+if [ "\${1:-}" = '--version' ]; then
+  printf '%s\n' 'codex-cli 0.0.0'
+  exit 0
+fi
+if [ "\${1:-}" = 'login' ] && [ "\${2:-}" = 'status' ]; then
+  exit 0
+fi
+if [ "\${1:-}" = 'mcp' ] && [ "\${2:-}" = 'get' ] && [ "\${4:-}" = '--json' ]; then
+  file="$state/$3.json"
+  if [ ! -f "$file" ]; then
+    printf "Error: No MCP server named '%s' found.\n" "$3" >&2
+    exit 1
+  fi
+  cat "$file"
+  exit 0
+fi
+if [ "\${1:-}" = 'mcp' ] && [ "\${2:-}" = 'add' ] && [ "\${4:-}" = '--' ] && [ "$#" -eq 7 ]; then
+  printf '{"transport":{"type":"stdio","command":"%s","args":["%s","%s"]}}\n' "$5" "$6" "$7" > "$state/$3.json"
+  exit 0
+fi
+if [ "\${1:-}" = 'mcp' ] && [ "\${2:-}" = 'remove' ] && [ "$#" -eq 3 ]; then
+  rm -f "$state/$3.json"
+  exit 0
+fi
+printf 'unsupported codex stub call: %s\n' "$*" >&2
+exit 64
+BOTTEGA_CODEX_STUB
+  chmod 755 ${codex}
+  exit 0
+fi
+printf 'unsupported brew call: %s\n' "$*" >&2
+exit 64
+`
+}
+
+function curlStub(): string {
+  return `#!/bin/sh
+if [ "$#" -eq 2 ] && [ "$1" = '-fsSL' ] && [ "$2" = 'https://x.ai/cli/install.sh' ]; then
+  cat <<'BOTTEGA_GROK_INSTALLER'
+#!/bin/sh
+set -eu
+mkdir -p "$HOME/.grok/bin"
+cat > "$HOME/.grok/bin/grok" <<'BOTTEGA_GROK_STUB'
+#!/bin/sh
+state="$HOME/.${PLATFORM_SLUG}-proof-grok-mcp"
+mkdir -p "$state"
+if [ "\${1:-}" = '--version' ]; then
+  printf '%s\n' 'grok 0.0.0'
+  exit 0
+fi
+if [ "\${1:-}" = 'mcp' ] && [ "\${2:-}" = 'list' ] && [ "\${3:-}" = '--json' ]; then
+  printf '['
+  separator=
+  for name in ${MCP_SERVER_NAME} ${WORKER_MCP_SERVER_NAME}; do
+    file="$state/$name.json"
+    if [ -f "$file" ]; then
+      printf '%s' "$separator"
+      cat "$file"
+      separator=,
+    fi
+  done
+  printf ']\n'
+  exit 0
+fi
+if [ "\${1:-}" = 'mcp' ] && [ "\${2:-}" = 'add' ] && [ "\${3:-}" = '--scope' ] && [ "\${4:-}" = 'user' ] && [ "\${6:-}" = '--' ] && [ "$#" -eq 9 ]; then
+  printf '{"name":"%s","command":"%s","args":["%s","%s"]}\n' "$5" "$7" "$8" "$9" > "$state/$5.json"
+  exit 0
+fi
+if [ "\${1:-}" = 'mcp' ] && [ "\${2:-}" = 'remove' ] && [ "\${3:-}" = '--scope' ] && [ "\${4:-}" = 'user' ] && [ "$#" -eq 5 ]; then
+  rm -f "$state/$5.json"
+  exit 0
+fi
+printf 'unsupported grok stub call: %s\n' "$*" >&2
+exit 64
+BOTTEGA_GROK_STUB
+chmod 755 "$HOME/.grok/bin/grok"
+BOTTEGA_GROK_INSTALLER
+  exit 0
+fi
+exec /usr/bin/curl "$@"
+`
+}
+
 async function runStep(
   name: string,
   argv: string[],
@@ -123,12 +214,18 @@ async function proveReleaseInstall(version: string, keep: boolean): Promise<numb
     for (const directory of [paths.home, paths.state, paths.bin, paths.stub]) {
       mkdirSync(directory, { recursive: true })
     }
-    const launchctl = join(paths.stub, 'launchctl')
-    writeFileSync(
-      launchctl,
-      launchctlStub(join(root, 'launchctl-state'), join(root, 'launchctl.log')),
-    )
-    chmodSync(launchctl, 0o755)
+    const stubs = [
+      {
+        path: join(paths.stub, 'launchctl'),
+        text: launchctlStub(join(root, 'launchctl-state'), join(root, 'launchctl.log')),
+      },
+      { path: join(paths.stub, 'brew'), text: brewStub(join(paths.stub, 'codex')) },
+      { path: join(paths.stub, 'curl'), text: curlStub() },
+    ]
+    for (const stub of stubs) {
+      writeFileSync(stub.path, stub.text)
+      chmodSync(stub.path, 0o755)
+    }
 
     const env = releaseInstallEnvironment(process.env, paths)
     const repositoryRoot = resolve(import.meta.dir, '..')

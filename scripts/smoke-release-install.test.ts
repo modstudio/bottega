@@ -26,5 +26,7 @@ test('release install environment drops inherited product and harness overrides'
   expect(env.BOTTEGA_STATE_HOME).toBe('/proof/state')
   expect(env.BOTTEGA_INSTALL_DIR).toBe('/proof/bin')
   expect(env.BOTTEGA_DOWNLOAD_BASE_URL).toBe('file:///proof/mirror')
-  expect(env.PATH).toBe('/proof/stub:/proof/bin:/usr/bin:/bin:/usr/sbin:/sbin')
+  expect(env.PATH).toBe(
+    '/proof/stub:/proof/home/.grok/bin:/proof/bin:/usr/bin:/bin:/usr/sbin:/sbin',
+  )
 })
