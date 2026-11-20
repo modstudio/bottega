@@ -196,21 +196,24 @@ export async function runSetupCommandAsync(
       error: null,
     }
   } catch (error) {
-    const timedOut = isDeadlineBreach(error)
-    const outputExceeded = isOutputBreach(error)
-    return {
-      exitCode: null,
-      stdout: '',
-      stderr: '',
-      timedOut,
-      error: timedOut
-        ? null
-        : outputExceeded
-          ? 'output exceeded'
-          : error instanceof Error
-            ? error.message
-            : String(error),
-    }
+    return setupCommandFailure(error)
+  }
+}
+
+export function setupCommandFailure(error: unknown): SetupCommandResult {
+  const timedOut = isDeadlineBreach(error)
+  return {
+    exitCode: null,
+    stdout: '',
+    stderr: '',
+    timedOut,
+    error: timedOut
+      ? null
+      : isOutputBreach(error)
+        ? 'output exceeded'
+        : error instanceof Error
+          ? error.message
+          : String(error),
   }
 }
 
