@@ -301,7 +301,7 @@ async function cliLaunch(opts: TransportStartOpts) {
     write: opts.write,
     sandbox: opts.sandbox,
     sandboxWorkspaceWriteNetworkAccess: opts.sandboxWorkspaceWriteNetworkAccess,
-    codexPermissionProfile: opts.codexPermissionProfile,
+    writableRoots: opts.writableRoots,
     gitConfigEnvironment: opts.gitConfigEnvironment,
     recipeEnvironment: opts.recipeEnvironment,
     session: opts.session,

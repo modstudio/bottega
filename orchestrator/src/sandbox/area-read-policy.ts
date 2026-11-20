@@ -1,6 +1,6 @@
 // concern: pure broad-area read policy; must not know sandbox-runtime or secret paths.
 
-import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
+import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
 import {
   resolveHubDatabase,
   resolveOrchestratorDatabase,
@@ -14,14 +14,11 @@ import { runHarnessStateDir } from '../run-owned-paths.ts'
 
 export type AreaReadPolicy = { deny: string[]; allow: string[] }
 
-export type WorktreeDenyForm = 'live-glob' | 'launch-literal'
+export type AreaReadPlatform = 'darwin' | 'linux'
 
 export const isAtOrBelow = (path: string, parent: string) => {
   const fromParent = relative(parent, path)
-  return (
-    fromParent === '' ||
-    (fromParent !== '..' && !fromParent.startsWith(`..${sep}`) && !isAbsolute(fromParent))
-  )
+  return fromParent === '' || (!fromParent.startsWith('..') && !isAbsolute(fromParent))
 }
 
 /** A carve-back may never reopen a protected path or one of its parents. */
@@ -42,12 +39,12 @@ export function carveBackOutsideProtected(
 export function ownProjectWorktreeDenies(input: {
   root: string
   worktree: string
-  form: WorktreeDenyForm
+  platform: AreaReadPlatform
   entries: readonly string[]
 }): string[] {
   const root = resolve(input.root)
   const worktree = resolve(input.worktree)
-  if (input.form === 'live-glob') return [join(root, '*')]
+  if (input.platform === 'darwin') return [join(root, '*')]
   return input.entries
     .map((entry) => resolve(entry))
     .filter((entry) => isAtOrBelow(entry, root) && !isAtOrBelow(worktree, entry))
@@ -61,7 +58,7 @@ export function areaReadPolicy(input: {
   project: Project | null
   registeredProjects: readonly Project[]
   environment: StateEnvironment
-  worktreeDenyForm: WorktreeDenyForm
+  platform: AreaReadPlatform
   ownWorktreeRootEntries: readonly string[]
 }): AreaReadPolicy {
   const worktree = resolve(input.worktree)
@@ -79,7 +76,7 @@ export function areaReadPolicy(input: {
       ? ownProjectWorktreeDenies({
           root,
           worktree,
-          form: input.worktreeDenyForm,
+          platform: input.platform,
           entries: input.ownWorktreeRootEntries,
         })
       : [root]

@@ -35,8 +35,6 @@ test('refuses a workflow with a missing or extra job', () => {
       if (job === processSuite.job) return processHooksJobFixture()
       if (job === 'postgres') return postgresJobFixture()
       if (job === 'release-smoke') return releaseSmokeJobFixture().trimEnd()
-      if (job === 'codex-permission-canary')
-        return `  ${job}:\n    runs-on: macos-15\n    steps:\n      - run: npm install --global @openai/codex@0.171.0\n      - run: bun orchestrator/scripts/codex-permission-canary.ts`
       if (job === 'migration-paths') return migrationPathsJobFixture()
       if (job === 'migration-compatibility') return migrationCompatibilityJobFixture()
       if (job === 'install-proof') return installProofJobFixture()
@@ -167,26 +165,6 @@ test('pins the merge-queue release smoke job', () => {
       ),
     ),
   ).toThrow('not gated on pull_request, merge_group or workflow_dispatch; add "if:')
-})
-
-test('pins the required macOS Codex permission canary and CLI version', () => {
-  const workflow = readWorkflowFixture()
-  expect(() =>
-    checkCiWorkflow(
-      workflow.replace(
-        'npm install --global @openai/codex@0.171.0',
-        'npm install --global @openai/codex@latest',
-      ),
-    ),
-  ).toThrow('must run npm install --global @openai/codex@0.171.0')
-  expect(() =>
-    checkCiWorkflow(
-      workflow.replace(
-        'bun orchestrator/scripts/codex-permission-canary.ts',
-        'bun orchestrator/scripts/other.ts',
-      ),
-    ),
-  ).toThrow('must run bun orchestrator/scripts/codex-permission-canary.ts')
 })
 
 test('pins the real-Postgres leg', () => {
@@ -444,8 +422,6 @@ function readWorkflowFixture() {
       if (job === processSuite.job) return processHooksJobFixture()
       if (job === 'postgres') return postgresJobFixture()
       if (job === 'release-smoke') return releaseSmokeJobFixture().trimEnd()
-      if (job === 'codex-permission-canary')
-        return `  ${job}:\n    runs-on: macos-15\n    steps:\n      - run: npm install --global @openai/codex@0.171.0\n      - run: bun orchestrator/scripts/codex-permission-canary.ts`
       if (job === 'migration-paths') return migrationPathsJobFixture()
       if (job === 'migration-compatibility') return migrationCompatibilityJobFixture()
       if (job === 'install-proof') return installProofJobFixture()
