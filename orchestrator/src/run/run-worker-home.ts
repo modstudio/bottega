@@ -27,8 +27,8 @@ import {
   prepareSandboxHome,
   type RunSandbox,
   removeNewSandboxHomeAfterFailure,
-  workerStateEnvironment,
   workerSandboxEnvironment,
+  workerStateEnvironment,
 } from '../sandbox/sandbox.ts'
 import { prepareWorkerMcpConfig } from '../worktree/worktree-mcp.ts'
 import type { Worktree } from '../worktree/worktree-types.ts'

@@ -328,7 +328,9 @@ export function readonlyLensProfile(input: {
       ...(input.nodeModuleLinks ?? linkedNodeModules(input.worktree)).map((path) => resolve(path)),
       join(homedir(), '.claude.json'),
       process.execPath,
-      ...runningInstallReadCarveouts(input.installLayout ?? resolveRunningInstallLayout(environment)),
+      ...runningInstallReadCarveouts(
+        input.installLayout ?? resolveRunningInstallLayout(environment),
+      ),
     ]),
   ]
   // SRT reads are allow-by-default. This list only carves paths back out of

@@ -1,7 +1,6 @@
 import { TRPCError } from '@trpc/server'
 import { z } from 'zod'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
-import { installationIdentity } from '../../shared/install-root.ts'
 import {
   CREDENTIAL_BINDINGS,
   CREDENTIAL_ENVIRONMENTS,
@@ -19,6 +18,7 @@ import {
   type DocStatus,
   hostedDocAudiences,
 } from '../../shared/docs.ts'
+import { installationIdentity } from '../../shared/install-root.ts'
 import type { MachineRef } from '../../shared/machine-label.ts'
 import {
   HarnessHealthSchema,

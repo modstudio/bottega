@@ -2,9 +2,9 @@ import { afterEach, expect, test } from 'bun:test'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import type { Project } from '../project/projects.ts'
 import { probeAgentWrites, writingCapabilityPolicy } from './agent-writing-probe.ts'
 import type { Agent } from './agents.ts'
-import type { Project } from '../project/projects.ts'
 
 const scratchDirectories: string[] = []
 

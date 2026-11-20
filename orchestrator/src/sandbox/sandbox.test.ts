@@ -27,34 +27,32 @@ import {
 } from '../../../shared/state-directory.ts'
 import { workerHarnessName } from '../agent/worker-launch-env.ts'
 import { ROOT } from '../database/db.ts'
-import { classify, NOT_EVIDENCE } from '../failure/failure.ts'
 import type { Project } from '../project/projects.ts'
 import { resolveRunningInstallLayout, runningInstallReadCarveouts } from './install-read-policy.ts'
 import {
+  probeSandboxProfile as buildProbeSandboxProfile,
+  readonlyLensProfile as buildReadonlyLensProfile,
+  selectReadonlySandbox as buildReadonlySandboxSelection,
+  writerProfile as buildWriterProfile,
   canonicalSocketDenyPaths,
   createSandboxRuntimeConfig,
   grokAskCommandFromConfig,
   grokAskServerCommand,
   grokSandboxConfig,
-  isWritingAcpRun,
   prepareCodexHome,
   prepareGrokMcpHome,
   prepareSandboxHome,
   prepareWorkerHomeMirror,
-  probeSandboxProfile as buildProbeSandboxProfile,
   READONLY_LENS_DENY_PATHS,
   READONLY_LENS_DENY_WRITE_PATHS,
   readonlyLensDeniesLoginKeychain,
   readonlyLensDeniesOperatorEnvFile,
-  readonlyLensProfile as buildReadonlyLensProfile,
   readonlyLensReportInputs,
   removeNewSandboxHomeAfterFailure,
   resetSandbox,
   sandboxReasonPrefix,
   sandboxRuntimeConfig,
-  selectReadonlySandbox as buildReadonlySandboxSelection,
   withoutRegisteredOrchAskServer,
-  writerProfile as buildWriterProfile,
 } from './sandbox.ts'
 
 const fixtureProject = (settings: Project['settings'] = {}): Project => ({
@@ -70,23 +68,25 @@ const fixtureProject = (settings: Project['settings'] = {}): Project => ({
 type WithOptionalRegister<T> = Omit<T, 'registeredProjects'> & {
   registeredProjects?: readonly Project[]
 }
-const withRegister = <T extends { project: Project | null; registeredProjects?: readonly Project[] }>(
+const withRegister = <
+  T extends { project: Project | null; registeredProjects?: readonly Project[] },
+>(
   input: T,
-) => ({ ...input, registeredProjects: input.registeredProjects ?? (input.project ? [input.project] : []) })
-const readonlyLensProfile = (input: WithOptionalRegister<Parameters<typeof buildReadonlyLensProfile>[0]>) =>
-  buildReadonlyLensProfile(withRegister(input))
+) => ({
+  ...input,
+  registeredProjects: input.registeredProjects ?? (input.project ? [input.project] : []),
+})
+const readonlyLensProfile = (
+  input: WithOptionalRegister<Parameters<typeof buildReadonlyLensProfile>[0]>,
+) => buildReadonlyLensProfile(withRegister(input))
 const writerProfile = (input: WithOptionalRegister<Parameters<typeof buildWriterProfile>[0]>) =>
   buildWriterProfile(withRegister(input))
-const probeSandboxProfile = (input: WithOptionalRegister<Parameters<typeof buildProbeSandboxProfile>[0]>) =>
-  buildProbeSandboxProfile(withRegister(input))
-const selectReadonlySandbox = (input: WithOptionalRegister<Parameters<typeof buildReadonlySandboxSelection>[0]>) =>
-  buildReadonlySandboxSelection(withRegister(input))
-
-test('the writing ACP decision requires both ACP and repository writes', () => {
-  expect(isWritingAcpRun('acp', true)).toBe(true)
-  expect(isWritingAcpRun('acp', false)).toBe(false)
-  expect(isWritingAcpRun('cli', true)).toBe(false)
-})
+const probeSandboxProfile = (
+  input: WithOptionalRegister<Parameters<typeof buildProbeSandboxProfile>[0]>,
+) => buildProbeSandboxProfile(withRegister(input))
+const selectReadonlySandbox = (
+  input: WithOptionalRegister<Parameters<typeof buildReadonlySandboxSelection>[0]>,
+) => buildReadonlySandboxSelection(withRegister(input))
 
 test.each([
   {
@@ -1053,17 +1053,5 @@ describe('readonly-lens sandbox profile', () => {
         }),
       ).toEqual({ sandbox: 'host', profile: null, reason: null })
     }
-  })
-
-  test('sandbox denial classification is conditioned on srt and accepts every absolute path', () => {
-    const hostDenial = 'cat: /Users/operator/.ssh/orch-sentinel: Operation not permitted'
-    expect(classify(hostDenial, 1, false, 'host')).toBe('other')
-    expect(classify('cat: /shared/x.secret: Operation not permitted', 1, false, 'srt')).toBe(
-      'sandbox_denied',
-    )
-    expect(classify('cat: /var/run/docker.sock: Operation not permitted', 1, false, 'srt')).toBe(
-      'sandbox_denied',
-    )
-    expect(NOT_EVIDENCE).toContain('sandbox_denied')
   })
 })

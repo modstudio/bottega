@@ -2,8 +2,8 @@
 /** Best-effort short retention of Goose's sandbox-owned request ledger. */
 
 import {
-  existsSync,
   chmodSync,
+  existsSync,
   lstatSync,
   mkdirSync,
   readdirSync,
