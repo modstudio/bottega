@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, test } from 'bun:test'
+import { rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
@@ -18,7 +19,6 @@ import {
   artifactPersistenceOutcome,
   checkpointTerminalWork,
   finishRun,
-  questionsToInsert,
   recordArtifactPersistenceFailure,
   recordTerminalReviewEvidence,
   shouldCheckpointAtTerminal,
@@ -26,6 +26,7 @@ import {
   writeTerminalOperationalState,
 } from './run-terminal.ts'
 import { finalizeTerminalChain } from './run-terminal-chain.ts'
+import { questionsToInsert } from './run-terminal-questions.ts'
 
 afterEach(() => {
   installRecordApiClient(null)
@@ -332,6 +333,95 @@ test('finish makes a reply question answerable before its store write finishes',
 
   releaseWrite()
   await finishing
+})
+
+test('a superseded turn finishes without recording its reply question', async () => {
+  const runId = addRun({ agent: 'codex', job: 'implement', status: 'ok' })
+  const outPath = join(dir, 'superseded-terminal-question.out')
+  const question = {
+    kind: 'text' as const,
+    question: 'Which implementation should be used?',
+    why: 'The implementation depends on the ruling.',
+  }
+
+  const result = await finishRun({
+    processless: true,
+    timer: null,
+    checkpointTimer: null,
+    resourceObserver: null,
+    proc: null,
+    askLoopback: null,
+    claim: { id: runId, number: 1 },
+    machineId: 'machine-superseded-terminal-question',
+    writesJob: true,
+    worktree: null,
+    launchKey: null,
+    failureKind: null,
+    endpointKey: { secretName: null, source: 'agent', projectName: null },
+    scratchDir: dir,
+    gitConfigEnvironment: undefined,
+    writingAcp: false,
+    checkpointContainment: { disableHooks: false, gitDir: null, hooksDir: null },
+    opts: { job: 'implement' },
+    watchedCheckouts: [],
+    confinementFailures: [],
+    frozenBefore: [],
+    callerRemoval: { attribution: 'unattributed', removalSession: null, removalRun: null },
+    removeIsolatedCwd: null,
+    changes: null,
+    provisionedMcpConfig: null,
+    started: Date.now(),
+    retargetDiagnostic: null,
+    error: null,
+    contract: {
+      status: 'asking',
+      summary: 'A ruling is required.',
+      files_changed: null,
+      change_guide: null,
+      questions: [question],
+      deviations: null,
+      blockers: null,
+      tests: null,
+    },
+    status: 'asking',
+    contractObjects: 1,
+    vendorTerminatedStream: null,
+    acceptedQuestions: [question],
+    requestedJob: job('implement'),
+    checkReviewedCommit: false,
+    output: 'A ruling is required.',
+    confinementEvent: null,
+    parsedReply: null,
+    runProjectName: null,
+    mcpConnection: null,
+    mcpMode: null,
+    declaredDeliverables: [],
+    mcpSetupHeader: null,
+    outPath,
+    preConfinement: null,
+    callerCwd: dir,
+    promptPath: join(dir, 'superseded-terminal-question.prompt'),
+    exitCode: 0,
+    vendorTokens: null,
+    callUsage: null,
+    costUsd: null,
+    vendorUsage: EMPTY_VENDOR_USAGE,
+    quotaReadings: EMPTY_QUOTA_READINGS,
+    effectiveModel: null,
+    resolvedSession: 'session-from-superseded-worker',
+    name: 'codex',
+    artifactsPersisted: false,
+    mcpRuling: null,
+    workerEvents: [],
+  })
+
+  expect(
+    db().query('SELECT COUNT(*) count FROM question WHERE run_record_id=?').get(runId),
+  ).toEqual({ count: 0 })
+  expect(result.output).toContain(
+    `Dropped 1 reply question because run ${runId} was already superseded or finished.`,
+  )
+  rmSync(outPath)
 })
 
 describe('terminal checkpoint decision', () => {

@@ -150,21 +150,6 @@ test('reply questions store and send structured typed values', async () => {
   })
 })
 
-test('ask refuses a superseded turn without recording', async () => {
-  const runId = addRun({ agent: 'codex', job: 'implement', status: 'ok' })
-  const result = await ask({
-    runId,
-    question: 'Which implementation?',
-    why: 'The implementation depends on the ruling.',
-    timeoutMs: 1,
-  })
-  if (result.answered) throw new Error('superseded turn unexpectedly received a ruling')
-  expect(result.reason).toMatch(/turn was superseded or finished.*must stop/)
-  expect(
-    db().query('SELECT COUNT(*) count FROM question WHERE run_record_id=?').get(runId),
-  ).toEqual({ count: 0 })
-})
-
 describe('the live ask channel always answers', () => {
   test('the HTTP endpoint rejects a missing token and serves an authenticated MCP request', async () => {
     const run = addRun({ agent: 'goose-trial', job: 'implement', status: 'running' })

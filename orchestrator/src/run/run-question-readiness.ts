@@ -6,8 +6,34 @@ import { db, nowIso, writeTransaction } from '../database/db.ts'
 import { enqueueRunRecord } from './run-outbox.ts'
 
 /** Apply the one running-to-asking transition shared by every question channel. */
-export function markRunAsking(database: Database, runId: string): void {
+function markRunAsking(database: Database, runId: string): void {
   database.query("UPDATE run SET status='asking' WHERE record_id=? AND status='running'").run(runId)
+}
+
+export function restoreRunAfterQuestionRefusal(
+  database: Database,
+  input: { runId: string; machineId: string; transitioned: boolean; recordedAt: string },
+): void {
+  if (!input.transitioned) return
+  writeTransaction(() => {
+    database
+      .query("UPDATE run SET status='running' WHERE record_id=? AND status='asking'")
+      .run(input.runId)
+    enqueueRunRecord(database, input.runId, input.machineId, input.recordedAt)
+  }, database)
+}
+
+export function claimLiveRunQuestionChannel(
+  database: Database,
+  runId: string,
+): { live: boolean; transitioned: boolean } {
+  const transition = database
+    .query("UPDATE run SET status='asking' WHERE record_id=? AND status='running'")
+    .run(runId)
+  const owner = database
+    .query<{ status: string }, [string]>('SELECT status FROM run WHERE record_id=?')
+    .get(runId)
+  return { live: owner?.status === 'asking', transitioned: transition.changes > 0 }
 }
 
 /** Persist the facts needed to answer or resume a reply-borne question. */

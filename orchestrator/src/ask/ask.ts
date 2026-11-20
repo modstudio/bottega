@@ -79,7 +79,10 @@ import { ASKED_VIA_LIVE, ASKED_VIA_REPLY, type AskedVia } from '../run/question-
 import { runScratchDir } from '../run/run-artifacts.ts'
 import { resolveRunIdentifier } from '../run/run-identifier.ts'
 import { enqueueRunRecord } from '../run/run-outbox.ts'
-import { markRunAsking } from '../run/run-question-readiness.ts'
+import {
+  claimLiveRunQuestionChannel,
+  restoreRunAfterQuestionRefusal,
+} from '../run/run-question-readiness.ts'
 import { enableRunSchemaReload } from '../run/run-schema-reload-cause.ts'
 import { registerAskBoardTools } from './ask-board-tools.ts'
 import { writeAskServerFailure } from './ask-failure.ts'
@@ -469,12 +472,20 @@ export async function ask(
   const askedAt = nowIso()
   const typed = WorkerQuestionSchema.parse(o)
   const awaitingOperatorAt = await initialQuestionWaitingAt(o.runId, askedAt)
-  writeTransaction(() => {
-    markRunAsking(db(), o.runId)
+  let transitioned = false
+  const live = writeTransaction(() => {
+    const claim = claimLiveRunQuestionChannel(db(), o.runId)
+    transitioned = claim.transitioned
+    // Ask asks: is this turn still the live owner of its escalation channel?
+    if (!claim.live) return false
     enqueueRunRecord(db(), o.runId, machineId(), askedAt)
+    return true
   })
+  if (!live)
+    return { answered: false, reason: runQuestionOwnerNotLiveMessage(o.runId), notice: proseNotice }
   let id: string
   try {
+    // A hosted supersede can still land between this local check and the cross-store insert.
     id = await recordQuestion({
       runId: o.runId,
       askedAt,
@@ -488,6 +499,12 @@ export async function ask(
     })
   } catch (error) {
     if (!isRunQuestionOwnerNotLive(error)) throw error
+    restoreRunAfterQuestionRefusal(db(), {
+      runId: o.runId,
+      machineId: machineId(),
+      transitioned,
+      recordedAt: nowIso(),
+    })
     return { answered: false, reason: runQuestionOwnerNotLiveMessage(o.runId), notice: proseNotice }
   }
   await preAnswerWorkerQuestion({

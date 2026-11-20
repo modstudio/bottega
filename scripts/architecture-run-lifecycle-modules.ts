@@ -795,6 +795,7 @@ export const runLifecycleModules: ArchitectureModule[] = [
     './run-terminal-blockers.ts',
     './run-terminal-chain.ts',
     './run-terminal-change.ts',
+    './run-terminal-questions.ts',
     './run-terminal-premature.ts',
     './run-terminal-precedence.ts',
     './run-terminal-lifecycle-verdict.ts',
@@ -814,6 +815,13 @@ export const runLifecycleModules: ArchitectureModule[] = [
     './run-resume-kind.ts',
     './run-terminal-chain.ts',
     './run-task-claim-renewal.ts',
+  ]),
+  module('orchestrator/src/run/run-terminal-questions.ts', [
+    '../ask/ask.ts',
+    '../contract/contract.ts',
+    '../database/db.ts',
+    '../operator/operator-waiting.ts',
+    '../question-store/question-store-read.ts',
   ]),
   module('orchestrator/src/run/run-terminal-chain.ts', [
     'bun:sqlite',
