@@ -279,8 +279,8 @@ async function attachWorkflowTextUnchecked(
     cursor,
     context.session,
     d,
-    undefined,
-    undefined,
+    context.taskRecordId,
+    context.taskStatusCategory,
     context.taskFlowClient,
   )) as AttachCursorRow | null
   if (!row) throw new Error('workflow has no live cursor; fetch its current step first')

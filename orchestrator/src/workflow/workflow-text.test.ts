@@ -1,6 +1,7 @@
 import type { Database } from 'bun:sqlite'
 import { describe, expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { newRecordId } from '../../../shared/record/schema.ts'
 import {
   createMemoryRecordApiClient,
   installRecordApiClient,
@@ -19,6 +20,7 @@ import {
 import { seedWorkflows } from './workflow-seeds.ts'
 import {
   attachedTextReferenceMeetsFloor,
+  attachWorkflowText,
   attachWorkflowTextByHandle,
   decideWorkflowTextAttach,
   WORKFLOW_TEXT_ATTACHMENT_MAX_BYTES,
@@ -257,6 +259,48 @@ describe('workflow text decisions', () => {
 })
 
 describe('workflow text lifecycle', () => {
+  test('keyed attach without a cursor selects the task open stage', async () => {
+    const d = database()
+    const cursor = await open(d)
+    const stage = d
+      .query<{ record_id: string; project_record_id: string }, [number]>(
+        'SELECT record_id,project_record_id FROM workflow_cursor WHERE number=?',
+      )
+      .get(cursor)!
+    const flowRecordId = newRecordId()
+    d.query(
+      `INSERT INTO task_flow
+       (record_id,task_record_id,project_record_id,state,open_stage_cursor_record_id,
+        created_at,updated_at,revision)
+       VALUES (?,'task-dev-2538',?,'open',?,'2026-11-20','2026-11-20',1)`,
+    ).run(flowRecordId, stage.project_record_id, stage.record_id)
+    d.query(
+      `UPDATE workflow_cursor
+       SET workflow_key='DEV-2538',args=?,task_record_id='task-dev-2538',task_flow_record_id=?
+       WHERE number=?`,
+    ).run(JSON.stringify({ key: 'DEV-2538' }), flowRecordId, cursor)
+
+    const reference = await attachWorkflowText(
+      {
+        project: 'fixture',
+        workflow: 'text-fixture',
+        mode: 'default',
+        key: 'DEV-2538',
+      },
+      undefined,
+      'keyed research body',
+      { ...context, taskRecordId: 'task-dev-2538', taskStatusCategory: 'open' },
+      d,
+    )
+
+    expect(reference).toStartWith('attached-text:')
+    expect(
+      d
+        .query<{ cursor_record_id: string }, []>('SELECT cursor_record_id FROM workflow_step_text')
+        .get()?.cursor_record_id,
+    ).toBe(stage.record_id)
+  })
+
   test('attach then close meets the floor, injects text, and stores only a marker in the trail', async () => {
     const d = database()
     const cursor = await open(d)
