@@ -133,12 +133,12 @@ async function pushResponse(
     return json(outcomes)
   } catch (error) {
     if (error instanceof HostedRevisionConflictError) {
-      error.index = decision.positions[error.index] ?? error.index
-      return json(revisionConflictBody(error), error.status)
+      const wireIndex = decision.positions[error.appliedIndex]!
+      return json(revisionConflictBody(error, wireIndex), error.status)
     }
     if (error instanceof HostedChangeIdMismatchError) {
-      error.index = decision.positions[error.index] ?? error.index
-      return json(changeIdMismatchBody(error), error.status)
+      const wireIndex = decision.positions[error.appliedIndex]!
+      return json(changeIdMismatchBody(error, wireIndex), error.status)
     }
     return json({ error: (error as Error).message }, 409)
   }

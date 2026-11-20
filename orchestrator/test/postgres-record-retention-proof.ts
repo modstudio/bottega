@@ -19,6 +19,14 @@ export function registerRecordRetentionProof(actorUrl: string): void {
         ('${SPACE_A}', 'project', '${recentRowId}', 'upsert', now());
     `)
 
+    const expiredAppliedChangeId = newRecordId()
+    const recentAppliedChangeId = newRecordId()
+    admin(`
+      INSERT INTO hub_applied_change (change_id, space_id, result, applied_at) VALUES
+        ('${expiredAppliedChangeId}', '${SPACE_A}', '{}', now() - interval '31 days'),
+        ('${recentAppliedChangeId}', '${SPACE_A}', '{}', now());
+    `)
+
     const expiredContentionId = newRecordId()
     const otherSpaceExpiredContentionId = newRecordId()
     const recentContentionId = newRecordId()
@@ -68,6 +76,10 @@ export function registerRecordRetentionProof(actorUrl: string): void {
       'deleted' in result.outcomes.claimChallenge && result.outcomes.claimChallenge.deleted >= 1,
     ).toBe(true)
     expect(
+      'deleted' in result.outcomes.hubAppliedChange &&
+        result.outcomes.hubAppliedChange.deleted >= 1,
+    ).toBe(true)
+    expect(
       admin(
         `SELECT count(*) FROM machine_join_nameplate WHERE id='${expiredNameplateId}';
          SELECT count(*) FROM machine_join_message WHERE id='${expiredMessageId}';
@@ -81,6 +93,11 @@ export function registerRecordRetentionProof(actorUrl: string): void {
         `SELECT row_id FROM record_change WHERE row_id IN ('${expiredRowId}', '${recentRowId}') ORDER BY row_id;`,
       ),
     ).toBe(recentRowId)
+    expect(
+      admin(
+        `SELECT change_id FROM hub_applied_change WHERE change_id IN ('${expiredAppliedChangeId}', '${recentAppliedChangeId}') ORDER BY change_id;`,
+      ),
+    ).toBe(recentAppliedChangeId)
     expect(
       admin(
         `SELECT resource_key FROM contention

@@ -162,12 +162,6 @@
     "shared/test-git-repository.ts": 1
   },
   "commandCases": {
-    "hub/src/hosted-push-conflict.ts#revisionConflict": {
-      "test": "hub/src/hosted-push-changes.test.ts: a stale guarded item aborts every write in its batch"
-    },
-    "hub/src/hosted-push-conflict.ts#fieldConflict": {
-      "test": "hub/src/note-outbox-integration.test.ts: field compare-and-set compares note timestamps as instants and rejects a stale field"
-    },
     "orchestrator/src/record/record-sync-command.ts#waitingOnUnregisteredLines": {
       "test": "orchestrator/src/record/record-sync-command.test.ts: waiting docs are grouped once per unregistered project with its remedy"
     },

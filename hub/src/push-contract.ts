@@ -754,16 +754,25 @@ function parseHostedPushItemContent(value: unknown): ParsedHostedPushItem {
   return { input: { table, id: input.id, op: 'delete' } }
 }
 
-function parseExpectedRevision(value: unknown, table: PushableHubChangeTable) {
-  if (value === undefined) return undefined
+type ParsedExpectedRevision =
+  | { ok: true; value: number | string | undefined }
+  | { ok: false; error: string }
+
+function parseExpectedRevision(
+  value: unknown,
+  table: PushableHubChangeTable,
+): ParsedExpectedRevision {
+  if (value === undefined) return { ok: true, value: undefined }
   if (table === HOSTED_DOCUMENT_TABLE)
-    return typeof value === 'string' ? value : `${table} expected_revision must be a string`
+    return typeof value === 'string'
+      ? { ok: true, value }
+      : { ok: false, error: `${table} expected_revision must be a string` }
   const revisioned =
     table === HOSTED_TASK_TABLE || table === HOSTED_COMMENT_TABLE || table === HOSTED_NOTE_TABLE
-  if (!revisioned) return `${table} does not accept expected_revision`
+  if (!revisioned) return { ok: false, error: `${table} does not accept expected_revision` }
   return Number.isSafeInteger(value) && Number(value) >= 0
-    ? (value as number)
-    : `${table} expected_revision must be a non-negative safe integer`
+    ? { ok: true, value: value as number }
+    : { ok: false, error: `${table} expected_revision must be a non-negative safe integer` }
 }
 
 function parseFrom(
@@ -782,15 +791,9 @@ function parsePushGuards(wire: Record<string, unknown>, input: ParsedHostedPushC
   const changeId = wire.change_id
   if (changeId !== undefined && (typeof changeId !== 'string' || !hasRecordIdShape(changeId)))
     return 'pushed change change_id must be a UUID'
-  if (
-    input.table === HOSTED_DOCUMENT_TABLE &&
-    wire.expected_revision !== undefined &&
-    typeof wire.expected_revision !== 'string'
-  )
-    return `${input.table} expected_revision must be a string`
-  const expectedRevision = parseExpectedRevision(wire.expected_revision, input.table)
-  if (typeof expectedRevision === 'string' && input.table !== HOSTED_DOCUMENT_TABLE)
-    return expectedRevision
+  const parsedExpectedRevision = parseExpectedRevision(wire.expected_revision, input.table)
+  if (!parsedExpectedRevision.ok) return parsedExpectedRevision.error
+  const expectedRevision = parsedExpectedRevision.value
   const from = parseFrom(wire.from, input)
   if (typeof from === 'string') return from
   return {

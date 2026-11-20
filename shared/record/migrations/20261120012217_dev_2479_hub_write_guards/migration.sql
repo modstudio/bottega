@@ -36,4 +36,5 @@ CREATE POLICY "hub_applied_change_space_delete" ON "hub_applied_change" AS PERMI
     WHERE m.space_id = "hub_applied_change"."space_id"
       AND m.user_id = nullif(current_setting('app.user_id', true), '')::uuid
       AND m.permission = 'write'
-  )));
+  )));--> statement-breakpoint
+CREATE POLICY "hub_applied_change_owner_all" ON "hub_applied_change" AS PERMISSIVE FOR ALL TO "record_owner" USING (true) WITH CHECK (true);

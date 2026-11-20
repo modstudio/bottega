@@ -245,6 +245,12 @@ export const hubAppliedChange = pgTable.withRLS(
   (table) => [
     index('hub_applied_change_applied_at_idx').on(table.appliedAt),
     ...tenantPolicies('hub_applied_change', table.spaceId),
+    pgPolicy('hub_applied_change_owner_all', {
+      for: 'all',
+      to: RECORD_OWNER_ROLE,
+      using: sql`true`,
+      withCheck: sql`true`,
+    }),
   ],
 )
 

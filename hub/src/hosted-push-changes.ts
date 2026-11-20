@@ -111,12 +111,15 @@ function assertFieldGuards(
 
 const TIMESTAMP_GUARD_FIELDS = new Set(['deleted_at', 'last_seen_at', 'stale_at', 'updated_at'])
 
+function sameInstant(left: unknown, right: unknown): boolean {
+  const leftMillis = new Date(left as string | Date).getTime()
+  const rightMillis = new Date(right as string | Date).getTime()
+  return Number.isFinite(leftMillis) && Number.isFinite(rightMillis) && leftMillis === rightMillis
+}
+
 function guardValuesMatch(field: string, current: unknown, expected: unknown): boolean {
-  if (TIMESTAMP_GUARD_FIELDS.has(field) && current !== null && expected !== null) {
-    const currentMillis = new Date(current as string | Date).getTime()
-    const expectedMillis = new Date(expected as string | Date).getTime()
-    return Number.isFinite(currentMillis) && currentMillis === expectedMillis
-  }
+  if (TIMESTAMP_GUARD_FIELDS.has(field) && current !== null && expected !== null)
+    return sameInstant(current, expected)
   return canonicalJson(current) === canonicalJson(expected)
 }
 
@@ -142,21 +145,21 @@ async function replayedOutcome(
   tx: SQL,
   identity: TaskIdentity,
   input: ParsedHostedPushChange,
-): Promise<{ fingerprint: string; outcome: HostedPushOutcome | null }> {
-  const fingerprint = changeFingerprint(input)
-  if (!input.change_id) return { fingerprint, outcome: null }
+  fingerprint: string,
+): Promise<HostedPushOutcome | null> {
+  if (!input.change_id) return null
   const rows = (await tx`SELECT result FROM hub_applied_change
     WHERE change_id=${input.change_id}::uuid AND space_id=${identity.spaceId}::uuid`) as Array<{
     result: StoredAppliedChange | string
   }>
-  if (!rows[0]) return { fingerprint, outcome: null }
+  if (!rows[0]) return null
   const stored =
     typeof rows[0].result === 'string'
       ? (JSON.parse(rows[0].result) as StoredAppliedChange)
       : rows[0].result
   if (stored.fingerprint !== fingerprint)
     throw new HostedChangeIdMismatchError(input.table, input.id, input.change_id)
-  return { fingerprint, outcome: stored.outcome }
+  return stored.outcome
 }
 
 async function rememberOutcome(
@@ -222,9 +225,7 @@ export type HostedCommentPushDecision =
   | { kind: 'reject'; reason: string }
 
 const sameTimestamp = (left: string | Date | null, right: string | Date | null) =>
-  left === null || right === null
-    ? left === right
-    : new Date(left).getTime() === new Date(right).getTime()
+  left === null || right === null ? left === right : sameInstant(left, right)
 
 const commentPushMatches = (stored: StoredCommentPushRow, pushed: PushedComment) =>
   stored.id === pushed.id &&
@@ -500,15 +501,16 @@ export async function applyHostedPushChangesInTransaction(
   }))
   const outcomes = new Array<HostedPushOutcome>(inputs.length)
   for (const { input, index } of ordered) {
+    const fingerprint = changeFingerprint(input)
     await tx.unsafe('SAVEPOINT hub_push_row')
-    let fingerprint = ''
+    let replayProbeCompleted = false
     let outcome: HostedPushOutcome
     try {
-      const replay = await replayedOutcome(tx, identity, input)
-      fingerprint = replay.fingerprint
-      if (replay.outcome) {
+      const replay = await replayedOutcome(tx, identity, input, fingerprint)
+      replayProbeCompleted = true
+      if (replay) {
         await tx.unsafe('RELEASE SAVEPOINT hub_push_row')
-        outcomes[index] = replay.outcome
+        outcomes[index] = replay
         continue
       }
       outcome = await PUSHABLE_HUB_CHANGES[input.table]!.apply(tx, identity, input)
@@ -516,13 +518,19 @@ export async function applyHostedPushChangesInTransaction(
     } catch (error) {
       await tx.unsafe('ROLLBACK TO SAVEPOINT hub_push_row')
       await tx.unsafe('RELEASE SAVEPOINT hub_push_row')
-      if (
-        error instanceof HostedRevisionConflictError ||
-        error instanceof HostedChangeIdMismatchError
-      ) {
-        error.index = index
-        throw error
-      }
+      if (error instanceof HostedRevisionConflictError)
+        throw new HostedRevisionConflictError(
+          error.table,
+          error.id,
+          error.condition,
+          error.currentRevision,
+          error.field,
+          error.currentValue,
+          index,
+        )
+      if (error instanceof HostedChangeIdMismatchError)
+        throw new HostedChangeIdMismatchError(error.table, error.id, error.changeId, index)
+      if (!replayProbeCompleted) throw error
       outcome = { id: input.id, status: 'rejected', reason: (error as Error).message }
     }
     await rememberOutcome(tx, identity, input, fingerprint, outcome)

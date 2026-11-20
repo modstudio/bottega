@@ -521,7 +521,7 @@ test('a stale guarded item aborts every write in its batch', async () => {
     throw new Error('expected a revision conflict')
   } catch (error) {
     expect(error).toBeInstanceOf(HostedRevisionConflictError)
-    expect(error).toMatchObject({ index: 1, table: 'hub_task', id: ids[1], currentRevision: '1' })
+    expect(error).toMatchObject({ appliedIndex: 1, id: ids[1], currentRevision: '1' })
     expect((error as Error).message).toContain(`cleared by: ${PLATFORM_SLUG} task show DEV-401`)
   }
   expect(
@@ -553,7 +553,8 @@ test('change ids replay the stored outcome and reject a different payload', asyn
     expected_revision: 0,
   }
   expect(await apply([change])).toEqual([{ id, status: 'applied' }])
-  expect(await apply([change])).toEqual([{ id, status: 'applied' }])
+  const reorderedRow = Object.fromEntries(Object.entries(change.row).reverse()) as PushedTask
+  expect(await apply([{ ...change, row: reorderedRow }])).toEqual([{ id, status: 'applied' }])
   expect(
     (await database.query(`SELECT revision::int FROM hub_task WHERE id=$1`, [id])).rows,
   ).toEqual([{ revision: 1 }])

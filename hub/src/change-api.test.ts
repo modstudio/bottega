@@ -244,8 +244,8 @@ test('push route returns typed guard and replay refusals at original batch posit
         '7',
         'status',
         'review',
+        0,
       )
-      error.index = 0
       throw error
     },
   })
@@ -270,8 +270,8 @@ test('push route returns typed guard and replay refusals at original batch posit
         'hub_task',
         id,
         '01990000-0000-7000-8000-000000000091',
+        0,
       )
-      error.index = 0
       throw error
     },
   })

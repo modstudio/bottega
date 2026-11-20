@@ -7,7 +7,7 @@ import type { PushableHubChangeTable } from './push-contract.ts'
 
 export class HostedRevisionConflictError extends Error {
   readonly status = 409
-  index = -1
+  readonly appliedIndex: number
   readonly table: PushableHubChangeTable
   readonly id: string
   readonly condition: string
@@ -22,6 +22,7 @@ export class HostedRevisionConflictError extends Error {
     currentRevision: string | null,
     field?: string,
     currentValue?: unknown,
+    appliedIndex = -1,
   ) {
     super(condition)
     this.table = table
@@ -30,22 +31,30 @@ export class HostedRevisionConflictError extends Error {
     this.currentRevision = currentRevision
     this.field = field
     this.currentValue = currentValue
+    this.appliedIndex = appliedIndex
   }
 }
 
 export class HostedChangeIdMismatchError extends Error {
   readonly status = 422
-  index = -1
+  readonly appliedIndex: number
   readonly table: PushableHubChangeTable
   readonly id: string
   readonly changeId: string
 
-  constructor(table: PushableHubChangeTable, id: string, changeId: string) {
+  constructor(table: PushableHubChangeTable, id: string, changeId: string, appliedIndex = -1) {
     super(`change_id ${changeId} was already applied with a different payload`)
     this.table = table
     this.id = id
     this.changeId = changeId
+    this.appliedIndex = appliedIndex
   }
+}
+
+function conflictRemedy(table: PushableHubChangeTable, key: string) {
+  return table === 'hub_note'
+    ? { kind: 'command' as const, argv: [PLATFORM_SLUG, 'note', 'list', '--json'] }
+    : { kind: 'command' as const, argv: [PLATFORM_SLUG, 'task', 'show', key] }
 }
 
 export function revisionConflict(input: {
@@ -62,7 +71,7 @@ export function revisionConflict(input: {
     renderRefusal(
       refusal(
         `${input.table} ${input.id} changed since revision ${input.expected}; now ${currentRevision}.`,
-        { kind: 'command', argv: [PLATFORM_SLUG, 'task', 'show', input.key] },
+        conflictRemedy(input.table, input.key),
       ),
     ),
     currentRevision,
@@ -83,7 +92,7 @@ export function fieldConflict(input: {
     renderRefusal(
       refusal(
         `${input.table} ${input.id} field ${input.field} changed; now ${JSON.stringify(input.currentValue)}`,
-        { kind: 'command', argv: [PLATFORM_SLUG, 'task', 'show', input.key] },
+        conflictRemedy(input.table, input.key),
       ),
     ),
     input.currentRevision === null ? null : String(input.currentRevision),
@@ -92,14 +101,14 @@ export function fieldConflict(input: {
   )
 }
 
-export function revisionConflictBody(error: HostedRevisionConflictError) {
+export function revisionConflictBody(error: HostedRevisionConflictError, index: number) {
   return {
     error: error.message,
     code: 'revision-conflict' as const,
     reason: 'stale-revision' as const,
     condition: error.condition,
     currentRevision: error.currentRevision,
-    index: error.index,
+    index,
     table: error.table,
     id: error.id,
     ...(error.field === undefined
@@ -108,11 +117,11 @@ export function revisionConflictBody(error: HostedRevisionConflictError) {
   }
 }
 
-export function changeIdMismatchBody(error: HostedChangeIdMismatchError) {
+export function changeIdMismatchBody(error: HostedChangeIdMismatchError, index: number) {
   return {
     error: error.message,
     code: 'change-id-mismatch' as const,
-    index: error.index,
+    index,
     table: error.table,
     id: error.id,
     change_id: error.changeId,

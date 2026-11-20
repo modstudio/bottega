@@ -219,7 +219,7 @@ test('field compare-and-set compares note timestamps as instants and rejects a s
       currentRevision: '2',
       currentValue: new Date(nextSeenAt),
     })
-    expect((error as Error).message).toContain(`cleared by: ${PLATFORM_SLUG} task show ${noteId}`)
+    expect((error as Error).message).toContain(`cleared by: ${PLATFORM_SLUG} note list --json`)
   }
 })
 

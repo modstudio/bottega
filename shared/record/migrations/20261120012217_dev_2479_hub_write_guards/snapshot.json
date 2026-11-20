@@ -1,7 +1,7 @@
 {
   "version": "8",
   "dialect": "postgres",
-  "id": "b1e1039b-1cbe-411b-a178-0778669215e7",
+  "id": "bc40fa57-266f-43d8-a86c-56c91c1050a4",
   "prevIds": [
     "f54c1f78-2da8-4214-9fd9-cd71baa98ca9"
   ],
@@ -30787,6 +30787,19 @@
       "using": "(\"hub_applied_change\".\"space_id\" = nullif(current_setting('app.space_id', true), '')::uuid) AND (EXISTS (\n    SELECT 1 FROM membership m\n    WHERE m.space_id = \"hub_applied_change\".\"space_id\"\n      AND m.user_id = nullif(current_setting('app.user_id', true), '')::uuid\n      AND m.permission = 'write'\n  ))",
       "withCheck": null,
       "name": "hub_applied_change_space_delete",
+      "entityType": "policies",
+      "schema": "public",
+      "table": "hub_applied_change"
+    },
+    {
+      "as": "PERMISSIVE",
+      "for": "ALL",
+      "roles": [
+        "record_owner"
+      ],
+      "using": "true",
+      "withCheck": "true",
+      "name": "hub_applied_change_owner_all",
       "entityType": "policies",
       "schema": "public",
       "table": "hub_applied_change"
