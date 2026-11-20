@@ -9,6 +9,7 @@ type DockerfileText = { path: string; text: string }
 
 export type DockerWorkspaceInputs = {
   workspaces: string[]
+  patchedDependencies: string[]
   dockerfiles: DockerfileText[]
   dockerignore: string
   rootDataImports: readonly string[]
@@ -80,6 +81,27 @@ function reIncludedPaths(text: string): Set<string> {
   )
 }
 
+function copiedSourceCoversPath(source: string, path: string): boolean {
+  const normalizedSource = source.replace(/^\.\//, '').replace(/\/$/, '')
+  return (
+    normalizedSource === '.' || path === normalizedSource || path.startsWith(`${normalizedSource}/`)
+  )
+}
+
+function copiedPatchFindings(dockerfile: DockerfileText, patchedDependencies: string[]): string[] {
+  const findings: string[] = []
+  for (const install of copiedSourcesAtInstalls(dockerfile.text)) {
+    for (const patch of patchedDependencies) {
+      if (![...install.sources].some((source) => copiedSourceCoversPath(source, patch))) {
+        findings.push(
+          `${dockerfile.path}:${install.line}: missing patched dependency ${patch}; add before bun install: COPY ${patch} ${patch}`,
+        )
+      }
+    }
+  }
+  return findings
+}
+
 function dockerfileFindings(dockerfile: DockerfileText, workspaces: string[]): string[] {
   const findings: string[] = []
   const installs = copiedSourcesAtInstalls(dockerfile.text)
@@ -100,9 +122,10 @@ function dockerfileFindings(dockerfile: DockerfileText, workspaces: string[]): s
 
 /** Decide whether install-stage manifests and embedded root data stay complete in the image. */
 export function decideDockerWorkspaces(inputs: DockerWorkspaceInputs): string[] {
-  const findings = inputs.dockerfiles.flatMap((dockerfile) =>
-    dockerfileFindings(dockerfile, inputs.workspaces),
-  )
+  const findings = inputs.dockerfiles.flatMap((dockerfile) => [
+    ...dockerfileFindings(dockerfile, inputs.workspaces),
+    ...copiedPatchFindings(dockerfile, inputs.patchedDependencies),
+  ])
 
   const included = reIncludedPaths(inputs.dockerignore)
   for (const workspace of inputs.workspaces) {
@@ -116,6 +139,11 @@ export function decideDockerWorkspaces(inputs: DockerWorkspaceInputs): string[] 
       findings.push(`.dockerignore: missing root data import ${file}; add: !${file}`)
     }
   }
+  for (const patch of inputs.patchedDependencies) {
+    if (![...included].some((path) => copiedSourceCoversPath(path, patch))) {
+      findings.push(`.dockerignore: excludes patched dependency ${patch}; add: !${patch}`)
+    }
+  }
   return findings
 }
 
@@ -123,13 +151,15 @@ if (import.meta.main) {
   const root = resolve(fileURLToPath(new URL('..', import.meta.url)))
   const rootPackage = JSON.parse(readFileSync(resolve(root, 'package.json'), 'utf8')) as {
     workspaces?: string[]
+    patchedDependencies?: Record<string, string>
   }
-  const dockerfiles = [...new Glob('**/Dockerfile').scanSync({ cwd: root, onlyFiles: true })]
+  const dockerfiles = [...new Glob('**/*Dockerfile').scanSync({ cwd: root, onlyFiles: true })]
     .filter((path) => !path.startsWith('node_modules/'))
     .sort()
     .map((path) => ({ path, text: readFileSync(resolve(root, path), 'utf8') }))
   const findings = decideDockerWorkspaces({
     workspaces: rootPackage.workspaces ?? [],
+    patchedDependencies: Object.values(rootPackage.patchedDependencies ?? {}),
     dockerfiles,
     dockerignore: readFileSync(resolve(root, '.dockerignore'), 'utf8'),
     rootDataImports: REPOSITORY_ROOT_DATA_IMPORTS,

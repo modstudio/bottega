@@ -2,9 +2,11 @@ import { describe, expect, test } from 'bun:test'
 import { type DockerWorkspaceInputs, decideDockerWorkspaces } from './check-docker-workspaces.ts'
 
 const workspaces = ['alpha', 'nested/beta']
+const patch = 'patches/example.patch'
 const completeDockerfile = `
 FROM oven/bun
 COPY package.json bun.lock ./
+COPY patches patches
 COPY alpha/package.json alpha/package.json
 COPY nested/beta/package.json nested/beta/package.json
 RUN bun install --frozen-lockfile
@@ -15,11 +17,13 @@ const completeIgnore = `
 !alpha/package.json
 !nested/beta/package.json
 !data.toml
+!patches/
 `
 
 function inputs(overrides: Partial<DockerWorkspaceInputs> = {}): DockerWorkspaceInputs {
   return {
     workspaces,
+    patchedDependencies: [patch],
     dockerfiles: [{ path: 'deploy/Dockerfile', text: completeDockerfile }],
     dockerignore: completeIgnore,
     rootDataImports: ['data.toml'],
@@ -59,13 +63,35 @@ describe('docker workspace decision', () => {
   test('refuses a later stage missing a workspace copied only in the first stage', () => {
     const text = `${completeDockerfile}
 FROM oven/bun
+COPY patches patches
 COPY alpha/package.json alpha/package.json
 RUN bun install --frozen-lockfile
 `
     expect(
       decideDockerWorkspaces(inputs({ dockerfiles: [{ path: 'deploy/Dockerfile', text }] })),
     ).toEqual([
-      'deploy/Dockerfile:11: missing workspace nested/beta; add before bun install: COPY nested/beta/package.json nested/beta/package.json',
+      'deploy/Dockerfile:13: missing workspace nested/beta; add before bun install: COPY nested/beta/package.json nested/beta/package.json',
     ])
+  })
+
+  test('refuses a Dockerfile missing a patched dependency before install', () => {
+    const text = completeDockerfile.replace('COPY patches patches\n', '')
+    expect(
+      decideDockerWorkspaces(inputs({ dockerfiles: [{ path: 'deploy/Dockerfile', text }] })),
+    ).toContain(
+      'deploy/Dockerfile:6: missing patched dependency patches/example.patch; add before bun install: COPY patches/example.patch patches/example.patch',
+    )
+  })
+
+  test('accepts a Dockerfile copying the patches directory before install', () => {
+    expect(decideDockerWorkspaces(inputs())).toEqual([])
+  })
+
+  test('refuses an allowlist that excludes a patched dependency', () => {
+    expect(
+      decideDockerWorkspaces(inputs({ dockerignore: completeIgnore.replace('!patches/\n', '') })),
+    ).toContain(
+      '.dockerignore: excludes patched dependency patches/example.patch; add: !patches/example.patch',
+    )
   })
 })
