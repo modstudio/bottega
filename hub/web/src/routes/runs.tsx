@@ -67,7 +67,7 @@ type LiveRow = {
 }
 type RunsPayload = {
   collectedAt: string | null
-  collectorLegs: CollectorLegHealth[]
+  collectorLegs?: CollectorLegHealth[]
   servingSince: string
   activeAgents: string[]
   data: {

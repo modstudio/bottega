@@ -25,7 +25,7 @@ type Strip = {
   activeAgents: string[]
   tasksShipped: number
   collectedAt: string | null
-  collectorLegs: CollectorLegHealth[]
+  collectorLegs?: CollectorLegHealth[]
   servingSince: string
   counts: { flight: number; done: number; runs: number }
 }

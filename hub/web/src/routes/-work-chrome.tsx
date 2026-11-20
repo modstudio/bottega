@@ -11,7 +11,13 @@ type Facets = { projects: string[]; agents: string[]; sources: string[] }
 
 type ChromeFigures = Pick<
   ChromeResponse,
-  'engaged' | 'activeAgents' | 'tasksShipped' | 'collectedAt' | 'servingSince' | 'counts'
+  | 'engaged'
+  | 'activeAgents'
+  | 'tasksShipped'
+  | 'collectedAt'
+  | 'collectorLegs'
+  | 'servingSince'
+  | 'counts'
 >
 
 /**

@@ -6,7 +6,7 @@ export type ChromeResponse = {
   activeAgents: string[]
   tasksShipped: number
   collectedAt: string | null
-  collectorLegs: CollectorLegHealth[]
+  collectorLegs?: CollectorLegHealth[]
   servingSince: string
   counts: { flight: number; done: number; runs: number }
 }
@@ -27,12 +27,12 @@ function truncatedError(error: string): string {
 
 export function responseSubtitle(response: {
   collectedAt: string | null
-  collectorLegs: CollectorLegHealth[]
+  collectorLegs?: CollectorLegHealth[]
   activeAgents: string[]
   servingSince: string
 }) {
   const agent = `${response.activeAgents.length} agent${response.activeAgents.length === 1 ? '' : 's'} working`
-  const unhealthy = response.collectorLegs.find((leg) => leg.status !== 'current')
+  const unhealthy = response.collectorLegs?.find((leg) => leg.status !== 'current')
   if (unhealthy) {
     const state =
       unhealthy.status === 'failing'
