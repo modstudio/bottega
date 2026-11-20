@@ -317,7 +317,6 @@ export const questionCloseFacts = (
   database
     .query<TaskFlowQuestionCloseRow, [string]>(
       `SELECT q.answered_at,q.closed_at,q.run_record_id,q.workflow_cursor_record_id,c.state cursor_state,
-              owner.status owner_status,
               COALESCE(owner.parent_run_record_id,owner.record_id) root_id,
               (SELECT latest.status FROM run latest
                 WHERE latest.record_id=COALESCE(owner.parent_run_record_id,owner.record_id)

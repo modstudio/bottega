@@ -1,12 +1,15 @@
 // concern: run-terminal-questions
 /** Records reply-borne questions only while their local owner turn is live. */
 
-import { writeFileSync } from 'node:fs'
 import { recordReplyQuestions } from '../ask/ask.ts'
 import type { realQuestions } from '../contract/contract.ts'
 import { db, nowIso } from '../database/db.ts'
 import { initialQuestionWaitingAt } from '../operator/operator-waiting.ts'
 import { questionsForRun } from '../question-store/question-store-read.ts'
+import {
+  isRunQuestionOwnerNotLive,
+  runQuestionOwnerLive,
+} from '../question-store/run-question-write-guard.ts'
 
 /** Which accepted questions have not already been recorded, preserving reply order. */
 export function questionsToInsert<T extends { question: string }>(
@@ -23,55 +26,45 @@ export function questionsToInsert<T extends { question: string }>(
   })
 }
 
-async function recordTerminalQuestions(
+export async function recordTerminalQuestions(
   runId: string,
   questions: ReturnType<typeof realQuestions>,
-  currentHeader: string | null,
 ): Promise<{
   recorded: Awaited<ReturnType<typeof recordReplyQuestions>>
-  operationalHeader: string | null
+  notice: string | null
 }> {
-  if (!questions.length) return { recorded: [], operationalHeader: currentHeader }
+  if (!questions.length) return { recorded: [], notice: null }
   const owner = db()
     .query<{ status: string }, [string]>('SELECT status FROM run WHERE record_id=?')
     .get(runId)
   // Reply asks: is this turn still the live owner of its escalation channel?
-  if (!owner || (owner.status !== 'running' && owner.status !== 'asking')) {
+  if (!runQuestionOwnerLive(owner?.status)) {
     const count = questions.length
-    const dropped = `Dropped ${count} reply question${count === 1 ? '' : 's'} because run ${runId} was already superseded or finished.`
     return {
       recorded: [],
-      operationalHeader: currentHeader ? `${currentHeader}\n${dropped}` : dropped,
+      notice: `Dropped ${count} reply question${count === 1 ? '' : 's'} because run ${runId} was already superseded or finished.`,
     }
   }
   const existingQuestionTexts = (await questionsForRun(db(), runId)).map((row) =>
     String(row.question),
   )
   const askedAt = nowIso()
-  return {
-    recorded: await recordReplyQuestions({
-      runId,
-      questions: questionsToInsert(existingQuestionTexts, questions),
-      askedAt,
-      awaitingOperatorAt: await initialQuestionWaitingAt(runId, askedAt),
-    }),
-    operationalHeader: currentHeader,
+  try {
+    return {
+      recorded: await recordReplyQuestions({
+        runId,
+        questions: questionsToInsert(existingQuestionTexts, questions),
+        askedAt,
+        awaitingOperatorAt: await initialQuestionWaitingAt(runId, askedAt),
+      }),
+      notice: null,
+    }
+  } catch (error) {
+    if (!isRunQuestionOwnerNotLive(error)) throw error
+    const count = questions.length
+    return {
+      recorded: [],
+      notice: `Dropped ${count} reply question${count === 1 ? '' : 's'} because the record refused the write after run ${runId} was superseded or finished.`,
+    }
   }
-}
-
-export async function finishQs(
-  runId: string,
-  questions: ReturnType<typeof realQuestions>,
-  currentHeader: string | null,
-  output: string,
-  outPath: string,
-): Promise<{ recorded: Awaited<ReturnType<typeof recordReplyQuestions>>; output: string }> {
-  const result = await recordTerminalQuestions(runId, questions, currentHeader)
-  const finalizedOutput = result.operationalHeader
-    ? output
-      ? `${result.operationalHeader}\n\n${output}`
-      : result.operationalHeader
-    : output
-  if (result.operationalHeader) writeFileSync(outPath, finalizedOutput)
-  return { recorded: result.recorded, output: finalizedOutput }
 }

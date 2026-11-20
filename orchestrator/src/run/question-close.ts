@@ -9,6 +9,7 @@ import {
   requireQuestionMutationApplied,
 } from '../question-store/question-store-mutation.ts'
 import { questionById } from '../question-store/question-store-read.ts'
+import { runQuestionOwnerLive } from '../question-store/run-question-write-guard.ts'
 import type { TaskFlowQuestionCloseRow } from '../workflow/task-flow-store-types.ts'
 import { appendQuestionDeliveries } from './question-delivery.ts'
 import {
@@ -149,7 +150,9 @@ export async function closeQuestionByOperator(
 ): Promise<void> {
   const text = reasonText.trim()
   if (!text) throw new Error('--reason must not be empty')
-  const row = (await questionById(database, questionId)) as TaskFlowQuestionCloseRow | null
+  const row = (await questionById(database, questionId)) as
+    | (TaskFlowQuestionCloseRow & { owner_status: string | null })
+    | null
   if (!row) throw new Error(`no question ${questionId}`)
   if (row.answered_at) throw new Error(`question ${questionId} is already answered`)
   if (row.closed_at) throw new Error(`question ${questionId} is already closed`)
@@ -161,7 +164,7 @@ export async function closeQuestionByOperator(
   if (
     row.run_record_id !== null &&
     // Close asks: is this question's own owner waiting on it?
-    (row.owner_status === 'running' || row.owner_status === 'asking')
+    runQuestionOwnerLive(row.owner_status)
   ) {
     throw new Error(
       `question ${questionId}'s owner is waiting; use ${PLATFORM_SLUG} question answer ${row.root_id}`,

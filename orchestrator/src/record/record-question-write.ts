@@ -4,6 +4,7 @@
 import type { SQL } from 'bun'
 import { and, sql as drizzleSql, eq, or } from 'drizzle-orm'
 import { drizzle } from 'drizzle-orm/bun-sql'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { hostedTaskIdForReference } from '../../../shared/record/hosted-task-id.ts'
 import {
   hostedQuestionWins,
@@ -13,7 +14,11 @@ import {
 import { run as runRecord } from '../../../shared/record/schema-run.ts'
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
 import { RECORD_DIFFERENT_CONTENT } from '../doc/doc-revision-conflict.ts'
-import { runQuestionOwnerNotLiveMessage } from '../question-store/run-question-write-guard.ts'
+import {
+  RunQuestionOwnerNotLiveError,
+  runQuestionOwnerAbsentMessage,
+  runQuestionOwnerLive,
+} from '../question-store/run-question-write-guard.ts'
 import { isUniqueViolation } from './record-config-error.ts'
 import { recordPool } from './record-pool.ts'
 import { pushQuestionAudits } from './record-question-audit.ts'
@@ -100,8 +105,14 @@ async function assertRunQuestionOwnerLive(runId: string, tx: SQL): Promise<void>
     .where(eq(runRecord.id, runId))
     .for('update')
   const owner = owners[0]
-  if (!owner || (owner.status !== 'running' && owner.status !== 'asking'))
-    throw new RecordQuestionError(runQuestionOwnerNotLiveMessage(runId), 409)
+  if (!owner)
+    throw new RecordQuestionError(runQuestionOwnerAbsentMessage(runId, PLATFORM_SLUG), 409)
+  if (!runQuestionOwnerLive(owner.status)) {
+    const cause = new RunQuestionOwnerNotLiveError(runId)
+    const refusal = new RecordQuestionError(cause.message, 409)
+    refusal.cause = cause
+    throw refusal
+  }
 }
 
 export async function writeRecordQuestion(

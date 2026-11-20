@@ -19,6 +19,7 @@ import { job } from '../jobs/jobs.ts'
 import { mcpRequestFromStored } from '../mcp/mcp-preflight.ts'
 import { assertOrchestratorProse } from '../prose-service.ts'
 import { questionsById } from '../question-store/question-store-read.ts'
+import { runQuestionOwnerLive } from '../question-store/run-question-write-guard.ts'
 import type { ReviewRole } from '../review/review-role.ts'
 import { chainTransport, retryModelForAgent, transportTurns } from '../route/failover.ts'
 import { answerRulingRefusal } from '../workflow/autonomy.ts'
@@ -204,13 +205,28 @@ type OpenQuestion = TypedAnswerQuestion & {
 
 function questionsNotWaitingRefusal(id: string, questions: OpenQuestion[]): string {
   const remedies = questions
-    .filter((q) => q.owner_status !== 'asking' && q.owner_status !== 'running')
+    .filter((q) => !runQuestionOwnerLive(q.owner_status))
     .map(
       (q) =>
         `q${q.number} (run ${q.owner_id}, ${q.owner_status}): ${PLATFORM_SLUG} question close q${q.number} --reason "<why this question is obsolete>"`,
     )
     .join('; ')
   return `run ${id} has questions whose owners are not waiting: ${remedies}. Close each question, then retry ${PLATFORM_SLUG} question answer ${id}`
+}
+
+function mixedQuestionOwnerRefusal(
+  id: string,
+  live: OpenQuestion[],
+  stopped: OpenQuestion[],
+): string {
+  if (stopped.some((question) => !runQuestionOwnerLive(question.owner_status)))
+    return questionsNotWaitingRefusal(id, stopped)
+  const list = (questions: OpenQuestion[]) =>
+    questions.map((q) => `q${q.number} (run ${q.owner_id}, ${q.owner_status})`).join(', ')
+  return (
+    `run ${id} has questions owned by both live and stopped turns. ` +
+    `Live: ${list(live)}. Stopped: ${list(stopped)}. Refusing to rule; inspect the run chain.`
+  )
 }
 
 type RecordedRuling = { number: number; record_id: string; question: string; answer: string }
@@ -857,24 +873,17 @@ export async function answerRun(
    * test that "proved" it wrote the answer with raw SQL, bypassing the very
    * guard that was refusing it.
    */
-  const live = open.filter(
-    (q) => (q.owner_status === 'running' || q.owner_status === 'asking') && pidAlive(q.owner_pid),
-  )
+  const live = open.filter((q) => runQuestionOwnerLive(q.owner_status) && pidAlive(q.owner_pid))
   const stopped = open.filter((q) => !live.includes(q))
   if (live.length && stopped.length) {
-    const list = (questions: typeof open) =>
-      questions.map((q) => `q${q.number} (run ${q.owner_id}, ${q.owner_status})`).join(', ')
-    throw new Error(
-      `run ${id} has questions owned by both live and stopped turns. ` +
-        `Live: ${list(live)}. Stopped: ${list(stopped)}. Refusing to rule; inspect the run chain.`,
-    )
+    throw new Error(mixedQuestionOwnerRefusal(id, live, stopped))
   }
   const ownersLive = live.length > 0
   const skipResume = input.recordOnly && !ownersLive
   if (
     !ownersLive &&
     // Answer asks: is every open question's owner waiting for a ruling?
-    !stopped.every((q) => q.owner_status === 'asking' || q.owner_status === 'running')
+    !stopped.every((q) => runQuestionOwnerLive(q.owner_status))
   )
     throw new Error(questionsNotWaitingRefusal(id, stopped))
 

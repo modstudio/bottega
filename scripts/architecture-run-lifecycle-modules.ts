@@ -817,12 +817,12 @@ export const runLifecycleModules: ArchitectureModule[] = [
     './run-task-claim-renewal.ts',
   ]),
   module('orchestrator/src/run/run-terminal-questions.ts', [
-    'node:fs',
     '../ask/ask.ts',
     '../contract/contract.ts',
     '../database/db.ts',
     '../operator/operator-waiting.ts',
     '../question-store/question-store-read.ts',
+    '../question-store/run-question-write-guard.ts',
   ]),
   module('orchestrator/src/run/run-terminal-chain.ts', [
     'bun:sqlite',
@@ -833,6 +833,7 @@ export const runLifecycleModules: ArchitectureModule[] = [
   module('orchestrator/src/run/run-question-readiness.ts', [
     'bun:sqlite',
     '../database/db.ts',
+    '../question-store/run-question-write-guard.ts',
     './run-outbox.ts',
   ]),
   module('orchestrator/src/run/run-terminal-fallback.ts', [

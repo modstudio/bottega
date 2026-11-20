@@ -2,6 +2,7 @@
 /** Adapts the existing SQLite question rows to the question port. */
 
 import type { Database } from 'bun:sqlite'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { writeTransaction } from '../database/db.ts'
 import { nextEntityNumber } from '../database/entity-number.ts'
 import type {
@@ -36,7 +37,11 @@ import {
   workflowInboxQuestions,
 } from './question-store-sqlite-reads.ts'
 import type { QuestionReadResult, QuestionStore } from './question-store-types.ts'
-import { runQuestionOwnerNotLiveMessage } from './run-question-write-guard.ts'
+import {
+  RunQuestionOwnerNotLiveError,
+  runQuestionOwnerAbsentMessage,
+  runQuestionOwnerLive,
+} from './run-question-write-guard.ts'
 
 const json = (value: unknown) => (value == null ? null : JSON.stringify(value))
 const limited = <Row>(rows: Row[], limit?: number): Row[] =>
@@ -47,8 +52,8 @@ function assertRunQuestionOwnerLive(database: Database, runId: string): void {
   const owner = database
     .query<{ status: string }, [string]>('SELECT status FROM run WHERE record_id=?')
     .get(runId)
-  if (!owner || (owner.status !== 'running' && owner.status !== 'asking'))
-    throw new Error(runQuestionOwnerNotLiveMessage(runId))
+  if (!owner) throw new Error(runQuestionOwnerAbsentMessage(runId, PLATFORM_SLUG))
+  if (!runQuestionOwnerLive(owner.status)) throw new RunQuestionOwnerNotLiveError(runId)
 }
 
 function assertLocalChangedAfter(input: QuestionReadInput): void {

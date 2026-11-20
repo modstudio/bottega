@@ -5,6 +5,7 @@
  * live worker execution, run control, dispatch surfaces, or the CLI.
  */
 import type { Database } from 'bun:sqlite'
+import { writeFileSync } from 'node:fs'
 import { MCP_SERVER_NAME, PLATFORM_SLUG, WORKER_MCP_SERVER_NAME } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { AGENTS, refreshAgents } from '../agent/agent-registry.ts'
@@ -75,7 +76,7 @@ import {
   applyPrematureFinalFailure,
   terminalPrematureFinalRefusal,
 } from './run-terminal-premature.ts'
-import { finishQs } from './run-terminal-questions.ts'
+import { recordTerminalQuestions } from './run-terminal-questions.ts'
 import { settleTerminalStateWithClaimRenewal } from './run-terminal-task-claim.ts'
 import {
   type ObservedTestOutcome,
@@ -669,6 +670,19 @@ function forgetTerminalProcess(proc: TerminalInput['proc']): void {
   liveCheckpoints.delete(proc)
 }
 
+function terminalQuestionOutput(
+  currentHeader: string | null,
+  notice: string | null,
+  output: string,
+  outPath: string,
+): string {
+  const header = [currentHeader, notice].filter(Boolean).join('\n') || null
+  if (!header) return output
+  const finalized = output ? `${header}\n\n${output}` : header
+  writeFileSync(outPath, finalized)
+  return finalized
+}
+
 export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
   let {
     checkpointTimer,
@@ -843,9 +857,9 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
       exitCode,
     }),
   ))
-  const qs = await finishQs(claim.id, acceptedQuestions, mcpSetupHeader, output, outPath)
+  const qs = await recordTerminalQuestions(claim.id, acceptedQuestions)
   const recordedQuestions = qs.recorded
-  output = qs.output
+  output = terminalQuestionOutput(mcpSetupHeader, qs.notice, output, outPath)
 
   const confinementPrecedence = applyConfinementPrecedence({
     outcome: { status, failureKind, error },

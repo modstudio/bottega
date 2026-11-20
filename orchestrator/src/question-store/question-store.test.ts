@@ -22,7 +22,9 @@ import {
 } from './question-run-pusher.ts'
 import { questionStore } from './question-store.ts'
 import { RecordQuestionStore } from './question-store-record.ts'
+import { SqliteQuestionStore } from './question-store-sqlite.ts'
 import type { QuestionStore } from './question-store-types.ts'
+import { RunQuestionOwnerNotLiveError } from './run-question-write-guard.ts'
 
 const STAMP = '2026-11-15T12:00:00.000Z'
 const PROJECT_ID = '00000000-0000-4000-8000-000000000101'
@@ -477,6 +479,36 @@ test.each(QUESTION_JSON_FIELDS)('SQLite question writes refuse string-valued %s'
   const question = snapshot()
   ;(question as unknown as Record<string, unknown>)[field] = '[]'
   await expect(questionStore(database).write('ask', body(question))).rejects.toThrow(field)
+  database.close()
+})
+
+test('SQLite ask refuses a terminal owner with the typed error and writes no question', async () => {
+  const database = migratedTestDatabase()
+  seedOwners(database)
+  database.query("UPDATE run SET status='ok' WHERE record_id=?").run(RUN_ID)
+  const question = snapshot({ id: RUN_QUESTION_ID, runId: RUN_ID, workflowCursorRecordId: null })
+
+  await expect(
+    new SqliteQuestionStore(database).write('ask', body(question)),
+  ).rejects.toBeInstanceOf(RunQuestionOwnerNotLiveError)
+  expect(database.query('SELECT COUNT(*) count FROM question').get()).toEqual({ count: 0 })
+  database.close()
+})
+
+test('SQLite ask reports an owner absent from the local store without calling it superseded', async () => {
+  const database = migratedTestDatabase()
+  seedOwners(database)
+  const absentRun = newRecordId()
+  const question = snapshot({
+    id: RUN_QUESTION_ID,
+    runId: absentRun,
+    workflowCursorRecordId: null,
+  })
+
+  await expect(new SqliteQuestionStore(database).write('ask', body(question))).rejects.toThrow(
+    `could not see run ${absentRun} in this space`,
+  )
+  expect(database.query('SELECT COUNT(*) count FROM question').get()).toEqual({ count: 0 })
   database.close()
 })
 

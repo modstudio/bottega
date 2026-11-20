@@ -3,6 +3,7 @@
 
 import type { Database } from 'bun:sqlite'
 import { db, nowIso, writeTransaction } from '../database/db.ts'
+import { runQuestionOwnerLive } from '../question-store/run-question-write-guard.ts'
 import { enqueueRunRecord } from './run-outbox.ts'
 
 /** Apply the one running-to-asking transition shared by every question channel. */
@@ -33,7 +34,10 @@ export function claimLiveRunQuestionChannel(
   const owner = database
     .query<{ status: string }, [string]>('SELECT status FROM run WHERE record_id=?')
     .get(runId)
-  return { live: owner?.status === 'asking', transitioned: transition.changes > 0 }
+  return {
+    live: owner?.status === 'asking' && runQuestionOwnerLive(owner.status),
+    transitioned: transition.changes > 0,
+  }
 }
 
 /** Persist the facts needed to answer or resume a reply-borne question. */

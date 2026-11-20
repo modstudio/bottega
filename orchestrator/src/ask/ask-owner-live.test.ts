@@ -5,6 +5,7 @@ import {
 } from '../../test/fixtures/record-api.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
+import { RunQuestionOwnerNotLiveError } from '../question-store/run-question-write-guard.ts'
 import { identity } from '../record/record-api-identity.fixture.ts'
 import { ask } from './ask.ts'
 
@@ -52,7 +53,7 @@ test('ask restores running when the hosted store refuses its transition', async 
     ...client,
     whoami: async () => identity,
     writeQuestion: async () => {
-      throw new Error(`run ${runId}'s turn was superseded or finished`)
+      throw new RunQuestionOwnerNotLiveError(runId)
     },
   })
 

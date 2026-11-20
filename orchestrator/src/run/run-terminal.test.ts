@@ -10,6 +10,7 @@ import { reviewReply } from '../../test/fixtures/replies.ts'
 import { addRun, dir } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
 import { job } from '../jobs/jobs.ts'
+import { RunQuestionOwnerNotLiveError } from '../question-store/run-question-write-guard.ts'
 import { identity } from '../record/record-api-identity.fixture.ts'
 import { EMPTY_QUOTA_READINGS } from '../transport/quota-readings.ts'
 import { EMPTY_VENDOR_USAGE } from '../transport/vendor-usage.ts'
@@ -26,11 +27,36 @@ import {
   writeTerminalOperationalState,
 } from './run-terminal.ts'
 import { finalizeTerminalChain } from './run-terminal-chain.ts'
-import { questionsToInsert } from './run-terminal-questions.ts'
+import { questionsToInsert, recordTerminalQuestions } from './run-terminal-questions.ts'
 
 afterEach(() => {
   installRecordApiClient(null)
   delete process.env.BOTTEGA_RECORD_API_URL
+})
+
+test('a record refusal drops reply questions with a notice and does not throw', async () => {
+  const runId = addRun({ agent: 'codex', job: 'implement', status: 'running' })
+  const client = createMemoryRecordApiClient()
+  db().query("UPDATE project SET settings=json_set(settings,'$.space','space-a')").run()
+  process.env.BOTTEGA_RECORD_API_URL = 'https://record.test'
+  installRecordApiClient({
+    ...client,
+    whoami: async () => identity,
+    writeQuestion: async () => {
+      throw new RunQuestionOwnerNotLiveError(runId)
+    },
+  })
+
+  const result = await recordTerminalQuestions(runId, [
+    {
+      kind: 'text',
+      question: 'Which implementation?',
+      why: 'The implementation depends on the ruling.',
+    },
+  ])
+
+  expect(result.recorded).toEqual([])
+  expect(result.notice).toContain('record refused the write')
 })
 
 test('an unverified observed test outcome stores claim disagreement as null', () => {

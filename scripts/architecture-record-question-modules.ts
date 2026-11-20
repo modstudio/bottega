@@ -89,6 +89,7 @@ export const recordQuestionModules: RecordModule[] = [
   module('orchestrator/src/record/record-question-write.ts', [
     'drizzle-orm',
     'drizzle-orm/bun-sql',
+    '../../../shared/brand.ts',
     '../../../shared/record/hosted-task-id.ts',
     '../../../shared/record/tenant.ts',
     '../../../shared/record/schema-question.ts',
@@ -118,6 +119,7 @@ export const recordQuestionModules: RecordModule[] = [
   module('orchestrator/src/question-store/question-store-sql.ts', []),
   module('orchestrator/src/question-store/question-store-sqlite.ts', [
     'bun:sqlite',
+    '../../../shared/brand.ts',
     '../database/db.ts',
     '../database/entity-number.ts',
     '../record/record-question-contract.ts',

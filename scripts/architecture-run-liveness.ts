@@ -36,7 +36,7 @@ export const runLivenessModuleSpecs = [
   },
   {
     file: 'orchestrator/src/run/run-answer-liveness.ts',
-    allowed: [],
+    allowed: ['../question-store/run-question-write-guard.ts'],
     typeOnlyAllowed: [],
   },
   liveRunMemberSpec,
