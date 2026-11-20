@@ -3,7 +3,6 @@
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { refusal, renderRefusal } from '../../../shared/refusal.ts'
-import { workflowCursorReference } from '../workflow/workflow-cursor-format.ts'
 
 export type KeyedRunTurn = 'start' | 'continue' | 'answer' | 'retry'
 
@@ -113,9 +112,7 @@ function decideBoundRootCursor(
           `refusing keyed run turn because its root is bound to workflow cursor ${heldRoot.number}, not cursor ${input.cursor}`,
           {
             kind: 'edit',
-            text:
-              'rerun without --cursor or with' +
-              workflowCursorReference(heldRoot.number, heldRoot.project).cli,
+            text: 'rerun without the cursor selection option so the root binding is preserved',
           },
         ),
       ),
@@ -125,6 +122,26 @@ function decideBoundRootCursor(
     kind: 'allow',
     binding: { cursorRecordId: heldRoot.recordId, stepSlug: heldRoot.stepSlug },
   }
+}
+
+function decideOverride(input: KeyedRunCursorAdmissionInput): KeyedRunCursorAdmission | null {
+  if (!canOverride(input.turn) || input.overrideReason === undefined) return null
+  const reason = input.overrideReason.trim()
+  if (!reason) {
+    return {
+      kind: 'refuse',
+      message: `${OVERRIDE_OPTION} requires a non-empty reason; rerun with ${OVERRIDE_REMEDY}`,
+    }
+  }
+  if (!input.fromOperator) {
+    return {
+      kind: 'refuse',
+      message:
+        'refusing unbound keyed run turn override without operator attribution; rerun with ' +
+        OVERRIDE_REMEDY,
+    }
+  }
+  return { kind: 'allow-with-override', warning: `${OVERRIDE_PREFIX}${reason}` }
 }
 
 /** Apply cursor ownership and operator-override policy without reaching process or storage. */
@@ -138,24 +155,8 @@ export function decideKeyedRunCursorAdmission(
   const boundRootDecision = decideBoundRootCursor(input)
   if (boundRootDecision) return boundRootDecision
 
-  if (canOverride(input.turn) && input.overrideReason !== undefined) {
-    const reason = input.overrideReason.trim()
-    if (!reason) {
-      return {
-        kind: 'refuse',
-        message: `${OVERRIDE_OPTION} requires a non-empty reason; rerun with ${OVERRIDE_REMEDY}`,
-      }
-    }
-    if (!input.fromOperator) {
-      return {
-        kind: 'refuse',
-        message:
-          'refusing unbound keyed run turn override without operator attribution; rerun with ' +
-          OVERRIDE_REMEDY,
-      }
-    }
-    return { kind: 'allow-with-override', warning: `${OVERRIDE_PREFIX}${reason}` }
-  }
+  const overrideDecision = decideOverride(input)
+  if (overrideDecision) return overrideDecision
 
   if (!input.harnessSession) {
     const remedy =

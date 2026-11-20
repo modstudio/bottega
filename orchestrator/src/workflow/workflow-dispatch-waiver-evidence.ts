@@ -3,7 +3,6 @@
 
 import type { Database } from 'bun:sqlite'
 import { existsSync } from 'node:fs'
-import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { projectByName } from '../project/projects.ts'
 import { continuationRoundHasAcceptedFindings } from '../review/review-continuation-findings.ts'
 import { measureChangeGroup } from '../review/review-group.ts'
@@ -31,7 +30,7 @@ export function gatherNoAcceptedFindingsFact(
   const project = projectByName(projectName, database)
   if (!project)
     return refusal(
-      `project ${projectName} is not registered; register it with ${PLATFORM_SLUG} project add <path> --name ${projectName}`,
+      `project ${projectName} is not registered; register it with project add <path> --name ${projectName}`,
     )
   const worktreeArg = args.worktree?.trim() || null
   const worktreeExists = Boolean(worktreeArg && existsSync(worktreeArg))
