@@ -41,7 +41,7 @@ test('non-repository writable roots exclude shared temporary directories', () =>
   ).toEqual(['/run/isolate', '/run/isolate/scratch'])
 })
 
-test('permission input preserves repository temp roots without granting them to no-repo launches', () => {
+test('permission input gives readers exactly the shared write roots and preserves writer roots', () => {
   const profile = {
     network: {
       allowedDomains: [],
@@ -52,7 +52,7 @@ test('permission input preserves repository temp roots without granting them to 
     filesystem: {
       denyRead: ['/state'],
       allowWithinDeny: ['/run'],
-      allowWrite: [],
+      allowWrite: ['/run/runtime', '/run/scratch'],
       denyWrite: [],
     },
   }
@@ -64,11 +64,19 @@ test('permission input preserves repository temp roots without granting them to 
     tempDir: '/private/tmp/codex-run',
   }
 
-  expect(codexPermissionProfileInput({ ...launch, repository: false }).writableRoots).toEqual([
-    '/run/tree',
-    '/run/scratch',
-  ])
-  expect(codexPermissionProfileInput({ ...launch, repository: true }).writableRoots).toEqual([
+  expect(
+    codexPermissionProfileInput({ ...launch, writesRepository: false }).writableRoots,
+  ).toEqual(['/run/runtime', '/run/scratch'])
+  expect(
+    codexPermissionProfileInput({ ...launch, writesRepository: false }).writableRoots,
+  ).not.toContain('/run/tree')
+  expect(
+    codexPermissionProfileInput({ ...launch, writesRepository: false }).writableRoots,
+  ).not.toContain('/tmp')
+  expect(
+    codexPermissionProfileInput({ ...launch, writesRepository: false }).writableRoots,
+  ).not.toContain('/private/tmp/codex-run')
+  expect(codexPermissionProfileInput({ ...launch, writesRepository: true }).writableRoots).toEqual([
     '/run/tree',
     '/run/scratch',
     '/tmp',

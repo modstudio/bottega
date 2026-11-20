@@ -97,6 +97,7 @@ async function launchCodexProbe(
   targets: readonly AccessTarget[],
   cwd: string,
   environment: Record<string, string>,
+  tempDir: string,
 ): Promise<ConfinementFilesystemProbeRow> {
   const codex = Bun.which('codex')
   if (!codex) {
@@ -114,11 +115,15 @@ async function launchCodexProbe(
         sandbox: 'workspace-write',
         cwd,
         writableRoots: profile.filesystem.allowWrite,
-        tempDir: environment.TMPDIR,
-        repository: true,
+        tempDir,
+        writesRepository: false,
       }),
       network: false,
     })
+    const writeTargets: AccessTarget[] = [
+      { name: 'reader TMPDIR write', path: tempDir, expected: 'readable' },
+      { name: 'shared /tmp write', path: '/tmp', expected: 'denied' },
+    ]
     const result = await startBounded(
       [
         codex,
@@ -129,11 +134,15 @@ async function launchCodexProbe(
         '--',
         '/bin/sh',
         '-c',
-        'for path\ndo\nif /bin/cat "$path" >/dev/null 2>&1; then echo readable; else echo denied; fi\ndone',
+        'for path\ndo\nif /bin/cat "$path" >/dev/null 2>&1; then echo readable; else echo denied; fi\ndone\nif created=$(/usr/bin/mktemp "$TMPDIR/codex-reader.XXXXXX" 2>/dev/null); then /bin/rm "$created"; echo readable; else echo denied; fi\nif created=$(/usr/bin/mktemp "/tmp/codex-reader.XXXXXX" 2>/dev/null); then /bin/rm "$created"; echo readable; else echo denied; fi',
         'probe',
         ...targets.map(({ path }) => path),
       ],
-      { budget: 'sandbox-probe', cwd, env: { ...process.env, ...environment } },
+      {
+        budget: 'sandbox-probe',
+        cwd,
+        env: { ...process.env, ...environment, TMPDIR: tempDir, TMP: tempDir, TEMP: tempDir },
+      },
     )
     if (result.exitCode !== 0) {
       return {
@@ -144,15 +153,16 @@ async function launchCodexProbe(
       }
     }
     const values = result.stdout.trim().split(/\r?\n/)
+    const verdictTargets = [...targets, ...writeTargets]
     const paths = Object.fromEntries(
-      targets.map(({ name }, index) => [
+      verdictTargets.map(({ name }, index) => [
         name,
         values[index] === 'denied' || values[index] === 'readable' ? values[index] : 'not covered',
       ]),
     ) as Record<string, FilesystemProbeAccess>
     return {
       family: 'Codex',
-      ...probeVerdict(targets, paths, { status: 'ran', reason: 'codex sandbox ran' }),
+      ...probeVerdict(verdictTargets, paths, { status: 'ran', reason: 'codex sandbox ran' }),
       paths,
     }
   } catch (error) {
@@ -661,6 +671,7 @@ function createProbeFixture(root: string) {
     expected: 'readable',
   })
   mkdirSync(runtimeDir, { recursive: true })
+  mkdirSync(join(runtimeDir, 'tmp'), { recursive: true })
   mkdirSync(scratchDir, { recursive: true })
   mkdirSync(state.hubDirectory, { recursive: true })
   const hubWriter = openLiveHubFixture(hubDatabase)
@@ -764,10 +775,11 @@ export async function runConfinementFilesystemProbes(): Promise<ConfinementFiles
         hubOpenMode,
       ),
       await launchCodexProbe(
-        readonlyLensProfile({ ...common, agent: 'codex' }),
+        readonlyLensProfile({ ...common, agent: 'codex', sharedReader: true }),
         targets,
         common.worktree,
         environment,
+        join(common.runtimeDir, 'tmp'),
       ),
       ...NOT_COVERED,
     ]

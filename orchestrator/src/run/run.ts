@@ -840,13 +840,13 @@ export async function run(
   let confinementEvent: ConfinementEvent | null = null
   let runLease: ReturnType<typeof acquireRunLease> | null = null
   const { callerCheckout, candidates, beforeFreeze } = runConfinement.freezeBeforeRunCheckouts({
-    srtProfile: sandboxSelection.profile,
+    confinementProfile: sandboxSelection.profile ?? sandboxSelection.codexProfile ?? null,
     agent: name,
     cwd,
     writableRoots,
     tmpDir: process.env.TMPDIR,
     codexSandbox: codexSandbox.sandbox,
-    repoJob,
+    writesRepo: writesJob,
     callerCwd,
     isolatedCwd,
     runProject,

@@ -47,6 +47,7 @@ test('Codex selection carries planted area denies through the shared mapping int
     runtimeDir: join(state, 'orchestrator/runs/sandbox-run'),
     scratchDir: join(state, 'orchestrator/runs/run/scratch'),
     project: own,
+    sharedReader: true,
     registeredProjects: [own, sibling],
     environment: { HOME: homedir(), [STATE_HOME_ENV]: state },
     path: '/usr/bin',
@@ -61,7 +62,7 @@ test('Codex selection carries planted area denies through the shared mapping int
     cwd: worktree,
     writableRoots: selected.codexProfile!.filesystem.allowWrite,
     tempDir: '/private/tmp/codex-run',
-    repository: true,
+    writesRepository: false,
   })
   const filesystemArg = codexPermissionProfileArgs({
     ...permissionInput,
@@ -71,5 +72,7 @@ test('Codex selection carries planted area denies through the shared mapping int
   expect(filesystemArg).toContain(
     `${JSON.stringify(resolveStatePaths({ [STATE_HOME_ENV]: state }).root)}="deny"`,
   )
-  expect(filesystemArg).toContain(`${JSON.stringify(worktree)}="write"`)
+  expect(filesystemArg).toContain(`${JSON.stringify(worktree)}="read"`)
+  expect(filesystemArg).not.toContain(`${JSON.stringify('/tmp')}="write"`)
+  expect(filesystemArg).not.toContain(`${JSON.stringify('/private/tmp/codex-run')}="write"`)
 })

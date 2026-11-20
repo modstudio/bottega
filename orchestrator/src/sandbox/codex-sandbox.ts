@@ -81,21 +81,22 @@ export function codexPermissionProfileInput(input: {
   cwd: string
   writableRoots: readonly string[]
   tempDir: string | undefined
-  repository: boolean
+  writesRepository: boolean
 }): CodexPermissionProfileInput {
   return {
     filesystem: {
       denyRead: input.profile.filesystem.denyRead,
       allowRead: input.profile.filesystem.allowWithinDeny,
     },
-    writableRoots:
-      codexWritableRoots(
-        input.sandbox,
-        input.cwd,
-        input.writableRoots,
-        input.tempDir,
-        input.repository,
-      ) ?? [],
+    writableRoots: input.writesRepository
+      ? (codexWritableRoots(
+          input.sandbox,
+          input.cwd,
+          input.writableRoots,
+          input.tempDir,
+          true,
+        ) ?? [])
+      : input.profile.filesystem.allowWrite,
   }
 }
 

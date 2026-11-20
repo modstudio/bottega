@@ -13,6 +13,7 @@ import { checkoutWatchSet } from '../git/checkout-identity.ts'
 import { gitContext } from '../git/git-environment.ts'
 import { projectAt } from '../project/projects.ts'
 import { checkoutRemovalAttribution } from '../resources/resource-claims.ts'
+import type { SandboxRuntimeConfig } from '../sandbox/sandbox.ts'
 import type { Worktree } from '../worktree/worktree-types.ts'
 import { confinementRoots, runRoots } from './run-acp-writer.ts'
 import { callerWatch } from './run-caller-watch.ts'
@@ -52,7 +53,7 @@ export function prepareHarnessConfinement(input: {
 }): void {
   const runProject = projectAt(input.callerCwd)
   const frozen = freezeBeforeRunCheckouts({
-    srtProfile: null,
+    confinementProfile: null,
     agent: input.agent,
     cwd: input.cwd,
     writableRoots: runRoots(
@@ -64,7 +65,7 @@ export function prepareHarnessConfinement(input: {
     ),
     tmpDir: process.env.TMPDIR,
     codexSandbox: 'danger-full-access',
-    repoJob: Boolean(input.worktree),
+    writesRepo: input.writesRepo,
     callerCwd: input.callerCwd,
     isolatedCwd: input.isolatedCwd,
     runProject,
@@ -89,13 +90,13 @@ export function confinementSkipLines(failures: FreezeFailure[]): string[] {
 }
 
 export function freezeBeforeRunCheckouts(input: {
-  srtProfile: { filesystem: { allowWrite: string[] } } | null
+  confinementProfile: SandboxRuntimeConfig | null
   agent: string
   cwd: string
   writableRoots: string[]
   tmpDir: string | undefined
   codexSandbox: 'read-only' | 'workspace-write' | 'danger-full-access'
-  repoJob: boolean
+  writesRepo: boolean
   callerCwd: string
   isolatedCwd: string | null
   runProject: { name: string } | null
@@ -103,13 +104,13 @@ export function freezeBeforeRunCheckouts(input: {
   runProjectName: string | null
 }) {
   const roots = confinementRoots(
-    input.srtProfile,
+    input.confinementProfile,
     input.agent,
     input.cwd,
     input.writableRoots,
     input.tmpDir,
     input.codexSandbox,
-    input.repoJob,
+    input.writesRepo,
   )
   const callerCheckout = input.runProject
     ? (gitContext(input.callerCwd, 'rev-parse', '--show-toplevel') ?? input.callerCwd)

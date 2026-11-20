@@ -209,7 +209,7 @@ function startProbeTransport(
             cwd,
             writableRoots: [scratchDir],
             tempDir: environment.TMPDIR,
-            repository: true,
+            writesRepository: true,
           }),
         }
       : {}),

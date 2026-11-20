@@ -44,13 +44,19 @@ describe('codex worker shell environment', () => {
     expect(argv).not.toContain('-s')
   })
 
-  test('no-repository jobs limit workspace-write to the isolate and scratch', () => {
+  test('reader jobs pin their private temporary directory in the tool shell', () => {
+    const tempEnvironment = {
+      TMPDIR: '/runs/42/scratch/tmp',
+      TMP: '/runs/42/scratch/tmp',
+      TEMP: '/runs/42/scratch/tmp',
+    }
     const repositoryReader = BUILTIN_AGENTS.codex!.argv({
       prompt: 'p',
       out: '/tmp/out',
       sandbox: 'workspace-write',
       write: true,
       codexPermissionProfile,
+      recipeEnvironment: tempEnvironment,
     })
     const noRepositoryJob = BUILTIN_AGENTS.codex!.argv({
       prompt: 'p',
@@ -58,11 +64,7 @@ describe('codex worker shell environment', () => {
       sandbox: 'workspace-write',
       writableRoots: ['/runs/42/scratch'],
       codexPermissionProfile,
-      recipeEnvironment: {
-        TMPDIR: '/runs/42/scratch/tmp',
-        TMP: '/runs/42/scratch/tmp',
-        TEMP: '/runs/42/scratch/tmp',
-      },
+      recipeEnvironment: tempEnvironment,
     })
     expect(repositoryReader).toContain('--approve-for-me')
     expect(repositoryReader).not.toContain('-s')
@@ -76,9 +78,7 @@ describe('codex worker shell environment', () => {
     ])
     expect(noRepositoryJob).not.toContain(`permissions.${PLATFORM_SLUG}.network.enabled=true`)
     expect(repositoryReader.join(' ')).not.toContain('sandbox_workspace_write')
-    expect(shellSets(repositoryReader)).not.toContainEqual(
-      expect.stringMatching(/^shell_environment_policy\.set\.(?:TMPDIR|TMP|TEMP)=/),
-    )
+    expect(shellSets(repositoryReader)).toEqual(shellSets(noRepositoryJob))
   })
 
   test('MCP writers continue to use approval without an explicit sandbox', () => {
