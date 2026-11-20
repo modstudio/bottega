@@ -7,7 +7,7 @@ import {
 import type { Project } from '../project/projects.ts'
 import { probeSandboxProfile } from './sandbox.ts'
 
-test('probe profiles apply area denies only to agents while both deny protected secrets', () => {
+test('the shared probe profile denies areas and protected secrets', () => {
   const project: Project = {
     recordId: 'fixture-id',
     name: 'fixture',
@@ -30,22 +30,12 @@ test('probe profiles apply area denies only to agents while both deny protected 
     environment,
     socketDenyPaths: [],
   }
-  const agent = probeSandboxProfile({
-    ...input,
-    kind: 'agent',
-  })
-  const workflow = probeSandboxProfile({
-    ...input,
-    kind: 'workflow-probe',
-  })
+  const profile = probeSandboxProfile(input)
   const store = resolveOrchestratorDatabase(environment)
   const secret = '/projects/fixture/operator.secret'
 
-  expect(agent.filesystem.denyRead).toContain(store)
-  expect(agent.filesystem.denyRead).toContain('/override/orchestrator/runs')
-  expect(agent.filesystem.denyRead).toContain(secret)
-  expect(workflow.filesystem.denyRead).not.toContain(store)
-  expect(workflow.filesystem.denyRead).not.toContain('/override/orchestrator/runs')
-  expect(workflow.filesystem.allowWithinDeny).not.toContain(store)
-  expect(workflow.filesystem.denyRead).toContain(secret)
+  expect(profile.filesystem.denyRead).toContain(store)
+  expect(profile.filesystem.denyRead).toContain('/override/orchestrator/runs')
+  expect(profile.filesystem.allowWithinDeny).not.toContain(store)
+  expect(profile.filesystem.denyRead).toContain(secret)
 })

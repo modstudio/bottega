@@ -29,7 +29,7 @@ import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 import { ensureHubLoginTokenDirectory } from '../../../shared/state-directory.ts'
 import { disabledProjectMcpServers } from '../mcp/mcp-probe.ts'
 import { createNoFollowFile } from '../no-follow-file.ts'
-import { type Project, projectAt, projects } from '../project/projects.ts'
+import { type Project, projectAt, projectsForSandboxDeny } from '../project/projects.ts'
 import { mainStackGateAddresses } from '../resources/main-stack-network.ts'
 import { runHarnessStateDir, runWorkerHomeDir } from '../run-owned-paths.ts'
 import { areaReadPolicy, carveBackOutsideProtected, isAtOrBelow } from './area-read-policy.ts'
@@ -182,6 +182,23 @@ function protectedDenyPaths(project: Project | null, environment: ConfigEnvironm
   ]
 }
 
+function assembleAreaReadProfile(input: {
+  areaDeny: readonly string[]
+  candidateAllows: readonly string[]
+  protectedDenies: readonly string[]
+  socketDenyPaths: readonly string[]
+}): Pick<SandboxRuntimeConfig['filesystem'], 'denyRead' | 'allowWithinDeny'> {
+  return {
+    denyRead: [
+      ...new Set([...input.areaDeny, ...input.protectedDenies, ...input.socketDenyPaths]),
+    ],
+    allowWithinDeny: carveBackOutsideProtected(
+      [...new Set(input.candidateAllows)],
+      input.protectedDenies,
+    ),
+  }
+}
+
 /** Resolved deny lists a confinement report needs; the report itself reads no home. */
 export function readonlyLensReportInputs(
   environment: ConfigEnvironment,
@@ -325,7 +342,12 @@ export function readonlyLensProfile(input: {
   ]
   // SRT reads are allow-by-default. This list only carves paths back out of
   // denyRead; it is not, and must not be read as, a read confinement boundary.
-  const allowWithinDeny = carveBackOutsideProtected(candidateAllows, protectedDenies)
+  const readProfile = assembleAreaReadProfile({
+    areaDeny: areas.deny,
+    candidateAllows,
+    protectedDenies,
+    socketDenyPaths: input.socketDenyPaths ?? readonlyLensSocketDenyPaths(),
+  })
   const isolation = decideWeakerNetworkIsolation({ base_url: input.baseUrl })
   return createSandboxRuntimeConfig(
     {
@@ -347,14 +369,7 @@ export function readonlyLensProfile(input: {
         allowLocalBinding: READONLY_LENS_ALLOW_LOCAL_BINDING,
       },
       filesystem: {
-        denyRead: [
-          ...new Set([
-            ...areas.deny,
-            ...protectedDenies,
-            ...(input.socketDenyPaths ?? readonlyLensSocketDenyPaths()),
-          ]),
-        ],
-        allowWithinDeny,
+        ...readProfile,
         allowWrite,
         denyWrite: input.denySharedTemp === false ? [] : [...READONLY_LENS_DENY_WRITE_PATHS],
       },
@@ -469,32 +484,43 @@ export function writerProfile(input: {
 
 /** Write-deny everywhere except a throwaway directory; no network; protected secrets denied. */
 export function probeSandboxProfile(input: {
-  kind: 'agent' | 'workflow-probe'
   allowWriteDir: string
   cwd: string
   project: Project
   registeredProjects: readonly Project[]
   environment?: ConfigEnvironment
   socketDenyPaths?: readonly string[]
+  installLayout?: RunningInstallLayout
 }): SandboxRuntimeConfig {
   if (input.registeredProjects.length === 0) {
     throw new Error(emptyProjectRegisterRefusal())
   }
   const allowWrite = resolve(input.allowWriteDir)
   const cwd = resolve(input.cwd)
-  const protectedDenies = protectedDenyPaths(input.project, input.environment ?? process.env)
+  const environment = input.environment ?? process.env
+  const protectedDenies = protectedDenyPaths(input.project, environment)
   refuseProtectedOverlap('probe', protectedDenies, cwd, allowWrite)
-  const areas =
-    input.kind === 'agent'
-      ? areaReadPolicy({
-          worktree: cwd,
-          runtimeDir: allowWrite,
-          scratchDir: allowWrite,
-          project: input.project,
-          registeredProjects: input.registeredProjects,
-          environment: input.environment ?? process.env,
-        })
-      : { deny: [], allow: [] }
+  const areas = areaReadPolicy({
+    worktree: cwd,
+    runtimeDir: allowWrite,
+    scratchDir: allowWrite,
+    project: input.project,
+    registeredProjects: input.registeredProjects,
+    environment,
+  })
+  const readProfile = assembleAreaReadProfile({
+    areaDeny: areas.deny,
+    candidateAllows: [
+      ...areas.allow,
+      cwd,
+      allowWrite,
+      ...runningInstallReadCarveouts(
+        input.installLayout ?? resolveRunningInstallLayout(environment),
+      ),
+    ],
+    protectedDenies,
+    socketDenyPaths: input.socketDenyPaths ?? readonlyLensSocketDenyPaths(),
+  })
   return {
     network: {
       allowedDomains: [],
@@ -503,14 +529,7 @@ export function probeSandboxProfile(input: {
       allowLocalBinding: false,
     },
     filesystem: {
-      denyRead: [
-        ...new Set([
-          ...protectedDenies,
-          ...areas.deny,
-          ...(input.socketDenyPaths ?? readonlyLensSocketDenyPaths()),
-        ]),
-      ],
-      allowWithinDeny: carveBackOutsideProtected(areas.allow, protectedDenies),
+      ...readProfile,
       allowWrite: [allowWrite],
       denyWrite: [],
     },
@@ -526,14 +545,10 @@ export function probeSandboxProfileForCwd(input: {
   if (!project)
     throw new Error(`${PLATFORM_SLUG} workflow probe: no registered project contains ${input.cwd}`)
   return probeSandboxProfile({
-    kind: 'workflow-probe',
     allowWriteDir: input.allowWriteDir,
     cwd: input.cwd,
     project,
-    registeredProjects: [
-      ...projects({}, input.database),
-      ...projects({ retired: true }, input.database),
-    ],
+    registeredProjects: projectsForSandboxDeny(input.database),
   })
 }
 

@@ -40,7 +40,12 @@ import {
 import { namesSeenAt, probeMcpServer, storedMcpProbe } from '../mcp/mcp-probe.ts'
 import type { OutcomeStatus } from '../outcome.ts'
 import type { RunResourceObserver } from '../process-resource-sampler.ts'
-import { projectAt, projectByName, projects, stackAt } from '../project/projects.ts'
+import {
+  projectAt,
+  projectByName,
+  projectsForSandboxDeny,
+  stackAt,
+} from '../project/projects.ts'
 import { machineId } from '../record/machine-identity.ts'
 import { startedByUserIdForRun } from '../record/record-attribution.ts'
 import { teardownTerminalRunResources } from '../resources/resource-ownership.ts'
@@ -79,7 +84,7 @@ import { capacityStartupFailure, selectAgentWithCapacityEvents } from './run-age
 import { pruneRuns, RUNS_DIR, unclaimedPaths } from './run-artifacts.ts'
 import { resolveRunBase, shouldResolveRunBase } from './run-base-resolution.ts'
 import { prepareRunBoard as board, persistBoundPrompt } from './run-board-prompt.ts'
-import { claimRun } from './run-claim.ts'
+import { claimRun, recordRunSandboxSelection } from './run-claim.ts'
 import { inheritedRunBinding } from './run-claim-inheritance.ts'
 import { closeRun } from './run-close.ts'
 import { acquireRunCloseOutLeaseHandle } from './run-close-out-lease-handle.ts'
@@ -617,7 +622,7 @@ export async function run(
         runtimeDir,
         scratchDir,
         project: runProject,
-        registeredProjects: [...projects({}, db()), ...projects({ retired: true }, db())],
+        registeredProjects: projectsForSandboxDeny(db()),
         override: process.env.BOTTEGA_SANDBOX,
         path: process.env.PATH,
         baseUrl: a.baseUrl,
@@ -669,9 +674,11 @@ export async function run(
       ? `${reason}; ${sandboxReasonPrefix(sandboxSelection.sandbox)}: ${sandboxSelection.reason}`
       : reason
     writeTransaction(() => {
-      db()
-        .query('UPDATE run SET sandbox=?, route_reason=? WHERE record_id=?')
-        .run(sandboxSelection.sandbox, sandboxRouteReason, claim.id)
+      recordRunSandboxSelection(db(), claim.id, {
+        sandbox: sandboxSelection.sandbox,
+        reason: sandboxSelection.reason,
+        routeReason: sandboxRouteReason,
+      })
       recordLegacySandboxHome(db(), {
         ...owner,
         path: runtimeDir,

@@ -80,6 +80,8 @@ export function runRecordValues(
     transport: nullableString(row.transport),
     sessionId: nullableString(row.sessionId),
     routeReason: nullableString(row.routeReason),
+    sandbox: nullableString(row.sandbox),
+    sandboxReason: nullableString(row.sandboxReason),
     ...credentialRecordValues(row),
     noFailover: Boolean(row.noFailover),
     automaticFailover: Boolean(row.automaticFailover),

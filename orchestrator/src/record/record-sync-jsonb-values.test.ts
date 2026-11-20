@@ -97,6 +97,8 @@ const payload: RecordPayload = {
   credentialBinding: 'project',
   cursorRecordId: OTHER_ID,
   stepSlug: 'write',
+  sandbox: 'srt',
+  sandboxReason: 'eligible read-only repository run',
   trunkBefore: 'trunk',
   error: null,
   requestedAt: STAMP,
@@ -260,6 +262,8 @@ test('run sync values preserve credential payment identity', () => {
     credentialBinding: 'project',
     cursorRecordId: OTHER_ID,
     stepSlug: 'write',
+    sandbox: 'srt',
+    sandboxReason: 'eligible read-only repository run',
   })
 })
 

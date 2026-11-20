@@ -17,6 +17,7 @@ import { join, resolve } from 'node:path'
 import { MCP_SERVER_NAME, PLATFORM_SLUG, WORKER_MCP_SERVER_NAME } from '../../../shared/brand.ts'
 import { CONFIG_HOME_ENV, HARNESS_ENV_FILE_ENV } from '../../../shared/config-directory.ts'
 import { fileBackedSecretPaths } from '../../../shared/file-backed-secret-paths.ts'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { sourceBunExecutable } from '../../../shared/self-spawn.ts'
 import {
   hubLoginTokenDirectory,
@@ -27,8 +28,8 @@ import {
   STATE_HOME_ENV,
 } from '../../../shared/state-directory.ts'
 import { workerHarnessName } from '../agent/worker-launch-env.ts'
-import { ROOT } from '../database/db.ts'
-import type { Project } from '../project/projects.ts'
+import { db, ROOT, writableDb } from '../database/db.ts'
+import { type Project, projectsForSandboxDeny } from '../project/projects.ts'
 import {
   probeSandboxProfile as buildProbeSandboxProfile,
   readonlyLensProfile as buildReadonlyLensProfile,
@@ -459,7 +460,6 @@ test('readonlyLensDeniesLoginKeychain follows the denyRead list, not a keychain 
 test('probe sandbox profile denies network and writes except the throwaway directory', () => {
   const scratch = '/tmp/orch-probe-scratch'
   const profile = probeSandboxProfile({
-    kind: 'agent',
     allowWriteDir: scratch,
     cwd: '/projects/fixture',
     project: fixtureProject(),
@@ -479,7 +479,6 @@ test('probe sandbox profile denies network and writes except the throwaway direc
 
 test('probe sandbox profile denies a project-declared secret path', () => {
   const profile = probeSandboxProfile({
-    kind: 'agent',
     allowWriteDir: '/tmp/orch-probe-scratch',
     cwd: '/projects/fixture',
     project: fixtureProject({ secretPaths: ['/operator/project-secret'] }),
@@ -677,6 +676,38 @@ describe('readonly-lens sandbox profile', () => {
     expect(profile.filesystem.allowWithinDeny).not.toContain(
       '/projects/fixture/config/operator.secret',
     )
+  })
+
+  test('the sandbox deny universe includes a retired checkout, its parent, and its worktree root', () => {
+    const recordId = newRecordId()
+    writableDb()
+    db()
+      .query(
+        `INSERT INTO project (record_id,name,path,stack,settings,retired_at)
+         VALUES (?,'retired-sandbox-fixture','/retired-fixture/sibling','node','{}',?)`,
+      )
+      .run(recordId, new Date().toISOString())
+    try {
+      const state = temporaryState()
+      const own = fixtureProject()
+      const profile = readonlyLensProfile({
+        worktree: '/projects/fixture/.claude/worktrees/run',
+        runtimeDir: join(state, 'orchestrator/runs/sandbox-run'),
+        project: own,
+        registeredProjects: [own, ...projectsForSandboxDeny(db())],
+        agent: 'grok',
+        path: '/usr/bin',
+        nodeModuleLinks: [],
+        environment: { HOME: '/Users/operator', [STATE_HOME_ENV]: state },
+        socketDenyPaths: [],
+      })
+
+      expect(profile.filesystem.denyRead).toContain('/retired-fixture/sibling')
+      expect(profile.filesystem.denyRead).toContain('/retired-fixture')
+      expect(profile.filesystem.denyRead).toContain('/retired-fixture/sibling/.claude/worktrees')
+    } finally {
+      db().query('DELETE FROM project WHERE record_id=?').run(recordId)
+    }
   })
 
   test('sandbox selection removes the shared reader worktree from writable roots', () => {

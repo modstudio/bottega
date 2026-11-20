@@ -112,6 +112,8 @@ export const run = pgTable.withRLS(
     transport: text(),
     sessionId: text('session_id'),
     routeReason: text('route_reason'),
+    sandbox: text(),
+    sandboxReason: text('sandbox_reason'),
     credentialId: uuid('credential_id'),
     credentialPayer: text('credential_payer'),
     credentialBinding: text('credential_binding'),

@@ -62,6 +62,17 @@ import { assertBranchHasNoAliveOwner } from './branch-owner-guard.ts'
 import { heldLandingTreeRefusal } from './held-branch-remedy.ts'
 import { sha } from './prompt-sha.ts'
 import { withReaderCreationLocks } from './reader-tree-sharing-claim.ts'
+
+/** Persist the dispatch sandbox decision without folding it into routing metadata. */
+export function recordRunSandboxSelection(
+  database: ReturnType<typeof db>,
+  runId: string,
+  selection: { sandbox: 'host' | 'srt'; reason: string | null; routeReason: string },
+): void {
+  database
+    .query('UPDATE run SET sandbox=?, sandbox_reason=?, route_reason=? WHERE record_id=?')
+    .run(selection.sandbox, selection.reason, selection.routeReason, runId)
+}
 import { resumeCreationOptions } from './resume-tree.ts'
 import {
   noRepoIsolatePath,

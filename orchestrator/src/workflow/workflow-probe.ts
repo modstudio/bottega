@@ -26,7 +26,7 @@ import { probeSandboxProfileForCwd, resetSandbox, sandboxLaunchArgv } from '../s
 import { sandboxRuntimeAvailability } from '../sandbox/sandbox-runtime.ts'
 import {
   workerSandboxEnvironment,
-  workflowProbeStateEnvironment,
+  workerStateEnvironment,
 } from '../sandbox/worker-sandbox-environment.ts'
 import { assertEvidenceCheckoutIdentity } from '../worktree/evidence-checkout.ts'
 import { handOffWorkflowEvidence } from './workflow-evidence-handoff.ts'
@@ -101,7 +101,7 @@ function probeEnv(scratch: string): NodeJS.ProcessEnv {
     LANG: process.env.LANG ?? 'C.UTF-8',
     TMPDIR: scratch,
     ...workerSandboxEnvironment(),
-    ...workflowProbeStateEnvironment(process.env),
+    ...workerStateEnvironment(process.env),
   }
 }
 

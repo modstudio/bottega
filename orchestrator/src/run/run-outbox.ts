@@ -238,6 +238,8 @@ export function buildRunRecordPayload(
     transport: row.transport,
     sessionId: row.session_id,
     routeReason: row.route_reason,
+    sandbox: row.sandbox,
+    sandboxReason: row.sandbox_reason,
     ...credentialValues(row),
     noFailover: Boolean(row.no_failover),
     automaticFailover: Boolean(row.automatic_failover),

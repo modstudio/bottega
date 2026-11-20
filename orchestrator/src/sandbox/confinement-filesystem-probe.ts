@@ -448,19 +448,15 @@ export async function runConfinementFilesystemProbes(): Promise<ConfinementFiles
       await launchProbe(
         'workflow probe',
         probeSandboxProfile({
-          kind: 'workflow-probe',
           allowWriteDir: common.runtimeDir,
           cwd: common.worktree,
           project: common.project,
           registeredProjects: common.registeredProjects,
           environment: common.environment,
           socketDenyPaths: common.socketDenyPaths,
+          installLayout: common.installLayout,
         }),
-        targets
-          .filter(({ name }) => name === 'orchestrator store' || name === 'own secret')
-          .map((target) =>
-            target.name === 'orchestrator store' ? { ...target, expected: 'readable' } : target,
-          ),
+        targets,
         commandArgv,
         environment,
         hubOpenMode,

@@ -466,6 +466,11 @@ function addExactFilter(
   args.push(value)
 }
 
+/** The run-list window accepts an ISO instant verbatim for SQLite timestamp comparison. */
+export function parseRunListSince(value: string | undefined): string | undefined {
+  return value
+}
+
 function resolveRequestedRunIds(values: string[]): { ids: string[]; unknown: string[] } {
   const ids = new Set<string>()
   const unknown: string[] = []
@@ -788,7 +793,7 @@ export async function runListingCommand(
   addExactFilter(where, args, 'r.agent = ?', flag('agent'))
   const onlyUnscored = has('unscored')
   const { cte: unscoredCte, join: unscoredJoin } = unscoredListingClauses(onlyUnscored, where)
-  const sinceFlag = flag('since')
+  const sinceFlag = parseRunListSince(flag('since'))
   const requested = resolveRequestedRunIds(values('id'))
   const { ids: requestedIds, unknown: unknownRecordIds } = requested
   // Runs normally presents one canonical row per resumed conversation. If a caller names a child
