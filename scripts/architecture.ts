@@ -566,7 +566,6 @@ const declaredModules: ArchitectureModule[] = [
   module('orchestrator/src/resources/ref-guard-runtime.ts', [
     '../../../shared/embedded-assets.ts',
     '../../../shared/runtime-assets.ts',
-    '../../../shared/state-directory.ts',
     '../database/db.ts',
   ]),
   module('orchestrator/src/resources/worker-hooks.ts', [

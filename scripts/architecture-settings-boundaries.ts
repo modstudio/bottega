@@ -237,11 +237,7 @@ export const settingsBoundarySpecs: ImportBoundary[] = [
   {
     name: 'settings-machine-runtime-boundary',
     file: `${source}settings-machine-runtime.ts`,
-    allowed: [
-      'shared/install-root.ts',
-      'shared/runtime-assets.ts',
-      'shared/self-spawn.ts',
-    ],
+    allowed: ['shared/install-root.ts', 'shared/runtime-assets.ts', 'shared/self-spawn.ts'],
     typeOnlyAllowed: [`${source}settings-machine-hooks.ts`],
     reason: 'Keep runtime path extraction outside the pure machine hook declaration.',
   },
