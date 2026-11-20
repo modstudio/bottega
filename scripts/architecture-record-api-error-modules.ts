@@ -12,6 +12,8 @@ const module = (file: string, allowed: string[]): RecordModule => ({
 
 export const recordApiErrorModules: RecordModule[] = [
   module('orchestrator/src/record/record-api-errors.ts', [
+    '../../../shared/brand.ts',
+    '../../../shared/refusal.ts',
     '../doc/doc-revision-conflict.ts',
     './outbox-failure.ts',
     './record-board-contract.ts',

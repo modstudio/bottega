@@ -84,7 +84,7 @@ export type ProjectIdentityClient = {
   retireProject(
     id: string,
     destination: RecordWriteDestination,
-  ): Promise<{ name: string; revision: number }>
+  ): Promise<{ name: string; revision?: number }>
   purgeProject(
     id: string,
     confirmation: string,
