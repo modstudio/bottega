@@ -1,4 +1,4 @@
-ALTER TABLE public.hub_applied_change FORCE ROW LEVEL SECURITY;
+ALTER TABLE "hub_applied_change" FORCE ROW LEVEL SECURITY;
 
 CREATE FUNCTION public.hub_guarded_revision_bump() RETURNS trigger
 LANGUAGE plpgsql
