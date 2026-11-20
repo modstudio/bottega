@@ -40,7 +40,6 @@ export function areaReadPolicy(input: {
   project: Project | null
   registeredProjects: readonly Project[]
   environment: StateEnvironment
-  orchestratorStoreAccess: 'deny' | 'allow-read'
 }): AreaReadPolicy {
   const worktree = resolve(input.worktree)
   const runtimeDir = resolve(input.runtimeDir)
@@ -61,9 +60,8 @@ export function areaReadPolicy(input: {
     deny: [
       ...new Set([
         state.root,
-        ...(input.orchestratorStoreAccess === 'deny'
-          ? [dirname(orchestratorDatabase), orchestratorDatabase]
-          : []),
+        dirname(orchestratorDatabase),
+        orchestratorDatabase,
         runsDirectory,
         ...checkoutParents,
         ...siblingCheckouts,
@@ -79,14 +77,6 @@ export function areaReadPolicy(input: {
         hubDatabase,
         `${hubDatabase}-wal`,
         `${hubDatabase}-shm`,
-        ...(input.orchestratorStoreAccess === 'allow-read'
-          ? [
-              dirname(orchestratorDatabase),
-              orchestratorDatabase,
-              `${orchestratorDatabase}-wal`,
-              `${orchestratorDatabase}-shm`,
-            ]
-          : []),
         ...(ownMain ? [ownMain, join(ownMain, '.git')] : []),
       ]),
     ],

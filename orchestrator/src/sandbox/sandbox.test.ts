@@ -34,7 +34,6 @@ import {
   readonlyLensProfile as buildReadonlyLensProfile,
   selectReadonlySandbox as buildReadonlySandboxSelection,
   writerProfile as buildWriterProfile,
-  canonicalSocketDenyPaths,
   createSandboxRuntimeConfig,
   grokAskCommandFromConfig,
   grokAskServerCommand,
@@ -47,7 +46,6 @@ import {
   READONLY_LENS_DENY_WRITE_PATHS,
   readonlyLensDeniesLoginKeychain,
   readonlyLensDeniesOperatorEnvFile,
-  readonlyLensReportInputs,
   removeNewSandboxHomeAfterFailure,
   resetSandbox,
   sandboxReasonPrefix,
@@ -65,7 +63,7 @@ const fixtureProject = (settings: Project['settings'] = {}): Project => ({
   settings,
 })
 
-type AgentProfileInput<T> = Omit<T, 'registeredProjects' | 'orchestratorStoreAccess'> & {
+type AgentProfileInput<T> = Omit<T, 'registeredProjects'> & {
   registeredProjects?: readonly Project[]
 }
 const withRegister = <
@@ -75,7 +73,6 @@ const withRegister = <
 ) => ({
   ...input,
   registeredProjects: input.registeredProjects ?? (input.project ? [input.project] : []),
-  orchestratorStoreAccess: 'deny' as const,
 })
 const readonlyLensProfile = (
   input: AgentProfileInput<Parameters<typeof buildReadonlyLensProfile>[0]>,
@@ -89,47 +86,7 @@ const selectReadonlySandbox = (
   input: AgentProfileInput<Parameters<typeof buildReadonlySandboxSelection>[0]>,
 ) => buildReadonlySandboxSelection(withRegister(input))
 
-test.each([
-  {
-    name: 'resolves a symlinked-parent path to its target',
-    paths: ['/var/run/docker.sock'],
-    resolved: { '/var/run': '/run' },
-    expected: ['/run/docker.sock'],
-  },
-  {
-    name: 'keeps a missing socket when its parent cannot be resolved',
-    paths: ['/missing/docker.sock'],
-    resolved: {},
-    expected: ['/missing/docker.sock'],
-  },
-  {
-    name: 'dedupes paths that resolve to one target',
-    paths: ['/var/run/docker.sock', '/run/docker.sock'],
-    resolved: {
-      '/var/run': '/run',
-      '/run': '/run',
-    },
-    expected: ['/run/docker.sock'],
-  },
-])('$name', ({ paths, resolved, expected }) => {
-  expect(
-    canonicalSocketDenyPaths(paths, (path) => resolved[path as keyof typeof resolved] ?? null),
-  ).toEqual([...expected])
-})
-
 const TEST_SOCKET_DENY_PATHS = ['/test/run/docker.sock', '/test/custom/docker.sock'] as const
-
-test('confinement report inputs use the injected socket denies', () => {
-  const environment = {
-    HOME: '/Users/operator',
-    [STATE_HOME_ENV]: '/operator/state',
-    [CONFIG_HOME_ENV]: '/operator/config',
-  }
-
-  expect(readonlyLensReportInputs(environment, null, TEST_SOCKET_DENY_PATHS).denyRead).toEqual(
-    expect.arrayContaining(TEST_SOCKET_DENY_PATHS),
-  )
-})
 
 const temporaryDirectories: string[] = []
 const temporaryState = () => {
@@ -502,6 +459,7 @@ test('readonlyLensDeniesLoginKeychain follows the denyRead list, not a keychain 
 test('probe sandbox profile denies network and writes except the throwaway directory', () => {
   const scratch = '/tmp/orch-probe-scratch'
   const profile = probeSandboxProfile({
+    kind: 'agent',
     allowWriteDir: scratch,
     cwd: '/projects/fixture',
     project: fixtureProject(),
@@ -521,6 +479,7 @@ test('probe sandbox profile denies network and writes except the throwaway direc
 
 test('probe sandbox profile denies a project-declared secret path', () => {
   const profile = probeSandboxProfile({
+    kind: 'agent',
     allowWriteDir: '/tmp/orch-probe-scratch',
     cwd: '/projects/fixture',
     project: fixtureProject({ secretPaths: ['/operator/project-secret'] }),

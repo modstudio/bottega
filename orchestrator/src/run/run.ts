@@ -625,7 +625,6 @@ export async function run(
         mcpAllowlist: mcpMode ? mcpLaunch.allowlist : [],
         writingAcp,
         sharedReader: worktree?.sharedReader === true,
-        orchestratorStoreAccess: 'deny',
         ...writingAcpAsk.sandbox,
       })
       const home = await prepareRecordedWorkerHome(db(), {

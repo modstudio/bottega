@@ -15,7 +15,7 @@ export type RunningInstallLayout = {
   workspaceDirectories: string[]
 }
 
-export function runningInstallRootForSandbox(environment: ConfigEnvironment): string {
+function runningInstallRootForSandbox(environment: ConfigEnvironment): string {
   return runningInstallRoot(import.meta.dir, environment)
 }
 

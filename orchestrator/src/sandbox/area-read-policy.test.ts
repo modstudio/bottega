@@ -18,7 +18,6 @@ test('area policy denies orchestrator database and runs overrides outside the st
     runtimeDir: '/override/runs/current',
     project,
     registeredProjects: [project],
-    orchestratorStoreAccess: 'deny',
     environment: {
       HOME: '/Users/operator',
       [STATE_HOME_ENV]: '/operator/state',

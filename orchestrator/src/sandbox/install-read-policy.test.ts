@@ -37,7 +37,6 @@ test('a different project can read only the running checkout runtime', () => {
     nodeModuleLinks: [],
     environment,
     socketDenyPaths: [],
-    orchestratorStoreAccess: 'deny',
     installLayout,
   })
 

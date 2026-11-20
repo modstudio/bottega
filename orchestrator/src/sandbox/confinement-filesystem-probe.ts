@@ -395,7 +395,6 @@ function createProbeFixture(root: string) {
       installLayout: fixtureInstall,
       environment,
       socketDenyPaths: [],
-      orchestratorStoreAccess: 'deny' as const,
     },
   }
 }
@@ -449,17 +448,19 @@ export async function runConfinementFilesystemProbes(): Promise<ConfinementFiles
       await launchProbe(
         'workflow probe',
         probeSandboxProfile({
+          kind: 'workflow-probe',
           allowWriteDir: common.runtimeDir,
           cwd: common.worktree,
           project: common.project,
           registeredProjects: common.registeredProjects,
           environment: common.environment,
           socketDenyPaths: common.socketDenyPaths,
-          orchestratorStoreAccess: 'allow-read',
         }),
-        targets.filter(
-          ({ name }) => name === 'orchestrator store' || name === 'another run directory',
-        ),
+        targets
+          .filter(({ name }) => name === 'orchestrator store' || name === 'own secret')
+          .map((target) =>
+            target.name === 'orchestrator store' ? { ...target, expected: 'readable' } : target,
+          ),
         commandArgv,
         environment,
         hubOpenMode,

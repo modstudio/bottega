@@ -278,7 +278,6 @@ export function readonlyLensProfile(input: {
   denySharedTemp?: boolean
   socketDenyPaths?: readonly string[]
   installLayout?: RunningInstallLayout
-  orchestratorStoreAccess: 'deny' | 'allow-read'
 }): SandboxRuntimeConfig {
   if (input.registeredProjects.length === 0) {
     throw new Error(emptyProjectRegisterRefusal())
@@ -309,7 +308,6 @@ export function readonlyLensProfile(input: {
     project: input.project,
     registeredProjects: input.registeredProjects,
     environment,
-    orchestratorStoreAccess: input.orchestratorStoreAccess,
   })
   const candidateAllows = [
     ...new Set([
@@ -437,7 +435,6 @@ export function writerProfile(input: {
   nodeModuleLinks?: string[]
   environment?: ConfigEnvironment
   socketDenyPaths?: readonly string[]
-  orchestratorStoreAccess: 'deny' | 'allow-read'
 }): SandboxRuntimeConfig {
   const worktree = resolve(input.worktree)
   const scratchDir = resolve(input.scratchDir)
@@ -470,15 +467,15 @@ export function writerProfile(input: {
   }
 }
 
-/** Write-deny everywhere except a throwaway directory; no network; no secret paths. */
+/** Write-deny everywhere except a throwaway directory; no network; protected secrets denied. */
 export function probeSandboxProfile(input: {
+  kind: 'agent' | 'workflow-probe'
   allowWriteDir: string
   cwd: string
   project: Project
   registeredProjects: readonly Project[]
   environment?: ConfigEnvironment
   socketDenyPaths?: readonly string[]
-  orchestratorStoreAccess: 'deny' | 'allow-read'
 }): SandboxRuntimeConfig {
   if (input.registeredProjects.length === 0) {
     throw new Error(emptyProjectRegisterRefusal())
@@ -487,15 +484,17 @@ export function probeSandboxProfile(input: {
   const cwd = resolve(input.cwd)
   const protectedDenies = protectedDenyPaths(input.project, input.environment ?? process.env)
   refuseProtectedOverlap('probe', protectedDenies, cwd, allowWrite)
-  const areas = areaReadPolicy({
-    worktree: cwd,
-    runtimeDir: allowWrite,
-    scratchDir: allowWrite,
-    project: input.project,
-    registeredProjects: input.registeredProjects,
-    environment: input.environment ?? process.env,
-    orchestratorStoreAccess: input.orchestratorStoreAccess,
-  })
+  const areas =
+    input.kind === 'agent'
+      ? areaReadPolicy({
+          worktree: cwd,
+          runtimeDir: allowWrite,
+          scratchDir: allowWrite,
+          project: input.project,
+          registeredProjects: input.registeredProjects,
+          environment: input.environment ?? process.env,
+        })
+      : { deny: [], allow: [] }
   return {
     network: {
       allowedDomains: [],
@@ -527,6 +526,7 @@ export function probeSandboxProfileForCwd(input: {
   if (!project)
     throw new Error(`${PLATFORM_SLUG} workflow probe: no registered project contains ${input.cwd}`)
   return probeSandboxProfile({
+    kind: 'workflow-probe',
     allowWriteDir: input.allowWriteDir,
     cwd: input.cwd,
     project,
@@ -534,7 +534,6 @@ export function probeSandboxProfileForCwd(input: {
       ...projects({}, input.database),
       ...projects({ retired: true }, input.database),
     ],
-    orchestratorStoreAccess: 'allow-read',
   })
 }
 
@@ -651,7 +650,6 @@ export function selectReadonlySandbox(input: {
   askAddress?: string
   sharedReader?: boolean
   socketDenyPaths?: readonly string[]
-  orchestratorStoreAccess: 'deny' | 'allow-read'
 }): SandboxSelection {
   const kind = selectReadonlySandboxKind({
     agent: input.agent,
@@ -694,7 +692,6 @@ export function selectReadonlySandbox(input: {
         baseUrl: input.baseUrl,
         environment: input.environment,
         socketDenyPaths: input.socketDenyPaths,
-        orchestratorStoreAccess: input.orchestratorStoreAccess,
       }),
     }
   }
@@ -714,7 +711,6 @@ export function selectReadonlySandbox(input: {
       environment: input.environment,
       socketDenyPaths: input.socketDenyPaths,
       allowWrite: readonlySandboxWriteRoots(input),
-      orchestratorStoreAccess: input.orchestratorStoreAccess,
     }),
   }
 }

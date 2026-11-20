@@ -19,7 +19,6 @@ test('an SRT agent profile refuses an empty project register with its remedy', (
       runtimeDir: '/runs/sandbox-42',
       project: null,
       registeredProjects: [],
-      orchestratorStoreAccess: 'deny',
     }),
   ).toThrow(
     `${PLATFORM_SLUG} sandbox refusal: the project register is empty\ncleared by: ${PLATFORM_SLUG} project add <path>`,

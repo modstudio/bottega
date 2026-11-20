@@ -6,13 +6,21 @@ const ran = { status: 'ran', reason: 'exit 0' } as const
 describe('probeVerdict', () => {
   test('reports an unexpectedly readable denied target', () => {
     expect(
-      probeVerdict([{ name: 'secret', path: '/secret', expected: 'denied' }], { secret: 'readable' }, ran),
+      probeVerdict(
+        [{ name: 'secret', path: '/secret', expected: 'denied' }],
+        { secret: 'readable' },
+        ran,
+      ),
     ).toEqual({ status: 'readable' })
   })
 
   test('reports an unexpectedly denied readable target', () => {
     expect(
-      probeVerdict([{ name: 'tree', path: '/tree', expected: 'readable' }], { tree: 'denied' }, ran),
+      probeVerdict(
+        [{ name: 'tree', path: '/tree', expected: 'readable' }],
+        { tree: 'denied' },
+        ran,
+      ),
     ).toEqual({ status: 'failed', reason: 'one or more expected-readable paths were denied' })
   })
 
