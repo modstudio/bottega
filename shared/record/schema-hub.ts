@@ -13,7 +13,6 @@ import {
   jsonb,
   pgPolicy,
   pgTable,
-  primaryKey,
   text,
   timestamp,
   unique,

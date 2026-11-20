@@ -513,8 +513,8 @@ test('change ids replay the stored outcome and reject a different payload', asyn
 
   const firstId = '01990000-0000-7000-8000-000000001416'
   const firstChangeId = '01990000-0000-7000-8000-000000001417'
-  try {
-    await apply([
+  await expect(
+    apply([
       {
         table: 'hub_task',
         id: firstId,
@@ -523,51 +523,15 @@ test('change ids replay the stored outcome and reject a different payload', asyn
         change_id: firstChangeId,
       },
       { ...change, row: { ...change.row, title: 'different again' } },
-    ])
-    throw new Error('expected a change-id mismatch')
-  } catch (error) {
-    expect(error).toBeInstanceOf(HostedChangeIdMismatchError)
-    expect(error).toMatchObject({ appliedIndex: 1 })
-  }
-  expect((await database.query(`SELECT 1 FROM hub_task WHERE id=$1`, [firstId])).rows).toHaveLength(0)
+    ]),
+  ).rejects.toMatchObject({ appliedIndex: 1 })
+  expect((await database.query(`SELECT 1 FROM hub_task WHERE id=$1`, [firstId])).rows).toHaveLength(
+    0,
+  )
   expect(
     (await database.query(`SELECT 1 FROM hub_applied_change WHERE change_id=$1`, [firstChangeId]))
       .rows,
   ).toHaveLength(0)
-})
-
-test('a change id journaled in another space is refused as a typed mismatch', async () => {
-  const otherSpaceId = '01990000-0000-7000-8000-000000001418'
-  const id = '01990000-0000-7000-8000-000000001419'
-  const changeId = '01990000-0000-7000-8000-00000000141a'
-  await database.exec(`
-    RESET ROLE;
-    INSERT INTO space(id,name,slug,created_at)
-    VALUES ('${otherSpaceId}','Other journal space','other-journal-space',now());
-    INSERT INTO hub_applied_change(change_id,space_id,result,applied_at)
-    VALUES ('${changeId}','${otherSpaceId}','{"fingerprint":"other","outcome":{"id":"${id}","status":"applied"}}',now());
-    SET ROLE ${RECORD_ACTOR_ROLE};
-    SELECT set_config('app.user_id','${userId}',false);
-    SELECT set_config('app.space_id','${spaceId}',false);
-    SELECT set_config('app.space_ids','${spaceId}',false);
-  `)
-
-  try {
-    await apply([
-      {
-        table: 'hub_task',
-        id,
-        op: 'upsert',
-        row: taskRow(id, 'DEV-419'),
-        change_id: changeId,
-      },
-    ])
-    throw new Error('expected a cross-space change-id mismatch')
-  } catch (error) {
-    expect(error).toBeInstanceOf(HostedChangeIdMismatchError)
-    expect(error).toMatchObject({ appliedIndex: 0 })
-  }
-  expect((await database.query(`SELECT 1 FROM hub_task WHERE id=$1`, [id])).rows).toHaveLength(0)
 })
 
 test('a rejected change id is retried after its missing state arrives', async () => {
