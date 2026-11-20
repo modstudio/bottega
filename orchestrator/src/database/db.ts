@@ -931,10 +931,15 @@ function seedProjects(d: Database): void {
 
 /** Main-checkout binary only: apply pending, ordered Drizzle migrations. */
 export function migrateDatabase(
-  input: { beforeMigration?: string; beforeApply?: BeforeMigrationApply } = {},
+  input: {
+    beforeMigration?: string
+    beforeApply?: BeforeMigrationApply
+    newStore?: boolean
+  } = {},
 ): {
   path: string
   versions: string[]
+  created: boolean
 } {
   const legacyRefusal = legacyDatabaseRefusal()
   if (legacyRefusal) throw new Error(legacyRefusal)
@@ -951,10 +956,12 @@ export function migrateDatabase(
       const versions = input.beforeMigration
         ? applyMigrationsBefore(database, input.beforeMigration)
         : applyMigrations(database, undefined, input.beforeApply)
-      writeTransaction(() => initializeDefaultLocalProject(database, true), database)
-      seedProjects(database)
       // Seeding and hygiene assume the current schema, so a partial migration skips them.
-      if (!input.beforeMigration) runOpenHooks('afterInitialize', database)
+      if (!input.beforeMigration) {
+        writeTransaction(() => initializeDefaultLocalProject(database, true), database)
+        seedProjects(database)
+        runOpenHooks('afterInitialize', database)
+      }
       return versions
     })
     if (!created.published) {
@@ -970,7 +977,7 @@ export function migrateDatabase(
         winner.close()
       }
     }
-    return { path: DB_PATH, versions: created.result }
+    return { path: DB_PATH, versions: created.result, created: true }
   }
   const d = openOwnedWritableDatabase(DB_PATH, { create: false })
   try {
@@ -979,10 +986,12 @@ export function migrateDatabase(
     const versions = input.beforeMigration
       ? applyMigrationsBefore(d, input.beforeMigration)
       : applyMigrations(d, undefined, input.beforeApply)
-    writeTransaction(() => initializeDefaultLocalProject(d, false), d)
-    seedProjects(d)
-    if (!input.beforeMigration) runOpenHooks('afterInitialize', d)
-    return { path: DB_PATH, versions }
+    if (!input.beforeMigration) {
+      writeTransaction(() => initializeDefaultLocalProject(d, input.newStore ?? false), d)
+      seedProjects(d)
+      runOpenHooks('afterInitialize', d)
+    }
+    return { path: DB_PATH, versions, created: false }
   } finally {
     d.close()
   }
