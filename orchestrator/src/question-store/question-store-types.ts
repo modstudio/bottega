@@ -73,4 +73,5 @@ export type QuestionReadResult = {
 export interface QuestionStore {
   write(intent: QuestionLiveIntent, input: QuestionWriteBody): Promise<QuestionWriteResult>
   read(input: QuestionReadInput, projectId?: string): Promise<QuestionReadResult>
+  projectSpace?(projectId: string): Promise<string | null>
 }

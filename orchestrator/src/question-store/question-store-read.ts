@@ -14,6 +14,14 @@ import type {
 import { compareQuestionsByAsk } from './question-order.ts'
 import { questionStore } from './question-store.ts'
 import type { QuestionStore } from './question-store-types.ts'
+
+export async function questionProjectSpace(
+  database: Database,
+  projectId: string,
+): Promise<string | null> {
+  return (await questionStore(database).projectSpace?.(projectId)) ?? null
+}
+
 export async function questionById(
   database: Database,
   id: string,

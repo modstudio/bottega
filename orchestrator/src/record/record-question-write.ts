@@ -42,6 +42,7 @@ type ExistingQuestion = {
   number: number | string | null
   revision: number | string
   last_request_id: string | null
+  project_id: string | null
 }
 
 function requireRestoreNumber(intent: QuestionIntent, input: Tenant & QuestionWriteBody): void {
@@ -96,6 +97,17 @@ async function questionNumberForWrite(
   if (existing?.number != null) return Number(existing.number)
   if (intent === 'restore') return input.question.number!
   return allocateQuestionNumber(tx, input.spaceId)
+}
+
+async function projectIdForQuestionWrite(
+  intent: QuestionIntent,
+  input: Tenant & QuestionWriteBody,
+  existing: ExistingQuestion | undefined,
+  tx: SQL,
+): Promise<string | null> {
+  if (intent === 'close' && existing && input.question.projectId === existing.project_id)
+    return existing.project_id
+  return projectRecordId(tx, input.question, input)
 }
 
 async function assertRunQuestionOwnerLive(runId: string, tx: SQL): Promise<void> {
@@ -166,7 +178,7 @@ export async function writeRecordQuestionTransaction(
   if (intent === 'ask' && writeInput.question.runId)
     await assertRunQuestionOwnerLive(writeInput.question.runId, tx)
   const existing = (await tx`
-      SELECT number,revision,last_request_id::text
+      SELECT number,revision,last_request_id::text,project_id::text
         FROM question WHERE id=${writeInput.question.id}::uuid FOR UPDATE
     `) as ExistingQuestion[]
   if (existing[0]?.last_request_id === writeInput.requestId)
@@ -188,7 +200,7 @@ export async function writeRecordQuestionTransaction(
     id: writeInput.question.workflowTaskId,
     key: writeInput.question.workflowKey,
   })
-  const projectId = await projectRecordId(tx, writeInput.question, writeInput)
+  const projectId = await projectIdForQuestionWrite(intent, writeInput, existing[0], tx)
   const values = await questionValuesForWrite(
     tx,
     payload,

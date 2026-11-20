@@ -36,6 +36,7 @@ export type RecordContractFixture = {
   client: RecordApiClient
   database: PGlite
   requestedRoutes: Set<string>
+  requests: Array<{ path: string; destinationSpaceId: string | null }>
   close(): Promise<void>
 }
 
@@ -63,7 +64,9 @@ function identity(): RecordIdentity {
   }
 }
 
-export async function createRecordContractFixture(): Promise<RecordContractFixture> {
+export async function createRecordContractFixture(
+  options: { identity?: RecordIdentity } = {},
+): Promise<RecordContractFixture> {
   const database = await createHostedRecordFixture({
     spaceId: RECORD_CONTRACT_SPACE_A,
     userId: RECORD_CONTRACT_USER,
@@ -80,7 +83,7 @@ export async function createRecordContractFixture(): Promise<RecordContractFixtu
   `)
   const restorePool = installRecordPool(RECORD_CONTRACT_URL, pgliteSql(database))
   const app = recordApiTestApp(
-    identity(),
+    options.identity ?? identity(),
     { ...idleSubjectDeps(), ...idleRecordApiDeps() },
     {
       recordUrl: RECORD_CONTRACT_URL,
@@ -97,6 +100,7 @@ export async function createRecordContractFixture(): Promise<RecordContractFixtu
     },
   )
   const requestedRoutes = new Set<string>()
+  const requests: Array<{ path: string; destinationSpaceId: string | null }> = []
   installRecordApiClient(null)
   const request: RecordClientRequest = async <T>(
     path: string,
@@ -108,6 +112,10 @@ export async function createRecordContractFixture(): Promise<RecordContractFixtu
       .replace(/^\/v1\/task-flow\/stages\/[^/]+$/, '/v1/task-flow/stages/:id')
       .replace(/^\/v1\/task-flow\/texts\/[^/]+$/, '/v1/task-flow/texts/:id')
     requestedRoutes.add(`${requestInit.method?.toUpperCase() ?? 'GET'} ${pathname}`)
+    requests.push({
+      path: `${requestInit.method?.toUpperCase() ?? 'GET'} ${path}`,
+      destinationSpaceId: requestInit.destinationSpaceId ?? null,
+    })
     const headers = recordRequestHeaders({
       destinationSpaceId: requestInit.destinationSpaceId,
       headers: requestInit.headers,
@@ -135,6 +143,7 @@ export async function createRecordContractFixture(): Promise<RecordContractFixtu
     client,
     database,
     requestedRoutes,
+    requests,
     close,
   }
 }

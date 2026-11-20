@@ -22,7 +22,10 @@ import {
   QUESTION_RULINGS_PAGE_SIZE,
   questionChangedAfterRefusal,
 } from '../record/record-question-contract.ts'
-import { questionWriteDestinations } from '../record/record-question-destination.ts'
+import {
+  ProjectRecordDestinationRefusal,
+  questionWriteDestinations,
+} from '../record/record-question-destination.ts'
 import { compareQuestionsByAsk } from './question-order.ts'
 import { resolveQuestionRunPusher } from './question-run-pusher.ts'
 import type { QuestionReadResult, QuestionReadRow, QuestionStore } from './question-store-types.ts'
@@ -158,6 +161,15 @@ export class RecordQuestionStore implements QuestionStore {
               new Error('record API predates identity reads; release hosted-api, then retry'),
             ),
     })
+  }
+
+  async projectSpace(projectId: string): Promise<string | null> {
+    try {
+      return (await this.destination(projectId)).destinationSpaceId
+    } catch (error) {
+      if (error instanceof ProjectRecordDestinationRefusal) return null
+      throw error
+    }
   }
 
   private allDestinations(): Promise<RecordWriteDestination[]> {

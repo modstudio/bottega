@@ -8,7 +8,12 @@ import { recordWriteSpace } from '../../../shared/record-write-space.ts'
 import { projectByRecordId, projectRowByRecordId } from '../project/project-read.ts'
 import type { RecordWriteDestination } from './record-api-client-paths.ts'
 import type { RecordIdentity } from './record-auth.ts'
-import { requireProjectRecordDestination } from './record-project-destination-client.ts'
+import {
+  ProjectRecordDestinationRefusal,
+  requireProjectRecordDestination,
+} from './record-project-destination-client.ts'
+
+export { ProjectRecordDestinationRefusal }
 
 export class QuestionWriteIdentityError extends Error {}
 

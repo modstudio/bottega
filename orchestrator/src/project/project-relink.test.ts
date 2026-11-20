@@ -10,6 +10,7 @@ import { readMachineValue } from '../../../shared/machine-config.ts'
 import { machineKeyId } from '../../../shared/machine-key-id.ts'
 import { writeMachineKey } from '../../../shared/machine-key-store.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
+import { projectOutsideRequestSpacePrefix } from '../../../shared/record-project-identity.ts'
 import { RECORD_ACTIVE_SPACE_REMEDY } from '../../../shared/record-remedies.ts'
 import { generateMachineKeyPair } from '../../../shared/secret-envelope.ts'
 import {
@@ -135,8 +136,8 @@ test('relink rewrites every registered reference and only pending matching paylo
     )
     .run(
       pending,
-      `record project ${oldId} is absent from request space space-a`,
-      `record project ${oldId} is absent from request space space-a`,
+      `${projectOutsideRequestSpacePrefix(oldId)}space-a (project "local"); request was sent to record space space-a`,
+      `${projectOutsideRequestSpacePrefix(oldId)}space-a (project "local"); request was sent to record space space-a`,
       newRecordId(),
     )
 
