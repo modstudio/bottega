@@ -12,10 +12,7 @@ import { applyRecordWriteAuthority } from '../record/record-write-authority.ts'
 import { taskFlowReadStore } from '../workflow/task-flow-store.ts'
 import { openKeylessCursorsForSession } from '../workflow/workflow-cursor-list.ts'
 import type { HubTaskReference } from '../workflow/workflow-task-reference.ts'
-import {
-  contextCursorWarning,
-  cursorAncestorTasks,
-} from './context-cursor-warning-decision.ts'
+import { contextCursorWarning, cursorAncestorTasks } from './context-cursor-warning-decision.ts'
 import { hostedContextItemClient } from './context-item-hosted-client.ts'
 import {
   getContextItem,

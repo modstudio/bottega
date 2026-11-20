@@ -176,8 +176,7 @@ export async function readHubTaskReferenceByRecordId(
   try {
     return taskReferenceFromShow(await taskReader().show(recordId, { recordId }))
   } catch (error) {
-    if (namesMissingTaskRecord(error instanceof Error ? error.message : String(error), recordId))
-      return null
+    if (taskRecordFailureNamesMissingTask(error, recordId)) return null
     throw error
   }
 }
@@ -204,6 +203,10 @@ export async function pullHubTask(project: string, key: string): Promise<HubTask
 /** Classify only the canonical missing-task line; every other command failure remains a read error. */
 export function taskPullFailureNamesMissingTask(error: unknown, key: string): boolean {
   return namesMissingTask(error instanceof Error ? error.message : String(error), key)
+}
+
+export function taskRecordFailureNamesMissingTask(error: unknown, recordId: string): boolean {
+  return namesMissingTaskRecord(error instanceof Error ? error.message : String(error), recordId)
 }
 
 /** A reader failure is a refusal; callers with best-effort policy catch it explicitly. */

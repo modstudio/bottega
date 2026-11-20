@@ -8,7 +8,6 @@ import {
   referenceNotVisibleRefusal,
   referenceStoreUnreachableRefusal,
 } from '../../../shared/reference-refusal.ts'
-import { namesMissingTaskRecord } from '../../../shared/task-missing.ts'
 import { liveClaimsOfSession } from '../board/board-claim-service.ts'
 import { db, sessionId } from '../database/db.ts'
 import { resolveCommitArgument } from '../git/commit-resolution.ts'
@@ -22,10 +21,11 @@ import {
   type HubTaskPuller,
   type HubTaskReference,
   pullHubTask,
+  readHubTaskChildren,
   readHubTaskReference,
   readHubTaskReferenceByRecordId,
-  readHubTaskChildren,
   resolveOrPullHubTaskReference,
+  taskRecordFailureNamesMissingTask,
 } from '../workflow/workflow-task-reference.ts'
 import { productionWorkflowTextDocumentPorts } from '../workflow/workflow-text-copy.ts'
 import { listContextItems } from './context-item-store.ts'
@@ -282,12 +282,7 @@ export async function resolveContextTaskWithChildren(
   const prefix = taskKeyPrefix(key) ?? key.split('-', 1)[0] ?? key
   const project = projectForTaskKey(key, projects(undefined, database))
   if (!project) throw new ContextTaskPrefixError(key, prefix)
-  const task = await resolveOrPullHubTaskReference(
-    project.name,
-    key,
-    ports.lookup,
-    ports.task,
-  )
+  const task = await resolveOrPullHubTaskReference(project.name, key, ports.lookup, ports.task)
   const children = await ports.children(project.name, task.key)
   return {
     task,
@@ -314,10 +309,7 @@ export async function resolveContextTaskByRecordId(
   try {
     return { task: await ports.record(recordId), unreadable: [] }
   } catch (error) {
-    if (
-      namesMissingTaskRecord(error instanceof Error ? error.message : String(error), recordId)
-    )
-      return { task: null, unreadable: [] }
+    if (taskRecordFailureNamesMissingTask(error, recordId)) return { task: null, unreadable: [] }
     return { task: null, unreadable: projects(undefined, database).map((row) => row.name) }
   }
 }
@@ -431,15 +423,4 @@ export async function assertContextDropAllowed({
     (await contextCursorOwner(item.holder, database))?.session_id,
   )
   if (refusal) throw new ContextWriteRefusalError(refusal)
-}
-
-export async function contextProfileForHolder(
-  subject: string,
-  ports = defaultContextFactsPorts(),
-  task?: ContextTask,
-) {
-  const address = splitContextHolder(subject)
-  if (address.holderKind === 'session' || address.holderKind === 'cursor') return 'session' as const
-  if (!task) return 'task' as const
-  return taskProfile(task.key, await ports.children(task.project, task.key))
 }

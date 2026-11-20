@@ -7,7 +7,7 @@ export type CarriedTaskPair = { key: string; project: string }
 type TaskIdentity = CarriedTaskPair
 type TaskParent = TaskIdentity & { parent_key?: string | null }
 type CursorTask = { project: string; taskKey: string | null }
-export const CONTEXT_CURSOR_ANCESTOR_DEPTH = 32
+const CONTEXT_CURSOR_ANCESTOR_DEPTH = 32
 
 /** Resolve the bounded ancestor chains needed to decide whether open cursors carry a task. */
 export async function cursorAncestorTasks(input: {
