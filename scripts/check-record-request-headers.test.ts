@@ -119,3 +119,14 @@ test('allows the named task transport handed to the traced hosted-session seam',
     { file: 'hub/src/task-client.ts', line: 6 },
   ])
 })
+
+test('does not inherit transport allow-list function names', () => {
+  const source = `
+    async function toString() {
+      return fetch(resolveHostedUrl('/v1/tasks'))
+    }
+  `
+  expect(recordFetchViolations(source, 'hub/src/task-client.ts')).toEqual([
+    { file: 'hub/src/task-client.ts', line: 3 },
+  ])
+})

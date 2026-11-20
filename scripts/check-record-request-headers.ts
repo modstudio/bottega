@@ -239,7 +239,7 @@ export function recordFetchViolations(source: string, file: string): RecordFetch
         const allowedFunctions =
           TRACED_TRANSPORT_FUNCTIONS[file as keyof typeof TRACED_TRANSPORT_FUNCTIONS]
         const functionName = enclosingFunctionName(node)
-        if (functionName && functionName in (allowedFunctions ?? {})) {
+        if (functionName && Object.hasOwn(allowedFunctions ?? {}, functionName)) {
           ts.forEachChild(node, visit)
           return
         }

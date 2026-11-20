@@ -233,7 +233,11 @@ export async function tracedRecordFetch(
   const startedAt = performance.now()
   const routeClass = recordRouteClass(new URL(url).pathname)
   try {
-    const response = await transport(url, { ...init, [RECORD_TRACE_ACTIVE]: true })
+    const marked: RequestInit & { [RECORD_TRACE_ACTIVE]?: true } = {
+      ...init,
+      [RECORD_TRACE_ACTIVE]: true,
+    }
+    const response = await transport(url, marked)
     const responseBytes = contentLength(response.headers)
     const common = {
       routeClass,

@@ -2,6 +2,7 @@
 /** Composes and serves the record API. Must not own record queries or authentication policy. */
 import { readBuiltCommit } from '../../../shared/built-commit.ts'
 import {
+  type BodyCountFinish,
   contentLength,
   countResponseBody,
   HOSTED_SERVER_IDLE_TIMEOUT_SECONDS,
@@ -229,7 +230,7 @@ export async function timedRecordApiResponse(
     bytes: number,
     status: number,
     durationMs: number,
-    finish: 'complete' | 'error' | 'cancelled',
+    finish: BodyCountFinish,
   ) => void = () => {},
 ): Promise<{ response: Response; durationMs: number }> {
   const started = now()
