@@ -168,11 +168,11 @@ describe('run answers', () => {
     })
   })
 
-  test('answer refuses questions split between live and stopped owners', async () => {
+  test('answer tells how to close a terminal question mixed with a live owner', async () => {
     const root = addRun({
       agent: 'codex',
       job: 'implement',
-      status: 'asking',
+      status: 'ok',
       session: 'orch-test-session',
     })
     const child = addRun({
@@ -188,9 +188,17 @@ describe('run answers', () => {
     )
     addQuestion.run(newRecordId(), root, new Date().toISOString(), 'root question?')
     addQuestion.run(newRecordId(), child, new Date().toISOString(), 'child question?')
-    await expect(
-      answerRun(root, { argv: ['one', 'two'], recordOnly: false, flags }, helpers),
-    ).rejects.toThrow('both live and stopped turns')
+    const refusal = answerRun(
+      root,
+      {
+        argv: ['one', 'two'],
+        recordOnly: false,
+        flags,
+      },
+      helpers,
+    )
+    await expect(refusal).rejects.toThrow(/question close q\d+ --reason/)
+    await expect(refusal).rejects.toThrow(`retry ${PLATFORM_SLUG} question answer ${root}`)
     expect(
       db().query('SELECT COUNT(*) n FROM question WHERE answered_at IS NOT NULL').get(),
     ).toEqual({ n: 0 })
