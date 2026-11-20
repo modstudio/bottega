@@ -12,15 +12,17 @@ import {
   withheldClassNamesForwardedFrom,
 } from './record-connection-env.ts'
 import {
-  isReadonlySandboxCandidate,
   isWritingAcpRun,
   READONLY_LENS_ALLOW_LOCAL_BINDING,
-  type RunSandbox,
   readonlyLensDeniesLoginKeychain,
   readonlyLensDeniesOperatorEnvFile,
-  selectReadonlySandboxKind,
   workerHomeLinksEnvFile,
 } from './sandbox.ts'
+import {
+  isReadonlySandboxCandidate,
+  type RunSandbox,
+  selectReadonlySandboxKind,
+} from './sandbox-selection-policy.ts'
 
 const CONFINEMENT_JOB_KINDS = ['reading', 'writing'] as const
 export type ConfinementJobKind = (typeof CONFINEMENT_JOB_KINDS)[number]
@@ -85,7 +87,6 @@ export type ConfinementReportInput = {
 const OPEN = 'orchestrator has no denial'
 const JOB_KINDS: readonly ConfinementJobKind[] = CONFINEMENT_JOB_KINDS
 const MCP_VALUES = [false, true] as const
-const CODEX_NO_READ_DENIAL = 'orchestrator passes codex no read denial'
 
 export function confinementJobKindFromNeeds(needs: {
   readsRepo?: boolean
@@ -164,14 +165,16 @@ function envFileAccess(
   denyRead: readonly string[],
   envFilePaths: readonly string[],
 ): ConfinementAccess {
-  if (agent === 'codex') return { access: 'open', reason: CODEX_NO_READ_DENIAL }
   const linksEnvFile = workerHomeLinksEnvFile(harness)
-  if (outerSandbox === 'srt' && readonlyLensDeniesOperatorEnvFile(denyRead, envFilePaths)) {
+  if (
+    (outerSandbox === 'srt' || agent === 'codex') &&
+    readonlyLensDeniesOperatorEnvFile(denyRead, envFilePaths)
+  ) {
     return {
       access: 'denied',
       reason: linksEnvFile
-        ? 'srt denyRead includes the operator env file; the worker-home link resolves to it'
-        : 'srt denyRead includes the operator env file',
+        ? `${agent === 'codex' ? 'codex permission profile' : 'srt denyRead'} includes the operator env file; the worker-home link resolves to it`
+        : `${agent === 'codex' ? 'codex permission profile' : 'srt denyRead'} includes the operator env file`,
     }
   }
   if (linksEnvFile) {
@@ -186,10 +189,12 @@ function keychainAccess(
   denyRead: readonly string[],
   keychainPaths: readonly string[],
 ): ConfinementAccess {
-  if (agent === 'codex') return { access: 'open', reason: CODEX_NO_READ_DENIAL }
-  if (outerSandbox === 'host') return { access: 'open', reason: OPEN }
+  if (outerSandbox === 'host' && agent !== 'codex') return { access: 'open', reason: OPEN }
   if (readonlyLensDeniesLoginKeychain(denyRead, keychainPaths)) {
-    return { access: 'denied', reason: 'srt denyRead includes the login keychain' }
+    return {
+      access: 'denied',
+      reason: `${agent === 'codex' ? 'codex permission profile' : 'srt denyRead'} includes the login keychain`,
+    }
   }
   return { access: 'open', reason: OPEN }
 }
@@ -232,7 +237,7 @@ function okConfinement(
 ): ConfinementReportOkRow['confinement'] {
   if (agent.name === 'codex') {
     const ruling = decideCodexSandbox()
-    return { sandbox: ruling.sandbox, reason: 'codex native sandbox' }
+    return { sandbox: ruling.sandbox, reason: 'codex native permission profile' }
   }
   return {
     sandbox: kind.sandbox,

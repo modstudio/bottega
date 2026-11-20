@@ -70,6 +70,7 @@ test('running install carve-backs contain install paths only', () => {
     runningInstallReadCarveouts({
       kind: 'distribution',
       root: '/install',
+      executablePath: `/install/${PLATFORM_SLUG}`,
       workspaceDirectories: [],
     }),
   ).toEqual(['/install'])

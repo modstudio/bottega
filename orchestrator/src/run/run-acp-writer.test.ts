@@ -31,6 +31,16 @@ const sandboxDeniesLoopbackBinding = await (async () => {
   }
 })()
 
+const confinementProfile = (allowWrite: string[]) => ({
+  network: {
+    allowedDomains: [],
+    deniedDomains: [],
+    allowUnixSockets: [],
+    allowLocalBinding: false,
+  },
+  filesystem: { denyRead: [], allowWithinDeny: [], allowWrite, denyWrite: [] },
+})
+
 const tree: Worktree = {
   path: resolve('..'),
   branch: 'DEV-1530-test',
@@ -79,18 +89,40 @@ test('trusted writers keep their shared git roots and ordinary checkpoints', () 
 test('recorded confinement exposes sandbox roots and leaves host workers unproved', () => {
   expect(
     confinementRoots(
-      { filesystem: { allowWrite: ['/run/tree'] } },
+      confinementProfile(['/run/tree']),
       'grok',
       '/run/tree',
       [],
       '/tmp',
       'workspace-write',
+      true,
     ),
   ).toEqual(['/run/tree'])
-  expect(confinementRoots(null, 'grok', '/run/tree', [], '/tmp', 'workspace-write')).toBeNull()
   expect(
-    confinementRoots(null, 'codex', '/run/tree', ['/run/scratch'], '/tmp', 'workspace-write'),
+    confinementRoots(null, 'grok', '/run/tree', [], '/tmp', 'workspace-write', true),
+  ).toBeNull()
+  expect(
+    confinementRoots(
+      confinementProfile(['/run/runtime', '/run/scratch']),
+      'codex',
+      '/run/tree',
+      ['/run/scratch'],
+      '/tmp',
+      'workspace-write',
+      true,
+    ),
   ).toEqual(['/run/tree', '/run/scratch', '/tmp'])
+  expect(
+    confinementRoots(
+      confinementProfile(['/run/runtime', '/run/scratch']),
+      'codex',
+      '/run/tree',
+      ['/run/scratch'],
+      '/private/tmp',
+      'workspace-write',
+      false,
+    ),
+  ).toEqual(['/run/runtime', '/run/scratch'])
 })
 
 test.skipIf(sandboxDeniesLoopbackBinding)(
