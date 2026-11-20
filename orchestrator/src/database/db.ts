@@ -929,9 +929,31 @@ function seedProjects(d: Database): void {
   }
 }
 
+const NEW_STORE_SEED_MARKER = 'new_store_seed_pending'
+
+function markNewStoreForSeeding(database: Database): void {
+  database
+    .query('INSERT OR REPLACE INTO schema_meta(key,value) VALUES (?,?)')
+    .run(NEW_STORE_SEED_MARKER, '1')
+}
+
+function hasNewStoreSeedMarker(database: Database): boolean {
+  return Boolean(
+    database
+      .query<{ value: string }, [string]>('SELECT value FROM schema_meta WHERE key=?')
+      .get(NEW_STORE_SEED_MARKER),
+  )
+}
+
+function seedCurrentProjectSchema(database: Database, newStore: boolean): void {
+  initializeDefaultLocalProject(database, newStore)
+  seedProjects(database)
+  if (newStore) database.query('DELETE FROM schema_meta WHERE key=?').run(NEW_STORE_SEED_MARKER)
+}
+
 /** Main-checkout binary only: apply pending, ordered Drizzle migrations. */
 export function migrateDatabase(
-  input: { beforeMigration?: string; beforeApply?: BeforeMigrationApply; newStore?: boolean } = {},
+  input: { beforeMigration?: string; beforeApply?: BeforeMigrationApply } = {},
 ): {
   path: string
   versions: string[]
@@ -953,11 +975,11 @@ export function migrateDatabase(
         ? applyMigrationsBefore(database, input.beforeMigration)
         : applyMigrations(database, undefined, input.beforeApply)
       // Seeding and hygiene assume the current schema, so a partial migration skips them.
-      if (!input.beforeMigration) {
-        writeTransaction(() => initializeDefaultLocalProject(database, true), database)
-        seedProjects(database)
-        runOpenHooks('afterInitialize', database)
-      }
+      writeTransaction(() => {
+        markNewStoreForSeeding(database)
+        if (!input.beforeMigration) seedCurrentProjectSchema(database, true)
+      }, database)
+      if (!input.beforeMigration) runOpenHooks('afterInitialize', database)
       return versions
     })
     if (!created.published) {
@@ -983,8 +1005,7 @@ export function migrateDatabase(
       ? applyMigrationsBefore(d, input.beforeMigration)
       : applyMigrations(d, undefined, input.beforeApply)
     if (!input.beforeMigration) {
-      writeTransaction(() => initializeDefaultLocalProject(d, input.newStore ?? false), d)
-      seedProjects(d)
+      writeTransaction(() => seedCurrentProjectSchema(d, hasNewStoreSeedMarker(d)), d)
       runOpenHooks('afterInitialize', d)
     }
     return { path: DB_PATH, versions, created: false }

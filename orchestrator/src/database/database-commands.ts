@@ -45,12 +45,12 @@ export type DatabaseCommandPresentation = { log(value: string): void }
 type MigrateCommandActions = {
   assertAuthority?(): void
   inFlightRuns(): Promise<MigrationInFlightRun[]>
-  migrate(input?: { beforeMigration?: string; newStore?: boolean }): {
+  migrate(input?: { beforeMigration?: string }): {
     path: string
     versions: string[]
     created?: boolean
   }
-  migrateCutover?(input?: { newStore?: boolean }): {
+  migrateCutover?(): {
     path: string
     versions: string[]
     created?: boolean
@@ -285,10 +285,9 @@ function defaultMigrateCommandActions(options: MigrateCommandOptions = {}): Migr
         eventKind: 'invalidation',
         cause: `operator forced an in-flight migration: ${reason}`,
       }),
-    migrateCutover: (input) => {
+    migrateCutover: () => {
       let files: RunFilesystemMigrationReport | undefined
       const migrated = migrateDatabase({
-        newStore: input?.newStore,
         beforeApply: {
           migration: RUN_FILESYSTEM_IDENTITY_CUTOVER,
           action(database) {
@@ -416,9 +415,7 @@ async function finishMigration(
     path: string
     versions: string[]
     files?: RunFilesystemMigrationReport
-  } =
-    actions.migrateCutover?.({ newStore: before.created }) ??
-    actions.migrate({ newStore: before.created })
+  } = actions.migrateCutover?.() ?? actions.migrate()
   const files = after.files
   if (files) {
     presentation.log(

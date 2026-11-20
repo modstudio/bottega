@@ -1,9 +1,18 @@
 import { afterAll, beforeAll, expect, test } from 'bun:test'
 import type { PGlite } from '@electric-sql/pglite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { createHostedRecordFixture, pgliteSql } from '../../test/fixtures/hosted-record.ts'
-import { idleRecordApiDeps, idleSubjectDeps } from '../../test/fixtures/record-api.ts'
+import {
+  createMemoryRecordApiClient,
+  idleRecordApiDeps,
+  idleSubjectDeps,
+  installRecordApiClient,
+} from '../../test/fixtures/record-api.ts'
 import { recordApiTestApp } from '../../test/fixtures/record-api-app.ts'
+import { projectCommand } from '../project/project-commands.ts'
+import { upsertProject } from '../project/projects.ts'
+import { rememberHostedRecord } from './install-binding-write.ts'
 import { recordApiError } from './record-api-client-error.ts'
 import type { RecordIdentity } from './record-auth.ts'
 import { hostedProjectColumns } from './record-project-columns.ts'
@@ -92,6 +101,16 @@ function putProject(
   })
 }
 
+async function runProjectSet(name: string): Promise<void> {
+  await projectCommand(
+    'set',
+    ['project', 'set', name],
+    { has: () => false, flag: () => undefined },
+    { log: () => {}, cwd: () => process.cwd() },
+    { requireSpaceMembership: async () => {} },
+  )
+}
+
 test('the real record app refuses a stale project revision and names the pull remedy', async () => {
   const application = recordApp()
   expect(await (await putProject(application, 'project-revision')).json()).toEqual({
@@ -127,6 +146,55 @@ test('the real record app refuses a stale project revision and names the pull re
     (await database.query<{ name: string }>('SELECT name FROM project WHERE id=$1', [projectId]))
       .rows,
   ).toEqual([{ name: 'newer-project' }])
+})
+
+test('project set refuses after another machine writes a newer project revision', async () => {
+  const application = recordApp()
+  const id = newRecordId()
+  const created = (await (await putProject(application, 'set-stale', undefined, id)).json()) as {
+    revision: number
+  }
+  upsertProject({
+    recordId: id,
+    recordRevision: created.revision,
+    name: 'set-stale',
+    path: '/w/set-stale',
+    settings: { space: 'project-revision' },
+  })
+  await putProject(application, 'set-newer', created.revision, id)
+  rememberHostedRecord()
+  const priorApiUrl = process.env.BOTTEGA_RECORD_API_URL
+  process.env.BOTTEGA_RECORD_API_URL = 'https://record-api.example.test'
+  installRecordApiClient({
+    ...createMemoryRecordApiClient(),
+    whoami: async () => ({
+      user: { id: userId },
+      activeSpaceId: spaceId,
+      personalSpaceId: spaceId,
+      memberships: [{ space_id: spaceId, slug: 'project-revision', permission: 'write' as const }],
+    }),
+    upsertProject: async (input) => {
+      const response = await application.request('/v1/projects', {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json', 'x-record-space': spaceId },
+        body: JSON.stringify(input),
+      })
+      const body = await response.json()
+      if (!response.ok) throw recordApiError(body, response.status)
+      return body as { id: string; name: string; revision: number }
+    },
+  })
+  try {
+    await expect(runProjectSet('set-stale')).rejects.toMatchObject({
+      kind: 'conflict',
+      currentRevision: String(created.revision + 1),
+      message: expect.stringContaining(`${PLATFORM_SLUG} record pull`),
+    })
+  } finally {
+    installRecordApiClient(createMemoryRecordApiClient())
+    if (priorApiUrl === undefined) delete process.env.BOTTEGA_RECORD_API_URL
+    else process.env.BOTTEGA_RECORD_API_URL = priorApiUrl
+  }
 })
 
 test('retire returns the revision used by a same-machine unretire and preserves stale refusal', async () => {

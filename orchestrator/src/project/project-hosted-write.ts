@@ -27,7 +27,7 @@ export async function writeProjectToHostedRecord(
     canon?: boolean
     settings?: ProjectSettings | StoredProjectSettings
     retiredAt?: string | null
-    recordRevision?: number | null
+    recordRevision: number | null
   },
   destinationSpaceId?: string,
 ): Promise<{ recordId: string; recordRevision: number | null }> {

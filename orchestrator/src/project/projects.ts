@@ -353,7 +353,7 @@ export async function writeHostedProject(
     canon?: boolean
     settings?: ProjectSettings
     retiredAt?: string | null
-    recordRevision?: number | null
+    recordRevision: number | null
   },
   destinationSpaceId?: string,
 ): Promise<{ recordId: string; recordRevision: number | null }> {

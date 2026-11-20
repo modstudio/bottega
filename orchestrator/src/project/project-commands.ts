@@ -708,6 +708,7 @@ function projectSetCandidate(
 ): Project {
   return {
     recordId: project.recordId,
+    recordRevision: project.recordRevision ?? null,
     name: flags.flag('name') ?? currentName,
     path: flags.flag('path') ?? project.path,
     stack: flags.flag('stack') ?? project.stack,

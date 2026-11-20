@@ -121,6 +121,7 @@ export async function upsertHostedProjectRow(
 ): Promise<{ id: string; revision: number }> {
   const id = input.id
   const columns = input.columns
+  const expectedRevision = input.expectedRevision ?? null
   const rows = await tx`
     INSERT INTO project (
       id, space_id, name, key_prefixes, checkout_path, stack, canon, managed_context, agent_keys,
@@ -189,8 +190,8 @@ export async function upsertHostedProjectRow(
       tracker = EXCLUDED.tracker,
       worktree = EXCLUDED.worktree,
       retired_at = EXCLUDED.retired_at
-    WHERE ${input.expectedRevision ?? null}::bigint IS NULL
-       OR project.revision = ${input.expectedRevision ?? null}::bigint
+    WHERE ${expectedRevision}::bigint IS NULL
+       OR project.revision = ${expectedRevision}::bigint
     RETURNING id, revision
   `
   if (!rows.length) {
