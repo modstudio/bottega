@@ -239,6 +239,19 @@ test('probe names a missing working directory outside any registered project', a
   )
 })
 
+test('probe refuses an existing directory outside any registered project', async () => {
+  const outsideProject = tmpdir()
+  await expect(
+    recordWorkflowProbe(['printf', 'ok'], {
+      cwd: outsideProject,
+      d: database(),
+      runner: () => ({ exitCode: 0, output: 'ok' }),
+    }),
+  ).rejects.toThrow(
+    `${PLATFORM_SLUG} workflow probe: no registered project contains ${outsideProject}`,
+  )
+})
+
 test('exec records an architect command with its kind and session', async () => {
   const priorDepth = process.env.BOTTEGA_DEPTH
   const priorSession = process.env.CLAUDE_CODE_SESSION_ID
