@@ -75,10 +75,10 @@ function QuestionRuling({
   onAnswered: (questions: OperatorWaitingItem[]) => void
 }) {
   const first = questions[0]!
-  const [drafts, setDrafts] = useState<Record<number, Draft>>(() =>
+  const [drafts, setDrafts] = useState<Record<string, Draft>>(() =>
     Object.fromEntries(
       questions.map((question) => [
-        question.id,
+        question.question_record_id,
         {
           choice: question.recommendation ?? question.options[0] ?? '',
           freeText: '',
@@ -96,7 +96,10 @@ function QuestionRuling({
   const runId = first.run_record_id
   const rulings = questions.map((question) => ({
     questionId: question.id,
-    ruling: drafts[question.id]?.freeText.trim() || drafts[question.id]?.choice || '',
+    ruling:
+      drafts[question.question_record_id]?.freeText.trim() ||
+      drafts[question.question_record_id]?.choice ||
+      '',
   }))
   return (
     <section className="max-w-3xl">
@@ -107,11 +110,11 @@ function QuestionRuling({
       <div className="space-y-6 border border-border-default bg-surface-raised p-6">
         <Badge tone="warning">waiting on you</Badge>
         {questions.map((question, index) => {
-          const draft = drafts[question.id] ?? { choice: '', freeText: '' }
+          const draft = drafts[question.question_record_id] ?? { choice: '', freeText: '' }
           const update = (change: Partial<Draft>) =>
             setDrafts((current) => ({
               ...current,
-              [question.id]: { ...draft, ...change },
+              [question.question_record_id]: { ...draft, ...change },
             }))
           return (
             <div
@@ -204,7 +207,7 @@ function FileRulingControl({ question }: { question: OperatorWaitingItem }) {
       <Button
         variant="secondary"
         disabled={file.isPending || file.isSuccess}
-        onClick={() => file.mutate({ questionId: question.id, as: kind })}
+        onClick={() => file.mutate({ questionId: question.question_record_id, as: kind })}
       >
         {file.isPending ? 'Filing...' : 'File this ruling'}
       </Button>

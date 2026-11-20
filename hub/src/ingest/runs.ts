@@ -593,19 +593,15 @@ export async function ingestRunChanges(
       return { rows: change.rows, result }
     })(),
   ])
-  const failures = [
-    ...(runLeg.status === 'rejected'
-      ? [
-          `runs leg: ${runLeg.reason instanceof Error ? runLeg.reason.message : String(runLeg.reason)}`,
-        ]
-      : []),
-    ...(rulingLeg.status === 'rejected'
-      ? [
-          `rulings leg: ${rulingLeg.reason instanceof Error ? rulingLeg.reason.message : String(rulingLeg.reason)}`,
-        ]
-      : []),
-  ]
-  if (failures.length) throw new Error(failures.join('; '))
+  const failureMessage = (reason: unknown) =>
+    reason instanceof Error ? reason.message : String(reason)
+  if (runLeg.status === 'rejected' && rulingLeg.status === 'rejected')
+    throw new Error(
+      `runs leg: ${failureMessage(runLeg.reason)}; rulings leg: ${failureMessage(rulingLeg.reason)}`,
+    )
+  if (runLeg.status === 'rejected') throw new Error(`runs leg: ${failureMessage(runLeg.reason)}`)
+  if (rulingLeg.status === 'rejected')
+    throw new Error(`rulings leg: ${failureMessage(rulingLeg.reason)}`)
   const { rows: runs, result: runResult } = runLeg.value
   const { rows: workflowQuestions, result: rulingResult } = rulingLeg.value
   const skippedUnlinked = (runResult.skippedUnlinked ?? 0) + (rulingResult.skippedUnlinked ?? 0)

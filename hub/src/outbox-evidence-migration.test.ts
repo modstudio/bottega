@@ -103,7 +103,11 @@ test('evidence outbox rollout preserves acknowledgements, vanished deletes, and 
 function storeBeforeDayHostedSpace() {
   const folder = mkdtempSync(join(tmpdir(), 'hub-day-hosted-space-migration-'))
   mkdirSync(join(folder, 'meta'))
-  const entries = migrationJournal().slice(0, -1)
+  const journal = migrationJournal()
+  const entries = journal.slice(
+    0,
+    journal.findIndex((entry) => entry.tag === '0049_day_hosted_space'),
+  )
   for (const entry of entries)
     copyFileSync(join(MIGRATIONS_FOLDER, `${entry.tag}.sql`), join(folder, `${entry.tag}.sql`))
   writeFileSync(

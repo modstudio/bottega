@@ -570,6 +570,7 @@ describe('hub migration journal', () => {
         {
           id: 7001,
           record_id: '00000000-0000-4000-8000-000000007001',
+          space_id: null,
           run_number: 7001,
           run_record_id: '00000000-0000-4000-8000-000000007001',
           asked_at: askedAt,

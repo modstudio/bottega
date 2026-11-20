@@ -39,7 +39,7 @@ test('waiting query and answer mutation use the orchestrator seam', async () => 
     file: async (input) => {
       calls.push(['file', input])
       return {
-        question_id: input.questionId,
+        question_id: 7,
         question_record_id: '00000000-0000-4000-8000-000000000007',
         filed_as: input.as === 'canon' ? ('canon-proposal' as const) : ('doc' as const),
         filed_ref: '12@rev-1',
@@ -66,7 +66,12 @@ test('waiting query and answer mutation use the orchestrator seam', async () => 
     resumed_record_id: '00000000-0000-4000-8000-000000000043',
     resumed_number: 43,
   })
-  expect(await caller.file({ questionId: 7, as: 'doc' })).toEqual({
+  expect(
+    await caller.file({
+      questionId: '00000000-0000-4000-8000-000000000007',
+      as: 'doc',
+    }),
+  ).toEqual({
     question_id: 7,
     question_record_id: '00000000-0000-4000-8000-000000000007',
     filed_as: 'doc',
@@ -77,7 +82,7 @@ test('waiting query and answer mutation use the orchestrator seam', async () => 
   })
   expect(calls).toEqual([
     ['00000000-0000-4000-8000-000000000042', [{ questionId: 7, ruling: 'A' }]],
-    ['file', { questionId: 7, as: 'doc' }],
+    ['file', { questionId: '00000000-0000-4000-8000-000000000007', as: 'doc' }],
   ])
   expect(await caller.emailSettings()).toEqual({ delayMinutes: 30 })
   expect(await caller.setEmailSettings({ delayMinutes: 0 })).toEqual({ delayMinutes: 0 })
@@ -115,12 +120,18 @@ test('answer mutation surfaces orchestrator refusals and validates input at the 
   ).rejects.toMatchObject({
     code: 'BAD_REQUEST',
   })
-  await expect(caller.file({ questionId: 7, as: 'canon' })).rejects.toMatchObject({
+  await expect(
+    caller.file({ questionId: '00000000-0000-4000-8000-000000000007', as: 'canon' }),
+  ).rejects.toMatchObject({
     code: 'BAD_REQUEST',
     message: 'question 7 is unanswered',
   })
   await expect(
-    caller.file({ questionId: 7, as: 'doc', scope: 'canon' as never }),
+    caller.file({
+      questionId: '00000000-0000-4000-8000-000000000007',
+      as: 'doc',
+      scope: 'canon' as never,
+    }),
   ).rejects.toMatchObject({
     code: 'BAD_REQUEST',
   })
