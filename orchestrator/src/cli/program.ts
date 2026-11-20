@@ -68,6 +68,7 @@ export const program = new Command()
   .showSuggestionAfterError()
   .configureHelp({
     commandUsage: publicCommandUsage,
+    optionDescription: (option) => `${option.description}${option.mandatory ? ' (required)' : ''}`,
   })
 
 registerReview(program)

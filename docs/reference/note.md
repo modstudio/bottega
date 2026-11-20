@@ -223,7 +223,7 @@ report typed-question outcomes and operating cost
 
 ## bottega note typed-question backtest
 
-**Synopsis:** `bottega note typed-question backtest [--version <n>] [--json]`
+**Synopsis:** `bottega note typed-question backtest --version <n> [--json]`
 
 replay a note-duplicate question version over ruled pairs
 

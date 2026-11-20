@@ -29,7 +29,7 @@ pull requests
 
 ## bottega pr check
 
-**Synopsis:** `bottega pr check [--local-ref <ref>] [--sha <sha>] [--remote-ref <ref>]`
+**Synopsis:** `bottega pr check --local-ref <ref> --sha <sha> --remote-ref <ref>`
 
 read-only pre-push triage check
 
@@ -99,7 +99,7 @@ merge a pull request only when its head commit is proven
 
 ## bottega pr override
 
-**Synopsis:** `bottega pr override [--reason <reason>] [--from-operator]`
+**Synopsis:** `bottega pr override --reason <reason> [--from-operator]`
 
 record an operator override for the checked-out tip
 

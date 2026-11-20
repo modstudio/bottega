@@ -2,7 +2,7 @@
 /** Records probe and architect-executed commands as artifacts. Must not know floor decisions. */
 import type { Database } from 'bun:sqlite'
 import { spawn, spawnSync } from 'node:child_process'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, rmSync } from 'node:fs'
 import { constants, homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
@@ -162,6 +162,11 @@ function assertWorkflowEvidenceCheckout(cwd: string, database: Database, verb: s
   assertEvidenceCheckoutIdentity({ cwd, projectPath: project.path, verb })
 }
 
+function assertWorkingDirectory(cwd: string): void {
+  if (!existsSync(cwd))
+    throw new Error(`working directory ${cwd} does not exist; pass an existing checkout with --cwd`)
+}
+
 export async function recordWorkflowProbe(
   command: string[],
   input: {
@@ -175,7 +180,10 @@ export async function recordWorkflowProbe(
   if (!command.length) throw new Error(`${PLATFORM_SLUG} workflow probe needs a command after --`)
   const cwd = input.cwd ?? process.cwd()
   const database = input.d ?? db()
+  if (!projectAt(cwd, database))
+    throw new Error(`${PLATFORM_SLUG} workflow probe: no registered project contains ${cwd}`)
   assertWorkflowEvidenceCheckout(cwd, database, 'workflow probe')
+  assertWorkingDirectory(cwd)
   // Capture the head the probe command will run against.
   const preCommandHead = resolveEvidenceHead(cwd, input)
   probeSandboxProfileForCwd({ allowWriteDir: cwd, cwd, database })
@@ -236,7 +244,14 @@ async function streamingRunner(
     child.stdout?.on('data', record)
     child.stderr?.on('data', record)
     child.once('error', (error) =>
-      reject(new Error(`command could not be started: ${error.message}`, { cause: error })),
+      reject(
+        new Error(
+          `command could not be started in working directory ${input.cwd}: ${error.message}`,
+          {
+            cause: error,
+          },
+        ),
+      ),
     )
     child.once('close', (code, signal) =>
       resolve({
@@ -360,11 +375,12 @@ export async function recordWorkflowExec(
   assertWorkflowExecCaller()
   const cwd = input.cwd ?? process.cwd()
   const database = input.d ?? db()
+  if (input.registeredProject === false)
+    throw new Error(`${PLATFORM_SLUG} workflow exec: no registered project contains ${cwd}`)
+  assertWorkingDirectory(cwd)
   assertWorkflowEvidenceCheckout(cwd, database, 'workflow exec')
   // Capture the head the exec command will run against.
   const commandHead = resolveEvidenceHead(cwd, input)
-  if (input.registeredProject === false)
-    throw new Error(`${PLATFORM_SLUG} workflow exec: no registered project contains ${cwd}`)
   // A child may migrate the store; an additive range then reloads instead of refusing the row
   // below. A process that already registered its own reload and refusal keeps them.
   enableSchemaReloadUnlessRegistered()

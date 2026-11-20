@@ -637,7 +637,7 @@ test('workflow probe prints a failed outcome and stored output tail', async () =
   expect(shown.exitCodes).toEqual([127])
 })
 
-test('workflow probe success prints its outcome and id', async () => {
+test('workflow probe success prints its outcome, id, and recorded output', async () => {
   registerCurrentProject('workflow-probe-presentation-success')
   const shown = outcomePresentation()
 
@@ -645,8 +645,9 @@ test('workflow probe success prints its outcome and id', async () => {
     probeRunner: () => ({ exitCode: 0, output: 'hidden success output\n' }),
   })
 
-  expect(shown.stdout).toHaveLength(1)
+  expect(shown.stdout).toHaveLength(2)
   expect(shown.stdout[0]).toMatch(/^probe \d+ passed$/)
+  expect(shown.stdout[1]).toBe('hidden success output\n')
   expect(shown.stderr).toEqual([])
   expect(shown.exitCodes).toEqual([0])
 })
@@ -680,7 +681,7 @@ test('workflow probe failure says when the stored output tail is empty', async (
   expect(shown.stderr).toEqual([`${PLATFORM_SLUG} workflow probe: command exited 2`, '(no output)'])
 })
 
-test('workflow probe JSON adds exitCode and outputTail only for a failure', async () => {
+test('workflow probe JSON includes exitCode and outputTail for every outcome', async () => {
   registerCurrentProject('workflow-probe-presentation-json')
   const failing = outcomePresentation()
   await workflowCommand(['workflow', 'probe', '--', 'failing'], failing.presentation, {
@@ -703,7 +704,10 @@ test('workflow probe JSON adds exitCode and outputTail only for a failure', asyn
   expect(JSON.parse(passing.stdout[0]!)).toEqual({
     id: expect.any(Number),
     withheld: false,
+    exitCode: 0,
+    outputTail: 'not printed\n',
   })
+  expect(passing.stdout[1]).toBe('not printed\n')
   expect(passing.stderr).toEqual([])
 })
 

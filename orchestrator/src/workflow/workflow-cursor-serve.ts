@@ -40,6 +40,7 @@ import {
   stepPass,
 } from './workflow-cursor-transition.ts'
 import { resolveWorkflowStepReference } from './workflow-step-reference.ts'
+import { workflowCursorStepSuccessor } from './workflow-step-sequences.ts'
 import { linkResolvedWorkflowTask } from './workflow-task-linking.ts'
 import { withWorkflowTextFacts } from './workflow-text.ts'
 import { composeWorkflow, getWorkflowStep } from './workflows.ts'
@@ -341,6 +342,7 @@ async function serveWorkflowStepWithCursor(
   const flow = (JSON.parse(row.closed) as CursorTrailEntry[]).filter(isClosedStep)
   return {
     ...served,
+    next: workflowCursorStepSuccessor(composition.steps, flow, decision.ordinal),
     cursor: row.id,
     flow,
     pass: stepPass(flow, composition.steps, decision.ordinal),

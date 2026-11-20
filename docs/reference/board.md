@@ -101,7 +101,7 @@ move eligible machine-local board records to the hosted board
 
 ## bottega board ask
 
-**Synopsis:** `bottega board ask [--audience <expr>] [--title <text>] [--body <text>] [--task <key>] [--path <glob>] [--topic <name>] [--expires <duration>]`
+**Synopsis:** `bottega board ask --audience <expr> --title <text> --body <text> [--task <key>] [--path <glob>] [--topic <name>] [--expires <duration>]`
 
 ask a question on the architects board
 
@@ -172,7 +172,7 @@ release a path or resource claim; workflow abandon releases a task claim
 
 ## bottega board claim release-task
 
-**Synopsis:** `bottega board claim release-task <key> [--project <name>] [--json]`
+**Synopsis:** `bottega board claim release-task <key> --project <name> [--json]`
 
 repair a task claim after its cursor has closed
 
@@ -268,7 +268,7 @@ list board notices and questions
 
 ## bottega board pending
 
-**Synopsis:** `bottega board pending [--session <id>] [--recently-injected <ids>] [--exclude-acknowledgement-required] [--json]`
+**Synopsis:** `bottega board pending --session <id> [--recently-injected <ids>] [--exclude-acknowledgement-required] [--json]`
 
 list messages due for delivery to a session
 
@@ -285,7 +285,7 @@ list messages due for delivery to a session
 
 ## bottega board post
 
-**Synopsis:** `bottega board post [--audience <expr>] [--title <text>] [--body <text>] [--purpose <purpose>] [--task <key>] [--path <glob>] [--topic <name>] [--ack-required] [--deadline <duration>] [--expires <duration>]`
+**Synopsis:** `bottega board post --audience <expr> --title <text> --body <text> [--purpose <purpose>] [--task <key>] [--path <glob>] [--topic <name>] [--ack-required] [--deadline <duration>] [--expires <duration>]`
 
 post a notice to the architects board
 
@@ -353,7 +353,7 @@ read board notices addressed to this session
 
 ## bottega board reply
 
-**Synopsis:** `bottega board reply <root-id> [--audience <choice>] [--body <text>]`
+**Synopsis:** `bottega board reply <root-id> [--audience <choice>] --body <text>`
 
 reply to a board notice or question
 
@@ -411,7 +411,7 @@ display help for command
 
 ## bottega board suggestion post
 
-**Synopsis:** `bottega board suggestion post <id> [--audience <expr>] [--title <text>] [--body <text>] [--task <key>] [--path <glob>] [--topic <name>]`
+**Synopsis:** `bottega board suggestion post <id> --audience <expr> [--title <text>] [--body <text>] [--task <key>] [--path <glob>] [--topic <name>]`
 
 post a worker suggestion to the board
 

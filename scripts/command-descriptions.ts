@@ -121,6 +121,7 @@ function optionDetail(option: Option): DocumentationOptionDetail {
     valuePlaceholder: valuePlaceholder(option.flags),
     description: option.description,
     default: optionDefault(option),
+    required: option.mandatory,
   }
 }
 
@@ -264,9 +265,6 @@ function compositeRouteUnits(
       }, new Map<string, DocumentationOptionDetail>())
       .values(),
   ]
-  for (const option of uniqueOptions)
-    option.required =
-      route.requiredOptions?.some((token) => option.flags.includes(token.split(' ')[0]!)) ?? false
   writeCommand(book, {
     spelling: commandUnit.spelling,
     group: commandUnit.group,

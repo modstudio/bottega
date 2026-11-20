@@ -169,6 +169,22 @@ function forwardAdvance(
   return { ordinal: null, skipped }
 }
 
+/** Select the successor a pointer may name before the current step's outcome is known. */
+export function decidePointerAdvance(
+  steps: readonly ConditionalStep[],
+  trail: readonly OutcomeTrailEntry[],
+  currentOrdinal: number,
+): Pick<ConditionalAdvance, 'ordinal' | 'skipped'> {
+  const immediateOrdinal = currentOrdinal + 1
+  const immediate = steps[immediateOrdinal]
+  if (
+    immediate?.when &&
+    trail.findLast((entry) => entry.slug === immediate.when!.step)?.outcome === undefined
+  )
+    return { ordinal: immediateOrdinal, skipped: [] }
+  return forwardAdvance(steps, trail, immediateOrdinal)
+}
+
 /** Select the next ordinal, skips, any re-entry, and whether a ruling floor applies. */
 export function decideConditionalAdvance(
   steps: readonly ConditionalStep[],

@@ -506,8 +506,36 @@ test('exec reports a command that could not start without recording a row', asyn
         commit: 'abc',
         write: () => {},
       }),
-    ).rejects.toThrow('command could not be started:')
+    ).rejects.toThrow(`command could not be started in working directory ${probeRepository}:`)
 
+    expect(d.query('SELECT count(*) AS n FROM probe').get()).toEqual({ n: 0 })
+  } finally {
+    if (priorDepth === undefined) delete process.env.BOTTEGA_DEPTH
+    else process.env.BOTTEGA_DEPTH = priorDepth
+    if (priorSession === undefined) delete process.env.CLAUDE_CODE_SESSION_ID
+    else process.env.CLAUDE_CODE_SESSION_ID = priorSession
+  }
+})
+
+test('exec refuses a missing working directory without recording a row', async () => {
+  const priorDepth = process.env.BOTTEGA_DEPTH
+  const priorSession = process.env.CLAUDE_CODE_SESSION_ID
+  try {
+    delete process.env.BOTTEGA_DEPTH
+    process.env.CLAUDE_CODE_SESSION_ID = 'architect-session'
+    const d = database()
+    const missing = join(probeRepository, 'missing-working-directory')
+
+    await expect(
+      recordWorkflowExec(['true'], {
+        cwd: missing,
+        d,
+        registeredProject: true,
+        write: () => {},
+      }),
+    ).rejects.toThrow(
+      `working directory ${missing} does not exist; pass an existing checkout with --cwd`,
+    )
     expect(d.query('SELECT count(*) AS n FROM probe').get()).toEqual({ n: 0 })
   } finally {
     if (priorDepth === undefined) delete process.env.BOTTEGA_DEPTH

@@ -2,6 +2,7 @@
 /** Owns named workflow-step sequences and their flat expansion. */
 
 import type { CatalogueSequence, CatalogueStep } from './step-catalogue-definition.ts'
+import { decidePointerAdvance } from './workflow-cursor-transition.ts'
 import type {
   WorkflowMode,
   WorkflowModeStep,
@@ -139,6 +140,22 @@ export function workflowStepSuccessor(
   )
     ? successors[0]
     : undefined
+}
+
+export function workflowCursorStepSuccessor(
+  steps: readonly (ExpandedWorkflowStep & { title: string })[],
+  trail: readonly { slug: string; outcome?: string }[],
+  currentOrdinal: number,
+) {
+  const advance = decidePointerAdvance(steps, trail, currentOrdinal)
+  if (advance.ordinal === null) return null
+  const entry = steps[advance.ordinal]!
+  return {
+    n: advance.ordinal + 1,
+    slug: entry.slug,
+    title: entry.title,
+    ...(entry.when ? { when: entry.when } : {}),
+  }
 }
 
 export function inspectWorkflowSteps(

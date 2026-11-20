@@ -47,7 +47,7 @@ Options are documented by `--help`.
 
 ## bottega question close
 
-**Synopsis:** `bottega question close <id> [--reason <text>]`
+**Synopsis:** `bottega question close <id> --reason <text>`
 
 close a question without recording a ruling
 
@@ -106,7 +106,7 @@ inspect and preserve recorded rulings
 
 ## bottega question ruling file
 
-**Synopsis:** `bottega question ruling file <question-id> [--as <kind>] [--scope <doc-scope>] [--subject <subject>] [--title <title>] [--from-operator] [--channel <channel>] [--json]`
+**Synopsis:** `bottega question ruling file <question-id> --as <kind> [--scope <doc-scope>] [--subject <subject>] [--title <title>] [--from-operator] [--channel <channel>] [--json]`
 
 file a recorded ruling as a document or canon proposal
 
@@ -153,7 +153,7 @@ list recorded run and workflow rulings
 
 ## bottega question ruling overturn
 
-**Synopsis:** `bottega question ruling overturn <question-id> [--because <reason>] [--replacement <ruling>] [--replacement-file <path>] [--from-operator]`
+**Synopsis:** `bottega question ruling overturn <question-id> --because <reason> [--replacement <ruling>] [--replacement-file <path>] [--from-operator]`
 
 overturn a recorded ruling
 
