@@ -6,11 +6,7 @@ import { db, nowIso, writeTransaction } from './db.ts'
 import { sendHostedChanges } from './hosted-change-sender.ts'
 import { applyHostedWriteLocally } from './hosted-local-apply.ts'
 import { taskDocumentIdentityByNumber } from './identity/identity.ts'
-import {
-  drainHostedEditOutbox,
-  queueHostedDocumentDelete,
-  queueHostedDocumentUpsert,
-} from './offline-task-edits.ts'
+import { drainHostedEditOutbox, queueHostedDocumentDelete } from './offline-task-edits.ts'
 import { HOSTED_DOCUMENT_TABLE, type PushedDocument } from './push-contract.ts'
 import { hostedCreateDocument } from './task-client.ts'
 import { formatTaskDocumentLabel, parseTaskDocumentLabel } from './task-document-label.ts'
@@ -244,8 +240,8 @@ export async function updateTaskDocument(
   },
   options: { hosted?: HostedTaskWriteOptions; scope?: TaskScope } = {},
 ): Promise<TaskDocument> {
-  const current = getTaskDocument(value, options.scope)
-  const id = current.id
+  const current = getTaskDocument(value, options.scope),
+    id = current.id
   const task = taskByRecordId<DocumentTask>(current.task_record_id)
   if (task.source !== 'local') throw new Error(`task ${current.task_key} is not local`)
   const expectedVersion = changes.expectedVersion
@@ -326,15 +322,12 @@ export async function updateTaskDocument(
           `task document ${id} changed since version ${expectedVersion}; read it again`,
         )
       }
-      if (hosted) queueHostedDocumentUpsert(conn, id, at, fields)
       return
     }
     conn
       .query(`UPDATE task_document SET title = ?, role = ?, updated_at = ? WHERE record_id = ?`)
       .run(changes.title ?? row.title, nextRole, at, id)
-    if (hosted) queueHostedDocumentUpsert(conn, id, at, fields)
   })
-  if (hosted) await drainHostedEditOutbox(at, options.hosted)
   return getTaskDocument(id)
 }
 

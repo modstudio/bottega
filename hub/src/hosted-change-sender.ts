@@ -8,10 +8,16 @@ export async function sendHostedChanges(
   changes: HostedPushChange[],
   options: HostedTaskWriteOptions & { recordSpace: string },
 ): Promise<void> {
-  const outcomes = await hostedPushChanges(
-    changes.map((change) => ({ ...change, change_id: change.change_id ?? newRecordId() })),
-    options,
-  )
+  let outcomes: Awaited<ReturnType<typeof hostedPushChanges>>
+  try {
+    outcomes = await hostedPushChanges(
+      changes.map((change) => ({ ...change, change_id: change.change_id ?? newRecordId() })),
+      options,
+    )
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    throw new Error(`${message}. Retry when the hosted record is reachable.`)
+  }
   const refused = outcomes.find((outcome) => outcome.status === 'rejected')
   if (refused)
     throw new Error(

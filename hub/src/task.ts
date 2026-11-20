@@ -152,6 +152,8 @@ function assertParent(key: string | null | undefined, project?: string) {
 /** Check, allocate, insert, and record an override under one serialized write transaction. */
 type HostedOptions = HostedTaskWriteOptions
 const hostedOptionsForProject = hostedTaskWriteOptions
+const hostedConfigured = (options?: HostedOptions) =>
+  Boolean((options?.baseUrl ?? resolveHostedUrl())?.trim())
 
 type DoneTransitionOptions = {
   abandonReason?: string
@@ -511,7 +513,7 @@ export async function setTaskBody(
   options: { hosted?: HostedOptions } = {},
 ): Promise<TaskRow> {
   const upper = key.toUpperCase()
-  if (resolveHostedUrl()) {
+  if (hostedConfigured(options.hosted)) {
     const current = (await showHostedTask(upper, scope, options.hosted)).task
     const row = pushedTask(current, { body }, nowIso())
     await sendHostedChanges(
@@ -674,7 +676,7 @@ export async function setTask(
   } & DoneTransitionOptions = {},
 ): Promise<TaskRow> {
   const upper = key.toUpperCase()
-  const current = resolveHostedUrl()
+  const current = hostedConfigured(options.hosted)
     ? (await showHostedTask(upper, scope, options.hosted)).task
     : showLocalTask(upper, scope).task
   if (current.source !== 'local') throw new Error(`task ${upper} is not local`)
@@ -749,7 +751,7 @@ export async function closeTask(
   attribution: Attribution,
   options: { hosted?: HostedOptions } & DoneTransitionOptions = {},
 ) {
-  const current = resolveHostedUrl()
+  const current = hostedConfigured(options.hosted)
     ? (await showHostedTask(key, scope, options.hosted)).task
     : showLocalTask(key, scope).task
   if (current.source !== 'local') throw new Error(`task ${current.key} is not local`)
@@ -819,7 +821,7 @@ export async function commentTask(
   options: { hosted?: HostedOptions } = {},
 ): Promise<TaskComment> {
   const upper = key.toUpperCase()
-  const current = resolveHostedUrl()
+  const current = hostedConfigured(options.hosted)
     ? (await showHostedTask(upper, scope, options.hosted)).task
     : showLocalTask(upper, scope).task
   if (current.source !== 'local') throw new Error(`task ${upper} is not local`)
@@ -889,7 +891,7 @@ export async function editTaskComment(
   options: { hosted?: HostedOptions; expectedRevision?: number } = {},
 ): Promise<TaskComment> {
   if (!body.trim()) throw new Error('comment body is required; pass non-empty text')
-  const detail = resolveHostedUrl()
+  const detail = hostedConfigured(options.hosted)
     ? await showHostedTask(key, scope, options.hosted)
     : showLocalTask(key, scope)
   const current = detail.task
@@ -966,7 +968,7 @@ export async function deleteTaskComment(
   attribution: Attribution,
   options: { hosted?: HostedOptions; expectedRevision?: number } = {},
 ): Promise<void> {
-  const detail = resolveHostedUrl()
+  const detail = hostedConfigured(options.hosted)
     ? await showHostedTask(key, scope, options.hosted)
     : showLocalTask(key, scope)
   const current = detail.task
