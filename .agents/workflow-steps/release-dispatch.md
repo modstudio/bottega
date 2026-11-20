@@ -4,7 +4,6 @@ stage: implement
 floor:
   - command-exit
 jobs: [implement]
-dispatch: required
 autonomy: auto
 needs: []
 ---

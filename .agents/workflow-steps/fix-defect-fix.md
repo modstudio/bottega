@@ -4,7 +4,6 @@ stage: implement
 floor:
   - recorded-artifact
 jobs: [issue-worker]
-dispatch: required
 autonomy: auto
 needs: []
 ---

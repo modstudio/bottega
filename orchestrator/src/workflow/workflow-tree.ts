@@ -195,12 +195,45 @@ const commandEvidenceFrom = (frontMatter: Record<string, unknown>) =>
     ? {}
     : { commandEvidence: frontMatter.commandEvidence as CatalogueStep['commandEvidence'] }
 
+const STEP_FRONTMATTER_KEYS = new Set([
+  'title',
+  'stage',
+  'floor',
+  'outcomes',
+  'rulingOutcomes',
+  'reenter',
+  'deferrable',
+  'expectedExitCodes',
+  'expectedStatus',
+  'requirePullRequest',
+  'operatorRuling',
+  'commandEvidence',
+  'jobs',
+  'dispatch',
+  'dispatchWaivedBy',
+  'judges',
+  'actions',
+  'autonomy',
+  'needs',
+])
+
+function refuseUnknownStepFrontmatter(file: WorkflowTreeFile, frontMatter: Record<string, unknown>) {
+  const unknown = Object.keys(frontMatter).find((key) => !STEP_FRONTMATTER_KEYS.has(key))
+  if (!unknown) return
+  throw new Error(
+    `${file.path}: unknown workflow step frontmatter key "${unknown}"; ` +
+      `a new step setting lands in two pull requests: first the parser support for ${unknown}, ` +
+      'then the step files once that is on main.',
+  )
+}
+
 function parsedCatalogueStep(
   file: WorkflowTreeFile,
   slug: string,
   frontMatter: Record<string, unknown>,
   body: string,
 ): CatalogueStep {
+  refuseUnknownStepFrontmatter(file, frontMatter)
   const step: CatalogueStep = {
     slug,
     title: frontMatter.title as string,

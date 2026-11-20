@@ -4,7 +4,6 @@ stage: review
 floor:
   - ruling
 jobs: []
-judges: [review-lens]
 autonomy: ask
 needs: []
 ---
