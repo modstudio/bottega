@@ -87,7 +87,7 @@ export const mcpModules: McpModule[] = [
     '@modelcontextprotocol/server',
     'zod',
     '../../../shared/board-purpose.ts',
-    '../../../shared/install-root.ts',
+    '../../../shared/runtime-assets.ts',
     '../board/board-delivery.ts',
     '../board/board-message-identifier.ts',
     '../board/board-operations.ts',

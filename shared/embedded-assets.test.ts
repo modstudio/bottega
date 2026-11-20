@@ -27,10 +27,11 @@ test('the install asset reader falls back to disk only while the registry is emp
     expect(readInstallAsset('asset.txt', path)).toBe('from disk')
     registerEmbeddedAssets({
       assets: { 'asset.txt': 'from registry' },
-      files: { 'hub/web/dist/index.html': '/$bunfs/root/index.html' },
+      files: { 'asset-file.txt': path, 'hub/web/dist/index.html': '/$bunfs/root/index.html' },
       manifest,
     })
     expect(readInstallAsset('asset.txt', path)).toBe('from registry')
+    expect(readInstallAsset('asset-file.txt', '')).toBe('from disk')
     expect(() => readInstallAsset('missing.txt', path)).toThrow(
       'compiled missing.txt asset is missing',
     )

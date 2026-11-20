@@ -150,12 +150,17 @@ export async function buildBinary(
         [
           ...(await migrationAssetPaths()),
           ...(await scheduleTemplateAssetPaths()),
-          ...RUNTIME_ASSETS.map((asset) => asset.packagePath),
+          ...RUNTIME_ASSETS.filter((asset) => !asset.packagePath.endsWith('.json')).map(
+            (asset) => asset.packagePath,
+          ),
         ],
         [
           ...(await webAssetPaths()),
           ...sandboxRuntimePayloadPaths(platform, arch),
           ...commentParserPaths,
+          ...RUNTIME_ASSETS.filter((asset) => asset.packagePath.endsWith('.json')).map(
+            (asset) => asset.packagePath,
+          ),
         ],
         manifest,
       ),

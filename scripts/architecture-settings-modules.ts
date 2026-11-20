@@ -358,6 +358,7 @@ export const settingsModules: SettingsModule[] = [
     './settings-render.ts',
     './settings-permission-overlay.ts',
     './settings-machine-hooks.ts',
+    './settings-machine-runtime.ts',
     './settings-machine-mcp-placement.ts',
     './settings-machine-projects.ts',
     './settings-machine-scope.ts',
@@ -397,5 +398,12 @@ export const settingsModules: SettingsModule[] = [
     '../board/board-delivery.ts',
     '../session/context-review-decision.ts',
     './settings.ts',
+  ]),
+  module('orchestrator/src/settings/settings-machine-runtime.ts', [
+    '../../../shared/brand.ts',
+    '../../../shared/install-root.ts',
+    '../../../shared/runtime-assets.ts',
+    '../../../shared/self-spawn.ts',
+    './settings-machine-hooks.ts',
   ]),
 ]

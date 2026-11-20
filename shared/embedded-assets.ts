@@ -305,10 +305,10 @@ export function registerEmbeddedAssets(value: EmbeddedAssets | null): void {
 export function readInstallAsset(relativePath: string, diskPath: string): string {
   if (embedded === null) return readFileSync(diskPath, 'utf8')
   const value = embedded.assets[relativePath]
-  if (value === undefined) {
-    throw new Error(`compiled ${relativePath} asset is missing`)
-  }
-  return value
+  if (value !== undefined) return value
+  const file = embedded.files[relativePath]
+  if (file !== undefined) return readFileSync(file, 'utf8')
+  throw new Error(`compiled ${relativePath} asset is missing`)
 }
 
 /** List registered install assets beneath a path, or report that disk enumeration is required. */

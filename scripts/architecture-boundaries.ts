@@ -614,6 +614,7 @@ export const importBoundaries: ImportBoundary[] = [
       'node:fs',
       'node:path',
       '../../../shared/install-root.ts',
+      '../../../shared/runtime-assets.ts',
       '../../../shared/monitor-capability.ts',
       '../../../shared/process-identity.ts',
       '../caller-classification.ts',

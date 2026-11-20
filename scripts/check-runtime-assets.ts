@@ -3,19 +3,20 @@ import { readdirSync, readFileSync } from 'node:fs'
 import { join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import * as ts from 'typescript'
+import { PLATFORM_SLUG } from '../shared/brand.ts'
 import { RUNTIME_ASSETS } from '../shared/embedded-assets.ts'
 
 const root = fileURLToPath(new URL('..', import.meta.url))
 const runtimePaths = new Set(RUNTIME_ASSETS.map(({ packagePath }) => packagePath))
 
 /** Source-mode paths that are deliberately unavailable in a compiled distribution. */
-export const CHECKOUT_ONLY_RUNTIME_PATHS = new Map([
+const CHECKOUT_ONLY_RUNTIME_PATHS = new Map([
   ['<install-root>', 'callers need the installation identity, not an asset'],
   ['node_modules/.bin/codex-acp', 'transport declares codex-acp is not an install asset'],
   ['orchestrator', 'Bun module resolution is reached only by the source transport'],
-  ['bin/bottega', 'source-mode self-spawn executable'],
+  [`bin/${PLATFORM_SLUG}`, 'source-mode self-spawn executable'],
   ['bin/retrieval-search', 'source-mode hidden entry executable'],
-  ['cli/bottega.ts', 'source-mode run-exec entry'],
+  [`cli/${PLATFORM_SLUG}.ts`, 'source-mode run-exec entry'],
   ['orchestrator/src/ask/ask-proxy.ts', 'source-mode ask proxy entry'],
   ['orchestrator/src/check/check-attribution.ts', 'source-mode hidden check entry'],
   ['orchestrator/src/check/check-strict-schema.ts', 'source-mode hidden schema entry'],
@@ -55,7 +56,7 @@ function staticAssetPath(node: ts.CallExpression): string | null | undefined {
     if (ts.isStringLiteral(argument) || ts.isNoSubstitutionTemplateLiteral(argument)) {
       segments.push(argument.text)
     } else if (ts.isIdentifier(argument) && argument.text === 'PLATFORM_SLUG') {
-      segments.push('bottega')
+      segments.push(PLATFORM_SLUG)
     } else {
       return null
     }

@@ -541,7 +541,7 @@ async function reportInstallationStatus(
   const pythonPath = Bun.which('python3', { PATH: process.env.PATH })
   if (pythonPath) log(`python3        ${pythonPath}`)
   else {
-    log('python3        MISSING — install Python 3, then re-run bottega machine doctor')
+    log(`python3        MISSING — install Python 3, then re-run ${PLATFORM_SLUG} machine doctor`)
     exitCode(1)
   }
   const launchAgents = await launchAgentDoctorReport(

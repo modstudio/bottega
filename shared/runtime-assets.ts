@@ -13,7 +13,7 @@ import {
 import { assetPath } from './install-root.ts'
 import { resolveStateRoot, type StateEnvironment } from './state-directory.ts'
 
-export const RUNTIME_DIRECTORY = 'assets'
+const RUNTIME_DIRECTORY = 'assets'
 
 function extractedRuntimeRoot(environment: StateEnvironment): string {
   const manifest = embeddedDistributionManifest()
