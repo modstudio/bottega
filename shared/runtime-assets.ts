@@ -9,11 +9,17 @@ import {
   extractEmbeddedRuntime,
   RUNTIME_ASSETS,
   readInstallAsset,
+  type RuntimeAsset,
 } from './embedded-assets.ts'
 import { assetPath } from './install-root.ts'
 import { resolveStateRoot, type StateEnvironment } from './state-directory.ts'
 
 const RUNTIME_DIRECTORY = 'assets'
+
+/** Compose a runtime asset's path relative to its version-scoped directory. */
+export function extractedRuntimeAssetRelativePath(asset: Pick<RuntimeAsset, 'destination'>): string {
+  return join(RUNTIME_DIRECTORY, asset.destination)
+}
 
 /** Whether runtime assets come from the compiled binary rather than a checkout. */
 function runtimeAssetsAreEmbedded(): boolean {
@@ -21,8 +27,17 @@ function runtimeAssetsAreEmbedded(): boolean {
 }
 
 /** The version-scoped root containing extracted runtime assets. */
-function extractedRuntimeRootPath(stateRoot: string, version: string): string {
+export function extractedRuntimeRootPath(stateRoot: string, version: string): string {
   return join(stateRoot, 'runtime', version, RUNTIME_DIRECTORY)
+}
+
+/** Resolve one runtime asset under the version-scoped extracted layout. */
+export function extractedRuntimeAssetPath(
+  stateRoot: string,
+  version: string,
+  asset: Pick<RuntimeAsset, 'destination'>,
+): string {
+  return join(stateRoot, 'runtime', version, extractedRuntimeAssetRelativePath(asset))
 }
 
 function extractedRuntimeRoot(environment: StateEnvironment): string {
