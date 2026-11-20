@@ -224,6 +224,7 @@ export const ROOT_TEST_FILES = [
   'scripts/check-unchecked-exits.test.ts',
   'scripts/check-outcome-lines.test.ts',
   'scripts/check-ci-workflow.test.ts',
+  'scripts/superseded-migration-ddl.test.ts',
   'scripts/check-storybook.test.ts',
   'scripts/check-outcome.test.ts',
   'scripts/check-gitleaks-plan.test.ts',

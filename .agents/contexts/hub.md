@@ -163,6 +163,15 @@ it. Migration hashing covers DDL rather than backfill content, and columns read 
 running processes expand before they contract. The baseline
 is the canonical SQLite DDL; later migrations are explicit SQL.
 
+An applied migration is never edited, except to change a `RAISE` message. Such an edit
+declares the old hash in `hub/migrations/meta/_superseded_hashes.json`: an open then accepts a
+store that recorded it, and migrate rewrites it to the current hash without rerunning the
+migration. `scripts/check-hub-superseded-migration-hashes.ts` pins each declaration to its
+pre-edit commit and the journal, and refuses an edit that changes anything beyond `RAISE`
+messages, comments and whitespace. A `RAISE` message is a string literal, because the SQLite
+that macOS links rejects an expression there; the `migration-compatibility` CI job migrates
+fresh stores on macOS whenever migration sources change.
+
 # Collection
 
 A collect never overwrites a good token reading with a worse one, because transcript data

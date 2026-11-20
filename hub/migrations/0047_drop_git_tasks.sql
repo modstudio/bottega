@@ -4,7 +4,7 @@ CREATE TEMP TRIGGER git_task_delete_refusal
 BEFORE INSERT ON git_task_delete_guard
 WHEN NEW.detail IS NOT NULL
 BEGIN
-  SELECT RAISE(ABORT, NEW.detail);
+  SELECT RAISE(ABORT, 'git task deletion found cascade dependents; preserve or reassign these rows, then run bottega machine migrate');
 END;
 --> statement-breakpoint
 INSERT INTO git_task_delete_guard(detail)

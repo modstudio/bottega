@@ -300,6 +300,7 @@ const STATIC_CHECKS: readonly StaticCheckDeclaration[] = [
   ),
   script('scripts/check-workflow-tree.ts', run),
   script('scripts/check-ci-workflow.ts', run),
+  script('scripts/check-hub-superseded-migration-hashes.ts', run),
   script('scripts/generate-recipe-schema.ts', run, {
     extra: () => ['--check'],
   }),

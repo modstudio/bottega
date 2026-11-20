@@ -167,6 +167,11 @@ const GLOBAL_SUBSTITUTIONS: Readonly<Record<string, GlobalSubstitution>> = {
 
 const SQL_PREPARE_EXEMPTIONS: readonly SqlExemption[] = [
   ...exempt(
+    'hub/src/migrations.ts',
+    ['47941778b957f44c', '17852cf8fea0c0d2', 'd7f6dac0bdff1ae1'],
+    '0042 preconditions read legacy run_ref columns immediately before that migration rebuilds them',
+  ),
+  ...exempt(
     'orchestrator/src/project/project-purge-local.ts',
     ['8af00ad0d221eb05', 'f5ab4b5264982dab', 'acac8c479e5fa140', 'b4bbdd9fcdf6e472'],
     'project purge quotes identifiers enumerated from the same live SQLite schema',

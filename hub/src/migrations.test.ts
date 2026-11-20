@@ -255,6 +255,7 @@ describe('hub migration journal', () => {
         ],
       }),
     )
+    writeFileSync(join(folder, 'meta', '_superseded_hashes.json'), JSON.stringify({ entries: [] }))
     const d = baselineFresh()
     expect(applyMigrations(d, folder)).toEqual([baseline.tag, '0001_after_adoption'])
     expect(d.query("SELECT 1 FROM sqlite_master WHERE name='adopted_followup'").get()).toBeDefined()
@@ -480,6 +481,7 @@ describe('hub migration journal', () => {
         ],
       }),
     )
+    writeFileSync(join(dir, 'meta', '_superseded_hashes.json'), JSON.stringify({ entries: [] }))
     expect(splitMigrationSource(readFileSync(join(dir, '0001_fill.sql'), 'utf8')).ddl).toBe(
       '-- note\n',
     )
@@ -938,7 +940,7 @@ describe('hub migration journal', () => {
       (2,'MISSING-43','dangling-record','2026-01-01','open')`)
     d.exec('PRAGMA foreign_keys = ON')
     expect(() => applyMigrations(d, undefined, HUB_MIGRATION_BACKFILL_VALUES)).toThrow(
-      'unresolved task_status_event rows: 1:MISSING-42, 2:MISSING-43',
+      `task identity migration found unresolved task_comment, task_document, task_status_event, task parent, or promoted note rows; repair the unresolved task identities in those tables, then run ${PLATFORM_SLUG} machine migrate`,
     )
     expect(d.query("SELECT name FROM sqlite_master WHERE name='task_new'").get()).toBeNull()
     expect(d.query('PRAGMA foreign_keys').get()).toEqual({ foreign_keys: 1 })

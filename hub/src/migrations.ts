@@ -14,6 +14,7 @@ import {
 } from '../../shared/migration-connection-policy.ts'
 import { splitMigrationSource } from '../../shared/migration-source.ts'
 import type { QuestionIdentity, WorkflowCursorIdentityRow } from '../../shared/orch-contract.ts'
+import { refusal, renderRefusal } from '../../shared/refusal.ts'
 import {
   storeAheadMigrationRefusal,
   storeAheadOfJournalRefusal,
@@ -27,6 +28,14 @@ export const CONNECTION_SCHEMA_INVARIANT = 'A process writes only the schema ver
 export const JOURNAL_WHEN_ORDER = 'migration journal when values must be strictly increasing'
 
 export type JournalEntry = { idx: number; when: number; tag: string }
+type SupersededMigrationHash = {
+  tag: string
+  when: number
+  predecessorHash: string
+  preEditCommit: string
+  reason: string
+}
+export type RecordedMigrationHashState = 'applied' | 'superseded predecessor' | 'ahead'
 type ColumnShape = {
   table: string
   name: string
@@ -104,6 +113,29 @@ function migrationHash(entry: JournalEntry, folder = MIGRATIONS_FOLDER): string 
     .digest('hex')
 }
 
+/** Judge one recorded journal hash without store or filesystem access. */
+export function recordedMigrationHashState(input: {
+  recordedHash: string
+  currentHash: string
+  predecessorHashes: readonly string[]
+}): RecordedMigrationHashState {
+  if (input.recordedHash === input.currentHash) return 'applied'
+  if (input.predecessorHashes.includes(input.recordedHash)) return 'superseded predecessor'
+  return 'ahead'
+}
+
+function predecessorsFor(entry: JournalEntry, folder = MIGRATIONS_FOLDER): string[] {
+  const declaredSupersededHashes = JSON.parse(
+    readInstallAsset(
+      join('hub', 'migrations', 'meta', '_superseded_hashes.json'),
+      join(folder, 'meta', '_superseded_hashes.json'),
+    ),
+  ).entries as SupersededMigrationHash[]
+  return declaredSupersededHashes
+    .filter((declared) => declared.tag === entry.tag && declared.when === entry.when)
+    .map((declared) => declared.predecessorHash)
+}
+
 export function readUserVersion(d: Database): number {
   return (d.query('PRAGMA user_version').get() as { user_version: number }).user_version
 }
@@ -133,23 +165,48 @@ function tableExists(d: Database, table: string): boolean {
 function migrationState(
   d: Database,
   folder = MIGRATIONS_FOLDER,
-): { pending: JournalEntry[]; ahead: string | null } {
+): {
+  pending: JournalEntry[]
+  superseded: { entry: JournalEntry; currentHash: string }[]
+  ahead: string | null
+} {
   const journal = migrationJournal(folder)
-  if (!tableExists(d, MIGRATIONS_TABLE)) return { pending: journal, ahead: null }
+  if (!tableExists(d, MIGRATIONS_TABLE)) return { pending: journal, superseded: [], ahead: null }
   const applied = d
     .query(`SELECT hash, created_at, version FROM ${MIGRATIONS_TABLE} ORDER BY created_at`)
     .all() as { hash: string; created_at: number; version: string | null }[]
   const expected = new Map(journal.map((entry) => [entry.when, migrationHash(entry, folder)]))
-  const ahead = applied.find((row) => expected.get(Number(row.created_at)) !== row.hash)
+  const entriesByWhen = new Map(journal.map((entry) => [entry.when, entry]))
+  const states = applied.map((row) => {
+    const entry = entriesByWhen.get(Number(row.created_at))
+    const currentHash = entry ? expected.get(entry.when)! : ''
+    return {
+      row,
+      entry,
+      currentHash,
+      state: entry
+        ? recordedMigrationHashState({
+            recordedHash: row.hash,
+            currentHash,
+            predecessorHashes: predecessorsFor(entry, folder),
+          })
+        : ('ahead' as const),
+    }
+  })
+  const ahead = states.find(({ state }) => state === 'ahead')
+  const superseded = states.flatMap(({ entry, currentHash, state }) =>
+    entry && state === 'superseded predecessor' ? [{ entry, currentHash }] : [],
+  )
   return {
     pending: journal.filter(
       (entry) =>
-        !applied.some(
-          (row) => Number(row.created_at) === entry.when && row.hash === expected.get(entry.when),
+        !states.some(
+          ({ row, state }) => Number(row.created_at) === entry.when && state !== 'ahead',
         ),
     ),
+    superseded,
     ahead: ahead
-      ? (ahead.version ?? String(ahead.created_at))
+      ? (ahead.row.version ?? String(ahead.row.created_at))
       : applied.length > journal.length
         ? (applied.at(-1)?.version ?? String(applied.at(-1)?.created_at))
         : null,
@@ -687,6 +744,111 @@ function assertNoteCounterProjects(d: Database): void {
   )
 }
 
+function assertQuestionRunReferences(d: Database): void {
+  const details = [
+    d
+      .query<{ detail: string }, []>(
+        `SELECT 'unparseable question.run_ref values: ' || group_concat(record_id || ':' || run_ref, ', ') detail
+         FROM question
+         WHERE run_ref IS NOT NULL AND NOT (
+           (length(run_ref)=83 AND substr(run_ref,1,5)='orch:' AND substr(run_ref,42,6)=':turn:'
+           AND substr(run_ref,6,36) NOT GLOB '*[^0-9A-Fa-f-]*'
+           AND substr(run_ref,14,1)='-' AND substr(run_ref,19,1)='-'
+           AND substr(run_ref,24,1)='-' AND substr(run_ref,29,1)='-'
+           AND substr(run_ref,20,1) GLOB '[1-8]' AND substr(run_ref,25,1) GLOB '[89AaBb]'
+           AND substr(run_ref,48,36) NOT GLOB '*[^0-9A-Fa-f-]*'
+           AND substr(run_ref,56,1)='-' AND substr(run_ref,61,1)='-'
+           AND substr(run_ref,66,1)='-' AND substr(run_ref,71,1)='-'
+           AND substr(run_ref,62,1) GLOB '[1-8]' AND substr(run_ref,67,1) GLOB '[89AaBb]')
+           OR (length(run_ref)=41 AND substr(run_ref,1,5)='orch:'
+           AND substr(run_ref,6,36) NOT GLOB '*[^0-9A-Fa-f-]*'
+           AND substr(run_ref,14,1)='-' AND substr(run_ref,19,1)='-'
+           AND substr(run_ref,24,1)='-' AND substr(run_ref,29,1)='-'
+           AND substr(run_ref,20,1) GLOB '[1-8]' AND substr(run_ref,25,1) GLOB '[89AaBb]')
+         ) HAVING count(*) > 0`,
+      )
+      .get()?.detail,
+    d
+      .query<{ detail: string }, []>(
+        `SELECT 'unparseable question.root_ref values: ' || group_concat(record_id || ':' || root_ref, ', ') detail
+         FROM question
+         WHERE root_ref IS NOT NULL AND NOT (
+           length(root_ref)=41 AND substr(root_ref,1,5)='orch:'
+           AND substr(root_ref,6,36) NOT GLOB '*[^0-9A-Fa-f-]*'
+           AND substr(root_ref,14,1)='-' AND substr(root_ref,19,1)='-'
+           AND substr(root_ref,24,1)='-' AND substr(root_ref,29,1)='-'
+           AND substr(root_ref,20,1) GLOB '[1-8]' AND substr(root_ref,25,1) GLOB '[89AaBb]'
+         ) HAVING count(*) > 0`,
+      )
+      .get()?.detail,
+    d
+      .query<{ detail: string }, []>(
+        `SELECT 'unparseable question_delivery.run_ref values: ' ||
+           group_concat(question_record_id || ':' || run_ref, ', ') detail
+         FROM question_delivery
+         WHERE run_ref IS NOT NULL AND NOT (
+           (length(run_ref)=83 AND substr(run_ref,1,5)='orch:' AND substr(run_ref,42,6)=':turn:'
+           AND substr(run_ref,6,36) NOT GLOB '*[^0-9A-Fa-f-]*'
+           AND substr(run_ref,14,1)='-' AND substr(run_ref,19,1)='-'
+           AND substr(run_ref,24,1)='-' AND substr(run_ref,29,1)='-'
+           AND substr(run_ref,20,1) GLOB '[1-8]' AND substr(run_ref,25,1) GLOB '[89AaBb]'
+           AND substr(run_ref,48,36) NOT GLOB '*[^0-9A-Fa-f-]*'
+           AND substr(run_ref,56,1)='-' AND substr(run_ref,61,1)='-'
+           AND substr(run_ref,66,1)='-' AND substr(run_ref,71,1)='-'
+           AND substr(run_ref,62,1) GLOB '[1-8]' AND substr(run_ref,67,1) GLOB '[89AaBb]')
+           OR (length(run_ref)=41 AND substr(run_ref,1,5)='orch:'
+           AND substr(run_ref,6,36) NOT GLOB '*[^0-9A-Fa-f-]*'
+           AND substr(run_ref,14,1)='-' AND substr(run_ref,19,1)='-'
+           AND substr(run_ref,24,1)='-' AND substr(run_ref,29,1)='-'
+           AND substr(run_ref,20,1) GLOB '[1-8]' AND substr(run_ref,25,1) GLOB '[89AaBb]')
+         ) HAVING count(*) > 0`,
+      )
+      .get()?.detail,
+  ].filter((detail): detail is string => detail !== undefined)
+  if (!details.length) return
+  throw new Error(
+    renderRefusal(
+      refusal(`refusing question run record id migration: ${details.join('; ')}`, {
+        kind: 'edit',
+        text: `repair or delete the named question rows in the hub store, then run \`${PLATFORM_SLUG} machine migrate\``,
+      }),
+    ),
+  )
+}
+
+function assertGitTaskCascadeDependents(d: Database): void {
+  const detail = d
+    .query<{ detail: string }, []>(
+      `SELECT 'git task rows have cascade dependents: ' || group_concat(dependent, ', ') detail
+       FROM (
+         SELECT 'task_comment:' || c.record_id AS dependent
+         FROM task_comment c JOIN task t ON t.record_id=c.task_record_id WHERE t.source='git'
+         UNION ALL
+         SELECT 'task_document:' || d.record_id
+         FROM task_document d JOIN task t ON t.record_id=d.task_record_id WHERE t.source='git'
+       ) HAVING count(*) > 0`,
+    )
+    .get()?.detail
+  if (!detail) return
+  throw new Error(
+    renderRefusal(
+      refusal(`refusing git task deletion migration: ${detail}`, {
+        kind: 'edit',
+        text: `preserve or reassign the named rows, then run \`${PLATFORM_SLUG} machine migrate\``,
+      }),
+    ),
+  )
+}
+
+function rewriteSupersededMigrationHashes(
+  d: Database,
+  entries: readonly { entry: JournalEntry; currentHash: string }[],
+): void {
+  if (!entries.length) return
+  const update = d.query(`UPDATE ${MIGRATIONS_TABLE} SET hash=? WHERE created_at=?`)
+  for (const { entry, currentHash } of entries) update.run(currentHash, entry.when)
+}
+
 function prepareMigrationEntry(
   d: Database,
   tag: string,
@@ -694,6 +856,8 @@ function prepareMigrationEntry(
 ): void {
   if (tag === '0038_workflow_cursor_uuid_key') prepareCursorIdentityInput(d, cursorIdentities)
   if (tag === '0039_note_counter_uuid_key') assertNoteCounterProjects(d)
+  if (tag === '0042_question_run_record_id') assertQuestionRunReferences(d)
+  if (tag === '0047_drop_git_tasks') assertGitTaskCascadeDependents(d)
 }
 
 /** Apply pending journal entries and re-run backfills under one IMMEDIATE lock. */
@@ -722,6 +886,7 @@ export function applyMigrations(
         ),
       )
     }
+    rewriteSupersededMigrationHashes(d, state.superseded)
     for (const entry of state.pending) {
       createMigrationsTable(d)
       if (entry.tag === '0036_question_uuid_key') {
