@@ -22,6 +22,9 @@ export type CatalogueStep = {
   operatorRuling?: boolean
   commandEvidence?: CommandEvidence
   jobs: string[]
+  dispatch?: 'required'
+  dispatchWaivedBy?: FloorKind[]
+  judges?: string[]
   actions: string[]
   /** Optional only when reading a stored catalogue created before stages existed. */
   stage?: AutonomyStage

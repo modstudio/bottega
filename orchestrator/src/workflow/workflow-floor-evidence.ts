@@ -14,6 +14,7 @@ import { viewPullRequest } from '../branch/merged-pull-request.ts'
 import { branchForTaskKey, pullRequestNumberForBranch } from '../branch/task-key-pull-request.ts'
 import { resolveRunsDirectory } from '../database/database-location.ts'
 import { db } from '../database/db.ts'
+import { PENDING_SCORE_WHERE } from '../evidence/evidence-query.ts'
 import { resolveDocReference } from '../doc/doc-reference-read.ts'
 import { landingGatePurposeRefusal, resolveGateIdentifier } from '../gate/gate-identifier.ts'
 import { resolveCommitArgument } from '../git/commit-resolution.ts'
@@ -56,6 +57,7 @@ import {
   parseArtifactRef,
   pullRequestCreateArgv,
   type ValidatedEvidence,
+  type WorkflowRunChainEvidence,
 } from './workflow-floor.ts'
 import { gitText, productionResolveCheckout } from './workflow-floor-evidence-checkout.ts'
 import { positiveEvidenceId } from './workflow-floor-evidence-input.ts'
@@ -77,6 +79,37 @@ import {
 import { attachedTextReferenceMeetsFloor, type WorkflowTextRow } from './workflow-text.ts'
 
 export type { FloorEvidencePorts } from './workflow-floor-evidence-replay.ts'
+
+export function gatherWorkflowRunChains(
+  cursorRecordId: string,
+  jobs: readonly string[],
+  database: Database,
+  stepSlug?: string,
+): WorkflowRunChainEvidence[] {
+  if (!jobs.length) return []
+  const jobPlaceholders = jobs.map(() => '?').join(',')
+  const stepClause = stepSlug === undefined ? '' : ' AND r.step_slug=?'
+  const rows = database
+    .query<
+      { number: number; job: string; status: string; needs_verdict: number },
+      (string | number)[]
+    >(
+      `SELECT r.number,r.job,r.status,
+              CASE WHEN ${PENDING_SCORE_WHERE} THEN 1 ELSE 0 END AS needs_verdict
+         FROM run r LEFT JOIN score s ON s.run_record_id=r.record_id
+        WHERE r.parent_run_record_id IS NULL
+          AND r.cursor_record_id=?${stepClause}
+          AND r.job IN (${jobPlaceholders})
+        ORDER BY r.number`,
+    )
+    .all(cursorRecordId, ...(stepSlug === undefined ? [] : [stepSlug]), ...jobs)
+  return rows.map((row) => ({
+    number: row.number,
+    job: row.job,
+    terminal: TERMINAL_RUN_STATUS_SET.has(row.status),
+    needsVerdict: row.needs_verdict === 1,
+  }))
+}
 
 export type CursorIdentity = {
   project: string

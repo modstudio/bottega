@@ -74,6 +74,7 @@ export function validateStepCatalogue(value: unknown): string[] {
     errors.push(...closeInstructionTaskTargetErrors(item))
     validateDispatchPrompts(item, errors)
     validatePrescribedJobs(item, errors)
+    validateDispatchObligations(item, errors)
   }
   errors.push(
     ...validateCatalogueSequences(
@@ -200,6 +201,45 @@ function validatePrescribedJobs(item: Record<string, unknown>, errors: string[])
       errors.push(
         `step "${slug}" prescribes job "${job}" but does not declare it in jobs; add "${job}" to the step's jobs`,
       )
+  }
+}
+
+function validateDispatchObligations(item: Record<string, unknown>, errors: string[]): void {
+  const slug = String(item.slug ?? '')
+  if (item.dispatch !== undefined && item.dispatch !== 'required')
+    errors.push(`step "${slug}" dispatch must be "required"`)
+
+  if (item.dispatchWaivedBy !== undefined) {
+    if (item.dispatch !== 'required')
+      errors.push(`step "${slug}" dispatchWaivedBy requires dispatch: required`)
+    if (!Array.isArray(item.dispatchWaivedBy)) {
+      errors.push(`step "${slug}" dispatchWaivedBy must be an array of declared floor kinds`)
+    } else {
+      const declaredFloors = new Set(Array.isArray(item.floor) ? item.floor : [])
+      for (const kind of item.dispatchWaivedBy) {
+        if (!isFloorKind(kind) || !declaredFloors.has(kind))
+          errors.push(
+            `step "${slug}" dispatchWaivedBy names undeclared floor kind "${String(kind)}"`,
+          )
+      }
+    }
+  }
+
+  if (item.judges !== undefined) {
+    if (!Array.isArray(item.judges)) errors.push(`step "${slug}" judges must be an array`)
+    else
+      for (const entry of item.judges)
+        if (typeof entry !== 'string' || !(entry in JOBS))
+          errors.push(`step "${slug}" judges unknown job "${String(entry)}"`)
+  }
+
+  if (Array.isArray(item.jobs)) {
+    for (const entry of item.jobs) {
+      if (typeof entry === 'string' && JOBS[entry]?.needs.writesRepo && item.dispatch !== 'required')
+        errors.push(
+          `step "${slug}" declares repository-writing job "${entry}" but not dispatch: required`,
+        )
+    }
   }
 }
 

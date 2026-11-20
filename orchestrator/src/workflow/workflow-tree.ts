@@ -84,6 +84,9 @@ function renderedFiles(store: WorkflowTreeStore): WorkflowTreeFile[] {
         ...(step.operatorRuling ? { operatorRuling: true } : {}),
         ...(step.commandEvidence ? { commandEvidence: step.commandEvidence } : {}),
         jobs: step.jobs,
+        ...(step.dispatch ? { dispatch: step.dispatch } : {}),
+        ...(step.dispatchWaivedBy?.length ? { dispatchWaivedBy: step.dispatchWaivedBy } : {}),
+        ...(step.judges?.length ? { judges: step.judges } : {}),
         ...(step.actions.length ? { actions: step.actions } : {}),
         autonomy: step.autonomy,
         needs: step.needs,
@@ -214,6 +217,18 @@ function parsedCatalogueStep(
     ...stepBooleanOptionsFrom(frontMatter),
     ...commandEvidenceFrom(frontMatter),
     jobs: frontMatter.jobs as string[],
+    ...(frontMatter.dispatch === undefined
+      ? {}
+      : { dispatch: frontMatter.dispatch as CatalogueStep['dispatch'] }),
+    ...(frontMatter.dispatchWaivedBy === undefined
+      ? {}
+      : {
+          dispatchWaivedBy:
+            frontMatter.dispatchWaivedBy as CatalogueStep['dispatchWaivedBy'],
+        }),
+    ...(frontMatter.judges === undefined
+      ? {}
+      : { judges: frontMatter.judges as CatalogueStep['judges'] }),
     actions: (frontMatter.actions ?? []) as string[],
     autonomy: frontMatter.autonomy as CatalogueStep['autonomy'],
     needs: frontMatter.needs as CatalogueStep['needs'],

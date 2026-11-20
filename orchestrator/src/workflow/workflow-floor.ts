@@ -154,6 +154,15 @@ export type ValidatedEvidence = {
   deferReason?: string
   satisfy?: ValidatedSatisfy
   tree?: { project: string; worktree?: string | null; commit: string | null }
+  dispatchRuns?: WorkflowRunChainEvidence[]
+  judgedRuns?: WorkflowRunChainEvidence[]
+}
+
+export type WorkflowRunChainEvidence = {
+  number: number
+  job: string
+  terminal: boolean
+  needsVerdict: boolean
 }
 
 export const isOperatorRulingFloor = (floor: Pick<Floor, 'kind' | 'operatorRuling'>): boolean =>
@@ -186,6 +195,15 @@ export type FloorSatisfactionInput = {
   openObligations: OpenObligation[]
   freshRulingAfter?: string
   cursorTakeoverRemedy?: string
+  workflowKey: string
+  step: {
+    slug: string
+    jobs: string[]
+    dispatch?: 'required'
+    dispatchWaivedBy?: FloorKind[]
+    judges?: string[]
+  }
+  externallyMetFloors?: FloorKind[]
 }
 
 export function flagForFloor(kind: FloorKind): string {
@@ -880,6 +898,53 @@ function unfinishedReviewRefusal(floors: Floor[], evidence: ValidatedEvidence): 
   return `floor ruling is unmet: review ids ${unfinished.join(', ')} in this round are unfinished`
 }
 
+function scoreRemedy(runs: readonly WorkflowRunChainEvidence[]): string {
+  return runs.map((run) => `\`${PLATFORM_SLUG} score ${run.number} ...\``).join(', ')
+}
+
+function dispatchObligationRefusal(
+  input: FloorSatisfactionInput,
+  metFloors: readonly FloorKind[],
+): string | null {
+  if (input.step.dispatch !== 'required') return null
+  if (input.floors.some((floor) => floor.kind === 'descendants-closed')) return null
+  const waived = (input.step.dispatchWaivedBy ?? []).find((kind) => metFloors.includes(kind))
+  if (waived) return null
+  const runs = input.evidence.dispatchRuns ?? []
+  if (!runs.length) {
+    const job = input.step.jobs[0] ?? '<job>'
+    return (
+      `dispatch obligation is unmet: no ${input.step.jobs.join(' or ') || 'declared-job'} run was dispatched ` +
+      `from this cursor at step ${input.step.slug}; dispatch one with ` +
+      `\`${PLATFORM_SLUG} run start ${job} --key ${input.workflowKey || '<KEY>'} ...\` from this cursor`
+    )
+  }
+  const running = runs.filter((run) => !run.terminal)
+  if (running.length)
+    return (
+      `dispatch obligation is unmet: run ${running.map((run) => run.number).join(', ')} ` +
+      `${running.length === 1 ? 'is' : 'are'} not terminal; wait for each dispatched chain to finish, then score it`
+    )
+  const unscored = runs.filter((run) => run.job !== 'review-lens' && run.needsVerdict)
+  if (unscored.length)
+    return (
+      `dispatch obligation is unmet: run ${unscored.map((run) => run.number).join(', ')} ` +
+      `${unscored.length === 1 ? 'still needs' : 'still need'} a verdict; score each chain with ${scoreRemedy(unscored)}`
+    )
+  return null
+}
+
+function judgingObligationRefusal(input: FloorSatisfactionInput): string | null {
+  if (!input.step.judges?.length) return null
+  const unscored = (input.evidence.judgedRuns ?? []).filter((run) => run.needsVerdict)
+  if (!unscored.length) return null
+  return (
+    `judging obligation is unmet: ${input.step.judges.join(' or ')} run ` +
+    `${unscored.map((run) => run.number).join(', ')} ${unscored.length === 1 ? 'is' : 'are'} unscored; ` +
+    `score each chain with ${scoreRemedy(unscored)}`
+  )
+}
+
 function evidenceRefs(evidence: ValidatedEvidence): EvidenceRef[] {
   const refs: EvidenceRef[] = []
   if (evidence.ruling) refs.push({ flag: '--ruling', value: String(evidence.ruling.id) })
@@ -1011,6 +1076,13 @@ export function decideFloorSatisfaction(input: FloorSatisfactionInput): FloorDec
   const met = input.floors.filter((floor) =>
     floorIsMet(floor, input.evidence, input.freshRulingAfter),
   )
+  const metFloorKinds = [
+    ...new Set([...met.map((floor) => floor.kind), ...(input.externallyMetFloors ?? [])]),
+  ]
+  const dispatchRefusal = dispatchObligationRefusal(input, metFloorKinds)
+  if (dispatchRefusal) return { action: 'refuse', message: dispatchRefusal }
+  const judgingRefusal = judgingObligationRefusal(input)
+  if (judgingRefusal) return { action: 'refuse', message: judgingRefusal }
   const commandFailure = commandExitFailureRefusal(input.floors, input.evidence, met)
   if (commandFailure) return { action: 'refuse', message: commandFailure }
   const bindingRefusal = input.evidence.artifacts
