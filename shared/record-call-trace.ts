@@ -2,7 +2,7 @@
 /** Measures record API HTTP calls without coupling callers to a concern-specific client. */
 
 import { PLATFORM_SLUG } from './brand.ts'
-import { contentLength, countResponseBody } from './hosted-server.ts'
+import { type BodyCountFinish, contentLength, countResponseBody } from './hosted-server.ts'
 
 const RECORD_TRACE_ENV = `${PLATFORM_SLUG.toUpperCase()}_RECORD_TRACE`
 
@@ -15,6 +15,7 @@ export type RecordCallTrace = {
   clientMs: number
   serverMs: number | null
   open: boolean
+  finish: BodyCountFinish | null
 }
 
 type RecordTraceSummary = {
@@ -27,18 +28,15 @@ type RecordTraceSummary = {
   serverMsTotal: number | null
   serverMsMax: number | null
   open: number
+  incomplete: number
 }
 
 const encoder = new TextEncoder()
-const recordedCalls: RecordCallTrace[] = []
+const completedSummaries = new Map<string, RecordTraceSummary>()
+const activeCalls = new Set<RecordCallTrace>()
 
 function configuredMode(): string | null {
   return process.env[RECORD_TRACE_ENV] ?? null
-}
-
-/** Recorded calls are exposed for behavioral tests and diagnostics. */
-export function recordedRecordCalls(): readonly RecordCallTrace[] {
-  return recordedCalls
 }
 
 export function recordRouteClass(path: string): string {
@@ -99,6 +97,7 @@ export function summarizeRecordCalls(calls: readonly RecordCallTrace[]): RecordT
       serverMsTotal: null,
       serverMsMax: null,
       open: 0,
+      incomplete: 0,
     }
     summary.count += 1
     if (call.responseBytes !== null) {
@@ -112,6 +111,7 @@ export function summarizeRecordCalls(calls: readonly RecordCallTrace[]): RecordT
       summary.serverMsMax = Math.max(summary.serverMsMax ?? 0, call.serverMs)
     }
     if (call.open) summary.open += 1
+    if (call.finish !== 'complete') summary.incomplete += 1
     grouped.set(call.routeClass, summary)
   }
   return [...grouped.values()].sort((left, right) =>
@@ -146,6 +146,7 @@ function combineSummaries(summaries: readonly RecordTraceSummary[]): RecordTrace
           ? total.serverMsMax
           : Math.max(total.serverMsMax ?? 0, summary.serverMsMax),
       open: total.open + summary.open,
+      incomplete: total.incomplete + summary.incomplete,
     }),
     {
       routeClass: 'total',
@@ -157,6 +158,7 @@ function combineSummaries(summaries: readonly RecordTraceSummary[]): RecordTrace
       serverMsTotal: null,
       serverMsMax: null,
       open: 0,
+      incomplete: 0,
     },
   )
 }
@@ -173,12 +175,8 @@ function summaryLine(summary: RecordTraceSummary): string {
     `server_ms_total=${optionalDecimal(summary.serverMsTotal)}`,
     `server_ms_max=${optionalDecimal(summary.serverMsMax)}`,
     `open=${summary.open}`,
+    `incomplete=${summary.incomplete}`,
   ].join(' ')
-}
-
-export function formatRecordCallSummary(calls: readonly RecordCallTrace[]): string[] {
-  const summaries = summarizeRecordCalls(calls)
-  return [...summaries, combineSummaries(summaries)].map(summaryLine)
 }
 
 function formatRecordCall(call: RecordCallTrace): string {
@@ -192,21 +190,43 @@ function formatRecordCall(call: RecordCallTrace): string {
     `client_ms=${decimal(call.clientMs)}`,
     `server_ms=${optionalDecimal(call.serverMs)}`,
     `open=${call.open}`,
+    `finish=${call.finish ?? 'open'}`,
   ].join(' ')
 }
 
-function recordRecordCallTrace(call: RecordCallTrace): void {
-  recordedCalls.push(call)
+function mergeCompletedCall(call: RecordCallTrace): void {
+  const current = completedSummaries.get(call.routeClass)
+  const next = summarizeRecordCalls([call])[0]!
+  completedSummaries.set(call.routeClass, current ? combineSummaries([current, next]) : next)
+  const stored = completedSummaries.get(call.routeClass)!
+  stored.routeClass = call.routeClass
+}
+
+function finishRecordCall(
+  call: RecordCallTrace,
+  finish: BodyCountFinish,
+  runtimeTrace: boolean,
+  observer?: (call: RecordCallTrace) => void,
+): void {
+  call.open = false
+  call.finish = finish
+  if (runtimeTrace) {
+    activeCalls.delete(call)
+    mergeCompletedCall(call)
+  }
+  observer?.(call)
+  if (configuredMode() === 'calls') process.stderr.write(`${formatRecordCall(call)}\n`)
 }
 
 export async function tracedRecordFetch(
   url: string,
   init: RequestInit,
   transport: typeof fetch,
-  observer: (call: RecordCallTrace) => void = recordRecordCallTrace,
+  observer?: (call: RecordCallTrace) => void,
 ): Promise<Response> {
   const mode = configuredMode()
-  if (!mode && observer === recordRecordCallTrace) return transport(url, init)
+  if (!mode && !observer) return transport(url, init)
+  const runtimeTrace = mode !== null
   const startedAt = performance.now()
   const routeClass = recordRouteClass(new URL(url).pathname)
   try {
@@ -224,16 +244,16 @@ export async function tracedRecordFetch(
       responseBytes: responseBytes ?? 0,
       clientMs: performance.now() - startedAt,
       open: responseBytes === null && response.body !== null,
+      finish: null,
     }
-    observer(call)
-    const finish = (measuredResponseBytes: number) => {
+    if (runtimeTrace && call.open) activeCalls.add(call)
+    const finish = (measuredResponseBytes: number, kind: BodyCountFinish) => {
       call.responseBytes = measuredResponseBytes
       call.clientMs = performance.now() - startedAt
-      call.open = false
-      if (mode === 'calls') process.stderr.write(`${formatRecordCall(call)}\n`)
+      finishRecordCall(call, kind, runtimeTrace, observer)
     }
     if (responseBytes !== null || response.body === null) {
-      finish(responseBytes ?? 0)
+      finish(responseBytes ?? 0, 'complete')
       return response
     }
     return countResponseBody(
@@ -242,7 +262,7 @@ export async function tracedRecordFetch(
         call.responseBytes = bytes
         call.clientMs = performance.now() - startedAt
       },
-      (bytes) => finish(bytes),
+      (bytes, kind) => finish(bytes, kind),
     )
   } catch (error) {
     const call = {
@@ -254,15 +274,27 @@ export async function tracedRecordFetch(
       clientMs: performance.now() - startedAt,
       serverMs: null,
       open: false,
+      finish: null,
     }
-    observer(call)
-    if (mode === 'calls') process.stderr.write(`${formatRecordCall(call)}\n`)
+    finishRecordCall(call, 'error', runtimeTrace, observer)
     throw error
   }
 }
 
 process.once('exit', () => {
-  if (configuredMode())
-    for (const line of formatRecordCallSummary(recordedRecordCalls()))
-      process.stderr.write(`${line}\n`)
+  if (!configuredMode()) return
+  const summaries = [...completedSummaries.values()]
+  for (const active of activeCalls) {
+    const activeSummary = summarizeRecordCalls([active])[0]!
+    const index = summaries.findIndex((summary) => summary.routeClass === active.routeClass)
+    if (index < 0) summaries.push(activeSummary)
+    else {
+      const routeClass = summaries[index]!.routeClass
+      summaries[index] = combineSummaries([summaries[index]!, activeSummary])
+      summaries[index]!.routeClass = routeClass
+    }
+  }
+  summaries.sort((left, right) => left.routeClass.localeCompare(right.routeClass))
+  for (const summary of [...summaries, combineSummaries(summaries)])
+    process.stderr.write(`${summaryLine(summary)}\n`)
 })

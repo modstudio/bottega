@@ -157,6 +157,38 @@ function calledName(node: ts.CallExpression): string | undefined {
   return undefined
 }
 
+function unparenthesized(node: ts.Expression): ts.Expression {
+  while (ts.isParenthesizedExpression(node)) node = node.expression
+  return node
+}
+
+function isFetchFallback(node: ts.Expression): boolean {
+  node = unparenthesized(node)
+  if (ts.isIdentifier(node)) return node.text === 'fetch'
+  return (
+    ts.isBinaryExpression(node) &&
+    (node.operatorToken.kind === ts.SyntaxKind.QuestionQuestionToken ||
+      node.operatorToken.kind === ts.SyntaxKind.BarBarToken) &&
+    (isFetchFallback(node.left) || isFetchFallback(node.right))
+  )
+}
+
+function sameScopeInitializer(
+  identifier: ts.Identifier,
+  call: ts.CallExpression,
+): ts.Expression | undefined {
+  let scope: ts.Node | undefined = call.parent
+  while (scope && !ts.isBlock(scope) && !ts.isSourceFile(scope)) scope = scope.parent
+  if (!scope || (!ts.isBlock(scope) && !ts.isSourceFile(scope))) return undefined
+  for (const statement of scope.statements) {
+    if (!ts.isVariableStatement(statement)) continue
+    for (const declaration of statement.declarationList.declarations)
+      if (ts.isIdentifier(declaration.name) && declaration.name.text === identifier.text)
+        return declaration.initializer
+  }
+  return undefined
+}
+
 function nodeText(node: ts.Node | undefined, sourceFile: ts.SourceFile): string {
   return node?.getText(sourceFile) ?? ''
 }
@@ -168,8 +200,15 @@ export function recordFetchViolations(source: string, file: string): RecordFetch
   const violations: RecordFetchViolation[] = []
   const visit = (node: ts.Node) => {
     if (ts.isCallExpression(node)) {
-      const name = calledName(node)
-      const first = nodeText(node.arguments[0], sourceFile)
+      const fallbackFetch = isFetchFallback(node.expression)
+      const name = fallbackFetch ? 'fetch' : calledName(node)
+      const firstArgument = node.arguments[0]
+      const initializer =
+        firstArgument && ts.isIdentifier(firstArgument)
+          ? sameScopeInitializer(firstArgument, node)
+          : undefined
+      const first =
+        `${nodeText(firstArgument, sourceFile)} ${nodeText(initializer, sourceFile)}`.trim()
       const hostedBoundedFetch =
         name === 'boundedFetch' && literalText(node.arguments[0]) === 'hosted-api'
       const opaqueHostedSend =

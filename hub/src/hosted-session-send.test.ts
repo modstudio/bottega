@@ -1,5 +1,4 @@
 import { expect, test } from 'bun:test'
-import { recordedRecordCalls } from '../../shared/record-call-trace.ts'
 import { CALLER_HEADER_NAME, withRecordCaller } from '../../shared/record-caller.ts'
 import { sendHostedSessionRequest } from './hosted-session-send.ts'
 import { hostedCreateTask } from './task-client.ts'
@@ -78,8 +77,13 @@ test('hosted session writes require and send a destination while reads remain un
 
 test.serial('hosted session sends are recorded through the record trace seam', async () => {
   const previous = process.env.BOTTEGA_RECORD_TRACE
-  process.env.BOTTEGA_RECORD_TRACE = '1'
-  const before = recordedRecordCalls().length
+  process.env.BOTTEGA_RECORD_TRACE = 'calls'
+  const originalWrite = process.stderr.write
+  const writes: string[] = []
+  process.stderr.write = ((value: string | Uint8Array) => {
+    writes.push(String(value))
+    return true
+  }) as typeof process.stderr.write
   try {
     const response = await sendHostedSessionRequest({
       ...common,
@@ -92,13 +96,13 @@ test.serial('hosted session sends are recorded through the record trace seam', a
     })
 
     expect(await response.json()).toEqual([])
-    expect(recordedRecordCalls()).toHaveLength(before + 1)
-    expect(recordedRecordCalls()[before]).toMatchObject({
-      routeClass: 'record-tasks',
-      responseBytes: 2,
-      open: false,
-    })
+    expect(writes).toHaveLength(1)
+    expect(writes[0]).toContain(
+      'record-trace-call route=record-tasks method=GET status=200 request_bytes=0 response_bytes=2',
+    )
+    expect(writes[0]).toContain('open=false finish=complete')
   } finally {
+    process.stderr.write = originalWrite
     if (previous === undefined) delete process.env.BOTTEGA_RECORD_TRACE
     else process.env.BOTTEGA_RECORD_TRACE = previous
   }

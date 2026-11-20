@@ -13,7 +13,7 @@ export function contentLength(headers: Headers): number | null {
   return Number.isSafeInteger(parsed) ? parsed : null
 }
 
-type BodyCountFinish = 'complete' | 'error' | 'cancelled'
+export type BodyCountFinish = 'complete' | 'error' | 'cancelled'
 
 /** Wrap a response body with bounded, backpressured byte counting. */
 export function countResponseBody(
@@ -80,4 +80,15 @@ export function hostedAccessLogLine(input: {
   caller?: string | null
 }): string {
   return `${input.method} ${input.pathname} ${input.status} ${Math.round(input.durationMs)}ms bytes=${input.responseBytes ?? '-'} caller=${input.caller ?? '-'}`
+}
+
+export function hostedAccessBodyLogLine(input: {
+  method: string
+  pathname: string
+  status: number
+  responseBytes: number
+  finish: BodyCountFinish
+  caller?: string | null
+}): string {
+  return `${input.method} ${input.pathname} ${input.status} body bytes=${input.responseBytes} finish=${input.finish} caller=${input.caller ?? '-'}`
 }

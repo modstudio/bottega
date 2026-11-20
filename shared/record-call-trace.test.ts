@@ -1,9 +1,7 @@
 import { expect, test } from 'bun:test'
 import {
-  formatRecordCallSummary,
   parseServerTiming,
   type RecordCallTrace,
-  recordedRecordCalls,
   recordRouteClass,
   summarizeRecordCalls,
   tracedRecordFetch,
@@ -27,6 +25,7 @@ test('record call summaries aggregate each route and the formatted total', () =>
       clientMs: 8.25,
       serverMs: 3.5,
       open: false,
+      finish: 'complete',
     },
     {
       routeClass: 'record-docs',
@@ -37,6 +36,7 @@ test('record call summaries aggregate each route and the formatted total', () =>
       clientMs: 5,
       serverMs: null,
       open: false,
+      finish: 'complete',
     },
     {
       routeClass: 'record-tasks',
@@ -47,6 +47,7 @@ test('record call summaries aggregate each route and the formatted total', () =>
       clientMs: 2,
       serverMs: 1,
       open: false,
+      finish: 'error',
     },
   ]
 
@@ -61,6 +62,7 @@ test('record call summaries aggregate each route and the formatted total', () =>
       serverMsTotal: 3.5,
       serverMsMax: 3.5,
       open: 0,
+      incomplete: 0,
     },
     {
       routeClass: 'record-tasks',
@@ -72,11 +74,9 @@ test('record call summaries aggregate each route and the formatted total', () =>
       serverMsTotal: 1,
       serverMsMax: 1,
       open: 0,
+      incomplete: 1,
     },
   ])
-  expect(formatRecordCallSummary(calls).at(-1)).toBe(
-    'record-trace route=total count=3 response_bytes_total=150 response_bytes_max=120 client_ms_total=15.3 client_ms_max=8.3 server_ms_total=4.5 server_ms_max=3.5 open=0',
-  )
 })
 
 test('traced record fetch captures the request and response measurements', async () => {
@@ -101,6 +101,7 @@ test('traced record fetch captures the request and response measurements', async
     requestBytes: 11,
     responseBytes: 4,
     serverMs: 2.5,
+    finish: 'complete',
   })
   expect(calls[0]!.clientMs).toBeGreaterThanOrEqual(0)
   expect(calls[0]!.open).toBeFalse()
@@ -118,7 +119,11 @@ test('traced record fetch counts a response body when content-length is absent',
   expect(await response.text()).toBe('chunked body')
   for (let attempt = 0; calls.length === 0 && attempt < 10; attempt++) await Bun.sleep(0)
   expect(calls).toHaveLength(1)
-  expect(calls[0]).toMatchObject({ routeClass: 'record-tasks', responseBytes: 12 })
+  expect(calls[0]).toMatchObject({
+    routeClass: 'record-tasks',
+    responseBytes: 12,
+    finish: 'complete',
+  })
 })
 
 test('route classes derive from the first v1 path segment', () => {
@@ -150,14 +155,13 @@ test('traced fetch counts an unbounded body only as the caller reads it and reco
   await reader.cancel('test complete')
 
   expect(calls).toHaveLength(1)
-  expect(calls[0]).toMatchObject({ responseBytes: 6, open: false })
+  expect(calls[0]).toMatchObject({ responseBytes: 6, open: false, finish: 'cancelled' })
   expect(pulls).toBeLessThanOrEqual(5)
 })
 
 test.serial('trace off returns the original response and records or writes nothing', async () => {
   const previous = process.env.BOTTEGA_RECORD_TRACE
   delete process.env.BOTTEGA_RECORD_TRACE
-  const before = recordedRecordCalls().length
   const originalWrite = process.stderr.write
   const writes: string[] = []
   process.stderr.write = ((value: string | Uint8Array) => {
@@ -172,7 +176,6 @@ test.serial('trace off returns the original response and records or writes nothi
       (async () => original) as unknown as typeof fetch,
     )
     expect(response).toBe(original)
-    expect(recordedRecordCalls()).toHaveLength(before)
     expect(writes).toEqual([])
   } finally {
     process.stderr.write = originalWrite

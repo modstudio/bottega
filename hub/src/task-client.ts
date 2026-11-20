@@ -1,5 +1,6 @@
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { jsonBody } from '../../shared/http-json.ts'
+import { tracedRecordFetch } from '../../shared/record-call-trace.ts'
 import type { RecordSpaceMembership } from '../../shared/record-space-membership.ts'
 import type {
   HostedChangeRow,
@@ -57,7 +58,11 @@ async function hostedFetch(
   })
   try {
     return await Promise.race([
-      (options.fetch ?? fetch)(input, { ...init, signal: controller.signal }),
+      tracedRecordFetch(
+        input,
+        { ...init, signal: controller.signal },
+        (options.fetch ?? fetch) as typeof fetch,
+      ),
       expired,
     ])
   } finally {

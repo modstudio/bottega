@@ -5,6 +5,7 @@ import {
   contentLength,
   countResponseBody,
   HOSTED_SERVER_IDLE_TIMEOUT_SECONDS,
+  hostedAccessBodyLogLine,
   hostedAccessLogLine,
 } from '../../../shared/hosted-server.ts'
 import { CALLER_HEADER_NAME, loggedCallerToken } from '../../../shared/record-caller.ts'
@@ -224,7 +225,12 @@ export async function timedRecordApiResponse(
   app: { fetch(request: Request): Response | Promise<Response> },
   request: Request,
   now: () => number = performance.now.bind(performance),
-  onBodyBytes: (bytes: number | null, status: number, durationMs: number) => void = () => {},
+  onBodyBytes: (
+    bytes: number,
+    status: number,
+    durationMs: number,
+    finish: 'complete' | 'error' | 'cancelled',
+  ) => void = () => {},
 ): Promise<{ response: Response; durationMs: number }> {
   const started = now()
   const response = await app.fetch(request)
@@ -233,14 +239,15 @@ export async function timedRecordApiResponse(
     response.headers.set('server-timing', `app;dur=${durationMs.toFixed(1)}`)
   } catch {
     // Redirects and pass-through fetch responses can have immutable headers.
-    onBodyBytes(contentLength(response.headers), response.status, durationMs)
     return { response, durationMs }
   }
+  if (contentLength(response.headers) !== null || response.body === null)
+    return { response, durationMs }
   return {
     response: countResponseBody(
       response,
       () => {},
-      (bytes) => onBodyBytes(bytes, response.status, durationMs),
+      (bytes, finish) => onBodyBytes(bytes, response.status, durationMs, finish),
     ),
     durationMs,
   }
@@ -266,21 +273,31 @@ function serveRecordApi(
       const method = request.method
       const pathname = new URL(request.url).pathname
       const caller = loggedCallerToken(request.headers.get(CALLER_HEADER_NAME))
-      const { response } = await timedRecordApiResponse(
+      const { response, durationMs } = await timedRecordApiResponse(
         app,
         request,
         undefined,
-        (responseBytes, status, durationMs) =>
+        (responseBytes, status, _durationMs, finish) =>
           console.log(
-            hostedAccessLogLine({
+            hostedAccessBodyLogLine({
               method,
               pathname,
               status,
-              durationMs,
               responseBytes,
+              finish,
               caller,
             }),
           ),
+      )
+      console.log(
+        hostedAccessLogLine({
+          method,
+          pathname,
+          status: response.status,
+          durationMs,
+          responseBytes: contentLength(response.headers),
+          caller,
+        }),
       )
       return response
     },

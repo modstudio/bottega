@@ -91,3 +91,17 @@ test('refuses hosted transports and opaque hosted-session sends', () => {
     { file: 'hub/src/example.ts', line: 4 },
   ])
 })
+
+test('refuses fallback fetches and resolver-derived URL variables', () => {
+  const source = `
+    async function send(options) {
+      const url = resolveHostedUrl('/v1/tasks')
+      await (options.fetch ?? fetch)(url, {})
+      await (options.fetchImpl || fetch)(resolveRecordApiUrl('/v1/docs'), {})
+    }
+  `
+  expect(recordFetchViolations(source, 'hub/src/example.ts')).toEqual([
+    { file: 'hub/src/example.ts', line: 4 },
+    { file: 'hub/src/example.ts', line: 5 },
+  ])
+})
