@@ -43,6 +43,7 @@ export type HostPressureConditionDetail = {
 export const MONITOR_NOTICE_DELIVERY_POLICY = {
   'abandoned-bootstrap': 'revalidated',
   'asking-run': 'revalidated',
+  'collector-leg-failure': 'revalidated',
   'dead-running-process': 'revalidated',
   'ghost-open-interval': 'append-only',
   'host-pressure': 'append-only',

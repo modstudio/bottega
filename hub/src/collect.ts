@@ -242,13 +242,27 @@ async function settleTimedLeg<T>(
     details = success(await work())
   } catch (error) {
     const message = (error as Error).message
-    const transition = recordCollectorLegFailure(source, message, nowIso())
-    if (transition.logFailure) console.error(`hub: ${source} collect failed: ${message}`)
+    try {
+      const transition = recordCollectorLegFailure(source, message, nowIso())
+      if (transition.logFailure) console.error(`hub: ${source} collect failed: ${message}`)
+    } catch (stateError) {
+      console.error(`hub: ${source} collect failed: ${message}`)
+      console.error(
+        `hub: ${source} collector state failed: ${stateError instanceof Error ? stateError.message : String(stateError)}`,
+      )
+    }
     return { source, ok: false, error: message, durationMs: Date.now() - startedAt }
   }
-  const transition = recordCollectorLegSuccess(source, nowIso())
-  if (transition.logRecovery) console.error(`hub: ${source} collect recovered`)
-  return details === null ? null : { source, ...details, durationMs: Date.now() - startedAt }
+  if (details === null) return null
+  try {
+    const transition = recordCollectorLegSuccess(source, nowIso())
+    if (transition.logRecovery) console.error(`hub: ${source} collect recovered`)
+  } catch (stateError) {
+    console.error(
+      `hub: ${source} collector state failed: ${stateError instanceof Error ? stateError.message : String(stateError)}`,
+    )
+  }
+  return { source, ...details, durationMs: Date.now() - startedAt }
 }
 
 async function settleLeg<T>(

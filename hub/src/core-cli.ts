@@ -23,7 +23,7 @@ import {
   watch,
   withLease,
 } from './collect.ts'
-import { collectorLegStates } from './collector-leg-state.ts'
+import { collectorLegStates, collectorLegView } from './collector-leg-state.ts'
 import {
   db,
   formatMigrationRepairSummary,
@@ -252,9 +252,13 @@ function registerCollectionCommands(program: Command): void {
       requireDatabase()
       const states = collectorLegStates()
       if (options.json) console.log(JSON.stringify(states))
-      else
-        for (const state of states)
-          console.log(`${state.source}: ${state.failingSince ? 'failing' : 'current'}`)
+      else {
+        const { collectorLegs } = collectorLegView(states, Date.now())
+        for (const leg of collectorLegs) {
+          const error = leg.status === 'failing' && leg.lastError ? `: ${leg.lastError}` : ''
+          console.log(`${leg.source}: ${leg.status}${error}`)
+        }
+      }
     })
   program
     .command('lease')

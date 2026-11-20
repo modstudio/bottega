@@ -15,6 +15,13 @@ export type CollectorLegState = {
   failingSince: string | null
 }
 
+type UnreadableCollectorLegState = {
+  unreadable: true
+  key: string
+}
+
+export type CollectorLegObservation = CollectorLegState | UnreadableCollectorLegState
+
 export type CollectorLegHealth = CollectorLegState & {
   status: 'current' | 'failing' | 'stale'
   ageMs: number | null
@@ -22,6 +29,15 @@ export type CollectorLegHealth = CollectorLegState & {
 
 function settingKey(source: string): string {
   return `${SETTING_PREFIX}${encodeURIComponent(source)}`
+}
+
+function sourceFromSettingKey(key: string): string {
+  const encoded = key.slice(SETTING_PREFIX.length)
+  try {
+    return decodeURIComponent(encoded)
+  } catch {
+    return encoded
+  }
 }
 
 function parseState(value: string): CollectorLegState {
@@ -87,18 +103,37 @@ export function recordCollectorLegSuccess(source: string, at: string): { logReco
   return { logRecovery: previous?.failingSince != null }
 }
 
-export function collectorLegStates(): CollectorLegState[] {
+export function collectorLegStates(): CollectorLegObservation[] {
   return db()
-    .query<{ value: string }, [string]>('SELECT value FROM setting WHERE key LIKE ? ORDER BY key')
+    .query<{ key: string; value: string }, [string]>(
+      'SELECT key,value FROM setting WHERE key LIKE ? ORDER BY key',
+    )
     .all(`${SETTING_PREFIX}%`)
-    .map((row) => parseState(row.value))
+    .map((row) => {
+      try {
+        return parseState(row.value)
+      } catch {
+        return { unreadable: true, key: row.key }
+      }
+    })
 }
 
 export function collectorLegView(
-  states: readonly CollectorLegState[],
+  states: readonly CollectorLegObservation[],
   now = Date.now(),
 ): { collectedAt: string | null; collectorLegs: CollectorLegHealth[] } {
   const collectorLegs = states.map((state): CollectorLegHealth => {
+    if ('unreadable' in state) {
+      return {
+        source: sourceFromSettingKey(state.key),
+        lastSuccessAt: null,
+        lastError: 'stored collector leg state is unreadable',
+        lastErrorAt: null,
+        failingSince: null,
+        status: 'stale',
+        ageMs: null,
+      }
+    }
     const successMs = state.lastSuccessAt === null ? Number.NaN : Date.parse(state.lastSuccessAt)
     const ageMs = Number.isFinite(successMs) ? Math.max(0, now - successMs) : null
     return {
