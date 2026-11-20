@@ -10,6 +10,7 @@ import {
 import type { FailureKind } from '../failure/failure.ts'
 import { classify } from '../failure/failure.ts'
 import { job } from '../jobs/jobs.ts'
+import type { CodexPermissionProfileInput } from '../sandbox/codex-sandbox.ts'
 import type { ProjectMcpSelection } from '../sandbox/project-mcp-scope.ts'
 import type { SandboxRuntimeConfig } from '../sandbox/sandbox.ts'
 import type { AjvValidator } from './ajv-validator.ts'
@@ -103,18 +104,12 @@ export type ArgvOpts = {
   model?: string
   /** Open the sandbox for editing. True for every job that reads a repository. */
   write?: boolean
-  /**
-   * How much of the machine this run may use.
-   *
-   * Repository jobs get workspace-write in their disposable worktree. Codex
-   * no-repository jobs get workspace-write in their isolate so they can write
-   * run artifacts. `exec` remains available when a job passes it explicitly.
-   */
+  /** Codex execution level; `exec` keeps its explicit unrestricted path. */
   sandbox?: SandboxLevel
-  /** Open outbound network in Codex's workspace-write sandbox. */
+  /** Enable network in Codex's native permission profile. */
   sandboxWorkspaceWriteNetworkAccess?: boolean
-  /** Exact extra paths made writable inside Codex's workspace-write sandbox. */
-  writableRoots?: string[]
+  /** Shared read policy and complete current write set for Codex's native permission profile. */
+  codexPermissionProfile?: CodexPermissionProfileInput
   /** Command-scoped git configuration enforced inside the worker's shell. */
   gitConfigEnvironment?: Record<string, string>
   /** Tracked-recipe allocation values (BOTTEGA_INDEX, BOTTEGA_PORTS_*, BOTTEGA_ALLOC_*) set inside the worker's shell. */
@@ -262,7 +257,7 @@ export type TransportStartOpts = {
   /** Project MCP servers this run attaches, and how; transports that cannot render them ignore it. */
   projectMcpSelection?: ProjectMcpSelection | null
   trustCwd?: string
-  writableRoots?: ArgvOpts['writableRoots']
+  codexPermissionProfile?: ArgvOpts['codexPermissionProfile']
   gitConfigEnvironment?: ArgvOpts['gitConfigEnvironment']
   recipeEnvironment?: ArgvOpts['recipeEnvironment']
   tempEnvironment?: Record<string, string>

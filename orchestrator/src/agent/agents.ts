@@ -3,7 +3,10 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { WORKER_MCP_SERVER_NAME } from '../../../shared/brand.ts'
 import { codexAskServerCommand, codexScopeArgs } from '../sandbox/codex-mcp-scope.ts'
-import { codexLaunchUsesApproveForMe } from '../sandbox/codex-sandbox.ts'
+import {
+  codexLaunchUsesApproveForMe,
+  codexPermissionProfileArgs,
+} from '../sandbox/codex-sandbox.ts'
 import { grokAskCommandFromConfig } from '../sandbox/sandbox.ts'
 import type { ArgvOpts } from '../transport/transport.ts'
 import type { AgentBilling } from '../transport/vendor-usage.ts'
@@ -341,15 +344,6 @@ function codexCommon(o: Omit<ArgvOpts, 'prompt'>): string[] {
    * No-repository jobs use an explicit workspace-write sandbox, so bottega-ask
    * tools without a read-only annotation still cannot run without approval.
    */
-  if (o.writableRoots?.length) {
-    a.push('-c', `sandbox_workspace_write.writable_roots=${JSON.stringify(o.writableRoots)}`)
-  }
-  if (o.sandboxWorkspaceWriteNetworkAccess) {
-    // Probe established on 2026-09-21 that Codex reaches the Docker socket
-    // through this network_access switch. It also opens outbound network for
-    // the run, which the ruling accepts for projects that declare the flag.
-    a.push('-c', 'sandbox_workspace_write.network_access=true')
-  }
   a.push(...codexShellEnvironmentArgs(o.gitConfigEnvironment, o.recipeEnvironment))
   const sandbox =
     o.sandbox === 'exec'
@@ -357,15 +351,25 @@ function codexCommon(o: Omit<ArgvOpts, 'prompt'>): string[] {
       : o.write || o.sandbox === 'workspace-write'
         ? 'workspace-write'
         : 'read-only'
-  if (!o.write && sandbox === 'workspace-write') {
+  if (sandbox === CODEX_EXEC_SANDBOX) {
+    // Execution jobs retain the explicitly ruled unrestricted Codex path.
+    a.push(...codexSandboxArgs(o.mcp, sandbox, o.write))
+  } else {
+    if (!o.codexPermissionProfile) {
+      throw new Error('codex launch refusal: native permission profile is missing')
+    }
     a.push(
-      '-c',
-      'sandbox_workspace_write.exclude_slash_tmp=true',
-      '-c',
-      'sandbox_workspace_write.exclude_tmpdir_env_var=true',
+      ...codexPermissionProfileArgs({
+        ...o.codexPermissionProfile,
+        // Codex reaches the Docker socket through this switch. It also opens
+        // outbound network, which the ruling accepts for projects that declare the flag.
+        network: o.sandboxWorkspaceWriteNetworkAccess === true,
+      }),
     )
+    if (codexLaunchUsesApproveForMe({ mcp: o.mcp, sandbox, repository: o.write })) {
+      a.push('--approve-for-me')
+    }
   }
-  a.push(...codexSandboxArgs(o.mcp, sandbox, o.write))
   if (o.schema) a.push('--output-schema', o.schema)
   return a
 }
