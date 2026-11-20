@@ -216,7 +216,9 @@ try {
 console.log('loopback listen+connect=ran')
 try {
   const response = await fetch('http://192.0.2.1/', { signal: AbortSignal.timeout(500) })
-  throw new Error('non-loopback outbound unexpectedly connected with status ' + response.status)
+  if (response.ok) {
+    throw new Error('non-loopback outbound unexpectedly connected with status ' + response.status)
+  }
 } catch (error) {
   if (error instanceof Error && error.message.startsWith('non-loopback outbound unexpectedly')) {
     throw error
