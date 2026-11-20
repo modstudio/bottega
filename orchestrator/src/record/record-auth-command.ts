@@ -6,6 +6,7 @@ import { probeRecordSessionStore, writeRecordSessionToken } from '../../../share
 import { refusal } from '../../../shared/refusal.ts'
 import { automaticallyAdoptHostedBoard } from '../board/board-auto-adoption.ts'
 import { claimCurrentMachineKey } from '../config/config-service.ts'
+import { withDatabaseForMigrationStep } from '../database/db.ts'
 import { retireUnusedDefaultLocalProject } from '../project/default-local-project-retirement.ts'
 import { reportCheckedOutHostedProjects } from '../project/project-checkout-adoption.ts'
 import { adoptAllHostedProjectIdentities, formatProjectRelink } from '../project/project-relink.ts'
@@ -133,7 +134,9 @@ async function completeSignedInMachineSetup(presentation: Presentation): Promise
         `${adoption.name}: project identity adoption failed: ${adoption.message}; run \`${PLATFORM_SLUG} project relink ${adoption.name}\``,
       )
   }
-  await uploadLocalWorkflowHistory(adoptions, presentation)
+  await uploadLocalWorkflowHistory(adoptions, presentation, {
+    withDatabase: withDatabaseForMigrationStep,
+  })
   await pushDocsCommand({ dryRun: false }, presentation)
   await automaticallyAdoptHostedBoard(presentation, { signedIn: () => true })
 }

@@ -5,7 +5,6 @@ import type { Database } from 'bun:sqlite'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { resolveStateRoot } from '../../../shared/state-directory.ts'
-import { withDatabaseForMigrationStep } from '../database/db.ts'
 import { DocRevisionConflictError, RECORD_DIFFERENT_CONTENT } from '../doc/doc-revision-conflict.ts'
 import { BOUNDED_JSONL_ARCHIVE_KEEP, writeBoundedJsonlArchive } from '../jsonl-archive.ts'
 import type { ProjectAdoptionResult } from '../project/project-relink.ts'
@@ -475,7 +474,7 @@ async function uploadDatabaseHistory(
 export async function uploadLocalWorkflowHistory(
   adoptions: readonly ProjectAdoptionResult[],
   presentation: Presentation,
-  dependencies?: Partial<UploadDependencies>,
+  dependencies: Partial<UploadDependencies> & Pick<UploadDependencies, 'withDatabase'>,
 ): Promise<void> {
   const client = dependencies?.client ?? recordApiClient()
   const complete: UploadDependencies = {
@@ -487,7 +486,7 @@ export async function uploadLocalWorkflowHistory(
           client as RecordApiClient,
           project === null ? null : { kind: 'project', name: project },
         )),
-    withDatabase: dependencies?.withDatabase ?? withDatabaseForMigrationStep,
+    withDatabase: dependencies.withDatabase,
   }
   await complete.withDatabase((database) =>
     uploadDatabaseHistory(database, adoptions, presentation, complete),
@@ -818,9 +817,10 @@ function finishUploadPass(
 /** Upload only flow and question aggregates containing rows absent from the record. */
 export async function uploadMissingWorkflowHistory(
   client: RecordApiClient,
-  destinationFor: DestinationFor = recordWriteDestination,
-  withDatabase: WithMaintenanceDatabase = withDatabaseForMigrationStep,
+  destinationFor: DestinationFor | undefined,
+  withDatabase: WithMaintenanceDatabase,
 ): Promise<HistorySyncResult> {
+  const resolveDestination = destinationFor ?? recordWriteDestination
   return withDatabase(async (database) => {
     if (!readRecordInstallBinding(database).bound) return { failed: 0, lines: [], skipped: false }
     if (!client.readTaskFlowPresence || !client.importTaskFlow || !client.importQuestion)
@@ -875,14 +875,14 @@ export async function uploadMissingWorkflowHistory(
           project,
           present,
           capable,
-          destinationFor,
+          resolveDestination,
           pass,
         ),
       )
     }
     const personal = pass.questionStopped
       ? { failed: 0, lines: [], skipped: false }
-      : await uploadPersonalMissingHistory(database, present, capable, destinationFor, pass)
+      : await uploadPersonalMissingHistory(database, present, capable, resolveDestination, pass)
     const result = finishUploadPass(
       database,
       combineHistoryResults(

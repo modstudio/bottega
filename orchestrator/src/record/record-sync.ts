@@ -803,7 +803,7 @@ export async function syncRecord(options: RecordSyncOptions = {}): Promise<Recor
   const history = await uploadMissingWorkflowHistory(
     client as ReturnType<typeof recordApiClient>,
     undefined,
-    options.historyUploadWithDatabase,
+    options.historyUploadWithDatabase ?? ((action) => action(writableLocal)),
   )
   failed += history.failed
   const cachePull = await pullAfterSync(options, writableLocal, session)
