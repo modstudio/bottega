@@ -62,7 +62,6 @@ import { assertBranchHasNoAliveOwner } from './branch-owner-guard.ts'
 import { heldLandingTreeRefusal } from './held-branch-remedy.ts'
 import { sha } from './prompt-sha.ts'
 import { withReaderCreationLocks } from './reader-tree-sharing-claim.ts'
-
 import { resumeCreationOptions } from './resume-tree.ts'
 import {
   noRepoIsolatePath,
