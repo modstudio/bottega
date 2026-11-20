@@ -7,6 +7,7 @@ import { basename, dirname, join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { claudeMcpPlacementPath, type StateEnvironment } from '../../../shared/state-directory.ts'
 import type {
+  ClaudeMcpRegistrationAsyncPort,
   ClaudeMcpRegistrationPort,
   McpServer,
   mutateClaudeMcpRegistration,
@@ -40,8 +41,12 @@ type PlacementDependencies = {
   read: typeof readClaudeMcpPlacement
   write: typeof writeClaudeMcpPlacement
   reconcile(input: ReconcileInput): { changed: boolean; detail?: string }
-  reconcileAsync?(input: ReconcileAsyncInput): Promise<{ changed: boolean; detail?: string }>
   mutate(input: MutateInput): void
+}
+
+type AsyncPlacementDependencies = Omit<PlacementDependencies, 'port'> & {
+  port(): ClaudeMcpRegistrationAsyncPort | null
+  reconcileAsync(input: ReconcileAsyncInput): Promise<{ changed: boolean; detail?: string }>
 }
 
 function parsePlacement(value: unknown): ClaudeMcpPlacement {
@@ -132,7 +137,7 @@ function plannedTargets(plan: MachineSettingsScopePlan): string[] {
 
 async function checkPlacement(
   plan: MachineSettingsScopePlan,
-  deps: PlacementDependencies,
+  deps: AsyncPlacementDependencies,
 ): Promise<ClaudeMcpPlacementResult[]> {
   const port = deps.port()
   if (!port) {
@@ -157,8 +162,7 @@ async function checkPlacement(
   return Promise.all(
     inputs.map(async (input) => {
       try {
-        const reconcileAsync = deps.reconcileAsync ?? (async (value) => deps.reconcile(value))
-        const reconciled = await reconcileAsync({
+        const reconciled = await deps.reconcileAsync({
           port,
           server: deps.server,
           scope: input.scope,
@@ -283,7 +287,7 @@ export function reconcileClaudeMcpPlacementPlan(
 export async function reconcileClaudeMcpPlacementPlanAsync(
   check: boolean,
   plan: MachineSettingsScopePlan,
-  deps: PlacementDependencies,
+  deps: AsyncPlacementDependencies,
 ): Promise<ClaudeMcpPlacementResult[]> {
   if (check) return checkPlacement(plan, deps)
   return reconcileClaudeMcpPlacementPlan(plan, deps)

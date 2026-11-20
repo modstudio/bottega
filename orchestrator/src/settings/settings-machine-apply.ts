@@ -28,7 +28,7 @@ import { tryKernelLease } from '../project/project-lock.ts'
 import { applyRecordWriteAuthority } from '../record/record-write-authority.ts'
 import { isOrchWorkerProcess } from '../run/run-process.ts'
 import {
-  type ClaudeMcpRegistrationPort,
+  type ClaudeMcpRegistrationAsyncPort,
   mutateClaudeMcpRegistration,
   reconcileClaudeMcpRegistration,
   reconcileClaudeMcpRegistrationAsync,
@@ -108,7 +108,7 @@ type Dependencies = {
   applyCanon: typeof applyUserCanonHomePlans
   projectPaths(): string[]
   projectFact: typeof registeredProjectScopeFact
-  claudeMcpPort(): ClaudeMcpRegistrationPort | null
+  claudeMcpPort(): ClaudeMcpRegistrationAsyncPort | null
   reconcileMcp: typeof reconcileClaudeMcpRegistration
   reconcileMcpAsync: typeof reconcileClaudeMcpRegistrationAsync
   mutateMcp: typeof mutateClaudeMcpRegistration
