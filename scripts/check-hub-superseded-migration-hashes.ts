@@ -21,7 +21,7 @@ function journalRefusal(
     renderRefusal(
       refusal(`cannot verify superseded hub migration ${entry.tag}: ${problem}`, {
         kind: 'edit',
-        text: `make ${entry.tag} resolve to exactly one hub journal entry with when ${entry.when}, then rerun bun run check`,
+        text: `correct the ${entry.tag} entry in hub/migrations/meta/_superseded_hashes.json so its tag and when match exactly one hub journal entry, then rerun bun run check`,
       }),
     ),
   )
