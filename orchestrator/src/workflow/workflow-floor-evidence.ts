@@ -16,7 +16,6 @@ import { resolveRunsDirectory } from '../database/database-location.ts'
 import { db } from '../database/db.ts'
 import { resolveDocReference } from '../doc/doc-reference-read.ts'
 import { landingGatePurposeRefusal, resolveGateIdentifier } from '../gate/gate-identifier.ts'
-import { passingGateNumberForProjectCommit } from '../gate/gate-passed.ts'
 import { resolveCommitArgument } from '../git/commit-resolution.ts'
 import { projectByName } from '../project/projects.ts'
 import {
@@ -59,6 +58,7 @@ import {
 } from './workflow-floor.ts'
 import { gitText, productionResolveCheckout } from './workflow-floor-evidence-checkout.ts'
 import { positiveEvidenceId } from './workflow-floor-evidence-input.ts'
+import { gatherPassingGateForTree } from './workflow-floor-evidence-passing-gate.ts'
 import {
   type FloorEvidencePorts,
   invokeFloorEvidencePort,
@@ -898,17 +898,6 @@ function gatherTreeEvidence(
   }
 }
 
-function passingGateForTree(
-  tree: NonNullable<ValidatedEvidence['tree']>,
-  d: Database,
-): ValidatedEvidence['passingGateForTree'] {
-  if (!tree.commit) return undefined
-  const project = projectByName(tree.project, d)
-  if (!project) return null
-  const number = passingGateNumberForProjectCommit(project.recordId, tree.commit, d)
-  return number === null ? null : { number }
-}
-
 function evidenceCheckoutResolver(
   identity: CursorIdentity,
   ports: FloorEvidencePorts,
@@ -1026,7 +1015,7 @@ export async function gatherValidatedEvidenceBase(
   const gateRecordId = resolveOfferedGate(d, input.evidence.gate)
   const run = input.evidence.run
   const satisfies = input.evidence.satisfies
-  if (!gateRecordId) gathered.passingGateForTree = passingGateForTree(gathered.tree, d)
+  if (!gateRecordId) gathered.passingGateForTree = gatherPassingGateForTree(gathered.tree, d)
   if (ruling)
     gathered.ruling = await gatherRuling(
       ruling,

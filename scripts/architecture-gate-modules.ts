@@ -97,12 +97,14 @@ export const gateModules: GateModule[] = [
     'bun:sqlite',
     '../../../shared/record-id.ts',
   ]),
+  module('orchestrator/src/gate/gate-passing-lookup.ts', ['bun:sqlite']),
   module('orchestrator/src/gate/gate-passed.ts', [
     '../../../shared/brand.ts',
     'bun:sqlite',
     '../database/db.ts',
     '../git/commit-resolution.ts',
     '../project/projects.ts',
+    './gate-passing-lookup.ts',
   ]),
   module('orchestrator/src/gate/gate-result.ts', [
     '../../../shared/brand.ts',

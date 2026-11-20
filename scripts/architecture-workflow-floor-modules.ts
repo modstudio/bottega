@@ -316,6 +316,11 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     '../../../shared/bounded-process.ts',
   ]),
   module('orchestrator/src/workflow/workflow-floor-evidence-input.ts', []),
+  module('orchestrator/src/workflow/workflow-floor-evidence-passing-gate.ts', [
+    'bun:sqlite',
+    '../gate/gate-passing-lookup.ts',
+    '../project/projects.ts',
+  ]),
   module('orchestrator/src/workflow/workflow-step-question-evidence.ts', [
     'bun:sqlite',
     '../run/question-open.ts',
@@ -391,6 +396,7 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     './workflow-floor-evidence-checkout.ts',
     './task-flow-store.ts',
     './workflow-floor-evidence-input.ts',
+    './workflow-floor-evidence-passing-gate.ts',
     './workflow-floor-evidence-replay.ts',
     './workflow-obligation-floor.ts',
     './workflow-floor-task-read.ts',
