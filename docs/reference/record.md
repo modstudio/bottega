@@ -6,6 +6,7 @@ the hosted record and outbox
 
 - [bottega record](#bottega-record)
 - [bottega record audit-secrets](#bottega-record-audit-secrets)
+- [bottega record collector-legs](#bottega-record-collector-legs)
 - [bottega record doctor](#bottega-record-doctor)
 - [bottega record help](#bottega-record-help)
 - [bottega record lease](#bottega-record-lease)
@@ -77,6 +78,7 @@ the hosted record and outbox
 ### Related
 
 - [bottega record audit-secrets](./record.md#bottega-record-audit-secrets)
+- [bottega record collector-legs](./record.md#bottega-record-collector-legs)
 - [bottega record doctor](./record.md#bottega-record-doctor)
 - [bottega record help](./record.md#bottega-record-help)
 - [bottega record lease](./record.md#bottega-record-lease)
@@ -108,6 +110,20 @@ scan local outbox payloads for secret material
 
 - `--json`: write the audit findings as JSON
 - `--ids`: include row identifiers in text output
+
+### Related
+
+- [bottega record](./record.md#bottega-record)
+
+## bottega record collector-legs
+
+**Synopsis:** `bottega record collector-legs [--json]`
+
+show persisted collector-leg state
+
+### Options
+
+- `--json`: write the collector-leg state as JSON
 
 ### Related
 

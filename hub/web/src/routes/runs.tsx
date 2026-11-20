@@ -14,9 +14,10 @@ import { Identifier } from '@bottega/hub-ui/identifier'
 import { PageHeader } from '@bottega/hub-ui/page-header'
 import { PAGE_SIZES, type PageSize } from '@bottega/hub-ui/pagination'
 import { StatRow, StatTile } from '@bottega/hub-ui/stat'
-import { collectedTime, compactTokens, duration } from '@bottega/hub-util/format'
+import { compactTokens, duration } from '@bottega/hub-util/format'
 import { ProjectMark } from '@bottega/hub-views/project-colors'
 import { verdictTone } from '@bottega/hub-views/status-look/verdict-tone'
+import { type CollectorLegHealth, responseSubtitle } from '@bottega/hub-views/work-summary'
 import { keepPreviousData, type UseQueryOptions, useQuery } from '@tanstack/react-query'
 import { createFileRoute, useNavigate, useParams } from '@tanstack/react-router'
 import { ChevronRight } from 'lucide-react'
@@ -66,6 +67,7 @@ type LiveRow = {
 }
 type RunsPayload = {
   collectedAt: string | null
+  collectorLegs?: CollectorLegHealth[]
   servingSince: string
   activeAgents: string[]
   data: {
@@ -357,7 +359,7 @@ function RunsSummary({ data }: { data: RunsPayload['data'] }) {
 
 function runsSubtitle(payload: RunsPayload | undefined, pending: boolean) {
   if (!payload) return pending ? 'Loading runs...' : undefined
-  return `${collectedTime(payload.collectedAt)} \u00b7 ${payload.activeAgents.length} agent${payload.activeAgents.length === 1 ? '' : 's'} working`
+  return responseSubtitle(payload).text
 }
 
 function RunningNow({

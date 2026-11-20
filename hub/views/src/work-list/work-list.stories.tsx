@@ -31,6 +31,7 @@ const boardResponse = {
   activeAgents: [],
   tasksShipped: 3,
   collectedAt: '2026-10-19T12:00:00.000Z',
+  collectorLegs: [],
   servingSince: '2026-10-19T10:00:00.000Z',
   counts: { flight: 0, done: 3, runs: 0 },
   data: {
