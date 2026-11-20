@@ -378,7 +378,7 @@ export async function pushProjects(): Promise<string[]> {
         canon: project.canon,
         settings: project.settings,
         retiredAt: project.retiredAt,
-        recordRevision: project.recordRevision,
+        recordRevision: project.recordRevision ?? null,
       })
     } catch (error) {
       if (!(error instanceof RecordProjectSpaceConflictError)) throw error
@@ -509,7 +509,7 @@ export async function unretireWrittenProject(name: string): Promise<boolean> {
     canon: project.canon,
     settings: project.settings,
     retiredAt: null,
-    recordRevision: project.recordRevision,
+    recordRevision: project.recordRevision ?? null,
   })
   storeProjectRecordRevision(db(), project.recordId, written.recordRevision)
   return unretireProject(name)

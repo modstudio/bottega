@@ -320,7 +320,10 @@ export async function addProject(
   const written =
     decision.kind === 'adopt'
       ? { recordId: decision.recordId, recordRevision: decision.recordRevision }
-      : await writeHostedProject(candidate)
+      : await writeHostedProject({
+          ...candidate,
+          recordRevision: candidate.recordRevision ?? null,
+        })
   registerLocalProject({ ...candidate, ...written }, targetSpace?.id ?? null)
   const project = projectByName(input.name)
   if (!project) throw new Error(`project ${input.name} was not registered`)
@@ -420,7 +423,10 @@ export async function migrateProjectSettingsText(
   for (const plan of plans) {
     const { snapshot, settings } = plan
     const candidate = { ...snapshot, settings }
-    const written = await writeHostedProject(candidate, plan.destinationSpaceId)
+    const written = await writeHostedProject(
+      { ...candidate, recordRevision: candidate.recordRevision ?? null },
+      plan.destinationSpaceId,
+    )
     writeTransaction(() => {
       const current = projectRowByName(snapshot.name)
       if (!current || JSON.stringify(current.settings) !== JSON.stringify(snapshot.settings)) {
@@ -452,7 +458,10 @@ export async function restoreMigratedProjectRows(rows: unknown[]): Promise<void>
       throw new Error('invalid project row in setup backup')
     }
     const destination = await hostedProjectDestination(project.name, project.settings)
-    const written = await writeHostedProject(project, destination?.destinationSpaceId)
+    const written = await writeHostedProject(
+      { ...project, recordRevision: project.recordRevision ?? null },
+      destination?.destinationSpaceId,
+    )
     writeTransaction(() => upsertProject({ ...project, ...written }))
   }
 }
@@ -557,7 +566,10 @@ async function writeHostedFillCandidate(
     candidate.project.settings,
   )
   await refuseHostedProjectSpaceChange(snapshot, candidate.project.settings, destination)
-  return writeHostedProject(candidate.project, destination?.destinationSpaceId)
+  return writeHostedProject(
+    { ...candidate.project, recordRevision: candidate.project.recordRevision ?? null },
+    destination?.destinationSpaceId,
+  )
 }
 
 /** Atomically fills setup-owned gaps without overwriting a value written since planning. */
@@ -688,7 +700,10 @@ async function persistSetProject(
   destinationSpaceId?: string,
 ): Promise<void> {
   const renamed = nextName === currentName ? null : assertProjectRename(currentName, nextName)
-  const written = await writeHostedProject(candidate, destinationSpaceId)
+  const written = await writeHostedProject(
+    { ...candidate, recordRevision: candidate.recordRevision ?? null },
+    destinationSpaceId,
+  )
   const nextTrunk = typeof candidate.settings.trunk === 'string' ? candidate.settings.trunk : null
   persistLocalProjectSet(renamed, currentName, nextName, { ...candidate, ...written })
   if (previousTrunk === nextTrunk) return
