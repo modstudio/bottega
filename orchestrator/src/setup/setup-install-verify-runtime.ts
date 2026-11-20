@@ -64,6 +64,7 @@ function gatherSetupInstallVerifyFacts(
   const claudeHome = claudeHomeFromEnvironment(environment)
   const scriptFacts = SCRIPT_FILES.map((file) => {
     const path = runtimeAssetPath(`orchestrator/hooks/${file}`, environment)
+    const assetRoot = join(path, '..', '..', '..')
     const exists = existsSync(path) && statSync(path).isFile()
     let readable = false
     let executable = false
@@ -77,7 +78,15 @@ function gatherSetupInstallVerifyFacts(
         executable = true
       } catch {}
     }
-    return { file, path, exists, readable, executable, invocation: 'interpreter' as const }
+    return {
+      file,
+      path,
+      assetRoot,
+      exists,
+      readable,
+      executable,
+      invocation: 'interpreter' as const,
+    }
   })
   const homes = userCanonHomesFromEnvironment(
     environment,

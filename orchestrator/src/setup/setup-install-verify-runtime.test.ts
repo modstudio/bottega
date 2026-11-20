@@ -41,6 +41,7 @@ function facts(): SetupInstallVerifyFacts {
     scripts: SCRIPT_FILES.map((file) => ({
       file,
       path: hookScriptPath(installRoot, file),
+      assetRoot: installRoot,
       exists: true,
       readable: true,
       executable: true,

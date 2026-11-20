@@ -1,10 +1,7 @@
 import type { McpServer } from '@modelcontextprotocol/server'
 import { z } from 'zod'
 import { BOARD_PURPOSES, defaultBoardPurpose } from '../../../shared/board-purpose.ts'
-import {
-  runtimeAssetPath,
-  runtimeAssetsAreEmbedded,
-} from '../../../shared/runtime-assets.ts'
+import { runtimeAssetPath, runtimeAssetsAreEmbedded } from '../../../shared/runtime-assets.ts'
 import { readBoardNotices } from '../board/board-delivery.ts'
 import { resolveLocalBoardMessageIdentifier } from '../board/board-message-identifier.ts'
 import {

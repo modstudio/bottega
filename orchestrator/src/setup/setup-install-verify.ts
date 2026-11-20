@@ -1,7 +1,6 @@
 // concern: setup-install-verify
 /** Decides whether setup-rendered hooks and user canon landed. Pure: adapters supply plain facts. */
 
-import { dirname } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   commandNamesHookScript,
@@ -24,6 +23,7 @@ export type SetupInstallVerifyFacts = {
   scripts: Array<{
     file: string
     path: string
+    assetRoot: string
     exists: boolean
     readable: boolean
     executable: boolean
@@ -83,7 +83,7 @@ function missingHooks(
     const key = `${declaration.event}\0${declaration.matcher ?? ''}\0${declaration.script}`
     if (available.has(key)) continue
     const script = facts.scripts.find((candidate) => candidate.file === declaration.script)
-    const assetRoot = script ? dirname(dirname(dirname(script.path))) : facts.installRoot
+    const assetRoot = script?.assetRoot ?? facts.installRoot
     available.set(
       key,
       handlersFor(file.settings, declaration).filter((handler) =>

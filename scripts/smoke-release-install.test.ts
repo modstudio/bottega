@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { PLATFORM_NAME } from '../shared/brand.ts'
+import { PLATFORM_NAME, PLATFORM_SLUG } from '../shared/brand.ts'
 import {
   harnessInstallerInvocationCounts,
   releaseDownloadsReachedCurl,
@@ -62,8 +62,7 @@ test('release proof log decisions distinguish installers from forwarded download
 })
 
 test('release proof selects the product hook command rendered by setup apply', () => {
-  const command =
-    "BOTTEGA_BIN='/proof/bin/bottega' python3 '/proof/runtime/orchestrator/hooks/test-substance-guard.py'"
+  const command = `BOTTEGA_BIN='/proof/bin/${PLATFORM_SLUG}' python3 '/proof/runtime/orchestrator/hooks/test-substance-guard.py'`
   expect(
     renderedHookCommand(
       {

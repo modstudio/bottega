@@ -42,6 +42,7 @@ function facts(): SetupInstallVerifyFacts {
     scripts: SCRIPT_FILES.map((file) => ({
       file,
       path: hookScriptPath(INSTALL, file),
+      assetRoot: INSTALL,
       exists: true,
       readable: true,
       executable: true,
@@ -102,6 +103,7 @@ test('rendered hooks are recognized under the verified extracted runtime root', 
   settings.hooks = JSON.parse(JSON.stringify(settings.hooks).replaceAll(INSTALL, runtimeRoot))
   for (const script of input.scripts) {
     script.path = hookScriptPath(runtimeRoot, script.file)
+    script.assetRoot = runtimeRoot
   }
   expect(check(verifySetupInstall(input), 'hooks-present')).toMatchObject({ ok: true })
 })

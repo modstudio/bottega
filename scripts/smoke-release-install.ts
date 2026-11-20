@@ -66,26 +66,26 @@ export function releaseDownloadsReachedCurl(
   )
 }
 
+function object(value: unknown): Record<string, unknown> | null {
+  return typeof value === 'object' && value !== null ? (value as Record<string, unknown>) : null
+}
+
+function array(value: unknown): unknown[] {
+  return Array.isArray(value) ? value : []
+}
+
 export function renderedHookCommand(settings: unknown, script: string): string | null {
-  if (typeof settings !== 'object' || settings === null || !('hooks' in settings)) return null
-  const hooks = settings.hooks
-  if (typeof hooks !== 'object' || hooks === null) return null
-  for (const groups of Object.values(hooks)) {
-    if (!Array.isArray(groups)) continue
-    for (const group of groups) {
-      if (typeof group !== 'object' || group === null || !('hooks' in group)) continue
-      const handlers = group.hooks
-      if (!Array.isArray(handlers)) continue
-      for (const handler of handlers) {
-        if (typeof handler !== 'object' || handler === null || !('command' in handler)) continue
-        const command = handler.command
-        if (typeof command === 'string' && command.includes(`/orchestrator/hooks/${script}`)) {
-          return command
-        }
-      }
-    }
-  }
-  return null
+  const hooks = object(object(settings)?.hooks)
+  const groups = hooks ? Object.values(hooks).flatMap(array) : []
+  return (
+    groups
+      .flatMap((group) => array(object(group)?.hooks))
+      .map((handler) => object(handler)?.command)
+      .find(
+        (command): command is string =>
+          typeof command === 'string' && command.includes(`/orchestrator/hooks/${script}`),
+      ) ?? null
+  )
 }
 
 export function releaseInstallEnvironment(
@@ -369,6 +369,95 @@ async function runExtractedHookProof(
   return result
 }
 
+async function prepareReleaseProof(
+  version: string,
+  root: string,
+  paths: InstallProofPaths,
+): Promise<{ archive: string; releaseDirectory: string }> {
+  const releaseDirectory = join(paths.mirror, 'download', `v${version}`)
+  mkdirSync(releaseDirectory, { recursive: true })
+  const target = parseBinaryTarget(`darwin-${process.arch}`)
+  const archive = await buildReleaseArtifact(`v${version}`, releaseDirectory, target)
+  writeChecksumSet(releaseDirectory, [archive])
+  for (const directory of [paths.home, paths.state, paths.bin, paths.stub]) {
+    mkdirSync(directory, { recursive: true })
+  }
+  const stubs = [
+    {
+      path: join(paths.stub, 'launchctl'),
+      text: launchctlStub(join(root, 'launchctl-state'), join(root, 'launchctl.log')),
+    },
+    {
+      path: join(paths.stub, 'brew'),
+      text: brewStub(join(paths.stub, 'codex'), join(root, 'brew.log')),
+    },
+    { path: join(paths.stub, 'curl'), text: curlStub(join(root, 'curl.log')) },
+  ]
+  for (const stub of stubs) {
+    writeFileSync(stub.path, stub.text)
+    chmodSync(stub.path, 0o755)
+  }
+  return { archive, releaseDirectory }
+}
+
+async function seedProofSettings(
+  paths: InstallProofPaths,
+  executable: string,
+  env: Record<string, string | undefined>,
+): Promise<{ results: StepResult[]; seeded: boolean }> {
+  mkdirSync(join(paths.home, '.claude'), { recursive: true })
+  writeFileSync(join(paths.home, '.claude', 'settings.json'), '{}\n')
+  const settingsImport = await runStep(
+    'settings import',
+    [executable, 'machine', 'settings', 'import', '--user'],
+    paths.home,
+    env,
+  )
+  const canonSet = await runStep(
+    'canon set',
+    [
+      executable,
+      'doc',
+      'set',
+      'AGENTS.md',
+      '--scope',
+      'canon',
+      '--user',
+      '--title',
+      'Release proof canon',
+      '--reason',
+      'seed release install proof',
+    ],
+    paths.home,
+    env,
+    'Release proof canon.\n',
+  )
+  const results = [settingsImport, canonSet]
+  const seeded = results.every((result) => result.exitCode === 0)
+  if (seeded) {
+    results.push(
+      await runStep(
+        'settings apply',
+        [executable, 'machine', 'settings', 'apply'],
+        paths.home,
+        env,
+      ),
+    )
+  }
+  return { results, seeded }
+}
+
+function reportProof(results: StepResult[], assertionFailures: string[]): number {
+  for (const result of results) {
+    console.log(`${result.name} exit ${result.exitCode}`)
+    if ((result.exitCode !== 0 || result.name === 'extracted hook') && result.output) {
+      console.log(result.output)
+    }
+  }
+  for (const failure of assertionFailures) console.error(`proof assertion failed: ${failure}`)
+  return results.some((result) => result.exitCode !== 0) || assertionFailures.length ? 1 : 0
+}
+
 async function proveReleaseInstall(version: string, keep: boolean): Promise<number> {
   if (process.platform !== 'darwin') {
     console.error('release install proof requires darwin')
@@ -384,31 +473,7 @@ async function proveReleaseInstall(version: string, keep: boolean): Promise<numb
     mirror: join(root, 'mirror'),
   }
   try {
-    const releaseDirectory = join(paths.mirror, 'download', `v${version}`)
-    mkdirSync(releaseDirectory, { recursive: true })
-    const target = parseBinaryTarget(`darwin-${process.arch}`)
-    const archive = await buildReleaseArtifact(`v${version}`, releaseDirectory, target)
-    writeChecksumSet(releaseDirectory, [archive])
-
-    for (const directory of [paths.home, paths.state, paths.bin, paths.stub]) {
-      mkdirSync(directory, { recursive: true })
-    }
-    const stubs = [
-      {
-        path: join(paths.stub, 'launchctl'),
-        text: launchctlStub(join(root, 'launchctl-state'), join(root, 'launchctl.log')),
-      },
-      {
-        path: join(paths.stub, 'brew'),
-        text: brewStub(join(paths.stub, 'codex'), join(root, 'brew.log')),
-      },
-      { path: join(paths.stub, 'curl'), text: curlStub(join(root, 'curl.log')) },
-    ]
-    for (const stub of stubs) {
-      writeFileSync(stub.path, stub.text)
-      chmodSync(stub.path, 0o755)
-    }
-
+    const { archive, releaseDirectory } = await prepareReleaseProof(version, root, paths)
     const env = releaseInstallEnvironment(process.env, paths)
     const repositoryRoot = resolve(import.meta.dir, '..')
     const executable = join(paths.bin, PLATFORM_SLUG)
@@ -436,45 +501,8 @@ async function proveReleaseInstall(version: string, keep: boolean): Promise<numb
     )
 
     results.push(await runStep('setup apply', setupArgv, paths.home, env))
-    const settingsPath = join(paths.home, '.claude', 'settings.json')
-    mkdirSync(join(paths.home, '.claude'), { recursive: true })
-    writeFileSync(settingsPath, '{}\n')
-    const settingsImport = await runStep(
-      'settings import',
-      [executable, 'machine', 'settings', 'import', '--user'],
-      paths.home,
-      env,
-    )
-    const canonSet = await runStep(
-      'canon set',
-      [
-        executable,
-        'doc',
-        'set',
-        'AGENTS.md',
-        '--scope',
-        'canon',
-        '--user',
-        '--title',
-        'Release proof canon',
-        '--reason',
-        'seed release install proof',
-      ],
-      paths.home,
-      env,
-      'Release proof canon.\n',
-    )
-    results.push(settingsImport, canonSet)
-    const seeded = settingsImport.exitCode === 0 && canonSet.exitCode === 0
-    if (seeded) {
-      const settingsApply = await runStep(
-        'settings apply',
-        [executable, 'machine', 'settings', 'apply'],
-        paths.home,
-        env,
-      )
-      results.push(settingsApply)
-    }
+    const seededSettings = await seedProofSettings(paths, executable, env)
+    results.push(...seededSettings.results)
     results.push(
       await runExtractedHookProof(
         version,
@@ -482,7 +510,7 @@ async function proveReleaseInstall(version: string, keep: boolean): Promise<numb
         executable,
         env,
         assertionFailures,
-        seeded,
+        seededSettings.seeded,
       ),
     )
     const firstInstallerCounts = harnessInstallerInvocationCounts(
@@ -505,14 +533,7 @@ async function proveReleaseInstall(version: string, keep: boolean): Promise<numb
     results.push(
       await runStep('doctor (second)', [executable, 'machine', 'doctor'], paths.home, env),
     )
-    for (const result of results) {
-      console.log(`${result.name} exit ${result.exitCode}`)
-      if ((result.exitCode !== 0 || result.name === 'extracted hook') && result.output) {
-        console.log(result.output)
-      }
-    }
-    for (const failure of assertionFailures) console.error(`proof assertion failed: ${failure}`)
-    return results.some((result) => result.exitCode !== 0) || assertionFailures.length ? 1 : 0
+    return reportProof(results, assertionFailures)
   } finally {
     if (keep) console.log(`kept release install proof at ${root}`)
     else rmSync(root, { recursive: true, force: true })
