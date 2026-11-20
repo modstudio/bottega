@@ -21,7 +21,8 @@ import {
 import { assertBranchRefMayBeCreated, assertBranchRefMayBeDeleted } from './branch-ref-guard.ts'
 import { settleDeletedBranch } from './branch-settlement.ts'
 import { isProbeOnlyMint } from './branch-state.ts'
-import { branchesReport, taskKeyToken, UNKEYED_BRANCH_GROUP } from './branches.ts'
+import { branchesReport, UNKEYED_BRANCH_GROUP } from './branches.ts'
+import { taskKeyToken } from './other-branch-state.ts'
 import { observeTaskStatus, type TaskStatusObservation } from './task-status-observation.ts'
 
 const BRANCH_DISPOSAL_ARCHIVE_RETENTION_MS = 30 * 24 * 60 * 60 * 1_000

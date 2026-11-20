@@ -1,5 +1,6 @@
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { newRecordId } from '../../shared/record/schema.ts'
+import { HostedSessionTransportError } from './hosted-session-send.ts'
 import { HOSTED_UNREACHABLE_REMEDY } from './hosted-write-mode.ts'
 import type { HostedPushChange } from './push-contract.ts'
 import { hostedPushChanges } from './task-client.ts'
@@ -20,7 +21,7 @@ export async function sendHostedChanges(
     try {
       return await hostedPushChanges(batch, options)
     } catch (error) {
-      if (!(error instanceof Error) || error.name !== 'HostedSessionTransportError') throw error
+      if (!(error instanceof HostedSessionTransportError)) throw error
       const message = error instanceof Error ? error.message : String(error)
       throw new Error(`${message}. ${HOSTED_UNREACHABLE_REMEDY}`)
     }

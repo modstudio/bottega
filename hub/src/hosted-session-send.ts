@@ -15,7 +15,7 @@ type HostedSessionRequestBase = {
   fetch: (input: string, init: RequestInit) => Promise<Response>
 }
 
-class HostedSessionTransportError extends Error {
+export class HostedSessionTransportError extends Error {
   override readonly name = 'HostedSessionTransportError'
 }
 

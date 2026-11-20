@@ -15,8 +15,6 @@ import {
 import { hostedCreateDocument } from './task-client.ts'
 import { formatTaskDocumentLabel, parseTaskDocumentLabel } from './task-document-label.ts'
 
-export { formatTaskDocumentLabel } from './task-document-label.ts'
-
 import { resolveTask, type TaskScope, taskByRecordId, taskRecordId } from './task-identity.ts'
 import {
   type HostedTaskWriteOptions,

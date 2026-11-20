@@ -57,7 +57,6 @@ import {
 import { taskBranchPatchEquivalent, taskBranchPullRequestCheck } from './task-branch.ts'
 
 export const UNKEYED_BRANCH_GROUP = 'unkeyed'
-export { taskKeyToken }
 
 type RunRow = BranchReportRun & {
   minted_branch: string | null

@@ -429,6 +429,7 @@ export const hubModuleSpecs = [
     allowed: [
       '../../shared/brand.ts',
       '../../shared/record/schema.ts',
+      './hosted-session-send.ts',
       './hosted-write-mode.ts',
       './push-contract.ts',
       './task-client.ts',
@@ -445,6 +446,7 @@ export const hubModuleSpecs = [
       './push-contract.ts',
       './task-attribution.ts',
       './task-client.ts',
+      './task-document-label.ts',
       './task-types.ts',
       './task-document.ts',
       './task-identity.ts',
