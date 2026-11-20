@@ -104,7 +104,7 @@ export async function queueWorkflowChild(
   },
   database: Database = db(),
 ) {
-  const tasks = taskReader().list({ project: input.project })
+  const tasks = await taskReader().list({ project: input.project })
   const ancestors = childAncestorKeys(input.child, tasks)
   if (!ancestors.length) throw new Error(`${input.child} is not a child task`)
   const root = ancestors.at(-1)!
@@ -156,7 +156,7 @@ export async function startWorkflowChild(
   )
   if (epic.workflow_slug !== 'plan-task' || epic.step_slug !== 'start')
     throw new Error(`cursor ${input.cursor} is not an epic plan-task cursor at start`)
-  const tasks = taskReader().list({ project: input.project })
+  const tasks = await taskReader().list({ project: input.project })
   const facts = await gatherChildTaskFacts(database, input.project, tasks)
   if (!facts.some((task) => task.parentKey === epic.workflow_key))
     throw new Error(`cursor ${input.cursor} is not an epic cursor`)

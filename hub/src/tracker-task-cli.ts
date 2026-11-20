@@ -35,7 +35,7 @@ export type FreshTaskResult = {
   commentsVerifiable: boolean
   /** The tracker read's own comment ids; empty when it reports none. */
   commentIds: string[]
-  shown?: ReturnType<typeof showTask>
+  shown?: Awaited<ReturnType<typeof showTask>>
 }
 
 /**
@@ -113,7 +113,7 @@ export async function refreshTrackerTask(
           guard.assertHeld()
           return {
             commentIds,
-            shown: (dependencies.readBack ?? showTask)(task.key, { project: task.project }),
+            shown: await (dependencies.readBack ?? showTask)(task.key, { project: task.project }),
           }
         },
         dependencies.leaseWaitMs,

@@ -183,7 +183,7 @@ async function searchDuplicateIssues(
   { duplicates: DuplicateCandidate[]; error: null } | { duplicates: null; error: string }
 > {
   try {
-    const duplicates = taskReader().duplicates(PLATFORM_SLUG, title)
+    const duplicates = await taskReader().duplicates(PLATFORM_SLUG, title)
     if (!Array.isArray(duplicates))
       throw new Error(`${PLATFORM_SLUG} task duplicates returned a non-array JSON value`)
     return { duplicates, error: null }

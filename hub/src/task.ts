@@ -476,32 +476,30 @@ export async function createTask(
     : hostedTaskRow(hosted)
 }
 
-export function listTasks(
+export async function listTasks(
   filters: { project?: string; status?: string; parent?: string } = {},
-): TaskRow[] {
+): Promise<TaskRow[]> {
   if (!resolveHostedUrl()) return listLocalTasks(filters)
   if (filters.status) status(filters.status)
-  return listHostedTasks(filters) as unknown as TaskRow[]
+  return listHostedTasks(filters)
 }
 
-export function showTask(
+export async function showTask(
   key: string,
   scope: TaskScope = {},
-): { task: TaskRow; comments: TaskComment[]; documents: TaskDocumentSummary[] } {
+): Promise<{ task: TaskRow; comments: TaskComment[]; documents: TaskDocumentSummary[] }> {
   if (!resolveHostedUrl()) return showLocalTask(key, scope)
-  return showHostedTask(key, scope) as unknown as ReturnType<typeof showLocalTask>
+  return showHostedTask(key, scope)
 }
 
 /** The complete read-only task record used by the dashboard detail sheet. */
-export function taskRecord(
+export async function taskRecord(
   key: string,
   scope: TaskScope = {},
   readerUserId: string | null = null,
-): TaskDetail {
+): Promise<TaskDetail> {
   if (resolveHostedUrl())
-    return showHostedTask(key, scope).then((record) =>
-      taskRecordFromRows(record, readerUserId),
-    ) as unknown as TaskDetail
+    return taskRecordFromRows(await showHostedTask(key, scope), readerUserId)
   return taskRecordFromRows(showLocalTask(key, scope), readerUserId)
 }
 

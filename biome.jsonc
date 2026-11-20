@@ -113,7 +113,8 @@
         }
       },
       "suspicious": {
-        "noExplicitAny": "error"
+        "noExplicitAny": "error",
+        "noSkippedTests": "error"
       },
       "nursery": {
         "noFloatingPromises": "error",
@@ -174,6 +175,16 @@
               "level": "off",
               "options": { "maxLines": 65535, "skipBlankLines": true }
             }
+          }
+        }
+      }
+    },
+    {
+      "includes": ["shared/test-substance/fixtures/**"],
+      "linter": {
+        "rules": {
+          "suspicious": {
+            "noSkippedTests": "off"
           }
         }
       }

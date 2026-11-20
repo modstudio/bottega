@@ -42,7 +42,7 @@ const shown = {
   task: { key: 'FIX-1' },
   comments: [],
   documents: [],
-} as unknown as ReturnType<typeof import('./task.ts')['showTask']>
+} as unknown as Awaited<ReturnType<typeof import('./task.ts')['showTask']>>
 
 const dependencies = (lookup: TrackerSource['lookup']) => ({
   registeredProjects: () => [project],

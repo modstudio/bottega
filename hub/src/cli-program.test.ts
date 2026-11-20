@@ -106,7 +106,7 @@ test('Commander binds scalar, repeatable, and presence options without losing ta
     const parent = await createTask({ project: 'workshop', title: 'Parent' })
     const child = await createTask({ project: 'workshop', title: 'Child', parent: parent.key })
     expect(await run(createHubProgram(), ['task', 'set', child.key, '--no-parent'])).toBe(0)
-    expect(showTask(child.key).task.parent_key).toBeNull()
+    expect((await showTask(child.key)).task.parent_key).toBeNull()
     const document = await createTaskDocument(
       { task: child.key, title: 'Handoff', role: 'handoff' },
       {},

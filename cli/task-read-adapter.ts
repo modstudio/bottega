@@ -49,17 +49,17 @@ function cliTaskReadAdapter(): TaskReadPort {
     list(filters) {
       return hubTaskReads().task.listTasks(filters)
     },
-    duplicates(project, title) {
+    async duplicates(project, title) {
       const { duplicateCandidates, listTasks } = hubTaskReads().task
-      return duplicateCandidates(listTasks({ project }), title)
+      return duplicateCandidates(await listTasks({ project }), title)
     },
     show(key, scope) {
       return hubTaskReads().task.showTask(key, scope)
     },
-    documents(key, scope) {
+    async documents(key, scope) {
       return hubTaskReads().document.listTaskDocuments(key, scope)
     },
-    document(value, scope) {
+    async document(value, scope) {
       return hubTaskReads().document.getTaskDocument(value, scope)
     },
   }

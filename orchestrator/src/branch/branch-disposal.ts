@@ -156,12 +156,12 @@ export function composeBranchDisposalRefusal(input: {
   return `${prefix}cleared by: ${PLATFORM_SLUG} tree branch prune --project ${project} --key <KEY>`
 }
 
-function planBranchDisposal(input: {
+async function planBranchDisposal(input: {
   target: string
   reason: string
   note: string
   operator?: boolean
-}): DisposalPlan {
+}): Promise<DisposalPlan> {
   const separator = input.target.indexOf(':')
   if (separator < 1 || separator === input.target.length - 1)
     throw new Error('branch disposal target must be <project>:<branch>')
@@ -190,7 +190,7 @@ function planBranchDisposal(input: {
     .all(project.recordId, branch) as { probe: number }[]
   const runMinted = mintingRuns.length > 0
   const probeOnly = isProbeOnlyMint(mintingRuns.map((run) => run.probe === 1))
-  const taskStatus = observeTaskStatus(taskKey, projectName)
+  const taskStatus = await observeTaskStatus(taskKey, projectName)
   const decision = decideBranchDisposal({
     runMinted,
     probeOnly,
@@ -295,7 +295,7 @@ const branchDisposalDependencies: BranchDisposalDependencies = {
   record: recordDisposal,
 }
 
-export function disposeBranch(
+export async function disposeBranch(
   input: {
     target: string
     reason: string
@@ -303,8 +303,8 @@ export function disposeBranch(
     operator?: boolean
   },
   dependencies: BranchDisposalDependencies = branchDisposalDependencies,
-): BranchDisposalResult {
-  const plan = planBranchDisposal(input)
+): Promise<BranchDisposalResult> {
+  const plan = await planBranchDisposal(input)
   withWorktreeCreateLock(plan.project.path, () => {
     const currentTip = git(plan.project.path, [
       'rev-parse',

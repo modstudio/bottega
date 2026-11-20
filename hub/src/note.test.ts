@@ -514,7 +514,7 @@ describe('suggestion notes', () => {
         title: 'Merged sightings worth one task',
       })
       expect(promoted.promoted_task).toMatch(/^LOC-\d+$/)
-      const promotedDetail = showTask(promoted.promoted_task!, { project: 'workshop' })
+      const promotedDetail = await showTask(promoted.promoted_task!, { project: 'workshop' })
       expect(promotedDetail.task.title).toBe('Merged sightings worth one task')
       expect(promotedDetail.task.body).toContain(same.note.text)
       expect(promotedDetail.task.body).toContain('SIGHTINGS (2)')
@@ -552,7 +552,7 @@ describe('suggestion notes', () => {
         title: 'Hub-owned promotion states its point',
       })
       expect(promoted.promoted_task).toMatch(/^LOC-\d+$/)
-      const minted = showTask(promoted.promoted_task!, { project: 'workshop' })
+      const minted = await showTask(promoted.promoted_task!, { project: 'workshop' })
       expect(minted.task.title).toBe('Hub-owned promotion states its point')
       expect(minted.task.body).toContain(created.text)
       expect(minted.task.body).toContain('SIGHTINGS (1)')
@@ -573,7 +573,7 @@ describe('suggestion notes', () => {
       )
       const linked = await promoteNote(another.record_id, { existingTaskKey: existing.key })
       expect(linked.promoted_task).toBe(existing.key)
-      const detail = showTask(existing.key, { project: 'workshop' })
+      const detail = await showTask(existing.key, { project: 'workshop' })
       expect(detail.task.status_category).toBe('done')
       expect(detail.comments).toHaveLength(1)
       expect(detail.comments[0]?.body).toContain(another.text)
