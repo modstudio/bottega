@@ -93,7 +93,7 @@ test('refuses an unresolvable main checkout with the override remedy', () => {
   })
   expect(decision.kind).toBe('refuse')
   expect(decision.kind === 'refuse' ? decision.message : '').toContain(
-    'set BOTTEGA_RECORD_REHEARSAL_FLY_TOKEN, or run from a checkout whose main has bin/bottega',
+    `set BOTTEGA_RECORD_REHEARSAL_FLY_TOKEN, or run from a checkout whose main has bin/${PLATFORM_SLUG}`,
   )
 })
 
@@ -249,7 +249,7 @@ test('an interruption after launch destroys the known machine and fails', async 
     'destroy',
     'abcdef12345678',
     '--app',
-    'bottega-record-backup',
+    `${PLATFORM_SLUG}-record-backup`,
     '--force',
   ])
 })
@@ -277,7 +277,7 @@ test('a cleanup failure names the exact machine removal command', async () => {
       machineDetails: async () => ({}),
     }),
   ).rejects.toThrow(
-    'flyctl machine destroy abcdef12345678 --app bottega-record-backup --force',
+    `flyctl machine destroy abcdef12345678 --app ${PLATFORM_SLUG}-record-backup --force`,
   )
 })
 

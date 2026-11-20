@@ -23,8 +23,8 @@ import type { SettingsObjectMode } from './project-injection.ts'
 import type { ProjectSettings } from './project-settings.ts'
 
 function scriptsFiles(command: string): string[] {
-  return [...command.matchAll(/(?:^|[\s"'])(?:\.\/)?(scripts\/[^\s"']+)/g)].map(
-    (match) => match[1]!.replace(/[;|&]+$/, ''),
+  return [...command.matchAll(/(?:^|[\s"'])(?:\.\/)?(scripts\/[^\s"']+)/g)].map((match) =>
+    match[1]!.replace(/[;|&]+$/, ''),
   )
 }
 
@@ -36,7 +36,11 @@ function treeRunCommands(settings: ProjectSettings): Array<[field: string, comma
   add('gate', settings.gate)
   add('workerCheck', settings.workerCheck)
   if (settings.focusedTests) {
-    add('focusedTests', [settings.focusedTests.command, ...settings.focusedTests.args].join(' '))
+    const runners =
+      'runners' in settings.focusedTests ? settings.focusedTests.runners : [settings.focusedTests]
+    for (const [index, runner] of runners.entries()) {
+      add(`focusedTests.runners.${index}`, [runner.command, ...runner.args].join(' '))
+    }
   }
   const recipe = settings.worktree?.recipe
   for (const field of ['install', 'migrate', 'serve', 'stop', 'after'] as const) {

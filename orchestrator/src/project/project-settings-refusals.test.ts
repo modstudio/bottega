@@ -14,7 +14,7 @@ function settings(run: string): ProjectSettings {
   }
 }
 
-test('register writes normalize every tree-script command form and scope the list to Bottega', () => {
+test('register writes normalize every tree-script command form and scope the platform list', () => {
   const cases: Array<{
     name: string
     project: string

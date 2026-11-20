@@ -40,6 +40,13 @@ type ParentBoundChild = {
   exitOnSignal: boolean
 }
 
+type ParentBoundStartedChild = ReturnType<typeof Bun.spawn>
+type ParentBoundPipedChild = ParentBoundStartedChild & {
+  stdin: NonNullable<ParentBoundStartedChild['stdin']>
+  stdout: NonNullable<ParentBoundStartedChild['stdout']>
+  stderr: NonNullable<ParentBoundStartedChild['stderr']>
+}
+
 const parentBoundChildren = new Set<ParentBoundChild>()
 let parentBoundHooksInstalled = false
 
@@ -75,7 +82,18 @@ function installParentBoundHooks(): void {
 }
 
 /** Start a streaming child whose lifetime is bounded by this parent instead of a deadline. */
-export function startParentBound(argv: readonly string[], options: ParentBoundProcessOptions) {
+export function startParentBound(
+  argv: readonly string[],
+  options: ParentBoundProcessOptions & { streamOutput: true },
+): ParentBoundStartedChild
+export function startParentBound(
+  argv: readonly string[],
+  options: ParentBoundProcessOptions & { streamOutput?: false },
+): ParentBoundPipedChild
+export function startParentBound(
+  argv: readonly string[],
+  options: ParentBoundProcessOptions,
+): ParentBoundStartedChild {
   if (!argv.length) throw new TypeError(`${options.name} requires a non-empty argv`)
   installParentBoundHooks()
   const child = Bun.spawn([...argv], {
@@ -88,7 +106,7 @@ export function startParentBound(argv: readonly string[], options: ParentBoundPr
   const tracked = Object.assign(child, { exitOnSignal: options.exitOnSignal !== false })
   parentBoundChildren.add(tracked)
   void child.exited.then(() => parentBoundChildren.delete(tracked))
-  return child
+  return child as ParentBoundStartedChild
 }
 
 export function isDeadlineAbort(error: unknown): boolean {

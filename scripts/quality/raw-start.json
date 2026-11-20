@@ -61,6 +61,7 @@
     "scripts/check-dead-code.ts": 3,
     "scripts/check-gitleaks.ts": 1,
     "scripts/check.ts": 4,
+    "scripts/record-rehearse.ts": 1,
     "scripts/release-support.ts": 1,
     "scripts/smoke-binary.ts": 1,
     "scripts/test-focused.ts": 1,
