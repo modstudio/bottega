@@ -228,7 +228,7 @@ test('dispatch and judging vocabulary is validated beside jobs', () => {
           ...staged,
           jobs: ['review-lens'],
           dispatch: 'required',
-          dispatchWaivedBy: ['review-owed'],
+          dispatchWaivedBy: ['no-lens-owed'],
           judges: ['review-lens'],
         },
       ],
@@ -249,7 +249,7 @@ test('dispatch and judging vocabulary is validated beside jobs', () => {
     expect.arrayContaining([
       'step "design" dispatch must be "required"',
       'step "design" dispatchWaivedBy requires dispatch: required',
-      'step "design" dispatchWaivedBy names undeclared floor kind "recorded-artifact"',
+      'step "design" dispatchWaivedBy names unknown fact "recorded-artifact"',
       'step "design" judges unknown job "unknown"',
     ]),
   )

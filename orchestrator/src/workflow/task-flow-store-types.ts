@@ -190,6 +190,7 @@ export type TaskFlowOpenSessionStageRow = {
   workflow_slug: string
   mode_slug: string
   workflow_key: string
+  step_slug: string
   state: string
   updated_at: string
   open_question_record_id: string | null

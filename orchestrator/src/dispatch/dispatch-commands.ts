@@ -229,8 +229,9 @@ async function keyedRunCursorWarningForDispatch(input: {
   bindingPresent: boolean
   overrideReason: string | undefined
   fromOperator: boolean
+  cursor?: number
   adapter: DispatchPresentation['harnessCursorAdapter']
-}): Promise<string | null> {
+}) {
   const { harnessSession, readOpenCursors } = input.adapter()
   const decision = await checkKeyedRunCursorAdmission(
     {
@@ -241,11 +242,22 @@ async function keyedRunCursorWarningForDispatch(input: {
       overrideReason: input.overrideReason,
       fromOperator: input.fromOperator,
       harnessSession,
+      cursor: input.cursor,
     },
     readOpenCursors,
   )
   if (decision.kind === 'refuse') throw new Error(decision.message)
-  return decision.kind === 'allow-with-override' ? decision.warning : null
+  return {
+    warning: decision.kind === 'allow-with-override' ? decision.warning : null,
+    binding: decision.kind === 'allow' ? decision.binding : undefined,
+  }
+}
+
+function cursorOption(value: string | undefined): number | undefined {
+  if (value === undefined) return undefined
+  const cursor = Number(value)
+  if (!Number.isInteger(cursor) || cursor < 1) throw new Error('--cursor must be a positive integer')
+  return cursor
 }
 
 async function cursorWarningFor(
@@ -253,13 +265,14 @@ async function cursorWarningFor(
   presentation: DispatchPresentation,
   binding: { cursorRecordId: string; stepSlug: string } | undefined,
   project: string | null,
-): Promise<string | null> {
+) {
   return keyedRunCursorWarningForDispatch({
     key: flags.flag('key'),
     project,
     bindingPresent: Boolean(binding),
     overrideReason: flags.flag('override-unbound'),
     fromOperator: flags.has('from-operator'),
+    cursor: cursorOption(flags.flag('cursor')),
     adapter: presentation.harnessCursorAdapter,
   })
 }
@@ -762,7 +775,13 @@ export async function dispatchCommand(
   reportCallerCheckoutNotice(notice, porcelain, error)
   const dispatchProject = assertDispatchableProject(explicitRepo, callerCwd, Boolean(requestedCwd))
   const dispatchProjectName = dispatchProject?.name ?? null
-  const cursorWarning = await cursorWarningFor(flags, presentation, binding, dispatchProjectName)
+  const cursorAdmission = await cursorWarningFor(
+    flags,
+    presentation,
+    binding,
+    dispatchProjectName,
+  )
+  const effectiveBinding = binding ?? cursorAdmission.binding
   // Check project-required inputs before reading the prompt so a missing key does not pay for stdin.
   const { base, reviewRef, resolvedReviewTarget, seed } = prepareDispatchTarget({
     flags,
@@ -863,7 +882,7 @@ export async function dispatchCommand(
   const detachByDefault = !has('follow')
   if (has('detach') || detachByDefault) {
     const id = await detach(jobName, prompt, false, {
-      ...{ agent, agentExplicit, binding },
+      ...{ agent, agentExplicit, binding: effectiveBinding },
       schema,
       label: flag('label'),
       lens,
@@ -892,7 +911,7 @@ export async function dispatchCommand(
       resolvedTaskBranch,
       lensInputs,
     })
-    recordDispatchWarnings(id, [taskKeyWarning, cursorWarning], recordRunWarning)
+    recordDispatchWarnings(id, [taskKeyWarning, cursorAdmission.warning], recordRunWarning)
     presentation.detachedResult(id, json)
     if (!has('quiet') && !porcelain) {
       error(detachedRunCollectRemedy(id, presentation.runNumber))
@@ -926,7 +945,7 @@ export async function dispatchCommand(
    * genuinely stuck run still returns control rather than hanging for ever.
    */
   const id = await detach(jobName, prompt, true, {
-    ...{ agent, agentExplicit, schema, lens, binding },
+    ...{ agent, agentExplicit, schema, lens, binding: effectiveBinding },
     reviewRole,
     label: flag('label'),
     mcp: resolved.mcp,
@@ -952,6 +971,6 @@ export async function dispatchCommand(
     resolvedTaskBranch,
     lensInputs,
   })
-  recordDispatchWarnings(id, [taskKeyWarning, cursorWarning], recordRunWarning)
+  recordDispatchWarnings(id, [taskKeyWarning, cursorAdmission.warning], recordRunWarning)
   await follow(id, has('quiet'))
 }

@@ -87,7 +87,7 @@ function gatherReviewOwedFloor(
     facts,
     verdict,
   })
-  return decision
+  return { ...decision, noLensOwed: verdict.next.action !== 'dispatch' }
 }
 
 export const productionReviewOwedFloor = (

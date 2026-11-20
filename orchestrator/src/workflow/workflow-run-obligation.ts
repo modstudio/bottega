@@ -10,15 +10,18 @@ export type WorkflowRunChainEvidence = {
   needsVerdict: boolean
 }
 
+export const dispatchWaiverFacts = ['no-lens-owed', 'no-accepted-findings'] as const
+export type DispatchWaiverFact = (typeof dispatchWaiverFacts)[number]
+
 export type WorkflowRunObligationInput = {
   workflowKey?: string
   selectedFloors: string[]
-  metFloors: string[]
+  metWaiverFacts: DispatchWaiverFact[]
   step?: {
     slug: string
     jobs: string[]
     dispatch?: 'required'
-    dispatchWaivedBy?: string[]
+    dispatchWaivedBy?: DispatchWaiverFact[]
     judges?: string[]
   }
   dispatchRuns?: WorkflowRunChainEvidence[]
@@ -33,7 +36,7 @@ export function dispatchObligationRefusal(input: WorkflowRunObligationInput): st
   const step = input.step
   if (step?.dispatch !== 'required') return null
   if (input.selectedFloors.includes('descendants-closed')) return null
-  if ((step.dispatchWaivedBy ?? []).some((kind) => input.metFloors.includes(kind))) return null
+  if ((step.dispatchWaivedBy ?? []).some((fact) => input.metWaiverFacts.includes(fact))) return null
   const runs = input.dispatchRuns ?? []
   if (!runs.length) {
     const job = step.jobs[0] ?? '<job>'

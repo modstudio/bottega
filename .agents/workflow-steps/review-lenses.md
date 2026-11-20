@@ -6,7 +6,7 @@ floor:
   - review-owed
 jobs: [review-lens]
 dispatch: required
-dispatchWaivedBy: [review-owed]
+dispatchWaivedBy: [no-lens-owed]
 autonomy: auto
 needs:
   - tracker

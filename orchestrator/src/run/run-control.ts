@@ -55,6 +55,7 @@ import { closeStaleChainQuestions, RUN_FOLLOW_TIMEOUT_MS, reapStale } from './ru
 import { continuationResumeKind } from './run-resume-kind.ts'
 import { packedResumePromptWithCarriedAttachments } from './run-resume-prompt.ts'
 import { type ContinuationInstruction, renderCheckpointContinuationPrompt } from './run-retry.ts'
+import type { RunWorkflowBinding } from './run-claim-inheritance.ts'
 import { type RenewTaskClaim, renewTaskClaimBestEffort } from './run-task-claim-renewal.ts'
 import { terminalSharedGitConfigForRecordedRun } from './shared-git-config-run.ts'
 
@@ -710,7 +711,7 @@ export async function continueRun(
   message: string | undefined,
   argvResumeLimit: RunControlPresentation['argvResumeLimit'],
   produceMessage?: () => string | undefined,
-  dependencies: { renewTaskClaim?: RenewTaskClaim } = {},
+  dependencies: { renewTaskClaim?: RenewTaskClaim; binding?: RunWorkflowBinding } = {},
 ): Promise<{ childId: string; job: string }> {
   let authority = authorizeRunMutation(id, 'continue')
   const row = db()
@@ -831,6 +832,7 @@ export async function continueRun(
   // Stop preserves the artifact specifically so this transition can reopen it.
   authority = prepareContinuationAuthority(authority, id)
   const childId = await detach(row.job, prompt, {
+    binding: dependencies.binding,
     cwd: continuationTreeCwd(treeDecision, checkout.cwd, checkout.project?.path ?? null),
     repo: row.repo ?? undefined,
     ...launch,

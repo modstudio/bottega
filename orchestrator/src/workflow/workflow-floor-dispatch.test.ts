@@ -104,16 +104,35 @@ test('a judging step refuses an unscored lens chain', () => {
   if (decision.action === 'refuse') expect(decision.message).toContain(`${PLATFORM_SLUG} score 51`)
 })
 
-test('a met declarative waiver floor allows zero dispatches', () => {
+test.each([
+  ['review-lenses', 'no-lens-owed'],
+  ['apply-findings', 'no-accepted-findings'],
+] as const)('a true %s waiver fact allows zero dispatches', (slug, fact) => {
+  expect(
+    decide({
+      floors: [artifact],
+      evidence: {
+        artifacts: [{ artifact: { ref: 'probe:3', exists: true } }],
+        metDispatchWaiverFacts: [fact],
+      },
+      workflowKey: 'DEV-1',
+      step: { ...dispatchStep, slug, dispatchWaivedBy: [fact] },
+    }).action,
+  ).toBe('allow')
+})
+
+test.each([
+  ['review-lenses', 'no-lens-owed'],
+  ['apply-findings', 'no-accepted-findings'],
+] as const)('a false %s waiver fact refuses zero dispatches', (slug, fact) => {
   expect(
     decide({
       floors: [artifact],
       evidence: { artifacts: [{ artifact: { ref: 'probe:3', exists: true } }] },
       workflowKey: 'DEV-1',
-      step: { ...dispatchStep, slug: 'apply-findings', dispatchWaivedBy: ['review-owed'] },
-      externallyMetFloors: ['review-owed'],
+      step: { ...dispatchStep, slug, dispatchWaivedBy: [fact] },
     }).action,
-  ).toBe('allow')
+  ).toBe('refuse')
 })
 
 test('a selected descendants-closed floor allows zero dispatches', () => {

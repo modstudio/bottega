@@ -9,6 +9,7 @@ import type { SelectableCursorRow, WorkflowCursorContext } from './workflow-curs
 import { currentStepActivatedAt, reentryBoundFloorInput } from './workflow-cursor-trail.ts'
 import { foreignCursorOwner } from './workflow-cursor-transition.ts'
 import { descendantTaskFacts, selectEpicStartFloors } from './workflow-epic-floor.ts'
+import { gatherNoAcceptedFindingsFact } from './workflow-dispatch-waiver-evidence.ts'
 import type { WorkflowEvidenceInput } from './workflow-evidence-input.ts'
 import {
   decideFloorSatisfaction,
@@ -21,12 +22,13 @@ import { gatherValidatedEvidence } from './workflow-floor-evidence-gather.ts'
 import { invokeFloorEvidencePort } from './workflow-floor-evidence-replay.ts'
 import { openWorkflowObligations } from './workflow-obligation-floor.ts'
 import { gatherWorkflowRunChains } from './workflow-run-obligation-evidence.ts'
+import type { DispatchWaiverFact } from './workflow-run-obligation.ts'
 
 type StepRunObligation = {
   slug: string
   jobs: string[]
   dispatch?: 'required'
-  dispatchWaivedBy?: Floor['kind'][]
+  dispatchWaivedBy?: DispatchWaiverFact[]
   judges?: string[]
 }
 
@@ -87,8 +89,10 @@ export async function applyFloorDecision(
     step: row.step_slug,
     hasChildren: taskRows.some((task) => task.parentKey === row.workflow_key),
   })
-  const externallyMetFloors: Floor['kind'][] = []
-  if (row.enforcement === 'floors' && floors.some(({ kind }) => kind === 'review-owed')) {
+  const metDispatchWaiverFacts: DispatchWaiverFact[] = []
+  const checksReviewOwed = floors.some(({ kind }) => kind === 'review-owed')
+  const gathersNoLensOwed = step.dispatchWaivedBy?.includes('no-lens-owed') ?? false
+  if (row.enforcement === 'floors' && (checksReviewOwed || gathersNoLensOwed)) {
     const reviewOwed = invokeFloorEvidencePort(
       ports,
       'reviewOwed',
@@ -98,9 +102,14 @@ export async function applyFloorDecision(
       row.project,
       args,
     )
-    if (reviewOwed.action === 'refuse') return reviewOwed
-    externallyMetFloors.push('review-owed')
+    if (checksReviewOwed && reviewOwed.action === 'refuse') return reviewOwed
+    if (reviewOwed.noLensOwed) metDispatchWaiverFacts.push('no-lens-owed')
   }
+  if (
+    row.enforcement === 'floors' &&
+    step.dispatchWaivedBy?.includes('no-accepted-findings')
+  )
+    metDispatchWaiverFacts.push(...gatherNoAcceptedFindingsFact(row.project, args, database))
   const validated = await gatherValidatedEvidence({
     cursorId: row.record_id,
     cursorState: row.state,
@@ -128,6 +137,7 @@ export async function applyFloorDecision(
   if (evidenceFloors.some(({ kind }) => kind === 'descendants-closed'))
     validated.descendants = descendantTaskFacts(row.workflow_key, taskRows)
   attachRunObligationEvidence(validated, row, step, database)
+  validated.metDispatchWaiverFacts = metDispatchWaiverFacts
   if (selfRulingId !== undefined)
     validated.ruling = {
       id: selfRulingId,
@@ -145,7 +155,6 @@ export async function applyFloorDecision(
     openObligations: await openWorkflowObligations(row.record_id, database, client),
     workflowKey: row.workflow_key,
     step,
-    externallyMetFloors,
     ...(foreignOwner
       ? { cursorTakeoverRemedy: workflowCursorTakeoverRemedy(row, foreignOwner) }
       : {}),

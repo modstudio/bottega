@@ -15,7 +15,9 @@ type ReviewOwedVerdict = {
   remedy: string
 }
 
-export type ReviewOwedFloorDecision = { action: 'allow' } | { action: 'refuse'; message: string }
+export type ReviewOwedFloorDecision =
+  | { action: 'allow'; noLensOwed?: boolean }
+  | { action: 'refuse'; message: string; noLensOwed?: boolean }
 
 const BLOCKING_LENS_STATUSES: ReadonlySet<ReviewFunnelLensStatus> = new Set([
   'owed',

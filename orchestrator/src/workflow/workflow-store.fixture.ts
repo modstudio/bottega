@@ -304,7 +304,7 @@ const requiredArtifactDispatch = {
   jobs: ['implement'],
   actions: [],
   dispatch: 'required' as const,
-  dispatchWaivedBy: ['recorded-artifact' as const],
+  dispatchWaivedBy: ['no-accepted-findings' as const],
 }
 
 /** Installs a neutral multi-step workflow for tests of generic workflow behavior. */

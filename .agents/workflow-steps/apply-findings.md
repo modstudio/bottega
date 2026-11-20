@@ -7,7 +7,7 @@ floor:
   - review-owed
 jobs: [implement]
 dispatch: required
-dispatchWaivedBy: [review-owed]
+dispatchWaivedBy: [no-accepted-findings]
 autonomy: ask
 needs: []
 ---

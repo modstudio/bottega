@@ -28,6 +28,7 @@ import {
   workflowsAfterReplacement,
 } from './workflow-definition.ts'
 import { floorKinds, isFloorKind, mayCloseOnAgentSelfRuling } from './workflow-floor.ts'
+import { dispatchWaiverFacts } from './workflow-run-obligation.ts'
 import { workflowHostedSpace } from './workflow-hosted-space.ts'
 import { workflowReadSpaceFor } from './workflow-read-space.ts'
 import { checkWorkflowRendering, renderCheckRefusal } from './workflow-render-check.ts'
@@ -222,13 +223,12 @@ function validateDispatchWaivers(
   if (item.dispatch !== 'required')
     errors.push(`step "${slug}" dispatchWaivedBy requires dispatch: required`)
   if (!Array.isArray(item.dispatchWaivedBy)) {
-    errors.push(`step "${slug}" dispatchWaivedBy must be an array of declared floor kinds`)
+    errors.push(`step "${slug}" dispatchWaivedBy must be an array of dispatch waiver facts`)
     return
   }
-  const declaredFloors = new Set(Array.isArray(item.floor) ? item.floor : [])
-  for (const kind of item.dispatchWaivedBy) {
-    if (!isFloorKind(kind) || !declaredFloors.has(kind))
-      errors.push(`step "${slug}" dispatchWaivedBy names undeclared floor kind "${String(kind)}"`)
+  for (const fact of item.dispatchWaivedBy) {
+    if (!(dispatchWaiverFacts as readonly unknown[]).includes(fact))
+      errors.push(`step "${slug}" dispatchWaivedBy names unknown fact "${String(fact)}"`)
   }
 }
 

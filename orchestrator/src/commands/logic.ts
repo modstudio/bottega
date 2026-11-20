@@ -98,7 +98,13 @@ const collectedOption = (flags: string, description: string) =>
   repeatable(new Option(flags, description).argParser(collect).default([]))
 
 const localRunId = (input: string | number) => resolveRunIdentifier(db(), input)
-const CONTINUE_USAGE = `${PLATFORM_SLUG} run continue <id> [--findings] [--follow] [--override-unbound "<reason>" --from-operator] [--file PATH | "<what next>"]`
+const CONTINUE_USAGE = `${PLATFORM_SLUG} run continue <id> [--findings] [--follow] [--cursor <number>] [--override-unbound "<reason>" --from-operator] [--file PATH | "<what next>"]`
+const keyedCursorNumber = (value: string | undefined): number | undefined => {
+  if (value === undefined) return undefined
+  const cursor = Number(value)
+  if (!Number.isInteger(cursor) || cursor < 1) throw new Error('--cursor must be a positive integer')
+  return cursor
+}
 const displayRunNumber = (recordId: string): number =>
   (db().query('SELECT number FROM run WHERE record_id=?').get(recordId) as { number: number })
     .number
@@ -725,6 +731,7 @@ export function register(program: Command, dependencies: LogicDependencies = {})
       {
         overrideReason: options.overrideUnbound,
         fromOperator: Boolean(options.fromOperator),
+        cursor: keyedCursorNumber(options.cursor),
       },
     ),
   )

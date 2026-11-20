@@ -3,7 +3,7 @@
 
 import type { WorkflowFactSource } from '../project/project-injection.ts'
 import type { AutonomyStage, AutonomyValue } from './autonomy.ts'
-import type { CommandEvidence, FloorKind } from './workflow-floor.ts'
+import type { CommandEvidence, DispatchWaiverFact, FloorKind } from './workflow-floor.ts'
 
 export type FloorEntry = FloorKind | `{{${string}}}`
 
@@ -23,7 +23,7 @@ export type CatalogueStep = {
   commandEvidence?: CommandEvidence
   jobs: string[]
   dispatch?: 'required'
-  dispatchWaivedBy?: FloorKind[]
+  dispatchWaivedBy?: DispatchWaiverFact[]
   judges?: string[]
   actions: string[]
   /** Optional only when reading a stored catalogue created before stages existed. */

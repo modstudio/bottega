@@ -7,9 +7,14 @@ import { refusal, renderRefusal } from '../../../shared/refusal.ts'
 export type KeyedRunTurn = 'start' | 'continue' | 'answer' | 'retry'
 
 type KeyedRunCursor = {
+  recordId: string
+  number: number
   project: string
   workflowKey: string
+  stepSlug: string
 }
+
+export type KeyedRunCursorBinding = { cursorRecordId: string; stepSlug: string }
 
 export type KeyedRunCursorAdmissionInput = {
   turn: KeyedRunTurn
@@ -18,12 +23,13 @@ export type KeyedRunCursorAdmissionInput = {
   bindingPresent: boolean
   harnessSession: string | null
   heldCursors: readonly KeyedRunCursor[]
+  cursor?: number
   overrideReason: string | undefined
   fromOperator: boolean
 }
 
 export type KeyedRunCursorAdmission =
-  | { kind: 'allow' }
+  | { kind: 'allow'; binding?: KeyedRunCursorBinding }
   | { kind: 'allow-with-override'; warning: string }
   | { kind: 'refuse'; message: string }
 
@@ -111,12 +117,38 @@ export function decideKeyedRunCursorAdmission(
     }
   }
 
-  if (
-    input.heldCursors.some(
-      (cursor) => cursor.project === input.project && cursor.workflowKey === input.key,
-    )
-  ) {
-    return { kind: 'allow' }
+  const matching = input.heldCursors.filter(
+    (cursor) => cursor.project === input.project && cursor.workflowKey === input.key,
+  )
+  if (matching.length) {
+    if (input.cursor === undefined && matching.length > 1) {
+      return {
+        kind: 'refuse',
+        message: renderRefusal(
+          refusal(
+            `refusing keyed run turn because harness session ${input.harnessSession} holds more than one open workflow cursor for project ${input.project} and task ${input.key}`,
+            { kind: 'edit', text: `rerun with --cursor <number> naming one of: ${matching.map(({ number }) => number).join(', ')}` },
+          ),
+        ),
+      }
+    }
+    const admitted =
+      input.cursor === undefined ? matching[0] : matching.find(({ number }) => number === input.cursor)
+    if (!admitted) {
+      return {
+        kind: 'refuse',
+        message: renderRefusal(
+          refusal(
+            `refusing keyed run turn because cursor ${input.cursor} is not an open workflow cursor held by harness session ${input.harnessSession} for project ${input.project} and task ${input.key}`,
+            { kind: 'edit', text: `rerun with --cursor <number> naming one of: ${matching.map(({ number }) => number).join(', ')}` },
+          ),
+        ),
+      }
+    }
+    return {
+      kind: 'allow',
+      binding: { cursorRecordId: admitted.recordId, stepSlug: admitted.stepSlug },
+    }
   }
 
   return {

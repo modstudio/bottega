@@ -88,6 +88,12 @@ export const ORCH_DO_OPTIONS = [
     description: 'attribute the run to this task key',
   },
   {
+    flags: '--cursor <number>',
+    name: 'cursor',
+    value: 'required',
+    description: 'select the held workflow cursor for this keyed run',
+  },
+  {
     flags: '--repo <value>',
     name: 'repo',
     value: 'required',

@@ -23,6 +23,7 @@ import {
   dispatchObligationRefusal,
   judgingObligationRefusal,
   type WorkflowRunChainEvidence,
+  type DispatchWaiverFact,
 } from './workflow-run-obligation.ts'
 
 type TrackerStateCategory = 'backlog' | 'open' | 'active' | 'review' | 'done' | 'dropped'
@@ -161,6 +162,7 @@ export type ValidatedEvidence = {
   tree?: { project: string; worktree?: string | null; commit: string | null }
   dispatchRuns?: WorkflowRunChainEvidence[]
   judgedRuns?: WorkflowRunChainEvidence[]
+  metDispatchWaiverFacts?: DispatchWaiverFact[]
 }
 
 export const isOperatorRulingFloor = (floor: Pick<Floor, 'kind' | 'operatorRuling'>): boolean =>
@@ -198,10 +200,9 @@ export type FloorSatisfactionInput = {
     slug: string
     jobs: string[]
     dispatch?: 'required'
-    dispatchWaivedBy?: FloorKind[]
+    dispatchWaivedBy?: DispatchWaiverFact[]
     judges?: string[]
   }
-  externallyMetFloors?: FloorKind[]
 }
 
 export function flagForFloor(kind: FloorKind): string {
@@ -1027,13 +1028,10 @@ export function decideFloorSatisfaction(input: FloorSatisfactionInput): FloorDec
   const met = input.floors.filter((floor) =>
     floorIsMet(floor, input.evidence, input.freshRulingAfter),
   )
-  const metFloorKinds = [
-    ...new Set([...met.map((floor) => floor.kind), ...(input.externallyMetFloors ?? [])]),
-  ]
   const obligationInput = {
     workflowKey: input.workflowKey,
     selectedFloors: input.floors.map((floor) => floor.kind),
-    metFloors: metFloorKinds,
+    metWaiverFacts: input.evidence.metDispatchWaiverFacts ?? [],
     step: input.step,
     dispatchRuns: input.evidence.dispatchRuns,
     judgedRuns: input.evidence.judgedRuns,

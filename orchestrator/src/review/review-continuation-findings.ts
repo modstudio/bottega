@@ -84,6 +84,7 @@ function selectContinuationReviewRound(
 function selectedFindings(
   database: Database,
   group: ChangeGroup,
+  allowEmpty = false,
 ): { findings: ContinuationFinding[]; round: SelectedContinuationRound } {
   const round = selectContinuationReviewRound(
     reviewsForTriage(database, group).branchReviews,
@@ -133,7 +134,7 @@ function selectedFindings(
         ORDER BY rf.review_record_id,rf.ordinal`,
     )
     .all(...reviewIds)
-  if (!rows.length) {
+  if (!rows.length && !allowEmpty) {
     throw new Error(
       'the current review round has no accepted or modified findings; ' +
         'continue without --findings',
@@ -153,6 +154,14 @@ function selectedFindings(
       proposedCorrection: row.proposed_correction,
     })),
   }
+}
+
+/** Whether the same current round rendered by --findings contains anything to apply. */
+export function continuationRoundHasAcceptedFindings(
+  database: Database,
+  group: ChangeGroup,
+): boolean {
+  return selectedFindings(database, group, true).findings.length > 0
 }
 
 /** Pure presentation decision shared by normal and checkpoint continuation paths. */

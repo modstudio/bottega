@@ -12,7 +12,7 @@ export function inheritedRunBinding(
   parent: string | undefined,
   binding: RunWorkflowBinding | undefined,
 ): { cursorRecordId: string | null; stepSlug: string | null } | null {
-  if (!parent) return binding ?? null
+  if (!parent || binding) return binding ?? null
   const facts = inheritedRunFacts(parent)
   return { cursorRecordId: facts.cursor_record_id, stepSlug: facts.step_slug }
 }
