@@ -20,7 +20,6 @@ import {
   sandboxRuntimeAssets,
   sandboxRuntimePayloadPaths,
 } from '../../../shared/sandbox-runtime-assets.ts'
-import { runningInstallReadCarveouts } from './install-read-policy.ts'
 import {
   classifySandboxRuntimeAvailability,
   extractedSandboxRuntimeRoot,
@@ -31,6 +30,7 @@ import {
   sandboxRuntimeAvailability,
   withSandboxTemporaryDirectory,
 } from './sandbox-runtime.ts'
+import { workerRuntimeReadCarvebacks } from './worker-runtime-read-carvebacks.ts'
 
 const availabilityFacts = {
   location: '/runtime',
@@ -94,12 +94,7 @@ describe('sandbox runtime payloads', () => {
     const previous = process.env.BOTTEGA_STATE_HOME
     process.env.BOTTEGA_STATE_HOME = join(root, 'different-process-state')
     try {
-      const carvebacks = runningInstallReadCarveouts({
-        kind: 'distribution',
-        root: '/install',
-        workspaceDirectories: [],
-        extractedWorkerRuntimeAssetPaths: [final],
-      })
+      const carvebacks = workerRuntimeReadCarvebacks(ports.environment, manifest)
       const payload = await prepareSandboxRuntimeConfig(ports.environment, ports)
 
       expect(carvebacks).toContain(final)

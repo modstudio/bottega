@@ -37,7 +37,6 @@ const profileForLinks = (input: {
       kind: 'distribution',
       root: '/install',
       workspaceDirectories: [],
-      extractedWorkerRuntimeAssetPaths: [],
     },
     onWarning: (message) => input.warnings.push(message),
     platform: input.platform,

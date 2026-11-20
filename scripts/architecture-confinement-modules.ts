@@ -54,6 +54,7 @@ export const confinementModules: ConfinementModule[] = [
     '../../../shared/refusal.ts',
     '../../../shared/self-spawn.ts',
     '../../../shared/config-directory.ts',
+    '../../../shared/distribution-manifest.ts',
     '../../../shared/state-directory.ts',
     '../mcp/mcp-probe.ts',
     '../no-follow-file.ts',
@@ -66,6 +67,19 @@ export const confinementModules: ConfinementModule[] = [
     './sandbox-area-read-profile.ts',
     './sandbox-runtime.ts',
     './weaker-network-isolation.ts',
+    './worktree-root-entries.ts',
+    './worker-runtime-read-carvebacks.ts',
+  ]),
+  module('orchestrator/src/sandbox/worktree-root-entries.ts', [
+    'node:fs',
+    'node:path',
+    '../project/projects.ts',
+  ]),
+  module('orchestrator/src/sandbox/worker-runtime-read-carvebacks.ts', [
+    '../../../shared/embedded-assets.ts',
+    '../../../shared/distribution-manifest.ts',
+    '../../../shared/runtime-assets-in-sandbox.ts',
+    '../../../shared/state-directory.ts',
   ]),
   module('orchestrator/src/sandbox/sandbox-area-read-profile.ts', ['./area-read-policy.ts']),
   module('orchestrator/src/sandbox/node-module-read-carvebacks.ts', [

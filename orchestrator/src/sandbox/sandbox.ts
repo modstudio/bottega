@@ -10,7 +10,6 @@ import {
   lstatSync,
   mkdirSync,
   openSync,
-  readdirSync,
   readFileSync,
   readlinkSync,
   realpathSync,
@@ -30,7 +29,6 @@ import { ensureHubLoginTokenDirectory } from '../../../shared/state-directory.ts
 import { disabledProjectMcpServers } from '../mcp/mcp-probe.ts'
 import { createNoFollowFile } from '../no-follow-file.ts'
 import {
-  mainCheckoutWorktreeHint,
   type Project,
   projectAt,
   projectsIncludingRetired,
@@ -47,16 +45,8 @@ import { linkedNodeModules, permittedNodeModuleCarvebacks } from './node-module-
 import { assembleAreaReadProfile } from './sandbox-area-read-profile.ts'
 import { launchWithSandboxRuntime, resetSandboxRuntime } from './sandbox-runtime.ts'
 import { decideWeakerNetworkIsolation, endpointHost } from './weaker-network-isolation.ts'
-
-function ownWorktreeRootEntries(project: Project | null): string[] {
-  if (!project) return []
-  const root = resolve(mainCheckoutWorktreeHint(project.path))
-  try {
-    return readdirSync(root).map((entry) => join(root, entry))
-  } catch {
-    return []
-  }
-}
+import { ownWorktreeRootEntries } from './worktree-root-entries.ts'
+import { workerRuntimeReadCarvebacks } from './worker-runtime-read-carvebacks.ts'
 
 export type SandboxRuntimeConfig = {
   network: {
@@ -315,6 +305,7 @@ export function readonlyLensProfile(input: {
       join(homedir(), '.claude.json'),
       process.execPath,
       ...runningInstallReadCarveouts(installLayout),
+      ...workerRuntimeReadCarvebacks(environment),
     ]),
   ]
   // SRT reads are allow-by-default. This list only carves paths back out of
@@ -497,6 +488,7 @@ export function probeSandboxProfile(input: {
       ...runningInstallReadCarveouts(
         input.installLayout ?? resolveRunningInstallLayout(environment),
       ),
+      ...workerRuntimeReadCarvebacks(environment),
     ],
     protectedDenies,
     socketDenyPaths: input.socketDenyPaths ?? readonlyLensSocketDenyPaths(),
