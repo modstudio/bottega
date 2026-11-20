@@ -54,8 +54,9 @@ export function areaReadPolicy(input: {
     deny: [
       ...new Set([
         state.root,
-        dirname(orchestratorDatabase),
-        orchestratorDatabase,
+        ...(input.orchestratorStoreAccess === 'deny'
+          ? [dirname(orchestratorDatabase), orchestratorDatabase]
+          : []),
         runsDirectory,
         ...checkoutParents,
         ...siblingCheckouts,
@@ -71,7 +72,12 @@ export function areaReadPolicy(input: {
         `${hubDatabase}-wal`,
         `${hubDatabase}-shm`,
         ...(input.orchestratorStoreAccess === 'allow-read'
-          ? [orchestratorDatabase, `${orchestratorDatabase}-wal`, `${orchestratorDatabase}-shm`]
+          ? [
+              dirname(orchestratorDatabase),
+              orchestratorDatabase,
+              `${orchestratorDatabase}-wal`,
+              `${orchestratorDatabase}-shm`,
+            ]
           : []),
         ...(ownMain ? [ownMain, join(ownMain, '.git')] : []),
       ]),

@@ -696,13 +696,17 @@ describe('readonly-lens sandbox profile', () => {
       orchestratorStoreAccess: 'allow-read',
     })
     const orchestratorStore = resolveOrchestratorDatabase(environment)
+    expect(workflowProfile.filesystem.denyRead).not.toContain(join(orchestratorStore, '..'))
+    expect(workflowProfile.filesystem.denyRead).not.toContain(orchestratorStore)
     expect(workflowProfile.filesystem.allowWithinDeny).toEqual(
       expect.arrayContaining([
+        join(orchestratorStore, '..'),
         orchestratorStore,
         `${orchestratorStore}-wal`,
         `${orchestratorStore}-shm`,
       ]),
     )
+    expect(workflowProfile.filesystem.denyRead).toContain(join(state, 'orchestrator/runs'))
   })
 
   test('sandbox selection removes the shared reader worktree from writable roots', () => {

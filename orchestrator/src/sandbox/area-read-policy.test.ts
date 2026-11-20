@@ -64,8 +64,12 @@ test('workflow access carves back only the orchestrator store and its WAL view',
   })
 
   const store = '/override/orchestrator/orchestrator.db'
+  expect(agentPolicy.deny).toEqual(expect.arrayContaining(['/override/orchestrator', store]))
   expect(agentPolicy.allow).not.toContain(store)
+  expect(workflowPolicy.deny).not.toContain('/override/orchestrator')
+  expect(workflowPolicy.deny).not.toContain(store)
   expect(workflowPolicy.allow).toEqual(
-    expect.arrayContaining([store, `${store}-wal`, `${store}-shm`]),
+    expect.arrayContaining(['/override/orchestrator', store, `${store}-wal`, `${store}-shm`]),
   )
+  expect(workflowPolicy.deny).toContain('/override/orchestrator/runs')
 })

@@ -9,6 +9,7 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { HARNESS_ENV_FILE_ENV, PLATFORM_ENV_FILE_ENV } from '../../../shared/config-directory.ts'
 import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 import {
+  hubLoginTokenDirectory,
   resolveHubDatabase,
   resolveStatePaths,
   STATE_HOME_ENV,
@@ -262,6 +263,13 @@ function createProbeFixture(root: string) {
   mkdirSync(scratchDir, { recursive: true })
   mkdirSync(state.hubDirectory, { recursive: true })
   copyHubFixture(hubDatabase)
+  const loginToken = join(hubLoginTokenDirectory(environment), 'planted-token')
+  mkdirSync(join(loginToken, '..'), { recursive: true })
+  writeFileSync(loginToken, 'PLANTED_HUB_TOKEN=fixture\n')
+  targets.push(
+    { name: 'hub store', path: hubDatabase, expected: 'readable' },
+    { name: 'hub login token', path: loginToken, expected: 'denied' },
+  )
   const cliArgv = bottegaEntryArgv(PLATFORM_SLUG)
   return {
     stateRoot,
