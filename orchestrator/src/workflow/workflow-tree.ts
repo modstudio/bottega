@@ -195,27 +195,31 @@ const commandEvidenceFrom = (frontMatter: Record<string, unknown>) =>
     ? {}
     : { commandEvidence: frontMatter.commandEvidence as CatalogueStep['commandEvidence'] }
 
-const STEP_FRONTMATTER_KEYS = new Set([
-  'title',
-  'stage',
-  'floor',
-  'outcomes',
-  'rulingOutcomes',
-  'reenter',
-  'deferrable',
-  'expectedExitCodes',
-  'expectedStatus',
-  'requirePullRequest',
-  'operatorRuling',
-  'commandEvidence',
-  'jobs',
-  'dispatch',
-  'dispatchWaivedBy',
-  'judges',
-  'actions',
-  'autonomy',
-  'needs',
-])
+type StepFrontmatterKey = Exclude<keyof CatalogueStep, 'slug' | 'body'>
+
+const STEP_FRONTMATTER_KEY_SCHEMA = {
+  title: true,
+  stage: true,
+  floor: true,
+  outcomes: true,
+  rulingOutcomes: true,
+  reenter: true,
+  deferrable: true,
+  expectedExitCodes: true,
+  expectedStatus: true,
+  requirePullRequest: true,
+  operatorRuling: true,
+  commandEvidence: true,
+  jobs: true,
+  dispatch: true,
+  dispatchWaivedBy: true,
+  judges: true,
+  actions: true,
+  autonomy: true,
+  needs: true,
+} satisfies Record<StepFrontmatterKey, true>
+
+const STEP_FRONTMATTER_KEYS = new Set<string>(Object.keys(STEP_FRONTMATTER_KEY_SCHEMA))
 
 function refuseUnknownStepFrontmatter(
   file: WorkflowTreeFile,

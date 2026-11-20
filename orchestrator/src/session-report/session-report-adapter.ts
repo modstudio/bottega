@@ -3,7 +3,7 @@
 
 import type { Database } from 'bun:sqlite'
 import { db } from '../database/db.ts'
-import { UNSCORED_WHERE } from '../evidence/evidence-query.ts'
+import { UNSCORED_WHERE } from '../evidence/pending-score-sql.ts'
 import { openQuestionStages, questionsForSession } from '../question-store/question-store-read.ts'
 import { currentRecordWriteDecision } from '../record/record-write-authority.ts'
 import { taskFlowReadStore } from '../workflow/task-flow-store.ts'

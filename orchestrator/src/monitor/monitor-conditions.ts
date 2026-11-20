@@ -17,7 +17,7 @@ import {
 import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 import { recordedRunClaimsWorktree } from '../cleanup/cleanup-sweep-docker.ts'
 import { db, liveRuns } from '../database/db.ts'
-import { UNSCORED_WHERE } from '../evidence/evidence-query.ts'
+import { UNSCORED_WHERE } from '../evidence/pending-score-sql.ts'
 import { targetGitEnvironment } from '../git/git-environment.ts'
 import { hookTreeNotice } from '../hook-tree/hook-tree.ts'
 import { runHasLiveDescendants } from '../idle-kill.ts'

@@ -23,6 +23,7 @@ import {
   type DispatchWaiverFact,
   dispatchObligationRefusal,
   judgingObligationRefusal,
+  type StepRunObligation,
   type WorkflowRunChainEvidence,
 } from './workflow-run-obligation.ts'
 
@@ -196,13 +197,7 @@ export type FloorSatisfactionInput = {
   freshRulingAfter?: string
   cursorTakeoverRemedy?: string
   workflowKey?: string
-  step?: {
-    slug: string
-    jobs: string[]
-    dispatch?: 'required'
-    dispatchWaivedBy?: DispatchWaiverFact[]
-    judges?: string[]
-  }
+  step?: StepRunObligation
 }
 
 export function flagForFloor(kind: FloorKind): string {

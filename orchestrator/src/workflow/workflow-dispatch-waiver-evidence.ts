@@ -2,13 +2,10 @@
 /** Gathers declarative dispatch-waiver facts from their canonical review decisions. */
 
 import type { Database } from 'bun:sqlite'
-import { existsSync } from 'node:fs'
-import { projectByName } from '../project/projects.ts'
 import { continuationRoundHasAcceptedFindings } from '../review/review-continuation-findings.ts'
 import { measureChangeGroup } from '../review/review-group.ts'
-import { gitText } from './workflow-floor-evidence-checkout.ts'
 import {
-  decideReviewOwedCheckout,
+  resolveBranchUnderReview,
   reviewOwedArgumentRemedy,
 } from './workflow-review-owed-checkout.ts'
 import type { DispatchWaiverFact } from './workflow-run-obligation.ts'
@@ -19,7 +16,7 @@ export type DispatchWaiverEvidence =
 
 const refusal = (condition: string): DispatchWaiverEvidence => ({
   action: 'refuse',
-  message: `dispatch waiver no-accepted-findings cannot be established: ${condition}; ${reviewOwedArgumentRemedy}`,
+  message: `no-accepted-findings cannot be established: ${condition}; ${reviewOwedArgumentRemedy}`,
 })
 
 export function gatherNoAcceptedFindingsFact(
@@ -27,35 +24,34 @@ export function gatherNoAcceptedFindingsFact(
   args: Record<string, string>,
   database: Database,
 ): DispatchWaiverEvidence {
-  const project = projectByName(projectName, database)
-  if (!project)
+  const resolved = resolveBranchUnderReview(projectName, args, database)
+  if (resolved.action === 'refuse') {
+    if (resolved.kind === 'project')
+      return refusal(
+        `${resolved.condition}; register it with project add <path> --name ${projectName}`,
+      )
     return refusal(
-      `project ${projectName} is not registered; register it with project add <path> --name ${projectName}`,
+      resolved.condition,
     )
-  const worktreeArg = args.worktree?.trim() || null
-  const worktreeExists = Boolean(worktreeArg && existsSync(worktreeArg))
-  const checkout = decideReviewOwedCheckout({
-    worktreeArg,
-    worktreeExists,
-    worktreeHead:
-      worktreeArg && worktreeExists
-        ? gitText(worktreeArg, ['rev-parse', '--abbrev-ref', 'HEAD'])
-        : null,
-    branchArg: args.branch?.trim() || null,
-    projectPath: project.path,
-  })
-  if ('refusal' in checkout) return refusal(checkout.refusal)
-  const tip =
-    gitText(checkout.cwd, ['rev-parse', '--verify', `${checkout.branch}^{commit}`]) ??
-    gitText(checkout.cwd, ['rev-parse', '--verify', `origin/${checkout.branch}^{commit}`])
-  if (!tip) return refusal(`cannot resolve the current tip of branch ${checkout.branch}`)
-  const measured = measureChangeGroup(checkout.cwd, project, checkout.branch, tip)
+  }
+  const measured = measureChangeGroup(
+    resolved.cwd,
+    resolved.project,
+    resolved.branch,
+    resolved.tip,
+  )
   if (!measured)
-    return refusal(`could not measure the current change group for branch ${checkout.branch}`)
-  return {
-    action: 'allow',
-    facts: continuationRoundHasAcceptedFindings(database, measured.group)
-      ? []
-      : ['no-accepted-findings'],
+    return refusal(`could not measure the current change group for branch ${resolved.branch}`)
+  try {
+    return {
+      action: 'allow',
+      facts: continuationRoundHasAcceptedFindings(database, measured.group)
+        ? []
+        : ['no-accepted-findings'],
+    }
+  } catch (error) {
+    if (error instanceof Error && error.message.includes('has no measured review rounds'))
+      return refusal(error.message.replace('\n', '; '))
+    throw error
   }
 }

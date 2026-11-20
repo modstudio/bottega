@@ -21,18 +21,11 @@ import type { FloorEvidencePorts } from './workflow-floor-evidence.ts'
 import { gatherValidatedEvidence } from './workflow-floor-evidence-gather.ts'
 import { invokeFloorEvidencePort } from './workflow-floor-evidence-replay.ts'
 import { openWorkflowObligations } from './workflow-obligation-floor.ts'
-import {
-  type DispatchWaiverFact,
-  gatherWorkflowRunChains,
-} from './workflow-run-obligation-evidence.ts'
-
-type StepRunObligation = {
-  slug: string
-  jobs: string[]
-  dispatch?: 'required'
-  dispatchWaivedBy?: DispatchWaiverFact[]
-  judges?: string[]
-}
+import { gatherWorkflowRunChains } from './workflow-run-obligation-evidence.ts'
+import type {
+  DispatchWaiverFact,
+  StepRunObligation,
+} from './workflow-run-obligation.ts'
 
 type FloorCursor = Pick<
   SelectableCursorRow,
@@ -108,7 +101,14 @@ export async function applyFloorDecision(
     if (reviewOwed.noLensOwed) metDispatchWaiverFacts.push('no-lens-owed')
   }
   if (row.enforcement === 'floors' && step.dispatchWaivedBy?.includes('no-accepted-findings')) {
-    const gathered = gatherNoAcceptedFindingsFact(row.project, args, database)
+    const gathered = invokeFloorEvidencePort(
+      ports,
+      'noAcceptedFindings',
+      gatherNoAcceptedFindingsFact,
+      row.project,
+      args,
+      database,
+    )
     if (gathered.action === 'refuse') return gathered
     metDispatchWaiverFacts.push(...gathered.facts)
   }

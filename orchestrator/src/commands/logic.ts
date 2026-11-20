@@ -70,6 +70,7 @@ import {
   typedQuestionCommand,
 } from '../typed-question/typed-question-commands.ts'
 import { renewTaskClaim } from '../workflow/workflow-task-claim.ts'
+import { positive } from '../workflow/workflow-command-arguments.ts'
 import { registerDatabaseCommands } from './database.ts'
 import { ORCH_DO_OPTIONS } from './do-options.ts'
 import { efficiencyCommand, provisioningAliasOptions } from './efficiency-command.ts'
@@ -99,13 +100,6 @@ const collectedOption = (flags: string, description: string) =>
 
 const localRunId = (input: string | number) => resolveRunIdentifier(db(), input)
 const CONTINUE_USAGE = `${PLATFORM_SLUG} run continue <id> [--findings] [--follow] [--cursor <number>] [--override-unbound "<reason>" --from-operator] [--file PATH | "<what next>"]`
-const keyedCursorNumber = (value: string | undefined): number | undefined => {
-  if (value === undefined) return undefined
-  const cursor = Number(value)
-  if (!Number.isInteger(cursor) || cursor < 1)
-    throw new Error('--cursor must be a positive integer')
-  return cursor
-}
 const keyedTurnOptions = (options: {
   overrideUnbound?: string
   fromOperator?: boolean
@@ -113,7 +107,7 @@ const keyedTurnOptions = (options: {
 }) => ({
   overrideReason: options.overrideUnbound,
   fromOperator: Boolean(options.fromOperator),
-  cursor: keyedCursorNumber(options.cursor),
+  cursor: positive(options.cursor, '--cursor'),
 })
 const displayRunNumber = (recordId: string): number =>
   (db().query('SELECT number FROM run WHERE record_id=?').get(recordId) as { number: number })

@@ -32,6 +32,7 @@ import {
   specSubjectKind,
 } from '../typed-question/spec-unsettled-question.ts'
 import { keepTreeExemptionFromOption } from '../worktree/keep-tree-hold.ts'
+import { positive } from '../workflow/workflow-command-arguments.ts'
 import { preflight, resolvedFindingsLens } from './dispatch-preflight.ts'
 import { executionRequirementRefusal } from './execution-requirement.ts'
 import {
@@ -253,14 +254,6 @@ async function keyedRunCursorWarningForDispatch(input: {
   }
 }
 
-function cursorOption(value: string | undefined): number | undefined {
-  if (value === undefined) return undefined
-  const cursor = Number(value)
-  if (!Number.isInteger(cursor) || cursor < 1)
-    throw new Error('--cursor must be a positive integer')
-  return cursor
-}
-
 async function cursorWarningFor(
   flags: DispatchFlags,
   presentation: DispatchPresentation,
@@ -273,7 +266,7 @@ async function cursorWarningFor(
     bindingPresent: Boolean(binding),
     overrideReason: flags.flag('override-unbound'),
     fromOperator: flags.has('from-operator'),
-    cursor: cursorOption(flags.flag('cursor')),
+    cursor: positive(flags.flag('cursor'), '--cursor'),
     adapter: presentation.harnessCursorAdapter,
   })
 }

@@ -13,17 +13,19 @@ export type WorkflowRunChainEvidence = {
 export const dispatchWaiverFacts = ['no-lens-owed', 'no-accepted-findings'] as const
 export type DispatchWaiverFact = (typeof dispatchWaiverFacts)[number]
 
+export type StepRunObligation = {
+  slug: string
+  jobs: string[]
+  dispatch?: 'required'
+  dispatchWaivedBy?: DispatchWaiverFact[]
+  judges?: string[]
+}
+
 export type WorkflowRunObligationInput = {
   workflowKey?: string
   selectedFloors: string[]
   metWaiverFacts: DispatchWaiverFact[]
-  step?: {
-    slug: string
-    jobs: string[]
-    dispatch?: 'required'
-    dispatchWaivedBy?: DispatchWaiverFact[]
-    judges?: string[]
-  }
+  step?: StepRunObligation
   dispatchRuns?: WorkflowRunChainEvidence[]
   judgedRuns?: WorkflowRunChainEvidence[]
 }

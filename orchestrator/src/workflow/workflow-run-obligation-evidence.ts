@@ -6,8 +6,6 @@ import { PENDING_SCORE_WHERE } from '../evidence/pending-score-sql.ts'
 import { TERMINAL_RUN_STATUS_SET } from '../run/run-status.ts'
 import type { WorkflowRunChainEvidence } from './workflow-run-obligation.ts'
 
-export type { DispatchWaiverFact } from './workflow-run-obligation.ts'
-
 export function gatherWorkflowRunChains(
   cursorRecordId: string,
   jobs: readonly string[],

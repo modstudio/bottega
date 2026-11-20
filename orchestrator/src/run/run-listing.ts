@@ -17,7 +17,7 @@ import {
   readEventLog,
   runEventsPath,
 } from '../events.ts'
-import { UNSCORED_WHERE } from '../evidence/evidence-query.ts'
+import { UNSCORED_WHERE } from '../evidence/pending-score-sql.ts'
 import { failureReason, type OutcomeRow, outcomeOf } from '../outcome.ts'
 import type { ProcessSample } from '../process-resource-sampler.ts'
 import { questionRulings } from '../question-store/question-store-read.ts'

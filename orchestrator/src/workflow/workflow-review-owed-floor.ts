@@ -2,15 +2,12 @@
 /** Resolves one cursor change and applies the pure review-owed floor decision. */
 
 import type { Database } from 'bun:sqlite'
-import { existsSync } from 'node:fs'
 import { db } from '../database/db.ts'
-import { projectByName } from '../project/projects.ts'
 import { emptyReviewRefusal, resolveReviewBase } from '../review/review-target.ts'
 import { recordReviewFunnelDecision } from '../review-funnel/review-funnel-decision-log.ts'
 import { reviewFunnelVerdictForChange } from '../review-funnel/review-funnel-verdict-service.ts'
-import { gitText } from './workflow-floor-evidence-checkout.ts'
 import {
-  decideReviewOwedCheckout,
+  resolveBranchUnderReview,
   reviewOwedArgumentRemedy,
 } from './workflow-review-owed-checkout.ts'
 import {
@@ -23,22 +20,15 @@ function gatherReviewOwedFloor(
   args: Record<string, string>,
   database: Database,
 ): ReviewOwedFloorDecision {
-  const project = projectByName(projectName, database)
-  if (!project) return { action: 'refuse', message: `project ${projectName} is not registered` }
-  const worktreeArg = args.worktree?.trim() || null
-  const worktreeExists = Boolean(worktreeArg && existsSync(worktreeArg))
-  const checkout = decideReviewOwedCheckout({
-    worktreeArg,
-    worktreeExists,
-    worktreeHead:
-      worktreeArg && worktreeExists
-        ? gitText(worktreeArg, ['rev-parse', '--abbrev-ref', 'HEAD'])
-        : null,
-    branchArg: args.branch?.trim() || null,
-    projectPath: project.path,
-  })
-  if ('refusal' in checkout) return { action: 'refuse', message: checkout.refusal }
-  const { cwd, branch } = checkout
+  const resolved = resolveBranchUnderReview(projectName, args, database)
+  if (resolved.action === 'refuse') {
+    if (resolved.kind !== 'tip') return { action: 'refuse', message: resolved.condition }
+    return {
+      action: 'refuse',
+      message: `floor review-owed cannot resolve branch ref ${resolved.branch} in ${resolved.cwd}; pass \`--arg worktree=<path>\` naming its checkout, or fetch ${resolved.branch}`,
+    }
+  }
+  const { project, cwd, branch, tip: head } = resolved
   const trunk = project.settings.trunk?.trim()
   if (!trunk)
     return {
@@ -49,14 +39,6 @@ function gatherReviewOwedFloor(
     return {
       action: 'refuse',
       message: `floor review-owed cannot evaluate configured trunk ${trunk}; ${reviewOwedArgumentRemedy}`,
-    }
-  const head =
-    gitText(cwd, ['rev-parse', '--verify', `${branch}^{commit}`]) ??
-    gitText(cwd, ['rev-parse', '--verify', `origin/${branch}^{commit}`])
-  if (!head)
-    return {
-      action: 'refuse',
-      message: `floor review-owed cannot resolve branch ref ${branch} in ${cwd}; pass \`--arg worktree=<path>\` naming its checkout, or fetch ${branch}`,
     }
   const base = resolveReviewBase(cwd, head, trunk)
   if (!base)

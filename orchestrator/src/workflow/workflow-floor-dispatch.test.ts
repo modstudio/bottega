@@ -59,7 +59,7 @@ test.each([
   if (decision.action === 'refuse') expect(decision.message).toContain(message)
 })
 
-test.each(['scored', 'voided'])('a terminal %s dispatch allows', () => {
+test('a terminal scored dispatch allows', () => {
   expect(
     decide({
       floors: [tracker],
@@ -70,15 +70,23 @@ test.each(['scored', 'voided'])('a terminal %s dispatch allows', () => {
   ).toBe('allow')
 })
 
-test('a chain filtered out for another cursor or step does not count as the dispatch', () => {
-  expect(
-    decide({
-      floors: [tracker],
-      evidence: { ...closedTask, dispatchRuns: [] },
-      workflowKey: 'DEV-1',
-      step: dispatchStep,
-    }).action,
-  ).toBe('refuse')
+test('run-chain evidence includes only the requested cursor and step', () => {
+  const cursorRecordId = newRecordId()
+  const otherCursorRecordId = newRecordId()
+  const matching = addRun({ agent: 'codex', job: 'implement' })
+  const otherStep = addRun({ agent: 'codex', job: 'implement' })
+  const otherCursor = addRun({ agent: 'codex', job: 'implement' })
+  const bind = db().query('UPDATE run SET cursor_record_id=?,step_slug=? WHERE record_id=?')
+  bind.run(cursorRecordId, 'start', matching)
+  bind.run(cursorRecordId, 'implement-fix', otherStep)
+  bind.run(otherCursorRecordId, 'start', otherCursor)
+  const matchingNumber = db()
+    .query<{ number: number }, [string]>('SELECT number FROM run WHERE record_id=?')
+    .get(matching)!.number
+
+  expect(gatherWorkflowRunChains(cursorRecordId, ['implement'], db(), 'start')).toEqual([
+    expect.objectContaining({ number: matchingNumber, job: 'implement' }),
+  ])
 })
 
 test('a root that is ok while its latest turn runs refuses the bound step', () => {

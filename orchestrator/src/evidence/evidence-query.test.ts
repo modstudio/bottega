@@ -11,8 +11,8 @@ import {
   pendingForSession,
   runTotals,
   SHARED_OUTPUT_REASON,
-  UNSCORED_WHERE,
 } from './evidence-query.ts'
+import { UNSCORED_WHERE } from './pending-score-sql.ts'
 
 test('runs --unscored uses the shared definition of an owed judgment', () => {
   const wanted = addRun({ agent: 'grok', job: 'craft', session: 'owed-session' })

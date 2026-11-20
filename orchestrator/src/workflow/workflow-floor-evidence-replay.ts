@@ -1,8 +1,10 @@
 // concern: workflows
 /** Replays process and network floor facts without holding the store write lock. */
 
+import type { Database } from 'bun:sqlite'
 import type { PullRequestView } from '../branch/pull-request-view.ts'
 import type { CheckoutResolution } from './workflow-checkout-refusal.ts'
+import type { DispatchWaiverEvidence } from './workflow-dispatch-waiver-evidence.ts'
 import type { HubTaskRead } from './workflow-floor-task-read.ts'
 import type { ReviewOwedFloorDecision } from './workflow-review-owed-decision.ts'
 
@@ -19,6 +21,11 @@ export type FloorEvidencePorts = {
   resolveCommit?: (checkout: string, reference: string) => string
   resolveTreeCommit?: (worktree: string) => string | null
   reviewOwed?: (project: string, args: Record<string, string>) => ReviewOwedFloorDecision
+  noAcceptedFindings?: (
+    project: string,
+    args: Record<string, string>,
+    database: Database,
+  ) => DispatchWaiverEvidence
 }
 
 export const MAX_FLOOR_EVIDENCE_REPLAY_ROUNDS = 16
@@ -86,6 +93,7 @@ function replayingPorts(real: FloorEvidencePorts, memo: Map<string, RecordedCall
     'resolveCommit',
     'resolveTreeCommit',
     'reviewOwed',
+    'noAcceptedFindings',
   ] as const) {
     if (real[port]) {
       Object.assign(wrapped, {
