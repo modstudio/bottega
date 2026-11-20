@@ -25,8 +25,8 @@ import {
   temporaryStateStoreMigrationAllowed,
 } from '../../../shared/state-directory.ts'
 import { decideStoreAccess } from '../../../shared/store-access.ts'
-import type { Project } from '../project/projects.ts'
 import { BUILTIN_AGENTS } from '../agent/agents.ts'
+import type { Project } from '../project/projects.ts'
 import { workerChildEnvironment } from '../run/run-worker-home.ts'
 import {
   type RunningInstallLayout,
@@ -239,6 +239,30 @@ function installFixture(root: string, running: RunningInstallLayout): RunningIns
   }
 }
 
+function probeWorkerEnvironment(environment: Record<string, string>): Record<string, string> {
+  return workerChildEnvironment({
+    agent: BUILTIN_AGENTS.grok!,
+    sandbox: 'srt',
+    runRecordId: 'confinement-filesystem-probe',
+    runToken: 'confinement-filesystem-probe-token',
+    runNumber: 1,
+    environment,
+    stateEnvironment: environment,
+    includeStore: true,
+  })
+}
+
+function probeHubOpenMode(hubDatabase: string): string {
+  return decideStoreAccess({
+    restrictedActor: true,
+    storePathUnderTemporaryRoot: temporaryStateStoreMigrationAllowed(
+      realPathForPotentialPath(hubDatabase),
+      realPathForPotentialPath(tmpdir()),
+    ),
+    walOrShmSidecarPresent: existsSync(`${hubDatabase}-wal`) || existsSync(`${hubDatabase}-shm`),
+  }).openMode
+}
+
 function createProbeFixture(root: string) {
   const ownPath = join(root, 'projects', 'own')
   const worktree = join(root, 'worktrees', 'own')
@@ -299,33 +323,15 @@ function createProbeFixture(root: string) {
     { name: 'hub login token', path: loginToken, expected: 'denied' },
   )
   const cliArgv = bottegaEntryArgv(PLATFORM_SLUG)
-  const workerEnvironment = workerChildEnvironment({
-    agent: BUILTIN_AGENTS.grok!,
-    sandbox: 'srt',
-    runRecordId: 'confinement-filesystem-probe',
-    runToken: 'confinement-filesystem-probe-token',
-    runNumber: 1,
-    environment,
-    stateEnvironment: environment,
-    includeStore: true,
-  })
-  const hubOpenMode = decideStoreAccess({
-    restrictedActor: true,
-    storePathUnderTemporaryRoot: temporaryStateStoreMigrationAllowed(
-      realPathForPotentialPath(hubDatabase),
-      realPathForPotentialPath(tmpdir()),
-    ),
-    walOrShmSidecarPresent: existsSync(`${hubDatabase}-wal`) || existsSync(`${hubDatabase}-shm`),
-  }).openMode
   return {
     hubWriter,
-    hubOpenMode,
+    hubOpenMode: probeHubOpenMode(hubDatabase),
     stateRoot,
     targets,
     cliArgv,
     commandArgv: [...cliArgv, 'task', 'show', 'DEV-2510'],
     fixtureInstall,
-    environment: workerEnvironment,
+    environment: probeWorkerEnvironment(environment),
     common: {
       worktree,
       runtimeDir,
