@@ -36,6 +36,7 @@ export function linkedNodeModules(worktree: string): string[] {
 /** Keep links rooted in the run project or running install and warn for every ignored link. */
 export function permittedNodeModuleCarvebacks(input: {
   links: readonly string[]
+  areaDenies: readonly string[]
   projectRoot?: string
   runningInstallRoot: string
   onWarning: (message: string) => void
@@ -43,12 +44,18 @@ export function permittedNodeModuleCarvebacks(input: {
   const roots = [input.projectRoot, input.runningInstallRoot]
     .filter((root): root is string => root !== undefined)
     .map((root) => resolve(root))
+  const areaDenies = input.areaDenies.map((path) => resolve(path))
   return input.links
     .map((path) => resolve(path))
     .filter((path) => {
-      if (roots.some((root) => isAtOrBelow(path, root))) return true
+      const admitted = roots.some(
+        (root) =>
+          isAtOrBelow(path, root) &&
+          !areaDenies.some((denied) => isAtOrBelow(denied, root) && isAtOrBelow(path, denied)),
+      )
+      if (admitted) return true
       input.onWarning(
-        `sandbox ignored node_modules link outside the project and running install: ${path}`,
+        `sandbox ignored node_modules link outside permitted project and running-install areas: ${path}`,
       )
       return false
     })

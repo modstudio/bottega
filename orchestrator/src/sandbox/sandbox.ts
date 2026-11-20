@@ -283,6 +283,7 @@ export function readonlyLensProfile(input: {
   })
   const nodeModuleLinks = permittedNodeModuleCarvebacks({
     links: input.nodeModuleLinks ?? linkedNodeModules(input.worktree),
+    areaDenies: areas.deny,
     projectRoot: input.project?.path,
     runningInstallRoot,
     onWarning: input.onWarning ?? console.warn,

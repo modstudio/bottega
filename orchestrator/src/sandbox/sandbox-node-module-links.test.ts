@@ -76,3 +76,16 @@ test('a node_modules link under the run project main checkout stays re-allowed',
   expect(profile.filesystem.allowWithinDeny).toContain(link)
   expect(warnings).toEqual([])
 })
+
+test('a node_modules link into a sibling worktree is not re-allowed', () => {
+  const warnings: string[] = []
+  const link = '/projects/fixture/.claude/worktrees/other-run/node_modules'
+  const profile = profileForLinks({
+    project: fixtureProject(),
+    links: [link],
+    warnings,
+  })
+
+  expect(profile.filesystem.allowWithinDeny).not.toContain(link)
+  expect(warnings).toEqual([expect.stringContaining(link)])
+})
