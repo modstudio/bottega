@@ -254,6 +254,16 @@ describe('run ingest', () => {
       filed_at: null,
     })
     const runQuestionRecordId = fixtureRecordId(80_023)
+    const legacyRulingRecordId = fixtureRecordId(80_021)
+    writeTransaction((conn) =>
+      conn
+        .query(
+          `INSERT INTO question
+            (record_id,space_id,number,workflow_cursor_id,asked_at)
+           VALUES (?,NULL,?,?,?)`,
+        )
+        .run(legacyRulingRecordId, number, fixtureRecordId(80_031), '2026-09-24T11:00:00.000Z'),
+    )
     await ingestStdout(
       JSON.stringify(
         runFixture({
@@ -269,7 +279,7 @@ describe('run ingest', () => {
         }),
       ),
       JSON.stringify([
-        ruling(fixtureRecordId(80_021), fixtureRecordId(80_011), fixtureRecordId(80_031)),
+        ruling(legacyRulingRecordId, fixtureRecordId(80_011), fixtureRecordId(80_031)),
         ruling(fixtureRecordId(80_022), fixtureRecordId(80_012), fixtureRecordId(80_032)),
       ]),
     )
@@ -279,10 +289,15 @@ describe('run ingest', () => {
         .query(`SELECT record_id,space_id,number FROM question WHERE number=? ORDER BY record_id`)
         .all(number),
     ).toEqual([
-      { record_id: fixtureRecordId(80_021), space_id: fixtureRecordId(80_011), number },
+      { record_id: legacyRulingRecordId, space_id: fixtureRecordId(80_011), number },
       { record_id: fixtureRecordId(80_022), space_id: fixtureRecordId(80_012), number },
       { record_id: runQuestionRecordId, space_id: fixtureRecordId(80_013), number },
     ])
+    expect(
+      db()
+        .query(`SELECT COUNT(*) count,MAX(space_id) space_id FROM question WHERE record_id=?`)
+        .get(legacyRulingRecordId),
+    ).toEqual({ count: 1, space_id: fixtureRecordId(80_011) })
   })
 
   test('change collection reports both rejected legs', async () => {
