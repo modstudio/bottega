@@ -17,7 +17,6 @@ import { ResolutionMissError } from '../identity/identity-local-run.ts'
 import { projectForTaskKey, projects, taskKeyPrefix } from '../project/projects.ts'
 import { RecordApiRequestError } from '../record/record-api-client.ts'
 import { taskFlowReadStore } from '../workflow/task-flow-store.ts'
-import { taskReader } from '../workflow/task-read-port.ts'
 import {
   type HubTaskPuller,
   type HubTaskReader,
@@ -25,6 +24,7 @@ import {
   pullHubTask,
   readHubTask,
   readHubTaskByRecordId,
+  readHubTaskChildren,
   readHubTasks,
   resolveOrPullHubTaskReference,
   taskKeyMap,
@@ -260,8 +260,7 @@ const productionContextFactsPorts: ContextFactsPorts = {
   task: pullHubTask,
   lookup: readHubTask,
   record: readHubTaskByRecordId,
-  children: async (project, parent) =>
-    (await taskReader().list({ project, parent })).map((row) => row as ContextTask),
+  children: readHubTaskChildren,
   pointer: pointerRefusal,
 }
 const defaultContextFactsPorts = () =>
@@ -363,6 +362,27 @@ function bestEffortProjectTaskReader(ports: ContextFactsPorts) {
   }
 }
 
+async function claimedContextTask(
+  claim: { key: string; project: string },
+  ports: ContextFactsPorts,
+  readProject: ReturnType<typeof bestEffortProjectTaskReader>,
+) {
+  if (ports.lookup) return ports.lookup(claim.project, claim.key).catch(() => null)
+  const tasks = await readProject(claim.project)
+  return tasks && mirrorTask(tasks, claim.project, claim.key)
+}
+
+async function parentContextTask(
+  task: ContextTask,
+  ports: ContextFactsPorts,
+  readProject: ReturnType<typeof bestEffortProjectTaskReader>,
+) {
+  if (!task.parent_key) return null
+  if (ports.lookup) return ports.lookup(task.project, task.parent_key).catch(() => null)
+  const tasks = await readProject(task.project)
+  return tasks && mirrorTask(tasks, task.project, task.parent_key)
+}
+
 async function relatedContextTasks(input: {
   owner: string | null
   claims: readonly { key: string; project: string }[]
@@ -380,18 +400,11 @@ async function relatedContextTasks(input: {
   }
   const readProject = bestEffortProjectTaskReader(input.ports)
   for (const claim of input.claims) {
-    const tasks = input.ports.lookup ? null : await readProject(claim.project)
-    const claimed = input.ports.lookup
-      ? await input.ports.lookup(claim.project, claim.key).catch(() => null)
-      : tasks && mirrorTask(tasks, claim.project, claim.key)
+    const claimed = await claimedContextTask(claim, input.ports, readProject)
     if (!claimed) continue
     related.push(claimed)
-    if (claimed.parent_key) {
-      const parent = input.ports.lookup
-        ? await input.ports.lookup(claimed.project, claimed.parent_key).catch(() => null)
-        : tasks && mirrorTask(tasks, claimed.project, claimed.parent_key)
-      if (parent) related.push(parent)
-    }
+    const parent = await parentContextTask(claimed, input.ports, readProject)
+    if (parent) related.push(parent)
   }
   return related
 }

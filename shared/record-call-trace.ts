@@ -301,10 +301,7 @@ export function writeRecordTraceSummary(): void {
     const index = summaries.findIndex((summary) => summary.routeClass === active.routeClass)
     if (index < 0) summaries.push(activeSummary)
     else {
-      summaries[index] = combineSummaries(
-        [summaries[index]!, activeSummary],
-        active.routeClass,
-      )
+      summaries[index] = combineSummaries([summaries[index]!, activeSummary], active.routeClass)
     }
   }
   summaries.sort((left, right) => left.routeClass.localeCompare(right.routeClass))

@@ -22,8 +22,6 @@ export type HubTaskReference = {
   commentsVerifiable?: boolean
 }
 export type HubTaskReader = (project: string) => Promise<HubTaskReference[]>
-export type HubTaskLookup = (project: string, key: string) => Promise<HubTaskReference | null>
-export type HubTaskRecordLookup = (recordId: string) => Promise<HubTaskReference | null>
 export type HubTaskPuller = (project: string, key: string) => Promise<HubTaskReference | null>
 export type HubTaskKeyMap = ReadonlyMap<string, readonly HubTaskReference[]>
 
@@ -176,6 +174,13 @@ export async function readHubTaskByRecordId(recordId: string): Promise<HubTaskRe
       return null
     throw error
   }
+}
+
+export async function readHubTaskChildren(
+  project: string,
+  parent: string,
+): Promise<HubTaskReference[]> {
+  return (await taskReader().list({ project, parent })).map(taskReference)
 }
 
 export async function pullHubTask(project: string, key: string): Promise<HubTaskReference | null> {

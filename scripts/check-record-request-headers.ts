@@ -185,12 +185,21 @@ function visibleInitializer(
 ): ts.Expression | undefined {
   for (let scope: ts.Node | undefined = call.parent; scope; scope = scope.parent) {
     if (!ts.isBlock(scope) && !ts.isSourceFile(scope)) continue
-    for (const statement of scope.statements) {
-      if (!ts.isVariableStatement(statement)) continue
-      for (const declaration of statement.declarationList.declarations)
-        if (ts.isIdentifier(declaration.name) && declaration.name.text === identifier.text)
-          return declaration.initializer
-    }
+    const found = initializerInStatements(identifier.text, scope.statements)
+    if (found) return found
+  }
+  return undefined
+}
+
+function initializerInStatements(
+  name: string,
+  statements: ts.NodeArray<ts.Statement>,
+): ts.Expression | undefined {
+  for (const statement of statements) {
+    if (!ts.isVariableStatement(statement)) continue
+    for (const declaration of statement.declarationList.declarations)
+      if (ts.isIdentifier(declaration.name) && declaration.name.text === name)
+        return declaration.initializer
   }
   return undefined
 }
