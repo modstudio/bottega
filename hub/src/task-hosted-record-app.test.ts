@@ -232,6 +232,42 @@ test('a hosted list scoped to an undeclared-space project refuses', async () => 
   )
 })
 
+test('a rejected hosted task status change leaves no status event', async () => {
+  const task = await recordCreate(
+    { project: 'gamma', title: 'Deleted before status change' },
+    { hosted: hosted() },
+  )
+  let deleted = false
+  const deleteBeforePush = async (input: string, init?: RequestInit) => {
+    if (!deleted && init?.method === 'POST' && input.endsWith('/v1/changes')) {
+      deleted = true
+      await database.exec(`
+        RESET ROLE;
+        UPDATE hub_task SET deleted_at=now() WHERE id='${task.record_id}';
+        SET ROLE record_actor;
+      `)
+    }
+    return recordFetch(input, init)
+  }
+
+  await expect(
+    setTask(
+      task.key,
+      { project: 'gamma' },
+      { status: 'active' },
+      { actorUserId: userId, actorName: 'Record author', agent: null, runId: null },
+      { hosted: { ...hosted(), fetch: deleteBeforePush } },
+    ),
+  ).rejects.toThrow(`task show ${task.key}`)
+  await database.exec('RESET ROLE;')
+  const events = await database.query<{ count: number }>(
+    `SELECT count(*)::int count FROM hub_task_status_event WHERE task_id=$1`,
+    [task.record_id],
+  )
+  await database.exec('SET ROLE record_actor;')
+  expect(events.rows).toEqual([{ count: 0 }])
+})
+
 test('work.task composes the hosted task, comments, documents, and project', async () => {
   const task = await recordCreate(
     { project: 'gamma', title: 'Inspectable hosted task', body: 'Task body' },

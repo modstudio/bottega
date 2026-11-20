@@ -1,7 +1,11 @@
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { newRecordId } from '../../shared/record/schema.ts'
 import { HOSTED_UNREACHABLE_REMEDY } from './hosted-write-mode.ts'
-import type { HostedPushChange } from './push-contract.ts'
+import {
+  HOSTED_STATUS_EVENT_TABLE,
+  HOSTED_TASK_TABLE,
+  type HostedPushChange,
+} from './push-contract.ts'
 import { hostedPushChanges } from './task-client.ts'
 import type { HostedTaskWriteOptions } from './task-write-destination.ts'
 
@@ -10,20 +14,33 @@ export async function sendHostedChanges(
   changes: HostedPushChange[],
   options: HostedTaskWriteOptions & { recordSpace: string },
 ): Promise<void> {
-  let outcomes: Awaited<ReturnType<typeof hostedPushChanges>>
-  try {
-    outcomes = await hostedPushChanges(
-      changes.map((change) => ({ ...change, change_id: change.change_id ?? newRecordId() })),
-      options,
-    )
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error)
-    throw new Error(`${message}. ${HOSTED_UNREACHABLE_REMEDY}`)
+  const prepared = changes.map((change) => ({
+    ...change,
+    change_id: change.change_id ?? newRecordId(),
+  }))
+  const push = async (batch: HostedPushChange[]) => {
+    try {
+      return await hostedPushChanges(batch, options)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      throw new Error(`${message}. ${HOSTED_UNREACHABLE_REMEDY}`)
+    }
   }
-  const refused = outcomes.find((outcome) => outcome.status === 'rejected')
-  if (refused)
-    throw new Error(
-      `hosted change ${refused.id} was refused: ${refused.reason}; ` +
-        `refresh the record with \`${PLATFORM_SLUG} task show ${taskKey}\` and retry`,
-    )
+  const refuseRejected = (outcomes: Awaited<ReturnType<typeof hostedPushChanges>>) => {
+    const refused = outcomes.find((outcome) => outcome.status === 'rejected')
+    if (refused)
+      throw new Error(
+        `hosted change ${refused.id} was refused: ${refused.reason}; ` +
+          `refresh the record with \`${PLATFORM_SLUG} task show ${taskKey}\` and retry`,
+      )
+  }
+  const taskPatch = prepared.find((change) => change.table === HOSTED_TASK_TABLE)
+  const hasStatusEvent = prepared.some((change) => change.table === HOSTED_STATUS_EVENT_TABLE)
+  if (taskPatch && hasStatusEvent) {
+    refuseRejected(await push([taskPatch]))
+    refuseRejected(await push(prepared.filter((change) => change !== taskPatch)))
+    return
+  }
+  const outcomes = await push(prepared)
+  refuseRejected(outcomes)
 }
