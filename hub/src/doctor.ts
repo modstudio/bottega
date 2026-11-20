@@ -1,7 +1,6 @@
 import { homedir } from 'node:os'
 import { type InstallationKind, runningInstallationKind } from '../../shared/install-root.ts'
 import {
-  HUB_COLLECT_LAUNCH_AGENT_LABEL,
   launchAgentInstalled,
   launchAgentLoaded,
   NOT_INSTALLED_BY_RELEASE_INSTALL,
@@ -17,6 +16,8 @@ import { projects } from './projects.ts'
 import { formatServiceRevisionDoctor } from './service-revision.ts'
 import { readSettingStamp } from './setting-stamp.ts'
 import { formatTaskIdentityDoctor, taskIdentityDoctor } from './task-identity.ts'
+
+const hubCollectLaunchAgentLabel = 'com.user.hub-collect'
 
 export const INTERVAL_UNLINKED_KEY_LIMIT = 10
 
@@ -103,8 +104,8 @@ export function slowCollectionDoctorLine(
 ): string {
   return slowCollectionDoctorDecision(
     installationKind,
-    launchAgentLoaded(HUB_COLLECT_LAUNCH_AGENT_LABEL),
-    launchAgentInstalled(HUB_COLLECT_LAUNCH_AGENT_LABEL, homedir()),
+    launchAgentLoaded(hubCollectLaunchAgentLabel),
+    launchAgentInstalled(hubCollectLaunchAgentLabel, homedir()),
     slowCollectionHealth(now, readSettingStamp('collect.slow.at')),
   )
 }

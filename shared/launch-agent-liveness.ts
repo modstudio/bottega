@@ -5,7 +5,6 @@ import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { startBoundedSync } from './bounded-process.ts'
 
-export const HUB_COLLECT_LAUNCH_AGENT_LABEL = 'com.user.hub-collect' as const
 export const NOT_INSTALLED_BY_RELEASE_INSTALL = 'not installed by a release install' as const
 
 /** Observe one launch agent without treating an unavailable launchctl domain as unloaded. */
