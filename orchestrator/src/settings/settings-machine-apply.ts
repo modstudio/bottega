@@ -15,6 +15,7 @@ import {
   applyUserCanonHomePlans,
   collectUserCanonHome,
   decideUserCanonHomePlanApplication,
+  emptyHostedUserCanonStoreRefusal,
   emptyUserCanonStoreRefusal,
   planUserCanonHome,
   type UserCanonHomePlan,
@@ -22,9 +23,8 @@ import {
   userCanonHomesFromEnvironment,
 } from '../canon/user-canon-home-files.ts'
 import { db } from '../database/db.ts'
-import { getDoc, listDocs, signedInDocOwner } from '../doc/docs.ts'
+import { getDoc, listDocs, readHostedUserSettingsDocuments, signedInDocOwner } from '../doc/docs.ts'
 import { tryKernelLease } from '../project/project-lock.ts'
-import { pullRecordCache } from '../record/record-cache.ts'
 import { applyRecordWriteAuthority } from '../record/record-write-authority.ts'
 import { isOrchWorkerProcess } from '../run/run-process.ts'
 import {
@@ -98,7 +98,6 @@ export function settingsApplyLockSkipped(result: MachineSettingsApplyResult): bo
 
 type Dependencies = {
   environment: NodeJS.ProcessEnv
-  pull(): Promise<unknown>
   workerProcess(): boolean
   owner(): Promise<string>
   local: Database
@@ -114,6 +113,12 @@ type Dependencies = {
   writeMcpPlacement: typeof writeClaudeMcpPlacement
 }
 
+type UserSettingsDocuments = {
+  source: 'local' | 'hosted'
+  settings: { body: string } | null
+  canon: Array<{ slug: string; body: string }>
+}
+
 type ApplyOverrides = Partial<Dependencies> & {
   runningFromRegisteredMainCheckout?: boolean
   registeredMainCheckout?: string | null
@@ -125,7 +130,6 @@ function dependencies(overrides: Partial<Dependencies>): Dependencies {
   const local = overrides.local ?? db(true)
   return {
     environment: process.env,
-    pull: () => pullRecordCache(local),
     workerProcess: () => isOrchWorkerProcess(process.env, process.pid),
     owner: signedInDocOwner,
     local,
@@ -188,8 +192,32 @@ function missingUserSettingsResult(target: string): MachineSettingsApplyResult {
   }
 }
 
+function localUserSettingsDocuments(owner: string): UserSettingsDocuments {
+  return {
+    source: 'local',
+    settings: getDoc(SETTINGS_SCOPE, null, SETTINGS_SLUG, owner),
+    canon: listDocs({ scope: 'canon', subject: null, owner, status: 'current' }),
+  }
+}
+
+async function hostedUserSettingsDocuments(owner: string): Promise<UserSettingsDocuments> {
+  const { settings, canon } = await readHostedUserSettingsDocuments()
+  const settingsRow = settings.find(
+    (row) => row.slug === SETTINGS_SLUG && row.owner === owner && typeof row.body === 'string',
+  )
+  return {
+    source: 'hosted',
+    settings: settingsRow ? { body: settingsRow.body as string } : null,
+    canon: canon.flatMap((row) =>
+      row.owner === owner && typeof row.slug === 'string' && typeof row.body === 'string'
+        ? [{ slug: row.slug, body: row.body }]
+        : [],
+    ),
+  }
+}
+
 function applyUserSettings(
-  owner: string,
+  row: UserSettingsDocuments['settings'],
   check: boolean,
   deps: Dependencies,
 ): MachineSettingsApplyResult {
@@ -197,7 +225,6 @@ function applyUserSettings(
   const path = userSettingsPath(home)
   const target = `settings ${path}`
   try {
-    const row = getDoc(SETTINGS_SCOPE, null, SETTINGS_SLUG, owner)
     if (!row) return missingUserSettingsResult(target)
     const parsed = readSettingsFile(path)
     const merged = mergeMachinePermissionOverlay(
@@ -318,11 +345,11 @@ function assertMachineSettingsWriteAuthority(
 }
 
 function applyUserCanon(
-  owner: string,
+  rows: UserSettingsDocuments['canon'],
+  source: UserSettingsDocuments['source'],
   check: boolean,
   deps: Dependencies,
 ): MachineSettingsApplyResult[] {
-  const rows = listDocs({ scope: 'canon', subject: null, owner, status: 'current' })
   const homes = userCanonHomesFromEnvironment(deps.environment, deps.runsDirectory).filter(
     (home) => home.installed,
   )
@@ -358,7 +385,8 @@ function applyUserCanon(
       target: item.target,
       outcome: 'refused',
       condition: 'empty-user-canon-store',
-      detail: emptyUserCanonStoreRefusal(),
+      detail:
+        source === 'hosted' ? emptyHostedUserCanonStoreRefusal() : emptyUserCanonStoreRefusal(),
       changed: false,
     }))
   }
@@ -419,11 +447,17 @@ export async function applyMachineSettings(
     return [{ target: SETTINGS_APPLY_LOCK_TARGET, outcome: 'skipped', changed: false }]
   }
   try {
-    await applyRecordWriteAuthority({ local: () => undefined, hosted: deps.pull })
     const owner = await deps.owner()
+    const documents = await applyRecordWriteAuthority(
+      {
+        local: () => localUserSettingsDocuments(owner),
+        hosted: () => hostedUserSettingsDocuments(owner),
+      },
+      deps.local,
+    )
     return [
-      applyUserSettings(owner, input.check, deps),
-      ...applyUserCanon(owner, input.check, deps),
+      applyUserSettings(documents.settings, input.check, deps),
+      ...applyUserCanon(documents.canon, documents.source, input.check, deps),
       ...applyClaudeMcpPlacement(input.check, deps),
     ]
   } finally {

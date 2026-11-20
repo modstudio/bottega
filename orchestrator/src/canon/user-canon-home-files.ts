@@ -56,6 +56,13 @@ export function emptyUserCanonStoreRefusal(): string {
   return `refusing user canon hydration: ${EMPTY_USER_CANON_STORE_REFUSAL}`
 }
 
+export function emptyHostedUserCanonStoreRefusal(): string {
+  return (
+    'refusing user canon hydration: no user canon rows exist in the hosted personal space; ' +
+    `create one with \`${PLATFORM_SLUG} doc set --scope canon --user\``
+  )
+}
+
 type CollectedFileState = { collectedText: string; collectedMode: number }
 type PlannedUserCanonWriteBase = {
   slug: string

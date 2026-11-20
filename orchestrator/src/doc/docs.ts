@@ -278,8 +278,8 @@ function validate(scope: string, subject: string | null, slug: string): asserts 
   validateDocSubject(scope, subject)
 }
 
+export { readHostedUserSettingsDocuments } from './doc-hosted-client.ts'
 export { docSubjects, listDocMetadata, listDocs }
-
 export const getDoc = getDocStore
 export const getDocForAudience = getDocForAudienceStore
 
