@@ -22,7 +22,6 @@ import {
 import {
   type DispatchWaiverFact,
   dispatchObligationRefusal,
-  type EarlierStepDispatchEvidence,
   judgingObligationRefusal,
   type StepRunObligation,
   type WorkflowRunChainEvidence,
@@ -163,7 +162,6 @@ export type ValidatedEvidence = {
   satisfy?: ValidatedSatisfy
   tree?: { project: string; worktree?: string | null; commit: string | null }
   dispatchRuns?: WorkflowRunChainEvidence[]
-  earlierStepDispatch?: EarlierStepDispatchEvidence
   judgedRuns?: WorkflowRunChainEvidence[]
   metDispatchWaiverFacts?: DispatchWaiverFact[]
 }
@@ -1031,7 +1029,6 @@ export function decideFloorSatisfaction(input: FloorSatisfactionInput): FloorDec
     metWaiverFacts: input.evidence.metDispatchWaiverFacts ?? [],
     step: input.step,
     dispatchRuns: input.evidence.dispatchRuns,
-    earlierStepDispatch: input.evidence.earlierStepDispatch,
     judgedRuns: input.evidence.judgedRuns,
   }
   const dispatchRefusal = dispatchObligationRefusal(obligationInput)

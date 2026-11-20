@@ -10,19 +10,6 @@ export type WorkflowRunChainEvidence = {
   needsVerdict: boolean
 }
 
-type EarlierStepDispatchCandidate = WorkflowRunChainEvidence & {
-  terminalOk: boolean
-  finishedAt: string | null
-  headCommit: string | null
-}
-
-export type EarlierStepDispatchEvidence = {
-  candidates: EarlierStepDispatchCandidate[]
-  latestAcceptedDispositionAt: string | null
-  branchTip: string
-  reviewedTips: string[]
-}
-
 export const dispatchWaiverFacts = ['no-lens-owed', 'no-accepted-findings'] as const
 export type DispatchWaiverFact = (typeof dispatchWaiverFacts)[number]
 
@@ -41,7 +28,6 @@ export type WorkflowRunObligationInput = {
   step?: StepRunObligation
   dispatchRuns?: WorkflowRunChainEvidence[]
   judgedRuns?: WorkflowRunChainEvidence[]
-  earlierStepDispatch?: EarlierStepDispatchEvidence
 }
 
 function scoreRemedy(runs: readonly WorkflowRunChainEvidence[]): string {
@@ -53,25 +39,7 @@ export function dispatchObligationRefusal(input: WorkflowRunObligationInput): st
   if (step?.dispatch !== 'required') return null
   if (input.selectedFloors.includes('descendants-closed')) return null
   if ((step.dispatchWaivedBy ?? []).some((fact) => input.metWaiverFacts.includes(fact))) return null
-  let runs = input.dispatchRuns ?? []
-  const earlierStepDispatch = input.earlierStepDispatch
-  const latestAcceptedDispositionAt = earlierStepDispatch?.latestAcceptedDispositionAt
-  if (
-    !runs.length &&
-    step.dispatchWaivedBy?.includes('no-accepted-findings') &&
-    earlierStepDispatch &&
-    latestAcceptedDispositionAt
-  ) {
-    const triagedAt = Date.parse(latestAcceptedDispositionAt)
-    runs = earlierStepDispatch.candidates.filter(
-      (run) =>
-        run.terminalOk &&
-        run.finishedAt !== null &&
-        Date.parse(run.finishedAt) > triagedAt &&
-        run.headCommit === earlierStepDispatch.branchTip &&
-        earlierStepDispatch.reviewedTips.includes(earlierStepDispatch.branchTip),
-    )
-  }
+  const runs = input.dispatchRuns ?? []
   if (!runs.length) {
     const job = step.jobs[0] ?? '<job>'
     return (
