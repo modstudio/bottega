@@ -31,6 +31,7 @@ import { createTaskDocument, updateTaskDocument } from './task-document.ts'
 const spaceId = '01990000-0000-7000-8000-000000002520'
 const userId = '01990000-0000-7000-8000-000000002521'
 const projectId = projectRecordIdFor('gamma')
+const sharedSpaceProjectId = projectRecordIdFor('eta')
 const stateRoot = mkdtempSync(join(tmpdir(), `${PLATFORM_SLUG}-task-record-app-`))
 const previous = {
   fetch: globalThis.fetch,
@@ -48,7 +49,9 @@ beforeAll(async () => {
     RESET ROLE;
     UPDATE space SET slug='declared-gamma-space' WHERE id='${spaceId}';
     INSERT INTO project (id,space_id,name,key_prefixes,created_at)
-    VALUES ('${projectId}','${spaceId}','gamma',ARRAY['GAM'],now());
+    VALUES
+      ('${projectId}','${spaceId}','gamma',ARRAY['GAM'],now()),
+      ('${sharedSpaceProjectId}','${spaceId}','eta',ARRAY['ETA'],now());
     SET ROLE record_actor;
   `)
   const client = pgliteSql(database)
@@ -146,6 +149,38 @@ test('create and edit from one client store are visible in the other without pul
     'Edited from client B',
   )
   expect(dbTaskCount()).toBe(0)
+})
+
+async function createSharedSpaceTasks() {
+  const gamma = await recordCreate(
+    { project: 'gamma', title: 'Shared-space gamma task' },
+    { hosted: hosted(), skipDuplicateCheck: true },
+  )
+  const eta = await recordCreate(
+    { project: 'eta', title: 'Shared-space eta task' },
+    { hosted: hosted(), skipDuplicateCheck: true },
+  )
+  return { gamma, eta }
+}
+
+test('hosted show finds each task in a shared record space without project scope', async () => {
+  const { gamma, eta } = await createSharedSpaceTasks()
+  expect((await recordShow(gamma.key, {})).task.record_id).toBe(gamma.record_id)
+  expect((await recordShow(eta.key, {})).task.record_id).toBe(eta.record_id)
+})
+
+test('hosted list keeps only tasks from the requested project in a shared space', async () => {
+  const { eta } = await createSharedSpaceTasks()
+  const filtered = await recordList({ project: 'eta' })
+  expect(filtered).toContainEqual(expect.objectContaining({ record_id: eta.record_id }))
+  expect(filtered.every((task) => task.project === 'eta')).toBe(true)
+})
+
+test('unfiltered hosted list has no duplicate rows for a shared space', async () => {
+  const { gamma, eta } = await createSharedSpaceTasks()
+  const unfiltered = await recordList({})
+  expect(unfiltered.filter((task) => task.record_id === gamma.record_id)).toHaveLength(1)
+  expect(unfiltered.filter((task) => task.record_id === eta.record_id)).toHaveLength(1)
 })
 
 const hosted = () => ({ baseUrl: 'https://hub.example.test', token: 'test', fetch: recordFetch })
@@ -413,7 +448,7 @@ function dbTaskCount(): number {
   return db().query<{ count: number }, []>('SELECT count(*) count FROM task').get()!.count
 }
 
-async function recordShow(key: string, scope: { project: string }) {
+async function recordShow(key: string, scope: { project?: string }) {
   const nodeEnv = process.env.NODE_ENV
   delete process.env.NODE_ENV
   try {
