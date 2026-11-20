@@ -23,11 +23,21 @@ function buildEnvironment(
   return { ...files, ...processValues }
 }
 
+export function envFileReadErrorDecision(code: string | undefined): 'absent' | 'refuse' {
+  return code === 'ENOENT' || code === 'EPERM' || code === 'EACCES' ? 'absent' : 'refuse'
+}
+
 function readEnvFile(path: string): string | undefined {
   try {
     return readFileSync(path, 'utf8')
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined
+    const code = (error as NodeJS.ErrnoException).code
+    if (envFileReadErrorDecision(code) === 'absent') {
+      if (code === 'EPERM' || code === 'EACCES') {
+        console.error(`environment file ${path} was skipped: access denied`)
+      }
+      return undefined
+    }
     const detail = error instanceof Error ? error.message : String(error)
     throw new Error(`cannot read environment file ${path}: ${detail}`)
   }

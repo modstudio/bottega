@@ -194,6 +194,90 @@ async function launchCommand(
   }
 }
 
+async function launchWorkflowNetworkProbe(
+  profile: ReturnType<typeof probeSandboxProfile>,
+  environment: Record<string, string>,
+  scratchDir: string,
+): Promise<Record<string, CommandProbe>> {
+  const script = String.raw`
+const server = Bun.serve({
+  hostname: '127.0.0.1',
+  port: 0,
+  async fetch(request) {
+    return new Response(await request.text())
+  },
+})
+try {
+  const response = await fetch(server.url, { method: 'POST', body: 'probe' })
+  if ((await response.text()) !== 'probe') throw new Error('loopback byte exchange failed')
+} finally {
+  await server.stop(true)
+}
+console.log('loopback listen+connect=ran')
+try {
+  const response = await fetch('http://192.0.2.1/', { signal: AbortSignal.timeout(500) })
+  throw new Error('non-loopback outbound unexpectedly connected with status ' + response.status)
+} catch (error) {
+  if (error instanceof Error && error.message.startsWith('non-loopback outbound unexpectedly')) {
+    throw error
+  }
+}
+console.log('non-loopback outbound=ran')
+`
+  const result = await startBounded(
+    await sandboxLaunchArgv(profile, process.execPath, ['-e', script], scratchDir, environment),
+    { budget: 'sandbox-probe', env: { ...process.env, ...environment } },
+  )
+  const output = result.stdout.split(/\r?\n/)
+  const reason =
+    result.exitCode === 0
+      ? 'loopback exchange succeeded and non-loopback connection was denied'
+      : `exit ${result.exitCode ?? 'unknown'}: ${stderrTail(result.stderr)}`
+  return {
+    'loopback listen+connect': {
+      status: output.includes('loopback listen+connect=ran') ? 'ran' : 'failed',
+      reason,
+    },
+    'non-loopback outbound': {
+      status: output.includes('non-loopback outbound=ran') ? 'ran' : 'failed',
+      reason,
+    },
+  }
+}
+
+async function launchDeniedEnvCliProbe(
+  profile: ReturnType<typeof probeSandboxProfile>,
+  commandArgv: string[],
+  environment: Record<string, string>,
+  scratchDir: string,
+  envFile: string,
+): Promise<CommandProbe> {
+  const result = await startBounded(
+    await sandboxLaunchArgv(
+      profile,
+      commandArgv[0]!,
+      commandArgv.slice(1),
+      scratchDir,
+      environment,
+    ),
+    {
+      budget: 'sandbox-probe',
+      env: { ...process.env, ...environment },
+    },
+  )
+  const expected = `environment file ${envFile} was skipped: access denied`
+  const skipped = result.stderr.split(/\r?\n/).includes(expected)
+  return {
+    status: result.exitCode === 0 && skipped ? 'ran' : 'failed',
+    reason:
+      result.exitCode !== 0
+        ? `exit ${result.exitCode ?? 'unknown'}: ${firstErrorLine(result.stderr)}`
+        : skipped
+          ? `exit 0; ${expected}`
+          : `exit 0 without expected stderr: ${expected}`,
+  }
+}
+
 function afterLaunchFixture(
   profile: ReturnType<typeof readonlyLensProfile>,
   targets: readonly AccessTarget[],
@@ -306,6 +390,54 @@ async function launchProbe(
       family,
       status: 'failed',
       paths: {},
+      reason: error instanceof Error ? error.message : String(error),
+    }
+  } finally {
+    await resetSandbox()
+  }
+}
+
+async function launchWorkflowProbe(
+  profile: ReturnType<typeof probeSandboxProfile>,
+  targets: readonly AccessTarget[],
+  commandArgv: string[],
+  environment: Record<string, string>,
+  scratchDir: string,
+  hubOpenMode: string,
+  commandLabel: string,
+  deniedEnvFile: string,
+): Promise<ConfinementFilesystemProbeRow> {
+  const row = await launchProbe(
+    'workflow probe',
+    profile,
+    targets,
+    commandArgv,
+    environment,
+    scratchDir,
+    hubOpenMode,
+    commandLabel,
+  )
+  try {
+    const network = await launchWorkflowNetworkProbe(profile, environment, scratchDir)
+    const deniedEnv = await launchDeniedEnvCliProbe(
+      profile,
+      commandArgv,
+      environment,
+      scratchDir,
+      deniedEnvFile,
+    )
+    const commands = { ...row.commands, ...network, 'denied env file skipped': deniedEnv }
+    const commandFailed = Object.values(commands).some(({ status }) => status === 'failed')
+    return {
+      ...row,
+      status: commandFailed ? 'failed' : row.status === 'denied' ? 'ran' : row.status,
+      commands,
+      reason: commandFailed ? 'one or more workflow probe commands failed' : row.reason,
+    }
+  } catch (error) {
+    return {
+      ...row,
+      status: 'failed',
       reason: error instanceof Error ? error.message : String(error),
     }
   } finally {
@@ -489,6 +621,8 @@ function probeWorkerEnvironment(environment: Record<string, string>): Record<str
     stateEnvironment: environment,
     includeStore: true,
   })
+  delete child[HARNESS_ENV_FILE_ENV]
+  delete child[PLATFORM_ENV_FILE_ENV]
   child.BOTTEGA_ORCHESTRATOR_DB = resolveOrchestratorDatabase(environment)
   return child
 }
@@ -577,6 +711,21 @@ function createProbeTaskFixture(
   return { own, task }
 }
 
+function probeFixtureEnvironment(root: string, stateRoot: string, hubDatabase: string) {
+  const environment: Record<string, string> = {
+    ...process.env,
+    HOME: join(root, 'home'),
+    [STATE_HOME_ENV]: stateRoot,
+    BOTTEGA_HUB_DB: hubDatabase,
+  }
+  delete environment[HARNESS_ENV_FILE_ENV]
+  delete environment[PLATFORM_ENV_FILE_ENV]
+  const harnessEnvFile = join(environment.HOME!, '.claude', '.env')
+  mkdirSync(dirname(harnessEnvFile), { recursive: true })
+  writeFileSync(harnessEnvFile, 'PLANTED_HARNESS_SECRET=fixture\n')
+  return { environment, harnessEnvFile }
+}
+
 function createProbeFixture(root: string) {
   const ownPath = join(root, 'projects', 'own')
   const worktree = join(ownPath, '.claude', 'worktrees', 'own')
@@ -586,14 +735,7 @@ function createProbeFixture(root: string) {
   const runningInstall = resolveRunningInstallLayout(process.env)
   const fixtureInstall = installFixture(join(root, 'projects', 'install'), runningInstall)
   const hubDatabase = join(stateRoot, 'hub', 'hub.db')
-  const environment = {
-    ...process.env,
-    HOME: join(root, 'home'),
-    [STATE_HOME_ENV]: stateRoot,
-    BOTTEGA_HUB_DB: hubDatabase,
-    [HARNESS_ENV_FILE_ENV]: '',
-    [PLATFORM_ENV_FILE_ENV]: '',
-  } as Record<string, string>
+  const { environment, harnessEnvFile } = probeFixtureEnvironment(root, stateRoot, hubDatabase)
   const state = resolveStatePaths(environment)
   const runtimeDir = join(state.orchestratorRuns, 'sandbox-probe')
   const scratchDir = join(state.orchestratorRuns, 'probe', 'scratch')
@@ -649,6 +791,7 @@ function createProbeFixture(root: string) {
     cliArgv,
     commandArgv: [...cliArgv, 'task', 'show', probeTask.key],
     commandLabel,
+    harnessEnvFile,
     fixtureInstall,
     environment: probeWorkerEnvironment(environment),
     common: {
@@ -705,8 +848,7 @@ export async function runConfinementFilesystemProbes(): Promise<ConfinementFiles
         common.scratchDir,
         fixture.environment,
       ),
-      await launch(
-        'workflow probe',
+      await launchWorkflowProbe(
         probeSandboxProfile({
           allowWriteDir: common.scratchDir,
           cwd: common.worktree,
@@ -715,6 +857,13 @@ export async function runConfinementFilesystemProbes(): Promise<ConfinementFiles
           environment: common.environment,
           socketDenyPaths: common.socketDenyPaths,
         }),
+        fixture.targets,
+        fixture.commandArgv,
+        fixture.environment,
+        common.scratchDir,
+        fixture.hubOpenMode,
+        fixture.commandLabel,
+        fixture.harnessEnvFile,
       ),
       await launchCrossProjectCliProbe(
         readonlyLensProfile({ ...common, agent: 'grok' }),

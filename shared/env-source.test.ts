@@ -5,6 +5,15 @@ import { join } from 'node:path'
 import { PLATFORM_SLUG } from './brand.ts'
 import { CONFIG_HOME_ENV, HARNESS_ENV_FILE_ENV } from './config-directory.ts'
 import { readEnvValues } from './env-source.ts'
+import { envFileReadErrorDecision } from './env-values.ts'
+
+test('permission-denied env files are absent while other read failures refuse', () => {
+  expect(envFileReadErrorDecision('EPERM')).toBe('absent')
+  expect(envFileReadErrorDecision('EACCES')).toBe('absent')
+  expect(envFileReadErrorDecision('ENOENT')).toBe('absent')
+  expect(envFileReadErrorDecision('EISDIR')).toBe('refuse')
+  expect(envFileReadErrorDecision(undefined)).toBe('refuse')
+})
 
 test('process and platform env sources take precedence in that order', () => {
   const root = mkdtempSync(join(tmpdir(), 'env-source-precedence-'))

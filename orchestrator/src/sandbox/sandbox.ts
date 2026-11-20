@@ -448,7 +448,7 @@ export function writerProfile(input: {
   }
 }
 
-/** Write-deny everywhere except a throwaway directory; no network; protected secrets denied. */
+/** Write-deny everywhere except a throwaway directory; loopback only; protected secrets denied. */
 export function probeSandboxProfile(input: {
   allowWriteDir: string
   cwd: string
@@ -492,10 +492,10 @@ export function probeSandboxProfile(input: {
   })
   return {
     network: {
-      allowedDomains: [],
+      allowedDomains: [...LOOPBACK_DOMAINS],
       deniedDomains: [],
       allowUnixSockets: [],
-      allowLocalBinding: false,
+      allowLocalBinding: READONLY_LENS_ALLOW_LOCAL_BINDING,
     },
     filesystem: {
       ...readProfile,

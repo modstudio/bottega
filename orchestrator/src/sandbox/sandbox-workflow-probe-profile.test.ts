@@ -38,4 +38,8 @@ test('the shared probe profile denies areas and protected secrets', () => {
   expect(profile.filesystem.denyRead).toContain('/override/orchestrator/runs')
   expect(profile.filesystem.allowWithinDeny).not.toContain(store)
   expect(profile.filesystem.denyRead).toContain(secret)
+  expect(profile.network.allowedDomains).toEqual(['localhost', '127.0.0.1', '[::1]'])
+  expect(profile.network.allowLocalBinding).toBe(true)
+  expect(profile.network.deniedDomains).toEqual([])
+  expect(profile.network.allowUnixSockets).toEqual([])
 })

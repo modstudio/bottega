@@ -169,7 +169,7 @@ su -s /bin/sh smoke -c '
   printf "%s\\n" "$confinement_output" | grep -F "filesystem-probe  goose" | grep -F "${PLATFORM_SLUG} task show <probe task>=ran"
   printf "%s\\n" "$confinement_output" | grep -F "filesystem-probe  grok" | grep -F "${PLATFORM_SLUG} task show <probe task>=ran"
   printf "%s\\n" "$confinement_output" | grep -F "filesystem-probe  ACP writer" | grep -F "${PLATFORM_SLUG} task show <probe task>=ran"
-  printf "%s\\n" "$confinement_output" | grep -F "filesystem-probe  workflow probe" | grep -F "${PLATFORM_SLUG} task show <probe task>=ran"
+  printf "%s\\n" "$confinement_output" | grep -F "filesystem-probe  workflow probe  ran" | grep -F "${PLATFORM_SLUG} task show <probe task>=ran" | grep -F "loopback listen+connect=ran" | grep -F "non-loopback outbound=ran" | grep -F "denied env file skipped=ran"
   printf "%s\\n" "$confinement_output" | grep -F "filesystem-probe  cross-project CLI" | grep -F "${PLATFORM_SLUG} task show <probe task>=ran"
   ${installedBinary} workflow import --cwd /tmp/probe-repository --reason "DEV-2421 release smoke workflow"
   ${installedBinary} workflow promote-tree --cwd /tmp/probe-repository --reason "DEV-2421 release smoke workflow"
