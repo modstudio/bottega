@@ -25,6 +25,7 @@ export function areaReadPolicy(input: {
   const scratchDir = input.scratchDir ? resolve(input.scratchDir) : null
   const ownMain = input.project ? resolve(input.project.path) : null
   const state = resolveStatePaths(input.environment)
+  const hubDatabase = resolveHubDatabase(input.environment)
   const checkoutParents = input.registeredProjects.map((project) => dirname(resolve(project.path)))
   const siblingCheckouts = input.registeredProjects
     .filter((project) => !input.project || project.recordId !== input.project.recordId)
@@ -37,7 +38,9 @@ export function areaReadPolicy(input: {
         runtimeDir,
         runHarnessStateDir(runtimeDir),
         ...(scratchDir ? [dirname(scratchDir), scratchDir] : []),
-        resolveHubDatabase(input.environment),
+        hubDatabase,
+        `${hubDatabase}-wal`,
+        `${hubDatabase}-shm`,
         ...(ownMain ? [ownMain, join(ownMain, '.git')] : []),
       ]),
     ],

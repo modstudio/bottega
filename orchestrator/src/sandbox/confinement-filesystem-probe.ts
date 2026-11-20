@@ -7,14 +7,53 @@ import { startBounded } from '../../../shared/bounded-process.ts'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { resolveStatePaths, STATE_HOME_ENV } from '../../../shared/state-directory.ts'
 import type { Project } from '../project/projects.ts'
+import {
+  runningBottegaEntryArgv,
+  runningInstallRootForSandbox,
+} from './install-read-policy.ts'
 import { readonlyLensProfile, resetSandbox, sandboxLaunchArgv, writerProfile } from './sandbox.ts'
 
 type FilesystemProbeAccess = 'denied' | 'readable' | 'not covered'
 export type ConfinementFilesystemProbeRow = {
-  family: 'goose' | 'grok' | 'ACP writer' | 'Codex' | 'read-only MCP' | 'host override'
+  family:
+    | 'goose'
+    | 'grok'
+    | 'ACP writer'
+    | 'cross-project CLI'
+    | 'Codex'
+    | 'read-only MCP'
+    | 'host override'
   status: FilesystemProbeAccess
   paths: Record<string, FilesystemProbeAccess>
   reason?: string
+}
+
+async function launchCrossProjectCliProbe(
+  profile: ReturnType<typeof readonlyLensProfile>,
+): Promise<ConfinementFilesystemProbeRow> {
+  try {
+    const [bin, ...argv] = runningBottegaEntryArgv()
+    await startBounded(await sandboxLaunchArgv(profile, bin!, [...argv, '--version']), {
+      budget: 'sandbox-probe',
+    })
+    return {
+      family: 'cross-project CLI',
+      status: 'readable',
+      paths: { [`${PLATFORM_SLUG} --version`]: 'readable', 'install .env': 'not covered' },
+      reason:
+        'real running install used; its CLI was executed, but no .env was planted in that checkout',
+    }
+  } catch {
+    return {
+      family: 'cross-project CLI',
+      status: 'denied',
+      paths: { [`${PLATFORM_SLUG} --version`]: 'denied', 'install .env': 'not covered' },
+      reason:
+        'real running install used; its CLI failed, and no .env was planted in that checkout',
+    }
+  } finally {
+    await resetSandbox()
+  }
 }
 
 const NOT_COVERED: ConfinementFilesystemProbeRow[] = [
@@ -94,7 +133,12 @@ export async function runConfinementFilesystemProbes(): Promise<ConfinementFiles
     const scratchDir = join(state.orchestratorRuns, 'probe', 'scratch')
     const own = fixtureProject('own', 'own', ownPath, ['declared.secret'])
     const sibling = fixtureProject('sibling', 'sibling', siblingPath)
-    const registeredProjects = [own, sibling]
+    const install = fixtureProject(
+      'running-install',
+      PLATFORM_SLUG,
+      runningInstallRootForSandbox(environment),
+    )
+    const registeredProjects = [own, sibling, install]
     const planted = {
       'sibling .env': join(siblingPath, '.env'),
       'sibling .mcp.json': join(siblingPath, '.mcp.json'),
@@ -131,6 +175,7 @@ export async function runConfinementFilesystemProbes(): Promise<ConfinementFiles
         writerProfile({ ...common, agent: 'grok', askAddress: '127.0.0.1:1' }),
         targets,
       ),
+      await launchCrossProjectCliProbe(readonlyLensProfile({ ...common, agent: 'grok' })),
       ...NOT_COVERED,
     ]
   } finally {

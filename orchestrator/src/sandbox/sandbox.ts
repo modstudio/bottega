@@ -24,7 +24,6 @@ import type { SandboxRuntimeConfig as LibrarySandboxRuntimeConfig } from '@anthr
 import { PLATFORM_SLUG, WORKER_MCP_SERVER_NAME } from '../../../shared/brand.ts'
 import { type ConfigEnvironment, resolveEnvFilePaths } from '../../../shared/config-directory.ts'
 import { fileBackedSecretPaths } from '../../../shared/file-backed-secret-paths.ts'
-import { runningInstallRoot } from '../../../shared/install-root.ts'
 import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 import {
   ensureHubLoginTokenDirectory,
@@ -37,6 +36,7 @@ import { type Project, projectAt, projects } from '../project/projects.ts'
 import { mainStackGateAddresses } from '../resources/main-stack-network.ts'
 import { runHarnessStateDir, runWorkerHomeDir } from '../run-owned-paths.ts'
 import { areaReadPolicy } from './area-read-policy.ts'
+import { runningInstallReadCarveouts } from './install-read-policy.ts'
 import { launchWithSandboxRuntime, resetSandboxRuntime } from './sandbox-runtime.ts'
 import { decideWeakerNetworkIsolation, endpointHost } from './weaker-network-isolation.ts'
 
@@ -313,7 +313,7 @@ export function readonlyLensProfile(input: {
       ...(input.nodeModuleLinks ?? linkedNodeModules(input.worktree)).map((path) => resolve(path)),
       join(homedir(), '.claude.json'),
       process.execPath,
-      join(runningInstallRoot(import.meta.dir, environment), 'orchestrator'),
+      ...runningInstallReadCarveouts(environment),
     ]),
   ]
   // SRT reads are allow-by-default. This list only carves paths back out of

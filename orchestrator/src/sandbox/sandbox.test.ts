@@ -55,6 +55,7 @@ import {
   withoutRegisteredOrchAskServer,
   writerProfile,
 } from './sandbox.ts'
+import { runningInstallReadCarveouts } from './install-read-policy.ts'
 
 const fixtureProject = (settings: Project['settings'] = {}): Project => ({
   recordId: '01990000-0000-7000-8000-000000001214',
@@ -590,6 +591,8 @@ describe('readonly-lens sandbox profile', () => {
       '/runs/evidence',
       '/runs/evidence/harness',
       resolveHubDatabase(environment),
+      `${resolveHubDatabase(environment)}-wal`,
+      `${resolveHubDatabase(environment)}-shm`,
       '/projects/fixture',
       '/projects/fixture/.git',
       '/opt/toolchain/bin',
@@ -597,7 +600,7 @@ describe('readonly-lens sandbox profile', () => {
       '/projects/fixture/node_modules',
       join(homedir(), '.claude.json'),
       process.execPath,
-      ROOT,
+      ...runningInstallReadCarveouts(environment),
     ])
     expect(profile.filesystem.allowWrite).toEqual(['/runs/tree', '/runs/evidence'])
     expect(profile.filesystem.denyWrite).toEqual(['/tmp/claude', '/private/tmp/claude'])
@@ -650,6 +653,8 @@ describe('readonly-lens sandbox profile', () => {
       join(state, 'orchestrator/runs/sandbox-run'),
       join(state, 'orchestrator/runs/sandbox-run/harness'),
       resolveHubDatabase(environment),
+      `${resolveHubDatabase(environment)}-wal`,
+      `${resolveHubDatabase(environment)}-shm`,
       '/projects/fixture',
       '/projects/fixture/.git',
     ]) {
