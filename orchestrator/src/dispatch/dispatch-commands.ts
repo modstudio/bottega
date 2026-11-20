@@ -256,7 +256,8 @@ async function keyedRunCursorWarningForDispatch(input: {
 function cursorOption(value: string | undefined): number | undefined {
   if (value === undefined) return undefined
   const cursor = Number(value)
-  if (!Number.isInteger(cursor) || cursor < 1) throw new Error('--cursor must be a positive integer')
+  if (!Number.isInteger(cursor) || cursor < 1)
+    throw new Error('--cursor must be a positive integer')
   return cursor
 }
 
@@ -275,6 +276,16 @@ async function cursorWarningFor(
     cursor: cursorOption(flags.flag('cursor')),
     adapter: presentation.harnessCursorAdapter,
   })
+}
+
+async function cursorForDispatch(
+  flags: DispatchFlags,
+  presentation: DispatchPresentation,
+  binding: { cursorRecordId: string; stepSlug: string } | undefined,
+  project: string | null,
+) {
+  const admission = await cursorWarningFor(flags, presentation, binding, project)
+  return { warning: admission.warning, binding: binding ?? admission.binding }
 }
 
 type SpecWarningInput = {
@@ -775,13 +786,7 @@ export async function dispatchCommand(
   reportCallerCheckoutNotice(notice, porcelain, error)
   const dispatchProject = assertDispatchableProject(explicitRepo, callerCwd, Boolean(requestedCwd))
   const dispatchProjectName = dispatchProject?.name ?? null
-  const cursorAdmission = await cursorWarningFor(
-    flags,
-    presentation,
-    binding,
-    dispatchProjectName,
-  )
-  const effectiveBinding = binding ?? cursorAdmission.binding
+  const cursor = await cursorForDispatch(flags, presentation, binding, dispatchProjectName)
   // Check project-required inputs before reading the prompt so a missing key does not pay for stdin.
   const { base, reviewRef, resolvedReviewTarget, seed } = prepareDispatchTarget({
     flags,
@@ -882,7 +887,7 @@ export async function dispatchCommand(
   const detachByDefault = !has('follow')
   if (has('detach') || detachByDefault) {
     const id = await detach(jobName, prompt, false, {
-      ...{ agent, agentExplicit, binding: effectiveBinding },
+      ...{ agent, agentExplicit, binding: cursor.binding },
       schema,
       label: flag('label'),
       lens,
@@ -911,7 +916,7 @@ export async function dispatchCommand(
       resolvedTaskBranch,
       lensInputs,
     })
-    recordDispatchWarnings(id, [taskKeyWarning, cursorAdmission.warning], recordRunWarning)
+    recordDispatchWarnings(id, [taskKeyWarning, cursor.warning], recordRunWarning)
     presentation.detachedResult(id, json)
     if (!has('quiet') && !porcelain) {
       error(detachedRunCollectRemedy(id, presentation.runNumber))
@@ -945,7 +950,7 @@ export async function dispatchCommand(
    * genuinely stuck run still returns control rather than hanging for ever.
    */
   const id = await detach(jobName, prompt, true, {
-    ...{ agent, agentExplicit, schema, lens, binding: effectiveBinding },
+    ...{ agent, agentExplicit, schema, lens, binding: cursor.binding },
     reviewRole,
     label: flag('label'),
     mcp: resolved.mcp,
@@ -971,6 +976,6 @@ export async function dispatchCommand(
     resolvedTaskBranch,
     lensInputs,
   })
-  recordDispatchWarnings(id, [taskKeyWarning, cursorAdmission.warning], recordRunWarning)
+  recordDispatchWarnings(id, [taskKeyWarning, cursor.warning], recordRunWarning)
   await follow(id, has('quiet'))
 }

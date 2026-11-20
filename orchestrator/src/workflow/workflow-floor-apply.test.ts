@@ -199,6 +199,46 @@ test('plan-task start refuses zero dispatches without creating review debt', asy
   expect(reviewOwedCalls).toBe(0)
 })
 
+test.each([
+  [true, 'allow'],
+  [false, 'refuse'],
+] as const)(
+  'review-lenses no-lens-owed=%s decides the zero-run waiver',
+  async (noLensOwed, action) => {
+    const result = await applyFloorDecision(
+      {
+        id: 2,
+        record_id: newRecordId(),
+        project: 'fixture',
+        workflow_slug: 'fix-defect',
+        mode_slug: 'default',
+        workflow_key: 'DEV-1',
+        task_record_id: null,
+        args: '{"key":"DEV-1","branch":"DEV-1-fix"}',
+        session_id: 'session-a',
+        created_at: '2026-11-19T00:00:00.000Z',
+        ordinal: 0,
+        step_slug: 'review-lenses',
+        state: 'running',
+        closed: '[]',
+        enforcement: 'floors',
+      },
+      [floor('review-owed')],
+      {
+        slug: 'review-lenses',
+        jobs: ['review-lens'],
+        dispatch: 'required',
+        dispatchWaivedBy: ['no-lens-owed'],
+      },
+      {},
+      { reviewOwed: () => ({ action: 'allow', noLensOwed }) },
+      false,
+      floorDatabase(),
+    )
+    expect(result.action).toBe(action)
+  },
+)
+
 test('a foreign keyed advance keeps the recorded taken-over claim behavior', async () => {
   const d = database()
   await composeWorkflowWithCursor('flow', 'fixture', 'default', args, context, d, {}, {})

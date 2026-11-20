@@ -8,8 +8,8 @@ import { cursorName, workflowCursorTakeoverRemedy } from './workflow-cursor-form
 import type { SelectableCursorRow, WorkflowCursorContext } from './workflow-cursor-selection.ts'
 import { currentStepActivatedAt, reentryBoundFloorInput } from './workflow-cursor-trail.ts'
 import { foreignCursorOwner } from './workflow-cursor-transition.ts'
-import { descendantTaskFacts, selectEpicStartFloors } from './workflow-epic-floor.ts'
 import { gatherNoAcceptedFindingsFact } from './workflow-dispatch-waiver-evidence.ts'
+import { descendantTaskFacts, selectEpicStartFloors } from './workflow-epic-floor.ts'
 import type { WorkflowEvidenceInput } from './workflow-evidence-input.ts'
 import {
   decideFloorSatisfaction,
@@ -21,8 +21,10 @@ import type { FloorEvidencePorts } from './workflow-floor-evidence.ts'
 import { gatherValidatedEvidence } from './workflow-floor-evidence-gather.ts'
 import { invokeFloorEvidencePort } from './workflow-floor-evidence-replay.ts'
 import { openWorkflowObligations } from './workflow-obligation-floor.ts'
-import { gatherWorkflowRunChains } from './workflow-run-obligation-evidence.ts'
-import type { DispatchWaiverFact } from './workflow-run-obligation.ts'
+import {
+  type DispatchWaiverFact,
+  gatherWorkflowRunChains,
+} from './workflow-run-obligation-evidence.ts'
 
 type StepRunObligation = {
   slug: string
@@ -105,10 +107,7 @@ export async function applyFloorDecision(
     if (checksReviewOwed && reviewOwed.action === 'refuse') return reviewOwed
     if (reviewOwed.noLensOwed) metDispatchWaiverFacts.push('no-lens-owed')
   }
-  if (
-    row.enforcement === 'floors' &&
-    step.dispatchWaivedBy?.includes('no-accepted-findings')
-  )
+  if (row.enforcement === 'floors' && step.dispatchWaivedBy?.includes('no-accepted-findings'))
     metDispatchWaiverFacts.push(...gatherNoAcceptedFindingsFact(row.project, args, database))
   const validated = await gatherValidatedEvidence({
     cursorId: row.record_id,

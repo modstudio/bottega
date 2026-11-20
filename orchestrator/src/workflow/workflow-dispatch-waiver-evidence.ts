@@ -6,9 +6,9 @@ import { existsSync } from 'node:fs'
 import { projectByName } from '../project/projects.ts'
 import { continuationRoundHasAcceptedFindings } from '../review/review-continuation-findings.ts'
 import { measureChangeGroup } from '../review/review-group.ts'
-import type { DispatchWaiverFact } from './workflow-run-obligation.ts'
 import { gitText } from './workflow-floor-evidence-checkout.ts'
 import { decideReviewOwedCheckout } from './workflow-review-owed-checkout.ts'
+import type { DispatchWaiverFact } from './workflow-run-obligation.ts'
 
 export function gatherNoAcceptedFindingsFact(
   projectName: string,

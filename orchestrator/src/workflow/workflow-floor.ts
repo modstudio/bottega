@@ -20,10 +20,10 @@ import {
   type PassingGateForTree,
 } from './workflow-floor-refusal.ts'
 import {
+  type DispatchWaiverFact,
   dispatchObligationRefusal,
   judgingObligationRefusal,
   type WorkflowRunChainEvidence,
-  type DispatchWaiverFact,
 } from './workflow-run-obligation.ts'
 
 type TrackerStateCategory = 'backlog' | 'open' | 'active' | 'review' | 'done' | 'dropped'

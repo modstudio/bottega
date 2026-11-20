@@ -14,7 +14,7 @@ type KeyedRunCursor = {
   stepSlug: string
 }
 
-export type KeyedRunCursorBinding = { cursorRecordId: string; stepSlug: string }
+type KeyedRunCursorBinding = { cursorRecordId: string; stepSlug: string }
 
 export type KeyedRunCursorAdmissionInput = {
   turn: KeyedRunTurn
@@ -54,6 +54,48 @@ const laterTurnRemedy = (
 ): string =>
   composeRemedy(input.project, input.key!) +
   (canOverride(input.turn) ? `; override with ${OVERRIDE_REMEDY}` : '')
+
+function decideMatchingCursor(
+  input: KeyedRunCursorAdmissionInput,
+  matching: readonly KeyedRunCursor[],
+): KeyedRunCursorAdmission {
+  if (input.cursor === undefined && matching.length > 1) {
+    return {
+      kind: 'refuse',
+      message: renderRefusal(
+        refusal(
+          `refusing keyed run turn because harness session ${input.harnessSession} holds more than one open workflow cursor for project ${input.project} and task ${input.key}`,
+          {
+            kind: 'edit',
+            text: `rerun with --cursor <number> naming one of: ${matching.map(({ number }) => number).join(', ')}`,
+          },
+        ),
+      ),
+    }
+  }
+  const admitted =
+    input.cursor === undefined
+      ? matching[0]
+      : matching.find(({ number }) => number === input.cursor)
+  if (!admitted) {
+    return {
+      kind: 'refuse',
+      message: renderRefusal(
+        refusal(
+          `refusing keyed run turn because cursor ${input.cursor} is not an open workflow cursor held by harness session ${input.harnessSession} for project ${input.project} and task ${input.key}`,
+          {
+            kind: 'edit',
+            text: `rerun with --cursor <number> naming one of: ${matching.map(({ number }) => number).join(', ')}`,
+          },
+        ),
+      ),
+    }
+  }
+  return {
+    kind: 'allow',
+    binding: { cursorRecordId: admitted.recordId, stepSlug: admitted.stepSlug },
+  }
+}
 
 /** Apply cursor ownership and operator-override policy without reaching process or storage. */
 export function decideKeyedRunCursorAdmission(
@@ -120,36 +162,7 @@ export function decideKeyedRunCursorAdmission(
   const matching = input.heldCursors.filter(
     (cursor) => cursor.project === input.project && cursor.workflowKey === input.key,
   )
-  if (matching.length) {
-    if (input.cursor === undefined && matching.length > 1) {
-      return {
-        kind: 'refuse',
-        message: renderRefusal(
-          refusal(
-            `refusing keyed run turn because harness session ${input.harnessSession} holds more than one open workflow cursor for project ${input.project} and task ${input.key}`,
-            { kind: 'edit', text: `rerun with --cursor <number> naming one of: ${matching.map(({ number }) => number).join(', ')}` },
-          ),
-        ),
-      }
-    }
-    const admitted =
-      input.cursor === undefined ? matching[0] : matching.find(({ number }) => number === input.cursor)
-    if (!admitted) {
-      return {
-        kind: 'refuse',
-        message: renderRefusal(
-          refusal(
-            `refusing keyed run turn because cursor ${input.cursor} is not an open workflow cursor held by harness session ${input.harnessSession} for project ${input.project} and task ${input.key}`,
-            { kind: 'edit', text: `rerun with --cursor <number> naming one of: ${matching.map(({ number }) => number).join(', ')}` },
-          ),
-        ),
-      }
-    }
-    return {
-      kind: 'allow',
-      binding: { cursorRecordId: admitted.recordId, stepSlug: admitted.stepSlug },
-    }
-  }
+  if (matching.length) return decideMatchingCursor(input, matching)
 
   return {
     kind: 'refuse',

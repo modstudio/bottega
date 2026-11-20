@@ -28,10 +28,10 @@ import {
   workflowsAfterReplacement,
 } from './workflow-definition.ts'
 import { floorKinds, isFloorKind, mayCloseOnAgentSelfRuling } from './workflow-floor.ts'
-import { dispatchWaiverFacts } from './workflow-run-obligation.ts'
 import { workflowHostedSpace } from './workflow-hosted-space.ts'
 import { workflowReadSpaceFor } from './workflow-read-space.ts'
 import { checkWorkflowRendering, renderCheckRefusal } from './workflow-render-check.ts'
+import { dispatchWaiverFacts } from './workflow-run-obligation.ts'
 import { workflowPromotionReport } from './workflow-shared-promotion.ts'
 import {
   type CataloguePromotionPorts,

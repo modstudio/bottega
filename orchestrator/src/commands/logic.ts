@@ -102,9 +102,19 @@ const CONTINUE_USAGE = `${PLATFORM_SLUG} run continue <id> [--findings] [--follo
 const keyedCursorNumber = (value: string | undefined): number | undefined => {
   if (value === undefined) return undefined
   const cursor = Number(value)
-  if (!Number.isInteger(cursor) || cursor < 1) throw new Error('--cursor must be a positive integer')
+  if (!Number.isInteger(cursor) || cursor < 1)
+    throw new Error('--cursor must be a positive integer')
   return cursor
 }
+const keyedTurnOptions = (options: {
+  overrideUnbound?: string
+  fromOperator?: boolean
+  cursor?: string
+}) => ({
+  overrideReason: options.overrideUnbound,
+  fromOperator: Boolean(options.fromOperator),
+  cursor: keyedCursorNumber(options.cursor),
+})
 const displayRunNumber = (recordId: string): number =>
   (db().query('SELECT number FROM run WHERE record_id=?').get(recordId) as { number: number })
     .number
@@ -728,11 +738,7 @@ export function register(program: Command, dependencies: LogicDependencies = {})
       localRunId(id),
       { agent: options.agent, model: options.model, flags: runFlags(options) },
       presentation,
-      {
-        overrideReason: options.overrideUnbound,
-        fromOperator: Boolean(options.fromOperator),
-        cursor: keyedCursorNumber(options.cursor),
-      },
+      keyedTurnOptions(options),
     ),
   )
   answerCommandDefinition(program).action((id, _message, options, command) =>
@@ -753,10 +759,7 @@ export function register(program: Command, dependencies: LogicDependencies = {})
           message,
         ),
       dependencies.continueCommandDependencies,
-      {
-        overrideReason: options.overrideUnbound,
-        fromOperator: Boolean(options.fromOperator),
-      },
+      keyedTurnOptions(options),
     )
   })
   registerDoCommand(program)

@@ -1,10 +1,14 @@
 import { expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { newRecordId } from '../../../shared/record-id.ts'
+import { addRun } from '../../test/fixtures/store.ts'
+import { db } from '../database/db.ts'
 import {
   decideFloorSatisfaction,
   type Floor,
   type FloorSatisfactionInput,
 } from './workflow-floor.ts'
+import { gatherWorkflowRunChains } from './workflow-run-obligation-evidence.ts'
 
 const floor = (kind: Floor['kind']): Floor => ({
   kind,
@@ -73,6 +77,39 @@ test('a chain filtered out for another cursor or step does not count as the disp
       evidence: { ...closedTask, dispatchRuns: [] },
       workflowKey: 'DEV-1',
       step: dispatchStep,
+    }).action,
+  ).toBe('refuse')
+})
+
+test('a root that is ok while its latest turn runs refuses the bound step', () => {
+  const cursorRecordId = newRecordId()
+  const root = addRun({ agent: 'codex', job: 'implement', status: 'ok' })
+  const turn = addRun({
+    agent: 'codex',
+    job: 'implement',
+    status: 'running',
+    parent: root,
+    turn: 2,
+  })
+  db()
+    .query('UPDATE run SET cursor_record_id=?,step_slug=? WHERE record_id=?')
+    .run(cursorRecordId, 'apply-findings', turn)
+  const dispatchRuns = gatherWorkflowRunChains(
+    cursorRecordId,
+    ['implement'],
+    db(),
+    'apply-findings',
+  )
+
+  expect(dispatchRuns).toEqual([
+    expect.objectContaining({ job: 'implement', terminal: false, needsVerdict: false }),
+  ])
+  expect(
+    decide({
+      floors: [tracker],
+      evidence: { ...closedTask, dispatchRuns },
+      workflowKey: 'DEV-1',
+      step: { ...dispatchStep, slug: 'apply-findings' },
     }).action,
   ).toBe('refuse')
 })

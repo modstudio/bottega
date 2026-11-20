@@ -9,6 +9,7 @@ import { trackedTestResidue } from '../../test/residue.ts'
 import { ARGV_PROMPT_BYTES } from '../agent/agents.ts'
 import { packResumePrompt } from '../contract/contract.ts'
 import { db } from '../database/db.ts'
+import { admitKeyedTurn } from '../dispatch/keyed-run-cursor-admission-adapter.ts'
 import { git, gitOk } from '../git/git-environment.ts'
 import { upsertProject } from '../project/projects.ts'
 import { recordReview } from '../review/review-triage.ts'
@@ -283,6 +284,49 @@ describe('run continuation', () => {
       failure_kind: null,
       error: null,
     })
+  })
+
+  test('a keyed continuation binds its new turn to the held cursor current step', async () => {
+    const root = insert('ok')
+    const cursorRecordId = newRecordId()
+    const projectId = db()
+      .query<{ record_id: string }, []>(
+        "SELECT record_id FROM project WHERE name='continuation-fixture'",
+      )
+      .get()!.record_id
+    db()
+      .query(
+        "UPDATE run SET launch_key='DEV-2496',vendor_session='vendor-session' WHERE record_id=?",
+      )
+      .run(root)
+    db().exec('PRAGMA foreign_keys=OFF')
+    db()
+      .query(
+        `INSERT INTO workflow_cursor
+          (record_id,number,project,project_record_id,workflow_slug,mode_slug,workflow_key,instance_id,
+           session_id,workflow_version_record_id,catalogue_version_record_id,args,ordinal,step_slug,state,
+           closed,total_steps,created_at,updated_at,revision)
+         VALUES (?,77124,'continuation-fixture',?,'fix-defect','default','DEV-2496','',
+                 'orch-test-session',?,?,'{}',4,'apply-findings','running','[]',7,
+                 '2026-11-20','2026-11-20',1)`,
+      )
+      .run(cursorRecordId, projectId, newRecordId(), newRecordId())
+    db().exec('PRAGMA foreign_keys=ON')
+
+    const admission = await admitKeyedTurn({
+      runId: root,
+      turn: 'continue',
+      fromOperator: false,
+    })
+    const resumed = await continueRun(root, 'apply the accepted findings', limit, undefined, {
+      binding: admission.binding,
+    })
+
+    expect(
+      db()
+        .query('SELECT cursor_record_id,step_slug FROM run WHERE record_id=?')
+        .get(resumed.childId),
+    ).toEqual({ cursor_record_id: cursorRecordId, step_slug: 'apply-findings' })
   })
 
   test('continue --file refuses when a just-below-limit body plus the reminder exceeds argv', async () => {

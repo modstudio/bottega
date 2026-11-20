@@ -55,7 +55,6 @@ import { closeStaleChainQuestions, RUN_FOLLOW_TIMEOUT_MS, reapStale } from './ru
 import { continuationResumeKind } from './run-resume-kind.ts'
 import { packedResumePromptWithCarriedAttachments } from './run-resume-prompt.ts'
 import { type ContinuationInstruction, renderCheckpointContinuationPrompt } from './run-retry.ts'
-import type { RunWorkflowBinding } from './run-claim-inheritance.ts'
 import { type RenewTaskClaim, renewTaskClaimBestEffort } from './run-task-claim-renewal.ts'
 import { terminalSharedGitConfigForRecordedRun } from './shared-git-config-run.ts'
 
@@ -64,6 +63,11 @@ export type RunControlPresentation = {
   scoreHint(id: string, jobName: string, parent: string | null): string
   argvResumeLimit(agentName: string): number | undefined
   printRunId(id: string): void
+}
+
+type ContinueRunDependencies = {
+  renewTaskClaim?: RenewTaskClaim
+  binding?: { cursorRecordId: string; stepSlug: string }
 }
 
 export type HarnessHandoff = {
@@ -513,9 +517,11 @@ function continuationLaunch(
   treeDecision: ContinuationTreeDecision,
   writesRepo: boolean,
   project: Project | null,
-): ResumeLaunchOptions {
+  binding: ContinueRunDependencies['binding'],
+): ResumeLaunchOptions & { binding?: ContinueRunDependencies['binding'] } {
   return {
     ...inherited,
+    binding,
     lensInputs: continuationLensInputs(id),
     seed: requireContinuationProvision({
       rootId: id,
@@ -711,7 +717,7 @@ export async function continueRun(
   message: string | undefined,
   argvResumeLimit: RunControlPresentation['argvResumeLimit'],
   produceMessage?: () => string | undefined,
-  dependencies: { renewTaskClaim?: RenewTaskClaim; binding?: RunWorkflowBinding } = {},
+  dependencies: ContinueRunDependencies = {},
 ): Promise<{ childId: string; job: string }> {
   let authority = authorizeRunMutation(id, 'continue')
   const row = db()
@@ -819,6 +825,7 @@ export async function continueRun(
     treeDecision,
     Boolean(jobNeeds.writesRepo),
     project,
+    dependencies.binding,
   )
   const prompt = continuationPrompt(id, row.job, checkpoint, continuationMessage)
   await refuseOversizedResumePrompt({
@@ -832,7 +839,6 @@ export async function continueRun(
   // Stop preserves the artifact specifically so this transition can reopen it.
   authority = prepareContinuationAuthority(authority, id)
   const childId = await detach(row.job, prompt, {
-    binding: dependencies.binding,
     cwd: continuationTreeCwd(treeDecision, checkout.cwd, checkout.project?.path ?? null),
     repo: row.repo ?? undefined,
     ...launch,
