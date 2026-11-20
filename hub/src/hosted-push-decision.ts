@@ -1,5 +1,5 @@
 import { canonicalJson } from '../../shared/canonical-json.ts'
-import { recordDate } from '../../shared/record-timestamp.ts'
+import { later, nullableRecordIso, sameRecordInstant } from '../../shared/record-timestamp.ts'
 import { DELETED_ON_HOSTED_RECORD_REASON } from './hosted-delete.ts'
 import { mergeNoteAnchors } from './note-anchor-merge.ts'
 import type {
@@ -10,7 +10,7 @@ import type {
   PushedNoteAcknowledgement,
   PushedTask,
 } from './push-contract.ts'
-import { GUARDED_REVISION_FIELDS } from './push-contract.ts'
+import { GUARDED_REVISION_FIELDS, RECORD_TIMESTAMP_FIELDS } from './push-contract.ts'
 
 type GuardedStoredRow = object & { revision?: number; version?: string }
 
@@ -46,20 +46,6 @@ function storedRevision(
     : null
 }
 
-const TIMESTAMP_GUARD_FIELDS = new Set(['deleted_at', 'last_seen_at', 'stale_at', 'updated_at'])
-
-export function sameInstant(left: unknown, right: unknown): boolean {
-  const leftMillis = new Date(left as string | Date).getTime()
-  const rightMillis = new Date(right as string | Date).getTime()
-  return Number.isFinite(leftMillis) && Number.isFinite(rightMillis) && leftMillis === rightMillis
-}
-
-function guardValuesMatch(field: string, current: unknown, expected: unknown): boolean {
-  if (TIMESTAMP_GUARD_FIELDS.has(field) && current !== null && expected !== null)
-    return sameInstant(current, expected)
-  return canonicalJson(current) === canonicalJson(expected)
-}
-
 export function decidePushGuards(
   input: ParsedHostedPushChange,
   current: GuardedStoredRow | undefined,
@@ -80,7 +66,7 @@ export function decidePushGuards(
   }
   for (const [field, expected] of Object.entries(input.from ?? {})) {
     const currentValue = (current as Record<string, unknown> | undefined)?.[field] ?? null
-    if (current === undefined || !guardValuesMatch(field, currentValue, expected))
+    if (current === undefined || !same(field, currentValue, expected))
       return {
         kind: 'field-conflict',
         field,
@@ -108,19 +94,16 @@ type Decision<Row> =
       resolveParent?: { key: string | null; preferred: string | null }
     }
 
-const instant = (value: unknown) =>
-  value instanceof Date
-    ? value.toISOString()
-    : value === null || value === undefined
-      ? value
-      : recordDate(value).toISOString()
-const same = (left: unknown, right: unknown) =>
-  left instanceof Date || right instanceof Date ? instant(left) === instant(right) : left === right
-const later = (left: unknown, right: unknown) =>
-  recordDate(left).getTime() >= recordDate(right).getTime()
-    ? (instant(left) as string)
-    : (instant(right) as string)
-
+const scalar = (value: unknown) =>
+  value === null || (typeof value !== 'object' && typeof value !== 'function')
+const isRecordTimestampField = (field: string): field is (typeof RECORD_TIMESTAMP_FIELDS)[number] =>
+  RECORD_TIMESTAMP_FIELDS.includes(field as (typeof RECORD_TIMESTAMP_FIELDS)[number])
+const same = (field: string, left: unknown, right: unknown) => {
+  if (isRecordTimestampField(field)) return sameRecordInstant(left, right)
+  return scalar(left) && scalar(right)
+    ? left === right
+    : canonicalJson(left) === canonicalJson(right)
+}
 export function decideNoteUpsert(
   stored: PushedNote,
   incoming: PushedNote,
@@ -143,7 +126,7 @@ export function decideNoteUpsert(
     sightings: merged.sightings,
     last_seen_at: selected.has('last_seen_at')
       ? later(stored.last_seen_at, incoming.last_seen_at)
-      : (instant(stored.last_seen_at) as string),
+      : nullableRecordIso(stored.last_seen_at)!,
     stale_at:
       merged.appended > 0 ? null : selected.has('stale_at') ? incoming.stale_at : stored.stale_at,
     stale_reason:
@@ -154,10 +137,10 @@ export function decideNoteUpsert(
           : stored.stale_reason,
   }
   if (
-    same(values.anchors, stored.anchors) &&
+    same('anchors', values.anchors, stored.anchors) &&
     values.sightings === stored.sightings &&
-    same(values.last_seen_at, stored.last_seen_at) &&
-    same(values.stale_at, stored.stale_at) &&
+    same('last_seen_at', values.last_seen_at, stored.last_seen_at) &&
+    same('stale_at', values.stale_at, stored.stale_at) &&
     values.stale_reason === stored.stale_reason
   )
     return { kind: 'duplicate' }
@@ -170,11 +153,11 @@ export function decideNoteAcknowledgementUpsert(
 ): Decision<PushedNoteAcknowledgement> {
   const acknowledgedAt = stored
     ? later(stored.acknowledged_at, incoming.acknowledged_at)
-    : (instant(incoming.acknowledged_at) as string)
+    : nullableRecordIso(incoming.acknowledged_at)!
   if (
     stored &&
     !stored.deleted_at &&
-    same(stored.acknowledged_at, acknowledgedAt) &&
+    same('acknowledged_at', stored.acknowledged_at, acknowledgedAt) &&
     stored.sightings === incoming.sightings
   )
     return { kind: 'duplicate' }
@@ -215,9 +198,9 @@ export function decideTaskUpsert(
       'deleted_at',
     ]
     if (
-      compared.every((field) => same(stored[field], incoming[field])) &&
+      compared.every((field) => same(field, stored[field], incoming[field])) &&
       (!Object.hasOwn(incoming, 'retired_reason') ||
-        same(stored.retired_reason ?? null, incoming.retired_reason ?? null)) &&
+        same('retired_reason', stored.retired_reason ?? null, incoming.retired_reason ?? null)) &&
       stored.next_document_number >= incoming.next_document_number
     )
       return { kind: 'duplicate' }
@@ -225,7 +208,7 @@ export function decideTaskUpsert(
   }
   if (
     fields.every((field) =>
-      same(stored[field as keyof PushedTask], incoming[field as keyof PushedTask]),
+      same(field, stored[field as keyof PushedTask], incoming[field as keyof PushedTask]),
     )
   )
     return { kind: 'duplicate' }
@@ -268,13 +251,13 @@ export function decideDocumentUpsert(
       'updated_at',
       'deleted_at',
     ]
-    return compared.every((field) => same(stored[field], incoming[field]))
+    return compared.every((field) => same(field, stored[field], incoming[field]))
       ? { kind: 'duplicate' }
       : { kind: 'replace', row: incoming }
   }
   if (
     fields.every((field) =>
-      same(stored[field as keyof PushedDocument], incoming[field as keyof PushedDocument]),
+      same(field, stored[field as keyof PushedDocument], incoming[field as keyof PushedDocument]),
     )
   )
     return { kind: 'duplicate' }

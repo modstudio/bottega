@@ -1,5 +1,9 @@
 import parser from '@typescript-eslint/parser'
 import sonarjs from 'eslint-plugin-sonarjs'
+import {
+  RECORD_TIMESTAMP_COMPARISON_SELECTORS,
+  RECORD_TIMESTAMP_GUARD_SCOPE,
+} from './hub/src/record-timestamp-guard.ts'
 
 const importMetaUrlPathnameSelector = {
   selector:
@@ -79,6 +83,16 @@ export default [
           message:
             'record push modules throw OutboxRowError for row content (row-fatal) or RecordSyncWiringError for wiring invariants (pass-fatal); a bare Error fails the whole sync batch',
         },
+      ],
+    },
+  },
+  {
+    ...RECORD_TIMESTAMP_GUARD_SCOPE,
+    rules: {
+      'no-restricted-syntax': [
+        'error',
+        importMetaUrlPathnameSelector,
+        ...RECORD_TIMESTAMP_COMPARISON_SELECTORS,
       ],
     },
   },

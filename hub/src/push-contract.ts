@@ -208,6 +208,41 @@ export type PushedDocument = {
   deleted_at: string | null
 }
 
+type PushedRecordRow =
+  | PushedStatusEvent
+  | PushedInterval
+  | PushedDay
+  | PushedNote
+  | PushedNoteAcknowledgement
+  | PushedTask
+  | PushedComment
+  | PushedDocument
+type PushedRecordKey<Row> = Row extends Row ? keyof Row : never
+type RecordTimestampField =
+  | Extract<PushedRecordKey<PushedRecordRow>, `${string}_at`>
+  | 'at'
+  | 'first_seen'
+  | 'last_seen'
+const exactRecordTimestampFields = <const Fields extends readonly RecordTimestampField[]>(
+  fields: Exclude<RecordTimestampField, Fields[number]> extends never ? Fields : never,
+) => fields
+export const RECORD_TIMESTAMP_FIELDS = exactRecordTimestampFields([
+  'at',
+  'acknowledged_at',
+  'closed_at',
+  'collected_at',
+  'created_at',
+  'deleted_at',
+  'end_at',
+  'first_seen',
+  'last_seen',
+  'last_seen_at',
+  'opened_at',
+  'stale_at',
+  'start_at',
+  'updated_at',
+] as const)
+
 const HOSTED_COMMENT_UPDATE_COLUMNS = [
   'task_key',
   'task_id',

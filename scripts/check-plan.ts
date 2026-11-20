@@ -265,6 +265,7 @@ export const ROOT_TEST_FILES = [
   'scripts/command-descriptions.test.ts',
   'scripts/command-reference.test.ts',
   'scripts/check-cognitive-ceiling.test.ts',
+  'scripts/check-record-timestamp-comparison.test.ts',
   'scripts/check-harness-mirror.test.ts',
   'scripts/check-canon-drift.test.ts',
   'scripts/check-workflow-drift.test.ts',

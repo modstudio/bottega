@@ -243,6 +243,7 @@ const STATIC_CHECKS: readonly StaticCheckDeclaration[] = [
     category: 'cognitive-complexity',
     reportsRemaining: true,
   }),
+  script('scripts/check-record-timestamp-comparison.ts', run),
   {
     name: 'function length and naming ratchet',
     argv: ({ root, qualityBase }) => [
