@@ -38,10 +38,8 @@ export const confinementModules: ConfinementModule[] = [
   module('orchestrator/src/sandbox/install-read-policy.ts', [
     'node:fs',
     'node:path',
-    '../../../shared/brand.ts',
     '../../../shared/config-directory.ts',
     '../../../shared/install-root.ts',
-    '../../../shared/self-spawn.ts',
   ]),
   module('orchestrator/src/sandbox/sandbox.ts', [
     '../../../shared/brand.ts',
@@ -65,11 +63,14 @@ export const confinementModules: ConfinementModule[] = [
     './sandbox.ts',
   ]),
   module('orchestrator/src/sandbox/confinement-filesystem-probe.ts', [
+    'bun:sqlite',
     'node:fs',
     'node:os',
     'node:path',
     '../../../shared/brand.ts',
     '../../../shared/bounded-process.ts',
+    '../../../shared/config-directory.ts',
+    '../../../shared/self-spawn.ts',
     '../../../shared/state-directory.ts',
     '../project/projects.ts',
     './install-read-policy.ts',

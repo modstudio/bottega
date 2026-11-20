@@ -426,7 +426,7 @@ function registerConfinement(program: Command): void {
 
   confinement
     .command('report')
-    .description('report the sandbox inputs for eligible review agents')
+    .description('report sandbox inputs and execute real filesystem probes')
     .option('--agent <value>', 'include only this agent')
     .option('--job <value>', 'report a reading, writing, or named job')
     .option('--mcp [value]', 'filter by whether MCP access is enabled')

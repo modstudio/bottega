@@ -4,6 +4,7 @@ import { PLATFORM_SLUG } from './brand.ts'
 import {
   CONFIG_HOME_ENV,
   HARNESS_ENV_FILE_ENV,
+  PLATFORM_ENV_FILE_ENV,
   resolveConfigRoot,
   resolveEnvFilePaths,
 } from './config-directory.ts'
@@ -44,6 +45,16 @@ describe('config root resolution', () => {
         [HARNESS_ENV_FILE_ENV]: '',
       }),
     ).toEqual([join('/home/person', '.config', PLATFORM_SLUG, `${PLATFORM_SLUG}.env`)])
+  })
+
+  test('both env-file sources can be disabled explicitly', () => {
+    expect(
+      resolveEnvFilePaths({
+        HOME: '/home/person',
+        [HARNESS_ENV_FILE_ENV]: '',
+        [PLATFORM_ENV_FILE_ENV]: '',
+      }),
+    ).toEqual([])
   })
 
   test('env file paths are ordered from the default harness source to the platform source', () => {

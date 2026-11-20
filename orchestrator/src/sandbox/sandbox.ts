@@ -22,7 +22,12 @@ import { homedir } from 'node:os'
 import { basename, delimiter, dirname, isAbsolute, join, relative, resolve } from 'node:path'
 import type { SandboxRuntimeConfig as LibrarySandboxRuntimeConfig } from '@anthropic-ai/sandbox-runtime'
 import { PLATFORM_SLUG, WORKER_MCP_SERVER_NAME } from '../../../shared/brand.ts'
-import { type ConfigEnvironment, resolveEnvFilePaths } from '../../../shared/config-directory.ts'
+import {
+  type ConfigEnvironment,
+  HARNESS_ENV_FILE_ENV,
+  PLATFORM_ENV_FILE_ENV,
+  resolveEnvFilePaths,
+} from '../../../shared/config-directory.ts'
 import { fileBackedSecretPaths } from '../../../shared/file-backed-secret-paths.ts'
 import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 import {
@@ -36,7 +41,11 @@ import { type Project, projectAt, projects } from '../project/projects.ts'
 import { mainStackGateAddresses } from '../resources/main-stack-network.ts'
 import { runHarnessStateDir, runWorkerHomeDir } from '../run-owned-paths.ts'
 import { areaReadPolicy } from './area-read-policy.ts'
-import { runningInstallReadCarveouts } from './install-read-policy.ts'
+import {
+  type RunningInstallLayout,
+  resolveRunningInstallLayout,
+  runningInstallReadCarveouts,
+} from './install-read-policy.ts'
 import { launchWithSandboxRuntime, resetSandboxRuntime } from './sandbox-runtime.ts'
 import { decideWeakerNetworkIsolation, endpointHost } from './weaker-network-isolation.ts'
 
@@ -61,6 +70,11 @@ export type SandboxRuntimeConfig = {
 /** Pin operator state before a worker's isolated HOME changes implicit resolution. */
 export function workerStateEnvironment(environment: StateEnvironment): Record<string, string> {
   return { BOTTEGA_HUB_DB: resolveHubDatabase(environment) }
+}
+
+/** Explicitly disable host env-file reads inside every SRT worker. */
+export function workerSandboxEnvironment(): Record<string, string> {
+  return { [HARNESS_ENV_FILE_ENV]: '', [PLATFORM_ENV_FILE_ENV]: '' }
 }
 
 export type RunSandbox = 'host' | 'srt'
@@ -181,6 +195,16 @@ function protectedDenyPaths(project: Project | null, environment: ConfigEnvironm
   ]
 }
 
+/** Keep a broad-area carve-back only when it cannot reopen a protected secret path. */
+export function carveBackOutsideProtected(
+  candidates: readonly string[],
+  protectedDenies: readonly string[],
+): string[] {
+  return candidates.filter(
+    (allowed) => !protectedDenies.some((denied) => isAtOrBelow(allowed, denied)),
+  )
+}
+
 /** Resolved deny lists a confinement report needs; the report itself reads no home. */
 export function readonlyLensReportInputs(
   environment: ConfigEnvironment,
@@ -267,7 +291,7 @@ export function readonlyLensProfile(input: {
   scratchDir?: string
   allowWrite?: string[]
   project: Project | null
-  registeredProjects?: readonly Project[]
+  registeredProjects: readonly Project[]
   agent: string
   path?: string
   baseUrl?: string | null
@@ -276,6 +300,7 @@ export function readonlyLensProfile(input: {
   environment?: ConfigEnvironment
   denySharedTemp?: boolean
   socketDenyPaths?: readonly string[]
+  installLayout?: RunningInstallLayout
 }): SandboxRuntimeConfig {
   const environment = input.environment ?? process.env
   const toolchain = (input.path ?? process.env.PATH ?? '')
@@ -301,7 +326,7 @@ export function readonlyLensProfile(input: {
     runtimeDir,
     scratchDir: scratchDir ?? undefined,
     project: input.project,
-    registeredProjects: input.registeredProjects ?? (input.project ? [input.project] : []),
+    registeredProjects: input.registeredProjects,
     environment,
   })
   const candidateAllows = [
@@ -313,14 +338,12 @@ export function readonlyLensProfile(input: {
       ...(input.nodeModuleLinks ?? linkedNodeModules(input.worktree)).map((path) => resolve(path)),
       join(homedir(), '.claude.json'),
       process.execPath,
-      ...runningInstallReadCarveouts(environment),
+      ...runningInstallReadCarveouts(input.installLayout ?? resolveRunningInstallLayout(environment)),
     ]),
   ]
   // SRT reads are allow-by-default. This list only carves paths back out of
   // denyRead; it is not, and must not be read as, a read confinement boundary.
-  const allowWithinDeny = candidateAllows.filter(
-    (allowed) => !protectedDenies.some((denied) => isAtOrBelow(allowed, denied)),
-  )
+  const allowWithinDeny = carveBackOutsideProtected(candidateAllows, protectedDenies)
   const isolation = decideWeakerNetworkIsolation({ base_url: input.baseUrl })
   return createSandboxRuntimeConfig(
     {
@@ -423,7 +446,7 @@ export function writerProfile(input: {
   scratchDir: string
   askAddress: string
   project: Project
-  registeredProjects?: readonly Project[]
+  registeredProjects: readonly Project[]
   agent: string
   path?: string
   baseUrl?: string | null
@@ -467,7 +490,7 @@ export function probeSandboxProfile(input: {
   allowWriteDir: string
   cwd: string
   project: Project
-  registeredProjects?: readonly Project[]
+  registeredProjects: readonly Project[]
   environment?: ConfigEnvironment
   socketDenyPaths?: readonly string[]
 }): SandboxRuntimeConfig {
@@ -480,7 +503,7 @@ export function probeSandboxProfile(input: {
     runtimeDir: allowWrite,
     scratchDir: allowWrite,
     project: input.project,
-    registeredProjects: input.registeredProjects ?? [input.project],
+    registeredProjects: input.registeredProjects,
     environment: input.environment ?? process.env,
   })
   return {
@@ -498,9 +521,7 @@ export function probeSandboxProfile(input: {
           ...(input.socketDenyPaths ?? readonlyLensSocketDenyPaths()),
         ]),
       ],
-      allowWithinDeny: areas.allow.filter(
-        (allowed) => !protectedDenies.some((denied) => isAtOrBelow(allowed, denied)),
-      ),
+      allowWithinDeny: carveBackOutsideProtected(areas.allow, protectedDenies),
       allowWrite: [allowWrite],
       denyWrite: [],
     },
@@ -625,7 +646,7 @@ export function selectReadonlySandbox(input: {
   runtimeDir: string
   scratchDir?: string
   project: Project | null
-  registeredProjects?: readonly Project[]
+  registeredProjects: readonly Project[]
   override?: string
   path?: string
   baseUrl?: string | null

@@ -3,6 +3,8 @@
 import { dirname, join, resolve } from 'node:path'
 import {
   resolveHubDatabase,
+  resolveOrchestratorDatabase,
+  resolveRunsDirectory,
   resolveStatePaths,
   type StateEnvironment,
 } from '../../../shared/state-directory.ts'
@@ -26,12 +28,23 @@ export function areaReadPolicy(input: {
   const ownMain = input.project ? resolve(input.project.path) : null
   const state = resolveStatePaths(input.environment)
   const hubDatabase = resolveHubDatabase(input.environment)
+  const orchestratorDatabase = resolveOrchestratorDatabase(input.environment)
+  const runsDirectory = resolveRunsDirectory(input.environment)
   const checkoutParents = input.registeredProjects.map((project) => dirname(resolve(project.path)))
   const siblingCheckouts = input.registeredProjects
     .filter((project) => !input.project || project.recordId !== input.project.recordId)
     .map((project) => resolve(project.path))
   return {
-    deny: [...new Set([state.root, ...checkoutParents, ...siblingCheckouts])],
+    deny: [
+      ...new Set([
+        state.root,
+        dirname(orchestratorDatabase),
+        orchestratorDatabase,
+        runsDirectory,
+        ...checkoutParents,
+        ...siblingCheckouts,
+      ]),
+    ],
     allow: [
       ...new Set([
         worktree,

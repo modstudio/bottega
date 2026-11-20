@@ -22,6 +22,7 @@ import {
   hubLoginTokenDirectory,
   recordSessionPath,
   resolveHubDatabase,
+  ORCHESTRATOR_DATABASE_ENV,
   resolveStatePaths,
   STATE_HOME_ENV,
 } from '../../../shared/state-directory.ts'
@@ -29,7 +30,7 @@ import { workerHarnessName } from '../agent/worker-launch-env.ts'
 import { ROOT } from '../database/db.ts'
 import { classify, NOT_EVIDENCE } from '../failure/failure.ts'
 import type { Project } from '../project/projects.ts'
-import { runningInstallReadCarveouts } from './install-read-policy.ts'
+import { resolveRunningInstallLayout, runningInstallReadCarveouts } from './install-read-policy.ts'
 import {
   canonicalSocketDenyPaths,
   createSandboxRuntimeConfig,
@@ -41,20 +42,20 @@ import {
   prepareGrokMcpHome,
   prepareSandboxHome,
   prepareWorkerHomeMirror,
-  probeSandboxProfile,
+  probeSandboxProfile as buildProbeSandboxProfile,
   READONLY_LENS_DENY_PATHS,
   READONLY_LENS_DENY_WRITE_PATHS,
   readonlyLensDeniesLoginKeychain,
   readonlyLensDeniesOperatorEnvFile,
-  readonlyLensProfile,
+  readonlyLensProfile as buildReadonlyLensProfile,
   readonlyLensReportInputs,
   removeNewSandboxHomeAfterFailure,
   resetSandbox,
   sandboxReasonPrefix,
   sandboxRuntimeConfig,
-  selectReadonlySandbox,
+  selectReadonlySandbox as buildReadonlySandboxSelection,
   withoutRegisteredOrchAskServer,
-  writerProfile,
+  writerProfile as buildWriterProfile,
 } from './sandbox.ts'
 
 const fixtureProject = (settings: Project['settings'] = {}): Project => ({
@@ -66,6 +67,21 @@ const fixtureProject = (settings: Project['settings'] = {}): Project => ({
   retiredAt: null,
   settings,
 })
+
+type WithOptionalRegister<T> = Omit<T, 'registeredProjects'> & {
+  registeredProjects?: readonly Project[]
+}
+const withRegister = <T extends { project: Project | null; registeredProjects?: readonly Project[] }>(
+  input: T,
+) => ({ ...input, registeredProjects: input.registeredProjects ?? (input.project ? [input.project] : []) })
+const readonlyLensProfile = (input: WithOptionalRegister<Parameters<typeof buildReadonlyLensProfile>[0]>) =>
+  buildReadonlyLensProfile(withRegister(input))
+const writerProfile = (input: WithOptionalRegister<Parameters<typeof buildWriterProfile>[0]>) =>
+  buildWriterProfile(withRegister(input))
+const probeSandboxProfile = (input: WithOptionalRegister<Parameters<typeof buildProbeSandboxProfile>[0]>) =>
+  buildProbeSandboxProfile(withRegister(input))
+const selectReadonlySandbox = (input: WithOptionalRegister<Parameters<typeof buildReadonlySandboxSelection>[0]>) =>
+  buildReadonlySandboxSelection(withRegister(input))
 
 test('the writing ACP decision requires both ACP and repository writes', () => {
   expect(isWritingAcpRun('acp', true)).toBe(true)
@@ -579,6 +595,9 @@ describe('readonly-lens sandbox profile', () => {
       ...READONLY_LENS_DENY_PATHS.map((path) => path.replace(/^~/, homedir())),
       ...fileBackedSecretPaths(environment),
       state,
+      join(state, 'orchestrator'),
+      join(state, 'orchestrator', 'orchestrator.db'),
+      join(state, 'orchestrator', 'runs'),
       '/projects',
       join('/Users/operator/.config/platform', `${PLATFORM_SLUG}.env`),
       '/shared/absolute.secret',
@@ -600,7 +619,7 @@ describe('readonly-lens sandbox profile', () => {
       '/projects/fixture/node_modules',
       join(homedir(), '.claude.json'),
       process.execPath,
-      ...runningInstallReadCarveouts(environment),
+      ...runningInstallReadCarveouts(resolveRunningInstallLayout(environment)),
     ])
     expect(profile.filesystem.allowWrite).toEqual(['/runs/tree', '/runs/evidence'])
     expect(profile.filesystem.denyWrite).toEqual(['/tmp/claude', '/private/tmp/claude'])
@@ -663,6 +682,30 @@ describe('readonly-lens sandbox profile', () => {
     expect(profile.filesystem.allowWithinDeny).not.toContain(
       '/projects/fixture/config/operator.secret',
     )
+  })
+
+  test('area policy denies orchestrator database and runs overrides outside the state root', () => {
+    const project = fixtureProject()
+    const environment = {
+      HOME: '/Users/operator',
+      [STATE_HOME_ENV]: '/operator/state',
+      [ORCHESTRATOR_DATABASE_ENV]: '/override/orchestrator/orchestrator.db',
+      BOTTEGA_RUNS: '/override/runs',
+    }
+    const profile = readonlyLensProfile({
+      worktree: '/projects/fixture/.claude/worktrees/run',
+      runtimeDir: '/override/runs/current',
+      project,
+      registeredProjects: [project],
+      agent: 'grok',
+      path: '/usr/bin',
+      nodeModuleLinks: [],
+      environment,
+      socketDenyPaths: [],
+    })
+    expect(profile.filesystem.denyRead).toContain('/override/orchestrator')
+    expect(profile.filesystem.denyRead).toContain('/override/orchestrator/orchestrator.db')
+    expect(profile.filesystem.denyRead).toContain('/override/runs')
   })
 
   test('sandbox selection removes the shared reader worktree from writable roots', () => {

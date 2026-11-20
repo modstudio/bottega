@@ -38,6 +38,7 @@ export type CapabilityProbeSandboxInput = {
   agent: Agent
   path?: string
   environment: ConfigEnvironment
+  registeredProjects: readonly Project[]
 }
 
 function createScratchGitWorktree(path: string): void {
@@ -94,6 +95,7 @@ export async function withCapabilityProbeSandbox<T>(
     mkdirSync(workerHomeDir, { recursive: true })
     mkdirSync(checkpointHooksDir, { recursive: true })
     askListener = ports.openAskListener()
+    const syntheticProject = probeProject(worktree)
     const selection = selectReadonlySandbox({
       agent: input.agent.name,
       readsRepo: true,
@@ -101,8 +103,8 @@ export async function withCapabilityProbeSandbox<T>(
       worktree,
       runtimeDir,
       scratchDir,
-      project: probeProject(worktree),
-      registeredProjects: [probeProject(worktree)],
+      project: syntheticProject,
+      registeredProjects: [...input.registeredProjects, syntheticProject],
       path: input.path,
       baseUrl: input.agent.baseUrl,
       environment: input.environment,

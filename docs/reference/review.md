@@ -156,7 +156,7 @@ clear one confinement finding with an architect ruling
 
 **Synopsis:** `bottega review confinement report [--agent <value>] [--job <value>] [--mcp [value]] [--json]`
 
-report the sandbox inputs for eligible review agents
+report sandbox inputs and execute real filesystem probes; JSON contains `rows` and `filesystemProbes`
 
 ### Options
 
