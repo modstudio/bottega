@@ -18,15 +18,14 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { repositoryVisibility } from '../../../shared/repository-visibility.ts'
 import { TREE_RUN_SCRIPTS, TREE_RUN_SCRIPTS_MODULE } from '../../../shared/tree-run-scripts.ts'
 import { GATE_INPUTS } from '../gate/gate-decision.ts'
-import type { Recipe } from '../recipe/recipe.ts'
 import { validateAutonomySettings } from '../workflow/autonomy.ts'
 import type { SettingsObjectMode } from './project-injection.ts'
 import type { ProjectSettings } from './project-settings.ts'
 
 function scriptsFiles(command: string): string[] {
-  return [...command.matchAll(/(?:^|[\s"'])(?:\.\/)?((?:[^\s"'|;&]+\/)*scripts\/[^\s"'|;&]+)/g)].map((match) =>
-    match[1]!.replace(/[;|&]+$/, ''),
-  )
+  return [
+    ...command.matchAll(/(?:^|[\s"'])(?:\.\/)?((?:[^\s"'|;&]+\/)*scripts\/[^\s"'|;&]+)/g),
+  ].map((match) => match[1]!.replace(/[;|&]+$/, ''))
 }
 
 const TREE_RUN_RECIPE_FIELDS = [
@@ -35,7 +34,9 @@ const TREE_RUN_RECIPE_FIELDS = [
   'serve',
   'stop',
   'after',
-] as const satisfies readonly (keyof Recipe)[]
+] as const satisfies readonly (keyof NonNullable<
+  NonNullable<ProjectSettings['worktree']>['recipe']
+>)[]
 
 function treeRunCommands(settings: ProjectSettings): Array<[field: string, command: string]> {
   const commands: Array<[string, string]> = []

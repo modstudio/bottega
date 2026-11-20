@@ -58,7 +58,8 @@ export function parentBoundSignalExitCode(
   signal: 'SIGINT' | 'SIGTERM',
   childExitFlags: readonly boolean[],
 ): number | null {
-  if (childExitFlags.length > 0 && childExitFlags.every((exitOnSignal) => !exitOnSignal)) return null
+  if (childExitFlags.length > 0 && childExitFlags.every((exitOnSignal) => !exitOnSignal))
+    return null
   return signal === 'SIGINT' ? 130 : 143
 }
 

@@ -132,7 +132,7 @@ test('a parent-bound child can inherit all three stdio streams', () => {
     return child
   }) as typeof Bun.spawn
   try {
-    startParentBound(['/installed/bottega', 'credential'], {
+    startParentBound([`/installed/${PLATFORM_SLUG}`, 'credential'], {
       name: 'credential child',
       inheritStdio: true,
     })

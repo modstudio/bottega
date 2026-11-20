@@ -41,7 +41,6 @@ import {
   type SettingsPatchEffect,
   settingsPatchEffect,
 } from './project-settings-patch.ts'
-import { treeRunScriptProblems } from './project-settings-refusals.ts'
 import {
   assertProjectRename,
   assertRegisterBranches,
@@ -62,6 +61,7 @@ import {
   retiredProjectRefusal,
   retireWrittenProject,
   sniffStack,
+  treeRunScriptProblems,
   unretireWrittenProject,
   upsertProject,
   validateProjectSettings,

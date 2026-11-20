@@ -113,6 +113,7 @@ import {
   githubForgeVisibilityLookup,
 } from './project-visibility.ts'
 
+export { treeRunScriptProblems } from './project-settings-refusals.ts'
 export { projectLifecycleForm, resolvedWorktreeTool } from './project-worktree-resolution.ts'
 export type { MainStackConsumer, Project, ProjectSettings, WorktreeTool }
 export { projectByName, projectRowByName, projects }

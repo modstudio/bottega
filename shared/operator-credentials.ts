@@ -35,7 +35,7 @@ export function operatorCredentialSetCommand(definition: OperatorCredentialDefin
   return `${PLATFORM_SLUG} credential set ${credentialIdentityPath(provider, name, type)} --project ${PLATFORM_SLUG}`
 }
 
-export function operatorCredentialResolveArgv(definition: OperatorCredentialDefinition): string[] {
+function operatorCredentialResolveArgv(definition: OperatorCredentialDefinition): string[] {
   const { provider, name, type } = definition.identity
   return [
     'credential',
