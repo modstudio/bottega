@@ -46,13 +46,17 @@ import {
   parseConfinementMcpSelector,
   reportConfinement,
 } from '../sandbox/confinement-report.ts'
+import {
+  formatConfinementFilesystemProbes,
+  runConfinementFilesystemProbes,
+} from '../sandbox/confinement-filesystem-probe.ts'
 import { readonlyLensReportInputs } from '../sandbox/sandbox.ts'
 import { type CliFlags, log, optionFlags } from './support.ts'
 
 const CLEAR_USAGE = `${PLATFORM_SLUG} review confinement clear <run-id> --writer <text> --note <text> [--tip <current-tip>]`
 const REPORT_USAGE = `${PLATFORM_SLUG} review confinement report [--agent <name>] [--job reading|writing|<job>] [--mcp [true|false]] [--json]`
 
-function confinementReportCommand(flags: CliFlags): void {
+async function confinementReportCommand(flags: CliFlags): Promise<void> {
   const lens = readonlyLensReportInputs(process.env)
   const rows = reportConfinement({
     agents: Object.values(AGENTS).map((agent) => ({
@@ -73,7 +77,14 @@ function confinementReportCommand(flags: CliFlags): void {
     job: parseConfinementJobSelector(flags.flag('job'), JOBS),
     mcp: parseConfinementMcpSelector(flags.has('mcp'), flags.flag('mcp')),
   })
-  for (const line of formatConfinementReport(rows, flags.has('json'))) log(line)
+  const probes = await runConfinementFilesystemProbes()
+  if (flags.has('json')) {
+    log(JSON.stringify({ rows, filesystemProbes: probes }))
+    return
+  }
+  for (const line of formatConfinementReport(rows, false)) log(line)
+  log('')
+  for (const line of formatConfinementFilesystemProbes(probes)) log(line)
 }
 
 const reviewPresentation = {
@@ -421,8 +432,8 @@ function registerConfinement(program: Command): void {
     .option('--mcp [value]', 'filter by whether MCP access is enabled')
     .option('--json', 'write the report as JSON')
     .allowExcessArguments(false)
-    .action((options) => {
-      confinementReportCommand(optionFlags(options))
+    .action(async (options) => {
+      await confinementReportCommand(optionFlags(options))
     })
 }
 

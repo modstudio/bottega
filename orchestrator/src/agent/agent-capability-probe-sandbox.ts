@@ -102,6 +102,7 @@ export async function withCapabilityProbeSandbox<T>(
       runtimeDir,
       scratchDir,
       project: probeProject(worktree),
+      registeredProjects: [probeProject(worktree)],
       path: input.path,
       baseUrl: input.agent.baseUrl,
       environment: input.environment,

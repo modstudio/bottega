@@ -21,6 +21,8 @@ import { sourceBunExecutable } from '../../../shared/self-spawn.ts'
 import {
   hubLoginTokenDirectory,
   recordSessionPath,
+  resolveHubDatabase,
+  resolveStatePaths,
   STATE_HOME_ENV,
 } from '../../../shared/state-directory.ts'
 import { workerHarnessName } from '../agent/worker-launch-env.ts'
@@ -575,6 +577,8 @@ describe('readonly-lens sandbox profile', () => {
     expect(profile.filesystem.denyRead).toEqual([
       ...READONLY_LENS_DENY_PATHS.map((path) => path.replace(/^~/, homedir())),
       ...fileBackedSecretPaths(environment),
+      state,
+      '/projects',
       join('/Users/operator/.config/platform', `${PLATFORM_SLUG}.env`),
       '/shared/absolute.secret',
       join(homedir(), '.tokens/private'),
@@ -584,6 +588,10 @@ describe('readonly-lens sandbox profile', () => {
     expect(profile.filesystem.allowWithinDeny).toEqual([
       '/runs/tree',
       '/runs/evidence',
+      '/runs/evidence/harness',
+      resolveHubDatabase(environment),
+      '/projects/fixture',
+      '/projects/fixture/.git',
       '/opt/toolchain/bin',
       '/usr/bin',
       '/projects/fixture/node_modules',
@@ -606,6 +614,75 @@ describe('readonly-lens sandbox profile', () => {
     expect(profile.network.allowUnixSockets).toEqual([])
     expect(profile.network.allowLocalBinding).toBe(true)
     expect(profile.enableWeakerNetworkIsolation).toBe(true)
+  })
+
+  test('area policy denies the state root and sibling checkout while carving back owned paths', () => {
+    const state = temporaryState()
+    const environment = { HOME: '/Users/operator', [STATE_HOME_ENV]: state }
+    const own = fixtureProject({ secretPaths: ['config/operator.secret'] })
+    const sibling = {
+      ...fixtureProject(),
+      recordId: 'sibling-id',
+      name: 'sibling',
+      path: '/projects/sibling',
+    }
+    const profile = readonlyLensProfile({
+      worktree: '/projects/fixture/.claude/worktrees/run',
+      runtimeDir: join(state, 'orchestrator/runs/sandbox-run'),
+      scratchDir: join(state, 'orchestrator/runs/run/scratch'),
+      project: own,
+      registeredProjects: [own, sibling],
+      agent: 'grok',
+      path: '/usr/bin',
+      nodeModuleLinks: [],
+      environment,
+      socketDenyPaths: [],
+    })
+
+    expect(profile.filesystem.denyRead).toContain(resolveStatePaths(environment).root)
+    expect(profile.filesystem.denyRead).toContain('/projects/sibling')
+    expect(profile.filesystem.denyRead).toContain('/projects')
+    expect(profile.filesystem.denyRead).toContain('/projects/fixture/config/operator.secret')
+    for (const allowed of [
+      '/projects/fixture/.claude/worktrees/run',
+      join(state, 'orchestrator/runs/run'),
+      join(state, 'orchestrator/runs/run/scratch'),
+      join(state, 'orchestrator/runs/sandbox-run'),
+      join(state, 'orchestrator/runs/sandbox-run/harness'),
+      resolveHubDatabase(environment),
+      '/projects/fixture',
+      '/projects/fixture/.git',
+    ]) {
+      expect(profile.filesystem.allowWithinDeny).toContain(allowed)
+    }
+    expect(profile.filesystem.allowWithinDeny).not.toContain(
+      '/projects/fixture/config/operator.secret',
+    )
+    const writer = writerProfile({
+      worktree: '/projects/fixture/.claude/worktrees/run',
+      runtimeDir: join(state, 'orchestrator/runs/sandbox-run'),
+      scratchDir: join(state, 'orchestrator/runs/run/scratch'),
+      askAddress: '127.0.0.1:1',
+      project: own,
+      registeredProjects: [own, sibling],
+      agent: 'grok',
+      path: '/usr/bin',
+      nodeModuleLinks: [],
+      environment,
+      socketDenyPaths: [],
+    })
+    const probe = probeSandboxProfile({
+      allowWriteDir: join(state, 'orchestrator/runs/probe/scratch'),
+      cwd: '/projects/fixture/.claude/worktrees/run',
+      project: own,
+      registeredProjects: [own, sibling],
+      environment,
+      socketDenyPaths: [],
+    })
+    for (const carried of [writer, probe]) {
+      expect(carried.filesystem.denyRead).toContain(state)
+      expect(carried.filesystem.denyRead).toContain('/projects/sibling')
+    }
   })
 
   test('sandbox selection removes the shared reader worktree from writable roots', () => {

@@ -40,7 +40,7 @@ import {
 import { namesSeenAt, probeMcpServer, storedMcpProbe } from '../mcp/mcp-probe.ts'
 import type { OutcomeStatus } from '../outcome.ts'
 import type { RunResourceObserver } from '../process-resource-sampler.ts'
-import { projectAt, projectByName, stackAt } from '../project/projects.ts'
+import { projectAt, projectByName, projects, stackAt } from '../project/projects.ts'
 import { machineId } from '../record/machine-identity.ts'
 import { startedByUserIdForRun } from '../record/record-attribution.ts'
 import { teardownTerminalRunResources } from '../resources/resource-ownership.ts'
@@ -619,6 +619,7 @@ export async function run(
         runtimeDir,
         scratchDir,
         project: runProject,
+        registeredProjects: projects({}, db()),
         override: process.env.BOTTEGA_SANDBOX,
         path: process.env.PATH,
         baseUrl: a.baseUrl,

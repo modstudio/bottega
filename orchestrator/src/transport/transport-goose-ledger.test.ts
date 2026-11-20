@@ -85,3 +85,25 @@ test('retains regular ledger files without copying symbolic links', () => {
     rmSync(root, { recursive: true, force: true })
   }
 })
+
+test('masks secret-shaped text in every retained ledger file', () => {
+  const root = mkdtempSync(join(tmpdir(), 'goose-ledger-redaction-'))
+  try {
+    const input = {
+      harness: 'goose',
+      runtimeDir: join(root, 'runtime'),
+      outPath: join(root, 'run', 'output.txt'),
+    }
+    const logs = gooseLedgerCopyPaths(input)[0]!
+    mkdirSync(logs.source, { recursive: true })
+    writeFileSync(join(logs.source, 'request.jsonl'), 'Authorization: Bearer fixture-live-token')
+
+    preserveGooseLedger(input, () => {})
+
+    const retained = readFileSync(join(logs.destination, 'request.jsonl'), 'utf8')
+    expect(retained).toContain('[withheld: authorization]')
+    expect(retained).not.toContain('fixture-live-token')
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})

@@ -29,12 +29,13 @@ import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 import {
   ensureHubLoginTokenDirectory,
   resolveHubDatabase,
+  resolveStatePaths,
   type StateEnvironment,
 } from '../../../shared/state-directory.ts'
 import { ROOT } from '../database/db.ts'
 import { disabledProjectMcpServers } from '../mcp/mcp-probe.ts'
 import { createNoFollowFile } from '../no-follow-file.ts'
-import { type Project, projectAt } from '../project/projects.ts'
+import { type Project, projectAt, projects } from '../project/projects.ts'
 import { mainStackGateAddresses } from '../resources/main-stack-network.ts'
 import { runHarnessStateDir, runWorkerHomeDir } from '../run-owned-paths.ts'
 import { launchWithSandboxRuntime, resetSandboxRuntime } from './sandbox-runtime.ts'
@@ -181,6 +182,41 @@ function protectedDenyPaths(project: Project | null, environment: ConfigEnvironm
   ]
 }
 
+type AreaReadPolicy = { deny: string[]; allow: string[] }
+
+/** Broad machine areas hidden from workers, with only run-owned paths carved back in. */
+export function areaReadPolicy(input: {
+  worktree: string
+  runtimeDir: string
+  scratchDir?: string
+  project: Project | null
+  registeredProjects: readonly Project[]
+  environment: ConfigEnvironment
+}): AreaReadPolicy {
+  const worktree = resolve(input.worktree)
+  const runtimeDir = resolve(input.runtimeDir)
+  const scratchDir = input.scratchDir ? resolve(input.scratchDir) : null
+  const ownMain = input.project ? resolve(input.project.path) : null
+  const state = resolveStatePaths(input.environment)
+  const checkoutParents = input.registeredProjects.map((project) => dirname(resolve(project.path)))
+  const siblingCheckouts = input.registeredProjects
+    .filter((project) => !input.project || project.recordId !== input.project.recordId)
+    .map((project) => resolve(project.path))
+  return {
+    deny: [...new Set([state.root, ...checkoutParents, ...siblingCheckouts])],
+    allow: [
+      ...new Set([
+        worktree,
+        runtimeDir,
+        runHarnessStateDir(runtimeDir),
+        ...(scratchDir ? [dirname(scratchDir), scratchDir] : []),
+        resolveHubDatabase(input.environment),
+        ...(ownMain ? [ownMain, join(ownMain, '.git')] : []),
+      ]),
+    ],
+  }
+}
+
 /** Resolved deny lists a confinement report needs; the report itself reads no home. */
 export function readonlyLensReportInputs(
   environment: ConfigEnvironment,
@@ -267,6 +303,7 @@ export function readonlyLensProfile(input: {
   scratchDir?: string
   allowWrite?: string[]
   project: Project | null
+  registeredProjects?: readonly Project[]
   agent: string
   path?: string
   baseUrl?: string | null
@@ -295,8 +332,17 @@ export function readonlyLensProfile(input: {
   ]
   const protectedDenies = protectedDenyPaths(input.project, environment)
   refuseProtectedOverlap('readonly-lens', protectedDenies, worktree, runtimeDir)
+  const areas = areaReadPolicy({
+    worktree,
+    runtimeDir,
+    scratchDir: scratchDir ?? undefined,
+    project: input.project,
+    registeredProjects: input.registeredProjects ?? (input.project ? [input.project] : []),
+    environment,
+  })
   const candidateAllows = [
     ...new Set([
+      ...areas.allow,
       worktree,
       runtimeDir,
       ...toolchain,
@@ -332,7 +378,13 @@ export function readonlyLensProfile(input: {
         allowLocalBinding: READONLY_LENS_ALLOW_LOCAL_BINDING,
       },
       filesystem: {
-        denyRead: [...protectedDenies, ...(input.socketDenyPaths ?? readonlyLensSocketDenyPaths())],
+        denyRead: [
+          ...new Set([
+            ...areas.deny,
+            ...protectedDenies,
+            ...(input.socketDenyPaths ?? readonlyLensSocketDenyPaths()),
+          ]),
+        ],
         allowWithinDeny,
         allowWrite,
         denyWrite: input.denySharedTemp === false ? [] : [...READONLY_LENS_DENY_WRITE_PATHS],
@@ -407,6 +459,7 @@ export function writerProfile(input: {
   scratchDir: string
   askAddress: string
   project: Project
+  registeredProjects?: readonly Project[]
   agent: string
   path?: string
   baseUrl?: string | null
@@ -450,6 +503,7 @@ export function probeSandboxProfile(input: {
   allowWriteDir: string
   cwd: string
   project: Project
+  registeredProjects?: readonly Project[]
   environment?: ConfigEnvironment
   socketDenyPaths?: readonly string[]
 }): SandboxRuntimeConfig {
@@ -457,6 +511,14 @@ export function probeSandboxProfile(input: {
   const cwd = resolve(input.cwd)
   const protectedDenies = protectedDenyPaths(input.project, input.environment ?? process.env)
   refuseProtectedOverlap('probe', protectedDenies, cwd, allowWrite)
+  const areas = areaReadPolicy({
+    worktree: cwd,
+    runtimeDir: allowWrite,
+    scratchDir: allowWrite,
+    project: input.project,
+    registeredProjects: input.registeredProjects ?? [input.project],
+    environment: input.environment ?? process.env,
+  })
   return {
     network: {
       allowedDomains: [],
@@ -468,10 +530,13 @@ export function probeSandboxProfile(input: {
       denyRead: [
         ...new Set([
           ...protectedDenies,
+          ...areas.deny,
           ...(input.socketDenyPaths ?? readonlyLensSocketDenyPaths()),
         ]),
       ],
-      allowWithinDeny: [],
+      allowWithinDeny: areas.allow.filter(
+        (allowed) => !protectedDenies.some((denied) => isAtOrBelow(allowed, denied)),
+      ),
       allowWrite: [allowWrite],
       denyWrite: [],
     },
@@ -490,6 +555,7 @@ export function probeSandboxProfileForCwd(input: {
     allowWriteDir: input.allowWriteDir,
     cwd: input.cwd,
     project,
+    registeredProjects: projects({}, input.database),
   })
 }
 
@@ -595,6 +661,7 @@ export function selectReadonlySandbox(input: {
   runtimeDir: string
   scratchDir?: string
   project: Project | null
+  registeredProjects?: readonly Project[]
   override?: string
   path?: string
   baseUrl?: string | null
@@ -641,6 +708,7 @@ export function selectReadonlySandbox(input: {
         scratchDir: input.scratchDir,
         askAddress: input.askAddress,
         project: input.project,
+        registeredProjects: input.registeredProjects,
         agent: input.agent,
         path: input.path,
         baseUrl: input.baseUrl,
@@ -657,6 +725,7 @@ export function selectReadonlySandbox(input: {
       runtimeDir: input.runtimeDir,
       scratchDir: input.scratchDir,
       project: input.project,
+      registeredProjects: input.registeredProjects,
       agent: input.agent,
       path: input.path,
       baseUrl: input.baseUrl,

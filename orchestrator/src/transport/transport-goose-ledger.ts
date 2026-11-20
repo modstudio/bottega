@@ -1,8 +1,17 @@
 // concern: transport-goose-ledger
 /** Best-effort short retention of Goose's sandbox-owned request ledger. */
 
-import { cpSync, existsSync, lstatSync, mkdirSync, realpathSync } from 'node:fs'
+import {
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  realpathSync,
+  writeFileSync,
+} from 'node:fs'
 import { dirname, join, sep } from 'node:path'
+import { redactSecretShaped } from '../../../shared/secret-shaped.ts'
 import { runHarnessStateDir } from '../run-owned-paths.ts'
 import { gooseContextProfile } from './transport-goose-context-profile.ts'
 
@@ -30,6 +39,22 @@ function gooseSourceContained(runtimeDir: string, path: string): boolean {
   )
 }
 
+/** Copy a regular ledger tree while masking credential-shaped text in every retained file. */
+function copyRedactedLedger(source: string, destination: string): void {
+  const stat = lstatSync(source)
+  if (stat.isSymbolicLink()) return
+  if (stat.isDirectory()) {
+    mkdirSync(destination, { recursive: true })
+    for (const entry of readdirSync(source)) {
+      copyRedactedLedger(join(source, entry), join(destination, entry))
+    }
+    return
+  }
+  if (!stat.isFile()) return
+  mkdirSync(dirname(destination), { recursive: true })
+  writeFileSync(destination, redactSecretShaped(readFileSync(source, 'utf8')).text)
+}
+
 export function preserveGooseLedger(
   input: Parameters<typeof gooseLedgerCopyPaths>[0],
   onWarning: (message: string) => void,
@@ -44,12 +69,7 @@ export function preserveGooseLedger(
         onWarning(`Goose ledger copy skipped linked path ${copy.source}`)
         continue
       }
-      mkdirSync(dirname(copy.destination), { recursive: true })
-      cpSync(copy.source, copy.destination, {
-        recursive: true,
-        force: true,
-        filter: (source) => !lstatSync(source).isSymbolicLink(),
-      })
+      copyRedactedLedger(copy.source, copy.destination)
     } catch (error) {
       try {
         onWarning(
