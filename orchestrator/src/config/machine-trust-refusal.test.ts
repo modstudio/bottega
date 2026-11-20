@@ -15,6 +15,7 @@ test('credential trust repair orders registration before trust and omits complet
     keyId,
     publicKey: 'public-key',
     revoked: false,
+    ownedByAnotherUser: false,
   }
   expect(credentialMachineTrustSteps({ ...facts, registered: false, trusted: false })).toEqual([
     `${PLATFORM_SLUG} machine config machine register --space named-space`,
@@ -29,8 +30,9 @@ test('credential trust repair orders registration before trust and omits complet
 test('credential trust facts give a revoked machine key the init-new-key repair', () => {
   const facts = credentialMachineTrustFacts({
     space: 'named-space',
+    signedInUserId: 'signed-in-user',
     machine: { keyId, publicKey: new Uint8Array([1, 2, 3]) },
-    machineRows: [{ keyId, revokedAt: '2026-11-10T00:00:00.000Z' }],
+    machineRows: [{ keyId, revokedAt: '2026-11-10T00:00:00.000Z', userId: 'signed-in-user' }],
     trust: { [keyId]: { public_key: 'public-key', label: 'fixture' } },
   })
   expect(facts).toEqual({
@@ -38,6 +40,7 @@ test('credential trust facts give a revoked machine key the init-new-key repair'
     registered: false,
     revoked: true,
     trusted: true,
+    ownedByAnotherUser: false,
     space: 'named-space',
     keyId,
     publicKey: 'AQID',

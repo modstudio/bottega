@@ -11,6 +11,8 @@ import { RECORD_SIGN_IN_REMEDY } from './record-remedies.ts'
 import { recordRequestHeaders } from './record-request-headers.ts'
 import { readRecordSessionToken, sendWithStoredRecordSessionToken } from './record-session.ts'
 
+export const CURRENT_DATA_KEY_PATH = '/v1/config/data-keys/current'
+
 export type ConfigClientErrorReason = 'not-configured' | 'unreachable' | 'response'
 
 export class ConfigClientError extends Error {
@@ -369,7 +371,7 @@ function credentialPreferenceClient(request: Request) {
 function configKeyClient(request: Request, query: Query) {
   return {
     currentDataKey: (recipientKeyId: string, destination: ConfigDestination = {}) =>
-      request<DataKey>(`/v1/config/data-keys/current${query({ recipientKeyId })}`, destination),
+      request<DataKey>(`${CURRENT_DATA_KEY_PATH}${query({ recipientKeyId })}`, destination),
     listDataKeys: (destination: ConfigDestination = {}) =>
       request<{ items: DataKey[] }>('/v1/config/data-keys', destination).then((x) => x.items),
     getDataKey: (dekId: string, recipientKeyId: string, destination: ConfigDestination = {}) =>

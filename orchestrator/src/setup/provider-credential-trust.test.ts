@@ -158,6 +158,7 @@ test('provider credential trust gathering returns checked facts for a matching r
       registered: true,
       revoked: false,
       trusted: false,
+      ownedByAnotherUser: false,
       space: 'studio',
       keyId: 'test-key',
       publicKey: 'AQID',

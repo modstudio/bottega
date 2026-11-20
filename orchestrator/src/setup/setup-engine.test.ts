@@ -150,6 +150,7 @@ test('notices credential trust with registration before trust', () => {
         registered: false,
         revoked: false,
         trusted: false,
+        ownedByAnotherUser: false,
         space,
         keyId: 'machine-key',
         publicKey: 'machine-public-key',

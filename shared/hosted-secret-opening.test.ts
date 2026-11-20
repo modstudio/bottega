@@ -76,3 +76,43 @@ test('a project destination never consults machine keys in another space', async
   ).rejects.toThrow('not a member')
   expect(listed).toBe(false)
 })
+
+test('a destination machine key owned by another user gives only the supported account switch', async () => {
+  const keyId = 'machine-key'
+  const client = {
+    whoami: async () => ({
+      user: { id: user },
+      activeSpaceId: space,
+      memberships: [
+        {
+          space_id: space,
+          slug: membership.slug,
+          permission: membership.permission,
+        },
+      ],
+    }),
+    listMachineKeys: async () => [
+      { keyId, userId: 'other-user', revokedAt: null, publicKey: 'AQID' },
+    ],
+    readTrustLog: async () => [],
+  } as never
+  const refusal = await destinationHostedIdentity(
+    client,
+    {
+      spaceId: space,
+      machine: {
+        keyId,
+        publicKey: new Uint8Array([1, 2, 3]),
+        privateKey: new Uint8Array([4, 5, 6]),
+      },
+    },
+    { spaceId: space, userId: user },
+  ).catch((error) => String(error))
+  expect(refusal).toContain(
+    "this machine's key in record space alpha belongs to another account; sign back in as that account. Using this machine under a different account is not supported yet.",
+  )
+  expect(refusal).not.toContain('machine config machine init')
+  expect(refusal).not.toContain('machine config machine register')
+  expect(refusal).not.toContain('machine config machine trust')
+  expect(refusal).not.toContain(space)
+})

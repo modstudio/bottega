@@ -5,6 +5,7 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   ConfigClientError,
   type ConfigWriteDestination,
+  CURRENT_DATA_KEY_PATH,
   configClient,
 } from '../../../shared/config-client.ts'
 import {
@@ -14,7 +15,10 @@ import {
   type CredentialPayer,
   credentialIdentityKey,
 } from '../../../shared/credential.ts'
-import { missingDataKeyWrapRemedy } from '../../../shared/credential-machine-trust.ts'
+import {
+  missingDataKeyWrapRemedy,
+  spaceHasNoDataKeyRemedy,
+} from '../../../shared/credential-machine-trust.ts'
 import { readCredentialMachineTrustFactsOrUnchecked } from '../../../shared/credential-machine-trust-reader.ts'
 import {
   credentialScopeFromPayer,
@@ -31,10 +35,7 @@ import {
 } from '../../../shared/credential-value.ts'
 import { localMachine } from '../../../shared/hosted-secret-row.ts'
 import type { OperatorCredentialIdentity } from '../../../shared/operator-credentials.ts'
-import {
-  configAccessRemedy,
-  recordSpaceMembershipRefusal,
-} from '../../../shared/record-remedies.ts'
+import { recordSpaceMembershipRefusal } from '../../../shared/record-remedies.ts'
 import {
   parseRecordSpaceMemberships,
   recordSpaceMembership,
@@ -160,15 +161,19 @@ async function missingWrapTrustRemedy(
   )
 }
 
+function credentialBinding(address: CredentialAddress): string {
+  if (address.account) return 'account'
+  return address.projectName
+    ? `project ${address.projectName} in space ${address.spaceName}`
+    : `space ${address.spaceName}`
+}
+
 async function missingProjectWrapRefusal(
   address: CredentialAddress,
   client: ReturnType<typeof configClient>,
 ): Promise<Error> {
-  const binding = address.projectName
-    ? `project ${address.projectName} in space ${address.spaceName}`
-    : `space ${address.spaceName}`
   return new Error(
-    `cannot access credentials for ${binding}: ${await missingWrapTrustRemedy(address, client)}; ${configAccessRemedy(address.spaceName)}`,
+    `cannot access credentials for ${credentialBinding(address)}: ${await missingWrapTrustRemedy(address, client)}`,
   )
 }
 
@@ -185,6 +190,12 @@ const missingWrapRefusal = (address: CredentialAddress, client: ReturnType<typeo
   address.account
     ? missingAccountWrapRefusal(address, client)
     : missingProjectWrapRefusal(address, client)
+
+function noDataKeyRefusal(address: CredentialAddress): Error {
+  return new Error(
+    `cannot access credentials for ${credentialBinding(address)}: ${spaceHasNoDataKeyRemedy(address.spaceName)}`,
+  )
+}
 
 function missingCredentialRefusal(address: CredentialAddress): Error {
   return new Error(credentialSetRefusalText(address, 'missing', 'pipe its value to'))
@@ -229,8 +240,12 @@ export async function setCredential(
       },
     )
   } catch (error) {
-    if (error instanceof ConfigClientError && error.status === 404)
-      throw await missingWrapRefusal(address, client)
+    if (
+      error instanceof ConfigClientError &&
+      error.status === 404 &&
+      error.route.split('?', 1)[0] === CURRENT_DATA_KEY_PATH
+    )
+      throw noDataKeyRefusal(address)
     throw error
   }
 }

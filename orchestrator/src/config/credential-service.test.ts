@@ -7,6 +7,7 @@ import {
   type ConfigClient,
   ConfigClientError,
   type ConfigWriteDestination,
+  configClient,
 } from '../../../shared/config-client.ts'
 import { writeHostedConfigIdentity } from '../../../shared/hosted-config-space.ts'
 import { machineKeyId } from '../../../shared/machine-key-id.ts'
@@ -181,48 +182,153 @@ test('operator identity replaces identity fields and retains project binding fie
   })
 })
 
-test('set credential gives the project access remedy for every missing wrap outcome', async () => {
-  for (const currentDataKey of [
-    async () => {
-      throw new ConfigClientError('response', '/v1/config/data-keys/current', 404)
-    },
-    async () => ({
+test('set credential names machine registration when the space has no data key', async () => {
+  const transport = mock(async (input: RequestInfo | URL) => {
+    expect(String(input)).toMatch(
+      /^https:\/\/record\.test\/v1\/config\/data-keys\/current\?recipientKeyId=.+$/,
+    )
+    return Response.json({ error: 'missing' }, { status: 404 })
+  })
+  const client = configClient({ BOTTEGA_RECORD_API_URL: 'https://record.test' }, transport, 'token')
+  const refusal = await setCredential(address, 'secret', client).catch((error) => String(error))
+  expect(refusal).toContain('cannot access credentials for project alpha in space studio')
+  expect(refusal).toContain('record space studio has no data key yet')
+  expect(refusal).toContain('machine config machine register --space studio')
+  expect(refusal).not.toContain('machine config machine trust')
+  expect(refusal).not.toContain('lacks config access')
+  expect(transport).toHaveBeenCalledTimes(1)
+})
+
+test('set credential without a project name names its space when it has no data key', async () => {
+  const client = configClient(
+    { BOTTEGA_RECORD_API_URL: 'https://record.test' },
+    async () => Response.json({ error: 'missing' }, { status: 404 }),
+    'token',
+  )
+  const refusal = await setCredential(
+    { ...address, projectName: undefined },
+    'secret',
+    client,
+  ).catch((error) => String(error))
+  expect(refusal).toContain('cannot access credentials for space studio:')
+  expect(refusal).not.toContain('undefined')
+})
+
+test('set credential gives the machine trust remedy when the data key has no wrap', async () => {
+  const keyId = await machineKeyId(pair.publicKey)
+  const createDataKey = mock(async () => ({ id: '', version: 1 }))
+  const client = {
+    currentDataKey: async () => ({
       id: '01990000-0000-7000-8000-000000000003',
       version: 1,
       createdAt: '2026-01-01T00:00:00.000Z',
       retiredAt: null,
       wraps: [],
     }),
-  ]) {
-    const createDataKey = mock(async () => ({ id: '', version: 1 }))
-    const client = {
-      currentDataKey,
-      createDataKey,
-      listMachineKeys: async () => [],
-      readTrustLog: async () => [],
-    } as unknown as ConfigClient
-    await expect(setCredential(address, 'secret', client)).rejects.toThrow(
-      'machine config machine trust',
-    )
-    expect(createDataKey).not.toHaveBeenCalled()
-  }
+    createDataKey,
+    listMachineKeys: async () => [{ keyId, userId: 'signed-in-user', revokedAt: null }],
+    readTrustLog: async () => [],
+    whoami: async () => ({
+      user: { id: 'signed-in-user' },
+      memberships: [],
+    }),
+  } as unknown as ConfigClient
+  const refusal = await setCredential(address, 'secret', client).catch((error) => String(error))
+  expect(refusal).toContain('this machine is not trusted in record space studio')
+  expect(refusal).toContain('machine config machine trust')
+  expect(refusal).not.toContain('lacks config access')
+  expect(createDataKey).not.toHaveBeenCalled()
+})
+
+test('set credential account-switch refusal does not claim config access is missing', async () => {
+  const keyId = await machineKeyId(pair.publicKey)
+  const client = {
+    currentDataKey: async () => ({
+      id: '01990000-0000-7000-8000-000000000003',
+      version: 1,
+      createdAt: '2026-01-01T00:00:00.000Z',
+      retiredAt: null,
+      wraps: [],
+    }),
+    listMachineKeys: async () => [{ keyId, userId: 'other-user', revokedAt: null }],
+    readTrustLog: async () => [],
+    whoami: async () => ({
+      user: { id: 'signed-in-user' },
+      memberships: [],
+    }),
+  } as unknown as ConfigClient
+  const refusal = await setCredential(address, 'secret', client).catch((error) => String(error))
+  expect(refusal).toContain('belongs to another account; sign back in as that account')
+  expect(refusal).not.toContain('lacks config access')
 })
 
 test('set account credential gives the personal-space registration remedy', async () => {
-  const client = {
-    currentDataKey: async () => {
-      throw new ConfigClientError('response', '/v1/config/data-keys/current', 404)
-    },
-    listMachineKeys: async () => [],
-    readTrustLog: async () => [],
-  } as unknown as ConfigClient
+  const client = configClient(
+    { BOTTEGA_RECORD_API_URL: 'https://record.test' },
+    async () => Response.json({ error: 'missing' }, { status: 404 }),
+    'token',
+  )
   await expect(
     setCredential(
       { ...address, account: true, projectId: null, projectName: undefined },
       'secret',
       client,
     ),
-  ).rejects.toThrow('machine config machine register --space studio')
+  ).rejects.toThrow('record space studio has no data key yet')
+})
+
+test('set credential propagates a non-data-key 404 unchanged', async () => {
+  const userId = '01990000-0000-7000-8000-000000000003'
+  const keyId = await machineKeyId(pair.publicKey)
+  await pinTrustedMachine(keyId, pair.publicKey, 'current')
+  writeHostedConfigIdentity({
+    spaceId: address.destinationSpaceId,
+    userId,
+  })
+  const dekId = '01990000-0000-7000-8000-000000000003'
+  const dek = generateDataKey()
+  const wrapped = await wrapDataKey({
+    dek,
+    wrapContext: { spaceId: address.destinationSpaceId, dekId, dekVersion: 1 },
+    senderPrivateKey: pair.privateKey,
+    senderPublicKey: pair.publicKey,
+    recipientPublicKey: pair.publicKey,
+  })
+  const occupancy = new ConfigClientError('response', '/v1/config/secrets/OPENROUTER_API_KEY', 404)
+  const client = {
+    currentDataKey: async () => ({
+      id: dekId,
+      version: 1,
+      createdAt: '2026-01-01T00:00:00.000Z',
+      retiredAt: null,
+      wraps: [
+        {
+          recipientKeyId: keyId,
+          senderKeyId: keyId,
+          enc: Buffer.from(wrapped.enc).toString('base64url'),
+          ciphertext: Buffer.from(wrapped.ciphertext).toString('base64url'),
+        },
+      ],
+    }),
+    readTrustLog: async () => [],
+    listMachineKeys: async () => [{ keyId, userId, revokedAt: null }],
+    listSecrets: async () => [],
+    listDataKeys: async () => [
+      {
+        id: dekId,
+        version: 1,
+        createdAt: '2026-01-01T00:00:00.000Z',
+        retiredAt: null,
+        wraps: [],
+      },
+    ],
+    getSecret: async () => null,
+    whoami: async () => ({ user: { id: userId }, activeSpaceId: address.destinationSpaceId }),
+    putSecret: async () => {
+      throw occupancy
+    },
+  } as unknown as ConfigClient
+  await expect(setCredential(address, 'secret', client)).rejects.toBe(occupancy)
 })
 
 test('trusted machine without a wrap names the no-wrap condition', async () => {
@@ -236,8 +342,12 @@ test('trusted machine without a wrap names the no-wrap condition', async () => {
       retiredAt: null,
       wraps: [],
     }),
-    listMachineKeys: async () => [{ keyId, revokedAt: null }],
+    listMachineKeys: async () => [{ keyId, userId: 'signed-in-user', revokedAt: null }],
     readTrustLog: async () => [],
+    whoami: async () => ({
+      user: { id: 'signed-in-user' },
+      memberships: [],
+    }),
   } as unknown as ConfigClient
   const refusal = await setCredential(address, 'secret', client).catch((error) => String(error))
   expect(refusal).toContain('this machine has no data-key wrap in record space studio')

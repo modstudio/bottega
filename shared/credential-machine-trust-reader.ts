@@ -17,17 +17,9 @@ type MachineSource = CredentialMachine | (() => CredentialMachine | Promise<Cred
 
 const cause = (error: unknown) => (error instanceof Error ? error.message : String(error))
 
-async function spaceLabel(client: TrustClient, space: CredentialMachineTrustSpace) {
-  if (space.kind === 'known') return space.slug
-  const memberships = parseRecordSpaceMemberships((await client.whoami()).memberships)
-  return (
-    memberships.find((membership) => membership.spaceId === space.spaceId)?.slug ?? space.spaceId
-  )
-}
-
 async function readFacts(
   client: TrustClient,
-  input: { spaceId: string; label: string; machine: MachineSource },
+  input: { spaceId: string; label: string; machine: MachineSource; signedInUserId: string },
   env: ConfigEnvironment,
 ): Promise<CredentialMachineTrustFacts> {
   const machine = typeof input.machine === 'function' ? await input.machine() : input.machine
@@ -35,7 +27,13 @@ async function readFacts(
     client.listMachineKeys({ destinationSpaceId: input.spaceId }),
     trustedKeysForSpace(client, input.spaceId, env),
   ])
-  return credentialMachineTrustFacts({ space: input.label, machine, machineRows, trust })
+  return credentialMachineTrustFacts({
+    space: input.label,
+    signedInUserId: input.signedInUserId,
+    machine,
+    machineRows,
+    trust,
+  })
 }
 
 /** Preserve a useful, honest trust state when any failure-path read throws. */
@@ -46,10 +44,21 @@ export async function readCredentialMachineTrustFactsOrUnchecked(
 ): Promise<CredentialMachineTrustFacts> {
   let label = input.space.kind === 'known' ? input.space.slug : input.space.spaceId
   try {
-    label = await spaceLabel(client, input.space)
+    const current = await client.whoami()
+    label =
+      input.space.kind === 'known'
+        ? input.space.slug
+        : (parseRecordSpaceMemberships(current.memberships).find(
+            (membership) => membership.spaceId === input.space.spaceId,
+          )?.slug ?? input.space.spaceId)
     return await readFacts(
       client,
-      { spaceId: input.space.spaceId, label, machine: input.machine },
+      {
+        spaceId: input.space.spaceId,
+        label,
+        machine: input.machine,
+        signedInUserId: current.user.id,
+      },
       env,
     )
   } catch (error) {

@@ -5,6 +5,7 @@ export type CheckedCredentialMachineTrustFacts = {
   registered: boolean
   revoked: boolean
   trusted: boolean
+  ownedByAnotherUser: boolean
   space: string
   keyId: string
   publicKey: string
@@ -39,16 +40,23 @@ export function credentialMachineTrustCommands(input: {
 /** Derive credential trust facts from one space's record rows and verified trust state. */
 export function credentialMachineTrustFacts(input: {
   space: string
+  signedInUserId: string
   machine: CredentialMachine
-  machineRows: readonly { keyId: string; revokedAt: string | null }[]
+  machineRows: readonly { keyId: string; revokedAt: string | null; userId: string | null }[]
   trust: Readonly<Record<string, unknown>>
 }): CheckedCredentialMachineTrustFacts {
   const registration = input.machineRows.find((row) => row.keyId === input.machine.keyId)
+  const ownedByAnotherUser =
+    registration !== undefined &&
+    registration.userId !== null &&
+    registration.userId !== input.signedInUserId
   return {
     status: 'checked',
-    registered: registration !== undefined && registration.revokedAt === null,
+    registered:
+      registration !== undefined && registration.revokedAt === null && !ownedByAnotherUser,
     revoked: registration?.revokedAt != null,
-    trusted: input.trust[input.machine.keyId] !== undefined,
+    trusted: !ownedByAnotherUser && input.trust[input.machine.keyId] !== undefined,
+    ownedByAnotherUser,
     space: input.space,
     keyId: input.machine.keyId,
     publicKey: Buffer.from(input.machine.publicKey).toString('base64url'),
@@ -58,6 +66,7 @@ export function credentialMachineTrustFacts(input: {
 /** Order the complete repair for a machine that cannot open credentials in one space. */
 export function credentialMachineTrustSteps(facts: CheckedCredentialMachineTrustFacts): string[] {
   const commands = credentialMachineTrustCommands(facts)
+  if (facts.ownedByAnotherUser) return []
   if (facts.revoked)
     return [
       commands.init,
@@ -78,12 +87,19 @@ export function credentialMachineTrustRemedy(facts: CredentialMachineTrustFacts)
     const commands = credentialMachineTrustCommands({ space: facts.space })
     return `credential trust could not be checked in record space ${facts.space}: ${facts.reason}; if this machine is not registered there, on this machine run \`${commands.register}\`; then from a machine already trusted in that space, run \`${commands.trust}\``
   }
+  if (facts.ownedByAnotherUser)
+    return `this machine's key in record space ${facts.space} belongs to another account; sign back in as that account. Using this machine under a different account is not supported yet.`
   const steps = credentialMachineTrustSteps(facts)
   if (!steps.length) return null
   if (facts.revoked)
     return `on this machine, run \`${steps[0]}\` to make a new key, then \`${steps[1]}\`; then from a machine already trusted in that space, run \`${steps[2]}\``
   const trust = `from a machine already trusted in that space, run \`${steps.at(-1)}\``
   return steps.length === 1 ? trust : `on this machine, run \`${steps[0]}\`; then ${trust}`
+}
+
+export function spaceHasNoDataKeyRemedy(space: string): string {
+  const command = credentialMachineTrustCommands({ space }).register
+  return `record space ${space} has no data key yet; on this machine, run \`${command}\` to create it`
 }
 
 export function noDataKeyWrapRemedy(input: {
@@ -99,6 +115,7 @@ export function noDataKeyWrapRemedy(input: {
 export function missingDataKeyWrapRemedy(facts: CredentialMachineTrustFacts): string {
   const trustRemedy = credentialMachineTrustRemedy(facts)
   if (facts.status === 'could-not-check') return credentialMachineTrustRemedy(facts)
+  if (facts.ownedByAnotherUser) return trustRemedy ?? ''
   return trustRemedy
     ? `this machine is not trusted in record space ${facts.space}; ${trustRemedy}`
     : noDataKeyWrapRemedy(facts)
