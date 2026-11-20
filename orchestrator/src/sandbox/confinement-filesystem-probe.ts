@@ -93,6 +93,29 @@ function firstErrorLine(stderr: string): string {
   return stderr.trim().split(/\r?\n/, 1)[0] || 'no stderr'
 }
 
+function probeVerdict(
+  targets: readonly AccessTarget[],
+  paths: Record<string, FilesystemProbeAccess>,
+  command: CommandProbe,
+): Pick<ConfinementFilesystemProbeRow, 'status' | 'reason'> {
+  if (targets.some(({ name }) => paths[name] === 'not covered')) {
+    return {
+      status: 'not covered',
+      reason: 'one or more filesystem probe output lines were missing',
+    }
+  }
+  if (targets.some(({ name, expected }) => expected === 'denied' && paths[name] === 'readable')) {
+    return { status: 'readable' }
+  }
+  if (targets.some(({ name, expected }) => paths[name] !== expected)) {
+    return { status: 'failed', reason: 'one or more expected-readable paths were denied' }
+  }
+  if (command.status === 'failed') {
+    return { status: 'failed', reason: 'the real CLI verb failed' }
+  }
+  return { status: 'denied' }
+}
+
 async function launchCommand(
   profile: ReturnType<typeof readonlyLensProfile>,
   argv: string[],
@@ -142,30 +165,12 @@ async function launchProbe(
         values[index] === 'denied' || values[index] === 'readable' ? values[index] : 'not covered',
       ]),
     ) as Record<string, FilesystemProbeAccess>
-    const measured = targets.every(({ name, expected }) => paths[name] === expected)
-    const unmeasured = targets.some(({ name }) => paths[name] === 'not covered')
-    const unexpectedlyReadable = targets.some(
-      ({ name, expected }) => expected === 'denied' && paths[name] === 'readable',
-    )
     const command = await launchCommand(profile, commandArgv, environment, hubOpenMode)
     return {
       family,
-      status: unmeasured
-        ? 'not covered'
-        : unexpectedlyReadable
-          ? 'readable'
-          : measured && command.status === 'ran'
-            ? 'denied'
-            : 'failed',
+      ...probeVerdict(targets, paths, command),
       paths,
       commands: { [`${PLATFORM_SLUG} task show DEV-2510`]: command },
-      reason: unmeasured
-        ? 'one or more filesystem probe output lines were missing'
-        : !measured && !unexpectedlyReadable
-          ? 'one or more expected-readable paths were denied'
-          : command.status === 'failed'
-            ? 'the real CLI verb failed'
-            : undefined,
     }
   } catch (error) {
     return {
