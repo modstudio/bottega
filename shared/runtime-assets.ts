@@ -37,7 +37,7 @@ export function extractedRuntimeAssetPath(
   version: string,
   asset: Pick<RuntimeAsset, 'destination'>,
 ): string {
-  return join(stateRoot, 'runtime', version, extractedRuntimeAssetRelativePath(asset))
+  return join(extractedRuntimeRootPath(stateRoot, version), asset.destination)
 }
 
 function extractedRuntimeRoot(environment: StateEnvironment): string {
