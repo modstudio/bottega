@@ -1,6 +1,11 @@
 import { PLATFORM_SLUG } from './brand.ts'
 import { embeddedDistributionManifest } from './embedded-assets.ts'
-import { assetPath, installRoot, readDistributionManifest } from './install-root.ts'
+import {
+  assetPath,
+  installationExecutable,
+  installRoot,
+  readDistributionManifest,
+} from './install-root.ts'
 
 export const BOTTEGA_ENTRY_PROTOCOL = {
   [PLATFORM_SLUG]: { compiledArguments: [], usage: 'public' },
@@ -22,7 +27,8 @@ export type BottegaEntry = keyof typeof BOTTEGA_ENTRY_PROTOCOL
 /** The public executable of the running installed distribution, when this is one. */
 export function installedBottegaExecutable(): string | null {
   if (embeddedDistributionManifest()) return process.execPath
-  return readDistributionManifest(installRoot()) ? assetPath('bin', PLATFORM_SLUG) : null
+  const root = installRoot()
+  return readDistributionManifest(root) ? installationExecutable(root, 'distribution') : null
 }
 
 /** Resolve source-mode Bun through PATH so generated commands survive package upgrades. */

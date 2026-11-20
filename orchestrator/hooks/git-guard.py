@@ -18,6 +18,7 @@ import sys
 sys.path.insert(0, os.path.dirname(__file__))
 from registered_scope import should_hook_act
 from hook_emission import record_emission
+from hook_paths import bottega_bin
 
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
@@ -135,18 +136,14 @@ def database_path():
         return os.environ["BOTTEGA_ORCHESTRATOR_DB"]
     try:
         result = subprocess.run(
-            [
-                "bun", "--no-env-file",
-                os.path.join(ROOT, "shared", "state-directory.ts"),
-                "orchestrator", "database",
-            ],
+            [bottega_bin(), "machine", "store-path"],
             capture_output=True, text=True, timeout=5,
         )
     except (OSError, subprocess.TimeoutExpired):
         return None
     if result.returncode != 0:
         return None
-    return result.stdout.strip() or None
+    return (result.stdout.splitlines() or [""])[0].strip() or None
 
 
 def load_projects(db_path):

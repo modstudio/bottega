@@ -225,6 +225,7 @@ const STATIC_CHECKS: readonly StaticCheckDeclaration[] = [
   script('scripts/check-outcome-lines.ts', run),
   script('scripts/check-source-root.ts', run),
   script('scripts/check-install-paths.ts', run),
+  script('scripts/check-runtime-assets.ts', run),
   script('scripts/check-rehearsal-image-imports.ts', run),
   script('scripts/check-launchd-templates.ts', run),
   script('scripts/check-hook-binary.ts', run),

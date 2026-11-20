@@ -1,6 +1,7 @@
 import importlib.util
 import os
 import unittest
+from unittest.mock import patch
 
 
 PATH = os.path.join(os.path.dirname(__file__), "heartbeat-remind.py")
@@ -10,6 +11,21 @@ SPEC.loader.exec_module(heartbeat_remind)
 
 
 class DetachedDispatchTest(unittest.TestCase):
+    def test_checkout_arm_text_stays_on_the_main_checkout(self):
+        self.assertEqual(
+            heartbeat_remind.arm_context("session-1", checkout=True),
+            "Arm under Monitor from the main checkout: "
+            f"{heartbeat_remind.heartbeat_path()} session-1",
+        )
+
+    def test_distribution_arm_text_carries_the_installed_binary(self):
+        with patch.dict(os.environ, {"BOTTEGA_BIN": "/install dir/bottega's"}):
+            self.assertEqual(
+                heartbeat_remind.arm_context("session-1", checkout=False),
+                "Arm under Monitor: BOTTEGA_BIN='/install dir/bottega'\"'\"'s' "
+                f"{heartbeat_remind.heartbeat_path()} session-1",
+            )
+
     def test_recognizes_front_door_dispatch_spellings(self):
         self.assertIsNotNone(
             heartbeat_remind.detached_dispatch("bottega run start implement task")

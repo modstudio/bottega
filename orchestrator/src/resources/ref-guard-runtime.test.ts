@@ -12,27 +12,18 @@ import {
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { PLATFORM_NAME } from '../../../shared/brand.ts'
-import { REF_GUARD_RUNTIME_ASSET, registerEmbeddedAssets } from '../../../shared/embedded-assets.ts'
+import { RUNTIME_ASSETS, registerEmbeddedAssets } from '../../../shared/embedded-assets.ts'
 import { assertSharedRefGuardOutsideWritableRoots } from './ref-guard.ts'
 import { refGuardRuntimePath, resolveRefGuardHook } from './ref-guard-runtime.ts'
 
 afterEach(() => registerEmbeddedAssets(null))
 
-test('the ref guard path selects checkout and extracted locations without mixing roots', () => {
+test('the ref guard path selects the checkout hook', () => {
   expect(
     refGuardRuntimePath({
-      embeddedVersion: null,
       sourceRoot: '/checkout/orchestrator',
-      stateRoot: '/state',
     }),
   ).toBe('/checkout/orchestrator/hooks/reference-transaction')
-  expect(
-    refGuardRuntimePath({
-      embeddedVersion: '1.2.3',
-      sourceRoot: '',
-      stateRoot: '/state',
-    }),
-  ).toBe('/state/runtime/1.2.3/ref-guard/reference-transaction')
 })
 
 test('dispatch refuses a resolved guard executable inside a writable root', () => {
@@ -62,7 +53,7 @@ test('a symlinked runtime version directory is quarantined before guard extracti
     mkdirSync(dirname(version), { recursive: true })
     symlinkSync(planted, version)
     registerEmbeddedAssets({
-      assets: { [REF_GUARD_RUNTIME_ASSET.packagePath]: bytes },
+      assets: Object.fromEntries(RUNTIME_ASSETS.map((asset) => [asset.packagePath, bytes])),
       files: {},
       manifest: {
         name: PLATFORM_NAME,

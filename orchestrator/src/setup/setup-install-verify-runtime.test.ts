@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test'
+import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { RECORD_SIGN_IN_REMEDY } from '../../../shared/record-remedies.ts'
 import {
@@ -7,7 +8,6 @@ import {
   settingsApplyDecision,
 } from '../settings/settings-machine-apply.ts'
 import {
-  hookScriptPath,
   PRODUCT_HOOKS,
   SCRIPT_FILES,
   withMachineProductHooks,
@@ -21,6 +21,7 @@ const current: MachineSettingsApplyResult[] = [
 
 function facts(): SetupInstallVerifyFacts {
   const installRoot = `/installed/${PLATFORM_SLUG}`
+  const scriptPath = (file: string) => join(installRoot, 'orchestrator', 'hooks', file)
   return {
     installRoot,
     hooks: PRODUCT_HOOKS,
@@ -32,16 +33,21 @@ function facts(): SetupInstallVerifyFacts {
         state: 'readable',
         settings: withMachineProductHooks(
           { permissions: {}, hooks: {} },
-          installRoot,
           '/state/orchestrator.db',
           'on',
+          {
+            executable: join(installRoot, 'bin', PLATFORM_SLUG),
+            scriptPath,
+          },
         ).settings,
       },
     ],
     scripts: SCRIPT_FILES.map((file) => ({
       file,
-      path: hookScriptPath(installRoot, file),
+      path: scriptPath(file),
+      assetRoot: installRoot,
       exists: true,
+      readable: true,
       executable: true,
     })),
     canonEntries: [{ harness: 'claude', path: '/home/operator/.claude/CLAUDE.md', exists: true }],
@@ -116,12 +122,17 @@ test('signed-out settings decisions stay follow-ups after a grok canon home is i
   expect(first.action).toBe('wait-for-sign-in')
   expect(second.action).toBe(first.action)
 
+  let runtimePrepared = false
   const applied = await applySetupInstallVerify(false, {
+    prepareRuntime: () => {
+      runtimePrepared = true
+    },
     applySettings: async () => [missingSettings, emptyGrokCanon],
     facts: () => {
       throw new Error('signed-out follow-up must not gather verification facts')
     },
   })
+  expect(runtimePrepared).toBe(true)
   expect(applied).toEqual({
     status: 'follow-up',
     condition: 'waiting-for-sign-in',

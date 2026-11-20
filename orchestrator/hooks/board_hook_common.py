@@ -9,6 +9,8 @@ import subprocess
 import tempfile
 import uuid
 
+from hook_paths import bottega_bin
+
 
 def store_path() -> str:
     value = os.environ.get("BOTTEGA_ORCHESTRATOR_DB")
@@ -16,9 +18,7 @@ def store_path() -> str:
 
 
 def board_bin() -> str:
-    return os.environ.get("BOTTEGA_BOARD_BIN") or os.path.abspath(
-        os.path.join(os.path.dirname(__file__), "..", "..", "bin", "bottega")
-    )
+    return os.environ.get("BOTTEGA_BOARD_BIN") or bottega_bin()
 
 
 def marker_path(kind: str, session: str) -> str:

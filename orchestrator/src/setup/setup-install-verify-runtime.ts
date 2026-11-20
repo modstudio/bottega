@@ -6,6 +6,7 @@ import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { assetPath } from '../../../shared/install-root.ts'
 import { recordSignInRemedy } from '../../../shared/record-remedies.ts'
+import { runtimeAssetPath, runtimeAssetRoot } from '../../../shared/runtime-assets.ts'
 import { resolveRunsDirectory } from '../../../shared/state-directory.ts'
 import { userCanonHomesFromEnvironment } from '../canon/user-canon-home-files.ts'
 import {
@@ -21,7 +22,7 @@ import {
   settingsApplyDecision,
   settingsApplyLockSkipped,
 } from '../settings/settings-machine-apply.ts'
-import { hookScriptPath, PRODUCT_HOOKS, SCRIPT_FILES } from '../settings/settings-machine-hooks.ts'
+import { PRODUCT_HOOKS, SCRIPT_FILES } from '../settings/settings-machine-hooks.ts'
 import {
   type SetupInstallSettingsFileFact,
   type SetupInstallVerifyFacts,
@@ -31,6 +32,7 @@ import {
 export type SetupInstallVerifyAdapters = {
   applySettings?: () => Promise<MachineSettingsApplyResult[]>
   facts?: () => SetupInstallVerifyFacts
+  prepareRuntime?: () => void
 }
 
 const SIGN_IN_FOLLOW_UP =
@@ -60,17 +62,30 @@ function gatherSetupInstallVerifyFacts(
 ): SetupInstallVerifyFacts {
   const installRoot = assetPath()
   const claudeHome = claudeHomeFromEnvironment(environment)
+  const assetRoot = runtimeAssetRoot(environment)
   const scriptFacts = SCRIPT_FILES.map((file) => {
-    const path = hookScriptPath(installRoot, file)
+    const path = runtimeAssetPath(`orchestrator/hooks/${file}`, environment)
     const exists = existsSync(path) && statSync(path).isFile()
+    let readable = false
     let executable = false
     if (exists) {
+      try {
+        accessSync(path, constants.R_OK)
+        readable = true
+      } catch {}
       try {
         accessSync(path, constants.X_OK)
         executable = true
       } catch {}
     }
-    return { file, path, exists, executable }
+    return {
+      file,
+      path,
+      assetRoot,
+      exists,
+      readable,
+      executable,
+    }
   })
   const homes = userCanonHomesFromEnvironment(
     environment,
@@ -112,6 +127,9 @@ export async function applySetupInstallVerify(
   message: string
   condition?: 'waiting-for-sign-in'
 }> {
+  const prepareRuntime =
+    adapters.prepareRuntime ?? (() => runtimeAssetPath('orchestrator/hooks/session-start.py'))
+  prepareRuntime()
   const results = await (adapters.applySettings ?? (() => applyMachineSettings({ check: false })))()
   if (results.some(settingsApplyLockSkipped)) {
     throw new Error(
