@@ -9,7 +9,6 @@ const SOURCE_ROOTS = ['hub', 'orchestrator', 'shared']
 const DIRECT_ARRAY_CAST = /\}::[a-z_]+\[\]/g
 const SQL_TEMPLATE_LITERAL =
   /[A-Za-z_$][\w.$]*\s*\\?`\s*(?:SELECT|INSERT|UPDATE|DELETE|WITH|SET|SAVEPOINT|ROLLBACK|RELEASE)\b[\s\S]*?`/gi
-const INTERPOLATION = /\$\{([\s\S]*?)\}/g
 const DIRECT_JSON_CAST = /^\s*::(?:text\s*::\s*)?jsonb?\b/
 const JSON_SERIALIZER = /^(?:JSON\.stringify|canonicalJson)\(/
 const JSON_TEXT_EXEMPTIONS = new Map([
@@ -23,6 +22,25 @@ const JSON_TEXT_EXEMPTIONS = new Map([
 ])
 const TEST_FILE = /(?:^|\/)(?:test|tests)\/|(?:^|\/)(?:test-[^/]+|[^/]+\.test)\.ts$/
 const violations: string[] = []
+
+function interpolations(template: string) {
+  const found: { expression: string; index: number; end: number }[] = []
+  let searchFrom = 0
+  while (searchFrom < template.length) {
+    const index = template.indexOf('${', searchFrom)
+    if (index === -1) break
+    let depth = 1
+    let cursor = index + 2
+    for (; cursor < template.length && depth > 0; cursor++) {
+      if (template[cursor] === '{') depth++
+      else if (template[cursor] === '}') depth--
+    }
+    if (depth > 0) break
+    found.push({ expression: template.slice(index + 2, cursor - 1), index, end: cursor })
+    searchFrom = cursor
+  }
+  return found
+}
 
 export function postgresBindingViolations(source: string, file: string): string[] {
   const found: string[] = []
@@ -41,9 +59,8 @@ export function postgresBindingViolations(source: string, file: string): string[
   }
   SQL_TEMPLATE_LITERAL.lastIndex = 0
   for (const template of source.matchAll(SQL_TEMPLATE_LITERAL)) {
-    INTERPOLATION.lastIndex = 0
-    for (const match of template[0].matchAll(INTERPOLATION)) {
-      const offset = template.index + match.index
+    for (const interpolation of interpolations(template[0])) {
+      const offset = template.index + interpolation.index
       const line = source.slice(0, offset).split('\n').length
       const prefix = lines[line - 1]?.trimStart() ?? ''
       if (
@@ -53,8 +70,8 @@ export function postgresBindingViolations(source: string, file: string): string[
         prefix.startsWith('#')
       )
         continue
-      const expression = match[1]!.trim()
-      const afterInterpolation = template[0].slice(match.index + match[0].length)
+      const expression = interpolation.expression.trim()
+      const afterInterpolation = template[0].slice(interpolation.end)
       const exempt = JSON_TEXT_EXEMPTIONS.get(file)?.has(expression) ?? false
       if (
         (!exempt && JSON_SERIALIZER.test(expression)) ||
@@ -68,12 +85,7 @@ export function postgresBindingViolations(source: string, file: string): string[
 
 for (const sourceRoot of SOURCE_ROOTS) {
   for (const relative of new Glob('**/*.ts').scanSync({ cwd: join(ROOT, sourceRoot) })) {
-    if (
-      relative.includes('node_modules/') ||
-      TEST_FILE.test(relative) ||
-      join(sourceRoot, relative) === 'shared/record/jsonb-sql.ts'
-    )
-      continue
+    if (relative.includes('node_modules/') || TEST_FILE.test(relative)) continue
     const file = join(sourceRoot, relative)
     violations.push(...postgresBindingViolations(readFileSync(join(ROOT, file), 'utf8'), file))
   }

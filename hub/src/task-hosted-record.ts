@@ -111,7 +111,8 @@ export async function showHostedTask(
   const found = []
   for (const options of hostedProjectSpaces(scope.project, hosted)) {
     try {
-      found.push(await hostedGetTask(scope.recordId ?? key.toUpperCase(), options))
+      const detail = await hostedGetTask(scope.recordId ?? key.toUpperCase(), options)
+      if (!scope.project || detail.task.project === scope.project) found.push(detail)
     } catch (error) {
       if (!isMissingHostedTask(error)) {
         const message = error instanceof Error ? error.message : String(error)

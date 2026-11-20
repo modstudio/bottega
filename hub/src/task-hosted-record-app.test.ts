@@ -176,11 +176,9 @@ test('hosted list keeps only tasks from the requested project in a shared space'
   expect(filtered.every((task) => task.project === 'eta')).toBe(true)
 })
 
-test('unfiltered hosted list has no duplicate rows for a shared space', async () => {
-  const { gamma, eta } = await createSharedSpaceTasks()
-  const unfiltered = await recordList({})
-  expect(unfiltered.filter((task) => task.record_id === gamma.record_id)).toHaveLength(1)
-  expect(unfiltered.filter((task) => task.record_id === eta.record_id)).toHaveLength(1)
+test("hosted show does not return another shared-space project's task", async () => {
+  const { gamma } = await createSharedSpaceTasks()
+  await expect(recordShow(gamma.key, { project: 'eta' })).rejects.toThrow(`no task ${gamma.key}`)
 })
 
 const hosted = () => ({ baseUrl: 'https://hub.example.test', token: 'test', fetch: recordFetch })
