@@ -4,9 +4,16 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
+import { reviewReply } from '../../test/fixtures/replies.ts'
 import { spawnFixtureGitSync } from '../../test/fixtures/spawn.ts'
 import { boardClaimList } from '../board/board-operations.ts'
 import { testDatabaseFixture } from '../database/test-database.fixture.ts'
+import {
+  completeReview,
+  gradeReviewLens,
+  recordReview,
+  triageFinding,
+} from '../review/review-triage.ts'
 import {
   productionStepCatalogue,
   promoteStepCatalogueLocal,
@@ -284,7 +291,7 @@ test('an unresolvable waiver branch refuses with the required arguments and does
   })
 })
 
-test('no accepted findings refuses instead of throwing when no measured review round exists', () => {
+function noAcceptedFindingsFixture() {
   const repository = mkdtempSync(join(tmpdir(), 'workflow-no-accepted-findings-'))
   const git = (...args: string[]) => {
     const result = spawnFixtureGitSync(args, { cwd: repository })
@@ -301,27 +308,112 @@ test('no accepted findings refuses instead of throwing when no measured review r
     writeFileSync(join(repository, 'file.txt'), 'changed\n')
     git('commit', '-am', 'change')
     const d = floorDatabase()
+    const projectRecordId = newRecordId()
     d.query('INSERT INTO project (record_id,name,path,settings) VALUES (?,?,?,?)').run(
-      newRecordId(),
+      projectRecordId,
       'waiver-fixture',
       repository,
       JSON.stringify({ trunk: 'main' }),
     )
+    const head = spawnFixtureGitSync(['rev-parse', 'HEAD'], { cwd: repository })
+    if (head.exitCode !== 0) throw new Error(head.stderr.toString())
+    return {
+      d,
+      head: head.stdout.toString().trim(),
+      projectRecordId,
+      repository,
+      dispose: () => rmSync(repository, { recursive: true, force: true }),
+    }
+  } catch (error) {
+    rmSync(repository, { recursive: true, force: true })
+    throw error
+  }
+}
+
+test('no measured review round establishes no accepted findings', () => {
+  const fixture = noAcceptedFindingsFixture()
+  try {
+    expect(
+      gatherNoAcceptedFindingsFact(
+        'waiver-fixture',
+        { worktree: fixture.repository, branch: 'DEV-1-change' },
+        fixture.d,
+      ),
+    ).toEqual({ action: 'allow', facts: ['no-accepted-findings'] })
+  } finally {
+    fixture.dispose()
+  }
+})
+
+test('a measured review round with an accepted finding withholds no accepted findings', () => {
+  const fixture = noAcceptedFindingsFixture()
+  try {
+    const runRecordId = newRecordId()
+    fixture.d
+      .query(
+        `INSERT INTO run
+           (record_id,number,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,repo,
+            project_record_id,branch,head_commit,lens,model)
+         VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM run),'2026-11-19','codex','review-lens',
+                 'sha',1,'head','ok','waiver-fixture',?,'DEV-1-change',?,'correctness','fixture-model')`,
+      )
+      .run(runRecordId, fixture.projectRecordId, fixture.head)
+    const output = reviewReply(1, 'high')
+    const reviewRecordId = recordReview(runRecordId, output, fixture.d)
+    gradeReviewLens(
+      runRecordId,
+      output,
+      { reproduced: 'all', coverage: 'adequate', limits: 'absent', overlap: 'none' },
+      fixture.d,
+    )
+    triageFinding(reviewRecordId, 1, 'accepted', undefined, 'high', fixture.d)
+    completeReview(reviewRecordId, fixture.d)
 
     expect(
       gatherNoAcceptedFindingsFact(
         'waiver-fixture',
-        { worktree: repository, branch: 'DEV-1-change' },
-        d,
+        { worktree: fixture.repository, branch: 'DEV-1-change' },
+        fixture.d,
       ),
-    ).toEqual({
-      action: 'refuse',
-      message: expect.stringContaining(
-        'no-accepted-findings cannot be established: the review lineage for branch DEV-1-change has no measured review rounds; cleared by: run and judge the review lenses for the current change',
-      ),
-    })
+    ).toEqual({ action: 'allow', facts: [] })
   } finally {
-    rmSync(repository, { recursive: true, force: true })
+    fixture.dispose()
+  }
+})
+
+test('an unmeasured review with an accepted finding withholds no accepted findings', () => {
+  const fixture = noAcceptedFindingsFixture()
+  try {
+    const runRecordId = newRecordId()
+    fixture.d
+      .query(
+        `INSERT INTO run
+           (record_id,number,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,repo,
+            project_record_id,branch,lens,model)
+         VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM run),'2026-11-19','codex','review-lens',
+                 'sha',1,'head','ok','waiver-fixture',?,'DEV-1-change','correctness','fixture-model')`,
+      )
+      .run(runRecordId, fixture.projectRecordId)
+    const output = reviewReply(1, 'high')
+    const reviewRecordId = recordReview(runRecordId, output, fixture.d)
+    gradeReviewLens(
+      runRecordId,
+      output,
+      { reproduced: 'all', coverage: 'adequate', limits: 'absent', overlap: 'none' },
+      fixture.d,
+    )
+    triageFinding(reviewRecordId, 1, 'accepted', undefined, 'high', fixture.d)
+    completeReview(reviewRecordId, fixture.d)
+
+    expect(
+      gatherNoAcceptedFindingsFact(
+        'waiver-fixture',
+        { worktree: fixture.repository, branch: 'DEV-1-change' },
+        fixture.d,
+      ),
+    ).toEqual({ action: 'allow', facts: [] })
+  } finally {
+    fixture.dispose()
   }
 })
 

@@ -2,7 +2,11 @@
 /** Gathers declarative dispatch-waiver facts from their canonical review decisions. */
 
 import type { Database } from 'bun:sqlite'
-import { continuationRoundHasAcceptedFindings } from '../review/review-continuation-findings.ts'
+import {
+  continuationLineageHasAcceptedFindings,
+  continuationLineageHasMeasuredRound,
+  continuationRoundHasAcceptedFindings,
+} from '../review/review-continuation-findings.ts'
 import { measureChangeGroup } from '../review/review-group.ts'
 import {
   resolveBranchUnderReview,
@@ -35,16 +39,18 @@ export function gatherNoAcceptedFindingsFact(
   const measured = measureChangeGroup(resolved.cwd, resolved.project, resolved.branch, resolved.tip)
   if (!measured)
     return refusal(`could not measure the current change group for branch ${resolved.branch}`)
-  try {
+  if (!continuationLineageHasMeasuredRound(database, measured.group)) {
     return {
       action: 'allow',
-      facts: continuationRoundHasAcceptedFindings(database, measured.group)
+      facts: continuationLineageHasAcceptedFindings(database, measured.group)
         ? []
         : ['no-accepted-findings'],
     }
-  } catch (error) {
-    if (error instanceof Error && error.message.includes('has no measured review rounds'))
-      return refusal(error.message.replace('\n', '; '))
-    throw error
+  }
+  return {
+    action: 'allow',
+    facts: continuationRoundHasAcceptedFindings(database, measured.group)
+      ? []
+      : ['no-accepted-findings'],
   }
 }
