@@ -46,7 +46,6 @@ function facts(): SetupInstallVerifyFacts {
       exists: true,
       readable: true,
       executable: true,
-      invocation: 'interpreter',
     })),
     canonEntries: [
       { harness: 'claude', path: '/home/operator/.claude/CLAUDE.md', exists: true },
@@ -75,6 +74,24 @@ function removeHook(input: SetupInstallVerifyFacts, script: string): void {
   for (const groups of Object.values(hooks)) {
     for (const group of groups) {
       group.hooks = group.hooks.filter((handler) => !handler.command.includes(`/${script}`))
+    }
+  }
+}
+
+function replaceHookCommand(
+  input: SetupInstallVerifyFacts,
+  script: string,
+  replacement: (command: string) => string,
+): void {
+  const hooks = userSettings(input).hooks as Record<
+    string,
+    Array<{ hooks: Array<{ command: string }> }>
+  >
+  for (const groups of Object.values(hooks)) {
+    for (const group of groups) {
+      for (const handler of group.hooks) {
+        if (handler.command.includes(`/${script}`)) handler.command = replacement(handler.command)
+      }
     }
   }
 }
@@ -118,9 +135,15 @@ test('an interpreter-invoked hook script must be readable but need not be execut
 
 test('a directly invoked hook script must be executable', () => {
   const input = facts()
-  input.scripts[0]!.invocation = 'direct'
-  input.scripts[0]!.executable = false
-  expect(check(verifySetupInstall(input), 'hook-scripts-accessible')).toMatchObject({ ok: false })
+  const script = input.scripts[0]!
+  replaceHookCommand(input, script.file, (command) =>
+    command.replace(/(?:[A-Za-z_][A-Za-z0-9_]*=(?:'[^']*'|\S+)\s+)*python3\s+/, ''),
+  )
+  script.executable = false
+  expect(check(verifySetupInstall(input), 'hook-scripts-accessible')).toMatchObject({
+    ok: false,
+    detail: `${script.path} is not executable for direct invocation`,
+  })
 })
 
 test('disableAllHooks in user settings fails hooks-not-disabled', () => {

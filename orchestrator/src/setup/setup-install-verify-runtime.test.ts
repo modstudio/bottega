@@ -45,7 +45,6 @@ function facts(): SetupInstallVerifyFacts {
       exists: true,
       readable: true,
       executable: true,
-      invocation: 'interpreter',
     })),
     canonEntries: [{ harness: 'claude', path: '/home/operator/.claude/CLAUDE.md', exists: true }],
   }

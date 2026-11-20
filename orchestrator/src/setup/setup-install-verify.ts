@@ -27,7 +27,6 @@ export type SetupInstallVerifyFacts = {
     exists: boolean
     readable: boolean
     executable: boolean
-    invocation: 'interpreter' | 'direct'
   }>
   canonEntries: Array<{ harness: string; path: string; exists: boolean }>
 }
@@ -123,10 +122,40 @@ function hookCheck(
   }
 }
 
+const LEADING_ENVIRONMENT_ASSIGNMENT =
+  /^[A-Za-z_][A-Za-z0-9_]*=(?:'(?:[^']|'\\'')*'|"(?:[^"\\]|\\.)*"|(?:\\.|[^\s])+?)\s+/
+
+function startsWithPython3AfterAssignments(command: string): boolean {
+  let remainder = command.trimStart()
+  while (true) {
+    const assignment = remainder.match(LEADING_ENVIRONMENT_ASSIGNMENT)
+    if (!assignment) return remainder === 'python3' || /^python3\s/.test(remainder)
+    remainder = remainder.slice(assignment[0].length)
+  }
+}
+
+function scriptInvocation(
+  facts: SetupInstallVerifyFacts,
+  script: SetupInstallVerifyFacts['scripts'][number],
+): 'interpreter' | 'direct' {
+  const file = userSettings(facts)
+  if (file?.state !== 'readable') return 'direct'
+  const commands = facts.hooks
+    .filter((declaration) => declaration.script === script.file)
+    .flatMap((declaration) => handlersFor(file.settings, declaration))
+    .map((handler) => handler.command)
+    .filter((command) => commandNamesHookScript(command, script.file, script.assetRoot))
+  return commands.length > 0 && commands.every(startsWithPython3AfterAssignments)
+    ? 'interpreter'
+    : 'direct'
+}
+
 function scriptAccessCheck(facts: SetupInstallVerifyFacts): SetupInstallVerifyCheck {
   const failed = facts.scripts.filter(
     (script) =>
-      !script.exists || !script.readable || (script.invocation === 'direct' && !script.executable),
+      !script.exists ||
+      !script.readable ||
+      (scriptInvocation(facts, script) === 'direct' && !script.executable),
   )
   return {
     name: 'hook-scripts-accessible',

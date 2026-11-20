@@ -85,7 +85,6 @@ function gatherSetupInstallVerifyFacts(
       exists,
       readable,
       executable,
-      invocation: 'interpreter' as const,
     }
   })
   const homes = userCanonHomesFromEnvironment(

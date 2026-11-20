@@ -312,10 +312,8 @@ function assertSecondSetupSkipsInstallerCalls(
 async function runExtractedHookProof(
   version: string,
   paths: InstallProofPaths,
-  executable: string,
   env: Record<string, string | undefined>,
   failures: string[],
-  rendered: boolean,
 ): Promise<StepResult> {
   const runtimeRoot = join(paths.state, 'runtime', version, 'assets')
   recordProofAssertion(
@@ -324,7 +322,7 @@ async function runExtractedHookProof(
     `setup apply did not extract the runtime tree at ${runtimeRoot}`,
   )
   const settingsPath = join(paths.home, '.claude', 'settings.json')
-  if (rendered && !existsSync(settingsPath)) {
+  if (!existsSync(settingsPath)) {
     return {
       name: 'extracted hook',
       exitCode: 1,
@@ -332,13 +330,10 @@ async function runExtractedHookProof(
       stderr: '',
     }
   }
-  const hook = join(runtimeRoot, 'orchestrator', 'hooks', 'test-substance-guard.py')
-  const command = rendered
-    ? renderedHookCommand(
-        JSON.parse(readFileSync(settingsPath, 'utf8')) as unknown,
-        'test-substance-guard.py',
-      )
-    : `BOTTEGA_BIN=${shellQuote(executable)} python3 ${shellQuote(hook)}`
+  const command = renderedHookCommand(
+    JSON.parse(readFileSync(settingsPath, 'utf8')) as unknown,
+    'test-substance-guard.py',
+  )
   if (command === null) {
     return {
       name: 'extracted hook',
@@ -404,7 +399,7 @@ async function seedProofSettings(
   paths: InstallProofPaths,
   executable: string,
   env: Record<string, string | undefined>,
-): Promise<{ results: StepResult[]; seeded: boolean }> {
+): Promise<StepResult[]> {
   mkdirSync(join(paths.home, '.claude'), { recursive: true })
   writeFileSync(join(paths.home, '.claude', 'settings.json'), '{}\n')
   const settingsImport = await runStep(
@@ -444,7 +439,7 @@ async function seedProofSettings(
       ),
     )
   }
-  return { results, seeded }
+  return results
 }
 
 function reportProof(results: StepResult[], assertionFailures: string[]): number {
@@ -502,17 +497,8 @@ async function proveReleaseInstall(version: string, keep: boolean): Promise<numb
 
     results.push(await runStep('setup apply', setupArgv, paths.home, env))
     const seededSettings = await seedProofSettings(paths, executable, env)
-    results.push(...seededSettings.results)
-    results.push(
-      await runExtractedHookProof(
-        version,
-        paths,
-        executable,
-        env,
-        assertionFailures,
-        seededSettings.seeded,
-      ),
-    )
+    results.push(...seededSettings)
+    results.push(await runExtractedHookProof(version, paths, env, assertionFailures))
     const firstInstallerCounts = harnessInstallerInvocationCounts(
       readProofLog(brewLog),
       readProofLog(curlLog),
