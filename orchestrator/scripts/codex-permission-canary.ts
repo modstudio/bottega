@@ -46,6 +46,7 @@ try {
   mkdirSync(scratch)
   mkdirSync(runtime)
   mkdirSync(state)
+  mkdirSync(join(state, 'hub'))
   writeFileSync(join(other, 'secret.txt'), 'other project\n')
   mkdirSync(main)
   const gitEnvironment = targetGitEnvironment(main)
@@ -61,7 +62,11 @@ try {
 
   const ownProject = project('own-project', 'own-project', main)
   const otherProject = project('other-project', 'other-project', other)
-  const environment = { ...process.env, BOTTEGA_STATE_HOME: state }
+  const environment = {
+    ...process.env,
+    BOTTEGA_STATE_HOME: state,
+    BOTTEGA_HUB_DB: join(state, 'hub', 'hub.db'),
+  }
   const sharedProfile = codexPermissionProfile({
     worktree: own,
     runtimeDir: runtime,

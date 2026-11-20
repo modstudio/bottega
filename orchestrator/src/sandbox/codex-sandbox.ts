@@ -96,6 +96,7 @@ export function codexPermissionProfileInput(input: {
   tempDir: string | undefined
   writesRepository: boolean
   directoryListings: CodexDirectoryListing
+  opaquePaths?: readonly string[]
 }): CodexPermissionProfileInput {
   refuseGlobDeny(input.profile.filesystem.denyRead)
   const writableRoots = input.writesRepository
@@ -107,6 +108,7 @@ export function codexPermissionProfileInput(input: {
         denyRead: input.profile.filesystem.denyRead,
         protectedPaths: [input.cwd, ...writableRoots],
         directoryListings: input.directoryListings,
+        opaquePaths: input.opaquePaths,
       }),
       allowRead: input.profile.filesystem.allowWithinDeny,
       denyWrite: input.profile.filesystem.denyWrite,

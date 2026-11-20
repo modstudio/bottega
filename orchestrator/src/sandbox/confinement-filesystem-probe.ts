@@ -163,7 +163,7 @@ if printf fixture >${JSON.stringify(canaryPath)} && git add ${JSON.stringify(can
 if git log --format=%s -1 | grep -Fx codex-confinement-canary >/dev/null; then echo git-log=ran; else echo git-log=failed; fi
 ${accessScript}`,
         'probe',
-        cwd,
+        realPathForPotentialPath(cwd),
         ...measuredTargets.map(({ path }) => path),
       ],
       {

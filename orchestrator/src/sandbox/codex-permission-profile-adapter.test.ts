@@ -2,6 +2,7 @@ import { expect, test } from 'bun:test'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { realPathForPotentialPath } from '../../../shared/state-directory.ts'
 import { codexPermissionLaunchProfileInput } from './codex-permission-profile-adapter.ts'
 
 test('a continued turn rebuilds its profile and denies an entry created after the first launch', () => {
@@ -35,11 +36,11 @@ test('a continued turn rebuilds its profile and denies an entry created after th
         writesRepository: false,
       })
 
-    expect(launch().filesystem.denyRead).toContain(firstSibling)
+    expect(launch().filesystem.denyRead).toContain(realPathForPotentialPath(firstSibling))
     const laterSibling = join(root, 'projects', 'proj', 'worktrees', 'later-sibling')
     mkdirSync(laterSibling)
     writeFileSync(join(laterSibling, 'secret'), 'fixture')
-    expect(launch().filesystem.denyRead).toContain(laterSibling)
+    expect(launch().filesystem.denyRead).toContain(realPathForPotentialPath(laterSibling))
   } finally {
     rmSync(root, { recursive: true, force: true })
   }

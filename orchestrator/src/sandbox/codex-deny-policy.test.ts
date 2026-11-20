@@ -25,6 +25,7 @@ test('writer denies literal siblings without denying cwd or writable-root ancest
   const denies = decideCodexLiteralDenyRead({
     denyRead: ['/projects', '/state', `${cwd}/declared.secret`],
     protectedPaths,
+    opaquePaths: ['/projects/proj/.git'],
     directoryListings: {
       '/projects': ['other', 'proj'],
       '/projects/proj': ['.claude', '.git', 'README'],
@@ -49,6 +50,7 @@ test('writer denies literal siblings without denying cwd or writable-root ancest
       `${cwd}/declared.secret`,
     ]),
   )
+  expect(denies.some((deny) => deny.startsWith('/projects/proj/.git/'))).toBe(false)
 
   // Mutation probe: restoring the original projects-root deny violates the invariant.
   expect(() => expectSafeCodexDenies([...denies, '/projects'], protectedPaths)).toThrow()

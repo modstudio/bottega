@@ -17,12 +17,14 @@ function protectedBelow(deny: string, protectedPaths: readonly string[]): string
 export function codexDenyListingDirectories(
   denyRead: readonly string[],
   protectedPaths: readonly string[],
+  opaquePaths: readonly string[] = [],
 ): string[] {
   const directories = new Set<string>()
   for (const deny of denyRead) {
     for (const target of protectedBelow(deny, protectedPaths)) {
       let directory = deny
       for (const component of relative(deny, target).split(sep).filter(Boolean)) {
+        if (opaquePaths.some((opaque) => isAtOrBelow(directory, opaque))) break
         directories.add(directory)
         directory = resolve(directory, component)
       }
@@ -40,6 +42,7 @@ export function decideCodexLiteralDenyRead(input: {
   denyRead: readonly string[]
   protectedPaths: readonly string[]
   directoryListings: CodexDirectoryListing
+  opaquePaths?: readonly string[]
 }): string[] {
   const denied = new Set<string>()
   for (const deny of input.denyRead) {
@@ -48,7 +51,7 @@ export function decideCodexLiteralDenyRead(input: {
       denied.add(deny)
       continue
     }
-    for (const directory of codexDenyListingDirectories([deny], targets)) {
+    for (const directory of codexDenyListingDirectories([deny], targets, input.opaquePaths)) {
       const entries = input.directoryListings[directory]
       if (!entries) {
         throw new Error(`Codex deny decision is missing the directory listing for ${directory}`)

@@ -3,7 +3,11 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { resolveStatePaths, STATE_HOME_ENV } from '../../../shared/state-directory.ts'
+import {
+  realPathForPotentialPath,
+  resolveStatePaths,
+  STATE_HOME_ENV,
+} from '../../../shared/state-directory.ts'
 import type { Project } from '../project/projects.ts'
 import { isAtOrBelow } from './area-read-policy.ts'
 import { codexPermissionLaunchProfileInput } from './codex-permission-profile-adapter.ts'
@@ -76,15 +80,19 @@ test('Codex writer profile literally denies existing siblings without denying it
     tempDir: '/private/tmp/codex-run',
     writesRepository: true,
   })
-  expect(permissionInput.writableRoots).toContain(worktree)
+  expect(permissionInput.writableRoots).toContain(realPathForPotentialPath(worktree))
   expect(permissionInput.filesystem.denyRead).toEqual(
-    expect.arrayContaining([siblingA, siblingB, siblingPath]),
+    expect.arrayContaining(
+      [siblingA, siblingB, siblingPath].map((path) => realPathForPotentialPath(path)),
+    ),
   )
   expect(permissionInput.filesystem.denyRead.some((denied) => isAtOrBelow(denied, worktree))).toBe(
     false,
   )
-  expect(permissionInput.filesystem.denyRead).not.toContain(projects)
-  expect(permissionInput.filesystem.denyRead).toContain(join(state, 'orchestrator/runs/other-run'))
+  expect(permissionInput.filesystem.denyRead).not.toContain(realPathForPotentialPath(projects))
+  expect(permissionInput.filesystem.denyRead).toContain(
+    realPathForPotentialPath(join(state, 'orchestrator/runs/other-run')),
+  )
   for (const path of [
     ...permissionInput.filesystem.denyRead,
     ...permissionInput.filesystem.allowRead,
@@ -96,14 +104,16 @@ test('Codex writer profile literally denies existing siblings without denying it
     ...permissionInput,
     network: false,
   }).find((arg) => arg.startsWith(`permissions.${PLATFORM_SLUG}.filesystem=`))
-  expect(filesystemArg).toContain(`${JSON.stringify(siblingPath)}="deny"`)
-  expect(filesystemArg).toContain(`${JSON.stringify(siblingA)}="deny"`)
-  expect(filesystemArg).toContain(`${JSON.stringify(siblingB)}="deny"`)
+  expect(filesystemArg).toContain(`${JSON.stringify(realPathForPotentialPath(siblingPath))}="deny"`)
+  expect(filesystemArg).toContain(`${JSON.stringify(realPathForPotentialPath(siblingA))}="deny"`)
+  expect(filesystemArg).toContain(`${JSON.stringify(realPathForPotentialPath(siblingB))}="deny"`)
   expect(filesystemArg).toContain(
-    `${JSON.stringify(resolveStatePaths({ [STATE_HOME_ENV]: state }).orchestratorDatabase)}="deny"`,
+    `${JSON.stringify(realPathForPotentialPath(resolveStatePaths({ [STATE_HOME_ENV]: state }).orchestratorDatabase))}="deny"`,
   )
-  expect(filesystemArg).toContain(`${JSON.stringify(join(state, 'orchestrator/runs/other-run'))}="deny"`)
-  expect(filesystemArg).toContain(`${JSON.stringify(worktree)}="write"`)
+  expect(filesystemArg).toContain(
+    `${JSON.stringify(realPathForPotentialPath(join(state, 'orchestrator/runs/other-run')))}="deny"`,
+  )
+  expect(filesystemArg).toContain(`${JSON.stringify(realPathForPotentialPath(worktree))}="write"`)
   expect(filesystemArg).toContain(`${JSON.stringify('/tmp')}="write"`)
   expect(filesystemArg).toContain(`${JSON.stringify('/private/tmp/codex-run')}="write"`)
 })
@@ -150,10 +160,14 @@ test('Codex translation preserves literal state and runs denies for a no-repo re
   const statePaths = resolveStatePaths({ [STATE_HOME_ENV]: state })
   expect(permissionInput.filesystem.denyRead).toEqual(
     expect.arrayContaining([
-      statePaths.orchestratorDatabase,
-      join(statePaths.orchestratorRuns, 'other-run'),
+      realPathForPotentialPath(statePaths.orchestratorDatabase),
+      realPathForPotentialPath(join(statePaths.orchestratorRuns, 'other-run')),
     ]),
   )
-  expect(permissionInput.filesystem.denyRead).not.toContain(statePaths.root)
-  expect(permissionInput.filesystem.denyRead).not.toContain(statePaths.orchestratorRuns)
+  expect(permissionInput.filesystem.denyRead).not.toContain(
+    realPathForPotentialPath(statePaths.root),
+  )
+  expect(permissionInput.filesystem.denyRead).not.toContain(
+    realPathForPotentialPath(statePaths.orchestratorRuns),
+  )
 })

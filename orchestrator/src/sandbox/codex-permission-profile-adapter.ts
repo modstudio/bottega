@@ -1,6 +1,7 @@
 // concern: launch-time filesystem adapter for the Codex literal deny policy
 
 import { readdirSync } from 'node:fs'
+import { isAbsolute, relative, resolve } from 'node:path'
 import { realPathForPotentialPath } from '../../../shared/state-directory.ts'
 import { codexDenyListingDirectories, type CodexDirectoryListing } from './codex-deny-policy.ts'
 import {
@@ -19,7 +20,14 @@ export function codexPermissionLaunchProfileInput(input: {
   tempDir: string | undefined
   writesRepository: boolean
 }): CodexPermissionProfileInput {
-  const canonical = (path: string) => realPathForPotentialPath(path)
+  const canonical = (path: string) => {
+    try {
+      return realPathForPotentialPath(path)
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'EOPNOTSUPP') return resolve(path)
+      throw error
+    }
+  }
   const profile = {
     ...input.profile,
     filesystem: {
@@ -36,10 +44,17 @@ export function codexPermissionLaunchProfileInput(input: {
     ? (codexWritableRoots(input.sandbox, cwd, launchWritableRoots, tempDir, true) ?? [])
     : profile.filesystem.allowWrite
   const protectedPaths = [cwd, ...writableRoots]
+  const opaquePaths = profile.filesystem.allowWithinDeny.filter((allowed) =>
+    writableRoots.some((writable) => {
+      const rel = relative(allowed, writable)
+      return rel === '' || (!rel.startsWith('..') && !isAbsolute(rel))
+    }),
+  )
   const directoryListings: Record<string, readonly string[]> = {}
   for (const directory of codexDenyListingDirectories(
     profile.filesystem.denyRead,
     protectedPaths,
+    opaquePaths,
   )) {
     try {
       directoryListings[directory] = readdirSync(directory)
@@ -57,6 +72,7 @@ export function codexPermissionLaunchProfileInput(input: {
     writableRoots: launchWritableRoots,
     tempDir,
     directoryListings,
+    opaquePaths,
   })
 }
 
