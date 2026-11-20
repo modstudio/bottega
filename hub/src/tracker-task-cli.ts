@@ -80,7 +80,11 @@ export async function refreshTrackerTask(
   projectName?: string,
   dependencies: FreshTaskDependencies = {},
 ): Promise<FreshTaskResult> {
-  const project = await projectForTask(key, projectName, (dependencies.registeredProjects ?? projects)())
+  const project = await projectForTask(
+    key,
+    projectName,
+    (dependencies.registeredProjects ?? projects)(),
+  )
   const source = (dependencies.sourceFor ?? trackerSourceFor)(project)
   if (!source) return { trackerRead: false, commentsVerifiable: true, commentIds: [] }
   if (!source.lookup)

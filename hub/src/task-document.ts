@@ -3,16 +3,16 @@ import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { newRecordId } from '../../shared/record/schema.ts'
 import type { TaskSource } from '../../shared/task-source.ts'
 import { db, nowIso, writeTransaction } from './db.ts'
-import { applyHostedWriteLocally } from './hosted-local-apply.ts'
 import { sendHostedChanges } from './hosted-change-sender.ts'
+import { applyHostedWriteLocally } from './hosted-local-apply.ts'
 import { taskDocumentIdentityByNumber } from './identity/identity.ts'
 import {
   drainHostedEditOutbox,
   queueHostedDocumentDelete,
   queueHostedDocumentUpsert,
 } from './offline-task-edits.ts'
-import { hostedCreateDocument } from './task-client.ts'
 import { HOSTED_DOCUMENT_TABLE, type PushedDocument } from './push-contract.ts'
+import { hostedCreateDocument } from './task-client.ts'
 import { formatTaskDocumentLabel, parseTaskDocumentLabel } from './task-document-label.ts'
 import { resolveTask, type TaskScope, taskByRecordId, taskRecordId } from './task-identity.ts'
 import {
@@ -32,6 +32,9 @@ export type TaskDocumentSummary = {
   role: TaskDocumentRole | null
   title: string
   updated_at: string
+  body?: string
+  version?: string
+  created_at?: string
 }
 export type TaskDocument = TaskDocumentSummary & {
   body: string
@@ -246,7 +249,9 @@ export async function updateTaskDocument(
   ]
   if (hosted) {
     if (!expectedVersion)
-      throw new Error(`a hosted document update requires --version from \`${PLATFORM_SLUG} task doc show\``)
+      throw new Error(
+        `a hosted document update requires --version from \`${PLATFORM_SLUG} task doc show\``,
+      )
     const version = documentVersion()
     const row: PushedDocument = {
       id,
@@ -264,10 +269,24 @@ export async function updateTaskDocument(
       deleted_at: null,
     }
     await sendHostedChanges(
-      [{ table: HOSTED_DOCUMENT_TABLE, id, op: 'upsert', row, fields, expected_revision: expectedVersion }],
+      [
+        {
+          table: HOSTED_DOCUMENT_TABLE,
+          id,
+          op: 'upsert',
+          row,
+          fields,
+          expected_revision: expectedVersion,
+        },
+      ],
       hostedTaskWriteOptions(task.project, options.hosted),
     )
-    return withDocumentLabel({ ...row, task_record_id: current.task_record_id, role: documentRole(row.role), number: current.number })
+    return withDocumentLabel({
+      ...row,
+      task_record_id: current.task_record_id,
+      role: documentRole(row.role),
+      number: current.number,
+    })
   }
   writeTransaction((conn) => {
     const row = conn

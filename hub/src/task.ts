@@ -3,8 +3,8 @@ import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { newRecordId } from '../../shared/record/schema.ts'
 import { TASK_STATUSES } from '../../shared/trackers.ts'
 import { db, nowIso, writeTransaction } from './db.ts'
-import { applyHostedWriteLocally } from './hosted-local-apply.ts'
 import { sendHostedChanges } from './hosted-change-sender.ts'
+import { applyHostedWriteLocally } from './hosted-local-apply.ts'
 import { resolveHostedUrl } from './hosted-url.ts'
 import type { TaskWriteMode } from './hosted-write-mode.ts'
 import { persistInstallBinding } from './install-binding.ts'
@@ -17,11 +17,14 @@ import {
   HOSTED_COMMENT_TABLE,
   HOSTED_STATUS_EVENT_TABLE,
   HOSTED_TASK_TABLE,
-  type HostedPushChange,
   type PushedComment,
 } from './push-contract.ts'
 import type { Attribution } from './task-attribution.ts'
 import { commentAuthorDecision, UNATTRIBUTED } from './task-attribution.ts'
+import { hostedCreateTask } from './task-client.ts'
+import { decideTaskClose, landingCheck } from './task-close-decision.ts'
+import { type TaskDetail, taskBodyVersion } from './task-detail.ts'
+import { listTaskDocuments, type TaskDocumentSummary } from './task-document.ts'
 import {
   hostedComment,
   hostedTaskBatch,
@@ -33,10 +36,6 @@ import {
   showHostedTask,
   taskChangeFields,
 } from './task-hosted-record.ts'
-import { hostedCreateTask } from './task-client.ts'
-import { decideTaskClose, landingCheck } from './task-close-decision.ts'
-import { type TaskDetail, taskBodyVersion } from './task-detail.ts'
-import { listTaskDocuments, type TaskDocumentSummary } from './task-document.ts'
 import {
   missingTaskError,
   resolveTask,
@@ -45,8 +44,8 @@ import {
   taskRecordId,
   taskRecordIdFor,
 } from './task-identity.ts'
-import type { TaskRow } from './task-row.ts'
 import { taskRecordFromRows } from './task-record.ts'
+import type { TaskRow } from './task-row.ts'
 import {
   type HostedTaskWriteOptions,
   hostedTaskWriteOptions,
@@ -336,7 +335,10 @@ export function createLocalTaskInTransaction(
   return row
 }
 
-function cacheTask(conn: import('bun:sqlite').Database, row: import('./hosted-tasks.ts').HostedTask) {
+function cacheTask(
+  conn: import('bun:sqlite').Database,
+  row: import('./hosted-tasks.ts').HostedTask,
+) {
   const task = hostedTaskRow(row)
   conn
     .query(`INSERT INTO task
@@ -523,7 +525,15 @@ export async function createTask(
   )
   if (applied && options.allowDuplicateReason)
     await drainHostedEditOutbox(commentAt, options.hosted)
-  return applied ? (await showTask(hosted.key, { recordId: hosted.id })).task : hostedTaskRow(hosted)
+  return applied
+    ? (
+        await showHostedTask(
+          hosted.key,
+          { project: input.project, recordId: hosted.id },
+          options.hosted,
+        )
+      ).task
+    : hostedTaskRow(hosted)
 }
 
 function listLocalTasks(
@@ -611,13 +621,28 @@ export async function setTaskBody(
 ): Promise<TaskRow> {
   const upper = key.toUpperCase()
   if (resolveHostedUrl()) {
-    const current = (await showTask(upper, scope)).task
+    const current = (await showHostedTask(upper, scope, options.hosted)).task
     const row = pushedTask(current, { body }, nowIso())
     await sendHostedChanges(
-      [{ table: HOSTED_TASK_TABLE, id: current.record_id, op: 'upsert', row, fields: ['body'], expected_revision: Number(expectedVersion) }],
+      [
+        {
+          table: HOSTED_TASK_TABLE,
+          id: current.record_id,
+          op: 'upsert',
+          row,
+          fields: ['body'],
+          expected_revision: Number(expectedVersion),
+        },
+      ],
       hostedOptionsForProject(current.project, options.hosted),
     )
-    return (await showTask(upper, { project: current.project, recordId: current.record_id })).task
+    return (
+      await showHostedTask(
+        upper,
+        { project: current.project, recordId: current.record_id },
+        options.hosted,
+      )
+    ).task
   }
   const recordId = taskRecordId(upper, scope)
   const initial = taskByRecordId<TaskRow>(recordId)
@@ -758,7 +783,9 @@ export async function setTask(
   } & DoneTransitionOptions = {},
 ): Promise<TaskRow> {
   const upper = key.toUpperCase()
-  const current = (await showTask(upper, scope)).task
+  const current = resolveHostedUrl()
+    ? (await showHostedTask(upper, scope, options.hosted)).task
+    : showLocalTask(upper, scope).task
   if (current.source !== 'local') throw new Error(`task ${upper} is not local`)
   assertLocalTaskBodyOverwrite(current, changes.body, options.force)
   const category = changes.status === undefined ? current.status_category : status(changes.status)
@@ -772,11 +799,29 @@ export async function setTask(
   const at = nowIso()
   const hosted = mode === 'hosted-configured'
   if (hosted) {
-    if ((changes.title !== undefined || changes.body !== undefined) && options.expectedRevision === undefined)
-      throw new Error(`task ${current.key} text replacement requires --expect <revision> from \`${PLATFORM_SLUG} task show ${current.key}\``)
-    const batch = hostedTaskBatch({ current, changes, category, at, attribution, expectedRevision: options.expectedRevision })
+    if (
+      (changes.title !== undefined || changes.body !== undefined) &&
+      options.expectedRevision === undefined
+    )
+      throw new Error(
+        `task ${current.key} text replacement requires --expect <revision> from \`${PLATFORM_SLUG} task show ${current.key}\``,
+      )
+    const batch = hostedTaskBatch({
+      current,
+      changes,
+      category,
+      at,
+      attribution,
+      expectedRevision: options.expectedRevision,
+    })
     await sendHostedChanges(batch, hostedOptionsForProject(current.project, options.hosted))
-    return (await showTask(current.key, { project: current.project, recordId: current.record_id })).task
+    return (
+      await showHostedTask(
+        current.key,
+        { project: current.project, recordId: current.record_id },
+        options.hosted,
+      )
+    ).task
   }
   const result = writeTransaction((conn) => {
     const before = conn
@@ -784,7 +829,14 @@ export async function setTask(
       .get(current.record_id)!
     const row = applyLocalTaskPatch(conn, current.record_id, changes, options, at, attribution)
     if (hosted) {
-      queueHostedChange(conn, HOSTED_TASK_TABLE, row.record_id, 'upsert', at, taskChangeFields(changes))
+      queueHostedChange(
+        conn,
+        HOSTED_TASK_TABLE,
+        row.record_id,
+        'upsert',
+        at,
+        taskChangeFields(changes),
+      )
       if (changes.status !== undefined && before.status_category !== row.status_category) {
         const event = conn
           .query<{ record_id: string }, [string, string]>(
@@ -806,7 +858,9 @@ export async function closeTask(
   attribution: Attribution,
   options: { hosted?: HostedOptions } & DoneTransitionOptions = {},
 ) {
-  const current = (await showTask(key, scope)).task
+  const current = resolveHostedUrl()
+    ? (await showHostedTask(key, scope, options.hosted)).task
+    : showLocalTask(key, scope).task
   if (current.source !== 'local') throw new Error(`task ${current.key} is not local`)
   if (current.status_category !== 'done') await prepareDoneTransition(current, attribution, options)
   const mode = writeMode(current.project, options.hosted)
@@ -828,7 +882,13 @@ export async function closeTask(
       ],
       hostedOptionsForProject(current.project, options.hosted),
     )
-    return (await showTask(current.key, { project: current.project, recordId: current.record_id })).task
+    return (
+      await showHostedTask(
+        current.key,
+        { project: current.project, recordId: current.record_id },
+        options.hosted,
+      )
+    ).task
   }
   const result = writeTransaction((conn) => {
     const row = conn
@@ -868,7 +928,9 @@ export async function commentTask(
   options: { hosted?: HostedOptions } = {},
 ): Promise<TaskComment> {
   const upper = key.toUpperCase()
-  const current = (await showTask(upper, scope)).task
+  const current = resolveHostedUrl()
+    ? (await showHostedTask(upper, scope, options.hosted)).task
+    : showLocalTask(upper, scope).task
   if (current.source !== 'local') throw new Error(`task ${upper} is not local`)
   const mode = writeMode(current.project, options.hosted)
   const hosted = mode === 'hosted-configured'
@@ -876,7 +938,15 @@ export async function commentTask(
   if (hosted) {
     const comment = pushedComment(current, body, at, attribution)
     await sendHostedChanges(
-      [{ table: HOSTED_COMMENT_TABLE, id: comment.id, op: 'upsert', row: comment, expected_revision: 0 }],
+      [
+        {
+          table: HOSTED_COMMENT_TABLE,
+          id: comment.id,
+          op: 'upsert',
+          row: comment,
+          expected_revision: 0,
+        },
+      ],
       hostedOptionsForProject(current.project, options.hosted),
     )
     return { ...hostedComment(comment), revision: 1 }
@@ -928,20 +998,48 @@ export async function editTaskComment(
   options: { hosted?: HostedOptions; expectedRevision?: number } = {},
 ): Promise<TaskComment> {
   if (!body.trim()) throw new Error('comment body is required; pass non-empty text')
-  const detail = await showTask(key, scope)
+  const detail = resolveHostedUrl()
+    ? await showHostedTask(key, scope, options.hosted)
+    : showLocalTask(key, scope)
   const current = detail.task
   const hosted = writeMode(current.project, options.hosted) === 'hosted-configured'
   const at = nowIso()
   if (hosted) {
     if (options.expectedRevision === undefined)
-      throw new Error(`comment ${commentId} edit requires --expect <revision> from \`${PLATFORM_SLUG} task show ${current.key}\``)
+      throw new Error(
+        `comment ${commentId} edit requires --expect <revision> from \`${PLATFORM_SLUG} task show ${current.key}\``,
+      )
     const comment = detail.comments.find((row) => row.id === commentId)
-    if (!comment) throw new Error(`comment ${commentId} was not found; run ${PLATFORM_SLUG} task show ${current.key}`)
-    const author = commentAuthorDecision('hosted-configured', attribution.actorUserId, comment.actor_user_id)
+    if (!comment)
+      throw new Error(
+        `comment ${commentId} was not found; run ${PLATFORM_SLUG} task show ${current.key}`,
+      )
+    const author = commentAuthorDecision(
+      'hosted-configured',
+      attribution.actorUserId,
+      comment.actor_user_id,
+    )
     if (!author.allowed) throw new Error(`comment ${commentId} ${author.reason}`)
-    const row: PushedComment = { ...comment, id: comment.id, task_id: current.record_id, project_name: current.project, projectId: current.project_record_id ?? projectRecordIdFor(current.project), body, updated_at: at }
+    const row: PushedComment = {
+      ...comment,
+      id: comment.id,
+      task_id: current.record_id,
+      project_name: current.project,
+      projectId: current.project_record_id ?? projectRecordIdFor(current.project),
+      body,
+      updated_at: at,
+    }
     await sendHostedChanges(
-      [{ table: HOSTED_COMMENT_TABLE, id: commentId, op: 'upsert', row, fields: ['body', 'updated_at'], expected_revision: options.expectedRevision }],
+      [
+        {
+          table: HOSTED_COMMENT_TABLE,
+          id: commentId,
+          op: 'upsert',
+          row,
+          fields: ['body', 'updated_at'],
+          expected_revision: options.expectedRevision,
+        },
+      ],
       hostedOptionsForProject(current.project, options.hosted),
     )
     return { ...comment, body, updated_at: at, revision: options.expectedRevision + 1 }
@@ -977,20 +1075,48 @@ export async function deleteTaskComment(
   attribution: Attribution,
   options: { hosted?: HostedOptions; expectedRevision?: number } = {},
 ): Promise<void> {
-  const detail = await showTask(key, scope)
+  const detail = resolveHostedUrl()
+    ? await showHostedTask(key, scope, options.hosted)
+    : showLocalTask(key, scope)
   const current = detail.task
   const hosted = writeMode(current.project, options.hosted) === 'hosted-configured'
   const at = nowIso()
   if (hosted) {
     if (options.expectedRevision === undefined)
-      throw new Error(`comment ${commentId} deletion requires --expect <revision> from \`${PLATFORM_SLUG} task show ${current.key}\``)
+      throw new Error(
+        `comment ${commentId} deletion requires --expect <revision> from \`${PLATFORM_SLUG} task show ${current.key}\``,
+      )
     const comment = detail.comments.find((row) => row.id === commentId)
-    if (!comment) throw new Error(`comment ${commentId} was not found; run ${PLATFORM_SLUG} task show ${current.key}`)
-    const author = commentAuthorDecision('hosted-configured', attribution.actorUserId, comment.actor_user_id)
+    if (!comment)
+      throw new Error(
+        `comment ${commentId} was not found; run ${PLATFORM_SLUG} task show ${current.key}`,
+      )
+    const author = commentAuthorDecision(
+      'hosted-configured',
+      attribution.actorUserId,
+      comment.actor_user_id,
+    )
     if (!author.allowed) throw new Error(`comment ${commentId} ${author.reason}`)
-    const row: PushedComment = { ...comment, id: comment.id, task_id: current.record_id, project_name: current.project, projectId: current.project_record_id ?? projectRecordIdFor(current.project), updated_at: at, deleted_at: at }
+    const row: PushedComment = {
+      ...comment,
+      id: comment.id,
+      task_id: current.record_id,
+      project_name: current.project,
+      projectId: current.project_record_id ?? projectRecordIdFor(current.project),
+      updated_at: at,
+      deleted_at: at,
+    }
     await sendHostedChanges(
-      [{ table: HOSTED_COMMENT_TABLE, id: commentId, op: 'upsert', row, fields: ['updated_at', 'deleted_at'], expected_revision: options.expectedRevision }],
+      [
+        {
+          table: HOSTED_COMMENT_TABLE,
+          id: commentId,
+          op: 'upsert',
+          row,
+          fields: ['updated_at', 'deleted_at'],
+          expected_revision: options.expectedRevision,
+        },
+      ],
       hostedOptionsForProject(current.project, options.hosted),
     )
     return

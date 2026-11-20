@@ -247,7 +247,8 @@ function registerNoteReferenceCommands(note: Command): void {
         options.task !== undefined &&
         project !== undefined &&
         taskCreationDestination(project) !== 'tracker' &&
-        (await showTask(row.promoted_task!, { project: row.project })).task.status_category === 'done'
+        (await showTask(row.promoted_task!, { project: row.project })).task.status_category ===
+          'done'
       console.log(linkedDone ? `${row.promoted_task} (done)` : `${row.promoted_task}`)
     })
   note

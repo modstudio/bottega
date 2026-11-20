@@ -164,6 +164,10 @@ async function showTaskCommand(key: string, options: TaskOptions): Promise<void>
     )
     return
   }
+  printShownTask(shown)
+}
+
+function printShownTask(shown: Awaited<ReturnType<typeof showTask>>): void {
   printTaskRow(shown.task)
   if (shown.task.revision !== undefined) console.log(`revision: ${shown.task.revision}`)
   if (shown.task.retired_reason) console.log(`retired: ${shown.task.retired_reason}`)
@@ -369,7 +373,8 @@ function registerTaskQueryCommands(task: Command): void {
         attribution,
         {
           force: Boolean(options.force),
-          expectedRevision: options.expect === undefined ? undefined : Number(required(options, 'expect')),
+          expectedRevision:
+            options.expect === undefined ? undefined : Number(required(options, 'expect')),
           abandonReason: optional(options, 'abandon'),
           confirm: ARRAY_MCP_STATUS_WRITE_CONFIRM,
           cursorAbandoned: (cursor) =>
