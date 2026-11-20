@@ -4,12 +4,9 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { PGlite } from '@electric-sql/pglite'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
-import {
-  createHostedRecordFixture,
-  pgliteSql,
-} from '../../orchestrator/test/fixtures/hosted-record.ts'
 import { createNoDestinationWriteCounter } from '../../shared/record-no-destination-write-counter.ts'
 import { forgetRecordSessionToken, writeRecordSessionToken } from '../../shared/record-session.ts'
+import { createHostedRecordFixture, pgliteSql } from '../test/hosted-record-fixture.ts'
 import { resetFixtureStore } from '../test/run-fixtures.ts'
 import { db } from './db.ts'
 import { hostedRequestHandler } from './hosted.ts'
@@ -22,6 +19,7 @@ import {
   createTask,
   deleteTaskComment,
   editTaskComment,
+  setTask,
   setTaskBody,
   showTask,
   taskRecord,
@@ -105,9 +103,9 @@ afterAll(async () => {
   rmSync(stateRoot, { recursive: true, force: true })
 })
 
-test('a hosted write is immediately readable from a fresh empty local store without pull', async () => {
+test('create and edit from one client store are visible in the other without pull', async () => {
   const created = await recordCreate(
-    { project: 'gamma', title: 'Record-authoritative acceptance' },
+    { project: 'gamma', title: 'Created from client A' },
     {
       hosted: {
         baseUrl: 'https://hub.example.test',
@@ -117,16 +115,33 @@ test('a hosted write is immediately readable from a fresh empty local store with
     },
   )
 
+  // Client B begins with no pulled task rows and reads the record directly.
   resetFixtureStore()
   expect(dbTaskCount()).toBe(0)
 
-  const shown = await recordShow(created.key, { project: 'gamma' })
-  expect(shown.task).toMatchObject({
+  const shownInB = await recordShow(created.key, { project: 'gamma' })
+  expect(shownInB.task).toMatchObject({
     record_id: created.record_id,
     key: created.key,
     project: 'gamma',
-    title: 'Record-authoritative acceptance',
+    title: 'Created from client A',
   })
+  expect(dbTaskCount()).toBe(0)
+
+  await setTask(
+    created.key,
+    { project: 'gamma' },
+    { title: 'Edited from client B' },
+    { actorUserId: userId, actorName: 'Record author', agent: null, runId: null },
+    { hosted: hosted(), expectedRevision: shownInB.task.revision },
+  )
+
+  // Client A also has no pulled rows when it observes B's edit.
+  resetFixtureStore()
+  expect(dbTaskCount()).toBe(0)
+  expect((await recordShow(created.key, { project: 'gamma' })).task.title).toBe(
+    'Edited from client B',
+  )
   expect(dbTaskCount()).toBe(0)
 })
 
