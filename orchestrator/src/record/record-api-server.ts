@@ -4,6 +4,7 @@ import { readBuiltCommit } from '../../../shared/built-commit.ts'
 import {
   HOSTED_SERVER_IDLE_TIMEOUT_SECONDS,
   hostedAccessLogLine,
+  responseBodyBytes,
 } from '../../../shared/hosted-server.ts'
 import { CALLER_HEADER_NAME, loggedCallerToken } from '../../../shared/record-caller.ts'
 import { createNoDestinationWriteCounter } from '../../../shared/record-no-destination-write-counter.ts'
@@ -218,6 +219,18 @@ export async function stopRecordApiServer(input: {
   await Promise.all([input.auth.close(), closeRecordPools()])
 }
 
+export async function timedRecordApiResponse(
+  app: { fetch(request: Request): Response | Promise<Response> },
+  request: Request,
+  now: () => number = performance.now.bind(performance),
+): Promise<{ response: Response; durationMs: number }> {
+  const started = now()
+  const response = await app.fetch(request)
+  const durationMs = now() - started
+  response.headers.set('server-timing', `app;dur=${durationMs.toFixed(1)}`)
+  return { response, durationMs }
+}
+
 function serveRecordApi(
   app: { fetch(request: Request): Response | Promise<Response> },
   port: number,
@@ -232,17 +245,17 @@ function serveRecordApi(
     idleTimeout: HOSTED_SERVER_IDLE_TIMEOUT_SECONDS,
     port,
     fetch: async (request, bunServer) => {
-      const started = performance.now()
       if (request.method === 'GET' && new URL(request.url).pathname === '/v1/board/stream') {
         bunServer.timeout(request, 0)
       }
-      const response = await app.fetch(request)
+      const { response, durationMs } = await timedRecordApiResponse(app, request)
       console.log(
         hostedAccessLogLine({
           method: request.method,
           pathname: new URL(request.url).pathname,
           status: response.status,
-          durationMs: performance.now() - started,
+          durationMs,
+          responseBytes: responseBodyBytes(response),
           caller: loggedCallerToken(request.headers.get(CALLER_HEADER_NAME)),
         }),
       )

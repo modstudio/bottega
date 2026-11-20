@@ -24,6 +24,7 @@ export const hubModuleSpecs = [
     allowed: [
       'node:fs',
       '../../shared/brand.ts',
+      '../../shared/record-call-trace.ts',
       '../../shared/install-root.ts',
       '../../shared/orch-contract.ts',
       '../../shared/process-identity.ts',

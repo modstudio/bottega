@@ -8,9 +8,10 @@ test('hosted access line includes the caller header token', () => {
       pathname: '/v1/questions',
       status: 200,
       durationMs: 12.6,
+      responseBytes: 42,
       caller: 'hook:heartbeat',
     }),
-  ).toBe('GET /v1/questions 200 13ms caller=hook:heartbeat')
+  ).toBe('GET /v1/questions 200 13ms bytes=42 caller=hook:heartbeat')
 })
 
 test('hosted access line marks a missing caller header', () => {
@@ -22,5 +23,5 @@ test('hosted access line marks a missing caller header', () => {
       durationMs: 1,
       caller: null,
     }),
-  ).toBe('GET /health 200 1ms caller=-')
+  ).toBe('GET /health 200 1ms bytes=- caller=-')
 })

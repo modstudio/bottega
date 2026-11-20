@@ -5,6 +5,7 @@ import { hostedApiFetch } from '../../../shared/bounded-fetch.ts'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { scheduleHostedCallObservation } from '../../../shared/hosted-call-observation.ts'
 import { runningInstallationIdentity } from '../../../shared/install-root.ts'
+import { recordRouteClass, tracedRecordFetch } from '../../../shared/record-call-trace.ts'
 import { recordRequestHeaders } from '../../../shared/record-request-headers.ts'
 import {
   classifyHostedTransportError,
@@ -34,41 +35,6 @@ function runningUserAgent(): string {
   return memoizedUserAgent
 }
 
-function recordHostedRouteClass(path: string): string {
-  const pathname = path.split('?', 1)[0] ?? path
-  if (pathname.startsWith('/api/auth/')) return 'record-auth'
-  if (pathname.startsWith('/public/v1/docs')) return 'record-public-docs'
-  if (pathname.startsWith('/v1/board/stream')) return 'record-board-stream'
-  const family = pathname.match(/^\/v1\/([^/]+)/)?.[1]
-  const known = new Set([
-    'board',
-    'catalogues',
-    'changes',
-    'config-access',
-    'docs',
-    'invitations',
-    'lens-catalogue',
-    'machine',
-    'outside-blocks',
-    'outside-intake',
-    'port-catalogue',
-    'projects',
-    'routing-evidence',
-    'runs',
-    'scores',
-    'settings',
-    'snapshots',
-    'spaces',
-    'storage',
-    'subjects',
-    'sync',
-    'task-flow',
-    'whoami',
-    'workflow-catalogue',
-  ])
-  return family && known.has(family) ? `record-${family}` : 'record-other'
-}
-
 export async function recordTransport(
   baseUrl: string,
   path: string,
@@ -82,10 +48,10 @@ export async function recordTransport(
   try {
     const headers = recordRequestHeaders({ headers: init.headers })
     headers.set('user-agent', userAgent)
-    const response = await transport(`${baseUrl}${path}`, { ...init, headers })
+    const response = await tracedRecordFetch(`${baseUrl}${path}`, { ...init, headers }, transport)
     scheduleHostedCallObservation(recorder, {
       observedAt: new Date().toISOString(),
-      routeClass: recordHostedRouteClass(path),
+      routeClass: recordRouteClass(path),
       httpStatus: response.status,
       transportError: null,
       latencyMs: performance.now() - startedAt,
@@ -94,7 +60,7 @@ export async function recordTransport(
   } catch (error) {
     scheduleHostedCallObservation(recorder, {
       observedAt: new Date().toISOString(),
-      routeClass: recordHostedRouteClass(path),
+      routeClass: recordRouteClass(path),
       httpStatus: null,
       transportError: classifyHostedTransportError(error),
       latencyMs: performance.now() - startedAt,

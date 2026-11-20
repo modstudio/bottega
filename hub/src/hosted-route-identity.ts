@@ -1,5 +1,6 @@
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { recordNoDestinationWrite } from '../../shared/record/no-destination-write-store.ts'
+import { tracedRecordFetch } from '../../shared/record-call-trace.ts'
 import { noDestinationWriteCause } from '../../shared/record-no-destination-write-contract.ts'
 import type { NoDestinationWriteTelemetry } from '../../shared/record-no-destination-write-counter.ts'
 import {
@@ -122,9 +123,11 @@ export async function taskSpaceIdentity(
   if (!authorization) return { kind: 'unauthenticated' }
   let response: Response
   try {
-    response = await fetchImpl(`${base.replace(/\/$/, '')}/v1/whoami`, {
-      headers: recordRequestHeaders({ headers: { authorization } }),
-    })
+    response = await tracedRecordFetch(
+      `${base.replace(/\/$/, '')}/v1/whoami`,
+      { headers: recordRequestHeaders({ headers: { authorization } }) },
+      fetchImpl,
+    )
   } catch (cause) {
     return { kind: 'unavailable', cause: cause instanceof Error ? cause.name : 'Error' }
   }

@@ -172,6 +172,7 @@ function startHostedServer(environment: ServerEnvironment = process.env) {
           pathname: new URL(request.url).pathname,
           status: response.status,
           durationMs: performance.now() - started,
+          responseBytes: hostedServer.responseBodyBytes(response),
           caller: caller.logged,
         }),
       )
