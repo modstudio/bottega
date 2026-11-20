@@ -4,6 +4,15 @@ import { lstatSync, readdirSync, realpathSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { isAtOrBelow } from './area-read-policy.ts'
 
+function denyRoot(path: string): string {
+  return path.endsWith('/*') ? path.slice(0, -2) : path
+}
+
+function areaDenyCovers(path: string, denied: string): boolean {
+  const root = denyRoot(denied)
+  return isAtOrBelow(path, root) && (denied === root || path !== root)
+}
+
 /** Find only node_modules symlinks below the disposable checkout. */
 export function linkedNodeModules(worktree: string): string[] {
   const found = new Set<string>()
@@ -51,7 +60,10 @@ export function permittedNodeModuleCarvebacks(input: {
       const admitted = roots.some(
         (root) =>
           isAtOrBelow(path, root) &&
-          !areaDenies.some((denied) => isAtOrBelow(denied, root) && isAtOrBelow(path, denied)),
+          !areaDenies.some(
+            (denied) =>
+              isAtOrBelow(denyRoot(denied), root) && areaDenyCovers(path, denied),
+          ),
       )
       if (admitted) return true
       input.onWarning(

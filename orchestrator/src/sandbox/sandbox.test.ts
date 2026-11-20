@@ -574,7 +574,7 @@ describe('readonly-lens sandbox profile', () => {
       join(state, 'orchestrator', 'orchestrator.db'),
       join(state, 'orchestrator', 'runs'),
       '/projects',
-      '/projects/fixture/.claude/worktrees',
+      ...(process.platform === 'darwin' ? ['/projects/fixture/.claude/worktrees/*'] : []),
       join('/Users/operator/.config/platform', `${PLATFORM_SLUG}.env`),
       '/shared/absolute.secret',
       join(homedir(), '.tokens/private'),
@@ -656,7 +656,9 @@ describe('readonly-lens sandbox profile', () => {
       resolveOrchestratorDatabase(environment),
     )
     expect(profile.filesystem.denyRead).toContain('/projects/sibling')
-    expect(profile.filesystem.denyRead).toContain('/projects/fixture/.claude/worktrees')
+    if (process.platform === 'darwin') {
+      expect(profile.filesystem.denyRead).toContain('/projects/fixture/.claude/worktrees/*')
+    }
     expect(profile.filesystem.denyRead).toContain('/projects/sibling/.claude/worktrees')
     expect(profile.filesystem.denyRead).toContain('/projects/fixture/config/operator.secret')
     for (const allowed of [

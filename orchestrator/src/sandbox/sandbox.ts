@@ -29,7 +29,12 @@ import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 import { ensureHubLoginTokenDirectory } from '../../../shared/state-directory.ts'
 import { disabledProjectMcpServers } from '../mcp/mcp-probe.ts'
 import { createNoFollowFile } from '../no-follow-file.ts'
-import { type Project, projectAt, projectsIncludingRetired } from '../project/projects.ts'
+import {
+  mainCheckoutWorktreeHint,
+  type Project,
+  projectAt,
+  projectsIncludingRetired,
+} from '../project/projects.ts'
 import { mainStackGateAddresses } from '../resources/main-stack-network.ts'
 import { runHarnessStateDir, runWorkerHomeDir } from '../run-owned-paths.ts'
 import { areaReadPolicy, isAtOrBelow } from './area-read-policy.ts'
@@ -42,6 +47,16 @@ import { linkedNodeModules, permittedNodeModuleCarvebacks } from './node-module-
 import { assembleAreaReadProfile } from './sandbox-area-read-profile.ts'
 import { launchWithSandboxRuntime, resetSandboxRuntime } from './sandbox-runtime.ts'
 import { decideWeakerNetworkIsolation, endpointHost } from './weaker-network-isolation.ts'
+
+function ownWorktreeRootEntries(project: Project | null): string[] {
+  if (!project) return []
+  const root = resolve(mainCheckoutWorktreeHint(project.path))
+  try {
+    return readdirSync(root).map((entry) => join(root, entry))
+  } catch {
+    return []
+  }
+}
 
 export type SandboxRuntimeConfig = {
   network: {
@@ -280,6 +295,8 @@ export function readonlyLensProfile(input: {
     project: input.project,
     registeredProjects: input.registeredProjects,
     environment,
+    platform: process.platform === 'linux' ? 'linux' : 'darwin',
+    ownWorktreeRootEntries: ownWorktreeRootEntries(input.project),
   })
   const nodeModuleLinks = permittedNodeModuleCarvebacks({
     links: input.nodeModuleLinks ?? linkedNodeModules(input.worktree),
@@ -467,6 +484,8 @@ export function probeSandboxProfile(input: {
     project: input.project,
     registeredProjects: input.registeredProjects,
     environment,
+    platform: process.platform === 'linux' ? 'linux' : 'darwin',
+    ownWorktreeRootEntries: ownWorktreeRootEntries(input.project),
   })
   const readProfile = assembleAreaReadProfile({
     areaDeny: areas.deny,

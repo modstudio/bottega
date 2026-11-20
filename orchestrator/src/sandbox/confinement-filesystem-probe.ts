@@ -11,7 +11,7 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { startBounded } from '../../../shared/bounded-process.ts'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { HARNESS_ENV_FILE_ENV, PLATFORM_ENV_FILE_ENV } from '../../../shared/config-directory.ts'
@@ -62,7 +62,13 @@ export type ConfinementFilesystemProbeRow = {
   reason?: string
 }
 
-type AccessTarget = { name: string; path: string; expected: 'denied' | 'readable' }
+type AccessTarget = {
+  name: string
+  path: string
+  expected: 'denied' | 'readable'
+  plant?: boolean
+  createAfterLaunch?: boolean
+}
 
 const NOT_COVERED: ConfinementFilesystemProbeRow[] = [
   { family: 'Codex', status: 'not covered', paths: {}, reason: 'Codex has no SRT read profile' },
@@ -148,16 +154,40 @@ async function launchProbe(
   environment: Record<string, string>,
   hubOpenMode: string,
 ): Promise<ConfinementFilesystemProbeRow> {
+  const afterLaunch = targets.find(({ createAfterLaunch }) => createAfterLaunch)
+  const markerRoot = profile.filesystem.allowWrite[0]
+  const ready = afterLaunch ? join(markerRoot!, '.confinement-probe-ready') : null
+  const release = afterLaunch ? join(markerRoot!, '.confinement-probe-release') : null
   try {
-    const script =
-      'for path\ndo\nif /bin/cat "$path" >/dev/null 2>&1; then echo readable; else echo denied; fi\ndone'
+    if (afterLaunch) rmSync(dirname(afterLaunch.path), { recursive: true, force: true })
+    if (ready) rmSync(ready, { force: true })
+    if (release) rmSync(release, { force: true })
+    const script = afterLaunch
+      ? '/usr/bin/touch "$1"\nwhile ! /bin/test -e "$2"; do /bin/sleep 0.01; done\nshift 2\nfor path\ndo\nif /bin/cat "$path" >/dev/null 2>&1; then echo readable; else echo denied; fi\ndone'
+      : 'for path\ndo\nif /bin/cat "$path" >/dev/null 2>&1; then echo readable; else echo denied; fi\ndone'
     const argv = await sandboxLaunchArgv(profile, '/bin/sh', [
       '-c',
       script,
       'probe',
+      ...(afterLaunch ? [ready!, release!] : []),
       ...targets.map(({ path }) => path),
     ])
-    const result = await startBounded(argv, { budget: 'sandbox-probe' })
+    const running = startBounded(argv, { budget: 'sandbox-probe' })
+    if (afterLaunch) {
+      const deadline = Date.now() + 5_000
+      while (!existsSync(ready!)) {
+        if (Date.now() >= deadline) {
+          writeFileSync(release!, 'continue')
+          await running
+          throw new Error('filesystem probe did not signal launch')
+        }
+        await Bun.sleep(10)
+      }
+      mkdirSync(dirname(afterLaunch.path), { recursive: true })
+      writeFileSync(afterLaunch.path, 'fixture')
+      writeFileSync(release!, 'continue')
+    }
+    const result = await running
     if (result.exitCode !== 0) {
       return {
         family,
@@ -188,6 +218,9 @@ async function launchProbe(
       reason: error instanceof Error ? error.message : String(error),
     }
   } finally {
+    if (afterLaunch) rmSync(dirname(afterLaunch.path), { recursive: true, force: true })
+    if (ready) rmSync(ready, { force: true })
+    if (release) rmSync(release, { force: true })
     await resetSandbox()
   }
 }
@@ -357,7 +390,17 @@ function createProbeFixture(root: string) {
       expected: 'readable',
     },
   ]
-  for (const { path } of targets) {
+  if (process.platform === 'darwin') {
+    targets.push({
+      name: 'sibling tree created after launch',
+      path: join(ownPath, '.claude', 'worktrees', 'created-after-launch', 'secret'),
+      expected: 'denied',
+      plant: false,
+      createAfterLaunch: true,
+    })
+  }
+  for (const { path, plant = true } of targets) {
+    if (!plant) continue
     mkdirSync(join(path, '..'), { recursive: true })
     writeFileSync(path, 'fixture')
   }
