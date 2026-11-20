@@ -80,7 +80,13 @@ test("consuming a resume brief prints and drops the author's session context", a
   process.env.CLAUDE_CODE_SESSION_ID = author
   ;(globalThis as typeof globalThis & { [CONTEXT_FACTS_PORTS_KEY]?: ContextFactsPorts })[
     CONTEXT_FACTS_PORTS_KEY
-  ] = { tasks: async () => [], task: async () => null, pointer: async () => null }
+  ] = {
+    task: async () => null,
+    lookup: async () => null,
+    record: async () => null,
+    children: async () => [],
+    pointer: async () => null,
+  }
   const stored = await brief()
   await setDoc({
     scope: 'context',
@@ -218,7 +224,13 @@ test('failed adoption preserves the author session context', async () => {
   const root = addRun({ agent: 'codex', job: 'implement', status: 'ok', session: author })
   ;(globalThis as typeof globalThis & { [CONTEXT_FACTS_PORTS_KEY]?: ContextFactsPorts })[
     CONTEXT_FACTS_PORTS_KEY
-  ] = { tasks: async () => [], task: async () => null, pointer: async () => null }
+  ] = {
+    task: async () => null,
+    lookup: async () => null,
+    record: async () => null,
+    children: async () => [],
+    pointer: async () => null,
+  }
   await setDoc({
     scope: 'context',
     subject: `session:${author}`,
@@ -261,7 +273,13 @@ test('partial adoption keeps the author session context until the remaining run 
   const remaining = addRun({ agent: 'codex', job: 'implement', status: 'running', session: author })
   ;(globalThis as typeof globalThis & { [CONTEXT_FACTS_PORTS_KEY]?: ContextFactsPorts })[
     CONTEXT_FACTS_PORTS_KEY
-  ] = { tasks: async () => [], task: async () => null, pointer: async () => null }
+  ] = {
+    task: async () => null,
+    lookup: async () => null,
+    record: async () => null,
+    children: async () => [],
+    pointer: async () => null,
+  }
   await setDoc({
     scope: 'context',
     subject: `session:${author}`,

@@ -19,16 +19,12 @@ import { RecordApiRequestError } from '../record/record-api-client.ts'
 import { taskFlowReadStore } from '../workflow/task-flow-store.ts'
 import {
   type HubTaskPuller,
-  type HubTaskReader,
   type HubTaskReference,
   pullHubTask,
   readHubTask,
   readHubTaskByRecordId,
   readHubTaskChildren,
-  readHubTasks,
   resolveOrPullHubTaskReference,
-  taskKeyMap,
-  taskReferenceForProjectKey,
 } from '../workflow/workflow-task-reference.ts'
 import { productionWorkflowTextDocumentPorts } from '../workflow/workflow-text-copy.ts'
 import { listContextItems } from './context-item-store.ts'
@@ -59,11 +55,10 @@ class ContextTaskPrefixError extends Error {
 }
 
 export type ContextFactsPorts = {
-  tasks: HubTaskReader
   task: HubTaskPuller
-  lookup?: (project: string, key: string) => Promise<ContextTask | null>
-  record?: (recordId: string) => Promise<ContextTask | null>
-  children?: (project: string, parent: string) => Promise<ContextTask[]>
+  lookup(project: string, key: string): Promise<ContextTask | null>
+  record(recordId: string): Promise<ContextTask | null>
+  children(project: string, parent: string): Promise<ContextTask[]>
   pointer(value: string, database: Database): Promise<string | null>
 }
 export type PointerTargetPorts = {
@@ -256,7 +251,6 @@ export async function resolvedPointerTarget(
 }
 
 const productionContextFactsPorts: ContextFactsPorts = {
-  tasks: readHubTasks,
   task: pullHubTask,
   lookup: readHubTask,
   record: readHubTaskByRecordId,
@@ -287,21 +281,16 @@ export async function resolveContextTaskWithProjectTasks(
   const prefix = taskKeyPrefix(key) ?? key.split('-', 1)[0] ?? key
   const project = projectForTaskKey(key, projects(undefined, database))
   if (!project) throw new ContextTaskPrefixError(key, prefix)
-  const lookup =
-    ports.lookup ??
-    (async (name: string, taskKey: string) => mirrorTask(await ports.tasks(name), name, taskKey))
   const task = await resolveOrPullHubTaskReference(
     project.name,
     key,
     async (name) => {
-      const found = await lookup(name, key)
+      const found = await ports.lookup(name, key)
       return found ? [found] : []
     },
     ports.task,
   )
-  const projectTasks = ports.children
-    ? await ports.children(project.name, task.key)
-    : await ports.tasks(project.name)
+  const projectTasks = await ports.children(project.name, task.key)
   return {
     task,
     tasks: projectTasks.some((candidate) => candidate.record_id === task.record_id)
@@ -318,92 +307,46 @@ export async function resolveContextTaskByRecordId(
   database: Database = db(),
   ports: ContextFactsPorts = defaultContextFactsPorts(),
 ): Promise<ContextTaskByRecordId> {
-  if (ports.record) {
-    try {
-      return { task: await ports.record(recordId), unreadable: [] }
-    } catch {
-      return { task: null, unreadable: projects(undefined, database).map((row) => row.name) }
-    }
+  try {
+    return { task: await ports.record(recordId), unreadable: [] }
+  } catch {
+    return { task: null, unreadable: projects(undefined, database).map((row) => row.name) }
   }
-  const readTasks = bestEffortProjectTaskReader(ports)
-  const unreadable: string[] = []
-  for (const project of projects(undefined, database)) {
-    const tasks = await readTasks(project.name)
-    if (!tasks) {
-      unreadable.push(project.name)
-      continue
-    }
-    const match = tasks.find((task) => task.record_id === recordId)
-    if (match) return { task: match, unreadable }
-  }
-  return { task: null, unreadable }
 }
 
 export function taskProfile(key: string, tasks: readonly ContextTask[]): ContextProfile {
   return tasks.some((task) => task.parent_key === key) ? 'epic' : 'task'
 }
 
-function mirrorTask(
-  tasks: readonly ContextTask[],
-  project: string,
-  key: string,
-): ContextTask | null {
-  return taskReferenceForProjectKey(taskKeyMap(tasks), project, key)
-}
-
-function bestEffortProjectTaskReader(ports: ContextFactsPorts) {
-  const reads = new Map<string, Promise<readonly ContextTask[] | null>>()
-  return (project: string) => {
-    const existing = reads.get(project)
-    if (existing) return existing
-    const reading = ports.tasks(project).catch(() => null)
-    reads.set(project, reading)
-    return reading
-  }
-}
-
 async function claimedContextTask(
   claim: { key: string; project: string },
   ports: ContextFactsPorts,
-  readProject: ReturnType<typeof bestEffortProjectTaskReader>,
 ) {
-  if (ports.lookup) return ports.lookup(claim.project, claim.key).catch(() => null)
-  const tasks = await readProject(claim.project)
-  return tasks && mirrorTask(tasks, claim.project, claim.key)
+  return ports.lookup(claim.project, claim.key).catch(() => null)
 }
 
-async function parentContextTask(
-  task: ContextTask,
-  ports: ContextFactsPorts,
-  readProject: ReturnType<typeof bestEffortProjectTaskReader>,
-) {
+async function parentContextTask(task: ContextTask, ports: ContextFactsPorts) {
   if (!task.parent_key) return null
-  if (ports.lookup) return ports.lookup(task.project, task.parent_key).catch(() => null)
-  const tasks = await readProject(task.project)
-  return tasks && mirrorTask(tasks, task.project, task.parent_key)
+  return ports.lookup(task.project, task.parent_key).catch(() => null)
 }
 
 async function relatedContextTasks(input: {
   owner: string | null
   claims: readonly { key: string; project: string }[]
   task?: ContextTask
-  projectTasks: readonly ContextTask[]
   ports: ContextFactsPorts
 }): Promise<ContextTask[]> {
   const related: ContextTask[] = []
   if (!input.owner) {
-    const parent = input.task?.parent_key
-      ? mirrorTask(input.projectTasks, input.task.project, input.task.parent_key)
-      : null
+    const parent = input.task ? await parentContextTask(input.task, input.ports) : null
     if (parent) related.push(parent)
     return related
   }
-  const readProject = bestEffortProjectTaskReader(input.ports)
   for (const claim of input.claims) {
-    const claimed = await claimedContextTask(claim, input.ports, readProject)
+    const claimed = await claimedContextTask(claim, input.ports)
     if (!claimed) continue
     related.push(claimed)
-    const parent = await parentContextTask(claimed, input.ports, readProject)
+    const parent = await parentContextTask(claimed, input.ports)
     if (parent) related.push(parent)
   }
   return related
@@ -435,17 +378,12 @@ async function contextSetRefusal(
         .filter((claim) => claim.subject.kind === 'task')
         .map((claim) => ({ key: claim.subject.value, project: claim.project }))
     : []
-  const projectTasks = task
-    ? ports.children
-      ? await ports.children(task.project, task.key)
-      : await ports.tasks(task.project)
-    : []
+  const projectTasks = task ? await ports.children(task.project, task.key) : []
   const profile = task ? taskProfile(task.key, projectTasks) : 'session'
   const relatedTasks = await relatedContextTasks({
     owner,
     claims,
     task,
-    projectTasks,
     ports,
   })
   const relatedHolders = [
@@ -495,8 +433,5 @@ export async function contextProfileForHolder(
   const address = splitContextHolder(subject)
   if (address.holderKind === 'session' || address.holderKind === 'cursor') return 'session' as const
   if (!task) return 'task' as const
-  return taskProfile(
-    task.key,
-    ports.children ? await ports.children(task.project, task.key) : await ports.tasks(task.project),
-  )
+  return taskProfile(task.key, await ports.children(task.project, task.key))
 }

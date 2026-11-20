@@ -17,10 +17,7 @@ import { briefInjectionWindow } from '../session/brief-injection.ts'
 import { contextReviewWindow } from '../session/context-review-store.ts'
 import { taskFlowReadStore } from '../workflow/task-flow-store.ts'
 import { liveRunCursorIds } from '../workflow/workflow-cursor-list.ts'
-import {
-  type HubTaskReference,
-  readHubTaskByRecordId,
-} from '../workflow/workflow-task-reference.ts'
+import { type HubTaskReference, readHubTasks } from '../workflow/workflow-task-reference.ts'
 import { type ContextHealthFacts, type ContextHealthItem, contextHealth } from './context-health.ts'
 
 export type ContextHealthOptions = { since?: string; project?: string; session?: string }
@@ -31,13 +28,13 @@ function selectedSince(value: string | undefined, now: number): string {
 }
 
 async function taskRows(project: string | undefined): Promise<HubTaskReference[]> {
+  const selected = projects().filter((candidate) => !project || candidate.name === project)
   const rows: HubTaskReference[] = []
-  for (const holder of scopeContextHolders('task')) {
+  for (const candidate of selected) {
     try {
-      const task = await readHubTaskByRecordId(holder.holderId)
-      if (task && (!project || task.project === project)) rows.push(task)
+      rows.push(...(await readHubTasks(candidate.name)))
     } catch (error) {
-      throw new ProjectTaskReadError(project ?? 'registered projects', error)
+      throw new ProjectTaskReadError(candidate.name, error)
     }
   }
   return rows

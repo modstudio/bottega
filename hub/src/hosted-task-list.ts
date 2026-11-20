@@ -21,8 +21,7 @@ import { type TaskIdentity, withHostedTenant } from './hosted-tenant.ts'
 
 const changeStreams = ['tasks', 'comments', 'documents', 'statusEvents'] as const
 const listStreams = ['tasks'] as const
-const streams = changeStreams
-type TaskStream = (typeof streams)[number]
+type TaskStream = (typeof changeStreams)[number]
 type TaskCursorRow = HostedPullMeasuredRow<
   HostedTask | HostedComment | HostedDocument | HostedStatusEvent
 >
@@ -126,7 +125,7 @@ export async function listHostedTasks(
   client: SQL,
   identity: TaskIdentity,
   filters: HostedTaskListFilters,
-): Promise<ReturnType<typeof emptyPage> & { cursor: string; more: boolean }> {
+) {
   return withHostedTenant(client, identity, async (tx) => {
     const selectedStreams = filters.includeDeleted ? changeStreams : listStreams
     const limit = hostedPullLimit(filters.limit)
@@ -142,10 +141,10 @@ export async function listHostedTasks(
       }
       const page = taskPage(cursor.stream, result.rows)
       return {
-        ...(filters.includeDeleted ? page : { tasks: page.tasks }),
+        ...page,
         cursor: encodeHostedPullCursor(result.cursor),
         more: result.more,
-      } as ReturnType<typeof emptyPage> & { cursor: string; more: boolean }
+      }
     }
   })
 }

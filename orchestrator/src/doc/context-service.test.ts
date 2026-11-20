@@ -34,8 +34,10 @@ function installContextFacts() {
     settings: { keyPrefixes: ['DEV'], space: 'personal' },
   })
   globals[CONTEXT_FACTS_PORTS_KEY] = {
-    tasks: async () => [task],
     task: async () => task,
+    lookup: async () => task,
+    record: async () => task,
+    children: async () => [],
     pointer: async (value) =>
       value.startsWith('doc:') ? `doc-store record ${value} does not resolve` : null,
   }

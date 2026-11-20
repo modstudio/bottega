@@ -269,7 +269,7 @@ function captureDestination(spaces: { space_id: string; slug: string }[]) {
   return seen
 }
 
-test('a task context subject derives its project space past a project whose tasks cannot be read', async () => {
+test('a task context subject derives its project space from its record lookup', async () => {
   upsertProject({
     recordId: newRecordId(),
     name: 'aaa-unreadable-project',
@@ -285,28 +285,27 @@ test('a task context subject derives its project space past a project whose task
   const recordId = newRecordId()
   const read: string[] = []
   globals[CONTEXT_FACTS_PORTS_KEY] = {
-    tasks: async (project) => {
-      read.push(project)
-      if (project === 'aaa-unreadable-project') throw new Error('task list failed')
-      return project === 'derived-project'
-        ? [{ key: 'DER-1', record_id: recordId, project: 'derived-project' }]
-        : []
-    },
     task: async () => null,
+    lookup: async () => null,
+    record: async (id) => {
+      read.push(id)
+      return id === recordId
+        ? { key: 'DER-1', record_id: recordId, project: 'derived-project' }
+        : null
+    },
+    children: async () => [],
     pointer: async () => null,
   }
   const seen = captureDestination([{ space_id: 'derived-space', slug: 'derived-team' }])
   const client = await hostedContextItemClient(`task:${recordId}`)
   await client.upsert(contextInput('task', recordId))
-  expect(read.slice(0, 2)).toEqual(['aaa-unreadable-project', 'derived-project'])
+  expect(read).toEqual([recordId])
   expect(seen.destination).toBe('derived-space')
-  await expect(hostedContextItemClient(`task:${newRecordId()}`)).rejects.toMatchObject({
-    status: 409,
-    message: expect.stringContaining('aaa-unreadable-project could not be read'),
-  })
   globals[CONTEXT_FACTS_PORTS_KEY] = {
-    tasks: async () => [],
     task: async () => null,
+    lookup: async () => null,
+    record: async () => null,
+    children: async () => [],
     pointer: async () => null,
   }
   await expect(hostedContextItemClient(`task:${newRecordId()}`)).rejects.toMatchObject({

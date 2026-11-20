@@ -22,8 +22,10 @@ async function addSessionItem(
   body = 'carry this fact',
 ): Promise<void> {
   globals[CONTEXT_FACTS_PORTS_KEY] = {
-    tasks: async () => [],
     task: async () => null,
+    lookup: async () => null,
+    record: async () => null,
+    children: async () => [],
     pointer: async () => null,
   }
   const previous = process.env.CLAUDE_CODE_SESSION_ID

@@ -97,9 +97,9 @@ test('a first task pull pages shared timestamps without repeating rows or exposi
 test('an ordinary task list returns rows without child streams', async () => {
   const page = await listHostedTasks(pgliteSql(database), { userId, spaceId }, { limit: 2 })
   expect(page.tasks).toHaveLength(2)
-  expect(page).not.toHaveProperty('comments')
-  expect(page).not.toHaveProperty('documents')
-  expect(page).not.toHaveProperty('statusEvents')
+  expect(page.comments).toEqual([])
+  expect(page.documents).toEqual([])
+  expect(page.statusEvents).toEqual([])
 })
 
 test('document pull pages enforce the body byte budget and include one oversized row', async () => {
