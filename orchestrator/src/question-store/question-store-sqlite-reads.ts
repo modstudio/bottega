@@ -270,7 +270,7 @@ export function rulingRows(
   }
   return database
     .query<TaskFlowRulingRow, string[]>(
-      `SELECT q.number,q.record_id,q.run_record_id,r.number AS run_number,
+      `SELECT q.number,q.record_id,NULL space_id,q.run_record_id,r.number AS run_number,
               q.workflow_cursor_record_id workflow_cursor_id,q.workflow_key,q.workflow_task_record_id,
               COALESCE(r.repo,c.project) project,c.workflow_slug,c.mode_slug,
               COALESCE(r.session_id,c.session_id) session_id,
