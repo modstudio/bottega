@@ -522,9 +522,7 @@ test('a stale guarded item aborts every write in its batch', async () => {
   } catch (error) {
     expect(error).toBeInstanceOf(HostedRevisionConflictError)
     expect(error).toMatchObject({ index: 1, table: 'hub_task', id: ids[1], currentRevision: '1' })
-    expect((error as Error).message).toContain(
-      `cleared by: ${PLATFORM_SLUG} task show DEV-401`,
-    )
+    expect((error as Error).message).toContain(`cleared by: ${PLATFORM_SLUG} task show DEV-401`)
   }
   expect(
     (
