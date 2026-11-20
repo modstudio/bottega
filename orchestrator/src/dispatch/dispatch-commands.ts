@@ -32,11 +32,11 @@ import {
   specSubjectKind,
 } from '../typed-question/spec-unsettled-question.ts'
 import { keepTreeExemptionFromOption } from '../worktree/keep-tree-hold.ts'
-import { positive } from '../workflow/workflow-command-arguments.ts'
 import { preflight, resolvedFindingsLens } from './dispatch-preflight.ts'
 import { executionRequirementRefusal } from './execution-requirement.ts'
 import {
   checkKeyedRunCursorAdmission,
+  keyedCursorOption,
   type OpenKeyedRunCursors,
 } from './keyed-run-cursor-admission.ts'
 import { decideProbeLaunchOverrides } from './probe-launch-overrides.ts'
@@ -266,7 +266,7 @@ async function cursorWarningFor(
     bindingPresent: Boolean(binding),
     overrideReason: flags.flag('override-unbound'),
     fromOperator: flags.has('from-operator'),
-    cursor: positive(flags.flag('cursor'), '--cursor'),
+    cursor: keyedCursorOption(flags.flag('cursor')),
     adapter: presentation.harnessCursorAdapter,
   })
 }

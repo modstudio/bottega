@@ -20,9 +20,9 @@ import {
   database,
   selectAndNextWorkflowStep,
 } from './workflow-cursor-test.fixture.ts'
+import { gatherNoAcceptedFindingsFact } from './workflow-dispatch-waiver-evidence.ts'
 import type { Floor } from './workflow-floor.ts'
 import { applyFloorDecision } from './workflow-floor-apply.ts'
-import { gatherNoAcceptedFindingsFact } from './workflow-dispatch-waiver-evidence.ts'
 import { promoteWorkflowLocal, setWorkflowLocal } from './workflows.ts'
 
 const floorDatabase = testDatabaseFixture((d) => {

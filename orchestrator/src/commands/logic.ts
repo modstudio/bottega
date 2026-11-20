@@ -17,6 +17,7 @@ import { peekCommand, resultCommand, waitCommand } from '../collect/collection-c
 import { contractCommand } from '../contract/contract-command.ts'
 import { db, sessionId } from '../database/db.ts'
 import { doCommand, pickPreviewCommand } from '../dispatch/dispatch-cli-service.ts'
+import { keyedCursorOption } from '../dispatch/keyed-run-cursor-admission.ts'
 import { enforcementCommand } from '../enforcement/enforcement-commands.ts'
 import { epicCommand } from '../epic/epic-commands.ts'
 import { pendingCommand } from '../evidence/pending-commands.ts'
@@ -70,7 +71,6 @@ import {
   typedQuestionCommand,
 } from '../typed-question/typed-question-commands.ts'
 import { renewTaskClaim } from '../workflow/workflow-task-claim.ts'
-import { positive } from '../workflow/workflow-command-arguments.ts'
 import { registerDatabaseCommands } from './database.ts'
 import { ORCH_DO_OPTIONS } from './do-options.ts'
 import { efficiencyCommand, provisioningAliasOptions } from './efficiency-command.ts'
@@ -107,7 +107,7 @@ const keyedTurnOptions = (options: {
 }) => ({
   overrideReason: options.overrideUnbound,
   fromOperator: Boolean(options.fromOperator),
-  cursor: positive(options.cursor, '--cursor'),
+  cursor: keyedCursorOption(options.cursor),
 })
 const displayRunNumber = (recordId: string): number =>
   (db().query('SELECT number FROM run WHERE record_id=?').get(recordId) as { number: number })

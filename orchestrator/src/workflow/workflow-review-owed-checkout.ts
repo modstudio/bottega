@@ -3,7 +3,7 @@
 
 import type { Database } from 'bun:sqlite'
 import { existsSync } from 'node:fs'
-import { projectByName, type Project } from '../project/projects.ts'
+import { type Project, projectByName } from '../project/projects.ts'
 import { gitText } from './workflow-floor-evidence-checkout.ts'
 
 export interface ReviewOwedCheckoutFacts {

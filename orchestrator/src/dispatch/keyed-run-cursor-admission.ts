@@ -36,6 +36,14 @@ export type KeyedRunCursorAdmission =
 
 export type OpenKeyedRunCursors = (session: string) => Promise<KeyedRunCursor[]>
 
+export function keyedCursorOption(value: string | undefined): number | undefined {
+  if (value === undefined) return undefined
+  const cursor = Number(value)
+  if (!Number.isInteger(cursor) || cursor < 1)
+    throw new Error('--cursor must be a positive integer')
+  return cursor
+}
+
 const OVERRIDE_OPTION = '--override-unbound'
 const OVERRIDE_REMEDY = `${OVERRIDE_OPTION} "<reason>" --from-operator`
 const OVERRIDE_PREFIX = 'unbound keyed run turn overridden by Shmuel Barkin: '

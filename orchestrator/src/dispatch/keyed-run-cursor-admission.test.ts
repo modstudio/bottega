@@ -3,6 +3,7 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   checkKeyedRunCursorAdmission,
   decideKeyedRunCursorAdmission,
+  keyedCursorOption,
 } from './keyed-run-cursor-admission.ts'
 
 const base = {
@@ -23,6 +24,13 @@ const base = {
 }
 
 describe('keyed run cursor admission', () => {
+  test('the shared cursor option accepts only positive integers', () => {
+    expect(keyedCursorOption(undefined)).toBeUndefined()
+    expect(keyedCursorOption('4')).toBe(4)
+    expect(() => keyedCursorOption('0')).toThrow('--cursor must be a positive integer')
+    expect(() => keyedCursorOption('1.5')).toThrow('--cursor must be a positive integer')
+  })
+
   test.each([
     ['keyless', { key: undefined }],
     ['unkeyed later turn', { turn: 'retry' as const, key: undefined }],

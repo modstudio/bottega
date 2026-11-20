@@ -30,16 +30,9 @@ export function gatherNoAcceptedFindingsFact(
       return refusal(
         `${resolved.condition}; register it with project add <path> --name ${projectName}`,
       )
-    return refusal(
-      resolved.condition,
-    )
+    return refusal(resolved.condition)
   }
-  const measured = measureChangeGroup(
-    resolved.cwd,
-    resolved.project,
-    resolved.branch,
-    resolved.tip,
-  )
+  const measured = measureChangeGroup(resolved.cwd, resolved.project, resolved.branch, resolved.tip)
   if (!measured)
     return refusal(`could not measure the current change group for branch ${resolved.branch}`)
   try {

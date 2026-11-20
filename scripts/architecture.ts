@@ -388,7 +388,7 @@ const declaredModules: ArchitectureModule[] = [
     '../database/db.ts',
     '../record/machine-identity.ts',
     '../run/run-outbox.ts',
-    './evidence-query.ts',
+    './pending-score-sql.ts',
   ]),
   module('orchestrator/src/evidence-exclusion.ts', [
     './database/db.ts',

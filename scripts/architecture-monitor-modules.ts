@@ -23,7 +23,7 @@ export const monitorModules: MonitorModule[] = [
     '../database/db.ts',
     '../cleanup/cleanup-sweep-docker.ts',
     '../events.ts',
-    '../evidence/evidence-query.ts',
+    '../evidence/pending-score-sql.ts',
     '../git/git-environment.ts',
     '../hook-tree/hook-tree.ts',
     '../idle-kill.ts',
