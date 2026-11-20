@@ -603,8 +603,7 @@ export async function run(
   })
   const mcpServerName = mcpLaunch.serverName
   let sandboxSelection: ReturnType<typeof selectReadonlySandbox>
-  let sandboxEnvironment: Record<string, string>
-  let mcpEnvironment: Record<string, string>
+  let sandboxEnvironment: Record<string, string>, mcpEnvironment: Record<string, string>
   let codexMcpCatalogues: CodexMcpCatalogue[]
   let startupComplete = false
   try {

@@ -28,6 +28,7 @@ export const coreModuleSpecs = [
     allowed: [
       'node:fs',
       'node:path',
+      '../../../shared/secret-shaped.ts',
       '../run-owned-paths.ts',
       './transport-goose-context-profile.ts',
     ],

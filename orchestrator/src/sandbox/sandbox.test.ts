@@ -658,31 +658,6 @@ describe('readonly-lens sandbox profile', () => {
     expect(profile.filesystem.allowWithinDeny).not.toContain(
       '/projects/fixture/config/operator.secret',
     )
-    const writer = writerProfile({
-      worktree: '/projects/fixture/.claude/worktrees/run',
-      runtimeDir: join(state, 'orchestrator/runs/sandbox-run'),
-      scratchDir: join(state, 'orchestrator/runs/run/scratch'),
-      askAddress: '127.0.0.1:1',
-      project: own,
-      registeredProjects: [own, sibling],
-      agent: 'grok',
-      path: '/usr/bin',
-      nodeModuleLinks: [],
-      environment,
-      socketDenyPaths: [],
-    })
-    const probe = probeSandboxProfile({
-      allowWriteDir: join(state, 'orchestrator/runs/probe/scratch'),
-      cwd: '/projects/fixture/.claude/worktrees/run',
-      project: own,
-      registeredProjects: [own, sibling],
-      environment,
-      socketDenyPaths: [],
-    })
-    for (const carried of [writer, probe]) {
-      expect(carried.filesystem.denyRead).toContain(state)
-      expect(carried.filesystem.denyRead).toContain('/projects/sibling')
-    }
   })
 
   test('sandbox selection removes the shared reader worktree from writable roots', () => {

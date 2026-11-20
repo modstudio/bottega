@@ -41,15 +41,15 @@ import {
 import { resolveRunIdentifier } from '../run/run-identifier.ts'
 import { loadSubscriptionCostContext } from '../run/run-subscription-prices.ts'
 import {
+  formatConfinementFilesystemProbes,
+  runConfinementFilesystemProbes,
+} from '../sandbox/confinement-filesystem-probe.ts'
+import {
   formatConfinementReport,
   parseConfinementJobSelector,
   parseConfinementMcpSelector,
   reportConfinement,
 } from '../sandbox/confinement-report.ts'
-import {
-  formatConfinementFilesystemProbes,
-  runConfinementFilesystemProbes,
-} from '../sandbox/confinement-filesystem-probe.ts'
 import { readonlyLensReportInputs } from '../sandbox/sandbox.ts'
 import { type CliFlags, log, optionFlags } from './support.ts'
 

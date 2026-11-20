@@ -3,11 +3,13 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { STATE_HOME_ENV, resolveStatePaths } from '../../../shared/state-directory.ts'
+import { startBounded } from '../../../shared/bounded-process.ts'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { resolveStatePaths, STATE_HOME_ENV } from '../../../shared/state-directory.ts'
 import type { Project } from '../project/projects.ts'
 import { readonlyLensProfile, resetSandbox, sandboxLaunchArgv, writerProfile } from './sandbox.ts'
 
-export type FilesystemProbeAccess = 'denied' | 'readable' | 'not covered'
+type FilesystemProbeAccess = 'denied' | 'readable' | 'not covered'
 export type ConfinementFilesystemProbeRow = {
   family: 'goose' | 'grok' | 'ACP writer' | 'Codex' | 'read-only MCP' | 'host override'
   status: FilesystemProbeAccess
@@ -62,9 +64,7 @@ async function launchProbe(
       'probe',
       ...targets.map(([, path]) => path),
     ])
-    const child = Bun.spawn(argv, { stdout: 'pipe', stderr: 'pipe' })
-    const output = await new Response(child.stdout).text()
-    await child.exited
+    const output = (await startBounded(argv, { budget: 'sandbox-probe' })).stdout
     const values = output.trim().split(/\r?\n/) as FilesystemProbeAccess[]
     const paths = Object.fromEntries(
       targets.map(([name], index) => [name, values[index] ?? 'denied']),
@@ -82,7 +82,7 @@ async function launchProbe(
 
 /** Execute each SRT profile family against planted sibling, state, secret, and own-tree paths. */
 export async function runConfinementFilesystemProbes(): Promise<ConfinementFilesystemProbeRow[]> {
-  const root = mkdtempSync(join(tmpdir(), 'bottega-confinement-probe-'))
+  const root = mkdtempSync(join(tmpdir(), `${PLATFORM_SLUG}-confinement-probe-`))
   try {
     const ownPath = join(root, 'projects', 'own')
     const worktree = join(root, 'worktrees', 'own')

@@ -23,21 +23,20 @@ import { basename, delimiter, dirname, isAbsolute, join, relative, resolve } fro
 import type { SandboxRuntimeConfig as LibrarySandboxRuntimeConfig } from '@anthropic-ai/sandbox-runtime'
 import { PLATFORM_SLUG, WORKER_MCP_SERVER_NAME } from '../../../shared/brand.ts'
 import { type ConfigEnvironment, resolveEnvFilePaths } from '../../../shared/config-directory.ts'
-import { embeddedDistributionManifest } from '../../../shared/embedded-assets.ts'
 import { fileBackedSecretPaths } from '../../../shared/file-backed-secret-paths.ts'
+import { runningInstallRoot } from '../../../shared/install-root.ts'
 import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 import {
   ensureHubLoginTokenDirectory,
   resolveHubDatabase,
-  resolveStatePaths,
   type StateEnvironment,
 } from '../../../shared/state-directory.ts'
-import { ROOT } from '../database/db.ts'
 import { disabledProjectMcpServers } from '../mcp/mcp-probe.ts'
 import { createNoFollowFile } from '../no-follow-file.ts'
 import { type Project, projectAt, projects } from '../project/projects.ts'
 import { mainStackGateAddresses } from '../resources/main-stack-network.ts'
 import { runHarnessStateDir, runWorkerHomeDir } from '../run-owned-paths.ts'
+import { areaReadPolicy } from './area-read-policy.ts'
 import { launchWithSandboxRuntime, resetSandboxRuntime } from './sandbox-runtime.ts'
 import { decideWeakerNetworkIsolation, endpointHost } from './weaker-network-isolation.ts'
 
@@ -182,41 +181,6 @@ function protectedDenyPaths(project: Project | null, environment: ConfigEnvironm
   ]
 }
 
-type AreaReadPolicy = { deny: string[]; allow: string[] }
-
-/** Broad machine areas hidden from workers, with only run-owned paths carved back in. */
-export function areaReadPolicy(input: {
-  worktree: string
-  runtimeDir: string
-  scratchDir?: string
-  project: Project | null
-  registeredProjects: readonly Project[]
-  environment: ConfigEnvironment
-}): AreaReadPolicy {
-  const worktree = resolve(input.worktree)
-  const runtimeDir = resolve(input.runtimeDir)
-  const scratchDir = input.scratchDir ? resolve(input.scratchDir) : null
-  const ownMain = input.project ? resolve(input.project.path) : null
-  const state = resolveStatePaths(input.environment)
-  const checkoutParents = input.registeredProjects.map((project) => dirname(resolve(project.path)))
-  const siblingCheckouts = input.registeredProjects
-    .filter((project) => !input.project || project.recordId !== input.project.recordId)
-    .map((project) => resolve(project.path))
-  return {
-    deny: [...new Set([state.root, ...checkoutParents, ...siblingCheckouts])],
-    allow: [
-      ...new Set([
-        worktree,
-        runtimeDir,
-        runHarnessStateDir(runtimeDir),
-        ...(scratchDir ? [dirname(scratchDir), scratchDir] : []),
-        resolveHubDatabase(input.environment),
-        ...(ownMain ? [ownMain, join(ownMain, '.git')] : []),
-      ]),
-    ],
-  }
-}
-
 /** Resolved deny lists a confinement report needs; the report itself reads no home. */
 export function readonlyLensReportInputs(
   environment: ConfigEnvironment,
@@ -349,7 +313,7 @@ export function readonlyLensProfile(input: {
       ...(input.nodeModuleLinks ?? linkedNodeModules(input.worktree)).map((path) => resolve(path)),
       join(homedir(), '.claude.json'),
       process.execPath,
-      ...(embeddedDistributionManifest() ? [] : [ROOT]),
+      join(runningInstallRoot(import.meta.dir, environment), 'orchestrator'),
     ]),
   ]
   // SRT reads are allow-by-default. This list only carves paths back out of
