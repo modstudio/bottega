@@ -1,10 +1,16 @@
-/** Refuse install-root and hook runtime paths that a compiled release does not ship. */
-import { readdirSync, readFileSync } from 'node:fs'
+/**
+ * Refuse install-root and hook runtime paths that a compiled release does not ship.
+ *
+ * Hook declarations cover every non-test file and the matched repo-relative reads. The read
+ * scanner does not infer Python paths built through parents[1], cwd joins, environment values or
+ * f-strings, and TypeScript hooks that import ../src must be declared checkout-only.
+ */
+import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import * as ts from 'typescript'
 import { PLATFORM_SLUG } from '../shared/brand.ts'
-import { RUNTIME_ASSETS } from '../shared/embedded-assets.ts'
+import { EMBEDDED_ASSET_PREFIXES, RUNTIME_ASSETS } from '../shared/embedded-assets.ts'
 
 const root = fileURLToPath(new URL('..', import.meta.url))
 const runtimePaths = new Set(RUNTIME_ASSETS.map(({ packagePath }) => packagePath))
@@ -31,13 +37,21 @@ const DYNAMIC_ASSET_PATH_ALLOWANCES = new Map([
   ],
 ])
 
-const embeddedPrefixes = [
-  'orchestrator/migrations',
-  'hub/migrations',
-  'hub/web/dist',
-  'ops/launchd',
-  'ops/systemd',
-]
+/** Hook files that intentionally require a checkout rather than an extracted runtime. */
+const CHECKOUT_ONLY_HOOKS = new Map([
+  [
+    'orchestrator/hooks/canon-edit-guard.ts',
+    'imports orchestrator/src and is rendered only by checkout project settings',
+  ],
+  [
+    'orchestrator/hooks/process_heartbeat_shell.py',
+    'drives checkout-scoped heartbeat shell tests and resolves project checkout files',
+  ],
+  [
+    'orchestrator/hooks/heartbeat_decision_fixture.py',
+    'fixture imported only by heartbeat decision tests',
+  ],
+])
 
 export type RuntimeAssetFinding = { path: string; line: number; asset: string }
 
@@ -67,7 +81,7 @@ function staticAssetPath(node: ts.CallExpression): string | null | undefined {
 function shipped(path: string): boolean {
   return (
     runtimePaths.has(path) ||
-    embeddedPrefixes.some((prefix) => path === prefix || path.startsWith(`${prefix}/`)) ||
+    EMBEDDED_ASSET_PREFIXES.some((prefix) => path === prefix || path.startsWith(`${prefix}/`)) ||
     CHECKOUT_ONLY_RUNTIME_PATHS.has(path)
   )
 }
@@ -99,7 +113,7 @@ export function runtimeAssetCallFindings(sourceText: string, path: string): Runt
 
 /** Find Python and shell hook reads that escape the shipped hook directory. */
 export function hookRuntimeOpenFindings(sourceText: string, path: string): RuntimeAssetFinding[] {
-  if (path.includes('/test_') || path.endsWith('process_heartbeat_shell.py')) return []
+  if (path.includes('/test_') || CHECKOUT_ONLY_HOOKS.has(path)) return []
   const findings: RuntimeAssetFinding[] = []
   const patterns = [
     /parents\[2\]\s*\/\s*["']shared["']\s*\/\s*["']([^"']+)["']/g,
@@ -117,6 +131,43 @@ export function hookRuntimeOpenFindings(sourceText: string, path: string): Runti
   return findings
 }
 
+export type HookAssetFact = { path: string; executable: boolean }
+
+/** Read the production hook inventory and executable bits from a checkout. */
+export function hookAssetFacts(repositoryRoot: string = root): HookAssetFact[] {
+  const hookRoot = join(repositoryRoot, 'orchestrator/hooks')
+  return files(hookRoot).flatMap((diskPath) => {
+    const path = relative(repositoryRoot, diskPath).split('\\').join('/')
+    if (/\/test_[^/]*\.py$/.test(path) || path.includes('/__pycache__/')) return []
+    return [{ path, executable: (statSync(diskPath).mode & 0o111) !== 0 }]
+  })
+}
+
+/** Find hook files missing a declaration, declared twice, or carrying the wrong executable bit. */
+export function hookAssetDeclarationFindings(
+  facts: readonly HookAssetFact[],
+): RuntimeAssetFinding[] {
+  return facts.flatMap((fact) => {
+    const runtime = RUNTIME_ASSETS.find((asset) => asset.packagePath === fact.path)
+    const checkoutOnly = CHECKOUT_ONLY_HOOKS.has(fact.path)
+    if (Boolean(runtime) === checkoutOnly) {
+      return [
+        { path: fact.path, line: 1, asset: runtime ? '<declared twice>' : '<undeclared hook>' },
+      ]
+    }
+    if (runtime && (runtime.mode === 0o755) !== fact.executable) {
+      return [
+        {
+          path: fact.path,
+          line: 1,
+          asset: `<mode ${runtime.mode.toString(8)} disagrees with checkout executable bit>`,
+        },
+      ]
+    }
+    return []
+  })
+}
+
 function files(directory: string): string[] {
   return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
     if (entry.name === 'node_modules' || entry.name.startsWith('.')) return []
@@ -126,15 +177,17 @@ function files(directory: string): string[] {
 }
 
 if (import.meta.main) {
-  const findings = files(root).flatMap((diskPath) => {
-    const path = relative(root, diskPath).split('\\').join('/')
-    if (/\.(?:ts|tsx|mts)$/.test(path))
-      return runtimeAssetCallFindings(readFileSync(diskPath, 'utf8'), path)
-    if (path.startsWith('orchestrator/hooks/') && /\.(?:py|sh)$/.test(path)) {
-      return hookRuntimeOpenFindings(readFileSync(diskPath, 'utf8'), path)
-    }
-    return []
-  })
+  const findings = hookAssetDeclarationFindings(hookAssetFacts()).concat(
+    files(root).flatMap((diskPath) => {
+      const path = relative(root, diskPath).split('\\').join('/')
+      if (/\.(?:ts|tsx|mts)$/.test(path))
+        return runtimeAssetCallFindings(readFileSync(diskPath, 'utf8'), path)
+      if (path.startsWith('orchestrator/hooks/') && /\.(?:py|sh)$/.test(path)) {
+        return hookRuntimeOpenFindings(readFileSync(diskPath, 'utf8'), path)
+      }
+      return []
+    }),
+  )
   for (const finding of findings) {
     console.error(
       `${finding.path}:${finding.line}: runtime asset ${finding.asset} is neither embedded nor declared checkout-only with a reason`,

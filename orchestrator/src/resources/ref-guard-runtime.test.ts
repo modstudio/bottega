@@ -18,21 +18,12 @@ import { refGuardRuntimePath, resolveRefGuardHook } from './ref-guard-runtime.ts
 
 afterEach(() => registerEmbeddedAssets(null))
 
-test('the ref guard path selects checkout and extracted locations without mixing roots', () => {
+test('the ref guard path selects the checkout hook', () => {
   expect(
     refGuardRuntimePath({
-      embeddedVersion: null,
       sourceRoot: '/checkout/orchestrator',
-      stateRoot: '/state',
     }),
   ).toBe('/checkout/orchestrator/hooks/reference-transaction')
-  expect(
-    refGuardRuntimePath({
-      embeddedVersion: '1.2.3',
-      sourceRoot: '',
-      stateRoot: '/state',
-    }),
-  ).toBe('/state/runtime/1.2.3/assets/orchestrator/hooks/reference-transaction')
 })
 
 test('dispatch refuses a resolved guard executable inside a writable root', () => {

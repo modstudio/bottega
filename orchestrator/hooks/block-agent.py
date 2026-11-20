@@ -66,7 +66,8 @@ ALLOW = {"claude-code-guide"}
 ORCHESTRATOR_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 DB = os.environ.get("BOTTEGA_ORCHESTRATOR_DB") or subprocess.check_output(
     [bottega_bin(), "machine", "store-path"], text=True,
-).splitlines()[0]
+)
+DB = (DB.splitlines() or [""])[0].strip()
 # Where a decision goes when sqlite will not take it. A gate that cannot say
 # what it did is the thing this table exists to prevent, so a failed write has
 # to leave a mark somewhere rather than evaporate.

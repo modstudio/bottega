@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test'
+import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { RECORD_SIGN_IN_REMEDY } from '../../../shared/record-remedies.ts'
 import {
@@ -7,7 +8,6 @@ import {
   settingsApplyDecision,
 } from '../settings/settings-machine-apply.ts'
 import {
-  hookScriptPath,
   PRODUCT_HOOKS,
   SCRIPT_FILES,
   withMachineProductHooks,
@@ -21,6 +21,7 @@ const current: MachineSettingsApplyResult[] = [
 
 function facts(): SetupInstallVerifyFacts {
   const installRoot = `/installed/${PLATFORM_SLUG}`
+  const scriptPath = (file: string) => join(installRoot, 'orchestrator', 'hooks', file)
   return {
     installRoot,
     hooks: PRODUCT_HOOKS,
@@ -35,12 +36,16 @@ function facts(): SetupInstallVerifyFacts {
           installRoot,
           '/state/orchestrator.db',
           'on',
+          {
+            executable: join(installRoot, 'bin', PLATFORM_SLUG),
+            scriptPath,
+          },
         ).settings,
       },
     ],
     scripts: SCRIPT_FILES.map((file) => ({
       file,
-      path: hookScriptPath(installRoot, file),
+      path: scriptPath(file),
       assetRoot: installRoot,
       exists: true,
       readable: true,

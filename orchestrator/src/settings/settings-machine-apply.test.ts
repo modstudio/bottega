@@ -16,6 +16,7 @@ import { tryKernelLease } from '../project/project-lock.ts'
 import { serializeOwnedSettings } from './settings.ts'
 import { applyMachineSettings, printMachineSettingsApplyResults } from './settings-machine-apply.ts'
 import { withMachineProductHooks } from './settings-machine-hooks.ts'
+import { resolveMachineHookRuntime } from './settings-machine-runtime.ts'
 import { applySettingsWrite } from './settings-write.ts'
 
 const OWNER = '01990000-0000-7000-8000-000000000001'
@@ -107,6 +108,7 @@ function writeCurrentSettings() {
           assetPath(),
           join(root, 'state', 'orchestrator', 'orchestrator.db'),
           'on',
+          resolveMachineHookRuntime(),
         ).settings,
         env: {},
       },
@@ -204,6 +206,7 @@ describe('settings apply', () => {
           assetPath(),
           resolveOrchestratorDatabase(environment),
           'on',
+          resolveMachineHookRuntime(),
         ).settings,
         env: {},
       },

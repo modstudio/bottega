@@ -6,7 +6,7 @@ import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { assetPath } from '../../../shared/install-root.ts'
 import { recordSignInRemedy } from '../../../shared/record-remedies.ts'
-import { runtimeAssetPath } from '../../../shared/runtime-assets.ts'
+import { runtimeAssetPath, runtimeAssetRoot } from '../../../shared/runtime-assets.ts'
 import { resolveRunsDirectory } from '../../../shared/state-directory.ts'
 import { userCanonHomesFromEnvironment } from '../canon/user-canon-home-files.ts'
 import {
@@ -62,9 +62,9 @@ function gatherSetupInstallVerifyFacts(
 ): SetupInstallVerifyFacts {
   const installRoot = assetPath()
   const claudeHome = claudeHomeFromEnvironment(environment)
+  const assetRoot = runtimeAssetRoot(environment)
   const scriptFacts = SCRIPT_FILES.map((file) => {
     const path = runtimeAssetPath(`orchestrator/hooks/${file}`, environment)
-    const assetRoot = join(path, '..', '..', '..')
     const exists = existsSync(path) && statSync(path).isFile()
     let readable = false
     let executable = false

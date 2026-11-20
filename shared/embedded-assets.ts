@@ -226,7 +226,6 @@ const runtimeHookFiles = [
   'board-interrupt.py',
   'board_hook_common.py',
   'bun-cache-guard.py',
-  'canon-edit-guard.ts',
   'context-precompact.py',
   'context-review.py',
   'git-guard.py',
@@ -254,6 +253,15 @@ const runtimeHookFiles = [
   'stop-summary.py',
   'test-substance-guard.py',
   'workflow-cursor-reminder.py',
+] as const
+
+/** Directory prefixes whose contents the binary builder embeds wholesale. */
+export const EMBEDDED_ASSET_PREFIXES = [
+  'orchestrator/migrations',
+  'hub/migrations',
+  'hub/web/dist',
+  'ops/launchd',
+  'ops/systemd',
 ] as const
 
 /** Every real file that an installed binary exposes to an outside process. */

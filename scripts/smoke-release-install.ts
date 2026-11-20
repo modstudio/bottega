@@ -9,7 +9,7 @@ import {
 } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, join, resolve } from 'node:path'
-import { startBounded } from '../shared/bounded-process.ts'
+import { startBounded, startParentBound } from '../shared/bounded-process.ts'
 import { MCP_SERVER_NAME, PLATFORM_SLUG, WORKER_MCP_SERVER_NAME } from '../shared/brand.ts'
 import { parseBinaryTarget } from './build-binary.ts'
 import { buildReleaseArtifact, writeChecksumSet } from './build-release-artifacts.ts'
@@ -106,6 +106,14 @@ export function releaseInstallEnvironment(
 
 function shellQuote(value: string): string {
   return `'${value.replaceAll("'", `'"'"'`)}'`
+}
+
+export function distributionHeartbeatCommand(
+  executable: string,
+  script: string,
+  session: string,
+): string {
+  return `BOTTEGA_BIN=${shellQuote(executable)} ${script} ${session}`
 }
 
 function launchctlStub(stateFile: string, logFile: string): string {
@@ -364,6 +372,77 @@ async function runExtractedHookProof(
   return result
 }
 
+async function firstOutputLine(
+  stream: ReadableStream<Uint8Array>,
+  timeoutMs: number,
+): Promise<string | null> {
+  const reader = stream.getReader()
+  const decoder = new TextDecoder()
+  let pending = ''
+  const read = async (): Promise<string | null> => {
+    for (;;) {
+      const chunk = await reader.read()
+      if (chunk.done) return pending || null
+      pending += decoder.decode(chunk.value, { stream: true })
+      const newline = pending.indexOf('\n')
+      if (newline >= 0) return pending.slice(0, newline)
+    }
+  }
+  let timeout: ReturnType<typeof setTimeout> | undefined
+  try {
+    return await Promise.race([
+      read(),
+      new Promise<null>((resolve) => {
+        timeout = setTimeout(() => resolve(null), timeoutMs)
+      }),
+    ])
+  } finally {
+    if (timeout) clearTimeout(timeout)
+    await reader.cancel().catch(() => {})
+  }
+}
+
+async function runHeartbeatArmProof(
+  version: string,
+  paths: InstallProofPaths,
+  executable: string,
+  env: Record<string, string | undefined>,
+  failures: string[],
+): Promise<StepResult> {
+  const script = join(
+    paths.state,
+    'runtime',
+    version,
+    'assets',
+    'orchestrator',
+    'hooks',
+    'orch-heartbeat.sh',
+  )
+  const command = distributionHeartbeatCommand(executable, script, 'release-proof-heartbeat')
+  const child = startParentBound(['sh', '-c', command], {
+    name: 'release install heartbeat proof',
+    cwd: paths.home,
+    env,
+  })
+  const stderrPromise = new Response(child.stderr).text()
+  const line = await firstOutputLine(child.stdout, 5_000)
+  child.kill()
+  await child.exited
+  const stderr = await stderrPromise
+  recordProofAssertion(failures, line !== null, 'heartbeat arm produced no line within 5 seconds')
+  recordProofAssertion(
+    failures,
+    line !== null && !line.startsWith('DEGRADED') && !line.includes(' DEGRADED '),
+    `heartbeat arm degraded: ${line ?? '<no output>'}`,
+  )
+  return {
+    name: 'heartbeat arm',
+    exitCode: line !== null && !line.startsWith('DEGRADED') && !line.includes(' DEGRADED ') ? 0 : 1,
+    output: line ?? '',
+    stderr,
+  }
+}
+
 async function prepareReleaseProof(
   version: string,
   root: string,
@@ -499,6 +578,7 @@ async function proveReleaseInstall(version: string, keep: boolean): Promise<numb
     const seededSettings = await seedProofSettings(paths, executable, env)
     results.push(...seededSettings)
     results.push(await runExtractedHookProof(version, paths, env, assertionFailures))
+    results.push(await runHeartbeatArmProof(version, paths, executable, env, assertionFailures))
     const firstInstallerCounts = harnessInstallerInvocationCounts(
       readProofLog(brewLog),
       readProofLog(curlLog),

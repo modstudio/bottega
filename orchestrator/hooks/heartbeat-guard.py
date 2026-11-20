@@ -31,7 +31,8 @@ PROCESS_LIST_PS_TIMEOUT_SECONDS = 2
 DB = os.environ.get("BOTTEGA_ORCHESTRATOR_DB") or subprocess.check_output(
     [bottega_bin(), "machine", "store-path"],
     text=True,
-).splitlines()[0]
+)
+DB = (DB.splitlines() or [""])[0].strip()
 
 
 def load_hook_module(name: str, filename: str):

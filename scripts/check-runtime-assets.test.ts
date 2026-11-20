@@ -1,5 +1,14 @@
 import { expect, test } from 'bun:test'
-import { hookRuntimeOpenFindings, runtimeAssetCallFindings } from './check-runtime-assets.ts'
+import {
+  hookAssetDeclarationFindings,
+  hookAssetFacts,
+  hookRuntimeOpenFindings,
+  runtimeAssetCallFindings,
+} from './check-runtime-assets.ts'
+
+test('every production hook has exactly one declaration with its checkout mode', () => {
+  expect(hookAssetDeclarationFindings(hookAssetFacts())).toEqual([])
+})
 
 test('refuses a new assetPath that a release does not ship', () => {
   expect(
@@ -30,6 +39,32 @@ test('refuses an unshipped repo-relative file opened by a production hook', () =
       path: 'orchestrator/hooks/example.py',
       line: 1,
       asset: 'shared/new-table.json',
+    },
+  ])
+})
+
+test('refuses an undeclared production hook file', () => {
+  expect(
+    hookAssetDeclarationFindings([{ path: 'orchestrator/hooks/stray.py', executable: false }]),
+  ).toEqual([
+    {
+      path: 'orchestrator/hooks/stray.py',
+      line: 1,
+      asset: '<undeclared hook>',
+    },
+  ])
+})
+
+test('refuses a declared hook whose executable bit differs from its mode', () => {
+  expect(
+    hookAssetDeclarationFindings([
+      { path: 'orchestrator/hooks/orch-heartbeat.sh', executable: false },
+    ]),
+  ).toEqual([
+    {
+      path: 'orchestrator/hooks/orch-heartbeat.sh',
+      line: 1,
+      asset: '<mode 755 disagrees with checkout executable bit>',
     },
   ])
 })

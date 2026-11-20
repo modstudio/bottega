@@ -34,15 +34,31 @@ const result = (value: unknown) => ({
   ],
 })
 
+function shellQuote(value: string): string {
+  return `'${value.replaceAll("'", `'"'"'`)}'`
+}
+
+export function renderedBoardHeartbeatGuidance(input: {
+  session: string
+  script: string
+  distributionExecutable: string | null
+}): string {
+  if (input.distributionExecutable) {
+    return `Arm under Monitor: BOTTEGA_BIN=${shellQuote(input.distributionExecutable)} ${input.script} ${input.session}`
+  }
+  return `Arm under Monitor from the main checkout: ${input.script} ${input.session}`
+}
+
 function boardHeartbeatGuidance(
   env: Record<string, string | undefined> = process.env,
 ): string | null {
   const session = architectIdentity(env)?.session
   if (!session) return null
-  const prefix = runtimeAssetsAreEmbedded()
-    ? 'Arm under Monitor'
-    : 'Arm under Monitor from the main checkout'
-  return `${prefix}: ${runtimeAssetPath('orchestrator/hooks/orch-heartbeat.sh')} ${session}`
+  return renderedBoardHeartbeatGuidance({
+    session,
+    script: runtimeAssetPath('orchestrator/hooks/orch-heartbeat.sh'),
+    distributionExecutable: runtimeAssetsAreEmbedded() ? process.execPath : null,
+  })
 }
 
 function withHeartbeatGuidance<T>(value: T, required: boolean): T | (T & { heartbeat: string }) {

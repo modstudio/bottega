@@ -13,7 +13,7 @@ export type SourceRootAllowance = { path: string; line: number; reason: string }
 export const SOURCE_ROOT_ALLOWANCES: SourceRootAllowance[] = [
   {
     path: 'orchestrator/src/resources/ref-guard-runtime.ts',
-    line: 32,
+    line: 23,
     reason: 'the tracked hook path is selected only when no embedded manifest exists',
   },
   {

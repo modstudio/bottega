@@ -7,7 +7,11 @@ import {
   SYSTEMD_UNIT_SUFFIXES,
 } from '../orchestrator/src/setup/setup-schedule-policy.ts'
 import { PLATFORM_SLUG } from '../shared/brand.ts'
-import { RUNTIME_ASSETS, registerEmbeddedAssets } from '../shared/embedded-assets.ts'
+import {
+  EMBEDDED_ASSET_PREFIXES,
+  RUNTIME_ASSETS,
+  registerEmbeddedAssets,
+} from '../shared/embedded-assets.ts'
 import { LAUNCHD_TEMPLATE_OWNERS } from '../shared/launchd-owners.ts'
 import { BINARY_TARGETS, type BinaryTarget } from '../shared/release-artifacts.ts'
 import { sandboxRuntimePayloadPaths } from '../shared/sandbox-runtime-assets.ts'
@@ -74,7 +78,7 @@ export async function embeddedAssetPaths(
 
 async function migrationAssetPaths(): Promise<string[]> {
   const paths: string[] = []
-  for (const root of ['orchestrator/migrations', 'hub/migrations']) {
+  for (const root of EMBEDDED_ASSET_PREFIXES.filter((path) => path.endsWith('/migrations'))) {
     paths.push(...(await embeddedAssetPaths(root)))
   }
   return paths.sort()
@@ -97,7 +101,7 @@ async function scheduleTemplateAssetPaths(): Promise<string[]> {
 }
 
 async function webAssetPaths(): Promise<string[]> {
-  const root = 'hub/web/dist'
+  const root = EMBEDDED_ASSET_PREFIXES.find((path) => path.endsWith('/web/dist'))!
   const paths = await embeddedAssetPaths(root)
   if (paths.length === 0) throw new Error('hub/web/dist is empty after the web build')
   return paths

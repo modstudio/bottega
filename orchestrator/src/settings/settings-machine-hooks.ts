@@ -179,12 +179,10 @@ export const PRODUCT_HOOKS: readonly ProductHookDeclaration[] = [
 
 const shellQuote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`
 
-export function hookScriptPath(assetRoot: string, file: string): string {
-  return join(assetRoot, 'orchestrator', 'hooks', file)
-}
-
 export function commandNamesHookScript(command: string, file: string, assetRoot?: string): boolean {
-  const needle = assetRoot ? hookScriptPath(assetRoot, file) : `orchestrator/hooks/${file}`
+  const needle = assetRoot
+    ? join(assetRoot, 'orchestrator', 'hooks', file)
+    : `orchestrator/hooks/${file}`
   let index = command.indexOf(needle)
   while (index >= 0) {
     const previous = command[index - 1]
@@ -296,10 +294,7 @@ export function withMachineProductHooks(
   assetRoot: string,
   databasePath: string,
   globalUse: 'on' | 'off',
-  runtime: MachineHookRuntime = {
-    executable: join(assetRoot, 'bin', PLATFORM_SLUG),
-    scriptPath: (file) => hookScriptPath(assetRoot, file),
-  },
+  runtime: MachineHookRuntime,
 ): MachineProductHooksResult {
   const profileHooks = isPlainObject(settings.hooks) ? settings.hooks : {}
   const superseded: SupersededProfileHook[] = []

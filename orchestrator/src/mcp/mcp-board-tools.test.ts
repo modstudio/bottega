@@ -7,7 +7,7 @@ import { newRecordId } from '../../../shared/record/schema.ts'
 import { BOARD_TITLE_MAX_CHARS } from '../board/board-policy.ts'
 import { postNotice } from '../board/board-service.ts'
 import { db } from '../database/db.ts'
-import { registerBoardTools } from './mcp-board-tools.ts'
+import { registerBoardTools, renderedBoardHeartbeatGuidance } from './mcp-board-tools.ts'
 
 let identityKeys: string[] = []
 let identityEnvironment: Record<string, string | undefined> = {}
@@ -148,6 +148,27 @@ test('request-posting MCP tools return the same heartbeat guidance', async () =>
   } finally {
     process.chdir(previousCwd)
   }
+})
+
+test('heartbeat guidance carries the installed binary only for a distribution', () => {
+  expect(
+    renderedBoardHeartbeatGuidance({
+      session: 'session-1',
+      script: '/checkout/orchestrator/hooks/orch-heartbeat.sh',
+      distributionExecutable: null,
+    }),
+  ).toBe(
+    'Arm under Monitor from the main checkout: /checkout/orchestrator/hooks/orch-heartbeat.sh session-1',
+  )
+  expect(
+    renderedBoardHeartbeatGuidance({
+      session: 'session-1',
+      script: '/state/runtime/1/assets/orchestrator/hooks/orch-heartbeat.sh',
+      distributionExecutable: `/install dir/${PLATFORM_SLUG}'s`,
+    }),
+  ).toBe(
+    `Arm under Monitor: BOTTEGA_BIN='/install dir/${PLATFORM_SLUG}'"'"'s' /state/runtime/1/assets/orchestrator/hooks/orch-heartbeat.sh session-1`,
+  )
 })
 
 test('board_read MCP result is the delivery envelope with one normalized notice shape', async () => {

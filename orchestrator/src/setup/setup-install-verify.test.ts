@@ -1,7 +1,7 @@
 import { expect, test } from 'bun:test'
+import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
-  hookScriptPath,
   PRODUCT_HOOKS,
   SCRIPT_FILES,
   withMachineProductHooks,
@@ -13,6 +13,11 @@ import {
 } from './setup-install-verify.ts'
 
 const INSTALL = `/installed/${PLATFORM_SLUG}`
+const scriptPath = (file: string) => join(INSTALL, 'orchestrator', 'hooks', file)
+const RUNTIME = {
+  executable: join(INSTALL, 'bin', PLATFORM_SLUG),
+  scriptPath,
+}
 
 function facts(): SetupInstallVerifyFacts {
   const settings = withMachineProductHooks(
@@ -20,6 +25,7 @@ function facts(): SetupInstallVerifyFacts {
     INSTALL,
     '/state/orchestrator.db',
     'on',
+    RUNTIME,
   ).settings
   return {
     installRoot: INSTALL,
@@ -41,7 +47,7 @@ function facts(): SetupInstallVerifyFacts {
     ],
     scripts: SCRIPT_FILES.map((file) => ({
       file,
-      path: hookScriptPath(INSTALL, file),
+      path: scriptPath(file),
       assetRoot: INSTALL,
       exists: true,
       readable: true,
@@ -119,7 +125,7 @@ test('rendered hooks are recognized under the verified extracted runtime root', 
   const settings = userSettings(input)
   settings.hooks = JSON.parse(JSON.stringify(settings.hooks).replaceAll(INSTALL, runtimeRoot))
   for (const script of input.scripts) {
-    script.path = hookScriptPath(runtimeRoot, script.file)
+    script.path = join(runtimeRoot, 'orchestrator', 'hooks', script.file)
     script.assetRoot = runtimeRoot
   }
   expect(check(verifySetupInstall(input), 'hooks-present')).toMatchObject({ ok: true })

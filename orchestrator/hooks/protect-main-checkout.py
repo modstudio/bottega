@@ -53,10 +53,11 @@ def database_path():
     if configured:
         return configured
     try:
-        return subprocess.check_output(
+        out = subprocess.check_output(
             [bottega_bin(), "machine", "store-path"],
             text=True,
-        ).splitlines()[0]
+        )
+        return (out.splitlines() or [""])[0].strip()
     except (OSError, subprocess.CalledProcessError):
         return None
 

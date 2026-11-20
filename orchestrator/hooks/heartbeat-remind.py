@@ -30,6 +30,19 @@ def heartbeat_path() -> str:
     return os.path.abspath(os.path.join(os.path.dirname(__file__), "orch-heartbeat.sh"))
 
 
+def checkout_hooks() -> bool:
+    return os.path.exists(os.path.join(os.path.dirname(__file__), "..", "..", ".git"))
+
+
+def arm_context(session_id: str, checkout: bool | None = None) -> str:
+    is_checkout = checkout_hooks() if checkout is None else checkout
+    arm = f"{heartbeat_path()} {session_id}"
+    if is_checkout:
+        return f"Arm under Monitor from the main checkout: {arm}"
+    executable = os.environ["BOTTEGA_BIN"]
+    return f"Arm under Monitor: BOTTEGA_BIN={shlex.quote(executable)} {arm}"
+
+
 def heartbeat_armed(session_id: str) -> bool | None:
     process_list = os.environ.get("BOTTEGA_HEARTBEAT_PROCESS_LIST")
     if process_list is None:
@@ -131,8 +144,7 @@ def main() -> int:
         armed = heartbeat_armed(sid)
         if armed is not False:
             return 0
-        arm = f"{heartbeat_path()} {sid}"
-        context = f"Arm under Monitor from the main checkout: {arm}"
+        context = arm_context(sid)
         record_emission(payload, "additionalContext", context)
         sys.stdout.write(json.dumps({
             "hookSpecificOutput": {

@@ -1,11 +1,24 @@
 import { expect, test } from 'bun:test'
 import { PLATFORM_NAME, PLATFORM_SLUG } from '../shared/brand.ts'
 import {
+  distributionHeartbeatCommand,
   harnessInstallerInvocationCounts,
   releaseDownloadsReachedCurl,
   releaseInstallEnvironment,
   renderedHookCommand,
 } from './smoke-release-install.ts'
+
+test('distribution heartbeat command carries the shell-quoted installed executable', () => {
+  expect(
+    distributionHeartbeatCommand(
+      `/install dir/${PLATFORM_SLUG}'s`,
+      '/state/runtime/1/assets/orchestrator/hooks/orch-heartbeat.sh',
+      'session-1',
+    ),
+  ).toBe(
+    `BOTTEGA_BIN='/install dir/${PLATFORM_SLUG}'"'"'s' /state/runtime/1/assets/orchestrator/hooks/orch-heartbeat.sh session-1`,
+  )
+})
 
 test('release install environment drops inherited product and harness overrides', () => {
   const env = releaseInstallEnvironment(

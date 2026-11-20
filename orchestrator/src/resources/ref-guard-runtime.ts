@@ -10,20 +10,8 @@ import { runtimeAssetPath } from '../../../shared/runtime-assets.ts'
 import { ROOT } from '../database/db.ts'
 
 /** Select the tracked checkout hook or the installed binary's extracted hook. */
-export function refGuardRuntimePath(input: {
-  embeddedVersion: string | null
-  sourceRoot: string
-  stateRoot: string
-}): string {
-  return input.embeddedVersion
-    ? join(
-        input.stateRoot,
-        'runtime',
-        input.embeddedVersion,
-        'assets',
-        REF_GUARD_RUNTIME_ASSET.destination,
-      )
-    : join(input.sourceRoot, relative('orchestrator', REF_GUARD_RUNTIME_ASSET.packagePath))
+export function refGuardRuntimePath(input: { sourceRoot: string }): string {
+  return join(input.sourceRoot, relative('orchestrator', REF_GUARD_RUNTIME_ASSET.packagePath))
 }
 
 /** Resolve the checkout hook or extract and SHA-256 verify the binary's embedded hook. */
@@ -32,7 +20,6 @@ export function resolveRefGuardHook(
   sourceRoot = ROOT,
 ): string {
   const manifest = embeddedDistributionManifest()
-  if (!manifest)
-    return realpathSync(refGuardRuntimePath({ embeddedVersion: null, sourceRoot, stateRoot: '' }))
+  if (!manifest) return realpathSync(refGuardRuntimePath({ sourceRoot }))
   return runtimeAssetPath(REF_GUARD_RUNTIME_ASSET.packagePath, environment)
 }

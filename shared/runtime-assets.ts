@@ -20,6 +20,20 @@ export function runtimeAssetsAreEmbedded(): boolean {
   return embeddedDistributionManifest() !== null
 }
 
+/** The version-scoped root containing extracted runtime assets. */
+export function extractedRuntimeRootPath(stateRoot: string, version: string): string {
+  return join(stateRoot, 'runtime', version, RUNTIME_DIRECTORY)
+}
+
+/** The extracted location of one declared runtime asset. */
+export function extractedRuntimeAssetPath(
+  stateRoot: string,
+  version: string,
+  asset: { destination: string },
+): string {
+  return join(extractedRuntimeRootPath(stateRoot, version), asset.destination)
+}
+
 function extractedRuntimeRoot(environment: StateEnvironment): string {
   const manifest = embeddedDistributionManifest()
   if (!manifest) throw new Error('an extracted runtime exists only in a compiled distribution')
@@ -28,10 +42,16 @@ function extractedRuntimeRoot(environment: StateEnvironment): string {
     return { ...asset, bytes, digest: embeddedRuntimeDigest(bytes) }
   })
   return extractEmbeddedRuntime(
-    join(resolveStateRoot(environment), 'runtime', manifest.version, RUNTIME_DIRECTORY),
+    extractedRuntimeRootPath(resolveStateRoot(environment), manifest.version),
     expected,
     'compiled runtime assets',
   )
+}
+
+/** Resolve the root shared by every declared runtime asset. */
+export function runtimeAssetRoot(environment: StateEnvironment = process.env): string {
+  if (!runtimeAssetsAreEmbedded()) return realpathSync(assetPath())
+  return extractedRuntimeRoot(environment)
 }
 
 /** Resolve a declared runtime asset to a verified, ordinary filesystem path. */
@@ -42,5 +62,8 @@ export function runtimeAssetPath(
   const asset = RUNTIME_ASSETS.find((entry) => entry.packagePath === packagePath)
   if (!asset) throw new Error(`runtime asset is not declared: ${packagePath}`)
   if (!runtimeAssetsAreEmbedded()) return realpathSync(assetPath(packagePath))
-  return realpathSync(join(extractedRuntimeRoot(environment), asset.destination))
+  const manifest = embeddedDistributionManifest()!
+  const stateRoot = resolveStateRoot(environment)
+  runtimeAssetRoot(environment)
+  return realpathSync(extractedRuntimeAssetPath(stateRoot, manifest.version, asset))
 }
