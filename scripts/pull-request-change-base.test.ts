@@ -5,24 +5,30 @@ import { fileURLToPath } from 'node:url'
 import { pullRequestChangeBase } from './pull-request-change-base.ts'
 
 test('uses the merge ref first parent for a pull request', () => {
-  expect(pullRequestChangeBase({}, 'pull_request')).toEqual({ revision: 'HEAD^1' })
+  expect(pullRequestChangeBase({}, 'pull_request', true)).toEqual({ revision: 'HEAD^1' })
+})
+
+test('refuses a pull request HEAD without a second parent', () => {
+  expect(pullRequestChangeBase({}, 'pull_request', false)).toEqual({
+    refusal: expect.stringContaining('leaving actions/checkout ref: unset'),
+  })
 })
 
 test('uses the current merge-group base', () => {
   expect(
-    pullRequestChangeBase({ merge_group: { base_sha: 'current-base' } }, 'merge_group'),
+    pullRequestChangeBase({ merge_group: { base_sha: 'current-base' } }, 'merge_group', false),
   ).toEqual({ revision: 'current-base' })
 })
 
 test('refuses a merge group without its base', () => {
-  expect(pullRequestChangeBase({ merge_group: {} }, 'merge_group')).toEqual({
-    refusal: expect.stringContaining('merge_group.base_sha'),
+  expect(pullRequestChangeBase({ merge_group: {} }, 'merge_group', false)).toEqual({
+    refusal: expect.stringContaining('re-run the merge-queue check'),
   })
 })
 
 test('refuses an event that does not describe pull request changes', () => {
-  expect(pullRequestChangeBase({}, 'push')).toEqual({
-    refusal: expect.stringContaining('push'),
+  expect(pullRequestChangeBase({}, 'push', false)).toEqual({
+    refusal: expect.stringContaining('gate this step on pull_request and merge_group events'),
   })
 })
 
