@@ -7,10 +7,8 @@ import {
   type InstallationKind,
   runningInstallationIdentity,
 } from '../../../shared/install-root.ts'
-import {
-  LAUNCHD_TEMPLATE_OWNERS,
-  NOT_INSTALLED_BY_RELEASE_INSTALL,
-} from '../../../shared/launchd-owners.ts'
+import { NOT_INSTALLED_BY_RELEASE_INSTALL } from '../../../shared/launch-agent-liveness.ts'
+import { LAUNCHD_TEMPLATE_OWNERS } from '../../../shared/launchd-owners.ts'
 import {
   type InstalledPlistOwner,
   includesLaunchAgents,

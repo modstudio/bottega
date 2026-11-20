@@ -1,5 +1,11 @@
+import { homedir } from 'node:os'
 import { type InstallationKind, runningInstallationKind } from '../../shared/install-root.ts'
-import { launchAgentLoaded, NOT_INSTALLED_BY_RELEASE_INSTALL } from '../../shared/launchd-owners.ts'
+import {
+  HUB_COLLECT_LAUNCH_AGENT_LABEL,
+  launchAgentInstalled,
+  launchAgentLoaded,
+  NOT_INSTALLED_BY_RELEASE_INSTALL,
+} from '../../shared/launch-agent-liveness.ts'
 import { type SlowCollectionHealth, slowCollectionHealth } from './collect-slow-health.ts'
 import { DB_PATH, db } from './db.ts'
 import { resolveHostedUrl } from './hosted-url.ts'
@@ -77,9 +83,10 @@ function questionCommitTaskLinkDoctor(): string[] {
 export function slowCollectionDoctorDecision(
   installationKind: InstallationKind,
   loaded: boolean | null,
+  installed: boolean,
   health: SlowCollectionHealth,
 ): string {
-  if (installationKind !== 'checkout' && loaded === false) {
+  if (installationKind !== 'checkout' && loaded === false && installed === false) {
     return `collect slow   ${NOT_INSTALLED_BY_RELEASE_INSTALL}`
   }
   if (health.ageMs === null)
@@ -96,7 +103,8 @@ export function slowCollectionDoctorLine(
 ): string {
   return slowCollectionDoctorDecision(
     installationKind,
-    launchAgentLoaded('com.user.hub-collect'),
+    launchAgentLoaded(HUB_COLLECT_LAUNCH_AGENT_LABEL),
+    launchAgentInstalled(HUB_COLLECT_LAUNCH_AGENT_LABEL, homedir()),
     slowCollectionHealth(now, readSettingStamp('collect.slow.at')),
   )
 }

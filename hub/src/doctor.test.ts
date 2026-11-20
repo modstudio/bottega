@@ -56,13 +56,16 @@ describe(`${PLATFORM_SLUG} machine doctor`, () => {
 
   test('judges distribution slow collection from its observed launch-agent state', () => {
     const missing = { status: 'missing', ageMs: null } as const
-    expect(slowCollectionDoctorDecision('distribution', false, missing)).toBe(
+    expect(slowCollectionDoctorDecision('distribution', false, false, missing)).toBe(
       'collect slow   not installed by a release install',
     )
-    expect(slowCollectionDoctorDecision('distribution', true, missing)).toBe(
+    expect(slowCollectionDoctorDecision('distribution', true, false, missing)).toBe(
       'collect slow   FAIL — never completed',
     )
-    expect(slowCollectionDoctorDecision('distribution', null, missing)).toBe(
+    expect(slowCollectionDoctorDecision('distribution', null, false, missing)).toBe(
+      'collect slow   FAIL — never completed',
+    )
+    expect(slowCollectionDoctorDecision('distribution', false, true, missing)).toBe(
       'collect slow   FAIL — never completed',
     )
   })

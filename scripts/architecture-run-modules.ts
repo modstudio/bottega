@@ -26,6 +26,7 @@ export const runModuleSpecs = [
       '../../../shared/brand.ts',
       '../../../shared/env-values.ts',
       '../../../shared/install-root.ts',
+      '../../../shared/launch-agent-liveness.ts',
       '../../../shared/launchd-owners.ts',
       '../../../shared/launch-agent-render.ts',
       '../../../shared/launch-agent-skip.ts',

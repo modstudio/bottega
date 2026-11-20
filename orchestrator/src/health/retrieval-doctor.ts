@@ -1,8 +1,9 @@
 // concern: retrieval doctor
 /** Decides and reports retrieval health only when retrieval was configured. */
 
+import type { DoctorReporter } from './doctor-reporter.ts'
+
 export type RetrievalCheckResult = { stdout: string; stderr: string; exitCode: number }
-export type RetrievalDoctorReporter = { log(value: string): void; exitCode(code: number): void }
 
 export function retrievalIsConfigured(
   configuredUrl: string,
@@ -40,7 +41,7 @@ export function retrievalDoctorDecision(
 
 export async function reportRetrievalDoctor(
   configured: boolean,
-  reporter: RetrievalDoctorReporter,
+  reporter: DoctorReporter,
   check: () => Promise<RetrievalCheckResult>,
 ): Promise<void> {
   const decision = configured
@@ -54,7 +55,7 @@ export function reportRetrieval(
   configuredUrl: string,
   modelHostInstalled: boolean,
   environment: Readonly<Record<string, string | undefined>>,
-  reporter: RetrievalDoctorReporter,
+  reporter: DoctorReporter,
   check: () => Promise<RetrievalCheckResult>,
 ): Promise<void> {
   return reportRetrievalDoctor(

@@ -5,6 +5,7 @@ import { accessSync, constants, existsSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { assetPath } from '../../../shared/install-root.ts'
+import { recordSignInRemedy } from '../../../shared/record-remedies.ts'
 import { resolveRunsDirectory } from '../../../shared/state-directory.ts'
 import { userCanonHomesFromEnvironment } from '../canon/user-canon-home-files.ts'
 import {
@@ -34,7 +35,7 @@ export type SetupInstallVerifyAdapters = {
 
 const SIGN_IN_FOLLOW_UP =
   `not signed in: user settings and user canon wait for sign-in; run ` +
-  `${PLATFORM_SLUG} record sign-in --email <email>, then re-run ${PLATFORM_SLUG} machine setup apply`
+  `${recordSignInRemedy('<email>').argv.join(' ')}, then re-run ${PLATFORM_SLUG} machine setup apply`
 
 function refusedSettingsMessage(refused: readonly MachineSettingsApplyResult[]): string {
   return refused

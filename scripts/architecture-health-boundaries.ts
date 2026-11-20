@@ -38,6 +38,7 @@ export const healthBoundarySpecs: ImportBoundary[] = [
       'orchestrator/src/database/migrations.ts',
       'orchestrator/src/health/health.ts',
       'orchestrator/src/health/delegation-doctor.ts',
+      'orchestrator/src/health/doctor-reporter.ts',
       'orchestrator/src/health/launch-agent-doctor.ts',
       'orchestrator/src/focused-test/focused-test-decision.ts',
       'orchestrator/src/project/projects.ts',
@@ -55,10 +56,17 @@ export const healthBoundarySpecs: ImportBoundary[] = [
       'Keep doctor independent of transports, routing, run control, the CLI, and reviews by value.',
   },
   {
+    name: 'doctor-reporter-boundary',
+    file: 'orchestrator/src/health/doctor-reporter.ts',
+    allowed: [],
+    typeOnlyAllowed: [],
+    reason: 'Keep the doctor presentation port independent of diagnosis implementations.',
+  },
+  {
     name: 'retrieval-doctor-boundary',
     file: 'orchestrator/src/health/retrieval-doctor.ts',
     allowed: [],
-    typeOnlyAllowed: [],
+    typeOnlyAllowed: ['orchestrator/src/health/doctor-reporter.ts'],
     reason: 'Keep optional retrieval diagnosis independent of endpoint and command adapters.',
   },
   {

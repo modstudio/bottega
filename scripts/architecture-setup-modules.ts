@@ -242,6 +242,7 @@ export const setupModuleSpecs: readonly SetupModuleSpec[] = [
       'node:path',
       '../../../shared/brand.ts',
       '../../../shared/install-root.ts',
+      '../../../shared/record-remedies.ts',
       '../../../shared/state-directory.ts',
       '../canon/user-canon-home-files.ts',
       '../settings/settings-files.ts',

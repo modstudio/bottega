@@ -72,16 +72,13 @@ import { keepTreeHold } from '../worktree/keep-tree-hold.ts'
 import { worktreeDirty } from '../worktree/worktree-attribution.ts'
 import { lifecycleReportLines } from '../worktree/worktree-lifecycle.ts'
 import { configuredDelegationDoctorLines } from './delegation-doctor.ts'
+import type { DoctorReporter } from './doctor-reporter.ts'
 import { launchAgentDoctorReport } from './launch-agent-doctor.ts'
 import { reportProviderCredentialTrustDoctor } from './provider-credential-trust-doctor.ts'
-import {
-  type RetrievalCheckResult,
-  type RetrievalDoctorReporter,
-  reportRetrieval,
-} from './retrieval-doctor.ts'
+import { type RetrievalCheckResult, reportRetrieval } from './retrieval-doctor.ts'
 
 type DoctorFlags = { has(name: string): boolean }
-type DoctorPresentation = RetrievalDoctorReporter & {
+type DoctorPresentation = DoctorReporter & {
   candidates(job: string): {
     agent: string
     eligible: boolean
@@ -123,7 +120,7 @@ export async function activeSpaceDoctorDiagnosis(
 }
 
 export async function reportActiveSpaceDoctor(
-  presentation: RetrievalDoctorReporter,
+  presentation: DoctorReporter,
   diagnose: () => Promise<{ line: string; failed: boolean }> = activeSpaceDoctorDiagnosis,
 ): Promise<void> {
   const diagnosis = await diagnose()
@@ -242,7 +239,7 @@ function reportProjectLifecycles(
 
 export function reportCheckoutRegister<T extends RegisteredCheckout>(
   projects: readonly T[],
-  presentation: RetrievalDoctorReporter,
+  presentation: DoctorReporter,
   hookFinding: (project: T) => string | null,
   inspectBranch: (project: T) => BranchInspection,
   inspectCheckout: (path: string, trunk: string) => CheckoutInspection,

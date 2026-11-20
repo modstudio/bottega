@@ -14,6 +14,10 @@ import {
   resolveInstallationPaths,
 } from '../../../shared/install-root.ts'
 import {
+  launchAgentLoaded,
+  NOT_INSTALLED_BY_RELEASE_INSTALL,
+} from '../../../shared/launch-agent-liveness.ts'
+import {
   FIX_DEFECT_BACKSTOP_SECONDS,
   type LaunchAgentRenderValues,
   launchAgentProgramPath,
@@ -24,11 +28,7 @@ import {
   gatherLaunchAgentSkipFacts,
   launchAgentSkipReason,
 } from '../../../shared/launch-agent-skip.ts'
-import {
-  isCheckoutOnlyLaunchAgentInstaller,
-  launchAgentLoaded,
-  NOT_INSTALLED_BY_RELEASE_INSTALL,
-} from '../../../shared/launchd-owners.ts'
+import { isCheckoutOnlyLaunchAgentInstaller } from '../../../shared/launchd-owners.ts'
 import { type MachineLevel, readMachineValue } from '../../../shared/machine-config.ts'
 import {
   RECORD_SYNC_PENDING_MARKER,
