@@ -226,10 +226,6 @@ test('resume keeps the complete scope before resume', () => {
     mcp: true,
     mcpServer: 'starship',
     home: '/operator',
-    codexPermissionProfile: {
-      filesystem: { denyRead: [], allowRead: [] },
-      writableRoots: [],
-    },
   })
   const resume = argv.indexOf('resume')
   for (const expected of ['--ignore-user-config', 'features.apps=false', 'features.plugins=false'])

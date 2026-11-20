@@ -94,7 +94,7 @@ The durable protocol is `status: blocked` in the return contract. The live chann
 
 **A writing job gets MCP whether or not the caller asked for it.**
 
-**Codex confinement is a named permission profile.** `--approve-for-me`, required for Codex MCP, excludes `--sandbox` but coexists with a profile.
+**The MCP-versus-sandbox trade is Codex's, not the system's.** `--approve-for-me` is required for Codex MCP and mutually exclusive with `--sandbox`. Grok has no such conflict.
 
 **Headless grok must never be able to prompt.** Every grok run uses `bypassPermissions`. The worktree and the dirtied-tree detector are the guards.
 
