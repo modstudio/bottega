@@ -381,6 +381,95 @@ test('a measured review round with an accepted finding withholds no accepted fin
   }
 })
 
+test('apply-findings receives an earlier-step turn, triage time, branch tip, and review read', async () => {
+  const fixture = noAcceptedFindingsFixture()
+  try {
+    const cursorRecordId = newRecordId()
+    const reviewRunRecordId = newRecordId()
+    fixture.d
+      .query(
+        `INSERT INTO run
+           (record_id,number,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,latency_ms,
+            repo,project_record_id,branch,head_commit,lens,model)
+         VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM run),'2026-11-19T12:00:00.000Z','codex','review-lens',
+                 'sha',1,'head','ok',1000,'waiver-fixture',?,'DEV-1-change',?,'correctness','fixture-model')`,
+      )
+      .run(reviewRunRecordId, fixture.projectRecordId, fixture.head)
+    const output = reviewReply(1, 'high')
+    const reviewRecordId = recordReview(reviewRunRecordId, output, fixture.d)
+    gradeReviewLens(
+      reviewRunRecordId,
+      output,
+      { reproduced: 'all', coverage: 'adequate', limits: 'absent', overlap: 'none' },
+      fixture.d,
+    )
+    triageFinding(reviewRecordId, 1, 'accepted', undefined, 'high', fixture.d)
+    completeReview(reviewRecordId, fixture.d)
+    fixture.d
+      .query('UPDATE review_finding SET triaged_at=? WHERE review_record_id=?')
+      .run('2026-11-19T12:00:01.000Z', reviewRecordId)
+
+    const implementRunRecordId = newRecordId()
+    fixture.d
+      .query(
+        `INSERT INTO run
+           (record_id,number,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,latency_ms,
+            repo,project_record_id,branch,head_commit,cursor_record_id,step_slug)
+         VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM run),'2026-11-19T12:00:02.000Z','codex','implement',
+                 'sha',1,'head','ok',1000,'waiver-fixture',?,'DEV-1-change',?,?, 'implement-fix')`,
+      )
+      .run(implementRunRecordId, fixture.projectRecordId, fixture.head, cursorRecordId)
+    fixture.d
+      .query(
+        `INSERT INTO score (record_id,run_record_id,delivery,quality,fidelity,scored_at)
+         VALUES (?,?,'full','right','faithful','2026-11-19T12:00:04.000Z')`,
+      )
+      .run(newRecordId(), implementRunRecordId)
+    fixture.d
+      .query(
+        `INSERT INTO review_read
+           (record_id,project,project_record_id,branch,tip,patch_id,path_set,tier,note,recorded_at)
+         VALUES (?,'waiver-fixture',?,'DEV-1-change',?,'patch','[]',1,'read tip','2026-11-19T12:00:05.000Z')`,
+      )
+      .run(newRecordId(), fixture.projectRecordId, fixture.head)
+
+    const result = await applyFloorDecision(
+      {
+        id: 4,
+        record_id: cursorRecordId,
+        project: 'waiver-fixture',
+        workflow_slug: 'fix-defect',
+        mode_slug: 'default',
+        workflow_key: 'DEV-1',
+        task_record_id: null,
+        args: JSON.stringify({ worktree: fixture.repository, branch: 'DEV-1-change' }),
+        session_id: 'session-a',
+        created_at: '2026-11-19T00:00:00.000Z',
+        ordinal: 0,
+        step_slug: 'apply-findings',
+        state: 'running',
+        closed: '[]',
+        enforcement: 'floors',
+      },
+      [],
+      {
+        slug: 'apply-findings',
+        jobs: ['implement'],
+        dispatch: 'required',
+        dispatchWaivedBy: ['no-accepted-findings'],
+      },
+      {},
+      {},
+      false,
+      fixture.d,
+    )
+
+    expect(result.action).toBe('allow')
+  } finally {
+    fixture.dispose()
+  }
+})
+
 test('an unmeasured review with an accepted finding withholds no accepted findings', () => {
   const fixture = noAcceptedFindingsFixture()
   try {

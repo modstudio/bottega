@@ -21,8 +21,12 @@ import type { FloorEvidencePorts } from './workflow-floor-evidence.ts'
 import { gatherValidatedEvidence } from './workflow-floor-evidence-gather.ts'
 import { invokeFloorEvidencePort } from './workflow-floor-evidence-replay.ts'
 import { openWorkflowObligations } from './workflow-obligation-floor.ts'
+import { resolveBranchUnderReview } from './workflow-review-owed-checkout.ts'
 import type { DispatchWaiverFact, StepRunObligation } from './workflow-run-obligation.ts'
-import { gatherWorkflowRunChains } from './workflow-run-obligation-evidence.ts'
+import {
+  gatherEarlierStepDispatchEvidence,
+  gatherWorkflowRunChains,
+} from './workflow-run-obligation-evidence.ts'
 
 type FloorCursor = Pick<
   SelectableCursorRow,
@@ -185,6 +189,20 @@ function attachRunObligationEvidence(
       database,
       row.step_slug,
     )
+  if (step.dispatchWaivedBy?.includes('no-accepted-findings')) {
+    const args = JSON.parse(row.args) as Record<string, string>
+    const branch = resolveBranchUnderReview(row.project, args, database)
+    if (branch.action === 'allow')
+      evidence.earlierStepDispatch = gatherEarlierStepDispatchEvidence(
+        row.record_id,
+        step.jobs,
+        row.step_slug,
+        row.project,
+        branch.branch,
+        branch.tip,
+        database,
+      )
+  }
   if (step.judges?.length)
     evidence.judgedRuns = gatherWorkflowRunChains(row.record_id, step.judges, database)
 }
