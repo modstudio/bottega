@@ -1,6 +1,6 @@
 import type { SQL } from 'bun'
-import { sameRecordInstant } from '../../shared/record-timestamp.ts'
 import { bindJsonb } from '../../shared/record/jsonb-sql.ts'
+import { sameRecordInstant } from '../../shared/record-timestamp.ts'
 import { DELETED_ON_HOSTED_RECORD_REASON } from './hosted-delete.ts'
 import { applyDayChangeInTransaction, applyIntervalChangeInTransaction } from './hosted-evidence.ts'
 import { storedHubProjectId } from './hosted-project-identity.ts'
