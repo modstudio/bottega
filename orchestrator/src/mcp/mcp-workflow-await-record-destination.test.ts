@@ -25,6 +25,7 @@ const WORKFLOW = '01990000-0000-7000-8000-000000025106'
 const WORKFLOW_VERSION = '01990000-0000-7000-8000-000000025107'
 const CATALOGUE = '01990000-0000-7000-8000-000000025108'
 const CATALOGUE_VERSION = '01990000-0000-7000-8000-000000025109'
+const STRAY_QUESTION = '01990000-0000-7000-8000-000000025111'
 
 const identity: RecordIdentity = {
   user: { id: RECORD_CONTRACT_USER, email: 'contract@example.test', emailVerified: true },
@@ -162,6 +163,12 @@ test('CLI and MCP workflow await writes name the cursor project space', async ()
         'SEGNA-585','old-session','${WORKFLOW_VERSION}','${CATALOGUE_VERSION}',
         '{"key":"SEGNA-585"}',0,'design-signoff','running','[]','note-only',1,
         '${localMachine}','${localMachine}',1,'2026-11-16T00:00:00Z','2026-11-16T00:00:00Z');
+      INSERT INTO question
+        (id,space_id,workflow_cursor_record_id,project_id,machine_id,number,revision,
+         asked_at,question,awaiting_operator_at,withheld_fields,created_at,updated_at)
+      VALUES ('${STRAY_QUESTION}','${RECORD_CONTRACT_SPACE_A}','${STAGE}','${PROJECT}',
+        '${localMachine}',1,1,'2026-11-16T00:00:00Z','Old question',
+        '2026-11-16T00:00:00Z','[]','2026-11-16T00:00:00Z','2026-11-16T00:00:00Z');
       SET ROLE record_actor;
     `)
     const hubTaskReader = async () => [{ key: 'SEGNA-585', record_id: TASK, project: 'segnavia' }]
@@ -208,6 +215,7 @@ test('CLI and MCP workflow await writes name the cursor project space', async ()
     }
     const writes = fixture.requests.filter(({ path }) => !path.startsWith('GET '))
     expect(writes).toEqual([
+      { path: 'POST /v1/questions/close', destinationSpaceId: RECORD_CONTRACT_SPACE_A },
       { path: 'POST /v1/questions/ask', destinationSpaceId: PROJECT_SPACE },
       { path: 'POST /v1/task-flow/await-ruling', destinationSpaceId: PROJECT_SPACE },
       { path: 'POST /v1/questions/link', destinationSpaceId: PROJECT_SPACE },
