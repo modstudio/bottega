@@ -303,6 +303,7 @@ export function readonlyLensProfile(input: {
   ]
   const protectedDenies = protectedDenyPaths(input.project, environment)
   const installLayout = input.installLayout ?? resolveRunningInstallLayout(environment)
+  const runningInstallRoot = resolveRunningInstallLayout(environment).root
   refuseProtectedOverlap('readonly-lens', protectedDenies, worktree, runtimeDir)
   const areas = areaReadPolicy({
     worktree,
@@ -315,7 +316,7 @@ export function readonlyLensProfile(input: {
   const nodeModuleLinks = (input.nodeModuleLinks ?? linkedNodeModules(input.worktree))
     .map((path) => resolve(path))
     .filter((path) => {
-      const promoted = [input.project?.path, installLayout.root]
+      const promoted = [input.project?.path, runningInstallRoot]
         .filter((root): root is string => root !== undefined)
         .some((root) => isAtOrBelow(path, resolve(root)))
       if (!promoted) {
