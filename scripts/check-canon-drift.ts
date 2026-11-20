@@ -73,7 +73,7 @@ export function readCanonGateInput(
   return { project, rows: storedRepositoryCanonRows(project.name, database) }
 }
 
-export function readCanonGateFactsInput(
+function readCanonGateFactsInput(
   checkout: string,
   facts: GateFacts,
 ): { project: Project; rows: { slug: string; body: string; subject: string | null }[] } {
