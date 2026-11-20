@@ -76,6 +76,7 @@ export type RecordSyncOptions = {
   identity?: { id: string; shortName?: string; displayName?: string; name?: string }
   projectSpaces?: Record<string, string>
   historyUploadWithDatabase?: <T>(action: (database: Database) => Promise<T>) => Promise<T>
+  skipHistoryUpload?: boolean
   client?: {
     whoami: RecordApiClient['whoami']
     sync: NonNullable<RecordApiClient['sync']>

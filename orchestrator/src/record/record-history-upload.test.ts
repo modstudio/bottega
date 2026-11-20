@@ -6,6 +6,7 @@ import { newRecordId } from '../../../shared/record-id.ts'
 import { resolveStateRoot } from '../../../shared/state-directory.ts'
 import { options as syncOptions } from '../../test/fixtures/record-sync.ts'
 import { fakePostgres } from '../../test/fixtures/record-sync-postgres.ts'
+import { guardHostedTables } from '../database/hosted-table-guard.ts'
 import { migratedTestDatabase } from '../database/test-database.fixture.ts'
 import { RECORD_DIFFERENT_CONTENT } from '../doc/doc-revision-conflict.ts'
 import type { ProjectAdoptionResult } from '../project/project-relink.ts'
@@ -786,13 +787,13 @@ test('sync history reports one failed question import and continues to the next'
   database.close()
 })
 
-test('sync uploads bound hosted history through its given local handle', async () => {
+test('sync uses the maintenance handle for bound hosted history instead of its guarded handle', async () => {
   const database = migratedTestDatabase()
   database.exec('PRAGMA foreign_keys=OFF')
   linked(database, 'sync-guarded', 1)
   bind(database)
   let presenceReads = 0
-  const base = syncOptions(database, fakePostgres())
+  const base = syncOptions(guardHostedTables(database), fakePostgres())
   const client = {
     ...base.client,
     readTaskFlowPresence: async (
@@ -817,8 +818,11 @@ test('sync uploads bound hosted history through its given local handle', async (
       throw new Error('unexpected flow import')
     },
   }
-  const { historyUploadWithDatabase: _, ...withoutHistoryHandle } = base
-  await syncRecord({ ...withoutHistoryHandle, client })
+  await syncRecord({
+    ...base,
+    client,
+    historyUploadWithDatabase: maintenanceHandle(database),
+  })
   expect(presenceReads).toBe(1)
   database.close()
 })

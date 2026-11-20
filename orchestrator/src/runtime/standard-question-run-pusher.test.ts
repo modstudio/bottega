@@ -1,11 +1,13 @@
 import { afterEach, beforeEach, expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { newRecordId } from '../../../shared/record-id.ts'
 import {
   createMemoryRecordApiClient,
   installRecordApiClient,
 } from '../../test/fixtures/record-api.ts'
 import { localOutbox, options } from '../../test/fixtures/record-sync.ts'
 import { fakePostgres } from '../../test/fixtures/record-sync-postgres.ts'
+import { db } from '../database/db.ts'
 import { resolveQuestionRunPusher } from '../question-store/question-run-pusher.ts'
 import { registerStandardQuestionRunPusher } from './standard-question-run-pusher.ts'
 
@@ -33,6 +35,65 @@ test('standard question run pusher syncs the run before returning', async () => 
     .query<{ row_id: string }, []>("SELECT row_id FROM outbox WHERE kind='run'")
     .get()!.row_id
   await resolveQuestionRunPusher()(database, runId)
+  expect(
+    database.query<{ synced_at: string | null }, []>('SELECT synced_at FROM outbox').get()!
+      .synced_at,
+  ).not.toBeNull()
+  database.close()
+})
+
+test('standard question run pusher skips workflow history upload', async () => {
+  const database = localOutbox(1, null)
+  database.exec("INSERT INTO record_install_binding(id,bound_at) VALUES (1,'2026-11-20')")
+  const maintenance = db()
+  maintenance.exec('PRAGMA foreign_keys=OFF')
+  const projectId = newRecordId()
+  const machineId = newRecordId()
+  maintenance
+    .query('INSERT INTO project(record_id,name,path,canon,settings) VALUES (?,?,?,?,?)')
+    .run(projectId, 'pusher-history', '/tmp/pusher-history', 0, '{"trunk":"main"}')
+  maintenance
+    .query(
+      `INSERT INTO task_flow
+       (record_id,project_record_id,state,created_at,updated_at,opening_machine_id,updated_machine_id,revision)
+       VALUES (?,?,?,?,?,?,?,1)`,
+    )
+    .run(
+      newRecordId(),
+      projectId,
+      'done',
+      '2026-11-20T00:00:00.000Z',
+      '2026-11-20T00:00:00.000Z',
+      machineId,
+      machineId,
+    )
+  maintenance
+    .query(
+      "INSERT INTO record_install_binding(id,bound_at,record_origin) VALUES (1,'2026-11-20','https://record.example.test')",
+    )
+    .run()
+  let presenceReads = 0
+  installRecordApiClient({
+    ...createMemoryRecordApiClient(),
+    ...options(database, fakePostgres()).client,
+    readTaskFlowPresence: async (input) => {
+      presenceReads += 1
+      return { ...input, questionAuditIdentities: [] }
+    },
+    importTaskFlow: async () => {
+      throw new Error('unexpected flow import')
+    },
+    importQuestion: async () => {
+      throw new Error('unexpected question import')
+    },
+  })
+  const runId = database
+    .query<{ row_id: string }, []>("SELECT row_id FROM outbox WHERE kind='run'")
+    .get()!.row_id
+
+  await resolveQuestionRunPusher()(database, runId)
+
+  expect(presenceReads).toBe(0)
   expect(
     database.query<{ synced_at: string | null }, []>('SELECT synced_at FROM outbox').get()!
       .synced_at,

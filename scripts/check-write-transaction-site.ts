@@ -13,6 +13,7 @@ const migrationStepHandleModules = new Set([
   'orchestrator/src/database/release-update.ts',
   'orchestrator/src/commands/record-auth.ts',
   'orchestrator/src/commands/setup.ts',
+  'orchestrator/src/record/record-sync.ts',
 ])
 const migrationStepHandles = new Set([
   'withDatabaseForMigrationStep',
