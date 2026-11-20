@@ -78,6 +78,8 @@ bottega credential set fly/rehearsal/token --project bottega
 bun scripts/record-rehearse.ts
 ```
 
+Unless `BOTTEGA_RECORD_REHEARSAL_FLY_TOKEN` is already set, the driver re-runs itself through the main checkout's `bin/bottega`, which reveals the sealed token to it. It finds main from `BOTTEGA_MAIN_CHECKOUT`, or else from the repository layout, so the main checkout must be present even when the driver runs from a worktree. An interrupt destroys the launched Machine before the driver exits.
+
 The driver builds and starts an ephemeral Machine in `bottega-record-backup`, restores the newest `record/` object into that Machine's local PostgreSQL 18 server, applies the tree's pending migrations, records the result as the `record-rehearsal` GitHub commit status, and destroys the Machine. The in-machine script prints the dump key, pending migration count, total restore and migration times, one `REHEARSAL NOTICE` line for each server notice the migrations raised (bounded by `REHEARSAL_NOTICE_LIMIT` in `orchestrator/src/postgres/migration-notices.ts`, with a `REHEARSAL NOTICE-TRUNCATED` count when more were dropped), and a final `REHEARSAL PASS` migration-set hash or `REHEARSAL FAIL` message. Notice lines are printed before a migration failure, and the driver includes them after the failure text so guarded-migration diagnostics remain visible on both successful and failed rehearsals.
 
 ## Restore the hosted record
