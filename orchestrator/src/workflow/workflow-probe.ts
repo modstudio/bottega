@@ -373,9 +373,9 @@ export async function recordWorkflowExec(
   assertWorkflowExecCaller()
   const cwd = input.cwd ?? process.cwd()
   const database = input.d ?? db()
+  assertWorkingDirectory(cwd)
   if (input.registeredProject === false)
     throw new Error(`${PLATFORM_SLUG} workflow exec: no registered project contains ${cwd}`)
-  assertWorkingDirectory(cwd)
   assertWorkflowEvidenceCheckout(cwd, database, 'workflow exec')
   // Capture the head the exec command will run against.
   const commandHead = resolveEvidenceHead(cwd, input)
