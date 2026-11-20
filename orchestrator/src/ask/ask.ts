@@ -70,12 +70,19 @@ import { initialQuestionWaitingAt } from '../operator/operator-waiting.ts'
 import { orchestratorProseGate } from '../prose-service.ts'
 import { askQuestion } from '../question-store/question-store-mutation.ts'
 import { questionById } from '../question-store/question-store-read.ts'
+import {
+  isRunQuestionOwnerNotLive,
+  runQuestionOwnerNotLiveMessage,
+} from '../question-store/run-question-write-guard.ts'
 import { machineId } from '../record/machine-identity.ts'
 import { ASKED_VIA_LIVE, ASKED_VIA_REPLY, type AskedVia } from '../run/question-vocabulary.ts'
 import { runScratchDir } from '../run/run-artifacts.ts'
 import { resolveRunIdentifier } from '../run/run-identifier.ts'
 import { enqueueRunRecord } from '../run/run-outbox.ts'
-import { markRunAsking } from '../run/run-question-readiness.ts'
+import {
+  claimLiveRunQuestionChannel,
+  restoreRunAfterQuestionRefusal,
+} from '../run/run-question-readiness.ts'
 import { enableRunSchemaReload } from '../run/run-schema-reload-cause.ts'
 import { registerAskBoardTools } from './ask-board-tools.ts'
 import { writeAskServerFailure } from './ask-failure.ts'
@@ -465,21 +472,41 @@ export async function ask(
   const askedAt = nowIso()
   const typed = WorkerQuestionSchema.parse(o)
   const awaitingOperatorAt = await initialQuestionWaitingAt(o.runId, askedAt)
-  writeTransaction(() => {
-    markRunAsking(db(), o.runId)
+  let transitioned = false
+  const live = writeTransaction(() => {
+    const claim = claimLiveRunQuestionChannel(db(), o.runId)
+    transitioned = claim.transitioned
+    // Ask asks: is this turn still the live owner of its escalation channel?
+    if (!claim.live) return false
     enqueueRunRecord(db(), o.runId, machineId(), askedAt)
+    return true
   })
-  const id = await recordQuestion({
-    runId: o.runId,
-    askedAt,
-    question: o.question,
-    options: typed.kind === 'choice' ? typed.options.map(({ name }) => name) : undefined,
-    recommendation: typed.kind === 'choice' ? typed.recommendation : undefined,
-    why: typed.why,
-    askedVia: ASKED_VIA_LIVE,
-    awaitingOperatorAt,
-    typed,
-  })
+  if (!live)
+    return { answered: false, reason: runQuestionOwnerNotLiveMessage(o.runId), notice: proseNotice }
+  let id: string
+  try {
+    // A hosted supersede can still land between this local check and the cross-store insert.
+    id = await recordQuestion({
+      runId: o.runId,
+      askedAt,
+      question: o.question,
+      options: typed.kind === 'choice' ? typed.options.map(({ name }) => name) : undefined,
+      recommendation: typed.kind === 'choice' ? typed.recommendation : undefined,
+      why: typed.why,
+      askedVia: ASKED_VIA_LIVE,
+      awaitingOperatorAt,
+      typed,
+    })
+  } catch (error) {
+    if (!isRunQuestionOwnerNotLive(error)) throw error
+    restoreRunAfterQuestionRefusal(db(), {
+      runId: o.runId,
+      machineId: machineId(),
+      transitioned,
+      recordedAt: nowIso(),
+    })
+    return { answered: false, reason: runQuestionOwnerNotLiveMessage(o.runId), notice: proseNotice }
+  }
   await preAnswerWorkerQuestion({
     recordId: id,
     runId: o.runId,

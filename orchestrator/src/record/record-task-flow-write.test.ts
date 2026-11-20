@@ -2,7 +2,12 @@ import { afterEach, beforeEach, expect, test } from 'bun:test'
 import type { PGlite } from '@electric-sql/pglite'
 import { createHostedRecordFixture, pgliteSql } from '../../test/fixtures/hosted-record.ts'
 import { RECORD_DIFFERENT_CONTENT } from '../doc/doc-revision-conflict.ts'
-import type { QuestionImportBody, QuestionWriteBody } from './record-question-contract.ts'
+import { RunQuestionOwnerNotLiveError } from '../question-store/run-question-write-guard.ts'
+import {
+  type QuestionImportBody,
+  type QuestionWriteBody,
+  RecordQuestionError,
+} from './record-question-contract.ts'
 import { writeRecordQuestionTransaction } from './record-question-write.ts'
 import { writeRecordTaskFlowTransaction } from './record-task-flow-write.ts'
 import type { TaskFlowIntentBody } from './record-task-flow-write-contract.ts'
@@ -22,6 +27,7 @@ const STAGE_LIVE = '01990000-0000-7000-8000-000000002512'
 const QUESTION_ONE = '01990000-0000-7000-8000-000000002513'
 const QUESTION_TWO = '01990000-0000-7000-8000-000000002514'
 const QUESTION_LIVE = '01990000-0000-7000-8000-000000002515'
+const RUN = '01990000-0000-7000-8000-000000002524'
 const REQUEST = '01990000-0000-7000-8000-000000002516'
 const REQUEST_TWO = '01990000-0000-7000-8000-000000002517'
 const REQUEST_LIVE = '01990000-0000-7000-8000-000000002518'
@@ -376,4 +382,45 @@ test('question import preserves history, audits, idempotency, and numbering besi
   await expect(
     writeRecordQuestionTransaction('import', { ...principal, ...changed }, sql),
   ).rejects.toMatchObject({ status: 409, message: expect.stringContaining('different content') })
+})
+
+test('hosted ask distinguishes a terminal owner from an owner absent in the declared space', async () => {
+  await postgres.exec(`
+    RESET ROLE;
+    INSERT INTO run (
+      id,space_id,machine_id,started_by_user_id,started_at,agent,job,prompt_sha,prompt_bytes,
+      prompt_head,probe,project_id,status,turn,no_failover,automatic_failover,work_preserved,
+      withheld_fields,created_at,updated_at
+    ) VALUES (
+      '${RUN}','${SPACE}','${MACHINE}','${USER}','${STAMP}','codex','implement','sha',1,
+      'prompt',false,'${PROJECT}','ok',1,false,false,false,'[]','${STAMP}','${STAMP}'
+    );
+    SET ROLE record_actor;
+  `)
+  const sql = pgliteSql(postgres)
+  const terminal = liveQuestion()
+  terminal.question.runId = RUN
+  const terminalRefusal = await writeRecordQuestionTransaction(
+    'ask',
+    { ...principal, ...terminal },
+    sql,
+  ).catch((error: unknown) => error)
+  expect(terminalRefusal).toBeInstanceOf(RecordQuestionError)
+  expect((terminalRefusal as Error).cause).toBeInstanceOf(RunQuestionOwnerNotLiveError)
+
+  const absent = liveQuestion()
+  absent.question.id = '01990000-0000-7000-8000-000000002525'
+  absent.requestId = '01990000-0000-7000-8000-000000002526'
+  absent.question.runId = '01990000-0000-7000-8000-000000002527'
+  const absentRefusal = await writeRecordQuestionTransaction(
+    'ask',
+    { ...principal, ...absent },
+    sql,
+  ).catch((error: unknown) => error)
+  expect(absentRefusal).toBeInstanceOf(RecordQuestionError)
+  expect((absentRefusal as Error).message).toContain('could not see run')
+  expect((absentRefusal as Error).cause).toBeUndefined()
+  expect((await postgres.query('SELECT count(*)::int count FROM question')).rows).toEqual([
+    { count: 0 },
+  ])
 })

@@ -9,6 +9,7 @@ export const questionCallerModules = [
     allowed: [
       'shared/brand.ts',
       'orchestrator/src/database/db.ts',
+      'orchestrator/src/question-store/run-question-write-guard.ts',
       'orchestrator/src/run/question-delivery-pending.ts',
       'orchestrator/src/workflow/task-flow-store-types.ts',
       'orchestrator/src/workflow/task-flow-store.ts',

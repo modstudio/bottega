@@ -9,7 +9,7 @@ import { writeFileSync } from 'node:fs'
 import { MCP_SERVER_NAME, PLATFORM_SLUG, WORKER_MCP_SERVER_NAME } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { AGENTS, refreshAgents } from '../agent/agent-registry.ts'
-import { type AskLoopback, preAnswerReplyQuestions, recordReplyQuestions } from '../ask/ask.ts'
+import { type AskLoopback, preAnswerReplyQuestions } from '../ask/ask.ts'
 import {
   type CheckoutRemovalAttribution,
   type CheckoutToWatch,
@@ -31,11 +31,9 @@ import {
 import { terminateProcessGroup } from '../idle-kill.ts'
 import { isReaderJob, type Job } from '../jobs/jobs.ts'
 import type { McpConnection, McpMode } from '../mcp/mcp-preflight.ts'
-import { initialQuestionWaitingAt } from '../operator/operator-waiting.ts'
 import { finalizeWorkerReply, type OutcomeStatus } from '../outcome.ts'
 import type { RunResourceObserver, RunResourceUsage } from '../process-resource-sampler.ts'
 import { projectByName, projects } from '../project/projects.ts'
-import { questionsForRun } from '../question-store/question-store-read.ts'
 import { teardownTerminalRunResources } from '../resources/resource-ownership.ts'
 import { cleanReviewEvidence } from '../review/review.ts'
 import { resetSandbox } from '../sandbox/sandbox.ts'
@@ -78,6 +76,7 @@ import {
   applyPrematureFinalFailure,
   terminalPrematureFinalRefusal,
 } from './run-terminal-premature.ts'
+import { recordTerminalQuestions } from './run-terminal-questions.ts'
 import { settleTerminalStateWithClaimRenewal } from './run-terminal-task-claim.ts'
 import {
   type ObservedTestOutcome,
@@ -395,21 +394,6 @@ function isNonPlatformMcpServer(server: string, ownMcpServer: string | null | un
   return server !== ownMcpServer && server !== MCP_SERVER_NAME && server !== WORKER_MCP_SERVER_NAME
 }
 
-/** Which accepted questions have not already been recorded, preserving reply order. */
-export function questionsToInsert<T extends { question: string }>(
-  existingQuestionTexts: string[],
-  acceptedQuestions: T[],
-): T[] {
-  const norm = (text: string) => text.trim().replace(/\s+/g, ' ').toLowerCase()
-  const already = new Set(existingQuestionTexts.map(norm))
-  return acceptedQuestions.filter((item) => {
-    const question = norm(item.question)
-    if (already.has(question)) return false
-    already.add(question)
-    return true
-  })
-}
-
 /** Every writing turn gets one last chance to preserve tracked work. */
 export function shouldCheckpointAtTerminal(input: {
   writesJob: boolean
@@ -680,29 +664,23 @@ function completeRecordedRun(input: RecordedFinishInput): TerminalResult {
   }
 }
 
-async function recordTerminalQuestions(
-  runId: string,
-  questions: ReturnType<typeof realQuestions>,
-): Promise<Awaited<ReturnType<typeof recordReplyQuestions>>> {
-  if (!questions.length) return []
-  // A live question that timed out is repeated in the final answer; recording it twice
-  // would make `bottega question answer` demand two rulings for one question.
-  const existingQuestionTexts = (await questionsForRun(db(), runId)).map((row) =>
-    String(row.question),
-  )
-  const askedAt = nowIso()
-  return recordReplyQuestions({
-    runId,
-    questions: questionsToInsert(existingQuestionTexts, questions),
-    askedAt,
-    awaitingOperatorAt: await initialQuestionWaitingAt(runId, askedAt),
-  })
-}
-
 function forgetTerminalProcess(proc: TerminalInput['proc']): void {
   if (!proc) return
   live.delete(proc)
   liveCheckpoints.delete(proc)
+}
+
+function terminalQuestionOutput(
+  currentHeader: string | null,
+  notice: string | null,
+  output: string,
+  outPath: string,
+): string {
+  const header = [currentHeader, notice].filter(Boolean).join('\n') || null
+  if (!header) return output
+  const finalized = output ? `${header}\n\n${output}` : header
+  writeFileSync(outPath, finalized)
+  return finalized
 }
 
 export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
@@ -879,13 +857,9 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
       exitCode,
     }),
   ))
-  // The run is already answerable locally; this hosted write may remain pending.
-  const recordedQuestions = await recordTerminalQuestions(claim.id, acceptedQuestions)
-
-  if (mcpSetupHeader) {
-    output = output ? `${mcpSetupHeader}\n\n${output}` : mcpSetupHeader
-    writeFileSync(outPath, output)
-  }
+  const qs = await recordTerminalQuestions(claim.id, acceptedQuestions)
+  const recordedQuestions = qs.recorded
+  output = terminalQuestionOutput(mcpSetupHeader, qs.notice, output, outPath)
 
   const confinementPrecedence = applyConfinementPrecedence({
     outcome: { status, failureKind, error },

@@ -8,6 +8,7 @@ import { takeHostedBoardClaim } from '../../src/record/record-board-claims.ts'
 import { countRecordCacheRows } from '../../src/record/record-cache-counts.ts'
 import { countRecordDocs } from '../../src/record/record-docs.ts'
 import { readRecordQuestions } from '../../src/record/record-question-read.ts'
+import { writeRecordQuestion } from '../../src/record/record-question-write.ts'
 import {
   listRecordTaskFlowStages,
   readRecordTaskFlow,
@@ -84,6 +85,7 @@ export async function createRecordContractFixture(): Promise<RecordContractFixtu
     {
       recordUrl: RECORD_CONTRACT_URL,
       readQuestions: readRecordQuestions,
+      writeQuestion: writeRecordQuestion,
       readTaskFlow: readRecordTaskFlow,
       readTaskFlowStage: readRecordTaskFlowStage,
       readTaskFlowText: readRecordTaskFlowText,
