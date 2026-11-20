@@ -362,11 +362,12 @@ printf '%s\n' '{"messages":[],"warning":null}'
 })
 
 test('operator file-ruling argv runs the verb through the orchestrator seam with json', () => {
-  expect(fileRulingArgv({ questionId: 7, as: 'doc' })).toEqual([
+  const questionId = '00000000-0000-4000-8000-000000000007'
+  expect(fileRulingArgv({ questionId, as: 'doc' })).toEqual([
     'question',
     'ruling',
     'file',
-    '7',
+    questionId,
     '--as',
     'doc',
     '--from-operator',
@@ -376,7 +377,7 @@ test('operator file-ruling argv runs the verb through the orchestrator seam with
   ])
   expect(
     fileRulingArgv({
-      questionId: 7,
+      questionId,
       as: 'canon',
       scope: 'project',
       subject: PLATFORM_SLUG,
@@ -386,7 +387,7 @@ test('operator file-ruling argv runs the verb through the orchestrator seam with
     'question',
     'ruling',
     'file',
-    '7',
+    questionId,
     '--as',
     'canon',
     '--scope',

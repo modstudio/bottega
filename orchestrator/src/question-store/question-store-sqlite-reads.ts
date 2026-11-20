@@ -225,7 +225,7 @@ export function runInboxQuestionRows(
 ): QueriedInboxQuestion[] {
   return database
     .query(
-      `SELECT q.number,q.record_id,q.run_record_id,r.number AS run_number,
+      `SELECT q.number,q.record_id,NULL space_id,q.run_record_id,r.number AS run_number,
             q.asked_at,q.question,q.options,q.recommendation,q.why,q.kind,
             q.jev_pick,q.jev_confidence,q.jev_probabilities,q.jev_error,
             q.answered_at,q.overturned_at,q.overturned_by,q.overturn_reason,q.replacement,
@@ -270,7 +270,7 @@ export function rulingRows(
   }
   return database
     .query<TaskFlowRulingRow, string[]>(
-      `SELECT q.number,q.record_id,q.run_record_id,r.number AS run_number,
+      `SELECT q.number,q.record_id,NULL space_id,q.run_record_id,r.number AS run_number,
               q.workflow_cursor_record_id workflow_cursor_id,q.workflow_key,q.workflow_task_record_id,
               COALESCE(r.repo,c.project) project,c.workflow_slug,c.mode_slug,
               COALESCE(r.session_id,c.session_id) session_id,

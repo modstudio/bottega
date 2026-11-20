@@ -33,10 +33,11 @@ export const RUN_INGEST_BATCH_SIZE = 50
 function questionReplacer(conn: Database) {
   const upsertQuestion = conn.query(
     `INSERT INTO question
-      (record_id, number, run_record_id, root_run_record_id, task_key, task_record_id, session_id, asked_at, answered_at,
+      (record_id, space_id, number, run_record_id, root_run_record_id, task_key, task_record_id, session_id, asked_at, answered_at,
        asked_via, answerer_kind, answer_channel, overturned_at, closed_at, close_reason)
-   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
    ON CONFLICT(record_id) DO UPDATE SET
+     space_id       = COALESCE(excluded.space_id, question.space_id),
      number         = excluded.number,
      run_record_id  = excluded.run_record_id,
      root_run_record_id = excluded.root_run_record_id,
@@ -66,6 +67,7 @@ function questionReplacer(conn: Database) {
     for (const question of run.questions) {
       upsertQuestion.run(
         question.record_id,
+        question.space_id,
         question.id,
         question.run_record_id,
         run.record_id,
@@ -99,11 +101,12 @@ function questionReplacer(conn: Database) {
 function upsertWorkflowQuestions(conn: Database, questions: readonly RulingListRow[]): void {
   const upsert = conn.query(
     `INSERT INTO question
-      (record_id,number,run_record_id,root_run_record_id,workflow_cursor_id,workflow_key,workflow_task_record_id,project,project_record_id,task_key,task_record_id,
+      (record_id,space_id,number,run_record_id,root_run_record_id,workflow_cursor_id,workflow_key,workflow_task_record_id,project,project_record_id,task_key,task_record_id,
        session_id,asked_at,answered_at,asked_via,answerer_kind,answer_channel,
        overturned_at,closed_at,close_reason)
-     VALUES (?,?,NULL,NULL,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+     VALUES (?,?,?,NULL,NULL,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
      ON CONFLICT(record_id) DO UPDATE SET
+       space_id=COALESCE(excluded.space_id,question.space_id),
        number=excluded.number,
        workflow_cursor_id=excluded.workflow_cursor_id,
        workflow_key=excluded.workflow_key,
@@ -127,6 +130,7 @@ function upsertWorkflowQuestions(conn: Database, questions: readonly RulingListR
     const taskRecordId = uniqueTaskRecordIdForKey(conn, question.workflow_key)
     upsert.run(
       question.record_id,
+      question.space_id,
       question.id,
       question.workflow_cursor_id,
       question.workflow_key,
@@ -589,8 +593,15 @@ export async function ingestRunChanges(
       return { rows: change.rows, result }
     })(),
   ])
-  if (runLeg.status === 'rejected') throw runLeg.reason
-  if (rulingLeg.status === 'rejected') throw rulingLeg.reason
+  const failureMessage = (reason: unknown) =>
+    reason instanceof Error ? reason.message : String(reason)
+  if (runLeg.status === 'rejected' && rulingLeg.status === 'rejected')
+    throw new Error(
+      `runs leg: ${failureMessage(runLeg.reason)}; rulings leg: ${failureMessage(rulingLeg.reason)}`,
+    )
+  if (runLeg.status === 'rejected') throw new Error(`runs leg: ${failureMessage(runLeg.reason)}`)
+  if (rulingLeg.status === 'rejected')
+    throw new Error(`rulings leg: ${failureMessage(rulingLeg.reason)}`)
   const { rows: runs, result: runResult } = runLeg.value
   const { rows: workflowQuestions, result: rulingResult } = rulingLeg.value
   const skippedUnlinked = (runResult.skippedUnlinked ?? 0) + (rulingResult.skippedUnlinked ?? 0)

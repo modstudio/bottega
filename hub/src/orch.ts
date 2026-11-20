@@ -405,7 +405,7 @@ export async function answerWaiting(
 }
 
 export type FileWaitingRuling = {
-  questionId: number
+  questionId: string
   as: 'doc' | 'canon'
   scope?: FilingDocScope
   subject?: string

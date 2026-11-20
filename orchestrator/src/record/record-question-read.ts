@@ -10,7 +10,7 @@ import {
   readRecordChanges,
 } from '../../../shared/record/record-changes.ts'
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
-import { recordIso } from '../../../shared/record-timestamp.ts'
+import { nullableRecordIso, recordIso } from '../../../shared/record-timestamp.ts'
 import { encodeRulingPageCursor } from './record-cursor.ts'
 import { recordPool } from './record-pool.ts'
 import {
@@ -39,6 +39,27 @@ const rootRunColumn = (column: string): string =>
   `CASE WHEN owner.parent_run_id IS NULL THEN owner.${column} ELSE parent.${column} END`
 
 type RulingRead = Extract<RecordQuestionReadInput, { read: 'rulings' }>
+
+const NULLABLE_QUESTION_TIMESTAMPS = [
+  'answered_at',
+  'overturned_at',
+  'closed_at',
+  'filed_at',
+  'awaiting_operator_at',
+] as const
+const REQUIRED_QUESTION_TIMESTAMPS = ['asked_at', 'created_at', 'updated_at'] as const
+
+/** Normalize a record question row before it crosses the question-store boundary. */
+function mapRecordQuestionRow(row: Row): Row {
+  const mapped = { ...row }
+  for (const column of REQUIRED_QUESTION_TIMESTAMPS) {
+    if (column in mapped) mapped[column] = recordIso(mapped[column])
+  }
+  for (const column of NULLABLE_QUESTION_TIMESTAMPS) {
+    if (column in mapped) mapped[column] = nullableRecordIso(mapped[column])
+  }
+  return mapped
+}
 
 export async function readRecordQuestionPresenceTransaction(
   tx: SQL,
@@ -111,8 +132,8 @@ async function recordQuestionRulingRows(
     clauses.push(`q.number>$${values.length}`)
   }
   const sqlLimit = input.limit === undefined ? '' : ` LIMIT ${input.limit}`
-  return (await tx.unsafe(
-    `SELECT q.number,q.id::text record_id,q.run_id::text run_record_id,owner.number run_number,
+  const rows = (await tx.unsafe(
+    `SELECT q.number,q.id::text record_id,q.space_id::text space_id,q.run_id::text run_record_id,owner.number run_number,
       q.workflow_cursor_record_id::text workflow_cursor_id,q.workflow_key,q.workflow_task_id::text workflow_task_record_id,
       COALESCE(run_project.name,stage_project.name) project,stage.workflow workflow_slug,stage.mode mode_slug,
       COALESCE(owner.session_id,stage.session_id) session_id,q.asked_at::text,q.question,q.answer,q.answer_basis,
@@ -129,6 +150,7 @@ async function recordQuestionRulingRows(
      ORDER BY q.number${sqlLimit}`,
     values,
   )) as Row[]
+  return rows
 }
 
 const QUESTION_DETAIL_COLUMNS = `q.id::text record_id,q.space_id::text space_id,q.number,q.run_id::text run_record_id,
@@ -209,7 +231,7 @@ function questionDetailFilter(input: QuestionDetailInput): {
 async function recordQuestionDetails(tx: SQL, input: QuestionDetailInput): Promise<Row[]> {
   const filter = questionDetailFilter(input)
   if (!filter) return []
-  return (await tx.unsafe(
+  const rows = (await tx.unsafe(
     `SELECT ${QUESTION_DETAIL_COLUMNS} FROM question q
      LEFT JOIN run owner ON owner.id=q.run_id
      LEFT JOIN project run_project ON run_project.id=owner.project_id
@@ -218,6 +240,7 @@ async function recordQuestionDetails(tx: SQL, input: QuestionDetailInput): Promi
      WHERE ${filter.predicate} ORDER BY q.number`,
     filter.values,
   )) as Row[]
+  return rows
 }
 
 async function boundedIdentityRows(tx: SQL, input: QuestionReadInput): Promise<Row[] | null> {
@@ -338,7 +361,7 @@ async function inboxRows(
     )[0]?.count ?? 0,
   )
   const runs = (await tx.unsafe(
-    `SELECT q.number,q.id::text record_id,q.run_id::text run_record_id,owner.number run_number,
+    `SELECT q.number,q.id::text record_id,q.space_id::text space_id,q.run_id::text run_record_id,owner.number run_number,
       q.asked_at::text,q.question,q.options::text,q.recommendation,q.why,q.kind,q.jev_pick,q.jev_confidence,
       q.jev_probabilities::text,q.jev_error,q.answered_at::text,q.overturned_at::text,q.overturned_by,
       q.overturn_reason,q.replacement,q.filed_as,q.filed_ref,q.filed_record_id::text,q.filed_label,q.filed_at::text,
@@ -460,7 +483,7 @@ export async function readRecordQuestionRows(
   tx: SQL,
   input: Exclude<QuestionReadInput, { read: 'rulings' }>,
 ): Promise<{ items: Row[]; cursor?: string; more?: boolean }> {
-  const items = await rows(tx, input)
+  const items = (await rows(tx, input)).map(mapRecordQuestionRow)
   if (input.read !== 'inbox' || input.limit === undefined) return { items }
   const offset = input.changedAfter === undefined ? 0 : Number(input.changedAfter)
   const page = items.slice(0, input.limit)
@@ -589,12 +612,16 @@ export async function readRecordQuestions(
       throw new UnboundedQuestionRulingsError()
     const client = recordPool(input.url)
     if (input.limit !== undefined || (input.changedAfter && 'questionNumber' in input.changedAfter))
-      return readRulingPage(client, input)
-    return readRulingChanges(client, input)
+      return mapQuestionReadResult(await readRulingPage(client, input))
+    return mapQuestionReadResult(await readRulingChanges(client, input))
   }
   const client = recordPool(input.url)
   return client.begin(async (tx) => {
     await bindTenant(tx, input)
     return readRecordQuestionRows(tx, input)
   })
+}
+
+function mapQuestionReadResult<T extends { items: Row[] }>(result: T): T {
+  return { ...result, items: result.items.map(mapRecordQuestionRow) }
 }

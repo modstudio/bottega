@@ -150,38 +150,43 @@ function reportRouteAndExecutor(row: Record<string, unknown>, log: (...values: u
   if (row.executor === 'harness') log('      executor: harness')
 }
 
+export function listingQuestion(q: Record<string, unknown>) {
+  const question = q as {
+    number: number
+    record_id: string
+    space_id?: string | null
+    run_record_id: string
+    run_number: number
+    asked_at: string
+    answered_at: string | null
+    asked_via: AskedVia | null
+    answerer_kind: AnswererKind | null
+    answer_channel: AnswerChannel | null
+    overturned_at: string | null
+    closed_at: string | null
+    close_reason: string | null
+  }
+  return {
+    id: question.number,
+    record_id: question.record_id,
+    space_id: question.space_id ?? null,
+    run_record_id: question.run_record_id,
+    run_number: question.run_number,
+    asked_at: question.asked_at,
+    answered_at: question.answered_at ?? null,
+    asked_via: question.asked_via ?? null,
+    answerer_kind: question.answerer_kind ?? null,
+    answer_channel: question.answer_channel ?? null,
+    overturned_at: question.overturned_at ?? null,
+    closed_at: question.closed_at ?? null,
+    close_reason: question.close_reason ?? null,
+    deliveries: questionDeliveries(question.record_id, question.number),
+  }
+}
+
 function listingQuestions(questions: Record<string, unknown>[] | undefined, json: boolean) {
   if (!json) return undefined
-  return (
-    (questions ?? []) as unknown as {
-      number: number
-      record_id: string
-      run_record_id: string
-      run_number: number
-      asked_at: string
-      answered_at: string | null
-      asked_via: AskedVia | null
-      answerer_kind: AnswererKind | null
-      answer_channel: AnswerChannel | null
-      overturned_at: string | null
-      closed_at: string | null
-      close_reason: string | null
-    }[]
-  ).map((q) => ({
-    id: q.number,
-    record_id: q.record_id,
-    run_record_id: q.run_record_id,
-    run_number: q.run_number,
-    asked_at: q.asked_at,
-    answered_at: q.answered_at ?? null,
-    asked_via: q.asked_via ?? null,
-    answerer_kind: q.answerer_kind ?? null,
-    answer_channel: q.answer_channel ?? null,
-    overturned_at: q.overturned_at ?? null,
-    closed_at: q.closed_at ?? null,
-    close_reason: q.close_reason ?? null,
-    deliveries: questionDeliveries(q.record_id, q.number),
-  }))
+  return (questions ?? []).map(listingQuestion)
 }
 
 async function listingQuestionsByRoot(
