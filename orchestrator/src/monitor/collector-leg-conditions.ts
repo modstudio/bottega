@@ -5,7 +5,7 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 import type { MonitorCondition } from './monitor-types.ts'
 
-export const COLLECTOR_LEG_FAILURE_WARN_MS = 60_000
+export const COLLECTOR_LEG_FAILURE_WARN_MS = 10 * 60_000
 
 type CollectorLegObservation = {
   source: string
@@ -45,13 +45,14 @@ export function collectorLegFailureDecision(
       if (!Number.isFinite(since)) throw new Error(`${leg.source} had an invalid failingSince`)
       const ageMs = Math.max(0, now - since)
       if (ageMs <= COLLECTOR_LEG_FAILURE_WARN_MS) return []
+      const ageMinutes = Math.floor(ageMs / 60_000)
       return [
         {
           kind: 'collector-leg-failure',
           subject: leg.source,
           since: leg.failingSince,
           ageMs,
-          detail: `${leg.source} collection has failed for ${ageMs}ms: ${leg.lastError ?? 'error unavailable'}`,
+          detail: `${leg.source} collection has failed for ${ageMinutes} minutes: ${leg.lastError ?? 'error unavailable'}`,
           action: `fix the named hub collector failure, then run ${PLATFORM_SLUG} record collector-legs --json to confirm recovery`,
         },
       ]

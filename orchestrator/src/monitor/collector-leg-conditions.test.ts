@@ -16,10 +16,7 @@ const leg = (failingSince: string | null) => ({
 describe('collector leg failure decision', () => {
   test('fires only after the sustained-failure threshold and clears on success', () => {
     expect(
-      collectorLegFailureDecision(
-        [leg(new Date(now - COLLECTOR_LEG_FAILURE_WARN_MS).toISOString())],
-        now,
-      ).conditions,
+      collectorLegFailureDecision([leg(new Date(now - 9 * 60_000).toISOString())], now).conditions,
     ).toEqual([])
     expect(
       collectorLegFailureDecision(
@@ -31,7 +28,7 @@ describe('collector leg failure decision', () => {
         kind: 'collector-leg-failure',
         subject: 'runs',
         ageMs: COLLECTOR_LEG_FAILURE_WARN_MS + 1,
-        detail: expect.stringContaining('ruling read unavailable'),
+        detail: 'runs collection has failed for 10 minutes: ruling read unavailable',
       }),
     ])
     expect(collectorLegFailureDecision([leg(null)], now).conditions).toEqual([])
