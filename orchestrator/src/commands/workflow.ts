@@ -284,6 +284,7 @@ function registerWorkflowRendering({
       .option('--version <value>', 'compose this workflow version')
       .option('--catalogue-version <value>', 'compose with this step catalogue version')
       .option('--mode <value>', 'select this workflow mode')
+      .option('--cursor <value>', 'select an open keyless workflow cursor to adopt')
       .option('--project <value>', 'compose for this registered project')
       .addOption(collectedOption('--arg <value>', 'supply a workflow argument as name=value'))
       .addOption(collectedOption('--autonomy <value>', 'override an autonomy scope')),

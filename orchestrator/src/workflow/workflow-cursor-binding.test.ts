@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { testDatabaseFixture } from '../database/test-database.fixture.ts'
 import { productionStepCatalogue } from './step-catalogue.ts'
@@ -8,10 +9,16 @@ import {
   bindTaskKeyWorktree,
   decideCursorBranchBinding,
 } from './workflow-cursor-binding.ts'
+import { getWorkflowStepWithCursor } from './workflow-cursor-serve.ts'
 import { closeStep, context } from './workflow-cursor-test.fixture.ts'
 import { expandWorkflowSteps } from './workflow-step-sequences.ts'
 import { seedCurrentWorkflowTreeFixture } from './workflow-store.fixture.ts'
-import { getWorkflowStep, showResolvedWorkflow } from './workflows.ts'
+import {
+  getWorkflowStep,
+  promoteWorkflowLocal,
+  setWorkflowLocal,
+  showResolvedWorkflow,
+} from './workflows.ts'
 
 const currentDatabase = testDatabaseFixture((d) =>
   seedCurrentWorkflowTreeFixture(d, ['explore', 'fix-defect'], 'DEV-2449 current workflow fixture'),
@@ -282,6 +289,294 @@ test('a writing run bound to explore skips undeclared branch and worktree handle
   expect(
     d.query('SELECT args,closed FROM workflow_cursor WHERE record_id=?').get(cursor.record_id),
   ).toEqual({ args: cursor.args, closed: cursor.closed })
+})
+
+test('compose adopts the session single advanced keyless cursor without losing progress', async () => {
+  const d = currentDatabase()
+  const live = { resolution: resolutionFor('explore', 'default', d) }
+  const opened = await composeWorkflowWithCursor(
+    'explore',
+    'fixture',
+    'default',
+    {},
+    { session: context.session },
+    d,
+    {},
+    live,
+  )
+  const recordId = d
+    .query<{ record_id: string }, [number]>('SELECT record_id FROM workflow_cursor WHERE number=?')
+    .get(opened.cursor!.id)!.record_id
+  const closed = [{ n: 1, slug: opened.steps[0]!.slug, note: 'planned', at: '2026-11-20' }]
+  d.query('UPDATE workflow_cursor SET ordinal=1,step_slug=?,closed=? WHERE record_id=?').run(
+    opened.steps[1]!.slug,
+    JSON.stringify(closed),
+    recordId,
+  )
+
+  const adopted = await composeWorkflowWithCursor(
+    'explore',
+    'fixture',
+    'default',
+    { key: 'DEV-2532' },
+    { session: context.session, taskRecordId: 'task-DEV-2532' },
+    d,
+    {},
+    live,
+  )
+
+  expect(adopted.cursor!.id).toBe(opened.cursor!.id)
+  expect(d.query('SELECT record_id,workflow_key,closed FROM workflow_cursor').get()).toEqual({
+    record_id: recordId,
+    workflow_key: 'DEV-2532',
+    closed: JSON.stringify(closed),
+  })
+})
+
+test('serve adopts one advanced keyless cursor in place for a non-hub tracker', async () => {
+  const d = currentDatabase()
+  d.query('UPDATE project SET settings=? WHERE name=?').run(
+    JSON.stringify({
+      gate: 'bun run check',
+      trunk: 'develop',
+      tracker: { protocol: 'workspace-mcp' },
+      docs: { protocol: 'orch-docs' },
+    }),
+    'fixture',
+  )
+  const live = { resolution: resolutionFor('explore', 'default', d) }
+  const opened = await composeWorkflowWithCursor(
+    'explore',
+    'fixture',
+    'default',
+    {},
+    { session: context.session },
+    d,
+    {},
+    live,
+  )
+  const recordId = d
+    .query<{ record_id: string }, [number]>('SELECT record_id FROM workflow_cursor WHERE number=?')
+    .get(opened.cursor!.id)!.record_id
+  const closed = [{ n: 1, slug: opened.steps[0]!.slug, note: 'planned', at: '2026-11-20' }]
+  const activeStep = opened.steps[1]!.slug
+  d.query('UPDATE workflow_cursor SET ordinal=1,step_slug=?,closed=? WHERE record_id=?').run(
+    activeStep,
+    JSON.stringify(closed),
+    recordId,
+  )
+
+  const served = await getWorkflowStepWithCursor(
+    'explore',
+    'fixture',
+    activeStep,
+    { key: 'DEV-2532' },
+    'default',
+    { session: context.session, taskRecordId: null },
+    d,
+    live,
+  )
+
+  expect(served.cursor).toBe(opened.cursor!.id)
+  expect(d.query('SELECT count(*) AS count FROM workflow_cursor').get()).toEqual({ count: 1 })
+  expect(d.query('SELECT record_id,workflow_key,closed FROM workflow_cursor').get()).toEqual({
+    record_id: recordId,
+    workflow_key: 'DEV-2532',
+    closed: JSON.stringify(closed),
+  })
+})
+
+test('implicit adoption refuses two keyless cursors and names each explicit remedy', async () => {
+  const d = currentDatabase()
+  const live = { resolution: resolutionFor('explore', 'default', d) }
+  const first = await composeWorkflowWithCursor(
+    'explore',
+    'fixture',
+    'default',
+    {},
+    { session: context.session },
+    d,
+    {},
+    live,
+  )
+  const second = await composeWorkflowWithCursor(
+    'explore',
+    'fixture',
+    'default',
+    {},
+    { session: context.session },
+    d,
+    {},
+    live,
+  )
+
+  await expect(
+    composeWorkflowWithCursor(
+      'explore',
+      'fixture',
+      'default',
+      { key: 'DEV-2532' },
+      { session: context.session, taskRecordId: 'task-DEV-2532' },
+      d,
+      {},
+      live,
+    ),
+  ).rejects.toThrow(
+    `cursor ${first.cursor!.id}, unassigned, explore default, step 1 frame; rerun with --cursor ${first.cursor!.id} --project fixture\n` +
+      `cursor ${second.cursor!.id}, unassigned, explore default, step 1 frame; rerun with --cursor ${second.cursor!.id} --project fixture`,
+  )
+
+  const adopted = await composeWorkflowWithCursor(
+    'explore',
+    'fixture',
+    'default',
+    { key: 'DEV-2532' },
+    { session: context.session, taskRecordId: 'task-DEV-2532' },
+    d,
+    {},
+    live,
+    undefined,
+    undefined,
+    second.cursor!.id,
+  )
+  expect(adopted.cursor!.id).toBe(second.cursor!.id)
+  expect(
+    d.query('SELECT workflow_key FROM workflow_cursor WHERE number=?').get(second.cursor!.id),
+  ).toEqual({ workflow_key: 'DEV-2532' })
+})
+
+test('serve by key reuses a keyed cursor with its stored required arguments', async () => {
+  const d = currentDatabase()
+  const slug = 'stored-required-argument'
+  const draft = setWorkflowLocal(
+    slug,
+    {
+      title: 'Stored required argument',
+      description: 'Exercises keyed serve argument reuse.',
+      arguments: [
+        { name: 'key', required: true, description: 'Task key.' },
+        { name: 'branch', required: true, description: 'Task branch.' },
+      ],
+      modes: [{ slug: 'default', title: 'Default', default: true, steps: ['frame'] }],
+    },
+    'test fixture',
+    'test',
+    d,
+  )
+  promoteWorkflowLocal(slug, draft.n, 'test fixture', 'test', d)
+  const key = 'DEV-2532'
+  const cursorContext = { session: context.session, taskRecordId: `task-${key}` }
+  const opened = await composeWorkflowWithCursor(
+    slug,
+    'fixture',
+    'default',
+    { key, branch: 'DEV-2532-work' },
+    cursorContext,
+    d,
+    {},
+    { resolution: resolutionFor(slug, 'default', d) },
+  )
+
+  const served = await getWorkflowStepWithCursor(
+    slug,
+    'fixture',
+    'frame',
+    { key },
+    'default',
+    cursorContext,
+    d,
+    { resolution: resolutionFor(slug, 'default', d) },
+  )
+
+  expect(served.cursor).toBe(opened.cursor!.id)
+  expect(d.query('SELECT count(*) AS count FROM workflow_cursor').get()).toEqual({ count: 1 })
+  expect(
+    JSON.parse(
+      d
+        .query<{ args: string }, [number]>('SELECT args FROM workflow_cursor WHERE number=?')
+        .get(opened.cursor!.id)!.args,
+    ),
+  ).toEqual({ key, branch: 'DEV-2532-work' })
+})
+
+test('an unresolvable hub key refuses before adopting a keyless cursor', async () => {
+  const d = currentDatabase()
+  const live = { resolution: resolutionFor('explore', 'default', d) }
+  const opened = await composeWorkflowWithCursor(
+    'explore',
+    'fixture',
+    'default',
+    {},
+    { session: context.session },
+    d,
+    {},
+    live,
+  )
+
+  await expect(
+    composeWorkflowWithCursor(
+      'explore',
+      'fixture',
+      'default',
+      { key: 'DEV-MISSING' },
+      { session: context.session, taskRecordId: null },
+      d,
+      {},
+      live,
+    ),
+  ).rejects.toThrow(
+    `task key DEV-MISSING names no task in hub; check it with \`${PLATFORM_SLUG} task show DEV-MISSING\` or file the task first`,
+  )
+  expect(
+    d.query('SELECT workflow_key,args FROM workflow_cursor WHERE number=?').get(opened.cursor!.id),
+  ).toEqual({ workflow_key: '', args: '{}' })
+})
+
+test('missing required key previews compose and refuses serve without opening a cursor', async () => {
+  const d = currentDatabase()
+  const slug = 'required-key-preview'
+  const draft = setWorkflowLocal(
+    slug,
+    {
+      title: 'Required key preview',
+      description: 'Exercises required argument validation before cursor insertion.',
+      arguments: [{ name: 'key', required: true, description: 'Task key.' }],
+      modes: [{ slug: 'default', title: 'Default', default: true, steps: ['frame'] }],
+    },
+    'test fixture',
+    'test',
+    d,
+  )
+  promoteWorkflowLocal(slug, draft.n, 'test fixture', 'test', d)
+  const before = d
+    .query<{ count: number }, []>('SELECT count(*) AS count FROM workflow_cursor')
+    .get()!
+  const preview = await composeWorkflowWithCursor(
+    slug,
+    'fixture',
+    'default',
+    {},
+    { session: context.session },
+    d,
+    {},
+    { resolution: resolutionFor(slug, 'default', d) },
+  )
+  expect(preview.needs.arguments?.map(({ name }) => name)).toEqual(['key'])
+  expect(d.query('SELECT count(*) AS count FROM workflow_cursor').get()).toEqual(before)
+
+  await expect(
+    getWorkflowStepWithCursor(
+      slug,
+      'fixture',
+      'frame',
+      {},
+      'default',
+      { session: context.session },
+      d,
+      { resolution: resolutionFor(slug, 'default', d) },
+    ),
+  ).rejects.toThrow('missing required arguments: key')
+  expect(d.query('SELECT count(*) AS count FROM workflow_cursor').get()).toEqual(before)
 })
 
 describe('task-key worktree binding', () => {

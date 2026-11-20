@@ -16,6 +16,20 @@ import {
 import { taskFlowRequestId } from '../record/record-task-flow-write-contract.ts'
 import { refuseTaskFlowStageConflictLocal, vacateRetiredWorkflowKeySlot } from './task-flow.ts'
 import { taskFlowLocalStore, taskFlowReadStore } from './task-flow-store.ts'
+import { workflowKeyOf } from './workflow-cursor-arguments.ts'
+import {
+  unresolvedHubTaskKeyRefusal,
+  workflowCursorTakeoverRemedy,
+} from './workflow-cursor-format.ts'
+import { workflowCursorProjectUsesHubTracker } from './workflow-cursor-project.ts'
+import {
+  findWorkflowCursor,
+  type SelectableCursorRow,
+  selectByHandle,
+  selectOwnedKeylessWorkflowCursorForAdoption,
+  type WorkflowCursorContext,
+} from './workflow-cursor-selection.ts'
+import { foreignCursorOwner } from './workflow-cursor-transition.ts'
 
 type AdoptionCursor = {
   id: number
@@ -27,6 +41,78 @@ type AdoptionCursor = {
   task_record_id: string | null
   args: string
   revision: number
+}
+
+export async function selectWorkflowCursorForKeyAdoption(input: {
+  project: string
+  workflow: string
+  mode: string
+  args: Record<string, string>
+  cursor?: number
+  context: WorkflowCursorContext
+  database: Database
+}): Promise<{ row: SelectableCursorRow | null; adopted: boolean }> {
+  const key = workflowKeyOf(input.args)
+  if (!key) return { row: null, adopted: false }
+  let row: SelectableCursorRow | null
+  if (input.cursor !== undefined) {
+    row = await selectByHandle(
+      input.cursor,
+      { project: input.project, workflow: input.workflow, mode: input.mode },
+      input.database,
+      false,
+      input.context.taskFlowClient,
+    )
+    if (row.workflow_key)
+      return {
+        row: await findWorkflowCursor(
+          input.project,
+          input.workflow,
+          input.mode,
+          input.args,
+          input.context,
+          input.database,
+          input.cursor,
+        ),
+        adopted: false,
+      }
+    const foreignOwner = foreignCursorOwner(row, input.context.session)
+    if (foreignOwner)
+      throw new Error(
+        `workflow cursor ${row.id} is owned by session ${foreignOwner}; a keyless cursor changes owner only through an explicit takeover. Take it over with: ${workflowCursorTakeoverRemedy(row, foreignOwner)}`,
+      )
+  } else {
+    const keyed = await findWorkflowCursor(
+      input.project,
+      input.workflow,
+      input.mode,
+      input.args,
+      input.context,
+      input.database,
+    )
+    if (keyed) return { row: keyed, adopted: false }
+    row = await selectOwnedKeylessWorkflowCursorForAdoption(
+      { project: input.project, workflow: input.workflow, mode: input.mode },
+      input.context.session,
+      input.database,
+      input.context.taskFlowClient,
+    )
+  }
+  if (!row) return { row: null, adopted: false }
+  if (
+    workflowCursorProjectUsesHubTracker(input.project, input.database) &&
+    input.context.taskRecordId === null
+  )
+    throw new Error(unresolvedHubTaskKeyRefusal(key))
+  await adoptWorkflowTask(
+    row,
+    key,
+    input.context.taskRecordId,
+    input.database,
+    input.context.taskFlowClient,
+    input.context.taskStatusCategory,
+  )
+  return { row, adopted: true }
 }
 
 function assignWorkflowTaskKey(

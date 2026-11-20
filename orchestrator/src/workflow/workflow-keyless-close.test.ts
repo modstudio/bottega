@@ -540,7 +540,7 @@ test('next refuses an undeclared argument before storing it and a correct next s
   ).toContain('Rendered after valid next.')
 })
 
-test('a key argument cannot stand in for task adoption on a keyless cursor', async () => {
+test('a step key argument adopts an explicitly selected keyless cursor', async () => {
   const d = database()
   const opened = await composeWorkflowWithCursor(
     'plan-task',
@@ -552,21 +552,23 @@ test('a key argument cannot stand in for task adoption on a keyless cursor', asy
     {},
     {},
   )
-  await expect(
-    getWorkflowStepWithCursor(
-      'plan-task',
-      'fixture',
-      'dedupe',
-      { key: 'DEV-1873' },
-      'requirements',
-      { session: 'key-mismatch-session' },
-      d,
-      {},
-      opened.cursor!.id,
-    ),
-  ).rejects.toThrow(
-    `workflow next plan-task --cursor ${opened.cursor!.id} --project fixture --task <KEY>`,
+  const served = await getWorkflowStepWithCursor(
+    'plan-task',
+    'fixture',
+    'dedupe',
+    { key: 'DEV-1873' },
+    'requirements',
+    { session: 'key-mismatch-session', taskRecordId: 'task-DEV-1873' },
+    d,
+    {},
+    opened.cursor!.id,
   )
+  expect(served.cursor).toBe(opened.cursor!.id)
+  expect(
+    d
+      .query('SELECT workflow_key,task_record_id FROM workflow_cursor WHERE number=?')
+      .get(opened.cursor!.id),
+  ).toEqual({ workflow_key: 'DEV-1873', task_record_id: 'task-DEV-1873' })
 })
 
 test('compose refuses an undeclared argument and lists the declared arguments', async () => {

@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { recordUnreachableRefusal } from '../../../shared/record-remedies.ts'
 import { JOBS } from '../jobs/jobs.ts'
 import { composeWorkflowWithCursor } from './workflow-cursor.ts'
@@ -14,6 +15,7 @@ import {
 const target = (overrides: Partial<StepActionTarget> = {}): StepActionTarget => ({
   cursor: 17,
   cursorRecordId: 'cursor-record-17',
+  project: 'fixture',
   workflowSlug: 'ship-task',
   stepSlug: 'implement',
   taskKey: 'DEV-2283',
@@ -41,6 +43,7 @@ test('the action target selects the cursor handle and reads its composed ordinal
   expect(await stepActionTarget(cursor.id, d)).toEqual({
     cursor: cursor.id,
     cursorRecordId: row.record_id,
+    project: 'fixture',
     workflowSlug: 'flow',
     stepSlug: composition.steps[0]!.slug,
     taskKey: args.key,
@@ -118,6 +121,7 @@ test('the pure dispatch decision accepts a keyless explore lookup without a key'
   expect(
     decideStepDispatch({
       cursor: 17,
+      project: 'fixture',
       taskKey: '',
       workflowSlug: 'explore',
       stepSlug: 'investigate',
@@ -131,6 +135,7 @@ test('the pure dispatch decision refuses a keyless writer with the task remedy b
   expect(
     decideStepDispatch({
       cursor: 17,
+      project: 'fixture',
       taskKey: '',
       workflowSlug: 'explore',
       stepSlug: 'act',
@@ -141,7 +146,7 @@ test('the pure dispatch decision refuses a keyless writer with the task remedy b
     action: 'refuse',
     reason:
       'workflow explore cursor 17 has no task key, and implement writes the repository; ' +
-      'compose plan-task for a task, or hand this cursor off with workflow handoff, then dispatch from that keyed cursor',
+      `adopt the task key in place with ${PLATFORM_SLUG} workflow step explore --cursor 17 --project fixture --arg key=<KEY>`,
   })
 })
 
@@ -149,6 +154,7 @@ test('the pure dispatch decision preserves a keyed cursor key', () => {
   expect(
     decideStepDispatch({
       cursor: 17,
+      project: 'fixture',
       taskKey: 'DEV-2289',
       workflowSlug: 'ship-task',
       stepSlug: 'implement',
@@ -162,6 +168,7 @@ test('the pure dispatch decision admits a keyless reader missing from the step',
   expect(
     decideStepDispatch({
       cursor: 17,
+      project: 'fixture',
       taskKey: '',
       workflowSlug: 'explore',
       stepSlug: 'investigate',
@@ -175,6 +182,7 @@ test('the pure dispatch decision still refuses an undeclared job on a keyed curs
   expect(
     decideStepDispatch({
       cursor: 17,
+      project: 'fixture',
       taskKey: 'DEV-2289',
       workflowSlug: 'ship-task',
       stepSlug: 'implement',

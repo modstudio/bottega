@@ -199,10 +199,12 @@ export const workflowCommandModules: WorkflowCommandModule[] = [
   ]),
   module('orchestrator/src/workflow/workflow-step-action.ts', [
     'bun:sqlite',
+    '../../../shared/brand.ts',
     '../database/db.ts',
     '../jobs/jobs.ts',
     './workflow-cursor-selection.ts',
     './workflow-cursor-serve.ts',
+    './workflow-cursor-format.ts',
   ]),
   module('orchestrator/src/workflow/workflow-step-action-commands.ts', [
     'commander',
@@ -295,6 +297,7 @@ export const workflowCommandModules: WorkflowCommandModule[] = [
     '../record/record-task-flow-write-contract.ts',
     './autonomy.ts',
     './workflow-compose-branch.ts',
+    './workflow-cursor-adoption.ts',
     './workflow-cursor-arguments.ts',
     './workflow-cursor-autonomy.ts',
     './workflow-cursor-compose.ts',
@@ -308,6 +311,7 @@ export const workflowCommandModules: WorkflowCommandModule[] = [
     './workflow-cursor-transition.ts',
     './workflow-step-reference.ts',
     './workflow-task-linking.ts',
+    './workflow-task-claim.ts',
     './workflow-text.ts',
     './workflows.ts',
   ]),

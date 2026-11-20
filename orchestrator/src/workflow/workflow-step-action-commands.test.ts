@@ -19,11 +19,13 @@ test('workflow dispatch preserves its allowed run-start inputs and adds the curs
       model: 'gpt-test',
       mcp: 'prefer',
       detach: true,
+      seed: '--bundle=minimal',
     },
     {
       read: async () => ({
         cursor: 9,
         cursorRecordId: 'cursor-record-9',
+        project: 'fixture',
         workflowSlug: 'ship-task',
         stepSlug: 'implement',
         taskKey: 'DEV-2283',
@@ -51,6 +53,8 @@ test('workflow dispatch preserves its allowed run-start inputs and adds the curs
         '--mcp',
         'prefer',
         '--detach',
+        '--seed',
+        '--bundle=minimal',
         '--key',
         'DEV-2283',
       ],
@@ -71,6 +75,7 @@ test('workflow step action surfaces expose only the ruled public options', () =>
     '--agent',
     '--file',
     '--model',
+    '--seed',
     '--detach',
     '--mcp',
   ])
@@ -100,6 +105,7 @@ test('workflow land forwards create and merge options without the cursor', async
     read: async () => ({
       cursor: 7,
       cursorRecordId: 'cursor-record-7',
+      project: 'fixture',
       workflowSlug: 'ship-task',
       stepSlug: 'land',
       taskKey: 'DEV-2283',

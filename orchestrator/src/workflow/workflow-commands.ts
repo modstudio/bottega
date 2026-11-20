@@ -861,6 +861,7 @@ export async function composeCommand(
   const project = flagValue(argv, 'project')
   if (!project) throw new Error('--project is required')
   const mode = flagValue(argv, 'mode')
+  const cursor = positive(flagValue(argv, 'cursor'), '--cursor')
   const args = workflowArgs(argv)
   const selection = {
     version: positive(flagValue(argv, 'version'), '--version'),
@@ -895,6 +896,8 @@ export async function composeCommand(
         selection,
         live,
         options.commitCount,
+        undefined,
+        cursor,
       )
     : composeWorkflow(argv[2]!, project, mode, args, undefined, selection, live.resolution)
   print(result, json ? undefined : renderWorkflowComposition(result))
