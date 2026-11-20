@@ -43,7 +43,9 @@ function facts(): SetupInstallVerifyFacts {
       file,
       path: hookScriptPath(INSTALL, file),
       exists: true,
+      readable: true,
       executable: true,
+      invocation: 'interpreter',
     })),
     canonEntries: [
       { harness: 'claude', path: '/home/operator/.claude/CLAUDE.md', exists: true },
@@ -93,10 +95,30 @@ test('a hook pointing to another installation fails hooks-present', () => {
   expect(check(verifySetupInstall(input), 'hooks-present')).toMatchObject({ ok: false })
 })
 
-test('a non-executable hook script fails hook-scripts-executable', () => {
+test('rendered hooks are recognized under the verified extracted runtime root', () => {
+  const input = facts()
+  const runtimeRoot = '/state/runtime/1.2.3/assets'
+  const settings = userSettings(input)
+  settings.hooks = JSON.parse(JSON.stringify(settings.hooks).replaceAll(INSTALL, runtimeRoot))
+  for (const script of input.scripts) {
+    script.path = hookScriptPath(runtimeRoot, script.file)
+  }
+  expect(check(verifySetupInstall(input), 'hooks-present')).toMatchObject({ ok: true })
+})
+
+test('an interpreter-invoked hook script must be readable but need not be executable', () => {
   const input = facts()
   input.scripts[0]!.executable = false
-  expect(check(verifySetupInstall(input), 'hook-scripts-executable')).toMatchObject({ ok: false })
+  expect(check(verifySetupInstall(input), 'hook-scripts-accessible')).toMatchObject({ ok: true })
+  input.scripts[0]!.readable = false
+  expect(check(verifySetupInstall(input), 'hook-scripts-accessible')).toMatchObject({ ok: false })
+})
+
+test('a directly invoked hook script must be executable', () => {
+  const input = facts()
+  input.scripts[0]!.invocation = 'direct'
+  input.scripts[0]!.executable = false
+  expect(check(verifySetupInstall(input), 'hook-scripts-accessible')).toMatchObject({ ok: false })
 })
 
 test('disableAllHooks in user settings fails hooks-not-disabled', () => {

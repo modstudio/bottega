@@ -42,7 +42,9 @@ function facts(): SetupInstallVerifyFacts {
       file,
       path: hookScriptPath(installRoot, file),
       exists: true,
+      readable: true,
       executable: true,
+      invocation: 'interpreter',
     })),
     canonEntries: [{ harness: 'claude', path: '/home/operator/.claude/CLAUDE.md', exists: true }],
   }

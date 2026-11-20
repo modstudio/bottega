@@ -363,8 +363,8 @@ async function runExtractedHookProof(
   )
   recordProofAssertion(
     failures,
-    !result.stderr.includes('was not checked'),
-    `extracted hook judge did not run: ${result.stderr.trim()}`,
+    !result.stderr.includes('could not start') && !result.stderr.includes('timed out'),
+    `extracted hook judge did not start or timed out: ${result.stderr.trim()}`,
   )
   return result
 }
@@ -451,12 +451,12 @@ async function proveReleaseInstall(version: string, keep: boolean): Promise<numb
         executable,
         'doc',
         'set',
-        'release-proof',
+        'AGENTS.md',
         '--scope',
         'canon',
         '--user',
         '--title',
-        'Release proof',
+        'Release proof canon',
         '--reason',
         'seed release install proof',
       ],
@@ -507,7 +507,9 @@ async function proveReleaseInstall(version: string, keep: boolean): Promise<numb
     )
     for (const result of results) {
       console.log(`${result.name} exit ${result.exitCode}`)
-      if (result.exitCode !== 0 && result.output) console.log(result.output)
+      if ((result.exitCode !== 0 || result.name === 'extracted hook') && result.output) {
+        console.log(result.output)
+      }
     }
     for (const failure of assertionFailures) console.error(`proof assertion failed: ${failure}`)
     return results.some((result) => result.exitCode !== 0) || assertionFailures.length ? 1 : 0

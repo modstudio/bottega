@@ -1,6 +1,7 @@
 // concern: setup-install-verify
 /** Decides whether setup-rendered hooks and user canon landed. Pure: adapters supply plain facts. */
 
+import { dirname } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   commandNamesHookScript,
@@ -20,14 +21,21 @@ export type SetupInstallVerifyFacts = {
   installRoot: string
   hooks: readonly ProductHookDeclaration[]
   settingsFiles: SetupInstallSettingsFileFact[]
-  scripts: Array<{ file: string; path: string; exists: boolean; executable: boolean }>
+  scripts: Array<{
+    file: string
+    path: string
+    exists: boolean
+    readable: boolean
+    executable: boolean
+    invocation: 'interpreter' | 'direct'
+  }>
   canonEntries: Array<{ harness: string; path: string; exists: boolean }>
 }
 
 export type SetupInstallVerifyCheck = {
   name:
     | 'hooks-present'
-    | 'hook-scripts-executable'
+    | 'hook-scripts-accessible'
     | 'hooks-not-disabled'
     | 'board-hooks-present'
     | 'user-canon-present'
@@ -74,10 +82,12 @@ function missingHooks(
   for (const declaration of declarations) {
     const key = `${declaration.event}\0${declaration.matcher ?? ''}\0${declaration.script}`
     if (available.has(key)) continue
+    const script = facts.scripts.find((candidate) => candidate.file === declaration.script)
+    const assetRoot = script ? dirname(dirname(dirname(script.path))) : facts.installRoot
     available.set(
       key,
       handlersFor(file.settings, declaration).filter((handler) =>
-        commandNamesHookScript(handler.command, declaration.script, facts.installRoot),
+        commandNamesHookScript(handler.command, declaration.script, assetRoot),
       ).length,
     )
   }
@@ -113,18 +123,25 @@ function hookCheck(
   }
 }
 
-function executableCheck(facts: SetupInstallVerifyFacts): SetupInstallVerifyCheck {
-  const failed = facts.scripts.filter((script) => !script.exists || !script.executable)
+function scriptAccessCheck(facts: SetupInstallVerifyFacts): SetupInstallVerifyCheck {
+  const failed = facts.scripts.filter(
+    (script) =>
+      !script.exists || !script.readable || (script.invocation === 'direct' && !script.executable),
+  )
   return {
-    name: 'hook-scripts-executable',
+    name: 'hook-scripts-accessible',
     ok: failed.length === 0,
     detail:
       failed.length === 0
-        ? `${facts.scripts.length} hook scripts exist and are executable`
+        ? `${facts.scripts.length} hook scripts have the access required by their invocation`
         : failed
-            .map((script) => `${script.path} ${script.exists ? 'is not executable' : 'is absent'}`)
+            .map((script) => {
+              if (!script.exists) return `${script.path} is absent`
+              if (!script.readable) return `${script.path} is not readable`
+              return `${script.path} is not executable for direct invocation`
+            })
             .join(', '),
-    fix: `restore executable hook scripts in this installation, then re-run \`${PLATFORM_SLUG} machine setup apply\``,
+    fix: `restore hook script access in this installation, then re-run \`${PLATFORM_SLUG} machine setup apply\``,
   }
 }
 
@@ -172,7 +189,7 @@ function canonCheck(facts: SetupInstallVerifyFacts): SetupInstallVerifyCheck {
 export function verifySetupInstall(facts: SetupInstallVerifyFacts): SetupInstallVerifyCheck[] {
   return [
     hookCheck(facts, 'hooks-present', facts.hooks),
-    executableCheck(facts),
+    scriptAccessCheck(facts),
     hooksEnabledCheck(facts),
     hookCheck(
       facts,

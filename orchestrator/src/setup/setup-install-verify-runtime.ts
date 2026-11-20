@@ -65,14 +65,19 @@ function gatherSetupInstallVerifyFacts(
   const scriptFacts = SCRIPT_FILES.map((file) => {
     const path = runtimeAssetPath(`orchestrator/hooks/${file}`, environment)
     const exists = existsSync(path) && statSync(path).isFile()
+    let readable = false
     let executable = false
     if (exists) {
+      try {
+        accessSync(path, constants.R_OK)
+        readable = true
+      } catch {}
       try {
         accessSync(path, constants.X_OK)
         executable = true
       } catch {}
     }
-    return { file, path, exists, executable }
+    return { file, path, exists, readable, executable, invocation: 'interpreter' as const }
   })
   const homes = userCanonHomesFromEnvironment(
     environment,
