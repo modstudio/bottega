@@ -15,6 +15,7 @@ import { startBoundedSync } from '../../../shared/bounded-process.ts'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { gitAt } from '../../../shared/git.ts'
 import { INSTALL_HOME_ENV, installationIdentity } from '../../../shared/install-root.ts'
+import { refusal, renderRefusal } from '../../../shared/refusal.ts'
 import {
   WORKER_RUNTIME_ASSETS,
   workerRuntimeAssetPaths,
@@ -37,11 +38,23 @@ function sha256(path: string): string {
   return createHash('sha256').update(readFileSync(path)).digest('hex')
 }
 
+/** Render every checkout-build failure with the command that retries it. */
+export function checkoutCliBuildFailure(condition: string): Error {
+  return new Error(
+    renderRefusal(
+      refusal(condition, {
+        kind: 'command',
+        argv: [PLATFORM_SLUG, 'machine', 'update'],
+      }),
+    ),
+  )
+}
+
 function checkoutHead(checkoutRoot: string): string {
   const result = gitAt(checkoutRoot, ['rev-parse', 'HEAD'])
   if (result.code !== 0) {
-    throw new Error(
-      `git rev-parse HEAD failed with exit ${result.code}: ${result.stderr.trim()}; cleared by: rerun ${PLATFORM_SLUG} machine update`,
+    throw checkoutCliBuildFailure(
+      `git rev-parse HEAD failed with exit ${result.code}: ${result.stderr.trim()}`,
     )
   }
   return result.stdout.trim()
@@ -111,8 +124,8 @@ export function buildCheckoutCli(
       },
     )
     if (result.exitCode !== 0) {
-      throw new Error(
-        `bun build --compile failed with exit ${result.exitCode}${result.stderr.trim() ? `: ${result.stderr.trim()}` : ''}; cleared by: rerun ${PLATFORM_SLUG} machine update`,
+      throw checkoutCliBuildFailure(
+        `bun build --compile failed with exit ${result.exitCode}${result.stderr.trim() ? `: ${result.stderr.trim()}` : ''}`,
       )
     }
     chmodSync(temporaryBinary, 0o755)

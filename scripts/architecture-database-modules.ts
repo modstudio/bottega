@@ -18,6 +18,7 @@ export const databaseModules: ArchitectureModule[] = [
     '../../../shared/git.ts',
     '../../../shared/install-root.ts',
     '../../../shared/runtime-assets-in-sandbox.ts',
+    '../../../shared/refusal.ts',
     '../../../shared/state-directory.ts',
   ]),
   module('orchestrator/src/jsonl-archive.ts', ['node:fs', 'node:path']),

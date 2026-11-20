@@ -162,6 +162,9 @@
     "shared/test-git-repository.ts": 1
   },
   "commandCases": {
+    "orchestrator/src/database/checkout-cli-build.ts#checkoutCliBuildFailure": {
+      "test": "orchestrator/src/database/checkout-cli-build.test.ts: the checkout CLI build failure names machine update as the clearing command"
+    },
     "orchestrator/src/record/record-api-errors.ts#renderRecordApiRefusal": {
       "test": "orchestrator/src/record/record-projects.test.ts: the real record app refuses a stale project revision and names the pull remedy"
     },

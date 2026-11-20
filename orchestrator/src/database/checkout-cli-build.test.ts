@@ -1,9 +1,10 @@
 import { expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { createHash } from 'node:crypto'
 import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { verifyCheckoutCliBuild } from './checkout-cli-build.ts'
+import { checkoutCliBuildFailure, verifyCheckoutCliBuild } from './checkout-cli-build.ts'
 
 function hash(path: string): string {
   return createHash('sha256').update(readFileSync(path)).digest('hex')
@@ -40,4 +41,10 @@ test('published checkout CLI verification covers hashes and launch metadata', ()
   } finally {
     rmSync(root, { recursive: true, force: true })
   }
+})
+
+test('the checkout CLI build failure names machine update as the clearing command', () => {
+  expect(checkoutCliBuildFailure('compile failed').message).toEndWith(
+    `cleared by: ${PLATFORM_SLUG} machine update`,
+  )
 })
