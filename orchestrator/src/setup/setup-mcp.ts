@@ -4,6 +4,7 @@
 import {
   boundedDeadlineMs,
   isDeadlineBreach,
+  isOutputBreach,
   startBounded,
 } from '../../../shared/bounded-process.ts'
 import { MCP_SERVER_NAME, PLATFORM_SLUG, WORKER_MCP_SERVER_NAME } from '../../../shared/brand.ts'
@@ -196,12 +197,19 @@ export async function runSetupCommandAsync(
     }
   } catch (error) {
     const timedOut = isDeadlineBreach(error)
+    const outputExceeded = isOutputBreach(error)
     return {
       exitCode: null,
       stdout: '',
       stderr: '',
       timedOut,
-      error: timedOut ? null : error instanceof Error ? error.message : String(error),
+      error: timedOut
+        ? null
+        : outputExceeded
+          ? 'output exceeded'
+          : error instanceof Error
+            ? error.message
+            : String(error),
     }
   }
 }
@@ -283,6 +291,7 @@ function stringArray(value: unknown): string[] | null {
 
 export function resultFailure(result: SetupCommandResult): string | null {
   if (result.timedOut) return 'timed out'
+  if (result.error === 'output exceeded') return result.error
   if (result.error) return 'spawn error'
   if (result.exitCode !== 0) return `exit code ${String(result.exitCode)}`
   return null
@@ -469,15 +478,8 @@ function currentClaudeMcpRegistration(
   input: ClaudeMcpReconcileInput,
   commandCwd: string | undefined,
 ): McpReadback {
-  if (input.removeName) return { status: 'absent' }
-  if (input.forceReplace) {
-    return {
-      status: 'registered',
-      command: input.server.command,
-      args: input.server.args,
-      scope: input.scope,
-    }
-  }
+  const preset = presetClaudeMcpRegistration(input)
+  if (preset) return preset
   return readMcpRegistration('claude', input.port.bin, input.server.name, input.port.runner, {
     cwd: commandCwd,
   })
@@ -487,9 +489,8 @@ async function currentClaudeMcpRegistrationAsync(
   input: ClaudeMcpReconcileAsyncInput,
   commandCwd: string | undefined,
 ): Promise<McpReadback> {
-  if (input.removeName || input.forceReplace) {
-    return currentClaudeMcpRegistration(input, commandCwd)
-  }
+  const preset = presetClaudeMcpRegistration(input)
+  if (preset) return preset
   return readMcpRegistrationAsync(
     'claude',
     input.port.bin,
@@ -497,6 +498,17 @@ async function currentClaudeMcpRegistrationAsync(
     input.port.asyncRunner,
     { cwd: commandCwd },
   )
+}
+
+function presetClaudeMcpRegistration(input: ClaudeMcpReconcileInput): McpReadback | null {
+  if (input.removeName) return { status: 'absent' }
+  if (!input.forceReplace) return null
+  return {
+    status: 'registered',
+    command: input.server.command,
+    args: input.server.args,
+    scope: input.scope,
+  }
 }
 
 function runClaudeMcpMutation(

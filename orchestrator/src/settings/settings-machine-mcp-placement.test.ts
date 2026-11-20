@@ -6,7 +6,6 @@ import { claudeMcpPlacementPath } from '../../../shared/state-directory.ts'
 import { reconcileClaudeMcpRegistrationAsync, stableMcpServers } from '../setup/setup-mcp.ts'
 import {
   readClaudeMcpPlacement,
-  reconcileClaudeMcpPlacementPlan,
   reconcileClaudeMcpPlacementPlanAsync,
   writeClaudeMcpPlacement,
 } from './settings-machine-mcp-placement.ts'
@@ -42,27 +41,34 @@ test('refuses an invalid Claude MCP placement record', () => {
   }
 })
 
-test('first global user placement records state without resolving or calling Claude', () => {
+test('first global user placement records state without resolving or calling Claude', async () => {
   const root = mkdtempSync(join(tmpdir(), 'claude-mcp-placement-'))
   const environment = { BOTTEGA_STATE_HOME: root }
   let portCalls = 0
   try {
-    const results = reconcileClaudeMcpPlacementPlan(decideMachineSettingsScope('on', []), {
-      environment,
-      port: () => {
-        portCalls++
-        return null
+    const results = await reconcileClaudeMcpPlacementPlanAsync(
+      false,
+      decideMachineSettingsScope('on', []),
+      {
+        environment,
+        port: () => {
+          portCalls++
+          return null
+        },
+        server: stableMcpServers()[0]!,
+        read: readClaudeMcpPlacement,
+        write: writeClaudeMcpPlacement,
+        reconcile: () => {
+          throw new Error('unexpected reconcile')
+        },
+        reconcileAsync: async () => {
+          throw new Error('unexpected async reconcile')
+        },
+        mutate: () => {
+          throw new Error('unexpected mutation')
+        },
       },
-      server: stableMcpServers()[0]!,
-      read: readClaudeMcpPlacement,
-      write: writeClaudeMcpPlacement,
-      reconcile: () => {
-        throw new Error('unexpected reconcile')
-      },
-      mutate: () => {
-        throw new Error('unexpected mutation')
-      },
-    })
+    )
     expect(results).toEqual([{ target: 'MCP claude user', outcome: 'current', changed: false }])
     expect(portCalls).toBe(0)
     expect(readClaudeMcpPlacement(environment)).toEqual({ scope: 'user', projectPaths: [] })
@@ -71,7 +77,7 @@ test('first global user placement records state without resolving or calling Cla
   }
 })
 
-test('first local placement reads user once, then writes projects without readbacks', () => {
+test('first local placement reads user once, then writes projects without readbacks', async () => {
   const root = mkdtempSync(join(tmpdir(), 'claude-mcp-placement-'))
   const environment = { BOTTEGA_STATE_HOME: root }
   let reads = 0
@@ -81,15 +87,22 @@ test('first local placement reads user once, then writes projects without readba
     { path: '/projects/two', exists: true, gitMainCheckout: true },
   ])
   try {
-    reconcileClaudeMcpPlacementPlan(plan, {
+    await reconcileClaudeMcpPlacementPlanAsync(false, plan, {
       environment,
-      port: () => ({ bin: 'claude', runner: () => fixtureCommandResult() }),
+      port: () => ({
+        bin: 'claude',
+        runner: () => fixtureCommandResult(),
+        asyncRunner: async () => fixtureCommandResult(),
+      }),
       server: stableMcpServers()[0]!,
       read: readClaudeMcpPlacement,
       write: writeClaudeMcpPlacement,
       reconcile: () => {
         reads++
         return { changed: true }
+      },
+      reconcileAsync: async () => {
+        throw new Error('unexpected async reconcile')
       },
       mutate: ({ action, cwd }) => mutations.push({ action, cwd }),
     })
@@ -107,25 +120,33 @@ test('first local placement reads user once, then writes projects without readba
   }
 })
 
-test('a failed recorded removal converges through one scoped reconcile', () => {
+test('a failed recorded removal converges through one scoped reconcile', async () => {
   const root = mkdtempSync(join(tmpdir(), 'claude-mcp-placement-'))
   const environment = { BOTTEGA_STATE_HOME: root }
   const reconciles: Array<{ scope: string; present: boolean }> = []
   try {
     writeClaudeMcpPlacement(environment, { scope: 'user', projectPaths: [] })
-    const results = reconcileClaudeMcpPlacementPlan(
+    const results = await reconcileClaudeMcpPlacementPlanAsync(
+      false,
       decideMachineSettingsScope('off', [
         { path: '/projects/one', exists: true, gitMainCheckout: true },
       ]),
       {
         environment,
-        port: () => ({ bin: 'claude', runner: () => fixtureCommandResult() }),
+        port: () => ({
+          bin: 'claude',
+          runner: () => fixtureCommandResult(),
+          asyncRunner: async () => fixtureCommandResult(),
+        }),
         server: stableMcpServers()[0]!,
         read: readClaudeMcpPlacement,
         write: writeClaudeMcpPlacement,
         reconcile: (input) => {
           reconciles.push({ scope: input.scope, present: input.present })
           return { changed: false }
+        },
+        reconcileAsync: async () => {
+          throw new Error('unexpected async reconcile')
         },
         mutate: ({ action }) => {
           if (action === 'remove') throw new Error('already absent')

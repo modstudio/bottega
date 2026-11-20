@@ -31,6 +31,7 @@ mock.module('execa', () => ({ execa: execaMock }))
 const {
   boundedDeadlineMs,
   isDeadlineBreach,
+  isOutputBreach,
   parentBoundSignalExitCode,
   startBounded,
   startParentBound,
@@ -71,8 +72,7 @@ test('a deliberate git probe budget keeps its declared deadline', async () => {
   expect(execaMock.mock.calls[0]?.[2]?.timeout).toBe(CALL_BUDGETS['git-probe'].deadlineMs)
 })
 
-test('named deadline helpers share the budget and distinguish output breaches', () => {
-  expect(boundedDeadlineMs('setup-command')).toBe(CALL_BUDGETS['setup-command'].deadlineMs)
+test('named breach helpers distinguish deadline and output breaches', () => {
   expect(
     isDeadlineBreach(
       new BoundExceededError(
@@ -83,16 +83,13 @@ test('named deadline helpers share the budget and distinguish output breaches', 
       ),
     ),
   ).toBe(true)
-  expect(
-    isDeadlineBreach(
-      new BoundExceededError(
-        'probe',
-        'setup-command',
-        'output',
-        CALL_BUDGETS['setup-command'].outputBytes,
-      ),
-    ),
-  ).toBe(false)
+  expect(isDeadlineBreach(new BoundExceededError('probe', 'setup-command', 'output', 1))).toBe(
+    false,
+  )
+  expect(isOutputBreach(new BoundExceededError('probe', 'setup-command', 'output', 1))).toBe(true)
+  expect(isOutputBreach(new BoundExceededError('probe', 'setup-command', 'deadline', 1))).toBe(
+    false,
+  )
 })
 
 test('tracked child exit flags compose into the parent signal decision', () => {

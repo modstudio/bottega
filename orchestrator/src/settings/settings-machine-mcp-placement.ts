@@ -255,8 +255,7 @@ function applyPlacementCalls(
   return [...results.values()]
 }
 
-/** Reconcile writes from the placement record; only --check reads every Claude scope. */
-export function reconcileClaudeMcpPlacementPlan(
+function applyClaudeMcpPlacementWrites(
   plan: MachineSettingsScopePlan,
   deps: PlacementDependencies,
 ): ClaudeMcpPlacementResult[] {
@@ -283,12 +282,12 @@ export function reconcileClaudeMcpPlacementPlan(
   return applyPlacementCalls(decision, deps, results)
 }
 
-/** Issue independent Claude placement readbacks together while preserving result order. */
+/** Check placements concurrently, or apply placement-record writes in order. */
 export async function reconcileClaudeMcpPlacementPlanAsync(
   check: boolean,
   plan: MachineSettingsScopePlan,
   deps: AsyncPlacementDependencies,
 ): Promise<ClaudeMcpPlacementResult[]> {
   if (check) return checkPlacement(plan, deps)
-  return reconcileClaudeMcpPlacementPlan(plan, deps)
+  return applyClaudeMcpPlacementWrites(plan, deps)
 }
