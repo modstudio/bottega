@@ -288,7 +288,7 @@ export async function tracedRecordFetch(
   }
 }
 
-process.once('exit', () => {
+export function writeRecordTraceSummary(): void {
   if (!configuredMode()) return
   const summaries = [...completedSummaries.values()]
   for (const active of activeCalls) {
@@ -304,4 +304,6 @@ process.once('exit', () => {
   summaries.sort((left, right) => left.routeClass.localeCompare(right.routeClass))
   for (const summary of [...summaries, combineSummaries(summaries)])
     process.stderr.write(`${summaryLine(summary)}\n`)
-})
+}
+
+process.once('exit', writeRecordTraceSummary)

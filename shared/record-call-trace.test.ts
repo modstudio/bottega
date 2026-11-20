@@ -5,6 +5,7 @@ import {
   recordRouteClass,
   summarizeRecordCalls,
   tracedRecordFetch,
+  writeRecordTraceSummary,
 } from './record-call-trace.ts'
 
 test('server timing parser reads app duration and rejects absent or malformed values', () => {
@@ -200,9 +201,7 @@ test.serial('exit summary formats bounded aggregate state', async () => {
       (async () =>
         new Response(null, { headers: { 'content-length': '7' } })) as unknown as typeof fetch,
     )
-    const exitSummary = process.listeners('exit').at(-1)
-    expect(exitSummary).toBeFunction()
-    exitSummary?.(0)
+    writeRecordTraceSummary()
     expect(writes).toContainEqual(
       expect.stringContaining('record-trace route=record-questions count=1 response_bytes_total=7'),
     )
