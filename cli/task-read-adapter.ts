@@ -1,4 +1,4 @@
-import { Database } from 'bun:sqlite'
+import { tmpdir } from 'node:os'
 import {
   installProjectRegisterReader,
   projectRegisterReader,
@@ -11,8 +11,14 @@ import {
   installTaskReader,
   type TaskReadPort,
 } from '../orchestrator/src/workflow/task-read-port.ts'
+import { refusal, renderRefusal } from '../shared/refusal.ts'
+import {
+  realPathForPotentialPath,
+  temporaryStateStoreMigrationAllowed,
+} from '../shared/state-directory.ts'
 
 type HubTaskReads = {
+  db: typeof import('../hub/src/db.ts')
   task: typeof import('../hub/src/task.ts')
   document: typeof import('../hub/src/task-document.ts')
   projects: typeof import('../hub/src/projects.ts')
@@ -21,6 +27,7 @@ type HubTaskReads = {
 let loadedHubTaskReads: HubTaskReads | undefined
 
 type ProjectRegisterReads = {
+  database: typeof import('../orchestrator/src/database/db.ts')
   migrations: typeof import('../orchestrator/src/database/migrations.ts')
   project: typeof import('../orchestrator/src/project/project-read.ts')
   presentation: typeof import('../orchestrator/src/project/project-list-json.ts')
@@ -34,6 +41,8 @@ let loadedProjectRegisterReads: ProjectRegisterReads | undefined
 function projectRegisterReads(): ProjectRegisterReads {
   if (loadedProjectRegisterReads) return loadedProjectRegisterReads
   loadedProjectRegisterReads = {
+    database:
+      require('../orchestrator/src/database/db.ts') as typeof import('../orchestrator/src/database/db.ts'),
     migrations:
       require('../orchestrator/src/database/migrations.ts') as typeof import('../orchestrator/src/database/migrations.ts'),
     project:
@@ -51,6 +60,7 @@ function projectRegisterReads(): ProjectRegisterReads {
 function hubTaskReads(): HubTaskReads {
   if (loadedHubTaskReads) return loadedHubTaskReads
   loadedHubTaskReads = {
+    db: require('../hub/src/db.ts') as typeof import('../hub/src/db.ts'),
     task: require('../hub/src/task.ts') as typeof import('../hub/src/task.ts'),
     document:
       require('../hub/src/task-document.ts') as typeof import('../hub/src/task-document.ts'),
@@ -61,15 +71,27 @@ function hubTaskReads(): HubTaskReads {
 
 function registerConfinementProbeProject(input: ConfinementProbeTaskInput) {
   const register = projectRegisterReads()
-  const fixtureRegister = new Database(input.orchestratorDatabase, { create: true })
-  try {
-    fixtureRegister.exec('PRAGMA foreign_keys = ON;')
-    register.migrations.applyMigrations(fixtureRegister)
-    register.registration.registerLocalProject(input.project, null, fixtureRegister)
-    return register.presentation.listedProjectJson(input.project)
-  } finally {
-    fixtureRegister.close()
+  const storePath = realPathForPotentialPath(input.orchestratorDatabase)
+  const temporaryDirectory = realPathForPotentialPath(tmpdir())
+  if (!temporaryStateStoreMigrationAllowed(storePath, temporaryDirectory)) {
+    throw new Error(
+      renderRefusal(
+        refusal(
+          `refusing to create the confinement probe store outside OS temporary state: ${input.orchestratorDatabase}\n` +
+            'invariant: A confinement probe creates and migrates only its isolated temporary store.',
+          {
+            kind: 'edit',
+            text: 'run the confinement report with its fixture state under the OS temporary directory',
+          },
+        ),
+      ),
+    )
   }
+  register.database.createDatabasePrivately(input.orchestratorDatabase, (database) => {
+    register.migrations.applyMigrations(database)
+    register.registration.registerLocalProject(input.project, null, database)
+  })
+  return register.presentation.listedProjectJson(input.project)
 }
 
 /** Build the CLI-owned port without loading its hub implementation. */
@@ -113,10 +135,14 @@ export function installCliTaskReader(): void {
     installProjectRegisterReader(() => [fixtureProject])
     hub.projects.refreshProjects()
     try {
-      const task = hub.task.createLocalTaskInTransaction(
+      const task = hub.db.writeTransaction(
+        (fixtureConnection) =>
+          hub.task.createLocalTaskInTransaction(
+            fixtureConnection,
+            { project: fixtureProject.name, title: 'Verify confined CLI access' },
+            { skipDuplicateCheck: true },
+          ),
         connection,
-        { project: fixtureProject.name, title: 'Verify confined CLI access' },
-        { skipDuplicateCheck: true },
       )
       return {
         key: task.key,

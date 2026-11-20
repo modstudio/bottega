@@ -97,13 +97,14 @@ const NOT_COVERED: ConfinementFilesystemProbeRow[] = [
 ]
 
 const PROBE_PROJECT_NAME = 'confinement-probe'
-const PROBE_TASK_PREFIX = ['CONFINEMENT', 'PROBE'].join('')
+const PROBE_TASK_PREFIX = 'CONFINEMENTPROBE'
 
 function fixtureProject(
   recordId: string,
   name: string,
   path: string,
   secretPaths: string[] = [],
+  keyPrefixes: string[] = [],
 ): Project {
   return {
     recordId,
@@ -112,7 +113,7 @@ function fixtureProject(
     stack: 'probe',
     canon: false,
     retiredAt: null,
-    settings: { secretPaths },
+    settings: { keyPrefixes, secretPaths },
   }
 }
 
@@ -559,18 +560,16 @@ function createProbeTaskFixture(
   orchestratorDatabase: string,
   ownPath: string,
 ): { own: Project; task: ConfinementProbeTask } {
-  const own = fixtureProject(Bun.randomUUIDv7(), PROBE_PROJECT_NAME, ownPath, ['declared.secret'])
-  own.settings.keyPrefixes = [PROBE_TASK_PREFIX]
+  const own = fixtureProject(
+    Bun.randomUUIDv7(),
+    PROBE_PROJECT_NAME,
+    ownPath,
+    ['declared.secret'],
+    [PROBE_TASK_PREFIX],
+  )
   const task = createConfinementProbeTask(hubWriter, {
     orchestratorDatabase,
-    project: {
-      ...own,
-      retiredAt: null,
-      settings: {
-        keyPrefixes: [PROBE_TASK_PREFIX],
-        secretPaths: ['declared.secret'],
-      },
-    },
+    project: own,
   })
   if (task.project.name !== own.name || task.project.recordId !== own.recordId) {
     throw new Error('confinement probe task was created for the wrong fixture project')

@@ -1,21 +1,11 @@
 // concern: confinement probe task creation port; the CLI composition root supplies the hub adapter.
 
 import type { Database } from 'bun:sqlite'
-
-type ConfinementProbeProject = {
-  recordId: string
-  recordRevision?: number | null
-  name: string
-  path: string
-  stack: string | null
-  canon: boolean
-  retiredAt: null
-  settings: { keyPrefixes: string[]; secretPaths: string[] }
-}
+import type { Project } from '../project/projects.ts'
 
 export type ConfinementProbeTaskInput = {
   orchestratorDatabase: string
-  project: ConfinementProbeProject
+  project: Project
 }
 
 export type ConfinementProbeTask = {
