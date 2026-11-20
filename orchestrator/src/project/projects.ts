@@ -77,6 +77,7 @@ import {
 import { type SettingsObjectMode, validateProjectInjectionSettings } from './project-injection.ts'
 import { localProjectPurgeRefusals, purgeLocalOrchestratorProject } from './project-purge-local.ts'
 import { projectPushRefusalMessage } from './project-push-refusal.ts'
+import { treeRunScriptProblems } from './project-tree-run-script.ts'
 import { type Project, projectByName, projectRowByName, projects } from './project-read.ts'
 import {
   PROJECT_REFERENCE_REPORT,
@@ -601,6 +602,10 @@ export function validateProjectSettings(
     ...gateToolingProblems(settings.gateTooling),
     ...workerCheckProblems(settings.workerCheck),
     ...projectAgentKeyProblems(settings.agentKeys),
+    ...treeRunScriptProblems(
+      context.projectNameAfterWrite ?? context.currentProjectName,
+      settings.release,
+    ),
   ]
 
   if (invalidOptionalStringArray(settings.secretPaths)) {

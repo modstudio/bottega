@@ -9,6 +9,7 @@ import {
   machineExitCode,
   parseRehearsalLines,
   type RehearsalCommandRunner,
+  rehearsalCredentialDecision,
   rehearsalStatus,
   renderRehearsalNotices,
   rerunFailedRecordRehearsal,
@@ -21,6 +22,65 @@ REHEARSAL PENDING 1
 REHEARSAL RESTORE 123
 REHEARSAL MIGRATE 45
 REHEARSAL PASS ${hash}`
+
+test('re-runs through the main binary without putting a credential on argv or logs', () => {
+  const secret = 'fake-secret-value'
+  const log = spyOn(console, 'log').mockImplementation(() => {})
+  const error = spyOn(console, 'error').mockImplementation(() => {})
+  try {
+    const decision = rehearsalCredentialDecision(
+      { UNRELATED_SECRET: secret },
+      ['/opt/bun', 'scripts/record-rehearse.ts', '--fixture'],
+      { mainCheckout: '/projects/bottega', mainCheckoutExists: true, binaryExists: true },
+    )
+    expect(decision).toEqual({
+      kind: 'rerun',
+      argv: [
+        '/projects/bottega/bin/bottega',
+        'credential',
+        'resolve',
+        'fly/rehearsal/token',
+        '--project',
+        'bottega',
+        '--reveal-to-env',
+        'BOTTEGA_RECORD_REHEARSAL_FLY_TOKEN',
+        '--',
+        '/opt/bun',
+        'scripts/record-rehearse.ts',
+        '--fixture',
+      ],
+    })
+    expect(JSON.stringify(decision)).not.toContain(secret)
+    expect(log).not.toHaveBeenCalled()
+    expect(error).not.toHaveBeenCalled()
+  } finally {
+    log.mockRestore()
+    error.mockRestore()
+  }
+})
+
+test('uses a present override without re-running the script', () => {
+  expect(
+    rehearsalCredentialDecision(
+      { BOTTEGA_RECORD_REHEARSAL_FLY_TOKEN: 'fake-child-token' },
+      ['/opt/bun', 'scripts/record-rehearse.ts'],
+      { mainCheckout: '/missing', mainCheckoutExists: false, binaryExists: false },
+    ),
+  ).toEqual({ kind: 'use-override' })
+})
+
+test('refuses a missing main binary with both credential remedies', () => {
+  const decision = rehearsalCredentialDecision({}, ['/opt/bun', 'scripts/record-rehearse.ts'], {
+    mainCheckout: '/projects/bottega',
+    mainCheckoutExists: true,
+    binaryExists: false,
+  })
+  expect(decision).toEqual({
+    kind: 'refuse',
+    message:
+      'record rehearsal cannot resolve its Fly token because the main checkout binary does not exist: /projects/bottega/bin/bottega; set BOTTEGA_RECORD_REHEARSAL_FLY_TOKEN, or set BOTTEGA_MAIN_CHECKOUT to a main checkout whose bin/bottega exists',
+  })
+})
 
 function gitResult(argv: readonly string[]) {
   if (argv[0] !== 'git') return undefined

@@ -72,6 +72,7 @@ import { workflowFloorModules } from './architecture-workflow-floor-modules.ts'
 import { workflowTreeModules } from './architecture-workflow-tree-modules.ts'
 import { worktreeModules } from './architecture-worktree-modules.ts'
 import { REPOSITORY_ROOT_DATA_IMPORTS } from './repository-root-data-imports.ts'
+import { TREE_RUN_SCRIPTS } from '../shared/tree-run-scripts.ts'
 
 export type ArchitectureModule = { file: string; allowed: string[]; typeOnlyAllowed?: string[] }
 type ArchitectureException = { from: string; to: string; dependencyTypes: string[]; reason: string }
@@ -953,6 +954,22 @@ export function architectureRules() {
     activeSpaceResolverRule,
     recordPoolInstallerRule,
     sqliteAdapterImportRule,
+    {
+      name: 'tree-run-scripts-reach-no-orchestrator-store',
+      severity: 'error',
+      comment: "Scripts run from a disposable tree must not open the tree binary's local store.",
+      from: { path: TREE_RUN_SCRIPTS.map(exactArchitecturePath).join('|') },
+      to: {
+        path: [
+          'orchestrator/src/project/projects.ts',
+          'orchestrator/src/project/project-read.ts',
+          'orchestrator/src/database/db.ts',
+        ]
+          .map(exactArchitecturePath)
+          .join('|'),
+        reachable: true,
+      },
+    },
     {
       name: 'import-record-api-server-transitive-boundary',
       severity: 'error',

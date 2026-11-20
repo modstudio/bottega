@@ -1,10 +1,12 @@
 #!/usr/bin/env bun
-import { resolveOperatorCredential } from '../orchestrator/src/config/operator-credential.ts'
+import { existsSync } from 'node:fs'
+import { dirname, join, resolve } from 'node:path'
 import { REHEARSAL_NOTICE_LIMIT } from '../orchestrator/src/postgres/migration-notices.ts'
 import { hostedApiFetch } from '../shared/bounded-fetch.ts'
 import { PLATFORM_SLUG } from '../shared/brand.ts'
 import { credentialIdentityPath } from '../shared/credential.ts'
 import {
+  operatorCredentialResolveCommand,
   operatorCredentialSetCommand,
   RECORD_REHEARSAL_OPERATOR_CREDENTIAL,
 } from '../shared/operator-credentials.ts'
@@ -22,6 +24,70 @@ const GITHUB_STATUS_DESCRIPTION_LIMIT = 140
 const rehearsalCredential = RECORD_REHEARSAL_OPERATOR_CREDENTIAL
 const tokenName = rehearsalCredential.overrideVariable
 const sealingCommand = operatorCredentialSetCommand(rehearsalCredential)
+const MAIN_CHECKOUT_VARIABLE = 'BOTTEGA_MAIN_CHECKOUT'
+
+export type MainCheckoutFacts = {
+  mainCheckout: string | null
+  mainCheckoutExists: boolean
+  binaryExists: boolean
+}
+
+export type RehearsalCredentialDecision =
+  | { kind: 'use-override' }
+  | { kind: 'rerun'; argv: string[] }
+  | { kind: 'refuse'; message: string }
+
+export function rehearsalCredentialDecision(
+  env: Readonly<Record<string, string | undefined>>,
+  argv: readonly string[],
+  facts: MainCheckoutFacts,
+): RehearsalCredentialDecision {
+  if (env[tokenName]?.trim()) return { kind: 'use-override' }
+  const mainCheckout = facts.mainCheckout
+  if (!mainCheckout || !facts.mainCheckoutExists || !facts.binaryExists) {
+    const condition = !mainCheckout
+      ? `the main checkout could not be resolved from ${MAIN_CHECKOUT_VARIABLE} or git common-dir`
+      : !facts.mainCheckoutExists
+        ? `the resolved main checkout does not exist: ${mainCheckout}`
+        : `the main checkout binary does not exist: ${join(mainCheckout, 'bin', PLATFORM_SLUG)}`
+    return {
+      kind: 'refuse',
+      message: `record rehearsal cannot resolve its Fly token because ${condition}; set ${tokenName}, or set ${MAIN_CHECKOUT_VARIABLE} to a main checkout whose bin/${PLATFORM_SLUG} exists`,
+    }
+  }
+  const resolveArgv = operatorCredentialResolveCommand(rehearsalCredential).split(' ')
+  return {
+    kind: 'rerun',
+    argv: [
+      join(mainCheckout, 'bin', PLATFORM_SLUG),
+      ...resolveArgv.slice(1),
+      '--reveal-to-env',
+      tokenName,
+      '--',
+      ...argv,
+    ],
+  }
+}
+
+function mainCheckoutFacts(env: Readonly<Record<string, string | undefined>>): MainCheckoutFacts {
+  const configured = env[MAIN_CHECKOUT_VARIABLE]?.trim()
+  let mainCheckout = configured ? resolve(configured) : null
+  if (!mainCheckout) {
+    const commonDirectory = Bun.spawnSync(['git', 'rev-parse', '--git-common-dir'], {
+      stdout: 'pipe',
+      stderr: 'pipe',
+    })
+    if (commonDirectory.exitCode === 0) {
+      const value = commonDirectory.stdout.toString().trim()
+      if (value) mainCheckout = dirname(resolve(value))
+    }
+  }
+  return {
+    mainCheckout,
+    mainCheckoutExists: mainCheckout ? existsSync(mainCheckout) : false,
+    binaryExists: mainCheckout ? existsSync(join(mainCheckout, 'bin', PLATFORM_SLUG)) : false,
+  }
+}
 
 type CommandResult = { exitCode: number; stdout: string; stderr: string }
 export type RehearsalCommandRunner = (
@@ -432,19 +498,25 @@ export async function runRecordRehearsal(input: {
 }
 
 if (import.meta.main) {
-  const { registerStandardRuntime } = await import(
-    '../orchestrator/src/runtime/runtime-registration.ts'
+  const credential = rehearsalCredentialDecision(
+    process.env,
+    Bun.argv,
+    mainCheckoutFacts(process.env),
   )
-  registerStandardRuntime()
-  let token: string | undefined
-  try {
-    token = await resolveOperatorCredential(rehearsalCredential.identity, tokenName)
-  } catch (error) {
-    console.error(
-      `record rehearsal failed to resolve its Fly token: ${error instanceof Error ? error.message : String(error)}`,
-    )
+  if (credential.kind === 'refuse') {
+    console.error(credential.message)
     process.exit(1)
   }
+  if (credential.kind === 'rerun') {
+    const child = Bun.spawn(credential.argv, {
+      env: process.env,
+      stdin: 'inherit',
+      stdout: 'inherit',
+      stderr: 'inherit',
+    })
+    process.exit(await child.exited)
+  }
+  const token = process.env[tokenName]?.trim()
   if (!token) {
     console.error(
       `${credentialIdentityPath(rehearsalCredential.identity.provider, rehearsalCredential.identity.name, rehearsalCredential.identity.type)} is required unless ${tokenName} is set. Pipe the app-scoped token on stdin to: ${sealingCommand}`,

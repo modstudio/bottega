@@ -12,6 +12,10 @@ const module = (file: string, allowed: string[]): ProjectModule => ({
 })
 
 export const projectModules: ProjectModule[] = [
+  module('orchestrator/src/project/project-tree-run-script.ts', [
+    '../../../shared/brand.ts',
+    '../../../shared/tree-run-scripts.ts',
+  ]),
   module('orchestrator/src/project/default-local-project-retirement.ts', [
     'bun:sqlite',
     'node:fs',
