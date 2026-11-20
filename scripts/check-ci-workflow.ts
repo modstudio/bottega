@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
+import { PLATFORM_SLUG } from '../shared/brand.ts'
 import { CHECK_LEGS, CI_ONLY_JOBS, CI_ONLY_SUITES } from './check-plan.ts'
 
 const root = fileURLToPath(new URL('..', import.meta.url))
@@ -16,7 +17,7 @@ const playwrightTrustWorkspaceCommand =
 const releaseSmokeCommand = 'bun scripts/smoke-release.ts'
 const migrationJobs = ['migration-paths', 'migration-compatibility'] as const
 const migrationPaths = 'orchestrator/migrations hub/migrations'
-const migrationCommand = './bin/bottega machine migrate'
+const migrationCommand = `./bin/${PLATFORM_SLUG} machine migrate`
 const ciReleaseSmokeCondition =
   "github.event_name == 'pull_request' || github.event_name == 'merge_group' || github.event_name == 'workflow_dispatch'"
 
@@ -147,7 +148,7 @@ function checkMigrationCompatibilityJobs(source: string): void {
     throw new Error('migration-compatibility job must run on macos-15')
   if (!workflowRunCommands(compatibility).includes(migrationCommand))
     throw new Error(`migration-compatibility job must run ${migrationCommand}`)
-  if (!compatibility.includes("select sqlite_version() version"))
+  if (!compatibility.includes('select sqlite_version() version'))
     throw new Error('migration-compatibility job must print the SQLite version Bun links')
 
   const aggregate = workflowJob(source, 'ci')

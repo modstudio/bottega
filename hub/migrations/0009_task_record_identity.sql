@@ -197,7 +197,7 @@ CREATE TEMP TRIGGER task_identity_migration_refusal
 BEFORE INSERT ON task_identity_migration_guard
 WHEN NEW.detail IS NOT NULL
 BEGIN
-  SELECT RAISE(ABORT, NEW.detail);
+  SELECT RAISE(ABORT, 'task identity migration found unresolved task_comment, task_document, task_status_event, task parent, or promoted note rows; repair the named task identities, then run bottega machine migrate');
 END;
 --> statement-breakpoint
 INSERT INTO task_identity_migration_guard(detail)

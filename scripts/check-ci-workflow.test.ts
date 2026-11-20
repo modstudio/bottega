@@ -1,5 +1,6 @@
 import { expect, test } from 'bun:test'
 import { readFileSync } from 'node:fs'
+import { PLATFORM_SLUG } from '../shared/brand.ts'
 import {
   agreedPlaywrightDependencyPin,
   checkCiWorkflow,
@@ -10,6 +11,7 @@ import {
 import { CI_ONLY_SUITES } from './check-plan.ts'
 
 const postgresServiceContainer = `BOTTEGA_TEST_POSTGRES_CONTAINER: \${{ job.services.postgres.id }}`
+const migrationCommand = `./bin/${PLATFORM_SLUG} machine migrate`
 const processSuite = CI_ONLY_SUITES[0]!
 const playwrightPin = (
   JSON.parse(readFileSync(new URL('../hub/web/package.json', import.meta.url), 'utf8')) as {
@@ -33,7 +35,9 @@ test('refuses a workflow with a missing or extra job', () => {
       if (job === 'ci')
         return `  ${job}:\n    needs: [${expectedWorkflowJobNames()
           .filter((name) => name !== 'ci')
-          .join(', ')}]\n    steps:\n      - run: jq -e 'all(to_entries[]; .value.result == "success" or (.key == "migration-compatibility" and .value.result == "skipped"))'`
+          .join(
+            ', ',
+          )}]\n    steps:\n      - run: jq -e 'all(to_entries[]; .value.result == "success" or (.key == "migration-compatibility" and .value.result == "skipped"))'`
       return `  ${job}:\n    runs-on: ubuntu-latest`
     })
     .join('\n')}\n`
@@ -60,14 +64,12 @@ test('requires every planned job to block the aggregate ci job', () => {
 
 test('pins the migration compatibility path gate and macOS proof', () => {
   const workflow = readWorkflowFixture()
+  expect(() => checkCiWorkflow(workflow.replace('runs-on: macos-15', 'runs-on: macos-14'))).toThrow(
+    'must run on macos-15',
+  )
   expect(() =>
-    checkCiWorkflow(workflow.replace('runs-on: macos-15', 'runs-on: macos-14')),
-  ).toThrow('must run on macos-15')
-  expect(() =>
-    checkCiWorkflow(
-      workflow.replace('./bin/bottega machine migrate', './bin/bottega machine doctor'),
-    ),
-  ).toThrow('must run ./bin/bottega machine migrate')
+    checkCiWorkflow(workflow.replace(migrationCommand, `./bin/${PLATFORM_SLUG} machine doctor`)),
+  ).toThrow(`must run ${migrationCommand}`)
   expect(() =>
     checkCiWorkflow(
       workflow.replace(
@@ -377,7 +379,9 @@ function readWorkflowFixture() {
       if (job === 'ci')
         return `  ${job}:\n    needs: [${expectedWorkflowJobNames()
           .filter((name) => name !== 'ci')
-          .join(', ')}]\n    steps:\n      - run: jq -e 'all(to_entries[]; .value.result == "success" or (.key == "migration-compatibility" and .value.result == "skipped"))'`
+          .join(
+            ', ',
+          )}]\n    steps:\n      - run: jq -e 'all(to_entries[]; .value.result == "success" or (.key == "migration-compatibility" and .value.result == "skipped"))'`
       return `  ${job}:\n    runs-on: ubuntu-latest`
     })
     .join('\n')}\n`
@@ -399,7 +403,7 @@ function migrationCompatibilityJobFixture() {
     runs-on: macos-15
     steps:
       - run: bun -e "select sqlite_version() version"
-      - run: ./bin/bottega machine migrate`
+      - run: ${migrationCommand}`
 }
 
 function releaseSmokeJobFixture() {
