@@ -70,7 +70,7 @@ export async function retireProjectInHostedRecord(
         client,
       )
       const result = await client.retireProject(project.recordId, { destinationSpaceId })
-      return result.revision
+      return result.revision ?? project.recordRevision ?? null
     },
   })
 }

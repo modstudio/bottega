@@ -2,11 +2,14 @@
 /** Owns tenant-bound hosted project reads and writes. Must not know local cache, CLI, or HTTP. */
 
 import type { SQL } from 'bun'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { bindJsonb } from '../../../shared/record/jsonb-sql.ts'
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
 import type { RecordProject } from '../../../shared/record-project-contract.ts'
 import { recordDate } from '../../../shared/record-timestamp.ts'
+import { refusal, renderRefusal } from '../../../shared/refusal.ts'
 import { repositoryVisibility } from '../../../shared/repository-visibility.ts'
+import { REVISION_CONFLICT_CODE, type RevisionConflictBody } from '../doc/doc-revision-conflict.ts'
 import { recordPool } from './record-pool.ts'
 import {
   type HostedProjectColumns,
@@ -27,15 +30,31 @@ export type RecordProjectUpsertInput = {
 
 export class RecordProjectError extends Error {
   status: 400 | 404 | 409
-  code: 'revision-conflict' | null
+  code: typeof REVISION_CONFLICT_CODE | null
+  condition: string | null
+  currentRevision: string | null
   constructor(
     message: string,
     status: 400 | 404 | 409 = 400,
-    code: 'revision-conflict' | null = null,
+    code: typeof REVISION_CONFLICT_CODE | null = null,
+    condition: string | null = null,
+    currentRevision: string | null = null,
   ) {
     super(message)
     this.status = status
     this.code = code
+    this.condition = condition
+    this.currentRevision = currentRevision
+  }
+}
+
+export function projectRevisionConflictBody(error: RecordProjectError): RevisionConflictBody {
+  return {
+    error: error.message,
+    code: REVISION_CONFLICT_CODE,
+    reason: 'stale-revision',
+    condition: error.condition ?? error.message,
+    currentRevision: error.currentRevision,
   }
 }
 
@@ -193,10 +212,15 @@ export async function upsertHostedProjectRow(
   if (!rows.length) {
     const current = await tx`SELECT revision FROM project WHERE id=${id}::uuid`
     const revision = Number(current[0]?.revision)
+    const condition = `project ${id} changed since revision ${input.expectedRevision}; now ${revision}.`
     throw new RecordProjectError(
-      `project ${id} changed since revision ${input.expectedRevision}; now ${revision}.`,
+      renderRefusal(
+        refusal(condition, { kind: 'command', argv: [PLATFORM_SLUG, 'record', 'pull'] }),
+      ),
       409,
-      'revision-conflict',
+      REVISION_CONFLICT_CODE,
+      condition,
+      String(revision),
     )
   }
   return { id: String(rows[0]!.id), revision: Number(rows[0]!.revision) }
@@ -283,28 +307,15 @@ export async function upsertRecordProject(
     return await tenant(input, async (tx) => {
       const nextName = input.name
       const currentRows = await tx`
-      SELECT id, name, revision FROM project
+      SELECT id, name FROM project
       WHERE id=${input.id}::uuid
     `
       const currentName = currentRows[0]?.name == null ? null : String(currentRows[0].name)
-      const currentRevision =
-        currentRows[0]?.revision == null ? null : Number(currentRows[0].revision)
       let columns: HostedProjectColumns
       try {
         columns = hostedProjectColumns(input.settings, nextName)
       } catch (error) {
         throw new RecordProjectError(error instanceof Error ? error.message : String(error), 400)
-      }
-      if (
-        currentRevision !== null &&
-        input.expectedRevision != null &&
-        currentRevision !== input.expectedRevision
-      ) {
-        throw new RecordProjectError(
-          `project ${input.id} changed since revision ${input.expectedRevision}; now ${currentRevision}.`,
-          409,
-          'revision-conflict',
-        )
       }
       const written = await upsertHostedProjectRow(tx, {
         spaceId: input.spaceId,

@@ -158,6 +158,32 @@ test('a hosted retire stores the bumped revision for the next local write', asyn
   })
 })
 
+test('a hosted retire preserves the last-seen revision when an older server omits it', async () => {
+  rememberHostedRecord()
+  process.env.BOTTEGA_RECORD_API_URL = 'https://record-api.example.test'
+  const recordId = newRecordId()
+  upsertProject({
+    recordId,
+    recordRevision: 7,
+    name: 'retire-old-server',
+    path: '/w/retire-old-server',
+    settings: { space: 'fixture' },
+  })
+  installRecordApiClient({
+    ...createMemoryRecordApiClient(),
+    whoami: async () => ({
+      user: { id: 'user-a' },
+      activeSpaceId: 'space-a',
+      personalSpaceId: 'space-a',
+      memberships: [{ space_id: 'space-a', slug: 'fixture', permission: 'write' as const }],
+    }),
+    retireProject: async () => ({ name: 'retire-old-server' }),
+  })
+
+  expect(await retireWrittenProject('retire-old-server')).toBe('retired')
+  expect(retiredProjectByName('retire-old-server')).toMatchObject({ recordRevision: 7 })
+})
+
 function recordingClient(calls: string[]): RecordApiClient {
   const client = createMemoryRecordApiClient()
   return new Proxy(client, {

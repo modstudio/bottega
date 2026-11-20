@@ -45,6 +45,7 @@ import { releaseTagVersion } from '../../../shared/release-tag.ts'
 import { db, nowIso, writableDb } from '../database/db.ts'
 import {
   DEFAULT_LOCAL_PROJECT_NAME,
+  storeProjectRecordRevision,
   writeProjectRegisterRow,
 } from '../database/project-register-store.ts'
 import { loadTrackedRecipe, recipePointerErrors } from '../recipe/recipe-loader.ts'
@@ -386,9 +387,7 @@ export async function pushProjects(): Promise<string[]> {
     }
     if (project.recordId !== written.recordId)
       throw new Error(`hosted project identity changed for ${project.name}`)
-    db()
-      .query('UPDATE project SET record_revision=? WHERE record_id=?')
-      .run(written.recordRevision, project.recordId)
+    storeProjectRecordRevision(db(), project.recordId, written.recordRevision)
     names.push(project.name)
   }
   if (refusals.length) {
@@ -486,9 +485,7 @@ export async function retireWrittenProject(name: string): Promise<'retired' | 'a
   const project = projectRowByName(name)
   if (!project) throw new Error(`no project "${name}"`)
   const recordRevision = await retireProjectInHostedRecord(project, project.settings)
-  db()
-    .query('UPDATE project SET record_revision=? WHERE record_id=?')
-    .run(recordRevision, project.recordId)
+  storeProjectRecordRevision(db(), project.recordId, recordRevision)
   return retireProject(name)
 }
 
@@ -514,9 +511,7 @@ export async function unretireWrittenProject(name: string): Promise<boolean> {
     retiredAt: null,
     recordRevision: project.recordRevision,
   })
-  db()
-    .query('UPDATE project SET record_revision=? WHERE record_id=?')
-    .run(written.recordRevision, project.recordId)
+  storeProjectRecordRevision(db(), project.recordId, written.recordRevision)
   return unretireProject(name)
 }
 

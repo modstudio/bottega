@@ -57,6 +57,15 @@ export function deleteProjectRegisterRow(database: Database, recordId: string): 
   return database.query('DELETE FROM project WHERE record_id = ?').run(recordId).changes > 0
 }
 
+/** Store the last hosted revision observed for one project-register row. */
+export function storeProjectRecordRevision(
+  database: Database,
+  recordId: string,
+  revision: number | null,
+): void {
+  database.query('UPDATE project SET record_revision=? WHERE record_id=?').run(revision, recordId)
+}
+
 /** Mirror a hosted row onto the local row it is linked to by record id, lifecycle included; returns rows changed. */
 export function mirrorProjectRegisterRow(
   database: Database,

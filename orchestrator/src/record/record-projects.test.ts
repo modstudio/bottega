@@ -4,6 +4,7 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { createHostedRecordFixture, pgliteSql } from '../../test/fixtures/hosted-record.ts'
 import { idleRecordApiDeps, idleSubjectDeps } from '../../test/fixtures/record-api.ts'
 import { recordApiTestApp } from '../../test/fixtures/record-api-app.ts'
+import { recordApiError } from './record-api-client-error.ts'
 import type { RecordIdentity } from './record-auth.ts'
 import { hostedProjectColumns } from './record-project-columns.ts'
 import {
@@ -108,10 +109,19 @@ test('the real record app refuses a stale project revision and names the pull re
   ).toMatchObject({ revision: 2 })
   const stale = await putProject(application, 'stale-project', read[0]!.revision)
   expect(stale.status).toBe(409)
-  expect(await stale.json()).toEqual({
+  const staleBody = await stale.json()
+  expect(staleBody).toEqual({
     error:
       `project ${projectId} changed since revision 1; now 2.\n` +
       `cleared by: ${PLATFORM_SLUG} record pull`,
+    code: 'revision-conflict',
+    reason: 'stale-revision',
+    condition: `project ${projectId} changed since revision 1; now 2.`,
+    currentRevision: '2',
+  })
+  expect(recordApiError(staleBody, stale.status)).toMatchObject({
+    kind: 'conflict',
+    currentRevision: '2',
   })
   expect(
     (await database.query<{ name: string }>('SELECT name FROM project WHERE id=$1', [projectId]))
@@ -156,5 +166,9 @@ test('retire returns the revision used by a same-machine unretire and preserves 
     error:
       `project ${retirementProjectId} changed since revision ${secondRetire.revision}; now ${anotherMachine.revision}.\n` +
       `cleared by: ${PLATFORM_SLUG} record pull`,
+    code: 'revision-conflict',
+    reason: 'stale-revision',
+    condition: `project ${retirementProjectId} changed since revision ${secondRetire.revision}; now ${anotherMachine.revision}.`,
+    currentRevision: String(anotherMachine.revision),
   })
 })
