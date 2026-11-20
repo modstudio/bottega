@@ -35,6 +35,12 @@ export type FloorKind = (typeof floorKinds)[number]
 export type EnforcementMode = 'note-only' | 'floors'
 export type CommandEvidence = 'gate' | 'pull-request'
 
+export function hasGateFloor(
+  floors: ReadonlyArray<{ kind: string; commandEvidence?: string }>,
+): boolean {
+  return floors.some((floor) => floor.kind === 'command-exit' && floor.commandEvidence === 'gate')
+}
+
 const ARTIFACT_FORMS =
   'doc:<scope>/<subject-or-_>/<slug> | doc:<UUID> | task:<KEY> | task:<KEY>#comment:<id> | run number or run id | probe:<id> | exec:<id> | review-read:<UUID> | attached-text:<UUID> | #<pull request number> | GitHub pull-request link | a commit SHA'
 

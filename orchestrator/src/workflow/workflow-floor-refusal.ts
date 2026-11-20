@@ -18,12 +18,6 @@ export function floorsAcceptPullRequestLink(
   return floors.some((floor) => floor.commandEvidence === 'pull-request')
 }
 
-export function hasGateFloor(
-  floors: ReadonlyArray<{ kind: string; commandEvidence?: string }>,
-): boolean {
-  return floors.some((floor) => floor.kind === 'command-exit' && floor.commandEvidence === 'gate')
-}
-
 export type PassingGateForTree = { number: number } | null | undefined
 
 export function gateFloorRefusal(

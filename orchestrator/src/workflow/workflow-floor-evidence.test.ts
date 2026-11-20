@@ -30,22 +30,14 @@ test(
 test('gathers the newest passing gate for the tree only as refusal evidence', async () => {
   const d = database()
   const gateFloor = {
+    ...operatorRulingFloor,
     kind: 'command-exit',
-    deferrable: false,
-    expectedExitCode: 0,
-    expectedStatus: 'done',
-    requirePullRequest: false,
     operatorRuling: false,
     commandEvidence: 'gate',
   } as const
   expect((await gather(d, {}, {}, identity, [gateFloor])).passingGateForTree).toBeNull()
 
-  const run = insertRun(d, {
-    project: 'fixture',
-    launchKey: 'DEV-977',
-    branch: identity.branch,
-    sessionId: identity.session,
-  })
+  const run = insertRun(d, { project: 'fixture', launchKey: 'DEV-977' })
   const gateRecordId = newRecordId()
   d.query(
     `INSERT INTO gate_execution
@@ -60,9 +52,9 @@ test('gathers the newest passing gate for the tree only as refusal evidence', as
   expect((await gather(d, {}, {}, identity, [gateFloor])).passingGateForTree).toEqual({
     number: gate.number,
   })
-  expect((await gather(d, { gate: gate.number }, {}, identity, [gateFloor])).passingGateForTree).toEqual(
-    { number: gate.number },
-  )
+  expect(
+    (await gather(d, { gate: gate.number }, {}, identity, [gateFloor])).passingGateForTree,
+  ).toEqual({ number: gate.number })
   expect((await gather(d, {})).gate).toBeUndefined()
 })
 

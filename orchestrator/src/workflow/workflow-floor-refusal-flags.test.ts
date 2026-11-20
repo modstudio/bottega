@@ -152,7 +152,9 @@ test('a gate refusal names the passing gate when the offered gate does not meet 
   })
   expect(decision.action).toBe('refuse')
   if (decision.action !== 'refuse') return
-  expect(decision.message).toContain('the offered gate does not meet the floor at fixture commit abc')
+  expect(decision.message).toContain(
+    'the offered gate does not meet the floor at fixture commit abc',
+  )
   expect(decision.message).toContain('passing gate 17 is recorded for it')
   expect(decision.message).toContain('--gate 17')
 })
