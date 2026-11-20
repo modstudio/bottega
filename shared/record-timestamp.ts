@@ -36,6 +36,13 @@ export function sameRecordInstant(left: unknown, right: unknown): boolean {
   return recordIso(left) === recordIso(right)
 }
 
+/** Return the later record timestamp in canonical form; the left wins a tie. */
+export function later(left: unknown, right: unknown): string {
+  const leftIso = recordIso(left)
+  const rightIso = recordIso(right)
+  return leftIso >= rightIso ? leftIso : rightIso
+}
+
 /** A nullable record timestamp as ISO text; null and undefined pass through as null. */
 export function nullableRecordIso(value: unknown): string | null {
   return value == null ? null : recordIso(value)

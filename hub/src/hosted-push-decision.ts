@@ -1,5 +1,5 @@
 import { canonicalJson } from '../../shared/canonical-json.ts'
-import { recordDate, recordIso, sameRecordInstant } from '../../shared/record-timestamp.ts'
+import { later, recordIso, sameRecordInstant } from '../../shared/record-timestamp.ts'
 import { DELETED_ON_HOSTED_RECORD_REASON } from './hosted-delete.ts'
 import { mergeNoteAnchors } from './note-anchor-merge.ts'
 import type {
@@ -110,11 +110,6 @@ const same = (field: string, left: unknown, right: unknown) => {
     ? left === right
     : canonicalJson(left) === canonicalJson(right)
 }
-const later = (left: unknown, right: unknown) =>
-  recordDate(left).getTime() >= recordDate(right).getTime()
-    ? (instant(left) as string)
-    : (instant(right) as string)
-
 export function decideNoteUpsert(
   stored: PushedNote,
   incoming: PushedNote,

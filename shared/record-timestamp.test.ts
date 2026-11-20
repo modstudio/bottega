@@ -1,5 +1,6 @@
 import { expect, test } from 'bun:test'
 import {
+  later,
   nullableRecordDate,
   nullableRecordIso,
   recordDate,
@@ -45,4 +46,10 @@ test('record instant equality uses the millisecond precision of the canonical fo
   expect(sameRecordInstant(null, undefined)).toBeTrue()
   expect(sameRecordInstant(null, milliseconds)).toBeFalse()
   expect(sameRecordInstant(milliseconds, null)).toBeFalse()
+})
+
+test('later compares canonical instants and returns the later canonical form', () => {
+  expect(later('2026-10-11T12:00:01+00:00', '2026-10-11T12:00:00.500Z')).toBe(
+    '2026-10-11T12:00:01.000Z',
+  )
 })

@@ -309,4 +309,14 @@ test('record timestamp spellings agree across guards, upserts, and comment match
       comment.actor_user_id!,
     ).kind,
   ).toBe('apply')
+  expect(
+    decideNoteUpsert(
+      { ...note, last_seen_at: '2026-10-11T12:00:00.500Z' },
+      { ...note, last_seen_at: '2026-10-11T12:00:01+00:00' },
+      ['last_seen_at'],
+    ),
+  ).toMatchObject({
+    kind: 'patch',
+    values: { last_seen_at: '2026-10-11T12:00:01.000Z' },
+  })
 })
