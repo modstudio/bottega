@@ -74,17 +74,27 @@ function hostedProjects(project?: string) {
   return hosted
 }
 
+function hostedProjectSpaces(project?: string, hosted?: HostedTaskWriteOptions) {
+  const spaces = new Map<string, ReturnType<typeof hostedTaskWriteOptions>>()
+  for (const row of hostedProjects(project)) {
+    const options = hostedTaskWriteOptions(row.name, hosted)
+    if (!spaces.has(options.recordSpace)) spaces.set(options.recordSpace, options)
+  }
+  return spaces.values()
+}
+
 export async function listHostedTasks(filters: {
   project?: string
   status?: string
   parent?: string
 }) {
   const rows = new Map<string, TaskRow>()
-  for (const project of hostedProjects(filters.project)) {
-    const page = await hostedListTasks(hostedTaskWriteOptions(project.name))
+  for (const options of hostedProjectSpaces(filters.project)) {
+    const page = await hostedListTasks(options)
     for (const task of page.tasks) rows.set(task.id, hostedTaskRow(task))
   }
   return [...rows.values()]
+    .filter((task) => !filters.project || task.project === filters.project)
     .filter((task) => !filters.status || task.status_category === filters.status)
     .filter((task) => !filters.parent || task.parent_key === filters.parent.toUpperCase())
     .sort(
@@ -99,14 +109,10 @@ export async function showHostedTask(
   hosted?: HostedTaskWriteOptions,
 ) {
   const found = []
-  for (const project of hostedProjects(scope.project)) {
+  for (const options of hostedProjectSpaces(scope.project, hosted)) {
     try {
-      found.push(
-        await hostedGetTask(
-          scope.recordId ?? key.toUpperCase(),
-          hostedTaskWriteOptions(project.name, hosted),
-        ),
-      )
+      const detail = await hostedGetTask(scope.recordId ?? key.toUpperCase(), options)
+      if (!scope.project || detail.task.project === scope.project) found.push(detail)
     } catch (error) {
       if (!isMissingHostedTask(error)) {
         const message = error instanceof Error ? error.message : String(error)

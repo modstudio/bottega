@@ -63,22 +63,40 @@ export async function createHostedRecordFixture(options: {
   return database
 }
 
-type SqlFragment = { readonly sql: string }
+type SqlFragment = { readonly sql: string; readonly parameters?: readonly unknown[] }
 
 function pgliteQuery(database: Pick<PGlite, 'query'>): SQL {
-  const query = async (strings: TemplateStringsArray, ...interpolations: unknown[]) => {
+  const query = (strings: TemplateStringsArray, ...interpolations: unknown[]) => {
     let statement = strings[0]!
     const parameters: unknown[] = []
     for (const [index, interpolation] of interpolations.entries()) {
       if (typeof interpolation === 'object' && interpolation !== null && 'sql' in interpolation) {
-        statement += (interpolation as SqlFragment).sql
+        const fragment = interpolation as SqlFragment
+        const offset = parameters.length
+        statement += fragment.sql.replace(
+          /\$(\d+)/g,
+          (_, index: string) => `$${Number(index) + offset}`,
+        )
+        parameters.push(...(fragment.parameters ?? []))
       } else {
         parameters.push(interpolation)
         statement += `$${parameters.length}`
       }
       statement += strings[index + 1]!
     }
-    return (await database.query(statement, parameters)).rows
+    return {
+      sql: statement,
+      parameters,
+      // biome-ignore lint/suspicious/noThenProperty: Bun SQL query fragments are deliberately awaitable.
+      then: <TResult1 = unknown[], TResult2 = never>(
+        onfulfilled?: ((value: unknown[]) => TResult1 | PromiseLike<TResult1>) | null,
+        onrejected?: ((reason: unknown) => TResult2 | PromiseLike<TResult2>) | null,
+      ) =>
+        database
+          .query(statement, parameters)
+          .then((result) => result.rows)
+          .then(onfulfilled, onrejected),
+    }
   }
   query.unsafe = (sql: string) => ({ sql })
   return query as unknown as SQL
