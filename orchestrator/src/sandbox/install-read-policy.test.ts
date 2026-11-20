@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
 import { join } from 'node:path'
-import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { PLATFORM_NAME, PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { registerEmbeddedAssets } from '../../../shared/embedded-assets.ts'
 import { WORKER_RUNTIME_ASSETS } from '../../../shared/runtime-assets-in-sandbox.ts'
 import { STATE_HOME_ENV } from '../../../shared/state-directory.ts'
@@ -83,7 +83,7 @@ test('embedded runtime assets are carved back for every area profile regardless 
   const environment = { HOME: '/Users/operator', [STATE_HOME_ENV]: stateRoot }
   const project = fixtureProject('fixture-id', 'fixture', '/projects/fixture')
   const distributionManifest = {
-    name: PLATFORM_SLUG,
+    name: PLATFORM_NAME,
     version: '1.2.3',
     built: '2026-11-20T00:00:00.000Z',
     commit: 'fixture',

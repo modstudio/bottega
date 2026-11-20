@@ -17,11 +17,11 @@ export const confinementModules: ConfinementModule[] = [
     'node:path',
     '@anthropic-ai/sandbox-runtime',
     '../../../shared/embedded-assets.ts',
+    '../../../shared/install-root.ts',
     '../../../shared/sandbox-runtime-assets.ts',
     '../../../shared/runtime-assets-in-sandbox.ts',
     '../../../shared/state-directory.ts',
     '../../../shared/bounded-process.ts',
-    '../database/db.ts',
   ]),
   module('orchestrator/src/transport/sandbox-readiness.ts', [
     '../../../shared/brand.ts',

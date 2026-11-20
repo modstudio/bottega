@@ -10,6 +10,7 @@ import {
   lstatSync,
   mkdirSync,
   openSync,
+  readdirSync,
   readFileSync,
   readlinkSync,
   realpathSync,
@@ -28,11 +29,7 @@ import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 import { ensureHubLoginTokenDirectory } from '../../../shared/state-directory.ts'
 import { disabledProjectMcpServers } from '../mcp/mcp-probe.ts'
 import { createNoFollowFile } from '../no-follow-file.ts'
-import {
-  type Project,
-  projectAt,
-  projectsIncludingRetired,
-} from '../project/projects.ts'
+import { type Project, projectAt, projectsIncludingRetired } from '../project/projects.ts'
 import { mainStackGateAddresses } from '../resources/main-stack-network.ts'
 import { runHarnessStateDir, runWorkerHomeDir } from '../run-owned-paths.ts'
 import { areaReadPolicy, isAtOrBelow } from './area-read-policy.ts'
@@ -45,8 +42,8 @@ import { linkedNodeModules, permittedNodeModuleCarvebacks } from './node-module-
 import { assembleAreaReadProfile } from './sandbox-area-read-profile.ts'
 import { launchWithSandboxRuntime, resetSandboxRuntime } from './sandbox-runtime.ts'
 import { decideWeakerNetworkIsolation, endpointHost } from './weaker-network-isolation.ts'
-import { ownWorktreeRootEntries } from './worktree-root-entries.ts'
 import { workerRuntimeReadCarvebacks } from './worker-runtime-read-carvebacks.ts'
+import { ownWorktreeRootEntries } from './worktree-root-entries.ts'
 
 export type SandboxRuntimeConfig = {
   network: {

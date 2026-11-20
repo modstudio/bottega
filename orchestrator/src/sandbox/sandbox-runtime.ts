@@ -15,6 +15,7 @@ import {
   extractEmbeddedRuntime,
   resolveInstallFile,
 } from '../../../shared/embedded-assets.ts'
+import { runningInstallRoot } from '../../../shared/install-root.ts'
 import {
   WORKER_RUNTIME_ASSETS,
   workerRuntimeAssetPaths,
@@ -25,10 +26,10 @@ import {
   sandboxRuntimeAssets,
 } from '../../../shared/sandbox-runtime-assets.ts'
 import { resolveStateRoot, type StateEnvironment } from '../../../shared/state-directory.ts'
-import { ROOT } from '../database/db.ts'
 
 export const SRT_LIBRARY = join(
-  ROOT,
+  runningInstallRoot(import.meta.dir, process.env),
+  'orchestrator',
   'node_modules',
   '@anthropic-ai',
   'sandbox-runtime',
@@ -64,17 +65,8 @@ export function extractedSandboxRuntimeRoot(environment: StateEnvironment): stri
   })[0]
 }
 
-/** Exact extracted assets needed by a worker running from a compiled distribution. */
-export function extractedWorkerRuntimeAssetPaths(
-  environment: StateEnvironment,
-): string[] | undefined {
-  const manifest = embeddedDistributionManifest()
-  if (!manifest) return undefined
-  return workerRuntimeAssetPaths(resolveStateRoot(environment), manifest.version)
-}
-
-function diskPayloadPath(relativePath: string): string {
-  return join(ROOT, relativePath)
+function diskPayloadPath(relativePath: string, environment: StateEnvironment): string {
+  return join(runningInstallRoot(import.meta.dir, environment), relativePath)
 }
 
 function payloads(assets: SandboxRuntimeAssets): SandboxRuntimePayload[] {
@@ -382,7 +374,7 @@ export async function sandboxRuntimeAvailability(
       (required.length > 1 || platform === 'darwin') &&
       required.every(
         ({ packagePath }) =>
-          resolveInstallFile(packagePath, diskPayloadPath(packagePath)) !== undefined,
+          resolveInstallFile(packagePath, diskPayloadPath(packagePath, environment)) !== undefined,
       ),
     location: extractedSandboxRuntimeRoot(environment)!,
     sourceCheckout: false,
@@ -405,6 +397,7 @@ async function expectedPayloads(
   arch: NodeJS.Architecture,
   resolveFile: NonNullable<ExtractionPorts['resolveFile']>,
   readFile: NonNullable<ExtractionPorts['readFile']>,
+  environment: StateEnvironment,
 ): Promise<ExpectedPayload[]> {
   const required = payloads(assets)
   if (required.length === 1 && platform !== 'darwin') {
@@ -412,7 +405,7 @@ async function expectedPayloads(
   }
   return Promise.all(
     required.map(async (asset) => {
-      const source = resolveFile(asset.packagePath, diskPayloadPath(asset.packagePath))
+      const source = resolveFile(asset.packagePath, diskPayloadPath(asset.packagePath, environment))
       if (!source) {
         throw new Error(`compiled sandbox runtime payload is missing: ${asset.packagePath}`)
       }
@@ -448,6 +441,7 @@ export async function extractSandboxRuntime(
     arch,
     ports.resolveFile ?? resolveInstallFile,
     ports.readFile ?? ((path) => Bun.file(path).arrayBuffer()),
+    environment,
   )
   const root = extractedSandboxRuntimeRoot(environment)!
   await extractEmbeddedRuntime(root, expected, 'sandbox runtime')
