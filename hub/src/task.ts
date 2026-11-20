@@ -693,7 +693,7 @@ export async function setTask(
       throw hostedExpectedRevisionRefusal('task text replacement', current.key)
     const batch = hostedTaskBatch({
       current,
-      changes,
+      changes: changes.parent === undefined ? changes : { ...changes, parent },
       category,
       at,
       attribution,

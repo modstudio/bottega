@@ -6,6 +6,7 @@ import { db, writeTransaction } from './db.ts'
 import { DUPLICATE_TITLE_FIXTURE } from './duplicate-matcher.fixture.ts'
 import { writeTrackerCache } from './ingest/trackers.ts'
 import { persistInstallBinding } from './install-binding.ts'
+import { HOSTED_UNREACHABLE_REMEDY } from './hosted-write-mode.ts'
 import { projectRecordIdFor } from './project-record-id.ts'
 import {
   closeTask,
@@ -197,11 +198,16 @@ describe('hosted-authoritative existing-row edits', () => {
       return response
     }
 
-    await expect(
-      setTask('GAM-79', { recordId: id }, { status: 'active' }, UNATTRIBUTED, {
-        hosted: { ...hosted, fetch },
-      }),
-    ).rejects.toThrow('Retry when the hosted record is reachable')
+    const refused = await setTask(
+      'GAM-79',
+      { recordId: id },
+      { status: 'active' },
+      UNATTRIBUTED,
+      { hosted: { ...hosted, fetch } },
+    ).catch((error: unknown) => error)
+    expect(refused).toBeInstanceOf(Error)
+    expect((refused as Error).message).toContain(HOSTED_UNREACHABLE_REMEDY)
+    expect((refused as Error).message).not.toContain('saved and queued')
     expect(db().query(`SELECT status_category FROM task WHERE record_id=?`).get(id)).toEqual({
       status_category: 'open',
     })

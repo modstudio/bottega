@@ -16,6 +16,13 @@ import { OrchProjectListSchema } from '../shared/orch-contract.ts'
 import { captureTestHubDatabase, mintTestHubDatabase } from '../shared/test-hub-database.ts'
 import { installCliTaskReader } from './task-read-adapter.ts'
 
+const lazyHubTaskModules = [
+  require.resolve('../hub/src/task.ts'),
+  require.resolve('../hub/src/task-document.ts'),
+  require.resolve('../hub/src/db.ts'),
+  require.resolve('../hub/src/task-local-read.ts'),
+]
+
 let adapterHubDatabaseDirectory: string | undefined
 let projectRecordId: string
 let restoreHubDatabase: (() => void) | undefined
@@ -49,15 +56,11 @@ beforeEach(() => {
 
 afterAll(() => {
   db().query("DELETE FROM project WHERE name = 'alpha'").run()
-  const hubDatabaseModule = require.resolve('../hub/src/db.ts')
   const { closeDatabaseForFixture } =
     require('../hub/src/db.ts') as typeof import('../hub/src/db.ts')
   closeDatabaseForFixture()
   restoreHubDatabase?.()
-  delete require.cache[require.resolve('../hub/src/task.ts')]
-  delete require.cache[require.resolve('../hub/src/task-document.ts')]
-  delete require.cache[hubDatabaseModule]
-  delete require.cache[require.resolve('../hub/src/task-local-read.ts')]
+  for (const module of lazyHubTaskModules) delete require.cache[module]
   if (adapterHubDatabaseDirectory)
     rmSync(adapterHubDatabaseDirectory, { recursive: true, force: true })
   if (previousHostedUrl === undefined) delete process.env.BOTTEGA_HOSTED_URL
@@ -65,21 +68,12 @@ afterAll(() => {
 })
 
 test('installing the CLI adapter leaves hub unloaded until the first read', async () => {
-  const hubTaskModule = require.resolve('../hub/src/task.ts')
-  const hubTaskDocumentModule = require.resolve('../hub/src/task-document.ts')
-  const hubDatabaseModule = require.resolve('../hub/src/db.ts')
-  const hubTaskLocalReadModule = require.resolve('../hub/src/task-local-read.ts')
-  delete require.cache[hubTaskModule]
-  delete require.cache[hubTaskDocumentModule]
-  delete require.cache[hubDatabaseModule]
-  delete require.cache[hubTaskLocalReadModule]
-  expect(require.cache[hubTaskModule]).toBeUndefined()
-  expect(require.cache[hubTaskDocumentModule]).toBeUndefined()
+  for (const module of lazyHubTaskModules) delete require.cache[module]
+  for (const module of lazyHubTaskModules) expect(require.cache[module]).toBeUndefined()
 
   installCliTaskReader()
 
-  expect(require.cache[hubTaskModule]).toBeUndefined()
-  expect(require.cache[hubTaskDocumentModule]).toBeUndefined()
+  for (const module of lazyHubTaskModules) expect(require.cache[module]).toBeUndefined()
 
   const recordId = Bun.randomUUIDv7()
   const stamp = new Date().toISOString()
@@ -100,8 +94,7 @@ test('installing the CLI adapter leaves hub unloaded until the first read', asyn
   expect(await taskReader().duplicates('alpha', 'In-process reads')).toContainEqual(
     expect.objectContaining({ key: 'ALP-2451', title: 'In-process reads' }),
   )
-  expect(require.cache[hubTaskModule]).toBeDefined()
-  expect(require.cache[hubTaskDocumentModule]).toBeDefined()
+  for (const module of lazyHubTaskModules) expect(require.cache[module]).toBeDefined()
 })
 
 test('the installed register reader returns schema-valid registered projects', () => {

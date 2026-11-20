@@ -13,7 +13,6 @@ import { hostedRequestHandler } from './hosted.ts'
 import { applyHostedPushChanges } from './hosted-push-changes.ts'
 import { listHostedTasks } from './hosted-task-list.ts'
 import { createHostedDocument, createHostedTask, getHostedTask } from './hosted-tasks.ts'
-import { HOSTED_UNREACHABLE_REMEDY } from './hosted-write-mode.ts'
 import { projectRecordIdFor } from './project-record-id.ts'
 import {
   commentTask,
@@ -229,34 +228,6 @@ test('hosted writes use the project-declared record space', async () => {
   ])
 })
 
-test('an unreachable hosted task update refuses without queuing the write', async () => {
-  const task = await recordCreate(
-    { project: 'gamma', title: 'Unreachable update' },
-    { hosted: hosted() },
-  )
-  const unreachableChanges = async (input: string, init?: RequestInit) => {
-    if (init?.method === 'POST' && input.endsWith('/v1/changes')) throw new Error('offline')
-    return recordFetch(input, init)
-  }
-
-  const refused = await setTask(
-    task.key,
-    { project: 'gamma' },
-    { status: 'active' },
-    { actorUserId: userId, actorName: 'Record author', agent: null, runId: null },
-    { hosted: { ...hosted(), fetch: unreachableChanges } },
-  ).catch((error: unknown) => error)
-
-  expect(refused).toBeInstanceOf(Error)
-  expect((refused as Error).message).toContain(HOSTED_UNREACHABLE_REMEDY)
-  expect((refused as Error).message).not.toContain('saved and queued')
-  expect(
-    db()
-      .query<{ count: number }, [string]>(`SELECT count(*) count FROM hosted_outbox WHERE row_id=?`)
-      .get(task.record_id)!.count,
-  ).toBe(0)
-})
-
 test('a stale hosted body replacement names the current revision and preserves the body', async () => {
   const task = await recordCreate(
     { project: 'gamma', title: 'Revision guard', body: 'Before' },
@@ -344,6 +315,36 @@ test('a hosted list scoped to an undeclared-space project refuses', async () => 
   )
 })
 
+test('a hosted parent update normalizes the key and remains listable by parent', async () => {
+  const parent = await recordCreate(
+    { project: 'gamma', title: 'Normalize parent fixture' },
+    { hosted: hosted(), skipDuplicateCheck: true },
+  )
+  const child = await recordCreate(
+    { project: 'gamma', title: 'Normalize child fixture' },
+    { hosted: hosted(), skipDuplicateCheck: true },
+  )
+
+  await setTask(
+    child.key,
+    { project: 'gamma' },
+    { parent: parent.key.toLowerCase() },
+    { actorUserId: userId, actorName: 'Record author', agent: null, runId: null },
+    { hosted: hosted() },
+  )
+
+  await database.exec('RESET ROLE;')
+  const stored = await database.query<{ parent_key: string }>(
+    `SELECT parent_key FROM hub_task WHERE id=$1`,
+    [child.record_id],
+  )
+  await database.exec('SET ROLE record_actor;')
+  expect(stored.rows).toEqual([{ parent_key: parent.key }])
+  expect(await recordList({ project: 'gamma', parent: parent.key.toLowerCase() })).toEqual([
+    expect.objectContaining({ record_id: child.record_id, parent_key: parent.key }),
+  ])
+})
+
 test('a rejected hosted task status change leaves no status event', async () => {
   const task = await recordCreate(
     { project: 'gamma', title: 'Deleted before status change' },
@@ -417,6 +418,17 @@ async function recordShow(key: string, scope: { project: string }) {
   delete process.env.NODE_ENV
   try {
     return await showTask(key, scope)
+  } finally {
+    if (nodeEnv === undefined) delete process.env.NODE_ENV
+    else process.env.NODE_ENV = nodeEnv
+  }
+}
+
+async function recordList(filters: Parameters<typeof listTasks>[0]) {
+  const nodeEnv = process.env.NODE_ENV
+  delete process.env.NODE_ENV
+  try {
+    return await listTasks(filters)
   } finally {
     if (nodeEnv === undefined) delete process.env.NODE_ENV
     else process.env.NODE_ENV = nodeEnv
