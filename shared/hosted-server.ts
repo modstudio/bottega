@@ -82,6 +82,34 @@ export function hostedAccessLogLine(input: {
   return `${input.method} ${input.pathname} ${input.status} ${Math.round(input.durationMs)}ms bytes=${input.responseBytes ?? '-'} caller=${input.caller ?? '-'}`
 }
 
+export function hostedTimedResponse(input: {
+  response: Response
+  method: string
+  pathname: string
+  durationMs: number
+  caller?: string | null
+}): { response: Response; accessLine: string; headersMutable: boolean } {
+  let headersMutable = true
+  try {
+    input.response.headers.set('server-timing', `app;dur=${input.durationMs.toFixed(1)}`)
+  } catch {
+    // Redirects and pass-through fetch responses can have immutable headers.
+    headersMutable = false
+  }
+  return {
+    response: input.response,
+    accessLine: hostedAccessLogLine({
+      method: input.method,
+      pathname: input.pathname,
+      status: input.response.status,
+      durationMs: input.durationMs,
+      responseBytes: contentLength(input.response.headers),
+      caller: input.caller,
+    }),
+    headersMutable,
+  }
+}
+
 export function hostedAccessBodyLogLine(input: {
   method: string
   pathname: string

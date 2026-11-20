@@ -149,6 +149,30 @@ export function hostedRequestHandler(
   }
 }
 
+export async function timedHostedResponse(
+  requestHandler: (request: Request) => Response | Promise<Response>,
+  request: Request,
+  now: () => number = performance.now.bind(performance),
+): Promise<{
+  response: Response
+  accessLine: string
+  headersMutable: boolean
+  caller: ReturnType<typeof inboundCaller>
+}> {
+  const started = now()
+  const caller = inboundCaller(request.headers.get(CALLER_HEADER_NAME))
+  const response = await withRecordCaller(caller.scope, () => requestHandler(request))
+  const durationMs = now() - started
+  const timed = hostedServer.hostedTimedResponse({
+    response,
+    method: request.method,
+    pathname: new URL(request.url).pathname,
+    durationMs,
+    caller: caller.logged,
+  })
+  return { ...timed, caller }
+}
+
 function startHostedServer(environment: ServerEnvironment = process.env) {
   const config = hostedServerConfig(environment)
   const recordDatabase = new SQL(recordServiceUrl(config.recordDatabaseUrl))
@@ -163,23 +187,18 @@ function startHostedServer(environment: ServerEnvironment = process.env) {
     idleTimeout: hostedServer.HOSTED_SERVER_IDLE_TIMEOUT_SECONDS,
     port: config.port,
     fetch: async (request) => {
-      const started = performance.now()
-      const caller = inboundCaller(request.headers.get(CALLER_HEADER_NAME))
-      const response = await withRecordCaller(caller.scope, () => requestHandler(request))
-      const durationMs = performance.now() - started
+      const { response, accessLine, headersMutable, caller } = await timedHostedResponse(
+        requestHandler,
+        request,
+      )
       const method = request.method
       const pathname = new URL(request.url).pathname
-      console.log(
-        hostedServer.hostedAccessLogLine({
-          method,
-          pathname,
-          status: response.status,
-          durationMs,
-          responseBytes: hostedServer.contentLength(response.headers),
-          caller: caller.logged,
-        }),
+      console.log(accessLine)
+      if (
+        !headersMutable ||
+        hostedServer.contentLength(response.headers) !== null ||
+        response.body === null
       )
-      if (hostedServer.contentLength(response.headers) !== null || response.body === null)
         return response
       return hostedServer.countResponseBody(
         response,

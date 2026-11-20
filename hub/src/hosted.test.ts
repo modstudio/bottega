@@ -6,7 +6,7 @@ import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { CONFIG_HOME_ENV, HARNESS_ENV_FILE_ENV } from '../../shared/config-directory.ts'
 import { INSTALL_HOME_ENV } from '../../shared/install-root.ts'
 import { createNoDestinationWriteCounter } from '../../shared/record-no-destination-write-counter.ts'
-import { hostedRequestHandler, hostedServerConfig } from './hosted.ts'
+import { hostedRequestHandler, hostedServerConfig, timedHostedResponse } from './hosted.ts'
 import { hostedRouter } from './trpc/hosted-router.ts'
 
 describe('hosted server config', () => {
@@ -216,10 +216,16 @@ describe('hosted destination-less write report', () => {
   }) as typeof fetch
 
   test('refuses an unauthenticated caller', async () => {
-    const response = await hostedRequestHandler(config)(
+    const { response } = await timedHostedResponse(
+      hostedRequestHandler(config),
       new Request('https://hub.example.test/v1/health/no-destination-writes'),
+      (() => {
+        const readings = [10, 12.25]
+        return () => readings.shift()!
+      })(),
     )
     expect(response.status).toBe(401)
+    expect(response.headers.get('server-timing')).toBe('app;dur=2.3')
   })
 
   test('refuses a requested space outside the caller memberships with JSON guidance', async () => {
