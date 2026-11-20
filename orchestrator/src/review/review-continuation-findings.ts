@@ -50,6 +50,16 @@ type SelectedContinuationRound = {
   matchesCurrentGroup: boolean
 }
 
+/** Whether the branch lineage contains a round with enough measurement to select. */
+export function continuationLineageHasMeasuredRound(
+  database: Database,
+  group: ChangeGroup,
+): boolean {
+  return reviewsForTriage(database, group).branchReviews.some(
+    (review) => review.patchId !== null && review.pathSet !== null,
+  )
+}
+
 /** Choose the newest review round on the branch lineage, independent of today's patch. */
 function selectContinuationReviewRound(
   branchReviews: readonly TriageReviewRow[],
