@@ -13,14 +13,22 @@ import { taskReader } from '../orchestrator/src/workflow/task-read-port.ts'
 import { addProject } from '../orchestrator/test/fixtures/offline-branch-landing.ts'
 import { FROZEN_STATE_NAMES } from '../shared/brand.ts'
 import { OrchProjectListSchema } from '../shared/orch-contract.ts'
-import { mintTestHubDatabase } from '../shared/test-hub-database.ts'
+import { captureTestHubDatabase, mintTestHubDatabase } from '../shared/test-hub-database.ts'
 import { installCliTaskReader } from './task-read-adapter.ts'
 
 let adapterHubDatabaseDirectory: string | undefined
 let projectRecordId: string
+let restoreHubDatabase: (() => void) | undefined
 let previousHostedUrl: string | undefined
 
 beforeAll(() => {
+  restoreHubDatabase = captureTestHubDatabase()
+  const adapterStore = mintTestHubDatabase(FROZEN_STATE_NAMES.hubDatabase)
+  adapterHubDatabaseDirectory = adapterStore.directory
+  const adapterDatabase = new Database(adapterStore.database, { create: true })
+  adapterDatabase.exec('PRAGMA foreign_keys = ON;')
+  applyHubMigrations(adapterDatabase, undefined, HUB_MIGRATION_BACKFILL_VALUES)
+  adapterDatabase.close()
   previousHostedUrl = process.env.BOTTEGA_HOSTED_URL
   delete process.env.BOTTEGA_HOSTED_URL
   registerStandardRuntime()
@@ -41,6 +49,15 @@ beforeEach(() => {
 
 afterAll(() => {
   db().query("DELETE FROM project WHERE name = 'alpha'").run()
+  const hubDatabaseModule = require.resolve('../hub/src/db.ts')
+  const { closeDatabaseForFixture } =
+    require('../hub/src/db.ts') as typeof import('../hub/src/db.ts')
+  closeDatabaseForFixture()
+  restoreHubDatabase?.()
+  delete require.cache[require.resolve('../hub/src/task.ts')]
+  delete require.cache[require.resolve('../hub/src/task-document.ts')]
+  delete require.cache[hubDatabaseModule]
+  delete require.cache[require.resolve('../hub/src/task-local-read.ts')]
   if (adapterHubDatabaseDirectory)
     rmSync(adapterHubDatabaseDirectory, { recursive: true, force: true })
   if (previousHostedUrl === undefined) delete process.env.BOTTEGA_HOSTED_URL
@@ -48,12 +65,6 @@ afterAll(() => {
 })
 
 test('installing the CLI adapter leaves hub unloaded until the first read', async () => {
-  const adapterStore = mintTestHubDatabase(FROZEN_STATE_NAMES.hubDatabase)
-  adapterHubDatabaseDirectory = adapterStore.directory
-  const adapterDatabase = new Database(adapterStore.database, { create: true })
-  adapterDatabase.exec('PRAGMA foreign_keys = ON;')
-  applyHubMigrations(adapterDatabase, undefined, HUB_MIGRATION_BACKFILL_VALUES)
-  adapterDatabase.close()
   const hubTaskModule = require.resolve('../hub/src/task.ts')
   const hubTaskDocumentModule = require.resolve('../hub/src/task-document.ts')
   const hubDatabaseModule = require.resolve('../hub/src/db.ts')
