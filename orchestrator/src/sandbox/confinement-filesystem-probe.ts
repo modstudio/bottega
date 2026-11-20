@@ -34,6 +34,10 @@ import type { Project } from '../project/projects.ts'
 import { prepareSharedRefGuard, workerSharedGitRoots } from '../resources/ref-guard.ts'
 import { workerChildEnvironment } from '../run/run-worker-home.ts'
 import {
+  type ConfinementProbeTask,
+  createConfinementProbeTask,
+} from './confinement-probe-task-port.ts'
+import {
   type RunningInstallLayout,
   resolveRunningInstallLayout,
   runningInstallReadCarveouts,
@@ -92,11 +96,15 @@ const NOT_COVERED: ConfinementFilesystemProbeRow[] = [
   },
 ]
 
+const PROBE_PROJECT_NAME = 'confinement-probe'
+const PROBE_TASK_PREFIX = 'CONFINEMENTPROBE'
+
 function fixtureProject(
   recordId: string,
   name: string,
   path: string,
   secretPaths: string[] = [],
+  keyPrefixes: string[] = [],
 ): Project {
   return {
     recordId,
@@ -105,7 +113,7 @@ function fixtureProject(
     stack: 'probe',
     canon: false,
     retiredAt: null,
-    settings: { secretPaths },
+    settings: { keyPrefixes, secretPaths },
   }
 }
 
@@ -267,6 +275,7 @@ async function launchProbe(
   environment: Record<string, string>,
   scratchDir: string,
   hubOpenMode: string,
+  commandLabel: string,
 ): Promise<ConfinementFilesystemProbeRow> {
   try {
     const result = await runFilesystemAccessProbe(profile, targets, environment, scratchDir)
@@ -290,7 +299,7 @@ async function launchProbe(
       family,
       ...probeVerdict(targets, paths, command),
       paths,
-      commands: { [`${PLATFORM_SLUG} task show DEV-2510`]: command },
+      commands: { [commandLabel]: command },
     }
   } catch (error) {
     return {
@@ -312,6 +321,7 @@ async function launchCrossProjectCliProbe(
   environment: Record<string, string>,
   scratchDir: string,
   hubOpenMode: string,
+  commandLabel: string,
 ): Promise<ConfinementFilesystemProbeRow> {
   try {
     const targets: AccessTarget[] = [
@@ -331,7 +341,7 @@ async function launchCrossProjectCliProbe(
       reason:
         version.status === 'failed'
           ? `${PLATFORM_SLUG} --version ${version.reason}`
-          : `${PLATFORM_SLUG} task show DEV-2510 ${verb.reason}`,
+          : `${commandLabel} ${verb.reason}`,
     }
     const verdict = probeVerdict(targets, paths, command)
     return {
@@ -340,7 +350,7 @@ async function launchCrossProjectCliProbe(
       paths,
       commands: {
         [`${PLATFORM_SLUG} --version`]: version,
-        [`${PLATFORM_SLUG} task show DEV-2510`]: verb,
+        [commandLabel]: verb,
       },
       reason:
         verdict.status === 'denied'
@@ -509,7 +519,12 @@ function probeAccessTargets(input: {
       path: join(input.siblingPath, '.mcp.json'),
       expected: 'denied',
     },
-    { name: 'orchestrator store', path: input.orchestratorDatabase, expected: 'denied' },
+    {
+      name: 'orchestrator store',
+      path: input.orchestratorDatabase,
+      expected: 'denied',
+      plant: false,
+    },
     { name: 'own secret', path: join(input.ownPath, 'declared.secret'), expected: 'denied' },
     {
       name: 'same-project sibling worktree',
@@ -540,6 +555,28 @@ function probeAccessTargets(input: {
   return targets
 }
 
+function createProbeTaskFixture(
+  hubWriter: Database,
+  orchestratorDatabase: string,
+  ownPath: string,
+): { own: Project; task: ConfinementProbeTask } {
+  const own = fixtureProject(
+    Bun.randomUUIDv7(),
+    PROBE_PROJECT_NAME,
+    ownPath,
+    ['declared.secret'],
+    [PROBE_TASK_PREFIX],
+  )
+  const task = createConfinementProbeTask(hubWriter, {
+    orchestratorDatabase,
+    project: own,
+  })
+  if (task.project.name !== own.name || task.project.recordId !== own.recordId) {
+    throw new Error('confinement probe task was created for the wrong fixture project')
+  }
+  return { own, task }
+}
+
 function createProbeFixture(root: string) {
   const ownPath = join(root, 'projects', 'own')
   const worktree = join(ownPath, '.claude', 'worktrees', 'own')
@@ -560,14 +597,6 @@ function createProbeFixture(root: string) {
   const state = resolveStatePaths(environment)
   const runtimeDir = join(state.orchestratorRuns, 'sandbox-probe')
   const scratchDir = join(state.orchestratorRuns, 'probe', 'scratch')
-  const own = fixtureProject('own', 'own', ownPath, ['declared.secret'])
-  const sibling = fixtureProject('sibling', 'sibling', siblingPath)
-  const registeredProjects = [
-    own,
-    sibling,
-    fixtureProject('fixture-install', 'fixture-install', fixtureInstall.root),
-    fixtureProject('running-install', PLATFORM_SLUG, runningInstall.root),
-  ]
   const targets = probeAccessTargets({
     ownPath,
     worktree,
@@ -591,6 +620,19 @@ function createProbeFixture(root: string) {
   mkdirSync(scratchDir, { recursive: true })
   mkdirSync(state.hubDirectory, { recursive: true })
   const hubWriter = openLiveHubFixture(hubDatabase)
+  const { own, task: probeTask } = createProbeTaskFixture(
+    hubWriter,
+    state.orchestratorDatabase,
+    ownPath,
+  )
+  const commandLabel = `${PLATFORM_SLUG} task show <probe task>`
+  const sibling = fixtureProject('sibling', 'sibling', siblingPath)
+  const registeredProjects = [
+    own,
+    sibling,
+    fixtureProject('fixture-install', 'fixture-install', fixtureInstall.root),
+    fixtureProject('running-install', PLATFORM_SLUG, runningInstall.root),
+  ]
   const loginToken = join(hubLoginTokenDirectory(environment), 'planted-token')
   mkdirSync(join(loginToken, '..'), { recursive: true })
   writeFileSync(loginToken, 'PLANTED_HUB_TOKEN=fixture\n')
@@ -605,7 +647,8 @@ function createProbeFixture(root: string) {
     stateRoot,
     targets,
     cliArgv,
-    commandArgv: [...cliArgv, 'task', 'show', 'DEV-2510'],
+    commandArgv: [...cliArgv, 'task', 'show', probeTask.key],
+    commandLabel,
     fixtureInstall,
     environment: probeWorkerEnvironment(environment),
     common: {
@@ -633,17 +676,8 @@ export async function runConfinementFilesystemProbes(): Promise<ConfinementFiles
   try {
     const fixture = createProbeFixture(root)
     hubWriter = fixture.hubWriter
-    const {
-      stateRoot,
-      targets,
-      cliArgv,
-      commandArgv,
-      fixtureInstall,
-      environment,
-      common,
-      hubOpenMode,
-    } = fixture
-    process.env[STATE_HOME_ENV] = stateRoot
+    const { common } = fixture
+    process.env[STATE_HOME_ENV] = fixture.stateRoot
     const launch = (
       family: Parameters<typeof launchProbe>[0],
       profile: Parameters<typeof launchProbe>[1],
@@ -651,11 +685,12 @@ export async function runConfinementFilesystemProbes(): Promise<ConfinementFiles
       launchProbe(
         family,
         profile,
-        targets,
-        commandArgv,
-        environment,
+        fixture.targets,
+        fixture.commandArgv,
+        fixture.environment,
         common.scratchDir,
-        hubOpenMode,
+        fixture.hubOpenMode,
+        fixture.commandLabel,
       )
     return [
       await launch('goose', readonlyLensProfile({ ...common, agent: 'goose' })),
@@ -668,7 +703,7 @@ export async function runConfinementFilesystemProbes(): Promise<ConfinementFiles
         writerProfile({ ...common, agent: 'grok', askAddress: '127.0.0.1:1' }),
         common.worktree,
         common.scratchDir,
-        environment,
+        fixture.environment,
       ),
       await launch(
         'workflow probe',
@@ -683,12 +718,13 @@ export async function runConfinementFilesystemProbes(): Promise<ConfinementFiles
       ),
       await launchCrossProjectCliProbe(
         readonlyLensProfile({ ...common, agent: 'grok' }),
-        join(fixtureInstall.root, '.env'),
-        cliArgv,
-        commandArgv,
-        environment,
+        join(fixture.fixtureInstall.root, '.env'),
+        fixture.cliArgv,
+        fixture.commandArgv,
+        fixture.environment,
         common.scratchDir,
-        hubOpenMode,
+        fixture.hubOpenMode,
+        fixture.commandLabel,
       ),
       ...NOT_COVERED,
     ]
