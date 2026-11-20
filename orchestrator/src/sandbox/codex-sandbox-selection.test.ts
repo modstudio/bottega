@@ -1,12 +1,13 @@
 import { afterEach, expect, test } from 'bun:test'
-import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { resolveStatePaths, STATE_HOME_ENV } from '../../../shared/state-directory.ts'
 import type { Project } from '../project/projects.ts'
 import { isAtOrBelow } from './area-read-policy.ts'
-import { codexPermissionProfileArgs, codexPermissionProfileInput } from './codex-sandbox.ts'
+import { codexPermissionLaunchProfileInput } from './codex-permission-profile-adapter.ts'
+import { codexPermissionProfileArgs } from './codex-sandbox.ts'
 import { selectReadonlySandbox } from './sandbox.ts'
 
 const temporaryDirectories: string[] = []
@@ -34,6 +35,11 @@ test('Codex writer profile literally denies existing siblings without denying it
   mkdirSync(siblingA, { recursive: true })
   mkdirSync(siblingB, { recursive: true })
   mkdirSync(siblingPath, { recursive: true })
+  const runtimeDir = join(state, 'orchestrator/runs/sandbox-run')
+  const scratchDir = join(state, 'orchestrator/runs/run/scratch')
+  mkdirSync(runtimeDir, { recursive: true })
+  mkdirSync(scratchDir, { recursive: true })
+  mkdirSync(join(state, 'orchestrator/runs/other-run'), { recursive: true })
   const project = (recordId: string, name: string, path: string): Project => ({
     recordId,
     name,
@@ -50,8 +56,8 @@ test('Codex writer profile literally denies existing siblings without denying it
     readsRepo: true,
     writesRepo: true,
     worktree,
-    runtimeDir: join(state, 'orchestrator/runs/sandbox-run'),
-    scratchDir: join(state, 'orchestrator/runs/run/scratch'),
+    runtimeDir,
+    scratchDir,
     project: own,
     sharedReader: true,
     registeredProjects: [own, sibling],
@@ -62,11 +68,11 @@ test('Codex writer profile literally denies existing siblings without denying it
   expect(selected.profile).toBeNull()
   expect(selected.codexProfile).toBeDefined()
 
-  const permissionInput = codexPermissionProfileInput({
+  const permissionInput = codexPermissionLaunchProfileInput({
     profile: selected.codexProfile!,
     sandbox: 'workspace-write',
     cwd: worktree,
-    writableRoots: [],
+    writableRoots: selected.codexProfile!.filesystem.allowWrite,
     tempDir: '/private/tmp/codex-run',
     writesRepository: true,
   })
@@ -77,7 +83,8 @@ test('Codex writer profile literally denies existing siblings without denying it
   expect(permissionInput.filesystem.denyRead.some((denied) => isAtOrBelow(denied, worktree))).toBe(
     false,
   )
-  expect(permissionInput.filesystem.denyRead).toContain(projects)
+  expect(permissionInput.filesystem.denyRead).not.toContain(projects)
+  expect(permissionInput.filesystem.denyRead).toContain(join(state, 'orchestrator/runs/other-run'))
   for (const path of [
     ...permissionInput.filesystem.denyRead,
     ...permissionInput.filesystem.allowRead,
@@ -93,20 +100,23 @@ test('Codex writer profile literally denies existing siblings without denying it
   expect(filesystemArg).toContain(`${JSON.stringify(siblingA)}="deny"`)
   expect(filesystemArg).toContain(`${JSON.stringify(siblingB)}="deny"`)
   expect(filesystemArg).toContain(
-    `${JSON.stringify(resolveStatePaths({ [STATE_HOME_ENV]: state }).root)}="deny"`,
+    `${JSON.stringify(resolveStatePaths({ [STATE_HOME_ENV]: state }).orchestratorDatabase)}="deny"`,
   )
+  expect(filesystemArg).toContain(`${JSON.stringify(join(state, 'orchestrator/runs/other-run'))}="deny"`)
   expect(filesystemArg).toContain(`${JSON.stringify(worktree)}="write"`)
   expect(filesystemArg).toContain(`${JSON.stringify('/tmp')}="write"`)
   expect(filesystemArg).toContain(`${JSON.stringify('/private/tmp/codex-run')}="write"`)
 })
 
-test('Codex translation preserves ancestor state denies for a no-repo reader', () => {
+test('Codex translation preserves literal state and runs denies for a no-repo reader', () => {
   const state = temporaryDirectory()
   const projects = temporaryDirectory()
   const ownPath = join(projects, 'own')
   const runDirectory = join(state, 'orchestrator', 'runs', 'reader-run')
   mkdirSync(ownPath, { recursive: true })
   mkdirSync(runDirectory, { recursive: true })
+  mkdirSync(join(state, 'orchestrator', 'runs', 'other-run'), { recursive: true })
+  writeFileSync(join(state, 'orchestrator.db'), 'fixture')
   const project: Project = {
     recordId: '01990000-0000-7000-8000-000000001216',
     name: 'own',
@@ -129,7 +139,7 @@ test('Codex translation preserves ancestor state denies for a no-repo reader', (
     environment: { HOME: homedir(), [STATE_HOME_ENV]: state },
     path: '/usr/bin',
   })
-  const permissionInput = codexPermissionProfileInput({
+  const permissionInput = codexPermissionLaunchProfileInput({
     profile: selected.codexProfile!,
     sandbox: 'workspace-write',
     cwd: runDirectory,
@@ -139,6 +149,11 @@ test('Codex translation preserves ancestor state denies for a no-repo reader', (
   })
   const statePaths = resolveStatePaths({ [STATE_HOME_ENV]: state })
   expect(permissionInput.filesystem.denyRead).toEqual(
-    expect.arrayContaining([statePaths.root, statePaths.orchestratorRuns]),
+    expect.arrayContaining([
+      statePaths.orchestratorDatabase,
+      join(statePaths.orchestratorRuns, 'other-run'),
+    ]),
   )
+  expect(permissionInput.filesystem.denyRead).not.toContain(statePaths.root)
+  expect(permissionInput.filesystem.denyRead).not.toContain(statePaths.orchestratorRuns)
 })

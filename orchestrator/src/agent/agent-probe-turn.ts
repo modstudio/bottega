@@ -11,7 +11,7 @@ import { type Project, projectsIncludingRetired } from '../project/projects.ts'
 import { workerMcpLaunchSelection, writerProxyRoute } from '../run/run-mcp-launch-scope.ts'
 import { nextRunNumber } from '../run/run-number.ts'
 import { quotaReadingsColumnValues } from '../run/run-usage-columns.ts'
-import { codexPermissionProfileInput } from '../sandbox/codex-sandbox.ts'
+import { codexPermissionLaunchProfileInput } from '../sandbox/codex-permission-profile-adapter.ts'
 import { codexPermissionProfile, prepareCodexHome } from '../sandbox/sandbox.ts'
 import { harnessCollectsQuotaReadings } from '../transport/codex-quota.ts'
 import { EMPTY_QUOTA_READINGS } from '../transport/quota-readings.ts'
@@ -202,7 +202,7 @@ function startProbeTransport(
     sandbox: 'workspace-write',
     ...(codexProfile
       ? {
-          codexPermissionProfile: codexPermissionProfileInput({
+          codexPermissionProfile: codexPermissionLaunchProfileInput({
             profile: codexProfile,
             sandbox: 'workspace-write',
             cwd,

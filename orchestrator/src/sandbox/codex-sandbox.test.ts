@@ -62,6 +62,7 @@ test('permission input gives readers exactly the shared write roots and preserve
     cwd: '/run/tree',
     writableRoots: ['/run/scratch'],
     tempDir: '/private/tmp/codex-run',
+    directoryListings: {},
   }
 
   expect(codexPermissionProfileInput({ ...launch, writesRepository: false }).writableRoots).toEqual(
@@ -138,6 +139,9 @@ describe('Codex permission profile', () => {
         writableRoots: [],
         tempDir: '/tmp/run',
         writesRepository: true,
+        directoryListings: {
+          '/projects/own/.claude/worktrees': ['own'],
+        },
       }),
     ).toThrow('rebuild the Codex profile from the current worktree-root directory listing')
   })

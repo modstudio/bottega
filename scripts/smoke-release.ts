@@ -175,7 +175,12 @@ su -s /bin/sh smoke -c '
   codex_probe=$(printf "%s\\n" "$confinement_output" | grep -F "filesystem-probe  Codex writer")
   case "$codex_probe" in
     *"not covered: codex is not installed"*) ;;
-    *) printf "%s\\n" "$codex_probe" | grep -F "filesystem-probe  Codex writer  ran" ;;
+    *) printf "%s\\n" "$codex_probe" | grep -F "filesystem-probe  Codex writer  ran" | grep -F "git status=ran" | grep -F "git commit=ran" | grep -F "git log=ran" ;;
+  esac
+  codex_gap_probe=$(printf "%s\\n" "$confinement_output" | grep -F "filesystem-probe  Codex post-launch sibling gap")
+  case "$codex_gap_probe" in
+    *"not covered: codex is not installed"*) ;;
+    *) printf "%s\\n" "$codex_gap_probe" | grep -F "filesystem-probe  Codex post-launch sibling gap  ran" | grep -F "new sibling worktree=readable" | grep -F "new project under projects root=readable" | grep -F "new top-level entry in main checkout=readable" ;;
   esac
   ${installedBinary} workflow import --cwd /tmp/probe-repository --reason "DEV-2421 release smoke workflow"
   ${installedBinary} workflow promote-tree --cwd /tmp/probe-repository --reason "DEV-2421 release smoke workflow"

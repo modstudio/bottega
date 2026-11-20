@@ -1,7 +1,7 @@
 // concern: Codex permission-profile launch adapter
 
 import type { CodexMcpScope } from '../sandbox/codex-mcp-scope.ts'
-import { codexPermissionProfileInput } from '../sandbox/codex-sandbox.ts'
+import { codexPermissionLaunchProfileInput } from '../sandbox/codex-permission-profile-adapter.ts'
 import type { SandboxRuntimeConfig } from '../sandbox/sandbox.ts'
 import type { ArgvOpts } from '../transport/transport.ts'
 
@@ -34,7 +34,7 @@ function codexPermissionLaunchProfile(input: {
 }): ArgvOpts['codexPermissionProfile'] {
   const profile = input.sandboxSelection.codexProfile
   if (input.name !== 'codex' || !profile) return undefined
-  return codexPermissionProfileInput({
+  return codexPermissionLaunchProfileInput({
     profile,
     sandbox: input.codexSandbox.sandbox,
     cwd: input.cwd,

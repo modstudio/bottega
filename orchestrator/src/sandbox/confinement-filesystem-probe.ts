@@ -34,7 +34,8 @@ import { targetGitEnvironment, worktreeGitDir } from '../git/git-environment.ts'
 import type { Project } from '../project/projects.ts'
 import { prepareSharedRefGuard, workerSharedGitRoots } from '../resources/ref-guard.ts'
 import { workerChildEnvironment } from '../run/run-worker-home.ts'
-import { codexPermissionProfileArgs, codexPermissionProfileInput } from './codex-sandbox.ts'
+import { codexPermissionLaunchProfileInput } from './codex-permission-profile-adapter.ts'
+import { codexPermissionProfileArgs } from './codex-sandbox.ts'
 import {
   type ConfinementProbeTask,
   createConfinementProbeTask,
@@ -87,13 +88,6 @@ type AfterLaunchFixture = { target: string; ready: string; release: string }
 
 const NOT_COVERED: ConfinementFilesystemProbeRow[] = [
   {
-    family: 'Codex post-launch sibling gap',
-    status: 'not covered',
-    paths: {},
-    reason:
-      'launch-literal profiles (Codex on every platform and srt on Linux) cannot deny a sibling worktree created after launch',
-  },
-  {
     family: 'read-only MCP',
     status: 'not covered',
     paths: {},
@@ -115,10 +109,6 @@ function codexShellArgument(index: number): string {
   return `\${${index}}`
 }
 
-function codexReadProbe(index: number): string {
-  return `if /bin/cat "${codexShellArgument(index)}" >/dev/null 2>&1; then echo readable; else echo denied; fi`
-}
-
 async function launchCodexWriterProbe(
   profile: ReturnType<typeof readonlyLensProfile>,
   targets: readonly AccessTarget[],
@@ -136,21 +126,27 @@ async function launchCodexWriterProbe(
     }
   }
   try {
+    const branch = gitFixture(['symbolic-ref', '--short', 'HEAD'], cwd)
+    const gitRoots = [worktreeGitDir(cwd), ...workerSharedGitRoots(cwd, branch)]
     const permissionArgs = codexPermissionProfileArgs({
-      ...codexPermissionProfileInput({
+      ...codexPermissionLaunchProfileInput({
         profile,
         sandbox: 'workspace-write',
         cwd,
-        writableRoots: profile.filesystem.allowWrite,
+        writableRoots: [...profile.filesystem.allowWrite, ...gitRoots],
         tempDir,
         writesRepository: true,
       }),
       network: false,
     })
     const measuredTargets = targets.filter(({ createAfterLaunch }) => !createAfterLaunch)
-    const writePath = join(cwd, '.codex-confinement-write')
-    const accessScript = measuredTargets.map((_, index) => codexReadProbe(index + 2)).join('\n')
-    const writeArgument = codexShellArgument(measuredTargets.length + 2)
+    const accessScript = measuredTargets
+      .map(
+        (_, index) =>
+          `if /bin/cat "${codexShellArgument(index + 2)}" >/dev/null 2>&1; then echo path:${index}=readable; else echo path:${index}=denied; fi`,
+      )
+      .join('\n')
+    const canaryPath = join(cwd, '.codex-confinement-canary')
     const result = await startBounded(
       [
         codex,
@@ -161,16 +157,29 @@ async function launchCodexWriterProbe(
         '--',
         '/bin/sh',
         '-c',
-        `/bin/pwd\n${accessScript}\nif printf fixture >"${writeArgument}" 2>/dev/null; then /bin/rm -f "${writeArgument}"; echo readable; else echo denied; fi`,
+        `if test "$(/bin/pwd -P)" = "$1"; then echo pwd=ran; else echo pwd=failed; fi
+if git status --short >/dev/null; then echo git-status=ran; else echo git-status=failed; fi
+if printf fixture >${JSON.stringify(canaryPath)} && git add ${JSON.stringify(canaryPath)} && git commit -qm codex-confinement-canary; then echo git-commit=ran; else echo git-commit=failed; fi
+if git log --format=%s -1 | grep -Fx codex-confinement-canary >/dev/null; then echo git-log=ran; else echo git-log=failed; fi
+${accessScript}`,
         'probe',
         cwd,
         ...measuredTargets.map(({ path }) => path),
-        writePath,
       ],
       {
         budget: 'sandbox-probe',
         cwd,
-        env: { ...process.env, ...environment, TMPDIR: tempDir, TMP: tempDir, TEMP: tempDir },
+        env: {
+          ...process.env,
+          ...environment,
+          GIT_AUTHOR_NAME: 'Confinement Probe',
+          GIT_AUTHOR_EMAIL: 'confinement-probe@example.invalid',
+          GIT_COMMITTER_NAME: 'Confinement Probe',
+          GIT_COMMITTER_EMAIL: 'confinement-probe@example.invalid',
+          TMPDIR: tempDir,
+          TMP: tempDir,
+          TEMP: tempDir,
+        },
       },
     )
     if (result.exitCode !== 0) {
@@ -181,37 +190,42 @@ async function launchCodexWriterProbe(
         reason: `filesystem launch exited ${result.exitCode ?? 'unknown'}: ${firstErrorLine(result.stderr)}`,
       }
     }
-    const values = result.stdout.trim().split(/\r?\n/)
-    const expectedCwd = realPathForPotentialPath(cwd)
-    const pwd = values[0] === expectedCwd ? 'ran' : 'failed'
+    const values = new Map(
+      result.stdout
+        .trim()
+        .split(/\r?\n/)
+        .map((line) => line.split('=', 2) as [string, string]),
+    )
+    const command = (name: string): CommandProbe => ({
+      status: values.get(name) === 'ran' ? 'ran' : 'failed',
+      reason: values.get(name) === 'ran' ? 'succeeded' : 'failed',
+    })
     const paths = Object.fromEntries(
       measuredTargets.map(({ name }, index) => [
         name,
-        values[index + 1] === 'readable' || values[index + 1] === 'denied'
-          ? values[index + 1]
+        values.get(`path:${index}`) === 'readable' || values.get(`path:${index}`) === 'denied'
+          ? values.get(`path:${index}`)
           : 'not covered',
       ]),
     ) as Record<string, FilesystemProbeAccess>
-    const ownTreeWrite = values[measuredTargets.length + 1] === 'readable' ? 'ran' : 'failed'
     const accessVerdict = probeVerdict(measuredTargets, paths, {
       status: 'ran',
       reason: 'Codex access targets measured',
     })
-    const passed = pwd === 'ran' && ownTreeWrite === 'ran' && accessVerdict.status === 'denied'
+    const commands = {
+      pwd: command('pwd'),
+      'git status': command('git-status'),
+      'git commit': command('git-commit'),
+      'git log': command('git-log'),
+    }
+    const passed =
+      Object.values(commands).every(({ status }) => status === 'ran') &&
+      accessVerdict.status === 'denied'
     return {
       family: 'Codex writer',
       status: passed ? 'ran' : 'failed',
       paths,
-      commands: {
-        pwd: {
-          status: pwd,
-          reason: pwd === 'ran' ? 'own tree' : `expected ${expectedCwd}; got ${values[0]}`,
-        },
-        'own tree write': {
-          status: ownTreeWrite,
-          reason: ownTreeWrite === 'ran' ? 'write succeeded' : 'write was denied',
-        },
-      },
+      commands,
       reason: passed ? CODEX_PROBE_MODE : `${CODEX_PROBE_MODE}; access expectation failed`,
     }
   } catch (error) {
@@ -221,6 +235,102 @@ async function launchCodexWriterProbe(
       paths: {},
       reason: error instanceof Error ? error.message : String(error),
     }
+  }
+}
+
+async function launchCodexPostLaunchGapProbe(
+  profile: ReturnType<typeof readonlyLensProfile>,
+  targets: readonly AccessTarget[],
+  cwd: string,
+  environment: Record<string, string>,
+  tempDir: string,
+): Promise<ConfinementFilesystemProbeRow> {
+  const codex = Bun.which('codex')
+  if (!codex)
+    return {
+      family: 'Codex post-launch sibling gap',
+      status: 'not covered',
+      paths: {},
+      reason: 'codex is not installed',
+    }
+  const ready = join(tempDir, '.codex-gap-ready')
+  const release = join(tempDir, '.codex-gap-release')
+  for (const target of targets) rmSync(dirname(target.path), { recursive: true, force: true })
+  try {
+    const permissionArgs = codexPermissionProfileArgs({
+      ...codexPermissionLaunchProfileInput({
+        profile,
+        sandbox: 'workspace-write',
+        cwd,
+        writableRoots: profile.filesystem.allowWrite,
+        tempDir,
+        writesRepository: true,
+      }),
+      network: false,
+    })
+    const script = `/usr/bin/touch "$1"
+while ! /bin/test -e "$2"; do /bin/sleep 0.01; done
+shift 2
+for path; do if /bin/cat "$path" >/dev/null 2>&1; then echo readable; else echo denied; fi; done`
+    const running = startBounded(
+      [
+        codex,
+        'sandbox',
+        '-P',
+        PLATFORM_SLUG,
+        ...permissionArgs,
+        '--',
+        '/bin/sh',
+        '-c',
+        script,
+        'probe',
+        ready,
+        release,
+        ...targets.map(({ path }) => path),
+      ],
+      { budget: 'sandbox-probe', cwd, env: { ...process.env, ...environment } },
+    )
+    const deadline = Date.now() + 5_000
+    while (!existsSync(ready)) {
+      if (Date.now() >= deadline) throw new Error('Codex gap probe did not signal launch')
+      await Bun.sleep(10)
+    }
+    for (const target of targets) {
+      mkdirSync(dirname(target.path), { recursive: true })
+      writeFileSync(target.path, 'created after launch')
+    }
+    writeFileSync(release, 'continue')
+    const result = await running
+    const values = result.stdout.trim().split(/\r?\n/)
+    const paths = Object.fromEntries(
+      targets.map(({ name }, index) => [
+        name,
+        values[index] === 'readable'
+          ? 'readable'
+          : values[index] === 'denied'
+            ? 'denied'
+            : 'not covered',
+      ]),
+    ) as Record<string, FilesystemProbeAccess>
+    const passed = result.exitCode === 0 && targets.every(({ name }) => paths[name] === 'readable')
+    return {
+      family: 'Codex post-launch sibling gap',
+      status: passed ? 'ran' : 'failed',
+      paths,
+      reason:
+        'anything created beside the path after launch is readable to a running Codex writer, including a new sibling worktree, a new project under the projects root and a new top-level entry in the main checkout; this is a read, never a write',
+    }
+  } catch (error) {
+    return {
+      family: 'Codex post-launch sibling gap',
+      status: 'failed',
+      paths: {},
+      reason: error instanceof Error ? error.message : String(error),
+    }
+  } finally {
+    rmSync(ready, { force: true })
+    rmSync(release, { force: true })
+    for (const target of targets) rmSync(dirname(target.path), { recursive: true, force: true })
   }
 }
 
@@ -732,6 +842,23 @@ function createProbeFixture(root: string, hubSource: string) {
     orchestratorDatabase: state.orchestratorDatabase,
     orchestratorRuns: state.orchestratorRuns,
   })
+  const codexGapTargets: AccessTarget[] = [
+    {
+      name: 'new sibling worktree',
+      path: join(ownPath, '.claude', 'worktrees', 'created-after-codex-launch', 'secret'),
+      expected: 'readable',
+    },
+    {
+      name: 'new project under projects root',
+      path: join(root, 'projects', 'created-after-codex-launch', 'secret'),
+      expected: 'readable',
+    },
+    {
+      name: 'new top-level entry in main checkout',
+      path: join(ownPath, 'created-after-codex-launch', 'secret'),
+      expected: 'readable',
+    },
+  ]
   initializeProbeGitFixture(ownPath, worktree)
   for (const { path, plant = true } of targets) {
     if (!plant) continue
@@ -770,6 +897,7 @@ function createProbeFixture(root: string, hubSource: string) {
     hubOpenMode: probeHubOpenMode(hubDatabase),
     stateRoot,
     targets,
+    codexGapTargets,
     cliArgv,
     commandArgv: [...cliArgv, 'task', 'show', probeTask.key],
     commandLabel,
@@ -859,6 +987,16 @@ export async function runConfinementFilesystemProbes(): Promise<ConfinementFiles
           agent: 'codex',
         }),
         fixture.targets,
+        common.worktree,
+        fixture.environment,
+        join(common.runtimeDir, 'tmp'),
+      ),
+      await launchCodexPostLaunchGapProbe(
+        codexPermissionProfile({
+          ...common,
+          agent: 'codex',
+        }),
+        fixture.codexGapTargets,
         common.worktree,
         fixture.environment,
         join(common.runtimeDir, 'tmp'),

@@ -6,6 +6,7 @@
  */
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { type CodexDirectoryListing, decideCodexLiteralDenyRead } from './codex-deny-policy.ts'
 import type { SandboxRuntimeConfig } from './sandbox.ts'
 
 export type CodexSandboxRuling = {
@@ -94,18 +95,23 @@ export function codexPermissionProfileInput(input: {
   writableRoots: readonly string[]
   tempDir: string | undefined
   writesRepository: boolean
+  directoryListings: CodexDirectoryListing
 }): CodexPermissionProfileInput {
   refuseGlobDeny(input.profile.filesystem.denyRead)
+  const writableRoots = input.writesRepository
+    ? (codexWritableRoots(input.sandbox, input.cwd, input.writableRoots, input.tempDir, true) ?? [])
+    : input.profile.filesystem.allowWrite
   return {
     filesystem: {
-      denyRead: input.profile.filesystem.denyRead,
+      denyRead: decideCodexLiteralDenyRead({
+        denyRead: input.profile.filesystem.denyRead,
+        protectedPaths: [input.cwd, ...writableRoots],
+        directoryListings: input.directoryListings,
+      }),
       allowRead: input.profile.filesystem.allowWithinDeny,
       denyWrite: input.profile.filesystem.denyWrite,
     },
-    writableRoots: input.writesRepository
-      ? (codexWritableRoots(input.sandbox, input.cwd, input.writableRoots, input.tempDir, true) ??
-        [])
-      : input.profile.filesystem.allowWrite,
+    writableRoots,
   }
 }
 
