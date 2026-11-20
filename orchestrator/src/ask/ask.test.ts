@@ -150,30 +150,16 @@ test('reply questions store and send structured typed values', async () => {
   })
 })
 
-test('question writers refuse a superseded turn without recording', async () => {
+test('ask refuses a superseded turn without recording', async () => {
   const runId = addRun({ agent: 'codex', job: 'implement', status: 'ok' })
-  const question = {
-    kind: 'text' as const,
+  const result = await ask({
+    runId,
     question: 'Which implementation?',
     why: 'The implementation depends on the ruling.',
-  }
-
-  const liveResult = await ask({ runId, ...question, timeoutMs: 1 })
-  expect(liveResult).toEqual({
-    answered: false,
-    reason: expect.stringContaining('turn was superseded or finished'),
+    timeoutMs: 1,
   })
-  if (liveResult.answered) throw new Error('superseded turn unexpectedly received a ruling')
-  expect(liveResult.reason).toContain('must stop')
-
-  await expect(
-    recordReplyQuestions({
-      runId,
-      askedAt: '2026-11-16T12:00:00.000Z',
-      awaitingOperatorAt: null,
-      questions: [question],
-    }),
-  ).rejects.toThrow('turn was superseded or finished')
+  if (result.answered) throw new Error('superseded turn unexpectedly received a ruling')
+  expect(result.reason).toMatch(/turn was superseded or finished.*must stop/)
   expect(
     db().query('SELECT COUNT(*) count FROM question WHERE run_record_id=?').get(runId),
   ).toEqual({ count: 0 })

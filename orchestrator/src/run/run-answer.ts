@@ -202,6 +202,17 @@ type OpenQuestion = TypedAnswerQuestion & {
   taskHolder: string | null
 }
 
+function questionsNotWaitingRefusal(id: string, questions: OpenQuestion[]): string {
+  const remedies = questions
+    .filter((q) => q.owner_status !== 'asking' && q.owner_status !== 'running')
+    .map(
+      (q) =>
+        `q${q.number} (run ${q.owner_id}, ${q.owner_status}): ${PLATFORM_SLUG} question close q${q.number} --reason "<why this question is obsolete>"`,
+    )
+    .join('; ')
+  return `run ${id} has questions whose owners are not waiting: ${remedies}. Close each question, then retry ${PLATFORM_SLUG} question answer ${id}`
+}
+
 type RecordedRuling = { number: number; record_id: string; question: string; answer: string }
 
 function wrongQuestionChain(questionId: string, rootRecordId: string): string {
@@ -864,20 +875,8 @@ export async function answerRun(
     !ownersLive &&
     // Answer asks: is every open question's owner waiting for a ruling?
     !stopped.every((q) => q.owner_status === 'asking' || q.owner_status === 'running')
-  ) {
-    const strays = stopped.filter(
-      (q) => q.owner_status !== 'asking' && q.owner_status !== 'running',
-    )
-    const remedies = strays
-      .map(
-        (q) =>
-          `q${q.number} (run ${q.owner_id}, ${q.owner_status}): ${PLATFORM_SLUG} question close q${q.number} --reason "<why this question is obsolete>"`,
-      )
-      .join('; ')
-    throw new Error(
-      `run ${id} has questions whose owners are not waiting: ${remedies}. Close each question, then retry ${PLATFORM_SLUG} question answer ${id}`,
-    )
-  }
+  )
+    throw new Error(questionsNotWaitingRefusal(id, stopped))
 
   const latest = db()
     .query(
