@@ -60,9 +60,12 @@ export function permittedNodeModuleCarvebacks(input: {
       const admitted = roots.some(
         (root) =>
           isAtOrBelow(path, root) &&
-          !areaDenies.some(
-            (denied) => isAtOrBelow(denyRoot(denied), root) && areaDenyCovers(path, denied),
-          ),
+          !areaDenies.some((denied) => {
+            const deniedRoot = denyRoot(denied)
+            return (
+              deniedRoot !== root && isAtOrBelow(deniedRoot, root) && areaDenyCovers(path, denied)
+            )
+          }),
       )
       if (admitted) return true
       input.onWarning(

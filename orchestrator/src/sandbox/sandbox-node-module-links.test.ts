@@ -2,6 +2,7 @@ import { expect, test } from 'bun:test'
 import { join } from 'node:path'
 import { STATE_HOME_ENV } from '../../../shared/state-directory.ts'
 import type { Project } from '../project/projects.ts'
+import { permittedNodeModuleCarvebacks } from './node-module-read-carvebacks.ts'
 import { readonlyLensProfile } from './sandbox.ts'
 
 const fixtureProject = (path = '/projects/fixture'): Project => ({
@@ -88,4 +89,21 @@ test('a node_modules link into a sibling worktree is not re-allowed', () => {
 
   expect(profile.filesystem.allowWithinDeny).not.toContain(link)
   expect(warnings).toEqual([expect.stringContaining(link)])
+})
+
+test('an area deny must be strictly inside the root that admits a node_modules link', () => {
+  const root = '/install'
+  const allowedLink = '/install/node_modules'
+  const deniedLink = '/install/private/node_modules'
+  const warnings: string[] = []
+
+  const carvebacks = permittedNodeModuleCarvebacks({
+    links: [allowedLink, deniedLink],
+    areaDenies: [root, '/install/private/*'],
+    runningInstallRoot: root,
+    onWarning: (message) => warnings.push(message),
+  })
+
+  expect(carvebacks).toEqual([allowedLink])
+  expect(warnings).toEqual([expect.stringContaining(deniedLink)])
 })
