@@ -242,7 +242,7 @@ function reportProjectLifecycles(
 
 export function reportCheckoutRegister<T extends RegisteredCheckout>(
   projects: readonly T[],
-  presentation: DoctorReporter,
+  presentation: RetrievalDoctorReporter,
   hookFinding: (project: T) => string | null,
   inspectBranch: (project: T) => BranchInspection,
   inspectCheckout: (path: string, trunk: string) => CheckoutInspection,
