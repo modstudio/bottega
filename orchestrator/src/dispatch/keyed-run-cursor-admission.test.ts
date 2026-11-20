@@ -84,73 +84,79 @@ describe('keyed run cursor admission', () => {
   })
 
   test('a bound root at an unheld cursor binds an explicit selection', () => {
-    expect(decideKeyedRunCursorAdmission({
-      ...base,
-      turn: 'continue',
-      bindingPresent: true,
-      rootCursorRecordId: 'unheld-cursor-record',
-      cursor: 18,
-      heldCursors: [
-        {
-          recordId: 'selected-cursor-record',
-          number: 18,
-          project: PLATFORM_SLUG,
-          workflowKey: 'DEV-2293',
-          stepSlug: 'apply-findings',
-        },
-      ],
-    })).toEqual({
+    expect(
+      decideKeyedRunCursorAdmission({
+        ...base,
+        turn: 'continue',
+        bindingPresent: true,
+        rootCursorRecordId: 'unheld-cursor-record',
+        cursor: 18,
+        heldCursors: [
+          {
+            recordId: 'selected-cursor-record',
+            number: 18,
+            project: PLATFORM_SLUG,
+            workflowKey: 'DEV-2293',
+            stepSlug: 'apply-findings',
+          },
+        ],
+      }),
+    ).toEqual({
       kind: 'allow',
       binding: { cursorRecordId: 'selected-cursor-record', stepSlug: 'apply-findings' },
     })
   })
 
   test('a bound root at a held cursor binds a different explicit selection', () => {
-    expect(decideKeyedRunCursorAdmission({
-      ...base,
-      turn: 'continue',
-      bindingPresent: true,
-      rootCursorRecordId: 'root-cursor-record',
-      cursor: 18,
-      heldCursors: [
-        {
-          recordId: 'root-cursor-record',
-          number: 17,
-          project: PLATFORM_SLUG,
-          workflowKey: 'DEV-2293',
-          stepSlug: 'implement-fix',
-        },
-        {
-          recordId: 'selected-cursor-record',
-          number: 18,
-          project: PLATFORM_SLUG,
-          workflowKey: 'DEV-2293',
-          stepSlug: 'apply-findings',
-        },
-      ],
-    })).toEqual({
+    expect(
+      decideKeyedRunCursorAdmission({
+        ...base,
+        turn: 'continue',
+        bindingPresent: true,
+        rootCursorRecordId: 'root-cursor-record',
+        cursor: 18,
+        heldCursors: [
+          {
+            recordId: 'root-cursor-record',
+            number: 17,
+            project: PLATFORM_SLUG,
+            workflowKey: 'DEV-2293',
+            stepSlug: 'implement-fix',
+          },
+          {
+            recordId: 'selected-cursor-record',
+            number: 18,
+            project: PLATFORM_SLUG,
+            workflowKey: 'DEV-2293',
+            stepSlug: 'apply-findings',
+          },
+        ],
+      }),
+    ).toEqual({
       kind: 'allow',
       binding: { cursorRecordId: 'selected-cursor-record', stepSlug: 'apply-findings' },
     })
   })
 
   test('a bound root refuses an explicit cursor that is not held', () => {
-    expect(decideKeyedRunCursorAdmission({
-      ...base,
-      turn: 'continue',
-      bindingPresent: true,
-      rootCursorRecordId: 'root-cursor-record',
-      cursor: 18,
-      heldCursors: [
-        {
-          recordId: 'root-cursor-record',
-          number: 17,
-          project: PLATFORM_SLUG,
-          workflowKey: 'DEV-2293',
-          stepSlug: 'implement-fix',
-        },
-      ],
-    })).toEqual({
+    expect(
+      decideKeyedRunCursorAdmission({
+        ...base,
+        turn: 'continue',
+        bindingPresent: true,
+        rootCursorRecordId: 'root-cursor-record',
+        cursor: 18,
+        heldCursors: [
+          {
+            recordId: 'root-cursor-record',
+            number: 17,
+            project: PLATFORM_SLUG,
+            workflowKey: 'DEV-2293',
+            stepSlug: 'implement-fix',
+          },
+        ],
+      }),
+    ).toEqual({
       kind: 'refuse',
       message: expect.stringContaining(
         'cursor 18 is not an open workflow cursor held by harness session',

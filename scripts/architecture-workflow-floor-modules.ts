@@ -218,7 +218,9 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
   module('orchestrator/src/workflow/workflow-run-obligation-evidence.ts', [
     'bun:sqlite',
     '../evidence/pending-score-sql.ts',
+    '../review/review-lineage-store.ts',
     '../run/run-status.ts',
+    './workflow-review-owed-checkout.ts',
     './workflow-run-obligation.ts',
   ]),
   module('orchestrator/src/workflow/workflow-dispatch-waiver-evidence.ts', [

@@ -10,7 +10,7 @@ export type WorkflowRunChainEvidence = {
   needsVerdict: boolean
 }
 
-export type EarlierStepDispatchCandidate = WorkflowRunChainEvidence & {
+type EarlierStepDispatchCandidate = WorkflowRunChainEvidence & {
   terminalOk: boolean
   finishedAt: string | null
   headCommit: string | null

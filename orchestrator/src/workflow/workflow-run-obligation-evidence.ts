@@ -5,6 +5,7 @@ import type { Database } from 'bun:sqlite'
 import { PENDING_SCORE_WHERE } from '../evidence/pending-score-sql.ts'
 import { reviewLineage } from '../review/review-lineage-store.ts'
 import { TERMINAL_RUN_STATUS_SET } from '../run/run-status.ts'
+import { resolveBranchUnderReview } from './workflow-review-owed-checkout.ts'
 import type {
   EarlierStepDispatchEvidence,
   WorkflowRunChainEvidence,
@@ -52,10 +53,12 @@ export function gatherEarlierStepDispatchEvidence(
   jobs: readonly string[],
   currentStepSlug: string,
   project: string,
-  branch: string,
-  branchTip: string,
+  args: Record<string, string>,
   database: Database,
-): EarlierStepDispatchEvidence {
+): EarlierStepDispatchEvidence | null {
+  const resolved = resolveBranchUnderReview(project, args, database)
+  if (resolved.action === 'refuse') return null
+  const { branch, tip: branchTip } = resolved
   const lineage = reviewLineage(database, project, branch)
   const jobPlaceholders = jobs.map(() => '?').join(',')
   const candidates = jobs.length
