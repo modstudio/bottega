@@ -49,6 +49,7 @@ export const runLifecycleBoundarySpecs: ImportBoundary[] = [
       '../question-store/question-store-read.ts',
       '../question-store/question-store-mutation.ts',
       '../question-store/question-store-sql.ts',
+      '../question-store/run-question-write-guard.ts',
       './checkpoint.ts',
       './continuation-checkout-service.ts',
       './question-answer.ts',

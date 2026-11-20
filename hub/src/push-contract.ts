@@ -1,3 +1,4 @@
+import { hasRecordIdShape } from '../../shared/record-id.ts'
 import { TASK_SOURCES, type TaskSource } from '../../shared/task-source.ts'
 
 export const HOSTED_TASK_TABLE = 'hub_task'
@@ -20,6 +21,15 @@ export const PUSHABLE_HUB_CHANGE_TABLES = [
 ] as const
 
 export type PushableHubChangeTable = (typeof PUSHABLE_HUB_CHANGE_TABLES)[number]
+
+export const GUARDED_REVISION_FIELDS = {
+  [HOSTED_TASK_TABLE]: 'revision',
+  [HOSTED_COMMENT_TABLE]: 'revision',
+  [HOSTED_DOCUMENT_TABLE]: 'version',
+  [HOSTED_NOTE_TABLE]: 'revision',
+} as const
+
+export type GuardedPushTable = keyof typeof GUARDED_REVISION_FIELDS
 
 export const PUSHABLE_HUB_DELETE_ACCEPTANCE = {
   [HOSTED_TASK_TABLE]: false,
@@ -119,6 +129,7 @@ export type PushedNote = {
   promoted_task_id: string | null
   updated_at: string
   deleted_at: string | null
+  revision?: number
 }
 
 export type PushedNoteAcknowledgement = {
@@ -162,6 +173,7 @@ export type PushedTask = {
   deleted_at: string | null
   next_document_number: number
   retired_reason?: string | null
+  revision?: number
 }
 
 export type PushedComment = {
@@ -178,6 +190,7 @@ export type PushedComment = {
   actor_name?: string | null
   agent?: string | null
   run_id?: string | null
+  revision?: number
 }
 export type PushedDocument = {
   id: string
@@ -217,7 +230,13 @@ const HOSTED_TASK_UPDATE_COLUMNS = [
   'assignee',
 ] as const satisfies readonly (keyof PushedTask)[]
 
-export type HostedPushChange =
+type HostedPushGuards = {
+  change_id?: string
+  expected_revision?: number | string
+  from?: Record<string, unknown>
+}
+
+type HostedPushOperation =
   | { table: PushableHubChangeTable; id: string; op: 'delete' }
   | {
       table: typeof HOSTED_TASK_TABLE
@@ -264,9 +283,13 @@ export type HostedPushChange =
       row: PushedNoteAcknowledgement
     }
 
-export type ParsedHostedPushChange =
-  | Exclude<HostedPushChange, { op: 'delete' }>
-  | { table: DeleteAcceptingTable; id: string; op: 'delete' }
+export type HostedPushChange = HostedPushGuards & HostedPushOperation
+
+export type ParsedHostedPushChange = HostedPushGuards &
+  (
+    | Exclude<HostedPushOperation, { op: 'delete' }>
+    | { table: DeleteAcceptingTable; id: string; op: 'delete' }
+  )
 
 export type HostedPushOutcome =
   | {
@@ -722,7 +745,7 @@ function parseFields(
   return [...new Set(value as string[])]
 }
 
-export function parseHostedPushItem(value: unknown): ParsedHostedPushItem {
+function parseHostedPushItemContent(value: unknown): ParsedHostedPushItem {
   const input = object(value)
   const id = typeof input?.id === 'string' ? input.id : String(input?.id ?? '')
   if (!input) return rejected(id, 'pushed change must be an object')
@@ -741,4 +764,61 @@ export function parseHostedPushItem(value: unknown): ParsedHostedPushItem {
     return parseHostedUpsert(input as Record<string, unknown> & { id: string }, table)
   if (!acceptsDelete(table)) return rejected(id, `${table} does not accept delete`)
   return { input: { table, id: input.id, op: 'delete' } }
+}
+
+type ParsedExpectedRevision =
+  | { ok: true; value: number | string | undefined }
+  | { ok: false; error: string }
+
+function parseExpectedRevision(
+  value: unknown,
+  table: PushableHubChangeTable,
+): ParsedExpectedRevision {
+  if (value === undefined) return { ok: true, value: undefined }
+  const revisionField = GUARDED_REVISION_FIELDS[table as GuardedPushTable]
+  if (revisionField === 'version')
+    return typeof value === 'string'
+      ? { ok: true, value }
+      : { ok: false, error: `${table} expected_revision must be a string` }
+  if (revisionField !== 'revision')
+    return { ok: false, error: `${table} does not accept expected_revision` }
+  return Number.isSafeInteger(value) && Number(value) >= 0
+    ? { ok: true, value: value as number }
+    : { ok: false, error: `${table} expected_revision must be a non-negative safe integer` }
+}
+
+function parseFrom(
+  value: unknown,
+  input: ParsedHostedPushChange,
+): Record<string, unknown> | undefined | string {
+  if (value === undefined) return undefined
+  const from = object(value)
+  if (!from) return `${input.table} from must be a JSON object`
+  const fields = 'fields' in input && Array.isArray(input.fields) ? input.fields : []
+  const unknown = Object.keys(from).find((field) => !fields.includes(field))
+  return unknown ? `${input.table} from contains ${unknown}, which is not in fields` : from
+}
+
+function parsePushGuards(wire: Record<string, unknown>, input: ParsedHostedPushChange) {
+  const changeId = wire.change_id
+  if (changeId !== undefined && (typeof changeId !== 'string' || !hasRecordIdShape(changeId)))
+    return 'pushed change change_id must be a UUID'
+  const parsedExpectedRevision = parseExpectedRevision(wire.expected_revision, input.table)
+  if (!parsedExpectedRevision.ok) return parsedExpectedRevision.error
+  const expectedRevision = parsedExpectedRevision.value
+  const from = parseFrom(wire.from, input)
+  if (typeof from === 'string') return from
+  return {
+    ...(changeId === undefined ? {} : { change_id: changeId }),
+    ...(expectedRevision === undefined ? {} : { expected_revision: expectedRevision }),
+    ...(from === undefined ? {} : { from }),
+  } satisfies HostedPushGuards
+}
+
+export function parseHostedPushItem(value: unknown): ParsedHostedPushItem {
+  const parsed = parseHostedPushItemContent(value)
+  if ('outcome' in parsed) return parsed
+  const guards = parsePushGuards(value as Record<string, unknown>, parsed.input)
+  if (typeof guards === 'string') return rejected(parsed.input.id, guards)
+  return { input: { ...parsed.input, ...guards } as ParsedHostedPushChange }
 }

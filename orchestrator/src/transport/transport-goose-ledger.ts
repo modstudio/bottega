@@ -1,8 +1,18 @@
 // concern: transport-goose-ledger
 /** Best-effort short retention of Goose's sandbox-owned request ledger. */
 
-import { cpSync, existsSync, lstatSync, mkdirSync, realpathSync } from 'node:fs'
+import {
+  chmodSync,
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  realpathSync,
+  writeFileSync,
+} from 'node:fs'
 import { dirname, join, sep } from 'node:path'
+import { containsSecretShaped, redactSecretShaped } from '../../../shared/secret-shaped.ts'
 import { runHarnessStateDir } from '../run-owned-paths.ts'
 import { gooseContextProfile } from './transport-goose-context-profile.ts'
 
@@ -30,6 +40,38 @@ function gooseSourceContained(runtimeDir: string, path: string): boolean {
   )
 }
 
+/** Copy a regular ledger tree while masking credential-shaped text in every retained file. */
+function copyRedactedLedger(
+  source: string,
+  destination: string,
+  onWarning: (message: string) => void,
+): void {
+  const stat = lstatSync(source)
+  if (stat.isSymbolicLink()) return
+  if (stat.isDirectory()) {
+    mkdirSync(destination, { recursive: true })
+    for (const entry of readdirSync(source)) {
+      copyRedactedLedger(join(source, entry), join(destination, entry), onWarning)
+    }
+    return
+  }
+  if (!stat.isFile()) return
+  const bytes = readFileSync(source)
+  let output: string | Uint8Array
+  try {
+    output = redactSecretShaped(new TextDecoder('utf-8', { fatal: true }).decode(bytes)).text
+  } catch {
+    if (containsSecretShaped(bytes.toString('latin1'))) {
+      onWarning(`Goose ledger copy skipped non-UTF-8 file with secret-shaped bytes ${source}`)
+      return
+    }
+    output = bytes
+  }
+  mkdirSync(dirname(destination), { recursive: true })
+  writeFileSync(destination, output, { mode: stat.mode })
+  chmodSync(destination, stat.mode)
+}
+
 export function preserveGooseLedger(
   input: Parameters<typeof gooseLedgerCopyPaths>[0],
   onWarning: (message: string) => void,
@@ -44,12 +86,7 @@ export function preserveGooseLedger(
         onWarning(`Goose ledger copy skipped linked path ${copy.source}`)
         continue
       }
-      mkdirSync(dirname(copy.destination), { recursive: true })
-      cpSync(copy.source, copy.destination, {
-        recursive: true,
-        force: true,
-        filter: (source) => !lstatSync(source).isSymbolicLink(),
-      })
+      copyRedactedLedger(copy.source, copy.destination, onWarning)
     } catch (error) {
       try {
         onWarning(

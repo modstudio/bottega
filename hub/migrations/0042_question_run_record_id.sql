@@ -10,7 +10,7 @@ CREATE TEMP TRIGGER question_run_ref_migration_refusal
 BEFORE INSERT ON question_run_ref_migration_guard
 WHEN NEW.detail IS NOT NULL
 BEGIN
-  SELECT RAISE(ABORT, NEW.detail);
+  SELECT RAISE(ABORT, 'question run reference migration found unparseable question.run_ref, question.root_ref, or question_delivery.run_ref values; repair or delete these hub question rows, then run bottega machine migrate');
 END;
 --> statement-breakpoint
 INSERT INTO question_run_ref_migration_guard(detail)

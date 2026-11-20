@@ -83,7 +83,7 @@ export function createOperatorRouter(
       .input(
         z
           .object({
-            questionId: z.number().int().positive(),
+            questionId: z.string().uuid(),
             as: z.enum(['doc', 'canon']),
             scope: z.enum(FILING_DOC_SCOPES).optional(),
             subject: z.string().trim().min(1).optional(),

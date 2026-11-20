@@ -218,7 +218,7 @@ describe('ruling-loop measures', () => {
       new Date(now - minutesAgo * 60_000 + waitMinutes * 60_000).toISOString()
     const questions = [
       {
-        question_id: 1,
+        question_record_id: 'question-1',
         asked_at: asked(180),
         answered_at: answered(180, 2),
         asked_via: 'reply' as const,
@@ -226,35 +226,35 @@ describe('ruling-loop measures', () => {
         overturned_at: asked(30),
       },
       {
-        question_id: 2,
+        question_record_id: 'question-2',
         asked_at: asked(160),
         answered_at: answered(160, 10),
         asked_via: 'live' as const,
         answerer_kind: 'agent' as const,
       },
       {
-        question_id: 3,
+        question_record_id: 'question-3',
         asked_at: asked(150),
         answered_at: answered(150, 120),
         asked_via: 'reply' as const,
         answerer_kind: 'eval' as const,
       },
       {
-        question_id: 4,
+        question_record_id: 'question-4',
         asked_at: asked(90),
         answered_at: null,
         asked_via: 'reply' as const,
         answerer_kind: null,
       },
       {
-        question_id: 5,
+        question_record_id: 'question-5',
         asked_at: asked(60),
         answered_at: answered(60, 30),
         asked_via: null,
         answerer_kind: null,
       },
       {
-        question_id: 6,
+        question_record_id: 'question-6',
         asked_at: '2026-09-01T00:00:00.000Z',
         answered_at: null,
         asked_via: 'live' as const,
@@ -262,14 +262,18 @@ describe('ruling-loop measures', () => {
       },
     ]
     const deliveries = [
-      { question_id: 1, mode: 'resume' as const, outcome: 'failed' as const },
-      { question_id: 1, mode: 'retry' as const, outcome: 'delivered' as const },
-      { question_id: 2, mode: 'live' as const, outcome: 'delivered' as const },
-      { question_id: 3, mode: 'resume' as const, outcome: 'delivered' as const },
-      { question_id: 3, mode: 'retry' as const, outcome: 'delivered' as const },
-      { question_id: 4, mode: 'record-only' as const, outcome: 'delivered' as const },
-      { question_id: 5, mode: 'retry' as const, outcome: 'failed' as const },
-      { question_id: 6, mode: 'live' as const, outcome: 'failed' as const },
+      { question_record_id: 'question-1', mode: 'resume' as const, outcome: 'failed' as const },
+      { question_record_id: 'question-1', mode: 'retry' as const, outcome: 'delivered' as const },
+      { question_record_id: 'question-2', mode: 'live' as const, outcome: 'delivered' as const },
+      { question_record_id: 'question-3', mode: 'resume' as const, outcome: 'delivered' as const },
+      { question_record_id: 'question-3', mode: 'retry' as const, outcome: 'delivered' as const },
+      {
+        question_record_id: 'question-4',
+        mode: 'record-only' as const,
+        outcome: 'delivered' as const,
+      },
+      { question_record_id: 'question-5', mode: 'retry' as const, outcome: 'failed' as const },
+      { question_record_id: 'question-6', mode: 'live' as const, outcome: 'failed' as const },
     ]
 
     expect(measureRulings(questions, deliveries, { now, staleAfterMs: 60 * 60_000 })).toEqual({

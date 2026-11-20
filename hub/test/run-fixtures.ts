@@ -44,6 +44,7 @@ export const questionFixture = (overrides: Record<string, unknown> = {}) => {
   return {
     id,
     record_id: fixtureRecordId(id),
+    space_id: null,
     run_number: runNumber,
     run_record_id: fixtureRecordId(runNumber),
     asked_at: '2026-09-03T00:00:00.000Z',
@@ -93,6 +94,7 @@ export const runFixture = (overrides: Record<string, unknown> = {}): OrchRun => 
       const { run_id: _legacyRunId, ...questionFields } = value
       return {
         record_id: fixtureRecordId(questionId),
+        space_id: null,
         run_number: runNumber,
         run_record_id: fixtureRecordId(runNumber),
         asked_via: null,

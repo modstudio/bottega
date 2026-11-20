@@ -1,5 +1,6 @@
 import { expect, test } from 'bun:test'
 import { readFileSync } from 'node:fs'
+import { PLATFORM_SLUG } from '../shared/brand.ts'
 import {
   agreedPlaywrightDependencyPin,
   checkCiWorkflow,
@@ -10,6 +11,9 @@ import {
 import { CI_ONLY_SUITES } from './check-plan.ts'
 
 const postgresServiceContainer = `BOTTEGA_TEST_POSTGRES_CONTAINER: \${{ job.services.postgres.id }}`
+const migrationCommand = `./bin/${PLATFORM_SLUG} machine migrate`
+const migrationPaths =
+  "orchestrator/migrations hub/migrations hub/src/migrations.ts shared/migration-source.ts ':(glob)orchestrator/src/database/*migration*.ts'"
 const processSuite = CI_ONLY_SUITES[0]!
 const playwrightPin = (
   JSON.parse(readFileSync(new URL('../hub/web/package.json', import.meta.url), 'utf8')) as {
@@ -28,10 +32,14 @@ test('refuses a workflow with a missing or extra job', () => {
       if (job === processSuite.job) return processHooksJobFixture()
       if (job === 'postgres') return postgresJobFixture()
       if (job === 'release-smoke') return releaseSmokeJobFixture().trimEnd()
+      if (job === 'migration-paths') return migrationPathsJobFixture()
+      if (job === 'migration-compatibility') return migrationCompatibilityJobFixture()
       if (job === 'ci')
         return `  ${job}:\n    needs: [${expectedWorkflowJobNames()
           .filter((name) => name !== 'ci')
-          .join(', ')}]`
+          .join(
+            ', ',
+          )}]\n    steps:\n      - run: jq -e 'all(to_entries[]; .value.result == "success" or (.key == "migration-compatibility" and .value.result == "skipped"))'`
       return `  ${job}:\n    runs-on: ubuntu-latest`
     })
     .join('\n')}\n`
@@ -53,6 +61,34 @@ test('requires every planned job to block the aggregate ci job', () => {
         ),
       ),
     ).toThrow(job)
+  }
+})
+
+test('pins the migration compatibility path gate and macOS proof', () => {
+  const workflow = readWorkflowFixture()
+  expect(() => checkCiWorkflow(workflow.replace('runs-on: macos-15', 'runs-on: macos-14'))).toThrow(
+    'must run on macos-15',
+  )
+  expect(() =>
+    checkCiWorkflow(workflow.replace(migrationCommand, `./bin/${PLATFORM_SLUG} machine doctor`)),
+  ).toThrow(`must run ${migrationCommand}`)
+  expect(() =>
+    checkCiWorkflow(
+      workflow.replace(
+        `git diff --quiet "$BASE_SHA" HEAD -- ${migrationPaths}`,
+        'git diff --quiet "$BASE_SHA" HEAD',
+      ),
+    ),
+  ).toThrow(`must compare ${migrationPaths}`)
+
+  for (const path of [
+    'hub/src/migrations.ts',
+    'shared/migration-source.ts',
+    "':(glob)orchestrator/src/database/*migration*.ts'",
+  ]) {
+    expect(() => checkCiWorkflow(workflow.replace(` ${path}`, ''))).toThrow(
+      `must compare ${migrationPaths}`,
+    )
   }
 })
 
@@ -350,13 +386,36 @@ function readWorkflowFixture() {
       if (job === processSuite.job) return processHooksJobFixture()
       if (job === 'postgres') return postgresJobFixture()
       if (job === 'release-smoke') return releaseSmokeJobFixture().trimEnd()
+      if (job === 'migration-paths') return migrationPathsJobFixture()
+      if (job === 'migration-compatibility') return migrationCompatibilityJobFixture()
       if (job === 'ci')
         return `  ${job}:\n    needs: [${expectedWorkflowJobNames()
           .filter((name) => name !== 'ci')
-          .join(', ')}]`
+          .join(
+            ', ',
+          )}]\n    steps:\n      - run: jq -e 'all(to_entries[]; .value.result == "success" or (.key == "migration-compatibility" and .value.result == "skipped"))'`
       return `  ${job}:\n    runs-on: ubuntu-latest`
     })
     .join('\n')}\n`
+}
+
+function migrationPathsJobFixture() {
+  return `  migration-paths:
+    runs-on: ubuntu-24.04
+    outputs:
+      changed: ${'$'}{{ steps.changes.outputs.changed }}
+    steps:
+      - run: git diff --quiet "$BASE_SHA" HEAD -- ${migrationPaths}`
+}
+
+function migrationCompatibilityJobFixture() {
+  return `  migration-compatibility:
+    needs: migration-paths
+    if: needs.migration-paths.outputs.changed == 'true'
+    runs-on: macos-15
+    steps:
+      - run: bun -e "select sqlite_version() version"
+      - run: ${migrationCommand}`
 }
 
 function releaseSmokeJobFixture() {

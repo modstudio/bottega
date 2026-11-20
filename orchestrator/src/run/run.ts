@@ -40,7 +40,7 @@ import {
 import { namesSeenAt, probeMcpServer, storedMcpProbe } from '../mcp/mcp-probe.ts'
 import type { OutcomeStatus } from '../outcome.ts'
 import type { RunResourceObserver } from '../process-resource-sampler.ts'
-import { projectAt, projectByName, stackAt } from '../project/projects.ts'
+import { projectAt, projectByName, projects, stackAt } from '../project/projects.ts'
 import { machineId } from '../record/machine-identity.ts'
 import { startedByUserIdForRun } from '../record/record-attribution.ts'
 import { teardownTerminalRunResources } from '../resources/resource-ownership.ts'
@@ -590,7 +590,7 @@ export async function run(
     ...runTemp.environment,
   }
   assertConfiguredGitGuard(gitConfigEnvironment, writableRoots)
-  let askLoopback: AskLoopback | null = null
+  let [startupComplete, askLoopback]: [boolean, AskLoopback | null] = [false, null]
   const mcpLaunch = workerMcpLaunchScope({
     agent: a,
     transport: transportName,
@@ -603,10 +603,8 @@ export async function run(
   })
   const mcpServerName = mcpLaunch.serverName
   let sandboxSelection: ReturnType<typeof selectReadonlySandbox>
-  let sandboxEnvironment: Record<string, string>
-  let mcpEnvironment: Record<string, string>
+  let sandboxEnvironment: Record<string, string>, mcpEnvironment: Record<string, string>
   let codexMcpCatalogues: CodexMcpCatalogue[]
-  let startupComplete = false
   try {
     try {
       const writingAcpAsk = acpWriter.prepareWritingAcpAsk(writingAcp, claim.id, runToken)
@@ -619,6 +617,7 @@ export async function run(
         runtimeDir,
         scratchDir,
         project: runProject,
+        registeredProjects: [...projects({}, db()), ...projects({ retired: true }, db())],
         override: process.env.BOTTEGA_SANDBOX,
         path: process.env.PATH,
         baseUrl: a.baseUrl,

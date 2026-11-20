@@ -33,6 +33,7 @@ export const recordQuestionModules: RecordModule[] = [
     './record-question-contract.ts',
   ]),
   module('orchestrator/src/record/record-api-client-question.ts', [
+    '../question-store/run-question-write-guard.ts',
     './record-api-client-paths.ts',
     './record-auth.ts',
     './record-question-contract.ts',
@@ -89,10 +90,13 @@ export const recordQuestionModules: RecordModule[] = [
   module('orchestrator/src/record/record-question-write.ts', [
     'drizzle-orm',
     'drizzle-orm/bun-sql',
+    '../../../shared/brand.ts',
     '../../../shared/record/hosted-task-id.ts',
     '../../../shared/record/tenant.ts',
     '../../../shared/record/schema-question.ts',
+    '../../../shared/record/schema-run.ts',
     '../doc/doc-revision-conflict.ts',
+    '../question-store/run-question-write-guard.ts',
     './record-config-error.ts',
     './record-pool.ts',
     './record-question-audit.ts',
@@ -116,11 +120,15 @@ export const recordQuestionModules: RecordModule[] = [
   module('orchestrator/src/question-store/question-store-sql.ts', []),
   module('orchestrator/src/question-store/question-store-sqlite.ts', [
     'bun:sqlite',
+    '../../../shared/brand.ts',
+    '../database/db.ts',
     '../database/entity-number.ts',
     '../record/record-question-contract.ts',
     './question-store-sqlite-reads.ts',
     './question-store-types.ts',
+    './run-question-write-guard.ts',
   ]),
+  module('orchestrator/src/question-store/run-question-write-guard.ts', []),
   module('orchestrator/src/question-store/question-store-record.ts', [
     'bun:sqlite',
     '../../../shared/record-space-membership.ts',

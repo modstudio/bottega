@@ -1,0 +1,25 @@
+{
+  "entries": [
+    {
+      "tag": "0009_task_record_identity",
+      "when": 1790272800000,
+      "predecessorHash": "96bd13dd5f3ddbb923ffe219b14e51b24919bddfd63d6229a54194ffd8cb0cd2",
+      "preEditCommit": "c8ae3ef012875ab4dec30aabc920b4d58458d3c7",
+      "reason": "Replace an expression-valued RAISE message with an older-SQLite-compatible literal."
+    },
+    {
+      "tag": "0042_question_run_record_id",
+      "when": 1793225336000,
+      "predecessorHash": "633f5ffab4661840f6f50b5b8c046578d21104b2439a845f326fa3ac67ec30a0",
+      "preEditCommit": "c8ae3ef012875ab4dec30aabc920b4d58458d3c7",
+      "reason": "Replace an expression-valued RAISE message with an older-SQLite-compatible literal."
+    },
+    {
+      "tag": "0047_drop_git_tasks",
+      "when": 1793570996000,
+      "predecessorHash": "2c53fee3a3de2b78be4e72a65e4e87f64c4e9b1bcecb483915f2c6b49effdc70",
+      "preEditCommit": "c8ae3ef012875ab4dec30aabc920b4d58458d3c7",
+      "reason": "Replace an expression-valued RAISE message with an older-SQLite-compatible literal."
+    }
+  ]
+}

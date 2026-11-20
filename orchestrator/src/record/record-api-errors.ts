@@ -27,12 +27,16 @@ export function renderRecordApiRefusal(context: Context, error: unknown): Respon
     return context.json(revisionConflictBody(error), 409)
   if (error instanceof RecordProjectSpaceConflictError)
     return context.json(projectSpaceConflictResponse(error), error.status)
+  if (error instanceof RecordQuestionError)
+    return context.json(
+      error.code ? { error: error.message, code: error.code } : { error: error.message },
+      error.status,
+    )
   if (
     error instanceof RecordDocError ||
     error instanceof RecordVerdictError ||
     error instanceof ConfigServiceError ||
     error instanceof RecordProjectError ||
-    error instanceof RecordQuestionError ||
     error instanceof RecordBoardError ||
     error instanceof SpaceDeleteError ||
     error instanceof RecordProjectPurgeError

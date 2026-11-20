@@ -2,6 +2,7 @@ import { afterEach, expect, test } from 'bun:test'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import type { Project } from '../project/projects.ts'
 import { probeAgentWrites, writingCapabilityPolicy } from './agent-writing-probe.ts'
 import type { Agent } from './agents.ts'
 
@@ -19,6 +20,7 @@ function scratch(): string {
 
 const agent = { name: 'fixture', baseUrl: null } as Agent
 const environment = { ...process.env }
+const registeredProjects: Project[] = []
 
 const lifecyclePorts = {
   openAskListener: () => ({ address: '127.0.0.1:43123', close() {} }),
@@ -28,7 +30,7 @@ const lifecyclePorts = {
 test('a confined ACP writing check passes only after the requested content is written', async () => {
   const root = scratch()
   const result = await probeAgentWrites(
-    { transport: 'acp', scratch: root, agent, environment },
+    { transport: 'acp', scratch: root, agent, environment, registeredProjects },
     {
       ...lifecyclePorts,
       createWorktree(path) {
@@ -63,7 +65,7 @@ test('a confined ACP writing check passes only after the requested content is wr
 test('an ACP writing check fails when the requested content is absent', async () => {
   const root = scratch()
   const result = await probeAgentWrites(
-    { transport: 'acp', scratch: root, agent, environment },
+    { transport: 'acp', scratch: root, agent, environment, registeredProjects },
     {
       ...lifecyclePorts,
       createWorktree(path) {
@@ -81,7 +83,7 @@ test('an ACP writing check fails when the requested content is absent', async ()
 test('a CLI transport is not given the writing check', async () => {
   let calls = 0
   const result = await probeAgentWrites(
-    { transport: 'cli', scratch: scratch(), agent, environment },
+    { transport: 'cli', scratch: scratch(), agent, environment, registeredProjects },
     {
       ...lifecyclePorts,
       createWorktree() {
@@ -102,7 +104,7 @@ test('a CLI transport is not given the writing check', async () => {
 
 test('a writing-check setup failure is observed instead of thrown', async () => {
   const result = await probeAgentWrites(
-    { transport: 'acp', scratch: scratch(), agent, environment },
+    { transport: 'acp', scratch: scratch(), agent, environment, registeredProjects },
     {
       ...lifecyclePorts,
       createWorktree() {

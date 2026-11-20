@@ -4,14 +4,22 @@
 import type { SQL } from 'bun'
 import { and, sql as drizzleSql, eq, or } from 'drizzle-orm'
 import { drizzle } from 'drizzle-orm/bun-sql'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { hostedTaskIdForReference } from '../../../shared/record/hosted-task-id.ts'
 import {
   hostedQuestionWins,
   questionMutationAudit as questionMutationAuditRecord,
   question as questionRecord,
 } from '../../../shared/record/schema-question.ts'
+import { run as runRecord } from '../../../shared/record/schema-run.ts'
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
 import { RECORD_DIFFERENT_CONTENT } from '../doc/doc-revision-conflict.ts'
+import {
+  RUN_QUESTION_OWNER_NOT_LIVE_CODE,
+  RunQuestionOwnerNotLiveError,
+  runQuestionOwnerAbsentMessage,
+  runQuestionOwnerLive,
+} from '../question-store/run-question-write-guard.ts'
 import { isUniqueViolation } from './record-config-error.ts'
 import { recordPool } from './record-pool.ts'
 import { pushQuestionAudits } from './record-question-audit.ts'
@@ -102,6 +110,24 @@ async function projectIdForQuestionWrite(
   return projectRecordId(tx, input.question, input)
 }
 
+async function assertRunQuestionOwnerLive(runId: string, tx: SQL): Promise<void> {
+  // Ask asks: is this turn still the live owner of its escalation channel?
+  const owners = await drizzle({ client: tx })
+    .select({ status: runRecord.status })
+    .from(runRecord)
+    .where(eq(runRecord.id, runId))
+    .for('update')
+  const owner = owners[0]
+  if (!owner)
+    throw new RecordQuestionError(runQuestionOwnerAbsentMessage(runId, PLATFORM_SLUG), 409)
+  if (!runQuestionOwnerLive(owner.status)) {
+    const cause = new RunQuestionOwnerNotLiveError(runId)
+    const refusal = new RecordQuestionError(cause.message, 409, RUN_QUESTION_OWNER_NOT_LIVE_CODE)
+    refusal.cause = cause
+    throw refusal
+  }
+}
+
 export async function writeRecordQuestion(
   intent: QuestionIntent,
   input: Tenant & QuestionIntentBody,
@@ -149,6 +175,8 @@ export async function writeRecordQuestionTransaction(
     return importRecordQuestionTransaction(input as Tenant & QuestionImportBody, tx)
   const writeInput = input as Tenant & QuestionWriteBody
   requireRestoreNumber(intent, writeInput)
+  if (intent === 'ask' && writeInput.question.runId)
+    await assertRunQuestionOwnerLive(writeInput.question.runId, tx)
   const existing = (await tx`
       SELECT number,revision,last_request_id::text,project_id::text
         FROM question WHERE id=${writeInput.question.id}::uuid FOR UPDATE

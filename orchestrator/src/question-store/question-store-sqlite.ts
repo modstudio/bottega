@@ -2,6 +2,8 @@
 /** Adapts the existing SQLite question rows to the question port. */
 
 import type { Database } from 'bun:sqlite'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { writeTransaction } from '../database/db.ts'
 import { nextEntityNumber } from '../database/entity-number.ts'
 import type {
   QuestionLiveIntent,
@@ -35,10 +37,24 @@ import {
   workflowInboxQuestions,
 } from './question-store-sqlite-reads.ts'
 import type { QuestionReadResult, QuestionStore } from './question-store-types.ts'
+import {
+  RunQuestionOwnerNotLiveError,
+  runQuestionOwnerAbsentMessage,
+  runQuestionOwnerLive,
+} from './run-question-write-guard.ts'
 
 const json = (value: unknown) => (value == null ? null : JSON.stringify(value))
 const limited = <Row>(rows: Row[], limit?: number): Row[] =>
   limit === undefined ? rows : rows.slice(0, limit)
+
+function assertRunQuestionOwnerLive(database: Database, runId: string): void {
+  // Ask asks: is this turn still the live owner of its escalation channel?
+  const owner = database
+    .query<{ status: string }, [string]>('SELECT status FROM run WHERE record_id=?')
+    .get(runId)
+  if (!owner) throw new Error(runQuestionOwnerAbsentMessage(runId, PLATFORM_SLUG))
+  if (!runQuestionOwnerLive(owner.status)) throw new RunQuestionOwnerNotLiveError(runId)
+}
 
 function assertLocalChangedAfter(input: QuestionReadInput): void {
   if (
@@ -190,8 +206,16 @@ export class SqliteQuestionStore implements QuestionStore {
   }
 
   async write(intent: QuestionLiveIntent, input: QuestionWriteBody): Promise<QuestionWriteResult> {
+    return writeTransaction(() => this.writeInTransaction(intent, input), this.database)
+  }
+
+  private writeInTransaction(
+    intent: QuestionLiveIntent,
+    input: QuestionWriteBody,
+  ): QuestionWriteResult {
     const q = input.question
     assertQuestionJsonFieldsStructured(q)
+    if (intent === 'ask' && q.runId) assertRunQuestionOwnerLive(this.database, q.runId)
     const workflowStep = q.workflowCursorRecordId
       ? this.database
           .query<{ ordinal: number; step_slug: string }, [string]>(

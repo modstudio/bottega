@@ -83,10 +83,30 @@ test('operator close accepts a terminal question and records the supplied reason
   })
 })
 
+test("operator close judges the question's owner while a later turn is asking", async () => {
+  const { database, questionId } = fixture()
+  database
+    .query(
+      `INSERT INTO run
+       (number,record_id,parent_run_record_id,turn,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,project_record_id)
+       VALUES (43,'01990000-0000-7000-8000-000000000043','01990000-0000-7000-8000-000000000042',2,
+               '2026-09-29','codex','implement','sha',3,'ask','asking',
+               (SELECT record_id FROM project ORDER BY name LIMIT 1))`,
+    )
+    .run()
+
+  await closeQuestionByOperator(questionId, 'superseded by the later turn', database)
+  expect(
+    database.query('SELECT close_reason FROM question WHERE record_id=?').get(questionId),
+  ).toEqual({
+    close_reason: 'operator-closed: superseded by the later turn',
+  })
+})
+
 test('operator close refuses live, answered and blank questions', async () => {
   const live = fixture('asking')
   await expect(closeQuestionByOperator(live.questionId, 'obsolete', live.database)).rejects.toThrow(
-    `chain is live; use ${PLATFORM_SLUG} question answer 01990000-0000-7000-8000-000000000042`,
+    `owner is waiting; use ${PLATFORM_SLUG} question answer 01990000-0000-7000-8000-000000000042`,
   )
   const answered = fixture()
   answered.database

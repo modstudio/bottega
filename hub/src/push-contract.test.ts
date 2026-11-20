@@ -88,6 +88,37 @@ test('field lists accept only the update vocabulary for their table', () => {
   }
 })
 
+test('change guards parse without changing the legacy field list', () => {
+  const changeId = '01990000-0000-7000-8000-000000000031'
+  expect(
+    parseHostedPushItem({
+      ...task,
+      change_id: changeId,
+      expected_revision: 4,
+      fields: ['status'],
+      from: { status: 'open' },
+    }),
+  ).toEqual({
+    input: {
+      ...task,
+      change_id: changeId,
+      expected_revision: 4,
+      fields: ['status'],
+      from: { status: 'open' },
+    },
+  })
+  expect(parseHostedPushItem(task)).toEqual({ input: task })
+  for (const value of [
+    { ...task, change_id: 'not-a-uuid' },
+    { ...task, expected_revision: '4' },
+    { ...task, fields: ['status'], from: { title: 'old' } },
+    { ...task, fields: ['status'], from: [] },
+  ]) {
+    const parsed = parseHostedPushItem(value)
+    expect('outcome' in parsed ? parsed.outcome.status : 'accepted').toBe('rejected')
+  }
+})
+
 test('comment and document rows validate every wire field', () => {
   const comment = {
     table: 'hub_task_comment',

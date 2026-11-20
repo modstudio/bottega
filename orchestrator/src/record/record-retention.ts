@@ -7,6 +7,7 @@ import { recordPool } from './record-pool.ts'
 
 export const RECORD_RETENTION_INTERVAL_MS = 60 * 60_000
 export const RECORD_RETENTION_START_DELAY_MS = 10_000
+const hubAppliedChangeRetentionDays = 30
 // Serializes every prune across record API instances.
 export const RECORD_RETENTION_ADVISORY_LOCK_KEY = 2_121_000_001
 
@@ -15,6 +16,7 @@ type TimeoutTimer = ReturnType<typeof setTimeout>
 type PruneOutcome = { deleted: number } | { failure: string }
 type PruneOutcomes = {
   recordChange: PruneOutcome
+  hubAppliedChange: PruneOutcome
   contention: PruneOutcome
   noDestinationWrite: PruneOutcome
   boardPresence: PruneOutcome
@@ -49,6 +51,7 @@ async function pruneOutcome(prune: () => Promise<number>): Promise<PruneOutcome>
 export async function runLockedRecordRetention(input: {
   tryLock(): Promise<boolean>
   pruneRecordChanges(): Promise<number>
+  pruneHubAppliedChanges(): Promise<number>
   pruneContention(): Promise<number>
   pruneNoDestinationWrite(): Promise<number>
   pruneBoardPresence(): Promise<number>
@@ -57,6 +60,7 @@ export async function runLockedRecordRetention(input: {
 }): Promise<RecordRetentionResult> {
   if (!(await input.tryLock())) return { acquired: false }
   const recordChange = await pruneOutcome(input.pruneRecordChanges)
+  const hubAppliedChange = await pruneOutcome(input.pruneHubAppliedChanges)
   const contention = await pruneOutcome(input.pruneContention)
   const noDestinationWrite = await pruneOutcome(input.pruneNoDestinationWrite)
   const boardPresence = await pruneOutcome(input.pruneBoardPresence)
@@ -66,6 +70,7 @@ export async function runLockedRecordRetention(input: {
     acquired: true,
     outcomes: {
       recordChange,
+      hubAppliedChange,
       contention,
       noDestinationWrite,
       boardPresence,
@@ -111,6 +116,16 @@ export async function pruneRecordRetention(
     return await runLockedRecordRetention({
       tryLock: async () => acquired,
       pruneRecordChanges: () => pruneFunction(connection, 'record_change_prune'),
+      pruneHubAppliedChanges: async () => {
+        const result = rows<{ deleted: number | bigint | string }>(
+          await connection`SELECT public.hub_applied_change_prune(${hubAppliedChangeRetentionDays}) AS deleted`,
+        )[0]
+        if (!result)
+          throw new Error(
+            `hub_applied_change_prune() returned no result; verify the record retention migrations are applied`,
+          )
+        return Number(result.deleted)
+      },
       pruneContention: () => pruneFunction(connection, 'contention_prune'),
       pruneNoDestinationWrite: () => pruneFunction(connection, 'no_destination_write_prune'),
       pruneBoardPresence: async () => {
@@ -155,6 +170,9 @@ export async function runRecordRetentionPass(
         : `${name} failed (${outcome.failure})`
     adapters.log(
       `record retention: ${format('record_change', result.outcomes.recordChange)}, ${format(
+        'hub_applied_change',
+        result.outcomes.hubAppliedChange,
+      )}, ${format(
         'contention',
         result.outcomes.contention,
       )}, ${format('no_destination_write', result.outcomes.noDestinationWrite)}, ${format(
@@ -169,7 +187,7 @@ export async function runRecordRetentionPass(
     const durationMs = adapters.now() - startedAt
     const message = error instanceof Error ? error.message : String(error)
     adapters.log(
-      `record retention failed after ${durationMs}ms: ${message}; verify record database connectivity and that record_change_prune(), contention_prune(), no_destination_write_prune(), board_presence_prune(), machine_join_prune(), and machine_key_claim_challenge_prune() are installed; the next interval will retry`,
+      `record retention failed after ${durationMs}ms: ${message}; verify record database connectivity and that record_change_prune(), hub_applied_change_prune(), contention_prune(), no_destination_write_prune(), board_presence_prune(), machine_join_prune(), and machine_key_claim_challenge_prune() are installed; the next interval will retry`,
     )
   }
 }

@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
+import { PLATFORM_SLUG } from '../shared/brand.ts'
 import { CHECK_LEGS, CI_ONLY_JOBS, CI_ONLY_SUITES } from './check-plan.ts'
 
 const root = fileURLToPath(new URL('..', import.meta.url))
@@ -14,6 +15,10 @@ const playwrightBunInstallCommand = 'npm install --global "bun@$(cat .bun-versio
 const playwrightTrustWorkspaceCommand =
   'git config --system --add safe.directory "$GITHUB_WORKSPACE"'
 const releaseSmokeCommand = 'bun scripts/smoke-release.ts'
+const migrationJobs = ['migration-paths', 'migration-compatibility'] as const
+const migrationPaths =
+  "orchestrator/migrations hub/migrations hub/src/migrations.ts shared/migration-source.ts ':(glob)orchestrator/src/database/*migration*.ts'"
+const migrationCommand = `./bin/${PLATFORM_SLUG} machine migrate`
 const ciReleaseSmokeCondition =
   "github.event_name == 'pull_request' || github.event_name == 'merge_group' || github.event_name == 'workflow_dispatch'"
 
@@ -124,6 +129,32 @@ function checkCiReleaseSmokeJob(source: string): void {
       `.github/workflows/ci.yml release-smoke command is not gated on pull_request, merge_group or workflow_dispatch; add "if: ${ciReleaseSmokeCondition}" to the step that runs ${releaseSmokeCommand}`,
     )
   }
+}
+
+function checkMigrationCompatibilityJobs(source: string): void {
+  const paths = workflowJob(source, 'migration-paths')
+  if (!paths.includes('runs-on: ubuntu-24.04'))
+    throw new Error('migration-paths job must make its path decision on ubuntu-24.04')
+  if (!paths.includes(`git diff --quiet "$BASE_SHA" HEAD -- ${migrationPaths}`))
+    throw new Error(`migration-paths job must compare ${migrationPaths} against the event base`)
+  if (!paths.includes('changed: ${{ steps.changes.outputs.changed }}'))
+    throw new Error('migration-paths job must expose its changed decision')
+
+  const compatibility = workflowJob(source, 'migration-compatibility')
+  if (!compatibility.includes('needs: migration-paths'))
+    throw new Error('migration-compatibility job must need migration-paths')
+  if (!compatibility.includes("if: needs.migration-paths.outputs.changed == 'true'"))
+    throw new Error('migration-compatibility job must skip unless migration paths changed')
+  if (!compatibility.includes('runs-on: macos-15'))
+    throw new Error('migration-compatibility job must run on macos-15')
+  if (!workflowRunCommands(compatibility).includes(migrationCommand))
+    throw new Error(`migration-compatibility job must run ${migrationCommand}`)
+  if (!compatibility.includes('select sqlite_version() version'))
+    throw new Error('migration-compatibility job must print the SQLite version Bun links')
+
+  const aggregate = workflowJob(source, 'ci')
+  if (!aggregate.includes('.key == "migration-compatibility" and .value.result == "skipped"'))
+    throw new Error('ci aggregate must accept a path-skipped migration-compatibility job')
 }
 
 function workflowNeeds(job: string, dependency: string): boolean {
@@ -247,6 +278,7 @@ export function expectedWorkflowJobNames(): string[] {
     'static',
     ...CHECK_LEGS.flatMap((leg) => (leg.ciJob === null ? [] : [leg.ciJob])),
     ...CI_ONLY_JOBS,
+    ...migrationJobs,
     'root',
     'ci',
   ].sort()
@@ -254,6 +286,7 @@ export function expectedWorkflowJobNames(): string[] {
 
 export function checkCiWorkflow(source: string): void {
   checkCiReleaseSmokeJob(source)
+  checkMigrationCompatibilityJobs(source)
   const actual = workflowJobNames(source).sort()
   const expected = expectedWorkflowJobNames()
   if (JSON.stringify(actual) !== JSON.stringify(expected)) {

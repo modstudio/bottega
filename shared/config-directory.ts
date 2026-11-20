@@ -9,6 +9,9 @@ export const CONFIG_HOME_ENV = `${PLATFORM_SLUG.toUpperCase()}_CONFIG_HOME`
 /** The harness-owned env-file override is derived from the one canonical slug. */
 export const HARNESS_ENV_FILE_ENV = `${PLATFORM_SLUG.toUpperCase()}_HARNESS_ENV_FILE`
 
+/** The platform env-file override is derived from the one canonical slug. */
+export const PLATFORM_ENV_FILE_ENV = `${PLATFORM_SLUG.toUpperCase()}_PLATFORM_ENV_FILE`
+
 /** The owner-only file holding the machine key when file storage is selected. */
 export function machineKeyFilePath(env: ConfigEnvironment): string {
   return join(resolveConfigRoot(env), 'machine-key')
@@ -47,6 +50,15 @@ export function resolveConfigRoot(env: ConfigEnvironment): string {
 }
 
 export function resolvePlatformEnvFile(env: ConfigEnvironment): string {
+  const override = env[PLATFORM_ENV_FILE_ENV]
+  if (override !== undefined && override !== '') {
+    if (!isAbsolute(override)) {
+      throw new Error(
+        `${PLATFORM_ENV_FILE_ENV} must be an absolute env-file path; set it to an absolute path or set it to the empty string to disable the platform source`,
+      )
+    }
+    return override
+  }
   return join(resolveConfigRoot(env), `${PLATFORM_SLUG}.env`)
 }
 
@@ -76,5 +88,6 @@ function resolveHarnessEnvFile(env: ConfigEnvironment): string | null {
  */
 export function resolveEnvFilePaths(env: ConfigEnvironment): string[] {
   const harness = resolveHarnessEnvFile(env)
-  return [...(harness ? [harness] : []), resolvePlatformEnvFile(env)]
+  const platform = env[PLATFORM_ENV_FILE_ENV] === '' ? null : resolvePlatformEnvFile(env)
+  return [...(harness ? [harness] : []), ...(platform ? [platform] : [])]
 }
