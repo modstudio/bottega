@@ -952,6 +952,7 @@ const UUID_COLUMNS: readonly ManifestColumn[] = [
     'note_counter.record_id',
     'question.project_record_id',
     'question.record_id',
+    'question.space_id',
     'question.root_run_record_id',
     'question.run_record_id',
     'question.task_record_id',

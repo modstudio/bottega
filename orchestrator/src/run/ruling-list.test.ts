@@ -26,13 +26,13 @@ test('ruling list strips question-store fields outside the published contract', 
          asked_at,question,answer,answered_at,kind,jev_pick,asked_via,answerer_kind)
        VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM question),?,'DEV-2349','task-DEV-2349',
                '2026-11-16T01:01:00.000Z','Which option?','Alpha',
-               '2026-11-16T01:02:00.000Z','choice','\"alpha\"','workflow','operator')`,
+               '2026-11-16T01:02:00.000Z','choice','"alpha"','workflow','operator')`,
     )
     .run(questionId, cursorId)
 
   const rows = await listRulings({ kind: 'all' })
 
   expect(rows).toHaveLength(1)
-  expect(rows[0]).toMatchObject({ record_id: questionId, answer: 'Alpha' })
+  expect(rows[0]).toMatchObject({ record_id: questionId, space_id: null, answer: 'Alpha' })
   expect(rows[0]).not.toHaveProperty('jev_pick')
 })

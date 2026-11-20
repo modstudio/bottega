@@ -25,7 +25,7 @@ const FIVE_MINUTES_MS = 5 * 60_000
 const ONE_HOUR_MS = 60 * 60_000
 
 export type RulingMeasureQuestion = {
-  question_id: number
+  question_id: string
   asked_at: string
   answered_at: string | null
   asked_via: AskedVia | null
@@ -35,7 +35,7 @@ export type RulingMeasureQuestion = {
 }
 
 export type RulingMeasureDelivery = {
-  question_id: number
+  question_id: string
   mode: QuestionDeliveryMode
   outcome: QuestionDeliveryOutcome
 }
@@ -267,12 +267,12 @@ export function rulingsPayload(now = Date.now()) {
 export function rulingsStatsPayload(days = DEFAULT_STATS_DAYS, now = Date.now()) {
   const questionRows = db()
     .query<RulingMeasureQuestion, []>(
-      `SELECT number question_id, asked_at, answered_at, asked_via, answerer_kind, overturned_at, closed_at FROM question`,
+      `SELECT record_id question_id, asked_at, answered_at, asked_via, answerer_kind, overturned_at, closed_at FROM question`,
     )
     .all()
   const deliveryRows = db()
     .query<RulingMeasureDelivery, []>(
-      `SELECT q.number question_id,d.mode,d.outcome FROM question_delivery d
+      `SELECT q.record_id question_id,d.mode,d.outcome FROM question_delivery d
        JOIN question q ON q.record_id=d.question_record_id`,
     )
     .all()

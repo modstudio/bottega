@@ -13,7 +13,12 @@ import {
 import { db, writeTransaction } from '../db.ts'
 import { loadOutboxChange } from '../outbox-row.ts'
 import { runRef } from '../run-ref.ts'
-import { chainVendorTokens, executionSpans, RUN_INGEST_BATCH_SIZE } from './runs.ts'
+import {
+  chainVendorTokens,
+  executionSpans,
+  ingestRunChanges,
+  RUN_INGEST_BATCH_SIZE,
+} from './runs.ts'
 
 beforeAll(resetFixtureStore)
 
@@ -158,6 +163,7 @@ describe('run ingest', () => {
         {
           id: 8001,
           record_id: '00000000-0000-4000-8000-000000008001',
+          space_id: '00000000-0000-4000-8000-000000008099',
           run_number: null,
           run_record_id: null,
           workflow_cursor_id: '00000000-0000-4000-8000-000000007001',
@@ -208,6 +214,88 @@ describe('run ingest', () => {
       project: 'alpha',
       asked_via: 'workflow',
     })
+  })
+
+  test('questions sharing a number ingest independently across record spaces and sources', async () => {
+    const number = 8002
+    const ruling = (recordId: string, spaceId: string, cursorId: string) => ({
+      id: number,
+      record_id: recordId,
+      space_id: spaceId,
+      run_number: null,
+      run_record_id: null,
+      workflow_cursor_id: cursorId,
+      workflow_key: null,
+      project: 'alpha',
+      workflow_slug: 'ship',
+      mode_slug: 'default',
+      session_id: 'owner',
+      asked_at: '2026-09-24T12:00:00.000Z',
+      question: 'Proceed?',
+      answer: null,
+      answer_basis: null,
+      answered_at: null,
+      answered_by: null,
+      answered_by_name: null,
+      asked_via: 'workflow',
+      answerer_kind: null,
+      answer_channel: null,
+      closed_at: null,
+      close_reason: null,
+      overturned_at: null,
+      overturned_by: null,
+      overturned_by_name: null,
+      overturn_reason: null,
+      replacement: null,
+      filed_as: null,
+      filed_ref: null,
+      filed_record_id: null,
+      filed_label: null,
+      filed_at: null,
+    })
+    const runQuestionRecordId = fixtureRecordId(80_023)
+    await ingestStdout(
+      JSON.stringify(
+        runFixture({
+          id: 80_020,
+          questions: [
+            questionFixture({
+              id: number,
+              record_id: runQuestionRecordId,
+              run_id: 80_020,
+              space_id: fixtureRecordId(80_013),
+            }),
+          ],
+        }),
+      ),
+      JSON.stringify([
+        ruling(fixtureRecordId(80_021), fixtureRecordId(80_011), fixtureRecordId(80_031)),
+        ruling(fixtureRecordId(80_022), fixtureRecordId(80_012), fixtureRecordId(80_032)),
+      ]),
+    )
+
+    expect(
+      db()
+        .query(`SELECT record_id,space_id,number FROM question WHERE number=? ORDER BY record_id`)
+        .all(number),
+    ).toEqual([
+      { record_id: fixtureRecordId(80_021), space_id: fixtureRecordId(80_011), number },
+      { record_id: fixtureRecordId(80_022), space_id: fixtureRecordId(80_012), number },
+      { record_id: runQuestionRecordId, space_id: fixtureRecordId(80_013), number },
+    ])
+  })
+
+  test('change collection reports both rejected legs', async () => {
+    await expect(
+      ingestRunChanges('2026-09-01T00:00:00.000Z', {
+        runChangeReader: async () => {
+          throw new Error('runs unavailable')
+        },
+        rulingChangeReader: async () => {
+          throw new Error('rulings unavailable')
+        },
+      }),
+    ).rejects.toThrow('runs leg: runs unavailable; rulings leg: rulings unavailable')
   })
 
   test('a second collect of an unchanged run keeps the interval UUID', async () => {

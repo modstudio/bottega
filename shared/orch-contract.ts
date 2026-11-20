@@ -291,10 +291,11 @@ const OrchTurnSchema = z
   })
   .passthrough()
 
-const OrchQuestionSchema = z
+export const OrchQuestionSchema = z
   .object({
     id: z.number().int(),
     record_id: z.string().uuid(),
+    space_id: z.string().uuid().nullable(),
     run_number: z.number().int(),
     run_record_id: z.string().uuid(),
     asked_at: z.iso.datetime(),
@@ -327,6 +328,7 @@ const RulingListRowSchema = z
   .object({
     id: z.number().int().positive(),
     record_id: z.string().uuid(),
+    space_id: z.string().uuid().nullable(),
     run_number: z.number().int().positive().nullable(),
     run_record_id: z.string().uuid().nullable(),
     workflow_cursor_id: z.string().uuid().nullable(),

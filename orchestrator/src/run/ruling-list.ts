@@ -50,6 +50,7 @@ async function queryRulings(options: RulingListOptions): Promise<{
   const parsed = z.array(RulingListSchema.element.strip()).parse(
     rows.map(({ number, ...row }) => ({
       id: number,
+      space_id: row.space_id ?? null,
       ...row,
     })),
   )
