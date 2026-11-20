@@ -304,6 +304,7 @@ export const hubModuleSpecs = [
     file: 'hub/src/hosted-route-identity.ts',
     allowed: [
       '../../shared/brand.ts',
+      '../../shared/record-call-trace.ts',
       '../../shared/record-request-headers.ts',
       '../../shared/record-no-destination-write-contract.ts',
       '../../shared/record-no-destination-write-counter.ts',
@@ -340,6 +341,7 @@ export const hubModuleSpecs = [
   {
     file: 'hub/src/hosted-session-send.ts',
     allowed: [
+      '../../shared/record-call-trace.ts',
       '../../shared/record-remedies.ts',
       '../../shared/record-request-headers.ts',
       '../../shared/record-session.ts',

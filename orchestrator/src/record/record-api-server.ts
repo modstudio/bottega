@@ -2,7 +2,11 @@
 /** Composes and serves the record API. Must not own record queries or authentication policy. */
 import { readBuiltCommit } from '../../../shared/built-commit.ts'
 import {
+  type BodyCountFinish,
+  contentLength,
+  countResponseBody,
   HOSTED_SERVER_IDLE_TIMEOUT_SECONDS,
+  hostedAccessBodyLogLine,
   hostedAccessLogLine,
 } from '../../../shared/hosted-server.ts'
 import { CALLER_HEADER_NAME, loggedCallerToken } from '../../../shared/record-caller.ts'
@@ -218,6 +222,38 @@ export async function stopRecordApiServer(input: {
   await Promise.all([input.auth.close(), closeRecordPools()])
 }
 
+export async function timedRecordApiResponse(
+  app: { fetch(request: Request): Response | Promise<Response> },
+  request: Request,
+  now: () => number = performance.now.bind(performance),
+  onBodyBytes: (
+    bytes: number,
+    status: number,
+    durationMs: number,
+    finish: BodyCountFinish,
+  ) => void = () => {},
+): Promise<{ response: Response; durationMs: number }> {
+  const started = now()
+  const response = await app.fetch(request)
+  const durationMs = now() - started
+  try {
+    response.headers.set('server-timing', `app;dur=${durationMs.toFixed(1)}`)
+  } catch {
+    // Redirects and pass-through fetch responses can have immutable headers.
+    return { response, durationMs }
+  }
+  if (contentLength(response.headers) !== null || response.body === null)
+    return { response, durationMs }
+  return {
+    response: countResponseBody(
+      response,
+      () => {},
+      (bytes, finish) => onBodyBytes(bytes, response.status, durationMs, finish),
+    ),
+    durationMs,
+  }
+}
+
 function serveRecordApi(
   app: { fetch(request: Request): Response | Promise<Response> },
   port: number,
@@ -232,18 +268,36 @@ function serveRecordApi(
     idleTimeout: HOSTED_SERVER_IDLE_TIMEOUT_SECONDS,
     port,
     fetch: async (request, bunServer) => {
-      const started = performance.now()
       if (request.method === 'GET' && new URL(request.url).pathname === '/v1/board/stream') {
         bunServer.timeout(request, 0)
       }
-      const response = await app.fetch(request)
+      const method = request.method
+      const pathname = new URL(request.url).pathname
+      const caller = loggedCallerToken(request.headers.get(CALLER_HEADER_NAME))
+      const { response, durationMs } = await timedRecordApiResponse(
+        app,
+        request,
+        undefined,
+        (responseBytes, status, _durationMs, finish) =>
+          console.log(
+            hostedAccessBodyLogLine({
+              method,
+              pathname,
+              status,
+              responseBytes,
+              finish,
+              caller,
+            }),
+          ),
+      )
       console.log(
         hostedAccessLogLine({
-          method: request.method,
-          pathname: new URL(request.url).pathname,
+          method,
+          pathname,
           status: response.status,
-          durationMs: performance.now() - started,
-          caller: loggedCallerToken(request.headers.get(CALLER_HEADER_NAME)),
+          durationMs,
+          responseBytes: contentLength(response.headers),
+          caller,
         }),
       )
       return response

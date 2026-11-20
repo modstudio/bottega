@@ -53,6 +53,6 @@ test('access-log caller validation prevents a supplied value from injecting a fi
     durationMs: 1,
     caller: loggedCallerToken('cli:hook caller=hook:heartbeat'),
   })
-  expect(line).toBe('GET /v1/questions 200 1ms caller=invalid')
+  expect(line).toBe('GET /v1/questions 200 1ms bytes=- caller=invalid')
   expect(line.match(/caller=/g)).toHaveLength(1)
 })

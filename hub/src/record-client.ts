@@ -27,6 +27,7 @@ import {
   OrchStateSchema,
 } from '../../shared/orch-contract.ts'
 import { resolveRecordApiUrl } from '../../shared/record-api-url.ts'
+import { tracedRecordFetch } from '../../shared/record-call-trace.ts'
 import { RecordProjectsSchema } from '../../shared/record-project-contract.ts'
 import { hostedRequestSafetyStatement } from '../../shared/record-remedies.ts'
 import { recordRequestHeaders } from '../../shared/record-request-headers.ts'
@@ -561,7 +562,11 @@ async function request<T>(
   try {
     return await Promise.race([
       (async () => {
-        const response = await fetchImpl(url, { ...init, headers, signal })
+        const response = await tracedRecordFetch(
+          url,
+          { ...init, headers, signal },
+          fetchImpl as typeof fetch,
+        )
         const body = await response.json().catch(() => null)
         if (!response.ok) throw mappedError(response.status, body, path)
         const parsed = schema.safeParse(body)

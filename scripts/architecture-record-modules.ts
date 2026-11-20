@@ -616,6 +616,7 @@ export const recordModules: RecordModule[] = [
     '../../../shared/env-source.ts',
     '../../../shared/operator-credentials.ts',
     '../../../shared/record-api-url.ts',
+    '../../../shared/record-call-trace.ts',
     '../../../shared/record-remedies.ts',
     '../../../shared/record-request-headers.ts',
     '../../../shared/record/schema.ts',

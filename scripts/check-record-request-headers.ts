@@ -9,6 +9,13 @@ import { RECORD_SPACE_HEADER_NAME } from '../shared/record-request-headers.ts'
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url)).replace(/\/$/, '')
 const SOURCE_ROOTS = ['shared', 'hub/src', 'hub/web/scripts', 'orchestrator/src'] as const
+const RECORD_FETCH_SOURCE_ROOTS = [
+  'shared',
+  'hub/src',
+  'orchestrator/src',
+  'cli',
+  'scripts',
+] as const
 const HELPER_MODULE = 'shared/record-request-headers.ts'
 const TEST_FILE = /(?:^|\/)(?:test|tests)\/|(?:^|\/)(?:test-[^/]+|[^/]+\.test)\.ts$/
 
@@ -22,6 +29,22 @@ const THIRD_PARTY_BEARER_HEADER_FILES = {
     'external typed-question provider endpoint, not the record API or hosted hub',
 } as const
 
+const NON_RECORD_FETCH_FILES = {
+  'orchestrator/src/agent/model-host.ts': 'model host endpoint, not the record API',
+  'orchestrator/src/agent/openrouter-key-budget.ts':
+    'external model provider endpoint, not the record API',
+  'scripts/record-rehearse.ts': 'Fly Machines API, not the record API',
+  'scripts/smoke-binary.ts': 'ephemeral smoke-test servers, not the record API',
+  'shared/bounded-fetch.ts': 'defines the transport passed into tracedRecordFetch',
+  'shared/typed-question/client.ts': 'external typed-question provider, not the record API',
+} as const
+
+const TRACED_TRANSPORT_FUNCTIONS = {
+  'hub/src/task-client.ts': {
+    hostedFetch: 'transport handed to sendHostedSessionRequest, which is the traced seam',
+  },
+} as const
+
 type HeaderConstructionKind = 'caller' | 'space' | 'bearer'
 
 export type RecordRequestHeaderViolation = {
@@ -29,6 +52,8 @@ export type RecordRequestHeaderViolation = {
   line: number
   kind: HeaderConstructionKind
 }
+
+export type RecordFetchViolation = { file: string; line: number }
 
 function literalText(node: ts.Node | undefined): string | undefined {
   return node && (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node))
@@ -132,6 +157,102 @@ export function recordRequestHeaderViolations(
   return violations
 }
 
+function calledName(node: ts.CallExpression): string | undefined {
+  if (ts.isIdentifier(node.expression)) return node.expression.text
+  if (ts.isPropertyAccessExpression(node.expression)) return node.expression.name.text
+  return undefined
+}
+
+function unparenthesized(node: ts.Expression): ts.Expression {
+  while (ts.isParenthesizedExpression(node)) node = node.expression
+  return node
+}
+
+function isFetchFallback(node: ts.Expression): boolean {
+  node = unparenthesized(node)
+  if (ts.isIdentifier(node)) return node.text === 'fetch'
+  return (
+    ts.isBinaryExpression(node) &&
+    (node.operatorToken.kind === ts.SyntaxKind.QuestionQuestionToken ||
+      node.operatorToken.kind === ts.SyntaxKind.BarBarToken) &&
+    (isFetchFallback(node.left) || isFetchFallback(node.right))
+  )
+}
+
+function sameScopeInitializer(
+  identifier: ts.Identifier,
+  call: ts.CallExpression,
+): ts.Expression | undefined {
+  let scope: ts.Node | undefined = call.parent
+  while (scope && !ts.isBlock(scope) && !ts.isSourceFile(scope)) scope = scope.parent
+  if (!scope || (!ts.isBlock(scope) && !ts.isSourceFile(scope))) return undefined
+  for (const statement of scope.statements) {
+    if (!ts.isVariableStatement(statement)) continue
+    for (const declaration of statement.declarationList.declarations)
+      if (ts.isIdentifier(declaration.name) && declaration.name.text === identifier.text)
+        return declaration.initializer
+  }
+  return undefined
+}
+
+function nodeText(node: ts.Node | undefined, sourceFile: ts.SourceFile): string {
+  return node?.getText(sourceFile) ?? ''
+}
+
+function enclosingFunctionName(node: ts.Node): string | undefined {
+  for (let parent = node.parent; parent; parent = parent.parent)
+    if (ts.isFunctionDeclaration(parent)) return parent.name?.text
+  return undefined
+}
+
+/** Find record or hosted API fetches that bypass tracedRecordFetch. */
+export function recordFetchViolations(source: string, file: string): RecordFetchViolation[] {
+  if (file === 'shared/record-call-trace.ts' || file in NON_RECORD_FETCH_FILES) return []
+  const sourceFile = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true)
+  const violations: RecordFetchViolation[] = []
+  const visit = (node: ts.Node) => {
+    if (ts.isCallExpression(node)) {
+      const fallbackFetch = isFetchFallback(node.expression)
+      const name = fallbackFetch ? 'fetch' : calledName(node)
+      const firstArgument = node.arguments[0]
+      const initializer =
+        firstArgument && ts.isIdentifier(firstArgument)
+          ? sameScopeInitializer(firstArgument, node)
+          : undefined
+      const first =
+        `${nodeText(firstArgument, sourceFile)} ${nodeText(initializer, sourceFile)}`.trim()
+      const hostedBoundedFetch =
+        name === 'boundedFetch' && literalText(node.arguments[0]) === 'hosted-api'
+      const opaqueHostedSend =
+        name === 'fetch' &&
+        ts.isPropertyAccessExpression(node.expression) &&
+        /(?:^|\.)input\.url$/.test(first)
+      const recordResolvedFetch =
+        name === 'fetch' &&
+        /(?:resolveRecordApiUrl|resolveHostedUrl|recordApiUrl|hostedUrl)/.test(first)
+      if (
+        name === 'hostedApiFetch' ||
+        hostedBoundedFetch ||
+        opaqueHostedSend ||
+        recordResolvedFetch
+      ) {
+        const allowedFunctions =
+          TRACED_TRANSPORT_FUNCTIONS[file as keyof typeof TRACED_TRANSPORT_FUNCTIONS]
+        const functionName = enclosingFunctionName(node)
+        if (functionName && Object.hasOwn(allowedFunctions ?? {}, functionName)) {
+          ts.forEachChild(node, visit)
+          return
+        }
+        const { line } = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile))
+        violations.push({ file, line: line + 1 })
+      }
+    }
+    ts.forEachChild(node, visit)
+  }
+  visit(sourceFile)
+  return violations
+}
+
 function run(): number {
   const violations: RecordRequestHeaderViolation[] = []
   for (const sourceRoot of SOURCE_ROOTS) {
@@ -143,12 +264,24 @@ function run(): number {
       )
     }
   }
+  const fetchViolations: RecordFetchViolation[] = []
+  for (const sourceRoot of RECORD_FETCH_SOURCE_ROOTS) {
+    for (const relative of new Glob('**/*.ts').scanSync({ cwd: join(ROOT, sourceRoot) })) {
+      const file = join(sourceRoot, relative)
+      if (relative.includes('node_modules/') || TEST_FILE.test(file)) continue
+      fetchViolations.push(...recordFetchViolations(readFileSync(join(ROOT, file), 'utf8'), file))
+    }
+  }
   for (const violation of violations) {
     console.error(
       `${violation.file}:${violation.line}: request header construction must use recordRequestHeaders`,
     )
   }
-  if (violations.length > 0) return 1
+  for (const violation of fetchViolations)
+    console.error(
+      `${violation.file}:${violation.line}: record and hosted API requests must use tracedRecordFetch`,
+    )
+  if (violations.length > 0 || fetchViolations.length > 0) return 1
   console.log('check-record-request-headers: ok')
   return 0
 }

@@ -48,6 +48,7 @@ export const recordBindingModules: RecordModule[] = [
     '../../../shared/bounded-fetch.ts',
     '../../../shared/brand.ts',
     '../../../shared/hosted-call-observation.ts',
+    '../../../shared/record-call-trace.ts',
     '../../../shared/install-root.ts',
     '../../../shared/record-request-headers.ts',
     '../hosted-call-outcome.ts',

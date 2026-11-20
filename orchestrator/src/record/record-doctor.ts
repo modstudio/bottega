@@ -15,6 +15,7 @@ import {
   RECORD_READER_ROLE,
 } from '../../../shared/record/schema.ts'
 import { recordApiConfigured } from '../../../shared/record-api-url.ts'
+import { tracedRecordFetch } from '../../../shared/record-call-trace.ts'
 import {
   NO_DESTINATION_WRITES_ROUTE,
   type NoDestinationWriteReport,
@@ -500,9 +501,10 @@ export async function hostedHubDestinationlessWriteFacts(input: {
       hubNoDestinationWritesFailure: `BOTTEGA_HOSTED_URL is not set; run \`${PLATFORM_SLUG} record use <address>\``,
     }
   try {
-    const response = await (input.fetchImpl ?? fetch)(
+    const response = await tracedRecordFetch(
       `${input.hostedUrl.replace(/\/$/, '')}${NO_DESTINATION_WRITES_ROUTE}`,
       { headers: recordRequestHeaders({ bearerToken: input.token }) },
+      input.fetchImpl ?? fetch,
     )
     if (!response.ok)
       return {

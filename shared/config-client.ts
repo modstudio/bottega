@@ -7,6 +7,7 @@ import type {
 import { scheduleHostedCallObservation } from './hosted-call-observation.ts'
 import { jsonBody } from './http-json.ts'
 import { resolveRecordApiUrl } from './record-api-url.ts'
+import { tracedRecordFetch } from './record-call-trace.ts'
 import { RECORD_SIGN_IN_REMEDY } from './record-remedies.ts'
 import { recordRequestHeaders } from './record-request-headers.ts'
 import { readRecordSessionToken, sendWithStoredRecordSessionToken } from './record-session.ts'
@@ -437,11 +438,15 @@ function createConfigClient(
       if (init.body) headers.set('content-type', 'application/json')
       const startedAt = performance.now()
       try {
-        const response = await transport(`${baseUrl}${route}`, {
-          ...init,
-          headers,
-          signal: init.signal ?? signal,
-        })
+        const response = await tracedRecordFetch(
+          `${baseUrl}${route}`,
+          {
+            ...init,
+            headers,
+            signal: init.signal ?? signal,
+          },
+          transport as typeof fetch,
+        )
         scheduleHostedCallObservation(recorder, {
           route,
           observedAt: new Date().toISOString(),
