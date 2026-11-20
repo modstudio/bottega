@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { CONFIG_HOME_ENV } from '../../shared/config-directory.ts'
 import { KEYSTORE_ENV } from '../../shared/key-store-constants.ts'
+import { withDatabaseForMigrationStep } from '../src/database/db.ts'
 import { signInCommand } from '../src/record/record-auth-command.ts'
 import { registerCustomerAuthProof } from './postgres-customer-auth-proof.ts'
 
@@ -41,9 +42,12 @@ export function registerPostgresSignInProofs(input: {
          DELETE FROM space WHERE id='${input.repairSpace()}';`,
       )
       const output: string[] = []
-      await signInCommand(input.repair.email, async () => input.repair.password, {
-        log: (value) => output.push(value),
-      })
+      await signInCommand(
+        input.repair.email,
+        async () => input.repair.password,
+        { log: (value) => output.push(value) },
+        withDatabaseForMigrationStep,
+      )
       expect(output.filter((line) => line !== 'board now uses the hosted record')).toEqual([
         `signed in ${input.repair.email}`,
         expect.stringMatching(/^active record space user-\S+$/),

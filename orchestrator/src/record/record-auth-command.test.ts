@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { withDatabaseForMigrationStep } from '../database/db.ts'
 import { RecordApiRequestError } from './record-api-client.ts'
 import {
   decideRecordPassword,
@@ -73,16 +74,22 @@ test('sign-up refuses before the API when the session-store probe fails', async 
 test('sign-in refuses before the API when the session-store probe fails', async () => {
   let apiCalls = 0
   await expect(
-    signInCommand('person@example.test', async () => 'secret', presentation, {
-      probeSessionStore: () => {
-        throw new Error('session store unavailable')
+    signInCommand(
+      'person@example.test',
+      async () => 'secret',
+      presentation,
+      withDatabaseForMigrationStep,
+      {
+        probeSessionStore: () => {
+          throw new Error('session store unavailable')
+        },
+        signUp: async () => sessionResult,
+        signIn: async () => {
+          apiCalls += 1
+          return sessionResult
+        },
       },
-      signUp: async () => sessionResult,
-      signIn: async () => {
-        apiCalls += 1
-        return sessionResult
-      },
-    }),
+    ),
   ).rejects.toThrow('session store unavailable')
   expect(apiCalls).toBe(0)
 })

@@ -48,7 +48,7 @@ export type HistoryUploadFingerprint = ReadonlyArray<{
   count: number
   maxRowid: number
 }>
-type WithMaintenanceDatabase = <T>(action: (database: Database) => Promise<T>) => Promise<T>
+export type WithMaintenanceDatabase = <T>(action: (database: Database) => Promise<T>) => Promise<T>
 
 type UploadDependencies = {
   client: Pick<RecordApiClient, 'importTaskFlow' | 'importQuestion' | 'readTaskFlowPresence'>

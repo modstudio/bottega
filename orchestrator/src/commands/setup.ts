@@ -6,6 +6,7 @@ import { type Command, InvalidArgumentError, Option } from 'commander'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { repeatable } from '../../../shared/cli-repeat-guard.ts'
 import { MACHINE_LEVELS, type MachineLevel } from '../../../shared/machine-config.ts'
+import { withDatabaseForMigrationStep } from '../database/db.ts'
 import { signInCommand } from '../record/record-auth-command.ts'
 import { cachedSignedInRecordUser } from '../record/record-session.ts'
 import { isOrchWorkerProcess } from '../run/run-process.ts'
@@ -111,7 +112,12 @@ async function applyInteractiveSetup(options: SetupOptions, service: SetupServic
     cachedSignedInRecordUser()?.email ?? null,
     clackSetupPrompter,
     (email, password) =>
-      signInCommand(email, async () => password, { log: clackSetupPrompter.line }),
+      signInCommand(
+        email,
+        async () => password,
+        { log: clackSetupPrompter.line },
+        withDatabaseForMigrationStep,
+      ),
   )
   if (signIn === SETUP_CANCEL) {
     process.exitCode = 130
