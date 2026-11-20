@@ -28,22 +28,7 @@ export const confinementModules: ConfinementModule[] = [
     '../sandbox/sandbox-runtime.ts',
   ]),
   module('orchestrator/src/sandbox/record-connection-env.ts', []),
-  module('orchestrator/src/sandbox/codex-sandbox.ts', [
-    '../../../shared/brand.ts',
-    './codex-deny-policy.ts',
-    './sandbox.ts',
-  ]),
-  module('orchestrator/src/sandbox/codex-deny-policy.ts', ['node:path', './area-read-policy.ts']),
-  module('orchestrator/src/sandbox/codex-permission-profile-adapter.ts', [
-    'node:fs',
-    'node:path',
-    '../../../shared/state-directory.ts',
-    './area-read-policy.ts',
-    './codex-deny-policy.ts',
-    './codex-sandbox.ts',
-    './sandbox.ts',
-  ]),
-  module('orchestrator/src/sandbox/sandbox-selection-policy.ts', []),
+  module('orchestrator/src/sandbox/codex-sandbox.ts', []),
   module('orchestrator/src/sandbox/weaker-network-isolation.ts', ['node:net']),
   module('orchestrator/src/sandbox/area-read-policy.ts', [
     'node:path',
@@ -80,7 +65,6 @@ export const confinementModules: ConfinementModule[] = [
     './install-read-policy.ts',
     './node-module-read-carvebacks.ts',
     './sandbox-area-read-profile.ts',
-    './sandbox-selection-policy.ts',
     './sandbox-runtime.ts',
     './weaker-network-isolation.ts',
     './worktree-root-entries.ts',
@@ -106,16 +90,11 @@ export const confinementModules: ConfinementModule[] = [
   module('orchestrator/src/sandbox/confinement-report.ts', [
     './codex-sandbox.ts',
     './record-connection-env.ts',
-    './sandbox-selection-policy.ts',
     './sandbox.ts',
   ]),
   module('orchestrator/src/sandbox/confinement-probe-task-port.ts', [
     'bun:sqlite',
     '../project/projects.ts',
-  ]),
-  module('orchestrator/src/sandbox/confinement-codex-gap-fixture.ts', ['node:path']),
-  module('orchestrator/src/sandbox/confinement-codex-writer-probe.ts', [
-    '../../../shared/brand.ts',
   ]),
   module('orchestrator/src/sandbox/confinement-run-measurement.ts', [
     '../run/run-confinement-count.ts',
@@ -140,11 +119,6 @@ export const confinementModules: ConfinementModule[] = [
     '../run/run-worker-home.ts',
     './install-read-policy.ts',
     './confinement-probe-task-port.ts',
-    './codex-permission-profile-adapter.ts',
-    './confinement-codex-gap-fixture.ts',
-    './confinement-codex-writer-probe.ts',
-    './codex-sandbox.ts',
-    './sandbox-selection-policy.ts',
     './sandbox.ts',
   ]),
 ]

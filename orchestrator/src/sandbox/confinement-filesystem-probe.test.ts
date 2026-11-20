@@ -1,7 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { codexWriterProbeOutput } from './confinement-codex-writer-probe.ts'
 import { probeVerdict } from './confinement-filesystem-probe.ts'
 
 const ran = { status: 'ran', reason: 'exit 0' } as const
@@ -68,32 +67,5 @@ describe('probeVerdict', () => {
         ran,
       ),
     ).toEqual({ status: 'denied' })
-  })
-})
-
-describe('Codex writer git cells', () => {
-  test('records packed-refs operations as intended refusals', () => {
-    const { commands } = codexWriterProbeOutput(`pwd=ran
-git-status=ran
-git-commit=ran
-git-log=ran
-git-branch-delete=refused
-git-pack-refs=refused`)
-
-    expect(commands['git branch -d']).toEqual({
-      status: 'refused',
-      reason: 'packed-refs.lock: Operation not permitted',
-    })
-    expect(commands['git pack-refs']).toEqual({
-      status: 'refused',
-      reason: 'packed-refs.lock: Operation not permitted',
-    })
-  })
-
-  test('fails a packed-refs cell when the command succeeds', () => {
-    const { commands } = codexWriterProbeOutput('git-branch-delete=ran\ngit-pack-refs=ran')
-
-    expect(commands['git branch -d']?.status).toBe('failed')
-    expect(commands['git pack-refs']?.status).toBe('failed')
   })
 })

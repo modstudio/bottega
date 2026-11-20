@@ -15,8 +15,6 @@ const playwrightBunInstallCommand = 'npm install --global "bun@$(cat .bun-versio
 const playwrightTrustWorkspaceCommand =
   'git config --system --add safe.directory "$GITHUB_WORKSPACE"'
 const releaseSmokeCommand = 'bun scripts/smoke-release.ts'
-const codexCanaryInstallCommand = 'npm install --global @openai/codex@0.171.0'
-const codexCanaryCommand = 'bun orchestrator/scripts/codex-permission-canary.ts'
 const pathGatedJobs = ['migration-paths', 'migration-compatibility', 'install-proof'] as const
 const migrationPaths =
   "orchestrator/migrations hub/migrations hub/src/migrations.ts shared/migration-source.ts ':(glob)orchestrator/src/database/*migration*.ts'"
@@ -136,16 +134,6 @@ function checkCiReleaseSmokeJob(source: string): void {
       `.github/workflows/ci.yml release-smoke command is not gated on pull_request, merge_group or workflow_dispatch; add "if: ${ciReleaseSmokeCondition}" to the step that runs ${releaseSmokeCommand}`,
     )
   }
-}
-
-function checkCodexPermissionCanaryJob(source: string): void {
-  const job = workflowJob(source, 'codex-permission-canary')
-  if (!job.includes('runs-on: macos-15'))
-    throw new Error('codex-permission-canary job must run on macos-15')
-  if (!workflowRunCommands(job).includes(codexCanaryInstallCommand))
-    throw new Error(`codex-permission-canary job must run ${codexCanaryInstallCommand}`)
-  if (!workflowRunCommands(job).includes(codexCanaryCommand))
-    throw new Error(`codex-permission-canary job must run ${codexCanaryCommand}`)
 }
 
 function checkMigrationCompatibilityJobs(source: string): void {
@@ -331,7 +319,6 @@ export function expectedWorkflowJobNames(): string[] {
 
 export function checkCiWorkflow(source: string): void {
   checkCiReleaseSmokeJob(source)
-  checkCodexPermissionCanaryJob(source)
   checkMigrationCompatibilityJobs(source)
   checkInstallProofJob(source)
   const actual = workflowJobNames(source).sort()

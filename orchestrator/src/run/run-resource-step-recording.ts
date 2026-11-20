@@ -21,7 +21,7 @@ import {
   recordResourceStep,
   recordResourceStepAsync,
 } from '../resources/resource-step-recorder.ts'
-import type { RunSandbox } from '../sandbox/sandbox-selection-policy.ts'
+import type { RunSandbox } from '../sandbox/sandbox.ts'
 import type { Worktree } from '../worktree/worktree-types.ts'
 import { requiredRunLease, runLeaseAllocationPath } from './run-lease.ts'
 import type { workerMcpLaunchScope } from './run-mcp-launch-scope.ts'
