@@ -8,6 +8,7 @@ COPY --from=bun-runtime /usr/local/bin/bun /usr/local/bin/bun
 WORKDIR /app
 
 COPY package.json bun.lock ./
+COPY patches patches
 COPY cli/package.json cli/package.json
 COPY orchestrator/package.json orchestrator/package.json
 COPY hub/package.json hub/package.json

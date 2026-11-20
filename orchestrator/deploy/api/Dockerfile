@@ -3,6 +3,7 @@ FROM oven/bun:1.4.4-alpine
 WORKDIR /app
 
 COPY package.json bun.lock ./
+COPY patches patches
 COPY cli/package.json cli/package.json
 COPY orchestrator/package.json orchestrator/package.json
 COPY hub/package.json hub/package.json
