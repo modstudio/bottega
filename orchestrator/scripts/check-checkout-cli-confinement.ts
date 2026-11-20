@@ -148,7 +148,11 @@ async function main(): Promise<void> {
   mkdirSync(cwd, { recursive: true })
   mkdirSync(runtimeDir, { recursive: true })
   const environment: Record<string, string> = {
-    ...process.env,
+    ...Object.fromEntries(
+      Object.entries(process.env).filter(
+        (entry): entry is [string, string] => entry[1] !== undefined,
+      ),
+    ),
     [STATE_HOME_ENV]: stateRoot,
     BOTTEGA_RUN_ID: 'checkout-cli-confinement',
     BOTTEGA_RUN_TOKEN: 'checkout-cli-confinement-token',
