@@ -473,10 +473,9 @@ async function currentClaudeMcpRegistrationAsync(
   }
   const runner = input.port.asyncRunner
   if (!runner) return currentClaudeMcpRegistration(input, commandCwd)
-  const result = await runner(
-    mcpReadArgv('claude', input.port.bin, input.server.name),
-    { cwd: commandCwd },
-  )
+  const result = await runner(mcpReadArgv('claude', input.port.bin, input.server.name), {
+    cwd: commandCwd,
+  })
   return parseClaude(result, input.server.name)
 }
 
