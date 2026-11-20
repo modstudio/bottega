@@ -6,7 +6,6 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { recordDate } from '../../../shared/record-timestamp.ts'
 import { callerIdentityRefusal } from '../caller-classification.ts'
 import { callerIdentity, db, sessionId } from '../database/db.ts'
-import { ProjectRecordDestinationRefusal } from '../record/record-project-destination-client.ts'
 import {
   askQuestion,
   hostedQuestionProjectSpace,
@@ -112,10 +111,7 @@ export async function upsertWorkflowQuestion(
     if (!row) throw new Error(`question ${openId} disappeared before it could be linked`)
     const projectSpace =
       input.projectId && row.project_record_id !== null
-        ? await hostedQuestionProjectSpace(database, input.projectId).catch((error: unknown) => {
-            if (error instanceof ProjectRecordDestinationRefusal) return null
-            throw error
-          })
+        ? await hostedQuestionProjectSpace(database, input.projectId)
         : null
     const openSpace = typeof row?.space_id === 'string' ? row.space_id : null
     if (

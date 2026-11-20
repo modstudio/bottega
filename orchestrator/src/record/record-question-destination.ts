@@ -8,9 +8,13 @@ import { recordWriteSpace } from '../../../shared/record-write-space.ts'
 import { projectByRecordId, projectRowByRecordId } from '../project/project-read.ts'
 import type { RecordWriteDestination } from './record-api-client-paths.ts'
 import type { RecordIdentity } from './record-auth.ts'
-import { requireProjectRecordDestination } from './record-project-destination-client.ts'
+import {
+  ProjectRecordDestinationRefusal,
+  requireProjectRecordDestination,
+} from './record-project-destination-client.ts'
 
 export class QuestionWriteIdentityError extends Error {}
+export class QuestionProjectDestinationRefusal extends Error {}
 
 type DestinationInput = {
   database: Database
@@ -43,10 +47,16 @@ async function resolveQuestionWriteDestination(
       )
     throw new Error(`project ${projectId} is not registered; register it, then retry`)
   }
-  return {
-    destinationSpaceId: await requireProjectRecordDestination(project.name, project.settings, {
-      whoami: input.whoami,
-    }),
+  try {
+    return {
+      destinationSpaceId: await requireProjectRecordDestination(project.name, project.settings, {
+        whoami: input.whoami,
+      }),
+    }
+  } catch (error) {
+    if (error instanceof ProjectRecordDestinationRefusal)
+      throw new QuestionProjectDestinationRefusal(error.message, { cause: error })
+    throw error
   }
 }
 

@@ -159,6 +159,7 @@ export const projectModules: ProjectModule[] = [
     'bun:sqlite',
     '../../../shared/brand.ts',
     '../../../shared/record-project-contract.ts',
+    '../../../shared/record-project-identity.ts',
     '../../../shared/state-directory.ts',
     '../database/db.ts',
     '../record/outbox-enqueue.ts',

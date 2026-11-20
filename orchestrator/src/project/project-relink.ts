@@ -3,8 +3,8 @@
 
 import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { projectOutsideRequestSpacePrefix } from '../../../shared/record-project-identity.ts'
 import type { RecordProject } from '../../../shared/record-project-contract.ts'
+import { projectOutsideRequestSpacePrefix } from '../../../shared/record-project-identity.ts'
 import type { StateEnvironment } from '../../../shared/state-directory.ts'
 import { writableDb, writeTransaction } from '../database/db.ts'
 import { rewritePendingOutboxPayloads } from '../record/outbox-enqueue.ts'
