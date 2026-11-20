@@ -33,6 +33,9 @@ export function recordIso(value: unknown): string {
  */
 export function sameRecordInstant(left: unknown, right: unknown): boolean {
   if (left == null || right == null) return left == null && right == null
+  const leftDate = recordDate(left)
+  const rightDate = recordDate(right)
+  if (Number.isNaN(leftDate.getTime()) || Number.isNaN(rightDate.getTime())) return false
   return recordIso(left) === recordIso(right)
 }
 

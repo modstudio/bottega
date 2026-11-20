@@ -10,6 +10,7 @@ import {
   decideTaskUpsert,
 } from './hosted-push-decision.ts'
 import type {
+  ParsedHostedPushChange,
   PushedComment,
   PushedDocument,
   PushedNote,
@@ -319,4 +320,18 @@ test('record timestamp spellings agree across guards, upserts, and comment match
     kind: 'patch',
     values: { last_seen_at: '2026-10-11T12:00:01.000Z' },
   })
+})
+
+test('an invalid timestamp guard returns a field conflict', () => {
+  expect(
+    decidePushGuards(
+      {
+        table: 'hub_task',
+        op: 'upsert',
+        row: { key: 'DEV-1' },
+        from: { updated_at: 'garbage' },
+      } as ParsedHostedPushChange,
+      { updated_at: '2026-10-11T12:00:00.000Z' },
+    ),
+  ).toMatchObject({ kind: 'field-conflict', field: 'updated_at', key: 'DEV-1' })
 })

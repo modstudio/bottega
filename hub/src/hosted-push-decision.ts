@@ -1,5 +1,5 @@
 import { canonicalJson } from '../../shared/canonical-json.ts'
-import { later, recordIso, sameRecordInstant } from '../../shared/record-timestamp.ts'
+import { later, nullableRecordIso, sameRecordInstant } from '../../shared/record-timestamp.ts'
 import { DELETED_ON_HOSTED_RECORD_REASON } from './hosted-delete.ts'
 import { mergeNoteAnchors } from './note-anchor-merge.ts'
 import type {
@@ -46,12 +46,6 @@ function storedRevision(
     : null
 }
 
-function guardValuesMatch(field: string, current: unknown, expected: unknown): boolean {
-  if (RECORD_TIMESTAMP_FIELDS.includes(field as (typeof RECORD_TIMESTAMP_FIELDS)[number]))
-    return sameRecordInstant(current, expected)
-  return canonicalJson(current) === canonicalJson(expected)
-}
-
 export function decidePushGuards(
   input: ParsedHostedPushChange,
   current: GuardedStoredRow | undefined,
@@ -72,7 +66,7 @@ export function decidePushGuards(
   }
   for (const [field, expected] of Object.entries(input.from ?? {})) {
     const currentValue = (current as Record<string, unknown> | undefined)?.[field] ?? null
-    if (current === undefined || !guardValuesMatch(field, currentValue, expected))
+    if (current === undefined || !same(field, currentValue, expected))
       return {
         kind: 'field-conflict',
         field,
@@ -100,12 +94,12 @@ type Decision<Row> =
       resolveParent?: { key: string | null; preferred: string | null }
     }
 
-const instant = (value: unknown) => (value == null ? value : recordIso(value))
 const scalar = (value: unknown) =>
   value === null || (typeof value !== 'object' && typeof value !== 'function')
+const isRecordTimestampField = (field: string): field is (typeof RECORD_TIMESTAMP_FIELDS)[number] =>
+  RECORD_TIMESTAMP_FIELDS.includes(field as (typeof RECORD_TIMESTAMP_FIELDS)[number])
 const same = (field: string, left: unknown, right: unknown) => {
-  if (RECORD_TIMESTAMP_FIELDS.includes(field as (typeof RECORD_TIMESTAMP_FIELDS)[number]))
-    return sameRecordInstant(left, right)
+  if (isRecordTimestampField(field)) return sameRecordInstant(left, right)
   return scalar(left) && scalar(right)
     ? left === right
     : canonicalJson(left) === canonicalJson(right)
@@ -132,7 +126,7 @@ export function decideNoteUpsert(
     sightings: merged.sightings,
     last_seen_at: selected.has('last_seen_at')
       ? later(stored.last_seen_at, incoming.last_seen_at)
-      : (instant(stored.last_seen_at) as string),
+      : nullableRecordIso(stored.last_seen_at),
     stale_at:
       merged.appended > 0 ? null : selected.has('stale_at') ? incoming.stale_at : stored.stale_at,
     stale_reason:
@@ -159,7 +153,7 @@ export function decideNoteAcknowledgementUpsert(
 ): Decision<PushedNoteAcknowledgement> {
   const acknowledgedAt = stored
     ? later(stored.acknowledged_at, incoming.acknowledged_at)
-    : (instant(incoming.acknowledged_at) as string)
+    : nullableRecordIso(incoming.acknowledged_at)
   if (
     stored &&
     !stored.deleted_at &&

@@ -9,12 +9,16 @@ const importMetaUrlPathnameSelector = {
 
 const recordTimestampComparisonSelectors = [
   {
-    selector:
-      "BinaryExpression[operator=/^(===|!==|==|!=)$/] > CallExpression[callee.type='MemberExpression'][callee.property.name='getTime']",
+    selector: "CallExpression[callee.type='MemberExpression'][callee.property.name='getTime']",
     message: 'Compare record timestamps with sameRecordInstant from shared/record-timestamp.ts.',
   },
   {
     selector: "BinaryExpression[operator='instanceof'][right.name='Date']",
+    message: 'Compare record timestamps with sameRecordInstant from shared/record-timestamp.ts.',
+  },
+  {
+    selector:
+      "BinaryExpression[operator=/^(===|!==|==|!=)$/][left.type='MemberExpression'][right.type='MemberExpression'][left.property.name=/^(at|first_seen|last_seen|.*_at)$/][right.property.name=/^(at|first_seen|last_seen|.*_at)$/]",
     message: 'Compare record timestamps with sameRecordInstant from shared/record-timestamp.ts.',
   },
 ]

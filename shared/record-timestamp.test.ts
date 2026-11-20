@@ -46,6 +46,8 @@ test('record instant equality uses the millisecond precision of the canonical fo
   expect(sameRecordInstant(null, undefined)).toBeTrue()
   expect(sameRecordInstant(null, milliseconds)).toBeFalse()
   expect(sameRecordInstant(milliseconds, null)).toBeFalse()
+  expect(sameRecordInstant('garbage', milliseconds)).toBeFalse()
+  expect(sameRecordInstant('garbage', 'garbage')).toBeFalse()
 })
 
 test('later compares canonical instants and returns the later canonical form', () => {
