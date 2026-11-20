@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url'
 import { startBoundedSync } from '../shared/bounded-process.ts'
 import { budgetForArgv } from '../shared/call-budgets.ts'
 import { nulPathListArgs, splitNulPaths } from '../shared/git-path-list.ts'
+import { pullRequestChangeBase } from './pull-request-change-base.ts'
 import { recordMigrationSetHashFrom } from './record-migration-set.ts'
 import {
   RECORD_REHEARSAL_STATUS_CONTEXT,
@@ -72,7 +73,7 @@ export function decideRecordRehearsal(input: {
 
 type GitHubEvent = {
   number?: number
-  pull_request?: { base?: { sha?: string }; head?: { sha?: string } }
+  pull_request?: { head?: { sha?: string } }
   merge_group?: { base_sha?: string; head_ref?: string }
 }
 
@@ -123,15 +124,15 @@ function earlierHeadStatuses(
 if (import.meta.main) {
   try {
     const eventPath = process.env.GITHUB_EVENT_PATH
+    const eventName = process.env.GITHUB_EVENT_NAME
     const repository = process.env.GITHUB_REPOSITORY
-    if (!eventPath || !repository)
-      throw new Error('GITHUB_EVENT_PATH and GITHUB_REPOSITORY are required')
+    if (!eventPath || !eventName || !repository)
+      throw new Error('GITHUB_EVENT_PATH, GITHUB_EVENT_NAME and GITHUB_REPOSITORY are required')
     const event = JSON.parse(readFileSync(eventPath, 'utf8')) as GitHubEvent
-    const baseSha = event.pull_request?.base?.sha ?? event.merge_group?.base_sha
-    if (!baseSha)
-      throw new Error('GitHub event does not carry a pull request or merge-group base sha')
+    const base = pullRequestChangeBase(event, eventName)
+    if (base.refusal) throw new Error(base.refusal)
     const changed = splitNulPaths(
-      command(['git', ...nulPathListArgs(['diff', '--name-only', `${baseSha}...HEAD`])]),
+      command(['git', ...nulPathListArgs(['diff', '--name-only', `${base.revision}...HEAD`])]),
     ).some((path) => path.startsWith('shared/record/migrations/'))
     let currentHeadStatuses: CommitStatus[] = []
     let priorStatuses: CommitStatus[] = []

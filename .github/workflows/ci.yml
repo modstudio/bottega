@@ -352,10 +352,14 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: .bun-version
+      - name: Find pull request change base
+        if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
+        run: echo "BASE_SHA=$(bun scripts/pull-request-change-base.ts)" >> "$GITHUB_ENV"
       - name: Find migration changes
         id: changes
-        env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
         run: |
           changed=false
           if [[ "$GITHUB_EVENT_NAME" == "pull_request" || "$GITHUB_EVENT_NAME" == "merge_group" ]]; then
@@ -366,8 +370,6 @@ jobs:
           echo "changed=$changed" >> "$GITHUB_OUTPUT"
       - name: Find release install proof changes
         id: install-proof
-        env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
         run: |
           changed=false
           if [[ "$GITHUB_EVENT_NAME" == "pull_request" || "$GITHUB_EVENT_NAME" == "merge_group" ]]; then
