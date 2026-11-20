@@ -25,6 +25,7 @@ export function codexTransportScope(
 /** Translate the shared read profile and current Codex write roots at the launch edge. */
 function codexPermissionLaunchProfile(input: {
   name: string
+  repoJob: boolean
   sandboxSelection: { codexProfile?: SandboxRuntimeConfig }
   codexSandbox: { sandbox: 'read-only' | 'workspace-write' }
   cwd: string
