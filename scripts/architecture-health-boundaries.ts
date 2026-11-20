@@ -48,10 +48,18 @@ export const healthBoundarySpecs: ImportBoundary[] = [
       'orchestrator/src/run/run-task-linking.ts',
       'orchestrator/src/setup/developer-node.ts',
       'orchestrator/src/health/provider-credential-trust-doctor.ts',
+      'orchestrator/src/health/retrieval-doctor.ts',
     ],
     typeOnlyAllowed: [],
     reason:
       'Keep doctor independent of transports, routing, run control, the CLI, and reviews by value.',
+  },
+  {
+    name: 'retrieval-doctor-boundary',
+    file: 'orchestrator/src/health/retrieval-doctor.ts',
+    allowed: [],
+    typeOnlyAllowed: [],
+    reason: 'Keep optional retrieval diagnosis independent of endpoint and command adapters.',
   },
   {
     name: 'provider-credential-trust-doctor-boundary',

@@ -175,6 +175,7 @@ const declaredModules: ArchitectureModule[] = [
     'node:path',
     '../../../shared/brand.ts',
     '../../../shared/install-root.ts',
+    '../../../shared/launchd-owners.ts',
     '../setup/launchd-owners.ts',
     '../setup/setup-schedule-policy.ts',
     '../setup/setup-schedule-runtime.ts',
@@ -187,6 +188,7 @@ const declaredModules: ArchitectureModule[] = [
     '../setup/provider-credential-trust.ts',
     '../setup/provider-credential-trust-notice.ts',
   ]),
+  module('orchestrator/src/health/retrieval-doctor.ts', []),
   module('orchestrator/src/project/project-agent-keys.ts', []),
   module('orchestrator/src/project/project-visibility.ts', [
     '../../../shared/brand.ts',

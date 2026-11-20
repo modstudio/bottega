@@ -18,30 +18,9 @@ import {
   registeredMainCheckoutDiagnosis,
   reportActiveSpaceDoctor,
   reportCheckoutRegister,
-  retrievalDoctorDecision,
   sandboxRuntimeDoctorLine,
   workerCheckDoctorFinding,
 } from './doctor.ts'
-
-test('retrieval doctor is informational until configured and fails when configured but down', () => {
-  expect(retrievalDoctorDecision(false)).toEqual({
-    lines: ['retrieval  not configured (optional)'],
-    failed: false,
-  })
-  expect(
-    retrievalDoctorDecision(true, {
-      stdout: 'embedding unreachable',
-      stderr: '',
-      exitCode: 1,
-    }),
-  ).toEqual({
-    lines: [
-      'retrieval endpoints (optional; search_code and doc search unavailable)',
-      '  embedding unreachable',
-    ],
-    failed: true,
-  })
-})
 
 test('sandbox doctor prints each readiness fix on its own indented line', () => {
   expect(

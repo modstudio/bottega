@@ -159,6 +159,12 @@ function checkMigrationCompatibilityJobs(source: string): void {
   if (!compatibility.includes('select sqlite_version() version'))
     throw new Error('migration-compatibility job must print the SQLite version Bun links')
 
+  const aggregate = workflowJob(source, 'ci')
+  if (!aggregate.includes('.key == "migration-compatibility"'))
+    throw new Error('ci aggregate must accept a path-skipped migration-compatibility job')
+}
+
+function checkInstallProofJob(source: string): void {
   const installProof = workflowJob(source, 'install-proof')
   if (!installProof.includes('needs: migration-paths'))
     throw new Error('install-proof job must need migration-paths')
@@ -176,8 +182,6 @@ function checkMigrationCompatibilityJobs(source: string): void {
     throw new Error(`install-proof job must run ${installProofCommand}`)
 
   const aggregate = workflowJob(source, 'ci')
-  if (!aggregate.includes('.key == "migration-compatibility"'))
-    throw new Error('ci aggregate must accept a path-skipped migration-compatibility job')
   if (!aggregate.includes('.key == "install-proof"'))
     throw new Error('ci aggregate must accept a path-skipped install-proof job')
 }
@@ -312,6 +316,7 @@ export function expectedWorkflowJobNames(): string[] {
 export function checkCiWorkflow(source: string): void {
   checkCiReleaseSmokeJob(source)
   checkMigrationCompatibilityJobs(source)
+  checkInstallProofJob(source)
   const actual = workflowJobNames(source).sort()
   const expected = expectedWorkflowJobNames()
   if (JSON.stringify(actual) !== JSON.stringify(expected)) {
