@@ -99,4 +99,30 @@ describe('Codex permission profile', () => {
     expect(args()).not.toContain(`permissions.${CODEX_PERMISSION_PROFILE}.network.enabled=true`)
     expect(args(true)).toContain(`permissions.${CODEX_PERMISSION_PROFILE}.network.enabled=true`)
   })
+
+  test('translation refuses a glob deny with a rebuild remedy', () => {
+    expect(() =>
+      codexPermissionProfileInput({
+        profile: {
+          network: {
+            allowedDomains: [],
+            deniedDomains: [],
+            allowUnixSockets: [],
+            allowLocalBinding: false,
+          },
+          filesystem: {
+            denyRead: ['/projects/own/.claude/worktrees/*'],
+            allowWithinDeny: ['/projects/own/.claude/worktrees/own'],
+            allowWrite: [],
+            denyWrite: [],
+          },
+        },
+        sandbox: 'workspace-write',
+        cwd: '/projects/own/.claude/worktrees/own',
+        writableRoots: [],
+        tempDir: '/tmp/run',
+        writesRepository: true,
+      }),
+    ).toThrow('rebuild the Codex profile from the current worktree-root directory listing')
+  })
 })

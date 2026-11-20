@@ -5,7 +5,7 @@ import { registerEmbeddedAssets } from '../../../shared/embedded-assets.ts'
 import { WORKER_RUNTIME_ASSETS } from '../../../shared/runtime-assets-in-sandbox.ts'
 import { STATE_HOME_ENV } from '../../../shared/state-directory.ts'
 import type { Project } from '../project/projects.ts'
-import { runningInstallReadCarveouts } from './install-read-policy.ts'
+import { runningInstallProbeTarget, runningInstallReadCarveouts } from './install-read-policy.ts'
 import { probeSandboxProfile, readonlyLensProfile, writerProfile } from './sandbox.ts'
 
 function fixtureProject(recordId: string, name: string, path: string): Project {
@@ -73,6 +73,26 @@ test('running install carve-backs contain install paths only', () => {
       workspaceDirectories: [],
     }),
   ).toEqual(['/install'])
+})
+
+test('running install probe targets metadata shipped by each install kind', () => {
+  expect(
+    runningInstallProbeTarget({
+      kind: 'checkout',
+      root: '/checkout',
+      workspaceDirectories: [],
+    }),
+  ).toEqual({ name: 'running checkout package.json', path: '/checkout/package.json' })
+  expect(
+    runningInstallProbeTarget({
+      kind: 'distribution',
+      root: '/distribution',
+      workspaceDirectories: [],
+    }),
+  ).toEqual({
+    name: 'running distribution manifest',
+    path: `/distribution/.${PLATFORM_SLUG}-dist.json`,
+  })
 })
 
 test('embedded runtime assets are carved back for every area profile regardless of install layout', () => {

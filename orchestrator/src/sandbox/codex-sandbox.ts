@@ -6,6 +6,7 @@
  */
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { isAtOrBelow } from './area-read-policy.ts'
 import type { SandboxRuntimeConfig } from './sandbox.ts'
 
 export type CodexSandboxRuling = {
@@ -27,6 +28,16 @@ export const CODEX_PERMISSION_PROFILE = PLATFORM_SLUG
 
 function tomlString(value: string): string {
   return JSON.stringify(value)
+}
+
+const GLOB_CHARACTER = /[*?[]/
+
+function refuseGlobDeny(paths: readonly string[]): void {
+  const glob = paths.find((path) => GLOB_CHARACTER.test(path))
+  if (!glob) return
+  throw new Error(
+    `codex permission profile refusal: deny path ${glob} contains a glob character; rebuild the Codex profile from the current worktree-root directory listing`,
+  )
 }
 
 /** Render the native Codex permission profile from the shared read policy and current write roots. */
@@ -83,9 +94,13 @@ export function codexPermissionProfileInput(input: {
   tempDir: string | undefined
   writesRepository: boolean
 }): CodexPermissionProfileInput {
+  refuseGlobDeny(input.profile.filesystem.denyRead)
+  const denyRead = input.profile.filesystem.denyRead.filter(
+    (denied) => !isAtOrBelow(input.cwd, denied),
+  )
   return {
     filesystem: {
-      denyRead: input.profile.filesystem.denyRead,
+      denyRead,
       allowRead: input.profile.filesystem.allowWithinDeny,
     },
     writableRoots: input.writesRepository

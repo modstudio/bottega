@@ -345,6 +345,13 @@ export function readonlyLensProfile(input: {
   )
 }
 
+/** Build Codex's fixed-at-launch profile from the literal worktree entries visible now. */
+export function codexPermissionProfile(
+  input: Parameters<typeof readonlyLensProfile>[0],
+): SandboxRuntimeConfig {
+  return readonlyLensProfile({ ...input, platform: 'linux' })
+}
+
 type SocketPathResolver = (path: string) => string | null
 
 /** Canonicalize socket deny parents while preserving unresolved paths to fail closed. */
@@ -560,7 +567,7 @@ type ReadonlySandboxInput = {
 function codexReadProfile(input: ReadonlySandboxInput): SandboxRuntimeConfig | undefined {
   if (input.agent !== 'codex') return undefined
   if (!input.worktree) throw new Error('codex permission profile refusal: sandbox root is missing')
-  return readonlyLensProfile({
+  return codexPermissionProfile({
     ...input,
     worktree: input.worktree,
     agent: 'codex',

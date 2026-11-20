@@ -12,7 +12,7 @@ import { workerMcpLaunchSelection, writerProxyRoute } from '../run/run-mcp-launc
 import { nextRunNumber } from '../run/run-number.ts'
 import { quotaReadingsColumnValues } from '../run/run-usage-columns.ts'
 import { codexPermissionProfileInput } from '../sandbox/codex-sandbox.ts'
-import { prepareCodexHome, readonlyLensProfile } from '../sandbox/sandbox.ts'
+import { codexPermissionProfile, prepareCodexHome } from '../sandbox/sandbox.ts'
 import { harnessCollectsQuotaReadings } from '../transport/codex-quota.ts'
 import { EMPTY_QUOTA_READINGS } from '../transport/quota-readings.ts'
 import type {
@@ -178,7 +178,7 @@ function startProbeTransport(
   const codexProfile =
     input.agent.name === 'codex'
       ? (input.writing?.profile ??
-        readonlyLensProfile({
+        codexPermissionProfile({
           worktree: cwd,
           runtimeDir: join(scratchDir, 'codex-confinement-runtime'),
           scratchDir,

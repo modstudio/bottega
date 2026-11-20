@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { resolveStatePaths, STATE_HOME_ENV } from '../../../shared/state-directory.ts'
 import type { Project } from '../project/projects.ts'
+import { isAtOrBelow } from './area-read-policy.ts'
 import { codexPermissionProfileArgs, codexPermissionProfileInput } from './codex-sandbox.ts'
 import { selectReadonlySandbox } from './sandbox.ts'
 
@@ -20,13 +21,18 @@ afterEach(() => {
   for (const directory of temporaryDirectories.splice(0)) rmSync(directory, { recursive: true })
 })
 
-test('Codex selection carries planted area denies through the shared mapping into permission argv', () => {
+test('Codex writer profile literally denies existing siblings without denying its own tree', () => {
   const state = temporaryDirectory()
   const projects = temporaryDirectory()
   const ownPath = join(projects, 'own')
-  const worktree = join(ownPath, '.claude/worktrees/run')
+  const worktreeRoot = join(ownPath, '.claude/worktrees')
+  const worktree = join(worktreeRoot, 'own')
+  const siblingA = join(worktreeRoot, 'a')
+  const siblingB = join(worktreeRoot, 'b')
   const siblingPath = join(projects, 'sibling')
   mkdirSync(worktree, { recursive: true })
+  mkdirSync(siblingA, { recursive: true })
+  mkdirSync(siblingB, { recursive: true })
   mkdirSync(siblingPath, { recursive: true })
   const project = (recordId: string, name: string, path: string): Project => ({
     recordId,
@@ -42,7 +48,7 @@ test('Codex selection carries planted area denies through the shared mapping int
   const selected = selectReadonlySandbox({
     agent: 'codex',
     readsRepo: true,
-    writesRepo: false,
+    writesRepo: true,
     worktree,
     runtimeDir: join(state, 'orchestrator/runs/sandbox-run'),
     scratchDir: join(state, 'orchestrator/runs/run/scratch'),
@@ -60,19 +66,37 @@ test('Codex selection carries planted area denies through the shared mapping int
     profile: selected.codexProfile!,
     sandbox: 'workspace-write',
     cwd: worktree,
-    writableRoots: selected.codexProfile!.filesystem.allowWrite,
+    writableRoots: [],
     tempDir: '/private/tmp/codex-run',
-    writesRepository: false,
+    writesRepository: true,
   })
+  expect(permissionInput.writableRoots).toContain(worktree)
+  expect(permissionInput.filesystem.denyRead).toEqual(
+    expect.arrayContaining([siblingA, siblingB, siblingPath]),
+  )
+  expect(
+    permissionInput.filesystem.denyRead.some(
+      (denied) => isAtOrBelow(worktree, denied) || isAtOrBelow(denied, worktree),
+    ),
+  ).toBe(false)
+  for (const path of [
+    ...permissionInput.filesystem.denyRead,
+    ...permissionInput.filesystem.allowRead,
+    ...permissionInput.writableRoots,
+  ]) {
+    expect(path).not.toMatch(/[*?[]/)
+  }
   const filesystemArg = codexPermissionProfileArgs({
     ...permissionInput,
     network: false,
   }).find((arg) => arg.startsWith(`permissions.${PLATFORM_SLUG}.filesystem=`))
   expect(filesystemArg).toContain(`${JSON.stringify(siblingPath)}="deny"`)
+  expect(filesystemArg).toContain(`${JSON.stringify(siblingA)}="deny"`)
+  expect(filesystemArg).toContain(`${JSON.stringify(siblingB)}="deny"`)
   expect(filesystemArg).toContain(
     `${JSON.stringify(resolveStatePaths({ [STATE_HOME_ENV]: state }).root)}="deny"`,
   )
-  expect(filesystemArg).toContain(`${JSON.stringify(worktree)}="read"`)
-  expect(filesystemArg).not.toContain(`${JSON.stringify('/tmp')}="write"`)
-  expect(filesystemArg).not.toContain(`${JSON.stringify('/private/tmp/codex-run')}="write"`)
+  expect(filesystemArg).toContain(`${JSON.stringify(worktree)}="write"`)
+  expect(filesystemArg).toContain(`${JSON.stringify('/tmp')}="write"`)
+  expect(filesystemArg).toContain(`${JSON.stringify('/private/tmp/codex-run')}="write"`)
 })

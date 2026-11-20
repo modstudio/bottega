@@ -3,7 +3,11 @@
 import { readFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import type { ConfigEnvironment } from '../../../shared/config-directory.ts'
-import { runningInstallationKind, runningInstallRoot } from '../../../shared/install-root.ts'
+import {
+  DIST_MANIFEST,
+  runningInstallationKind,
+  runningInstallRoot,
+} from '../../../shared/install-root.ts'
 
 type WorkspaceManifest = {
   workspaces?: string[] | { packages?: string[] }
@@ -68,4 +72,14 @@ export function runningInstallReadCarveouts(layout: RunningInstallLayout): strin
       ...layout.workspaceDirectories,
     ]),
   ]
+}
+
+/** Stable readable file used to prove the running install carve-back. */
+export function runningInstallProbeTarget(layout: RunningInstallLayout): {
+  name: string
+  path: string
+} {
+  return layout.kind === 'distribution'
+    ? { name: 'running distribution manifest', path: join(layout.root, DIST_MANIFEST) }
+    : { name: 'running checkout package.json', path: join(layout.root, 'package.json') }
 }
