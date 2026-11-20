@@ -12,6 +12,7 @@ import {
   withMachineProductHooks,
 } from '../settings/settings-machine-hooks.ts'
 import type { SetupInstallVerifyFacts } from './setup-install-verify.ts'
+import { setupInstallSettingsDecision } from './setup-install-verify-decision.ts'
 import { applySetupInstallVerify } from './setup-install-verify-runtime.ts'
 
 const current: MachineSettingsApplyResult[] = [
@@ -59,7 +60,7 @@ function removeRenderedHook(input: SetupInstallVerifyFacts, script: string): voi
 }
 
 test('rendered and verified install settings succeed with every named check', async () => {
-  const result = await applySetupInstallVerify({
+  const result = await applySetupInstallVerify(true, {
     applySettings: async () => current,
     facts,
   })
@@ -72,13 +73,13 @@ test('the rendered success fixture fails when one product hook is removed', asyn
   const input = facts()
   removeRenderedHook(input, 'git-guard.py')
   await expect(
-    applySetupInstallVerify({ applySettings: async () => current, facts: () => input }),
+    applySetupInstallVerify(true, { applySettings: async () => current, facts: () => input }),
   ).rejects.toThrow('hooks-present: failed')
 })
 
 test('a settings-row refusal names its target, condition, and row remedy', async () => {
   await expect(
-    applySetupInstallVerify({
+    applySetupInstallVerify(true, {
       applySettings: async () => [
         {
           target: 'settings /home/operator/.claude/settings.json',
@@ -95,17 +96,69 @@ test('a settings-row refusal names its target, condition, and row remedy', async
   ).rejects.toThrow('no-settings-row')
 })
 
+test('signed-out settings decisions stay follow-ups after a grok canon home is installed', async () => {
+  const missingSettings: MachineSettingsApplyResult = {
+    target: 'settings /home/operator/.claude/settings.json',
+    outcome: 'refused',
+    condition: 'no-settings-row',
+    detail: 'refusing settings render: no settings row for user',
+    changed: false,
+  }
+  const emptyGrokCanon: MachineSettingsApplyResult = {
+    target: 'canon grok /home/operator/.grok',
+    outcome: 'refused',
+    condition: 'empty-user-canon-store',
+    detail: 'refusing user canon hydration: empty store',
+    changed: false,
+  }
+  const first = setupInstallSettingsDecision(false, [missingSettings])
+  const second = setupInstallSettingsDecision(false, [missingSettings, emptyGrokCanon])
+  expect(first.action).toBe('wait-for-sign-in')
+  expect(second.action).toBe(first.action)
+
+  const applied = await applySetupInstallVerify(false, {
+    applySettings: async () => [missingSettings, emptyGrokCanon],
+    facts,
+  })
+  expect(applied).toEqual({
+    status: 'follow-up',
+    condition: 'waiting-for-sign-in',
+    message:
+      `not signed in: user settings and user canon wait for sign-in; run ` +
+      `${PLATFORM_SLUG} record sign-in --email <email>, then re-run ${PLATFORM_SLUG} machine setup apply`,
+  })
+})
+
+test('signed-in settings and canon refusals still refuse', () => {
+  expect(
+    setupInstallSettingsDecision(true, [
+      {
+        target: 'settings user',
+        outcome: 'refused',
+        condition: 'no-settings-row',
+        changed: false,
+      },
+      {
+        target: 'canon grok',
+        outcome: 'refused',
+        condition: 'empty-user-canon-store',
+        changed: false,
+      },
+    ]),
+  ).toMatchObject({ action: 'refuse' })
+})
+
 test('an absent hook after render refuses naming hooks-present', async () => {
   const input = facts()
   removeRenderedHook(input, 'stop-summary.py')
   await expect(
-    applySetupInstallVerify({ applySettings: async () => current, facts: () => input }),
+    applySetupInstallVerify(true, { applySettings: async () => current, facts: () => input }),
   ).rejects.toThrow('hooks-present: failed')
 })
 
 test('a missing record session refuses with the sign-in remedy', async () => {
   await expect(
-    applySetupInstallVerify({
+    applySetupInstallVerify(false, {
       applySettings: async () => {
         throw new Error(RECORD_SIGN_IN_REMEDY)
       },
@@ -117,7 +170,7 @@ test('a missing record session refuses with the sign-in remedy', async () => {
 test('a skipped settings render refuses without verifying', async () => {
   let gathered = false
   await expect(
-    applySetupInstallVerify({
+    applySetupInstallVerify(false, {
       applySettings: async () => [
         { target: SETTINGS_APPLY_LOCK_TARGET, outcome: 'skipped', changed: false },
       ],
@@ -131,7 +184,7 @@ test('a skipped settings render refuses without verifying', async () => {
 })
 
 test('a skipped registered project does not prevent verification', async () => {
-  const result = await applySetupInstallVerify({
+  const result = await applySetupInstallVerify(true, {
     applySettings: async () => [
       ...current,
       {

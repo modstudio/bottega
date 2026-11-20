@@ -491,14 +491,35 @@ function rowReachabilityDiagnosis(row: AgentRow, globalBaseUrl: string): string[
   return lines
 }
 
+export function retrievalDoctorDecision(
+  configured: boolean,
+  result?: { stdout: string; stderr: string; exitCode: number },
+): { lines: string[]; failed: boolean } {
+  if (!configured) return { lines: ['retrieval  not configured (optional)'], failed: false }
+  if (!result) throw new Error('configured retrieval doctor requires a check result')
+  const failed = result.exitCode !== 0
+  return {
+    lines: [
+      failed
+        ? 'retrieval endpoints (optional; search_code and doc search unavailable)'
+        : 'retrieval endpoints',
+      ...result.stdout
+        .trim()
+        .split('\n')
+        .filter(Boolean)
+        .map((line) => `  ${line}`),
+      ...(result.stderr.trim() ? [`  ${result.stderr.trim()}`] : []),
+    ],
+    failed,
+  }
+}
+
 function reportRetrievalCheck(
-  result: { stdout: string; stderr: string; exitCode: number },
+  decision: ReturnType<typeof retrievalDoctorDecision>,
   presentation: Pick<DoctorPresentation, 'log' | 'exitCode'>,
 ): void {
-  presentation.log('retrieval endpoints')
-  for (const line of result.stdout.trim().split('\n').filter(Boolean)) presentation.log(`  ${line}`)
-  if (result.stderr.trim()) presentation.log(`  ${result.stderr.trim()}`)
-  if (result.exitCode !== 0) presentation.exitCode(1)
+  for (const line of decision.lines) presentation.log(line)
+  if (decision.failed) presentation.exitCode(1)
 }
 
 export function sandboxRuntimeDoctorLine(runtime: RuntimeAvailability): string {
@@ -745,7 +766,16 @@ export async function doctorCommand(
   const { log, exitCode, candidates, pick, jobs, acpRuntimeGaps, retrievalCheck } = presentation
   const machineLevel = readMachineValue('machine.level') as MachineLevel
   const r = await workerHealthForInstallLevel(machineLevel)
-  reportRetrievalCheck(await retrievalCheck(), presentation)
+  const configuredUrl = modelHostUrl()
+  const retrievalConfigured =
+    configuredUrl.length > 0 || registeredLocalAgent(agentRows(), configuredUrl) !== null
+  reportRetrievalCheck(
+    retrievalDoctorDecision(
+      retrievalConfigured,
+      retrievalConfigured ? await retrievalCheck() : undefined,
+    ),
+    presentation,
+  )
   const { CanonBudgetError, compilePack, findingsForPack } = await import('../canon/canon.ts')
   const { listDocs } = await import('../doc/docs.ts')
   const { DEFAULT_PACK_BYTES, MAX_INJECT_DOC_BYTES } = await import('../canon/pack-budget.ts')
@@ -873,7 +903,6 @@ export async function doctorCommand(
     )
   }
   await reportAgentsForInstallLevel(machineLevel, { log, candidates }, agentStatus)
-  const configuredUrl = modelHostUrl()
   for (const row of workerRowsForInstallLevel(machineLevel)) {
     if (row.operated_by !== 'self' || !row.enabled) continue
     const probe = localProbeDiagnosis(row)

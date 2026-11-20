@@ -6,7 +6,7 @@ import { readdirSync, readFileSync } from 'node:fs'
 import { join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import * as ts from 'typescript'
-import { LAUNCHD_TEMPLATE_OWNERS } from '../orchestrator/src/setup/launchd-owners.ts'
+import { LAUNCHD_TEMPLATE_OWNERS } from '../shared/launchd-owners.ts'
 
 const root = fileURLToPath(new URL('..', import.meta.url))
 const REMEDY_BASELINE_PATH = join(root, 'scripts', 'install-path-remedy-baseline.json')
@@ -142,7 +142,7 @@ export function installPathFindings(sourceText: string, path: string): InstallPa
 const CHECKOUT_ONLY_INSTALLERS = LAUNCHD_TEMPLATE_OWNERS.map(({ command }) => command)
 
 function isLaunchdOwnerCommandDeclaration(node: ts.Node, path: string): boolean {
-  if (path !== 'orchestrator/src/setup/launchd-owners.ts') return false
+  if (path !== 'shared/launchd-owners.ts') return false
   for (let current: ts.Node | undefined = node; current; current = current.parent) {
     if (
       ts.isVariableDeclaration(current) &&

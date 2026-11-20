@@ -7,11 +7,11 @@ import {
   type InstallationKind,
   runningInstallationIdentity,
 } from '../../../shared/install-root.ts'
+import { LAUNCHD_TEMPLATE_OWNERS } from '../../../shared/launchd-owners.ts'
 import {
   type InstalledPlistOwner,
   includesLaunchAgents,
   installationPlistOwners,
-  LAUNCHD_TEMPLATE_OWNERS,
 } from '../setup/launchd-owners.ts'
 import {
   isMaintenanceScheduleLabel,

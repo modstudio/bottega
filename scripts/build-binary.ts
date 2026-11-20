@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { commentParserAssets } from '../orchestrator/src/check/check-comment-parser-assets.ts'
-import { LAUNCHD_TEMPLATE_OWNERS } from '../orchestrator/src/setup/launchd-owners.ts'
+import { LAUNCHD_TEMPLATE_OWNERS } from '../shared/launchd-owners.ts'
 import {
   SYSTEMD_TEMPLATE_DIRECTORY,
   SYSTEMD_UNIT_SUFFIXES,

@@ -14,6 +14,7 @@ import {
   type InstallationKind,
   resolveInstallationPaths,
 } from '../../../shared/install-root.ts'
+import { isCheckoutOnlyLaunchAgentInstaller } from '../../../shared/launchd-owners.ts'
 import {
   FIX_DEFECT_BACKSTOP_SECONDS,
   type LaunchAgentRenderValues,
@@ -36,7 +37,6 @@ import {
   type InstalledPlistOwner,
   includesLaunchAgents,
   installationPlistOwners,
-  isCheckoutOnlyLaunchAgentInstaller,
 } from '../setup/launchd-owners.ts'
 import { isMaintenanceScheduleLabel } from '../setup/setup-schedule-policy.ts'
 import { minutesOfDay } from '../spare/spare-decisions.ts'

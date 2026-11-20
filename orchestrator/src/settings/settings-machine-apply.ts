@@ -63,10 +63,14 @@ import { applySettingsWrite, planSettingsWrite } from './settings-write.ts'
 export type MachineSettingsApplyResult = {
   target: string
   outcome: 'applied' | 'current' | 'refused' | 'skipped'
-  condition?: 'no-settings-row'
+  condition?: 'no-settings-row' | 'empty-user-canon-store'
   detail?: string
   changed: boolean
   superseded?: SupersededProfileHook[]
+}
+
+export function settingsApplyResultWaitsForSignIn(result: MachineSettingsApplyResult): boolean {
+  return result.condition === 'no-settings-row' || result.condition === 'empty-user-canon-store'
 }
 
 export const SETTINGS_APPLY_LOCK_TARGET = 'settings apply'
@@ -336,6 +340,7 @@ function applyUserCanon(
     return planned.map((item) => ({
       target: item.target,
       outcome: 'refused',
+      condition: 'empty-user-canon-store',
       detail: emptyUserCanonStoreRefusal(),
       changed: false,
     }))

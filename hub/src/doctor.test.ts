@@ -3,7 +3,12 @@ import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { newRecordId } from '../../shared/record/schema.ts'
 import { resetFixtureStore } from '../test/run-fixtures.ts'
 import { writeTransaction } from './db.ts'
-import { hubDoctorLines, INTERVAL_UNLINKED_KEY_LIMIT, slowCollectionDoctorLine } from './doctor.ts'
+import {
+  hubDoctorLines,
+  INTERVAL_UNLINKED_KEY_LIMIT,
+  slowCollectionDoctorDecision,
+  slowCollectionDoctorLine,
+} from './doctor.ts'
 
 beforeEach(resetFixtureStore)
 afterAll(resetFixtureStore)
@@ -47,6 +52,12 @@ describe(`${PLATFORM_SLUG} machine doctor`, () => {
 
   test('includes slow collection health in hub doctor output', async () => {
     expect(await hubDoctorLines()).toContain('collect slow   FAIL — never completed')
+  })
+
+  test('reports checkout-only slow collection as not installed in a distribution', () => {
+    expect(slowCollectionDoctorDecision('distribution', { status: 'missing', ageMs: null })).toBe(
+      'collect slow   not installed by a release install',
+    )
   })
 
   test('reports intervals whose task display key has no UUID link', async () => {

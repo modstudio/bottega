@@ -33,6 +33,7 @@ import {
 import {
   applyMachineSettings,
   type MachineSettingsApplyResult,
+  settingsApplyResultWaitsForSignIn,
 } from '../settings/settings-machine-apply.ts'
 import {
   processEnvironmentNameMigration,
@@ -83,11 +84,13 @@ export function environmentSettingsApplyDecision(
   sessionPresent: boolean,
   refused: readonly MachineSettingsApplyResult[],
 ): EnvironmentSettingsApplyDecision {
-  const refusal = refused.find((result) => sessionPresent || result.condition !== 'no-settings-row')
+  const refusal = refused.find(
+    (result) => sessionPresent || !settingsApplyResultWaitsForSignIn(result),
+  )
   if (refusal) {
     return { action: 'refuse', refusal: refusal.detail ?? `${refusal.target} refused` }
   }
-  return refused.some((result) => result.condition === 'no-settings-row')
+  return refused.some(settingsApplyResultWaitsForSignIn)
     ? { action: 'wait-for-sign-in' }
     : { action: 'continue' }
 }
@@ -290,6 +293,7 @@ export async function withMigratedProcessEnvironment<T>(
 }
 
 export const setupEnvironmentService = {
+  recordSessionPresent: (): boolean => storedRecordToken() !== null,
   setMachineLevel: (level: MachineLevel) => setMachineValue('machine.level', level),
   setGlobalUse: (value: 'on' | 'off') => setMachineValue('machine.global_use', value),
   setKeystore: (value: 'file') => {

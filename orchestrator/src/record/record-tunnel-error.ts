@@ -3,8 +3,8 @@
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { runningInstallationKind } from '../../../shared/install-root.ts'
+import { launchdOwnerCommand } from '../../../shared/launchd-owners.ts'
 import { installerRemedy } from '../health/launch-agent-doctor.ts'
-import { launchdOwnerCommand } from '../setup/launchd-owners.ts'
 
 const CONNECTION_FAILURE =
   /\b(?:ECONNREFUSED|ECONNRESET|ETIMEDOUT)\b|failed to connect|connection (?:refused|closed|reset)|connect(?:ion)? timed out|connection timeout/i

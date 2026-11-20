@@ -25,6 +25,7 @@ import {
   type SetupInstallVerifyFacts,
   verifySetupInstall,
 } from './setup-install-verify.ts'
+import { setupInstallSettingsDecision } from './setup-install-verify-decision.ts'
 
 export type SetupInstallVerifyAdapters = {
   applySettings?: () => Promise<MachineSettingsApplyResult[]>
@@ -89,8 +90,13 @@ function renderedChecks(
 }
 
 export async function applySetupInstallVerify(
+  sessionPresent: boolean,
   adapters: SetupInstallVerifyAdapters = {},
-): Promise<{ status: 'applied' | 'unchanged'; message: string }> {
+): Promise<{
+  status: 'applied' | 'unchanged' | 'follow-up'
+  message: string
+  condition?: 'waiting-for-sign-in'
+}> {
   const results = await (adapters.applySettings ?? (() => applyMachineSettings({ check: false })))()
   if (results.some(settingsApplyLockSkipped)) {
     throw new Error(
@@ -98,16 +104,14 @@ export async function applySetupInstallVerify(
         `re-run \`${PLATFORM_SLUG} machine setup apply\` after it finishes`,
     )
   }
-  const refused = results.filter((result) => result.outcome === 'refused')
-  if (refused.length > 0) {
-    throw new Error(
-      refused
-        .map(
-          (result) =>
-            `${result.target}: ${result.condition ? `${result.condition}; ` : ''}${result.detail ?? 'refused'}`,
-        )
-        .join('\n'),
-    )
+  const decision = setupInstallSettingsDecision(sessionPresent, results)
+  if (decision.action === 'refuse') throw new Error(decision.message)
+  if (decision.action === 'wait-for-sign-in') {
+    return {
+      status: 'follow-up',
+      message: decision.message,
+      condition: 'waiting-for-sign-in',
+    }
   }
   const checks = verifySetupInstall((adapters.facts ?? gatherSetupInstallVerifyFacts)())
   if (checks.some((check) => !check.ok)) throw new Error(renderedChecks(checks, true))

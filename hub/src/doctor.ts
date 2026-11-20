@@ -1,3 +1,8 @@
+import { type InstallationKind, runningInstallationKind } from '../../shared/install-root.ts'
+import {
+  isCheckoutOnlyLaunchAgentInstaller,
+  launchdOwnerCommand,
+} from '../../shared/launchd-owners.ts'
 import { slowCollectionHealth } from './collect-slow-health.ts'
 import { DB_PATH, db } from './db.ts'
 import { resolveHostedUrl } from './hosted-url.ts'
@@ -72,14 +77,34 @@ function questionCommitTaskLinkDoctor(): string[] {
   ]
 }
 
-export function slowCollectionDoctorLine(now = Date.now()): string {
-  const health = slowCollectionHealth(now, readSettingStamp('collect.slow.at'))
+type SlowCollectionHealth = ReturnType<typeof slowCollectionHealth>
+
+export function slowCollectionDoctorDecision(
+  installationKind: InstallationKind,
+  health: SlowCollectionHealth,
+): string {
+  if (
+    installationKind === 'distribution' &&
+    isCheckoutOnlyLaunchAgentInstaller(launchdOwnerCommand('hub'))
+  ) {
+    return 'collect slow   not installed by a release install'
+  }
   if (health.ageMs === null)
     return health.status === 'missing'
       ? 'collect slow   FAIL — never completed'
       : 'collect slow   FAIL — completion stamp is invalid'
   const age = `${Math.floor(health.ageMs / 1_000)}s old`
   return `collect slow   ${health.status === 'current' ? 'pass' : 'FAIL'} — ${age}`
+}
+
+export function slowCollectionDoctorLine(
+  now = Date.now(),
+  installationKind = runningInstallationKind(import.meta.dir, process.env),
+): string {
+  return slowCollectionDoctorDecision(
+    installationKind,
+    slowCollectionHealth(now, readSettingStamp('collect.slow.at')),
+  )
 }
 
 export async function hubDoctorLines(): Promise<string[]> {

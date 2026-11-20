@@ -3,11 +3,8 @@ import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { PLATFORM_NAME } from '../../../shared/brand.ts'
 import { registerEmbeddedAssets } from '../../../shared/embedded-assets.ts'
-import {
-  installationPlistOwners,
-  installedPlistOwners,
-  LAUNCHD_TEMPLATE_OWNERS,
-} from './launchd-owners.ts'
+import { LAUNCHD_TEMPLATE_OWNERS } from '../../../shared/launchd-owners.ts'
+import { installationPlistOwners, installedPlistOwners } from './launchd-owners.ts'
 
 afterEach(() => registerEmbeddedAssets(null))
 
