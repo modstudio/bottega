@@ -11,8 +11,8 @@ import {
 } from '../../../shared/record/record-changes.ts'
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
 import { recordIso } from '../../../shared/record-timestamp.ts'
-import { recordPool } from './record-pool.ts'
 import { encodeRulingPageCursor } from './record-cursor.ts'
+import { recordPool } from './record-pool.ts'
 import {
   QUESTION_RULINGS_PAGE_SIZE,
   type QuestionReadInput,
@@ -470,11 +470,7 @@ export async function readRecordQuestionRows(
 type RulingsInput = Tenant & Extract<RecordQuestionReadInput, { read: 'rulings' }>
 type RecordPool = ReturnType<typeof recordPool>
 
-async function materializeRulingPage(
-  tx: SQL,
-  input: RulingsInput,
-  changeHead: RecordChangeCursor,
-) {
+async function materializeRulingPage(tx: SQL, input: RulingsInput, changeHead: RecordChangeCursor) {
   const pageSize = input.limit ?? QUESTION_RULINGS_PAGE_SIZE
   const all = await recordQuestionRulingRows(tx, {
     kind: input.kind,

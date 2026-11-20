@@ -18,8 +18,8 @@ import {
   questionIntentSchema,
   questionReadSchema,
   questionWriteSchema,
-  type RulingPageCursor,
   type RecordQuestionReadInput,
+  type RulingPageCursor,
   UnboundedQuestionRulingsError,
 } from './record-question-contract.ts'
 

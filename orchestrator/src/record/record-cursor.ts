@@ -58,9 +58,7 @@ export function decodeTaskFlowStageListCursor(value: string): TaskFlowStageListC
 
 export function encodeRulingPageCursor(cursor: RulingPageCursor): string {
   const page = `page:${String(cursor.questionNumber)}`
-  return cursor.changeHead
-    ? `${page}:${encodeRecordChangeCursor(cursor.changeHead)}`
-    : page
+  return cursor.changeHead ? `${page}:${encodeRecordChangeCursor(cursor.changeHead)}` : page
 }
 
 export function parseRulingPageCursor(value: string): RulingPageCursor {

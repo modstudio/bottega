@@ -1,12 +1,12 @@
 import { expect, test } from 'bun:test'
-import { type RecordChangeCursor } from '../../../shared/record/record-changes.ts'
+import type { RecordChangeCursor } from '../../../shared/record/record-changes.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import {
   decodeRecordCursor,
   decodeTaskFlowStageListCursor,
   encodeRecordCursor,
-  encodeTaskFlowStageListCursor,
   encodeRulingPageCursor,
+  encodeTaskFlowStageListCursor,
   pageRecordItems,
   parseRulingPageCursor,
   parseStoredRecordCursor,

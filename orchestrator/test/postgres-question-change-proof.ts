@@ -117,7 +117,7 @@ export function registerQuestionChangeFeedProof(
     expect(truncated.items).toHaveLength(1)
     expect(truncated.cursor).toMatch(/^page:\d+:[^:]+$/)
     const truncatedCursor = parseRulingPageCursor(truncated.cursor!)
-    expect(truncatedCursor.questionNumber).toBe(truncated.items[0]!.number)
+    expect(truncatedCursor.questionNumber).toBe(Number(truncated.items[0]!.number))
     const [capturedXid, capturedSeq] = fixture
       .admin(`SELECT xid::text || '|' || seq::text FROM record_change
         WHERE xid<pg_snapshot_xmin(pg_current_snapshot()) AND table_name='question'
