@@ -59,11 +59,16 @@ async function rulingReadResponse(
       },
       422,
     )
-  let changedAfter: RecordChangeCursor | { questionNumber: number }
+  let changedAfter: RecordChangeCursor | { questionNumber: number; changeHead?: RecordChangeCursor }
   try {
-    changedAfter = encodedChangedAfter.startsWith('page:')
-      ? { questionNumber: Number(encodedChangedAfter.slice(5)) }
-      : decodeRecordChangeCursor(encodedChangedAfter)
+    if (encodedChangedAfter.startsWith('page:')) {
+      const [number, encodedHead, ...extra] = encodedChangedAfter.slice(5).split(':')
+      if (!number || extra.length > 0 || encodedHead === '') throw new Error('shape')
+      changedAfter = {
+        questionNumber: Number(number),
+        ...(encodedHead ? { changeHead: decodeRecordChangeCursor(encodedHead) } : {}),
+      }
+    } else changedAfter = decodeRecordChangeCursor(encodedChangedAfter)
     if ('questionNumber' in changedAfter && !Number.isSafeInteger(changedAfter.questionNumber))
       throw new Error('shape')
   } catch {

@@ -265,8 +265,13 @@ export const questionReadSchema = z.discriminatedUnion('read', [
 ])
 export type QuestionReadInput = z.infer<typeof questionReadSchema>
 type RulingReadInput = Extract<QuestionReadInput, { read: 'rulings' }>
+export const QUESTION_RULINGS_PAGE_SIZE = 100
+export type RulingPageCursor = {
+  questionNumber: number
+  changeHead?: RecordChangeCursor
+}
 export type RecordQuestionReadInput =
   | Exclude<QuestionReadInput, RulingReadInput>
   | (Omit<RulingReadInput, 'changedAfter'> & {
-      changedAfter?: RecordChangeCursor | { questionNumber: number }
+      changedAfter?: RecordChangeCursor | RulingPageCursor
     })

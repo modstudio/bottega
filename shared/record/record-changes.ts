@@ -76,6 +76,23 @@ export function recordChangePage(after: RecordChangeCursor, candidates: readonly
   return { changes, cursor: last ? { xid: last.xid, seq: last.seq } : after }
 }
 
+export async function readRecordChangeHead(
+  tx: SQL,
+  tables: readonly string[],
+): Promise<RecordChangeCursor> {
+  const head = rows<{ xid: string | number | bigint; seq: string | number | bigint }>(
+    await tx`SELECT xid::text,seq::text FROM record_change
+      WHERE xid<pg_snapshot_xmin(pg_current_snapshot())
+        AND table_name=ANY(string_to_array(${tables.join(',')}, ',')::text[])
+      ORDER BY record_change.xid DESC,record_change.seq DESC LIMIT 1`,
+  )[0]
+  if (head) return { xid: asBigInt(head.xid), seq: asBigInt(head.seq) }
+  const horizon = rows<{ xid: string | number | bigint; seq: string | number | bigint }>(
+    await tx`SELECT xid::text,seq::text FROM record_change_horizon WHERE singleton`,
+  )[0]!
+  return { xid: asBigInt(horizon.xid), seq: asBigInt(horizon.seq) }
+}
+
 async function recordChangeLag(
   tx: SQL,
   cursor: RecordChangeCursor,

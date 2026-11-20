@@ -18,7 +18,10 @@ import type {
   QuestionReadInput,
   QuestionWriteBody,
 } from '../record/record-question-contract.ts'
-import { questionChangedAfterRefusal } from '../record/record-question-contract.ts'
+import {
+  QUESTION_RULINGS_PAGE_SIZE,
+  questionChangedAfterRefusal,
+} from '../record/record-question-contract.ts'
 import { questionWriteDestinations } from '../record/record-question-destination.ts'
 import { compareQuestionsByAsk } from './question-order.ts'
 import { resolveQuestionRunPusher } from './question-run-pusher.ts'
@@ -116,6 +119,16 @@ function decodeSpaceCursors(value: string): SpaceCursors {
   }
 }
 
+export function rulingSpaceReadRequest(
+  input: Extract<QuestionReadInput, { read: 'rulings' }>,
+  position: string | undefined,
+): Extract<QuestionReadInput, { read: 'rulings' }> {
+  const { changedAfter: _changedAfter, limit: _limit, ...read } = input
+  return position
+    ? { ...read, changedAfter: position }
+    : { ...read, limit: QUESTION_RULINGS_PAGE_SIZE }
+}
+
 const SPACE_KEYED_READ_KINDS = [
   'by-id',
   'for-run',
@@ -197,11 +210,7 @@ export class RecordQuestionStore implements QuestionStore {
       (await this.allDestinations()).map(async (destination) => {
         const request =
           input.read === 'rulings' && positions
-            ? {
-                ...input,
-                limit: undefined,
-                changedAfter: positions[destination.destinationSpaceId],
-              }
+            ? rulingSpaceReadRequest(input, positions[destination.destinationSpaceId])
             : input.read === 'inbox' && positions
               ? {
                   ...input,

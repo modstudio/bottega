@@ -4,6 +4,8 @@ import type { SQL } from 'bun'
 import {
   encodeRecordChangeCursor,
   MAX_RECORD_CHANGE_PAGE_SIZE,
+  readRecordChangeHead,
+  type RecordChangeCursor,
   type RecordChangeReadPage,
   readRecordChanges,
 } from '../../../shared/record/record-changes.ts'
@@ -11,6 +13,7 @@ import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.
 import { recordIso } from '../../../shared/record-timestamp.ts'
 import { recordPool } from './record-pool.ts'
 import {
+  QUESTION_RULINGS_PAGE_SIZE,
   type QuestionReadInput,
   type RecordQuestionReadInput,
   UnboundedQuestionRulingsError,
@@ -466,43 +469,66 @@ export async function readRecordQuestionRows(
 type RulingsInput = Tenant & Extract<RecordQuestionReadInput, { read: 'rulings' }>
 type RecordPool = ReturnType<typeof recordPool>
 
+async function materializeRulingPage(
+  tx: SQL,
+  input: RulingsInput,
+  changeHead?: RecordChangeCursor,
+) {
+  const pageSize = input.limit ?? QUESTION_RULINGS_PAGE_SIZE
+  const all = await recordQuestionRulingRows(tx, {
+    kind: input.kind,
+    since: input.since,
+    afterNumber:
+      input.changedAfter && 'questionNumber' in input.changedAfter
+        ? input.changedAfter.questionNumber
+        : undefined,
+    limit: pageSize + 1,
+  })
+  const items = all.slice(0, pageSize)
+  const last = items.at(-1)
+  const more = all.length > pageSize
+  const encodedHead = changeHead ? encodeRecordChangeCursor(changeHead) : undefined
+  return {
+    items,
+    ...(encodedHead
+      ? { cursor: more ? `page:${String(last!.number)}:${encodedHead}` : encodedHead }
+      : last
+        ? { cursor: `page:${String(last.number)}` }
+        : {}),
+    more,
+  }
+}
+
 async function readRulingPage(client: RecordPool, input: RulingsInput) {
-  const pageSize = input.limit ?? 100
   return client.begin(async (tx) => {
     await bindTenant(tx, input)
-    const all = await recordQuestionRulingRows(tx, {
-      kind: input.kind,
-      since: input.since,
-      afterNumber:
-        input.changedAfter && 'questionNumber' in input.changedAfter
-          ? input.changedAfter.questionNumber
-          : undefined,
-      limit: pageSize + 1,
-    })
-    const items = all.slice(0, pageSize)
-    const last = items.at(-1)
-    return {
-      items,
-      ...(last ? { cursor: `page:${String(last.number)}` } : {}),
-      more: all.length > pageSize,
-    }
+    const pageCursor =
+      input.changedAfter && 'questionNumber' in input.changedAfter ? input.changedAfter : undefined
+    const changeHead =
+      pageCursor && !pageCursor.changeHead
+        ? undefined
+        : (pageCursor?.changeHead ??
+          (await readRecordChangeHead(tx, RECORD_QUESTION_CHANGE_TABLES)))
+    return materializeRulingPage(tx, input, changeHead)
   })
 }
 
 async function readRulingChanges(client: RecordPool, input: RulingsInput) {
   const materialize = async (tx: SQL, page: RecordChangeReadPage) => {
-    const items = page.resetRequired
-      ? limited(await recordQuestionRulingRows(tx, input), input.limit)
-      : await recordQuestionRulingRows(tx, {
-          kind: input.kind,
-          since: input.since,
-          ids: [...new Set(page.changes.map(({ id }) => id))],
-        })
+    if (page.resetRequired) {
+      const changeHead = await readRecordChangeHead(tx, RECORD_QUESTION_CHANGE_TABLES)
+      return { ...(await materializeRulingPage(tx, input, changeHead)), reset: true }
+    }
+    const items = await recordQuestionRulingRows(tx, {
+      kind: input.kind,
+      since: input.since,
+      ids: [...new Set(page.changes.map(({ id }) => id))],
+    })
     return {
       items,
       cursor: encodeRecordChangeCursor(page.cursor),
-      more: page.resetRequired ? false : page.more,
-      reset: page.resetRequired,
+      more: page.more,
+      reset: false,
     }
   }
   if (input.changedAfter !== undefined) {
