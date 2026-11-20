@@ -16,7 +16,8 @@ const playwrightTrustWorkspaceCommand =
   'git config --system --add safe.directory "$GITHUB_WORKSPACE"'
 const releaseSmokeCommand = 'bun scripts/smoke-release.ts'
 const migrationJobs = ['migration-paths', 'migration-compatibility'] as const
-const migrationPaths = 'orchestrator/migrations hub/migrations'
+const migrationPaths =
+  "orchestrator/migrations hub/migrations hub/src/migrations.ts shared/migration-source.ts ':(glob)orchestrator/src/database/*migration*.ts'"
 const migrationCommand = `./bin/${PLATFORM_SLUG} machine migrate`
 const ciReleaseSmokeCondition =
   "github.event_name == 'pull_request' || github.event_name == 'merge_group' || github.event_name == 'workflow_dispatch'"

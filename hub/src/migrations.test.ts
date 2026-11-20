@@ -938,7 +938,7 @@ describe('hub migration journal', () => {
       (2,'MISSING-43','dangling-record','2026-01-01','open')`)
     d.exec('PRAGMA foreign_keys = ON')
     expect(() => applyMigrations(d, undefined, HUB_MIGRATION_BACKFILL_VALUES)).toThrow(
-      `task identity migration found unresolved task_comment, task_document, task_status_event, task parent, or promoted note rows; repair the named task identities, then run ${PLATFORM_SLUG} machine migrate`,
+      `task identity migration found unresolved task_comment, task_document, task_status_event, task parent, or promoted note rows; repair the unresolved task identities in those tables, then run ${PLATFORM_SLUG} machine migrate`,
     )
     expect(d.query("SELECT name FROM sqlite_master WHERE name='task_new'").get()).toBeNull()
     expect(d.query('PRAGMA foreign_keys').get()).toEqual({ foreign_keys: 1 })

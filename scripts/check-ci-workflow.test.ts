@@ -12,6 +12,8 @@ import { CI_ONLY_SUITES } from './check-plan.ts'
 
 const postgresServiceContainer = `BOTTEGA_TEST_POSTGRES_CONTAINER: \${{ job.services.postgres.id }}`
 const migrationCommand = `./bin/${PLATFORM_SLUG} machine migrate`
+const migrationPaths =
+  "orchestrator/migrations hub/migrations hub/src/migrations.ts shared/migration-source.ts ':(glob)orchestrator/src/database/*migration*.ts'"
 const processSuite = CI_ONLY_SUITES[0]!
 const playwrightPin = (
   JSON.parse(readFileSync(new URL('../hub/web/package.json', import.meta.url), 'utf8')) as {
@@ -73,11 +75,21 @@ test('pins the migration compatibility path gate and macOS proof', () => {
   expect(() =>
     checkCiWorkflow(
       workflow.replace(
-        'git diff --quiet "$BASE_SHA" HEAD -- orchestrator/migrations hub/migrations',
+        `git diff --quiet "$BASE_SHA" HEAD -- ${migrationPaths}`,
         'git diff --quiet "$BASE_SHA" HEAD',
       ),
     ),
-  ).toThrow('must compare orchestrator/migrations hub/migrations')
+  ).toThrow(`must compare ${migrationPaths}`)
+
+  for (const path of [
+    'hub/src/migrations.ts',
+    'shared/migration-source.ts',
+    "':(glob)orchestrator/src/database/*migration*.ts'",
+  ]) {
+    expect(() => checkCiWorkflow(workflow.replace(` ${path}`, ''))).toThrow(
+      `must compare ${migrationPaths}`,
+    )
+  }
 })
 
 test('pins the Python hook leg', () => {
@@ -393,7 +405,7 @@ function migrationPathsJobFixture() {
     outputs:
       changed: ${'$'}{{ steps.changes.outputs.changed }}
     steps:
-      - run: git diff --quiet "$BASE_SHA" HEAD -- orchestrator/migrations hub/migrations`
+      - run: git diff --quiet "$BASE_SHA" HEAD -- ${migrationPaths}`
 }
 
 function migrationCompatibilityJobFixture() {
