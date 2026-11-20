@@ -21,6 +21,20 @@ test('record API timing wrapper adds Server-Timing to success and error response
   expect(error.response.headers.get('server-timing')).toBe('app;dur=4.5')
 })
 
+test('record API timing wrapper counts response bytes as the body is consumed', async () => {
+  const observed: Array<number | null> = []
+  const timed = await timedRecordApiResponse(
+    { fetch: () => new Response('abc') },
+    new Request('https://record.test/v1/tasks'),
+    () => 1,
+    (bytes) => observed.push(bytes),
+  )
+
+  expect(observed).toEqual([])
+  expect(await timed.response.text()).toBe('abc')
+  expect(observed).toEqual([3])
+})
+
 test('record API timing wrapper preserves a response with immutable headers', async () => {
   const passThrough = new Response('pass-through')
   Object.defineProperty(passThrough.headers, 'set', {

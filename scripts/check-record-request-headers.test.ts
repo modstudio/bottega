@@ -1,6 +1,9 @@
 import { expect, test } from 'bun:test'
 import { CALLER_HEADER_NAME } from '../shared/record-caller.ts'
-import { recordRequestHeaderViolations } from './check-record-request-headers.ts'
+import {
+  recordFetchViolations,
+  recordRequestHeaderViolations,
+} from './check-record-request-headers.ts'
 
 test('refuses request-header construction outside the shared helper', () => {
   const source = `
@@ -59,4 +62,32 @@ test('allows a server read through the shared caller-header name', () => {
       'orchestrator/src/server.ts',
     ),
   ).toEqual([])
+})
+
+test('refuses direct record fetches and allows the traced seam', () => {
+  expect(
+    recordFetchViolations(
+      `const response = await fetch(resolveRecordApiUrl())`,
+      'hub/src/example.ts',
+    ),
+  ).toEqual([{ file: 'hub/src/example.ts', line: 1 }])
+  expect(
+    recordFetchViolations(
+      `const response = await tracedRecordFetch(resolveRecordApiUrl(), {}, fetch)`,
+      'hub/src/example.ts',
+    ),
+  ).toEqual([])
+})
+
+test('refuses hosted transports and opaque hosted-session sends', () => {
+  const source = `
+    const direct = hostedApiFetch(url)
+    const transport = boundedFetch('hosted-api')
+    const response = input.fetch(input.url, init)
+  `
+  expect(recordFetchViolations(source, 'hub/src/example.ts')).toEqual([
+    { file: 'hub/src/example.ts', line: 2 },
+    { file: 'hub/src/example.ts', line: 3 },
+    { file: 'hub/src/example.ts', line: 4 },
+  ])
 })

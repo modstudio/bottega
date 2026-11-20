@@ -1,5 +1,5 @@
-import { expect, mock, spyOn, test } from 'bun:test'
-import * as recordCallTrace from '../../shared/record-call-trace.ts'
+import { expect, test } from 'bun:test'
+import { recordedRecordCalls } from '../../shared/record-call-trace.ts'
 import { CALLER_HEADER_NAME, withRecordCaller } from '../../shared/record-caller.ts'
 import { sendHostedSessionRequest } from './hosted-session-send.ts'
 import { hostedCreateTask } from './task-client.ts'
@@ -76,8 +76,10 @@ test('hosted session writes require and send a destination while reads remain un
   void compileOnlyClient
 })
 
-test('hosted session sends pass through the record trace seam', async () => {
-  const trace = spyOn(recordCallTrace, 'tracedRecordFetch')
+test.serial('hosted session sends are recorded through the record trace seam', async () => {
+  const previous = process.env.BOTTEGA_RECORD_TRACE
+  process.env.BOTTEGA_RECORD_TRACE = '1'
+  const before = recordedRecordCalls().length
   try {
     const response = await sendHostedSessionRequest({
       ...common,
@@ -85,14 +87,19 @@ test('hosted session sends pass through the record trace seam', async () => {
       method: 'GET',
       fetch: async () =>
         new Response('[]', {
-          headers: { 'content-length': '2', 'content-type': 'application/json' },
+          headers: { 'content-type': 'application/json' },
         }),
     })
 
     expect(await response.json()).toEqual([])
-    expect(trace).toHaveBeenCalledTimes(1)
-    expect(trace.mock.calls[0]?.[0]).toBe('https://hub.example.test/v1/tasks')
+    expect(recordedRecordCalls()).toHaveLength(before + 1)
+    expect(recordedRecordCalls()[before]).toMatchObject({
+      routeClass: 'record-tasks',
+      responseBytes: 2,
+      open: false,
+    })
   } finally {
-    mock.restore()
+    if (previous === undefined) delete process.env.BOTTEGA_RECORD_TRACE
+    else process.env.BOTTEGA_RECORD_TRACE = previous
   }
 })

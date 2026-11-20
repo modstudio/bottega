@@ -2,9 +2,10 @@
 /** Composes and serves the record API. Must not own record queries or authentication policy. */
 import { readBuiltCommit } from '../../../shared/built-commit.ts'
 import {
+  contentLength,
+  countResponseBody,
   HOSTED_SERVER_IDLE_TIMEOUT_SECONDS,
   hostedAccessLogLine,
-  responseBodyBytes,
 } from '../../../shared/hosted-server.ts'
 import { CALLER_HEADER_NAME, loggedCallerToken } from '../../../shared/record-caller.ts'
 import { createNoDestinationWriteCounter } from '../../../shared/record-no-destination-write-counter.ts'
@@ -223,6 +224,7 @@ export async function timedRecordApiResponse(
   app: { fetch(request: Request): Response | Promise<Response> },
   request: Request,
   now: () => number = performance.now.bind(performance),
+  onBodyBytes: (bytes: number | null, status: number, durationMs: number) => void = () => {},
 ): Promise<{ response: Response; durationMs: number }> {
   const started = now()
   const response = await app.fetch(request)
@@ -231,8 +233,17 @@ export async function timedRecordApiResponse(
     response.headers.set('server-timing', `app;dur=${durationMs.toFixed(1)}`)
   } catch {
     // Redirects and pass-through fetch responses can have immutable headers.
+    onBodyBytes(contentLength(response.headers), response.status, durationMs)
+    return { response, durationMs }
   }
-  return { response, durationMs }
+  return {
+    response: countResponseBody(
+      response,
+      () => {},
+      (bytes) => onBodyBytes(bytes, response.status, durationMs),
+    ),
+    durationMs,
+  }
 }
 
 function serveRecordApi(
@@ -252,16 +263,24 @@ function serveRecordApi(
       if (request.method === 'GET' && new URL(request.url).pathname === '/v1/board/stream') {
         bunServer.timeout(request, 0)
       }
-      const { response, durationMs } = await timedRecordApiResponse(app, request)
-      console.log(
-        hostedAccessLogLine({
-          method: request.method,
-          pathname: new URL(request.url).pathname,
-          status: response.status,
-          durationMs,
-          responseBytes: responseBodyBytes(response),
-          caller: loggedCallerToken(request.headers.get(CALLER_HEADER_NAME)),
-        }),
+      const method = request.method
+      const pathname = new URL(request.url).pathname
+      const caller = loggedCallerToken(request.headers.get(CALLER_HEADER_NAME))
+      const { response } = await timedRecordApiResponse(
+        app,
+        request,
+        undefined,
+        (responseBytes, status, durationMs) =>
+          console.log(
+            hostedAccessLogLine({
+              method,
+              pathname,
+              status,
+              durationMs,
+              responseBytes,
+              caller,
+            }),
+          ),
       )
       return response
     },

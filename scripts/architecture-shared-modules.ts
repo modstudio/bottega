@@ -100,7 +100,7 @@ export const sharedModules: ArchitectureModule[] = [
   ]),
   module('shared/record-request-headers.ts', ['./record-caller.ts']),
   module('shared/hosted-call-observation.ts', []),
-  module('shared/record-call-trace.ts', ['./brand.ts']),
+  module('shared/record-call-trace.ts', ['./brand.ts', './hosted-server.ts']),
   module('shared/record-api-url.ts', ['./brand.ts', './config-directory.ts', './env-values.ts']),
   module('shared/http-json.ts', []),
   module('shared/autonomy.ts', ['./ship-to.ts']),

@@ -2,6 +2,7 @@
 /** Measures record API HTTP calls without coupling callers to a concern-specific client. */
 
 import { PLATFORM_SLUG } from './brand.ts'
+import { contentLength, countResponseBody } from './hosted-server.ts'
 
 const RECORD_TRACE_ENV = `${PLATFORM_SLUG.toUpperCase()}_RECORD_TRACE`
 
@@ -13,6 +14,7 @@ export type RecordCallTrace = {
   responseBytes: number | null
   clientMs: number
   serverMs: number | null
+  open: boolean
 }
 
 type RecordTraceSummary = {
@@ -24,12 +26,20 @@ type RecordTraceSummary = {
   clientMsMax: number | null
   serverMsTotal: number | null
   serverMsMax: number | null
+  open: number
 }
 
 const encoder = new TextEncoder()
-const traceState = { attempts: 0 }
 const recordedCalls: RecordCallTrace[] = []
-const configuredMode = process.env[RECORD_TRACE_ENV] ?? null
+
+function configuredMode(): string | null {
+  return process.env[RECORD_TRACE_ENV] ?? null
+}
+
+/** Recorded calls are exposed for behavioral tests and diagnostics. */
+export function recordedRecordCalls(): readonly RecordCallTrace[] {
+  return recordedCalls
+}
 
 export function recordRouteClass(path: string): string {
   const pathname = path.split('?', 1)[0] ?? path
@@ -37,44 +47,7 @@ export function recordRouteClass(path: string): string {
   if (pathname.startsWith('/public/v1/docs')) return 'record-public-docs'
   if (pathname.startsWith('/v1/board/stream')) return 'record-board-stream'
   const family = pathname.match(/^\/v1\/([^/]+)/)?.[1]
-  const known = new Set([
-    'active-space',
-    'board',
-    'catalogues',
-    'changes',
-    'config',
-    'config-access',
-    'context-items',
-    'docs',
-    'invitations',
-    'lens-catalogue',
-    'machine',
-    'members',
-    'notes',
-    'operator-waiting-emails',
-    'outside-blocks',
-    'outside-intake',
-    'port-catalogue',
-    'projects',
-    'releases',
-    'report-subscriptions',
-    'reviews',
-    'routing-evidence',
-    'runs',
-    'scores',
-    'sends',
-    'settings',
-    'snapshots',
-    'spaces',
-    'storage',
-    'subjects',
-    'sync',
-    'tasks',
-    'task-flow',
-    'whoami',
-    'workflow-catalogue',
-  ])
-  return family && known.has(family) ? `record-${family}` : 'record-other'
+  return family ? `record-${family}` : 'record-other'
 }
 
 export function parseServerTiming(value: string | null): number | null {
@@ -101,13 +74,6 @@ function bodyBytes(body: BodyInit | null | undefined): number | null {
   return null
 }
 
-function contentLength(headers: Headers): number | null {
-  const value = headers.get('content-length')
-  if (value === null || !/^\d+$/.test(value)) return null
-  const parsed = Number(value)
-  return Number.isSafeInteger(parsed) ? parsed : null
-}
-
 function decimal(value: number): string {
   return value.toFixed(1)
 }
@@ -132,6 +98,7 @@ export function summarizeRecordCalls(calls: readonly RecordCallTrace[]): RecordT
       clientMsMax: null,
       serverMsTotal: null,
       serverMsMax: null,
+      open: 0,
     }
     summary.count += 1
     if (call.responseBytes !== null) {
@@ -144,6 +111,7 @@ export function summarizeRecordCalls(calls: readonly RecordCallTrace[]): RecordT
       summary.serverMsTotal = (summary.serverMsTotal ?? 0) + call.serverMs
       summary.serverMsMax = Math.max(summary.serverMsMax ?? 0, call.serverMs)
     }
+    if (call.open) summary.open += 1
     grouped.set(call.routeClass, summary)
   }
   return [...grouped.values()].sort((left, right) =>
@@ -177,6 +145,7 @@ function combineSummaries(summaries: readonly RecordTraceSummary[]): RecordTrace
         summary.serverMsMax === null
           ? total.serverMsMax
           : Math.max(total.serverMsMax ?? 0, summary.serverMsMax),
+      open: total.open + summary.open,
     }),
     {
       routeClass: 'total',
@@ -187,6 +156,7 @@ function combineSummaries(summaries: readonly RecordTraceSummary[]): RecordTrace
       clientMsMax: null,
       serverMsTotal: null,
       serverMsMax: null,
+      open: 0,
     },
   )
 }
@@ -202,6 +172,7 @@ function summaryLine(summary: RecordTraceSummary): string {
     `client_ms_max=${optionalDecimal(summary.clientMsMax)}`,
     `server_ms_total=${optionalDecimal(summary.serverMsTotal)}`,
     `server_ms_max=${optionalDecimal(summary.serverMsMax)}`,
+    `open=${summary.open}`,
   ].join(' ')
 }
 
@@ -220,14 +191,12 @@ function formatRecordCall(call: RecordCallTrace): string {
     `response_bytes=${optionalInteger(call.responseBytes)}`,
     `client_ms=${decimal(call.clientMs)}`,
     `server_ms=${optionalDecimal(call.serverMs)}`,
+    `open=${call.open}`,
   ].join(' ')
 }
 
 function recordRecordCallTrace(call: RecordCallTrace): void {
-  traceState.attempts += 1
-  if (!configuredMode) return
   recordedCalls.push(call)
-  if (configuredMode === 'calls') process.stderr.write(`${formatRecordCall(call)}\n`)
 }
 
 export async function tracedRecordFetch(
@@ -236,8 +205,8 @@ export async function tracedRecordFetch(
   transport: typeof fetch,
   observer: (call: RecordCallTrace) => void = recordRecordCallTrace,
 ): Promise<Response> {
-  traceState.attempts += 1
-  if (!configuredMode && observer === recordRecordCallTrace) return transport(url, init)
+  const mode = configuredMode()
+  if (!mode && observer === recordRecordCallTrace) return transport(url, init)
   const startedAt = performance.now()
   const routeClass = recordRouteClass(new URL(url).pathname)
   try {
@@ -250,26 +219,31 @@ export async function tracedRecordFetch(
       requestBytes: bodyBytes(init.body),
       serverMs: parseServerTiming(response.headers.get('server-timing')),
     }
-    const finish = (measuredResponseBytes: number | null) => {
-      const call = {
-        ...common,
-        responseBytes: measuredResponseBytes,
-        clientMs: performance.now() - startedAt,
-      }
-      if (observer === recordRecordCallTrace) {
-        recordedCalls.push(call)
-        if (configuredMode === 'calls') process.stderr.write(`${formatRecordCall(call)}\n`)
-      } else observer(call)
+    const call: RecordCallTrace = {
+      ...common,
+      responseBytes: responseBytes ?? 0,
+      clientMs: performance.now() - startedAt,
+      open: responseBytes === null && response.body !== null,
     }
-    if (responseBytes !== null) finish(responseBytes)
-    else if (response.body === null) finish(0)
-    else
-      void response
-        .clone()
-        .arrayBuffer()
-        .then((body) => finish(body.byteLength))
-        .catch(() => finish(null))
-    return response
+    observer(call)
+    const finish = (measuredResponseBytes: number) => {
+      call.responseBytes = measuredResponseBytes
+      call.clientMs = performance.now() - startedAt
+      call.open = false
+      if (mode === 'calls') process.stderr.write(`${formatRecordCall(call)}\n`)
+    }
+    if (responseBytes !== null || response.body === null) {
+      finish(responseBytes ?? 0)
+      return response
+    }
+    return countResponseBody(
+      response,
+      (bytes) => {
+        call.responseBytes = bytes
+        call.clientMs = performance.now() - startedAt
+      },
+      (bytes) => finish(bytes),
+    )
   } catch (error) {
     const call = {
       routeClass,
@@ -279,16 +253,16 @@ export async function tracedRecordFetch(
       responseBytes: null,
       clientMs: performance.now() - startedAt,
       serverMs: null,
+      open: false,
     }
-    if (observer === recordRecordCallTrace) {
-      recordedCalls.push(call)
-      if (configuredMode === 'calls') process.stderr.write(`${formatRecordCall(call)}\n`)
-    } else observer(call)
+    observer(call)
+    if (mode === 'calls') process.stderr.write(`${formatRecordCall(call)}\n`)
     throw error
   }
 }
 
-if (configuredMode)
-  process.once('exit', () => {
-    for (const line of formatRecordCallSummary(recordedCalls)) process.stderr.write(`${line}\n`)
-  })
+process.once('exit', () => {
+  if (configuredMode())
+    for (const line of formatRecordCallSummary(recordedRecordCalls()))
+      process.stderr.write(`${line}\n`)
+})

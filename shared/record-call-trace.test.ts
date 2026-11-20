@@ -3,6 +3,8 @@ import {
   formatRecordCallSummary,
   parseServerTiming,
   type RecordCallTrace,
+  recordedRecordCalls,
+  recordRouteClass,
   summarizeRecordCalls,
   tracedRecordFetch,
 } from './record-call-trace.ts'
@@ -24,6 +26,7 @@ test('record call summaries aggregate each route and the formatted total', () =>
       responseBytes: 120,
       clientMs: 8.25,
       serverMs: 3.5,
+      open: false,
     },
     {
       routeClass: 'record-docs',
@@ -33,6 +36,7 @@ test('record call summaries aggregate each route and the formatted total', () =>
       responseBytes: 30,
       clientMs: 5,
       serverMs: null,
+      open: false,
     },
     {
       routeClass: 'record-tasks',
@@ -42,6 +46,7 @@ test('record call summaries aggregate each route and the formatted total', () =>
       responseBytes: null,
       clientMs: 2,
       serverMs: 1,
+      open: false,
     },
   ]
 
@@ -55,6 +60,7 @@ test('record call summaries aggregate each route and the formatted total', () =>
       clientMsMax: 8.25,
       serverMsTotal: 3.5,
       serverMsMax: 3.5,
+      open: 0,
     },
     {
       routeClass: 'record-tasks',
@@ -65,10 +71,11 @@ test('record call summaries aggregate each route and the formatted total', () =>
       clientMsMax: 2,
       serverMsTotal: 1,
       serverMsMax: 1,
+      open: 0,
     },
   ])
   expect(formatRecordCallSummary(calls).at(-1)).toBe(
-    'record-trace route=total count=3 response_bytes_total=150 response_bytes_max=120 client_ms_total=15.3 client_ms_max=8.3 server_ms_total=4.5 server_ms_max=3.5',
+    'record-trace route=total count=3 response_bytes_total=150 response_bytes_max=120 client_ms_total=15.3 client_ms_max=8.3 server_ms_total=4.5 server_ms_max=3.5 open=0',
   )
 })
 
@@ -96,6 +103,7 @@ test('traced record fetch captures the request and response measurements', async
     serverMs: 2.5,
   })
   expect(calls[0]!.clientMs).toBeGreaterThanOrEqual(0)
+  expect(calls[0]!.open).toBeFalse()
 })
 
 test('traced record fetch counts a response body when content-length is absent', async () => {
@@ -111,4 +119,64 @@ test('traced record fetch counts a response body when content-length is absent',
   for (let attempt = 0; calls.length === 0 && attempt < 10; attempt++) await Bun.sleep(0)
   expect(calls).toHaveLength(1)
   expect(calls[0]).toMatchObject({ routeClass: 'record-tasks', responseBytes: 12 })
+})
+
+test('route classes derive from the first v1 path segment', () => {
+  expect(recordRouteClass('/v1/questions/one')).toBe('record-questions')
+  expect(recordRouteClass('/v1/moderation')).toBe('record-moderation')
+  expect(recordRouteClass('/v1/board/stream')).toBe('record-board-stream')
+})
+
+test('traced fetch counts an unbounded body only as the caller reads it and records cancellation', async () => {
+  const calls: RecordCallTrace[] = []
+  let pulls = 0
+  const response = await tracedRecordFetch(
+    'https://record.test/v1/board/stream',
+    {},
+    (async () =>
+      new Response(
+        new ReadableStream<Uint8Array>({
+          pull(controller) {
+            pulls += 1
+            controller.enqueue(new Uint8Array([1, 2, 3]))
+          },
+        }),
+      )) as unknown as typeof fetch,
+    (call) => calls.push(call),
+  )
+  const reader = response.body!.getReader()
+  expect((await reader.read()).value).toEqual(new Uint8Array([1, 2, 3]))
+  expect((await reader.read()).value).toEqual(new Uint8Array([1, 2, 3]))
+  await reader.cancel('test complete')
+
+  expect(calls).toHaveLength(1)
+  expect(calls[0]).toMatchObject({ responseBytes: 6, open: false })
+  expect(pulls).toBeLessThanOrEqual(5)
+})
+
+test.serial('trace off returns the original response and records or writes nothing', async () => {
+  const previous = process.env.BOTTEGA_RECORD_TRACE
+  delete process.env.BOTTEGA_RECORD_TRACE
+  const before = recordedRecordCalls().length
+  const originalWrite = process.stderr.write
+  const writes: string[] = []
+  process.stderr.write = ((value: string | Uint8Array) => {
+    writes.push(String(value))
+    return true
+  }) as typeof process.stderr.write
+  try {
+    const original = new Response('body')
+    const response = await tracedRecordFetch(
+      'https://record.test/v1/tasks',
+      {},
+      (async () => original) as unknown as typeof fetch,
+    )
+    expect(response).toBe(original)
+    expect(recordedRecordCalls()).toHaveLength(before)
+    expect(writes).toEqual([])
+  } finally {
+    process.stderr.write = originalWrite
+    if (previous === undefined) delete process.env.BOTTEGA_RECORD_TRACE
+    else process.env.BOTTEGA_RECORD_TRACE = previous
+  }
 })

@@ -166,17 +166,22 @@ function startHostedServer(environment: ServerEnvironment = process.env) {
       const started = performance.now()
       const caller = inboundCaller(request.headers.get(CALLER_HEADER_NAME))
       const response = await withRecordCaller(caller.scope, () => requestHandler(request))
-      console.log(
-        hostedServer.hostedAccessLogLine({
-          method: request.method,
-          pathname: new URL(request.url).pathname,
-          status: response.status,
-          durationMs: performance.now() - started,
-          responseBytes: hostedServer.responseBodyBytes(response),
-          caller: caller.logged,
-        }),
+      const durationMs = performance.now() - started
+      return hostedServer.countResponseBody(
+        response,
+        () => {},
+        (responseBytes) =>
+          console.log(
+            hostedServer.hostedAccessLogLine({
+              method: request.method,
+              pathname: new URL(request.url).pathname,
+              status: response.status,
+              durationMs,
+              responseBytes,
+              caller: caller.logged,
+            }),
+          ),
       )
-      return response
     },
   })
   let stopping = false
