@@ -48,7 +48,7 @@ export function codexWriterProbeOutput(stdout: string): {
       values.get(name) === expected
         ? expected === 'ran'
           ? 'succeeded'
-          : 'sandbox refusal held'
+          : 'packed-refs.lock: Operation not permitted'
         : 'failed',
   })
   return {

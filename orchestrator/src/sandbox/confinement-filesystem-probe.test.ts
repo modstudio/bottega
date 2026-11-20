@@ -82,11 +82,11 @@ git-pack-refs=refused`)
 
     expect(commands['git branch -d']).toEqual({
       status: 'refused',
-      reason: 'sandbox refusal held',
+      reason: 'packed-refs.lock: Operation not permitted',
     })
     expect(commands['git pack-refs']).toEqual({
       status: 'refused',
-      reason: 'sandbox refusal held',
+      reason: 'packed-refs.lock: Operation not permitted',
     })
   })
 
