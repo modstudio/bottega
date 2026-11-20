@@ -112,20 +112,6 @@ function decideBoundRootCursor(
   if (!input.rootCursorRecordId) return null
   const heldRoot = input.heldCursors.find(({ recordId }) => recordId === input.rootCursorRecordId)
   if (!heldRoot) return { kind: 'allow' }
-  if (input.cursor !== undefined && input.cursor !== heldRoot.number) {
-    return {
-      kind: 'refuse',
-      message: renderRefusal(
-        refusal(
-          `refusing keyed run turn because its root is bound to workflow cursor ${heldRoot.number}, not cursor ${input.cursor}`,
-          {
-            kind: 'edit',
-            text: 'rerun without the cursor selection option so the root binding is preserved',
-          },
-        ),
-      ),
-    }
-  }
   return {
     kind: 'allow',
     binding: { cursorRecordId: heldRoot.recordId, stepSlug: heldRoot.stepSlug },
@@ -160,7 +146,7 @@ export function decideKeyedRunCursorAdmission(
     return { kind: 'allow' }
   }
 
-  const boundRootDecision = decideBoundRootCursor(input)
+  const boundRootDecision = input.cursor === undefined ? decideBoundRootCursor(input) : null
   if (boundRootDecision) return boundRootDecision
 
   const overrideDecision = decideOverride(input)

@@ -289,6 +289,18 @@ describe('a message that is not a ruling is refused', () => {
 })
 
 describe('continue message grammar', () => {
+  test('--cursor is structural before or after the run id', () => {
+    const usage = `${PLATFORM_SLUG} run continue <id> [--file PATH | message]`
+    expect(parseContinueArgs(['--cursor', '110', '17074', 'apply', 'findings'], usage)).toEqual({
+      identifier: '17074',
+      sources: { commandFile: undefined, positionals: ['apply', 'findings'] },
+    })
+    expect(parseContinueArgs(['17074', 'apply', '--cursor=110', 'findings'], usage)).toEqual({
+      identifier: '17074',
+      sources: { commandFile: undefined, positionals: ['apply', 'findings'] },
+    })
+  })
+
   test('--file is structural before or after the run id', () => {
     const usage = `${PLATFORM_SLUG} run continue <id> [--file PATH | message]`
     expect(parseContinueArgs(['--file', 'fixes.md', '17074'], usage)).toEqual({
