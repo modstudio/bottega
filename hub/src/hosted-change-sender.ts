@@ -1,27 +1,26 @@
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { newRecordId } from '../../shared/record/schema.ts'
 import { HOSTED_UNREACHABLE_REMEDY } from './hosted-write-mode.ts'
-import {
-  HOSTED_STATUS_EVENT_TABLE,
-  HOSTED_TASK_TABLE,
-  type HostedPushChange,
-} from './push-contract.ts'
+import type { HostedPushChange } from './push-contract.ts'
 import { hostedPushChanges } from './task-client.ts'
 import type { HostedTaskWriteOptions } from './task-write-destination.ts'
 
 export async function sendHostedChanges(
   taskKey: string,
-  changes: HostedPushChange[],
+  stages: HostedPushChange[][],
   options: HostedTaskWriteOptions & { recordSpace: string },
 ): Promise<void> {
-  const prepared = changes.map((change) => ({
-    ...change,
-    change_id: change.change_id ?? newRecordId(),
-  }))
+  const prepared = stages.map((stage) =>
+    stage.map((change) => ({
+      ...change,
+      change_id: change.change_id ?? newRecordId(),
+    })),
+  )
   const push = async (batch: HostedPushChange[]) => {
     try {
       return await hostedPushChanges(batch, options)
     } catch (error) {
+      if (!(error instanceof Error) || error.name !== 'HostedSessionTransportError') throw error
       const message = error instanceof Error ? error.message : String(error)
       throw new Error(`${message}. ${HOSTED_UNREACHABLE_REMEDY}`)
     }
@@ -34,13 +33,8 @@ export async function sendHostedChanges(
           `refresh the record with \`${PLATFORM_SLUG} task show ${taskKey}\` and retry`,
       )
   }
-  const taskPatch = prepared.find((change) => change.table === HOSTED_TASK_TABLE)
-  const hasStatusEvent = prepared.some((change) => change.table === HOSTED_STATUS_EVENT_TABLE)
-  if (taskPatch && hasStatusEvent) {
-    refuseRejected(await push([taskPatch]))
-    refuseRejected(await push(prepared.filter((change) => change !== taskPatch)))
-    return
+  for (const stage of prepared) {
+    const outcomes = await push(stage)
+    refuseRejected(outcomes)
   }
-  const outcomes = await push(prepared)
-  refuseRejected(outcomes)
 }

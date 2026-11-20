@@ -12,7 +12,7 @@ import { db } from './db.ts'
 import { hostedRequestHandler } from './hosted.ts'
 import { applyHostedPushChanges } from './hosted-push-changes.ts'
 import { listHostedTasks } from './hosted-task-list.ts'
-import { createHostedTask, getHostedTask } from './hosted-tasks.ts'
+import { createHostedDocument, createHostedTask, getHostedTask } from './hosted-tasks.ts'
 import { projectRecordIdFor } from './project-record-id.ts'
 import {
   commentTask,
@@ -26,6 +26,7 @@ import {
   taskRecord,
 } from './task.ts'
 import { taskBodyVersion } from './task-detail.ts'
+import { createTaskDocument, updateTaskDocument } from './task-document.ts'
 
 const spaceId = '01990000-0000-7000-8000-000000002520'
 const userId = '01990000-0000-7000-8000-000000002521'
@@ -67,6 +68,7 @@ beforeAll(async () => {
       tasks: {
         fetch: identityFetch,
         create: createHostedTask,
+        createDocument: createHostedDocument,
         get: getHostedTask,
         list: listHostedTasks,
       },
@@ -224,6 +226,51 @@ test('hosted writes use the project-declared record space', async () => {
     'declared-gamma-space',
     'declared-gamma-space',
   ])
+})
+
+test('hosted document updates use the declared space and refuse a stale version', async () => {
+  const requests: Array<{ path: string; space: string | null }> = []
+  const fetch = async (input: string, init?: RequestInit) => {
+    if (init?.method === 'POST')
+      requests.push({
+        path: new URL(input).pathname,
+        space: new Headers(init.headers).get('x-record-space'),
+      })
+    return recordFetch(input, init)
+  }
+  const options = {
+    hosted: { baseUrl: 'https://hub.example.test', token: 'test', fetch },
+  }
+  const task = await recordCreate(
+    { project: 'gamma', title: 'Document destination' },
+    { ...options, skipDuplicateCheck: true },
+  )
+  const document = await createTaskDocument(
+    { task: task.key, title: 'Plan', body: 'Before' },
+    { project: 'gamma' },
+    options,
+  )
+
+  await updateTaskDocument(
+    document.id,
+    { body: 'After', expectedVersion: document.version },
+    { ...options, scope: { project: 'gamma' } },
+  )
+  expect(requests.at(-1)).toEqual({
+    path: '/v1/changes',
+    space: 'declared-gamma-space',
+  })
+
+  const stale = await updateTaskDocument(
+    document.id,
+    { body: 'Stale', expectedVersion: document.version },
+    { ...options, scope: { project: 'gamma' } },
+  ).catch((error: unknown) => error)
+  expect(stale).toBeInstanceOf(Error)
+  expect((stale as Error).message).toContain(
+    `hub_task_document ${document.id} changed since revision ${document.version}`,
+  )
+  expect((stale as Error).message).not.toContain('Retry when the hosted record is reachable.')
 })
 
 test('a hosted list scoped to an undeclared-space project refuses', async () => {

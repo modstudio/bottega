@@ -13,6 +13,7 @@ import {
 import type { Attribution } from './task-attribution.ts'
 import { hostedGetTask, hostedListTasks, isMissingHostedTask } from './task-client.ts'
 import type { TaskDocumentSummary } from './task-document.ts'
+import { documentRole, formatTaskDocumentLabel } from './task-document.ts'
 import { missingTaskError, type TaskScope } from './task-identity.ts'
 import type { TaskRow } from './task-row.ts'
 import type { TaskChanges, TaskComment } from './task-types.ts'
@@ -122,10 +123,10 @@ export async function showHostedTask(
       (row): TaskDocumentSummary => ({
         id: row.id,
         number: row.number!,
-        label: `${row.task_key}/${row.number}`,
+        label: formatTaskDocumentLabel(row.task_key, row.number!),
         task_key: row.task_key,
         task_record_id: row.task_id ?? '',
-        role: row.role === 'handoff' ? 'handoff' : null,
+        role: documentRole(row.role),
         title: row.title,
         updated_at: row.updated_at,
         body: row.body,
@@ -194,7 +195,7 @@ export function hostedTaskBatch(input: {
   at: string
   attribution: Attribution
   expectedRevision?: number
-}): HostedPushChange[] {
+}): HostedPushChange[][] {
   const fields = taskChangeFields(input.changes)
   const guards = taskPatchGuards(input.current, input.changes)
   const task: HostedPushChange = {
@@ -207,9 +208,9 @@ export function hostedTaskBatch(input: {
     ...(Object.keys(guards).length ? { from: guards } : {}),
   }
   if (input.changes.status === undefined || input.current.status_category === input.category)
-    return [task]
+    return [[task]]
   const event = pushedStatusEvent(input.current, input.category!, input.at, input.attribution)
-  return [task, { table: HOSTED_STATUS_EVENT_TABLE, id: event.id, op: 'upsert', row: event }]
+  return [[task], [{ table: HOSTED_STATUS_EVENT_TABLE, id: event.id, op: 'upsert', row: event }]]
 }
 
 function pushedStatusEvent(

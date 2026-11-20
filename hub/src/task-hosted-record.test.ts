@@ -28,7 +28,7 @@ const current: TaskRow = {
 
 describe('hosted task patch payload', () => {
   test('carries the command read values only for patched scalar fields', () => {
-    const [change] = hostedTaskBatch({
+    const [[change]] = hostedTaskBatch({
       current,
       changes: { status: 'active', parent: null, assignee: 'Lee' },
       category: 'active',
@@ -50,7 +50,7 @@ describe('hosted task patch payload', () => {
   })
 
   test('carries the displayed revision for text replacement', () => {
-    const [change] = hostedTaskBatch({
+    const [[change]] = hostedTaskBatch({
       current,
       changes: { title: 'After', body: 'Next body' },
       category: 'open',
@@ -77,6 +77,6 @@ describe('hosted task patch payload', () => {
     })
 
     expect(changes).toHaveLength(1)
-    expect(changes[0]).toMatchObject({ table: 'hub_task' })
+    expect(changes[0]?.[0]).toMatchObject({ table: 'hub_task' })
   })
 })

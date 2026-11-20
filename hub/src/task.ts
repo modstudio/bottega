@@ -479,8 +479,19 @@ export async function showTask(
   key: string,
   scope: TaskScope = {},
 ): Promise<{ task: TaskRow; comments: TaskComment[]; documents: TaskDocumentSummary[] }> {
-  if (hostedWriteMode(resolveHostedUrl()) !== 'hosted-configured') return showLocalTask(key, scope)
-  return showHostedTask(key, scope)
+  return readCurrentTask(key, scope)
+}
+
+async function readCurrentTask(key: string, scope: TaskScope, hosted?: HostedOptions) {
+  if (hostedWriteMode(hosted?.baseUrl ?? resolveHostedUrl()) !== 'hosted-configured')
+    return showLocalTask(key, scope)
+  return showHostedTask(key, scope, hosted)
+}
+
+function hostedExpectedRevisionRefusal(subject: string, taskKey: string): Error {
+  return new Error(
+    `${subject} requires --expect <revision> from \`${PLATFORM_SLUG} task show ${taskKey}\``,
+  )
 }
 
 /** The complete read-only task record used by the dashboard detail sheet. */
@@ -489,9 +500,7 @@ export async function taskRecord(
   scope: TaskScope = {},
   readerUserId: string | null = null,
 ): Promise<TaskDetail> {
-  if (hostedWriteMode(resolveHostedUrl()) === 'hosted-configured')
-    return taskRecordFromRows(await showHostedTask(key, scope), readerUserId)
-  return taskRecordFromRows(showLocalTask(key, scope), readerUserId)
+  return taskRecordFromRows(await readCurrentTask(key, scope), readerUserId)
 }
 
 export async function setTaskBody(
@@ -503,7 +512,7 @@ export async function setTaskBody(
 ): Promise<TaskRow> {
   const upper = key.toUpperCase()
   if (hostedWriteMode(options.hosted?.baseUrl ?? resolveHostedUrl()) === 'hosted-configured') {
-    const current = (await showHostedTask(upper, scope, options.hosted)).task
+    const current = (await readCurrentTask(upper, scope, options.hosted)).task
     const project = projects().find((candidate) => candidate.name === current.project) ?? null
     const capability = trackerCapabilities({ source: current.source, project }).setBody
     if (!capability.allowed) throw new Error(capability.reason)
@@ -663,10 +672,7 @@ export async function setTask(
   } & DoneTransitionOptions = {},
 ): Promise<TaskRow> {
   const upper = key.toUpperCase()
-  const current =
-    hostedWriteMode(options.hosted?.baseUrl ?? resolveHostedUrl()) === 'hosted-configured'
-      ? (await showHostedTask(upper, scope, options.hosted)).task
-      : showLocalTask(upper, scope).task
+  const current = (await readCurrentTask(upper, scope, options.hosted)).task
   if (current.source !== 'local') throw new Error(`task ${upper} is not local`)
   assertLocalTaskBodyOverwrite(current, changes.body, options.force)
   const category = changes.status === undefined ? current.status_category : status(changes.status)
@@ -684,9 +690,7 @@ export async function setTask(
       (changes.title !== undefined || changes.body !== undefined) &&
       options.expectedRevision === undefined
     )
-      throw new Error(
-        `task ${current.key} text replacement requires --expect <revision> from \`${PLATFORM_SLUG} task show ${current.key}\``,
-      )
+      throw hostedExpectedRevisionRefusal('task text replacement', current.key)
     const batch = hostedTaskBatch({
       current,
       changes,
@@ -720,10 +724,7 @@ export async function closeTask(
   attribution: Attribution,
   options: { hosted?: HostedOptions } & DoneTransitionOptions = {},
 ) {
-  const current =
-    hostedWriteMode(options.hosted?.baseUrl ?? resolveHostedUrl()) === 'hosted-configured'
-      ? (await showHostedTask(key, scope, options.hosted)).task
-      : showLocalTask(key, scope).task
+  const current = (await readCurrentTask(key, scope, options.hosted)).task
   if (current.source !== 'local') throw new Error(`task ${current.key} is not local`)
   if (current.status_category !== 'done') await prepareDoneTransition(current, attribution, options)
   const mode = writeMode(current.project, options.hosted)
@@ -779,10 +780,7 @@ export async function commentTask(
   options: { hosted?: HostedOptions } = {},
 ): Promise<TaskComment> {
   const upper = key.toUpperCase()
-  const current =
-    hostedWriteMode(options.hosted?.baseUrl ?? resolveHostedUrl()) === 'hosted-configured'
-      ? (await showHostedTask(upper, scope, options.hosted)).task
-      : showLocalTask(upper, scope).task
+  const current = (await readCurrentTask(upper, scope, options.hosted)).task
   if (current.source !== 'local') throw new Error(`task ${upper} is not local`)
   const mode = writeMode(current.project, options.hosted)
   const hosted = mode === 'hosted-configured'
@@ -792,13 +790,15 @@ export async function commentTask(
     await sendHostedChanges(
       current.key,
       [
-        {
-          table: HOSTED_COMMENT_TABLE,
-          id: comment.id,
-          op: 'upsert',
-          row: comment,
-          expected_revision: 0,
-        },
+        [
+          {
+            table: HOSTED_COMMENT_TABLE,
+            id: comment.id,
+            op: 'upsert',
+            row: comment,
+            expected_revision: 0,
+          },
+        ],
       ],
       hostedOptionsForProject(current.project, options.hosted),
     )
@@ -851,18 +851,13 @@ export async function editTaskComment(
   options: { hosted?: HostedOptions; expectedRevision?: number } = {},
 ): Promise<TaskComment> {
   if (!body.trim()) throw new Error('comment body is required; pass non-empty text')
-  const detail =
-    hostedWriteMode(options.hosted?.baseUrl ?? resolveHostedUrl()) === 'hosted-configured'
-      ? await showHostedTask(key, scope, options.hosted)
-      : showLocalTask(key, scope)
+  const detail = await readCurrentTask(key, scope, options.hosted)
   const current = detail.task
   const hosted = writeMode(current.project, options.hosted) === 'hosted-configured'
   const at = nowIso()
   if (hosted) {
     if (options.expectedRevision === undefined)
-      throw new Error(
-        `comment ${commentId} edit requires --expect <revision> from \`${PLATFORM_SLUG} task show ${current.key}\``,
-      )
+      throw hostedExpectedRevisionRefusal(`comment ${commentId} edit`, current.key)
     const comment = detail.comments.find((row) => row.id === commentId)
     if (!comment)
       throw new Error(
@@ -878,14 +873,16 @@ export async function editTaskComment(
     await sendHostedChanges(
       current.key,
       [
-        {
-          table: HOSTED_COMMENT_TABLE,
-          id: commentId,
-          op: 'upsert',
-          row,
-          fields: ['body', 'updated_at'],
-          expected_revision: options.expectedRevision,
-        },
+        [
+          {
+            table: HOSTED_COMMENT_TABLE,
+            id: commentId,
+            op: 'upsert',
+            row,
+            fields: ['body', 'updated_at'],
+            expected_revision: options.expectedRevision,
+          },
+        ],
       ],
       hostedOptionsForProject(current.project, options.hosted),
     )
@@ -922,18 +919,13 @@ export async function deleteTaskComment(
   attribution: Attribution,
   options: { hosted?: HostedOptions; expectedRevision?: number } = {},
 ): Promise<void> {
-  const detail =
-    hostedWriteMode(options.hosted?.baseUrl ?? resolveHostedUrl()) === 'hosted-configured'
-      ? await showHostedTask(key, scope, options.hosted)
-      : showLocalTask(key, scope)
+  const detail = await readCurrentTask(key, scope, options.hosted)
   const current = detail.task
   const hosted = writeMode(current.project, options.hosted) === 'hosted-configured'
   const at = nowIso()
   if (hosted) {
     if (options.expectedRevision === undefined)
-      throw new Error(
-        `comment ${commentId} deletion requires --expect <revision> from \`${PLATFORM_SLUG} task show ${current.key}\``,
-      )
+      throw hostedExpectedRevisionRefusal(`comment ${commentId} deletion`, current.key)
     const comment = detail.comments.find((row) => row.id === commentId)
     if (!comment)
       throw new Error(
@@ -949,14 +941,16 @@ export async function deleteTaskComment(
     await sendHostedChanges(
       current.key,
       [
-        {
-          table: HOSTED_COMMENT_TABLE,
-          id: commentId,
-          op: 'upsert',
-          row,
-          fields: ['updated_at', 'deleted_at'],
-          expected_revision: options.expectedRevision,
-        },
+        [
+          {
+            table: HOSTED_COMMENT_TABLE,
+            id: commentId,
+            op: 'upsert',
+            row,
+            fields: ['updated_at', 'deleted_at'],
+            expected_revision: options.expectedRevision,
+          },
+        ],
       ],
       hostedOptionsForProject(current.project, options.hosted),
     )

@@ -21,7 +21,7 @@ import {
 import { assertBranchRefMayBeCreated, assertBranchRefMayBeDeleted } from './branch-ref-guard.ts'
 import { settleDeletedBranch } from './branch-settlement.ts'
 import { isProbeOnlyMint } from './branch-state.ts'
-import { branchesReport, UNKEYED_BRANCH_GROUP } from './branches.ts'
+import { branchesReport, taskKeyToken, UNKEYED_BRANCH_GROUP } from './branches.ts'
 import { observeTaskStatus, type TaskStatusObservation } from './task-status-observation.ts'
 
 const BRANCH_DISPOSAL_ARCHIVE_RETENTION_MS = 30 * 24 * 60 * 60 * 1_000
@@ -178,6 +178,8 @@ async function planBranchDisposal(input: {
   const ref = observeGitRef(project.path, `refs/heads/${branch}`)
   if (ref.outcome === 'failed') throw new Error(ref.detail)
   if (ref.outcome === 'absent') throw new Error(`branch ${branch} has no ref; nothing to dispose`)
+  const observedTaskKey = taskKeyToken(branch, project.settings.keyPrefixes ?? [])
+  const taskStatus = await observeTaskStatus(observedTaskKey, projectName)
   const projectReport = branchesReport({ project: projectName, branch }).projects[0]!
   if (projectReport.error) throw new Error(projectReport.error)
   const keyGroup = projectReport.keys.find((group) =>
@@ -190,7 +192,6 @@ async function planBranchDisposal(input: {
     .all(project.recordId, branch) as { probe: number }[]
   const runMinted = mintingRuns.length > 0
   const probeOnly = isProbeOnlyMint(mintingRuns.map((run) => run.probe === 1))
-  const taskStatus = await observeTaskStatus(taskKey, projectName)
   const decision = decideBranchDisposal({
     runMinted,
     probeOnly,

@@ -7,9 +7,16 @@ import { sendHostedChanges } from './hosted-change-sender.ts'
 import { applyHostedWriteLocally } from './hosted-local-apply.ts'
 import { taskDocumentIdentityByNumber } from './identity/identity.ts'
 import { drainHostedEditOutbox, queueHostedDocumentDelete } from './offline-task-edits.ts'
-import { HOSTED_DOCUMENT_TABLE, type PushedDocument } from './push-contract.ts'
+import {
+  HOSTED_DOCUMENT_TABLE,
+  type HostedPushChange,
+  type PushedDocument,
+} from './push-contract.ts'
 import { hostedCreateDocument } from './task-client.ts'
 import { formatTaskDocumentLabel, parseTaskDocumentLabel } from './task-document-label.ts'
+
+export { formatTaskDocumentLabel } from './task-document-label.ts'
+
 import { resolveTask, type TaskScope, taskByRecordId, taskRecordId } from './task-identity.ts'
 import {
   type HostedTaskWriteOptions,
@@ -48,7 +55,7 @@ type DocumentTask = {
 
 const documentVersion = () => randomBytes(8).toString('hex')
 
-function documentRole(value: string | null | undefined): TaskDocumentRole | null {
+export function documentRole(value: string | null | undefined): TaskDocumentRole | null {
   if (value == null) return null
   if (!(TASK_DOCUMENT_ROLES as readonly string[]).includes(value)) {
     throw new Error(`invalid document role '${value}': expected ${TASK_DOCUMENT_ROLES.join('|')}`)
@@ -272,18 +279,17 @@ export async function updateTaskDocument(
       updated_at: at,
       deleted_at: null,
     }
+    const change: HostedPushChange = {
+      table: HOSTED_DOCUMENT_TABLE,
+      id,
+      op: 'upsert',
+      row,
+      fields,
+      expected_revision: expectedVersion,
+    }
     await sendHostedChanges(
       current.task_key,
-      [
-        {
-          table: HOSTED_DOCUMENT_TABLE,
-          id,
-          op: 'upsert',
-          row,
-          fields,
-          expected_revision: expectedVersion,
-        },
-      ],
+      [[change]],
       hostedTaskWriteOptions(task.project, options.hosted),
     )
     return withDocumentLabel({
