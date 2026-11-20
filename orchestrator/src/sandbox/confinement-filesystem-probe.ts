@@ -214,15 +214,9 @@ try {
   await server.stop(true)
 }
 console.log('loopback listen+connect=ran')
-try {
-  const response = await fetch('http://192.0.2.1/', { signal: AbortSignal.timeout(500) })
-  if (response.ok) {
-    throw new Error('non-loopback outbound unexpectedly connected with status ' + response.status)
-  }
-} catch (error) {
-  if (error instanceof Error && error.message.startsWith('non-loopback outbound unexpectedly')) {
-    throw error
-  }
+const outbound = await fetch('http://example.com/', { signal: AbortSignal.timeout(500) })
+if (outbound.status !== 403) {
+  throw new Error('non-loopback outbound was not refused by the proxy; status ' + outbound.status)
 }
 console.log('non-loopback outbound=ran')
 `
@@ -432,7 +426,7 @@ async function launchWorkflowProbe(
     const commandFailed = Object.values(commands).some(({ status }) => status === 'failed')
     return {
       ...row,
-      status: commandFailed ? 'failed' : row.status === 'denied' ? 'ran' : row.status,
+      status: commandFailed ? 'failed' : row.status,
       commands,
       reason: commandFailed ? 'one or more workflow probe commands failed' : row.reason,
     }
