@@ -1,7 +1,7 @@
 import { expect, test } from 'bun:test'
 import { CALLER_HEADER_NAME, withRecordCaller } from '../../shared/record-caller.ts'
 import { sendHostedSessionRequest } from './hosted-session-send.ts'
-import { hostedCreateTask } from './task-client.ts'
+import { hostedCreateTask, hostedListTasks } from './task-client.ts'
 
 const common = {
   origin: 'https://hub.example.test',
@@ -101,6 +101,39 @@ test.serial('hosted session sends are recorded through the record trace seam', a
       'record-trace-call route=record-tasks method=GET status=200 request_bytes=0 response_bytes=2',
     )
     expect(writes[0]).toContain('open=false finish=complete')
+  } finally {
+    process.stderr.write = originalWrite
+    if (previous === undefined) delete process.env.BOTTEGA_RECORD_TRACE
+    else process.env.BOTTEGA_RECORD_TRACE = previous
+  }
+})
+
+test.serial('task transport nested under the hosted session seam records exactly once', async () => {
+  const previous = process.env.BOTTEGA_RECORD_TRACE
+  process.env.BOTTEGA_RECORD_TRACE = 'calls'
+  const originalWrite = process.stderr.write
+  const writes: string[] = []
+  process.stderr.write = ((value: string | Uint8Array) => {
+    writes.push(String(value))
+    return true
+  }) as typeof process.stderr.write
+  try {
+    await hostedListTasks({
+      baseUrl: 'https://hub.example.test',
+      token: 'session',
+      fetch: async () =>
+        Response.json({
+          tasks: [],
+          comments: [],
+          documents: [],
+          statusEvents: [],
+          cursor: 'done',
+          more: false,
+        }),
+    })
+
+    expect(writes).toHaveLength(1)
+    expect(writes[0]).toContain('record-trace-call route=record-tasks')
   } finally {
     process.stderr.write = originalWrite
     if (previous === undefined) delete process.env.BOTTEGA_RECORD_TRACE

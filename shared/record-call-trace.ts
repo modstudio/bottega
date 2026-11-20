@@ -32,6 +32,7 @@ type RecordTraceSummary = {
 }
 
 const encoder = new TextEncoder()
+const RECORD_TRACE_ACTIVE = Symbol('record-trace-active')
 const completedSummaries = new Map<string, RecordTraceSummary>()
 const activeCalls = new Set<RecordCallTrace>()
 
@@ -224,13 +225,15 @@ export async function tracedRecordFetch(
   transport: typeof fetch,
   observer?: (call: RecordCallTrace) => void,
 ): Promise<Response> {
+  if ((init as RequestInit & { [RECORD_TRACE_ACTIVE]?: true })[RECORD_TRACE_ACTIVE])
+    return transport(url, init)
   const mode = configuredMode()
   if (!mode && !observer) return transport(url, init)
   const runtimeTrace = mode !== null
   const startedAt = performance.now()
   const routeClass = recordRouteClass(new URL(url).pathname)
   try {
-    const response = await transport(url, init)
+    const response = await transport(url, { ...init, [RECORD_TRACE_ACTIVE]: true })
     const responseBytes = contentLength(response.headers)
     const common = {
       routeClass,

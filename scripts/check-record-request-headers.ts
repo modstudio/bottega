@@ -39,6 +39,12 @@ const NON_RECORD_FETCH_FILES = {
   'shared/typed-question/client.ts': 'external typed-question provider, not the record API',
 } as const
 
+const TRACED_TRANSPORT_FUNCTIONS = {
+  'hub/src/task-client.ts': {
+    hostedFetch: 'transport handed to sendHostedSessionRequest, which is the traced seam',
+  },
+} as const
+
 type HeaderConstructionKind = 'caller' | 'space' | 'bearer'
 
 export type RecordRequestHeaderViolation = {
@@ -193,6 +199,12 @@ function nodeText(node: ts.Node | undefined, sourceFile: ts.SourceFile): string 
   return node?.getText(sourceFile) ?? ''
 }
 
+function enclosingFunctionName(node: ts.Node): string | undefined {
+  for (let parent = node.parent; parent; parent = parent.parent)
+    if (ts.isFunctionDeclaration(parent)) return parent.name?.text
+  return undefined
+}
+
 /** Find record or hosted API fetches that bypass tracedRecordFetch. */
 export function recordFetchViolations(source: string, file: string): RecordFetchViolation[] {
   if (file === 'shared/record-call-trace.ts' || file in NON_RECORD_FETCH_FILES) return []
@@ -224,6 +236,13 @@ export function recordFetchViolations(source: string, file: string): RecordFetch
         opaqueHostedSend ||
         recordResolvedFetch
       ) {
+        const allowedFunctions =
+          TRACED_TRANSPORT_FUNCTIONS[file as keyof typeof TRACED_TRANSPORT_FUNCTIONS]
+        const functionName = enclosingFunctionName(node)
+        if (functionName && functionName in (allowedFunctions ?? {})) {
+          ts.forEachChild(node, visit)
+          return
+        }
         const { line } = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile))
         violations.push({ file, line: line + 1 })
       }
