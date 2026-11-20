@@ -10,8 +10,10 @@ import {
   questionMutationAudit as questionMutationAuditRecord,
   question as questionRecord,
 } from '../../../shared/record/schema-question.ts'
+import { run as runRecord } from '../../../shared/record/schema-run.ts'
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
 import { RECORD_DIFFERENT_CONTENT } from '../doc/doc-revision-conflict.ts'
+import { runQuestionOwnerNotLiveMessage } from '../question-store/run-question-write-guard.ts'
 import { isUniqueViolation } from './record-config-error.ts'
 import { recordPool } from './record-pool.ts'
 import { pushQuestionAudits } from './record-question-audit.ts'
@@ -90,6 +92,18 @@ async function questionNumberForWrite(
   return allocateQuestionNumber(tx, input.spaceId)
 }
 
+async function assertRunQuestionOwnerLive(runId: string, tx: SQL): Promise<void> {
+  // Ask asks: is this turn still the live owner of its escalation channel?
+  const owners = await drizzle({ client: tx })
+    .select({ status: runRecord.status })
+    .from(runRecord)
+    .where(eq(runRecord.id, runId))
+    .for('update')
+  const owner = owners[0]
+  if (!owner || (owner.status !== 'running' && owner.status !== 'asking'))
+    throw new RecordQuestionError(runQuestionOwnerNotLiveMessage(runId), 409)
+}
+
 export async function writeRecordQuestion(
   intent: QuestionIntent,
   input: Tenant & QuestionIntentBody,
@@ -137,6 +151,8 @@ export async function writeRecordQuestionTransaction(
     return importRecordQuestionTransaction(input as Tenant & QuestionImportBody, tx)
   const writeInput = input as Tenant & QuestionWriteBody
   requireRestoreNumber(intent, writeInput)
+  if (intent === 'ask' && writeInput.question.runId)
+    await assertRunQuestionOwnerLive(writeInput.question.runId, tx)
   const existing = (await tx`
       SELECT number,revision,last_request_id::text
         FROM question WHERE id=${writeInput.question.id}::uuid FOR UPDATE

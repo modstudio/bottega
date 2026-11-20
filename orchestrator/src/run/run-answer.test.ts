@@ -196,6 +196,41 @@ describe('run answers', () => {
     ).toEqual({ n: 0 })
   })
 
+  test('answer tells the operator to close a question stranded on a finished owner', async () => {
+    const root = addRun({
+      agent: 'codex',
+      job: 'implement',
+      status: 'ok',
+      session: 'orch-test-session',
+    })
+    const child = addRun({
+      agent: 'codex',
+      job: 'implement',
+      status: 'asking',
+      parent: root,
+      turn: 2,
+    })
+    const addQuestion = db().query(
+      `INSERT INTO question (number,record_id,run_record_id,asked_at,question)
+       VALUES ((SELECT COALESCE(MAX(number),0)+1 FROM question),?,?,?,?)`,
+    )
+    addQuestion.run(newRecordId(), root, new Date().toISOString(), 'obsolete question?')
+    addQuestion.run(newRecordId(), child, new Date().toISOString(), 'live question?')
+
+    await expect(
+      answerRun(root, { argv: ['one', 'two'], recordOnly: true, flags }, helpers),
+    ).rejects.toThrow(
+      new RegExp(
+        `${PLATFORM_SLUG} question close q\\d+ --reason .* then retry ${PLATFORM_SLUG} question answer`,
+      ),
+    )
+    expect(
+      db().query('SELECT COUNT(*) n FROM question WHERE answered_at IS NOT NULL').get(),
+    ).toEqual({
+      n: 0,
+    })
+  })
+
   test('a stopped run without a vendor session keeps its question open', async () => {
     const id = insert('stopped', 'implement')
     db().query('UPDATE run SET session_id=? WHERE record_id=?').run('orch-test-session', id)

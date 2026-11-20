@@ -70,6 +70,10 @@ import { initialQuestionWaitingAt } from '../operator/operator-waiting.ts'
 import { orchestratorProseGate } from '../prose-service.ts'
 import { askQuestion } from '../question-store/question-store-mutation.ts'
 import { questionById } from '../question-store/question-store-read.ts'
+import {
+  isRunQuestionOwnerNotLive,
+  runQuestionOwnerNotLiveMessage,
+} from '../question-store/run-question-write-guard.ts'
 import { machineId } from '../record/machine-identity.ts'
 import { ASKED_VIA_LIVE, ASKED_VIA_REPLY, type AskedVia } from '../run/question-vocabulary.ts'
 import { runScratchDir } from '../run/run-artifacts.ts'
@@ -469,17 +473,23 @@ export async function ask(
     markRunAsking(db(), o.runId)
     enqueueRunRecord(db(), o.runId, machineId(), askedAt)
   })
-  const id = await recordQuestion({
-    runId: o.runId,
-    askedAt,
-    question: o.question,
-    options: typed.kind === 'choice' ? typed.options.map(({ name }) => name) : undefined,
-    recommendation: typed.kind === 'choice' ? typed.recommendation : undefined,
-    why: typed.why,
-    askedVia: ASKED_VIA_LIVE,
-    awaitingOperatorAt,
-    typed,
-  })
+  let id: string
+  try {
+    id = await recordQuestion({
+      runId: o.runId,
+      askedAt,
+      question: o.question,
+      options: typed.kind === 'choice' ? typed.options.map(({ name }) => name) : undefined,
+      recommendation: typed.kind === 'choice' ? typed.recommendation : undefined,
+      why: typed.why,
+      askedVia: ASKED_VIA_LIVE,
+      awaitingOperatorAt,
+      typed,
+    })
+  } catch (error) {
+    if (!isRunQuestionOwnerNotLive(error)) throw error
+    return { answered: false, reason: runQuestionOwnerNotLiveMessage(o.runId), notice: proseNotice }
+  }
   await preAnswerWorkerQuestion({
     recordId: id,
     runId: o.runId,

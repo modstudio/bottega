@@ -292,6 +292,7 @@ function detailReads(questions: QuestionStore) {
             'workflow_cursor_record_id',
             'cursor_state',
             'root_id',
+            'owner_status',
             'latest_status',
           ])
         : null

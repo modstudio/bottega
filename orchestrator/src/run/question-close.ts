@@ -160,10 +160,11 @@ export async function closeQuestionByOperator(
   }
   if (
     row.run_record_id !== null &&
-    (row.latest_status === 'running' || row.latest_status === 'asking')
+    // Close asks: is this question's own owner waiting on it?
+    (row.owner_status === 'running' || row.owner_status === 'asking')
   ) {
     throw new Error(
-      `question ${questionId}'s chain is live; use ${PLATFORM_SLUG} question answer ${row.root_id}`,
+      `question ${questionId}'s owner is waiting; use ${PLATFORM_SLUG} question answer ${row.root_id}`,
     )
   }
   if ((await closeQuestions(database, [questionId], `${QUESTION_CLOSE_OPERATOR}: ${text}`)) !== 1) {

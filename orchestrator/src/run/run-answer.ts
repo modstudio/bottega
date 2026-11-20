@@ -862,12 +862,21 @@ export async function answerRun(
   const skipResume = input.recordOnly && !ownersLive
   if (
     !ownersLive &&
+    // Answer asks: is every open question's owner waiting for a ruling?
     !stopped.every((q) => q.owner_status === 'asking' || q.owner_status === 'running')
   ) {
-    const states = stopped
-      .map((q) => `q${q.number} (run ${q.owner_id}, ${q.owner_status})`)
-      .join(', ')
-    throw new Error(`run ${id} has questions whose owners are not waiting: ${states}`)
+    const strays = stopped.filter(
+      (q) => q.owner_status !== 'asking' && q.owner_status !== 'running',
+    )
+    const remedies = strays
+      .map(
+        (q) =>
+          `q${q.number} (run ${q.owner_id}, ${q.owner_status}): ${PLATFORM_SLUG} question close q${q.number} --reason "<why this question is obsolete>"`,
+      )
+      .join('; ')
+    throw new Error(
+      `run ${id} has questions whose owners are not waiting: ${remedies}. Close each question, then retry ${PLATFORM_SLUG} question answer ${id}`,
+    )
   }
 
   const latest = db()

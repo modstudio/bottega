@@ -260,6 +260,7 @@ export type TaskFlowQuestionCloseRow = {
   workflow_cursor_record_id: string | null
   cursor_state: string | null
   root_id: string | null
+  owner_status: string | null
   latest_status: string | null
 }
 export type TaskFlowOverturnRulingRow = {
