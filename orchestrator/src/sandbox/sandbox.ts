@@ -427,6 +427,7 @@ export function writerProfile(input: {
   nodeModuleLinks?: string[]
   environment?: ConfigEnvironment
   socketDenyPaths?: readonly string[]
+  installLayout?: RunningInstallLayout
 }): SandboxRuntimeConfig {
   const worktree = resolve(input.worktree)
   const scratchDir = resolve(input.scratchDir)

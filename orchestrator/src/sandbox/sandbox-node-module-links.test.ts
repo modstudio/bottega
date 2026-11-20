@@ -35,7 +35,7 @@ const profileForLinks = (input: {
       kind: 'distribution',
       root: '/install',
       workspaceDirectories: [],
-      extractedSandboxRuntimeRoot: undefined,
+      extractedWorkerRuntimeAssetPaths: [],
     },
     onWarning: (message) => input.warnings.push(message),
   })

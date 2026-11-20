@@ -163,4 +163,8 @@ export const sharedModules: ArchitectureModule[] = [
   module('shared/state-directory.ts', ['./brand.ts']),
   module('shared/release-artifacts.ts', ['./brand.ts']),
   module('shared/sandbox-runtime-assets.ts', []),
+  module('shared/runtime-assets-in-sandbox.ts', [
+    'node:path',
+    './embedded-assets.ts',
+  ]),
 ]

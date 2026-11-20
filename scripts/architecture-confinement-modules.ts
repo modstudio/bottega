@@ -33,6 +33,7 @@ export const confinementModules: ConfinementModule[] = [
     'node:path',
     '../../../shared/state-directory.ts',
     '../project/projects.ts',
+    '../resources/ref-guard.ts',
     '../run-owned-paths.ts',
   ]),
   module('orchestrator/src/sandbox/install-read-policy.ts', [

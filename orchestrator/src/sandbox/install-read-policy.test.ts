@@ -2,9 +2,10 @@ import { expect, test } from 'bun:test'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { STATE_HOME_ENV } from '../../../shared/state-directory.ts'
+import { WORKER_RUNTIME_ASSETS } from '../../../shared/runtime-assets-in-sandbox.ts'
 import type { Project } from '../project/projects.ts'
 import { runningInstallReadCarveouts } from './install-read-policy.ts'
-import { probeSandboxProfile, readonlyLensProfile } from './sandbox.ts'
+import { probeSandboxProfile, readonlyLensProfile, writerProfile } from './sandbox.ts'
 
 function fixtureProject(recordId: string, name: string, path: string): Project {
   return {
@@ -70,21 +71,23 @@ test('a distribution carves back its extracted sandbox runtime and no parent', (
       kind: 'distribution',
       root: '/install',
       workspaceDirectories: [],
-      extractedSandboxRuntimeRoot: runtimeRoot,
+      extractedWorkerRuntimeAssetPaths: [runtimeRoot],
     }),
   ).toEqual(['/install', runtimeRoot])
 })
 
 test('distribution profiles carve back the extracted runtime beneath the denied state root', () => {
   const stateRoot = '/operator/state'
-  const runtimeRoot = join(stateRoot, 'runtime', '1.2.3', 'sandbox-runtime')
+  const versionRoot = join(stateRoot, 'runtime', '1.2.3')
+  const runtimeRoot = join(versionRoot, WORKER_RUNTIME_ASSETS.sandboxRuntime)
+  const refGuard = join(versionRoot, WORKER_RUNTIME_ASSETS.refGuard)
   const environment = { HOME: '/Users/operator', [STATE_HOME_ENV]: stateRoot }
   const project = fixtureProject('fixture-id', 'fixture', '/projects/fixture')
   const installLayout = {
     kind: 'distribution' as const,
     root: '/install',
     workspaceDirectories: [],
-    extractedSandboxRuntimeRoot: runtimeRoot,
+    extractedWorkerRuntimeAssetPaths: [runtimeRoot, refGuard],
   }
   const readonly = readonlyLensProfile({
     worktree: '/projects/fixture/.claude/worktrees/run',
@@ -111,7 +114,39 @@ test('distribution profiles carve back the extracted runtime beneath the denied 
   for (const profile of [readonly, probe]) {
     expect(profile.filesystem.denyRead).toContain(stateRoot)
     expect(profile.filesystem.allowWithinDeny).toContain(runtimeRoot)
+    expect(profile.filesystem.allowWithinDeny).toContain(refGuard)
     expect(profile.filesystem.allowWithinDeny).not.toContain(join(stateRoot, 'runtime'))
     expect(profile.filesystem.allowWithinDeny).not.toContain(join(stateRoot, 'runtime', '1.2.3'))
   }
+})
+
+test('a distribution writer can read the extracted ref guard under the denied state root', () => {
+  const stateRoot = '/operator/state'
+  const versionRoot = join(stateRoot, 'runtime', '1.2.3')
+  const runtimeRoot = join(versionRoot, WORKER_RUNTIME_ASSETS.sandboxRuntime)
+  const refGuard = join(versionRoot, WORKER_RUNTIME_ASSETS.refGuard)
+  const environment = { HOME: '/Users/operator', [STATE_HOME_ENV]: stateRoot }
+  const project = fixtureProject('fixture-id', 'fixture', '/projects/fixture')
+  const profile = writerProfile({
+    worktree: '/projects/fixture/.claude/worktrees/run',
+    runtimeDir: join(stateRoot, 'orchestrator', 'runs', 'run'),
+    scratchDir: join(stateRoot, 'orchestrator', 'runs', 'run', 'scratch'),
+    askAddress: '127.0.0.1:1',
+    project,
+    registeredProjects: [project],
+    agent: 'grok',
+    path: '/usr/bin',
+    nodeModuleLinks: [],
+    environment,
+    socketDenyPaths: [],
+    installLayout: {
+      kind: 'distribution',
+      root: '/install',
+      workspaceDirectories: [],
+      extractedWorkerRuntimeAssetPaths: [runtimeRoot, refGuard],
+    },
+  })
+
+  expect(profile.filesystem.denyRead).toContain(stateRoot)
+  expect(profile.filesystem.allowWithinDeny).toContain(refGuard)
 })

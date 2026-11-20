@@ -20,6 +20,10 @@ import {
   type SandboxRuntimePayload,
   sandboxRuntimeAssets,
 } from '../../../shared/sandbox-runtime-assets.ts'
+import {
+  WORKER_RUNTIME_ASSETS,
+  workerRuntimeAssetPaths,
+} from '../../../shared/runtime-assets-in-sandbox.ts'
 import { resolveStateRoot, type StateEnvironment } from '../../../shared/state-directory.ts'
 import { ROOT } from '../database/db.ts'
 
@@ -55,7 +59,18 @@ type ExpectedPayload = SandboxRuntimePayload & EmbeddedRuntimeFile
 export function extractedSandboxRuntimeRoot(environment: StateEnvironment): string | undefined {
   const manifest = embeddedDistributionManifest()
   if (!manifest) return undefined
-  return join(resolveStateRoot(environment), 'runtime', manifest.version, 'sandbox-runtime')
+  return workerRuntimeAssetPaths(resolveStateRoot(environment), manifest.version, {
+    sandboxRuntime: WORKER_RUNTIME_ASSETS.sandboxRuntime,
+  })[0]
+}
+
+/** Exact extracted assets needed by a worker running from a compiled distribution. */
+export function extractedWorkerRuntimeAssetPaths(
+  environment: StateEnvironment,
+): string[] | undefined {
+  const manifest = embeddedDistributionManifest()
+  if (!manifest) return undefined
+  return workerRuntimeAssetPaths(resolveStateRoot(environment), manifest.version)
 }
 
 function diskPayloadPath(relativePath: string): string {

@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import type { ConfigEnvironment } from '../../../shared/config-directory.ts'
 import { runningInstallationKind, runningInstallRoot } from '../../../shared/install-root.ts'
-import { extractedSandboxRuntimeRoot } from './sandbox-runtime.ts'
+import { extractedWorkerRuntimeAssetPaths } from './sandbox-runtime.ts'
 
 type WorkspaceManifest = {
   workspaces?: string[] | { packages?: string[] }
@@ -20,7 +20,7 @@ export type RunningInstallLayout =
       kind: 'distribution'
       root: string
       workspaceDirectories: string[]
-      extractedSandboxRuntimeRoot: string | undefined
+      extractedWorkerRuntimeAssetPaths: string[]
     }
 
 function runningInstallRootForSandbox(environment: ConfigEnvironment): string {
@@ -35,7 +35,7 @@ export function resolveRunningInstallLayout(environment: ConfigEnvironment): Run
       kind: 'distribution',
       root,
       workspaceDirectories: [],
-      extractedSandboxRuntimeRoot: extractedSandboxRuntimeRoot(environment),
+      extractedWorkerRuntimeAssetPaths: extractedWorkerRuntimeAssetPaths(environment) ?? [],
     }
   }
   const manifestPath = join(root, 'package.json')
@@ -60,10 +60,7 @@ export function resolveRunningInstallLayout(environment: ConfigEnvironment): Run
 /** Runtime paths needed to launch the CLI without exposing its checkout root. */
 export function runningInstallReadCarveouts(layout: RunningInstallLayout): string[] {
   if (layout.kind === 'distribution') {
-    return [
-      layout.root,
-      ...(layout.extractedSandboxRuntimeRoot ? [layout.extractedSandboxRuntimeRoot] : []),
-    ]
+    return [layout.root, ...layout.extractedWorkerRuntimeAssetPaths]
   }
   const root = layout.root
   return [

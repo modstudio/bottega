@@ -12,7 +12,7 @@ import {
 } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
-import { startBounded } from '../../../shared/bounded-process.ts'
+import { startBounded, startBoundedSync } from '../../../shared/bounded-process.ts'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { HARNESS_ENV_FILE_ENV, PLATFORM_ENV_FILE_ENV } from '../../../shared/config-directory.ts'
 import { installationExecutable } from '../../../shared/install-root.ts'
@@ -29,6 +29,7 @@ import {
 import { decideStoreAccess } from '../../../shared/store-access.ts'
 import { BUILTIN_AGENTS } from '../agent/agents.ts'
 import type { Project } from '../project/projects.ts'
+import { prepareSharedRefGuard } from '../resources/ref-guard.ts'
 import { workerChildEnvironment } from '../run/run-worker-home.ts'
 import {
   type RunningInstallLayout,
@@ -53,10 +54,11 @@ export type ConfinementFilesystemProbeRow = {
     | 'ACP writer'
     | 'workflow probe'
     | 'cross-project CLI'
+    | 'writer ref update'
     | 'Codex'
     | 'read-only MCP'
     | 'host override'
-  status: FilesystemProbeAccess | CommandProbeStatus
+  status: FilesystemProbeAccess | CommandProbeStatus | 'committed' | 'refused'
   paths: Record<string, FilesystemProbeAccess>
   commands?: Record<string, CommandProbe>
   reason?: string
@@ -107,6 +109,18 @@ function fixtureProject(
 
 function firstErrorLine(stderr: string): string {
   return stderr.trim().split(/\r?\n/, 1)[0] || 'no stderr'
+}
+
+function stderrTail(stderr: string): string {
+  return stderr.trim().split(/\r?\n/).slice(-3).join(' | ') || 'no stderr'
+}
+
+function gitFixture(argv: string[], cwd: string): string {
+  const result = startBoundedSync(['git', ...argv], { budget: 'git-plumbing', cwd })
+  if (result.exitCode !== 0) {
+    throw new Error(`git ${argv.join(' ')} failed: ${stderrTail(result.stderr)}`)
+  }
+  return result.stdout.trim()
 }
 
 export function probeVerdict(
@@ -308,6 +322,55 @@ async function launchCrossProjectCliProbe(
   }
 }
 
+async function launchWriterRefUpdateProbe(
+  profile: ReturnType<typeof writerProfile>,
+  worktree: string,
+  scratchDir: string,
+  environment: Record<string, string>,
+): Promise<ConfinementFilesystemProbeRow> {
+  const before = gitFixture(['rev-parse', 'HEAD'], worktree)
+  const branch = gitFixture(['symbolic-ref', '--short', 'HEAD'], worktree)
+  const guardEnvironment = prepareSharedRefGuard(worktree, `refs/heads/${branch}`)
+  try {
+    const result = await startBounded(
+      await sandboxLaunchArgv(profile, 'git', ['commit', '--allow-empty', '-m', 'probe']),
+      {
+        budget: 'sandbox-probe',
+        cwd: worktree,
+        env: {
+          ...process.env,
+          ...environment,
+          ...guardEnvironment,
+          GIT_AUTHOR_NAME: 'Confinement Probe',
+          GIT_AUTHOR_EMAIL: 'confinement-probe@example.invalid',
+          GIT_COMMITTER_NAME: 'Confinement Probe',
+          GIT_COMMITTER_EMAIL: 'confinement-probe@example.invalid',
+          TMPDIR: scratchDir,
+        },
+      },
+    )
+    const after = gitFixture(['rev-parse', 'HEAD'], worktree)
+    const committed = result.exitCode === 0 && before !== after
+    return {
+      family: 'writer ref update',
+      status: committed ? 'committed' : 'refused',
+      paths: {},
+      reason: committed
+        ? undefined
+        : `exit ${result.exitCode ?? 'unknown'}; ${stderrTail(result.stderr)}`,
+    }
+  } catch (error) {
+    return {
+      family: 'writer ref update',
+      status: 'refused',
+      paths: {},
+      reason: error instanceof Error ? error.message : String(error),
+    }
+  } finally {
+    await resetSandbox()
+  }
+}
+
 function openLiveHubFixture(destination: string): Database {
   const source = new Database(resolveHubDatabase(process.env), { readonly: true })
   try {
@@ -454,6 +517,15 @@ function createProbeFixture(root: string) {
     orchestratorDatabase: state.orchestratorDatabase,
     orchestratorRuns: state.orchestratorRuns,
   })
+  mkdirSync(ownPath, { recursive: true })
+  gitFixture(['init', '--initial-branch=main'], ownPath)
+  gitFixture(['config', 'user.email', 'confinement-probe@example.invalid'], ownPath)
+  gitFixture(['config', 'user.name', 'Confinement Probe'], ownPath)
+  writeFileSync(join(ownPath, 'fixture.txt'), 'fixture')
+  gitFixture(['add', 'fixture.txt'], ownPath)
+  gitFixture(['commit', '-m', 'probe fixture'], ownPath)
+  mkdirSync(dirname(worktree), { recursive: true })
+  gitFixture(['worktree', 'add', '-b', 'probe-writer', worktree], ownPath)
   for (const { path, plant = true } of targets) {
     if (!plant) continue
     mkdirSync(join(path, '..'), { recursive: true })
@@ -545,6 +617,12 @@ export async function runConfinementFilesystemProbes(): Promise<ConfinementFiles
         commandArgv,
         environment,
         hubOpenMode,
+      ),
+      await launchWriterRefUpdateProbe(
+        writerProfile({ ...common, agent: 'grok', askAddress: '127.0.0.1:1' }),
+        common.worktree,
+        common.scratchDir,
+        environment,
       ),
       await launchProbe(
         'workflow probe',
