@@ -1,13 +1,9 @@
 // concern: pure Codex literal read-deny policy
 
-import { isAbsolute, relative, resolve, sep } from 'node:path'
+import { relative, resolve, sep } from 'node:path'
+import { isAtOrBelow } from './area-read-policy.ts'
 
 export type CodexDirectoryListing = Readonly<Record<string, readonly string[]>>
-
-function isAtOrBelow(path: string, ancestor: string): boolean {
-  const rel = relative(ancestor, path)
-  return rel === '' || (!rel.startsWith(`..${sep}`) && rel !== '..' && !isAbsolute(rel))
-}
 
 function protectedBelow(deny: string, protectedPaths: readonly string[]): string[] {
   return protectedPaths.filter((path) => isAtOrBelow(path, deny))

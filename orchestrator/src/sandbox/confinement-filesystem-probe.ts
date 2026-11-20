@@ -92,6 +92,30 @@ type AccessTarget = {
 
 type AfterLaunchFixture = { target: string; ready: string; release: string }
 
+const POST_LAUNCH_READ_SCRIPT = `/usr/bin/touch "$1"
+while ! /bin/test -e "$2"; do /bin/sleep 0.01; done
+shift 2
+for path; do if /bin/cat "$path" >/dev/null 2>&1; then echo readable; else echo denied; fi; done`
+
+async function releasePostLaunchProbe(
+  fixture: Pick<AfterLaunchFixture, 'ready' | 'release'>,
+  running: ReturnType<typeof startBounded>,
+  createFixture: () => void,
+  launchFailure: string,
+): Promise<void> {
+  const deadline = Date.now() + 5_000
+  while (!existsSync(fixture.ready)) {
+    if (Date.now() >= deadline) {
+      writeFileSync(fixture.release, 'continue')
+      await running
+      throw new Error(launchFailure)
+    }
+    await Bun.sleep(10)
+  }
+  createFixture()
+  writeFileSync(fixture.release, 'continue')
+}
+
 const NOT_COVERED: ConfinementFilesystemProbeRow[] = [
   {
     family: 'read-only MCP',
@@ -269,10 +293,6 @@ async function launchCodexPostLaunchGapProbe(
       }),
       network: false,
     })
-    const script = `/usr/bin/touch "$1"
-while ! /bin/test -e "$2"; do /bin/sleep 0.01; done
-shift 2
-for path; do if /bin/cat "$path" >/dev/null 2>&1; then echo readable; else echo denied; fi; done`
     const running = startBounded(
       [
         codex,
@@ -283,7 +303,7 @@ for path; do if /bin/cat "$path" >/dev/null 2>&1; then echo readable; else echo 
         '--',
         '/bin/sh',
         '-c',
-        script,
+        POST_LAUNCH_READ_SCRIPT,
         'probe',
         ready,
         release,
@@ -291,16 +311,17 @@ for path; do if /bin/cat "$path" >/dev/null 2>&1; then echo readable; else echo 
       ],
       { budget: 'sandbox-probe', cwd, env: { ...process.env, ...environment } },
     )
-    const deadline = Date.now() + 5_000
-    while (!existsSync(ready)) {
-      if (Date.now() >= deadline) throw new Error('Codex gap probe did not signal launch')
-      await Bun.sleep(10)
-    }
-    for (const target of targets) {
-      mkdirSync(dirname(target.path), { recursive: true })
-      writeFileSync(target.path, 'created after launch')
-    }
-    writeFileSync(release, 'continue')
+    await releasePostLaunchProbe(
+      { ready, release },
+      running,
+      () => {
+        for (const target of targets) {
+          mkdirSync(dirname(target.path), { recursive: true })
+          writeFileSync(target.path, 'created after launch')
+        }
+      },
+      'Codex gap probe did not signal launch',
+    )
     const result = await running
     const values = result.stdout.trim().split(/\r?\n/)
     const paths = Object.fromEntries(
@@ -444,24 +465,6 @@ function afterLaunchFixture(
   }
 }
 
-async function releaseAfterLaunchFixture(
-  fixture: AfterLaunchFixture,
-  running: ReturnType<typeof startBounded>,
-): Promise<void> {
-  const deadline = Date.now() + 5_000
-  while (!existsSync(fixture.ready)) {
-    if (Date.now() >= deadline) {
-      writeFileSync(fixture.release, 'continue')
-      await running
-      throw new Error('filesystem probe did not signal launch')
-    }
-    await Bun.sleep(10)
-  }
-  mkdirSync(dirname(fixture.target), { recursive: true })
-  writeFileSync(fixture.target, 'fixture')
-  writeFileSync(fixture.release, 'continue')
-}
-
 async function runFilesystemAccessProbe(
   profile: ReturnType<typeof readonlyLensProfile>,
   targets: readonly AccessTarget[],
@@ -476,7 +479,7 @@ async function runFilesystemAccessProbe(
   }
   try {
     const script = fixture
-      ? '/usr/bin/touch "$1"\nwhile ! /bin/test -e "$2"; do /bin/sleep 0.01; done\nshift 2\nfor path\ndo\nif /bin/cat "$path" >/dev/null 2>&1; then echo readable; else echo denied; fi\ndone'
+      ? POST_LAUNCH_READ_SCRIPT
       : 'for path\ndo\nif /bin/cat "$path" >/dev/null 2>&1; then echo readable; else echo denied; fi\ndone'
     const argv = await sandboxLaunchArgv(
       profile,
@@ -492,7 +495,16 @@ async function runFilesystemAccessProbe(
       environment,
     )
     const running = startBounded(argv, { budget: 'sandbox-probe' })
-    if (fixture) await releaseAfterLaunchFixture(fixture, running)
+    if (fixture)
+      await releasePostLaunchProbe(
+        fixture,
+        running,
+        () => {
+          mkdirSync(dirname(fixture.target), { recursive: true })
+          writeFileSync(fixture.target, 'fixture')
+        },
+        'filesystem probe did not signal launch',
+      )
     return await running
   } finally {
     if (fixture) {

@@ -1,13 +1,14 @@
 // concern: launch-time filesystem adapter for the Codex literal deny policy
 
 import { readdirSync } from 'node:fs'
-import { isAbsolute, relative, resolve } from 'node:path'
+import { resolve } from 'node:path'
 import { realPathForPotentialPath } from '../../../shared/state-directory.ts'
+import { isAtOrBelow } from './area-read-policy.ts'
 import { codexDenyListingDirectories } from './codex-deny-policy.ts'
 import {
   type CodexPermissionProfileInput,
   codexPermissionProfileInput,
-  codexWritableRoots,
+  codexPermissionWritableRoots,
 } from './codex-sandbox.ts'
 import type { SandboxRuntimeConfig } from './sandbox.ts'
 
@@ -40,15 +41,17 @@ export function codexPermissionLaunchProfileInput(input: {
   const cwd = canonical(input.cwd)
   const launchWritableRoots = input.writableRoots.map(canonical)
   const tempDir = input.tempDir === undefined ? undefined : canonical(input.tempDir)
-  const writableRoots = input.writesRepository
-    ? (codexWritableRoots(input.sandbox, cwd, launchWritableRoots, tempDir, true) ?? [])
-    : profile.filesystem.allowWrite
+  const writableRoots = codexPermissionWritableRoots({
+    profile,
+    sandbox: input.sandbox,
+    cwd,
+    writableRoots: launchWritableRoots,
+    tempDir,
+    writesRepository: input.writesRepository,
+  })
   const protectedPaths = [cwd, ...writableRoots]
   const opaquePaths = profile.filesystem.allowWithinDeny.filter((allowed) =>
-    writableRoots.some((writable) => {
-      const rel = relative(allowed, writable)
-      return rel === '' || (!rel.startsWith('..') && !isAbsolute(rel))
-    }),
+    writableRoots.some((writable) => isAtOrBelow(writable, allowed)),
   )
   const directoryListings: Record<string, readonly string[]> = {}
   for (const directory of codexDenyListingDirectories(
@@ -69,8 +72,7 @@ export function codexPermissionLaunchProfileInput(input: {
     ...input,
     profile,
     cwd,
-    writableRoots: launchWritableRoots,
-    tempDir,
+    writableRoots,
     directoryListings,
     opaquePaths,
   })

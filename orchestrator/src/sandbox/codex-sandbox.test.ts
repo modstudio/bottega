@@ -4,6 +4,7 @@ import {
   CODEX_PERMISSION_PROFILE,
   codexPermissionProfileArgs,
   codexPermissionProfileInput,
+  codexPermissionWritableRoots,
   codexWritableRoots,
   decideCodexSandbox,
 } from './codex-sandbox.ts'
@@ -62,18 +63,28 @@ test('permission input gives readers exactly the shared write roots and preserve
     cwd: '/run/tree',
     writableRoots: ['/run/scratch'],
     tempDir: '/private/tmp/codex-run',
-    directoryListings: {},
   }
 
-  expect(codexPermissionProfileInput({ ...launch, writesRepository: false }).writableRoots).toEqual(
-    ['/run/runtime', '/run/scratch'],
-  )
-  expect(codexPermissionProfileInput({ ...launch, writesRepository: true }).writableRoots).toEqual([
-    '/run/tree',
-    '/run/scratch',
-    '/tmp',
-    '/private/tmp/codex-run',
-  ])
+  const readerRoots = codexPermissionWritableRoots({ ...launch, writesRepository: false })
+  expect(readerRoots).toEqual(['/run/runtime', '/run/scratch'])
+  expect(
+    codexPermissionProfileInput({
+      profile,
+      cwd: launch.cwd,
+      writableRoots: readerRoots,
+      directoryListings: {},
+    }).writableRoots,
+  ).toEqual(readerRoots)
+  const writerRoots = codexPermissionWritableRoots({ ...launch, writesRepository: true })
+  expect(writerRoots).toEqual(['/run/tree', '/run/scratch', '/tmp', '/private/tmp/codex-run'])
+  expect(
+    codexPermissionProfileInput({
+      profile,
+      cwd: launch.cwd,
+      writableRoots: writerRoots,
+      directoryListings: {},
+    }).writableRoots,
+  ).toEqual(writerRoots)
 })
 
 describe('Codex permission profile', () => {
@@ -118,27 +129,34 @@ describe('Codex permission profile', () => {
   })
 
   test('translation refuses a glob deny with a rebuild remedy', () => {
+    const profile = {
+      network: {
+        allowedDomains: [],
+        deniedDomains: [],
+        allowUnixSockets: [],
+        allowLocalBinding: false,
+      },
+      filesystem: {
+        denyRead: ['/projects/own/.claude/worktrees/*'],
+        allowWithinDeny: ['/projects/own/.claude/worktrees/own'],
+        allowWrite: [],
+        denyWrite: [],
+      },
+    }
+    const cwd = '/projects/own/.claude/worktrees/own'
+    const writableRoots = codexPermissionWritableRoots({
+      profile,
+      sandbox: 'workspace-write',
+      cwd,
+      writableRoots: [],
+      tempDir: '/tmp/run',
+      writesRepository: true,
+    })
     expect(() =>
       codexPermissionProfileInput({
-        profile: {
-          network: {
-            allowedDomains: [],
-            deniedDomains: [],
-            allowUnixSockets: [],
-            allowLocalBinding: false,
-          },
-          filesystem: {
-            denyRead: ['/projects/own/.claude/worktrees/*'],
-            allowWithinDeny: ['/projects/own/.claude/worktrees/own'],
-            allowWrite: [],
-            denyWrite: [],
-          },
-        },
-        sandbox: 'workspace-write',
-        cwd: '/projects/own/.claude/worktrees/own',
-        writableRoots: [],
-        tempDir: '/tmp/run',
-        writesRepository: true,
+        profile,
+        cwd,
+        writableRoots,
         directoryListings: {
           '/projects/own/.claude/worktrees': ['own'],
         },

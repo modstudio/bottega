@@ -1,6 +1,6 @@
 // concern: pure broad-area read policy; must not know sandbox-runtime or secret paths.
 
-import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
+import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import {
   resolveHubDatabase,
   resolveOrchestratorDatabase,
@@ -18,7 +18,10 @@ export type WorktreeDenyForm = 'live-glob' | 'launch-literal'
 
 export const isAtOrBelow = (path: string, parent: string) => {
   const fromParent = relative(parent, path)
-  return fromParent === '' || (!fromParent.startsWith('..') && !isAbsolute(fromParent))
+  return (
+    fromParent === '' ||
+    (fromParent !== '..' && !fromParent.startsWith(`..${sep}`) && !isAbsolute(fromParent))
+  )
 }
 
 /** A carve-back may never reopen a protected path or one of its parents. */

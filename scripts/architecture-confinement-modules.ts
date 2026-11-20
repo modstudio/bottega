@@ -33,11 +33,12 @@ export const confinementModules: ConfinementModule[] = [
     './codex-deny-policy.ts',
     './sandbox.ts',
   ]),
-  module('orchestrator/src/sandbox/codex-deny-policy.ts', ['node:path']),
+  module('orchestrator/src/sandbox/codex-deny-policy.ts', ['node:path', './area-read-policy.ts']),
   module('orchestrator/src/sandbox/codex-permission-profile-adapter.ts', [
     'node:fs',
     'node:path',
     '../../../shared/state-directory.ts',
+    './area-read-policy.ts',
     './codex-deny-policy.ts',
     './codex-sandbox.ts',
     './sandbox.ts',

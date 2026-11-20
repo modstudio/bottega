@@ -87,33 +87,41 @@ export function codexWritableRoots(
   return [...new Set([cwd, ...extraRoots, ...(repository ? ['/tmp', tmpDir ?? '/tmp'] : [])])]
 }
 
-/** Translate one shared runtime profile and the launch's write facts for Codex. */
-export function codexPermissionProfileInput(input: {
+/** Select the writable roots for one Codex permission-profile launch. */
+export function codexPermissionWritableRoots(input: {
   profile: SandboxRuntimeConfig
   sandbox: CodexSandboxRuling['sandbox'] | 'danger-full-access'
   cwd: string
   writableRoots: readonly string[]
   tempDir: string | undefined
   writesRepository: boolean
+}): string[] {
+  return input.writesRepository
+    ? (codexWritableRoots(input.sandbox, input.cwd, input.writableRoots, input.tempDir, true) ?? [])
+    : [...input.profile.filesystem.allowWrite]
+}
+
+/** Translate one shared runtime profile and its already-selected writable roots for Codex. */
+export function codexPermissionProfileInput(input: {
+  profile: SandboxRuntimeConfig
+  cwd: string
+  writableRoots: readonly string[]
   directoryListings: CodexDirectoryListing
   opaquePaths?: readonly string[]
 }): CodexPermissionProfileInput {
   refuseGlobDeny(input.profile.filesystem.denyRead)
-  const writableRoots = input.writesRepository
-    ? (codexWritableRoots(input.sandbox, input.cwd, input.writableRoots, input.tempDir, true) ?? [])
-    : input.profile.filesystem.allowWrite
   return {
     filesystem: {
       denyRead: decideCodexLiteralDenyRead({
         denyRead: input.profile.filesystem.denyRead,
-        protectedPaths: [input.cwd, ...writableRoots],
+        protectedPaths: [input.cwd, ...input.writableRoots],
         directoryListings: input.directoryListings,
         opaquePaths: input.opaquePaths,
       }),
       allowRead: input.profile.filesystem.allowWithinDeny,
       denyWrite: input.profile.filesystem.denyWrite,
     },
-    writableRoots,
+    writableRoots: [...input.writableRoots],
   }
 }
 

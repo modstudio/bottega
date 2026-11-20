@@ -4,6 +4,10 @@ import type { Project } from '../project/projects.ts'
 import { areaReadPolicy, isAtOrBelow, ownProjectWorktreeDenies } from './area-read-policy.ts'
 import { assembleAreaReadProfile } from './sandbox-area-read-profile.ts'
 
+test('containment treats an entry beginning with two dots as inside its parent', () => {
+  expect(isAtOrBelow('/projects/..foo', '/projects')).toBe(true)
+})
+
 test('area policy denies orchestrator database and runs overrides outside the state root', () => {
   const project: Project = {
     recordId: 'fixture-id',
