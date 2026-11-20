@@ -192,6 +192,7 @@ su -s /bin/sh smoke -c '
   esac
   ${installedBinary} run wait "$run_number"
   ${installedBinary} run result "$run_number"
+  ${installedBinary} score "$run_number" full right faithful --note "Release smoke read the writing probe result."
   ${installedBinary} workflow next --cursor "$cursor" --run "$run_number" --note "Writing probe completed."
 '
 su -s /bin/sh smoke -c '
