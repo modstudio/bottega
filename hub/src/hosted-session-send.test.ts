@@ -165,7 +165,12 @@ test.serial(
           tracedRecordFetch(
             input,
             { method: init.method, headers: new Headers(init.headers) },
-            async () => Response.json({ tasks: [], cursor: 'done', more: false }),
+            (async () =>
+              Response.json({
+                tasks: [],
+                cursor: 'done',
+                more: false,
+              })) as unknown as typeof fetch,
           ),
       })
       await response.json()

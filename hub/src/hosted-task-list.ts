@@ -126,7 +126,7 @@ export async function listHostedTasks(
   client: SQL,
   identity: TaskIdentity,
   filters: HostedTaskListFilters,
-) {
+): Promise<ReturnType<typeof emptyPage> & { cursor: string; more: boolean }> {
   return withHostedTenant(client, identity, async (tx) => {
     const selectedStreams = filters.includeDeleted ? changeStreams : listStreams
     const limit = hostedPullLimit(filters.limit)
@@ -145,7 +145,7 @@ export async function listHostedTasks(
         ...(filters.includeDeleted ? page : { tasks: page.tasks }),
         cursor: encodeHostedPullCursor(result.cursor),
         more: result.more,
-      }
+      } as ReturnType<typeof emptyPage> & { cursor: string; more: boolean }
     }
   })
 }
