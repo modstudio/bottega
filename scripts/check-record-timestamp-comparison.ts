@@ -6,7 +6,7 @@ import { ESLint } from 'eslint'
 import {
   RECORD_TIMESTAMP_COMPARISON_REMEDY,
   RECORD_TIMESTAMP_GUARD_SCOPE,
-} from '../shared/record-timestamp-guard.js'
+} from '../hub/src/record-timestamp-guard.ts'
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url)).replace(/\/$/, '')
 type EslintResults = Awaited<ReturnType<ESLint['lintText']>>

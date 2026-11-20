@@ -3,7 +3,7 @@ import sonarjs from 'eslint-plugin-sonarjs'
 import {
   RECORD_TIMESTAMP_COMPARISON_SELECTORS,
   RECORD_TIMESTAMP_GUARD_SCOPE,
-} from './shared/record-timestamp-guard.js'
+} from './hub/src/record-timestamp-guard.ts'
 
 const importMetaUrlPathnameSelector = {
   selector:

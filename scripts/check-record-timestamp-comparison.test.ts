@@ -6,7 +6,7 @@ import {
   RECORD_TIMESTAMP_COMPARISON_REMEDY,
   RECORD_TIMESTAMP_GUARD_FIELDS,
   RECORD_TIMESTAMP_GUARD_SCOPE,
-} from '../shared/record-timestamp-guard.js'
+} from '../hub/src/record-timestamp-guard.ts'
 import { selectRecordTimestampGuardFiles } from './check-record-timestamp-comparison.ts'
 
 const ROOT = resolve(import.meta.dir, '..')
