@@ -43,6 +43,7 @@ import { processStartTime } from '../project/project-lock.ts'
 import { orchestratorProseGate } from '../prose-service.ts'
 import type { ResolvedReviewTarget } from '../review/review-target.ts'
 import type { CodexMcpScope } from '../sandbox/codex-mcp-scope.ts'
+import { codexWritableRoots } from '../sandbox/codex-sandbox.ts'
 import type { ProjectMcpSelection } from '../sandbox/project-mcp-scope.ts'
 import type { SandboxSelection } from '../sandbox/sandbox.ts'
 import { askExposureEvent } from '../transport/codex-ask-exposure.ts'
@@ -741,6 +742,23 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
       projectMcpSelection: input.projectMcpSelection,
       trustCwd: mcpTrustGranted ? cwd : undefined,
       writableRoots,
+      ...(name === 'codex' && sandboxSelection.codexProfile
+        ? {
+            codexPermissionProfile: {
+              filesystem: {
+                denyRead: sandboxSelection.codexProfile.filesystem.denyRead,
+                allowRead: sandboxSelection.codexProfile.filesystem.allowWithinDeny,
+              },
+              writableRoots:
+                codexWritableRoots(
+                  codexSandbox.sandbox,
+                  cwd,
+                  writableRoots,
+                  input.runTemp.directory,
+                ) ?? [],
+            },
+          }
+        : {}),
       gitConfigEnvironment,
       recipeEnvironment,
       tempEnvironment: input.runTemp.environment,

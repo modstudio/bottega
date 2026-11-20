@@ -10,6 +10,42 @@ export type CodexSandboxRuling = {
   workspaceWriteNetworkAccess: boolean
 }
 
+export type CodexPermissionFilesystem = {
+  denyRead: readonly string[]
+  allowRead: readonly string[]
+}
+
+const CODEX_PERMISSION_PROFILE = 'bottega'
+
+function tomlString(value: string): string {
+  return JSON.stringify(value)
+}
+
+/** Render the native Codex permission profile from the shared read policy and current write roots. */
+export function codexPermissionProfileArgs(input: {
+  filesystem: CodexPermissionFilesystem
+  writableRoots: readonly string[]
+  network: boolean
+}): string[] {
+  const permissions = new Map<string, 'read' | 'write' | 'deny'>([[':root', 'read']])
+  for (const path of input.filesystem.allowRead) permissions.set(path, 'read')
+  for (const path of input.writableRoots) permissions.set(path, 'write')
+  // Codex resolves a more specific entry first and deny wins at equal specificity.
+  for (const path of input.filesystem.denyRead) permissions.set(path, 'deny')
+  const filesystem = [...permissions]
+    .map(([path, access]) => `${tomlString(path)}=${tomlString(access)}`)
+    .join(',')
+  return [
+    '-c',
+    `default_permissions=${tomlString(CODEX_PERMISSION_PROFILE)}`,
+    '-c',
+    `permissions.${CODEX_PERMISSION_PROFILE}.filesystem={${filesystem}}`,
+    ...(input.network
+      ? ['-c', `permissions.${CODEX_PERMISSION_PROFILE}.network.enabled=true`]
+      : []),
+  ]
+}
+
 /** Decide Codex's native sandbox separately from the srt/host outer seam. */
 export function decideCodexSandbox(): CodexSandboxRuling {
   return {

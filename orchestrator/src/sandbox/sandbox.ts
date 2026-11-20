@@ -524,6 +524,8 @@ export function probeSandboxProfileForCwd(input: {
 export type SandboxSelection = {
   sandbox: RunSandbox
   profile: SandboxRuntimeConfig | null
+  /** Shared read policy translated by the native Codex permission-profile adapter. */
+  codexProfile?: SandboxRuntimeConfig
   reason: string | null
 }
 
@@ -652,6 +654,29 @@ export function selectReadonlySandbox(input: {
     )
   }
   if (kind.sandbox !== 'srt') {
+    if (input.agent === 'codex') {
+      if (!input.worktree)
+        throw new Error('codex permission profile refusal: sandbox root is missing')
+      return {
+        sandbox: kind.sandbox,
+        profile: null,
+        codexProfile: readonlyLensProfile({
+          worktree: input.worktree,
+          runtimeDir: input.runtimeDir,
+          scratchDir: input.scratchDir,
+          project: input.project,
+          registeredProjects: input.registeredProjects,
+          agent: input.agent,
+          path: input.path,
+          baseUrl: input.baseUrl,
+          mcpAllowlist: input.mcpAllowlist,
+          environment: input.environment,
+          socketDenyPaths: input.socketDenyPaths,
+          allowWrite: readonlySandboxWriteRoots(input),
+        }),
+        reason: kind.reason,
+      }
+    }
     return { sandbox: kind.sandbox, profile: null, reason: kind.reason }
   }
   const isolation = decideWeakerNetworkIsolation({ base_url: input.baseUrl })

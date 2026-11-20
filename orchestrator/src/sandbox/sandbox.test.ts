@@ -1018,21 +1018,33 @@ describe('readonly-lens sandbox profile', () => {
     ).toBe('srt')
   })
 
-  test('codex and non-ACP writing jobs stay on the host seam', () => {
-    for (const input of [
-      { agent: 'codex', writesRepo: false },
-      { agent: 'grok', writesRepo: true },
-    ]) {
-      expect(
-        selectReadonlySandbox({
-          ...input,
-          readsRepo: true,
-          worktree: '/runs/tree',
-          runtimeDir: '/runs/evidence',
-          project: fixtureProject(),
-        }),
-      ).toEqual({ sandbox: 'host', profile: null, reason: null })
-    }
+  test('codex stays on the host seam with the shared read profile for native translation', () => {
+    const selected = selectReadonlySandbox({
+      agent: 'codex',
+      writesRepo: false,
+      readsRepo: true,
+      worktree: '/runs/tree',
+      runtimeDir: '/runs/evidence',
+      project: fixtureProject(),
+      environment: { HOME: '/home', [STATE_HOME_ENV]: '/state' },
+    })
+    expect(selected.sandbox).toBe('host')
+    expect(selected.profile).toBeNull()
+    expect(selected.codexProfile?.filesystem.denyRead).toContain('/state')
+    expect(selected.codexProfile?.filesystem.allowWithinDeny).toContain('/runs/tree')
+  })
+
+  test('non-ACP writing jobs stay on the host seam without an srt profile', () => {
+    expect(
+      selectReadonlySandbox({
+        agent: 'grok',
+        writesRepo: true,
+        readsRepo: true,
+        worktree: '/runs/tree',
+        runtimeDir: '/runs/evidence',
+        project: fixtureProject(),
+      }),
+    ).toEqual({ sandbox: 'host', profile: null, reason: null })
   })
 
   test('repository candidates keep their missing-root and missing-project host fallbacks', () => {

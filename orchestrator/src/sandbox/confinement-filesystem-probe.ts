@@ -33,6 +33,7 @@ import { targetGitEnvironment, worktreeGitDir } from '../git/git-environment.ts'
 import type { Project } from '../project/projects.ts'
 import { prepareSharedRefGuard, workerSharedGitRoots } from '../resources/ref-guard.ts'
 import { workerChildEnvironment } from '../run/run-worker-home.ts'
+import { codexPermissionProfileArgs, codexWritableRoots } from './codex-sandbox.ts'
 import {
   type RunningInstallLayout,
   resolveRunningInstallLayout,
@@ -77,7 +78,6 @@ type AccessTarget = {
 type AfterLaunchFixture = { target: string; ready: string; release: string }
 
 const NOT_COVERED: ConfinementFilesystemProbeRow[] = [
-  { family: 'Codex', status: 'not covered', paths: {}, reason: 'Codex has no SRT read profile' },
   {
     family: 'read-only MCP',
     status: 'not covered',
@@ -91,6 +91,82 @@ const NOT_COVERED: ConfinementFilesystemProbeRow[] = [
     reason: 'BOTTEGA_SANDBOX=host bypasses SRT',
   },
 ]
+
+async function launchCodexProbe(
+  profile: ReturnType<typeof readonlyLensProfile>,
+  targets: readonly AccessTarget[],
+  cwd: string,
+  environment: Record<string, string>,
+): Promise<ConfinementFilesystemProbeRow> {
+  const codex = Bun.which('codex')
+  if (!codex) {
+    return {
+      family: 'Codex',
+      status: 'not covered',
+      paths: {},
+      reason: 'codex is not installed',
+    }
+  }
+  try {
+    const permissionArgs = codexPermissionProfileArgs({
+      filesystem: {
+        denyRead: profile.filesystem.denyRead,
+        allowRead: profile.filesystem.allowWithinDeny,
+      },
+      writableRoots:
+        codexWritableRoots(
+          'workspace-write',
+          cwd,
+          profile.filesystem.allowWrite,
+          environment.TMPDIR,
+        ) ?? [],
+      network: false,
+    })
+    const result = await startBounded(
+      [
+        codex,
+        'sandbox',
+        '-P',
+        'bottega',
+        ...permissionArgs,
+        '--',
+        '/bin/sh',
+        '-c',
+        'for path\ndo\nif /bin/cat "$path" >/dev/null 2>&1; then echo readable; else echo denied; fi\ndone',
+        'probe',
+        ...targets.map(({ path }) => path),
+      ],
+      { budget: 'sandbox-probe', cwd, env: { ...process.env, ...environment } },
+    )
+    if (result.exitCode !== 0) {
+      return {
+        family: 'Codex',
+        status: 'failed',
+        paths: {},
+        reason: `filesystem launch exited ${result.exitCode ?? 'unknown'}: ${firstErrorLine(result.stderr)}`,
+      }
+    }
+    const values = result.stdout.trim().split(/\r?\n/)
+    const paths = Object.fromEntries(
+      targets.map(({ name }, index) => [
+        name,
+        values[index] === 'denied' || values[index] === 'readable' ? values[index] : 'not covered',
+      ]),
+    ) as Record<string, FilesystemProbeAccess>
+    return {
+      family: 'Codex',
+      ...probeVerdict(targets, paths, { status: 'ran', reason: 'codex sandbox ran' }),
+      paths,
+    }
+  } catch (error) {
+    return {
+      family: 'Codex',
+      status: 'failed',
+      paths: {},
+      reason: error instanceof Error ? error.message : String(error),
+    }
+  }
+}
 
 function fixtureProject(
   recordId: string,
@@ -689,6 +765,12 @@ export async function runConfinementFilesystemProbes(): Promise<ConfinementFiles
         environment,
         common.scratchDir,
         hubOpenMode,
+      ),
+      await launchCodexProbe(
+        readonlyLensProfile({ ...common, agent: 'codex' }),
+        targets,
+        common.worktree,
+        environment,
       ),
       ...NOT_COVERED,
     ]
