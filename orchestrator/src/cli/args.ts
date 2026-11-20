@@ -382,6 +382,11 @@ function withoutKeyedTurnAdmissionArgs(args: string[]): string[] {
       continue
     }
     if (arg.startsWith('--override-unbound=')) continue
+    if (arg === '--cursor') {
+      index += 1
+      continue
+    }
+    if (arg.startsWith('--cursor=')) continue
     filtered.push(arg)
   }
   return filtered
