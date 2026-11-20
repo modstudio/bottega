@@ -21,7 +21,7 @@ import {
 } from '../project/project-commands.ts'
 import { projects } from '../project/projects.ts'
 import { RecordApiRequestError } from '../record/record-api-client.ts'
-import { storedRecordToken } from '../record/record-session.ts'
+import { recordSessionPresent } from '../record/record-session.ts'
 import { currentRecordWriteDecision } from '../record/record-write-authority.ts'
 import type { RecordWriteDecision } from '../record/record-write-decision.ts'
 import { isOrchWorkerProcess } from '../run/run-process.ts'
@@ -33,6 +33,8 @@ import {
 import {
   applyMachineSettings,
   type MachineSettingsApplyResult,
+  settingsApplyDecision,
+  settingsApplyResultWaitsForSignIn,
 } from '../settings/settings-machine-apply.ts'
 import {
   processEnvironmentNameMigration,
@@ -81,15 +83,16 @@ export type EnvironmentSettingsApplyDecision =
 
 export function environmentSettingsApplyDecision(
   sessionPresent: boolean,
-  refused: readonly MachineSettingsApplyResult[],
+  results: readonly MachineSettingsApplyResult[],
 ): EnvironmentSettingsApplyDecision {
-  const refusal = refused.find((result) => sessionPresent || result.condition !== 'no-settings-row')
-  if (refusal) {
+  const decision = settingsApplyDecision(sessionPresent, results)
+  if (decision.action === 'refuse') {
+    const refusal = decision.refused.find(
+      (result) => sessionPresent || !settingsApplyResultWaitsForSignIn(result),
+    )!
     return { action: 'refuse', refusal: refusal.detail ?? `${refusal.target} refused` }
   }
-  return refused.some((result) => result.condition === 'no-settings-row')
-    ? { action: 'wait-for-sign-in' }
-    : { action: 'continue' }
+  return { action: decision.action }
 }
 
 const RECORD_SIGN_IN_NOTE = `not signed in: record secrets and user settings wait for sign-in; run ${PLATFORM_SLUG} record sign-in --email <email>`
@@ -290,6 +293,7 @@ export async function withMigratedProcessEnvironment<T>(
 }
 
 export const setupEnvironmentService = {
+  recordSessionPresent,
   setMachineLevel: (level: MachineLevel) => setMachineValue('machine.level', level),
   setGlobalUse: (value: 'on' | 'off') => setMachineValue('machine.global_use', value),
   setKeystore: (value: 'file') => {
@@ -303,7 +307,7 @@ export const setupEnvironmentService = {
     withMigratedProcessEnvironment(process.env, async (processNamesRenamed) => {
       const notes: string[] = []
       const authority = currentRecordWriteDecision()
-      const sessionPresent = storedRecordToken() !== null
+      const sessionPresent = recordSessionPresent()
       let recordSessionUnavailable = false
       const waitForSignIn = () => {
         recordSessionUnavailable = true
@@ -359,10 +363,7 @@ export const setupEnvironmentService = {
             if (waitOnSessionError(error)) return false
             throw error
           }
-          const decision = environmentSettingsApplyDecision(
-            sessionPresent,
-            results.filter((result) => result.outcome === 'refused'),
-          )
+          const decision = environmentSettingsApplyDecision(sessionPresent, results)
           if (decision.action === 'wait-for-sign-in') waitForSignIn()
           if (decision.action === 'refuse') throw new Error(decision.refusal)
           return results.some((result) => result.changed)

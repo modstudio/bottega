@@ -140,6 +140,30 @@ test('decides environment settings refusals from session presence and structured
       {
         target: 'canon claude',
         outcome: 'refused',
+        condition: 'empty-user-canon-store',
+        detail: 'refusing user canon hydration: empty store',
+        changed: false,
+      },
+    ]),
+  ).toEqual({ action: 'wait-for-sign-in' })
+  expect(
+    environmentSettingsApplyDecision(true, [
+      missingRow,
+      {
+        target: 'canon grok',
+        outcome: 'refused',
+        condition: 'empty-user-canon-store',
+        detail: 'refusing user canon hydration: empty store',
+        changed: false,
+      },
+    ]),
+  ).toEqual({ action: 'refuse', refusal: 'refusing settings render: no settings row for user' })
+  expect(
+    environmentSettingsApplyDecision(false, [
+      missingRow,
+      {
+        target: 'canon claude',
+        outcome: 'refused',
         detail: 'refusing canon write',
         changed: false,
       },

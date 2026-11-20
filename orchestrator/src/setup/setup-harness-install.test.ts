@@ -89,7 +89,10 @@ test('a skipped install reports the exact manual command and never runs a comman
   const [result] = await applySetupActions(
     [{ kind: 'skip-harness-install', harness: 'codex', route }],
     { add: async () => {}, fillAbsent: async () => {} },
-    { migrateEnvironment: async () => ({ status: 'unchanged', message: null }) },
+    {
+      recordSessionPresent: () => false,
+      migrateEnvironment: async () => ({ status: 'unchanged', message: null }),
+    },
     () => {
       calls += 1
       return success

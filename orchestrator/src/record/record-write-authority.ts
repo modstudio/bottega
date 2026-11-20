@@ -10,7 +10,7 @@ import { db } from '../database/db.ts'
 import { readRecordInstallBinding } from './install-binding.ts'
 import { rememberHostedRecord } from './install-binding-write.ts'
 import { readRecordLocalByDesign } from './record-local-mark.ts'
-import { storedRecordToken } from './record-session.ts'
+import { recordSessionPresent } from './record-session.ts'
 import { decideRecordWrite, type RecordWriteDecision } from './record-write-decision.ts'
 
 export function currentRecordWriteDecision(
@@ -64,7 +64,7 @@ export function recordPublishAvailability(): { hostedConfigured: boolean; signed
   if (decision.verdict === 'local-authoritative') {
     return { hostedConfigured: false, signedIn: false }
   }
-  return { hostedConfigured: true, signedIn: storedRecordToken() !== null }
+  return { hostedConfigured: true, signedIn: recordSessionPresent() }
 }
 
 export function requireHostedRecord(command: string): void {

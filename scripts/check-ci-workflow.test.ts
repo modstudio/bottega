@@ -14,6 +14,9 @@ const postgresServiceContainer = `BOTTEGA_TEST_POSTGRES_CONTAINER: \${{ job.serv
 const migrationCommand = `./bin/${PLATFORM_SLUG} machine migrate`
 const migrationPaths =
   "orchestrator/migrations hub/migrations hub/src/migrations.ts shared/migration-source.ts ':(glob)orchestrator/src/database/*migration*.ts'"
+const installProofPaths =
+  'install.sh scripts/smoke-release-install.ts scripts/build-binary.ts scripts/build-release-artifacts.ts scripts/release-config.ts orchestrator/src/setup/ orchestrator/src/settings/ orchestrator/src/canon/ orchestrator/src/health/ hub/src/doctor.ts orchestrator/migrations hub/migrations shared/launch-agent-liveness.ts shared/launchd-owners.ts shared/install-root.ts orchestrator/src/record/record-session.ts'
+const installProofCommand = 'bun run release:install-proof -- "v$(jq -r .version package.json)"'
 const processSuite = CI_ONLY_SUITES[0]!
 const playwrightPin = (
   JSON.parse(readFileSync(new URL('../hub/web/package.json', import.meta.url), 'utf8')) as {
@@ -34,12 +37,13 @@ test('refuses a workflow with a missing or extra job', () => {
       if (job === 'release-smoke') return releaseSmokeJobFixture().trimEnd()
       if (job === 'migration-paths') return migrationPathsJobFixture()
       if (job === 'migration-compatibility') return migrationCompatibilityJobFixture()
+      if (job === 'install-proof') return installProofJobFixture()
       if (job === 'ci')
         return `  ${job}:\n    needs: [${expectedWorkflowJobNames()
           .filter((name) => name !== 'ci')
           .join(
             ', ',
-          )}]\n    steps:\n      - run: jq -e 'all(to_entries[]; .value.result == "success" or (.key == "migration-compatibility" and .value.result == "skipped"))'`
+          )}]\n    steps:\n      - run: jq -e 'all(to_entries[]; .value.result == "success" or ((.key == "migration-compatibility" or .key == "install-proof") and .value.result == "skipped"))'`
       return `  ${job}:\n    runs-on: ubuntu-latest`
     })
     .join('\n')}\n`
@@ -90,6 +94,38 @@ test('pins the migration compatibility path gate and macOS proof', () => {
       `must compare ${migrationPaths}`,
     )
   }
+})
+
+test('pins the release install proof path gate and macOS job', () => {
+  const workflow = readWorkflowFixture()
+  expect(() =>
+    checkCiWorkflow(
+      workflow.replace(
+        `git diff --quiet "$BASE_SHA" HEAD -- ${installProofPaths}`,
+        'git diff --quiet "$BASE_SHA" HEAD -- install.sh',
+      ),
+    ),
+  ).toThrow(`must compare ${installProofPaths}`)
+  expect(() =>
+    checkCiWorkflow(workflow.replace(installProofCommand, 'bun scripts/smoke-release-install.ts')),
+  ).toThrow(`must run ${installProofCommand}`)
+  expect(() =>
+    checkCiWorkflow(
+      workflow.replace("if: needs.migration-paths.outputs.install-proof == 'true'", 'if: always()'),
+    ),
+  ).toThrow('install-proof job must skip unless install proof paths changed')
+})
+
+test('refuses an aggregate that lets a path-gated job fail', () => {
+  const workflow = readWorkflowFixture()
+  expect(() =>
+    checkCiWorkflow(
+      workflow.replace(
+        'or .key == "install-proof") and .value.result == "skipped"',
+        'or .key == "install-proof") and .value.result != "cancelled"',
+      ),
+    ),
+  ).toThrow('ci aggregate must accept only success, or skipped for path-gated jobs')
 })
 
 test('pins the Python hook leg', () => {
@@ -388,12 +424,13 @@ function readWorkflowFixture() {
       if (job === 'release-smoke') return releaseSmokeJobFixture().trimEnd()
       if (job === 'migration-paths') return migrationPathsJobFixture()
       if (job === 'migration-compatibility') return migrationCompatibilityJobFixture()
+      if (job === 'install-proof') return installProofJobFixture()
       if (job === 'ci')
         return `  ${job}:\n    needs: [${expectedWorkflowJobNames()
           .filter((name) => name !== 'ci')
           .join(
             ', ',
-          )}]\n    steps:\n      - run: jq -e 'all(to_entries[]; .value.result == "success" or (.key == "migration-compatibility" and .value.result == "skipped"))'`
+          )}]\n    steps:\n      - run: jq -e 'all(to_entries[]; .value.result == "success" or ((.key == "migration-compatibility" or .key == "install-proof") and .value.result == "skipped"))'`
       return `  ${job}:\n    runs-on: ubuntu-latest`
     })
     .join('\n')}\n`
@@ -404,8 +441,10 @@ function migrationPathsJobFixture() {
     runs-on: ubuntu-24.04
     outputs:
       changed: ${'$'}{{ steps.changes.outputs.changed }}
+      install-proof: ${'$'}{{ steps.install-proof.outputs.changed }}
     steps:
-      - run: git diff --quiet "$BASE_SHA" HEAD -- ${migrationPaths}`
+      - run: git diff --quiet "$BASE_SHA" HEAD -- ${migrationPaths}
+      - run: git diff --quiet "$BASE_SHA" HEAD -- ${installProofPaths}`
 }
 
 function migrationCompatibilityJobFixture() {
@@ -416,6 +455,20 @@ function migrationCompatibilityJobFixture() {
     steps:
       - run: bun -e "select sqlite_version() version"
       - run: ${migrationCommand}`
+}
+
+function installProofJobFixture() {
+  return `  install-proof:
+    needs: migration-paths
+    if: needs.migration-paths.outputs.install-proof == 'true'
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: .bun-version
+      - run: bun install --frozen-lockfile
+      - run: ${installProofCommand}`
 }
 
 function releaseSmokeJobFixture() {

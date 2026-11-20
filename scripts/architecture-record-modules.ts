@@ -586,8 +586,8 @@ export const recordModules: RecordModule[] = [
   module('orchestrator/src/record/record-tunnel-error.ts', [
     '../../../shared/brand.ts',
     '../../../shared/install-root.ts',
+    '../../../shared/launchd-owners.ts',
     '../health/launch-agent-doctor.ts',
-    '../setup/launchd-owners.ts',
   ]),
   module('orchestrator/src/record/record-public-doc-designation.ts', [
     '../../../shared/brand.ts',

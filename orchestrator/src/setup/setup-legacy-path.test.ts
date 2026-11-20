@@ -19,6 +19,7 @@ import {
 
 const applySetupActions = (actions: SetupAction[], service: SetupProjectService) =>
   applySetupActionsWithService(actions, service, {
+    recordSessionPresent: () => false,
     migrateEnvironment: async () => ({ status: 'unchanged', message: null }),
   })
 

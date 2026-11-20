@@ -39,6 +39,7 @@ const applySetupActions = (
   service: SetupProjectService,
   runner?: Parameters<typeof applySetupActionsWithService>[3],
   environment: SetupEnvironmentService = {
+    recordSessionPresent: () => false,
     migrateEnvironment: async () => ({ status: 'unchanged', message: null }),
   },
 ) => applySetupActionsWithService(actions, service, environment, runner)
@@ -317,6 +318,7 @@ test.each(['add', 'set'] as const)(
       },
     }
     const environment: SetupEnvironmentService = {
+      recordSessionPresent: () => false,
       migrateEnvironment: async () => {
         attempted.push('environment')
         return { status: 'applied', message: 'migrated' }
@@ -380,6 +382,7 @@ test('renames the injected process environment before the hosted record-write ga
     { add: async () => {}, fillAbsent: async () => {} },
     undefined,
     {
+      recordSessionPresent: () => false,
       migrateEnvironment: async () => {
         const renamed = migrateProcessEnvironment(environment)
         const decision = currentRecordWriteDecision(database, environment)
@@ -456,6 +459,7 @@ test('reports an applied environment migration requiring operator follow-up dist
     { add: async () => {}, fillAbsent: async () => {} },
     undefined,
     {
+      recordSessionPresent: () => false,
       migrateEnvironment: async () => ({
         status: 'follow-up',
         message: 'applied, follow-up required: reload the service',
@@ -474,6 +478,7 @@ test('does not require attention when environment migration waits for sign-in', 
     { add: async () => {}, fillAbsent: async () => {} },
     undefined,
     {
+      recordSessionPresent: () => false,
       migrateEnvironment: async () => ({
         status: 'follow-up',
         message: 'not signed in: record secrets and user settings wait for sign-in',

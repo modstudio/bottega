@@ -1,4 +1,11 @@
-import { slowCollectionHealth } from './collect-slow-health.ts'
+import { homedir } from 'node:os'
+import { type InstallationKind, runningInstallationKind } from '../../shared/install-root.ts'
+import {
+  launchAgentInstalled,
+  launchAgentLoaded,
+  NOT_INSTALLED_BY_RELEASE_INSTALL,
+} from '../../shared/launch-agent-liveness.ts'
+import { type SlowCollectionHealth, slowCollectionHealth } from './collect-slow-health.ts'
 import { DB_PATH, db } from './db.ts'
 import { resolveHostedUrl } from './hosted-url.ts'
 import { formatProjectWriteModes } from './hosted-write-mode.ts'
@@ -9,6 +16,8 @@ import { projects } from './projects.ts'
 import { formatServiceRevisionDoctor } from './service-revision.ts'
 import { readSettingStamp } from './setting-stamp.ts'
 import { formatTaskIdentityDoctor, taskIdentityDoctor } from './task-identity.ts'
+
+const hubCollectLaunchAgentLabel = 'com.user.hub-collect'
 
 export const INTERVAL_UNLINKED_KEY_LIMIT = 10
 
@@ -72,14 +81,33 @@ function questionCommitTaskLinkDoctor(): string[] {
   ]
 }
 
-export function slowCollectionDoctorLine(now = Date.now()): string {
-  const health = slowCollectionHealth(now, readSettingStamp('collect.slow.at'))
+export function slowCollectionDoctorDecision(
+  installationKind: InstallationKind,
+  loaded: boolean | null,
+  installed: boolean,
+  health: SlowCollectionHealth,
+): string {
+  if (installationKind !== 'checkout' && loaded === false && installed === false) {
+    return `collect slow   ${NOT_INSTALLED_BY_RELEASE_INSTALL}`
+  }
   if (health.ageMs === null)
     return health.status === 'missing'
       ? 'collect slow   FAIL — never completed'
       : 'collect slow   FAIL — completion stamp is invalid'
   const age = `${Math.floor(health.ageMs / 1_000)}s old`
   return `collect slow   ${health.status === 'current' ? 'pass' : 'FAIL'} — ${age}`
+}
+
+export function slowCollectionDoctorLine(
+  now = Date.now(),
+  installationKind = runningInstallationKind(import.meta.dir, process.env),
+): string {
+  return slowCollectionDoctorDecision(
+    installationKind,
+    launchAgentLoaded(hubCollectLaunchAgentLabel),
+    launchAgentInstalled(hubCollectLaunchAgentLabel, homedir()),
+    slowCollectionHealth(now, readSettingStamp('collect.slow.at')),
+  )
 }
 
 export async function hubDoctorLines(): Promise<string[]> {

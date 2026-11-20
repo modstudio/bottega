@@ -97,7 +97,7 @@ test('allows the canonical owner inventory and running-copy executable resolver'
   expect(
     distributionUnsafeInstallPathFindings(
       "export const LAUNCHD_TEMPLATE_OWNERS = [{ command: 'ops/install.sh' }, { command: 'hub/bin/install-launchd.sh' }]\n",
-      'orchestrator/src/setup/launchd-owners.ts',
+      'shared/launchd-owners.ts',
     ),
   ).toEqual([])
 })

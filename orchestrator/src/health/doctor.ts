@@ -72,14 +72,13 @@ import { keepTreeHold } from '../worktree/keep-tree-hold.ts'
 import { worktreeDirty } from '../worktree/worktree-attribution.ts'
 import { lifecycleReportLines } from '../worktree/worktree-lifecycle.ts'
 import { configuredDelegationDoctorLines } from './delegation-doctor.ts'
+import type { DoctorReporter } from './doctor-reporter.ts'
 import { launchAgentDoctorReport } from './launch-agent-doctor.ts'
 import { reportProviderCredentialTrustDoctor } from './provider-credential-trust-doctor.ts'
+import { type RetrievalCheckResult, reportRetrieval } from './retrieval-doctor.ts'
 
 type DoctorFlags = { has(name: string): boolean }
-type DoctorReporter = { log(value: string): void; exitCode(code: number): void }
-type DoctorPresentation = {
-  log(...values: unknown[]): void
-  exitCode(code: number): void
+type DoctorPresentation = DoctorReporter & {
   candidates(job: string): {
     agent: string
     eligible: boolean
@@ -97,7 +96,7 @@ type DoctorPresentation = {
   pick(job: string): { agent: string }
   jobs(): string[]
   acpRuntimeGaps(): string | null
-  retrievalCheck(): Promise<{ stdout: string; stderr: string; exitCode: number }>
+  retrievalCheck(): Promise<RetrievalCheckResult>
 }
 
 export async function activeSpaceDoctorDiagnosis(
@@ -491,16 +490,6 @@ function rowReachabilityDiagnosis(row: AgentRow, globalBaseUrl: string): string[
   return lines
 }
 
-function reportRetrievalCheck(
-  result: { stdout: string; stderr: string; exitCode: number },
-  presentation: Pick<DoctorPresentation, 'log' | 'exitCode'>,
-): void {
-  presentation.log('retrieval endpoints')
-  for (const line of result.stdout.trim().split('\n').filter(Boolean)) presentation.log(`  ${line}`)
-  if (result.stderr.trim()) presentation.log(`  ${result.stderr.trim()}`)
-  if (result.exitCode !== 0) presentation.exitCode(1)
-}
-
 export function sandboxRuntimeDoctorLine(runtime: RuntimeAvailability): string {
   const probeUnavailable = runtime.sandboxProbeUnavailableReason
     ? `sandbox probe unavailable: ${runtime.sandboxProbeUnavailableReason}; ${PLATFORM_NAME} cannot confirm the sandbox works on this host`
@@ -697,6 +686,9 @@ function routedJobsForInstallLevel(machineLevel: MachineLevel, jobs: () => strin
   return machineLevel === 'full' ? jobs() : []
 }
 
+const retrievalFacts = (url: string) =>
+  [url, registeredLocalAgent(agentRows(), url) !== null] as const
+
 function hasCoolingWorker(
   machineLevel: MachineLevel,
   candidates: DoctorPresentation['candidates'],
@@ -745,7 +737,8 @@ export async function doctorCommand(
   const { log, exitCode, candidates, pick, jobs, acpRuntimeGaps, retrievalCheck } = presentation
   const machineLevel = readMachineValue('machine.level') as MachineLevel
   const r = await workerHealthForInstallLevel(machineLevel)
-  reportRetrievalCheck(await retrievalCheck(), presentation)
+  const [configuredUrl, installed] = retrievalFacts(modelHostUrl())
+  await reportRetrieval(configuredUrl, installed, process.env, presentation, retrievalCheck)
   const { CanonBudgetError, compilePack, findingsForPack } = await import('../canon/canon.ts')
   const { listDocs } = await import('../doc/docs.ts')
   const { DEFAULT_PACK_BYTES, MAX_INJECT_DOC_BYTES } = await import('../canon/pack-budget.ts')
@@ -873,7 +866,6 @@ export async function doctorCommand(
     )
   }
   await reportAgentsForInstallLevel(machineLevel, { log, candidates }, agentStatus)
-  const configuredUrl = modelHostUrl()
   for (const row of workerRowsForInstallLevel(machineLevel)) {
     if (row.operated_by !== 'self' || !row.enabled) continue
     const probe = localProbeDiagnosis(row)

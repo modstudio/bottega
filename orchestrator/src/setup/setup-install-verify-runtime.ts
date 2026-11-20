@@ -5,6 +5,7 @@ import { accessSync, constants, existsSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { assetPath } from '../../../shared/install-root.ts'
+import { recordSignInRemedy } from '../../../shared/record-remedies.ts'
 import { resolveRunsDirectory } from '../../../shared/state-directory.ts'
 import { userCanonHomesFromEnvironment } from '../canon/user-canon-home-files.ts'
 import {
@@ -17,6 +18,7 @@ import {
 import {
   applyMachineSettings,
   type MachineSettingsApplyResult,
+  settingsApplyDecision,
   settingsApplyLockSkipped,
 } from '../settings/settings-machine-apply.ts'
 import { hookScriptPath, PRODUCT_HOOKS, SCRIPT_FILES } from '../settings/settings-machine-hooks.ts'
@@ -29,6 +31,20 @@ import {
 export type SetupInstallVerifyAdapters = {
   applySettings?: () => Promise<MachineSettingsApplyResult[]>
   facts?: () => SetupInstallVerifyFacts
+}
+
+const SIGN_IN_FOLLOW_UP =
+  `not signed in: user settings and user canon wait for sign-in; run ` +
+  `${recordSignInRemedy('<email>').argv.join(' ')}, then re-run ${PLATFORM_SLUG} machine setup apply; ` +
+  `install verification runs after sign-in`
+
+function refusedSettingsMessage(refused: readonly MachineSettingsApplyResult[]): string {
+  return refused
+    .map(
+      (result) =>
+        `${result.target}: ${result.condition ? `${result.condition}; ` : ''}${result.detail ?? 'refused'}`,
+    )
+    .join('\n')
 }
 
 function readSettingsFact(
@@ -89,8 +105,13 @@ function renderedChecks(
 }
 
 export async function applySetupInstallVerify(
+  sessionPresent: boolean,
   adapters: SetupInstallVerifyAdapters = {},
-): Promise<{ status: 'applied' | 'unchanged'; message: string }> {
+): Promise<{
+  status: 'applied' | 'unchanged' | 'follow-up'
+  message: string
+  condition?: 'waiting-for-sign-in'
+}> {
   const results = await (adapters.applySettings ?? (() => applyMachineSettings({ check: false })))()
   if (results.some(settingsApplyLockSkipped)) {
     throw new Error(
@@ -98,16 +119,14 @@ export async function applySetupInstallVerify(
         `re-run \`${PLATFORM_SLUG} machine setup apply\` after it finishes`,
     )
   }
-  const refused = results.filter((result) => result.outcome === 'refused')
-  if (refused.length > 0) {
-    throw new Error(
-      refused
-        .map(
-          (result) =>
-            `${result.target}: ${result.condition ? `${result.condition}; ` : ''}${result.detail ?? 'refused'}`,
-        )
-        .join('\n'),
-    )
+  const decision = settingsApplyDecision(sessionPresent, results)
+  if (decision.action === 'refuse') throw new Error(refusedSettingsMessage(decision.refused))
+  if (decision.action === 'wait-for-sign-in') {
+    return {
+      status: 'follow-up',
+      message: SIGN_IN_FOLLOW_UP,
+      condition: 'waiting-for-sign-in',
+    }
   }
   const checks = verifySetupInstall((adapters.facts ?? gatherSetupInstallVerifyFacts)())
   if (checks.some((check) => !check.ok)) throw new Error(renderedChecks(checks, true))

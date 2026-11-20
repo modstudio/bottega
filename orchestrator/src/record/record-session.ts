@@ -96,6 +96,10 @@ export function storedRecordToken(
   return legacy
 }
 
+export function recordSessionPresent(): boolean {
+  return storedRecordToken() !== null
+}
+
 /** The cancellable read for budgeted requests. It never migrates a legacy token, because the
  * keychain write and its transaction cannot be cancelled; storedRecordToken migrates it. */
 export async function storedRecordTokenAsync(

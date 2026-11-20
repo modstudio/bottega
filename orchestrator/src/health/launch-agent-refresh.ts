@@ -7,11 +7,12 @@ import {
   type InstallationKind,
   runningInstallationIdentity,
 } from '../../../shared/install-root.ts'
+import { NOT_INSTALLED_BY_RELEASE_INSTALL } from '../../../shared/launch-agent-liveness.ts'
+import { LAUNCHD_TEMPLATE_OWNERS } from '../../../shared/launchd-owners.ts'
 import {
   type InstalledPlistOwner,
   includesLaunchAgents,
   installationPlistOwners,
-  LAUNCHD_TEMPLATE_OWNERS,
 } from '../setup/launchd-owners.ts'
 import {
   isMaintenanceScheduleLabel,
@@ -180,7 +181,7 @@ export async function refreshLaunchAgents(
     presentation.log(`${label} unverified — ${detail}`)
   }
   for (const label of plan.notReleaseInstalled) {
-    presentation.log(`${label} not installed by a release install`)
+    presentation.log(`${label} ${NOT_INSTALLED_BY_RELEASE_INSTALL}`)
   }
   const runInstaller = deps.runCheckoutInstaller ?? runCheckoutInstaller
   for (const command of plan.checkoutCommands) runInstaller(identity.root, command)

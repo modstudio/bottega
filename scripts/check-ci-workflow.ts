@@ -15,10 +15,15 @@ const playwrightBunInstallCommand = 'npm install --global "bun@$(cat .bun-versio
 const playwrightTrustWorkspaceCommand =
   'git config --system --add safe.directory "$GITHUB_WORKSPACE"'
 const releaseSmokeCommand = 'bun scripts/smoke-release.ts'
-const migrationJobs = ['migration-paths', 'migration-compatibility'] as const
+const pathGatedJobs = ['migration-paths', 'migration-compatibility', 'install-proof'] as const
 const migrationPaths =
   "orchestrator/migrations hub/migrations hub/src/migrations.ts shared/migration-source.ts ':(glob)orchestrator/src/database/*migration*.ts'"
 const migrationCommand = `./bin/${PLATFORM_SLUG} machine migrate`
+const installProofPaths =
+  'install.sh scripts/smoke-release-install.ts scripts/build-binary.ts scripts/build-release-artifacts.ts scripts/release-config.ts orchestrator/src/setup/ orchestrator/src/settings/ orchestrator/src/canon/ orchestrator/src/health/ hub/src/doctor.ts orchestrator/migrations hub/migrations shared/launch-agent-liveness.ts shared/launchd-owners.ts shared/install-root.ts orchestrator/src/record/record-session.ts'
+const aggregateAcceptance =
+  '.value.result == "success" or ((.key == "migration-compatibility" or .key == "install-proof") and .value.result == "skipped")'
+const installProofCommand = 'bun run release:install-proof -- "v$(jq -r .version package.json)"'
 const ciReleaseSmokeCondition =
   "github.event_name == 'pull_request' || github.event_name == 'merge_group' || github.event_name == 'workflow_dispatch'"
 
@@ -139,6 +144,10 @@ function checkMigrationCompatibilityJobs(source: string): void {
     throw new Error(`migration-paths job must compare ${migrationPaths} against the event base`)
   if (!paths.includes('changed: ${{ steps.changes.outputs.changed }}'))
     throw new Error('migration-paths job must expose its changed decision')
+  if (!paths.includes('install-proof: ${{ steps.install-proof.outputs.changed }}'))
+    throw new Error('migration-paths job must expose its install-proof decision')
+  if (!paths.includes(`git diff --quiet "$BASE_SHA" HEAD -- ${installProofPaths}`))
+    throw new Error(`migration-paths job must compare ${installProofPaths} for the install proof`)
 
   const compatibility = workflowJob(source, 'migration-compatibility')
   if (!compatibility.includes('needs: migration-paths'))
@@ -153,8 +162,32 @@ function checkMigrationCompatibilityJobs(source: string): void {
     throw new Error('migration-compatibility job must print the SQLite version Bun links')
 
   const aggregate = workflowJob(source, 'ci')
-  if (!aggregate.includes('.key == "migration-compatibility" and .value.result == "skipped"'))
-    throw new Error('ci aggregate must accept a path-skipped migration-compatibility job')
+  if (!aggregate.includes(aggregateAcceptance))
+    throw new Error(
+      `ci aggregate must accept only success, or skipped for path-gated jobs: ${aggregateAcceptance}`,
+    )
+}
+
+function checkInstallProofJob(source: string): void {
+  const installProof = workflowJob(source, 'install-proof')
+  if (!installProof.includes('needs: migration-paths'))
+    throw new Error('install-proof job must need migration-paths')
+  if (!installProof.includes("if: needs.migration-paths.outputs.install-proof == 'true'"))
+    throw new Error('install-proof job must skip unless install proof paths changed')
+  if (!installProof.includes('runs-on: macos-15'))
+    throw new Error('install-proof job must run on macos-15')
+  if (!installProof.includes('timeout-minutes: 30'))
+    throw new Error('install-proof job must have a 30 minute timeout')
+  if (!installProof.includes('bun-version-file: .bun-version'))
+    throw new Error('install-proof job must install Bun from .bun-version')
+  if (!workflowRunCommands(installProof).includes('bun install --frozen-lockfile'))
+    throw new Error('install-proof job must install frozen dependencies')
+  if (!workflowRunCommands(installProof).includes(installProofCommand))
+    throw new Error(`install-proof job must run ${installProofCommand}`)
+
+  const aggregate = workflowJob(source, 'ci')
+  if (!aggregate.includes(aggregateAcceptance))
+    throw new Error('ci aggregate must accept a path-skipped install-proof job')
 }
 
 function workflowNeeds(job: string, dependency: string): boolean {
@@ -278,7 +311,7 @@ export function expectedWorkflowJobNames(): string[] {
     'static',
     ...CHECK_LEGS.flatMap((leg) => (leg.ciJob === null ? [] : [leg.ciJob])),
     ...CI_ONLY_JOBS,
-    ...migrationJobs,
+    ...pathGatedJobs,
     'root',
     'ci',
   ].sort()
@@ -287,6 +320,7 @@ export function expectedWorkflowJobNames(): string[] {
 export function checkCiWorkflow(source: string): void {
   checkCiReleaseSmokeJob(source)
   checkMigrationCompatibilityJobs(source)
+  checkInstallProofJob(source)
   const actual = workflowJobNames(source).sort()
   const expected = expectedWorkflowJobNames()
   if (JSON.stringify(actual) !== JSON.stringify(expected)) {
