@@ -82,10 +82,7 @@ test('Linux worktree denies enumerate existing siblings but not the own tree', (
       root: '/projects/own/.claude/worktrees',
       worktree: '/projects/own/.claude/worktrees/run',
       platform: 'linux',
-      entries: [
-        '/projects/own/.claude/worktrees/run',
-        '/projects/own/.claude/worktrees/sibling',
-      ],
+      entries: ['/projects/own/.claude/worktrees/run', '/projects/own/.claude/worktrees/sibling'],
     }),
   ).toEqual(['/projects/own/.claude/worktrees/sibling'])
 })

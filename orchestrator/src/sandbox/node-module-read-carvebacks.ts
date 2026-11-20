@@ -61,8 +61,7 @@ export function permittedNodeModuleCarvebacks(input: {
         (root) =>
           isAtOrBelow(path, root) &&
           !areaDenies.some(
-            (denied) =>
-              isAtOrBelow(denyRoot(denied), root) && areaDenyCovers(path, denied),
+            (denied) => isAtOrBelow(denyRoot(denied), root) && areaDenyCovers(path, denied),
           ),
       )
       if (admitted) return true

@@ -70,6 +70,8 @@ type AccessTarget = {
   createAfterLaunch?: boolean
 }
 
+type AfterLaunchFixture = { target: string; ready: string; release: string }
+
 const NOT_COVERED: ConfinementFilesystemProbeRow[] = [
   { family: 'Codex', status: 'not covered', paths: {}, reason: 'Codex has no SRT read profile' },
   {
@@ -146,6 +148,71 @@ async function launchCommand(
   }
 }
 
+function afterLaunchFixture(
+  profile: ReturnType<typeof readonlyLensProfile>,
+  targets: readonly AccessTarget[],
+): AfterLaunchFixture | null {
+  const target = targets.find(({ createAfterLaunch }) => createAfterLaunch)?.path
+  if (!target) return null
+  const markerRoot = profile.filesystem.allowWrite[0]!
+  return {
+    target,
+    ready: join(markerRoot, '.confinement-probe-ready'),
+    release: join(markerRoot, '.confinement-probe-release'),
+  }
+}
+
+async function releaseAfterLaunchFixture(
+  fixture: AfterLaunchFixture,
+  running: ReturnType<typeof startBounded>,
+): Promise<void> {
+  const deadline = Date.now() + 5_000
+  while (!existsSync(fixture.ready)) {
+    if (Date.now() >= deadline) {
+      writeFileSync(fixture.release, 'continue')
+      await running
+      throw new Error('filesystem probe did not signal launch')
+    }
+    await Bun.sleep(10)
+  }
+  mkdirSync(dirname(fixture.target), { recursive: true })
+  writeFileSync(fixture.target, 'fixture')
+  writeFileSync(fixture.release, 'continue')
+}
+
+async function runFilesystemAccessProbe(
+  profile: ReturnType<typeof readonlyLensProfile>,
+  targets: readonly AccessTarget[],
+) {
+  const fixture = afterLaunchFixture(profile, targets)
+  if (fixture) {
+    rmSync(dirname(fixture.target), { recursive: true, force: true })
+    rmSync(fixture.ready, { force: true })
+    rmSync(fixture.release, { force: true })
+  }
+  try {
+    const script = fixture
+      ? '/usr/bin/touch "$1"\nwhile ! /bin/test -e "$2"; do /bin/sleep 0.01; done\nshift 2\nfor path\ndo\nif /bin/cat "$path" >/dev/null 2>&1; then echo readable; else echo denied; fi\ndone'
+      : 'for path\ndo\nif /bin/cat "$path" >/dev/null 2>&1; then echo readable; else echo denied; fi\ndone'
+    const argv = await sandboxLaunchArgv(profile, '/bin/sh', [
+      '-c',
+      script,
+      'probe',
+      ...(fixture ? [fixture.ready, fixture.release] : []),
+      ...targets.map(({ path }) => path),
+    ])
+    const running = startBounded(argv, { budget: 'sandbox-probe' })
+    if (fixture) await releaseAfterLaunchFixture(fixture, running)
+    return await running
+  } finally {
+    if (fixture) {
+      rmSync(dirname(fixture.target), { recursive: true, force: true })
+      rmSync(fixture.ready, { force: true })
+      rmSync(fixture.release, { force: true })
+    }
+  }
+}
+
 async function launchProbe(
   family: 'goose' | 'grok' | 'ACP writer' | 'workflow probe',
   profile: ReturnType<typeof readonlyLensProfile>,
@@ -154,40 +221,8 @@ async function launchProbe(
   environment: Record<string, string>,
   hubOpenMode: string,
 ): Promise<ConfinementFilesystemProbeRow> {
-  const afterLaunch = targets.find(({ createAfterLaunch }) => createAfterLaunch)
-  const markerRoot = profile.filesystem.allowWrite[0]
-  const ready = afterLaunch ? join(markerRoot!, '.confinement-probe-ready') : null
-  const release = afterLaunch ? join(markerRoot!, '.confinement-probe-release') : null
   try {
-    if (afterLaunch) rmSync(dirname(afterLaunch.path), { recursive: true, force: true })
-    if (ready) rmSync(ready, { force: true })
-    if (release) rmSync(release, { force: true })
-    const script = afterLaunch
-      ? '/usr/bin/touch "$1"\nwhile ! /bin/test -e "$2"; do /bin/sleep 0.01; done\nshift 2\nfor path\ndo\nif /bin/cat "$path" >/dev/null 2>&1; then echo readable; else echo denied; fi\ndone'
-      : 'for path\ndo\nif /bin/cat "$path" >/dev/null 2>&1; then echo readable; else echo denied; fi\ndone'
-    const argv = await sandboxLaunchArgv(profile, '/bin/sh', [
-      '-c',
-      script,
-      'probe',
-      ...(afterLaunch ? [ready!, release!] : []),
-      ...targets.map(({ path }) => path),
-    ])
-    const running = startBounded(argv, { budget: 'sandbox-probe' })
-    if (afterLaunch) {
-      const deadline = Date.now() + 5_000
-      while (!existsSync(ready!)) {
-        if (Date.now() >= deadline) {
-          writeFileSync(release!, 'continue')
-          await running
-          throw new Error('filesystem probe did not signal launch')
-        }
-        await Bun.sleep(10)
-      }
-      mkdirSync(dirname(afterLaunch.path), { recursive: true })
-      writeFileSync(afterLaunch.path, 'fixture')
-      writeFileSync(release!, 'continue')
-    }
-    const result = await running
+    const result = await runFilesystemAccessProbe(profile, targets)
     if (result.exitCode !== 0) {
       return {
         family,
@@ -218,9 +253,6 @@ async function launchProbe(
       reason: error instanceof Error ? error.message : String(error),
     }
   } finally {
-    if (afterLaunch) rmSync(dirname(afterLaunch.path), { recursive: true, force: true })
-    if (ready) rmSync(ready, { force: true })
-    if (release) rmSync(release, { force: true })
     await resetSandbox()
   }
 }
@@ -340,6 +372,52 @@ function probeHubOpenMode(hubDatabase: string): string {
   }).openMode
 }
 
+function probeAccessTargets(input: {
+  ownPath: string
+  worktree: string
+  siblingWorktree: string
+  siblingPath: string
+  orchestratorDatabase: string
+  orchestratorRuns: string
+}): AccessTarget[] {
+  const targets: AccessTarget[] = [
+    { name: 'sibling .env', path: join(input.siblingPath, '.env'), expected: 'denied' },
+    {
+      name: 'sibling .mcp.json',
+      path: join(input.siblingPath, '.mcp.json'),
+      expected: 'denied',
+    },
+    { name: 'orchestrator store', path: input.orchestratorDatabase, expected: 'denied' },
+    { name: 'own secret', path: join(input.ownPath, 'declared.secret'), expected: 'denied' },
+    {
+      name: 'same-project sibling worktree',
+      path: join(input.siblingWorktree, '.env'),
+      expected: 'denied',
+    },
+    {
+      name: 'another run directory',
+      path: join(input.orchestratorRuns, 'another-run', 'planted.txt'),
+      expected: 'denied',
+    },
+    { name: 'own tree', path: join(input.worktree, 'visible.txt'), expected: 'readable' },
+    {
+      name: 'own .git objects',
+      path: join(input.ownPath, '.git', 'objects', 'visible'),
+      expected: 'readable',
+    },
+  ]
+  if (process.platform === 'darwin') {
+    targets.push({
+      name: 'sibling tree created after launch',
+      path: join(input.ownPath, '.claude', 'worktrees', 'created-after-launch', 'secret'),
+      expected: 'denied',
+      plant: false,
+      createAfterLaunch: true,
+    })
+  }
+  return targets
+}
+
 function createProbeFixture(root: string) {
   const ownPath = join(root, 'projects', 'own')
   const worktree = join(ownPath, '.claude', 'worktrees', 'own')
@@ -368,37 +446,14 @@ function createProbeFixture(root: string) {
     fixtureProject('fixture-install', 'fixture-install', fixtureInstall.root),
     fixtureProject('running-install', PLATFORM_SLUG, runningInstall.root),
   ]
-  const targets: AccessTarget[] = [
-    { name: 'sibling .env', path: join(siblingPath, '.env'), expected: 'denied' },
-    { name: 'sibling .mcp.json', path: join(siblingPath, '.mcp.json'), expected: 'denied' },
-    { name: 'orchestrator store', path: state.orchestratorDatabase, expected: 'denied' },
-    { name: 'own secret', path: join(ownPath, 'declared.secret'), expected: 'denied' },
-    {
-      name: 'same-project sibling worktree',
-      path: join(siblingWorktree, '.env'),
-      expected: 'denied',
-    },
-    {
-      name: 'another run directory',
-      path: join(state.orchestratorRuns, 'another-run', 'planted.txt'),
-      expected: 'denied',
-    },
-    { name: 'own tree', path: join(worktree, 'visible.txt'), expected: 'readable' },
-    {
-      name: 'own .git objects',
-      path: join(ownPath, '.git', 'objects', 'visible'),
-      expected: 'readable',
-    },
-  ]
-  if (process.platform === 'darwin') {
-    targets.push({
-      name: 'sibling tree created after launch',
-      path: join(ownPath, '.claude', 'worktrees', 'created-after-launch', 'secret'),
-      expected: 'denied',
-      plant: false,
-      createAfterLaunch: true,
-    })
-  }
+  const targets = probeAccessTargets({
+    ownPath,
+    worktree,
+    siblingWorktree,
+    siblingPath,
+    orchestratorDatabase: state.orchestratorDatabase,
+    orchestratorRuns: state.orchestratorRuns,
+  })
   for (const { path, plant = true } of targets) {
     if (!plant) continue
     mkdirSync(join(path, '..'), { recursive: true })
