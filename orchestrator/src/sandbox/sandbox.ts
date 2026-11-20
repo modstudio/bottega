@@ -22,19 +22,12 @@ import { homedir } from 'node:os'
 import { basename, delimiter, dirname, isAbsolute, join, relative, resolve } from 'node:path'
 import type { SandboxRuntimeConfig as LibrarySandboxRuntimeConfig } from '@anthropic-ai/sandbox-runtime'
 import { PLATFORM_SLUG, WORKER_MCP_SERVER_NAME } from '../../../shared/brand.ts'
-import {
-  type ConfigEnvironment,
-  HARNESS_ENV_FILE_ENV,
-  PLATFORM_ENV_FILE_ENV,
-  resolveEnvFilePaths,
-} from '../../../shared/config-directory.ts'
+import { type ConfigEnvironment, resolveEnvFilePaths } from '../../../shared/config-directory.ts'
 import { fileBackedSecretPaths } from '../../../shared/file-backed-secret-paths.ts'
 import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 import {
   ensureHubLoginTokenDirectory,
-  ORCHESTRATOR_DATABASE_ENV,
   resolveHubDatabase,
-  resolveOrchestratorDatabase,
   type StateEnvironment,
 } from '../../../shared/state-directory.ts'
 import { disabledProjectMcpServers } from '../mcp/mcp-probe.ts'
@@ -72,16 +65,6 @@ export type SandboxRuntimeConfig = {
 /** Pin operator state before a worker's isolated HOME changes implicit resolution. */
 export function workerStateEnvironment(environment: StateEnvironment): Record<string, string> {
   return { BOTTEGA_HUB_DB: resolveHubDatabase(environment) }
-}
-
-/** Explicitly disable host env-file reads inside every SRT worker. */
-export function workerSandboxEnvironment(): Record<string, string> {
-  return { [HARNESS_ENV_FILE_ENV]: '', [PLATFORM_ENV_FILE_ENV]: '' }
-}
-
-/** Pin the architect-authored workflow probe to the store its profile carves back. */
-export function workflowProbeStateEnvironment(environment: StateEnvironment): Record<string, string> {
-  return { [ORCHESTRATOR_DATABASE_ENV]: resolveOrchestratorDatabase(environment) }
 }
 
 export type RunSandbox = 'host' | 'srt'

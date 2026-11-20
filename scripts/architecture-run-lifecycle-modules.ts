@@ -746,6 +746,7 @@ export const runLifecycleModules: ArchitectureModule[] = [
     '../sandbox/project-mcp-preflight.ts',
     '../sandbox/project-mcp-scope.ts',
     '../sandbox/sandbox.ts',
+    '../sandbox/worker-sandbox-environment.ts',
     '../worktree/worktree-mcp.ts',
     '../worktree/worktree-types.ts',
     './run-process.ts',

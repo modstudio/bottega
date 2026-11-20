@@ -590,7 +590,7 @@ export async function run(
     ...runTemp.environment,
   }
   assertConfiguredGitGuard(gitConfigEnvironment, writableRoots)
-  let askLoopback: AskLoopback | null = null
+  let [startupComplete, askLoopback]: [boolean, AskLoopback | null] = [false, null]
   const mcpLaunch = workerMcpLaunchScope({
     agent: a,
     transport: transportName,
@@ -605,7 +605,6 @@ export async function run(
   let sandboxSelection: ReturnType<typeof selectReadonlySandbox>
   let sandboxEnvironment: Record<string, string>, mcpEnvironment: Record<string, string>
   let codexMcpCatalogues: CodexMcpCatalogue[]
-  let startupComplete = false
   try {
     try {
       const writingAcpAsk = acpWriter.prepareWritingAcpAsk(writingAcp, claim.id, runToken)

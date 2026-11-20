@@ -41,6 +41,10 @@ export const confinementModules: ConfinementModule[] = [
     '../../../shared/config-directory.ts',
     '../../../shared/install-root.ts',
   ]),
+  module('orchestrator/src/sandbox/worker-sandbox-environment.ts', [
+    '../../../shared/config-directory.ts',
+    '../../../shared/state-directory.ts',
+  ]),
   module('orchestrator/src/sandbox/sandbox.ts', [
     '../../../shared/brand.ts',
     '../../../shared/file-backed-secret-paths.ts',

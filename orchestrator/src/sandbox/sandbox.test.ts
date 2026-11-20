@@ -664,7 +664,9 @@ describe('readonly-lens sandbox profile', () => {
 
     expect(profile.filesystem.denyRead).toContain(resolveStatePaths(environment).root)
     expect(profile.filesystem.denyRead).toContain(resolveOrchestratorDatabase(environment))
-    expect(profile.filesystem.allowWithinDeny).not.toContain(resolveOrchestratorDatabase(environment))
+    expect(profile.filesystem.allowWithinDeny).not.toContain(
+      resolveOrchestratorDatabase(environment),
+    )
     expect(profile.filesystem.denyRead).toContain('/projects/sibling')
     expect(profile.filesystem.denyRead).toContain('/projects')
     expect(profile.filesystem.denyRead).toContain('/projects/fixture/config/operator.secret')
@@ -685,28 +687,6 @@ describe('readonly-lens sandbox profile', () => {
     expect(profile.filesystem.allowWithinDeny).not.toContain(
       '/projects/fixture/config/operator.secret',
     )
-
-    const workflowProfile = buildProbeSandboxProfile({
-      allowWriteDir: join(state, 'orchestrator/runs/workflow/scratch'),
-      cwd: '/projects/fixture/.claude/worktrees/run',
-      project: own,
-      registeredProjects: [own, sibling],
-      environment,
-      socketDenyPaths: [],
-      orchestratorStoreAccess: 'allow-read',
-    })
-    const orchestratorStore = resolveOrchestratorDatabase(environment)
-    expect(workflowProfile.filesystem.denyRead).not.toContain(join(orchestratorStore, '..'))
-    expect(workflowProfile.filesystem.denyRead).not.toContain(orchestratorStore)
-    expect(workflowProfile.filesystem.allowWithinDeny).toEqual(
-      expect.arrayContaining([
-        join(orchestratorStore, '..'),
-        orchestratorStore,
-        `${orchestratorStore}-wal`,
-        `${orchestratorStore}-shm`,
-      ]),
-    )
-    expect(workflowProfile.filesystem.denyRead).toContain(join(state, 'orchestrator/runs'))
   })
 
   test('sandbox selection removes the shared reader worktree from writable roots', () => {

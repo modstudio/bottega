@@ -22,14 +22,12 @@ import {
 } from '../database/db.ts'
 import { boundedGateOutputTail, GATE_OUTPUT_TAIL_BYTES } from '../gate/gate-decision.ts'
 import { projectAt } from '../project/projects.ts'
+import { probeSandboxProfileForCwd, resetSandbox, sandboxLaunchArgv } from '../sandbox/sandbox.ts'
+import { sandboxRuntimeAvailability } from '../sandbox/sandbox-runtime.ts'
 import {
-  probeSandboxProfileForCwd,
-  resetSandbox,
-  sandboxLaunchArgv,
   workerSandboxEnvironment,
   workflowProbeStateEnvironment,
-} from '../sandbox/sandbox.ts'
-import { sandboxRuntimeAvailability } from '../sandbox/sandbox-runtime.ts'
+} from '../sandbox/worker-sandbox-environment.ts'
 import { assertEvidenceCheckoutIdentity } from '../worktree/evidence-checkout.ts'
 import { handOffWorkflowEvidence } from './workflow-evidence-handoff.ts'
 import type { WorkflowEvidencePayload } from './workflow-evidence-payload.ts'
