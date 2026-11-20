@@ -162,6 +162,9 @@
     "shared/test-git-repository.ts": 1
   },
   "commandCases": {
+    "orchestrator/src/record/record-api-errors.ts#renderRecordApiRefusal": {
+      "test": "orchestrator/src/record/record-projects.test.ts: the real record app refuses a stale project revision and names the pull remedy"
+    },
     "orchestrator/src/sandbox/sandbox.ts#emptyProjectRegisterRefusal": {
       "test": "orchestrator/src/sandbox/sandbox-selection.test.ts: an SRT agent profile refuses an empty project register with its remedy"
     },

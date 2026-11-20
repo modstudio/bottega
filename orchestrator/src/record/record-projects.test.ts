@@ -1,9 +1,9 @@
 import { afterAll, beforeAll, expect, test } from 'bun:test'
 import type { PGlite } from '@electric-sql/pglite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { createHostedRecordFixture, pgliteSql } from '../../test/fixtures/hosted-record.ts'
 import { idleRecordApiDeps, idleSubjectDeps } from '../../test/fixtures/record-api.ts'
 import { recordApiTestApp } from '../../test/fixtures/record-api-app.ts'
-import { createHostedRecordFixture, pgliteSql } from '../../test/fixtures/hosted-record.ts'
 import type { RecordIdentity } from './record-auth.ts'
 import { hostedProjectColumns } from './record-project-columns.ts'
 import { mapRecordProjectRow, upsertHostedProjectRow } from './record-projects.ts'
@@ -83,7 +83,7 @@ function putProject(
   })
 }
 
-test('the record app refuses a stale project revision and names the pull remedy', async () => {
+test('the real record app refuses a stale project revision and names the pull remedy', async () => {
   const application = recordApp()
   expect(await (await putProject(application, 'project-revision')).json()).toEqual({
     id: projectId,
