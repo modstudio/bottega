@@ -71,7 +71,6 @@ export type SandboxRuntimeConfig = {
 /** Pin operator state before a worker's isolated HOME changes implicit resolution. */
 export {
   isReadonlySandboxCandidate,
-  type ReadonlySandboxKind,
   type RunSandbox,
   selectReadonlySandboxKind,
 } from './sandbox-selection-policy.ts'

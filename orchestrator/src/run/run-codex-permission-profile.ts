@@ -5,15 +5,25 @@ import { codexWritableRoots } from '../sandbox/codex-sandbox.ts'
 import type { SandboxRuntimeConfig } from '../sandbox/sandbox.ts'
 import type { ArgvOpts } from '../transport/transport.ts'
 
-export function codexTransportMcpScope(scope: CodexMcpScope | null) {
+function codexTransportMcpScope(scope: CodexMcpScope | null) {
   return {
     projectServers: scope?.servers,
     withheldProjectServers: scope?.withheld.map((server) => server.name),
   }
 }
 
+export function codexTransportScope(
+  scope: CodexMcpScope | null,
+  input: Parameters<typeof codexPermissionLaunchProfile>[0],
+) {
+  return {
+    ...codexTransportMcpScope(scope),
+    codexPermissionProfile: codexPermissionLaunchProfile(input),
+  }
+}
+
 /** Translate the shared read profile and current Codex write roots at the launch edge. */
-export function codexPermissionLaunchProfile(input: {
+function codexPermissionLaunchProfile(input: {
   name: string
   sandboxSelection: { codexProfile?: SandboxRuntimeConfig }
   codexSandbox: { sandbox: 'read-only' | 'workspace-write' }

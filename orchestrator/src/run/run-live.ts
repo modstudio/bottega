@@ -70,10 +70,7 @@ import { createCheckpointSchedule } from './checkpoint-schedule.ts'
 import { prepareLaterRunBoardPrompt } from './run-board-prompt.ts'
 import { foldRunCallUsage, type RunCallUsage } from './run-call-usage.ts'
 import { raiseForHostCapacityWait } from './run-claim-host-capacity.ts'
-import {
-  codexPermissionLaunchProfile,
-  codexTransportMcpScope,
-} from './run-codex-permission-profile.ts'
+import { codexTransportScope } from './run-codex-permission-profile.ts'
 import type { GooseContextProfile } from './run-context-profile.ts'
 import { startRunAfterHostCapacity, waitForLiveRunHostCapacity } from './run-host-capacity.ts'
 import { type IdleKillState, idleSnapshotObserver, performIdleKill } from './run-idle-kill.ts'
@@ -733,11 +730,10 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
       sandboxWorkspaceWriteNetworkAccess: codexSandbox.workspaceWriteNetworkAccess,
       mcp: usingMcp,
       mcpServer: mcpServerName ?? undefined,
-      ...codexTransportMcpScope(codexMcpScope),
+      ...codexTransportScope(codexMcpScope, input),
       projectMcpSelection: input.projectMcpSelection,
       trustCwd: mcpTrustGranted ? cwd : undefined,
       writableRoots,
-      codexPermissionProfile: codexPermissionLaunchProfile(input),
       gitConfigEnvironment,
       recipeEnvironment,
       tempEnvironment: input.runTemp.environment,
@@ -771,8 +767,7 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
     effectiveModel = handle.effectiveModel ?? null
     if (effectiveModel)
       db().query('UPDATE run SET model=? WHERE record_id=?').run(effectiveModel, claim.id)
-    // The vendor pid stays the worker's while output and questions are finalized;
-    // testing it then would mark a still-finalizing run stale.
+    // Testing the vendor pid while output finalizes would mark the run stale.
     // Recorded HERE, before the wait, not after it. Written afterwards it is
     // always the pid of a process that has already exited.
     // Idle is silence of the VENDOR, not of orchestrator's own setup. last_event_at
@@ -809,8 +804,7 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
         })
       }
     }
-    // Two timeouts, composed, not one: the wall stays, and idle kill is the
-    // second, shorter no-activity bound. Do not replace the wall.
+    // Keep both the wall timeout and the shorter idle timeout.
     wallArmedAtMs = Date.now()
     const expireWall = () => {
       rearmWallDeadline = () => {}
