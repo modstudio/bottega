@@ -9,7 +9,7 @@ const migrationsFolder = join(root, 'shared', 'record', 'migrations')
 
 const EXEMPTIONS: ReadonlyMap<string, ReadonlyMap<string, string>> = new Map([
   [
-    '20261120012223_dev_2479_hub_applied_change_prune',
+    '20261120033811_dev_2479_hub_applied_change_prune',
     new Map([
       [
         '*',

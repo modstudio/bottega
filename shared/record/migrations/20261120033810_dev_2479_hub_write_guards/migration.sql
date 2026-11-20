@@ -1,9 +1,8 @@
 CREATE TABLE "hub_applied_change" (
-	"change_id" uuid,
-	"space_id" uuid,
+	"change_id" uuid PRIMARY KEY,
+	"space_id" uuid NOT NULL,
 	"result" jsonb NOT NULL,
-	"applied_at" timestamp with time zone DEFAULT now() NOT NULL,
-	CONSTRAINT "hub_applied_change_pkey" PRIMARY KEY("space_id","change_id")
+	"applied_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
 ALTER TABLE "hub_applied_change" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint

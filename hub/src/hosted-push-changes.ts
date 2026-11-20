@@ -117,11 +117,16 @@ async function rememberOutcome(
   input: ParsedHostedPushChange,
   fingerprint: string,
   outcome: HostedPushOutcome,
+  appliedIndex: number,
 ): Promise<void> {
   if (!input.change_id) return
-  await tx`INSERT INTO hub_applied_change (change_id,space_id,result,applied_at)
+  const inserted = (await tx`INSERT INTO hub_applied_change (change_id,space_id,result,applied_at)
     VALUES (${input.change_id}::uuid,${identity.spaceId}::uuid,
-      ${canonicalJson({ fingerprint, outcome })}::jsonb,now())`
+      ${canonicalJson({ fingerprint, outcome })}::jsonb,now())
+    ON CONFLICT (change_id) DO NOTHING
+    RETURNING change_id`) as Array<{ change_id: string }>
+  if (!inserted[0])
+    throw new HostedChangeIdMismatchError(input.table, input.id, input.change_id, appliedIndex)
 }
 
 async function requireLiveChildTask(
@@ -468,7 +473,7 @@ export async function applyHostedPushChangesInTransaction(
         continue
       }
       outcome = await PUSHABLE_HUB_CHANGES[input.table]!.apply(tx, identity, input, index)
-      await rememberOutcome(tx, identity, input, fingerprint, outcome)
+      await rememberOutcome(tx, identity, input, fingerprint, outcome, index)
       await tx.unsafe('RELEASE SAVEPOINT hub_push_row')
     } catch (error) {
       await tx.unsafe('ROLLBACK TO SAVEPOINT hub_push_row')

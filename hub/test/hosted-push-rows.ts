@@ -5,6 +5,7 @@ export const hostedTaskRow = (
   key: string,
   projectId: string,
   source: PushedTask['source'] = 'mcp',
+  overrides: Partial<PushedTask> = {},
 ): PushedTask => ({
   id,
   key,
@@ -27,6 +28,7 @@ export const hostedTaskRow = (
   updated_at: '2026-10-09T11:00:00.000Z',
   deleted_at: null,
   next_document_number: 1,
+  ...overrides,
 })
 
 export const hostedIntervalRow = (

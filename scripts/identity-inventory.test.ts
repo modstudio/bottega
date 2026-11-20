@@ -200,20 +200,6 @@ test('every non-owned UUID primary-key shape is reported', () => {
     expect(classifyKeyInventory('hosted', [table], EMPTY).findings).toContain(`${name}:primary-key`)
 })
 
-test('a tenant-scoped owned UUID composite primary key is classified as owned', () => {
-  const table: KeyTable = {
-    name: 'applied_change',
-    primaryKey: ['space_id', 'change_id'],
-    columns: [
-      column('applied_change', 'space_id', 'uuid', true, true),
-      column('applied_change', 'change_id', 'uuid', true),
-    ],
-  }
-  expect(classifyKeyInventory('hosted', [table], EMPTY).findings).not.toContain(
-    'applied_change:primary-key',
-  )
-})
-
 test('an undeclared parent integer is reported', () => {
   const manifests = {
     ...EMPTY,

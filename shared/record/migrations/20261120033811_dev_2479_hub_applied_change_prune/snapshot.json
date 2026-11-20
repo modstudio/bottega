@@ -1,10 +1,10 @@
 {
+  "id": "a72e091e-161b-467a-bf17-897005bdf262",
+  "prevIds": [
+    "1de9d93b-cf2d-4101-af3a-8e6975a3c715"
+  ],
   "version": "8",
   "dialect": "postgres",
-  "id": "5e3a8d63-2aed-411c-aeab-5987add4c57b",
-  "prevIds": [
-    "f54c1f78-2da8-4214-9fd9-cd71baa98ca9"
-  ],
   "ddl": [
     {
       "isRlsEnabled": false,
@@ -25425,17 +25425,6 @@
     },
     {
       "columns": [
-        "space_id",
-        "change_id"
-      ],
-      "nameExplicit": false,
-      "name": "hub_applied_change_pkey",
-      "entityType": "pks",
-      "schema": "public",
-      "table": "hub_applied_change"
-    },
-    {
-      "columns": [
         "id"
       ],
       "nameExplicit": false,
@@ -25912,6 +25901,16 @@
       "name": "subject_pkey",
       "schema": "public",
       "table": "subject",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
+        "change_id"
+      ],
+      "nameExplicit": false,
+      "name": "hub_applied_change_pkey",
+      "schema": "public",
+      "table": "hub_applied_change",
       "entityType": "pks"
     },
     {

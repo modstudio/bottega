@@ -139,17 +139,13 @@ function classifyKeyTable(
 }
 
 function hasOwnedUuidPrimaryKey(table: KeyTable, uuids: ReadonlyMap<string, string>): boolean {
-  const primaryColumns = table.primaryKey.map((name) =>
-    table.columns.find((column) => column.name === name),
+  if (table.primaryKey.length !== 1) return false
+  const primaryColumn = table.columns.find((column) => column.name === table.primaryKey[0])
+  return Boolean(
+    primaryColumn &&
+      (primaryColumn.type === 'uuid' || uuids.has(`${table.name}.${primaryColumn.name}`)) &&
+      !primaryColumn.foreignKey,
   )
-  if (
-    primaryColumns.length === 0 ||
-    primaryColumns.some(
-      (column) => !column || (column.type !== 'uuid' && !uuids.has(`${table.name}.${column.name}`)),
-    )
-  )
-    return false
-  return primaryColumns.some((column) => !column!.foreignKey)
 }
 
 function classifyKeyColumn(
