@@ -1,7 +1,9 @@
 // concern: setup-mcp
 /** Knows harness MCP CLI grammar and bounded execution. Must not know setup questions or projects. */
 
+import { startBunBounded } from '../../../shared/bounded-process.ts'
 import { MCP_SERVER_NAME, PLATFORM_SLUG, WORKER_MCP_SERVER_NAME } from '../../../shared/brand.ts'
+import { BoundExceededError } from '../../../shared/call-budgets.ts'
 import { redactSecretShaped } from '../../../shared/secret-shaped.ts'
 import { bottegaEntryArgv, bottegaMcpServeArgv } from '../../../shared/self-spawn.ts'
 import { DISCARD_STORE_PATH } from '../../../shared/state-directory.ts'
@@ -112,6 +114,11 @@ export type SetupCommandRunner = (
   timeoutMs: number,
   options?: { cwd?: string },
 ) => SetupCommandResult
+type AsyncSetupCommandRunner = (
+  argv: string[],
+  timeoutMs: number,
+  options?: { cwd?: string },
+) => Promise<SetupCommandResult>
 export type McpReadback =
   | { status: 'absent' }
   | { status: 'registered'; command: string; args: string[]; scope?: 'user' | 'local' }
@@ -170,6 +177,41 @@ export function runSetupCommand(
       stderr: '',
       timedOut: false,
       error: error instanceof Error ? error.message : String(error),
+    }
+  }
+}
+
+export async function runSetupCommandAsync(
+  argv: string[],
+  timeoutMs = SETUP_COMMAND_TIMEOUT_MS,
+  options?: { cwd?: string },
+): Promise<SetupCommandResult> {
+  try {
+    const env = { ...process.env }
+    delete env.CLAUDE_CODE_SESSION_ID
+    delete env.CLAUDE_CODE_BRIDGE_SESSION_ID
+    env.BOTTEGA_ORCHESTRATOR_DB = DISCARD_STORE_PATH
+    if (timeoutMs !== SETUP_COMMAND_TIMEOUT_MS) {
+      throw new Error(`async setup commands require the ${SETUP_COMMAND_TIMEOUT_MS} ms timeout`)
+    }
+    const result = await startBunBounded(argv, {
+      budget: 'setup-command',
+      env,
+      cwd: options?.cwd,
+    })
+    return {
+      ...result,
+      timedOut: false,
+      error: null,
+    }
+  } catch (error) {
+    const timedOut = error instanceof BoundExceededError && error.bound === 'deadline'
+    return {
+      exitCode: null,
+      stdout: '',
+      stderr: '',
+      timedOut,
+      error: timedOut ? null : error instanceof Error ? error.message : String(error),
     }
   }
 }
@@ -356,6 +398,7 @@ export function readMcpRegistration(
 
 export type ClaudeMcpRegistrationPort = {
   runner: SetupCommandRunner
+  asyncRunner?: AsyncSetupCommandRunner
   bin: string
 }
 
@@ -423,6 +466,23 @@ function currentClaudeMcpRegistration(
   })
 }
 
+async function currentClaudeMcpRegistrationAsync(
+  input: ClaudeMcpReconcileInput,
+  commandCwd: string | undefined,
+): Promise<McpReadback> {
+  if (input.removeName || input.forceReplace) {
+    return currentClaudeMcpRegistration(input, commandCwd)
+  }
+  const runner = input.port.asyncRunner
+  if (!runner) return currentClaudeMcpRegistration(input, commandCwd)
+  const result = await runner(
+    mcpReadArgv('claude', input.port.bin, input.server.name),
+    SETUP_COMMAND_TIMEOUT_MS,
+    { cwd: commandCwd },
+  )
+  return parseClaude(result, input.server.name)
+}
+
 function runClaudeMcpMutation(
   input: ClaudeMcpReconcileInput,
   action: 'add' | 'remove' | 'replace',
@@ -461,9 +521,17 @@ export function reconcileClaudeMcpRegistration(input: ClaudeMcpReconcileInput): 
   changed: boolean
   detail?: string
 } {
-  const { server, scope, cwd } = input
-  const commandCwd = cwd ?? process.env.HOME
+  const commandCwd = input.cwd ?? process.env.HOME
   const current = currentClaudeMcpRegistration(input, commandCwd)
+  return reconcileClaudeMcpRegistrationFromCurrent(input, current, commandCwd)
+}
+
+function reconcileClaudeMcpRegistrationFromCurrent(
+  input: ClaudeMcpReconcileInput,
+  current: McpReadback,
+  commandCwd: string | undefined,
+): { changed: boolean; detail?: string } {
+  const { server, scope } = input
   if (current.status === 'unreadable') throw new Error(current.detail)
   if (
     input.refuseChangedBeforeAdd &&
@@ -486,6 +554,15 @@ export function reconcileClaudeMcpRegistration(input: ClaudeMcpReconcileInput): 
   if (input.check) return { changed: true, detail: 'would apply' }
   runClaudeMcpMutation(input, action, commandCwd)
   return { changed: true }
+}
+
+/** Async read variant for callers that inspect independent Claude scopes together. */
+export async function reconcileClaudeMcpRegistrationAsync(
+  input: ClaudeMcpReconcileInput,
+): Promise<{ changed: boolean; detail?: string }> {
+  const commandCwd = input.cwd ?? process.env.HOME
+  const current = await currentClaudeMcpRegistrationAsync(input, commandCwd)
+  return reconcileClaudeMcpRegistrationFromCurrent(input, current, commandCwd)
 }
 
 export function captureHarnessMcpFacts(

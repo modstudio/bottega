@@ -31,7 +31,9 @@ import {
   type ClaudeMcpRegistrationPort,
   mutateClaudeMcpRegistration,
   reconcileClaudeMcpRegistration,
+  reconcileClaudeMcpRegistrationAsync,
   runSetupCommand,
+  runSetupCommandAsync,
   stableMcpServers,
 } from '../setup/setup-mcp.ts'
 import {
@@ -49,7 +51,7 @@ import { claudeHomeFromEnvironment, readSettingsFile, userSettingsPath } from '.
 import { type SupersededProfileHook, withMachineProductHooks } from './settings-machine-hooks.ts'
 import {
   readClaudeMcpPlacement,
-  reconcileClaudeMcpPlacementPlan,
+  reconcileClaudeMcpPlacementPlanAsync,
   writeClaudeMcpPlacement,
 } from './settings-machine-mcp-placement.ts'
 import { registeredProjectScopeFact } from './settings-machine-projects.ts'
@@ -108,6 +110,7 @@ type Dependencies = {
   projectFact: typeof registeredProjectScopeFact
   claudeMcpPort(): ClaudeMcpRegistrationPort | null
   reconcileMcp: typeof reconcileClaudeMcpRegistration
+  reconcileMcpAsync: typeof reconcileClaudeMcpRegistrationAsync
   mutateMcp: typeof mutateClaudeMcpRegistration
   readMcpPlacement: typeof readClaudeMcpPlacement
   writeMcpPlacement: typeof writeClaudeMcpPlacement
@@ -146,9 +149,10 @@ function dependencies(overrides: Partial<Dependencies>): Dependencies {
     projectFact: registeredProjectScopeFact,
     claudeMcpPort: () => {
       const bin = Bun.which('claude')
-      return bin ? { bin, runner: runSetupCommand } : null
+      return bin ? { bin, runner: runSetupCommand, asyncRunner: runSetupCommandAsync } : null
     },
     reconcileMcp: reconcileClaudeMcpRegistration,
+    reconcileMcpAsync: reconcileClaudeMcpRegistrationAsync,
     mutateMcp: mutateClaudeMcpRegistration,
     readMcpPlacement: readClaudeMcpPlacement,
     writeMcpPlacement: writeClaudeMcpPlacement,
@@ -293,20 +297,28 @@ function applyUserSettings(
   }
 }
 
-function applyClaudeMcpPlacement(check: boolean, deps: Dependencies): MachineSettingsApplyResult[] {
+async function applyClaudeMcpPlacement(
+  check: boolean,
+  deps: Dependencies,
+): Promise<MachineSettingsApplyResult[]> {
   const globalUse = readMachineValue('machine.global_use', deps.environment) as 'on' | 'off'
   const scope = decideMachineSettingsScope(globalUse, deps.projectPaths().map(deps.projectFact))
   const server = stableMcpServers().find((candidate) => candidate.name === MCP_SERVER_NAME)
   if (!server) return [refusal('MCP claude', `stable MCP server ${MCP_SERVER_NAME} is missing`)]
-  const results: MachineSettingsApplyResult[] = reconcileClaudeMcpPlacementPlan(check, scope, {
-    environment: deps.environment,
-    port: deps.claudeMcpPort,
-    server,
-    read: deps.readMcpPlacement,
-    write: deps.writeMcpPlacement,
-    reconcile: deps.reconcileMcp,
-    mutate: deps.mutateMcp,
-  })
+  const results: MachineSettingsApplyResult[] = await reconcileClaudeMcpPlacementPlanAsync(
+    check,
+    scope,
+    {
+      environment: deps.environment,
+      port: deps.claudeMcpPort,
+      server,
+      read: deps.readMcpPlacement,
+      write: deps.writeMcpPlacement,
+      reconcile: deps.reconcileMcp,
+      reconcileAsync: deps.reconcileMcpAsync,
+      mutate: deps.mutateMcp,
+    },
+  )
   for (const project of scope.projects) {
     if (project.action === 'skip') {
       results.push({
@@ -458,7 +470,7 @@ export async function applyMachineSettings(
     return [
       applyUserSettings(documents.settings, input.check, deps),
       ...applyUserCanon(documents.canon, documents.source, input.check, deps),
-      ...applyClaudeMcpPlacement(input.check, deps),
+      ...(await applyClaudeMcpPlacement(input.check, deps)),
     ]
   } finally {
     lease.release()
