@@ -7,6 +7,7 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { decideHistoryUploadPass } from '../record/record-history-upload.ts'
 import {
+  storeHeldFlowIds,
   storeHeldQuestionIds,
   WORKFLOW_HISTORY_UPLOAD_FINGERPRINT_KEY,
 } from '../record/record-history-upload-state.ts'
@@ -115,12 +116,10 @@ test('hosted row release accepts identity-matched audits and persisted held ques
     question_mutation_audit: [heldAudit, identityAudit],
   })
   expect(
-    decideHostedRowRelease(
-      local,
-      presence({ question: [presentQuestion] }, [identity]),
-      refs,
-      new Set([heldQuestion]),
-    ),
+    decideHostedRowRelease(local, presence({ question: [presentQuestion] }, [identity]), refs, {
+      questions: new Set([heldQuestion]),
+      flows: new Set(),
+    }),
   ).toEqual({ deleteIds: local, keptTables: [] })
 })
 
@@ -352,6 +351,52 @@ test('hosted row release deletes a held question and its identity-matched audit'
   )
   expect(database.query('SELECT record_id FROM question_mutation_audit').all()).toEqual([])
   expect(database.query('SELECT record_id FROM question').all()).toEqual([])
+  database.close()
+})
+
+test('hosted row release deletes a held flow when all child rows are present', async () => {
+  const database = migratedTestDatabase()
+  const ids = seedReleaseRows(database)
+  const flowId = [...ids.task_flow][0]!
+  storeHeldFlowIds(database, new Set([flowId]))
+  await releaseHostedRowsAfterUpdate(
+    { log: () => {} },
+    adapterDependencies(database, async (input) => ({ ...input, flowIds: [], stageIds: [] })),
+  )
+  expect(tableCounts(database)).toEqual(
+    Object.fromEntries(HOSTED_ROW_TABLES.map((table) => [table, 0])),
+  )
+  database.close()
+})
+
+test('hosted row release keeps a held flow intact when one child is absent', async () => {
+  const database = migratedTestDatabase()
+  const ids = seedReleaseRows(database)
+  const flowId = [...ids.task_flow][0]!
+  const textId = [...ids.workflow_step_text][0]!
+  storeHeldFlowIds(database, new Set([flowId]))
+  const output: string[] = []
+  await releaseHostedRowsAfterUpdate(
+    { log: (line) => output.push(line) },
+    adapterDependencies(database, async (input) => ({
+      ...input,
+      flowIds: [],
+      stageIds: [],
+      textIds: [],
+    })),
+  )
+  expect(tableCounts(database)).toEqual({
+    workflow_obligation: 1,
+    workflow_step_text: 1,
+    workflow_text_copy: 1,
+    question_mutation_audit: 0,
+    question: 0,
+    workflow_cursor: 1,
+    task_flow: 1,
+  })
+  expect(output.some((line) => line.includes(`workflow_step_text`) && line.includes(textId))).toBe(
+    true,
+  )
   database.close()
 })
 

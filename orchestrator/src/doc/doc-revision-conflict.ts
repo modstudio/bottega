@@ -4,6 +4,7 @@ import { z } from 'zod'
 import type { DocRevisionRefusalReason } from './doc-write-allowed.ts'
 
 export const REVISION_CONFLICT_CODE = 'revision-conflict' as const
+export const RECORD_DIFFERENT_CONTENT = 'already exists with different content'
 const DOC_REVISION_REFUSAL_REASONS = [
   'missing-hosted-revision',
   'stale-revision',

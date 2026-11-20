@@ -8,6 +8,7 @@ import { BOUNDED_JSONL_ARCHIVE_KEEP, writeBoundedJsonlArchive } from '../jsonl-a
 import { readRecordInstallBinding } from '../record/install-binding.ts'
 import { recordApiClient } from '../record/record-api-client.ts'
 import {
+  readHeldFlowIds,
   readHeldQuestionIds,
   WORKFLOW_HISTORY_UPLOAD_FINGERPRINT_KEY,
 } from '../record/record-history-upload-state.ts'
@@ -51,18 +52,61 @@ function addParents(
   return changed
 }
 
+function keepIncompleteHeldFlows(
+  kept: Record<HostedRowTable, Set<string>>,
+  local: HostedRowIds,
+  present: HostedRowPresence,
+  references: HostedRowReferences,
+  heldFlowIds: ReadonlySet<string>,
+): void {
+  for (const flowId of heldFlowIds) {
+    const cursorIds = new Set(
+      [...local.workflow_cursor].filter((id) => references.cursorFlow.get(id) === flowId),
+    )
+    const children = {
+      workflow_obligation: [...local.workflow_obligation].filter((id) =>
+        cursorIds.has(references.obligationCursor.get(id) ?? ''),
+      ),
+      workflow_step_text: [...local.workflow_step_text].filter((id) =>
+        cursorIds.has(references.stepTextCursor.get(id) ?? ''),
+      ),
+      workflow_text_copy: [...local.workflow_text_copy].filter((id) =>
+        cursorIds.has(references.textCopyCursor.get(id) ?? ''),
+      ),
+    }
+    const incomplete = Object.entries(children).some(([table, ids]) =>
+      ids.some((id) => !present[table as keyof typeof children].has(id)),
+    )
+    if (!incomplete) continue
+    kept.task_flow.add(flowId)
+    for (const id of cursorIds) kept.workflow_cursor.add(id)
+    for (const id of children.workflow_obligation) kept.workflow_obligation.add(id)
+    for (const id of children.workflow_step_text) kept.workflow_step_text.add(id)
+    for (const id of children.workflow_text_copy) kept.workflow_text_copy.add(id)
+  }
+}
+
 /** Decide per-table retention and close retained parent references to a fixed point. */
 export function decideHostedRowRelease(
   local: HostedRowIds,
   present: HostedRowPresence,
   references: HostedRowReferences,
-  heldQuestionIds: ReadonlySet<string> = new Set(),
+  held: { questions: ReadonlySet<string>; flows: ReadonlySet<string> } = {
+    questions: new Set(),
+    flows: new Set(),
+  },
 ): HostedRowReleaseDecision {
+  const heldQuestionIds = held.questions
+  const heldFlowIds = held.flows
   const kept = emptyHostedRowIds()
   const keptTables: HostedRowReleaseDecision['keptTables'] = []
+  keepIncompleteHeldFlows(kept, local, present, references, heldFlowIds)
   for (const table of HOSTED_ROW_TABLES) {
     const absent = [...local[table]].filter((id) => {
       if (present[table].has(id)) return false
+      if (table === 'task_flow' && heldFlowIds.has(id)) return false
+      if (table === 'workflow_cursor' && heldFlowIds.has(references.cursorFlow.get(id) ?? ''))
+        return false
       if (table === 'question') return !heldQuestionIds.has(id)
       if (table !== 'question_mutation_audit') return true
       const questionId = references.auditQuestion.get(id)
@@ -220,8 +264,11 @@ export async function releaseHostedRowsAfterUpdate(
     presentation.log(`kept all local workflow history: record presence read failed: ${detail}`)
     return
   }
-  const heldQuestionIds = withDatabase((database) => readHeldQuestionIds(database))
-  const decision = decideHostedRowRelease(state.ids, present, state.references, heldQuestionIds)
+  const heldIds = withDatabase((database) => ({
+    flows: readHeldFlowIds(database),
+    questions: readHeldQuestionIds(database),
+  }))
+  const decision = decideHostedRowRelease(state.ids, present, state.references, heldIds)
   const released = HOSTED_ROW_TABLES.reduce(
     (total, table) => total + decision.deleteIds[table].size,
     0,

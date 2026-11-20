@@ -85,6 +85,7 @@ export const recordQuestionModules: RecordModule[] = [
     '../../../shared/record/hosted-task-id.ts',
     '../../../shared/record/tenant.ts',
     '../../../shared/record/schema-question.ts',
+    '../doc/doc-revision-conflict.ts',
     './record-config-error.ts',
     './record-pool.ts',
     './record-question-audit.ts',

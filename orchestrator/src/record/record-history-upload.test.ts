@@ -8,6 +8,7 @@ import { options as syncOptions } from '../../test/fixtures/record-sync.ts'
 import { fakePostgres } from '../../test/fixtures/record-sync-postgres.ts'
 import { guardHostedTables } from '../database/hosted-table-guard.ts'
 import { migratedTestDatabase } from '../database/test-database.fixture.ts'
+import { RECORD_DIFFERENT_CONTENT } from '../doc/doc-revision-conflict.ts'
 import type { ProjectAdoptionResult } from '../project/project-relink.ts'
 import type { RecordApiClient } from './record-api-client.ts'
 import type { RecordQuestionClient } from './record-api-client-question.ts'
@@ -18,7 +19,6 @@ import {
   uploadLocalWorkflowHistory,
   uploadMissingWorkflowHistory,
 } from './record-history-upload.ts'
-import { RECORD_QUESTION_DIFFERENT_CONTENT } from './record-question-contract.ts'
 import { syncRecord } from './record-sync.ts'
 
 const at = '2026-11-18T01:00:00.000Z'
@@ -209,7 +209,6 @@ test('empty history prints only the empty upload line', async () => {
   expect(output).toEqual(['no local task-flow or question history to upload'])
   database.close()
 })
-
 test('two projects upload repeatably to their own spaces and preserve every local row', async () => {
   const database = migratedTestDatabase()
   database.exec('PRAGMA foreign_keys=OFF')
@@ -872,7 +871,7 @@ test('sync archives a question held by the record with different content', async
     async (input) => {
       importedIds.push(input.question.id)
       if (input.question.id === questionId)
-        throw new Error(`question ${questionId} ${RECORD_QUESTION_DIFFERENT_CONTENT}`)
+        throw new Error(`question ${questionId} ${RECORD_DIFFERENT_CONTENT}`)
       return { id: input.question.id, number: 92, revision: 1, applied: true }
     },
     async () => ({ revisions: {}, stages: [] }),
@@ -911,7 +910,7 @@ test('sync archives a question held by the record with different content', async
   database.close()
 })
 
-test('sync stops importing after the pass-wide failure bound', async () => {
+test('sync stops importing after the question failure bound', async () => {
   const database = migratedTestDatabase()
   database.exec('PRAGMA foreign_keys=OFF')
   for (let index = 0; index < HISTORY_UPLOAD_FAILURE_BOUND + 2; index += 1)
@@ -934,7 +933,54 @@ test('sync stops importing after the pass-wide failure bound', async () => {
   expect(calls).toBe(HISTORY_UPLOAD_FAILURE_BOUND)
   expect(result.failed).toBe(HISTORY_UPLOAD_FAILURE_BOUND)
   expect(result.lines).toContain(
-    `workflow history upload stopped after ${HISTORY_UPLOAD_FAILURE_BOUND} failures; the rest waits for the next sync`,
+    `workflow history question upload stopped after ${HISTORY_UPLOAD_FAILURE_BOUND} failures; the rest waits for the next sync`,
   )
+  database.close()
+})
+
+test('sync resolves no more destinations after both upload kinds stop', async () => {
+  const database = migratedTestDatabase()
+  database.exec('PRAGMA foreign_keys=OFF')
+  const firstProjectId = project(database, 'a-both-bounds')
+  for (let index = 0; index < HISTORY_UPLOAD_FAILURE_BOUND; index += 1) {
+    const flowId = flow(database, firstProjectId)
+    const stageId = stage(database, {
+      project: 'a-both-bounds',
+      projectId: firstProjectId,
+      number: 700 + index,
+      state: 'done',
+      flowId,
+    })
+    question(database, stageId, 700 + index)
+  }
+  linked(database, 'z-unvisited-project', 800)
+  question(database, null, 900)
+  bind(database)
+  const destinations: string[] = []
+  let flowImports = 0
+  let questionImports = 0
+  const client = syncClient(
+    absentPresence,
+    async () => {
+      questionImports += 1
+      throw new Error('question unavailable')
+    },
+    async () => {
+      flowImports += 1
+      throw new Error('flow unavailable')
+    },
+  )
+  const result = await uploadMissingWorkflowHistory(
+    client,
+    async (_client, owner) => {
+      destinations.push(owner?.kind === 'project' ? owner.name : 'personal')
+      return { destinationSpaceId: 'space' }
+    },
+    maintenanceHandle(database),
+  )
+  expect(flowImports).toBe(HISTORY_UPLOAD_FAILURE_BOUND)
+  expect(questionImports).toBe(HISTORY_UPLOAD_FAILURE_BOUND)
+  expect(result.failed).toBe(HISTORY_UPLOAD_FAILURE_BOUND * 2)
+  expect(destinations).toEqual(['a-both-bounds'])
   database.close()
 })

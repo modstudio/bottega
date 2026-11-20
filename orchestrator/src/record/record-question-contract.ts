@@ -146,8 +146,6 @@ export const questionWriteResultSchema = z.object({
 })
 export type QuestionWriteResult = z.infer<typeof questionWriteResultSchema>
 
-export const RECORD_QUESTION_DIFFERENT_CONTENT = 'already exists with different content'
-
 export class RecordQuestionError extends Error {
   status: 404 | 409 | 422
   constructor(message: string, status: 404 | 409 | 422) {

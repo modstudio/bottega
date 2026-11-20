@@ -6,7 +6,7 @@
 import type { SQL } from 'bun'
 import { bindJsonb } from '../../../shared/record/jsonb-sql.ts'
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
-import { DocRevisionConflictError } from '../doc/doc-revision-conflict.ts'
+import { DocRevisionConflictError, RECORD_DIFFERENT_CONTENT } from '../doc/doc-revision-conflict.ts'
 import { handoffSourceRefusal, handoffTargetRefusal } from '../workflow/workflow-handoff-refusal.ts'
 import { isUniqueViolation } from './record-config-error.ts'
 import { recordPool } from './record-pool.ts'
@@ -159,7 +159,8 @@ function assertSameInsert(
 ) {
   for (const [key, value] of Object.entries(values)) {
     const column = recordColumnName(key)
-    if (!sameRecordValue(existing[column], value)) conflict(table, id, null, 'already-exists')
+    if (!sameRecordValue(existing[column], value))
+      refusal(`${table} ${id} ${RECORD_DIFFERENT_CONTENT}`, `${table}.id=${id}`, 'already-exists')
   }
 }
 
