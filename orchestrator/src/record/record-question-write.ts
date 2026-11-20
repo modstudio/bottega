@@ -15,6 +15,7 @@ import { run as runRecord } from '../../../shared/record/schema-run.ts'
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
 import { RECORD_DIFFERENT_CONTENT } from '../doc/doc-revision-conflict.ts'
 import {
+  RUN_QUESTION_OWNER_NOT_LIVE_CODE,
   RunQuestionOwnerNotLiveError,
   runQuestionOwnerAbsentMessage,
   runQuestionOwnerLive,
@@ -109,7 +110,7 @@ async function assertRunQuestionOwnerLive(runId: string, tx: SQL): Promise<void>
     throw new RecordQuestionError(runQuestionOwnerAbsentMessage(runId, PLATFORM_SLUG), 409)
   if (!runQuestionOwnerLive(owner.status)) {
     const cause = new RunQuestionOwnerNotLiveError(runId)
-    const refusal = new RecordQuestionError(cause.message, 409)
+    const refusal = new RecordQuestionError(cause.message, 409, RUN_QUESTION_OWNER_NOT_LIVE_CODE)
     refusal.cause = cause
     throw refusal
   }

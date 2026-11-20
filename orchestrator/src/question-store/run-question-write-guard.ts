@@ -2,6 +2,7 @@
 /** Defines the refusal shared by question stores when a run no longer owns its ask channel. */
 
 const RUN_QUESTION_OWNER_NOT_LIVE = 'turn was superseded or finished'
+export const RUN_QUESTION_OWNER_NOT_LIVE_CODE = 'run-question-owner-not-live'
 
 export function runQuestionOwnerLive(status: string | null | undefined): boolean {
   return status === 'running' || status === 'asking'

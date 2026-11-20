@@ -148,10 +148,12 @@ export type QuestionWriteResult = z.infer<typeof questionWriteResultSchema>
 
 export class RecordQuestionError extends Error {
   status: 404 | 409 | 422
-  constructor(message: string, status: 404 | 409 | 422) {
+  readonly code: string | null
+  constructor(message: string, status: 404 | 409 | 422, code: string | null = null) {
     super(message)
     this.name = 'RecordQuestionError'
     this.status = status
+    this.code = code
   }
 }
 
