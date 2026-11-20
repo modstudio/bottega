@@ -1,6 +1,5 @@
 import { expect, test } from 'bun:test'
 import { join } from 'node:path'
-import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { STATE_HOME_ENV } from '../../../shared/state-directory.ts'
 import type { Project } from '../project/projects.ts'
 import { permittedNodeModuleCarvebacks } from './node-module-read-carvebacks.ts'
@@ -37,7 +36,6 @@ const profileForLinks = (input: {
     installLayout: {
       kind: 'distribution',
       root: '/install',
-      executablePath: `/install/${PLATFORM_SLUG}`,
       workspaceDirectories: [],
     },
     onWarning: (message) => input.warnings.push(message),

@@ -10,8 +10,7 @@ import {
   type ProjectMcpServerEntry,
   READER_PLATFORM_MCP_SERVERS,
 } from './mcp-reader-scope.ts'
-import { grokSandboxConfig } from './sandbox.ts'
-import type { RunSandbox } from './sandbox-selection-policy.ts'
+import { grokSandboxConfig, type RunSandbox } from './sandbox.ts'
 
 /** Rewrite the already-provisioned run home without retaining an undetectable server alias. */
 export function scopeGrokReaderMcpHome(

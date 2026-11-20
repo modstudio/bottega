@@ -70,7 +70,6 @@ import { createCheckpointSchedule } from './checkpoint-schedule.ts'
 import { prepareLaterRunBoardPrompt } from './run-board-prompt.ts'
 import { foldRunCallUsage, type RunCallUsage } from './run-call-usage.ts'
 import { raiseForHostCapacityWait } from './run-claim-host-capacity.ts'
-import { codexTransportScope } from './run-codex-permission-profile.ts'
 import type { GooseContextProfile } from './run-context-profile.ts'
 import { startRunAfterHostCapacity, waitForLiveRunHostCapacity } from './run-host-capacity.ts'
 import { type IdleKillState, idleSnapshotObserver, performIdleKill } from './run-idle-kill.ts'
@@ -572,6 +571,14 @@ function captureLiveGooseLedger(input: LiveInput) {
   )
 }
 
+function codexTransportMcpScope(scope: CodexMcpScope | null, writableRoots: string[]) {
+  return {
+    writableRoots,
+    projectServers: scope?.servers,
+    withheldProjectServers: scope?.withheld.map((server) => server.name),
+  }
+}
+
 export async function runLive(input: LiveInput): Promise<LiveResult> {
   let {
     repoJob,
@@ -730,7 +737,7 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
       sandboxWorkspaceWriteNetworkAccess: codexSandbox.workspaceWriteNetworkAccess,
       mcp: usingMcp,
       mcpServer: mcpServerName ?? undefined,
-      ...codexTransportScope(codexMcpScope, input),
+      ...codexTransportMcpScope(codexMcpScope, input.writableRoots),
       projectMcpSelection: input.projectMcpSelection,
       trustCwd: mcpTrustGranted ? cwd : undefined,
       gitConfigEnvironment,

@@ -759,7 +759,7 @@ export async function doctorCommand(
   const packHeadroom = doctorPack.budgetBytes - doctorPack.bytes
   const { CANON_EVALS, currentCanonEvalSha, latestCanonEvals } = await import('../canon/evals.ts')
   const latestEvals = latestCanonEvals()
-  const { isReadonlySandboxCandidate } = await import('../sandbox/sandbox-selection-policy.ts')
+  const { isReadonlySandboxCandidate } = await import('../sandbox/sandbox.ts')
   log(
     `canon          ${doctorFindings} finding(s) in ${doctorPack.bytes}/${doctorPack.budgetBytes} bytes (${packHeadroom} bytes headroom; ceiling ${DEFAULT_PACK_BYTES})`,
   )
