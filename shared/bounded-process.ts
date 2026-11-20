@@ -40,12 +40,8 @@ type ParentBoundChild = {
   exitOnSignal: boolean
 }
 
-type ParentBoundStartedChild = ReturnType<typeof Bun.spawn>
-type ParentBoundPipedChild = ParentBoundStartedChild & {
-  stdin: NonNullable<ParentBoundStartedChild['stdin']>
-  stdout: NonNullable<ParentBoundStartedChild['stdout']>
-  stderr: NonNullable<ParentBoundStartedChild['stderr']>
-}
+type ParentBoundStartedChild = Bun.Subprocess
+type ParentBoundPipedChild = Bun.PipedSubprocess
 
 const parentBoundChildren = new Set<ParentBoundChild>()
 let parentBoundHooksInstalled = false
