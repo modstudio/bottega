@@ -253,6 +253,7 @@ console.log('non-loopback outbound=ran')
     ['-e', script],
     environment,
     scratchDir,
+    { environment: { BUN_BE_BUN: '1' } },
   )
   const output = result.stdout.split(/\r?\n/)
   const reason =
