@@ -178,6 +178,34 @@ export function runScopedHome(harness: string, sandbox: RunSandbox): boolean {
   return harness === 'codex' || harness === 'grok' || sandbox === 'srt'
 }
 
+export function workerChildEnvironment(input: {
+  agent: Agent
+  sandbox: RunSandbox
+  runRecordId: string
+  runToken: string
+  runNumber: number
+  environment: Record<string, string>
+  stateEnvironment: Record<string, string | undefined>
+  includeStore: boolean
+  endpointEnvironment?: Record<string, string>
+}): Record<string, string> {
+  // Resolve shared state before a run-scoped HOME replaces the operator HOME,
+  // then let childEnv add the worker markers used by caller classification.
+  return childEnv(
+    input.agent,
+    input.runRecordId,
+    input.runToken,
+    {
+      ...input.environment,
+      ...(input.includeStore ? workerStateEnvironment(input.stateEnvironment) : {}),
+      ...(input.sandbox === 'srt' ? workerSandboxEnvironment() : {}),
+    },
+    input.includeStore,
+    input.runNumber,
+    input.endpointEnvironment ?? input.environment,
+  )
+}
+
 export async function prepareWorkerHomeLaunch(input: {
   agent: Agent
   sandbox: RunSandbox
@@ -203,24 +231,22 @@ export async function prepareWorkerHomeLaunch(input: {
     input.sandbox,
     input.mcpLaunch.grok,
   )
-  const environment = childEnv(
-    input.agent,
-    input.runRecordId,
-    input.runToken,
-    {
+  const environment = workerChildEnvironment({
+    agent: input.agent,
+    sandbox: input.sandbox,
+    runRecordId: input.runRecordId,
+    runToken: input.runToken,
+    runNumber: input.runNumber,
+    environment: {
       ...input.environment,
-      // Repository workers receive run-scoped homes. Resolve the operator's
-      // hub store before that HOME replaces the one that owns task state.
-      ...(input.includeStore ? workerStateEnvironment(process.env) : {}),
-      ...(input.sandbox === 'srt' ? workerSandboxEnvironment() : {}),
       ...home,
       ...input.grokEnvironment,
       ...grokReaderScope?.environment,
     },
-    input.includeStore,
-    input.runNumber,
-    input.environment,
-  )
+    stateEnvironment: process.env,
+    includeStore: input.includeStore,
+    endpointEnvironment: input.environment,
+  })
   const codexMcpCatalogues = await preflightCodexMcpCatalogues(input.mcpLaunch.codex, environment)
   await refuseRequiredProjectMcpLaunch({
     runNumber: input.runNumber,

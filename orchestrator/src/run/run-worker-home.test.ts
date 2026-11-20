@@ -11,6 +11,7 @@ import {
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { classifyCaller } from '../../../shared/caller-classification.ts'
 import { HARNESS_ENV_FILE_ENV, PLATFORM_ENV_FILE_ENV } from '../../../shared/config-directory.ts'
 import { ORCHESTRATOR_DATABASE_ENV, resolveHubDatabase } from '../../../shared/state-directory.ts'
 import type { Agent } from '../agent/agents.ts'
@@ -26,6 +27,7 @@ import {
   prepareClaimedWorkerMcpConfig,
   prepareWorkerHomeLaunch,
   readOnlyRunTempEnvironment,
+  workerChildEnvironment,
 } from './run-worker-home.ts'
 
 const FRONT_DOOR = join('/', 'bin', PLATFORM_SLUG)
@@ -91,6 +93,23 @@ test('a writer gets cwd-discovered MCP configuration and a reader does not', () 
 })
 
 const grokAgent = { name: 'grok', harness: 'grok' } as Agent
+
+test('the shared worker child shaper pins state, disables env files and classifies the caller', () => {
+  const environment = workerChildEnvironment({
+    agent: grokAgent,
+    sandbox: 'srt',
+    runRecordId: 'probe-run',
+    runToken: 'probe-token',
+    runNumber: 44,
+    environment: { BOTTEGA_STATE_HOME: '/fixture/state' },
+    stateEnvironment: { BOTTEGA_HUB_DB: '/fixture/hub.db' },
+    includeStore: true,
+  })
+  expect(classifyCaller(environment)).toEqual({ kind: 'worker' })
+  expect(environment.BOTTEGA_HUB_DB).toBe('/fixture/hub.db')
+  expect(environment[HARNESS_ENV_FILE_ENV]).toBe('')
+  expect(environment[PLATFORM_ENV_FILE_ENV]).toBe('')
+})
 
 test('Grok launch scopes only a reader home while leaving a writer direct', async () => {
   const operatorHub = resolveHubDatabase(process.env)

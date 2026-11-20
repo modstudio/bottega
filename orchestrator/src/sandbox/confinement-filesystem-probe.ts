@@ -1,7 +1,15 @@
 // concern: executed confinement probe; owns disposable fixtures and real SRT launches.
 
 import { Database } from 'bun:sqlite'
-import { copyFileSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import {
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { startBounded } from '../../../shared/bounded-process.ts'
@@ -10,11 +18,16 @@ import { HARNESS_ENV_FILE_ENV, PLATFORM_ENV_FILE_ENV } from '../../../shared/con
 import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 import {
   hubLoginTokenDirectory,
+  realPathForPotentialPath,
   resolveHubDatabase,
   resolveStatePaths,
   STATE_HOME_ENV,
+  temporaryStateStoreMigrationAllowed,
 } from '../../../shared/state-directory.ts'
+import { decideStoreAccess } from '../../../shared/store-access.ts'
 import type { Project } from '../project/projects.ts'
+import { BUILTIN_AGENTS } from '../agent/agents.ts'
+import { workerChildEnvironment } from '../run/run-worker-home.ts'
 import {
   type RunningInstallLayout,
   resolveRunningInstallLayout,
@@ -83,6 +96,7 @@ async function launchCommand(
   profile: ReturnType<typeof readonlyLensProfile>,
   argv: string[],
   environment: Record<string, string>,
+  hubOpenMode?: string,
 ): Promise<CommandProbe> {
   const result = await startBounded(await sandboxLaunchArgv(profile, argv[0]!, argv.slice(1)), {
     budget: 'sandbox-probe',
@@ -90,7 +104,7 @@ async function launchCommand(
   })
   return {
     status: result.exitCode === 0 ? 'ran' : 'failed',
-    reason: `exit ${result.exitCode ?? 'unknown'}${result.exitCode === 0 ? '' : `: ${firstErrorLine(result.stderr)}`}`,
+    reason: `exit ${result.exitCode ?? 'unknown'}${result.exitCode === 0 ? '' : `: ${firstErrorLine(result.stderr)}`}${hubOpenMode ? `; hub open mode: ${hubOpenMode}` : ''}`,
   }
 }
 
@@ -100,6 +114,7 @@ async function launchProbe(
   targets: readonly AccessTarget[],
   commandArgv: string[],
   environment: Record<string, string>,
+  hubOpenMode: string,
 ): Promise<ConfinementFilesystemProbeRow> {
   try {
     const script =
@@ -127,7 +142,7 @@ async function launchProbe(
       ]),
     ) as Record<string, FilesystemProbeAccess>
     const measured = targets.every(({ name, expected }) => paths[name] === expected)
-    const command = await launchCommand(profile, commandArgv, environment)
+    const command = await launchCommand(profile, commandArgv, environment, hubOpenMode)
     return {
       family,
       status: measured && command.status === 'ran' ? 'denied' : 'readable',
@@ -152,11 +167,12 @@ async function launchCrossProjectCliProbe(
   cliArgv: string[],
   commandArgv: string[],
   environment: Record<string, string>,
+  hubOpenMode: string,
 ): Promise<ConfinementFilesystemProbeRow> {
   try {
     const access = await launchCommand(profile, ['/bin/cat', installEnvPath], environment)
     const version = await launchCommand(profile, [...cliArgv, '--version'], environment)
-    const verb = await launchCommand(profile, commandArgv, environment)
+    const verb = await launchCommand(profile, commandArgv, environment, hubOpenMode)
     return {
       family: 'cross-project CLI',
       status: version.status === 'ran' && verb.status === 'ran' ? 'ran' : 'failed',
@@ -182,13 +198,25 @@ async function launchCrossProjectCliProbe(
   }
 }
 
-function copyHubFixture(destination: string): void {
+function openLiveHubFixture(destination: string): Database {
   const source = new Database(resolveHubDatabase(process.env), { readonly: true })
   try {
     writeFileSync(destination, source.serialize())
   } finally {
     source.close()
   }
+  const writer = new Database(destination, { readwrite: true, create: false })
+  writer.exec(`
+    PRAGMA journal_mode = WAL;
+    PRAGMA wal_autocheckpoint = 0;
+    CREATE TABLE IF NOT EXISTS confinement_probe_live_wal (marker TEXT NOT NULL);
+    INSERT INTO confinement_probe_live_wal (marker) VALUES ('held-open');
+  `)
+  if (!existsSync(`${destination}-wal`) || !existsSync(`${destination}-shm`)) {
+    writer.close()
+    throw new Error(`live hub fixture did not create WAL sidecars for ${destination}`)
+  }
+  return writer
 }
 
 function installFixture(root: string, running: RunningInstallLayout): RunningInstallLayout {
@@ -262,7 +290,7 @@ function createProbeFixture(root: string) {
   mkdirSync(runtimeDir, { recursive: true })
   mkdirSync(scratchDir, { recursive: true })
   mkdirSync(state.hubDirectory, { recursive: true })
-  copyHubFixture(hubDatabase)
+  const hubWriter = openLiveHubFixture(hubDatabase)
   const loginToken = join(hubLoginTokenDirectory(environment), 'planted-token')
   mkdirSync(join(loginToken, '..'), { recursive: true })
   writeFileSync(loginToken, 'PLANTED_HUB_TOKEN=fixture\n')
@@ -271,13 +299,33 @@ function createProbeFixture(root: string) {
     { name: 'hub login token', path: loginToken, expected: 'denied' },
   )
   const cliArgv = bottegaEntryArgv(PLATFORM_SLUG)
+  const workerEnvironment = workerChildEnvironment({
+    agent: BUILTIN_AGENTS.grok!,
+    sandbox: 'srt',
+    runRecordId: 'confinement-filesystem-probe',
+    runToken: 'confinement-filesystem-probe-token',
+    runNumber: 1,
+    environment,
+    stateEnvironment: environment,
+    includeStore: true,
+  })
+  const hubOpenMode = decideStoreAccess({
+    restrictedActor: true,
+    storePathUnderTemporaryRoot: temporaryStateStoreMigrationAllowed(
+      realPathForPotentialPath(hubDatabase),
+      realPathForPotentialPath(tmpdir()),
+    ),
+    walOrShmSidecarPresent: existsSync(`${hubDatabase}-wal`) || existsSync(`${hubDatabase}-shm`),
+  }).openMode
   return {
+    hubWriter,
+    hubOpenMode,
     stateRoot,
     targets,
     cliArgv,
     commandArgv: [...cliArgv, 'task', 'show', 'DEV-2510'],
     fixtureInstall,
-    environment,
+    environment: workerEnvironment,
     common: {
       worktree,
       runtimeDir,
@@ -296,11 +344,24 @@ function createProbeFixture(root: string) {
 
 /** Execute each SRT profile family against planted sibling, state, secret, and own-tree paths. */
 export async function runConfinementFilesystemProbes(): Promise<ConfinementFilesystemProbeRow[]> {
-  const root = mkdtempSync(join(tmpdir(), `${PLATFORM_SLUG}-confinement-probe-`))
+  const probeParent = process.env.BOTTEGA_SCRATCH ?? resolveStatePaths(process.env).orchestratorRuns
+  mkdirSync(probeParent, { recursive: true })
+  const root = mkdtempSync(join(probeParent, `${PLATFORM_SLUG}-confinement-probe-`))
   const priorStateRoot = process.env[STATE_HOME_ENV]
+  let hubWriter: Database | null = null
   try {
-    const { stateRoot, targets, cliArgv, commandArgv, fixtureInstall, environment, common } =
-      createProbeFixture(root)
+    const fixture = createProbeFixture(root)
+    hubWriter = fixture.hubWriter
+    const {
+      stateRoot,
+      targets,
+      cliArgv,
+      commandArgv,
+      fixtureInstall,
+      environment,
+      common,
+      hubOpenMode,
+    } = fixture
     process.env[STATE_HOME_ENV] = stateRoot
     return [
       await launchProbe(
@@ -309,6 +370,7 @@ export async function runConfinementFilesystemProbes(): Promise<ConfinementFiles
         targets,
         commandArgv,
         environment,
+        hubOpenMode,
       ),
       await launchProbe(
         'grok',
@@ -316,6 +378,7 @@ export async function runConfinementFilesystemProbes(): Promise<ConfinementFiles
         targets,
         commandArgv,
         environment,
+        hubOpenMode,
       ),
       await launchProbe(
         'ACP writer',
@@ -323,6 +386,7 @@ export async function runConfinementFilesystemProbes(): Promise<ConfinementFiles
         targets,
         commandArgv,
         environment,
+        hubOpenMode,
       ),
       await launchCrossProjectCliProbe(
         readonlyLensProfile({ ...common, agent: 'grok' }),
@@ -330,10 +394,12 @@ export async function runConfinementFilesystemProbes(): Promise<ConfinementFiles
         cliArgv,
         commandArgv,
         environment,
+        hubOpenMode,
       ),
       ...NOT_COVERED,
     ]
   } finally {
+    hubWriter?.close()
     if (priorStateRoot === undefined) delete process.env[STATE_HOME_ENV]
     else process.env[STATE_HOME_ENV] = priorStateRoot
     rmSync(root, { recursive: true, force: true })
