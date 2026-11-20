@@ -4,7 +4,8 @@ import { newRecordId } from '../../shared/record/schema.ts'
 import { TASK_STATUSES } from '../../shared/trackers.ts'
 import { db, nowIso, writeTransaction } from './db.ts'
 import { applyHostedWriteLocally } from './hosted-local-apply.ts'
-import type { HostedTask } from './hosted-tasks.ts'
+import { sendHostedChanges } from './hosted-change-sender.ts'
+import { resolveHostedUrl } from './hosted-url.ts'
 import type { TaskWriteMode } from './hosted-write-mode.ts'
 import { persistInstallBinding } from './install-binding.ts'
 import { drainHostedEditOutbox } from './offline-task-edits.ts'
@@ -16,15 +17,26 @@ import {
   HOSTED_COMMENT_TABLE,
   HOSTED_STATUS_EVENT_TABLE,
   HOSTED_TASK_TABLE,
+  type HostedPushChange,
+  type PushedComment,
 } from './push-contract.ts'
-import { runRef } from './reconcile.ts'
 import type { Attribution } from './task-attribution.ts'
 import { commentAuthorDecision, UNATTRIBUTED } from './task-attribution.ts'
-import { parentTaskRecordId } from './task-cache.ts'
+import {
+  hostedComment,
+  hostedTaskBatch,
+  hostedTaskRow,
+  listHostedTasks,
+  pushedComment,
+  pushedStatusEvent,
+  pushedTask,
+  showHostedTask,
+  taskChangeFields,
+} from './task-hosted-record.ts'
 import { hostedCreateTask } from './task-client.ts'
 import { decideTaskClose, landingCheck } from './task-close-decision.ts'
-import { localTaskDetail, type TaskDetail, taskBodyVersion } from './task-detail.ts'
-import { getTaskDocument, listTaskDocuments, type TaskDocumentSummary } from './task-document.ts'
+import { type TaskDetail, taskBodyVersion } from './task-detail.ts'
+import { listTaskDocuments, type TaskDocumentSummary } from './task-document.ts'
 import {
   missingTaskError,
   resolveTask,
@@ -34,11 +46,11 @@ import {
   taskRecordIdFor,
 } from './task-identity.ts'
 import type { TaskRow } from './task-row.ts'
+import { taskRecordFromRows } from './task-record.ts'
 import {
   type HostedTaskWriteOptions,
   hostedTaskWriteOptions,
   registeredTaskProject,
-  taskWriteDecision,
   taskWriteMode,
 } from './task-write-destination.ts'
 import { trackerCapabilities } from './tracker-capabilities.ts'
@@ -56,6 +68,7 @@ export type TaskComment = {
   run_id: string | null
   updated_at: string | null
   deleted_at: string | null
+  revision?: number
 }
 
 export type TaskChanges = {
@@ -323,8 +336,8 @@ export function createLocalTaskInTransaction(
   return row
 }
 
-function cacheTask(conn: import('bun:sqlite').Database, row: HostedTask) {
-  const task = hostedTaskRow(conn, row)
+function cacheTask(conn: import('bun:sqlite').Database, row: import('./hosted-tasks.ts').HostedTask) {
+  const task = hostedTaskRow(row)
   conn
     .query(`INSERT INTO task
     (record_id,key,project,project_record_id,title,status,status_category,parent_key,parent_record_id,body,assignee,opened_at,closed_at,
@@ -343,7 +356,7 @@ function cacheTask(conn: import('bun:sqlite').Database, row: HostedTask) {
       task.record_id,
       task.key,
       task.project,
-      task.project_record_id,
+      task.project_record_id ?? null,
       task.title,
       task.status,
       task.status_category,
@@ -361,31 +374,6 @@ function cacheTask(conn: import('bun:sqlite').Database, row: HostedTask) {
       task.retired_reason ?? null,
     )
   persistInstallBinding(conn)
-}
-
-function hostedTaskRow(conn: import('bun:sqlite').Database, row: HostedTask) {
-  return {
-    record_id: row.id,
-    external_id: null,
-    key: row.key,
-    project: row.project,
-    project_record_id: row.projectId ?? projectRecordIdFor(row.project),
-    title: row.title,
-    status: row.status,
-    status_category: row.status_category,
-    parent_key: row.parent_key,
-    parent_record_id: parentTaskRecordId(conn, row),
-    body: row.body,
-    assignee: row.assignee,
-    opened_at: row.opened_at,
-    closed_at: row.closed_at,
-    updated_at: row.updated_at,
-    source: row.source,
-    first_seen: row.first_seen,
-    last_seen: row.last_seen,
-    next_document_number: row.next_document_number,
-    retired_reason: row.retired_reason ?? null,
-  }
 }
 
 function writeLocalComment(
@@ -492,7 +480,7 @@ export async function createTask(
   const parent = input.parent?.toUpperCase()
   assertParent(parent, input.project)
   void prefix
-  const candidates = duplicateCandidates(listTasks({ project: input.project }), input.title)
+  const candidates = duplicateCandidates(await listTasks({ project: input.project }), input.title)
   options.afterDuplicateSearch?.()
   if (options.allowDuplicateReason !== undefined && !options.allowDuplicateReason.trim())
     throw new Error('--allow-duplicate requires a non-empty reason')
@@ -535,10 +523,10 @@ export async function createTask(
   )
   if (applied && options.allowDuplicateReason)
     await drainHostedEditOutbox(commentAt, options.hosted)
-  return applied ? showTask(hosted.key, { recordId: hosted.id }).task : hostedTaskRow(db(), hosted)
+  return applied ? (await showTask(hosted.key, { recordId: hosted.id })).task : hostedTaskRow(hosted)
 }
 
-export function listTasks(
+function listLocalTasks(
   filters: { project?: string; status?: string; parent?: string } = {},
 ): TaskRow[] {
   const clauses: string[] = []
@@ -564,7 +552,7 @@ export function listTasks(
     .all(...values)
 }
 
-export function showTask(
+function showLocalTask(
   key: string,
   scope: TaskScope = {},
 ): {
@@ -585,16 +573,20 @@ export function showTask(
   return { task, comments, documents: listTaskDocuments(upper, { recordId }) }
 }
 
-type TaskRun = {
-  id: string
-  source: string | null
-  agent: string | null
-  job: string | null
-  started_at: string
-  ended_at: string
-  running: boolean
-  vendor_tokens: number
-  vendor_cost_usd: number | null
+export function listTasks(
+  filters: { project?: string; status?: string; parent?: string } = {},
+): TaskRow[] {
+  if (!resolveHostedUrl()) return listLocalTasks(filters)
+  if (filters.status) status(filters.status)
+  return listHostedTasks(filters) as unknown as TaskRow[]
+}
+
+export function showTask(
+  key: string,
+  scope: TaskScope = {},
+): { task: TaskRow; comments: TaskComment[]; documents: TaskDocumentSummary[] } {
+  if (!resolveHostedUrl()) return showLocalTask(key, scope)
+  return showHostedTask(key, scope) as unknown as ReturnType<typeof showLocalTask>
 }
 
 /** The complete read-only task record used by the dashboard detail sheet. */
@@ -603,83 +595,11 @@ export function taskRecord(
   scope: TaskScope = {},
   readerUserId: string | null = null,
 ): TaskDetail {
-  const record = showTask(key, scope)
-  const project = projects().find((candidate) => candidate.name === record.task.project) ?? null
-  const documents = record.documents
-    .map((document) => getTaskDocument(document.id))
-    .sort((a, b) => Number(b.role === 'handoff') - Number(a.role === 'handoff'))
-  const runs = db()
-    .query<
-      {
-        ref: string
-        agent: string | null
-        job: string | null
-        started_at: string
-        ended_at: string
-        running: number
-        vendor_tokens: number
-        vendor_cost_usd: number | null
-      },
-      [string]
-    >(
-      `SELECT ref, agent, job, MIN(start_at) started_at, MAX(end_at) ended_at,
-            MAX(open) running, SUM(vendor_tokens) vendor_tokens,
-            SUM(vendor_cost_usd) vendor_cost_usd
-       FROM interval
-      WHERE task_record_id = ? AND source = 'orch'
-      GROUP BY ref, agent, job
-      ORDER BY started_at DESC`,
-    )
-    .all(record.task.record_id)
-    .flatMap((run): TaskRun[] => {
-      const parsed = runRef(run.ref)
-      if (!parsed) return []
-      return [
-        {
-          id: parsed.turn ?? parsed.root,
-          source: 'orch',
-          agent: run.agent,
-          job: run.job,
-          started_at: run.started_at,
-          ended_at: run.ended_at,
-          running: Boolean(run.running),
-          vendor_tokens: run.vendor_tokens,
-          vendor_cost_usd: run.vendor_cost_usd,
-        },
-      ]
-    })
-  const statusEvents = db()
-    .query<
-      {
-        id: string
-        at: string
-        from_status: string | null
-        to_status: string
-        actor_name: string | null
-        agent: string | null
-      },
-      [string]
-    >(
-      `SELECT record_id AS id, at, from_status, to_status,actor_name,agent FROM task_status_event
-       WHERE task_record_id = ? ORDER BY at, record_id`,
-    )
-    .all(record.task.record_id)
-  return localTaskDetail(
-    {
-      task: {
-        ...record.task,
-        source_protocol:
-          record.task.source === 'mcp' ? (project?.settings.tracker?.protocol ?? null) : null,
-      },
-      capabilities: trackerCapabilities({ source: record.task.source, project }),
-      runs,
-      comments: record.comments,
-      documents,
-      statusEvents,
-    },
-    readerUserId,
-    taskWriteDecision(record.task.project),
-  )
+  if (resolveHostedUrl())
+    return showHostedTask(key, scope).then((record) =>
+      taskRecordFromRows(record, readerUserId),
+    ) as unknown as TaskDetail
+  return taskRecordFromRows(showLocalTask(key, scope), readerUserId)
 }
 
 export async function setTaskBody(
@@ -690,6 +610,15 @@ export async function setTaskBody(
   options: { hosted?: HostedOptions } = {},
 ): Promise<TaskRow> {
   const upper = key.toUpperCase()
+  if (resolveHostedUrl()) {
+    const current = (await showTask(upper, scope)).task
+    const row = pushedTask(current, { body }, nowIso())
+    await sendHostedChanges(
+      [{ table: HOSTED_TASK_TABLE, id: current.record_id, op: 'upsert', row, fields: ['body'], expected_revision: Number(expectedVersion) }],
+      hostedOptionsForProject(current.project, options.hosted),
+    )
+    return (await showTask(upper, { project: current.project, recordId: current.record_id })).task
+  }
   const recordId = taskRecordId(upper, scope)
   const initial = taskByRecordId<TaskRow>(recordId)
   const initialProject = projects().find((candidate) => candidate.name === initial.project) ?? null
@@ -824,11 +753,12 @@ export async function setTask(
   attribution: Attribution,
   options: {
     force?: boolean
+    expectedRevision?: number
     hosted?: HostedOptions
   } & DoneTransitionOptions = {},
 ): Promise<TaskRow> {
   const upper = key.toUpperCase()
-  const current = showTask(upper, scope).task
+  const current = (await showTask(upper, scope)).task
   if (current.source !== 'local') throw new Error(`task ${upper} is not local`)
   assertLocalTaskBodyOverwrite(current, changes.body, options.force)
   const category = changes.status === undefined ? current.status_category : status(changes.status)
@@ -841,20 +771,20 @@ export async function setTask(
   const mode = writeMode(current.project, options.hosted)
   const at = nowIso()
   const hosted = mode === 'hosted-configured'
-  const fields = [
-    ...(changes.title !== undefined ? ['title'] : []),
-    ...(changes.status !== undefined ? ['status', 'status_category'] : []),
-    ...(changes.parent !== undefined ? ['parent_key'] : []),
-    ...(changes.body !== undefined ? ['body'] : []),
-    ...(changes.assignee !== undefined ? ['assignee'] : []),
-  ]
+  if (hosted) {
+    if ((changes.title !== undefined || changes.body !== undefined) && options.expectedRevision === undefined)
+      throw new Error(`task ${current.key} text replacement requires --expect <revision> from \`${PLATFORM_SLUG} task show ${current.key}\``)
+    const batch = hostedTaskBatch({ current, changes, category, at, attribution, expectedRevision: options.expectedRevision })
+    await sendHostedChanges(batch, hostedOptionsForProject(current.project, options.hosted))
+    return (await showTask(current.key, { project: current.project, recordId: current.record_id })).task
+  }
   const result = writeTransaction((conn) => {
     const before = conn
       .query<TaskRow, [string]>(`SELECT * FROM task WHERE record_id=?`)
       .get(current.record_id)!
     const row = applyLocalTaskPatch(conn, current.record_id, changes, options, at, attribution)
     if (hosted) {
-      queueHostedChange(conn, HOSTED_TASK_TABLE, row.record_id, 'upsert', at, fields)
+      queueHostedChange(conn, HOSTED_TASK_TABLE, row.record_id, 'upsert', at, taskChangeFields(changes))
       if (changes.status !== undefined && before.status_category !== row.status_category) {
         const event = conn
           .query<{ record_id: string }, [string, string]>(
@@ -876,12 +806,30 @@ export async function closeTask(
   attribution: Attribution,
   options: { hosted?: HostedOptions } & DoneTransitionOptions = {},
 ) {
-  const current = showTask(key, scope).task
+  const current = (await showTask(key, scope)).task
   if (current.source !== 'local') throw new Error(`task ${current.key} is not local`)
   if (current.status_category !== 'done') await prepareDoneTransition(current, attribution, options)
   const mode = writeMode(current.project, options.hosted)
   const hosted = mode === 'hosted-configured'
   const at = nowIso()
+  if (hosted) {
+    const event = pushedStatusEvent(current, 'done', at, attribution)
+    await sendHostedChanges(
+      [
+        {
+          table: HOSTED_TASK_TABLE,
+          id: current.record_id,
+          op: 'upsert',
+          row: pushedTask(current, { status: 'done' }, at),
+          fields: ['status', 'status_category'],
+          from: { status: current.status, status_category: current.status_category },
+        },
+        { table: HOSTED_STATUS_EVENT_TABLE, id: event.id, op: 'upsert', row: event },
+      ],
+      hostedOptionsForProject(current.project, options.hosted),
+    )
+    return (await showTask(current.key, { project: current.project, recordId: current.record_id })).task
+  }
   const result = writeTransaction((conn) => {
     const row = conn
       .query<TaskRow, [string]>(`SELECT * FROM task WHERE record_id = ?`)
@@ -920,11 +868,19 @@ export async function commentTask(
   options: { hosted?: HostedOptions } = {},
 ): Promise<TaskComment> {
   const upper = key.toUpperCase()
-  const current = showTask(upper, scope).task
+  const current = (await showTask(upper, scope)).task
   if (current.source !== 'local') throw new Error(`task ${upper} is not local`)
   const mode = writeMode(current.project, options.hosted)
   const hosted = mode === 'hosted-configured'
   const at = nowIso()
+  if (hosted) {
+    const comment = pushedComment(current, body, at, attribution)
+    await sendHostedChanges(
+      [{ table: HOSTED_COMMENT_TABLE, id: comment.id, op: 'upsert', row: comment, expected_revision: 0 }],
+      hostedOptionsForProject(current.project, options.hosted),
+    )
+    return { ...hostedComment(comment), revision: 1 }
+  }
   const result = writeTransaction((conn) => {
     const row = conn
       .query<TaskRow, [string]>(`SELECT * FROM task WHERE record_id = ?`)
@@ -969,12 +925,27 @@ export async function editTaskComment(
   commentId: string,
   body: string,
   attribution: Attribution,
-  options: { hosted?: HostedOptions } = {},
+  options: { hosted?: HostedOptions; expectedRevision?: number } = {},
 ): Promise<TaskComment> {
   if (!body.trim()) throw new Error('comment body is required; pass non-empty text')
-  const current = showTask(key, scope).task
+  const detail = await showTask(key, scope)
+  const current = detail.task
   const hosted = writeMode(current.project, options.hosted) === 'hosted-configured'
   const at = nowIso()
+  if (hosted) {
+    if (options.expectedRevision === undefined)
+      throw new Error(`comment ${commentId} edit requires --expect <revision> from \`${PLATFORM_SLUG} task show ${current.key}\``)
+    const comment = detail.comments.find((row) => row.id === commentId)
+    if (!comment) throw new Error(`comment ${commentId} was not found; run ${PLATFORM_SLUG} task show ${current.key}`)
+    const author = commentAuthorDecision('hosted-configured', attribution.actorUserId, comment.actor_user_id)
+    if (!author.allowed) throw new Error(`comment ${commentId} ${author.reason}`)
+    const row: PushedComment = { ...comment, id: comment.id, task_id: current.record_id, project_name: current.project, projectId: current.project_record_id ?? projectRecordIdFor(current.project), body, updated_at: at }
+    await sendHostedChanges(
+      [{ table: HOSTED_COMMENT_TABLE, id: commentId, op: 'upsert', row, fields: ['body', 'updated_at'], expected_revision: options.expectedRevision }],
+      hostedOptionsForProject(current.project, options.hosted),
+    )
+    return { ...comment, body, updated_at: at, revision: options.expectedRevision + 1 }
+  }
   const result = writeTransaction((conn) => {
     const task = conn
       .query<TaskRow, [string]>('SELECT * FROM task WHERE record_id=?')
@@ -1004,11 +975,26 @@ export async function deleteTaskComment(
   scope: TaskScope,
   commentId: string,
   attribution: Attribution,
-  options: { hosted?: HostedOptions } = {},
+  options: { hosted?: HostedOptions; expectedRevision?: number } = {},
 ): Promise<void> {
-  const current = showTask(key, scope).task
+  const detail = await showTask(key, scope)
+  const current = detail.task
   const hosted = writeMode(current.project, options.hosted) === 'hosted-configured'
   const at = nowIso()
+  if (hosted) {
+    if (options.expectedRevision === undefined)
+      throw new Error(`comment ${commentId} deletion requires --expect <revision> from \`${PLATFORM_SLUG} task show ${current.key}\``)
+    const comment = detail.comments.find((row) => row.id === commentId)
+    if (!comment) throw new Error(`comment ${commentId} was not found; run ${PLATFORM_SLUG} task show ${current.key}`)
+    const author = commentAuthorDecision('hosted-configured', attribution.actorUserId, comment.actor_user_id)
+    if (!author.allowed) throw new Error(`comment ${commentId} ${author.reason}`)
+    const row: PushedComment = { ...comment, id: comment.id, task_id: current.record_id, project_name: current.project, projectId: current.project_record_id ?? projectRecordIdFor(current.project), updated_at: at, deleted_at: at }
+    await sendHostedChanges(
+      [{ table: HOSTED_COMMENT_TABLE, id: commentId, op: 'upsert', row, fields: ['updated_at', 'deleted_at'], expected_revision: options.expectedRevision }],
+      hostedOptionsForProject(current.project, options.hosted),
+    )
+    return
+  }
   writeTransaction((conn) => {
     const task = conn
       .query<TaskRow, [string]>('SELECT * FROM task WHERE record_id=?')

@@ -58,6 +58,7 @@ type TaskOptions = {
   status?: string
   title?: string
   version?: string
+  expect?: string
 }
 
 const open = () => requireDatabase()
@@ -84,7 +85,7 @@ function taskBody(options: TaskOptions): string | undefined {
   return options.body === undefined ? undefined : required(options, 'body')
 }
 
-function printTaskRow(row: ReturnType<typeof showTask>['task']): void {
+function printTaskRow(row: Awaited<ReturnType<typeof showTask>>['task']): void {
   console.log(
     `${row.key.padEnd(10)} ${(row.status_category ?? '').padEnd(8)} ` +
       `${row.project.padEnd(12)} ${row.title ?? ''}`,
@@ -148,7 +149,7 @@ async function createTaskCommand(options: TaskOptions): Promise<void> {
 
 async function showTaskCommand(key: string, options: TaskOptions): Promise<void> {
   const freshness = options.fresh ? await refreshTrackerTask(key, options.project) : null
-  const shown = freshness?.shown ?? showTask(key, { project: options.project })
+  const shown = freshness?.shown ?? (await showTask(key, { project: options.project }))
   if (options.json) {
     console.log(
       JSON.stringify(
@@ -164,6 +165,7 @@ async function showTaskCommand(key: string, options: TaskOptions): Promise<void>
     return
   }
   printTaskRow(shown.task)
+  if (shown.task.revision !== undefined) console.log(`revision: ${shown.task.revision}`)
   if (shown.task.retired_reason) console.log(`retired: ${shown.task.retired_reason}`)
   if (shown.task.parent_key) console.log(`parent: ${shown.task.parent_key}`)
   if (shown.task.body) console.log(`\n${shown.task.body}`)
@@ -178,7 +180,7 @@ async function showTaskCommand(key: string, options: TaskOptions): Promise<void>
   }
   for (const comment of shown.comments)
     console.log(
-      `\n${comment.id}  ${comment.created_at}  ${comment.actor_name ?? 'unknown'}\n${comment.body}`,
+      `\n${comment.id}  ${comment.created_at}  ${comment.actor_name ?? 'unknown'}${comment.revision === undefined ? '' : `  revision ${comment.revision}`}\n${comment.body}`,
     )
 }
 
@@ -249,11 +251,11 @@ function registerTaskCreationCommands(task: Command): void {
     .option('--project <X>', 'search tasks in this project')
     .option('--title <text>', 'find tasks similar to this title')
     .option('--json', 'write the candidates as JSON')
-    .action((_options, command) => {
+    .action(async (_options, command) => {
       open()
       const options = taskOptions(command)
       const rows = duplicateCandidates(
-        listTasks({ project: required(options, 'project') }),
+        await listTasks({ project: required(options, 'project') }),
         required(options, 'title'),
       )
       if (!options.json) throw new Error(`${PLATFORM_SLUG} task duplicates requires --json`)
@@ -304,10 +306,10 @@ function registerTaskQueryCommands(task: Command): void {
     .option('--status <Y>', 'limit tasks to this status')
     .option('--parent <key>', 'limit tasks to this parent task')
     .option('--json', 'write the task rows as JSON')
-    .action((_options, command) => {
+    .action(async (_options, command) => {
       open()
       const options = taskOptions(command)
-      const rows = listTasks({
+      const rows = await listTasks({
         project: options.project,
         status: options.status,
         parent: options.parent,
@@ -336,6 +338,7 @@ function registerTaskQueryCommands(task: Command): void {
       .option('--parent <key>', 'replace the parent task key')
       .addOption(new PresenceOption('--no-parent', 'clear the parent task'))
       .option('--assignee <name>', 'replace the task assignee')
+      .option('--expect <revision>', 'require this task revision for title or body replacement')
       .option('--force', 'allow replacing an existing task body')
       .option('--abandon <reason>', 'record why unlanded work may be abandoned'),
   ).action(async (key, _options, command) => {
@@ -366,6 +369,7 @@ function registerTaskQueryCommands(task: Command): void {
         attribution,
         {
           force: Boolean(options.force),
+          expectedRevision: options.expect === undefined ? undefined : Number(required(options, 'expect')),
           abandonReason: optional(options, 'abandon'),
           confirm: ARRAY_MCP_STATUS_WRITE_CONFIRM,
           cursorAbandoned: (cursor) =>
@@ -408,6 +412,7 @@ function registerTaskLifecycleCommands(task: Command): void {
     .command('comment-edit <key> <comment-id> <text>')
     .description('edit one of your task comments')
     .option('--project <X>', 'resolve the task in this project')
+    .option('--expect <revision>', 'require this current comment revision')
     .action(async (key, commentId, text, _options, command) => {
       open()
       const edited = await editTaskComment(
@@ -416,6 +421,7 @@ function registerTaskLifecycleCommands(task: Command): void {
         commentId,
         text,
         await machineAttribution(),
+        { expectedRevision: Number(required(taskOptions(command), 'expect')) },
       )
       console.log(`${edited.task_key} comment ${edited.id} edited ${edited.updated_at}`)
     })
@@ -423,6 +429,7 @@ function registerTaskLifecycleCommands(task: Command): void {
     .command('comment-delete <key> <comment-id>')
     .description('delete one of your task comments')
     .option('--project <X>', 'resolve the task in this project')
+    .option('--expect <revision>', 'require this current comment revision')
     .action(async (key, commentId, _options, command) => {
       open()
       await deleteTaskComment(
@@ -430,6 +437,7 @@ function registerTaskLifecycleCommands(task: Command): void {
         { project: taskOptions(command).project },
         commentId,
         await machineAttribution(),
+        { expectedRevision: Number(required(taskOptions(command), 'expect')) },
       )
       console.log(`${key.toUpperCase()} comment ${commentId} deleted`)
     })

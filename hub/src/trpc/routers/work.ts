@@ -189,7 +189,7 @@ export function createWorkRouter(given: Partial<WorkDeps> = {}) {
         // An unavailable record identity makes hosted comments non-editable, not unreadable.
       }
       try {
-        return deps.taskRecord(value.key, value.scope, readerUserId)
+        return await deps.taskRecord(value.key, value.scope, readerUserId)
       } catch (cause) {
         const message = cause instanceof Error ? cause.message : String(cause)
         if (message.startsWith('no task ')) throw new TRPCError({ code: 'NOT_FOUND', message })

@@ -23,4 +23,5 @@ export type TaskRow = {
   last_seen: string
   next_document_number: number
   retired_reason: string | null
+  revision?: number
 }

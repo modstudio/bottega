@@ -36,7 +36,7 @@ export async function closeThenPrune(
   } = {},
 ): Promise<{ closed: TaskRow; pruned: BranchPruneResult | null }> {
   const plan = await planOpenTaskCursorClose(
-    dependencies.project?.(key, scope) ?? showTaskProject(key, scope),
+    dependencies.project?.(key, scope) ?? (await showTaskProject(key, scope)),
     key,
     'done',
     {
@@ -66,6 +66,6 @@ export async function closeThenPrune(
   }
 }
 
-function showTaskProject(key: string, scope: TaskScope): string {
-  return showTask(key, scope).task.project
+async function showTaskProject(key: string, scope: TaskScope): Promise<string> {
+  return (await showTask(key, scope)).task.project
 }

@@ -4,6 +4,7 @@ import { newRecordId } from '../../shared/record/schema.ts'
 import type { TaskSource } from '../../shared/task-source.ts'
 import { db, nowIso, writeTransaction } from './db.ts'
 import { applyHostedWriteLocally } from './hosted-local-apply.ts'
+import { sendHostedChanges } from './hosted-change-sender.ts'
 import { taskDocumentIdentityByNumber } from './identity/identity.ts'
 import {
   drainHostedEditOutbox,
@@ -11,6 +12,7 @@ import {
   queueHostedDocumentUpsert,
 } from './offline-task-edits.ts'
 import { hostedCreateDocument } from './task-client.ts'
+import { HOSTED_DOCUMENT_TABLE, type PushedDocument } from './push-contract.ts'
 import { formatTaskDocumentLabel, parseTaskDocumentLabel } from './task-document-label.ts'
 import { resolveTask, type TaskScope, taskByRecordId, taskRecordId } from './task-identity.ts'
 import {
@@ -242,6 +244,31 @@ export async function updateTaskDocument(
     ...(changes.role !== undefined ? ['role'] : []),
     ...(changes.body !== undefined ? ['body', 'version'] : []),
   ]
+  if (hosted) {
+    if (!expectedVersion)
+      throw new Error(`a hosted document update requires --version from \`${PLATFORM_SLUG} task doc show\``)
+    const version = documentVersion()
+    const row: PushedDocument = {
+      id,
+      number: current.number,
+      task_key: current.task_key,
+      task_id: current.task_record_id,
+      project_name: task.project,
+      projectId: undefined,
+      role: changes.role === undefined ? current.role : documentRole(changes.role),
+      title: changes.title ?? current.title,
+      body: changes.body ?? current.body,
+      version,
+      created_at: current.created_at,
+      updated_at: at,
+      deleted_at: null,
+    }
+    await sendHostedChanges(
+      [{ table: HOSTED_DOCUMENT_TABLE, id, op: 'upsert', row, fields, expected_revision: expectedVersion }],
+      hostedTaskWriteOptions(task.project, options.hosted),
+    )
+    return withDocumentLabel({ ...row, task_record_id: current.task_record_id, role: documentRole(row.role), number: current.number })
+  }
   writeTransaction((conn) => {
     const row = conn
       .query<Omit<TaskDocument, 'label'>, [string]>(
