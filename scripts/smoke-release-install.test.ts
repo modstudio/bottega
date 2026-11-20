@@ -4,6 +4,7 @@ import {
   harnessInstallerInvocationCounts,
   releaseDownloadsReachedCurl,
   releaseInstallEnvironment,
+  renderedHookCommand,
 } from './smoke-release-install.ts'
 
 test('release install environment drops inherited product and harness overrides', () => {
@@ -57,4 +58,25 @@ test('release proof log decisions distinguish installers from forwarded download
       archive,
     ),
   ).toBe(false)
+})
+
+test('release proof selects the product hook command rendered by setup apply', () => {
+  const command =
+    "BOTTEGA_BIN='/proof/bin/bottega' python3 '/proof/runtime/orchestrator/hooks/test-substance-guard.py'"
+  expect(
+    renderedHookCommand(
+      {
+        hooks: {
+          PreToolUse: [
+            {
+              matcher: 'Write|Edit|MultiEdit',
+              hooks: [{ type: 'command', command }],
+            },
+          ],
+        },
+      },
+      'test-substance-guard.py',
+    ),
+  ).toBe(command)
+  expect(renderedHookCommand({ hooks: {} }, 'test-substance-guard.py')).toBeNull()
 })

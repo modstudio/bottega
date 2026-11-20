@@ -142,6 +142,7 @@ test('request-posting MCP tools return the same heartbeat guidance', async () =>
     const posted = await call('board_post')
     const asked = await call('board_ask')
     expect(posted.heartbeat).toBe(asked.heartbeat)
+    expect(posted.heartbeat).toStartWith('Arm under Monitor from the main checkout:')
     expect(posted.heartbeat).toContain('mcp-request-session')
     expect(posted.heartbeat).toContain('orch-heartbeat.sh')
   } finally {

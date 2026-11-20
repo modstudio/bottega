@@ -15,6 +15,11 @@ import { resolveStateRoot, type StateEnvironment } from './state-directory.ts'
 
 const RUNTIME_DIRECTORY = 'assets'
 
+/** Whether runtime assets come from the compiled binary rather than a checkout. */
+export function runtimeAssetsAreEmbedded(): boolean {
+  return embeddedDistributionManifest() !== null
+}
+
 function extractedRuntimeRoot(environment: StateEnvironment): string {
   const manifest = embeddedDistributionManifest()
   if (!manifest) throw new Error('an extracted runtime exists only in a compiled distribution')
@@ -36,6 +41,6 @@ export function runtimeAssetPath(
 ): string {
   const asset = RUNTIME_ASSETS.find((entry) => entry.packagePath === packagePath)
   if (!asset) throw new Error(`runtime asset is not declared: ${packagePath}`)
-  if (!embeddedDistributionManifest()) return realpathSync(assetPath(packagePath))
+  if (!runtimeAssetsAreEmbedded()) return realpathSync(assetPath(packagePath))
   return realpathSync(join(extractedRuntimeRoot(environment), asset.destination))
 }

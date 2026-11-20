@@ -27,6 +27,7 @@ type StepResult = {
   name: string
   exitCode: number
   output: string
+  stderr: string
 }
 
 const GROK_INSTALLER_URL = 'https://x.ai/cli/install.sh'
@@ -63,6 +64,28 @@ export function releaseDownloadsReachedCurl(
   return [`${releaseUrl}/SHA256SUMS`, `${releaseUrl}/${archiveName}`].every((url) =>
     lines.some((line) => line.startsWith(`-fsSL ${url} -o `)),
   )
+}
+
+export function renderedHookCommand(settings: unknown, script: string): string | null {
+  if (typeof settings !== 'object' || settings === null || !('hooks' in settings)) return null
+  const hooks = settings.hooks
+  if (typeof hooks !== 'object' || hooks === null) return null
+  for (const groups of Object.values(hooks)) {
+    if (!Array.isArray(groups)) continue
+    for (const group of groups) {
+      if (typeof group !== 'object' || group === null || !('hooks' in group)) continue
+      const handlers = group.hooks
+      if (!Array.isArray(handlers)) continue
+      for (const handler of handlers) {
+        if (typeof handler !== 'object' || handler === null || !('command' in handler)) continue
+        const command = handler.command
+        if (typeof command === 'string' && command.includes(`/orchestrator/hooks/${script}`)) {
+          return command
+        }
+      }
+    }
+  }
+  return null
 }
 
 export function releaseInstallEnvironment(
@@ -236,6 +259,7 @@ async function runStep(
     name,
     exitCode: result.exitCode,
     output: [result.stdout, result.stderr].filter(Boolean).join('\n'),
+    stderr: result.stderr,
   }
 }
 
@@ -287,22 +311,33 @@ function assertSecondSetupSkipsInstallerCalls(
 async function runExtractedHookProof(
   version: string,
   paths: InstallProofPaths,
-  executable: string,
   env: Record<string, string | undefined>,
   failures: string[],
 ): Promise<StepResult> {
   const runtimeRoot = join(paths.state, 'runtime', version, 'assets')
-  const hook = join(runtimeRoot, 'orchestrator', 'hooks', 'test-substance-guard.py')
   recordProofAssertion(
     failures,
     existsSync(runtimeRoot),
     `setup apply did not extract the runtime tree at ${runtimeRoot}`,
   )
-  return runStep(
+  const settingsPath = join(paths.home, '.claude', 'settings.json')
+  const command = renderedHookCommand(
+    JSON.parse(readFileSync(settingsPath, 'utf8')) as unknown,
+    'test-substance-guard.py',
+  )
+  if (command === null) {
+    return {
+      name: 'extracted hook',
+      exitCode: 1,
+      output: `setup apply did not render test-substance-guard.py in ${settingsPath}`,
+      stderr: '',
+    }
+  }
+  const result = await runStep(
     'extracted hook',
-    ['python3', hook],
+    ['sh', '-c', command],
     paths.home,
-    { ...env, BOTTEGA_BIN: executable },
+    env,
     JSON.stringify({
       tool_name: 'Write',
       cwd: paths.home,
@@ -312,6 +347,12 @@ async function runExtractedHookProof(
       },
     }),
   )
+  recordProofAssertion(
+    failures,
+    !result.stderr.includes('was not checked'),
+    `extracted hook judge did not run: ${result.stderr.trim()}`,
+  )
+  return result
 }
 
 async function proveReleaseInstall(version: string, keep: boolean): Promise<number> {
@@ -381,7 +422,7 @@ async function proveReleaseInstall(version: string, keep: boolean): Promise<numb
     )
 
     results.push(await runStep('setup apply', setupArgv, paths.home, env))
-    results.push(await runExtractedHookProof(version, paths, executable, env, assertionFailures))
+    results.push(await runExtractedHookProof(version, paths, env, assertionFailures))
     const firstInstallerCounts = harnessInstallerInvocationCounts(
       readProofLog(brewLog),
       readProofLog(curlLog),
