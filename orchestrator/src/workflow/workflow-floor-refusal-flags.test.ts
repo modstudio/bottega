@@ -143,6 +143,33 @@ test('a gate refusal tells the caller to run a gate only when none passed', () =
   expect(decision.message).toContain('--gate <gate execution id>')
 })
 
+test('a gate refusal names the passing gate when the offered gate does not meet the floor', () => {
+  const floor = { ...base, kind: 'command-exit' as const, commandEvidence: 'gate' as const }
+  const decision = decide([floor], {
+    tree: { project: 'fixture', commit: 'abc' },
+    gate: { recordId: ID, finished: true, exitCode: 1, project: 'fixture', commit: 'abc' },
+    passingGateForTree: { number: 17 },
+  })
+  expect(decision.action).toBe('refuse')
+  if (decision.action !== 'refuse') return
+  expect(decision.message).toContain('the offered gate does not meet the floor at fixture commit abc')
+  expect(decision.message).toContain('passing gate 17 is recorded for it')
+  expect(decision.message).toContain('--gate 17')
+})
+
+test('a gate refusal composes with another floor on one line', () => {
+  const gateFloor = { ...base, kind: 'command-exit' as const, commandEvidence: 'gate' as const }
+  const decision = decide([gateFloor, { ...base, kind: 'recorded-artifact' }], {
+    tree: { project: 'fixture', commit: 'abc' },
+    passingGateForTree: { number: 17 },
+  })
+  expect(decision.action).toBe('refuse')
+  if (decision.action !== 'refuse') return
+  expect(decision.message).not.toContain('\n')
+  expect(decision.message).toContain('--gate 17')
+  expect(decision.message).toContain('floor recorded-artifact')
+})
+
 test('command-exit guidance names exec, gate, and run evidence', () => {
   expect(floorGuidance['command-exit']).toContain('--artifact exec:<id>')
   expect(floorGuidance['command-exit']).toContain('--gate <gate execution id>')

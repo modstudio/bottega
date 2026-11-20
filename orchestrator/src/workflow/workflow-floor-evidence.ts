@@ -58,7 +58,8 @@ import {
 } from './workflow-floor.ts'
 import { gitText, productionResolveCheckout } from './workflow-floor-evidence-checkout.ts'
 import { positiveEvidenceId } from './workflow-floor-evidence-input.ts'
-import { gatherPassingGateForTree, hasGateFloor } from './workflow-floor-evidence-passing-gate.ts'
+import { gatherPassingGateForTree } from './workflow-floor-evidence-passing-gate.ts'
+import { hasGateFloor } from './workflow-floor-refusal.ts'
 import {
   type FloorEvidencePorts,
   invokeFloorEvidencePort,
@@ -1015,8 +1016,7 @@ export async function gatherValidatedEvidenceBase(
   const gateRecordId = resolveOfferedGate(d, input.evidence.gate)
   const run = input.evidence.run
   const satisfies = input.evidence.satisfies
-  if (!gateRecordId && hasGateFloor(input.floors))
-    gathered.passingGateForTree = gatherPassingGateForTree(gathered.tree, d)
+  if (hasGateFloor(input.floors)) gathered.passingGateForTree = gatherPassingGateForTree(gathered.tree, d)
   if (ruling)
     gathered.ruling = await gatherRuling(
       ruling,

@@ -18,22 +18,34 @@ export function floorsAcceptPullRequestLink(
   return floors.some((floor) => floor.commandEvidence === 'pull-request')
 }
 
+export function hasGateFloor(
+  floors: ReadonlyArray<{ kind: string; commandEvidence?: string }>,
+): boolean {
+  return floors.some((floor) => floor.kind === 'command-exit' && floor.commandEvidence === 'gate')
+}
+
+export type PassingGateForTree = { number: number } | null | undefined
+
 export function gateFloorRefusal(
   tree: {
     project: string
     worktree?: string | null
     commit: string | null
   },
-  passingGateForTree?: { number: number } | null,
+  passingGateForTree: PassingGateForTree = undefined,
+  gateOffered = false,
 ): string {
   if (tree.commit) {
-    const condition = passingGateForTree
-      ? `floor command-exit is unmet: \`--gate\` was not passed; passing gate ${passingGateForTree.number} is recorded for ${tree.project} commit ${tree.commit}`
-      : `floor command-exit is unmet: no passing gate is recorded for ${tree.project} commit ${tree.commit}`
+    const condition =
+      passingGateForTree && gateOffered
+        ? `floor command-exit is unmet: the offered gate does not meet the floor at ${tree.project} commit ${tree.commit}, and passing gate ${passingGateForTree.number} is recorded for it`
+        : passingGateForTree
+          ? `floor command-exit is unmet: \`--gate\` was not passed; passing gate ${passingGateForTree.number} is recorded for ${tree.project} commit ${tree.commit}`
+          : `floor command-exit is unmet: no passing gate is recorded for ${tree.project} commit ${tree.commit}`
     const remedy = passingGateForTree
       ? `pass \`--gate ${passingGateForTree.number}\``
       : `run \`${PLATFORM_SLUG} gate run\` in the tree at commit ${tree.commit}, then pass \`--gate <gate execution id>\``
-    return renderRefusal(refusal(condition, { kind: 'edit', text: remedy }))
+    return `${condition}; ${remedy}`
   }
   const condition = tree.worktree
     ? `the recorded cursor worktree ${tree.worktree} was removed or could not be resolved to a commit`

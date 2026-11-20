@@ -40,7 +40,12 @@ test('gathers the newest passing gate for the tree only as refusal evidence', as
   } as const
   expect((await gather(d, {}, {}, identity, [gateFloor])).passingGateForTree).toBeNull()
 
-  const run = insertRun(d, { project: 'fixture', launchKey: 'DEV-977' })
+  const run = insertRun(d, {
+    project: 'fixture',
+    launchKey: 'DEV-977',
+    branch: identity.branch,
+    sessionId: identity.session,
+  })
   const gateRecordId = newRecordId()
   d.query(
     `INSERT INTO gate_execution
@@ -55,6 +60,9 @@ test('gathers the newest passing gate for the tree only as refusal evidence', as
   expect((await gather(d, {}, {}, identity, [gateFloor])).passingGateForTree).toEqual({
     number: gate.number,
   })
+  expect((await gather(d, { gate: gate.number }, {}, identity, [gateFloor])).passingGateForTree).toEqual(
+    { number: gate.number },
+  )
   expect((await gather(d, {})).gate).toBeUndefined()
 })
 

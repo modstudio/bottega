@@ -17,6 +17,7 @@ import {
   commandExitMismatchRefusal,
   floorsAcceptPullRequestLink,
   gateFloorRefusal,
+  type PassingGateForTree,
 } from './workflow-floor-refusal.ts'
 
 type TrackerStateCategory = 'backlog' | 'open' | 'active' | 'review' | 'done' | 'dropped'
@@ -131,7 +132,7 @@ export type ValidatedEvidence = {
     project: string | null
     commit: string | null
   }
-  passingGateForTree?: { number: number } | null
+  passingGateForTree?: PassingGateForTree
   run?: { id: string; terminal: boolean; exitCode: number | null }
   task?: {
     key: string
@@ -735,6 +736,7 @@ function floorUnmetMessage(
     return gateFloorRefusal(
       evidence.tree ?? { project: 'this project', worktree: null, commit: null },
       evidence.passingGateForTree,
+      evidence.gate !== undefined,
     )
   const pullRequest = pullRequestUnmetMessage(floor, evidence)
   if (pullRequest) return pullRequest
