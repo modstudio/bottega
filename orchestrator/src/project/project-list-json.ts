@@ -9,7 +9,7 @@ import {
 
 /** Publish one project-register row through the shared hub contract. */
 export function listedProjectJson(project: Project) {
-  const { recordId, retiredAt, ...rest } = project
+  const { recordId, recordRevision: _recordRevision, retiredAt, ...rest } = project
   return {
     ...rest,
     visibility: project.settings.visibility ?? null,
