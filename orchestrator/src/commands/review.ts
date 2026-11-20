@@ -38,8 +38,8 @@ import {
   replayReviewFunnelCommand,
   reportReviewFunnelCommand,
 } from '../review-funnel/review-funnel-commands.ts'
-import { resolveRunIdentifier } from '../run/run-identifier.ts'
 import { countRunConfinement } from '../run/run-confinement-count.ts'
+import { resolveRunIdentifier } from '../run/run-identifier.ts'
 import { loadSubscriptionCostContext } from '../run/run-subscription-prices.ts'
 import {
   formatConfinementFilesystemProbes,
@@ -51,9 +51,7 @@ import {
   parseConfinementMcpSelector,
   reportConfinement,
 } from '../sandbox/confinement-report.ts'
-import {
-  formatConfinementRunMeasurement,
-} from '../sandbox/confinement-run-measurement.ts'
+import { formatConfinementRunMeasurement } from '../sandbox/confinement-run-measurement.ts'
 import { readonlyLensReportInputs } from '../sandbox/sandbox.ts'
 import { type CliFlags, log, optionFlags } from './support.ts'
 

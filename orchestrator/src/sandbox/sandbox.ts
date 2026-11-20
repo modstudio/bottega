@@ -19,7 +19,7 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { homedir } from 'node:os'
-import { basename, delimiter, dirname, isAbsolute, join, relative, resolve } from 'node:path'
+import { basename, delimiter, dirname, isAbsolute, join, resolve } from 'node:path'
 import type { SandboxRuntimeConfig as LibrarySandboxRuntimeConfig } from '@anthropic-ai/sandbox-runtime'
 import { PLATFORM_SLUG, WORKER_MCP_SERVER_NAME } from '../../../shared/brand.ts'
 import { type ConfigEnvironment, resolveEnvFilePaths } from '../../../shared/config-directory.ts'
@@ -38,6 +38,7 @@ import {
   resolveRunningInstallLayout,
   runningInstallReadCarveouts,
 } from './install-read-policy.ts'
+import { assembleAreaReadProfile, isAtOrBelow } from './sandbox-area-read-profile.ts'
 import { launchWithSandboxRuntime, resetSandboxRuntime } from './sandbox-runtime.ts'
 import { decideWeakerNetworkIsolation, endpointHost } from './weaker-network-isolation.ts'
 
@@ -61,29 +62,6 @@ export type SandboxRuntimeConfig = {
 
 /** Pin operator state before a worker's isolated HOME changes implicit resolution. */
 export type RunSandbox = 'host' | 'srt'
-
-const isAtOrBelow = (path: string, parent: string) => {
-  const fromParent = relative(parent, path)
-  return fromParent === '' || (!fromParent.startsWith('..') && !isAbsolute(fromParent))
-}
-
-/** Assemble broad area policy and protected denies in sandbox-runtime field names. */
-function assembleAreaReadProfile(input: {
-  areaDeny: readonly string[]
-  candidateAllows: readonly string[]
-  protectedDenies: readonly string[]
-  socketDenyPaths: readonly string[]
-}): { denyRead: string[]; allowWithinDeny: string[] } {
-  return {
-    denyRead: [...new Set([...input.areaDeny, ...input.protectedDenies, ...input.socketDenyPaths])],
-    allowWithinDeny: [...new Set(input.candidateAllows)].filter(
-      (allowed) =>
-        !input.protectedDenies.some(
-          (denied) => isAtOrBelow(allowed, denied) || isAtOrBelow(denied, allowed),
-        ),
-    ),
-  }
-}
 
 function emptyProjectRegisterRefusal(): string {
   return renderRefusal(

@@ -7,7 +7,7 @@ import { parseRunListSince } from './run-listing.ts'
 const CONFINEMENT_RUN_WINDOW_MS = 7 * 24 * 60 * 60 * 1000
 const UNRECORDED_SANDBOX_VALUE = 'unrecorded'
 
-export type RunConfinementCount = {
+type RunConfinementCount = {
   sandbox: string
   reason: string
   count: number

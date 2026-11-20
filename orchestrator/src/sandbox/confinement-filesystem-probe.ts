@@ -21,6 +21,7 @@ import {
   hubLoginTokenDirectory,
   realPathForPotentialPath,
   resolveHubDatabase,
+  resolveOrchestratorDatabase,
   resolveStatePaths,
   STATE_HOME_ENV,
   temporaryStateStoreMigrationAllowed,
