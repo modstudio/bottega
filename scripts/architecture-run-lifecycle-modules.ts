@@ -817,6 +817,7 @@ export const runLifecycleModules: ArchitectureModule[] = [
     './run-task-claim-renewal.ts',
   ]),
   module('orchestrator/src/run/run-terminal-questions.ts', [
+    'node:fs',
     '../ask/ask.ts',
     '../contract/contract.ts',
     '../database/db.ts',

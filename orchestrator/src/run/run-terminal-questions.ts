@@ -1,10 +1,11 @@
 // concern: run-terminal-questions
 /** Records reply-borne questions only while their local owner turn is live. */
 
+import { writeFileSync } from 'node:fs'
+import { recordReplyQuestions } from '../ask/ask.ts'
 import type { realQuestions } from '../contract/contract.ts'
 import { db, nowIso } from '../database/db.ts'
 import { initialQuestionWaitingAt } from '../operator/operator-waiting.ts'
-import { recordReplyQuestions } from '../ask/ask.ts'
 import { questionsForRun } from '../question-store/question-store-read.ts'
 
 /** Which accepted questions have not already been recorded, preserving reply order. */
@@ -22,23 +23,25 @@ export function questionsToInsert<T extends { question: string }>(
   })
 }
 
-export async function recordRunTerminalQuestions(
+async function recordTerminalQuestions(
   runId: string,
   questions: ReturnType<typeof realQuestions>,
+  currentHeader: string | null,
 ): Promise<{
   recorded: Awaited<ReturnType<typeof recordReplyQuestions>>
   operationalHeader: string | null
 }> {
-  if (!questions.length) return { recorded: [], operationalHeader: null }
+  if (!questions.length) return { recorded: [], operationalHeader: currentHeader }
   const owner = db()
     .query<{ status: string }, [string]>('SELECT status FROM run WHERE record_id=?')
     .get(runId)
   // Reply asks: is this turn still the live owner of its escalation channel?
   if (!owner || (owner.status !== 'running' && owner.status !== 'asking')) {
     const count = questions.length
+    const dropped = `Dropped ${count} reply question${count === 1 ? '' : 's'} because run ${runId} was already superseded or finished.`
     return {
       recorded: [],
-      operationalHeader: `Dropped ${count} reply question${count === 1 ? '' : 's'} because run ${runId} was already superseded or finished.`,
+      operationalHeader: currentHeader ? `${currentHeader}\n${dropped}` : dropped,
     }
   }
   const existingQuestionTexts = (await questionsForRun(db(), runId)).map((row) =>
@@ -52,6 +55,23 @@ export async function recordRunTerminalQuestions(
       askedAt,
       awaitingOperatorAt: await initialQuestionWaitingAt(runId, askedAt),
     }),
-    operationalHeader: null,
+    operationalHeader: currentHeader,
   }
+}
+
+export async function finishQs(
+  runId: string,
+  questions: ReturnType<typeof realQuestions>,
+  currentHeader: string | null,
+  output: string,
+  outPath: string,
+): Promise<{ recorded: Awaited<ReturnType<typeof recordReplyQuestions>>; output: string }> {
+  const result = await recordTerminalQuestions(runId, questions, currentHeader)
+  const finalizedOutput = result.operationalHeader
+    ? output
+      ? `${result.operationalHeader}\n\n${output}`
+      : result.operationalHeader
+    : output
+  if (result.operationalHeader) writeFileSync(outPath, finalizedOutput)
+  return { recorded: result.recorded, output: finalizedOutput }
 }

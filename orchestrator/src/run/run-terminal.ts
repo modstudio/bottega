@@ -5,7 +5,6 @@
  * live worker execution, run control, dispatch surfaces, or the CLI.
  */
 import type { Database } from 'bun:sqlite'
-import { writeFileSync } from 'node:fs'
 import { MCP_SERVER_NAME, PLATFORM_SLUG, WORKER_MCP_SERVER_NAME } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { AGENTS, refreshAgents } from '../agent/agent-registry.ts'
@@ -37,7 +36,6 @@ import { projectByName, projects } from '../project/projects.ts'
 import { teardownTerminalRunResources } from '../resources/resource-ownership.ts'
 import { cleanReviewEvidence } from '../review/review.ts'
 import { resetSandbox } from '../sandbox/sandbox.ts'
-import { mergeMcpSetupHeader } from '../sandbox/project-mcp-scope.ts'
 import type { QuotaReadings } from '../transport/quota-readings.ts'
 import type { VendorUsage } from '../transport/transport.ts'
 import { type Changes, changesIn } from '../worktree/worktree-remove.ts'
@@ -68,7 +66,6 @@ import type { RenewTaskClaim } from './run-task-claim-renewal.ts'
 import { type BlockerRow, blockersToRecord } from './run-terminal-blockers.ts'
 import { finalizeTerminalChain } from './run-terminal-chain.ts'
 import { terminalTurnChanged } from './run-terminal-change.ts'
-import { recordRunTerminalQuestions } from './run-terminal-questions.ts'
 import {
   terminalLifecycleColumnValues,
   terminalLifecycleWrite,
@@ -78,6 +75,7 @@ import {
   applyPrematureFinalFailure,
   terminalPrematureFinalRefusal,
 } from './run-terminal-premature.ts'
+import { finishQs } from './run-terminal-questions.ts'
 import { settleTerminalStateWithClaimRenewal } from './run-terminal-task-claim.ts'
 import {
   type ObservedTestOutcome,
@@ -845,15 +843,9 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
       exitCode,
     }),
   ))
-  // The run is already answerable locally; this hosted write may remain pending.
-  const terminalQuestions = await recordRunTerminalQuestions(claim.id, acceptedQuestions)
-  const recordedQuestions = terminalQuestions.recorded
-  mcpSetupHeader = mergeMcpSetupHeader(mcpSetupHeader, terminalQuestions.operationalHeader)
-
-  if (mcpSetupHeader) {
-    output = output ? `${mcpSetupHeader}\n\n${output}` : mcpSetupHeader
-    writeFileSync(outPath, output)
-  }
+  const qs = await finishQs(claim.id, acceptedQuestions, mcpSetupHeader, output, outPath)
+  const recordedQuestions = qs.recorded
+  output = qs.output
 
   const confinementPrecedence = applyConfinementPrecedence({
     outcome: { status, failureKind, error },
