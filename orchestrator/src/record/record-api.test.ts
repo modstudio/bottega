@@ -884,6 +884,7 @@ describe('record API presentation routes', () => {
       spaceId: 'space-a',
       spaceName: 'Space A',
       name: 'one',
+      revision: 1,
       keyPrefixes: ['ONE'],
       stack: null,
       managedContext: true,
@@ -908,6 +909,7 @@ describe('record API presentation routes', () => {
       'managedContext',
       'name',
       'retiredAt',
+      'revision',
       'settings',
       'spaceId',
       'spaceName',
@@ -989,7 +991,7 @@ describe('record API presentation routes', () => {
     const app = appWith(identity, {
       retireProject: async (input: { id: string }) => {
         calls.push(input.id)
-        return { name: 'probe' }
+        return { name: 'probe', revision: 1 }
       },
     })
     const response = await app.request(`/v1/projects/${id}/retire`, {

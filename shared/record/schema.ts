@@ -279,6 +279,7 @@ export const project = pgTable.withRLS(
     states: jsonb(),
     tracker: jsonb(),
     worktree: jsonb(),
+    revision: bigint({ mode: 'number' }).notNull().default(1),
     retiredAt: timestamp('retired_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
   },

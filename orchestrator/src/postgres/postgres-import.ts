@@ -149,7 +149,7 @@ export async function importProjects(options: ProjectImportOptions): Promise<Pro
         retiredAt: row.retired_at,
         columns,
       })
-      projectIds.set(row.name, id)
+      projectIds.set(row.name, id.id)
     }
 
     const skippedSequences: SequenceSkip[] = []

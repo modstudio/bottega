@@ -43,6 +43,7 @@ function trunk(settings: ProjectSettings): string | null {
 function sameProject(left: Project, right: Project): boolean {
   return (
     left.name === right.name &&
+    (left.recordRevision ?? null) === (right.recordRevision ?? null) &&
     left.path === right.path &&
     left.stack === right.stack &&
     left.canon === right.canon &&
@@ -112,6 +113,7 @@ function decideEachProject(
     const settings = mergedSettings(local.settings, hosted.settings)
     const candidate: Project = {
       ...local,
+      ...(hosted.revision !== undefined ? { recordRevision: hosted.revision } : {}),
       name: hosted.name,
       stack: hosted.stack ?? local.stack,
       canon: hosted.canon ?? local.canon,

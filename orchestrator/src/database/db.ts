@@ -929,12 +929,35 @@ function seedProjects(d: Database): void {
   }
 }
 
+const NEW_STORE_SEED_MARKER = 'new_store_seed_pending'
+
+function markNewStoreForSeeding(database: Database): void {
+  database
+    .query('INSERT OR REPLACE INTO schema_meta(key,value) VALUES (?,?)')
+    .run(NEW_STORE_SEED_MARKER, '1')
+}
+
+function hasNewStoreSeedMarker(database: Database): boolean {
+  return Boolean(
+    database
+      .query<{ value: string }, [string]>('SELECT value FROM schema_meta WHERE key=?')
+      .get(NEW_STORE_SEED_MARKER),
+  )
+}
+
+function seedCurrentProjectSchema(database: Database, seedPending: boolean): void {
+  initializeDefaultLocalProject(database, seedPending)
+  seedProjects(database)
+  if (seedPending) database.query('DELETE FROM schema_meta WHERE key=?').run(NEW_STORE_SEED_MARKER)
+}
+
 /** Main-checkout binary only: apply pending, ordered Drizzle migrations. */
 export function migrateDatabase(
   input: { beforeMigration?: string; beforeApply?: BeforeMigrationApply } = {},
 ): {
   path: string
   versions: string[]
+  created: boolean
 } {
   const legacyRefusal = legacyDatabaseRefusal()
   if (legacyRefusal) throw new Error(legacyRefusal)
@@ -951,9 +974,11 @@ export function migrateDatabase(
       const versions = input.beforeMigration
         ? applyMigrationsBefore(database, input.beforeMigration)
         : applyMigrations(database, undefined, input.beforeApply)
-      writeTransaction(() => initializeDefaultLocalProject(database, true), database)
-      seedProjects(database)
       // Seeding and hygiene assume the current schema, so a partial migration skips them.
+      writeTransaction(() => {
+        markNewStoreForSeeding(database)
+        if (!input.beforeMigration) seedCurrentProjectSchema(database, true)
+      }, database)
       if (!input.beforeMigration) runOpenHooks('afterInitialize', database)
       return versions
     })
@@ -970,7 +995,7 @@ export function migrateDatabase(
         winner.close()
       }
     }
-    return { path: DB_PATH, versions: created.result }
+    return { path: DB_PATH, versions: created.result, created: true }
   }
   const d = openOwnedWritableDatabase(DB_PATH, { create: false })
   try {
@@ -979,10 +1004,11 @@ export function migrateDatabase(
     const versions = input.beforeMigration
       ? applyMigrationsBefore(d, input.beforeMigration)
       : applyMigrations(d, undefined, input.beforeApply)
-    writeTransaction(() => initializeDefaultLocalProject(d, false), d)
-    seedProjects(d)
-    if (!input.beforeMigration) runOpenHooks('afterInitialize', d)
-    return { path: DB_PATH, versions }
+    if (!input.beforeMigration) {
+      writeTransaction(() => seedCurrentProjectSchema(d, hasNewStoreSeedMarker(d)), d)
+      runOpenHooks('afterInitialize', d)
+    }
+    return { path: DB_PATH, versions, created: false }
   } finally {
     d.close()
   }

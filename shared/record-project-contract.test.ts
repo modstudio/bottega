@@ -23,6 +23,7 @@ describe('RecordProjectSchema', () => {
   test('decodes the additive adoption fields', () => {
     const response = {
       ...previousResponse,
+      revision: 3,
       canon: true,
       settings: { keyPrefixes: ['DEV'], trunk: 'main' },
     }

@@ -23,14 +23,17 @@ const projectUpsertSchema = z.object({
   canon: z.boolean(),
   settings: z.record(z.string(), z.unknown()),
   retiredAt: z.string().datetime({ offset: true }).nullable(),
+  expectedRevision: z.number().int().positive().nullable().optional(),
 })
 
 export function registerRecordProjectRoutes(
   app: Hono<ApiEnvironment>,
   deps: {
     readProjects(input: Tenant): Promise<RecordProject[]>
-    upsertProject(input: Tenant & RecordProjectUpsertInput): Promise<{ id: string; name: string }>
-    retireProject(input: Tenant & { id: string }): Promise<{ name: string }>
+    upsertProject(
+      input: Tenant & RecordProjectUpsertInput,
+    ): Promise<{ id: string; name: string; revision?: number }>
+    retireProject(input: Tenant & { id: string }): Promise<{ name: string; revision: number }>
     purgeProject(
       input: Tenant & { id: string; confirmation: string },
     ): Promise<RecordProjectPurgeResult>

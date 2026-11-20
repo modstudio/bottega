@@ -150,7 +150,7 @@ export function registerTrialSpaceTeardownProof(input: {
       {
         readProjects: async () => [],
         upsertProject: async () => ({ id: crossSpaceProject, name: 'unused' }),
-        retireProject: async () => ({ name: 'unused' }),
+        retireProject: async () => ({ name: 'unused', revision: 1 }),
         purgeProject: purgeRecordProject,
       },
       {

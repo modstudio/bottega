@@ -22,6 +22,7 @@ export type RecordProjectUpsertInput = {
   canon: boolean
   settings: Record<string, unknown>
   retiredAt: string | null
+  expectedRevision?: number | null
 }
 
 export class RecordProjectError extends Error {
@@ -29,6 +30,15 @@ export class RecordProjectError extends Error {
   constructor(message: string, status: 400 | 404 | 409 = 400) {
     super(message)
     this.status = status
+  }
+}
+
+export class RecordProjectRevisionConflictError extends RecordProjectError {
+  readonly currentRevision: string
+
+  constructor(condition: string, currentRevision: string) {
+    super(condition, 409)
+    this.currentRevision = currentRevision
   }
 }
 
@@ -106,10 +116,12 @@ export async function upsertHostedProjectRow(
     retiredAt: string | null
     columns: HostedProjectColumns
     id: string
+    expectedRevision?: number | null
   },
-): Promise<string> {
+): Promise<{ id: string; revision: number }> {
   const id = input.id
   const columns = input.columns
+  const expectedRevision = input.expectedRevision ?? null
   const rows = await tx`
     INSERT INTO project (
       id, space_id, name, key_prefixes, checkout_path, stack, canon, managed_context, agent_keys,
@@ -178,9 +190,17 @@ export async function upsertHostedProjectRow(
       tracker = EXCLUDED.tracker,
       worktree = EXCLUDED.worktree,
       retired_at = EXCLUDED.retired_at
-    RETURNING id
+    WHERE ${expectedRevision}::bigint IS NULL
+       OR project.revision = ${expectedRevision}::bigint
+    RETURNING id, revision
   `
-  return String(rows[0]!.id)
+  if (!rows.length) {
+    const current = await tx`SELECT revision FROM project WHERE id=${id}::uuid`
+    const revision = Number(current[0]?.revision)
+    const condition = `project ${id} changed since revision ${input.expectedRevision}; now ${revision}.`
+    throw new RecordProjectRevisionConflictError(condition, String(revision))
+  }
+  return { id: String(rows[0]!.id), revision: Number(rows[0]!.revision) }
 }
 
 export function mapRecordProjectRow(row: Record<string, unknown>): RecordProject {
@@ -228,6 +248,7 @@ export function mapRecordProjectRow(row: Record<string, unknown>): RecordProject
     landingBranch: columns.landingBranch,
     color: columns.color,
     colorDark: columns.colorDark,
+    revision: Number(row.revision),
     retiredAt: row.retired_at == null ? null : recordDate(row.retired_at).toISOString(),
     canon: row.canon === true,
     settings: hostedProjectSettings(columns),
@@ -258,7 +279,7 @@ export async function listRecordProjects(
 
 export async function upsertRecordProject(
   input: Tenant & RecordProjectUpsertInput,
-): Promise<{ id: string; name: string }> {
+): Promise<{ id: string; name: string; revision: number }> {
   try {
     return await tenant(input, async (tx) => {
       const nextName = input.name
@@ -273,17 +294,7 @@ export async function upsertRecordProject(
       } catch (error) {
         throw new RecordProjectError(error instanceof Error ? error.message : String(error), 400)
       }
-      if (currentName !== null && currentName !== nextName) {
-        await tx`UPDATE project SET name=${nextName} WHERE id=${input.id}::uuid`
-        await renameHostedHubProjectNames(tx, {
-          spaceId: input.spaceId,
-          projectId: input.id,
-          from: currentName,
-          to: nextName,
-        })
-        await renameHostedDocSubjects(tx, input.spaceId, input.id, currentName, nextName)
-      }
-      const id = await upsertHostedProjectRow(tx, {
+      const written = await upsertHostedProjectRow(tx, {
         spaceId: input.spaceId,
         id: input.id,
         name: nextName,
@@ -292,8 +303,18 @@ export async function upsertRecordProject(
         canon: input.canon,
         retiredAt: input.retiredAt,
         columns,
+        expectedRevision: input.expectedRevision,
       })
-      return { id, name: nextName }
+      if (currentName !== null && currentName !== nextName) {
+        await renameHostedHubProjectNames(tx, {
+          spaceId: input.spaceId,
+          projectId: input.id,
+          from: currentName,
+          to: nextName,
+        })
+        await renameHostedDocSubjects(tx, input.spaceId, input.id, currentName, nextName)
+      }
+      return { ...written, name: nextName }
     })
   } catch (error) {
     if (
@@ -313,14 +334,19 @@ export async function upsertRecordProject(
 
 export async function retireRecordProject(
   input: Tenant & { id: string },
-): Promise<{ name: string }> {
-  return tenant(input, async (tx) => {
-    const rows = await tx`
-      UPDATE project SET retired_at = now()
-      WHERE space_id=${input.spaceId}::uuid AND id=${input.id}::uuid
-      RETURNING name
-    `
-    if (!rows.length) throw new RecordProjectError(`hosted project ${input.id} not found`, 404)
-    return { name: String(rows[0]!.name) }
-  })
+): Promise<{ name: string; revision: number }> {
+  return tenant(input, (tx) => retireHostedProjectRow(tx, input))
+}
+
+export async function retireHostedProjectRow(
+  tx: SQL,
+  input: { spaceId: string; id: string },
+): Promise<{ name: string; revision: number }> {
+  const rows = await tx`
+    UPDATE project SET retired_at = now()
+    WHERE space_id=${input.spaceId}::uuid AND id=${input.id}::uuid
+    RETURNING name, revision
+  `
+  if (!rows.length) throw new RecordProjectError(`hosted project ${input.id} not found`, 404)
+  return { name: String(rows[0]!.name), revision: Number(rows[0]!.revision) }
 }
