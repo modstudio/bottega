@@ -1,7 +1,8 @@
 // concern: recording the sandbox dispatch decision on its run row
 
 import type { Database } from 'bun:sqlite'
-import { type RunSandbox, sandboxReasonPrefix } from '../sandbox/sandbox.ts'
+import { sandboxReasonPrefix } from '../sandbox/sandbox.ts'
+import type { RunSandbox } from '../sandbox/sandbox-selection-policy.ts'
 
 /** Persist the dedicated sandbox reason while preserving existing route-reason rendering. */
 export function recordRunSandboxSelection(

@@ -25,9 +25,9 @@ import type { ProjectMcpSelection } from '../sandbox/project-mcp-scope.ts'
 import {
   prepareProjectGrokMcpScope,
   prepareSandboxHome,
-  type RunSandbox,
   removeNewSandboxHomeAfterFailure,
 } from '../sandbox/sandbox.ts'
+import type { RunSandbox } from '../sandbox/sandbox-selection-policy.ts'
 import {
   workerSandboxEnvironment,
   workerStateEnvironment,

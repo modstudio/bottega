@@ -28,7 +28,12 @@ export const confinementModules: ConfinementModule[] = [
     '../sandbox/sandbox-runtime.ts',
   ]),
   module('orchestrator/src/sandbox/record-connection-env.ts', []),
-  module('orchestrator/src/sandbox/codex-sandbox.ts', []),
+  module('orchestrator/src/sandbox/codex-sandbox.ts', [
+    '../../../shared/brand.ts',
+    './area-read-policy.ts',
+    './sandbox.ts',
+  ]),
+  module('orchestrator/src/sandbox/sandbox-selection-policy.ts', []),
   module('orchestrator/src/sandbox/weaker-network-isolation.ts', ['node:net']),
   module('orchestrator/src/sandbox/area-read-policy.ts', [
     'node:path',
@@ -65,6 +70,7 @@ export const confinementModules: ConfinementModule[] = [
     './install-read-policy.ts',
     './node-module-read-carvebacks.ts',
     './sandbox-area-read-profile.ts',
+    './sandbox-selection-policy.ts',
     './sandbox-runtime.ts',
     './weaker-network-isolation.ts',
     './worktree-root-entries.ts',
@@ -90,6 +96,7 @@ export const confinementModules: ConfinementModule[] = [
   module('orchestrator/src/sandbox/confinement-report.ts', [
     './codex-sandbox.ts',
     './record-connection-env.ts',
+    './sandbox-selection-policy.ts',
     './sandbox.ts',
   ]),
   module('orchestrator/src/sandbox/confinement-probe-task-port.ts', [
@@ -119,6 +126,8 @@ export const confinementModules: ConfinementModule[] = [
     '../run/run-worker-home.ts',
     './install-read-policy.ts',
     './confinement-probe-task-port.ts',
+    './codex-sandbox.ts',
+    './sandbox-selection-policy.ts',
     './sandbox.ts',
   ]),
 ]

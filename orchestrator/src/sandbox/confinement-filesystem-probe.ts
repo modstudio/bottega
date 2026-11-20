@@ -18,6 +18,7 @@ import { HARNESS_ENV_FILE_ENV, PLATFORM_ENV_FILE_ENV } from '../../../shared/con
 import { installationExecutable } from '../../../shared/install-root.ts'
 import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 import {
+  HUB_DATABASE_ENV,
   hubLoginTokenDirectory,
   realPathForPotentialPath,
   resolveHubDatabase,
@@ -33,6 +34,7 @@ import { targetGitEnvironment, worktreeGitDir } from '../git/git-environment.ts'
 import type { Project } from '../project/projects.ts'
 import { prepareSharedRefGuard, workerSharedGitRoots } from '../resources/ref-guard.ts'
 import { workerChildEnvironment } from '../run/run-worker-home.ts'
+import { codexPermissionProfileArgs, codexPermissionProfileInput } from './codex-sandbox.ts'
 import {
   type ConfinementProbeTask,
   createConfinementProbeTask,
@@ -40,9 +42,11 @@ import {
 import {
   type RunningInstallLayout,
   resolveRunningInstallLayout,
+  runningInstallProbeTarget,
   runningInstallReadCarveouts,
 } from './install-read-policy.ts'
 import {
+  codexPermissionProfile,
   probeSandboxProfile,
   readonlyLensProfile,
   resetSandbox,
@@ -61,7 +65,8 @@ export type ConfinementFilesystemProbeRow = {
     | 'workflow probe'
     | 'cross-project CLI'
     | 'extracted ref guard executes under the area deny'
-    | 'Codex'
+    | 'Codex writer'
+    | 'Codex post-launch sibling gap'
     | 'read-only MCP'
     | 'host override'
   status: FilesystemProbeAccess | CommandProbeStatus | 'committed' | 'refused'
@@ -81,7 +86,13 @@ type AccessTarget = {
 type AfterLaunchFixture = { target: string; ready: string; release: string }
 
 const NOT_COVERED: ConfinementFilesystemProbeRow[] = [
-  { family: 'Codex', status: 'not covered', paths: {}, reason: 'Codex has no SRT read profile' },
+  {
+    family: 'Codex post-launch sibling gap',
+    status: 'not covered',
+    paths: {},
+    reason:
+      'launch-literal profiles (Codex on every platform and srt on Linux) cannot deny a sibling worktree created after launch',
+  },
   {
     family: 'read-only MCP',
     status: 'not covered',
@@ -98,6 +109,120 @@ const NOT_COVERED: ConfinementFilesystemProbeRow[] = [
 
 const PROBE_PROJECT_NAME = 'confinement-probe'
 const PROBE_TASK_PREFIX = 'CONFINEMENTPROBE'
+const CODEX_PROBE_MODE = 'codex sandbox -P ran without --approve-for-me'
+
+function codexShellArgument(index: number): string {
+  return `\${${index}}`
+}
+
+function codexReadProbe(index: number): string {
+  return `if /bin/cat "${codexShellArgument(index)}" >/dev/null 2>&1; then echo readable; else echo denied; fi`
+}
+
+async function launchCodexWriterProbe(
+  profile: ReturnType<typeof readonlyLensProfile>,
+  targets: readonly AccessTarget[],
+  cwd: string,
+  environment: Record<string, string>,
+  tempDir: string,
+): Promise<ConfinementFilesystemProbeRow> {
+  const codex = Bun.which('codex')
+  if (!codex) {
+    return {
+      family: 'Codex writer',
+      status: 'not covered',
+      paths: {},
+      reason: 'codex is not installed',
+    }
+  }
+  try {
+    const permissionArgs = codexPermissionProfileArgs({
+      ...codexPermissionProfileInput({
+        profile,
+        sandbox: 'workspace-write',
+        cwd,
+        writableRoots: profile.filesystem.allowWrite,
+        tempDir,
+        writesRepository: true,
+      }),
+      network: false,
+    })
+    const measuredTargets = targets.filter(({ createAfterLaunch }) => !createAfterLaunch)
+    const writePath = join(cwd, '.codex-confinement-write')
+    const accessScript = measuredTargets.map((_, index) => codexReadProbe(index + 2)).join('\n')
+    const writeArgument = codexShellArgument(measuredTargets.length + 2)
+    const result = await startBounded(
+      [
+        codex,
+        'sandbox',
+        '-P',
+        PLATFORM_SLUG,
+        ...permissionArgs,
+        '--',
+        '/bin/sh',
+        '-c',
+        `/bin/pwd\n${accessScript}\nif printf fixture >"${writeArgument}" 2>/dev/null; then /bin/rm -f "${writeArgument}"; echo readable; else echo denied; fi`,
+        'probe',
+        cwd,
+        ...measuredTargets.map(({ path }) => path),
+        writePath,
+      ],
+      {
+        budget: 'sandbox-probe',
+        cwd,
+        env: { ...process.env, ...environment, TMPDIR: tempDir, TMP: tempDir, TEMP: tempDir },
+      },
+    )
+    if (result.exitCode !== 0) {
+      return {
+        family: 'Codex writer',
+        status: 'failed',
+        paths: {},
+        reason: `filesystem launch exited ${result.exitCode ?? 'unknown'}: ${firstErrorLine(result.stderr)}`,
+      }
+    }
+    const values = result.stdout.trim().split(/\r?\n/)
+    const expectedCwd = realPathForPotentialPath(cwd)
+    const pwd = values[0] === expectedCwd ? 'ran' : 'failed'
+    const paths = Object.fromEntries(
+      measuredTargets.map(({ name }, index) => [
+        name,
+        values[index + 1] === 'readable' || values[index + 1] === 'denied'
+          ? values[index + 1]
+          : 'not covered',
+      ]),
+    ) as Record<string, FilesystemProbeAccess>
+    const ownTreeWrite = values[measuredTargets.length + 1] === 'readable' ? 'ran' : 'failed'
+    const accessVerdict = probeVerdict(measuredTargets, paths, {
+      status: 'ran',
+      reason: 'Codex access targets measured',
+    })
+    const passed = pwd === 'ran' && ownTreeWrite === 'ran' && accessVerdict.status === 'denied'
+    return {
+      family: 'Codex writer',
+      status: passed ? 'ran' : 'failed',
+      paths,
+      commands: {
+        pwd: {
+          status: pwd,
+          reason: pwd === 'ran' ? 'own tree' : `expected ${expectedCwd}; got ${values[0]}`,
+        },
+        'own tree write': {
+          status: ownTreeWrite,
+          reason: ownTreeWrite === 'ran' ? 'write succeeded' : 'write was denied',
+        },
+      },
+      reason: passed ? CODEX_PROBE_MODE : `${CODEX_PROBE_MODE}; access expectation failed`,
+    }
+  } catch (error) {
+    return {
+      family: 'Codex writer',
+      status: 'failed',
+      paths: {},
+      reason: error instanceof Error ? error.message : String(error),
+    }
+  }
+}
 
 function fixtureProject(
   recordId: string,
@@ -295,9 +420,11 @@ async function launchProbe(
       ]),
     ) as Record<string, FilesystemProbeAccess>
     const command = await launchCommand(profile, commandArgv, environment, scratchDir, hubOpenMode)
+    const verdict = probeVerdict(targets, paths, command)
     return {
       family,
-      ...probeVerdict(targets, paths, command),
+      status: verdict.status === 'denied' ? 'ran' : verdict.status,
+      ...(verdict.reason ? { reason: verdict.reason } : {}),
       paths,
       commands: { [commandLabel]: command },
     }
@@ -440,8 +567,8 @@ async function launchExtractedRefGuardProbe(
   }
 }
 
-function openLiveHubFixture(destination: string): Database {
-  const source = new Database(resolveHubDatabase(process.env), { readonly: true })
+function openLiveHubFixture(sourcePath: string, destination: string): Database {
+  const source = new Database(sourcePath, { readonly: true })
   try {
     writeFileSync(destination, source.serialize())
   } finally {
@@ -577,7 +704,7 @@ function createProbeTaskFixture(
   return { own, task }
 }
 
-function createProbeFixture(root: string) {
+function createProbeFixture(root: string, hubSource: string) {
   const ownPath = join(root, 'projects', 'own')
   const worktree = join(ownPath, '.claude', 'worktrees', 'own')
   const siblingWorktree = join(ownPath, '.claude', 'worktrees', 'sibling')
@@ -611,15 +738,12 @@ function createProbeFixture(root: string) {
     mkdirSync(join(path, '..'), { recursive: true })
     writeFileSync(path, 'fixture')
   }
-  targets.push({
-    name: 'running package.json',
-    path: join(runningInstall.root, 'package.json'),
-    expected: 'readable',
-  })
+  targets.push({ ...runningInstallProbeTarget(runningInstall), expected: 'readable' })
   mkdirSync(runtimeDir, { recursive: true })
+  mkdirSync(join(runtimeDir, 'tmp'), { recursive: true })
   mkdirSync(scratchDir, { recursive: true })
   mkdirSync(state.hubDirectory, { recursive: true })
-  const hubWriter = openLiveHubFixture(hubDatabase)
+  const hubWriter = openLiveHubFixture(hubSource, hubDatabase)
   const { own, task: probeTask } = createProbeTaskFixture(
     hubWriter,
     state.orchestratorDatabase,
@@ -668,16 +792,19 @@ function createProbeFixture(root: string) {
 
 /** Execute each SRT profile family against planted sibling, state, secret, and own-tree paths. */
 export async function runConfinementFilesystemProbes(): Promise<ConfinementFilesystemProbeRow[]> {
-  const probeParent = process.env.BOTTEGA_SCRATCH ?? resolveStatePaths(process.env).orchestratorRuns
+  const probeParent = tmpdir()
   mkdirSync(probeParent, { recursive: true })
   const root = mkdtempSync(join(probeParent, `${PLATFORM_SLUG}-confinement-probe-`))
   const priorStateRoot = process.env[STATE_HOME_ENV]
+  const priorHubDatabase = process.env[HUB_DATABASE_ENV]
+  const hubSource = resolveHubDatabase(process.env)
   let hubWriter: Database | null = null
   try {
-    const fixture = createProbeFixture(root)
+    process.env[STATE_HOME_ENV] = join(root, 'state')
+    process.env[HUB_DATABASE_ENV] = join(root, 'state', 'hub', 'hub.db')
+    const fixture = createProbeFixture(root, hubSource)
     hubWriter = fixture.hubWriter
     const { common } = fixture
-    process.env[STATE_HOME_ENV] = fixture.stateRoot
     const launch = (
       family: Parameters<typeof launchProbe>[0],
       profile: Parameters<typeof launchProbe>[1],
@@ -726,12 +853,24 @@ export async function runConfinementFilesystemProbes(): Promise<ConfinementFiles
         fixture.hubOpenMode,
         fixture.commandLabel,
       ),
+      await launchCodexWriterProbe(
+        codexPermissionProfile({
+          ...common,
+          agent: 'codex',
+        }),
+        fixture.targets,
+        common.worktree,
+        fixture.environment,
+        join(common.runtimeDir, 'tmp'),
+      ),
       ...NOT_COVERED,
     ]
   } finally {
     hubWriter?.close()
     if (priorStateRoot === undefined) delete process.env[STATE_HOME_ENV]
     else process.env[STATE_HOME_ENV] = priorStateRoot
+    if (priorHubDatabase === undefined) delete process.env[HUB_DATABASE_ENV]
+    else process.env[HUB_DATABASE_ENV] = priorHubDatabase
     rmSync(root, { recursive: true, force: true })
   }
 }

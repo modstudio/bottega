@@ -253,7 +253,7 @@ test('srt denies the env file even when the worker home links it; host reports t
   })
 })
 
-test('codex rows name the native workspace-write sandbox and deny loopback when network_access is off', () => {
+test('codex rows report the native permission profile denials and default network policy', () => {
   for (const job of ['reading', 'writing'] as const) {
     for (const mcp of [false, true]) {
       const reported = row(codex, job, mcp)
@@ -261,19 +261,19 @@ test('codex rows name the native workspace-write sandbox and deny loopback when 
       if (reported.status !== 'ok') continue
       expect(reported.confinement).toEqual({
         sandbox: 'workspace-write',
-        reason: 'codex native sandbox',
+        reason: 'codex native permission profile',
       })
       expect(reported.loopback).toEqual({
         access: 'denied',
         reason: 'codex workspace-write has network_access off',
       })
       expect(reported.envFile).toEqual({
-        access: 'open',
-        reason: 'orchestrator passes codex no read denial',
+        access: 'denied',
+        reason: 'codex permission profile includes the operator env file',
       })
       expect(reported.keychain).toEqual({
-        access: 'open',
-        reason: 'orchestrator passes codex no read denial',
+        access: 'denied',
+        reason: 'codex permission profile includes the login keychain',
       })
     }
   }

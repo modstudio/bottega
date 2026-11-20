@@ -14,7 +14,7 @@ import { runHarnessStateDir } from '../run-owned-paths.ts'
 
 export type AreaReadPolicy = { deny: string[]; allow: string[] }
 
-export type AreaReadPlatform = 'darwin' | 'linux'
+export type WorktreeDenyForm = 'live-glob' | 'launch-literal'
 
 export const isAtOrBelow = (path: string, parent: string) => {
   const fromParent = relative(parent, path)
@@ -39,12 +39,12 @@ export function carveBackOutsideProtected(
 export function ownProjectWorktreeDenies(input: {
   root: string
   worktree: string
-  platform: AreaReadPlatform
+  form: WorktreeDenyForm
   entries: readonly string[]
 }): string[] {
   const root = resolve(input.root)
   const worktree = resolve(input.worktree)
-  if (input.platform === 'darwin') return [join(root, '*')]
+  if (input.form === 'live-glob') return [join(root, '*')]
   return input.entries
     .map((entry) => resolve(entry))
     .filter((entry) => isAtOrBelow(entry, root) && !isAtOrBelow(worktree, entry))
@@ -58,7 +58,7 @@ export function areaReadPolicy(input: {
   project: Project | null
   registeredProjects: readonly Project[]
   environment: StateEnvironment
-  platform: AreaReadPlatform
+  worktreeDenyForm: WorktreeDenyForm
   ownWorktreeRootEntries: readonly string[]
 }): AreaReadPolicy {
   const worktree = resolve(input.worktree)
@@ -76,7 +76,7 @@ export function areaReadPolicy(input: {
       ? ownProjectWorktreeDenies({
           root,
           worktree,
-          platform: input.platform,
+          form: input.worktreeDenyForm,
           entries: input.ownWorktreeRootEntries,
         })
       : [root]
