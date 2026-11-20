@@ -253,6 +253,7 @@ export function readonlyLensProfile(input: {
   installLayout?: RunningInstallLayout
   onWarning?: (message: string) => void
   platform?: 'darwin' | 'linux'
+  worktreeDenyForm?: 'live-glob' | 'launch-literal'
   ownWorktreeRootEntries?: readonly string[]
 }): SandboxRuntimeConfig {
   if (input.registeredProjects.length === 0) throw new Error(emptyProjectRegisterRefusal())
@@ -284,7 +285,11 @@ export function readonlyLensProfile(input: {
     project: input.project,
     registeredProjects: input.registeredProjects,
     environment,
-    platform: input.platform ?? (process.platform === 'linux' ? 'linux' : 'darwin'),
+    worktreeDenyForm:
+      input.worktreeDenyForm ??
+      ((input.platform ?? (process.platform === 'linux' ? 'linux' : 'darwin')) === 'darwin'
+        ? 'live-glob'
+        : 'launch-literal'),
     ownWorktreeRootEntries: input.ownWorktreeRootEntries ?? ownWorktreeRootEntries(input.project),
   })
   const nodeModuleLinks = permittedNodeModuleCarvebacks({
@@ -349,7 +354,8 @@ export function readonlyLensProfile(input: {
 export function codexPermissionProfile(
   input: Parameters<typeof readonlyLensProfile>[0],
 ): SandboxRuntimeConfig {
-  return readonlyLensProfile({ ...input, platform: 'linux' })
+  const platform = input.platform ?? (process.platform === 'linux' ? 'linux' : 'darwin')
+  return readonlyLensProfile({ ...input, platform, worktreeDenyForm: 'launch-literal' })
 }
 
 type SocketPathResolver = (path: string) => string | null
@@ -482,7 +488,10 @@ export function probeSandboxProfile(input: {
     project: input.project,
     registeredProjects: input.registeredProjects,
     environment,
-    platform: input.platform ?? (process.platform === 'linux' ? 'linux' : 'darwin'),
+    worktreeDenyForm:
+      (input.platform ?? (process.platform === 'linux' ? 'linux' : 'darwin')) === 'darwin'
+        ? 'live-glob'
+        : 'launch-literal',
     ownWorktreeRootEntries: input.ownWorktreeRootEntries ?? ownWorktreeRootEntries(input.project),
   })
   const readProfile = assembleAreaReadProfile({

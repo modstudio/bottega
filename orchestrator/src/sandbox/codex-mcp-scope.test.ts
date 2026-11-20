@@ -227,7 +227,7 @@ test('resume keeps the complete scope before resume', () => {
     mcpServer: 'starship',
     home: '/operator',
     codexPermissionProfile: {
-      filesystem: { denyRead: [], allowRead: [] },
+      filesystem: { denyRead: [], allowRead: [], denyWrite: [] },
       writableRoots: [],
     },
   })

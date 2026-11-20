@@ -91,7 +91,7 @@ const NOT_COVERED: ConfinementFilesystemProbeRow[] = [
     status: 'not covered',
     paths: {},
     reason:
-      'Codex uses a fixed-at-launch literal deny list, so a sibling worktree created after launch is readable',
+      'launch-literal profiles (Codex on every platform and srt on Linux) cannot deny a sibling worktree created after launch',
   },
   {
     family: 'read-only MCP',
@@ -109,6 +109,7 @@ const NOT_COVERED: ConfinementFilesystemProbeRow[] = [
 
 const PROBE_PROJECT_NAME = 'confinement-probe'
 const PROBE_TASK_PREFIX = 'CONFINEMENTPROBE'
+const CODEX_PROBE_MODE = 'codex sandbox -P ran without --approve-for-me'
 
 function codexShellArgument(index: number): string {
   return `\${${index}}`
@@ -211,7 +212,7 @@ async function launchCodexWriterProbe(
           reason: ownTreeWrite === 'ran' ? 'write succeeded' : 'write was denied',
         },
       },
-      reason: passed ? undefined : 'pwd, own-tree write, or an access-target expectation failed',
+      reason: passed ? CODEX_PROBE_MODE : `${CODEX_PROBE_MODE}; access expectation failed`,
     }
   } catch (error) {
     return {

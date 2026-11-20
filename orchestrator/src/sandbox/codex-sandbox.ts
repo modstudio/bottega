@@ -16,6 +16,7 @@ export type CodexSandboxRuling = {
 export type CodexPermissionFilesystem = {
   denyRead: readonly string[]
   allowRead: readonly string[]
+  denyWrite: readonly string[]
 }
 
 export type CodexPermissionProfileInput = {
@@ -48,6 +49,7 @@ export function codexPermissionProfileArgs(input: {
   const permissions = new Map<string, 'read' | 'write' | 'deny'>([[':root', 'read']])
   for (const path of input.filesystem.allowRead) permissions.set(path, 'read')
   for (const path of input.writableRoots) permissions.set(path, 'write')
+  for (const path of input.filesystem.denyWrite) permissions.set(path, 'read')
   // Codex resolves a more specific entry first and deny wins at equal specificity.
   for (const path of input.filesystem.denyRead) permissions.set(path, 'deny')
   const filesystem = [...permissions]
@@ -98,6 +100,7 @@ export function codexPermissionProfileInput(input: {
     filesystem: {
       denyRead: input.profile.filesystem.denyRead,
       allowRead: input.profile.filesystem.allowWithinDeny,
+      denyWrite: input.profile.filesystem.denyWrite,
     },
     writableRoots: input.writesRepository
       ? (codexWritableRoots(input.sandbox, input.cwd, input.writableRoots, input.tempDir, true) ??

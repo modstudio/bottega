@@ -166,6 +166,7 @@ su -s /bin/sh smoke -c '
   confinement_output=$(PATH=/tmp/bin:/usr/bin:/bin ${installedBinary} review confinement report 2>&1)
   printf "%s\\n" "$confinement_output"
   printf "%s\\n" "$confinement_output" | grep -F "filesystem-probe  extracted ref guard executes under the area deny  committed"
+  printf "%s\\n" "$confinement_output" | grep -F "running distribution binary=readable"
   printf "%s\\n" "$confinement_output" | grep -F "filesystem-probe  goose  ran" | grep -F "${PLATFORM_SLUG} task show <probe task>=ran"
   printf "%s\\n" "$confinement_output" | grep -F "filesystem-probe  grok  ran" | grep -F "${PLATFORM_SLUG} task show <probe task>=ran"
   printf "%s\\n" "$confinement_output" | grep -F "filesystem-probe  ACP writer  ran" | grep -F "${PLATFORM_SLUG} task show <probe task>=ran"

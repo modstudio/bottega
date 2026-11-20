@@ -341,8 +341,8 @@ function codexCommon(o: Omit<ArgvOpts, 'prompt'>): string[] {
    * with `--sandbox`; it implies the same workspace-write sandbox repository
    * jobs already receive. Every repository job therefore uses it for the
    * always-present bottega-ask channel, whether or not project MCP was requested.
-   * No-repository jobs use an explicit workspace-write sandbox, so bottega-ask
-   * tools without a read-only annotation still cannot run without approval.
+   * Repository and no-repository jobs both use the named native permission
+   * profile; no-repository jobs omit approval, so mutating tools still require it.
    */
   a.push(...codexShellEnvironmentArgs(o.gitConfigEnvironment, o.recipeEnvironment))
   const sandbox =

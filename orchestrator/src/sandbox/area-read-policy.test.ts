@@ -25,7 +25,7 @@ test('area policy denies orchestrator database and runs overrides outside the st
       [ORCHESTRATOR_DATABASE_ENV]: '/override/orchestrator/orchestrator.db',
       BOTTEGA_RUNS: '/override/runs',
     },
-    platform: 'darwin',
+    worktreeDenyForm: 'live-glob',
     ownWorktreeRootEntries: [],
   })
   expect(policy.deny).toContain('/override/orchestrator')
@@ -53,7 +53,7 @@ test('own-project worktree denies preserve owned carve-backs under the late-deny
     project,
     registeredProjects: [project],
     environment: { HOME: '/Users/operator', [STATE_HOME_ENV]: '/operator/state' },
-    platform: 'darwin',
+    worktreeDenyForm: 'live-glob',
     ownWorktreeRootEntries: [],
   })
   const profile = assembleAreaReadProfile({
@@ -81,7 +81,7 @@ test('Linux worktree denies enumerate existing siblings but not the own tree', (
     ownProjectWorktreeDenies({
       root: '/projects/own/.claude/worktrees',
       worktree: '/projects/own/.claude/worktrees/run',
-      platform: 'linux',
+      form: 'launch-literal',
       entries: ['/projects/own/.claude/worktrees/run', '/projects/own/.claude/worktrees/sibling'],
     }),
   ).toEqual(['/projects/own/.claude/worktrees/sibling'])

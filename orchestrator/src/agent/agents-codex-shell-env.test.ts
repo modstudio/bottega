@@ -8,11 +8,19 @@ const shellSets = (argv: string[]) =>
   )
 
 const codexPermissionProfile = {
-  filesystem: { denyRead: ['/state'], allowRead: ['/state/runs/this-run'] },
+  filesystem: { denyRead: ['/state'], allowRead: ['/state/runs/this-run'], denyWrite: [] },
   writableRoots: ['/repo', '/run/scratch'],
 }
 
 describe('codex worker shell environment', () => {
+  test('repository and no-repository launches refuse a missing native permission profile', () => {
+    for (const options of [{ write: true }, {}]) {
+      expect(() =>
+        BUILTIN_AGENTS.codex!.argv({ prompt: 'p', out: '/tmp/out', ...options }),
+      ).toThrow('codex launch refusal: native permission profile is missing')
+    }
+  })
+
   test('first turns and resumes disable native project docs', () => {
     const first = BUILTIN_AGENTS.codex!.argv({
       prompt: 'p',

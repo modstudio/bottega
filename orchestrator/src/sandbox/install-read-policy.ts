@@ -3,11 +3,7 @@
 import { readFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import type { ConfigEnvironment } from '../../../shared/config-directory.ts'
-import {
-  DIST_MANIFEST,
-  runningInstallationKind,
-  runningInstallRoot,
-} from '../../../shared/install-root.ts'
+import { runningInstallationKind, runningInstallRoot } from '../../../shared/install-root.ts'
 
 type WorkspaceManifest = {
   workspaces?: string[] | { packages?: string[] }
@@ -22,6 +18,7 @@ export type RunningInstallLayout =
   | {
       kind: 'distribution'
       root: string
+      executablePath: string
       workspaceDirectories: string[]
     }
 
@@ -36,6 +33,7 @@ export function resolveRunningInstallLayout(environment: ConfigEnvironment): Run
     return {
       kind: 'distribution',
       root,
+      executablePath: process.execPath,
       workspaceDirectories: [],
     }
   }
@@ -80,6 +78,6 @@ export function runningInstallProbeTarget(layout: RunningInstallLayout): {
   path: string
 } {
   return layout.kind === 'distribution'
-    ? { name: 'running distribution manifest', path: join(layout.root, DIST_MANIFEST) }
+    ? { name: 'running distribution binary', path: layout.executablePath }
     : { name: 'running checkout package.json', path: join(layout.root, 'package.json') }
 }

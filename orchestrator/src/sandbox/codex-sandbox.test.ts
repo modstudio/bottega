@@ -81,6 +81,7 @@ describe('Codex permission profile', () => {
       filesystem: {
         denyRead: ['/projects/sibling', '/state', '/projects/own/declared.secret'],
         allowRead: ['/projects/own/tree', '/state/run', '/runtime/assets'],
+        denyWrite: [],
       },
       writableRoots,
       network,
@@ -93,6 +94,21 @@ describe('Codex permission profile', () => {
       '-c',
       `permissions.${PLATFORM_SLUG}.filesystem={":root"="read","/projects/own/tree"="write","/state/run"="read","/runtime/assets"="read","/state/run/scratch"="write","/projects/sibling"="deny","/state"="deny","/projects/own/declared.secret"="deny"}`,
     ])
+  })
+
+  test('write denies override broader writable roots while preserving read denies', () => {
+    const rendered = codexPermissionProfileArgs({
+      filesystem: {
+        denyRead: ['/tmp/secret'],
+        allowRead: [],
+        denyWrite: ['/tmp/readonly', '/tmp/secret'],
+      },
+      writableRoots: ['/tmp'],
+      network: false,
+    }).find((arg) => arg.startsWith(`permissions.${PLATFORM_SLUG}.filesystem=`))
+    expect(rendered).toContain('"/tmp"="write"')
+    expect(rendered).toContain('"/tmp/readonly"="read"')
+    expect(rendered).toContain('"/tmp/secret"="deny"')
   })
 
   test('network is emitted only when the run enables it', () => {
