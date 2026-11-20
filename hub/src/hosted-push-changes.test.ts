@@ -7,6 +7,7 @@ import { createHostedRecordFixture, pgliteSql } from '../test/hosted-record-fixt
 import { db, writeTransaction } from './db.ts'
 import { DELETED_ON_HOSTED_RECORD_REASON } from './hosted-delete.ts'
 import { applyHostedPushChangesInTransaction } from './hosted-push-changes.ts'
+import { HostedChangeIdMismatchError, HostedRevisionConflictError } from './hosted-push-conflict.ts'
 import { drainHostedOutbox } from './outbox.ts'
 import {
   type HostedPushChange,
@@ -486,6 +487,187 @@ test('field task pushes preserve other hosted edits, deduplicate, and create an 
   expect((await database.query(`SELECT title FROM hub_task WHERE id=$1`, [taskId])).rows).toEqual([
     { title: 'Later arriving title' },
   ])
+})
+
+test('a stale guarded item aborts every write in its batch', async () => {
+  const ids = [
+    '01990000-0000-7000-8000-000000001400',
+    '01990000-0000-7000-8000-000000001401',
+    '01990000-0000-7000-8000-000000001402',
+  ]
+  await apply(
+    ids.map((id, index) => ({
+      table: 'hub_task',
+      id,
+      op: 'upsert',
+      row: taskRow(id, `DEV-${400 + index}`),
+    })),
+  )
+  const batch = ids.map((id, index) => {
+    const row = { ...taskRow(id, `DEV-${400 + index}`), title: `changed-${index}` }
+    return {
+      table: 'hub_task' as const,
+      id,
+      op: 'upsert' as const,
+      row,
+      fields: ['title'],
+      expected_revision: index === 1 ? 99 : 1,
+      change_id: `01990000-0000-7000-8000-00000000140${index + 3}`,
+    }
+  })
+  try {
+    await apply(batch)
+    throw new Error('expected a revision conflict')
+  } catch (error) {
+    expect(error).toBeInstanceOf(HostedRevisionConflictError)
+    expect(error).toMatchObject({ index: 1, table: 'hub_task', id: ids[1], currentRevision: '1' })
+  }
+  expect(
+    (
+      await database.query<{ title: string }>(
+        `SELECT title FROM hub_task WHERE id=ANY($1::uuid[]) ORDER BY id`,
+        [ids],
+      )
+    ).rows,
+  ).toEqual([{ title: 'DEV-400' }, { title: 'DEV-401' }, { title: 'DEV-402' }])
+  expect(
+    (
+      await database.query(`SELECT 1 FROM hub_applied_change WHERE change_id=ANY($1::uuid[])`, [
+        batch.map((change) => change.change_id),
+      ])
+    ).rows,
+  ).toHaveLength(0)
+})
+
+test('change ids replay the stored outcome and reject a different payload', async () => {
+  const id = '01990000-0000-7000-8000-000000001410'
+  const changeId = '01990000-0000-7000-8000-000000001411'
+  const change = {
+    table: 'hub_task' as const,
+    id,
+    op: 'upsert' as const,
+    row: taskRow(id, 'DEV-410'),
+    change_id: changeId,
+    expected_revision: 0,
+  }
+  expect(await apply([change])).toEqual([{ id, status: 'applied' }])
+  expect(await apply([change])).toEqual([{ id, status: 'applied' }])
+  expect(
+    (await database.query(`SELECT revision::int FROM hub_task WHERE id=$1`, [id])).rows,
+  ).toEqual([{ revision: 1 }])
+  await expect(
+    apply([{ ...change, row: { ...change.row, title: 'different' } }]),
+  ).rejects.toBeInstanceOf(HostedChangeIdMismatchError)
+})
+
+test('field compare-and-set permits independent task patches and rejects a stale field', async () => {
+  const id = '01990000-0000-7000-8000-000000001420'
+  const original = { ...taskRow(id, 'DEV-420'), title: 'Old title', status: 'active' }
+  await apply([{ table: 'hub_task', id, op: 'upsert', row: original }])
+  await apply([
+    {
+      table: 'hub_task',
+      id,
+      op: 'upsert',
+      row: { ...original, status: 'review' },
+      fields: ['status'],
+      from: { status: 'active' },
+    },
+  ])
+  await apply([
+    {
+      table: 'hub_task',
+      id,
+      op: 'upsert',
+      row: { ...original, title: 'New title' },
+      fields: ['title'],
+      from: { title: 'Old title' },
+    },
+  ])
+  try {
+    await apply([
+      {
+        table: 'hub_task',
+        id,
+        op: 'upsert',
+        row: { ...original, title: 'Other title' },
+        fields: ['title'],
+        from: { title: 'Old title' },
+      },
+    ])
+    throw new Error('expected a field conflict')
+  } catch (error) {
+    expect(error).toMatchObject({ field: 'title', currentValue: 'New title' })
+  }
+  expect(
+    (await database.query(`SELECT title,status,revision::int FROM hub_task WHERE id=$1`, [id]))
+      .rows,
+  ).toEqual([{ title: 'New title', status: 'review', revision: 3 }])
+})
+
+test('unguarded updates increment revisions and document changes compare text versions', async () => {
+  const id = '01990000-0000-7000-8000-000000001430'
+  const documentId = '01990000-0000-7000-8000-000000001431'
+  const original = taskRow(id, 'DEV-430')
+  await apply([{ table: 'hub_task', id, op: 'upsert', row: original }])
+  await apply([
+    {
+      table: 'hub_task',
+      id,
+      op: 'upsert',
+      row: { ...original, title: 'unguarded' },
+      fields: ['title'],
+    },
+  ])
+  expect(
+    (await database.query(`SELECT revision::int FROM hub_task WHERE id=$1`, [id])).rows,
+  ).toEqual([{ revision: 2 }])
+  const document = {
+    id: documentId,
+    task_key: 'DEV-430',
+    task_id: id,
+    project_name: 'workshop',
+    projectId,
+    number: 1,
+    role: null,
+    title: 'Document',
+    body: 'body',
+    version: 'v1',
+    created_at: '2026-10-09T10:00:00.000Z',
+    updated_at: '2026-10-09T11:00:00.000Z',
+    deleted_at: null,
+  }
+  await apply([{ table: 'hub_task_document', id: documentId, op: 'upsert', row: document }])
+  await expect(
+    apply([
+      {
+        table: 'hub_task_document',
+        id: documentId,
+        op: 'upsert',
+        row: { ...document, body: 'changed', version: 'v2' },
+        fields: ['body', 'version'],
+        expected_revision: 'stale',
+      },
+    ]),
+  ).rejects.toMatchObject({ currentRevision: 'v1' })
+})
+
+test('applied change retention prunes only rows older than its window', async () => {
+  await database.exec(`
+    INSERT INTO hub_applied_change(change_id,space_id,result,applied_at) VALUES
+      ('01990000-0000-7000-8000-000000001440','${spaceId}','{}',now() - interval '31 days'),
+      ('01990000-0000-7000-8000-000000001441','${spaceId}','{}',now() - interval '29 days');
+  `)
+  expect(
+    (await database.query(`SELECT public.hub_applied_change_prune(30)::int AS deleted`)).rows,
+  ).toEqual([{ deleted: 1 }])
+  expect(
+    (
+      await database.query(`SELECT change_id::text FROM hub_applied_change WHERE change_id=$1`, [
+        '01990000-0000-7000-8000-000000001441',
+      ])
+    ).rows,
+  ).toHaveLength(1)
 })
 
 test('offline commands later drain through the real outbox into hosted task rows', async () => {

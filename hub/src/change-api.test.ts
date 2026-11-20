@@ -3,6 +3,7 @@ import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { encodeRecordChangeCursor } from '../../shared/record/record-changes.ts'
 import { hostedRouteTestConfig } from '../test/hosted-route-fixture.ts'
 import { changeApi } from './change-api.ts'
+import { HostedChangeIdMismatchError, HostedRevisionConflictError } from './hosted-push-conflict.ts'
 import { hostedPushChanges } from './task-client.ts'
 
 const config = hostedRouteTestConfig
@@ -224,6 +225,58 @@ test('push route rejects an invalid item in place and passes only validated rows
     },
     { id: valid.id, status: 'applied' },
   ])
+})
+
+test('push route returns typed guard and replay refusals at original batch positions', async () => {
+  const id = '01990000-0000-7000-8000-000000000090'
+  const valid = {
+    table: 'hub_interval',
+    id,
+    op: 'delete',
+  }
+  const revision = await changeApi(pushRequest([{ ...valid, id: 'bad' }, valid]), config, {
+    fetch: whoami,
+    push: async () => {
+      const error = new HostedRevisionConflictError(
+        'hub_task',
+        id,
+        'hub_task changed',
+        '7',
+        'status',
+        'review',
+      )
+      error.index = 0
+      throw error
+    },
+  })
+  expect(revision?.status).toBe(409)
+  expect(await revision?.json()).toEqual({
+    error: 'hub_task changed',
+    code: 'revision-conflict',
+    reason: 'stale-revision',
+    condition: 'hub_task changed',
+    currentRevision: '7',
+    index: 1,
+    table: 'hub_task',
+    id,
+    field: 'status',
+    currentValue: 'review',
+  })
+
+  const mismatch = await changeApi(pushRequest([valid]), config, {
+    fetch: whoami,
+    push: async () => {
+      const error = new HostedChangeIdMismatchError(
+        'hub_task',
+        id,
+        '01990000-0000-7000-8000-000000000091',
+      )
+      error.index = 0
+      throw error
+    },
+  })
+  expect(mismatch?.status).toBe(422)
+  expect(await mismatch?.json()).toMatchObject({ code: 'change-id-mismatch', index: 0, id })
 })
 
 test('push route rejects malformed UUIDs and timestamps at their batch positions', async () => {

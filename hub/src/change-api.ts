@@ -10,6 +10,12 @@ import { recordSpaceAccessDecision } from '../../shared/record-space-request.ts'
 import { listHostedIdentitySet } from './hosted-identity-set.ts'
 import { applyHostedPushChanges } from './hosted-push-changes.ts'
 import {
+  changeIdMismatchBody,
+  HostedChangeIdMismatchError,
+  HostedRevisionConflictError,
+  revisionConflictBody,
+} from './hosted-push-conflict.ts'
+import {
   HOSTED_RECORD_CHANGE_TABLES,
   type HostedRecordChangeReadResult,
   readHostedRecordChanges,
@@ -86,17 +92,24 @@ function hasTestDependencies(
 function pushInput(
   value: unknown,
 ):
-  | { inputs: ParsedHostedPushChange[]; rejected: Map<number, HostedPushOutcome> }
+  | {
+      inputs: ParsedHostedPushChange[]
+      positions: number[]
+      rejected: Map<number, HostedPushOutcome>
+    }
   | { error: string } {
   if (!Array.isArray(value)) return { error: 'body must be a list of pushed changes' }
   const inputs: ParsedHostedPushChange[] = []
+  const positions: number[] = []
   const rejected = new Map<number, HostedPushOutcome>()
   for (const [index, item] of value.entries()) {
     const parsed = parseHostedPushItem(item)
-    if ('input' in parsed) inputs.push(parsed.input)
-    else rejected.set(index, parsed.outcome)
+    if ('input' in parsed) {
+      inputs.push(parsed.input)
+      positions.push(index)
+    } else rejected.set(index, parsed.outcome)
   }
-  return { inputs, rejected }
+  return { inputs, positions, rejected }
 }
 
 async function pushResponse(
@@ -121,6 +134,14 @@ async function pushResponse(
       outcomes.push(decision.rejected.get(index) ?? applied[appliedIndex++]!)
     return json(outcomes)
   } catch (error) {
+    if (error instanceof HostedRevisionConflictError) {
+      error.index = decision.positions[error.index] ?? error.index
+      return json(revisionConflictBody(error), error.status)
+    }
+    if (error instanceof HostedChangeIdMismatchError) {
+      error.index = decision.positions[error.index] ?? error.index
+      return json(changeIdMismatchBody(error), error.status)
+    }
     return json({ error: (error as Error).message }, 409)
   }
 }

@@ -62,6 +62,7 @@ export const hubTask = pgTable.withRLS(
     updatedAt: updatedAt(),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
     nextDocumentNumber: integer('next_document_number').notNull().default(1),
+    revision: bigint({ mode: 'number' }).notNull().default(1),
   },
   (table) => [
     unique('hub_task_space_key_unique').on(table.spaceId, table.key),
@@ -92,6 +93,7 @@ export const hubTaskComment = pgTable.withRLS(
     createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
     updatedAt: updatedAt(),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    revision: bigint({ mode: 'number' }).notNull().default(1),
   },
   (table) => [
     unique('hub_task_comment_space_id_unique').on(table.spaceId, table.id),
@@ -197,6 +199,7 @@ export const hubNote = pgTable.withRLS(
     hiddenAt: timestamp('hidden_at', { withTimezone: true }),
     hiddenByUserId: uuid('hidden_by_user_id').references(() => user.id),
     hiddenReason: text('hidden_reason'),
+    revision: bigint({ mode: 'number' }).notNull().default(1),
   },
   (table) => [
     unique('hub_note_space_project_number_unique').on(
@@ -228,6 +231,20 @@ export const hubNote = pgTable.withRLS(
             AND m.role = 'owner'
         )`,
     }),
+  ],
+)
+
+export const hubAppliedChange = pgTable.withRLS(
+  'hub_applied_change',
+  {
+    changeId: uuid('change_id').primaryKey(),
+    spaceId: spaceIdentity(),
+    result: jsonb().notNull(),
+    appliedAt: timestamp('applied_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index('hub_applied_change_applied_at_idx').on(table.appliedAt),
+    ...tenantPolicies('hub_applied_change', table.spaceId),
   ],
 )
 

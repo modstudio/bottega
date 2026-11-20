@@ -1,3 +1,4 @@
+import { hasRecordIdShape } from '../../shared/record-id.ts'
 import { TASK_SOURCES, type TaskSource } from '../../shared/task-source.ts'
 
 export const HOSTED_TASK_TABLE = 'hub_task'
@@ -217,52 +218,60 @@ const HOSTED_TASK_UPDATE_COLUMNS = [
   'assignee',
 ] as const satisfies readonly (keyof PushedTask)[]
 
-export type HostedPushChange =
-  | { table: PushableHubChangeTable; id: string; op: 'delete' }
-  | {
-      table: typeof HOSTED_TASK_TABLE
-      id: string
-      op: 'upsert'
-      row: PushedTask
-      fields?: string[] | null
-    }
-  | {
-      table: typeof HOSTED_COMMENT_TABLE
-      id: string
-      op: 'upsert'
-      row: PushedComment
-      fields?: string[] | null
-    }
-  | {
-      table: typeof HOSTED_DOCUMENT_TABLE
-      id: string
-      op: 'upsert'
-      row: PushedDocument
-      fields?: string[] | null
-    }
-  | {
-      table: typeof HOSTED_STATUS_EVENT_TABLE
-      id: string
-      op: 'upsert'
-      row: PushedStatusEvent
-    }
-  | { table: typeof HOSTED_INTERVAL_TABLE; id: string; op: 'upsert'; row: PushedInterval }
-  | { table: typeof HOSTED_INTERVAL_TABLE; id: string; op: 'delete' }
-  | { table: typeof HOSTED_DAY_TABLE; id: string; op: 'upsert'; row: PushedDay }
-  | {
-      table: typeof HOSTED_NOTE_TABLE
-      id: string
-      op: 'upsert'
-      row: PushedNote
-      fields: string[]
-    }
-  | { table: typeof HOSTED_NOTE_TABLE; id: string; op: 'delete' }
-  | {
-      table: typeof HOSTED_NOTE_ACKNOWLEDGEMENT_TABLE
-      id: string
-      op: 'upsert'
-      row: PushedNoteAcknowledgement
-    }
+type HostedPushGuards = {
+  change_id?: string
+  expected_revision?: number | string
+  from?: Record<string, unknown>
+}
+
+export type HostedPushChange = HostedPushGuards &
+  (
+    | { table: PushableHubChangeTable; id: string; op: 'delete' }
+    | {
+        table: typeof HOSTED_TASK_TABLE
+        id: string
+        op: 'upsert'
+        row: PushedTask
+        fields?: string[] | null
+      }
+    | {
+        table: typeof HOSTED_COMMENT_TABLE
+        id: string
+        op: 'upsert'
+        row: PushedComment
+        fields?: string[] | null
+      }
+    | {
+        table: typeof HOSTED_DOCUMENT_TABLE
+        id: string
+        op: 'upsert'
+        row: PushedDocument
+        fields?: string[] | null
+      }
+    | {
+        table: typeof HOSTED_STATUS_EVENT_TABLE
+        id: string
+        op: 'upsert'
+        row: PushedStatusEvent
+      }
+    | { table: typeof HOSTED_INTERVAL_TABLE; id: string; op: 'upsert'; row: PushedInterval }
+    | { table: typeof HOSTED_INTERVAL_TABLE; id: string; op: 'delete' }
+    | { table: typeof HOSTED_DAY_TABLE; id: string; op: 'upsert'; row: PushedDay }
+    | {
+        table: typeof HOSTED_NOTE_TABLE
+        id: string
+        op: 'upsert'
+        row: PushedNote
+        fields: string[]
+      }
+    | { table: typeof HOSTED_NOTE_TABLE; id: string; op: 'delete' }
+    | {
+        table: typeof HOSTED_NOTE_ACKNOWLEDGEMENT_TABLE
+        id: string
+        op: 'upsert'
+        row: PushedNoteAcknowledgement
+      }
+  )
 
 export type ParsedHostedPushChange =
   | Exclude<HostedPushChange, { op: 'delete' }>
@@ -722,7 +731,7 @@ function parseFields(
   return [...new Set(value as string[])]
 }
 
-export function parseHostedPushItem(value: unknown): ParsedHostedPushItem {
+function parseHostedPushItemContent(value: unknown): ParsedHostedPushItem {
   const input = object(value)
   const id = typeof input?.id === 'string' ? input.id : String(input?.id ?? '')
   if (!input) return rejected(id, 'pushed change must be an object')
@@ -741,4 +750,47 @@ export function parseHostedPushItem(value: unknown): ParsedHostedPushItem {
     return parseHostedUpsert(input as Record<string, unknown> & { id: string }, table)
   if (!acceptsDelete(table)) return rejected(id, `${table} does not accept delete`)
   return { input: { table, id: input.id, op: 'delete' } }
+}
+
+function parsePushGuards(
+  wire: Record<string, unknown>,
+  input: ParsedHostedPushChange,
+): HostedPushGuards | string {
+  const guards: HostedPushGuards = {}
+  if (wire.change_id !== undefined) {
+    if (typeof wire.change_id !== 'string' || !hasRecordIdShape(wire.change_id))
+      return 'pushed change change_id must be a UUID'
+    guards.change_id = wire.change_id
+  }
+  if (wire.expected_revision !== undefined) {
+    if (input.table === HOSTED_DOCUMENT_TABLE) {
+      if (typeof wire.expected_revision !== 'string')
+        return `${input.table} expected_revision must be a string`
+    } else if (
+      input.table === HOSTED_TASK_TABLE ||
+      input.table === HOSTED_COMMENT_TABLE ||
+      input.table === HOSTED_NOTE_TABLE
+    ) {
+      if (!Number.isSafeInteger(wire.expected_revision) || Number(wire.expected_revision) < 0)
+        return `${input.table} expected_revision must be a non-negative safe integer`
+    } else return `${input.table} does not accept expected_revision`
+    guards.expected_revision = wire.expected_revision as number | string
+  }
+  if (wire.from !== undefined) {
+    const from = object(wire.from)
+    if (!from) return `${input.table} from must be a JSON object`
+    const fields = 'fields' in input && Array.isArray(input.fields) ? input.fields : []
+    const unknown = Object.keys(from).find((field) => !fields.includes(field))
+    if (unknown) return `${input.table} from contains ${unknown}, which is not in fields`
+    guards.from = from
+  }
+  return guards
+}
+
+export function parseHostedPushItem(value: unknown): ParsedHostedPushItem {
+  const parsed = parseHostedPushItemContent(value)
+  if ('outcome' in parsed) return parsed
+  const guards = parsePushGuards(value as Record<string, unknown>, parsed.input)
+  if (typeof guards === 'string') return rejected(parsed.input.id, guards)
+  return { input: { ...parsed.input, ...guards } as ParsedHostedPushChange }
 }

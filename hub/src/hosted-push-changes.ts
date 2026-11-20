@@ -1,7 +1,14 @@
 import type { SQL } from 'bun'
+import { canonicalJson } from '../../shared/canonical-json.ts'
 import { DELETED_ON_HOSTED_RECORD_REASON } from './hosted-delete.ts'
 import { applyDayChangeInTransaction, applyIntervalChangeInTransaction } from './hosted-evidence.ts'
 import { storedHubProjectId } from './hosted-project-identity.ts'
+import {
+  fieldConflict,
+  HostedChangeIdMismatchError,
+  HostedRevisionConflictError,
+  revisionConflict,
+} from './hosted-push-conflict.ts'
 import {
   decideDocumentUpsert,
   decideNoteAcknowledgementUpsert,
@@ -46,6 +53,97 @@ type PushDeclaration = {
   ): Promise<Extract<HostedPushOutcome, { status: 'applied' | 'duplicate' }>>
 }
 
+type GuardedStoredRow = Record<string, unknown> & {
+  revision?: number | string
+  version?: string
+}
+
+function changeKey(input: ParsedHostedPushChange): string {
+  if (input.op === 'delete') return input.id
+  const row = input.row as unknown as Record<string, unknown>
+  return String(row.key ?? row.task_key ?? input.id)
+}
+
+function assertPushGuards(
+  input: ParsedHostedPushChange,
+  current: GuardedStoredRow | undefined,
+): void {
+  if (input.expected_revision !== undefined) {
+    const currentRevision =
+      input.table === HOSTED_DOCUMENT_TABLE ? current?.version : current?.revision
+    const matches =
+      input.expected_revision === 0
+        ? current === undefined
+        : current !== undefined && currentRevision === input.expected_revision
+    if (!matches)
+      throw revisionConflict({
+        table: input.table,
+        id: input.id,
+        expected: input.expected_revision,
+        current: currentRevision == null ? null : currentRevision,
+        key: changeKey(input),
+      })
+  }
+  for (const [field, expected] of Object.entries(input.from ?? {})) {
+    const currentValue = current?.[field] ?? null
+    if (current === undefined || !Object.is(currentValue, expected))
+      throw fieldConflict({
+        table: input.table,
+        id: input.id,
+        field,
+        currentValue,
+        currentRevision:
+          input.table === HOSTED_DOCUMENT_TABLE
+            ? (current?.version ?? null)
+            : (current?.revision ?? null),
+      })
+  }
+}
+
+function changeFingerprint(input: ParsedHostedPushChange): string {
+  const { change_id: _changeId, ...payload } = input
+  return new Bun.CryptoHasher('sha256').update(canonicalJson(payload)).digest('hex')
+}
+
+type StoredAppliedChange = {
+  fingerprint: string
+  outcome: HostedPushOutcome
+}
+
+async function replayedOutcome(
+  tx: SQL,
+  identity: TaskIdentity,
+  input: ParsedHostedPushChange,
+): Promise<{ fingerprint: string; outcome: HostedPushOutcome | null }> {
+  const fingerprint = changeFingerprint(input)
+  if (!input.change_id) return { fingerprint, outcome: null }
+  const rows = (await tx`SELECT result FROM hub_applied_change
+    WHERE change_id=${input.change_id}::uuid AND space_id=${identity.spaceId}::uuid`) as Array<{
+    result: StoredAppliedChange | string
+  }>
+  if (!rows[0]) return { fingerprint, outcome: null }
+  const stored =
+    typeof rows[0].result === 'string'
+      ? (JSON.parse(rows[0].result) as StoredAppliedChange)
+      : rows[0].result
+  if (stored.fingerprint !== fingerprint)
+    throw new HostedChangeIdMismatchError(input.table, input.id, input.change_id)
+  return { fingerprint, outcome: stored.outcome }
+}
+
+async function rememberOutcome(
+  tx: SQL,
+  identity: TaskIdentity,
+  input: ParsedHostedPushChange,
+  fingerprint: string,
+  outcome: HostedPushOutcome,
+): Promise<void> {
+  if (!input.change_id) return
+  await tx`INSERT INTO hub_applied_change (change_id,space_id,result,applied_at)
+    VALUES (${input.change_id}::uuid,${identity.spaceId}::uuid,
+      ${JSON.stringify({ fingerprint, outcome })}::jsonb,now())`
+}
+
 async function requireLiveChildTask(
   tx: SQL,
   identity: TaskIdentity,
@@ -85,7 +183,8 @@ async function applyTaskPatch(
     body=CASE WHEN ${has('body')} THEN ${values.body ?? null} ELSE body END,
     assignee=CASE WHEN ${has('assignee')} THEN ${values.assignee ?? null} ELSE assignee END,
     closed_at=CASE WHEN ${has('closed_at')} THEN ${values.closed_at ?? null}::timestamptz ELSE closed_at END,
-    updated_at=${values.updated_at!}::timestamptz,last_seen=${values.last_seen!}::timestamptz
+    updated_at=${values.updated_at!}::timestamptz,last_seen=${values.last_seen!}::timestamptz,
+    revision=revision+1
     WHERE id=${id}::uuid AND space_id=${identity.spaceId}::uuid`
 }
 
@@ -173,7 +272,7 @@ async function deleteHostedNoteFromPush(
   current: PushedNote | undefined,
 ) {
   if (!current || current.deleted_at) return { id: input.id, status: 'duplicate' as const }
-  await tx`UPDATE hub_note SET deleted_at=now(),updated_at=now()
+  await tx`UPDATE hub_note SET deleted_at=now(),updated_at=now(),revision=revision+1
     WHERE id=${input.id}::uuid AND space_id=${identity.spaceId}::uuid`
   await tx`UPDATE hub_note_acknowledgement SET deleted_at=now(),updated_at=now()
     WHERE note_id=${input.id}::uuid AND space_id=${identity.spaceId}::uuid AND deleted_at IS NULL`
@@ -194,14 +293,15 @@ async function upsertHostedNoteFromPush(
   const values = decision.values
   await tx`UPDATE hub_note SET anchors=${values.anchors!},sightings=${values.sightings!},
     last_seen_at=${values.last_seen_at!}::timestamptz,stale_at=${values.stale_at ?? null}::timestamptz,
-    stale_reason=${values.stale_reason ?? null},updated_at=now()
+    stale_reason=${values.stale_reason ?? null},updated_at=now(),revision=revision+1
     WHERE id=${input.id}::uuid AND space_id=${identity.spaceId}::uuid`
   return { id: input.id, status: 'applied' as const }
 }
 
 async function applyHostedNotePush(tx: SQL, identity: TaskIdentity, input: NotePushChange) {
-  const existing = (await tx`SELECT *,number::int number FROM hub_note
+  const existing = (await tx`SELECT *,number::int number,revision::int revision FROM hub_note
     WHERE id=${input.id}::uuid AND space_id=${identity.spaceId}::uuid FOR UPDATE`) as PushedNote[]
+  assertPushGuards(input, existing[0] as unknown as GuardedStoredRow | undefined)
   return input.op === 'delete'
     ? deleteHostedNoteFromPush(tx, identity, input, existing[0])
     : upsertHostedNoteFromPush(tx, identity, input, existing[0])
@@ -213,7 +313,8 @@ const PUSHABLE_HUB_CHANGES: Record<PushableHubChangeTable, PushDeclaration> = {
       if (input.table !== HOSTED_TASK_TABLE)
         throw new Error(`${input.table} was routed to the task handler`)
       const existing =
-        (await tx`SELECT * FROM hub_task WHERE id=${input.id}::uuid AND space_id=${identity.spaceId}::uuid`) as PushedTask[]
+        (await tx`SELECT *,revision::int revision FROM hub_task WHERE id=${input.id}::uuid AND space_id=${identity.spaceId}::uuid FOR UPDATE`) as PushedTask[]
+      assertPushGuards(input, existing[0] as unknown as GuardedStoredRow | undefined)
       const decision = decideTaskUpsert(existing[0] ?? null, input.row, input.fields ?? null)
       if (decision.kind === 'reject') throw new Error(decision.reason)
       if (decision.kind === 'duplicate') return { id: input.id, status: 'duplicate' }
@@ -234,15 +335,16 @@ const PUSHABLE_HUB_CHANGES: Record<PushableHubChangeTable, PushDeclaration> = {
         throw new Error(`${input.table} was routed to the task comment handler`)
       const existing = (await tx`SELECT id::text id,task_key,body,created_at,updated_at,deleted_at,
           actor_user_id,actor_name,agent,run_id,project_name,task_id::text task_id
-          FROM hub_task_comment WHERE id=${input.id}::uuid
+          ,revision::int revision FROM hub_task_comment WHERE id=${input.id}::uuid
             AND space_id=${identity.spaceId}::uuid FOR UPDATE`) as StoredCommentPushRow[]
+      assertPushGuards(input, existing[0] as unknown as GuardedStoredRow | undefined)
       const decision = decideHostedCommentPush(existing[0] ?? null, input.row, identity.userId)
       if (decision.kind === 'reject') throw new Error(decision.reason)
       if (decision.kind === 'duplicate') return { id: input.id, status: 'duplicate' }
       await requireLiveChildTask(tx, identity, input.row)
       await mirrorCommentRow(tx, identity, input.row)
       const taskId = await taskIdFor(tx, identity.spaceId, input.row.task_key, input.row.task_id)
-      await tx`UPDATE hub_task SET updated_at=GREATEST(updated_at,${input.row.updated_at}::timestamptz),last_seen=GREATEST(last_seen,${input.row.updated_at}::timestamptz) WHERE id=${taskId}::uuid AND space_id=${identity.spaceId}::uuid`
+      await tx`UPDATE hub_task SET updated_at=GREATEST(updated_at,${input.row.updated_at}::timestamptz),last_seen=GREATEST(last_seen,${input.row.updated_at}::timestamptz),revision=revision+1 WHERE id=${taskId}::uuid AND space_id=${identity.spaceId}::uuid`
       return { id: input.id, status: 'applied' }
     },
   },
@@ -250,7 +352,8 @@ const PUSHABLE_HUB_CHANGES: Record<PushableHubChangeTable, PushDeclaration> = {
     async apply(tx, identity, input) {
       if (input.table !== HOSTED_DOCUMENT_TABLE) throw new Error('wrong document handler')
       const existing =
-        (await tx`SELECT * FROM hub_task_document WHERE id=${input.id}::uuid AND space_id=${identity.spaceId}::uuid`) as PushedDocument[]
+        (await tx`SELECT * FROM hub_task_document WHERE id=${input.id}::uuid AND space_id=${identity.spaceId}::uuid FOR UPDATE`) as PushedDocument[]
+      assertPushGuards(input, existing[0] as unknown as GuardedStoredRow | undefined)
       if (input.op === 'delete') {
         if (!existing.length || existing[0]!.deleted_at)
           return { id: input.id, status: 'duplicate' }
@@ -371,15 +474,32 @@ export async function applyHostedPushChangesInTransaction(
   const outcomes = new Array<HostedPushOutcome>(inputs.length)
   for (const { input, index } of ordered) {
     await tx.unsafe('SAVEPOINT hub_push_row')
+    let fingerprint = ''
+    let outcome: HostedPushOutcome
     try {
-      const outcome = await PUSHABLE_HUB_CHANGES[input.table]!.apply(tx, identity, input)
+      const replay = await replayedOutcome(tx, identity, input)
+      fingerprint = replay.fingerprint
+      if (replay.outcome) {
+        await tx.unsafe('RELEASE SAVEPOINT hub_push_row')
+        outcomes[index] = replay.outcome
+        continue
+      }
+      outcome = await PUSHABLE_HUB_CHANGES[input.table]!.apply(tx, identity, input)
       await tx.unsafe('RELEASE SAVEPOINT hub_push_row')
-      outcomes[index] = outcome
     } catch (error) {
       await tx.unsafe('ROLLBACK TO SAVEPOINT hub_push_row')
       await tx.unsafe('RELEASE SAVEPOINT hub_push_row')
-      outcomes[index] = { id: input.id, status: 'rejected', reason: (error as Error).message }
+      if (
+        error instanceof HostedRevisionConflictError ||
+        error instanceof HostedChangeIdMismatchError
+      ) {
+        error.index = index
+        throw error
+      }
+      outcome = { id: input.id, status: 'rejected', reason: (error as Error).message }
     }
+    await rememberOutcome(tx, identity, input, fingerprint, outcome)
+    outcomes[index] = outcome
   }
   return outcomes
 }

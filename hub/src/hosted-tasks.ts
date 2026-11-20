@@ -353,7 +353,7 @@ export async function mirrorTaskRow(
       closed_at=${row.closed_at}::timestamptz,source=${row.source},
       first_seen=LEAST(first_seen,${row.first_seen}::timestamptz),last_seen=${row.last_seen}::timestamptz,
       updated_at=${row.updated_at}::timestamptz,deleted_at=${row.deleted_at}::timestamptz,
-      next_document_number=GREATEST(next_document_number,${row.next_document_number})
+      next_document_number=GREATEST(next_document_number,${row.next_document_number}),revision=revision+1
       WHERE id=${targetId}::uuid AND space_id=${identity.spaceId}::uuid AND
         (${row.source}='local' OR source <> 'local') AND
         (ROW(project_name,project_id,key,project,title,status,status_category,retired_reason,parent_key,parent_id,body,assignee,
@@ -380,7 +380,7 @@ export async function mirrorTaskRow(
     (id,space_id,project_name,project_id,key,project,title,status,status_category,retired_reason,parent_key,parent_id,body,assignee,
      opened_at,closed_at,source,first_seen,last_seen,created_at,updated_at,deleted_at,next_document_number)
     VALUES (${row.id || newRecordId()}::uuid,${identity.spaceId}::uuid,${row.project_name},${projectId}::uuid,${row.key},${row.project},${row.title},${row.status},${row.status_category},${retiredReason},${row.parent_key},${parentId}::uuid,${row.body},${row.assignee},${row.opened_at}::timestamptz,${row.closed_at}::timestamptz,${row.source},${row.first_seen}::timestamptz,${row.last_seen}::timestamptz,${row.created_at}::timestamptz,${row.updated_at}::timestamptz,${row.deleted_at}::timestamptz,${row.next_document_number})
-    ON CONFLICT (space_id,key) DO UPDATE SET project_name=excluded.project_name,project_id=excluded.project_id,project=excluded.project,title=excluded.title,status=excluded.status,status_category=excluded.status_category,retired_reason=CASE WHEN ${retiredReasonPresent} THEN excluded.retired_reason ELSE hub_task.retired_reason END,parent_key=excluded.parent_key,parent_id=excluded.parent_id,body=excluded.body,assignee=excluded.assignee,opened_at=excluded.opened_at,closed_at=excluded.closed_at,source=excluded.source,first_seen=LEAST(hub_task.first_seen,excluded.first_seen),last_seen=excluded.last_seen,updated_at=excluded.updated_at,deleted_at=excluded.deleted_at,next_document_number=GREATEST(hub_task.next_document_number,excluded.next_document_number)
+    ON CONFLICT (space_id,key) DO UPDATE SET project_name=excluded.project_name,project_id=excluded.project_id,project=excluded.project,title=excluded.title,status=excluded.status,status_category=excluded.status_category,retired_reason=CASE WHEN ${retiredReasonPresent} THEN excluded.retired_reason ELSE hub_task.retired_reason END,parent_key=excluded.parent_key,parent_id=excluded.parent_id,body=excluded.body,assignee=excluded.assignee,opened_at=excluded.opened_at,closed_at=excluded.closed_at,source=excluded.source,first_seen=LEAST(hub_task.first_seen,excluded.first_seen),last_seen=excluded.last_seen,updated_at=excluded.updated_at,deleted_at=excluded.deleted_at,next_document_number=GREATEST(hub_task.next_document_number,excluded.next_document_number),revision=hub_task.revision+1
     WHERE (hub_task.id=excluded.id OR ${mayAdopt}) AND
       (excluded.source='local' OR hub_task.source <> 'local') AND
       (ROW(hub_task.project_name,hub_task.project_id,hub_task.project,hub_task.title,hub_task.status,
@@ -440,7 +440,7 @@ export async function mirrorCommentRow(
       actor_name=COALESCE(${row.actor_name},actor_name),agent=COALESCE(${row.agent},agent),
       run_id=COALESCE(${row.run_id},run_id),
       updated_at=${row.updated_at}::timestamptz,
-      deleted_at=COALESCE(${row.deleted_at}::timestamptz,deleted_at)
+      deleted_at=COALESCE(${row.deleted_at}::timestamptz,deleted_at),revision=revision+1
       WHERE id=${row.id}::uuid`
     return
   }
@@ -486,7 +486,7 @@ export async function mirrorDocumentRow(
       updated_at=${row.updated_at}::timestamptz,deleted_at=${row.deleted_at}::timestamptz
       WHERE id=${row.id}::uuid`
     if (!row.deleted_at)
-      await tx`UPDATE hub_task SET next_document_number=GREATEST(next_document_number,${number! + 1})
+      await tx`UPDATE hub_task SET next_document_number=GREATEST(next_document_number,${number! + 1}),revision=revision+1
         WHERE id=${taskId}::uuid`
     return
   }
@@ -494,7 +494,7 @@ export async function mirrorDocumentRow(
     (id,space_id,project_name,project_id,task_key,task_id,number,role,title,body,version,created_at,updated_at,deleted_at)
     VALUES (${row.id}::uuid,${identity.spaceId}::uuid,${row.project_name},${projectId}::uuid,${row.task_key},${taskId}::uuid,${number},${row.role},${row.title},${row.body},${row.version},${row.created_at}::timestamptz,${row.updated_at}::timestamptz,${row.deleted_at}::timestamptz)`
   if (!row.deleted_at)
-    await tx`UPDATE hub_task SET next_document_number=GREATEST(next_document_number,${number! + 1})
+    await tx`UPDATE hub_task SET next_document_number=GREATEST(next_document_number,${number! + 1}),revision=revision+1
       WHERE id=${taskId}::uuid`
 }
 
