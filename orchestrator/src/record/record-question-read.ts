@@ -361,7 +361,7 @@ async function inboxRows(
     )[0]?.count ?? 0,
   )
   const runs = (await tx.unsafe(
-    `SELECT q.number,q.id::text record_id,q.run_id::text run_record_id,owner.number run_number,
+    `SELECT q.number,q.id::text record_id,q.space_id::text space_id,q.run_id::text run_record_id,owner.number run_number,
       q.asked_at::text,q.question,q.options::text,q.recommendation,q.why,q.kind,q.jev_pick,q.jev_confidence,
       q.jev_probabilities::text,q.jev_error,q.answered_at::text,q.overturned_at::text,q.overturned_by,
       q.overturn_reason,q.replacement,q.filed_as,q.filed_ref,q.filed_record_id::text,q.filed_label,q.filed_at::text,
