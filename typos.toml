@@ -45,6 +45,8 @@ extend-exclude = [
   "node_modules/**",
   # Bun's generated dependency lockfile is not hand-authored prose.
   "bun.lock",
+  # Dependency patches carry third-party source and truncated hunk headers.
+  "patches/**",
   # Applied orchestrator migrations are checksummed history.
   "orchestrator/migrations/**",
   # Applied hub migrations are immutable database history.
