@@ -116,12 +116,10 @@ test('hosted row release accepts identity-matched audits and persisted held ques
     question_mutation_audit: [heldAudit, identityAudit],
   })
   expect(
-    decideHostedRowRelease(
-      local,
-      presence({ question: [presentQuestion] }, [identity]),
-      refs,
-      { questions: new Set([heldQuestion]), flows: new Set() },
-    ),
+    decideHostedRowRelease(local, presence({ question: [presentQuestion] }, [identity]), refs, {
+      questions: new Set([heldQuestion]),
+      flows: new Set(),
+    }),
   ).toEqual({ deleteIds: local, keptTables: [] })
 })
 

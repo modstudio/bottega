@@ -268,12 +268,7 @@ export async function releaseHostedRowsAfterUpdate(
     flows: readHeldFlowIds(database),
     questions: readHeldQuestionIds(database),
   }))
-  const decision = decideHostedRowRelease(
-    state.ids,
-    present,
-    state.references,
-    heldIds,
-  )
+  const decision = decideHostedRowRelease(state.ids, present, state.references, heldIds)
   const released = HOSTED_ROW_TABLES.reduce(
     (total, table) => total + decision.deleteIds[table].size,
     0,

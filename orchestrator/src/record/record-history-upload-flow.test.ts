@@ -5,11 +5,13 @@ import { join } from 'node:path'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { resolveStateRoot } from '../../../shared/state-directory.ts'
 import { migratedTestDatabase } from '../database/test-database.fixture.ts'
-import { RECORD_DIFFERENT_CONTENT } from '../doc/doc-revision-conflict.ts'
+import {
+  RECORD_DIFFERENT_CONTENT,
+  type RevisionConflictReason,
+} from '../doc/doc-revision-conflict.ts'
 import type { ProjectAdoptionResult } from '../project/project-relink.ts'
 import type { RecordApiClient } from './record-api-client.ts'
 import { recordApiError } from './record-api-client-error.ts'
-import { RecordApiRequestError } from './record-api-client-response.ts'
 import { recordTaskFlowClient } from './record-api-client-task-flow.ts'
 import {
   HISTORY_UPLOAD_FAILURE_BOUND,
@@ -117,7 +119,7 @@ function client(
     importQuestion,
   } as unknown as RecordApiClient
 }
-function revisionConflictImport(message: string, reason: 'already-exists') {
+function revisionConflictImport(message: string, reason: RevisionConflictReason) {
   return recordTaskFlowClient(async () => {
     throw recordApiError(
       {
@@ -144,25 +146,23 @@ test('stale flow refusals remain failures and are not held', async () => {
   stage(database, 'stale-flow', projectId, flowId, 302)
   bind(database)
   let imports = 0
+  const importTaskFlow = revisionConflictImport(
+    `stale flow ${RECORD_DIFFERENT_CONTENT}`,
+    'stale-revision',
+  )
   const record = client(
-    async () => {
+    async (input, destination) => {
       imports += 1
-      throw new RecordApiRequestError(
-        'stale flow',
-        'conflict',
-        409,
-        null,
-        false,
-        null,
-        'stale-revision',
-      )
+      return importTaskFlow(input, destination)
     },
     async (input) => ({ id: input.question.id, number: 1, revision: 1, applied: true }),
   )
   const first = await uploadMissingWorkflowHistory(record, destination, handle(database))
   await uploadMissingWorkflowHistory(record, destination, handle(database))
   expect(first.failed).toBe(1)
-  expect(first.lines).toEqual([`workflow history task flow ${flowId} failed: stale flow`])
+  expect(first.lines).toEqual([
+    `workflow history task flow ${flowId} failed: stale flow ${RECORD_DIFFERENT_CONTENT}`,
+  ])
   expect(imports).toBe(2)
   database.close()
 })

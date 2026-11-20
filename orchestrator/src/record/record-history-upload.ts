@@ -6,10 +6,7 @@ import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { resolveStateRoot } from '../../../shared/state-directory.ts'
 import { withDatabaseForMigrationStep } from '../database/db.ts'
-import {
-  DocRevisionConflictError,
-  RECORD_DIFFERENT_CONTENT,
-} from '../doc/doc-revision-conflict.ts'
+import { DocRevisionConflictError, RECORD_DIFFERENT_CONTENT } from '../doc/doc-revision-conflict.ts'
 import { BOUNDED_JSONL_ARCHIVE_KEEP, writeBoundedJsonlArchive } from '../jsonl-archive.ts'
 import type { ProjectAdoptionResult } from '../project/project-relink.ts'
 import {
@@ -37,10 +34,7 @@ import {
   questionAuditIdentity,
   readHostedRowPresence,
 } from './record-hosted-row-presence.ts'
-import {
-  type TaskFlowIntentInput,
-  taskFlowRequestId,
-} from './record-task-flow-write-contract.ts'
+import { type TaskFlowIntentInput, taskFlowRequestId } from './record-task-flow-write-contract.ts'
 import { recordWriteDestination } from './record-write-destination.ts'
 
 type Presentation = { log(value: string): void }
