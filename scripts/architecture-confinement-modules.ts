@@ -40,6 +40,7 @@ export const confinementModules: ConfinementModule[] = [
     'node:path',
     '../../../shared/config-directory.ts',
     '../../../shared/install-root.ts',
+    './sandbox-runtime.ts',
   ]),
   module('orchestrator/src/sandbox/worker-sandbox-environment.ts', [
     '../../../shared/config-directory.ts',

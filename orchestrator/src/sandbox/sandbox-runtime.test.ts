@@ -22,6 +22,7 @@ import {
 } from '../../../shared/sandbox-runtime-assets.ts'
 import {
   classifySandboxRuntimeAvailability,
+  extractedSandboxRuntimeRoot,
   extractSandboxRuntime,
   packageManagerFromOsRelease,
   SRT_LIBRARY,
@@ -78,6 +79,14 @@ function quarantines(final: string): string[] {
 }
 
 describe('sandbox runtime payloads', () => {
+  test('the extracted distribution runtime root has one canonical derivation', () => {
+    expect(extractedSandboxRuntimeRoot({ BOTTEGA_STATE_HOME: '/operator/state' })).toBeUndefined()
+    registerEmbeddedAssets({ assets: {}, files: {}, manifest })
+    expect(extractedSandboxRuntimeRoot({ BOTTEGA_STATE_HOME: '/operator/state' })).toBe(
+      '/operator/state/runtime/1.2.3/sandbox-runtime',
+    )
+  })
+
   test('temporary directory is scoped to one launch and restored before the next', async () => {
     const previous = process.env.CLAUDE_CODE_TMPDIR
     let releaseFirst = () => {}

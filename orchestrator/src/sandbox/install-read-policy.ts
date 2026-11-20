@@ -4,16 +4,24 @@ import { readFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import type { ConfigEnvironment } from '../../../shared/config-directory.ts'
 import { runningInstallationKind, runningInstallRoot } from '../../../shared/install-root.ts'
+import { extractedSandboxRuntimeRoot } from './sandbox-runtime.ts'
 
 type WorkspaceManifest = {
   workspaces?: string[] | { packages?: string[] }
 }
 
-export type RunningInstallLayout = {
-  kind: 'distribution' | 'checkout'
-  root: string
-  workspaceDirectories: string[]
-}
+export type RunningInstallLayout =
+  | {
+      kind: 'checkout'
+      root: string
+      workspaceDirectories: string[]
+    }
+  | {
+      kind: 'distribution'
+      root: string
+      workspaceDirectories: string[]
+      extractedSandboxRuntimeRoot: string | undefined
+    }
 
 function runningInstallRootForSandbox(environment: ConfigEnvironment): string {
   return runningInstallRoot(import.meta.dir, environment)
@@ -23,7 +31,12 @@ function runningInstallRootForSandbox(environment: ConfigEnvironment): string {
 export function resolveRunningInstallLayout(environment: ConfigEnvironment): RunningInstallLayout {
   const root = runningInstallRootForSandbox(environment)
   if (runningInstallationKind(import.meta.dir, environment) === 'distribution') {
-    return { kind: 'distribution', root, workspaceDirectories: [] }
+    return {
+      kind: 'distribution',
+      root,
+      workspaceDirectories: [],
+      extractedSandboxRuntimeRoot: extractedSandboxRuntimeRoot(environment),
+    }
   }
   const manifestPath = join(root, 'package.json')
   let manifest: WorkspaceManifest
@@ -46,7 +59,12 @@ export function resolveRunningInstallLayout(environment: ConfigEnvironment): Run
 
 /** Runtime paths needed to launch the CLI without exposing its checkout root. */
 export function runningInstallReadCarveouts(layout: RunningInstallLayout): string[] {
-  if (layout.kind === 'distribution') return [layout.root]
+  if (layout.kind === 'distribution') {
+    return [
+      layout.root,
+      ...(layout.extractedSandboxRuntimeRoot ? [layout.extractedSandboxRuntimeRoot] : []),
+    ]
+  }
   const root = layout.root
   return [
     ...new Set([

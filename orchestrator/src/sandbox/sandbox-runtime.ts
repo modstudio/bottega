@@ -51,8 +51,11 @@ type ExtractionPorts = {
 
 type ExpectedPayload = SandboxRuntimePayload & EmbeddedRuntimeFile
 
-function extractedRoot(environment: StateEnvironment, version: string): string {
-  return join(resolveStateRoot(environment), 'runtime', version, 'sandbox-runtime')
+/** The extracted payload root used by a compiled distribution, when one is running. */
+export function extractedSandboxRuntimeRoot(environment: StateEnvironment): string | undefined {
+  const manifest = embeddedDistributionManifest()
+  if (!manifest) return undefined
+  return join(resolveStateRoot(environment), 'runtime', manifest.version, 'sandbox-runtime')
 }
 
 function diskPayloadPath(relativePath: string): string {
@@ -366,7 +369,7 @@ export async function sandboxRuntimeAvailability(
         ({ packagePath }) =>
           resolveInstallFile(packagePath, diskPayloadPath(packagePath)) !== undefined,
       ),
-    location: extractedRoot(environment, manifest.version),
+    location: extractedSandboxRuntimeRoot(environment)!,
     sourceCheckout: false,
     missingSystemDependencies,
     userNamespacesUsable,
@@ -431,7 +434,7 @@ export async function extractSandboxRuntime(
     ports.resolveFile ?? resolveInstallFile,
     ports.readFile ?? ((path) => Bun.file(path).arrayBuffer()),
   )
-  const root = extractedRoot(environment, manifest.version)
+  const root = extractedSandboxRuntimeRoot(environment)!
   await extractEmbeddedRuntime(root, expected, 'sandbox runtime')
   return runtimePaths(root, assets)
 }

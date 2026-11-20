@@ -3,7 +3,8 @@ import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { STATE_HOME_ENV } from '../../../shared/state-directory.ts'
 import type { Project } from '../project/projects.ts'
-import { readonlyLensProfile } from './sandbox.ts'
+import { runningInstallReadCarveouts } from './install-read-policy.ts'
+import { probeSandboxProfile, readonlyLensProfile } from './sandbox.ts'
 
 function fixtureProject(recordId: string, name: string, path: string): Project {
   return {
@@ -59,5 +60,58 @@ test('a different project can read only the running checkout runtime', () => {
         (allowed) => sensitive === allowed || sensitive.startsWith(`${allowed}/`),
       ),
     ).toBe(false)
+  }
+})
+
+test('a distribution carves back its extracted sandbox runtime and no parent', () => {
+  const runtimeRoot = '/operator/state/runtime/1.2.3/sandbox-runtime'
+  expect(
+    runningInstallReadCarveouts({
+      kind: 'distribution',
+      root: '/install',
+      workspaceDirectories: [],
+      extractedSandboxRuntimeRoot: runtimeRoot,
+    }),
+  ).toEqual(['/install', runtimeRoot])
+})
+
+test('distribution profiles carve back the extracted runtime beneath the denied state root', () => {
+  const stateRoot = '/operator/state'
+  const runtimeRoot = join(stateRoot, 'runtime', '1.2.3', 'sandbox-runtime')
+  const environment = { HOME: '/Users/operator', [STATE_HOME_ENV]: stateRoot }
+  const project = fixtureProject('fixture-id', 'fixture', '/projects/fixture')
+  const installLayout = {
+    kind: 'distribution' as const,
+    root: '/install',
+    workspaceDirectories: [],
+    extractedSandboxRuntimeRoot: runtimeRoot,
+  }
+  const readonly = readonlyLensProfile({
+    worktree: '/projects/fixture/.claude/worktrees/run',
+    runtimeDir: join(stateRoot, 'orchestrator', 'runs', 'run'),
+    project,
+    registeredProjects: [project],
+    agent: 'grok',
+    path: '/usr/bin',
+    nodeModuleLinks: [],
+    environment,
+    socketDenyPaths: [],
+    installLayout,
+  })
+  const probe = probeSandboxProfile({
+    allowWriteDir: join(stateRoot, 'orchestrator', 'runs', 'probe', 'scratch'),
+    cwd: '/projects/fixture/.claude/worktrees/run',
+    project,
+    registeredProjects: [project],
+    environment,
+    socketDenyPaths: [],
+    installLayout,
+  })
+
+  for (const profile of [readonly, probe]) {
+    expect(profile.filesystem.denyRead).toContain(stateRoot)
+    expect(profile.filesystem.allowWithinDeny).toContain(runtimeRoot)
+    expect(profile.filesystem.allowWithinDeny).not.toContain(join(stateRoot, 'runtime'))
+    expect(profile.filesystem.allowWithinDeny).not.toContain(join(stateRoot, 'runtime', '1.2.3'))
   }
 })

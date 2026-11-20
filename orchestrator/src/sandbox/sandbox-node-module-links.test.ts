@@ -31,7 +31,12 @@ const profileForLinks = (input: {
     path: '/usr/bin',
     nodeModuleLinks: input.links,
     environment: input.environment,
-    installLayout: { kind: 'distribution', root: '/install', workspaceDirectories: [] },
+    installLayout: {
+      kind: 'distribution',
+      root: '/install',
+      workspaceDirectories: [],
+      extractedSandboxRuntimeRoot: undefined,
+    },
     onWarning: (message) => input.warnings.push(message),
   })
 
