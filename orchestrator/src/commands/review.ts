@@ -38,8 +38,7 @@ import {
   replayReviewFunnelCommand,
   reportReviewFunnelCommand,
 } from '../review-funnel/review-funnel-commands.ts'
-import { countRunConfinement } from '../run/run-confinement-count.ts'
-import { CONFINEMENT_RUN_WINDOW_DAYS } from '../run/run-confinement-count.ts'
+import { CONFINEMENT_RUN_WINDOW_DAYS, countRunConfinement } from '../run/run-confinement-count.ts'
 import { resolveRunIdentifier } from '../run/run-identifier.ts'
 import { loadSubscriptionCostContext } from '../run/run-subscription-prices.ts'
 import {

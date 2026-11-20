@@ -59,11 +59,17 @@ export const confinementModules: ConfinementModule[] = [
     '../run-owned-paths.ts',
     './area-read-policy.ts',
     './install-read-policy.ts',
+    './node-module-read-carvebacks.ts',
     './sandbox-area-read-profile.ts',
     './sandbox-runtime.ts',
     './weaker-network-isolation.ts',
   ]),
-  module('orchestrator/src/sandbox/sandbox-area-read-profile.ts', ['node:path']),
+  module('orchestrator/src/sandbox/sandbox-area-read-profile.ts', ['./area-read-policy.ts']),
+  module('orchestrator/src/sandbox/node-module-read-carvebacks.ts', [
+    'node:fs',
+    'node:path',
+    './area-read-policy.ts',
+  ]),
   module('orchestrator/src/sandbox/confinement-report.ts', [
     './codex-sandbox.ts',
     './record-connection-env.ts',

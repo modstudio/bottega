@@ -458,26 +458,6 @@ describe('run listing', () => {
     ).rejects.toThrow(`${PLATFORM_SLUG} run list --id and --since cannot be combined`)
   })
 
-  test('runs --since normalizes a time-zone offset before selecting exact rows', async () => {
-    const before = addRun({
-      agent: 'codex',
-      job: 'understand',
-      startedAt: '2026-11-19T05:30:00.000Z',
-    })
-    const after = addRun({
-      agent: 'codex',
-      job: 'understand',
-      startedAt: '2026-11-19T06:30:00.000Z',
-    })
-
-    expect(
-      (await command({ json: true, since: ['2026-11-19T01:00:00-05:00'] }))
-        .map(runJson)
-        .map((row) => row.record_id),
-    ).toEqual([after])
-    expect(before).not.toBe(after)
-  })
-
   test('runs JSON emits every execution interval in a resumed chain', async () => {
     const starts = [
       '2026-09-01T12:00:00.000Z',

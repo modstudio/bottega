@@ -38,6 +38,7 @@ import {
   resolveRunningInstallLayout,
   runningInstallReadCarveouts,
 } from './install-read-policy.ts'
+import { linkedNodeModules, permittedNodeModuleCarvebacks } from './node-module-read-carvebacks.ts'
 import { assembleAreaReadProfile } from './sandbox-area-read-profile.ts'
 import { launchWithSandboxRuntime, resetSandboxRuntime } from './sandbox-runtime.ts'
 import { decideWeakerNetworkIsolation, endpointHost } from './weaker-network-isolation.ts'
@@ -230,39 +231,6 @@ function refuseProtectedOverlap(
   }
 }
 
-/**
- * Find dependency roots linked from the disposable checkout into its main
- * checkout. Only directory entries named node_modules are followed; arbitrary
- * symlinks are not promoted into sandbox read grants.
- */
-function linkedNodeModules(worktree: string): string[] {
-  const found = new Set<string>()
-  const visit = (dir: string, depth: number) => {
-    if (depth > 4) return
-    let entries: import('node:fs').Dirent[]
-    try {
-      entries = readdirSync(dir, { withFileTypes: true })
-    } catch {
-      return
-    }
-    for (const entry of entries) {
-      if (entry.name === '.git' || entry.name === '.claude') continue
-      const path = join(dir, entry.name)
-      if (entry.name === 'node_modules') {
-        try {
-          if (lstatSync(path).isSymbolicLink()) found.add(realpathSync(path))
-        } catch {
-          /* a broken link is not a readable dependency root */
-        }
-        continue
-      }
-      if (entry.isDirectory()) visit(path, depth + 1)
-    }
-  }
-  visit(worktree, 0)
-  return [...found].sort()
-}
-
 export function readonlyLensProfile(input: {
   worktree: string
   runtimeDir: string
@@ -313,18 +281,12 @@ export function readonlyLensProfile(input: {
     registeredProjects: input.registeredProjects,
     environment,
   })
-  const nodeModuleLinks = (input.nodeModuleLinks ?? linkedNodeModules(input.worktree))
-    .map((path) => resolve(path))
-    .filter((path) => {
-      const promoted = [input.project?.path, runningInstallRoot]
-        .filter((root): root is string => root !== undefined)
-        .some((root) => isAtOrBelow(path, resolve(root)))
-      if (!promoted) {
-        const warn = input.onWarning ?? console.warn
-        warn(`sandbox ignored node_modules link outside the project and running install: ${path}`)
-      }
-      return promoted
-    })
+  const nodeModuleLinks = permittedNodeModuleCarvebacks({
+    links: input.nodeModuleLinks ?? linkedNodeModules(input.worktree),
+    projectRoot: input.project?.path,
+    runningInstallRoot,
+    onWarning: input.onWarning ?? console.warn,
+  })
   const candidateAllows = [
     ...new Set([
       ...areas.allow,
