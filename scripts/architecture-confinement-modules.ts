@@ -67,6 +67,11 @@ export const confinementModules: ConfinementModule[] = [
     './record-connection-env.ts',
     './sandbox.ts',
   ]),
+  module('orchestrator/src/sandbox/confinement-run-measurement.ts', [
+    'bun:sqlite',
+    '../jobs/jobs.ts',
+    '../run/run-listing.ts',
+  ]),
   module('orchestrator/src/sandbox/confinement-filesystem-probe.ts', [
     'bun:sqlite',
     'node:fs',

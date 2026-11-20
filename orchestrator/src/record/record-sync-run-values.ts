@@ -16,6 +16,11 @@ const runBindingValues = (row: Payload) => ({
   cursorRecordId: nullableString(row.cursorRecordId),
   stepSlug: nullableString(row.stepSlug),
 })
+const sandboxRecordValues = (row: Payload) => ({
+  routeReason: nullableString(row.routeReason),
+  sandbox: nullableString(row.sandbox),
+  sandboxReason: nullableString(row.sandboxReason),
+})
 
 export function runRecordValues(
   row: Payload,
@@ -79,9 +84,7 @@ export function runRecordValues(
     canonSha: nullableString(row.canonSha),
     transport: nullableString(row.transport),
     sessionId: nullableString(row.sessionId),
-    routeReason: nullableString(row.routeReason),
-    sandbox: nullableString(row.sandbox),
-    sandboxReason: nullableString(row.sandboxReason),
+    ...sandboxRecordValues(row),
     ...credentialRecordValues(row),
     noFailover: Boolean(row.noFailover),
     automaticFailover: Boolean(row.automaticFailover),

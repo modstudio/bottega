@@ -32,6 +32,22 @@ export function carveBackOutsideProtected(
   )
 }
 
+/** Assemble the shared read-deny and safe carve-back portion of every SRT profile. */
+export function assembleAreaReadProfile(input: {
+  areaDeny: readonly string[]
+  candidateAllows: readonly string[]
+  protectedDenies: readonly string[]
+  socketDenyPaths: readonly string[]
+}): { denyRead: string[]; allowWithinDeny: string[] } {
+  return {
+    denyRead: [...new Set([...input.areaDeny, ...input.protectedDenies, ...input.socketDenyPaths])],
+    allowWithinDeny: carveBackOutsideProtected(
+      [...new Set(input.candidateAllows)],
+      input.protectedDenies,
+    ),
+  }
+}
+
 /** Broad machine areas hidden from workers, with only run-owned paths carved back in. */
 export function areaReadPolicy(input: {
   worktree: string

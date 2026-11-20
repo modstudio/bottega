@@ -32,7 +32,7 @@ import { createNoFollowFile } from '../no-follow-file.ts'
 import { type Project, projectAt, projectsForSandboxDeny } from '../project/projects.ts'
 import { mainStackGateAddresses } from '../resources/main-stack-network.ts'
 import { runHarnessStateDir, runWorkerHomeDir } from '../run-owned-paths.ts'
-import { areaReadPolicy, carveBackOutsideProtected, isAtOrBelow } from './area-read-policy.ts'
+import { areaReadPolicy, assembleAreaReadProfile, isAtOrBelow } from './area-read-policy.ts'
 import {
   type RunningInstallLayout,
   resolveRunningInstallLayout,
@@ -180,23 +180,6 @@ function protectedDenyPaths(project: Project | null, environment: ConfigEnvironm
       ...resolveSecretPaths(project),
     ]),
   ]
-}
-
-function assembleAreaReadProfile(input: {
-  areaDeny: readonly string[]
-  candidateAllows: readonly string[]
-  protectedDenies: readonly string[]
-  socketDenyPaths: readonly string[]
-}): Pick<SandboxRuntimeConfig['filesystem'], 'denyRead' | 'allowWithinDeny'> {
-  return {
-    denyRead: [
-      ...new Set([...input.areaDeny, ...input.protectedDenies, ...input.socketDenyPaths]),
-    ],
-    allowWithinDeny: carveBackOutsideProtected(
-      [...new Set(input.candidateAllows)],
-      input.protectedDenies,
-    ),
-  }
 }
 
 /** Resolved deny lists a confinement report needs; the report itself reads no home. */

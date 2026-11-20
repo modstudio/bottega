@@ -171,6 +171,14 @@ function credentialValues(row: LocalRun) {
   }
 }
 
+function sandboxValues(row: LocalRun) {
+  return {
+    routeReason: row.route_reason,
+    sandbox: row.sandbox,
+    sandboxReason: row.sandbox_reason,
+  }
+}
+
 const nullableBoolean = (value: unknown): boolean | null => (value == null ? null : Boolean(value))
 
 /** Terminal payloads use last_event_at as finished_at when present, otherwise started_at. */
@@ -237,9 +245,7 @@ export function buildRunRecordPayload(
     canonSha: row.canon_sha,
     transport: row.transport,
     sessionId: row.session_id,
-    routeReason: row.route_reason,
-    sandbox: row.sandbox,
-    sandboxReason: row.sandbox_reason,
+    ...sandboxValues(row),
     ...credentialValues(row),
     noFailover: Boolean(row.no_failover),
     automaticFailover: Boolean(row.automatic_failover),

@@ -1,9 +1,6 @@
 import { expect, test } from 'bun:test'
 import { newRecordId } from '../../../shared/record-id.ts'
-import {
-  fixtureProjectRecordId,
-  migratedTestDatabase,
-} from '../database/test-database.fixture.ts'
+import { fixtureProjectRecordId, migratedTestDatabase } from '../database/test-database.fixture.ts'
 import {
   CONFINEMENT_RUN_WINDOW_MS,
   confinementRunWindow,
@@ -33,15 +30,7 @@ test('read-only runs are counted by sandbox and reason while old null reasons ar
         project_record_id,sandbox,sandbox_reason)
      VALUES (?,?,?,'grok',?,'sha',1,'head','ok',?,?,?)`,
   )
-  insert.run(
-    newRecordId(),
-    1,
-    '2026-11-19T00:00:00.000Z',
-    'understand',
-    projectId,
-    'host',
-    null,
-  )
+  insert.run(newRecordId(), 1, '2026-11-19T00:00:00.000Z', 'understand', projectId, 'host', null)
   insert.run(
     newRecordId(),
     2,
@@ -51,24 +40,8 @@ test('read-only runs are counted by sandbox and reason while old null reasons ar
     'srt',
     'eligible read-only repository run',
   )
-  insert.run(
-    newRecordId(),
-    3,
-    '2026-11-19T02:00:00.000Z',
-    'implement',
-    projectId,
-    'srt',
-    'writer',
-  )
-  insert.run(
-    newRecordId(),
-    4,
-    '2026-11-10T00:00:00.000Z',
-    'understand',
-    projectId,
-    'host',
-    'old',
-  )
+  insert.run(newRecordId(), 3, '2026-11-19T02:00:00.000Z', 'implement', projectId, 'srt', 'writer')
+  insert.run(newRecordId(), 4, '2026-11-10T00:00:00.000Z', 'understand', projectId, 'host', 'old')
 
   const measurement = measureConfinementRuns(database, undefined, NOW)
   expect(measurement.rows).toEqual([

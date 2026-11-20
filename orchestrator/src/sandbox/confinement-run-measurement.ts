@@ -5,9 +5,9 @@ import { isReadOnlyRepositoryJob, JOBS } from '../jobs/jobs.ts'
 import { parseRunListSince } from '../run/run-listing.ts'
 
 export const CONFINEMENT_RUN_WINDOW_MS = 7 * 24 * 60 * 60 * 1000
-export const UNRECORDED_SANDBOX_VALUE = 'unrecorded'
+const UNRECORDED_SANDBOX_VALUE = 'unrecorded'
 
-export type ConfinementRunCount = {
+type ConfinementRunCount = {
   sandbox: string
   reason: string
   count: number
@@ -40,10 +40,7 @@ export function measureConfinementRuns(
   const jobs = Object.keys(JOBS).filter(isReadOnlyRepositoryJob)
   const marks = jobs.map(() => '?').join(',')
   const rows = database
-    .query<
-      { sandbox: string | null; reason: string | null; count: number },
-      Array<string>
-    >(
+    .query<{ sandbox: string | null; reason: string | null; count: number }, Array<string>>(
       `SELECT sandbox, sandbox_reason AS reason, COUNT(*) AS count
          FROM run
         WHERE started_at >= ? AND job IN (${marks})
@@ -59,9 +56,7 @@ export function measureConfinementRuns(
   return { ...window, rows }
 }
 
-export function formatConfinementRunMeasurement(
-  measurement: ConfinementRunMeasurement,
-): string[] {
+export function formatConfinementRunMeasurement(measurement: ConfinementRunMeasurement): string[] {
   const defaultLabel = measurement.defaultWindow ? ' (default seven days)' : ''
   return [
     `read-only-run-window  since=${measurement.since}${defaultLabel}`,

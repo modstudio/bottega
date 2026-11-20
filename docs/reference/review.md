@@ -154,7 +154,7 @@ clear one confinement finding with an architect ruling
 
 ## bottega review confinement report
 
-**Synopsis:** `bottega review confinement report [--agent <value>] [--job <value>] [--mcp [value]] [--json]`
+**Synopsis:** `bottega review confinement report [--agent <value>] [--job <value>] [--mcp [value]] [--since <value>] [--json]`
 
 report sandbox inputs and execute real filesystem probes
 
@@ -163,6 +163,7 @@ report sandbox inputs and execute real filesystem probes
 - `--agent <value>`: include only this agent
 - `--job <value>`: report a reading, writing, or named job
 - `--mcp [value]`: filter by whether MCP access is enabled
+- `--since <value>`: count read-only runs since this ISO instant (default: seven days)
 - `--json`: write the report as JSON
 
 ### Related
