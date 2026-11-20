@@ -22,17 +22,17 @@ test('record API timing wrapper adds Server-Timing to success and error response
 })
 
 test('record API timing wrapper counts response bytes as the body is consumed', async () => {
-  const observed: Array<number | null> = []
+  const observed: Array<{ bytes: number; finish: string }> = []
   const timed = await timedRecordApiResponse(
     { fetch: () => new Response('abc') },
     new Request('https://record.test/v1/tasks'),
     () => 1,
-    (bytes) => observed.push(bytes),
+    (bytes, _status, _durationMs, finish) => observed.push({ bytes, finish }),
   )
 
   expect(observed).toEqual([])
   expect(await timed.response.text()).toBe('abc')
-  expect(observed).toEqual([3])
+  expect(observed).toEqual([{ bytes: 3, finish: 'complete' }])
 })
 
 test('record API timing wrapper preserves a response with immutable headers', async () => {

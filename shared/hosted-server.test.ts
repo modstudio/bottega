@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { hostedAccessLogLine } from './hosted-server.ts'
+import { hostedAccessBodyLogLine, hostedAccessLogLine } from './hosted-server.ts'
 
 test('hosted access line includes the caller header token', () => {
   expect(
@@ -24,4 +24,17 @@ test('hosted access line marks a missing caller header', () => {
       caller: null,
     }),
   ).toBe('GET /health 200 1ms bytes=- caller=-')
+})
+
+test('hosted body completion line names measured bytes and finish state', () => {
+  expect(
+    hostedAccessBodyLogLine({
+      method: 'GET',
+      pathname: '/v1/board/stream',
+      status: 200,
+      responseBytes: 24,
+      finish: 'cancelled',
+      caller: 'cli:board/watch',
+    }),
+  ).toBe('GET /v1/board/stream 200 body bytes=24 finish=cancelled caller=cli:board/watch')
 })
