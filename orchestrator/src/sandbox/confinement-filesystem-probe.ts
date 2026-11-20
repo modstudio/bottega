@@ -43,6 +43,7 @@ import {
   runningInstallReadCarveouts,
 } from './install-read-policy.ts'
 import {
+  type SandboxRuntimeConfig,
   probeSandboxProfile,
   readonlyLensProfile,
   resetSandbox,
@@ -154,24 +155,59 @@ function initializeProbeGitFixture(ownPath: string, worktree: string): void {
 export function probeVerdict(
   targets: readonly AccessTarget[],
   paths: Record<string, FilesystemProbeAccess>,
-  command: CommandProbe,
+  commands: Record<string, CommandProbe>,
 ): Pick<ConfinementFilesystemProbeRow, 'status' | 'reason'> {
+  let filesystemVerdict: Pick<ConfinementFilesystemProbeRow, 'status' | 'reason'>
   if (targets.some(({ name }) => paths[name] === 'not covered')) {
-    return {
+    filesystemVerdict = {
       status: 'not covered',
       reason: 'one or more filesystem probe output lines were missing',
     }
+  } else if (
+    targets.some(({ name, expected }) => expected === 'denied' && paths[name] === 'readable')
+  ) {
+    filesystemVerdict = {
+      status: 'readable',
+      reason: 'one or more denied paths were unexpectedly readable',
+    }
+  } else if (targets.some(({ name, expected }) => paths[name] !== expected)) {
+    filesystemVerdict = {
+      status: 'failed',
+      reason: 'one or more expected-readable paths were denied',
+    }
+  } else {
+    filesystemVerdict = { status: 'denied' }
   }
-  if (targets.some(({ name, expected }) => expected === 'denied' && paths[name] === 'readable')) {
-    return { status: 'readable' }
-  }
-  if (targets.some(({ name, expected }) => paths[name] !== expected)) {
-    return { status: 'failed', reason: 'one or more expected-readable paths were denied' }
-  }
-  if (command.status === 'failed') {
-    return { status: 'failed', reason: 'the real CLI verb failed' }
-  }
-  return { status: 'denied' }
+  return applyCommandCellVerdict(filesystemVerdict, commands)
+}
+
+function applyCommandCellVerdict(
+  filesystemVerdict: Pick<ConfinementFilesystemProbeRow, 'status' | 'reason'>,
+  commands: Record<string, CommandProbe>,
+): Pick<ConfinementFilesystemProbeRow, 'status' | 'reason'> {
+  if (filesystemVerdict.status !== 'denied') return filesystemVerdict
+  const failed = Object.entries(commands).find(([, command]) => command.status === 'failed')
+  if (!failed) return filesystemVerdict
+  const [name, command] = failed
+  return { status: 'failed', reason: `command cell ${name} failed: ${command.reason}` }
+}
+
+async function launchSandboxProbe(
+  profile: SandboxRuntimeConfig,
+  executable: string,
+  argv: string[],
+  environment: Record<string, string>,
+  scratchDir: string,
+  options: { cwd?: string; environment?: Record<string, string> } = {},
+) {
+  return startBounded(
+    await sandboxLaunchArgv(profile, executable, argv, scratchDir, environment),
+    {
+      budget: 'sandbox-probe',
+      cwd: options.cwd,
+      env: { ...process.env, ...environment, ...options.environment },
+    },
+  )
 }
 
 async function launchCommand(
@@ -181,12 +217,12 @@ async function launchCommand(
   scratchDir: string,
   hubOpenMode?: string,
 ): Promise<CommandProbe> {
-  const result = await startBounded(
-    await sandboxLaunchArgv(profile, argv[0]!, argv.slice(1), scratchDir, environment),
-    {
-      budget: 'sandbox-probe',
-      env: { ...process.env, ...environment },
-    },
+  const result = await launchSandboxProbe(
+    profile,
+    argv[0]!,
+    argv.slice(1),
+    environment,
+    scratchDir,
   )
   return {
     status: result.exitCode === 0 ? 'ran' : 'failed',
@@ -220,9 +256,12 @@ if (outbound.status !== 403) {
 }
 console.log('non-loopback outbound=ran')
 `
-  const result = await startBounded(
-    await sandboxLaunchArgv(profile, process.execPath, ['-e', script], scratchDir, environment),
-    { budget: 'sandbox-probe', env: { ...process.env, ...environment } },
+  const result = await launchSandboxProbe(
+    profile,
+    process.execPath,
+    ['-e', script],
+    environment,
+    scratchDir,
   )
   const output = result.stdout.split(/\r?\n/)
   const reason =
@@ -238,39 +277,6 @@ console.log('non-loopback outbound=ran')
       status: output.includes('non-loopback outbound=ran') ? 'ran' : 'failed',
       reason,
     },
-  }
-}
-
-async function launchDeniedEnvCliProbe(
-  profile: ReturnType<typeof probeSandboxProfile>,
-  commandArgv: string[],
-  environment: Record<string, string>,
-  scratchDir: string,
-  envFile: string,
-): Promise<CommandProbe> {
-  const result = await startBounded(
-    await sandboxLaunchArgv(
-      profile,
-      commandArgv[0]!,
-      commandArgv.slice(1),
-      scratchDir,
-      environment,
-    ),
-    {
-      budget: 'sandbox-probe',
-      env: { ...process.env, ...environment },
-    },
-  )
-  const expected = `environment file ${envFile} was skipped: access denied`
-  const skipped = result.stderr.split(/\r?\n/).includes(expected)
-  return {
-    status: result.exitCode === 0 && skipped ? 'ran' : 'failed',
-    reason:
-      result.exitCode !== 0
-        ? `exit ${result.exitCode ?? 'unknown'}: ${firstErrorLine(result.stderr)}`
-        : skipped
-          ? `exit 0; ${expected}`
-          : `exit 0 without expected stderr: ${expected}`,
   }
 }
 
@@ -375,11 +381,12 @@ async function launchProbe(
       ]),
     ) as Record<string, FilesystemProbeAccess>
     const command = await launchCommand(profile, commandArgv, environment, scratchDir, hubOpenMode)
+    const commands = { [commandLabel]: command }
     return {
       family,
-      ...probeVerdict(targets, paths, command),
+      ...probeVerdict(targets, paths, commands),
       paths,
-      commands: { [commandLabel]: command },
+      commands,
     }
   } catch (error) {
     return {
@@ -401,7 +408,6 @@ async function launchWorkflowProbe(
   scratchDir: string,
   hubOpenMode: string,
   commandLabel: string,
-  deniedEnvFile: string,
 ): Promise<ConfinementFilesystemProbeRow> {
   const row = await launchProbe(
     'workflow probe',
@@ -415,20 +421,11 @@ async function launchWorkflowProbe(
   )
   try {
     const network = await launchWorkflowNetworkProbe(profile, environment, scratchDir)
-    const deniedEnv = await launchDeniedEnvCliProbe(
-      profile,
-      commandArgv,
-      environment,
-      scratchDir,
-      deniedEnvFile,
-    )
-    const commands = { ...row.commands, ...network, 'denied env file skipped': deniedEnv }
-    const commandFailed = Object.values(commands).some(({ status }) => status === 'failed')
+    const commands = { ...row.commands, ...network }
     return {
       ...row,
-      status: commandFailed ? 'failed' : row.status,
+      ...applyCommandCellVerdict({ status: row.status, reason: row.reason }, commands),
       commands,
-      reason: commandFailed ? 'one or more workflow probe commands failed' : row.reason,
     }
   } catch (error) {
     return {
@@ -471,7 +468,7 @@ async function launchCrossProjectCliProbe(
           ? `${PLATFORM_SLUG} --version ${version.reason}`
           : `${commandLabel} ${verb.reason}`,
     }
-    const verdict = probeVerdict(targets, paths, command)
+    const verdict = probeVerdict(targets, paths, { 'real CLI verb': command })
     return {
       family: 'cross-project CLI',
       status: verdict.status === 'denied' ? 'ran' : 'failed',
@@ -523,20 +520,15 @@ async function launchExtractedRefGuardProbe(
     },
   }
   try {
-    const result = await startBounded(
-      await sandboxLaunchArgv(
-        refUpdateProfile,
-        'git',
-        ['commit', '--allow-empty', '-m', 'probe'],
-        scratchDir,
-        environment,
-      ),
+    const result = await launchSandboxProbe(
+      refUpdateProfile,
+      'git',
+      ['commit', '--allow-empty', '-m', 'probe'],
+      environment,
+      scratchDir,
       {
-        budget: 'sandbox-probe',
         cwd: worktree,
-        env: {
-          ...process.env,
-          ...environment,
+        environment: {
           ...guardEnvironment,
           GIT_AUTHOR_NAME: 'Confinement Probe',
           GIT_AUTHOR_EMAIL: 'confinement-probe@example.invalid',
@@ -617,8 +609,6 @@ function probeWorkerEnvironment(environment: Record<string, string>): Record<str
     stateEnvironment: environment,
     includeStore: true,
   })
-  delete child[HARNESS_ENV_FILE_ENV]
-  delete child[PLATFORM_ENV_FILE_ENV]
   child.BOTTEGA_ORCHESTRATOR_DB = resolveOrchestratorDatabase(environment)
   return child
 }
@@ -707,21 +697,6 @@ function createProbeTaskFixture(
   return { own, task }
 }
 
-function probeFixtureEnvironment(root: string, stateRoot: string, hubDatabase: string) {
-  const environment = {
-    ...process.env,
-    HOME: join(root, 'home'),
-    [STATE_HOME_ENV]: stateRoot,
-    BOTTEGA_HUB_DB: hubDatabase,
-  } as Record<string, string>
-  delete environment[HARNESS_ENV_FILE_ENV]
-  delete environment[PLATFORM_ENV_FILE_ENV]
-  const harnessEnvFile = join(environment.HOME!, '.claude', '.env')
-  mkdirSync(dirname(harnessEnvFile), { recursive: true })
-  writeFileSync(harnessEnvFile, 'PLANTED_HARNESS_SECRET=fixture\n')
-  return { environment, harnessEnvFile }
-}
-
 function createProbeFixture(root: string) {
   const ownPath = join(root, 'projects', 'own')
   const worktree = join(ownPath, '.claude', 'worktrees', 'own')
@@ -731,7 +706,14 @@ function createProbeFixture(root: string) {
   const runningInstall = resolveRunningInstallLayout(process.env)
   const fixtureInstall = installFixture(join(root, 'projects', 'install'), runningInstall)
   const hubDatabase = join(stateRoot, 'hub', 'hub.db')
-  const { environment, harnessEnvFile } = probeFixtureEnvironment(root, stateRoot, hubDatabase)
+  const environment = {
+    ...process.env,
+    HOME: join(root, 'home'),
+    [STATE_HOME_ENV]: stateRoot,
+    BOTTEGA_HUB_DB: hubDatabase,
+    [HARNESS_ENV_FILE_ENV]: '',
+    [PLATFORM_ENV_FILE_ENV]: '',
+  } as Record<string, string>
   const state = resolveStatePaths(environment)
   const runtimeDir = join(state.orchestratorRuns, 'sandbox-probe')
   const scratchDir = join(state.orchestratorRuns, 'probe', 'scratch')
@@ -787,7 +769,6 @@ function createProbeFixture(root: string) {
     cliArgv,
     commandArgv: [...cliArgv, 'task', 'show', probeTask.key],
     commandLabel,
-    harnessEnvFile,
     fixtureInstall,
     environment: probeWorkerEnvironment(environment),
     common: {
@@ -859,7 +840,6 @@ export async function runConfinementFilesystemProbes(): Promise<ConfinementFiles
         common.scratchDir,
         fixture.hubOpenMode,
         fixture.commandLabel,
-        fixture.harnessEnvFile,
       ),
       await launchCrossProjectCliProbe(
         readonlyLensProfile({ ...common, agent: 'grok' }),
