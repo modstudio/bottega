@@ -183,3 +183,33 @@ test.serial('trace off returns the original response and records or writes nothi
     else process.env.BOTTEGA_RECORD_TRACE = previous
   }
 })
+
+test.serial('exit summary formats bounded aggregate state', async () => {
+  const previous = process.env.BOTTEGA_RECORD_TRACE
+  process.env.BOTTEGA_RECORD_TRACE = '1'
+  const originalWrite = process.stderr.write
+  const writes: string[] = []
+  process.stderr.write = ((value: string | Uint8Array) => {
+    writes.push(String(value))
+    return true
+  }) as typeof process.stderr.write
+  try {
+    await tracedRecordFetch(
+      'https://record.test/v1/questions',
+      {},
+      (async () =>
+        new Response(null, { headers: { 'content-length': '7' } })) as unknown as typeof fetch,
+    )
+    const exitSummary = process.listeners('exit').at(-1)
+    expect(exitSummary).toBeFunction()
+    exitSummary?.(0)
+    expect(writes).toContainEqual(
+      expect.stringContaining('record-trace route=record-questions count=1 response_bytes_total=7'),
+    )
+    expect(writes).toContainEqual(expect.stringContaining('record-trace route=total count=1'))
+  } finally {
+    process.stderr.write = originalWrite
+    if (previous === undefined) delete process.env.BOTTEGA_RECORD_TRACE
+    else process.env.BOTTEGA_RECORD_TRACE = previous
+  }
+})
