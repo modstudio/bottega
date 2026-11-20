@@ -229,7 +229,7 @@ test('hosted writes use the project-declared record space', async () => {
   ])
 })
 
-test('an unreachable hosted task update refuses without queueing the write', async () => {
+test('an unreachable hosted task update refuses without queuing the write', async () => {
   const task = await recordCreate(
     { project: 'gamma', title: 'Unreachable update' },
     { hosted: hosted() },
