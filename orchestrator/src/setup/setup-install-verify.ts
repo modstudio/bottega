@@ -36,16 +36,6 @@ export type SetupInstallVerifyCheck = {
   fix: string
 }
 
-const SESSION_INDEPENDENT_CHECKS: ReadonlySet<SetupInstallVerifyCheck['name']> = new Set([
-  'hook-scripts-executable',
-])
-
-export function sessionIndependentSetupInstallChecks(
-  checks: readonly SetupInstallVerifyCheck[],
-): SetupInstallVerifyCheck[] {
-  return checks.filter((check) => SESSION_INDEPENDENT_CHECKS.has(check.name))
-}
-
 type HookHandler = { command: string }
 
 function object(value: unknown): Record<string, unknown> | null {

@@ -118,53 +118,18 @@ test('signed-out settings decisions stay follow-ups after a grok canon home is i
 
   const applied = await applySetupInstallVerify(false, {
     applySettings: async () => [missingSettings, emptyGrokCanon],
-    facts,
+    facts: () => {
+      throw new Error('signed-out follow-up must not gather verification facts')
+    },
   })
   expect(applied).toEqual({
     status: 'follow-up',
     condition: 'waiting-for-sign-in',
     message:
       `not signed in: user settings and user canon wait for sign-in; run ` +
-      `${PLATFORM_SLUG} record sign-in --email <email>, then re-run ${PLATFORM_SLUG} machine setup apply`,
+      `${PLATFORM_SLUG} record sign-in --email <email>, then re-run ${PLATFORM_SLUG} machine setup apply; ` +
+      `install verification runs after sign-in`,
   })
-})
-
-test('signed-out verification refuses a missing or non-executable hook script', async () => {
-  for (const script of [
-    { exists: false, executable: false },
-    { exists: true, executable: false },
-  ]) {
-    const input = facts()
-    Object.assign(input.scripts[0]!, script)
-    await expect(
-      applySetupInstallVerify(false, {
-        applySettings: async () => [
-          {
-            target: 'settings user',
-            outcome: 'refused',
-            condition: 'no-settings-row',
-            changed: false,
-          },
-        ],
-        facts: () => input,
-      }),
-    ).rejects.toThrow('hook-scripts-executable: failed')
-  }
-})
-
-test('signed-out verification with executable hook scripts returns the follow-up', async () => {
-  const result = await applySetupInstallVerify(false, {
-    applySettings: async () => [
-      {
-        target: 'settings user',
-        outcome: 'refused',
-        condition: 'no-settings-row',
-        changed: false,
-      },
-    ],
-    facts,
-  })
-  expect(result).toMatchObject({ status: 'follow-up', condition: 'waiting-for-sign-in' })
 })
 
 test('signed-in settings and canon refusals still refuse', () => {

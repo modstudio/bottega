@@ -25,7 +25,6 @@ import { hookScriptPath, PRODUCT_HOOKS, SCRIPT_FILES } from '../settings/setting
 import {
   type SetupInstallSettingsFileFact,
   type SetupInstallVerifyFacts,
-  sessionIndependentSetupInstallChecks,
   verifySetupInstall,
 } from './setup-install-verify.ts'
 
@@ -36,7 +35,8 @@ export type SetupInstallVerifyAdapters = {
 
 const SIGN_IN_FOLLOW_UP =
   `not signed in: user settings and user canon wait for sign-in; run ` +
-  `${recordSignInRemedy('<email>').argv.join(' ')}, then re-run ${PLATFORM_SLUG} machine setup apply`
+  `${recordSignInRemedy('<email>').argv.join(' ')}, then re-run ${PLATFORM_SLUG} machine setup apply; ` +
+  `install verification runs after sign-in`
 
 function refusedSettingsMessage(refused: readonly MachineSettingsApplyResult[]): string {
   return refused
@@ -121,18 +121,14 @@ export async function applySetupInstallVerify(
   }
   const decision = settingsApplyDecision(sessionPresent, results)
   if (decision.action === 'refuse') throw new Error(refusedSettingsMessage(decision.refused))
-  const checks = verifySetupInstall((adapters.facts ?? gatherSetupInstallVerifyFacts)())
   if (decision.action === 'wait-for-sign-in') {
-    const sessionIndependentChecks = sessionIndependentSetupInstallChecks(checks)
-    if (sessionIndependentChecks.some((check) => !check.ok)) {
-      throw new Error(renderedChecks(sessionIndependentChecks, true))
-    }
     return {
       status: 'follow-up',
       message: SIGN_IN_FOLLOW_UP,
       condition: 'waiting-for-sign-in',
     }
   }
+  const checks = verifySetupInstall((adapters.facts ?? gatherSetupInstallVerifyFacts)())
   if (checks.some((check) => !check.ok)) throw new Error(renderedChecks(checks, true))
   return {
     status: results.some((result) => result.changed) ? 'applied' : 'unchanged',
