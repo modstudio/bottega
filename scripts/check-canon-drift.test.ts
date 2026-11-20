@@ -1,44 +1,24 @@
 import { Database } from 'bun:sqlite'
-import { afterAll, afterEach, beforeAll, describe, expect, test } from 'bun:test'
+import { afterEach, describe, expect, test } from 'bun:test'
 import { createHash } from 'node:crypto'
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { mkdirSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { hydrationDrift, planHydration } from '../orchestrator/src/canon/canon-hydrate.ts'
+import { openReadOnlyDatabase } from '../orchestrator/src/database/db.ts'
 import { PLATFORM_SLUG } from '../shared/brand.ts'
 import { newRecordId } from '../shared/record-id.ts'
 import { cloneRepository, runTestGit } from '../shared/test-git-repository.ts'
+import {
+  branchChangedPaths,
+  branchHydrationPaths,
+  canonBranchFindings,
+  canonEmptyStoreDriftRefusal,
+  readCanonGateInput,
+} from './check-canon-drift.ts'
 import { resolveRegisteredLandingBase } from './landing-base.ts'
 
 let scratch: string | null = null
 const originalGithubBase = process.env.GITHUB_BASE_REF
-const originalOrchDatabase = process.env.BOTTEGA_ORCHESTRATOR_DB
-let databaseScratch = ''
-let openReadOnlyDatabase: typeof import('../orchestrator/src/database/db.ts').openReadOnlyDatabase
-let branchChangedPaths: typeof import('./check-canon-drift.ts').branchChangedPaths
-let branchHydrationPaths: typeof import('./check-canon-drift.ts').branchHydrationPaths
-let canonBranchFindings: typeof import('./check-canon-drift.ts').canonBranchFindings
-let canonEmptyStoreDriftRefusal: typeof import('./check-canon-drift.ts').canonEmptyStoreDriftRefusal
-let readCanonGateInput: typeof import('./check-canon-drift.ts').readCanonGateInput
-
-beforeAll(async () => {
-  databaseScratch = mkdtempSync(join(tmpdir(), 'canon-drift-database-'))
-  process.env.BOTTEGA_ORCHESTRATOR_DB = join(databaseScratch, 'orchestrator.db')
-  ;({ openReadOnlyDatabase } = await import('../orchestrator/src/database/db.ts'))
-  ;({
-    branchChangedPaths,
-    branchHydrationPaths,
-    canonBranchFindings,
-    canonEmptyStoreDriftRefusal,
-    readCanonGateInput,
-  } = await import('./check-canon-drift.ts'))
-})
-
-afterAll(() => {
-  if (originalOrchDatabase === undefined) delete process.env.BOTTEGA_ORCHESTRATOR_DB
-  else process.env.BOTTEGA_ORCHESTRATOR_DB = originalOrchDatabase
-  rmSync(databaseScratch, { recursive: true, force: true })
-})
 
 function git(root: string, ...args: string[]): string {
   return runTestGit(root, process.env, ...args)
