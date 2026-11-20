@@ -9,7 +9,6 @@ import type { SelectableCursorRow, WorkflowCursorContext } from './workflow-curs
 import { currentStepActivatedAt, reentryBoundFloorInput } from './workflow-cursor-trail.ts'
 import { foreignCursorOwner } from './workflow-cursor-transition.ts'
 import { descendantTaskFacts, selectEpicStartFloors } from './workflow-epic-floor.ts'
-import type { CatalogueStep } from './step-catalogue-definition.ts'
 import type { WorkflowEvidenceInput } from './workflow-evidence-input.ts'
 import {
   decideFloorSatisfaction,
@@ -17,13 +16,19 @@ import {
   type Floor,
   type FloorDecision,
 } from './workflow-floor.ts'
-import {
-  type FloorEvidencePorts,
-  gatherWorkflowRunChains,
-} from './workflow-floor-evidence.ts'
+import type { FloorEvidencePorts } from './workflow-floor-evidence.ts'
 import { gatherValidatedEvidence } from './workflow-floor-evidence-gather.ts'
 import { invokeFloorEvidencePort } from './workflow-floor-evidence-replay.ts'
 import { openWorkflowObligations } from './workflow-obligation-floor.ts'
+import { gatherWorkflowRunChains } from './workflow-run-obligation-evidence.ts'
+
+type StepRunObligation = {
+  slug: string
+  jobs: string[]
+  dispatch?: 'required'
+  dispatchWaivedBy?: Floor['kind'][]
+  judges?: string[]
+}
 
 type FloorCursor = Pick<
   SelectableCursorRow,
@@ -54,7 +59,7 @@ export function refuseForeignKeylessCursor(row: FloorCursor, callerSession?: str
 export async function applyFloorDecision(
   row: FloorCursor,
   floors: Floor[],
-  step: Pick<CatalogueStep, 'slug' | 'jobs' | 'dispatch' | 'dispatchWaivedBy' | 'judges'>,
+  step: StepRunObligation,
   evidence: WorkflowEvidenceInput,
   ports: FloorEvidencePorts,
   finishing: boolean,
@@ -122,15 +127,7 @@ export async function applyFloorDecision(
   })
   if (evidenceFloors.some(({ kind }) => kind === 'descendants-closed'))
     validated.descendants = descendantTaskFacts(row.workflow_key, taskRows)
-  if (step.dispatch === 'required')
-    validated.dispatchRuns = gatherWorkflowRunChains(
-      row.record_id,
-      step.jobs,
-      database,
-      row.step_slug,
-    )
-  if (step.judges?.length)
-    validated.judgedRuns = gatherWorkflowRunChains(row.record_id, step.judges, database)
+  attachRunObligationEvidence(validated, row, step, database)
   if (selfRulingId !== undefined)
     validated.ruling = {
       id: selfRulingId,
@@ -154,4 +151,21 @@ export async function applyFloorDecision(
       : {}),
     ...reentryBoundFloorInput(requireRuling, row.closed, row.step_slug),
   })
+}
+
+function attachRunObligationEvidence(
+  evidence: Parameters<typeof decideFloorSatisfaction>[0]['evidence'],
+  row: FloorCursor,
+  step: StepRunObligation,
+  database: Database,
+): void {
+  if (step.dispatch === 'required')
+    evidence.dispatchRuns = gatherWorkflowRunChains(
+      row.record_id,
+      step.jobs,
+      database,
+      row.step_slug,
+    )
+  if (step.judges?.length)
+    evidence.judgedRuns = gatherWorkflowRunChains(row.record_id, step.judges, database)
 }

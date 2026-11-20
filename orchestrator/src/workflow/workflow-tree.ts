@@ -223,8 +223,7 @@ function parsedCatalogueStep(
     ...(frontMatter.dispatchWaivedBy === undefined
       ? {}
       : {
-          dispatchWaivedBy:
-            frontMatter.dispatchWaivedBy as CatalogueStep['dispatchWaivedBy'],
+          dispatchWaivedBy: frontMatter.dispatchWaivedBy as CatalogueStep['dispatchWaivedBy'],
         }),
     ...(frontMatter.judges === undefined
       ? {}

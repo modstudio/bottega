@@ -2,17 +2,23 @@
 /** Decides dispatch and judging obligations from already gathered run-chain facts. */
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import type { FloorKind, WorkflowRunChainEvidence } from './workflow-floor.ts'
+
+export type WorkflowRunChainEvidence = {
+  number: number
+  job: string
+  terminal: boolean
+  needsVerdict: boolean
+}
 
 export type WorkflowRunObligationInput = {
   workflowKey?: string
-  selectedFloors: FloorKind[]
-  metFloors: FloorKind[]
+  selectedFloors: string[]
+  metFloors: string[]
   step?: {
     slug: string
     jobs: string[]
     dispatch?: 'required'
-    dispatchWaivedBy?: FloorKind[]
+    dispatchWaivedBy?: string[]
     judges?: string[]
   }
   dispatchRuns?: WorkflowRunChainEvidence[]

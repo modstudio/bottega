@@ -410,7 +410,6 @@ async function closeFloorsForStep(
   const floors = decideCloseFloors(currentStep, outcome, advance.requireRuling)
   let selfRulingPlan: Parameters<typeof recordWorkflowSelfRuling>[0] | undefined
   let selfRulingQuestionNumber: number | undefined
-  let floorEvidence = evidence
   if (selfRuling) {
     if (evidence.ruling !== undefined)
       throw new Error('--self-ruling and --ruling are mutually exclusive')
@@ -423,7 +422,6 @@ async function closeFloorsForStep(
     )
     if (refusal) throw new Error(refusal)
     selfRulingQuestionNumber = (await maximumQuestionNumber(d)) + 1
-    floorEvidence = evidence
     selfRulingPlan = {
       cursorId: row.record_id,
       projectId: projectByName(row.project, d)?.recordId ?? null,
@@ -442,7 +440,7 @@ async function closeFloorsForStep(
       row,
       floors,
       currentStep,
-      floorEvidence,
+      evidence,
       ports,
       advance.ordinal === null,
       d,

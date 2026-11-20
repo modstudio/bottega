@@ -300,6 +300,13 @@ export const installHostedWorkflowTreeFixture = (
   rememberProjectSpace(local, project, spaceId)
 }
 
+const requiredArtifactDispatch = {
+  jobs: ['implement'],
+  actions: [],
+  dispatch: 'required' as const,
+  dispatchWaivedBy: ['recorded-artifact' as const],
+}
+
 /** Installs a neutral multi-step workflow for tests of generic workflow behavior. */
 export function installWorkflowStoreFixture(d: Database): void {
   const current = productionStepCatalogue(d).definition
@@ -360,9 +367,7 @@ export function installWorkflowStoreFixture(d: Database): void {
       stage: 'review' as const,
       body: 'Fix accepted findings.',
       floor: ['command-exit' as const, 'recorded-artifact' as const],
-      ...{ jobs: ['implement'], actions: [] },
-      dispatch: 'required' as const,
-      dispatchWaivedBy: ['recorded-artifact' as const],
+      ...requiredArtifactDispatch,
       autonomy: 'ask' as const,
       needs: [],
     },

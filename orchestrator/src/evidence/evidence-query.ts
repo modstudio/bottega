@@ -6,7 +6,9 @@ import type { Database } from 'bun:sqlite'
 import { db } from '../database/db.ts'
 import { NOT_EVIDENCE_SQL } from '../failure/failure.ts'
 import { agentExecutionStatsSql } from '../run/synthetic-lifecycle-job.ts'
+
 export { PENDING_SCORE_WHERE, UNSCORED_WHERE } from './pending-score-sql.ts'
+
 import { PENDING_SCORE_WHERE, UNSCORED_WHERE } from './pending-score-sql.ts'
 
 /**

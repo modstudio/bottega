@@ -195,6 +195,14 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     './workflow-artifact-evidence.ts',
     './workflow-checkout-refusal.ts',
     './workflow-floor-refusal.ts',
+    './workflow-run-obligation.ts',
+  ]),
+  module('orchestrator/src/workflow/workflow-run-obligation.ts', ['../../../shared/brand.ts']),
+  module('orchestrator/src/workflow/workflow-run-obligation-evidence.ts', [
+    'bun:sqlite',
+    '../evidence/pending-score-sql.ts',
+    '../run/run-status.ts',
+    './workflow-run-obligation.ts',
   ]),
   module('orchestrator/src/workflow/workflow-epic-floor.ts', [
     './workflow-floor.ts',
@@ -242,6 +250,7 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     './workflow-floor-evidence-replay.ts',
     './workflow-obligation-floor.ts',
     './workflow-epic-floor.ts',
+    './workflow-run-obligation-evidence.ts',
     './task-read-port.ts',
   ]),
   module('orchestrator/src/workflow/workflow-finish-live-writer.ts', ['../../../shared/brand.ts']),

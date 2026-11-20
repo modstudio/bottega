@@ -1,5 +1,9 @@
 export const runModuleSpecs = [
   {
+    file: 'orchestrator/src/evidence/pending-score-sql.ts',
+    allowed: ['../failure/failure.ts', '../run/run-status.ts'],
+  },
+  {
     file: 'orchestrator/src/run/cursorless-run-evidence.ts',
     allowed: ['bun:sqlite', '../jobs/jobs.ts'],
   },

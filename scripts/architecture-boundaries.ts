@@ -476,8 +476,8 @@ export const importBoundaries: ImportBoundary[] = [
     [
       '../database/db.ts',
       '../failure/failure.ts',
-      '../run/run-status.ts',
       '../run/synthetic-lifecycle-job.ts',
+      './pending-score-sql.ts',
       'bun:sqlite',
     ],
     'Enforce the evidence-query concern boundary.',

@@ -22,6 +22,7 @@ import {
 import {
   dispatchObligationRefusal,
   judgingObligationRefusal,
+  type WorkflowRunChainEvidence,
 } from './workflow-run-obligation.ts'
 
 type TrackerStateCategory = 'backlog' | 'open' | 'active' | 'review' | 'done' | 'dropped'
@@ -160,13 +161,6 @@ export type ValidatedEvidence = {
   tree?: { project: string; worktree?: string | null; commit: string | null }
   dispatchRuns?: WorkflowRunChainEvidence[]
   judgedRuns?: WorkflowRunChainEvidence[]
-}
-
-export type WorkflowRunChainEvidence = {
-  number: number
-  job: string
-  terminal: boolean
-  needsVerdict: boolean
 }
 
 export const isOperatorRulingFloor = (floor: Pick<Floor, 'kind' | 'operatorRuling'>): boolean =>
