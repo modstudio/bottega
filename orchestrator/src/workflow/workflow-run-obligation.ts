@@ -54,20 +54,22 @@ export function dispatchObligationRefusal(input: WorkflowRunObligationInput): st
   if (input.selectedFloors.includes('descendants-closed')) return null
   if ((step.dispatchWaivedBy ?? []).some((fact) => input.metWaiverFacts.includes(fact))) return null
   let runs = input.dispatchRuns ?? []
+  const earlierStepDispatch = input.earlierStepDispatch
+  const latestAcceptedDispositionAt = earlierStepDispatch?.latestAcceptedDispositionAt
   if (
     !runs.length &&
     step.dispatchWaivedBy?.includes('no-accepted-findings') &&
-    input.earlierStepDispatch?.latestAcceptedDispositionAt
+    earlierStepDispatch &&
+    latestAcceptedDispositionAt
   ) {
-    const evidence = input.earlierStepDispatch
-    const triagedAt = Date.parse(evidence.latestAcceptedDispositionAt)
-    runs = evidence.candidates.filter(
+    const triagedAt = Date.parse(latestAcceptedDispositionAt)
+    runs = earlierStepDispatch.candidates.filter(
       (run) =>
         run.terminalOk &&
         run.finishedAt !== null &&
         Date.parse(run.finishedAt) > triagedAt &&
-        run.headCommit === evidence.branchTip &&
-        evidence.reviewedTips.includes(evidence.branchTip),
+        run.headCommit === earlierStepDispatch.branchTip &&
+        earlierStepDispatch.reviewedTips.includes(earlierStepDispatch.branchTip),
     )
   }
   if (!runs.length) {
