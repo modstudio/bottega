@@ -1,12 +1,12 @@
 import { describe, expect, test } from 'bun:test'
-import type { TaskRow } from './task-row.ts'
 import { hostedTaskBatch } from './task-hosted-record.ts'
+import type { TaskRow } from './task-row.ts'
 
 const current: TaskRow = {
   record_id: '01990000-0000-7000-8000-000000000001',
   external_id: null,
   key: 'DEV-1',
-  project: 'bottega',
+  project: 'alpha',
   project_record_id: '01990000-0000-7000-8000-000000000002',
   title: 'Before',
   status: 'open',

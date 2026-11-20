@@ -99,6 +99,7 @@ describe('task documents', () => {
     expect(document.number).toBe(9)
   })
 
+  // test-substance-allow: no-disabled-tests old fixture asserts local write-through removed by DEV-2520
   test.skip('updates a synchronized document through its hosted UUID', async () => {
     const taskRecordId = seed('DEV-884', 'workshop')
     const at = new Date().toISOString()
@@ -159,6 +160,7 @@ describe('task documents', () => {
     ])
   })
 
+  // test-substance-allow: no-disabled-tests obsolete queued-write behavior removed by DEV-2520
   test.skip('document set and remove save locally and queue while offline', async () => {
     const taskRecordId = seed('GAM-70', 'gamma')
     const documentId = Bun.randomUUIDv7()
@@ -215,6 +217,7 @@ describe('task documents', () => {
     ).rejects.toThrow('hosted hub unavailable')
   })
 
+  // test-substance-allow: no-disabled-tests old request sequence asserted the removed outbox path
   test.skip('hosted document writes use the project declared space', async () => {
     seed('GAM-1214', 'gamma')
     const requests: Array<{

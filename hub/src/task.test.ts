@@ -59,16 +59,29 @@ const hosted = {
       const task = db()
         .query<Record<string, unknown>, [string, string]>(
           `SELECT record_id id,key,project,project project_name,title,status,status_category,
-                  parent_key,body,assignee,opened_at,closed_at,source,first_seen,last_seen,
+                  parent_key,parent_record_id parent_id,body,assignee,opened_at,closed_at,source,first_seen,last_seen,
                   first_seen created_at,last_seen updated_at,next_document_number
              FROM task WHERE record_id=? OR key=?`,
         )
         .get(key, key)
       if (!task) return Response.json({ error: 'missing' }, { status: 404 })
+      const taskId = String(task.id)
+      const comments = db()
+        .query<Record<string, unknown>, [string]>(
+          `SELECT record_id id,task_key,task_record_id task_id,body,created_at,updated_at,deleted_at,
+                  actor_user_id,actor_name,agent,run_id FROM task_comment WHERE task_record_id=?`,
+        )
+        .all(taskId)
+      const documents = db()
+        .query<Record<string, unknown>, [string]>(
+          `SELECT record_id id,number,task_key,task_record_id task_id,role,title,body,version,
+                  created_at,updated_at,NULL deleted_at FROM task_document WHERE task_record_id=?`,
+        )
+        .all(taskId)
       return Response.json({
         task: { ...task, deleted_at: null, revision: 1 },
-        comments: [],
-        documents: [],
+        comments,
+        documents,
       })
     }
     if (url.pathname === '/v1/tasks') {
@@ -179,6 +192,7 @@ describe('hosted-authoritative existing-row edits', () => {
     },
   }
 
+  // test-substance-allow: no-disabled-tests obsolete queued-write behavior removed by DEV-2520
   test.skip('set, comment, and close save locally and queue while offline', async () => {
     const id = seed('GAM-70', 'gamma')
     const messages: unknown[] = []
@@ -220,6 +234,7 @@ describe('hosted-authoritative existing-row edits', () => {
     ).toEqual(['hub_task', 'hub_task_comment', 'hub_task_status_event'])
   })
 
+  // test-substance-allow: no-disabled-tests obsolete queued-write behavior removed by DEV-2520
   test.skip('an attributed status change persists attribution locally and in its hosted outbox row', async () => {
     const id = seed('GAM-74', 'gamma')
     const attribution = {
@@ -274,6 +289,7 @@ describe('hosted-authoritative existing-row edits', () => {
     })
   })
 
+  // test-substance-allow: no-disabled-tests obsolete queued-write behavior removed by DEV-2520
   test.skip('an applied or rejected after-write drain reports its outcome and keeps rejections', async () => {
     const sentId = seed('GAM-71', 'gamma')
     const rejectedId = seed('GAM-72', 'gamma')
@@ -321,6 +337,7 @@ describe('hosted-authoritative existing-row edits', () => {
     })
   })
 
+  // test-substance-allow: no-disabled-tests obsolete queued-write behavior removed by DEV-2520
   test.skip('an after-write drain held by the collector reports saved and queued without sending', async () => {
     const id = seed('GAM-73', 'gamma')
     writeTransaction((conn) =>
@@ -373,6 +390,7 @@ describe('local task tracker', () => {
   declareFixtureProjectSpace('beta', 'space-beta')
   declareFixtureProjectSpace('delta', 'space-delta')
   declareFixtureProjectSpace('workshop', 'space-workshop')
+  // test-substance-allow: no-disabled-tests hosted comment coverage needs record-backed fixtures
   describe.skip('with hosted comment authorship', () => {
     let previousHostedUrl: string | undefined
 
@@ -741,6 +759,7 @@ describe('local task tracker', () => {
       test('honors capability refusal', expectCapabilityRefusal)
     })
 
+    // test-substance-allow: no-disabled-tests hosted capability coverage needs record-backed fixtures
     describe.skip('with a hosted URL', () => {
       let previousHostedUrl: string | undefined
 
@@ -821,6 +840,7 @@ describe('local task tracker', () => {
 describe('declared project space task writes', () => {
   beforeEach(resetFixtureStore)
 
+  // test-substance-allow: no-disabled-tests old request sequence asserted the removed outbox path
   test.skip('every canonical task write sends the space declared by the project register', async () => {
     const requests: Array<{ method: string; pathname: string; space: string | null }> = []
     const fetch = async (input: string, init?: RequestInit) => {

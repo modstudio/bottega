@@ -104,6 +104,18 @@ export function getTaskDocument(value: string, scope: TaskScope = {}): TaskDocum
 
 type CreateDocumentInput = { task: string; title: string; body?: string; role?: string }
 
+function taskDocumentFields(changes: {
+  title?: string
+  body?: string
+  role?: string | null
+}): string[] {
+  return [
+    ...(changes.title !== undefined ? ['title'] : []),
+    ...(changes.role !== undefined ? ['role'] : []),
+    ...(changes.body !== undefined ? ['body', 'version'] : []),
+  ]
+}
+
 function createLocalTaskDocument(task: DocumentTask, input: CreateDocumentInput): TaskDocument {
   const at = nowIso()
   const recordId = newRecordId()
@@ -242,11 +254,7 @@ export async function updateTaskDocument(
   const mode = taskWriteMode(task.project, options.hosted)
   const hosted = mode === 'hosted-configured'
   const at = nowIso()
-  const fields = [
-    ...(changes.title !== undefined ? ['title'] : []),
-    ...(changes.role !== undefined ? ['role'] : []),
-    ...(changes.body !== undefined ? ['body', 'version'] : []),
-  ]
+  const fields = taskDocumentFields(changes)
   if (hosted) {
     if (!expectedVersion)
       throw new Error(

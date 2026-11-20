@@ -7,7 +7,6 @@ import { sendHostedChanges } from './hosted-change-sender.ts'
 import { applyHostedWriteLocally } from './hosted-local-apply.ts'
 import { resolveHostedUrl } from './hosted-url.ts'
 import type { TaskWriteMode } from './hosted-write-mode.ts'
-import { persistInstallBinding } from './install-binding.ts'
 import { drainHostedEditOutbox } from './offline-task-edits.ts'
 import { type BranchPruneResult, classifyTaskBranches } from './orch.ts'
 import { queueHostedChange } from './outbox.ts'
@@ -21,10 +20,11 @@ import {
 } from './push-contract.ts'
 import type { Attribution } from './task-attribution.ts'
 import { commentAuthorDecision, UNATTRIBUTED } from './task-attribution.ts'
+import { cacheCreatedHostedTask } from './task-cache.ts'
 import { hostedCreateTask } from './task-client.ts'
 import { decideTaskClose, landingCheck } from './task-close-decision.ts'
 import { type TaskDetail, taskBodyVersion } from './task-detail.ts'
-import { listTaskDocuments, type TaskDocumentSummary } from './task-document.ts'
+import type { TaskDocumentSummary } from './task-document.ts'
 import {
   hostedComment,
   hostedTaskBatch,
@@ -44,8 +44,10 @@ import {
   taskRecordId,
   taskRecordIdFor,
 } from './task-identity.ts'
+import { listLocalTasks, showLocalTask } from './task-local-read.ts'
 import { taskRecordFromRows } from './task-record.ts'
 import type { TaskRow } from './task-row.ts'
+import type { TaskChanges, TaskComment } from './task-types.ts'
 import {
   type HostedTaskWriteOptions,
   hostedTaskWriteOptions,
@@ -55,28 +57,7 @@ import {
 import { trackerCapabilities } from './tracker-capabilities.ts'
 import { taskCreationDestination } from './tracker-new.ts'
 
-export type TaskComment = {
-  id: string
-  task_key: string
-  task_record_id: string
-  body: string
-  created_at: string
-  actor_user_id: string | null
-  actor_name: string | null
-  agent: string | null
-  run_id: string | null
-  updated_at: string | null
-  deleted_at: string | null
-  revision?: number
-}
-
-export type TaskChanges = {
-  title?: string
-  status?: string
-  parent?: string | null
-  body?: string
-  assignee?: string | null
-}
+export type { TaskChanges, TaskComment } from './task-types.ts'
 
 export type DuplicateCandidate = {
   key: string
@@ -335,49 +316,6 @@ export function createLocalTaskInTransaction(
   return row
 }
 
-function cacheTask(
-  conn: import('bun:sqlite').Database,
-  row: import('./hosted-tasks.ts').HostedTask,
-) {
-  const task = hostedTaskRow(row)
-  conn
-    .query(`INSERT INTO task
-    (record_id,key,project,project_record_id,title,status,status_category,parent_key,parent_record_id,body,assignee,opened_at,closed_at,
-     updated_at,source,first_seen,last_seen,next_document_number,retired_reason)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-    ON CONFLICT(project,key) DO UPDATE SET record_id=excluded.record_id,
-      project_record_id=COALESCE(excluded.project_record_id,task.project_record_id),
-      title=excluded.title,status=excluded.status,status_category=excluded.status_category,
-      parent_key=excluded.parent_key,parent_record_id=excluded.parent_record_id,
-      body=excluded.body,assignee=excluded.assignee,
-      opened_at=excluded.opened_at,closed_at=excluded.closed_at,updated_at=excluded.updated_at,
-      source=excluded.source,first_seen=excluded.first_seen,last_seen=excluded.last_seen,
-      next_document_number=MAX(task.next_document_number,excluded.next_document_number),
-      retired_reason=excluded.retired_reason`)
-    .run(
-      task.record_id,
-      task.key,
-      task.project,
-      task.project_record_id ?? null,
-      task.title,
-      task.status,
-      task.status_category,
-      task.parent_key,
-      task.parent_record_id,
-      task.body,
-      task.assignee,
-      task.opened_at,
-      task.closed_at,
-      task.updated_at,
-      task.source,
-      task.first_seen,
-      task.last_seen,
-      task.next_document_number,
-      task.retired_reason ?? null,
-    )
-  persistInstallBinding(conn)
-}
-
 function writeLocalComment(
   conn: Database,
   task: Pick<TaskRow, 'key' | 'record_id'>,
@@ -511,7 +449,7 @@ export async function createTask(
     `${hosted.key} was created in the hosted record; its local copy will arrive on the next record pull`,
     () =>
       writeTransaction((conn) => {
-        cacheTask(conn, hosted)
+        cacheCreatedHostedTask(conn, hosted)
         if (options.allowDuplicateReason)
           writeLocalComment(
             conn,
@@ -534,53 +472,6 @@ export async function createTask(
         )
       ).task
     : hostedTaskRow(hosted)
-}
-
-function listLocalTasks(
-  filters: { project?: string; status?: string; parent?: string } = {},
-): TaskRow[] {
-  const clauses: string[] = []
-  const values: string[] = []
-  if (filters.project) {
-    registeredProject(filters.project)
-    clauses.push('project = ?')
-    values.push(filters.project)
-  }
-  if (filters.status) {
-    clauses.push('status_category = ?')
-    values.push(status(filters.status))
-  }
-  if (filters.parent) {
-    clauses.push('parent_record_id = ?')
-    values.push(resolveTask(db(), filters.parent, filters.project))
-  }
-  return db()
-    .query<TaskRow, string[]>(
-      `SELECT * FROM task ${clauses.length ? `WHERE ${clauses.join(' AND ')}` : ''}
-     ORDER BY project, key`,
-    )
-    .all(...values)
-}
-
-function showLocalTask(
-  key: string,
-  scope: TaskScope = {},
-): {
-  task: TaskRow
-  comments: TaskComment[]
-  documents: TaskDocumentSummary[]
-} {
-  const upper = key.toUpperCase()
-  const recordId = taskRecordId(upper, scope)
-  const task = taskByRecordId<TaskRow>(recordId)
-  const comments = db()
-    .query<TaskComment, [string]>(
-      `SELECT record_id AS id, task_key, task_record_id, body, created_at,updated_at,deleted_at,
-       actor_user_id,actor_name,agent,run_id FROM task_comment
-      WHERE task_record_id = ? AND deleted_at IS NULL ORDER BY created_at, record_id`,
-    )
-    .all(recordId)
-  return { task, comments, documents: listTaskDocuments(upper, { recordId }) }
 }
 
 export function listTasks(

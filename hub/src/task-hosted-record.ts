@@ -9,16 +9,13 @@ import {
   type PushedStatusEvent,
   type PushedTask,
 } from './push-contract.ts'
-import type { TaskChanges, TaskComment } from './task.ts'
 import type { Attribution } from './task-attribution.ts'
 import { hostedGetTask, hostedListTasks, isMissingHostedTask } from './task-client.ts'
 import type { TaskDocumentSummary } from './task-document.ts'
 import { missingTaskError, type TaskScope } from './task-identity.ts'
 import type { TaskRow } from './task-row.ts'
-import {
-  type HostedTaskWriteOptions,
-  hostedTaskWriteOptions,
-} from './task-write-destination.ts'
+import type { TaskChanges, TaskComment } from './task-types.ts'
+import { type HostedTaskWriteOptions, hostedTaskWriteOptions } from './task-write-destination.ts'
 
 export function hostedTaskRow(row: import('./hosted-tasks.ts').HostedTask): TaskRow {
   return {
@@ -104,7 +101,10 @@ export async function showHostedTask(
         ),
       )
     } catch (error) {
-      if (!isMissingHostedTask(error)) throw error
+      if (!isMissingHostedTask(error)) {
+        const message = error instanceof Error ? error.message : String(error)
+        throw new Error(`${message}. Retry when the hosted record is reachable.`)
+      }
     }
   }
   if (found.length !== 1) throw missingTaskError(key.toUpperCase())
@@ -161,7 +161,7 @@ export function pushedTask(current: TaskRow, changes: TaskChanges, at: string): 
   }
 }
 
-export function taskPatchGuards(current: TaskRow, changes: TaskChanges) {
+function taskPatchGuards(current: TaskRow, changes: TaskChanges) {
   return {
     ...(changes.status !== undefined
       ? { status: current.status, status_category: current.status_category }
