@@ -125,6 +125,12 @@ export const hostedTableLifecycles: readonly TableLifecycle[] = [
     'change-logs',
   ),
   ...entries(
+    ['hub_applied_change'],
+    'journal',
+    'orchestrator/src/record/record-retention.ts#pruneRecordRetention',
+    'change-logs',
+  ),
+  ...entries(
     ['machine_key_claim_challenge', 'machine_join_message', 'machine_join_nameplate'],
     'record',
     'orchestrator/src/record/record-retention.ts#pruneRecordRetention',

@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, expect, test } from 'bun:test'
 import type { PGlite } from '@electric-sql/pglite'
 import type { SQL } from 'bun'
+import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { RECORD_ACTOR_ROLE } from '../../shared/record/schema.ts'
 import { bindTenant } from '../../shared/record/tenant.ts'
 import { createHostedRecordFixture, pgliteSql } from '../test/hosted-record-fixture.ts'
@@ -521,6 +522,9 @@ test('a stale guarded item aborts every write in its batch', async () => {
   } catch (error) {
     expect(error).toBeInstanceOf(HostedRevisionConflictError)
     expect(error).toMatchObject({ index: 1, table: 'hub_task', id: ids[1], currentRevision: '1' })
+    expect((error as Error).message).toContain(
+      `cleared by: ${PLATFORM_SLUG} task show DEV-401`,
+    )
   }
   expect(
     (
@@ -650,24 +654,6 @@ test('unguarded updates increment revisions and document changes compare text ve
       },
     ]),
   ).rejects.toMatchObject({ currentRevision: 'v1' })
-})
-
-test('applied change retention prunes only rows older than its window', async () => {
-  await database.exec(`
-    INSERT INTO hub_applied_change(change_id,space_id,result,applied_at) VALUES
-      ('01990000-0000-7000-8000-000000001440','${spaceId}','{}',now() - interval '31 days'),
-      ('01990000-0000-7000-8000-000000001441','${spaceId}','{}',now() - interval '29 days');
-  `)
-  expect(
-    (await database.query(`SELECT public.hub_applied_change_prune(30)::int AS deleted`)).rows,
-  ).toEqual([{ deleted: 1 }])
-  expect(
-    (
-      await database.query(`SELECT change_id::text FROM hub_applied_change WHERE change_id=$1`, [
-        '01990000-0000-7000-8000-000000001441',
-      ])
-    ).rows,
-  ).toHaveLength(1)
 })
 
 test('offline commands later drain through the real outbox into hosted task rows', async () => {

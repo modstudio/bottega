@@ -64,26 +64,37 @@ function changeKey(input: ParsedHostedPushChange): string {
   return String(row.key ?? row.task_key ?? input.id)
 }
 
-function assertPushGuards(
+function storedRevision(
+  input: ParsedHostedPushChange,
+  current: GuardedStoredRow | undefined,
+): number | string | null {
+  return (input.table === HOSTED_DOCUMENT_TABLE ? current?.version : current?.revision) ?? null
+}
+
+function assertRevisionGuard(
   input: ParsedHostedPushChange,
   current: GuardedStoredRow | undefined,
 ): void {
-  if (input.expected_revision !== undefined) {
-    const currentRevision =
-      input.table === HOSTED_DOCUMENT_TABLE ? current?.version : current?.revision
-    const matches =
-      input.expected_revision === 0
-        ? current === undefined
-        : current !== undefined && currentRevision === input.expected_revision
-    if (!matches)
-      throw revisionConflict({
-        table: input.table,
-        id: input.id,
-        expected: input.expected_revision,
-        current: currentRevision == null ? null : currentRevision,
-        key: changeKey(input),
-      })
-  }
+  if (input.expected_revision === undefined) return
+  const currentRevision = storedRevision(input, current)
+  const matches =
+    input.expected_revision === 0
+      ? current === undefined
+      : current !== undefined && currentRevision === input.expected_revision
+  if (!matches)
+    throw revisionConflict({
+      table: input.table,
+      id: input.id,
+      expected: input.expected_revision,
+      current: currentRevision,
+      key: changeKey(input),
+    })
+}
+
+function assertFieldGuards(
+  input: ParsedHostedPushChange,
+  current: GuardedStoredRow | undefined,
+): void {
   for (const [field, expected] of Object.entries(input.from ?? {})) {
     const currentValue = current?.[field] ?? null
     if (current === undefined || !Object.is(currentValue, expected))
@@ -92,12 +103,17 @@ function assertPushGuards(
         id: input.id,
         field,
         currentValue,
-        currentRevision:
-          input.table === HOSTED_DOCUMENT_TABLE
-            ? (current?.version ?? null)
-            : (current?.revision ?? null),
+        currentRevision: storedRevision(input, current),
       })
   }
+}
+
+function assertPushGuards(
+  input: ParsedHostedPushChange,
+  current: GuardedStoredRow | undefined,
+): void {
+  assertRevisionGuard(input, current)
+  assertFieldGuards(input, current)
 }
 
 function changeFingerprint(input: ParsedHostedPushChange): string {
@@ -141,7 +157,7 @@ async function rememberOutcome(
   if (!input.change_id) return
   await tx`INSERT INTO hub_applied_change (change_id,space_id,result,applied_at)
     VALUES (${input.change_id}::uuid,${identity.spaceId}::uuid,
-      ${JSON.stringify({ fingerprint, outcome })}::jsonb,now())`
+      ${canonicalJson({ fingerprint, outcome })}::jsonb,now())`
 }
 
 async function requireLiveChildTask(

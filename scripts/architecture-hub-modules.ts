@@ -214,6 +214,7 @@ export const hubModuleSpecs = [
       '../../shared/record-space-request.ts',
       '../../shared/record/record-changes.ts',
       './hosted-identity-set.ts',
+      './hosted-push-conflict.ts',
       './hosted-push-changes.ts',
       './hosted-record-changes.ts',
       './hosted-route-config.ts',
@@ -221,6 +222,10 @@ export const hubModuleSpecs = [
       './identity-set-contract.ts',
       './push-contract.ts',
     ],
+  },
+  {
+    file: 'hub/src/hosted-push-conflict.ts',
+    allowed: ['../../shared/brand.ts', '../../shared/refusal.ts', './push-contract.ts'],
   },
   {
     file: 'hub/src/hosted-record-changes.ts',
@@ -253,7 +258,10 @@ export const hubModuleSpecs = [
     allowed: ['../../shared/record-id.ts', './push-contract.ts'],
   },
   { file: 'hub/src/task-push-plan.ts', allowed: ['../../shared/brand.ts', './push-contract.ts'] },
-  { file: 'hub/src/push-contract.ts', allowed: ['../../shared/task-source.ts'] },
+  {
+    file: 'hub/src/push-contract.ts',
+    allowed: ['../../shared/record-id.ts', '../../shared/task-source.ts'],
+  },
   {
     file: 'hub/src/task-row.ts',
     allowed: ['../../shared/task-source.ts', '../../shared/trackers.ts'],

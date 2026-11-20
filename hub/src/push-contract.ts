@@ -752,39 +752,50 @@ function parseHostedPushItemContent(value: unknown): ParsedHostedPushItem {
   return { input: { table, id: input.id, op: 'delete' } }
 }
 
-function parsePushGuards(
-  wire: Record<string, unknown>,
+function parseExpectedRevision(value: unknown, table: PushableHubChangeTable) {
+  if (value === undefined) return undefined
+  if (table === HOSTED_DOCUMENT_TABLE)
+    return typeof value === 'string' ? value : `${table} expected_revision must be a string`
+  const revisioned =
+    table === HOSTED_TASK_TABLE || table === HOSTED_COMMENT_TABLE || table === HOSTED_NOTE_TABLE
+  if (!revisioned) return `${table} does not accept expected_revision`
+  return Number.isSafeInteger(value) && Number(value) >= 0
+    ? (value as number)
+    : `${table} expected_revision must be a non-negative safe integer`
+}
+
+function parseFrom(
+  value: unknown,
   input: ParsedHostedPushChange,
-): HostedPushGuards | string {
-  const guards: HostedPushGuards = {}
-  if (wire.change_id !== undefined) {
-    if (typeof wire.change_id !== 'string' || !hasRecordIdShape(wire.change_id))
-      return 'pushed change change_id must be a UUID'
-    guards.change_id = wire.change_id
-  }
-  if (wire.expected_revision !== undefined) {
-    if (input.table === HOSTED_DOCUMENT_TABLE) {
-      if (typeof wire.expected_revision !== 'string')
-        return `${input.table} expected_revision must be a string`
-    } else if (
-      input.table === HOSTED_TASK_TABLE ||
-      input.table === HOSTED_COMMENT_TABLE ||
-      input.table === HOSTED_NOTE_TABLE
-    ) {
-      if (!Number.isSafeInteger(wire.expected_revision) || Number(wire.expected_revision) < 0)
-        return `${input.table} expected_revision must be a non-negative safe integer`
-    } else return `${input.table} does not accept expected_revision`
-    guards.expected_revision = wire.expected_revision as number | string
-  }
-  if (wire.from !== undefined) {
-    const from = object(wire.from)
-    if (!from) return `${input.table} from must be a JSON object`
-    const fields = 'fields' in input && Array.isArray(input.fields) ? input.fields : []
-    const unknown = Object.keys(from).find((field) => !fields.includes(field))
-    if (unknown) return `${input.table} from contains ${unknown}, which is not in fields`
-    guards.from = from
-  }
-  return guards
+): Record<string, unknown> | undefined | string {
+  if (value === undefined) return undefined
+  const from = object(value)
+  if (!from) return `${input.table} from must be a JSON object`
+  const fields = 'fields' in input && Array.isArray(input.fields) ? input.fields : []
+  const unknown = Object.keys(from).find((field) => !fields.includes(field))
+  return unknown ? `${input.table} from contains ${unknown}, which is not in fields` : from
+}
+
+function parsePushGuards(wire: Record<string, unknown>, input: ParsedHostedPushChange) {
+  const changeId = wire.change_id
+  if (changeId !== undefined && (typeof changeId !== 'string' || !hasRecordIdShape(changeId)))
+    return 'pushed change change_id must be a UUID'
+  if (
+    input.table === HOSTED_DOCUMENT_TABLE &&
+    wire.expected_revision !== undefined &&
+    typeof wire.expected_revision !== 'string'
+  )
+    return `${input.table} expected_revision must be a string`
+  const expectedRevision = parseExpectedRevision(wire.expected_revision, input.table)
+  if (typeof expectedRevision === 'string' && input.table !== HOSTED_DOCUMENT_TABLE)
+    return expectedRevision
+  const from = parseFrom(wire.from, input)
+  if (typeof from === 'string') return from
+  return {
+    ...(changeId === undefined ? {} : { change_id: changeId }),
+    ...(expectedRevision === undefined ? {} : { expected_revision: expectedRevision }),
+    ...(from === undefined ? {} : { from }),
+  } satisfies HostedPushGuards
 }
 
 export function parseHostedPushItem(value: unknown): ParsedHostedPushItem {

@@ -7,7 +7,7 @@ import { recordPool } from './record-pool.ts'
 
 export const RECORD_RETENTION_INTERVAL_MS = 60 * 60_000
 export const RECORD_RETENTION_START_DELAY_MS = 10_000
-export const HUB_APPLIED_CHANGE_RETENTION_DAYS = 30
+const hubAppliedChangeRetentionDays = 30
 // Serializes every prune across record API instances.
 export const RECORD_RETENTION_ADVISORY_LOCK_KEY = 2_121_000_001
 
@@ -118,7 +118,7 @@ export async function pruneRecordRetention(
       pruneRecordChanges: () => pruneFunction(connection, 'record_change_prune'),
       pruneHubAppliedChanges: async () => {
         const result = rows<{ deleted: number | bigint | string }>(
-          await connection`SELECT public.hub_applied_change_prune(${HUB_APPLIED_CHANGE_RETENTION_DAYS}) AS deleted`,
+          await connection`SELECT public.hub_applied_change_prune(${hubAppliedChangeRetentionDays}) AS deleted`,
         )[0]
         if (!result)
           throw new Error(

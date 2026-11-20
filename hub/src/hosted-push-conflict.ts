@@ -2,6 +2,7 @@
 /** Typed whole-batch refusals for guarded hub changes. */
 
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
+import { refusal, renderRefusal } from '../../shared/refusal.ts'
 import type { PushableHubChangeTable } from './push-contract.ts'
 
 export class HostedRevisionConflictError extends Error {
@@ -44,7 +45,12 @@ export function revisionConflict(input: {
   return new HostedRevisionConflictError(
     input.table,
     input.id,
-    `${input.table} ${input.id} changed since revision ${input.expected}; now ${currentRevision}. cleared by: ${PLATFORM_SLUG} task show ${input.key}`,
+    renderRefusal(
+      refusal(
+        `${input.table} ${input.id} changed since revision ${input.expected}; now ${currentRevision}.`,
+        { kind: 'command', argv: [PLATFORM_SLUG, 'task', 'show', input.key] },
+      ),
+    ),
     currentRevision,
   )
 }

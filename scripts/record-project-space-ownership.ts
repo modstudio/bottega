@@ -49,6 +49,7 @@ export const RECORD_PROJECT_SPACE_OWNERSHIP = [
     reason: 'space-attributed global synchronization journal',
   },
   { table: 'hub_day', kind: 'space', reason: 'space-and-day aggregate' },
+  { table: 'hub_applied_change', kind: 'space', reason: 'space change replay journal' },
   {
     table: 'hub_interval',
     kind: 'project',

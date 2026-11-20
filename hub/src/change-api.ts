@@ -89,9 +89,7 @@ function hasTestDependencies(
   return method === 'GET' ? Boolean(dependencies.feed) : Boolean(dependencies.push)
 }
 
-function pushInput(
-  value: unknown,
-):
+function pushInput(value: unknown):
   | {
       inputs: ParsedHostedPushChange[]
       positions: number[]
