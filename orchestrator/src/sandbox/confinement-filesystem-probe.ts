@@ -34,7 +34,13 @@ import {
   resolveRunningInstallLayout,
   runningInstallReadCarveouts,
 } from './install-read-policy.ts'
-import { readonlyLensProfile, resetSandbox, sandboxLaunchArgv, writerProfile } from './sandbox.ts'
+import {
+  probeSandboxProfile,
+  readonlyLensProfile,
+  resetSandbox,
+  sandboxLaunchArgv,
+  writerProfile,
+} from './sandbox.ts'
 
 type FilesystemProbeAccess = 'denied' | 'readable' | 'not covered'
 type CommandProbeStatus = 'ran' | 'failed'
@@ -44,6 +50,7 @@ export type ConfinementFilesystemProbeRow = {
     | 'goose'
     | 'grok'
     | 'ACP writer'
+    | 'workflow probe'
     | 'cross-project CLI'
     | 'Codex'
     | 'read-only MCP'
@@ -93,7 +100,7 @@ function firstErrorLine(stderr: string): string {
   return stderr.trim().split(/\r?\n/, 1)[0] || 'no stderr'
 }
 
-function probeVerdict(
+export function probeVerdict(
   targets: readonly AccessTarget[],
   paths: Record<string, FilesystemProbeAccess>,
   command: CommandProbe,
@@ -133,7 +140,7 @@ async function launchCommand(
 }
 
 async function launchProbe(
-  family: 'goose' | 'grok' | 'ACP writer',
+  family: 'goose' | 'grok' | 'ACP writer' | 'workflow probe',
   profile: ReturnType<typeof readonlyLensProfile>,
   targets: readonly AccessTarget[],
   commandArgv: string[],
@@ -193,21 +200,35 @@ async function launchCrossProjectCliProbe(
   hubOpenMode: string,
 ): Promise<ConfinementFilesystemProbeRow> {
   try {
+    const targets: AccessTarget[] = [
+      { name: 'install .env', path: installEnvPath, expected: 'denied' },
+    ]
     const access = await launchCommand(profile, ['/bin/cat', installEnvPath], environment)
     const version = await launchCommand(profile, [...cliArgv, '--version'], environment)
     const verb = await launchCommand(profile, commandArgv, environment, hubOpenMode)
+    const paths = { 'install .env': access.status === 'ran' ? 'readable' : 'denied' } as const
+    const command: CommandProbe = {
+      status: version.status === 'ran' && verb.status === 'ran' ? 'ran' : 'failed',
+      reason:
+        version.status === 'failed'
+          ? `${PLATFORM_SLUG} --version ${version.reason}`
+          : `${PLATFORM_SLUG} task show DEV-2510 ${verb.reason}`,
+    }
+    const verdict = probeVerdict(targets, paths, command)
     return {
       family: 'cross-project CLI',
-      status: version.status === 'ran' && verb.status === 'ran' ? 'ran' : 'failed',
-      paths: { 'install .env': access.status === 'ran' ? 'readable' : 'denied' },
+      status: verdict.status === 'denied' ? 'ran' : 'failed',
+      paths,
       commands: {
         [`${PLATFORM_SLUG} --version`]: version,
         [`${PLATFORM_SLUG} task show DEV-2510`]: verb,
       },
       reason:
-        version.status === 'ran' && verb.status === 'ran'
+        verdict.status === 'denied'
           ? undefined
-          : 'one or more CLI probes failed',
+          : verdict.status === 'readable'
+            ? 'the install .env was unexpectedly readable'
+            : verdict.reason,
     }
   } catch (error) {
     return {
@@ -421,6 +442,24 @@ export async function runConfinementFilesystemProbes(): Promise<ConfinementFiles
         'ACP writer',
         writerProfile({ ...common, agent: 'grok', askAddress: '127.0.0.1:1' }),
         targets,
+        commandArgv,
+        environment,
+        hubOpenMode,
+      ),
+      await launchProbe(
+        'workflow probe',
+        probeSandboxProfile({
+          allowWriteDir: common.runtimeDir,
+          cwd: common.worktree,
+          project: common.project,
+          registeredProjects: common.registeredProjects,
+          environment: common.environment,
+          socketDenyPaths: common.socketDenyPaths,
+          orchestratorStoreAccess: 'allow-read',
+        }),
+        targets.filter(
+          ({ name }) => name === 'orchestrator store' || name === 'another run directory',
+        ),
         commandArgv,
         environment,
         hubOpenMode,

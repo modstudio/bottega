@@ -3,11 +3,6 @@ import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { STATE_HOME_ENV } from '../../../shared/state-directory.ts'
 import type { Project } from '../project/projects.ts'
-import {
-  resolveRunningInstallLayout,
-  runningInstallReadCarveouts,
-  runningInstallRootForSandbox,
-} from './install-read-policy.ts'
 import { readonlyLensProfile } from './sandbox.ts'
 
 function fixtureProject(recordId: string, name: string, path: string): Project {
@@ -24,7 +19,12 @@ function fixtureProject(recordId: string, name: string, path: string): Project {
 
 test('a different project can read only the running checkout runtime', () => {
   const environment = { HOME: '/Users/operator', [STATE_HOME_ENV]: '/operator/state' }
-  const installRoot = runningInstallRootForSandbox(environment)
+  const installRoot = '/install'
+  const installLayout = {
+    kind: 'checkout' as const,
+    root: installRoot,
+    workspaceDirectories: ['/install/hub', '/install/orchestrator'],
+  }
   const own = fixtureProject('other-project-id', 'other-project', '/projects/other-project')
   const install = fixtureProject('install-project-id', PLATFORM_SLUG, installRoot)
   const profile = readonlyLensProfile({
@@ -38,11 +38,20 @@ test('a different project can read only the running checkout runtime', () => {
     environment,
     socketDenyPaths: [],
     orchestratorStoreAccess: 'deny',
+    installLayout,
   })
 
   expect(profile.filesystem.denyRead).toContain(installRoot)
   expect(profile.filesystem.allowWithinDeny).toEqual(
-    expect.arrayContaining(runningInstallReadCarveouts(resolveRunningInstallLayout(environment))),
+    expect.arrayContaining([
+      '/install/bin',
+      '/install/cli',
+      '/install/shared',
+      '/install/node_modules',
+      '/install/package.json',
+      '/install/hub',
+      '/install/orchestrator',
+    ]),
   )
   expect(profile.filesystem.allowWithinDeny).not.toContain(installRoot)
   for (const sensitive of [join(installRoot, '.env'), join(installRoot, '.claude')]) {

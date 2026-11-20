@@ -29,7 +29,6 @@ import {
 import { workerHarnessName } from '../agent/worker-launch-env.ts'
 import { ROOT } from '../database/db.ts'
 import type { Project } from '../project/projects.ts'
-import { resolveRunningInstallLayout, runningInstallReadCarveouts } from './install-read-policy.ts'
 import {
   probeSandboxProfile as buildProbeSandboxProfile,
   readonlyLensProfile as buildReadonlyLensProfile,
@@ -580,6 +579,23 @@ describe('readonly-lens sandbox profile', () => {
     const project = fixtureProject({
       secretPaths: ['/shared/absolute.secret', '~/.tokens/private', 'config/operator.secret'],
     })
+    const installLayout = {
+      kind: 'checkout' as const,
+      root: '/install',
+      workspaceDirectories: [
+        '/install/orchestrator',
+        '/install/cli',
+        '/install/hub',
+        '/install/hub/deploy/site',
+        '/install/hub/data',
+        '/install/hub/site',
+        '/install/hub/ui',
+        '/install/hub/util',
+        '/install/hub/views',
+        '/install/hub/web',
+        '/install/retrieval',
+      ],
+    }
     const profile = readonlyLensProfile({
       worktree: '/runs/tree',
       runtimeDir: '/runs/evidence',
@@ -590,6 +606,7 @@ describe('readonly-lens sandbox profile', () => {
       nodeModuleLinks: ['/projects/fixture/node_modules'],
       environment,
       socketDenyPaths: TEST_SOCKET_DENY_PATHS,
+      installLayout,
     })
 
     expect(profile.filesystem.denyRead).toEqual([
@@ -620,7 +637,21 @@ describe('readonly-lens sandbox profile', () => {
       '/projects/fixture/node_modules',
       join(homedir(), '.claude.json'),
       process.execPath,
-      ...runningInstallReadCarveouts(resolveRunningInstallLayout(environment)),
+      '/install/bin',
+      '/install/cli',
+      '/install/shared',
+      '/install/node_modules',
+      '/install/package.json',
+      '/install/orchestrator',
+      '/install/hub',
+      '/install/hub/deploy/site',
+      '/install/hub/data',
+      '/install/hub/site',
+      '/install/hub/ui',
+      '/install/hub/util',
+      '/install/hub/views',
+      '/install/hub/web',
+      '/install/retrieval',
     ])
     expect(profile.filesystem.allowWrite).toEqual(['/runs/tree', '/runs/evidence'])
     expect(profile.filesystem.denyWrite).toEqual(['/tmp/claude', '/private/tmp/claude'])
