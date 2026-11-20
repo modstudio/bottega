@@ -219,7 +219,7 @@ reconcile a completed run with its saved artifacts
 
 ## bottega run relay
 
-**Synopsis:** `bottega run relay <id> [--note <why>]`
+**Synopsis:** `bottega run relay <id> --note <why>`
 
 relay a worker question to a person for a ruling
 

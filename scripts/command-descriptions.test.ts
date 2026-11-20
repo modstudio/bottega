@@ -207,6 +207,11 @@ test('local route options and the outbox owner verb union are documented', () =>
   expect(units).toContainEqual(
     expect.objectContaining({ spelling: `${PLATFORM_SLUG} run outbox retire --reason` }),
   )
+  expect(
+    documentationInventory(groups, routes, commandPrograms)
+      .commands.find(({ spelling }) => spelling === `${PLATFORM_SLUG} run outbox retire`)
+      ?.options.find(({ flags }) => flags.includes('--reason')),
+  ).toMatchObject({ required: true })
   expect(units.filter((unit) => unit.spelling === `${PLATFORM_SLUG} run outbox retry`)).toEqual([
     expect.objectContaining({ description: 'retry from orch' }),
   ])

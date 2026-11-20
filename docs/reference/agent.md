@@ -97,7 +97,7 @@ manage stored architect context or resolve checkout context
 
 ## bottega agent context brief
 
-**Synopsis:** `bottega agent context brief [--session <id>] [--json]`
+**Synopsis:** `bottega agent context brief --session <id> [--json]`
 
 show the compact working context for an architect session
 
@@ -112,7 +112,7 @@ show the compact working context for an architect session
 
 ## bottega agent context clear
 
-**Synopsis:** `bottega agent context clear [--task <key>]`
+**Synopsis:** `bottega agent context clear --task <key>`
 
 remove every context item from one task holder
 
@@ -126,7 +126,7 @@ remove every context item from one task holder
 
 ## bottega agent context drop
 
-**Synopsis:** `bottega agent context drop [--task <key>] [--session <id>] [--cursor <record-id>] [--id <id>] [--expected-revision <revision>]`
+**Synopsis:** `bottega agent context drop [--task <key>] [--session <id>] [--cursor <record-id>] --id <id> [--expected-revision <revision>]`
 
 remove one context item
 
@@ -161,7 +161,7 @@ report whether stored architect context is managed correctly
 
 ## bottega agent context record-emission
 
-**Synopsis:** `bottega agent context record-emission [--session <id>] [--event <event>] [--hook <hook>] [--kind <kind>] [--chars <count>] [--lines <count>] [--hash <sha256>]`
+**Synopsis:** `bottega agent context record-emission --session <id> --event <event> --hook <hook> --kind <kind> --chars <count> --lines <count> --hash <sha256>`
 
 record one product-hook output
 
@@ -181,7 +181,7 @@ record one product-hook output
 
 ## bottega agent context record-injection
 
-**Synopsis:** `bottega agent context record-injection [--session <id>] [--source <source>] [--bytes <count>] [--lines <count>] [--chars <count>]`
+**Synopsis:** `bottega agent context record-injection --session <id> --source <source> --bytes <count> --lines <count> --chars <count>`
 
 record one SessionStart context injection
 
@@ -199,7 +199,7 @@ record one SessionStart context injection
 
 ## bottega agent context review
 
-**Synopsis:** `bottega agent context review [--session <id>] [--json]`
+**Synopsis:** `bottega agent context review --session <id> [--json]`
 
 review stored context items when the measured interval is due
 
@@ -214,7 +214,7 @@ review stored context items when the measured interval is due
 
 ## bottega agent context set
 
-**Synopsis:** `bottega agent context set <body> [--task <key>] [--session <id>] [--cursor <record-id>] [--kind <kind>] [--source <source>] [--id <id>] [--expected-revision <revision>]`
+**Synopsis:** `bottega agent context set <body> [--task <key>] [--session <id>] [--cursor <record-id>] --kind <kind> --source <source> --id <id> [--expected-revision <revision>]`
 
 create or revise one context item
 
@@ -459,7 +459,7 @@ report typed-question outcomes and operating cost
 
 ## bottega agent typed-question backtest
 
-**Synopsis:** `bottega agent typed-question backtest [--question <id>] [--version <value>] [--job <name>] [--limit <value>] [--project <name>]`
+**Synopsis:** `bottega agent typed-question backtest --question <id> --version <value> [--job <name>] [--limit <value>] [--project <name>]`
 
 ask a declared typed question about unanswered historical subjects
 

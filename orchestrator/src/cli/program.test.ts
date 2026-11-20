@@ -142,6 +142,18 @@ test('canon command recognition is pinned to the Commander registry', () => {
   expect([...CLI_COMMANDS].sort()).toEqual([...registered].sort())
 })
 
+test('every mandatory option is marked required in help', () => {
+  const visit = (command: typeof program): void => {
+    const help = command.createHelp()
+    for (const option of help.visibleOptions(command)) {
+      if (option.mandatory) expect(help.optionDescription(option)).toEndWith('(required)')
+    }
+    for (const child of command.commands) visit(child)
+  }
+
+  visit(program)
+})
+
 test('run scopes real command actions to the public CLI path and restores the parent caller', async () => {
   const parentCaller = process.env[CALLER_ENVIRONMENT_KEY]
   const observed: string[] = []

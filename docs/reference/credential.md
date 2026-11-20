@@ -97,7 +97,7 @@ set or clear a payer preference
 
 ## bottega credential reach
 
-**Synopsis:** `bottega credential reach <provider/type> [--project <name>] [--space <slug>] [--account] [--mode <mode>] [--env <environment>] [--spaces <spaces>]`
+**Synopsis:** `bottega credential reach <provider/type> [--project <name>] [--space <slug>] [--account] [--mode <mode>] [--env <environment>] --spaces <spaces>`
 
 change an account credential reach
 

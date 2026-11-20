@@ -33,7 +33,7 @@ architect session lifecycle
 
 ## bottega session adopt
 
-**Synopsis:** `bottega session adopt <session> [--reason <text>] [--cut-off] [--json]`
+**Synopsis:** `bottega session adopt <session> --reason <text> [--cut-off] [--json]`
 
 take over another session's run chains
 

@@ -412,7 +412,7 @@ fork a workflow into a new draft version
 
 ## bottega workflow handoff
 
-**Synopsis:** `bottega workflow handoff <workflow> [--cursor <value>] [--mode <value>] [--project <value>] [--gate <value>] [--run <value>] [--artifact <value>] [--task <value>] [--arg <value>] [--reason <value>] [--json]`
+**Synopsis:** `bottega workflow handoff <workflow> --cursor <value> [--mode <value>] [--project <value>] [--gate <value>] [--run <value>] [--artifact <value>] [--task <value>] [--arg <value>] [--reason <value>] [--json]`
 
 close the current cursor by opening a named workflow for the same key
 
@@ -496,7 +496,7 @@ Options are documented by `--help`.
 
 ## bottega workflow land merge
 
-**Synopsis:** `bottega workflow land merge <number-or-url> [--cursor <value>] [--cwd <tree>] [--release-required] [--depth <rung>]`
+**Synopsis:** `bottega workflow land merge <number-or-url> --cursor <value> [--cwd <tree>] [--release-required] [--depth <rung>]`
 
 merge a pull request when the current step declares pr-merge
 
@@ -608,7 +608,7 @@ promote newest workflow drafts that match a project workflow tree
 
 ## bottega workflow queue
 
-**Synopsis:** `bottega workflow queue <child> [--session <name>] [--project <value>] [--off] [--json]`
+**Synopsis:** `bottega workflow queue <child> --session <name> --project <value> [--off] [--json]`
 
 line an epic child up for a session without opening a cursor
 
@@ -709,7 +709,7 @@ show a workflow definition
 
 ## bottega workflow start-child
 
-**Synopsis:** `bottega workflow start-child [--cursor <value>] [--project <value>] [--task <child>] [--json]`
+**Synopsis:** `bottega workflow start-child --cursor <value> --project <value> [--task <child>] [--json]`
 
 open the next inherited child cursor for an epic
 
@@ -759,7 +759,7 @@ read and preserve workflow text attachments
 
 ## bottega workflow text copy
 
-**Synopsis:** `bottega workflow text copy [--cursor <value>] [--project <value>] [--task <key>] [--json]`
+**Synopsis:** `bottega workflow text copy --cursor <value> [--project <value>] [--task <key>] [--json]`
 
 copy uncopied cursor text to task documents
 

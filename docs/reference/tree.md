@@ -56,7 +56,7 @@ report run-minted branches and their landing state
 
 ## bottega tree branch dispose
 
-**Synopsis:** `bottega tree branch dispose <project-branch> [--reason <reason>] [--note <why>] [--operator] [--json]`
+**Synopsis:** `bottega tree branch dispose <project-branch> --reason <reason> --note <why> [--operator] [--json]`
 
 archive and dispose a run-minted branch after a recorded ruling
 
@@ -73,7 +73,7 @@ archive and dispose a run-minted branch after a recorded ruling
 
 ## bottega tree branch landed
 
-**Synopsis:** `bottega tree branch landed <branch> [--pr <number>] [--json]`
+**Synopsis:** `bottega tree branch landed <branch> --pr <number> [--json]`
 
 record the pull request that landed a branch
 
@@ -88,7 +88,7 @@ record the pull request that landed a branch
 
 ## bottega tree branch prune
 
-**Synopsis:** `bottega tree branch prune [--project <name>] [--key <KEY>] [--all-local] [--dry-run] [--json]`
+**Synopsis:** `bottega tree branch prune --project <name> [--key <KEY>] [--all-local] [--dry-run] [--json]`
 
 delete branches proven safe to reclaim
 
@@ -106,7 +106,7 @@ delete branches proven safe to reclaim
 
 ## bottega tree create
 
-**Synopsis:** `bottega tree create [--name <text>] [--key <KEY>] [--base <ref>] [--seed <value>] [--cwd <path>]`
+**Synopsis:** `bottega tree create --name <text> [--key <KEY>] [--base <ref>] [--seed <value>] [--cwd <path>]`
 
 create a project worktree and print its path
 

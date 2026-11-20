@@ -150,6 +150,35 @@ async function open(
   await composeWorkflowWithCursor(slug, 'fixture', 'default', openArgs, context, d, {}, {})
 }
 
+function installConditionalPointerFixture(d: Database): void {
+  installConditionalFixture(d, 'conditional-pointer-catalogue', [])
+  const draft = setWorkflowLocal(
+    'conditional-pointer',
+    {
+      title: 'Conditional pointer fixture',
+      description: 'Places an unconditional step before a conditional entry.',
+      arguments: [{ name: 'key', required: true, description: 'Task key.' }],
+      modes: [
+        {
+          slug: 'default',
+          title: 'Default',
+          default: true,
+          steps: [
+            'flow-choice',
+            'score',
+            { step: 'complete', when: { step: 'flow-choice', outcome: ['needed'] } },
+            'ship-triage',
+          ],
+        },
+      ],
+    },
+    'conditional pointer fixture',
+    'test',
+    d,
+  )
+  promoteWorkflowLocal('conditional-pointer', draft.n, 'publish', 'test', d)
+}
+
 test('a keyed cursor cannot finish until its live writing run is terminal', async () => {
   const d = database()
   installConditionalFixture(d, 'finish-live-writer', [], [])
@@ -228,6 +257,39 @@ describe('conditional workflow cursor advance', () => {
       ordinal: 1,
       step_slug: 'score',
     })
+  })
+
+  test('a step pointer names the same eligible composed step that next serves', async () => {
+    const d = database()
+    installConditionalPointerFixture(d)
+    await open(d, 'conditional-pointer')
+
+    const score = await closeChoice(d, 'conditional-pointer', 'clear')
+    expect(score).toContain('that serves step 4 ship-triage')
+    await closeChoice(d, 'conditional-pointer')
+    expect(d.query('SELECT ordinal,step_slug FROM workflow_cursor').get()).toEqual({
+      ordinal: 3,
+      step_slug: 'ship-triage',
+    })
+  })
+
+  test('a served step pointer names the later eligible composed step', async () => {
+    const d = database()
+    installConditionalPointerFixture(d)
+    await open(d, 'conditional-pointer')
+    await closeChoice(d, 'conditional-pointer', 'clear')
+
+    const served = await getWorkflowStepWithCursor(
+      'conditional-pointer',
+      'fixture',
+      'score',
+      args,
+      'default',
+      context,
+      d,
+      {},
+    )
+    expect(served.next).toMatchObject({ n: 4, slug: 'ship-triage' })
   })
 
   test('a chain of two unmet conditions skips both', async () => {

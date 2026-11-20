@@ -244,7 +244,7 @@ restore retired question snapshots to their hosted record spaces
 
 ## bottega record outbox retire
 
-**Synopsis:** `bottega record outbox retire <row-id> [--reason <text>]`
+**Synopsis:** `bottega record outbox retire <row-id> --reason <text>`
 
 retire an outbox row after proving its dependencies
 
@@ -438,7 +438,7 @@ redact secret material from synchronized record payloads
 
 ## bottega record sign-in
 
-**Synopsis:** `bottega record sign-in [--email <email>]`
+**Synopsis:** `bottega record sign-in --email <email>`
 
 sign in to the hosted record
 
@@ -452,7 +452,7 @@ sign in to the hosted record
 
 ## bottega record sign-up
 
-**Synopsis:** `bottega record sign-up [--email <email>] [--name <name>]`
+**Synopsis:** `bottega record sign-up --email <email> --name <name>`
 
 create a hosted record account and sign in
 
@@ -570,7 +570,7 @@ withdraw config access from a member
 
 ## bottega record space create
 
-**Synopsis:** `bottega record space create [--name <name>] [--slug <slug>] [--trial]`
+**Synopsis:** `bottega record space create --name <name> --slug <slug> [--trial]`
 
 create a hosted record space and report how to switch back
 
@@ -586,7 +586,7 @@ create a hosted record space and report how to switch back
 
 ## bottega record space delete
 
-**Synopsis:** `bottega record space delete <slug> [--confirm <slug>]`
+**Synopsis:** `bottega record space delete <slug> --confirm <slug>`
 
 delete one hosted record space after confirmation
 
@@ -630,7 +630,7 @@ list hidden board messages and notes (owner only)
 
 ## bottega record space hide
 
-**Synopsis:** `bottega record space hide <message-id|project#number> [--space <slug>] [--reason <reason>]`
+**Synopsis:** `bottega record space hide <message-id|project#number> --space <slug> --reason <reason>`
 
 hide a board message or note; shared-space notices cannot be hidden (owner only)
 
@@ -663,7 +663,7 @@ manage the outside intake project
 
 ## bottega record space intake block
 
-**Synopsis:** `bottega record space intake block [--space <slug>] [--message <id>] [--note <label>] [--hours <n>]`
+**Synopsis:** `bottega record space intake block --space <slug> [--message <id>] [--note <label>] [--hours <n>]`
 
 block an outside author from a record space (owner only)
 
@@ -704,7 +704,7 @@ display help for command
 
 ## bottega record space intake pause
 
-**Synopsis:** `bottega record space intake pause [--space <slug>] [--hours <n>]`
+**Synopsis:** `bottega record space intake pause --space <slug> [--hours <n>]`
 
 pause outside writes to a record space (owner only)
 
@@ -719,7 +719,7 @@ pause outside writes to a record space (owner only)
 
 ## bottega record space intake resume
 
-**Synopsis:** `bottega record space intake resume [--space <slug>]`
+**Synopsis:** `bottega record space intake resume --space <slug>`
 
 resume outside writes to a record space (owner only)
 
@@ -733,7 +733,7 @@ resume outside writes to a record space (owner only)
 
 ## bottega record space intake set
 
-**Synopsis:** `bottega record space intake set <project> [--space <slug>]`
+**Synopsis:** `bottega record space intake set <project> --space <slug>`
 
 set a record space outside intake project (owner only)
 
@@ -757,7 +757,7 @@ show the active space outside intake project
 
 ## bottega record space intake unblock
 
-**Synopsis:** `bottega record space intake unblock <user-id> [--space <slug>]`
+**Synopsis:** `bottega record space intake unblock <user-id> --space <slug>`
 
 remove an outside-author block from a record space (owner only)
 
@@ -781,7 +781,7 @@ list invitations available to the signed-in account
 
 ## bottega record space invite
 
-**Synopsis:** `bottega record space invite [--email <email>] [--space <slug>] [--role <role>]`
+**Synopsis:** `bottega record space invite --email <email> [--space <slug>] [--role <role>]`
 
 invite an email address to a record space
 
@@ -829,7 +829,7 @@ display help for command
 
 ## bottega record space member remove
 
-**Synopsis:** `bottega record space member remove <email> [--space <slug>]`
+**Synopsis:** `bottega record space member remove <email> --space <slug>`
 
 remove a member from a hosted record space
 
@@ -843,7 +843,7 @@ remove a member from a hosted record space
 
 ## bottega record space move-project
 
-**Synopsis:** `bottega record space move-project <project> [--to <slug-or-id>] [--dry-run] [--confirm <count>]`
+**Synopsis:** `bottega record space move-project <project> --to <slug-or-id> [--dry-run] [--confirm <count>]`
 
 move a registered project to another space
 
@@ -874,7 +874,7 @@ select the active hosted record space
 
 ## bottega record space unhide
 
-**Synopsis:** `bottega record space unhide <message-id|project#number> [--space <slug>]`
+**Synopsis:** `bottega record space unhide <message-id|project#number> --space <slug>`
 
 unhide a board message or note (owner only)
 

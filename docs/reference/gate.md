@@ -105,7 +105,7 @@ display help for command
 
 ## bottega gate hub-import judge
 
-**Synopsis:** `bottega gate hub-import judge [--tool-input] [--deadline-ms <epoch-ms>]`
+**Synopsis:** `bottega gate hub-import judge [--tool-input] --deadline-ms <epoch-ms>`
 
 read and judge one proposed hub editor payload from standard input
 

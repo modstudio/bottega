@@ -18,6 +18,7 @@ import {
   decideCursorStart,
   type decideCursorTransition,
   stepPass,
+  workflowCursorStepSuccessor,
 } from './workflow-cursor-transition.ts'
 import { cursorAutonomyLines, renderWorkflowStep, withSelfRuling } from './workflow-render.ts'
 import type { WorkflowSelfRulingInput } from './workflow-self-ruling-mutation.ts'
@@ -174,6 +175,7 @@ export async function renderWorkflowAdvanceResult(input: {
     cursor: row.id,
     flow,
     pass: stepPass(flow, composition.steps, advance.ordinal),
+    next: workflowCursorStepSuccessor(composition.steps, flow, advance.ordinal),
   })
   return withSelfRuling(rendered, selfRuling)
 }

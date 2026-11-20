@@ -517,7 +517,7 @@ report orchestration efficiency; median is nearest-rank 50th percentile
 
 ## bottega machine gate-facts
 
-**Synopsis:** `bottega machine gate-facts [--out <path>]`
+**Synopsis:** `bottega machine gate-facts --out <path>`
 
 write branch-stable gate facts
 
@@ -816,7 +816,7 @@ manage canonical auto-mode rules
 
 ## bottega machine settings auto-mode add
 
-**Synopsis:** `bottega machine settings auto-mode add [--user] [--project <name>] [--list <name>] [--rule <rule>] [--expect <revision>] [--reason <text>] [--json]`
+**Synopsis:** `bottega machine settings auto-mode add [--user] [--project <name>] --list <name> --rule <rule> [--expect <revision>] [--reason <text>] [--json]`
 
 add a canonical auto-mode rule
 
@@ -846,7 +846,7 @@ display help for command
 
 ## bottega machine settings auto-mode remove
 
-**Synopsis:** `bottega machine settings auto-mode remove [--user] [--project <name>] [--list <name>] [--rule <rule>] [--expect <revision>] [--reason <text>] [--json]`
+**Synopsis:** `bottega machine settings auto-mode remove [--user] [--project <name>] --list <name> --rule <rule> [--expect <revision>] [--reason <text>] [--json]`
 
 remove a canonical auto-mode rule
 
@@ -968,7 +968,7 @@ manage canonical permission rules
 
 ## bottega machine settings permission add
 
-**Synopsis:** `bottega machine settings permission add [--user] [--project <name>] [--machine] [--list <name>] [--rule <rule>] [--expect <revision>] [--reason <text>] [--json]`
+**Synopsis:** `bottega machine settings permission add [--user] [--project <name>] [--machine] --list <name> --rule <rule> [--expect <revision>] [--reason <text>] [--json]`
 
 add a canonical or machine permission rule
 
@@ -989,7 +989,7 @@ add a canonical or machine permission rule
 
 ## bottega machine settings permission drop
 
-**Synopsis:** `bottega machine settings permission drop [--list <name>] [--rule <rule>] [--json]`
+**Synopsis:** `bottega machine settings permission drop --list <name> --rule <rule> [--json]`
 
 suppress a machine permission rule
 
@@ -1030,7 +1030,7 @@ list machine permission overlays
 
 ## bottega machine settings permission remove
 
-**Synopsis:** `bottega machine settings permission remove [--user] [--project <name>] [--machine] [--list <name>] [--rule <rule>] [--expect <revision>] [--reason <text>] [--json]`
+**Synopsis:** `bottega machine settings permission remove [--user] [--project <name>] [--machine] --list <name> --rule <rule> [--expect <revision>] [--reason <text>] [--json]`
 
 remove a canonical or machine permission rule
 
@@ -1051,7 +1051,7 @@ remove a canonical or machine permission rule
 
 ## bottega machine settings permission undrop
 
-**Synopsis:** `bottega machine settings permission undrop [--list <name>] [--rule <rule>] [--json]`
+**Synopsis:** `bottega machine settings permission undrop --list <name> --rule <rule> [--json]`
 
 stop suppressing a machine permission rule
 

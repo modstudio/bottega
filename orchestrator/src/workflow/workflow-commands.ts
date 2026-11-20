@@ -386,14 +386,12 @@ export async function probeCommand(
 }
 
 function probePrintRecord(result: ProbeRecord): ProbePrintRecord {
-  if (result.exitCode !== 0 || result.signal)
-    return {
-      id: result.id,
-      withheld: result.withheld,
-      exitCode: result.exitCode,
-      outputTail: result.outputTail,
-    }
-  return { id: result.id, withheld: result.withheld }
+  return {
+    id: result.id,
+    withheld: result.withheld,
+    exitCode: result.exitCode,
+    outputTail: result.outputTail,
+  }
 }
 
 type ExecPrintRecord = Pick<ProbeRecord, 'id' | 'withheld' | 'exitCode' | 'signal'>
@@ -426,8 +424,11 @@ function presentCommandOutcome(
   if (outcome.errorLine) presentation.error(outcome.errorLine)
   else if (verb === 'probe' && result.exitCode !== 0)
     presentation.error(`${PLATFORM_SLUG} workflow probe: command exited ${result.exitCode}`)
-  if (verb === 'probe' && (result.exitCode !== 0 || result.signal))
-    presentation.error(result.outputTail || '(no output)')
+  if (verb === 'probe') {
+    const output = result.outputTail || '(no output)'
+    if (result.exitCode !== 0 || result.signal) presentation.error(output)
+    else presentation.log(output)
+  }
   presentation.setExitCode(outcome.exitCode)
 }
 
