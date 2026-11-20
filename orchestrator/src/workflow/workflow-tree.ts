@@ -217,7 +217,10 @@ const STEP_FRONTMATTER_KEYS = new Set([
   'needs',
 ])
 
-function refuseUnknownStepFrontmatter(file: WorkflowTreeFile, frontMatter: Record<string, unknown>) {
+function refuseUnknownStepFrontmatter(
+  file: WorkflowTreeFile,
+  frontMatter: Record<string, unknown>,
+) {
   const unknown = Object.keys(frontMatter).find((key) => !STEP_FRONTMATTER_KEYS.has(key))
   if (!unknown) return
   throw new Error(
