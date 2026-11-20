@@ -64,6 +64,8 @@ test('hosted timed response counts only bodies without a known length', () => {
   })
 
   expect(countable.countBody).toBe(true)
+  expect(countable.method).toBe('GET')
+  expect(countable.pathname).toBe('/v1/tasks')
   expect(knownLength.countBody).toBe(false)
   expect(empty.countBody).toBe(false)
 })

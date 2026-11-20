@@ -157,6 +157,8 @@ export async function hubTimedResponse(
   response: Response
   accessLine: string
   countBody: boolean
+  method: string
+  pathname: string
   caller: ReturnType<typeof inboundCaller>
 }> {
   const started = now()
