@@ -273,7 +273,7 @@ export const hubModuleSpecs = [
   { file: 'hub/src/collect-cadence.ts', allowed: [] },
   {
     file: 'hub/src/collector-leg-state.ts',
-    allowed: ['./collect-cadence.ts', './db.ts'],
+    allowed: ['@bottega/hub-views/work-summary', './collect-slow-health.ts', './db.ts'],
   },
   {
     file: 'hub/src/collect-tracker-counts.ts',

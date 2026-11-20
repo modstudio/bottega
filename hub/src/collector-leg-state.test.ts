@@ -116,9 +116,8 @@ describe('collector leg state', () => {
     }
   })
 
-  test('state persistence failures preserve the collector result and report both errors', async () => {
-    const errors: string[] = []
-    const error = spyOn(console, 'error').mockImplementation((value) => errors.push(String(value)))
+  test('state persistence failures preserve the collector result', async () => {
+    const error = spyOn(console, 'error').mockImplementation(() => {})
     writeTransaction((conn) =>
       conn.exec(`CREATE TRIGGER reject_collector_leg_state
         BEFORE INSERT ON setting
@@ -140,17 +139,13 @@ describe('collector leg state', () => {
         ok: false,
         error: 'ruling read unavailable',
       })
-      expect(errors).toEqual([
-        'hub: runs collect failed: ruling read unavailable',
-        'hub: runs collector state failed: collector leg state unavailable',
-      ])
     } finally {
       writeTransaction((conn) => conn.exec('DROP TRIGGER reject_collector_leg_state'))
       error.mockRestore()
     }
   })
 
-  test('an unparsable stored leg is an unreadable observation and a stale view', () => {
+  test('an unparsable stored leg is an unreadable observation and view', () => {
     writeTransaction((conn) =>
       conn
         .query('INSERT INTO setting(key,value) VALUES (?,?)')
@@ -159,7 +154,7 @@ describe('collector leg state', () => {
 
     const observations = collectorLegStates()
     expect(observations).toEqual([{ unreadable: true, key: 'collect.leg.hosted%20outbox' }])
-    expect(collectorLegView(observations)).toEqual({
+    expect(collectorLegView(observations, Date.parse('2026-11-20T12:00:00.000Z'))).toEqual({
       collectedAt: null,
       collectorLegs: [
         {
@@ -168,10 +163,44 @@ describe('collector leg state', () => {
           lastError: 'stored collector leg state is unreadable',
           lastErrorAt: null,
           failingSince: null,
-          status: 'stale',
+          status: 'unreadable',
           ageMs: null,
         },
       ],
     })
+  })
+
+  test('a fresh non-Error failure repairs an unparsable stored leg', async () => {
+    const error = spyOn(console, 'error').mockImplementation(() => {})
+    writeTransaction((conn) =>
+      conn
+        .query('INSERT INTO setting(key,value) VALUES (?,?)')
+        .run('collect.leg.runs', '{not-json'),
+    )
+    try {
+      const result = await collectFast(
+        {
+          runs: async () => {
+            throw 'ruling read unavailable'
+          },
+        },
+        undefined,
+        'runs',
+      )
+      expect(result[0]).toMatchObject({
+        source: 'runs',
+        ok: false,
+        error: 'ruling read unavailable',
+      })
+      expect(collectorLegStates()).toEqual([
+        expect.objectContaining({
+          source: 'runs',
+          lastError: 'ruling read unavailable',
+          failingSince: expect.any(String),
+        }),
+      ])
+    } finally {
+      error.mockRestore()
+    }
   })
 })

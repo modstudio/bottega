@@ -1,11 +1,11 @@
 // concern: collector leg health
 /** Persists collector-leg outcomes and projects their freshness for public read surfaces. */
 
-import { SLOW_MS } from './collect-cadence.ts'
+import type { CollectorLegHealth } from '@bottega/hub-views/work-summary'
+import { collectionStaleness } from './collect-slow-health.ts'
 import { db, writeTransaction } from './db.ts'
 
 const SETTING_PREFIX = 'collect.leg.'
-const COLLECTOR_LEG_STALE_MS = 3 * SLOW_MS
 
 export type CollectorLegState = {
   source: string
@@ -21,11 +21,6 @@ type UnreadableCollectorLegState = {
 }
 
 export type CollectorLegObservation = CollectorLegState | UnreadableCollectorLegState
-
-export type CollectorLegHealth = CollectorLegState & {
-  status: 'current' | 'failing' | 'stale'
-  ageMs: number | null
-}
 
 function settingKey(source: string): string {
   return `${SETTING_PREFIX}${encodeURIComponent(source)}`
@@ -61,7 +56,12 @@ function storedState(source: string): CollectorLegState | null {
   const row = db()
     .query<{ value: string }, [string]>('SELECT value FROM setting WHERE key = ?')
     .get(settingKey(source))
-  return row ? parseState(row.value) : null
+  if (!row) return null
+  try {
+    return parseState(row.value)
+  } catch {
+    return null
+  }
 }
 
 function storeState(state: CollectorLegState): void {
@@ -120,7 +120,7 @@ export function collectorLegStates(): CollectorLegObservation[] {
 
 export function collectorLegView(
   states: readonly CollectorLegObservation[],
-  now = Date.now(),
+  now: number,
 ): { collectedAt: string | null; collectorLegs: CollectorLegHealth[] } {
   const collectorLegs = states.map((state): CollectorLegHealth => {
     if ('unreadable' in state) {
@@ -130,21 +130,20 @@ export function collectorLegView(
         lastError: 'stored collector leg state is unreadable',
         lastErrorAt: null,
         failingSince: null,
-        status: 'stale',
+        status: 'unreadable',
         ageMs: null,
       }
     }
-    const successMs = state.lastSuccessAt === null ? Number.NaN : Date.parse(state.lastSuccessAt)
-    const ageMs = Number.isFinite(successMs) ? Math.max(0, now - successMs) : null
+    const staleness = collectionStaleness(now, state.lastSuccessAt)
     return {
       ...state,
       status:
         state.failingSince !== null
           ? 'failing'
-          : ageMs === null || ageMs > COLLECTOR_LEG_STALE_MS
-            ? 'stale'
-            : 'current',
-      ageMs,
+          : staleness.status === 'current'
+            ? 'current'
+            : 'stale',
+      ageMs: staleness.ageMs,
     }
   })
   const successes = collectorLegs.flatMap((leg) =>

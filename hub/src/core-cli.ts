@@ -251,9 +251,9 @@ function registerCollectionCommands(program: Command): void {
     .action((options: { json?: boolean }) => {
       requireDatabase()
       const states = collectorLegStates()
-      if (options.json) console.log(JSON.stringify(states))
+      const { collectorLegs } = collectorLegView(states, Date.now())
+      if (options.json) console.log(JSON.stringify(collectorLegs))
       else {
-        const { collectorLegs } = collectorLegView(states, Date.now())
         for (const leg of collectorLegs) {
           const error = leg.status === 'failing' && leg.lastError ? `: ${leg.lastError}` : ''
           console.log(`${leg.source}: ${leg.status}${error}`)

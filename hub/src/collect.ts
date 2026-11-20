@@ -241,7 +241,7 @@ async function settleTimedLeg<T>(
   try {
     details = success(await work())
   } catch (error) {
-    const message = (error as Error).message
+    const message = error instanceof Error ? error.message : String(error)
     try {
       const transition = recordCollectorLegFailure(source, message, nowIso())
       if (transition.logFailure) console.error(`hub: ${source} collect failed: ${message}`)

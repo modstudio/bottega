@@ -17,7 +17,7 @@ export type CollectorLegHealth = {
   lastError: string | null
   lastErrorAt: string | null
   failingSince: string | null
-  status: 'current' | 'failing' | 'stale'
+  status: 'current' | 'failing' | 'stale' | 'unreadable'
   ageMs: number | null
 }
 
@@ -37,9 +37,11 @@ export function responseSubtitle(response: {
     const state =
       unhealthy.status === 'failing'
         ? `failing since ${relativeTime(unhealthy.failingSince!)}`
-        : unhealthy.lastSuccessAt
-          ? `stale since ${relativeTime(unhealthy.lastSuccessAt)}`
-          : 'stale with no recorded success'
+        : unhealthy.status === 'unreadable'
+          ? 'state is unreadable'
+          : unhealthy.lastSuccessAt
+            ? `stale since ${relativeTime(unhealthy.lastSuccessAt)}`
+            : 'stale with no recorded success'
     const error = unhealthy.lastError ? ` · ${truncatedError(unhealthy.lastError)}` : ''
     return {
       text: `Collector ${unhealthy.source} ${state}${error}`,

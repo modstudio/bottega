@@ -11,6 +11,8 @@ const leg = (failingSince: string | null) => ({
   lastError: failingSince ? 'ruling read unavailable' : null,
   lastErrorAt: failingSince ? '2026-11-20T11:59:00.000Z' : null,
   failingSince,
+  status: failingSince ? ('failing' as const) : ('current' as const),
+  ageMs: 60 * 60_000,
 })
 
 describe('collector leg failure decision', () => {
@@ -39,5 +41,29 @@ describe('collector leg failure decision', () => {
       conditions: [],
       errors: ['collector leg observation unreadable: response was not an array'],
     })
+  })
+
+  test('keeps a sustained failure when another leg is unreadable', () => {
+    const result = collectorLegFailureDecision(
+      [
+        {
+          source: 'hosted outbox',
+          lastSuccessAt: null,
+          lastError: 'stored collector leg state is unreadable',
+          lastErrorAt: null,
+          failingSince: null,
+          status: 'unreadable',
+          ageMs: null,
+        },
+        leg(new Date(now - COLLECTOR_LEG_FAILURE_WARN_MS - 1).toISOString()),
+      ],
+      now,
+    )
+    expect(result.conditions).toEqual([
+      expect.objectContaining({ kind: 'collector-leg-failure', subject: 'runs' }),
+    ])
+    expect(result.errors).toEqual([
+      'collector leg observation unreadable: hosted outbox state is unreadable',
+    ])
   })
 })

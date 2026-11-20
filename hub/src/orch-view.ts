@@ -165,7 +165,7 @@ export function strip(hours: number) {
   const rows = window.tasks
   const active = new Set(rows.flatMap((r) => r.activeAgents))
   const r = ratioSummary(14, false)
-  const collection = collectorLegView(collectorLegStates())
+  const collection = collectorLegView(collectorLegStates(), Date.now())
   return {
     window: `${hours}h`,
     ...collection,

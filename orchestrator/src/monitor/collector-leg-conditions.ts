@@ -13,24 +13,54 @@ type CollectorLegObservation = {
   lastError: string | null
   lastErrorAt: string | null
   failingSince: string | null
+  status: 'current' | 'failing' | 'stale' | 'unreadable'
+  ageMs: number | null
 }
 
-function parsedObservations(value: unknown): CollectorLegObservation[] {
-  if (!Array.isArray(value)) throw new Error('response was not an array')
-  return value.map((item, index) => {
-    if (!item || typeof item !== 'object') throw new Error(`leg ${index} was not an object`)
+function observationError(detail: string): string {
+  return `collector leg observation unreadable: ${detail}`
+}
+
+function parsedObservations(value: unknown): {
+  observations: CollectorLegObservation[]
+  errors: string[]
+} {
+  if (!Array.isArray(value))
+    return { observations: [], errors: [observationError('response was not an array')] }
+  const observations: CollectorLegObservation[] = []
+  const errors: string[] = []
+  value.forEach((item, index) => {
+    if (!item || typeof item !== 'object') {
+      errors.push(observationError(`leg ${index} was not an object`))
+      return
+    }
     const row = item as Partial<CollectorLegObservation>
     const nullableString = (field: unknown) => field === null || typeof field === 'string'
+    const validStatus =
+      row.status === 'current' ||
+      row.status === 'failing' ||
+      row.status === 'stale' ||
+      row.status === 'unreadable'
     if (
       typeof row.source !== 'string' ||
       !nullableString(row.lastSuccessAt) ||
       !nullableString(row.lastError) ||
       !nullableString(row.lastErrorAt) ||
-      !nullableString(row.failingSince)
-    )
-      throw new Error(`leg ${index} contained invalid fields`)
-    return row as CollectorLegObservation
+      !nullableString(row.failingSince) ||
+      !validStatus ||
+      !(row.ageMs === null || (typeof row.ageMs === 'number' && Number.isFinite(row.ageMs)))
+    ) {
+      errors.push(observationError(`leg ${index} contained invalid fields`))
+      return
+    }
+    const observation = row as CollectorLegObservation
+    if (observation.status === 'unreadable') {
+      errors.push(observationError(`${observation.source} state is unreadable`))
+      return
+    }
+    observations.push(observation)
   })
+  return { observations, errors }
 }
 
 /** Pure decision over the hub command's already-observed JSON value. */
@@ -38,34 +68,28 @@ export function collectorLegFailureDecision(
   value: unknown,
   now: number,
 ): { conditions: MonitorCondition[]; errors: string[] } {
-  try {
-    const conditions = parsedObservations(value).flatMap((leg): MonitorCondition[] => {
-      if (leg.failingSince === null) return []
-      const since = Date.parse(leg.failingSince)
-      if (!Number.isFinite(since)) throw new Error(`${leg.source} had an invalid failingSince`)
-      const ageMs = Math.max(0, now - since)
-      if (ageMs <= COLLECTOR_LEG_FAILURE_WARN_MS) return []
-      const ageMinutes = Math.floor(ageMs / 60_000)
-      return [
-        {
-          kind: 'collector-leg-failure',
-          subject: leg.source,
-          since: leg.failingSince,
-          ageMs,
-          detail: `${leg.source} collection has failed for ${ageMinutes} minutes: ${leg.lastError ?? 'error unavailable'}`,
-          action: `fix the named hub collector failure, then run ${PLATFORM_SLUG} record collector-legs --json to confirm recovery`,
-        },
-      ]
-    })
-    return { conditions, errors: [] }
-  } catch (cause) {
-    return {
-      conditions: [],
-      errors: [
-        `collector leg observation unreadable: ${cause instanceof Error ? cause.message : String(cause)}`,
-      ],
+  const { observations, errors } = parsedObservations(value)
+  const conditions: MonitorCondition[] = []
+  for (const leg of observations) {
+    if (leg.failingSince === null) continue
+    const since = Date.parse(leg.failingSince)
+    if (!Number.isFinite(since)) {
+      errors.push(observationError(`${leg.source} had an invalid failingSince`))
+      continue
     }
+    const ageMs = Math.max(0, now - since)
+    if (ageMs <= COLLECTOR_LEG_FAILURE_WARN_MS) continue
+    const ageMinutes = Math.floor(ageMs / 60_000)
+    conditions.push({
+      kind: 'collector-leg-failure',
+      subject: leg.source,
+      since: leg.failingSince,
+      ageMs,
+      detail: `${leg.source} collection has failed for ${ageMinutes} minutes: ${leg.lastError ?? 'error unavailable'}`,
+      action: `fix the named hub collector failure, then run ${PLATFORM_SLUG} record collector-legs --json to confirm recovery`,
+    })
   }
+  return { conditions, errors }
 }
 
 export function observeCollectorLegFailures(
