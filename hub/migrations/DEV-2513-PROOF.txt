@@ -1,0 +1,1 @@
+DEV-2513 proof only: touches hub/migrations so the migration-compatibility path gate runs on the pre-fix tree. Never merged.
