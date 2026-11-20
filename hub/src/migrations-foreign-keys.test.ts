@@ -41,6 +41,7 @@ test('a replay from the stale-target connection state has only resolvable foreig
 test('a migration that creates a dangling reference is refused and rolled back', () => {
   const folder = mkdtempSync(join(tmpdir(), 'hub-dangling-migration-'))
   mkdirSync(join(folder, 'meta'))
+  writeFileSync(join(folder, 'meta', '_superseded_hashes.json'), JSON.stringify({ entries: [] }))
   const entries = [
     { idx: 0, version: '6', when: 1, tag: '0000_parent', breakpoints: true },
     { idx: 1, version: '6', when: 2, tag: '0001_orphan', breakpoints: true },

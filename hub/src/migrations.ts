@@ -19,9 +19,6 @@ import {
   storeAheadMigrationRefusal,
   storeAheadOfJournalRefusal,
 } from '../../shared/store-ahead-remedy.ts'
-import supersededMigrationHashes from '../migrations/meta/_superseded_hashes.json' with {
-  type: 'json',
-}
 import { measureFinishedWrite } from './write-hold-measurement.ts'
 export const MIGRATIONS_FOLDER = assetPath('hub', 'migrations')
 export const MIGRATIONS_TABLE = 'hub_migrations'
@@ -127,9 +124,13 @@ export function recordedMigrationHashState(input: {
   return 'ahead'
 }
 
-const declaredSupersededHashes = supersededMigrationHashes.entries as SupersededMigrationHash[]
-
-function predecessorsFor(entry: JournalEntry): string[] {
+function predecessorsFor(entry: JournalEntry, folder = MIGRATIONS_FOLDER): string[] {
+  const declaredSupersededHashes = JSON.parse(
+    readInstallAsset(
+      join('hub', 'migrations', 'meta', '_superseded_hashes.json'),
+      join(folder, 'meta', '_superseded_hashes.json'),
+    ),
+  ).entries as SupersededMigrationHash[]
   return declaredSupersededHashes
     .filter((declared) => declared.tag === entry.tag && declared.when === entry.when)
     .map((declared) => declared.predecessorHash)
@@ -187,7 +188,7 @@ function migrationState(
         ? recordedMigrationHashState({
             recordedHash: row.hash,
             currentHash,
-            predecessorHashes: predecessorsFor(entry),
+            predecessorHashes: predecessorsFor(entry, folder),
           })
         : ('ahead' as const),
     }

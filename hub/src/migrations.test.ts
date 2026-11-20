@@ -255,6 +255,7 @@ describe('hub migration journal', () => {
         ],
       }),
     )
+    writeFileSync(join(folder, 'meta', '_superseded_hashes.json'), JSON.stringify({ entries: [] }))
     const d = baselineFresh()
     expect(applyMigrations(d, folder)).toEqual([baseline.tag, '0001_after_adoption'])
     expect(d.query("SELECT 1 FROM sqlite_master WHERE name='adopted_followup'").get()).toBeDefined()
@@ -480,6 +481,7 @@ describe('hub migration journal', () => {
         ],
       }),
     )
+    writeFileSync(join(dir, 'meta', '_superseded_hashes.json'), JSON.stringify({ entries: [] }))
     expect(splitMigrationSource(readFileSync(join(dir, '0001_fill.sql'), 'utf8')).ddl).toBe(
       '-- note\n',
     )
