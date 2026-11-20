@@ -1,6 +1,6 @@
 // concern: running-install read carve-outs shared by SRT profiles and their executed probe.
 
-import { readFileSync } from 'node:fs'
+import { readFileSync, statSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import type { ConfigEnvironment } from '../../../shared/config-directory.ts'
 import { runningInstallationKind, runningInstallRoot } from '../../../shared/install-root.ts'
@@ -54,6 +54,23 @@ export function resolveRunningInstallLayout(environment: ConfigEnvironment): Run
   }
 }
 
+/** Exact Git files the checkout launcher may use to prove its compiled CLI is current. */
+export function checkoutGitReadCarveouts(layout: RunningInstallLayout): string[] {
+  if (layout.kind === 'distribution') return []
+  const head = join(layout.root, '.git', 'HEAD')
+  try {
+    const value = readFileSync(head, 'utf8').trim()
+    if (!value.startsWith('ref: refs/')) return [head]
+    const ref = value.slice('ref: '.length)
+    if (!/^refs\/[^\r\n]+$/.test(ref) || ref.includes('..') || ref.includes('//')) return [head]
+    const looseRef = join(layout.root, '.git', ref)
+    if (!statSync(looseRef).isFile()) return [head]
+    return [head, looseRef]
+  } catch {
+    return [head]
+  }
+}
+
 /** Runtime paths needed to launch the CLI without exposing its checkout root. */
 export function runningInstallReadCarveouts(layout: RunningInstallLayout): string[] {
   if (layout.kind === 'distribution') return [layout.root]
@@ -66,6 +83,7 @@ export function runningInstallReadCarveouts(layout: RunningInstallLayout): strin
       join(root, 'node_modules'),
       join(root, 'package.json'),
       ...layout.workspaceDirectories,
+      ...checkoutGitReadCarveouts(layout),
     ]),
   ]
 }

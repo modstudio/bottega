@@ -1,8 +1,9 @@
 // concern: CI proof that a confined ACP worker can launch checkout bottega-ask.
 
-import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
+import { Database } from 'bun:sqlite'
+import { mkdirSync, mkdtempSync, rmSync, statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { startBoundedSync } from '../../shared/bounded-process.ts'
 import { PLATFORM_NAME, PLATFORM_SLUG, WORKER_MCP_SERVER_NAME } from '../../shared/brand.ts'
 import { resolveOrchestratorDatabase, STATE_HOME_ENV } from '../../shared/state-directory.ts'
@@ -29,6 +30,10 @@ function fixtureProject(recordId: string, name: string, path: string): Project {
 }
 
 function migrateTemporaryStore(checkout: string, environment: Record<string, string>): void {
+  const store = environment.BOTTEGA_ORCHESTRATOR_DB
+  if (!store) throw new Error('temporary store path is missing')
+  mkdirSync(dirname(store), { recursive: true })
+  new Database(store, { create: true }).close()
   const result = startBoundedSync([join(checkout, 'bin', PLATFORM_SLUG), 'machine', 'migrate'], {
     budget: 'machine-update',
     cwd: checkout,
@@ -42,9 +47,13 @@ function migrateTemporaryStore(checkout: string, environment: Record<string, str
 }
 
 async function main(): Promise<void> {
-  if (process.platform !== 'linux')
-    throw new Error('checkout CLI confinement proof requires Linux SRT')
   const checkout = resolve(import.meta.dir, '../..')
+  try {
+    if (!statSync(join(checkout, '.git')).isDirectory()) throw new Error()
+  } catch {
+    throw new Error('checkout CLI confinement proof requires a real checkout; run from a real checkout')
+  }
+  const forceSource = process.argv.includes('--force-source')
   const root = mkdtempSync(join(tmpdir(), `${PLATFORM_SLUG}-checkout-cli-confinement-`))
   const stateRoot = join(root, 'state')
   const cwd = join(root, 'outside-project')
@@ -63,7 +72,7 @@ async function main(): Promise<void> {
     migrateTemporaryStore(checkout, environment)
     const built = buildCheckoutCli(checkout, environment)
     verifyCheckoutCliBuild(built)
-    if (process.argv.includes('--force-source')) rmSync(built.stamp, { force: true })
+    if (forceSource) rmSync(built.stamp, { force: true })
     const outside = fixtureProject('outside-project', 'outside-project', cwd)
     const registeredProjects = [
       outside,
@@ -106,7 +115,15 @@ async function main(): Promise<void> {
       env: environment,
       wrap: (command, args) => sandboxLaunchArgv(profile, command, args, runtimeDir, environment),
     })
-    if (!result.ok) throw new Error(`confined ask-server tools/list failed: ${result.error}`)
+    if (!result.ok) {
+      if (forceSource && result.error.includes('Cannot find package')) {
+        console.log('forced source launch failed with the package-resolution error')
+        return
+      }
+      throw new Error(`confined ask-server tools/list failed: ${result.error}`)
+    }
+    if (forceSource)
+      throw new Error('forced source launch unexpectedly reached confined bottega-ask tools')
     const listed = new Set(result.listedTools ?? [])
     const missing = REQUIRED_TOOLS.filter((name) => !listed.has(name))
     if (missing.length > 0)

@@ -364,11 +364,7 @@ jobs:
       - name: Prove confined checkout ask-server tools
         run: bun run --cwd orchestrator check:checkout-cli-confinement
       - name: Prove source-launch mutation fails
-        run: |
-          if bun run --cwd orchestrator check:checkout-cli-confinement -- --force-source; then
-            echo "forced source launch unexpectedly reached bottega-ask"
-            exit 1
-          fi
+        run: bun run --cwd orchestrator check:checkout-cli-confinement -- --force-source
 
   migration-paths:
     runs-on: ubuntu-24.04

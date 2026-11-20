@@ -610,6 +610,7 @@ describe('readonly-lens sandbox profile', () => {
       '/install/hub/views',
       '/install/hub/web',
       '/install/retrieval',
+      '/install/.git/HEAD',
       ...workerRuntimeReadCarvebacks(environment, null),
     ])
     expect(profile.filesystem.allowWrite).toEqual(['/runs/tree', '/runs/evidence'])
