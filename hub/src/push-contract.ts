@@ -224,58 +224,60 @@ type HostedPushGuards = {
   from?: Record<string, unknown>
 }
 
-export type HostedPushChange = HostedPushGuards &
-  (
-    | { table: PushableHubChangeTable; id: string; op: 'delete' }
-    | {
-        table: typeof HOSTED_TASK_TABLE
-        id: string
-        op: 'upsert'
-        row: PushedTask
-        fields?: string[] | null
-      }
-    | {
-        table: typeof HOSTED_COMMENT_TABLE
-        id: string
-        op: 'upsert'
-        row: PushedComment
-        fields?: string[] | null
-      }
-    | {
-        table: typeof HOSTED_DOCUMENT_TABLE
-        id: string
-        op: 'upsert'
-        row: PushedDocument
-        fields?: string[] | null
-      }
-    | {
-        table: typeof HOSTED_STATUS_EVENT_TABLE
-        id: string
-        op: 'upsert'
-        row: PushedStatusEvent
-      }
-    | { table: typeof HOSTED_INTERVAL_TABLE; id: string; op: 'upsert'; row: PushedInterval }
-    | { table: typeof HOSTED_INTERVAL_TABLE; id: string; op: 'delete' }
-    | { table: typeof HOSTED_DAY_TABLE; id: string; op: 'upsert'; row: PushedDay }
-    | {
-        table: typeof HOSTED_NOTE_TABLE
-        id: string
-        op: 'upsert'
-        row: PushedNote
-        fields: string[]
-      }
-    | { table: typeof HOSTED_NOTE_TABLE; id: string; op: 'delete' }
-    | {
-        table: typeof HOSTED_NOTE_ACKNOWLEDGEMENT_TABLE
-        id: string
-        op: 'upsert'
-        row: PushedNoteAcknowledgement
-      }
-  )
+type HostedPushOperation =
+  | { table: PushableHubChangeTable; id: string; op: 'delete' }
+  | {
+      table: typeof HOSTED_TASK_TABLE
+      id: string
+      op: 'upsert'
+      row: PushedTask
+      fields?: string[] | null
+    }
+  | {
+      table: typeof HOSTED_COMMENT_TABLE
+      id: string
+      op: 'upsert'
+      row: PushedComment
+      fields?: string[] | null
+    }
+  | {
+      table: typeof HOSTED_DOCUMENT_TABLE
+      id: string
+      op: 'upsert'
+      row: PushedDocument
+      fields?: string[] | null
+    }
+  | {
+      table: typeof HOSTED_STATUS_EVENT_TABLE
+      id: string
+      op: 'upsert'
+      row: PushedStatusEvent
+    }
+  | { table: typeof HOSTED_INTERVAL_TABLE; id: string; op: 'upsert'; row: PushedInterval }
+  | { table: typeof HOSTED_INTERVAL_TABLE; id: string; op: 'delete' }
+  | { table: typeof HOSTED_DAY_TABLE; id: string; op: 'upsert'; row: PushedDay }
+  | {
+      table: typeof HOSTED_NOTE_TABLE
+      id: string
+      op: 'upsert'
+      row: PushedNote
+      fields: string[]
+    }
+  | { table: typeof HOSTED_NOTE_TABLE; id: string; op: 'delete' }
+  | {
+      table: typeof HOSTED_NOTE_ACKNOWLEDGEMENT_TABLE
+      id: string
+      op: 'upsert'
+      row: PushedNoteAcknowledgement
+    }
 
-export type ParsedHostedPushChange =
-  | Exclude<HostedPushChange, { op: 'delete' }>
-  | { table: DeleteAcceptingTable; id: string; op: 'delete' }
+export type HostedPushChange = HostedPushGuards & HostedPushOperation
+
+export type ParsedHostedPushChange = HostedPushGuards &
+  (
+    | Exclude<HostedPushOperation, { op: 'delete' }>
+    | { table: DeleteAcceptingTable; id: string; op: 'delete' }
+  )
 
 export type HostedPushOutcome =
   | {

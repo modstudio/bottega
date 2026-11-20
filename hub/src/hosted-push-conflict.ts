@@ -8,29 +8,43 @@ import type { PushableHubChangeTable } from './push-contract.ts'
 export class HostedRevisionConflictError extends Error {
   readonly status = 409
   index = -1
+  readonly table: PushableHubChangeTable
+  readonly id: string
+  readonly condition: string
+  readonly currentRevision: string | null
+  readonly field: string | undefined
+  readonly currentValue: unknown
 
   constructor(
-    readonly table: PushableHubChangeTable,
-    readonly id: string,
-    readonly condition: string,
-    readonly currentRevision: string | null,
-    readonly field?: string,
-    readonly currentValue?: unknown,
+    table: PushableHubChangeTable,
+    id: string,
+    condition: string,
+    currentRevision: string | null,
+    field?: string,
+    currentValue?: unknown,
   ) {
     super(condition)
+    this.table = table
+    this.id = id
+    this.condition = condition
+    this.currentRevision = currentRevision
+    this.field = field
+    this.currentValue = currentValue
   }
 }
 
 export class HostedChangeIdMismatchError extends Error {
   readonly status = 422
   index = -1
+  readonly table: PushableHubChangeTable
+  readonly id: string
+  readonly changeId: string
 
-  constructor(
-    readonly table: PushableHubChangeTable,
-    readonly id: string,
-    readonly changeId: string,
-  ) {
+  constructor(table: PushableHubChangeTable, id: string, changeId: string) {
     super(`change_id ${changeId} was already applied with a different payload`)
+    this.table = table
+    this.id = id
+    this.changeId = changeId
   }
 }
 
