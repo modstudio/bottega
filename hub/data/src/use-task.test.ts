@@ -162,3 +162,50 @@ test('a draft whose body conflicts saves no title', async () => {
   expect(writes).toEqual(['body'])
   await testing.waitFor(() => expect(rendered.result.current.actions.saveDraft.conflict).toBeTrue())
 })
+
+test('local title and comment edits send no revision when none is available', async () => {
+  const writes: Array<{ path: string; input: Record<string, unknown> }> = []
+  const localDetail = {
+    ...detail('body-version'),
+    comments: [
+      {
+        id: '01990000-0000-7000-8000-000000000001',
+        body: 'before',
+        createdAt: '2026-10-16T12:00:00.000Z',
+        actorName: null,
+        agent: null,
+        updatedAt: null,
+        canEdit: true,
+        canDelete: true,
+      },
+    ],
+  }
+  fetchHandler = (async (input, init) => {
+    const url = String(input)
+    if (url.includes('work.task')) return trpcResponse(localDetail)
+    for (const path of ['work.setTitle', 'work.editComment']) {
+      if (!url.includes(path)) continue
+      const body = JSON.parse(String(init?.body)) as { 0: Record<string, unknown> }
+      writes.push({ path, input: body[0] })
+      return trpcResponse({})
+    }
+    throw new Error(`unexpected request ${url}`)
+  }) as typeof globalThis.fetch
+
+  const wrapper = ({ children }: { children: ReactNode }) =>
+    createElement(QueryClientProvider, { client: queryClient }, children)
+  const rendered = testing.renderHook(() => useTask('DEV-1', 'record-1'), { wrapper })
+  await testing.waitFor(() => expect(rendered.result.current.detail).not.toBeNull())
+
+  await testing.act(() => rendered.result.current.actions.setTitle.run('Changed'))
+  await testing.act(() =>
+    rendered.result.current.actions.editComment.run({
+      id: '01990000-0000-7000-8000-000000000001',
+      body: 'Changed comment',
+    }),
+  )
+
+  expect(writes).toHaveLength(2)
+  expect(writes[0]?.input).not.toHaveProperty('expectedRevision')
+  expect(writes[1]?.input).not.toHaveProperty('expectedRevision')
+})

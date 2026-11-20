@@ -1,10 +1,12 @@
 import { afterEach, beforeEach, expect, spyOn, test } from 'bun:test'
 import type { Command } from 'commander'
+import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { CALLER_ENVIRONMENT_KEY, recordCallerToken } from '../../shared/record-caller.ts'
 import { resetFixtureStore } from '../test/run-fixtures.ts'
 import { createHubProgram, run, usesReadOnlyStoreHandle } from './cli-program.ts'
 import { createNote } from './note.ts'
-import { createTask, showTask } from './task.ts'
+import { commentTask, createTask, showTask } from './task.ts'
+import { UNATTRIBUTED } from './task-attribution.ts'
 import { createTaskDocument, getTaskDocument } from './task-document.ts'
 
 let parentCaller: string | undefined
@@ -142,6 +144,56 @@ test('note list text searches the notes while --new keeps the filing remedy', as
     expect(await run(createHubProgram(), ['note', 'list', '--new', 'list'])).toBe(1)
   } finally {
     log.mockRestore()
+    if (hostedUrl !== undefined) process.env.BOTTEGA_HOSTED_URL = hostedUrl
+  }
+})
+
+test('local comment edit and delete do not require --expect', async () => {
+  const hostedUrl = process.env.BOTTEGA_HOSTED_URL
+  delete process.env.BOTTEGA_HOSTED_URL
+  try {
+    const task = await createTask({ project: 'workshop', title: 'Local comments' })
+    const edited = await commentTask(task.key, {}, 'before edit', UNATTRIBUTED)
+    const deleted = await commentTask(task.key, {}, 'before delete', UNATTRIBUTED)
+
+    expect(
+      await run(createHubProgram(), ['task', 'comment-edit', task.key, edited.id, 'after edit']),
+    ).toBe(0)
+    expect(await run(createHubProgram(), ['task', 'comment-delete', task.key, deleted.id])).toBe(0)
+
+    const comments = (await showTask(task.key)).comments
+    expect(comments.find(({ id }) => id === edited.id)?.body).toBe('after edit')
+    expect(comments.some(({ id }) => id === deleted.id)).toBeFalse()
+  } finally {
+    if (hostedUrl !== undefined) process.env.BOTTEGA_HOSTED_URL = hostedUrl
+  }
+})
+
+test('a malformed --expect refuses with the task show remedy', async () => {
+  const hostedUrl = process.env.BOTTEGA_HOSTED_URL
+  delete process.env.BOTTEGA_HOSTED_URL
+  const stderr: string[] = []
+  const error = spyOn(console, 'error').mockImplementation((message) =>
+    stderr.push(String(message)),
+  )
+  try {
+    const task = await createTask({ project: 'workshop', title: 'Revision edge' })
+    expect(
+      await run(createHubProgram(), [
+        'task',
+        'set',
+        task.key,
+        '--title',
+        'Changed',
+        '--expect',
+        'abc',
+      ]),
+    ).toBe(1)
+    expect(stderr).toContain(
+      `--expect expects a revision number from \`${PLATFORM_SLUG} task show ${task.key}\``,
+    )
+  } finally {
+    error.mockRestore()
     if (hostedUrl !== undefined) process.env.BOTTEGA_HOSTED_URL = hostedUrl
   }
 })

@@ -68,6 +68,47 @@ test('task reads disable edits when machine identity resolution throws', async (
   expect(result.comments[0]).toMatchObject({ canEdit: false, canDelete: false })
 })
 
+test('local title and comment edits pass through without a revision', async () => {
+  const calls: unknown[] = []
+  const router = createWorkRouter({
+    machineAttribution: async () => ({
+      actorUserId: null,
+      actorName: null,
+      agent: null,
+      runId: null,
+    }),
+    setTask: (async (...args: unknown[]) => void calls.push(['title', ...args])) as never,
+    editTaskComment: (async (...args: unknown[]) => void calls.push(['comment', ...args])) as never,
+  })
+  const writes = router.createCaller({})
+
+  await writes.setTitle({ key: 'DEV-1', scope: {}, title: 'Changed' })
+  await writes.editComment({
+    key: 'DEV-1',
+    scope: {},
+    commentId: '01990000-0000-7000-8000-000000000001',
+    body: 'Changed comment',
+  })
+
+  expect(calls[0]).toEqual([
+    'title',
+    'DEV-1',
+    {},
+    { title: 'Changed' },
+    { actorUserId: null, actorName: null, agent: null, runId: null },
+    {},
+  ])
+  expect(calls[1]).toEqual([
+    'comment',
+    'DEV-1',
+    {},
+    '01990000-0000-7000-8000-000000000001',
+    'Changed comment',
+    { actorUserId: null, actorName: null, agent: null, runId: null },
+    {},
+  ])
+})
+
 test('setBody maps the service stale-body error to CONFLICT and leaves the body unchanged', async () => {
   const recordId = Bun.randomUUIDv7()
   const stamp = new Date().toISOString()

@@ -139,14 +139,16 @@ function commentProcedures(deps: WorkDeps) {
           ...taskIdentityInput,
           commentId: z.string().uuid(),
           body: z.string().trim().min(1),
-          expectedRevision: z.number().int().positive(),
+          expectedRevision: z.number().int().positive().optional(),
         }),
       )
       .mutation(async ({ input: value }) => {
         const attribution = await deps.machineAttribution()
         return write(() =>
           deps.editTaskComment(value.key, value.scope, value.commentId, value.body, attribution, {
-            expectedRevision: value.expectedRevision,
+            ...(value.expectedRevision === undefined
+              ? {}
+              : { expectedRevision: value.expectedRevision }),
           }),
         )
       }),
@@ -155,14 +157,16 @@ function commentProcedures(deps: WorkDeps) {
         z.object({
           ...taskIdentityInput,
           commentId: z.string().uuid(),
-          expectedRevision: z.number().int().positive(),
+          expectedRevision: z.number().int().positive().optional(),
         }),
       )
       .mutation(async ({ input: value }) => {
         const attribution = await deps.machineAttribution()
         return write(() =>
           deps.deleteTaskComment(value.key, value.scope, value.commentId, attribution, {
-            expectedRevision: value.expectedRevision,
+            ...(value.expectedRevision === undefined
+              ? {}
+              : { expectedRevision: value.expectedRevision }),
           }),
         )
       }),
@@ -213,14 +217,16 @@ export function createWorkRouter(given: Partial<WorkDeps> = {}) {
         z.object({
           ...taskIdentityInput,
           title: z.string().trim().min(1).max(500),
-          expectedRevision: z.number().int().positive(),
+          expectedRevision: z.number().int().positive().optional(),
         }),
       )
       .mutation(async ({ input: value }) => {
         const attribution = await deps.machineAttribution()
         return write(() =>
           deps.setTask(value.key, value.scope, { title: value.title }, attribution, {
-            expectedRevision: value.expectedRevision,
+            ...(value.expectedRevision === undefined
+              ? {}
+              : { expectedRevision: value.expectedRevision }),
           }),
         )
       }),

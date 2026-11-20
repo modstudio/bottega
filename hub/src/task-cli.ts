@@ -78,6 +78,16 @@ const optional = (options: TaskOptions, name: keyof TaskOptions): string | undef
 const camelToDash = (value: string) =>
   value.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`)
 
+function expectedRevision(options: TaskOptions, key: string): number | undefined {
+  if (options.expect === undefined) return undefined
+  const value = Number(required(options, 'expect'))
+  if (!Number.isInteger(value) || value <= 0)
+    throw new Error(
+      `--expect expects a revision number from \`${PLATFORM_SLUG} task show ${key.toUpperCase()}\``,
+    )
+  return value
+}
+
 function taskBody(options: TaskOptions): string | undefined {
   if (options.body !== undefined && options.bodyFile !== undefined)
     throw new Error('--body and --body-file are mutually exclusive')
@@ -373,8 +383,7 @@ function registerTaskQueryCommands(task: Command): void {
         attribution,
         {
           force: Boolean(options.force),
-          expectedRevision:
-            options.expect === undefined ? undefined : Number(required(options, 'expect')),
+          expectedRevision: expectedRevision(options, key),
           abandonReason: optional(options, 'abandon'),
           confirm: ARRAY_MCP_STATUS_WRITE_CONFIRM,
           cursorAbandoned: (cursor) =>
@@ -420,13 +429,14 @@ function registerTaskLifecycleCommands(task: Command): void {
     .option('--expect <revision>', 'require this current comment revision')
     .action(async (key, commentId, text, _options, command) => {
       open()
+      const options = taskOptions(command)
       const edited = await editTaskComment(
         key,
-        { project: taskOptions(command).project },
+        { project: options.project },
         commentId,
         text,
         await machineAttribution(),
-        { expectedRevision: Number(required(taskOptions(command), 'expect')) },
+        { expectedRevision: expectedRevision(options, key) },
       )
       console.log(`${edited.task_key} comment ${edited.id} edited ${edited.updated_at}`)
     })
@@ -437,12 +447,13 @@ function registerTaskLifecycleCommands(task: Command): void {
     .option('--expect <revision>', 'require this current comment revision')
     .action(async (key, commentId, _options, command) => {
       open()
+      const options = taskOptions(command)
       await deleteTaskComment(
         key,
-        { project: taskOptions(command).project },
+        { project: options.project },
         commentId,
         await machineAttribution(),
-        { expectedRevision: Number(required(taskOptions(command), 'expect')) },
+        { expectedRevision: expectedRevision(options, key) },
       )
       console.log(`${key.toUpperCase()} comment ${commentId} deleted`)
     })

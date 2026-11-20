@@ -273,6 +273,7 @@ export async function updateTaskDocument(
       deleted_at: null,
     }
     await sendHostedChanges(
+      current.task_key,
       [
         {
           table: HOSTED_DOCUMENT_TABLE,

@@ -1,4 +1,5 @@
 import { newRecordId } from '../../shared/record/schema.ts'
+import { HOSTED_UNREACHABLE_REMEDY, projectMappedToHostedSpace } from './hosted-write-mode.ts'
 import { projectRecordIdFor } from './project-record-id.ts'
 import { projects } from './projects.ts'
 import {
@@ -62,9 +63,14 @@ export function hostedComment(row: import('./hosted-tasks.ts').HostedComment): T
 
 function hostedProjects(project?: string) {
   const selected = project ? projects().filter((row) => row.name === project) : projects()
-  return selected.filter(
-    (row) => typeof row.settings.space === 'string' && row.settings.space.trim(),
-  )
+  const hosted = selected.filter((row) => projectMappedToHostedSpace(row.settings.space))
+  const undeclared = selected.filter((row) => !projectMappedToHostedSpace(row.settings.space))
+  if (project && undeclared.length) hostedTaskWriteOptions(project)
+  if (!project && undeclared.length)
+    console.error(
+      `tasks for projects ${undeclared.map((row) => row.name).join(', ')} were not shown because they have no declared record space`,
+    )
+  return hosted
 }
 
 export async function listHostedTasks(filters: {
@@ -103,7 +109,7 @@ export async function showHostedTask(
     } catch (error) {
       if (!isMissingHostedTask(error)) {
         const message = error instanceof Error ? error.message : String(error)
-        throw new Error(`${message}. Retry when the hosted record is reachable.`)
+        throw new Error(`${message}. ${HOSTED_UNREACHABLE_REMEDY}`)
       }
     }
   }
@@ -130,7 +136,7 @@ export async function showHostedTask(
   }
 }
 
-export function pushedTask(current: TaskRow, changes: TaskChanges, at: string): PushedTask {
+function pushedTask(current: TaskRow, changes: TaskChanges, at: string): PushedTask {
   const category =
     changes.status === undefined
       ? current.status_category
@@ -171,7 +177,7 @@ function taskPatchGuards(current: TaskRow, changes: TaskChanges) {
   }
 }
 
-export function taskChangeFields(changes: TaskChanges): string[] {
+function taskChangeFields(changes: TaskChanges): string[] {
   return [
     ...(changes.title !== undefined ? ['title'] : []),
     ...(changes.status !== undefined ? ['status', 'status_category'] : []),
@@ -206,7 +212,7 @@ export function hostedTaskBatch(input: {
   return [task, { table: HOSTED_STATUS_EVENT_TABLE, id: event.id, op: 'upsert', row: event }]
 }
 
-export function pushedStatusEvent(
+function pushedStatusEvent(
   current: TaskRow,
   next: string,
   at: string,
@@ -251,5 +257,22 @@ export function pushedComment(
     actor_name: attribution.actorName,
     agent: attribution.agent,
     run_id: attribution.runId,
+  }
+}
+
+export function pushedCommentRevision(
+  current: TaskRow,
+  comment: TaskComment,
+  changes: Partial<Pick<PushedComment, 'body' | 'deleted_at'>>,
+  at: string,
+): PushedComment {
+  return {
+    ...comment,
+    id: comment.id,
+    task_id: current.record_id,
+    project_name: current.project,
+    projectId: current.project_record_id ?? projectRecordIdFor(current.project),
+    ...changes,
+    updated_at: at,
   }
 }

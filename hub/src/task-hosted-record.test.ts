@@ -65,4 +65,18 @@ describe('hosted task patch payload', () => {
     })
     expect(change).not.toHaveProperty('from')
   })
+
+  test('closing an already-done task sends no status event', () => {
+    const done = { ...current, status: 'done', status_category: 'done' as const }
+    const changes = hostedTaskBatch({
+      current: done,
+      changes: { status: 'done' },
+      category: 'done',
+      at: '2026-11-20T01:00:00.000Z',
+      attribution: { actorUserId: null, actorName: null, agent: null, runId: null },
+    })
+
+    expect(changes).toHaveLength(1)
+    expect(changes[0]).toMatchObject({ table: 'hub_task' })
+  })
 })

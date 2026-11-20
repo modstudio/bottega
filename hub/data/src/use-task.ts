@@ -37,9 +37,12 @@ function useCommentActions(
       run: async ({ id, body }: { id: string; body: string }) => {
         if (refused) return
         const expectedRevision = detail?.comments.find((comment) => comment.id === id)?.revision
-        if (expectedRevision === undefined)
-          throw new Error('Reload the task to read the current comment revision.')
-        await editComment.mutateAsync({ ...localInput, commentId: id, body, expectedRevision })
+        await editComment.mutateAsync({
+          ...localInput,
+          commentId: id,
+          body,
+          ...(expectedRevision === undefined ? {} : { expectedRevision }),
+        })
         await refresh()
       },
       pending: editComment.isPending,
@@ -50,9 +53,11 @@ function useCommentActions(
       run: async ({ id }: { id: string }) => {
         if (refused) return
         const expectedRevision = detail?.comments.find((comment) => comment.id === id)?.revision
-        if (expectedRevision === undefined)
-          throw new Error('Reload the task to read the current comment revision.')
-        await deleteComment.mutateAsync({ ...localInput, commentId: id, expectedRevision })
+        await deleteComment.mutateAsync({
+          ...localInput,
+          commentId: id,
+          ...(expectedRevision === undefined ? {} : { expectedRevision }),
+        })
         await refresh()
       },
       pending: deleteComment.isPending,
@@ -79,7 +84,7 @@ function draftAction(
     key: string
     scope: { recordId?: string }
     title: string
-    expectedRevision: number
+    expectedRevision?: number
   }>,
   setBody: TaskMutation<{
     key: string
@@ -104,12 +109,12 @@ function draftAction(
             expectedVersion: detail.bodyVersion,
           })
         if (title !== (detail.task.title ?? '').trim() && !titleRefused) {
-          if (detail.task.revision === undefined)
-            throw new Error('Reload the task to read its current revision.')
           await setTitle.mutateAsync({
             ...localInput,
             title,
-            expectedRevision: detail.task.revision,
+            ...(detail.task.revision === undefined
+              ? {}
+              : { expectedRevision: detail.task.revision }),
           })
         }
       } catch {
@@ -157,11 +162,13 @@ export function useTask(key: string, recordId?: string) {
       setTitle: {
         run: async (title: string) => {
           if (refusal(capability?.setTitle)) return
-          if (query.data?.task.revision === undefined) return
+          if (!query.data) return
           await setTitle.mutateAsync({
             ...localInput,
             title,
-            expectedRevision: query.data.task.revision,
+            ...(query.data.task.revision === undefined
+              ? {}
+              : { expectedRevision: query.data.task.revision }),
           })
           await refresh()
         },

@@ -19,6 +19,7 @@ import {
   createTask,
   deleteTaskComment,
   editTaskComment,
+  listTasks,
   setTask,
   setTaskBody,
   showTask,
@@ -223,6 +224,12 @@ test('hosted writes use the project-declared record space', async () => {
     'declared-gamma-space',
     'declared-gamma-space',
   ])
+})
+
+test('a hosted list scoped to an undeclared-space project refuses', async () => {
+  await expect(listTasks({ project: 'workshop' })).rejects.toThrow(
+    'project workshop has no declared record space',
+  )
 })
 
 test('work.task composes the hosted task, comments, documents, and project', async () => {
