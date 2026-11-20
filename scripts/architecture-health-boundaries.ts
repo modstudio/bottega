@@ -34,7 +34,6 @@ export const healthBoundarySpecs: ImportBoundary[] = [
       'orchestrator/src/canon/pack-budget.ts',
       'orchestrator/src/canon/evals.ts',
       'orchestrator/src/sandbox/sandbox.ts',
-      'orchestrator/src/sandbox/sandbox-selection-policy.ts',
       'orchestrator/src/sandbox/sandbox-runtime.ts',
       'orchestrator/src/database/migrations.ts',
       'orchestrator/src/health/health.ts',

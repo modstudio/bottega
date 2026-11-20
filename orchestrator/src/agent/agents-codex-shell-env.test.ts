@@ -1,5 +1,4 @@
 import { describe, expect, test } from 'bun:test'
-import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { BUILTIN_AGENTS } from './agents.ts'
 
 const shellSets = (argv: string[]) =>
@@ -7,23 +6,13 @@ const shellSets = (argv: string[]) =>
     argv[index - 1] === '-c' && arg.startsWith('shell_environment_policy.set.') ? [arg] : [],
   )
 
-const codexPermissionProfile = {
-  filesystem: { denyRead: ['/state'], allowRead: ['/state/runs/this-run'] },
-  writableRoots: ['/repo', '/run/scratch'],
-}
-
 describe('codex worker shell environment', () => {
   test('first turns and resumes disable native project docs', () => {
-    const first = BUILTIN_AGENTS.codex!.argv({
-      prompt: 'p',
-      out: '/tmp/out',
-      codexPermissionProfile,
-    })
+    const first = BUILTIN_AGENTS.codex!.argv({ prompt: 'p', out: '/tmp/out' })
     const resumed = BUILTIN_AGENTS.codex!.resumeArgv!({
       prompt: 'ruling',
       out: '/tmp/out',
       session: 'thread',
-      codexPermissionProfile,
     })
     expect(first).toContain('project_doc_max_bytes=0')
     expect(resumed).toContain('project_doc_max_bytes=0')
@@ -37,47 +26,49 @@ describe('codex worker shell environment', () => {
       sandbox: 'workspace-write',
       sandboxWorkspaceWriteNetworkAccess: true,
       write: true,
-      codexPermissionProfile,
     })
-    expect(argv).toContain(`permissions.${PLATFORM_SLUG}.network.enabled=true`)
+    expect(argv).toContain('sandbox_workspace_write.network_access=true')
     expect(argv).toContain('--approve-for-me')
     expect(argv).not.toContain('-s')
   })
 
-  test('reader jobs pin their private temporary directory in the tool shell', () => {
-    const tempEnvironment = {
-      TMPDIR: '/runs/42/scratch/tmp',
-      TMP: '/runs/42/scratch/tmp',
-      TEMP: '/runs/42/scratch/tmp',
-    }
+  test('no-repository jobs limit workspace-write to the isolate and scratch', () => {
     const repositoryReader = BUILTIN_AGENTS.codex!.argv({
       prompt: 'p',
       out: '/tmp/out',
       sandbox: 'workspace-write',
       write: true,
-      codexPermissionProfile,
-      recipeEnvironment: tempEnvironment,
     })
     const noRepositoryJob = BUILTIN_AGENTS.codex!.argv({
       prompt: 'p',
       out: '/tmp/out',
       sandbox: 'workspace-write',
-      codexPermissionProfile,
-      recipeEnvironment: tempEnvironment,
+      writableRoots: ['/runs/42/scratch'],
+      recipeEnvironment: {
+        TMPDIR: '/runs/42/scratch/tmp',
+        TMP: '/runs/42/scratch/tmp',
+        TEMP: '/runs/42/scratch/tmp',
+      },
     })
     expect(repositoryReader).toContain('--approve-for-me')
     expect(repositoryReader).not.toContain('-s')
     expect(noRepositoryJob).not.toContain('--approve-for-me')
-    expect(noRepositoryJob).not.toContain('-s')
-    expect(noRepositoryJob.join(' ')).not.toContain('sandbox_workspace_write')
+    expect(noRepositoryJob).toContain('-s')
+    expect(noRepositoryJob).toContain('workspace-write')
+    expect(noRepositoryJob).toContain('sandbox_workspace_write.writable_roots=["/runs/42/scratch"]')
+    expect(noRepositoryJob).toContain('sandbox_workspace_write.exclude_slash_tmp=true')
+    expect(noRepositoryJob).toContain('sandbox_workspace_write.exclude_tmpdir_env_var=true')
     expect(shellSets(noRepositoryJob)).toEqual([
       'shell_environment_policy.set.TMPDIR="/runs/42/scratch/tmp"',
       'shell_environment_policy.set.TMP="/runs/42/scratch/tmp"',
       'shell_environment_policy.set.TEMP="/runs/42/scratch/tmp"',
     ])
-    expect(noRepositoryJob).not.toContain(`permissions.${PLATFORM_SLUG}.network.enabled=true`)
-    expect(repositoryReader.join(' ')).not.toContain('sandbox_workspace_write')
-    expect(shellSets(repositoryReader)).toEqual(shellSets(noRepositoryJob))
+    expect(noRepositoryJob).not.toContain('sandbox_workspace_write.network_access=true')
+    expect(repositoryReader).not.toContain('sandbox_workspace_write.exclude_slash_tmp=true')
+    expect(repositoryReader).not.toContain('sandbox_workspace_write.exclude_tmpdir_env_var=true')
+    expect(shellSets(repositoryReader)).not.toContainEqual(
+      expect.stringMatching(/^shell_environment_policy\.set\.(?:TMPDIR|TMP|TEMP)=/),
+    )
   })
 
   test('MCP writers continue to use approval without an explicit sandbox', () => {
@@ -87,7 +78,6 @@ describe('codex worker shell environment', () => {
       mcp: true,
       sandbox: 'workspace-write',
       write: true,
-      codexPermissionProfile,
     })
     expect(argv).toContain('--approve-for-me')
     expect(argv).not.toContain('-s')
@@ -98,7 +88,6 @@ describe('codex worker shell environment', () => {
       prompt: 'p',
       out: '/tmp/out',
       recipeEnvironment: { BOTTEGA_INDEX: '1', BOTTEGA_PORTS_HUB: '21003' },
-      codexPermissionProfile,
     })
     expect(shellSets(argv)).toEqual([
       'shell_environment_policy.set.BOTTEGA_INDEX="1"',
@@ -111,7 +100,6 @@ describe('codex worker shell environment', () => {
       prompt: 'p',
       out: '/tmp/out',
       recipeEnvironment: { BOTTEGA_MAIN_CHECKOUT: '/projects/app' },
-      codexPermissionProfile,
     })
     expect(shellSets(argv)).toEqual([
       'shell_environment_policy.set.BOTTEGA_MAIN_CHECKOUT="/projects/app"',
@@ -119,11 +107,7 @@ describe('codex worker shell environment', () => {
   })
 
   test('a run with no recipe allocations sets nothing', () => {
-    const argv = BUILTIN_AGENTS.codex!.argv({
-      prompt: 'p',
-      out: '/tmp/out',
-      codexPermissionProfile,
-    })
+    const argv = BUILTIN_AGENTS.codex!.argv({ prompt: 'p', out: '/tmp/out' })
     expect(shellSets(argv)).toEqual([])
   })
 
@@ -133,7 +117,7 @@ describe('codex worker shell environment', () => {
       out: '/tmp/out',
       sandbox: 'workspace-write',
       write: true,
-      codexPermissionProfile,
+      writableRoots: ['/repo/.git/objects'],
       ...{
         gitObjectEnvironment: {
           GIT_OBJECT_DIRECTORY: '/repo/.git/worktrees/reader/objects',
