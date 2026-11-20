@@ -83,7 +83,7 @@ if [ -n "${BOTTEGA_ORCHESTRATOR_DB:-}" ]; then
     *) DB_PATH="$CALLER_DIRECTORY/$BOTTEGA_ORCHESTRATOR_DB" ;;
   esac
 else
-  DB_PATH=$(bun --no-env-file "$ROOT/../shared/state-directory.ts" orchestrator database) || {
+  DB_PATH=$("$BOTTEGA" machine store-path | head -n 1) || {
     echo "DEGRADED: cannot resolve orchestrator database"
     exit 2
   }

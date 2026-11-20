@@ -18,6 +18,7 @@ import sys
 sys.path.insert(0, os.path.dirname(__file__))
 from registered_scope import should_hook_act
 from hook_emission import record_emission
+from hook_paths import bottega_bin
 from registered_scope_decision import path_is_within
 
 from protect_main_checkout import (
@@ -53,13 +54,9 @@ def database_path():
         return configured
     try:
         return subprocess.check_output(
-            [
-                "bun", "--no-env-file",
-                os.path.join(ROOT, "shared", "state-directory.ts"),
-                "orchestrator", "database",
-            ],
+            [bottega_bin(), "machine", "store-path"],
             text=True,
-        ).strip()
+        ).splitlines()[0]
     except (OSError, subprocess.CalledProcessError):
         return None
 

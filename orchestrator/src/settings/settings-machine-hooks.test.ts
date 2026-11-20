@@ -189,11 +189,11 @@ test('test substance guard covers every editor tool from the rendered install', 
   expect(group?.hooks).toEqual([
     {
       type: 'command',
-      command: `BOTTEGA_ORCHESTRATOR_DB='${DATABASE}' BOTTEGA_GLOBAL_USE=on python3 '${ASSET_ROOT}/orchestrator/hooks/test-substance-guard.py'`,
+      command: `BOTTEGA_BIN='${ASSET_ROOT}/bin/bottega' BOTTEGA_ORCHESTRATOR_DB='${DATABASE}' BOTTEGA_GLOBAL_USE=on python3 '${ASSET_ROOT}/orchestrator/hooks/test-substance-guard.py'`,
     },
     {
       type: 'command',
-      command: `BOTTEGA_ORCHESTRATOR_DB='${DATABASE}' BOTTEGA_GLOBAL_USE=on python3 '${ASSET_ROOT}/orchestrator/hooks/hub-import-guard.py'`,
+      command: `BOTTEGA_BIN='${ASSET_ROOT}/bin/bottega' BOTTEGA_ORCHESTRATOR_DB='${DATABASE}' BOTTEGA_GLOBAL_USE=on python3 '${ASSET_ROOT}/orchestrator/hooks/hub-import-guard.py'`,
     },
   ])
 })

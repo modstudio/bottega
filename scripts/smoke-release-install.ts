@@ -1,4 +1,12 @@
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, join, resolve } from 'node:path'
 import { startBounded } from '../shared/bounded-process.ts'
@@ -221,8 +229,9 @@ async function runStep(
   argv: string[],
   cwd: string,
   env: Record<string, string | undefined>,
+  stdin?: string,
 ): Promise<StepResult> {
-  const result = await startBounded(argv, { budget: 'self-cli', cwd, env })
+  const result = await startBounded(argv, { budget: 'self-cli', cwd, env, stdin })
   return {
     name,
     exitCode: result.exitCode,
@@ -272,6 +281,36 @@ function assertSecondSetupSkipsInstallerCalls(
     failures,
     second.curlGrok === first.curlGrok,
     'second setup apply re-requested the grok installer even though grok was already installed',
+  )
+}
+
+async function runExtractedHookProof(
+  version: string,
+  paths: InstallProofPaths,
+  executable: string,
+  env: Record<string, string | undefined>,
+  failures: string[],
+): Promise<StepResult> {
+  const runtimeRoot = join(paths.state, 'runtime', version, 'assets')
+  const hook = join(runtimeRoot, 'orchestrator', 'hooks', 'test-substance-guard.py')
+  recordProofAssertion(
+    failures,
+    existsSync(runtimeRoot),
+    `setup apply did not extract the runtime tree at ${runtimeRoot}`,
+  )
+  return runStep(
+    'extracted hook',
+    ['python3', hook],
+    paths.home,
+    { ...env, BOTTEGA_BIN: executable },
+    JSON.stringify({
+      tool_name: 'Write',
+      cwd: paths.home,
+      tool_input: {
+        file_path: join(paths.home, 'example.test.ts'),
+        content: "test('release hook', () => expect(1).toBe(1))\n",
+      },
+    }),
   )
 }
 
@@ -342,6 +381,7 @@ async function proveReleaseInstall(version: string, keep: boolean): Promise<numb
     )
 
     results.push(await runStep('setup apply', setupArgv, paths.home, env))
+    results.push(await runExtractedHookProof(version, paths, executable, env, assertionFailures))
     const firstInstallerCounts = harnessInstallerInvocationCounts(
       readProofLog(brewLog),
       readProofLog(curlLog),

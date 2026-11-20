@@ -7,8 +7,8 @@ import {
   embeddedDistributionManifest,
   embeddedRuntimeDigest,
   extractEmbeddedRuntime,
-  readInstallAsset,
   RUNTIME_ASSETS,
+  readInstallAsset,
 } from './embedded-assets.ts'
 import { assetPath } from './install-root.ts'
 import { resolveStateRoot, type StateEnvironment } from './state-directory.ts'

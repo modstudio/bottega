@@ -268,6 +268,16 @@ export const RUNTIME_ASSETS: readonly RuntimeAsset[] = [
     destination: 'shared/store-write-lock.c',
     mode: 0o644,
   },
+  {
+    packagePath: 'shared/secret-shaped-rules.json',
+    destination: 'shared/secret-shaped-rules.json',
+    mode: 0o644,
+  },
+  {
+    packagePath: 'shared/attribution-markers.json',
+    destination: 'shared/attribution-markers.json',
+    mode: 0o644,
+  },
 ]
 
 /** The ref guard entry retained as a named consumer-facing member of the runtime set. */

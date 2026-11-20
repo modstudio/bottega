@@ -209,7 +209,6 @@ function resolvedCondition(value: HookCondition | undefined, executable: string)
 
 function productCommand(
   file: ScriptFile,
-  assetRoot: string,
   databasePath: string,
   globalUse: 'on' | 'off',
   runtime: MachineHookRuntime,
@@ -227,12 +226,11 @@ function productCommand(
 
 function boardCommand(
   file: ScriptFile,
-  assetRoot: string,
   databasePath: string,
   globalUse: 'on' | 'off',
   runtime: MachineHookRuntime,
 ): string {
-  return productCommand(file, assetRoot, databasePath, globalUse, runtime, [
+  return productCommand(file, databasePath, globalUse, runtime, [
     `BOARD_PUSH_REFRESH_SECONDS=${BOARD_PUSH_REFRESH_SECONDS}`,
     `BOARD_PUSH_REMIND_SECONDS=${BOARD_PUSH_REMIND_SECONDS}`,
     `BOARD_PUSH_RETRY_SECONDS=${BOARD_PUSH_RETRY_SECONDS}`,
@@ -247,7 +245,6 @@ function boardCommand(
 
 function declaredHandler(
   declaration: ProductHookDeclaration,
-  assetRoot: string,
   databasePath: string,
   globalUse: 'on' | 'off',
   runtime: MachineHookRuntime,
@@ -256,15 +253,14 @@ function declaredHandler(
   return {
     type: 'command',
     command: declaration.boardEnvironment
-      ? boardCommand(declaration.script, assetRoot, databasePath, globalUse, runtime)
-      : productCommand(declaration.script, assetRoot, databasePath, globalUse, runtime),
+      ? boardCommand(declaration.script, databasePath, globalUse, runtime)
+      : productCommand(declaration.script, databasePath, globalUse, runtime),
     ...(hookCondition === undefined ? {} : { if: hookCondition }),
     ...(declaration.timeout === undefined ? {} : { timeout: declaration.timeout }),
   }
 }
 
 function declaredGroups(
-  assetRoot: string,
   databasePath: string,
   globalUse: 'on' | 'off',
   runtime: MachineHookRuntime,
@@ -275,11 +271,11 @@ function declaredGroups(
     const previous = eventGroups.at(-1)
     const previousMatcher = isPlainObject(previous) ? previous.matcher : undefined
     if (previous && previousMatcher === declaration.matcher && Array.isArray(previous.hooks)) {
-      previous.hooks.push(declaredHandler(declaration, assetRoot, databasePath, globalUse, runtime))
+      previous.hooks.push(declaredHandler(declaration, databasePath, globalUse, runtime))
     } else {
       eventGroups.push({
         ...(declaration.matcher === undefined ? {} : { matcher: declaration.matcher }),
-        hooks: [declaredHandler(declaration, assetRoot, databasePath, globalUse, runtime)],
+        hooks: [declaredHandler(declaration, databasePath, globalUse, runtime)],
       })
     }
     groups.set(declaration.event, eventGroups)
@@ -309,7 +305,7 @@ export function withMachineProductHooks(
   const superseded: SupersededProfileHook[] = []
   const hooks = withoutSupersededProfileHooks(profileHooks, superseded)
 
-  for (const [event, groups] of declaredGroups(assetRoot, databasePath, globalUse, runtime)) {
+  for (const [event, groups] of declaredGroups(databasePath, globalUse, runtime)) {
     const existing = Array.isArray(hooks[event]) ? hooks[event] : []
     hooks[event] = [...existing, ...groups]
   }

@@ -48,13 +48,13 @@ import {
 } from './settings-env.ts'
 import { claudeHomeFromEnvironment, readSettingsFile, userSettingsPath } from './settings-files.ts'
 import { type SupersededProfileHook, withMachineProductHooks } from './settings-machine-hooks.ts'
-import { resolveMachineHookRuntime } from './settings-machine-runtime.ts'
 import {
   readClaudeMcpPlacement,
   reconcileClaudeMcpPlacementPlan,
   writeClaudeMcpPlacement,
 } from './settings-machine-mcp-placement.ts'
 import { registeredProjectScopeFact } from './settings-machine-projects.ts'
+import { resolveMachineHookRuntime } from './settings-machine-runtime.ts'
 import { decideMachineSettingsScope } from './settings-machine-scope.ts'
 import { assertCurrentMachineHomeWriteAuthority } from './settings-machine-write-authority.ts'
 import { mergeMachinePermissionOverlay } from './settings-permission-overlay.ts'

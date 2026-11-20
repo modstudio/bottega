@@ -29,9 +29,9 @@ from hook_paths import bottega_bin
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
 PROCESS_LIST_PS_TIMEOUT_SECONDS = 2
 DB = os.environ.get("BOTTEGA_ORCHESTRATOR_DB") or subprocess.check_output(
-    ["bun", "--no-env-file", os.path.join(ROOT, "shared", "state-directory.ts"), "orchestrator", "database"],
+    [bottega_bin(), "machine", "store-path"],
     text=True,
-).strip()
+).splitlines()[0]
 
 
 def load_hook_module(name: str, filename: str):

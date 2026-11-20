@@ -12,13 +12,13 @@ import {
   realpathSync,
 } from 'node:fs'
 import { basename, dirname } from 'node:path'
-import { runtimeAssetPath } from '../../../shared/runtime-assets.ts'
 import {
   MONITOR_CAPABILITY_PATH_ENV,
   MONITOR_CAPABILITY_TOKEN_ENV,
   type MonitorCapability,
 } from '../../../shared/monitor-capability.ts'
 import { observeBoundedSubprocess, pidAlive } from '../../../shared/process-identity.ts'
+import { runtimeAssetPath } from '../../../shared/runtime-assets.ts'
 import { callerIdentityRefusal } from '../caller-classification.ts'
 import { failingCanonEvalSlugs } from '../canon/evals.ts'
 import { callerIdentity, sessionId } from '../database/db.ts'

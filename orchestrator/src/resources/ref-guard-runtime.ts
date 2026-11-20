@@ -2,7 +2,10 @@
 /** Extracts and verifies the shared ref guard shipped inside the compiled binary. */
 import { realpathSync } from 'node:fs'
 import { join, relative } from 'node:path'
-import { embeddedDistributionManifest, REF_GUARD_RUNTIME_ASSET } from '../../../shared/embedded-assets.ts'
+import {
+  embeddedDistributionManifest,
+  REF_GUARD_RUNTIME_ASSET,
+} from '../../../shared/embedded-assets.ts'
 import { runtimeAssetPath } from '../../../shared/runtime-assets.ts'
 import type { StateEnvironment } from '../../../shared/state-directory.ts'
 import { ROOT } from '../database/db.ts'
@@ -14,7 +17,13 @@ export function refGuardRuntimePath(input: {
   stateRoot: string
 }): string {
   return input.embeddedVersion
-    ? join(input.stateRoot, 'runtime', input.embeddedVersion, 'assets', REF_GUARD_RUNTIME_ASSET.destination)
+    ? join(
+        input.stateRoot,
+        'runtime',
+        input.embeddedVersion,
+        'assets',
+        REF_GUARD_RUNTIME_ASSET.destination,
+      )
     : join(input.sourceRoot, relative('orchestrator', REF_GUARD_RUNTIME_ASSET.packagePath))
 }
 
@@ -25,8 +34,6 @@ export function resolveRefGuardHook(
 ): string {
   const manifest = embeddedDistributionManifest()
   if (!manifest)
-    return realpathSync(
-      refGuardRuntimePath({ embeddedVersion: null, sourceRoot, stateRoot: '' }),
-    )
+    return realpathSync(refGuardRuntimePath({ embeddedVersion: null, sourceRoot, stateRoot: '' }))
   return runtimeAssetPath(REF_GUARD_RUNTIME_ASSET.packagePath, environment)
 }
