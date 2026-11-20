@@ -316,7 +316,7 @@ test('ruling bootstrap pages hand over their captured change head and replay dra
   expect(replay.items.map((row) => row.record_id)).toContain(drainQuestionId)
 })
 
-test('a reset returns one bounded bootstrap page and legacy page cursors keep their shape', async () => {
+test('resets and legacy page cursors restart a bounded bootstrap with a fresh head', async () => {
   const current = await readRecordQuestions({
     url: fixtureUrl,
     userId,
@@ -354,7 +354,38 @@ test('a reset returns one bounded bootstrap page and legacy page cursors keep th
     kind: 'all',
     changedAfter: { questionNumber: 1 },
   })
-  expect(legacy.cursor).toMatch(/^page:\d+$/)
-  expect(() => decodeRecordChangeCursor(legacy.cursor!)).toThrow('malformed')
+  expect(legacy.reset).toBe(true)
+  expect(legacy.items[0]?.number).toBe(1)
+  expect(decodeRecordChangeCursor(legacy.cursor!)).toEqual(head)
   expect(encodeRecordChangeCursor(head)).toBe(encodedHead)
+})
+
+test('a bootstrap handover head never falls behind the prune horizon', async () => {
+  const current = await readRecordQuestions({
+    url: fixtureUrl,
+    userId,
+    spaceId,
+    read: 'rulings',
+    kind: 'all',
+    limit: 1,
+  })
+  const currentHead = decodeRecordChangeCursor(current.cursor!.split(':').at(-1)!)
+  const horizon = { xid: currentHead.xid + 100n, seq: currentHead.seq }
+  await database.exec(`
+    RESET ROLE;
+    UPDATE record_change_horizon
+    SET xid='${horizon.xid.toString()}'::xid8,seq=${horizon.seq.toString()}
+    WHERE singleton;
+    SET ROLE record_actor;
+  `)
+
+  const bootstrap = await readRecordQuestions({
+    url: fixtureUrl,
+    userId,
+    spaceId,
+    read: 'rulings',
+    kind: 'all',
+    limit: 1,
+  })
+  expect(decodeRecordChangeCursor(bootstrap.cursor!.split(':').at(-1)!)).toEqual(horizon)
 })

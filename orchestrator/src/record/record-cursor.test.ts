@@ -1,11 +1,14 @@
 import { expect, test } from 'bun:test'
+import { type RecordChangeCursor } from '../../../shared/record/record-changes.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import {
   decodeRecordCursor,
   decodeTaskFlowStageListCursor,
   encodeRecordCursor,
   encodeTaskFlowStageListCursor,
+  encodeRulingPageCursor,
   pageRecordItems,
+  parseRulingPageCursor,
   parseStoredRecordCursor,
   recordCursorAt,
   recordCursorOf,
@@ -18,6 +21,13 @@ const microseconds = '2026-10-09T12:34:56.789123Z'
 test('task-flow stage-list cursor round-trips a non-Latin-1 project name', () => {
   const cursor = { order: 'project', projectName: 'פרויקט', number: 1, id } as const
   expect(decodeTaskFlowStageListCursor(encodeTaskFlowStageListCursor(cursor))).toEqual(cursor)
+})
+
+test('ruling page cursors round-trip their change-feed handover head', () => {
+  const changeHead: RecordChangeCursor = { xid: 12n, seq: 34n }
+  const cursor = { questionNumber: 56, changeHead }
+  expect(parseRulingPageCursor(encodeRulingPageCursor(cursor))).toEqual(cursor)
+  expect(parseRulingPageCursor('page:56')).toEqual({ questionNumber: 56 })
 })
 
 test('parses stored JSON cursors without migration', () => {

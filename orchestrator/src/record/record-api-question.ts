@@ -7,6 +7,7 @@ import {
   type RecordChangeCursor,
 } from '../../../shared/record/record-changes.ts'
 import type { RecordIdentity } from './record-auth.ts'
+import { parseRulingPageCursor } from './record-cursor.ts'
 import { recordKeyedNotVisibleRefusal } from './record-keyed-read.ts'
 import {
   type QuestionIntent,
@@ -17,6 +18,7 @@ import {
   questionIntentSchema,
   questionReadSchema,
   questionWriteSchema,
+  type RulingPageCursor,
   type RecordQuestionReadInput,
   UnboundedQuestionRulingsError,
 } from './record-question-contract.ts'
@@ -59,18 +61,11 @@ async function rulingReadResponse(
       },
       422,
     )
-  let changedAfter: RecordChangeCursor | { questionNumber: number; changeHead?: RecordChangeCursor }
+  let changedAfter: RecordChangeCursor | RulingPageCursor
   try {
-    if (encodedChangedAfter.startsWith('page:')) {
-      const [number, encodedHead, ...extra] = encodedChangedAfter.slice(5).split(':')
-      if (!number || extra.length > 0 || encodedHead === '') throw new Error('shape')
-      changedAfter = {
-        questionNumber: Number(number),
-        ...(encodedHead ? { changeHead: decodeRecordChangeCursor(encodedHead) } : {}),
-      }
-    } else changedAfter = decodeRecordChangeCursor(encodedChangedAfter)
-    if ('questionNumber' in changedAfter && !Number.isSafeInteger(changedAfter.questionNumber))
-      throw new Error('shape')
+    changedAfter = encodedChangedAfter.startsWith('page:')
+      ? parseRulingPageCursor(encodedChangedAfter)
+      : decodeRecordChangeCursor(encodedChangedAfter)
   } catch {
     return context.json(
       {

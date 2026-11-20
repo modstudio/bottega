@@ -12,6 +12,7 @@ import {
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
 import { recordIso } from '../../../shared/record-timestamp.ts'
 import { recordPool } from './record-pool.ts'
+import { encodeRulingPageCursor } from './record-cursor.ts'
 import {
   QUESTION_RULINGS_PAGE_SIZE,
   type QuestionReadInput,
@@ -472,7 +473,7 @@ type RecordPool = ReturnType<typeof recordPool>
 async function materializeRulingPage(
   tx: SQL,
   input: RulingsInput,
-  changeHead?: RecordChangeCursor,
+  changeHead: RecordChangeCursor,
 ) {
   const pageSize = input.limit ?? QUESTION_RULINGS_PAGE_SIZE
   const all = await recordQuestionRulingRows(tx, {
@@ -487,14 +488,12 @@ async function materializeRulingPage(
   const items = all.slice(0, pageSize)
   const last = items.at(-1)
   const more = all.length > pageSize
-  const encodedHead = changeHead ? encodeRecordChangeCursor(changeHead) : undefined
+  const encodedHead = encodeRecordChangeCursor(changeHead)
   return {
     items,
-    ...(encodedHead
-      ? { cursor: more ? `page:${String(last!.number)}:${encodedHead}` : encodedHead }
-      : last
-        ? { cursor: `page:${String(last.number)}` }
-        : {}),
+    cursor: more
+      ? encodeRulingPageCursor({ questionNumber: last!.number as number, changeHead })
+      : encodedHead,
     more,
   }
 }
@@ -504,11 +503,15 @@ async function readRulingPage(client: RecordPool, input: RulingsInput) {
     await bindTenant(tx, input)
     const pageCursor =
       input.changedAfter && 'questionNumber' in input.changedAfter ? input.changedAfter : undefined
+    if (pageCursor && !pageCursor.changeHead) {
+      const changeHead = await readRecordChangeHead(tx, RECORD_QUESTION_CHANGE_TABLES)
+      return {
+        ...(await materializeRulingPage(tx, { ...input, changedAfter: undefined }, changeHead)),
+        reset: true,
+      }
+    }
     const changeHead =
-      pageCursor && !pageCursor.changeHead
-        ? undefined
-        : (pageCursor?.changeHead ??
-          (await readRecordChangeHead(tx, RECORD_QUESTION_CHANGE_TABLES)))
+      pageCursor?.changeHead ?? (await readRecordChangeHead(tx, RECORD_QUESTION_CHANGE_TABLES))
     return materializeRulingPage(tx, input, changeHead)
   })
 }

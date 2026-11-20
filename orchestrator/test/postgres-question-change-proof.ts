@@ -1,11 +1,14 @@
 import { expect, test } from 'bun:test'
 import {
+  decodeRecordChangeCursor,
   encodeRecordChangeCursor,
   MAX_RECORD_CHANGE_PAGE_SIZE,
   type RecordChangeCursor,
 } from '../../shared/record/record-changes.ts'
 import { newRecordId } from '../../shared/record-id.ts'
 import { recordApiClient } from '../src/record/record-api-client.ts'
+import { parseRulingPageCursor } from '../src/record/record-cursor.ts'
+import { QUESTION_RULINGS_PAGE_SIZE } from '../src/record/record-question-contract.ts'
 
 type PsqlResult = { code: number; stdout: string; stderr: string }
 
@@ -112,17 +115,18 @@ export function registerQuestionChangeFeedProof(
       destination,
     )
     expect(truncated.items).toHaveLength(1)
-    expect(truncated.cursor).toBe(`page:${String(truncated.items[0]!.number)}`)
+    expect(truncated.cursor).toMatch(/^page:\d+:[^:]+$/)
+    const truncatedCursor = parseRulingPageCursor(truncated.cursor!)
+    expect(truncatedCursor.questionNumber).toBe(truncated.items[0]!.number)
+    const [capturedXid, capturedSeq] = fixture
+      .admin(`SELECT xid::text || '|' || seq::text FROM record_change
+        WHERE xid<pg_snapshot_xmin(pg_current_snapshot()) AND table_name='question'
+        ORDER BY xid DESC,seq DESC LIMIT 1;`)
+      .split('|')
+    const capturedHead = { xid: BigInt(capturedXid!), seq: BigInt(capturedSeq!) }
+    expect(truncatedCursor.changeHead).toEqual(capturedHead)
     expect(truncated.more).toBe(true)
     expect(truncated.reset).toBeUndefined()
-    const nextPage = await client.readQuestions!(
-      { read: 'rulings', kind: 'all', changedAfter: truncated.cursor! },
-      destination,
-    )
-    expect(nextPage.items.length).toBeGreaterThan(0)
-    expect(nextPage.items.map((item) => item.record_id)).not.toContain(
-      truncated.items[0]!.record_id,
-    )
     const complete = await client.readQuestions!(
       { read: 'rulings', kind: 'all', since: bootstrapSince },
       destination,
@@ -150,6 +154,31 @@ export function registerQuestionChangeFeedProof(
       reset: false,
     })
 
+    const changedDuringDrain = fixture.asSpace(
+      fixture.actorRole,
+      'actor-password',
+      fixture.spaceId,
+      `UPDATE question SET revision=3,answer='Changed during drain',updated_at='2026-11-15T13:02:00.000Z'
+       WHERE id='${priorQuestionId}';`,
+    )
+    expect(changedDuringDrain.code, changedDuringDrain.stderr).toBe(0)
+    const nextPage = await client.readQuestions!(
+      { read: 'rulings', kind: 'all', changedAfter: truncated.cursor! },
+      destination,
+    )
+    expect(nextPage.items.length).toBeGreaterThan(0)
+    expect(nextPage.items.map((item) => item.record_id)).not.toContain(
+      truncated.items[0]!.record_id,
+    )
+    expect(nextPage.cursor).toBe(encodeRecordChangeCursor(capturedHead))
+    const replayedDrainChange = await client.readQuestions!(
+      { read: 'rulings', kind: 'all', changedAfter: nextPage.cursor! },
+      destination,
+    )
+    expect(replayedDrainChange.items).toContainEqual(
+      expect.objectContaining({ record_id: priorQuestionId, answer: 'Changed during drain' }),
+    )
+
     const [horizonXid, horizonSeq] = fixture
       .admin(`SELECT xid::text || '|' || seq::text FROM record_change_horizon WHERE singleton;`)
       .split('|')
@@ -167,7 +196,12 @@ export function registerQuestionChangeFeedProof(
       destination,
     )
     expect(reset.reset).toBe(true)
-    expect(reset.cursor).toBe(encodeRecordChangeCursor(horizon))
+    expect(reset.items.length).toBeLessThanOrEqual(QUESTION_RULINGS_PAGE_SIZE)
+    const resetHead = reset.cursor!.startsWith('page:')
+      ? parseRulingPageCursor(reset.cursor!).changeHead
+      : decodeRecordChangeCursor(reset.cursor!)
+    expect(resetHead).toBeDefined()
+    expect(resetHead!.xid > horizon.xid || resetHead!.seq > horizon.seq).toBe(true)
     expect(
       fixture.admin(
         `SELECT count(*) FROM record_change WHERE table_name='question' AND row_id='${questionId}';`,

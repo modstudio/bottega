@@ -86,11 +86,13 @@ export async function readRecordChangeHead(
         AND table_name=ANY(string_to_array(${tables.join(',')}, ',')::text[])
       ORDER BY record_change.xid DESC,record_change.seq DESC LIMIT 1`,
   )[0]
-  if (head) return { xid: asBigInt(head.xid), seq: asBigInt(head.seq) }
   const horizon = rows<{ xid: string | number | bigint; seq: string | number | bigint }>(
     await tx`SELECT xid::text,seq::text FROM record_change_horizon WHERE singleton`,
   )[0]!
-  return { xid: asBigInt(horizon.xid), seq: asBigInt(horizon.seq) }
+  const horizonCursor = { xid: asBigInt(horizon.xid), seq: asBigInt(horizon.seq) }
+  if (!head) return horizonCursor
+  const headCursor = { xid: asBigInt(head.xid), seq: asBigInt(head.seq) }
+  return before(headCursor, horizonCursor) ? horizonCursor : headCursor
 }
 
 async function recordChangeLag(
