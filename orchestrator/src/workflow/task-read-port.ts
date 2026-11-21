@@ -19,6 +19,8 @@ export type TaskReadRow = {
   has_children?: boolean
 }
 
+type TaskLookupRow = Omit<TaskReadRow, 'source' | 'body'>
+
 type TaskReadDocumentSummary = {
   id: string
   label: string
@@ -47,7 +49,7 @@ type TaskReadDuplicateCandidate = {
 
 export type TaskReadPort = {
   list(filters?: { project?: string; status?: string; parent?: string }): Promise<TaskReadRow[]>
-  lookup(project: string, keys: string[]): Promise<TaskReadRow[]>
+  lookup(project: string, keys: string[]): Promise<TaskLookupRow[]>
   duplicates(project: string, title: string): Promise<TaskReadDuplicateCandidate[]>
   show(key: string, scope?: { project?: string; recordId?: string }): Promise<TaskReadShow>
   documents(
