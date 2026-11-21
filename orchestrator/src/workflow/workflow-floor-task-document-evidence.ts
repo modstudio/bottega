@@ -3,6 +3,7 @@
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { ArtifactRef } from './workflow-artifact-reference.ts'
+import { requireMutableArtifactFreshness } from './workflow-floor-artifact-freshness.ts'
 import {
   type FloorEvidencePorts,
   invokeFloorEvidencePort,
@@ -12,6 +13,7 @@ type TaskDocumentCursor = {
   project: string
   workflowKey: string
   workflowTaskRecordId?: string | null
+  stepActivatedAt: string
 }
 
 export function artifactTaskIsNotCursorTask(
@@ -56,5 +58,6 @@ export async function resolveTaskDocumentArtifact(
     })
   )
     throw new Error(`--artifact ${raw} task is not this cursor's ${identity.workflowKey}`)
+  requireMutableArtifactFreshness('task document', document.updated_at, identity.stepActivatedAt)
   return { ref: `${ref.key}/${ref.number}`, exists: true }
 }

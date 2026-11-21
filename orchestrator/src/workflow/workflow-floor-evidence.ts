@@ -30,6 +30,7 @@ import { resolveRunIdentifier } from '../run/run-identifier.ts'
 import { TERMINAL_RUN_STATUS_SET } from '../run/run-status.ts'
 import { taskFlowHandoffLinks, taskFlowReadStore } from './task-flow-store.ts'
 import type {
+  ArtifactEvidence,
   BottegaCommandIdentity,
   ValidatedArtifactEvidence,
 } from './workflow-artifact-evidence.ts'
@@ -55,6 +56,10 @@ import {
   pullRequestCreateArgv,
   type ValidatedEvidence,
 } from './workflow-floor.ts'
+import {
+  requireAttachedTextFreshness,
+  requireMutableArtifactFreshness,
+} from './workflow-floor-artifact-freshness.ts'
 import { gitText, productionResolveCheckout } from './workflow-floor-evidence-checkout.ts'
 import { positiveEvidenceId } from './workflow-floor-evidence-input.ts'
 import { gatherPassingGateForTree } from './workflow-floor-evidence-passing-gate.ts'
@@ -68,6 +73,7 @@ import {
   gatherPullRequestArtifactEvidence,
   viewPullRequestInProject,
 } from './workflow-floor-pull-request-evidence.ts'
+import { resolveTaskCommentArtifact } from './workflow-floor-task-comment-evidence.ts'
 import {
   artifactTaskIsNotCursorTask,
   resolveTaskDocumentArtifact,
@@ -463,6 +469,7 @@ function resolveDocArtifact(value: string, identity: CursorIdentity, d: Database
     throw new Error(
       `${flag} is scoped to ${row.projectName ?? row.subject ?? row.scope}, not this cursor's ${identity.project}`,
     )
+  requireMutableArtifactFreshness('doc', row.updatedAt, identity.stepActivatedAt)
   return row.address
 }
 
@@ -479,7 +486,7 @@ async function resolveNumericArtifact(
   identity: CursorIdentity,
   cursorId: string,
   d: Database,
-): Promise<{ ref: string; exists: boolean }> {
+): Promise<ArtifactEvidence> {
   const run = d.query('SELECT record_id FROM run WHERE number=?').get(id) as {
     record_id: string
   } | null
@@ -497,7 +504,7 @@ async function resolveTaskArtifact(
   raw: string,
   identity: CursorIdentity,
   ports: FloorEvidencePorts,
-): Promise<{ ref: string; exists: boolean }> {
+): Promise<ArtifactEvidence> {
   if (ref.kind === 'task-document')
     return await resolveTaskDocumentArtifact(ref, raw, identity, ports)
   if (!ports.readTask)
@@ -508,13 +515,7 @@ async function resolveTaskArtifact(
   if (artifactTaskIsNotCursorTask(identity, { key: ref.key, recordId: task.recordId }))
     throw new Error(`--artifact ${raw} task is not this cursor's ${identity.workflowKey}`)
   if (ref.kind === 'task') return { ref: raw, exists: task.key === ref.key }
-  if (task.commentsVerifiable === false)
-    throw new Error(
-      `--artifact ${raw} cannot be verified because this tracker's task read does not report comment ids; use --artifact task:${ref.key} to verify the task instead`,
-    )
-  if (!task.commentIds.map(String).includes(ref.id))
-    throw new Error(`--artifact ${raw} is not a comment on ${ref.key}`)
-  return { ref: raw, exists: true }
+  return resolveTaskCommentArtifact(ref, raw, task, identity.stepActivatedAt)
 }
 
 async function resolveStoredArtifact(
@@ -523,7 +524,7 @@ async function resolveStoredArtifact(
   binding: { cursorId: string; stepOrdinal: number; stepSlug: string },
   d: Database,
   branchTip: string | null,
-): Promise<{ ref: string; exists: boolean }> {
+): Promise<ArtifactEvidence> {
   if (ref.kind === 'attached-text') {
     const row = await taskFlowReadStore(d).textAttachmentByRecordId(ref.id)
     const attachment: WorkflowTextRow | null = row
@@ -533,8 +534,10 @@ async function resolveStoredArtifact(
           stepOrdinal: row.step_ordinal,
           stepSlug: row.step_slug,
           body: row.body,
+          writtenAt: row.created_at,
         }
       : null
+    requireAttachedTextFreshness(attachment, identity.stepActivatedAt)
     return {
       ref: 'attached-text',
       exists: attachedTextReferenceMeetsFloor({ ...binding, attachment }),
@@ -565,7 +568,7 @@ async function resolveArtifact(
   resolveCheckout: FloorEvidencePorts['resolveCheckout'],
   branchTip: string | null,
   requireCommandCheckout: boolean,
-): Promise<{ ref: string; exists: boolean }> {
+): Promise<ArtifactEvidence> {
   if (ref.kind === 'attached-text' || ref.kind === 'doc' || ref.kind === 'review-read')
     return resolveStoredArtifact(ref, identity, binding, d, branchTip)
   if (ref.kind === 'id') return await resolveNumericArtifact(ref.id, identity, binding.cursorId, d)
@@ -935,7 +938,13 @@ async function gatherArtifactEntry(
   if ('error' in parsed) throw new Error(parsed.error)
   const noteEvidence =
     parsed.kind === 'note'
-      ? await gatherNoteArtifactEvidence(parsed, offeredArtifact, input.identity.project, ports)
+      ? await gatherNoteArtifactEvidence(
+          parsed,
+          offeredArtifact,
+          input.identity.project,
+          input.identity.stepActivatedAt,
+          ports,
+        )
       : undefined
   const entry: ValidatedArtifactEvidence = {
     artifact: noteEvidence

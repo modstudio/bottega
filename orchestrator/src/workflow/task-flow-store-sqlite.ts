@@ -425,7 +425,7 @@ class SqliteTaskFlowStore {
   textAttachmentByRecordId(recordId: string): TaskFlowTextRow | null {
     return this.database
       .query<TaskFlowTextRow, [string]>(
-        `SELECT record_id id,cursor_record_id,step_ordinal,step_slug,body
+        `SELECT record_id id,cursor_record_id,step_ordinal,step_slug,body,created_at
          FROM workflow_step_text WHERE record_id=?`,
       )
       .get(recordId)

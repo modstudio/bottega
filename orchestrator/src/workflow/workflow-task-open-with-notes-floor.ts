@@ -41,6 +41,7 @@ export type NoteFloorEvidence = {
   label: string | null
   promotedTask: string | null
   staleAt: string | null
+  writtenAt?: string
 }
 
 export type TaskOpenWithNotesEvidence = {

@@ -13,4 +13,4 @@ When the finished run's worktree is absent, open its branch in a project-provisi
 
 The project's required services are `{{mainStack.requiredServicesText}}`. When this list is not `none`, each listed service must be running in the registered main checkout before the gate; start them there with `docker compose up -d --wait` followed by the listed service names.
 
-This step is done only when both the fetch and rebase commands exit successfully and `{{branch}}` is based on the fetched `origin/{{trunk}}`.
+Treat the successful fetch as the rebase's precondition. Close this step with the successful rebase execution, after confirming that `{{branch}}` is based on the fetched `origin/{{trunk}}`.

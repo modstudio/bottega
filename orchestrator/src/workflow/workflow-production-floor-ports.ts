@@ -21,6 +21,7 @@ export const productionWorkflowFloorPorts = (): FloorEvidencePorts => ({
           label: note.label,
           promotedTask: note.promoted_task,
           staleAt: note.stale_at,
+          writtenAt: note.created_at,
         }
       : null
   },

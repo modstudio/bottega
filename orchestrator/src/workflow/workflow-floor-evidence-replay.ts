@@ -14,11 +14,14 @@ export type FloorEvidencePorts = {
   readTaskDocument?: (
     value: string,
     scope: { project: string; recordId?: string },
-  ) => Promise<{ id: string; label: string; task_record_id: string } | null>
+  ) => Promise<{ id: string; label: string; task_record_id: string; updated_at: string } | null>
   readNote?: (
     project: string,
     reference: string,
-  ) => Promise<Pick<NoteFloorEvidence, 'recordId' | 'label' | 'promotedTask' | 'staleAt'> | null>
+  ) => Promise<Pick<
+    NoteFloorEvidence,
+    'recordId' | 'label' | 'promotedTask' | 'staleAt' | 'writtenAt'
+  > | null>
   resolveCheckout?: (
     cwd: string,
     headCommit: string | null,

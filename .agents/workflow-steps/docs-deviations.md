@@ -3,6 +3,12 @@ title: Rule on every documentation deviation
 stage: docs
 floor:
   - ruling
+outcomes:
+  - deviations
+  - no-deviations
+outcomeFloors:
+  no-deviations:
+    - recorded-artifact
 jobs: []
 autonomy: ask
 needs:
@@ -17,6 +23,6 @@ Present one complete deviation table. For every deviation, require exactly one r
 - **Retire** — remove or retire a record that is no longer true or useful.
 - **Leave** — keep it unchanged, with an explicit reason recorded.
 
-Do not silently treat an implementation difference as documentation truth. If the implementation appears wrong rather than the record, identify it as such so the ruling can leave the documentation unchanged and return the defect to implementation. When no deviations exist, record that result explicitly and continue without a ceremonial ruling.
+Do not silently treat an implementation difference as documentation truth. If the implementation appears wrong rather than the record, identify it as such so the ruling can leave the documentation unchanged and return the defect to implementation. With deviations, close with `--outcome deviations` and the ruling that records every disposition. With none, close with `--outcome no-deviations` and a recorded artifact stating that no deviation was found, such as a task comment written in this step.
 
 This step blocks until every listed deviation has one recorded disposition and every leave disposition has a reason. Group approval is valid only when it unambiguously covers every row.

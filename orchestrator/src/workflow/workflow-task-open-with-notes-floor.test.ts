@@ -89,6 +89,43 @@ test('waiting-for-review applies its authored review and slice outcome floors', 
   })
 })
 
+test('docs-deviations closes either on a ruling or on a no-deviations artifact', () => {
+  const repositoryRoot = fileURLToPath(new URL('../../..', import.meta.url))
+  const step = parseWorkflowTree(collectWorkflowTree(repositoryRoot)).steps.find(
+    ({ slug }) => slug === 'docs-deviations',
+  )!
+  const decide = (outcome: 'deviations' | 'no-deviations', evidence: ValidatedEvidence) =>
+    decideFloorSatisfaction({
+      floors: decideCloseFloors(step, outcome),
+      evidence,
+      enforcement: 'floors',
+      finishing: false,
+      openObligations: [],
+    })
+
+  expect(step).toMatchObject({
+    outcomes: ['deviations', 'no-deviations'],
+    outcomeFloors: { 'no-deviations': ['recorded-artifact'] },
+  })
+  expect(
+    decide('no-deviations', {
+      artifacts: [{ artifact: { ref: 'task:DEV-2490#comment:1', exists: true } }],
+    }).action,
+  ).toBe('allow')
+  expect(decide('no-deviations', {}).action).toBe('refuse')
+  expect(
+    decide('deviations', {
+      ruling: {
+        id: 9,
+        answered: true,
+        answeredByOperator: true,
+        boundToCursor: true,
+        boundToStep: true,
+      },
+    }).action,
+  ).toBe('allow')
+})
+
 test('task-open-with-notes requires an open task and every named note to be live and attached', () => {
   const task = {
     key: 'DEV-977',

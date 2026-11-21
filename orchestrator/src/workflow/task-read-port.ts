@@ -26,6 +26,7 @@ type TaskReadDocumentSummary = {
   task_record_id: string
   title: string
   role?: string | null
+  updated_at: string
 }
 
 type TaskReadDocument = TaskReadDocumentSummary & {

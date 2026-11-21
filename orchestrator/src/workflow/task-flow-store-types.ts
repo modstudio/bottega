@@ -122,6 +122,7 @@ export type TaskFlowTextRow = {
   step_ordinal: number
   step_slug: string
   body: string
+  created_at?: string
 }
 export type TaskFlowTextBodyRow = Omit<TaskFlowTextRow, 'id'>
 export type TaskFlowUncopiedTextRow = {

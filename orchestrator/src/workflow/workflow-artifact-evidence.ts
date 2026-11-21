@@ -10,8 +10,10 @@ export type BottegaCommandIdentity = {
   installedExecutable: string | null
 }
 
+export type ArtifactEvidence = { ref: string; exists: boolean; notice?: string }
+
 export type ValidatedArtifactEvidence = {
-  artifact: { ref: string; exists: boolean }
+  artifact: ArtifactEvidence
   note?: NoteFloorEvidence
   artifactRunOffered?: string
   probe?: { id: number; exitCode: number }

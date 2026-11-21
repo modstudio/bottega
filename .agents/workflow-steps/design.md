@@ -16,7 +16,7 @@ For each new piece of state, decide where it lives and how long each copy is kep
 
 On the fix path this step runs only after `recurrence` closed with `original-fix-wrong`: rethink the fix that did not hold, in full. A fix whose `recurrence` closed with `new-symptom` skips this step.
 
-Recommend one approach and explain why it best satisfies the locked requirements and project canon. Where the operator rules, every material design fork goes to the operator. Where the agent rules, a fork that changes what the user sees, or product direction, still goes to the operator; the agent rules every other fork and records the ruling.
+Recommend one approach and explain why it best satisfies the locked requirements and project canon. Where the user rules, every material design fork goes to the user. Where the agent rules, a fork that changes what the user sees, or product direction, still goes to the user; the agent rules every other fork and records the ruling.
 
 List every database change in the chosen design, including schemas, tables, columns, keys, and migrations, or write `none`. List every new significant name, including public APIs, CLI verbs and flags, attributes, properties, messages, events, tables, and packages, or write `none`. Internal identifiers are not significant names. Close with `schema-or-names` when either list contains an entry and with `neither` only when both lists say `none`.
 

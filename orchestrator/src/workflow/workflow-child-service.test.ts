@@ -68,6 +68,7 @@ function installTasks(tasks: TaskReadRow[]) {
       title: 'none',
       body: '',
       version: '1',
+      updated_at: '2026-11-19T00:00:00.000Z',
     }),
   }
   installTaskReader(port)

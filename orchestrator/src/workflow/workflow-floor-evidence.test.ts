@@ -763,7 +763,10 @@ test('a fresh tracker task read verifies its own comment ids and refuses another
   const trackerComment = '01a16517-2274-71fc-998f-2be4a598791b'
   const trackerRead = hubTaskReadFromJson('DEV-977', {
     task: { record_id: 'task-DEV-977', key: 'DEV-977', status: 'done', status_category: 'done' },
-    comments: [{ id: 4 }],
+    comments: [
+      { id: 4, created_at: '2026-09-02' },
+      { id: trackerComment, created_at: '2026-09-02' },
+    ],
     tracker_comment_ids: [trackerComment],
     tracker_comments_verifiable: true,
   })
@@ -779,7 +782,7 @@ test('a fresh tracker task read verifies its own comment ids and refuses another
 
   const hubRead = hubTaskReadFromJson('DEV-977', {
     task: { record_id: 'task-DEV-977', key: 'DEV-977', status: 'done', status_category: 'done' },
-    comments: [{ id: 4 }],
+    comments: [{ id: 4, created_at: '2026-09-02' }],
   })
   expect(
     (await gather(d, { artifacts: ['task:DEV-977#comment:4'] }, { readTask: () => hubRead }))

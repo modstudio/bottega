@@ -3,6 +3,7 @@
 
 import type { ValidatedArtifactEvidence } from './workflow-artifact-evidence.ts'
 import type { ArtifactRef } from './workflow-artifact-reference.ts'
+import { requireMutableArtifactFreshness } from './workflow-floor-artifact-freshness.ts'
 import {
   type FloorEvidencePorts,
   invokeFloorEvidencePort,
@@ -12,6 +13,7 @@ export async function gatherNoteArtifactEvidence(
   parsed: Extract<ArtifactRef, { kind: 'note' }>,
   offeredArtifact: string,
   project: string,
+  stepActivatedAt: string,
   ports: FloorEvidencePorts,
 ): Promise<{
   artifact: ValidatedArtifactEvidence['artifact']
@@ -32,7 +34,10 @@ export async function gatherNoteArtifactEvidence(
     label: note?.label ?? null,
     promotedTask: note?.promotedTask ?? null,
     staleAt: note?.staleAt ?? null,
+    writtenAt: note?.writtenAt,
   }
+  if (evidence.recordId)
+    requireMutableArtifactFreshness('note', evidence.writtenAt, stepActivatedAt)
   return {
     artifact: { ref: offeredArtifact, exists: evidence.recordId !== null },
     note: evidence,

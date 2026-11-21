@@ -353,6 +353,9 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     './workflow-review-owed-decision.ts',
     './workflow-task-open-with-notes-floor.ts',
   ]),
+  module('orchestrator/src/workflow/workflow-floor-artifact-freshness.ts', [
+    './workflow-cursor-trail.ts',
+  ]),
   module('orchestrator/src/workflow/workflow-floor-task-read.ts', [
     'node:child_process',
     '../../../shared/brand.ts',
@@ -367,7 +370,14 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
   module('orchestrator/src/workflow/workflow-floor-task-document-evidence.ts', [
     '../../../shared/brand.ts',
     './workflow-artifact-reference.ts',
+    './workflow-floor-artifact-freshness.ts',
     './workflow-floor-evidence-replay.ts',
+  ]),
+  module('orchestrator/src/workflow/workflow-floor-task-comment-evidence.ts', [
+    './workflow-artifact-evidence.ts',
+    './workflow-artifact-reference.ts',
+    './workflow-floor-artifact-freshness.ts',
+    './workflow-floor-task-read.ts',
   ]),
   module('orchestrator/src/workflow/workflow-checkout-refusal.ts', ['../../../shared/brand.ts']),
   module('orchestrator/src/workflow/workflow-checkout-landing.ts', [
@@ -466,6 +476,7 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     './workflow-checkout-landing.ts',
     './workflow-checkout-refusal.ts',
     './workflow-floor-evidence-checkout.ts',
+    './workflow-floor-artifact-freshness.ts',
     './task-flow-store.ts',
     './workflow-floor-evidence-input.ts',
     './workflow-floor-note-evidence.ts',
@@ -473,6 +484,7 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     './workflow-floor-evidence-passing-gate.ts',
     './workflow-floor-evidence-replay.ts',
     './workflow-floor-task-document-evidence.ts',
+    './workflow-floor-task-comment-evidence.ts',
     './workflow-obligation-floor.ts',
     './workflow-floor-task-read.ts',
     './workflow-run-binding.ts',
@@ -481,6 +493,7 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
   module('orchestrator/src/workflow/workflow-floor-note-evidence.ts', [
     './workflow-artifact-evidence.ts',
     './workflow-artifact-reference.ts',
+    './workflow-floor-artifact-freshness.ts',
     './workflow-floor-evidence-replay.ts',
   ]),
   module('orchestrator/src/workflow/workflow-floor-pull-request-evidence.ts', [
