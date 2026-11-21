@@ -436,6 +436,9 @@ async function releaseLandingTree(
           reasonKind: 'safety-hold',
           holdingPath: null,
           remedy,
+          ...(result.callerGroupHolderPids
+            ? { callerGroupHolderPids: result.callerGroupHolderPids }
+            : {}),
         },
         callerLandingTreePath,
       ),

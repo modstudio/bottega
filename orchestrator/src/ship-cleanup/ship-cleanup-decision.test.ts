@@ -265,6 +265,30 @@ test('caller-group holders are caller-owned while foreign holders remain residue
   })
 })
 
+test('landing-tree safety holds are clean only when every holder is in the caller group', () => {
+  const fact = {
+    item: 'run 42 worktree',
+    reason: 'process cwd hold',
+    reasonKind: 'safety-hold' as const,
+    holdingPath: null,
+  }
+  const callerOwned = decideShipCleanupKeptItem(
+    { ...fact, callerGroupHolderPids: [101, 102] },
+    null,
+  )
+  const residue = decideShipCleanupKeptItem(fact, null)
+
+  expect(decideShipCleanupVerdict({ kept: [callerOwned], errors: [] })).toEqual({
+    clean: true,
+    residue: [],
+  })
+  expect(decideShipCleanupVerdict({ kept: [residue], errors: [] })).toEqual({
+    clean: false,
+    reason: 'unexpected-kept-item',
+    residue: [residue],
+  })
+})
+
 test('task branch pruning accepts squash, recorded PR head, and containment proof but keeps unique work', () => {
   const runs = [
     run({ launchKey: 'DEV-1392', mintedBranch: 'DEV-1392-a' }),

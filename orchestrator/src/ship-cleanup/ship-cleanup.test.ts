@@ -620,6 +620,28 @@ test('ship cleanup keeps a dirty landing tree and names its dirty paths', async 
   expect(result.report.errors).toEqual([])
 })
 
+test('ship cleanup treats a landing tree held only by caller-group processes as clean', async () => {
+  const result = await landingTreeCleanup({
+    removal: {
+      outcome: 'kept',
+      reason: 'process cwd hold',
+      callerGroupHolderPids: [101, 102],
+    },
+  })
+
+  expect(result.report.verdict).toEqual({ clean: true, residue: [] })
+  expect(result.report.kept).toContainEqual({
+    item: expect.stringMatching(/^run \d+ worktree$/),
+    reason: 'process cwd hold',
+    reasonKind: 'safety-hold',
+    owner: 'caller-process-group',
+    callerGroupHolderPids: [101, 102],
+    remedy:
+      `${PLATFORM_SLUG} tree remove ${result.landingTree}, then ` +
+      `${PLATFORM_SLUG} tree ship-cleanup DEV-1392-c3`,
+  })
+})
+
 test('ship cleanup records an already absent landing tree separately from released trees', async () => {
   const result = await landingTreeCleanup({ removal: { outcome: 'absent' } })
 

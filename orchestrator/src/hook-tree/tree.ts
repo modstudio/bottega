@@ -243,7 +243,7 @@ export function createHookTree(input: {
 export type HookTreeRemovalResult =
   | { outcome: 'released'; cursorCleanupFailure?: string; cursorCleanupRemedy?: string }
   | { outcome: 'absent'; cursorCleanupFailure?: string; cursorCleanupRemedy?: string }
-  | { outcome: 'kept'; reason: string }
+  | { outcome: 'kept'; reason: string; callerGroupHolderPids?: readonly number[] }
   | { outcome: 'failed'; detail: string }
 
 export async function removeHookTreeResult(
@@ -303,7 +303,14 @@ async function removeRecordedHookTree(
       result.cursorCleanupFailure,
       result.cursorCleanupRemedy,
     )
-  if (result.outcome === 'held') return { outcome: 'kept', reason: result.detail }
+  if (result.outcome === 'held')
+    return {
+      outcome: 'kept',
+      reason: result.detail,
+      ...(result.callerGroupHolderPids
+        ? { callerGroupHolderPids: result.callerGroupHolderPids }
+        : {}),
+    }
   return { outcome: 'failed', detail: `tree teardown ${result.outcome}: ${result.detail}` }
 }
 

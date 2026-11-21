@@ -10,7 +10,12 @@ import { join, resolve } from 'node:path'
 import { restoreBranch } from '../branch/branch-ref-guard.ts'
 import { db, nowIso, sessionId, writeTransaction } from '../database/db.ts'
 import { gitContext, targetGitEnvironment } from '../git/git-environment.ts'
-import * as idleKill from '../idle-kill.ts'
+import {
+  isGroupKillablePgid,
+  isProcessGroupPgid,
+  processGroupForPid,
+  runHasLiveDescendants,
+} from '../idle-kill.ts'
 import {
   projectLockState,
   reclaimStaleProjectLock,
@@ -207,7 +212,7 @@ function conversationProcessState(rootId: string): boolean | null {
     state: '',
   }))
   return (
-    idleKill.runHasLiveDescendants(roots, [], { sample: () => samples }) ||
+    runHasLiveDescendants(roots, [], { sample: () => samples }) ||
     inventory.rows.some((row) => roots.includes(row.pid) || groups.has(row.pgid))
   )
 }
@@ -678,11 +683,11 @@ function attemptCloseOutRun(
   // did not setsid inherits the coordinator pgid; after it exits that group
   // still has live members (this process). terminateProcessGroup already
   // refuses that pgid; close-out must too, or every finished run retains.
-  const selfPgid = idleKill.processGroupForPid(processSamples, process.pid)
+  const selfPgid = processGroupForPid(processSamples, process.pid)
   const vendorGroupAlive = (pgid: number | null | undefined): boolean => {
-    if (!idleKill.isProcessGroupPgid(pgid)) return false
-    if (selfPgid !== null && !idleKill.isGroupKillablePgid(pgid, selfPgid)) return false
-    return idleKill.runHasLiveDescendants([], [], { sample }, pgid)
+    if (!isProcessGroupPgid(pgid)) return false
+    if (selfPgid !== null && !isGroupKillablePgid(pgid, selfPgid)) return false
+    return runHasLiveDescendants([], [], { sample }, pgid)
   }
   // A database row cannot observe a grandchild born after the T0 census and
   // reparented when its wrapper died. Re-sample the process table and retain
@@ -690,7 +695,7 @@ function attemptCloseOutRun(
   // persisted vendor pgid still has a live member. Close-out does not signal
   // unverified leftovers; the monitor reports them.
   const treeStillAlive =
-    idleKill.runHasLiveDescendants(
+    runHasLiveDescendants(
       agentPids,
       options.extraPids ?? [],
       { sample },
