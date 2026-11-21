@@ -46,6 +46,8 @@ jobs:
         run: bun install --frozen-lockfile
 
       - name: Validate release version
+        env:
+          BOTTEGA_RELEASE_REQUIRE_PINNED_BUN: '1'
         run: bun run orch -- release check "${GITHUB_REF_NAME}"
 
       - name: Prove the release installs

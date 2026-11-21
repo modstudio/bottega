@@ -8,6 +8,9 @@ import { startBounded } from '../../../shared/bounded-process.ts'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { refusal, renderRefusal } from '../../../shared/refusal.ts'
 
+export const RELEASE_REQUIRE_PINNED_BUN_ENV = `${PLATFORM_SLUG.toUpperCase()}_RELEASE_REQUIRE_PINNED_BUN`
+const RELEASE_DOTENV_SENTINEL_ENV = `${PLATFORM_SLUG.toUpperCase()}_RELEASE_DOTENV_SENTINEL`
+
 const AUTOLOAD_SWITCHES = [
   '--compile-autoload-dotenv',
   '--compile-autoload-bunfig',
@@ -41,14 +44,13 @@ async function checkDotenv(
   environment: Record<string, string | undefined>,
 ): Promise<void> {
   const marker = join(directory, 'dotenv-marker')
-  const sentinelName = 'BOTTEGA_RELEASE_DOTENV_SENTINEL'
-  writeFileSync(join(directory, '.env'), `${sentinelName}=loaded\n`)
+  writeFileSync(join(directory, '.env'), `${RELEASE_DOTENV_SENTINEL_ENV}=loaded\n`)
   writeFileSync(
     join(directory, 'planted.ts'),
-    `import { writeFileSync } from 'node:fs'\nif (process.env.${sentinelName}) writeFileSync(${JSON.stringify(marker)}, '')\n`,
+    `import { writeFileSync } from 'node:fs'\nif (process.env.${RELEASE_DOTENV_SENTINEL_ENV}) writeFileSync(${JSON.stringify(marker)}, '')\n`,
   )
   const cleanEnvironment = { ...environment }
-  delete cleanEnvironment[sentinelName]
+  delete cleanEnvironment[RELEASE_DOTENV_SENTINEL_ENV]
   await runBinary(binary, ['--version'], directory, {
     ...cleanEnvironment,
     BUN_OPTIONS: '--preload=./planted.ts',

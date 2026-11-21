@@ -338,6 +338,11 @@ jobs:
       - name: Run release smoke
         if: github.event_name == 'pull_request' || github.event_name == 'merge_group' || github.event_name == 'workflow_dispatch'
         run: bun scripts/smoke-release.ts
+      - name: Prove release runtime config stays inert
+        if: github.event_name == 'pull_request' || github.event_name == 'merge_group' || github.event_name == 'workflow_dispatch'
+        env:
+          BOTTEGA_RELEASE_REQUIRE_PINNED_BUN: '1'
+        run: bun run orch -- release check "v$(jq -r .version package.json)"
       - name: Pass outside the release smoke events
         if: github.event_name != 'pull_request' && github.event_name != 'merge_group' && github.event_name != 'workflow_dispatch'
         run: "echo 'release smoke: no pull request, merge queue or dispatch event'"

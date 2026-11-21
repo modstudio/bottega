@@ -69,6 +69,7 @@ export function register(program: Command): void {
     .allowExcessArguments(false)
     .action(async (tag) => {
       const checked = await checkRelease(tag)
+      if (checked.runtimeConfigGuardSkip) log(checked.runtimeConfigGuardSkip)
       log(`reported version ${checked.reportedVersion} matches release tag ${checked.tag}`)
     })
 

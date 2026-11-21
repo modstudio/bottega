@@ -24,7 +24,10 @@ import {
   readLiveCommit,
   readLiveVersion,
 } from './live-reading.ts'
-import { checkReleaseBinaryAutoload } from './release-binary-autoload-check.ts'
+import {
+  checkReleaseBinaryAutoload,
+  RELEASE_REQUIRE_PINNED_BUN_ENV,
+} from './release-binary-autoload-check.ts'
 import {
   alreadyLiveReleaseDecision,
   checkoutReleaseDecision,
@@ -41,6 +44,7 @@ import {
   releaseReasonDecision,
   releaseRowProvesCandidate,
   releaseRungProofRefusal,
+  releaseRuntimeConfigGuardDecision,
   releaseTagVersionDecision,
   selectReleaseRung,
   trunkFreshnessDecision,
@@ -89,13 +93,23 @@ export async function checkRelease(
   tag: string,
   fromDirectory?: string,
   environment: Record<string, string | undefined> = process.env,
-): Promise<{ tag: string; reportedVersion: string }> {
+): Promise<{ tag: string; reportedVersion: string; runtimeConfigGuardSkip: string | null }> {
   const checked = validateReleaseTagVersion(tag, fromDirectory, environment)
   const root = fromDirectory
     ? resolveInstallRoot(fromDirectory, environment)
     : resolveInstallRoot(import.meta.dir, environment)
-  await checkReleaseBinaryAutoload(root, tag, environment)
-  return checked
+  const pinnedBunVersion = readFileSync(join(root, '.bun-version'), 'utf8').trim()
+  const guard = releaseRuntimeConfigGuardDecision(
+    Bun.version,
+    pinnedBunVersion,
+    environment[RELEASE_REQUIRE_PINNED_BUN_ENV] === '1',
+  )
+  if (guard.action === 'fail') throw new Error(guard.message)
+  if (guard.action === 'run') await checkReleaseBinaryAutoload(root, tag, environment)
+  return {
+    ...checked,
+    runtimeConfigGuardSkip: guard.action === 'skip' ? guard.message : null,
+  }
 }
 
 export type ReleaseLedgerRow = {
