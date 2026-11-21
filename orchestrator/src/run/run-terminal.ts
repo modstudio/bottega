@@ -28,9 +28,6 @@ import {
   type classify,
   type EffectiveBillingKey,
 } from '../failure/failure.ts'
-import { recordedWorkerCheckVerdict } from '../gate/worker-check-result.ts'
-import { workerCheckRefusalText } from '../gate/worker-check-verdict.ts'
-import { gitContext } from '../git/git-environment.ts'
 import { terminateProcessGroup } from '../idle-kill.ts'
 import { isReaderJob, type Job } from '../jobs/jobs.ts'
 import type { McpConnection, McpMode } from '../mcp/mcp-preflight.ts'
@@ -69,7 +66,6 @@ import { rollUpRootAndEnqueue } from './run-root-rollup.ts'
 import type { RenewTaskClaim } from './run-task-claim-renewal.ts'
 import { type BlockerRow, blockersToRecord } from './run-terminal-blockers.ts'
 import { finalizeTerminalChain } from './run-terminal-chain.ts'
-import { terminalTurnChanged } from './run-terminal-change.ts'
 import {
   terminalLifecycleColumnValues,
   terminalLifecycleWrite,
@@ -81,6 +77,7 @@ import {
 } from './run-terminal-premature.ts'
 import { recordTerminalQuestions } from './run-terminal-questions.ts'
 import { settleTerminalStateWithClaimRenewal } from './run-terminal-task-claim.ts'
+import { terminalReplyFacts } from './run-terminal-worker-check.ts'
 import {
   type ObservedTestOutcome,
   observedTestOutcome,
@@ -223,17 +220,6 @@ function terminalOutcomeNote(
     : error
 }
 
-export function terminalWorkerCheckRefusal(database: Database, runRecordId: string): string | null {
-  const replyHead = (
-    database.query('SELECT reply_head FROM run WHERE record_id=?').get(runRecordId) as {
-      reply_head: string | null
-    } | null
-  )?.reply_head
-  return workerCheckRefusalText(
-    recordedWorkerCheckVerdict(database, runRecordId, replyHead ?? null),
-  )
-}
-
 export type TerminalInput = {
   processless?: boolean
   timer: ReturnType<typeof setTimeout> | null
@@ -297,28 +283,6 @@ export type TerminalInput = {
   mcpRuling: TerminalMcpRuling
   workerEvents: Array<{ kind: string }>
   contextProfile?: GooseContextProfile | null
-}
-
-function terminalReplyFacts(input: TerminalInput) {
-  const database = db()
-  const replyHead = input.worktree
-    ? gitContext(input.worktree.path, 'rev-parse', '--verify', 'HEAD^{commit}')
-    : ((
-        database.query('SELECT head_commit FROM run WHERE record_id=?').get(input.claim.id) as {
-          head_commit: string | null
-        } | null
-      )?.head_commit ?? null)
-  database.query('UPDATE run SET reply_head=? WHERE record_id=?').run(replyHead, input.claim.id)
-  return {
-    turnChanged: terminalTurnChanged({
-      database: db(),
-      runId: input.claim.id,
-      writingJob: input.writesJob,
-      worktreePath: input.worktree?.path ?? null,
-      measurementScope: input.provisionedMcpConfig,
-    }),
-    contractRefusal: input.writesJob ? terminalWorkerCheckRefusal(database, input.claim.id) : null,
-  }
 }
 
 export type TerminalResult = {
@@ -801,7 +765,13 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
       console.error(`orch: could not read the diff for run ${claim.id}: ${e}`)
     }
   }
-  const replyFacts = terminalReplyFacts(input)
+  const replyFacts = terminalReplyFacts({
+    database: db(),
+    runId: input.claim.id,
+    writesJob: input.writesJob,
+    worktreePath: input.worktree?.path ?? null,
+    measurementScope: input.provisionedMcpConfig,
+  })
   if (confinement.before.length && !confinement.failures.length) {
     confinementEvent = classifyCheckoutChanges({
       before: confinement.before,

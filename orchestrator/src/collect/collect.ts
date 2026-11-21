@@ -12,13 +12,6 @@ import {
 } from '../artifact-paths.ts'
 import { retainedBranchPruneCommand, retainedBranchReason } from '../close/retained-branch.ts'
 import { FAILS_OVER, failoverRefused } from '../failure/failure.ts'
-import {
-  type FinishedWorkerCheckExecution,
-  latestFinishedWorkerCheckExecution,
-  uncheckedChecksForGateExecution,
-} from '../gate/worker-check-omissions.ts'
-import { recordedWorkerCheckVerdictFromExecution } from '../gate/worker-check-result.ts'
-import { workerCheckVerdictLine } from '../gate/worker-check-verdict.ts'
 import { parseMcpProbe } from '../mcp/mcp-probe.ts'
 import { failureReason, outcomeOf } from '../outcome.ts'
 import { openRunChainRoots } from '../run/question-open.ts'
@@ -30,11 +23,11 @@ import type { FocusedTestExecutionObservation } from '../run/run-test-outcome.ts
 import { refusalScoreGuidance } from '../score/refusal-guidance.ts'
 import {
   declaredExpectFailProbeLines,
-  lastWorkerCheckNotRunBlock,
   observedTestsLine,
   TRUNCATED_TRANSCRIPT_BYTES,
   visibleTranscriptText,
 } from './result-output.ts'
+import { presentWorkerCheckResult } from './worker-check-presentation.ts'
 export const COLLECTION_COMMANDS = new Set(['result', 'wait'])
 
 const THIN_OUTPUT_BYTES = 1024
@@ -142,18 +135,6 @@ function presentObservedTests(
   for (const probeLine of declaredExpectFailProbeLines(declaredProbes(row.record_id))) {
     presentation.error(probeLine)
   }
-}
-
-function presentLastWorkerCheckOmissions(
-  database: Database,
-  execution: FinishedWorkerCheckExecution | null,
-  presentation: CollectResultPresentation,
-): void {
-  const uncheckedChecks = execution
-    ? uncheckedChecksForGateExecution(execution.record_id, database)
-    : []
-  const block = lastWorkerCheckNotRunBlock(uncheckedChecks)
-  if (block) presentation.error(block)
 }
 
 /** Resolve what an `asking` status means across the whole conversation. */
@@ -695,8 +676,6 @@ const consoleCollectResultPresentation: CollectResultPresentation = {
 }
 
 function presentCollectedOutput(
-  database: Database,
-  workerCheck: FinishedWorkerCheckExecution | null,
   row: {
     number: number
     record_id: string
@@ -712,11 +691,6 @@ function presentCollectedOutput(
   ok: boolean,
   presentation: CollectResultPresentation,
 ): void {
-  presentation.error(
-    workerCheckVerdictLine(
-      recordedWorkerCheckVerdictFromExecution(database, workerCheck, row.reply_head),
-    ),
-  )
   if (output === null) return
   const runsRoot = resolveRunsDirectory(process.env)
   if (!ok) {
@@ -805,9 +779,10 @@ export async function collectResult(
       /* a legacy malformed value remains visible in the raw output */
     }
   }
-  const workerCheck = latestFinishedWorkerCheckExecution(row.result_member_record_id, database)
-  presentCollectedOutput(database, workerCheck, row, output, outcome.ok, presentation)
-  presentLastWorkerCheckOmissions(database, workerCheck, presentation)
+  presentWorkerCheckResult(database, row.result_member_record_id, row.reply_head, (value) =>
+    presentation.error(value),
+  )
+  presentCollectedOutput(row, output, outcome.ok, presentation)
   presentObservedTests(row, presentation, declaredProbes)
   const chainNote = failoverSummary(chain.attempts)
   if (chainNote) presentation.error(`\n— ${chainNote}`)

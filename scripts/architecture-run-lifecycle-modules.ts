@@ -779,9 +779,6 @@ export const runLifecycleModules: ArchitectureModule[] = [
     '../database/db.ts',
     '../evidence/evidence.ts',
     '../failure/failure.ts',
-    '../gate/worker-check-result.ts',
-    '../gate/worker-check-verdict.ts',
-    '../git/git-environment.ts',
     '../idle-kill.ts',
     '../jobs/jobs.ts',
     '../mcp/mcp-preflight.ts',
@@ -808,6 +805,7 @@ export const runLifecycleModules: ArchitectureModule[] = [
     './run-terminal-change.ts',
     './run-terminal-questions.ts',
     './run-terminal-premature.ts',
+    './run-terminal-worker-check.ts',
     './run-terminal-precedence.ts',
     './run-terminal-lifecycle-verdict.ts',
     './run-terminal-lifecycle-store.ts',
@@ -872,6 +870,13 @@ export const runLifecycleModules: ArchitectureModule[] = [
   module('orchestrator/src/run/run-terminal-change.ts', [
     'bun:sqlite',
     '../git/git-environment.ts',
+  ]),
+  module('orchestrator/src/run/run-terminal-worker-check.ts', [
+    'bun:sqlite',
+    '../gate/worker-check-result.ts',
+    '../gate/worker-check-verdict.ts',
+    '../git/git-environment.ts',
+    './run-terminal-change.ts',
   ]),
   module('orchestrator/src/run/run-terminal-precedence.ts', [
     '../failure/failure.ts',

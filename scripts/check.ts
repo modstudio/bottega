@@ -8,10 +8,10 @@ import { biomeFindings } from '../orchestrator/src/ratchet/biome-adapter.ts'
 import { classifyCaller } from '../shared/caller-classification'
 import { changeViewPlan } from '../shared/change-view.ts'
 import {
-  FAILING_LEG_TAIL_MARKER,
-  GATE_FAILURES_MARKER,
   CHECK_EXECUTION_FILE_ENV,
   type CheckExecutionRecord,
+  FAILING_LEG_TAIL_MARKER,
+  GATE_FAILURES_MARKER,
   UNCHECKED_EXIT_CODE,
   UNIT_TEST_CHECK_CATEGORY,
   uncheckedReasonFromLines,

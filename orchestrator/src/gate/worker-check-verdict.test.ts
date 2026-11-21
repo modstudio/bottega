@@ -2,8 +2,8 @@ import { describe, expect, test } from 'bun:test'
 import {
   decideWorkerCheckVerdict,
   type WorkerCheckCandidate,
-  workerCheckRefusalText,
   workerCheckFailures,
+  workerCheckRefusalText,
 } from './worker-check-verdict.ts'
 
 const head = '1234567890abcdef1234567890abcdef12345678'

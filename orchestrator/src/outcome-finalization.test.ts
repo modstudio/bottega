@@ -6,7 +6,7 @@ import type { WorkerReply } from './contract/contract.ts'
 import { db } from './database/db.ts'
 import { FAILS_OVER } from './failure/failure.ts'
 import { finalizeWorkerReply } from './outcome.ts'
-import { terminalWorkerCheckRefusal } from './run/run-terminal.ts'
+import { terminalWorkerCheckRefusal } from './run/run-terminal-worker-check.ts'
 
 const classify = (
   reply: WorkerReply,
