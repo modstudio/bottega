@@ -6,129 +6,159 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { startBounded } from '../../../shared/bounded-process.ts'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { COMPILE_AUTOLOAD_OFF_FLAGS } from '../../../shared/compile-autoload.ts'
 import { refusal, renderRefusal } from '../../../shared/refusal.ts'
 
 export const RELEASE_REQUIRE_PINNED_BUN_ENV = `${PLATFORM_SLUG.toUpperCase()}_RELEASE_REQUIRE_PINNED_BUN`
 const RELEASE_DOTENV_SENTINEL_ENV = `${PLATFORM_SLUG.toUpperCase()}_RELEASE_DOTENV_SENTINEL`
 
-const AUTOLOAD_SWITCHES = [
-  '--compile-autoload-dotenv',
-  '--compile-autoload-bunfig',
-  '--compile-autoload-tsconfig',
-  '--compile-autoload-package-json',
-] as const
+type AutoloadOffFlag = (typeof COMPILE_AUTOLOAD_OFF_FLAGS)[number]
+type ProbePlant = (facts: {
+  directory: string
+  marker: string
+  observerMarker: string
+  environment: Record<string, string | undefined>
+}) => Record<string, string | undefined>
+type AutoloadProbe = { flag: AutoloadOffFlag; directory: string; plant: ProbePlant }
 
-async function runBinary(
-  binary: string,
-  args: readonly string[],
-  cwd: string,
-  environment: Record<string, string | undefined>,
-): Promise<{ stdout: string; stderr: string }> {
-  const result = await startBounded([binary, ...args], {
-    budget: 'self-cli',
-    cwd,
-    env: environment,
-  })
-  return { stdout: result.stdout, stderr: result.stderr }
+function observerSource(observerMarker: string): string {
+  return `import { writeFileSync } from 'node:fs'\nwriteFileSync(${JSON.stringify(observerMarker)}, '')\n`
 }
 
-function autoloadFailure(flag: (typeof AUTOLOAD_SWITCHES)[number]): Error {
+const AUTOLOAD_PROBES: readonly AutoloadProbe[] = [
+  {
+    flag: '--no-compile-autoload-dotenv',
+    directory: 'dotenv',
+    plant: ({ directory, marker, observerMarker, environment }) => {
+      writeFileSync(join(directory, '.env'), `${RELEASE_DOTENV_SENTINEL_ENV}=loaded\n`)
+      writeFileSync(
+        join(directory, 'observer.ts'),
+        `${observerSource(observerMarker)}if (process.env.${RELEASE_DOTENV_SENTINEL_ENV}) writeFileSync(${JSON.stringify(marker)}, '')\n`,
+      )
+      const cleanEnvironment = { ...environment }
+      delete cleanEnvironment[RELEASE_DOTENV_SENTINEL_ENV]
+      return { ...cleanEnvironment, BUN_OPTIONS: '--preload=./observer.ts' }
+    },
+  },
+  {
+    flag: '--no-compile-autoload-bunfig',
+    directory: 'bunfig',
+    plant: ({ directory, marker, observerMarker, environment }) => {
+      writeFileSync(join(directory, 'bunfig.toml'), 'preload = ["./sentinel.ts"]\n')
+      writeFileSync(join(directory, 'observer.ts'), observerSource(observerMarker))
+      writeFileSync(
+        join(directory, 'sentinel.ts'),
+        `import { writeFileSync } from 'node:fs'\nwriteFileSync(${JSON.stringify(marker)}, '')\n`,
+      )
+      return { ...environment, BUN_OPTIONS: '--preload=./observer.ts' }
+    },
+  },
+  {
+    flag: '--no-compile-autoload-tsconfig',
+    directory: 'tsconfig',
+    plant: ({ directory, marker, observerMarker, environment }) => {
+      mkdirSync(join(directory, 'planted'))
+      writeFileSync(
+        join(directory, 'tsconfig.json'),
+        `${JSON.stringify({
+          compilerOptions: {
+            baseUrl: '.',
+            paths: { '@release-guard/*': ['./planted/*'] },
+          },
+        })}\n`,
+      )
+      writeFileSync(
+        join(directory, 'observer.ts'),
+        `${observerSource(observerMarker)}const modulePath = '@release-guard/' + 'marker'\nawait import(modulePath)\n`,
+      )
+      writeFileSync(
+        join(directory, 'planted', 'marker.ts'),
+        `import { writeFileSync } from 'node:fs'\nwriteFileSync(${JSON.stringify(marker)}, '')\n`,
+      )
+      return { ...environment, BUN_OPTIONS: '--preload=./observer.ts' }
+    },
+  },
+  {
+    flag: '--no-compile-autoload-package-json',
+    directory: 'package-json',
+    plant: ({ directory, marker, observerMarker, environment }) => {
+      writeFileSync(
+        join(directory, 'package.json'),
+        `${JSON.stringify({ imports: { '#release-autoload-sentinel': './sentinel.ts' } })}\n`,
+      )
+      writeFileSync(
+        join(directory, 'observer.ts'),
+        `${observerSource(observerMarker)}const modulePath = '#release-autoload-' + 'sentinel'\nawait import(modulePath)\n`,
+      )
+      writeFileSync(
+        join(directory, 'sentinel.ts'),
+        `import { writeFileSync } from 'node:fs'\nwriteFileSync(${JSON.stringify(marker)}, '')\n`,
+      )
+      return { ...environment, BUN_OPTIONS: '--preload=./observer.ts' }
+    },
+  },
+]
+
+const coveredFlags = new Set(AUTOLOAD_PROBES.map(({ flag }) => flag))
+if (
+  coveredFlags.size !== AUTOLOAD_PROBES.length ||
+  COMPILE_AUTOLOAD_OFF_FLAGS.some((flag) => !coveredFlags.has(flag))
+) {
+  throw new Error(
+    'release binary runtime guard must define exactly one probe for every compile autoload flag',
+  )
+}
+
+function positiveFlag(flag: AutoloadOffFlag): string {
+  return flag.replace('--no-', '--')
+}
+
+function autoloadFailure(flag: AutoloadOffFlag): Error {
   return new Error(
-    `release binary runtime guard failed: ${flag} took effect from the working directory`,
+    renderRefusal(
+      refusal(
+        `release binary runtime guard failed: ${positiveFlag(flag)} took effect from the working directory`,
+        {
+          kind: 'edit',
+          text: 'keep every flag of COMPILE_AUTOLOAD_OFF_FLAGS on the compile in scripts/build-binary.ts, then retry',
+        },
+      ),
+    ),
   )
 }
 
-async function checkDotenv(
+function observerFailure(flag: AutoloadOffFlag): Error {
+  return new Error(
+    renderRefusal(
+      refusal(
+        `release binary runtime guard failed for ${positiveFlag(flag)}: the sentinel's observer never ran, so the guard proved nothing`,
+        {
+          kind: 'edit',
+          text: "the guard's injection mechanism stopped working on this Bun; fix the sentinel before releasing",
+        },
+      ),
+    ),
+  )
+}
+
+async function probe(
   binary: string,
-  directory: string,
+  scratch: string,
+  entry: AutoloadProbe,
   environment: Record<string, string | undefined>,
 ): Promise<void> {
-  const marker = join(directory, 'dotenv-marker')
-  writeFileSync(join(directory, '.env'), `${RELEASE_DOTENV_SENTINEL_ENV}=loaded\n`)
-  writeFileSync(
-    join(directory, 'planted.ts'),
-    `import { writeFileSync } from 'node:fs'\nif (process.env.${RELEASE_DOTENV_SENTINEL_ENV}) writeFileSync(${JSON.stringify(marker)}, '')\n`,
-  )
-  const cleanEnvironment = { ...environment }
-  delete cleanEnvironment[RELEASE_DOTENV_SENTINEL_ENV]
-  await runBinary(binary, ['--version'], directory, {
-    ...cleanEnvironment,
-    BUN_OPTIONS: '--preload=./planted.ts',
+  const directory = join(scratch, entry.directory)
+  const marker = join(directory, 'autoload-marker')
+  const observerMarker = join(directory, 'observer-ran')
+  mkdirSync(directory)
+  const probeEnvironment = entry.plant({ directory, marker, observerMarker, environment })
+  await startBounded([binary, '--version'], {
+    budget: 'self-cli',
+    cwd: directory,
+    env: probeEnvironment,
   })
-  if (existsSync(marker)) throw autoloadFailure(AUTOLOAD_SWITCHES[0])
-}
-
-async function checkBunfig(
-  binary: string,
-  directory: string,
-  environment: Record<string, string | undefined>,
-): Promise<void> {
-  const marker = join(directory, 'bunfig-marker')
-  writeFileSync(join(directory, 'bunfig.toml'), 'preload = ["./planted.ts"]\n')
-  writeFileSync(
-    join(directory, 'planted.ts'),
-    `import { writeFileSync } from 'node:fs'\nwriteFileSync(${JSON.stringify(marker)}, '')\n`,
-  )
-  await runBinary(binary, ['--version'], directory, environment)
-  if (existsSync(marker)) throw autoloadFailure(AUTOLOAD_SWITCHES[1])
-}
-
-async function checkTsconfig(
-  binary: string,
-  directory: string,
-  environment: Record<string, string | undefined>,
-): Promise<void> {
-  const marker = join(directory, 'tsconfig-marker')
-  mkdirSync(join(directory, 'planted'))
-  writeFileSync(
-    join(directory, 'tsconfig.json'),
-    `${JSON.stringify({
-      compilerOptions: {
-        baseUrl: '.',
-        paths: { '@release-guard/*': ['./planted/*'] },
-      },
-    })}\n`,
-  )
-  writeFileSync(
-    join(directory, 'entry.ts'),
-    `const modulePath = '@release-guard/' + 'marker'\nawait import(modulePath)\n`,
-  )
-  writeFileSync(
-    join(directory, 'planted', 'marker.ts'),
-    `import { writeFileSync } from 'node:fs'\nwriteFileSync(${JSON.stringify(marker)}, '')\n`,
-  )
-  await runBinary(binary, ['--version'], directory, {
-    ...environment,
-    BUN_OPTIONS: '--preload=./entry.ts',
-  })
-  if (existsSync(marker)) throw autoloadFailure(AUTOLOAD_SWITCHES[2])
-}
-
-async function checkPackageJson(
-  binary: string,
-  directory: string,
-  environment: Record<string, string | undefined>,
-): Promise<void> {
-  const marker = join(directory, 'package-json-marker')
-  writeFileSync(
-    join(directory, 'package.json'),
-    `${JSON.stringify({
-      imports: { '#release-autoload-sentinel': './planted.ts' },
-    })}\n`,
-  )
-  writeFileSync(
-    join(directory, 'entry.ts'),
-    `const modulePath = '#release-autoload-' + 'sentinel'\nawait import(modulePath)\n`,
-  )
-  writeFileSync(
-    join(directory, 'planted.ts'),
-    `import { writeFileSync } from 'node:fs'\nwriteFileSync(${JSON.stringify(marker)}, '')\n`,
-  )
-  await runBinary(binary, ['--version'], directory, {
-    ...environment,
-    BUN_OPTIONS: '--preload=./entry.ts',
-  })
-  if (existsSync(marker)) throw autoloadFailure(AUTOLOAD_SWITCHES[3])
+  if (!existsSync(observerMarker)) throw observerFailure(entry.flag)
+  if (existsSync(marker)) throw autoloadFailure(entry.flag)
 }
 
 /** Build and execute the same host binary as the release artifact path, with every cwd sentinel. */
@@ -150,7 +180,7 @@ export async function checkReleaseBinaryAutoload(
         output,
         `${process.platform}-${process.arch}`,
       ],
-      { budget: 'self-cli', cwd: root, env: environment },
+      { budget: 'release-build', cwd: root, env: environment },
     )
     if (build.exitCode !== 0) {
       throw new Error(
@@ -163,15 +193,7 @@ export async function checkReleaseBinaryAutoload(
       )
     }
     const binary = join(output, PLATFORM_SLUG)
-    const dotenv = join(scratch, 'dotenv')
-    const bunfig = join(scratch, 'bunfig')
-    const tsconfig = join(scratch, 'tsconfig')
-    const packageJson = join(scratch, 'package-json')
-    for (const directory of [dotenv, bunfig, tsconfig, packageJson]) mkdirSync(directory)
-    await checkDotenv(binary, dotenv, environment)
-    await checkBunfig(binary, bunfig, environment)
-    await checkTsconfig(binary, tsconfig, environment)
-    await checkPackageJson(binary, packageJson, environment)
+    for (const entry of AUTOLOAD_PROBES) await probe(binary, scratch, entry, environment)
   } finally {
     rmSync(scratch, { recursive: true, force: true })
   }

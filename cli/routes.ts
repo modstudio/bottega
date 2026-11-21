@@ -208,7 +208,7 @@ export const ROUTES = (
       'release check',
       'orch',
       'release check',
-      'validate the reported version before tagging a release',
+      'validate the release tag and prove release binaries ignore working-directory config',
     ),
     route('release log', 'orch', 'release log'),
     {

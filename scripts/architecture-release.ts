@@ -1,12 +1,13 @@
 export const releaseModules = [
   {
     file: 'orchestrator/src/release/release-decision.ts',
-    allowed: ['shared/release-tag.ts', 'shared/secret-shaped.ts'],
+    allowed: ['shared/refusal.ts', 'shared/release-tag.ts', 'shared/secret-shaped.ts'],
   },
   {
     file: 'orchestrator/src/release/release-service.ts',
     allowed: [
       'shared/brand.ts',
+      'shared/bun-version.ts',
       'node:fs',
       'node:path',
       'orchestrator/src/database/db.ts',
@@ -17,6 +18,7 @@ export const releaseModules = [
       'orchestrator/src/project/projects.ts',
       'orchestrator/src/project/main-checkout-invariant.ts',
       'shared/install-root.ts',
+      'shared/refusal.ts',
       'shared/secret-shaped.ts',
       'shared/record/schema.ts',
       'orchestrator/src/release/release-decision.ts',
@@ -34,6 +36,7 @@ export const releaseModules = [
       'node:path',
       'shared/brand.ts',
       'shared/bounded-process.ts',
+      'shared/compile-autoload.ts',
       'shared/refusal.ts',
     ],
   },

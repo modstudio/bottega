@@ -46,7 +46,7 @@ describe('release binary runtime-config guard', () => {
     expect(releaseRuntimeConfigGuardDecision('1.4.5', '1.4.4', true)).toEqual({
       action: 'fail',
       message:
-        'release binary runtime-config guard requires pinned Bun 1.4.4, received local Bun 1.4.5',
+        'release binary runtime-config guard requires pinned Bun 1.4.4, received local Bun 1.4.5\ncleared by: install the Bun named in .bun-version (1.4.4) and retry',
     })
   })
 })

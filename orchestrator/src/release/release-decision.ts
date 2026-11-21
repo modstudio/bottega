@@ -2,6 +2,7 @@
 /** Pure release policy over checkout, ancestry, lock, rung, and post-deploy facts. */
 
 import { RELEASE_TAG_SHAPE, releaseTagVersion } from '../../../shared/release-tag.ts'
+import { refusal, renderRefusal } from '../../../shared/refusal.ts'
 import { redactSecretShaped } from '../../../shared/secret-shaped.ts'
 
 export type ReleaseRuntimeConfigGuardDecision =
@@ -19,7 +20,15 @@ export function releaseRuntimeConfigGuardDecision(
   if (requirePinnedBun) {
     return {
       action: 'fail',
-      message: `release binary runtime-config guard requires pinned Bun ${pinnedBunVersion}, received local Bun ${localBunVersion}`,
+      message: renderRefusal(
+        refusal(
+          `release binary runtime-config guard requires pinned Bun ${pinnedBunVersion}, received local Bun ${localBunVersion}`,
+          {
+            kind: 'edit',
+            text: `install the Bun named in .bun-version (${pinnedBunVersion}) and retry`,
+          },
+        ),
+      ),
     }
   }
   return {

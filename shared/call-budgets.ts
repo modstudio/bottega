@@ -6,6 +6,7 @@ export type CallBudgetName =
   | 'git-ref-move'
   | 'process-table'
   | 'self-cli'
+  | 'release-build'
   | 'machine-update'
   | 'hosted-api'
   | 'release-download'
@@ -40,6 +41,9 @@ export const CALL_BUDGETS: Readonly<Record<CallBudgetName, CallBudget>> = Object
   'git-ref-move': { deadlineMs: 180_000, outputBytes: 16 * MIB, graceMs: 5_000 },
   'process-table': { deadlineMs: 10_000, outputBytes: 4 * MIB, graceMs: 1_000 },
   'self-cli': { deadlineMs: 60_000, outputBytes: 16 * MIB, graceMs: 5_000 },
+  // Measured with `bun run orch -- release check v0.5.12`: 5.38s on Bun 1.4.4;
+  // allow a cold CI runner ten minutes for the Vite and compiled-binary build.
+  'release-build': { deadlineMs: 600_000, outputBytes: 16 * MIB, graceMs: 5_000 },
   /** Must cover MIGRATION_DRAIN_TIMEOUT_MS, MIGRATION_WINDOW_WAIT_MS, MACHINE_UPDATE_LOCK_WAIT_MS, and the release-download total, which the child may spend in sequence. */
   'machine-update': {
     deadlineMs: 1_200_000 + MACHINE_UPDATE_LOCK_WAIT_MS,

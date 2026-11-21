@@ -6,7 +6,9 @@ import type { Database } from 'bun:sqlite'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { BUN_VERSION_FILE, readDeclaredBunVersion } from '../../../shared/bun-version.ts'
 import { resolveInstallRoot } from '../../../shared/install-root.ts'
+import { refusal, renderRefusal } from '../../../shared/refusal.ts'
 import { containsSecretShaped } from '../../../shared/secret-shaped.ts'
 import { db, sessionId, writableDb } from '../database/db.ts'
 import { boundedGateOutputTail, GATE_OUTPUT_TAIL_BYTES } from '../gate/gate-decision.ts'
@@ -98,7 +100,33 @@ export async function checkRelease(
   const root = fromDirectory
     ? resolveInstallRoot(fromDirectory, environment)
     : resolveInstallRoot(import.meta.dir, environment)
-  const pinnedBunVersion = readFileSync(join(root, '.bun-version'), 'utf8').trim()
+  const bunVersionFile = join(root, BUN_VERSION_FILE)
+  let pinnedBunVersion: string | undefined
+  try {
+    pinnedBunVersion = readDeclaredBunVersion(bunVersionFile)
+  } catch (error) {
+    throw new Error(
+      renderRefusal(
+        refusal(
+          `cannot read the pinned Bun version from ${bunVersionFile}: ${error instanceof Error ? error.message : String(error)}`,
+          {
+            kind: 'edit',
+            text: `restore ${BUN_VERSION_FILE} with one plain Bun version, then retry`,
+          },
+        ),
+      ),
+    )
+  }
+  if (!pinnedBunVersion) {
+    throw new Error(
+      renderRefusal(
+        refusal(`${bunVersionFile} must contain one plain Bun version, for example 1.4.4`, {
+          kind: 'edit',
+          text: `restore ${BUN_VERSION_FILE} with one plain Bun version, then retry`,
+        }),
+      ),
+    )
+  }
   const guard = releaseRuntimeConfigGuardDecision(
     Bun.version,
     pinnedBunVersion,

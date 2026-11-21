@@ -65,7 +65,9 @@ export function register(program: Command): void {
 
   release
     .command('check <tag>')
-    .description('validate the reported version before tagging a release')
+    .description(
+      'validate the release tag and prove release binaries ignore working-directory config',
+    )
     .allowExcessArguments(false)
     .action(async (tag) => {
       const checked = await checkRelease(tag)
