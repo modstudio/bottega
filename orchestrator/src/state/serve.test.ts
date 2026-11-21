@@ -46,7 +46,6 @@ const RUN_DETAIL_INTENTIONALLY_OMITTED_COLUMNS = {
   exit_code: RUN_DETAIL_DISPLAY_DEFERRED_REASON,
   output_bytes: RUN_DETAIL_ARTIFACT_ACCOUNTING_REASON,
   pid: RUN_DETAIL_LAUNCH_INTERNAL_REASON,
-  session_id: RUN_DETAIL_LAUNCH_INTERNAL_REASON,
   retry_of_record_id: RUN_DETAIL_LAUNCH_INTERNAL_REASON,
   launch_cwd: RUN_DETAIL_LAUNCH_INTERNAL_REASON,
   launch_seed: RUN_DETAIL_LAUNCH_INTERNAL_REASON,
@@ -93,7 +92,6 @@ const RUN_DETAIL_INTENTIONALLY_OMITTED_COLUMNS = {
   review_provenance: RUN_DETAIL_PROVENANCE_REASON,
   provenance_status: RUN_DETAIL_PROVENANCE_REASON,
   work_preserved: RUN_DETAIL_CLOSE_OUT_REASON,
-  close_out_outcome: RUN_DETAIL_CLOSE_OUT_REASON,
   close_out_detail: RUN_DETAIL_CLOSE_OUT_REASON,
   close_out_attempted_at: RUN_DETAIL_CLOSE_OUT_REASON,
   agent_pgid: RUN_DETAIL_LAUNCH_INTERNAL_REASON,
@@ -180,6 +178,18 @@ test('live child turns publish their chain root for hub badge matching', async (
 })
 
 describe('run detail', () => {
+  test('shows close-out outcome and owning session', async () => {
+    const id = addRun({ agent: 'codex', job: 'implement' })
+    db()
+      .query('UPDATE run SET close_out_outcome=?,session_id=? WHERE record_id=?')
+      .run('released', 'architect-session', id)
+
+    expect(await runDetail(id)).toMatchObject({
+      close_out_outcome: 'released',
+      session_id: 'architect-session',
+    })
+  })
+
   test('shows the recorded sandbox kind and its dedicated reason', async () => {
     const id = addRun({ agent: 'grok', job: 'understand' })
     db()

@@ -1874,6 +1874,14 @@
       "tag": "0243_run_reply_head",
       "breakpoints": true,
       "compatibility": "additive"
+    },
+    {
+      "idx": 244,
+      "version": "6",
+      "when": 1794758400018,
+      "tag": "0244_resource_claim_settled_by",
+      "breakpoints": true,
+      "compatibility": "additive"
     }
   ]
 }

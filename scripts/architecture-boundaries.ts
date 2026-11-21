@@ -290,6 +290,7 @@ export const importBoundaries: ImportBoundary[] = [
       './close-out-preparation.ts',
       './close-out-report.ts',
       './close-out-tree-naming.ts',
+      './path-inside.ts',
       './conversation-liveness.ts',
       './close-out-release-holds.ts',
       './reader-scratch-close-out.ts',

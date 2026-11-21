@@ -2,7 +2,7 @@
 /** Settles a creation-time branch claim only after cleanup proves the minted ref is gone. */
 
 import type { Database } from 'bun:sqlite'
-import { db, nowIso, writeTransaction } from '../database/db.ts'
+import { db, nowIso, sessionId, writeTransaction } from '../database/db.ts'
 import { type GitRefObservation, observeGitRef } from '../git/git-environment.ts'
 import { settleClaims } from '../resources/resource-claims.ts'
 import type { Worktree } from '../worktree/worktree-types.ts'
@@ -30,6 +30,7 @@ export function settleCreateTimeBranchCleanup(
       state: 'released',
       settledAt: nowIso(),
       detail: `deleted ${ref}`,
+      by: { verb: 'create-cleanup', session: sessionId() },
       allocationKey: ref,
     })
   if (options.database) settle()

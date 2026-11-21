@@ -140,3 +140,14 @@ export type MonitorHistoryRow = {
   conditions: unknown[]
   host_load: MonitorHostLoad | null
 }
+
+export type MonitorWorktreeRelease = {
+  path: string
+  run: string
+  root_run: string
+  state: string
+  settled_at: string
+  verb: string | null
+  session: string | null
+  settled_detail: string | null
+}

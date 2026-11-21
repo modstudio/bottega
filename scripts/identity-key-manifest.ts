@@ -565,6 +565,7 @@ const EXTERNAL_IDENTIFIERS: readonly ManifestColumn[] = [
     'release_ledger.session_id',
     'review_read.session_id',
     'review_funnel_decision.session_id',
+    'resource_claim.settled_session',
     'run.session_id',
     'board_withdrawal_delivery.reader_session',
     'session_board_hold.session_id',

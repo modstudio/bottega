@@ -56,6 +56,7 @@ test('last shared reader archives committed and uncommitted changes after the cr
       state: 'released',
       settledAt: nowIso(),
       detail: 'creator conversation terminated',
+      by: { verb: 'close-out:terminal', session: null },
     })
     writeFileSync(join(fixture.worktree, 'tracked.txt'), 'escaped\n')
     git(['add', 'tracked.txt'], fixture.worktree)

@@ -6,7 +6,7 @@
  */
 
 import { existsSync, rmSync } from 'node:fs'
-import { join, resolve } from 'node:path'
+import { join } from 'node:path'
 import { restoreBranch } from '../branch/branch-ref-guard.ts'
 import { db, nowIso, sessionId, writeTransaction } from '../database/db.ts'
 import { gitContext, targetGitEnvironment } from '../git/git-environment.ts'
@@ -19,6 +19,7 @@ import {
   worktreeLeaseName,
 } from '../project/project-lock.ts'
 import {
+  claimSettlement,
   isSharedReaderWorktreeClaim,
   type ResourceClaimState,
   recordRetainedRefClaim,
@@ -79,6 +80,7 @@ import {
   liveCloseOutResult,
   missingTreeConversationResult,
 } from './conversation-liveness.ts'
+import { isPathInside } from './path-inside.ts'
 import {
   extractionRunId,
   prepareReaderScratchCloseOut,
@@ -118,6 +120,10 @@ type CloseOutPreparedOptions = CloseOutOptions & {
 type CloseOutAttemptResult = PreparedTreeNamingResult
 
 type RunIdRow = { record_id: string }
+
+function closeOutSettlement(detail: string, intent: CloseOutIntent) {
+  return claimSettlement(detail, `close-out:${intent}`, sessionId())
+}
 
 function terminateCloseOutProcesses(dryRun: boolean, runId: string): void {
   if (!dryRun) terminateRunProcesses(runId, [process.pid])
@@ -230,20 +236,14 @@ function recordedWorktreeState(rootId: string): ResourceClaimState | 'no-tree' {
   return rows.some((row) => row.worktree && existsSync(row.worktree)) ? 'claimed' : 'no-tree'
 }
 
-function pathInside(candidate: string | null, directory: string): boolean {
-  if (!candidate) return false
-  const path = resolve(candidate)
-  const root = resolve(directory)
-  return path === root || path.startsWith(`${root}/`)
-}
-
 /** Release one conversation's vendor home after its tree and process claims are settled. */
 export function releaseSandboxDirectoryForConversation(
   rootId: string,
   options: {
+    intent: CloseOutIntent
     dryRun?: boolean
     worktreeState?: ResourceClaimState | 'no-tree'
-  } = {},
+  },
 ): SandboxReleaseResult {
   const path = join(RUNS_DIR, `sandbox-${rootId}`)
   const turns = db()
@@ -266,7 +266,7 @@ export function releaseSandboxDirectoryForConversation(
           kind: 'sandbox_dir',
           state: 'absent',
           settledAt: nowIso(),
-          detail: 'sandbox directory was already absent',
+          ...closeOutSettlement('sandbox directory was already absent', options.intent),
         })
       })
     return {
@@ -309,7 +309,7 @@ export function releaseSandboxDirectoryForConversation(
       kind: 'sandbox_dir',
       state: 'released',
       settledAt,
-      detail: `removed ${path}`,
+      ...closeOutSettlement(`removed ${path}`, options.intent),
     })
     const trustClaims = db()
       .query(
@@ -318,13 +318,13 @@ export function releaseSandboxDirectoryForConversation(
       )
       .all(rootId) as { allocation_key: string; identity: string | null }[]
     for (const claim of trustClaims) {
-      if (!pathInside(claim.identity, path)) continue
+      if (!isPathInside(claim.identity, path)) continue
       settleClaims(db(), {
         rootRunId: rootId,
         kind: 'trust_entry',
         state: 'released',
         settledAt,
-        detail: `trust store removed with ${path}`,
+        ...closeOutSettlement(`trust store removed with ${path}`, options.intent),
         allocationKey: claim.allocation_key,
       })
     }
@@ -574,7 +574,7 @@ function attemptCloseOutRun(
           kind: 'branch',
           state: 'retained',
           settledAt: nowIso(),
-          detail: `branch retained at ${turnHead.tip}`,
+          ...closeOutSettlement(`branch retained at ${turnHead.tip}`, options.intent),
           allocationKey: `refs/heads/${turnHead.branch}`,
         })
       }
@@ -583,7 +583,7 @@ function attemptCloseOutRun(
         kind: 'branch',
         state: 'retained',
         settledAt: nowIso(),
-        detail: `branch retained at ${tip}`,
+        ...closeOutSettlement(`branch retained at ${tip}`, options.intent),
         allocationKey: `refs/heads/${retainedBranch}`,
       })
       if (retainedRef)
@@ -841,7 +841,7 @@ function attemptCloseOutRun(
                   kind: 'retained_ref',
                   state: 'released',
                   settledAt: nowIso(),
-                  detail: `deleted ${retainedRef}`,
+                  ...closeOutSettlement(`deleted ${retainedRef}`, options.intent),
                   allocationKey: retainedRef,
                 })
               })
@@ -968,13 +968,14 @@ function closeOutRunHoldingLease(
           kind: 'worktree',
           state: settled,
           settledAt,
-          detail: settledDetail,
+          ...closeOutSettlement(settledDetail, options.intent),
         })
       }
     })
   }
   if (options.intent !== 'sweep' && ['released', 'absent', 'forgotten'].includes(result.outcome)) {
     const sandbox = releaseSandboxDirectoryForConversation(result.runId, {
+      intent: options.intent,
       dryRun: options.dryRun,
       worktreeState: result.outcome as Extract<
         ResourceClaimState,
