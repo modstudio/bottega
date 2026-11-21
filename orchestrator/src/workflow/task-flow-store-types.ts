@@ -147,6 +147,10 @@ export type TaskFlowOpenObligationRow = TaskFlowObligationFloorRow & {
   stepOrdinal: number
   stepSlug: string
 }
+export type TaskFlowStageSummaryRow = {
+  stage: TaskFlowStageCursorRow
+  obligations: TaskFlowOpenObligationRow[]
+}
 export type TaskFlowObligationRow = TaskFlowObligationFloorRow & {
   cursor_record_id: string
   satisfied_at: string | null

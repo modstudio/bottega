@@ -12,8 +12,11 @@ import { gatherChildTaskFacts, liveChildClaims } from '../workflow/workflow-chil
 import { childQueueState, sessionWorksUnderEpic } from '../workflow/workflow-child-queue.ts'
 import { descendantTaskKeys } from '../workflow/workflow-task-tree.ts'
 
-export async function sessionEpicWork(session: string, database: Database = db()) {
-  const sessionStages = await taskFlowReadStore(database).listOpenStages({ sessionId: session })
+export async function sessionEpicWork(
+  session: string,
+  sessionStages: readonly { project: string }[],
+  database: Database = db(),
+) {
   const claimProjects = boardLiveClaimProjectsForSession(session, Date.now(), database)
   const projects = new Set([...claimProjects, ...sessionStages.map(({ project }) => project)])
   const surfaces: Array<{ epic: string; queue: string[]; open: string[]; cursor: number }> = []

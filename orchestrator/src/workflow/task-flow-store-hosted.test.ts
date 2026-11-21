@@ -4,17 +4,23 @@ import {
   createMemoryRecordApiClient,
   installRecordApiClient,
 } from '../../test/fixtures/record-api.ts'
+import { installTaskRows } from '../../test/fixtures/task-reader.ts'
 import { guardHostedTables } from '../database/hosted-table-guard.ts'
+import { contextBrief } from '../doc/context-brief.ts'
+import { projectByName, upsertProject } from '../project/projects.ts'
 import { rememberActiveRecordSpace } from '../project-space.ts'
 import { rememberProjectSpace } from '../project-space-cache.ts'
 import type { HostedTaskFlowStageById } from '../record/record-task-flow-contract.ts'
 import { TASK_FLOW_STAGE_STATES } from '../record/record-task-flow-contract.ts'
+import { reviewContext } from '../session/context-review.ts'
+import { sessionStopSummary } from '../session/stop-summary.ts'
 import { taskFlowReadStore } from './task-flow-store.ts'
 import {
   abandonSelectedWorkflowCursorForClose,
   awaitWorkflowRuling,
   composeWorkflowWithCursor,
 } from './workflow-cursor.ts'
+import { workflowCursorListCommand } from './workflow-cursor-format.ts'
 import { listWorkflowCursors } from './workflow-cursor-list.ts'
 import { ruleWorkflow } from './workflow-cursor-ruling.ts'
 import { getWorkflowStepWithCursor } from './workflow-cursor-serve.ts'
@@ -41,9 +47,30 @@ const workflow = 'hosted-task-flow-guard'
 const taskKey = 'DEV-HOSTED-GUARD'
 const taskId = '00000000-0000-4000-8001-000000000001'
 const secondProjectId = '00000000-0000-4000-8001-000000000002'
+const WORKFLOW_CURSOR_TASK_FLOW_CALL_LIMIT = 2
+const STOP_SUMMARY_TASK_FLOW_CALL_LIMIT = 3
+const CONTEXT_BRIEF_TASK_FLOW_CALL_LIMIT = 3
+const CONTEXT_REVIEW_TASK_FLOW_CALL_LIMIT = 5
+
+type TaskFlowReadCounts = NonNullable<
+  NonNullable<Parameters<typeof createMemoryRecordApiClient>[0]>['taskFlowReadCounts']
+>
+
+function taskFlowReadDelta(before: TaskFlowReadCounts, after: TaskFlowReadCounts) {
+  const byKind = {
+    flowsById: after.flowsById - before.flowsById,
+    stageLists: after.stageLists - before.stageLists,
+    stagesById: after.stagesById - before.stagesById,
+    textsById: after.textsById - before.textsById,
+    obligationsById: after.obligationsById - before.obligationsById,
+    stageSummaries: (after.stageSummaries ?? 0) - (before.stageSummaries ?? 0),
+  }
+  return { byKind, total: Object.values(byKind).reduce((sum, count) => sum + count, 0) }
+}
 
 afterEach(() => {
   installRecordApiClient(null)
+  installTaskRows(null)
 })
 
 test('hosted task-flow intents never touch the five local task-flow tables', async () => {
@@ -78,6 +105,15 @@ test('hosted task-flow intents never touch the five local task-flow tables', asy
   raw.query('UPDATE step_catalogue_version SET space_id = ?').run(destinationSpaceId)
   rememberActiveRecordSpace(raw, destinationSpaceId)
   rememberProjectSpace(raw, 'fixture', destinationSpaceId)
+  const registeredProject = projectByName('fixture', raw)!
+  upsertProject({
+    recordId: registeredProject.recordId,
+    name: registeredProject.name,
+    path: registeredProject.path,
+    stack: registeredProject.stack,
+    canon: registeredProject.canon,
+    settings: { ...registeredProject.settings, space: destinationSpaceId },
+  })
   raw
     .query('INSERT INTO project (record_id,name,path,stack,settings) VALUES (?,?,?,?,?)')
     .run(secondProjectId, 'second-fixture', '/second-fixture', 'bun', '{}')
@@ -96,6 +132,14 @@ test('hosted task-flow intents never touch the five local task-flow tables', asy
         .get()!.record_id]: destinationSpaceId,
       [secondProjectId]: destinationSpaceId,
     },
+    taskFlowReadCounts: {
+      flowsById: 0,
+      stageLists: 0,
+      stagesById: 0,
+      textsById: 0,
+      obligationsById: 0,
+      stageSummaries: 0,
+    },
   }
   const memory = createMemoryRecordApiClient(memoryInput)
   const taskFlowClient = {
@@ -110,6 +154,20 @@ test('hosted task-flow intents never touch the five local task-flow tables', asy
     }),
   }
   installRecordApiClient(taskFlowClient)
+  installTaskRows([
+    {
+      key: taskKey,
+      record_id: taskId,
+      project: 'fixture',
+      title: 'Hosted task-flow guard task',
+      parent_key: null,
+      status: 'open',
+      status_category: 'open',
+      last_seen: null,
+      opened_at: null,
+      has_children: false,
+    },
+  ])
   const context = { session: 'hosted-task-flow-guard', taskFlowClient }
 
   const composed = await composeWorkflowWithCursor(
@@ -249,10 +307,139 @@ test('hosted task-flow intents never touch the five local task-flow tables', asy
       projectName: 'second-fixture',
     },
   })
+  const handoffStageId = memoryInput.taskFlowStages.at(-1)!.stage.id
+  const openObligation = {
+    id: '00000000-0000-4000-8003-000000000001',
+    stageRecordId: hosted.stage.id,
+    stepOrdinal: 0,
+    stepSlug: 'score',
+    floor: 'command-exit',
+    requirePullRequest: false,
+    expectedExitCode: 0,
+    expectedStatus: 'passed',
+    floorDeferrable: false,
+    reason: 'guard the open-obligation batch read',
+    sessionId: context.session,
+    createdAt: hosted.stage.createdAt,
+    satisfiedAt: null,
+    satisfiedStepOrdinal: null,
+    satisfiedStepSlug: null,
+    satisfiedEvidence: null,
+    abandonedAt: null,
+    abandonedReason: null,
+    operatorRuling: false,
+  }
+  Object.assign(hosted.stage, {
+    state: 'running',
+    handedOffFromRecordId: handoffStageId,
+    obligations: [openObligation],
+  })
+
+  const measure = async (entry: () => Promise<unknown>) => {
+    const before = { ...memoryInput.taskFlowReadCounts }
+    await entry()
+    return taskFlowReadDelta(before, memoryInput.taskFlowReadCounts)
+  }
+  const measureEntryPoints = async () => {
+    const cwd = process.cwd()
+    process.chdir('/tmp')
+    try {
+      const cursorRows: Awaited<ReturnType<typeof listWorkflowCursors>> = []
+      const cursor = await measure(async () => {
+        cursorRows.push(...(await listWorkflowCursors({ session: context.session }, database)))
+      })
+      expect(cursorRows).not.toHaveLength(0)
+      expect(
+        cursorRows.every((row) =>
+          (row as typeof row & { obligations: string }).obligations.includes(
+            '(score:command-exit)',
+          ),
+        ),
+      ).toBe(true)
+      const stop = await measure(() =>
+        sessionStopSummary(
+          {
+            session: context.session,
+            previousBlockKey: null,
+            now: '2026-11-21T12:00:00.000Z',
+          },
+          database,
+        ),
+      )
+      const brief = await measure(() => contextBrief(context.session, '/tmp', database))
+      const review = await measure(() =>
+        reviewContext(context.session, {
+          database,
+          now: () => Date.parse('2026-11-21T12:00:00.000Z'),
+        }),
+      )
+      const entries = {
+        cursor: { result: cursor, limit: WORKFLOW_CURSOR_TASK_FLOW_CALL_LIMIT },
+        stop: { result: stop, limit: STOP_SUMMARY_TASK_FLOW_CALL_LIMIT },
+        brief: { result: brief, limit: CONTEXT_BRIEF_TASK_FLOW_CALL_LIMIT },
+        review: { result: review, limit: CONTEXT_REVIEW_TASK_FLOW_CALL_LIMIT },
+      }
+      for (const [name, { result, limit }] of Object.entries(entries)) {
+        expect(
+          result.total,
+          `${name} task-flow reads ${JSON.stringify(result.byKind)}`,
+        ).toBeLessThanOrEqual(limit)
+        expect(result.byKind.stagesById, `${name} stage-by-id reads`).toBe(0)
+      }
+      return Object.fromEntries(
+        Object.entries(entries).map(([name, entry]) => [name, entry.result]),
+      ) as Record<keyof typeof entries, ReturnType<typeof taskFlowReadDelta>>
+    } finally {
+      process.chdir(cwd)
+    }
+  }
+
+  const one = await measureEntryPoints()
+
+  for (let index = 2; index <= 10; index++) {
+    const stageId = `00000000-0000-4000-8002-${String(index).padStart(12, '0')}`
+    memoryInput.taskFlowStages.push({
+      flow: { ...hosted.flow },
+      stage: {
+        ...hosted.stage,
+        id: stageId,
+        number: index,
+        state: index % 2 === 0 ? 'awaiting-ruling' : 'running',
+        handedOffFromRecordId: handoffStageId,
+        obligations: [
+          {
+            ...openObligation,
+            id: `00000000-0000-4000-8003-${String(index).padStart(12, '0')}`,
+            stageRecordId: stageId,
+          },
+        ],
+        stepTexts: [],
+        textCopies: [],
+      },
+    })
+  }
+  const ten = await measureEntryPoints()
   expect(
-    (await listWorkflowCursors({ all: true, project: 'fixture' }, database)).map((row) => ({
-      project: row.project,
-      state: row.state,
-    })),
-  ).toEqual([{ project: 'fixture', state: 'abandoned' }])
+    Object.fromEntries(
+      Object.keys(one).map((name) => [
+        name,
+        [one[name as keyof typeof one].total, ten[name as keyof typeof ten].total],
+      ]),
+    ),
+  ).toEqual({ cursor: [2, 2], stop: [3, 3], brief: [3, 3], review: [5, 5] })
+
+  const readStageSummaries = taskFlowClient.readTaskFlowStageSummaries!
+  installRecordApiClient({
+    ...taskFlowClient,
+    readTaskFlowStageSummaries: async (input) => {
+      const result = await readStageSummaries(input)
+      return {
+        ...result,
+        items: result.items.filter((item) => item.stage.id !== hosted.stage.id),
+      }
+    },
+  })
+  await expect(listWorkflowCursors({ session: context.session }, database)).rejects.toThrow(
+    `workflow cursor fixture#1 was listed, but its stage summary could not be read; retry \`${workflowCursorListCommand}\``,
+  )
 })

@@ -70,6 +70,10 @@ test('all-state stage reads include closed cursors without widening open reads',
   expect(
     (await store.listOpenStages({ project: 'fixture' })).map((row) => row.workflow_key),
   ).toEqual(['DEV-OPEN'])
+  const open = (await store.listOpenStages({ project: 'fixture' }))[0]!
+  expect(await store.stageSummaries([open.record_id, newRecordId()])).toEqual([
+    { stage: expect.objectContaining({ record_id: open.record_id }), obligations: [] },
+  ])
 
   const cursorCount = d.query<{ count: number }, []>('SELECT count(*) count FROM workflow_cursor')
   const listed = await listWorkflowCursors({ all: true, project: 'fixture' }, d)

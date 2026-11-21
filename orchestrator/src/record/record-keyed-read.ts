@@ -25,6 +25,7 @@ export function recordReadIsUuidKeyed(route: string, readKind?: string): boolean
     )
   if (route === '/v1/task-flow') return readKind === 'flow'
   if (route === '/v1/task-flow/presence') return true
+  if (route === '/v1/task-flow/stage-summaries') return true
   return /^\/v1\/task-flow\/(stages|texts|obligations)\/[^/]+$/.test(route)
 }
 

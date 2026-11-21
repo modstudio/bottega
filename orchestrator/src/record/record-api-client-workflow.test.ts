@@ -157,6 +157,24 @@ test('task-flow presence posts every id batch without requiring a destination sp
   ])
 })
 
+test('task-flow stage summaries refuse an old server and preserve other refusals', async () => {
+  const oldServer = recordApiError({ error: 'route not found' }, 404)
+  const oldClient = recordTaskFlowClient(async () => {
+    throw oldServer
+  })
+  await expect(oldClient.readTaskFlowStageSummaries!({ stageIds: [ID] })).rejects.toThrow(
+    'route not found; deploy the hosted API with `scripts/deploy/hosted api`, then retry',
+  )
+
+  const badRequest = recordApiError({ error: 'invalid stage ids' }, 400)
+  const currentClient = recordTaskFlowClient(async () => {
+    throw badRequest
+  })
+  await expect(currentClient.readTaskFlowStageSummaries!({ stageIds: [ID] })).rejects.toBe(
+    badRequest,
+  )
+})
+
 const ID = '00000000-0000-4000-8000-000000000010'
 test.each([
   ['keyed not-visible', recordKeyedNotVisibleRefusal(5)],

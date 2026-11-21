@@ -35,16 +35,22 @@ export function floorFromObligationRow(row: WorkflowObligationFloorRow): Floor {
   }
 }
 
+export function openObligationFromRow(
+  row: WorkflowObligationFloorRow & Pick<OpenObligation, 'stepOrdinal' | 'stepSlug'>,
+): OpenObligation {
+  return {
+    id: row.id,
+    stepOrdinal: row.stepOrdinal,
+    stepSlug: row.stepSlug,
+    floorDefinition: floorFromObligationRow(row),
+  }
+}
+
 export async function openWorkflowObligations(
   cursorId: string,
   d: Database,
   client?: RecordTaskFlowClient,
 ): Promise<OpenObligation[]> {
   const rows = await taskFlowReadStore(d, client).openObligations(cursorId)
-  return rows.map((row) => ({
-    id: row.id,
-    stepOrdinal: row.stepOrdinal,
-    stepSlug: row.stepSlug,
-    floorDefinition: floorFromObligationRow(row),
-  }))
+  return rows.map(openObligationFromRow)
 }

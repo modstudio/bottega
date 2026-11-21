@@ -129,7 +129,7 @@ export async function sessionStopSummary(
   const session = options.session
   const now = options.now ?? new Date().toISOString()
   const cursors = await listWorkflowCursors({ session }, database)
-  const epicWork = await sessionEpicWork(session, database)
+  const epicWork = await sessionEpicWork(session, cursors, database)
   const epicCursorNumbers = new Set(epicWork.map(({ cursor }) => cursor))
   const questionCounts = await questionInboxCountsForSession(session, database)
   const livePlaceholders = RUN_LIVE_STATUSES.map(() => '?').join(',')

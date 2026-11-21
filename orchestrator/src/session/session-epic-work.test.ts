@@ -2,6 +2,7 @@ import type { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
 import { boardClaimTake } from '../board/board-operations.ts'
 import { testDatabaseFixture } from '../database/test-database.fixture.ts'
+import { taskFlowReadStore } from '../workflow/task-flow-store.ts'
 import {
   installTaskReader,
   type TaskReadPort,
@@ -117,7 +118,8 @@ test('sessionEpicWork uses filtered lists plus lookup ancestry within its task-c
   const calls = installGuardReader(tasks)
   await openEpicAtStart(d, session)
 
-  const surfaces = await sessionEpicWork(session, d)
+  const sessionStages = await taskFlowReadStore(d).listOpenStages({ sessionId: session })
+  const surfaces = await sessionEpicWork(session, sessionStages, d)
 
   expect(calls).toHaveLength(STOP_RECORD_TASK_CALL_LIMIT)
   expect(calls.every((call) => call.operation !== 'list' || call.status !== undefined)).toBe(true)

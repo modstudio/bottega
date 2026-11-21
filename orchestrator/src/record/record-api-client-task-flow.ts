@@ -13,17 +13,20 @@ import {
   type HostedTaskFlowProjectReferenceCounts,
   type HostedTaskFlowStageById,
   type HostedTaskFlowStageList,
+  type HostedTaskFlowStageSummaries,
   type HostedTaskFlowTextById,
   hostedTaskFlowObligationByIdSchema,
   hostedTaskFlowProjectReferenceCountsSchema,
   hostedTaskFlowSchema,
   hostedTaskFlowStageByIdSchema,
   hostedTaskFlowStageListSchema,
+  hostedTaskFlowStageSummariesSchema,
   hostedTaskFlowTextByIdSchema,
   type TaskFlowPresenceInput,
   type TaskFlowPresenceResult,
   type TaskFlowReadQueryInput,
   type TaskFlowStageListQueryInput,
+  type TaskFlowStageSummariesInput,
   taskFlowPresenceResultSchema,
 } from './record-task-flow-contract.ts'
 import {
@@ -73,6 +76,10 @@ export type RecordTaskFlowClient = {
     input: TaskFlowPresenceInput,
     destination?: RecordRequestDestination,
   ): Promise<TaskFlowPresenceResult>
+  readTaskFlowStageSummaries?(
+    input: TaskFlowStageSummariesInput,
+    destination?: RecordRequestDestination,
+  ): Promise<HostedTaskFlowStageSummaries>
   readTaskFlowStage?(
     id: string,
     destination?: RecordRequestDestination,
@@ -207,6 +214,30 @@ function taskFlowReadClient(request: Request): Partial<RecordTaskFlowClient> {
         ...destination,
         schema: (body) => taskFlowPresenceResultSchema.parse(body),
       }),
+    readTaskFlowStageSummaries: async (input, destination) => {
+      try {
+        return await request('/v1/task-flow/stage-summaries', {
+          method: 'POST',
+          body: JSON.stringify(input),
+          ...destination,
+          schema: (body) => hostedTaskFlowStageSummariesSchema.parse(body),
+        })
+      } catch (error) {
+        if (
+          error &&
+          typeof error === 'object' &&
+          'status' in error &&
+          (error.status === 404 || error.status === 405)
+        ) {
+          const detail = error instanceof Error ? error.message : String(error)
+          throw new Error(
+            `${detail}; deploy the hosted API with \`scripts/deploy/hosted api\`, then retry`,
+            { cause: error },
+          )
+        }
+        throw error
+      }
+    },
     readTaskFlowStage: (id, destination) =>
       readById(
         request,

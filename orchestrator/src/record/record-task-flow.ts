@@ -13,6 +13,7 @@ import {
   type HostedTaskFlowProjectReferenceCounts,
   type HostedTaskFlowStageById,
   type HostedTaskFlowStageList,
+  type HostedTaskFlowStageSummaries,
   type HostedTaskFlowTextById,
   RECORD_TASK_FLOW_NOT_FOUND_CODE,
   RECORD_TASK_FLOW_NOT_FOUND_MESSAGE,
@@ -409,6 +410,47 @@ export async function readRecordTaskFlowStage(
       space_id: rowSpaceId,
       stage: withChildren(toHostedStage(row), children),
       flow: toHostedFlow(row),
+    }
+  })
+}
+
+export async function readRecordTaskFlowStageSummaries(
+  input: TenantPrincipal & { url: string; stageIds: string[] },
+): Promise<HostedTaskFlowStageSummaries> {
+  return recordPool(input.url).begin(async (tx) => {
+    await bindTenant(tx, input)
+    if (!input.stageIds.length) return { items: [] }
+    const rows = await tx.unsafe(
+      `SELECT ${STAGE_SELECT},${FLOW_SELECT}
+       FROM task_flow_stage s
+       JOIN task_flow f ON f.id=s.flow_record_id AND f.space_id=s.space_id
+       LEFT JOIN hub_task t ON t.id=f.task_id AND t.space_id=f.space_id
+       ${STAGE_JOINS}
+       WHERE s.id=ANY($1::uuid[])
+       ORDER BY array_position($1::uuid[],s.id)`,
+      [input.stageIds],
+    )
+    const obligations = await tx.unsafe(
+      `SELECT o.* FROM workflow_obligation o
+       WHERE o.stage_record_id=ANY($1::uuid[])
+       ORDER BY o.created_at,o.id`,
+      [input.stageIds],
+    )
+    const byStage = new Map<string, ReturnType<typeof toHostedObligation>[]>()
+    for (const row of obligations) {
+      const obligation = toHostedObligation(row)
+      const current = byStage.get(obligation.stageRecordId) ?? []
+      current.push(obligation)
+      byStage.set(obligation.stageRecordId, current)
+    }
+    return {
+      items: rows.map((row: Record<string, unknown>) => {
+        const stage = toHostedStageSummary(row)
+        return {
+          stage: { ...stage, obligations: byStage.get(stage.id) ?? [] },
+          flow: toHostedFlow(row),
+        }
+      }),
     }
   })
 }
