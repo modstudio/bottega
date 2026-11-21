@@ -654,7 +654,6 @@ async function applyMechanicalAction(
   return { kind: 'complete' }
 }
 
-
 function liveRunProcessItem(
   item: Extract<
     GatheredSessionResources['classification']['process'][number],
