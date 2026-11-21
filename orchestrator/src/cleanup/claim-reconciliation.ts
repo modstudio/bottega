@@ -8,7 +8,7 @@ import { restoreBranch } from '../branch/branch-ref-guard.ts'
 import { db, nowIso, sessionId, writeTransaction } from '../database/db.ts'
 import { type GitRefObservation, observeGitRef } from '../git/git-environment.ts'
 import { withCleanupLock, withWorktreeLease } from '../project/project-lock.ts'
-import { CLAIM_SETTLEMENT_VERBS, type ClaimSettlementVerb } from '../resources/resource-claims.ts'
+import type { ClaimSettlementVerb } from '../resources/resource-claims.ts'
 import { runLeaseState } from '../run/run-lease.ts'
 import { TERMINAL_RUN_STATUS_SET } from '../run/run-status.ts'
 import type { GrokTrustObservation } from '../sandbox/grok-trust.ts'
@@ -339,7 +339,6 @@ function reconcileClaimUnderLock(
   branch: string,
 ): ReconciliationResult | null {
   const settledVerb = 'claim-reconciliation:reconcileClaimUnderLock' satisfies ClaimSettlementVerb
-  if (!CLAIM_SETTLEMENT_VERBS.includes(settledVerb)) throw new Error('unknown settlement verb')
   const row = claimedRow(database, claimId)
   if (!row) return null
   const snapshot = rulingFor(database, row, observers)
