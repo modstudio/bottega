@@ -22,7 +22,12 @@ const decisionCases: Array<{
     body: 'Close this step with `--task <KEY>`.',
     expected: {
       judged: true,
-      findings: [{ flag: '--task', acceptingFloors: ['tracker-transition', 'descendants-closed'] }],
+      findings: [
+        {
+          flag: '--task',
+          acceptingFloors: ['tracker-transition', 'task-open-with-notes', 'descendants-closed'],
+        },
+      ],
     },
   },
   {
@@ -58,7 +63,12 @@ const decisionCases: Array<{
     body: 'Close this step on `--task <KEY>`.',
     expected: {
       judged: true,
-      findings: [{ flag: '--task', acceptingFloors: ['tracker-transition', 'descendants-closed'] }],
+      findings: [
+        {
+          flag: '--task',
+          acceptingFloors: ['tracker-transition', 'task-open-with-notes', 'descendants-closed'],
+        },
+      ],
     },
   },
   {
@@ -67,7 +77,12 @@ const decisionCases: Array<{
     body: 'Close the step by passing `--task <KEY>`.',
     expected: {
       judged: true,
-      findings: [{ flag: '--task', acceptingFloors: ['tracker-transition', 'descendants-closed'] }],
+      findings: [
+        {
+          flag: '--task',
+          acceptingFloors: ['tracker-transition', 'task-open-with-notes', 'descendants-closed'],
+        },
+      ],
     },
   },
   {
@@ -76,7 +91,12 @@ const decisionCases: Array<{
     body: 'Finish by adding `--artifact task:<KEY>` to the call.',
     expected: {
       judged: true,
-      findings: [{ flag: '--artifact', acceptingFloors: ['command-exit', 'recorded-artifact'] }],
+      findings: [
+        {
+          flag: '--artifact',
+          acceptingFloors: ['command-exit', 'recorded-artifact', 'task-open-with-notes'],
+        },
+      ],
     },
   },
   {
@@ -142,6 +162,6 @@ Close this step with \`--task <KEY>\`.
       },
     ]),
   ).toThrow(
-    '.agents/workflow-steps/write.md: close instruction names --task, which none of its declared floors accept; --task is accepted by tracker-transition, descendants-closed; change the instruction to an accepted flag, or change the floor',
+    '.agents/workflow-steps/write.md: close instruction names --task, which none of its declared floors accept; --task is accepted by tracker-transition, task-open-with-notes, descendants-closed; change the instruction to an accepted flag, or change the floor',
   )
 })
