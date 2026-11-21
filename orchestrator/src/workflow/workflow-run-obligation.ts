@@ -12,6 +12,7 @@ export type WorkflowRunChainEvidence = {
 }
 
 export type EarlierStepRunEvidence = { number: number; stepSlug: string }
+export type LandedEarlierStepRunEvidence = EarlierStepRunEvidence & { prNumber: number }
 
 export const dispatchWaiverFacts = ['no-lens-owed', 'no-accepted-findings'] as const
 export type DispatchWaiverFact = (typeof dispatchWaiverFacts)[number]
@@ -36,6 +37,7 @@ export type WorkflowRunObligationInput = {
   step?: StepRunObligation
   dispatchRuns?: WorkflowRunChainEvidence[]
   earlierStepRuns?: EarlierStepRunEvidence[]
+  landedEarlierStepRuns?: LandedEarlierStepRunEvidence[]
   judgedRuns?: WorkflowRunChainEvidence[]
 }
 
@@ -50,6 +52,7 @@ export function dispatchObligationRefusal(input: WorkflowRunObligationInput): st
   if ((step.dispatchWaivedBy ?? []).some((fact) => input.metWaiverFacts.includes(fact))) return null
   const runs = input.dispatchRuns ?? []
   if (!runs.length) {
+    if (isApplyFindingsStep(step) && (input.landedEarlierStepRuns?.length ?? 0) > 0) return null
     const job = step.jobs[0] ?? '<job>'
     const earlier = input.earlierStepRuns ?? []
     if (isApplyFindingsStep(step) && earlier.length) {

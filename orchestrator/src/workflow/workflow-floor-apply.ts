@@ -27,6 +27,7 @@ import {
 } from './workflow-run-obligation.ts'
 import {
   gatherEarlierStepWorkflowRunChains,
+  gatherLandedEarlierStepWorkflowRunChains,
   gatherWorkflowRunChains,
 } from './workflow-run-obligation-evidence.ts'
 import { readHubTaskChildren } from './workflow-task-reference.ts'
@@ -227,8 +228,9 @@ function attachRunObligationEvidence(
       step.jobs,
       database,
       row.step_slug,
+      stepActivatedAt,
     )
-    if (isApplyFindingsStep(step))
+    if (isApplyFindingsStep(step)) {
       evidence.earlierStepRuns = gatherEarlierStepWorkflowRunChains(
         row.record_id,
         step.jobs,
@@ -236,6 +238,11 @@ function attachRunObligationEvidence(
         stepActivatedAt,
         database,
       )
+      evidence.landedEarlierStepRuns = gatherLandedEarlierStepWorkflowRunChains(
+        evidence.earlierStepRuns,
+        database,
+      )
+    }
   }
   if (step.judges?.length)
     evidence.judgedRuns = gatherWorkflowRunChains(row.record_id, step.judges, database)
