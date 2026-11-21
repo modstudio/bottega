@@ -28,7 +28,7 @@ export type ResourceClaimState =
   | 'absent'
   | 'stuck'
 export type PortBand = { start: number; end: number }
-export const CLAIM_SETTLEMENT_VERBS = [
+const CLAIM_SETTLEMENT_VERBS = [
   'discard',
   'abandon',
   'cleanup:discardRun',
