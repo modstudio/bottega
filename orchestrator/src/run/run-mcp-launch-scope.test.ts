@@ -16,6 +16,7 @@ import {
 } from '../sandbox/project-mcp-scope.ts'
 import { acpProjectMcpServers } from '../transport/transport-acp-mcp.ts'
 import {
+  mergeLaunchMcpScopeLines,
   PROJECT_MCP_ACP_WRITER_ADVICE,
   projectSelectionForLaunch,
   withheldScopeLine,
@@ -103,6 +104,11 @@ test('an MCP launch reports checkout header names missing from its tree config',
     },
   ])
   expect(JSON.stringify(scope.headerMismatches)).not.toContain('FAKE_FIXTURE_HEADER_VALUE')
+  const header = mergeLaunchMcpScopeLines(null, 'cli', 'codex', scope)
+  expect(header).toContain(
+    'MCP scope: tracker tree config lacks checkout header names Authorization',
+  )
+  expect(header).not.toContain('FAKE_FIXTURE_HEADER_VALUE')
   expect(launch('codex', 'cli', false, cwd, { callerCwd: checkout }).headerMismatches).toEqual([])
 })
 

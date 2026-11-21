@@ -8,6 +8,8 @@ import { codexProjectServersFromSelection } from '../sandbox/codex-mcp-scope.ts'
 import {
   type HeaderMismatchFinding,
   headerMismatchFindings,
+  headerMismatchScopeLine,
+  mergeMcpSetupHeader,
   type ProjectMcpSelection,
   projectMcpWithheldLine,
   selectProjectMcpServers,
@@ -127,6 +129,25 @@ export function withheldScopeLine(
 ): string | null {
   if (transport !== 'acp' && harness !== 'grok') return null
   return projectMcpWithheldLine(harness, selection?.withheld ?? [])
+}
+
+/** Merge every visible project MCP scope diagnostic into one launch header. */
+export function mergeLaunchMcpScopeLines(
+  header: string | null,
+  transport: string,
+  harness: string,
+  scope: {
+    projectSelection: ProjectMcpSelection | null
+    headerMismatches: HeaderMismatchFinding[]
+    credentialLines: string[]
+  },
+): string | null {
+  const lines = [
+    withheldScopeLine(transport, harness, scope.projectSelection),
+    ...scope.headerMismatches.map(headerMismatchScopeLine),
+    ...scope.credentialLines,
+  ]
+  return lines.reduce<string | null>((current, line) => mergeMcpSetupHeader(current, line), header)
 }
 
 /** Decide every MCP scope one launch needs from the tree, the register and the job shape. */
