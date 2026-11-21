@@ -1,11 +1,7 @@
 import { afterAll, beforeAll, expect, test } from 'bun:test'
 import type { PGlite } from '@electric-sql/pglite'
 import { createHostedRecordFixture, pgliteSql } from '../test/hosted-record-fixture.ts'
-import {
-  createHostedTaskInTransaction,
-  getHostedTask,
-  lookupHostedTasks,
-} from './hosted-tasks.ts'
+import { createHostedTaskInTransaction, getHostedTask, lookupHostedTasks } from './hosted-tasks.ts'
 
 const spaceId = '01990000-0000-7000-8000-000000001430'
 const otherSpaceId = '01990000-0000-7000-8000-000000001431'

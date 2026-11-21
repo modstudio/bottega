@@ -73,6 +73,11 @@ export function taskReadRefusal(
   )
 }
 
+function validateTaskChildPresence(row: HubTaskReference): void {
+  if (row.has_children !== undefined && typeof row.has_children !== 'boolean')
+    throw new Error('response contained invalid task child presence')
+}
+
 export function taskReference(row: unknown): HubTaskReference {
   if (
     !row ||
@@ -104,9 +109,7 @@ export function taskReference(row: unknown): HubTaskReference {
   const openedAt = (row as HubTaskReference).opened_at
   if (openedAt !== undefined && openedAt !== null && typeof openedAt !== 'string')
     throw new Error('response contained an invalid task opened time')
-  const hasChildren = (row as HubTaskReference).has_children
-  if (hasChildren !== undefined && typeof hasChildren !== 'boolean')
-    throw new Error('response contained invalid task child presence')
+  validateTaskChildPresence(row as HubTaskReference)
   return row as HubTaskReference
 }
 

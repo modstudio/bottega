@@ -23,15 +23,6 @@ import type {
 export type MainStackConsumer = 'gate' | 'mcp' | 'worktree-create'
 
 export const DEFAULT_TASK_KEY_PATTERN = '^[A-Z][A-Z0-9]+-[0-9]+$'
-const DEFAULT_TASK_KEY_SOURCE = DEFAULT_TASK_KEY_PATTERN.slice(1, -1)
-const TASK_KEY_IN_TEXT_PATTERN = new RegExp(
-  `(?:^|[^A-Z0-9])(${DEFAULT_TASK_KEY_SOURCE}(?:/[0-9]+)?)(?=$|[^A-Z0-9/])`,
-  'gi',
-)
-
-export function taskKeysInText(value: string): string[] {
-  return [...value.matchAll(TASK_KEY_IN_TEXT_PATTERN)].map((match) => match[1]!.toUpperCase())
-}
 
 /** A project's own worktree lifecycle, as declared commands. */
 export type WorktreeTool = {

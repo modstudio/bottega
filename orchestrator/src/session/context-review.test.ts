@@ -1,6 +1,5 @@
 import { expect, test } from 'bun:test'
 import { testDatabaseFixture } from '../database/test-database.fixture.ts'
-import { taskKeysInText } from '../project/project-settings.ts'
 import {
   installTaskReader,
   type TaskLookupRow,
@@ -8,7 +7,7 @@ import {
 } from '../workflow/task-read-port.ts'
 import { composeWorkflowWithCursor } from '../workflow/workflow-cursor.ts'
 import { seedCurrentWorkflowTreeFixture } from '../workflow/workflow-store.fixture.ts'
-import { reviewContext } from './context-review.ts'
+import { contextReviewTaskKeys, reviewContext } from './context-review.ts'
 
 const REVIEW_RECORD_TASK_CALL_LIMIT = 5
 const database = testDatabaseFixture((d) => {
@@ -16,7 +15,7 @@ const database = testDatabaseFixture((d) => {
 })
 
 test('context-review task key extraction retains slice suffixes', () => {
-  expect(taskKeysInText('DEV-1844/2 is done; dev-1844/2 is repeated.')).toEqual([
+  expect(contextReviewTaskKeys('DEV-1844/2 is done; dev-1844/2 is repeated.')).toEqual([
     'DEV-1844/2',
     'DEV-1844/2',
   ])
