@@ -12,6 +12,8 @@ test('a createTree failure after recording the tree still releases it', async ()
   const root = mirrorRepository('cm-create-fail')
   let released = false
   let releasedBranchAt = ''
+  const clearedNotice =
+    'open workflow cursor 1207 (ship-task, bottega) worktree claim was cleared'
   try {
     await registerManagedMirror(root, 'cm-create-fail')
     const base = mirrorFixturePort(root)
@@ -22,7 +24,17 @@ test('a createTree failure after recording the tree still releases it', async ()
       },
       releaseRun: (id, preparation) => {
         released = true
-        return base.releaseRun(id, preparation)
+        const result = base.releaseRun(id, preparation)
+        return {
+          ...result,
+          cursorCleanup: Promise.resolve({
+            runId: id,
+            worktree: null,
+            outcome: 'released' as const,
+            detail: `${result.detail}; ${clearedNotice}`,
+            clearedCursorClaims: [clearedNotice],
+          }),
+        }
       },
       releaseBranch: (project, branch, expected) => {
         releasedBranchAt = expected
@@ -36,6 +48,7 @@ test('a createTree failure after recording the tree still releases it', async ()
       noteFailure: async () => {},
     })
     expect(result[0]?.text).toContain('fixture failure after create')
+    expect(result[0]?.text).toContain(clearedNotice)
     expect(released).toBe(true)
     expect(releasedBranchAt).toMatch(/^[0-9a-f]{40}$/)
     expect(existsSync(join(root, '.claude', 'worktrees', 'canon-mirror'))).toBe(false)

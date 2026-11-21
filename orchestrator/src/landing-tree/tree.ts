@@ -114,15 +114,16 @@ function refuseExistingLandingTree(
 }
 
 /** Settle a failed landing-tree row even when its project remover already removed the directory. */
-export async function releaseFailedLandingTree(runId: string): Promise<void> {
+export async function releaseFailedLandingTree(runId: string): Promise<string[]> {
   const recorded = db().query('SELECT worktree FROM run WHERE record_id=?').get(runId) as {
     worktree: string | null
   }
-  if (!recorded.worktree) return
+  if (!recorded.worktree) return []
   const cleanup = await closeOutRun(runId, { intent: 'failed-provision' })
   if (!['released', 'absent'].includes(cleanup.outcome)) {
     throw new Error(`landing tree cleanup ${cleanup.outcome}: ${cleanup.detail}`)
   }
+  return cleanup.clearedCursorClaims ?? []
 }
 
 function recordLandingTreeFailure(recordId: string, startedAt: string, error: unknown): void {

@@ -11,38 +11,15 @@ import { HOOK_TREE_JOB, LANDING_TREE_JOB } from '../run/synthetic-lifecycle-job.
 import type { OpenCursorWorktree } from '../workflow/workflow-cursor-worktrees.ts'
 import { keepTreeHold } from '../worktree/keep-tree-hold.ts'
 import { worktreeDirty } from '../worktree/worktree-attribution.ts'
-import type { CloseOutResult, ConversationKeepTreeHold } from './close-out-report.ts'
+import type { ConversationKeepTreeHold } from './close-out-report.ts'
 import {
+  closeOutIntentAuthority,
   type CloseOutIntent,
   decideTreeKeep,
   type TreeKeepDecision,
   type TreeNamer,
   treeNamersText,
-  treeNamingReleaseReport,
 } from './tree-keep-decision.ts'
-
-function appendTreeNamingDetail(
-  result: CloseOutResult,
-  naming: TreeKeepDecision,
-  dryRun = false,
-): boolean {
-  const report = treeNamingReleaseReport(naming, dryRun)
-  if (!report) return false
-  if (report.detail) result.detail += `; ${report.detail}`
-  if (report.clearedCursorClaims.length) result.clearedCursorClaims = report.clearedCursorClaims
-  return true
-}
-
-export function recordTreeNamingDetail(
-  result: CloseOutResult,
-  naming: TreeKeepDecision,
-  options: { dryRun?: boolean; intent: CloseOutIntent },
-): void {
-  const named = appendTreeNamingDetail(result, naming, options.dryRun)
-  if (!named || options.dryRun) return
-  const detail = `${result.detail}; close-out intent=${options.intent} pid=${process.pid} ppid=${process.ppid}`
-  db().query('UPDATE run SET close_out_detail=? WHERE record_id=?').run(detail, result.runId)
-}
 
 function realTreePath(path: string): string | null {
   if (!existsSync(path)) return null
@@ -204,7 +181,7 @@ export function closeOutKeepTreeDecision(
       naming,
     }
   }
-  if (intent === 'operator-removal' || intent === 'landed' || intent === 'failed-provision')
+  if (closeOutIntentAuthority(intent).namedTree !== 'hold')
     return { hold: { held: false }, naming }
   if (intent === 'sweep') {
     const landing = database

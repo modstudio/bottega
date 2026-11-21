@@ -1,5 +1,10 @@
 import { describe, expect, test } from 'bun:test'
-import { CLOSE_OUT_INTENTS, decideTreeKeep, type TreeNamer } from './tree-keep-decision.ts'
+import {
+  CLOSE_OUT_INTENTS,
+  closeOutIntentAuthority,
+  decideTreeKeep,
+  type TreeNamer,
+} from './tree-keep-decision.ts'
 
 const cursor: TreeNamer = {
   kind: 'cursor',
@@ -20,6 +25,16 @@ describe('tree keep decision', () => {
         action,
         namers: [liveRun],
       })
+    })
+
+    test(`${intent} has an explicit authority classification`, () => {
+      expect(closeOutIntentAuthority(intent)).toEqual(
+        intent === 'operator-removal' || intent === 'failed-provision'
+          ? { namedTree: 'proceed', explicitTreeRemoval: true }
+          : intent === 'landed'
+            ? { namedTree: 'landed', explicitTreeRemoval: true }
+            : { namedTree: 'hold', explicitTreeRemoval: false },
+      )
     })
   }
 

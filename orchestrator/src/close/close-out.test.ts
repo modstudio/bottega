@@ -51,11 +51,12 @@ function landingObservationResult(
 ): { args: string[]; result: ReturnType<typeof Bun.spawnSync> | null } {
   const args = normalizedGitArgs(command)
   if (args[0] === 'for-each-ref') {
+    const branchRows = args.some((arg) => arg.includes('committerdate'))
+      ? `${branch}\t${head}\t2026-11-20T00:00:00Z\n`
+      : `${branch}\t${head}\n`
     return {
       args,
-      result: spawnResult(
-        sourceRefs ?? (observation === 'missing-branch' ? '' : `${branch}\t${head}\n`),
-      ),
+      result: spawnResult(sourceRefs ?? (observation === 'missing-branch' ? '' : branchRows)),
     }
   }
   if (args[0] === 'status') {
@@ -101,6 +102,7 @@ function closeOutFixture(
   cwdObservation?: { stdout?: string | ((tree: string) => string); exitCode?: number },
   observeBeforeLock?: (tree: string) => void,
   readerSourceRefs?: string,
+  landedNaming?: 'unlanded' | 'unknown',
 ) {
   const id = addRun({ agent: 'codex', job: 'implement', status: 'ok' })
   const project = `close-out-${id}`
@@ -117,13 +119,14 @@ function closeOutFixture(
           .get(id)!.record_id
       : newRecordId()
   writeFileSync(join(tree, '.orch-run'), `${ownerRecordId}\n${repo}\nsource: git\n`)
-  upsertProject({ recordId: newRecordId(), name: project, path: repo, settings: { trunk: 'main' } })
+  const projectRecordId = newRecordId()
+  upsertProject({ recordId: projectRecordId, name: project, path: repo, settings: { trunk: 'main' } })
   db()
     .query(
-      `UPDATE run SET repo=?, cwd=?, worktree=?, branch=?, minted_branch=?,
+      `UPDATE run SET repo=?, project_record_id=?, cwd=?, worktree=?, branch=?, minted_branch=?,
        base_commit=?, worktree_source='git', head_commit=?, launch_key='DEV-647' WHERE record_id=?`,
     )
-    .run(project, tree, tree, branch, branch, head, head, id)
+    .run(project, projectRecordId, tree, tree, branch, branch, head, head, id)
   if (landingObservation) {
     db()
       .query(
@@ -138,6 +141,9 @@ function closeOutFixture(
     beforeLockedObservation(command, tree, observeBeforeLock)
     const cwdResult = cwdObservationResult(command, cwdObservation, tree)
     if (cwdResult) return cwdResult
+    const normalized = normalizedGitArgs(command)
+    if (landedNaming === 'unknown' && normalized[0] === 'for-each-ref')
+      return spawnResult('', 1)
     const observed = landingObservationResult(
       command,
       landingObservation,
@@ -161,7 +167,9 @@ function closeOutFixture(
     }
     if (args[0] === 'symbolic-ref') return spawnResult(branch)
     if (args[0] === 'diff') return spawnResult()
-    if (args[0] === 'rev-list' && args.includes('--count')) return spawnResult('0')
+    if (landedNaming === 'unlanded' && args[0] === 'cherry') return spawnResult(`+ ${head}`)
+    if (args[0] === 'rev-list' && args.includes('--count'))
+      return spawnResult(landedNaming === 'unlanded' ? '1' : '0')
     if (args[0] === 'merge-base' || args[0] === 'rev-parse' || args[0] === 'show-ref') {
       return spawnResult(head)
     }
@@ -230,6 +238,101 @@ describe('close-out of a tree named by an open workflow cursor', () => {
       }
     })
   }
+
+  test('landed proceeds and clears the cursor claim only when the branch is landed', async () => {
+    const fixture = closeOutFixture('owned')
+    const number = addOpenCursorWorktree(db(), { project: 'segnavia', worktree: fixture.tree })
+    const run = db()
+      .query<{ repo: string; branch: string }, [string]>(
+        'SELECT repo,branch FROM run WHERE record_id=?',
+      )
+      .get(fixture.id)!
+    const projectRecordId = db()
+      .query<{ record_id: string }, [string]>('SELECT record_id FROM project WHERE name=?')
+      .get(run.repo)!.record_id
+    db()
+      .query(
+        `INSERT INTO branch_landing_record
+         (record_id,project,project_record_id,branch,tip,pr_number,merge_commit,merged_at,recorded_at)
+         VALUES (?,?,?,?,?,?,?,?,?)`,
+      )
+      .run(
+        newRecordId(),
+        run.repo,
+        projectRecordId,
+        run.branch,
+        '1234567890abcdef1234567890abcdef12345678',
+        647,
+        '1234567890abcdef1234567890abcdef12345678',
+        '2026-11-20T00:00:00Z',
+        '2026-11-20T00:00:01Z',
+      )
+    try {
+      const result = await closeOutRun(fixture.id, { intent: 'landed' })
+
+      expect(result).toMatchObject({ outcome: 'released' })
+      expect(result.clearedCursorClaims).toEqual([
+        `open workflow cursor ${number} (ship-task, segnavia) worktree claim was cleared`,
+      ])
+      expect(existsSync(fixture.tree)).toBe(false)
+    } finally {
+      rmSync(fixture.repo, { recursive: true, force: true })
+    }
+  })
+
+  test.each(['unlanded', 'unknown'] as const)(
+    'landed holds a cursor-named tree when branch state is %s',
+    async (landedNaming) => {
+      const fixture = closeOutFixture(
+        'owned',
+        false,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        landedNaming,
+      )
+      const number = addOpenCursorWorktree(db(), { project: 'segnavia', worktree: fixture.tree })
+      try {
+        const result = await closeOutRun(fixture.id, { intent: 'landed' })
+
+        expect(result).toMatchObject({ outcome: 'held' })
+        expect(result.detail).toContain(`open workflow cursor ${number} (ship-task, segnavia)`)
+        expect(existsSync(fixture.tree)).toBe(true)
+      } finally {
+        rmSync(fixture.repo, { recursive: true, force: true })
+      }
+    },
+  )
+
+  test('a failed cursor clear is reported in memory and in persisted close-out detail', async () => {
+    const fixture = closeOutFixture('owned')
+    const number = addOpenCursorWorktree(db(), { project: 'segnavia', worktree: fixture.tree })
+    db().exec(
+      `CREATE TRIGGER reject_cursor_clear_${number}
+       BEFORE UPDATE ON workflow_cursor WHEN OLD.number=${number}
+       BEGIN SELECT RAISE(ABORT,'cursor clear refused'); END`,
+    )
+    try {
+      const result = await closeOutRun(fixture.id, { intent: 'operator-removal' })
+      const persisted = db()
+        .query<{ detail: string }, [string]>(
+          'SELECT close_out_detail detail FROM run WHERE record_id=?',
+        )
+        .get(fixture.id)!
+
+      const notice =
+        `open workflow cursor ${number} (ship-task, segnavia) ` +
+        'worktree claim could not be cleared'
+      expect(result.detail).toContain(notice)
+      expect(result.clearedCursorClaims).toBeUndefined()
+      expect(persisted.detail).toContain(notice)
+      expect(persisted.detail).not.toContain('worktree claim was cleared')
+    } finally {
+      db().exec(`DROP TRIGGER IF EXISTS reject_cursor_clear_${number}`)
+      rmSync(fixture.repo, { recursive: true, force: true })
+    }
+  })
 
   test('terminal uses the cursor naming snapshot taken before the lock', async () => {
     let number = 0
@@ -624,6 +727,18 @@ test('landing-tree sweep does not substitute tree HEAD for a missing branch ref'
     expect(result.detail).toContain('landing status could not be established')
     expect(result.detail).toContain('refs/heads/DEV-647-orch-')
     expect(existsSync(fixture.tree)).toBe(true)
+  } finally {
+    rmSync(fixture.repo, { recursive: true, force: true })
+  }
+})
+
+test('landed releases a clean landing tree whose branch ref is missing', async () => {
+  const fixture = closeOutFixture('owned', false, 'missing-branch')
+  try {
+    const result = await closeOutRun(fixture.id, { intent: 'landed' })
+
+    expect(result).toMatchObject({ outcome: 'released' })
+    expect(existsSync(fixture.tree)).toBe(false)
   } finally {
     rmSync(fixture.repo, { recursive: true, force: true })
   }
