@@ -10,6 +10,7 @@ import { type GitRefObservation, observeGitRef } from '../git/git-environment.ts
 import { withCleanupLock, withWorktreeLease } from '../project/project-lock.ts'
 import { runLeaseState } from '../run/run-lease.ts'
 import { TERMINAL_RUN_STATUS_SET } from '../run/run-status.ts'
+import type { ClaimSettlementVerb } from '../resources/resource-claims.ts'
 import type { GrokTrustObservation } from '../sandbox/grok-trust.ts'
 import type { CleanupPresentation } from './cleanup.ts'
 import { decideAbsentClaim } from './cleanup-sweep-decisions.ts'
@@ -337,6 +338,8 @@ function reconcileClaimUnderLock(
   observers: ClaimReconciliationObservers,
   branch: string,
 ): ReconciliationResult | null {
+  const settledVerb =
+    'claim-reconciliation:reconcileClaimUnderLock' satisfies ClaimSettlementVerb
   const row = claimedRow(database, claimId)
   if (!row) return null
   const snapshot = rulingFor(database, row, observers)
@@ -356,13 +359,15 @@ function reconcileClaimUnderLock(
     () =>
       database
         .query(
-          `UPDATE resource_claim SET state=?,settled_at=?,settled_detail=?
+          `UPDATE resource_claim SET state=?,settled_at=?,settled_detail=?,settled_verb=?,settled_session=?
            WHERE record_id=? AND state='claimed'`,
         )
         .run(
           retained ? 'retained' : 'absent',
           nowIso(),
           settlementDetail(snapshot, branch, retained),
+          settledVerb,
+          sessionId(),
           row.record_id,
         ).changes,
     database,

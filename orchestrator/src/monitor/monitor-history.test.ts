@@ -4,9 +4,11 @@ import { addRun } from '../../test/fixtures/store.ts'
 import { db, nowIso } from '../database/db.ts'
 import { monitorWorktreeReleases } from './monitor-history.ts'
 
-test('worktree release history includes settled claims and excludes live claims', () => {
+test('worktree release history includes settled claims and excludes unsettled claims', () => {
   const settledRun = addRun({ agent: 'codex', job: 'implement', status: 'ok' })
   const claimedRun = addRun({ agent: 'codex', job: 'implement', status: 'running' })
+  const pendingRun = addRun({ agent: 'codex', job: 'implement', status: 'running' })
+  const stuckRun = addRun({ agent: 'codex', job: 'implement', status: 'stopped' })
   const insert = db().query(
     `INSERT INTO resource_claim
      (record_id,root_run_record_id,run_record_id,kind,allocation_key,state,claimed_at,
@@ -37,6 +39,30 @@ test('worktree release history includes settled claims and excludes live claims'
     null,
     null,
   )
+  insert.run(
+    newRecordId(),
+    pendingRun,
+    pendingRun,
+    '/tmp/pending-tree',
+    'pending',
+    nowIso(),
+    null,
+    null,
+    null,
+    null,
+  )
+  insert.run(
+    newRecordId(),
+    stuckRun,
+    stuckRun,
+    '/tmp/stuck-tree',
+    'stuck',
+    nowIso(),
+    nowIso(),
+    'resource-step-recorder:markResourceStepStuck',
+    'architect-session',
+    'creation failed',
+  )
 
   expect(monitorWorktreeReleases()).toContainEqual({
     path: '/tmp/released-tree',
@@ -48,5 +74,8 @@ test('worktree release history includes settled claims and excludes live claims'
     session: 'architect-session',
     settled_detail: 'removed tree',
   })
-  expect(monitorWorktreeReleases().map((release) => release.path)).not.toContain('/tmp/live-tree')
+  const paths = monitorWorktreeReleases().map((release) => release.path)
+  expect(paths).not.toContain('/tmp/live-tree')
+  expect(paths).not.toContain('/tmp/pending-tree')
+  expect(paths).not.toContain('/tmp/stuck-tree')
 })

@@ -1,7 +1,7 @@
 import { expect, test } from 'bun:test'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun } from '../../test/fixtures/store.ts'
-import { db, nowIso } from '../database/db.ts'
+import { db, nowIso, sessionId } from '../database/db.ts'
 import { upsertProject } from '../project/projects.ts'
 import { reconcileAbsentClaims } from './claim-reconciliation.ts'
 import type { CleanupPresentation } from './cleanup.ts'
@@ -101,6 +101,14 @@ test('an absent kept branch with a live tip is restored once and settled retaine
   expect(claimState(fixture.claimId)).toEqual({
     state: 'retained',
     settled_detail: `branch retained at ${fixture.tip}`,
+  })
+  expect(
+    db()
+      .query('SELECT settled_verb,settled_session FROM resource_claim WHERE number=?')
+      .get(fixture.claimId),
+  ).toEqual({
+    settled_verb: 'claim-reconciliation:reconcileClaimUnderLock',
+    settled_session: sessionId(),
   })
   expect(lines).toEqual([`restored ${fixture.branch} at ${fixture.tip}`])
 })

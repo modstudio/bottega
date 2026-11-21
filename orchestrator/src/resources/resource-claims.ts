@@ -5,7 +5,6 @@
  */
 
 import type { Database } from 'bun:sqlite'
-import { resolve } from 'node:path'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { realpathOrSpelled } from '../git/checkout-identity.ts'
 import { TERMINAL_RUN_STATUS_SQL } from '../run/run-status.ts'
@@ -29,17 +28,35 @@ export type ResourceClaimState =
   | 'absent'
   | 'stuck'
 export type PortBand = { start: number; end: number }
-export type ClaimSettlementBy = { verb: string; session: string | null }
+export const CLAIM_SETTLEMENT_VERBS = [
+  'discard',
+  'abandon',
+  'cleanup:discardRun',
+  'reclaim',
+  'create-cleanup',
+  'branch-settlement:settleDeletedBranch',
+  'tracked-recipe:trackedAllocator',
+  'tracked-recipe:createTrackedRecipe',
+  'tracked-recipe:teardownTrackedRecipe',
+  'ref-guard:removeSharedRefGuard',
+  'canon-mirror:runCanonMirror',
+  'run-resource-step-recording:recordRunLeaseStep',
+  'worktree-remove:removeFor',
+  'claim-reconciliation:reconcileClaimUnderLock',
+  'resource-step-recorder:markResourceStepStuck',
+  'resource-step-recorder:completeResourceStep',
+  'close-out:terminal',
+  'close-out:sweep',
+  'close-out:requested',
+  'close-out:operator-removal',
+  'close-out:landed',
+  'close-out:failed-provision',
+] as const
+export type ClaimSettlementVerb = (typeof CLAIM_SETTLEMENT_VERBS)[number]
+export type ClaimSettlementBy = { verb: ClaimSettlementVerb; session: string | null }
 
-export function claimSettlement(detail: string, verb: string, session: string | null) {
+export function claimSettlement(detail: string, verb: ClaimSettlementVerb, session: string | null) {
   return { detail, by: { verb, session } }
-}
-
-export function isPathInside(candidate: string | null, directory: string): boolean {
-  if (!candidate) return false
-  const path = resolve(candidate)
-  const root = resolve(directory)
-  return path === root || path.startsWith(`${root}/`)
 }
 export type CloseOutClaimOutcome = 'released' | 'forgotten' | 'held' | 'live' | 'absent' | 'failed'
 export type SandboxDirectoryReleaseInput = {

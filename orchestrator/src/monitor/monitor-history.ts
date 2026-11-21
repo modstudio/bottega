@@ -43,7 +43,7 @@ export function monitorWorktreeReleases(
       `SELECT allocation_key path,run_record_id run,root_run_record_id root_run,state,
               settled_at,settled_verb verb,settled_session session,settled_detail
        FROM resource_claim
-       WHERE kind='worktree' AND state<>'claimed'
+       WHERE kind='worktree' AND state IN ('released','retained','forgotten','absent')
        ORDER BY settled_at DESC,record_id DESC LIMIT ?`,
     )
     .all(limit) as MonitorWorktreeRelease[]
