@@ -4,6 +4,7 @@ import {
   type BranchStateDecision,
   decidePruneEligibility,
   isProbeOnlyMint,
+  type MintedBranchVerdict,
 } from '../branch/branch-state.ts'
 import type { TaskStatusObservation } from '../branch/task-status-observation.ts'
 import {
@@ -12,7 +13,6 @@ import {
   decideShipCleanupVerdict,
   decideTaskBranchesToPrune,
   type ShipCleanupRunFact,
-  type TaskBranchKeepReason,
 } from './ship-cleanup-decision.ts'
 
 const run = (overrides: Partial<ShipCleanupRunFact> = {}): ShipCleanupRunFact => ({
@@ -34,6 +34,10 @@ const run = (overrides: Partial<ShipCleanupRunFact> = {}): ShipCleanupRunFact =>
   worktree: '/trees/1',
   ...overrides,
 })
+
+type TaskBranchKeepReason =
+  | 'throwaway'
+  | Extract<MintedBranchVerdict, { verdict: 'keep' }>['reason']
 
 describe('ship cleanup decision', () => {
   const decide = (

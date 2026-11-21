@@ -23,11 +23,7 @@ import { refGuardDirectory } from '../resources/ref-guard.ts'
 import { parseRetainedRef } from '../resources/resource-inventory.ts'
 import { isSyntheticLifecycleJob } from '../run/synthetic-lifecycle-job.ts'
 import { observeGrokTrustHeadings } from '../sandbox/grok-trust.ts'
-import {
-  reportedShipCleanupItems,
-  type ShipCleanupKeptItem,
-} from '../ship-cleanup/ship-cleanup-decision.ts'
-import { shipCleanup } from '../ship-cleanup/ship-cleanup.ts'
+import { reportedShipCleanupItems, shipCleanup } from '../ship-cleanup/ship-cleanup.ts'
 import type { TaskFlowOpenSessionStageRow as OpenCursor } from '../workflow/task-flow-store.ts'
 import { hasAbsentTreeTeardownPlanWithRegisteredRemoveCommand } from '../worktree/worktree-remove.ts'
 import { releaseSessionCursors } from './session-close-out-cursors.ts'
@@ -48,6 +44,7 @@ import {
   sessionCloseOutVerdict,
   sessionOwnedRunIds,
 } from './session-close-out-decision.ts'
+
 import { sessionCloseOutObligationItems } from './session-close-out-obligation-adapter.ts'
 import { closeOutSessionOutbox } from './session-close-out-outbox.ts'
 import type {
@@ -65,6 +62,8 @@ import {
   closeOutSessionContext,
   type SessionContextLifecycleReport,
 } from './session-context-lifecycle.ts'
+
+type ShipCleanupKeptItem = Awaited<ReturnType<typeof shipCleanup>>['kept'][number]
 
 export const SESSION_CLOSE_OUT_RESIDUE_EXIT_CODE = 1
 
@@ -653,7 +652,7 @@ async function applyMechanicalAction(
 }
 
 function formatReportedTaskSibling(item: ShipCleanupKeptItem): string {
-  return `reported: ${item.item}: ${item.reason}; stays until open task ${item.taskKey} closes${item.remedy ? `; cleared by: ${item.remedy}` : ''}`
+  return `reported: ${item.item}: ${item.reason}; stays until open task ${item.taskKey} closes${item.remedy ? `; remedy after task closes: ${item.remedy}` : ''}`
 }
 
 function liveRunProcessItem(

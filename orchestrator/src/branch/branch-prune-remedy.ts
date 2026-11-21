@@ -2,7 +2,8 @@
 /** Names the action that clears a branch kept by the prune classifier. */
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import type { TaskBranchKeepReason } from '../ship-cleanup/ship-cleanup-decision.ts'
+
+type TaskBranchKeepReason = 'throwaway' | 'superseded' | 'unlanded' | 'unknown'
 
 /** Return the operator remedy for one prune refusal. */
 export function branchVerdictRemedy(
@@ -18,4 +19,15 @@ export function branchVerdictRemedy(
   if (reason === 'unlanded')
     return `land it through its own pull request, or ${PLATFORM_SLUG} tree branch dispose ${project}:${branch} --reason abandoned --note "<why>"`
   return `${PLATFORM_SLUG} tree branch prune --project ${project} --key ${key ?? '<KEY>'} --dry-run once the reported error clears`
+}
+
+export function operatorTaskBranchCommand(
+  state: Exclude<TaskBranchKeepReason, 'throwaway'>,
+  project: string,
+  branch: string,
+  key: string | null,
+): string {
+  return state === 'superseded'
+    ? branchVerdictRemedy(state, project, branch, key)
+    : `git branch -D ${branch}`
 }

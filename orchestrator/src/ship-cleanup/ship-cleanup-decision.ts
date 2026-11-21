@@ -5,6 +5,7 @@ import {
   type BranchStateDecision,
   decideMintedBranchVerdict,
   isProbeOnlyMint,
+  type MintedBranchVerdict,
 } from '../branch/branch-state.ts'
 import {
   decideUnjudgedRunRemedy,
@@ -64,8 +65,11 @@ type ShipCleanupTaskContext = {
   taskState: 'open' | 'closed'
 }
 
-export type TaskBranchKeepReason = 'throwaway' | 'superseded' | 'unlanded' | 'unknown'
-export const TASK_SIBLING_KEEP_REASONS = [
+type TaskBranchKeepReason =
+  | 'throwaway'
+  | Extract<MintedBranchVerdict, { verdict: 'keep' }>['reason']
+
+const TASK_SIBLING_KEEP_REASONS = [
   'superseded',
   'unlanded',
 ] as const satisfies readonly TaskBranchKeepReason[]

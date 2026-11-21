@@ -22,7 +22,7 @@ import {
   type RecordedLandingReport,
   recordAutomaticBranchLandingEvidence,
 } from './branch-landing-service.ts'
-import { branchVerdictRemedy } from './branch-prune-remedy.ts'
+import { branchVerdictRemedy, operatorTaskBranchCommand } from './branch-prune-remedy.ts'
 import { assertBranchRefMayBeDeleted } from './branch-ref-guard.ts'
 import { settleDeletedBranch } from './branch-settlement.ts'
 import {
@@ -584,10 +584,7 @@ function listOperatorBranch(
       branch: row.branch,
       state: row.state,
       commitsNotOnTrunk: row.commitsNotOnTrunk,
-      command:
-        row.state === 'superseded'
-          ? branchVerdictRemedy('superseded', report.project, row.branch, key)
-          : `git branch -D ${row.branch}`,
+      command: operatorTaskBranchCommand(row.state, report.project, row.branch, key),
     })
   }
   keepTaskBranch(report, row.branch, eligibility.reason, key)

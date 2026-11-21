@@ -45,10 +45,10 @@ import {
   decideShipCleanupVerdict,
   decideTaskBranchesToPrune,
   isTaskSiblingKeepReason,
-  reportedShipCleanupItems,
   type ShipCleanupKeptItem,
   type ShipCleanupRunDecision,
   type ShipCleanupRunFact,
+  reportedShipCleanupItems as selectReportedShipCleanupItems,
 } from './ship-cleanup-decision.ts'
 
 type RunRow = {
@@ -887,8 +887,14 @@ export function formatShipCleanup(report: ShipCleanupReport): string {
   return lines.join('\n')
 }
 
-export function formatShipCleanupReportedItem(item: ShipCleanupKeptItem): string {
-  return `reported: ${item.item}: ${item.reason}; stays until open task ${item.taskKey} closes${item.remedy ? `; cleared by: ${item.remedy}` : ''}`
+export function reportedShipCleanupItems(
+  report: Pick<ShipCleanupReport, 'kept'>,
+): readonly ShipCleanupKeptItem[] {
+  return selectReportedShipCleanupItems(report)
+}
+
+function formatShipCleanupReportedItem(item: ShipCleanupKeptItem): string {
+  return `reported: ${item.item}: ${item.reason}; stays until open task ${item.taskKey} closes${item.remedy ? `; remedy after task closes: ${item.remedy}` : ''}`
 }
 
 function formatCallerOwnedKeptItem(item: ShipCleanupKeptItem): string {
