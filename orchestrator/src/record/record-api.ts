@@ -6,6 +6,7 @@ import { HTTPException } from 'hono/http-exception'
 import { z } from 'zod'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { builtCommitResponse } from '../../../shared/built-commit.ts'
+import type { ContextItemHolderGroup } from '../../../shared/context-item-vocabulary.ts'
 import { DOC_AUDIENCES, DOC_KINDS, DOC_STATUSES, type DocAudience } from '../../../shared/docs.ts'
 import { isPersonalItem } from '../../../shared/personal-item-space.ts'
 import type { RecordClientAddresses } from '../../../shared/record-client-addresses.ts'
@@ -136,7 +137,7 @@ type RecordApiDeps = RecordSessionRouteDeps &
     ): Promise<RecordContextItem[]>
     readContextHolders(
       input: Tenant & { holderKind: 'task' | 'session' | 'cursor' },
-    ): Promise<unknown>
+    ): Promise<ContextItemHolderGroup[]>
     upsertContextItem(input: Tenant & RecordContextItemInput): Promise<unknown>
     deleteContextItem(
       input: Tenant & { id: string; expectedRevision?: string },

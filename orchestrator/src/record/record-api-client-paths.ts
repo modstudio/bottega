@@ -8,6 +8,10 @@ import {
 } from '../../../shared/record-project-contract.ts'
 import type { RecordProjectPurgeResult } from './record-project-purge-contract.ts'
 
+export const RECORD_CONTEXT_ITEMS_ROUTE = '/v1/context-items'
+export const RECORD_CONTEXT_ITEM_HOLDERS_ROUTE = '/v1/context-items/holders'
+export const CONTEXT_ITEM_HOLDER_BATCH_LIMIT = 100
+
 export type RecordRequestDestination = { destinationSpaceId?: string }
 export type RecordWriteDestination = { destinationSpaceId: string }
 export type RecordApiAuthentication = {

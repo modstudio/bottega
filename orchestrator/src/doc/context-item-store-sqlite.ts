@@ -2,13 +2,15 @@
 /** Owns local context-item persistence. Context policy belongs to doc-context-write. */
 import type { Database } from 'bun:sqlite'
 import {
+  contextItemHolderGroup,
   type ContextHolderKind,
+  type ContextItemHolderGroup,
   type ContextItemKind,
+  type StoredContextItem,
   splitContextHolder,
 } from '../../../shared/context-item-vocabulary.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { db, nowIso, writeTransaction } from '../database/db.ts'
-import type { ContextItem } from './doc-context-write.ts'
 
 type ContextItemRow = {
   record_id: string
@@ -22,15 +24,6 @@ type ContextItemRow = {
   target: string | null
   created_at: string
   updated_at: string
-}
-
-export type StoredContextItem = Omit<ContextItem, 'questionNumber' | 'target'> & {
-  recordId: string
-  questionNumber: number | null
-  target: string | null
-  revision: string
-  createdAt: string
-  updatedAt: string
 }
 
 function stored(row: ContextItemRow): StoredContextItem {
@@ -79,21 +72,15 @@ export function getLocalContextItem(
 export function listLocalContextHolders(
   holderKind: ContextItemRow['holder_kind'],
   database: Database = db(),
-) {
+): ContextItemHolderGroup[] {
   const rows = database
     .query<ContextItemRow, [string]>(
       'SELECT * FROM context_item WHERE holder_kind=? ORDER BY holder_id,slug',
     )
     .all(holderKind)
-  return [...Map.groupBy(rows, (row) => row.holder_id)].map(([holderId, items]) => ({
-    holder: `${holderKind}:${holderId}`,
-    holderId,
-    updatedAt: items.reduce(
-      (latest, row) => (row.updated_at > latest ? row.updated_at : latest),
-      items[0]!.updated_at,
-    ),
-    items: items.map(stored),
-  }))
+  return [...Map.groupBy(rows, (row) => row.holder_id)].map(([holderId, items]) =>
+    contextItemHolderGroup(`${holderKind}:${holderId}`, items.map(stored)),
+  )
 }
 
 type SetContextItem = {

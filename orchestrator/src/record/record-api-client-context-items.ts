@@ -1,15 +1,16 @@
 // concern: record-api-client-context-items
 /** Builds hosted context-item point-read methods and paths. */
-import {
-  CONTEXT_ITEM_HOLDER_BATCH_LIMIT,
-  RECORD_CONTEXT_ITEM_HOLDERS_ROUTE,
-  RECORD_CONTEXT_ITEMS_ROUTE,
-} from '../../../shared/record-routes.ts'
+import type { ContextItemHolderGroup } from '../../../shared/context-item-vocabulary.ts'
 import type {
   RecordClientRequest,
   RecordContextItemMethod,
   RecordRequestDestination,
   RecordWriteDestination,
+} from './record-api-client-paths.ts'
+import {
+  CONTEXT_ITEM_HOLDER_BATCH_LIMIT,
+  RECORD_CONTEXT_ITEM_HOLDERS_ROUTE,
+  RECORD_CONTEXT_ITEMS_ROUTE,
 } from './record-api-client-paths.ts'
 import type { RecordContextItem, RecordContextItemInput } from './record-context-items.ts'
 
@@ -26,14 +27,7 @@ export type RecordContextItemClient = {
   listContextHolders(
     kind: 'task' | 'session' | 'cursor',
     destination: RecordRequestDestination,
-  ): Promise<
-    Array<{
-      holder: string
-      holderId: string
-      updatedAt: string
-      items: RecordContextItem[]
-    }>
-  >
+  ): Promise<ContextItemHolderGroup[]>
   upsertContextItem(
     input: RecordContextItemInput,
     destination: RecordWriteDestination,
@@ -58,7 +52,6 @@ export function recordContextItemReadClient(
     const chunks: string[][] = []
     for (let index = 0; index < holders.length; index += CONTEXT_ITEM_HOLDER_BATCH_LIMIT)
       chunks.push(holders.slice(index, index + CONTEXT_ITEM_HOLDER_BATCH_LIMIT))
-    if (chunks.length === 0) chunks.push([])
     return chunks
   }
   return {

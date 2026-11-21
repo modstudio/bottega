@@ -2,7 +2,11 @@
 /** Selects the authoritative context-item reader while retaining local-only persistence. */
 import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import type { ContextHolderKind } from '../../../shared/context-item-vocabulary.ts'
+import type {
+  ContextHolderKind,
+  ContextItemHolderGroup,
+  StoredContextItem,
+} from '../../../shared/context-item-vocabulary.ts'
 import { db } from '../database/db.ts'
 import { recordApiClient } from '../record/record-api-client.ts'
 import {
@@ -16,11 +20,10 @@ import {
   listLocalContextItems,
   removeLocalContextHolder,
   removeLocalContextItem,
-  type StoredContextItem,
   setLocalContextItem,
 } from './context-item-store-sqlite.ts'
 
-export type { StoredContextItem }
+export type { StoredContextItem } from '../../../shared/context-item-vocabulary.ts'
 export { removeLocalContextHolder, removeLocalContextItem, setLocalContextItem }
 
 type ContextItemReadSource = 'local' | 'hosted'
@@ -29,6 +32,10 @@ type ContextItemReadSource = 'local' | 'hosted'
 export function contextItemReadSource(decision: RecordWriteDecision): ContextItemReadSource {
   throwIfRecordRefused(decision)
   return decision.verdict === 'hosted' ? 'hosted' : 'local'
+}
+
+export function contextItemReadSourceFor(database: Database = db()): ContextItemReadSource {
+  return contextItemReadSource(currentRecordWriteDecision(database))
 }
 
 export function contextItemReadFailure(error: unknown): never {
@@ -44,7 +51,8 @@ export async function listContextItems(
   database: Database = db(),
 ): Promise<StoredContextItem[]> {
   const holders = typeof holder === 'string' ? [holder] : [...holder]
-  if (contextItemReadSource(currentRecordWriteDecision(database)) === 'local')
+  if (holders.length === 0) return []
+  if (contextItemReadSourceFor(database) === 'local')
     return holders.flatMap((value) => listLocalContextItems(value, database))
   try {
     return await recordApiClient().listContextItems(holders, {})
@@ -58,7 +66,7 @@ export async function getContextItem(
   slug: string,
   database: Database = db(),
 ): Promise<StoredContextItem | null> {
-  if (contextItemReadSource(currentRecordWriteDecision(database)) === 'local')
+  if (contextItemReadSourceFor(database) === 'local')
     return getLocalContextItem(holder, slug, database)
   try {
     return await recordApiClient().getContextItem(holder, slug, {})
@@ -67,8 +75,11 @@ export async function getContextItem(
   }
 }
 
-export async function listContextHolders(holderKind: ContextHolderKind, database: Database = db()) {
-  if (contextItemReadSource(currentRecordWriteDecision(database)) === 'local')
+export async function listContextHolders(
+  holderKind: ContextHolderKind,
+  database: Database = db(),
+): Promise<ContextItemHolderGroup[]> {
+  if (contextItemReadSourceFor(database) === 'local')
     return listLocalContextHolders(holderKind, database)
   try {
     return await recordApiClient().listContextHolders(holderKind, {})

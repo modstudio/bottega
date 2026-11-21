@@ -3,6 +3,7 @@
 
 import type { Database } from 'bun:sqlite'
 import { db, writableDb } from '../database/db.ts'
+import { contextItemReadSourceFor } from '../doc/context-item-store.ts'
 import {
   dropSessionContextItemsForLifecycle,
   sessionContextHolders,
@@ -13,6 +14,24 @@ import { latestStoredDocAuthorSession } from '../doc/doc-revision-store.ts'
 import type { CleanupPresentation } from './cleanup.ts'
 import { ownerIsGone, UNJUDGED_OWNER_WINDOW_MS } from './cleanup-sweep-decisions.ts'
 import { gatherOwnerActivity } from './owner-activity.ts'
+
+export type SessionContextSweepDecision = 'drop' | 'keep' | 'not-owned-by-this-install'
+
+/** Keeps hosted holders unless local owner-activity facts establish this install's ownership. */
+export function decideSessionContextSweep(input: {
+  readSource: 'local' | 'hosted'
+  localOwnerEvidence: boolean
+  ownerGone: boolean
+  hasUnconsumedResumeBrief: boolean
+}): SessionContextSweepDecision {
+  if (input.readSource === 'hosted' && !input.localOwnerEvidence) return 'not-owned-by-this-install'
+  if (input.hasUnconsumedResumeBrief || !input.ownerGone) return 'keep'
+  return 'drop'
+}
+
+export function sessionContextOwnershipLine(count: number): string {
+  return `session context: kept ${count} holder${count === 1 ? '' : 's'} not owned by this install`
+}
 
 function hasUnconsumedResumeBrief(database: Database, session: string): boolean {
   return listDocsStore({ scope: 'resume' }, database).some((doc) => {
@@ -30,8 +49,9 @@ export async function sweepSessionContext(input: {
   if (!input.enabled) return false
   const database = input.database ?? (input.dryRun ? db() : writableDb())
   let failed = false
+  let notOwned = 0
+  const readSource = contextItemReadSourceFor(database)
   for (const holder of await sessionContextHolders(database)) {
-    if (hasUnconsumedResumeBrief(database, holder.session)) continue
     const activity = gatherOwnerActivity(database, {
       ownerSessionId: holder.session,
       holderActivityAt: holder.updatedAt,
@@ -41,8 +61,19 @@ export async function sweepSessionContext(input: {
       now: Date.now(),
       windowMs: UNJUDGED_OWNER_WINDOW_MS,
     })
-    if (gone && (await dropSweptHolder(input, holder))) failed = true
+    const decision = decideSessionContextSweep({
+      readSource,
+      localOwnerEvidence: activity.localOwnerEvidence,
+      ownerGone: gone,
+      hasUnconsumedResumeBrief: hasUnconsumedResumeBrief(database, holder.session),
+    })
+    if (decision === 'not-owned-by-this-install') {
+      notOwned++
+      continue
+    }
+    if (decision === 'drop' && (await dropSweptHolder(input, holder))) failed = true
   }
+  if (notOwned) input.presentation.log(sessionContextOwnershipLine(notOwned))
   return failed
 }
 

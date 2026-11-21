@@ -52,7 +52,6 @@ export const docModules: DocModule[] = [
     '../../../shared/context-item-vocabulary.ts',
     '../../../shared/record-id.ts',
     '../database/db.ts',
-    './doc-context-write.ts',
   ]),
   module('orchestrator/src/doc/context-item-hosted-client.ts', [
     '../../../shared/brand.ts',

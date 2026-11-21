@@ -227,7 +227,7 @@ export async function clearTaskHolderForLifecycle(input: {
       let removed = 0
       let alreadyAbsent = 0
       for (const item of items) {
-        const hosted = await client.remove(item.recordId, {})
+        const hosted = await client.remove(item.recordId, { expectedRevision: item.revision })
         if (hosted.removed) removed++
         else alreadyAbsent++
       }
@@ -301,7 +301,7 @@ async function dropSessionContextItemForLifecycle(input: {
         kind: 'session',
         checkoutProject: project,
       })
-      const hosted = await client.remove(item.recordId, {})
+      const hosted = await client.remove(item.recordId, { expectedRevision: item.revision })
       return hosted.removed ? ('dropped' as const) : ('already-absent' as const)
     },
   })

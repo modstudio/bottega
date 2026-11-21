@@ -17,6 +17,7 @@ export type ContextReviewEvent = {
   items: number
   flagged: number
   itemIds: string[]
+  itemHolders?: string[]
 }
 
 /** Reads the recorded review measurements in one report window. */
@@ -40,7 +41,11 @@ export function recordContextReview(
 ): ContextReviewEvent {
   const database = dependencies.database ?? db(true)
   const row = { ...input, id: newRecordId(), at: (dependencies.now ?? nowIso)() }
-  const itemIds = JSON.stringify(row.itemIds)
+  const itemIds = JSON.stringify(
+    row.itemHolders
+      ? row.itemIds.map((id, index) => ({ id, holder: row.itemHolders![index]! }))
+      : row.itemIds,
+  )
   writeTransaction(() => {
     database
       .query(`INSERT INTO context_review

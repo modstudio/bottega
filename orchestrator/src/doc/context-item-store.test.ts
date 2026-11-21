@@ -9,6 +9,8 @@ import { rememberHostedRecord } from '../record/install-binding-write.ts'
 import {
   contextItemReadFailure,
   contextItemReadSource,
+  getContextItem,
+  listContextHolders,
   listContextItems,
 } from './context-item-store.ts'
 
@@ -32,6 +34,45 @@ test('an unreachable hosted context-item read refuses with a remedy', () => {
   expect(() => contextItemReadFailure(new Error('record API 404'))).toThrow(
     `remedy: run \`${PLATFORM_SLUG} record doctor\``,
   )
+})
+
+test('failing hosted readers refuse through the store seam without a local fallback', async () => {
+  const priorUrl = process.env.BOTTEGA_RECORD_API_URL
+  const holderId = `local-fallback-${crypto.randomUUID()}`
+  const holder = `session:${holderId}`
+  try {
+    process.env.BOTTEGA_RECORD_API_URL = 'https://record.example.test'
+    rememberHostedRecord(db())
+    db()
+      .query(
+        `INSERT INTO context_item
+         (record_id,holder_kind,holder_id,slug,kind,body,source,created_at,updated_at)
+         VALUES (?, 'session', ?, 'local-only', 'fact', 'stale', 'test', ?, ?)`,
+      )
+      .run(crypto.randomUUID(), holderId, new Date().toISOString(), new Date().toISOString())
+    const reject = async () => {
+      throw new Error('record API 503')
+    }
+    installRecordApiClient({
+      ...createMemoryRecordApiClient(),
+      listContextItems: reject,
+      getContextItem: reject,
+      listContextHolders: reject,
+    })
+
+    for (const read of [
+      () => listContextItems(holder),
+      () => getContextItem(holder, 'local-only'),
+      () => listContextHolders('session'),
+    ]) {
+      await expect(read()).rejects.toThrow('record API 503')
+      await expect(read()).rejects.toThrow(`remedy: run \`${PLATFORM_SLUG} record doctor\``)
+    }
+  } finally {
+    db().query("DELETE FROM context_item WHERE holder_kind='session' AND holder_id=?").run(holderId)
+    if (priorUrl === undefined) delete process.env.BOTTEGA_RECORD_API_URL
+    else process.env.BOTTEGA_RECORD_API_URL = priorUrl
+  }
 })
 
 test('hook holder batches make one hosted context-item call', async () => {

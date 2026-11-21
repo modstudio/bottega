@@ -14,11 +14,37 @@ import type { SessionCloseOutReport } from '../session/session-close-out.ts'
 import { markSessionCloseOutSwept } from '../session/session-close-out-store.ts'
 import type { CleanupPresentation } from './cleanup.ts'
 import { sweepRuns } from './cleanup-sweep.ts'
-import { sweepSessionContext } from './cleanup-sweep-context.ts'
+import {
+  decideSessionContextSweep,
+  sessionContextOwnershipLine,
+  sweepSessionContext,
+} from './cleanup-sweep-context.ts'
 import { sweepSessionCloseOutRecords } from './cleanup-sweep-session-close-out.ts'
 
 afterEach(() => {
   mock.restore()
+})
+
+test('hosted session context sweep keeps foreign holders and drops owned expired holders', () => {
+  expect(
+    decideSessionContextSweep({
+      readSource: 'hosted',
+      localOwnerEvidence: false,
+      ownerGone: true,
+      hasUnconsumedResumeBrief: false,
+    }),
+  ).toBe('not-owned-by-this-install')
+  expect(
+    decideSessionContextSweep({
+      readSource: 'hosted',
+      localOwnerEvidence: true,
+      ownerGone: true,
+      hasUnconsumedResumeBrief: false,
+    }),
+  ).toBe('drop')
+  expect(sessionContextOwnershipLine(1)).toBe(
+    'session context: kept 1 holder not owned by this install',
+  )
 })
 
 function closeOutReport(session: string, clean = true): SessionCloseOutReport {

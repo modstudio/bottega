@@ -2,7 +2,13 @@
 /** Owns tenant-bound hosted context-item reads and mutations. */
 import type { SQL } from 'bun'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import type { ContextHolderKind, ContextItemKind } from '../../../shared/context-item-vocabulary.ts'
+import {
+  contextItemHolderGroup,
+  type ContextHolderKind,
+  type ContextItemHolderGroup,
+  type ContextItemKind,
+  type StoredContextItem,
+} from '../../../shared/context-item-vocabulary.ts'
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { recordIso } from '../../../shared/record-timestamp.ts'
@@ -41,7 +47,7 @@ function output(row: Record<string, unknown>) {
   }
 }
 
-function readOutput(row: Record<string, unknown>) {
+function readOutput(row: Record<string, unknown>): StoredContextItem {
   return {
     recordId: String(row.id),
     holder: `${String(row.holder_kind)}:${String(row.holder_id)}`,
@@ -57,7 +63,7 @@ function readOutput(row: Record<string, unknown>) {
   }
 }
 
-export type RecordContextItem = ReturnType<typeof readOutput>
+export type RecordContextItem = StoredContextItem
 
 export async function readRecordContextItems(
   input: Tenant & {
@@ -86,22 +92,18 @@ export async function readRecordContextItems(
   })
 }
 
-export async function readRecordContextHolders(input: Tenant & { holderKind: ContextHolderKind }) {
+export async function readRecordContextHolders(
+  input: Tenant & { holderKind: ContextHolderKind },
+): Promise<ContextItemHolderGroup[]> {
   return tenant(input, async (tx) => {
     const rows = (await tx`
       SELECT * FROM context_item WHERE space_id=${input.spaceId}::uuid
         AND holder_kind=${input.holderKind}
       ORDER BY holder_id,slug
     `) as Record<string, unknown>[]
-    return [...Map.groupBy(rows, (row) => String(row.holder_id))].map(([holderId, items]) => ({
-      holder: `${input.holderKind}:${holderId}`,
-      holderId,
-      updatedAt: items.reduce((latest, row) => {
-        const value = recordIso(row.updated_at)
-        return value > latest ? value : latest
-      }, recordIso(items[0]!.updated_at)),
-      items: items.map(readOutput),
-    }))
+    return [...Map.groupBy(rows, (row) => String(row.holder_id))].map(([holderId, items]) =>
+      contextItemHolderGroup(`${input.holderKind}:${holderId}`, items.map(readOutput)),
+    )
   })
 }
 

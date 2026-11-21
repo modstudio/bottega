@@ -106,6 +106,49 @@ test('hosted task reads return record items when the local row is absent', async
   }
 })
 
+test('hosted context set with no related holders skips the empty batch read', async () => {
+  installContextFacts()
+  const priorUrl = process.env.BOTTEGA_RECORD_API_URL
+  let listReads = 0
+  try {
+    process.env.BOTTEGA_RECORD_API_URL = 'https://record.example.test'
+    rememberHostedRecord(db())
+    const client = createMemoryRecordApiClient()
+    installRecordApiClient({
+      ...client,
+      listContextItems: async (holders, destination) => {
+        listReads++
+        return client.listContextItems(holders, destination)
+      },
+      whoami: async () => ({
+        user: { id: 'user-a' },
+        activeSpaceId: 'personal-space',
+        personalSpaceId: 'personal-space',
+        memberships: [{ space_id: 'personal-space', slug: 'personal', permission: 'write' }],
+      }),
+      upsertContextItem: async () => ({
+        id: newRecordId(),
+        createdAt: '2026-11-21T00:00:00.000Z',
+        updatedAt: '2026-11-21T00:00:00.000Z',
+      }),
+    })
+
+    await expect(
+      setContextItem({
+        task: task.key,
+        id: 'no-related-holders',
+        kind: 'fact',
+        source: 'test',
+        body: 'The empty related-holder batch is a no-op.',
+      }),
+    ).resolves.toMatchObject({ id: 'no-related-holders' })
+    expect(listReads).toBe(1)
+  } finally {
+    if (priorUrl === undefined) delete process.env.BOTTEGA_RECORD_API_URL
+    else process.env.BOTTEGA_RECORD_API_URL = priorUrl
+  }
+})
+
 afterEach(() => {
   delete globals[CONTEXT_FACTS_PORTS_KEY]
   installRecordApiClient(null)
@@ -402,7 +445,7 @@ test('worker environments refuse every context-item write entry point', async ()
   }
 })
 
-test('lifecycle task clear ignores revisions and counts already-absent hosted rows', async () => {
+test('lifecycle task clear passes revisions and counts already-absent hosted rows', async () => {
   installContextFacts()
   await setContextItem({
     task: task.key,
@@ -453,7 +496,9 @@ test('lifecycle task clear ignores revisions and counts already-absent hosted ro
       expect.objectContaining({ removed: 1, alreadyAbsent: 1 }),
     )
     expect(removals).toHaveLength(2)
-    expect(removals.map((removal) => removal.input)).toEqual([{}, {}])
+    expect(removals.map((removal) => removal.input)).toEqual(
+      hostedItems.map((item) => ({ expectedRevision: item.revision })),
+    )
     expect(
       db().query('SELECT 1 FROM context_item WHERE record_id=?').get(hostedItems[0]!.recordId),
     ).not.toBeNull()
@@ -536,7 +581,7 @@ test('lifecycle drop reports an absent hosted row and leaves the local mirror un
   }
 })
 
-test('lifecycle drop ignores a divergent hosted revision and leaves the local mirror untouched', async () => {
+test('lifecycle drop reports a divergent hosted revision and leaves the local mirror untouched', async () => {
   const session = newRecordId()
   const ownerProject = `session-owner-${session}`
   const priorSession = process.env.CLAUDE_CODE_SESSION_ID
@@ -593,7 +638,12 @@ test('lifecycle drop ignores a divergent hosted revision and leaves the local mi
         reason: 'test divergent hosted revision',
         items,
       }),
-    ).toEqual([expect.objectContaining({ outcome: 'dropped', error: null })])
+    ).toEqual([
+      expect.objectContaining({
+        outcome: 'failed',
+        error: expect.stringContaining('context item changed'),
+      }),
+    ])
     expect(
       db().query('SELECT 1 FROM context_item WHERE record_id=?').get(item.recordId),
     ).not.toBeNull()

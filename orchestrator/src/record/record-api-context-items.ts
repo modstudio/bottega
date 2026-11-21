@@ -5,12 +5,14 @@ import { z } from 'zod'
 import {
   CONTEXT_HOLDER_KINDS,
   CONTEXT_ITEM_KINDS,
+  type ContextItemHolderGroup,
+  splitContextHolder,
 } from '../../../shared/context-item-vocabulary.ts'
 import {
   CONTEXT_ITEM_HOLDER_BATCH_LIMIT,
   RECORD_CONTEXT_ITEM_HOLDERS_ROUTE,
   RECORD_CONTEXT_ITEMS_ROUTE,
-} from '../../../shared/record-routes.ts'
+} from './record-api-client-paths.ts'
 import type { RecordIdentity } from './record-auth.ts'
 import type { RecordContextItem, RecordContextItemInput } from './record-context-items.ts'
 
@@ -25,7 +27,7 @@ type Deps = {
   ): Promise<RecordContextItem[]>
   readContextHolders(
     input: Tenant & { holderKind: (typeof CONTEXT_HOLDER_KINDS)[number] },
-  ): Promise<unknown>
+  ): Promise<ContextItemHolderGroup[]>
   upsertContextItem(input: Tenant & RecordContextItemInput): Promise<unknown>
   deleteContextItem(
     input: Tenant & { id: string; expectedRevision?: string },
@@ -33,18 +35,12 @@ type Deps = {
 }
 
 const holder = z.string().transform((value, context) => {
-  const separator = value.indexOf(':')
-  const parsed = z
-    .object({
-      holderKind: z.enum(CONTEXT_HOLDER_KINDS),
-      holderId: z.string().min(1),
-    })
-    .safeParse({ holderKind: value.slice(0, separator), holderId: value.slice(separator + 1) })
-  if (separator < 1 || !parsed.success) {
+  try {
+    return splitContextHolder(value)
+  } catch {
     context.addIssue({ code: 'custom', message: 'invalid context holder' })
     return z.NEVER
   }
-  return parsed.data
 })
 
 const body = z.object({

@@ -4,7 +4,8 @@
 import type { Database } from 'bun:sqlite'
 import { readBranchLandingTaskRows } from '../branch/branch-landing-records.ts'
 import { observeLandedTasks } from '../branch/task-status-observation.ts'
-import { taskContextItems } from '../doc/context-service.ts'
+import { listContextItems } from '../doc/context-item-store.ts'
+import { taskContextHolder } from '../doc/doc-subjects.ts'
 import { pendingForSession } from '../evidence/evidence-query.ts'
 import { projects } from '../project/projects.ts'
 import { type ProjectTaskListReader, readProjectTaskList } from '../workflow/project-task-list.ts'
@@ -35,18 +36,11 @@ export async function sessionCloseOutObligationItems(
     ),
   })
   const landedTasks = await observeLandedTasks(identities, taskReader)
-  const contextByTask = new Map(
-    await Promise.all(
-      landedTasks.flatMap((observation) =>
-        observation.task
-          ? [
-              taskContextItems(observation.task, database).then(
-                (items) => [observation.task!.record_id, items] as const,
-              ),
-            ]
-          : [],
-      ),
-    ),
+  const taskHolders = landedTasks.flatMap((observation) =>
+    observation.task ? [taskContextHolder(observation.task.record_id)] : [],
+  )
+  const contextByTask = Map.groupBy(await listContextItems(taskHolders, database), (item) =>
+    item.holder.slice('task:'.length),
   )
   return sessionCloseOutObligations({
     pendingScores: pendingForSession(session, database),

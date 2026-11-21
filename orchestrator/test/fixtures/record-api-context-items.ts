@@ -1,5 +1,6 @@
 import type { RecordApiClient } from '../../src/record/record-api-client.ts'
 import type { RecordContextItem } from '../../src/record/record-context-items.ts'
+import { contextItemHolderGroup } from '../../../shared/context-item-vocabulary.ts'
 
 export function memoryContextItemClient(
   contextItems: RecordContextItem[],
@@ -13,15 +14,9 @@ export function memoryContextItemClient(
     },
     async listContextHolders(kind) {
       const selected = contextItems.filter((item) => item.holder.startsWith(`${kind}:`))
-      return [...Map.groupBy(selected, (item) => item.holder)].map(([holder, items]) => ({
-        holder,
-        holderId: holder.slice(holder.indexOf(':') + 1),
-        updatedAt: items.reduce(
-          (latest, item) => (item.updatedAt > latest ? item.updatedAt : latest),
-          items[0]!.updatedAt,
-        ),
-        items,
-      }))
+      return [...Map.groupBy(selected, (item) => item.holder)].map(([holder, items]) =>
+        contextItemHolderGroup(holder, items),
+      )
     },
   }
 }

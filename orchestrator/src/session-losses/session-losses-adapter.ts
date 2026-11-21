@@ -9,6 +9,7 @@ import { resolveStatePaths } from '../../../shared/state-directory.ts'
 import { UNJUDGED_OWNER_WINDOW_MS } from '../cleanup/cleanup-sweep-decisions.ts'
 import { REPLY_FILE_NAME } from '../contract/contract.ts'
 import { db } from '../database/db.ts'
+import type { Database } from 'bun:sqlite'
 import { listContextItems } from '../doc/context-item-store.ts'
 import { getDoc } from '../doc/docs.ts'
 import {
@@ -62,27 +63,40 @@ type SessionLossOutput = Omit<SessionLossReport, 'boundaries'> & {
   >
 }
 
-async function contextReviewMeasurements(
+type StoredReviewItem = string | { id: string; holder: string }
+
+export async function contextReviewMeasurements(
   sessionId: string,
   boundaries: SessionLossReport['boundaries'],
+  dependencies: {
+    database?: Database
+    readItems?: typeof listContextItems
+  } = {},
 ) {
-  const reviews = db()
+  const rows = (dependencies.database ?? db())
     .query<{ at: string; items: number; flagged: number; item_ids: string }, [string]>(
       `SELECT at,items,flagged,item_ids FROM context_review
        WHERE session_id=? ORDER BY at,record_id`,
     )
     .all(sessionId)
-    .map(
-      (row): ContextReviewLossRow => ({
-        at: row.at,
-        items: row.items,
-        flagged: row.flagged,
-        itemIds: JSON.parse(row.item_ids) as string[],
-      }),
-    )
+  const storedItems = rows.map((row) => JSON.parse(row.item_ids) as StoredReviewItem[])
+  const reviews = rows.map(
+    (row, index): ContextReviewLossRow => ({
+      at: row.at,
+      items: row.items,
+      flagged: row.flagged,
+      itemIds: storedItems[index]!.map((item) => (typeof item === 'string' ? item : item.id)),
+    }),
+  )
   const reviewedIds = new Set(reviews.flatMap((review) => review.itemIds))
   const captureSource = compactionCaptureSource(sessionId)
-  const items = (await listContextItems(`session:${sessionId}`))
+  const holders = [
+    `session:${sessionId}`,
+    ...storedItems.flatMap((items) =>
+      items.flatMap((item) => (typeof item === 'string' ? [] : [item.holder])),
+    ),
+  ]
+  const items = (await (dependencies.readItems ?? listContextItems)([...new Set(holders)]))
     .map((item) => ({
       id: item.recordId,
       createdAt: item.createdAt,

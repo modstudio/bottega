@@ -2,7 +2,7 @@ import { expect, test } from 'bun:test'
 import {
   CONTEXT_ITEM_HOLDER_BATCH_LIMIT,
   RECORD_CONTEXT_ITEMS_ROUTE,
-} from '../../../shared/record-routes.ts'
+} from './record-api-client-paths.ts'
 import { recordContextItemReadClient } from './record-api-client-context-items.ts'
 import type { RecordClientRequest } from './record-api-client-paths.ts'
 import type { RecordContextItem } from './record-context-items.ts'
@@ -59,4 +59,11 @@ test('context-item client splits one holder past the limit and returns every ite
       (path) => new URL(path, 'https://record.example.test').searchParams.getAll('holder').length,
     ),
   ).toEqual([CONTEXT_ITEM_HOLDER_BATCH_LIMIT, 1])
+})
+
+test('context-item client makes no request for an empty holder batch', async () => {
+  const { calls, client } = captureContextItemReads()
+
+  expect(await client.listContextItems([], {})).toEqual([])
+  expect(calls).toEqual([])
 })
