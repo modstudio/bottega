@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db, nowIso, writeTransaction } from '../database/db.ts'
@@ -145,7 +146,7 @@ describe('resource claim decisions', () => {
       .run(newRecordId(), root, child, null, path, nowIso())
 
     expect(runsClaimingWorktreePath(database, path, child)).toEqual([])
-    expect(claimedWorktreeRefusal(database, path, child)).toBeNull()
+    expect(claimedWorktreeRefusal(database, path, PLATFORM_SLUG, child)).toBeNull()
   })
 
   test('the lowest free port selects the band start when the band is empty', () => {

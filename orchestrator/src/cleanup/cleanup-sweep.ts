@@ -79,10 +79,9 @@ import { sweepHubTasks } from './cleanup-sweep-hub-tasks.ts'
 import { holdNamedFilesystemOrphans } from './cleanup-sweep-named-tree.ts'
 import {
   observeNamedRunForSweep,
-  orphanClaimRuling,
   orphanCandidateDecision,
-  rememberedWorktrees,
 } from './cleanup-sweep-orphan-candidate.ts'
+import { orphanClaimRuling, rememberedWorktrees } from './cleanup-sweep-orphan-claims.ts'
 import {
   finishRemovedOrphan,
   reportClaimedOrphanKeep,
@@ -898,7 +897,7 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
    * list as a worktree is kept; uncommitted work is extracted before removal.
    * A project's own removal refusal remains final through removeWithTool().
    */
-  const remembered = rememberedWorktrees(db())
+  const remembered = rememberedWorktrees()
   for (const p of sweepProjects) {
     const root = join(p.path, '.claude', 'worktrees')
     if (!existsSync(root)) continue
@@ -940,7 +939,7 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
           const sharersBefore = liveWorktreeSharers(db(), worktreeRow)
           const locked = observeLockedRun(path, p, runId, label, options.presentation)
           cleanupFailed ||= locked.failed
-          const lockedRuling = orphanClaimRuling(db(), path, sharersBefore.length, locked.alive)
+          const lockedRuling = orphanClaimRuling(path, sharersBefore.length, locked.alive)
           if (reportClaimedOrphanKeep(lockedRuling, label, keepHeld)) return
           if (lockedRuling.action === 'shared-before') {
             const owners = worktreeSharerList(sharersBefore)

@@ -5,7 +5,6 @@
  */
 
 import type { Database } from 'bun:sqlite'
-import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { realpathOrSpelled } from '../git/checkout-identity.ts'
 import { TERMINAL_RUN_STATUS_SQL } from '../run/run-status.ts'
@@ -104,11 +103,13 @@ export function runsClaimingWorktreePath(
   excludeRunId?: string,
 ): ClaimedWorktreeOwner[] {
   const excludedRoot = excludeRunId
-    ? ((database
-        .query(
-          'SELECT COALESCE(parent_run_record_id,record_id) root_record_id FROM run WHERE record_id=?',
-        )
-        .get(excludeRunId) as { root_record_id: string } | null)?.root_record_id ?? excludeRunId)
+    ? ((
+        database
+          .query(
+            'SELECT COALESCE(parent_run_record_id,record_id) root_record_id FROM run WHERE record_id=?',
+          )
+          .get(excludeRunId) as { root_record_id: string } | null
+      )?.root_record_id ?? excludeRunId)
     : null
   const canonicalPath = realpathOrSpelled(path)
   const claimed = database
@@ -130,6 +131,7 @@ export function runsClaimingWorktreePath(
 export function claimedWorktreeRefusal(
   database: Database,
   path: string,
+  platformSlug: string,
   actingRunId?: string,
 ): string | null {
   const claimants = runsClaimingWorktreePath(database, path, actingRunId)
@@ -139,7 +141,7 @@ export function claimedWorktreeRefusal(
   return (
     `worktree ${path} is in use by run(s) ${ids.join(', ')}; ` +
     `once run ${first} is finished with the tree, close it out with ` +
-    `${PLATFORM_SLUG} run close-out ${first}`
+    `${platformSlug} run close-out ${first}`
   )
 }
 

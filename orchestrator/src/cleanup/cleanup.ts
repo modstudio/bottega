@@ -497,13 +497,35 @@ function releaseSharedWorktreePointer(
   throw claim
 }
 
+function releaseSharedReaderPointer(
+  row: CleanupRow,
+  sharers: WorktreeSharerRow[],
+  auditAuthority: RootAuthority | undefined,
+  options: CleanupOptions,
+): void {
+  if (sharers.length && isSharedReaderWorktreeClaim(db(), row.worktree)) {
+    releaseSharedWorktreePointer(row, sharers, auditAuthority, options)
+  }
+}
+
+function discardWorktreeSharers(
+  row: CleanupRow,
+  auditAuthority: RootAuthority | undefined,
+  options: CleanupOptions,
+): WorktreeSharerRow[] {
+  const sharers = otherConversationWorktreeSharers(db(), row)
+  releaseSharedReaderPointer(row, sharers, auditAuthority, options)
+  assertNoOtherWorktreeClaim(row.worktree, row.record_id)
+  return sharers
+}
+
 function assertNoOtherWorktreeClaim(path: string, actingRunId: string): void {
-  const refusal = claimedWorktreeRefusal(db(), path, actingRunId)
+  const refusal = claimedWorktreeRefusal(db(), path, PLATFORM_SLUG, actingRunId)
   if (refusal) throw new Error(refusal)
 }
 
 function assertNoWorktreeClaimAcquiredDuringCleanup(path: string, actingRunId: string): void {
-  const refusal = claimedWorktreeRefusal(db(), path, actingRunId)
+  const refusal = claimedWorktreeRefusal(db(), path, PLATFORM_SLUG, actingRunId)
   if (!refusal) return
   throw new Error(
     `another run claimed ${path} during cleanup; the tree has already been removed and ` +
@@ -532,11 +554,7 @@ export function discardWorktree(
   const repoRoot = cleanupRepoRoot(row) ?? process.cwd()
   withCleanupLock(repoRoot, `${row.record_id}`, row.worktree, () => {
     const treeWasAlreadyReleased = worktreeWasReleasedBeforeDiscard(row, repoRoot, force)
-    const sharers = otherConversationWorktreeSharers(db(), row)
-    if (sharers.length && isSharedReaderWorktreeClaim(db(), row.worktree)) {
-      releaseSharedWorktreePointer(row, sharers, auditAuthority, options)
-    }
-    assertNoOtherWorktreeClaim(row.worktree, row.record_id)
+    const sharers = discardWorktreeSharers(row, auditAuthority, options)
     if (sharers.length) releaseSharedWorktreePointer(row, sharers, auditAuthority, options)
 
     const minted = mintedBranchForCleanup(row)

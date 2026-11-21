@@ -205,7 +205,7 @@ function proveRunOwners(
 }
 
 export function sharedWorktreeRefusal(path: string, runId?: string): ReclaimResult | null {
-  const claimRefusal = claimedWorktreeRefusal(db(), path, runId)
+  const claimRefusal = claimedWorktreeRefusal(db(), path, PLATFORM_SLUG, runId)
   if (claimRefusal) return refuse(claimRefusal)
   if (!runId) return null
   const sharers = otherConversationWorktreeSharers(db(), {

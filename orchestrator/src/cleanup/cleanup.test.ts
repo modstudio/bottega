@@ -218,11 +218,9 @@ test("discard releases its pointer when another chain's shared-reader claim hold
   const reader = addRun({ agent: 'codex', job: 'review-lens', status: 'ok' })
   const fixture = heldCleanup(id)
   try {
-    db().query('UPDATE run SET repo=?,worktree=? WHERE record_id=?').run(
-      fixture.project,
-      fixture.tree,
-      reader,
-    )
+    db()
+      .query('UPDATE run SET repo=?,worktree=? WHERE record_id=?')
+      .run(fixture.project, fixture.tree, reader)
     db()
       .query(
         `INSERT INTO resource_claim
