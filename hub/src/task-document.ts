@@ -334,7 +334,6 @@ export async function updateTaskDocument(
     throw new Error(`a body update requires --version from \`${PLATFORM_SLUG} task doc show\``)
   const mode = taskWriteMode(task.project, options.hosted)
   const at = nowIso()
-  const fields = taskDocumentFields(changes)
   if (mode === 'hosted-configured') {
     if (!expectedVersion)
       throw new Error(
@@ -344,7 +343,6 @@ export async function updateTaskDocument(
     const writeOptions = hostedTaskWriteOptions(task.project, options.hosted)
     if (changes.role !== undefined && role)
       await assertHostedRoleAvailable(current.task_key, role, writeOptions, id)
-    const version = documentVersion()
     const row: PushedDocument = {
       id,
       number: current.number,
@@ -355,7 +353,7 @@ export async function updateTaskDocument(
       role,
       title: changes.title ?? current.title,
       body: changes.body ?? current.body,
-      version,
+      version: documentVersion(),
       created_at: current.created_at,
       updated_at: at,
       deleted_at: null,
@@ -365,7 +363,7 @@ export async function updateTaskDocument(
       id,
       op: 'upsert',
       row,
-      fields,
+      fields: taskDocumentFields(changes),
       expected_revision: expectedVersion,
     }
     await sendHostedChanges(current.task_key, [[change]], writeOptions)
