@@ -33,6 +33,7 @@ import {
 import type { DockerResource } from '../resources/docker-resources.ts'
 import { sweepIdleMainStacks } from '../resources/main-stack.ts'
 import { currentOrphanProcesses } from '../resources/process-inventory.ts'
+import { runsClaimingWorktreePath } from '../resources/resource-claims.ts'
 import {
   liveWorktreeSharers,
   recordedWorktreeSharerRunIds,
@@ -141,6 +142,22 @@ function rememberedWorktrees(): Set<string> {
   return new Set(
     rows.map((row) => (existsSync(row.worktree) ? realpathSync(row.worktree) : row.worktree)),
   )
+}
+
+function runsRememberingWorktreePath(path: string): string[] {
+  const canonicalPath = existsSync(path) ? realpathSync(path) : path
+  const rows = db()
+    .query('SELECT record_id,worktree FROM run WHERE worktree IS NOT NULL')
+    .all() as {
+    record_id: string
+    worktree: string
+  }[]
+  return rows
+    .filter((row) => {
+      const recordedPath = existsSync(row.worktree) ? realpathSync(row.worktree) : row.worktree
+      return recordedPath === canonicalPath
+    })
+    .map((row) => row.record_id)
 }
 
 export type SweepOptions = {
@@ -941,13 +958,21 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
         withCleanupLock(p.path, `sweep ${label}`, path, () => {
           const ownerRow = { record_id: runId, repo: p.name, branch: safe.branch }
           const worktreeRow = { record_id: runId, worktree: path }
+          const claimingRuns = runsClaimingWorktreePath(db(), path).map((row) => row.record_id)
+          const pointerRuns = runsRememberingWorktreePath(path)
           const sharersBefore = liveWorktreeSharers(db(), worktreeRow)
           const locked = observeLockedRun(path, p, runId, label, options.presentation)
           cleanupFailed ||= locked.failed
           const lockedRuling = decideFilesystemOrphanUnderLock({
+            claimingRuns,
+            pointerRuns,
             sharers: sharersBefore.length,
             lockedAlive: locked.alive,
           })
+          if (lockedRuling.action === 'claimed') {
+            keepHeld(`${label}  ${lockedRuling.keepLine}`, lockedRuling.keepReason)
+            return
+          }
           if (lockedRuling.action === 'shared-before') {
             const owners = worktreeSharerList(sharersBefore)
             cleanupFailed ||= lockedRuling.cleanupFailed

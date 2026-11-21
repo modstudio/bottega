@@ -22,7 +22,11 @@ import {
   withWorktreeLease,
 } from '../project/project-lock.ts'
 import { projectAt, projectByName, resolvedWorktreeTool } from '../project/projects.ts'
-import { claimSettlement, settleClaims } from '../resources/resource-claims.ts'
+import {
+  claimSettlement,
+  runsClaimingWorktreePath,
+  settleClaims,
+} from '../resources/resource-claims.ts'
 import { otherConversationWorktreeSharers } from '../resources/resource-ownership.ts'
 import { recordedRunLivenessFacts, runAlive } from '../run/run-alive.ts'
 import { runLeaseState } from '../run/run-lease.ts'
@@ -200,7 +204,15 @@ function proveRunOwners(
   return null
 }
 
-function sharedWorktreeRefusal(path: string, runId: string): ReclaimResult | null {
+export function sharedWorktreeRefusal(path: string, runId: string): ReclaimResult | null {
+  const claimants = runsClaimingWorktreePath(db(), path, runId)
+  if (claimants.length) {
+    const claimant = claimants[0]!
+    return refuse(
+      `worktree ${path} is still claimed by run ${claimant.record_id}; ` +
+        `release it with ${PLATFORM_SLUG} run close-out ${claimant.record_id}`,
+    )
+  }
   const sharers = otherConversationWorktreeSharers(db(), {
     record_id: runId,
     worktree: path,

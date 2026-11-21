@@ -768,8 +768,38 @@ describe('filesystem orphan under-lock ruling', () => {
     expected: ReturnType<typeof decideFilesystemOrphanUnderLock>
   }> = [
     {
+      name: 'a claimed worktree is kept before liveness checks',
+      facts: {
+        claimingRuns: ['claim-run'],
+        pointerRuns: [],
+        sharers: 0,
+        lockedAlive: false,
+      },
+      expected: {
+        action: 'claimed',
+        keepLine: 'claimed by run(s) claim-run — kept',
+        keepReason: 'claimed by run',
+        cleanupFailed: false,
+      },
+    },
+    {
+      name: 'a remembered run pointer keeps the worktree',
+      facts: {
+        claimingRuns: [],
+        pointerRuns: ['pointer-run'],
+        sharers: 0,
+        lockedAlive: false,
+      },
+      expected: {
+        action: 'claimed',
+        keepLine: 'claimed by run(s) pointer-run — kept',
+        keepReason: 'claimed by run',
+        cleanupFailed: false,
+      },
+    },
+    {
       name: 'sharers before removal refuse',
-      facts: { sharers: 1, lockedAlive: false },
+      facts: { claimingRuns: [], pointerRuns: [], sharers: 1, lockedAlive: false },
       expected: {
         action: 'shared-before',
         keepLine: 'acquired by run(s)',
@@ -779,7 +809,7 @@ describe('filesystem orphan under-lock ruling', () => {
     },
     {
       name: 'sharers take precedence when the tree is also live',
-      facts: { sharers: 1, lockedAlive: true },
+      facts: { claimingRuns: [], pointerRuns: [], sharers: 1, lockedAlive: true },
       expected: {
         action: 'shared-before',
         keepLine: 'acquired by run(s)',
@@ -789,7 +819,7 @@ describe('filesystem orphan under-lock ruling', () => {
     },
     {
       name: 'an orphan that becomes live under the lock is kept',
-      facts: { sharers: 0, lockedAlive: true },
+      facts: { claimingRuns: [], pointerRuns: [], sharers: 0, lockedAlive: true },
       expected: {
         action: 'live',
         keepLine: 'live — kept',
@@ -799,7 +829,7 @@ describe('filesystem orphan under-lock ruling', () => {
     },
     {
       name: 'an unshared non-live orphan proceeds to removal',
-      facts: { sharers: 0, lockedAlive: false },
+      facts: { claimingRuns: [], pointerRuns: [], sharers: 0, lockedAlive: false },
       expected: { action: 'remove', cleanupFailed: false },
     },
   ]

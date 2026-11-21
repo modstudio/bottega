@@ -125,6 +125,7 @@ describe('resource claim decisions', () => {
     expect(runsClaimingWorktreePath(database, path)).toEqual([
       { record_id: claimedRun, job: 'implement', allocation_key: path },
     ])
+    expect(runsClaimingWorktreePath(database, path, claimedRun)).toEqual([])
     expect(runsClaimingWorktreePath(database, '/tmp/resource-claim-missing-tree')).toEqual([])
   })
 

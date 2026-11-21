@@ -97,7 +97,11 @@ export function isSharedReaderWorktreeClaim(database: Database, path: string): b
 }
 
 /** Runs whose live worktree claim resolves to the requested filesystem path. */
-export function runsClaimingWorktreePath(database: Database, path: string): ClaimedWorktreeOwner[] {
+export function runsClaimingWorktreePath(
+  database: Database,
+  path: string,
+  excludeRootRunId?: string,
+): ClaimedWorktreeOwner[] {
   const canonicalPath = realpathOrSpelled(path)
   const claimed = database
     .query(
@@ -108,7 +112,10 @@ export function runsClaimingWorktreePath(database: Database, path: string): Clai
        ORDER BY run.number`,
     )
     .all() as ClaimedWorktreeOwner[]
-  return claimed.filter((row) => realpathOrSpelled(row.allocation_key) === canonicalPath)
+  return claimed.filter(
+    (row) =>
+      row.record_id !== excludeRootRunId && realpathOrSpelled(row.allocation_key) === canonicalPath,
+  )
 }
 
 /** Attribution proved by a worktree claim explicitly released after a run began. */

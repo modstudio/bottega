@@ -7,7 +7,12 @@ import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
 import { branchMonitorConditions } from '../monitor/monitor-branches.ts'
 import { upsertProject } from '../project/projects.ts'
-import { decideBranchReclaimEvidence, reclaimBranchesDryRun, reclaimWorktree } from './reclaim.ts'
+import {
+  decideBranchReclaimEvidence,
+  reclaimBranchesDryRun,
+  reclaimWorktree,
+  sharedWorktreeRefusal,
+} from './reclaim.ts'
 
 function git(cwd: string, args: string[]): void {
   const result = Bun.spawnSync(['git', ...args], { cwd, stdout: 'pipe', stderr: 'pipe' })
@@ -68,6 +73,27 @@ test('reclaim locked recheck preserves a worktree when a terminal sharer appears
   } finally {
     rmSync(root, { recursive: true, force: true })
   }
+})
+
+test("reclaim refuses another run's claimed worktree claim", () => {
+  const owner = addRun({ agent: 'codex', job: 'implement', status: 'ok' })
+  const claimant = addRun({ agent: 'codex', job: 'implement', status: 'ok' })
+  const path = '/tmp/reclaim-claimed-worktree'
+  db()
+    .query(
+      `INSERT INTO resource_claim
+       (record_id,root_run_record_id,run_record_id,project_record_id,kind,allocation_key,
+        identity,label,state,claimed_at,settled_at)
+       VALUES (?,?,?,?, 'worktree', ?,NULL,NULL,'claimed',?,NULL)`,
+    )
+    .run(newRecordId(), claimant, claimant, null, path, '2026-11-21T00:00:00.000Z')
+
+  expect(sharedWorktreeRefusal(path, owner)).toEqual({
+    ok: false,
+    action:
+      `refused; worktree ${path} is still claimed by run ${claimant}; ` +
+      `release it with bottega run close-out ${claimant}`,
+  })
 })
 
 describe('branch reclaim landing evidence', () => {
