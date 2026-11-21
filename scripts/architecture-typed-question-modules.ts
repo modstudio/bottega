@@ -15,8 +15,10 @@ export const typedQuestionModules = [
   module('shared/typed-question/client.ts', [
     '../brand.ts',
     '../config-client.ts',
+    '../config-read-memo.ts',
     '../credential.ts',
     '../credential-value.ts',
+    '../process-memo.ts',
     './registry.ts',
     '../bounded-fetch.ts',
   ]),
