@@ -19,8 +19,6 @@ import {
 import { resolveNoteIdentity } from './identity/identity.ts'
 import { readInstallBinding } from './install-binding.ts'
 import { mergeNoteAnchors } from './note-anchor-merge.ts'
-import { deriveNoteFileAnchors } from './note-file-anchors.ts'
-
 import { applyHostedNote } from './note-cache.ts'
 import { hostedCreateNote, hostedPromoteNote, type NoteClientOptions } from './note-client.ts'
 import {
@@ -29,6 +27,7 @@ import {
   recordNoteDuplicateMerge,
   recordNoteDuplicateOutcomes,
 } from './note-duplicate-question.ts'
+import { deriveNoteFileAnchors } from './note-file-anchors.ts'
 import { noteGit } from './note-git.ts'
 import { createOutsideProjectNote, listOutsideProjectNotes } from './note-outside.ts'
 import { noteDestinationOptions } from './note-project-space.ts'
