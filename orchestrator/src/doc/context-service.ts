@@ -150,7 +150,7 @@ export async function getContext(selection: ContextHolderSelection) {
     ? await openKeylessCursorsForSession(selection.session, db())
     : []
   const addresses = [
-    task ? { holder, owner: contextTaskOwner({ project: task.project }) } : holder,
+    task ? { holder, owner: { kind: 'task', projectName: task.project } } : holder,
     ...cursors.map((cursor) => cursorContextHolder(cursor.record_id)),
   ]
   const batchedItems = await listContextItems(addresses)
@@ -223,7 +223,7 @@ export async function clearTaskHolderForLifecycle(input: {
   const holder = taskContextHolder(input.holderId)
   const items = await listContextItems({
     holder,
-    owner: contextTaskOwner({ project: input.project }),
+    owner: { kind: 'task', projectName: input.project },
   })
   if (input.dryRun) return { holder, removed: items.length, alreadyAbsent: 0 }
   writableDb()

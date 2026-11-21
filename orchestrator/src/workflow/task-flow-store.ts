@@ -62,14 +62,6 @@ export type {
 } from './task-flow-store-types.ts'
 export { isKeylessExplore } from './task-flow-store-types.ts'
 
-/** Reads machine-local cursor/task links for reports that explicitly measure this install's facts. */
-export async function localTaskRecordIdsForSession(
-  database: Database,
-  sessionId: string,
-): Promise<string[]> {
-  return (await localTaskReferencesForSession(database, sessionId)).map((row) => row.recordId)
-}
-
 /** Reads machine-local cursor/task links with their already-known project owners. */
 export async function localTaskReferencesForSession(
   database: Database,

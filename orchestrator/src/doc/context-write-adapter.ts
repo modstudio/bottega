@@ -6,7 +6,6 @@ import {
   type StoredContextItem,
   splitContextHolder,
 } from '../../../shared/context-item-vocabulary.ts'
-import type { RecordWriteOwner } from '../../../shared/record-write-space.ts'
 import { parsePointerReference } from '../../../shared/reference.ts'
 import {
   referenceNotVisibleRefusal,
@@ -40,11 +39,16 @@ import {
   contextWriteRefusal,
   holderOwnershipRefusal,
 } from './doc-context-write.ts'
-import { readHostedDocReference } from './doc-hosted-client.ts'
+import { type contextTaskOwner, readHostedDocReference } from './doc-hosted-client.ts'
 import { isScratchLocation } from './doc-resume-write.ts'
 import { taskContextHolder } from './doc-subjects.ts'
 
-type ContextReadHolder = string | { holder: string; owner: RecordWriteOwner }
+type ContextReadHolder =
+  | string
+  | {
+      holder: string
+      owner: NonNullable<ReturnType<typeof contextTaskOwner>>
+    }
 
 export type ContextTask = HubTaskReference
 class ContextTaskPrefixError extends Error {

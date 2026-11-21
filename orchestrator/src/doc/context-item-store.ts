@@ -7,7 +7,6 @@ import type {
   ContextItemHolderGroup,
   StoredContextItem,
 } from '../../../shared/context-item-vocabulary.ts'
-import type { RecordWriteOwner } from '../../../shared/record-write-space.ts'
 import { db } from '../database/db.ts'
 import { recordApiClient } from '../record/record-api-client.ts'
 import {
@@ -28,7 +27,8 @@ import {
 export type { StoredContextItem } from '../../../shared/context-item-vocabulary.ts'
 export { removeLocalContextHolder, removeLocalContextItem, setLocalContextItem }
 
-export type ContextItemHolderEntry = string | { holder: string; owner: RecordWriteOwner }
+type ContextItemReadOwner = NonNullable<Parameters<typeof hostedContextItemDestination>[1]>
+export type ContextItemHolderEntry = string | { holder: string; owner: ContextItemReadOwner }
 
 type ContextItemReadSource = 'local' | 'hosted'
 
@@ -94,7 +94,7 @@ export async function getContextItem(
   holder: string,
   slug: string,
   database: Database = db(),
-  owner?: RecordWriteOwner,
+  owner?: ContextItemReadOwner,
 ): Promise<StoredContextItem | null> {
   if (contextItemReadSourceFor(database) === 'local')
     return getLocalContextItem(holder, slug, database)
