@@ -21,6 +21,7 @@ import type {
   FloorEntry,
   StepCatalogueDefinition,
 } from './step-catalogue-definition.ts'
+import { outcomeFloorErrors } from './step-catalogue-outcome-floors.ts'
 import { versionedLifecycle } from './versioned-lifecycle.ts'
 import {
   type WorkflowDefinition,
@@ -68,6 +69,7 @@ export function validateStepCatalogue(value: unknown): string[] {
     validateIdentity(item, seen, errors)
     validateOutcomes(item, errors)
     validateRulingOutcomes(item, errors)
+    errors.push(...outcomeFloorErrors(item))
     validateReenter(item, errors)
     validateFloor(item, errors)
     validateNeeds(item, errors)
@@ -469,6 +471,22 @@ function validateFloor(item: Record<string, unknown>, errors: string[]): void {
                 operatorRuling: false,
               },
               String(outcome),
+            ),
+          )
+        : []),
+      ...(object(item.outcomeFloors)
+        ? Object.keys(item.outcomeFloors).map((outcome) =>
+            mayCloseOnAgentSelfRuling(
+              {
+                floor,
+                outcomeFloors: Object.fromEntries(
+                  Object.entries(item.outcomeFloors as Record<string, unknown>).map(
+                    ([key, value]) => [key, Array.isArray(value) ? value.map(String) : []],
+                  ),
+                ),
+                operatorRuling: false,
+              },
+              outcome,
             ),
           )
         : []),

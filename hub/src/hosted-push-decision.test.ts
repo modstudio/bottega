@@ -144,6 +144,16 @@ test('note decisions compare last-seen timestamps as instants and never move the
       'last_seen_at',
     ]),
   ).toEqual({ kind: 'duplicate' })
+  const taskId = Bun.randomUUIDv7()
+  expect(
+    decideNoteUpsert(note, { ...note, promoted_task: 'DEV-2543', promoted_task_id: taskId }, [
+      'promoted_task',
+      'promoted_task_id',
+    ]),
+  ).toMatchObject({
+    kind: 'patch',
+    values: { promoted_task: 'DEV-2543', promoted_task_id: taskId },
+  })
 })
 
 test('acknowledgement decisions compare timestamps as instants and never move them backwards', () => {

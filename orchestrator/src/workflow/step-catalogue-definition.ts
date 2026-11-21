@@ -15,6 +15,7 @@ export type CatalogueStep = {
   floor: FloorEntry[]
   outcomes?: string[]
   rulingOutcomes?: string[]
+  outcomeFloors?: Record<string, FloorKind[]>
   reenter?: { to: string; outcome: string }
   deferrable?: FloorKind[]
   expectedExitCodes?: Record<string, number>

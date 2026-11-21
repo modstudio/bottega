@@ -1,5 +1,5 @@
 import type { Database } from 'bun:sqlite'
-import { closeSync, fstatSync, openSync, readFileSync, readSync, realpathSync } from 'node:fs'
+import { readFileSync, realpathSync } from 'node:fs'
 import { isAbsolute, relative, resolve } from 'node:path'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import type { NoteAnchorWire } from '../../shared/note-anchor.ts'
@@ -27,6 +27,7 @@ import {
   recordNoteDuplicateMerge,
   recordNoteDuplicateOutcomes,
 } from './note-duplicate-question.ts'
+import { deriveNoteFileAnchors } from './note-file-anchors.ts'
 import { noteGit } from './note-git.ts'
 import { createOutsideProjectNote, listOutsideProjectNotes } from './note-outside.ts'
 import { noteDestinationOptions } from './note-project-space.ts'
@@ -53,14 +54,13 @@ import {
   attachLocalTaskEvidenceInTransaction,
   createLocalTaskInTransaction,
   duplicateCandidates,
+  recordNoteRelinkCommentsInTransaction,
 } from './task.ts'
 import { applyHostedTask, applyHostedTaskComment } from './task-cache.ts'
 import type { TaskRow } from './task-row.ts'
 import { taskCreationDestination } from './tracker-new.ts'
 
 export type NoteAnchor = NoteAnchorWire
-
-export const NOTE_ANCHOR_MAX_FILE_BYTES = 1_000_000
 
 export function parseNoteAnchor(value: unknown): NoteAnchor {
   return parseNoteAnchorWire(value)
@@ -194,65 +194,6 @@ function mintLocalNoteNumber(conn: Database, project: string): number {
     )
     .run(newRecordId(), project, projectRecordIdFor(project), number + 1)
   return number
-}
-
-function boundedNoteLine(path: string, requested: number): string | null {
-  const fd = openSync(path, 'r')
-  try {
-    const stat = fstatSync(fd)
-    if (!stat.isFile() || stat.size > NOTE_ANCHOR_MAX_FILE_BYTES) return null
-    const bytes: number[] = []
-    const byte = Buffer.allocUnsafe(1)
-    let line = 1
-    let total = 0
-    while (readSync(fd, byte, 0, 1, null) === 1) {
-      total += 1
-      if (total > NOTE_ANCHOR_MAX_FILE_BYTES) return null
-      if (byte[0] === 10) {
-        if (line === requested) return Buffer.from(bytes).toString('utf8').replace(/\r$/, '')
-        line += 1
-        continue
-      }
-      if (line === requested) bytes.push(byte[0]!)
-    }
-    return line === requested ? Buffer.from(bytes).toString('utf8').replace(/\r$/, '') : null
-  } finally {
-    closeSync(fd)
-  }
-}
-
-/** Derive only bounded file facts whose real paths stay strictly inside the checkout. */
-export function deriveNoteFileAnchors(text: string, projectPath: string): NoteAnchor['files'] {
-  let root: string
-  try {
-    root = realpathSync(projectPath)
-  } catch {
-    return []
-  }
-  return [...text.matchAll(/(?:^|[\s`(])([^\s`():]+):(\d+)\b/g)].flatMap((match) => {
-    const line = Number(match[2])
-    let path: string
-    try {
-      path = realpathSync(isAbsolute(match[1]!) ? match[1]! : resolve(root, match[1]!))
-    } catch {
-      return []
-    }
-    const fromRoot = relative(root, path)
-    if (
-      !fromRoot ||
-      fromRoot === '..' ||
-      fromRoot.startsWith(`..${process.platform === 'win32' ? '\\' : '/'}`) ||
-      isAbsolute(fromRoot)
-    ) {
-      return []
-    }
-    try {
-      const content = boundedNoteLine(path, line)
-      return content === null ? [] : [{ path, line, content }]
-    } catch {
-      return []
-    }
-  })
 }
 
 export function deriveNoteAnchor(text: string, cwd = process.cwd(), env = process.env): NoteAnchor {
@@ -809,6 +750,66 @@ export async function dropNote(
     ])
   })
   await drainHostedEditOutbox(queuedAt, options.hosted)
+  return getNote(recordId)
+}
+
+export async function relinkNote(
+  recordId: string,
+  targetTask: string,
+  reason: string,
+  options: { hosted?: NoteClientOptions } = {},
+): Promise<NoteRow> {
+  if (!reason.trim()) throw new Error('--reason is required')
+  const current = getNote(recordId)
+  if (!current.promoted_task)
+    throw new Error(
+      `note ${current.label} has no attachment; attach it with: ${PLATFORM_SLUG} note promote ${current.label} --task <KEY>`,
+    )
+  const target = targetTask.trim().toUpperCase()
+  if (!target) throw new Error('--task is required')
+  if (target === current.promoted_task.toUpperCase())
+    throw new Error(
+      `note ${current.label} is already attached to ${current.promoted_task}; choose a different task with --task <KEY>`,
+    )
+  const project = registeredProject(current.project)
+  if (taskCreationDestination(project) === 'tracker')
+    throw new Error(
+      `note ${current.label} cannot be relinked in project ${current.project}: its tasks are tracker-owned, and relink records its trail as task comments in the hub that tracker-owned tasks cannot carry; use note relink only for a hub-owned project`,
+    )
+  const mode = writeMode(current.project, options.hosted)
+  const at = nowIso()
+  writeTransaction((conn) => {
+    const row = decode(noteRow(conn, recordId))
+    if (!row.promoted_task)
+      throw new Error(
+        `note ${row.label} has no attachment; attach it with: ${PLATFORM_SLUG} note promote ${row.label} --task <KEY>`,
+      )
+    if (target === row.promoted_task.toUpperCase())
+      throw new Error(
+        `note ${row.label} is already attached to ${row.promoted_task}; choose a different task with --task <KEY>`,
+      )
+    const history = recordNoteRelinkCommentsInTransaction(conn, {
+      project: row.project,
+      noteLabel: row.label,
+      previousTask: row.promoted_task,
+      targetTask: target,
+      reason: reason.trim(),
+      at,
+      queue: mode === 'hosted-configured',
+    })
+    conn
+      .query(
+        `UPDATE note SET promoted_task=?,promoted_task_record_id=?,last_seen_at=? WHERE record_id=?`,
+      )
+      .run(target, history.targetTaskRecordId, at, row.record_id)
+    if (mode === 'hosted-configured')
+      queueHostedChange(conn, HOSTED_NOTE_TABLE, row.record_id, 'upsert', at, [
+        'promoted_task',
+        'promoted_task_id',
+        'last_seen_at',
+      ])
+  })
+  if (mode === 'hosted-configured') await drainHostedEditOutbox(at, options.hosted)
   return getNote(recordId)
 }
 

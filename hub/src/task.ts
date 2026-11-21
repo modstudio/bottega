@@ -355,13 +355,7 @@ function writeLocalComment(
   }
 }
 
-export function attachLocalTaskEvidenceInTransaction(
-  conn: Database,
-  key: string,
-  project: string,
-  body: string,
-  at: string,
-): TaskComment {
+function localTaskInTransaction(conn: Database, key: string, project: string): TaskRow {
   const upper = key.toUpperCase()
   const task = conn
     .query<TaskRow, [string, string]>(
@@ -372,7 +366,52 @@ export function attachLocalTaskEvidenceInTransaction(
     throw new Error(
       `no local task ${upper} in project ${project}; run \`${PLATFORM_SLUG} task list --project ${project}\``,
     )
+  return task
+}
+
+export function attachLocalTaskEvidenceInTransaction(
+  conn: Database,
+  key: string,
+  project: string,
+  body: string,
+  at: string,
+): TaskComment {
+  const task = localTaskInTransaction(conn, key, project)
   return writeLocalComment(conn, task, body, at, false, UNATTRIBUTED)
+}
+
+export function recordNoteRelinkCommentsInTransaction(
+  conn: Database,
+  input: {
+    project: string
+    noteLabel: string
+    previousTask: string
+    targetTask: string
+    reason: string
+    at: string
+    queue: boolean
+  },
+): { targetTaskRecordId: string } {
+  const target = localTaskInTransaction(conn, input.targetTask, input.project)
+  writeLocalComment(
+    conn,
+    target,
+    `note ${input.noteLabel} relinked from ${input.previousTask}: ${input.reason}`,
+    input.at,
+    input.queue,
+    UNATTRIBUTED,
+  )
+  const previous = localTaskInTransaction(conn, input.previousTask, input.project)
+  if (previous.record_id !== target.record_id)
+    writeLocalComment(
+      conn,
+      previous,
+      `note ${input.noteLabel} relinked to ${target.key}: ${input.reason}`,
+      input.at,
+      input.queue,
+      UNATTRIBUTED,
+    )
+  return { targetTaskRecordId: target.record_id }
 }
 
 export async function createTask(

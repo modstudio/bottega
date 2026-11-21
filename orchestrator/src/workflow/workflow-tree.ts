@@ -76,6 +76,7 @@ function renderedFiles(store: WorkflowTreeStore): WorkflowTreeFile[] {
         floor: step.floor,
         ...(step.outcomes?.length ? { outcomes: step.outcomes } : {}),
         ...(step.rulingOutcomes?.length ? { rulingOutcomes: step.rulingOutcomes } : {}),
+        ...(step.outcomeFloors ? { outcomeFloors: step.outcomeFloors } : {}),
         ...(step.reenter ? { reenter: step.reenter } : {}),
         ...(step.deferrable?.length ? { deferrable: step.deferrable } : {}),
         ...(step.expectedExitCodes ? { expectedExitCodes: step.expectedExitCodes } : {}),
@@ -176,6 +177,11 @@ const rulingOutcomesFrom = (frontMatter: Record<string, unknown>) =>
     ? {}
     : { rulingOutcomes: frontMatter.rulingOutcomes as CatalogueStep['rulingOutcomes'] }
 
+const outcomeFloorsFrom = (frontMatter: Record<string, unknown>) =>
+  frontMatter.outcomeFloors === undefined
+    ? {}
+    : { outcomeFloors: frontMatter.outcomeFloors as CatalogueStep['outcomeFloors'] }
+
 const reenterFrom = (frontMatter: Record<string, unknown>) =>
   frontMatter.reenter === undefined
     ? {}
@@ -203,6 +209,7 @@ const STEP_FRONTMATTER_KEY_SCHEMA = {
   floor: true,
   outcomes: true,
   rulingOutcomes: true,
+  outcomeFloors: true,
   reenter: true,
   deferrable: true,
   expectedExitCodes: true,
@@ -248,6 +255,7 @@ function parsedCatalogueStep(
     floor: frontMatter.floor as CatalogueStep['floor'],
     ...outcomesFrom(frontMatter),
     ...rulingOutcomesFrom(frontMatter),
+    ...outcomeFloorsFrom(frontMatter),
     ...reenterFrom(frontMatter),
     ...(frontMatter.deferrable === undefined
       ? {}

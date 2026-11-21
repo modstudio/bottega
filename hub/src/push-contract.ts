@@ -145,7 +145,14 @@ export type PushedNoteAcknowledgement = {
   deleted_at: string | null
 }
 
-const HOSTED_NOTE_UPDATE_COLUMNS = ['anchors', 'last_seen_at', 'stale_at', 'stale_reason'] as const
+const HOSTED_NOTE_UPDATE_COLUMNS = [
+  'anchors',
+  'last_seen_at',
+  'stale_at',
+  'stale_reason',
+  'promoted_task',
+  'promoted_task_id',
+] as const
 
 const TASK_STATUS_CATEGORIES = ['open', 'active', 'review', 'done', 'dropped'] as const
 type TaskStatusCategory = (typeof TASK_STATUS_CATEGORIES)[number]

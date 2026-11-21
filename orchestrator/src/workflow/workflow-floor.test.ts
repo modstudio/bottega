@@ -309,7 +309,7 @@ test('a run offered to an artifact floor names the same run artifact form', () =
   expect(decision).toEqual({
     action: 'refuse',
     message:
-      'floor recorded-artifact is unmet; pass --artifact <doc:<scope>/<subject-or-_>/<slug> | doc:<UUID> | task:<KEY> | task:<KEY>#comment:<id> | run number or run id | probe:<id> | exec:<id> | review-read:<UUID> | attached-text:<UUID> | #<pull request number> | GitHub pull-request link | a commit SHA>; run 8 is accepted as --artifact 8 when it has a reply or a recorded artifact',
+      'floor recorded-artifact is unmet; pass --artifact <doc:<scope>/<subject-or-_>/<slug> | doc:<UUID> | task:<KEY> | task:<KEY>#comment:<id> | note:<record-id|label> | run number or run id | probe:<id> | exec:<id> | review-read:<UUID> | attached-text:<UUID> | #<pull request number> | GitHub pull-request link | a commit SHA>; run 8 is accepted as --artifact 8 when it has a reply or a recorded artifact',
   })
 })
 
@@ -960,6 +960,22 @@ test('parseArtifactRef accepts each recorded-artifact form', () => {
     id: '01a10c8d-164d-71e9-b8a9-a59f15256556',
   })
   expect(parseArtifactRef('task:DEV-977')).toEqual({ kind: 'task', key: 'DEV-977' })
+  expect(parseArtifactRef(`note:${PLATFORM_SLUG}#2817`)).toEqual({
+    kind: 'note',
+    reference: `${PLATFORM_SLUG}#2817`,
+  })
+  expect(parseArtifactRef(`note:${ATTACHMENT_UUID}`)).toEqual({
+    kind: 'note',
+    reference: ATTACHMENT_UUID,
+  })
+  expect(parseArtifactRef('note:2817', PLATFORM_SLUG)).toMatchObject({
+    error: expect.stringContaining('expected note:<project>#<number> or note:<record-id>'),
+  })
+  expect(parseArtifactRef('note:other#2817', PLATFORM_SLUG)).toMatchObject({
+    error: expect.stringContaining(
+      `expected note:<project>#<number> or note:<record-id>; the label project must be ${PLATFORM_SLUG}`,
+    ),
+  })
   expect(parseArtifactRef(`probe:${ATTACHMENT_UUID}`)).toEqual({
     kind: 'probe',
     recordId: ATTACHMENT_UUID,

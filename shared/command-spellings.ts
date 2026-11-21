@@ -235,6 +235,7 @@ export const PLATFORM_COMMAND_WORDS = [
   'note new',
   'note promote',
   'note push',
+  'note relink',
   'note same',
   'note stale',
   'note typed-question',

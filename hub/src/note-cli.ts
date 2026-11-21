@@ -14,6 +14,7 @@ import {
   mergeNote,
   noteSessionId,
   parseExplicitNoteAnchor,
+  relinkNote,
   resolveNoteReference,
   setCuratorEnabled,
   staleNotes,
@@ -189,7 +190,26 @@ async function resolveDuplicateNote(
   return filed
 }
 
+function registerNoteRelinkCommand(note: Command): void {
+  note
+    .command('relink <reference>')
+    .description("move this note's attachment to another task")
+    .requiredOption('--task <key>', 'attach the note to this task')
+    .requiredOption('--reason <text>', 'record why the attachment moved')
+    .option('--project <name>', 'resolve the note in this project')
+    .action(async (noteReference, options: NoteOptions) => {
+      open()
+      const row = await relinkNote(
+        reference(noteReference, options.project),
+        options.task!,
+        options.reason!,
+      )
+      console.log(row.promoted_task)
+    })
+}
+
 function registerNoteReferenceCommands(note: Command): void {
+  registerNoteRelinkCommand(note)
   note
     .command('distinct <a> <b>')
     .description('record that two notes are related but distinct')

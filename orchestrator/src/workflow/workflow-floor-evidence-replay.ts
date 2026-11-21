@@ -7,9 +7,14 @@ import type { CheckoutResolution } from './workflow-checkout-refusal.ts'
 import type { DispatchWaiverEvidence } from './workflow-dispatch-waiver-evidence.ts'
 import type { HubTaskRead } from './workflow-floor-task-read.ts'
 import type { ReviewOwedFloorDecision } from './workflow-review-owed-decision.ts'
+import type { NoteFloorEvidence } from './workflow-task-open-with-notes-floor.ts'
 
 export type FloorEvidencePorts = {
   readTask?: (key: string, options: { fresh: true }) => HubTaskRead
+  readNote?: (
+    project: string,
+    reference: string,
+  ) => Promise<Pick<NoteFloorEvidence, 'recordId' | 'label' | 'promotedTask' | 'staleAt'> | null>
   runHasArtifacts?: (runId: string) => boolean
   resolveCheckout?: (
     cwd: string,
@@ -88,6 +93,7 @@ function replayingPorts(real: FloorEvidencePorts, memo: Map<string, RecordedCall
   const wrapped: ReplayingPorts = { ...real, [REPLAY]: context }
   for (const port of [
     'readTask',
+    'readNote',
     'resolveCheckout',
     'viewPullRequest',
     'resolveCommit',

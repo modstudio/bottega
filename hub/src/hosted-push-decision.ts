@@ -135,13 +135,19 @@ export function decideNoteUpsert(
         : selected.has('stale_reason')
           ? incoming.stale_reason
           : stored.stale_reason,
+    promoted_task: selected.has('promoted_task') ? incoming.promoted_task : stored.promoted_task,
+    promoted_task_id: selected.has('promoted_task_id')
+      ? incoming.promoted_task_id
+      : stored.promoted_task_id,
   }
   if (
     same('anchors', values.anchors, stored.anchors) &&
     values.sightings === stored.sightings &&
     same('last_seen_at', values.last_seen_at, stored.last_seen_at) &&
     same('stale_at', values.stale_at, stored.stale_at) &&
-    values.stale_reason === stored.stale_reason
+    values.stale_reason === stored.stale_reason &&
+    values.promoted_task === stored.promoted_task &&
+    values.promoted_task_id === stored.promoted_task_id
   )
     return { kind: 'duplicate' }
   return { kind: 'patch', values }

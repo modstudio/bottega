@@ -660,6 +660,10 @@ export const hubModuleSpecs = [
     allowed: ['./hosted-write-destination.ts', './note-client.ts', './task-project-space.ts'],
   },
   {
+    file: 'hub/src/note-file-anchors.ts',
+    allowed: ['node:fs', 'node:path', '../../shared/note-anchor.ts'],
+  },
+  {
     file: 'hub/src/note-staleness.ts',
     allowed: [],
   },

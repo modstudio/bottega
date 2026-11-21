@@ -22,6 +22,7 @@ const store: WorkflowTreeStore = {
       floor: ['command-exit'],
       outcomes: ['passed', 'failed'],
       rulingOutcomes: ['failed'],
+      outcomeFloors: { passed: ['recorded-artifact'] },
       reenter: { to: 'prepare', outcome: 'failed' },
       jobs: [],
       actions: [],

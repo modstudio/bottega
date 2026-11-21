@@ -1,6 +1,6 @@
 import { Database } from 'bun:sqlite'
 import { afterAll, beforeAll, beforeEach, describe, expect, spyOn, test } from 'bun:test'
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
@@ -10,20 +10,17 @@ import { db, writeTransaction } from './db.ts'
 import { persistInstallBinding } from './install-binding.ts'
 import {
   acknowledgeNote,
-  confineExplicitNoteAnchor,
   createNote,
   deriveNoteAnchor,
-  deriveNoteFileAnchors,
   dropNote,
   getNote,
   listActionableNotes,
   listNotes,
   listProjectNotes,
   mergeNote,
-  NOTE_ANCHOR_MAX_FILE_BYTES,
   type NoteAnchor,
-  parseNoteAnchor,
   promoteNote,
+  relinkNote,
   resolveNoteReference,
   staleNotes,
 } from './note.ts'
@@ -598,6 +595,67 @@ describe('suggestion notes', () => {
       ).rejects.toThrow(`${PLATFORM_SLUG} task list --project workshop`)
     })
 
+    test('relink moves the attachment and records both task-history directions', async () => {
+      const note = (
+        await createNote({
+          text: `Relink history ${crypto.randomUUID()}`,
+          cwd: '/fixtures/repos/workshop',
+          forceNew: true,
+        })
+      ).note
+      const [previous, target] = writeTransaction((conn) => [
+        createLocalTaskInTransaction(
+          conn,
+          { project: 'workshop', title: 'Previous task', status: 'done' },
+          { skipDuplicateCheck: true },
+        ),
+        createLocalTaskInTransaction(
+          conn,
+          { project: 'workshop', title: 'Target task' },
+          { skipDuplicateCheck: true },
+        ),
+      ])
+      await promoteNote(note.record_id, { existingTaskKey: previous.key })
+
+      const moved = await relinkNote(note.record_id, target.key, 'the repair belongs here')
+
+      expect(moved.promoted_task).toBe(target.key)
+      expect(
+        db()
+          .query<{ promoted_task_record_id: string }, [string]>(
+            'SELECT promoted_task_record_id FROM note WHERE record_id=?',
+          )
+          .get(note.record_id),
+      ).toEqual({ promoted_task_record_id: target.record_id })
+      expect((await showTask(previous.key, { project: 'workshop' })).comments).toContainEqual(
+        expect.objectContaining({
+          body: `note ${note.label} relinked to ${target.key}: the repair belongs here`,
+        }),
+      )
+      expect((await showTask(target.key, { project: 'workshop' })).comments).toContainEqual(
+        expect.objectContaining({
+          body: `note ${note.label} relinked from ${previous.key}: the repair belongs here`,
+        }),
+      )
+      await expect(relinkNote(note.record_id, target.key, 'already there')).rejects.toThrow(
+        `note ${note.label} is already attached to ${target.key}`,
+      )
+
+      const unattached = (
+        await createNote({
+          text: `Unattached relink ${crypto.randomUUID()}`,
+          cwd: '/fixtures/repos/workshop',
+          forceNew: true,
+        })
+      ).note
+      await expect(relinkNote(unattached.record_id, target.key, 'move it')).rejects.toThrow(
+        `${PLATFORM_SLUG} note promote ${unattached.label} --task <KEY>`,
+      )
+      await expect(relinkNote(note.record_id, 'LOC-999999', 'move it')).rejects.toThrow(
+        `${PLATFORM_SLUG} task list --project workshop`,
+      )
+    })
+
     test('drop merge and reap write locally and keep hosted invariants', async () => {
       const one = (
         await createNote({
@@ -671,55 +729,6 @@ describe('suggestion notes', () => {
     }
   })
 
-  test(`${PLATFORM_SLUG} note names a malformed explicit anchor field`, () => {
-    const anchor: NoteAnchor = {
-      cwd: '/fixtures/repos/workshop',
-      project: 'workshop',
-      files: [],
-      run_record_id: null,
-      branch: null,
-      commit: null,
-      session_id: null,
-    }
-    expect(() => parseNoteAnchor({ ...anchor, cwd: 7 })).toThrow('cwd')
-  })
-
-  test('explicit note anchors are confined to the cwd project and its registered checkout', () => {
-    const anchor: NoteAnchor = {
-      cwd: '/projects/workshop',
-      project: 'workshop',
-      files: [{ path: '/projects/workshop/src/file.ts', line: 2, content: 'worker content' }],
-      run_record_id: '42000000-0000-4000-8000-000000000000',
-      branch: null,
-      commit: 'abc',
-      session_id: 'session-42',
-    }
-    const realpath = (path: string) => path
-    expect(
-      confineExplicitNoteAnchor(anchor, {
-        cwdProject: 'workshop',
-        projectPath: '/projects/workshop',
-        realpath,
-      }),
-    ).toBe(anchor)
-    expect(() =>
-      confineExplicitNoteAnchor(
-        { ...anchor, project: 'other' },
-        {
-          cwdProject: 'workshop',
-          projectPath: '/projects/workshop',
-          realpath,
-        },
-      ),
-    ).toThrow('anchor.project')
-    expect(() =>
-      confineExplicitNoteAnchor(
-        { ...anchor, files: [{ ...anchor.files[0]!, path: '/projects/other/file.ts' }] },
-        { cwdProject: 'workshop', projectPath: '/projects/workshop', realpath },
-      ),
-    ).toThrow('anchor.files[0].path')
-  })
-
   test(`${PLATFORM_SLUG} note new without a duplicate choice returns candidates and files nothing`, async () => {
     const unique = crypto.randomUUID()
     const first = (
@@ -752,23 +761,6 @@ describe('suggestion notes', () => {
       session_id: 'session-42',
     })
     expect(anchor.files).toEqual([])
-  })
-
-  test('derived file anchors stay inside the checkout and use bounded reads', () => {
-    const checkout = join(scratch, 'checkout')
-    mkdirSync(checkout, { recursive: true })
-    const inside = join(checkout, 'anchor.ts')
-    const outside = join(scratch, 'outside.ts')
-    const oversized = join(checkout, 'oversized.ts')
-    writeFileSync(inside, 'first\nanchored line\n')
-    writeFileSync(outside, 'outside\n')
-    writeFileSync(oversized, 'x'.repeat(NOTE_ANCHOR_MAX_FILE_BYTES + 1))
-    expect(
-      deriveNoteFileAnchors(
-        `inside anchor.ts:2 outside ${outside}:1 large oversized.ts:1`,
-        checkout,
-      ),
-    ).toEqual([{ path: realpathSync(inside), line: 2, content: 'anchored line' }])
   })
 
   test('a write offers duplicate notes until the caller chooses', async () => {
