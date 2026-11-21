@@ -13,6 +13,7 @@ import {
   type HostedTaskFlowProjectReferenceCounts,
   type HostedTaskFlowStageById,
   type HostedTaskFlowStageList,
+  type HostedTaskFlowStageSummary,
   type HostedTaskFlowStageSummaries,
   type HostedTaskFlowTextById,
   RECORD_TASK_FLOW_NOT_FOUND_CODE,
@@ -31,7 +32,8 @@ export class RecordTaskFlowError extends Error {
 }
 
 type HostedStage = NonNullable<HostedTaskFlow['otherStages']>[number]
-type HostedStageSummary = HostedTaskFlowStageList['items'][number]['stage']
+type HostedStageSummary = HostedTaskFlowStageSummary
+type HostedStageListSummary = HostedTaskFlowStageList['items'][number]['stage']
 
 const STAGE_SELECT = `
   s.id stage_id,s.space_id stage_space_id,s.flow_record_id stage_flow_record_id,s.project_id stage_project_id,
@@ -119,7 +121,7 @@ function toHostedStageSummary(row: Record<string, unknown>): HostedStageSummary 
   }
 }
 
-function toHostedStageListSummary(row: Record<string, unknown>): HostedStageSummary {
+function toHostedStageListSummary(row: Record<string, unknown>): HostedStageListSummary {
   const {
     closedStepNotes: _closedStepNotes,
     autonomy: _autonomy,

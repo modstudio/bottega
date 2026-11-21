@@ -114,7 +114,7 @@ const hostedTaskFlowStageSummarySchema = z.object({
   activeOrdinal: z.number().int().nonnegative(),
   activeSlug: z.string(),
   state: stageState,
-  closedStepNotes: z.array(z.unknown()).optional(),
+  closedStepNotes: z.array(z.unknown()),
   question: z.string().nullable().optional(),
   autonomy: z.string().nullable().optional(),
   enforcement: z.string().nullable().optional(),
@@ -126,6 +126,11 @@ const hostedTaskFlowStageSummarySchema = z.object({
   revision: z.number().int().positive(),
   createdAt: z.string(),
   updatedAt: z.string(),
+})
+export type HostedTaskFlowStageSummary = z.infer<typeof hostedTaskFlowStageSummarySchema>
+
+const hostedTaskFlowStageListItemSchema = hostedTaskFlowStageSummarySchema.extend({
+  closedStepNotes: z.array(z.unknown()).optional(),
 })
 
 const hostedTaskFlowStageBatchSummarySchema = hostedTaskFlowStageSummarySchema.extend({
@@ -192,7 +197,7 @@ export type HostedTaskFlowObligationById = z.infer<typeof hostedTaskFlowObligati
 export const hostedTaskFlowStageListSchema = z
   .object({
     items: z.array(
-      z.object({ stage: hostedTaskFlowStageSummarySchema, flow: hostedTaskFlowSummarySchema }),
+      z.object({ stage: hostedTaskFlowStageListItemSchema, flow: hostedTaskFlowSummarySchema }),
     ),
     truncated: z.boolean(),
     nextCursor: z.string().nullable(),

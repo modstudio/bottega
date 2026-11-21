@@ -29,6 +29,10 @@ test('summary stage listings replace only closed notes and autonomy', async () =
   const input = { project: 'fixture', states: TASK_FLOW_STAGE_STATES } as const
   const full = (await store.listStages(input))[0]!
   const summary = (await store.listStages({ ...input, view: 'summary' }))[0]!
+  expect(full).toMatchObject({
+    closed: '[{"slug":"plan","note":"complete"}]',
+    autonomy: 'delegated',
+  })
   expect(summary).toEqual({ ...full, closed: '[]', autonomy: null })
 })
 
