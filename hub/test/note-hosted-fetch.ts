@@ -1,5 +1,6 @@
 import { db } from '../src/db.ts'
-import { getNote, listNotes, resolveNoteReference } from '../src/note.ts'
+import { resolveNoteReference } from '../src/note.ts'
+import { getNote, listNotes } from '../src/note-read.ts'
 
 type NoteRequestBody = {
   sameAs?: unknown

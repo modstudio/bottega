@@ -1,40 +1,53 @@
 // concern: note read authority
-/** Selects the canonical note read source and applies filters at its owning boundary. */
+/** Owns canonical note reads, source selection, and filter normalization. */
 
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
-import { formatNoteLabel } from '../../shared/note-label.ts'
 import { db } from './db.ts'
+import type { HostedAcknowledgement } from './hosted-notes.ts'
 import { resolveHostedUrl } from './hosted-url.ts'
 import { hostedWriteMode } from './hosted-write-mode.ts'
-import type { NoteClientOptions } from './note-client.ts'
-import { listHostedNoteRows, type NoteFilters, readHostedNote } from './note-hosted-record.ts'
+import {
+  hostedGetNote,
+  hostedListNotes,
+  isMissingHostedNote,
+  type NoteClientOptions,
+} from './note-client.ts'
+import { noteRowFromHosted } from './note-hosted-record.ts'
 import { listOutsideProjectNotes } from './note-outside.ts'
-import type { NoteRow } from './note-row.ts'
-import { projects } from './projects.ts'
+import { decodeNoteRow, isRegisteredNoteProject, type NoteRow } from './note-row.ts'
 
-function decode(row: Omit<NoteRow, 'anchors' | 'label'> & { anchors: string }): NoteRow {
-  return {
-    ...row,
-    label: formatNoteLabel(row.project, row.number),
-    anchors: JSON.parse(row.anchors),
-  }
+export type NoteFilters = {
+  project?: string
+  stale?: boolean
+  session?: string | string[]
+  actionable?: boolean
+  kept?: boolean
+  text?: string
 }
 
-const registered = (name: string) => projects().some((project) => project.name === name)
+type NormalizedNoteFilters = Omit<NoteFilters, 'session'> & { sessions: string[] }
 
-function appendSessionClauses(
-  filters: NoteFilters,
-  clauses: string[],
-  values: (string | number)[],
-) {
+function normalizeNoteFilters(filters: NoteFilters): NormalizedNoteFilters {
+  if (filters.project && !isRegisteredNoteProject(filters.project))
+    throw new Error(`unknown project '${filters.project}'`)
+  const { session, ...rest } = filters
   const sessions = [
     ...new Set(
-      (Array.isArray(filters.session) ? filters.session : filters.session ? [filters.session] : [])
-        .map((session) => session.trim())
+      (Array.isArray(session) ? session : session ? [session] : [])
+        .map((value) => value.trim())
         .filter(Boolean),
     ),
   ]
   if (filters.kept && !sessions.length) throw new Error('listing kept notes requires a session')
+  return { ...rest, sessions }
+}
+
+function appendSessionClauses(
+  filters: NormalizedNoteFilters,
+  clauses: string[],
+  values: (string | number)[],
+) {
+  const sessions = filters.sessions
   if (!sessions.length) return
   const candidates = sessions.map(() => '?').join(',')
   clauses.push(`EXISTS (
@@ -51,11 +64,10 @@ function appendSessionClauses(
   values.push(...sessions)
 }
 
-function listLocalNotes(filters: NoteFilters = {}): NoteRow[] {
+function listLocalNotes(filters: NormalizedNoteFilters): NoteRow[] {
   const clauses: string[] = []
   const values: (string | number)[] = []
   if (filters.project) {
-    if (!registered(filters.project)) throw new Error(`unknown project '${filters.project}'`)
     clauses.push('note.project = ?')
     values.push(filters.project)
   }
@@ -70,18 +82,88 @@ function listLocalNotes(filters: NoteFilters = {}): NoteRow[] {
     )
     .all(...values)
   const search = filters.text?.toLowerCase()
-  return (search ? rows.filter((row) => row.text.toLowerCase().includes(search)) : rows).map(decode)
+  return (search ? rows.filter((row) => row.text.toLowerCase().includes(search)) : rows).map(
+    decodeNoteRow,
+  )
+}
+
+const readRemedy = `run \`${PLATFORM_SLUG} record doctor\`, then retry`
+
+function hostedReadFailure(cause: unknown): Error {
+  const message = cause instanceof Error ? cause.message : String(cause)
+  return new Error(`${message}. ${readRemedy}`)
+}
+
+async function readHostedNote(recordId: string, options?: NoteClientOptions): Promise<NoteRow> {
+  try {
+    return noteRowFromHosted(await hostedGetNote(recordId, options))
+  } catch (cause) {
+    if (isMissingHostedNote(cause)) throw new Error(`no note ${recordId}`)
+    throw hostedReadFailure(cause)
+  }
+}
+
+function acknowledgementMatches(
+  acknowledgement: HostedAcknowledgement,
+  note: NoteRow,
+  sessions: string[],
+) {
+  return (
+    !acknowledgement.deleted_at &&
+    acknowledgement.note_id === note.record_id &&
+    sessions.includes(acknowledgement.session_id) &&
+    acknowledgement.sightings === note.sightings
+  )
+}
+
+async function listHostedNoteRows(
+  filters: NormalizedNoteFilters,
+  options?: NoteClientOptions,
+): Promise<NoteRow[]> {
+  try {
+    const result = await hostedListNotes(
+      {
+        project: filters.project,
+        stale: filters.stale,
+        actionable: filters.actionable,
+      },
+      options,
+    )
+    const search = filters.text?.toLowerCase()
+    return result.notes
+      .map(noteRowFromHosted)
+      .filter((note) =>
+        filters.sessions.length
+          ? note.anchors.some((anchor) =>
+              filters.sessions.includes(
+                typeof anchor.session_id === 'string' ? anchor.session_id : '',
+              ),
+            ) &&
+            filters.kept ===
+              result.acknowledgements.some((acknowledgement) =>
+                acknowledgementMatches(acknowledgement, note, filters.sessions),
+              )
+          : true,
+      )
+      .filter((note) => !search || note.text.toLowerCase().includes(search))
+      .sort(
+        (left, right) =>
+          right.last_seen_at.localeCompare(left.last_seen_at) ||
+          right.record_id.localeCompare(left.record_id),
+      )
+  } catch (cause) {
+    throw hostedReadFailure(cause)
+  }
 }
 
 export async function listNotes(
   filters: NoteFilters = {},
   hosted?: NoteClientOptions,
 ): Promise<NoteRow[]> {
-  if (filters.project && !registered(filters.project))
-    throw new Error(`unknown project '${filters.project}'`)
+  const normalized = normalizeNoteFilters(filters)
   if (hostedWriteMode(hosted?.baseUrl ?? resolveHostedUrl()) === 'hosted-configured')
-    return listHostedNoteRows(filters, hosted)
-  return listLocalNotes(filters)
+    return listHostedNoteRows(normalized, hosted)
+  return listLocalNotes(normalized)
 }
 
 export function listActionableNotes(
@@ -94,7 +176,7 @@ export function listActionableNotes(
 export async function listProjectNotes(
   filters: NoteFilters & { hosted?: NoteClientOptions },
 ): Promise<NoteRow[]> {
-  if (filters.project && !registered(filters.project)) {
+  if (filters.project && !isRegisteredNoteProject(filters.project)) {
     if (filters.stale || filters.kept || filters.actionable)
       throw new Error(
         `outside project '${filters.project}' does not support these note filters; an outside project's notes support only text filtering; drop --stale, --kept and --actionable`,
@@ -125,5 +207,5 @@ export async function getNote(recordId: string, hosted?: NoteClientOptions): Pro
     )
     .get(recordId)
   if (!row) throw new Error(`no note ${recordId}`)
-  return decode(row)
+  return decodeNoteRow(row)
 }

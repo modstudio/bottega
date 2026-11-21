@@ -8,7 +8,6 @@ import { resetFixtureStore } from '../test/run-fixtures.ts'
 import { db, writeTransaction } from './db.ts'
 import { observeTrackerTask } from './ingest/trackers.ts'
 import {
-  DIRECT_RECORD_TABLES,
   discardHostedOutboxEntryCommand,
   drainHostedOutbox,
   hostedOutboxDoctorLines,
@@ -75,7 +74,6 @@ beforeEach(resetFixtureStore)
 
 describe('hosted outbox', () => {
   test('direct record tables refuse before inserting while other tables still queue', () => {
-    expect(DIRECT_RECORD_TABLES).toEqual(new Set(['hub_note', 'hub_note_acknowledgement']))
     writeTransaction((conn) => {
       expect(() => queueHostedChange(conn, 'hub_note', crypto.randomUUID(), 'upsert')).toThrow(
         'hub_note writes go through sendHostedChanges and cannot be queued',

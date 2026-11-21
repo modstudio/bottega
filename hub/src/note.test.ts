@@ -14,10 +14,6 @@ import {
   createNote,
   deriveNoteAnchor,
   dropNote,
-  getNote,
-  listActionableNotes,
-  listNotes,
-  listProjectNotes,
   mergeNote,
   type NoteAnchor,
   promoteNote,
@@ -26,6 +22,7 @@ import {
   staleNotes,
 } from './note.ts'
 import { listOutsideProjectNotes } from './note-outside.ts'
+import { getNote, listActionableNotes, listNotes, listProjectNotes } from './note-read.ts'
 import { projectRecordIdFor } from './project-record-id.ts'
 import { createLocalTaskInTransaction, showTask } from './task.ts'
 

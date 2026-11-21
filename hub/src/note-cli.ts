@@ -10,7 +10,6 @@ import {
   curateNotes,
   curatorEnabled,
   dropNote,
-  listProjectNotes,
   mergeNote,
   noteSessionId,
   parseExplicitNoteAnchor,
@@ -22,6 +21,7 @@ import {
 import { recordNoteDuplicateDistinct } from './note-duplicate-question.ts'
 import { promoteNoteCommand } from './note-promote-cli.ts'
 import { pushNotes } from './note-push.ts'
+import { listProjectNotes } from './note-read.ts'
 import { projects } from './projects.ts'
 import { showTask } from './task.ts'
 import { taskCreationDestination } from './tracker-new.ts'

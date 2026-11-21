@@ -6,11 +6,12 @@ import { db, writeTransaction } from './db.ts'
 import { noteMirrorCollision } from './hosted-notes.ts'
 import { HostedOutsideNoteError } from './hosted-outside-notes.ts'
 import { confirmCount } from './hosted-tasks.ts'
-import { createNote, getNote, promoteNote } from './note.ts'
+import { createNote, promoteNote } from './note.ts'
 import { noteApi } from './note-api.ts'
 import { applyHostedNoteRows } from './note-cache.ts'
 import { hostedNoteChanges, hostedReapNotes } from './note-client.ts'
 import { nextNoteNumber } from './note-number.ts'
+import { getNote } from './note-read.ts'
 import { showTask } from './task.ts'
 
 const applyHostedNoteChanges = (changes: Awaited<ReturnType<typeof hostedNoteChanges>>) =>

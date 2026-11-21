@@ -1,41 +1,22 @@
 // concern: note hosted record
-/** Adapts canonical hosted note rows to the note service and direct change contract. */
+/** Owns hosted note row adaptation and direct record sends. */
 
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import type { NoteAnchorWire } from '../../shared/note-anchor.ts'
 import { formatNoteLabel } from '../../shared/note-label.ts'
-import { sendHostedChanges } from './hosted-change-sender.ts'
-import type { HostedAcknowledgement, HostedNote } from './hosted-notes.ts'
+import { newRecordId } from '../../shared/record/schema.ts'
+import { HostedChangeStageError, sendHostedChanges } from './hosted-change-sender.ts'
+import type { HostedNote } from './hosted-notes.ts'
 import { mergeNoteAnchors } from './note-anchor-merge.ts'
-import {
-  hostedGetNote,
-  hostedListNotes,
-  isMissingHostedNote,
-  type NoteClientOptions,
-} from './note-client.ts'
+import type { NoteClientOptions } from './note-client.ts'
 import { noteDestinationOptions } from './note-project-space.ts'
 import type { NoteRow } from './note-row.ts'
 import {
+  HOSTED_NOTE_ACKNOWLEDGEMENT_TABLE,
   HOSTED_NOTE_TABLE,
   type PushedNote,
   type PushedNoteAcknowledgement,
 } from './push-contract.ts'
-
-export type NoteFilters = {
-  project?: string
-  stale?: boolean
-  session?: string | string[]
-  actionable?: boolean
-  kept?: boolean
-  text?: string
-}
-
-const readRemedy = `run \`${PLATFORM_SLUG} record doctor\`, then retry`
-
-function hostedReadFailure(cause: unknown): Error {
-  const message = cause instanceof Error ? cause.message : String(cause)
-  return new Error(`${message}. ${readRemedy}`)
-}
 
 export function noteRowFromHosted(row: HostedNote): NoteRow {
   return {
@@ -58,76 +39,10 @@ export function noteRowFromHosted(row: HostedNote): NoteRow {
   }
 }
 
-export async function readHostedNote(
-  recordId: string,
-  options?: NoteClientOptions,
-): Promise<NoteRow> {
-  try {
-    return noteRowFromHosted(await hostedGetNote(recordId, options))
-  } catch (cause) {
-    if (isMissingHostedNote(cause)) throw new Error(`no note ${recordId}`)
-    throw hostedReadFailure(cause)
-  }
-}
-
-const sessionsFrom = (session: NoteFilters['session']) => [
-  ...new Set(
-    (Array.isArray(session) ? session : session ? [session] : [])
-      .map((value) => value.trim())
-      .filter(Boolean),
-  ),
-]
-
-function acknowledgementMatches(
-  acknowledgement: HostedAcknowledgement,
-  note: NoteRow,
-  sessions: string[],
-) {
-  return (
-    !acknowledgement.deleted_at &&
-    acknowledgement.note_id === note.record_id &&
-    sessions.includes(acknowledgement.session_id) &&
-    acknowledgement.sightings === note.sightings
-  )
-}
-
-export async function listHostedNoteRows(
-  filters: NoteFilters,
-  options?: NoteClientOptions,
-): Promise<NoteRow[]> {
-  const sessions = sessionsFrom(filters.session)
-  if (filters.kept && !sessions.length) throw new Error('listing kept notes requires a session')
-  try {
-    const result = await hostedListNotes(
-      {
-        project: filters.project,
-        stale: filters.stale,
-        actionable: filters.actionable,
-      },
-      options,
-    )
-    const search = filters.text?.toLowerCase()
-    return result.notes
-      .map(noteRowFromHosted)
-      .filter((note) =>
-        sessions.length
-          ? note.anchors.some((anchor) =>
-              sessions.includes(typeof anchor.session_id === 'string' ? anchor.session_id : ''),
-            ) &&
-            filters.kept ===
-              result.acknowledgements.some((acknowledgement) =>
-                acknowledgementMatches(acknowledgement, note, sessions),
-              )
-          : true,
-      )
-      .filter((note) => !search || note.text.toLowerCase().includes(search))
-      .sort(
-        (left, right) =>
-          right.last_seen_at.localeCompare(left.last_seen_at) ||
-          right.record_id.localeCompare(left.record_id),
-      )
-  } catch (cause) {
-    throw hostedReadFailure(cause)
+export async function noteChangeSendOptions(project: string, options?: NoteClientOptions) {
+  return {
+    ...(await noteDestinationOptions(project, options)),
+    conflictRemedy: `${PLATFORM_SLUG} note list --project ${project}`,
   }
 }
 
@@ -154,7 +69,7 @@ export function pushedNote(note: NoteRow, at: string): PushedNote {
   }
 }
 
-export function pushedAcknowledgement(input: {
+function pushedAcknowledgement(input: {
   id: string
   note: NoteRow
   sessionId: string
@@ -189,7 +104,6 @@ export async function sendHostedRepeatSighting(
     stale_at: null,
     stale_reason: null,
   }
-  const destination = await noteDestinationOptions(note.project, options)
   await sendHostedChanges(
     `note ${note.label}`,
     [
@@ -204,10 +118,114 @@ export async function sendHostedRepeatSighting(
         },
       ],
     ],
-    {
-      ...destination,
-      conflictRemedy: `${PLATFORM_SLUG} note list --project ${note.project}`,
-    },
+    await noteChangeSendOptions(note.project, options),
+  )
+  return updated
+}
+
+export async function sendHostedNoteAcknowledgement(
+  note: NoteRow,
+  sessionId: string,
+  at: string,
+  options?: NoteClientOptions,
+): Promise<PushedNoteAcknowledgement> {
+  const acknowledgement = pushedAcknowledgement({ id: newRecordId(), note, sessionId, at })
+  await sendHostedChanges(
+    `note ${note.label}`,
+    [
+      [
+        {
+          table: HOSTED_NOTE_ACKNOWLEDGEMENT_TABLE,
+          id: acknowledgement.id,
+          op: 'upsert',
+          row: acknowledgement,
+        },
+      ],
+    ],
+    await noteChangeSendOptions(note.project, options),
+  )
+  return acknowledgement
+}
+
+export async function sendHostedNoteMerge(
+  target: NoteRow,
+  source: NoteRow,
+  at: string,
+  options?: NoteClientOptions,
+): Promise<NoteRow> {
+  const union = mergeNoteAnchors(
+    target.anchors,
+    source.anchors.map((anchor) => (anchor.id ? anchor : { ...anchor, id: newRecordId() })),
+  )
+  const merged: NoteRow = {
+    ...target,
+    anchors: union.anchors,
+    sightings: union.sightings,
+    last_seen_at:
+      target.last_seen_at > source.last_seen_at ? target.last_seen_at : source.last_seen_at,
+  }
+  try {
+    await sendHostedChanges(
+      `note ${target.label}`,
+      [
+        [
+          {
+            table: HOSTED_NOTE_TABLE,
+            id: target.record_id,
+            op: 'upsert',
+            row: pushedNote(merged, at),
+            fields: ['anchors', 'last_seen_at'],
+            expected_revision: target.revision,
+          },
+        ],
+        [
+          {
+            table: HOSTED_NOTE_TABLE,
+            id: source.record_id,
+            op: 'delete',
+            expected_revision: source.revision,
+          },
+        ],
+      ],
+      await noteChangeSendOptions(target.project, options),
+    )
+  } catch (cause) {
+    if (cause instanceof HostedChangeStageError && cause.stageIndex === 1)
+      throw new Error(
+        `${cause.message}; the target holds the merged sightings but source ${source.label} still exists; rerun \`${PLATFORM_SLUG} note same ${target.label} ${source.label}\``,
+      )
+    throw cause
+  }
+  return merged
+}
+
+export async function sendHostedNoteDrop(
+  current: NoteRow,
+  reason: string,
+  at: string,
+  options?: NoteClientOptions,
+): Promise<NoteRow> {
+  const updated: NoteRow = {
+    ...current,
+    stale_at: at,
+    stale_reason: `dropped: ${reason}`,
+    last_seen_at: at,
+  }
+  await sendHostedChanges(
+    `note ${current.label}`,
+    [
+      [
+        {
+          table: HOSTED_NOTE_TABLE,
+          id: current.record_id,
+          op: 'upsert',
+          row: pushedNote(updated, at),
+          fields: ['stale_at', 'stale_reason', 'last_seen_at'],
+          expected_revision: current.revision,
+        },
+      ],
+    ],
+    await noteChangeSendOptions(current.project, options),
   )
   return updated
 }

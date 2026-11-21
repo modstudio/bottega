@@ -1,7 +1,8 @@
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { credentials, Mcp } from './mcp.ts'
-import { getNote, promoteNote, promotionTaskInput } from './note.ts'
+import { promoteNote, promotionTaskInput } from './note.ts'
 import { promotionTitleRefusal, requiredPromotionTitle } from './note-promotion-body.ts'
+import { getNote } from './note-read.ts'
 import { projects } from './projects.ts'
 import {
   createAdvertisedTrackerTaskKey,

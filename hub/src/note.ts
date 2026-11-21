@@ -9,7 +9,6 @@ import { newRecordId } from '../../shared/record/schema.ts'
 import { hasRecordIdShape } from '../../shared/record-id.ts'
 import { projectOf } from './attribute.ts'
 import { db, nowIso, writeTransaction } from './db.ts'
-import { HostedChangeStageError, sendHostedChanges } from './hosted-change-sender.ts'
 import { applyHostedWriteLocally } from './hosted-local-apply.ts'
 import { resolveHostedUrl } from './hosted-url.ts'
 import {
@@ -32,8 +31,9 @@ import { deriveNoteFileAnchors } from './note-file-anchors.ts'
 import { noteGit } from './note-git.ts'
 import {
   noteRowFromHosted,
-  pushedAcknowledgement,
-  pushedNote,
+  sendHostedNoteAcknowledgement,
+  sendHostedNoteDrop,
+  sendHostedNoteMerge,
   sendHostedRepeatSighting,
 } from './note-hosted-record.ts'
 import { createOutsideProjectNote } from './note-outside.ts'
@@ -43,9 +43,9 @@ import {
   promotionTitleRefusal,
   requiredPromotionTitle,
 } from './note-promotion-body.ts'
-import { getNote, listActionableNotes, listNotes, listProjectNotes } from './note-read.ts'
+import { getNote, listActionableNotes, listNotes } from './note-read.ts'
 import { relinkHostedNote } from './note-relink-record.ts'
-import type { NoteRow } from './note-row.ts'
+import { decodeNoteRow, isRegisteredNoteProject, type NoteRow } from './note-row.ts'
 import { evaluateNoteStaleness, type StalenessAnchorObservation } from './note-staleness.ts'
 import {
   applyHostedStaleness,
@@ -56,7 +56,6 @@ import {
 import { dispatchNoteCurator, readRunsById } from './orch.ts'
 import { projectRecordIdFor } from './project-record-id.ts'
 import { projects, type RegisteredProject } from './projects.ts'
-import { HOSTED_NOTE_ACKNOWLEDGEMENT_TABLE, HOSTED_NOTE_TABLE } from './push-contract.ts'
 import {
   attachLocalTaskEvidenceInTransaction,
   createLocalTaskInTransaction,
@@ -68,7 +67,6 @@ import type { TaskRow } from './task-row.ts'
 import { taskCreationDestination } from './tracker-new.ts'
 
 export type NoteAnchor = NoteAnchorWire
-export { getNote, listActionableNotes, listNotes, listProjectNotes }
 
 export function parseNoteAnchor(value: unknown): NoteAnchor {
   return parseNoteAnchorWire(value)
@@ -126,23 +124,12 @@ export type CreateNoteInput = {
   project?: string
 }
 
-function decode(row: Omit<NoteRow, 'anchors' | 'label'> & { anchors: string }): NoteRow {
-  return {
-    ...row,
-    label: formatNoteLabel(row.project, row.number),
-    anchors: JSON.parse(row.anchors) as NoteAnchor[],
-  }
-}
-
 function registeredProject(name: string): RegisteredProject {
   const project = projects().find((candidate) => candidate.name === name)
   if (!project)
     throw new Error(`project '${name}' is not registered; run \`${PLATFORM_SLUG} project list\``)
   return project
 }
-
-const isRegisteredNoteProject = (name: string) =>
-  projects().some((candidate) => candidate.name === name)
 
 function writeMode(
   projectName: string,
@@ -234,30 +221,7 @@ export async function acknowledgeNote(
     .get(note.record_id, sessionId)
   if (existing?.sightings === note.sightings) return { note, alreadyAcknowledged: true }
   if (mode === 'hosted-configured') {
-    const acknowledgement = pushedAcknowledgement({
-      id: newRecordId(),
-      note,
-      sessionId,
-      at,
-    })
-    const destination = await noteDestinationOptions(note.project, options.hosted)
-    await sendHostedChanges(
-      `note ${note.label}`,
-      [
-        [
-          {
-            table: HOSTED_NOTE_ACKNOWLEDGEMENT_TABLE,
-            id: acknowledgement.id,
-            op: 'upsert',
-            row: acknowledgement,
-          },
-        ],
-      ],
-      {
-        ...destination,
-        conflictRemedy: `${PLATFORM_SLUG} note list --project ${note.project}`,
-      },
-    )
+    const acknowledgement = await sendHostedNoteAcknowledgement(note, sessionId, at, options.hosted)
     writeTransaction((conn) => {
       conn
         .query(
@@ -277,7 +241,7 @@ export async function acknowledgeNote(
     return { note, alreadyAcknowledged: false }
   }
   writeTransaction((conn) => {
-    const row = decode(noteRow(conn, note.record_id))
+    const row = decodeNoteRow(noteRow(conn, note.record_id))
     conn
       .query(
         `INSERT INTO note_acknowledgement (record_id,note_record_id,session_id,acknowledged_at,sightings)
@@ -342,8 +306,8 @@ export async function mergeNote(
   const mode = writeMode(target.project, options.hosted)
   if (mode === 'local-authoritative') {
     writeTransaction((conn) => {
-      const current = decode(noteRow(conn, targetRecordId))
-      const source = decode(noteRow(conn, sourceRecordId))
+      const current = decodeNoteRow(noteRow(conn, targetRecordId))
+      const source = decodeNoteRow(noteRow(conn, sourceRecordId))
       if (current.project !== source.project)
         throw new Error('notes from different projects cannot be merged')
       const lastSeen =
@@ -359,50 +323,7 @@ export async function mergeNote(
     return merged
   }
   const at = nowIso()
-  const union = mergeNoteAnchors(target.anchors, sourceNote.anchors.map(identifiedAnchor))
-  const merged: NoteRow = {
-    ...target,
-    anchors: union.anchors,
-    sightings: union.sightings,
-    last_seen_at:
-      target.last_seen_at > sourceNote.last_seen_at ? target.last_seen_at : sourceNote.last_seen_at,
-  }
-  const destination = await noteDestinationOptions(target.project, options.hosted)
-  try {
-    await sendHostedChanges(
-      `note ${target.label}`,
-      [
-        [
-          {
-            table: HOSTED_NOTE_TABLE,
-            id: target.record_id,
-            op: 'upsert',
-            row: pushedNote(merged, at),
-            fields: ['anchors', 'last_seen_at'],
-            expected_revision: target.revision,
-          },
-        ],
-        [
-          {
-            table: HOSTED_NOTE_TABLE,
-            id: sourceNote.record_id,
-            op: 'delete',
-            expected_revision: sourceNote.revision,
-          },
-        ],
-      ],
-      {
-        ...destination,
-        conflictRemedy: `${PLATFORM_SLUG} note list --project ${target.project}`,
-      },
-    )
-  } catch (cause) {
-    if (cause instanceof HostedChangeStageError && cause.stageIndex === 1)
-      throw new Error(
-        `${cause.message}; the target holds the merged sightings but source ${sourceNote.label} still exists; rerun \`${PLATFORM_SLUG} note same ${target.label} ${sourceNote.label}\``,
-      )
-    throw cause
-  }
+  const merged = await sendHostedNoteMerge(target, sourceNote, at, options.hosted)
   writeTransaction((conn) => {
     conn
       .query(`UPDATE note SET anchors=?,sightings=?,last_seen_at=? WHERE record_id=?`)
@@ -532,7 +453,7 @@ export async function createNote(
     if (mode === 'local-authoritative') {
       const at = nowIso()
       writeTransaction((conn) => {
-        const row = decode(noteRow(conn, existing.record_id))
+        const row = decodeNoteRow(noteRow(conn, existing.record_id))
         if (row.project !== targetProject)
           throw new Error('the matching note belongs to another project')
         conn
@@ -618,7 +539,7 @@ export async function promoteNote(
   if (mode === 'local-authoritative') {
     if (destination === 'tracker') {
       writeTransaction((conn) => {
-        const row = decode(noteRow(conn, note.record_id))
+        const row = decodeNoteRow(noteRow(conn, note.record_id))
         if (row.promoted_task)
           throw new Error(`note ${row.label} is already promoted to ${row.promoted_task}`)
         conn
@@ -631,7 +552,7 @@ export async function promoteNote(
     }
     if (options.existingTaskKey) {
       writeTransaction((conn) => {
-        const row = decode(noteRow(conn, note.record_id))
+        const row = decodeNoteRow(noteRow(conn, note.record_id))
         if (row.promoted_task)
           throw new Error(`note ${row.label} is already promoted to ${row.promoted_task}`)
         const at = nowIso()
@@ -651,7 +572,7 @@ export async function promoteNote(
       return getNote(note.record_id, options.hosted)
     }
     writeTransaction((conn) => {
-      const row = decode(noteRow(conn, note.record_id))
+      const row = decodeNoteRow(noteRow(conn, note.record_id))
       if (row.promoted_task)
         throw new Error(`note ${row.label} is already promoted to ${row.promoted_task}`)
       const task = createLocalTaskInTransaction(
@@ -710,32 +631,7 @@ export async function dropNote(
     return getNote(recordId, options.hosted)
   }
   const at = nowIso()
-  const updated: NoteRow = {
-    ...current,
-    stale_at: at,
-    stale_reason: `dropped: ${reason.trim()}`,
-    last_seen_at: at,
-  }
-  const destination = await noteDestinationOptions(current.project, options.hosted)
-  await sendHostedChanges(
-    `note ${current.label}`,
-    [
-      [
-        {
-          table: HOSTED_NOTE_TABLE,
-          id: current.record_id,
-          op: 'upsert',
-          row: pushedNote(updated, at),
-          fields: ['stale_at', 'stale_reason', 'last_seen_at'],
-          expected_revision: current.revision,
-        },
-      ],
-    ],
-    {
-      ...destination,
-      conflictRemedy: `${PLATFORM_SLUG} note list --project ${current.project}`,
-    },
-  )
+  const updated = await sendHostedNoteDrop(current, reason.trim(), at, options.hosted)
   writeTransaction((conn) => {
     noteRow(conn, recordId)
     conn
@@ -773,7 +669,7 @@ export async function relinkNote(
   if (mode === 'hosted-configured')
     return relinkHostedNote(current, target, reason.trim(), at, options.hosted)
   writeTransaction((conn) => {
-    const row = decode(noteRow(conn, recordId))
+    const row = decodeNoteRow(noteRow(conn, recordId))
     if (!row.promoted_task)
       throw new Error(
         `note ${row.label} has no attachment; attach it with: ${PLATFORM_SLUG} note promote ${row.label} --task <KEY>`,
