@@ -698,38 +698,6 @@ describe('collection records', () => {
     rmSync(outputPath)
   })
 
-  test(`${PLATFORM_SLUG} run result prints a failed worker check and its legs`, async () => {
-    const id = addRun({ agent: 'codex', job: 'implement' })
-    const replyHead = 'fedcba0987654321fedcba0987654321fedcba09'
-    db().query('UPDATE run SET reply_head=? WHERE record_id=?').run(replyHead, id)
-    const gateId = newRecordId()
-    db()
-      .query(
-        `INSERT INTO gate_execution
-          (record_id,run_record_id,requested_at,finished_at,exit_code,timed_out,elapsed_ms,purpose,head_commit,output_tail)
-         VALUES (?,?,?,?,1,0,20,'worker-check',?,?)`,
-      )
-      .run(
-        gateId,
-        id,
-        '2026-11-08T01:00:00.000Z',
-        '2026-11-08T01:00:01.000Z',
-        replyHead,
-        ['gate failures:', 'orchestrator'].join('\n'),
-      )
-    db()
-      .query(
-        `INSERT INTO check_execution
-          (record_id,gate_execution_record_id,check_name,wall_ms,exit_code)
-         VALUES (?,?,?,?,?)`,
-      )
-      .run(newRecordId(), gateId, 'orchestrator', 20, 2)
-
-    expect((await recordedResult(id)).errors[0]).toBe(
-      'worker check: FAILED at fedcba098765 (gate 1): orchestrator',
-    )
-  })
-
   test(`${PLATFORM_SLUG} run result does not fall back to the launch HEAD for legacy rows`, async () => {
     const id = addRun({ agent: 'codex', job: 'implement' })
     const launchHead = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'

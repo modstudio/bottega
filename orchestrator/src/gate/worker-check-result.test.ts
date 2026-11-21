@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun, dir } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
-import { recordedWorkerCheckVerdict } from './worker-check-result.ts'
+import { recordedWorkerCheckResult } from './worker-check-result.ts'
 
 test('recorded worker-check verdict reads failing legs and their persisted footer tails', () => {
   const runId = addRun({ agent: 'codex', job: 'implement', status: 'running' })
@@ -44,7 +44,7 @@ test('recorded worker-check verdict reads failing legs and their persisted foote
     )
     .run(newRecordId(), gateId, 'orchestrator', 20, 2)
 
-  expect(recordedWorkerCheckVerdict(db(), runId, head)).toMatchObject({
+  expect(recordedWorkerCheckResult(db(), runId, head, null).verdict).toMatchObject({
     kind: 'failed',
     replyHead: head,
     failures: [

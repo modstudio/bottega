@@ -10,7 +10,7 @@ import { changeViewPlan } from '../shared/change-view.ts'
 import {
   CHECK_EXECUTION_FILE_ENV,
   type CheckExecutionRecord,
-  FAILING_LEG_TAIL_MARKER,
+  formatFailingLegTailHeading,
   GATE_FAILURES_MARKER,
   UNCHECKED_EXIT_CODE,
   UNIT_TEST_CHECK_CATEGORY,
@@ -479,7 +479,7 @@ function printFailedLegTails(results: LegResult[]) {
   const failed = results.filter((result) => result.exitCode !== 0)
   if (!failed.length) return
   for (const result of failed) {
-    console.error(`\n[${result.name}] ${FAILING_LEG_TAIL_MARKER}${result.exitCode})`)
+    console.error(`\n${formatFailingLegTailHeading(result.name, result.exitCode)}`)
     for (const line of result.tail) console.error(line)
   }
 }

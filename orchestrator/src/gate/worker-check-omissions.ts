@@ -6,6 +6,7 @@ export type FinishedWorkerCheckExecution = {
   record_id: string
   number: number
   head_commit: string | null
+  tree_id: string | null
   requested_at: string
   exit_code: number | null
   timed_out: number | null
@@ -35,9 +36,10 @@ export function latestFinishedWorkerCheckExecution(
 ): FinishedWorkerCheckExecution | null {
   const row = database
     .query<FinishedWorkerCheckExecution, [string]>(
-      `SELECT record_id,number,head_commit,requested_at,exit_code,timed_out,output_tail,output_artifact
+      `SELECT record_id,number,head_commit,tree_id,requested_at,exit_code,timed_out,output_tail,output_artifact
        FROM gate_execution
        WHERE run_record_id=? AND purpose='worker-check' AND finished_at IS NOT NULL
+         AND cancelled_reason IS NULL
        ORDER BY requested_at DESC,record_id DESC LIMIT 1`,
     )
     .get(runRecordId)

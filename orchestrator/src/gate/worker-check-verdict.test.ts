@@ -13,6 +13,7 @@ function check(overrides: Partial<WorkerCheckCandidate> = {}): WorkerCheckCandid
     recordId: '01990000-0000-7000-8000-000000000001',
     number: 41,
     headCommit: head,
+    treeId: null,
     requestedAt: '2026-11-20T10:00:00.000Z',
     exitCode: 0,
     timedOut: false,
@@ -25,6 +26,7 @@ describe('worker check verdict at the reply HEAD', () => {
   test('refuses a done reply when the latest check failed and names each recorded leg tail', () => {
     const verdict = decideWorkerCheckVerdict(
       head,
+      null,
       check({
         exitCode: 1,
         failures: [
@@ -47,15 +49,34 @@ describe('worker check verdict at the reply HEAD', () => {
   })
 
   test('passes a done reply when the check passed', () => {
-    const verdict = decideWorkerCheckVerdict(head, check())
+    const verdict = decideWorkerCheckVerdict(head, null, check())
     expect(workerCheckRefusalText(verdict)).toBeNull()
     expect(verdict.kind).toBe('passed')
   })
 
   test('passes with none when the only check is at another HEAD', () => {
-    const verdict = decideWorkerCheckVerdict(head, check({ headCommit: 'f'.repeat(40) }))
+    const verdict = decideWorkerCheckVerdict(
+      head,
+      null,
+      check({ headCommit: 'f'.repeat(40) }),
+    )
     expect(workerCheckRefusalText(verdict)).toBeNull()
     expect(verdict.kind).toBe('none')
+  })
+
+  test('matches a dirty worker check to the checkpointed reply by tree content', () => {
+    const tree = 'a'.repeat(40)
+    const verdict = decideWorkerCheckVerdict(
+      head,
+      tree,
+      check({
+        headCommit: null,
+        treeId: tree,
+        exitCode: 1,
+        failures: [{ leg: 'orchestrator', tail: ['typecheck failed'] }],
+      }),
+    )
+    expect(workerCheckRefusalText(verdict)).toContain('orchestrator')
   })
 })
 

@@ -54,3 +54,20 @@ test('latest worker-check reader returns the newest finished execution by reques
 
   expect(latestFinishedWorkerCheckExecution(run, db())?.record_id).toBe(newestFinished)
 })
+
+test('latest worker-check reader skips a newer cancelled execution', () => {
+  const run = addRun({ agent: 'codex', job: 'implement', status: 'running' })
+  const latestVerdict = insertGate({
+    runId: run,
+    finishedAt: '2026-10-01T11:00:00.000Z',
+  })
+  const cancelled = insertGate({
+    runId: run,
+    finishedAt: '2026-10-01T12:00:00.000Z',
+  })
+  db()
+    .query("UPDATE gate_execution SET cancelled_reason='coordinator cancelled' WHERE record_id=?")
+    .run(cancelled)
+
+  expect(latestFinishedWorkerCheckExecution(run, db())?.record_id).toBe(latestVerdict)
+})

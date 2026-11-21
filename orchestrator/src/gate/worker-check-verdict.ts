@@ -1,6 +1,10 @@
 // concern: worker reply check evidence
 
-import { FAILING_LEG_TAIL_MARKER, GATE_FAILURES_MARKER } from '../../../shared/check-execution.ts'
+import {
+  GATE_FAILURES_MARKER,
+  parseFailingLegTailHeading,
+  parseGateFailureFooterLine,
+} from '../../../shared/check-execution.ts'
 
 export type WorkerCheckFailure = {
   leg: string
@@ -11,6 +15,7 @@ export type WorkerCheckCandidate = {
   recordId: string
   number: number
   headCommit: string | null
+  treeId: string | null
   requestedAt: string
   exitCode: number | null
   timedOut: boolean | null
@@ -30,10 +35,14 @@ export type WorkerCheckVerdict =
 /** Decide the recorded worker-check verdict for the commit the worker replied from. */
 export function decideWorkerCheckVerdict(
   replyHead: string | null,
+  replyTree: string | null,
   latest: WorkerCheckCandidate | null,
 ): WorkerCheckVerdict {
   if (!replyHead) return { kind: 'none', replyHead }
-  if (!latest || latest.headCommit !== replyHead) return { kind: 'none', replyHead }
+  const matchesReply =
+    latest !== null &&
+    (latest.headCommit === replyHead || (replyTree !== null && latest.treeId === replyTree))
+  if (!latest || !matchesReply) return { kind: 'none', replyHead }
   return latest.exitCode === 0 && latest.timedOut === false
     ? { kind: 'passed', replyHead, number: latest.number }
     : {
@@ -79,9 +88,7 @@ export function workerCheckRefusalText(verdict: WorkerCheckVerdict): string | nu
 
 /** Recover the recorded footer detail for known failing legs without interpreting prose. */
 function recordedLegTail(lines: readonly string[], leg: string): string[] {
-  const marker = lines.findLastIndex((line) =>
-    line.startsWith(`[${leg}] ${FAILING_LEG_TAIL_MARKER}`),
-  )
+  const marker = lines.findLastIndex((line) => parseFailingLegTailHeading(line)?.leg === leg)
   if (marker < 0) return []
   const tail: string[] = []
   for (const line of lines.slice(marker + 1)) {
@@ -95,15 +102,16 @@ function addFooterTails(lines: readonly string[], failures: Map<string, string[]
   const footer = lines.findLastIndex((line) => line.trim() === GATE_FAILURES_MARKER)
   let current: string | null = null
   for (const line of footer < 0 ? [] : lines.slice(footer + 1)) {
-    if (failures.has(line)) {
-      current = line
+    const parsed = parseGateFailureFooterLine(line)
+    if (parsed?.kind === 'leg' && failures.has(parsed.value)) {
+      current = parsed.value
       continue
     }
-    if (!current || !line.startsWith('  ')) {
+    if (!current || parsed?.kind !== 'detail') {
       if (current) break
       continue
     }
-    if (failures.get(current)!.length === 0) failures.get(current)!.push(line.slice(2))
+    if (failures.get(current)!.length === 0) failures.get(current)!.push(parsed.value)
   }
 }
 

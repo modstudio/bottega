@@ -8,6 +8,35 @@ export const UNCHECKED_LINE_PREFIX = 'unchecked: '
 export const FAILING_LEG_TAIL_MARKER = 'failing leg tail (exit '
 export const GATE_FAILURES_MARKER = 'gate failures:'
 
+export function formatFailingLegTailHeading(leg: string, exitCode: number): string {
+  return `[${leg}] ${FAILING_LEG_TAIL_MARKER}${exitCode})`
+}
+
+export function parseFailingLegTailHeading(line: string): { leg: string; exitCode: number } | null {
+  const separator = `] ${FAILING_LEG_TAIL_MARKER}`
+  const separatorAt = line.indexOf(separator)
+  if (!line.startsWith('[') || separatorAt <= 1 || !line.endsWith(')')) return null
+  const exitCode = Number(line.slice(separatorAt + separator.length, -1))
+  if (!Number.isInteger(exitCode)) return null
+  return { leg: line.slice(1, separatorAt), exitCode }
+}
+
+export function formatGateFailureLeg(leg: string): string {
+  return leg
+}
+
+export function formatGateFailureDetail(detail: string): string {
+  return `  ${detail}`
+}
+
+export function parseGateFailureFooterLine(
+  line: string,
+): { kind: 'detail' | 'leg'; value: string } | null {
+  if (line.startsWith('  ')) return { kind: 'detail', value: line.slice(2) }
+  if (line.length > 0) return { kind: 'leg', value: line }
+  return null
+}
+
 export function exitUnchecked(reason: string): never {
   console.log(`${UNCHECKED_LINE_PREFIX}${reason}`)
   process.exit(UNCHECKED_EXIT_CODE)

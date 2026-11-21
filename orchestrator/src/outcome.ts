@@ -158,6 +158,7 @@ function rejectEmptyDone<FailureKind extends string>(
     reply.files_changed?.length !== 0 ||
     reply.tests?.ran !== false ||
     inputs.measuredFiles?.length !== 0 ||
+    decision.failureKind === 'contract' ||
     decision.failureKind === 'truncated'
   )
     return decision

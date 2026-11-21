@@ -1,12 +1,19 @@
 import { describe, expect, test } from 'bun:test'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { newRecordId } from '../../shared/record-id.ts'
 import { workerReply as fixtureWorkerReply } from '../test/fixtures/replies.ts'
 import { addRun } from '../test/fixtures/store.ts'
 import type { WorkerReply } from './contract/contract.ts'
 import { db } from './database/db.ts'
 import { FAILS_OVER } from './failure/failure.ts'
+import { git } from './git/git-environment.ts'
 import { finalizeWorkerReply } from './outcome.ts'
-import { terminalWorkerCheckRefusal } from './run/run-terminal-worker-check.ts'
+import {
+  terminalReplyFacts,
+  terminalWorkerCheckRefusal,
+} from './run/run-terminal-worker-check.ts'
 
 const classify = (
   reply: WorkerReply,
@@ -25,6 +32,45 @@ const reply = (overrides: Record<string, unknown>): WorkerReply =>
   fixtureWorkerReply(overrides) as WorkerReply
 
 describe('worker reply finalization', () => {
+  test('terminal facts record the finished writing run reply commit and tree', () => {
+    const repository = mkdtempSync(join(tmpdir(), 'worker-reply-facts-'))
+    try {
+      git(['init', '-b', 'DEV-1943-fixture'], repository)
+      writeFileSync(join(repository, 'changed.ts'), 'export const changed = true\n')
+      git(['add', 'changed.ts'], repository)
+      git(
+        [
+          '-c',
+          'user.name=Orch Test',
+          '-c',
+          'user.email=orch@example.invalid',
+          'commit',
+          '-m',
+          'fixture',
+        ],
+        repository,
+      )
+      const runId = addRun({ agent: 'codex', job: 'implement', status: 'running' })
+
+      terminalReplyFacts({
+        database: db(),
+        runId,
+        writesJob: true,
+        worktreePath: repository,
+        measurementScope: null,
+      })
+
+      expect(
+        db().query('SELECT reply_head,reply_tree FROM run WHERE record_id=?').get(runId),
+      ).toEqual({
+        reply_head: git(['rev-parse', 'HEAD^{commit}'], repository),
+        reply_tree: git(['rev-parse', 'HEAD^{tree}'], repository),
+      })
+    } finally {
+      rmSync(repository, { recursive: true, force: true })
+    }
+  })
+
   test('a terminal failing check at the recorded reply HEAD finalizes failed/contract with its legs', () => {
     const runId = addRun({ agent: 'codex', job: 'implement', status: 'running' })
     const replyHead = '1234567890abcdef1234567890abcdef12345678'
@@ -59,7 +105,7 @@ describe('worker reply finalization', () => {
       status: 'ok',
       failureKind: null,
       error: null,
-      contractRefusal: terminalWorkerCheckRefusal(db(), runId),
+      contractRefusal: terminalWorkerCheckRefusal(db(), runId, replyHead, null),
     })
 
     expect(result).toMatchObject({ status: 'failed', failureKind: 'contract' })
@@ -80,6 +126,23 @@ describe('worker reply finalization', () => {
       status: 'failed',
       failureKind: 'contract',
       error: 'worker check failed at the reply HEAD',
+    })
+  })
+
+  test('an empty done reply keeps a worker-check contract refusal', () => {
+    const result = finalizeWorkerReply({
+      reply: reply({ status: 'done', files_changed: [], tests: { ran: false } }),
+      measuredFiles: [],
+      turnChanged: false,
+      status: 'ok',
+      failureKind: null,
+      error: null,
+      contractRefusal: 'worker check failed at the reply content',
+    })
+    expect(result).toMatchObject({
+      status: 'failed',
+      failureKind: 'contract',
+      error: 'worker check failed at the reply content',
     })
   })
 

@@ -1,5 +1,10 @@
 import { expect, test } from 'bun:test'
 import {
+  formatFailingLegTailHeading,
+  formatGateFailureDetail,
+  formatGateFailureLeg,
+  parseFailingLegTailHeading,
+  parseGateFailureFooterLine,
   parseCheckExecutionLines,
   UNCHECKED_EXIT_CODE,
   UNCHECKED_LINE_PREFIX,
@@ -39,4 +44,19 @@ test('check execution lines retain unchecked reasons only with the unchecked exi
 test('unchecked line writer and parser share the exact protocol', () => {
   const reason = 'audit host unavailable'
   expect(uncheckedReasonFromLines([`${UNCHECKED_LINE_PREFIX}${reason}`])).toBe(reason)
+})
+
+test('worker-check footer writers and parsers share the exact line grammar', () => {
+  expect(parseFailingLegTailHeading(formatFailingLegTailHeading('orchestrator', 2))).toEqual({
+    leg: 'orchestrator',
+    exitCode: 2,
+  })
+  expect(parseGateFailureFooterLine(formatGateFailureLeg('orchestrator'))).toEqual({
+    kind: 'leg',
+    value: 'orchestrator',
+  })
+  expect(parseGateFailureFooterLine(formatGateFailureDetail('typecheck failed'))).toEqual({
+    kind: 'detail',
+    value: 'typecheck failed',
+  })
 })

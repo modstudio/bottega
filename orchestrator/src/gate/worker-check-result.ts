@@ -35,6 +35,7 @@ function workerCheckCandidate(
     recordId: row.record_id,
     number: row.number,
     headCommit: row.head_commit,
+    treeId: row.tree_id,
     requestedAt: row.requested_at,
     exitCode: row.exit_code,
     timedOut: row.timed_out === null ? null : row.timed_out === 1,
@@ -47,22 +48,19 @@ function workerCheckCandidate(
   }
 }
 
-export function recordedWorkerCheckVerdictFromExecution(
-  database: Database,
-  execution: FinishedWorkerCheckExecution | null,
-  replyHead: string | null,
-): WorkerCheckVerdict {
-  return decideWorkerCheckVerdict(replyHead, workerCheckCandidate(database, execution))
-}
-
-export function recordedWorkerCheckVerdict(
+export function recordedWorkerCheckResult(
   database: Database,
   runRecordId: string,
   replyHead: string | null,
-): WorkerCheckVerdict {
-  return recordedWorkerCheckVerdictFromExecution(
-    database,
-    latestFinishedWorkerCheckExecution(runRecordId, database),
-    replyHead,
-  )
+  replyTree: string | null,
+): { execution: FinishedWorkerCheckExecution | null; verdict: WorkerCheckVerdict } {
+  const execution = latestFinishedWorkerCheckExecution(runRecordId, database)
+  return {
+    execution,
+    verdict: decideWorkerCheckVerdict(
+      replyHead,
+      replyTree,
+      workerCheckCandidate(database, execution),
+    ),
+  }
 }

@@ -1,21 +1,21 @@
 // concern: terminal reply HEAD and worker-check contradiction
 
 import type { Database } from 'bun:sqlite'
-import { recordedWorkerCheckVerdict } from '../gate/worker-check-result.ts'
+import { recordedWorkerCheckResult } from '../gate/worker-check-result.ts'
 import { workerCheckRefusalText } from '../gate/worker-check-verdict.ts'
 import { gitContext } from '../git/git-environment.ts'
 import { terminalTurnChanged } from './run-terminal-change.ts'
 
 type MeasurementScope = { measure<T>(operation: () => T): T }
 
-export function terminalWorkerCheckRefusal(database: Database, runRecordId: string): string | null {
-  const replyHead = (
-    database.query('SELECT reply_head FROM run WHERE record_id=?').get(runRecordId) as {
-      reply_head: string | null
-    } | null
-  )?.reply_head
+export function terminalWorkerCheckRefusal(
+  database: Database,
+  runRecordId: string,
+  replyHead: string | null,
+  replyTree: string | null,
+): string | null {
   return workerCheckRefusalText(
-    recordedWorkerCheckVerdict(database, runRecordId, replyHead ?? null),
+    recordedWorkerCheckResult(database, runRecordId, replyHead, replyTree).verdict,
   )
 }
 
@@ -28,12 +28,14 @@ export function terminalReplyFacts(input: {
 }): { turnChanged: boolean | null; contractRefusal: string | null } {
   const replyHead = input.worktreePath
     ? gitContext(input.worktreePath, 'rev-parse', '--verify', 'HEAD^{commit}')
-    : ((
-        input.database.query('SELECT head_commit FROM run WHERE record_id=?').get(input.runId) as {
-          head_commit: string | null
-        } | null
-      )?.head_commit ?? null)
-  input.database.query('UPDATE run SET reply_head=? WHERE record_id=?').run(replyHead, input.runId)
+    : null
+  const replyTree =
+    input.worktreePath && replyHead
+      ? gitContext(input.worktreePath, 'rev-parse', '--verify', `${replyHead}^{tree}`)
+      : null
+  input.database
+    .query('UPDATE run SET reply_head=?,reply_tree=? WHERE record_id=?')
+    .run(replyHead, replyTree, input.runId)
   return {
     turnChanged: terminalTurnChanged({
       database: input.database,
@@ -43,7 +45,7 @@ export function terminalReplyFacts(input: {
       measurementScope: input.measurementScope,
     }),
     contractRefusal: input.writesJob
-      ? terminalWorkerCheckRefusal(input.database, input.runId)
+      ? terminalWorkerCheckRefusal(input.database, input.runId, replyHead, replyTree)
       : null,
   }
 }

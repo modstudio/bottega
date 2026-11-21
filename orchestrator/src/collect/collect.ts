@@ -114,6 +114,7 @@ type CollectedRunRow = {
   executor: string
   result_member_record_id: string
   reply_head: string | null
+  reply_tree: string | null
 }
 
 type AskingResolution =
@@ -684,8 +685,6 @@ function presentCollectedOutput(
     failure_kind: string | null
     exit_code: number | null
     cwd: string | null
-    result_member_record_id: string
-    reply_head: string | null
   },
   output: string | null,
   ok: boolean,
@@ -750,7 +749,7 @@ export async function collectResult(
             root.provenance_status, root.worktree, root.branch, root.minted_branch,
             root.tests_ran, root.tests_passed, root.tests_claim_disagrees, root.executor,
             current_run.record_id result_member_record_id,
-            current_run.reply_head
+            current_run.reply_head, current_run.reply_tree
        FROM run root`,
         'WHERE root.record_id = ?',
       ),
