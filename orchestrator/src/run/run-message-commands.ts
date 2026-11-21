@@ -42,7 +42,12 @@ import { answerClosedWorkflowQuestion } from './question-mutation.ts'
 import { rulingAttributionDecision } from './question-vocabulary.ts'
 import { rulingFileOfferLines } from './ruling-file-text.ts'
 import { type AnswerRunInput, answerRun, retryRun } from './run-answer.ts'
-import { continueRun, type RunControlPresentation, reportContinuedRun } from './run-control.ts'
+import {
+  continueRun,
+  type RunControlPresentation,
+  reportContinuedRun,
+  reportsBeforeFollow,
+} from './run-control.ts'
 
 type Flags = { detach: boolean; follow: boolean; quiet: boolean }
 type Presentation = { printRunId(id: string): void }
@@ -359,6 +364,16 @@ export async function continueCommand(
     turn: 'continue',
     ...admission,
   })
+  const reportDetached = reportsBeforeFollow(flags)
+    ? async (childId: string, jobName: string) => {
+        return dependencies.reportContinuedRun(
+          childId,
+          jobName,
+          flags,
+          controlPresentation(presentation),
+        )
+      }
+    : undefined
   const resumed = await dependencies.continueRun(
     id,
     message,
@@ -367,16 +382,18 @@ export async function continueCommand(
     {
       renewTaskClaim: dependencies.renewTaskClaim ?? renewTaskClaim,
       binding: admissionResult.binding,
+      reportDetached,
     },
   )
   ;(dependencies.recordKeyedTurnOverride ?? recordKeyedTurnOverride)(
     resumed.childId,
     admissionResult.warning,
   )
-  await dependencies.reportContinuedRun(
-    resumed.childId,
-    resumed.job,
-    flags,
-    controlPresentation(presentation),
-  )
+  if (!resumed.reported)
+    await dependencies.reportContinuedRun(
+      resumed.childId,
+      resumed.job,
+      flags,
+      controlPresentation(presentation),
+    )
 }

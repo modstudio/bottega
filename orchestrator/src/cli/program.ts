@@ -238,6 +238,7 @@ export async function run(argv: string[], invocation?: PublicCommandInvocation):
     return Number(process.exitCode ?? 0)
   } catch (error) {
     const code = exitCodeFor(error)
+    await drainStdout()
     if (!(error instanceof CommanderError)) console.error(await lockedStoreMessage(error, { argv }))
     return code
   }

@@ -502,6 +502,8 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     '../record/record-task-flow-write-contract.ts',
     './task-flow-store.ts',
     './task-flow-store-sqlite.ts',
+    './workflow-cursor-format.ts',
+    './workflow-cursor-project.ts',
     './workflow-cursor-selection.ts',
     './workflow-cursor-transition.ts',
     './workflow-task-linking.ts',

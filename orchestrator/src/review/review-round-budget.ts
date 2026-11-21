@@ -3,7 +3,7 @@
 import { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { DB_PATH } from '../database/db.ts'
-import { reviewRunEvidenceSql } from './review-evidence-sql.ts'
+import { admissionReviewRunEvidenceSql } from './review-evidence-sql.ts'
 import { provenanceSubjectFacts } from './review-group.ts'
 import { lensProvenanceSubject } from './review-lens-provenance.ts'
 import { reviewLineage } from './review-lineage-store.ts'
@@ -139,7 +139,7 @@ export function eligibleReviewRoundRows(
          JOIN review r ON r.record_id=rl.review_record_id
          JOIN run ON run.record_id=rl.run_record_id
          LEFT JOIN project p ON p.record_id=r.project_record_id
-        WHERE ${reviewRunEvidenceSql('run', 'rl')}
+        WHERE ${admissionReviewRunEvidenceSql('run', 'rl')}
           AND (? IS NULL OR r.recorded_at >= ?)
           ${targetFilter}
         ORDER BY r.recorded_at,r.number,run.number`,

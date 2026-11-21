@@ -286,6 +286,38 @@ describe('run continuation', () => {
     })
   })
 
+  test('a detached continuation is reported after its row exists and before post-detach audit', async () => {
+    const root = insert('ok')
+    db().query('UPDATE run SET vendor_session=? WHERE record_id=?').run('vendor-session', root)
+    let reportedChild: string | undefined
+
+    const resumed = await continueRun(root, 'report this turn immediately', limit, undefined, {
+      reportDetached: async (childId) => {
+        reportedChild = childId
+        expect(db().query('SELECT record_id FROM run WHERE record_id=?').get(childId)).toEqual({
+          record_id: childId,
+        })
+        expect(
+          db()
+            .query(
+              "SELECT action FROM run_mutation_audit WHERE action='continue' AND turn_run_record_id=?",
+            )
+            .get(childId),
+        ).toBeNull()
+      },
+    })
+
+    expect(reportedChild).toBe(resumed.childId)
+    expect(resumed.reported).toBe(true)
+    expect(
+      db()
+        .query(
+          "SELECT action FROM run_mutation_audit WHERE action='continue' AND turn_run_record_id=?",
+        )
+        .get(resumed.childId),
+    ).toEqual({ action: 'continue' })
+  })
+
   test('a keyed continuation binds its new turn to the held cursor current step', async () => {
     const root = insert('ok')
     const cursorRecordId = newRecordId()
@@ -626,7 +658,11 @@ describe('run continuation', () => {
       },
     })
 
-    expect(resumed).toEqual({ childId: expect.stringMatching(/^[0-9a-f-]{36}$/), job: 'summarize' })
+    expect(resumed).toEqual({
+      childId: expect.stringMatching(/^[0-9a-f-]{36}$/),
+      job: 'summarize',
+      reported: false,
+    })
     expect(warning).toHaveBeenCalledWith(expect.stringContaining('DEV-2414'))
     warning.mockRestore()
   })

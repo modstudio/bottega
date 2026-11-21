@@ -5,7 +5,7 @@ import { applicableReview } from './review-applicability.ts'
 import {
   parseStoredReviewPathSet,
   parseStoredReviewSettings,
-  reviewRunEvidenceSql,
+  routingReviewRunEvidenceSql,
 } from './review-evidence-sql.ts'
 import { reviewLensGraded } from './review-group.ts'
 import type { ReviewRole } from './review-role.ts'
@@ -256,7 +256,7 @@ export function reviewYield(
        LEFT JOIN agent ON agent.name=run.agent
        LEFT JOIN score s ON s.run_record_id=run.record_id
        LEFT JOIN project p ON p.record_id=r.project_record_id
-      WHERE ${reviewRunEvidenceSql('run', 'rl')}
+      WHERE ${routingReviewRunEvidenceSql('run', 'rl')}
       ORDER BY r.recorded_at,r.record_id,rl.record_id`,
     )
     .all() as ReviewRoundEvidenceRow[]

@@ -56,6 +56,10 @@ export function hasGateFloor(
   return floors.some((floor) => floor.kind === 'command-exit' && floor.commandEvidence === 'gate')
 }
 
+export function floorsAcceptCommandArtifact(floors: ReadonlyArray<{ kind: string }>): boolean {
+  return floors.some((floor) => floor.kind === 'command-exit' || floor.kind === 'recorded-artifact')
+}
+
 const ARTIFACT_FORMS =
   'doc:<scope>/<subject-or-_>/<slug> | doc:<UUID> | <KEY>/<n> | task:<KEY> | task:<KEY>#comment:<id> | note:<record-id|label> | run number or run id | probe:<id> | exec:<id> | review-read:<UUID> | attached-text:<UUID> | #<pull request number> | GitHub pull-request link | a commit SHA'
 

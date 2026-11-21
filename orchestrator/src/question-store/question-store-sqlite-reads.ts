@@ -173,17 +173,26 @@ export const cursorLifecycleForSession = (
 export const openStagesForSession = (
   database: Database,
   sessionId: string,
-): TaskFlowOpenSessionStageRow[] =>
-  database
-    .query<TaskFlowOpenSessionStageRow, [string]>(
-      `SELECT record_id,number,project,workflow_slug,mode_slug,workflow_key,step_slug,state,updated_at,
+): TaskFlowOpenSessionStageRow[] => {
+  const rows = database
+    .query<TaskFlowOpenSessionStageRow & { step_actions_json: string | null }, [string]>(
+      `SELECT workflow_cursor.record_id,number,project,workflow_slug,mode_slug,workflow_key,step_slug,state,updated_at,
+        (SELECT json_extract(step.value,'$.actions')
+          FROM json_each(catalogue.definition,'$.steps') step
+          WHERE json_extract(step.value,'$.slug')=workflow_cursor.step_slug) step_actions_json,
         (SELECT q.record_id FROM question q
           WHERE q.workflow_cursor_record_id=workflow_cursor.record_id
             AND ${questionOpenSql('q')} LIMIT 1) open_question_record_id
-       FROM workflow_cursor
+       FROM workflow_cursor LEFT JOIN step_catalogue_version catalogue
+         ON catalogue.record_id=workflow_cursor.catalogue_version_record_id
         WHERE session_id=? AND state NOT IN (${TASK_FLOW_CLOSED_STAGE_STATES_SQL}) ORDER BY number`,
     )
     .all(sessionId)
+  return rows.map(({ step_actions_json, ...row }) => ({
+    ...row,
+    step_actions: JSON.parse(step_actions_json ?? '[]') as string[],
+  }))
+}
 
 export const keylessSessionCursors = (
   database: Database,

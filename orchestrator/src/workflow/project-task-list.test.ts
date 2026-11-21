@@ -1,4 +1,4 @@
-import { expect, test } from 'bun:test'
+import { afterAll, beforeAll, expect, test } from 'bun:test'
 import { readProjectTaskList } from './project-task-list.ts'
 import { installTaskReader, type TaskReadPort } from './task-read-port.ts'
 
@@ -29,8 +29,15 @@ const invalidRowPort: TaskReadPort = {
   },
 }
 
+let previousTaskReader: TaskReadPort | undefined
+beforeAll(() => {
+  previousTaskReader = installTaskReader(invalidRowPort)
+})
+afterAll(() => {
+  installTaskReader(previousTaskReader)
+})
+
 test('project-wide task lists validate every returned row', async () => {
-  installTaskReader(invalidRowPort)
   await expect(readProjectTaskList('fixture')).rejects.toThrow(
     'response contained an invalid task status category',
   )
