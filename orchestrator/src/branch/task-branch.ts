@@ -14,7 +14,7 @@ import type { Project } from '../project/projects.ts'
 import { projectAt, projects } from '../project/projects.ts'
 import { RefusalError } from '../refusal-error.ts'
 import { runsClaimingWorktreePath } from '../resources/resource-claims.ts'
-import { reviewRunEvidenceSql } from '../review/review-evidence-sql.ts'
+import { routingReviewRunEvidenceSql } from '../review/review-evidence-sql.ts'
 import { TERMINAL_RUN_STATUS_SQL } from '../run/run-status.ts'
 import type { TaskBranchNominatingRun } from '../run/run-types.ts'
 import type { Worktree } from '../worktree/worktree-types.ts'
@@ -566,7 +566,7 @@ export function resolveTaskBranchCandidates(cwd: string, launchKey: string): Tas
         AND candidate.project_record_id=?
         AND candidate.branch IS NOT NULL
         AND ${taskBranchCandidacySql('candidate')}
-        AND ${reviewRunEvidenceSql('candidate', 'candidate')}
+        AND ${routingReviewRunEvidenceSql('candidate', 'candidate')}
       ORDER BY candidate.number`,
     )
     .all(launchKey, project.recordId) as ResolvedTaskBranchRunRow[]

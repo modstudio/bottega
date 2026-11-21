@@ -198,7 +198,7 @@ export function latestCompletedReview(
          JOIN run ON run.record_id=rl.run_record_id
         WHERE run.project_record_id=(SELECT record_id FROM project WHERE name=?)
           AND run.branch IN (${lineage.map(() => '?').join(',')})
-          AND ${completedReviewEvidenceSql('r', 'run', 'rl')}
+          AND ${completedReviewEvidenceSql('admission', 'r', 'run', 'rl')}
         ORDER BY r.number DESC,rl.record_id`,
     )
     .all(project, ...lineage)

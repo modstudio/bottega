@@ -42,20 +42,35 @@ export function parseStoredReviewPathSet(value: string | null): string[] | null 
   }
 }
 
-/** A recorded lens run eligible to become review evidence. */
-export function reviewRunEvidenceSql(runAlias = 'run', lensAlias = 'rl'): string {
+/** Does this lens run count as routing evidence? */
+export function routingReviewRunEvidenceSql(runAlias = 'run', lensAlias = 'rl'): string {
   return `NOT (${voidedSql(runAlias)})
     AND COALESCE(${runAlias}.probe, 0) = 0
     AND NOT EXISTS (SELECT 1 FROM score review_score
       WHERE review_score.run_record_id=${lensAlias}.run_record_id AND review_score.delivery='none')`
 }
 
-/** The complete-review boundary consumed by calibration and review reports. */
+/** Does this lens run count as review-admission evidence? */
+export function admissionReviewRunEvidenceSql(runAlias = 'run', lensAlias = 'rl'): string {
+  return `COALESCE(${runAlias}.probe, 0) = 0
+    AND ((${routingReviewRunEvidenceSql(runAlias, lensAlias)})
+      OR ((${voidedSql(runAlias)})
+        AND EXISTS (SELECT 1 FROM review_finding admission_finding
+          WHERE admission_finding.review_lens_record_id=${lensAlias}.record_id
+            AND admission_finding.disposition IS NOT NULL)))`
+}
+
+/** Does this completed review count as evidence for the named consumer class? */
 export function completedReviewEvidenceSql(
+  form: 'admission' | 'routing',
   reviewAlias = 'r',
   runAlias = 'run',
   lensAlias = 'rl',
 ): string {
   return `${reviewAlias}.completed_at IS NOT NULL
-    AND ${reviewRunEvidenceSql(runAlias, lensAlias)}`
+    AND ${
+      form === 'admission'
+        ? admissionReviewRunEvidenceSql(runAlias, lensAlias)
+        : routingReviewRunEvidenceSql(runAlias, lensAlias)
+    }`
 }
