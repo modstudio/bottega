@@ -52,6 +52,7 @@ const WORKFLOW_CURSOR_TASK_FLOW_CALL_LIMIT = 2
 const STOP_SUMMARY_TASK_FLOW_CALL_LIMIT = 3
 const CONTEXT_BRIEF_TASK_FLOW_CALL_LIMIT = 3
 const CONTEXT_REVIEW_TASK_FLOW_CALL_LIMIT = 5
+const STOP_CHILD_FACT_STAGE_LIST_BYTE_BUDGET = 262_144
 
 type TaskFlowReadCounts = NonNullable<
   NonNullable<Parameters<typeof createMemoryRecordApiClient>[0]>['taskFlowReadCounts']
@@ -509,6 +510,8 @@ test('hosted task-flow intents never touch the five local task-flow tables', asy
     },
   )
   const childFactStageRows: number[] = []
+  const childFactStageBytes: number[] = []
+  let measureChildFactStages = false
   const countedTaskFlowClient = {
     ...taskFlowClient,
     listTaskFlowStages: async (
@@ -516,7 +519,15 @@ test('hosted task-flow intents never touch the five local task-flow tables', asy
       destination: Parameters<NonNullable<typeof taskFlowClient.listTaskFlowStages>>[1],
     ) => {
       const result = await taskFlowClient.listTaskFlowStages!(selector, destination)
-      if (selector.workflowKeys) childFactStageRows.push(result.items.length)
+      if (
+        measureChildFactStages &&
+        selector.projectId &&
+        !selector.sessionId &&
+        selector.states?.length === TASK_FLOW_STAGE_STATES.length
+      ) {
+        childFactStageRows.push(result.items.length)
+        childFactStageBytes.push(new TextEncoder().encode(JSON.stringify(result)).byteLength)
+      }
       return result
     },
   }
@@ -533,6 +544,9 @@ test('hosted task-flow intents never touch the five local task-flow tables', asy
   ).toBe(true)
   const stopWithHistory = async () => {
     const before = { ...memoryInput.taskFlowReadCounts }
+    const rowOffset = childFactStageRows.length
+    const byteOffset = childFactStageBytes.length
+    measureChildFactStages = true
     const summary = await sessionStopSummary(
       {
         session: context.session,
@@ -540,9 +554,17 @@ test('hosted task-flow intents never touch the five local task-flow tables', asy
         now: '2026-11-21T12:00:00.000Z',
       },
       database,
-    )
+    ).finally(() => {
+      measureChildFactStages = false
+    })
     const reads = taskFlowReadDelta(before, memoryInput.taskFlowReadCounts)
-    return { reads, summary }
+    const stageRows = childFactStageRows
+      .slice(rowOffset)
+      .reduce((total, rows) => total + rows, 0)
+    const stageBytes = childFactStageBytes
+      .slice(byteOffset)
+      .reduce((total, bytes) => total + bytes, 0)
+    return { reads, stageBytes, stageRows, summary }
   }
   const withoutHistory = await stopWithHistory()
   for (let index = 0; index < 1_500; index++) {
@@ -569,8 +591,14 @@ test('hosted task-flow intents never touch the five local task-flow tables', asy
     })
   }
   const withHistory = await stopWithHistory()
+  expect(withHistory.stageBytes).toBe(withoutHistory.stageBytes)
+  expect(
+    [withoutHistory.stageBytes, withHistory.stageBytes].every(
+      (bytes) => bytes < STOP_CHILD_FACT_STAGE_LIST_BYTE_BUDGET,
+    ),
+  ).toBe(true)
   expect([withoutHistory.reads.total, withHistory.reads.total]).toEqual([4, 4])
-  expect(childFactStageRows).toEqual([11, 11])
+  expect([withoutHistory.stageRows, withHistory.stageRows]).toEqual([11, 11])
   expect(withHistory.summary).toEqual(withoutHistory.summary)
 
   const readStageSummaries = taskFlowClient.readTaskFlowStageSummaries!

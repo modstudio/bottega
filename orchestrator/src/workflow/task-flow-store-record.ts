@@ -40,6 +40,7 @@ import {
   stageItem,
   stageRow,
 } from './task-flow-store-record-stage-row.ts'
+import type { TaskFlowStageListInput } from './task-flow-store.ts'
 import { sqliteTaskFlowReadStore } from './task-flow-store-sqlite.ts'
 import type {
   TaskFlowObligationRow,
@@ -367,12 +368,7 @@ class RecordTaskFlowReadStore {
   async listOpenStages(input: { project?: string; sessionId?: string }) {
     return this.questions.listOpenStages(input)
   }
-  async listStages(input: {
-    project?: string
-    sessionId?: string
-    workflowKeys?: readonly string[]
-    states: readonly [TaskFlowStageCursorRow['state'], ...TaskFlowStageCursorRow['state'][]]
-  }) {
+  async listStages(input: TaskFlowStageListInput<TaskFlowStageCursorRow['state']>) {
     return this.questions.listStages(input)
   }
   async keyedStageHistory(input: { since: string }) {

@@ -16,6 +16,7 @@ import type {
   TaskFlowLiveIntent,
 } from '../record/record-task-flow-write-contract.ts'
 import type { TaskFlowLocalReadMethod, TaskFlowWriteMethod } from './task-flow-store-methods.ts'
+import type { TaskFlowStageListInput } from './task-flow-store.ts'
 import {
   type TaskFlowSqliteWriteResult,
   writeSqliteTaskFlow,
@@ -305,12 +306,7 @@ class SqliteTaskFlowStore {
           .all(input.project, input.workflow, input.sessionId)
   }
 
-  listStages(input: {
-    project?: string
-    sessionId?: string
-    workflowKeys?: readonly string[]
-    states: readonly [TaskFlowStageState, ...TaskFlowStageState[]]
-  }): TaskFlowListedStageRow[] {
+  listStages(input: TaskFlowStageListInput<TaskFlowStageState>): TaskFlowListedStageRow[] {
     const clauses = [`cursor.state IN (${input.states.map(() => '?').join(',')})`]
     const values: string[] = [...input.states]
     if (input.project) {
@@ -749,12 +745,7 @@ type SqliteTaskFlowReadStoreWithOpenStages = SqliteTaskFlowReadStore & {
 /** Delegates async reads to the single synchronous SQLite implementation. */
 export function sqliteTaskFlowReadStore(database: Database): SqliteTaskFlowReadStoreWithOpenStages {
   const local = new SqliteTaskFlowStore(database)
-  const listStages = async (input: {
-    project?: string
-    sessionId?: string
-    workflowKeys?: readonly string[]
-    states: readonly [TaskFlowStageState, ...TaskFlowStageState[]]
-  }) => {
+  const listStages = async (input: TaskFlowStageListInput<TaskFlowStageState>) => {
     const rows = local.listStages(input)
     const openByCursor = new Map<string, number>()
     for (const row of await openQuestionsForCursors(

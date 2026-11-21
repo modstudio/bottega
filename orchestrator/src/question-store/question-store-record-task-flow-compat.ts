@@ -10,6 +10,7 @@ import {
   TASK_FLOW_STAGE_STATES,
 } from '../record/record-task-flow-contract.ts'
 import { type ListedItem, stageRow } from '../workflow/task-flow-store-record-stage-row.ts'
+import type { TaskFlowStageListInput } from '../workflow/task-flow-store.ts'
 import type {
   TaskFlowInboxQuestionRow,
   TaskFlowListedStageRow,
@@ -76,12 +77,9 @@ async function openForStages(questions: QuestionStore, ids: string[]) {
 
 function stageReads(questions: QuestionStore, read: StageRead) {
   return {
-    async listStages(input: {
-      project?: string
-      sessionId?: string
-      workflowKeys?: readonly string[]
-      states: readonly [TaskFlowStageCursorRow['state'], ...TaskFlowStageCursorRow['state'][]]
-    }): Promise<TaskFlowListedStageRow[]> {
+    async listStages(
+      input: TaskFlowStageListInput<TaskFlowStageCursorRow['state']>,
+    ): Promise<TaskFlowListedStageRow[]> {
       const selector = {
         states: input.states,
         ...(input.sessionId ? { sessionId: input.sessionId } : {}),
