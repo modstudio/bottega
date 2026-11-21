@@ -2,6 +2,17 @@
 
 import type { Database } from 'bun:sqlite'
 
+export type FinishedWorkerCheckExecution = {
+  record_id: string
+  number: number
+  head_commit: string | null
+  requested_at: string
+  exit_code: number | null
+  timed_out: number | null
+  output_tail: string | null
+  output_artifact: string | null
+}
+
 /** Read every persisted omission for one gate execution in presentation order. */
 export function uncheckedChecksForGateExecution(
   executionRecordId: string,
@@ -18,16 +29,17 @@ export function uncheckedChecksForGateExecution(
 }
 
 /** Read the newest finished worker-check execution attached to one run. */
-export function latestFinishedWorkerCheckExecutionRecordId(
+export function latestFinishedWorkerCheckExecution(
   runRecordId: string,
   database: Database,
-): string | null {
+): FinishedWorkerCheckExecution | null {
   const row = database
-    .query<{ record_id: string }, [string]>(
-      `SELECT record_id FROM gate_execution
+    .query<FinishedWorkerCheckExecution, [string]>(
+      `SELECT record_id,number,head_commit,requested_at,exit_code,timed_out,output_tail,output_artifact
+       FROM gate_execution
        WHERE run_record_id=? AND purpose='worker-check' AND finished_at IS NOT NULL
        ORDER BY requested_at DESC,record_id DESC LIMIT 1`,
     )
     .get(runRecordId)
-  return row?.record_id ?? null
+  return row ?? null
 }

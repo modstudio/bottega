@@ -13,10 +13,12 @@ import {
 import { retainedBranchPruneCommand, retainedBranchReason } from '../close/retained-branch.ts'
 import { FAILS_OVER, failoverRefused } from '../failure/failure.ts'
 import {
-  latestFinishedWorkerCheckExecutionRecordId,
+  type FinishedWorkerCheckExecution,
+  latestFinishedWorkerCheckExecution,
   uncheckedChecksForGateExecution,
 } from '../gate/worker-check-omissions.ts'
-import { recordedWorkerCheckVerdictLine } from '../gate/worker-check-result.ts'
+import { recordedWorkerCheckVerdictFromExecution } from '../gate/worker-check-result.ts'
+import { workerCheckVerdictLine } from '../gate/worker-check-verdict.ts'
 import { parseMcpProbe } from '../mcp/mcp-probe.ts'
 import { failureReason, outcomeOf } from '../outcome.ts'
 import { openRunChainRoots } from '../run/question-open.ts'
@@ -144,12 +146,11 @@ function presentObservedTests(
 
 function presentLastWorkerCheckOmissions(
   database: Database,
-  runRecordId: string,
+  execution: FinishedWorkerCheckExecution | null,
   presentation: CollectResultPresentation,
 ): void {
-  const executionRecordId = latestFinishedWorkerCheckExecutionRecordId(runRecordId, database)
-  const uncheckedChecks = executionRecordId
-    ? uncheckedChecksForGateExecution(executionRecordId, database)
+  const uncheckedChecks = execution
+    ? uncheckedChecksForGateExecution(execution.record_id, database)
     : []
   const block = lastWorkerCheckNotRunBlock(uncheckedChecks)
   if (block) presentation.error(block)
@@ -695,6 +696,7 @@ const consoleCollectResultPresentation: CollectResultPresentation = {
 
 function presentCollectedOutput(
   database: Database,
+  workerCheck: FinishedWorkerCheckExecution | null,
   row: {
     number: number
     record_id: string
@@ -711,7 +713,9 @@ function presentCollectedOutput(
   presentation: CollectResultPresentation,
 ): void {
   presentation.error(
-    recordedWorkerCheckVerdictLine(database, row.result_member_record_id, row.reply_head),
+    workerCheckVerdictLine(
+      recordedWorkerCheckVerdictFromExecution(database, workerCheck, row.reply_head),
+    ),
   )
   if (output === null) return
   const runsRoot = resolveRunsDirectory(process.env)
@@ -772,7 +776,7 @@ export async function collectResult(
             root.provenance_status, root.worktree, root.branch, root.minted_branch,
             root.tests_ran, root.tests_passed, root.tests_claim_disagrees, root.executor,
             current_run.record_id result_member_record_id,
-            COALESCE(current_run.branch_kept_tip,current_run.head_commit) reply_head
+            current_run.reply_head
        FROM run root`,
         'WHERE root.record_id = ?',
       ),
@@ -801,8 +805,9 @@ export async function collectResult(
       /* a legacy malformed value remains visible in the raw output */
     }
   }
-  presentCollectedOutput(database, row, output, outcome.ok, presentation)
-  presentLastWorkerCheckOmissions(database, row.record_id, presentation)
+  const workerCheck = latestFinishedWorkerCheckExecution(row.result_member_record_id, database)
+  presentCollectedOutput(database, workerCheck, row, output, outcome.ok, presentation)
+  presentLastWorkerCheckOmissions(database, workerCheck, presentation)
   presentObservedTests(row, presentation, declaredProbes)
   const chainNote = failoverSummary(chain.attempts)
   if (chainNote) presentation.error(`\n— ${chainNote}`)

@@ -1,8 +1,12 @@
 import { describe, expect, test } from 'bun:test'
+import { newRecordId } from '../../shared/record-id.ts'
 import { workerReply as fixtureWorkerReply } from '../test/fixtures/replies.ts'
+import { addRun } from '../test/fixtures/store.ts'
 import type { WorkerReply } from './contract/contract.ts'
+import { db } from './database/db.ts'
 import { FAILS_OVER } from './failure/failure.ts'
 import { finalizeWorkerReply } from './outcome.ts'
+import { terminalWorkerCheckRefusal } from './run/run-terminal.ts'
 
 const classify = (
   reply: WorkerReply,
@@ -21,6 +25,47 @@ const reply = (overrides: Record<string, unknown>): WorkerReply =>
   fixtureWorkerReply(overrides) as WorkerReply
 
 describe('worker reply finalization', () => {
+  test('a terminal failing check at the recorded reply HEAD finalizes failed/contract with its legs', () => {
+    const runId = addRun({ agent: 'codex', job: 'implement', status: 'running' })
+    const replyHead = '1234567890abcdef1234567890abcdef12345678'
+    db().query('UPDATE run SET reply_head=? WHERE record_id=?').run(replyHead, runId)
+    const gateId = newRecordId()
+    db()
+      .query(
+        `INSERT INTO gate_execution
+          (record_id,run_record_id,requested_at,finished_at,exit_code,timed_out,elapsed_ms,purpose,head_commit,output_tail)
+         VALUES (?,?,?,?,1,0,20,'worker-check',?,?)`,
+      )
+      .run(
+        gateId,
+        runId,
+        '2026-11-20T10:00:00.000Z',
+        '2026-11-20T10:00:01.000Z',
+        replyHead,
+        ['gate failures:', 'orchestrator'].join('\n'),
+      )
+    db()
+      .query(
+        `INSERT INTO check_execution
+          (record_id,gate_execution_record_id,check_name,wall_ms,exit_code)
+         VALUES (?,?,?,?,?)`,
+      )
+      .run(newRecordId(), gateId, 'orchestrator', 20, 2)
+
+    const result = finalizeWorkerReply({
+      reply: reply({ status: 'done' }),
+      measuredFiles: ['changed.ts'],
+      turnChanged: true,
+      status: 'ok',
+      failureKind: null,
+      error: null,
+      contractRefusal: terminalWorkerCheckRefusal(db(), runId),
+    })
+
+    expect(result).toMatchObject({ status: 'failed', failureKind: 'contract' })
+    expect(result.error).toContain('orchestrator')
+  })
+
   test('a recorded check contradiction makes a done reply a contract failure', () => {
     const result = finalizeWorkerReply({
       reply: reply({ status: 'done' }),

@@ -3,7 +3,7 @@ import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
 import {
-  latestFinishedWorkerCheckExecutionRecordId,
+  latestFinishedWorkerCheckExecution,
   uncheckedChecksForGateExecution,
 } from './worker-check-omissions.ts'
 
@@ -52,5 +52,5 @@ test('latest worker-check reader returns the newest finished execution by reques
     )
     .run(newRecordId(), run, '2026-10-01T12:00:00.000Z')
 
-  expect(latestFinishedWorkerCheckExecutionRecordId(run, db())).toBe(newestFinished)
+  expect(latestFinishedWorkerCheckExecution(run, db())?.record_id).toBe(newestFinished)
 })

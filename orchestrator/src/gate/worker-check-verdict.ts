@@ -1,5 +1,7 @@
 // concern: worker reply check evidence
 
+import { FAILING_LEG_TAIL_MARKER, GATE_FAILURES_MARKER } from '../../../shared/check-execution.ts'
+
 export type WorkerCheckFailure = {
   leg: string
   tail: readonly string[]
@@ -25,28 +27,13 @@ export type WorkerCheckVerdict =
       failures: readonly WorkerCheckFailure[]
     }
 
-function newerWorkerCheck(
-  current: WorkerCheckCandidate | null,
-  candidate: WorkerCheckCandidate,
-): WorkerCheckCandidate {
-  if (!current) return candidate
-  const requestedOrder = candidate.requestedAt.localeCompare(current.requestedAt)
-  return requestedOrder > 0 ||
-    (requestedOrder === 0 && candidate.recordId.localeCompare(current.recordId) > 0)
-    ? candidate
-    : current
-}
-
 /** Decide the recorded worker-check verdict for the commit the worker replied from. */
 export function decideWorkerCheckVerdict(
   replyHead: string | null,
-  candidates: readonly WorkerCheckCandidate[],
+  latest: WorkerCheckCandidate | null,
 ): WorkerCheckVerdict {
   if (!replyHead) return { kind: 'none', replyHead }
-  const latest = candidates
-    .filter((candidate) => candidate.headCommit === replyHead)
-    .reduce<WorkerCheckCandidate | null>(newerWorkerCheck, null)
-  if (!latest) return { kind: 'none', replyHead }
+  if (!latest || latest.headCommit !== replyHead) return { kind: 'none', replyHead }
   return latest.exitCode === 0 && latest.timedOut === false
     ? { kind: 'passed', replyHead, number: latest.number }
     : {
@@ -76,12 +63,9 @@ export function workerCheckVerdictLine(verdict: WorkerCheckVerdict): string {
   )
 }
 
-/** Refuse only a done reply contradicted by a failed recorded check at the same HEAD. */
-export function workerCheckDoneRefusal(
-  replyStatus: 'done' | 'asking' | 'refused' | null,
-  verdict: WorkerCheckVerdict,
-): string | null {
-  if (replyStatus !== 'done' || verdict.kind !== 'failed') return null
+/** Render contract refusal text only for a failed recorded check at the reply HEAD. */
+export function workerCheckRefusalText(verdict: WorkerCheckVerdict): string | null {
+  if (verdict.kind !== 'failed') return null
   const details = verdict.failures.flatMap((failure) => [
     `${failure.leg}:`,
     ...failure.tail.map((line) => `  ${line}`),
@@ -95,7 +79,9 @@ export function workerCheckDoneRefusal(
 
 /** Recover the recorded footer detail for known failing legs without interpreting prose. */
 function recordedLegTail(lines: readonly string[], leg: string): string[] {
-  const marker = lines.findLastIndex((line) => line.startsWith(`[${leg}] failing leg tail (exit `))
+  const marker = lines.findLastIndex((line) =>
+    line.startsWith(`[${leg}] ${FAILING_LEG_TAIL_MARKER}`),
+  )
   if (marker < 0) return []
   const tail: string[] = []
   for (const line of lines.slice(marker + 1)) {
@@ -106,7 +92,7 @@ function recordedLegTail(lines: readonly string[], leg: string): string[] {
 }
 
 function addFooterTails(lines: readonly string[], failures: Map<string, string[]>): void {
-  const footer = lines.findLastIndex((line) => line.trim() === 'gate failures:')
+  const footer = lines.findLastIndex((line) => line.trim() === GATE_FAILURES_MARKER)
   let current: string | null = null
   for (const line of footer < 0 ? [] : lines.slice(footer + 1)) {
     if (failures.has(line)) {

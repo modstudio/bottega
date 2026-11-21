@@ -2,9 +2,8 @@ import { describe, expect, test } from 'bun:test'
 import {
   decideWorkerCheckVerdict,
   type WorkerCheckCandidate,
-  workerCheckDoneRefusal,
+  workerCheckRefusalText,
   workerCheckFailures,
-  workerCheckVerdictLine,
 } from './worker-check-verdict.ts'
 
 const head = '1234567890abcdef1234567890abcdef12345678'
@@ -24,7 +23,8 @@ function check(overrides: Partial<WorkerCheckCandidate> = {}): WorkerCheckCandid
 
 describe('worker check verdict at the reply HEAD', () => {
   test('refuses a done reply when the latest check failed and names each recorded leg tail', () => {
-    const verdict = decideWorkerCheckVerdict(head, [
+    const verdict = decideWorkerCheckVerdict(
+      head,
       check({
         exitCode: 1,
         failures: [
@@ -32,9 +32,9 @@ describe('worker check verdict at the reply HEAD', () => {
           { leg: 'scripts', tail: ['check failed'] },
         ],
       }),
-    ])
+    )
 
-    expect(workerCheckDoneRefusal('done', verdict)).toBe(
+    expect(workerCheckRefusalText(verdict)).toBe(
       [
         'worker check: FAILED at 1234567890ab (gate 41): orchestrator, scripts. A done reply is refused because its recorded worker check failed.',
         'orchestrator:',
@@ -47,43 +47,16 @@ describe('worker check verdict at the reply HEAD', () => {
   })
 
   test('passes a done reply when the check passed', () => {
-    const verdict = decideWorkerCheckVerdict(head, [check()])
-    expect(workerCheckDoneRefusal('done', verdict)).toBeNull()
+    const verdict = decideWorkerCheckVerdict(head, check())
+    expect(workerCheckRefusalText(verdict)).toBeNull()
     expect(verdict.kind).toBe('passed')
   })
 
   test('passes with none when the only check is at another HEAD', () => {
-    const verdict = decideWorkerCheckVerdict(head, [check({ headCommit: 'f'.repeat(40) })])
-    expect(workerCheckDoneRefusal('done', verdict)).toBeNull()
+    const verdict = decideWorkerCheckVerdict(head, check({ headCommit: 'f'.repeat(40) }))
+    expect(workerCheckRefusalText(verdict)).toBeNull()
     expect(verdict.kind).toBe('none')
   })
-
-  test('the latest check at the same HEAD wins', () => {
-    const verdict = decideWorkerCheckVerdict(head, [
-      check({ exitCode: 1, failures: [{ leg: 'orchestrator', tail: ['old failure'] }] }),
-      check({
-        recordId: '01990000-0000-7000-8000-000000000002',
-        requestedAt: '2026-11-20T10:01:00.000Z',
-      }),
-    ])
-    expect(verdict.kind).toBe('passed')
-  })
-})
-
-test('run-result line renders passed, failed, and none states', () => {
-  expect(workerCheckVerdictLine(decideWorkerCheckVerdict(head, [check()]))).toBe(
-    'worker check: passed at 1234567890ab (gate 41)',
-  )
-  expect(
-    workerCheckVerdictLine(
-      decideWorkerCheckVerdict(head, [
-        check({ exitCode: 1, failures: [{ leg: 'orchestrator', tail: [] }] }),
-      ]),
-    ),
-  ).toBe('worker check: FAILED at 1234567890ab (gate 41): orchestrator')
-  expect(workerCheckVerdictLine(decideWorkerCheckVerdict(head, []))).toBe(
-    'worker check: none at this HEAD',
-  )
 })
 
 test('failure detail comes from the recorded gate footer for known failing legs', () => {

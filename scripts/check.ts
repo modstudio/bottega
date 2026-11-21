@@ -8,6 +8,8 @@ import { biomeFindings } from '../orchestrator/src/ratchet/biome-adapter.ts'
 import { classifyCaller } from '../shared/caller-classification'
 import { changeViewPlan } from '../shared/change-view.ts'
 import {
+  FAILING_LEG_TAIL_MARKER,
+  GATE_FAILURES_MARKER,
   CHECK_EXECUTION_FILE_ENV,
   type CheckExecutionRecord,
   UNCHECKED_EXIT_CODE,
@@ -477,7 +479,7 @@ function printFailedLegTails(results: LegResult[]) {
   const failed = results.filter((result) => result.exitCode !== 0)
   if (!failed.length) return
   for (const result of failed) {
-    console.error(`\n[${result.name}] failing leg tail (exit ${result.exitCode})`)
+    console.error(`\n[${result.name}] ${FAILING_LEG_TAIL_MARKER}${result.exitCode})`)
     for (const line of result.tail) console.error(line)
   }
 }
@@ -801,7 +803,7 @@ if (checkArguments.mode === 'static' && cpuBudgetVerdict === 'over-informational
 for (const check of uncheckedChecks) console.log(`unchecked: ${check.check} (${check.reason})`)
 const gate = decideGateOutcome(gateSteps)
 if (gate.failures.length > 0) {
-  console.error('gate failures:')
+  console.error(GATE_FAILURES_MARKER)
   for (const line of gate.summary) console.error(line)
 }
 if (cpuBudgetVerdict === 'over-fatal' || gate.exitCode !== 0) process.exit(1)

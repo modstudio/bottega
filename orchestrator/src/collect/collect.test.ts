@@ -668,14 +668,22 @@ describe('collection records', () => {
     )
   })
 
-  test(`${PLATFORM_SLUG} run result prints the recorded verdict before worker prose`, async () => {
+  test(`${PLATFORM_SLUG} run result uses the recorded reply HEAD after the worker committed`, async () => {
     const id = addRun({ agent: 'codex', job: 'implement' })
+    const launchHead = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
     const replyHead = '1234567890abcdef1234567890abcdef12345678'
     const outputPath = join(dir, 'worker-check-result-output.json')
     writeFileSync(outputPath, JSON.stringify({ status: 'done', summary: 'worker narrative' }))
     db()
-      .query('UPDATE run SET output_path=?,branch_kept_tip=? WHERE record_id=?')
-      .run(outputPath, replyHead, id)
+      .query('UPDATE run SET output_path=?,head_commit=?,reply_head=? WHERE record_id=?')
+      .run(outputPath, launchHead, replyHead, id)
+    db()
+      .query(
+        `INSERT INTO gate_execution
+          (record_id,run_record_id,requested_at,finished_at,exit_code,timed_out,elapsed_ms,purpose,head_commit)
+         VALUES (?,?,?,?,1,0,20,'worker-check',?)`,
+      )
+      .run(newRecordId(), id, '2026-11-08T00:00:00.000Z', '2026-11-08T00:00:01.000Z', replyHead)
     db()
       .query(
         `INSERT INTO gate_execution
@@ -685,9 +693,56 @@ describe('collection records', () => {
       .run(newRecordId(), id, '2026-11-08T01:00:00.000Z', '2026-11-08T01:00:01.000Z', replyHead)
 
     const result = await recordedResult(id)
-    expect(result.errors[0]).toBe('worker check: passed at 1234567890ab (gate 1)')
+    expect(result.errors[0]).toBe('worker check: passed at 1234567890ab (gate 2)')
     expect(result.logs[0]).toContain('worker narrative')
     rmSync(outputPath)
+  })
+
+  test(`${PLATFORM_SLUG} run result prints a failed worker check and its legs`, async () => {
+    const id = addRun({ agent: 'codex', job: 'implement' })
+    const replyHead = 'fedcba0987654321fedcba0987654321fedcba09'
+    db().query('UPDATE run SET reply_head=? WHERE record_id=?').run(replyHead, id)
+    const gateId = newRecordId()
+    db()
+      .query(
+        `INSERT INTO gate_execution
+          (record_id,run_record_id,requested_at,finished_at,exit_code,timed_out,elapsed_ms,purpose,head_commit,output_tail)
+         VALUES (?,?,?,?,1,0,20,'worker-check',?,?)`,
+      )
+      .run(
+        gateId,
+        id,
+        '2026-11-08T01:00:00.000Z',
+        '2026-11-08T01:00:01.000Z',
+        replyHead,
+        ['gate failures:', 'orchestrator'].join('\n'),
+      )
+    db()
+      .query(
+        `INSERT INTO check_execution
+          (record_id,gate_execution_record_id,check_name,wall_ms,exit_code)
+         VALUES (?,?,?,?,?)`,
+      )
+      .run(newRecordId(), gateId, 'orchestrator', 20, 2)
+
+    expect((await recordedResult(id)).errors[0]).toBe(
+      'worker check: FAILED at fedcba098765 (gate 1): orchestrator',
+    )
+  })
+
+  test(`${PLATFORM_SLUG} run result does not fall back to the launch HEAD for legacy rows`, async () => {
+    const id = addRun({ agent: 'codex', job: 'implement' })
+    const launchHead = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+    db().query('UPDATE run SET head_commit=?,reply_head=NULL WHERE record_id=?').run(launchHead, id)
+    db()
+      .query(
+        `INSERT INTO gate_execution
+          (record_id,run_record_id,requested_at,finished_at,exit_code,timed_out,elapsed_ms,purpose,head_commit)
+         VALUES (?,?,?,?,0,0,20,'worker-check',?)`,
+      )
+      .run(newRecordId(), id, '2026-11-08T01:00:00.000Z', '2026-11-08T01:00:01.000Z', launchHead)
+
+    expect((await recordedResult(id)).errors[0]).toBe('worker check: none at this HEAD')
   })
 
   test(`${PLATFORM_SLUG} run result ignores legacy numeric note events`, async () => {

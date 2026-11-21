@@ -5,6 +5,8 @@ export const CHECK_EXECUTION_FILE_ENV = `${PLATFORM_SLUG.toUpperCase()}_CHECK_EX
 export const UNIT_TEST_CHECK_CATEGORY = 'unit-tests'
 export const UNCHECKED_EXIT_CODE = 77
 export const UNCHECKED_LINE_PREFIX = 'unchecked: '
+export const FAILING_LEG_TAIL_MARKER = 'failing leg tail (exit '
+export const GATE_FAILURES_MARKER = 'gate failures:'
 
 export function exitUnchecked(reason: string): never {
   console.log(`${UNCHECKED_LINE_PREFIX}${reason}`)
