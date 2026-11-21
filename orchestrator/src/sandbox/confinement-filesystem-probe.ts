@@ -83,8 +83,8 @@ export type ConfinementFilesystemProbeRow = {
     | 'read-only MCP'
     | 'host override'
     | 'sandbox git spawn'
-  status: FilesystemProbeAccess | CommandProbeStatus | 'committed' | 'refused' | 'ok' | 'slow'
     | 'headless browser'
+  status: FilesystemProbeAccess | CommandProbeStatus | 'committed' | 'refused' | 'ok' | 'slow'
   paths: Record<string, FilesystemProbeAccess>
   commands?: Record<string, CommandProbe>
   gitSpawn?: SandboxGitSpawnMeasurement
