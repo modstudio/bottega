@@ -204,6 +204,18 @@ function checkOrchestratorJob(source: string): void {
   }
 }
 
+function checkNoDirectBunTests(source: string): void {
+  for (const jobName of workflowJobNames(source)) {
+    for (const command of workflowRunCommands(workflowJob(source, jobName))) {
+      const direct = /(?:^|\n|&&|\|\||;)\s*(bun\s+test(?:\s+[^\n;&|]*)?)/.exec(command)
+      if (!direct) continue
+      throw new Error(
+        `CI workflow run steps must not invoke bun test directly; route every Bun suite through $SUITE_COMMAND; found ${JSON.stringify(direct[1]!.trim())} in ${jobName}`,
+      )
+    }
+  }
+}
+
 function workflowNeeds(job: string, dependency: string): boolean {
   if (new RegExp(`^ {4}needs:\\s*${dependency}\\s*$`, 'm').test(job)) return true
   const inline = job.match(/^ {4}needs:\s*\[([^\]]*)\]\s*$/m)
@@ -373,6 +385,7 @@ export function checkCiWorkflow(source: string): void {
     throw new Error('postgres job must pass its service container to the real-Postgres suite')
   if (!postgres.includes('run: bun run --cwd orchestrator test:postgres --without-live-import'))
     throw new Error('postgres job must run the real-Postgres suite without the live import proof')
+  checkNoDirectBunTests(source)
 }
 
 /** Keeps release creation inside the release publisher; check-bun-versions owns the Bun declaration. */

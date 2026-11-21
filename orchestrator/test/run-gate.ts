@@ -5,10 +5,9 @@ import { fileURLToPath } from 'node:url'
 import { resolveGateTimingDirectory } from '../../shared/gate-timing-directory.ts'
 import { mainCheckoutOf } from '../../shared/git.ts'
 import { withGateSlot } from '../src/gate-load.ts'
-import { gateShardArguments } from '../src/gate-shard.ts'
+import { gateTestArguments } from '../src/gate-shard.ts'
 import { warmHostedRecordSnapshot } from './fixtures/hosted-record-snapshot.ts'
 import { ORCHESTRATOR_GATE_TEST_SELECTION } from './gate-test-selection.ts'
-import { gateTestTimeoutArguments } from './gate-test-timeout.ts'
 import { publishTimingSummary } from './gate-timing-summary.ts'
 import { type GateTimings, mergeTimings } from './record-gate-timings.ts'
 
@@ -22,7 +21,7 @@ const timingDir = resolveGateTimingDirectory(
   tmpdir(),
 )
 const timingPath = join(timingDir, `${timingStamp}.json`)
-const shardArguments = gateShardArguments(Bun.argv.slice(2))
+const { shardArguments, timeoutArguments } = gateTestArguments(Bun.argv.slice(2))
 mkdirSync(timingDir, { recursive: true })
 
 async function pump(stream: ReadableStream<Uint8Array>, error: boolean): Promise<void> {
@@ -47,7 +46,7 @@ async function runTests(): Promise<GateTimings> {
   const command = [
     'bun',
     'test',
-    ...gateTestTimeoutArguments(Boolean(process.env.CI)),
+    ...timeoutArguments,
     ...ORCHESTRATOR_GATE_TEST_SELECTION.directories.map(({ selector }) => selector),
     ...ORCHESTRATOR_GATE_TEST_SELECTION.exclusions.flatMap(({ ignore }) => [
       '--path-ignore-patterns',

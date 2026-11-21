@@ -137,6 +137,20 @@ test('pins the orchestrator shard job timeout', () => {
   ).toThrow(refusal)
 })
 
+test('refuses a CI step that invokes bun test directly', () => {
+  const workflow = readFileSync(new URL('../.github/workflows/ci.yml', import.meta.url), 'utf8')
+  expect(() =>
+    checkCiWorkflow(
+      workflow.replace(
+        '      - name: Test root batch\n',
+        '      - name: Direct test\n        run: bun test\n      - name: Test root batch\n',
+      ),
+    ),
+  ).toThrow(
+    'CI workflow run steps must not invoke bun test directly; route every Bun suite through $SUITE_COMMAND; found "bun test" in root',
+  )
+})
+
 test('refuses an aggregate that lets a path-gated job fail', () => {
   const workflow = readWorkflowFixture()
   expect(() =>
