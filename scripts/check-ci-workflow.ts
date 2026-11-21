@@ -24,6 +24,7 @@ const installProofPaths =
 const aggregateAcceptance =
   '.value.result == "success" or ((.key == "migration-compatibility" or .key == "install-proof") and .value.result == "skipped")'
 const installProofCommand = 'bun run release:install-proof -- "v$(jq -r .version package.json)"'
+export const ORCHESTRATOR_JOB_TIMEOUT_MINUTES = 15
 const ciReleaseSmokeCondition =
   "github.event_name == 'pull_request' || github.event_name == 'merge_group' || github.event_name == 'workflow_dispatch'"
 
@@ -190,6 +191,15 @@ function checkInstallProofJob(source: string): void {
     throw new Error('ci aggregate must accept a path-skipped install-proof job')
 }
 
+function checkOrchestratorJob(source: string): void {
+  const orchestrator = workflowJob(source, 'orchestrator')
+  if (!orchestrator.includes(`timeout-minutes: ${ORCHESTRATOR_JOB_TIMEOUT_MINUTES}`)) {
+    throw new Error(
+      `orchestrator job must have a ${ORCHESTRATOR_JOB_TIMEOUT_MINUTES} minute timeout`,
+    )
+  }
+}
+
 function workflowNeeds(job: string, dependency: string): boolean {
   if (new RegExp(`^ {4}needs:\\s*${dependency}\\s*$`, 'm').test(job)) return true
   const inline = job.match(/^ {4}needs:\s*\[([^\]]*)\]\s*$/m)
@@ -321,6 +331,7 @@ export function checkCiWorkflow(source: string): void {
   checkCiReleaseSmokeJob(source)
   checkMigrationCompatibilityJobs(source)
   checkInstallProofJob(source)
+  checkOrchestratorJob(source)
   const actual = workflowJobNames(source).sort()
   const expected = expectedWorkflowJobNames()
   if (JSON.stringify(actual) !== JSON.stringify(expected)) {
