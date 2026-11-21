@@ -471,9 +471,9 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
   module('orchestrator/src/workflow/workflow-floor-pull-request-evidence.ts', [
     'bun:sqlite',
     '../../../shared/github-repository.ts',
+    '../branch/merged-pull-request.ts',
     '../project/projects.ts',
     './workflow-artifact-evidence.ts',
-    './workflow-floor-evidence.ts',
     './workflow-floor-evidence-checkout.ts',
     './workflow-floor-evidence-replay.ts',
   ]),

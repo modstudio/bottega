@@ -9,7 +9,6 @@ import { docScopeHasProjectSubject, docScopeIsProjectless } from '../../../share
 import { refusal, renderRefusal } from '../../../shared/refusal.ts'
 import { installedBottegaExecutable } from '../../../shared/self-spawn.ts'
 import { runArtifactsDir, runScratchReplyPath } from '../artifact-paths.ts'
-import { viewPullRequest } from '../branch/merged-pull-request.ts'
 import { branchForTaskKey, pullRequestNumberForBranch } from '../branch/task-key-pull-request.ts'
 import { resolveRunsDirectory } from '../database/database-location.ts'
 import { db } from '../database/db.ts'
@@ -65,7 +64,10 @@ import {
   rethrowFloorEvidencePortMiss,
 } from './workflow-floor-evidence-replay.ts'
 import { gatherNoteArtifactEvidence } from './workflow-floor-note-evidence.ts'
-import { gatherPullRequestArtifactEvidence } from './workflow-floor-pull-request-evidence.ts'
+import {
+  gatherPullRequestArtifactEvidence,
+  viewPullRequestInProject,
+} from './workflow-floor-pull-request-evidence.ts'
 import { readHubTask } from './workflow-floor-task-read.ts'
 import { floorFromObligationRow } from './workflow-obligation-floor.ts'
 import { resolvedOfferedArtifact } from './workflow-offered-artifacts.ts'
@@ -93,12 +95,7 @@ export type CursorIdentity = {
 export const productionFloorPorts = (): FloorEvidencePorts => ({
   readTask: (key) => readHubTask(key),
   runHasArtifacts: runHasRecordedArtifacts,
-  viewPullRequest: (project, number) => {
-    const row = projectByName(project)
-    if (!row)
-      throw new Error(`project ${project} is not registered; cannot view pull request ${number}`)
-    return viewPullRequest(row, number)
-  },
+  viewPullRequest: viewPullRequestInProject,
   readOriginUrl: (project) => {
     const row = projectByName(project)
     if (!row) throw new Error(`project ${project} is not registered; cannot read its origin`)

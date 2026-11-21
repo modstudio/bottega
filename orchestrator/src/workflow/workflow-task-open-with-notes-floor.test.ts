@@ -60,7 +60,8 @@ test('task-open-with-notes requires an open task and every named note to be live
     result({ task: { ...task, status: 'done', statusCategory: 'done' }, notes: [note] }).action,
   ).toBe('refuse')
   expect(
-    result({ task: { ...task, status: 'dropped', statusCategory: 'dropped' }, notes: [note] }).action,
+    result({ task: { ...task, status: 'dropped', statusCategory: 'dropped' }, notes: [note] })
+      .action,
   ).toBe('refuse')
   expect(
     result({ task: { ...task, status: null, statusCategory: null }, notes: [note] }),

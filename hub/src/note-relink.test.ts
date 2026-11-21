@@ -159,9 +159,9 @@ test('hosted relink queues the attachment fields and both history comments', asy
     row: { promoted_task: target.key, promoted_task_id: target.record_id },
   })
   expect(
-    pushed
-      .filter((change) => change.table === 'hub_task_comment')
-      .map((change) => ('row' in change ? change.row.body : null)),
+    pushed.flatMap((change) =>
+      change.table === 'hub_task_comment' && change.op === 'upsert' ? [change.row.body] : [],
+    ),
   ).toEqual([
     `note ${note.label} relinked from ${previous.key}: hosted trail`,
     `note ${note.label} relinked to ${target.key}: hosted trail`,
@@ -192,7 +192,7 @@ test('relink refuses a tracker-owned project with the task-comment cause', async
   workshop().settings.tracker = { protocol: 'workspace-mcp' }
 
   await expect(relinkNote(note.record_id, target.key, 'tracker trail')).rejects.toThrow(
-    'tasks are tracker-owned, and relink records its trail as hub task comments',
+    'tasks are tracker-owned, and relink records its trail as task comments in the hub',
   )
   expect(getNote(note.record_id).promoted_task).toBe(previous.key)
 })
