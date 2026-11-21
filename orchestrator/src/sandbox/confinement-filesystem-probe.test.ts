@@ -64,6 +64,24 @@ describe('probeVerdict', () => {
     })
   })
 
+  test('reports a readable denied target even when an expected-readable target is missing', () => {
+    expect(
+      probeVerdict(
+        [
+          { name: 'secret', path: '/secret', expected: 'denied' },
+          { name: 'running package.json', path: '/missing/package.json', expected: 'readable' },
+        ],
+        { secret: 'readable', 'running package.json': 'denied' },
+        { command: ran },
+        ['running package.json'],
+      ),
+    ).toEqual({
+      status: 'readable',
+      reason:
+        'one or more denied paths were unexpectedly readable; expected-readable target missing on the host: running package.json',
+    })
+  })
+
   test('keeps the existing verdict when every expected-readable target is present', () => {
     expect(
       probeVerdict(

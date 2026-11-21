@@ -159,7 +159,16 @@ export function probeVerdict(
   missingExpectedReadableTargets: readonly string[] = [],
 ): Pick<ConfinementFilesystemProbeRow, 'status' | 'reason'> {
   let filesystemVerdict: Pick<ConfinementFilesystemProbeRow, 'status' | 'reason'>
-  if (missingExpectedReadableTargets.length > 0) {
+  if (targets.some(({ name, expected }) => expected === 'denied' && paths[name] === 'readable')) {
+    const missingTargetReason =
+      missingExpectedReadableTargets.length > 0
+        ? `; expected-readable target missing on the host: ${missingExpectedReadableTargets.join(', ')}`
+        : ''
+    filesystemVerdict = {
+      status: 'readable',
+      reason: `one or more denied paths were unexpectedly readable${missingTargetReason}`,
+    }
+  } else if (missingExpectedReadableTargets.length > 0) {
     filesystemVerdict = {
       status: 'not covered',
       reason: `expected-readable target missing on the host: ${missingExpectedReadableTargets.join(', ')}`,
@@ -168,13 +177,6 @@ export function probeVerdict(
     filesystemVerdict = {
       status: 'not covered',
       reason: 'one or more filesystem probe output lines were missing',
-    }
-  } else if (
-    targets.some(({ name, expected }) => expected === 'denied' && paths[name] === 'readable')
-  ) {
-    filesystemVerdict = {
-      status: 'readable',
-      reason: 'one or more denied paths were unexpectedly readable',
     }
   } else if (targets.some(({ name, expected }) => paths[name] !== expected)) {
     filesystemVerdict = {
