@@ -356,6 +356,7 @@ describe('collection records', () => {
       .query<{ record_id: string }, [string]>('SELECT record_id FROM run WHERE record_id=?')
       .get(id)!.record_id
     expect((await recordedResult(id)).errors).toEqual([
+      'worker check: none at this HEAD',
       `\n— run ${number} · codex · 1.0s · vendor tokens not reported\n  score it:  ${PLATFORM_SLUG} score ${id} <none|partial|full> [wrong|mixed|right] --note "..."\n  record_id: ${recordId}`,
     ])
   })
