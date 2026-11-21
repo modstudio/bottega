@@ -254,6 +254,31 @@ test('a task cursor refusal stops before merge', async () => {
   expect(merged).toBeFalse()
 })
 
+test('a required release rung without the flag refuses before merge', async () => {
+  registerProject([])
+  recordPassingGate()
+  let merged = false
+  let decisions = 0
+  await expect(
+    mergePullRequest(
+      '42',
+      cwd,
+      adapter({
+        releaseDecision: () => {
+          decisions++
+          return { decided: true, required: ['hosted-api'], rungs: [], error: null }
+        },
+        merge: () => {
+          merged = true
+          return 'must-not-merge'
+        },
+      }),
+    ),
+  ).rejects.toThrow(`${PLATFORM_SLUG} pr merge 42 --release-required`)
+  expect(decisions).toBe(1)
+  expect(merged).toBeFalse()
+})
+
 test('an incomplete CI record is merge residue with the shared retry remedy', async () => {
   registerProject(['test'])
   const incomplete = `CI recording incomplete for PR #42: workflow runs unavailable; retry: ${PLATFORM_SLUG} pr ci-record 42 --project merge-fixture`

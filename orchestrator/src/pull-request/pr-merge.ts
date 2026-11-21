@@ -8,6 +8,7 @@ import type { Database } from 'bun:sqlite'
 import { startBoundedSync } from '../../../shared/bounded-process.ts'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { BoundExceededError, budgetForArgv } from '../../../shared/call-budgets.ts'
+import { nulPathListArgs, splitNulPaths } from '../../../shared/git-path-list.ts'
 import { refusal, renderRefusal } from '../../../shared/refusal.ts'
 import { recordMergeBranchLandings } from '../branch/branch-landing-service.ts'
 import { enableSchemaReload, writableDb } from '../database/db.ts'
@@ -15,6 +16,12 @@ import { passingGateForCommit } from '../gate/gate-passed.ts'
 import { runWithGitFetchRetry } from '../git/fetch-retry.ts'
 import { targetGitEnvironment } from '../git/git-environment.ts'
 import { currentProjectRepository, type Project, projectAt } from '../project/projects.ts'
+import { entryClosureAtCommit } from '../release/release-entry-closure.ts'
+import {
+  decidePullRequestReleaseAdmission,
+  type RequiredRungDecision,
+  requiredRungDecision,
+} from '../release/release-required.ts'
 import { shipToDepthRefusal } from '../release/ship-to-reach.ts'
 import { type ShipCleanupReport, shipCleanup } from '../ship-cleanup/ship-cleanup.ts'
 import { matchWorkflowTreePath } from '../workflow/workflow-tree.ts'
@@ -81,6 +88,12 @@ export type PullRequestMergeAdapter = {
   repository(project: Project): string | null
   view(cwd: string, target: string): PullRequestMergeFacts
   taskCursorAdmission?(project: Project, branch: string, database: Database): Promise<void>
+  releaseDecision(
+    project: Project,
+    cwd: string,
+    pullRequest: PullRequestMergeFacts,
+    depth?: string,
+  ): RequiredRungDecision
   checks(cwd: string, number: number): PullRequestCheck[]
   landingState(
     cwd: string,
@@ -249,6 +262,29 @@ const cliPullRequestMergeAdapter: PullRequestMergeAdapter = {
       branch,
       database,
     })
+  },
+  releaseDecision(project, cwd, pullRequest, depth) {
+    successful(cwd, ['git', 'fetch', 'origin', pullRequest.baseBranch], 'release base fetch')
+    const remoteBase = `refs/remotes/origin/${pullRequest.baseBranch}`
+    const mergeBase = successful(
+      cwd,
+      ['git', 'merge-base', pullRequest.headCommit, remoteBase],
+      'release merge-base lookup',
+    )
+    const projectAtHead = { ...project, path: cwd }
+    return requiredRungDecision(
+      projectAtHead,
+      () =>
+        splitNulPaths(
+          successful(
+            cwd,
+            nulPathListArgs(['git', 'diff', '--name-only', mergeBase, pullRequest.headCommit]),
+            'pull-request changed-path lookup',
+          ),
+        ),
+      (entries) => entryClosureAtCommit(projectAtHead, pullRequest.headCommit, entries),
+      depth,
+    )
   },
   checks(cwd, number) {
     const result = run(cwd, [
@@ -841,6 +877,25 @@ function admitViewedPullRequest(
   return admission.checked!.change
 }
 
+function assertPullRequestReleaseAdmission(
+  project: Project,
+  pullRequest: PullRequestMergeFacts,
+  input: {
+    cwd: string
+    adapter: PullRequestMergeAdapter
+    releaseRequired: boolean
+    depth?: string
+  },
+): void {
+  const admission = decidePullRequestReleaseAdmission({
+    decision: input.adapter.releaseDecision(project, input.cwd, pullRequest, input.depth),
+    releaseRequired: input.releaseRequired,
+  })
+  if (admission.kind === 'refuse') {
+    throw new Error(admission.message.replace('<n>', String(pullRequest.number)))
+  }
+}
+
 async function completeMerge(input: {
   target: string
   cwd: string
@@ -884,6 +939,7 @@ async function completeMerge(input: {
       )
     } else {
       admittedChange = admitViewedPullRequest(pullRequest, input)
+      assertPullRequestReleaseAdmission(input.project, pullRequest, input)
       const merged = mergeAdmittedHead({ ...input, pullRequest })
       if (merged.mergeCommit) mergeCommit = merged.mergeCommit
       else {

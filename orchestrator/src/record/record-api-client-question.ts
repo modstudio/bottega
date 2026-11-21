@@ -1,6 +1,7 @@
 // concern: record-api-client-question
 /** Calls the hosted question routes and validates write results. */
 
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   RUN_QUESTION_OWNER_NOT_LIVE_CODE,
   RunQuestionOwnerNotLiveError,
@@ -21,6 +22,38 @@ type Request = <T>(
   init?: RequestInit & { schema?: (body: unknown) => T; destinationSpaceId?: string },
 ) => Promise<T>
 
+type QuestionReadResponse = {
+  items: Record<string, unknown>[]
+  cursor?: string
+  more?: boolean
+  reset?: boolean
+}
+
+const HOSTED_API_RELEASE_REMEDY = `${PLATFORM_SLUG} release run --rung hosted-api ${PLATFORM_SLUG}`
+
+function questionReadResponseSchema(
+  input: QuestionReadInput,
+  body: unknown,
+): QuestionReadResponse {
+  const response = body as QuestionReadResponse
+  if (input.read !== 'open-for-session') return response
+  const valid =
+    Array.isArray(response?.items) &&
+    response.items.every(
+      (row) =>
+        row !== null &&
+        typeof row === 'object' &&
+        Array.isArray(row.step_actions) &&
+        row.step_actions.every((action) => typeof action === 'string'),
+    )
+  if (!valid) {
+    throw new Error(
+      `the hosted API predates this client: open-for-session rows require step_actions as a string array; run ${HOSTED_API_RELEASE_REMEDY}`,
+    )
+  }
+  return response
+}
+
 function isOwnerNotLiveResponse(error: unknown): error is { status: 409; code: string } {
   return (
     error !== null &&
@@ -37,12 +70,7 @@ export type RecordQuestionClient = {
   readQuestions?(
     input: QuestionReadInput,
     destination?: RecordRequestDestination,
-  ): Promise<{
-    items: Record<string, unknown>[]
-    cursor?: string
-    more?: boolean
-    reset?: boolean
-  }>
+  ): Promise<QuestionReadResponse>
   writeQuestion?(
     intent: QuestionLiveIntent,
     input: QuestionWriteBody,
@@ -92,13 +120,7 @@ export const recordQuestionClient = (request: Request): RecordQuestionClient => 
         if (value !== undefined) query.set(key, String(value))
       return request(`/v1/questions?${query}`, {
         ...destination,
-        schema: (body) =>
-          body as {
-            items: Record<string, unknown>[]
-            cursor?: string
-            more?: boolean
-            reset?: boolean
-          },
+        schema: (body) => questionReadResponseSchema(input, body),
       })
     },
     writeQuestion: (
