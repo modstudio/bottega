@@ -182,19 +182,22 @@ export async function readDescendantTaskFacts(
   const rows: DescendantTaskFact[] = []
   const pending = [root]
   const visited = new Set<string>()
+  const discovered = new Set([root])
   while (pending.length) {
     const parent = pending.shift()!
     if (visited.has(parent)) continue
     visited.add(parent)
     const children = await taskReader().list({ project, parent })
     for (const child of children) {
+      if (discovered.has(child.key)) continue
+      discovered.add(child.key)
       rows.push({
         key: child.key,
         parentKey: child.parent_key,
         status: child.status,
         statusCategory: child.status_category,
       })
-      if (!visited.has(child.key)) pending.push(child.key)
+      pending.push(child.key)
     }
   }
   return rows

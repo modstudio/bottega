@@ -77,6 +77,7 @@ import { attachWorkflowText } from './workflow-text.ts'
 import {
   closeCursorWithTextCopy,
   closeCursorWithTextCopyResult,
+  type HubTaskRecordLookup,
   productionWorkflowTextDocumentPorts,
   type WorkflowTextDocumentPorts,
 } from './workflow-text-copy.ts'
@@ -108,6 +109,7 @@ export type WorkflowCommandOptions = {
   /** Where a landing workflow reads the branch's commit count; the registered checkout's git by default. */
   commitCount?: CommitCountPort
   hubTaskLookup?: HubTaskLookup
+  hubTaskRecordLookup?: HubTaskRecordLookup
   workflowTextDocuments?: WorkflowTextDocumentPorts
   contextMomentPorts?: ContextMomentPorts
   contextMomentGather?: typeof import('./workflow-context-moment.ts').workflowNextContextMoment
@@ -555,7 +557,7 @@ export async function abandonCommand(
       surface: 'cli',
     },
     undefined,
-    options.hubTaskLookup,
+    options.hubTaskRecordLookup,
     options.workflowTextDocuments ?? productionWorkflowTextDocumentPorts,
   )
   print(result, result)
@@ -719,7 +721,7 @@ export async function nextCommand(
       live,
     },
     undefined,
-    options.hubTaskLookup,
+    options.hubTaskRecordLookup,
     options.workflowTextDocuments ?? productionWorkflowTextDocumentPorts,
   )
   print(result.text, result.text)

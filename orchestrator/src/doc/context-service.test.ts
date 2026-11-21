@@ -28,7 +28,7 @@ const globals = globalThis as typeof globalThis & {
 }
 const task = { key: 'DEV-2293', record_id: newRecordId(), project: PLATFORM_SLUG }
 
-function installContextFacts() {
+function installContextFacts(children: ContextFactsPorts['children'] = async () => []) {
   upsertProject({
     recordId: newRecordId(),
     name: PLATFORM_SLUG,
@@ -39,11 +39,29 @@ function installContextFacts() {
     task: async () => task,
     lookup: async () => task,
     record: async () => task,
-    children: async () => [],
+    children,
     pointer: async (value) =>
       value.startsWith('doc:') ? `doc-store record ${value} does not resolve` : null,
   }
 }
+
+test('task context set reuses the resolved children read', async () => {
+  let childReads = 0
+  installContextFacts(async () => {
+    childReads++
+    return []
+  })
+
+  await setContextItem({
+    task: task.key,
+    id: 'single-children-read',
+    kind: 'fact',
+    source: 'test',
+    body: 'Resolved once.',
+  })
+
+  expect(childReads).toBe(1)
+})
 
 afterEach(() => {
   delete globals[CONTEXT_FACTS_PORTS_KEY]

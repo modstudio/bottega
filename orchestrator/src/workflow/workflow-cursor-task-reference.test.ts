@@ -12,7 +12,12 @@ import {
 describe('workflow cursor task reference', () => {
   test('an unknown user task key is stored as a label with no UUID link', async () => {
     const d = database()
-    const unresolved = await resolveWorkflowCursorContext('fixture', args, context, async () => [])
+    const unresolved = await resolveWorkflowCursorContext(
+      'fixture',
+      args,
+      context,
+      async () => null,
+    )
     await composeWorkflowWithCursor('flow', 'fixture', 'default', args, unresolved, d, {}, {})
     expect(d.query('SELECT workflow_key,task_record_id FROM workflow_cursor').get()).toEqual({
       workflow_key: 'DEV-822',
@@ -26,6 +31,7 @@ describe('workflow cursor task reference', () => {
   })
 
   test('a pre-rollout cursor named by number links to its resolved task on next', async () => {
+    let taskLookups = 0
     const d = database()
     await composeWorkflowWithCursor(
       'flow',
@@ -49,9 +55,11 @@ describe('workflow cursor task reference', () => {
     ).run(newRecordId(), cursor.record_id, args.key)
     d.query("UPDATE workflow_cursor SET enforcement='note-only'").run()
 
-    const resolved = await resolveWorkflowCursorContext('fixture', args, context, async () => [
-      { key: args.key, record_id: 'task-DEV-822', project: 'fixture' },
-    ])
+    const resolved = await resolveWorkflowCursorContext('fixture', args, context, async () => {
+      taskLookups++
+      return { key: args.key, record_id: 'task-DEV-822', project: 'fixture' }
+    })
+    expect(taskLookups).toBe(1)
     await nextWorkflowStep(
       'flow',
       'fixture',

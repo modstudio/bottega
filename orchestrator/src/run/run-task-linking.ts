@@ -6,6 +6,7 @@ import { db, writableDb, writeTransaction } from '../database/db.ts'
 import { type Project, projectForTaskKey, projects } from '../project/projects.ts'
 import { machineId } from '../record/machine-identity.ts'
 import type { RecordTaskFlowClient } from '../record/record-api-client-task-flow.ts'
+import { type ProjectTaskListReader, readProjectTaskList } from '../workflow/project-task-list.ts'
 import {
   type TaskFlowLinkedTaskReferenceRow as LinkedLocalTaskReference,
   type TaskFlowPendingTaskLinkRow as LocalTaskLinkRow,
@@ -19,10 +20,6 @@ import {
   taskReadRefusal,
   taskReferenceForProjectKey,
 } from '../workflow/workflow-task-reference.ts'
-import {
-  type ProjectTaskListReader,
-  readProjectTaskList,
-} from '../workflow/project-task-list.ts'
 import { linkWorkflowQuestionTaskReference } from './question-mutation.ts'
 import { enqueueRunRecord, isRunRecordEligible, runRecordFinishedAt } from './run-outbox.ts'
 

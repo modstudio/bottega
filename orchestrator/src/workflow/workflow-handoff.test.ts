@@ -296,14 +296,12 @@ test('keyless handoff takes the claim, adopts the key, and moves context to its 
     'fixture',
     args,
     fixture.context,
-    async () => [
-      {
-        key: 'DEV-KEYLESS',
-        record_id: 'task-DEV-KEYLESS',
-        project: 'fixture',
-        status_category: 'active',
-      },
-    ],
+    async () => ({
+      key: 'DEV-KEYLESS',
+      record_id: 'task-DEV-KEYLESS',
+      project: 'fixture',
+      status_category: 'active',
+    }),
     fixture.row,
   )
   fixture.d
@@ -394,14 +392,12 @@ test('brief lineage lists a carried run under the real handoff successor', async
     'fixture',
     args,
     fixture.context,
-    async () => [
-      {
-        key: 'DEV-KEYLESS',
-        record_id: 'task-DEV-KEYLESS',
-        project: 'fixture',
-        status_category: 'active',
-      },
-    ],
+    async () => ({
+      key: 'DEV-KEYLESS',
+      record_id: 'task-DEV-KEYLESS',
+      project: 'fixture',
+      status_category: 'active',
+    }),
     fixture.row,
   )
   const result = await handoffWorkflow({

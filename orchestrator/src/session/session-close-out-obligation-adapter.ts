@@ -7,10 +7,7 @@ import { observeLandedTasks } from '../branch/task-status-observation.ts'
 import { taskContextItems } from '../doc/context-service.ts'
 import { pendingForSession } from '../evidence/evidence-query.ts'
 import { projects } from '../project/projects.ts'
-import {
-  type ProjectTaskListReader,
-  readProjectTaskList,
-} from '../workflow/project-task-list.ts'
+import { type ProjectTaskListReader, readProjectTaskList } from '../workflow/project-task-list.ts'
 import type { SessionOwnedRun } from './session-close-out-decision.ts'
 import {
   landedTaskIdentities,

@@ -3,20 +3,16 @@
 
 import { flagValue } from '../cli/args.ts'
 import { TASK_FLOW_OPEN_STAGE_STATES } from '../record/record-task-flow-contract.ts'
+import { type ProjectTaskListReader, readProjectTaskList } from './project-task-list.ts'
 import { taskFlowState } from './task-flow-decision.ts'
 import type { WorkflowPrint } from './workflow-commands.ts'
 import { renderWorkflowCursorLine } from './workflow-cursor-format.ts'
 import { listWorkflowCursors } from './workflow-cursor-list.ts'
 import {
-  type HubTaskReference,
   taskKeyMap,
   taskReadRefusal,
   taskReferenceForProjectKey,
 } from './workflow-task-reference.ts'
-import {
-  type ProjectTaskListReader,
-  readProjectTaskList,
-} from './project-task-list.ts'
 
 /** Names the closed task an open cursor outlived; a finished or abandoned cursor outlived nothing. */
 export function closedTaskAnnotation(

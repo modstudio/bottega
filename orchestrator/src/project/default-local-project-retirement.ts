@@ -10,10 +10,7 @@ import {
   defaultLocalProjectPath,
   deleteProjectRegisterRow,
 } from '../database/project-register-store.ts'
-import {
-  type ProjectTaskListReader,
-  readProjectTaskList,
-} from '../workflow/project-task-list.ts'
+import { type ProjectTaskListReader, readProjectTaskList } from '../workflow/project-task-list.ts'
 import { projectByName } from './project-read.ts'
 import { localProjectReferenceCounts } from './project-reference-counts.ts'
 import type { StoredProjectSettings } from './project-settings.ts'

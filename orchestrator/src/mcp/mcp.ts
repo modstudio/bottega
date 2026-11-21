@@ -58,6 +58,7 @@ import {
 } from '../workflow/workflow-text.ts'
 import {
   closeCursorWithTextCopy,
+  type HubTaskRecordLookup,
   productionWorkflowTextDocumentPorts,
   type WorkflowTextDocumentPorts,
 } from '../workflow/workflow-text-copy.ts'
@@ -81,6 +82,7 @@ import { registerWorkflowStepTool } from './mcp-workflow-step.ts'
 
 export type DocsMcpPorts = LandingBranchPorts & {
   hubTaskLookup?: HubTaskLookup
+  hubTaskRecordLookup?: HubTaskRecordLookup
   workflowTextDocuments?: WorkflowTextDocumentPorts
   contextMomentPorts?: ContextMomentPorts
   registerSchemaReload?: (
@@ -510,7 +512,7 @@ async function abandonWorkflowWithTextCopy(
       surface: 'mcp',
     },
     undefined,
-    ports.hubTaskLookup,
+    ports.hubTaskRecordLookup,
     ports.workflowTextDocuments ?? productionWorkflowTextDocumentPorts,
   )
   return text(result)

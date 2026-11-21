@@ -244,9 +244,11 @@ describe('workflow prompts on the wire', () => {
 
   const connected = async () => {
     const server = createDocsMcpServer({
-      hubTaskReader: async () => [
-        { key: 'STAR-4291', record_id: 'task-STAR-4291', project: 'prompt-fixture' },
-      ],
+      hubTaskLookup: async () => ({
+        key: 'STAR-4291',
+        record_id: 'task-STAR-4291',
+        project: 'prompt-fixture',
+      }),
     })
     const [serverTransport, clientTransport] = InMemoryTransport.createLinkedPair()
     const client = new Client({ name: 'prompt-test', version: '1' })

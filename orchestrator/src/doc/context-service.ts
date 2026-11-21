@@ -367,7 +367,7 @@ export async function setContextItem(
   },
 ) {
   assertWorkerDocStoreWriteAllowed('setContextItem')
-  const { holder, task } = await resolveContextHolder(input)
+  const { holder, task, children } = await resolveContextHolder(input)
   writableDb()
   const questionNumber = /^(?:q)(\d+)$/.exec(input.source.trim())
   const item = {
@@ -391,7 +391,12 @@ export async function setContextItem(
   )
   if (ownership) throw new ContextWriteRefusalError(ownership)
   if (input.kind === 'pointer') item.target = await resolvedPointerTarget(input.body)
-  await assertContextSetAllowed({ holder, item, contextTask: task ?? undefined })
+  await assertContextSetAllowed({
+    holder,
+    item,
+    contextTask: task ?? undefined,
+    contextTaskChildren: children,
+  })
   const localInput = {
     holder,
     slug: input.id,

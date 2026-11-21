@@ -181,7 +181,7 @@ test('CLI and MCP workflow await writes name the cursor project space', async ()
   const fixture = await createRecordContractFixture({ identity })
   try {
     await seedHostedAwait(fixture, PROJECT_SPACE)
-    const hubTaskReader = async () => [{ key: 'SEGNA-585', record_id: TASK, project: 'segnavia' }]
+    const hubTaskLookup = async () => ({ key: 'SEGNA-585', record_id: TASK, project: 'segnavia' })
     await awaitCommand(
       [
         'workflow',
@@ -199,9 +199,9 @@ test('CLI and MCP workflow await writes name the cursor project space', async ()
         'Proceed?',
       ],
       () => {},
-      { hubTaskReader },
+      { hubTaskLookup },
     )
-    const { server } = workflowRulingContextFixture({ hubTaskReader })
+    const { server } = workflowRulingContextFixture({ hubTaskLookup })
     const client = new Client({ name: 'await-proof', version: '1.0.0' })
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair()
     await server.connect(serverTransport)

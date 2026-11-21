@@ -9,8 +9,8 @@ import { contextBrief } from '../doc/context-brief.ts'
 import { taskHoldersCarriedByOpenCursors } from '../doc/context-cursor-warning-decision.ts'
 import type { StoredContextItem } from '../doc/context-item-store.ts'
 import { cursorContextHolder, taskContextHolder } from '../doc/doc-subjects.ts'
-import { listWorkflowCursors } from '../workflow/workflow-cursor-list.ts'
 import { readProjectTaskList } from '../workflow/project-task-list.ts'
+import { listWorkflowCursors } from '../workflow/workflow-cursor-list.ts'
 import {
   CONTEXT_REVIEW_WINDOW_MS,
   type ContextReviewFacts,

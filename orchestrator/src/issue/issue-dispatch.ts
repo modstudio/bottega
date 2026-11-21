@@ -11,11 +11,8 @@ import { UNSCORED_WHERE } from '../evidence/pending-score-sql.ts'
 import { type KernelLease, projectGitCommonDir, tryKernelLease } from '../project/project-lock.ts'
 import { projectByName } from '../project/projects.ts'
 import { TERMINAL_RUN_STATUS_SQL } from '../run/run-status.ts'
+import { type ProjectTaskListReader, readProjectTaskList } from '../workflow/project-task-list.ts'
 import { taskReader } from '../workflow/task-read-port.ts'
-import {
-  type ProjectTaskListReader,
-  readProjectTaskList,
-} from '../workflow/project-task-list.ts'
 import { worktreeDirty } from '../worktree/worktree-attribution.ts'
 import { workIssue } from './issue.ts'
 import { parseFiledIssue } from './issue-file.ts'
@@ -215,7 +212,16 @@ export async function dispatchFiledIssues(key?: string): Promise<boolean> {
     return false
   }
   const rows = await readProjectTaskList(PLATFORM_SLUG)
-  const candidates = eligibleFiledIssueTasks(rows, liveLease)
+  const candidates = eligibleFiledIssueTasks(
+    rows.map((row) => ({
+      key: row.key,
+      title: row.title ?? null,
+      body: row.body ?? null,
+      status_category: row.status_category ?? null,
+      opened_at: row.opened_at ?? null,
+    })),
+    liveLease,
+  )
   const dispatched = new Set<string>()
   let taken = 0
   let failed = false

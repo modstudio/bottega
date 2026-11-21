@@ -29,7 +29,7 @@ import {
 } from './workflow-cursor-test.fixture.ts'
 import { gatherNoAcceptedFindingsFact } from './workflow-dispatch-waiver-evidence.ts'
 import type { Floor } from './workflow-floor.ts'
-import { applyFloorDecision } from './workflow-floor-apply.ts'
+import { applyFloorDecision, readDescendantTaskFacts } from './workflow-floor-apply.ts'
 import { promoteWorkflowLocal, setWorkflowLocal } from './workflows.ts'
 
 const floorDatabase = testDatabaseFixture((d) => {
@@ -62,6 +62,29 @@ const taskPort: TaskReadPort = {
   documents: async () => [],
   document: async () => ({ id: 'none', label: 'none', title: 'none', body: '', version: '1' }),
 }
+
+test('descendant facts use parent-filtered reads and visit each node once', async () => {
+  const reads: Array<{ project?: string; parent?: string }> = []
+  const children = new Map([
+    ['DEV-1', [{ ...task, key: 'DEV-2', parent_key: 'DEV-1' }]],
+    ['DEV-2', [{ ...task, key: 'DEV-3', parent_key: 'DEV-2' }]],
+    ['DEV-3', [{ ...task, key: 'DEV-2', parent_key: 'DEV-3' }]],
+  ])
+  installTaskReader({
+    ...taskPort,
+    list: async (filters = {}) => {
+      reads.push(filters)
+      return children.get(filters.parent ?? '') ?? []
+    },
+  })
+
+  await expect(readDescendantTaskFacts('fixture', 'DEV-1')).resolves.toHaveLength(2)
+  expect(reads).toEqual([
+    { project: 'fixture', parent: 'DEV-1' },
+    { project: 'fixture', parent: 'DEV-2' },
+    { project: 'fixture', parent: 'DEV-3' },
+  ])
+})
 
 const floor = (kind: Floor['kind']): Floor => ({
   kind,

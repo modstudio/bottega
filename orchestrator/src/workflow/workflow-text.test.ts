@@ -449,7 +449,11 @@ describe('workflow text lifecycle', () => {
   })
 })
 
-const taskReader = async () => [{ key: 'DEV-1975', record_id: 'task-dev-1975', project: 'fixture' }]
+const taskReader = async () => ({
+  key: 'DEV-1975',
+  record_id: 'task-dev-1975',
+  project: 'fixture',
+})
 
 function linkCursor(d: Database, cursor: number): void {
   d.query('UPDATE workflow_cursor SET task_record_id=? WHERE number=?').run('task-dev-1975', cursor)
@@ -501,14 +505,12 @@ describe('task-linked workflow text preservation', () => {
     const result = await copyWorkflowTextForCursor(
       await cursorForWorkflowTextCopy(cursor, d),
       d,
-      async () => [
-        {
-          key: 'STAR-6294',
-          record_id: 'task-dev-1975',
-          project: 'fixture',
-          source: 'git',
-        },
-      ],
+      async () => ({
+        key: 'STAR-6294',
+        record_id: 'task-dev-1975',
+        project: 'fixture',
+        source: 'git',
+      }),
       documents,
     )
     const expected =
@@ -539,14 +541,12 @@ describe('task-linked workflow text preservation', () => {
     const result = await copyWorkflowTextForCursor(
       await cursorForWorkflowTextCopy(cursor, d),
       d,
-      async () => [
-        {
-          key: 'DEV-1975',
-          record_id: 'task-dev-1975',
-          project: 'fixture',
-          source: 'local',
-        },
-      ],
+      async () => ({
+        key: 'DEV-1975',
+        record_id: 'task-dev-1975',
+        project: 'fixture',
+        source: 'local',
+      }),
       fake.ports,
     )
     const reports = [workflowTextCopyReport(result), workflowTextUncopiedReport(result)]

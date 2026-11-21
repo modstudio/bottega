@@ -5,7 +5,6 @@ import type { Database } from 'bun:sqlite'
 import { boardLiveClaimsForProject } from '../board/board-operations.ts'
 import { TASK_FLOW_STAGE_STATES } from '../record/record-task-flow-contract.ts'
 import { taskFlowReadStore } from './task-flow-store.ts'
-import type { TaskReadRow } from './task-read-port.ts'
 import type { ChildTaskFact } from './workflow-child-queue.ts'
 import { ancestorTaskKeys } from './workflow-task-tree.ts'
 
@@ -30,7 +29,12 @@ export function liveChildClaims(database: Database, project: string, now = Date.
 export async function gatherChildTaskFacts(
   database: Database,
   project: string,
-  tasks: readonly TaskReadRow[],
+  tasks: readonly {
+    key: string
+    project: string
+    parent_key?: string | null
+    status_category?: string | null
+  }[],
 ): Promise<ChildTaskFact[]> {
   const cursors = new Map<string, { number: number; state: string }>()
   for (const cursor of await taskFlowReadStore(database).listStages({
@@ -49,9 +53,9 @@ export async function gatherChildTaskFacts(
     return {
       key: task.key,
       project: task.project,
-      parentKey: task.parent_key,
+      parentKey: task.parent_key ?? null,
       number: Number(/(\d+)$/.exec(task.key)?.[1] ?? Number.MAX_SAFE_INTEGER),
-      statusCategory: task.status_category,
+      statusCategory: task.status_category ?? null,
       cursorEverComposed: cursors.has(task.key),
       cursorNumber: cursors.get(task.key)?.number ?? null,
       cursorState: cursors.get(task.key)?.state ?? null,
@@ -64,9 +68,12 @@ export async function gatherChildTaskFacts(
   })
 }
 
-export function childAncestorKeys(key: string, tasks: readonly TaskReadRow[]): string[] {
+export function childAncestorKeys(
+  key: string,
+  tasks: readonly { key: string; parent_key?: string | null }[],
+): string[] {
   return ancestorTaskKeys(
     key,
-    tasks.map((task) => ({ key: task.key, parentKey: task.parent_key })),
+    tasks.map((task) => ({ key: task.key, parentKey: task.parent_key ?? null })),
   )
 }

@@ -105,14 +105,12 @@ test('manual handoff of an untouched explore cursor still enforces its floor', a
       {
         database: d,
         context: { session },
-        hubTaskReader: async () => [
-          {
-            key: taskArgs.key,
-            record_id: 'task-DEV-2323',
-            project: 'fixture',
-            status_category: 'active',
-          },
-        ],
+        hubTaskLookup: async () => ({
+          key: taskArgs.key,
+          record_id: 'task-DEV-2323',
+          project: 'fixture',
+          status_category: 'active',
+        }),
       },
     ),
   ).rejects.toThrow('floor recorded-artifact is unmet')

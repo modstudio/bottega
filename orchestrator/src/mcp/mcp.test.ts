@@ -171,7 +171,7 @@ describe('orch MCP', () => {
     const stepFor = async (commitCount: number) => {
       const server = createDocsMcpServer({
         commitCount: () => commitCount,
-        hubTaskReader: async () => [{ key, record_id: `task-${key}`, project }],
+        hubTaskLookup: async () => ({ key, record_id: `task-${key}`, project }),
       })
       const client = new Client({ name: 'orch-test', version: '1.0.0' })
       const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair()
@@ -630,13 +630,16 @@ describe('orch MCP', () => {
       )
       .run(project, first.id, second.id)
     const secondRow = mcpTaskFlowStageIdentity(db(), second.id)
+    let taskLookups = 0
     const { server } = workflowRulingContextFixture({
-      hubTaskReader: async () =>
-        ['DEV-1082-MCP-A', 'DEV-1082-MCP-B'].map((key) => ({
+      hubTaskLookup: async (_project, key) => {
+        taskLookups++
+        return {
           key,
           record_id: `task-${key}`,
           project,
-        })),
+        }
+      },
       workflowTextDocuments: {
         async list() {
           return []
@@ -779,12 +782,14 @@ describe('orch MCP', () => {
       })
       process.env.BOTTEGA_RECORD_API_URL = 'https://record.test'
       rememberProjectSpace(db(), project, hostedSpaceId)
+      const lookupsBeforeAdvance = taskLookups
       const advanced = await call('next_workflow_step', {
         ...common,
         args: args('DEV-1082-MCP-A'),
         note: 'closed through MCP handle',
         run: evidenceRunNumber,
       })
+      expect(taskLookups - lookupsBeforeAdvance).toBe(1)
       expect(advanced).not.toContain('Took over this workflow stage from Remote MCP machine.')
       await call('await_workflow_ruling', {
         ...common,

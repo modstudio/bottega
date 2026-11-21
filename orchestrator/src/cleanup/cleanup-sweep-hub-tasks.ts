@@ -6,10 +6,7 @@ import { clearTaskHolderForLifecycle } from '../doc/context-service.ts'
 import { projects } from '../project/projects.ts'
 import { sweepRunTaskLinks } from '../run/run-task-linking.ts'
 import type { ProjectTaskListReader } from '../workflow/project-task-list.ts'
-import {
-  type HubTaskReference,
-  taskReadRefusal,
-} from '../workflow/workflow-task-reference.ts'
+import { type HubTaskReference, taskReadRefusal } from '../workflow/workflow-task-reference.ts'
 import type { CleanupPresentation } from './cleanup.ts'
 import { decideTaskContextReap } from './task-context-reap-decision.ts'
 

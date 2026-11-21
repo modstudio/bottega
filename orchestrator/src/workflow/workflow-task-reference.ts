@@ -71,7 +71,7 @@ export function taskReadRefusal(
   )
 }
 
-export function taskReferenceFromRow(row: unknown): HubTaskReference {
+function taskReference(row: unknown): HubTaskReference {
   if (
     !row ||
     typeof row !== 'object' ||
@@ -106,7 +106,7 @@ export function taskReferenceFromShow(response: unknown): HubTaskReference | nul
   if (!response || typeof response !== 'object') throw new Error('response was not an object')
   const row = (response as { task?: unknown }).task
   if (row === undefined || row === null) return null
-  const task = taskReferenceFromRow(row)
+  const task = taskReference(row)
   const record = response as {
     comments?: Array<{ id?: unknown }>
     tracker_comment_ids?: unknown
@@ -180,7 +180,7 @@ export async function readHubTaskChildren(
   project: string,
   parent: string,
 ): Promise<HubTaskReference[]> {
-  return (await taskReader().list({ project, parent })).map(taskReferenceFromRow)
+  return (await taskReader().list({ project, parent })).map(taskReference)
 }
 
 export async function pullHubTask(project: string, key: string): Promise<HubTaskReference | null> {

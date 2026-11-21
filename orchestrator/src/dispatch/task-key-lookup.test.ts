@@ -42,6 +42,7 @@ describe('built-in task-key lookup output', () => {
 })
 
 test('reads external task text and resolves its project-scoped mirror record', async () => {
+  let taskLookups = 0
   const project = {
     recordId: 'project-id',
     name: 'remote-project',
@@ -63,11 +64,10 @@ test('reads external task text and resolves its project-scoped mirror record', a
         },
       ],
     },
-    hubTaskLookup: async (projectName) => ({
-      key: 'SHARED-7',
-      record_id: 'mirror-id',
-      project: projectName,
-    }),
+    hubTaskLookup: async (projectName) => {
+      taskLookups++
+      return { key: 'SHARED-7', record_id: 'mirror-id', project: projectName }
+    },
   })
   expect(result).toEqual({
     available: true,
@@ -77,6 +77,7 @@ test('reads external task text and resolves its project-scoped mirror record', a
     body: 'Remote body',
     comments: [],
   })
+  expect(taskLookups).toBe(1)
 })
 
 test('carries external task text when the requested mirror read fails', async () => {
@@ -131,7 +132,7 @@ test('does not read the mirror when no record id is requested', async () => {
     },
     hubTaskLookup: async () => {
       mirrorReads += 1
-      return []
+      return null
     },
   })
 

@@ -2,6 +2,7 @@
 /** Reads one task's status through the installed task reader. */
 
 import { TASK_STATUSES } from '../../../shared/trackers.ts'
+import { type ProjectTaskListReader, readProjectTaskList } from '../workflow/project-task-list.ts'
 import { taskReader } from '../workflow/task-read-port.ts'
 import {
   type HubTaskReference,
@@ -9,10 +10,6 @@ import {
   taskReadRefusal,
   taskReferenceForProjectKey,
 } from '../workflow/workflow-task-reference.ts'
-import {
-  type ProjectTaskListReader,
-  readProjectTaskList,
-} from '../workflow/project-task-list.ts'
 
 export type TaskStatusObservation = {
   raw: string | null

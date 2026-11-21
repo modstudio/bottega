@@ -102,12 +102,8 @@ export async function runWorkflowCommand(
     return []
   })
   registerWorkflowCommands(command, shown, {
-    hubTaskReader: async (project) =>
-      [...new Set(suppliedKeys)].map((key) => ({
-        key,
-        record_id: `task-${key}`,
-        project,
-      })),
+    hubTaskLookup: async (project, key) =>
+      suppliedKeys.includes(key) ? { key, record_id: `task-${key}`, project } : null,
     ...options,
   })
   setRawArgv(argv)
