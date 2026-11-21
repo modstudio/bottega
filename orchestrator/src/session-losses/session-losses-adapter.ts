@@ -35,6 +35,7 @@ import {
   type TranscriptRow,
   transcriptRowTime,
 } from './session-losses.ts'
+import { listContextItems } from '../doc/context-item-store.ts'
 
 type JudgeVerdict = {
   candidateId: string
@@ -61,7 +62,7 @@ type SessionLossOutput = Omit<SessionLossReport, 'boundaries'> & {
   >
 }
 
-function contextReviewMeasurements(sessionId: string, boundaries: SessionLossReport['boundaries']) {
+async function contextReviewMeasurements(sessionId: string, boundaries: SessionLossReport['boundaries']) {
   const reviews = db()
     .query<{ at: string; items: number; flagged: number; item_ids: string }, [string]>(
       `SELECT at,items,flagged,item_ids FROM context_review
@@ -78,15 +79,11 @@ function contextReviewMeasurements(sessionId: string, boundaries: SessionLossRep
     )
   const reviewedIds = new Set(reviews.flatMap((review) => review.itemIds))
   const captureSource = compactionCaptureSource(sessionId)
-  const items = db()
-    .query<{ record_id: string; created_at: string; updated_at: string; source: string }, []>(
-      'SELECT record_id,created_at,updated_at,source FROM context_item',
-    )
-    .all()
+  const items = (await listContextItems(`session:${sessionId}`))
     .map((item) => ({
-      id: item.record_id,
-      createdAt: item.created_at,
-      updatedAt: item.updated_at,
+      id: item.recordId,
+      createdAt: item.createdAt,
+      updatedAt: item.updatedAt,
       source: item.source,
     }))
     .filter((item) => reviewedIds.has(item.id) || item.source === captureSource)
@@ -461,7 +458,7 @@ async function outputSession(
   )
   if (!report) return { sessionId, error: 'no timestamped rows' }
   const briefs = briefsForBoundaries(sessionId, report.boundaries)
-  const reviewMeasurements = contextReviewMeasurements(sessionId, report.boundaries)
+  const reviewMeasurements = await contextReviewMeasurements(sessionId, report.boundaries)
   const boundaries: SessionLossOutput['boundaries'] = []
   for (const [index, boundary] of report.boundaries.entries())
     boundaries.push({

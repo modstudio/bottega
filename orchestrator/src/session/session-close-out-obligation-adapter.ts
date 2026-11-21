@@ -35,6 +35,15 @@ export async function sessionCloseOutObligationItems(
     ),
   })
   const landedTasks = await observeLandedTasks(identities, taskReader)
+  const contextByTask = new Map(
+    await Promise.all(
+      landedTasks.flatMap((observation) =>
+        observation.task
+          ? [taskContextItems(observation.task, database).then((items) => [observation.task!.record_id, items] as const)]
+          : [],
+      ),
+    ),
+  )
   return sessionCloseOutObligations({
     pendingScores: pendingForSession(session, database),
     acknowledgementDate: new Date().toISOString().slice(0, 'YYYY-MM-DD'.length),
@@ -42,7 +51,7 @@ export async function sessionCloseOutObligationItems(
       ...observation,
       openAfterLandingAcknowledged:
         observation.task !== null &&
-        taskContextItems(observation.task, database).some(
+        (contextByTask.get(observation.task.record_id) ?? []).some(
           (item) => item.id === OPEN_AFTER_LANDING_CONTEXT_ID && item.kind === 'ruling',
         ),
     })),

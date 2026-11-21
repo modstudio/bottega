@@ -19,6 +19,7 @@ import {
   getContext,
   sessionContextItems,
   setContextItem,
+  taskContextItems,
 } from './context-service.ts'
 import { CONTEXT_FACTS_PORTS_KEY, type ContextFactsPorts } from './context-write-adapter.ts'
 import { ContextWriteRefusalError } from './doc-context-write.ts'
@@ -61,6 +62,41 @@ test('task context set reuses the resolved children read', async () => {
   })
 
   expect(childReads).toBe(1)
+})
+
+test('hosted task reads return record items when the local row is absent', async () => {
+  installContextFacts()
+  const priorUrl = process.env.BOTTEGA_RECORD_API_URL
+  const at = '2026-11-21T00:00:00.000Z'
+  try {
+    process.env.BOTTEGA_RECORD_API_URL = 'https://record.example.test'
+    rememberHostedRecord(db())
+    installRecordApiClient(
+      createMemoryRecordApiClient({
+        contextItems: [
+          {
+            recordId: newRecordId(),
+            holder: `task:${task.record_id}`,
+            id: 'probe',
+            kind: 'fact',
+            body: 'visible from the record',
+            source: 'test',
+            questionNumber: null,
+            target: null,
+            revision: at,
+            createdAt: at,
+            updatedAt: at,
+          },
+        ],
+      }),
+    )
+    expect(db().query('SELECT slug FROM context_item WHERE slug=?').get('probe')).toBeNull()
+    expect((await getContext({ task: task.key })).items.map((item) => item.id)).toEqual(['probe'])
+    expect((await taskContextItems(task, db())).map((item) => item.id)).toEqual(['probe'])
+  } finally {
+    if (priorUrl === undefined) delete process.env.BOTTEGA_RECORD_API_URL
+    else process.env.BOTTEGA_RECORD_API_URL = priorUrl
+  }
 })
 
 afterEach(() => {

@@ -29,10 +29,16 @@ export const recordBindingModules: RecordModule[] = [
     'hono',
     'zod',
     '../../../shared/context-item-vocabulary.ts',
+    '../../../shared/record-routes.ts',
     './record-auth.ts',
     './record-context-items.ts',
   ]),
   module('orchestrator/src/record/record-api-context-items.fixture.ts', ['./record-api-client.ts']),
+  module('orchestrator/src/record/record-api-client-context-items.ts', [
+    '../../../shared/record-routes.ts',
+    './record-api-client-paths.ts',
+    './record-context-items.ts',
+  ]),
   module('orchestrator/src/record/record-api-identity.fixture.ts', ['./record-auth.ts']),
   module('orchestrator/src/record/record-machine-join-policy.ts', [
     '../../../shared/pairing-code.ts',

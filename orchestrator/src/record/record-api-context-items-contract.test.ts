@@ -13,6 +13,14 @@ import { registerRecordContextItemRoutes } from './record-api-context-items.ts'
 import { identity } from './record-api-identity.fixture.ts'
 import type { RecordIdentity } from './record-auth.ts'
 
+const contractRoutes = ['GET /v1/context-items', 'GET /v1/context-items/holders'] as const
+void contractRoutes
+
+const readDeps = {
+  readContextItems: async () => [],
+  readContextHolders: async () => [],
+}
+
 test('hosted context-item delete returns removed false when the row is absent', async () => {
   const id = newRecordId()
   const app = new Hono<{
@@ -21,6 +29,7 @@ test('hosted context-item delete returns removed false when the row is absent', 
   registerRecordContextItemRoutes(
     app,
     {
+      ...readDeps,
       upsertContextItem: async () => ({}),
       deleteContextItem: async () => ({ removed: false }),
     },
@@ -93,3 +102,52 @@ test.each(['PUT', 'DELETE'])(
     })
   },
 )
+
+test('hosted context-item GET validates batches and forwards holders and slug', async () => {
+  let received: unknown = null
+  const app = new Hono<{
+    Variables: { identity: RecordIdentity; destinationSpaceId?: string }
+  }>()
+  registerRecordContextItemRoutes(
+    app,
+    {
+      ...readDeps,
+      readContextItems: async (input) => {
+        received = input
+        return []
+      },
+      upsertContextItem: async () => ({}),
+      deleteContextItem: async () => ({ removed: false }),
+    },
+    {
+      scope: () => ({
+        url: 'postgres://unused.invalid/record',
+        userId: newRecordId(),
+        spaceId: newRecordId(),
+        spaceIds: [],
+      }),
+      noSpace: () => new Response(null, { status: 403 }),
+    },
+  )
+  const holderId = newRecordId()
+  const response = await app.request(`/v1/context-items?holder=task:${holderId}&slug=probe`)
+  expect(response.status).toBe(200)
+  expect(received).toMatchObject({
+    holders: [{ holderKind: 'task', holderId }],
+    slug: 'probe',
+  })
+})
+
+test('hosted context-item GET names the holder batch cap when exceeded', async () => {
+  const app = recordApiTestApp(identity, {
+    ...idleSubjectDeps(),
+    ...idleRecordApiDeps(),
+  })
+  const search = new URLSearchParams()
+  for (let index = 0; index < 101; index++) search.append('holder', `session:s-${index}`)
+  const response = await app.request(`/v1/context-items?${search}`, {
+    headers: { 'x-record-space': 'space-a' },
+  })
+  expect(response.status).toBe(400)
+  expect(await response.text()).toContain('CONTEXT_ITEM_HOLDER_BATCH_LIMIT')
+})

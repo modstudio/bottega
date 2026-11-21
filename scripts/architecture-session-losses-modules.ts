@@ -26,6 +26,7 @@ export const sessionLossesModules: SessionLossesModule[] = [
     '../cleanup/cleanup-sweep-decisions.ts',
     '../contract/contract.ts',
     '../database/db.ts',
+    '../doc/context-item-store.ts',
     '../doc/docs.ts',
     '../metric/transcript-reader.ts',
     '../record/record-task-flow-contract.ts',

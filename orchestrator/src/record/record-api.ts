@@ -76,7 +76,7 @@ import type { RecordCacheCounts } from './record-cache-counts-contract.ts'
 import type { RecordCanonImportInput, RecordCanonImportResult } from './record-canon-import.ts'
 import type { ConfigTenant } from './record-config.ts'
 import { CONFIG_SCOPES } from './record-config.ts'
-import type { RecordContextItemInput } from './record-context-items.ts'
+import type { RecordContextItem, RecordContextItemInput } from './record-context-items.ts'
 import {
   decodeRecordCursor,
   encodeRecordCursor,
@@ -128,6 +128,8 @@ type Deps = RecordSubjectRouteDeps &
   RecordApiDeps
 type RecordApiDeps = RecordSessionRouteDeps &
   RecordSettingsRouteDeps & {
+    readContextItems(input: Tenant & { holders: Array<{ holderKind: 'task' | 'session' | 'cursor'; holderId: string }>; slug?: string }): Promise<RecordContextItem[]>
+    readContextHolders(input: Tenant & { holderKind: 'task' | 'session' | 'cursor' }): Promise<unknown>
     upsertContextItem(input: Tenant & RecordContextItemInput): Promise<unknown>
     deleteContextItem(
       input: Tenant & { id: string; expectedRevision?: string },

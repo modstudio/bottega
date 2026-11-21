@@ -87,6 +87,7 @@ export const recordApiBoundaries: ImportBoundary[] = [
       './record-api-client-changes.ts',
       './record-api-client-counts.ts',
       './record-api-client-config-access.ts',
+      './record-api-client-context-items.ts',
       './record-api-client-error.ts',
       './record-api-client-paths.ts',
       './record-api-client-response.ts',

@@ -30,7 +30,7 @@ export async function sweepSessionContext(input: {
   if (!input.enabled) return false
   const database = input.database ?? (input.dryRun ? db() : writableDb())
   let failed = false
-  for (const holder of sessionContextHolders(database)) {
+  for (const holder of await sessionContextHolders(database)) {
     if (hasUnconsumedResumeBrief(database, holder.session)) continue
     const activity = gatherOwnerActivity(database, {
       ownerSessionId: holder.session,
@@ -48,7 +48,7 @@ export async function sweepSessionContext(input: {
 
 async function dropSweptHolder(
   input: Parameters<typeof sweepSessionContext>[0],
-  holder: ReturnType<typeof sessionContextHolders>[number],
+  holder: Awaited<ReturnType<typeof sessionContextHolders>>[number],
 ): Promise<boolean> {
   let failed = false
   for (const drop of await dropSessionContextItemsForLifecycle({

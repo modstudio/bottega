@@ -262,7 +262,7 @@ const productionContextFactsPorts: ContextFactsPorts = {
 const defaultContextFactsPorts = () =>
   portsHolder[CONTEXT_FACTS_PORTS_KEY] ?? productionContextFactsPorts
 
-export function storedItems(holder: string, database: Database): ContextItem[] {
+export async function storedItems(holder: string, database: Database): Promise<ContextItem[]> {
   return listContextItems(holder, database)
 }
 
@@ -400,10 +400,14 @@ async function contextSetRefusal(
   const relatedHolders = [
     ...new Set(relatedTasks.map((related) => taskContextHolder(related.record_id))),
   ]
+  const [siblings, related] = await Promise.all([
+    storedItems(input.holder, database),
+    listContextItems([...new Set(relatedHolders)], database),
+  ])
   const refusal = contextWriteRefusal(item, {
     profile,
-    siblings: storedItems(input.holder, database),
-    related: [...new Set(relatedHolders)].flatMap((holder) => storedItems(holder, database)),
+    siblings,
+    related,
     pointerRefusal: item.kind === 'pointer' ? await ports.pointer(item.body, database) : null,
     claimedTask: claims[0]?.key ?? null,
   })

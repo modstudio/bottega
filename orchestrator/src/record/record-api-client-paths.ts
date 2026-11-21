@@ -63,6 +63,10 @@ export type RecordIdentityAndSpaceMethod =
   | 'inviteMember'
   | 'removeMember'
 export type RecordBoardWatchMethod = 'releaseBoardTaskClaims' | 'openBoardStream'
+export type RecordContextItemMethod =
+  | 'listContextItems'
+  | 'getContextItem'
+  | 'listContextHolders'
 
 export type ProjectIdentityClient = {
   upsertProject(

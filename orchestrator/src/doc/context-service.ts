@@ -143,10 +143,21 @@ async function taskCursorWarning(task: ContextTaskIdentity): Promise<string | nu
 export async function getContext(selection: ContextHolderSelection) {
   const { holder, task, children } = await resolveContextHolder(selection)
   const profile = task ? taskProfile(task.key, children) : 'session'
-  const items = listContextItems(holder)
-  const cursorHolders = selection.session
-    ? await listOpenCursorContextHolders(selection.session)
-    : []
+  const cursors = selection.session ? await openKeylessCursorsForSession(selection.session, db()) : []
+  const addresses = [holder, ...cursors.map((cursor) => cursorContextHolder(cursor.record_id))]
+  const batchedItems = await listContextItems(addresses)
+  const items = batchedItems.filter((item) => item.holder === holder)
+  const cursorHolders = cursors.map((cursor) => {
+    const cursorHolder = cursorContextHolder(cursor.record_id)
+    return {
+      cursor: cursor.number,
+      project: cursor.project,
+      workflow: cursor.workflow_slug,
+      mode: cursor.mode_slug,
+      holder: cursorHolder,
+      items: batchedItems.filter((item) => item.holder === cursorHolder),
+    }
+  })
   return {
     holder,
     task: task?.key ?? null,
@@ -156,35 +167,21 @@ export async function getContext(selection: ContextHolderSelection) {
   }
 }
 
-async function listOpenCursorContextHolders(session: string, database: Database = db()) {
-  return (await openKeylessCursorsForSession(session, database)).map((cursor) => {
-    const holder = cursorContextHolder(cursor.record_id)
-    return {
-      cursor: cursor.number,
-      project: cursor.project,
-      workflow: cursor.workflow_slug,
-      mode: cursor.mode_slug,
-      holder,
-      items: listContextItems(holder, database),
-    }
-  })
-}
-
 /** Reads one item's current revision on a resolved holder for compare-and-set writes. */
 export async function contextItemRevision(
   selection: ContextHolderSelection & { id: string },
 ): Promise<string | undefined> {
   const { holder } = await resolveContextHolder(selection)
-  return getContextItem(holder, selection.id)?.revision
+  return (await getContextItem(holder, selection.id))?.revision
 }
 
-export function sessionContextItems(session: string, database: Database) {
+export async function sessionContextItems(session: string, database: Database) {
   const holder = `session:${session}`
   return listContextItems(holder, database)
 }
 
 /** Read one task's context items through the document-store owner. */
-export function taskContextItems(task: ContextTaskIdentity, database: Database) {
+export async function taskContextItems(task: ContextTaskIdentity, database: Database) {
   const holder = taskContextHolder(task.record_id)
   return listContextItems(holder, database)
 }
@@ -215,7 +212,7 @@ export async function clearTaskHolderForLifecycle(input: {
 }) {
   assertWorkerDocStoreWriteAllowed('clearTaskHolderForLifecycle')
   const holder = taskContextHolder(input.holderId)
-  const items = listContextItems(holder)
+  const items = await listContextItems(holder)
   if (input.dryRun) return { holder, removed: items.length, alreadyAbsent: 0 }
   writableDb()
   const result = await applyRecordWriteAuthority({
@@ -229,7 +226,6 @@ export async function clearTaskHolderForLifecycle(input: {
       let alreadyAbsent = 0
       for (const item of items) {
         const hosted = await client.remove(item.recordId, {})
-        if (!removeLocalContextItem(holder, item.id)) continue
         if (hosted.removed) removed++
         else alreadyAbsent++
       }
@@ -240,8 +236,8 @@ export async function clearTaskHolderForLifecycle(input: {
 }
 
 /** Lists one scope of stored context through the context service read boundary. */
-export function scopeContextHolders(holderKind: ContextHolderKind, database: Database = db()) {
-  return listContextHolders(holderKind, database).map(({ holder, holderId, updatedAt, items }) => ({
+export async function scopeContextHolders(holderKind: ContextHolderKind, database: Database = db()) {
+  return (await listContextHolders(holderKind, database)).map(({ holder, holderId, updatedAt, items }) => ({
     holder,
     holderId,
     updatedAt,
@@ -249,8 +245,8 @@ export function scopeContextHolders(holderKind: ContextHolderKind, database: Dat
   }))
 }
 
-export function sessionContextHolders(database: Database) {
-  return scopeContextHolders('session', database).map(({ holder, holderId, updatedAt, items }) => ({
+export async function sessionContextHolders(database: Database) {
+  return (await scopeContextHolders('session', database)).map(({ holder, holderId, updatedAt, items }) => ({
     holder,
     session: holderId,
     updatedAt,
@@ -268,7 +264,7 @@ async function dropSessionContextItemForLifecycle(input: {
   assertWorkerDocStoreWriteAllowed('dropSessionContextItemForLifecycle')
   const holder = `session:${input.session}`
   writableDb()
-  const item = getContextItem(holder, input.id)
+  const item = await getContextItem(holder, input.id)
   if (!item) return { holder, id: input.id, outcome: 'already-absent' as const }
   const result = await applyRecordWriteAuthority({
     local: () =>
@@ -297,8 +293,6 @@ async function dropSessionContextItemForLifecycle(input: {
         checkoutProject: project,
       })
       const hosted = await client.remove(item.recordId, {})
-      const dropped = removeLocalContextItem(holder, input.id, input.localExpectedRevision)
-      if (!dropped) return 'already-absent' as const
       return hosted.removed ? ('dropped' as const) : ('already-absent' as const)
     },
   })
@@ -308,7 +302,7 @@ async function dropSessionContextItemForLifecycle(input: {
 type SessionContextDropOutcome = 'dropped' | 'already-absent' | 'would-drop' | 'failed'
 
 export type SessionContextDropResult = {
-  item: ReturnType<typeof sessionContextItems>[number]
+  item: Awaited<ReturnType<typeof sessionContextItems>>[number]
   outcome: SessionContextDropOutcome
   error: string | null
 }
@@ -316,7 +310,7 @@ export type SessionContextDropResult = {
 /** The single lifecycle loop for dropping selected items from one session holder. */
 export async function dropSessionContextItemsForLifecycle(input: {
   session: string
-  items: ReturnType<typeof sessionContextItems>
+  items: Awaited<ReturnType<typeof sessionContextItems>>
   reason: string
   dryRun?: boolean
 }): Promise<SessionContextDropResult[]> {
@@ -407,7 +401,7 @@ export async function setContextItem(
   const written = await applyRecordWriteAuthority({
     local: () => setLocalContextItem(localInput),
     hosted: async () => {
-      const current = getContextItem(holder, input.id)
+      const current = await getContextItem(holder, input.id)
       const client = await hostedContextItemClient(holder, contextTaskOwner(task ?? undefined))
       const address = splitContextHolder(holder)
       const result = await client.upsert({
@@ -422,12 +416,13 @@ export async function setContextItem(
         target: item.target,
         expectedRevision: input.expectedRevision,
       })
-      return setLocalContextItem({
-        ...localInput,
+      return {
+        ...item,
         recordId: result.id,
+        revision: result.updatedAt,
         createdAt: result.createdAt,
         updatedAt: result.updatedAt,
-      })
+      }
     },
   })
   const warning = task ? await taskCursorWarning(task) : null
@@ -452,7 +447,7 @@ export async function dropContextItem(
   assertWorkerDocStoreWriteAllowed('dropContextItem')
   const { holder, task } = await resolveContextHolder(input)
   writableDb()
-  const item = getContextItem(holder, input.id)
+  const item = await getContextItem(holder, input.id)
   if (!item)
     return {
       holder,
@@ -472,10 +467,9 @@ export async function dropContextItem(
       const result = await client.remove(item.recordId, {
         expectedRevision: input.expectedRevision,
       })
-      const removed = removeLocalContextItem(holder, input.id, item.revision)
       return {
-        removed: result.removed && removed,
-        alreadyAbsent: !result.removed && removed,
+        removed: result.removed,
+        alreadyAbsent: !result.removed,
       }
     },
   })

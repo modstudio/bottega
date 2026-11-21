@@ -59,6 +59,10 @@ import {
 import { type RecordPortClient, recordPortClient } from './record-api-client-port.ts'
 import { RecordApiRequestError, responseRecord } from './record-api-client-response.ts'
 import type { RecordContextItemInput } from './record-context-items.ts'
+import {
+  type RecordContextItemClient,
+  recordContextItemReadClient,
+} from './record-api-client-context-items.ts'
 
 export { recordAuthRefusal, recordAuthToken } from './record-api-client-error.ts'
 export { RecordApiRequestError } from './record-api-client-response.ts'
@@ -248,7 +252,8 @@ export type RecordApiClient = ProjectIdentityClient &
   RecordCountsClient &
   ReturnType<typeof recordModerationClient> &
   ReturnType<typeof recordOutsideClient> &
-  ReturnType<typeof recordConfigAccessClient> & {
+  ReturnType<typeof recordConfigAccessClient> &
+  RecordContextItemClient & {
     upsertContextItem(
       input: RecordContextItemInput,
       destination: RecordWriteDestination,
@@ -756,6 +761,7 @@ export function recordApiClientOver(request: RecordClientRequest): RecordApiClie
     ...recordSnapshotAndPublicDocClient(request),
     ...recordDocReadClient(request),
     ...recordDocWriteClient(request),
+    ...recordContextItemReadClient(request),
     upsertContextItem: (input, destination) =>
       request('/v1/context-items', {
         method: 'PUT',

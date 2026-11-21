@@ -1,5 +1,5 @@
 // concern: record-context-items
-/** Owns tenant-bound hosted context-item mutations. */
+/** Owns tenant-bound hosted context-item reads and mutations. */
 import type { SQL } from 'bun'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { ContextHolderKind, ContextItemKind } from '../../../shared/context-item-vocabulary.ts'
@@ -39,6 +39,72 @@ function output(row: Record<string, unknown>) {
     createdAt: recordIso(row.created_at),
     updatedAt: recordIso(row.updated_at),
   }
+}
+
+function readOutput(row: Record<string, unknown>) {
+  return {
+    recordId: String(row.id),
+    holder: `${String(row.holder_kind)}:${String(row.holder_id)}`,
+    id: String(row.slug),
+    kind: String(row.kind) as ContextItemKind,
+    body: String(row.body),
+    source: String(row.source),
+    questionNumber: row.question_number === null ? null : Number(row.question_number),
+    target: row.target === null ? null : String(row.target),
+    revision: recordIso(row.updated_at),
+    createdAt: recordIso(row.created_at),
+    updatedAt: recordIso(row.updated_at),
+  }
+}
+
+export type RecordContextItem = ReturnType<typeof readOutput>
+
+export async function readRecordContextItems(
+  input: Tenant & { holders: Array<{ holderKind: ContextHolderKind; holderId: string }>; slug?: string },
+): Promise<RecordContextItem[]> {
+  return tenant(input, async (tx) => {
+    const groups = await Promise.all(
+      input.holders.map(async ({ holderKind, holderId }) => {
+        const rows = input.slug
+          ? ((await tx`
+              SELECT * FROM context_item WHERE space_id=${input.spaceId}::uuid
+                AND holder_kind=${holderKind} AND holder_id=${holderId} AND slug=${input.slug}
+              ORDER BY slug
+            `) as Record<string, unknown>[])
+          : ((await tx`
+              SELECT * FROM context_item WHERE space_id=${input.spaceId}::uuid
+                AND holder_kind=${holderKind} AND holder_id=${holderId}
+              ORDER BY slug
+            `) as Record<string, unknown>[])
+        return rows.map(readOutput)
+      }),
+    )
+    return groups.flat()
+  })
+}
+
+export async function readRecordContextHolders(
+  input: Tenant & { holderKind: ContextHolderKind },
+) {
+  return tenant(input, async (tx) => {
+    const rows = (await tx`
+      SELECT * FROM context_item WHERE space_id=${input.spaceId}::uuid
+        AND holder_kind=${input.holderKind}
+      ORDER BY holder_id,slug
+    `) as Record<string, unknown>[]
+    return [...Map.groupBy(rows, (row) => String(row.holder_id))].map(([holderId, items]) => ({
+      holder: `${input.holderKind}:${holderId}`,
+      holderId,
+      updatedAt: items.reduce(
+        (latest, row) => {
+          const value = recordIso(row.updated_at)
+          return value > latest ? value : latest
+        },
+        recordIso(items[0]!.updated_at),
+      ),
+      items: items.map(readOutput),
+    }))
+  })
 }
 
 export function assertRecordContextItemRevision(
