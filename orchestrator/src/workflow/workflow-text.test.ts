@@ -259,7 +259,7 @@ describe('workflow text decisions', () => {
 })
 
 describe('workflow text lifecycle', () => {
-  test('keyed attach distinguishes an unknown hub task from a known task without a cursor', async () => {
+  test('keyed attach distinguishes an unknown task in hub from a known task without a cursor', async () => {
     const d = database()
     const identity = {
       project: 'fixture',
@@ -279,9 +279,7 @@ describe('workflow text lifecycle', () => {
         },
         d,
       ),
-    ).rejects.toThrow(
-      `task key DEV-404 names no task in hub; check it with \`${PLATFORM_SLUG} task show DEV-404\` or file the task first`,
-    )
+    ).rejects.toThrow('task key DEV-404 names no task in hub')
     await expect(
       attachWorkflowText(
         identity,

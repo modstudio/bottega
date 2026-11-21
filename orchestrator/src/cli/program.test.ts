@@ -1,13 +1,14 @@
 import { expect, spyOn, test } from 'bun:test'
 import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
-import { CommanderError } from 'commander'
+import { type Command, CommanderError } from 'commander'
 import { FROZEN_ENV_NAMES } from '../../../shared/brand.ts'
 import type { PublicCommandInvocation } from '../../../shared/commander-public-path.ts'
 import { CALLER_ENVIRONMENT_KEY, recordCallerToken } from '../../../shared/record-caller.ts'
 import { refusal } from '../../../shared/refusal.ts'
 import { readStoreLockRefusalsSince } from '../../../shared/store-lock-refusal-log.ts'
 import { dir } from '../../test/fixtures/store.ts'
+import { write } from '../commands/support.ts'
 import {
   MIGRATION_DRAIN_REFUSAL_EXIT_CODE,
   MigrationDrainRefusalError,
@@ -27,7 +28,6 @@ import {
   run,
   usesReadOnlyStoreHandle,
 } from './program.ts'
-import { write } from '../commands/support.ts'
 
 test('the outer CLI classifies every informational invocation without consulting the store', () => {
   for (const argv of [
@@ -250,7 +250,8 @@ test('run drains output written before a command action throws', async () => {
   } finally {
     stdout.mockRestore()
     error.mockRestore()
-    program.commands.splice(program.commands.indexOf(command), 1)
+    const commands = program.commands as Command[]
+    commands.splice(commands.indexOf(command), 1)
   }
 })
 

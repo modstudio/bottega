@@ -345,6 +345,16 @@ function requireCheckout(
   return checkout
 }
 
+function requireCommandArtifactCheckout(
+  required: boolean,
+  flag: string,
+  row: { cwd: string; head_commit: string | null },
+  identity: CursorIdentity,
+  resolveCheckout: FloorEvidencePorts['resolveCheckout'],
+): void {
+  if (required) requireCheckout(flag, row.cwd, row.head_commit, identity, resolveCheckout)
+}
+
 async function gatherGate(
   recordId: string,
   identity: CursorIdentity,
@@ -595,8 +605,7 @@ async function resolveArtifact(
     if (!row) throw new Error(`${unresolvedFlag} does not exist`)
     const flag = `--artifact ${ref.kind}:${row.number}`
     if (row.kind !== ref.kind) throw new Error(`${flag} is recorded as ${row.kind}:${row.number}`)
-    if (requireCommandCheckout)
-      requireCheckout(flag, row.cwd, row.head_commit, identity, resolveCheckout)
+    requireCommandArtifactCheckout(requireCommandCheckout, flag, row, identity, resolveCheckout)
     return { ref: raw, exists: true }
   }
   if (ref.kind === 'run') {
