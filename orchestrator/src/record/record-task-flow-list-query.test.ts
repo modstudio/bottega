@@ -2,7 +2,7 @@ import { expect, test } from 'bun:test'
 import { taskFlowStageListQuerySchema } from './record-task-flow-contract.ts'
 import { taskFlowStageListSql } from './record-task-flow-list-query.ts'
 
-test('workflowKeys is ANDed with existing stage-list predicates', () => {
+test('workflowKeys combines with existing stage-list predicates by AND', () => {
   const input = taskFlowStageListQuerySchema.parse({
     projectId: '00000000-0000-4000-8000-000000000001',
     states: ['running'],
