@@ -640,6 +640,12 @@ describe('orch MCP', () => {
           project,
         }
       },
+      hubTaskRecordLookup: async (recordId) => ({
+        key: recordId.replace(/^task-/, ''),
+        record_id: recordId,
+        project,
+        source: 'local',
+      }),
       workflowTextDocuments: {
         async list() {
           return []

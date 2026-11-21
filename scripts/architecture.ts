@@ -110,6 +110,10 @@ const concerns = {
 const declaredModules: ArchitectureModule[] = [
   ...questionCallerModules,
   module('orchestrator/src/outcome-line.ts', []),
+  module('orchestrator/src/workflow/project-task-list.ts', [
+    './task-read-port.ts',
+    './workflow-task-reference.ts',
+  ]),
   module('orchestrator/src/workflow/task-flow-store.ts', [
     'bun:sqlite',
     '../record/record-task-flow-contract.ts',
