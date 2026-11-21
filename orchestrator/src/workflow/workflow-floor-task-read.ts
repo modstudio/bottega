@@ -50,6 +50,7 @@ type HubTaskReadJson = {
   /** The tracker read's own comment ids, present on a fresh tracker read. */
   tracker_comment_ids?: Array<number | string>
   tracker_comments_verifiable?: boolean
+  tracker_updated_at?: string | null
 }
 
 /** The ids a task read carries, dropping the entries that name no comment. */
@@ -69,7 +70,10 @@ export function hubTaskReadFromJson(key: string, parsed: unknown): HubTaskRead {
   return {
     recordId: read.task.record_id,
     key: read.task.key,
-    updatedAt: read.task.updated_at ?? null,
+    updatedAt:
+      'tracker_updated_at' in read
+        ? (read.tracker_updated_at ?? null)
+        : (read.task.updated_at ?? null),
     status: read.task.status ?? null,
     statusCategory: read.task.status_category ?? null,
     commentIds: carriedCommentIds(

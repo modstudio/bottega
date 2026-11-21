@@ -353,7 +353,7 @@ export async function updateTaskDocument(
       role,
       title: changes.title ?? current.title,
       body: changes.body ?? current.body,
-      version: documentVersion(),
+      version: changes.body === undefined ? current.version : documentVersion(),
       created_at: current.created_at,
       updated_at: at,
       deleted_at: null,

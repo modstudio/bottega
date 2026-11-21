@@ -165,6 +165,42 @@ describe('task documents', () => {
     expect(Date.parse(mirrored.updated_at)).toBeGreaterThan(Date.parse(mirrored.created_at))
   })
 
+  test("a hosted title-only update keeps the mirror's version", async () => {
+    const taskKey = 'WRK-2561'
+    const taskRecordId = seed(taskKey, 'workshop')
+    const documentId = Bun.randomUUIDv7()
+    const createdAt = '2026-01-01T00:00:00.000Z'
+    writeTransaction((conn) =>
+      conn
+        .query(
+          `INSERT INTO task_document
+            (record_id,task_key,task_record_id,number,role,title,body,version,created_at,updated_at)
+           VALUES (?, ?, ?, 1, NULL, 'Plan', 'body', 'version-before', ?, ?)`,
+        )
+        .run(documentId, taskKey, taskRecordId, createdAt, createdAt),
+    )
+    const document = getTaskDocument(documentId)
+    const fetch = async (_input: string, init?: RequestInit) => {
+      const changes = JSON.parse(String(init?.body)) as Array<{ id: string }>
+      return Response.json(changes.map(({ id }) => ({ id, status: 'applied' })))
+    }
+
+    const updated = await updateTaskDocument(
+      documentId,
+      { title: 'Renamed', expectedVersion: document.version },
+      {
+        hosted: {
+          baseUrl: 'https://hub.example.test',
+          token: 'test',
+          fetch,
+        },
+      },
+    )
+
+    expect(updated.title).toBe('Renamed')
+    expect(getTaskDocument(documentId).version).toBe(document.version)
+  })
+
   test('document creation still needs the hosted record while offline', async () => {
     const id = seed('GAM-71', 'gamma')
     await expect(

@@ -59,7 +59,7 @@ import {
 import {
   requireAttachedTextFreshness,
   requireMutableArtifactFreshness,
-  timedTaskFreshnessNotice,
+  TIMED_FRESHNESS as FRESHNESS,
 } from './workflow-floor-artifact-freshness.ts'
 import { gitText, productionResolveCheckout } from './workflow-floor-evidence-checkout.ts'
 import { positiveEvidenceId } from './workflow-floor-evidence-input.ts'
@@ -516,7 +516,7 @@ async function resolveTaskArtifact(
   if (artifactTaskIsNotCursorTask(identity, { key: ref.key, recordId: task.recordId }))
     throw new Error(`--artifact ${raw} task is not this cursor's ${identity.workflowKey}`)
   if (ref.kind === 'task') {
-    const notice = timedTaskFreshnessNotice(task.updatedAt, identity.stepActivatedAt)
+    const notice = FRESHNESS.notice(FRESHNESS.task, task.updatedAt, identity.stepActivatedAt)
     return { ref: raw, exists: task.key === ref.key, ...(notice ? { notice } : {}) }
   }
   return resolveTaskCommentArtifact(ref, raw, task, identity.stepActivatedAt)

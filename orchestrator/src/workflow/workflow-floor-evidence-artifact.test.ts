@@ -9,6 +9,7 @@ import {
   projectId,
   unlinkedIdentity,
 } from './workflow-floor-evidence.fixture.ts'
+import { hubTaskReadFromJson } from './workflow-floor-task-read.ts'
 
 test('a bare number still refuses a run bound to another cursor', async () => {
   const d = database()
@@ -154,6 +155,29 @@ test('tasks must change during the active step when their tracker reports an upd
   ).toMatchObject({
     action: 'allow',
     notices: ['freshness unchecked: the tracker returns no task update time'],
+  })
+})
+
+test('a fresh tracker task without its own update time reports freshness unchecked', async () => {
+  const d = database()
+  const trackerRead = hubTaskReadFromJson('DEV-977', {
+    task: {
+      record_id: 'task-DEV-977',
+      key: 'DEV-977',
+      updated_at: '2026-09-02',
+      status: 'done',
+      status_category: 'done',
+    },
+    tracker_updated_at: null,
+    tracker_comment_ids: [],
+    tracker_comments_verifiable: true,
+  })
+
+  const evidence = await gather(d, { artifacts: ['task:DEV-977'] }, { readTask: () => trackerRead })
+  expect(evidence.artifacts?.[0]?.artifact).toEqual({
+    ref: 'task:DEV-977',
+    exists: true,
+    notice: 'freshness unchecked: the tracker returns no task update time',
   })
 })
 
