@@ -27,7 +27,11 @@ import {
 } from './task.ts'
 import { hostedGetTask } from './task-client.ts'
 import { taskBodyVersion } from './task-detail.ts'
-import { createTaskDocument, getTaskDocument, updateTaskDocument } from './task-document.ts'
+import {
+  createTaskDocument,
+  getLocalTaskDocument,
+  updateTaskDocument,
+} from './task-document.ts'
 
 const spaceId = '01990000-0000-7000-8000-000000002520'
 const userId = '01990000-0000-7000-8000-000000002521'
@@ -426,8 +430,8 @@ test('hosted document create demotes a role holder left stale by a hosted clear'
     options,
   )
 
-  expect(getTaskDocument(first.id).role).toBeNull()
-  expect(getTaskDocument(second.id).role).toBe('handoff')
+  expect(getLocalTaskDocument(first.id).role).toBeNull()
+  expect(getLocalTaskDocument(second.id).role).toBe('handoff')
   expect(
     (await hostedGetTask(task.key, options.hosted)).documents.filter(
       (document) => document.role === 'handoff',

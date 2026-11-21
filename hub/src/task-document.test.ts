@@ -65,7 +65,7 @@ describe('task documents', () => {
     ).rejects.toThrow(`task document ${document.id} changed since version ${document.version}`)
 
     await deleteTaskDocument(document.id)
-    expect(() => getTaskDocument(document.id)).toThrow(`no task document ${document.id}`)
+    await expect(getTaskDocument(document.id)).rejects.toThrow(`no task document ${document.id}`)
   })
 
   test('never reuses document numbers after deletion', async () => {
@@ -120,7 +120,7 @@ describe('task documents', () => {
       (error: unknown) => error,
     )
     expect((updateError as Error).message).toBe(refusal)
-    expect(getTaskDocument(other.id)).toEqual(other)
+    expect(await getTaskDocument(other.id)).toEqual(other)
 
     expect((await updateTaskDocument(holder.id, { role: 'handoff' })).role).toBe('handoff')
     expect((await updateTaskDocument(holder.id, { role: null })).role).toBeNull()
@@ -140,7 +140,7 @@ describe('task documents', () => {
         )
         .run(documentId, taskKey, taskRecordId, createdAt, createdAt),
     )
-    const document = getTaskDocument(documentId)
+    const document = await getTaskDocument(documentId)
     const fetch = async (_input: string, init?: RequestInit) => {
       const changes = JSON.parse(String(init?.body)) as Array<{ id: string }>
       return Response.json(changes.map(({ id }) => ({ id, status: 'applied' })))
@@ -157,7 +157,7 @@ describe('task documents', () => {
         },
       },
     )
-    const mirrored = getTaskDocument(documentId)
+    const mirrored = await getTaskDocument(documentId)
 
     expect(mirrored.body).toBe('after')
     expect(mirrored.version).toBe(updated.version)
@@ -179,7 +179,7 @@ describe('task documents', () => {
         )
         .run(documentId, taskKey, taskRecordId, createdAt, createdAt),
     )
-    const document = getTaskDocument(documentId)
+    const document = await getTaskDocument(documentId)
     const fetch = async (_input: string, init?: RequestInit) => {
       const changes = JSON.parse(String(init?.body)) as Array<{ id: string }>
       return Response.json(changes.map(({ id }) => ({ id, status: 'applied' })))
@@ -198,7 +198,7 @@ describe('task documents', () => {
     )
 
     expect(updated.title).toBe('Renamed')
-    expect(getTaskDocument(documentId).version).toBe(document.version)
+    expect((await getTaskDocument(documentId)).version).toBe(document.version)
   })
 
   test('document creation still needs the hosted record while offline', async () => {

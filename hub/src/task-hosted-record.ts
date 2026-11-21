@@ -12,7 +12,7 @@ import {
 } from './push-contract.ts'
 import type { Attribution } from './task-attribution.ts'
 import { hostedGetTask, hostedListTasks, isMissingHostedTask } from './task-client.ts'
-import type { TaskDocumentSummary } from './task-document.ts'
+import type { TaskDocumentSummary } from './task-document-types.ts'
 import { formatTaskDocumentLabel } from './task-document-label.ts'
 import { documentRole } from './task-document-role.ts'
 import { missingTaskError, type TaskScope } from './task-identity.ts'

@@ -7,7 +7,6 @@ import { db, nowIso, writeTransaction } from './db.ts'
 import { sendHostedChanges } from './hosted-change-sender.ts'
 import { applyHostedWriteLocally } from './hosted-local-apply.ts'
 import { taskDocumentIdentityByNumber } from './identity/identity.ts'
-import { drainHostedEditOutbox, queueHostedDocumentDelete } from './offline-task-edits.ts'
 import {
   HOSTED_DOCUMENT_TABLE,
   type HostedPushChange,
@@ -15,6 +14,10 @@ import {
 } from './push-contract.ts'
 import { hostedCreateDocument, hostedGetTask } from './task-client.ts'
 import { demoteOtherTaskDocumentRoleHolders } from './task-document-demotion.ts'
+import {
+  resolveHostedTaskDocument,
+  resolveHostedTaskDocuments,
+} from './task-document-hosted.ts'
 import { formatTaskDocumentLabel, parseTaskDocumentLabel } from './task-document-label.ts'
 import {
   type DocumentRoleCandidate,
@@ -22,6 +25,7 @@ import {
   documentRoleRefusal,
   type TaskDocumentRole,
 } from './task-document-role.ts'
+import type { TaskDocument, TaskDocumentSummary } from './task-document-types.ts'
 
 import {
   missingTaskRecordLine,
@@ -36,24 +40,7 @@ import {
   taskWriteMode,
 } from './task-write-destination.ts'
 
-export type TaskDocumentSummary = {
-  id: string
-  number: number
-  label: string
-  task_key: string
-  task_record_id: string
-  role: TaskDocumentRole | null
-  title: string
-  updated_at: string
-  body?: string
-  version?: string
-  created_at?: string
-}
-export type TaskDocument = TaskDocumentSummary & {
-  body: string
-  version: string
-  created_at: string
-}
+export type { TaskDocument, TaskDocumentSummary } from './task-document-types.ts'
 
 type DocumentTask = {
   record_id: string
@@ -83,7 +70,7 @@ function withDocumentLabel<T extends Omit<TaskDocumentSummary, 'label'>>(
   return { ...row, label: formatTaskDocumentLabel(row.task_key, row.number) }
 }
 
-export function listTaskDocuments(key: string, scope: TaskScope = {}): TaskDocumentSummary[] {
+export function listLocalTaskDocuments(key: string, scope: TaskScope = {}): TaskDocumentSummary[] {
   const upper = key.toUpperCase()
   const recordId = taskRecordId(upper, scope)
   return db()
@@ -95,7 +82,7 @@ export function listTaskDocuments(key: string, scope: TaskScope = {}): TaskDocum
     .map(withDocumentLabel)
 }
 
-export function getTaskDocument(value: string, scope: TaskScope = {}): TaskDocument {
+export function getLocalTaskDocument(value: string, scope: TaskScope = {}): TaskDocument {
   const id = documentRecordId(value, scope)
   const document = db()
     .query<Omit<TaskDocument, 'label'>, [string]>(
@@ -105,6 +92,22 @@ export function getTaskDocument(value: string, scope: TaskScope = {}): TaskDocum
     .get(id)
   if (!document) throw new Error(`no task document ${id}`)
   return withDocumentLabel(document)
+}
+
+export async function listTaskDocuments(
+  key: string,
+  scope: TaskScope = {},
+  hosted?: HostedTaskWriteOptions,
+): Promise<TaskDocumentSummary[]> {
+  return (await resolveHostedTaskDocuments(key, scope, hosted)) ?? listLocalTaskDocuments(key, scope)
+}
+
+export async function getTaskDocument(
+  value: string,
+  scope: TaskScope = {},
+  hosted?: HostedTaskWriteOptions,
+): Promise<TaskDocument> {
+  return (await resolveHostedTaskDocument(value, scope, hosted))?.document ?? getLocalTaskDocument(value, scope)
 }
 
 type CreateDocumentInput = { task: string; title: string; body?: string; role?: string }
@@ -268,7 +271,7 @@ async function createHostedTaskDocument(
           .run(hostedNumber + 1, task.record_id)
       }),
   )
-  return applied ? getTaskDocument(hosted.id) : document
+  return applied ? getLocalTaskDocument(hosted.id) : document
 }
 
 export async function createTaskDocument(
@@ -291,10 +294,17 @@ function assertBodyUpdateVersion(body: string | undefined, expectedVersion: stri
 }
 
 function applyHostedDocumentUpdateLocally(document: TaskDocument): boolean {
-  return applyHostedWriteLocally(
+  let updated = false
+  const applied = applyHostedWriteLocally(
     `${document.label} was updated in the hosted record; its local copy will arrive on the next record pull`,
     () =>
       writeTransaction((conn) => {
+        const present = conn
+          .query<{ found: number }, [string]>(
+            `SELECT 1 found FROM task_document WHERE record_id=?`,
+          )
+          .get(document.id)
+        if (!present) return
         if (document.role)
           demoteOtherTaskDocumentRoleHolders(
             conn,
@@ -302,7 +312,7 @@ function applyHostedDocumentUpdateLocally(document: TaskDocument): boolean {
             document.role,
             document.id,
           )
-        conn
+        const result = conn
           .query(
             `UPDATE task_document
                 SET role = ?, title = ?, body = ?, version = ?, updated_at = ?
@@ -316,8 +326,10 @@ function applyHostedDocumentUpdateLocally(document: TaskDocument): boolean {
             document.updated_at,
             document.id,
           )
+        updated = result.changes === 1
       }),
   )
+  return applied && updated
 }
 
 export async function updateTaskDocument(
@@ -330,21 +342,20 @@ export async function updateTaskDocument(
   },
   options: { hosted?: HostedTaskWriteOptions; scope?: TaskScope } = {},
 ): Promise<TaskDocument> {
-  const current = getTaskDocument(value, options.scope),
-    id = current.id
-  const task = taskByRecordId<DocumentTask>(current.task_record_id)
-  if (task.source !== 'local') throw new Error(`task ${current.task_key} is not local`)
   const expectedVersion = changes.expectedVersion
   assertBodyUpdateVersion(changes.body, expectedVersion)
   const at = nowIso()
-  if (taskWriteMode(task.project, options.hosted) === 'hosted-configured') {
+  const hostedContext = await resolveHostedTaskDocument(value, options.scope, options.hosted)
+  if (hostedContext) {
+    const current = hostedContext.document
+    const id = current.id
     if (!expectedVersion)
       throw new Error(
         `a hosted document update requires --version from \`${PLATFORM_SLUG} task doc show\``,
       )
     const role = changes.role === undefined ? current.role : documentRole(changes.role)
     const writeOptions = {
-      ...hostedTaskWriteOptions(task.project, options.hosted),
+      ...hostedTaskWriteOptions(hostedContext.project, options.hosted),
       conflictRemedy: `${PLATFORM_SLUG} task show ${current.task_key}`,
     }
     if (changes.role !== undefined && role)
@@ -354,7 +365,7 @@ export async function updateTaskDocument(
       number: current.number,
       task_key: current.task_key,
       task_id: current.task_record_id,
-      project_name: task.project,
+      project_name: hostedContext.project,
       projectId: undefined,
       role,
       title: changes.title ?? current.title,
@@ -380,8 +391,13 @@ export async function updateTaskDocument(
       number: current.number,
     })
     const applied = applyHostedDocumentUpdateLocally(document)
-    return applied ? getTaskDocument(id) : document
+    return applied ? getLocalTaskDocument(id) : document
   }
+  const current = getLocalTaskDocument(value, options.scope),
+    id = current.id
+  const task = taskByRecordId<DocumentTask>(current.task_record_id)
+  if (task.source !== 'local') throw new Error(`task ${current.task_key} is not local`)
+  taskWriteMode(task.project, options.hosted)
   writeTransaction((conn) => {
     const row = conn
       .query<Omit<TaskDocument, 'label'>, [string]>(
@@ -420,21 +436,44 @@ export async function updateTaskDocument(
       .query(`UPDATE task_document SET title = ?, role = ?, updated_at = ? WHERE record_id = ?`)
       .run(changes.title ?? row.title, nextRole, at, id)
   })
-  return getTaskDocument(id)
+  return getLocalTaskDocument(id)
 }
 
 export async function deleteTaskDocument(
   value: string,
   options: { hosted?: HostedTaskWriteOptions; scope?: TaskScope } = {},
 ): Promise<TaskDocument> {
-  const removed = getTaskDocument(value, options.scope)
+  const hostedContext = await resolveHostedTaskDocument(value, options.scope, options.hosted)
+  if (hostedContext) {
+    const removed = hostedContext.document
+    const writeOptions = {
+      ...hostedTaskWriteOptions(hostedContext.project, options.hosted),
+      conflictRemedy: `${PLATFORM_SLUG} task show ${removed.task_key}`,
+    }
+    await sendHostedChanges(
+      'the record',
+      [[
+        {
+          table: HOSTED_DOCUMENT_TABLE,
+          id: removed.id,
+          op: 'delete',
+          expected_revision: removed.version,
+        },
+      ]],
+      writeOptions,
+    )
+    applyHostedWriteLocally(
+      `${removed.label} was deleted in the hosted record; its local copy will disappear on the next record pull`,
+      () => writeTransaction((conn) => conn.query(`DELETE FROM task_document WHERE record_id=?`).run(removed.id)),
+    )
+    return removed
+  }
+  const removed = getLocalTaskDocument(value, options.scope)
   const id = removed.id
   const task = taskByRecordId<DocumentTask>(removed.task_record_id)
   if (task.source !== 'local') throw new Error(`task ${removed.task_key} is not local`)
-  const mode = taskWriteMode(task.project, options.hosted)
-  const hosted = mode === 'hosted-configured'
-  const at = nowIso()
-  const result = writeTransaction((conn) => {
+  taskWriteMode(task.project, options.hosted)
+  return writeTransaction((conn) => {
     const row = conn
       .query<Omit<TaskDocument, 'label'>, [string]>(
         `SELECT record_id AS id, number, task_key, task_record_id, role, title, body, version, created_at, updated_at
@@ -442,10 +481,7 @@ export async function deleteTaskDocument(
       )
       .get(id)
     if (!row) throw new Error(`no task document ${id}`)
-    if (hosted) queueHostedDocumentDelete(conn, id, task.project, at)
     conn.query(`DELETE FROM task_document WHERE record_id = ?`).run(id)
     return withDocumentLabel(row)
   })
-  if (hosted) await drainHostedEditOutbox(at, options.hosted)
-  return result
 }
