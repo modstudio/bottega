@@ -1,9 +1,7 @@
 // concern: workflow-task-open-with-notes-floor
 /** Decides the partial-close task and note floor from already gathered facts. */
 
-import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-
-export type PullRequestUnavailable =
+type PullRequestUnavailable =
   | { kind: 'unrecorded'; reason: string; branch: string }
   | { kind: 'read-error'; reason: string }
 
@@ -13,15 +11,17 @@ export type PullRequestRequirementEvidence = {
   pullRequestUnavailable?: PullRequestUnavailable
 }
 
-export function pullRequestRequirement(task: PullRequestRequirementEvidence): {
+export function pullRequestRequirement(
+  task: PullRequestRequirementEvidence,
+  platformSlug: string,
+): {
   met: boolean
   taskFailure: string | null
   trackerSuffix: string
 } {
-  if (task.mergedPullRequest === true)
-    return { met: true, taskFailure: null, trackerSuffix: '' }
+  if (task.mergedPullRequest === true) return { met: true, taskFailure: null, trackerSuffix: '' }
   if (task.pullRequestUnavailable?.kind === 'unrecorded') {
-    const unmet = `pull request merge state could not be established: ${task.pullRequestUnavailable.reason}; record it with: ${PLATFORM_SLUG} tree branch landed ${task.pullRequestUnavailable.branch} --pr <number>`
+    const unmet = `pull request merge state could not be established: ${task.pullRequestUnavailable.reason}; record it with: ${platformSlug} tree branch landed ${task.pullRequestUnavailable.branch} --pr <number>`
     return { met: false, taskFailure: unmet, trackerSuffix: `; ${unmet}` }
   }
   if (task.pullRequestUnavailable?.kind === 'read-error') {
@@ -54,24 +54,33 @@ export type TaskOpenWithNotesEvidence = {
   notes?: NoteFloorEvidence[]
 }
 
+function taskFailures(
+  task: TaskOpenWithNotesEvidence['task'],
+  requirePullRequest: boolean,
+  platformSlug: string,
+): string[] {
+  if (!task) return ['the task was not named']
+  const failures: string[] = []
+  if (!task.statusCategory) failures.push(`${task.key}'s status category could not be established`)
+  else if (!['open', 'active', 'review'].includes(task.statusCategory))
+    failures.push(
+      `${task.key} reads back as ${task.status ?? 'unset'} (category ${task.statusCategory ?? 'unset'})`,
+    )
+  if (requirePullRequest) {
+    const pullRequest = pullRequestRequirement(task, platformSlug)
+    if (!pullRequest.met && pullRequest.taskFailure) failures.push(pullRequest.taskFailure)
+  }
+  return failures
+}
+
 export function taskOpenWithNotesFailures(
   evidence: TaskOpenWithNotesEvidence,
   workflowKey?: string,
   requirePullRequest = false,
+  platformSlug = '',
 ): string[] {
-  const failures: string[] = []
+  const failures = taskFailures(evidence.task, requirePullRequest, platformSlug)
   if (!workflowKey) failures.push('the cursor has no task key')
-  if (!evidence.task) failures.push('the task was not named')
-  else if (!evidence.task.statusCategory)
-    failures.push(`${evidence.task.key}'s status category could not be established`)
-  else if (!['open', 'active', 'review'].includes(evidence.task.statusCategory))
-    failures.push(
-      `${evidence.task.key} reads back as ${evidence.task.status ?? 'unset'} (category ${evidence.task.statusCategory ?? 'unset'})`,
-    )
-  if (requirePullRequest && evidence.task) {
-    const pullRequest = pullRequestRequirement(evidence.task)
-    if (!pullRequest.met && pullRequest.taskFailure) failures.push(pullRequest.taskFailure)
-  }
   if (!evidence.notes?.length) failures.push('no note artifact was named')
   for (const note of evidence.notes ?? []) {
     const name = note.label ?? note.reference
@@ -87,6 +96,9 @@ export function taskOpenWithNotesMet(
   evidence: TaskOpenWithNotesEvidence,
   workflowKey?: string,
   requirePullRequest = false,
+  platformSlug = '',
 ): boolean {
-  return taskOpenWithNotesFailures(evidence, workflowKey, requirePullRequest).length === 0
+  return (
+    taskOpenWithNotesFailures(evidence, workflowKey, requirePullRequest, platformSlug).length === 0
+  )
 }

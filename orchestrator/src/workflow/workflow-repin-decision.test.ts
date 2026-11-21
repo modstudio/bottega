@@ -1,11 +1,11 @@
 import { expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import type { Floor, FloorKind } from './workflow-floor.ts'
 import {
   decideWorkflowRepin,
   type RepinClosedStep,
   type RepinStep,
 } from './workflow-repin-decision.ts'
-import type { Floor, FloorKind } from './workflow-floor.ts'
 
 const floor = (kind: FloorKind, overrides: Partial<Floor> = {}): Floor => ({
   kind,

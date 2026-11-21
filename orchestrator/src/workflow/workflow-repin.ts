@@ -21,9 +21,10 @@ import { workflowCursorReference } from './workflow-cursor-format.ts'
 import type { SelectableCursorRow, WorkflowCursorContext } from './workflow-cursor-selection.ts'
 import { cursorComposition } from './workflow-cursor-serve.ts'
 import {
-  closedStepsFromTrail,
+  type ClosedStep,
   type CursorRepinnedEvent,
   type CursorTrailEntry,
+  closedStepsFromTrail,
 } from './workflow-cursor-trail.ts'
 import { decideCloseFloors } from './workflow-floor.ts'
 import {
@@ -37,7 +38,7 @@ const repinSteps = (composition: ReturnType<typeof composeWorkflow>): RepinStep[
   composition.steps.map((step) => ({ slug: step.slug }))
 
 const repinClosedSteps = (
-  trail: readonly CursorTrailEntry[],
+  trail: readonly ClosedStep[],
   oldComposition: ReturnType<typeof composeWorkflow>,
   nextComposition: ReturnType<typeof composeWorkflow>,
 ): RepinClosedStep[] =>

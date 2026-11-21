@@ -1,20 +1,27 @@
 // concern: workflow repin decision
 /** Decides whether an open cursor may adopt the current workflow and catalogue versions. */
 
-import type { Floor } from './workflow-floor.ts'
-
 export type RepinStep = { slug: string }
+type RepinFloor = {
+  kind: string
+  deferrable: boolean
+  expectedExitCode: number
+  expectedStatus: string
+  requirePullRequest: boolean
+  operatorRuling: boolean
+  commandEvidence?: string
+}
 export type RepinClosedStep = {
   ordinal: number
   slug: string
   outcome?: string
-  oldFloors: readonly Floor[]
-  newFloors: readonly Floor[]
+  oldFloors: readonly RepinFloor[]
+  newFloors: readonly RepinFloor[]
 }
 
 export type WorkflowRepinDecision = { action: 'allow' } | { action: 'refuse'; message: string }
 
-function sameFloor(left: Floor, right: Floor): boolean {
+function sameFloor(left: RepinFloor, right: RepinFloor): boolean {
   return (
     left.kind === right.kind &&
     left.deferrable === right.deferrable &&
@@ -26,7 +33,7 @@ function sameFloor(left: Floor, right: Floor): boolean {
   )
 }
 
-function changedFloorAttribute(oldFloor: Floor, newFloor: Floor): string | undefined {
+function changedFloorAttribute(oldFloor: RepinFloor, newFloor: RepinFloor): string | undefined {
   const attributes = [
     'deferrable',
     'expectedExitCode',
@@ -36,6 +43,16 @@ function changedFloorAttribute(oldFloor: Floor, newFloor: Floor): string | undef
     'commandEvidence',
   ] as const
   return attributes.find((attribute) => oldFloor[attribute] !== newFloor[attribute])
+}
+
+function incompatibleFloorRefusal(cursor: number, step: RepinClosedStep): string | undefined {
+  const added = step.newFloors.find(
+    (newFloor) => !step.oldFloors.some((oldFloor) => sameFloor(oldFloor, newFloor)),
+  )
+  if (!added) return undefined
+  const oldKind = step.oldFloors.find((floor) => floor.kind === added.kind)
+  const difference = oldKind ? ` differs in ${changedFloorAttribute(oldKind, added)}` : ' added'
+  return `workflow cursor ${cursor} closed step ${step.ordinal} ${step.slug}${step.outcome ? ` outcome ${step.outcome}` : ''} floor ${added.kind}${difference}; restore the old floor definition in the current catalogue or open a successor with the workflow handoff verb`
 }
 
 export function decideWorkflowRepin(input: {
@@ -80,17 +97,8 @@ export function decideWorkflowRepin(input: {
       }
   }
   for (const step of [...input.closedSteps].sort((a, b) => a.ordinal - b.ordinal)) {
-    const added = step.newFloors.find(
-      (newFloor) => !step.oldFloors.some((oldFloor) => sameFloor(oldFloor, newFloor)),
-    )
-    if (added) {
-      const oldKind = step.oldFloors.find((floor) => floor.kind === added.kind)
-      const difference = oldKind ? ` differs in ${changedFloorAttribute(oldKind, added)}` : ' added'
-      return {
-        action: 'refuse',
-        message: `workflow cursor ${input.cursor} closed step ${step.ordinal} ${step.slug}${step.outcome ? ` outcome ${step.outcome}` : ''} floor ${added.kind}${difference}; restore the old floor definition in the current catalogue or open a successor with the workflow handoff verb`,
-      }
-    }
+    const refusal = incompatibleFloorRefusal(input.cursor, step)
+    if (refusal) return { action: 'refuse', message: refusal }
   }
   if (input.alreadyCurrent)
     return {

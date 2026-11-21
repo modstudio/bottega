@@ -616,7 +616,7 @@ function taskMet(floor: Floor, evidence: ValidatedEvidence): boolean {
       task.statusCategory !== expectedCategory)
   )
     return false
-  return !floor.requirePullRequest || pullRequestRequirement(task).met
+  return !floor.requirePullRequest || pullRequestRequirement(task, PLATFORM_SLUG).met
 }
 
 function floorIsMet(
@@ -635,7 +635,7 @@ function floorIsMet(
       : (evidence.artifacts ?? []).some((entry) => entry.artifact.exists)
   if (floor.kind === 'tracker-transition') return taskMet(floor, evidence)
   if (floor.kind === 'task-open-with-notes')
-    return taskOpenWithNotesMet(evidence, workflowKey, floor.requirePullRequest)
+    return taskOpenWithNotesMet(evidence, workflowKey, floor.requirePullRequest, PLATFORM_SLUG)
   if (floor.kind === 'descendants-closed')
     return (
       taskMet(floor, evidence) &&
@@ -660,7 +660,7 @@ function trackerUnmetMessage(floor: Floor, evidence: ValidatedEvidence): string 
     : floor.expectedStatus
   const unavailable =
     floor.requirePullRequest && evidence.task
-      ? pullRequestRequirement(evidence.task).trackerSuffix
+      ? pullRequestRequirement(evidence.task, PLATFORM_SLUG).trackerSuffix
       : ''
   const expectation = evidence.task
     ? `; ${trackerReadback(evidence.task)}; expected ${expected}${pullRequest}`
@@ -673,7 +673,12 @@ function taskOpenWithNotesUnmetMessage(
   evidence: ValidatedEvidence,
   workflowKey?: string,
 ): string {
-  const failures = taskOpenWithNotesFailures(evidence, workflowKey, floor.requirePullRequest)
+  const failures = taskOpenWithNotesFailures(
+    evidence,
+    workflowKey,
+    floor.requirePullRequest,
+    PLATFORM_SLUG,
+  )
   return `floor task-open-with-notes is unmet: ${failures.join('; ')}; leave ${workflowKey ?? 'the cursor task'} open and retry with --task <KEY> and --artifact note:<record-id|label> for every note named`
 }
 
