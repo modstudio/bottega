@@ -11,7 +11,7 @@ type SuiteCommand = {
 
 // Python unit suites are timing-category peers, but Bun's per-test timeout cannot apply to them.
 export function isBunUnitTestCommand(command: SuiteCommand): boolean {
-  return command.unitTests && command.argv[0] === 'bun'
+  return command.unitTests === true && command.argv[0] === 'bun'
 }
 
 export function checkSuiteTestTimeoutArguments(

@@ -38,7 +38,5 @@ test('requires forwarded package scripts to be one bun test invocation', () => {
   expect(() => checkSingleBunTestScript('bun test src', 'retrieval test')).not.toThrow()
   expect(() =>
     checkSingleBunTestScript('bun test && bun run --cwd ../ui test', 'hub/web test'),
-  ).toThrow(
-    'hub/web test must be a single bun test invocation so CI timeout arguments reach it',
-  )
+  ).toThrow('hub/web test must be a single bun test invocation so CI timeout arguments reach it')
 })

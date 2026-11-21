@@ -17,13 +17,13 @@ import {
   UNIT_TEST_CHECK_CATEGORY,
   uncheckedReasonFromLines,
 } from '../shared/check-execution'
-import { borrowedCheckoutOf, inspectionGitEnv } from '../shared/git'
 import {
   checkSingleBunTestScript,
   checkSuiteTestTimeoutArguments,
   gateTestTimeoutArguments,
   isBunUnitTestCommand,
 } from '../shared/gate-test-timeout.ts'
+import { borrowedCheckoutOf, inspectionGitEnv } from '../shared/git'
 import { findingLine } from '../shared/ratchet.ts'
 import { checkExecutionCardinality } from './check-execution-completeness.ts'
 import {
@@ -242,10 +242,7 @@ function track(
   return child
 }
 
-function checkForwardedPackageTestScript(
-  directory: string,
-  argv: readonly string[],
-): void {
+function checkForwardedPackageTestScript(directory: string, argv: readonly string[]): void {
   if (argv[0] !== 'bun' || argv[1] !== 'run') return
   const cwdIndex = argv.indexOf('--cwd')
   const scriptIndex = cwdIndex < 0 ? 2 : cwdIndex + 2
