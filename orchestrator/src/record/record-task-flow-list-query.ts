@@ -38,6 +38,12 @@ function appendCursor(input: TaskFlowStageListQuery, result: TaskFlowStageListSq
   )
 }
 
+function appendWorkflowKeys(input: TaskFlowStageListQuery, result: TaskFlowStageListSql): void {
+  if (!input.workflowKeys) return
+  result.values.push(input.workflowKeys)
+  result.clauses.push(`s.workflow_key = ANY($${result.values.length})`)
+}
+
 export function taskFlowStageListSql(
   spaceId: string,
   input: TaskFlowStageListQuery,
@@ -65,8 +71,7 @@ export function taskFlowStageListSql(
   if (input.workflow) add((parameter) => `s.workflow=${parameter}`, input.workflow)
   if (input.mode) add((parameter) => `s.mode=${parameter}`, input.mode)
   if (input.workflowKey) add((parameter) => `s.workflow_key=${parameter}`, input.workflowKey)
-  if (input.workflowKeys)
-    add((parameter) => `s.workflow_key = ANY(${parameter}::text[])`, input.workflowKeys)
+  appendWorkflowKeys(input, result)
   if (input.keyless) result.clauses.push("s.workflow_key=''")
   if (input.primaryInstance) result.clauses.push("s.instance_id=''")
   if (input.taskId) add((parameter) => `f.task_id=${parameter}::uuid`, input.taskId)

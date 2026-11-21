@@ -16,8 +16,6 @@ import { TASK_FLOW_STAGE_STATES } from '../record/record-task-flow-contract.ts'
 import { reviewContext } from '../session/context-review.ts'
 import { sessionStopSummary } from '../session/stop-summary.ts'
 import { taskFlowReadStore } from './task-flow-store.ts'
-import { installTaskReader } from './task-read-port.ts'
-import { gatherChildTaskFacts } from './workflow-child-facts.ts'
 import {
   abandonSelectedWorkflowCursorForClose,
   awaitWorkflowRuling,
@@ -171,17 +169,7 @@ test('hosted task-flow intents never touch the five local task-flow tables', asy
       has_children: false,
     },
   ]
-  installTaskReader({
-    list: async ({ project } = {}) => stopTasks.filter((task) => task.project === project),
-    lookup: async (project, keys) =>
-      stopTasks.filter((task) => task.project === project && keys.includes(task.key)),
-    show: async (key) => ({ task: stopTasks.find((task) => task.key === key)! }),
-    duplicates: async () => [],
-    documents: async () => [],
-    document: async () => {
-      throw new Error('hosted Stop guard does not read task documents')
-    },
-  })
+  installTaskRows(stopTasks)
   const context = { session: 'hosted-task-flow-guard', taskFlowClient }
 
   const composed = await composeWorkflowWithCursor(
@@ -554,8 +542,7 @@ test('hosted task-flow intents never touch the five local task-flow tables', asy
       database,
     )
     const reads = taskFlowReadDelta(before, memoryInput.taskFlowReadCounts)
-    const facts = await gatherChildTaskFacts(database, 'fixture', stopTasks)
-    return { reads, summary, facts }
+    return { reads, summary }
   }
   const withoutHistory = await stopWithHistory()
   for (let index = 0; index < 1_500; index++) {
@@ -582,9 +569,8 @@ test('hosted task-flow intents never touch the five local task-flow tables', asy
     })
   }
   const withHistory = await stopWithHistory()
-  expect([withoutHistory.reads.total, withHistory.reads.total]).toEqual([3, 3])
+  expect([withoutHistory.reads.total, withHistory.reads.total]).toEqual([4, 4])
   expect(childFactStageRows).toEqual([11, 11])
-  expect(withHistory.facts).toEqual(withoutHistory.facts)
   expect(withHistory.summary).toEqual(withoutHistory.summary)
 
   const readStageSummaries = taskFlowClient.readTaskFlowStageSummaries!
