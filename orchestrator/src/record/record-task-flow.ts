@@ -444,7 +444,7 @@ export async function readRecordTaskFlowStageSummaries(
       byStage.set(obligation.stageRecordId, current)
     }
     return {
-      items: rows.map((row) => {
+      items: rows.map((row: Record<string, unknown>) => {
         const stage = toHostedStageSummary(row)
         return {
           stage: { ...stage, obligations: byStage.get(stage.id) ?? [] },

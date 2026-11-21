@@ -49,9 +49,8 @@ test('a task flow in another member space is found by task id while space A is a
 })
 
 test('a missing stage summary is absent across member spaces', async () => {
-  await expect(
-    fixture.client.readTaskFlowStageSummaries?.({
-      stageIds: ['01990000-0000-7000-8000-000000024599'],
-    }),
-  ).resolves.toEqual({ items: [] })
+  const result = await fixture.client.readTaskFlowStageSummaries?.({
+    stageIds: ['01990000-0000-7000-8000-000000024599'],
+  })
+  expect(result).toEqual({ items: [] })
 })

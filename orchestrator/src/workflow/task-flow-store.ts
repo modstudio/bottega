@@ -259,18 +259,19 @@ export async function taskFlowHandoffLinks(
 ): Promise<WorkflowCursorHandoffLink[]> {
   const links: WorkflowCursorHandoffLink[] = []
   const visited = new Set<string>()
-  const pending = [...terminalRecordIds]
+  let pending = [...terminalRecordIds]
   while (pending.length) {
-    const recordId = pending.pop()!
-    if (visited.has(recordId)) continue
-    visited.add(recordId)
-    const row = await store.stageByRecordId(recordId)
-    if (!row) continue
-    links.push({
-      record_id: row.record_id,
-      handed_off_from_record_id: row.handed_off_from_record_id,
-    })
-    if (row.handed_off_from_record_id) pending.push(row.handed_off_from_record_id)
+    const ids = [...new Set(pending.filter((recordId) => !visited.has(recordId)))]
+    pending = []
+    for (const recordId of ids) visited.add(recordId)
+    for (const { stage: row } of await store.stageSummaries(ids)) {
+      links.push({
+        record_id: row.record_id,
+        handed_off_from_record_id: row.handed_off_from_record_id,
+      })
+      if (row.handed_off_from_record_id && !visited.has(row.handed_off_from_record_id))
+        pending.push(row.handed_off_from_record_id)
+    }
   }
   return links
 }

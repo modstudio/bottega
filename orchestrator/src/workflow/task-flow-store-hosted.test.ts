@@ -41,6 +41,7 @@ const workflow = 'hosted-task-flow-guard'
 const taskKey = 'DEV-HOSTED-GUARD'
 const taskId = '00000000-0000-4000-8001-000000000001'
 const secondProjectId = '00000000-0000-4000-8001-000000000002'
+const WORKFLOW_CURSOR_TASK_FLOW_CALL_LIMIT = 2
 
 afterEach(() => {
   installRecordApiClient(null)
@@ -95,6 +96,14 @@ test('hosted task-flow intents never touch the five local task-flow tables', asy
         .query<{ record_id: string }, []>("SELECT record_id FROM project WHERE name='fixture'")
         .get()!.record_id]: destinationSpaceId,
       [secondProjectId]: destinationSpaceId,
+    },
+    taskFlowReadCounts: {
+      flowsById: 0,
+      stageLists: 0,
+      stagesById: 0,
+      textsById: 0,
+      obligationsById: 0,
+      stageSummaries: 0,
     },
   }
   const memory = createMemoryRecordApiClient(memoryInput)
@@ -249,10 +258,42 @@ test('hosted task-flow intents never touch the five local task-flow tables', asy
       projectName: 'second-fixture',
     },
   })
+  const beforeOne = { ...memoryInput.taskFlowReadCounts }
   expect(
     (await listWorkflowCursors({ all: true, project: 'fixture' }, database)).map((row) => ({
       project: row.project,
       state: row.state,
     })),
   ).toEqual([{ project: 'fixture', state: 'abandoned' }])
+  const oneCalls =
+    memoryInput.taskFlowReadCounts.stageLists -
+    beforeOne.stageLists +
+    (memoryInput.taskFlowReadCounts.stageSummaries - beforeOne.stageSummaries)
+
+  for (let index = 2; index <= 10; index++) {
+    memoryInput.taskFlowStages.push({
+      flow: { ...hosted.flow },
+      stage: {
+        ...hosted.stage,
+        id: `00000000-0000-4000-8002-${String(index).padStart(12, '0')}`,
+        number: index,
+        state: 'abandoned',
+        handedOffFromRecordId: hosted.stage.id,
+        obligations: [],
+        stepTexts: [],
+        textCopies: [],
+      },
+    })
+  }
+  const beforeTen = { ...memoryInput.taskFlowReadCounts }
+  expect(await listWorkflowCursors({ all: true, project: 'fixture' }, database)).toHaveLength(10)
+  const tenCalls =
+    memoryInput.taskFlowReadCounts.stageLists -
+    beforeTen.stageLists +
+    (memoryInput.taskFlowReadCounts.stageSummaries - beforeTen.stageSummaries)
+  expect({ oneCalls, tenCalls }).toEqual({
+    oneCalls: WORKFLOW_CURSOR_TASK_FLOW_CALL_LIMIT,
+    tenCalls: WORKFLOW_CURSOR_TASK_FLOW_CALL_LIMIT,
+  })
+  expect(memoryInput.taskFlowReadCounts.stagesById).toBe(beforeOne.stagesById)
 })

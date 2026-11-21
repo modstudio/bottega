@@ -37,13 +37,24 @@ export async function openKeylessCursorsForSession(session: string, d: Database 
 }
 
 export async function workflowCursorHandoffLinks(
-  cursors: readonly Pick<WorkflowCursorListRow, 'record_id'>[],
+  cursors: readonly Pick<
+    WorkflowCursorListRow,
+    'record_id' | 'handed_off_from_record_id'
+  >[],
   d: Database = db(),
 ) {
-  return taskFlowHandoffLinks(
-    taskFlowReadStore(d),
-    cursors.map((cursor) => cursor.record_id),
-  )
+  return [
+    ...cursors.map((cursor) => ({
+      record_id: cursor.record_id,
+      handed_off_from_record_id: cursor.handed_off_from_record_id,
+    })),
+    ...(await taskFlowHandoffLinks(
+      taskFlowReadStore(d),
+      cursors.flatMap((cursor) =>
+        cursor.handed_off_from_record_id ? [cursor.handed_off_from_record_id] : [],
+      ),
+    )),
+  ]
 }
 
 /** Reads the run-owned live bindings for the selected workflow cursors. */
