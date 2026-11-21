@@ -55,6 +55,7 @@ const taskReadPortImporters = [
   'orchestrator/src/workflow/task-read-port.test.ts',
   'orchestrator/src/workflow/workflow-child-service.test.ts',
   'orchestrator/src/workflow/workflow-floor-apply.test.ts',
+  'orchestrator/src/workflow/workflow-floor-task-read.ts',
   'orchestrator/src/workflow/workflow-task-reference.ts',
   'orchestrator/src/workflow/workflow-text-copy.ts',
 ] as const

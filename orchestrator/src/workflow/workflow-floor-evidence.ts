@@ -29,7 +29,6 @@ import { rulingStatus } from '../run/question-vocabulary.ts'
 import { resolveRunIdentifier } from '../run/run-identifier.ts'
 import { TERMINAL_RUN_STATUS_SET } from '../run/run-status.ts'
 import { taskFlowHandoffLinks, taskFlowReadStore } from './task-flow-store.ts'
-import { taskReader } from './task-read-port.ts'
 import type {
   BottegaCommandIdentity,
   ValidatedArtifactEvidence,
@@ -68,7 +67,8 @@ import {
   gatherPullRequestArtifactEvidence,
   viewPullRequestInProject,
 } from './workflow-floor-pull-request-evidence.ts'
-import { readHubTask } from './workflow-floor-task-read.ts'
+import { resolveTaskDocumentArtifact } from './workflow-floor-task-document-evidence.ts'
+import { readHubTask, readHubTaskDocument } from './workflow-floor-task-read.ts'
 import { floorFromObligationRow } from './workflow-obligation-floor.ts'
 import { resolvedOfferedArtifact } from './workflow-offered-artifacts.ts'
 import {
@@ -94,7 +94,7 @@ export type CursorIdentity = {
 
 export const productionFloorPorts = (): FloorEvidencePorts => ({
   readTask: (key) => readHubTask(key),
-  readTaskDocument: (value, scope) => taskReader().document(value, scope),
+  readTaskDocument: readHubTaskDocument,
   viewPullRequest: viewPullRequestInProject,
   readOriginUrl: (project) => {
     const row = projectByName(project)
@@ -478,47 +478,14 @@ async function resolveNumericArtifact(
   throw new Error(`--artifact ${id} is not a run with artifacts or a reply`)
 }
 
-async function resolveTaskDocumentArtifact(
-  ref: Extract<ArtifactRef, { kind: 'task-document' }>,
+async function resolveTaskArtifact(
+  ref: Extract<ArtifactRef, { kind: 'task' | 'comment' | 'task-document' }>,
   raw: string,
   identity: CursorIdentity,
   ports: FloorEvidencePorts,
 ): Promise<{ ref: string; exists: boolean }> {
-  if (ref.key !== identity.workflowKey)
-    throw new Error(`--artifact ${raw} task is not this cursor's ${identity.workflowKey}`)
-  if (!ports.readTaskDocument)
-    throw new Error(
-      `--artifact ${raw} needs a ${PLATFORM_SLUG} task document read and no reader was provided`,
-    )
-  try {
-    await invokeFloorEvidencePort(
-      ports,
-      'readTaskDocument',
-      ports.readTaskDocument,
-      `${ref.key}/${ref.number}`,
-      {
-        project: identity.project,
-        ...(identity.workflowTaskRecordId
-          ? { recordId: identity.workflowTaskRecordId }
-          : {}),
-      },
-    )
-  } catch (error) {
-    rethrowFloorEvidencePortMiss(error)
-    if (!(error instanceof Error) || !error.message.startsWith('no task document ')) throw error
-    throw new Error(
-      `--artifact ${raw} does not exist for this cursor's task ${identity.workflowKey}`,
-    )
-  }
-  return { ref: `${ref.key}/${ref.number}`, exists: true }
-}
-
-function resolveTaskArtifact(
-  ref: Extract<ArtifactRef, { kind: 'task' | 'comment' }>,
-  raw: string,
-  identity: CursorIdentity,
-  ports: FloorEvidencePorts,
-): { ref: string; exists: boolean } {
+  if (ref.kind === 'task-document')
+    return await resolveTaskDocumentArtifact(ref, raw, identity, ports)
   if (!ports.readTask)
     throw new Error(
       `--artifact ${raw} needs a ${PLATFORM_SLUG} task read and no reader was provided`,
@@ -590,15 +557,7 @@ async function resolveArtifact(
 ): Promise<{ ref: string; exists: boolean }> {
   if (ref.kind === 'attached-text' || ref.kind === 'doc' || ref.kind === 'review-read')
     return resolveStoredArtifact(ref, identity, binding, d, branchTip)
-  if (ref.kind === 'id')
-    return await resolveNumericArtifact(
-      ref.id,
-      identity,
-      binding.cursorId,
-      d,
-    )
-  if (ref.kind === 'task-document')
-    return await resolveTaskDocumentArtifact(ref, raw, identity, ports)
+  if (ref.kind === 'id') return await resolveNumericArtifact(ref.id, identity, binding.cursorId, d)
   if (ref.kind === 'pull-request') return { ref: ref.url, exists: true }
   if (ref.kind === 'commit') {
     const project = projectByName(identity.project, d)
@@ -649,7 +608,7 @@ async function resolveArtifact(
     }
   }
   if (ref.kind === 'note') throw new Error('note artifacts resolve through the note evidence port')
-  return resolveTaskArtifact(ref, raw, identity, ports)
+  return await resolveTaskArtifact(ref, raw, identity, ports)
 }
 
 function gatherTask(

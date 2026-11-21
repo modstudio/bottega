@@ -1,11 +1,6 @@
 import { expect, test } from 'bun:test'
 import { newRecordId } from '../../../shared/record/schema.ts'
-import {
-  database,
-  gather,
-  insertRun,
-  projectId,
-} from './workflow-floor-evidence.fixture.ts'
+import { database, gather, insertRun, projectId } from './workflow-floor-evidence.fixture.ts'
 
 test('a scored cursor-bound lens run needs no disk artifact by number or id', async () => {
   const d = database()
@@ -20,9 +15,10 @@ test('a scored cursor-bound lens run needs no disk artifact by number or id', as
     .get(runId)!.number
 
   for (const reference of [String(number), runId]) {
-    expect(
-      (await gather(d, { artifacts: [reference] })).artifacts?.[0]?.artifact,
-    ).toEqual({ ref: reference, exists: true })
+    expect((await gather(d, { artifacts: [reference] })).artifacts?.[0]?.artifact).toEqual({
+      ref: reference,
+      exists: true,
+    })
   }
 })
 
@@ -47,8 +43,7 @@ test('a task document on the cursor task is stable recorded evidence', async () 
   const readTaskDocument = async (value: string) => ({ id: 'document-id', label: value })
 
   expect(
-    (await gather(d, { artifacts: ['DEV-977/1'] }, { readTaskDocument })).artifacts?.[0]
-      ?.artifact,
+    (await gather(d, { artifacts: ['DEV-977/1'] }, { readTaskDocument })).artifacts?.[0]?.artifact,
   ).toEqual({ ref: 'DEV-977/1', exists: true })
 })
 
