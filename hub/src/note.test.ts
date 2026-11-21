@@ -653,6 +653,54 @@ describe('suggestion notes', () => {
       )
     })
 
+    test('relink rolls back the attachment when its history comment cannot be written', async () => {
+      const note = (
+        await createNote({
+          text: `Relink rollback ${crypto.randomUUID()}`,
+          cwd: '/fixtures/repos/workshop',
+          forceNew: true,
+        })
+      ).note
+      const [previous, target] = writeTransaction((conn) => [
+        createLocalTaskInTransaction(
+          conn,
+          { project: 'workshop', title: 'Rollback previous task' },
+          { skipDuplicateCheck: true },
+        ),
+        createLocalTaskInTransaction(
+          conn,
+          { project: 'workshop', title: 'Rollback target task' },
+          { skipDuplicateCheck: true },
+        ),
+      ])
+      await promoteNote(note.record_id, { existingTaskKey: previous.key })
+      writeTransaction((conn) =>
+        conn.exec(`
+          CREATE TEMP TRIGGER fail_relink_comment
+          BEFORE INSERT ON task_comment
+          BEGIN
+            SELECT RAISE(ABORT, 'forced comment failure');
+          END
+        `),
+      )
+      try {
+        await expect(relinkNote(note.record_id, target.key, 'must remain atomic')).rejects.toThrow(
+          'forced comment failure',
+        )
+      } finally {
+        writeTransaction((conn) => conn.exec('DROP TRIGGER fail_relink_comment'))
+      }
+
+      expect(getNote(note.record_id).promoted_task).toBe(previous.key)
+      expect(
+        db()
+          .query<{ promoted_task_record_id: string }, [string]>(
+            'SELECT promoted_task_record_id FROM note WHERE record_id=?',
+          )
+          .get(note.record_id),
+      ).toEqual({ promoted_task_record_id: previous.record_id })
+    })
+
     test('drop merge and reap write locally and keep hosted invariants', async () => {
       const one = (
         await createNote({
