@@ -11,12 +11,19 @@ type MemoEntry<T> = {
   startedAt: number
   load: Promise<T>
   settled: boolean
+  value?: T
+}
+
+type ProcessMemo<T> = {
+  get(): Promise<T>
+  clear(): void
+  clearIf(predicate: (value: T) => boolean): void
 }
 
 export function processMemo<T>(
   load: () => Promise<T>,
   options: ProcessMemoOptions<T>,
-): { get(): Promise<T>; clear(): void } {
+): ProcessMemo<T> {
   const now = options.now ?? Date.now
   const keep = options.keep ?? (() => true)
   let entry: MemoEntry<T> | undefined
@@ -31,6 +38,7 @@ export function processMemo<T>(
       const pending = load().then(
         (value) => {
           next.settled = true
+          next.value = value
           if (!keep(value) && entry === next) entry = undefined
           return value
         },
@@ -45,6 +53,9 @@ export function processMemo<T>(
     },
     clear(): void {
       entry = undefined
+    },
+    clearIf(predicate: (value: T) => boolean): void {
+      if (entry?.settled && predicate(entry.value as T)) entry = undefined
     },
   }
 }

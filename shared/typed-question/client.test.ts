@@ -292,6 +292,32 @@ test('shares one credential resolution across the duplicate-candidate request bu
   expect(resolutions).toBe(1)
 })
 
+test('shares one missing credential resolution across the duplicate-candidate request budget', async () => {
+  const candidateCount = 20
+  let resolutions = 0
+  let requests = 0
+  const dependencies = typedQuestionClientDependencies(
+    async () => {
+      resolutions += 1
+      return { kind: 'missing' }
+    },
+    async () => {
+      requests += 1
+      throw new Error('request must not be sent')
+    },
+  )
+
+  const results = await Promise.all(
+    Array.from({ length: candidateCount }, (_, index) =>
+      askTypedQuestionsClient([FIXTURE_QUESTION], { candidate: index }, dependencies),
+    ),
+  )
+
+  expect(results.every((result) => result.kind === 'missing-key')).toBe(true)
+  expect(requests).toBe(0)
+  expect(resolutions).toBe(1)
+})
+
 test('an auth refusal clears the credential and resends once with the refreshed key', async () => {
   const keys = ['fake-key-a', 'fake-key-b']
   let resolutions = 0
@@ -344,4 +370,34 @@ test('two auth refusals resolve twice and return the second refusal', async () =
   expect(resolutions).toBe(2)
   expect(requests).toBe(2)
   expect(result).toMatchObject({ kind: 'error', error: 'http_401' })
+})
+
+test('concurrent auth refusals share one refreshed credential resolution', async () => {
+  const requestCount = 8
+  const keys = ['fake-key-a', 'fake-key-b']
+  let resolutions = 0
+  let requests = 0
+  const dependencies = typedQuestionClientDependencies(
+    async () => {
+      const value = keys[resolutions]!
+      resolutions += 1
+      return { kind: 'resolved', value }
+    },
+    async () => {
+      requests += 1
+      return new Response('', { status: 401 })
+    },
+  )
+
+  const results = await Promise.all(
+    Array.from({ length: requestCount }, (_, index) =>
+      askTypedQuestionsClient([FIXTURE_QUESTION], { candidate: index }, dependencies),
+    ),
+  )
+
+  expect(resolutions).toBe(2)
+  expect(requests).toBe(requestCount * 2)
+  expect(results.every((result) => result.kind === 'error' && result.error === 'http_401')).toBe(
+    true,
+  )
 })

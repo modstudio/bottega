@@ -87,3 +87,33 @@ test('clear forces a reload without changing an existing caller result', async (
   expect(await second).toBe('new')
   expect(await memo.get()).toBe('new')
 })
+
+test('clearIf leaves pending and non-matching values, then drops a matching value', async () => {
+  let loads = 0
+  let finish!: (value: string) => void
+  const memo = processMemo(
+    () => {
+      loads += 1
+      return new Promise<string>((resolve) => {
+        finish = resolve
+      })
+    },
+    { maxAgeMs: 100 },
+  )
+
+  const pending = memo.get()
+  memo.clearIf((value) => value === 'fake-value-a')
+  expect(memo.get()).toBe(pending)
+  finish('fake-value-a')
+  expect(await pending).toBe('fake-value-a')
+
+  memo.clearIf((value) => value === 'fake-value-b')
+  expect(await memo.get()).toBe('fake-value-a')
+  expect(loads).toBe(1)
+
+  memo.clearIf((value) => value === 'fake-value-a')
+  const reloaded = memo.get()
+  expect(loads).toBe(2)
+  finish('fake-value-b')
+  expect(await reloaded).toBe('fake-value-b')
+})

@@ -76,7 +76,7 @@ export type TypedQuestionsClientResult =
 
 export type TypedQuestionClientDependencies = {
   resolveCredential(): Promise<{ kind: 'resolved'; value: string } | { kind: 'missing' }>
-  invalidateCredential?(): void
+  invalidateCredential?(refusedKey: string): void
   fetch(input: string, init: RequestInit): Promise<Response>
   sleep?(ms: number): Promise<void>
   random?(): number
@@ -88,11 +88,11 @@ export function typedQuestionClientDependencies(
 ): TypedQuestionClientDependencies {
   const credential = processMemo(resolveCredential, {
     maxAgeMs: RECORD_IDENTITY_MEMO_MAX_AGE_MS,
-    keep: (result) => result.kind === 'resolved',
   })
   return {
     resolveCredential: credential.get,
-    invalidateCredential: credential.clear,
+    invalidateCredential: (refusedKey) =>
+      credential.clearIf((result) => result.kind === 'resolved' && result.value === refusedKey),
     fetch,
     sleep: (ms) => Bun.sleep(ms),
     random: Math.random,
@@ -222,15 +222,29 @@ function elapsed(started: number): number {
   return Math.max(0, Math.round(performance.now() - started))
 }
 
+type CredentialResolution =
+  | { kind: 'key'; value: string }
+  | { kind: 'missing-key' }
+  | { kind: 'key-resolution' }
+
+function credentialResolutionFailure(
+  result: Exclude<CredentialResolution, { kind: 'key' }>,
+  started: number,
+): TypedQuestionsClientResult {
+  return result.kind === 'missing-key'
+    ? result
+    : { kind: 'error', error: 'key_resolution', latencyMs: elapsed(started) }
+}
+
 async function resolveKey(
   dependencies: TypedQuestionClientDependencies,
-): Promise<{ kind: 'key'; value: string } | { kind: 'missing-key' } | { kind: 'error' }> {
+): Promise<CredentialResolution> {
   try {
     const credential = await dependencies.resolveCredential()
     if (credential.kind === 'resolved') return { kind: 'key', value: credential.value }
     return { kind: 'missing-key' }
   } catch {
-    return { kind: 'error' }
+    return { kind: 'key-resolution' }
   }
 }
 
@@ -276,8 +290,7 @@ type CredentialRequestResult =
       key: string
       refreshed: boolean
     }
-  | { kind: 'missing-key' }
-  | { kind: 'key-resolution' }
+  | Exclude<CredentialResolution, { kind: 'key' }>
 
 async function sendWithCredentialRefresh(
   key: string,
@@ -293,10 +306,9 @@ async function sendWithCredentialRefresh(
   )
     return { kind: 'response', response, key, refreshed: false }
 
-  dependencies.invalidateCredential?.()
+  dependencies.invalidateCredential?.(key)
   const resolved = await resolveKey(dependencies)
-  if (resolved.kind === 'error') return { kind: 'key-resolution' }
-  if (resolved.kind === 'missing-key') return resolved
+  if (resolved.kind !== 'key') return resolved
   return {
     kind: 'response',
     response: await sendRequest(resolved.value, body, dependencies.fetch),
@@ -354,7 +366,11 @@ export async function askTypedQuestionClient(
     : { kind: 'error', error: 'unparsable_body', latencyMs: result.latencyMs }
 }
 
-/** Resolve the key once and ask every question sharing the supplied state. */
+/**
+ * Resolve the key once and ask every question sharing the supplied state.
+ * A 401 or 403 clears that cached key, resolves once more, and resends once before
+ * returning the second HTTP refusal.
+ */
 export async function askTypedQuestionsClient(
   questions: readonly TypedQuestion[],
   state: string | Record<string, unknown>,
@@ -362,10 +378,7 @@ export async function askTypedQuestionsClient(
 ): Promise<TypedQuestionsClientResult> {
   const started = performance.now()
   let resolved = await resolveKey(dependencies)
-  if (resolved.kind === 'error') {
-    return { kind: 'error', error: 'key_resolution', latencyMs: elapsed(started) }
-  }
-  if (resolved.kind === 'missing-key') return resolved
+  if (resolved.kind !== 'key') return credentialResolutionFailure(resolved, started)
   const body = JSON.stringify({
     model: JEV_MODEL,
     state,
@@ -378,9 +391,7 @@ export async function askTypedQuestionsClient(
   let authRetried = false
   for (let attempt = 0; attempt < 3; attempt += 1) {
     const sent = await sendWithCredentialRefresh(resolved.value, body, dependencies, !authRetried)
-    if (sent.kind === 'key-resolution')
-      return { kind: 'error', error: 'key_resolution', latencyMs: elapsed(started) }
-    if (sent.kind === 'missing-key') return sent
+    if (sent.kind !== 'response') return credentialResolutionFailure(sent, started)
     const response = sent.response
     resolved = { kind: 'key', value: sent.key }
     authRetried ||= sent.refreshed
