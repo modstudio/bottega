@@ -167,6 +167,7 @@ import {
   readRecordTaskFlowPresence,
   readRecordTaskFlowProjectReferenceCounts,
   readRecordTaskFlowStage,
+  readRecordTaskFlowStageSummaries,
   readRecordTaskFlowText,
 } from './record-task-flow.ts'
 import { writeRecordTaskFlow } from './record-task-flow-write.ts'
@@ -439,6 +440,7 @@ function recordProjectDependencies() {
     readProjects: listRecordProjects,
     readTaskFlow: readRecordTaskFlow,
     readTaskFlowStage: readRecordTaskFlowStage,
+    readTaskFlowStageSummaries: readRecordTaskFlowStageSummaries,
     readTaskFlowText: readRecordTaskFlowText,
     readTaskFlowObligation: readRecordTaskFlowObligation,
     listTaskFlowStages: listRecordTaskFlowStages,

@@ -11,6 +11,7 @@ import {
   TASK_FLOW_OPEN_STAGE_STATES,
   TASK_FLOW_PRESENCE_BATCH_MAX,
   TASK_FLOW_STAGE_LIST_LIMIT_MAX,
+  TASK_FLOW_STAGE_SUMMARY_BATCH_MAX,
   type TaskFlowPresence,
   type TaskFlowStageListQuery,
 } from './record-task-flow-contract.ts'
@@ -217,6 +218,67 @@ test('destinationless task-flow presence reads every member space without write 
     questionAuditIds: [],
   })
   expect(recorded).not.toHaveBeenCalled()
+})
+
+test('task-flow stage summaries validate bounds, scope the read, and omit missing ids and text bodies', async () => {
+  const calls: Array<{ stageIds: string[]; spaceId: string; uuidKeyedRead?: true }> = []
+  const app = new Hono<{
+    Variables: { identity: RecordIdentity; destinationSpaceId?: string }
+  }>()
+  registerRecordWorkflowRoutes(
+    app,
+    {
+      readTaskFlowStageSummaries: async (input) => {
+        calls.push(input)
+        return {
+          items: input.stageIds.includes(KNOWN_ID)
+            ? [{ stage: { id: KNOWN_ID, number: 7, obligations: [] }, flow: { id: PROJECT } }]
+            : [],
+        }
+      },
+      listWorkflowCatalogue: async () => [],
+      draftWorkflow: async () => null,
+      promoteWorkflow: async () => null,
+      retireWorkflow: async () => null,
+    },
+    {
+      scope: () => ({
+        url: 'postgres://unused',
+        userId: SPACE,
+        spaceId: SPACE,
+        spaceIds: [SPACE],
+        uuidKeyedRead: true,
+      }),
+      noSpace: () => new Response(null, { status: 403 }),
+    },
+  )
+  const response = await app.request('/v1/task-flow/stage-summaries', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ stageIds: [KNOWN_ID, UNKNOWN_ID] }),
+  })
+  expect(response.status).toBe(200)
+  const body = (await response.json()) as { items: Array<{ stage: Record<string, unknown> }> }
+  expect(body.items).toHaveLength(1)
+  expect(body.items[0]?.stage).not.toHaveProperty('stepTexts')
+  expect(body.items[0]?.stage).not.toHaveProperty('textCopies')
+  expect(calls).toEqual([
+    expect.objectContaining({
+      stageIds: [KNOWN_ID, UNKNOWN_ID],
+      spaceId: SPACE,
+      uuidKeyedRead: true,
+    }),
+  ])
+
+  const oversized = await app.request('/v1/task-flow/stage-summaries', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      stageIds: Array(TASK_FLOW_STAGE_SUMMARY_BATCH_MAX + 1).fill(KNOWN_ID),
+    }),
+  })
+  expect(oversized.status).toBe(400)
+  expect(calls).toHaveLength(1)
 })
 
 test('task-flow stage list refuses contradictory task-link filters', async () => {

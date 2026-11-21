@@ -42,6 +42,7 @@ import type {
   TaskFlowRulingFileRow,
   TaskFlowRulingRow,
   TaskFlowStageCursorRow,
+  TaskFlowStageSummaryRow,
   TaskFlowTaskRulingRow,
   TaskFlowTextBodyRow,
   TaskFlowTextRow,
@@ -109,6 +110,7 @@ interface TaskFlowQueries {
   flowProjectionForTask(taskRecordId: string): TaskFlowProjectionRow | null
   stageByHandle(project: string | undefined, cursor: number): TaskFlowStageCursorRow | null
   stageByRecordId(recordId: string): TaskFlowStageCursorRow | null
+  stageSummaries(recordIds: readonly string[]): TaskFlowStageSummaryRow[]
   latestStageForTask(input: {
     project: string
     workflow: string

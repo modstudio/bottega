@@ -22,6 +22,7 @@ export type MemoryTaskFlowInput = {
     flowsById: number
     stageLists: number
     stagesById: number
+    stageSummaries?: number
     textsById: number
     obligationsById: number
   }
@@ -312,6 +313,22 @@ export function memoryTaskFlowClient(input: MemoryTaskFlowInput): Partial<Record
       return found
         ? { ...found, space_id: input.taskFlowProjectSpaces?.[found.stage.projectId] }
         : null
+    },
+    async readTaskFlowStageSummaries({ stageIds }, destination) {
+      if (input.taskFlowReadCounts)
+        input.taskFlowReadCounts.stageSummaries = (input.taskFlowReadCounts.stageSummaries ?? 0) + 1
+      return {
+        items: stages
+          .filter(
+            (row) =>
+              stageIds.includes(row.stage.id) &&
+              inDestination(row, input, destination, '/v1/task-flow/stage-summaries'),
+          )
+          .map(({ stage, flow }) => {
+            const { stepTexts: _stepTexts, textCopies: _textCopies, ...summary } = stage
+            return { stage: { ...summary, obligations: stage.obligations ?? [] }, flow }
+          }),
+      }
     },
     async readTaskFlowText(id, destination) {
       if (input.taskFlowReadCounts) input.taskFlowReadCounts.textsById++

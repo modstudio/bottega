@@ -6,7 +6,7 @@ import {
   type RecordContractFixture,
 } from '../../test/fixtures/record-contract.ts'
 
-const contractRoutes = ['GET /v1/task-flow'] as const
+const contractRoutes = ['GET /v1/task-flow', 'POST /v1/task-flow/stage-summaries'] as const
 
 const PROJECT = '01990000-0000-7000-8000-000000024570'
 const TASK = '01990000-0000-7000-8000-000000024571'
@@ -46,4 +46,12 @@ test('a task flow in another member space is found by task id while space A is a
     flow: { id: FLOW, taskId: TASK },
     space_id: RECORD_CONTRACT_SPACE_B,
   })
+})
+
+test('a missing stage summary is absent across member spaces', async () => {
+  await expect(
+    fixture.client.readTaskFlowStageSummaries?.({
+      stageIds: ['01990000-0000-7000-8000-000000024599'],
+    }),
+  ).resolves.toEqual({ items: [] })
 })

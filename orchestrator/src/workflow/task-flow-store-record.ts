@@ -22,10 +22,12 @@ import {
   type HostedTaskFlow,
   type HostedTaskFlowStageById,
   type HostedTaskFlowStageList,
+  type HostedTaskFlowStageSummaries,
   isClosedStageState,
   TASK_FLOW_OPEN_STAGE_STATES,
   TASK_FLOW_STAGE_LIST_LIMIT_MAX,
   TASK_FLOW_STAGE_STATES,
+  TASK_FLOW_STAGE_SUMMARY_BATCH_MAX,
 } from '../record/record-task-flow-contract.ts'
 import {
   currentRecordWriteDecision,
@@ -214,6 +216,33 @@ class RecordTaskFlowReadStore {
     if (!read)
       throw new Error('record API predates task-flow stage reads; release hosted-api, then retry')
     return read(id)
+  }
+
+  async stageSummaries(recordIds: readonly string[]) {
+    const read = this.client.readTaskFlowStageSummaries
+    if (!read)
+      throw new Error(
+        'record API predates task-flow stage summaries; deploy the hosted API with `scripts/deploy/hosted api`, then retry',
+      )
+    const items: HostedTaskFlowStageSummaries['items'] = []
+    for (let offset = 0; offset < recordIds.length; offset += TASK_FLOW_STAGE_SUMMARY_BATCH_MAX) {
+      const result = await read({
+        stageIds: recordIds.slice(offset, offset + TASK_FLOW_STAGE_SUMMARY_BATCH_MAX),
+      })
+      items.push(...result.items)
+    }
+    return items.map((item) => ({
+      stage: stageRow(item, false),
+      obligations: item.stage.obligations
+        .filter(({ satisfiedAt, abandonedAt }) => !satisfiedAt && !abandonedAt)
+        .map((obligation) =>
+          openObligationRow(
+            obligation,
+            item.stage.number,
+            required(item.stage.projectName, 'project name'),
+          ),
+        ),
+    }))
   }
 
   private async flow(selector: {

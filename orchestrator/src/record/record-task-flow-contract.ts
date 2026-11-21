@@ -7,6 +7,7 @@ export const RECORD_TASK_FLOW_NOT_FOUND_MESSAGE = 'hosted task flow was not foun
 export const RECORD_TASK_FLOW_NOT_FOUND_CODE = 'task_flow_not_found'
 export const TASK_FLOW_STAGE_LIST_LIMIT_MAX = 1_000
 export const TASK_FLOW_PRESENCE_BATCH_MAX = 500
+export const TASK_FLOW_STAGE_SUMMARY_BATCH_MAX = 200
 export const TASK_FLOW_STAGE_LIST_REMEDY = `Pass projectId, projectId with number, sessionId, states, taskKey, workflow, mode, workflowKey, keyless, primaryInstance, taskId, unlinked, linked, or openedMachineId; limit must be from 1 through ${TASK_FLOW_STAGE_LIST_LIMIT_MAX}. Restart the list without cursor when its cursor is invalid.`
 
 const nullableId = z.string().uuid().nullable()
@@ -126,6 +127,10 @@ const hostedTaskFlowStageSummarySchema = z.object({
   updatedAt: z.string(),
 })
 
+const hostedTaskFlowStageBatchSummarySchema = hostedTaskFlowStageSummarySchema.extend({
+  obligations: z.array(hostedTaskFlowObligationSchema),
+})
+
 const hostedTaskFlowStageSchema = hostedTaskFlowStageSummarySchema.extend({
   obligations: z.array(hostedTaskFlowObligationSchema).optional(),
   stepTexts: z.array(hostedTaskFlowStepTextSchema).optional(),
@@ -195,6 +200,17 @@ export const hostedTaskFlowStageListSchema = z
     message: 'nextCursor must be present exactly when the stage list is truncated',
   })
 export type HostedTaskFlowStageList = z.infer<typeof hostedTaskFlowStageListSchema>
+
+export const taskFlowStageSummariesInputSchema = z
+  .object({ stageIds: z.array(z.string().uuid()).max(TASK_FLOW_STAGE_SUMMARY_BATCH_MAX) })
+  .strict()
+export type TaskFlowStageSummariesInput = z.output<typeof taskFlowStageSummariesInputSchema>
+export const hostedTaskFlowStageSummariesSchema = z.object({
+  items: z.array(
+    z.object({ stage: hostedTaskFlowStageBatchSummarySchema, flow: hostedTaskFlowSummarySchema }),
+  ),
+})
+export type HostedTaskFlowStageSummaries = z.infer<typeof hostedTaskFlowStageSummariesSchema>
 
 export const hostedTaskFlowProjectReferenceCountsSchema = z.object({
   stages: z.number().int().nonnegative(),

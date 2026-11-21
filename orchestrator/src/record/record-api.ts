@@ -116,7 +116,10 @@ import { type RecordSnapshot, SNAPSHOT_KINDS, type SnapshotKind } from './record
 import type { RecordScore } from './record-verdicts.ts'
 
 export const SNAPSHOT_MAX_BYTES = 1024 * 1024
-const RECORD_API_POST_READ_ROUTES = new Set(['/v1/task-flow/presence'])
+const RECORD_API_POST_READ_ROUTES = new Set([
+  '/v1/task-flow/presence',
+  '/v1/task-flow/stage-summaries',
+])
 
 type ApiEnvironment = RecordWriteTelemetryEnvironment
 type Tenant = Omit<ConfigTenant, 'spaceIds'> & { spaceIds: string[]; uuidKeyedRead?: true }

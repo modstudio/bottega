@@ -15,7 +15,7 @@ import {
 import { cursorAutonomy } from './workflow-cursor-autonomy.ts'
 import { renderWorkflowCursorLine } from './workflow-cursor-format.ts'
 import { workflowCursorProjectScope } from './workflow-cursor-selection.ts'
-import { openWorkflowObligations } from './workflow-obligation-floor.ts'
+import { floorFromObligationRow } from './workflow-obligation-floor.ts'
 import { composeWorkflow } from './workflows.ts'
 
 export type CursorListOptions = {
@@ -75,6 +75,14 @@ export async function listWorkflowCursors(
   const rows = options.all
     ? await store.listStages({ ...selector, states: TASK_FLOW_STAGE_STATES })
     : await store.listOpenStages(selector)
+  const summaryIds = [
+    ...new Set(
+      rows.flatMap((row) => [row.record_id, row.handed_off_from_record_id].filter(Boolean)),
+    ),
+  ] as string[]
+  const summaries = new Map(
+    (await store.stageSummaries(summaryIds)).map((summary) => [summary.stage.record_id, summary]),
+  )
   const liveRunsByCursor = new Map<string, Array<{ number: number; record_id: string }>>()
   if (rows.length) {
     const placeholders = rows.map(() => '?').join(',')
@@ -94,7 +102,7 @@ export async function listWorkflowCursors(
   return await Promise.all(
     rows.map(async (row) => {
       const handedOffFrom = row.handed_off_from_record_id
-        ? await taskFlowReadStore(d).stageByRecordId(row.handed_off_from_record_id)
+        ? (summaries.get(row.handed_off_from_record_id)?.stage ?? null)
         : null
       const closed = !isOpenStageState(row.state)
       const composition = closed
@@ -113,7 +121,14 @@ export async function listWorkflowCursors(
             },
             cursorAutonomy(row),
           )
-      const open = closed ? [] : await openWorkflowObligations(row.record_id, d)
+      const open = closed
+        ? []
+        : (summaries.get(row.record_id)?.obligations ?? []).map((item) => ({
+            id: item.id,
+            stepOrdinal: item.stepOrdinal,
+            stepSlug: item.stepSlug,
+            floorDefinition: floorFromObligationRow(item),
+          }))
       const liveRuns = liveRunsByCursor.get(row.record_id) ?? []
       const listed = {
         ...row,
