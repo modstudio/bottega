@@ -1066,9 +1066,7 @@ export function decideFloorSatisfaction(input: FloorSatisfactionInput): FloorDec
     action: 'allow',
     enforcement: 'floors',
     refs: evidenceRefs(input.evidence),
-    ...(evidenceNotices(input.evidence).length
-      ? { notices: evidenceNotices(input.evidence) }
-      : {}),
+    ...(evidenceNotices(input.evidence).length ? { notices: evidenceNotices(input.evidence) } : {}),
     ...deferred,
     ...satisfied,
   }

@@ -373,6 +373,11 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     './workflow-floor-artifact-freshness.ts',
     './workflow-floor-evidence-replay.ts',
   ]),
+  module('orchestrator/src/workflow/workflow-floor-task-comment-evidence.ts', [
+    './workflow-artifact-reference.ts',
+    './workflow-floor-artifact-freshness.ts',
+    './workflow-floor-task-read.ts',
+  ]),
   module('orchestrator/src/workflow/workflow-checkout-refusal.ts', ['../../../shared/brand.ts']),
   module('orchestrator/src/workflow/workflow-checkout-landing.ts', [
     'bun:sqlite',
@@ -478,6 +483,7 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     './workflow-floor-evidence-passing-gate.ts',
     './workflow-floor-evidence-replay.ts',
     './workflow-floor-task-document-evidence.ts',
+    './workflow-floor-task-comment-evidence.ts',
     './workflow-obligation-floor.ts',
     './workflow-floor-task-read.ts',
     './workflow-run-binding.ts',

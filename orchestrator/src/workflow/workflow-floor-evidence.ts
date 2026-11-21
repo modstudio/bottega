@@ -58,7 +58,6 @@ import {
 import {
   requireAttachedTextFreshness,
   requireMutableArtifactFreshness,
-  timedTaskCommentFreshnessNotice,
 } from './workflow-floor-artifact-freshness.ts'
 import { gitText, productionResolveCheckout } from './workflow-floor-evidence-checkout.ts'
 import { positiveEvidenceId } from './workflow-floor-evidence-input.ts'
@@ -73,6 +72,7 @@ import {
   gatherPullRequestArtifactEvidence,
   viewPullRequestInProject,
 } from './workflow-floor-pull-request-evidence.ts'
+import { resolveTaskCommentArtifact } from './workflow-floor-task-comment-evidence.ts'
 import {
   artifactTaskIsNotCursorTask,
   resolveTaskDocumentArtifact,
@@ -514,17 +514,7 @@ async function resolveTaskArtifact(
   if (artifactTaskIsNotCursorTask(identity, { key: ref.key, recordId: task.recordId }))
     throw new Error(`--artifact ${raw} task is not this cursor's ${identity.workflowKey}`)
   if (ref.kind === 'task') return { ref: raw, exists: task.key === ref.key }
-  if (task.commentsVerifiable === false)
-    throw new Error(
-      `--artifact ${raw} cannot be verified because this tracker's task read does not report comment ids; use --artifact task:${ref.key} to verify the task instead`,
-    )
-  if (!task.commentIds.map(String).includes(ref.id))
-    throw new Error(`--artifact ${raw} is not a comment on ${ref.key}`)
-  const notice = timedTaskCommentFreshnessNotice(
-    task.commentWrittenAt?.[ref.id],
-    identity.stepActivatedAt,
-  )
-  return { ref: raw, exists: true, ...(notice ? { notice } : {}) }
+  return resolveTaskCommentArtifact(ref, raw, task, identity.stepActivatedAt)
 }
 
 async function resolveStoredArtifact(

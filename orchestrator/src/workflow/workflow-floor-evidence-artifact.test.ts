@@ -1,5 +1,6 @@
 import { expect, test } from 'bun:test'
 import { newRecordId } from '../../../shared/record/schema.ts'
+import { decideFloorSatisfaction } from './workflow-floor.ts'
 import {
   CURSOR_RECORD_ID,
   database,
@@ -130,18 +131,37 @@ test('task comments and documents must change during the active step', async () 
   await expect(
     gather(d, { artifacts: ['task:DEV-977#comment:4'] }, { readTask: readTask('2026-09-02') }),
   ).resolves.toBeDefined()
-  await expect(
-    gather(
-      d,
-      { artifacts: ['task:DEV-977#comment:4'] },
-      {
-        readTask: () => ({
-          ...readTask('2026-09-02')(),
-          commentWrittenAt: {},
-        }),
-      },
-    ),
-  ).resolves.toBeDefined()
+  const untimed = await gather(
+    d,
+    { artifacts: ['task:DEV-977#comment:4'] },
+    {
+      readTask: () => ({
+        ...readTask('2026-09-02')(),
+        commentWrittenAt: {},
+      }),
+    },
+  )
+  expect(
+    decideFloorSatisfaction({
+      floors: [
+        {
+          kind: 'recorded-artifact',
+          deferrable: false,
+          expectedExitCode: 0,
+          expectedStatus: 'done',
+          requirePullRequest: false,
+          operatorRuling: false,
+        },
+      ],
+      evidence: untimed,
+      enforcement: 'floors',
+      finishing: false,
+      openObligations: [],
+    }),
+  ).toMatchObject({
+    action: 'allow',
+    notices: ['freshness unchecked: external tracker returns no comment time'],
+  })
 
   const readTaskDocument = (updatedAt: string) => async (value: string) => ({
     id: 'document-id',
