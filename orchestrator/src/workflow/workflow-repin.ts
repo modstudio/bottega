@@ -110,6 +110,15 @@ export async function repinWorkflowCursor(input: {
   }
   const payload: TaskFlowIntentInput<'repin'> = {
     requestId: taskFlowRequestId('repin', [input.row.record_id, String(input.row.revision)]),
+    expected: {
+      sessionId: input.row.session_id,
+      state: input.row.state,
+      activeOrdinal: input.row.ordinal,
+      workflowVersionId: input.row.workflow_version_record_id,
+      catalogueVersionId: input.row.catalogue_version_record_id,
+      noPendingAwait: true,
+      noOpenWorkflowQuestion: true,
+    },
     stage: {
       id: input.row.record_id,
       expectedRevision: input.row.revision,

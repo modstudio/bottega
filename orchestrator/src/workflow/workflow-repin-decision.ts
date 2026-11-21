@@ -1,6 +1,8 @@
 // concern: workflow repin decision
 /** Decides whether an open cursor may adopt the current workflow and catalogue versions. */
 
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+
 export type RepinStep = { slug: string }
 type RepinFloor = {
   kind: string
@@ -20,6 +22,39 @@ export type RepinClosedStep = {
 }
 
 export type WorkflowRepinDecision = { action: 'allow' } | { action: 'refuse'; message: string }
+
+export type RepinWriteFacts = {
+  sessionId: string | null
+  state: string
+  activeOrdinal: number
+  workflowVersionId: string
+  catalogueVersionId: string
+  hasOpenWorkflowQuestion: boolean
+}
+
+/** Re-checks the cursor facts consumed by the client decision immediately before its write. */
+export function repinWriteRefusal(
+  cursor: number | string,
+  current: RepinWriteFacts,
+  expected: Omit<RepinWriteFacts, 'hasOpenWorkflowQuestion'>,
+): string | undefined {
+  const retry = `rerun ${PLATFORM_SLUG} workflow repin`
+  if (current.state === 'awaiting-ruling')
+    return `workflow cursor ${cursor} gained a pending workflow await; ${retry}`
+  if (current.hasOpenWorkflowQuestion)
+    return `workflow cursor ${cursor} gained an open workflow question; ${retry}`
+  if (current.sessionId !== expected.sessionId)
+    return `workflow cursor ${cursor} holder changed from ${expected.sessionId ?? 'none'} to ${current.sessionId ?? 'none'}; ${retry}`
+  if (current.state !== expected.state)
+    return `workflow cursor ${cursor} state changed from ${expected.state} to ${current.state}; ${retry}`
+  if (current.activeOrdinal !== expected.activeOrdinal)
+    return `workflow cursor ${cursor} ordinal changed from ${expected.activeOrdinal + 1} to ${current.activeOrdinal + 1}; ${retry}`
+  if (current.workflowVersionId !== expected.workflowVersionId)
+    return `workflow cursor ${cursor} pinned workflow version changed; ${retry}`
+  if (current.catalogueVersionId !== expected.catalogueVersionId)
+    return `workflow cursor ${cursor} pinned catalogue version changed; ${retry}`
+  return undefined
+}
 
 function sameFloor(left: RepinFloor, right: RepinFloor): boolean {
   return (

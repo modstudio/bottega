@@ -13,6 +13,7 @@ import {
   workflowHandoffTrail,
 } from '../record/record-task-flow-write-contract.ts'
 import { decideAppliedMirrorMutation } from './task-flow-decision.ts'
+import { repinWriteRefusal } from './workflow-repin-decision.ts'
 
 type Mutation = { id: string; expectedRevision: number; values: Record<string, unknown> }
 type SqlRow = Record<string, SQLQueryBindings>
@@ -622,6 +623,48 @@ function writeStageUpdate(database: Database, body: SqlRow, revisions?: Record<s
 
 function writeRepin(database: Database, body: SqlRow, revisions?: Record<string, number>) {
   const stage = body.stage as unknown as Mutation
+  const expected = body.expected as unknown as {
+    sessionId: string | null
+    state: string
+    activeOrdinal: number
+    workflowVersionId: string
+    catalogueVersionId: string
+  }
+  const appliedRevision = revisions?.[stage.id]
+  const currentRevision = revision(database, 'workflow_cursor', stage.id)
+  if (!(appliedRevision !== undefined && currentRevision !== null && currentRevision >= appliedRevision)) {
+    const row = database
+      .query<{
+        number: number
+        session_id: string | null
+        state: string
+        ordinal: number
+        workflow_version_record_id: string
+        catalogue_version_record_id: string
+        has_open_workflow_question: number
+      }, [string]>(
+        `SELECT c.number,c.session_id,c.state,c.ordinal,c.workflow_version_record_id,
+          c.catalogue_version_record_id,EXISTS(SELECT 1 FROM question q
+            WHERE q.workflow_cursor_record_id=c.record_id
+              AND q.answered_at IS NULL AND q.closed_at IS NULL) has_open_workflow_question
+         FROM workflow_cursor c WHERE c.record_id=?`,
+      )
+      .get(stage.id)
+    if (!row) revisionRefusal(database, 'repin', 'workflow_cursor', stage.id)
+    const changed = repinWriteRefusal(
+      row.number,
+      {
+        sessionId: row.session_id,
+        state: row.state,
+        activeOrdinal: row.ordinal,
+        workflowVersionId: row.workflow_version_record_id,
+        catalogueVersionId: row.catalogue_version_record_id,
+        hasOpenWorkflowQuestion: row.has_open_workflow_question === 1,
+      },
+      expected,
+    )
+    if (changed) throw new Error(changed)
+  }
   return {
     revisions: {
       [stage.id]: updateMutation(database, 'workflow_cursor', stage, 'repin', revisions),

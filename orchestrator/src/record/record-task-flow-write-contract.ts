@@ -193,6 +193,15 @@ const taskFlowStageUpdateSchema = z.object({
 })
 const taskFlowRepinSchema = z.object({
   ...base,
+  expected: z.object({
+    sessionId: nullableText,
+    state: z.enum(TASK_FLOW_STAGE_STATES),
+    activeOrdinal: z.number().int().nonnegative(),
+    workflowVersionId: id,
+    catalogueVersionId: id,
+    noPendingAwait: z.literal(true),
+    noOpenWorkflowQuestion: z.literal(true),
+  }),
   stage: mutation(
     z.object({
       workflowVersionId: id,

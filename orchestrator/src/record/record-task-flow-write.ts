@@ -8,6 +8,7 @@ import { bindJsonb } from '../../../shared/record/jsonb-sql.ts'
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
 import { DocRevisionConflictError, RECORD_DIFFERENT_CONTENT } from '../doc/doc-revision-conflict.ts'
 import { handoffSourceRefusal, handoffTargetRefusal } from '../workflow/workflow-handoff-refusal.ts'
+import { repinWriteRefusal } from '../workflow/workflow-repin-decision.ts'
 import { isUniqueViolation } from './record-config-error.ts'
 import { recordPool } from './record-pool.ts'
 import { allocateRecordSequence } from './record-sequence.ts'
@@ -494,6 +495,39 @@ async function applyStageUpdates(tx: SQL, body: StageUpdateBody) {
 
 async function applyRepin(tx: SQL, body: RepinBody) {
   await lockParentFlowForStage(tx, body.stage.id)
+  if ((await revisionDecision(tx, 'task_flow_stage', body.stage, body.requestId)) === 'retry')
+    return { revisions: { [body.stage.id]: body.stage.expectedRevision + 1 } }
+  const rows = (await tx.unsafe(
+    `SELECT stage.number,stage.session_id,stage.state,stage.active_ordinal,
+       stage.workflow_version_id::text,stage.catalogue_version_id::text,
+       EXISTS(SELECT 1 FROM question q WHERE q.workflow_cursor_record_id=stage.id
+         AND q.answered_at IS NULL AND q.closed_at IS NULL) has_open_workflow_question
+     FROM task_flow_stage stage WHERE stage.id=$1::uuid FOR UPDATE`,
+    [body.stage.id],
+  )) as Array<{
+    number: number | string
+    session_id: string | null
+    state: string
+    active_ordinal: number | string
+    workflow_version_id: string
+    catalogue_version_id: string
+    has_open_workflow_question: boolean
+  }>
+  const row = rows[0]
+  if (!row) conflict('task_flow_stage', body.stage.id, null)
+  const changed = repinWriteRefusal(
+    Number(row.number),
+    {
+      sessionId: row.session_id,
+      state: row.state,
+      activeOrdinal: Number(row.active_ordinal),
+      workflowVersionId: row.workflow_version_id,
+      catalogueVersionId: row.catalogue_version_id,
+      hasOpenWorkflowQuestion: row.has_open_workflow_question,
+    },
+    body.expected,
+  )
+  if (changed) refusal(changed, `task_flow_stage.id=${body.stage.id}`, 'stale-revision')
   return {
     revisions: {
       [body.stage.id]: await updateRevisionRow(tx, 'task_flow_stage', body.stage, body.requestId),
