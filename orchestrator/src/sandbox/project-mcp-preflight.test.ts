@@ -56,6 +56,24 @@ test('a require run refuses header mismatches and a prefer run allows them', () 
   ).toBeNull()
 })
 
+test('a require run refuses when the checkout config could not be checked', () => {
+  const checkoutConfigPath = '/opt/starship/.mcp.json'
+  const remedy = `fix or remove ${checkoutConfigPath}, then rerun`
+  const headerMismatches = [{ checkoutConfigPath, reason: 'invalid' as const, remedy }]
+  const required = requiredMcpProbeRefusal({
+    mode: 'require',
+    project,
+    failures: [],
+    headerMismatches,
+  })!
+  expect(required).toContain(checkoutConfigPath)
+  expect(required).toContain('invalid')
+  expect(required).toContain(remedy)
+  expect(
+    requiredMcpProbeRefusal({ mode: 'prefer', project, failures: [], headerMismatches }),
+  ).toBeNull()
+})
+
 test('a require run refuses a failed probe and never a passed one', () => {
   expect(requiredMcpProbeRefusal({ mode: 'require', project, failures: [failure] })).not.toBeNull()
   expect(requiredMcpProbeRefusal({ mode: 'require', project, failures: [] })).toBeNull()

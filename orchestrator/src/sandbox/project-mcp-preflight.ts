@@ -10,7 +10,9 @@ import type { McpMode } from '../mcp/mcp-preflight.ts'
 import { listMcpToolPages, type McpToolListLaunch } from '../mcp/mcp-tool-list.ts'
 import { RefusalError } from '../refusal-error.ts'
 import {
-  type HeaderMismatchFinding,
+  HEADER_MISMATCH_REMEDY,
+  type HeaderMismatchDiagnostic,
+  headerMismatchSentence,
   type ProjectMcpSelection,
   type ProjectMcpWithheld,
   projectMcpWriterRemedy,
@@ -59,7 +61,7 @@ export type RequiredMcpProbeFacts = {
   /** The server names the selection withheld, and why. */
   withheld?: readonly ProjectMcpWithheld[]
   /** Checkout header names absent from matching entries in the run tree. */
-  headerMismatches?: readonly HeaderMismatchFinding[]
+  headerMismatches?: readonly HeaderMismatchDiagnostic[]
 }
 
 export type RequiredMcpProbeDecision = {
@@ -98,16 +100,23 @@ function missingRequiredServerFailure(facts: RequiredMcpProbeFacts): ProjectMcpP
 export function requiredMcpProbeDecision(facts: RequiredMcpProbeFacts): RequiredMcpProbeDecision {
   if (facts.mode !== 'require') return { refusal: null, unrelatedFailures: [] }
   if (facts.headerMismatches?.length) {
-    const mismatchLines = facts.headerMismatches.map(
-      (finding) =>
-        `${finding.server}: tree config lacks checkout header names ${finding.headerNames.join(', ')}`,
-    )
-    const remedies = [...new Set(facts.headerMismatches.map((finding) => finding.remedy))]
+    const checkFailure = facts.headerMismatches.find((finding) => 'checkoutConfigPath' in finding)
+    if (checkFailure) {
+      return {
+        refusal: refusal(
+          `--mcp require was asked for, but the checkout MCP config could not be checked:\n${headerMismatchSentence(checkFailure)}` +
+            `\ninvariant: --mcp require refuses when checkout header names cannot be verified`,
+          { kind: 'edit', text: checkFailure.remedy },
+        ),
+        unrelatedFailures: facts.failures,
+      }
+    }
+    const mismatchLines = facts.headerMismatches.map(headerMismatchSentence)
     return {
       refusal: refusal(
         `--mcp require was asked for, but the tree MCP config is missing checkout header names:\n${mismatchLines.join('\n')}` +
           `\ninvariant: --mcp require refuses a tree config that omits checkout header names`,
-        { kind: 'edit', text: remedies.join('; ') },
+        { kind: 'edit', text: HEADER_MISMATCH_REMEDY },
       ),
       unrelatedFailures: facts.failures,
     }

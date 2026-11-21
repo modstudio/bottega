@@ -2,11 +2,16 @@
 /** The MCP servers one worker launch attaches, before any harness renders them. */
 import type { Agent } from '../agent/agents.ts'
 import { literalCredentialFindings, literalCredentialLines } from '../mcp/mcp-credential-literal.ts'
-import { type McpServerConfig, mcpConfigAllowlist, readMcpConfig } from '../mcp/mcp-probe.ts'
+import {
+  type McpServerConfig,
+  mcpConfigAllowlist,
+  readMcpConfig,
+  readMcpConfigResult,
+} from '../mcp/mcp-probe.ts'
 import { type Project, projectAt } from '../project/projects.ts'
 import { codexProjectServersFromSelection } from '../sandbox/codex-mcp-scope.ts'
 import {
-  type HeaderMismatchFinding,
+  type HeaderMismatchDiagnostic,
   headerMismatchFindings,
   headerMismatchScopeLine,
   mergeMcpSetupHeader,
@@ -66,17 +71,31 @@ function launchSelectionFacts(input: {
   writerProxy: WriterProxyDecision
 }): {
   config: Record<string, McpServerConfig>
-  headerMismatches: HeaderMismatchFinding[]
+  headerMismatches: HeaderMismatchDiagnostic[]
   project: Project | null
   selection: ProjectMcpSelection | null
 } {
   const config = readMcpConfig(input.cwd)
   const project = projectAt(input.callerCwd)
-  const checkoutConfig =
-    input.usingMcp && project && project.path !== input.cwd ? readMcpConfig(project.path) : {}
+  const checkoutRead =
+    input.usingMcp && project && project.path !== input.cwd
+      ? readMcpConfigResult(project.path)
+      : null
+  const headerMismatches: HeaderMismatchDiagnostic[] =
+    checkoutRead?.ok === true
+      ? headerMismatchFindings(config, checkoutRead.config)
+      : checkoutRead && checkoutRead.reason !== 'missing'
+        ? [
+            {
+              checkoutConfigPath: checkoutRead.path,
+              reason: checkoutRead.reason,
+              remedy: `fix or remove ${checkoutRead.path}, then rerun`,
+            },
+          ]
+        : []
   return {
     config,
-    headerMismatches: headerMismatchFindings(config, checkoutConfig),
+    headerMismatches,
     project,
     selection: launchProjectSelection(
       input.usingMcp,
@@ -138,7 +157,7 @@ export function mergeLaunchMcpScopeLines(
   harness: string,
   scope: {
     projectSelection: ProjectMcpSelection | null
-    headerMismatches: HeaderMismatchFinding[]
+    headerMismatches: HeaderMismatchDiagnostic[]
     credentialLines: string[]
   },
 ): string | null {

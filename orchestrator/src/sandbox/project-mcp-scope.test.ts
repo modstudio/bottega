@@ -104,6 +104,23 @@ test('matching headers and servers absent from either config produce no mismatch
   ).toEqual([])
 })
 
+test('platform servers do not produce checkout header mismatch findings', () => {
+  for (const server of [MCP_SERVER_NAME, WORKER_MCP_SERVER_NAME]) {
+    expect(
+      headerMismatchFindings(
+        { [server]: { name: server, url: 'https://tree.test/mcp' } },
+        {
+          [server]: {
+            name: server,
+            url: 'https://checkout.test/mcp',
+            headers: { Authorization: FAKE_FIXTURE_HEADER_VALUE },
+          },
+        },
+      ),
+    ).toEqual([])
+  }
+})
+
 test('a writing run attaches every project server except the withheld ones', () => {
   const selection = selectProjectMcpServers('writer', CONFIG, PROJECT, '/project', true, PROXY)
   expect(selection?.kind).toBe('direct')

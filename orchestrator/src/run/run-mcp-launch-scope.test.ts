@@ -112,6 +112,35 @@ test('an MCP launch reports checkout header names missing from its tree config',
   expect(launch('codex', 'cli', false, cwd, { callerCwd: checkout }).headerMismatches).toEqual([])
 })
 
+test('an MCP launch reports an invalid checkout config instead of an empty comparison', () => {
+  const checkout = mkdtempSync(join(tmpdir(), 'orch-mcp-checkout-invalid-'))
+  roots.push(checkout)
+  writeFileSync(join(checkout, '.mcp.json'), '{not valid json')
+  execFileSync('git', ['init', '--quiet'], { cwd: checkout })
+  const cwd = join(checkout, '.claude', 'worktrees', 'invalid-checkout-config')
+  mkdirSync(cwd, { recursive: true })
+  writeFileSync(join(cwd, '.mcp.json'), JSON.stringify({ mcpServers: {} }))
+  upsertProject({
+    recordId: newRecordId(),
+    name: 'invalid-checkout-config-fixture',
+    path: checkout,
+    settings: {},
+  })
+
+  const scope = launch('codex', 'cli', true, cwd, { callerCwd: checkout })
+  const checkoutConfigPath = join(checkout, '.mcp.json')
+  expect(scope.headerMismatches).toEqual([
+    {
+      checkoutConfigPath,
+      reason: 'invalid',
+      remedy: `fix or remove ${checkoutConfigPath}, then rerun`,
+    },
+  ])
+  expect(mergeLaunchMcpScopeLines(null, 'cli', 'codex', scope)).toBe(
+    `MCP scope: could not check checkout MCP config ${checkoutConfigPath}: invalid; fix or remove ${checkoutConfigPath}, then rerun`,
+  )
+})
+
 test('inline credentials are withheld from the selection rather than rendered', () => {
   const cwd = tree({ secret: { command: 'secret-env', env: { TOKEN: 'literal-secret' } } })
   const scope = launch('goose', 'acp', true, cwd)
