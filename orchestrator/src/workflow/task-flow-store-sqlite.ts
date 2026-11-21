@@ -308,6 +308,7 @@ class SqliteTaskFlowStore {
   listStages(input: {
     project?: string
     sessionId?: string
+    workflowKeys?: readonly string[]
     states: readonly [TaskFlowStageState, ...TaskFlowStageState[]]
   }): TaskFlowListedStageRow[] {
     const clauses = [`cursor.state IN (${input.states.map(() => '?').join(',')})`]
@@ -319,6 +320,11 @@ class SqliteTaskFlowStore {
     if (input.sessionId) {
       clauses.push('cursor.session_id=?')
       values.push(input.sessionId)
+    }
+    if (input.workflowKeys) {
+      if (input.workflowKeys.length === 0) return []
+      clauses.push(`cursor.workflow_key IN (${input.workflowKeys.map(() => '?').join(',')})`)
+      values.push(...input.workflowKeys)
     }
     return this.database
       .query<TaskFlowListedStageRow, string[]>(
@@ -746,6 +752,7 @@ export function sqliteTaskFlowReadStore(database: Database): SqliteTaskFlowReadS
   const listStages = async (input: {
     project?: string
     sessionId?: string
+    workflowKeys?: readonly string[]
     states: readonly [TaskFlowStageState, ...TaskFlowStageState[]]
   }) => {
     const rows = local.listStages(input)

@@ -32,9 +32,12 @@ export async function gatherChildTaskFacts(
   project: string,
   tasks: readonly HubTaskReference[],
 ): Promise<ChildTaskFact[]> {
+  if (tasks.length === 0) return []
+  const workflowKeys = [...new Set(tasks.map(({ key }) => key))]
   const cursors = new Map<string, { number: number; state: string }>()
   for (const cursor of await taskFlowReadStore(database).listStages({
     project,
+    workflowKeys,
     states: [...TASK_FLOW_STAGE_STATES],
   })) {
     const existing = cursors.get(cursor.workflow_key)

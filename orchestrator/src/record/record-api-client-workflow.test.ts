@@ -95,6 +95,7 @@ test('task-flow stage lists carry combined filters and the destination space', a
       projectId: '00000000-0000-4000-8000-000000000001',
       number: 4,
       states: [...TASK_FLOW_OPEN_STAGE_STATES],
+      workflowKeys: ['DEV-1', 'DEV-2'],
       linked: true,
       openedMachineId: '00000000-0000-4000-8000-000000000003',
       limit: 50,
@@ -103,7 +104,7 @@ test('task-flow stage lists carry combined filters and the destination space', a
   )
   expect(requests).toEqual([
     {
-      path: '/v1/task-flow/stages?projectId=00000000-0000-4000-8000-000000000001&openedMachineId=00000000-0000-4000-8000-000000000003&number=4&state=running&state=awaiting-ruling&linked=true&limit=50',
+      path: '/v1/task-flow/stages?projectId=00000000-0000-4000-8000-000000000001&openedMachineId=00000000-0000-4000-8000-000000000003&number=4&state=running&state=awaiting-ruling&workflowKeys=DEV-1&workflowKeys=DEV-2&linked=true&limit=50',
       destinationSpaceId: '00000000-0000-4000-8000-000000000002',
     },
   ])

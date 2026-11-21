@@ -58,6 +58,8 @@ function matches({ stage, flow }: HostedTaskFlowStageById, selector: Selector): 
     selector.workflow === undefined || stage.workflow === selector.workflow,
     selector.mode === undefined || stage.mode === selector.mode,
     selector.workflowKey === undefined || stage.workflowKey === selector.workflowKey,
+    selector.workflowKeys === undefined ||
+      (stage.workflowKey !== null && selector.workflowKeys.includes(stage.workflowKey)),
     !selector.keyless || !stage.workflowKey,
     !selector.primaryInstance || stage.instanceId === '',
     selector.taskId === undefined || flow.taskId === selector.taskId,

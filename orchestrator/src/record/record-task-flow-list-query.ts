@@ -65,6 +65,8 @@ export function taskFlowStageListSql(
   if (input.workflow) add((parameter) => `s.workflow=${parameter}`, input.workflow)
   if (input.mode) add((parameter) => `s.mode=${parameter}`, input.mode)
   if (input.workflowKey) add((parameter) => `s.workflow_key=${parameter}`, input.workflowKey)
+  if (input.workflowKeys)
+    add((parameter) => `s.workflow_key = ANY(${parameter}::text[])`, input.workflowKeys)
   if (input.keyless) result.clauses.push("s.workflow_key=''")
   if (input.primaryInstance) result.clauses.push("s.instance_id=''")
   if (input.taskId) add((parameter) => `f.task_id=${parameter}::uuid`, input.taskId)

@@ -5,6 +5,7 @@ import {
   installRecordApiClient,
 } from '../../test/fixtures/record-api.ts'
 import { installTaskRows } from '../../test/fixtures/task-reader.ts'
+import { boardClaimTake } from '../board/board-operations.ts'
 import { guardHostedTables } from '../database/hosted-table-guard.ts'
 import { contextBrief } from '../doc/context-brief.ts'
 import { projectByName, upsertProject } from '../project/projects.ts'
@@ -15,6 +16,8 @@ import { TASK_FLOW_STAGE_STATES } from '../record/record-task-flow-contract.ts'
 import { reviewContext } from '../session/context-review.ts'
 import { sessionStopSummary } from '../session/stop-summary.ts'
 import { taskFlowReadStore } from './task-flow-store.ts'
+import { installTaskReader } from './task-read-port.ts'
+import { gatherChildTaskFacts } from './workflow-child-facts.ts'
 import {
   abandonSelectedWorkflowCursorForClose,
   awaitWorkflowRuling,
@@ -154,7 +157,7 @@ test('hosted task-flow intents never touch the five local task-flow tables', asy
     }),
   }
   installRecordApiClient(taskFlowClient)
-  installTaskRows([
+  const stopTasks = [
     {
       key: taskKey,
       record_id: taskId,
@@ -167,7 +170,18 @@ test('hosted task-flow intents never touch the five local task-flow tables', asy
       opened_at: null,
       has_children: false,
     },
-  ])
+  ]
+  installTaskReader({
+    list: async ({ project } = {}) => stopTasks.filter((task) => task.project === project),
+    lookup: async (project, keys) =>
+      stopTasks.filter((task) => task.project === project && keys.includes(task.key)),
+    show: async (key) => ({ task: stopTasks.find((task) => task.key === key)! }),
+    duplicates: async () => [],
+    documents: async () => [],
+    document: async () => {
+      throw new Error('hosted Stop guard does not read task documents')
+    },
+  })
   const context = { session: 'hosted-task-flow-guard', taskFlowClient }
 
   const composed = await composeWorkflowWithCursor(
@@ -281,6 +295,29 @@ test('hosted task-flow intents never touch the five local task-flow tables', asy
   expect(attachment).toStartWith('attached-text:')
 
   const readStore = taskFlowReadStore(database, taskFlowClient)
+  const workflowKeyBatchSizes: number[] = []
+  const batchingStore = taskFlowReadStore(database, {
+    ...taskFlowClient,
+    listTaskFlowStages: async (selector, destination) => {
+      workflowKeyBatchSizes.push(selector.workflowKeys?.length ?? 0)
+      return taskFlowClient.listTaskFlowStages!(selector, destination)
+    },
+  })
+  await batchingStore.listStages({
+    project: 'fixture',
+    workflowKeys: Array.from({ length: 101 }, (_, index) => `DEV-BATCH-${index}`),
+    states: TASK_FLOW_STAGE_STATES,
+  })
+  expect(workflowKeyBatchSizes).toEqual([100, 1])
+  workflowKeyBatchSizes.length = 0
+  expect(
+    await batchingStore.listStages({
+      project: 'fixture',
+      workflowKeys: [],
+      states: TASK_FLOW_STAGE_STATES,
+    }),
+  ).toEqual([])
+  expect(workflowKeyBatchSizes).toEqual([])
   const selected = (await readStore.listOpenStages({ project: 'fixture' }))[0]!
   await abandonSelectedWorkflowCursorForClose(
     selected,
@@ -427,6 +464,128 @@ test('hosted task-flow intents never touch the five local task-flow tables', asy
       ]),
     ),
   ).toEqual({ cursor: [2, 2], stop: [3, 3], brief: [3, 3], review: [5, 5] })
+
+  memoryInput.taskFlowStages.push({
+    flow: {
+      ...hosted.flow,
+      id: '00000000-0000-4000-8001-000000000006',
+      openStageRecordId: '00000000-0000-4000-8001-000000000007',
+    },
+    stage: {
+      ...hosted.stage,
+      id: '00000000-0000-4000-8001-000000000007',
+      flowRecordId: '00000000-0000-4000-8001-000000000006',
+      number: 11,
+      workflow: 'plan-task',
+      activeSlug: 'start',
+      workflowKey: taskKey,
+      sessionId: context.session,
+      state: 'running',
+      obligations: [],
+      stepTexts: [],
+      textCopies: [],
+    },
+  })
+  installTaskRows([
+    {
+      key: taskKey,
+      record_id: taskId,
+      project: 'fixture',
+      title: 'Hosted task-flow guard epic',
+      parent_key: null,
+      status: 'open',
+      status_category: 'open',
+      last_seen: null,
+      opened_at: null,
+      has_children: true,
+    },
+    {
+      key: 'DEV-HOSTED-GUARD-CHILD',
+      record_id: '00000000-0000-4000-8001-000000000005',
+      project: 'fixture',
+      title: 'Hosted task-flow guard child',
+      parent_key: taskKey,
+      status: 'open',
+      status_category: 'open',
+      last_seen: null,
+      opened_at: null,
+      has_children: false,
+    },
+  ])
+  await boardClaimTake(
+    { project: 'fixture', subject: `task:${taskKey}` },
+    {
+      database: raw,
+      cwd: '/fixture',
+      taskCursorAuthority: { mode: 'take', session: context.session },
+    },
+  )
+  const childFactStageRows: number[] = []
+  const countedTaskFlowClient = {
+    ...taskFlowClient,
+    listTaskFlowStages: async (
+      selector: Parameters<NonNullable<typeof taskFlowClient.listTaskFlowStages>>[0],
+      destination: Parameters<NonNullable<typeof taskFlowClient.listTaskFlowStages>>[1],
+    ) => {
+      const result = await taskFlowClient.listTaskFlowStages!(selector, destination)
+      if (selector.workflowKeys) childFactStageRows.push(result.items.length)
+      return result
+    },
+  }
+  installRecordApiClient(countedTaskFlowClient)
+  expect(
+    (await taskFlowReadStore(database).listOpenStages({ project: 'fixture' })).some(
+      (stage) => stage.workflow_slug === 'plan-task' && stage.step_slug === 'start',
+    ),
+  ).toBe(true)
+  expect(
+    (await listWorkflowCursors({ session: context.session }, database)).some(
+      (stage) => stage.workflow_slug === 'plan-task' && stage.step_slug === 'start',
+    ),
+  ).toBe(true)
+  const stopWithHistory = async () => {
+    const before = { ...memoryInput.taskFlowReadCounts }
+    const summary = await sessionStopSummary(
+      {
+        session: context.session,
+        previousBlockKey: null,
+        now: '2026-11-21T12:00:00.000Z',
+      },
+      database,
+    )
+    const reads = taskFlowReadDelta(before, memoryInput.taskFlowReadCounts)
+    const facts = await gatherChildTaskFacts(database, 'fixture', stopTasks)
+    return { reads, summary, facts }
+  }
+  const withoutHistory = await stopWithHistory()
+  for (let index = 0; index < 1_500; index++) {
+    const suffix = String(index + 100).padStart(12, '0')
+    memoryInput.taskFlowStages.push({
+      flow: {
+        ...hosted.flow,
+        id: `00000000-0000-4000-8010-${suffix}`,
+        taskId: null,
+        taskKey: `DEV-HISTORY-${index}`,
+      },
+      stage: {
+        ...hosted.stage,
+        id: `00000000-0000-4000-8020-${suffix}`,
+        flowRecordId: `00000000-0000-4000-8010-${suffix}`,
+        number: index + 100,
+        workflowKey: `DEV-HISTORY-${index}`,
+        sessionId: 'unrelated-history',
+        state: index % 2 === 0 ? 'done' : 'abandoned',
+        obligations: [],
+        stepTexts: [],
+        textCopies: [],
+      },
+    })
+  }
+  const withHistory = await stopWithHistory()
+  expect([withoutHistory.reads.total, withHistory.reads.total]).toEqual([3, 3])
+  expect(childFactStageRows).toEqual([11, 11])
+  expect(withHistory.facts).toEqual(withoutHistory.facts)
+  expect(withHistory.summary).toEqual(withoutHistory.summary)
 
   const readStageSummaries = taskFlowClient.readTaskFlowStageSummaries!
   installRecordApiClient({

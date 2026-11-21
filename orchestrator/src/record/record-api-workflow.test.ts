@@ -11,6 +11,7 @@ import {
   TASK_FLOW_OPEN_STAGE_STATES,
   TASK_FLOW_PRESENCE_BATCH_MAX,
   TASK_FLOW_STAGE_LIST_LIMIT_MAX,
+  TASK_FLOW_STAGE_LIST_WORKFLOW_KEYS_MAX,
   TASK_FLOW_STAGE_SUMMARY_BATCH_MAX,
   type TaskFlowPresence,
   type TaskFlowStageListQuery,
@@ -297,13 +298,16 @@ test('task-flow stage list refuses contradictory task-link filters', async () =>
 test('task-flow stage list passes the hosted filters and ordering', async () => {
   const calls: TaskFlowStageListQuery[] = []
   const response = await taskFlowApp(calls).request(
-    `/v1/task-flow/stages?workflow=fix-defect&mode=default&workflowKey=DEV-2234&keyless=true&primaryInstance=true&taskId=${KNOWN_ID}&linked=true&openedMachineId=${UNKNOWN_ID}&order=newest`,
+    `/v1/task-flow/stages?projectId=${PROJECT}&state=running&workflow=fix-defect&mode=default&workflowKey=DEV-2234&workflowKeys=DEV-2234&workflowKeys=DEV-2235&keyless=true&primaryInstance=true&taskId=${KNOWN_ID}&linked=true&openedMachineId=${UNKNOWN_ID}&order=newest`,
   )
   expect(response.status).toBe(200)
   expect(calls[0]).toMatchObject({
     workflow: 'fix-defect',
     mode: 'default',
     workflowKey: 'DEV-2234',
+    workflowKeys: ['DEV-2234', 'DEV-2235'],
+    projectId: PROJECT,
+    states: ['running'],
     keyless: true,
     primaryInstance: true,
     taskId: KNOWN_ID,
@@ -311,6 +315,23 @@ test('task-flow stage list passes the hosted filters and ordering', async () => 
     openedMachineId: UNKNOWN_ID,
     order: 'newest',
   })
+})
+
+test('task-flow stage list refuses more than the workflow-key batch maximum', async () => {
+  const calls: TaskFlowStageListQuery[] = []
+  const query = new URLSearchParams({ projectId: PROJECT })
+  for (let index = 0; index <= TASK_FLOW_STAGE_LIST_WORKFLOW_KEYS_MAX; index++)
+    query.append('workflowKeys', `DEV-${index}`)
+  const response = await taskFlowApp(calls).request(`/v1/task-flow/stages?${query}`)
+  expect(response.status).toBe(400)
+  expect(calls).toEqual([])
+})
+
+test('task-flow stage list without workflowKeys preserves the existing query', async () => {
+  const calls: TaskFlowStageListQuery[] = []
+  const response = await taskFlowApp(calls).request(`/v1/task-flow/stages?projectId=${PROJECT}`)
+  expect(response.status).toBe(200)
+  expect(calls[0]?.workflowKeys).toBeUndefined()
 })
 
 type ByIdKind = 'stage' | 'text' | 'obligation'

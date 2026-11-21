@@ -182,6 +182,7 @@ function registerTaskFlowListRoute(
       workflow: context.req.query('workflow'),
       mode: context.req.query('mode'),
       workflowKey: context.req.query('workflowKey'),
+      workflowKeys: context.req.queries('workflowKeys'),
       keyless: context.req.query('keyless'),
       primaryInstance: context.req.query('primaryInstance'),
       taskId: context.req.query('taskId'),

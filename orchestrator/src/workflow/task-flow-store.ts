@@ -135,6 +135,7 @@ interface TaskFlowQueries {
   listStages(input: {
     project?: string
     sessionId?: string
+    workflowKeys?: readonly string[]
     states: readonly [TaskFlowStageState, ...TaskFlowStageState[]]
   }): TaskFlowListedStageRow[]
   keyedStageHistory(input: { since: string }): TaskFlowStageCursorRow[]
