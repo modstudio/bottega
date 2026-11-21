@@ -21,13 +21,20 @@ type ProbePlant = (facts: {
 }) => Record<string, string | undefined>
 type AutoloadProbe = { flag: AutoloadOffFlag; directory: string; plant: ProbePlant }
 
+function compileAutoloadFlag(source: string): AutoloadOffFlag {
+  return (
+    COMPILE_AUTOLOAD_OFF_FLAGS.find((flag) => flag.endsWith(`autoload-${source}`)) ??
+    `--no-compile-autoload-${source}`
+  ) as AutoloadOffFlag
+}
+
 function observerSource(observerMarker: string): string {
   return `import { writeFileSync } from 'node:fs'\nwriteFileSync(${JSON.stringify(observerMarker)}, '')\n`
 }
 
 const AUTOLOAD_PROBES: readonly AutoloadProbe[] = [
   {
-    flag: '--no-compile-autoload-dotenv',
+    flag: compileAutoloadFlag('dotenv'),
     directory: 'dotenv',
     plant: ({ directory, marker, observerMarker, environment }) => {
       writeFileSync(join(directory, '.env'), `${RELEASE_DOTENV_SENTINEL_ENV}=loaded\n`)
@@ -41,7 +48,7 @@ const AUTOLOAD_PROBES: readonly AutoloadProbe[] = [
     },
   },
   {
-    flag: '--no-compile-autoload-bunfig',
+    flag: compileAutoloadFlag('bunfig'),
     directory: 'bunfig',
     plant: ({ directory, marker, observerMarker, environment }) => {
       writeFileSync(join(directory, 'bunfig.toml'), 'preload = ["./sentinel.ts"]\n')
@@ -54,7 +61,7 @@ const AUTOLOAD_PROBES: readonly AutoloadProbe[] = [
     },
   },
   {
-    flag: '--no-compile-autoload-tsconfig',
+    flag: compileAutoloadFlag('tsconfig'),
     directory: 'tsconfig',
     plant: ({ directory, marker, observerMarker, environment }) => {
       mkdirSync(join(directory, 'planted'))
@@ -79,7 +86,7 @@ const AUTOLOAD_PROBES: readonly AutoloadProbe[] = [
     },
   },
   {
-    flag: '--no-compile-autoload-package-json',
+    flag: compileAutoloadFlag('package-json'),
     directory: 'package-json',
     plant: ({ directory, marker, observerMarker, environment }) => {
       writeFileSync(
@@ -102,7 +109,9 @@ const AUTOLOAD_PROBES: readonly AutoloadProbe[] = [
 const coveredFlags = new Set(AUTOLOAD_PROBES.map(({ flag }) => flag))
 if (
   coveredFlags.size !== AUTOLOAD_PROBES.length ||
-  COMPILE_AUTOLOAD_OFF_FLAGS.some((flag) => !coveredFlags.has(flag))
+  COMPILE_AUTOLOAD_OFF_FLAGS.some(
+    (flag) => AUTOLOAD_PROBES.filter(({ flag: probeFlag }) => probeFlag === flag).length !== 1,
+  )
 ) {
   throw new Error(
     'release binary runtime guard must define exactly one probe for every compile autoload flag',
