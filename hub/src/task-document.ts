@@ -339,12 +339,27 @@ export async function updateTaskDocument(
       expected_revision: expectedVersion,
     }
     await sendHostedChanges(current.task_key, [[change]], writeOptions)
-    return withDocumentLabel({
+    const document = withDocumentLabel({
       ...row,
       task_record_id: current.task_record_id,
       role: documentRole(row.role),
       number: current.number,
     })
+    const applied = applyHostedWriteLocally(
+      `${document.label} was updated in the hosted record; its local copy will arrive on the next record pull`,
+      () =>
+        writeTransaction((conn) => {
+          if (role) demoteOtherTaskDocumentRoleHolders(conn, current.task_record_id, role, id)
+          conn
+            .query(
+              `UPDATE task_document
+                  SET role = ?, title = ?, body = ?, version = ?, updated_at = ?
+                WHERE record_id = ?`,
+            )
+            .run(role, row.title, row.body, row.version, row.updated_at, id)
+        }),
+    )
+    return applied ? getTaskDocument(id) : document
   }
   writeTransaction((conn) => {
     const row = conn
