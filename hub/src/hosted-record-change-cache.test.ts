@@ -362,7 +362,7 @@ test('a failed record change names its table and record id and keeps the origina
 
   expect(thrown).toBeInstanceOf(Error)
   expect((thrown as Error).message).toContain(
-    `hub_task_document ${recordId}: live task document ${recordId}`,
+    `hosted task change hub_task_document ${recordId}: live task document ${recordId}`,
   )
   expect((thrown as Error).cause).toBeInstanceOf(Error)
   expect(((thrown as Error).cause as Error).message).toContain('has no number')

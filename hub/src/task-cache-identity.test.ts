@@ -243,23 +243,62 @@ test('record role collision demotes the local holder and applies the incoming do
   ])
 })
 
-test('record role collision leaves the demoted holder pending edit unchanged', () => {
-  seedRoleHolder('pending-document')
-  writeTransaction((conn) =>
-    queueHostedChange(conn, 'hub_task_document', 'pending-document', 'upsert', AT, ['role']),
-  )
+test('record role collision removes the pending role while preserving other document edits', () => {
+  for (const [recordId, fields, expected] of [
+    ['role-and-title', ['role', 'title'], ['title']],
+    ['role-only', ['role'], null],
+    ['full-row', null, ['title', 'body', 'version']],
+  ] as const) {
+    resetFixtureStore()
+    seedRoleHolder(recordId)
+    writeTransaction((conn) =>
+      queueHostedChange(conn, 'hub_task_document', recordId, 'upsert', AT, fields),
+    )
 
-  expect(applyRoleCollision('incoming-document')).toEqual([
-    { record_id: 'pending-document', role: null },
-    { record_id: 'incoming-document', role: 'handoff' },
-  ])
-  expect(
-    db()
-      .query<{ operation: string; fields: string }, []>(
-        `SELECT operation,fields FROM hosted_outbox WHERE table_name='hub_task_document' AND row_id='pending-document'`,
+    expect(applyRoleCollision(`incoming-${recordId}`)[0]).toEqual({
+      record_id: recordId,
+      role: null,
+    })
+    const stored = db()
+      .query<{ fields: string | null }, [string]>(
+        `SELECT fields FROM hosted_outbox
+         WHERE table_name='hub_task_document' AND row_id=?`,
       )
-      .get(),
-  ).toEqual({ operation: 'upsert', fields: '["role"]' })
+      .get(recordId)
+    expect(stored ? JSON.parse(stored.fields!) : null).toEqual(expected)
+  }
+})
+
+test('a failed snapshot row names its family, table, and record id', () => {
+  seedTask(TASK_A, 'DEV-1')
+  const recordId = 'snapshot-document-without-number'
+
+  expect(() =>
+    applyHostedTaskChanges({
+      tasks: [],
+      comments: [],
+      documents: [
+        {
+          id: recordId,
+          task_key: 'DEV-1',
+          task_id: TASK_A,
+          project_name: 'workshop',
+          number: null,
+          role: null,
+          title: 'invalid',
+          body: '',
+          version: 'v1',
+          created_at: AT,
+          updated_at: AT,
+          deleted_at: null,
+        },
+      ],
+      statusEvents: [],
+      cursor: AT,
+    }),
+  ).toThrow(
+    `hosted task change hub_task_document ${recordId}: live task document ${recordId} for task DEV-1 has no number`,
+  )
 })
 
 test('task pull keeps a counter higher than its live document numbers', () => {

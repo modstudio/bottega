@@ -62,3 +62,17 @@ export type HostedChangeFamily = {
   reportAbsentParentSkips?: true
   failureLabel: string
 }
+
+export function applyHostedRow<T>(
+  failureLabel: string,
+  table: string,
+  id: string,
+  apply: () => T,
+): T {
+  try {
+    return apply()
+  } catch (cause) {
+    const message = cause instanceof Error ? cause.message : String(cause)
+    throw new Error(`${failureLabel} ${table} ${id}: ${message}`, { cause })
+  }
+}
