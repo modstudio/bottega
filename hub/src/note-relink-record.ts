@@ -74,18 +74,18 @@ function recordPreparedNoteRelinkComments(
       .run(
         comment.id,
         comment.task_key,
-        comment.task_id,
+        comment.task_id ?? null,
         comment.body,
         comment.created_at,
         comment.updated_at,
-        comment.actor_user_id,
-        comment.actor_name,
-        comment.agent,
-        comment.run_id,
+        comment.actor_user_id ?? null,
+        comment.actor_name ?? null,
+        comment.agent ?? null,
+        comment.run_id ?? null,
       )
     conn
       .query(`UPDATE task SET updated_at=?,last_seen=? WHERE record_id=?`)
-      .run(comment.updated_at, comment.updated_at, comment.task_id)
+      .run(comment.updated_at, comment.updated_at, comment.task_id ?? null)
   }
 }
 

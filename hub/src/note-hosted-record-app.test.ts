@@ -40,9 +40,9 @@ beforeAll(async () => {
       noDestinationWriteCounter: createNoDestinationWriteCounter(),
     },
     {
-      tasks: { fetch: identityFetch },
+      tasks: { fetch: identityFetch as unknown as typeof fetch },
       notes: {
-        fetch: identityFetch,
+        fetch: identityFetch as unknown as typeof fetch,
         create: createHostedNote,
         get: getHostedNote,
         list: listHostedNotes,
@@ -75,6 +75,9 @@ test('a note filed in one client store lists in another without a pull', async (
         cwd: '/fixtures/repos/gamma',
         project: 'gamma',
         files: [],
+        run_record_id: null,
+        branch: null,
+        commit: null,
         session_id: 'client-a',
       },
     },

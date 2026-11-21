@@ -130,11 +130,12 @@ async function postNote(body: NoteRequestBody, at: string) {
 
 export const noteHostedFetch = async (input: string, init?: RequestInit) => {
   const url = new URL(input)
-  const body = (init?.body ? JSON.parse(String(init.body)) : {}) as NoteRequestBody
+  const rawBody: unknown = init?.body ? JSON.parse(String(init.body)) : {}
+  const body = rawBody as NoteRequestBody
   const at = new Date().toISOString()
   if (url.pathname === '/v1/tasks/identity') return Response.json(identity)
   if (url.pathname === '/v1/changes') {
-    const changes = body as Array<{ id: string }>
+    const changes = rawBody as Array<{ id: string }>
     return Response.json(changes.map((change) => ({ id: change.id, status: 'applied' })))
   }
   if (url.pathname.startsWith('/v1/notes') && init?.method === 'GET') return getRoute(url, at)
