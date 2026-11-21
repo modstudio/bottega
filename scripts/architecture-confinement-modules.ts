@@ -48,6 +48,11 @@ export const confinementModules: ConfinementModule[] = [
     '../../../shared/config-directory.ts',
     '../../../shared/state-directory.ts',
   ]),
+  module('orchestrator/src/sandbox/sandbox-toolchain-path.ts', [
+    'node:fs',
+    'node:path',
+    '../../../shared/bounded-process.ts',
+  ]),
   module('orchestrator/src/sandbox/sandbox.ts', [
     '../../../shared/brand.ts',
     '../../../shared/file-backed-secret-paths.ts',
@@ -66,6 +71,7 @@ export const confinementModules: ConfinementModule[] = [
     './node-module-read-carvebacks.ts',
     './sandbox-area-read-profile.ts',
     './sandbox-runtime.ts',
+    './sandbox-toolchain-path.ts',
     './weaker-network-isolation.ts',
     './worktree-root-entries.ts',
     './worker-runtime-read-carvebacks.ts',
@@ -117,6 +123,7 @@ export const confinementModules: ConfinementModule[] = [
     '../project/projects.ts',
     '../resources/ref-guard.ts',
     '../run/run-worker-home.ts',
+    '../state/statistics.ts',
     './install-read-policy.ts',
     './confinement-probe-task-port.ts',
     './sandbox.ts',
