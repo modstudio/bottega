@@ -24,6 +24,7 @@ const installProofPaths =
 const aggregateAcceptance =
   '.value.result == "success" or ((.key == "migration-compatibility" or .key == "install-proof") and .value.result == "skipped")'
 const installProofCommand = 'bun run release:install-proof -- "v$(jq -r .version package.json)"'
+export const ORCHESTRATOR_JOB_TIMEOUT_MINUTES = 15
 const ciReleaseSmokeCondition =
   "github.event_name == 'pull_request' || github.event_name == 'merge_group' || github.event_name == 'workflow_dispatch'"
 
@@ -190,6 +191,31 @@ function checkInstallProofJob(source: string): void {
     throw new Error('ci aggregate must accept a path-skipped install-proof job')
 }
 
+function checkOrchestratorJob(source: string): void {
+  const orchestrator = workflowJob(source, 'orchestrator')
+  if (
+    !new RegExp(`^ {4}timeout-minutes: ${ORCHESTRATOR_JOB_TIMEOUT_MINUTES}$`, 'm').test(
+      orchestrator,
+    )
+  ) {
+    throw new Error(
+      `orchestrator job must have a ${ORCHESTRATOR_JOB_TIMEOUT_MINUTES} minute timeout`,
+    )
+  }
+}
+
+function checkNoDirectBunTests(source: string): void {
+  for (const jobName of workflowJobNames(source)) {
+    for (const command of workflowRunCommands(workflowJob(source, jobName))) {
+      const direct = /(?:^|\n|&&|\|\||;)\s*(bun\s+test(?:\s+[^\n;&|]*)?)/.exec(command)
+      if (!direct) continue
+      throw new Error(
+        `CI workflow run steps must not invoke bun test directly; route every Bun suite through $SUITE_COMMAND; found ${JSON.stringify(direct[1]!.trim())} in ${jobName}`,
+      )
+    }
+  }
+}
+
 function workflowNeeds(job: string, dependency: string): boolean {
   if (new RegExp(`^ {4}needs:\\s*${dependency}\\s*$`, 'm').test(job)) return true
   const inline = job.match(/^ {4}needs:\s*\[([^\]]*)\]\s*$/m)
@@ -321,6 +347,7 @@ export function checkCiWorkflow(source: string): void {
   checkCiReleaseSmokeJob(source)
   checkMigrationCompatibilityJobs(source)
   checkInstallProofJob(source)
+  checkOrchestratorJob(source)
   const actual = workflowJobNames(source).sort()
   const expected = expectedWorkflowJobNames()
   if (JSON.stringify(actual) !== JSON.stringify(expected)) {
@@ -358,6 +385,7 @@ export function checkCiWorkflow(source: string): void {
     throw new Error('postgres job must pass its service container to the real-Postgres suite')
   if (!postgres.includes('run: bun run --cwd orchestrator test:postgres --without-live-import'))
     throw new Error('postgres job must run the real-Postgres suite without the live import proof')
+  checkNoDirectBunTests(source)
 }
 
 /** Keeps release creation inside the release publisher; check-bun-versions owns the Bun declaration. */

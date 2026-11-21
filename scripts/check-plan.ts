@@ -126,6 +126,7 @@ export const CHECK_LEGS = [
     },
     suite: [
       { argv: ['bun', 'run', 'test'], unitTests: true },
+      { argv: ['bun', 'run', '--cwd', '../ui', 'test'], unitTests: true },
       { argv: ['bun', 'run', 'build'], unitTests: false },
     ],
   },

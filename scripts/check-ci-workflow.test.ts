@@ -6,6 +6,7 @@ import {
   checkCiWorkflow,
   checkReleaseWorkflow,
   expectedWorkflowJobNames,
+  ORCHESTRATOR_JOB_TIMEOUT_MINUTES,
   suiteRunLine,
 } from './check-ci-workflow.ts'
 import { CI_ONLY_SUITES } from './check-plan.ts'
@@ -38,6 +39,7 @@ test('refuses a workflow with a missing or extra job', () => {
       if (job === 'migration-paths') return migrationPathsJobFixture()
       if (job === 'migration-compatibility') return migrationCompatibilityJobFixture()
       if (job === 'install-proof') return installProofJobFixture()
+      if (job === 'orchestrator') return orchestratorJobFixture()
       if (job === 'ci')
         return `  ${job}:\n    needs: [${expectedWorkflowJobNames()
           .filter((name) => name !== 'ci')
@@ -114,6 +116,39 @@ test('pins the release install proof path gate and macOS job', () => {
       workflow.replace("if: needs.migration-paths.outputs.install-proof == 'true'", 'if: always()'),
     ),
   ).toThrow('install-proof job must skip unless install proof paths changed')
+})
+
+test('pins the orchestrator shard job timeout', () => {
+  const workflow = readFileSync(new URL('../.github/workflows/ci.yml', import.meta.url), 'utf8')
+  expect(() => checkCiWorkflow(workflow)).not.toThrow()
+  const withoutJobTimeout = workflow.replace(
+    `  orchestrator:\n    name: orchestrator (\${{ matrix.shard }}/\${{ strategy.job-total }})\n    runs-on: ubuntu-24.04\n    timeout-minutes: ${ORCHESTRATOR_JOB_TIMEOUT_MINUTES}\n`,
+    `  orchestrator:\n    name: orchestrator (\${{ matrix.shard }}/\${{ strategy.job-total }})\n    runs-on: ubuntu-24.04\n`,
+  )
+  const refusal = `orchestrator job must have a ${ORCHESTRATOR_JOB_TIMEOUT_MINUTES} minute timeout`
+  expect(() => checkCiWorkflow(withoutJobTimeout)).toThrow(refusal)
+  expect(() =>
+    checkCiWorkflow(
+      withoutJobTimeout.replace(
+        '      - name: Test shard\n',
+        `      - name: Test shard\n        timeout-minutes: ${ORCHESTRATOR_JOB_TIMEOUT_MINUTES}\n`,
+      ),
+    ),
+  ).toThrow(refusal)
+})
+
+test('refuses a CI step that invokes bun test directly', () => {
+  const workflow = readFileSync(new URL('../.github/workflows/ci.yml', import.meta.url), 'utf8')
+  expect(() =>
+    checkCiWorkflow(
+      workflow.replace(
+        '      - name: Test root batch\n',
+        '      - name: Direct test\n        run: bun test\n      - name: Test root batch\n',
+      ),
+    ),
+  ).toThrow(
+    'CI workflow run steps must not invoke bun test directly; route every Bun suite through $SUITE_COMMAND; found "bun test" in root',
+  )
 })
 
 test('refuses an aggregate that lets a path-gated job fail', () => {
@@ -425,6 +460,7 @@ function readWorkflowFixture() {
       if (job === 'migration-paths') return migrationPathsJobFixture()
       if (job === 'migration-compatibility') return migrationCompatibilityJobFixture()
       if (job === 'install-proof') return installProofJobFixture()
+      if (job === 'orchestrator') return orchestratorJobFixture()
       if (job === 'ci')
         return `  ${job}:\n    needs: [${expectedWorkflowJobNames()
           .filter((name) => name !== 'ci')
@@ -469,6 +505,12 @@ function installProofJobFixture() {
           bun-version-file: .bun-version
       - run: bun install --frozen-lockfile
       - run: ${installProofCommand}`
+}
+
+function orchestratorJobFixture() {
+  return `  orchestrator:
+    runs-on: ubuntu-24.04
+    timeout-minutes: ${ORCHESTRATOR_JOB_TIMEOUT_MINUTES}`
 }
 
 function releaseSmokeJobFixture() {
