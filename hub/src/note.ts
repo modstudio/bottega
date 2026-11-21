@@ -21,8 +21,6 @@ import { readInstallBinding } from './install-binding.ts'
 import { mergeNoteAnchors } from './note-anchor-merge.ts'
 import { deriveNoteFileAnchors } from './note-file-anchors.ts'
 
-export { deriveNoteFileAnchors, NOTE_ANCHOR_MAX_FILE_BYTES } from './note-file-anchors.ts'
-
 import { applyHostedNote } from './note-cache.ts'
 import { hostedCreateNote, hostedPromoteNote, type NoteClientOptions } from './note-client.ts'
 import {
