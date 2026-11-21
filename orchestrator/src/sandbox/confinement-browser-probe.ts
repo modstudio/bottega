@@ -1,6 +1,7 @@
 // concern: headless-browser confinement probe; resolves an installed shell and launches it in SRT.
 
 import { mkdirSync, readdirSync } from 'node:fs'
+import { homedir } from 'node:os'
 import { isAbsolute, join, resolve } from 'node:path'
 import { startBounded } from '../../../shared/bounded-process.ts'
 import { resetSandbox, type SandboxRuntimeConfig, sandboxLaunchArgv } from './sandbox.ts'
@@ -124,8 +125,8 @@ export async function launchHeadlessBrowserProbe(
 ) {
   const executable = headlessShellExecutable({
     platform: process.platform,
-    homeDirectory: environment.HOME ?? '',
-    playwrightBrowsersPath: environment.PLAYWRIGHT_BROWSERS_PATH,
+    homeDirectory: homedir(),
+    playwrightBrowsersPath: process.env.PLAYWRIGHT_BROWSERS_PATH,
     listDirectory: (directory) => readdirSync(directory),
   })
   if (executable === null) {

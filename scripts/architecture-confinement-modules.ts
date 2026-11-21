@@ -107,6 +107,7 @@ export const confinementModules: ConfinementModule[] = [
   ]),
   module('orchestrator/src/sandbox/confinement-browser-probe.ts', [
     'node:fs',
+    'node:os',
     'node:path',
     '../../../shared/bounded-process.ts',
     './sandbox.ts',
