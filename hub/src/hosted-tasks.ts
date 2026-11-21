@@ -16,6 +16,9 @@ import type {
 } from './push-contract.ts'
 import { isSameStatusEvent, statusEventIdentity } from './status-event-identity.ts'
 import { formatTaskDocumentLabel } from './task-document-label.ts'
+import type { HostedTaskLookupRow } from './task-types.ts'
+
+export type { HostedTaskLookupRow } from './task-types.ts'
 
 export type HostedTask = PushedTask & { newly_assigned?: boolean }
 export type HostedComment = PushedComment
@@ -23,19 +26,6 @@ export type HostedDocument = PushedDocument
 export type HostedStatusEvent = PushedStatusEvent
 
 export const TASK_LOOKUP_KEY_LIMIT = 100
-
-export type HostedTaskLookupRow = {
-  record_id: string
-  key: string
-  project: string
-  title: string | null
-  parent_key: string | null
-  status: string | null
-  status_category: string | null
-  opened_at: string | null
-  last_seen: string | null
-  has_children: boolean
-}
 
 export const hostedTaskPullSerializers = {
   hub_task: (row: HostedTask) => row,

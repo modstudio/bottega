@@ -21,5 +21,7 @@ export async function readLiveProjectTasks(
   reader: ProjectTaskListReader,
   project: string,
 ): Promise<HubTaskReference[]> {
-  return (await Promise.all(LIVE_TASK_STATUS_CATEGORIES.map((status) => reader(project, { status })))).flat()
+  return (
+    await Promise.all(LIVE_TASK_STATUS_CATEGORIES.map((status) => reader(project, { status })))
+  ).flat()
 }

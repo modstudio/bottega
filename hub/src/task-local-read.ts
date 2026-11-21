@@ -1,9 +1,8 @@
 import { db } from './db.ts'
-import type { HostedTaskLookupRow } from './hosted-tasks.ts'
 import { listTaskDocuments, type TaskDocumentSummary } from './task-document.ts'
 import { resolveTask, type TaskScope, taskByRecordId, taskRecordId } from './task-identity.ts'
 import type { TaskRow } from './task-row.ts'
-import type { TaskComment } from './task-types.ts'
+import type { HostedTaskLookupRow, TaskComment } from './task-types.ts'
 import { registeredTaskProject } from './task-write-destination.ts'
 
 export function listLocalTasks(

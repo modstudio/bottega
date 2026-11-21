@@ -316,6 +316,18 @@ export async function hostedListTasks(
 
 const TASK_LOOKUP_DEPLOY_REMEDY = 'run `scripts/deploy/hosted api` and retry'
 
+function oldTaskLookupRefusal(error: unknown): Error | null {
+  const status =
+    error instanceof Error && 'status' in error && typeof error.status === 'number'
+      ? error.status
+      : undefined
+  if (status !== 404 && status !== 405) return null
+  const message = error instanceof Error ? error.message : String(error)
+  return new Error(`hosted task lookup is unavailable: ${message}; ${TASK_LOOKUP_DEPLOY_REMEDY}`, {
+    cause: error,
+  })
+}
+
 export async function hostedLookupTasks(
   project: string,
   keys: string[],
@@ -334,16 +346,8 @@ export async function hostedLookupTasks(
       )
       for (const task of result.tasks) tasks.set(task.record_id, task)
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error)
-      const refusalStatus =
-        error instanceof Error && 'status' in error && typeof error.status === 'number'
-          ? error.status
-          : undefined
-      if (refusalStatus === 404 || refusalStatus === 405)
-        throw new Error(
-          `hosted task lookup is unavailable: ${message}; ${TASK_LOOKUP_DEPLOY_REMEDY}`,
-          { cause: error },
-        )
+      const refusal = oldTaskLookupRefusal(error)
+      if (refusal) throw refusal
       throw error
     }
   }
