@@ -57,7 +57,7 @@ const RELEASE_CI_DEPLOY_WAIT_MS = 30 * 60 * 1_000
 const RELEASE_CI_DEPLOY_POLL_MS = 30 * 1_000
 
 /** Validate a proposed tag against the version reported by this development checkout. */
-export function validateReleaseTagVersion(
+function validateReleaseTagVersion(
   tag: string,
   fromDirectory?: string,
   environment: Record<string, string | undefined> = process.env,

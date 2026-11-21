@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { startBounded } from '../../../shared/bounded-process.ts'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { refusal, renderRefusal } from '../../../shared/refusal.ts'
 
 const AUTOLOAD_SWITCHES = [
   '--compile-autoload-dotenv',
@@ -151,7 +152,12 @@ export async function checkReleaseBinaryAutoload(
     )
     if (build.exitCode !== 0) {
       throw new Error(
-        `release binary runtime guard could not build the host binary: ${build.stderr.trim() || build.stdout.trim() || `exit ${build.exitCode}`}`,
+        renderRefusal(
+          refusal(
+            `release binary runtime guard could not build the host binary: ${build.stderr.trim() || build.stdout.trim() || `exit ${build.exitCode}`}`,
+            { kind: 'edit', text: 'fix the reported release build failure, then retry' },
+          ),
+        ),
       )
     }
     const binary = join(output, PLATFORM_SLUG)
