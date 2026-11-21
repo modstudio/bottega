@@ -43,7 +43,7 @@ test('claim records host admission before its repository tree plan runs', async 
     writesJob: false,
     repoJob: true,
     runProjectName: 'admission-order-fixture',
-    projectAttribution: runProjectAttribution('admission-order-fixture'),
+    ...runProjectAttribution('admission-order-fixture'),
     reason: 'test',
     vendorSession: null,
     pack: null,

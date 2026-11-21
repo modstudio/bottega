@@ -108,7 +108,7 @@ test('a later claim records a UUID ruling identity and never resurrects a failed
       writesJob: false,
       repoJob: false,
       runProjectName: null,
-      projectAttribution: runProjectAttribution(null),
+      ...runProjectAttribution(null),
       reason: 'test',
       vendorSession: null,
       pack: null,
@@ -146,7 +146,7 @@ test('a later claim records a UUID ruling identity and never resurrects a failed
     const projectRecordId = newRecordId()
     upsertProject({ recordId: projectRecordId, name: 'claim-fixture', path: runsDir })
     claimInput.runProjectName = 'claim-fixture'
-    claimInput.projectAttribution = runProjectAttribution('claim-fixture')
+    Object.assign(claimInput, runProjectAttribution('claim-fixture'))
     const claimed = await claimRun(claimInput)
 
     expect(claimed.claim.id).toBe(reserved)
@@ -205,7 +205,7 @@ test('a later claim records a UUID ruling identity and never resurrects a failed
       },
       stamp: 'derived-project-turn',
       runProjectName: null,
-      projectAttribution: runProjectAttribution(null),
+      ...runProjectAttribution(null),
       precomputedLinks: null,
       carriedContext: { questionIds: [], attachmentWarnings: [] },
       implicitReview: { branch: null, findings: false },

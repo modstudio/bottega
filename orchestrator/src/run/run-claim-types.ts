@@ -5,11 +5,6 @@ import type { prepareWorkerMcpConfig } from '../worktree/worktree-mcp.ts'
 import type { Changes } from '../worktree/worktree-remove.ts'
 import type { Worktree } from '../worktree/worktree-types.ts'
 
-export type RunProjectAttribution = {
-  namedProjectRecordId: string | null
-  rowProjectId(derivedProjectRecordId?: string | null): string | null
-}
-
 export type ClaimResult = {
   promptPath: string
   outputPath: string

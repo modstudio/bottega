@@ -38,7 +38,7 @@ async function loadRunUnderTest(): Promise<typeof import('./run.ts').run> {
       if (input.callerCwd !== caller) return originalClaimRun(input)
       const id = newRecordId()
       const started = Date.now()
-      const runProjectRecordId = input.projectAttribution.rowProjectId(null)
+      const runProjectRecordId = input.rowProjectId(null)
       db()
         .query(
           `INSERT INTO run

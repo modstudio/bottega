@@ -225,7 +225,7 @@ describe('behavioral canon evals', () => {
         writesJob: false,
         repoJob: false,
         runProjectName: null,
-        projectAttribution: runProjectAttribution(null, options.projectRecordId),
+        ...runProjectAttribution(null, options.projectRecordId),
         reason: 'test',
         vendorSession: null,
         pack: null,
