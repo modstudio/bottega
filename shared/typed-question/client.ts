@@ -236,6 +236,8 @@ type CredentialResolution =
   | { kind: 'missing-key' }
   | { kind: 'key-resolution' }
 
+type CredentialKey = { value: string; version?: number }
+
 function credentialResolutionFailure(
   result: Exclude<CredentialResolution, { kind: 'key' }>,
   started: number,
@@ -297,13 +299,13 @@ type CredentialRequestResult =
   | {
       kind: 'response'
       response: Response | 'timeout' | 'transport'
-      key: string
+      key: CredentialKey
       refreshed: boolean
     }
   | Exclude<CredentialResolution, { kind: 'key' }>
 
 async function sendWithCredentialRefresh(
-  key: { value: string; version?: number },
+  key: CredentialKey,
   body: string,
   dependencies: TypedQuestionClientDependencies,
   allowRefresh: boolean,
@@ -314,7 +316,7 @@ async function sendWithCredentialRefresh(
     typeof response === 'string' ||
     (response.status !== 401 && response.status !== 403)
   )
-    return { kind: 'response', response, key: key.value, refreshed: false }
+    return { kind: 'response', response, key, refreshed: false }
 
   dependencies.invalidateCredential?.(key)
   const resolved = await resolveKey(dependencies)
@@ -322,7 +324,7 @@ async function sendWithCredentialRefresh(
   return {
     kind: 'response',
     response: await sendRequest(resolved.value, body, dependencies.fetch),
-    key: resolved.value,
+    key: resolved,
     refreshed: true,
   }
 }
@@ -390,8 +392,9 @@ export async function askTypedQuestionsClient(
   dependencies: TypedQuestionClientDependencies = clientDependencies,
 ): Promise<TypedQuestionsClientResult> {
   const started = performance.now()
-  let resolved = await resolveKey(dependencies)
+  const resolved = await resolveKey(dependencies)
   if (resolved.kind !== 'key') return credentialResolutionFailure(resolved, started)
+  let key: CredentialKey = resolved
   const body = JSON.stringify({
     model: JEV_MODEL,
     state,
@@ -403,10 +406,10 @@ export async function askTypedQuestionsClient(
   const random = dependencies.random ?? clientDependencies.random!
   let authRetried = false
   for (let attempt = 0; attempt < 3; attempt += 1) {
-    const sent = await sendWithCredentialRefresh(resolved, body, dependencies, !authRetried)
+    const sent = await sendWithCredentialRefresh(key, body, dependencies, !authRetried)
     if (sent.kind !== 'response') return credentialResolutionFailure(sent, started)
     const response = sent.response
-    resolved = { kind: 'key', value: sent.key }
+    key = sent.key
     authRetried ||= sent.refreshed
     if (retryable(response) && attempt < 2) {
       await sleep(retryDelay(response, attempt, random))

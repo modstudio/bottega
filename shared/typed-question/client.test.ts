@@ -349,6 +349,39 @@ test('an auth refusal clears the credential and resends once with the refreshed 
   })
 })
 
+test('a transient retry preserves credential identity for a later auth refresh', async () => {
+  const keys = ['fake-key-a', 'fake-key-b']
+  let resolutions = 0
+  const authorizations: Array<string | null> = []
+  const dependencies = typedQuestionClientDependencies(
+    async () => {
+      const value = keys[resolutions]!
+      resolutions += 1
+      return { kind: 'resolved', value }
+    },
+    async (_url, init) => {
+      authorizations.push(new Headers(init.headers).get('Authorization'))
+      if (authorizations.length === 1) return new Response('', { status: 503 })
+      if (authorizations.length === 2) return new Response('', { status: 401 })
+      return Response.json({
+        answers: { spec_unsettled: { noul: 0.9 } },
+        model: 'jev-served',
+        usage: { input_tokens: 1 },
+      })
+    },
+  )
+  dependencies.sleep = async () => {}
+
+  const result = await askTypedQuestionsClient([FIXTURE_QUESTION], 'state', dependencies)
+
+  expect(resolutions).toBe(2)
+  expect(authorizations).toEqual(['Bearer fake-key-a', 'Bearer fake-key-a', 'Bearer fake-key-b'])
+  expect(result).toMatchObject({
+    kind: 'answer',
+    answers: { spec_unsettled: { noul: 0.9 } },
+  })
+})
+
 test('two auth refusals resolve twice and return the second refusal', async () => {
   const keys = ['fake-key-a', 'fake-key-b']
   let resolutions = 0
