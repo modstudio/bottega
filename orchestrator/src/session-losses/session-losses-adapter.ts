@@ -91,6 +91,12 @@ export async function contextReviewMeasurements(
   )
   const reviewedIds = new Set(reviews.flatMap((review) => review.itemIds))
   const captureSource = compactionCaptureSource(sessionId)
+  const cursorTasks = (
+    await sqliteTaskFlowReadStore(database).listStages({
+      sessionId,
+      states: TASK_FLOW_STAGE_STATES,
+    })
+  ).flatMap((row) => (row.task_record_id ? [row.task_record_id] : []))
   const taskHolders = [
     ...database
       .query<{ task_record_id: string }, [string]>(
@@ -99,9 +105,7 @@ export async function contextReviewMeasurements(
       )
       .all(sessionId)
       .map((row) => row.task_record_id),
-    ...sqliteTaskFlowReadStore(database)
-      .listStages({ sessionId, states: TASK_FLOW_STAGE_STATES })
-      .flatMap((row) => (row.task_record_id ? [row.task_record_id] : [])),
+    ...cursorTasks,
   ].map((taskRecordId) => `task:${taskRecordId}`)
   const holders = [
     `session:${sessionId}`,
