@@ -1,18 +1,29 @@
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { formatTaskDocumentLabel } from './task-document-label.ts'
 
+export const TASK_DOCUMENT_ROLES = ['handoff'] as const
+export type TaskDocumentRole = (typeof TASK_DOCUMENT_ROLES)[number]
+
 export type DocumentRoleCandidate = {
   id: string
   number: number
-  role: string | null
+  role: TaskDocumentRole | null
   title: string
   version: string
+}
+
+export function documentRole(value: string | null | undefined): TaskDocumentRole | null {
+  if (value == null) return null
+  if (!(TASK_DOCUMENT_ROLES as readonly string[]).includes(value)) {
+    throw new Error(`invalid document role '${value}': expected ${TASK_DOCUMENT_ROLES.join('|')}`)
+  }
+  return value as TaskDocumentRole
 }
 
 export function documentRoleRefusal(
   documents: DocumentRoleCandidate[],
   taskKey: string,
-  requestedRole: string,
+  requestedRole: TaskDocumentRole,
   writtenDocumentId?: string,
 ): string | null {
   const holder = documents.find(

@@ -14,8 +14,14 @@ import {
   type PushedDocument,
 } from './push-contract.ts'
 import { hostedCreateDocument, hostedGetTask } from './task-client.ts'
+import { demoteOtherTaskDocumentRoleHolders } from './task-document-demotion.ts'
 import { formatTaskDocumentLabel, parseTaskDocumentLabel } from './task-document-label.ts'
-import { documentRoleRefusal } from './task-document-role.ts'
+import {
+  type DocumentRoleCandidate,
+  documentRole,
+  documentRoleRefusal,
+  type TaskDocumentRole,
+} from './task-document-role.ts'
 
 import {
   missingTaskRecordLine,
@@ -30,8 +36,6 @@ import {
   taskWriteMode,
 } from './task-write-destination.ts'
 
-const TASK_DOCUMENT_ROLES = ['handoff'] as const
-type TaskDocumentRole = (typeof TASK_DOCUMENT_ROLES)[number]
 export type TaskDocumentSummary = {
   id: string
   number: number
@@ -60,14 +64,6 @@ type DocumentTask = {
 }
 
 const documentVersion = () => randomBytes(8).toString('hex')
-
-export function documentRole(value: string | null | undefined): TaskDocumentRole | null {
-  if (value == null) return null
-  if (!(TASK_DOCUMENT_ROLES as readonly string[]).includes(value)) {
-    throw new Error(`invalid document role '${value}': expected ${TASK_DOCUMENT_ROLES.join('|')}`)
-  }
-  return value as TaskDocumentRole
-}
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
@@ -133,10 +129,7 @@ function assertLocalRoleAvailable(
   documentId?: string,
 ) {
   const documents = conn
-    .query<
-      { id: string; number: number; role: string | null; title: string; version: string },
-      [string]
-    >(
+    .query<DocumentRoleCandidate, [string]>(
       `SELECT record_id AS id,number,role,title,version FROM task_document
        WHERE task_record_id = ?`,
     )
@@ -152,12 +145,20 @@ async function assertHostedRoleAvailable(
   documentId?: string,
 ) {
   const { documents } = await hostedGetTask(taskKey, options)
-  const refusal = documentRoleRefusal(
-    documents.map((document) => ({ ...document, number: document.number! })),
-    taskKey,
-    role,
-    documentId,
+  const candidates: DocumentRoleCandidate[] = documents.flatMap((document) =>
+    document.number === null
+      ? []
+      : [
+          {
+            id: document.id,
+            number: document.number,
+            role: documentRole(document.role),
+            title: document.title,
+            version: document.version,
+          },
+        ],
   )
+  const refusal = documentRoleRefusal(candidates, taskKey, role, documentId)
   if (refusal) throw new Error(refusal)
 }
 
@@ -242,6 +243,7 @@ async function createHostedTaskDocument(
     `${document.label} was created in the hosted record; its local copy will arrive on the next record pull`,
     () =>
       writeTransaction((conn) => {
+        if (role) demoteOtherTaskDocumentRoleHolders(conn, task.record_id, role, hosted.id)
         conn
           .query(
             `INSERT INTO task_document (record_id,task_key,task_record_id,number,role,title,body,version,created_at,updated_at)

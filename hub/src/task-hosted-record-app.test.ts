@@ -27,7 +27,7 @@ import {
 } from './task.ts'
 import { hostedGetTask } from './task-client.ts'
 import { taskBodyVersion } from './task-detail.ts'
-import { createTaskDocument, updateTaskDocument } from './task-document.ts'
+import { createTaskDocument, getTaskDocument, updateTaskDocument } from './task-document.ts'
 
 const spaceId = '01990000-0000-7000-8000-000000002520'
 const userId = '01990000-0000-7000-8000-000000002521'
@@ -399,6 +399,40 @@ test('hosted role writes refuse another holder before posting a document or chan
     { ...options, scope: { project: 'gamma' } },
   )
   expect(cleared.role).toBeNull()
+})
+
+test('hosted document create demotes a role holder left stale by a hosted clear', async () => {
+  const options = {
+    hosted: { baseUrl: 'https://hub.example.test', token: 'test', fetch: recordFetch },
+  }
+  const task = await recordCreate(
+    { project: 'gamma', title: 'Stale local role holder' },
+    { ...options, skipDuplicateCheck: true },
+  )
+  const first = await createTaskDocument(
+    { task: task.key, title: 'First handoff', role: 'handoff' },
+    { project: 'gamma' },
+    options,
+  )
+  await updateTaskDocument(
+    first.id,
+    { role: null, expectedVersion: first.version },
+    { ...options, scope: { project: 'gamma' } },
+  )
+
+  const second = await createTaskDocument(
+    { task: task.key, title: 'Second handoff', role: 'handoff' },
+    { project: 'gamma' },
+    options,
+  )
+
+  expect(getTaskDocument(first.id).role).toBeNull()
+  expect(getTaskDocument(second.id).role).toBe('handoff')
+  expect(
+    (await hostedGetTask(task.key, options.hosted)).documents.filter(
+      (document) => document.role === 'handoff',
+    ),
+  ).toHaveLength(1)
 })
 
 test('a hosted list scoped to an undeclared-space project refuses', async () => {
