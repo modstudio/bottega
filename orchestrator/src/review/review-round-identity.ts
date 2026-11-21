@@ -3,7 +3,7 @@
 
 import type { Database } from 'bun:sqlite'
 import { attributedTaskKey } from '../epic/epic.ts'
-import { reviewRunEvidenceSql } from './review-evidence-sql.ts'
+import { admissionReviewRunEvidenceSql } from './review-evidence-sql.ts'
 import { reviewLineage } from './review-lineage-store.ts'
 import type { ReviewRole } from './review-role.ts'
 
@@ -69,7 +69,7 @@ export function reviewRoundForRecording(
         WHERE run.project_record_id=(SELECT record_id FROM project WHERE name=?)
           AND run.branch IN (${lineage.map(() => '?').join(',')})
           AND r.role='round'
-          AND ${reviewRunEvidenceSql('run', 'rl')}
+          AND ${admissionReviewRunEvidenceSql('run', 'rl')}
         ORDER BY r.recorded_at,r.number,run.number`,
     )
     .all(input.project, ...lineage)

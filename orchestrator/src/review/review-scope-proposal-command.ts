@@ -9,7 +9,7 @@ import { DB_PATH } from '../database/database-location.ts'
 import {
   parseStoredReviewPathSet,
   parseStoredReviewSettings,
-  reviewRunEvidenceSql,
+  routingReviewRunEvidenceSql,
 } from './review-evidence-sql.ts'
 import {
   proposeReviewScopes,
@@ -61,7 +61,7 @@ function reviewScopeProposal(database: Database): ReturnType<typeof proposeRevie
        JOIN run ON run.record_id=rl.run_record_id
        JOIN project p ON p.record_id=r.project_record_id
        LEFT JOIN review_finding rf ON rf.review_lens_record_id=rl.record_id
-       WHERE ${reviewRunEvidenceSql('run', 'rl')}
+       WHERE ${routingReviewRunEvidenceSql('run', 'rl')}
        ORDER BY p.name,r.recorded_at,r.record_id,rl.record_id,rf.ordinal`,
     )
     .all() as EvidenceRow[]

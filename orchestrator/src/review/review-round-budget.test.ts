@@ -53,6 +53,7 @@ function addEvidence(input: {
   probe?: boolean
   excluded?: boolean
   deliveryNone?: boolean
+  findingDisposition?: 'accepted' | null
   lens?: string
   role?: 'round' | 'supplementary'
   treeInspected?: string
@@ -85,6 +86,7 @@ function addEvidence(input: {
     startedAt: input.at,
     repo: project,
   })
+  const lensId = newRecordId()
   db()
     .query(
       'UPDATE run SET branch=?,launch_key=?,project_record_id=(SELECT record_id FROM project WHERE name=?) WHERE record_id=?',
@@ -112,7 +114,16 @@ function addEvidence(input: {
        (record_id,review_record_id,run_record_id,lens,agent,standards_read,files_covered,commands_run,could_not_verify)
        VALUES (?,?,?,?,'codex','[]','[]','[]','[]')`,
     )
-    .run(newRecordId(), review.record_id, run, input.lens ?? 'correctness')
+    .run(lensId, review.record_id, run, input.lens ?? 'correctness')
+  if ('findingDisposition' in input) {
+    db()
+      .query(
+        `INSERT INTO review_finding
+         (record_id,review_record_id,review_lens_record_id,ordinal,severity,location,evidence,proposed_correction,disposition)
+         VALUES (?,?,?,1,'high','file.ts:1','evidence','fix',?)`,
+      )
+      .run(newRecordId(), review.record_id, lensId, input.findingDisposition ?? null)
+  }
 }
 
 function addMintFact(input: {
@@ -134,6 +145,23 @@ function addMintFact(input: {
 }
 
 describe('review budget query', () => {
+  test('keeps a voided triaged lens eligible for the round budget', () => {
+    addEvidence({
+      branch: 'DEV-2538-voided',
+      at: '2026-11-21T00:00:00Z',
+      patch: 'voided-triaged',
+      tier: 1,
+      excluded: true,
+      deliveryNone: true,
+      findingDisposition: 'accepted',
+    })
+
+    expect(reviewBudgetForBranch(db(), 'fixture', 'DEV-2538-voided', null)).toMatchObject({
+      roundsUsed: 1,
+      eligibleReviewCount: 1,
+    })
+  })
+
   test('only subject-matching provenance consumes the review budget', () => {
     addEvidence({
       branch: 'DEV-2157-matching',
