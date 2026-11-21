@@ -110,6 +110,7 @@ export function buildCheckoutCli(
         'bun',
         'build',
         '--compile',
+        '--no-compile-autoload-dotenv',
         '--define',
         'BOTTEGA_COMPILED_CHECKOUT_BUILD=true',
         `cli/${PLATFORM_SLUG}.ts`,

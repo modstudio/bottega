@@ -1,6 +1,6 @@
 // concern: CI proof that a confined ACP worker can launch checkout bottega-ask.
 
-import { mkdirSync, mkdtempSync, rmSync, statSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { startBoundedSync } from '../../shared/bounded-process.ts'
@@ -74,6 +74,37 @@ async function loadGuardRuntime() {
 }
 
 type GuardRuntime = Awaited<ReturnType<typeof loadGuardRuntime>>
+
+function assertCompiledCliDoesNotAutoloadDotenv(
+  binary: string,
+  checkout: string,
+  root: string,
+  environment: Record<string, string>,
+): void {
+  const cwd = mkdtempSync(join(root, 'dotenv-'))
+  try {
+    writeFileSync(join(cwd, '.env'), `${CHECKOUT_ROOT_ENV}=${checkout}\n`)
+    const directEnvironment = { ...environment }
+    delete directEnvironment[CHECKOUT_ROOT_ENV]
+    const result = startBoundedSync([binary, '--version'], {
+      budget: 'machine-update',
+      cwd,
+      env: directEnvironment,
+    })
+    if (result.exitCode === 0) {
+      throw new Error('compiled checkout CLI autoloaded .env')
+    }
+    const output = `${result.stdout}\n${result.stderr}`
+    if (
+      !output.includes(`compiled checkout CLI requires ${CHECKOUT_ROOT_ENV}`) ||
+      !output.includes(`run it through bin/${PLATFORM_SLUG}`)
+    ) {
+      throw new Error(`compiled checkout CLI omitted its missing-root remedy: ${output.trim()}`)
+    }
+  } finally {
+    rmSync(cwd, { recursive: true, force: true })
+  }
+}
 
 async function probeConfinedTools(
   runtime: GuardRuntime,
@@ -184,6 +215,7 @@ async function main(): Promise<void> {
     environment.BOTTEGA_ASK_URL = askLoopback.url
     const built = runtime.build.buildCheckoutCli(checkout, environment)
     runtime.build.verifyCheckoutCliBuild(built)
+    assertCompiledCliDoesNotAutoloadDotenv(built.binary, checkout, root, environment)
     const result = await probeConfinedTools(runtime, {
       checkout,
       cwd,
