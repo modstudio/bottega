@@ -3,6 +3,7 @@
 
 import type { Database } from 'bun:sqlite'
 import { PENDING_SCORE_WHERE } from '../evidence/pending-score-sql.ts'
+import { resolveLocalRun } from '../identity/identity-local-run.ts'
 import { TERMINAL_RUN_STATUS_SET } from '../run/run-status.ts'
 import { createdAfterStepActivation } from './workflow-cursor-trail.ts'
 import type {
@@ -126,11 +127,15 @@ export function gatherLandedEarlierStepWorkflowRunChains(
   database: Database,
 ): LandedEarlierStepRunEvidence[] {
   if (!earlierStepRuns.length) return []
-  const byNumber = new Map(earlierStepRuns.map((run) => [run.number, run]))
+  const identified = earlierStepRuns.map((run) => ({
+    run,
+    recordId: resolveLocalRun(database, { kind: 'number', number: run.number }).record_id,
+  }))
+  const byRecordId = new Map(identified.map(({ recordId, run }) => [recordId, run]))
   const placeholders = earlierStepRuns.map(() => '?').join(',')
   const rows = database
-    .query<{ number: number; pr_number: number }, number[]>(
-      `SELECT root.number,landing.pr_number
+    .query<{ record_id: string; pr_number: number }, string[]>(
+      `SELECT root.record_id,landing.pr_number
          FROM run root
          JOIN run newest
            ON newest.record_id=(
@@ -143,12 +148,12 @@ export function gatherLandedEarlierStepWorkflowRunChains(
           AND landing.branch=COALESCE(newest.branch,newest.branch_kept)
           AND landing.merged_at IS NOT NULL
         WHERE root.parent_run_record_id IS NULL
-          AND root.number IN (${placeholders})
+          AND root.record_id IN (${placeholders})
         ORDER BY root.number`,
     )
-    .all(...earlierStepRuns.map((run) => run.number))
+    .all(...identified.map(({ recordId }) => recordId))
   return rows.flatMap((row) => {
-    const earlier = byNumber.get(row.number)
+    const earlier = byRecordId.get(row.record_id)
     return earlier ? [{ ...earlier, prNumber: row.pr_number }] : []
   })
 }
