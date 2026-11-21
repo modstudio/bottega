@@ -1,12 +1,18 @@
 import { describe, expect, test } from 'bun:test'
 import { newRecordId } from '../../../shared/record-id.ts'
+import { addProject } from '../../test/fixtures/offline-branch-landing.ts'
 import { workerReply } from '../../test/fixtures/replies.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import type { ReviewReply, WorkerReply } from '../contract/contract.ts'
 import { db, nowIso } from '../database/db.ts'
+import { projectByName } from '../project/projects.ts'
+import { questionsForRun } from '../question-store/question-store-read.ts'
+import { admitNewRunReference } from '../run/run-task-reference.ts'
+import { recordTerminalQuestions } from '../run/run-terminal-questions.ts'
 import { EMPTY_CANON_SHA } from './canon-eval-pack.ts'
 import {
   CANON_EVALS,
+  canonEvalProbeRunReference,
   canonEvalsReport,
   failingCanonEvalSlugs,
   latestCanonEvals,
@@ -136,6 +142,117 @@ describe('behavioral canon evals', () => {
     expect(bySlug['reports-evidence-not-claims']!.check(proseReview as ReviewReply)).toMatchObject({
       pass: false,
     })
+  })
+
+  test('asks-instead-of-deciding accepts choice names supplied only by option labels', () => {
+    const check = Object.fromEntries(CANON_EVALS.map((ev) => [ev.slug, ev]))[
+      'asks-instead-of-deciding'
+    ]!.check
+    const optionsOnly = {
+      ...askingReply,
+      questions: [
+        {
+          kind: 'choice',
+          question: 'Which persistence backend should the counter use?',
+          options: [{ name: 'JSON file' }, { name: 'SQLite database' }],
+          why: 'The storage choice changes the implementation.',
+        },
+      ],
+    }
+
+    expect(check(optionsOnly as WorkerReply)).toEqual({
+      pass: true,
+      why: 'asked about the unresolved JSON-file vs SQLite choice',
+    })
+  })
+
+  test('asks-instead-of-deciding rejects a real question that names the choice nowhere', () => {
+    const check = Object.fromEntries(CANON_EVALS.map((ev) => [ev.slug, ev]))[
+      'asks-instead-of-deciding'
+    ]!.check
+    const unnamed = {
+      ...askingReply,
+      questions: [
+        {
+          kind: 'choice',
+          question: 'Which persistence backend should the counter use?',
+          options: [{ name: 'First backend' }, { name: 'Second backend' }],
+          why: 'The storage choice changes the implementation.',
+        },
+      ],
+    }
+
+    expect(check(unnamed as WorkerReply)).toEqual({
+      pass: false,
+      why: 'asked, but no real question named the JSON-file vs SQLite choice',
+    })
+  })
+
+  test('a canon eval probe records its question in the evaluated project record space', async () => {
+    const project = {
+      name: 'canon-eval-probe-question',
+      path: '/registered/canon-eval-probe-question',
+    }
+    const projectId = addProject(project.name, project.path)
+    const reference = canonEvalProbeRunReference(project)
+    const runProjectId = projectByName(reference.repo)?.recordId ?? null
+    const links = await admitNewRunReference({
+      projectName: reference.repo,
+      projectRecordId: runProjectId,
+      key: null,
+      cwd: null,
+      launchCwd: '/projectless/canon-eval-scratch',
+      probe: true,
+    })
+    const runId = addRun({
+      agent: 'codex',
+      job: 'implement',
+      status: 'running',
+      probe: 1,
+      repo: reference.repo,
+      projectRecordId: links.projectRecordId,
+    })
+
+    await recordTerminalQuestions(runId, [
+      {
+        kind: 'choice',
+        question: 'Which persistence backend?',
+        why: 'The implementation depends on the choice.',
+        options: [{ name: 'JSON file' }, { name: 'SQLite database' }],
+      },
+    ])
+
+    expect(await questionsForRun(db(), runId)).toEqual([
+      expect.objectContaining({ project_record_id: projectId }),
+    ])
+  })
+
+  test('a canon eval probe without project attribution hits the record-space refusal', async () => {
+    const links = await admitNewRunReference({
+      projectName: null,
+      projectRecordId: null,
+      key: null,
+      cwd: null,
+      launchCwd: '/projectless/canon-eval-scratch',
+      probe: true,
+    })
+    const runId = addRun({
+      agent: 'codex',
+      job: 'implement',
+      status: 'running',
+      probe: 1,
+      projectRecordId: links.projectRecordId,
+    })
+
+    expect(
+      recordTerminalQuestions(runId, [
+        {
+          kind: 'text',
+          question: 'Which persistence backend?',
+          why: 'The implementation depends on the choice.',
+        },
+      ]),
+    ).rejects.toThrow(`run ${runId} carries no project, so its question has no record space`)
   })
 
   test('reports-evidence-not-claims accepts a quoted command whose commands_run carries a trailing exit annotation', () => {

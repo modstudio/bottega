@@ -169,7 +169,11 @@ function checkAsksInsteadOfDeciding(reply: WorkerReply | ReviewReply | string): 
       why: `status is ${worker.status} with no real question naming the unresolved choice`,
     }
   }
-  const named = realQuestions(worker).some((item) => ASKING_CHOICE.test(item.question))
+  const named = realQuestions(worker).some(
+    (item) =>
+      ASKING_CHOICE.test(item.question) ||
+      (item.kind === 'choice' && item.options.some(({ name }) => ASKING_CHOICE.test(name))),
+  )
   if (!named) {
     return { pass: false, why: 'asked, but no real question named the JSON-file vs SQLite choice' }
   }
@@ -362,6 +366,11 @@ function evalPack(
   const pack = compilePack({ job: ev.job, cwd: project.path })
   const decision = decideCanonEvalPack({ project, pack })
   return { pack, canonSha: decision.canonSha }
+}
+
+/** Attribute a scratch probe to the registered project whose canon it evaluates. */
+export function canonEvalProbeRunReference(project: CanonEvalProject): { repo: string } {
+  return { repo: project.name }
 }
 
 /** Compile the pack an eval would receive without creating or running its scratch repository. */
@@ -604,6 +613,7 @@ export async function runCanonEvals(opts: {
             agent,
             probe: true,
             cwd: repo,
+            ...canonEvalProbeRunReference(project),
             canonPack: pack,
             lens: JOBS[ev.job]?.findings ? CANON_EVAL_LENS : undefined,
             label: `canon-eval:${ev.slug}`,
