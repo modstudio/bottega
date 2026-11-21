@@ -163,7 +163,7 @@ function handoffCall(
 test('handoff refuses an unmet source floor before writing and succeeds with its evidence', async () => {
   const fixture = await refusalFixture()
   const remedy =
-    'floor recorded-artifact is unmet; pass --artifact <doc:<scope>/<subject-or-_>/<slug> | doc:<UUID> | task:<KEY> | task:<KEY>#comment:<id> | note:<record-id|label> | run number or run id | probe:<id> | exec:<id> | review-read:<UUID> | attached-text:<UUID> | #<pull request number> | GitHub pull-request link | a commit SHA>'
+    'floor recorded-artifact is unmet; pass --artifact <doc:<scope>/<subject-or-_>/<slug> | doc:<UUID> | <KEY>/<n> | task:<KEY> | task:<KEY>#comment:<id> | note:<record-id|label> | run number or run id | probe:<id> | exec:<id> | review-read:<UUID> | attached-text:<UUID> | #<pull request number> | GitHub pull-request link | a commit SHA>'
   await expectRefusalUnchanged(fixture, handoffCall(fixture), remedy, true)
 
   const result = await handoffCall(fixture, {

@@ -21,6 +21,7 @@ export type TaskReadRow = {
 type TaskReadDocumentSummary = {
   id: string
   label: string
+  task_record_id: string
   title: string
   role?: string | null
 }

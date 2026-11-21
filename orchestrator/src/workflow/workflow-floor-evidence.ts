@@ -2,15 +2,13 @@
 /** Gathers recorded rows that a floor decision may consume. Must not decide satisfaction. */
 
 import type { Database } from 'bun:sqlite'
-import { existsSync, readdirSync, realpathSync } from 'node:fs'
+import { realpathSync } from 'node:fs'
 import { isAbsolute, join, resolve } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { docScopeHasProjectSubject, docScopeIsProjectless } from '../../../shared/docs.ts'
 import { refusal, renderRefusal } from '../../../shared/refusal.ts'
 import { installedBottegaExecutable } from '../../../shared/self-spawn.ts'
-import { runArtifactsDir, runScratchReplyPath } from '../artifact-paths.ts'
 import { branchForTaskKey, pullRequestNumberForBranch } from '../branch/task-key-pull-request.ts'
-import { resolveRunsDirectory } from '../database/database-location.ts'
 import { db } from '../database/db.ts'
 import { resolveDocReference } from '../doc/doc-reference-read.ts'
 import { landingGatePurposeRefusal, resolveGateIdentifier } from '../gate/gate-identifier.ts'
@@ -69,7 +67,11 @@ import {
   gatherPullRequestArtifactEvidence,
   viewPullRequestInProject,
 } from './workflow-floor-pull-request-evidence.ts'
-import { readHubTask } from './workflow-floor-task-read.ts'
+import {
+  artifactTaskIsNotCursorTask,
+  resolveTaskDocumentArtifact,
+} from './workflow-floor-task-document-evidence.ts'
+import { readHubTask, readHubTaskDocument } from './workflow-floor-task-read.ts'
 import { floorFromObligationRow } from './workflow-obligation-floor.ts'
 import { resolvedOfferedArtifact } from './workflow-offered-artifacts.ts'
 import {
@@ -95,7 +97,7 @@ export type CursorIdentity = {
 
 export const productionFloorPorts = (): FloorEvidencePorts => ({
   readTask: (key) => readHubTask(key),
-  runHasArtifacts: runHasRecordedArtifacts,
+  readTaskDocument: readHubTaskDocument,
   viewPullRequest: viewPullRequestInProject,
   readOriginUrl: (project) => {
     const row = projectByName(project)
@@ -103,20 +105,6 @@ export const productionFloorPorts = (): FloorEvidencePorts => ({
     return gitText(row.path, ['remote', 'get-url', 'origin'])
   },
 })
-
-function runHasRecordedArtifacts(
-  runId: string,
-  runsDir = resolveRunsDirectory(process.env),
-): boolean {
-  const recordId = db()
-    .query<{ record_id: string }, [string]>('SELECT record_id FROM run WHERE record_id=?')
-    .get(runId)?.record_id
-  if (!recordId) return false
-  const artifacts = runArtifactsDir(recordId, runsDir)
-  const reply = runScratchReplyPath(recordId, runsDir)
-  if (existsSync(reply)) return true
-  return existsSync(artifacts) && readdirSync(artifacts).length > 0
-}
 
 export async function gatherRuling(
   id: number,
@@ -480,37 +468,33 @@ async function resolveNumericArtifact(
   identity: CursorIdentity,
   cursorId: string,
   d: Database,
-  runHasArtifacts: (runId: string) => boolean,
 ): Promise<{ ref: string; exists: boolean }> {
   const run = d.query('SELECT record_id FROM run WHERE number=?').get(id) as {
     record_id: string
   } | null
-  const runOk = run !== null && runHasArtifacts(run.record_id)
   if (run) {
     const binding = loadRunBinding(run.record_id, d)
-    if (!binding) throw new Error(`--artifact ${id} is not a run with artifacts or a reply`)
+    if (!binding) throw new Error(`--artifact ${id} is not a run bound to this cursor`)
     await requireRunBinding(`--artifact ${id}`, binding, identity, cursorId, d)
-    return { ref: String(id), exists: runOk }
+    return { ref: String(id), exists: true }
   }
-  throw new Error(`--artifact ${id} is not a run with artifacts or a reply`)
+  throw new Error(`--artifact ${id} is not a recorded run`)
 }
 
-function resolveTaskArtifact(
-  ref: Extract<ArtifactRef, { kind: 'task' | 'comment' }>,
+async function resolveTaskArtifact(
+  ref: Extract<ArtifactRef, { kind: 'task' | 'comment' | 'task-document' }>,
   raw: string,
   identity: CursorIdentity,
   ports: FloorEvidencePorts,
-): { ref: string; exists: boolean } {
+): Promise<{ ref: string; exists: boolean }> {
+  if (ref.kind === 'task-document')
+    return await resolveTaskDocumentArtifact(ref, raw, identity, ports)
   if (!ports.readTask)
     throw new Error(
       `--artifact ${raw} needs a ${PLATFORM_SLUG} task read and no reader was provided`,
     )
   const task = invokeFloorEvidencePort(ports, 'readTask', ports.readTask, ref.key, { fresh: true })
-  if (
-    identity.workflowTaskRecordId
-      ? task.recordId !== identity.workflowTaskRecordId
-      : Boolean(identity.workflowKey) && ref.key !== identity.workflowKey
-  )
+  if (artifactTaskIsNotCursorTask(identity, { key: ref.key, recordId: task.recordId }))
     throw new Error(`--artifact ${raw} task is not this cursor's ${identity.workflowKey}`)
   if (ref.kind === 'task') return { ref: raw, exists: task.key === ref.key }
   if (task.commentsVerifiable === false)
@@ -572,14 +556,7 @@ async function resolveArtifact(
 ): Promise<{ ref: string; exists: boolean }> {
   if (ref.kind === 'attached-text' || ref.kind === 'doc' || ref.kind === 'review-read')
     return resolveStoredArtifact(ref, identity, binding, d, branchTip)
-  if (ref.kind === 'id')
-    return await resolveNumericArtifact(
-      ref.id,
-      identity,
-      binding.cursorId,
-      d,
-      ports.runHasArtifacts ?? runHasRecordedArtifacts,
-    )
+  if (ref.kind === 'id') return await resolveNumericArtifact(ref.id, identity, binding.cursorId, d)
   if (ref.kind === 'pull-request') return { ref: ref.url, exists: true }
   if (ref.kind === 'commit') {
     const project = projectByName(identity.project, d)
@@ -626,11 +603,11 @@ async function resolveArtifact(
     await requireRunBinding(`--artifact ${raw}`, run, identity, binding.cursorId, d)
     return {
       ref: raw,
-      exists: (ports.runHasArtifacts ?? runHasRecordedArtifacts)(recordId),
+      exists: true,
     }
   }
   if (ref.kind === 'note') throw new Error('note artifacts resolve through the note evidence port')
-  return resolveTaskArtifact(ref, raw, identity, ports)
+  return await resolveTaskArtifact(ref, raw, identity, ports)
 }
 
 function gatherTask(

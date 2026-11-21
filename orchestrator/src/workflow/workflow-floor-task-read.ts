@@ -5,6 +5,7 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { withholdSecretShapedDetail } from '../../../shared/secret-shaped.ts'
 import { namesMissingTask } from '../../../shared/task-missing.ts'
 import { isTrackerCommentId } from '../../../shared/trackers.ts'
+import { taskReader } from './task-read-port.ts'
 import { readFreshHubTaskThroughCli } from './workflow-task-reference.ts'
 
 export type HubTaskRead = {
@@ -14,6 +15,25 @@ export type HubTaskRead = {
   statusCategory: string | null
   commentIds: Array<string | number>
   commentsVerifiable?: boolean
+}
+
+export async function readHubTaskDocument(
+  value: string,
+  scope: { project: string; recordId?: string },
+): Promise<{ id: string; label: string; task_record_id: string } | null> {
+  try {
+    return await taskReader().document(value, scope)
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error)
+    const key = value.split('/', 1)[0]!
+    if (namesMissingTask(detail, key) || namesMissingTaskDocument(detail, value)) return null
+    throw error
+  }
+}
+
+export function namesMissingTaskDocument(text: string, value: string): boolean {
+  const expected = `no task document ${value}`
+  return text.split('\n').some((line) => line.trim() === expected)
 }
 
 type HubTaskReadJson = {

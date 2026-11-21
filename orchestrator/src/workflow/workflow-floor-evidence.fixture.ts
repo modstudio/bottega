@@ -35,7 +35,6 @@ const ports: FloorEvidencePorts = {
     commentIds: ['4', '01a10c8d-164d-71e9-b8a9-a59f15256556'],
     commentsVerifiable: true,
   }),
-  runHasArtifacts: () => true,
   resolveCheckout: () => matchingCheckout,
   resolveTreeCommit: () => 'abc',
   viewPullRequest: () => ({

@@ -60,7 +60,14 @@ const taskPort: TaskReadPort = {
   show: async () => ({ task }),
   duplicates: async () => [],
   documents: async () => [],
-  document: async () => ({ id: 'none', label: 'none', title: 'none', body: '', version: '1' }),
+  document: async () => ({
+    id: 'none',
+    label: 'none',
+    task_record_id: 'task-none',
+    title: 'none',
+    body: '',
+    version: '1',
+  }),
 }
 
 test('descendant facts use parent-filtered reads and visit each node once', async () => {

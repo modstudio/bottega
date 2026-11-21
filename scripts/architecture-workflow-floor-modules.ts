@@ -361,7 +361,13 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     '../../../shared/task-missing.ts',
     '../../../shared/trackers.ts',
     '../../../shared/bounded-process.ts',
+    './task-read-port.ts',
     './workflow-task-reference.ts',
+  ]),
+  module('orchestrator/src/workflow/workflow-floor-task-document-evidence.ts', [
+    '../../../shared/brand.ts',
+    './workflow-artifact-reference.ts',
+    './workflow-floor-evidence-replay.ts',
   ]),
   module('orchestrator/src/workflow/workflow-checkout-refusal.ts', ['../../../shared/brand.ts']),
   module('orchestrator/src/workflow/workflow-checkout-landing.ts', [
@@ -466,6 +472,7 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     './workflow-floor-pull-request-evidence.ts',
     './workflow-floor-evidence-passing-gate.ts',
     './workflow-floor-evidence-replay.ts',
+    './workflow-floor-task-document-evidence.ts',
     './workflow-obligation-floor.ts',
     './workflow-floor-task-read.ts',
     './workflow-run-binding.ts',

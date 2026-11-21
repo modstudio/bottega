@@ -112,7 +112,7 @@ test('open-pr does not advance from a review-lens run artifact', async () => {
       context,
       d,
       { artifacts: [String(run.number)] },
-      { runHasArtifacts: () => true, resolveTreeCommit: () => 'abc' },
+      { resolveTreeCommit: () => 'abc' },
     ),
   ).toThrow('floor recorded-artifact is unmet')
   expect(d.query('SELECT ordinal,step_slug FROM workflow_cursor').get()).toEqual({

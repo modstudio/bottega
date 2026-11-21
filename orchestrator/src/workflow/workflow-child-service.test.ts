@@ -39,7 +39,14 @@ function installTasks(tasks: TaskReadRow[]) {
     show: async (key) => ({ task: byKey.get(key)! }),
     duplicates: async () => [],
     documents: async () => [],
-    document: async () => ({ id: 'none', label: 'none', title: 'none', body: '', version: '1' }),
+    document: async () => ({
+      id: 'none',
+      label: 'none',
+      task_record_id: 'task-none',
+      title: 'none',
+      body: '',
+      version: '1',
+    }),
   }
   installTaskReader(port)
 }

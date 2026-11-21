@@ -57,7 +57,7 @@ export function hasGateFloor(
 }
 
 const ARTIFACT_FORMS =
-  'doc:<scope>/<subject-or-_>/<slug> | doc:<UUID> | task:<KEY> | task:<KEY>#comment:<id> | note:<record-id|label> | run number or run id | probe:<id> | exec:<id> | review-read:<UUID> | attached-text:<UUID> | #<pull request number> | GitHub pull-request link | a commit SHA'
+  'doc:<scope>/<subject-or-_>/<slug> | doc:<UUID> | <KEY>/<n> | task:<KEY> | task:<KEY>#comment:<id> | note:<record-id|label> | run number or run id | probe:<id> | exec:<id> | review-read:<UUID> | attached-text:<UUID> | #<pull request number> | GitHub pull-request link | a commit SHA'
 
 export const floorGuidance = {
   ruling: `call \`await_workflow_ruling\` (or \`${PLATFORM_SLUG} workflow await\`), answer it with \`rule_workflow\`, then pass \`--ruling <the returned question id>\`; where you rule the step yourself, pass \`self_ruling\` with \`self_ruling_basis\` (or \`--self-ruling <text>\` with \`--basis <text>\`) on the closing call`,
@@ -742,7 +742,7 @@ function floorUnmetMessage(
         ? trackerUnmetMessage(floor, evidence)
         : '')
   if (floor.kind === 'recorded-artifact' && evidence.runOffered !== undefined)
-    return `${existing}; run ${evidence.runOffered} is accepted as --artifact ${evidence.runOffered} when it has a reply or a recorded artifact`
+    return `${existing}; run ${evidence.runOffered} is accepted as --artifact ${evidence.runOffered} when the run is bound to this cursor`
   const artifactRunOffered = evidence.artifacts?.find(
     (entry) => entry.artifactRunOffered !== undefined,
   )?.artifactRunOffered
