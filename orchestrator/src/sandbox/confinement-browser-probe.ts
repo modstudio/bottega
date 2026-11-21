@@ -17,6 +17,7 @@ type HeadlessShellInput = {
 
 type BrowserProbeVerdictInput = {
   executable: string | null
+  searchedRoot: string | null
   exitCode: number
   stdout: string
   stderr?: string
@@ -49,7 +50,8 @@ function listedExecutable(
 function headlessShellCacheRoot(input: HeadlessShellInput): string | null {
   if (input.platform !== 'darwin' && input.platform !== 'linux') return null
   const configuredRoot = input.playwrightBrowsersPath
-  if (configuredRoot && configuredRoot !== '0') {
+  if (configuredRoot === '0') return null
+  if (configuredRoot) {
     return isAbsolute(configuredRoot)
       ? configuredRoot
       : resolve(input.homeDirectory, configuredRoot)
@@ -107,10 +109,13 @@ export function browserProbeVerdict(input: BrowserProbeVerdictInput): BrowserPro
     return {
       status: 'not covered',
       reason:
-        'no Playwright chrome-headless-shell installed (npx playwright install chromium-headless-shell)',
+        input.searchedRoot === null
+          ? 'no Playwright chrome-headless-shell location on this host'
+          : `no Playwright chrome-headless-shell found under ${input.searchedRoot} (npx playwright install chromium-headless-shell)`,
     }
   }
   if (input.exitCode === 0 && input.stdout.includes('<body')) return { status: 'ran' }
+  if (input.exitCode === 0) return { status: 'failed', reason: 'exit 0 without a DOM dump' }
   return {
     status: 'failed',
     reason: `exit ${input.exitCode}: ${firstErrorLine(input.stderr)}`,
@@ -123,16 +128,18 @@ export async function launchHeadlessBrowserProbe(
   scratchDir: string,
   environment: Record<string, string>,
 ) {
-  const executable = headlessShellExecutable({
+  const resolverInput = {
     platform: process.platform,
     homeDirectory: homedir(),
     playwrightBrowsersPath: process.env.PLAYWRIGHT_BROWSERS_PATH,
     listDirectory: (directory) => readdirSync(directory),
-  })
+  } satisfies HeadlessShellInput
+  const searchedRoot = headlessShellCacheRoot(resolverInput)
+  const executable = headlessShellExecutable(resolverInput)
   if (executable === null) {
     return {
       family: 'headless browser' as const,
-      ...browserProbeVerdict({ executable, exitCode: 0, stdout: '' }),
+      ...browserProbeVerdict({ executable, searchedRoot, exitCode: 0, stdout: '' }),
       paths: {},
     }
   }
@@ -162,7 +169,7 @@ export async function launchHeadlessBrowserProbe(
     })
     return {
       family: 'headless browser' as const,
-      ...browserProbeVerdict({ executable, ...result }),
+      ...browserProbeVerdict({ executable, searchedRoot, ...result }),
       paths: {},
     }
   } catch (error) {

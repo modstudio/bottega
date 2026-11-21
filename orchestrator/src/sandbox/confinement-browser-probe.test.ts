@@ -83,14 +83,48 @@ describe('headlessShellExecutable', () => {
       }),
     ).toBeNull()
   })
+
+  test('returns null when PLAYWRIGHT_BROWSERS_PATH disables the shared cache', () => {
+    expect(
+      headlessShellExecutable({
+        platform: 'linux',
+        homeDirectory: '/home/worker',
+        playwrightBrowsersPath: '0',
+        listDirectory: () => {
+          throw new Error('must not list')
+        },
+      }),
+    ).toBeNull()
+  })
 })
 
 describe('browserProbeVerdict', () => {
-  test('reports no executable as not covered', () => {
-    expect(browserProbeVerdict({ executable: null, exitCode: 0, stdout: '' })).toEqual({
+  test('reports the searched cache when no executable is found', () => {
+    expect(
+      browserProbeVerdict({
+        executable: null,
+        searchedRoot: '/browser-cache',
+        exitCode: 0,
+        stdout: '',
+      }),
+    ).toEqual({
       status: 'not covered',
       reason:
-        'no Playwright chrome-headless-shell installed (npx playwright install chromium-headless-shell)',
+        'no Playwright chrome-headless-shell found under /browser-cache (npx playwright install chromium-headless-shell)',
+    })
+  })
+
+  test('reports when the host has no headless-shell location', () => {
+    expect(
+      browserProbeVerdict({
+        executable: null,
+        searchedRoot: null,
+        exitCode: 0,
+        stdout: '',
+      }),
+    ).toEqual({
+      status: 'not covered',
+      reason: 'no Playwright chrome-headless-shell location on this host',
     })
   })
 
@@ -98,16 +132,29 @@ describe('browserProbeVerdict', () => {
     expect(
       browserProbeVerdict({
         executable: '/cache/chrome-headless-shell',
+        searchedRoot: '/cache',
         exitCode: 0,
         stdout: '<html><body></body></html>',
       }),
     ).toEqual({ status: 'ran' })
   })
 
+  test('reports a zero exit without a DOM dump', () => {
+    expect(
+      browserProbeVerdict({
+        executable: '/cache/chrome-headless-shell',
+        searchedRoot: '/cache',
+        exitCode: 0,
+        stdout: '',
+      }),
+    ).toEqual({ status: 'failed', reason: 'exit 0 without a DOM dump' })
+  })
+
   test('reports a nonzero exit and names its code', () => {
     expect(
       browserProbeVerdict({
         executable: '/cache/chrome-headless-shell',
+        searchedRoot: '/cache',
         exitCode: 133,
         stdout: '',
         stderr: 'bootstrap_check_in denied\nmore detail',
