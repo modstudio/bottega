@@ -177,6 +177,7 @@ const canonMirrorBoundarySpecs: ImportBoundary[] = [
       'orchestrator/src/close/close-out.ts',
       'orchestrator/src/close/close-out-preparation.ts',
       'orchestrator/src/close/close-out-questions.ts',
+      'orchestrator/src/close/close-out-tree-naming.ts',
       'orchestrator/src/branch/branch-ref-guard.ts',
       'orchestrator/src/database/db.ts',
       'orchestrator/src/git/fetch-retry.ts',

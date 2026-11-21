@@ -432,7 +432,7 @@ function registerTreeCommands(program: Command): void {
     .command('remove <path>')
     .description(TREE_DESCRIPTIONS.remove)
     .allowExcessArguments(false)
-    .action((path) => treeRemoveCommand(path))
+    .action((path) => treeRemoveCommand(path, { log }))
   tree
     .command('refresh <path>')
     .description(TREE_DESCRIPTIONS.refresh)

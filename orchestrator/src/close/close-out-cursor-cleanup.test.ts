@@ -104,7 +104,7 @@ test('tree removal reports a cursor cleanup failure without changing the absent 
   installRecordApiClient(taskFlowClient)
 
   try {
-    const result = await closeOutRun(id, { intent: 'tree-remove', taskFlowClient })
+    const result = await closeOutRun(id, { intent: 'operator-removal', taskFlowClient })
 
     expect(result).toMatchObject({
       outcome: 'absent',

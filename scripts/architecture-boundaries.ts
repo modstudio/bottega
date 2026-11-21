@@ -289,6 +289,7 @@ export const importBoundaries: ImportBoundary[] = [
       './close-out-questions.ts',
       './close-out-preparation.ts',
       './close-out-report.ts',
+      './close-out-tree-naming.ts',
       './conversation-liveness.ts',
       './close-out-release-holds.ts',
       './reader-scratch-close-out.ts',

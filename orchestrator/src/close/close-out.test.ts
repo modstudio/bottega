@@ -8,6 +8,7 @@ import { addOpenCursorWorktree } from '../../test/fixtures/workflow.ts'
 import { db } from '../database/db.ts'
 import { upsertProject } from '../project/projects.ts'
 import { RUNS_DIR } from '../run/run-artifacts.ts'
+import { closeOutFixture, normalizedGitArgs, spawnResult } from './close-out.fixture.ts'
 import {
   clearConversationKeepTreeHold,
   closeOutRun,
@@ -17,158 +18,6 @@ import { closeOutCommand } from './close-out-command.ts'
 import { extractionRunId } from './reader-scratch-close-out.ts'
 
 afterEach(() => mock.restore())
-
-function spawnResult(stdout = '', exitCode = 0): ReturnType<typeof Bun.spawnSync> {
-  return {
-    exitCode,
-    stdout: Buffer.from(stdout),
-    stderr: Buffer.from(''),
-    success: exitCode === 0,
-    exitedDueToTimeout: false,
-  } as ReturnType<typeof Bun.spawnSync>
-}
-
-/** A unique branch is pinned by a retained ref, and deleting that ref fails. */
-function retainedRefFailure(args: string[]): ReturnType<typeof Bun.spawnSync> | null {
-  if (args[0] === 'update-ref' && args[1] === '-d') return spawnResult('', 1)
-  if (args[0] === 'rev-list' && args.includes('--count')) return spawnResult('1')
-  return null
-}
-
-function normalizedGitArgs(command: string[]): string[] {
-  const rawArgs = command[0] === 'git' ? command.slice(1) : command
-  const cwdStripped = rawArgs[0] === '-C' ? rawArgs.slice(2) : rawArgs
-  return cwdStripped[0] === '--no-optional-locks' ? cwdStripped.slice(1) : cwdStripped
-}
-
-function landingObservationResult(
-  command: string[],
-  observation: 'clean' | 'becomes-dirty' | 'missing-branch' | undefined,
-  branch: string,
-  head: string,
-  state: { statusCalls: number },
-  sourceRefs?: string,
-): { args: string[]; result: ReturnType<typeof Bun.spawnSync> | null } {
-  const args = normalizedGitArgs(command)
-  if (args[0] === 'for-each-ref') {
-    return {
-      args,
-      result: spawnResult(
-        sourceRefs ?? (observation === 'missing-branch' ? '' : `${branch}\t${head}\n`),
-      ),
-    }
-  }
-  if (args[0] === 'status') {
-    state.statusCalls++
-    const dirty = observation === 'becomes-dirty' && state.statusCalls > 1
-    return { args, result: spawnResult(dirty ? ' M changed.ts\n' : '') }
-  }
-  if (
-    observation === 'missing-branch' &&
-    args[0] === 'rev-parse' &&
-    args.includes(`refs/heads/${branch}^{commit}`)
-  ) {
-    return { args, result: spawnResult('', 1) }
-  }
-  return { args, result: null }
-}
-
-function cwdObservationResult(
-  command: string[],
-  observation: { stdout?: string | ((tree: string) => string); exitCode?: number } | undefined,
-  tree: string,
-): ReturnType<typeof Bun.spawnSync> | null {
-  if (command[0] !== 'lsof') return null
-  const stdout =
-    typeof observation?.stdout === 'function'
-      ? observation.stdout(tree)
-      : (observation?.stdout ?? '')
-  return spawnResult(stdout, observation?.exitCode ?? 0)
-}
-
-function beforeLockedObservation(
-  command: string[],
-  tree: string,
-  observe?: (tree: string) => void,
-): void {
-  if (command.join(' ') === 'ps -axo pid=,ppid=,pgid=,command=') observe?.(tree)
-}
-
-function closeOutFixture(
-  ownership: 'owned' | 'attached',
-  retainedRefDeleteFails = false,
-  landingObservation?: 'clean' | 'becomes-dirty' | 'missing-branch',
-  cwdObservation?: { stdout?: string | ((tree: string) => string); exitCode?: number },
-  observeBeforeLock?: (tree: string) => void,
-  readerSourceRefs?: string,
-) {
-  const id = addRun({ agent: 'codex', job: 'implement', status: 'ok' })
-  const project = `close-out-${id}`
-  const repo = join(dir, project)
-  const tree = join(repo, '.claude', 'worktrees', `orch-${id}`)
-  const branch = `DEV-647-orch-${id}`
-  const head = '1234567890abcdef1234567890abcdef12345678'
-  mkdirSync(join(repo, '.git'), { recursive: true })
-  mkdirSync(tree, { recursive: true })
-  const ownerRecordId =
-    ownership === 'owned'
-      ? db()
-          .query<{ record_id: string }, [string]>('SELECT record_id FROM run WHERE record_id=?')
-          .get(id)!.record_id
-      : newRecordId()
-  writeFileSync(join(tree, '.orch-run'), `${ownerRecordId}\n${repo}\nsource: git\n`)
-  upsertProject({ recordId: newRecordId(), name: project, path: repo, settings: { trunk: 'main' } })
-  db()
-    .query(
-      `UPDATE run SET repo=?, cwd=?, worktree=?, branch=?, minted_branch=?,
-       base_commit=?, worktree_source='git', head_commit=?, launch_key='DEV-647' WHERE record_id=?`,
-    )
-    .run(project, tree, tree, branch, branch, head, head, id)
-  if (landingObservation) {
-    db()
-      .query(
-        "UPDATE run SET job='landing-tree', minted_branch=NULL, session_id='owner' WHERE record_id=?",
-      )
-      .run(id)
-  }
-  const landingState = { statusCalls: 0 }
-  const spawnCommands: string[][] = []
-  spyOn(Bun, 'spawnSync').mockImplementation(((command: string[]) => {
-    spawnCommands.push(command)
-    beforeLockedObservation(command, tree, observeBeforeLock)
-    const cwdResult = cwdObservationResult(command, cwdObservation, tree)
-    if (cwdResult) return cwdResult
-    const observed = landingObservationResult(
-      command,
-      landingObservation,
-      branch,
-      head,
-      landingState,
-      readerSourceRefs,
-    )
-    const { args } = observed
-    if (observed.result) return observed.result
-    if (args[0] === 'worktree' && args[1] === 'remove') {
-      rmSync(tree, { recursive: true, force: true })
-      return spawnResult()
-    }
-    const failure = retainedRefDeleteFails ? retainedRefFailure(args) : null
-    if (failure) return failure
-    if (args.includes('--git-common-dir')) return spawnResult('.git')
-    if (args.includes('--is-inside-work-tree')) return spawnResult('true')
-    if (args[0] === 'worktree' && args[1] === 'list') {
-      return spawnResult(`worktree ${tree}\nbranch refs/heads/${branch}\n`)
-    }
-    if (args[0] === 'symbolic-ref') return spawnResult(branch)
-    if (args[0] === 'diff') return spawnResult()
-    if (args[0] === 'rev-list' && args.includes('--count')) return spawnResult('0')
-    if (args[0] === 'merge-base' || args[0] === 'rev-parse' || args[0] === 'show-ref') {
-      return spawnResult(head)
-    }
-    return spawnResult()
-  }) as typeof Bun.spawnSync)
-  return { id, repo, tree, spawnCommands }
-}
 
 describe('close-out extraction decision', () => {
   test('rejects filing a child turn extraction under the conversation root', async () => {
@@ -196,7 +45,7 @@ test('reader close-out excludes its base when the source no longer reaches it', 
 })
 
 describe('close-out of a tree named by an open workflow cursor', () => {
-  for (const intent of ['terminal', 'sweep'] as const) {
+  for (const intent of ['terminal', 'sweep', 'requested'] as const) {
     test(`${intent} holds the named tree`, async () => {
       const fixture = closeOutFixture('owned')
       const number = addOpenCursorWorktree(db(), { project: 'segnavia', worktree: fixture.tree })
@@ -212,7 +61,7 @@ describe('close-out of a tree named by an open workflow cursor', () => {
     })
   }
 
-  for (const intent of ['explicit', 'tree-remove'] as const) {
+  for (const intent of ['operator-removal', 'failed-provision'] as const) {
     test(`${intent} proceeds and reports the cursor naming the tree`, async () => {
       const fixture = closeOutFixture('owned')
       const number = addOpenCursorWorktree(db(), { project: 'segnavia', worktree: fixture.tree })
@@ -221,14 +70,110 @@ describe('close-out of a tree named by an open workflow cursor', () => {
         const result = await closeOutRun(fixture.id, { intent })
 
         expect(result.outcome).toBe('released')
-        expect(result.detail).toContain(`open workflow cursor ${number} (ship-task, segnavia)`)
-        expect(result.detail).toEndWith('names this tree')
+        expect(result.detail).toContain(
+          `open workflow cursor ${number} (ship-task, segnavia) worktree claim was cleared`,
+        )
         expect(existsSync(fixture.tree)).toBe(false)
       } finally {
         rmSync(fixture.repo, { recursive: true, force: true })
       }
     })
   }
+
+  test('landed proceeds and clears the cursor claim only when the branch is landed', async () => {
+    const fixture = closeOutFixture('owned')
+    const number = addOpenCursorWorktree(db(), { project: 'segnavia', worktree: fixture.tree })
+    const run = db()
+      .query<{ repo: string; branch: string }, [string]>(
+        'SELECT repo,branch FROM run WHERE record_id=?',
+      )
+      .get(fixture.id)!
+    const projectRecordId = db()
+      .query<{ record_id: string }, [string]>('SELECT record_id FROM project WHERE name=?')
+      .get(run.repo)!.record_id
+    db()
+      .query(
+        `INSERT INTO branch_landing_record
+         (record_id,project,project_record_id,branch,tip,pr_number,merge_commit,merged_at,recorded_at)
+         VALUES (?,?,?,?,?,?,?,?,?)`,
+      )
+      .run(
+        newRecordId(),
+        run.repo,
+        projectRecordId,
+        run.branch,
+        '1234567890abcdef1234567890abcdef12345678',
+        647,
+        '1234567890abcdef1234567890abcdef12345678',
+        '2026-11-20T00:00:00Z',
+        '2026-11-20T00:00:01Z',
+      )
+    try {
+      const result = await closeOutRun(fixture.id, { intent: 'landed' })
+
+      expect(result).toMatchObject({ outcome: 'released' })
+      expect(result.clearedCursorClaims).toEqual([
+        `open workflow cursor ${number} (ship-task, segnavia) worktree claim was cleared`,
+      ])
+      expect(existsSync(fixture.tree)).toBe(false)
+    } finally {
+      rmSync(fixture.repo, { recursive: true, force: true })
+    }
+  })
+
+  test.each(['unlanded', 'unknown'] as const)(
+    'landed holds a cursor-named tree when branch state is %s',
+    async (landedNaming) => {
+      const fixture = closeOutFixture(
+        'owned',
+        false,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        landedNaming,
+      )
+      const number = addOpenCursorWorktree(db(), { project: 'segnavia', worktree: fixture.tree })
+      try {
+        const result = await closeOutRun(fixture.id, { intent: 'landed' })
+
+        expect(result).toMatchObject({ outcome: 'held' })
+        expect(result.detail).toContain(`open workflow cursor ${number} (ship-task, segnavia)`)
+        expect(existsSync(fixture.tree)).toBe(true)
+      } finally {
+        rmSync(fixture.repo, { recursive: true, force: true })
+      }
+    },
+  )
+
+  test('a failed cursor clear is reported in memory and in persisted close-out detail', async () => {
+    const fixture = closeOutFixture('owned')
+    const number = addOpenCursorWorktree(db(), { project: 'segnavia', worktree: fixture.tree })
+    db().exec(
+      `CREATE TRIGGER reject_cursor_clear_${number}
+       BEFORE UPDATE ON workflow_cursor WHEN OLD.number=${number}
+       BEGIN SELECT RAISE(ABORT,'cursor clear refused'); END`,
+    )
+    try {
+      const result = await closeOutRun(fixture.id, { intent: 'operator-removal' })
+      const persisted = db()
+        .query<{ detail: string }, [string]>(
+          'SELECT close_out_detail detail FROM run WHERE record_id=?',
+        )
+        .get(fixture.id)!
+
+      const notice =
+        `open workflow cursor ${number} (ship-task, segnavia) ` +
+        'worktree claim could not be cleared'
+      expect(result.detail).toContain(notice)
+      expect(result.clearedCursorClaims).toBeUndefined()
+      expect(persisted.detail).toContain(notice)
+      expect(persisted.detail).not.toContain('worktree claim was cleared')
+    } finally {
+      db().exec(`DROP TRIGGER IF EXISTS reject_cursor_clear_${number}`)
+      rmSync(fixture.repo, { recursive: true, force: true })
+    }
+  })
 
   test('terminal uses the cursor naming snapshot taken before the lock', async () => {
     let number = 0
@@ -628,6 +573,18 @@ test('landing-tree sweep does not substitute tree HEAD for a missing branch ref'
   }
 })
 
+test('landed releases a clean landing tree whose branch ref is missing', async () => {
+  const fixture = closeOutFixture('owned', false, 'missing-branch')
+  try {
+    const result = await closeOutRun(fixture.id, { intent: 'landed' })
+
+    expect(result).toMatchObject({ outcome: 'released' })
+    expect(existsSync(fixture.tree)).toBe(false)
+  } finally {
+    rmSync(fixture.repo, { recursive: true, force: true })
+  }
+})
+
 test('absent terminal landing-tree close-out clears its pointer and settles missing residue', async () => {
   const id = addRun({ agent: '(architect)', job: 'landing-tree', status: 'ok' })
   const project = `absent-landing-close-out-${id}`
@@ -664,7 +621,7 @@ test('absent terminal landing-tree close-out clears its pointer and settles miss
          VALUES (?,?,?,?,'queued','2026-09-29T00:00:00.000Z')`,
       )
       .run(newRecordId(), project, projectId, `DEV-1023-orch-${id}`)
-    expect(await closeOutRun(id, { intent: 'explicit' })).toMatchObject({
+    expect(await closeOutRun(id, { intent: 'requested' })).toMatchObject({
       outcome: 'held',
       detail: 'landing tree held by session owner: landing is in flight',
     })
@@ -741,7 +698,7 @@ test('absent landing-tree close-out rechecks conversation liveness before cleari
     return spawnResult('', 1)
   }) as typeof Bun.spawnSync)
   try {
-    expect(await closeOutRun(id, { intent: 'explicit' })).toMatchObject({
+    expect(await closeOutRun(id, { intent: 'requested' })).toMatchObject({
       outcome: 'live',
       detail:
         `tree ${tree} has live run(s): ${child} (running, this conversation)\n` +
@@ -845,7 +802,7 @@ test('absent-tree recipe teardown stays done when retained-ref unpin fails', asy
     return spawnResult()
   }) as typeof Bun.spawnSync)
   try {
-    expect((await closeOutRun(fixture.id, { intent: 'explicit' })).outcome).toBe('failed')
+    expect((await closeOutRun(fixture.id, { intent: 'requested' })).outcome).toBe('failed')
     expect(
       (
         db().query('SELECT resource_teardown FROM run WHERE record_id=?').get(fixture.id) as {
@@ -853,7 +810,7 @@ test('absent-tree recipe teardown stays done when retained-ref unpin fails', asy
         }
       ).resource_teardown,
     ).toBe('done')
-    expect((await closeOutRun(fixture.id, { intent: 'explicit' })).outcome).toBe('absent')
+    expect((await closeOutRun(fixture.id, { intent: 'requested' })).outcome).toBe('absent')
     expect(commands.filter((command) => command === 'teardown-marker')).toHaveLength(1)
   } finally {
     rmSync(fixture.repo, { recursive: true, force: true })
@@ -1011,7 +968,7 @@ test('absent-tree dry run reports teardown without executing it', async () => {
     return spawnResult()
   }) as typeof Bun.spawnSync)
   try {
-    const result = await closeOutRun(fixture.id, { intent: 'explicit', dryRun: true })
+    const result = await closeOutRun(fixture.id, { intent: 'requested', dryRun: true })
     expect(result).toMatchObject({ outcome: 'absent' })
     expect(result.detail).toContain('would run its recorded resource teardown')
     expect(commands).not.toContain('teardown-marker')

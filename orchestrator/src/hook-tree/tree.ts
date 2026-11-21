@@ -241,17 +241,28 @@ export function createHookTree(input: {
 }
 
 export type HookTreeRemovalResult =
-  | { outcome: 'released'; cursorCleanupFailure?: string; cursorCleanupRemedy?: string }
-  | { outcome: 'absent'; cursorCleanupFailure?: string; cursorCleanupRemedy?: string }
+  | {
+      outcome: 'released'
+      cursorCleanupFailure?: string
+      cursorCleanupRemedy?: string
+      clearedCursorClaims?: string[]
+    }
+  | {
+      outcome: 'absent'
+      cursorCleanupFailure?: string
+      cursorCleanupRemedy?: string
+      clearedCursorClaims?: string[]
+    }
   | { outcome: 'kept'; reason: string; callerGroupHolderPids?: readonly number[] }
   | { outcome: 'failed'; detail: string }
 
 export async function removeHookTreeResult(
   requestedPath: string,
+  intent: 'operator-removal' | 'landed',
   taskFlowClient?: CursorWorktreeTaskFlowClient,
 ): Promise<HookTreeRemovalResult> {
   try {
-    return await removeRecordedHookTree(requestedPath, taskFlowClient)
+    return await removeRecordedHookTree(requestedPath, intent, taskFlowClient)
   } catch (cause) {
     return { outcome: 'failed', detail: cause instanceof Error ? cause.message : String(cause) }
   }
@@ -266,6 +277,7 @@ export function absentClaimedHookTreeDecision(input: {
 
 async function removeRecordedHookTree(
   requestedPath: string,
+  intent: 'operator-removal' | 'landed',
   taskFlowClient?: CursorWorktreeTaskFlowClient,
 ): Promise<HookTreeRemovalResult> {
   const wanted = canonicalPath(requestedPath)
@@ -294,7 +306,7 @@ async function removeRecordedHookTree(
   }
   writableDb()
   const result = await closeOutRun(owners[0]!.record_id, {
-    intent: 'tree-remove',
+    intent,
     taskFlowClient,
   })
   if (result.outcome === 'released' || result.outcome === 'absent')
@@ -302,6 +314,7 @@ async function removeRecordedHookTree(
       result.outcome,
       result.cursorCleanupFailure,
       result.cursorCleanupRemedy,
+      result.clearedCursorClaims,
     )
   if (result.outcome === 'held')
     return {
@@ -318,11 +331,13 @@ function successfulHookTreeRemovalResult(
   outcome: 'released' | 'absent',
   cursorCleanupFailure?: string,
   cursorCleanupRemedy?: string,
+  clearedCursorClaims?: string[],
 ): HookTreeRemovalResult {
   return {
     outcome,
     ...(cursorCleanupFailure ? { cursorCleanupFailure } : {}),
     ...(cursorCleanupRemedy ? { cursorCleanupRemedy } : {}),
+    ...(clearedCursorClaims?.length ? { clearedCursorClaims } : {}),
   }
 }
 
@@ -355,10 +370,11 @@ function unownedHookTreeRemovalResult(
   )
 }
 
-export async function removeHookTree(requestedPath: string): Promise<void> {
-  const result = await removeHookTreeResult(requestedPath)
+export async function removeHookTree(requestedPath: string): Promise<string[]> {
+  const result = await removeHookTreeResult(requestedPath, 'operator-removal')
   if ((result.outcome === 'released' || result.outcome === 'absent') && result.cursorCleanupFailure)
     throw new Error(result.cursorCleanupFailure)
   if (result.outcome === 'kept') throw new Error(`tree teardown held: ${result.reason}`)
   if (result.outcome === 'failed') throw new Error(result.detail)
+  return result.clearedCursorClaims ?? []
 }

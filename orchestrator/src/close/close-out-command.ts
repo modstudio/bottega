@@ -14,7 +14,7 @@ export async function closeOutCommand(
 ): Promise<void> {
   writableDb()
   const result = await annotateHeldLandingInFlight(
-    await closeOutRun(id, { intent: 'explicit', lockTimeoutMs: nonBlocking ? 0 : undefined }),
+    await closeOutRun(id, { intent: 'requested', lockTimeoutMs: nonBlocking ? 0 : undefined }),
   )
   const reportOutcome = result.reportOutcome ?? result.outcome
   presentation.log(json ? JSON.stringify(closeOutJson(result)) : formatCloseOutReport(result))

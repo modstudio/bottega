@@ -3,6 +3,7 @@
 
 import type { Database } from 'bun:sqlite'
 import { existsSync, realpathSync } from 'node:fs'
+import { classifyMintedBranch } from '../branch/branches.ts'
 import { db, liveRuns, nowIso } from '../database/db.ts'
 import { hookTreeHoldDecision } from '../hook-tree/hook-tree.ts'
 import { landingTreeHoldDecision } from '../landing-tree/landing-tree.ts'
@@ -13,6 +14,7 @@ import { worktreeDirty } from '../worktree/worktree-attribution.ts'
 import type { ConversationKeepTreeHold } from './close-out-report.ts'
 import {
   type CloseOutIntent,
+  closeOutIntentAuthority,
   decideTreeKeep,
   type TreeKeepDecision,
   type TreeNamer,
@@ -74,6 +76,23 @@ export function namedProjectTreePaths(
     if (canonical) named.add(canonical)
   }
   return named
+}
+
+function landedNamingFact(
+  rootId: string,
+  database: Database,
+): { landed: boolean | null; failure: string | null } {
+  const row = database.query('SELECT repo,branch FROM run WHERE record_id=?').get(rootId) as {
+    repo: string | null
+    branch: string | null
+  } | null
+  if (!row?.repo || !row.branch)
+    return { landed: null, failure: 'project or branch is no longer recorded' }
+  const state = classifyMintedBranch(row.repo, row.branch)
+  if (state.state === 'landed') return { landed: true, failure: null }
+  if (state.state === 'unknown')
+    return { landed: null, failure: state.error ?? 'landing status is unknown' }
+  return { landed: false, failure: `branch ${row.branch} is ${state.state}` }
 }
 
 export function conversationKeepTreeHold(
@@ -143,18 +162,26 @@ export function closeOutKeepTreeDecision(
   database: Database = db(),
 ): { hold: ConversationKeepTreeHold; naming: TreeKeepDecision } {
   const namers = treePath ? treeKeepNamers(treePath, rootId, cursorWorktrees, database) : []
-  const naming = decideTreeKeep({ intent, namers })
+  const landedFact =
+    intent === 'landed' && namers.length > 0
+      ? landedNamingFact(rootId, database)
+      : { landed: null, failure: null }
+  const naming = decideTreeKeep({ intent, namers, landed: landedFact.landed })
   if (naming.action === 'hold') {
     return {
       hold: {
         held: true,
         until: null,
-        reason: `tree kept because ${treeNamersText(naming.namers)} names it`,
+        reason:
+          `tree kept because ${treeNamersText(naming.namers)} names it` +
+          (intent === 'landed' && landedFact.failure
+            ? ` and landing could not be established: ${landedFact.failure}`
+            : ''),
       },
       naming,
     }
   }
-  if (intent === 'tree-remove') return { hold: { held: false }, naming }
+  if (closeOutIntentAuthority(intent).namedTree !== 'hold') return { hold: { held: false }, naming }
   if (intent === 'sweep') {
     const landing = database
       .query(

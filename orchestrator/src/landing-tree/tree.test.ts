@@ -89,7 +89,7 @@ test('failed creation settles its worktree claim after the recipe already remove
     )
     .run(id, id, missing, '2026-09-22T00:00:00.000Z')
 
-  await releaseFailedLandingTree(id)
+  expect(await releaseFailedLandingTree(id)).toEqual([])
 
   expect(
     db()

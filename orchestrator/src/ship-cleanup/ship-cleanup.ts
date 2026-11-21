@@ -74,6 +74,7 @@ export type ShipCleanupReport = {
   freed: { artifacts: number; scratch: number; worktrees: number }
   removed: { artifacts: string[]; scratch: string[]; worktrees: string[]; branches: string[] }
   absentWorktrees: string[]
+  clearedCursorClaims?: string[]
   reclaimed: { processes: string[]; compose: string[] }
   gone: string[]
   kept: ShipCleanupKeptItem[]
@@ -90,6 +91,7 @@ export type ShipCleanupDependencies = {
         detail: string
         cursorCleanupFailure?: string
         cursorCleanupRemedy?: string
+        clearedCursorClaims?: string[]
         callerGroupHolderPids?: readonly number[]
       }>
     | {
@@ -97,6 +99,7 @@ export type ShipCleanupDependencies = {
         detail: string
         cursorCleanupFailure?: string
         cursorCleanupRemedy?: string
+        clearedCursorClaims?: string[]
         callerGroupHolderPids?: readonly number[]
       }
   prune(
@@ -121,7 +124,7 @@ type ShipCleanupCloseOutResult = Awaited<ReturnType<ShipCleanupDependencies['clo
 const dependencies: ShipCleanupDependencies = {
   landingState: (project, branch) => classifyMintedBranch(project, branch),
   observeBranchRef: (projectPath, branch) => observeGitRef(projectPath, `refs/heads/${branch}`),
-  closeOut: (runId) => closeOutRun(runId, { intent: 'explicit' }),
+  closeOut: (runId) => closeOutRun(runId, { intent: 'landed' }),
   prune: (project, branch) => pruneBranch({ project, branch }),
   measure: (paths) => {
     const walked = walkStoragePaths(paths, () => ({}), STORAGE_WALK_ENTRY_LIMIT)
@@ -142,7 +145,7 @@ const dependencies: ShipCleanupDependencies = {
       throw cause
     }
   },
-  removeLandingTree: removeHookTreeResult,
+  removeLandingTree: (path) => removeHookTreeResult(path, 'landed'),
   runsFromTree: (path) => removalWorkingDirectoryRefusal(path, '') !== null,
   remove: (path) => rmSync(path, { recursive: true, force: true }),
   reclaimProcesses: reclaimRemovedTreeProcesses,
@@ -220,6 +223,7 @@ function emptyReport(
     freed: { artifacts: 0, scratch: 0, worktrees: 0 },
     removed: { artifacts: [], scratch: [], worktrees: [], branches: [] },
     absentWorktrees: [],
+    clearedCursorClaims: [],
     reclaimed: { processes: [], compose: [] },
     gone: [],
     kept: [],
@@ -339,6 +343,7 @@ async function closeBranchWorktree(
       if (result.outcome === 'released' && row.worktree)
         removedNow.set(row.worktree, runIdsByTree.get(row.worktree) ?? new Set([row.record_id]))
       reportCursorCleanupFailure(report, row.number, result)
+      report.clearedCursorClaims!.push(...(result.clearedCursorClaims ?? []))
       return null
     }
     reportKeptCloseOutResult(branch, row, result, report, callerLandingTreePath)
@@ -425,6 +430,7 @@ async function releaseLandingTree(
     else report.absentWorktrees.push(row.worktree)
     removedNow.set(row.worktree, runIdsByTree.get(row.worktree) ?? new Set([row.record_id]))
     reportCursorCleanupFailure(report, row.number, result)
+    report.clearedCursorClaims!.push(...(result.clearedCursorClaims ?? []))
     return null
   }
   if (result.outcome === 'kept') {
@@ -843,6 +849,7 @@ export function formatShipCleanup(report: ShipCleanupReport): string {
   for (const item of report.reclaimed.compose) lines.push(`reclaimed Compose resource: ${item}`)
   for (const path of report.removed.worktrees) lines.push(`released tree: ${path}`)
   for (const path of report.absentWorktrees) lines.push(`already absent tree: ${path}`)
+  for (const notice of report.clearedCursorClaims ?? []) lines.push(notice)
   if (report.removed.worktrees.length) {
     lines.push(deployFromLine(report))
   }
