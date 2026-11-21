@@ -182,12 +182,6 @@ export async function sessionContextItems(session: string, database: Database) {
   return listContextItems(holder, database)
 }
 
-/** Read one task's context items through the document-store owner. */
-export async function taskContextItems(task: ContextTaskIdentity, database: Database) {
-  const holder = taskContextHolder(task.record_id)
-  return listContextItems(holder, database)
-}
-
 /** Removes every item on a task holder; a whole-holder clear is not blocked by required kinds. */
 export async function clearTaskContext(input: { task: string }) {
   assertWorkerDocStoreWriteAllowed('clearTaskContext')

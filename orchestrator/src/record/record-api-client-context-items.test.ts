@@ -1,10 +1,10 @@
 import { expect, test } from 'bun:test'
+import { recordContextItemReadClient } from './record-api-client-context-items.ts'
+import type { RecordClientRequest } from './record-api-client-paths.ts'
 import {
   CONTEXT_ITEM_HOLDER_BATCH_LIMIT,
   RECORD_CONTEXT_ITEMS_ROUTE,
 } from './record-api-client-paths.ts'
-import { recordContextItemReadClient } from './record-api-client-context-items.ts'
-import type { RecordClientRequest } from './record-api-client-paths.ts'
 import type { RecordContextItem } from './record-context-items.ts'
 
 function contextItem(holder: string): RecordContextItem {

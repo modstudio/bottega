@@ -1,6 +1,7 @@
 // concern: session-losses-adapter
 /** Gathers loss facts, persists blind candidate files, and dispatches judges. */
 
+import type { Database } from 'bun:sqlite'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { basename, join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
@@ -9,7 +10,6 @@ import { resolveStatePaths } from '../../../shared/state-directory.ts'
 import { UNJUDGED_OWNER_WINDOW_MS } from '../cleanup/cleanup-sweep-decisions.ts'
 import { REPLY_FILE_NAME } from '../contract/contract.ts'
 import { db } from '../database/db.ts'
-import type { Database } from 'bun:sqlite'
 import { listContextItems } from '../doc/context-item-store.ts'
 import { getDoc } from '../doc/docs.ts'
 import {

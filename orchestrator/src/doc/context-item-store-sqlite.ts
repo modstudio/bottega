@@ -2,10 +2,10 @@
 /** Owns local context-item persistence. Context policy belongs to doc-context-write. */
 import type { Database } from 'bun:sqlite'
 import {
-  contextItemHolderGroup,
   type ContextHolderKind,
   type ContextItemHolderGroup,
   type ContextItemKind,
+  contextItemHolderGroup,
   type StoredContextItem,
   splitContextHolder,
 } from '../../../shared/context-item-vocabulary.ts'

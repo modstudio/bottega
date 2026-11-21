@@ -1,6 +1,6 @@
+import { contextItemHolderGroup } from '../../../shared/context-item-vocabulary.ts'
 import type { RecordApiClient } from '../../src/record/record-api-client.ts'
 import type { RecordContextItem } from '../../src/record/record-context-items.ts'
-import { contextItemHolderGroup } from '../../../shared/context-item-vocabulary.ts'
 
 export function memoryContextItemClient(
   contextItems: RecordContextItem[],

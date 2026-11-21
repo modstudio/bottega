@@ -3,10 +3,10 @@
 import type { SQL } from 'bun'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
-  contextItemHolderGroup,
   type ContextHolderKind,
   type ContextItemHolderGroup,
   type ContextItemKind,
+  contextItemHolderGroup,
   type StoredContextItem,
 } from '../../../shared/context-item-vocabulary.ts'
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
@@ -64,6 +64,7 @@ function readOutput(row: Record<string, unknown>): StoredContextItem {
 }
 
 export type RecordContextItem = StoredContextItem
+export type RecordContextItemHolderGroup = ContextItemHolderGroup
 
 export async function readRecordContextItems(
   input: Tenant & {

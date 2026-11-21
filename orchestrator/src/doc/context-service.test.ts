@@ -11,6 +11,7 @@ import { upsertProject } from '../project/projects.ts'
 import { rememberHostedRecord } from '../record/install-binding-write.ts'
 import { assertRecordContextItemRevision } from '../record/record-context-items.ts'
 import { contextCursorWarning } from './context-cursor-warning-decision.ts'
+import { listContextItems } from './context-item-store.ts'
 import {
   clearTaskContext,
   cursorAncestorTasks,
@@ -19,10 +20,10 @@ import {
   getContext,
   sessionContextItems,
   setContextItem,
-  taskContextItems,
 } from './context-service.ts'
 import { CONTEXT_FACTS_PORTS_KEY, type ContextFactsPorts } from './context-write-adapter.ts'
 import { ContextWriteRefusalError } from './doc-context-write.ts'
+import { taskContextHolder } from './doc-subjects.ts'
 
 const globals = globalThis as typeof globalThis & {
   [CONTEXT_FACTS_PORTS_KEY]?: ContextFactsPorts
@@ -99,7 +100,9 @@ test('hosted task reads return record items when the local row is absent', async
     )
     expect(db().query('SELECT slug FROM context_item WHERE slug=?').get('probe')).toBeNull()
     expect((await getContext({ task: task.key })).items.map((item) => item.id)).toEqual(['probe'])
-    expect((await taskContextItems(task, db())).map((item) => item.id)).toEqual(['probe'])
+    expect(
+      (await listContextItems(taskContextHolder(task.record_id), db())).map((item) => item.id),
+    ).toEqual(['probe'])
   } finally {
     if (priorUrl === undefined) delete process.env.BOTTEGA_RECORD_API_URL
     else process.env.BOTTEGA_RECORD_API_URL = priorUrl
@@ -464,7 +467,7 @@ test('lifecycle task clear passes revisions and counts already-absent hosted row
   db()
     .query("UPDATE context_item SET updated_at='2026-11-13T19:41:53.826Z' WHERE holder_kind='task'")
     .run()
-  const hostedItems = await taskContextItems(task, db())
+  const hostedItems = await listContextItems(taskContextHolder(task.record_id), db())
   const priorUrl = process.env.BOTTEGA_RECORD_API_URL
   const removals: { id: string; input: { expectedRevision?: string } }[] = []
   try {
@@ -783,7 +786,7 @@ test('single-item drop leaves a local mirror alone when hosted row is absent', a
     source: 'test',
     body: 'Drop the local copy.',
   })
-  const item = (await taskContextItems(task, db()))[0]!
+  const item = (await listContextItems(taskContextHolder(task.record_id), db()))[0]!
   const priorUrl = process.env.BOTTEGA_RECORD_API_URL
   try {
     process.env.BOTTEGA_RECORD_API_URL = 'https://record.example.test'
