@@ -376,6 +376,13 @@ describe('sweep candidate selection', () => {
     ).toBe(false)
     expect(
       isSweepCandidate({
+        status: 'ok',
+        worktree: null,
+        closeOutOutcome: 'released',
+      }),
+    ).toBe(false)
+    expect(
+      isSweepCandidate({
         status: 'running',
         worktree: '/tree',
         closeOutOutcome: null,

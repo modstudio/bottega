@@ -31,6 +31,7 @@ export type CloseOutReportResult = {
   inFlightRef?: string | null
   suppressBlock?: boolean
   leaseHolder?: { runId: string; number: number; job: string }
+  callerGroupHolderPids?: readonly number[]
 }
 
 export type CloseOutResult = Omit<CloseOutReportResult, 'outcome' | 'reportOutcome'> & {
