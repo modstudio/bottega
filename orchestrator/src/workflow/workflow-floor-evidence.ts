@@ -42,6 +42,7 @@ import { createdAfterStepActivation } from './workflow-cursor-trail.ts'
 import type { CursorState } from './workflow-cursor-transition.ts'
 import { resolveWorkflowCursorSuccessor } from './workflow-cursor-transition.ts'
 import type { WorkflowEvidenceInput } from './workflow-evidence-input.ts'
+import { requireMutableArtifactFreshness } from './workflow-floor-artifact-freshness.ts'
 import {
   type ArtifactRef,
   decideReviewReadArtifact,
@@ -463,6 +464,7 @@ function resolveDocArtifact(value: string, identity: CursorIdentity, d: Database
     throw new Error(
       `${flag} is scoped to ${row.projectName ?? row.subject ?? row.scope}, not this cursor's ${identity.project}`,
     )
+  requireMutableArtifactFreshness('doc', row.updatedAt, identity.stepActivatedAt)
   return row.address
 }
 
@@ -514,6 +516,11 @@ async function resolveTaskArtifact(
     )
   if (!task.commentIds.map(String).includes(ref.id))
     throw new Error(`--artifact ${raw} is not a comment on ${ref.key}`)
+  requireMutableArtifactFreshness(
+    'task comment',
+    task.commentWrittenAt?.[ref.id],
+    identity.stepActivatedAt,
+  )
   return { ref: raw, exists: true }
 }
 
@@ -533,8 +540,15 @@ async function resolveStoredArtifact(
           stepOrdinal: row.step_ordinal,
           stepSlug: row.step_slug,
           body: row.body,
+          copiedAt: row.copied_at,
         }
       : null
+    if (attachment)
+      requireMutableArtifactFreshness(
+        'attached text',
+        attachment.copiedAt,
+        identity.stepActivatedAt,
+      )
     return {
       ref: 'attached-text',
       exists: attachedTextReferenceMeetsFloor({ ...binding, attachment }),
@@ -935,7 +949,13 @@ async function gatherArtifactEntry(
   if ('error' in parsed) throw new Error(parsed.error)
   const noteEvidence =
     parsed.kind === 'note'
-      ? await gatherNoteArtifactEvidence(parsed, offeredArtifact, input.identity.project, ports)
+      ? await gatherNoteArtifactEvidence(
+          parsed,
+          offeredArtifact,
+          input.identity.project,
+          input.identity.stepActivatedAt,
+          ports,
+        )
       : undefined
   const entry: ValidatedArtifactEvidence = {
     artifact: noteEvidence

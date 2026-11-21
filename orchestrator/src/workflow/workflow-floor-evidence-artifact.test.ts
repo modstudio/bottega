@@ -1,6 +1,7 @@
 import { expect, test } from 'bun:test'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import {
+  CURSOR_RECORD_ID,
   database,
   gather,
   insertRun,
@@ -30,6 +31,7 @@ test('a task document on the cursor task is stable recorded evidence', async () 
     id: 'document-id',
     label: value,
     task_record_id: 'task-DEV-977',
+    updated_at: '2026-09-02',
   })
 
   expect(
@@ -52,6 +54,7 @@ test("a task document follows the cursor's task record when its key changes", as
     id: 'document-id',
     label: value,
     task_record_id: 'task-DEV-977',
+    updated_at: '2026-09-02',
   })
 
   expect(
@@ -65,6 +68,7 @@ test('a task document on another task record is refused', async () => {
     id: 'document-id',
     label: value,
     task_record_id: 'task-DEV-1',
+    updated_at: '2026-09-02',
   })
 
   await expect(
@@ -92,4 +96,89 @@ test('doc UUID evidence still resolves only through the doc store', async () => 
     ref: 'doc:project/fixture/unchanged',
     exists: true,
   })
+})
+
+test('a doc must change during the active step', async () => {
+  const d = database()
+  const id = newRecordId()
+  d.query(
+    `INSERT INTO doc (scope,subject,slug,title,body,delivery,audiences,created_at,updated_at,project_record_id,record_id)
+     VALUES ('project','fixture','freshness','t','b','inject','["technical"]','2026-08-01','2026-08-01',?,?)`,
+  ).run(projectId(d, 'fixture'), id)
+
+  await expect(gather(d, { artifacts: [`doc:${id}`] })).rejects.toThrow(
+    'doc record time is 2026-08-01, before step activation 2026-09-01',
+  )
+  d.query('UPDATE doc SET updated_at=? WHERE record_id=?').run('2026-09-02', id)
+  await expect(gather(d, { artifacts: [`doc:${id}`] })).resolves.toBeDefined()
+})
+
+test('task comments and documents must change during the active step', async () => {
+  const d = database()
+  const readTask = (writtenAt: string) => () => ({
+    recordId: 'task-DEV-977',
+    key: 'DEV-977',
+    status: 'done',
+    statusCategory: 'done',
+    commentIds: ['4'],
+    commentWrittenAt: { '4': writtenAt },
+    commentsVerifiable: true,
+  })
+  await expect(
+    gather(d, { artifacts: ['task:DEV-977#comment:4'] }, { readTask: readTask('2026-08-01') }),
+  ).rejects.toThrow('task comment record time is 2026-08-01')
+  await expect(
+    gather(d, { artifacts: ['task:DEV-977#comment:4'] }, { readTask: readTask('2026-09-02') }),
+  ).resolves.toBeDefined()
+
+  const readTaskDocument = (updated_at: string) => async (value: string) => ({
+    id: 'document-id',
+    label: value,
+    task_record_id: 'task-DEV-977',
+    updated_at,
+  })
+  await expect(
+    gather(d, { artifacts: ['DEV-977/1'] }, { readTaskDocument: readTaskDocument('2026-08-01') }),
+  ).rejects.toThrow('task document record time is 2026-08-01')
+  await expect(
+    gather(d, { artifacts: ['DEV-977/1'] }, { readTaskDocument: readTaskDocument('2026-09-02') }),
+  ).resolves.toBeDefined()
+})
+
+test('notes and attached text must be written during the active step', async () => {
+  const d = database()
+  const noteId = newRecordId()
+  const readNote = (writtenAt: string) => async () => ({
+    recordId: noteId,
+    label: 'fixture#1',
+    promotedTask: null,
+    staleAt: null,
+    writtenAt,
+  })
+  await expect(
+    gather(d, { artifacts: [`note:${noteId}`] }, { readNote: readNote('2026-08-01') }),
+  ).rejects.toThrow('note record time is 2026-08-01')
+  await expect(
+    gather(d, { artifacts: [`note:${noteId}`] }, { readNote: readNote('2026-09-02') }),
+  ).resolves.toBeDefined()
+
+  const textId = newRecordId()
+  d.query(
+    `INSERT INTO workflow_step_text
+      (record_id,cursor_record_id,step_ordinal,step_slug,body,created_at)
+     VALUES (?, ?, 1, 'rebase', 'evidence', '2026-08-01')`,
+  ).run(textId, CURSOR_RECORD_ID)
+  d.query(
+    `INSERT INTO workflow_text_copy
+      (record_id,workflow_text_record_id,cursor_record_id,task_document_reference,copied_at)
+     VALUES (?, ?, ?, 'DEV-977/1', '2026-08-01')`,
+  ).run(newRecordId(), textId, CURSOR_RECORD_ID)
+  await expect(gather(d, { artifacts: [`attached-text:${textId}`] })).rejects.toThrow(
+    'attached text record time is 2026-08-01',
+  )
+  d.query('UPDATE workflow_text_copy SET copied_at=? WHERE workflow_text_record_id=?').run(
+    '2026-09-02',
+    textId,
+  )
+  await expect(gather(d, { artifacts: [`attached-text:${textId}`] })).resolves.toBeDefined()
 })

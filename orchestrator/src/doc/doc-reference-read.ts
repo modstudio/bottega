@@ -10,6 +10,7 @@ export type ResolvedDocReference = {
   slug: string
   projectName: string | null
   address: string
+  updatedAt: string
 }
 
 export function resolveDocReference(value: string, d: Database): ResolvedDocReference | null {
@@ -33,10 +34,11 @@ export function resolveDocReference(value: string, d: Database): ResolvedDocRefe
             subject: string | null
             slug: string
             project_name: string | null
+            updated_at: string
           },
           [string]
         >(
-          `SELECT doc.record_id,doc.scope,doc.subject,doc.slug,p.name project_name FROM doc LEFT JOIN project p ON p.record_id=doc.project_record_id WHERE doc.record_id=?`,
+          `SELECT doc.record_id,doc.scope,doc.subject,doc.slug,p.name project_name,doc.updated_at FROM doc LEFT JOIN project p ON p.record_id=doc.project_record_id WHERE doc.record_id=?`,
         )
         .get(value)
     : address
@@ -48,10 +50,11 @@ export function resolveDocReference(value: string, d: Database): ResolvedDocRefe
               subject: string | null
               slug: string
               project_name: string | null
+              updated_at: string
             },
             [string, string | null, string]
           >(
-            `SELECT doc.record_id,doc.scope,doc.subject,doc.slug,p.name project_name FROM doc LEFT JOIN project p ON p.record_id=doc.project_record_id WHERE doc.scope=? AND doc.subject IS ? AND doc.slug=?`,
+            `SELECT doc.record_id,doc.scope,doc.subject,doc.slug,p.name project_name,doc.updated_at FROM doc LEFT JOIN project p ON p.record_id=doc.project_record_id WHERE doc.scope=? AND doc.subject IS ? AND doc.slug=?`,
           )
           .get(...address)
       : null
@@ -63,6 +66,7 @@ export function resolveDocReference(value: string, d: Database): ResolvedDocRefe
         slug: row.slug,
         projectName: row.project_name,
         address: `${row.scope}/${row.subject ?? '_'}/${row.slug}`,
+        updatedAt: row.updated_at,
       }
     : null
 }

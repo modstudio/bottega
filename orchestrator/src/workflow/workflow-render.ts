@@ -30,14 +30,44 @@ export function withSelfRuling(
     : result
 }
 
-const legend = `Reading a step line: autonomy=ask means the operator rules; autonomy=review means the agent rules and records it for the operator to review afterwards; autonomy=auto means the agent rules. floor names the proof that the step is done: ruling, a recorded ruling whose ruler follows the step autonomy; command-exit, the named command exited successfully and its output is recorded; recorded-artifact, a written artifact exists in the tracker or doc store; tracker-transition, the task's tracker state changed. Several floors means any one of them is enough. needs names the facts entries the step uses. jobs names the orchestrator jobs the step may dispatch; an empty list means none. At every autonomy, a genuine design or product-direction decision goes to the operator: record it with \`${PLATFORM_SLUG} workflow await\` and stop.`
+const legend = `Reading a step line: autonomy=ask means the user rules; autonomy=review means the agent rules and records it for the user to review afterwards; autonomy=auto means the agent rules. floor names the proof that the step is done: ruling, a recorded ruling whose ruler follows the step autonomy; command-exit, the named command exited successfully and its output is recorded; recorded-artifact, a written artifact exists in the tracker or doc store; tracker-transition, the task's tracker state changed. Several floors means any one of them is enough. needs names the facts entries the step uses. jobs names the orchestrator jobs the step may dispatch; an empty list means none. At every autonomy, a genuine design or product-direction decision goes to the user: record it with \`${PLATFORM_SLUG} workflow await\` and stop.`
+const agentRulingsGuidance =
+  ' answer what the specification or canon settles; relay a design or product-direction question to the user and answer it with --from-operator.'
+const contractQuestionGuidance = 'If a step ends in a question for the user'
+const missingWorkGuidance =
+  'If the work has not been supplied, get it from the user as a task key or a description before choosing a mode.'
+const missingArgumentsGuidance =
+  'STOP. Do not start step 1. Ask the user for each missing argument below, then compose again with them.'
+const otherFloorRulingGuidance = `this step cannot be closed by an agent self-ruling; close with another floor's evidence, or put a ruling recorded with \`--from-operator\` with \`${PLATFORM_SLUG} workflow await\` when that is the evidence you use.`
+const onlyRulingGuidance = `stop and put the ruling to the user; record the question with \`${PLATFORM_SLUG} workflow await\`.`
+const askActionGuidance = "The user's answer authorizes the action"
+const decisionStillGoesToUser = `a design or product-direction decision still goes to the user (\`${PLATFORM_SLUG} workflow await\`)`
+const userVisibleDecisionStillGoesToUser = `a decision that changes what the user sees, or product direction, still goes to the user (\`${PLATFORM_SLUG} workflow await\`)`
+const reviewListingGuidance = 'the ruling is listed for the user when the workflow finishes'
+
+/** The prose constants a composed workflow can print, exposed for the tree naming guard. */
+export function workflowRenderGuidanceTexts(): Array<{ name: string; text: string }> {
+  return [
+    { name: 'legend', text: legend },
+    { name: 'agent rulings', text: agentRulingsGuidance },
+    { name: 'contract question', text: contractQuestionGuidance },
+    { name: 'missing work', text: missingWorkGuidance },
+    { name: 'missing arguments', text: missingArgumentsGuidance },
+    { name: 'other-floor ruling', text: otherFloorRulingGuidance },
+    { name: 'only-ruling', text: onlyRulingGuidance },
+    { name: 'ask action', text: askActionGuidance },
+    { name: 'decision routing', text: decisionStillGoesToUser },
+    { name: 'user-visible decision routing', text: userVisibleDecisionStillGoesToUser },
+    { name: 'review listing', text: reviewListingGuidance },
+  ]
+}
 
 const renderedJobs = (jobs: string[]) => (jobs.length ? ` jobs=${jobs.join(',')}` : '')
 
 const rulingsHeader = (result: WorkflowComposition) =>
   `Worker questions: rulings=${result.rulings.value} (${result.rulings.scope}).${
     result.rulings.value === 'agent'
-      ? ' answer what the specification or canon settles; relay a design or product-direction question to the operator and answer it with --from-operator.'
+      ? agentRulingsGuidance
       : ''
   }`
 
@@ -73,7 +103,7 @@ function renderRunnableComposition(result: WorkflowComposition): string {
   const project = reference ? '' : ` --project ${result.project}`
   const nextCommand = `${PLATFORM_SLUG} workflow next ${result.workflow.slug}${project} --mode ${mode.slug}${cursor}${args} --note "<how the floor was met>"`
   const awaitCommand = `${PLATFORM_SLUG} workflow await ${result.workflow.slug}${project} --mode ${mode.slug}${cursor}${args} --question "..."`
-  const contract = `Work the numbered steps below in order, one at a time. A step's line here is its name, not its instructions. Before you start a step, fetch its body: with the orch MCP tool \`get_workflow_step\` (slug "${result.workflow.slug}", project "${result.project}", mode "${mode.slug}", step "${first.slug}", ${reference?.mcp ?? 'cursor omitted'}, args ${JSON.stringify(result.arguments)}), or with \`${PLATFORM_SLUG} workflow step ${result.workflow.slug} ${first.slug}${project} --mode ${mode.slug}${cursor}${args}\` (one --arg per argument). Carry out the body until its floor is met, then close it with \`${nextCommand}\` (or the MCP tool \`next_workflow_step\`), which serves the next step. If a step ends in a question for the operator, record it with \`${awaitCommand}\` before you stop. The workflow is finished only when the last step's floor is met; do not report it finished before then. ${continuation}`
+  const contract = `Work the numbered steps below in order, one at a time. A step's line here is its name, not its instructions. Before you start a step, fetch its body: with the orch MCP tool \`get_workflow_step\` (slug "${result.workflow.slug}", project "${result.project}", mode "${mode.slug}", step "${first.slug}", ${reference?.mcp ?? 'cursor omitted'}, args ${JSON.stringify(result.arguments)}), or with \`${PLATFORM_SLUG} workflow step ${result.workflow.slug} ${first.slug}${project} --mode ${mode.slug}${cursor}${args}\` (one --arg per argument). Carry out the body until its floor is met, then close it with \`${nextCommand}\` (or the MCP tool \`next_workflow_step\`), which serves the next step. ${contractQuestionGuidance}, record it with \`${awaitCommand}\` before you stop. The workflow is finished only when the last step's floor is met; do not report it finished before then. ${continuation}`
   const graduation = result.graduated
     ? result.graduated.closed
       ? `Closed explore cursor ${result.graduated.cursor}: replaced by cursor ${result.cursor!.id}.`
@@ -108,7 +138,7 @@ function modeChoiceLines(result: WorkflowComposition): string[] {
   const cliArgs = entries.map(([key, value]) => ` --arg ${shellWord(`${key}=${value}`)}`).join('')
   return [
     'No mode is chosen yet.',
-    'If the work has not been supplied, get it from the operator as a task key or a description before choosing a mode.',
+    missingWorkGuidance,
     'Workflow arguments:',
     ...result.declaredArguments.map(
       ({ name, required, description }) =>
@@ -130,7 +160,7 @@ function renderIncompleteComposition(result: WorkflowComposition): string {
     ...modeChoiceLines(result),
     ...(result.needs.arguments
       ? [
-          'STOP. Do not start step 1. Ask the operator for each missing argument below, then compose again with them.',
+          missingArgumentsGuidance,
           ...result.needs.arguments.map(({ name, description }) => `- ${name}: ${description}`),
         ]
       : []),
@@ -144,11 +174,11 @@ function renderIncompleteComposition(result: WorkflowComposition): string {
 
 function operatorRulingAutonomy(hasOtherFloor: boolean): string {
   return hasOtherFloor
-    ? `this step cannot be closed by an agent self-ruling; close with another floor's evidence, or put a ruling recorded with \`--from-operator\` with \`${PLATFORM_SLUG} workflow await\` when that is the evidence you use.`
-    : `stop and put the ruling to the operator; record the question with \`${PLATFORM_SLUG} workflow await\`.`
+    ? otherFloorRulingGuidance
+    : onlyRulingGuidance
 }
 
-const stopAndAsk = `stop and put the ruling to the operator; record the question with \`${PLATFORM_SLUG} workflow await\`.`
+const stopAndAsk = onlyRulingGuidance
 const selfRulingCloseProtocol = `record it while closing with \`next_workflow_step\` inputs \`self_ruling\` and \`self_ruling_basis\` or \`${PLATFORM_SLUG} workflow next --self-ruling --basis\``
 
 function selfRulingOpportunity(step: WorkflowStep): string | null {
@@ -173,14 +203,14 @@ function autonomyInstruction(step: WorkflowStep): string {
   if (effectiveRuling && step.operatorRuling)
     return operatorRulingAutonomy(step.floor.some((kind) => kind !== 'ruling'))
   if (resolved === 'ask')
-    return `${stopAndAsk} The operator's answer authorizes the action; then close this step with ${step.floor.join(' or ')} evidence.`
+    return `${stopAndAsk} ${askActionGuidance}; then close this step with ${step.floor.join(' or ')} evidence.`
   if (!opportunity)
-    return `meet this step's floor with ${step.floor.join(' or ')} evidence; a design or product-direction decision still goes to the operator (\`${PLATFORM_SLUG} workflow await\`).`
+    return `meet this step's floor with ${step.floor.join(' or ')} evidence; ${decisionStillGoesToUser}.`
   if (resolved === 'auto' && step.autonomy === 'ask')
-    return `${opportunity}; a decision that changes what the user sees, or product direction, still goes to the operator (\`${PLATFORM_SLUG} workflow await\`).`
+    return `${opportunity}; ${userVisibleDecisionStillGoesToUser}.`
   if (resolved === 'review')
-    return `${opportunity}; the ruling is listed for the operator when the workflow finishes; a design or product-direction decision still goes to the operator (\`${PLATFORM_SLUG} workflow await\`).`
-  return `${opportunity}; a design or product-direction decision still goes to the operator (\`${PLATFORM_SLUG} workflow await\`).`
+    return `${opportunity}; ${reviewListingGuidance}; ${decisionStillGoesToUser}.`
+  return `${opportunity}; ${decisionStillGoesToUser}.`
 }
 
 function closeContract(step: WorkflowStep): string {

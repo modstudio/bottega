@@ -14,13 +14,14 @@ export type HubTaskRead = {
   status: string | null
   statusCategory: string | null
   commentIds: Array<string | number>
+  commentWrittenAt?: Record<string, string>
   commentsVerifiable?: boolean
 }
 
 export async function readHubTaskDocument(
   value: string,
   scope: { project: string; recordId?: string },
-): Promise<{ id: string; label: string; task_record_id: string } | null> {
+): Promise<{ id: string; label: string; task_record_id: string; updated_at: string } | null> {
   try {
     return await taskReader().document(value, scope)
   } catch (error) {
@@ -43,7 +44,7 @@ type HubTaskReadJson = {
     status?: string | null
     status_category?: string | null
   }
-  comments?: Array<{ id?: number | string }>
+  comments?: Array<{ id?: number | string; created_at?: string; updated_at?: string | null }>
   /** The tracker read's own comment ids, present on a fresh tracker read. */
   tracker_comment_ids?: Array<number | string>
   tracker_comments_verifiable?: boolean
@@ -70,6 +71,12 @@ export function hubTaskReadFromJson(key: string, parsed: unknown): HubTaskRead {
     statusCategory: read.task.status_category ?? null,
     commentIds: carriedCommentIds(
       read.tracker_comment_ids ?? (read.comments ?? []).map((comment) => comment.id),
+    ),
+    commentWrittenAt: Object.fromEntries(
+      (read.comments ?? []).flatMap((comment) => {
+        if (!isTrackerCommentId(comment.id) || !comment.created_at) return []
+        return [[String(comment.id), comment.updated_at ?? comment.created_at]]
+      }),
     ),
     commentsVerifiable: read.tracker_comments_verifiable !== false,
   }

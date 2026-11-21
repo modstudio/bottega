@@ -223,10 +223,10 @@ describe('workflow rendering', () => {
     expect(rendered.split('\n').find((line) => line.startsWith('1. rebase'))).not.toContain('jobs=')
     expect(rendered).toContain('Worker questions: rulings=agent (built-in).')
     expect(rendered).toContain(
-      'answer what the specification or canon settles; relay a design or product-direction question to the operator and answer it with --from-operator.',
+      'answer what the specification or canon settles; relay a design or product-direction question to the user and answer it with --from-operator.',
     )
     expect(rendered).toContain(
-      `At every autonomy, a genuine design or product-direction decision goes to the operator: record it with \`${PLATFORM_SLUG} workflow await\` and stop.`,
+      `At every autonomy, a genuine design or product-direction decision goes to the user: record it with \`${PLATFORM_SLUG} workflow await\` and stop.`,
     )
   })
 
@@ -261,7 +261,7 @@ describe('workflow rendering', () => {
     expect(rendered).toContain('No mode is chosen yet.')
     expect(rendered).toContain('- key (optional): Existing task key.')
     expect(rendered).toContain(
-      'If the work has not been supplied, get it from the operator as a task key or a description before choosing a mode.',
+      'If the work has not been supplied, get it from the user as a task key or a description before choosing a mode.',
     )
     expect(rendered).toContain('MCP `compose_workflow` or `get_workflow_step` with `mode`')
     expect(rendered).toContain(
@@ -297,8 +297,8 @@ describe('workflow rendering', () => {
     )
     expect(rendered.split('\n').slice(0, 5)).toEqual([
       'Fixture workflow — Default',
-      'Worker questions: rulings=agent (built-in). answer what the specification or canon settles; relay a design or product-direction question to the operator and answer it with --from-operator.',
-      'STOP. Do not start step 1. Ask the operator for each missing argument below, then compose again with them.',
+      'Worker questions: rulings=agent (built-in). answer what the specification or canon settles; relay a design or product-direction question to the user and answer it with --from-operator.',
+      'STOP. Do not start step 1. Ask the user for each missing argument below, then compose again with them.',
       '- key: The task key.',
       '- branch: The branch.',
     ])
@@ -313,7 +313,7 @@ describe('workflow rendering', () => {
         getWorkflowStep('flow', 'fixture', 'rebase', args, d, { mode: 'default' }),
       ),
     ).toContain(
-      `Autonomy: auto (built-in) — meet this step's floor with command-exit evidence; a design or product-direction decision still goes to the operator (\`${PLATFORM_SLUG} workflow await\`).`,
+      `Autonomy: auto (built-in) — meet this step's floor with command-exit evidence; a design or product-direction decision still goes to the user (\`${PLATFORM_SLUG} workflow await\`).`,
     )
     expect(
       renderWorkflowStep(
@@ -375,7 +375,7 @@ describe('workflow rendering', () => {
     }
     const evidenceRendered = renderWorkflowStep(step)
     expect(evidenceRendered).toContain(
-      `Autonomy: auto (built-in) — meet this step's floor with command-exit or recorded-artifact evidence; a design or product-direction decision still goes to the operator (\`${PLATFORM_SLUG} workflow await\`).`,
+      `Autonomy: auto (built-in) — meet this step's floor with command-exit or recorded-artifact evidence; a design or product-direction decision still goes to the user (\`${PLATFORM_SLUG} workflow await\`).`,
     )
     expect(evidenceRendered).not.toContain('self_ruling')
     expect(evidenceRendered).not.toContain('--self-ruling')
@@ -386,7 +386,7 @@ describe('workflow rendering', () => {
       resolvedAutonomy: { value: 'review' as const, scope: 'project' },
     })
     expect(reviewEvidenceRendered).toContain(
-      `Autonomy: review (project) — meet this step's floor with command-exit or recorded-artifact evidence; a design or product-direction decision still goes to the operator (\`${PLATFORM_SLUG} workflow await\`).`,
+      `Autonomy: review (project) — meet this step's floor with command-exit or recorded-artifact evidence; a design or product-direction decision still goes to the user (\`${PLATFORM_SLUG} workflow await\`).`,
     )
     expect(reviewEvidenceRendered).not.toContain('self_ruling')
     expect(reviewEvidenceRendered).not.toContain('--self-ruling')
@@ -428,7 +428,7 @@ describe('workflow rendering', () => {
       next: null,
     })
     expect(rendered).toContain(
-      `Autonomy: ask (operator) — stop and put the ruling to the operator; record the question with \`${PLATFORM_SLUG} workflow await\`. The operator's answer authorizes the action; then close this step with command-exit or recorded-artifact evidence.`,
+      `Autonomy: ask (operator) — stop and put the ruling to the user; record the question with \`${PLATFORM_SLUG} workflow await\`. The user's answer authorizes the action; then close this step with command-exit or recorded-artifact evidence.`,
     )
     expect(rendered).not.toContain('self_ruling')
     expect(rendered).not.toContain('--self-ruling')
@@ -517,7 +517,7 @@ describe('workflow rendering', () => {
       next: null,
     })
     expect(rendered).toContain(
-      `Autonomy: auto (built-in) — meet this step's floor with tracker-transition evidence; a design or product-direction decision still goes to the operator (\`${PLATFORM_SLUG} workflow await\`).`,
+      `Autonomy: auto (built-in) — meet this step's floor with tracker-transition evidence; a design or product-direction decision still goes to the user (\`${PLATFORM_SLUG} workflow await\`).`,
     )
     expect(rendered).not.toContain('put a ruling recorded with `--from-operator`')
   })
