@@ -8,7 +8,11 @@ import {
   type Floor,
   type FloorSatisfactionInput,
 } from './workflow-floor.ts'
-import { gatherWorkflowRunChains } from './workflow-run-obligation-evidence.ts'
+import { dispatchObligationRefusal } from './workflow-run-obligation.ts'
+import {
+  gatherEarlierStepWorkflowRunChains,
+  gatherWorkflowRunChains,
+} from './workflow-run-obligation-evidence.ts'
 
 const floor = (kind: Floor['kind']): Floor => ({
   kind,
@@ -70,6 +74,65 @@ test('a terminal scored dispatch allows', () => {
   ).toBe('allow')
 })
 
+test('a current-step chain is credited without mentioning an earlier chain', () => {
+  expect(
+    dispatchObligationRefusal({
+      workflowKey: 'DEV-1',
+      cursorNumber: 1214,
+      selectedFloors: [],
+      metWaiverFacts: [],
+      step: {
+        ...dispatchStep,
+        slug: 'apply-findings',
+        dispatchWaivedBy: ['no-accepted-findings'],
+      },
+      dispatchRuns: [terminalDispatch],
+      earlierStepRuns: [{ number: 987_654, stepSlug: 'blast-radius' }],
+    }),
+  ).toBeNull()
+})
+
+test('empty earlier-step evidence keeps the existing zero-dispatch wording', () => {
+  const refusal = dispatchObligationRefusal({
+    workflowKey: 'DEV-1',
+    cursorNumber: 1214,
+    selectedFloors: [],
+    metWaiverFacts: [],
+    step: {
+      ...dispatchStep,
+      slug: 'apply-findings',
+      dispatchWaivedBy: ['no-accepted-findings'],
+    },
+    dispatchRuns: [],
+    earlierStepRuns: [],
+  })
+
+  expect(refusal).toBe(
+    `dispatch obligation is unmet: no implement run was dispatched from this cursor at step apply-findings; dispatch one with \`${PLATFORM_SLUG} run start implement --key DEV-1 ...\` from this cursor`,
+  )
+})
+
+test('earlier-step evidence keeps the existing wording outside apply-findings', () => {
+  const refusal = dispatchObligationRefusal({
+    workflowKey: 'DEV-1',
+    cursorNumber: 1214,
+    selectedFloors: [],
+    metWaiverFacts: [],
+    step: {
+      slug: 'review-lenses',
+      jobs: ['review-lens'],
+      dispatch: 'required',
+      dispatchWaivedBy: ['no-lens-owed'],
+    },
+    dispatchRuns: [],
+    earlierStepRuns: [{ number: 987_654, stepSlug: 'blast-radius' }],
+  })
+
+  expect(refusal).toBe(
+    `dispatch obligation is unmet: no review-lens run was dispatched from this cursor at step review-lenses; dispatch one with \`${PLATFORM_SLUG} run start review-lens --key DEV-1 ...\` from this cursor`,
+  )
+})
+
 test('run-chain evidence includes only the requested cursor and step', () => {
   const cursorRecordId = newRecordId()
   const otherCursorRecordId = newRecordId()
@@ -87,6 +150,28 @@ test('run-chain evidence includes only the requested cursor and step', () => {
   expect(gatherWorkflowRunChains(cursorRecordId, ['implement'], db(), 'start')).toEqual([
     expect.objectContaining({ number: matchingNumber, job: 'implement' }),
   ])
+})
+
+test('earlier-step evidence excludes a turn started after current-step activation', () => {
+  const cursorRecordId = newRecordId()
+  const root = addRun({
+    agent: 'codex',
+    job: 'implement',
+    startedAt: '2026-11-19T02:00:00.000Z',
+  })
+  db()
+    .query('UPDATE run SET cursor_record_id=?,step_slug=? WHERE record_id=?')
+    .run(cursorRecordId, 'blast-radius', root)
+
+  expect(
+    gatherEarlierStepWorkflowRunChains(
+      cursorRecordId,
+      ['implement'],
+      'apply-findings',
+      '2026-11-19T01:00:00.000Z',
+      db(),
+    ),
+  ).toEqual([])
 })
 
 test('a root that is ok while its latest turn runs refuses the bound step', () => {

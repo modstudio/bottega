@@ -20,8 +20,15 @@ import type { FloorEvidencePorts } from './workflow-floor-evidence.ts'
 import { gatherValidatedEvidence } from './workflow-floor-evidence-gather.ts'
 import { invokeFloorEvidencePort } from './workflow-floor-evidence-replay.ts'
 import { openWorkflowObligations } from './workflow-obligation-floor.ts'
-import type { DispatchWaiverFact, StepRunObligation } from './workflow-run-obligation.ts'
-import { gatherWorkflowRunChains } from './workflow-run-obligation-evidence.ts'
+import {
+  type DispatchWaiverFact,
+  isApplyFindingsStep,
+  type StepRunObligation,
+} from './workflow-run-obligation.ts'
+import {
+  gatherEarlierStepWorkflowRunChains,
+  gatherWorkflowRunChains,
+} from './workflow-run-obligation-evidence.ts'
 import { readHubTaskChildren } from './workflow-task-reference.ts'
 
 type FloorCursor = Pick<
@@ -74,7 +81,7 @@ function gatherDispatchWaiverFacts(
     if (checksReviewOwed && reviewOwed.action === 'refuse') return { facts, refusal: reviewOwed }
     if (reviewOwed.noLensOwed) facts.push('no-lens-owed')
   }
-  if (row.enforcement === 'floors' && step.dispatchWaivedBy?.includes('no-accepted-findings')) {
+  if (row.enforcement === 'floors' && isApplyFindingsStep(step)) {
     const gathered = invokeFloorEvidencePort(
       ports,
       'noAcceptedFindings',
@@ -115,6 +122,10 @@ export async function applyFloorDecision(
   })
   const waiver = gatherDispatchWaiverFacts(row, floors, step, ports, args, database)
   if (waiver.refusal) return waiver.refusal
+  const stepActivatedAt = currentStepActivatedAt(
+    row,
+    cursorName(row.workflow_slug, row.mode_slug, row.workflow_key),
+  )
   const validated = await gatherValidatedEvidence({
     cursorId: row.record_id,
     cursorState: row.state,
@@ -126,10 +137,7 @@ export async function applyFloorDecision(
       worktree: args.worktree?.trim() || null,
       session: row.session_id,
       createdAt: row.created_at,
-      stepActivatedAt: currentStepActivatedAt(
-        row,
-        cursorName(row.workflow_slug, row.mode_slug, row.workflow_key),
-      ),
+      stepActivatedAt,
     },
     stepOrdinal: row.ordinal + 1,
     stepSlug: row.step_slug,
@@ -141,7 +149,7 @@ export async function applyFloorDecision(
   })
   if (evidenceFloors.some(({ kind }) => kind === 'descendants-closed'))
     validated.descendants = descendantTaskFacts(row.workflow_key, taskRows)
-  attachRunObligationEvidence(validated, row, step, database)
+  attachRunObligationEvidence(validated, row, step, stepActivatedAt, database)
   validated.metDispatchWaiverFacts = waiver.facts
   if (selfRulingId !== undefined)
     validated.ruling = {
@@ -159,6 +167,7 @@ export async function applyFloorDecision(
     finishing,
     openObligations: await openWorkflowObligations(row.record_id, database, client),
     workflowKey: row.workflow_key,
+    cursorNumber: row.id,
     step,
     ...(foreignOwner
       ? { cursorTakeoverRemedy: workflowCursorTakeoverRemedy(row, foreignOwner) }
@@ -209,15 +218,25 @@ function attachRunObligationEvidence(
   evidence: Parameters<typeof decideFloorSatisfaction>[0]['evidence'],
   row: FloorCursor,
   step: StepRunObligation,
+  stepActivatedAt: string,
   database: Database,
 ): void {
-  if (step.dispatch === 'required')
+  if (step.dispatch === 'required') {
     evidence.dispatchRuns = gatherWorkflowRunChains(
       row.record_id,
       step.jobs,
       database,
       row.step_slug,
     )
+    if (isApplyFindingsStep(step))
+      evidence.earlierStepRuns = gatherEarlierStepWorkflowRunChains(
+        row.record_id,
+        step.jobs,
+        row.step_slug,
+        stepActivatedAt,
+        database,
+      )
+  }
   if (step.judges?.length)
     evidence.judgedRuns = gatherWorkflowRunChains(row.record_id, step.judges, database)
 }

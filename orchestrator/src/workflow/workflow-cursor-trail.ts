@@ -77,3 +77,6 @@ export function currentStepActivatedAt(
     )
   return preceding.at
 }
+
+export const createdAfterStepActivation = (createdAt: string, stepActivatedAt: string): boolean =>
+  createdAt >= stepActivatedAt
