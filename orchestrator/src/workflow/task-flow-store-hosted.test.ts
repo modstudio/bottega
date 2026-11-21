@@ -20,6 +20,7 @@ import {
   awaitWorkflowRuling,
   composeWorkflowWithCursor,
 } from './workflow-cursor.ts'
+import { workflowCursorListCommand } from './workflow-cursor-format.ts'
 import { listWorkflowCursors } from './workflow-cursor-list.ts'
 import { ruleWorkflow } from './workflow-cursor-ruling.ts'
 import { getWorkflowStepWithCursor } from './workflow-cursor-serve.ts'
@@ -439,6 +440,6 @@ test('hosted task-flow intents never touch the five local task-flow tables', asy
     },
   })
   await expect(listWorkflowCursors({ session: context.session }, database)).rejects.toThrow(
-    'workflow cursor fixture#1 was listed, but its stage summary could not be read; retry `bottega workflow cursors`',
+    `workflow cursor fixture#1 was listed, but its stage summary could not be read; retry \`${workflowCursorListCommand}\``,
   )
 })

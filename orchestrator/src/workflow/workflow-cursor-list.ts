@@ -13,7 +13,7 @@ import {
   taskFlowReadStore,
 } from './task-flow-store.ts'
 import { cursorAutonomy } from './workflow-cursor-autonomy.ts'
-import { renderWorkflowCursorLine } from './workflow-cursor-format.ts'
+import { renderWorkflowCursorLine, workflowCursorListCommand } from './workflow-cursor-format.ts'
 import { workflowCursorProjectScope } from './workflow-cursor-selection.ts'
 import { openObligationFromRow } from './workflow-obligation-floor.ts'
 import { composeWorkflow } from './workflows.ts'
@@ -133,9 +133,9 @@ export async function listWorkflowCursors(
       const summary = summaries.get(row.record_id)
       if (!closed && !summary)
         throw new Error(
-          `workflow cursor ${row.project}#${row.id} was listed, but its stage summary could not be read; retry \`bottega workflow cursors\``,
+          `workflow cursor ${row.project}#${row.id} was listed, but its stage summary could not be read; retry \`${workflowCursorListCommand}\``,
         )
-      const open = closed ? [] : summary.obligations.map(openObligationFromRow)
+      const open = closed ? [] : summary!.obligations.map(openObligationFromRow)
       const liveRuns = liveRunsByCursor.get(row.record_id) ?? []
       const listed = {
         ...row,
