@@ -15,14 +15,6 @@ const AUTOLOAD_SWITCHES = [
   '--compile-autoload-package-json',
 ] as const
 
-function cleanEnvironment(
-  environment: Record<string, string | undefined>,
-): Record<string, string | undefined> {
-  const clean = { ...environment }
-  delete clean.BOTTEGA_ORCHESTRATOR_DB
-  return clean
-}
-
 async function runBinary(
   binary: string,
   args: readonly string[],
@@ -32,7 +24,7 @@ async function runBinary(
   const result = await startBounded([binary, ...args], {
     budget: 'self-cli',
     cwd,
-    env: cleanEnvironment(environment),
+    env: environment,
   })
   return { stdout: result.stdout, stderr: result.stderr }
 }
@@ -48,12 +40,20 @@ async function checkDotenv(
   directory: string,
   environment: Record<string, string | undefined>,
 ): Promise<void> {
-  const sentinel = join(directory, 'dotenv-sentinel.db')
-  writeFileSync(join(directory, '.env'), `BOTTEGA_ORCHESTRATOR_DB=${sentinel}\n`)
-  const result = await runBinary(binary, ['run', 'list', '--limit', '1'], directory, environment)
-  if (`${result.stdout}\n${result.stderr}`.includes(sentinel)) {
-    throw autoloadFailure(AUTOLOAD_SWITCHES[0])
-  }
+  const marker = join(directory, 'dotenv-marker')
+  const sentinelName = 'BOTTEGA_RELEASE_DOTENV_SENTINEL'
+  writeFileSync(join(directory, '.env'), `${sentinelName}=loaded\n`)
+  writeFileSync(
+    join(directory, 'planted.ts'),
+    `import { writeFileSync } from 'node:fs'\nif (process.env.${sentinelName}) writeFileSync(${JSON.stringify(marker)}, '')\n`,
+  )
+  const cleanEnvironment = { ...environment }
+  delete cleanEnvironment[sentinelName]
+  await runBinary(binary, ['--version'], directory, {
+    ...cleanEnvironment,
+    BUN_OPTIONS: '--preload=./planted.ts',
+  })
+  if (existsSync(marker)) throw autoloadFailure(AUTOLOAD_SWITCHES[0])
 }
 
 async function checkBunfig(
