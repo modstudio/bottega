@@ -277,8 +277,7 @@ test('apply-findings receives an earlier-step chain and names its confirmation t
       ordinal: 1,
       step_slug: 'apply-findings',
       state: 'running',
-      closed:
-        '[{"n":1,"slug":"triage-findings","note":"triaged","at":"2026-11-19T01:00:00.000Z"}]',
+      closed: '[{"n":1,"slug":"triage-findings","note":"triaged","at":"2026-11-19T01:00:00.000Z"}]',
       enforcement: 'floors',
     },
     [floor('tracker-transition')],

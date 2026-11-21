@@ -8,11 +8,11 @@ import {
   type Floor,
   type FloorSatisfactionInput,
 } from './workflow-floor.ts'
+import { dispatchObligationRefusal } from './workflow-run-obligation.ts'
 import {
   gatherEarlierStepWorkflowRunChains,
   gatherWorkflowRunChains,
 } from './workflow-run-obligation-evidence.ts'
-import { dispatchObligationRefusal } from './workflow-run-obligation.ts'
 
 const floor = (kind: Floor['kind']): Floor => ({
   kind,
@@ -104,9 +104,7 @@ test('an earlier-step chain before activation gets the confirmation-turn refusal
 
   expect(refusal).toMatch(/\b987654\b/)
   expect(refusal).toContain('blast-radius')
-  expect(refusal).toContain(
-    `${PLATFORM_SLUG} run continue --findings --cursor 1214 987654`,
-  )
+  expect(refusal).toContain(`${PLATFORM_SLUG} run continue --findings --cursor 1214 987654`)
 })
 
 test('a current-step chain is credited without mentioning an earlier chain', () => {

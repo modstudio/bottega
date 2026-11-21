@@ -40,9 +40,9 @@ import {
   checkoutOutsideChangeRefusal,
   classifyCheckoutResolution,
 } from './workflow-checkout-refusal.ts'
+import { createdAfterStepActivation } from './workflow-cursor-trail.ts'
 import type { CursorState } from './workflow-cursor-transition.ts'
 import { resolveWorkflowCursorSuccessor } from './workflow-cursor-transition.ts'
-import { createdAfterStepActivation } from './workflow-cursor-trail.ts'
 import type { WorkflowEvidenceInput } from './workflow-evidence-input.ts'
 import {
   type ArtifactRef,
@@ -752,7 +752,10 @@ async function gatheredCommandEvidence(
     exitCode: row.exit_code,
     sessionMatches: session.sessionMatches,
     sessionAdoptedCursor: session.sessionAdoptedCursor,
-    createdAfterStepActivation: createdAfterStepActivation(row.created_at, identity.stepActivatedAt),
+    createdAfterStepActivation: createdAfterStepActivation(
+      row.created_at,
+      identity.stepActivatedAt,
+    ),
     checkoutLocation: classifyCheckoutResolution(checkout),
     headCommit: row.head_commit,
     cursorBranch: identity.branch,

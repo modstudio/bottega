@@ -219,7 +219,10 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
   ]),
   module('orchestrator/src/workflow/workflow-task-open-with-notes-floor.ts', []),
   module('orchestrator/src/workflow/step-catalogue-outcome-floors.ts', ['./workflow-floor.ts']),
-  module('orchestrator/src/workflow/workflow-run-obligation.ts', ['../../../shared/brand.ts']),
+  module('orchestrator/src/workflow/workflow-run-obligation.ts', [
+    '../../../shared/brand.ts',
+    './workflow-cursor-format.ts',
+  ]),
   module('orchestrator/src/workflow/workflow-artifact-reference.ts', [
     '../../../shared/reference.ts',
     '../record/machine-name.ts',
@@ -230,6 +233,7 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     'bun:sqlite',
     '../evidence/pending-score-sql.ts',
     '../run/run-status.ts',
+    './workflow-cursor-trail.ts',
     './workflow-run-obligation.ts',
   ]),
   module('orchestrator/src/workflow/workflow-dispatch-waiver-evidence.ts', [
@@ -449,6 +453,7 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     './workflow-evidence-input.ts',
     './workflow-offered-artifacts.ts',
     './workflow-floor.ts',
+    './workflow-cursor-trail.ts',
     './workflow-cursor-transition.ts',
     './workflow-checkout-landing.ts',
     './workflow-checkout-refusal.ts',

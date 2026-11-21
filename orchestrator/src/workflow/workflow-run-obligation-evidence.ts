@@ -55,10 +55,7 @@ export function gatherEarlierStepWorkflowRunChains(
   if (!jobs.length) return []
   const jobPlaceholders = jobs.map(() => '?').join(',')
   const rows = database
-    .query<
-      { number: number; step_slug: string; created_at: string },
-      (string | number)[]
-    >(
+    .query<{ number: number; step_slug: string; created_at: string }, (string | number)[]>(
       `SELECT root.number,bound.step_slug,bound.started_at AS created_at
          FROM run root JOIN run bound
            ON bound.record_id=root.record_id OR bound.parent_run_record_id=root.record_id
@@ -77,7 +74,8 @@ export function gatherEarlierStepWorkflowRunChains(
   const gathered: EarlierStepRunEvidence[] = []
   const seen = new Set<number>()
   for (const row of rows) {
-    if (seen.has(row.number) || createdAfterStepActivation(row.created_at, stepActivatedAt)) continue
+    if (seen.has(row.number) || createdAfterStepActivation(row.created_at, stepActivatedAt))
+      continue
     seen.add(row.number)
     gathered.push({ number: row.number, stepSlug: row.step_slug })
   }

@@ -2,6 +2,7 @@
 /** Decides dispatch and judging obligations from already gathered run-chain facts. */
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { workflowCursorNumberOption } from './workflow-cursor-format.ts'
 
 export type WorkflowRunChainEvidence = {
   number: number
@@ -46,7 +47,7 @@ export function dispatchObligationRefusal(input: WorkflowRunObligationInput): st
     const job = step.jobs[0] ?? '<job>'
     const earlier = input.earlierStepRuns ?? []
     if (earlier.length) {
-      const cursor = input.cursorNumber ?? '<n>'
+      const cursor = workflowCursorNumberOption(input.cursorNumber ?? '<n>')
       const chainSummary = earlier
         .map(
           (run) =>
@@ -57,7 +58,7 @@ export function dispatchObligationRefusal(input: WorkflowRunObligationInput): st
         `dispatch obligation is unmet: no ${step.jobs.join(' or ') || 'declared-job'} run is bound ` +
         `to this cursor at step ${step.slug}; ${chainSummary}. ` +
         `A finding applied before triage needs a confirmation turn at this step; ` +
-        `run \`${PLATFORM_SLUG} run continue --findings --cursor ${cursor} ${earlier[0]!.number} "<message>"\`; ` +
+        `run \`${PLATFORM_SLUG} run continue --findings${cursor} ${earlier[0]!.number} "<message>"\`; ` +
         `its successful exit meets the obligation`
       )
     }

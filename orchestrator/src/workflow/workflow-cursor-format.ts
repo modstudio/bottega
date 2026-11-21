@@ -8,6 +8,8 @@ import { foreignCursorOwner } from './workflow-cursor-transition.ts'
 export const WORKFLOW_CURSOR_QUESTION_SUMMARY_CHARS = 120
 export const workflowCursorListCommand = `${PLATFORM_SLUG} workflow cursors`
 
+export const workflowCursorNumberOption = (cursor: number | '<n>'): string => ` --cursor ${cursor}`
+
 export function unresolvedHubTaskKeyRefusal(key: string): string {
   return `task key ${key} names no task in hub; check it with \`${PLATFORM_SLUG} task show ${key}\` or file the task first`
 }
