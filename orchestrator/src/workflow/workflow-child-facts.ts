@@ -64,10 +64,7 @@ export async function gatherChildTaskFacts(
   })
 }
 
-export function childAncestorKeys(
-  key: string,
-  tasks: readonly HubTaskReference[],
-): string[] {
+export function childAncestorKeys(key: string, tasks: readonly HubTaskReference[]): string[] {
   return ancestorTaskKeys(
     key,
     tasks.map((task) => ({ key: task.key, parentKey: task.parent_key ?? null })),

@@ -25,14 +25,17 @@ const projectTaskListSurfaces = {
 
 const exactPath = (path: string) => `^${path.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`
 
-export const projectTaskListImportRule = {
+const projectTaskListImportRule = {
   name: 'project-task-list-has-declared-surface-importers',
   severity: 'error' as const,
   comment:
     'Project-wide task lists belong only to board, report, context-health, hosted mirror or sync, and project-lifecycle surfaces. Project lifecycle is administrative and may need a zero-task answer that no narrower query provides.',
   from: {
     path: '^orchestrator/src/',
-    pathNot: Object.values(projectTaskListSurfaces).flat().map(exactPath),
+    pathNot: [
+      ...Object.values(projectTaskListSurfaces).flat().map(exactPath),
+      exactPath('orchestrator/src/workflow/project-task-list.test.ts'),
+    ],
   },
   to: { path: exactPath('orchestrator/src/workflow/project-task-list.ts') },
 }
@@ -56,7 +59,7 @@ const taskReadPortImporters = [
   'orchestrator/src/workflow/workflow-text-copy.ts',
 ] as const
 
-export const taskReadPortImportRule = {
+const taskReadPortImportRule = {
   name: 'task-read-port-has-declared-importers',
   severity: 'error' as const,
   comment:
@@ -67,6 +70,8 @@ export const taskReadPortImportRule = {
   },
   to: { path: exactPath('orchestrator/src/workflow/task-read-port.ts') },
 }
+
+export const workflowTaskReadImportRules = [projectTaskListImportRule, taskReadPortImportRule]
 
 export const workflowBoundarySpecs = [
   ...workflowFloorBoundarySpecs,

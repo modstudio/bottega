@@ -285,7 +285,7 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     './workflow-dispatch-waiver-evidence.ts',
     './workflow-run-obligation-evidence.ts',
     './workflow-run-obligation.ts',
-    './task-read-port.ts',
+    './workflow-task-reference.ts',
   ]),
   module('orchestrator/src/workflow/workflow-finish-live-writer.ts', ['../../../shared/brand.ts']),
   module('orchestrator/src/workflow/workflow-finish-live-writer-adapter.ts', [

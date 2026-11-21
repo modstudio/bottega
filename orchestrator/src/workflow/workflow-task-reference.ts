@@ -17,6 +17,7 @@ export type HubTaskReference = {
   opened_at?: string | null
   parent_key?: string | null
   source?: string | null
+  status?: string | null
   status_category?: string | null
   commentIds?: Array<string | number>
   commentsVerifiable?: boolean
@@ -87,6 +88,9 @@ export function taskReference(row: unknown): HubTaskReference {
   const source = (row as HubTaskReference).source
   if (source !== undefined && source !== null && typeof source !== 'string')
     throw new Error('response contained an invalid task source')
+  const rawStatus = (row as HubTaskReference).status
+  if (rawStatus !== undefined && rawStatus !== null && typeof rawStatus !== 'string')
+    throw new Error('response contained an invalid task status')
   const title = (row as HubTaskReference).title
   if (title !== undefined && title !== null && typeof title !== 'string')
     throw new Error('response contained an invalid task title')

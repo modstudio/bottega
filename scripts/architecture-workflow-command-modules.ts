@@ -27,8 +27,8 @@ export const workflowCommandModules: WorkflowCommandModule[] = [
     '../board/board-operations.ts',
     '../record/record-task-flow-contract.ts',
     './task-flow-store.ts',
-    './task-read-port.ts',
     './workflow-child-queue.ts',
+    './workflow-task-reference.ts',
     './workflow-task-tree.ts',
   ]),
   module('orchestrator/src/workflow/workflow-child-service.ts', [

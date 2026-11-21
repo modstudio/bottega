@@ -68,10 +68,7 @@ import { treeRunScriptArchitectureRule } from './architecture-tree-run-scripts.t
 import { typedQuestionModules } from './architecture-typed-question-modules.ts'
 import { uiArchitectureRules, viewArchitectureRules } from './architecture-ui-layers.ts'
 import { workflowAutonomyModules } from './architecture-workflow-autonomy-modules.ts'
-import {
-  projectTaskListImportRule,
-  taskReadPortImportRule,
-} from './architecture-workflow-boundaries.ts'
+import { workflowTaskReadImportRules } from './architecture-workflow-boundaries.ts'
 import { workflowCommandModules } from './architecture-workflow-command-modules.ts'
 import { workflowFloorModules } from './architecture-workflow-floor-modules.ts'
 import { workflowTreeModules } from './architecture-workflow-tree-modules.ts'
@@ -911,8 +908,7 @@ export function architectureRules() {
     concernIsolationRule(concerns.roots),
     cliCompositionRule(concerns.roots, cliConcernEntries, exactArchitecturePath),
     cliRouteInspectionRule(concerns.roots, exactArchitecturePath),
-    projectTaskListImportRule,
-    taskReadPortImportRule,
+    ...workflowTaskReadImportRules,
     {
       name: 'shared-is-independent',
       severity: 'error',

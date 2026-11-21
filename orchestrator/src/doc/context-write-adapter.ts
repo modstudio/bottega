@@ -389,7 +389,7 @@ async function contextSetRefusal(
         .filter((claim) => claim.subject.kind === 'task')
         .map((claim) => ({ key: claim.subject.value, project: claim.project }))
     : []
-  const projectTasks = task ? input.contextTaskChildren : []
+  const projectTasks = input.contextTask ? input.contextTaskChildren : []
   const profile = task ? taskProfile(task.key, projectTasks) : 'session'
   const relatedTasks = await relatedContextTasks({
     owner,

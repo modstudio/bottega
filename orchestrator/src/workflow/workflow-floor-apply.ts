@@ -195,9 +195,9 @@ export async function readDescendantTaskFacts(
       discovered.add(child.key)
       rows.push({
         key: child.key,
-        parentKey: child.parent_key,
-        status: child.status,
-        statusCategory: child.status_category,
+        parentKey: child.parent_key ?? null,
+        status: child.status ?? null,
+        statusCategory: child.status_category ?? null,
       })
       pending.push(child.key)
     }
