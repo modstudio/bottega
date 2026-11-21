@@ -24,8 +24,10 @@ type ContextItemRow = {
   updated_at: string
 }
 
-export type StoredContextItem = ContextItem & {
+export type StoredContextItem = Omit<ContextItem, 'questionNumber' | 'target'> & {
   recordId: string
+  questionNumber: number | null
+  target: string | null
   revision: string
   createdAt: string
   updatedAt: string

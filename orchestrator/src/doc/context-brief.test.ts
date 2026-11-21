@@ -521,17 +521,7 @@ test('reads a working task brief from its record-id holder while retaining the t
 })
 
 test('renders an open keyless cursor item under its cursor header without an open line', async () => {
-  const database = new Database(':memory:')
-  database.exec(
-    `CREATE TABLE context_item (
-      record_id TEXT NOT NULL, holder_kind TEXT NOT NULL, holder_id TEXT NOT NULL,
-      slug TEXT NOT NULL, kind TEXT NOT NULL, body TEXT NOT NULL, source TEXT NOT NULL,
-      question_number INTEGER, target TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
-    ); CREATE TABLE question (
-      number INTEGER NOT NULL, workflow_task_record_id TEXT, question TEXT NOT NULL,
-      answered_at TEXT, closed_at TEXT
-    )`,
-  )
+  const database = migratedTestDatabase()
   const recordId = newRecordId()
   database
     .query(

@@ -71,12 +71,8 @@ export function hubBrowserNoNodeBuiltinConfig(sharedOptions: DependencyCruiserOp
 
 export const sqliteAdapterAllowedImporters = [
   {
-    path: '^orchestrator/src/doc/context-item-store\\.ts$',
-    reason: 'context-item-store.ts is the context-item adapter selector',
-  },
-  {
-    path: '^orchestrator/src/question-store/question-store\\.ts$',
-    reason: 'question-store.ts is the question adapter selector',
+    path: '^orchestrator/src/(?:doc/context-item-store|question-store/question-store)\\.ts$',
+    reason: 'context-item-store.ts and question-store.ts are adapter selectors',
   },
   {
     path: '^orchestrator/src/workflow/task-flow-store\\.ts$',
