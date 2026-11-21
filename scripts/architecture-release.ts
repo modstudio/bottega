@@ -22,8 +22,13 @@ export const releaseModules = [
       'orchestrator/src/release/release-decision.ts',
       'orchestrator/src/release/live-reading.ts',
       'orchestrator/src/release/release-ledger.ts',
+      'orchestrator/src/release/release-binary-autoload-check.ts',
       'shared/bounded-process.ts',
     ],
+  },
+  {
+    file: 'orchestrator/src/release/release-binary-autoload-check.ts',
+    allowed: ['node:fs', 'node:os', 'node:path', 'shared/brand.ts', 'shared/bounded-process.ts'],
   },
   {
     file: 'orchestrator/src/release/release-entry-closure.ts',

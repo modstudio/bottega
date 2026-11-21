@@ -24,6 +24,7 @@ import {
   readLiveCommit,
   readLiveVersion,
 } from './live-reading.ts'
+import { checkReleaseBinaryAutoload } from './release-binary-autoload-check.ts'
 import {
   alreadyLiveReleaseDecision,
   checkoutReleaseDecision,
@@ -81,6 +82,20 @@ export function validateReleaseTagVersion(
   const decision = releaseTagVersionDecision(reportedVersion, tag)
   if (!decision.ok) throw new Error(decision.message)
   return { tag, reportedVersion }
+}
+
+/** Validate the proposed tag and prove the host release binary ignores runtime cwd configuration. */
+export async function checkRelease(
+  tag: string,
+  fromDirectory?: string,
+  environment: Record<string, string | undefined> = process.env,
+): Promise<{ tag: string; reportedVersion: string }> {
+  const checked = validateReleaseTagVersion(tag, fromDirectory, environment)
+  const root = fromDirectory
+    ? resolveInstallRoot(fromDirectory, environment)
+    : resolveInstallRoot(import.meta.dir, environment)
+  await checkReleaseBinaryAutoload(root, tag, environment)
+  return checked
 }
 
 export type ReleaseLedgerRow = {

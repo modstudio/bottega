@@ -3,10 +3,10 @@
 import type { Command } from 'commander'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
+  checkRelease,
   type ReleaseResult,
   releaseLog,
   releaseProject,
-  validateReleaseTagVersion,
 } from '../release/release-service.ts'
 import { log } from './support.ts'
 
@@ -67,8 +67,8 @@ export function register(program: Command): void {
     .command('check <tag>')
     .description('validate the reported version before tagging a release')
     .allowExcessArguments(false)
-    .action((tag) => {
-      const checked = validateReleaseTagVersion(tag)
+    .action(async (tag) => {
+      const checked = await checkRelease(tag)
       log(`reported version ${checked.reportedVersion} matches release tag ${checked.tag}`)
     })
 
