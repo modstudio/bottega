@@ -37,10 +37,7 @@ export async function openKeylessCursorsForSession(session: string, d: Database 
 }
 
 export async function workflowCursorHandoffLinks(
-  cursors: readonly Pick<
-    WorkflowCursorListRow,
-    'record_id' | 'handed_off_from_record_id'
-  >[],
+  cursors: readonly Pick<WorkflowCursorListRow, 'record_id' | 'handed_off_from_record_id'>[],
   d: Database = db(),
 ) {
   return [

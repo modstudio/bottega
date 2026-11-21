@@ -4,13 +4,14 @@ import {
   createMemoryRecordApiClient,
   installRecordApiClient,
 } from '../../test/fixtures/record-api.ts'
+import { installTaskRows } from '../../test/fixtures/task-reader.ts'
 import { guardHostedTables } from '../database/hosted-table-guard.ts'
+import { contextBrief } from '../doc/context-brief.ts'
 import { projectByName, upsertProject } from '../project/projects.ts'
 import { rememberActiveRecordSpace } from '../project-space.ts'
 import { rememberProjectSpace } from '../project-space-cache.ts'
 import type { HostedTaskFlowStageById } from '../record/record-task-flow-contract.ts'
 import { TASK_FLOW_STAGE_STATES } from '../record/record-task-flow-contract.ts'
-import { contextBrief } from '../doc/context-brief.ts'
 import { reviewContext } from '../session/context-review.ts'
 import { sessionStopSummary } from '../session/stop-summary.ts'
 import { taskFlowReadStore } from './task-flow-store.ts'
@@ -31,7 +32,6 @@ import { linkWorkflowTaskLabel } from './workflow-task-linking.ts'
 import { attachWorkflowTextByHandle, deleteWorkflowText } from './workflow-text.ts'
 import { copyWorkflowTextForCursor } from './workflow-text-copy.ts'
 import { promoteWorkflowLocal, setWorkflowLocal } from './workflows.ts'
-import { installTaskReader } from './task-read-port.ts'
 
 const taskFlowTables = [
   'workflow_cursor',
@@ -69,7 +69,7 @@ function taskFlowReadDelta(before: TaskFlowReadCounts, after: TaskFlowReadCounts
 
 afterEach(() => {
   installRecordApiClient(null)
-  installTaskReader(undefined)
+  installTaskRows(null)
 })
 
 test('hosted task-flow intents never touch the five local task-flow tables', async () => {
@@ -153,34 +153,20 @@ test('hosted task-flow intents never touch the five local task-flow tables', asy
     }),
   }
   installRecordApiClient(taskFlowClient)
-  installTaskReader({
-    list: async () => [],
-    lookup: async (project, keys) =>
-      keys.includes(taskKey)
-        ? [
-            {
-              key: taskKey,
-              record_id: taskId,
-              project,
-              title: 'Hosted task-flow guard task',
-              parent_key: null,
-              status: 'open',
-              status_category: 'open',
-              last_seen: null,
-              opened_at: null,
-              has_children: false,
-            },
-          ]
-        : [],
-    duplicates: async () => [],
-    show: async () => {
-      throw new Error('hosted task-flow hook guard does not show tasks')
+  installTaskRows([
+    {
+      key: taskKey,
+      record_id: taskId,
+      project: 'fixture',
+      title: 'Hosted task-flow guard task',
+      parent_key: null,
+      status: 'open',
+      status_category: 'open',
+      last_seen: null,
+      opened_at: null,
+      has_children: false,
     },
-    documents: async () => [],
-    document: async () => {
-      throw new Error('hosted task-flow hook guard does not read task documents')
-    },
-  })
+  ])
   const context = { session: 'hosted-task-flow-guard', taskFlowClient }
 
   const composed = await composeWorkflowWithCursor(
