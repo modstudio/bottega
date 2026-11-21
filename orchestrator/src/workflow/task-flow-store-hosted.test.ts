@@ -52,7 +52,7 @@ const WORKFLOW_CURSOR_TASK_FLOW_CALL_LIMIT = 2
 const STOP_SUMMARY_TASK_FLOW_CALL_LIMIT = 3
 const CONTEXT_BRIEF_TASK_FLOW_CALL_LIMIT = 3
 const CONTEXT_REVIEW_TASK_FLOW_CALL_LIMIT = 5
-const STOP_CHILD_FACT_STAGE_LIST_BYTE_BUDGET = 262_144
+const STOP_CHILD_FACT_STAGE_LIST_BYTE_BUDGET = 22_127
 
 type TaskFlowReadCounts = NonNullable<
   NonNullable<Parameters<typeof createMemoryRecordApiClient>[0]>['taskFlowReadCounts']
@@ -511,6 +511,7 @@ test('hosted task-flow intents never touch the five local task-flow tables', asy
   )
   const childFactStageRows: number[] = []
   const childFactStageBytes: number[] = []
+  const childFactStageViews: Array<string | undefined> = []
   let measureChildFactStages = false
   const countedTaskFlowClient = {
     ...taskFlowClient,
@@ -527,6 +528,7 @@ test('hosted task-flow intents never touch the five local task-flow tables', asy
       ) {
         childFactStageRows.push(result.items.length)
         childFactStageBytes.push(new TextEncoder().encode(JSON.stringify(result)).byteLength)
+        childFactStageViews.push(selector.view)
       }
       return result
     },
@@ -590,6 +592,7 @@ test('hosted task-flow intents never touch the five local task-flow tables', asy
   }
   const withHistory = await stopWithHistory()
   expect(withHistory.stageBytes).toBe(withoutHistory.stageBytes)
+  expect(childFactStageViews).toEqual(['summary', 'summary'])
   expect(
     [withoutHistory.stageBytes, withHistory.stageBytes].every(
       (bytes) => bytes < STOP_CHILD_FACT_STAGE_LIST_BYTE_BUDGET,

@@ -85,6 +85,7 @@ function stageReads(questions: QuestionStore, read: StageRead) {
         ...(input.sessionId ? { sessionId: input.sessionId } : {}),
         ...(input.project ? { projectId: read.projectId(input.project) } : {}),
         ...(input.workflowKeys ? { workflowKeys: input.workflowKeys } : {}),
+        ...(input.view ? { view: input.view } : {}),
       }
       const items = input.project
         ? await read.list(selector, input.project)

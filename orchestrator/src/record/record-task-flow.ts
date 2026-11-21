@@ -48,6 +48,20 @@ const STAGE_SELECT = `
   s.handed_off_from_record_id stage_handed_off_from_record_id,s.revision stage_revision,
   s.created_at stage_created_at,s.updated_at stage_updated_at`
 
+const STAGE_LIST_SUMMARY_SELECT = `
+  s.id stage_id,s.space_id stage_space_id,s.flow_record_id stage_flow_record_id,s.project_id stage_project_id,
+  sp.name stage_project_name,s.number stage_number,s.workflow stage_workflow,s.mode stage_mode,
+  s.workflow_key stage_workflow_key,s.instance_id stage_instance_id,s.session_id stage_session_id,
+  s.workflow_version_id stage_workflow_version_id,wv.n stage_workflow_version_number,
+  s.catalogue_version_id stage_catalogue_version_id,cv.n stage_catalogue_version_number,
+  s.arguments stage_arguments,s.active_ordinal stage_active_ordinal,s.active_slug stage_active_slug,
+  s.state stage_state,s.question stage_question,s.enforcement stage_enforcement,s.total_steps stage_total_steps,
+  s.opened_machine_id stage_opened_machine_id,
+  s.taken_over_from_machine_id stage_taken_over_from_machine_id,
+  s.last_advanced_machine_id stage_last_advanced_machine_id,
+  s.handed_off_from_record_id stage_handed_off_from_record_id,s.revision stage_revision,
+  s.created_at stage_created_at,s.updated_at stage_updated_at`
+
 const FLOW_SELECT = `
   f.id,f.space_id,f.project_id,f.task_id,f.parent_flow_record_id,t.key task_key,f.state,f.open_stage_record_id,
   (SELECT count(*)::integer FROM task_flow_stage open_stage
@@ -103,6 +117,15 @@ function toHostedStageSummary(row: Record<string, unknown>): HostedStageSummary 
     createdAt: recordIso(row.stage_created_at),
     updatedAt: recordIso(row.stage_updated_at),
   }
+}
+
+function toHostedStageListSummary(row: Record<string, unknown>): HostedStageSummary {
+  const {
+    closedStepNotes: _closedStepNotes,
+    autonomy: _autonomy,
+    ...summary
+  } = toHostedStageSummary(row)
+  return summary
 }
 
 function toHostedStage(row: Record<string, unknown>): HostedStage {
@@ -287,12 +310,19 @@ export async function readRecordTaskFlowTransaction(
 export async function listRecordTaskFlowStages(
   input: TenantPrincipal & { url: string } & TaskFlowStageListQuery,
 ): Promise<HostedTaskFlowStageList> {
-  return recordPool(input.url).begin(async (tx) => {
-    await bindTenant(tx, input)
-    const query = taskFlowStageListSql(input.spaceId, input)
-    query.values.push(input.limit + 1)
-    const rows = await tx.unsafe(
-      `SELECT ${STAGE_SELECT},${FLOW_SELECT}
+  return recordPool(input.url).begin((tx) => listRecordTaskFlowStagesTransaction(tx, input))
+}
+
+export async function listRecordTaskFlowStagesTransaction(
+  tx: SQL,
+  input: TenantPrincipal & TaskFlowStageListQuery,
+): Promise<HostedTaskFlowStageList> {
+  await bindTenant(tx, input)
+  const query = taskFlowStageListSql(input.spaceId, input)
+  query.values.push(input.limit + 1)
+  const stageSelect = input.view === 'summary' ? STAGE_LIST_SUMMARY_SELECT : STAGE_SELECT
+  const rows = await tx.unsafe(
+    `SELECT ${stageSelect},${FLOW_SELECT}
        FROM task_flow_stage s
        JOIN task_flow f ON f.id=s.flow_record_id AND f.space_id=s.space_id
        LEFT JOIN hub_task t ON t.id=f.task_id AND t.space_id=f.space_id
@@ -300,20 +330,19 @@ export async function listRecordTaskFlowStages(
        WHERE ${query.clauses.join(' AND ')}
        ORDER BY ${query.orderBy}
        LIMIT $${query.values.length}::integer`,
-      query.values,
-    )
-    const truncated = rows.length > input.limit
-    const pageRows = rows.slice(0, input.limit) as Array<Record<string, unknown>>
-    const last = pageRows.at(-1)
-    return {
-      items: pageRows.map((row) => ({
-        stage: toHostedStageSummary(row),
-        flow: toHostedFlow(row),
-      })),
-      truncated,
-      nextCursor: truncated ? taskFlowStageListNextCursor(input, last) : null,
-    }
-  })
+    query.values,
+  )
+  const truncated = rows.length > input.limit
+  const pageRows = rows.slice(0, input.limit) as Array<Record<string, unknown>>
+  const last = pageRows.at(-1)
+  return {
+    items: pageRows.map((row) => ({
+      stage: input.view === 'summary' ? toHostedStageListSummary(row) : toHostedStageSummary(row),
+      flow: toHostedFlow(row),
+    })),
+    truncated,
+    nextCursor: truncated ? taskFlowStageListNextCursor(input, last) : null,
+  }
 }
 
 export async function readRecordTaskFlowProjectReferenceCounts(

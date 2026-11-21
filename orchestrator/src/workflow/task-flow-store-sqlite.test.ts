@@ -9,6 +9,29 @@ import { composeWorkflowWithCursor } from './workflow-cursor.ts'
 import { listWorkflowCursors } from './workflow-cursor-list.ts'
 import { database } from './workflow-cursor-test.fixture.ts'
 
+test('summary stage listings replace only closed notes and autonomy', async () => {
+  const d = database()
+  await composeWorkflowWithCursor(
+    'flow',
+    'fixture',
+    'default',
+    { key: 'DEV-SUMMARY', branch: 'DEV-SUMMARY-work', worktree: '/tmp/DEV-SUMMARY' },
+    { session: 'session-summary', taskRecordId: 'task-DEV-SUMMARY' },
+    d,
+    {},
+    {},
+  )
+  d.query("UPDATE workflow_cursor SET closed=?,autonomy=? WHERE project='fixture'").run(
+    '[{"slug":"plan","note":"complete"}]',
+    'delegated',
+  )
+  const store = taskFlowReadStore(d)
+  const input = { project: 'fixture', states: TASK_FLOW_STAGE_STATES } as const
+  const full = (await store.listStages(input))[0]!
+  const summary = (await store.listStages({ ...input, view: 'summary' }))[0]!
+  expect(summary).toEqual({ ...full, closed: '[]', autonomy: null })
+})
+
 test('all-state stage reads include closed cursors without widening open reads', async () => {
   const d = database()
   d.query(

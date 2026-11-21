@@ -43,7 +43,7 @@ export function stageRow(
     catalogue_version: required(stage.catalogueVersionNumber, 'catalogue version number'),
     args: JSON.stringify(stage.arguments),
     autonomy: stage.autonomy ?? null,
-    closed: JSON.stringify(stage.closedStepNotes),
+    closed: JSON.stringify(stage.closedStepNotes ?? []),
     question: stage.question ?? null,
     total_steps: stage.totalSteps,
     created_at: stage.createdAt,

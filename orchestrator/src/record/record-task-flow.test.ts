@@ -6,6 +6,7 @@ import { requestTenant } from './record-api-tenant.ts'
 import type { RecordIdentity } from './record-auth.ts'
 import { recordRequestReadKind } from './record-keyed-read.ts'
 import {
+  listRecordTaskFlowStagesTransaction,
   readRecordTaskFlowPresenceTransaction,
   readRecordTaskFlowTextTransaction,
   readRecordTaskFlowTransaction,
@@ -105,6 +106,95 @@ beforeEach(async () => {
 
 afterEach(async () => {
   await postgres.close()
+})
+
+test('stage-list summary omits only closed-step notes and autonomy', async () => {
+  await postgres.exec(`
+    RESET ROLE;
+    UPDATE task_flow_stage
+    SET closed_step_notes='[{"slug":"implementation","note":"complete"}]', autonomy='delegated'
+    WHERE id='${STAGE}';
+    SET ROLE record_actor;
+  `)
+  const base = {
+    userId: USER,
+    spaceId: SPACE,
+    projectId: PROJECT,
+    order: 'project' as const,
+    limit: 200,
+  }
+  const sql = pgliteSql(postgres)
+  const full = await listRecordTaskFlowStagesTransaction(sql, base)
+  expect(full).toEqual({
+    items: [
+      {
+        stage: {
+          id: STAGE,
+          flowRecordId: FLOW,
+          projectId: PROJECT,
+          projectName: 'text-copy',
+          number: 1,
+          workflow: 'proof',
+          mode: 'default',
+          workflowKey: 'DEV-2416',
+          instanceId: null,
+          sessionId: 'session',
+          workflowVersionId: WORKFLOW_VERSION,
+          workflowVersionNumber: 1,
+          catalogueVersionId: CATALOGUE_VERSION,
+          catalogueVersionNumber: 1,
+          arguments: {},
+          activeOrdinal: 0,
+          activeSlug: 'implementation',
+          state: 'running',
+          closedStepNotes: [{ slug: 'implementation', note: 'complete' }],
+          question: null,
+          autonomy: 'delegated',
+          enforcement: null,
+          totalSteps: 1,
+          openedMachineId: MACHINE,
+          takenOverFromMachineId: null,
+          lastAdvancedMachineId: MACHINE,
+          handedOffFromRecordId: null,
+          revision: 1,
+          createdAt: expect.any(String),
+          updatedAt: expect.any(String),
+        },
+        flow: {
+          id: FLOW,
+          projectId: PROJECT,
+          taskId: null,
+          parentFlowRecordId: null,
+          taskKey: null,
+          state: 'open',
+          openStageRecordId: null,
+          openStageCount: 1,
+          openingMachineId: MACHINE,
+          updatedMachineId: MACHINE,
+          revision: 1,
+          createdAt: expect.any(String),
+          updatedAt: expect.any(String),
+        },
+      },
+    ],
+    truncated: false,
+    nextCursor: null,
+  })
+
+  const summary = await listRecordTaskFlowStagesTransaction(sql, { ...base, view: 'summary' })
+  const fullStage = full.items[0]!.stage as Record<string, unknown>
+  const summaryStage = summary.items[0]!.stage as Record<string, unknown>
+  expect(
+    Object.keys(fullStage)
+      .filter((key) => !(key in summaryStage))
+      .sort(),
+  ).toEqual(['autonomy', 'closedStepNotes'])
+  expect(summaryStage).toEqual(
+    Object.fromEntries(
+      Object.entries(fullStage).filter(([key]) => key !== 'closedStepNotes' && key !== 'autonomy'),
+    ),
+  )
+  expect(summary.items[0]!.flow).toEqual(full.items[0]!.flow)
 })
 
 test('hosted text read returns a copy after its live text is removed', async () => {

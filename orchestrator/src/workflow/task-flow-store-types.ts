@@ -32,6 +32,8 @@ export type TaskFlowStageListInput<State extends string> = {
   /** An empty list matches no stages. */
   workflowKeys?: readonly string[]
   states: readonly [State, ...State[]]
+  /** Summary rows carry closed as '[]' and autonomy as null; do not read those fields. */
+  view?: 'summary'
 }
 
 export type TaskFlowStageCursorRow = {
