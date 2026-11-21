@@ -11,6 +11,8 @@ export type WorkflowRunChainEvidence = {
   needsVerdict: boolean
 }
 
+export type EarlierStepRunEvidence = { number: number; stepSlug: string }
+
 export const dispatchWaiverFacts = ['no-lens-owed', 'no-accepted-findings'] as const
 export type DispatchWaiverFact = (typeof dispatchWaiverFacts)[number]
 
@@ -22,6 +24,10 @@ export type StepRunObligation = {
   judges?: string[]
 }
 
+export function isApplyFindingsStep(step: StepRunObligation): boolean {
+  return step.dispatchWaivedBy?.includes('no-accepted-findings') ?? false
+}
+
 export type WorkflowRunObligationInput = {
   workflowKey?: string
   cursorNumber?: number
@@ -29,11 +35,11 @@ export type WorkflowRunObligationInput = {
   metWaiverFacts: DispatchWaiverFact[]
   step?: StepRunObligation
   dispatchRuns?: WorkflowRunChainEvidence[]
-  earlierStepRuns?: { number: number; stepSlug: string }[]
+  earlierStepRuns?: EarlierStepRunEvidence[]
   judgedRuns?: WorkflowRunChainEvidence[]
 }
 
-function scoreRemedy(runs: readonly WorkflowRunChainEvidence[]): string {
+function scoreRemedy(runs: readonly Pick<WorkflowRunChainEvidence, 'number'>[]): string {
   return runs.map((run) => `\`${PLATFORM_SLUG} score ${run.number} ...\``).join(', ')
 }
 
@@ -46,7 +52,7 @@ export function dispatchObligationRefusal(input: WorkflowRunObligationInput): st
   if (!runs.length) {
     const job = step.jobs[0] ?? '<job>'
     const earlier = input.earlierStepRuns ?? []
-    if (earlier.length) {
+    if (isApplyFindingsStep(step) && earlier.length) {
       const cursor = workflowCursorNumberOption(input.cursorNumber ?? '<n>')
       const chainSummary = earlier
         .map(
@@ -59,7 +65,8 @@ export function dispatchObligationRefusal(input: WorkflowRunObligationInput): st
         `to this cursor at step ${step.slug}; ${chainSummary}. ` +
         `A finding applied before triage needs a confirmation turn at this step; ` +
         `run \`${PLATFORM_SLUG} run continue --findings${cursor} ${earlier[0]!.number} "<message>"\`; ` +
-        `its successful exit meets the obligation`
+        `once the continuation finishes and its chain is scored with ${scoreRemedy([earlier[0]!])}, ` +
+        `the obligation is met`
       )
     }
     return (

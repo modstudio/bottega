@@ -281,7 +281,12 @@ test('apply-findings receives an earlier-step chain and names its confirmation t
       enforcement: 'floors',
     },
     [floor('tracker-transition')],
-    { slug: 'apply-findings', jobs: ['implement'], dispatch: 'required' },
+    {
+      slug: 'apply-findings',
+      jobs: ['implement'],
+      dispatch: 'required',
+      dispatchWaivedBy: ['no-accepted-findings'],
+    },
     { task: 'DEV-1' },
     {
       readTask: (key) => ({
@@ -290,6 +295,7 @@ test('apply-findings receives an earlier-step chain and names its confirmation t
         statusCategory: 'active',
         commentIds: [],
       }),
+      noAcceptedFindings: () => ({ action: 'allow', facts: [] }),
     },
     false,
     d,
@@ -302,6 +308,7 @@ test('apply-findings receives an earlier-step chain and names its confirmation t
     expect(result.message).toContain(
       `${PLATFORM_SLUG} run continue --findings --cursor 1214 987654`,
     )
+    expect(result.message).toContain(`${PLATFORM_SLUG} score 987654 ...`)
   }
 })
 

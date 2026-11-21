@@ -20,7 +20,11 @@ import type { FloorEvidencePorts } from './workflow-floor-evidence.ts'
 import { gatherValidatedEvidence } from './workflow-floor-evidence-gather.ts'
 import { invokeFloorEvidencePort } from './workflow-floor-evidence-replay.ts'
 import { openWorkflowObligations } from './workflow-obligation-floor.ts'
-import type { DispatchWaiverFact, StepRunObligation } from './workflow-run-obligation.ts'
+import {
+  type DispatchWaiverFact,
+  isApplyFindingsStep,
+  type StepRunObligation,
+} from './workflow-run-obligation.ts'
 import {
   gatherEarlierStepWorkflowRunChains,
   gatherWorkflowRunChains,
@@ -77,7 +81,7 @@ function gatherDispatchWaiverFacts(
     if (checksReviewOwed && reviewOwed.action === 'refuse') return { facts, refusal: reviewOwed }
     if (reviewOwed.noLensOwed) facts.push('no-lens-owed')
   }
-  if (row.enforcement === 'floors' && step.dispatchWaivedBy?.includes('no-accepted-findings')) {
+  if (row.enforcement === 'floors' && isApplyFindingsStep(step)) {
     const gathered = invokeFloorEvidencePort(
       ports,
       'noAcceptedFindings',
@@ -224,13 +228,14 @@ function attachRunObligationEvidence(
       database,
       row.step_slug,
     )
-    evidence.earlierStepRuns = gatherEarlierStepWorkflowRunChains(
-      row.record_id,
-      step.jobs,
-      row.step_slug,
-      stepActivatedAt,
-      database,
-    )
+    if (isApplyFindingsStep(step))
+      evidence.earlierStepRuns = gatherEarlierStepWorkflowRunChains(
+        row.record_id,
+        step.jobs,
+        row.step_slug,
+        stepActivatedAt,
+        database,
+      )
   }
   if (step.judges?.length)
     evidence.judgedRuns = gatherWorkflowRunChains(row.record_id, step.judges, database)

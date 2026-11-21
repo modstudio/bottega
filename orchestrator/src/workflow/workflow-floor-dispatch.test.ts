@@ -74,39 +74,6 @@ test('a terminal scored dispatch allows', () => {
   ).toBe('allow')
 })
 
-test('an earlier-step chain before activation gets the confirmation-turn refusal', () => {
-  const cursorRecordId = newRecordId()
-  const earlier = addRun({
-    agent: 'codex',
-    job: 'implement',
-    startedAt: '2026-11-19T00:00:00.000Z',
-  })
-  db()
-    .query('UPDATE run SET number=?,cursor_record_id=?,step_slug=? WHERE record_id=?')
-    .run(987_654, cursorRecordId, 'blast-radius', earlier)
-  const earlierStepRuns = gatherEarlierStepWorkflowRunChains(
-    cursorRecordId,
-    ['implement'],
-    'apply-findings',
-    '2026-11-19T01:00:00.000Z',
-    db(),
-  )
-
-  const refusal = dispatchObligationRefusal({
-    workflowKey: 'DEV-1',
-    cursorNumber: 1214,
-    selectedFloors: [],
-    metWaiverFacts: [],
-    step: { ...dispatchStep, slug: 'apply-findings' },
-    dispatchRuns: [],
-    earlierStepRuns,
-  })
-
-  expect(refusal).toMatch(/\b987654\b/)
-  expect(refusal).toContain('blast-radius')
-  expect(refusal).toContain(`${PLATFORM_SLUG} run continue --findings --cursor 1214 987654`)
-})
-
 test('a current-step chain is credited without mentioning an earlier chain', () => {
   expect(
     dispatchObligationRefusal({
@@ -114,7 +81,11 @@ test('a current-step chain is credited without mentioning an earlier chain', () 
       cursorNumber: 1214,
       selectedFloors: [],
       metWaiverFacts: [],
-      step: { ...dispatchStep, slug: 'apply-findings' },
+      step: {
+        ...dispatchStep,
+        slug: 'apply-findings',
+        dispatchWaivedBy: ['no-accepted-findings'],
+      },
       dispatchRuns: [terminalDispatch],
       earlierStepRuns: [{ number: 987_654, stepSlug: 'blast-radius' }],
     }),
@@ -127,13 +98,38 @@ test('empty earlier-step evidence keeps the existing zero-dispatch wording', () 
     cursorNumber: 1214,
     selectedFloors: [],
     metWaiverFacts: [],
-    step: { ...dispatchStep, slug: 'apply-findings' },
+    step: {
+      ...dispatchStep,
+      slug: 'apply-findings',
+      dispatchWaivedBy: ['no-accepted-findings'],
+    },
     dispatchRuns: [],
     earlierStepRuns: [],
   })
 
   expect(refusal).toBe(
     `dispatch obligation is unmet: no implement run was dispatched from this cursor at step apply-findings; dispatch one with \`${PLATFORM_SLUG} run start implement --key DEV-1 ...\` from this cursor`,
+  )
+})
+
+test('earlier-step evidence keeps the existing wording outside apply-findings', () => {
+  const refusal = dispatchObligationRefusal({
+    workflowKey: 'DEV-1',
+    cursorNumber: 1214,
+    selectedFloors: [],
+    metWaiverFacts: [],
+    step: {
+      slug: 'review-lenses',
+      jobs: ['review-lens'],
+      dispatch: 'required',
+      dispatchWaivedBy: ['no-lens-owed'],
+    },
+    dispatchRuns: [],
+    earlierStepRuns: [{ number: 987_654, stepSlug: 'blast-radius' }],
+  })
+
+  expect(refusal).toBe(
+    `dispatch obligation is unmet: no review-lens run was dispatched from this cursor at step review-lenses; dispatch one with \`${PLATFORM_SLUG} run start review-lens --key DEV-1 ...\` from this cursor`,
   )
 })
 
@@ -166,35 +162,6 @@ test('earlier-step evidence excludes a turn started after current-step activatio
   db()
     .query('UPDATE run SET cursor_record_id=?,step_slug=? WHERE record_id=?')
     .run(cursorRecordId, 'blast-radius', root)
-
-  expect(
-    gatherEarlierStepWorkflowRunChains(
-      cursorRecordId,
-      ['implement'],
-      'apply-findings',
-      '2026-11-19T01:00:00.000Z',
-      db(),
-    ),
-  ).toEqual([])
-})
-
-test('earlier-step evidence excludes a chain also bound at the current step', () => {
-  const cursorRecordId = newRecordId()
-  const root = addRun({
-    agent: 'codex',
-    job: 'implement',
-    startedAt: '2026-11-19T00:00:00.000Z',
-  })
-  const currentStepTurn = addRun({
-    agent: 'codex',
-    job: 'implement',
-    parent: root,
-    turn: 2,
-    startedAt: '2026-11-19T02:00:00.000Z',
-  })
-  const bind = db().query('UPDATE run SET cursor_record_id=?,step_slug=? WHERE record_id=?')
-  bind.run(cursorRecordId, 'blast-radius', root)
-  bind.run(cursorRecordId, 'apply-findings', currentStepTurn)
 
   expect(
     gatherEarlierStepWorkflowRunChains(

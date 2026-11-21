@@ -27,6 +27,7 @@ import {
 import {
   type DispatchWaiverFact,
   dispatchObligationRefusal,
+  type EarlierStepRunEvidence,
   judgingObligationRefusal,
   type StepRunObligation,
   type WorkflowRunChainEvidence,
@@ -158,7 +159,7 @@ export type ValidatedEvidence = {
   satisfy?: ValidatedSatisfy
   tree?: { project: string; worktree?: string | null; commit: string | null }
   dispatchRuns?: WorkflowRunChainEvidence[]
-  earlierStepRuns?: { number: number; stepSlug: string }[]
+  earlierStepRuns?: EarlierStepRunEvidence[]
   judgedRuns?: WorkflowRunChainEvidence[]
   metDispatchWaiverFacts?: DispatchWaiverFact[]
 }

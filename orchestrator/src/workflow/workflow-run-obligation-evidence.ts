@@ -5,7 +5,7 @@ import type { Database } from 'bun:sqlite'
 import { PENDING_SCORE_WHERE } from '../evidence/pending-score-sql.ts'
 import { TERMINAL_RUN_STATUS_SET } from '../run/run-status.ts'
 import { createdAfterStepActivation } from './workflow-cursor-trail.ts'
-import type { WorkflowRunChainEvidence } from './workflow-run-obligation.ts'
+import type { EarlierStepRunEvidence, WorkflowRunChainEvidence } from './workflow-run-obligation.ts'
 
 export function gatherWorkflowRunChains(
   cursorRecordId: string,
@@ -43,8 +43,6 @@ export function gatherWorkflowRunChains(
   }))
 }
 
-export type EarlierStepRunEvidence = { number: number; stepSlug: string }
-
 export function gatherEarlierStepWorkflowRunChains(
   cursorRecordId: string,
   jobs: readonly string[],
@@ -63,14 +61,9 @@ export function gatherEarlierStepWorkflowRunChains(
           AND root.job IN (${jobPlaceholders})
           AND bound.cursor_record_id=?
           AND bound.step_slug<>?
-          AND NOT EXISTS (SELECT 1 FROM run current_bound
-                           WHERE (current_bound.record_id=root.record_id
-                                  OR current_bound.parent_run_record_id=root.record_id)
-                             AND current_bound.cursor_record_id=?
-                             AND current_bound.step_slug=?)
         ORDER BY root.number,bound.turn DESC,bound.number DESC`,
     )
-    .all(...jobs, cursorRecordId, currentStepSlug, cursorRecordId, currentStepSlug)
+    .all(...jobs, cursorRecordId, currentStepSlug)
   const gathered: EarlierStepRunEvidence[] = []
   const seen = new Set<number>()
   for (const row of rows) {
