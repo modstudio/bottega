@@ -16,7 +16,6 @@ import type {
   TaskFlowLiveIntent,
 } from '../record/record-task-flow-write-contract.ts'
 import type { TaskFlowLocalReadMethod, TaskFlowWriteMethod } from './task-flow-store-methods.ts'
-import type { TaskFlowStageListInput } from './task-flow-store.ts'
 import {
   type TaskFlowSqliteWriteResult,
   writeSqliteTaskFlow,
@@ -41,6 +40,7 @@ import type {
   TaskFlowRulingFileRow,
   TaskFlowRulingRow,
   TaskFlowStageCursorRow,
+  TaskFlowStageListInput,
   TaskFlowStageSummaryRow,
   TaskFlowTaskRulingRow,
   TaskFlowTextBodyRow,

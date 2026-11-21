@@ -38,6 +38,15 @@ function appendCursor(input: TaskFlowStageListQuery, result: TaskFlowStageListSq
   )
 }
 
+function appendStates(input: TaskFlowStageListQuery, result: TaskFlowStageListSql): void {
+  if (!input.states) return
+  const parameters = input.states.map((state) => {
+    result.values.push(state)
+    return `$${result.values.length}`
+  })
+  result.clauses.push(`s.state IN (${parameters.join(',')})`)
+}
+
 export function taskFlowStageListSql(
   spaceId: string,
   input: TaskFlowStageListQuery,
@@ -54,19 +63,12 @@ export function taskFlowStageListSql(
   if (input.projectId) add((parameter) => `s.project_id=${parameter}::uuid`, input.projectId)
   if (input.number !== undefined) add((parameter) => `s.number=${parameter}::integer`, input.number)
   if (input.sessionId) add((parameter) => `s.session_id=${parameter}`, input.sessionId)
-  if (input.states) {
-    const parameters = input.states.map((state) => {
-      result.values.push(state)
-      return `$${result.values.length}`
-    })
-    result.clauses.push(`s.state IN (${parameters.join(',')})`)
-  }
+  appendStates(input, result)
   if (input.taskKey) add((parameter) => `t.key=${parameter}`, input.taskKey)
   if (input.workflow) add((parameter) => `s.workflow=${parameter}`, input.workflow)
   if (input.mode) add((parameter) => `s.mode=${parameter}`, input.mode)
   if (input.workflowKey) add((parameter) => `s.workflow_key=${parameter}`, input.workflowKey)
-  if (input.workflowKeys)
-    add((parameter) => `s.workflow_key=ANY(${parameter}::text[])`, input.workflowKeys)
+  if (input.workflowKeys) add((parameter) => `s.workflow_key=ANY(${parameter})`, input.workflowKeys)
   if (input.keyless) result.clauses.push("s.workflow_key=''")
   if (input.primaryInstance) result.clauses.push("s.instance_id=''")
   if (input.taskId) add((parameter) => `f.task_id=${parameter}::uuid`, input.taskId)

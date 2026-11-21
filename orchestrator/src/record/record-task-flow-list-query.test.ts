@@ -13,7 +13,7 @@ test('workflowKeys combines with existing stage-list predicates by AND', () => {
     's.space_id=$1::uuid',
     's.project_id=$2::uuid',
     's.state IN ($3)',
-    's.workflow_key=ANY($4::text[])',
+    's.workflow_key=ANY($4)',
   ])
   expect(query.values).toEqual([
     '00000000-0000-4000-8000-000000000002',

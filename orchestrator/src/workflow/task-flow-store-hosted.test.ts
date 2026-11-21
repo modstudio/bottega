@@ -558,9 +558,7 @@ test('hosted task-flow intents never touch the five local task-flow tables', asy
       measureChildFactStages = false
     })
     const reads = taskFlowReadDelta(before, memoryInput.taskFlowReadCounts)
-    const stageRows = childFactStageRows
-      .slice(rowOffset)
-      .reduce((total, rows) => total + rows, 0)
+    const stageRows = childFactStageRows.slice(rowOffset).reduce((total, rows) => total + rows, 0)
     const stageBytes = childFactStageBytes
       .slice(byteOffset)
       .reduce((total, bytes) => total + bytes, 0)

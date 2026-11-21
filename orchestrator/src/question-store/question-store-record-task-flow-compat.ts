@@ -10,7 +10,6 @@ import {
   TASK_FLOW_STAGE_STATES,
 } from '../record/record-task-flow-contract.ts'
 import { type ListedItem, stageRow } from '../workflow/task-flow-store-record-stage-row.ts'
-import type { TaskFlowStageListInput } from '../workflow/task-flow-store.ts'
 import type {
   TaskFlowInboxQuestionRow,
   TaskFlowListedStageRow,
@@ -20,6 +19,7 @@ import type {
   TaskFlowRulingFileRow,
   TaskFlowRulingRow,
   TaskFlowStageCursorRow,
+  TaskFlowStageListInput,
   TaskFlowTaskRulingRow,
   TaskFlowWaitingQuestionRow,
 } from '../workflow/task-flow-store-types.ts'

@@ -42,6 +42,7 @@ import type {
   TaskFlowRulingFileRow,
   TaskFlowRulingRow,
   TaskFlowStageCursorRow,
+  TaskFlowStageListInput,
   TaskFlowStageSummaryRow,
   TaskFlowTaskRulingRow,
   TaskFlowTextBodyRow,
@@ -62,14 +63,6 @@ export type {
   TaskFlowWaitingQuestionRow,
 } from './task-flow-store-types.ts'
 export { isKeylessExplore } from './task-flow-store-types.ts'
-
-export type TaskFlowStageListInput<State extends string = TaskFlowStageState> = {
-  project?: string
-  sessionId?: string
-  /** An empty list matches no stages. */
-  workflowKeys?: readonly string[]
-  states: readonly [State, ...State[]]
-}
 
 /** Reads machine-local cursor/task links with their already-known project owners. */
 export async function localTaskReferencesForSession(
@@ -140,7 +133,7 @@ interface TaskFlowQueries {
     sessionId: string
   }): Array<{ mode_slug: string }>
   listOpenStages(input: { project?: string; sessionId?: string }): TaskFlowListedStageRow[]
-  listStages(input: TaskFlowStageListInput): TaskFlowListedStageRow[]
+  listStages(input: TaskFlowStageListInput<TaskFlowStageState>): TaskFlowListedStageRow[]
   keyedStageHistory(input: { since: string }): TaskFlowStageCursorRow[]
   /** Reads open cursor worktree rows ordered by project, then cursor number. */
   openStageWorktrees(): TaskFlowOpenStageWorktreeRow[]

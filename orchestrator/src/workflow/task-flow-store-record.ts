@@ -40,13 +40,13 @@ import {
   stageItem,
   stageRow,
 } from './task-flow-store-record-stage-row.ts'
-import type { TaskFlowStageListInput } from './task-flow-store.ts'
 import { sqliteTaskFlowReadStore } from './task-flow-store-sqlite.ts'
 import type {
   TaskFlowObligationRow,
   TaskFlowOpenObligationRow,
   TaskFlowOpenStageWorktreeRow,
   TaskFlowStageCursorRow,
+  TaskFlowStageListInput,
   TaskFlowTextRow,
 } from './task-flow-store-types.ts'
 
