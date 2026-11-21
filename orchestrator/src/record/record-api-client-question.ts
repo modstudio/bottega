@@ -1,11 +1,11 @@
 // concern: record-api-client-question
 /** Calls the hosted question routes and validates write results. */
 
-import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   RUN_QUESTION_OWNER_NOT_LIVE_CODE,
   RunQuestionOwnerNotLiveError,
 } from '../question-store/run-question-write-guard.ts'
+import { HOSTED_API_RUNG_RELEASE_COMMAND } from './outbox-held-contract.ts'
 import type { RecordRequestDestination, RecordWriteDestination } from './record-api-client-paths.ts'
 import type { RecordIdentity } from './record-auth.ts'
 import {
@@ -29,12 +29,7 @@ type QuestionReadResponse = {
   reset?: boolean
 }
 
-const HOSTED_API_RELEASE_REMEDY = `${PLATFORM_SLUG} release run --rung hosted-api ${PLATFORM_SLUG}`
-
-function questionReadResponseSchema(
-  input: QuestionReadInput,
-  body: unknown,
-): QuestionReadResponse {
+function questionReadResponseSchema(input: QuestionReadInput, body: unknown): QuestionReadResponse {
   const response = body as QuestionReadResponse
   if (input.read !== 'open-for-session') return response
   const valid =
@@ -48,7 +43,7 @@ function questionReadResponseSchema(
     )
   if (!valid) {
     throw new Error(
-      `the hosted API predates this client: open-for-session rows require step_actions as a string array; run ${HOSTED_API_RELEASE_REMEDY}`,
+      `the hosted API predates this client: open-for-session rows require step_actions as a string array; run ${HOSTED_API_RUNG_RELEASE_COMMAND}`,
     )
   }
   return response

@@ -1,10 +1,7 @@
 import { fileURLToPath } from 'node:url'
 import { db } from '../database/db.ts'
 import { projectByName } from '../project/projects.ts'
-import type {
-  RequiredReleaseReport,
-  RequiredRungDecision,
-} from '../release/release-required.ts'
+import type { RequiredReleaseReport, RequiredRungDecision } from '../release/release-required.ts'
 import type { TriageDecision } from '../review-funnel/review-funnel-admission-evidence.ts'
 import type { ShipCleanupReport } from '../ship-cleanup/ship-cleanup.ts'
 import type { PullRequestCheck } from './merge-decision.ts'

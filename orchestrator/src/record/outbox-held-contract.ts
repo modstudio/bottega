@@ -4,6 +4,7 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 
 export const OUTBOX_HELD_FOR_UPGRADE_MARKER = 'outbox-held-for-upgrade:'
 export const HOSTED_API_RELEASE_COMMAND = `${PLATFORM_SLUG} release run ${PLATFORM_SLUG} --rung hosted-api`
+export const HOSTED_API_RUNG_RELEASE_COMMAND = `${PLATFORM_SLUG} release run --rung hosted-api ${PLATFORM_SLUG}`
 
 const UNKNOWN_COLUMNS_LABEL = ' outbox payload has unknown columns: '
 const RETIRE_COMMAND = `${PLATFORM_SLUG} record outbox retire orch:<row-id> --reason <text>`

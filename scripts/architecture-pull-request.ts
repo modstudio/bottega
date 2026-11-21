@@ -23,6 +23,17 @@ export const pullRequestModuleSpecs = [
     allowed: ['../ship-cleanup/ship-cleanup-decision.ts'],
   },
   {
+    file: 'orchestrator/src/pull-request/pr-release-admission.ts',
+    allowed: [
+      '../../../shared/git-path-list.ts',
+      '../git/git-environment.ts',
+      '../project/projects.ts',
+      '../release/release-entry-closure.ts',
+      '../release/release-required.ts',
+    ],
+    typeOnlyAllowed: ['../project/projects.ts'],
+  },
+  {
     file: 'orchestrator/src/pull-request/pr-merge.fixture.ts',
     allowed: [
       'node:url',
