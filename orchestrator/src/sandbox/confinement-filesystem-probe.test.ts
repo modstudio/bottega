@@ -50,6 +50,31 @@ describe('probeVerdict', () => {
     ).toEqual({ status: 'failed', reason: 'one or more expected-readable paths were denied' })
   })
 
+  test('reports a missing expected-readable target as not covered and names it', () => {
+    expect(
+      probeVerdict(
+        [{ name: 'running package.json', path: '/missing/package.json', expected: 'readable' }],
+        { 'running package.json': 'denied' },
+        { command: ran },
+        ['running package.json'],
+      ),
+    ).toEqual({
+      status: 'not covered',
+      reason: 'expected-readable target missing on the host: running package.json',
+    })
+  })
+
+  test('keeps the existing verdict when every expected-readable target is present', () => {
+    expect(
+      probeVerdict(
+        [{ name: 'tree', path: '/tree', expected: 'readable' }],
+        { tree: 'readable' },
+        { command: ran },
+        [],
+      ),
+    ).toEqual({ status: 'denied' })
+  })
+
   test('reports a failed command after expected path measurements', () => {
     expect(
       probeVerdict(
