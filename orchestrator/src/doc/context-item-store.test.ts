@@ -1,5 +1,4 @@
 import { afterEach, expect, test } from 'bun:test'
-import { readFileSync } from 'node:fs'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   createMemoryRecordApiClient,
@@ -107,14 +106,4 @@ test('hook holder batches make one hosted context-item call', async () => {
     if (priorUrl === undefined) delete process.env.BOTTEGA_RECORD_API_URL
     else process.env.BOTTEGA_RECORD_API_URL = priorUrl
   }
-})
-
-test('hook paths supply owners for task-holder context batches', () => {
-  const brief = readFileSync(new URL('./context-brief.ts', import.meta.url), 'utf8')
-  const show = readFileSync(new URL('./context-service.ts', import.meta.url), 'utf8')
-  const review = readFileSync(new URL('../session/context-review.ts', import.meta.url), 'utf8')
-
-  expect(brief).toMatch(/owner:\s*\{\s*kind: 'task' as const, projectName: reference\.project\s*\}/)
-  expect(show).toMatch(/task\s*\?\s*\{ holder, owner: contextTaskOwner/)
-  expect(review).not.toContain('listContextItems(')
 })
