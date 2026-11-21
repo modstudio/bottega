@@ -44,8 +44,6 @@ import { releaseAbsentCloseOutResidue } from './absent-close-out-residue.ts'
 import {
   absentTreeCloseOut,
   failedResourceRemovalResult,
-  pointerMustClear,
-  type ResourceTeardownResult,
   successfulReleaseResult,
 } from './absent-tree-close-out.ts'
 import { adoptedTreeCloseOutDecision } from './close-out-adoption.ts'
@@ -53,14 +51,11 @@ import { withCloseOutLease } from './close-out-lease.ts'
 import {
   type CloseOutPreparation,
   type CloseOutTaskFlowClient,
-  type PreparedTreeNaming,
   conversationRootAndWorktree,
-  finishCursorWorktreeClear,
   prepareCloseOut,
   prepareCursorWorktreeClear,
 } from './close-out-preparation.ts'
 import { closeTerminalChainQuestions } from './close-out-questions.ts'
-
 import {
   landingTreeReleaseHold,
   orderedCloseOutHold,
@@ -72,6 +67,11 @@ import {
   cleanLandingTreeCloseOutResult,
   heldConversationCloseOutResult,
 } from './close-out-report.ts'
+import {
+  appendPreparedTreeNaming,
+  completePreparedTreeNaming,
+  type PreparedTreeNamingResult,
+} from './close-out-tree-naming.ts'
 import {
   aliveConversationTurns,
   coordinatorLeaseHold,
@@ -91,15 +91,8 @@ import {
   retainedBranchReason,
   retainedRefForRun,
 } from './retained-branch.ts'
-import {
-  closeOutKeepTreeDecision,
-  conversationKeepTreeHold,
-} from './tree-keep.ts'
-import {
-  closeOutIntentAuthority,
-  type CloseOutIntent,
-  treeNamingReleaseReport,
-} from './tree-keep-decision.ts'
+import { closeOutKeepTreeDecision, conversationKeepTreeHold } from './tree-keep.ts'
+import { type CloseOutIntent, closeOutIntentAuthority } from './tree-keep-decision.ts'
 import { treeProcessCwdHold } from './tree-process-cwd-hold.ts'
 
 export type { CloseOutResult } from './close-out-report.ts'
@@ -121,12 +114,8 @@ type CloseOutPreparedOptions = CloseOutOptions & {
   cursorWorktrees: CloseOutPreparation['cursorWorktrees']
 }
 
-type CloseOutAttemptResult = CloseOutResult &
-  ResourceTeardownResult & { preparedTreeNaming?: PreparedTreeNaming }
+type CloseOutAttemptResult = PreparedTreeNamingResult
 
-function explicitlyRemovesTree(intent: CloseOutIntent): boolean {
-  return closeOutIntentAuthority(intent).explicitTreeRemoval
-}
 type RunIdRow = { record_id: string }
 
 function terminateCloseOutProcesses(dryRun: boolean, runId: string): void {
@@ -559,7 +548,7 @@ function attemptCloseOutRun(
     sessionId: effective.session_id,
     launchKey: effective.launch_key,
     status: effective.status,
-    explicitTreeRemovalRequested: explicitlyRemovesTree(options.intent),
+    explicitTreeRemovalRequested: closeOutIntentAuthority(options.intent).explicitTreeRemoval,
   }
   const preRemovalHold =
     terminalHoldResult(row.root_record_id, treePath, effective.status, options.keepTreeDecision) ??
@@ -913,7 +902,7 @@ function closeOutCallerDetail(detail: string, intent: CloseOutOptions['intent'])
   return `${detail}; close-out intent=${intent} pid=${process.pid} ppid=${process.ppid}`
 }
 
-function persistCloseOutDetail(result: CloseOutResult, intent: CloseOutIntent): void {
+export function persistCloseOutDetail(result: CloseOutResult, intent: CloseOutIntent): void {
   db()
     .query('UPDATE run SET close_out_detail=? WHERE record_id=?')
     .run(closeOutCallerDetail(result.detail, intent), result.runId)
@@ -1000,16 +989,9 @@ function closeOutRunHoldingLease(
       }
     }
   }
-  const namingBaseDetail = result.detail
-  const namingReport = treeNamingReleaseReport(
-    keepTree.naming,
-    options.dryRun ? 'dry-run' : 'named',
+  appendPreparedTreeNaming(result, keepTree.naming, !!options.dryRun, (named) =>
+    persistCloseOutDetail(named, options.intent),
   )
-  if (namingReport?.detail) result.detail += `; ${namingReport.detail}`
-  if (!options.dryRun && keepTree.naming.action === 'proceed-named') {
-    result.preparedTreeNaming = { baseDetail: namingBaseDetail, decision: keepTree.naming }
-    persistCloseOutDetail(result, options.intent)
-  }
   if (!options.dryRun && ['released', 'absent', 'forgotten'].includes(result.outcome)) {
     const turns = db()
       .query(
@@ -1032,33 +1014,14 @@ export async function closeOutRun(
   const preparation = await prepareCloseOut(options.taskFlowClient)
   const clearCursorWorktrees = prepareCursorWorktreeClear(runId, preparation)
   const { questionRootIds, ...preparedResult } = closeOutRunPrepared(runId, options, preparation)
-  const result = await completePreparedCursorWorktreeClear(
+  const result = await completePreparedTreeNaming(
     preparedResult,
-    options,
+    !!options.dryRun,
     clearCursorWorktrees,
+    (completed) => persistCloseOutDetail(completed, options.intent),
   )
   for (const rootId of questionRootIds) await closeTerminalChainQuestions(rootId, !!options.dryRun)
   return result
-}
-
-export async function completePreparedCursorWorktreeClear(
-  result: CloseOutAttemptResult,
-  options: Pick<CloseOutOptions, 'dryRun' | 'intent'>,
-  clearCursorWorktrees: ReturnType<typeof prepareCursorWorktreeClear>,
-): Promise<CloseOutResult> {
-  const shouldClear = Boolean(
-    !options.dryRun &&
-      result.worktree &&
-      pointerMustClear(result.outcome, result.worktree) &&
-      !result.resourceTeardownFailed,
-  )
-  const completed = finishCursorWorktreeClear(
-    result,
-    shouldClear ? await clearCursorWorktrees(result) : null,
-    shouldClear,
-  )
-  if (!options.dryRun) persistCloseOutDetail(completed, options.intent)
-  return completed
 }
 
 /** Closes with an open-cursor snapshot taken immediately before a caller's synchronous lock. */

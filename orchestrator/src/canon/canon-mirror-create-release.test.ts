@@ -1,6 +1,7 @@
 import { expect, test } from 'bun:test'
 import { existsSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
+import { PLATFORM_NAME } from '../../../shared/brand.ts'
 import { mirrorRepositoryCanon } from './canon-mirror.ts'
 import {
   mirrorFixturePort,
@@ -12,8 +13,7 @@ test('a createTree failure after recording the tree still releases it', async ()
   const root = mirrorRepository('cm-create-fail')
   let released = false
   let releasedBranchAt = ''
-  const clearedNotice =
-    'open workflow cursor 1207 (ship-task, bottega) worktree claim was cleared'
+  const clearedNotice = `open workflow cursor 1207 (ship-task, ${PLATFORM_NAME}) worktree claim was cleared`
   try {
     await registerManagedMirror(root, 'cm-create-fail')
     const base = mirrorFixturePort(root)

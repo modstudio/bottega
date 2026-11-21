@@ -13,8 +13,8 @@ import { keepTreeHold } from '../worktree/keep-tree-hold.ts'
 import { worktreeDirty } from '../worktree/worktree-attribution.ts'
 import type { ConversationKeepTreeHold } from './close-out-report.ts'
 import {
-  closeOutIntentAuthority,
   type CloseOutIntent,
+  closeOutIntentAuthority,
   decideTreeKeep,
   type TreeKeepDecision,
   type TreeNamer,
@@ -181,8 +181,7 @@ export function closeOutKeepTreeDecision(
       naming,
     }
   }
-  if (closeOutIntentAuthority(intent).namedTree !== 'hold')
-    return { hold: { held: false }, naming }
+  if (closeOutIntentAuthority(intent).namedTree !== 'hold') return { hold: { held: false }, naming }
   if (intent === 'sweep') {
     const landing = database
       .query(

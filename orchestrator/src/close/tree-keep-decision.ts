@@ -66,6 +66,23 @@ export function treeNamersText(namers: readonly TreeNamer[]): string {
 
 export type TreeNamingClearState = 'named' | 'cleared' | 'not-cleared' | 'dry-run'
 
+function cursorClaimText(
+  namer: Extract<TreeNamer, { kind: 'cursor' }>,
+  state: TreeNamingClearState,
+): string {
+  const cursor = `open workflow cursor ${namer.number} (${namer.workflow}, ${namer.project})`
+  switch (state) {
+    case 'named':
+      return `${cursor} names this tree`
+    case 'cleared':
+      return `${cursor} worktree claim was cleared`
+    case 'not-cleared':
+      return `${cursor} worktree claim could not be cleared`
+    case 'dry-run':
+      return `${cursor} worktree claim would be cleared`
+  }
+}
+
 export function treeNamingReleaseReport(
   decision: TreeKeepDecision,
   state: TreeNamingClearState,
@@ -73,19 +90,7 @@ export function treeNamingReleaseReport(
   if (decision.action !== 'proceed-named') return null
   const cursorClaims = decision.namers
     .filter((namer): namer is Extract<TreeNamer, { kind: 'cursor' }> => namer.kind === 'cursor')
-    .map((namer) => {
-      const cursor = `open workflow cursor ${namer.number} (${namer.workflow}, ${namer.project})`
-      switch (state) {
-        case 'named':
-          return `${cursor} names this tree`
-        case 'cleared':
-          return `${cursor} worktree claim was cleared`
-        case 'not-cleared':
-          return `${cursor} worktree claim could not be cleared`
-        case 'dry-run':
-          return `${cursor} worktree claim would be cleared`
-      }
-    })
+    .map((namer) => cursorClaimText(namer, state))
   const liveRuns = decision.namers
     .filter((namer) => namer.kind === 'live-run')
     .map((namer) => `live run ${namer.recordId} named this tree`)

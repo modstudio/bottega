@@ -15,7 +15,6 @@ import {
 } from '../workflow/workflow-cursor-worktrees.ts'
 import { pointerMustClear, type ResourceTeardownResult } from './absent-tree-close-out.ts'
 import type { CloseOutResult } from './close-out-report.ts'
-import { treeNamingReleaseReport, type TreeKeepDecision } from './tree-keep-decision.ts'
 
 export type CloseOutTaskFlowClient = RecordTaskFlowClient
 
@@ -29,30 +28,12 @@ export type CursorWorktreeCleanupFailure = {
   remedy: string
 }
 
-export type PreparedTreeNaming = { baseDetail: string; decision: TreeKeepDecision }
-
-export type PreparedCursorClearResult = CloseOutResult & {
-  preparedTreeNaming?: PreparedTreeNaming
-}
-
 export function finishCursorWorktreeClear(
-  result: PreparedCursorClearResult & ResourceTeardownResult,
+  result: CloseOutResult & ResourceTeardownResult,
   cleanup: CursorWorktreeCleanupFailure | null,
-  cleared: boolean,
 ): CloseOutResult {
   delete result.resourceTeardownCompleted
   delete result.resourceTeardownFailed
-  const naming = result.preparedTreeNaming
-  if (naming) {
-    if (cleanup || cleared) {
-      const report = treeNamingReleaseReport(naming.decision, cleanup ? 'not-cleared' : 'cleared')
-      result.detail = naming.baseDetail + (report?.detail ? `; ${report.detail}` : '')
-      if (report?.clearedCursorClaims.length)
-        result.clearedCursorClaims = report.clearedCursorClaims
-      else delete result.clearedCursorClaims
-    }
-    delete result.preparedTreeNaming
-  }
   return cleanup
     ? { ...result, cursorCleanupFailure: cleanup.failure, cursorCleanupRemedy: cleanup.remedy }
     : result

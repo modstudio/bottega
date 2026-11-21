@@ -15,9 +15,9 @@ import {
   assertBranchRefMayBeDeleted,
 } from '../branch/branch-ref-guard.ts'
 import {
-  closeOutRunPrepared,
-  completePreparedCursorWorktreeClear,
   type CloseOutResult,
+  closeOutRunPrepared,
+  persistCloseOutDetail,
 } from '../close/close-out.ts'
 import {
   type CloseOutPreparation,
@@ -25,6 +25,7 @@ import {
   prepareCursorWorktreeClear,
 } from '../close/close-out-preparation.ts'
 import { closeTerminalChainQuestions } from '../close/close-out-questions.ts'
+import { completePreparedTreeNaming } from '../close/close-out-tree-naming.ts'
 import { db, nowIso, sessionId, writableDb, writeTransaction } from '../database/db.ts'
 import { runWithGitFetchRetry } from '../git/fetch-retry.ts'
 import { targetGitEnvironment } from '../git/git-environment.ts'
@@ -284,10 +285,8 @@ export const systemCanonMirrorPort: CanonMirrorPort = {
     const result = closeOutRunPrepared(runId, { intent: 'landed' }, preparation)
     return {
       ...result,
-      cursorCleanup: completePreparedCursorWorktreeClear(
-        result,
-        { intent: 'landed' },
-        clearCursorWorktrees,
+      cursorCleanup: completePreparedTreeNaming(result, false, clearCursorWorktrees, (completed) =>
+        persistCloseOutDetail(completed, 'landed'),
       ),
     }
   },
@@ -780,12 +779,7 @@ function runMirrorLocked(input: {
       return outcome
     } finally {
       lease?.release()
-      const cleanupFailure = releaseLifecycle(
-        port,
-        runId,
-        releasePreparation,
-        execution,
-      )
+      const cleanupFailure = releaseLifecycle(port, runId, releasePreparation, execution)
       if (cleanupFailure) {
         setRunTerminal(runId, input.started, cleanupFailure)
         outcome.failed = true
