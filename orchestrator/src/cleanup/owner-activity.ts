@@ -20,6 +20,7 @@ export function gatherOwnerActivity(
     : null
   let runActivityAt = input.fallbackActivityAt
   let coordinatorRun = false
+  let localOwnerEvidence = seen !== null
   if (input.runRecordId) {
     const run = database
       .query(
@@ -37,6 +38,7 @@ export function gatherOwnerActivity(
       at: string | null
     } | null
     runActivityAt = run?.at ?? runActivityAt
+    localOwnerEvidence ||= run?.at !== null && run?.at !== undefined
     coordinatorRun = run
       ? filedIssueLoopRun({ id: run.record_id, job: run.job, label: run.label }) !== null
       : false
@@ -45,6 +47,7 @@ export function gatherOwnerActivity(
       .query('SELECT MAX(COALESCE(last_event_at,started_at)) AS at FROM run WHERE session_id=?')
       .get(input.ownerSessionId) as { at: string | null }
     runActivityAt = run.at ?? runActivityAt
+    localOwnerEvidence ||= run.at !== null
   }
   const runLastActivityAt = runActivityAt ? Date.parse(runActivityAt) : 0
   const holderActivityAt = input.holderActivityAt ? Date.parse(input.holderActivityAt) : 0
@@ -53,5 +56,6 @@ export function gatherOwnerActivity(
     ownerLastSeenAt: seen ? Date.parse(seen.last_seen) : null,
     runLastActivityAt: Math.max(runLastActivityAt, holderActivityAt),
     coordinatorRun,
+    localOwnerEvidence,
   }
 }

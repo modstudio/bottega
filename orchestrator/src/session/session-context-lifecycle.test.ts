@@ -58,7 +58,7 @@ test('ordinary close-out empties the session holder', async () => {
   })
 
   expect(report.process).toEqual([])
-  expect(sessionContextItems(session, db())).toEqual([])
+  expect(await sessionContextItems(session, db())).toEqual([])
 })
 
 test('resume keeps the session holder', async () => {
@@ -73,7 +73,7 @@ test('resume keeps the session holder', async () => {
   })
 
   expect(report.kept).toEqual([`context session:${session}/fact (fact)`])
-  expect(sessionContextItems(session, db())).toHaveLength(1)
+  expect(await sessionContextItems(session, db())).toHaveLength(1)
 })
 
 test('a ruling item produces only its exact refusal process line', async () => {

@@ -67,7 +67,9 @@ function presence(
 }
 
 test('hosted row release table set matches the guarded hosted table set', () => {
-  expect(new Set(HOSTED_ROW_TABLES)).toEqual(new Set(HOSTED_TABLES_WITHOUT_LOCAL_ACCESS))
+  expect(new Set(HOSTED_TABLES_WITHOUT_LOCAL_ACCESS)).toEqual(
+    new Set([...HOSTED_ROW_TABLES, 'context_item']),
+  )
 })
 
 test('hosted row release returns every local id when all are present', () => {

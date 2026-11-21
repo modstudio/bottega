@@ -1,6 +1,7 @@
 // concern: session-losses-adapter
 /** Gathers loss facts, persists blind candidate files, and dispatches judges. */
 
+import type { Database } from 'bun:sqlite'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { basename, join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
@@ -9,6 +10,7 @@ import { resolveStatePaths } from '../../../shared/state-directory.ts'
 import { UNJUDGED_OWNER_WINDOW_MS } from '../cleanup/cleanup-sweep-decisions.ts'
 import { REPLY_FILE_NAME } from '../contract/contract.ts'
 import { db } from '../database/db.ts'
+import { listContextItems } from '../doc/context-item-store.ts'
 import { getDoc } from '../doc/docs.ts'
 import {
   readTranscriptRows,
@@ -19,7 +21,8 @@ import { isClosedStageState } from '../record/record-task-flow-contract.ts'
 import { runArtifactsDir, runScratchDir } from '../run/run-artifacts.ts'
 import { detach } from '../run/run-dispatch.ts'
 import { TERMINAL_RUN_STATUS_SET } from '../run/run-status.ts'
-import { taskFlowReadStore } from '../workflow/task-flow-store.ts'
+import { decodeReviewItemRefs } from '../session/context-review-store.ts'
+import { localTaskReferencesForSession, taskFlowReadStore } from '../workflow/task-flow-store.ts'
 import {
   type ClaimLifecycle,
   type ContextReviewLoss,
@@ -61,32 +64,73 @@ type SessionLossOutput = Omit<SessionLossReport, 'boundaries'> & {
   >
 }
 
-function contextReviewMeasurements(sessionId: string, boundaries: SessionLossReport['boundaries']) {
-  const reviews = db()
+export async function contextReviewMeasurements(
+  sessionId: string,
+  boundaries: SessionLossReport['boundaries'],
+  dependencies: {
+    database?: Database
+    readItems?: typeof listContextItems
+  } = {},
+) {
+  const database = dependencies.database ?? db()
+  const rows = database
     .query<{ at: string; items: number; flagged: number; item_ids: string }, [string]>(
       `SELECT at,items,flagged,item_ids FROM context_review
        WHERE session_id=? ORDER BY at,record_id`,
     )
     .all(sessionId)
-    .map(
-      (row): ContextReviewLossRow => ({
-        at: row.at,
-        items: row.items,
-        flagged: row.flagged,
-        itemIds: JSON.parse(row.item_ids) as string[],
-      }),
-    )
+  const storedItems = rows.map((row) => decodeReviewItemRefs(row.item_ids))
+  const reviews = rows.map(
+    (row, index): ContextReviewLossRow => ({
+      at: row.at,
+      items: row.items,
+      flagged: row.flagged,
+      itemIds: storedItems[index]!.map((item) => (typeof item === 'string' ? item : item.id)),
+    }),
+  )
   const reviewedIds = new Set(reviews.flatMap((review) => review.itemIds))
   const captureSource = compactionCaptureSource(sessionId)
-  const items = db()
-    .query<{ record_id: string; created_at: string; updated_at: string; source: string }, []>(
-      'SELECT record_id,created_at,updated_at,source FROM context_item',
-    )
-    .all()
+  const taskFacts = [
+    ...database
+      .query<{ task_record_id: string; project: string }, [string]>(
+        `SELECT DISTINCT run.task_record_id,project.name project FROM run
+         JOIN project ON project.record_id=run.project_record_id
+         WHERE run.session_id=? AND run.task_record_id IS NOT NULL`,
+      )
+      .all(sessionId),
+    ...(await localTaskReferencesForSession(database, sessionId)).map((row) => ({
+      task_record_id: row.recordId,
+      project: row.project,
+    })),
+  ]
+  const ownerByHolder = new Map(
+    taskFacts.map((fact) => [
+      `task:${fact.task_record_id}`,
+      { kind: 'task' as const, projectName: fact.project },
+    ]),
+  )
+  const taskHolders = [...ownerByHolder].map(([holder, owner]) => ({ holder, owner }))
+  const holders = [
+    `session:${sessionId}`,
+    ...taskHolders,
+    ...storedItems.flatMap((items) =>
+      items.flatMap((item) => {
+        if (typeof item === 'string') return []
+        const owner = ownerByHolder.get(item.holder)
+        return [owner ? { holder: item.holder, owner } : item.holder]
+      }),
+    ),
+  ]
+  const uniqueHolders = [
+    ...new Map(
+      holders.map((entry) => [typeof entry === 'string' ? entry : entry.holder, entry]),
+    ).values(),
+  ]
+  const items = (await (dependencies.readItems ?? listContextItems)(uniqueHolders))
     .map((item) => ({
-      id: item.record_id,
-      createdAt: item.created_at,
-      updatedAt: item.updated_at,
+      id: item.recordId,
+      createdAt: item.createdAt,
+      updatedAt: item.updatedAt,
       source: item.source,
     }))
     .filter((item) => reviewedIds.has(item.id) || item.source === captureSource)
@@ -461,7 +505,7 @@ async function outputSession(
   )
   if (!report) return { sessionId, error: 'no timestamped rows' }
   const briefs = briefsForBoundaries(sessionId, report.boundaries)
-  const reviewMeasurements = contextReviewMeasurements(sessionId, report.boundaries)
+  const reviewMeasurements = await contextReviewMeasurements(sessionId, report.boundaries)
   const boundaries: SessionLossOutput['boundaries'] = []
   for (const [index, boundary] of report.boundaries.entries())
     boundaries.push({

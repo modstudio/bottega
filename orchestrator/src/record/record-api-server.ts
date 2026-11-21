@@ -75,7 +75,12 @@ import {
   revokeMachineKey,
   withdrawSpaceConfigAccess,
 } from './record-config.ts'
-import { deleteRecordContextItem, upsertRecordContextItem } from './record-context-items.ts'
+import {
+  deleteRecordContextItem,
+  readRecordContextHolders,
+  readRecordContextItems,
+  upsertRecordContextItem,
+} from './record-context-items.ts'
 import {
   deleteCredentialPreference,
   listCredentialPreferences,
@@ -517,6 +522,8 @@ async function serveRecordApiWithAuth(
     defineSubject: defineRecordSubject,
     reorderSubjects: reorderRecordSubjects,
     retireSubject: retireRecordSubject,
+    readContextItems: readRecordContextItems,
+    readContextHolders: readRecordContextHolders,
     upsertContextItem: upsertRecordContextItem,
     deleteContextItem: deleteRecordContextItem,
     ...recordDocDependencies(),

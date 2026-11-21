@@ -2,7 +2,10 @@
 /** Gathers store, task, claim, and pointer facts for the pure context write policy. */
 import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { splitContextHolder } from '../../../shared/context-item-vocabulary.ts'
+import {
+  type StoredContextItem,
+  splitContextHolder,
+} from '../../../shared/context-item-vocabulary.ts'
 import { parsePointerReference } from '../../../shared/reference.ts'
 import {
   referenceNotVisibleRefusal,
@@ -29,7 +32,6 @@ import {
   taskRecordFailureNamesMissingTask,
 } from '../workflow/workflow-task-reference.ts'
 import { productionWorkflowTextDocumentPorts } from '../workflow/workflow-text-copy.ts'
-import { listContextItems } from './context-item-store.ts'
 import {
   type ContextItem,
   type ContextProfile,
@@ -37,9 +39,16 @@ import {
   contextWriteRefusal,
   holderOwnershipRefusal,
 } from './doc-context-write.ts'
-import { readHostedDocReference } from './doc-hosted-client.ts'
+import { type contextTaskOwner, readHostedDocReference } from './doc-hosted-client.ts'
 import { isScratchLocation } from './doc-resume-write.ts'
 import { taskContextHolder } from './doc-subjects.ts'
+
+type ContextReadHolder =
+  | string
+  | {
+      holder: string
+      owner: NonNullable<ReturnType<typeof contextTaskOwner>>
+    }
 
 export type ContextTask = HubTaskReference
 class ContextTaskPrefixError extends Error {
@@ -262,10 +271,6 @@ const productionContextFactsPorts: ContextFactsPorts = {
 const defaultContextFactsPorts = () =>
   portsHolder[CONTEXT_FACTS_PORTS_KEY] ?? productionContextFactsPorts
 
-export function storedItems(holder: string, database: Database): ContextItem[] {
-  return listContextItems(holder, database)
-}
-
 export async function contextCursorOwner(holder: string, database: Database = db()) {
   const address = splitContextHolder(holder)
   if (address.holderKind !== 'cursor') return null
@@ -367,6 +372,12 @@ async function contextSetRefusal(
   input: ContextSetInput,
   database: Database = db(),
   ports: ContextFactsPorts = defaultContextFactsPorts(),
+  readItems: (
+    holder: ContextReadHolder | readonly ContextReadHolder[],
+    database: Database,
+  ) => Promise<StoredContextItem[]> = () => {
+    throw new Error('context item reader is required')
+  },
 ): Promise<string | null> {
   const item = input.item
   const owner = input.holder.startsWith('session:') ? input.holder.slice(8) : null
@@ -397,21 +408,43 @@ async function contextSetRefusal(
     task,
     ports,
   })
-  const relatedHolders = [
-    ...new Set(relatedTasks.map((related) => taskContextHolder(related.record_id))),
-  ]
+  const relatedHolders = relatedTasks.map((related) => ({
+    holder: taskContextHolder(related.record_id),
+    owner: { kind: 'task' as const, projectName: related.project },
+  }))
+  const [siblings, related] = await Promise.all([
+    readItems(
+      task
+        ? {
+            holder: input.holder,
+            owner: { kind: 'task', projectName: task.project },
+          }
+        : input.holder,
+      database,
+    ),
+    readItems(
+      [...new Map(relatedHolders.map((entry) => [entry.holder, entry])).values()],
+      database,
+    ),
+  ])
   const refusal = contextWriteRefusal(item, {
     profile,
-    siblings: storedItems(input.holder, database),
-    related: [...new Set(relatedHolders)].flatMap((holder) => storedItems(holder, database)),
+    siblings,
+    related,
     pointerRefusal: item.kind === 'pointer' ? await ports.pointer(item.body, database) : null,
     claimedTask: claims[0]?.key ?? null,
   })
   return refusal
 }
 
-export async function assertContextSetAllowed(input: ContextSetInput): Promise<void> {
-  const refusal = await contextSetRefusal(input)
+export async function assertContextSetAllowed(
+  input: ContextSetInput,
+  readItems: (
+    holder: ContextReadHolder | readonly ContextReadHolder[],
+    database: Database,
+  ) => Promise<StoredContextItem[]>,
+): Promise<void> {
+  const refusal = await contextSetRefusal(input, db(), defaultContextFactsPorts(), readItems)
   if (refusal) throw new ContextWriteRefusalError(refusal)
 }
 

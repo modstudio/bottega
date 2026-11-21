@@ -55,7 +55,7 @@ export async function sweepHubTasks(
     return true
   }
   const decision = decideTaskContextReap(
-    listContextHolders('task').map((holder) => ({
+    (await listContextHolders('task')).map((holder) => ({
       holderId: holder.holderId,
       itemCount: holder.items.length,
     })),

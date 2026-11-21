@@ -2,7 +2,10 @@
 /** The task-flow persistence port and its resolver. */
 
 import type { Database } from 'bun:sqlite'
-import type { TaskFlowStageState } from '../record/record-task-flow-contract.ts'
+import {
+  TASK_FLOW_STAGE_STATES,
+  type TaskFlowStageState,
+} from '../record/record-task-flow-contract.ts'
 import type {
   TaskFlowIntentResult,
   TaskFlowLiveIntent,
@@ -58,6 +61,21 @@ export type {
   TaskFlowWaitingQuestionRow,
 } from './task-flow-store-types.ts'
 export { isKeylessExplore } from './task-flow-store-types.ts'
+
+/** Reads machine-local cursor/task links with their already-known project owners. */
+export async function localTaskReferencesForSession(
+  database: Database,
+  sessionId: string,
+): Promise<Array<{ recordId: string; project: string }>> {
+  return (
+    await sqliteTaskFlowReadStore(database).listStages({
+      sessionId,
+      states: TASK_FLOW_STAGE_STATES,
+    })
+  ).flatMap((row) =>
+    row.task_record_id ? [{ recordId: row.task_record_id, project: row.project }] : [],
+  )
+}
 
 /**
  * Names the task-flow questions and write intents used by the workflow engine.

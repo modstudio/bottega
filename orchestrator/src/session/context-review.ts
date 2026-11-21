@@ -198,6 +198,7 @@ export async function reviewContext(
       items: decision.items.length,
       flagged,
       itemIds: decision.items.map((item) => item.recordId),
+      itemHolders: decision.items.map((item) => item.holder),
     },
     { database },
   )

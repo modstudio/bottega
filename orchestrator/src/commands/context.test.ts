@@ -36,7 +36,7 @@ test('agent context set refuses matching record shapes without writing', async (
         ]),
       ).toBe(1)
       expect(errors.at(-1)).toContain(refusal)
-      expect(getContextItem(`session:${session}`, 'shape')).toBeNull()
+      expect(await getContextItem(`session:${session}`, 'shape')).toBeNull()
     }
   } finally {
     if (previous === undefined) delete process.env.CLAUDE_CODE_SESSION_ID
@@ -80,9 +80,9 @@ test('agent context set and drop expose cursor holders', async () => {
         'cursor fact',
       ]),
     ).toBe(0)
-    expect(getContextItem(`cursor:${cursor}`, 'cursor-item')?.body).toBe('cursor fact')
+    expect((await getContextItem(`cursor:${cursor}`, 'cursor-item'))?.body).toBe('cursor fact')
     expect(await run(['context', 'drop', '--cursor', cursor, '--id', 'cursor-item'])).toBe(0)
-    expect(getContextItem(`cursor:${cursor}`, 'cursor-item')).toBeNull()
+    expect(await getContextItem(`cursor:${cursor}`, 'cursor-item')).toBeNull()
   } finally {
     db().exec('PRAGMA foreign_keys=ON')
     if (previous === undefined) delete process.env.CLAUDE_CODE_SESSION_ID

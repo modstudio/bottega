@@ -46,7 +46,8 @@ import {
   formatContextBriefCursorLine,
   formatContextBriefRunLine,
 } from './context-brief-format.ts'
-import { storedItems, taskProfile } from './context-write-adapter.ts'
+import { listContextItems } from './context-item-store.ts'
+import { taskProfile } from './context-write-adapter.ts'
 import type { ContextItem } from './doc-context-write.ts'
 import { cursorContextHolder, taskContextHolder } from './doc-subjects.ts'
 import { listOpenResumes } from './docs.ts'
@@ -254,24 +255,38 @@ export async function storedBriefHolders(
       openByTask.set(taskId, questions)
     }
   }
+  const holderAddresses = references.map((reference) =>
+    reference.kind === 'session'
+      ? `session:${reference.key}`
+      : reference.kind === 'cursor'
+        ? cursorContextHolder(reference.recordId)
+        : {
+            holder: taskContextHolder(reference.recordId),
+            owner: { kind: 'task' as const, projectName: reference.project },
+          },
+  )
+  const itemsByHolder = Map.groupBy(
+    await listContextItems(holderAddresses, database),
+    (item) => item.holder,
+  )
   return (
     await Promise.all(
       references.map(async (reference) => {
         if (reference.kind === 'session') {
           return {
             ...reference,
-            items: storedItems(`session:${reference.key}`, database),
+            items: itemsByHolder.get(`session:${reference.key}`) ?? [],
           }
         }
         if (reference.kind === 'cursor') {
           const { recordId, ...holder } = reference
-          return { ...holder, items: storedItems(cursorContextHolder(recordId), database) }
+          return { ...holder, items: itemsByHolder.get(cursorContextHolder(recordId)) ?? [] }
         }
         const { recordId, project: projectName, ...holder } = reference
         const openQuestions = openByTask.get(recordId) ?? []
         return {
           ...holder,
-          items: storedItems(taskContextHolder(recordId), database),
+          items: itemsByHolder.get(taskContextHolder(recordId)) ?? [],
           ...(unresolvedProjects.has(projectName)
             ? {
                 openQuestionsUnavailable: `questions unread for unresolved project ${projectName}; register or refresh the project, then retry`,

@@ -7,6 +7,7 @@ import type { Database } from 'bun:sqlite'
  * no longer reads or writes its local copy.
  */
 export const HOSTED_TABLES_WITHOUT_LOCAL_ACCESS = [
+  'context_item',
   'question',
   'question_mutation_audit',
   'task_flow',
@@ -18,7 +19,7 @@ export const HOSTED_TABLES_WITHOUT_LOCAL_ACCESS = [
 
 /** Production SQLite adapter modules whose handles are selected away on hosted installs. */
 export const LOCAL_SQLITE_ADAPTER_PATH =
-  '^orchestrator/src/(?:question-store/question-store-sqlite|workflow/task-flow-store-sqlite)[^/]*\\.ts$'
+  '^orchestrator/src/(?:doc/context-item-store-sqlite|question-store/question-store-sqlite|workflow/task-flow-store-sqlite)[^/]*\\.ts$'
 
 // Exact-path exemptions pin the number of hosted-table and unresolved sites they allow. Adapter
 // families and directory prefixes are intentionally uncounted because local SQL is their purpose.
@@ -35,7 +36,7 @@ export const HOSTED_LOCAL_SQL_ALLOWED_FILES = [
   },
   {
     pattern:
-      /^orchestrator\/src\/record\/(?:record-question-(?:number|read|write)|record-task-flow(?:-write)?)\.ts$/,
+      /^orchestrator\/src\/record\/(?:record-context-items|record-question-(?:number|read|write)|record-task-flow(?:-write)?)\.ts$/,
     reason:
       'Postgres record modules operate on the hosted record rather than a guarded SQLite handle',
   },

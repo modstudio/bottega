@@ -5,20 +5,124 @@ import { join } from 'node:path'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { encodeContextItem } from '../../test/fixtures/context-item.ts'
 import { setDoc } from '../../test/fixtures/docs.ts'
+import {
+  createMemoryRecordApiClient,
+  installRecordApiClient,
+} from '../../test/fixtures/record-api.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
 import { getContextItem } from '../doc/context-item-store.ts'
+import { sessionResumeBriefState } from '../doc/context-service.ts'
 import { CONTEXT_FACTS_PORTS_KEY, type ContextFactsPorts } from '../doc/context-write-adapter.ts'
 import { upsertProject } from '../project/projects.ts'
 import type { SessionCloseOutReport } from '../session/session-close-out.ts'
 import { markSessionCloseOutSwept } from '../session/session-close-out-store.ts'
 import type { CleanupPresentation } from './cleanup.ts'
 import { sweepRuns } from './cleanup-sweep.ts'
-import { sweepSessionContext } from './cleanup-sweep-context.ts'
+import {
+  decideSessionContextSweep,
+  sessionContextOwnershipLine,
+  sweepSessionContext,
+} from './cleanup-sweep-context.ts'
 import { sweepSessionCloseOutRecords } from './cleanup-sweep-session-close-out.ts'
 
 afterEach(() => {
   mock.restore()
+  installRecordApiClient(null)
+})
+
+test('hosted session context sweep keeps foreign holders and drops owned expired holders', () => {
+  expect(
+    decideSessionContextSweep({
+      readSource: 'hosted',
+      localOwnerEvidence: false,
+      ownerGone: true,
+      hasUnconsumedResumeBrief: false,
+    }),
+  ).toBe('not-owned-by-this-install')
+  expect(
+    decideSessionContextSweep({
+      readSource: 'hosted',
+      localOwnerEvidence: true,
+      ownerGone: true,
+      hasUnconsumedResumeBrief: false,
+    }),
+  ).toBe('drop')
+  expect(sessionContextOwnershipLine(1)).toBe(
+    'session context: kept 1 holder not owned by this install',
+  )
+})
+
+test('hosted session context sweep keeps owned holders for open or unreadable resume briefs', async () => {
+  const session = newRecordId()
+  const project = `hosted-resume-${newRecordId()}`
+  const projectRecordId = newRecordId()
+  upsertProject({
+    recordId: projectRecordId,
+    name: project,
+    path: `/w/${project}`,
+    settings: { space: 'project-space' },
+  })
+  addRun({ agent: 'codex', job: 'implement', session, projectRecordId })
+  const memory = createMemoryRecordApiClient()
+  installRecordApiClient({
+    ...memory,
+    whoami: async () => ({
+      user: { id: 'user-a' },
+      activeSpaceId: 'other-space',
+      personalSpaceId: 'personal-space',
+      memberships: [
+        { space_id: 'other-space', slug: 'other', permission: 'write' },
+        { space_id: 'project-space', slug: 'project-space', permission: 'write' },
+      ],
+    }),
+    listDocs: async () => ({
+      items: [
+        {
+          id: newRecordId(),
+          body: `---\nstatus: open\nproject: ${project}\n---\n\nNEXT ACTION: continue`,
+        },
+      ],
+      nextCursor: null,
+    }),
+    listRevisions: async () => [
+      { op: 'upsert', sessionId: session, at: '2026-11-20T00:00:00.000Z' },
+    ],
+  })
+
+  const open = await sessionResumeBriefState('hosted', db(), session)
+  expect(open).toBe('open')
+  expect(
+    decideSessionContextSweep({
+      readSource: 'hosted',
+      localOwnerEvidence: true,
+      ownerGone: true,
+      hasUnconsumedResumeBrief: open !== 'absent',
+    }),
+  ).toBe('keep')
+
+  installRecordApiClient({
+    ...memory,
+    whoami: async () => ({
+      user: { id: 'user-a' },
+      activeSpaceId: 'other-space',
+      personalSpaceId: 'personal-space',
+      memberships: [{ space_id: 'project-space', slug: 'project-space', permission: 'write' }],
+    }),
+    listDocs: async () => {
+      throw new Error('record unavailable')
+    },
+  })
+  const unreadable = await sessionResumeBriefState('hosted', db(), session)
+  expect(unreadable).toBe('unreadable')
+  expect(
+    decideSessionContextSweep({
+      readSource: 'hosted',
+      localOwnerEvidence: true,
+      ownerGone: true,
+      hasUnconsumedResumeBrief: unreadable !== 'absent',
+    }),
+  ).toBe('keep')
 })
 
 function closeOutReport(session: string, clean = true): SessionCloseOutReport {
@@ -189,8 +293,8 @@ test('session context sweep logs and drops each item for a gone owner', async ()
     `dropped context session:${session}/one (fact)`,
     `dropped context session:${session}/two (fact)`,
   ])
-  expect(getContextItem(`session:${session}`, 'one')).toBeNull()
-  expect(getContextItem(`session:${session}`, 'two')).toBeNull()
+  expect(await getContextItem(`session:${session}`, 'one')).toBeNull()
+  expect(await getContextItem(`session:${session}`, 'two')).toBeNull()
 })
 
 test.each(['session_seen', 'holder write'])(
@@ -224,7 +328,7 @@ test.each(['session_seen', 'holder write'])(
       presentation: presentation([], () => {}),
     })
 
-    expect(getContextItem(`session:${session}`, 'live')).not.toBeNull()
+    expect(await getContextItem(`session:${session}`, 'live')).not.toBeNull()
   },
 )
 
@@ -261,7 +365,7 @@ test('session context sweep keeps items while the author has an unconsumed resum
     presentation: presentation([], () => {}),
   })
 
-  expect(getContextItem(`session:${session}`, 'kept-for-resume')).not.toBeNull()
+  expect(await getContextItem(`session:${session}`, 'kept-for-resume')).not.toBeNull()
 })
 
 test('session context sweep resolves an open brief author past a later consume revision', async () => {
@@ -313,7 +417,7 @@ test('session context sweep resolves an open brief author past a later consume r
     presentation: presentation([], () => {}),
   })
 
-  expect(getContextItem(`session:${author}`, 'kept-for-revised-resume')).not.toBeNull()
+  expect(await getContextItem(`session:${author}`, 'kept-for-revised-resume')).not.toBeNull()
 })
 
 test('an owned terminal sweep candidate reaches close-out by UUID', async () => {

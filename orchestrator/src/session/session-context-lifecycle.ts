@@ -8,7 +8,7 @@ import { classifySessionContextItem } from './session-close-out-decision.ts'
 import type { SessionErrorLine, SessionProcessLine } from './session-close-out-report.ts'
 
 export type SessionContextLifecycleReport = {
-  items: ReturnType<typeof sessionContextItems>
+  items: Awaited<ReturnType<typeof sessionContextItems>>
   mechanical: string[]
   kept: string[]
   process: SessionProcessLine[]
@@ -17,7 +17,7 @@ export type SessionContextLifecycleReport = {
 
 function refusedContextProcess(
   session: string,
-  item: ReturnType<typeof sessionContextItems>[number],
+  item: Awaited<ReturnType<typeof sessionContextItems>>[number],
   dryRun: boolean,
 ): SessionContextLifecycleReport['process'][number] {
   return {
@@ -30,7 +30,7 @@ function refusedContextProcess(
 
 function remainingContextProcess(
   session: string,
-  items: ReturnType<typeof sessionContextItems>,
+  items: Awaited<ReturnType<typeof sessionContextItems>>,
 ): SessionProcessLine | null {
   const remaining = items.filter(
     (item) => classifySessionContextItem(item.kind, false) !== 'refuse',
@@ -61,7 +61,7 @@ export async function closeOutSessionContext(input: {
   database: Database
 }): Promise<SessionContextLifecycleReport> {
   const report: SessionContextLifecycleReport = {
-    items: sessionContextItems(input.session, input.database),
+    items: await sessionContextItems(input.session, input.database),
     mechanical: [],
     kept: [],
     process: [],
@@ -96,7 +96,7 @@ export async function closeOutSessionContext(input: {
   if (!input.dryRun && !input.resume) {
     const process = remainingContextProcess(
       input.session,
-      sessionContextItems(input.session, input.database),
+      await sessionContextItems(input.session, input.database),
     )
     if (process) report.process.push(process)
   }
@@ -109,7 +109,7 @@ export async function consumeSessionContext(input: {
   database: Database
 }): Promise<{ lines: string[] }> {
   const lines: string[] = []
-  const items = sessionContextItems(input.session, input.database)
+  const items = await sessionContextItems(input.session, input.database)
   for (const item of items) {
     lines.push(`context ${item.holder}/${item.id} ${item.kind} (${item.source}): ${item.body}`)
   }
@@ -130,13 +130,13 @@ export async function consumeSessionContext(input: {
   return { lines }
 }
 
-export function keptSessionContext(input: {
+export async function keptSessionContext(input: {
   session: string
   remedy: string
   database: Database
-}): { lines: string[] } {
+}): Promise<{ lines: string[] }> {
   return {
-    lines: sessionContextItems(input.session, input.database).map(
+    lines: (await sessionContextItems(input.session, input.database)).map(
       (item) =>
         `kept context ${item.holder}/${item.id} (${item.kind}): run ${input.remedy} to finish the handoff`,
     ),

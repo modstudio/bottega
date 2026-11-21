@@ -254,7 +254,8 @@ export const cleanupBoundarySpecs = [
       'bun:sqlite',
       '../branch/branch-landing-records.ts',
       '../branch/task-status-observation.ts',
-      '../doc/context-service.ts',
+      '../doc/context-item-store.ts',
+      '../doc/doc-subjects.ts',
       '../evidence/evidence-query.ts',
       '../project/projects.ts',
       '../workflow/project-task-list.ts',
@@ -663,6 +664,7 @@ export const cleanupBoundarySpecs = [
     allowed: [
       'bun:sqlite',
       '../database/db.ts',
+      '../doc/context-item-store.ts',
       '../doc/context-service.ts',
       '../doc/doc-read-store.ts',
       '../doc/doc-revision-store.ts',

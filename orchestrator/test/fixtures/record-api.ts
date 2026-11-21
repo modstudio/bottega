@@ -20,7 +20,10 @@ import {
 } from '../../src/record/record-board-contract.ts'
 import { BOARD_PRESENCE_WRITE_INTERVAL_MS } from '../../src/record/record-board-presence.ts'
 import { createBoardStreamRegistry } from '../../src/record/record-board-stream.ts'
+import type { RecordContextItem } from '../../src/record/record-context-items.ts'
 import { assertRevisionWrite } from '../../src/record/record-doc-errors.ts'
+import { memoryContextItemClient } from './record-api-context-items.ts'
+import { idleCredentialDeps, idlePortDeps } from './record-api-idle-catalogues.ts'
 import { memoryQuestionClient } from './record-api-question.ts'
 import { type MemoryTaskFlowInput, memoryTaskFlowClient } from './record-api-task-flow.ts'
 
@@ -79,24 +82,6 @@ function idleWorkflowDeps() {
     retireWorkflow: unused,
   }
 }
-function idlePortDeps() {
-  const unused = async () => {
-    throw new Error('hosted port catalogue is unused in this fixture')
-  }
-  return { listPortCatalogue: async () => [], writePort: unused }
-}
-
-function idleCredentialDeps() {
-  const unused = async () => {
-    throw new Error('hosted credential preferences are unused in this fixture')
-  }
-  return {
-    listCredentialPreferences: async () => [],
-    putCredentialPreference: unused,
-    deleteCredentialPreference: async () => undefined,
-  }
-}
-
 function idleBoardDeps(): RecordBoardDeps {
   const unused = async () => {
     throw new RecordBoardError('hosted board is not configured', 400)
@@ -130,6 +115,8 @@ export function idleRecordApiDeps() {
   const unusedContext = async (): Promise<never> =>
     Promise.reject(new Error('hosted context items are unused in this fixture'))
   return {
+    readContextItems: unusedContext,
+    readContextHolders: unusedContext,
     upsertContextItem: unusedContext,
     deleteContextItem: unusedContext,
     readChanges: async () => ({
@@ -381,11 +368,13 @@ export function createMemoryRecordApiClient(
     boardChanges?: HostedBoardChange[]
     boardProjectIds?: Record<string, string>
     questions?: Record<string, unknown>[]
+    contextItems?: RecordContextItem[]
   } = {},
 ): RecordApiClient {
   const hostsTaskFlow = Boolean(input.taskFlowStages)
   const docs = new Map<string, StoredDoc>()
   const revisions = new Map<string, StoredRevision[]>()
+  const contextItems = [...(input.contextItems ?? [])]
   const boardChanges = input.boardChanges ?? []
   const boardPresence = new Map<string, HostedBoardPresenceInput>()
   const boardReceipts = new Map<string, HostedBoardReceipt>()
@@ -413,6 +402,7 @@ export function createMemoryRecordApiClient(
     ...unusedIdentityAndSpaceClientMethods(),
     ...unusedBoardClientMethods(),
     ...unusedContextItemClientMethods(),
+    ...memoryContextItemClient(contextItems),
     ...memoryTaskFlowClient(input),
     ...memoryQuestionClient(input),
     cacheCounts: unusedIdentityAndSpace,

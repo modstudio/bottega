@@ -103,7 +103,7 @@ test("consuming a resume brief prints and drops the author's session context", a
   expect(handoff.lines[0]).toBe(
     `context session:${author}/handoff-fact fact (test): successor needs this`,
   )
-  expect(getContextItem(`session:${author}`, 'handoff-fact')).toBeNull()
+  expect(await getContextItem(`session:${author}`, 'handoff-fact')).toBeNull()
 })
 
 test('a resume handoff moves only owed roots while explicit adoption still moves all', async () => {
@@ -262,7 +262,7 @@ test('failed adoption preserves the author session context', async () => {
   expect(db().query('SELECT session_id FROM run WHERE record_id=?').get(root)).toEqual({
     session_id: author,
   })
-  expect(getContextItem(`session:${author}`, 'survives-failed-adoption')).not.toBeNull()
+  expect(await getContextItem(`session:${author}`, 'survives-failed-adoption')).not.toBeNull()
 })
 
 test('partial adoption keeps the author session context until the remaining run moves', async () => {
@@ -310,7 +310,7 @@ test('partial adoption keeps the author session context until the remaining run 
   expect(handoff.lines.join('\n')).toContain(
     `kept context session:${author}/survives-partial-adoption (fact): run ${PLATFORM_SLUG} session adopt ${author} --reason`,
   )
-  expect(getContextItem(`session:${author}`, 'survives-partial-adoption')).not.toBeNull()
+  expect(await getContextItem(`session:${author}`, 'survives-partial-adoption')).not.toBeNull()
 })
 
 test('hosted author preparation resolves the latest non-consume revision author', async () => {

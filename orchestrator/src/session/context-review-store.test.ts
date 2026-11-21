@@ -5,7 +5,14 @@ import { contextReviewWindow, recordContextReview } from './context-review-store
 test('recording a context review writes its row and outbox mutation atomically', () => {
   const database = migratedTestDatabase()
   recordContextReview(
-    { sessionId: 'session-a', intervalMs: 1_000, items: 2, flagged: 1, itemIds: ['a', 'b'] },
+    {
+      sessionId: 'session-a',
+      intervalMs: 1_000,
+      items: 2,
+      flagged: 1,
+      itemIds: ['a', 'b'],
+      itemHolders: ['session:session-a', 'task:task-a'],
+    },
     {
       database,
       now: () => '2026-11-16T12:00:00.000Z',
@@ -21,13 +28,16 @@ test('recording a context review writes its row and outbox mutation atomically',
     interval_ms: 1_000,
     items: 2,
     flagged: 1,
-    item_ids: '["a","b"]',
+    item_ids: '[{"id":"a","holder":"session:session-a"},{"id":"b","holder":"task:task-a"}]',
   })
   const outbox = database
     .query<{ kind: string; payload: string }, []>('SELECT kind,payload FROM outbox')
     .get()!
   expect(outbox.kind).toBe('context_review')
-  expect(JSON.parse(outbox.payload)).toMatchObject({ intervalMs: 1_000, itemIds: '["a","b"]' })
+  expect(JSON.parse(outbox.payload)).toMatchObject({
+    intervalMs: 1_000,
+    itemIds: '[{"id":"a","holder":"session:session-a"},{"id":"b","holder":"task:task-a"}]',
+  })
   expect(contextReviewWindow('2026-11-16T00:00:00.000Z', database)).toEqual([
     {
       sessionId: 'session-a',
