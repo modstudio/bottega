@@ -40,13 +40,7 @@ import {
 import { namesSeenAt, probeMcpServer, storedMcpProbe } from '../mcp/mcp-probe.ts'
 import type { OutcomeStatus } from '../outcome.ts'
 import type { RunResourceObserver } from '../process-resource-sampler.ts'
-import {
-  projectAt,
-  projectByName,
-  projectByRecordId,
-  projectsIncludingRetired,
-  stackAt,
-} from '../project/projects.ts'
+import { projectAt, projectByName, projectsIncludingRetired, stackAt } from '../project/projects.ts'
 import { machineId } from '../record/machine-identity.ts'
 import { startedByUserIdForRun } from '../record/record-attribution.ts'
 import { teardownTerminalRunResources } from '../resources/resource-ownership.ts'
@@ -121,6 +115,7 @@ import {
   reportProbeOverrides,
 } from './run-probe-launch.ts'
 import { completeRunStartup } from './run-process.ts'
+import { runProjectAttribution } from './run-project-attribution.ts'
 import { readOnlyBaseProjectPath, repoOf } from './run-project-context.ts'
 import { runInfrastructurePrompt } from './run-readonly-infrastructure.ts'
 import {
@@ -168,9 +163,6 @@ export async function run(
   const { resume, declaredDeliverables, timeoutMinutes } = inheritedRunDispatch(opts)
   const [writesJob, repoJob] = [!!requestedJob.needs.writesRepo, !!requestedJob.needs.readsRepo]
   const requestedTransport = resolveRunTransport(opts)
-  if (opts.projectRecordId && !projectByRecordId(opts.projectRecordId)) {
-    throw new Error(`unknown project record ${JSON.stringify(opts.projectRecordId)}`)
-  }
   const callerCwd = opts.cwd ?? process.cwd(),
     runProjectName = opts.repo ?? repoOf(callerCwd)
   const reviewTarget =
@@ -283,8 +275,8 @@ export async function run(
   })
   const [originalPrompt, resolvedDialect] = [opts.prompt, resolveReplyDialect(requestedJob)]
   const replySchemaName = opts.schemaPath ? basename(opts.schemaPath) : resolvedDialect.schemaName
-  const namedRunProjectId = runProjectName ? (projectByName(runProjectName)?.recordId ?? null) : null
-  const runProjectId = opts.projectRecordId ?? namedRunProjectId
+  const { namedProjectRecordId: namedRunProjectId, runProjectRecordId: runProjectId } =
+    runProjectAttribution({ projectName: runProjectName, projectRecordId: opts.projectRecordId })
   let pack: ReturnType<typeof compilePack> | null = null
   if (resume.isFirstTurn) {
     try {

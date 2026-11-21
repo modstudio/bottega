@@ -6,6 +6,7 @@ import { addRun } from '../../test/fixtures/store.ts'
 import type { ReviewReply, WorkerReply } from '../contract/contract.ts'
 import { db, nowIso } from '../database/db.ts'
 import { questionsForRun } from '../question-store/question-store-read.ts'
+import { runProjectAttribution } from '../run/run-project-attribution.ts'
 import { admitNewRunReference } from '../run/run-task-reference.ts'
 import { recordTerminalQuestions } from '../run/run-terminal-questions.ts'
 import { EMPTY_CANON_SHA } from './canon-eval-pack.ts'
@@ -212,12 +213,16 @@ describe('behavioral canon evals', () => {
       launchCwd: '/projectless/canon-eval-scratch',
       probe: true,
     })
+    const attribution = runProjectAttribution({
+      projectName: null,
+      projectRecordId: options.projectRecordId,
+    })
     const runId = addRun({
       agent: 'codex',
       job: 'implement',
       status: 'running',
       probe: 1,
-      projectRecordId: options.projectRecordId ?? links.projectRecordId,
+      projectRecordId: attribution.runProjectRecordId ?? links.projectRecordId,
     })
 
     await recordTerminalQuestions(runId, [

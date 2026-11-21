@@ -144,6 +144,7 @@ type ClaimOptions = {
   key?: string
   cwd?: string
   launchCwd?: string
+  projectRecordId?: string
   base?: string
   launchBase?: string
   resolvedTaskBranch?: TaskBranchCandidate | null

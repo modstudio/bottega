@@ -29,9 +29,9 @@ import {
 import { questionsForRun } from '../question-store/question-store-read.ts'
 import { parseReviewOutput, parseReviewReply } from '../review/review.ts'
 import { ANSWER_CHANNEL_CLI, ANSWERER_KIND_EVAL } from '../run/question-vocabulary.ts'
-import type { RunOptions } from '../run/run-options.ts'
 import { run } from '../run/run.ts'
 import { auditRunMutation, runMutationActor } from '../run/run-authority.ts'
+import type { RunOptions } from '../run/run-options.ts'
 import { renewTaskClaim } from '../workflow/workflow-task-claim.ts'
 import { checkDoc, compilePack } from './canon.ts'
 import {
