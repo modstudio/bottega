@@ -75,8 +75,10 @@ export type TypedQuestionsClientResult =
   | { kind: 'error'; error: string; latencyMs: number }
 
 export type TypedQuestionClientDependencies = {
-  resolveCredential(): Promise<{ kind: 'resolved'; value: string } | { kind: 'missing' }>
-  invalidateCredential?(refusedKey: string): void
+  resolveCredential(): Promise<
+    { kind: 'resolved'; value: string; version?: number } | { kind: 'missing' }
+  >
+  invalidateCredential?(refused: { value: string; version?: number }): void
   fetch(input: string, init: RequestInit): Promise<Response>
   sleep?(ms: number): Promise<void>
   random?(): number
@@ -86,13 +88,20 @@ export function typedQuestionClientDependencies(
   resolveCredential: TypedQuestionClientDependencies['resolveCredential'],
   fetch: TypedQuestionClientDependencies['fetch'],
 ): TypedQuestionClientDependencies {
-  const credential = processMemo(resolveCredential, {
-    maxAgeMs: RECORD_IDENTITY_MEMO_MAX_AGE_MS,
-  })
+  let loads = 0
+  const credential = processMemo(
+    async () => ({
+      ...(await resolveCredential()),
+      version: ++loads,
+    }),
+    {
+      maxAgeMs: RECORD_IDENTITY_MEMO_MAX_AGE_MS,
+    },
+  )
   return {
     resolveCredential: credential.get,
-    invalidateCredential: (refusedKey) =>
-      credential.clearIf((result) => result.kind === 'resolved' && result.value === refusedKey),
+    invalidateCredential: (refused) =>
+      credential.clearIf((result) => result.version === refused.version),
     fetch,
     sleep: (ms) => Bun.sleep(ms),
     random: Math.random,
@@ -223,7 +232,7 @@ function elapsed(started: number): number {
 }
 
 type CredentialResolution =
-  | { kind: 'key'; value: string }
+  | { kind: 'key'; value: string; version?: number }
   | { kind: 'missing-key' }
   | { kind: 'key-resolution' }
 
@@ -241,7 +250,8 @@ async function resolveKey(
 ): Promise<CredentialResolution> {
   try {
     const credential = await dependencies.resolveCredential()
-    if (credential.kind === 'resolved') return { kind: 'key', value: credential.value }
+    if (credential.kind === 'resolved')
+      return { kind: 'key', value: credential.value, version: credential.version }
     return { kind: 'missing-key' }
   } catch {
     return { kind: 'key-resolution' }
@@ -293,18 +303,18 @@ type CredentialRequestResult =
   | Exclude<CredentialResolution, { kind: 'key' }>
 
 async function sendWithCredentialRefresh(
-  key: string,
+  key: { value: string; version?: number },
   body: string,
   dependencies: TypedQuestionClientDependencies,
   allowRefresh: boolean,
 ): Promise<CredentialRequestResult> {
-  const response = await sendRequest(key, body, dependencies.fetch)
+  const response = await sendRequest(key.value, body, dependencies.fetch)
   if (
     !allowRefresh ||
     typeof response === 'string' ||
     (response.status !== 401 && response.status !== 403)
   )
-    return { kind: 'response', response, key, refreshed: false }
+    return { kind: 'response', response, key: key.value, refreshed: false }
 
   dependencies.invalidateCredential?.(key)
   const resolved = await resolveKey(dependencies)
@@ -352,7 +362,10 @@ function retryDelay(
   return Math.min(5_000, 500 * 2 ** retry * (0.75 + random() * 0.5))
 }
 
-/** Resolve the key at call time and retry bounded transient failures with backoff. */
+/**
+ * Ask with the process-wide cached credential, refresh it once on a 401 or 403,
+ * and retry bounded transient failures with backoff.
+ */
 export async function askTypedQuestionClient(
   question: TypedQuestion,
   state: string | Record<string, unknown>,
@@ -390,7 +403,7 @@ export async function askTypedQuestionsClient(
   const random = dependencies.random ?? clientDependencies.random!
   let authRetried = false
   for (let attempt = 0; attempt < 3; attempt += 1) {
-    const sent = await sendWithCredentialRefresh(resolved.value, body, dependencies, !authRetried)
+    const sent = await sendWithCredentialRefresh(resolved, body, dependencies, !authRetried)
     if (sent.kind !== 'response') return credentialResolutionFailure(sent, started)
     const response = sent.response
     resolved = { kind: 'key', value: sent.key }

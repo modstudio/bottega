@@ -374,17 +374,16 @@ test('two auth refusals resolve twice and return the second refusal', async () =
 
 test('concurrent auth refusals share one refreshed credential resolution', async () => {
   const requestCount = 8
-  const keys = ['fake-key-a', 'fake-key-b']
   let resolutions = 0
   let requests = 0
   const dependencies = typedQuestionClientDependencies(
     async () => {
-      const value = keys[resolutions]!
       resolutions += 1
-      return { kind: 'resolved', value }
+      return { kind: 'resolved', value: 'fake-key-a' }
     },
     async () => {
       requests += 1
+      if (requests >= 5 && requests <= 8) await Bun.sleep(5)
       return new Response('', { status: 401 })
     },
   )

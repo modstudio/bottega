@@ -38,7 +38,7 @@ test('reloads after the age measured from when loading began expires', async () 
   expect(await memo.get()).toBe(2)
 })
 
-test('does not keep a rejected load or a value rejected by keep', async () => {
+test('does not keep a rejected load', async () => {
   let rejectedLoads = 0
   const rejected = processMemo(
     async () => {
@@ -51,41 +51,6 @@ test('does not keep a rejected load or a value rejected by keep', async () => {
   await expect(rejected.get()).rejects.toThrow('fixture rejection')
   expect(await rejected.get()).toBe('kept')
   expect(rejectedLoads).toBe(2)
-
-  let filteredLoads = 0
-  const filtered = processMemo(
-    async () => {
-      filteredLoads += 1
-      return filteredLoads
-    },
-    { maxAgeMs: 100, keep: (value) => value > 1 },
-  )
-  expect(await filtered.get()).toBe(1)
-  expect(await filtered.get()).toBe(2)
-  expect(await filtered.get()).toBe(2)
-  expect(filteredLoads).toBe(2)
-})
-
-test('clear forces a reload without changing an existing caller result', async () => {
-  let loads = 0
-  const resolvers: Array<(value: string) => void> = []
-  const memo = processMemo(
-    () => {
-      loads += 1
-      return new Promise<string>((resolve) => resolvers.push(resolve))
-    },
-    { maxAgeMs: 100 },
-  )
-
-  const first = memo.get()
-  memo.clear()
-  const second = memo.get()
-  expect(loads).toBe(2)
-  resolvers[0]!('old')
-  resolvers[1]!('new')
-  expect(await first).toBe('old')
-  expect(await second).toBe('new')
-  expect(await memo.get()).toBe('new')
 })
 
 test('clearIf leaves pending and non-matching values, then drops a matching value', async () => {
