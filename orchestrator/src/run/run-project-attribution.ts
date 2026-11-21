@@ -1,13 +1,12 @@
 // concern: run project attribution
 /** Validates explicit row-only attribution separately from the run's project selector. */
 
-import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { projectByName, projectByRecordId } from '../project/projects.ts'
 
-export function validateRunProjectRecordId(projectRecordId?: string): void {
+function validateRunProjectRecordId(projectRecordId?: string): void {
   if (projectRecordId && !projectByRecordId(projectRecordId)) {
     throw new Error(
-      `unknown project record ${JSON.stringify(projectRecordId)}; pass a registered project's record id (${PLATFORM_SLUG} project list --json)`,
+      `unknown project record ${JSON.stringify(projectRecordId)}; replace it with a registered project's record id from project list --json`,
     )
   }
 }
