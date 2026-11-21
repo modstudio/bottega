@@ -121,14 +121,20 @@ test('pins the release install proof path gate and macOS job', () => {
 test('pins the orchestrator shard job timeout', () => {
   const workflow = readFileSync(new URL('../.github/workflows/ci.yml', import.meta.url), 'utf8')
   expect(() => checkCiWorkflow(workflow)).not.toThrow()
+  const withoutJobTimeout = workflow.replace(
+    `  orchestrator:\n    name: orchestrator (\${{ matrix.shard }}/\${{ strategy.job-total }})\n    runs-on: ubuntu-24.04\n    timeout-minutes: ${ORCHESTRATOR_JOB_TIMEOUT_MINUTES}\n`,
+    `  orchestrator:\n    name: orchestrator (\${{ matrix.shard }}/\${{ strategy.job-total }})\n    runs-on: ubuntu-24.04\n`,
+  )
+  const refusal = `orchestrator job must have a ${ORCHESTRATOR_JOB_TIMEOUT_MINUTES} minute timeout`
+  expect(() => checkCiWorkflow(withoutJobTimeout)).toThrow(refusal)
   expect(() =>
     checkCiWorkflow(
-      workflow.replace(
-        `  orchestrator:\n    name: orchestrator (\${{ matrix.shard }}/\${{ strategy.job-total }})\n    runs-on: ubuntu-24.04\n    timeout-minutes: ${ORCHESTRATOR_JOB_TIMEOUT_MINUTES}\n`,
-        `  orchestrator:\n    name: orchestrator (\${{ matrix.shard }}/\${{ strategy.job-total }})\n    runs-on: ubuntu-24.04\n`,
+      withoutJobTimeout.replace(
+        '      - name: Test shard\n',
+        `      - name: Test shard\n        timeout-minutes: ${ORCHESTRATOR_JOB_TIMEOUT_MINUTES}\n`,
       ),
     ),
-  ).toThrow(`orchestrator job must have a ${ORCHESTRATOR_JOB_TIMEOUT_MINUTES} minute timeout`)
+  ).toThrow(refusal)
 })
 
 test('refuses an aggregate that lets a path-gated job fail', () => {

@@ -193,7 +193,11 @@ function checkInstallProofJob(source: string): void {
 
 function checkOrchestratorJob(source: string): void {
   const orchestrator = workflowJob(source, 'orchestrator')
-  if (!orchestrator.includes(`timeout-minutes: ${ORCHESTRATOR_JOB_TIMEOUT_MINUTES}`)) {
+  if (
+    !new RegExp(`^ {4}timeout-minutes: ${ORCHESTRATOR_JOB_TIMEOUT_MINUTES}$`, 'm').test(
+      orchestrator,
+    )
+  ) {
     throw new Error(
       `orchestrator job must have a ${ORCHESTRATOR_JOB_TIMEOUT_MINUTES} minute timeout`,
     )
