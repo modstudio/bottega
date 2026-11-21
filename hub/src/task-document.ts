@@ -2,7 +2,6 @@ import { randomBytes } from 'node:crypto'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { newRecordId } from '../../shared/record/schema.ts'
 import type { TaskSource } from '../../shared/task-source.ts'
-import { missingTaskRecordLine } from '../../shared/task-missing.ts'
 import { db, nowIso, writeTransaction } from './db.ts'
 import { sendHostedChanges } from './hosted-change-sender.ts'
 import { applyHostedWriteLocally } from './hosted-local-apply.ts'
@@ -16,7 +15,13 @@ import {
 import { hostedCreateDocument } from './task-client.ts'
 import { formatTaskDocumentLabel, parseTaskDocumentLabel } from './task-document-label.ts'
 
-import { resolveTask, type TaskScope, taskByRecordId, taskRecordId } from './task-identity.ts'
+import {
+  missingTaskRecordLine,
+  resolveTask,
+  type TaskScope,
+  taskByRecordId,
+  taskRecordId,
+} from './task-identity.ts'
 import {
   type HostedTaskWriteOptions,
   hostedTaskWriteOptions,

@@ -51,6 +51,19 @@ type ResolvedContextHolder = {
 type CursorTask = { project: string; taskKey: string | null }
 type TaskParent = { key: string; project: string; parent_key?: string | null }
 
+async function cachedCursorTask(
+  cache: Map<string, TaskParent | null>,
+  project: string,
+  key: string,
+  lookup: (project: string, key: string) => Promise<TaskParent | null>,
+): Promise<TaskParent | null> {
+  const scopedKey = `${project}\0${key}`
+  if (cache.has(scopedKey)) return cache.get(scopedKey) ?? null
+  const task = await lookup(project, key)
+  cache.set(scopedKey, task)
+  return task
+}
+
 /** Read only the ancestor chains needed to decide whether an open cursor carries a task. */
 export async function cursorAncestorTasks(input: {
   task: { key: string; project: string }
@@ -74,11 +87,7 @@ export async function cursorAncestorTasks(input: {
       visited.add(key)
       if (key === input.task.key) return [...tasks.values()]
       const scopedKey = `${cursor.project}\0${key}`
-      let task = cache.get(scopedKey)
-      if (task === undefined && !cache.has(scopedKey)) {
-        task = await input.lookup(cursor.project, key)
-        cache.set(scopedKey, task)
-      }
+      const task = await cachedCursorTask(cache, cursor.project, key, input.lookup)
       if (!task) break
       tasks.set(scopedKey, task)
       key = task.parent_key ?? null

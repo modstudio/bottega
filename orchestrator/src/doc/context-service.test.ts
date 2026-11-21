@@ -10,6 +10,7 @@ import { db } from '../database/db.ts'
 import { upsertProject } from '../project/projects.ts'
 import { rememberHostedRecord } from '../record/install-binding-write.ts'
 import { assertRecordContextItemRevision } from '../record/record-context-items.ts'
+import { contextCursorWarning } from './context-cursor-warning-decision.ts'
 import {
   clearTaskContext,
   cursorAncestorTasks,
@@ -21,7 +22,6 @@ import {
 } from './context-service.ts'
 import { CONTEXT_FACTS_PORTS_KEY, type ContextFactsPorts } from './context-write-adapter.ts'
 import { ContextWriteRefusalError } from './doc-context-write.ts'
-import { contextCursorWarning } from './context-cursor-warning-decision.ts'
 
 const globals = globalThis as typeof globalThis & {
   [CONTEXT_FACTS_PORTS_KEY]?: ContextFactsPorts

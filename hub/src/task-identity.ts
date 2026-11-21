@@ -1,5 +1,8 @@
 import type { Database } from 'bun:sqlite'
-import { missingTaskMessage, missingTaskRecordLine } from '../../shared/task-missing.ts'
+import {
+  missingTaskMessage,
+  missingTaskRecordLine as sharedMissingTaskRecordLine,
+} from '../../shared/task-missing.ts'
 import { db } from './db.ts'
 import { projectRecordIdFor } from './project-record-id.ts'
 import { taskAdoptionCollisionCount } from './task-adoption.ts'
@@ -173,6 +176,8 @@ export function resolveTask(conn: Database, key: string, project?: string): stri
 export function taskRecordId(key: string, scope: TaskScope = {}) {
   return scope.recordId ?? resolveTask(db(), key, scope.project)
 }
+
+export const missingTaskRecordLine = sharedMissingTaskRecordLine
 
 export function taskByRecordId<T>(recordId: string): T {
   const task = db().query<T, [string]>(`SELECT * FROM task WHERE record_id = ?`).get(recordId)
