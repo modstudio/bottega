@@ -60,7 +60,7 @@ if [[ -z "$record_migrate_url" ]]; then
   fi
 fi
 
-"$SCRIPT_DIR/hosted-preflight" "$APP"
+"$SCRIPT_DIR/hosted-preflight" "$@"
 
 case "$APP" in
   api)

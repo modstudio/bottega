@@ -24,7 +24,7 @@ export type ReleasePreflightInput = {
 function runProbe(command: string, cwd: string): { ok: boolean; stderr: string } {
   try {
     const result = startBoundedSync(['/bin/sh', '-lc', command], {
-      budget: 'sandbox-probe',
+      budget: 'release-preflight',
       cwd,
       env: releaseProcessEnvironment(targetGitEnvironment(cwd)),
     })
