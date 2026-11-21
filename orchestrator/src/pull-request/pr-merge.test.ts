@@ -1024,42 +1024,6 @@ test('a missing recorded local gate refuses with the gate command', async () => 
   )
 })
 
-test('an explicitly required release rung refuses before the pull request is merged', async () => {
-  registerProject([])
-  recordPassingGate()
-  let merged = false
-  expect(
-    async () =>
-      await mergePullRequest(
-        '42',
-        cwd,
-        adapter({
-          releaseDecision: () => ({
-            decided: true,
-            required: ['hosted-api'],
-            rungs: [
-              {
-                rung: 'hosted-api',
-                branch: 'main',
-                required: true,
-                requiredBy: 'explicit',
-                reason: null,
-                declaresLive: true,
-                declaresDeploy: true,
-              },
-            ],
-            error: null,
-          }),
-          merge: () => {
-            merged = true
-            return 'unexpected'
-          },
-        }),
-      ),
-  ).toThrow(`${PLATFORM_SLUG} pr merge 42 --release-required`)
-  expect(merged).toBe(false)
-})
-
 test('a moved landing branch refuses after reading the recorded local gate', async () => {
   registerProject([])
   recordPassingGate()

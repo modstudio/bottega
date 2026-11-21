@@ -2,6 +2,8 @@ import { describe, expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { Project } from '../project/projects.ts'
 import type { ReleaseRungPlan, RequiredRungDecision } from '../release/release-required.ts'
+import { adapter, cwd, recordPassingGate, registerProject } from './pr-merge.fixture.ts'
+import { mergePullRequest } from './pr-merge.ts'
 import {
   decidePullRequestReleaseAdmission,
   pullRequestReleaseDecisionAtHead,
@@ -105,4 +107,25 @@ test('a project without explicit release requirements returns before changed-pat
       baseBranch: 'main',
     }),
   ).toEqual({ decided: true, required: [], rungs: [], error: null })
+})
+
+test('an explicitly required release rung refuses before the pull request is merged', async () => {
+  registerProject([])
+  recordPassingGate()
+  let merged = false
+  expect(
+    async () =>
+      await mergePullRequest(
+        '42',
+        cwd,
+        adapter({
+          releaseDecision: () => decided(plan('hosted-api', 'explicit')),
+          merge: () => {
+            merged = true
+            return 'unexpected'
+          },
+        }),
+      ),
+  ).toThrow(`${PLATFORM_SLUG} pr merge 42 --release-required`)
+  expect(merged).toBe(false)
 })

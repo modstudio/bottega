@@ -894,8 +894,7 @@ async function completeMerge(input: {
     } else {
       admittedChange = admitViewedPullRequest(pullRequest, input)
       const releaseDecision = assertPullRequestReleaseAdmission({ ...input, pullRequest })
-      if (projectCanRequireExplicitRelease(input.project))
-        preMergeReleaseDecision = releaseDecision
+      if (projectCanRequireExplicitRelease(input.project)) preMergeReleaseDecision = releaseDecision
       const merged = mergeAdmittedHead({ ...input, pullRequest })
       if (merged.mergeCommit) mergeCommit = merged.mergeCommit
       else {
