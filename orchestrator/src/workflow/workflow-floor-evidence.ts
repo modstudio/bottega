@@ -516,11 +516,10 @@ async function resolveTaskArtifact(
     )
   if (!task.commentIds.map(String).includes(ref.id))
     throw new Error(`--artifact ${raw} is not a comment on ${ref.key}`)
-  requireMutableArtifactFreshness(
-    'task comment',
-    task.commentWrittenAt?.[ref.id],
-    identity.stepActivatedAt,
-  )
+  const commentWrittenAt = task.commentWrittenAt?.[ref.id]
+  // External trackers expose comment ids without timestamps, so only timed comments get freshness.
+  if (commentWrittenAt)
+    requireMutableArtifactFreshness('task comment', commentWrittenAt, identity.stepActivatedAt)
   return { ref: raw, exists: true }
 }
 

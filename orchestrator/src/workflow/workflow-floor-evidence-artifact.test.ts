@@ -130,6 +130,14 @@ test('task comments and documents must change during the active step', async () 
   await expect(
     gather(d, { artifacts: ['task:DEV-977#comment:4'] }, { readTask: readTask('2026-09-02') }),
   ).resolves.toBeDefined()
+  await expect(
+    gather(d, { artifacts: ['task:DEV-977#comment:4'] }, {
+      readTask: () => ({
+        ...readTask('2026-09-02')(),
+        commentWrittenAt: {},
+      }),
+    }),
+  ).resolves.toBeDefined()
 
   const readTaskDocument = (updated_at: string) => async (value: string) => ({
     id: 'document-id',
