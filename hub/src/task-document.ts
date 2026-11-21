@@ -285,6 +285,36 @@ export async function createTaskDocument(
     : createHostedTaskDocument(task, input, options.hosted)
 }
 
+function applyHostedDocumentUpdateLocally(document: TaskDocument): boolean {
+  return applyHostedWriteLocally(
+    `${document.label} was updated in the hosted record; its local copy will arrive on the next record pull`,
+    () =>
+      writeTransaction((conn) => {
+        if (document.role)
+          demoteOtherTaskDocumentRoleHolders(
+            conn,
+            document.task_record_id,
+            document.role,
+            document.id,
+          )
+        conn
+          .query(
+            `UPDATE task_document
+                SET role = ?, title = ?, body = ?, version = ?, updated_at = ?
+              WHERE record_id = ?`,
+          )
+          .run(
+            document.role,
+            document.title,
+            document.body,
+            document.version,
+            document.updated_at,
+            document.id,
+          )
+      }),
+  )
+}
+
 export async function updateTaskDocument(
   value: string,
   changes: {
@@ -345,20 +375,7 @@ export async function updateTaskDocument(
       role: documentRole(row.role),
       number: current.number,
     })
-    const applied = applyHostedWriteLocally(
-      `${document.label} was updated in the hosted record; its local copy will arrive on the next record pull`,
-      () =>
-        writeTransaction((conn) => {
-          if (role) demoteOtherTaskDocumentRoleHolders(conn, current.task_record_id, role, id)
-          conn
-            .query(
-              `UPDATE task_document
-                  SET role = ?, title = ?, body = ?, version = ?, updated_at = ?
-                WHERE record_id = ?`,
-            )
-            .run(role, row.title, row.body, row.version, row.updated_at, id)
-        }),
-    )
+    const applied = applyHostedDocumentUpdateLocally(document)
     return applied ? getTaskDocument(id) : document
   }
   writeTransaction((conn) => {

@@ -133,11 +133,7 @@ test('tasks must change during the active step when their tracker reports an upd
     gather(d, { artifacts: ['task:DEV-977'] }, { readTask: readTask('2026-09-02') }),
   ).resolves.toBeDefined()
 
-  const untimed = await gather(
-    d,
-    { artifacts: ['task:DEV-977'] },
-    { readTask: readTask(null) },
-  )
+  const untimed = await gather(d, { artifacts: ['task:DEV-977'] }, { readTask: readTask(null) })
   expect(
     decideFloorSatisfaction({
       floors: [
