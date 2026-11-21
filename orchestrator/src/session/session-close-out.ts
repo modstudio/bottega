@@ -23,7 +23,11 @@ import { refGuardDirectory } from '../resources/ref-guard.ts'
 import { parseRetainedRef } from '../resources/resource-inventory.ts'
 import { isSyntheticLifecycleJob } from '../run/synthetic-lifecycle-job.ts'
 import { observeGrokTrustHeadings } from '../sandbox/grok-trust.ts'
-import { reportedShipCleanupItems, shipCleanup } from '../ship-cleanup/ship-cleanup.ts'
+import {
+  formatShipCleanupReportedItem,
+  reportedShipCleanupItems,
+  shipCleanup,
+} from '../ship-cleanup/ship-cleanup.ts'
 import type { TaskFlowOpenSessionStageRow as OpenCursor } from '../workflow/task-flow-store.ts'
 import { hasAbsentTreeTeardownPlanWithRegisteredRemoveCommand } from '../worktree/worktree-remove.ts'
 import { releaseSessionCursors } from './session-close-out-cursors.ts'
@@ -44,7 +48,6 @@ import {
   sessionCloseOutVerdict,
   sessionOwnedRunIds,
 } from './session-close-out-decision.ts'
-
 import { sessionCloseOutObligationItems } from './session-close-out-obligation-adapter.ts'
 import { closeOutSessionOutbox } from './session-close-out-outbox.ts'
 import type {
@@ -651,9 +654,6 @@ async function applyMechanicalAction(
   return { kind: 'complete' }
 }
 
-function formatReportedTaskSibling(item: ShipCleanupKeptItem): string {
-  return `reported: ${item.item}: ${item.reason}; stays until open task ${item.taskKey} closes${item.remedy ? `; remedy after task closes: ${item.remedy}` : ''}`
-}
 
 function liveRunProcessItem(
   item: Extract<
@@ -822,7 +822,7 @@ async function applySessionMechanicalActions(
       const result = await applyMechanicalAction(action, database)
       if (result.kind === 'released') releasedRoots.push(result.runId)
       if (result.kind === 'reported')
-        report.reported.push(...result.items.map(formatReportedTaskSibling))
+        report.reported.push(...result.items.map(formatShipCleanupReportedItem))
       report.mechanical.push(label)
     } catch (cause) {
       recordMechanicalFailure(report, label, session, cause)

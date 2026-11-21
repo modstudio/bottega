@@ -893,7 +893,7 @@ export function reportedShipCleanupItems(
   return selectReportedShipCleanupItems(report)
 }
 
-function formatShipCleanupReportedItem(item: ShipCleanupKeptItem): string {
+export function formatShipCleanupReportedItem(item: ShipCleanupKeptItem): string {
   return `reported: ${item.item}: ${item.reason}; stays until open task ${item.taskKey} closes${item.remedy ? `; remedy after task closes: ${item.remedy}` : ''}`
 }
 
