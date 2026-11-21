@@ -1,16 +1,31 @@
-import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { newRecordId } from '../../shared/record/schema.ts'
 import { HostedSessionTransportError } from './hosted-session-send.ts'
 import { HOSTED_UNREACHABLE_REMEDY } from './hosted-write-mode.ts'
 import type { HostedPushChange } from './push-contract.ts'
 import { hostedPushChanges } from './task-client.ts'
-import type { HostedTaskWriteOptions } from './task-write-destination.ts'
+
+export type HostedChangeSendOptions = {
+  baseUrl?: string
+  token?: string | null
+  fetch?: (input: string, init?: RequestInit) => Promise<Response>
+  recordSpace: string
+  conflictRemedy: string
+}
+
+export class HostedChangeStageError extends Error {
+  readonly stageIndex: number
+  constructor(stageIndex: number, cause: unknown) {
+    super(cause instanceof Error ? cause.message : String(cause))
+    this.stageIndex = stageIndex
+  }
+}
 
 export async function sendHostedChanges(
-  taskKey: string,
+  subject: string,
   stages: HostedPushChange[][],
-  options: HostedTaskWriteOptions & { recordSpace: string },
+  options: HostedChangeSendOptions,
 ): Promise<void> {
+  const { conflictRemedy, ...pushOptions } = options
   const prepared = stages.map((stage) =>
     stage.map((change) => ({
       ...change,
@@ -19,7 +34,7 @@ export async function sendHostedChanges(
   )
   const push = async (batch: HostedPushChange[]) => {
     try {
-      return await hostedPushChanges(batch, options)
+      return await hostedPushChanges(batch, pushOptions)
     } catch (error) {
       if (!(error instanceof HostedSessionTransportError)) throw error
       const message = error instanceof Error ? error.message : String(error)
@@ -31,11 +46,15 @@ export async function sendHostedChanges(
     if (refused)
       throw new Error(
         `hosted change ${refused.id} was refused: ${refused.reason}; ` +
-          `refresh the record with \`${PLATFORM_SLUG} task show ${taskKey}\` and retry`,
+          `refresh ${subject} with \`${conflictRemedy}\` and retry`,
       )
   }
-  for (const stage of prepared) {
-    const outcomes = await push(stage)
-    refuseRejected(outcomes)
+  for (const [stageIndex, stage] of prepared.entries()) {
+    try {
+      const outcomes = await push(stage)
+      refuseRejected(outcomes)
+    } catch (cause) {
+      throw new HostedChangeStageError(stageIndex, cause)
+    }
   }
 }

@@ -15,6 +15,7 @@ import {
   HOSTED_DOCUMENT_TABLE,
   HOSTED_INTERVAL_TABLE,
   HOSTED_NOTE_ACKNOWLEDGEMENT_TABLE,
+  HOSTED_NOTE_TABLE,
   HOSTED_STATUS_EVENT_TABLE,
   HOSTED_TASK_TABLE,
   type HostedPushChange,
@@ -53,6 +54,11 @@ export type OutboxEntry = {
   fields: string | null
   kept_values: string | null
 }
+
+export const DIRECT_RECORD_TABLES: ReadonlySet<string> = new Set([
+  HOSTED_NOTE_TABLE,
+  HOSTED_NOTE_ACKNOWLEDGEMENT_TABLE,
+])
 
 export function mergeQueuedHostedChange(
   prior: {
@@ -135,6 +141,8 @@ export function queueHostedChange(
   queuedAt = nowIso(),
   fields: readonly string[] | null = null,
 ) {
+  if (DIRECT_RECORD_TABLES.has(table))
+    throw new Error(`${table} writes go through sendHostedChanges and cannot be queued`)
   const prior = conn
     .query<{ operation: 'upsert' | 'delete'; fields: string | null }, [string, string]>(
       `SELECT operation,fields FROM hosted_outbox WHERE table_name=? AND row_id=?`,

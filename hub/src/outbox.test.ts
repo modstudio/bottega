@@ -73,6 +73,21 @@ function queueTransition(key: string, at: string) {
 beforeEach(resetFixtureStore)
 
 describe('hosted outbox', () => {
+  test('direct record tables refuse before inserting while other tables still queue', () => {
+    writeTransaction((conn) => {
+      expect(() => queueHostedChange(conn, 'hub_note', crypto.randomUUID(), 'upsert')).toThrow(
+        'hub_note writes go through sendHostedChanges and cannot be queued',
+      )
+      expect(() =>
+        queueHostedChange(conn, 'hub_note_acknowledgement', crypto.randomUUID(), 'upsert'),
+      ).toThrow('hub_note_acknowledgement writes go through sendHostedChanges and cannot be queued')
+      queueHostedChange(conn, HOSTED_TASK_TABLE, crypto.randomUUID(), 'delete')
+    })
+    expect(db().query('SELECT table_name FROM hosted_outbox').all()).toEqual([
+      { table_name: HOSTED_TASK_TABLE },
+    ])
+  })
+
   test('a non-installation store keeps pending rows and sends nothing', async () => {
     queueTransition('FIX-1', '2026-10-11T12:00:00.000Z')
     const previousStateHome = process.env[STATE_HOME_ENV]

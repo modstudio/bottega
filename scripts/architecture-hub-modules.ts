@@ -517,6 +517,7 @@ export const hubModuleSpecs = [
       './note-outside.ts',
       './note-promote-cli.ts',
       './note-push.ts',
+      './note-read.ts',
       './projects.ts',
       './task.ts',
       './tracker-new.ts',
@@ -532,7 +533,52 @@ export const hubModuleSpecs = [
       './note-row.ts',
     ],
   },
-  { file: 'hub/src/note-row.ts', allowed: ['../../shared/note-anchor.ts'] },
+  {
+    file: 'hub/src/note-hosted-record.ts',
+    allowed: [
+      '../../shared/brand.ts',
+      '../../shared/note-anchor.ts',
+      '../../shared/note-label.ts',
+      '../../shared/record/schema.ts',
+      './hosted-change-sender.ts',
+      './hosted-notes.ts',
+      './note-anchor-merge.ts',
+      './note-client.ts',
+      './note-project-space.ts',
+      './note-row.ts',
+      './push-contract.ts',
+    ],
+  },
+  {
+    file: 'hub/src/note-relink-record.ts',
+    allowed: [
+      './db.ts',
+      './hosted-change-sender.ts',
+      './note-client.ts',
+      './note-hosted-record.ts',
+      './note-row.ts',
+      './push-contract.ts',
+      './task.ts',
+    ],
+  },
+  {
+    file: 'hub/src/note-read.ts',
+    allowed: [
+      '../../shared/brand.ts',
+      './db.ts',
+      './hosted-notes.ts',
+      './hosted-url.ts',
+      './hosted-write-mode.ts',
+      './note-client.ts',
+      './note-hosted-record.ts',
+      './note-outside.ts',
+      './note-row.ts',
+    ],
+  },
+  {
+    file: 'hub/src/note-row.ts',
+    allowed: ['../../shared/note-anchor.ts', '../../shared/note-label.ts', './projects.ts'],
+  },
   {
     file: 'hub/src/cli.ts',
     allowed: [
@@ -695,6 +741,7 @@ export const hubModuleSpecs = [
   {
     file: 'hub/src/task-write-destination.ts',
     allowed: [
+      '../../shared/brand.ts',
       '../../shared/record-remedies.ts',
       './hosted-write-mode.ts',
       './hosted-url.ts',

@@ -1,7 +1,14 @@
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { db, writeTransaction } from './db.ts'
+import { sendHostedChanges } from './hosted-change-sender.ts'
 import { rememberHostedInstall } from './install-binding.ts'
-import { drainHostedOutbox, type HostedOutboxReport, queueHostedChange } from './outbox.ts'
+import {
+  DIRECT_RECORD_TABLES,
+  drainHostedOutbox,
+  type HostedOutboxReport,
+  queueHostedChange,
+} from './outbox.ts'
+import { loadOutboxChange } from './outbox-row.ts'
 import { memoizedPersonalRecordSpace } from './personal-record-space.ts'
 import { projects } from './projects.ts'
 import {
@@ -223,13 +230,53 @@ async function hostedTableIds(
 
 function queueRepairs(candidates: readonly RepairCandidate[]) {
   for (const table of PUSHABLE_HUB_CHANGE_TABLES) {
-    const rows = candidates.filter((candidate) => candidate.table === table)
+    const rows = candidates.filter(
+      (candidate) => candidate.table === table && !DIRECT_RECORD_TABLES.has(candidate.table),
+    )
     if (!rows.length) continue
     writeTransaction((conn) => {
       for (const row of rows)
         queueHostedChange(conn, table, row.id, 'upsert', undefined, row.fields)
     })
   }
+}
+
+async function sendDirectRepairs(
+  candidates: readonly RepairCandidate[],
+  spaces: readonly SpaceAudit[],
+  requestOptions: RequestOptions,
+): Promise<number> {
+  const directCandidates = new Map(
+    candidates
+      .filter((candidate) => DIRECT_RECORD_TABLES.has(candidate.table))
+      .map((candidate) => [`${candidate.table}:${candidate.id}`, candidate]),
+  )
+  let sent = 0
+  for (const space of spaces) {
+    const changes = space.tables.flatMap((table) =>
+      table.machineOnly.flatMap((id) => {
+        const candidate = directCandidates.get(`${table.table}:${id}`)
+        if (!candidate) return []
+        const loaded = loadOutboxChange(db(), {
+          table_name: candidate.table,
+          row_id: candidate.id,
+          operation: 'upsert',
+          fields: candidate.fields === null ? null : JSON.stringify(candidate.fields),
+        })
+        if (!loaded)
+          throw new Error(`could not load ${candidate.table} ${candidate.id} for direct repair`)
+        return [loaded.change]
+      }),
+    )
+    if (!changes.length) continue
+    await sendHostedChanges('note acknowledgement repair', [changes], {
+      ...requestOptions,
+      recordSpace: space.spaceId,
+      conflictRemedy: `${PLATFORM_SLUG} note list`,
+    })
+    sent += changes.length
+  }
+  return sent
 }
 
 function drainAudit(drain: HostedOutboxReport): DrainAudit {
@@ -283,13 +330,15 @@ export async function pushTasks(options: Options = {}): Promise<TaskPushReport> 
       drain: null,
       ok: taskPushVerdict(plan, null),
     }
+  const directlySent = await sendDirectRepairs(plan.repair, plan.spaces, requestOptions)
   queueRepairs(plan.repair)
-  const drain = await (options.drain ?? drainHostedOutbox)({
+  const drained = await (options.drain ?? drainHostedOutbox)({
     identity: async () => identity,
     registered: () => registered,
     push: (changes, pushOptions) =>
       hostedPushChanges(changes, { ...requestOptions, ...pushOptions }),
   })
+  const drain = { ...drained, sent: drained.sent + directlySent }
   return {
     spaces: plan.spaces,
     unroutable: plan.unroutable,

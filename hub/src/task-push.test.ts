@@ -228,9 +228,17 @@ afterAll(async () => {
   if (database) await database.close()
 })
 
-const runPush = (repair = false) =>
+const runPush = (repair = false, directPost?: (changes: HostedPushChange[]) => void) =>
   pushTasks({
     repair,
+    baseUrl: 'https://hub.example.test',
+    token: 'test',
+    fetch: async (input, init) => {
+      expect(new URL(input).pathname).toBe('/v1/changes')
+      const changes = JSON.parse(String(init?.body)) as HostedPushChange[]
+      directPost?.(changes)
+      return Response.json(await applyOn(spaceA, changes))
+    },
     personalSpace: async () => spaceA,
     identity: async () => identity,
     listIds,
@@ -341,11 +349,21 @@ test('a machine-only note is reported as unrepairable and repair queues nothing 
   expect(report.ok).toBeFalse()
 })
 
-test('a machine-only acknowledgement is queued and restored by repair', async () => {
+test('a machine-only acknowledgement posts directly and leaves no outbox row', async () => {
   insertMachineNote(noteId)
   insertMachineAcknowledgement(acknowledgementId)
   await insertHostedNote(noteId)
-  const report = await runPush(true)
+  const posts: HostedPushChange[][] = []
+  const report = await runPush(true, (changes) => posts.push(changes))
+  expect(posts).toEqual([
+    [
+      expect.objectContaining({
+        table: HOSTED_NOTE_ACKNOWLEDGEMENT_TABLE,
+        id: acknowledgementId,
+        op: 'upsert',
+      }),
+    ],
+  ])
   expect(report.drain?.sent).toBe(1)
   expect(report.unrepairable).toEqual([])
   expect(listHostedOutbox()).toEqual([])

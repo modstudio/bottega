@@ -1,3 +1,4 @@
+import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { undeclaredProjectSpaceRefusal } from '../../shared/record-remedies.ts'
 import { resolveHostedUrl } from './hosted-url.ts'
 import {
@@ -26,6 +27,17 @@ export function hostedTaskWriteOptions(projectName: string, options?: HostedTask
   const recordSpace = declaredProjectSpace(registeredTaskProject(projectName).settings.space)
   if (!recordSpace) throw new Error(undeclaredProjectSpaceRefusal(projectName))
   return { ...options, recordSpace }
+}
+
+export function hostedTaskChangeSendOptions(
+  taskKey: string,
+  projectName: string,
+  options?: HostedTaskWriteOptions,
+) {
+  return {
+    ...hostedTaskWriteOptions(projectName, options),
+    conflictRemedy: `${PLATFORM_SLUG} task show ${taskKey}`,
+  }
 }
 
 export function taskWriteDecision(

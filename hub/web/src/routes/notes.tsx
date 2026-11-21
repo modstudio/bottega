@@ -15,6 +15,7 @@ import { useState } from 'react'
 
 import { PLATFORM_SLUG } from '../../../../shared/brand.ts'
 export const Route = createFileRoute('/notes')({ component: NotesPage })
+const NOTE_LIST_REFETCH_INTERVAL_MS = 10_000
 
 function NotesPage() {
   return isHostedMode() ? <HostedNotesPage /> : <LocalNotesPage />
@@ -111,7 +112,9 @@ function PromoteNoteDialog({ note, onClose }: { note: PromoteTarget | null; onCl
 function LocalNotesPage() {
   const [stale, setStale] = useState(false)
   const [promoting, setPromoting] = useState<PromoteTarget | null>(null)
-  const notes = useQuery(trpc.note.list.queryOptions({ stale }, { refetchInterval: 2_000 }))
+  const notes = useQuery(
+    trpc.note.list.queryOptions({ stale }, { refetchInterval: NOTE_LIST_REFETCH_INTERVAL_MS }),
+  )
   const staleFilter = (
     <label htmlFor="show-stale" className="flex items-center gap-2 text-sm text-text-muted">
       <Checkbox
@@ -194,7 +197,9 @@ function LocalNotesPage() {
 
 export function HostedNotesPage() {
   const [stale, setStale] = useState(false)
-  const query = useQuery(trpc.record.notes.queryOptions({ stale }, { refetchInterval: 10_000 }))
+  const query = useQuery(
+    trpc.record.notes.queryOptions({ stale }, { refetchInterval: NOTE_LIST_REFETCH_INTERVAL_MS }),
+  )
   const acknowledgements = query.data?.acknowledgements ?? []
   const staleFilter = (
     <label htmlFor="show-stale" className="flex items-center gap-2 text-sm text-text-muted">

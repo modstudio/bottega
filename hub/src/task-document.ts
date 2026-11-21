@@ -285,6 +285,11 @@ export async function createTaskDocument(
     : createHostedTaskDocument(task, input, options.hosted)
 }
 
+function assertBodyUpdateVersion(body: string | undefined, expectedVersion: string | undefined) {
+  if (body !== undefined && !expectedVersion)
+    throw new Error(`a body update requires --version from \`${PLATFORM_SLUG} task doc show\``)
+}
+
 function applyHostedDocumentUpdateLocally(document: TaskDocument): boolean {
   return applyHostedWriteLocally(
     `${document.label} was updated in the hosted record; its local copy will arrive on the next record pull`,
@@ -330,17 +335,18 @@ export async function updateTaskDocument(
   const task = taskByRecordId<DocumentTask>(current.task_record_id)
   if (task.source !== 'local') throw new Error(`task ${current.task_key} is not local`)
   const expectedVersion = changes.expectedVersion
-  if (changes.body !== undefined && !expectedVersion)
-    throw new Error(`a body update requires --version from \`${PLATFORM_SLUG} task doc show\``)
-  const mode = taskWriteMode(task.project, options.hosted)
+  assertBodyUpdateVersion(changes.body, expectedVersion)
   const at = nowIso()
-  if (mode === 'hosted-configured') {
+  if (taskWriteMode(task.project, options.hosted) === 'hosted-configured') {
     if (!expectedVersion)
       throw new Error(
         `a hosted document update requires --version from \`${PLATFORM_SLUG} task doc show\``,
       )
     const role = changes.role === undefined ? current.role : documentRole(changes.role)
-    const writeOptions = hostedTaskWriteOptions(task.project, options.hosted)
+    const writeOptions = {
+      ...hostedTaskWriteOptions(task.project, options.hosted),
+      conflictRemedy: `${PLATFORM_SLUG} task show ${current.task_key}`,
+    }
     if (changes.role !== undefined && role)
       await assertHostedRoleAvailable(current.task_key, role, writeOptions, id)
     const row: PushedDocument = {
@@ -366,7 +372,7 @@ export async function updateTaskDocument(
       fields: taskDocumentFields(changes),
       expected_revision: expectedVersion,
     }
-    await sendHostedChanges(current.task_key, [[change]], writeOptions)
+    await sendHostedChanges('the record', [[change]], writeOptions)
     const document = withDocumentLabel({
       ...row,
       task_record_id: current.task_record_id,
