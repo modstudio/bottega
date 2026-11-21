@@ -31,21 +31,24 @@ import {
 import { deriveNoteFileAnchors } from './note-file-anchors.ts'
 import { noteGit } from './note-git.ts'
 import {
-  listHostedNoteRows,
-  type NoteFilters,
   noteRowFromHosted,
   pushedAcknowledgement,
   pushedNote,
-  readHostedNote,
+  sendHostedRepeatSighting,
 } from './note-hosted-record.ts'
-import { createOutsideProjectNote, listOutsideProjectNotes } from './note-outside.ts'
+import { createOutsideProjectNote } from './note-outside.ts'
 import { noteDestinationOptions } from './note-project-space.ts'
 import {
   notePromotionBody,
   promotionTitleRefusal,
   requiredPromotionTitle,
 } from './note-promotion-body.ts'
+import {
+  prepareNoteRelinkComments,
+  recordPreparedNoteRelinkComments,
+} from './note-relink-record.ts'
 import type { NoteRow } from './note-row.ts'
+import { getNote, listActionableNotes, listNotes, listProjectNotes } from './note-read.ts'
 import { evaluateNoteStaleness, type StalenessAnchorObservation } from './note-staleness.ts'
 import {
   applyHostedStaleness,
@@ -61,8 +64,6 @@ import {
   attachLocalTaskEvidenceInTransaction,
   createLocalTaskInTransaction,
   duplicateCandidates,
-  prepareNoteRelinkComments,
-  recordPreparedNoteRelinkComments,
   recordNoteRelinkCommentsInTransaction,
 } from './task.ts'
 import { applyHostedTask, applyHostedTaskComment } from './task-cache.ts'
@@ -70,6 +71,7 @@ import type { TaskRow } from './task-row.ts'
 import { taskCreationDestination } from './tracker-new.ts'
 
 export type NoteAnchor = NoteAnchorWire
+export { getNote, listActionableNotes, listNotes, listProjectNotes }
 
 export function parseNoteAnchor(value: unknown): NoteAnchor {
   return parseNoteAnchorWire(value)
@@ -212,113 +214,6 @@ export function noteSessionId(env = process.env): string | null {
 
 function identifiedAnchor(anchor: NoteAnchor): NoteAnchor {
   return anchor.id ? anchor : { ...anchor, id: newRecordId() }
-}
-
-function listLocalNotes(filters: NoteFilters = {}): NoteRow[] {
-  const clauses: string[] = []
-  const values: (string | number)[] = []
-  const sessions = [
-    ...new Set(
-      (Array.isArray(filters.session) ? filters.session : filters.session ? [filters.session] : [])
-        .map((session) => session.trim())
-        .filter(Boolean),
-    ),
-  ]
-  if (filters.kept && !sessions.length) throw new Error('listing kept notes requires a session')
-  if (filters.project) {
-    registeredProject(filters.project)
-    clauses.push('note.project = ?')
-    values.push(filters.project)
-  }
-  if (filters.stale !== undefined)
-    clauses.push(filters.stale ? 'note.stale_at IS NOT NULL' : 'note.stale_at IS NULL')
-  if (sessions.length) {
-    const candidates = sessions.map(() => '?').join(',')
-    clauses.push(`EXISTS (
-      SELECT 1 FROM json_each(note.anchors)
-       WHERE json_extract(value, '$.session_id') IN (${candidates})
-    )`)
-    values.push(...sessions)
-    clauses.push(`${filters.kept ? '' : 'NOT '}EXISTS (
-      SELECT 1 FROM note_acknowledgement acknowledgement
-       WHERE acknowledgement.note_record_id = note.record_id
-         AND acknowledgement.session_id IN (${candidates})
-         AND acknowledgement.sightings = note.sightings
-    )`)
-    values.push(...sessions)
-  }
-  if (filters.actionable) clauses.push('note.stale_at IS NULL AND note.promoted_task IS NULL')
-  const rows = db()
-    .query<Omit<NoteRow, 'anchors' | 'label'> & { anchors: string }, (string | number)[]>(
-      `SELECT note.* FROM note ${clauses.length ? `WHERE ${clauses.join(' AND ')}` : ''}
-     ORDER BY note.last_seen_at DESC, note.record_id DESC`,
-    )
-    .all(...values)
-  const search = filters.text?.toLowerCase()
-  const matched = search ? rows.filter((row) => row.text.toLowerCase().includes(search)) : rows
-  return matched.map(decode)
-}
-
-export async function listNotes(
-  filters: NoteFilters = {},
-  hosted?: NoteClientOptions,
-): Promise<NoteRow[]> {
-  if (filters.project) registeredProject(filters.project)
-  if (hostedWriteMode(hosted?.baseUrl ?? resolveHostedUrl()) === 'hosted-configured')
-    return listHostedNoteRows(filters, hosted)
-  return listLocalNotes(filters)
-}
-
-export async function listActionableNotes(
-  filters: { project?: string; session?: string | string[]; text?: string } = {},
-  hosted?: NoteClientOptions,
-): Promise<NoteRow[]> {
-  return listNotes({ ...filters, actionable: true }, hosted)
-}
-
-export async function listProjectNotes(
-  filters: Parameters<typeof listNotes>[0] & { hosted?: NoteClientOptions },
-): Promise<NoteRow[]> {
-  if (filters.project && !isRegisteredNoteProject(filters.project)) {
-    if (filters.stale || filters.kept || filters.actionable)
-      throw new Error(
-        `outside project '${filters.project}' does not support these note filters; an outside project's notes support only text filtering; drop --stale, --kept and --actionable`,
-      )
-    const notes = await listOutsideProjectNotes(filters.project, filters.hosted)
-    const search = filters.text?.toLowerCase()
-    return search ? notes.filter((note) => note.text.toLowerCase().includes(search)) : notes
-  }
-  if (filters.actionable && filters.kept)
-    throw new Error('--actionable and --kept are mutually exclusive')
-  if (filters.kept && !filters.session)
-    throw new Error(
-      `${PLATFORM_SLUG} note list --kept requires --session ID or a session environment`,
-    )
-  const { hosted: _, ...localFilters } = filters
-  return listNotes({
-    ...localFilters,
-    stale: Boolean(filters.stale),
-    kept: Boolean(filters.kept),
-  }, filters.hosted)
-}
-
-function getLocalNote(recordId: string): NoteRow {
-  const row = db()
-    .query<Omit<NoteRow, 'anchors' | 'label'> & { anchors: string }, [string]>(
-      'SELECT * FROM note WHERE record_id = ?',
-    )
-    .get(recordId)
-  if (!row) throw new Error(`no note ${recordId}`)
-  return decode(row)
-}
-
-export async function getNote(
-  recordId: string,
-  hosted?: NoteClientOptions,
-): Promise<NoteRow> {
-  if (hostedWriteMode(hosted?.baseUrl ?? resolveHostedUrl()) === 'hosted-configured')
-    return readHostedNote(recordId, hosted)
-  return getLocalNote(recordId)
 }
 
 export function resolveNoteReference(value: string, sessionProject: string | null): string {
@@ -623,35 +518,7 @@ export async function createNote(
       )
     }
     const at = nowIso()
-    const union = mergeNoteAnchors(existing.anchors, [anchor])
-    const updated: NoteRow = {
-      ...existing,
-      anchors: union.anchors,
-      sightings: union.sightings,
-      last_seen_at: at,
-      stale_at: null,
-      stale_reason: null,
-    }
-    const destination = await noteDestinationOptions(existing.project, options.hosted)
-    await sendHostedChanges(
-      `note ${existing.label}`,
-      [
-        [
-          {
-            table: HOSTED_NOTE_TABLE,
-            id: existing.record_id,
-            op: 'upsert',
-            row: pushedNote(updated, at),
-            fields: ['anchors', 'last_seen_at'],
-            expected_revision: existing.revision,
-          },
-        ],
-      ],
-      {
-        ...destination,
-        conflictRemedy: `${PLATFORM_SLUG} note list --project ${existing.project}`,
-      },
-    )
+    const updated = await sendHostedRepeatSighting(existing, anchor, at, options.hosted)
     writeTransaction((conn) => {
       conn
         .query(
@@ -1056,7 +923,7 @@ export async function staleNotes(deps: Partial<StaleDeps> = {}): Promise<StaleRe
   const runGit = deps.git ?? noteGit
   const readFile = deps.readFile ?? stalenessFileReader
   const clock = deps.now?.() ?? new Date()
-  const notes = listNotes()
+  const notes = await listNotes({}, deps.hosted)
   const runIds = [
     ...new Set(
       notes.flatMap((note) =>
@@ -1157,7 +1024,7 @@ export async function curateNotes(
   if (scheduled && !curatorEnabled()) return []
   const results: { project: string; result: string }[] = []
   for (const project of projects()) {
-    const notes = listActionableNotes({ project: project.name })
+    const notes = await listActionableNotes({ project: project.name })
     if (!notes.length) continue
     const prompt = noteCuratorPrompt(notes)
     results.push({ project: project.name, result: await dispatchNoteCurator(project.path, prompt) })

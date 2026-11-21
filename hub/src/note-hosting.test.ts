@@ -260,7 +260,7 @@ describe('hosted-only note safety', () => {
     expect(db().query<{ count: number }, []>('SELECT count(*) count FROM task').get()!.count).toBe(
       before,
     )
-    expect(getNote(id).promoted_task).toBeNull()
+    expect((await getNote(id, { baseUrl: '' })).promoted_task).toBeNull()
   })
 
   test('cache pull applies an update and a soft delete', () => {
@@ -313,7 +313,7 @@ describe('hosted-only note safety', () => {
       projectCounters: [{ project: 'workshop', next: 900 }],
       cursor: at,
     })
-    expect(getNote(ids.get(990)!).text).toBe('new')
+    expect((await getNote(ids.get(990)!, { baseUrl: '' })).text).toBe('new')
     expect(
       db()
         .query<{ note_record_id: string }, []>(
@@ -321,7 +321,9 @@ describe('hosted-only note safety', () => {
         )
         .get(),
     ).toEqual({ note_record_id: ids.get(990)! })
-    expect(() => getNote(ids.get(991)!)).toThrow(`no note ${ids.get(991)!}`)
+    await expect(getNote(ids.get(991)!, { baseUrl: '' })).rejects.toThrow(
+      `no note ${ids.get(991)!}`,
+    )
     expect(
       db()
         .query<{ next: number }, []>("SELECT next FROM note_counter WHERE project='workshop'")

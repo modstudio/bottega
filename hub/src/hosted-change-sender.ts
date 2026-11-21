@@ -1,4 +1,3 @@
-import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { newRecordId } from '../../shared/record/schema.ts'
 import { HostedSessionTransportError } from './hosted-session-send.ts'
 import { HOSTED_UNREACHABLE_REMEDY } from './hosted-write-mode.ts'

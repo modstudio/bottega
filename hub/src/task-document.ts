@@ -32,7 +32,6 @@ import {
 } from './task-identity.ts'
 import {
   type HostedTaskWriteOptions,
-  hostedTaskChangeSendOptions,
   hostedTaskWriteOptions,
   taskWriteMode,
 } from './task-write-destination.ts'
@@ -312,7 +311,10 @@ export async function updateTaskDocument(
         `a hosted document update requires --version from \`${PLATFORM_SLUG} task doc show\``,
       )
     const role = changes.role === undefined ? current.role : documentRole(changes.role)
-    const writeOptions = hostedTaskWriteOptions(task.project, options.hosted)
+    const writeOptions = {
+      ...hostedTaskWriteOptions(task.project, options.hosted),
+      conflictRemedy: `${PLATFORM_SLUG} task show ${current.task_key}`,
+    }
     if (changes.role !== undefined && role)
       await assertHostedRoleAvailable(current.task_key, role, writeOptions, id)
     const version = documentVersion()
@@ -339,11 +341,7 @@ export async function updateTaskDocument(
       fields,
       expected_revision: expectedVersion,
     }
-    await sendHostedChanges(
-      'the record',
-      [[change]],
-      hostedTaskChangeSendOptions(current.task_key, task.project, options.hosted),
-    )
+    await sendHostedChanges('the record', [[change]], writeOptions)
     return withDocumentLabel({
       ...row,
       task_record_id: current.task_record_id,

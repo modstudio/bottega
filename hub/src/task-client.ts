@@ -1,7 +1,5 @@
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
-import { RECORD_IDENTITY_MEMO_MAX_AGE_MS } from '../../shared/config-read-memo.ts'
 import { jsonBody } from '../../shared/http-json.ts'
-import { processMemo } from '../../shared/process-memo.ts'
 import type { RecordSpaceMembership } from '../../shared/record-space-membership.ts'
 import type {
   HostedChangeRow,
@@ -639,7 +637,7 @@ function validateTaskIdentityUser(object: Record<string, unknown>): void {
     )
 }
 
-async function loadHostedTaskIdentity(
+export async function hostedTaskIdentity(
   options?: HostedRequestOptions,
 ): Promise<HostedTaskIdentity> {
   const result = await taskIdentityResult(options)
@@ -671,37 +669,6 @@ async function loadHostedTaskIdentity(
           : undefined,
     },
   }
-}
-
-type IdentityMemo = ReturnType<typeof processMemo<HostedTaskIdentity>>
-const defaultIdentityMemos = new Map<string, IdentityMemo>()
-const transportIdentityMemos = new WeakMap<TaskFetch, Map<string, IdentityMemo>>()
-
-function identityMemo(options: HostedRequestOptions = {}): IdentityMemo {
-  const memos = options.fetch
-    ? (transportIdentityMemos.get(options.fetch) ?? (() => {
-        const created = new Map<string, IdentityMemo>()
-        transportIdentityMemos.set(options.fetch!, created)
-        return created
-      })())
-    : defaultIdentityMemos
-  const key = JSON.stringify([
-    options.baseUrl ?? null,
-    options.token ?? null,
-    options.recordSpace ?? null,
-    options.requestDeadlineMs ?? null,
-  ])
-  const existing = memos.get(key)
-  if (existing) return existing
-  const created = processMemo(() => loadHostedTaskIdentity(options), {
-    maxAgeMs: RECORD_IDENTITY_MEMO_MAX_AGE_MS,
-  })
-  memos.set(key, created)
-  return created
-}
-
-export function hostedTaskIdentity(options?: HostedRequestOptions): Promise<HostedTaskIdentity> {
-  return identityMemo(options).get()
 }
 
 export async function hostedSignedInUserId(options?: HostedRequestOptions): Promise<string | null> {

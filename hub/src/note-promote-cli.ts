@@ -49,7 +49,7 @@ export function promotionFlags(input: PromotionFlags): PromotionTarget {
 
 export async function promoteNoteCommand(id: string, flags: PromotionFlags) {
   const target = promotionFlags(flags)
-  const note = getNote(id)
+  const note = await getNote(id)
   const project = projects().find((candidate) => candidate.name === note.project)
   if (!project) throw new Error(`unknown project '${note.project}'`)
   let existingTaskKey = target.taskKey

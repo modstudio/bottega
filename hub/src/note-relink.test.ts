@@ -91,7 +91,7 @@ test('relink rolls back the attachment when its history comment cannot be writte
     writeTransaction((conn) => conn.exec('DROP TRIGGER fail_relink_comment'))
   }
 
-  expect(getNote(note.record_id).promoted_task).toBe(previous.key)
+  expect((await getNote(note.record_id, { baseUrl: '' })).promoted_task).toBe(previous.key)
   expect(
     db()
       .query<{ promoted_task_record_id: string }, [string]>(
@@ -194,5 +194,5 @@ test('relink refuses a tracker-owned project with the task-comment cause', async
   await expect(relinkNote(note.record_id, target.key, 'tracker trail')).rejects.toThrow(
     'tasks are tracker-owned, and relink records its trail as task comments in the hub',
   )
-  expect(getNote(note.record_id).promoted_task).toBe(previous.key)
+  expect((await getNote(note.record_id, { baseUrl: '' })).promoted_task).toBe(previous.key)
 })

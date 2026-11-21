@@ -3,7 +3,10 @@
 
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { formatNoteLabel } from '../../shared/note-label.ts'
+import type { NoteAnchorWire } from '../../shared/note-anchor.ts'
+import { sendHostedChanges } from './hosted-change-sender.ts'
 import type { HostedAcknowledgement, HostedNote } from './hosted-notes.ts'
+import { mergeNoteAnchors } from './note-anchor-merge.ts'
 import {
   hostedGetNote,
   hostedListNotes,
@@ -11,7 +14,12 @@ import {
   type NoteClientOptions,
 } from './note-client.ts'
 import type { NoteRow } from './note-row.ts'
-import type { PushedNote, PushedNoteAcknowledgement } from './push-contract.ts'
+import { noteDestinationOptions } from './note-project-space.ts'
+import {
+  HOSTED_NOTE_TABLE,
+  type PushedNote,
+  type PushedNoteAcknowledgement,
+} from './push-contract.ts'
 
 export type NoteFilters = {
   project?: string
@@ -139,7 +147,7 @@ export function pushedNote(note: NoteRow, at: string): PushedNote {
     stale_at: note.stale_at,
     stale_reason: note.stale_reason,
     promoted_task: note.promoted_task,
-    promoted_task_id: note.promoted_task_record_id,
+    promoted_task_id: note.promoted_task_record_id ?? null,
     updated_at: at,
     deleted_at: null,
     revision: note.revision,
@@ -164,4 +172,42 @@ export function pushedAcknowledgement(input: {
     updated_at: input.at,
     deleted_at: null,
   }
+}
+
+export async function sendHostedRepeatSighting(
+  note: NoteRow,
+  anchor: NoteAnchorWire,
+  at: string,
+  options?: NoteClientOptions,
+): Promise<NoteRow> {
+  const union = mergeNoteAnchors(note.anchors, [anchor])
+  const updated: NoteRow = {
+    ...note,
+    anchors: union.anchors,
+    sightings: union.sightings,
+    last_seen_at: at,
+    stale_at: null,
+    stale_reason: null,
+  }
+  const destination = await noteDestinationOptions(note.project, options)
+  await sendHostedChanges(
+    `note ${note.label}`,
+    [
+      [
+        {
+          table: HOSTED_NOTE_TABLE,
+          id: note.record_id,
+          op: 'upsert',
+          row: pushedNote(updated, at),
+          fields: ['anchors', 'last_seen_at'],
+          expected_revision: note.revision,
+        },
+      ],
+    ],
+    {
+      ...destination,
+      conflictRemedy: `${PLATFORM_SLUG} note list --project ${note.project}`,
+    },
+  )
+  return updated
 }
