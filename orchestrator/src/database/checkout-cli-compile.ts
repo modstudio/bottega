@@ -1,7 +1,7 @@
 // concern: compile marked checkout executables with runtime configuration autoload disabled.
 
 import { startBoundedSync } from '../../../shared/bounded-process.ts'
-import { COMPILED_RUNTIME_AUTOLOAD_DISABLE_FLAGS } from '../../../shared/compiled-runtime-autoload.ts'
+import { COMPILE_AUTOLOAD_OFF_FLAGS } from '../../../shared/compile-autoload.ts'
 import { INSTALL_HOME_ENV } from '../../../shared/install-root.ts'
 import type { StateEnvironment } from '../../../shared/state-directory.ts'
 
@@ -17,7 +17,7 @@ export function compileCheckoutCliEntry(
       'bun',
       'build',
       '--compile',
-      ...COMPILED_RUNTIME_AUTOLOAD_DISABLE_FLAGS,
+      ...COMPILE_AUTOLOAD_OFF_FLAGS,
       '--define',
       'BOTTEGA_COMPILED_CHECKOUT_BUILD=true',
       entry,

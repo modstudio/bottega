@@ -1,14 +1,6 @@
 // concern: CI proof that a confined ACP worker can launch checkout bottega-ask.
 
-import {
-  chmodSync,
-  existsSync,
-  mkdirSync,
-  mkdtempSync,
-  rmSync,
-  statSync,
-  writeFileSync,
-} from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { startBoundedSync } from '../../shared/bounded-process.ts'
@@ -16,7 +8,6 @@ import { PLATFORM_NAME, PLATFORM_SLUG, WORKER_MCP_SERVER_NAME } from '../../shar
 import { CHECKOUT_CLI_BINARY_ENV, CHECKOUT_ROOT_ENV } from '../../shared/install-root.ts'
 import { ORCHESTRATOR_DATABASE_ENV, STATE_HOME_ENV } from '../../shared/state-directory.ts'
 import type { Agent } from '../src/agent/agents.ts'
-import { compileCheckoutCliEntry } from '../src/database/checkout-cli-compile.ts'
 import type { Project } from '../src/project/projects.ts'
 import type { TransportStartOpts } from '../src/transport/transport.ts'
 
@@ -154,35 +145,58 @@ function assertCompiledCliDoesNotAutoloadBunfig(
   }
 }
 
-function assertCompiledProbeDoesNotAutoloadJsonConfig(
+function assertCompiledCliDoesNotAutoloadAliasConfig(
+  binary: string,
   checkout: string,
   root: string,
   environment: Record<string, string>,
+  config: 'tsconfig.json' | 'package.json',
 ): void {
-  const probeRoot = mkdtempSync(join(root, 'json-config-probe-'))
-  const entry = join(probeRoot, 'entry.ts')
-  const binary = join(probeRoot, 'probe')
+  const cwd = mkdtempSync(join(root, `${config.slice(0, -5)}-`))
+  const marker = join(cwd, 'planted-alias-ran')
   try {
-    writeFileSync(entry, "console.log('compiled runtime config probe')\n")
-    const compiled = compileCheckoutCliEntry(checkout, entry, binary, environment)
-    if (compiled.exitCode !== 0) {
-      throw new Error(
-        `compiled runtime config probe failed with exit ${compiled.exitCode}: ${compiled.stderr.trim()}`,
+    if (config === 'tsconfig.json') {
+      mkdirSync(join(cwd, 'planted'), { recursive: true })
+      writeFileSync(
+        join(cwd, config),
+        `${JSON.stringify({
+          compilerOptions: { baseUrl: '.', paths: { '@guard/*': ['./planted/*'] } },
+        })}\n`,
+      )
+      writeFileSync(
+        join(cwd, 'entry.ts'),
+        "const path = '@guard/' + 'marker'\ntry { await import(path) } catch {}\n",
+      )
+      writeFileSync(
+        join(cwd, 'planted', 'marker.ts'),
+        `await Bun.write(${JSON.stringify(marker)}, 'planted')\n`,
+      )
+    } else {
+      writeFileSync(
+        join(cwd, config),
+        `${JSON.stringify({ imports: { '#guard-sentinel': './planted.ts' } })}\n`,
+      )
+      writeFileSync(
+        join(cwd, 'entry.ts'),
+        "const path = '#guard-' + 'sentinel'\ntry { await import(path) } catch {}\n",
+      )
+      writeFileSync(
+        join(cwd, 'planted.ts'),
+        `await Bun.write(${JSON.stringify(marker)}, 'planted')\n`,
       )
     }
-    chmodSync(binary, 0o755)
-    for (const config of ['tsconfig.json', 'package.json'] as const) {
-      const cwd = mkdtempSync(join(probeRoot, `${config.slice(0, -5)}-`))
-      const sentinel = `BOTTEGA_${config === 'tsconfig.json' ? 'TSCONFIG' : 'PACKAGE_JSON'}_AUTOLOAD_SENTINEL`
-      writeFileSync(join(cwd, config), `${sentinel}\n`)
-      const result = compiledCliVersion(binary, checkout, cwd, environment)
-      const output = `${result.stdout}\n${result.stderr}`
-      if (result.exitCode !== 0 || output.includes(sentinel) || output.includes(config)) {
-        throw new Error(`compiled checkout CLI autoloaded ${config}`)
-      }
+    const result = compiledCliVersion(binary, checkout, cwd, {
+      ...environment,
+      BUN_OPTIONS: '--preload=./entry.ts',
+    })
+    if (existsSync(marker)) throw new Error(`compiled checkout CLI autoloaded ${config}`)
+    if (result.exitCode !== 0) {
+      throw new Error(
+        `compiled checkout CLI ${config} sentinel failed with exit ${result.exitCode}: ${result.stderr.trim()}`,
+      )
     }
   } finally {
-    rmSync(probeRoot, { recursive: true, force: true })
+    rmSync(cwd, { recursive: true, force: true })
   }
 }
 
@@ -194,7 +208,8 @@ function assertCompiledCliDoesNotAutoloadRuntimeConfig(
 ): void {
   assertCompiledCliDoesNotAutoloadDotenv(binary, checkout, root, environment)
   assertCompiledCliDoesNotAutoloadBunfig(binary, checkout, root, environment)
-  assertCompiledProbeDoesNotAutoloadJsonConfig(checkout, root, environment)
+  assertCompiledCliDoesNotAutoloadAliasConfig(binary, checkout, root, environment, 'tsconfig.json')
+  assertCompiledCliDoesNotAutoloadAliasConfig(binary, checkout, root, environment, 'package.json')
 }
 
 async function probeConfinedTools(
@@ -306,12 +321,7 @@ async function main(): Promise<void> {
     environment.BOTTEGA_ASK_URL = askLoopback.url
     const built = runtime.build.buildCheckoutCli(checkout, environment)
     runtime.build.verifyCheckoutCliBuild(built)
-    assertCompiledCliDoesNotAutoloadRuntimeConfig(
-      built.binary,
-      checkout,
-      root,
-      environment,
-    )
+    assertCompiledCliDoesNotAutoloadRuntimeConfig(built.binary, checkout, root, environment)
     const result = await probeConfinedTools(runtime, {
       checkout,
       cwd,

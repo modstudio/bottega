@@ -23,7 +23,7 @@ export const databaseModules: ArchitectureModule[] = [
   ]),
   module('orchestrator/src/database/checkout-cli-compile.ts', [
     '../../../shared/bounded-process.ts',
-    '../../../shared/compiled-runtime-autoload.ts',
+    '../../../shared/compile-autoload.ts',
     '../../../shared/install-root.ts',
     '../../../shared/state-directory.ts',
   ]),
