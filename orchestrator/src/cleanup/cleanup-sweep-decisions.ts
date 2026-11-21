@@ -429,10 +429,17 @@ export function decideFilesystemOrphanCandidate(
 }
 
 export type FilesystemOrphanUnderLockFacts = {
+  claimants: string[]
   sharers: number
   lockedAlive: boolean
 }
 export type FilesystemOrphanUnderLockRuling =
+  | {
+      action: 'claimed'
+      keepLine: string
+      keepReason: 'claimed by run'
+      cleanupFailed: false
+    }
   | {
       action: 'shared-before'
       keepLine: 'acquired by run(s)'
@@ -451,6 +458,14 @@ export type FilesystemOrphanUnderLockRuling =
 export function decideFilesystemOrphanUnderLock(
   facts: FilesystemOrphanUnderLockFacts,
 ): FilesystemOrphanUnderLockRuling {
+  if (facts.claimants.length > 0) {
+    return {
+      action: 'claimed',
+      keepLine: `claimed by run(s) ${facts.claimants.join(', ')} — kept`,
+      keepReason: 'claimed by run',
+      cleanupFailed: false,
+    }
+  }
   if (facts.sharers > 0) {
     return {
       action: 'shared-before',

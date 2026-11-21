@@ -520,6 +520,7 @@ export const cleanupBoundarySpecs = [
       './cleanup-sweep-report.ts',
       './cleanup-sweep-orphan-report.ts',
       './cleanup-sweep-orphan-candidate.ts',
+      './cleanup-sweep-orphan-claims.ts',
       './goose-ledger-sweep.ts',
       './claim-reconciliation.ts',
       './project-sweep.ts',
@@ -712,6 +713,19 @@ export const cleanupBoundarySpecs = [
     allowed: ['./cleanup.ts'],
     typeOnlyAllowed: ['./cleanup.ts'],
     reason: 'Keep maintenance-step presentation shared without owning sweep policy.',
+  },
+  {
+    name: 'cleanup-sweep-orphan-claims-boundary',
+    file: 'orchestrator/src/cleanup/cleanup-sweep-orphan-claims.ts',
+    allowed: [
+      '../database/db.ts',
+      '../git/checkout-identity.ts',
+      '../resources/resource-claims.ts',
+      '../resources/resource-ownership.ts',
+      './cleanup-sweep-decisions.ts',
+    ],
+    typeOnlyAllowed: [],
+    reason: 'Keep filesystem orphan claim and pointer reads in one store adapter.',
   },
   {
     name: 'cleanup-sweep-orphan-candidate-boundary',

@@ -188,6 +188,68 @@ test('releasing a shared worktree pointer drops this run from terminalCloseOutRu
   }
 })
 
+test("discard refuses another run's claimed worktree claim", () => {
+  const id = addRun({ agent: 'codex', job: 'implement', status: 'ok' })
+  const claimant = addRun({ agent: 'codex', job: 'implement', status: 'ok' })
+  const fixture = heldCleanup(id)
+  try {
+    db()
+      .query(
+        `INSERT INTO resource_claim
+         (record_id,root_run_record_id,run_record_id,project_record_id,kind,allocation_key,
+          identity,label,state,claimed_at,settled_at)
+         VALUES (?,?,?,?, 'worktree', ?,NULL,NULL,'claimed',?,NULL)`,
+      )
+      .run(newRecordId(), claimant, claimant, null, fixture.tree, '2026-11-21T00:00:00.000Z')
+
+    expect(() => discard(fixture.row)).toThrow(
+      new RegExp(`in use by run\\(s\\) ${claimant}.*run close-out ${claimant}`),
+    )
+    expect(db().query('SELECT worktree FROM run WHERE record_id=?').get(id)).toEqual({
+      worktree: fixture.tree,
+    })
+  } finally {
+    rmSync(fixture.repo, { recursive: true, force: true })
+  }
+})
+
+test("discard releases its pointer when another chain's shared-reader claim holds the tree", () => {
+  const id = addRun({ agent: 'codex', job: 'implement', status: 'ok' })
+  const reader = addRun({ agent: 'codex', job: 'review-lens', status: 'ok' })
+  const fixture = heldCleanup(id)
+  try {
+    db()
+      .query('UPDATE run SET repo=?,worktree=? WHERE record_id=?')
+      .run(fixture.project, fixture.tree, reader)
+    db()
+      .query(
+        `INSERT INTO resource_claim
+         (record_id,root_run_record_id,run_record_id,project_record_id,kind,allocation_key,
+          identity,label,state,claimed_at,settled_at)
+         VALUES (?,?,?,?, 'worktree', ?,?,NULL,'claimed',?,NULL)`,
+      )
+      .run(
+        newRecordId(),
+        reader,
+        reader,
+        null,
+        fixture.tree,
+        JSON.stringify({ path: fixture.tree, sharedReader: true }),
+        '2026-11-21T00:00:00.000Z',
+      )
+
+    expect(() => discard(fixture.row)).toThrow(/this conversation's pointer .* was released/)
+    expect(db().query('SELECT worktree FROM run WHERE record_id=?').get(id)).toEqual({
+      worktree: null,
+    })
+    expect(db().query('SELECT worktree FROM run WHERE record_id=?').get(reader)).toEqual({
+      worktree: fixture.tree,
+    })
+  } finally {
+    rmSync(fixture.repo, { recursive: true, force: true })
+  }
+})
+
 test('a two-tree chain held at close-out stays in terminalCloseOutRuns until the last pointer is released', () => {
   const id = addRun({ agent: 'codex', job: 'implement', status: 'ok' })
   const child = addRun({
