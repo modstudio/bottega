@@ -71,6 +71,7 @@ function adapter(input: {
   return {
     repository: () => 'example/repository',
     view: () => pullRequest,
+    releaseDecision: () => ({ decided: true, required: [], rungs: [], error: null }),
     checks: () =>
       input.checks ?? [
         { name: 'ci', bucket: 'pass', state: 'SUCCESS', link: 'https://checks.example/ci' },

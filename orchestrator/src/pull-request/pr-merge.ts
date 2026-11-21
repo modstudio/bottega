@@ -15,6 +15,10 @@ import { passingGateForCommit } from '../gate/gate-passed.ts'
 import { runWithGitFetchRetry } from '../git/fetch-retry.ts'
 import { targetGitEnvironment } from '../git/git-environment.ts'
 import { currentProjectRepository, type Project, projectAt } from '../project/projects.ts'
+import {
+  type RequiredRungDecision,
+  rungsCanBeExplicitlyRequired,
+} from '../release/release-required.ts'
 import { shipToDepthRefusal } from '../release/ship-to-reach.ts'
 import { type ShipCleanupReport, shipCleanup } from '../ship-cleanup/ship-cleanup.ts'
 import { matchWorkflowTreePath } from '../workflow/workflow-tree.ts'
@@ -68,6 +72,11 @@ import {
   type PullRequestMergeOutcome,
   type PullRequestPostLandingAdapter,
 } from './pr-post-landing.ts'
+import {
+  assertPullRequestReleaseAdmission,
+  type PullRequestReleaseDecisionAdapter,
+  pullRequestReleaseDecisionAtHead,
+} from './pr-release-admission.ts'
 import { assertPullRequestTaskCursorAdmission } from './task-cursor-admission.ts'
 
 export type { PullRequestMergeFacts } from './pr-merge-evidence.ts'
@@ -77,7 +86,7 @@ export type PullRequestMergeCommandOutcome = PullRequestMergeOutcome & {
   headBranch: string
 }
 
-export type PullRequestMergeAdapter = {
+export type PullRequestMergeAdapter = PullRequestReleaseDecisionAdapter & {
   repository(project: Project): string | null
   view(cwd: string, target: string): PullRequestMergeFacts
   taskCursorAdmission?(project: Project, branch: string, database: Database): Promise<void>
@@ -250,6 +259,7 @@ const cliPullRequestMergeAdapter: PullRequestMergeAdapter = {
       database,
     })
   },
+  releaseDecision: pullRequestReleaseDecisionAtHead,
   checks(cwd, number) {
     const result = run(cwd, [
       'gh',
@@ -860,6 +870,7 @@ async function completeMerge(input: {
   let mergeCommitLookupFailed = false
   let requeueOutput: string | undefined
   let admittedChange: PullRequestChange
+  let preMergeReleaseDecision: RequiredRungDecision | undefined
   try {
     pullRequest = input.adapter.view(input.cwd, input.target)
   } catch (cause) {
@@ -884,6 +895,9 @@ async function completeMerge(input: {
       )
     } else {
       admittedChange = admitViewedPullRequest(pullRequest, input)
+      const releaseDecision = assertPullRequestReleaseAdmission({ ...input, pullRequest })
+      if (rungsCanBeExplicitlyRequired(input.project.settings.release?.rungs ?? []))
+        preMergeReleaseDecision = releaseDecision
       const merged = mergeAdmittedHead({ ...input, pullRequest })
       if (merged.mergeCommit) mergeCommit = merged.mergeCommit
       else {
@@ -935,6 +949,7 @@ async function completeMerge(input: {
     releaseRequired: input.releaseRequired,
     depth: input.depth,
     workflowPromotionDue,
+    preMergeReleaseDecision,
   })
   return {
     ...outcome,

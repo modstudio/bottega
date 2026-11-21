@@ -1,7 +1,7 @@
 import { fileURLToPath } from 'node:url'
 import { db } from '../database/db.ts'
 import { projectByName } from '../project/projects.ts'
-import type { RequiredReleaseReport } from '../release/release-required.ts'
+import type { RequiredReleaseReport, RequiredRungDecision } from '../release/release-required.ts'
 import type { TriageDecision } from '../review-funnel/review-funnel-admission-evidence.ts'
 import type { ShipCleanupReport } from '../ship-cleanup/ship-cleanup.ts'
 import type { PullRequestCheck } from './merge-decision.ts'
@@ -47,6 +47,7 @@ export function adapter(
   input: {
     view?: (target: string) => PullRequestMergeFacts
     taskCursorAdmission?: PullRequestMergeAdapter['taskCursorAdmission']
+    releaseDecision?: () => RequiredRungDecision
     checks?: PullRequestCheck[] | (() => PullRequestCheck[])
     landingState?: () => { remoteLandingTip: string; mergeBase: string }
     hasCommit?: (cwd: string, headCommit: string) => boolean
@@ -83,6 +84,8 @@ export function adapter(
     repository: () => 'example/repository',
     view: (_cwd, target) => input.view?.(target) ?? pullRequest,
     ...(input.taskCursorAdmission ? { taskCursorAdmission: input.taskCursorAdmission } : {}),
+    releaseDecision: () =>
+      input.releaseDecision?.() ?? { decided: true, required: [], rungs: [], error: null },
     checks: () => (typeof input.checks === 'function' ? input.checks() : (input.checks ?? [])),
     landingState: input.landingState ?? (() => ({ remoteLandingTip: 'base', mergeBase: 'base' })),
     hasCommit: input.hasCommit ?? (() => true),

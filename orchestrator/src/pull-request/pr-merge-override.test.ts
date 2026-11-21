@@ -134,6 +134,7 @@ function adapterFor(
   return {
     repository: () => 'example/repository',
     view: () => pullRequest(headCommit),
+    releaseDecision: () => ({ decided: true, required: [], rungs: [], error: null }),
     checks: () => [
       {
         name: 'test',
