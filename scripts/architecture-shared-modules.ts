@@ -90,6 +90,7 @@ export const sharedModules: ArchitectureModule[] = [
   ]),
   module('shared/config-client.ts', [
     './bounded-fetch.ts',
+    './call-budgets.ts',
     './config-read-memo.ts',
     './credential.ts',
     './hosted-call-observation.ts',
@@ -151,6 +152,7 @@ export const sharedModules: ArchitectureModule[] = [
     './trust-log-head.ts',
   ]),
   module('shared/hosted-secrets.ts', [
+    './bounded-fetch.ts',
     './config-client.ts',
     './hosted-config-space.ts',
     './hosted-secret-opening.ts',

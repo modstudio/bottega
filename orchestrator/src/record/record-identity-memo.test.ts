@@ -2,7 +2,6 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { hostedApiFetch } from '../../../shared/bounded-fetch.ts'
 import { configClient } from '../../../shared/config-client.ts'
 import { forgetConfigReadMemo } from '../../../shared/config-read-memo.ts'
 import { markRecordIdentityChanged } from '../../../shared/record-session.ts'
@@ -110,7 +109,7 @@ describe('record identity process memo', () => {
 
   test('record and config clients share the same identity read', async () => {
     const record = recordApiClient()
-    const config = configClient(process.env, hostedApiFetch)
+    const config = configClient(process.env)
 
     await Promise.all([record.whoami(), config.whoami()])
 
@@ -123,17 +122,6 @@ describe('record identity process memo', () => {
     await first.whoami()
 
     markRecordIdentityChanged()
-    await second.whoami()
-
-    expect(whoamiRequests).toBe(2)
-  })
-
-  test('a changed session token generation makes the next client re-request whoami', async () => {
-    const first = recordApiClient()
-    const second = recordApiClient()
-    await first.whoami()
-
-    session.setToken('record-identity-memo-token-b')
     await second.whoami()
 
     expect(whoamiRequests).toBe(2)
@@ -159,28 +147,6 @@ describe('record identity process memo', () => {
     await expect(first.setActiveOrganization({ organizationId: 'space-b' })).rejects.toThrow(
       'record API returned an invalid organization',
     )
-    await second.whoami()
-
-    expect(whoamiRequests).toBe(2)
-  })
-
-  test('create-organization success invalidates identity before the next whoami', async () => {
-    const first = recordApiClient()
-    const second = recordApiClient()
-    await first.whoami()
-
-    await first.createOrganization({ name: 'Beta', slug: 'beta' })
-    await second.whoami()
-
-    expect(whoamiRequests).toBe(2)
-  })
-
-  test('accept-invitation success invalidates identity before the next whoami', async () => {
-    const first = recordApiClient()
-    const second = recordApiClient()
-    await first.whoami()
-
-    await first.acceptInvitation('invitation-a')
     await second.whoami()
 
     expect(whoamiRequests).toBe(2)

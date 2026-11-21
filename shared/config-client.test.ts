@@ -5,6 +5,7 @@ import {
   ConfigClientError,
   configClient,
 } from './config-client.ts'
+import { BoundExceededError } from './call-budgets.ts'
 import { CONFIG_HOME_ENV, HARNESS_ENV_FILE_ENV } from './config-directory.ts'
 import { CALLER_HEADER_NAME, withRecordCaller } from './record-caller.ts'
 
@@ -70,6 +71,28 @@ test('config client preserves a JSON refusal error and remedy', async () => {
     error: 'signed-in user lacks config access',
     remedy: 'ask a space owner to grant it',
   })
+})
+
+test('config client preserves a hosted transport bound and its remedy', async () => {
+  const bound = new BoundExceededError(
+    'https://record.test/v1/whoami',
+    'hosted-api',
+    'deadline',
+    30_000,
+  )
+  const client = configClient(
+    { BOTTEGA_RECORD_API_URL: 'https://record.test' },
+    async () => {
+      throw bound
+    },
+    'test',
+  )
+
+  await expect(client.whoami()).rejects.toMatchObject({
+    reason: 'unreachable',
+    error: bound.message,
+  })
+  await expect(client.whoami()).rejects.toThrow(bound.message)
 })
 
 test('config client sends the active caller header', async () => {

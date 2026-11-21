@@ -1,6 +1,7 @@
 // concern: hosted-config-call-outcome
 /** Adapts hosted config observations into the machine-local outcome store. */
 
+import { hostedApiFetch } from '../../../shared/bounded-fetch.ts'
 import {
   type ConfigCallObservation,
   type ConfigClient,
@@ -31,7 +32,7 @@ export function recordConfigCallOutcome(observation: ConfigCallObservation): voi
 
 export function hostedConfigClient(
   env: ConfigEnvironment = process.env,
-  transport: Parameters<typeof configClient>[1] = fetch,
+  transport: Parameters<typeof configClient>[1] = hostedApiFetch,
   token?: string | null,
   signal?: AbortSignal,
 ): ConfigClient {

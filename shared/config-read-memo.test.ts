@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, test } from 'bun:test'
 import { configClient } from './config-client.ts'
 import { forgetConfigReadMemo } from './config-read-memo.ts'
+import { RECORD_SPACE_HEADER_NAME } from './record-request-headers.ts'
 import { forgetRecordSessionToken } from './record-session.ts'
 
 type Counts = Map<string, number>
@@ -96,6 +97,26 @@ describe('hosted configuration read memo', () => {
     await configClient(environment, transport, 'token-b').whoami()
 
     expect(counts.get('GET /v1/whoami')).toBe(2)
+  })
+
+  test('secret-list reads are separate for each destination space', async () => {
+    let requests = 0
+    const transport = Object.assign(
+      async (_input: RequestInfo | URL, init?: RequestInit) => {
+        requests += 1
+        const space = new Headers(init?.headers).get(RECORD_SPACE_HEADER_NAME)
+        return Response.json({ items: [{ key: `secret-${space}` }] })
+      },
+      { preconnect: fetch.preconnect },
+    )
+    const client = configClient(environment, transport, 'token-a')
+
+    const alpha = await client.listSecrets('default', { destinationSpaceId: 'alpha' })
+    const beta = await client.listSecrets('default', { destinationSpaceId: 'beta' })
+
+    expect(requests).toBe(2)
+    expect(alpha).toEqual([{ key: 'secret-alpha' }])
+    expect(beta).toEqual([{ key: 'secret-beta' }])
   })
 
   test('a rejected read is retried', async () => {

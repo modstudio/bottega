@@ -1,25 +1,27 @@
 // concern: hosted-config-client
 /** Shares selected hosted configuration reads within one process. */
 
-type Transport = object
+export const RECORD_WHOAMI_ROUTE = '/v1/whoami'
+
+type MemoIdentity = object
 type ReadMemo = Map<string, Map<string, Map<string, Promise<unknown>>>>
 
-let readsByTransport = new WeakMap<Transport, ReadMemo>()
+let readsByIdentity = new WeakMap<MemoIdentity, ReadMemo>()
 
-function transportReads(transport: Transport): ReadMemo {
-  const existing = readsByTransport.get(transport)
+function identityReads(identityKey: MemoIdentity): ReadMemo {
+  const existing = readsByIdentity.get(identityKey)
   if (existing) return existing
   const created: ReadMemo = new Map()
-  readsByTransport.set(transport, created)
+  readsByIdentity.set(identityKey, created)
   return created
 }
 
 function tokenReads(
-  transport: Transport,
+  identityKey: MemoIdentity,
   baseUrl: string,
   token: string,
 ): Map<string, Promise<unknown>> {
-  const byUrl = transportReads(transport)
+  const byUrl = identityReads(identityKey)
   let byToken = byUrl.get(baseUrl)
   if (!byToken) {
     byToken = new Map()
@@ -34,31 +36,48 @@ function tokenReads(
 }
 
 export function memoizedConfigRead<T>(
-  transport: Transport,
+  identityKey: MemoIdentity,
   baseUrl: string,
   token: string,
   path: string,
+  destinationSpaceId: string | undefined,
+  projectId: string | null | undefined,
   load: () => Promise<T>,
 ): Promise<T> {
-  const byPath = tokenReads(transport, baseUrl, token)
-  const existing = byPath.get(path)
+  const byPath = tokenReads(identityKey, baseUrl, token)
+  const tenantPath = JSON.stringify([path, destinationSpaceId ?? '', projectId ?? ''])
+  const existing = byPath.get(tenantPath)
   if (existing) return existing as Promise<T>
   const read = load().catch((error) => {
-    if (byPath.get(path) === read) byPath.delete(path)
+    if (byPath.get(tenantPath) === read) byPath.delete(tenantPath)
     throw error
   })
-  byPath.set(path, read)
+  byPath.set(tenantPath, read)
   return read
 }
 
-export function clearConfigReadMemo(transport: Transport, baseUrl: string, token: string): void {
-  const byUrl = readsByTransport.get(transport)
+export function isMemoizedConfigRead(path: string): boolean {
+  return (
+    path === RECORD_WHOAMI_ROUTE ||
+    path === '/v1/config/secrets' ||
+    path.startsWith('/v1/config/secrets?') ||
+    path === '/v1/config/credential-preferences' ||
+    path === '/v1/config/trust-log'
+  )
+}
+
+export function clearConfigReadMemo(
+  identityKey: MemoIdentity,
+  baseUrl: string,
+  token: string,
+): void {
+  const byUrl = readsByIdentity.get(identityKey)
   const byToken = byUrl?.get(baseUrl)
   byToken?.delete(token)
   if (byToken?.size === 0) byUrl?.delete(baseUrl)
-  if (byUrl?.size === 0) readsByTransport.delete(transport)
+  if (byUrl?.size === 0) readsByIdentity.delete(identityKey)
 }
 
 export function forgetConfigReadMemo(): void {
-  readsByTransport = new WeakMap()
+  readsByIdentity = new WeakMap()
 }

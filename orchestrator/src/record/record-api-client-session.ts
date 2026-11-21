@@ -6,7 +6,8 @@ import {
   type NoDestinationWriteReport,
   parseNoDestinationWriteReport,
 } from '../../../shared/record-no-destination-write-contract.ts'
-import { RECORD_WHOAMI_ROUTE, type RecordClientRequest } from './record-api-client-paths.ts'
+import { RECORD_WHOAMI_ROUTE } from '../../../shared/config-read-memo.ts'
+import type { RecordClientRequest } from './record-api-client-paths.ts'
 import { responseRecord } from './record-api-client-response.ts'
 import type { RecordIdentity } from './record-auth.ts'
 import type { RecordSyncRequest, RecordSyncResponse } from './record-sync-contract.ts'

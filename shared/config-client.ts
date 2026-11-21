@@ -1,5 +1,11 @@
 import { hostedApiFetch } from './bounded-fetch.ts'
-import { clearConfigReadMemo, memoizedConfigRead } from './config-read-memo.ts'
+import { BoundExceededError } from './call-budgets.ts'
+import {
+  clearConfigReadMemo,
+  isMemoizedConfigRead,
+  memoizedConfigRead,
+  RECORD_WHOAMI_ROUTE,
+} from './config-read-memo.ts'
 import type {
   CredentialEnvironment,
   CredentialMetadataFields,
@@ -35,7 +41,7 @@ export class ConfigClientError extends Error {
       reason === 'not-configured'
         ? `hosted config is not configured; ${RECORD_SIGN_IN_REMEDY}`
         : reason === 'unreachable'
-          ? `hosted config route ${route} is unreachable`
+          ? `hosted config route ${route} is unreachable${refusal ? `: ${refusal}` : ''}`
           : details?.url && details.contentType
             ? `hosted config refused the response from ${details.url} (status ${status}, content type ${details.contentType}): expected JSON. ${RECORD_SIGN_IN_REMEDY}`
             : `hosted config route ${route} returned HTTP ${status}${refusal ? `: ${refusal}` : ''}`,
@@ -466,7 +472,12 @@ function createConfigClient(
           error,
         })
         if (signal?.aborted) throw signal.reason
-        throw new ConfigClientError('unreachable', route)
+        throw new ConfigClientError(
+          'unreachable',
+          route,
+          undefined,
+          error instanceof BoundExceededError ? { error: error.message } : undefined,
+        )
       }
     }
     const load = async () => {
@@ -496,8 +507,16 @@ function createConfigClient(
       clearConfigReadMemo(transport, baseUrl, token)
       return load()
     }
-    if (memoizedConfigRoute(route))
-      return memoizedConfigRead(transport, baseUrl, token, route, load)
+    if (isMemoizedConfigRead(route))
+      return memoizedConfigRead(
+        transport,
+        baseUrl,
+        token,
+        route,
+        init.destinationSpaceId,
+        init.projectId,
+        load,
+      )
     return load()
   }
   const query = (values: Record<string, string>) => `?${new URLSearchParams(values)}`
@@ -507,18 +526,8 @@ function createConfigClient(
     ...configSecretDeleteClient(request),
     ...credentialPreferenceClient(request),
     ...configKeyClient(request, query),
-    whoami: () => request<ConfigIdentity>('/v1/whoami'),
+    whoami: () => request<ConfigIdentity>(RECORD_WHOAMI_ROUTE),
   }
-}
-
-function memoizedConfigRoute(route: string): boolean {
-  return (
-    route === '/v1/whoami' ||
-    route === '/v1/config/secrets' ||
-    route.startsWith('/v1/config/secrets?') ||
-    route === '/v1/config/credential-preferences' ||
-    route === '/v1/config/trust-log'
-  )
 }
 
 export function configClient(

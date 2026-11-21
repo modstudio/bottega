@@ -159,6 +159,7 @@ export const setupModuleSpecs: readonly SetupModuleSpec[] = [
     name: 'provider-credential-trust-boundary',
     file: 'orchestrator/src/setup/provider-credential-trust.ts',
     allowed: [
+      '../../../shared/bounded-fetch.ts',
       '../../../shared/config-client.ts',
       '../../../shared/credential-machine-trust-reader.ts',
       '../../../shared/machine-key-store.ts',

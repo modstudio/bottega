@@ -63,7 +63,10 @@ import type { RecordContextItemInput } from './record-context-items.ts'
 export { recordAuthRefusal, recordAuthToken } from './record-api-client-error.ts'
 export { RecordApiRequestError } from './record-api-client-response.ts'
 
-import { sendWithStoredRecordSessionToken } from '../../../shared/record-session.ts'
+import {
+  markRecordIdentityChanged,
+  sendWithStoredRecordSessionToken,
+} from '../../../shared/record-session.ts'
 import {
   type RecordRoutingEvidenceClient,
   recordRoutingEvidenceClient,
@@ -98,7 +101,7 @@ import {
   type RecordDocWriteResponse,
   recordDocWriteResponseFields,
 } from './record-doc-transport-contract.ts'
-import { markRecordIdentityMemoChanged, selectRecordApiTransport } from './record-identity-memo.ts'
+import { selectRecordApiTransport } from './record-identity-memo.ts'
 import type { HostedRecordInvitation } from './record-pending-invitations.ts'
 import type {
   PublicRecordDoc,
@@ -937,7 +940,7 @@ function recordIdentityAndSpaceClient(
     try {
       return await request(path, init)
     } finally {
-      markRecordIdentityMemoChanged()
+      markRecordIdentityChanged()
     }
   }
   return {

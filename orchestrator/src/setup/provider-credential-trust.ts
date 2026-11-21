@@ -1,6 +1,7 @@
 // concern: provider-credential-trust setup facts
 /** Gathers bounded hosted facts for the credential spaces provider-backed agents use. */
 
+import { hostedApiFetch } from '../../../shared/bounded-fetch.ts'
 import { configClient } from '../../../shared/config-client.ts'
 import type {
   CredentialMachine,
@@ -35,7 +36,12 @@ const dependencies: GatherProviderCredentialTrustDependencies = {
     return pair ? machineKeyInfo(pair) : null
   },
   client: () =>
-    configClient(process.env, fetch, undefined, AbortSignal.timeout(SETUP_COMMAND_TIMEOUT_MS)),
+    configClient(
+      process.env,
+      hostedApiFetch,
+      undefined,
+      AbortSignal.timeout(SETUP_COMMAND_TIMEOUT_MS),
+    ),
 }
 
 /** Read each distinct provider credential space once; unsigned-in machines have no hosted fact. */
