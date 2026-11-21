@@ -6,7 +6,9 @@ import type { Database } from 'bun:sqlite'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { BUN_VERSION_FILE, readDeclaredBunVersion } from '../../../shared/bun-version.ts'
 import { resolveInstallRoot } from '../../../shared/install-root.ts'
+import { refusal, renderRefusal } from '../../../shared/refusal.ts'
 import { containsSecretShaped } from '../../../shared/secret-shaped.ts'
 import { db, sessionId, writableDb } from '../database/db.ts'
 import { boundedGateOutputTail, GATE_OUTPUT_TAIL_BYTES } from '../gate/gate-decision.ts'
@@ -25,6 +27,10 @@ import {
   readLiveVersion,
 } from './live-reading.ts'
 import {
+  checkReleaseBinaryAutoload,
+  RELEASE_REQUIRE_PINNED_BUN_ENV,
+} from './release-binary-autoload-check.ts'
+import {
   alreadyLiveReleaseDecision,
   checkoutReleaseDecision,
   ciDeployWaitDecision,
@@ -40,6 +46,7 @@ import {
   releaseReasonDecision,
   releaseRowProvesCandidate,
   releaseRungProofRefusal,
+  releaseRuntimeConfigGuardDecision,
   releaseTagVersionDecision,
   selectReleaseRung,
   trunkFreshnessDecision,
@@ -55,15 +62,20 @@ type CommandResult = { exitCode: number; output: string }
 const RELEASE_CI_DEPLOY_WAIT_MS = 30 * 60 * 1_000
 const RELEASE_CI_DEPLOY_POLL_MS = 30 * 1_000
 
-/** Validate a proposed tag against the version reported by this development checkout. */
-export function validateReleaseTagVersion(
-  tag: string,
+function releaseCheckoutRoot(
   fromDirectory?: string,
   environment: Record<string, string | undefined> = process.env,
-): { tag: string; reportedVersion: string } {
-  const root = fromDirectory
+): string {
+  return fromDirectory
     ? resolveInstallRoot(fromDirectory, environment)
     : resolveInstallRoot(import.meta.dir, environment)
+}
+
+/** Validate a proposed tag against the version reported by this development checkout. */
+function validateReleaseTagVersion(
+  tag: string,
+  root: string,
+): { tag: string; reportedVersion: string } {
   const file = join(root, 'package.json')
   let value: unknown
   try {
@@ -81,6 +93,54 @@ export function validateReleaseTagVersion(
   const decision = releaseTagVersionDecision(reportedVersion, tag)
   if (!decision.ok) throw new Error(decision.message)
   return { tag, reportedVersion }
+}
+
+/** Validate the proposed tag and prove the host release binary ignores runtime cwd configuration. */
+export async function checkRelease(
+  tag: string,
+  fromDirectory?: string,
+  environment: Record<string, string | undefined> = process.env,
+): Promise<{ tag: string; reportedVersion: string; runtimeConfigGuardSkip: string | null }> {
+  const root = releaseCheckoutRoot(fromDirectory, environment)
+  const checked = validateReleaseTagVersion(tag, root)
+  const bunVersionFile = join(root, BUN_VERSION_FILE)
+  let pinnedBunVersion: string | undefined
+  try {
+    pinnedBunVersion = readDeclaredBunVersion(bunVersionFile)
+  } catch (error) {
+    throw new Error(
+      renderRefusal(
+        refusal(
+          `cannot read the pinned Bun version from ${bunVersionFile}: ${error instanceof Error ? error.message : String(error)}`,
+          {
+            kind: 'edit',
+            text: `restore ${BUN_VERSION_FILE} with one plain Bun version, then retry`,
+          },
+        ),
+      ),
+    )
+  }
+  if (!pinnedBunVersion) {
+    throw new Error(
+      renderRefusal(
+        refusal(`${bunVersionFile} must contain one plain Bun version, for example 1.4.4`, {
+          kind: 'edit',
+          text: `restore ${BUN_VERSION_FILE} with one plain Bun version, then retry`,
+        }),
+      ),
+    )
+  }
+  const guard = releaseRuntimeConfigGuardDecision(
+    Bun.version,
+    pinnedBunVersion,
+    environment[RELEASE_REQUIRE_PINNED_BUN_ENV] === '1',
+  )
+  if (guard.action === 'fail') throw new Error(guard.message)
+  if (guard.action === 'run') await checkReleaseBinaryAutoload(root, tag, environment)
+  return {
+    ...checked,
+    runtimeConfigGuardSkip: guard.action === 'skip' ? guard.message : null,
+  }
 }
 
 export type ReleaseLedgerRow = {

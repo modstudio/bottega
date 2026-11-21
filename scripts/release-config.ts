@@ -1,23 +1,7 @@
-import { readFileSync } from 'node:fs'
-
-/** The repository's single Bun declaration, relative to the repository root. */
-export const BUN_VERSION_FILE = '.bun-version'
-
-const plainBunVersion = /^[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/
-
-/** The version a declaration file holds, or undefined unless it is exactly one plain version. */
-export function declaredBunVersion(source: string | undefined): string | undefined {
-  const version = source?.trim()
-  if (version && plainBunVersion.test(version) && source?.replace(/\r?\n$/, '') === version) {
-    return version
-  }
-  return undefined
-}
+import { BUN_VERSION_FILE, readDeclaredBunVersion } from '../shared/bun-version.ts'
 
 function readReleaseBunVersion(): string {
-  const version = declaredBunVersion(
-    readFileSync(new URL(`../${BUN_VERSION_FILE}`, import.meta.url), 'utf8'),
-  )
+  const version = readDeclaredBunVersion(new URL(`../${BUN_VERSION_FILE}`, import.meta.url))
   if (!version)
     throw new Error(`${BUN_VERSION_FILE} must contain one plain version, for example 1.4.4`)
   return version

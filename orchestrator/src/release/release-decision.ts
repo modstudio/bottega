@@ -1,8 +1,41 @@
 // concern: release-decision
 /** Pure release policy over checkout, ancestry, lock, rung, and post-deploy facts. */
 
+import { refusal, renderRefusal } from '../../../shared/refusal.ts'
 import { RELEASE_TAG_SHAPE, releaseTagVersion } from '../../../shared/release-tag.ts'
 import { redactSecretShaped } from '../../../shared/secret-shaped.ts'
+
+export type ReleaseRuntimeConfigGuardDecision =
+  | { action: 'run' }
+  | { action: 'skip'; message: string }
+  | { action: 'fail'; message: string }
+
+/** Run the binary guard only under its pinned compiler, and fail closed when CI requires it. */
+export function releaseRuntimeConfigGuardDecision(
+  localBunVersion: string,
+  pinnedBunVersion: string,
+  requirePinnedBun: boolean,
+): ReleaseRuntimeConfigGuardDecision {
+  if (localBunVersion === pinnedBunVersion) return { action: 'run' }
+  if (requirePinnedBun) {
+    return {
+      action: 'fail',
+      message: renderRefusal(
+        refusal(
+          `release binary runtime-config guard requires pinned Bun ${pinnedBunVersion}, received local Bun ${localBunVersion}`,
+          {
+            kind: 'edit',
+            text: `install the Bun named in .bun-version (${pinnedBunVersion}) and retry`,
+          },
+        ),
+      ),
+    }
+  }
+  return {
+    action: 'skip',
+    message: `release binary runtime-config guard skipped: local Bun ${localBunVersion} does not match pinned Bun ${pinnedBunVersion}; .github/workflows/release.yml runs it with the pinned Bun`,
+  }
+}
 
 const RELEASE_ENVIRONMENT_NAMES = [
   'BOTTEGA_RELEASE_PROJECT',

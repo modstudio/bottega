@@ -2,7 +2,7 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { BUN_VERSION_FILE, declaredBunVersion } from './release-config.ts'
+import { BUN_VERSION_FILE, declaredBunVersion } from '../shared/bun-version.ts'
 import { repositoryDockerfiles } from './repository-dockerfiles.ts'
 
 export type BunImagePin = { path: string; line: number; version: string }

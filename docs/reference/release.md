@@ -27,7 +27,7 @@ releases and rungs
 
 **Synopsis:** `bottega release check <tag>`
 
-validate the reported version before tagging a release
+validate the release tag and prove release binaries ignore working-directory config
 
 ### Related
 
@@ -72,7 +72,7 @@ run the registered deploy with BOTTEGA_RELEASE_PROJECT, BOTTEGA_RELEASE_RUNG, an
 
 **Synopsis:** `bottega release run check <tag>`
 
-validate the reported version before tagging a release
+validate the release tag and prove release binaries ignore working-directory config
 
 ### Related
 

@@ -17,11 +17,39 @@ import {
   releaseReasonDecision,
   releaseRowProvesCandidate,
   releaseRungProofRefusal,
+  releaseRuntimeConfigGuardDecision,
   releaseTagVersionDecision,
   selectReleaseRung,
   trunkFreshnessDecision,
   unprovableReleaseRungMessage,
 } from './release-decision.ts'
+
+describe('release binary runtime-config guard', () => {
+  test('runs with the pinned Bun whether or not the marker is set', () => {
+    expect(releaseRuntimeConfigGuardDecision('1.4.4', '1.4.4', false)).toEqual({
+      action: 'run',
+    })
+    expect(releaseRuntimeConfigGuardDecision('1.4.4', '1.4.4', true)).toEqual({
+      action: 'run',
+    })
+  })
+
+  test('skips an unpinned local Bun only without the marker', () => {
+    expect(releaseRuntimeConfigGuardDecision('1.4.5', '1.4.4', false)).toEqual({
+      action: 'skip',
+      message:
+        'release binary runtime-config guard skipped: local Bun 1.4.5 does not match pinned Bun 1.4.4; .github/workflows/release.yml runs it with the pinned Bun',
+    })
+  })
+
+  test('fails closed when the marker requires the pinned Bun', () => {
+    expect(releaseRuntimeConfigGuardDecision('1.4.5', '1.4.4', true)).toEqual({
+      action: 'fail',
+      message:
+        'release binary runtime-config guard requires pinned Bun 1.4.4, received local Bun 1.4.5\ncleared by: install the Bun named in .bun-version (1.4.4) and retry',
+    })
+  })
+})
 
 describe('CI deploy live wait', () => {
   test('matches when the live commit contains the candidate', () => {

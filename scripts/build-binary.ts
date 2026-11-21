@@ -7,6 +7,7 @@ import {
   SYSTEMD_UNIT_SUFFIXES,
 } from '../orchestrator/src/setup/setup-schedule-policy.ts'
 import { PLATFORM_SLUG } from '../shared/brand.ts'
+import { COMPILE_AUTOLOAD_OFF_FLAGS } from '../shared/compile-autoload.ts'
 import {
   EMBEDDED_ASSET_PREFIXES,
   RUNTIME_ASSETS,
@@ -190,7 +191,7 @@ await import(${JSON.stringify(join(repositoryRoot, 'cli', `${PLATFORM_SLUG}.ts`)
         'build',
         '--compile',
         `--target=bun-${target}`,
-        '--no-autoload-dotenv',
+        ...COMPILE_AUTOLOAD_OFF_FLAGS,
         '--outfile',
         destination,
         wrapper,
