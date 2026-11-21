@@ -15,7 +15,11 @@ const projectTaskListSurfaces = {
     'orchestrator/src/workflow/workflow-cursor-report.ts',
   ],
   contextHealth: ['orchestrator/src/context-health/context-health-adapter.ts'],
-  hostedMirrorOrSync: ['orchestrator/src/commands/cleanup.ts'],
+  hostedMirrorOrSync: [
+    'orchestrator/src/commands/cleanup.ts',
+    'orchestrator/src/cleanup/cleanup-sweep.ts',
+    'orchestrator/src/cleanup/cleanup-sweep-hub-tasks.ts',
+  ],
   projectLifecycle: ['orchestrator/src/project/default-local-project-retirement.ts'],
 } as const
 

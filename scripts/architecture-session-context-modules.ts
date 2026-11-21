@@ -56,6 +56,7 @@ export const sessionContextModules: SessionContextModule[] = [
     '../doc/context-cursor-warning-decision.ts',
     '../doc/context-item-store.ts',
     '../doc/doc-subjects.ts',
+    '../workflow/project-task-list.ts',
     '../workflow/workflow-cursor-list.ts',
     '../workflow/workflow-task-reference.ts',
     './context-review-decision.ts',

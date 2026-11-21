@@ -35,6 +35,7 @@ export const contextHealthModules: ContextHealthModule[] = [
     '../session/brief-injection.ts',
     '../session/context-review-store.ts',
     '../workflow/task-flow-store.ts',
+    '../workflow/project-task-list.ts',
     '../workflow/workflow-cursor-list.ts',
     '../workflow/workflow-task-reference.ts',
     './context-health.ts',
