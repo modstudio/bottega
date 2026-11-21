@@ -5,7 +5,11 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { declareFixtureProjectSpace } from '../test/fixture-project-space.ts'
-import { noteHostedFetch } from '../test/note-hosted-fetch.ts'
+import {
+  noteHostedChanges,
+  noteHostedFetch,
+  resetNoteHostedChanges,
+} from '../test/note-hosted-fetch.ts'
 import { resetFixtureStore } from '../test/run-fixtures.ts'
 import { db, writeTransaction } from './db.ts'
 import { persistInstallBinding } from './install-binding.ts'
@@ -28,6 +32,7 @@ import { createLocalTaskInTransaction, showTask } from './task.ts'
 
 const scratch = mkdtempSync(join(tmpdir(), 'hub-note-'))
 beforeAll(resetFixtureStore)
+beforeEach(resetNoteHostedChanges)
 const workshop = declareFixtureProjectSpace('workshop', 'workshop')
 afterAll(resetFixtureStore)
 afterAll(() => rmSync(scratch, { recursive: true, force: true }))
@@ -694,6 +699,31 @@ describe('suggestion notes', () => {
     expect(offered.candidates[0]?.record_id).toBe(first.record_id)
   })
 
+  test('same sends the fixture revision as a number', async () => {
+    const note = (
+      await fileNote({
+        text: `Same revision ${crypto.randomUUID()}`,
+        cwd: '/fixtures/repos/workshop',
+        forceNew: true,
+      })
+    ).note
+    resetNoteHostedChanges()
+
+    await fileNote({
+      text: 'A repeat sighting',
+      cwd: '/fixtures/repos/workshop',
+      sameAs: note.record_id,
+    })
+
+    expect(noteHostedChanges).toHaveLength(1)
+    expect(noteHostedChanges[0]).toMatchObject({
+      table: 'hub_note',
+      op: 'upsert',
+      expected_revision: 1,
+    })
+    expect(typeof noteHostedChanges[0]?.expected_revision).toBe('number')
+  })
+
   test('same preserves sightings and drop records why', async () => {
     const one = (
       await fileNote({
@@ -709,12 +739,26 @@ describe('suggestion notes', () => {
         forceNew: true,
       })
     ).note
+    resetNoteHostedChanges()
     expect((await merge(one.number, two.number)).sightings).toBe(2)
+    expect(noteHostedChanges).toHaveLength(2)
+    expect(noteHostedChanges.map((change) => change.expected_revision)).toEqual([1, 1])
+    expect(noteHostedChanges.every((change) => typeof change.expected_revision === 'number')).toBe(
+      true,
+    )
     await expect(getNote(two.record_id, { baseUrl: '' })).rejects.toThrow(
       `no note ${two.record_id}`,
     )
 
+    resetNoteHostedChanges()
     expect((await drop(one.number, 'superseded')).stale_reason).toBe('dropped: superseded')
+    expect(noteHostedChanges).toHaveLength(1)
+    expect(noteHostedChanges[0]).toMatchObject({
+      table: 'hub_note',
+      op: 'upsert',
+      expected_revision: 1,
+    })
+    expect(typeof noteHostedChanges[0]?.expected_revision).toBe('number')
   })
 
   test('actionable notes exclude promoted and dropped rows', async () => {

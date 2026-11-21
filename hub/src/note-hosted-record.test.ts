@@ -13,6 +13,42 @@ test('hosted note revisions decode from integer wire values', () => {
     )
 })
 
+test('a hosted read reports an invalid revision with one remedy', async () => {
+  const id = '01990000-0000-7000-8000-000000002571'
+  const remedy = `run \`${PLATFORM_SLUG} record doctor\`, then retry`
+  const options = {
+    baseUrl: 'https://hub.example.test',
+    token: 'test',
+    fetch: async () =>
+      Response.json({
+        id,
+        number: 4,
+        project: 'workshop',
+        text: 'Hosted note',
+        area: null,
+        anchors: '[]',
+        sightings: 1,
+        created_at: '2026-11-21T12:00:00.000Z',
+        last_seen_at: '2026-11-21T12:00:00.000Z',
+        stale_at: null,
+        stale_reason: null,
+        promoted_task: null,
+        revision: 'x',
+      }),
+  }
+
+  let failure: unknown
+  try {
+    await getNote(id, options)
+  } catch (cause) {
+    failure = cause
+  }
+  expect(failure).toBeInstanceOf(Error)
+  expect((failure as Error).message).toBe(
+    `note workshop#4 has invalid hosted revision "x"; ${remedy}`,
+  )
+})
+
 test('a hosted same write sends a decoded numeric revision', async () => {
   const id = '01990000-0000-7000-8000-000000002570'
   const at = '2026-11-21T12:00:00.000Z'
