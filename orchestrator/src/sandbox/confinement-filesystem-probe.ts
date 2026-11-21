@@ -34,6 +34,7 @@ import type { Project } from '../project/projects.ts'
 import { prepareSharedRefGuard, workerSharedGitRoots } from '../resources/ref-guard.ts'
 import { workerChildEnvironment } from '../run/run-worker-home.ts'
 import { median } from '../state/statistics.ts'
+import { launchHeadlessBrowserProbe } from './confinement-browser-probe.ts'
 import {
   type ConfinementProbeTask,
   createConfinementProbeTask,
@@ -83,6 +84,7 @@ export type ConfinementFilesystemProbeRow = {
     | 'host override'
     | 'sandbox git spawn'
   status: FilesystemProbeAccess | CommandProbeStatus | 'committed' | 'refused' | 'ok' | 'slow'
+    | 'headless browser'
   paths: Record<string, FilesystemProbeAccess>
   commands?: Record<string, CommandProbe>
   gitSpawn?: SandboxGitSpawnMeasurement
@@ -1011,6 +1013,11 @@ export async function runConfinementFilesystemProbes(): Promise<ConfinementFiles
         readonlyLensProfile({ ...common, agent: 'grok' }),
         fixture.environment,
         common.scratchDir,
+      ),
+      await launchHeadlessBrowserProbe(
+        readonlyLensProfile({ ...common, agent: 'goose' }),
+        common.scratchDir,
+        fixture.environment,
       ),
       ...NOT_COVERED,
     ]
