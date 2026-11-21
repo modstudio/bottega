@@ -59,14 +59,19 @@ test('task lookup client refuses an old server with its deploy remedy', async ()
 })
 
 test('task lookup client preserves a non-route refusal containing not found', async () => {
-  await expect(
-    hostedLookupTasks('workshop', ['DEV-1'], {
-      baseUrl: 'https://hub.example.test',
-      token: 'test',
-      recordSpace: 'space-a',
-      fetch: async () => Response.json({ error: 'project not found' }, { status: 400 }),
-    }),
-  ).rejects.toThrow('hosted hub refused the request (400): project not found')
+  const refusal = await hostedLookupTasks('workshop', ['DEV-1'], {
+    baseUrl: 'https://hub.example.test',
+    token: 'test',
+    recordSpace: 'space-a',
+    fetch: async () => Response.json({ error: 'project not found' }, { status: 400 }),
+  }).catch((error: unknown) => error)
+
+  expect(refusal).toBeInstanceOf(Error)
+  if (!(refusal instanceof Error)) throw new Error('expected task lookup to refuse the request')
+  expect(refusal.message).toContain('hosted hub refused the request (400): project not found')
+  expect(refusal.message).not.toContain('scripts/deploy/hosted api')
+  expect(refusal.message).not.toContain('hosted task lookup is unavailable')
+  expect(refusal).toHaveProperty('status', 400)
 })
 
 test('task lookup client chunks over-limit requests and deduplicates rows across chunks', async () => {
