@@ -6,7 +6,6 @@ import { existsSync, readdirSync, realpathSync } from 'node:fs'
 import { isAbsolute, join, resolve } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { docScopeHasProjectSubject, docScopeIsProjectless } from '../../../shared/docs.ts'
-import { githubRepository } from '../../../shared/github-repository.ts'
 import { refusal, renderRefusal } from '../../../shared/refusal.ts'
 import { installedBottegaExecutable } from '../../../shared/self-spawn.ts'
 import { runArtifactsDir, runScratchReplyPath } from '../artifact-paths.ts'
@@ -59,6 +58,8 @@ import {
 } from './workflow-floor.ts'
 import { gitText, productionResolveCheckout } from './workflow-floor-evidence-checkout.ts'
 import { positiveEvidenceId } from './workflow-floor-evidence-input.ts'
+import { gatherNoteArtifactEvidence } from './workflow-floor-note-evidence.ts'
+import { gatherPullRequestArtifactEvidence } from './workflow-floor-pull-request-evidence.ts'
 import { gatherPassingGateForTree } from './workflow-floor-evidence-passing-gate.ts'
 import {
   type FloorEvidencePorts,
@@ -571,20 +572,6 @@ async function resolveArtifact(
   resolveCheckout: FloorEvidencePorts['resolveCheckout'],
   branchTip: string | null,
 ): Promise<{ ref: string; exists: boolean }> {
-  if (ref.kind === 'note') {
-    if (!ports.readNote)
-      throw new Error(
-        `--artifact note:${ref.reference} needs a ${PLATFORM_SLUG} note read and no reader was provided`,
-      )
-    const note = await invokeFloorEvidencePort(
-      ports,
-      'readNote',
-      ports.readNote,
-      identity.project,
-      ref.reference,
-    )
-    return { ref: `note:${ref.reference}`, exists: note !== null }
-  }
   if (ref.kind === 'attached-text' || ref.kind === 'doc' || ref.kind === 'review-read')
     return resolveStoredArtifact(ref, identity, binding, d, branchTip)
   if (ref.kind === 'id')
@@ -644,54 +631,8 @@ async function resolveArtifact(
       exists: (ports.runHasArtifacts ?? runHasRecordedArtifacts)(recordId),
     }
   }
+  if (ref.kind === 'note') throw new Error('note artifacts resolve through the note evidence port')
   return resolveTaskArtifact(ref, raw, identity, ports)
-}
-
-function pullRequestEvidence(
-  reference: string,
-  identity: CursorIdentity,
-  d: Database,
-  ports: FloorEvidencePorts,
-  flag = `--artifact ${reference}`,
-): NonNullable<ValidatedArtifactEvidence['pullRequest']> {
-  const project = projectByName(identity.project, d)
-  if (!project) throw new Error(`project ${identity.project} is not registered`)
-  const trunk = project.settings.trunk?.trim()
-  if (!identity.branch || !trunk)
-    throw new Error(
-      `${flag} cannot be checked because this cursor has no branch or its project has no trunk`,
-    )
-  const fallback = productionFloorPorts().viewPullRequest!
-  const number = /^#([1-9][0-9]*)$/.exec(reference)?.[1]
-  const view = invokeFloorEvidencePort(
-    ports,
-    'viewPullRequest',
-    fallback,
-    identity.project,
-    number ? Number(number) : reference,
-  )
-  const resolvedNumber = /\/pull\/([1-9][0-9]*)\/?$/i.exec(view.url)?.[1]
-  if (
-    (number && resolvedNumber !== number) ||
-    (!number && view.url.replace(/\/$/, '') !== reference.replace(/\/$/, ''))
-  )
-    throw new Error(`${flag} resolved as ${view.url}, not the supplied pull-request link`)
-  const originUrl = invokeFloorEvidencePort(
-    ports,
-    'readOriginUrl',
-    () => gitText(project.path, ['remote', 'get-url', 'origin']),
-    identity.project,
-  )
-  return {
-    url: view.url,
-    repository: githubRepository(view.url.replace(/\/pull\/\d+\/?$/i, '')),
-    projectRepository: githubRepository(originUrl),
-    state: view.state,
-    head: view.headRefName,
-    base: view.baseRefName,
-    cursorBranch: identity.branch,
-    trunk,
-  }
 }
 
 function gatherTask(
@@ -942,6 +883,50 @@ type GatherValidatedEvidenceInput = {
   taskFlowClient?: Parameters<typeof taskFlowReadStore>[1]
 }
 
+async function gatherCommandArtifactEntry(
+  parsed: Extract<ArtifactRef, { kind: 'probe' | 'exec' }>,
+  entry: ValidatedArtifactEvidence,
+  input: GatherValidatedEvidenceInput,
+  d: Database,
+  ports: FloorEvidencePorts,
+  resolveCheckout: NonNullable<FloorEvidencePorts['resolveCheckout']>,
+): Promise<void> {
+  const row = d
+    .query<
+      {
+        number: number
+        command: string
+        cwd: string
+        head_commit: string | null
+        exit_code: number
+        session_id: string | null
+        created_at: string
+        output_tail: string
+        withheld: number
+        command_withheld: number
+      },
+      [string]
+    >(
+      'SELECT number,command,cwd,head_commit,exit_code,session_id,created_at,output_tail,withheld,command_withheld FROM probe WHERE record_id=?',
+    )
+    .get(parsed.recordId)!
+  const checkout = resolveCheckout(row.cwd, row.head_commit, input.identity.branch)
+  Object.assign(
+    entry,
+    await gatheredCommandEvidence(
+      parsed.kind,
+      row.number,
+      parsed.recordId,
+      row,
+      input.identity,
+      input.cursorId,
+      d,
+      checkout,
+      ports,
+    ),
+  )
+}
+
 async function gatherArtifactEvidence(
   input: GatherValidatedEvidenceInput,
   gathered: ValidatedEvidence,
@@ -957,30 +942,18 @@ async function gatherArtifactEvidence(
     seen.add(offeredArtifact)
     const parsed = parseArtifactRef(offeredArtifact)
     if ('error' in parsed) throw new Error(parsed.error)
-    let noteEvidence: NonNullable<ValidatedArtifactEvidence['note']> | undefined
-    if (parsed.kind === 'note') {
-      if (!ports.readNote)
-        throw new Error(
-          `--artifact ${offeredArtifact} needs a ${PLATFORM_SLUG} note read and no reader was provided`,
-        )
-      const note = await invokeFloorEvidencePort(
-        ports,
-        'readNote',
-        ports.readNote,
-        input.identity.project,
-        parsed.reference,
-      )
-      noteEvidence = {
-        reference: parsed.reference,
-        recordId: note?.recordId ?? null,
-        label: note?.label ?? null,
-        promotedTask: note?.promotedTask ?? null,
-        staleAt: note?.staleAt ?? null,
-      }
-    }
+    const noteEvidence =
+      parsed.kind === 'note'
+        ? await gatherNoteArtifactEvidence(
+            parsed,
+            offeredArtifact,
+            input.identity.project,
+            ports,
+          )
+        : undefined
     const entry: ValidatedArtifactEvidence = {
       artifact: noteEvidence
-        ? { ref: offeredArtifact, exists: noteEvidence.recordId !== null }
+        ? noteEvidence.artifact
         : await resolveArtifact(
             parsed,
             offeredArtifact,
@@ -998,48 +971,14 @@ async function gatherArtifactEvidence(
       ...offeredArtifactRunEvidence(parsed, d),
     }
     if (noteEvidence) {
-      entry.note = noteEvidence
+      entry.note = noteEvidence.note
       if (!gathered.notes) gathered.notes = []
-      gathered.notes.push(noteEvidence)
+      gathered.notes.push(noteEvidence.note)
     }
     if (parsed.kind === 'pull-request')
-      entry.pullRequest = pullRequestEvidence(parsed.url, input.identity, d, ports)
-    if (parsed.kind === 'probe' || parsed.kind === 'exec') {
-      const row = d
-        .query<
-          {
-            number: number
-            command: string
-            cwd: string
-            head_commit: string | null
-            exit_code: number
-            session_id: string | null
-            created_at: string
-            output_tail: string
-            withheld: number
-            command_withheld: number
-          },
-          [string]
-        >(
-          'SELECT number,command,cwd,head_commit,exit_code,session_id,created_at,output_tail,withheld,command_withheld FROM probe WHERE record_id=?',
-        )
-        .get(parsed.recordId)!
-      const checkout = resolveCheckout(row.cwd, row.head_commit, input.identity.branch)
-      Object.assign(
-        entry,
-        await gatheredCommandEvidence(
-          parsed.kind,
-          row.number,
-          parsed.recordId,
-          row,
-          input.identity,
-          input.cursorId,
-          d,
-          checkout,
-          ports,
-        ),
-      )
-    }
+      entry.pullRequest = gatherPullRequestArtifactEvidence(parsed.url, input.identity, d, ports)
+    if (parsed.kind === 'probe' || parsed.kind === 'exec')
+      await gatherCommandArtifactEntry(parsed, entry, input, d, ports, resolveCheckout)
     if (!gathered.artifacts) gathered.artifacts = []
     gathered.artifacts.push(entry)
   }

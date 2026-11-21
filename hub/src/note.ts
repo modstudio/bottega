@@ -1,5 +1,5 @@
 import type { Database } from 'bun:sqlite'
-import { closeSync, fstatSync, openSync, readFileSync, readSync, realpathSync } from 'node:fs'
+import { readFileSync, realpathSync } from 'node:fs'
 import { isAbsolute, relative, resolve } from 'node:path'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import type { NoteAnchorWire } from '../../shared/note-anchor.ts'
@@ -19,6 +19,10 @@ import {
 import { resolveNoteIdentity } from './identity/identity.ts'
 import { readInstallBinding } from './install-binding.ts'
 import { mergeNoteAnchors } from './note-anchor-merge.ts'
+import { deriveNoteFileAnchors } from './note-file-anchors.ts'
+
+export { deriveNoteFileAnchors, NOTE_ANCHOR_MAX_FILE_BYTES } from './note-file-anchors.ts'
+
 import { applyHostedNote } from './note-cache.ts'
 import { hostedCreateNote, hostedPromoteNote, type NoteClientOptions } from './note-client.ts'
 import {
@@ -60,8 +64,6 @@ import type { TaskRow } from './task-row.ts'
 import { taskCreationDestination } from './tracker-new.ts'
 
 export type NoteAnchor = NoteAnchorWire
-
-export const NOTE_ANCHOR_MAX_FILE_BYTES = 1_000_000
 
 export function parseNoteAnchor(value: unknown): NoteAnchor {
   return parseNoteAnchorWire(value)
@@ -195,65 +197,6 @@ function mintLocalNoteNumber(conn: Database, project: string): number {
     )
     .run(newRecordId(), project, projectRecordIdFor(project), number + 1)
   return number
-}
-
-function boundedNoteLine(path: string, requested: number): string | null {
-  const fd = openSync(path, 'r')
-  try {
-    const stat = fstatSync(fd)
-    if (!stat.isFile() || stat.size > NOTE_ANCHOR_MAX_FILE_BYTES) return null
-    const bytes: number[] = []
-    const byte = Buffer.allocUnsafe(1)
-    let line = 1
-    let total = 0
-    while (readSync(fd, byte, 0, 1, null) === 1) {
-      total += 1
-      if (total > NOTE_ANCHOR_MAX_FILE_BYTES) return null
-      if (byte[0] === 10) {
-        if (line === requested) return Buffer.from(bytes).toString('utf8').replace(/\r$/, '')
-        line += 1
-        continue
-      }
-      if (line === requested) bytes.push(byte[0]!)
-    }
-    return line === requested ? Buffer.from(bytes).toString('utf8').replace(/\r$/, '') : null
-  } finally {
-    closeSync(fd)
-  }
-}
-
-/** Derive only bounded file facts whose real paths stay strictly inside the checkout. */
-export function deriveNoteFileAnchors(text: string, projectPath: string): NoteAnchor['files'] {
-  let root: string
-  try {
-    root = realpathSync(projectPath)
-  } catch {
-    return []
-  }
-  return [...text.matchAll(/(?:^|[\s`(])([^\s`():]+):(\d+)\b/g)].flatMap((match) => {
-    const line = Number(match[2])
-    let path: string
-    try {
-      path = realpathSync(isAbsolute(match[1]!) ? match[1]! : resolve(root, match[1]!))
-    } catch {
-      return []
-    }
-    const fromRoot = relative(root, path)
-    if (
-      !fromRoot ||
-      fromRoot === '..' ||
-      fromRoot.startsWith(`..${process.platform === 'win32' ? '\\' : '/'}`) ||
-      isAbsolute(fromRoot)
-    ) {
-      return []
-    }
-    try {
-      const content = boundedNoteLine(path, line)
-      return content === null ? [] : [{ path, line, content }]
-    } catch {
-      return []
-    }
-  })
 }
 
 export function deriveNoteAnchor(text: string, cwd = process.cwd(), env = process.env): NoteAnchor {

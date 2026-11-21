@@ -14,6 +14,7 @@ observations and their lifecycle
 - [bottega note new](#bottega-note-new)
 - [bottega note promote](#bottega-note-promote)
 - [bottega note push](#bottega-note-push)
+- [bottega note relink](#bottega-note-relink)
 - [bottega note same](#bottega-note-same)
 - [bottega note stale](#bottega-note-stale)
 - [bottega note typed-question](#bottega-note-typed-question)
@@ -36,6 +37,7 @@ observations and their lifecycle
 - [bottega note new](./note.md#bottega-note-new)
 - [bottega note promote](./note.md#bottega-note-promote)
 - [bottega note push](./note.md#bottega-note-push)
+- [bottega note relink](./note.md#bottega-note-relink)
 - [bottega note same](./note.md#bottega-note-same)
 - [bottega note stale](./note.md#bottega-note-stale)
 - [bottega note typed-question](./note.md#bottega-note-typed-question)
@@ -176,6 +178,22 @@ migrate and verify the local note cache
 ### Options
 
 - `--dry-run`: report local counts without writing hosted notes
+
+### Related
+
+- [bottega note](./note.md#bottega-note)
+
+## bottega note relink
+
+**Synopsis:** `bottega note relink <reference> --task <key> --reason <text> [--project <name>]`
+
+move this note's attachment to another task
+
+### Options
+
+- `--task <key>`: attach the note to this task
+- `--reason <text>`: record why the attachment moved
+- `--project <name>`: resolve the note in this project
 
 ### Related
 

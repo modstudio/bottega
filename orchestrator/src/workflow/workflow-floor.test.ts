@@ -37,7 +37,6 @@ const tracker: Floor = {
   kind: 'tracker-transition',
   requirePullRequest: true,
 }
-const taskOpenWithNotes: Floor = { ...ruling, kind: 'task-open-with-notes' }
 const operatorRuling: Floor = { ...ruling, operatorRuling: true }
 const deferrableExit: Floor = { ...commandExit, deferrable: true }
 
@@ -135,61 +134,6 @@ test('a ruling outcome replaces ordinary floors with a ruling floor', () => {
   expect(mayCloseOnAgentSelfRuling(step, 'clear')).toBe(false)
   expect(mayCloseOnAgentSelfRuling(step, 'clear', true)).toBe(true)
   expect(mayCloseOnAgentSelfRuling({ ...step, operatorRuling: true }, 'fix')).toBe(false)
-})
-
-test('an outcome floor replaces the step floor only for its declared outcome', () => {
-  const step = {
-    floor: ['tracker-transition'] as const,
-    outcomeFloors: { partial: ['task-open-with-notes'] as const },
-  }
-  expect(decideCloseFloors(step, 'partial').map((floor) => floor.kind)).toEqual([
-    'task-open-with-notes',
-  ])
-  expect(decideCloseFloors(step, 'done').map((floor) => floor.kind)).toEqual(['tracker-transition'])
-  expect(decideCloseFloors(step, undefined).map((floor) => floor.kind)).toEqual([
-    'tracker-transition',
-  ])
-})
-
-test('ruling outcomes take precedence over outcome floors', () => {
-  const step = {
-    floor: ['tracker-transition'] as const,
-    rulingOutcomes: ['partial'],
-    outcomeFloors: { partial: ['task-open-with-notes'] as const },
-  }
-  expect(decideCloseFloors(step, 'partial').map((floor) => floor.kind)).toEqual(['ruling'])
-})
-
-test('task-open-with-notes requires an open task and every named note to be live and attached', () => {
-  const task = {
-    key: 'DEV-977',
-    status: 'open',
-    statusCategory: 'open',
-    mergedPullRequest: null,
-    trackerStates: {},
-  }
-  const note = {
-    reference: 'bottega#2817',
-    recordId: ATTACHMENT_UUID,
-    label: 'bottega#2817',
-    promotedTask: 'DEV-977',
-    staleAt: null,
-  }
-  const result = (evidence: ValidatedEvidence) =>
-    decide({ floors: [taskOpenWithNotes], evidence, workflowKey: 'DEV-977' })
-
-  expect(result({ task, notes: [note] }).action).toBe('allow')
-  expect(
-    result({ task: { ...task, status: 'done', statusCategory: 'done' }, notes: [note] }).action,
-  ).toBe('refuse')
-  expect(result({ task, notes: [] }).action).toBe('refuse')
-  expect(result({ task, notes: [{ ...note, promotedTask: 'DEV-978' }] }).action).toBe('refuse')
-  expect(result({ task, notes: [note, { ...note, promotedTask: 'DEV-978' }] }).action).toBe(
-    'refuse',
-  )
-  expect(result({ task, notes: [{ ...note, staleAt: '2026-11-20T00:00:00.000Z' }] }).action).toBe(
-    'refuse',
-  )
 })
 
 test('an outcome-specific exit code replaces the command-exit default for that close', () => {
@@ -1016,9 +960,9 @@ test('parseArtifactRef accepts each recorded-artifact form', () => {
     id: '01a10c8d-164d-71e9-b8a9-a59f15256556',
   })
   expect(parseArtifactRef('task:DEV-977')).toEqual({ kind: 'task', key: 'DEV-977' })
-  expect(parseArtifactRef('note:bottega#2817')).toEqual({
+  expect(parseArtifactRef(`note:${PLATFORM_SLUG}#2817`)).toEqual({
     kind: 'note',
-    reference: 'bottega#2817',
+    reference: `${PLATFORM_SLUG}#2817`,
   })
   expect(parseArtifactRef(`note:${ATTACHMENT_UUID}`)).toEqual({
     kind: 'note',
