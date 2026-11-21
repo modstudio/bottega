@@ -285,6 +285,11 @@ export async function createTaskDocument(
     : createHostedTaskDocument(task, input, options.hosted)
 }
 
+function assertBodyUpdateVersion(body: string | undefined, expectedVersion: string | undefined) {
+  if (body !== undefined && !expectedVersion)
+    throw new Error(`a body update requires --version from \`${PLATFORM_SLUG} task doc show\``)
+}
+
 export async function updateTaskDocument(
   value: string,
   changes: {
@@ -300,12 +305,10 @@ export async function updateTaskDocument(
   const task = taskByRecordId<DocumentTask>(current.task_record_id)
   if (task.source !== 'local') throw new Error(`task ${current.task_key} is not local`)
   const expectedVersion = changes.expectedVersion
-  if (changes.body !== undefined && !expectedVersion)
-    throw new Error(`a body update requires --version from \`${PLATFORM_SLUG} task doc show\``)
-  const mode = taskWriteMode(task.project, options.hosted)
+  assertBodyUpdateVersion(changes.body, expectedVersion)
   const at = nowIso()
   const fields = taskDocumentFields(changes)
-  if (mode === 'hosted-configured') {
+  if (taskWriteMode(task.project, options.hosted) === 'hosted-configured') {
     if (!expectedVersion)
       throw new Error(
         `a hosted document update requires --version from \`${PLATFORM_SLUG} task doc show\``,

@@ -25,7 +25,7 @@ function localTask(conn: Database, key: string, project: string): TaskRow {
   return task
 }
 
-export function prepareNoteRelinkComments(
+function prepareNoteRelinkComments(
   conn: Database,
   input: {
     project: string
@@ -60,7 +60,7 @@ export function prepareNoteRelinkComments(
   }
 }
 
-export function recordPreparedNoteRelinkComments(
+function recordPreparedNoteRelinkComments(
   conn: Database,
   comments: readonly PushedComment[],
 ): void {

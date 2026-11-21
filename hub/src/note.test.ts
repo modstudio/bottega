@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { declareFixtureProjectSpace } from '../test/fixture-project-space.ts'
+import { noteHostedFetch } from '../test/note-hosted-fetch.ts'
 import { resetFixtureStore } from '../test/run-fixtures.ts'
 import { db, writeTransaction } from './db.ts'
 import { persistInstallBinding } from './install-binding.ts'
@@ -34,146 +35,7 @@ const workshop = declareFixtureProjectSpace('workshop', 'workshop')
 afterAll(resetFixtureStore)
 afterAll(() => rmSync(scratch, { recursive: true, force: true }))
 
-const hosted = {
-  baseUrl: 'https://hub.example.test',
-  token: 'test',
-  fetch: async (input: string, init?: RequestInit) => {
-    const url = new URL(input),
-      body = init?.body ? JSON.parse(String(init.body)) : {},
-      at = new Date().toISOString()
-    if (url.pathname === '/v1/tasks/identity')
-      return Response.json({
-        userId: 'user-1',
-        activeSpaceId: 'space-a',
-        memberships: [
-          { spaceId: 'space-a', slug: 'workshop', permission: 'write' },
-          { spaceId: 'space-gamma', slug: 'declared-gamma-space', permission: 'write' },
-        ],
-        capabilities: {
-          projectNoteCounters: true,
-          noteTriageStaleness: true,
-          spacePush: true,
-          targetSpaceNotes: true,
-          spacePushTables: ['hub_note', 'hub_note_acknowledgement'],
-        },
-      })
-    if (url.pathname === '/v1/changes') {
-      const changes = body as Array<{ id: string }>
-      return Response.json(changes.map((change) => ({ id: change.id, status: 'applied' })))
-    }
-    const shape = (note: Awaited<ReturnType<typeof getNote>>) => ({
-      id: note.record_id,
-      number: note.number,
-      project: note.project,
-      project_name: note.project,
-      text: note.text,
-      area: note.area,
-      anchors: JSON.stringify(note.anchors),
-      sightings: note.sightings,
-      created_at: note.created_at,
-      last_seen_at: note.last_seen_at,
-      stale_at: note.stale_at,
-      stale_reason: note.stale_reason,
-      promoted_task: note.promoted_task,
-      updated_at: at,
-      deleted_at: null,
-    })
-    const noteMatch = /^\/v1\/notes\/([0-9a-f-]{36})$/i.exec(url.pathname)
-    if (noteMatch && init?.method === 'GET') {
-      try {
-        return Response.json(shape(await getNote(noteMatch[1]!, { baseUrl: '' })))
-      } catch {
-        return Response.json({ error: 'note not found' }, { status: 404 })
-      }
-    }
-    if (url.pathname === '/v1/notes' && init?.method === 'GET') {
-      const notes = await listNotes(
-        {
-          project: url.searchParams.get('project') ?? undefined,
-          stale: url.searchParams.has('stale')
-            ? url.searchParams.get('stale') === 'true'
-            : undefined,
-          actionable: url.searchParams.get('actionable') === 'true',
-        },
-        { baseUrl: '' },
-      )
-      const acknowledgements = db()
-        .query<
-          {
-            id: string
-            note_id: string
-            project_name: string
-            session_id: string
-            acknowledged_at: string
-            sightings: number
-          },
-          []
-        >(
-          `SELECT a.record_id id,a.note_record_id note_id,n.project project_name,a.session_id,
-           a.acknowledged_at,a.sightings FROM note_acknowledgement a
-           JOIN note n ON n.record_id=a.note_record_id`,
-        )
-        .all()
-        .map((row) => ({
-          ...row,
-          created_at: row.acknowledged_at,
-          updated_at: row.acknowledged_at,
-          deleted_at: null,
-        }))
-      return Response.json({
-        notes: notes.map(shape),
-        acknowledgements,
-        cursor: 'done',
-        more: false,
-      })
-    }
-    if (url.pathname === '/v1/notes' && init?.method === 'POST') {
-      if (body.sameAs) {
-        const old = await getNote(resolveNoteReference(String(body.sameAs), 'workshop'))
-        return Response.json({
-          ...shape(old),
-          anchors: JSON.stringify([...old.anchors, JSON.parse(body.anchor)]),
-          sightings: old.sightings + 1,
-          last_seen_at: at,
-          stale_at: null,
-          stale_reason: null,
-        })
-      }
-      const next =
-        (db().query<{ max: number | null }, []>('SELECT max(number) max FROM note').get()?.max ??
-          0) + 1
-      return Response.json({
-        id: crypto.randomUUID(),
-        number: next,
-        project: body.project,
-        project_name: body.project,
-        text: body.text,
-        area: body.area ?? null,
-        anchors: `[${body.anchor}]`,
-        sightings: 1,
-        created_at: at,
-        last_seen_at: at,
-        stale_at: null,
-        stale_reason: null,
-        promoted_task: null,
-        updated_at: at,
-        deleted_at: null,
-      })
-    }
-    if (url.pathname === '/v1/notes/reap')
-      return Response.json({
-        marked: body.stale.length,
-        annotated: body.annotated.length,
-        restored: body.restored.length,
-        deleted: body.deleted.length,
-        staleIds: body.stale.map((row: { recordId: string }) => row.recordId),
-        annotatedIds: body.annotated.map((row: { recordId: string }) => row.recordId),
-        restoredIds: body.restored.map((row: { recordId: string }) => row.recordId),
-        deletedIds: body.deleted,
-      })
-    return Response.json({ error: 'unexpected route' }, { status: 500 })
-  },
-}
+const hosted = { baseUrl: 'https://hub.example.test', token: 'test', fetch: noteHostedFetch }
 const fileNote = (input: Parameters<typeof createNote>[0]) => createNote(input, { hosted })
 const recordId = (number: number) => resolveNoteReference(String(number), 'workshop')
 const merge = (target: number, source: number) =>

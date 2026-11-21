@@ -2,8 +2,8 @@
 /** Adapts canonical hosted note rows to the note service and direct change contract. */
 
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
-import { formatNoteLabel } from '../../shared/note-label.ts'
 import type { NoteAnchorWire } from '../../shared/note-anchor.ts'
+import { formatNoteLabel } from '../../shared/note-label.ts'
 import { sendHostedChanges } from './hosted-change-sender.ts'
 import type { HostedAcknowledgement, HostedNote } from './hosted-notes.ts'
 import { mergeNoteAnchors } from './note-anchor-merge.ts'
@@ -13,8 +13,8 @@ import {
   isMissingHostedNote,
   type NoteClientOptions,
 } from './note-client.ts'
-import type { NoteRow } from './note-row.ts'
 import { noteDestinationOptions } from './note-project-space.ts'
+import type { NoteRow } from './note-row.ts'
 import {
   HOSTED_NOTE_TABLE,
   type PushedNote,

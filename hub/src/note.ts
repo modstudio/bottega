@@ -43,9 +43,9 @@ import {
   promotionTitleRefusal,
   requiredPromotionTitle,
 } from './note-promotion-body.ts'
+import { getNote, listActionableNotes, listNotes, listProjectNotes } from './note-read.ts'
 import { relinkHostedNote } from './note-relink-record.ts'
 import type { NoteRow } from './note-row.ts'
-import { getNote, listActionableNotes, listNotes, listProjectNotes } from './note-read.ts'
 import { evaluateNoteStaleness, type StalenessAnchorObservation } from './note-staleness.ts'
 import {
   applyHostedStaleness,
@@ -470,15 +470,51 @@ async function outsideNoteCreation(
   return { note, candidates: [], outside: true as const }
 }
 
-export async function createNote(
-  input: CreateNoteInput,
-  options: { hosted?: NoteClientOptions } = {},
-): Promise<CreateNoteResult> {
+function noteCreationContext(input: CreateNoteInput) {
   const text = input.text.trim()
   if (!text) throw new Error('note text is required')
   if (input.sameAs && input.forceNew) throw new Error('--same-as and --new are mutually exclusive')
   const anchor = identifiedAnchor(input.anchor ?? deriveNoteAnchor(text, input.cwd))
-  const targetProject = input.project ?? anchor.project
+  return { text, anchor, targetProject: input.project ?? anchor.project }
+}
+
+async function createLocalNoteRow(
+  input: CreateNoteInput,
+  text: string,
+  anchor: NoteAnchor,
+  targetProject: string,
+  hosted?: NoteClientOptions,
+) {
+  const at = nowIso()
+  const recordId = writeTransaction((conn) => {
+    const number = mintLocalNoteNumber(conn, targetProject)
+    const recordId = newRecordId()
+    conn
+      .query(
+        `INSERT INTO note (record_id,number,project,project_record_id,text,area,anchors,sightings,created_at,last_seen_at)
+         VALUES (?,?,?,?,?,?,?,1,?,?)`,
+      )
+      .run(
+        recordId,
+        number,
+        targetProject,
+        projectRecordIdFor(targetProject),
+        text,
+        input.area?.trim() || null,
+        JSON.stringify([anchor]),
+        at,
+        at,
+      )
+    return recordId
+  })
+  return getNote(recordId, hosted)
+}
+
+export async function createNote(
+  input: CreateNoteInput,
+  options: { hosted?: NoteClientOptions } = {},
+): Promise<CreateNoteResult> {
+  const { text, anchor, targetProject } = noteCreationContext(input)
   if (!isRegisteredNoteProject(targetProject))
     return outsideNoteCreation(input, text, anchor, targetProject, options.hosted)
   const registered = registeredProject(targetProject)
@@ -525,36 +561,13 @@ export async function createNote(
   }
   if (candidates.length && !input.forceNew)
     return { note: null as never, candidates, outside: false }
-  if (mode === 'local-authoritative') {
-    const at = nowIso()
-    const recordId = writeTransaction((conn) => {
-      const number = mintLocalNoteNumber(conn, targetProject)
-      const recordId = newRecordId()
-      conn
-        .query(
-          `INSERT INTO note (record_id,number,project,project_record_id,text,area,anchors,sightings,created_at,last_seen_at)
-       VALUES (?,?,?,?,?,?,?,1,?,?)`,
-        )
-        .run(
-          recordId,
-          number,
-          targetProject,
-          projectRecordIdFor(targetProject),
-          text,
-          input.area?.trim() || null,
-          JSON.stringify([anchor]),
-          at,
-          at,
-        )
-      return recordId
-    })
+  if (mode === 'local-authoritative')
     return completedNoteCreation(
-      await getNote(recordId, options.hosted),
+      await createLocalNoteRow(input, text, anchor, targetProject, options.hosted),
       candidates,
       input,
       targetProject,
     )
-  }
   const hostedOptions = await noteDestinationOptions(targetProject, options.hosted)
   const hosted = await hostedCreateNote(
     {

@@ -6,8 +6,8 @@ import { formatNoteLabel } from '../../shared/note-label.ts'
 import { db } from './db.ts'
 import { resolveHostedUrl } from './hosted-url.ts'
 import { hostedWriteMode } from './hosted-write-mode.ts'
-import { listHostedNoteRows, type NoteFilters, readHostedNote } from './note-hosted-record.ts'
 import type { NoteClientOptions } from './note-client.ts'
+import { listHostedNoteRows, type NoteFilters, readHostedNote } from './note-hosted-record.ts'
 import { listOutsideProjectNotes } from './note-outside.ts'
 import type { NoteRow } from './note-row.ts'
 import { projects } from './projects.ts'
@@ -22,9 +22,11 @@ function decode(row: Omit<NoteRow, 'anchors' | 'label'> & { anchors: string }): 
 
 const registered = (name: string) => projects().some((project) => project.name === name)
 
-function listLocalNotes(filters: NoteFilters = {}): NoteRow[] {
-  const clauses: string[] = []
-  const values: (string | number)[] = []
+function appendSessionClauses(
+  filters: NoteFilters,
+  clauses: string[],
+  values: (string | number)[],
+) {
   const sessions = [
     ...new Set(
       (Array.isArray(filters.session) ? filters.session : filters.session ? [filters.session] : [])
@@ -33,6 +35,25 @@ function listLocalNotes(filters: NoteFilters = {}): NoteRow[] {
     ),
   ]
   if (filters.kept && !sessions.length) throw new Error('listing kept notes requires a session')
+  if (!sessions.length) return
+  const candidates = sessions.map(() => '?').join(',')
+  clauses.push(`EXISTS (
+    SELECT 1 FROM json_each(note.anchors)
+     WHERE json_extract(value, '$.session_id') IN (${candidates})
+  )`)
+  values.push(...sessions)
+  clauses.push(`${filters.kept ? '' : 'NOT '}EXISTS (
+    SELECT 1 FROM note_acknowledgement acknowledgement
+     WHERE acknowledgement.note_record_id = note.record_id
+       AND acknowledgement.session_id IN (${candidates})
+       AND acknowledgement.sightings = note.sightings
+  )`)
+  values.push(...sessions)
+}
+
+function listLocalNotes(filters: NoteFilters = {}): NoteRow[] {
+  const clauses: string[] = []
+  const values: (string | number)[] = []
   if (filters.project) {
     if (!registered(filters.project)) throw new Error(`unknown project '${filters.project}'`)
     clauses.push('note.project = ?')
@@ -40,21 +61,7 @@ function listLocalNotes(filters: NoteFilters = {}): NoteRow[] {
   }
   if (filters.stale !== undefined)
     clauses.push(filters.stale ? 'note.stale_at IS NOT NULL' : 'note.stale_at IS NULL')
-  if (sessions.length) {
-    const candidates = sessions.map(() => '?').join(',')
-    clauses.push(`EXISTS (
-      SELECT 1 FROM json_each(note.anchors)
-       WHERE json_extract(value, '$.session_id') IN (${candidates})
-    )`)
-    values.push(...sessions)
-    clauses.push(`${filters.kept ? '' : 'NOT '}EXISTS (
-      SELECT 1 FROM note_acknowledgement acknowledgement
-       WHERE acknowledgement.note_record_id = note.record_id
-         AND acknowledgement.session_id IN (${candidates})
-         AND acknowledgement.sightings = note.sightings
-    )`)
-    values.push(...sessions)
-  }
+  appendSessionClauses(filters, clauses, values)
   if (filters.actionable) clauses.push('note.stale_at IS NULL AND note.promoted_task IS NULL')
   const rows = db()
     .query<Omit<NoteRow, 'anchors' | 'label'> & { anchors: string }, (string | number)[]>(
