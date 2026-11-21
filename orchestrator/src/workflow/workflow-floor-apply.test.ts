@@ -247,6 +247,7 @@ test('plan-task start refuses zero dispatches without creating review debt', asy
     {
       readTask: (key) => ({
         key,
+        updatedAt: null,
         status: 'Active',
         statusCategory: 'active',
         commentIds: [],
@@ -308,6 +309,7 @@ test('apply-findings receives an earlier-step chain and names its confirmation t
     {
       readTask: (key) => ({
         key,
+        updatedAt: null,
         status: 'Active',
         statusCategory: 'active',
         commentIds: [],

@@ -12,7 +12,7 @@ test('external floor evidence misses once and then replays the recorded result',
   const ports: FloorEvidencePorts = {
     readTask: (key) => {
       calls += 1
-      return { key, status: 'done', statusCategory: 'done', commentIds: [] }
+      return { key, updatedAt: null, status: 'done', statusCategory: 'done', commentIds: [] }
     },
   }
   const result = await withReplayedFloorEvidenceAsync(ports, async (replay) =>
@@ -45,7 +45,7 @@ test('different floor evidence arguments are separate misses', async () => {
     {
       readTask: (key) => {
         calls.push(key)
-        return { key, status: 'done', statusCategory: 'done', commentIds: [] }
+        return { key, updatedAt: null, status: 'done', statusCategory: 'done', commentIds: [] }
       },
     },
     async (replay) => [
