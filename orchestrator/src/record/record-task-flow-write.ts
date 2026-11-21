@@ -4,11 +4,11 @@
  * the seq row lock after the task_flow row lock, inside insertStage.
  */
 import type { SQL } from 'bun'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { bindJsonb } from '../../../shared/record/jsonb-sql.ts'
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
 import { DocRevisionConflictError, RECORD_DIFFERENT_CONTENT } from '../doc/doc-revision-conflict.ts'
 import { handoffSourceRefusal, handoffTargetRefusal } from '../workflow/workflow-handoff-refusal.ts'
-import { repinWriteRefusal } from '../workflow/workflow-repin-decision.ts'
 import { isUniqueViolation } from './record-config-error.ts'
 import { recordPool } from './record-pool.ts'
 import { allocateRecordSequence } from './record-sequence.ts'
@@ -24,6 +24,7 @@ import {
   decideRevisionPreflight,
   decideRevisionWrite,
   recordColumnName,
+  repinWriteRefusal,
   sameRecordValue,
 } from './record-task-flow-write-decision.ts'
 
@@ -526,6 +527,7 @@ async function applyRepin(tx: SQL, body: RepinBody) {
       hasOpenWorkflowQuestion: row.has_open_workflow_question,
     },
     body.expected,
+    `${PLATFORM_SLUG} workflow repin`,
   )
   if (changed) refusal(changed, `task_flow_stage.id=${body.stage.id}`, 'stale-revision')
   return {

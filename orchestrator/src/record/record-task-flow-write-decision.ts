@@ -1,6 +1,40 @@
 // concern: hosted task-flow write decisions
 /** Pure optimistic-write and idempotent-insert decisions for hosted task-flow intents. */
 
+export type RepinWriteFacts = {
+  sessionId: string | null
+  state: string
+  activeOrdinal: number
+  workflowVersionId: string
+  catalogueVersionId: string
+  hasOpenWorkflowQuestion: boolean
+}
+
+/** Re-checks the cursor facts consumed by the client decision immediately before its write. */
+export function repinWriteRefusal(
+  cursor: number | string,
+  current: RepinWriteFacts,
+  expected: Omit<RepinWriteFacts, 'hasOpenWorkflowQuestion'>,
+  retryCommand: string,
+): string | undefined {
+  const retry = `rerun ${retryCommand}`
+  if (current.state === 'awaiting-ruling')
+    return `workflow cursor ${cursor} gained a pending workflow await; ${retry}`
+  if (current.hasOpenWorkflowQuestion)
+    return `workflow cursor ${cursor} gained an open workflow question; ${retry}`
+  if (current.sessionId !== expected.sessionId)
+    return `workflow cursor ${cursor} holder changed from ${expected.sessionId ?? 'none'} to ${current.sessionId ?? 'none'}; ${retry}`
+  if (current.state !== expected.state)
+    return `workflow cursor ${cursor} state changed from ${expected.state} to ${current.state}; ${retry}`
+  if (current.activeOrdinal !== expected.activeOrdinal)
+    return `workflow cursor ${cursor} ordinal changed from ${expected.activeOrdinal + 1} to ${current.activeOrdinal + 1}; ${retry}`
+  if (current.workflowVersionId !== expected.workflowVersionId)
+    return `workflow cursor ${cursor} pinned workflow version changed; ${retry}`
+  if (current.catalogueVersionId !== expected.catalogueVersionId)
+    return `workflow cursor ${cursor} pinned catalogue version changed; ${retry}`
+  return undefined
+}
+
 export type RevisionDecision =
   | { kind: 'write' }
   | { kind: 'retry' }

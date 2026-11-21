@@ -142,6 +142,7 @@ const declaredModules: ArchitectureModule[] = [
     '../database/db.ts',
     '../record/record-task-flow-contract.ts',
     '../record/record-task-flow-write-contract.ts',
+    '../record/record-task-flow-write-decision.ts',
     './task-flow-decision.ts',
   ]),
   module('orchestrator/src/machine-journal.ts', [

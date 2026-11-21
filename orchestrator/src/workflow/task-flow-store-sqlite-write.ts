@@ -12,8 +12,8 @@ import {
   type TaskFlowLiveIntent,
   workflowHandoffTrail,
 } from '../record/record-task-flow-write-contract.ts'
+import { repinWriteRefusal } from '../record/record-task-flow-write-decision.ts'
 import { decideAppliedMirrorMutation } from './task-flow-decision.ts'
-import { repinWriteRefusal } from './workflow-repin-decision.ts'
 
 type Mutation = { id: string; expectedRevision: number; values: Record<string, unknown> }
 type SqlRow = Record<string, SQLQueryBindings>
@@ -632,17 +632,26 @@ function writeRepin(database: Database, body: SqlRow, revisions?: Record<string,
   }
   const appliedRevision = revisions?.[stage.id]
   const currentRevision = revision(database, 'workflow_cursor', stage.id)
-  if (!(appliedRevision !== undefined && currentRevision !== null && currentRevision >= appliedRevision)) {
+  if (
+    !(
+      appliedRevision !== undefined &&
+      currentRevision !== null &&
+      currentRevision >= appliedRevision
+    )
+  ) {
     const row = database
-      .query<{
-        number: number
-        session_id: string | null
-        state: string
-        ordinal: number
-        workflow_version_record_id: string
-        catalogue_version_record_id: string
-        has_open_workflow_question: number
-      }, [string]>(
+      .query<
+        {
+          number: number
+          session_id: string | null
+          state: string
+          ordinal: number
+          workflow_version_record_id: string
+          catalogue_version_record_id: string
+          has_open_workflow_question: number
+        },
+        [string]
+      >(
         `SELECT c.number,c.session_id,c.state,c.ordinal,c.workflow_version_record_id,
           c.catalogue_version_record_id,EXISTS(SELECT 1 FROM question q
             WHERE q.workflow_cursor_record_id=c.record_id
@@ -662,6 +671,7 @@ function writeRepin(database: Database, body: SqlRow, revisions?: Record<string,
         hasOpenWorkflowQuestion: row.has_open_workflow_question === 1,
       },
       expected,
+      `${PLATFORM_SLUG} workflow repin`,
     )
     if (changed) throw new Error(changed)
   }
