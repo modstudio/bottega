@@ -17,6 +17,7 @@ export const projectModules: ProjectModule[] = [
     'node:fs',
     '../database/db.ts',
     '../database/project-register-store.ts',
+    '../workflow/project-task-list.ts',
     '../workflow/workflow-task-reference.ts',
     './project-read.ts',
     './project-reference-counts.ts',

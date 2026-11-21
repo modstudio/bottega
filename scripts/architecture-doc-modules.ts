@@ -139,6 +139,7 @@ export const docModules: DocModule[] = [
     '../session/keyless-cursor-idle.ts',
     '../session/session-review-verdicts.ts',
     '../workflow/session-context.ts',
+    '../workflow/project-task-list.ts',
     '../workflow/workflow-cursor-list.ts',
     '../workflow/workflow-cursor-format.ts',
     '../workflow/workflow-cursor-transition.ts',

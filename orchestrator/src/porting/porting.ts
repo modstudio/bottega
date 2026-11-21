@@ -9,7 +9,7 @@ import { applyPortWriteResponse } from '../record/record-cache-port.ts'
 import { projectDestinationFromIdentity } from '../record/record-project-destination-client.ts'
 import { applyRecordWriteAuthority } from '../record/record-write-authority.ts'
 import { workerStoreWriteRefusal } from '../worker-store-write.ts'
-import { type HubTaskReader, resolveHubTaskReference } from '../workflow/workflow-task-reference.ts'
+import { type HubTaskLookup, resolveHubTaskReference } from '../workflow/workflow-task-reference.ts'
 
 export type PortPair = {
   record_id: string
@@ -499,13 +499,13 @@ export async function setLedgerRef(
     sources: LedgerSource[]
     createdAt?: string
   },
-  hubTaskReader?: HubTaskReader,
+  hubTaskLookup?: HubTaskLookup,
 ) {
   assertPortWriteAllowed('set port ledger ref')
   const task = await resolveHubTaskReference(
     projectName(input.targetProjectId),
     input.taskKey,
-    hubTaskReader,
+    hubTaskLookup,
   )
   return applyRecordWriteAuthority({
     local: () => setLedgerRefLocal({ ...input, taskRecordId: task?.record_id ?? null }),

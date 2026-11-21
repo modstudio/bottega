@@ -20,8 +20,7 @@ import {
 import { addRun } from '../../test/fixtures/store.ts'
 import { catalogueVersionRecordId, workflowVersionRecordId } from '../../test/fixtures/workflow.ts'
 import { db } from '../database/db.ts'
-import { missingIssueReportFields } from '../issue/issue-report-fields.ts'
-import { type Project, removeProject, upsertProject } from '../project/projects.ts'
+import { removeProject, upsertProject } from '../project/projects.ts'
 import { rememberProjectSpace } from '../project-space-cache.ts'
 import { machineId } from '../record/machine-identity.ts'
 import { RecordApiRequestError } from '../record/record-api-client.ts'
@@ -39,7 +38,7 @@ import {
   setWorkflowLocal,
   showResolvedWorkflow,
 } from '../workflow/workflows.ts'
-import { createDocsMcpServer, fileIssueTaskKey } from './mcp.ts'
+import { createDocsMcpServer } from './mcp.ts'
 import { workflowRulingContextFixture } from './mcp-context-reports.fixture.ts'
 import { MCP_SERVER_STALE_EXIT } from './mcp-exit-status.ts'
 import { createMcpTaskFlowMemory, mcpTaskFlowStageIdentity } from './mcp-task-flow.fixture.ts'
@@ -171,7 +170,7 @@ describe('orch MCP', () => {
     const stepFor = async (commitCount: number) => {
       const server = createDocsMcpServer({
         commitCount: () => commitCount,
-        hubTaskReader: async () => [{ key, record_id: `task-${key}`, project }],
+        hubTaskLookup: async () => ({ key, record_id: `task-${key}`, project }),
       })
       const client = new Client({ name: 'orch-test', version: '1.0.0' })
       const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair()
@@ -630,13 +629,22 @@ describe('orch MCP', () => {
       )
       .run(project, first.id, second.id)
     const secondRow = mcpTaskFlowStageIdentity(db(), second.id)
+    let taskLookups = 0
     const { server } = workflowRulingContextFixture({
-      hubTaskReader: async () =>
-        ['DEV-1082-MCP-A', 'DEV-1082-MCP-B'].map((key) => ({
+      hubTaskLookup: async (_project, key) => {
+        taskLookups++
+        return {
           key,
           record_id: `task-${key}`,
           project,
-        })),
+        }
+      },
+      hubTaskRecordLookup: async (recordId) => ({
+        key: recordId.replace(/^task-/, ''),
+        record_id: recordId,
+        project,
+        source: 'local',
+      }),
       workflowTextDocuments: {
         async list() {
           return []
@@ -779,12 +787,14 @@ describe('orch MCP', () => {
       })
       process.env.BOTTEGA_RECORD_API_URL = 'https://record.test'
       rememberProjectSpace(db(), project, hostedSpaceId)
+      const lookupsBeforeAdvance = taskLookups
       const advanced = await call('next_workflow_step', {
         ...common,
         args: args('DEV-1082-MCP-A'),
         note: 'closed through MCP handle',
         run: evidenceRunNumber,
       })
+      expect(taskLookups - lookupsBeforeAdvance).toBe(1)
       expect(advanced).not.toContain('Took over this workflow stage from Remote MCP machine.')
       await call('await_workflow_ruling', {
         ...common,
@@ -926,45 +936,6 @@ describe('orch MCP', () => {
       await client.close()
       await server.close()
     }
-  })
-
-  const fileIssueProject = {
-    settings: { worktree: { keyPattern: '^DEV-[1-9][0-9]*$' } },
-  } as unknown as Project
-
-  test('file_issue validates a returned key for the platform project, not the reporting project', () => {
-    const reportingProject = {
-      settings: { worktree: { keyPattern: '^AB-[1-9][0-9]*$' } },
-    } as unknown as Project
-
-    expect(fileIssueTaskKey('DEV-1270\n', fileIssueProject)).toBe('DEV-1270')
-    expect(() => fileIssueTaskKey('DEV-1270\n', reportingProject)).toThrow(
-      `${PLATFORM_SLUG} task new for file_issue did not return a valid task key; returned "DEV-1270"`,
-    )
-  })
-
-  test('file_issue refuses a notice line followed by a task key', () => {
-    expect(() => fileIssueTaskKey('hosted change sent\nDEV-1270\n', fileIssueProject)).toThrow(
-      `${PLATFORM_SLUG} task new for file_issue did not return a valid task key; returned "hosted change sent\\nDEV-1270"`,
-    )
-  })
-
-  test('kind-dependent fields have exact missing sets', () => {
-    const completeSuggestion = {
-      kind: 'suggestion' as const,
-      what_happened: 'Expose more filing guidance',
-      expected: 'Clients can construct a report without validation retries',
-      evidence: 'The advertised schema contains the common report fields',
-      not_established: 'Whether clients render every description',
-    }
-    expect(missingIssueReportFields({ kind: 'defect' })).toEqual([
-      'reproduce_command',
-      'environment',
-    ])
-    expect(
-      missingIssueReportFields({ kind: 'defect', reproduce_command: 'bun run check' }),
-    ).toEqual(['environment'])
-    expect(missingIssueReportFields(completeSuggestion)).toEqual([])
   })
 
   test('get_doc_revision resolves user canon only when user is true', async () => {

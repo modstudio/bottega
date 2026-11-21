@@ -7,7 +7,7 @@ import { observeLandedTasks } from '../branch/task-status-observation.ts'
 import { taskContextItems } from '../doc/context-service.ts'
 import { pendingForSession } from '../evidence/evidence-query.ts'
 import { projects } from '../project/projects.ts'
-import { type HubTaskReader, readHubTasks } from '../workflow/workflow-task-reference.ts'
+import { type ProjectTaskListReader, readProjectTaskList } from '../workflow/project-task-list.ts'
 import type { SessionOwnedRun } from './session-close-out-decision.ts'
 import {
   landedTaskIdentities,
@@ -20,7 +20,7 @@ export async function sessionCloseOutObligationItems(
   database: Database,
   session: string,
   ownedRuns: readonly SessionOwnedRun[],
-  taskReader: HubTaskReader = readHubTasks,
+  taskReader: ProjectTaskListReader = readProjectTaskList,
 ): Promise<SessionProcessLine[]> {
   const ownedRunRecordIds = ownedRuns.map((run) => run.recordId)
   const identities = landedTaskIdentities({

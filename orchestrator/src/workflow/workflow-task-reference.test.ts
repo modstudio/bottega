@@ -23,17 +23,27 @@ test('fresh task reads preserve whether tracker comment ids were verifiable', ()
 })
 
 test('resolves a shared key only within the workflow project', async () => {
-  const reader = async (project: string) => [
-    { key: 'SHARED-42', record_id: `task-${project}`, project },
-  ]
+  const lookup = async (project: string) => ({
+    key: 'SHARED-42',
+    record_id: `task-${project}`,
+    project,
+  })
 
-  await expect(resolveHubTaskReference('alpha', 'SHARED-42', reader)).resolves.toMatchObject({
+  await expect(resolveHubTaskReference('alpha', 'SHARED-42', lookup)).resolves.toMatchObject({
     record_id: 'task-alpha',
   })
-  await expect(resolveHubTaskReference('beta', 'SHARED-42', reader)).resolves.toMatchObject({
+  await expect(resolveHubTaskReference('beta', 'SHARED-42', lookup)).resolves.toMatchObject({
     record_id: 'task-beta',
   })
-  await expect(resolveHubTaskReference(null, 'SHARED-42', reader)).resolves.toBeNull()
+  await expect(resolveHubTaskReference(null, 'SHARED-42', lookup)).resolves.toBeNull()
+})
+
+test('preserves an ambiguity refusal from the point reader', async () => {
+  await expect(
+    resolveHubTaskReference('alpha', 'SHARED-42', async () => {
+      throw new Error('task SHARED-42 is ambiguous in project alpha')
+    }),
+  ).rejects.toThrow('task SHARED-42 is ambiguous in project alpha')
 })
 
 test('task-list refusals withhold secret-shaped child-process detail', () => {

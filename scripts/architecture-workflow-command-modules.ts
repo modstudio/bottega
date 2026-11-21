@@ -12,6 +12,10 @@ const module = (file: string, allowed: string[]): WorkflowCommandModule => ({
 })
 
 export const workflowCommandModules: WorkflowCommandModule[] = [
+  module('orchestrator/src/workflow/project-task-list.ts', [
+    './task-read-port.ts',
+    './workflow-task-reference.ts',
+  ]),
   module('orchestrator/src/workflow/workflow-task-tree.ts', []),
   module('orchestrator/src/workflow/workflow-child-queue.ts', [
     '../../../shared/brand.ts',
@@ -23,8 +27,8 @@ export const workflowCommandModules: WorkflowCommandModule[] = [
     '../board/board-operations.ts',
     '../record/record-task-flow-contract.ts',
     './task-flow-store.ts',
-    './task-read-port.ts',
     './workflow-child-queue.ts',
+    './workflow-task-reference.ts',
     './workflow-task-tree.ts',
   ]),
   module('orchestrator/src/workflow/workflow-child-service.ts', [
@@ -32,6 +36,7 @@ export const workflowCommandModules: WorkflowCommandModule[] = [
     '../board/board-claim-policy.ts',
     '../board/board-operations.ts',
     '../database/db.ts',
+    './project-task-list.ts',
     './task-flow-store.ts',
     './task-read-port.ts',
     './workflow-child-facts.ts',
@@ -40,12 +45,14 @@ export const workflowCommandModules: WorkflowCommandModule[] = [
     './workflow-cursor-live-autonomy.ts',
     './workflow-cursor-selection.ts',
     './workflow-cursor-trail.ts',
+    './workflow-task-reference.ts',
     './workflow-task-tree.ts',
     './workflows.ts',
   ]),
   module('orchestrator/src/workflow/workflow-cursor-report.ts', [
     '../cli/args.ts',
     '../record/record-task-flow-contract.ts',
+    './project-task-list.ts',
     './workflow-cursor-format.ts',
     './workflow-cursor-list.ts',
     './task-flow-decision.ts',

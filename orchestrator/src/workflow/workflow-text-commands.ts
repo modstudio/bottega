@@ -3,7 +3,7 @@
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { flagValue } from '../cli/args.ts'
 import { positive } from './workflow-command-arguments.ts'
-import type { HubTaskReader } from './workflow-task-reference.ts'
+import type { HubTaskLookup } from './workflow-task-reference.ts'
 import { workflowTextAttachmentToken } from './workflow-text.ts'
 import {
   copyWorkflowTextForTask,
@@ -16,7 +16,7 @@ import {
 
 type WorkflowTextPrint = (value: unknown, line?: string) => void
 type WorkflowTextCommandOptions = {
-  hubTaskReader?: HubTaskReader
+  hubTaskLookup?: HubTaskLookup
   workflowTextDocuments?: WorkflowTextDocumentPorts
 }
 
@@ -46,7 +46,7 @@ export async function copyWorkflowTextCommand(
     await cursorForWorkflowTextCopy(cursor, undefined, flagValue(argv, 'project')),
     flagValue(argv, 'task'),
     undefined,
-    options.hubTaskReader,
+    options.hubTaskLookup,
     options.workflowTextDocuments ?? productionWorkflowTextDocumentPorts,
   )
   print(result, workflowTextCopyReport(result, cursor) || 'no uncopied workflow text')

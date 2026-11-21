@@ -449,7 +449,11 @@ describe('workflow text lifecycle', () => {
   })
 })
 
-const taskReader = async () => [{ key: 'DEV-1975', record_id: 'task-dev-1975', project: 'fixture' }]
+const taskReader = async () => ({
+  key: 'DEV-1975',
+  record_id: 'task-dev-1975',
+  project: 'fixture',
+})
 
 function linkCursor(d: Database, cursor: number): void {
   d.query('UPDATE workflow_cursor SET task_record_id=? WHERE number=?').run('task-dev-1975', cursor)
@@ -501,14 +505,12 @@ describe('task-linked workflow text preservation', () => {
     const result = await copyWorkflowTextForCursor(
       await cursorForWorkflowTextCopy(cursor, d),
       d,
-      async () => [
-        {
-          key: 'STAR-6294',
-          record_id: 'task-dev-1975',
-          project: 'fixture',
-          source: 'git',
-        },
-      ],
+      async () => ({
+        key: 'STAR-6294',
+        record_id: 'task-dev-1975',
+        project: 'fixture',
+        source: 'git',
+      }),
       documents,
     )
     const expected =
@@ -539,14 +541,12 @@ describe('task-linked workflow text preservation', () => {
     const result = await copyWorkflowTextForCursor(
       await cursorForWorkflowTextCopy(cursor, d),
       d,
-      async () => [
-        {
-          key: 'DEV-1975',
-          record_id: 'task-dev-1975',
-          project: 'fixture',
-          source: 'local',
-        },
-      ],
+      async () => ({
+        key: 'DEV-1975',
+        record_id: 'task-dev-1975',
+        project: 'fixture',
+        source: 'local',
+      }),
       fake.ports,
     )
     const reports = [workflowTextCopyReport(result), workflowTextUncopiedReport(result)]
@@ -560,6 +560,42 @@ describe('task-linked workflow text preservation', () => {
     expect(
       reports.every((report) => !report.includes('workflow text copy does not support it')),
     ).toBe(true)
+  })
+
+  test("a task record from another project is not readable through the cursor's project", async () => {
+    const d = database()
+    const cursor = await open(d)
+    linkCursor(d, cursor)
+    await attachWorkflowTextByHandle(cursor, 'project-scoped text', context, d)
+    let documentCalls = 0
+    const documents: WorkflowTextDocumentPorts = {
+      async list() {
+        documentCalls += 1
+        return []
+      },
+      async create() {
+        documentCalls += 1
+        return 'DEV-1975/1'
+      },
+    }
+
+    const result = await copyWorkflowTextForCursor(
+      await cursorForWorkflowTextCopy(cursor, d),
+      d,
+      async () => ({
+        key: 'OTHER-1',
+        record_id: 'task-dev-1975',
+        project: 'another-project',
+        source: 'local',
+      }),
+      documents,
+    )
+    expect(result.uncopied).toEqual([
+      expect.objectContaining({
+        reason: 'task record task-dev-1975 is not readable in project fixture',
+      }),
+    ])
+    expect(documentCalls).toBe(0)
   })
 
   test('the close service copies through a context-only task link and leaves a redirect', async () => {

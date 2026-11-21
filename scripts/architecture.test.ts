@@ -51,6 +51,46 @@ test('SQLite adapters reject unreviewed importers', () => {
   )
 })
 
+test('project task lists reject a non-surface importer fixture', () => {
+  const rule = architectureRules().forbidden.find(
+    (candidate) => candidate.name === 'project-task-list-has-declared-surface-importers',
+  )!
+  expect(
+    ruleAllows(
+      rule,
+      'orchestrator/src/workflow/non-list-surface.fixture.ts',
+      'orchestrator/src/workflow/project-task-list.ts',
+    ),
+  ).toBeFalse()
+  expect(
+    ruleAllows(
+      rule,
+      'orchestrator/src/session/context-review.ts',
+      'orchestrator/src/workflow/project-task-list.ts',
+    ),
+  ).toBeTrue()
+})
+
+test('the broad task read port rejects an undeclared importer fixture', () => {
+  const rule = architectureRules().forbidden.find(
+    (candidate) => candidate.name === 'task-read-port-has-declared-importers',
+  )!
+  expect(
+    ruleAllows(
+      rule,
+      'orchestrator/src/workflow/non-task-read-adapter.fixture.ts',
+      'orchestrator/src/workflow/task-read-port.ts',
+    ),
+  ).toBeFalse()
+  expect(
+    ruleAllows(
+      rule,
+      'orchestrator/src/workflow/workflow-task-reference.ts',
+      'orchestrator/src/workflow/task-read-port.ts',
+    ),
+  ).toBeTrue()
+})
+
 function ruleAllows(
   rule: ReturnType<typeof architectureRules>['forbidden'][number],
   from: string,

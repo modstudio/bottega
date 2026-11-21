@@ -72,11 +72,12 @@ import {
 } from './workflow-render-check-store.ts'
 import { resolveWorkflowStepReference } from './workflow-step-reference.ts'
 import { resolveLinkedWorkflowCursorMode } from './workflow-task-linking.ts'
-import { type HubTaskReader, resolveHubTaskReference } from './workflow-task-reference.ts'
+import { type HubTaskLookup, resolveHubTaskReference } from './workflow-task-reference.ts'
 import { attachWorkflowText } from './workflow-text.ts'
 import {
   closeCursorWithTextCopy,
   closeCursorWithTextCopyResult,
+  type HubTaskRecordLookup,
   productionWorkflowTextDocumentPorts,
   type WorkflowTextDocumentPorts,
 } from './workflow-text-copy.ts'
@@ -107,7 +108,8 @@ export type WorkflowCommandOptions = {
   stdinIsTTY?: () => boolean | undefined
   /** Where a landing workflow reads the branch's commit count; the registered checkout's git by default. */
   commitCount?: CommitCountPort
-  hubTaskReader?: HubTaskReader
+  hubTaskLookup?: HubTaskLookup
+  hubTaskRecordLookup?: HubTaskRecordLookup
   workflowTextDocuments?: WorkflowTextDocumentPorts
   contextMomentPorts?: ContextMomentPorts
   contextMomentGather?: typeof import('./workflow-context-moment.ts').workflowNextContextMoment
@@ -268,7 +270,7 @@ export async function attachCommand(
     project,
     args,
     context,
-    options.hubTaskReader,
+    options.hubTaskLookup,
     selectedRow,
   )
   const mode = await resolveLinkedWorkflowCursorMode(
@@ -473,7 +475,7 @@ export async function ruleCommand(
     project,
     args,
     context,
-    options.hubTaskReader,
+    options.hubTaskLookup,
     selectedRow,
   )
   const mode = await resolveLinkedWorkflowCursorMode(
@@ -526,7 +528,7 @@ export async function abandonCommand(
     project,
     args,
     context,
-    options.hubTaskReader,
+    options.hubTaskLookup,
     selectedRow,
   )
   const mode = await resolveLinkedWorkflowCursorMode(
@@ -555,7 +557,7 @@ export async function abandonCommand(
       surface: 'cli',
     },
     undefined,
-    options.hubTaskReader,
+    options.hubTaskRecordLookup,
     options.workflowTextDocuments ?? productionWorkflowTextDocumentPorts,
   )
   print(result, result)
@@ -597,7 +599,7 @@ export async function stepCommand(
     project,
     args,
     context,
-    options.hubTaskReader,
+    options.hubTaskLookup,
     selectedRow,
   )
   const mode = cursor
@@ -674,11 +676,11 @@ export async function nextCommand(
     project,
     args,
     context,
-    options.hubTaskReader,
+    options.hubTaskLookup,
     selectedRow,
   )
   const adoptedTask = evidence.task
-    ? await resolveHubTaskReference(project, evidence.task, options.hubTaskReader)
+    ? await resolveHubTaskReference(project, evidence.task, options.hubTaskLookup)
     : null
   context = { ...context, adoptionTaskRecordId: adoptedTask?.record_id ?? null }
   const mode = await resolveLinkedWorkflowCursorMode(
@@ -719,7 +721,7 @@ export async function nextCommand(
       live,
     },
     undefined,
-    options.hubTaskReader,
+    options.hubTaskRecordLookup,
     options.workflowTextDocuments ?? productionWorkflowTextDocumentPorts,
   )
   print(result.text, result.text)
@@ -749,7 +751,7 @@ export async function awaitCommand(
     project,
     args,
     context,
-    options.hubTaskReader,
+    options.hubTaskLookup,
     selectedRow,
   )
   const mode = await resolveLinkedWorkflowCursorMode(
@@ -874,7 +876,7 @@ export async function composeCommand(
     project,
     args,
     cliWorkflowCursorContext(),
-    options.hubTaskReader,
+    options.hubTaskLookup,
   )
   const cursorPath = preliminary.mode && !preliminary.needs.arguments
   const live = await (cursorPath ? resolveWorkflowLiveAutonomy : resolveCompositionLiveAutonomy)({

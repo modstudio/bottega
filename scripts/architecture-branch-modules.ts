@@ -8,6 +8,7 @@ export const branchModuleSpecs = [
     allowed: [
       '../../../shared/trackers.ts',
       '../workflow/task-read-port.ts',
+      '../workflow/project-task-list.ts',
       '../workflow/workflow-task-reference.ts',
     ],
   },

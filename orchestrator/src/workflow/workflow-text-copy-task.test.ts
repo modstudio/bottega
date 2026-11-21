@@ -61,16 +61,21 @@ test('graduation copies every explore attachment into the target task documents'
   await attachWorkflowTextByHandle(cursor, 'first finding', context, d)
   await attachWorkflowTextByHandle(cursor, 'second finding', context, d)
   const fake = documentFake()
+  let taskLookups = 0
 
   const result = await copyWorkflowTextForTask(
     await cursorForWorkflowTextCopy(cursor, d),
     task.key,
     d,
-    async () => [task],
+    async () => {
+      taskLookups++
+      return task
+    },
     fake.ports,
   )
 
   expect(result.copied).toHaveLength(2)
+  expect(taskLookups).toBe(1)
   expect(fake.documents.map(({ taskKey, body }) => ({ taskKey, body }))).toEqual([
     { taskKey: task.key, body: 'first finding' },
     { taskKey: task.key, body: 'second finding' },
@@ -86,7 +91,7 @@ test('a keyless cursor with uncopied text refuses copy without --task and names 
       await cursorForWorkflowTextCopy(cursor, d),
       undefined,
       d,
-      async () => [],
+      async () => null,
       documentFake().ports,
     ),
   ).rejects.toThrow(
@@ -106,7 +111,7 @@ test('a failed explicit-task copy retains --task in its retry command', async ()
     await cursorForWorkflowTextCopy(cursor, d),
     task.key,
     d,
-    async () => [task],
+    async () => task,
     fake.ports,
   )
 
@@ -128,7 +133,7 @@ test('--task refuses a keyed cursor and names its own task', async () => {
       await cursorForWorkflowTextCopy(cursor, d),
       'DEV-9999',
       d,
-      async () => [task],
+      async () => task,
       documentFake().ports,
     ),
   ).rejects.toThrow(`cursor ${cursor} belongs to task ${task.key}`)
@@ -142,7 +147,7 @@ test('an unknown target task names how to find or create it', async () => {
       await cursorForWorkflowTextCopy(cursor, d),
       'DEV-9999',
       d,
-      async () => [],
+      async () => null,
       documentFake().ports,
     ),
   ).rejects.toThrow(

@@ -531,9 +531,7 @@ function registerWorkflowCursorAdmin({
       .option('--all', 'include closed cursors'),
   )
     .allowExcessArguments(false)
-    .action((options) =>
-      cursorsCommand(workflowArgv('cursors', [], options), output(options), handlerOptions),
-    )
+    .action((options) => cursorsCommand(workflowArgv('cursors', [], options), output(options)))
 }
 
 function registerWorkflowChildCommands({

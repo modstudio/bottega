@@ -34,7 +34,7 @@ type PortPresentation = {
   log(...values: unknown[]): void
   writeStdout(value: string): Promise<void>
   exitCode(code: number): void
-  hubTaskReader?: Parameters<typeof setLedgerRef>[1]
+  hubTaskLookup?: Parameters<typeof setLedgerRef>[1]
 }
 
 function refusePortUsage(usage: string): never {
@@ -94,7 +94,7 @@ export async function portCommand(
   presentation: PortPresentation,
 ): Promise<void> {
   const { has, flag } = flags
-  const { log, writeStdout, exitCode, hubTaskReader } = presentation
+  const { log, writeStdout, exitCode, hubTaskLookup } = presentation
   const output = (value: unknown, line: string) => log(has('json') ? JSON.stringify(value) : line)
 
   if (group === 'import') {
@@ -408,7 +408,7 @@ export async function portCommand(
         note,
         sources,
       },
-      hubTaskReader,
+      hubTaskLookup,
     )
     output(ref, `recorded provenance for ${taskKey} from ${sources.length} source project(s)`)
     return

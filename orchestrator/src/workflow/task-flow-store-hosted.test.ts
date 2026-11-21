@@ -203,7 +203,7 @@ test('hosted task-flow intents never touch the five local task-flow tables', asy
       state: hosted.stage.state,
     },
     database,
-    async () => [{ key: taskKey, record_id: taskId, project: 'fixture', source: 'local' }],
+    async () => ({ key: taskKey, record_id: taskId, project: 'fixture', source: 'local' }),
     {
       list: async () => [],
       create: async () => 'DEV-HOSTED-GUARD/1',

@@ -121,7 +121,7 @@ async function command(
     else if (args[0] === 'port')
       await portCommand(args[1], args[2], args, flags, {
         ...presentation,
-        hubTaskReader: async (project) => [{ key: 'TGT-7', record_id: 'task-TGT-7', project }],
+        hubTaskLookup: async (project) => ({ key: 'TGT-7', record_id: 'task-TGT-7', project }),
       })
     else if (args[0] === 'review') {
       const program = new Command().exitOverride()
@@ -418,6 +418,7 @@ describe('scoped operator docs', () => {
   }, 20_000)
 
   test('MCP port tools use registered names and preserve resolved provenance', async () => {
+    let taskLookups = 0
     upsertProject({
       recordId: newRecordId(),
       name: 'source-invented',
@@ -431,7 +432,10 @@ describe('scoped operator docs', () => {
       settings: { keyPrefixes: ['TGT'] },
     })
     const server = createDocsMcpServer({
-      hubTaskReader: async (project) => [{ key: 'TGT-8', record_id: 'task-TGT-8', project }],
+      hubTaskLookup: async (project) => {
+        taskLookups++
+        return { key: 'TGT-8', record_id: 'task-TGT-8', project }
+      },
     })
     const client = new Client({ name: 'orch-port-test', version: '1.0.0' })
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair()
@@ -492,6 +496,7 @@ describe('scoped operator docs', () => {
         name: 'resolve_port_ledger_ref',
         arguments: { project: 'target-invented', task_key: 'TGT-8' },
       })
+      expect(taskLookups).toBe(1)
       expect(value(resolved)).toMatchObject({ task_key: 'TGT-8', resolved_at: expect.any(String) })
       const active = await client.callTool({ name: 'list_port_ledger_refs', arguments: {} })
       const all = await client.callTool({

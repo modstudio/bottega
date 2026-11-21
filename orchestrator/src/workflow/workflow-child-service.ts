@@ -9,8 +9,8 @@ import {
   boardQueuedClaimClose,
 } from '../board/board-operations.ts'
 import { db } from '../database/db.ts'
+import { readProjectTaskList } from './project-task-list.ts'
 import { taskFlowReadStore } from './task-flow-store.ts'
-import { type TaskReadRow, taskReader } from './task-read-port.ts'
 import { childAncestorKeys, gatherChildTaskFacts, liveChildClaims } from './workflow-child-facts.ts'
 import {
   childEligibility,
@@ -26,6 +26,7 @@ import {
   selectWorkflowCursorByHandle,
 } from './workflow-cursor-selection.ts'
 import type { ClosedStep } from './workflow-cursor-trail.ts'
+import type { HubTaskReference } from './workflow-task-reference.ts'
 import { descendantTaskKeys } from './workflow-task-tree.ts'
 import { composeWorkflow } from './workflows.ts'
 
@@ -38,7 +39,11 @@ export type WorkflowChildServicePorts = {
   ) => ReturnType<typeof boardClaimTake>
 }
 
-async function nearestAncestorFlow(key: string, tasks: readonly TaskReadRow[], database: Database) {
+async function nearestAncestorFlow(
+  key: string,
+  tasks: readonly HubTaskReference[],
+  database: Database,
+) {
   const byKey = new Map(tasks.map((task) => [task.key, task]))
   const store = taskFlowReadStore(database)
   for (const ancestor of childAncestorKeys(key, tasks)) {
@@ -52,7 +57,7 @@ async function nearestAncestorFlow(key: string, tasks: readonly TaskReadRow[], d
 
 async function inheritedStart(
   child: string,
-  tasks: readonly TaskReadRow[],
+  tasks: readonly HubTaskReference[],
   database: Database,
   steps: readonly { slug: string }[],
 ) {
@@ -104,14 +109,14 @@ export async function queueWorkflowChild(
   },
   database: Database = db(),
 ) {
-  const tasks = await taskReader().list({ project: input.project })
+  const tasks = await readProjectTaskList(input.project)
   const ancestors = childAncestorKeys(input.child, tasks)
   if (!ancestors.length) throw new Error(`${input.child} is not a child task`)
   const root = ancestors.at(-1)!
   const claims = liveChildClaims(database, input.project)
   const descendants = descendantTaskKeys(
     root,
-    tasks.map((task) => ({ key: task.key, parentKey: task.parent_key })),
+    tasks.map((task) => ({ key: task.key, parentKey: task.parent_key ?? null })),
   )
   if (!sessionWorksUnderEpic(claims, input.callerSession, root, descendants))
     throw new Error(
@@ -156,7 +161,7 @@ export async function startWorkflowChild(
   )
   if (epic.workflow_slug !== 'plan-task' || epic.step_slug !== 'start')
     throw new Error(`cursor ${input.cursor} is not an epic plan-task cursor at start`)
-  const tasks = await taskReader().list({ project: input.project })
+  const tasks = await readProjectTaskList(input.project)
   const facts = await gatherChildTaskFacts(database, input.project, tasks)
   if (!facts.some((task) => task.parentKey === epic.workflow_key))
     throw new Error(`cursor ${input.cursor} is not an epic cursor`)

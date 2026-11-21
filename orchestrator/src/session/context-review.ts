@@ -9,8 +9,8 @@ import { contextBrief } from '../doc/context-brief.ts'
 import { taskHoldersCarriedByOpenCursors } from '../doc/context-cursor-warning-decision.ts'
 import type { StoredContextItem } from '../doc/context-item-store.ts'
 import { cursorContextHolder, taskContextHolder } from '../doc/doc-subjects.ts'
+import { readProjectTaskList } from '../workflow/project-task-list.ts'
 import { listWorkflowCursors } from '../workflow/workflow-cursor-list.ts'
-import { readHubTasks } from '../workflow/workflow-task-reference.ts'
 import {
   CONTEXT_REVIEW_WINDOW_MS,
   type ContextReviewFacts,
@@ -131,7 +131,7 @@ export async function reviewContext(
     listWorkflowCursors({ session }, database),
   ])
   const projects = [...new Set(cursors.map((cursor) => cursor.project))]
-  const tasks = (await Promise.all(projects.map(readHubTasks))).flat()
+  const tasks = (await Promise.all(projects.map(readProjectTaskList))).flat()
   const holders: ReviewHolder[] = brief.holders.flatMap((holder) => {
     const address = holder.items[0]?.holder
     if (!address) return []

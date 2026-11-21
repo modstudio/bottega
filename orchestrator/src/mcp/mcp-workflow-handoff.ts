@@ -12,9 +12,9 @@ import {
 import { handoffWorkflow } from '../workflow/workflow-handoff.ts'
 import { resolveOfferedArtifacts } from '../workflow/workflow-offered-artifacts.ts'
 import { productionWorkflowFloorPorts } from '../workflow/workflow-production-floor-ports.ts'
-import type { HubTaskReader } from '../workflow/workflow-task-reference.ts'
+import type { HubTaskLookup } from '../workflow/workflow-task-reference.ts'
 
-type HandoffToolPorts = { hubTaskReader?: HubTaskReader; commitCount?: CommitCountPort }
+type HandoffToolPorts = { hubTaskLookup?: HubTaskLookup; commitCount?: CommitCountPort }
 
 export function registerWorkflowHandoffTool(
   server: McpServer,
@@ -49,7 +49,7 @@ export function registerWorkflowHandoffTool(
         row.mode_slug,
         { ...args, key: row.workflow_key },
         cursor,
-        ports.hubTaskReader,
+        ports.hubTaskLookup,
       )
       const live = await resolveWorkflowLiveAutonomy({
         slug: workflow,

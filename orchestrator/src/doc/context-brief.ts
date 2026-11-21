@@ -18,6 +18,7 @@ import {
 import { LIVE_RUN_STATUS_SQL } from '../run/run-status.ts'
 import { KEYLESS_CURSOR_IDLE_MS, keylessCursorIdle } from '../session/keyless-cursor-idle.ts'
 import { sessionReviewVerdictLines } from '../session/session-review-verdicts.ts'
+import { type ProjectTaskListReader, readProjectTaskList } from '../workflow/project-task-list.ts'
 import { architectSessionContext } from '../workflow/session-context.ts'
 import { workflowCursorReference } from '../workflow/workflow-cursor-format.ts'
 import {
@@ -34,10 +35,8 @@ import {
   workflowCursorClaimHandles,
 } from '../workflow/workflow-cursor-worktrees.ts'
 import {
-  type HubTaskReader,
   type HubTaskReference,
   projectTaskKey,
-  readHubTasks,
   taskKeyMap,
   taskReferenceForProjectKey,
 } from '../workflow/workflow-task-reference.ts'
@@ -375,7 +374,7 @@ export async function contextBrief(
   session: string,
   cwd = process.cwd(),
   database: Database = db(),
-  hubTaskReader: HubTaskReader = readHubTasks,
+  hubTaskReader: ProjectTaskListReader = readProjectTaskList,
 ): Promise<ContextBrief> {
   const cursors = await listWorkflowCursors({ session }, database)
   const keylessCursors = cursors.filter((cursor) => !cursor.workflow_key)

@@ -3,7 +3,6 @@
 
 import type { Database } from 'bun:sqlite'
 import { nowIso } from '../database/db.ts'
-import { taskReader } from './task-read-port.ts'
 import { cursorName, workflowCursorTakeoverRemedy } from './workflow-cursor-format.ts'
 import type { SelectableCursorRow, WorkflowCursorContext } from './workflow-cursor-selection.ts'
 import { currentStepActivatedAt, reentryBoundFloorInput } from './workflow-cursor-trail.ts'
@@ -23,6 +22,7 @@ import { invokeFloorEvidencePort } from './workflow-floor-evidence-replay.ts'
 import { openWorkflowObligations } from './workflow-obligation-floor.ts'
 import type { DispatchWaiverFact, StepRunObligation } from './workflow-run-obligation.ts'
 import { gatherWorkflowRunChains } from './workflow-run-obligation-evidence.ts'
+import { readHubTaskChildren } from './workflow-task-reference.ts'
 
 type FloorCursor = Pick<
   SelectableCursorRow,
@@ -106,12 +106,7 @@ export async function applyFloorDecision(
   const args = JSON.parse(row.args) as Record<string, string>
   const declaredEvidenceFloors = floors.filter(({ kind }) => kind !== 'review-owed')
   const taskRows = declaredEvidenceFloors.some(({ kind }) => kind === 'descendants-closed')
-    ? (await taskReader().list({ project: row.project })).map((task) => ({
-        key: task.key,
-        parentKey: task.parent_key,
-        status: task.status,
-        statusCategory: task.status_category,
-      }))
+    ? await readDescendantTaskFacts(row.project, row.workflow_key)
     : []
   const evidenceFloors = selectEpicStartFloors(declaredEvidenceFloors, {
     workflow: row.workflow_slug,
@@ -170,6 +165,44 @@ export async function applyFloorDecision(
       : {}),
     ...reentryBoundFloorInput(requireRuling, row.closed, row.step_slug),
   })
+}
+
+type DescendantTaskFact = {
+  key: string
+  parentKey: string | null
+  status: string | null
+  statusCategory: string | null
+}
+
+/** Read each descendant set once without downloading the project's unrelated tasks. */
+export async function readDescendantTaskFacts(
+  project: string,
+  root: string,
+): Promise<DescendantTaskFact[]> {
+  if (!root) return []
+  const rows: DescendantTaskFact[] = []
+  const pending = [root]
+  const visited = new Set<string>()
+  const discovered = new Set([root])
+  while (pending.length) {
+    const parent = pending.shift()!
+    if (visited.has(parent)) continue
+    visited.add(parent)
+    const children = await readHubTaskChildren(project, parent)
+    for (const child of children) {
+      if (!child.key) continue
+      if (discovered.has(child.key)) continue
+      discovered.add(child.key)
+      rows.push({
+        key: child.key,
+        parentKey: child.parent_key ?? null,
+        status: child.status ?? null,
+        statusCategory: child.status_category ?? null,
+      })
+      pending.push(child.key)
+    }
+  }
+  return rows
 }
 
 function attachRunObligationEvidence(

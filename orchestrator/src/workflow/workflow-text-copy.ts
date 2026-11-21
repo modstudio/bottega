@@ -41,9 +41,10 @@ import {
   type WorkflowSelfRulingInput,
 } from './workflow-self-ruling-mutation.ts'
 import {
-  type HubTaskReader,
+  type HubTaskLookup,
   type HubTaskReference,
-  readHubTasks,
+  readHubTaskReference,
+  readHubTaskReferenceByRecordId,
   resolveHubTaskReference,
 } from './workflow-task-reference.ts'
 import {
@@ -68,6 +69,7 @@ type CopyCursor = {
   taskRecordId: string | null
   state: string
 }
+export type HubTaskRecordLookup = (recordId: string) => Promise<HubTaskReference | null>
 export type WorkflowTextCopyResult = {
   cursor: number
   project: string
@@ -184,7 +186,7 @@ function unsupportedCopyResult(
 export async function copyWorkflowTextForCursor(
   cursor: CopyCursor,
   database: Database = db(),
-  taskReader: HubTaskReader = readHubTasks,
+  taskLookup: HubTaskRecordLookup = readHubTaskReferenceByRecordId,
   documents: WorkflowTextDocumentPorts = productionWorkflowTextDocumentPorts,
   client?: RecordTaskFlowClient,
 ): Promise<WorkflowTextCopyResult> {
@@ -199,10 +201,8 @@ export async function copyWorkflowTextForCursor(
     }
   const target = taskFlowWriteTarget(cursor.project, database)
   try {
-    const task = (await taskReader(cursor.project)).find(
-      (candidate) => candidate.record_id === cursor.taskRecordId,
-    )
-    if (!task)
+    const task = await taskLookup(cursor.taskRecordId)
+    if (!task || task.project !== cursor.project)
       throw new Error(
         `task record ${cursor.taskRecordId} is not readable in project ${cursor.project}`,
       )
@@ -256,7 +256,7 @@ export async function copyWorkflowTextForTask(
   cursor: CopyCursor,
   requestedTaskKey: string | undefined,
   database: Database = db(),
-  taskReader: HubTaskReader = readHubTasks,
+  taskLookup: HubTaskLookup = readHubTaskReference,
   documents: WorkflowTextDocumentPorts = productionWorkflowTextDocumentPorts,
 ): Promise<WorkflowTextCopyResult> {
   if (!requestedTaskKey) {
@@ -265,7 +265,7 @@ export async function copyWorkflowTextForTask(
         `cursor ${cursor.number} is not linked to a task; copy it with ${PLATFORM_SLUG} workflow text copy${workflowCursorReference(cursor.number, cursor.project).cli} --task <KEY>`,
       )
     }
-    return copyWorkflowTextForCursor(cursor, database, taskReader, documents)
+    return copyWorkflowTextForCursor(cursor, database, undefined, documents)
   }
   if (cursor.taskRecordId) {
     const ownTask = cursor.taskKey ?? cursor.taskRecordId
@@ -273,9 +273,7 @@ export async function copyWorkflowTextForTask(
       `cursor ${cursor.number} belongs to task ${ownTask}; --task is only for a keyless cursor, so omit --task to copy to ${ownTask}`,
     )
   }
-  let tasks: HubTaskReference[] | undefined
-  const cachedTaskReader: HubTaskReader = async (project) => (tasks ??= await taskReader(project))
-  const task = await resolveHubTaskReference(cursor.project, requestedTaskKey, cachedTaskReader)
+  const task = await resolveHubTaskReference(cursor.project, requestedTaskKey, taskLookup)
   if (!task) {
     throw new Error(
       `task ${requestedTaskKey} does not exist in project ${cursor.project}; ` +
@@ -286,7 +284,7 @@ export async function copyWorkflowTextForTask(
   const result = await copyWorkflowTextForCursor(
     { ...cursor, taskRecordId: task.record_id },
     database,
-    cachedTaskReader,
+    async (recordId) => (recordId === task.record_id ? task : null),
     documents,
   )
   return { ...result, requestedTaskKey: task.key }
@@ -323,10 +321,10 @@ export type WorkflowTextCloseInput =
 export async function closeCursorWithTextCopy(
   input: WorkflowTextCloseInput,
   database: Database = db(),
-  taskReader: HubTaskReader = readHubTasks,
+  taskLookup: HubTaskRecordLookup = readHubTaskReferenceByRecordId,
   documents: WorkflowTextDocumentPorts = productionWorkflowTextDocumentPorts,
 ): Promise<string> {
-  return (await closeCursorWithTextCopyResult(input, database, taskReader, documents)).text
+  return (await closeCursorWithTextCopyResult(input, database, taskLookup, documents)).text
 }
 
 export type WorkflowTextCloseResult = {
@@ -344,7 +342,7 @@ export type WorkflowTextCloseResult = {
 export async function closeCursorWithTextCopyResult(
   input: WorkflowTextCloseInput,
   database: Database = db(),
-  taskReader: HubTaskReader = readHubTasks,
+  taskLookup: HubTaskRecordLookup = readHubTaskReferenceByRecordId,
   documents: WorkflowTextDocumentPorts = productionWorkflowTextDocumentPorts,
 ): Promise<WorkflowTextCloseResult> {
   if (input.action === 'next') await assertWorkflowSelfRulingProse(input.selfRuling)
@@ -387,7 +385,7 @@ export async function closeCursorWithTextCopyResult(
       state: row.state,
     },
     database,
-    taskReader,
+    taskLookup,
     documents,
     input.context.taskFlowClient,
   )

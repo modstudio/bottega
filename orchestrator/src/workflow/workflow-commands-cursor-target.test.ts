@@ -155,6 +155,7 @@ test('next by cursor alone reads the authoritative row and links the hosted task
   })
   process.env.BOTTEGA_RECORD_API_URL = 'https://record.test'
   const lines: string[] = []
+  let taskLookups = 0
   await workflowCommand(
     [
       'workflow',
@@ -168,11 +169,15 @@ test('next by cursor alone reads the authoritative row and links the hosted task
     presentation(lines),
     {
       json: true,
-      hubTaskReader: async () => [{ key, record_id: taskId, project }],
+      hubTaskLookup: async () => {
+        taskLookups++
+        return { key, record_id: taskId, project }
+      },
     },
   )
 
   expect(lines.join('\n')).not.toContain('Took over this workflow stage from Remote CLI machine.')
+  expect(taskLookups).toBe(1)
   expect(
     db().query('SELECT record_id FROM workflow_cursor WHERE record_id=?').get(stageId),
   ).toBeNull()

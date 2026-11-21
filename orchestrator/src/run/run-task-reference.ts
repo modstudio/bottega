@@ -4,7 +4,7 @@
 import { projectForTaskKey, projects } from '../project/projects.ts'
 import {
   bestEffortTaskReference,
-  type HubTaskReader,
+  type HubTaskLookup,
   taskKeyMap,
 } from '../workflow/workflow-task-reference.ts'
 import { deriveNewRunLinks } from './run-task-linking.ts'
@@ -33,14 +33,14 @@ export async function admitNewRunReference(input: {
   cwd: string | null
   launchCwd: string | null
   probe: boolean
-  hubTaskReader?: HubTaskReader
+  hubTaskLookup?: HubTaskLookup
 }): Promise<{ taskRecordId: string | null; projectRecordId: string | null }> {
   const registered = projects()
   const projectName =
     input.projectName ??
     (input.key ? (projectForTaskKey(input.key, registered)?.name ?? null) : null)
   const task = input.key
-    ? await bestEffortTaskReference(projectName, input.key, input.hubTaskReader)
+    ? await bestEffortTaskReference(projectName, input.key, input.hubTaskLookup)
     : null
   const tasks = taskKeyMap(task ? [task] : [])
   const links = deriveNewRunLinks(

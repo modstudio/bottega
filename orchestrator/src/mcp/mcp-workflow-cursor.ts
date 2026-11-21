@@ -7,7 +7,7 @@ import {
   type WorkflowCursorContext,
 } from '../workflow/workflow-cursor-selection.ts'
 import { resolveLinkedWorkflowCursorMode } from '../workflow/workflow-task-linking.ts'
-import type { HubTaskReader } from '../workflow/workflow-task-reference.ts'
+import type { HubTaskLookup } from '../workflow/workflow-task-reference.ts'
 
 export async function resolveMcpLinkedWorkflowCursor(
   slug: string,
@@ -17,7 +17,7 @@ export async function resolveMcpLinkedWorkflowCursor(
   cursor: number | undefined,
   caller: string,
   remedy: string,
-  reader?: HubTaskReader,
+  lookup?: HubTaskLookup,
 ): Promise<{
   context: WorkflowCursorContext
   selectedRow?: SelectableCursorRow
@@ -29,7 +29,7 @@ export async function resolveMcpLinkedWorkflowCursor(
     requested,
     args,
     cursor,
-    reader,
+    lookup,
   )
   return {
     context,

@@ -3,13 +3,12 @@
 
 import { flagValue } from '../cli/args.ts'
 import { TASK_FLOW_OPEN_STAGE_STATES } from '../record/record-task-flow-contract.ts'
+import { type ProjectTaskListReader, readProjectTaskList } from './project-task-list.ts'
 import { taskFlowState } from './task-flow-decision.ts'
 import type { WorkflowPrint } from './workflow-commands.ts'
 import { renderWorkflowCursorLine } from './workflow-cursor-format.ts'
 import { listWorkflowCursors } from './workflow-cursor-list.ts'
 import {
-  type HubTaskReader,
-  readHubTasks,
   taskKeyMap,
   taskReadRefusal,
   taskReferenceForProjectKey,
@@ -28,7 +27,7 @@ export function closedTaskAnnotation(
 export async function cursorsCommand(
   argv: string[],
   print: WorkflowPrint,
-  options: { hubTaskReader?: HubTaskReader } = {},
+  options: { hubTaskReader?: ProjectTaskListReader } = {},
 ): Promise<void> {
   const rows = await listWorkflowCursors({
     session: flagValue(argv, 'session'),
@@ -40,7 +39,7 @@ export async function cursorsCommand(
     print(rows)
     return
   }
-  const reader = options.hubTaskReader ?? readHubTasks
+  const reader = options.hubTaskReader ?? readProjectTaskList
   const projects = [...new Set(rows.filter((row) => row.workflow_key).map((row) => row.project))]
   const warnings: string[] = []
   const taskRows = (

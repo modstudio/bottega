@@ -42,9 +42,11 @@ export function workflowRulingContextFixture(
   const bodies = new Map<string, string>()
   return {
     server: createDocsMcpServer({
-      hubTaskReader: async () => [
-        { key: 'DEV-1069', record_id: 'task-DEV-1069', project: 'fixture' },
-      ],
+      hubTaskLookup: async () => ({
+        key: 'DEV-1069',
+        record_id: 'task-DEV-1069',
+        project: 'fixture',
+      }),
       ...ports,
       contextMomentPorts: recordingContextMomentPorts(calls, bodies),
     }),

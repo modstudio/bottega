@@ -51,13 +51,14 @@ import {
   mcpWorkflowCursorContext,
   resolveMcpSelectedCursorContext,
 } from '../workflow/workflow-cursor-selection.ts'
-import type { HubTaskReader } from '../workflow/workflow-task-reference.ts'
+import type { HubTaskLookup } from '../workflow/workflow-task-reference.ts'
 import {
   attachWorkflowTextByHandle,
   WORKFLOW_TEXT_ATTACHMENT_MAX_BYTES,
 } from '../workflow/workflow-text.ts'
 import {
   closeCursorWithTextCopy,
+  type HubTaskRecordLookup,
   productionWorkflowTextDocumentPorts,
   type WorkflowTextDocumentPorts,
 } from '../workflow/workflow-text-copy.ts'
@@ -80,7 +81,8 @@ import { resolveMcpWorkflowSpace } from './mcp-workflow-space.ts'
 import { registerWorkflowStepTool } from './mcp-workflow-step.ts'
 
 export type DocsMcpPorts = LandingBranchPorts & {
-  hubTaskReader?: HubTaskReader
+  hubTaskLookup?: HubTaskLookup
+  hubTaskRecordLookup?: HubTaskRecordLookup
   workflowTextDocuments?: WorkflowTextDocumentPorts
   contextMomentPorts?: ContextMomentPorts
   registerSchemaReload?: (
@@ -496,7 +498,7 @@ async function abandonWorkflowWithTextCopy(
     undefined,
     {},
     cursor,
-    ports.hubTaskReader,
+    ports.hubTaskLookup,
   )
   const result = await closeCursorWithTextCopy(
     {
@@ -510,7 +512,7 @@ async function abandonWorkflowWithTextCopy(
       surface: 'mcp',
     },
     undefined,
-    ports.hubTaskReader,
+    ports.hubTaskRecordLookup,
     ports.workflowTextDocuments ?? productionWorkflowTextDocumentPorts,
   )
   return text(result)
@@ -550,7 +552,7 @@ export function createDocsMcpServer(ports: DocsMcpPorts = {}): McpServer {
 }
 
 function registerCoreTools(server: McpServer, ports: DocsMcpPorts): void {
-  registerWorkflowPrompts(server, ports.hubTaskReader)
+  registerWorkflowPrompts(server, ports.hubTaskLookup)
   registerSearchTools(server)
   registerOperatorTools(server, ports.contextMomentPorts)
   registerBoardTools(server)
@@ -624,7 +626,7 @@ function registerWorkflowActionTools(server: McpServer, ports: DocsMcpPorts): vo
     async (input) => text(await composeWorkflowToolResult(input, ports.commitCount)),
   )
 
-  registerWorkflowStepTool(server, ports.commitCount, ports.hubTaskReader)
+  registerWorkflowStepTool(server, ports.commitCount, ports.hubTaskLookup)
 
   server.registerTool(
     'attach_workflow_text',
@@ -650,7 +652,7 @@ function registerWorkflowActionTools(server: McpServer, ports: DocsMcpPorts): vo
     (input) =>
       advanceWorkflow(
         input,
-        ports.hubTaskReader,
+        ports.hubTaskLookup,
         ports.workflowTextDocuments,
         ports.contextMomentPorts,
       ),
@@ -851,7 +853,7 @@ function registerPortLedgerTools(server: McpServer, ports: DocsMcpPorts): void {
             note,
             sources: portLedgerSources(sources),
           },
-          ports.hubTaskReader,
+          ports.hubTaskLookup,
         ),
       ),
   )

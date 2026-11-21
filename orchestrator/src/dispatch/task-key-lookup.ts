@@ -14,7 +14,7 @@ import {
 } from '../mcp/mcp-probe.ts'
 import { callMcpTool } from '../mcp/mcp-tool-list.ts'
 import type { Project } from '../project/projects.ts'
-import { type HubTaskReader, resolveHubTaskReference } from '../workflow/workflow-task-reference.ts'
+import { type HubTaskLookup, resolveHubTaskReference } from '../workflow/workflow-task-reference.ts'
 import { readTaskThroughCli } from './task-cli-read.ts'
 import type { TaskKeyLookupResult } from './task-key-admission.ts'
 
@@ -120,7 +120,7 @@ export async function readTaskText(
   key: string,
   dependencies: {
     toolCaller?: { callTool(name: string, args: Record<string, unknown>): Promise<unknown> }
-    hubTaskReader?: HubTaskReader
+    hubTaskLookup?: HubTaskLookup
     withRecordId?: boolean
   } = {},
 ): Promise<TaskTextRead> {
@@ -148,7 +148,7 @@ export async function readTaskText(
     let mirrorUnread: string | undefined
     if (dependencies.withRecordId) {
       try {
-        mirror = await resolveHubTaskReference(project.name, key, dependencies.hubTaskReader)
+        mirror = await resolveHubTaskReference(project.name, key, dependencies.hubTaskLookup)
       } catch (cause) {
         mirrorUnread = errorText(cause)
       }
