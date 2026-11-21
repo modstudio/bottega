@@ -503,6 +503,7 @@ function settleReleasedBranch(runId: string, branch: string): void {
       state: 'released',
       settledAt: nowIso(),
       detail: 'local canon mirror branch deleted at its recorded tip',
+      by: { verb: 'canon-mirror:runCanonMirror', session: sessionId() },
       allocationKey: `refs/heads/${branch}`,
     })
   })

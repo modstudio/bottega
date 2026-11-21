@@ -6,6 +6,7 @@
 
 import type { Database } from 'bun:sqlite'
 import { newRecordId } from '../../../shared/record-id.ts'
+import { resolve } from 'node:path'
 import { realpathOrSpelled } from '../git/checkout-identity.ts'
 import { TERMINAL_RUN_STATUS_SQL } from '../run/run-status.ts'
 import { SYNTHETIC_LIFECYCLE_JOBS } from '../run/synthetic-lifecycle-job.ts'
@@ -28,6 +29,18 @@ export type ResourceClaimState =
   | 'absent'
   | 'stuck'
 export type PortBand = { start: number; end: number }
+export type ClaimSettlementBy = { verb: string; session: string | null }
+
+export function claimSettlement(detail: string, verb: string, session: string | null) {
+  return { detail, by: { verb, session } }
+}
+
+export function isPathInside(candidate: string | null, directory: string): boolean {
+  if (!candidate) return false
+  const path = resolve(candidate)
+  const root = resolve(directory)
+  return path === root || path.startsWith(`${root}/`)
+}
 export type CloseOutClaimOutcome = 'released' | 'forgotten' | 'held' | 'live' | 'absent' | 'failed'
 export type SandboxDirectoryReleaseInput = {
   terminal: boolean
@@ -543,14 +556,25 @@ export function claimDatabaseName(
 
 export function releaseRecipeAllocationClaims(
   database: Database,
-  input: { claimIds: readonly string[]; settledAt: string; reason: string },
+  input: {
+    claimIds: readonly string[]
+    settledAt: string
+    reason: string
+    by: ClaimSettlementBy
+  },
 ): void {
   const update = database.query(
-    `UPDATE resource_claim SET state='released',settled_at=?,settled_detail=?
+    `UPDATE resource_claim SET state='released',settled_at=?,settled_detail=?,settled_verb=?,settled_session=?
      WHERE record_id=? AND state='claimed' AND kind IN ('port','index','string','database')`,
   )
   for (const id of input.claimIds) {
-    update.run(input.settledAt, `tracked creation failed: ${input.reason}`, id)
+    update.run(
+      input.settledAt,
+      `tracked creation failed: ${input.reason}`,
+      input.by.verb,
+      input.by.session,
+      id,
+    )
   }
 }
 
@@ -645,12 +669,13 @@ export function settleClaims(
     state: Exclude<ResourceClaimState, 'claimed'>
     settledAt: string
     detail: string
+    by: ClaimSettlementBy
     allocationKey?: string
   },
 ): void {
   const settled = database
     .query(
-      `UPDATE resource_claim SET state=?, settled_at=?, settled_detail=?
+      `UPDATE resource_claim SET state=?, settled_at=?, settled_detail=?, settled_verb=?, settled_session=?
        WHERE root_run_record_id=? AND kind=?
          AND (state='claimed' OR (?='released' AND state='retained'))
          AND (? IS NULL OR allocation_key=?)`,
@@ -659,6 +684,8 @@ export function settleClaims(
       input.state,
       input.settledAt,
       input.detail,
+      input.by.verb,
+      input.by.session,
       input.rootRunId,
       input.kind,
       input.state,
@@ -670,13 +697,15 @@ export function settleClaims(
     if (allocationState) {
       database
         .query(
-          `UPDATE resource_claim SET state=?, settled_at=?, settled_detail=?
+          `UPDATE resource_claim SET state=?, settled_at=?, settled_detail=?, settled_verb=?, settled_session=?
            WHERE root_run_record_id=? AND kind IN ('port','index','string') AND state='claimed'`,
         )
         .run(
           allocationState,
           input.settledAt,
           `worktree claim settled: ${input.detail}`,
+          input.by.verb,
+          input.by.session,
           input.rootRunId,
         )
     }
@@ -690,15 +719,16 @@ export function settleDatabaseClaim(
     databaseDropped: boolean
     settledAt: string
     detail: string
+    by: ClaimSettlementBy
   },
 ): void {
   const state = settledStateForDatabaseTeardown(input.databaseDropped)
   database
     .query(
-      `UPDATE resource_claim SET state=?, settled_at=?, settled_detail=?
+      `UPDATE resource_claim SET state=?, settled_at=?, settled_detail=?, settled_verb=?, settled_session=?
        WHERE kind='database' AND allocation_key=? AND state='claimed'`,
     )
-    .run(state, input.settledAt, input.detail, input.allocationKey)
+    .run(state, input.settledAt, input.detail, input.by.verb, input.by.session, input.allocationKey)
 }
 
 function claimedClaimsOnTerminalConversations(

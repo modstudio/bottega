@@ -22,7 +22,7 @@ import {
   withWorktreeLease,
 } from '../project/project-lock.ts'
 import { projectAt, projectByName, resolvedWorktreeTool } from '../project/projects.ts'
-import { settleClaims } from '../resources/resource-claims.ts'
+import { claimSettlement, settleClaims } from '../resources/resource-claims.ts'
 import { otherConversationWorktreeSharers } from '../resources/resource-ownership.ts'
 import { recordedRunLivenessFacts, runAlive } from '../run/run-alive.ts'
 import { runLeaseState } from '../run/run-lease.ts'
@@ -53,6 +53,10 @@ type ReclaimWorktreeOptions = {
   clock?: number
   allowDirty?: boolean
   beforeLockedProof?: () => void
+}
+
+function reclaimSettlement(detail: string) {
+  return claimSettlement(detail, 'reclaim', sessionId())
 }
 
 function prepareExactBranchDeletion(repoRoot: string, branch: string): void {
@@ -440,7 +444,7 @@ export function reclaimWorktree(
                   kind: 'worktree',
                   state: 'released',
                   settledAt: new Date().toISOString(),
-                  detail: removed.detail,
+                  ...reclaimSettlement(removed.detail),
                   allocationKey: path,
                 })
                 if (keepBranch && minted && branchBefore) {
@@ -449,7 +453,7 @@ export function reclaimWorktree(
                     kind: 'branch',
                     state: 'retained',
                     settledAt: new Date().toISOString(),
-                    detail: `branch retained at ${branchBefore}`,
+                    ...reclaimSettlement(`branch retained at ${branchBefore}`),
                     allocationKey: `refs/heads/${minted}`,
                   })
                 }

@@ -29,6 +29,7 @@ import {
   monitor,
   monitorHistory,
   monitorHistoryReleasedBefore,
+  monitorWorktreeReleases,
 } from './monitor.ts'
 import {
   claimMonitorNoticesForCommand,
@@ -249,8 +250,9 @@ async function showHistory(
   presentation: Presentation,
 ): Promise<void> {
   const rows = monitorHistory(limit)
+  const releases = monitorWorktreeReleases(limit)
   const releasedBefore = monitorHistoryReleasedBefore()
-  if (json) await presentation.write(`${JSON.stringify(rows)}\n`)
+  if (json) await presentation.write(`${JSON.stringify({ history: rows, releases })}\n`)
   else {
     for (const row of rows)
       presentation.log(
@@ -261,6 +263,10 @@ async function showHistory(
               : ''),
           displayConditions(row.conditions),
         ).join('\n'),
+      )
+    for (const release of releases)
+      presentation.log(
+        `released worktree  ${release.settled_at}  ${release.path}  run ${release.run}  root ${release.root_run}  ${release.state}  verb ${release.verb ?? '(unknown)'}  session ${release.session ?? '(none)'}  ${release.settled_detail ?? ''}`,
       )
     if (shouldReportReleasedMonitorHistory(rows.length, limit, releasedBefore))
       presentation.log(
