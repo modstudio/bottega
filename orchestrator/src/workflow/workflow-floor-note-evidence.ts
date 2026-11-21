@@ -13,7 +13,10 @@ export async function gatherNoteArtifactEvidence(
   offeredArtifact: string,
   project: string,
   ports: FloorEvidencePorts,
-): Promise<Pick<ValidatedArtifactEvidence, 'artifact' | 'note'>> {
+): Promise<{
+  artifact: ValidatedArtifactEvidence['artifact']
+  note: NonNullable<ValidatedArtifactEvidence['note']>
+}> {
   if (!ports.readNote)
     throw new Error(`--artifact ${offeredArtifact} needs note evidence and no reader was provided`)
   const note = await invokeFloorEvidencePort(

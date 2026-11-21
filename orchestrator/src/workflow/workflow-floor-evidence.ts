@@ -766,7 +766,13 @@ async function gatheredCommandEvidence(
   try {
     return {
       exec,
-      pullRequest: pullRequestEvidence(url, identity, d, ports, `--artifact exec:${id}`),
+      pullRequest: gatherPullRequestArtifactEvidence(
+        url,
+        identity,
+        d,
+        ports,
+        `--artifact exec:${id}`,
+      ),
     }
   } catch (error) {
     rethrowFloorEvidencePortMiss(error)
