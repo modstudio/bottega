@@ -1,6 +1,6 @@
 import { Database } from 'bun:sqlite'
 import { afterAll, beforeEach } from 'bun:test'
-import { chmodSync, mkdirSync, mkdtempSync, rmSync, symlinkSync } from 'node:fs'
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, statSync, symlinkSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -12,7 +12,16 @@ import { createTestHubDatabaseGuard, mintTestHubDatabase } from '../../shared/te
 import { HUB_MIGRATION_BACKFILL_VALUES } from './migration-values.ts'
 
 const fixture = fileURLToPath(new URL('./project-register.ts', import.meta.url))
-chmodSync(fixture, 0o755)
+if ((statSync(fixture).mode & 0o100) === 0) {
+  try {
+    chmodSync(fixture, 0o755)
+  } catch (cause) {
+    throw new Error(
+      `Could not make ${fixture} executable for BOTTEGA_ORCH: ${cause instanceof Error ? cause.message : String(cause)}. The file must be executable for BOTTEGA_ORCH. Run \`chmod +x hub/test/project-register.ts\` or restore Git's mode with \`git checkout -- hub/test/project-register.ts\`.`,
+      { cause },
+    )
+  }
+}
 process.env.BOTTEGA_ORCH = fixture
 
 const { directory: databaseDir } = mintTestHubDatabase(FROZEN_STATE_NAMES.hubDatabase)
