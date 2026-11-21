@@ -248,6 +248,7 @@ test('hosted task-flow intents never touch the five local task-flow tables', asy
 
   const hosted = (await taskFlowClient.listTaskFlowStages!({ workflow }, { destinationSpaceId }))
     .items[0]!
+  const hostedStage = hosted.stage as typeof hosted.stage & { closedStepNotes: unknown[] }
   const attachment = await attachWorkflowTextByHandle(
     cursor,
     'Hosted attachment.',
@@ -256,12 +257,12 @@ test('hosted task-flow intents never touch the five local task-flow tables', asy
   )
   const copied = await copyWorkflowTextForCursor(
     {
-      recordId: hosted.stage.id,
+      recordId: hostedStage.id,
       number: cursor,
       project: 'fixture',
       taskKey,
       taskRecordId: taskId,
-      state: hosted.stage.state,
+      state: hostedStage.state,
     },
     database,
     async () => ({ key: taskKey, record_id: taskId, project: 'fixture', source: 'local' }),
@@ -272,7 +273,7 @@ test('hosted task-flow intents never touch the five local task-flow tables', asy
     taskFlowClient,
   )
   expect(copied.copied).toHaveLength(1)
-  await deleteWorkflowText(hosted.stage.id, true, database, taskFlowClient)
+  await deleteWorkflowText(hostedStage.id, true, database, taskFlowClient)
   expect(
     await linkWorkflowTaskLabel(
       database,
@@ -326,7 +327,7 @@ test('hosted task-flow intents never touch the five local task-flow tables', asy
       projectId: secondProjectId,
     },
     stage: {
-      ...hosted.stage,
+      ...hostedStage,
       id: '00000000-0000-4000-8001-000000000004',
       flowRecordId: '00000000-0000-4000-8001-000000000003',
       projectId: secondProjectId,
@@ -336,7 +337,7 @@ test('hosted task-flow intents never touch the five local task-flow tables', asy
   const handoffStageId = memoryInput.taskFlowStages.at(-1)!.stage.id
   const openObligation = {
     id: '00000000-0000-4000-8003-000000000001',
-    stageRecordId: hosted.stage.id,
+    stageRecordId: hostedStage.id,
     stepOrdinal: 0,
     stepSlug: 'score',
     floor: 'command-exit',
@@ -346,7 +347,7 @@ test('hosted task-flow intents never touch the five local task-flow tables', asy
     floorDeferrable: false,
     reason: 'guard the open-obligation batch read',
     sessionId: context.session,
-    createdAt: hosted.stage.createdAt,
+    createdAt: hostedStage.createdAt,
     satisfiedAt: null,
     satisfiedStepOrdinal: null,
     satisfiedStepSlug: null,
@@ -355,7 +356,7 @@ test('hosted task-flow intents never touch the five local task-flow tables', asy
     abandonedReason: null,
     operatorRuling: false,
   }
-  Object.assign(hosted.stage, {
+  Object.assign(hostedStage, {
     state: 'running',
     handedOffFromRecordId: handoffStageId,
     obligations: [openObligation],
@@ -427,7 +428,7 @@ test('hosted task-flow intents never touch the five local task-flow tables', asy
     memoryInput.taskFlowStages.push({
       flow: { ...hosted.flow },
       stage: {
-        ...hosted.stage,
+        ...hostedStage,
         id: stageId,
         number: index,
         state: index % 2 === 0 ? 'awaiting-ruling' : 'running',
@@ -461,7 +462,7 @@ test('hosted task-flow intents never touch the five local task-flow tables', asy
       openStageRecordId: '00000000-0000-4000-8001-000000000007',
     },
     stage: {
-      ...hosted.stage,
+      ...hostedStage,
       id: '00000000-0000-4000-8001-000000000007',
       flowRecordId: '00000000-0000-4000-8001-000000000006',
       number: 11,
@@ -577,7 +578,7 @@ test('hosted task-flow intents never touch the five local task-flow tables', asy
         taskKey: `DEV-HISTORY-${index}`,
       },
       stage: {
-        ...hosted.stage,
+        ...hostedStage,
         id: `00000000-0000-4000-8020-${suffix}`,
         flowRecordId: `00000000-0000-4000-8010-${suffix}`,
         number: index + 100,
@@ -609,7 +610,7 @@ test('hosted task-flow intents never touch the five local task-flow tables', asy
       const result = await readStageSummaries(input)
       return {
         ...result,
-        items: result.items.filter((item) => item.stage.id !== hosted.stage.id),
+        items: result.items.filter((item) => item.stage.id !== hostedStage.id),
       }
     },
   })
