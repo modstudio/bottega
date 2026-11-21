@@ -1,0 +1,2 @@
+ALTER TABLE run ADD COLUMN reply_head TEXT;
+ALTER TABLE run ADD COLUMN reply_tree TEXT;

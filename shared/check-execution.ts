@@ -5,6 +5,49 @@ export const CHECK_EXECUTION_FILE_ENV = `${PLATFORM_SLUG.toUpperCase()}_CHECK_EX
 export const UNIT_TEST_CHECK_CATEGORY = 'unit-tests'
 export const UNCHECKED_EXIT_CODE = 77
 export const UNCHECKED_LINE_PREFIX = 'unchecked: '
+const FAILING_LEG_TAIL_MARKER = 'failing leg tail (exit '
+export const GATE_FAILURES_MARKER = 'gate failures:'
+
+export function formatCheckLegBodyLine(leg: string, line: string): string {
+  return `[${leg}] ${line}`
+}
+
+export function checkLegBodyLine(line: string, leg: string): string | null {
+  const prefix = formatCheckLegBodyLine(leg, '')
+  return line.startsWith(prefix) ? line.slice(prefix.length) : null
+}
+
+export function formatFailingLegTailHeading(leg: string, exitCode: number): string {
+  return `[${leg}] ${FAILING_LEG_TAIL_MARKER}${exitCode})`
+}
+
+export function parseFailingLegTailHeading(line: string): { leg: string; exitCode: number } | null {
+  const separator = `] ${FAILING_LEG_TAIL_MARKER}`
+  const separatorAt = line.indexOf(separator)
+  if (!line.startsWith('[') || separatorAt <= 1 || !line.endsWith(')')) return null
+  const exitText = line.slice(separatorAt + separator.length, -1)
+  if (!/^-?\d+$/.test(exitText)) return null
+  const exitCode = Number(exitText)
+  return { leg: line.slice(1, separatorAt), exitCode }
+}
+
+export function formatGateFailureLeg(leg: string): string {
+  return leg
+}
+
+export function formatGateFailureDetail(detail: string): string {
+  return `  ${detail}`
+}
+
+export function parseGateFailureFooterLine(
+  line: string,
+): { kind: 'detail' | 'leg'; value: string } | null {
+  if (line.startsWith(formatGateFailureDetail(''))) {
+    return { kind: 'detail', value: line.slice(formatGateFailureDetail('').length) }
+  }
+  if (line.length > 0 && formatGateFailureLeg(line) === line) return { kind: 'leg', value: line }
+  return null
+}
 
 export function exitUnchecked(reason: string): never {
   console.log(`${UNCHECKED_LINE_PREFIX}${reason}`)

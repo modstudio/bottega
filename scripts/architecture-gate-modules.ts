@@ -14,6 +14,13 @@ const module = (file: string, allowed: string[]): GateModule => ({
 })
 
 export const gateModules: GateModule[] = [
+  module('orchestrator/src/collect/worker-check-presentation.ts', [
+    'bun:sqlite',
+    '../gate/worker-check-omissions.ts',
+    '../gate/worker-check-result.ts',
+    '../gate/worker-check-verdict.ts',
+    './result-output.ts',
+  ]),
   module('orchestrator/src/collect/result-output.ts', [
     '../gate/gate-decision.ts',
     '../run/run-test-outcome.ts',
@@ -113,6 +120,14 @@ export const gateModules: GateModule[] = [
     './worker-check-omissions.ts',
   ]),
   module('orchestrator/src/gate/worker-check-omissions.ts', ['bun:sqlite']),
+  module('orchestrator/src/gate/worker-check-result.ts', [
+    'bun:sqlite',
+    'node:fs',
+    '../../../shared/check-execution.ts',
+    './worker-check-omissions.ts',
+    './worker-check-verdict.ts',
+  ]),
+  module('orchestrator/src/gate/worker-check-verdict.ts', ['../../../shared/check-execution.ts']),
 ]
 
 export const gateBoundarySpecs: GateBoundarySpec[] = [
